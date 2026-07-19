@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -471,7 +472,7 @@ func TestAdminStorageReflectsDuckLakeAfterCleanup(t *testing.T) {
 
 func TestGlobalReadExecutionAuditsQueueTelemetry(t *testing.T) {
 	h := newDuckLakeHarness(t)
-	req := h.authedJSONRequest(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/datasets/orders/query", `{"measures":[{"field":"revenue"}],"limit":1}`)
+	req := h.authedJSONRequest(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/query", `{"measures":[{"field":"revenue"}],"limit":1}`)
 	req.Header.Set("X-Request-ID", "integration-read-telemetry")
 	res, body := h.do(t, req)
 	if res.StatusCode != http.StatusOK {
@@ -518,7 +519,7 @@ func TestReadOverloadDoesNotBlockWriteRefresh(t *testing.T) {
 		readDone <- err
 	}()
 	<-started
-	req := h.authedJSONRequest(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/datasets/orders/query", `{"measures":[{"field":"revenue"}],"limit":1}`)
+	req := h.authedJSONRequest(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/query", `{"measures":[{"field":"revenue"}],"limit":1}`)
 	res, body := h.do(t, req)
 	if res.StatusCode == http.StatusOK || !strings.Contains(body, execution.ErrReadQueueFull.Error()) {
 		close(release)
@@ -915,7 +916,7 @@ func (h *duckLakeHarness) do(t *testing.T, req *http.Request) (*http.Response, s
 
 func (h *duckLakeHarness) queryRevenue(t *testing.T) float64 {
 	t.Helper()
-	req := h.authedJSONRequest(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/datasets/orders/query", `{"measures":[{"field":"revenue"}],"limit":1}`)
+	req := h.authedJSONRequest(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/query", `{"measures":[{"field":"revenue"}],"limit":1}`)
 	res, body := h.do(t, req)
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("semantic query status=%d body=%s", res.StatusCode, body)
@@ -924,10 +925,14 @@ func (h *duckLakeHarness) queryRevenue(t *testing.T) float64 {
 	if err := json.Unmarshal([]byte(body), &decoded); err != nil {
 		t.Fatalf("decode semantic query: %v body=%s", err, body)
 	}
-	if len(decoded.Items) != 1 {
-		t.Fatalf("semantic query items = %#v, want one", decoded.Items)
+	if len(decoded.Rows) != 1 || len(decoded.Columns) != 1 || len(decoded.Rows[0]) != 1 {
+		t.Fatalf("semantic query rowset = %#v, want one cell", decoded)
 	}
-	return integrationNumberValue(t, decoded.Items[0]["revenue"])
+	value, err := strconv.ParseFloat(decoded.Rows[0][0], 64)
+	if err != nil {
+		t.Fatalf("parse semantic revenue %q: %v", decoded.Rows[0][0], err)
+	}
+	return value
 }
 
 func integrationNumberValue(t *testing.T, value any) float64 {

@@ -56,11 +56,9 @@ func dataRevisionsCommand(ctx context.Context, opts *rootOptions) *cobra.Command
 			if err != nil {
 				return err
 			}
-			environment, err := targetEnvironment(ctx, nil, target, token, currentOptions.environment)
-			if err != nil {
+			if _, err := targetEnvironment(ctx, nil, target, token, currentOptions.environment); err != nil {
 				return err
 			}
-			currentOptions.environment = environment
 			return runDataRevisionCurrent(ctx, opts, currentOptions, newManagedDataCLIClient(nil, target, token), cmd.OutOrStdout())
 		},
 	}
@@ -118,7 +116,7 @@ func runDataRevisionsList(ctx context.Context, _ *rootOptions, values dataRevisi
 }
 
 func runDataRevisionCurrent(ctx context.Context, _ *rootOptions, values dataRevisionOptions, client *managedDataCLIClient, out io.Writer) error {
-	response, err := client.currentRevision(ctx, values.project, values.connection, values.environment)
+	response, err := client.currentRevision(ctx, values.project, values.connection, "")
 	if err != nil {
 		return err
 	}

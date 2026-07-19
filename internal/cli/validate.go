@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -189,13 +188,10 @@ func fetchActiveWorkspaceGraphFor(ctx context.Context, opts *rootOptions, worksp
 	if err != nil {
 		return workspace.AssetGraph{}, err
 	}
-	environment, err := targetEnvironment(ctx, http.DefaultClient, target, token, opts.environment)
-	if err != nil {
+	if _, err := targetEnvironment(ctx, http.DefaultClient, target, token, opts.environment); err != nil {
 		return workspace.AssetGraph{}, err
 	}
-	opts.environment = environment
-	query := url.Values{}
-	endpoint, err := apiOperationURL(target, "getWorkspaceActiveAssetGraph", map[string]string{"workspace": workspaceID}, query)
+	endpoint, err := apiOperationURL(target, "getWorkspaceActiveAssetGraph", map[string]string{"workspace": workspaceID}, nil)
 	if err != nil {
 		return workspace.AssetGraph{}, err
 	}

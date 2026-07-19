@@ -5,8 +5,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
@@ -25,10 +26,10 @@ import (
 
 type deployRequest struct {
 	ProjectPath string
-	Environment string
 	Revisions   map[string]string
 	Target      string
 	Token       string
+	Environment string
 	AutoApprove bool
 	Out         io.Writer
 	HTTPClient  *http.Client
@@ -53,8 +54,8 @@ func deployCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 				return err
 			}
 			return runDeploy(ctx, deployRequest{
-				ProjectPath: opts.catalog, Environment: opts.environment, Revisions: pins,
-				Target: target, Token: token, AutoApprove: opts.autoApprove,
+				ProjectPath: opts.catalog, Revisions: pins,
+				Target: target, Token: token, Environment: opts.environment, AutoApprove: opts.autoApprove,
 				Out: cmd.OutOrStdout(), HTTPClient: http.DefaultClient,
 			})
 		},
@@ -70,7 +71,6 @@ func deployCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 
 func runDeploy(ctx context.Context, request deployRequest) error {
 	request.ProjectPath = strings.TrimSpace(request.ProjectPath)
-	request.Environment = strings.TrimSpace(request.Environment)
 	request.Target = strings.TrimSpace(request.Target)
 	request.Token = strings.TrimSpace(request.Token)
 	if ctx == nil || request.ProjectPath == "" || request.Target == "" || request.Token == "" {
@@ -90,21 +90,25 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 	if len(workspaceIDs) == 0 {
 		return fmt.Errorf("project %q has no workspaces", request.ProjectPath)
 	}
-	environment, err := targetEnvironment(ctx, request.HTTPClient, request.Target, request.Token, request.Environment)
+	request.Environment, err = targetEnvironment(ctx, request.HTTPClient, request.Target, request.Token, request.Environment)
 	if err != nil {
 		return err
 	}
-	request.Environment = environment
 
-	cliOpts := &rootOptions{
-		target: request.Target, token: request.Token, catalog: request.ProjectPath,
-		environment: request.Environment, autoApprove: request.AutoApprove,
+	client := newManagedDataCLIClient(request.HTTPClient, request.Target, request.Token)
+	capabilities, err := client.capabilities(ctx)
+	if err != nil || strings.TrimSpace(capabilities.Environment) == "" {
+		return fmt.Errorf("read server capabilities failed")
 	}
-	type candidate struct {
+	if capabilities.Environment != request.Environment {
+		return fmt.Errorf("target instance environment %q does not match server capabilities environment %q", request.Environment, capabilities.Environment)
+	}
+	cliOpts := &rootOptions{target: request.Target, token: request.Token, catalog: request.ProjectPath, environment: request.Environment, autoApprove: request.AutoApprove}
+	type plannedWorkspace struct {
 		workspaceID string
 		activeGraph workspace.AssetGraph
 	}
-	candidates := make([]candidate, 0, len(workspaceIDs))
+	planned := make([]plannedWorkspace, 0, len(workspaceIDs))
 	for _, workspaceID := range workspaceIDs {
 		graph, graphErr := fetchActiveWorkspaceGraphFor(ctx, cliOpts, workspaceID)
 		if graphErr != nil {
@@ -115,46 +119,171 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 			return fmt.Errorf("plan workspace %q: %w", workspaceID, planErr)
 		}
 		printDeploymentPlanSummaryTo(outputOrDiscard(request.Out), plan.Workspaces[0])
-		candidates = append(candidates, candidate{workspaceID: workspaceID, activeGraph: graph})
+		planned = append(planned, plannedWorkspace{workspaceID: workspaceID, activeGraph: graph})
 	}
 	if err := confirmDeployment(cliOpts, os.Stdin, outputOrDiscard(request.Out)); err != nil {
 		return err
 	}
 
-	targets := make([]apigenapi.ProjectDeploymentTargetRequest, 0, len(candidates))
-	for _, item := range candidates {
+	type artifact struct {
+		workspaceID string
+		digest      string
+		content     []byte
+	}
+	artifacts := make([]artifact, 0, len(planned))
+	projectDigest := ""
+	for _, item := range planned {
 		workspaceProject := project.Workspaces[item.workspaceID]
 		pins := selectManagedDataPins(request.Revisions, managedConnectionsForWorkspace(project, workspaceProject))
-		prepared, localDigest, prepareErr := prepareWorkspaceCandidate(ctx, cliOpts, request.Target, request.Token, project.Name, item.workspaceID, workspaceProject, item.activeGraph, pins)
-		if prepareErr != nil {
-			return fmt.Errorf("prepare workspace %q failed", item.workspaceID)
+		var content bytes.Buffer
+		manifest, digest, packErr := servingstatefs.PackProject(request.ProjectPath, servingstatefs.PackProjectOptions{
+			WorkspaceID: item.workspaceID, Environment: servingstate.Environment(request.Environment), ServingStateID: "release-artifact",
+			ActiveGraph: item.activeGraph, ManagedDataRevisions: pins,
+		}, &content)
+		if packErr != nil {
+			return fmt.Errorf("package workspace %q: %w", item.workspaceID, packErr)
 		}
-		if prepared.Digest != localDigest || !canonicalArtifactDigest(prepared.Digest) {
-			return fmt.Errorf("prepare workspace %q returned an invalid artifact digest", item.workspaceID)
+		if projectDigest == "" {
+			projectDigest = manifest.ProjectDigest
+		} else if projectDigest != manifest.ProjectDigest {
+			return fmt.Errorf("workspace %q produced an inconsistent project digest", item.workspaceID)
 		}
-		targets = append(targets, apigenapi.ProjectDeploymentTargetRequest{Workspace: item.workspaceID, CandidateId: prepared.Id})
+		artifacts = append(artifacts, artifact{workspaceID: item.workspaceID, digest: digest, content: append([]byte(nil), content.Bytes()...)})
 	}
 
-	client := newManagedDataCLIClient(request.HTTPClient, request.Target, request.Token)
-	createBody := apigenapi.ProjectDeploymentCreateRequest{Environment: request.Environment, Targets: targets}
-	createKeyValues := []string{project.Name, request.Environment}
-	createKeyValues = append(createKeyValues, projectDeploymentTargetValues(targets)...)
-	created, err := client.createProjectDeployment(ctx, project.Name, deploymentIdempotencyKey("create", createKeyValues...), createBody)
-	if err != nil {
-		return fmt.Errorf("create project deployment failed")
+	createBody := apigenapi.ReleaseCreateRequest{ProjectDigest: projectDigest, Workspaces: make([]apigenapi.ReleaseWorkspaceManifest, 0, len(artifacts)), Connections: []apigenapi.ReleaseConnectionPin{}}
+	keyValues := []string{project.Name, projectDigest}
+	for _, item := range artifacts {
+		createBody.Workspaces = append(createBody.Workspaces, apigenapi.ReleaseWorkspaceManifest{Workspace: item.workspaceID, ArtifactDigest: item.digest})
+		keyValues = append(keyValues, item.workspaceID, item.digest)
 	}
-	if err := validateProjectDeploymentResponse(created, "", project.Name, request.Environment, apigenapi.ProjectDeploymentStatusPending, apigenapi.ProjectDeploymentTargetStatusPending, targets); err != nil {
+	connectionIDs := make([]string, 0, len(request.Revisions))
+	for connection := range request.Revisions {
+		connectionIDs = append(connectionIDs, connection)
+	}
+	sort.Strings(connectionIDs)
+	for _, connection := range connectionIDs {
+		createBody.Connections = append(createBody.Connections, apigenapi.ReleaseConnectionPin{Connection: connection, RevisionId: request.Revisions[connection]})
+		keyValues = append(keyValues, connection, request.Revisions[connection])
+	}
+	releaseKey := deploymentIdempotencyKey("release", keyValues...)
+	created, err := client.createRelease(ctx, project.Name, releaseKey, createBody)
+	if err != nil {
+		return fmt.Errorf("create project release failed")
+	}
+	if created.ProjectId != project.Name || created.ProjectDigest != projectDigest || created.Id == "" {
+		return fmt.Errorf("project release returned inconsistent scope or status")
+	}
+	finalized := created
+	switch created.Status {
+	case apigenapi.ReleaseStatusDraft:
+		for _, item := range artifacts {
+			digestBytes, _ := hex.DecodeString(item.digest)
+			contentDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(digestBytes) + ":"
+			if _, err := client.uploadReleaseArtifact(ctx, project.Name, created.Id, item.workspaceID, contentDigest, bytes.NewReader(item.content)); err != nil {
+				return fmt.Errorf("upload workspace %q artifact failed", item.workspaceID)
+			}
+		}
+		finalized, err = client.finalizeRelease(ctx, project.Name, created.Id, deploymentIdempotencyKey("finalize", project.Name, created.Id))
+		if err != nil {
+			return fmt.Errorf("finalize project release failed")
+		}
+	case apigenapi.ReleaseStatusValidating:
+		// Reissuing finalize is idempotent and restarts validation if a prior
+		// server process stopped after persisting the validating state.
+		finalized, err = client.finalizeRelease(ctx, project.Name, created.Id, deploymentIdempotencyKey("finalize", project.Name, created.Id))
+		if err != nil {
+			return fmt.Errorf("resume project release validation failed")
+		}
+	case apigenapi.ReleaseStatusReady:
+	case apigenapi.ReleaseStatusFailed:
+		return fmt.Errorf("existing project release validation failed; create a new release")
+	default:
+		return fmt.Errorf("project release returned unexpected status %q", created.Status)
+	}
+	finalized, err = waitForProjectRelease(ctx, client, project.Name, created.Id, finalized)
+	if err != nil {
 		return err
 	}
-	activated, err := client.activateProjectDeployment(ctx, project.Name, created.Id, deploymentIdempotencyKey("activate", project.Name, created.Id))
+	deployed, err := client.createDeployment(ctx, project.Name, deploymentIdempotencyKey("deploy", project.Name, created.Id), apigenapi.DeploymentCreateRequest{ReleaseId: created.Id})
 	if err != nil {
-		return fmt.Errorf("activate project deployment failed")
+		return fmt.Errorf("deploy project release failed")
 	}
-	if err := validateProjectDeploymentResponse(activated, created.Id, project.Name, request.Environment, apigenapi.ProjectDeploymentStatusActive, apigenapi.ProjectDeploymentTargetStatusActive, targets); err != nil {
+	if deployed.ProjectId != project.Name || deployed.ReleaseId != created.Id || deployed.Id == "" {
+		return fmt.Errorf("project deployment returned inconsistent scope or status")
+	}
+	deployed, err = waitForProjectDeployment(ctx, client, project.Name, created.Id, deployed)
+	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(outputOrDiscard(request.Out), "deployed %s deployment=%s environment=%s status=%s\n", project.Name, activated.Id, request.Environment, activated.Status)
+	_, err = fmt.Fprintf(outputOrDiscard(request.Out), "deployed %s release=%s deployment=%s environment=%s status=%s\n", project.Name, created.Id, deployed.Id, request.Environment, deployed.Status)
 	return err
+}
+
+func waitForProjectRelease(ctx context.Context, client *managedDataCLIClient, projectID, releaseID string, release apigenapi.ReleaseResponse) (apigenapi.ReleaseResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	defer cancel()
+	for {
+		if release.Id != releaseID || release.ProjectId != projectID {
+			return apigenapi.ReleaseResponse{}, fmt.Errorf("project release returned inconsistent scope")
+		}
+		switch release.Status {
+		case apigenapi.ReleaseStatusReady:
+			return release, nil
+		case apigenapi.ReleaseStatusValidating:
+		case apigenapi.ReleaseStatusFailed:
+			detail := ""
+			if release.Error != nil {
+				detail = ": " + *release.Error
+			}
+			return apigenapi.ReleaseResponse{}, fmt.Errorf("project release validation failed%s", detail)
+		default:
+			return apigenapi.ReleaseResponse{}, fmt.Errorf("project release validation returned unexpected status %q", release.Status)
+		}
+		select {
+		case <-ctx.Done():
+			return apigenapi.ReleaseResponse{}, fmt.Errorf("wait for project release validation: %w", ctx.Err())
+		case <-time.After(100 * time.Millisecond):
+		}
+		next, err := client.getRelease(ctx, projectID, releaseID)
+		if err != nil {
+			return apigenapi.ReleaseResponse{}, fmt.Errorf("get project release failed")
+		}
+		release = next
+	}
+}
+
+func waitForProjectDeployment(ctx context.Context, client *managedDataCLIClient, projectID, releaseID string, deployment apigenapi.DeploymentResponse) (apigenapi.DeploymentResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	defer cancel()
+	for {
+		switch deployment.Status {
+		case apigenapi.DeploymentStatusActive:
+			return deployment, nil
+		case apigenapi.DeploymentStatusQueued, apigenapi.DeploymentStatusRunning:
+		case apigenapi.DeploymentStatusFailed, apigenapi.DeploymentStatusCancelled:
+			detail := ""
+			if deployment.Error != nil {
+				detail = ": " + *deployment.Error
+			}
+			return apigenapi.DeploymentResponse{}, fmt.Errorf("project deployment %s%s", deployment.Status, detail)
+		default:
+			return apigenapi.DeploymentResponse{}, fmt.Errorf("project deployment returned unexpected status %q", deployment.Status)
+		}
+		select {
+		case <-ctx.Done():
+			return apigenapi.DeploymentResponse{}, fmt.Errorf("wait for project deployment: %w", ctx.Err())
+		case <-time.After(100 * time.Millisecond):
+		}
+		next, err := client.getDeployment(ctx, projectID, deployment.Id)
+		if err != nil {
+			return apigenapi.DeploymentResponse{}, fmt.Errorf("get project deployment failed")
+		}
+		if next.Id != deployment.Id || next.ProjectId != projectID || next.ReleaseId != releaseID {
+			return apigenapi.DeploymentResponse{}, fmt.Errorf("project deployment returned inconsistent scope")
+		}
+		deployment = next
+	}
 }
 
 func parseManagedRevisionPins(values []string) (map[string]string, error) {
@@ -201,34 +330,6 @@ func validateManagedRevisionPins(project workspacecompiler.Project, pins map[str
 func printDeploymentPlanSummaryTo(out io.Writer, workspacePlan workspacecompiler.ProjectPlanWorkspace) {
 	summary := workspacePlan.Summary
 	fmt.Fprintf(out, "workspace %s changes +%d ~%d -%d dependencies %d\n", workspacePlan.ID, summary.Added, summary.Changed, summary.Removed, summary.DependencyChanges)
-}
-
-func projectDeploymentTargetValues(targets []apigenapi.ProjectDeploymentTargetRequest) []string {
-	values := make([]string, 0, len(targets)*2)
-	for _, target := range targets {
-		values = append(values, target.Workspace, target.CandidateId)
-	}
-	return values
-}
-
-func validateProjectDeploymentResponse(response apigenapi.ProjectDeploymentResponse, expectedID, project, environment string, status apigenapi.ProjectDeploymentStatus, targetStatus apigenapi.ProjectDeploymentTargetStatus, targets []apigenapi.ProjectDeploymentTargetRequest) error {
-	if strings.TrimSpace(response.Id) == "" || expectedID != "" && response.Id != expectedID || response.Project != project || response.Environment != environment || response.Status != status || len(response.Targets) != len(targets) {
-		return fmt.Errorf("project deployment returned inconsistent scope or status")
-	}
-	expected := make(map[string]string, len(targets))
-	for _, target := range targets {
-		expected[target.Workspace] = target.CandidateId
-	}
-	for _, target := range response.Targets {
-		if expected[target.Workspace] != target.CandidateId || target.Status != targetStatus {
-			return fmt.Errorf("project deployment returned inconsistent targets")
-		}
-		delete(expected, target.Workspace)
-	}
-	if len(expected) != 0 {
-		return fmt.Errorf("project deployment omitted targets")
-	}
-	return nil
 }
 
 func canonicalArtifactDigest(value string) bool {
@@ -303,74 +404,6 @@ func sortedProjectWorkspaceIDs(workspaces map[string]*workspacecompiler.Workspac
 	}
 	sort.Strings(ids)
 	return ids
-}
-
-func prepareWorkspaceCandidate(ctx context.Context, opts *rootOptions, target, token, projectID, workspaceID string, workspaceProject *workspacecompiler.WorkspaceProject, activeGraph workspace.AssetGraph, managedDataRevisions map[string]string) (apigenapi.DeploymentCandidateResponse, string, error) {
-	createBody, _ := json.Marshal(map[string]any{
-		"title":       workspaceProject.Title,
-		"description": workspaceProject.Description,
-		"environment": cliEnvironment(opts),
-	})
-	var created apigenapi.DeploymentCandidateResponse
-	candidatePathParams := map[string]string{"project": projectID, "workspace": workspaceID}
-	createURL, err := apiOperationURL(target, "createDeploymentCandidate", candidatePathParams, nil)
-	if err != nil {
-		return apigenapi.DeploymentCandidateResponse{}, "", err
-	}
-	if err := doJSON(ctx, http.MethodPost, createURL, token, bytes.NewReader(createBody), &created); err != nil {
-		return apigenapi.DeploymentCandidateResponse{}, "", err
-	}
-	uploadURL, err := apiOperationURL(target, "uploadDeploymentCandidateArtifact", map[string]string{"project": projectID, "workspace": workspaceID, "candidate": created.Id}, nil)
-	if err != nil {
-		return apigenapi.DeploymentCandidateResponse{}, "", err
-	}
-	digest, err := streamProjectArtifact(ctx, uploadURL, token, opts.catalog, servingstatefs.PackProjectOptions{
-		WorkspaceID: workspaceID, Environment: servingstate.Environment(cliEnvironment(opts)), ServingStateID: servingstate.ID(created.Id),
-		ActiveGraph: activeGraph, ManagedDataRevisions: managedDataRevisions,
-	})
-	if err != nil {
-		return apigenapi.DeploymentCandidateResponse{}, "", err
-	}
-	var validated apigenapi.DeploymentCandidateResponse
-	validateURL, err := apiOperationURL(target, "validateDeploymentCandidate", map[string]string{"project": projectID, "workspace": workspaceID, "candidate": created.Id}, nil)
-	if err != nil {
-		return apigenapi.DeploymentCandidateResponse{}, "", err
-	}
-	if err := doJSON(ctx, http.MethodPost, validateURL, token, nil, &validated); err != nil {
-		return apigenapi.DeploymentCandidateResponse{}, "", err
-	}
-	if validated.Id != created.Id || validated.Project != projectID || validated.Workspace != workspaceID || validated.Environment != cliEnvironment(opts) || validated.Status != string(servingstate.StatusValidated) || strings.TrimSpace(validated.Digest) == "" {
-		return apigenapi.DeploymentCandidateResponse{}, "", fmt.Errorf("workspace candidate validation returned inconsistent scope or status")
-	}
-	return validated, digest, nil
-}
-
-func streamProjectArtifact(ctx context.Context, uploadURL, token, projectPath string, options servingstatefs.PackProjectOptions) (string, error) {
-	reader, writer := io.Pipe()
-	type packResult struct {
-		digest string
-		err    error
-	}
-	result := make(chan packResult, 1)
-	go func() {
-		_, digest, err := servingstatefs.PackProject(projectPath, options, writer)
-		_ = writer.CloseWithError(err)
-		result <- packResult{digest: digest, err: err}
-	}()
-	uploadErr := doRawAPI(ctx, http.MethodPut, uploadURL, token, "application/gzip", reader, io.Discard)
-	_ = reader.CloseWithError(uploadErr)
-	packed := <-result
-	if packed.err != nil {
-		return "", packed.err
-	}
-	if uploadErr != nil {
-		return "", uploadErr
-	}
-	return packed.digest, nil
-}
-
-func cliEnvironment(opts *rootOptions) string {
-	return strings.TrimSpace(opts.environment)
 }
 
 func confirmDeployment(opts *rootOptions, in *os.File, out io.Writer) error {

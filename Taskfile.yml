@@ -60,7 +60,7 @@ tasks:
         printf '%s\n' "$SYNC_OUTPUT"
         REVISION="$(printf '%s\n' "$SYNC_OUTPUT" | awk '$1 == "staged" { print $2 }')"
         printf '%s\n' "$REVISION" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo "Managed data sync did not return a canonical revision."; exit 1; }
-        go run ./cmd/libredash deploy --project dashboards/libredash.yaml --revision "olist=$REVISION" --target "http://localhost:${PORT}" --token dev --environment dev --auto-approve
+        go run ./cmd/libredash deploy --project dashboards/libredash.yaml --revision "olist=$REVISION" --target "http://localhost:${PORT}" --token dev --auto-approve
 
   dev:quack:status:
     desc: Show managed LibreDash dev server status with the local Quack profile
@@ -116,11 +116,11 @@ tasks:
       - go run ./cmd/libredash-site
 
   site:product-screenshot:
-    desc: Refresh the homepage screenshot from the real dashboard component fixture
-    deps:
-      - node:deps
+    desc: Refresh light and dark homepage screenshots from the deployed Visual Showcase
     cmds:
-      - LIBREDASH_TEST_CAPTURE_SITE_PRODUCT=1 bun test web/components/dashboard/dashboard-page.dom.test.ts --test-name-pattern 'dashboard page composes route UI on desktop'
+      - task: generate
+      - task: build
+      - bun scripts/capture_site_product.ts
 
   bench:datastar-bridge:
     desc: Benchmark legacy, Ignition, and DatastarLit bridges in Chromium
@@ -273,7 +273,6 @@ tasks:
       - Taskfile.yml
       - api/apigen.yaml
       - api/typespec/**/*.tsp
-      - internal/tools/apigenpostprocess/**/*.go
       - internal/tools/openapidocgen/**/*.go
     generates:
       - api/gen/json-ir.json
@@ -284,9 +283,8 @@ tasks:
       - docs/api/catalog.json
       - docs/api/openapi.yaml
     cmds:
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.4.0 typespec-compile -manifest api/apigen.yaml -target libredash-v1
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.4.0 all -manifest api/apigen.yaml -target libredash-v1
-      - go run ./internal/tools/apigenpostprocess
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.5.3 typespec-compile -manifest api/apigen.yaml -target libredash-v1
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.5.3 all -manifest api/apigen.yaml -target libredash-v1
       - go run ./internal/tools/openapidocgen
 
   schema:generate:
@@ -327,8 +325,8 @@ tasks:
       - internal/ui/signals/models.gen.go
       - web/generated/signals/index.ts
     cmds:
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.4.0 typespec-compile -manifest api/apigen.yaml -target ui-signals
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.4.0 all -manifest api/apigen.yaml -target ui-signals
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.5.3 typespec-compile -manifest api/apigen.yaml -target ui-signals
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.5.3 all -manifest api/apigen.yaml -target ui-signals
       - go run ./internal/tools/uisignalspostprocess
 
   test:

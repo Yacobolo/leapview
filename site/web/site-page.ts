@@ -1,14 +1,10 @@
 import { LitElement, css, html } from 'lit'
-import { Blocks, Bot, Boxes, ChartNoAxesCombined, Check, Copy, Database, GitBranch, LayoutDashboard, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, Search, Server, Sun, X, type IconNode } from 'lucide'
+import { Blocks, Bot, Boxes, ChartNoAxesCombined, Check, Copy, Database, Eclipse, GitBranch, LayoutDashboard, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, Search, Server, Sun, X, type IconNode } from 'lucide'
 import { DatastarLit } from '../../web/components/shared/datastar-lit'
 import { lucideIcon } from '../../web/components/shared/lucide-icons'
 import '../../web/components/shared/code-block'
 import type { ChartPayload } from '../../web/components/dashboard/charts/types'
 import type { TableSignal } from '../../web/components/dashboard/table/types'
-
-type DemoSignal = {
-  chart?: ChartPayload
-}
 
 type ThemeMode = 'system' | 'light' | 'dark'
 
@@ -189,7 +185,6 @@ class SiteMobileMenu extends LitElement {
       <nav id="site-mobile-navigation" aria-label="Site navigation" ?hidden=${!this.open}>
         <a href="/docs" @click=${this.close}>Docs</a>
         <a href="/docs/search" @click=${this.close}>Search</a>
-        <a href="/#demo" @click=${this.close}>Demo</a>
         <a href="/charts" @click=${this.close}>Charts</a>
       </nav>`
   }
@@ -1041,19 +1036,16 @@ class SiteBrandMark extends LitElement {
   static styles = css`
     :host {
       display: inline-grid;
-      width: var(--base-size-28);
-      height: var(--base-size-28);
+      width: var(--base-size-24);
+      height: var(--base-size-24);
       flex: 0 0 auto;
       place-items: center;
-      border: var(--ld-border-muted);
-      border-radius: var(--ld-radius-default);
-      background: var(--ld-bg-accent-muted);
       color: var(--ld-fg-accent);
     }
   `
 
   render() {
-    return lucideIcon(Blocks, { size: 18, strokeWidth: 2.2 })
+    return lucideIcon(Eclipse, { size: 22, strokeWidth: 2.2 })
   }
 }
 
@@ -1115,28 +1107,6 @@ function currentThemeMode(): ThemeMode {
 
 function normalizeThemeMode(mode: string | null | undefined): ThemeMode {
   return mode === 'light' || mode === 'dark' || mode === 'system' ? mode : 'system'
-}
-
-class SiteChartDemo extends DatastarLit(LitElement) {
-  static styles = css`
-    :host {
-      display: block;
-      min-height: 28rem;
-    }
-
-    ld-echart {
-      height: 28rem;
-    }
-  `
-
-  render() {
-    const demo = this.signal<DemoSignal>('demo', {})
-    return html`<ld-echart .chart=${demo.chart ?? null}></ld-echart>`
-  }
-}
-
-if (!customElements.get('ld-site-chart-demo')) {
-  customElements.define('ld-site-chart-demo', SiteChartDemo)
 }
 
 type ArticleSection = { id: string; label: string; level: number }
@@ -1487,14 +1457,14 @@ if (!customElements.get('ld-site-chart-showcase')) {
 
 async function loadRouteComponents(): Promise<void> {
   const imports: Promise<unknown>[] = []
-  if (document.querySelector('ld-site-chart-demo, ld-site-chart-showcase, ld-site-doc-chart')) {
+  if (document.querySelector('ld-site-chart-showcase, ld-site-doc-chart')) {
     imports.push(import('../../web/components/dashboard/charts/echart'))
   }
   if (document.querySelector('ld-site-chart-showcase')) {
     imports.push(import('../../web/components/dashboard/table/report-table'))
   }
-  if (document.querySelector('ld-topology-background')) {
-    imports.push(import('../../web/components/login/topology-background'))
+  if (document.querySelector('ld-site-flow-background')) {
+    imports.push(import('./site-flow-background'))
   }
   await Promise.all(imports)
 }
