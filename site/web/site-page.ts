@@ -5,6 +5,7 @@ import { lucideIcon } from '../../web/components/shared/lucide-icons'
 import '../../web/components/shared/code-block'
 import type { ChartPayload } from '../../web/components/dashboard/charts/types'
 import type { TableSignal } from '../../web/components/dashboard/table/types'
+import { visualExampleHighlightLines } from './visual-example-highlights'
 
 type ThemeMode = 'system' | 'light' | 'dark'
 
@@ -964,11 +965,21 @@ function enhanceDocsCodeBlocks(): void {
     const block = document.createElement('ld-code-block') as HTMLElement & {
       code: string
       copy: boolean
+      highlightedLines: number[]
       toolbar: boolean
     }
 
     block.setAttribute('language', language || 'text')
     block.code = code?.textContent ?? pre.textContent ?? ''
+    const keyFields = pre.previousElementSibling
+    const visualExample = keyFields?.matches('.site-visual-key-fields') ? keyFields.previousElementSibling : null
+    if (language === 'yaml' && keyFields instanceof HTMLElement && visualExample?.matches('ld-site-visual-example')) {
+      const fields = JSON.parse(keyFields.dataset.keyFields ?? '[]') as string[]
+      const exampleID = visualExample.getAttribute('example-id') ?? ''
+      block.dataset.visualExample = exampleID
+      block.dataset.highlightedFields = fields.join(',')
+      block.highlightedLines = visualExampleHighlightLines(block.code, fields)
+    }
     block.copy = true
     block.toolbar = true
     pre.replaceWith(block)
@@ -1288,12 +1299,12 @@ class SiteArticleToc extends LitElement {
 
 if (!customElements.get('ld-site-article-toc')) customElements.define('ld-site-article-toc', SiteArticleToc)
 
-class SiteDocsChart extends DatastarLit(LitElement) {
+class SiteVisualExample extends DatastarLit(LitElement) {
   static properties = {
-    chartId: { type: String, attribute: 'chart-id' },
+    exampleId: { type: String, attribute: 'example-id' },
   }
 
-  declare chartId: string
+  declare exampleId: string
 
   static styles = css`
     :host {
@@ -1312,11 +1323,19 @@ class SiteDocsChart extends DatastarLit(LitElement) {
       display: block;
       height: 28rem;
     }
+
+    :host([kind='kpi']) {
+      min-height: 13rem;
+    }
+
+    :host([kind='kpi']) ld-kpi-card {
+      height: 13rem;
+    }
   `
 
   render() {
     const charts = this.signal<ChartPayload[]>('charts', [])
-    const chart = charts.find((candidate) => candidate.id === this.chartId) ?? null
+    const chart = charts.find((candidate) => candidate.id === this.exampleId) ?? null
     if (chart?.type === 'kpi') {
       return html`<ld-kpi-card .visual=${chart}></ld-kpi-card>`
     }
@@ -1324,8 +1343,8 @@ class SiteDocsChart extends DatastarLit(LitElement) {
   }
 }
 
-if (!customElements.get('ld-site-doc-chart')) {
-  customElements.define('ld-site-doc-chart', SiteDocsChart)
+if (!customElements.get('ld-site-visual-example')) {
+  customElements.define('ld-site-visual-example', SiteVisualExample)
 }
 
 class SiteChartShowcase extends DatastarLit(LitElement) {
@@ -1457,7 +1476,7 @@ if (!customElements.get('ld-site-chart-showcase')) {
 
 async function loadRouteComponents(): Promise<void> {
   const imports: Promise<unknown>[] = []
-  if (document.querySelector('ld-site-chart-showcase, ld-site-doc-chart')) {
+  if (document.querySelector('ld-site-chart-showcase, ld-site-visual-example')) {
     imports.push(import('../../web/components/dashboard/charts/echart'))
   }
   if (document.querySelector('ld-site-chart-showcase')) {

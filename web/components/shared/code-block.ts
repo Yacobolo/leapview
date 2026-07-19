@@ -2,6 +2,7 @@ import { LitElement, html, nothing } from 'lit'
 import { property, state } from 'lit/decorators.js'
 import { unsafeHTML } from 'lit/directives/unsafe-html.js'
 import type { HighlighterCore } from 'shiki/core'
+import type { ShikiTransformer } from '@shikijs/types'
 import { Check, Copy } from 'lucide'
 import { lucideIcon } from './lucide-icons'
 
@@ -50,6 +51,7 @@ class CodeBlock extends LitElement {
   @property({ type: Boolean, reflect: true }) copy = false
   @property({ type: Boolean, reflect: true }) dense = false
   @property({ type: Boolean, reflect: true }) toolbar = false
+  @property({ attribute: false }) highlightedLines: number[] = []
   @state() private highlighted = ''
   @state() private error = ''
   @state() private copied = false
@@ -75,7 +77,7 @@ class CodeBlock extends LitElement {
   }
 
   updated(changed: Map<string, unknown>): void {
-    if (changed.has('code') || changed.has('language') || changed.has('format')) {
+    if (changed.has('code') || changed.has('language') || changed.has('format') || changed.has('highlightedLines')) {
       this.highlightPromise = this.highlight()
     }
   }
@@ -129,9 +131,17 @@ class CodeBlock extends LitElement {
       const highlighter = await loadHighlighter()
       if (token !== this.renderToken) return
       this.setPreparedCode(code)
+      const highlightedLines = new Set(this.highlightedLines)
+      const lineHighlightTransformer: ShikiTransformer = {
+        name: 'libredash-highlighted-lines',
+        line(hast, line) {
+          if (highlightedLines.has(line)) this.addClassToHast(hast, 'code-block-highlighted-line')
+        },
+      }
       this.highlighted = highlighter.codeToHtml(code, {
         lang: language,
         theme: this.theme,
+        transformers: [lineHighlightTransformer],
       })
       this.error = ''
     } catch {
@@ -352,6 +362,31 @@ const codeBlockStyles = `
   ld-code-block .shiki code,
   ld-code-block .code-block-fallback code {
     font-family: inherit;
+  }
+
+  ld-code-block .shiki code {
+    display: block;
+    min-width: max-content;
+  }
+
+  ld-code-block .shiki .line {
+    box-sizing: border-box;
+    display: inline-block;
+    min-width: 100%;
+  }
+
+  ld-code-block .shiki .code-block-highlighted-line {
+    position: relative;
+    background: var(--ld-bg-accent-muted);
+  }
+
+  ld-code-block .shiki .code-block-highlighted-line::before {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: var(--base-size-4);
+    background: var(--ld-line-accent);
+    content: '';
   }
 
   ld-code-block .code-block-fallback {

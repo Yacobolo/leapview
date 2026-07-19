@@ -5,11 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	stdhtml "html"
 	"net/url"
+	"regexp"
 	"strings"
 
 	content "github.com/Yacobolo/libredash/docs"
 	docsearch "github.com/Yacobolo/libredash/internal/site/search/sqlite"
+	"github.com/Yacobolo/libredash/internal/visualdocs"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	g "maragu.dev/gomponents"
@@ -24,7 +27,6 @@ type siteDocument struct {
 	breadcrumb         string
 	breadcrumbRoot     string
 	breadcrumbRootHref string
-	chartID            string
 	summary            string
 	markdown           string
 	sectionID          string
@@ -41,7 +43,6 @@ type siteCatalogDocument struct {
 	Summary         string `json:"summary"`
 	Source          string `json:"source"`
 	Breadcrumb      string `json:"breadcrumb"`
-	ChartID         string `json:"chartID"`
 	Generated       bool   `json:"generated"`
 }
 
@@ -78,6 +79,7 @@ var siteDocuments = documentation.documents
 var siteDocumentsBySlug = documentation.bySlug
 var documentationSearchIndex = loadDocumentationSearchIndex()
 var visualDocuments = documentsInCatalogGroup("reference", "visuals", true)
+var visualDocumentationCatalogValidated = validateVisualDocumentationCatalog()
 
 func loadDocumentationSearchIndex() *docsearch.Index {
 	index, err := docsearch.Open(content.Files, docsearch.Filename)
@@ -143,7 +145,6 @@ func (loaded *loadedDocumentation) add(section siteCatalogSection, group siteCat
 		breadcrumb:         firstNonEmpty(document.Breadcrumb, document.Title),
 		breadcrumbRoot:     rootTitle,
 		breadcrumbRootHref: rootHref,
-		chartID:            document.ChartID,
 		summary:            document.Summary,
 		markdown:           string(markdown),
 		sectionID:          section.ID,
@@ -228,16 +229,21 @@ func siteOpenAPISpecification() []byte {
 	return specification
 }
 
-const docsChartShortcode = "{{< chart >}}"
-const docsChartPlaceholder = "LIBREDASH_DOCS_CHART_PLACEHOLDER"
+var docsChartShortcode = regexp.MustCompile(`\{\{<\s*chart\s+id="([a-z0-9_]+)"\s*>}}`)
 
 func siteDocsArticle(document siteDocument) g.Node {
 	source := document.markdown
-	if strings.Contains(source, docsChartShortcode) {
-		if document.chartID == "" {
-			panic(fmt.Sprintf("chart shortcode requires a chart document: %s", document.slug))
+	shortcodes := docsChartShortcode.FindAllStringSubmatch(source, -1)
+	for index, shortcode := range shortcodes {
+		id := shortcode[1]
+		if !documentHasVisualExample(document.slug, id) {
+			panic(fmt.Sprintf("chart shortcode %q is not generated for documentation %s", id, document.slug))
 		}
-		source = strings.ReplaceAll(source, docsChartShortcode, docsChartPlaceholder)
+		placeholder := fmt.Sprintf("LIBREDASH_DOCS_CHART_PLACEHOLDER_%d", index)
+		source = strings.Replace(source, shortcode[0], placeholder, 1)
+	}
+	if strings.Contains(source, "{{< chart") {
+		panic(fmt.Sprintf("invalid chart shortcode in documentation: %s", document.slug))
 	}
 
 	var rendered bytes.Buffer
@@ -245,13 +251,33 @@ func siteDocsArticle(document siteDocument) g.Node {
 		panic(fmt.Sprintf("render documentation Markdown: %v", err))
 	}
 	renderedHTML := rendered.String()
-	if strings.Contains(source, docsChartPlaceholder) {
-		placeholder := "<p>" + docsChartPlaceholder + "</p>\n"
-		component := fmt.Sprintf("<ld-site-doc-chart chart-id=\"%s\"></ld-site-doc-chart>\n", document.chartID)
-		if !strings.Contains(renderedHTML, placeholder) {
-			panic(fmt.Sprintf("render chart shortcode for documentation: %s", document.slug))
+	if reference, ok := visualReferenceForDocument(document.slug); ok {
+		firstHeading := strings.Index(renderedHTML, "<h2")
+		if firstHeading < 0 {
+			panic(fmt.Sprintf("visual documentation has no variation headings: %s", document.slug))
 		}
-		renderedHTML = strings.ReplaceAll(renderedHTML, placeholder, component)
+		renderedHTML = renderedHTML[:firstHeading] + renderVisualAPIReference(reference) + renderedHTML[firstHeading:]
+	}
+	for index, shortcode := range shortcodes {
+		placeholderID := fmt.Sprintf("LIBREDASH_DOCS_CHART_PLACEHOLDER_%d", index)
+		placeholder := "<p>" + placeholderID + "</p>\n"
+		payload, ok := visualExampleForDocument(document.slug, shortcode[1])
+		if !ok {
+			panic(fmt.Sprintf("generated visual example %q is missing for documentation: %s", shortcode[1], document.slug))
+		}
+		kind := ""
+		if payload.Type == "kpi" {
+			kind = ` kind="kpi"`
+		}
+		exampleReference, ok := visualExampleReferenceForDocument(document.slug, shortcode[1])
+		if !ok {
+			panic(fmt.Sprintf("generated visual example reference %q is missing for documentation: %s", shortcode[1], document.slug))
+		}
+		component := fmt.Sprintf("<ld-site-visual-example example-id=\"%s\"%s></ld-site-visual-example>\n%s", shortcode[1], kind, renderVisualKeyFields(exampleReference.KeyFields))
+		if !strings.Contains(renderedHTML, placeholder) {
+			panic(fmt.Sprintf("render chart shortcode %q for documentation: %s", shortcode[1], document.slug))
+		}
+		renderedHTML = strings.Replace(renderedHTML, placeholder, component, 1)
 	}
 
 	return h.Article(
@@ -261,6 +287,42 @@ func siteDocsArticle(document siteDocument) g.Node {
 		g.Raw(renderedHTML),
 		siteDocsArticleFooter(document),
 	)
+}
+
+func renderVisualAPIReference(reference visualdocs.DocumentReference) string {
+	return `<section class="site-visual-api-summary" aria-labelledby="site-visual-api-summary">` +
+		`<h2 id="site-visual-api-summary">API at a glance</h2>` +
+		`<dl>` +
+		`<dt>Kind</dt><dd>` + renderVisualCodeValues(strings.Split(reference.Kind, ", ")) + `</dd>` +
+		`<dt>Renderer</dt><dd>` + renderVisualCodeValues(strings.Split(reference.Renderer, ", ")) + `</dd>` +
+		`<dt>Shapes</dt><dd>` + renderVisualCodeValues(reference.Shapes) + `</dd>` +
+		`<dt>Query fields</dt><dd>` + renderVisualCodeValues(reference.QueryFields) + `</dd>` +
+		`<dt>Options</dt><dd>` + renderVisualCodeValues(reference.Options) + `</dd>` +
+		`</dl>` +
+		`<p><strong>Accessibility.</strong> ` + stdhtml.EscapeString(reference.Accessibility) + `</p>` +
+		`</section>`
+}
+
+func renderVisualKeyFields(fields []string) string {
+	encoded, err := json.Marshal(fields)
+	if err != nil {
+		panic(fmt.Sprintf("encode visual key fields: %v", err))
+	}
+	return `<div class="site-visual-key-fields" aria-label="Key fields" data-key-fields="` + stdhtml.EscapeString(string(encoded)) + `"><strong>Key fields</strong>` + renderVisualCodeValues(fields) + `</div>`
+}
+
+func renderVisualCodeValues(values []string) string {
+	if len(values) == 0 {
+		return `<span>None</span>`
+	}
+	var rendered strings.Builder
+	for _, value := range values {
+		rendered.WriteString(`<code>`)
+		rendered.WriteString(stdhtml.EscapeString(value))
+		rendered.WriteString(`</code>`)
+		rendered.WriteByte(' ')
+	}
+	return strings.TrimSpace(rendered.String())
 }
 
 func siteDocsArticleFooter(document siteDocument) g.Node {

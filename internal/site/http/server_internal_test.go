@@ -598,12 +598,20 @@ func TestSiteChartDocumentationArticleRendersConfiguration(t *testing.T) {
 	body := readBody(t, response)
 	for _, want := range []string{
 		"<title>Line chart</title>",
-		`data-init="@get(&#39;/updates?view=charts&#39;, {openWhenHidden: true})"`,
+		`data-init="@get(&#39;/updates?view=visual-docs&amp;document=charts%2Fline&#39;, {openWhenHidden: true})"`,
 		`<nav class="site-docs-breadcrumb" aria-label="Breadcrumb"><ol><li><a href="/docs/charts/overview">Charts</a></li><li><span aria-current="page">Line chart</span></li></ol></nav>`,
 		"<h1>Line chart</h1>",
-		`<ld-site-doc-chart chart-id="line"></ld-site-doc-chart>`,
-		"<h2>Configuration</h2>",
+		`<section class="site-visual-api-summary" aria-labelledby="site-visual-api-summary">`,
+		`<h2 id="site-visual-api-summary">API at a glance</h2>`,
+		`<dt>Shapes</dt><dd><code>category_series_value</code> <code>category_value</code></dd>`,
+		`<ld-site-visual-example example-id="revenue_line"></ld-site-visual-example>`,
+		`<ld-site-visual-example example-id="revenue_line_status"></ld-site-visual-example>`,
+		`<ld-site-visual-example example-id="revenue_line_step"></ld-site-visual-example>`,
+		`<div class="site-visual-key-fields" aria-label="Key fields" data-key-fields="[&#34;query.dimensions&#34;,&#34;query.measures&#34;]">`,
+		`<code>options.step</code>`,
+		"<h2>Basic</h2>",
 		"type: line",
+		"visual-example=revenue_line_step",
 		`href="/docs/charts/line"`,
 		`href="/docs/charts/kpi"`,
 		`<details class="site-docs-nav-group site-docs-nav-group-active" data-site-docs-group="reference-visuals" open="true">`,
@@ -632,11 +640,11 @@ func TestSiteEveryChartTypeHasDocumentation(t *testing.T) {
 			continue
 		}
 		body := readBody(t, response)
-		if !strings.Contains(body, "<h2>Configuration</h2>") {
-			t.Errorf("%s documentation has no configuration block", document.slug)
+		if !strings.Contains(body, "visual-example=") {
+			t.Errorf("%s documentation has no executable configuration block", document.slug)
 		}
-		if !strings.Contains(body, `<ld-site-doc-chart chart-id="`+document.chartID+`"></ld-site-doc-chart>`) {
-			t.Errorf("%s documentation has no live chart component", document.slug)
+		if !strings.Contains(body, `<ld-site-visual-example example-id="`) {
+			t.Errorf("%s documentation has no live visual example", document.slug)
 		}
 	}
 }
@@ -753,6 +761,37 @@ func TestSiteChartShowcaseUpdatesIncludeEveryChartType(t *testing.T) {
 		if !strings.Contains(line, want) {
 			t.Errorf("chart showcase updates missing %q:\n%s", want, line)
 		}
+	}
+}
+
+func TestSiteVisualDocumentationUpdatesAreScopedToTheArticle(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/updates?view=visual-docs&document=charts%2Fline")
+	if err != nil {
+		t.Fatalf("get visual documentation updates: %v", err)
+	}
+	defer response.Body.Close()
+	line := readSSEUntil(t, response, `"charts"`)
+	for _, want := range []string{`"id":"revenue_line"`, `"id":"revenue_line_status"`, `"id":"revenue_line_step"`, `"step":"middle"`} {
+		if !strings.Contains(line, want) {
+			t.Errorf("line documentation updates missing %q:\n%s", want, line)
+		}
+	}
+	for _, unwanted := range []string{`"type":"area"`, `"type":"kpi"`, `"tables"`} {
+		if strings.Contains(line, unwanted) {
+			t.Errorf("line documentation updates unexpectedly include %q:\n%s", unwanted, line)
+		}
+	}
+
+	missing, err := server.Client().Get(server.URL + "/updates?view=visual-docs&document=charts%2Fmissing")
+	if err != nil {
+		t.Fatalf("get missing visual documentation updates: %v", err)
+	}
+	defer missing.Body.Close()
+	if missing.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing visual documentation status = %d, want %d", missing.StatusCode, http.StatusNotFound)
 	}
 }
 
