@@ -161,6 +161,7 @@ for (const viewport of [
         const semanticGraph = asset.shadowRoot.querySelector('ld-semantic-model-graph') as HTMLElement
         const firstRecordTable = asset.shadowRoot.querySelector('ld-record-table') as HTMLElement
         const semanticGraphSection = asset.shadowRoot.querySelector('.semantic-model-section') as HTMLElement
+        const assetPage = asset.shadowRoot.querySelector('.asset-page') as HTMLElement
         return {
           assetTitle: asset.shadowRoot.querySelector('h1 span:last-child')?.textContent?.trim(),
           assetHasOverview: asset.shadowRoot.textContent?.includes('Overview') ?? false,
@@ -172,6 +173,8 @@ for (const viewport of [
           assetHeaderDisplay: getComputedStyle(assetHeader).display,
           assetTabsPaddingLeft: getComputedStyle(assetTabs).paddingLeft,
           assetFirstTabInset: Math.round(assetFirstTab.getBoundingClientRect().left - assetTabs.getBoundingClientRect().left),
+          assetUsesDocumentScroll: getComputedStyle(assetSectionBody).overflowY === 'visible' && assetPage.scrollHeight === assetPage.clientHeight,
+          assetExtendsPastViewport: assetPage.getBoundingClientRect().height > window.innerHeight,
         }
       })
       expect(assetState).toEqual({
@@ -185,6 +188,8 @@ for (const viewport of [
         assetHeaderDisplay: 'grid',
         assetTabsPaddingLeft: '16px',
         assetFirstTabInset: 16,
+        assetUsesDocumentScroll: true,
+        assetExtendsPastViewport: true,
       })
     } finally {
       await page.close()

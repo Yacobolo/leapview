@@ -478,8 +478,9 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     const statusKey = this.componentStatusKey(component)
     const componentRefreshStatus = statusKey ? this.refreshStatusFor(statusKey) : undefined
     return html`
-      <ld-dashboard-visual-frame
-        data-canvas-visual
+              <ld-dashboard-visual-frame
+                data-canvas-visual
+                data-component-kind=${component.kind}
         ?data-canvas-filter-visual=${filterVisual}
         data-x=${component.x}
         data-y=${component.y}
