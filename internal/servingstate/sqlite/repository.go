@@ -17,6 +17,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/manageddata"
 	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
+	"github.com/Yacobolo/libredash/internal/refreshpipeline"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
@@ -299,7 +300,11 @@ func sameArtifact(existing platformdb.ServingStateArtifact, candidate servingsta
 }
 
 func (r *Repository) Activate(ctx context.Context, workspaceID servingstate.WorkspaceID, environment servingstate.Environment, servingStateID servingstate.ID) (servingstate.State, error) {
-	return r.activate(ctx, workspaceID, environment, servingStateID)
+	return r.activate(ctx, workspaceID, environment, servingStateID, nil)
+}
+
+func (r *Repository) ActivateRefresh(ctx context.Context, workspaceID servingstate.WorkspaceID, environment servingstate.Environment, servingStateID servingstate.ID, version refreshpipeline.DataVersion) (servingstate.State, error) {
+	return r.activate(ctx, workspaceID, environment, servingStateID, &version)
 }
 
 // ApplyAccessSnapshotTx installs the securable graph and access policy captured
@@ -327,7 +332,7 @@ func ApplyAccessSnapshotTx(ctx context.Context, tx *sql.Tx, q *platformdb.Querie
 	return reconcileWorkspacePolicyTx(ctx, tx, q, candidate.WorkspaceID, policy)
 }
 
-func (r *Repository) activate(ctx context.Context, workspaceID servingstate.WorkspaceID, environment servingstate.Environment, servingStateID servingstate.ID) (servingstate.State, error) {
+func (r *Repository) activate(ctx context.Context, workspaceID servingstate.WorkspaceID, environment servingstate.Environment, servingStateID servingstate.ID, version *refreshpipeline.DataVersion) (servingstate.State, error) {
 	environment = servingstate.NormalizeEnvironment(environment)
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -373,10 +378,35 @@ func (r *Repository) activate(ctx context.Context, workspaceID servingstate.Work
 	}); err != nil {
 		return servingstate.State{}, err
 	}
+	if version != nil {
+		if err := persistRefreshDataVersions(ctx, q, current, *version); err != nil {
+			return servingstate.State{}, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return servingstate.State{}, err
 	}
 	return r.ByID(ctx, servingStateID)
+}
+
+func persistRefreshDataVersions(ctx context.Context, q *platformdb.Queries, candidate servingstate.State, version refreshpipeline.DataVersion) error {
+	if candidate.DuckLakeSnapshotID <= 0 || version.SemanticModel == "" || version.RefreshedAt.IsZero() ||
+		version.WorkspaceID != string(candidate.WorkspaceID) || version.Environment != string(candidate.Environment) ||
+		version.SnapshotID != candidate.DuckLakeSnapshotID || version.ServingStateID != string(candidate.ID) ||
+		version.Source != refreshpipeline.DataVersionSourceRefresh {
+		return fmt.Errorf("refresh activation requires a matching semantic-model data version")
+	}
+	if err := q.AdvanceSemanticModelDataVersions(ctx, platformdb.AdvanceSemanticModelDataVersionsParams{
+		SnapshotID: version.SnapshotID, ServingStateID: version.ServingStateID, WorkspaceID: version.WorkspaceID,
+		Environment: version.Environment, SemanticModelID: version.SemanticModel,
+	}); err != nil {
+		return err
+	}
+	return q.UpsertRefreshSemanticModelDataVersion(ctx, platformdb.UpsertRefreshSemanticModelDataVersionParams{
+		WorkspaceID: version.WorkspaceID, Environment: version.Environment, SemanticModelID: version.SemanticModel,
+		SnapshotID: version.SnapshotID, ServingStateID: version.ServingStateID,
+		RefreshedAt: version.RefreshedAt.UTC().Format(time.RFC3339Nano), PipelineID: version.PipelineID, RunID: version.RunID,
+	})
 }
 
 func reconcileWorkspacePolicyTx(ctx context.Context, tx *sql.Tx, q *platformdb.Queries, workspaceID string, policy workspace.AccessPolicy) error {
@@ -784,6 +814,18 @@ func (r *Repository) ActiveArtifact(ctx context.Context, workspaceID servingstat
 		return servingstate.State{}, servingstate.Artifact{}, mapNotFound(err)
 	}
 	return mapServingState(row), mapArtifact(artifact), nil
+}
+
+func (r *Repository) ListActiveScopes(ctx context.Context) ([]servingstate.ActiveScope, error) {
+	rows, err := r.q.ListActiveServingStateScopes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]servingstate.ActiveScope, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, servingstate.ActiveScope{WorkspaceID: servingstate.WorkspaceID(row.WorkspaceID), Environment: servingstate.Environment(row.Environment)})
+	}
+	return out, nil
 }
 
 func (r *Repository) ArtifactByServingState(ctx context.Context, servingStateID servingstate.ID) (servingstate.Artifact, error) {

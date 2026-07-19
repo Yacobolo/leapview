@@ -30663,17 +30663,14 @@ paths:
                     error: example
                     finishedAt: "2026-01-02T15:04:05Z"
                     id: example
-                    modelId: example
-                    parentRunId: example
+                    pipelineId: example
                     principalDisplayName: example
                     principalId: example
                     retryOf: example
-                    servingStateId: example
+                    semanticModel: example
                     startedAt: "2026-01-02T15:04:05Z"
                     status: example
-                    targetId: example
-                    targetType: example
-                    triggerType: example
+                    trigger: example
                     workspaceId: example
                 page:
                   nextCursor: example
@@ -30934,7 +30931,8 @@ paths:
             - count_as: count
               select:
                 - source: /id
-                - source: /modelId
+                - source: /pipelineId
+                - source: /semanticModel
                 - source: /status
                 - source: /createdAt
               source: /items
@@ -30942,7 +30940,7 @@ paths:
           - refresh
       x-authz:
         mode: privilege
-        privilege: REFRESH_DATA
+        privilege: USE_WORKSPACE
     post:
       operationId: createRefreshRun
       summary: Create a refresh run
@@ -30978,17 +30976,14 @@ paths:
                 error: example
                 finishedAt: "2026-01-02T15:04:05Z"
                 id: example
-                modelId: example
-                parentRunId: example
+                pipelineId: example
                 principalDisplayName: example
                 principalId: example
                 retryOf: example
-                servingStateId: example
+                semanticModel: example
                 startedAt: "2026-01-02T15:04:05Z"
                 status: example
-                targetId: example
-                targetType: example
-                triggerType: example
+                trigger: example
                 workspaceId: example
         '400':
           description: The server could not understand the request due to invalid syntax.
@@ -31233,16 +31228,11 @@ paths:
             schema:
               $ref: '#/components/schemas/RefreshRunCreateRequest'
             example:
-              modelId: example
-              parentRunId: example
+              pipelineId: example
               retryOf: example
-              servingStateId: example
-              targetId: example
-              targetType: example
-              triggerType: example
       x-authz:
         mode: privilege
-        privilege: REFRESH_DATA
+        privilege: USE_WORKSPACE
   /api/v1/workspaces/{workspace}/refresh-runs/{run}:
     get:
       operationId: getRefreshRun
@@ -31272,17 +31262,14 @@ paths:
                 error: example
                 finishedAt: "2026-01-02T15:04:05Z"
                 id: example
-                modelId: example
-                parentRunId: example
+                pipelineId: example
                 principalDisplayName: example
                 principalId: example
                 retryOf: example
-                servingStateId: example
+                semanticModel: example
                 startedAt: "2026-01-02T15:04:05Z"
                 status: example
-                targetId: example
-                targetType: example
-                triggerType: example
+                trigger: example
                 workspaceId: example
         '400':
           description: The server could not understand the request due to invalid syntax.
@@ -31534,10 +31521,9 @@ paths:
           mode: project
           select:
             - source: /id
-            - source: /modelId
-            - source: /servingStateId
-            - source: /targetType
-            - source: /targetId
+            - source: /pipelineId
+            - source: /semanticModel
+            - source: /trigger
             - source: /status
             - source: /error
             - source: /createdAt
@@ -31547,7 +31533,7 @@ paths:
           - refresh
       x-authz:
         mode: privilege
-        privilege: REFRESH_DATA
+        privilege: USE_WORKSPACE
   /api/v1/workspaces/{workspace}/refresh-runs/{run}/cancel:
     post:
       operationId: cancelRefreshRun
@@ -31590,17 +31576,14 @@ paths:
                 error: example
                 finishedAt: "2026-01-02T15:04:05Z"
                 id: example
-                modelId: example
-                parentRunId: example
+                pipelineId: example
                 principalDisplayName: example
                 principalId: example
                 retryOf: example
-                servingStateId: example
+                semanticModel: example
                 startedAt: "2026-01-02T15:04:05Z"
                 status: example
-                targetId: example
-                targetType: example
-                triggerType: example
+                trigger: example
                 workspaceId: example
         '400':
           description: The server could not understand the request due to invalid syntax.
@@ -31840,7 +31823,7 @@ paths:
         - Refresh Runs
       x-authz:
         mode: privilege
-        privilege: REFRESH_DATA
+        privilege: USE_WORKSPACE
   /api/v1/workspaces/{workspace}/refresh-runs/{run}/events:
     get:
       operationId: listRefreshRunEvents
@@ -32157,7 +32140,7 @@ paths:
         - Refresh Runs
       x-authz:
         mode: privilege
-        privilege: REFRESH_DATA
+        privilege: USE_WORKSPACE
   /api/v1/workspaces/{workspace}/role-bindings:
     get:
       operationId: listRoleBindings
@@ -43369,36 +43352,18 @@ components:
       example: application/json
     RefreshRunCreateRequest:
       type: object
+      required:
+        - pipelineId
       properties:
-        modelId:
-          type: string
-          example: example
-        servingStateId:
-          type: string
-          example: example
-        targetType:
-          type: string
-          example: example
-        targetId:
-          type: string
-          example: example
-        triggerType:
-          type: string
-          example: example
-        parentRunId:
+        pipelineId:
           type: string
           example: example
         retryOf:
           type: string
           example: example
       example:
-        modelId: example
-        parentRunId: example
+        pipelineId: example
         retryOf: example
-        servingStateId: example
-        targetId: example
-        targetType: example
-        triggerType: example
     RefreshRunListResponse:
       type: object
       required:
@@ -43414,17 +43379,14 @@ components:
               error: example
               finishedAt: "2026-01-02T15:04:05Z"
               id: example
-              modelId: example
-              parentRunId: example
+              pipelineId: example
               principalDisplayName: example
               principalId: example
               retryOf: example
-              servingStateId: example
+              semanticModel: example
               startedAt: "2026-01-02T15:04:05Z"
               status: example
-              targetId: example
-              targetType: example
-              triggerType: example
+              trigger: example
               workspaceId: example
         page:
           $ref: '#/components/schemas/PageInfo'
@@ -43434,17 +43396,14 @@ components:
             error: example
             finishedAt: "2026-01-02T15:04:05Z"
             id: example
-            modelId: example
-            parentRunId: example
+            pipelineId: example
             principalDisplayName: example
             principalId: example
             retryOf: example
-            servingStateId: example
+            semanticModel: example
             startedAt: "2026-01-02T15:04:05Z"
             status: example
-            targetId: example
-            targetType: example
-            triggerType: example
+            trigger: example
             workspaceId: example
         page:
           nextCursor: example
@@ -43453,10 +43412,9 @@ components:
       required:
         - id
         - workspaceId
-        - modelId
-        - targetType
-        - targetId
-        - triggerType
+        - pipelineId
+        - semanticModel
+        - trigger
         - status
         - createdAt
       properties:
@@ -43466,10 +43424,10 @@ components:
         workspaceId:
           type: string
           example: example
-        modelId:
+        pipelineId:
           type: string
           example: example
-        servingStateId:
+        semanticModel:
           type: string
           example: example
         principalId:
@@ -43478,16 +43436,7 @@ components:
         principalDisplayName:
           type: string
           example: example
-        targetType:
-          type: string
-          example: example
-        targetId:
-          type: string
-          example: example
-        triggerType:
-          type: string
-          example: example
-        parentRunId:
+        trigger:
           type: string
           example: example
         retryOf:
@@ -43516,17 +43465,14 @@ components:
         error: example
         finishedAt: "2026-01-02T15:04:05Z"
         id: example
-        modelId: example
-        parentRunId: example
+        pipelineId: example
         principalDisplayName: example
         principalId: example
         retryOf: example
-        servingStateId: example
+        semanticModel: example
         startedAt: "2026-01-02T15:04:05Z"
         status: example
-        targetId: example
-        targetType: example
-        triggerType: example
+        trigger: example
         workspaceId: example
     ReleaseArtifactResponse:
       type: object

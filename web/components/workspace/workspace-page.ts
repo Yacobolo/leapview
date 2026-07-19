@@ -256,7 +256,7 @@ class LibreDashWorkspaceAssetPage extends DatastarLit(LitElement) {
   }
 
   private renderAction(action: NonNullable<WorkspaceAssetPageSignal['actions']>[number], page: WorkspaceAssetPageSignal) {
-    if (action.command === 'refresh-materializations') {
+    if (action.command === 'run-refresh-pipeline') {
       return html`
         <button
           type="button"
@@ -264,7 +264,7 @@ class LibreDashWorkspaceAssetPage extends DatastarLit(LitElement) {
           title=${action.label}
           aria-label=${action.label}
           ?disabled=${Boolean(action.disabled || page.refresh?.running)}
-          @click=${() => this.dispatchEvent(new CustomEvent('ld-refresh-materializations', { bubbles: true, composed: true }))}
+          @click=${() => this.dispatchEvent(new CustomEvent('ld-run-refresh-pipeline', { bubbles: true, composed: true }))}
         >
           ${lucideIcon(RefreshCw, { className: page.refresh?.running ? 'spin' : '' })}
         </button>

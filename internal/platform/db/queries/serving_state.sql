@@ -11,6 +11,11 @@ FROM serving_states d
 JOIN workspace_active_serving_states active ON active.serving_state_id = d.id
 WHERE active.workspace_id = ? AND active.environment = ?;
 
+-- name: ListActiveServingStateScopes :many
+SELECT workspace_id, environment
+FROM workspace_active_serving_states
+ORDER BY workspace_id, environment;
+
 -- name: ListReferencedDuckLakeSnapshots :many
 SELECT DISTINCT ducklake_snapshot_id
 FROM serving_states
@@ -155,6 +160,28 @@ VALUES (?, ?, ?, ?, ?, ?);
 
 -- name: ListAssetsByServingState :many
 SELECT * FROM assets WHERE serving_state_id = ? ORDER BY asset_type, asset_key;
+
+-- name: AdvanceSemanticModelDataVersions :exec
+UPDATE semantic_model_data_versions
+SET snapshot_id = sqlc.arg(snapshot_id), serving_state_id = sqlc.arg(serving_state_id)
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND environment = sqlc.arg(environment)
+  AND semantic_model_id <> sqlc.arg(semantic_model_id);
+
+-- name: UpsertRefreshSemanticModelDataVersion :exec
+INSERT INTO semantic_model_data_versions (
+  workspace_id, environment, semantic_model_id, snapshot_id, serving_state_id, refreshed_at, source, pipeline_id, run_id
+) VALUES (
+  sqlc.arg(workspace_id), sqlc.arg(environment), sqlc.arg(semantic_model_id), sqlc.arg(snapshot_id),
+  sqlc.arg(serving_state_id), sqlc.arg(refreshed_at), 'refresh', NULLIF(sqlc.arg(pipeline_id), ''), NULLIF(sqlc.arg(run_id), '')
+)
+ON CONFLICT (workspace_id, environment, semantic_model_id) DO UPDATE SET
+  snapshot_id = excluded.snapshot_id,
+  serving_state_id = excluded.serving_state_id,
+  refreshed_at = excluded.refreshed_at,
+  source = excluded.source,
+  pipeline_id = excluded.pipeline_id,
+  run_id = excluded.run_id;
 
 -- name: ListAssetEdgesByServingState :many
 SELECT * FROM asset_edges WHERE serving_state_id = ? ORDER BY edge_type, from_logical_asset_id, to_logical_asset_id;

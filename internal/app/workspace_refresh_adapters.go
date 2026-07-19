@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	analyticsduckdb "github.com/Yacobolo/libredash/internal/analytics/duckdb"
-	"github.com/Yacobolo/libredash/internal/analytics/materialize"
-	materializesqlite "github.com/Yacobolo/libredash/internal/analytics/materialize/sqlite"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 	servingstatefs "github.com/Yacobolo/libredash/internal/servingstate/filesystem"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacehttp "github.com/Yacobolo/libredash/internal/workspace/http"
 	"github.com/Yacobolo/libredash/internal/workspace/refresh"
+	"github.com/Yacobolo/libredash/pkg/pagestream"
 )
 
 func (s *Server) workspaceRefreshSupport() workspacehttp.Support {
@@ -34,9 +34,7 @@ func (s *Server) workspaceRefreshSupport() workspacehttp.Support {
 		DispatchQueued: func() {
 			s.dispatchQueuedRefreshJobs(context.Background())
 		},
-		DirectRunner: appRefreshRunner{metrics: s.metrics},
-		ModelLookup:  refreshModelLookup(s.metrics),
-		Broker:       s.broker,
+		Broker: s.broker,
 		AssetCatalog: func(ctx context.Context, workspaceID string) ([]workspace.AssetView, []workspace.AssetEdgeView, bool) {
 			assets, edges, err := s.workspaceHTTPReadModel().WorkspaceAssetsAndEdgesForData(ctx, workspaceID, string(s.defaultServingEnvironment()))
 			if err != nil || (len(assets) == 0 && len(edges) == 0) {
@@ -51,6 +49,7 @@ func (s *Server) workspaceRefreshSupport() workspacehttp.Support {
 			return s.workspaceHTTPReadModel().WorkspaceViewContext(ctx, workspaceID)
 		},
 		WorkspaceVersions: s.assetVersionsStateForSection,
+		DataVersions:      s.refreshPipelineRepo,
 	}
 }
 
@@ -71,9 +70,10 @@ func (s *Server) workspaceRefreshService(runRepo refresh.RunRepository) (refresh
 			DuckLakeCatalog: s.duckLakeCatalogPath,
 			DuckLakeData:    s.duckLakeDataPath,
 		},
-		Runtime:   appRefreshRuntimeHost{reloader: s.reloader},
-		Retention: appRefreshRetention{server: s},
-		Publisher: appRefreshPublisher{server: s},
+		Runtime:      appRefreshRuntimeHost{reloader: s.reloader},
+		Retention:    appRefreshRetention{server: s},
+		Publisher:    appRefreshPublisher{server: s},
+		DataVersions: s.refreshPipelineRepo,
 	}, nil
 }
 
@@ -113,6 +113,21 @@ func (h appRefreshRuntimeHost) CommitPrepared(prepared servingstate.PreparedRunt
 	return h.reloader.CommitPrepared(prepared)
 }
 
+func (h appRefreshRuntimeHost) CommitPreparedWithActivation(prepared servingstate.PreparedRuntime, activate func() error) error {
+	if h.reloader == nil || prepared == nil {
+		return activate()
+	}
+	if atomic, ok := h.reloader.(interface {
+		CommitPreparedWithActivation(servingstate.PreparedRuntime, func() error) error
+	}); ok {
+		return atomic.CommitPreparedWithActivation(prepared, activate)
+	}
+	if err := activate(); err != nil {
+		return err
+	}
+	return h.reloader.CommitPrepared(prepared)
+}
+
 func (h appRefreshRuntimeHost) Reload(ctx context.Context) error {
 	if h.reloader == nil {
 		return nil
@@ -135,26 +150,24 @@ type appRefreshPublisher struct {
 	server *Server
 }
 
-func (p appRefreshPublisher) PublishRefreshTarget(ctx context.Context, workspaceID, targetType, targetID string) {
+func (p appRefreshPublisher) PublishRefreshTarget(ctx context.Context, workspaceID, environment, targetType, targetID string) {
 	if p.server == nil {
 		return
 	}
-	p.server.workspaceRefreshSupport().PublishWorkspaceAssetRefreshPatchesForTarget(ctx, workspaceID, targetType, targetID)
+	p.server.workspaceRefreshSupport().PublishWorkspaceAssetRefreshPatchesForTarget(ctx, workspaceID, environment, targetType, targetID)
 }
 
-type appDirectRefreshExecutor struct {
-	repo    *materializesqlite.SQLRunRepository
-	metrics QueryMetrics
-	logger  interface {
-		WarnContext(context.Context, string, ...any)
+func (p appRefreshPublisher) PublishSemanticModelVersion(ctx context.Context, workspaceID, environment, modelID string) {
+	if p.server == nil {
+		return
 	}
-}
-
-func (e appDirectRefreshExecutor) ExecuteDirectJob(ctx context.Context, job materialize.JobRecord) error {
-	orchestrator := materialize.NewGenericRefreshOrchestrator(e.repo, appRefreshRunner{metrics: e.metrics}, refreshModelLookup(e.metrics))
-	_, err := orchestrator.ExecuteRun(ctx, job.WorkspaceID, job.RunID, materialize.RefreshPublisher{})
-	if err != nil && e.logger != nil {
-		e.logger.WarnContext(ctx, "refresh job failed", "workspace", job.WorkspaceID, "run", job.RunID, "error", err)
+	refreshedAt := ""
+	if p.server.refreshPipelineRepo != nil {
+		if version, ok, err := p.server.refreshPipelineRepo.DataVersion(ctx, workspaceID, environment, modelID); err == nil && ok {
+			refreshedAt = version.RefreshedAt.Format(time.RFC3339)
+		}
 	}
-	return err
+	for _, streamID := range p.server.dashboardRefreshes.RefreshSemanticModel(workspaceID, environment, modelID) {
+		p.server.broker.Publish(streamID, pagestream.SignalPatch{"status": map[string]any{"lastUpdated": refreshedAt}})
+	}
 }

@@ -90,6 +90,7 @@ require (
 	github.com/prometheus/procfs v0.20.1 // indirect
 	github.com/protocolbuffers/txtpbfmt v0.0.0-20260217160748-a481f6a22f94 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
 	github.com/tus/lockfile v1.2.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect

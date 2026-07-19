@@ -78,7 +78,6 @@ type integrationMetrics interface {
 	ExecuteDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Result, error)
 	QuerySemantic(ctx context.Context, modelID string, request reportdef.AggregateQuery) (reportdef.QueryRows, error)
 	PreviewSemantic(ctx context.Context, modelID string, request reportdef.RowQuery) (reportdef.QueryRows, error)
-	RefreshMaterializations(ctx context.Context, modelID string) error
 	Pages(dashboardID string) []dashboard.Page
 }
 

@@ -138,6 +138,23 @@ for (const viewport of [
         expect(layout.viewportScrollable).toBe(true)
       }
 
+      const footerState = await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
+        const footer = element.shadowRoot.querySelector('ld-report-footer') as any
+        await footer.updateComplete
+        const initial = footer.shadowRoot.querySelector('.status')?.textContent?.replace(/\s+/g, ' ').trim()
+        footer.status = { ...footer.status, loading: true }
+        await footer.updateComplete
+        const loading = footer.shadowRoot.querySelector('.status')?.textContent?.replace(/\s+/g, ' ').trim()
+        footer.status = { ...footer.status, error: 'query failed' }
+        await footer.updateComplete
+        const failed = footer.shadowRoot.querySelector('.status')?.textContent?.replace(/\s+/g, ' ').trim()
+        return { initial, loading, failed }
+      })
+      expect(footerState.initial).toStartWith('Data refreshed ')
+      expect(footerState.initial).not.toContain('2026-07-18T10:00:00Z')
+      expect(footerState.loading).toBe(footerState.initial)
+      expect(footerState.failed).toBe('Unable to update visuals')
+
       const tableState = await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
         const table = element.shadowRoot.querySelector('ld-report-table') as any
         await table.updateComplete
@@ -614,7 +631,7 @@ function testDocument(): string {
     error: '',
     refreshId: 'refresh-3',
     generation: 3,
-    lastUpdated: '12:00:00',
+    lastUpdated: '2026-07-18T10:00:00Z',
     setupRequired: false,
     progressPercent: 50,
   }

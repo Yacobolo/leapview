@@ -77,6 +77,7 @@ package contracts
 		dashboards!:     #IncludeList
 		access!:         #IncludeList
 		agentPolicy!:    #IncludeList
+		refreshPipelines?: #IncludeList
 	})
 })
 
@@ -159,6 +160,21 @@ package contracts
 			deny?:  [...#ResourceID]
 		})
 		instructions?: string
+	})
+})
+
+#RefreshPipelineResource: close({
+	apiVersion!: #APIVersion
+	kind!:       "RefreshPipeline"
+	metadata!:   #Metadata
+	spec!: close({
+		semanticModel!: #ResourceID
+		on?: close({
+			schedule?: [...close({
+				cron!:     string & !=""
+				timezone?: string & !=""
+			})]
+		})
 	})
 })
 
