@@ -64,6 +64,28 @@ func TestGlobalAPIGenDefinitionsRequireWorkspaceForWorkspaceRoutes(t *testing.T)
 	}
 }
 
+func TestAPIGenDefinitionsExposeObjectOutputSchemas(t *testing.T) {
+	for _, definition := range (APIGenProvider{}).Definitions(Scope{PrincipalID: "principal-1"}) {
+		if definition.Name != "query_dashboard_visual" {
+			continue
+		}
+		var schema map[string]any
+		if err := json.Unmarshal(definition.OutputSchema, &schema); err != nil {
+			t.Fatalf("decode output schema: %v", err)
+		}
+		if schema["type"] != "object" {
+			t.Fatalf("output schema type = %#v, want object: %s", schema["type"], definition.OutputSchema)
+		}
+		if _, hasOneOf := schema["oneOf"]; !hasOneOf {
+			if _, hasAllOf := schema["allOf"]; !hasAllOf {
+				t.Fatalf("normalized output schema lost its composition: %s", definition.OutputSchema)
+			}
+		}
+		return
+	}
+	t.Fatal("query_dashboard_visual definition not found")
+}
+
 func TestGlobalVisualDefinitionRequiresWorkspace(t *testing.T) {
 	definition := (VisualProvider{}).Definitions(Scope{PrincipalID: "principal-1"})[0]
 	var schema struct {

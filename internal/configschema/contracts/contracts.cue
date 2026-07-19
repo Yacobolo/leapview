@@ -313,9 +313,6 @@ package contracts
 	visuals!: close({
 		[#Identifier]: #Visual
 	})
-	tables?: close({
-		[#Identifier]: #Table
-	})
 	pages!: [...#Page]
 })
 
@@ -326,9 +323,6 @@ package contracts
 	})
 	visuals!: close({
 		[#Identifier]: #Visual
-	})
-	tables?: close({
-		[#Identifier]: #Table
 	})
 	pages!: [...#Page]
 })
@@ -353,7 +347,6 @@ package contracts
 	operator_url_param?: string
 	targets?: close({
 		visuals?: [...#Identifier]
-		tables?: [...#Identifier]
 	})
 })
 
@@ -374,20 +367,70 @@ package contracts
 	relative_days?: int
 })
 
-#Visual: close({
+#Visual: #ChartVisual | #KPIVisual | #DataTableVisual | #MatrixVisual | #PivotVisual
+
+#VisualCommon: {
 	title?:            string
 	description?:      string
-	kind?:             "chart" | "kpi"
+	interaction?:      null | #Interaction
+}
+
+#ChartVisual: close({
+	#VisualCommon
+	type!:             "line" | "area" | "bar" | "column" | "pie" | "donut" | "scatter" | "funnel" | "treemap" | "gauge" | "heatmap" | "sankey" | "graph" | "map" | "candlestick" | "boxplot" | "combo" | "waterfall" | "histogram" | "radar" | "tree" | "sunburst"
 	shape?:            "category_value" | "category_series_value" | "category_multi_measure" | "category_delta" | "single_value" | "matrix" | "graph" | "geo" | "ohlc" | "distribution" | "binned_measure" | "hierarchy"
 	renderer?:         "echarts" | "html"
-	type?:             "line" | "area" | "bar" | "column" | "pie" | "donut" | "scatter" | "funnel" | "treemap" | "gauge" | "heatmap" | "sankey" | "graph" | "map" | "candlestick" | "boxplot" | "combo" | "waterfall" | "histogram" | "radar" | "tree" | "sunburst" | "kpi"
 	query!:            #VisualQuery
 	options?:          #AnyObject
 	renderer_options?: #AnyObject
-	interaction?:      null | #Interaction
 	encode?: close({
 		[string]: string
 	})
+})
+
+#KPIVisual: close({
+	#VisualCommon
+	type!:    "kpi"
+	shape?:   "single_value"
+	query!:   #VisualQuery
+	options?: #AnyObject
+})
+
+#TabularVisualCommon: {
+	#VisualCommon
+	title!:       string
+	cardinality?: "bounded" | "exact"
+	default_sort?: close({
+		key?:       string
+		direction?: "asc" | "desc" | string
+	})
+	style?: close({
+		density?: "compact" | "comfortable" | "spacious" | string
+		zebra?:   bool
+		grid?:    "none" | "rows" | "columns" | "full" | string
+	})
+	columns?: [...#TableColumn]
+	measure_formatting?: {
+		[string]: [...#TableFormattingRule]
+	}
+}
+
+#DataTableVisual: close({
+	#TabularVisualCommon
+	type!:  "table"
+	query!: #TableQuery
+})
+
+#MatrixVisual: close({
+	#TabularVisualCommon
+	type!:  "matrix"
+	query!: #TableQuery
+})
+
+#PivotVisual: close({
+	#TabularVisualCommon
+	type!:  "pivot"
+	query!: #TableQuery
 })
 
 #VisualQuery: close({
@@ -444,28 +487,6 @@ package contracts
 	targets?: [...#Identifier]
 })
 
-#Table: close({
-	kind?:        "data_table" | "matrix_table" | "pivot_table"
-	cardinality?: "bounded" | "exact"
-	title!:       string
-	description?: string
-	query!:       #TableQuery
-	default_sort?: close({
-		key?:       string
-		direction?: "asc" | "desc" | string
-	})
-	style?: close({
-		density?: "compact" | "comfortable" | "spacious" | string
-		zebra?:   bool
-		grid?:    "none" | "rows" | "columns" | "full" | string
-	})
-	columns?: [...#TableColumn]
-	interaction?: null | #Interaction
-	measure_formatting?: {
-		[string]: [...#TableFormattingRule]
-	}
-})
-
 #TableQuery: close({
 	table?: #Identifier
 	fields?: [...#FieldRef]
@@ -499,7 +520,7 @@ package contracts
 })
 
 #Page: close({
-	name!:        #ObjectID
+	id!:          #ObjectID
 	title!:       string
 	description?: string
 	canvas?: close({
@@ -512,15 +533,13 @@ package contracts
 		gap?:        int
 		padding?:    int
 	})
-	visuals!: [...#PageVisual]
+	components!: [...#PageComponent]
 })
 
-#PageVisual: close({
+#PageComponent: #VisualComponent | #FilterComponent | #HeaderComponent
+
+#PageComponentCommon: {
 	id!:          #ObjectID
-	kind!:        "header" | "filter_card" | "kpi_card" | "line_chart" | "area_chart" | "bar_chart" | "column_chart" | "pie_chart" | "donut_chart" | "scatter_chart" | "funnel_chart" | "treemap_chart" | "gauge_chart" | "heatmap_chart" | "sankey_chart" | "graph_chart" | "map_chart" | "candlestick_chart" | "boxplot_chart" | "combo_chart" | "waterfall_chart" | "histogram_chart" | "radar_chart" | "tree_chart" | "sunburst_chart" | "table"
-	visual?:      #Identifier
-	table?:       #Identifier
-	filter?:      #Identifier
 	description?: string
 	placement!: close({
 		col!:      int
@@ -532,4 +551,21 @@ package contracts
 	title?:    string
 	subtitle?: string
 	badges?: [...string]
+}
+
+#VisualComponent: close({
+	#PageComponentCommon
+	kind!:   "visual"
+	visual!: #Identifier
+})
+
+#FilterComponent: close({
+	#PageComponentCommon
+	kind!:   "filter"
+	filter!: #Identifier
+})
+
+#HeaderComponent: close({
+	#PageComponentCommon
+	kind!: "header"
 })

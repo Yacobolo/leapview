@@ -141,7 +141,7 @@ func TestMCPRequiresBearerAndSupportsInitializeAndTools(t *testing.T) {
 		t.Fatalf("structured and text output differ: structured=%#v text=%#v", callResponse.Result.StructuredContent, textContent)
 	}
 
-	visual := mcpRequest(t, handler, "mcp-secret", "2025-11-25", `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"query_visual","arguments":{"workspace":"test","kind":"chart","model":"test","dataset":"orders","dimensions":[{"field":"orders.status"}],"measures":[{"field":"order_count"}],"limit":10}}}`)
+	visual := mcpRequest(t, handler, "mcp-secret", "2025-11-25", `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"query_visual","arguments":{"workspace":"test","type":"bar","model":"test","dataset":"orders","dimensions":[{"field":"orders.status"}],"measures":[{"field":"order_count"}],"limit":10}}}`)
 	if visual.Code != http.StatusOK {
 		t.Fatalf("query_visual = %d body=%s", visual.Code, visual.Body.String())
 	}
@@ -194,7 +194,7 @@ func TestMCPGoSDKClientInteroperability(t *testing.T) {
 		Name: "query_visual",
 		Arguments: map[string]any{
 			"workspace":  "test",
-			"kind":       "chart",
+			"type":       "bar",
 			"model":      "test",
 			"dataset":    "orders",
 			"dimensions": []map[string]any{{"field": "orders.status"}},

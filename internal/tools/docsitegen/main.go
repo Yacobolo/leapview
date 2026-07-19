@@ -189,6 +189,9 @@ func generate(navigationPath, catalogPath, searchPath string) error {
 	if err := writeJSON(catalogPath, catalog); err != nil {
 		return err
 	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(catalogPath), "llms.txt"), []byte(renderLLMs(catalog)), 0o644); err != nil {
+		return fmt.Errorf("write llms.txt: %w", err)
+	}
 	return docsearch.Build(searchPath, search)
 }
 
@@ -210,6 +213,7 @@ func checkGenerated(navigationPath, catalogPath, searchPath string) error {
 	}{
 		{current: catalogPath, generated: generatedCatalog},
 		{current: searchPath, generated: generatedSearch},
+		{current: filepath.Join(filepath.Dir(catalogPath), "llms.txt"), generated: filepath.Join(temporary, "llms.txt")},
 	} {
 		current, err := os.ReadFile(artifact.current)
 		if err != nil {
@@ -224,6 +228,40 @@ func checkGenerated(navigationPath, catalogPath, searchPath string) error {
 		}
 	}
 	return nil
+}
+
+func renderLLMs(catalog generatedCatalog) string {
+	var out strings.Builder
+	out.WriteString("# LibreDash\n\n")
+	out.WriteString("> Dashboards-as-code BI with generated, machine-readable CLI, API, configuration, and visual documentation.\n\n")
+	out.WriteString("## Agent entry points\n\n")
+	out.WriteString("- [Documentation MCP](/mcp): read-only Streamable HTTP MCP with docs_catalog, docs_search, and docs_read tools.\n")
+	out.WriteString("- [CLI manifest](/docs/cli/manifest.json): versioned command syntax, arguments, flags, defaults, side effects, and confirmation behavior.\n")
+	out.WriteString("- [API operation manifest](/docs/api/operations.json): versioned operation IDs, routes, authorization, safety metadata, and request/response schemas.\n")
+	out.WriteString("- [OpenAPI schema](/docs/openapi.yaml): complete generated OpenAPI contract.\n\n")
+	out.WriteString("Focused slices are available at `/docs/cli/commands/{id}.json|md` and `/docs/api/operations/{operationId}.json|md`. Prefer search and focused reads over loading complete manifests. Public documentation tools never execute commands or API operations.\n\n")
+	out.WriteString("## Documentation\n")
+	for _, section := range catalog.Sections {
+		out.WriteString("\n### " + section.Title + "\n\n")
+		for _, document := range section.Documents {
+			writeLLMsDocument(&out, document)
+		}
+		for _, group := range section.Groups {
+			out.WriteString("\n#### " + group.Title + "\n\n")
+			for _, document := range group.Documents {
+				writeLLMsDocument(&out, document)
+			}
+		}
+	}
+	return strings.TrimRight(out.String(), "\n") + "\n"
+}
+
+func writeLLMsDocument(out *strings.Builder, document documentSpec) {
+	out.WriteString("- [" + document.Title + "](/docs/" + document.Slug + ")")
+	if document.Summary != "" {
+		out.WriteString(": " + strings.ReplaceAll(strings.TrimSpace(document.Summary), "\n", " "))
+	}
+	out.WriteByte('\n')
 }
 
 func addDocument(root, section, group string, document documentSpec, seenSlugs, seenSources map[string]struct{}, output *[]documentSpec, search *[]docsearch.Document) error {
@@ -273,6 +311,10 @@ var internalDocumentationLink = regexp.MustCompile(`\]\((/docs(?:/[^\s)#?]+)?)`)
 var yamlCodeFence = regexp.MustCompile("(?ms)```ya?ml(?:[ \\t]+[^\\n]*)?\\n(.*?)\\n```")
 
 func validateInternalLinks(root string, seenSources, seenSlugs map[string]struct{}) error {
+	machineLinks, err := loadMachineDocumentationLinks(root)
+	if err != nil {
+		return err
+	}
 	for source := range seenSources {
 		contents, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(source)))
 		if err != nil {
@@ -281,6 +323,9 @@ func validateInternalLinks(root string, seenSources, seenSlugs map[string]struct
 		for _, match := range internalDocumentationLink.FindAllSubmatch(contents, -1) {
 			target := string(match[1])
 			if target == "/docs" || target == "/docs/search" || target == "/docs/openapi.yaml" {
+				continue
+			}
+			if _, ok := machineLinks[target]; ok {
 				continue
 			}
 			if strings.HasPrefix(target, "/docs/schemas/") {
@@ -297,6 +342,51 @@ func validateInternalLinks(root string, seenSources, seenSlugs map[string]struct
 		}
 	}
 	return nil
+}
+
+func loadMachineDocumentationLinks(root string) (map[string]struct{}, error) {
+	links := map[string]struct{}{}
+	cliPath := filepath.Join(root, "reference", "cli", "manifest.json")
+	if contents, err := os.ReadFile(cliPath); err == nil {
+		var manifest struct {
+			Commands []struct {
+				ID   string   `json:"id"`
+				Path []string `json:"path"`
+			} `json:"commands"`
+		}
+		if err := json.Unmarshal(contents, &manifest); err != nil {
+			return nil, fmt.Errorf("decode %s: %w", cliPath, err)
+		}
+		links["/docs/cli/manifest.json"] = struct{}{}
+		for _, command := range manifest.Commands {
+			links["/docs/cli/commands/"+command.ID+".json"] = struct{}{}
+			links["/docs/cli/commands/"+command.ID+".md"] = struct{}{}
+			if len(command.Path) > 1 {
+				links["/docs/cli/"+command.ID] = struct{}{}
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+	apiPath := filepath.Join(root, "api", "operations.json")
+	if contents, err := os.ReadFile(apiPath); err == nil {
+		var manifest struct {
+			Operations []struct {
+				OperationID string `json:"operationId"`
+			} `json:"operations"`
+		}
+		if err := json.Unmarshal(contents, &manifest); err != nil {
+			return nil, fmt.Errorf("decode %s: %w", apiPath, err)
+		}
+		links["/docs/api/operations.json"] = struct{}{}
+		for _, operation := range manifest.Operations {
+			links["/docs/api/operations/"+operation.OperationID+".json"] = struct{}{}
+			links["/docs/api/operations/"+operation.OperationID+".md"] = struct{}{}
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+	return links, nil
 }
 
 func validateYAMLExamples(root string, seenSources map[string]struct{}) error {

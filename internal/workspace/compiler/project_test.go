@@ -1471,16 +1471,16 @@ spec:
   semanticModel: ` + model + `
   visuals:
     total:
-      kind: kpi
+      type: kpi
       query:
         measures:
           order_count:
   pages:
-    - name: overview
+    - id: overview
       title: Overview
-      visuals:
+      components:
         - id: total
-          kind: kpi_card
+          kind: visual
           visual: total
           placement:
             col: 1

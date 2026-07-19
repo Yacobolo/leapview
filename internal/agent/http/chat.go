@@ -297,7 +297,6 @@ func chatSignalPatch(signal ui.ChatViewState) pagestream.SignalPatch {
 	return pagestream.SignalPatch{
 		"agent":   signal.Agent,
 		"visuals": signal.Visuals,
-		"tables":  signal.Tables,
 	}
 }
 

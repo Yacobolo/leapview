@@ -752,6 +752,7 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 			"docs/search-index.sqlite3",
 			"docs/configuration.md",
 			"docs/api/*.md",
+			"docs/api/operations.json",
 			"docs/reference/cli/",
 			"docs/reference/config/",
 		},
@@ -763,13 +764,14 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 			"docs/search-index.sqlite3",
 			"docs/configuration.md",
 			"docs/api/*.md",
+			"docs/api/operations.json",
 			"docs/reference/cli",
 			"docs/reference/config",
 		},
 		filepath.Join(".github", "workflows", "ci.yml"): {
 			"Check generated build inputs are untracked",
 			"docs/catalog.json docs/search-index.sqlite3 docs/configuration.md",
-			"'docs/api/*.md' docs/reference/cli docs/reference/config",
+			"'docs/api/*.md' docs/api/operations.json docs/reference/cli docs/reference/config",
 			"internal/config/config_gen.go internal/configspec/names_gen.go web/generated",
 			"Check public contract snapshots",
 			".env.example docs/api/openapi.yaml schemas/config schemas/json",
@@ -806,6 +808,61 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 			}
 		}
 	}
+
+	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	uploadStep := workflowStep(string(workflow), "      - name: Upload generated assets", "\n  go-tests:")
+	for _, artifact := range []string{"docs/api/operations.json", "docs/reference/cli/"} {
+		if !strings.Contains(uploadStep, artifact) {
+			t.Errorf("generated asset upload is missing build-only machine documentation %q", artifact)
+		}
+	}
+
+	gitignore, err := os.ReadFile(filepath.Join(root, ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(gitignore), "!docs/reference/cli/manifest.json") {
+		t.Error("generated CLI manifest must not be exempted from Git ignore rules")
+	}
+
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, generated := range []string{"docs/api/operations.json", "docs/reference/cli/manifest.json"} {
+		if strings.Contains(generatedCheckCommand(string(taskfile)), generated) {
+			t.Errorf("generated:check treats build-only artifact %q as a public snapshot", generated)
+		}
+	}
+}
+
+func workflowStep(workflow, startMarker, endMarker string) string {
+	start := strings.Index(workflow, startMarker)
+	if start < 0 {
+		return ""
+	}
+	rest := workflow[start+len(startMarker):]
+	end := strings.Index(rest, endMarker)
+	if end < 0 {
+		return rest
+	}
+	return rest[:end]
+}
+
+func generatedCheckCommand(taskfile string) string {
+	start := strings.Index(taskfile, "  generated:check:")
+	if start < 0 {
+		return ""
+	}
+	rest := taskfile[start+len("  generated:check:"):]
+	end := strings.Index(rest, "\n  api:generate:")
+	if end < 0 {
+		return rest
+	}
+	return rest[:end]
 }
 
 func TestFixedPlatformSQLiteQueriesUseSQLC(t *testing.T) {

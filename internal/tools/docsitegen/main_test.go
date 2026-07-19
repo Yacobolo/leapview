@@ -70,6 +70,12 @@ func TestGenerateBuildsUnifiedCatalogFromArticlesAndGeneratedCollections(t *test
 	if !catalog.Sections[1].Groups[0].Documents[1].Generated {
 		t.Fatal("generated collection document is not marked as generated")
 	}
+	llms := readFixture(t, filepath.Join(root, "llms.txt"))
+	for _, want := range []string{"# LibreDash", "[Documentation MCP](/mcp)", "[libredash deploy](/docs/cli/deploy)"} {
+		if !strings.Contains(llms, want) {
+			t.Errorf("llms.txt missing %q:\n%s", want, llms)
+		}
+	}
 
 	database, err := sql.Open("sqlite", "file:"+searchPath+"?mode=ro")
 	if err != nil {
@@ -239,4 +245,13 @@ func decodeFixture(t *testing.T, path string, value any) {
 	if err := json.Unmarshal(contents, value); err != nil {
 		t.Fatalf("decode %s: %v", path, err)
 	}
+}
+
+func readFixture(t *testing.T, path string) string {
+	t.Helper()
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(contents)
 }

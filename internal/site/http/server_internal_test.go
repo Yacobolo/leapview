@@ -122,7 +122,7 @@ func TestSitePublishesSitemapAndRobots(t *testing.T) {
 	}
 	for _, want := range []string{
 		"https://docs.libredash.dev/",
-		"https://docs.libredash.dev/charts",
+		"https://docs.libredash.dev/visuals",
 		"https://docs.libredash.dev/docs",
 		"https://docs.libredash.dev/docs/introduction",
 	} {
@@ -307,11 +307,11 @@ func TestSiteHomeRendersPageStreamDocument(t *testing.T) {
 	}
 }
 
-func TestSiteChartsRendersPageStreamShowcase(t *testing.T) {
+func TestSiteVisualsRendersPageStreamShowcase(t *testing.T) {
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()
 
-	response, err := server.Client().Get(server.URL + "/charts")
+	response, err := server.Client().Get(server.URL + "/visuals")
 	if err != nil {
 		t.Fatalf("get charts page: %v", err)
 	}
@@ -322,9 +322,9 @@ func TestSiteChartsRendersPageStreamShowcase(t *testing.T) {
 
 	body := readBody(t, response)
 	for _, want := range []string{
-		"<title>LeapView chart showcase</title>",
-		`data-init="@get(&#39;/updates?view=charts&#39;, {openWhenHidden: true})"`,
-		"<ld-site-chart-showcase>",
+		"<title>LeapView visual showcase</title>",
+		`data-init="@get(&#39;/updates?view=visuals&#39;, {openWhenHidden: true})"`,
+		"<ld-site-visual-showcase>",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("charts page missing %q:\n%s", want, body)
@@ -362,9 +362,9 @@ func TestSiteGettingStartedRendersGuide(t *testing.T) {
 		`<details class="site-docs-nav-group site-docs-nav-group-active" data-site-docs-group="start" open="true">`,
 		`<summary title="Start here"><span class="site-docs-nav-label">Start here</span></summary>`,
 		`<details class="site-docs-nav-group" data-site-docs-group="reference-visuals">`,
-		`<summary title="Charts"><span class="site-docs-nav-label">Charts</span></summary>`,
+		`<summary title="Visuals"><span class="site-docs-nav-label">Visuals</span></summary>`,
 		`<ul class="site-docs-nav-tree">`,
-		`<a class="site-docs-link" href="/docs/charts/overview" title="Overview">Overview</a>`,
+		`<a class="site-docs-link" href="/docs/visuals/overview" title="Overview">Overview</a>`,
 		"<h1>Get started with LibreDash</h1>",
 		"<h2>Bootstrap the workspace</h2>",
 		"task bootstrap",
@@ -597,7 +597,7 @@ func TestSiteChartsDocumentationParentPathIsNotAnArticle(t *testing.T) {
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()
 
-	response, err := server.Client().Get(server.URL + "/docs/charts")
+	response, err := server.Client().Get(server.URL + "/docs/visuals")
 	if err != nil {
 		t.Fatalf("get chart documentation parent path: %v", err)
 	}
@@ -639,11 +639,155 @@ func TestSiteAPIReferenceIsGeneratedFromOpenAPI(t *testing.T) {
 	}
 }
 
+func TestSiteServesMachineDocumentationArtifacts(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	tests := []struct {
+		path        string
+		contentType string
+		contains    []string
+	}{
+		{path: "/llms.txt", contentType: "text/plain", contains: []string{"# LibreDash", "/mcp", "/docs/cli/manifest.json", "/docs/api/operations.json"}},
+		{path: "/docs/cli/manifest.json", contentType: "application/json", contains: []string{`"schemaVersion": 1`, `"id": "deploy"`, `"effect": "write"`}},
+		{path: "/docs/api/operations.json", contentType: "application/json", contains: []string{`"schemaVersion": 1`, `"operationId": "listWorkspaces"`}},
+		{path: "/docs/api/operations/listWorkspaces.json", contentType: "application/json", contains: []string{`"operationId": "listWorkspaces"`, `"method": "GET"`, `"schemas": {`, `"WorkspaceListResponse": {`}},
+		{path: "/docs/api/operations/listWorkspaces.md", contentType: "text/markdown", contains: []string{"# List workspaces", "`GET /api/v1/workspaces`", "USE_WORKSPACE"}},
+		{path: "/docs/cli/commands/deploy.json", contentType: "application/json", contains: []string{`"id": "deploy"`, `"usage": "libredash deploy`}},
+		{path: "/docs/cli/commands/deploy.md", contentType: "text/markdown", contains: []string{"# libredash deploy", "## Usage"}},
+		{path: "/docs/cli/commands/semantic-models-query.md", contentType: "text/markdown", contains: []string{"# libredash semantic-models query", "## Usage", "## Behavior", "--body-json"}},
+	}
+	for _, test := range tests {
+		t.Run(test.path, func(t *testing.T) {
+			response, err := server.Client().Get(server.URL + test.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d, want 200", response.StatusCode)
+			}
+			if got := response.Header.Get("Content-Type"); !strings.Contains(got, test.contentType) {
+				t.Errorf("content type = %q, want %q", got, test.contentType)
+			}
+			body := readBody(t, response)
+			for _, want := range test.contains {
+				if !strings.Contains(body, want) {
+					t.Errorf("body missing %q:\n%s", want, body)
+				}
+			}
+		})
+	}
+}
+
+func TestSiteCLIReferenceGroupsSubcommandsAndRedirectsLeafPages(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	article, err := server.Client().Get(server.URL + "/docs/cli/semantic-models")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer article.Body.Close()
+	if article.StatusCode != http.StatusOK {
+		t.Fatalf("semantic models status = %d, want 200", article.StatusCode)
+	}
+	body := readBody(t, article)
+	for _, want := range []string{
+		`<h1>libredash semantic-models</h1>`,
+		`<h2 id="subcommands">Subcommands</h2>`,
+		`<h2 id="query">query</h2>`,
+		`libredash semantic-models query &lt;model&gt; &lt;dataset&gt;`,
+		`href="/docs/cli/commands/semantic-models-query.json"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("grouped CLI article missing %q:\n%s", want, body)
+		}
+	}
+
+	client := server.Client()
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	legacy, err := client.Get(server.URL + "/docs/cli/semantic-models-query")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer legacy.Body.Close()
+	if legacy.StatusCode != http.StatusPermanentRedirect {
+		t.Fatalf("legacy leaf status = %d, want %d", legacy.StatusCode, http.StatusPermanentRedirect)
+	}
+	if got, want := legacy.Header.Get("Location"), "/docs/cli/semantic-models#query"; got != want {
+		t.Errorf("legacy leaf location = %q, want %q", got, want)
+	}
+}
+
+func TestSiteDocumentationMCPTools(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	initialize := postMCP(t, server.URL, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`)
+	for _, want := range []string{`"protocolVersion":"2025-11-25"`, `"name":"libredash-docs"`} {
+		if !strings.Contains(initialize, want) {
+			t.Errorf("initialize response missing %q:\n%s", want, initialize)
+		}
+	}
+
+	tools := postMCP(t, server.URL, `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)
+	for _, want := range []string{`"name":"docs_catalog"`, `"name":"docs_search"`, `"name":"docs_read"`} {
+		if !strings.Contains(tools, want) {
+			t.Errorf("tools response missing %q:\n%s", want, tools)
+		}
+	}
+
+	search := postMCP(t, server.URL, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"docs_search","arguments":{"query":"line chart","limit":2}}}`)
+	if !strings.Contains(search, "visuals/line") {
+		t.Errorf("search response does not contain line chart:\n%s", search)
+	}
+
+	read := postMCP(t, server.URL, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"docs_read","arguments":{"id":"api:listWorkspaces","format":"json"}}}`)
+	if !strings.Contains(read, "listWorkspaces") || !strings.Contains(read, "/api/v1/workspaces") {
+		t.Errorf("read response does not contain operation slice:\n%s", read)
+	}
+
+	crossOrigin, err := http.NewRequest(http.MethodPost, server.URL+"/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":5,"method":"tools/list","params":{}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	crossOrigin.Header.Set("Content-Type", "application/json")
+	crossOrigin.Header.Set("Origin", "https://untrusted.example")
+	response, err := http.DefaultClient.Do(crossOrigin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusForbidden {
+		t.Errorf("cross-origin MCP status = %d, want %d", response.StatusCode, http.StatusForbidden)
+	}
+}
+
+func postMCP(t *testing.T, baseURL, body string) string {
+	t.Helper()
+	request, err := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json, text/event-stream")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("MCP status = %d, body = %s", response.StatusCode, readBody(t, response))
+	}
+	return readBody(t, response)
+}
+
 func TestSiteChartDocumentationArticleRendersConfiguration(t *testing.T) {
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()
 
-	response, err := server.Client().Get(server.URL + "/docs/charts/line")
+	response, err := server.Client().Get(server.URL + "/docs/visuals/line")
 	if err != nil {
 		t.Fatalf("get line chart documentation: %v", err)
 	}
@@ -655,8 +799,8 @@ func TestSiteChartDocumentationArticleRendersConfiguration(t *testing.T) {
 	body := readBody(t, response)
 	for _, want := range []string{
 		"<title>Line chart</title>",
-		`data-init="@get(&#39;/updates?view=visual-docs&amp;document=charts%2Fline&#39;, {openWhenHidden: true})"`,
-		`<nav class="site-docs-breadcrumb" aria-label="Breadcrumb"><ol><li><a href="/docs/charts/overview">Charts</a></li><li><span aria-current="page">Line chart</span></li></ol></nav>`,
+		`data-init="@get(&#39;/updates?view=visual-docs&amp;document=visuals%2Fline&#39;, {openWhenHidden: true})"`,
+		`<nav class="site-docs-breadcrumb" aria-label="Breadcrumb"><ol><li><a href="/docs/visuals/overview">Visuals</a></li><li><span aria-current="page">Line chart</span></li></ol></nav>`,
 		"<h1>Line chart</h1>",
 		`<h2 id="site-visual-api-reference">API reference</h2>`,
 		`<table aria-labelledby="site-visual-api-reference">`,
@@ -671,8 +815,8 @@ func TestSiteChartDocumentationArticleRendersConfiguration(t *testing.T) {
 		"<h2>Basic</h2>",
 		"type: line",
 		"visual-example=revenue_line_step",
-		`href="/docs/charts/line"`,
-		`href="/docs/charts/kpi"`,
+		`href="/docs/visuals/line"`,
+		`href="/docs/visuals/kpi"`,
 		`<details class="site-docs-nav-group site-docs-nav-group-active" data-site-docs-group="reference-visuals" open="true">`,
 	} {
 		if !strings.Contains(body, want) {
@@ -690,9 +834,9 @@ func TestSiteChartDocumentationArticleRendersConfiguration(t *testing.T) {
 	}
 }
 
-func TestSiteEveryChartTypeHasDocumentation(t *testing.T) {
-	if got, want := len(visualDocuments), 23; got != want {
-		t.Fatalf("documented chart types = %d, want %d", got, want)
+func TestSiteEveryVisualTypeHasDocumentation(t *testing.T) {
+	if got, want := len(visualDocuments), 26; got != want {
+		t.Fatalf("documented visual types = %d, want %d", got, want)
 	}
 
 	server := httptest.NewServer(NewHandler())
@@ -814,18 +958,18 @@ func TestSiteUpdatesCloseAfterInitialPatch(t *testing.T) {
 	}
 }
 
-func TestSiteChartShowcaseUpdatesIncludeEveryChartType(t *testing.T) {
+func TestSiteVisualShowcaseUpdatesIncludeEveryVisualType(t *testing.T) {
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()
 
-	response, err := server.Client().Get(server.URL + "/updates?view=charts")
+	response, err := server.Client().Get(server.URL + "/updates?view=visuals")
 	if err != nil {
 		t.Fatalf("get chart showcase updates: %v", err)
 	}
 	defer response.Body.Close()
 
-	line := readSSEUntil(t, response, `"charts"`)
-	for _, want := range []string{`"type":"line"`, `"type":"sunburst"`, `"type":"kpi"`, `"tables"`, `"kind":"matrix_table"`, `"kind":"pivot_table"`, `"title":"Orders conditional formatting"`} {
+	line := readSSEUntil(t, response, `"visuals"`)
+	for _, want := range []string{`"type":"line"`, `"type":"sunburst"`, `"type":"kpi"`, `"type":"table"`, `"type":"matrix"`, `"type":"pivot"`} {
 		if !strings.Contains(line, want) {
 			t.Errorf("chart showcase updates missing %q:\n%s", want, line)
 		}
@@ -836,24 +980,24 @@ func TestSiteVisualDocumentationUpdatesAreScopedToTheArticle(t *testing.T) {
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()
 
-	response, err := server.Client().Get(server.URL + "/updates?view=visual-docs&document=charts%2Fline")
+	response, err := server.Client().Get(server.URL + "/updates?view=visual-docs&document=visuals%2Fline")
 	if err != nil {
 		t.Fatalf("get visual documentation updates: %v", err)
 	}
 	defer response.Body.Close()
-	line := readSSEUntil(t, response, `"charts"`)
+	line := readSSEUntil(t, response, `"visuals"`)
 	for _, want := range []string{`"id":"revenue_line"`, `"id":"revenue_line_status"`, `"id":"revenue_line_step"`, `"step":"middle"`} {
 		if !strings.Contains(line, want) {
 			t.Errorf("line documentation updates missing %q:\n%s", want, line)
 		}
 	}
-	for _, unwanted := range []string{`"type":"area"`, `"type":"kpi"`, `"tables"`} {
+	for _, unwanted := range []string{`"type":"area"`, `"type":"kpi"`, `"type":"table"`} {
 		if strings.Contains(line, unwanted) {
 			t.Errorf("line documentation updates unexpectedly include %q:\n%s", unwanted, line)
 		}
 	}
 
-	missing, err := server.Client().Get(server.URL + "/updates?view=visual-docs&document=charts%2Fmissing")
+	missing, err := server.Client().Get(server.URL + "/updates?view=visual-docs&document=visuals%2Fmissing")
 	if err != nil {
 		t.Fatalf("get missing visual documentation updates: %v", err)
 	}

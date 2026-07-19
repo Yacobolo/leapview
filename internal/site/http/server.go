@@ -35,18 +35,27 @@ func NewHandler() http.Handler {
 func NewHandlerWithOptions(options Options) http.Handler {
 	server := &siteServer{baseURL: cloneURL(options.BaseURL)}
 	mux := http.NewServeMux()
+	documentationMCP := newDocumentationMCPHandler()
+	mux.Handle("GET /mcp", documentationMCP)
+	mux.Handle("POST /mcp", documentationMCP)
+	mux.Handle("DELETE /mcp", documentationMCP)
 	mux.HandleFunc("GET /{$}", server.home)
-	mux.HandleFunc("GET /charts", server.charts)
+	mux.HandleFunc("GET /visuals", server.visuals)
 	mux.HandleFunc("GET /docs", server.docsIndex)
 	mux.HandleFunc("GET /docs/search", server.docsSearch)
 	mux.HandleFunc("GET /docs/search/active", docsActiveSearch)
 	mux.HandleFunc("GET /docs/openapi.yaml", docsOpenAPISpecification)
+	mux.HandleFunc("GET /docs/cli/manifest.json", docsCLIManifest)
+	mux.HandleFunc("GET /docs/cli/commands/{command}", docsCLICommand)
+	mux.HandleFunc("GET /docs/api/operations.json", docsAPIOperations)
+	mux.HandleFunc("GET /docs/api/operations/{operation}", docsAPIOperation)
 	mux.HandleFunc("GET /docs/schemas/{schema}", docsConfigurationSchema)
 	mux.HandleFunc("GET /docs/{path...}", server.docsArticle)
 	mux.HandleFunc("GET /getting-started", gettingStarted)
 	mux.HandleFunc("GET /healthz", health)
 	mux.HandleFunc("GET /readyz", health)
 	mux.HandleFunc("GET /robots.txt", server.robots)
+	mux.HandleFunc("GET /llms.txt", docsLLMs)
 	mux.HandleFunc("GET /sitemap.xml", server.sitemap)
 	mux.HandleFunc("GET /updates", updates)
 	mux.Handle("GET /static/", compressedAssets(http.StripPrefix("/static/", http.FileServer(http.FS(siteassets.Static())))))
@@ -141,9 +150,9 @@ func (s *siteServer) home(w http.ResponseWriter, r *http.Request) {
 	renderHTML(w, http.StatusOK, sitePage(metadata), "render site page")
 }
 
-func (s *siteServer) charts(w http.ResponseWriter, r *http.Request) {
-	metadata := s.metadata(r, siteBrandName+" chart showcase", "Explore "+siteBrandName+" charts, KPIs, tables, and other data visualization components.", "website", "")
-	renderHTML(w, http.StatusOK, chartsPage(metadata), "render charts page")
+func (s *siteServer) visuals(w http.ResponseWriter, r *http.Request) {
+	metadata := s.metadata(r, siteBrandName+" visual showcase", "Explore "+siteBrandName+" charts, KPIs, tables, matrices, and pivots.", "website", "")
+	renderHTML(w, http.StatusOK, visualsPage(metadata), "render visuals page")
 }
 
 func gettingStarted(w http.ResponseWriter, r *http.Request) {
@@ -199,6 +208,10 @@ func docsActiveSearch(w http.ResponseWriter, r *http.Request) {
 func (s *siteServer) docsArticle(w http.ResponseWriter, r *http.Request) {
 	document, ok := siteDocumentBySlug(r.PathValue("path"))
 	if !ok {
+		if location, legacy := legacyCLICommandLocation(r.PathValue("path")); legacy {
+			http.Redirect(w, r, location, http.StatusPermanentRedirect)
+			return
+		}
 		s.notFound(w, r)
 		return
 	}
@@ -260,7 +273,7 @@ func (s *siteServer) absoluteURL(r *http.Request, requestedPath string) string {
 }
 
 func (s *siteServer) sitemap(w http.ResponseWriter, r *http.Request) {
-	paths := []string{"/", "/charts", "/docs"}
+	paths := []string{"/", "/visuals", "/docs"}
 	for _, document := range siteDocuments {
 		paths = append(paths, "/docs/"+document.slug)
 	}
@@ -300,15 +313,15 @@ func docsConfigurationSchema(w http.ResponseWriter, r *http.Request) {
 func updates(w http.ResponseWriter, r *http.Request) {
 	patch := pagestream.SignalPatch{"site": map[string]any{"ready": true}}
 	switch r.URL.Query().Get("view") {
-	case "charts":
-		patch = chartShowcasePatch()
+	case "visuals":
+		patch = visualShowcasePatch()
 	case "visual-docs":
 		examples, ok := visualExamplesForDocument(r.URL.Query().Get("document"))
 		if !ok {
 			http.NotFound(w, r)
 			return
 		}
-		patch = pagestream.SignalPatch{"charts": examples}
+		patch = pagestream.SignalPatch{"visuals": examples}
 	}
 	stream := pagestream.NewSignalStream(w, r)
 	if err := stream.Patch(patch); err != nil {
