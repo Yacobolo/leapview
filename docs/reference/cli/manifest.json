@@ -1,0 +1,2265 @@
+{
+  "schemaVersion": 1,
+  "commands": [
+    {
+      "id": "admin",
+      "path": [
+        "admin"
+      ],
+      "title": "libredash admin",
+      "summary": "Administrative utilities",
+      "description": "Administrative utilities",
+      "usage": "libredash admin",
+      "runnable": false,
+      "effect": "none",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": [
+        "admin-backup",
+        "admin-bootstrap",
+        "admin-maintenance",
+        "admin-restore",
+        "admin-storage"
+      ]
+    },
+    {
+      "id": "admin-backup",
+      "path": [
+        "admin",
+        "backup"
+      ],
+      "title": "libredash admin backup",
+      "summary": "Create a consistent LibreDash instance backup",
+      "description": "Create a consistent LibreDash instance backup",
+      "usage": "libredash admin backup [flags]",
+      "runnable": true,
+      "effect": "local-write",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [
+        {
+          "name": "database-only",
+          "type": "bool",
+          "default": "false",
+          "description": "backup only the platform SQLite database",
+          "required": false
+        },
+        {
+          "name": "out",
+          "type": "string",
+          "default": "",
+          "description": "backup archive output path",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "admin-bootstrap",
+      "path": [
+        "admin",
+        "bootstrap"
+      ],
+      "title": "libredash admin bootstrap",
+      "summary": "Bootstrap an owner principal and API token",
+      "description": "Bootstrap an owner principal and API token",
+      "usage": "libredash admin bootstrap",
+      "runnable": true,
+      "effect": "write",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "admin-maintenance",
+      "path": [
+        "admin",
+        "maintenance"
+      ],
+      "title": "libredash admin maintenance",
+      "summary": "Prune bounded operational history",
+      "description": "Prune bounded operational history",
+      "usage": "libredash admin maintenance [flags]",
+      "runnable": true,
+      "effect": "destructive",
+      "confirmation": "conditional",
+      "arguments": [],
+      "options": [
+        {
+          "name": "apply",
+          "type": "bool",
+          "default": "false",
+          "description": "delete rows instead of dry-run",
+          "required": false
+        },
+        {
+          "name": "archived-agent-days",
+          "type": "int",
+          "default": "180",
+          "description": "archived agent conversation retention in days; 0 disables archived conversation pruning",
+          "required": false
+        },
+        {
+          "name": "audit-days",
+          "type": "int",
+          "default": "365",
+          "description": "audit event retention in days; 0 disables audit pruning",
+          "required": false
+        },
+        {
+          "name": "auth-state-days",
+          "type": "int",
+          "default": "30",
+          "description": "expired or revoked auth state retention in days; 0 disables auth-state pruning",
+          "required": false
+        },
+        {
+          "name": "query-days",
+          "type": "int",
+          "default": "90",
+          "description": "query event retention in days; 0 disables query pruning",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "admin-restore",
+      "path": [
+        "admin",
+        "restore"
+      ],
+      "title": "libredash admin restore",
+      "summary": "Restore LibreDash from a validated instance backup",
+      "description": "Restore LibreDash from a validated instance backup",
+      "usage": "libredash admin restore [flags]",
+      "runnable": true,
+      "effect": "destructive",
+      "confirmation": "required",
+      "arguments": [],
+      "options": [
+        {
+          "name": "confirm",
+          "type": "bool",
+          "default": "false",
+          "description": "confirm replacement of the configured LibreDash instance",
+          "required": false
+        },
+        {
+          "name": "current-out",
+          "type": "string",
+          "default": "",
+          "description": "path for a backup of the current instance before replacement",
+          "required": false
+        },
+        {
+          "name": "database-only",
+          "type": "bool",
+          "default": "false",
+          "description": "restore only the platform SQLite database",
+          "required": false
+        },
+        {
+          "name": "from",
+          "type": "string",
+          "default": "",
+          "description": "backup archive path to restore",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "admin-storage",
+      "path": [
+        "admin",
+        "storage"
+      ],
+      "title": "libredash admin storage",
+      "summary": "Maintain analytical storage",
+      "description": "Maintain analytical storage",
+      "usage": "libredash admin storage",
+      "runnable": false,
+      "effect": "none",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": [
+        "admin-storage-cleanup"
+      ]
+    },
+    {
+      "id": "admin-storage-cleanup",
+      "path": [
+        "admin",
+        "storage",
+        "cleanup"
+      ],
+      "title": "libredash admin storage cleanup",
+      "summary": "Reconcile serving-state snapshots and clean DuckLake storage",
+      "description": "Reconcile serving-state snapshots and clean DuckLake storage",
+      "usage": "libredash admin storage cleanup [flags]",
+      "runnable": true,
+      "effect": "destructive",
+      "confirmation": "conditional",
+      "arguments": [],
+      "options": [
+        {
+          "name": "apply",
+          "type": "bool",
+          "default": "false",
+          "description": "perform destructive cleanup instead of dry-run",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "agent",
+      "path": [
+        "agent"
+      ],
+      "title": "libredash agent",
+      "summary": "Use the LibreDash read-only agent",
+      "description": "Use the LibreDash read-only agent",
+      "usage": "libredash agent",
+      "runnable": false,
+      "effect": "none",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": [
+        "agent-ask",
+        "agent-conversations",
+        "agent-tools"
+      ]
+    },
+    {
+      "id": "agent-ask",
+      "path": [
+        "agent",
+        "ask"
+      ],
+      "title": "libredash agent ask",
+      "summary": "Ask the LibreDash read-only agent a question",
+      "description": "Ask the LibreDash read-only agent a question",
+      "usage": "libredash agent ask [question] [flags]",
+      "runnable": true,
+      "effect": "write",
+      "confirmation": "never",
+      "arguments": [
+        "question"
+      ],
+      "options": [
+        {
+          "name": "conversation",
+          "type": "string",
+          "default": "",
+          "description": "existing agent conversation id",
+          "required": false
+        },
+        {
+          "name": "json",
+          "type": "bool",
+          "default": "false",
+          "description": "print JSON response",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "agent-conversations",
+      "path": [
+        "agent",
+        "conversations"
+      ],
+      "title": "libredash agent conversations",
+      "summary": "List agent conversations",
+      "description": "List agent conversations",
+      "usage": "libredash agent conversations [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [
+        {
+          "name": "json",
+          "type": "bool",
+          "default": "false",
+          "description": "print JSON response",
+          "required": false
+        },
+        {
+          "name": "limit",
+          "type": "int",
+          "default": "0",
+          "description": "maximum items to return",
+          "required": false
+        },
+        {
+          "name": "page-token",
+          "type": "string",
+          "default": "",
+          "description": "opaque page token",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "agent-tools",
+      "path": [
+        "agent",
+        "tools"
+      ],
+      "title": "libredash agent tools",
+      "summary": "List generated agent tools",
+      "description": "List generated agent tools",
+      "usage": "libredash agent tools",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [],
+      "inheritedOptions": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "api",
+      "path": [
+        "api"
+      ],
+      "title": "libredash api",
+      "summary": "Call any generated LibreDash API operation",
+      "description": "Call any generated LibreDash API operation",
+      "usage": "libredash api",
+      "runnable": false,
+      "effect": "none",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": [
+        "api-call",
+        "api-describe",
+        "api-list"
+      ]
+    },
+    {
+      "id": "api-call",
+      "path": [
+        "api",
+        "call"
+      ],
+      "title": "libredash api call",
+      "summary": "Call a generated API operation",
+      "description": "Call a generated API operation",
+      "usage": "libredash api call \u003coperation\u003e [flags]",
+      "runnable": true,
+      "effect": "dynamic",
+      "confirmation": "never",
+      "arguments": [
+        "operation"
+      ],
+      "options": [
+        {
+          "name": "body-file",
+          "type": "string",
+          "default": "",
+          "description": "request body file",
+          "required": false
+        },
+        {
+          "name": "body-json",
+          "type": "string",
+          "default": "",
+          "description": "request JSON body",
+          "required": false
+        },
+        {
+          "name": "content-type",
+          "type": "string",
+          "default": "",
+          "description": "request body content type",
+          "required": false
+        },
+        {
+          "name": "path",
+          "type": "stringArray",
+          "default": "[]",
+          "description": "path parameter as key=value; repeatable",
+          "required": false
+        },
+        {
+          "name": "query",
+          "type": "stringArray",
+          "default": "[]",
+          "description": "query parameter as key=value; repeatable",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        },
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "default workspace path parameter",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "api-describe",
+      "path": [
+        "api",
+        "describe"
+      ],
+      "title": "libredash api describe",
+      "summary": "Describe a generated API operation",
+      "description": "Describe a generated API operation",
+      "usage": "libredash api describe \u003coperation\u003e",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [
+        "operation"
+      ],
+      "options": [],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "api-list",
+      "path": [
+        "api",
+        "list"
+      ],
+      "title": "libredash api list",
+      "summary": "List generated API operations",
+      "description": "List generated API operations",
+      "usage": "libredash api list",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "config",
+      "path": [
+        "config"
+      ],
+      "title": "libredash config",
+      "summary": "Inspect and validate process-global configuration",
+      "description": "Inspect and validate process-global configuration",
+      "usage": "libredash config",
+      "runnable": false,
+      "effect": "none",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": [
+        "config-validate"
+      ]
+    },
+    {
+      "id": "config-validate",
+      "path": [
+        "config",
+        "validate"
+      ],
+      "title": "libredash config validate",
+      "summary": "Validate the active server environment",
+      "description": "Validate the active server environment",
+      "usage": "libredash config validate [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [
+        {
+          "name": "production",
+          "type": "bool",
+          "default": "false",
+          "description": "validate production requirements even when LIBREDASH_PRODUCTION is unset",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "dashboards",
+      "path": [
+        "dashboards"
+      ],
+      "title": "libredash dashboards",
+      "summary": "Inspect dashboards",
+      "description": "Inspect dashboards",
+      "usage": "libredash dashboards",
+      "runnable": false,
+      "effect": "none",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": [
+        "dashboards-describe",
+        "dashboards-filter-options",
+        "dashboards-list",
+        "dashboards-page",
+        "dashboards-query-page",
+        "dashboards-table-data",
+        "dashboards-visual",
+        "dashboards-visual-data"
+      ]
+    },
+    {
+      "id": "dashboards-describe",
+      "path": [
+        "dashboards",
+        "describe"
+      ],
+      "title": "libredash dashboards describe",
+      "summary": "Describe a dashboard",
+      "description": "Describe a dashboard",
+      "usage": "libredash dashboards describe \u003cdashboard\u003e [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [
+        "dashboard"
+      ],
+      "options": [
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "dashboards-filter-options",
+      "path": [
+        "dashboards",
+        "filter-options"
+      ],
+      "title": "libredash dashboards filter-options",
+      "summary": "List dashboard filter options",
+      "description": "List dashboard filter options",
+      "usage": "libredash dashboards filter-options \u003cdashboard\u003e \u003cpage\u003e \u003cfilter\u003e [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [
+        "dashboard",
+        "page",
+        "filter"
+      ],
+      "options": [
+        {
+          "name": "filters-json",
+          "type": "string",
+          "default": "",
+          "description": "dashboard filters JSON",
+          "required": false
+        },
+        {
+          "name": "limit",
+          "type": "int",
+          "default": "0",
+          "description": "maximum items to return",
+          "required": false
+        },
+        {
+          "name": "page-token",
+          "type": "string",
+          "default": "",
+          "description": "opaque page token",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "dashboards-list",
+      "path": [
+        "dashboards",
+        "list"
+      ],
+      "title": "libredash dashboards list",
+      "summary": "List dashboards",
+      "description": "List dashboards",
+      "usage": "libredash dashboards list [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [
+        {
+          "name": "limit",
+          "type": "int",
+          "default": "0",
+          "description": "maximum items to return",
+          "required": false
+        },
+        {
+          "name": "page-token",
+          "type": "string",
+          "default": "",
+          "description": "opaque page token",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "dashboards-page",
+      "path": [
+        "dashboards",
+        "page"
+      ],
+      "title": "libredash dashboards page",
+      "summary": "Describe a dashboard page",
+      "description": "Describe a dashboard page",
+      "usage": "libredash dashboards page \u003cdashboard\u003e \u003cpage\u003e [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [
+        "dashboard",
+        "page"
+      ],
+      "options": [
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "dashboards-query-page",
+      "path": [
+        "dashboards",
+        "query-page"
+      ],
+      "title": "libredash dashboards query-page",
+      "summary": "Query a dashboard page",
+      "description": "Query a dashboard page",
+      "usage": "libredash dashboards query-page \u003cdashboard\u003e \u003cpage\u003e [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [
+        "dashboard",
+        "page"
+      ],
+      "options": [
+        {
+          "name": "filters-json",
+          "type": "string",
+          "default": "",
+          "description": "dashboard filters JSON",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "dashboards-table-data",
+      "path": [
+        "dashboards",
+        "table-data"
+      ],
+      "title": "libredash dashboards table-data",
+      "summary": "Query dashboard table data",
+      "description": "Query dashboard table data",
+      "usage": "libredash dashboards table-data \u003cdashboard\u003e \u003cpage\u003e \u003ctable\u003e [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [
+        "dashboard",
+        "page",
+        "table"
+      ],
+      "options": [
+        {
+          "name": "count",
+          "type": "int",
+          "default": "0",
+          "description": "row count",
+          "required": false
+        },
+        {
+          "name": "filters-json",
+          "type": "string",
+          "default": "",
+          "description": "dashboard filters JSON",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "dashboards-visual",
+      "path": [
+        "dashboards",
+        "visual"
+      ],
+      "title": "libredash dashboards visual",
+      "summary": "Describe a dashboard visual",
+      "description": "Describe a dashboard visual",
+      "usage": "libredash dashboards visual \u003cdashboard\u003e \u003cpage\u003e \u003cvisual\u003e [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [
+        "dashboard",
+        "page",
+        "visual"
+      ],
+      "options": [
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "dashboards-visual-data",
+      "path": [
+        "dashboards",
+        "visual-data"
+      ],
+      "title": "libredash dashboards visual-data",
+      "summary": "Query dashboard visual data",
+      "description": "Query dashboard visual data",
+      "usage": "libredash dashboards visual-data \u003cdashboard\u003e \u003cpage\u003e \u003cvisual\u003e [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [
+        "dashboard",
+        "page",
+        "visual"
+      ],
+      "options": [
+        {
+          "name": "filters-json",
+          "type": "string",
+          "default": "",
+          "description": "dashboard filters JSON",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "data",
+      "path": [
+        "data"
+      ],
+      "title": "libredash data",
+      "summary": "Manage project-global data revisions",
+      "description": "Manage project-global data revisions",
+      "usage": "libredash data",
+      "runnable": false,
+      "effect": "none",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": [
+        "data-plan",
+        "data-revisions",
+        "data-sync"
+      ]
+    },
+    {
+      "id": "data-plan",
+      "path": [
+        "data",
+        "plan"
+      ],
+      "title": "libredash data plan",
+      "summary": "Plan a local managed data revision",
+      "description": "Plan a local managed data revision",
+      "usage": "libredash data plan [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [
+        {
+          "name": "connection",
+          "type": "string",
+          "default": "",
+          "description": "project-global managed connection",
+          "required": false
+        },
+        {
+          "name": "from",
+          "type": "string",
+          "default": "",
+          "description": "local filesystem root to ingest",
+          "required": false
+        },
+        {
+          "name": "previous-manifest",
+          "type": "string",
+          "default": "",
+          "description": "prior managed data manifest path",
+          "required": false
+        },
+        {
+          "name": "project",
+          "type": "string",
+          "default": "dashboards/libredash.yaml",
+          "description": "project path",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "data-revisions",
+      "path": [
+        "data",
+        "revisions"
+      ],
+      "title": "libredash data revisions",
+      "summary": "Inspect managed data revisions",
+      "description": "Inspect managed data revisions",
+      "usage": "libredash data revisions",
+      "runnable": false,
+      "effect": "none",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": [
+        "data-revisions-current",
+        "data-revisions-list"
+      ]
+    },
+    {
+      "id": "data-revisions-current",
+      "path": [
+        "data",
+        "revisions",
+        "current"
+      ],
+      "title": "libredash data revisions current",
+      "summary": "Print the active managed data revision",
+      "description": "Print the active managed data revision",
+      "usage": "libredash data revisions current [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [
+        {
+          "name": "connection",
+          "type": "string",
+          "default": "",
+          "description": "project-global managed connection",
+          "required": false
+        },
+        {
+          "name": "project",
+          "type": "string",
+          "default": "",
+          "description": "server project id",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "data-revisions-list",
+      "path": [
+        "data",
+        "revisions",
+        "list"
+      ],
+      "title": "libredash data revisions list",
+      "summary": "List staged managed data revisions",
+      "description": "List staged managed data revisions",
+      "usage": "libredash data revisions list [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [
+        {
+          "name": "connection",
+          "type": "string",
+          "default": "",
+          "description": "project-global managed connection",
+          "required": false
+        },
+        {
+          "name": "limit",
+          "type": "int",
+          "default": "0",
+          "description": "maximum revisions to return",
+          "required": false
+        },
+        {
+          "name": "page-token",
+          "type": "string",
+          "default": "",
+          "description": "opaque page token",
+          "required": false
+        },
+        {
+          "name": "project",
+          "type": "string",
+          "default": "",
+          "description": "server project id",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "data-sync",
+      "path": [
+        "data",
+        "sync"
+      ],
+      "title": "libredash data sync",
+      "summary": "Stage a managed data revision",
+      "description": "Stage a managed data revision",
+      "usage": "libredash data sync [flags]",
+      "runnable": true,
+      "effect": "write",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [
+        {
+          "name": "connection",
+          "type": "string",
+          "default": "",
+          "description": "project-global managed connection",
+          "required": false
+        },
+        {
+          "name": "from",
+          "type": "string",
+          "default": "",
+          "description": "local filesystem root to ingest",
+          "required": false
+        },
+        {
+          "name": "project",
+          "type": "string",
+          "default": "dashboards/libredash.yaml",
+          "description": "project catalog path",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "deploy",
+      "path": [
+        "deploy"
+      ],
+      "title": "libredash deploy",
+      "summary": "Atomically deploy a configuration-as-code project",
+      "description": "Atomically deploy a configuration-as-code project",
+      "usage": "libredash deploy [flags]",
+      "runnable": true,
+      "effect": "write",
+      "confirmation": "conditional",
+      "arguments": [],
+      "options": [
+        {
+          "name": "auto-approve",
+          "type": "bool",
+          "default": "false",
+          "description": "approve and activate the deployment without prompting",
+          "required": false
+        },
+        {
+          "name": "project",
+          "type": "string",
+          "default": "dashboards/libredash.yaml",
+          "description": "project path",
+          "required": false
+        },
+        {
+          "name": "revision",
+          "type": "stringArray",
+          "default": "[]",
+          "description": "managed revision pin as connection=sha256:\u003cdigest\u003e (repeatable)",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "healthcheck",
+      "path": [
+        "healthcheck"
+      ],
+      "title": "libredash healthcheck",
+      "summary": "Check the local LibreDash readiness endpoint",
+      "description": "Check the local LibreDash readiness endpoint",
+      "usage": "libredash healthcheck [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [
+        {
+          "name": "timeout",
+          "type": "duration",
+          "default": "5s",
+          "description": "healthcheck HTTP timeout",
+          "required": false
+        },
+        {
+          "name": "url",
+          "type": "string",
+          "default": "",
+          "description": "readiness URL to check",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "login",
+      "path": [
+        "login"
+      ],
+      "title": "libredash login",
+      "summary": "Store a LibreDash API token for a target",
+      "description": "Store a LibreDash API token for a target",
+      "usage": "libredash login [flags]",
+      "runnable": true,
+      "effect": "local-write",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "plan",
+      "path": [
+        "plan"
+      ],
+      "title": "libredash plan",
+      "summary": "Emit a deterministic configuration-as-code plan",
+      "description": "Emit a deterministic configuration-as-code plan",
+      "usage": "libredash plan [project] [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [
+        "project"
+      ],
+      "options": [
+        {
+          "name": "json",
+          "type": "bool",
+          "default": "false",
+          "description": "emit JSON plan",
+          "required": false
+        },
+        {
+          "name": "project",
+          "type": "string",
+          "default": "dashboards/libredash.yaml",
+          "description": "project path",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL for active deployment diff",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        },
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id for active diff",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "schema",
+      "path": [
+        "schema"
+      ],
+      "title": "libredash schema",
+      "summary": "Inspect LibreDash YAML schemas",
+      "description": "Inspect LibreDash YAML schemas",
+      "usage": "libredash schema",
+      "runnable": false,
+      "effect": "none",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": [
+        "schema-export"
+      ]
+    },
+    {
+      "id": "schema-export",
+      "path": [
+        "schema",
+        "export"
+      ],
+      "title": "libredash schema export",
+      "summary": "Export generated schema artifacts",
+      "description": "Export generated schema artifacts",
+      "usage": "libredash schema export [flags]",
+      "runnable": true,
+      "effect": "local-write",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json-schema",
+          "description": "schema output format",
+          "required": false
+        },
+        {
+          "name": "out",
+          "type": "string",
+          "default": "schemas/json",
+          "description": "output directory",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "search",
+      "path": [
+        "search"
+      ],
+      "title": "libredash search",
+      "summary": "Search workspace assets",
+      "description": "Search workspace assets",
+      "usage": "libredash search \u003cquery\u003e [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [
+        "query"
+      ],
+      "options": [
+        {
+          "name": "json",
+          "type": "bool",
+          "default": "false",
+          "description": "print JSON response",
+          "required": false
+        },
+        {
+          "name": "limit",
+          "type": "int",
+          "default": "0",
+          "description": "maximum items to return",
+          "required": false
+        },
+        {
+          "name": "page-token",
+          "type": "string",
+          "default": "",
+          "description": "opaque page token",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        },
+        {
+          "name": "type",
+          "type": "stringArray",
+          "default": "[]",
+          "description": "result type filter; repeatable or comma-separated",
+          "required": false
+        },
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "semantic-models",
+      "path": [
+        "semantic-models"
+      ],
+      "title": "libredash semantic-models",
+      "summary": "Inspect semantic models",
+      "description": "Inspect semantic models",
+      "usage": "libredash semantic-models",
+      "runnable": false,
+      "effect": "none",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": [
+        "semantic-models-dataset",
+        "semantic-models-datasets",
+        "semantic-models-describe",
+        "semantic-models-explain-preview",
+        "semantic-models-explain-query",
+        "semantic-models-fields",
+        "semantic-models-list",
+        "semantic-models-preview",
+        "semantic-models-query"
+      ]
+    },
+    {
+      "id": "semantic-models-dataset",
+      "path": [
+        "semantic-models",
+        "dataset"
+      ],
+      "title": "libredash semantic-models dataset",
+      "summary": "Describe a semantic model dataset",
+      "description": "Describe a semantic model dataset",
+      "usage": "libredash semantic-models dataset \u003cmodel\u003e \u003cdataset\u003e [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [
+        "model",
+        "dataset"
+      ],
+      "options": [
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "semantic-models-datasets",
+      "path": [
+        "semantic-models",
+        "datasets"
+      ],
+      "title": "libredash semantic-models datasets",
+      "summary": "List semantic model datasets",
+      "description": "List semantic model datasets",
+      "usage": "libredash semantic-models datasets \u003cmodel\u003e [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [
+        "model"
+      ],
+      "options": [
+        {
+          "name": "limit",
+          "type": "int",
+          "default": "0",
+          "description": "maximum items to return",
+          "required": false
+        },
+        {
+          "name": "page-token",
+          "type": "string",
+          "default": "",
+          "description": "opaque page token",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "semantic-models-describe",
+      "path": [
+        "semantic-models",
+        "describe"
+      ],
+      "title": "libredash semantic-models describe",
+      "summary": "Describe a semantic model",
+      "description": "Describe a semantic model",
+      "usage": "libredash semantic-models describe \u003cmodel\u003e [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [
+        "model"
+      ],
+      "options": [
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "semantic-models-explain-preview",
+      "path": [
+        "semantic-models",
+        "explain-preview"
+      ],
+      "title": "libredash semantic-models explain-preview",
+      "summary": "Explain a semantic model dataset row preview",
+      "description": "Explain a semantic model dataset row preview",
+      "usage": "libredash semantic-models explain-preview \u003cmodel\u003e \u003cdataset\u003e [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [
+        "model",
+        "dataset"
+      ],
+      "options": [
+        {
+          "name": "body-json",
+          "type": "string",
+          "default": "",
+          "description": "request JSON body",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "semantic-models-explain-query",
+      "path": [
+        "semantic-models",
+        "explain-query"
+      ],
+      "title": "libredash semantic-models explain-query",
+      "summary": "Explain a semantic model dataset query",
+      "description": "Explain a semantic model dataset query",
+      "usage": "libredash semantic-models explain-query \u003cmodel\u003e \u003cdataset\u003e [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [
+        "model",
+        "dataset"
+      ],
+      "options": [
+        {
+          "name": "body-json",
+          "type": "string",
+          "default": "",
+          "description": "request JSON body",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "semantic-models-fields",
+      "path": [
+        "semantic-models",
+        "fields"
+      ],
+      "title": "libredash semantic-models fields",
+      "summary": "List semantic model dataset fields",
+      "description": "List semantic model dataset fields",
+      "usage": "libredash semantic-models fields \u003cmodel\u003e \u003cdataset\u003e [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [
+        "model",
+        "dataset"
+      ],
+      "options": [
+        {
+          "name": "limit",
+          "type": "int",
+          "default": "0",
+          "description": "maximum items to return",
+          "required": false
+        },
+        {
+          "name": "page-token",
+          "type": "string",
+          "default": "",
+          "description": "opaque page token",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "semantic-models-list",
+      "path": [
+        "semantic-models",
+        "list"
+      ],
+      "title": "libredash semantic-models list",
+      "summary": "List semantic models",
+      "description": "List semantic models",
+      "usage": "libredash semantic-models list [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [
+        {
+          "name": "limit",
+          "type": "int",
+          "default": "0",
+          "description": "maximum items to return",
+          "required": false
+        },
+        {
+          "name": "page-token",
+          "type": "string",
+          "default": "",
+          "description": "opaque page token",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "semantic-models-preview",
+      "path": [
+        "semantic-models",
+        "preview"
+      ],
+      "title": "libredash semantic-models preview",
+      "summary": "Preview semantic model dataset rows",
+      "description": "Preview semantic model dataset rows",
+      "usage": "libredash semantic-models preview \u003cmodel\u003e \u003cdataset\u003e [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [
+        "model",
+        "dataset"
+      ],
+      "options": [
+        {
+          "name": "body-json",
+          "type": "string",
+          "default": "",
+          "description": "request JSON body",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "semantic-models-query",
+      "path": [
+        "semantic-models",
+        "query"
+      ],
+      "title": "libredash semantic-models query",
+      "summary": "Query a semantic model dataset",
+      "description": "Query a semantic model dataset",
+      "usage": "libredash semantic-models query \u003cmodel\u003e \u003cdataset\u003e [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [
+        "model",
+        "dataset"
+      ],
+      "options": [
+        {
+          "name": "body-json",
+          "type": "string",
+          "default": "",
+          "description": "request JSON body",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [
+        {
+          "name": "workspace",
+          "type": "string",
+          "default": "",
+          "description": "workspace id",
+          "required": false
+        }
+      ],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "serve",
+      "path": [
+        "serve"
+      ],
+      "title": "libredash serve",
+      "summary": "Run the LibreDash HTTP server",
+      "description": "Run the LibreDash HTTP server",
+      "usage": "libredash serve [flags]",
+      "runnable": true,
+      "effect": "local-write",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [
+        {
+          "name": "addr",
+          "type": "string",
+          "default": "",
+          "description": "listen address; defaults to the configured address",
+          "required": false
+        },
+        {
+          "name": "environment",
+          "type": "string",
+          "default": "",
+          "description": "serving environment; defaults to prod in production and dev otherwise",
+          "required": false
+        },
+        {
+          "name": "production",
+          "type": "bool",
+          "default": "false",
+          "description": "serve active serving state from the platform DB",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "validate",
+      "path": [
+        "validate"
+      ],
+      "title": "libredash validate",
+      "summary": "Validate a configuration-as-code project",
+      "description": "Validate a configuration-as-code project",
+      "usage": "libredash validate [project] [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [
+        "project"
+      ],
+      "options": [
+        {
+          "name": "json",
+          "type": "bool",
+          "default": "false",
+          "description": "emit JSON diagnostics",
+          "required": false
+        },
+        {
+          "name": "project",
+          "type": "string",
+          "default": "dashboards/libredash.yaml",
+          "description": "project path",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    },
+    {
+      "id": "workspaces",
+      "path": [
+        "workspaces"
+      ],
+      "title": "libredash workspaces",
+      "summary": "Inspect workspaces",
+      "description": "Inspect workspaces",
+      "usage": "libredash workspaces",
+      "runnable": false,
+      "effect": "none",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": [
+        "workspaces-list"
+      ]
+    },
+    {
+      "id": "workspaces-list",
+      "path": [
+        "workspaces",
+        "list"
+      ],
+      "title": "libredash workspaces list",
+      "summary": "List workspaces",
+      "description": "List workspaces",
+      "usage": "libredash workspaces list [flags]",
+      "runnable": true,
+      "effect": "read",
+      "confirmation": "never",
+      "arguments": [],
+      "options": [
+        {
+          "name": "limit",
+          "type": "int",
+          "default": "0",
+          "description": "maximum items to return",
+          "required": false
+        },
+        {
+          "name": "page-token",
+          "type": "string",
+          "default": "",
+          "description": "opaque page token",
+          "required": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "default": "",
+          "description": "LibreDash server URL",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "default": "",
+          "description": "API token",
+          "required": false
+        }
+      ],
+      "inheritedOptions": [],
+      "examples": [],
+      "subcommands": []
+    }
+  ]
+}

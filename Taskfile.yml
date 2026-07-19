@@ -183,8 +183,10 @@ tasks:
       - docs/guides/**/*.md
       - docs/api/*.md
       - docs/api/catalog.json
+      - docs/api/operations.json
       - docs/reference/cli/*.md
       - docs/reference/cli/catalog.json
+      - docs/reference/cli/manifest.json
       - docs/reference/config/*.md
       - docs/reference/config/catalog.json
       - docs/visuals/*.md
@@ -192,6 +194,7 @@ tasks:
       - internal/tools/docsitegen/**/*.go
     generates:
       - docs/catalog.json
+      - docs/llms.txt
       - docs/search-index.sqlite3
     cmds:
       - bun run docs:validate-diagrams
@@ -243,6 +246,7 @@ tasks:
       - internal/tools/clidocgen/**/*.go
     generates:
       - docs/reference/cli/catalog.json
+      - docs/reference/cli/manifest.json
     cmds:
       - go run ./internal/tools/clidocgen
 
@@ -289,7 +293,7 @@ tasks:
     cmds:
       - task: config:check
       - |
-        changed="$(git status --porcelain -- .env.example docs/api/openapi.yaml schemas/config schemas/json)"
+        changed="$(git status --porcelain -- .env.example docs/api/openapi.yaml docs/api/operations.json docs/reference/cli/manifest.json docs/llms.txt schemas/config schemas/json)"
         test -z "$changed" || { printf 'public contract snapshots are stale:\n%s\n' "$changed" >&2; exit 1; }
 
   api:generate:
@@ -308,6 +312,7 @@ tasks:
       - internal/cli/gen/apigen_registry.gen.go
       - docs/api/catalog.json
       - docs/api/openapi.yaml
+      - docs/api/operations.json
     cmds:
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.5.3 typespec-compile -manifest api/apigen.yaml -target libredash-v1
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.5.3 all -manifest api/apigen.yaml -target libredash-v1

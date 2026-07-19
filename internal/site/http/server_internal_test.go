@@ -582,6 +582,109 @@ func TestSiteAPIReferenceIsGeneratedFromOpenAPI(t *testing.T) {
 	}
 }
 
+func TestSiteServesMachineDocumentationArtifacts(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	tests := []struct {
+		path        string
+		contentType string
+		contains    []string
+	}{
+		{path: "/llms.txt", contentType: "text/plain", contains: []string{"# LibreDash", "/mcp", "/docs/cli/manifest.json", "/docs/api/operations.json"}},
+		{path: "/docs/cli/manifest.json", contentType: "application/json", contains: []string{`"schemaVersion": 1`, `"id": "deploy"`, `"effect": "write"`}},
+		{path: "/docs/api/operations.json", contentType: "application/json", contains: []string{`"schemaVersion": 1`, `"operationId": "listWorkspaces"`}},
+		{path: "/docs/api/operations/listWorkspaces.json", contentType: "application/json", contains: []string{`"operationId": "listWorkspaces"`, `"method": "GET"`, `"schemas": {`, `"WorkspaceListResponse": {`}},
+		{path: "/docs/api/operations/listWorkspaces.md", contentType: "text/markdown", contains: []string{"# List workspaces", "`GET /api/v1/workspaces`", "USE_WORKSPACE"}},
+		{path: "/docs/cli/commands/deploy.json", contentType: "application/json", contains: []string{`"id": "deploy"`, `"usage": "libredash deploy`}},
+		{path: "/docs/cli/commands/deploy.md", contentType: "text/markdown", contains: []string{"# libredash deploy", "## Usage"}},
+	}
+	for _, test := range tests {
+		t.Run(test.path, func(t *testing.T) {
+			response, err := server.Client().Get(server.URL + test.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d, want 200", response.StatusCode)
+			}
+			if got := response.Header.Get("Content-Type"); !strings.Contains(got, test.contentType) {
+				t.Errorf("content type = %q, want %q", got, test.contentType)
+			}
+			body := readBody(t, response)
+			for _, want := range test.contains {
+				if !strings.Contains(body, want) {
+					t.Errorf("body missing %q:\n%s", want, body)
+				}
+			}
+		})
+	}
+}
+
+func TestSiteDocumentationMCPTools(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	initialize := postMCP(t, server.URL, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`)
+	for _, want := range []string{`"protocolVersion":"2025-11-25"`, `"name":"libredash-docs"`} {
+		if !strings.Contains(initialize, want) {
+			t.Errorf("initialize response missing %q:\n%s", want, initialize)
+		}
+	}
+
+	tools := postMCP(t, server.URL, `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)
+	for _, want := range []string{`"name":"docs_catalog"`, `"name":"docs_search"`, `"name":"docs_read"`} {
+		if !strings.Contains(tools, want) {
+			t.Errorf("tools response missing %q:\n%s", want, tools)
+		}
+	}
+
+	search := postMCP(t, server.URL, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"docs_search","arguments":{"query":"line chart","limit":2}}}`)
+	if !strings.Contains(search, "charts/line") {
+		t.Errorf("search response does not contain line chart:\n%s", search)
+	}
+
+	read := postMCP(t, server.URL, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"docs_read","arguments":{"id":"api:listWorkspaces","format":"json"}}}`)
+	if !strings.Contains(read, "listWorkspaces") || !strings.Contains(read, "/api/v1/workspaces") {
+		t.Errorf("read response does not contain operation slice:\n%s", read)
+	}
+
+	crossOrigin, err := http.NewRequest(http.MethodPost, server.URL+"/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":5,"method":"tools/list","params":{}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	crossOrigin.Header.Set("Content-Type", "application/json")
+	crossOrigin.Header.Set("Origin", "https://untrusted.example")
+	response, err := http.DefaultClient.Do(crossOrigin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusForbidden {
+		t.Errorf("cross-origin MCP status = %d, want %d", response.StatusCode, http.StatusForbidden)
+	}
+}
+
+func postMCP(t *testing.T, baseURL, body string) string {
+	t.Helper()
+	request, err := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json, text/event-stream")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("MCP status = %d, body = %s", response.StatusCode, readBody(t, response))
+	}
+	return readBody(t, response)
+}
+
 func TestSiteChartDocumentationArticleRendersConfiguration(t *testing.T) {
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()

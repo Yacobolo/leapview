@@ -5,7 +5,35 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
+
+func TestRunnableCommandsDeclareDocumentationSafety(t *testing.T) {
+	root := NewCommand(context.Background())
+	seen := map[string]struct{}{}
+	var visit func(*cobra.Command)
+	visit = func(command *cobra.Command) {
+		seen[command.CommandPath()] = struct{}{}
+		if command.Runnable() {
+			if command.Annotations[documentationEffectAnnotation] == "" {
+				t.Errorf("runnable command %q has no documentation effect", command.CommandPath())
+			}
+			if command.Annotations[documentationConfirmationAnnotation] == "" {
+				t.Errorf("runnable command %q has no documentation confirmation", command.CommandPath())
+			}
+		}
+		for _, child := range command.Commands() {
+			visit(child)
+		}
+	}
+	visit(root)
+	for path := range documentedCommandSafety {
+		if _, ok := seen[path]; !ok {
+			t.Errorf("documentation safety declares unknown command %q", path)
+		}
+	}
+}
 
 func TestRootHelpExposesOnlyProjectDeploy(t *testing.T) {
 	originalArgs := os.Args
