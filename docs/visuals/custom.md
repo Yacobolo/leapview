@@ -2,6 +2,9 @@
 
 Use a custom visualization when the built-in visual types cannot express the analytical view. Custom programs run in a sandbox and receive only the compiled in-memory dataset.
 
+> [!EXPERIMENTAL]
+> Custom Vega-Lite is experimental. Its authoring contract, sandbox capabilities, and rendering behavior may change before it is promoted to stable. Prefer a built-in visual type whenever it can express the analytical view.
+
 Every preview on this page is generated from the YAML shown below it using a fixed documentation dataset.
 
 ## Basic

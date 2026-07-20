@@ -809,6 +809,7 @@ ld-site-search:not(:defined) > .site-search-active-input {
   background: var(--ld-bg-success-muted);
 }
 
+.site-docs-article .site-docs-callout-experimental,
 .site-docs-article .site-docs-callout-warning {
   border-color: var(--ld-line-warning-muted);
   background: var(--ld-bg-warning-muted);

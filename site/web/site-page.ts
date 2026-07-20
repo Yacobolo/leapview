@@ -1029,11 +1029,12 @@ function enhanceVisualKeyFieldControls(
   })
 }
 
-type CalloutKind = 'note' | 'tip' | 'warning' | 'danger'
+type CalloutKind = 'note' | 'tip' | 'experimental' | 'warning' | 'danger'
 
 const calloutKinds: Record<string, { kind: CalloutKind; label: string }> = {
   CAUTION: { kind: 'danger', label: 'Caution' },
   DANGER: { kind: 'danger', label: 'Danger' },
+  EXPERIMENTAL: { kind: 'experimental', label: 'Experimental' },
   IMPORTANT: { kind: 'note', label: 'Important' },
   NOTE: { kind: 'note', label: 'Note' },
   TIP: { kind: 'tip', label: 'Tip' },
@@ -1048,7 +1049,7 @@ function enhanceDocsCallouts(): void {
 
     const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT)
     const markerNode = walker.nextNode() as Text | null
-    const marker = markerNode?.data.match(/^\s*\[!(NOTE|TIP|WARNING|CAUTION|DANGER|IMPORTANT)\]\s*/i)
+    const marker = markerNode?.data.match(/^\s*\[!(NOTE|TIP|EXPERIMENTAL|WARNING|CAUTION|DANGER|IMPORTANT)\]\s*/i)
     if (!markerNode || !marker) return
 
     const definition = calloutKinds[marker[1].toUpperCase()]

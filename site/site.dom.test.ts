@@ -836,6 +836,19 @@ test('KPI documentation uses compact example frames', async () => {
   }
 })
 
+test('Custom Vega-Lite documentation is marked experimental', async () => {
+  const page = await browser.newPage()
+  try {
+    await page.goto(`${baseURL}/docs/visuals/custom`)
+    const callout = page.locator('.site-docs-callout[data-callout="experimental"]')
+    expect(await callout.count()).toBe(1)
+    expect(await callout.locator('.site-docs-callout-label').getByText('Experimental', { exact: true }).isVisible()).toBe(true)
+    expect(await callout.getByText('Custom Vega-Lite is experimental.', { exact: false }).isVisible()).toBe(true)
+  } finally {
+    await page.close()
+  }
+})
+
 test('every visual documentation page mounts its generated production payloads', async () => {
   const page = await browser.newPage()
   const visualTypes = ['line', 'area', 'bar', 'column', 'pie', 'donut', 'scatter', 'funnel', 'treemap', 'gauge', 'heatmap', 'sankey', 'graph', 'map', 'custom', 'candlestick', 'boxplot', 'combo', 'waterfall', 'histogram', 'radar', 'tree', 'sunburst', 'kpi', 'table', 'matrix', 'pivot']
