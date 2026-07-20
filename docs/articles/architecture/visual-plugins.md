@@ -12,7 +12,7 @@ The product contract must be understandable without knowing an ECharts option na
 
 ## Browser host
 
-The `ld-echart` host reads the chart payload from its signal, resolves the requested renderer (defaulting to `echarts`), mounts it into the canvas container, and forwards update, resize, clear, and dispose lifecycle.
+The `lv-echart` host reads the chart payload from its signal, resolves the requested renderer (defaulting to `echarts`), mounts it into the canvas container, and forwards update, resize, clear, and dispose lifecycle.
 
 It also owns product-level actions such as focus, show/copy data, CSV export, and clear selection. A renderer reports datum selection through the provided context rather than dispatching an unrelated library event as public API.
 
