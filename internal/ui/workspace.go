@@ -116,14 +116,12 @@ func catalogWithoutWorkspaceContext(catalog dashboard.Catalog) dashboard.Catalog
 type workspaceAccessSignalState struct {
 	WorkspaceAccessResponse
 	Command WorkspaceAccessCommand `json:"command"`
-	Search  string                 `json:"search"`
 }
 
 func WorkspaceAccessSignals(access WorkspaceAccessResponse) workspaceAccessSignalState {
 	return workspaceAccessSignalState{
 		WorkspaceAccessResponse: access,
 		Command:                 WorkspaceAccessCommand{},
-		Search:                  "",
 	}
 }
 
@@ -138,10 +136,11 @@ func workspaceAccessRouteBridge(workspaceID string, access WorkspaceAccessRespon
 		return nil, workspaceDocumentExtras{}
 	}
 	accessSignal := WorkspaceAccessSignals(access)
+	search := "$workspaceAccess.search = evt.detail.search; $workspaceAccess.searchStatus = {loading: true, error: ''}; $workspaceAccess.status = {loading: false, error: '', message: ''}; " + uiactions.Get("/workspaces/"+workspaceID+"/access/search")
 	upsert := "$workspaceAccess.status = {loading: true, error: '', message: ''}; $workspaceAccess.command = evt.detail; " + uiactions.Post("/workspaces/"+workspaceID+"/access/upsert")
 	remove := "$workspaceAccess.status = {loading: true, error: '', message: ''}; $workspaceAccess.command = evt.detail; " + uiactions.Post("/workspaces/"+workspaceID+"/access/remove")
 	return []g.Node{
-			g.Attr("data-on:ld-workspace-access-search__debounce.200ms", "$workspaceAccess.search = evt.detail.search"),
+			g.Attr("data-on:ld-workspace-access-search__debounce.200ms", search),
 			g.Attr("data-on:ld-workspace-access-upsert", upsert),
 			g.Attr("data-on:ld-workspace-access-remove", remove),
 		}, workspaceDocumentExtras{

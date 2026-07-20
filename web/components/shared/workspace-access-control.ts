@@ -1,6 +1,6 @@
 import { LitElement, css, html, nothing } from 'lit'
 import { property, state } from 'lit/decorators.js'
-import { Mail, Search, Trash2, Users } from 'lucide'
+import { Search, Trash2, UserRound, Users } from 'lucide'
 import { lucideIcon } from './lucide-icons'
 import './drawer'
 
@@ -24,10 +24,22 @@ type Binding = {
   role: string
 }
 
+type AccessCandidate = {
+  subjectType: 'principal' | 'group'
+  subjectId: string
+  label: string
+  detail: string
+}
+
 type AccessStatus = {
   loading?: boolean
   error?: string
   message?: string
+}
+
+type SearchStatus = {
+  loading?: boolean
+  error?: string
 }
 
 type WorkspaceAccess = {
@@ -38,7 +50,10 @@ type WorkspaceAccess = {
   mode?: string
   roles?: Role[]
   bindings?: Binding[]
+  candidates?: AccessCandidate[]
   canManage?: boolean
+  search?: string
+  searchStatus?: SearchStatus
   status?: AccessStatus
 }
 
@@ -46,7 +61,10 @@ type WorkspaceAccessInput = {
   workspace?: unknown
   roles?: unknown
   bindings?: unknown
+  candidates?: unknown
   canManage?: unknown
+  search?: unknown
+  searchStatus?: unknown
   status?: unknown
 }
 
@@ -63,7 +81,10 @@ type AccessCommand = {
 const emptyAccess: WorkspaceAccess = {
   roles: [],
   bindings: [],
+  candidates: [],
   canManage: false,
+  search: '',
+  searchStatus: {},
   status: {},
 }
 
@@ -73,13 +94,11 @@ class WorkspaceAccessControl extends LitElement {
   @property({ attribute: 'search' }) searchAttribute = ''
 
   @state() private open = false
-  @state() private email = ''
-  @state() private subjectType = 'principal'
   @state() private selectedRole = 'viewer'
   @state() private query = ''
+  @state() private selectedCandidate: AccessCandidate | null = null
 
   private previousFocus: HTMLElement | null = null
-  private searchTimer: number | null = null
 
   static styles = css`
     :host {
@@ -150,33 +169,6 @@ class WorkspaceAccessControl extends LitElement {
       line-height: var(--ld-line-height-snug);
     }
 
-    .row-action {
-      display: inline-flex;
-      width: var(--ld-control-medium);
-      height: var(--ld-control-medium);
-      flex: 0 0 auto;
-      align-items: center;
-      justify-content: center;
-      border: var(--ld-border-transparent);
-      border-radius: var(--ld-radius-default);
-      background: transparent;
-      color: var(--ld-fg-muted);
-      cursor: pointer;
-      padding: 0;
-      transition:
-        color var(--ld-transition-fast),
-        background-color var(--ld-transition-fast),
-        border-color var(--ld-transition-fast);
-    }
-
-    .row-action:hover,
-    .row-action:focus-visible {
-      border-color: var(--ld-line-muted);
-      background: var(--ld-bg-control-hover);
-      color: var(--ld-fg-default);
-      outline: 0;
-    }
-
     .drawer-body {
       display: grid;
       gap: var(--base-size-24);
@@ -225,39 +217,6 @@ class WorkspaceAccessControl extends LitElement {
       background: var(--ld-bg-control-hover);
     }
 
-    .composer {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: var(--base-size-8);
-      align-items: center;
-    }
-
-    .composer-shell {
-      min-height: var(--ld-control-medium);
-      border-radius: var(--ld-radius-tight);
-      padding: var(--base-size-4) var(--base-size-6) var(--base-size-4) var(--base-size-12);
-    }
-
-    .composer-shell input {
-      flex: 1 1 12rem;
-    }
-
-    .composer-role {
-      width: auto;
-      min-width: 7rem;
-      flex: 0 0 auto;
-      border: 0;
-      border-left: var(--ld-border-muted);
-      border-radius: 0;
-      background: transparent;
-      color: var(--ld-fg-default);
-      padding-left: var(--base-size-12);
-    }
-
-    .composer-role:focus {
-      outline-offset: var(--base-size-2);
-    }
-
     input,
     select {
       min-height: var(--ld-control-medium);
@@ -272,18 +231,14 @@ class WorkspaceAccessControl extends LitElement {
       padding: 0 var(--base-size-8);
     }
 
-    .field-shell input,
-    .field-shell select {
+    .field-shell input {
       min-height: auto;
+      flex: 1 1 auto;
       border: 0;
       border-radius: 0;
       background: transparent;
       padding: 0;
       outline: 0;
-    }
-
-    .field-shell input {
-      flex: 1 1 auto;
     }
 
     input::placeholder {
@@ -293,8 +248,129 @@ class WorkspaceAccessControl extends LitElement {
     input:focus,
     select:focus {
       border-color: var(--ld-line-accent);
-      outline: 2px solid var(--ld-line-accent-muted);
+      outline: var(--ld-border-width-focus) solid var(--ld-line-accent-muted);
       outline-offset: 0;
+    }
+
+    .access-search {
+      min-height: var(--ld-control-large);
+    }
+
+    .candidate-list {
+      display: grid;
+      overflow: hidden;
+      border: var(--ld-border-muted);
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-bg-panel);
+    }
+
+    .candidate {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: var(--base-size-32) minmax(0, 1fr);
+      align-items: center;
+      gap: var(--ld-space-control);
+      border: 0;
+      border-bottom: var(--ld-border-muted);
+      background: transparent;
+      color: var(--ld-fg-default);
+      cursor: pointer;
+      padding: var(--ld-space-control) var(--base-size-12);
+      text-align: left;
+    }
+
+    .candidate:last-child {
+      border-bottom: 0;
+    }
+
+    .candidate:hover,
+    .candidate:focus-visible,
+    .candidate-selected {
+      background: var(--ld-bg-control-hover);
+      outline: 0;
+    }
+
+    .subject-icon {
+      display: inline-flex;
+      width: var(--base-size-32);
+      height: var(--base-size-32);
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--ld-radius-full);
+      background: var(--ld-bg-control);
+      color: var(--ld-fg-muted);
+    }
+
+    .subject-icon-group {
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-bg-accent-muted);
+      color: var(--ld-fg-accent);
+    }
+
+    .subject-copy {
+      display: grid;
+      min-width: 0;
+    }
+
+    .subject-label,
+    .subject-detail {
+      overflow: hidden;
+      margin: 0;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .subject-label {
+      color: var(--ld-fg-default);
+      font-size: var(--ld-font-size-body-sm);
+      font-weight: var(--ld-font-weight-strong);
+      line-height: var(--ld-line-height-snug);
+    }
+
+    .subject-detail {
+      margin-top: var(--base-size-2);
+      color: var(--ld-fg-muted);
+      font-size: var(--ld-font-size-caption);
+      font-weight: var(--ld-font-weight-normal);
+      line-height: var(--ld-line-height-tight);
+    }
+
+    .search-state {
+      border: var(--ld-border-muted);
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-bg-panel);
+      color: var(--ld-fg-muted);
+      font-size: var(--ld-font-size-body-sm);
+      font-weight: var(--ld-font-weight-medium);
+      padding: var(--base-size-16);
+      text-align: center;
+    }
+
+    .search-state-error {
+      color: var(--ld-fg-danger);
+    }
+
+    .assignment {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(8rem, 10rem) auto;
+      align-items: center;
+      gap: var(--ld-space-control);
+      border: var(--ld-border-muted);
+      border-radius: var(--ld-radius-default);
+      background: var(--ld-bg-panel-muted);
+      padding: var(--base-size-12);
+    }
+
+    .selected-subject {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: var(--base-size-32) minmax(0, 1fr);
+      align-items: center;
+      gap: var(--ld-space-control);
+    }
+
+    .assignment-role {
+      width: 100%;
     }
 
     .submit {
@@ -326,6 +402,33 @@ class WorkspaceAccessControl extends LitElement {
       color: var(--ld-button-accent-fg-disabled);
     }
 
+    .row-action {
+      display: inline-flex;
+      width: var(--ld-control-medium);
+      height: var(--ld-control-medium);
+      flex: 0 0 auto;
+      align-items: center;
+      justify-content: center;
+      border: var(--ld-border-transparent);
+      border-radius: var(--ld-radius-default);
+      background: transparent;
+      color: var(--ld-fg-muted);
+      cursor: pointer;
+      padding: 0;
+      transition:
+        color var(--ld-transition-fast),
+        background-color var(--ld-transition-fast),
+        border-color var(--ld-transition-fast);
+    }
+
+    .row-action:hover,
+    .row-action:focus-visible {
+      border-color: var(--ld-line-muted);
+      background: var(--ld-bg-control-hover);
+      color: var(--ld-fg-default);
+      outline: 0;
+    }
+
     .submit:disabled,
     .row-action:disabled {
       cursor: not-allowed;
@@ -347,20 +450,9 @@ class WorkspaceAccessControl extends LitElement {
     }
 
     .status-message {
-      border: 1px solid var(--ld-line-success-muted);
+      border: var(--borderWidth-default) solid var(--ld-line-success-muted);
       background: var(--ld-bg-success-muted);
       color: var(--ld-fg-success);
-    }
-
-    .toolbar {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(12rem, 18rem);
-      align-items: center;
-      gap: var(--base-size-12);
-    }
-
-    .search {
-      width: 100%;
     }
 
     .list {
@@ -380,54 +472,16 @@ class WorkspaceAccessControl extends LitElement {
       padding: var(--ld-space-control) var(--base-size-12);
     }
 
+    .row:last-child {
+      border-bottom: 0;
+    }
+
     .person {
       display: grid;
+      min-width: 0;
       grid-template-columns: var(--base-size-32) minmax(0, 1fr);
       align-items: center;
       gap: var(--base-size-8);
-      min-width: 0;
-    }
-
-    .principal-copy {
-      min-width: 0;
-    }
-
-    .avatar {
-      display: inline-flex;
-      width: var(--base-size-28);
-      height: var(--base-size-28);
-      align-items: center;
-      justify-content: center;
-      border: var(--ld-border-muted);
-      border-radius: 999px;
-      background: var(--ld-bg-control);
-      color: var(--ld-fg-muted);
-      font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-strong);
-      line-height: 1;
-      text-transform: uppercase;
-    }
-
-    .name {
-      overflow: hidden;
-      margin: 0;
-      color: var(--ld-fg-default);
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: var(--ld-font-size-body-sm);
-      font-weight: var(--ld-font-weight-strong);
-      line-height: var(--ld-line-height-snug);
-    }
-
-    .email {
-      overflow: hidden;
-      margin: var(--base-size-2) 0 0;
-      color: var(--ld-fg-muted);
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-normal);
-      line-height: var(--ld-line-height-tight);
     }
 
     .empty {
@@ -442,23 +496,9 @@ class WorkspaceAccessControl extends LitElement {
     }
 
     @media (max-width: 44rem) {
-      .composer,
-      .row,
-      .toolbar {
+      .assignment,
+      .row {
         grid-template-columns: minmax(0, 1fr);
-      }
-
-      .composer-shell {
-        align-items: stretch;
-        flex-wrap: wrap;
-        padding: var(--base-size-8);
-      }
-
-      .composer-role {
-        min-width: 100%;
-        border-top: var(--ld-border-muted);
-        border-left: 0;
-        padding-left: var(--base-size-8);
       }
 
       .submit {
@@ -472,7 +512,7 @@ class WorkspaceAccessControl extends LitElement {
       this.ensureRole()
       const status = this.resolvedAccess.status
       if (status?.message && !status.error && !status.loading) {
-        this.email = ''
+        this.selectedCandidate = null
       }
     }
     if (changed.has('searchAttribute') && this.searchAttribute !== this.query) {
@@ -500,103 +540,133 @@ class WorkspaceAccessControl extends LitElement {
         <h2 class="title" slot="title" id="workspace-access-title">Manage access</h2>
         <p class="subtitle" slot="subtitle">${this.drawerSubtitle(access)}</p>
         <div class="drawer-body">
-            <section class="card" aria-label="Add workspace access">
-              <div class="label">Add people by email</div>
-              ${status.error ? html`<div class="status status-error" role="alert">${status.error}</div>` : nothing}
-              ${status.message && !status.error ? html`<div class="status status-message" role="status">${status.message}</div>` : nothing}
-              <form class="composer" @submit=${this.handleSubmit}>
-                <span class="field-shell composer-shell">
-                    ${mailIcon()}
-                    <select
-                      class="composer-role composer-subject-type"
-                      aria-label="Subject type"
-                      .value=${this.subjectType}
-                      ?disabled=${status.loading}
-                      @change=${(event: Event) => { this.subjectType = (event.currentTarget as HTMLSelectElement).value }}
-                    >
-                      <option value="principal">User</option>
-                      <option value="group">Group</option>
-                      <option value="service_principal">Service principal</option>
-                    </select>
-                    <input
-                      type=${this.subjectType === 'principal' ? 'email' : 'text'}
-                      autocomplete=${this.subjectType === 'principal' ? 'email' : 'off'}
-                      placeholder=${this.subjectType === 'principal' ? 'Search by email...' : 'Subject ID...'}
-                    aria-label=${this.subjectType === 'principal' ? 'Email principal' : 'Subject ID'}
-                    .value=${this.email}
-                    ?disabled=${status.loading}
-                      @input=${(event: Event) => { this.email = (event.currentTarget as HTMLInputElement).value }}
-                    >
-                    <select
-                      class="composer-role composer-grant-role"
-                      aria-label=${this.modeIsObject(access) ? 'Privilege to grant' : 'Role to assign'}
-                      .value=${this.selectedRole}
-                      ?disabled=${status.loading}
-                      @change=${(event: Event) => { this.selectedRole = (event.currentTarget as HTMLSelectElement).value }}
-                  >
-                    ${this.roles.map((role) => html`<option value=${role.name}>${roleLabel(role.name)}</option>`)}
-                  </select>
-                </span>
-                <button class="submit" type="submit" ?disabled=${status.loading || !this.email.trim() || !this.selectedRole}>
-                  ${status.loading ? 'Saving' : this.modeIsObject(access) ? 'Grant' : 'Assign'}
-                </button>
-              </form>
-            </section>
-            <section class="card" aria-label="Current workspace access">
-              <div class="toolbar">
-                <h3 class="section-title">${this.modeIsObject(access) ? 'Direct grants' : 'People with access'}</h3>
-                <span class="field-shell search">
-                  ${searchIcon()}
-                  <input
-                    type="search"
-                    placeholder="Search principals..."
-                    .value=${this.query}
-                    @input=${this.handleSearchInput}
-                  >
-                </span>
-              </div>
-              ${this.renderBindings(access)}
-            </section>
-          </div>
+          <section class="card" aria-label="Add workspace access">
+            <div class="label">Add people or groups</div>
+            ${status.error ? html`<div class="status status-error" role="alert">${status.error}</div>` : nothing}
+            ${status.message && !status.error ? html`<div class="status status-message" role="status">${status.message}</div>` : nothing}
+            <label class="field-shell access-search">
+              ${searchIcon()}
+              <input
+                type="search"
+                autocomplete="off"
+                aria-label="Search people and groups"
+                aria-controls="workspace-access-candidates"
+                placeholder="Search people and groups..."
+                .value=${this.query}
+                @input=${this.handleSearchInput}
+              >
+            </label>
+            ${this.renderCandidates(access)}
+            ${this.selectedCandidate ? this.renderAssignment(access, this.selectedCandidate, status) : nothing}
+          </section>
+          <section class="card" aria-label="Current workspace access">
+            <h3 class="section-title">${this.modeIsObject(access) ? 'Direct grants' : 'People with access'}</h3>
+            ${this.renderBindings(access)}
+          </section>
+        </div>
       </ld-drawer>
     `
   }
 
+  private renderCandidates(access: WorkspaceAccess) {
+    const searchStatus = access.searchStatus ?? {}
+    if (!this.query.trim()) {
+      return html`<div class="search-state">Search by name or email.</div>`
+    }
+    if (searchStatus.loading) {
+      return html`<div class="search-state" role="status">Searching...</div>`
+    }
+    if (searchStatus.error) {
+      return html`<div class="search-state search-state-error" role="alert">${searchStatus.error}</div>`
+    }
+    const candidates = access.candidates ?? []
+    if (candidates.length === 0) {
+      return html`<div class="search-state">No people or groups found.</div>`
+    }
+    return html`
+      <div id="workspace-access-candidates" class="candidate-list" role="listbox" aria-label="People and groups">
+        ${candidates.map((candidate) => {
+          const selected = sameCandidate(candidate, this.selectedCandidate)
+          return html`
+            <button
+              class=${selected ? 'candidate candidate-selected' : 'candidate'}
+              type="button"
+              role="option"
+              aria-selected=${String(selected)}
+              data-subject-type=${candidate.subjectType}
+              @click=${() => { this.selectedCandidate = candidate }}
+            >
+              ${subjectIcon(candidate.subjectType)}
+              ${subjectCopy(candidate.label, candidate.detail)}
+            </button>
+          `
+        })}
+      </div>
+    `
+  }
+
+  private renderAssignment(access: WorkspaceAccess, candidate: AccessCandidate, status: AccessStatus) {
+    return html`
+      <form class="assignment" @submit=${this.handleSubmit}>
+        <div class="selected-subject">
+          ${subjectIcon(candidate.subjectType)}
+          ${subjectCopy(candidate.label, candidate.detail)}
+        </div>
+        <select
+          class="assignment-role"
+          aria-label=${this.modeIsObject(access) ? 'Privilege to grant' : 'Role to assign'}
+          .value=${this.selectedRole}
+          ?disabled=${status.loading}
+          @change=${(event: Event) => { this.selectedRole = (event.currentTarget as HTMLSelectElement).value }}
+        >
+          ${this.roles.map((role) => html`<option value=${role.name}>${roleLabel(role.name)}</option>`)}
+        </select>
+        <button class="submit assign" type="submit" ?disabled=${status.loading || !this.selectedRole}>
+          ${status.loading ? 'Saving' : this.modeIsObject(access) ? 'Grant' : 'Assign'}
+        </button>
+      </form>
+    `
+  }
+
   private renderBindings(access: WorkspaceAccess) {
-    const rows = this.filteredBindings(access.bindings ?? [])
+    const rows = access.bindings ?? []
     if (rows.length === 0) {
-      return html`<div class="empty">${this.query ? 'No access entries match this search.' : 'No role bindings yet.'}</div>`
+      return html`<div class="empty">No role bindings yet.</div>`
     }
     return html`
       <div class="list">
-        ${rows.map((binding) => html`
-          <div class="row">
-            <div class="person">
-              <span class="avatar" aria-hidden="true">${principalInitial(binding)}</span>
-              <span class="principal-copy">
-                <p class="name">${displayLabel(binding)}</p>
-                <p class="email">${binding.email}</p>
-              </span>
+        ${rows.map((binding) => {
+          const subjectType = binding.subjectType === 'group' ? 'group' : 'principal'
+          const detail = subjectType === 'group' ? 'Group' : binding.email
+          return html`
+            <div class="row">
+              <div class="person">
+                ${subjectIcon(subjectType)}
+                <span class="subject-copy">
+                  <p class="name subject-label">${displayLabel(binding)}</p>
+                  <p class="email subject-detail">${detail}</p>
+                </span>
+              </div>
+              <select
+                aria-label=${`${this.modeIsObject(access) ? 'Privilege' : 'Role'} for ${displayLabel(binding)}`}
+                .value=${binding.role}
+                ?disabled=${access.status?.loading}
+                @change=${(event: Event) => this.updateBindingRole(binding, (event.currentTarget as HTMLSelectElement).value)}
+              >
+                ${this.roles.map((role) => html`<option value=${role.name}>${roleLabel(role.name)}</option>`)}
+              </select>
+              <button
+                class="row-action"
+                type="button"
+                aria-label=${`Remove ${displayLabel(binding)}`}
+                ?disabled=${access.status?.loading}
+                @click=${() => this.removeBinding(binding)}
+              >
+                ${trashIcon()}
+              </button>
             </div>
-            <select
-              aria-label=${`${this.modeIsObject(access) ? 'Privilege' : 'Role'} for ${displayLabel(binding)}`}
-              .value=${binding.role}
-              ?disabled=${access.status?.loading}
-              @change=${(event: Event) => this.updateBindingRole(binding, (event.currentTarget as HTMLSelectElement).value)}
-            >
-              ${this.roles.map((role) => html`<option value=${role.name}>${roleLabel(role.name)}</option>`)}
-            </select>
-            <button
-              class="row-action"
-              type="button"
-              aria-label=${`Remove ${displayLabel(binding)}`}
-              ?disabled=${access.status?.loading}
-              @click=${() => this.removeBinding(binding)}
-            >
-              ${trashIcon()}
-            </button>
-          </div>
-        `)}
+          `
+        })}
       </div>
     `
   }
@@ -635,24 +705,14 @@ class WorkspaceAccessControl extends LitElement {
     return `${access.workspace?.title ?? 'Workspace'} roles apply to every published asset in this workspace.`
   }
 
-  private filteredBindings(bindings: Binding[]): Binding[] {
-    const query = this.query.trim().toLowerCase()
-    if (!query) return bindings
-    return bindings.filter((binding) => {
-      return `${displayLabel(binding)} ${binding.email} ${binding.groupName ?? ''} ${binding.subjectId ?? ''} ${binding.subjectType ?? ''} ${binding.role}`.toLowerCase().includes(query)
-    })
-  }
-
   private readonly handleSearchInput = (event: Event): void => {
     this.query = (event.currentTarget as HTMLInputElement).value
-    if (this.searchTimer !== null) window.clearTimeout(this.searchTimer)
-    this.searchTimer = window.setTimeout(() => {
-      this.dispatchEvent(new CustomEvent('ld-workspace-access-search', {
-        bubbles: true,
-        composed: true,
-        detail: { search: this.query },
-      }))
-    }, 200)
+    this.selectedCandidate = null
+    this.dispatchEvent(new CustomEvent('ld-workspace-access-search', {
+      bubbles: true,
+      composed: true,
+      detail: { search: this.query },
+    }))
   }
 
   private readonly openDialog = (): void => {
@@ -665,10 +725,6 @@ class WorkspaceAccessControl extends LitElement {
 
   private readonly closeDialog = (): void => {
     this.open = false
-    if (this.searchTimer !== null) {
-      window.clearTimeout(this.searchTimer)
-      this.searchTimer = null
-    }
     window.setTimeout(() => {
       if (this.previousFocus?.isConnected) this.previousFocus.focus()
       this.previousFocus = null
@@ -677,15 +733,15 @@ class WorkspaceAccessControl extends LitElement {
 
   private readonly handleSubmit = (event: Event): void => {
     event.preventDefault()
-    const subjectID = this.email.trim()
+    const candidate = this.selectedCandidate
+    if (!candidate || !this.selectedRole) return
     const command: AccessCommand = {
-      email: this.subjectType === 'principal' ? subjectID : '',
+      email: '',
       role: this.modeIsObject() ? '' : this.selectedRole,
       privilege: this.modeIsObject() ? this.selectedRole : '',
-      subjectType: this.subjectType,
-      subjectId: this.subjectType === 'principal' ? '' : subjectID,
+      subjectType: candidate.subjectType,
+      subjectId: candidate.subjectId,
     }
-    if (!subjectID || (!command.role && !command.privilege)) return
     this.dispatchEvent(new CustomEvent('ld-workspace-access-upsert', {
       bubbles: true,
       composed: true,
@@ -704,7 +760,7 @@ class WorkspaceAccessControl extends LitElement {
         privilege: this.modeIsObject() ? role : '',
         bindingId: binding.id,
         subjectType: binding.subjectType || 'principal',
-        subjectId: binding.subjectId,
+        subjectId: binding.subjectId || binding.principalId,
       },
     }))
   }
@@ -734,7 +790,10 @@ function normalizeAccess(access: WorkspaceAccessInput): WorkspaceAccess {
     mode: stringValue(raw.mode ?? raw.Mode),
     roles: Array.isArray(access.roles) ? access.roles.map(normalizeRole).filter(isRole) : [],
     bindings: Array.isArray(access.bindings) ? access.bindings.map(normalizeBinding).filter(isBinding) : [],
+    candidates: Array.isArray(access.candidates) ? access.candidates.map(normalizeCandidate).filter(isCandidate) : [],
     canManage: Boolean(access.canManage ?? raw.CanManage),
+    search: stringValue(access.search ?? raw.Search),
+    searchStatus: normalizeSearchStatus(access.searchStatus ?? raw.SearchStatus),
     status: normalizeStatus(access.status ?? raw.Status),
   }
 }
@@ -776,6 +835,20 @@ function normalizeBinding(binding: unknown): Binding | null {
   }
 }
 
+function normalizeCandidate(candidate: unknown): AccessCandidate | null {
+  const raw = recordValue(candidate)
+  const subjectType = stringValue(raw.subjectType ?? raw.SubjectType)
+  const subjectId = stringValue(raw.subjectId ?? raw.SubjectID)
+  const label = stringValue(raw.label ?? raw.Label)
+  if ((subjectType !== 'principal' && subjectType !== 'group') || !subjectId || !label) return null
+  return {
+    subjectType,
+    subjectId,
+    label,
+    detail: stringValue(raw.detail ?? raw.Detail),
+  }
+}
+
 function normalizeStatus(status: unknown): AccessStatus {
   const raw = recordValue(status)
   return {
@@ -785,12 +858,24 @@ function normalizeStatus(status: unknown): AccessStatus {
   }
 }
 
+function normalizeSearchStatus(status: unknown): SearchStatus {
+  const raw = recordValue(status)
+  return {
+    loading: Boolean(raw.loading ?? raw.Loading),
+    error: stringValue(raw.error ?? raw.Error),
+  }
+}
+
 function isRole(role: Role | null): role is Role {
   return role !== null
 }
 
 function isBinding(binding: Binding | null): binding is Binding {
   return binding !== null
+}
+
+function isCandidate(candidate: AccessCandidate | null): candidate is AccessCandidate {
+  return candidate !== null
 }
 
 function recordValue(value: unknown): Record<string, unknown> {
@@ -805,17 +890,27 @@ function displayLabel(binding: Binding): string {
   return binding.displayName || binding.groupName || binding.email || binding.subjectId || 'Principal'
 }
 
-function principalInitial(binding: Binding): string {
-  const label = displayLabel(binding).trim()
-  return label ? label[0] : '?'
+function sameCandidate(left: AccessCandidate, right: AccessCandidate | null): boolean {
+  return Boolean(right && left.subjectType === right.subjectType && left.subjectId === right.subjectId)
 }
 
 function roleLabel(role: string): string {
   return role.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
-function usersIcon() {
-  return html`<span class="icon" aria-hidden="true">${lucideIcon(Users, { size: 16 })}</span>`
+function subjectCopy(label: string, detail: string) {
+  return html`
+    <span class="subject-copy">
+      <span class="subject-label">${label}</span>
+      <span class="subject-detail">${detail}</span>
+    </span>
+  `
+}
+
+function subjectIcon(subjectType: 'principal' | 'group', extraClass = '') {
+  const className = `${extraClass} subject-icon subject-icon-${subjectType}`.trim()
+  const icon = subjectType === 'group' ? Users : UserRound
+  return html`<span class=${className} aria-hidden="true">${lucideIcon(icon, { size: 16 })}</span>`
 }
 
 function trashIcon() {
@@ -826,11 +921,11 @@ function searchIcon() {
   return html`<span class="icon" aria-hidden="true">${lucideIcon(Search, { size: 16 })}</span>`
 }
 
-function mailIcon() {
-  return html`<span class="icon" aria-hidden="true">${lucideIcon(Mail, { size: 16 })}</span>`
+function usersIcon() {
+  return html`<span class="icon" aria-hidden="true">${lucideIcon(Users, { size: 16 })}</span>`
 }
 
-customElements.define('ld-workspace-access-control', WorkspaceAccessControl)
+if (!customElements.get('ld-workspace-access-control')) customElements.define('ld-workspace-access-control', WorkspaceAccessControl)
 
 declare global {
   interface HTMLElementTagNameMap {

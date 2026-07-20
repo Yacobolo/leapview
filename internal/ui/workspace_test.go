@@ -949,6 +949,7 @@ func TestWorkspaceAccessControlRendersForManagers(t *testing.T) {
 	for _, want := range []string{
 		`<ld-workspace-page`,
 		`data-on:ld-workspace-access-search__debounce.200ms=`,
+		`/workspaces/libredash/access/search`,
 		`data-on:ld-workspace-access-upsert=`,
 		`data-on:ld-workspace-access-remove=`,
 		`workspaceAccess`,

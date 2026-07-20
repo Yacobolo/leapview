@@ -1270,14 +1270,29 @@ model WorkspaceAccessCommand {
   `subjectType`: string;
 }
 
+model WorkspaceAccessCandidate {
+  `detail`: string;
+  `label`: string;
+  `subjectId`: string;
+  `subjectType`: string;
+}
+
+model WorkspaceAccessSearchStatus {
+  `error`: string;
+  `loading`: boolean;
+}
+
 model WorkspaceAccessResponse {
   `bindings`: unknown[];
+  `candidates`: WorkspaceAccessCandidate[];
   `canManage`: boolean;
   `mode`?: string;
   `objectId`?: string;
   `objectTitle`?: string;
   `objectType`?: string;
   `roles`: unknown[];
+  `search`: string;
+  `searchStatus`: WorkspaceAccessSearchStatus;
   `status`: WorkspaceAccessStatus;
   `workspace`: unknown;
 }
@@ -1286,6 +1301,7 @@ model WorkspaceAccessResponse {
 @apigen.`metadata`(#{ `x-libredash-contract-role`: "signal", `x-libredash-surface`: "workspace" })
 model WorkspaceAccessSignal {
   `bindings`: unknown[];
+  `candidates`: WorkspaceAccessCandidate[];
   `canManage`: boolean;
   `command`: WorkspaceAccessCommand;
   `mode`?: string;
@@ -1294,6 +1310,7 @@ model WorkspaceAccessSignal {
   `objectType`?: string;
   `roles`: unknown[];
   `search`: string;
+  `searchStatus`: WorkspaceAccessSearchStatus;
   `status`: WorkspaceAccessStatus;
   `workspace`: unknown;
 }

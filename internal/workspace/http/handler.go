@@ -40,8 +40,28 @@ type Handler struct {
 type workspaceAccessSignalPayload struct {
 	WorkspaceAccess struct {
 		Command ui.WorkspaceAccessCommand `json:"command"`
+		Search  string                    `json:"search"`
 	} `json:"workspaceAccess"`
 	WorkspaceAccessCommand ui.WorkspaceAccessCommand `json:"workspaceAccessCommand"`
+}
+
+func (h Handler) AccessSearch(w nethttp.ResponseWriter, r *nethttp.Request) {
+	signals := workspaceAccessSignalPayload{}
+	if err := pagestream.ReadSignals(r, &signals); err != nil {
+		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
+		return
+	}
+	workspaceID := h.workspaceID(chi.URLParam(r, "workspace"))
+	workspaceView := h.workspaceResponse(r, workspaceID)
+	response := h.workspaceAccess(r, workspaceView, true, ui.WorkspaceAccessStatus{})
+	response.Search = strings.TrimSpace(signals.WorkspaceAccess.Search)
+	candidates, err := h.ReadModel.WorkspaceAccessCandidates(r, workspaceID, response.Search, 8)
+	if err != nil {
+		response.SearchStatus.Error = err.Error()
+	} else {
+		response.Candidates = candidates
+	}
+	_ = pagestream.PatchResponse(w, r, pagestream.SignalPatch{"workspaceAccess": ui.WorkspaceAccessSignals(response)})
 }
 
 func (signals workspaceAccessSignalPayload) command() ui.WorkspaceAccessCommand {

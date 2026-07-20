@@ -49,10 +49,12 @@ const emptyWorkspaceAccess: WorkspaceAccessSignal = {
   workspace: {},
   roles: [],
   bindings: [],
+  candidates: [],
   canManage: false,
   status: { loading: false, error: '', message: '' },
   command: { bindingId: '', email: '', principalId: '', privilege: '', role: '', subjectId: '', subjectType: '' },
   search: '',
+  searchStatus: { loading: false, error: '' },
 }
 
 class LibreDashWorkspacePage extends DatastarLit(LitElement) {

@@ -334,7 +334,7 @@ test('workspace asset search filters the current asset rows', async () => {
   }
 })
 
-test('workspace access drawer normalizes Go-shaped access signals', async () => {
+test('workspace access drawer searches principals and groups before assigning a role', async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
   try {
     await page.goto(baseURL)
@@ -344,21 +344,44 @@ test('workspace access drawer normalizes Go-shaped access signals', async () => 
     const state = await page.evaluate(async () => {
       const workspace = document.querySelector('ld-workspace-page') as any
       const accessControl = workspace.shadowRoot.querySelector('ld-workspace-access-control') as any
+      const searchEvents: unknown[] = []
+      const upsertEvents: unknown[] = []
+      accessControl.addEventListener('ld-workspace-access-search', (event: CustomEvent) => searchEvents.push(event.detail))
+      accessControl.addEventListener('ld-workspace-access-upsert', (event: CustomEvent) => upsertEvents.push(event.detail))
       accessControl.shadowRoot.querySelector('.trigger').click()
       await accessControl.updateComplete
       const drawer = accessControl.shadowRoot.querySelector('ld-drawer') as any
       const dialog = drawer?.shadowRoot?.querySelector('[role="dialog"]')
-      const roleOptions = Array.from(accessControl.shadowRoot.querySelectorAll('.composer-role option')).map((option) => ({
+      const search = accessControl.shadowRoot.querySelector('.access-search input') as HTMLInputElement
+      search.value = 'finance'
+      search.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }))
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      const candidates = Array.from(accessControl.shadowRoot.querySelectorAll<HTMLButtonElement>('.candidate'))
+      const candidateTypes = candidates.map((candidate) => candidate.dataset.subjectType)
+      candidates[0]?.click()
+      await accessControl.updateComplete
+      const rolePicker = accessControl.shadowRoot.querySelector('.assignment-role') as HTMLSelectElement
+      const roleOptions = Array.from(rolePicker.options).map((option) => ({
         value: (option as HTMLOptionElement).value,
         label: option.textContent?.trim(),
       }))
+      rolePicker.value = 'workspace_admin'
+      rolePicker.dispatchEvent(new Event('change', { bubbles: true, composed: true }))
+      accessControl.shadowRoot.querySelector<HTMLButtonElement>('.assign')?.click()
       const rowRole = accessControl.shadowRoot.querySelector('.row select') as HTMLSelectElement | null
       return {
         hasDrawer: Boolean(drawer),
         hasDialog: Boolean(dialog),
         modal: dialog?.getAttribute('aria-modal'),
         title: accessControl.shadowRoot.querySelector('.subtitle')?.textContent?.trim(),
+        hasSubjectTypePicker: Boolean(accessControl.shadowRoot.querySelector('.composer-subject-type')),
+        searchPlaceholder: search.placeholder,
+        searchEvents,
+        candidateTypes,
+        candidateLabels: candidates.map((candidate) => candidate.textContent?.replace(/\s+/g, ' ').trim()),
+        selectedSubject: accessControl.shadowRoot.querySelector('.selected-subject')?.textContent?.replace(/\s+/g, ' ').trim(),
         roleOptions,
+        upsertEvents,
         rowRoleValue: rowRole?.value,
         principal: accessControl.shadowRoot.querySelector('.name')?.textContent?.trim(),
       }
@@ -369,13 +392,23 @@ test('workspace access drawer normalizes Go-shaped access signals', async () => 
       hasDialog: true,
       modal: 'true',
       title: 'LibreDash Workspace roles apply to every published asset in this workspace.',
+      hasSubjectTypePicker: false,
+      searchPlaceholder: 'Search people and groups...',
+      searchEvents: [{ search: 'finance' }],
+      candidateTypes: ['principal', 'group'],
+      candidateLabels: ['Ana Analyst ana@example.com', 'Analytics Group'],
+      selectedSubject: 'Ana Analyst ana@example.com',
       roleOptions: [
-        { value: 'principal', label: 'User' },
-        { value: 'group', label: 'Group' },
-        { value: 'service_principal', label: 'Service principal' },
         { value: 'viewer', label: 'Viewer' },
         { value: 'workspace_admin', label: 'Workspace Admin' },
       ],
+      upsertEvents: [{
+        email: '',
+        role: 'workspace_admin',
+        privilege: '',
+        subjectType: 'principal',
+        subjectId: 'principal_ana',
+      }],
       rowRoleValue: 'viewer',
       principal: 'analyst@example.com',
     })
@@ -640,10 +673,15 @@ function testDocument(root: 'workspace' | 'connections' | 'asset'): string {
       DisplayName: '',
       Role: 'viewer',
     }],
+    candidates: [
+      { subjectType: 'principal', subjectId: 'principal_ana', label: 'Ana Analyst', detail: 'ana@example.com' },
+      { subjectType: 'group', subjectId: 'group_analytics', label: 'Analytics', detail: 'Group' },
+    ],
     canManage: true,
     status: { loading: false, error: '', message: '' },
     command: { email: '', role: '', principalId: '' },
-    search: '',
+    search: 'ana',
+    searchStatus: { loading: false, error: '' },
   }
   const route = root === 'connections'
     ? { signals: { page: connectionsPage }, element: '<ld-connections-page></ld-connections-page>' }
