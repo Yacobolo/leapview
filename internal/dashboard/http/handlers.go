@@ -16,6 +16,7 @@ import (
 	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 	reportui "github.com/Yacobolo/libredash/internal/dashboard/ui"
 	"github.com/Yacobolo/libredash/internal/dataquery"
+	"github.com/Yacobolo/libredash/internal/ui"
 	"github.com/Yacobolo/libredash/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
@@ -49,6 +50,7 @@ type Handler struct {
 	ChromeDecorators     func(r *nethttp.Request) []reportui.ChromeDecorator
 	Environment          func(*nethttp.Request) string
 	DataRefreshedAt      func(context.Context, string, string, string) string
+	AgentBootstrap       func(*nethttp.Request, string) ui.ChatViewState
 }
 
 func (h Handler) filterAuthorizedDashboards(ctx context.Context, principalID, workspaceID string, rows []api.DashboardSummary) ([]api.DashboardSummary, error) {

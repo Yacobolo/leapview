@@ -38,6 +38,12 @@ func TestDashboardInitialEnvelopeValidatesPageScopedPayloads(t *testing.T) {
 	if len(envelope.ComponentStatus) != 0 {
 		t.Fatalf("initial component status = %#v, want empty", envelope.ComponentStatus)
 	}
+	if envelope.AgentContext.Surface != "dashboard" || envelope.AgentContext.PageID != report.Pages[0].ID || envelope.AgentContext.ModelID != model.Name {
+		t.Fatalf("agent context = %#v", envelope.AgentContext)
+	}
+	if envelope.AgentContext.References == nil || envelope.AgentVisuals == nil {
+		t.Fatalf("dashboard agent collections must be non-nil: context=%#v visuals=%#v", envelope.AgentContext, envelope.AgentVisuals)
+	}
 }
 
 func TestDashboardEnvelopeRejectsMissingReferencedPayload(t *testing.T) {

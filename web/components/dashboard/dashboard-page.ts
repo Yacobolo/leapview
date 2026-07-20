@@ -1,6 +1,8 @@
 import { LitElement, css, html, nothing } from 'lit'
 import { property, state } from 'lit/decorators.js'
+import { Bot, MessageSquareText } from 'lucide'
 import type {
+  AgentVisualReferenceSignal,
   DashboardComponentSignal,
   DashboardComponentStatus,
   DashboardFilters,
@@ -14,7 +16,9 @@ import type {
 } from '../../generated/signals'
 import { DatastarLit } from '../shared/datastar-lit'
 import { checkSignalContract } from '../shared/signal-contract'
+import { lucideIcon } from '../shared/lucide-icons'
 import '../navigation/sub-sidebar'
+import '../chat/chat-drawer'
 import './filters/filter-dock'
 import './report-canvas'
 import './report-footer'
@@ -63,6 +67,8 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
   @state() private unsupportedKinds = new Set<string>()
   @state() private optimisticSelections: CanonicalInteractionSelection[] | null = null
   @state() private optimisticTargetKeys = new Set<string>()
+	@state() private agentDrawerOpen = false
+	@state() private agentReferences: AgentVisualReferenceSignal[] = []
   private optimisticExpectedGeneration = 0
   private optimisticRollbackTimer?: ReturnType<typeof setTimeout>
   private renderSnapshot?: DashboardRenderSnapshot
@@ -82,9 +88,17 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     .route {
       display: grid;
       min-height: 100svh;
-      grid-template-columns: auto minmax(0, 1fr);
+		grid-template-columns: auto minmax(0, 1fr) 0;
       background: var(--ld-bg-app);
     }
+
+		.route.agent-open {
+			grid-template-columns: auto minmax(0, 1fr) 420px;
+		}
+
+		.route.agent-open > ld-chat-drawer {
+			width: 100%;
+		}
 
     .main {
       display: grid;
@@ -167,6 +181,32 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
       background: var(--ld-bg-control-hover);
       outline: 0;
     }
+
+		.agent-toggle {
+			display: inline-flex;
+			width: auto;
+			gap: var(--base-size-6);
+			border-color: transparent;
+			padding-inline: var(--base-size-8);
+			font-size: var(--ld-font-size-body-sm);
+			font-weight: var(--ld-font-weight-medium);
+		}
+
+		.agent-toggle[aria-expanded='true'] {
+			width: var(--control-medium-size);
+			padding-inline: 0;
+			background: var(--ld-bg-control-hover);
+		}
+
+		.agent-toggle[aria-expanded='true'] span {
+			display: none;
+		}
+
+		.agent-toggle svg,
+		.ask-visual svg {
+			width: var(--base-size-16);
+			height: var(--base-size-16);
+		}
 
     .icon-button[disabled] {
       cursor: not-allowed;
@@ -282,6 +322,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
 
     @media (max-width: 640px) {
       .route,
+			.route.agent-open,
       .body {
         grid-template-columns: 1fr;
       }
@@ -385,7 +426,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     this.renderSnapshot = snapshot
     const refreshProgress = this.refreshProgress(snapshot)
     return html`
-      <div class="route">
+			<div class=${`route${this.agentDrawerOpen ? ' agent-open' : ''}`}>
         <ld-sub-sidebar .config=${this.pageSidebar(page)}></ld-sub-sidebar>
         <section class="main" aria-label="LibreDash report canvas">
           <header class="header">
@@ -393,6 +434,15 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
               <h1>${page.title}</h1>
               <p class="detail">${page.headerDetail}</p>
             </div>
+						<div class="actions">
+							<button
+								type="button"
+								class="icon-button agent-toggle"
+								aria-label="Toggle dashboard agent"
+								aria-expanded=${String(this.agentDrawerOpen)}
+								@click=${() => { this.agentDrawerOpen = !this.agentDrawerOpen }}
+							>${lucideIcon(Bot)}<span>Ask</span></button>
+						</div>
           </header>
           <div class="body">
             ${this.renderRefreshProgress(refreshProgress)}
@@ -405,6 +455,13 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
           </div>
           <ld-report-footer .status=${snapshot.status}></ld-report-footer>
         </section>
+				<ld-chat-drawer
+					?open=${this.agentDrawerOpen}
+					style=${this.agentDrawerOpen ? 'width:min(420px, 100vw)' : 'width:0'}
+					.suggestions=${this.agentSuggestions(page)}
+					@ld-chat-drawer-close=${() => { this.agentDrawerOpen = false }}
+					@ld-agent-references-change=${this.handleAgentReferencesChanged}
+				></ld-chat-drawer>
       </div>
       <ld-visual-modal></ld-visual-modal>
     `
@@ -466,6 +523,8 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     const visualType = component.visual ? this.visuals[component.visual]?.type ?? '' : ''
     const statusKey = this.componentStatusKey(component)
     const componentRefreshStatus = statusKey ? this.refreshStatusFor(statusKey) : undefined
+		const askReference = this.agentReference(component)
+		const referenced = askReference ? this.agentReferences.some((reference) => reference.componentId === askReference.componentId) : false
     return html`
               <ld-dashboard-visual-frame
                 data-canvas-visual
@@ -477,8 +536,11 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
         data-w=${component.width}
         data-h=${component.height}
         data-component-status-key=${statusKey || nothing}
+		?data-agent-referenced=${referenced}
         .transparent=${component.kind === 'header'}
         .refreshStatus=${componentRefreshStatus}
+		.askReference=${askReference}
+		@ld-agent-reference=${this.handleAgentReference}
       >
         ${this.renderComponentContent(component)}
       </ld-dashboard-visual-frame>
@@ -553,6 +615,37 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
       ></ld-filter-dock>
     `
   }
+
+	private agentSuggestions(page: DashboardPageSignal): AgentVisualReferenceSignal[] {
+		return page.components
+			.map((component) => this.agentReference(component))
+			.filter((reference): reference is AgentVisualReferenceSignal => Boolean(reference))
+	}
+
+	private agentReference(component: DashboardComponentSignal): AgentVisualReferenceSignal | undefined {
+		if (component.kind !== 'visual' || !component.visual) return undefined
+		const visual = this.visuals[component.visual]
+		if (!visual) return undefined
+		return {
+			kind: 'visual',
+			componentId: component.id,
+			visualId: component.visual,
+			title: component.title || visual.title || component.visual,
+			visualType: visual.type,
+		}
+	}
+
+	private handleAgentReference = (event: CustomEvent<AgentVisualReferenceSignal>) => {
+		const reference = event.detail
+		if (!reference) return
+		this.agentDrawerOpen = true
+		const drawer = this.shadowRoot?.querySelector('ld-chat-drawer') as (HTMLElement & { openWithReference(reference: AgentVisualReferenceSignal): void }) | null
+		drawer?.openWithReference(reference)
+	}
+
+	private handleAgentReferencesChanged = (event: CustomEvent<{ references: AgentVisualReferenceSignal[] }>) => {
+		this.agentReferences = [...(event.detail.references ?? [])]
+	}
 
   private missingPayload(kind: string) {
     return html`<div class="unsupported">Missing ${kind} payload</div>`
@@ -694,6 +787,7 @@ function stableSignature(value: unknown): string {
 class DashboardVisualFrame extends LitElement {
   @property({ type: Boolean, reflect: true }) transparent = false
   @property({ type: Object, attribute: false }) refreshStatus?: DashboardComponentStatus
+	@property({ type: Object, attribute: false }) askReference?: AgentVisualReferenceSignal
 
   static styles = css`
     :host {
@@ -716,6 +810,46 @@ class DashboardVisualFrame extends LitElement {
       background: var(--ld-bg-panel);
       box-sizing: border-box;
     }
+
+		.ask-visual {
+			position: absolute;
+			top: var(--base-size-8);
+			right: var(--base-size-8);
+			z-index: 4;
+			display: inline-flex;
+			height: var(--control-medium-size);
+			align-items: center;
+			gap: var(--base-size-6);
+			border: var(--ld-border-default);
+			border-radius: var(--ld-radius-default);
+			background: var(--ld-bg-panel);
+			color: var(--ld-fg-default);
+			cursor: pointer;
+			opacity: 0.78;
+			padding: 0 var(--base-size-8);
+			box-shadow: var(--shadow-resting-small);
+			font: inherit;
+			font-size: var(--ld-font-size-caption);
+			font-weight: var(--ld-font-weight-medium);
+			transform: translateY(0);
+			transition: opacity var(--ld-transition-fast), transform var(--ld-transition-fast);
+		}
+
+		.frame:hover .ask-visual,
+		.ask-visual:focus-visible,
+		:host([data-agent-referenced]) .ask-visual {
+			opacity: 1;
+			transform: translateY(0);
+		}
+
+		:host([data-agent-referenced]) .frame {
+			box-shadow: inset 0 0 0 2px var(--ld-line-accent);
+		}
+
+		.ask-visual svg {
+			width: var(--base-size-16);
+			height: var(--base-size-16);
+		}
 
     :host([transparent]) .frame {
       border-color: transparent;
@@ -794,6 +928,11 @@ class DashboardVisualFrame extends LitElement {
     return html`
       <article class="frame" aria-busy=${refreshStatus?.loading ? 'true' : 'false'}>
         <slot></slot>
+				${this.askReference ? html`
+					<button class="ask-visual" type="button" title="Ask about ${this.askReference.title}" @click=${this.askVisual}>
+						${lucideIcon(MessageSquareText)}<span>Ask</span>
+					</button>
+				` : nothing}
         ${refreshStatus?.error ? html`
           <div class="refresh-overlay error" role="alert">
             <strong>Could not refresh this component</strong>
@@ -807,6 +946,17 @@ class DashboardVisualFrame extends LitElement {
       </article>
     `
   }
+
+	private askVisual(event: MouseEvent) {
+		event.preventDefault()
+		event.stopPropagation()
+		if (!this.askReference) return
+		this.dispatchEvent(new CustomEvent('ld-agent-reference', {
+			bubbles: true,
+			composed: true,
+			detail: this.askReference,
+		}))
+	}
 }
 
 function tagForComponent(component: DashboardComponentSignal, visuals: Record<string, DashboardVisual>): string {

@@ -44,7 +44,7 @@ afterAll(async () => {
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
 }, 15_000)
 
-test('composer renders an elevated centered prompt surface', async () => {
+test('composer renders a compact centered prompt surface', async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
   try {
     await page.goto(baseURL)
@@ -88,10 +88,10 @@ test('composer renders an elevated centered prompt surface', async () => {
       surfaceLeft: 260,
       surfaceDisplay: 'grid',
       surfaceRadius: '12px',
-      surfaceShadow: 'rgba(0, 0, 0, 0.12) 0px 8px 24px 0px',
+      surfaceShadow: 'none',
       textareaPlaceholder: 'Ask about dashboards, metrics, or models...',
       textareaResize: 'none',
-      textareaMinHeight: 36,
+      textareaMinHeight: 32,
       textareaMaxHeight: 160,
       actionsJustify: 'flex-end',
       buttonWidth: 32,
@@ -155,7 +155,7 @@ test('composer preserves submit, multiline, disabled, and pending behavior', asy
 
     expect(events.received).toEqual(['Revenue trend'])
     expect(events.enabledAfterInput).toBe(true)
-    expect(events.singleLineHeight).toBe(36)
+    expect(events.singleLineHeight).toBe(32)
     expect(events.multilineHeight).toBeGreaterThan(events.singleLineHeight)
     expect(events.multilineHeight).toBeLessThanOrEqual(160)
     expect(events.multilineOverflowY).toBe('hidden')
@@ -165,6 +165,52 @@ test('composer preserves submit, multiline, disabled, and pending behavior', asy
     expect(events.hasSpinner).toBe(true)
     expect(events.textareaDisabled).toBe(true)
     expect(events.disabledButton).toBe(true)
+  } finally {
+    await page.close()
+  }
+})
+
+test('composer supports keyboard-friendly @ visual references', async () => {
+  const page = await browser.newPage({ viewport: { width: 800, height: 600 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('ld-chat-composer'))
+    const result = await page.locator('ld-chat-composer').evaluate(async (element: any) => {
+      const reference = {
+        kind: 'visual',
+        componentId: 'orders-chart',
+        visualId: 'orders_chart',
+        title: 'Orders by status',
+        visualType: 'bar',
+      }
+      element.suggestions = [reference]
+      await element.updateComplete
+      const textarea = element.shadowRoot.querySelector('textarea') as HTMLTextAreaElement
+      textarea.value = 'Compare @orders'
+      textarea.dispatchEvent(new InputEvent('input', { bubbles: true }))
+      await element.updateComplete
+      const option = element.shadowRoot.querySelector('.mention-option') as HTMLButtonElement
+      const optionText = option?.textContent?.replace(/\s+/g, ' ').trim()
+      option.click()
+      await element.updateComplete
+      const draftAfterReference = textarea.value
+      textarea.value = 'Compare this with last month'
+      textarea.dispatchEvent(new InputEvent('input', { bubbles: true }))
+      const submitted = await new Promise<any>((resolve) => {
+        element.addEventListener('ld-chat-submit', (event: CustomEvent) => resolve(event.detail), { once: true })
+        textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      })
+      return { optionText, draftAfterReference, submitted }
+    })
+
+    expect(result).toEqual({
+      optionText: 'Orders by status bar',
+      draftAfterReference: 'Compare',
+      submitted: {
+        input: 'Compare this with last month',
+        references: [{ kind: 'visual', componentId: 'orders-chart', visualId: 'orders_chart', title: 'Orders by status', visualType: 'bar' }],
+      },
+    })
   } finally {
     await page.close()
   }

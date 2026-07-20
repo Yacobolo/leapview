@@ -24,6 +24,7 @@ func (s *Server) agentHTTPHandler() *agenthttp.Handler {
 		CurrentRoleLabel:       s.currentRoleLabel,
 		ChatSignal:             s.chatSignal,
 		ChatSignalWith:         s.chatSignalWith,
+		ResolveTurnContext:     s.resolveDashboardTurnContext,
 		QueueMissingTitle:      s.queueMissingChatTitle,
 		ExecuteStartedChatTurn: s.executeStartedChatTurn,
 		EnqueueRun: func(ctx context.Context, scope agent.Scope, started *agent.StartedPrompt) error {

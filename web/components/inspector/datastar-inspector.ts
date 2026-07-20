@@ -84,36 +84,37 @@ export class DatastarInspector extends LitElement {
 
     .toggle {
       position: fixed;
-      right: 16px;
-      bottom: 16px;
+      right: 12px;
+      bottom: 88px;
       z-index: var(--zIndex-popover);
       display: grid;
-      width: 38px;
-      height: 38px;
+      width: 30px;
+      height: 30px;
       place-items: center;
-      border: 1px solid color-mix(in srgb, var(--ds-accent), white 18%);
+      border: 1px solid var(--ds-border);
       border-radius: 50%;
-      background:
-        radial-gradient(circle at 35% 24%, rgb(255 255 255 / 22%), transparent 30%),
-        linear-gradient(145deg, color-mix(in srgb, var(--ds-accent), white 10%), var(--ds-accent));
-      color: var(--ds-accent-fg);
+      background: var(--ds-panel-muted);
+      color: var(--ds-muted);
       cursor: pointer;
-      font-size: 12px;
+      font-size: 10px;
       font-weight: var(--ld-font-weight-strong);
       letter-spacing: 0;
       line-height: 1;
-      box-shadow: 0 10px 28px rgb(0 0 0 / 38%), 0 0 0 1px rgb(255 255 255 / 8%) inset;
+      opacity: 0.68;
+      box-shadow: 0 6px 18px rgb(0 0 0 / 28%);
       transition:
         transform var(--motion-transition-hover),
         box-shadow var(--motion-transition-hover),
+        opacity var(--motion-transition-hover),
         filter var(--motion-transition-hover);
     }
 
     .toggle:hover,
     .toggle:focus-visible {
-      filter: brightness(1.08);
+      color: var(--ds-fg);
+      opacity: 1;
       transform: translateY(-1px);
-      box-shadow: 0 14px 34px rgb(0 0 0 / 44%), 0 0 0 1px rgb(255 255 255 / 14%) inset;
+      box-shadow: 0 8px 22px rgb(0 0 0 / 34%);
       outline: 0;
     }
 

@@ -387,6 +387,29 @@ model ChatArtifactSignal {
   `summary`?: string;
 }
 
+model AgentVisualReferenceSignal {
+  `kind`: "visual";
+  `componentId`: string;
+  `visualId`: string;
+  `title`: string;
+  `visualType`: string;
+}
+
+@apigen.contract(#{ kind: "ui-signal", tags: #["agent", "dashboard", "signal"] })
+@apigen.`metadata`(#{ `x-libredash-contract-role`: "signal", `x-libredash-surface`: "dashboard" })
+model AgentContextSignal {
+  `surface`: string;
+  `workspaceId`: string;
+  `dashboardId`: string;
+  `dashboardTitle`: string;
+  `pageId`: string;
+  `pageTitle`: string;
+  `modelId`: string;
+  `generation`: int64;
+  `filters`: DashboardFilters;
+  `references`: AgentVisualReferenceSignal[];
+}
+
 model ChatConversationSummary {
   `archivedAt`?: string;
   `createdAt`: string;
@@ -528,6 +551,12 @@ model DashboardComponentStatus {
 @apigen.contract(#{ kind: "ui-envelope", tags: #["dashboard", "envelope"] })
 @apigen.`metadata`(#{ `x-libredash-contract-role`: "envelope", `x-libredash-surface`: "dashboard" })
 model DashboardEnvelope {
+  @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "agent" })
+  `agent`: ChatSignal;
+  @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "agentContext" })
+  `agentContext`: AgentContextSignal;
+  @apigen.`metadata`(#{ `x-libredash-patch-mode`: "merge", `x-libredash-signal-key`: "agentVisuals" })
+  `agentVisuals`: Record<DashboardVisual>;
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "chrome" })
   `chrome`: ChromeSignal;
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "merge", `x-libredash-signal-key`: "componentStatus" })

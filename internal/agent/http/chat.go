@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"errors"
 	nethttp "net/http"
 	"net/url"
 	"strings"
@@ -15,7 +16,8 @@ import (
 )
 
 type chatTurnCommandSignals struct {
-	Agent chatTurnCommandAgentSignal `json:"agent"`
+	Agent        chatTurnCommandAgentSignal `json:"agent"`
+	AgentContext agent.TurnContext          `json:"agentContext"`
 }
 
 type chatTurnCommandAgentSignal struct {
@@ -89,12 +91,20 @@ func (h *Handler) ChatTurn(w nethttp.ResponseWriter, r *nethttp.Request) {
 		nethttp.Error(w, "input is required", nethttp.StatusBadRequest)
 		return
 	}
-	activeConversationID := strings.TrimSpace(signals.Agent.ActiveConversationID)
-	if activeConversationID == "" {
-		h.startDraftChatTurn(w, r, service, scope, clientID, input)
+	turnContext, embedded, err := h.resolveChatTurnContext(r.Context(), scope, signals.AgentContext)
+	if err != nil {
+		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
 		return
 	}
-	h.runChatTurn(w, r, service, scope, clientID, activeConversationID, input)
+	if turnContext != nil {
+		scope.WorkspaceID = turnContext.WorkspaceID
+	}
+	activeConversationID := strings.TrimSpace(signals.Agent.ActiveConversationID)
+	if activeConversationID == "" {
+		h.startDraftChatTurn(w, r, service, scope, clientID, input, turnContext, embedded)
+		return
+	}
+	h.runChatTurn(w, r, service, scope, clientID, activeConversationID, input, turnContext, embedded)
 }
 
 func (h *Handler) ChatUpdates(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -129,7 +139,7 @@ func (h *Handler) renderChat(w nethttp.ResponseWriter, r *nethttp.Request, view 
 	}
 }
 
-func (h *Handler) startDraftChatTurn(w nethttp.ResponseWriter, r *nethttp.Request, service *agent.Service, scope agent.Scope, clientID, input string) {
+func (h *Handler) startDraftChatTurn(w nethttp.ResponseWriter, r *nethttp.Request, service *agent.Service, scope agent.Scope, clientID, input string, turnContext *agent.TurnContext, embedded bool) {
 	conversation, err := service.CreateConversation(r.Context(), scope, "New conversation")
 	if err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
@@ -139,13 +149,31 @@ func (h *Handler) startDraftChatTurn(w nethttp.ResponseWriter, r *nethttp.Reques
 		Scope:          scope,
 		ConversationID: conversation.ID,
 		Input:          input,
+		Context:        turnContext,
 	})
 	if err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
 		return
 	}
-	go h.completeDraftChatTurn(service, scope, clientID, started)
-	_ = pagestream.Redirect(w, r, chatRoutePath(conversation.ID))
+	if !embedded {
+		go h.completeDraftChatTurn(service, scope, clientID, started)
+		_ = pagestream.Redirect(w, r, chatRoutePath(conversation.ID))
+		return
+	}
+	if h.options.ExecuteStartedChatTurn == nil {
+		nethttp.Error(w, "chat turn executor is not configured", nethttp.StatusServiceUnavailable)
+		return
+	}
+	updates := pagestream.NewSignalStream(w, r)
+	_, _ = h.options.ExecuteStartedChatTurn(r.Context(), service, scope, started, ChatTurnExecution{
+		EmitInitialRunning: true,
+		GenerateTitle:      true,
+		ClientID:           clientID,
+		LiveConversations:  h.chatConversations(r.Context(), scope),
+		Emit: func(signal ui.ChatViewState) error {
+			return updates.Patch(chatSignalPatch(signal, true))
+		},
+	})
 }
 
 func (h *Handler) completeDraftChatTurn(service *agent.Service, scope agent.Scope, clientID string, started *agent.StartedPrompt) {
@@ -160,14 +188,14 @@ func (h *Handler) completeDraftChatTurn(service *agent.Service, scope agent.Scop
 		ClientID:           clientID,
 		Emit: func(signal ui.ChatViewState) error {
 			if h.options.Broker != nil {
-				h.options.Broker.Publish(chatStreamID(scope, clientID), chatSignalPatch(signal))
+				h.options.Broker.Publish(chatStreamID(scope, clientID), chatSignalPatch(signal, false))
 			}
 			return nil
 		},
 	})
 }
 
-func (h *Handler) runChatTurn(w nethttp.ResponseWriter, r *nethttp.Request, service *agent.Service, scope agent.Scope, clientID, activeConversationID, input string) {
+func (h *Handler) runChatTurn(w nethttp.ResponseWriter, r *nethttp.Request, service *agent.Service, scope agent.Scope, clientID, activeConversationID, input string, turnContext *agent.TurnContext, embedded bool) {
 	conversationID := strings.TrimSpace(activeConversationID)
 	state, err := service.ConversationTranscriptState(r.Context(), scope, conversationID)
 	if err != nil {
@@ -186,9 +214,10 @@ func (h *Handler) runChatTurn(w nethttp.ResponseWriter, r *nethttp.Request, serv
 		Scope:          scope,
 		ConversationID: conversationID,
 		Input:          input,
+		Context:        turnContext,
 	})
 	if err != nil {
-		_ = updates.Patch(chatSignalPatch(h.chatSignalWith(r.Context(), scope, conversationID, transcript, streamArtifacts, chatTurnStatusError(err), false)))
+		_ = updates.Patch(chatSignalPatch(h.chatSignalWith(r.Context(), scope, conversationID, transcript, streamArtifacts, chatTurnStatusError(err), false), embedded))
 		return
 	}
 	if h.options.ExecuteStartedChatTurn == nil {
@@ -198,7 +227,7 @@ func (h *Handler) runChatTurn(w nethttp.ResponseWriter, r *nethttp.Request, serv
 	_, _ = h.options.ExecuteStartedChatTurn(r.Context(), service, scope, started, ChatTurnExecution{
 		LiveConversations: h.chatConversations(r.Context(), scope),
 		Emit: func(signal ui.ChatViewState) error {
-			return updates.Patch(chatSignalPatch(signal))
+			return updates.Patch(chatSignalPatch(signal, embedded))
 		},
 	})
 }
@@ -293,11 +322,28 @@ func chatTurnStatusError(err error) string {
 	return err.Error()
 }
 
-func chatSignalPatch(signal ui.ChatViewState) pagestream.SignalPatch {
-	return pagestream.SignalPatch{
-		"agent":   signal.Agent,
-		"visuals": signal.Visuals,
+func chatSignalPatch(signal ui.ChatViewState, embedded bool) pagestream.SignalPatch {
+	patch := pagestream.SignalPatch{"agent": signal.Agent}
+	if embedded {
+		patch["agentVisuals"] = signal.Visuals
+	} else {
+		patch["visuals"] = signal.Visuals
 	}
+	return patch
+}
+
+func (h *Handler) resolveChatTurnContext(ctx context.Context, scope agent.Scope, candidate agent.TurnContext) (*agent.TurnContext, bool, error) {
+	if strings.ToLower(strings.TrimSpace(candidate.Surface)) != "dashboard" {
+		return nil, false, nil
+	}
+	if h.options.ResolveTurnContext == nil {
+		return nil, true, errors.New("dashboard turn context resolver is not configured")
+	}
+	resolved, err := h.options.ResolveTurnContext(ctx, scope, candidate)
+	if err != nil {
+		return nil, true, err
+	}
+	return &resolved, true, nil
 }
 
 func chatRoutePath(parts ...string) string {

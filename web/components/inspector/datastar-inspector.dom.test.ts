@@ -120,6 +120,13 @@ test('inspector selects a delivered signal and shows its effective history', asy
     await page.goto(baseURL)
     await page.waitForFunction(() => customElements.get('datastar-inspector'))
     const state = await page.locator('datastar-inspector').evaluate(async (element: any) => {
+      const toggleStyle = getComputedStyle(element.shadowRoot.querySelector('.toggle'))
+      const launcher = {
+        bottom: toggleStyle.bottom,
+        width: toggleStyle.width,
+        height: toggleStyle.height,
+        opacity: toggleStyle.opacity,
+      }
       element.shadowRoot.querySelector<HTMLButtonElement>('.toggle')!.click()
       await element.updateComplete
       const deadline = Date.now() + 3_000
@@ -146,6 +153,7 @@ test('inspector selects a delivered signal and shows its effective history', asy
         streamSelectors: element.shadowRoot.querySelectorAll('.signal-stream-select').length,
         hasDeliveredStream: element.shadowRoot.textContent.includes('Delivered stream'),
         storedSelection: JSON.parse(sessionStorage.getItem('ds-inspector') ?? '{}').selectedSignalPath,
+        launcher,
       }
     })
 
@@ -161,6 +169,7 @@ test('inspector selects a delivered signal and shows its effective history', asy
     expect(state.streamSelectors).toBe(0)
     expect(state.hasDeliveredStream).toBe(false)
     expect(state.storedSelection).toBeUndefined()
+    expect(state.launcher).toEqual({ bottom: '88px', width: '30px', height: '30px', opacity: '0.68' })
     expect(signalQueries.some((query) => query.includes('path=%2Fstatus%2FprogressPercent'))).toBe(true)
 
     await page.reload()

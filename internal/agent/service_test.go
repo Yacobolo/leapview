@@ -157,6 +157,66 @@ func TestServicePromptPersistsRunEventsMessagesAndTranscript(t *testing.T) {
 	}
 }
 
+func TestServicePromptUsesStructuredTurnContextWithoutExposingItInUserTranscript(t *testing.T) {
+	ctx := context.Background()
+	store := openAgentAppStore(t, ctx)
+	defer store.Close()
+	principal := createAgentAppPrincipal(t, ctx, store, "context@example.com")
+	model := newRecordingAgentModel(agentcore.ModelResponse{Content: "The decline is concentrated in Denmark.", FinishReason: agentcore.FinishReasonStop})
+	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", Model: "fake-model"}, WithModel(model))
+	scope := Scope{WorkspaceID: "sales", PrincipalID: principal.ID}
+	conversation, err := service.CreateConversation(ctx, scope, "Dashboard context")
+	if err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	_, err = service.Prompt(ctx, PromptInput{
+		Scope:          scope,
+		ConversationID: conversation.ID,
+		Input:          "Why did this decline?",
+		Context: &TurnContext{
+			Surface:        "dashboard",
+			WorkspaceID:    "sales",
+			DashboardID:    "executive-sales",
+			DashboardTitle: "Executive Sales",
+			PageID:         "overview",
+			PageTitle:      "Overview",
+			ModelID:        "sales-model",
+			Generation:     7,
+			Filters: map[string]any{
+				"controls": map[string]any{"country": map[string]any{"type": "multi_select", "values": []string{"DK"}}},
+			},
+			References: []TurnReference{{Kind: "visual", ComponentID: "revenue-card", VisualID: "revenue_by_region", Title: "Revenue by region", VisualType: "bar"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+
+	requests := model.Requests()
+	if len(requests) != 1 {
+		t.Fatalf("model requests = %d, want 1", len(requests))
+	}
+	modelPayload, _ := json.Marshal(requests[0].Messages)
+	modelText := string(modelPayload)
+	for _, want := range []string{"libredash_turn_context", "executive-sales", "revenue_by_region", "country", "DK", "Why did this decline?"} {
+		if !strings.Contains(modelText, want) {
+			t.Fatalf("model messages missing %q: %s", want, modelText)
+		}
+	}
+
+	messages, err := store.ListMessages(ctx, principal.ID, conversation.ID)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) < 1 || messages[0].Role != MessageRoleUser || messages[0].ContentText != "Why did this decline?" {
+		t.Fatalf("visible user message = %#v, want original question only", messages)
+	}
+	if strings.Contains(messages[0].ContentText, "executive-sales") || strings.Contains(messages[0].ContentText, "revenue_by_region") {
+		t.Fatalf("visible user message leaked turn context: %#v", messages[0])
+	}
+}
+
 func TestServiceStartPromptPersistsUserBeforeRunCompletes(t *testing.T) {
 	ctx := context.Background()
 	store := openAgentAppStore(t, ctx)

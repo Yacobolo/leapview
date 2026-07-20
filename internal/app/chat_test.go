@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"html"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -678,6 +679,85 @@ func TestChatDraftTurnRedirectsAndStreamsThroughUpdates(t *testing.T) {
 		}
 	}
 	waitForAgentConversationTitle(t, store, "test", principal.ID, conversationID, "Background complete")
+}
+
+func TestDashboardChatDraftTurnStaysEmbeddedAndUsesResolvedContext(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	principal, token := chatPrincipalAndToken(t, ctx, store)
+	var requestBodiesMu sync.Mutex
+	requestBodies := []string{}
+	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		requestBodiesMu.Lock()
+		requestBodies = append(requestBodies, string(body))
+		requestBodiesMu.Unlock()
+		writeRawJSON(t, w, `{"choices":[{"message":{"role":"assistant","content":"Orders are down in the selected context."},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":5,"total_tokens":17}}`)
+	}))
+	defer modelServer.Close()
+	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
+	service := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: service, DefaultWorkspaceID: "test"})
+
+	signals := map[string]any{
+		"agent": map[string]any{
+			"activeConversationId": "",
+			"composer":             map[string]any{"value": "Why did this decline?"},
+		},
+		"agentContext": map[string]any{
+			"surface":     "dashboard",
+			"workspaceId": "test",
+			"dashboardId": "executive-sales",
+			"pageId":      "overview",
+			"generation":  3,
+			"filters": map[string]any{
+				"controls":   map[string]any{"state": map[string]any{"type": "multi_select", "operator": "in", "values": []string{"SP"}}},
+				"selections": []any{},
+			},
+			"references": []map[string]any{{
+				"kind": "visual", "componentId": "orders-chart", "visualId": "orders",
+				"title": "evil browser title", "visualType": "script",
+			}},
+		},
+	}
+	req := chatSignalsRequest(http.MethodPost, "/chats/turns", token, signals)
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"event: datastar-patch-signals", `"agentVisuals"`, "Orders are down", `"running":false`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("embedded turn response missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "window.location.href") || strings.Contains(body, `"visuals"`) {
+		t.Fatalf("embedded turn redirected or replaced dashboard visuals:\n%s", body)
+	}
+	conversations, err := testAgentRepository(store).ListConversations(ctx, principal.ID)
+	if err != nil || len(conversations) != 1 {
+		t.Fatalf("conversations = %#v err=%v", conversations, err)
+	}
+	state, err := service.ConversationTranscriptState(ctx, agent.Scope{WorkspaceID: "test", PrincipalID: principal.ID}, conversations[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Transcript) == 0 || state.Transcript[0].Text != "Why did this decline?" {
+		t.Fatalf("visible transcript = %#v", state.Transcript)
+	}
+	waitForAgentConversationTitle(t, store, "test", principal.ID, conversations[0].ID, "Orders are down in the selected context")
+	requestBodiesMu.Lock()
+	modelRequests := strings.Join(requestBodies, "\n")
+	requestBodiesMu.Unlock()
+	for _, want := range []string{"libredash_turn_context", "Executive Sales Dashboard", "Orders", `\"SP\"`} {
+		if !strings.Contains(modelRequests, want) {
+			t.Fatalf("model requests missing trusted context %q:\n%s", want, modelRequests)
+		}
+	}
+	if strings.Contains(modelRequests, "evil browser title") || strings.Contains(modelRequests, `\"visualType\":\"script\"`) {
+		t.Fatalf("model request trusted browser metadata:\n%s", modelRequests)
+	}
 }
 
 func TestChatTurnWithActiveConversationDoesNotReplaceURL(t *testing.T) {

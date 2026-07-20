@@ -216,7 +216,32 @@ func DashboardInitialEnvelope(clientID, streamInstanceID string, catalog dashboa
 		modelTitle = model.Title
 	}
 	return DashboardEnvelope{
-		Chrome: ChromeSignal{Sidebar: sidebarConfig(catalog, "workspaces", report.ID, workspaceDisplayTitle(catalog), report.Title, activePage.Title, modelID, modelTitle, true, "", strings.TrimSpace(catalog.Workspace.ID) != "")},
+		Agent: ChatSignal{
+			Conversations: []ChatConversationSummary{},
+			Transcript:    []ChatTranscriptItemSignal{},
+			Status: ChatStatus{
+				Enabled: false,
+				Running: false,
+				Error:   optionalValue("Agent is not configured"),
+			},
+			Composer: ComposerSignal{
+				Disabled:    true,
+				Placeholder: "Agent is not configured",
+			},
+		},
+		AgentContext: AgentContextSignal{
+			Surface:        "dashboard",
+			WorkspaceID:    catalog.Workspace.ID,
+			DashboardID:    report.ID,
+			DashboardTitle: report.Title,
+			PageID:         activePage.ID,
+			PageTitle:      activePage.Title,
+			ModelID:        modelID,
+			Filters:        DashboardFiltersFromDashboard(initialFilters),
+			References:     []AgentVisualReferenceSignal{},
+		},
+		AgentVisuals: map[string]DashboardVisual{},
+		Chrome:       ChromeSignal{Sidebar: sidebarConfig(catalog, "workspaces", report.ID, workspaceDisplayTitle(catalog), report.Title, activePage.Title, modelID, modelTitle, true, "", strings.TrimSpace(catalog.Workspace.ID) != "")},
 		Page: DashboardPageSignal{
 			Kind:           RouteDashboard,
 			Title:          report.Title,

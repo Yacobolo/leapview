@@ -507,6 +507,119 @@ test('dashboard refresh progress follows only the latest generation', async () =
   }
 })
 
+test('dashboard agent drawer carries page context and explicit visual references', async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => (
+      customElements.get('ld-dashboard-page')
+        && customElements.get('ld-chat-drawer')
+        && customElements.get('ld-chat-composer')
+    ))
+    await page.locator('ld-dashboard-page').evaluate((element: any) => element.updateComplete)
+
+    const initial = await page.locator('ld-dashboard-page').evaluate((element: any) => {
+      const root = element.shadowRoot
+      const drawer = root.querySelector('ld-chat-drawer') as any
+      return {
+        hasToggle: Boolean(root.querySelector('.agent-toggle')),
+        open: drawer?.open,
+        drawerWidth: Math.round(drawer?.getBoundingClientRect().width ?? 0),
+      }
+    })
+    expect(initial).toEqual({ hasToggle: true, open: false, drawerWidth: 0 })
+
+    await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
+      element.shadowRoot.querySelector('.agent-toggle').click()
+      await element.updateComplete
+      const drawer = element.shadowRoot.querySelector('ld-chat-drawer')
+      await drawer.updateComplete
+    })
+
+    const opened = await page.locator('ld-dashboard-page').evaluate((element: any) => {
+      const root = element.shadowRoot
+      const drawer = root.querySelector('ld-chat-drawer') as any
+      const drawerRoot = drawer.shadowRoot
+      const drawerSurface = drawerRoot.querySelector('.drawer') as HTMLElement
+      const header = drawerRoot.querySelector('.header') as HTMLElement
+      const context = drawerRoot.querySelector('.context') as HTMLElement
+      const toolbarAction = drawerRoot.querySelector('.toolbar-actions button') as HTMLElement
+      const thread = drawerRoot.querySelector('ld-chat-thread') as any
+      const composer = drawerRoot.querySelector('ld-chat-composer') as any
+      return {
+        open: drawer.open,
+        drawerWidth: Math.round(drawer.getBoundingClientRect().width),
+        pageContext: drawerRoot.querySelector('.page-context')?.textContent?.replace(/\s+/g, ' ').trim(),
+        filterContext: drawerRoot.querySelector('.filter-context')?.textContent?.replace(/\s+/g, ' ').trim(),
+        hasThread: Boolean(thread),
+        hasComposer: Boolean(composer),
+        contextInHeader: header.contains(context),
+        contextBorder: getComputedStyle(context).borderBottomStyle,
+        contextSharesSurface: getComputedStyle(context).backgroundColor === getComputedStyle(drawerSurface).backgroundColor,
+        toolbarActionBorder: toolbarAction ? getComputedStyle(toolbarAction).borderStyle : 'missing',
+        threadSharesSurface: getComputedStyle(thread.shadowRoot.querySelector('.thread')).backgroundColor === getComputedStyle(drawerSurface).backgroundColor,
+        composerDockBorder: getComputedStyle(composer).borderTopStyle,
+        composerShadow: getComputedStyle(composer.shadowRoot.querySelector('.composer-surface')).boxShadow,
+        composerHeight: Math.round(composer.shadowRoot.querySelector('.composer-surface').getBoundingClientRect().height),
+      }
+    })
+    expect(opened).toMatchObject({
+      open: true,
+      pageContext: 'Overview',
+      filterContext: '1 filter · 2 selections',
+      hasThread: true,
+      hasComposer: true,
+      contextInHeader: true,
+      contextBorder: 'none',
+      contextSharesSurface: true,
+      toolbarActionBorder: 'none',
+      threadSharesSurface: true,
+      composerDockBorder: 'none',
+      composerShadow: 'none',
+    })
+    expect(opened.composerHeight).toBeLessThan(80)
+    expect(opened.drawerWidth).toBeGreaterThanOrEqual(360)
+    expect(opened.drawerWidth).toBeLessThanOrEqual(520)
+
+    await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
+      const frame = Array.from(element.shadowRoot.querySelectorAll('ld-dashboard-visual-frame'))
+        .find((candidate: any) => candidate.getAttribute('data-component-status-key') === 'visual:orders_chart') as any
+      frame.shadowRoot.querySelector('.ask-visual').click()
+      const drawer = element.shadowRoot.querySelector('ld-chat-drawer') as any
+      await drawer.updateComplete
+    })
+
+    const referenced = await page.locator('ld-dashboard-page').evaluate((element: any) => {
+      const drawer = element.shadowRoot.querySelector('ld-chat-drawer') as any
+      const drawerRoot = drawer.shadowRoot
+      return {
+        chip: drawerRoot.querySelector('.reference-chip')?.textContent?.replace(/\s+/g, ' ').trim(),
+        highlighted: Boolean(element.shadowRoot.querySelector('ld-dashboard-visual-frame[data-agent-referenced]')),
+      }
+    })
+    expect(referenced).toEqual({ chip: 'Orders by status', highlighted: true })
+
+    const submitted = await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
+      const received: any[] = []
+      element.addEventListener('ld-chat-submit', (event: CustomEvent) => received.push(event.detail), { once: true })
+      const drawer = element.shadowRoot.querySelector('ld-chat-drawer') as any
+      const composer = drawer.shadowRoot.querySelector('ld-chat-composer') as any
+      const textarea = composer.shadowRoot.querySelector('textarea') as HTMLTextAreaElement
+      textarea.value = 'Why did this decline?'
+      textarea.dispatchEvent(new InputEvent('input', { bubbles: true }))
+      composer.shadowRoot.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      return received[0]
+    })
+    expect(submitted).toEqual({
+      input: 'Why did this decline?',
+      references: [{ kind: 'visual', componentId: 'orders-chart', visualId: 'orders_chart', title: 'Orders by status', visualType: 'bar' }],
+    })
+  } finally {
+    await page.close()
+  }
+})
+
 function testDocument(): string {
   const page = {
     kind: 'dashboard',
@@ -645,6 +758,26 @@ function testDocument(): string {
     componentStatus,
     visuals,
     status,
+    agent: {
+      conversations: [],
+      activeConversationId: '',
+      transcript: [],
+      status: { enabled: true, running: false },
+      composer: { value: '', disabled: false, placeholder: 'Ask about this dashboard...' },
+    },
+    agentContext: {
+      surface: 'dashboard',
+      workspaceId: 'sales',
+      dashboardId: 'executive-sales',
+      dashboardTitle: 'Executive Sales Dashboard',
+      pageId: 'overview',
+      pageTitle: 'Overview',
+      modelId: 'olist',
+      generation: 3,
+      filters,
+      references: [],
+    },
+    agentVisuals: {},
   }
   const attr = (value: unknown) => escapeHTML(JSON.stringify(value))
   return `

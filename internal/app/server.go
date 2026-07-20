@@ -647,6 +647,9 @@ func (s *Server) dashboardHTTP() dashboardhttp.Handler {
 			}
 			return version.RefreshedAt.Format(time.RFC3339)
 		},
+		AgentBootstrap: func(r *http.Request, workspaceID string) ui.ChatViewState {
+			return s.agentHTTPHandler().DashboardBootstrap(r, workspaceID)
+		},
 	}
 }
 

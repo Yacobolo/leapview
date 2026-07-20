@@ -38,6 +38,7 @@ class ChatThread extends LitElement {
   @property({ attribute: 'visuals', converter: jsonConverter<Record<string, DashboardVisual>>({}) }) visualsAttribute: Record<string, DashboardVisual> = {}
   @property({ attribute: 'status', converter: jsonConverter<ChatStatus>({ enabled: false, running: false }) }) status: ChatStatus = { enabled: false, running: false }
   @property({ attribute: 'conversation-id' }) conversationId = ''
+  @property({ reflect: true }) surface: 'page' | 'drawer' = 'page'
   @state() private expandedToolCalls = new Set<string>()
   private scrollFrame = 0
 
@@ -153,6 +154,20 @@ class ChatThread extends LitElement {
     .user .bubble {
       border-color: var(--ld-line-muted);
       background: var(--ld-bg-panel-muted);
+    }
+
+    :host([surface='drawer']) .thread {
+      background: var(--ld-bg-app);
+    }
+
+    :host([surface='drawer']) .scroll {
+      padding: var(--ld-space-lg) calc(var(--ld-space-lg) + var(--ld-space-xs)) var(--ld-space-sm);
+    }
+
+    :host([surface='drawer']) .user .bubble {
+      border-color: transparent;
+      border-radius: var(--ld-radius-large);
+      padding: var(--ld-space-sm) var(--ld-space-md);
     }
 
     .message.error .bubble {

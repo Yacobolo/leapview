@@ -15,6 +15,7 @@ type PromptInput struct {
 	Scope          Scope
 	ConversationID string
 	Input          string
+	Context        *TurnContext
 	CorrelationID  string
 	OnEvent        func(EventEnvelope)
 }
@@ -94,9 +95,10 @@ func (s *Service) StartPrompt(ctx context.Context, input PromptInput) (*StartedP
 		return nil, err
 	}
 	userMessage := agentcore.Message{
-		ID:      newID("msg"),
-		Role:    agentcore.RoleUser,
-		Content: input.Input,
+		ID:             newID("msg"),
+		Role:           agentcore.RoleUser,
+		Content:        contextualModelInput(input.Input, input.Context),
+		DisplayContent: input.Input,
 	}
 	if err := s.appendMessage(ctx, PromptInput{
 		Scope:          input.Scope,
@@ -367,12 +369,18 @@ func (s *Service) appendMessage(ctx context.Context, input PromptInput, runID st
 	if message.Role == agentcore.RoleSystem {
 		return nil
 	}
+	contentText := message.Content
+	if message.Role == agentcore.RoleUser {
+		if visible, ok := message.DisplayContent.(string); ok && strings.TrimSpace(visible) != "" {
+			contentText = visible
+		}
+	}
 	row, err := s.repo.AppendMessage(ctx, MessageInput{
 		PrincipalID:    input.Scope.PrincipalID,
 		ConversationID: input.ConversationID,
 		RunID:          runID,
 		Role:           platformRole(message.Role),
-		ContentText:    message.Content,
+		ContentText:    contentText,
 		ContentJSON:    messageContentJSON(message),
 		ToolCallID:     message.ToolCallID,
 		ToolName:       message.ToolName,

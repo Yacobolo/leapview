@@ -107,6 +107,7 @@ func Page(clientID, csrfToken string, catalog dashboard.Catalog, report reportde
 	dashboardUpdatesURL := updatesURLWithParams(catalog.Workspace.ID, report.ID, activePage.ID, initialURLParams)
 	reloadAction := uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/reload", "runtime", "filters.controls")
 	filtersUpdate := "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); " + visualReset
+	agentTurn := "$agent.composer.value = evt.detail.input; $agentContext.references = evt.detail.references; $agentContext.filters = $filters; $agentContext.generation = $status.generation; " + uiactions.Post("/chats/turns", "agent", "agentContext")
 	return pagestream.RenderPage(pagestream.PageSpec{
 		Title:             "LibreDash",
 		DatastarScriptURL: datastarScriptURL(),
@@ -135,6 +136,9 @@ func Page(clientID, csrfToken string, catalog dashboard.Catalog, report reportde
 					g.Attr("workspace-id", catalog.Workspace.ID),
 					g.Attr("dashboard-id", report.ID),
 					g.Attr("page-id", activePage.ID),
+					g.Attr("data-indicator", "agentTurnPending"),
+					g.Attr("data-on:ld-chat-submit", agentTurn),
+					g.Attr("data-on:ld-chat-new", "$agent.activeConversationId = ''; $agent.transcript = []; $agent.composer.value = ''; $agentVisuals = {}"),
 					g.Attr("data-on:ld-filters-change", filtersUpdate+reloadAction),
 					g.Attr("data-on:ld-filters-reset", filtersUpdate+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/reset-filters", "runtime")),
 					g.Attr("data-on:ld-filters-refresh", reloadAction),
@@ -166,6 +170,9 @@ func BootstrapSignals(clientID, streamInstanceID string, catalog dashboard.Catal
 		}
 	}
 	return map[string]any{
+		"agent":               envelope.Agent,
+		"agentContext":        envelope.AgentContext,
+		"agentVisuals":        envelope.AgentVisuals,
 		"chrome":              envelope.Chrome,
 		"componentStatus":     envelope.ComponentStatus,
 		"page":                envelope.Page,

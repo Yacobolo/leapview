@@ -61,6 +61,11 @@ func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
 		broker.TraceStore(), streamID, "dashboard.bootstrap",
 	))
 	bootstrap := reportui.BootstrapSignals(clientID, streamInstanceID, metrics.Catalog(), reportDefinition, model, pages, activePage, initialFilters)
+	if h.AgentBootstrap != nil {
+		agentState := h.AgentBootstrap(r, metrics.Catalog().Workspace.ID)
+		bootstrap["agent"] = agentState.Agent
+		bootstrap["agentVisuals"] = agentState.Visuals
+	}
 	status := lddatastar.LoadingPatch()["status"].(map[string]any)
 	environment := ""
 	if h.Environment != nil {
