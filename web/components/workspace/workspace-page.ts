@@ -49,10 +49,12 @@ const emptyWorkspaceAccess: WorkspaceAccessSignal = {
   workspace: {},
   roles: [],
   bindings: [],
+  candidates: [],
   canManage: false,
   status: { loading: false, error: '', message: '' },
   command: { bindingId: '', email: '', principalId: '', privilege: '', role: '', subjectId: '', subjectType: '' },
   search: '',
+  searchStatus: { loading: false, error: '' },
 }
 
 class LibreDashWorkspacePage extends DatastarLit(LitElement) {
@@ -355,27 +357,27 @@ function renderAssetTable(assets: WorkspaceAssetSummarySignal[], empty: string) 
   if (!assets.length) return html`<div class="panel"><div class="empty">${empty}</div></div>`
   const table: RecordTableSignal = {
     columns: [
-      { id: 'name', header: 'Name', kind: 'entity', width: '42%' },
+      { id: 'name', header: 'Name', kind: 'entity' },
       { id: 'type', header: 'Type', width: '150px' },
-      { id: 'key', header: 'Key', kind: 'code', width: '180px' },
       { id: 'actions', header: 'Actions', kind: 'actions', align: 'right', width: '104px', sortable: false } as any,
     ],
-    rows: assets.map((asset) => ({
-      name: {
-        label: asset.title,
-        description: asset.description,
-        href: asset.detailHref,
-        icon: asset.type,
-      },
-      type: asset.typeLabel,
-      key: asset.key,
-      actions: [
-        { label: 'View details', href: asset.detailHref, icon: 'details' },
-        { label: 'Open asset', href: asset.openHref, icon: 'open' },
-      ],
-    })),
+    rows: assets.map((asset) => {
+      const actions = [{ label: 'View details', href: asset.detailHref, icon: 'details' }]
+      if (asset.openHref && asset.openHref !== asset.detailHref) {
+        actions.push({ label: 'Open asset', href: asset.openHref, icon: 'open' })
+      }
+      return {
+        name: {
+          label: asset.title,
+          href: asset.detailHref,
+          icon: asset.type,
+        },
+        type: asset.typeLabel,
+        actions,
+      }
+    }),
     empty,
-    minWidth: '840px',
+    minWidth: '640px',
   }
   return html`
     <div class="panel">
@@ -731,8 +733,8 @@ const workspaceStyles = css`
   .search {
     position: relative;
     display: block;
-    max-width: 34rem;
     min-width: 0;
+    width: 100%;
   }
 
   input[type='search'] {
@@ -744,6 +746,8 @@ const workspaceStyles = css`
     background: var(--ld-bg-control);
     color: var(--ld-fg-default);
     padding: 0 calc(var(--base-size-24) + var(--base-size-12)) 0 var(--base-size-12);
+    font-size: var(--ld-font-size-body-md);
+    line-height: var(--ld-line-height-compact);
   }
 
   input[type='search']:focus {
