@@ -19,10 +19,14 @@
           "enum": [
             "principal",
             "group",
-            "service_principal"
+            "service_principal",
+            "dashboard_publication"
           ]
         },
         "principalId": {
+          "$ref": "#/$defs/%23ResourceID"
+        },
+        "publication": {
           "$ref": "#/$defs/%23ResourceID"
         }
       },
@@ -72,6 +76,7 @@
         "REFRESH_DATA",
         "DEPLOY",
         "ACTIVATE_DEPLOYMENT",
+        "MANAGE_PUBLICATIONS",
         "USE_AGENT",
         "VIEW_AGENT",
         "MANAGE_GRANTS",

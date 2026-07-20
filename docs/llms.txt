@@ -107,6 +107,7 @@ Focused slices are available at `/docs/cli/commands/{id}.json|md` and `/docs/api
 - [Grant configuration](/docs/config/grant): Fields and validation rules for the Grant YAML resource.
 - [Data Policy configuration](/docs/config/data-policy): Fields and validation rules for the DataPolicy YAML resource.
 - [Refresh Pipeline configuration](/docs/config/refresh-pipeline): Fields and validation rules for the RefreshPipeline YAML resource.
+- [Dashboard Publication configuration](/docs/config/dashboard-publication): Fields and validation rules for the DashboardPublication YAML resource.
 
 #### CLI commands
 
@@ -144,6 +145,7 @@ Focused slices are available at `/docs/cli/commands/{id}.json|md` and `/docs/api
 - [Agent](/docs/api/agent): Headless agent conversation and run operations.
 - [Access](/docs/api/access): Principals, groups, roles, and role bindings.
 - [Audit](/docs/api/audit): Workspace audit event discovery.
+- [Publications](/docs/api/publications): Anonymous public dashboard publication lifecycle.
 - [Managed Data](/docs/api/managed-data): Project-global managed-data revisions and uploads.
 
 #### Visuals

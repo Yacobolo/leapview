@@ -63,6 +63,7 @@ type DashboardRefreshProgress = {
 type VisualLoadingPresentation = 'none' | 'center' | 'header'
 
 class LeapViewDashboardPage extends DatastarLit(LitElement) {
+	@property({ type: String, reflect: true }) presentation: 'app' | 'public' | 'embed' = 'app'
   @state() private unsupportedKinds = new Set<string>()
   @state() private optimisticSelections: CanonicalInteractionSelection[] | null = null
   @state() private optimisticTargetKeys = new Set<string>()
@@ -88,6 +89,20 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
       grid-template-columns: auto minmax(0, 1fr);
       background: var(--lv-bg-app);
     }
+
+		:host([presentation='embed']) .route {
+			grid-template-columns: minmax(0, 1fr);
+		}
+
+		:host([presentation='embed']) lv-sub-sidebar,
+		:host([presentation='embed']) .header,
+		:host([presentation='embed']) lv-report-footer {
+			display: none;
+		}
+
+		:host([presentation='embed']) .main {
+			grid-template-rows: minmax(0, 1fr);
+		}
 
     .main {
       display: grid;

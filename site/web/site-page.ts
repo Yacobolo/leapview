@@ -99,6 +99,11 @@ if (!customElements.get('lv-site-theme-toggle')) {
 
 class SiteMobileMenu extends LitElement {
   private open = false
+  showcase = false
+
+  static properties = {
+    showcase: { type: Boolean },
+  }
 
   static styles = css`
     :host {
@@ -189,6 +194,7 @@ class SiteMobileMenu extends LitElement {
         <a href="/docs" @click=${this.close}>Docs</a>
         <a href="/docs/search" @click=${this.close}>Search</a>
         <a href="/visuals" @click=${this.close}>Visuals</a>
+        ${this.showcase ? html`<a href="/showcase" @click=${this.close}>Live demo</a>` : null}
       </nav>`
   }
 

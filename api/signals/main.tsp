@@ -59,6 +59,34 @@ model AdminMetricSignal {
   `value`: string;
 }
 
+@apigen.contract(#{ kind: "ui-signal", tags: #["admin", "signal"] })
+@apigen.`metadata`(#{ `x-leapview-contract-role`: "signal", `x-leapview-surface`: "admin" })
+model AdminPublicationSignal {
+  `workspaceId`: string;
+  `name`: string;
+  `dashboard`: string;
+  `defaultPage`: string;
+  `status`: string;
+  `origins`: string[];
+  `generation`?: string;
+  `publicUrl`: string;
+  `embedUrl`: string;
+  `iframeSnippet`: string;
+  `configuredAt`?: string;
+  `suspendedAt`?: string;
+  `disabledAt`?: string;
+  `rotatedAt`?: string;
+  `history`: string[];
+}
+
+@apigen.contract(#{ kind: "ui-signal", tags: #["admin", "signal"] })
+@apigen.`metadata`(#{ `x-leapview-contract-role`: "signal", `x-leapview-surface`: "admin" })
+model AdminPublicationCommand {
+  `workspaceId`: string;
+  `publication`: string;
+  `action`: string;
+}
+
 @apigen.contract(#{ kind: "ui-envelope", tags: #["admin", "envelope"] })
 @apigen.`metadata`(#{ `x-leapview-contract-role`: "envelope", `x-leapview-surface`: "admin" })
 model AdminPageEnvelope {
@@ -82,6 +110,7 @@ model AdminPageSignal {
   `headerTitle`: string;
   `kind`: RouteKind;
   `metrics`?: AdminMetricSignal[];
+  `publications`?: AdminPublicationSignal[];
   `sections`?: AdminContentSectionSignal[];
   `sidebar`: SubSidebarSignal;
   `storage`?: AdminStorageSignal;
@@ -677,6 +706,7 @@ model DashboardPageSignal {
   `pageId`: string;
   `pageTitle`: string;
   `pages`: DashboardPageNavSignal[];
+  `presentation`: "app" | "public" | "embed";
   `title`: string;
 }
 

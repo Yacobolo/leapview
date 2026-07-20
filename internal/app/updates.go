@@ -46,6 +46,9 @@ func streamPrivilege(route, section string) (access.Privilege, bool) {
 		if strings.TrimSpace(section) == "queries" {
 			return access.PrivilegeViewAudit, true
 		}
+		if strings.TrimSpace(section) == "publications" {
+			return access.PrivilegeManagePublications, true
+		}
 		return access.PrivilegeManageGrants, true
 	default:
 		return "", false

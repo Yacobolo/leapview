@@ -2,12 +2,17 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
+	"github.com/Yacobolo/leapview/internal/access"
 	adminhttp "github.com/Yacobolo/leapview/internal/admin/http"
 	adminstorage "github.com/Yacobolo/leapview/internal/admin/storage"
 	"github.com/Yacobolo/leapview/internal/api"
 	"github.com/Yacobolo/leapview/internal/dashboard"
+	"github.com/Yacobolo/leapview/internal/dashboard/publication"
+	"github.com/Yacobolo/leapview/internal/ui"
+	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 
@@ -23,15 +28,119 @@ func (s *Server) adminHTTPHandler() adminhttp.Handler {
 			QueryAuditRepository: s.queryAuditRepository,
 			CSRFToken:            func(r *http.Request) string { return csrfToken(r, s.auth) },
 			CurrentPrincipal:     s.currentAdminPrincipal,
+			Publications:         s.adminPublications,
 			DefaultWorkspaceID:   s.defaultWorkspaceID,
 			AuthConfigured:       s.auth != nil,
 			AccessConfigured:     s.store != nil,
 		},
-		CurrentRoleLabel: s.currentAdminRoleLabel,
-		ChromeOption:     s.chatChromeOption,
-		EnsureClientID:   func(w http.ResponseWriter, r *http.Request) { _ = pagestream.EnsureClientID(w, r) },
-		Broker:           s.broker,
+		CurrentRoleLabel:    s.currentAdminRoleLabel,
+		ChromeOption:        s.chatChromeOption,
+		EnsureClientID:      func(w http.ResponseWriter, r *http.Request) { _ = pagestream.EnsureClientID(w, r) },
+		Broker:              s.broker,
+		PublicationMutation: s.mutateAdminPublication,
 	}
+}
+
+func (s *Server) mutateAdminPublication(r *http.Request, command uisignals.AdminPublicationCommand) error {
+	if s.publicationRepo == nil {
+		return publication.ErrNotFound
+	}
+	principal, ok := currentPrincipal(s, r)
+	if !ok {
+		return publication.ErrConflict
+	}
+	if !principal.DevBypass {
+		repo, err := s.accessRepository()
+		if err != nil {
+			return err
+		}
+		if repo != nil {
+			decision, err := repo.Authorize(r.Context(), principal.ID, access.PrivilegeManagePublications, access.WorkspaceObject(command.WorkspaceID))
+			if err != nil {
+				return err
+			}
+			if !decision.Allowed {
+				return publication.ErrNotFound
+			}
+		}
+	}
+	var row publication.Publication
+	var err error
+	switch command.Action {
+	case "suspend":
+		row, err = s.publicationRepo.Suspend(r.Context(), command.WorkspaceID, command.Publication, principal.ID)
+	case "resume":
+		row, err = s.publicationRepo.Resume(r.Context(), command.WorkspaceID, command.Publication, principal.ID)
+	case "rotate":
+		row, err = s.publicationRepo.Rotate(r.Context(), command.WorkspaceID, command.Publication, principal.ID)
+	default:
+		return publication.ErrConflict
+	}
+	if err == nil && (command.Action == "suspend" || command.Action == "rotate") {
+		s.publicationStreams.ClosePublication(row.ID)
+	}
+	return err
+}
+
+func (s *Server) adminPublications(r *http.Request) ([]ui.AdminPublication, bool, error) {
+	if s.publicationRepo == nil {
+		return nil, false, nil
+	}
+	principal, ok := currentPrincipal(s, r)
+	if !ok {
+		return nil, false, nil
+	}
+	rows, err := s.publicationRepo.ListAll(r.Context())
+	if err != nil {
+		return nil, false, err
+	}
+	accessRepo, err := s.accessRepository()
+	if err != nil {
+		return nil, false, err
+	}
+	canManage := principal.DevBypass || accessRepo == nil
+	if !canManage && s.defaultWorkspaceID != "" {
+		decision, err := accessRepo.Authorize(r.Context(), principal.ID, access.PrivilegeManagePublications, access.WorkspaceObject(s.defaultWorkspaceID))
+		if err != nil {
+			return nil, false, err
+		}
+		canManage = decision.Allowed
+	}
+	out := make([]ui.AdminPublication, 0, len(rows))
+	for _, row := range rows {
+		allowed := principal.DevBypass || accessRepo == nil
+		if !allowed {
+			decision, err := accessRepo.Authorize(r.Context(), principal.ID, access.PrivilegeManagePublications, access.WorkspaceObject(row.WorkspaceID))
+			if err != nil {
+				return nil, false, err
+			}
+			allowed = decision.Allowed
+		}
+		if !allowed {
+			continue
+		}
+		dto := s.dashboardPublicationDTO(row)
+		events, err := s.publicationRepo.ListEvents(r.Context(), row.ID)
+		if err != nil {
+			return nil, false, err
+		}
+		history := make([]string, 0, len(events))
+		for _, event := range events {
+			actor := event.ActorID
+			if actor == "" {
+				actor = "system"
+			}
+			history = append(history, fmt.Sprintf("%s · %s · %s", event.CreatedAt, event.Type, actor))
+		}
+		out = append(out, ui.AdminPublication{
+			WorkspaceID: row.WorkspaceID, Name: row.Name, Dashboard: row.Dashboard, DefaultPage: row.DefaultPage,
+			Status: string(row.Status()), Origins: append([]string(nil), row.AllowedOrigins...), Generation: row.ServingStateID,
+			PublicURL: dto.PublicUrl, EmbedURL: dto.EmbedUrl, IFrameSnippet: dto.IframeSnippet,
+			ConfiguredAt: row.ConfiguredAt, SuspendedAt: row.SuspendedAt, DisabledAt: row.DisabledAt, RotatedAt: row.RotatedAt,
+			History: history,
+		})
+	}
+	return out, canManage, nil
 }
 
 func (s *Server) storageReadModel() adminstorage.Service {

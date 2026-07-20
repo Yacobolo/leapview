@@ -361,6 +361,8 @@ func (r *Repository) dataPolicyAppliesToPrincipal(ctx context.Context, policy ac
 		return true, nil
 	case access.SubjectPrincipal, access.SubjectServicePrincipal:
 		return strings.TrimSpace(policy.SubjectID) == strings.TrimSpace(principalID), nil
+	case access.SubjectDashboardPublication:
+		return strings.TrimSpace(policy.SubjectID) == strings.TrimSpace(principalID), nil
 	case access.SubjectGroup:
 		exists, err := r.q.GroupMemberExists(ctx, platformdb.GroupMemberExistsParams{GroupID: policy.SubjectID, PrincipalID: principalID})
 		return exists != 0, err
@@ -648,6 +650,7 @@ func knownPrivileges() []access.Privilege {
 		access.PrivilegeRefreshData,
 		access.PrivilegeDeploy,
 		access.PrivilegeActivateDeployment,
+		access.PrivilegeManagePublications,
 		access.PrivilegeUseAgent,
 		access.PrivilegeViewAgent,
 		access.PrivilegeManageGrants,

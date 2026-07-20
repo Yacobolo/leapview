@@ -205,6 +205,19 @@ func (s *Server) executeAsyncJob(ctx context.Context, job asyncjob.Job) error {
 		if err := json.Unmarshal(job.Payload, &payload); err != nil {
 			return err
 		}
+		pending, err := s.deploymentOptions.Coordinator.Get(ctx, apiadapter.Scope{Project: payload.Project, DeploymentID: payload.Deployment})
+		if err != nil {
+			return err
+		}
+		targets := make([]apiadapter.TargetRequest, 0, len(pending.Targets))
+		for _, target := range pending.Targets {
+			targets = append(targets, apiadapter.TargetRequest{Workspace: target.Workspace, CandidateID: target.CandidateID})
+		}
+		principal := Principal{ID: payload.Actor, DevBypass: s.auth == nil || s.auth.devBypass}
+		if err := s.authorizePublicationDeployment(ctx, principal, targets); err != nil {
+			_ = s.appendAsyncEvent(context.WithoutCancel(ctx), "deployment", payload.Deployment, "deployment.failed", map[string]any{"deploymentId": payload.Deployment, "status": "failed"})
+			return err
+		}
 		row, err := s.deploymentOptions.Coordinator.Activate(ctx, apiadapter.ActivateRequest{Scope: apiadapter.Scope{Project: payload.Project, DeploymentID: payload.Deployment}, Actor: payload.Actor, IdempotencyKey: payload.IdempotencyKey})
 		if err == nil && s.refreshPipelineRepo != nil {
 			if reconcileErr := s.reconcileRefreshPipelineSchedules(ctx, s.refreshPipelineRepo); reconcileErr != nil {

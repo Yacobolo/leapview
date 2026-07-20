@@ -10,6 +10,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/api"
 	"github.com/Yacobolo/leapview/internal/dashboard"
+	"github.com/Yacobolo/leapview/internal/dashboard/command"
 	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
 	"github.com/Yacobolo/leapview/internal/dashboard/report"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
@@ -19,6 +20,22 @@ import (
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
+
+type publicPresentationContextKey struct{}
+
+type PublicPresentation struct {
+	PublicID     string
+	Presentation string
+}
+
+func WithPublicPresentation(ctx context.Context, value PublicPresentation) context.Context {
+	return context.WithValue(ctx, publicPresentationContextKey{}, value)
+}
+
+func publicPresentationFromContext(ctx context.Context) (PublicPresentation, bool) {
+	value, ok := ctx.Value(publicPresentationContextKey{}).(PublicPresentation)
+	return value, ok
+}
 
 type Metrics interface {
 	consumer.Executor
@@ -49,6 +66,7 @@ type Handler struct {
 	ChromeDecorators     func(r *nethttp.Request) []reportui.ChromeDecorator
 	Environment          func(*nethttp.Request) string
 	DataRefreshedAt      func(context.Context, string, string, string) string
+	CommandGuard         func(*nethttp.Request, Metrics, command.Request, dashboard.Signals) error
 }
 
 func (h Handler) filterAuthorizedDashboards(ctx context.Context, principalID, workspaceID string, rows []api.DashboardSummary) ([]api.DashboardSummary, error) {

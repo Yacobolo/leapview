@@ -697,6 +697,11 @@ func (r *Repository) policySubject(ctx context.Context, workspaceID string, subj
 			return "", "", err
 		}
 		return access.SubjectServicePrincipal, principal.ID, nil
+	case string(access.SubjectDashboardPublication):
+		if strings.TrimSpace(subject.Publication) == "" {
+			return "", "", fmt.Errorf("dashboard publication subject requires publication")
+		}
+		return access.SubjectDashboardPublication, access.DashboardPublicationSubjectID(workspaceID, subject.Publication), nil
 	default:
 		return "", "", fmt.Errorf("unsupported subject kind %q in workspace %q", subject.Kind, workspaceID)
 	}

@@ -112,6 +112,7 @@ func projectWorkspaceRoleBinding(name string, spec workspaceRoleBindingSpec) wor
 			Email:       strings.TrimSpace(spec.Subject.Email),
 			DisplayName: strings.TrimSpace(spec.Subject.DisplayName),
 			Group:       strings.TrimSpace(spec.Subject.Group),
+			Publication: strings.TrimSpace(spec.Subject.Publication),
 		},
 	}
 }
@@ -130,6 +131,7 @@ func projectWorkspaceGrant(name string, spec workspaceGrantSpec) workspace.Works
 			Email:       strings.TrimSpace(spec.Subject.Email),
 			DisplayName: strings.TrimSpace(spec.Subject.DisplayName),
 			Group:       strings.TrimSpace(spec.Subject.Group),
+			Publication: strings.TrimSpace(spec.Subject.Publication),
 		},
 		Privilege: strings.TrimSpace(spec.Privilege),
 	}
@@ -162,6 +164,7 @@ func projectWorkspaceDataPolicy(name string, spec workspaceDataPolicySpec) (work
 			Email:       strings.TrimSpace(spec.Subject.Email),
 			DisplayName: strings.TrimSpace(spec.Subject.DisplayName),
 			Group:       strings.TrimSpace(spec.Subject.Group),
+			Publication: strings.TrimSpace(spec.Subject.Publication),
 		},
 		PolicyType:     strings.TrimSpace(spec.PolicyType),
 		ExpressionJSON: expressionJSON,
@@ -231,9 +234,10 @@ func (workspaceProject *WorkspaceProject) definition(project Project) (*workspac
 		Dashboards:     []workspace.CatalogDashboard{},
 	}
 	definition := &workspace.Definition{
-		Catalog:    catalog,
-		Models:     map[string]*semanticmodel.Model{},
-		Dashboards: workspaceProject.Dashboards,
+		Catalog:      catalog,
+		Models:       map[string]*semanticmodel.Model{},
+		Dashboards:   workspaceProject.Dashboards,
+		Publications: copyDashboardPublications(workspaceProject.Publications),
 		Access: workspace.AccessPolicy{
 			Groups:       copyWorkspaceGroups(workspaceProject.AccessGroups),
 			RoleBindings: copyWorkspaceRoleBindings(workspaceProject.AccessRoleBindings),
@@ -274,6 +278,16 @@ func (workspaceProject *WorkspaceProject) definition(project Project) (*workspac
 		return definition.Catalog.Dashboards[i].ID < definition.Catalog.Dashboards[j].ID
 	})
 	return definition, nil
+}
+
+func copyDashboardPublications(in map[string]workspace.DashboardPublication) map[string]workspace.DashboardPublication {
+	out := make(map[string]workspace.DashboardPublication, len(in))
+	for name, publication := range in {
+		publication.AllowedOrigins = append([]string(nil), publication.AllowedOrigins...)
+		publication.DependencyAssetIDs = append([]string(nil), publication.DependencyAssetIDs...)
+		out[name] = publication
+	}
+	return out
 }
 
 func (workspaceProject *WorkspaceProject) sourceFiles(project Project) map[string]string {

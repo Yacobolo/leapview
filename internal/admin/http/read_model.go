@@ -24,6 +24,7 @@ type Principal struct {
 type AgentDetailsProvider func(context.Context) (api.AdminAgentResponse, error)
 type CSRFTokenProvider func(*http.Request) string
 type CurrentPrincipalProvider func(*http.Request) (Principal, bool)
+type PublicationProvider func(*http.Request) ([]ui.AdminPublication, bool, error)
 
 type ReadModel struct {
 	AccessRepository     func() (access.Repository, error)
@@ -32,6 +33,7 @@ type ReadModel struct {
 	QueryAuditRepository QueryAuditRepositoryProvider
 	CSRFToken            CSRFTokenProvider
 	CurrentPrincipal     CurrentPrincipalProvider
+	Publications         PublicationProvider
 	DefaultWorkspaceID   string
 	AuthConfigured       bool
 	AccessConfigured     bool
@@ -49,6 +51,12 @@ func (m ReadModel) Data(r *http.Request) (ui.AdminData, error) {
 	data.Agent, err = m.agentData(r)
 	if err != nil {
 		return data, err
+	}
+	if m.Publications != nil {
+		data.Publications, data.CanManagePublications, err = m.Publications(r)
+		if err != nil {
+			return data, err
+		}
 	}
 	repo, err := m.accessRepository()
 	if err != nil {
@@ -95,6 +103,17 @@ func (m ReadModel) Data(r *http.Request) (ui.AdminData, error) {
 	data.PrincipalCount = len(data.Principals)
 	data.GroupCount = len(data.Groups)
 	return data, nil
+}
+
+func (m ReadModel) PublicationData(r *http.Request) (ui.AdminData, error) {
+	data := ui.AdminData{CSRFToken: m.csrfToken(r), CanManagePublications: true}
+	if m.Publications == nil {
+		return data, nil
+	}
+	rows, allowed, err := m.Publications(r)
+	data.Publications = rows
+	data.CanManagePublications = allowed
+	return data, err
 }
 
 func (m ReadModel) agentData(r *http.Request) (ui.AdminAgentData, error) {

@@ -13,6 +13,7 @@ import "./refresh_runs.tsp";
 import "./agent.tsp";
 import "./access.tsp";
 import "./audit.tsp";
+import "./dashboard_publications.tsp";
 import "./managed_data.tsp";
 import "./upload_tus.tsp";
 import "./upload_s3_multipart.tsp";
@@ -24,7 +25,7 @@ using TypeSpec.OpenAPI;
 @doc("Headless API for LeapView workspaces, deployments, managed data, access control, refreshes, and agent operations.")
 @info(#{ version: "1.0.0" })
 @useAuth(BearerAuth)
-@tagMetadata(#[#{ name: "System", description: "API capabilities and protocol discovery." }, #{ name: "Instance", description: "The immutable serving identity of this LeapView installation." }, #{ name: "Projects", description: "Read-only project registry." }, #{ name: "Releases", description: "Immutable project releases and artifacts." }, #{ name: "Current User", description: "Current principal, sessions, tokens, and privileges." }, #{ name: "Workspaces", description: "Workspace and lineage discovery." }, #{ name: "Search", description: "Progressive workspace discovery across BI assets." }, #{ name: "BI", description: "Dashboard and semantic model read APIs." }, #{ name: "Deployments", description: "Atomic project release deployment." }, #{ name: "Refresh Runs", description: "Headless refresh run operations." }, #{ name: "Agent", description: "Headless agent conversation and run operations." }, #{ name: "Access", description: "Principals, groups, roles, and role bindings." }, #{ name: "Audit", description: "Workspace audit event discovery." }, #{ name: "Managed Data", description: "Project-global managed-data revisions and uploads." }])
+@tagMetadata(#[#{ name: "System", description: "API capabilities and protocol discovery." }, #{ name: "Instance", description: "The immutable serving identity of this LeapView installation." }, #{ name: "Projects", description: "Read-only project registry." }, #{ name: "Releases", description: "Immutable project releases and artifacts." }, #{ name: "Current User", description: "Current principal, sessions, tokens, and privileges." }, #{ name: "Workspaces", description: "Workspace and lineage discovery." }, #{ name: "Search", description: "Progressive workspace discovery across BI assets." }, #{ name: "BI", description: "Dashboard and semantic model read APIs." }, #{ name: "Deployments", description: "Atomic project release deployment." }, #{ name: "Refresh Runs", description: "Headless refresh run operations." }, #{ name: "Agent", description: "Headless agent conversation and run operations." }, #{ name: "Access", description: "Principals, groups, roles, and role bindings." }, #{ name: "Audit", description: "Workspace audit event discovery." }, #{ name: "Publications", description: "Anonymous public dashboard publication lifecycle." }, #{ name: "Managed Data", description: "Project-global managed-data revisions and uploads." }])
 @apigen.transportErrors(ProblemDetails, #{
   contentType: "application/problem+json",
   failures: #[

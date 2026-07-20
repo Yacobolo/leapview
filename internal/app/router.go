@@ -11,6 +11,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/access/httpauth"
 	"github.com/Yacobolo/leapview/internal/access/scimprov"
 	dashboardhttp "github.com/Yacobolo/leapview/internal/dashboard/http"
+	reportui "github.com/Yacobolo/leapview/internal/dashboard/ui"
 	"github.com/Yacobolo/leapview/internal/staticasset"
 	workspacehttp "github.com/Yacobolo/leapview/internal/workspace/http"
 	"github.com/go-chi/chi/v5"
@@ -31,6 +32,19 @@ func (s *Server) Routes() http.Handler {
 	mux.Get("/readyz", s.readyz)
 	mux.Get("/api/openapi.json", s.openAPIDescription)
 	mux.Get("/api/docs", s.publicDocs)
+	mux.Group(func(r chi.Router) {
+		r.Use(s.rateLimits.apiMiddleware())
+		r.Get("/public/dashboards/{publicId}", s.publicDashboardDocument(reportui.PresentationPublic))
+		r.Get("/public/dashboards/{publicId}/pages/{page}", s.publicDashboardDocument(reportui.PresentationPublic))
+		r.Get("/embed/dashboards/{publicId}", s.publicDashboardDocument(reportui.PresentationEmbed))
+		r.Get("/embed/dashboards/{publicId}/pages/{page}", s.publicDashboardDocument(reportui.PresentationEmbed))
+		r.Post("/public/dashboards/{publicId}/commands/reload", s.publicDashboardCommand("reload", func(h dashboardhttp.Handler, w http.ResponseWriter, r *http.Request) { h.Reload(w, r) }))
+		r.Post("/public/dashboards/{publicId}/commands/reset-filters", s.publicDashboardCommand("reset_filters", func(h dashboardhttp.Handler, w http.ResponseWriter, r *http.Request) { h.ResetFilters(w, r) }))
+		r.Post("/public/dashboards/{publicId}/commands/select", s.publicDashboardCommand("select", func(h dashboardhttp.Handler, w http.ResponseWriter, r *http.Request) { h.Select(w, r) }))
+		r.Post("/public/dashboards/{publicId}/commands/clear-selection", s.publicDashboardCommand("clear_selection", func(h dashboardhttp.Handler, w http.ResponseWriter, r *http.Request) { h.ClearSelection(w, r) }))
+		r.Post("/public/dashboards/{publicId}/commands/visual-window", s.publicDashboardCommand("visual_window", func(h dashboardhttp.Handler, w http.ResponseWriter, r *http.Request) { h.VisualWindow(w, r) }))
+	})
+	mux.With(s.rateLimits.updatesMiddleware()).Get("/public/dashboards/{publicId}/updates", s.publicDashboardUpdates)
 	if s.pageStreamTrace != nil {
 		mux.Get("/__dev/pagestream/traces", s.pageStreamTraces)
 		mux.Get("/__dev/pagestream/signals", s.pageStreamSignals)
@@ -71,6 +85,8 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/admin/storage/select-table", s.protected(access.PrivilegeManageGrants, adminHTTP.StorageTableSelect))
 		r.Get("/admin/queries", s.protected(access.PrivilegeViewAudit, adminHTTP.Queries))
 		r.Post("/admin/queries/command", s.protected(access.PrivilegeViewAudit, adminHTTP.QueryCommand))
+		r.Get("/admin/publications", s.protected(access.PrivilegeManagePublications, adminHTTP.Publications))
+		r.Post("/admin/publications/command", s.protected(access.PrivilegeManagePublications, adminHTTP.PublicationCommand))
 		r.Post("/workspaces/{workspace}/access/upsert", s.protected(access.PrivilegeManageGrants, workspaceHTTP.AccessUpsert))
 		r.Get("/workspaces/{workspace}/access/search", s.protected(access.PrivilegeManageGrants, workspaceHTTP.AccessSearch))
 		r.Post("/workspaces/{workspace}/access/remove", s.protected(access.PrivilegeManageGrants, workspaceHTTP.AccessRemove))

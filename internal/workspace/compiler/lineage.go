@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	"github.com/Yacobolo/leapview/internal/workspace"
 )
@@ -229,6 +230,32 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, servingStateID workspace.
 				edge(id, fieldID, workspace.AssetEdgeUsesField)
 			}
 		}
+		for _, metricName := range sortedMapKeys(model.Metrics) {
+			metric := model.Metrics[metricName]
+			id, err := add(workspace.AssetTypeMeasure, modelKey+"."+metricName, modelID, measureLabel(metricName, metric.Label), metric.Description, metricMeasurePayload(metric))
+			if err != nil {
+				return workspace.AssetGraph{}, err
+			}
+			edge(modelID, id, workspace.AssetEdgeContains)
+		}
+		for _, metricName := range sortedMapKeys(model.Metrics) {
+			metric := model.Metrics[metricName]
+			metricID, err := assetID(workspace.AssetTypeMeasure, modelKey+"."+metricName)
+			if err != nil {
+				return workspace.AssetGraph{}, err
+			}
+			expression, err := semanticmodel.ParseExpression(metric.Expression)
+			if err != nil {
+				return workspace.AssetGraph{}, err
+			}
+			for _, ref := range expression.References() {
+				dependencyID, err := assetID(workspace.AssetTypeMeasure, modelKey+"."+ref)
+				if err != nil {
+					return workspace.AssetGraph{}, err
+				}
+				edge(metricID, dependencyID, workspace.AssetEdgeUsesMeasure)
+			}
+		}
 	}
 	for _, pipelineName := range sortedMapKeys(definition.RefreshPipelines) {
 		pipeline := definition.RefreshPipelines[pipelineName]
@@ -259,11 +286,16 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, servingStateID workspace.
 		edge(reportID, modelID, workspace.AssetEdgeUsesSemanticModel)
 		model := definition.Models[report.SemanticModel]
 		addMeasureUse := func(fromID workspace.AssetID, ref reportdef.FieldRef) error {
+			if metric, ok := model.Metrics[ref.Field]; ok {
+				metricID, err := assetID(workspace.AssetTypeMeasure, modelKey+"."+metric.Name)
+				if err != nil {
+					return err
+				}
+				edge(fromID, metricID, workspace.AssetEdgeUsesMeasure)
+				return nil
+			}
 			measure, err := model.ResolveMeasure(ref.Field)
 			if err != nil {
-				if _, ok := model.Metrics[ref.Field]; ok {
-					return nil
-				}
 				return err
 			}
 			measureID, err := assetID(workspace.AssetTypeMeasure, modelKey+"."+measure.Name)

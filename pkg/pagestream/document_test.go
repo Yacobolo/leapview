@@ -57,8 +57,16 @@ func TestRenderPageRequiresUpdatesURL(t *testing.T) {
 	_ = RenderPage(PageSpec{})
 }
 
-func TestRenderPageRequiresCanonicalUpdatesPath(t *testing.T) {
-	for _, updatesURL := range []string{"/data/updates", "/updates-old", "https://example.com/updates"} {
+func TestRenderPageAcceptsValidatedSameOriginAbsoluteUpdatesPath(t *testing.T) {
+	for _, updatesURL := range []string{"/updates?route=test", "/public/dashboards/opaque/updates?page=overview"} {
+		t.Run(updatesURL, func(t *testing.T) {
+			_ = RenderPage(PageSpec{DatastarScriptURL: "/datastar.js", UpdatesURL: updatesURL})
+		})
+	}
+}
+
+func TestRenderPageRejectsNonSameOriginOrNonAbsoluteUpdatesPath(t *testing.T) {
+	for _, updatesURL := range []string{"updates", "//example.com/updates", "https://example.com/updates", "/updates#fragment"} {
 		t.Run(updatesURL, func(t *testing.T) {
 			defer func() {
 				if recover() == nil {

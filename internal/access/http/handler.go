@@ -1888,6 +1888,7 @@ func knownPrivileges() []string {
 		string(access.PrivilegeRefreshData),
 		string(access.PrivilegeDeploy),
 		string(access.PrivilegeActivateDeployment),
+		string(access.PrivilegeManagePublications),
 		string(access.PrivilegeUseAgent),
 		string(access.PrivilegeViewAgent),
 		string(access.PrivilegeManageGrants),
@@ -1945,6 +1946,7 @@ func knownPrivilege(value access.Privilege) bool {
 		access.PrivilegeRefreshData,
 		access.PrivilegeDeploy,
 		access.PrivilegeActivateDeployment,
+		access.PrivilegeManagePublications,
 		access.PrivilegeUseAgent,
 		access.PrivilegeViewAgent,
 		access.PrivilegeManageGrants,
@@ -1959,7 +1961,7 @@ func knownPrivilege(value access.Privilege) bool {
 
 func knownSubjectType(value access.SubjectType) bool {
 	switch value {
-	case access.SubjectPrincipal, access.SubjectGroup, access.SubjectServicePrincipal:
+	case access.SubjectPrincipal, access.SubjectGroup, access.SubjectServicePrincipal, access.SubjectDashboardPublication:
 		return true
 	default:
 		return false

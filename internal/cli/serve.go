@@ -384,6 +384,7 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 		DuckLakeCatalogPath: duckLakeCatalogPath,
 		DuckLakeDataPath:    cfg.DuckLakeDataDir(),
 		DefaultEnvironment:  string(environment),
+		PublicURL:           firstConfigured(cfg.PublicURL, listenURL(cfg.ListenAddr())),
 		RateLimits:          rateLimits,
 		SecurityHeaders:     app.SecurityHeaders(production && cfg.HSTSEnabled(cookieSecure)),
 		RequestLogging:      production && cfg.RequestLoggingEnabled(),

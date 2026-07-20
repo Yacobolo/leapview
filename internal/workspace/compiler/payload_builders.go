@@ -173,6 +173,18 @@ func measurePayload(measure semanticmodel.MetricMeasure) measurePayloadV1 {
 	}
 }
 
+func metricMeasurePayload(metric semanticmodel.Metric) measurePayloadV1 {
+	return measurePayloadV1{
+		Name:            metric.Name,
+		Label:           metric.Label,
+		Description:     metric.Description,
+		InputExpression: metric.Expression,
+		Unit:            metric.Unit,
+		Format:          metric.Format,
+		Hidden:          metric.Hidden,
+	}
+}
+
 func semanticDimensionsPayload(dimensions map[string]semanticmodel.SemanticDimension) map[string]semanticDimensionPayloadV1 {
 	out := map[string]semanticDimensionPayloadV1{}
 	for _, name := range sortedMapKeys(dimensions) {

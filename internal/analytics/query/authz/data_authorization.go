@@ -128,6 +128,27 @@ func (m Metrics) GovernDataQuery(ctx context.Context, request dataquery.Query) (
 	}
 	objects = append(objects, semanticObjects...)
 	objects = append(objects, physicalObjects...)
+	if capability, ok := dashboardPublicationCapabilityFromContext(ctx); ok {
+		objects = append(objects, dataQueryColumnObjects(request)...)
+		request.PrincipalID = access.DashboardPublicationSubjectID(capability.WorkspaceID, capability.Publication)
+		if err := validateDashboardPublicationQuery(capability, request, objects); err != nil {
+			m.recordDataAccessAudit(ctx, request, access.PrivilegeQueryData, objects, "denied", err)
+			return request, nil, err
+		}
+		governed, err := m.applyDataPolicies(ctx, request, objects)
+		if err != nil {
+			m.recordDataAccessAudit(ctx, request, access.PrivilegeQueryData, objects, "error", err)
+			return request, nil, err
+		}
+		return governed, func(result *dataquery.Result, executeErr error) error {
+			status := "success"
+			if executeErr != nil || (result != nil && result.Status == dataquery.StatusError) {
+				status = "error"
+			}
+			m.recordDataAccessAudit(ctx, governed, access.PrivilegeQueryData, objects, status, executeErr)
+			return nil
+		}, nil
+	}
 	principalID := strings.TrimSpace(request.PrincipalID)
 	if principal, ok := m.currentPrincipal(ctx); ok {
 		if principal.DevBypass {
@@ -578,7 +599,7 @@ func dataQueryPrivilege(request dataquery.Query) access.Privilege {
 	case dataquery.KindModelTableRows, dataquery.KindSourceRows:
 		return access.PrivilegePreviewData
 	case dataquery.KindSemanticRows:
-		if request.Surface == dataquery.SurfaceDashboard {
+		if request.Surface == dataquery.SurfaceDashboard || request.Surface == dataquery.SurfacePublicDashboard {
 			return access.PrivilegeQueryData
 		}
 		return access.PrivilegePreviewData

@@ -73,6 +73,12 @@ func (h Handler) handleCommandWithBefore(w nethttp.ResponseWriter, r *nethttp.Re
 		VisualWindowCommand: signals.VisualWindowCommand,
 		InteractionCommand:  signals.InteractionCommand,
 	}
+	if h.CommandGuard != nil {
+		if err := h.CommandGuard(r, metrics, request, signals); err != nil {
+			nethttp.NotFound(w, r)
+			return
+		}
+	}
 
 	registry := h.Coordinators
 	if registry == nil {

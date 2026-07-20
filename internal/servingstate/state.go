@@ -46,23 +46,24 @@ const (
 )
 
 type State struct {
-	ID                 ID
-	WorkspaceID        WorkspaceID
-	ProjectID          string
-	ProjectDigest      string
-	ProjectWorkspaces  []string
-	AccessPolicyJSON   string
-	Environment        Environment
-	Status             Status
-	Source             Source
-	Digest             string
-	ManifestJSON       string
-	CreatedBy          string
-	CreatedAt          string
-	ActivatedAt        string
-	SupersededAt       string
-	Error              string
-	DuckLakeSnapshotID int64
+	ID                        ID
+	WorkspaceID               WorkspaceID
+	ProjectID                 string
+	ProjectDigest             string
+	ProjectWorkspaces         []string
+	AccessPolicyJSON          string
+	DashboardPublicationsJSON string
+	Environment               Environment
+	Status                    Status
+	Source                    Source
+	Digest                    string
+	ManifestJSON              string
+	CreatedBy                 string
+	CreatedAt                 string
+	ActivatedAt               string
+	SupersededAt              string
+	Error                     string
+	DuckLakeSnapshotID        int64
 }
 
 func (d State) CanActivate() bool {
@@ -100,15 +101,16 @@ type SnapshotLeaseInput struct {
 }
 
 type Validation struct {
-	Digest               string
-	ManifestJSON         string
-	RootDir              string
-	ProjectID            string
-	ProjectDigest        string
-	ProjectWorkspaces    []string
-	AccessPolicy         workspace.AccessPolicy
-	ManagedDataRevisions map[string]string
-	Graph                workspace.AssetGraph
+	Digest                string
+	ManifestJSON          string
+	RootDir               string
+	ProjectID             string
+	ProjectDigest         string
+	ProjectWorkspaces     []string
+	AccessPolicy          workspace.AccessPolicy
+	DashboardPublications map[string]workspace.DashboardPublication
+	ManagedDataRevisions  map[string]string
+	Graph                 workspace.AssetGraph
 }
 
 type PreparedRuntime interface {

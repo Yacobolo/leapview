@@ -69,6 +69,7 @@ COPY --from=build /out/leapview-site /leapview-site
 USER nonroot:nonroot
 
 ENV LEAPVIEW_SITE_BASE_URL=
+ENV LEAPVIEW_SITE_SHOWCASE_EMBED_URL=
 
 EXPOSE 8081
 

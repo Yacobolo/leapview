@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Yacobolo/leapview/internal/dashboard/publication"
+	publicationsqlite "github.com/Yacobolo/leapview/internal/dashboard/publication/sqlite"
 	"github.com/Yacobolo/leapview/internal/deployment"
 	refreshpipelinesqlite "github.com/Yacobolo/leapview/internal/refreshpipeline/sqlite"
 	"github.com/Yacobolo/leapview/internal/workspace"
@@ -127,6 +129,55 @@ func TestActivateDeploymentAtomicallyAppliesArtifactAccessPolicy(t *testing.T) {
 	}
 	if groupCount != 1 || objectCount != 1 {
 		t.Fatalf("activated access state: groups=%d dashboard_objects=%d", groupCount, objectCount)
+	}
+}
+
+func TestActivateDeploymentAtomicallyReconcilesDashboardPublications(t *testing.T) {
+	ctx, db, repository := testRepository(t)
+	insertWorkspaceCandidate(t, ctx, db, "sales", "sales_old", "sales_new", "prod")
+	targets := []deployment.TargetInput{{WorkspaceID: "sales", ServingStateID: "sales_new"}}
+	setCandidateProjectMetadata(t, ctx, db, targets)
+	snapshot, err := json.Marshal(map[string]workspace.DashboardPublication{
+		"website": {Name: "website", Dashboard: "executive", DefaultPage: "overview", ConfigurationDigest: "sha256:publication", AllowedOrigins: []string{"https://leapview.dev"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE serving_states SET dashboard_publications_json = ? WHERE id = 'sales_new'`, string(snapshot)); err != nil {
+		t.Fatal(err)
+	}
+	created := createDeployment(t, ctx, repository, "deployment_publication", targets)
+	if _, err := repository.ActivateDeployment(ctx, created.ID); err != nil {
+		t.Fatal(err)
+	}
+	row, err := publicationsqlite.NewRepository(db).Get(ctx, "sales", "website")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.Status() != publication.StatusActive || row.ServingStateID != "sales_new" || row.Dashboard != "executive" {
+		t.Fatalf("publication = %#v, status=%s", row, row.Status())
+	}
+}
+
+func TestActivateDeploymentRollsBackWhenPublicationSnapshotIsInvalid(t *testing.T) {
+	ctx, db, repository := testRepository(t)
+	insertWorkspaceCandidate(t, ctx, db, "sales", "sales_old", "sales_new", "prod")
+	targets := []deployment.TargetInput{{WorkspaceID: "sales", ServingStateID: "sales_new"}}
+	setCandidateProjectMetadata(t, ctx, db, targets)
+	if _, err := db.ExecContext(ctx, `UPDATE serving_states SET dashboard_publications_json = '{' WHERE id = 'sales_new'`); err != nil {
+		t.Fatal(err)
+	}
+	created := createDeployment(t, ctx, repository, "deployment_bad_publication", targets)
+	if _, err := repository.ActivateDeployment(ctx, created.ID); !errors.Is(err, deployment.ErrConflict) {
+		t.Fatalf("ActivateDeployment() error = %v", err)
+	}
+	assertActiveState(t, ctx, db, "sales", "prod", "sales_old")
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM dashboard_publications`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("publication rows after rollback = %d", count)
 	}
 }
 

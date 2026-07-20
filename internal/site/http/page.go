@@ -20,6 +20,7 @@ type sitePageMetadata struct {
 	canonical   string
 	contentType string
 	robots      string
+	showcase    bool
 }
 
 type siteStackIntegration struct {
@@ -82,7 +83,7 @@ func sitePage(metadata sitePageMetadata) g.Node {
 		UpdatesURL:        "/updates",
 		Body: []g.Node{
 			h.A(h.Class("skip-link"), h.Href("#main-content"), g.Text("Skip to content")),
-			siteHeader(false),
+			siteHeader(false, metadata.showcase),
 			h.Section(h.ID("main-content"), h.Class("site-hero"),
 				g.El("lv-site-flow-background", h.Class("site-hero-background"), g.Attr("aria-hidden", "true")),
 				h.Div(h.Class("site-hero-layout"),
@@ -199,7 +200,7 @@ func visualsPage(metadata sitePageMetadata) g.Node {
 		UpdatesURL:        "/updates?view=visuals",
 		Body: []g.Node{
 			h.A(h.Class("skip-link"), h.Href("#main-content"), g.Text("Skip to content")),
-			siteHeader(false),
+			siteHeader(false, metadata.showcase),
 			h.Div(h.Class("site-shell site-showcase-shell"),
 				h.Section(h.ID("main-content"), h.Class("site-showcase-intro"),
 					h.P(h.Class("site-eyebrow"), g.Text(siteBrandName+" visual system")),
@@ -207,6 +208,42 @@ func visualsPage(metadata sitePageMetadata) g.Node {
 					h.P(h.Class("site-lede"), g.Text("Each item below is a real "+siteBrandName+" visual rendered from the same type-discriminated payload contract.")),
 				),
 				g.El("lv-site-visual-showcase"),
+			),
+			siteFooter(),
+		},
+	})
+}
+
+func showcasePage(metadata sitePageMetadata, embedURL *url.URL) g.Node {
+	standaloneURL := *embedURL
+	standaloneURL.Path = strings.Replace(standaloneURL.Path, "/embed/dashboards/", "/public/dashboards/", 1)
+	standaloneURL.RawPath = ""
+	return pagestream.RenderPage(pagestream.PageSpec{
+		Title:             metadata.title,
+		HTMLAttrs:         siteHTMLAttrs(),
+		Head:              siteHead(metadata),
+		MainAttrs:         []g.Node{h.Class("site-page")},
+		DatastarScriptURL: siteDatastarScriptURL,
+		UpdatesURL:        "/updates",
+		Body: []g.Node{
+			h.A(h.Class("skip-link"), h.Href("#main-content"), g.Text("Skip to content")),
+			siteHeader(false, metadata.showcase),
+			h.Div(h.Class("site-shell site-live-showcase-shell"),
+				h.Section(h.ID("main-content"), h.Class("site-showcase-intro"),
+					h.P(h.Class("site-eyebrow"), g.Text("Live dashboard")),
+					h.H1(g.Text("Explore a real "+siteBrandName+" dashboard.")),
+					h.P(h.Class("site-lede"), g.Text("Filter, select, and navigate the same published dashboard surface you can embed in your own product.")),
+					h.A(h.Class("site-button"), h.Href(standaloneURL.String()), g.Attr("rel", "noreferrer"), g.Text("Open standalone dashboard")),
+				),
+				h.Div(h.Class("site-live-showcase-frame"),
+					h.IFrame(
+						h.Src(embedURL.String()),
+						h.Title(siteBrandName+" interactive dashboard showcase"),
+						g.Attr("sandbox", "allow-scripts allow-same-origin"),
+						g.Attr("referrerpolicy", "no-referrer"),
+						g.Attr("loading", "eager"),
+					),
+				),
 			),
 			siteFooter(),
 		},
@@ -223,7 +260,7 @@ func docsIndexPage(metadata sitePageMetadata) g.Node {
 		UpdatesURL:        "/updates",
 		Body: []g.Node{
 			h.A(h.Class("skip-link"), h.Href("#main-content"), g.Text("Skip to content")),
-			siteHeader(true),
+			siteHeader(true, metadata.showcase),
 			siteDocsLayout(nil, siteDocsIndex()),
 		},
 	})
@@ -239,7 +276,7 @@ func docsSearchPage(query string, metadata sitePageMetadata) g.Node {
 		UpdatesURL:        "/updates",
 		Body: []g.Node{
 			h.A(h.Class("skip-link"), h.Href("#main-content"), g.Text("Skip to content")),
-			siteHeader(true),
+			siteHeader(true, metadata.showcase),
 			siteDocsLayout(nil, siteDocsSearch(query)),
 		},
 	})
@@ -259,7 +296,7 @@ func docsArticlePage(document siteDocument, metadata sitePageMetadata) g.Node {
 		UpdatesURL:        updatesURL,
 		Body: []g.Node{
 			h.A(h.Class("skip-link"), h.Href("#main-content"), g.Text("Skip to content")),
-			siteHeader(true),
+			siteHeader(true, metadata.showcase),
 			siteDocsLayout(&document, siteDocsArticle(document)),
 		},
 	})
@@ -275,7 +312,7 @@ func notFoundPage(metadata sitePageMetadata) g.Node {
 		UpdatesURL:        "/updates",
 		Body: []g.Node{
 			h.A(h.Class("skip-link"), h.Href("#main-content"), g.Text("Skip to content")),
-			siteHeader(false),
+			siteHeader(false, metadata.showcase),
 			h.Div(h.Class("site-shell"),
 				h.Section(h.ID("main-content"), h.Class("site-showcase-intro"),
 					h.P(h.Class("site-eyebrow"), g.Text("404")),
@@ -318,7 +355,7 @@ func siteHead(metadata sitePageMetadata) []g.Node {
 	return nodes
 }
 
-func siteHeader(isDocs bool) g.Node {
+func siteHeader(isDocs, showcase bool) g.Node {
 	var actions []g.Node
 	if isDocs {
 		actions = append(actions, h.Div(h.Class("site-nav-links site-nav-links-docs"), siteActiveSearch()))
@@ -326,11 +363,12 @@ func siteHeader(isDocs bool) g.Node {
 		actions = append(actions, h.Div(h.Class("site-nav-links"),
 			h.A(h.Href("/docs"), g.Text("Docs")),
 			h.A(h.Href("/visuals"), g.Text("Visuals")),
+			g.If(showcase, h.A(h.Href("/showcase"), g.Text("Live demo"))),
 		))
 	}
 	actions = append(actions, g.El("lv-site-theme-toggle"))
 	if !isDocs {
-		actions = append(actions, g.El("lv-site-mobile-menu"))
+		actions = append(actions, g.El("lv-site-mobile-menu", g.If(showcase, g.Attr("showcase", ""))))
 	}
 
 	return h.Header(h.Class("site-header"),

@@ -481,6 +481,8 @@ func kindForResourceFile(t *testing.T, path string) (Kind, bool) {
 		return KindSemanticModelResource, true
 	case "Dashboard":
 		return KindDashboardResource, true
+	case "DashboardPublication":
+		return KindDashboardPublication, true
 	default:
 		return "", false
 	}

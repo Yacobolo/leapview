@@ -223,6 +223,7 @@ func DashboardInitialEnvelope(clientID, streamInstanceID string, catalog dashboa
 		Chrome: ChromeSignal{Sidebar: sidebarConfig(catalog, "workspaces", report.ID, workspaceDisplayTitle(catalog), report.Title, activePage.Title, modelID, modelTitle, true, "", strings.TrimSpace(catalog.Workspace.ID) != "")},
 		Page: DashboardPageSignal{
 			Kind:           RouteDashboard,
+			Presentation:   "app",
 			Title:          report.Title,
 			Description:    optionalValue(report.Description),
 			DashboardID:    report.ID,
