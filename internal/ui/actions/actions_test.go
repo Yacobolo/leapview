@@ -15,3 +15,11 @@ func TestRequestWithoutSignalFilter(t *testing.T) {
 		t.Fatalf("Patch() = %q, want %q", got, want)
 	}
 }
+
+func TestGetScopesActiveSearchSignals(t *testing.T) {
+	got := Get("/chats/references/search", "agentReferenceSearch", "agentContext")
+	want := `@get('/chats/references/search', {filterSignals: {include: /^(?:agentReferenceSearch|agentContext)(?:[.]|$)/}, headers: window.LibreDashCommand.headers()})`
+	if got != want {
+		t.Fatalf("Get() = %q, want %q", got, want)
+	}
+}

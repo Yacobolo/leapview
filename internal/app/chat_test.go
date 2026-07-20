@@ -18,6 +18,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/platform"
+	"github.com/Yacobolo/libredash/internal/workspace"
 	"github.com/Yacobolo/libredash/pkg/pagestream"
 )
 
@@ -85,6 +86,8 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 		`view="new"`,
 		`data-indicator="agentTurnPending"`,
 		`data-on:ld-chat-submit`,
+		`data-on:ld-chat-reference-search__debounce.200ms`,
+		`/chats/references/search`,
 		`/chats/turns`,
 		`/updates?route=chat&amp;view=new`,
 	} {
@@ -123,6 +126,67 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 	}
 	if strings.Contains(body, `data-attr:events`) || strings.Contains(body, `$agent.events`) {
 		t.Fatalf("chat page should not feed raw events to the chat thread:\n%s", body)
+	}
+}
+
+func TestChatReferenceSearchReturnsTypedGovernedWorkspaceResults(t *testing.T) {
+	store := testStore(t)
+	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
+
+	signals, _ := json.Marshal(map[string]any{
+		"agentReferenceSearch": map[string]any{"query": "orders by", "workspaceId": "test"},
+		"agentContext":         map[string]any{"surface": "chat", "workspaceId": "test"},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/chats/references/search?datastar="+url.QueryEscape(string(signals)), nil)
+	req.Header.Set("Accept", "text/event-stream")
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"agentReferenceSearch"`, `"query":"orders by"`, `"kind":"visual"`, `"title":"Orders"`, `"dashboardId":"executive-sales"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("reference search missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, `"query":`) && !strings.Contains(body, `"results":`) {
+		t.Fatalf("reference search did not patch typed results:\n%s", body)
+	}
+}
+
+func TestChatReferenceSearchWithoutWorkspaceSearchesVisibleWorkspaces(t *testing.T) {
+	store := testStore(t)
+	auth := testAuth(store, "", AuthConfig{DevBypass: true})
+	server := NewWithOptions(NewMultiWorkspaceMetrics("sales", map[string]QueryMetrics{"sales": fakeMetrics{}}), Options{
+		Store: store, Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}),
+	})
+	repo, err := server.workspaceRepository()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Ensure(context.Background(), workspace.EnsureInput{ID: "sales", Title: "Sales"}); err != nil {
+		t.Fatal(err)
+	}
+
+	signals, _ := json.Marshal(map[string]any{
+		"agentReferenceSearch": map[string]any{"query": "orders"},
+		"agentContext":         map[string]any{"surface": "chat"},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/chats/references/search?datastar="+url.QueryEscape(string(signals)), nil)
+	req.Header.Set("Accept", "text/event-stream")
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{`"workspaceId":"sales"`, `"kind":"visual"`, `"title":"Orders"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("global reference search missing %q:\n%s", want, rec.Body.String())
+		}
 	}
 }
 

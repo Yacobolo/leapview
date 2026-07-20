@@ -38,6 +38,31 @@ func (h Handler) SearchWorkspace(w nethttp.ResponseWriter, r *nethttp.Request) {
 	writeJSON(w, nethttp.StatusOK, api.SearchResponse{Items: items, Page: api.PageInfo{NextCursor: nextCursor}})
 }
 
+// SearchResults returns the same ranked, object-authorized workspace results
+// used by the public search API. Product surfaces should call this instead of
+// maintaining their own search index or authorization path.
+func (h Handler) SearchResults(r *nethttp.Request, workspaceID, query string, types search.TypeSet) ([]api.SearchResult, error) {
+	results, err := h.workspaceSearchResults(r, workspaceID, query, types)
+	if err != nil {
+		return nil, err
+	}
+	return h.filterReadableSearchResults(r, workspaceID, results)
+}
+
+func (h Handler) VisibleWorkspaceIDs(r *nethttp.Request) ([]string, error) {
+	workspaces, err := h.ReadModel.WorkspaceList(r)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(workspaces))
+	for _, item := range workspaces {
+		if id := strings.TrimSpace(string(item.ID)); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}
+
 func (h Handler) filterReadableSearchResults(r *nethttp.Request, workspaceID string, rows []api.SearchResult) ([]api.SearchResult, error) {
 	out := make([]api.SearchResult, 0, len(rows))
 	for _, row := range rows {
@@ -214,6 +239,7 @@ func dashboardComponentSearchDocument(report reportdef.Dashboard, page dashboard
 			Name:        name,
 			Description: description,
 			Refs: search.Refs{
+				ComponentID: component.ID,
 				DashboardID: report.ID,
 				PageID:      page.ID,
 				VisualID:    component.Visual,
@@ -237,6 +263,7 @@ func dashboardComponentSearchDocument(report reportdef.Dashboard, page dashboard
 			Name:        name,
 			Description: description,
 			Refs: search.Refs{
+				ComponentID: component.ID,
 				DashboardID: report.ID,
 				PageID:      page.ID,
 				VisualID:    component.Table,
@@ -261,6 +288,7 @@ func dashboardComponentSearchDocument(report reportdef.Dashboard, page dashboard
 			Name:        name,
 			Description: description,
 			Refs: search.Refs{
+				ComponentID: component.ID,
 				DashboardID: report.ID,
 				PageID:      page.ID,
 				FilterID:    component.Filter,
@@ -448,6 +476,7 @@ func searchResultsFromWorkspaceResults(results []search.Result) []api.SearchResu
 			Type:        result.Type,
 			Name:        result.Name,
 			Description: result.Description,
+			ComponentID: result.ComponentID,
 			DashboardID: result.DashboardID,
 			PageID:      result.PageID,
 			VisualID:    result.VisualID,

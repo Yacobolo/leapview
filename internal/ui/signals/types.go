@@ -238,7 +238,13 @@ func DashboardInitialEnvelope(clientID, streamInstanceID string, catalog dashboa
 			PageTitle:      activePage.Title,
 			ModelID:        modelID,
 			Filters:        DashboardFiltersFromDashboard(initialFilters),
-			References:     []AgentVisualReferenceSignal{},
+			References:     []AgentReferenceSignal{},
+		},
+		AgentReferenceSearch: AgentReferenceSearchSignal{
+			WorkspaceID: catalog.Workspace.ID,
+			DashboardID: report.ID,
+			PageID:      activePage.ID,
+			Results:     []AgentReferenceSignal{},
 		},
 		AgentVisuals: map[string]DashboardVisual{},
 		Chrome:       ChromeSignal{Sidebar: sidebarConfig(catalog, "workspaces", report.ID, workspaceDisplayTitle(catalog), report.Title, activePage.Title, modelID, modelTitle, true, "", strings.TrimSpace(catalog.Workspace.ID) != "")},
@@ -293,9 +299,16 @@ func ChatInitialEnvelope(catalog dashboard.Catalog, workspaceID, roleLabel, view
 	return ChatEnvelope{
 		Chrome:  chrome,
 		Page:    ChatPage(workspaceID, view, state.Agent),
-		Runtime: RouteRuntimeSignal{Kind: RouteChat},
+		Runtime: RouteRuntimeSignal{Kind: RouteChat, WorkspaceID: optionalValue(workspaceID)},
 		Agent:   state.Agent,
-		Visuals: state.Visuals,
+		AgentContext: AgentContextSignal{
+			Surface:     "chat",
+			WorkspaceID: workspaceID,
+			Filters:     DashboardFilters{Controls: map[string]DashboardFilterControl{}, Selections: []DashboardInteractionSelection{}},
+			References:  []AgentReferenceSignal{},
+		},
+		AgentReferenceSearch: AgentReferenceSearchSignal{WorkspaceID: workspaceID, Results: []AgentReferenceSignal{}},
+		Visuals:              state.Visuals,
 	}
 }
 

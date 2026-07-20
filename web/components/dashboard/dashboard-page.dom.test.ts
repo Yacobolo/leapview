@@ -592,8 +592,9 @@ test('dashboard agent drawer carries page context and explicit visual references
     const referenced = await page.locator('ld-dashboard-page').evaluate((element: any) => {
       const drawer = element.shadowRoot.querySelector('ld-chat-drawer') as any
       const drawerRoot = drawer.shadowRoot
+      const composerRoot = drawerRoot.querySelector('ld-chat-composer')?.shadowRoot
       return {
-        chip: drawerRoot.querySelector('.reference-chip')?.textContent?.replace(/\s+/g, ' ').trim(),
+        chip: composerRoot?.querySelector('.reference-chip')?.textContent?.replace(/\s+/g, ' ').trim(),
         highlighted: Boolean(element.shadowRoot.querySelector('ld-dashboard-visual-frame[data-agent-referenced]')),
       }
     })
@@ -613,7 +614,17 @@ test('dashboard agent drawer carries page context and explicit visual references
     })
     expect(submitted).toEqual({
       input: 'Why did this decline?',
-      references: [{ kind: 'visual', componentId: 'orders-chart', visualId: 'orders_chart', title: 'Orders by status', visualType: 'bar' }],
+      references: [{
+        kind: 'visual',
+        id: 'visual:executive-sales.overview.orders_chart',
+        workspaceId: 'sales',
+        dashboardId: 'executive-sales',
+        pageId: 'overview',
+        componentId: 'orders-chart',
+        visualId: 'orders_chart',
+        title: 'Orders by status',
+        visualType: 'bar',
+      }],
     })
   } finally {
     await page.close()

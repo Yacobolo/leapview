@@ -2,7 +2,8 @@ import { LitElement, css, html, nothing } from 'lit'
 import { property, state } from 'lit/decorators.js'
 import { Bot, MessageSquareText } from 'lucide'
 import type {
-  AgentVisualReferenceSignal,
+  AgentContextSignal,
+  AgentReferenceSignal,
   DashboardComponentSignal,
   DashboardComponentStatus,
   DashboardFilters,
@@ -68,7 +69,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
   @state() private optimisticSelections: CanonicalInteractionSelection[] | null = null
   @state() private optimisticTargetKeys = new Set<string>()
 	@state() private agentDrawerOpen = false
-	@state() private agentReferences: AgentVisualReferenceSignal[] = []
+	@state() private agentReferences: AgentReferenceSignal[] = []
   private optimisticExpectedGeneration = 0
   private optimisticRollbackTimer?: ReturnType<typeof setTimeout>
   private renderSnapshot?: DashboardRenderSnapshot
@@ -378,6 +379,10 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     return this.signal<DashboardPageSignal | null>('page', null)
   }
 
+	private get agentContext(): AgentContextSignal | null {
+		return this.signal<AgentContextSignal | null>('agentContext', null)
+	}
+
   private get filterConfig(): ReportFilterConfig[] {
     return this.signal<ReportFilterConfig[]>('filterConfig', [])
   }
@@ -523,8 +528,9 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     const visualType = component.visual ? this.visuals[component.visual]?.type ?? '' : ''
     const statusKey = this.componentStatusKey(component)
     const componentRefreshStatus = statusKey ? this.refreshStatusFor(statusKey) : undefined
-		const askReference = this.agentReference(component)
-		const referenced = askReference ? this.agentReferences.some((reference) => reference.componentId === askReference.componentId) : false
+			const currentPage = this.renderSnapshot?.page ?? this.page
+			const askReference = currentPage ? this.agentReference(component, currentPage) : undefined
+			const referenced = askReference ? this.agentReferences.some((reference) => reference.id === askReference.id) : false
     return html`
               <ld-dashboard-visual-frame
                 data-canvas-visual
@@ -616,18 +622,22 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     `
   }
 
-	private agentSuggestions(page: DashboardPageSignal): AgentVisualReferenceSignal[] {
+	private agentSuggestions(page: DashboardPageSignal): AgentReferenceSignal[] {
 		return page.components
-			.map((component) => this.agentReference(component))
-			.filter((reference): reference is AgentVisualReferenceSignal => Boolean(reference))
+			.map((component) => this.agentReference(component, page))
+			.filter((reference): reference is AgentReferenceSignal => Boolean(reference))
 	}
 
-	private agentReference(component: DashboardComponentSignal): AgentVisualReferenceSignal | undefined {
+	private agentReference(component: DashboardComponentSignal, page: DashboardPageSignal): AgentReferenceSignal | undefined {
 		if (component.kind !== 'visual' || !component.visual) return undefined
 		const visual = this.visuals[component.visual]
 		if (!visual) return undefined
 		return {
 			kind: 'visual',
+			id: `visual:${page.dashboardId}.${page.pageId}.${component.visual}`,
+			workspaceId: this.agentContext?.workspaceId ?? '',
+			dashboardId: page.dashboardId,
+			pageId: page.pageId,
 			componentId: component.id,
 			visualId: component.visual,
 			title: component.title || visual.title || component.visual,
@@ -635,15 +645,15 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
 		}
 	}
 
-	private handleAgentReference = (event: CustomEvent<AgentVisualReferenceSignal>) => {
+	private handleAgentReference = (event: CustomEvent<AgentReferenceSignal>) => {
 		const reference = event.detail
 		if (!reference) return
 		this.agentDrawerOpen = true
-		const drawer = this.shadowRoot?.querySelector('ld-chat-drawer') as (HTMLElement & { openWithReference(reference: AgentVisualReferenceSignal): void }) | null
+		const drawer = this.shadowRoot?.querySelector('ld-chat-drawer') as (HTMLElement & { openWithReference(reference: AgentReferenceSignal): void }) | null
 		drawer?.openWithReference(reference)
 	}
 
-	private handleAgentReferencesChanged = (event: CustomEvent<{ references: AgentVisualReferenceSignal[] }>) => {
+	private handleAgentReferencesChanged = (event: CustomEvent<{ references: AgentReferenceSignal[] }>) => {
 		this.agentReferences = [...(event.detail.references ?? [])]
 	}
 
@@ -787,7 +797,7 @@ function stableSignature(value: unknown): string {
 class DashboardVisualFrame extends LitElement {
   @property({ type: Boolean, reflect: true }) transparent = false
   @property({ type: Object, attribute: false }) refreshStatus?: DashboardComponentStatus
-	@property({ type: Object, attribute: false }) askReference?: AgentVisualReferenceSignal
+	@property({ type: Object, attribute: false }) askReference?: AgentReferenceSignal
 
   static styles = css`
     :host {

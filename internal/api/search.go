@@ -5,6 +5,7 @@ type SearchResult struct {
 	Type        string `json:"type"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	ComponentID string `json:"componentId,omitempty"`
 	DashboardID string `json:"dashboardId,omitempty"`
 	PageID      string `json:"pageId,omitempty"`
 	VisualID    string `json:"visualId,omitempty"`

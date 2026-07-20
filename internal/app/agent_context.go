@@ -151,6 +151,7 @@ func resolveDashboardTurnReferences(candidates []agent.TurnReference, page dashb
 			seen[component.ID] = struct{}{}
 			resolved = append(resolved, agent.TurnReference{
 				Kind:        "visual",
+				ID:          candidate.ID,
 				ComponentID: component.ID,
 				VisualID:    visualID,
 				Title:       title,

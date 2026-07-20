@@ -1,12 +1,34 @@
 package app
 
 import (
+	"net/http/httptest"
 	"testing"
 
 	"github.com/Yacobolo/libredash/internal/agent"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 )
+
+func TestResolveChatTurnReferencesUsesAuthorizedSearchMetadata(t *testing.T) {
+	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
+	resolved, err := server.resolveAgentTurnContext(httptest.NewRequest("GET", "/chats/new", nil), agent.Scope{DevAuthBypass: true}, agent.TurnContext{
+		Surface:     "chat",
+		WorkspaceID: "test",
+		References: []agent.TurnReference{{
+			Kind: "measure", ID: "test.order_count", Title: "Untrusted browser title", WorkspaceID: "test", ModelID: "wrong-model",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resolved.References) != 1 {
+		t.Fatalf("resolved references = %#v", resolved.References)
+	}
+	ref := resolved.References[0]
+	if ref.Kind != "measure" || ref.ID != "test.order_count" || ref.Title == "Untrusted browser title" || ref.ModelID != "test" {
+		t.Fatalf("resolved reference trusted browser metadata: %#v", ref)
+	}
+}
 
 func TestResolveDashboardTurnReferencesUsesCompiledMetadata(t *testing.T) {
 	page := dashboard.Page{Visuals: []dashboard.PageVisual{

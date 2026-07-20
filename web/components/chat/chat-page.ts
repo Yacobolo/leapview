@@ -1,5 +1,6 @@
 import { LitElement, css, html } from 'lit'
-import type { ChatConversationSummary, ChatPageSignal, ChatSignal, DashboardVisual } from '../../generated/signals'
+import { state } from 'lit/decorators.js'
+import type { AgentReferenceSearchSignal, AgentReferenceSignal, ChatConversationSummary, ChatPageSignal, ChatSignal, DashboardVisual } from '../../generated/signals'
 import { DatastarLit } from '../shared/datastar-lit'
 import { checkSignalContract } from '../shared/signal-contract'
 import '../dashboard/visual-modal'
@@ -17,6 +18,7 @@ const emptyAgent: ChatSignal = {
 
 class LibreDashChatPage extends DatastarLit(LitElement) {
   private redirectedConversationID = ''
+  @state() private references: AgentReferenceSignal[] = []
 
   static styles = css`
     :host {
@@ -207,6 +209,12 @@ class LibreDashChatPage extends DatastarLit(LitElement) {
     return this.signal<boolean>('agentTurnPending', false) || Boolean(this.agent.status?.running)
   }
 
+  get referenceSearch(): AgentReferenceSearchSignal {
+		return this.signal<AgentReferenceSearchSignal>('agentReferenceSearch', {
+			query: '', workspaceId: '', dashboardId: '', pageId: '', results: [],
+		})
+	}
+
   get composerDisabled(): boolean {
     const agent = this.agent
     return this.pending || Boolean(agent.status?.running) || Boolean(agent.composer?.disabled)
@@ -281,9 +289,16 @@ class LibreDashChatPage extends DatastarLit(LitElement) {
         .disabled=${this.composerDisabled || status.running || composer.disabled}
         .pending=${this.pending || status.running}
         .placeholder=${composer.placeholder ?? emptyAgent.composer.placeholder}
+				.references=${this.references}
+				.suggestions=${this.referenceSearch.results ?? []}
+				@ld-chat-references-change=${this.referencesChanged}
       ></ld-chat-composer>
     `
   }
+
+	private referencesChanged(event: CustomEvent<{ references: AgentReferenceSignal[] }>) {
+		this.references = [...(event.detail.references ?? [])]
+	}
 }
 
 function conversationTitle(agent: ChatSignal): string {

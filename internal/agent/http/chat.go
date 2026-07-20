@@ -20,6 +20,11 @@ type chatTurnCommandSignals struct {
 	AgentContext agent.TurnContext          `json:"agentContext"`
 }
 
+type chatReferenceSearchSignals struct {
+	AgentReferenceSearch ui.AgentReferenceSearchSignal `json:"agentReferenceSearch"`
+	AgentContext         agent.TurnContext             `json:"agentContext"`
+}
+
 type chatTurnCommandAgentSignal struct {
 	ActiveConversationID string                        `json:"activeConversationId"`
 	Composer             chatTurnCommandComposerSignal `json:"composer"`
@@ -91,7 +96,7 @@ func (h *Handler) ChatTurn(w nethttp.ResponseWriter, r *nethttp.Request) {
 		nethttp.Error(w, "input is required", nethttp.StatusBadRequest)
 		return
 	}
-	turnContext, embedded, err := h.resolveChatTurnContext(r.Context(), scope, signals.AgentContext)
+	turnContext, embedded, err := h.resolveChatTurnContext(r, scope, signals.AgentContext)
 	if err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
 		return
@@ -105,6 +110,38 @@ func (h *Handler) ChatTurn(w nethttp.ResponseWriter, r *nethttp.Request) {
 		return
 	}
 	h.runChatTurn(w, r, service, scope, clientID, activeConversationID, input, turnContext, embedded)
+}
+
+func (h *Handler) ChatReferenceSearch(w nethttp.ResponseWriter, r *nethttp.Request) {
+	if h.options.SearchReferences == nil {
+		nethttp.Error(w, "chat reference search is not configured", nethttp.StatusServiceUnavailable)
+		return
+	}
+	signals := chatReferenceSearchSignals{}
+	if err := pagestream.ReadSignals(r, &signals); err != nil {
+		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
+		return
+	}
+	search := signals.AgentReferenceSearch
+	workspaceID := firstNonEmptyString(search.WorkspaceID, signals.AgentContext.WorkspaceID)
+	dashboardID := firstNonEmptyString(search.DashboardID, signals.AgentContext.DashboardID)
+	pageID := firstNonEmptyString(search.PageID, signals.AgentContext.PageID)
+	results, err := h.options.SearchReferences(r, workspaceID, strings.TrimSpace(search.Query), dashboardID, pageID)
+	if err != nil {
+		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
+		return
+	}
+	if len(results) > 8 {
+		results = results[:8]
+	}
+	updates := pagestream.NewSignalStream(w, r)
+	_ = updates.Patch(pagestream.SignalPatch{"agentReferenceSearch": ui.AgentReferenceSearchSignal{
+		Query:       strings.TrimSpace(search.Query),
+		WorkspaceID: workspaceID,
+		DashboardID: dashboardID,
+		PageID:      pageID,
+		Results:     results,
+	}})
 }
 
 func (h *Handler) ChatUpdates(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -332,18 +369,28 @@ func chatSignalPatch(signal ui.ChatViewState, embedded bool) pagestream.SignalPa
 	return patch
 }
 
-func (h *Handler) resolveChatTurnContext(ctx context.Context, scope agent.Scope, candidate agent.TurnContext) (*agent.TurnContext, bool, error) {
-	if strings.ToLower(strings.TrimSpace(candidate.Surface)) != "dashboard" {
+func (h *Handler) resolveChatTurnContext(r *nethttp.Request, scope agent.Scope, candidate agent.TurnContext) (*agent.TurnContext, bool, error) {
+	surface := strings.ToLower(strings.TrimSpace(candidate.Surface))
+	if surface == "" || (surface == "chat" && len(candidate.References) == 0) {
 		return nil, false, nil
 	}
 	if h.options.ResolveTurnContext == nil {
-		return nil, true, errors.New("dashboard turn context resolver is not configured")
+		return nil, surface == "dashboard", errors.New("turn context resolver is not configured")
 	}
-	resolved, err := h.options.ResolveTurnContext(ctx, scope, candidate)
+	resolved, err := h.options.ResolveTurnContext(r, scope, candidate)
 	if err != nil {
-		return nil, true, err
+		return nil, surface == "dashboard", err
 	}
-	return &resolved, true, nil
+	return &resolved, surface == "dashboard", nil
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func chatRoutePath(parts ...string) string {

@@ -9,6 +9,7 @@ model SearchResult {
   type: string;
   name: string;
   description: string;
+  componentId?: string;
   dashboardId?: string;
   pageId?: string;
   visualId?: string;

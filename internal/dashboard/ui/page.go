@@ -131,6 +131,7 @@ func Page(clientID, csrfToken string, catalog dashboard.Catalog, report reportde
 		UpdatesURL: dashboardUpdatesURL,
 		Body: []g.Node{
 			g.El("ld-app-shell",
+				g.Attr("data-on:ld-chat-reference-search__debounce.200ms", "$agentReferenceSearch.query = evt.detail.query; "+uiactions.Get("/chats/references/search", "agentReferenceSearch", "agentContext")),
 				g.El("ld-dashboard-page",
 					g.Attr("slot", "page"),
 					g.Attr("workspace-id", catalog.Workspace.ID),
@@ -170,22 +171,23 @@ func BootstrapSignals(clientID, streamInstanceID string, catalog dashboard.Catal
 		}
 	}
 	return map[string]any{
-		"agent":               envelope.Agent,
-		"agentContext":        envelope.AgentContext,
-		"agentVisuals":        envelope.AgentVisuals,
-		"chrome":              envelope.Chrome,
-		"componentStatus":     envelope.ComponentStatus,
-		"page":                envelope.Page,
-		"runtime":             envelope.Runtime,
-		"filterConfig":        envelope.FilterConfig,
-		"filters":             envelope.Filters,
-		"urlParams":           envelope.URLParams,
-		"urlParamShape":       envelope.URLParamShape,
-		"filterOptions":       envelope.FilterOptions,
-		"interactionCommand":  envelope.InteractionCommand,
-		"visualWindowCommand": envelope.VisualWindowCommand,
-		"visuals":             envelope.Visuals,
-		"status":              envelope.Status,
+		"agent":                envelope.Agent,
+		"agentContext":         envelope.AgentContext,
+		"agentReferenceSearch": envelope.AgentReferenceSearch,
+		"agentVisuals":         envelope.AgentVisuals,
+		"chrome":               envelope.Chrome,
+		"componentStatus":      envelope.ComponentStatus,
+		"page":                 envelope.Page,
+		"runtime":              envelope.Runtime,
+		"filterConfig":         envelope.FilterConfig,
+		"filters":              envelope.Filters,
+		"urlParams":            envelope.URLParams,
+		"urlParamShape":        envelope.URLParamShape,
+		"filterOptions":        envelope.FilterOptions,
+		"interactionCommand":   envelope.InteractionCommand,
+		"visualWindowCommand":  envelope.VisualWindowCommand,
+		"visuals":              envelope.Visuals,
+		"status":               envelope.Status,
 	}
 }
 

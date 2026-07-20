@@ -387,12 +387,33 @@ model ChatArtifactSignal {
   `summary`?: string;
 }
 
-model AgentVisualReferenceSignal {
-  `kind`: "visual";
-  `componentId`: string;
-  `visualId`: string;
+model AgentReferenceSignal {
+  `kind`: string;
+  `id`: string;
   `title`: string;
-  `visualType`: string;
+  `description`?: string;
+  `workspaceId`: string;
+  `dashboardId`?: string;
+  `pageId`?: string;
+  `componentId`?: string;
+  `visualId`?: string;
+  `tableId`?: string;
+  `filterId`?: string;
+  `modelId`?: string;
+  `datasetId`?: string;
+  `fieldId`?: string;
+  `assetId`?: string;
+  `visualType`?: string;
+}
+
+@apigen.contract(#{ kind: "ui-signal", tags: #["agent", "search", "signal"] })
+@apigen.`metadata`(#{ `x-libredash-contract-role`: "signal", `x-libredash-surface`: "agent" })
+model AgentReferenceSearchSignal {
+  `query`: string;
+  `workspaceId`: string;
+  `dashboardId`: string;
+  `pageId`: string;
+  `results`: AgentReferenceSignal[];
 }
 
 @apigen.contract(#{ kind: "ui-signal", tags: #["agent", "dashboard", "signal"] })
@@ -407,7 +428,7 @@ model AgentContextSignal {
   `modelId`: string;
   `generation`: int64;
   `filters`: DashboardFilters;
-  `references`: AgentVisualReferenceSignal[];
+  `references`: AgentReferenceSignal[];
 }
 
 model ChatConversationSummary {
@@ -428,6 +449,10 @@ model ChatConversationSummary {
 model ChatEnvelope {
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "agent" })
   `agent`: ChatSignal;
+  @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "agentContext" })
+  `agentContext`: AgentContextSignal;
+  @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "agentReferenceSearch" })
+  `agentReferenceSearch`: AgentReferenceSearchSignal;
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "chrome" })
   `chrome`: ChromeSignal;
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "page" })
@@ -555,6 +580,8 @@ model DashboardEnvelope {
   `agent`: ChatSignal;
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "agentContext" })
   `agentContext`: AgentContextSignal;
+  @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "agentReferenceSearch" })
+  `agentReferenceSearch`: AgentReferenceSearchSignal;
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "merge", `x-libredash-signal-key`: "agentVisuals" })
   `agentVisuals`: Record<DashboardVisual>;
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "chrome" })

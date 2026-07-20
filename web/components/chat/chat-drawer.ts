@@ -3,7 +3,8 @@ import { property, state } from 'lit/decorators.js'
 import { Bot, ExternalLink, Plus, X } from 'lucide'
 import type {
   AgentContextSignal,
-  AgentVisualReferenceSignal,
+  AgentReferenceSearchSignal,
+  AgentReferenceSignal,
   ChatSignal,
   DashboardVisual,
 } from '../../generated/signals'
@@ -22,8 +23,8 @@ const emptyAgent: ChatSignal = {
 
 class ChatDrawer extends DatastarLit(LitElement) {
   @property({ type: Boolean, reflect: true }) open = false
-  @property({ attribute: false }) suggestions: AgentVisualReferenceSignal[] = []
-  @state() private references: AgentVisualReferenceSignal[] = []
+  @property({ attribute: false }) suggestions: AgentReferenceSignal[] = []
+  @state() private references: AgentReferenceSignal[] = []
 
   static styles = css`
     :host {
@@ -149,40 +150,6 @@ class ChatDrawer extends DatastarLit(LitElement) {
       white-space: nowrap;
     }
 
-    .references {
-      display: flex;
-      flex-wrap: wrap;
-			gap: var(--ld-space-xs);
-    }
-
-    .reference-chip {
-      display: inline-flex;
-      width: auto;
-      height: auto;
-      max-width: 100%;
-      align-items: center;
-			gap: var(--ld-space-xs);
-      border: 0;
-      border-radius: var(--ld-radius-full);
-      background: var(--ld-bg-panel-muted);
-      padding: 3px 8px;
-      color: var(--ld-fg-muted);
-      font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-medium);
-    }
-
-    .reference-chip span {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .reference-chip svg {
-      width: 12px;
-      height: 12px;
-      flex: 0 0 auto;
-    }
-
     ld-chat-thread {
       display: block;
       min-width: 0;
@@ -235,6 +202,12 @@ class ChatDrawer extends DatastarLit(LitElement) {
     return this.signal<boolean>('agentTurnPending', false) || Boolean(this.agent.status.running)
   }
 
+	get referenceSearch(): AgentReferenceSearchSignal {
+		return this.signal<AgentReferenceSearchSignal>('agentReferenceSearch', {
+			query: '', workspaceId: '', dashboardId: '', pageId: '', results: [],
+		})
+	}
+
   public openDrawer(): void {
     this.open = true
 		void this.updateComplete.then(() => {
@@ -243,8 +216,8 @@ class ChatDrawer extends DatastarLit(LitElement) {
 		})
   }
 
-  public openWithReference(reference: AgentVisualReferenceSignal): void {
-    if (!this.references.some((current) => current.componentId === reference.componentId)) {
+  public openWithReference(reference: AgentReferenceSignal): void {
+    if (!this.references.some((current) => referenceKey(current) === referenceKey(reference))) {
       this.references = [...this.references, reference]
       this.notifyReferences()
     }
@@ -263,6 +236,7 @@ class ChatDrawer extends DatastarLit(LitElement) {
 		const currentFilters = this.dashboardFilters
 		const controls = Object.keys(currentFilters.controls ?? {}).length
 		const selections = currentFilters.selections?.length ?? 0
+		const suggestions = mergeReferences(this.suggestions, this.referenceSearch.results ?? [])
     const conversationHref = agent.activeConversationId
       ? `/chats/${encodeURIComponent(agent.activeConversationId)}`
       : '/chats/new'
@@ -283,15 +257,6 @@ class ChatDrawer extends DatastarLit(LitElement) {
               <span class="context-separator" aria-hidden="true">·</span>
               <span class="filter-context">${controls} ${controls === 1 ? 'filter' : 'filters'} · ${selections} ${selections === 1 ? 'selection' : 'selections'}</span>
             </div>
-            ${this.references.length ? html`
-              <div class="references">
-                ${this.references.map((reference) => html`
-                  <button class="reference-chip" type="button" title="Remove reference" @click=${() => this.removeReference(reference.componentId)}>
-                    <span>${reference.title}</span>${lucideIcon(X)}
-                  </button>
-                `)}
-              </div>
-            ` : null}
           </section>
         </header>
         <ld-chat-thread
@@ -307,7 +272,7 @@ class ChatDrawer extends DatastarLit(LitElement) {
           .pending=${this.pending}
           .placeholder=${agent.composer.placeholder || 'Ask about this dashboard…'}
           .references=${this.references}
-          .suggestions=${this.suggestions}
+          .suggestions=${suggestions}
           @ld-chat-references-change=${this.referencesChanged}
         ></ld-chat-composer>
       </aside>
@@ -325,12 +290,7 @@ class ChatDrawer extends DatastarLit(LitElement) {
 		this.dispatchEvent(new CustomEvent('ld-chat-drawer-close', { bubbles: true, composed: true }))
 	}
 
-  private removeReference(componentId: string) {
-    this.references = this.references.filter((reference) => reference.componentId !== componentId)
-    this.notifyReferences()
-  }
-
-  private referencesChanged(event: CustomEvent<{ references: AgentVisualReferenceSignal[] }>) {
+  private referencesChanged(event: CustomEvent<{ references: AgentReferenceSignal[] }>) {
     this.references = event.detail.references ?? []
     this.notifyReferences()
   }
@@ -342,6 +302,20 @@ class ChatDrawer extends DatastarLit(LitElement) {
       detail: { references: this.references },
     }))
   }
+}
+
+function referenceKey(reference: AgentReferenceSignal): string {
+	return `${reference.workspaceId}:${reference.kind}:${reference.id || reference.componentId || reference.visualId || reference.title}`
+}
+
+function mergeReferences(...groups: AgentReferenceSignal[][]): AgentReferenceSignal[] {
+	const seen = new Set<string>()
+	return groups.flat().filter((reference) => {
+		const key = referenceKey(reference)
+		if (seen.has(key)) return false
+		seen.add(key)
+		return true
+	})
 }
 
 if (!customElements.get('ld-chat-drawer')) customElements.define('ld-chat-drawer', ChatDrawer)

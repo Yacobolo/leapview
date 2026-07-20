@@ -110,6 +110,12 @@ func TestChatInitialEnvelopeValidates(t *testing.T) {
 	if envelope.Page.View != "list" {
 		t.Fatalf("chat page view = %q", envelope.Page.View)
 	}
+	if envelope.AgentContext.Surface != "chat" || envelope.AgentContext.WorkspaceID != "test" || envelope.AgentContext.References == nil {
+		t.Fatalf("chat context = %#v", envelope.AgentContext)
+	}
+	if envelope.AgentReferenceSearch.WorkspaceID != "test" || envelope.AgentReferenceSearch.Results == nil {
+		t.Fatalf("chat reference search = %#v", envelope.AgentReferenceSearch)
+	}
 	if envelope.Chrome.Sidebar.History.Label != "Chats" {
 		t.Fatalf("chat history search config = %#v", envelope.Chrome.Sidebar.History)
 	}

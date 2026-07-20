@@ -20,9 +20,14 @@ var allowedTypes = map[string]struct{}{
 	"visual":         {},
 }
 
+var queryStopWords = map[string]struct{}{
+	"a": {}, "an": {}, "and": {}, "by": {}, "for": {}, "in": {}, "of": {}, "on": {}, "the": {}, "to": {},
+}
+
 type TypeSet map[string]struct{}
 
 type Refs struct {
+	ComponentID string
 	DashboardID string
 	PageID      string
 	VisualID    string
@@ -166,6 +171,9 @@ func tokens(query string) []string {
 	for _, field := range fields {
 		field = strings.TrimSpace(field)
 		if field == "" {
+			continue
+		}
+		if _, ignored := queryStopWords[field]; ignored {
 			continue
 		}
 		if _, ok := seen[field]; ok {

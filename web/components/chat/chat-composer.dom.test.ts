@@ -170,7 +170,7 @@ test('composer preserves submit, multiline, disabled, and pending behavior', asy
   }
 })
 
-test('composer supports keyboard-friendly @ visual references', async () => {
+test('composer searches for and attaches typed @ references with spaces', async () => {
   const page = await browser.newPage({ viewport: { width: 800, height: 600 } })
   try {
     await page.goto(baseURL)
@@ -178,16 +178,21 @@ test('composer supports keyboard-friendly @ visual references', async () => {
     const result = await page.locator('ld-chat-composer').evaluate(async (element: any) => {
       const reference = {
         kind: 'visual',
+        id: 'visual:executive-sales.overview.orders_chart',
         componentId: 'orders-chart',
         visualId: 'orders_chart',
-        title: 'Orders by status',
+        title: 'Orders',
+        description: 'Overview · Executive Sales',
         visualType: 'bar',
       }
       element.suggestions = [reference]
       await element.updateComplete
       const textarea = element.shadowRoot.querySelector('textarea') as HTMLTextAreaElement
-      textarea.value = 'Compare @orders'
-      textarea.dispatchEvent(new InputEvent('input', { bubbles: true }))
+      const searches: string[] = []
+      element.addEventListener('ld-chat-reference-search', (event: CustomEvent) => searches.push(event.detail.query))
+      textarea.value = 'Compare @orders by'
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+      textarea.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }))
       await element.updateComplete
       const option = element.shadowRoot.querySelector('.mention-option') as HTMLButtonElement
       const optionText = option?.textContent?.replace(/\s+/g, ' ').trim()
@@ -200,17 +205,62 @@ test('composer supports keyboard-friendly @ visual references', async () => {
         element.addEventListener('ld-chat-submit', (event: CustomEvent) => resolve(event.detail), { once: true })
         textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
       })
-      return { optionText, draftAfterReference, submitted }
+      return { searches, optionText, draftAfterReference, submitted }
     })
 
     expect(result).toEqual({
-      optionText: 'Orders by status bar',
+      searches: ['orders by'],
+      optionText: 'Orders Overview · Executive Sales visual',
       draftAfterReference: 'Compare',
       submitted: {
         input: 'Compare this with last month',
-        references: [{ kind: 'visual', componentId: 'orders-chart', visualId: 'orders_chart', title: 'Orders by status', visualType: 'bar' }],
+        references: [{
+          kind: 'visual',
+          id: 'visual:executive-sales.overview.orders_chart',
+          componentId: 'orders-chart',
+          visualId: 'orders_chart',
+          title: 'Orders',
+          description: 'Overview · Executive Sales',
+          visualType: 'bar',
+        }],
       },
     })
+  } finally {
+    await page.close()
+  }
+})
+
+test('composer distinguishes matching reference IDs from different workspaces', async () => {
+  const page = await browser.newPage({ viewport: { width: 800, height: 600 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('ld-chat-composer'))
+    const attached = await page.locator('ld-chat-composer').evaluate(async (element: any) => {
+      const references = ['sales', 'visuals'].map((workspaceId) => ({
+        kind: 'field',
+        id: 'orders.revenue',
+        workspaceId,
+        title: `Revenue ${workspaceId}`,
+      }))
+      element.suggestions = references
+      await element.updateComplete
+      const textarea = element.shadowRoot.querySelector('textarea') as HTMLTextAreaElement
+
+      for (const reference of references) {
+        textarea.value = '@revenue'
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+        textarea.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }))
+        await element.updateComplete
+        const option = Array.from(element.shadowRoot.querySelectorAll('.mention-option'))
+          .find((candidate: any) => candidate.textContent.includes(reference.title)) as HTMLButtonElement
+        option.click()
+        await element.updateComplete
+      }
+
+      return element.references.map((reference: any) => reference.workspaceId)
+    })
+
+    expect(attached).toEqual(['sales', 'visuals'])
   } finally {
     await page.close()
   }

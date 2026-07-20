@@ -9,6 +9,10 @@ func Post(path string, signalPaths ...string) string {
 	return request("post", path, signalPaths)
 }
 
+func Get(path string, signalPaths ...string) string {
+	return request("get", path, signalPaths)
+}
+
 func Patch(path string, signalPaths ...string) string {
 	return request("patch", path, signalPaths)
 }

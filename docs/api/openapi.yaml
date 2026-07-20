@@ -33245,6 +33245,7 @@ paths:
               example:
                 items:
                   - assetId: example
+                    componentId: example
                     dashboardId: example
                     datasetId: example
                     description: example
@@ -43132,6 +43133,7 @@ components:
             $ref: '#/components/schemas/SearchResult'
           example:
             - assetId: example
+              componentId: example
               dashboardId: example
               datasetId: example
               description: example
@@ -43149,6 +43151,7 @@ components:
       example:
         items:
           - assetId: example
+            componentId: example
             dashboardId: example
             datasetId: example
             description: example
@@ -43183,6 +43186,9 @@ components:
         description:
           type: string
           example: example
+        componentId:
+          type: string
+          example: example
         dashboardId:
           type: string
           example: example
@@ -43212,6 +43218,7 @@ components:
           example: example
       example:
         assetId: example
+        componentId: example
         dashboardId: example
         datasetId: example
         description: example

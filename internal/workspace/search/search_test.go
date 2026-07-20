@@ -44,6 +44,14 @@ func TestRankFiltersByTypeAndUsesStableTies(t *testing.T) {
 	}
 }
 
+func TestRankIgnoresNaturalLanguageGlueWords(t *testing.T) {
+	documents := []Document{{ID: "visual.orders", Type: "visual", Name: "Orders", Weight: 10}}
+	results := Rank(documents, Query{Text: "orders by"})
+	if got := resultIDs(results); !reflect.DeepEqual(got, []string{"visual.orders"}) {
+		t.Fatalf("result IDs = %#v, want orders result", got)
+	}
+}
+
 func TestParseTypesRejectsUnknownTypes(t *testing.T) {
 	if _, err := ParseTypes("dashboard,unknown"); err == nil {
 		t.Fatal("expected unknown type error")
