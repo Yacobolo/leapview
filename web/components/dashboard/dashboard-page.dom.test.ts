@@ -581,6 +581,33 @@ test('dashboard agent drawer carries page context and explicit visual references
     expect(opened.drawerWidth).toBeGreaterThanOrEqual(360)
     expect(opened.drawerWidth).toBeLessThanOrEqual(520)
 
+    const groupedSearch = await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
+      const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev')
+      mergePatch({ agentReferenceSearch: {
+        query: 'orders', workspaceId: 'sales', dashboardId: 'executive-sales', pageId: 'overview',
+        results: [
+          { kind: 'visual', id: 'visual:executive-sales.overview.orders_chart', workspaceId: 'sales', dashboardId: 'executive-sales', pageId: 'overview', componentId: 'orders-chart', visualId: 'orders_chart', title: 'Orders by status' },
+          { kind: 'measure', id: 'measure:orders.order_count', workspaceId: 'sales', modelId: 'olist', datasetId: 'orders', fieldId: 'order_count', title: 'Orders count', description: 'Across the sales workspace' },
+        ],
+      } })
+      await element.updateComplete
+      const drawer = element.shadowRoot.querySelector('ld-chat-drawer') as any
+      await drawer.updateComplete
+      const composer = drawer.shadowRoot.querySelector('ld-chat-composer') as any
+      const textarea = composer.shadowRoot.querySelector('textarea') as HTMLTextAreaElement
+      textarea.value = '@orders'
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+      textarea.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }))
+      await composer.updateComplete
+      return {
+        labels: Array.from(composer.shadowRoot.querySelectorAll('.mention-section-label')).map((node: any) => node.textContent.trim()),
+        options: Array.from(composer.shadowRoot.querySelectorAll('.mention-option')).map((node: any) => node.textContent.replace(/\s+/g, ' ').trim()),
+      }
+    })
+    expect(groupedSearch.labels).toEqual(['On this page', 'Workspace'])
+    expect(groupedSearch.options[0]).toContain('Orders')
+    expect(groupedSearch.options.at(-1)).toBe('Orders count Across the sales workspace')
+
     await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
       const frame = Array.from(element.shadowRoot.querySelectorAll('ld-dashboard-visual-frame'))
         .find((candidate: any) => candidate.getAttribute('data-component-status-key') === 'visual:orders_chart') as any

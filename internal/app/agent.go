@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"sort"
 	"strings"
 
 	"github.com/Yacobolo/libredash/internal/access"
@@ -66,7 +65,7 @@ func (s *Server) agentHTTPHandler() *agenthttp.Handler {
 	})
 }
 
-func (s *Server) searchAgentReferences(r *http.Request, workspaceID, query, dashboardID, pageID string) ([]uisignals.AgentReferenceSignal, error) {
+func (s *Server) searchAgentReferences(r *http.Request, workspaceID, query string) ([]uisignals.AgentReferenceSignal, error) {
 	handler := s.workspaceHTTPHandler()
 	workspaceIDs := []string{strings.TrimSpace(workspaceID)}
 	global := workspaceIDs[0] == ""
@@ -83,9 +82,6 @@ func (s *Server) searchAgentReferences(r *http.Request, workspaceID, query, dash
 		if err != nil {
 			return nil, err
 		}
-		sort.SliceStable(rows, func(i, j int) bool {
-			return agentReferenceScopeRank(rows[i], dashboardID, pageID) < agentReferenceScopeRank(rows[j], dashboardID, pageID)
-		})
 		group := make([]uisignals.AgentReferenceSignal, 0, len(rows))
 		for _, row := range rows {
 			reference := agentReferenceSignal(currentWorkspaceID, row)
@@ -114,16 +110,6 @@ func (s *Server) searchAgentReferences(r *http.Request, workspaceID, query, dash
 		}
 	}
 	return out, nil
-}
-
-func agentReferenceScopeRank(row api.SearchResult, dashboardID, pageID string) int {
-	if pageID != "" && row.DashboardID == dashboardID && row.PageID == pageID {
-		return 0
-	}
-	if dashboardID != "" && row.DashboardID == dashboardID {
-		return 1
-	}
-	return 2
 }
 
 func agentReferenceSignal(workspaceID string, row api.SearchResult) uisignals.AgentReferenceSignal {

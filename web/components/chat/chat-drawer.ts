@@ -236,7 +236,12 @@ class ChatDrawer extends DatastarLit(LitElement) {
 		const currentFilters = this.dashboardFilters
 		const controls = Object.keys(currentFilters.controls ?? {}).length
 		const selections = currentFilters.selections?.length ?? 0
-		const suggestions = mergeReferences(this.suggestions, this.referenceSearch.results ?? [])
+		const searchResults = this.referenceSearch.results ?? []
+		const pinnedSuggestions = mergeReferences(
+			this.suggestions,
+			searchResults.filter((reference) => isOnPageReference(reference, context)),
+		)
+		const workspaceSuggestions = searchResults.filter((reference) => !isOnPageReference(reference, context))
     const conversationHref = agent.activeConversationId
       ? `/chats/${encodeURIComponent(agent.activeConversationId)}`
       : '/chats/new'
@@ -272,7 +277,8 @@ class ChatDrawer extends DatastarLit(LitElement) {
           .pending=${this.pending}
           .placeholder=${agent.composer.placeholder || 'Ask about this dashboard…'}
           .references=${this.references}
-          .suggestions=${suggestions}
+					.pinnedSuggestions=${pinnedSuggestions}
+					.suggestions=${workspaceSuggestions}
           @ld-chat-references-change=${this.referencesChanged}
         ></ld-chat-composer>
       </aside>
@@ -306,6 +312,15 @@ class ChatDrawer extends DatastarLit(LitElement) {
 
 function referenceKey(reference: AgentReferenceSignal): string {
 	return `${reference.workspaceId}:${reference.kind}:${reference.id || reference.componentId || reference.visualId || reference.title}`
+}
+
+function isOnPageReference(reference: AgentReferenceSignal, context: AgentContextSignal | null): boolean {
+	return Boolean(
+		context?.dashboardId
+		&& context.pageId
+		&& reference.dashboardId === context.dashboardId
+		&& reference.pageId === context.pageId,
+	)
 }
 
 function mergeReferences(...groups: AgentReferenceSignal[][]): AgentReferenceSignal[] {

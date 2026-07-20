@@ -25,6 +25,8 @@ type chatReferenceSearchSignals struct {
 	AgentContext         agent.TurnContext             `json:"agentContext"`
 }
 
+const maxChatReferenceSearchResults = 24
+
 type chatTurnCommandAgentSignal struct {
 	ActiveConversationID string                        `json:"activeConversationId"`
 	Composer             chatTurnCommandComposerSignal `json:"composer"`
@@ -126,13 +128,13 @@ func (h *Handler) ChatReferenceSearch(w nethttp.ResponseWriter, r *nethttp.Reque
 	workspaceID := firstNonEmptyString(search.WorkspaceID, signals.AgentContext.WorkspaceID)
 	dashboardID := firstNonEmptyString(search.DashboardID, signals.AgentContext.DashboardID)
 	pageID := firstNonEmptyString(search.PageID, signals.AgentContext.PageID)
-	results, err := h.options.SearchReferences(r, workspaceID, strings.TrimSpace(search.Query), dashboardID, pageID)
+	results, err := h.options.SearchReferences(r, workspaceID, strings.TrimSpace(search.Query))
 	if err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
 		return
 	}
-	if len(results) > 8 {
-		results = results[:8]
+	if len(results) > maxChatReferenceSearchResults {
+		results = results[:maxChatReferenceSearchResults]
 	}
 	updates := pagestream.NewSignalStream(w, r)
 	_ = updates.Patch(pagestream.SignalPatch{"agentReferenceSearch": ui.AgentReferenceSearchSignal{

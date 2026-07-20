@@ -6,12 +6,16 @@ import { lucideIcon } from '../shared/lucide-icons'
 
 export type ChatContextReference = AgentReferenceSignal
 
+const maxPinnedMentionSuggestions = 8
+const maxWorkspaceMentionSuggestions = 8
+
 class ChatComposer extends LitElement {
   @property({ type: String }) value = ''
   @property({ type: Boolean, reflect: true }) disabled = false
   @property({ type: Boolean, reflect: true }) pending = false
   @property({ type: String }) placeholder = 'Ask about dashboards, metrics, or models...'
 	@property({ attribute: false }) references: ChatContextReference[] = []
+	@property({ attribute: false }) pinnedSuggestions: ChatContextReference[] = []
 	@property({ attribute: false }) suggestions: ChatContextReference[] = []
   @state() private draft = ''
 	@state() private mentionIndex = 0
@@ -134,6 +138,18 @@ class ChatComposer extends LitElement {
 			padding: var(--ld-space-2xs) var(--ld-space-sm);
 			box-shadow: none;
 			text-align: left;
+		}
+
+		.mention-group {
+			display: grid;
+		}
+
+		.mention-section-label {
+			min-width: 0;
+			padding: var(--ld-space-xs) var(--ld-space-sm) var(--ld-space-2xs);
+			color: var(--ld-fg-muted);
+			font-size: var(--ld-font-size-caption);
+			font-weight: var(--ld-font-weight-strong);
 		}
 
 		.mention-icon {
@@ -348,29 +364,24 @@ class ChatComposer extends LitElement {
   render() {
     const blocked = this.disabled || this.pending
 		const activeMention = this.activeMention()
-		const mentions = this.mentionSuggestions()
+		const mentionGroups = this.mentionSuggestionGroups()
+		const mentions = [...mentionGroups.pinned, ...mentionGroups.workspace]
     return html`
       <form @submit=${this.submit}>
 			${activeMention ? html`
 				<div class="mention-picker" role="listbox" aria-label="Add LibreDash context" aria-busy=${String(this.mentionSearchPending)}>
-					${mentions.map((reference, index) => html`
-						<button
-							type="button"
-							class="mention-option"
-							role="option"
-							aria-label=${`${reference.title}, ${reference.kind}${reference.description ? `, ${reference.description}` : ''}`}
-							aria-selected=${String(index === this.mentionIndex)}
-							data-active=${String(index === this.mentionIndex)}
-							@mousedown=${(event: MouseEvent) => event.preventDefault()}
-							@click=${() => this.selectMention(reference)}
-						>
-							<span class="mention-icon" aria-hidden="true">${referenceIcon(reference.kind)}</span>
-							<span class="mention-copy">
-								<span class="mention-title">${reference.title}</span>
-								${reference.description ? html`<span class="mention-description">${reference.description}</span>` : null}
-							</span>
-						</button>
-					`)}
+					${mentionGroups.pinned.length > 0 ? html`
+						<div class="mention-group" role="group" aria-label="On this page">
+							<div class="mention-section-label">On this page</div>
+							${mentionGroups.pinned.map((reference, index) => this.renderMentionOption(reference, index))}
+						</div>
+					` : null}
+					${mentionGroups.workspace.length > 0 ? html`
+						<div class="mention-group" role="group" aria-label=${mentionGroups.pinned.length > 0 ? 'Workspace' : 'Results'}>
+							${mentionGroups.pinned.length > 0 ? html`<div class="mention-section-label">Workspace</div>` : null}
+							${mentionGroups.workspace.map((reference, index) => this.renderMentionOption(reference, mentionGroups.pinned.length + index))}
+						</div>
+					` : null}
 					${mentions.length === 0 ? html`
 						<div class="mention-status" role="status">
 							${lucideIcon(Search)}<span>${this.mentionSearchPending ? 'Searching…' : 'No matching context'}</span>
@@ -476,14 +487,46 @@ class ChatComposer extends LitElement {
   }
 
 	private mentionSuggestions(): ChatContextReference[] {
+		const groups = this.mentionSuggestionGroups()
+		return [...groups.pinned, ...groups.workspace]
+	}
+
+	private mentionSuggestionGroups(): { pinned: ChatContextReference[]; workspace: ChatContextReference[] } {
 		const mention = this.activeMention()
-		if (!mention) return []
+		if (!mention) return { pinned: [], workspace: [] }
 		const query = mention.query.toLocaleLowerCase()
 		const selected = new Set(this.references.map(referenceIdentity))
-		return this.suggestions
+		const pinnedCandidates = uniqueReferences(this.pinnedSuggestions)
 			.filter((reference) => !selected.has(referenceIdentity(reference)))
 			.filter((reference) => matchesReferenceQuery(reference, query))
-			.slice(0, 8)
+		const pinned = pinnedCandidates.slice(0, maxPinnedMentionSuggestions)
+		const excluded = new Set([...selected, ...pinnedCandidates.map(referenceIdentity)])
+		const workspace = uniqueReferences(this.suggestions)
+			.filter((reference) => !excluded.has(referenceIdentity(reference)))
+			.filter((reference) => matchesReferenceQuery(reference, query))
+			.slice(0, maxWorkspaceMentionSuggestions)
+		return { pinned, workspace }
+	}
+
+	private renderMentionOption(reference: ChatContextReference, index: number) {
+		return html`
+			<button
+				type="button"
+				class="mention-option"
+				role="option"
+				aria-label=${`${reference.title}, ${reference.kind}${reference.description ? `, ${reference.description}` : ''}`}
+				aria-selected=${String(index === this.mentionIndex)}
+				data-active=${String(index === this.mentionIndex)}
+				@mousedown=${(event: MouseEvent) => event.preventDefault()}
+				@click=${() => this.selectMention(reference)}
+			>
+				<span class="mention-icon" aria-hidden="true">${referenceIcon(reference.kind)}</span>
+				<span class="mention-copy">
+					<span class="mention-title">${reference.title}</span>
+					${reference.description ? html`<span class="mention-description">${reference.description}</span>` : null}
+				</span>
+			</button>
+		`
 	}
 
 	private selectMention(reference: ChatContextReference | undefined) {
@@ -562,6 +605,16 @@ class ChatComposer extends LitElement {
 
 function referenceIdentity(reference: ChatContextReference): string {
 	return `${reference.workspaceId ?? ''}:${reference.kind}:${reference.id || reference.componentId || reference.visualId || reference.title}`
+}
+
+function uniqueReferences(references: ChatContextReference[]): ChatContextReference[] {
+	const seen = new Set<string>()
+	return references.filter((reference) => {
+		const key = referenceIdentity(reference)
+		if (seen.has(key)) return false
+		seen.add(key)
+		return true
+	})
 }
 
 const mentionStopWords = new Set(['a', 'an', 'and', 'by', 'for', 'in', 'of', 'on', 'the', 'to'])

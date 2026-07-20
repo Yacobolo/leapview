@@ -330,6 +330,41 @@ test('mention picker opens immediately, renders compact rows, and scrolls with k
   }
 })
 
+test('mention picker pins on-page results above deduplicated workspace results', async () => {
+  const page = await browser.newPage({ viewport: { width: 800, height: 600 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('ld-chat-composer'))
+    const result = await page.locator('ld-chat-composer').evaluate(async (element: any) => {
+      const onPage = {
+        kind: 'visual', id: 'orders-on-page', workspaceId: 'sales', dashboardId: 'executive-sales', pageId: 'overview',
+        title: 'Orders on this page', description: 'Overview',
+      }
+      element.pinnedSuggestions = [onPage]
+      element.suggestions = [
+        onPage,
+        { kind: 'measure', id: 'orders-workspace', workspaceId: 'sales', title: 'Orders workspace measure', description: 'Sales model' },
+      ]
+      await element.updateComplete
+      const textarea = element.shadowRoot.querySelector('textarea') as HTMLTextAreaElement
+      textarea.value = '@orders'
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+      textarea.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }))
+      await element.updateComplete
+
+      return {
+        labels: Array.from(element.shadowRoot.querySelectorAll('.mention-section-label')).map((node: any) => node.textContent.trim()),
+        options: Array.from(element.shadowRoot.querySelectorAll('.mention-option')).map((node: any) => node.textContent.replace(/\s+/g, ' ').trim()),
+      }
+    })
+
+    expect(result.labels).toEqual(['On this page', 'Workspace'])
+    expect(result.options).toEqual(['Orders on this page Overview', 'Orders workspace measure Sales model'])
+  } finally {
+    await page.close()
+  }
+})
+
 function testDocument(): string {
   return `
     <!doctype html>

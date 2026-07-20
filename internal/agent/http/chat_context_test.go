@@ -1,11 +1,48 @@
 package http
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/Yacobolo/libredash/internal/ui"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
 )
+
+func TestChatReferenceSearchReturnsEnoughResultsForPinnedAndWorkspaceGroups(t *testing.T) {
+	results := make([]uisignals.AgentReferenceSignal, 30)
+	for index := range results {
+		results[index] = uisignals.AgentReferenceSignal{
+			Kind: "field", ID: "field-" + string(rune('a'+index)), Title: "Field", WorkspaceID: "sales",
+		}
+	}
+	handler := NewHandler(Options{
+		SearchReferences: func(*http.Request, string, string) ([]uisignals.AgentReferenceSignal, error) {
+			return results, nil
+		},
+	})
+	signals, err := json.Marshal(map[string]any{
+		"agentReferenceSearch": map[string]any{"query": "field", "workspaceId": "sales"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/?datastar="+url.QueryEscape(string(signals)), nil)
+	request.Header.Set("Accept", "text/event-stream")
+	response := httptest.NewRecorder()
+
+	handler.ChatReferenceSearch(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
+	}
+	if got := strings.Count(response.Body.String(), `"kind":"field"`); got != 24 {
+		t.Fatalf("result count = %d, want 24:\n%s", got, response.Body.String())
+	}
+}
 
 func TestChatSignalPatchKeepsEmbeddedArtifactsSeparateFromDashboardVisuals(t *testing.T) {
 	state := ui.ChatViewState{
