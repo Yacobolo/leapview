@@ -9,6 +9,7 @@ export class VisualizationHost extends LitElement {
   @property({ attribute: false }) envelope?: VisualizationEnvelope
   @query('.renderer') private rendererContainer?: HTMLDivElement
   @state() private error = ''
+  @state() private applying = false
   private controller?: VisualizationController
   private resizeObserver?: ResizeObserver
   private applyGeneration = 0
@@ -53,7 +54,7 @@ export class VisualizationHost extends LitElement {
     const statusError = this.envelope?.status.kind === 'error' ? this.envelope.status.message ?? 'Visualization error' : ''
     const error = this.error || statusError
     return html`<div class="surface">
-      <div class="renderer" role="group" aria-label=${this.envelope?.spec.accessibility.title ?? 'Visualization'} aria-describedby="visualization-fallback"></div>
+      <div class="renderer" role="group" aria-label=${this.envelope?.spec.accessibility.title ?? 'Visualization'} aria-describedby="visualization-fallback" aria-busy=${String(this.applying)}></div>
       <div id="visualization-fallback" class="fallback">${this.accessibleFallback()}</div>
       ${error ? html`<div class="error" role="alert">${error}</div>` : null}
     </div>`
@@ -62,11 +63,14 @@ export class VisualizationHost extends LitElement {
   private async applyEnvelope(): Promise<void> {
     if (!this.envelope || !this.controller) return
     const generation = ++this.applyGeneration
+    this.applying = true
     try {
       await this.controller.apply(this.envelope)
       if (generation === this.applyGeneration) this.error = ''
     } catch (error) {
       if (generation === this.applyGeneration) this.error = error instanceof Error ? error.message : String(error)
+    } finally {
+      if (generation === this.applyGeneration) this.applying = false
     }
   }
 

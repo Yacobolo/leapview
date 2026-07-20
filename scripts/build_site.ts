@@ -1,7 +1,15 @@
 import { datastarRuntimeURL } from '../web/components/shared/datastar-runtime'
 
-await Bun.$`rm -rf site/static/site-page.js site/static/chunks site/static/shared site/static/vendor`.quiet()
-await Bun.$`mkdir -p site/static/shared/files site/static/vendor/integrations`.quiet()
+await Bun.$`rm -rf site/static/site-page.js site/static/chunks site/static/geometry site/static/shared site/static/vendor`.quiet()
+await Bun.$`mkdir -p site/static/geometry site/static/shared/files site/static/vendor/integrations`.quiet()
+
+const geometryCopies: Promise<number>[] = []
+const geometryGlob = new Bun.Glob('static/geometry/*.geojson')
+for await (const sourcePath of geometryGlob.scan({ cwd: '.', onlyFiles: true })) {
+  const fileName = sourcePath.slice('static/geometry/'.length)
+  geometryCopies.push(Bun.write(`site/static/geometry/${fileName}`, Bun.file(sourcePath)))
+}
+if (geometryCopies.length === 0) throw new Error('no geographic assets found')
 
 const integrationLogoCopies: Promise<number>[] = []
 const integrationLogoGlob = new Bun.Glob('static/vendor/integrations/*.svg')
@@ -25,6 +33,7 @@ await Promise.all([
   Bun.write('site/static/vendor/datastar-1.0.2.js', Bun.file('static/vendor/datastar-1.0.2.js')),
   Bun.write('site/static/vendor/github-mark.svg', Bun.file('static/vendor/github-mark.svg')),
   Bun.write('site/static/vendor/mcp-mark.svg', Bun.file('static/vendor/mcp-mark.svg')),
+  ...geometryCopies,
   ...integrationLogoCopies,
   ...fontCopies,
 ])

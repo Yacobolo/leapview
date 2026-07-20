@@ -27,6 +27,13 @@ test('site build publishes the isolated Vega-Lite sandbox entrypoint', async () 
   expect(await sandbox.text()).toContain('addEventListener("message"')
 })
 
+test('site build publishes content-addressed geographic assets', async () => {
+  const source = Bun.file('static/geometry/br-states-ibge.geojson')
+  const published = Bun.file('site/static/geometry/br-states-ibge.geojson')
+  expect(await published.exists()).toBe(true)
+  expect(await published.arrayBuffer()).toEqual(await source.arrayBuffer())
+})
+
 test('site build vendors the GitHub mark used by repository links', async () => {
   const mark = Bun.file('site/static/vendor/github-mark.svg')
   expect(await mark.exists()).toBe(true)

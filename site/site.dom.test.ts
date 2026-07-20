@@ -886,11 +886,6 @@ test('every visual documentation page mounts its generated production payloads',
       const host = element.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { shadowRoot: ShadowRoot }
       return host?.shadowRoot?.querySelector('.renderer[aria-label]')?.getAttribute('aria-label')
     })).not.toContain('NaN')
-    await page.waitForFunction(() => [...document.querySelectorAll('ld-site-visual-example')].every((element) => {
-      const host = element.shadowRoot?.querySelector('ld-visualization-host')
-      return Boolean(host?.shadowRoot?.querySelector('canvas.maplibregl-canvas'))
-    }))
-
     await page.goto(`${baseURL}/docs/visuals/custom`)
     await page.waitForFunction(() => {
       const example = document.querySelector('ld-site-visual-example') as HTMLElement & { shadowRoot: ShadowRoot }
@@ -915,6 +910,79 @@ test('every visual documentation page mounts its generated production payloads',
     await page.close()
   }
 }, 30_000)
+
+test('map documentation renders fitted, attributed canvases without adapter errors', async () => {
+  const page = await browser.newPage()
+  try {
+    await page.goto(`${baseURL}/docs/visuals/map`)
+    await page.waitForFunction(() => {
+      const examples = [...document.querySelectorAll('ld-site-visual-example')]
+      return examples.length === 4 && examples.every((element) => {
+        const host = element.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { envelope?: unknown } | null
+        return Boolean(host?.envelope)
+      })
+    })
+    await page.waitForFunction(() => {
+      const examples = [...document.querySelectorAll('ld-site-visual-example')]
+      return examples.every((element) => {
+        const host = element.shadowRoot?.querySelector('ld-visualization-host')
+        const renderer = host?.shadowRoot?.querySelector('.renderer')
+        return Boolean(host?.shadowRoot?.querySelector('canvas.maplibregl-canvas')) && renderer?.getAttribute('aria-busy') === 'false' && !host?.shadowRoot?.querySelector('[role="alert"]')
+      }) && Boolean(examples[0]?.shadowRoot?.querySelector('ld-visualization-host')?.shadowRoot?.querySelector('[data-map-attribution]')?.textContent?.trim())
+    })
+    const states = await page.locator('ld-site-visual-example').evaluateAll((elements) => elements.map((element) => {
+      const host = element.shadowRoot?.querySelector('ld-visualization-host')
+      const canvas = host?.shadowRoot?.querySelector('canvas.maplibregl-canvas') as HTMLCanvasElement | null
+      return {
+        alert: host?.shadowRoot?.querySelector('[role="alert"]')?.textContent?.trim() ?? '',
+        attribution: host?.shadowRoot?.querySelector('[data-map-attribution]')?.textContent?.trim() ?? '',
+        width: canvas?.width ?? 0,
+        height: canvas?.height ?? 0,
+        rendererChildren: host?.shadowRoot?.querySelector('.renderer')?.childElementCount ?? 0,
+      }
+    }))
+    expect(states.map(({ alert, attribution, rendererChildren }) => ({ alert, attribution, rendererChildren }))).toEqual([
+      { alert: '', attribution: 'Instituto Brasileiro de Geografia e Estatística (IBGE)', rendererChildren: 1 },
+      { alert: '', attribution: '', rendererChildren: 1 },
+      { alert: '', attribution: '', rendererChildren: 1 },
+      { alert: '', attribution: '', rendererChildren: 1 },
+    ])
+    expect(states.every(({ width, height }) => width > 500 && height >= 400)).toBe(true)
+    const snapshot = await page.locator('ld-site-visual-example').first().evaluate(async (element) => {
+      const host = element.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { snapshot(): Promise<Blob> }
+      const blob = await host.snapshot()
+      const bitmap = await createImageBitmap(blob)
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+      const context = canvas.getContext('2d')!
+      context.drawImage(bitmap, 0, 0)
+      const pixels = context.getImageData(0, 0, bitmap.width, bitmap.height).data
+      let visiblePixels = 0
+      for (let index = 3; index < pixels.length; index += 4) if (pixels[index]! > 0) visiblePixels++
+      return { height: bitmap.height, size: blob.size, type: blob.type, visiblePixels, width: bitmap.width }
+    })
+    expect(snapshot.type).toBe('image/png')
+    expect(snapshot.size).toBeGreaterThan(0)
+    expect(snapshot.visiblePixels).toBeGreaterThan(10_000)
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.waitForFunction(() => document.querySelector('.site-docs-sidebar')?.getAttribute('aria-hidden') === 'true')
+    await page.waitForTimeout(250)
+    const mobile = await page.locator('ld-site-visual-example').evaluateAll((elements) => elements.map((element) => {
+      const host = element.shadowRoot?.querySelector('ld-visualization-host')
+      const canvas = host?.shadowRoot?.querySelector('canvas.maplibregl-canvas') as HTMLCanvasElement | null
+      return {
+        alert: host?.shadowRoot?.querySelector('[role="alert"]')?.textContent?.trim() ?? '',
+        left: canvas?.getBoundingClientRect().left ?? -1,
+        right: canvas?.getBoundingClientRect().right ?? Number.POSITIVE_INFINITY,
+        width: canvas?.getBoundingClientRect().width ?? 0,
+      }
+    }))
+    expect(mobile.every(({ alert, left, right, width }) => alert === '' && left >= 0 && right <= 390 && width >= 320)).toBe(true)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  } finally {
+    await page.close()
+  }
+}, 20_000)
 
 test('documentation articles apply the shared Markdown treatment', async () => {
   const page = await browser.newPage()

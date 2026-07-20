@@ -36,7 +36,7 @@ visuals:
 
 ## Points
 
-Point layers bind numeric latitude and longitude query aliases. An optional value can drive future size or label policies without exposing MapLibre configuration.
+Point layers bind numeric latitude and longitude query aliases. An optional value controls marker size without exposing MapLibre configuration. Coordinate layers include a subtle geographic reference grid when no basemap asset is present.
 
 {{< visual id="order_point_map" >}}
 
