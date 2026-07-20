@@ -1,12 +1,13 @@
-import { LitElement, css, html, nothing } from 'lit'
-import { ExternalLink } from 'lucide'
+import { LitElement, css, html } from 'lit'
+import { ChevronRight, LayoutDashboard } from 'lucide'
 import type { CatalogPageSignal } from '../../generated/signals'
+import { catalogListStyles } from '../shared/catalog-list-styles'
 import { DatastarLit } from '../shared/datastar-lit'
 import { checkSignalContract } from '../shared/signal-contract'
 import { lucideIcon } from '../shared/lucide-icons'
 
 class LibreDashCatalogPage extends DatastarLit(LitElement) {
-  static styles = css`
+  static styles = [catalogListStyles, css`
     :host {
       display: block;
       min-width: 0;
@@ -33,7 +34,6 @@ class LibreDashCatalogPage extends DatastarLit(LitElement) {
     }
 
     h1,
-    h2,
     p {
       margin: 0;
     }
@@ -48,100 +48,19 @@ class LibreDashCatalogPage extends DatastarLit(LitElement) {
       line-height: var(--ld-line-height-compact);
     }
 
-    .detail,
-    .muted {
+    .detail {
       margin-top: var(--base-size-4);
       color: var(--ld-fg-muted);
       font-size: var(--ld-font-size-body-sm);
       line-height: var(--ld-line-height-snug);
     }
 
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 22rem));
-      gap: var(--base-size-16);
-      align-items: start;
-      justify-content: start;
+    .dashboard-icon {
+      border-color: var(--ld-asset-dashboard-border);
+      background: var(--ld-asset-dashboard-bg);
+      color: var(--ld-asset-dashboard-accent);
     }
-
-    article {
-      display: grid;
-      min-height: 10rem;
-      min-width: 0;
-      grid-template-rows: minmax(0, 1fr) auto;
-      overflow: hidden;
-      border: var(--ld-border-default);
-      border-radius: var(--ld-radius-default);
-      background: var(--ld-bg-panel);
-      padding: var(--base-size-16);
-      box-shadow: var(--ld-shadow-resting-sm, none);
-    }
-
-    .eyebrow {
-      margin-bottom: var(--base-size-4);
-      color: var(--ld-fg-muted);
-      font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-medium);
-      line-height: var(--ld-line-height-tight);
-      text-transform: uppercase;
-    }
-
-    h2 {
-      margin-top: var(--base-size-4);
-      color: var(--ld-fg-default);
-      font-size: var(--ld-font-size-body-md);
-      font-weight: var(--ld-font-weight-strong);
-      line-height: var(--ld-line-height-snug);
-    }
-
-    .tags {
-      display: flex;
-      flex-wrap: wrap;
-      gap: var(--base-size-8);
-      margin-top: var(--base-size-16);
-    }
-
-    .tag {
-      border: var(--ld-border-muted);
-      border-radius: var(--ld-radius-full);
-      background: var(--ld-bg-panel-muted);
-      color: var(--ld-fg-muted);
-      padding: 0 var(--base-size-8);
-      font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-medium);
-      line-height: var(--ld-line-height-snug);
-      text-transform: uppercase;
-    }
-
-    footer {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--base-size-12);
-      margin-top: var(--base-size-16);
-      border-top: var(--ld-border-muted);
-      padding-top: var(--base-size-12);
-      color: var(--ld-fg-muted);
-      font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-medium);
-    }
-
-    a {
-      display: inline-grid;
-      min-height: var(--ld-button-height-sm);
-      grid-auto-flow: column;
-      place-items: center;
-      gap: var(--base-size-6);
-      border: var(--borderWidth-default) solid var(--ld-button-accent-border-rest);
-      border-radius: var(--ld-button-radius);
-      background: var(--ld-button-accent-bg-rest);
-      color: var(--ld-button-accent-fg-rest);
-      padding: 0 var(--ld-button-padding-inline-sm);
-      font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-strong);
-      text-decoration: none;
-    }
-  `
+  `]
 
   updated(): void {
     const page = this.page
@@ -162,24 +81,23 @@ class LibreDashCatalogPage extends DatastarLit(LitElement) {
           <h1>${page.title}</h1>
           <p class="detail">${page.description}</p>
         </header>
-        <div class="grid">
+        <ul class="catalog-list dashboard-list" aria-label="Published dashboards">
           ${page.dashboards.map((dashboard) => html`
-            <article>
-              <div>
-                <p class="eyebrow">${dashboard.semanticModel || 'Dashboard'}</p>
-                <h2>${dashboard.title}</h2>
-                ${dashboard.description ? html`<p class="muted">${dashboard.description}</p>` : nothing}
-                ${dashboard.tags?.length ? html`
-                  <div class="tags">${dashboard.tags.map((tag) => html`<span class="tag">${tag}</span>`)}</div>
-                ` : nothing}
-              </div>
-              <footer>
-                <span>${dashboard.pageCount} ${dashboard.pageCount === 1 ? 'page' : 'pages'}</span>
-                <a href=${dashboard.href}>${lucideIcon(ExternalLink)}<span>Open</span></a>
-              </footer>
-            </article>
+            <li>
+              <a class="catalog-row dashboard-row" href=${dashboard.href}>
+                <span class="catalog-icon dashboard-icon">${lucideIcon(LayoutDashboard)}</span>
+                <span class="catalog-copy dashboard-copy">
+                  <span class="catalog-title dashboard-title">${dashboard.title}</span>
+                  <span class="catalog-description dashboard-description">${dashboard.description || dashboard.semanticModel || 'Dashboard'}</span>
+                </span>
+                <span class="catalog-trailing">
+                  <span class="catalog-meta dashboard-pages">${dashboard.pageCount} ${dashboard.pageCount === 1 ? 'page' : 'pages'}</span>
+                  <span class="catalog-chevron dashboard-chevron">${lucideIcon(ChevronRight)}</span>
+                </span>
+              </a>
+            </li>
           `)}
-        </div>
+        </ul>
       </section>
     `
   }

@@ -46,52 +46,91 @@ afterAll(async () => {
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
 }, 15_000)
 
-test('catalog page composes dashboard cards', async () => {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
-  try {
-    await page.goto(baseURL)
-    await page.waitForFunction(() => customElements.get('ld-catalog-page'))
-    await page.locator('ld-catalog-page').evaluate((element: any) => element.updateComplete)
+for (const viewport of [
+  { name: 'compact desktop', width: 706, height: 793 },
+  { name: 'mobile', width: 390, height: 820 },
+]) {
+  test(`catalog page renders compact full-width dashboard rows on ${viewport.name}`, async () => {
+    const page = await browser.newPage({ viewport })
+    try {
+      await page.goto(baseURL)
+      await page.waitForFunction(() => customElements.get('ld-catalog-page'))
+      await page.locator('ld-catalog-page').evaluate((element: any) => element.updateComplete)
 
-    const state = await page.locator('ld-catalog-page').evaluate((element: any) => {
-      const root = element.shadowRoot
-      const section = root.querySelector('section') as HTMLElement
-      const rect = section.getBoundingClientRect()
-      return {
-        title: root.querySelector('h1')?.textContent?.trim(),
-        card: root.querySelector('article h2')?.textContent?.trim(),
-        href: root.querySelector('article a')?.getAttribute('href'),
-        pages: root.querySelector('article footer span')?.textContent?.trim(),
-        sectionWidth: Math.round(rect.width),
-        centeredDelta: Math.round(Math.abs((rect.left + rect.width / 2) - window.innerWidth / 2)),
-      }
-    })
+      const state = await page.locator('ld-catalog-page').evaluate((element: any) => {
+        const root = element.shadowRoot
+        const section = root.querySelector('section') as HTMLElement
+        const list = root.querySelector('.dashboard-list') as HTMLElement
+        const rows = Array.from(root.querySelectorAll('a.dashboard-row')) as HTMLAnchorElement[]
+        const sectionRect = section.getBoundingClientRect()
+        const listRect = list.getBoundingClientRect()
+        return {
+          title: root.querySelector('h1')?.textContent?.trim(),
+          rowCount: rows.length,
+          hrefs: rows.map((row) => row.getAttribute('href')),
+          titles: rows.map((row) => row.querySelector('.dashboard-title')?.textContent?.trim()),
+          descriptions: rows.map((row) => row.querySelector('.dashboard-description')?.textContent?.trim()),
+          pages: rows.map((row) => row.querySelector('.dashboard-pages')?.textContent?.trim()),
+          hasIcons: rows.every((row) => Boolean(row.querySelector('.dashboard-icon svg'))),
+          hasChevrons: rows.every((row) => Boolean(row.querySelector('.dashboard-chevron svg'))),
+          fullWidth: rows.every((row) => Math.abs(row.getBoundingClientRect().width - listRect.width) <= 1),
+          maxRowHeight: Math.max(...rows.map((row) => Math.round(row.getBoundingClientRect().height))),
+          totalListHeight: Math.round(listRect.height),
+          hasCardGrid: Boolean(root.querySelector('.grid, article')),
+          hasOpenLabel: rows.some((row) => row.textContent?.includes('Open')),
+          sectionWidth: Math.round(sectionRect.width),
+          centeredDelta: Math.round(Math.abs((sectionRect.left + sectionRect.width / 2) - window.innerWidth / 2)),
+        }
+      })
 
-    expect(state.title).toBe('Dashboards')
-    expect(state.card).toBe('Executive Sales Dashboard')
-    expect(state.href).toBe('/dashboards/executive-sales')
-    expect(state.pages).toBe('1 page')
-    expect(state.sectionWidth).toBeLessThan(1280)
-    expect(state.centeredDelta).toBeLessThanOrEqual(1)
-  } finally {
-    await page.close()
-  }
-})
+      expect(state).toEqual({
+        title: 'Dashboards',
+        rowCount: 2,
+        hrefs: ['/dashboards/executive-sales', '/dashboards/operations-health'],
+        titles: ['Executive Sales Dashboard', 'Operations Health'],
+        descriptions: ['Fixture report', 'Fulfillment and delivery performance.'],
+        pages: ['1 page', '3 pages'],
+        hasIcons: true,
+        hasChevrons: true,
+        fullWidth: true,
+        maxRowHeight: 72,
+        totalListHeight: 144,
+        hasCardGrid: false,
+        hasOpenLabel: false,
+        sectionWidth: Math.min(viewport.width, 1152),
+        centeredDelta: 0,
+      })
+    } finally {
+      await page.close()
+    }
+  })
+}
 
 function testDocument(): string {
   const page = {
     kind: 'catalog',
     title: 'Dashboards',
     description: 'Reports backed by semantic models.',
-    dashboards: [{
-      id: 'executive-sales',
-      title: 'Executive Sales Dashboard',
-      description: 'Fixture report',
-      semanticModel: 'olist',
-      pageCount: 1,
-      tags: ['sales'],
-      href: '/dashboards/executive-sales',
-    }],
+    dashboards: [
+      {
+        id: 'executive-sales',
+        title: 'Executive Sales Dashboard',
+        description: 'Fixture report',
+        semanticModel: 'olist',
+        pageCount: 1,
+        tags: ['sales'],
+        href: '/dashboards/executive-sales',
+      },
+      {
+        id: 'operations-health',
+        title: 'Operations Health',
+        description: 'Fulfillment and delivery performance.',
+        semanticModel: 'operations',
+        pageCount: 3,
+        tags: ['operations'],
+        href: '/dashboards/operations-health',
+      },
+    ],
   }
   return `
     <!doctype html>
@@ -99,7 +138,7 @@ function testDocument(): string {
       <head>
         <style>
           html, body { margin: 0; min-height: 100%; }
-          body { --fontStack-system: system-ui; --ld-bg-app: #f6f8fa; --ld-bg-panel: #fff; --ld-bg-panel-muted: #f6f8fa; --ld-fg-default: #24292f; --ld-fg-muted: #57606a; --ld-fg-link: #0969da; --ld-border-default: 1px solid #d0d7de; --ld-border-muted: 1px solid #d8dee4; --ld-radius-default: 6px; --ld-radius-full: 999px; --ld-page-content-max-width: 72rem; --base-size-4: 4px; --base-size-6: 6px; --base-size-8: 8px; --base-size-10: 10px; --base-size-12: 12px; --base-size-16: 16px; --base-size-20: 20px; --ld-font-size-caption: 12px; --ld-font-size-body-sm: 14px; --ld-font-size-body-md: 16px; --ld-font-size-title-sm: 20px; --ld-font-weight-medium: 500; --ld-font-weight-strong: 600; --ld-line-height-tight: 1.1; --ld-line-height-snug: 1.35; --ld-line-height-compact: 1.25; }
+          body { --fontStack-system: system-ui; --ld-bg-app: #f6f8fa; --ld-bg-panel: #fff; --ld-bg-panel-muted: #f6f8fa; --ld-bg-control-hover: #f3f4f6; --ld-fg-default: #24292f; --ld-fg-muted: #57606a; --ld-fg-link: #0969da; --ld-line-muted: #d8dee4; --ld-line-accent: #0969da; --ld-border-default: 1px solid #d0d7de; --ld-border-muted: 1px solid #d8dee4; --ld-radius-default: 6px; --ld-radius-full: 999px; --ld-page-content-max-width: 72rem; --ld-asset-dashboard-bg: #fbefff; --ld-asset-dashboard-accent: #8250df; --ld-asset-dashboard-border: #d2bfff; --base-size-4: 4px; --base-size-6: 6px; --base-size-8: 8px; --base-size-10: 10px; --base-size-12: 12px; --base-size-16: 16px; --base-size-20: 20px; --borderWidth-default: 1px; --borderWidth-thick: 2px; --control-medium-size: 32px; --ld-font-size-caption: 12px; --ld-font-size-body-sm: 14px; --ld-font-size-body-md: 16px; --ld-font-size-title-sm: 20px; --ld-font-weight-medium: 500; --ld-font-weight-strong: 600; --ld-line-height-tight: 1.1; --ld-line-height-snug: 1.35; --ld-line-height-compact: 1.25; --motion-transition-stateChange: 160ms ease; }
         </style>
       </head>
       <body>

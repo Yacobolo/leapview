@@ -38,6 +38,7 @@ import type {
   WorkspaceTabSignal,
 } from '../../generated/signals'
 import { DatastarLit } from '../shared/datastar-lit'
+import { catalogListStyles } from '../shared/catalog-list-styles'
 import { checkSignalContract } from '../shared/signal-contract'
 import { lucideIcon } from '../shared/lucide-icons'
 import '../shared/record-table'
@@ -59,7 +60,7 @@ class LibreDashWorkspacePage extends DatastarLit(LitElement) {
   private lastPageKey = ''
 
   static get styles() {
-    return workspaceStyles
+    return [catalogListStyles, workspaceStyles]
   }
 
   updated(): void {
@@ -96,16 +97,18 @@ class LibreDashWorkspacePage extends DatastarLit(LitElement) {
     return html`
       <section class="page catalog" aria-label="LibreDash workspaces">
         ${this.renderHeader('', page.title, page.description)}
-        <ul class="workspace-list" aria-label="Published workspaces">
+        <ul class="catalog-list workspace-list" aria-label="Published workspaces">
           ${page.cards?.map((card) => html`
             <li>
-              <a class="workspace-row" href=${card.href}>
-                <span class="workspace-icon">${lucideIcon(Boxes)}</span>
-                <span class="workspace-copy">
-                  <span class="workspace-title">${card.title}</span>
-                  <span class="workspace-description">${card.description}</span>
+              <a class="catalog-row workspace-row" href=${card.href}>
+                <span class="catalog-icon workspace-icon">${lucideIcon(Boxes)}</span>
+                <span class="catalog-copy workspace-copy">
+                  <span class="catalog-title workspace-title">${card.title}</span>
+                  <span class="catalog-description workspace-description">${card.description}</span>
                 </span>
-                <span class="workspace-chevron">${lucideIcon(ChevronRight)}</span>
+                <span class="catalog-trailing">
+                  <span class="catalog-chevron workspace-chevron">${lucideIcon(ChevronRight)}</span>
+                </span>
               </a>
             </li>
           `)}
@@ -640,110 +643,12 @@ const workspaceStyles = css`
     gap: var(--base-size-8);
   }
 
-  .workspace-list {
-    display: grid;
-    min-width: 0;
-    overflow: hidden;
-    margin: 0;
-    border-radius: var(--ld-radius-default);
-    background: var(--ld-bg-panel);
-    box-shadow: inset 0 0 0 var(--borderWidth-default) var(--ld-line-muted);
-    padding: 0;
-    list-style: none;
-  }
-
   .panel {
     min-width: 0;
     overflow: hidden;
     border: var(--ld-border-muted);
     border-radius: var(--ld-radius-default);
     background: var(--ld-bg-panel);
-  }
-
-  .workspace-list li {
-    min-width: 0;
-  }
-
-  .workspace-row {
-    position: relative;
-    display: grid;
-    box-sizing: border-box;
-    height: 4.5rem;
-    min-width: 0;
-    grid-template-columns: var(--control-medium-size) minmax(0, 1fr) var(--base-size-16);
-    align-items: center;
-    gap: var(--base-size-12);
-    padding: var(--base-size-12) var(--base-size-16);
-    color: var(--ld-fg-default);
-    text-decoration: none;
-    transition: background-color var(--motion-transition-stateChange);
-  }
-
-  .workspace-list li + li .workspace-row::before {
-    position: absolute;
-    top: 0;
-    right: var(--base-size-16);
-    left: var(--base-size-16);
-    height: var(--borderWidth-default);
-    background: var(--ld-line-muted);
-    content: '';
-  }
-
-  .workspace-row:hover,
-  .workspace-row:focus-visible {
-    background: var(--ld-bg-control-hover);
-  }
-
-  .workspace-row:focus-visible {
-    z-index: 1;
-    outline: var(--borderWidth-thick) solid var(--borderColor-accent-emphasis, var(--ld-line-accent));
-    outline-offset: calc(-1 * var(--borderWidth-thick));
-  }
-
-  .workspace-icon,
-  .workspace-chevron {
-    display: grid;
-    place-items: center;
-  }
-
-  .workspace-icon {
-    width: var(--control-medium-size);
-    height: var(--control-medium-size);
-    border: var(--ld-border-muted);
-    border-radius: var(--ld-radius-default);
-    background: var(--ld-bg-panel-muted);
-    color: var(--ld-fg-link);
-  }
-
-  .workspace-copy {
-    display: grid;
-    min-width: 0;
-    gap: var(--base-size-4);
-  }
-
-  .workspace-title,
-  .workspace-description {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .workspace-title {
-    font-size: var(--ld-font-size-body-sm);
-    font-weight: var(--ld-font-weight-strong);
-    line-height: var(--ld-line-height-tight);
-  }
-
-  .workspace-description {
-    color: var(--ld-fg-muted);
-    font-size: var(--ld-font-size-caption);
-    line-height: var(--ld-line-height-tight);
-  }
-
-  .workspace-chevron {
-    width: var(--base-size-16);
-    height: var(--base-size-16);
-    color: var(--ld-fg-muted);
   }
 
   .primary-link,
