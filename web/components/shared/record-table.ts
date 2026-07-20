@@ -903,7 +903,7 @@ const recordTableStyles = `
 
   ld-record-table .variant-primary .record-table th,
   ld-record-table .variant-compact .record-table th {
-    padding: var(--base-size-12) var(--base-size-16);
+    padding: var(--base-size-8) var(--base-size-12);
     background: var(--ld-bg-panel-muted);
     font-size: var(--ld-font-size-body-sm);
     font-weight: var(--ld-font-weight-strong);
@@ -922,9 +922,9 @@ const recordTableStyles = `
   }
 
   ld-record-table .variant-primary .record-table td {
-    padding: var(--base-size-12) var(--base-size-16);
-    font-size: var(--ld-font-size-body-md);
-    vertical-align: top;
+    padding: var(--base-size-6) var(--base-size-12);
+    font-size: var(--ld-font-size-body-sm);
+    vertical-align: middle;
   }
 
   ld-record-table .variant-compact .record-table td {
@@ -942,7 +942,7 @@ const recordTableStyles = `
   }
 
   ld-record-table .variant-primary .record-table tbody tr {
-    min-height: 4rem;
+    min-height: 3rem;
   }
 
   ld-record-table .record-table th.is-right,
@@ -1382,8 +1382,20 @@ const recordTableStyles = `
   }
 
   ld-record-table .variant-primary .record-entity-label {
-    font-size: var(--ld-font-size-title-sm);
-    line-height: var(--ld-line-height-compact);
+    overflow: hidden;
+    overflow-wrap: normal;
+    font-size: var(--ld-font-size-body-md);
+    line-height: var(--ld-line-height-tight);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  ld-record-table .variant-primary .record-entity-description {
+    overflow: hidden;
+    overflow-wrap: normal;
+    line-height: var(--ld-line-height-tight);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   ld-record-table .record-entity-description {

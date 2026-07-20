@@ -744,6 +744,8 @@ const workspaceStyles = css`
     background: var(--ld-bg-control);
     color: var(--ld-fg-default);
     padding: 0 calc(var(--base-size-24) + var(--base-size-12)) 0 var(--base-size-12);
+    font-size: var(--ld-font-size-body-md);
+    line-height: var(--ld-line-height-compact);
   }
 
   input[type='search']:focus {
