@@ -2,7 +2,6 @@ package report
 
 import (
 	"fmt"
-	"strings"
 )
 
 func validateVisualQueryShape(name string, visual Visual) error {
@@ -201,46 +200,4 @@ func payloadKeys(values ...string) payloadKeySet {
 		keys[value] = struct{}{}
 	}
 	return keys
-}
-
-func validateRendererOptions(name string, options map[string]any) error {
-	for renderer, value := range options {
-		if !supportsRenderer(renderer) {
-			return fmt.Errorf("visual %q has renderer_options for unsupported renderer %q", name, renderer)
-		}
-		option, ok := value.(map[string]any)
-		if !ok {
-			return fmt.Errorf("visual %q renderer_options.%s must be an object", name, renderer)
-		}
-		if err := validateSafeRendererOption(name, "renderer_options."+renderer, option); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func validateSafeRendererOption(name, path string, value any) error {
-	switch typed := value.(type) {
-	case map[string]any:
-		for key, item := range typed {
-			nextPath := path + "." + key
-			if key == "renderItem" {
-				return fmt.Errorf("visual %q has unsafe renderer option %q", name, nextPath)
-			}
-			if err := validateSafeRendererOption(name, nextPath, item); err != nil {
-				return err
-			}
-		}
-	case []any:
-		for index, item := range typed {
-			if err := validateSafeRendererOption(name, fmt.Sprintf("%s[%d]", path, index), item); err != nil {
-				return err
-			}
-		}
-	case string:
-		if strings.Contains(typed, "function(") || strings.Contains(typed, "=>") {
-			return fmt.Errorf("visual %q has unsafe renderer option %q", name, path)
-		}
-	}
-	return nil
 }

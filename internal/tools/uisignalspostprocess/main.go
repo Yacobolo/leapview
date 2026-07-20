@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -41,11 +42,19 @@ var goInitialisms = map[string]string{
 }
 
 func main() {
-	if err := postprocessGeneratedModels(generatedModelsPath); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+	modelsPath := flag.String("go-models", generatedModelsPath, "generated Go models to normalize; empty disables Go post-processing")
+	typescriptPath := flag.String("typescript", generatedTypescriptPath, "generated TypeScript to specialize; empty disables TypeScript post-processing")
+	flag.Parse()
+	if *modelsPath != "" {
+		if err := postprocessGeneratedModels(*modelsPath); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	}
-	if err := postprocessGeneratedTypescript(generatedTypescriptPath); err != nil {
+	if *typescriptPath == "" {
+		return
+	}
+	if err := postprocessGeneratedTypescript(*typescriptPath); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -99,20 +108,6 @@ func postprocessGeneratedModels(path string) error {
 	if err != nil {
 		return fmt.Errorf("read generated UI signal models: %w", err)
 	}
-	// APIGen v0.5 emits tag.Value for discriminated unions even when the
-	// configured discriminator is named type. Keep the workaround scoped to the
-	// generated DashboardVisual decoder until the upstream emitter is fixed.
-	const visualDecoder = "func (value *DashboardVisual) UnmarshalJSON"
-	if start := bytes.Index(data, []byte(visualDecoder)); start >= 0 {
-		endMarker := []byte("\n}\n\ntype DashboardVisualBase")
-		end := bytes.Index(data[start:], endMarker)
-		if end < 0 {
-			return fmt.Errorf("generated DashboardVisual decoder is unterminated")
-		}
-		end += start + len("\n}\n")
-		decoder := bytes.ReplaceAll(data[start:end], []byte("tag.Value"), []byte("tag.Type"))
-		data = append(append(append([]byte(nil), data[:start]...), decoder...), data[end:]...)
-	}
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, path, data, parser.ParseComments)
 	if err != nil {
@@ -137,6 +132,7 @@ func postprocessGeneratedModels(path string) error {
 		}
 		return true
 	})
+	normalizeDiscriminatorSelectors(file)
 
 	var output bytes.Buffer
 	if err := format.Node(&output, fset, file); err != nil {
@@ -146,6 +142,55 @@ func postprocessGeneratedModels(path string) error {
 		return fmt.Errorf("write generated UI signal models: %w", err)
 	}
 	return nil
+}
+
+// APIGen v0.5 can emit tag.Value in union decoders even when the discriminator
+// field is named kind or type. Field-name normalization then makes the generated
+// decoder uncompilable. Resolve every selector on the decoder-local tag value to
+// the discriminator field declared by its JSON tag.
+func normalizeDiscriminatorSelectors(file *ast.File) {
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Name.Name != "UnmarshalJSON" || function.Body == nil {
+			continue
+		}
+		discriminator := ""
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			statement, ok := node.(*ast.DeclStmt)
+			if !ok {
+				return true
+			}
+			declaration, ok := statement.Decl.(*ast.GenDecl)
+			if !ok || declaration.Tok != token.VAR {
+				return true
+			}
+			for _, specification := range declaration.Specs {
+				value, ok := specification.(*ast.ValueSpec)
+				if !ok || len(value.Names) != 1 || value.Names[0].Name != "tag" {
+					continue
+				}
+				structure, ok := value.Type.(*ast.StructType)
+				if ok && len(structure.Fields.List) == 1 && len(structure.Fields.List[0].Names) == 1 {
+					discriminator = structure.Fields.List[0].Names[0].Name
+				}
+			}
+			return true
+		})
+		if discriminator == "" {
+			continue
+		}
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			selector, ok := node.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			identifier, ok := selector.X.(*ast.Ident)
+			if ok && identifier.Name == "tag" {
+				selector.Sel.Name = discriminator
+			}
+			return true
+		})
+	}
 }
 
 func goFieldName(value string) string {

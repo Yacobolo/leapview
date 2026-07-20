@@ -11,7 +11,10 @@ import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/dashboard/consumer"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	"github.com/Yacobolo/libredash/internal/testutil/dashboardfixture"
+	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -42,16 +45,22 @@ func (fakeMetrics) Pages(dashboardID string) []dashboard.Page {
 	}
 	return []dashboard.Page{{ID: "overview", Title: "Overview"}, {ID: "ops", Title: "Ops"}}
 }
-func (fakeMetrics) Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool) {
+func (fakeMetrics) Report(dashboardID string) (dashboarddefinition.Definition, *semanticmodel.Model, bool) {
 	if dashboardID != "dash" {
-		return reportdef.Dashboard{}, nil, false
+		return dashboarddefinition.Definition{}, nil, false
 	}
-	return reportdef.Dashboard{
-		ID:     "dash",
-		Title:  "Dashboard",
-		Tables: map[string]reportdef.TableVisual{},
-		Pages:  fakeMetrics{}.Pages(dashboardID),
-	}, &semanticmodel.Model{Name: "model", Title: "Model"}, true
+	report := reportdef.Dashboard{
+		ID:            "dash",
+		Title:         "Dashboard",
+		SemanticModel: "model",
+		Tables:        map[string]reportdef.TableVisual{},
+		Pages:         fakeMetrics{}.Pages(dashboardID),
+	}
+	model := &semanticmodel.Model{Name: "model", Title: "Model"}
+	return dashboardfixture.Compile(report, model), model, true
+}
+func (fakeMetrics) VisualizationDefinition(string, string) (visualizationdefinition.Definition, bool) {
+	return visualizationdefinition.Definition{}, false
 }
 func (fakeMetrics) QueryDashboardPage(_ context.Context, _ string, _ string, filters dashboard.Filters) (dashboard.Patch, error) {
 	return dashboard.Patch{Filters: filters.WithDefaults()}, nil

@@ -44,10 +44,6 @@ func supportsVisualShape(shape string) bool {
 	return ok
 }
 
-func supportsRenderer(renderer string) bool {
-	return renderer == "echarts" || renderer == "html"
-}
-
 func rendererSupportsType(renderer, chartType string) bool {
 	if renderer == "html" {
 		return chartType == "kpi" || chartType == ""

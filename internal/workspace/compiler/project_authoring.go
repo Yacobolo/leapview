@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"fmt"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/dashboard/report"
@@ -92,6 +93,12 @@ func (v *dashboardVisualSpec) UnmarshalYAML(value *yaml.Node) error {
 	v.Type = discriminator.Type
 	switch discriminator.Type {
 	case "table", "matrix", "pivot":
+		if err := rejectUnknownVisualFields(value, map[string]struct{}{
+			"type": {}, "title": {}, "description": {}, "cardinality": {}, "query": {}, "default_sort": {},
+			"presentation": {}, "columns": {}, "interaction": {}, "measure_formatting": {},
+		}); err != nil {
+			return err
+		}
 		var definition report.TableVisual
 		if err := value.Decode(&definition); err != nil {
 			return err
@@ -106,12 +113,31 @@ func (v *dashboardVisualSpec) UnmarshalYAML(value *yaml.Node) error {
 		}
 		v.Tabular = &definition
 	default:
+		if err := rejectUnknownVisualFields(value, map[string]struct{}{
+			"type": {}, "title": {}, "description": {}, "query": {}, "presentation": {}, "accessibility": {},
+			"data_budget": {}, "interaction": {}, "geo": {}, "custom": {},
+		}); err != nil {
+			return err
+		}
 		var definition report.Visual
 		if err := value.Decode(&definition); err != nil {
 			return err
 		}
 		definition.Type = discriminator.Type
 		v.Chart = &definition
+	}
+	return nil
+}
+
+func rejectUnknownVisualFields(value *yaml.Node, allowed map[string]struct{}) error {
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("visual must be a mapping")
+	}
+	for index := 0; index+1 < len(value.Content); index += 2 {
+		field := value.Content[index].Value
+		if _, ok := allowed[field]; !ok {
+			return fmt.Errorf("unsupported visualization property %q", field)
+		}
 	}
 	return nil
 }

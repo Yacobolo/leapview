@@ -3,14 +3,15 @@ package app
 import (
 	"testing"
 
+	"github.com/Yacobolo/libredash/internal/dashboard"
 	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 )
 
 func TestDashboardTelemetryObservesAcceptedProgressiveTargetEvents(t *testing.T) {
 	telemetry := newHTTPTelemetry()
 	for _, event := range []dashboardstream.RefreshEvent{
-		{Type: dashboardstream.RefreshEventVisual, Target: "revenue"},
-		{Type: dashboardstream.RefreshEventTable, Target: "orders"},
+		{Type: dashboardstream.RefreshEventVisual, Target: "revenue", Value: dashboard.Visual{Data: []dashboard.Datum{{"value": 1}}}},
+		{Type: dashboardstream.RefreshEventTable, Target: "orders", Value: dashboard.Table{AvailableRows: 1, Cardinality: dashboard.ExactCardinality(1), Blocks: map[string]dashboard.TableBlock{"a": {Rows: []map[string]any{{"order_id": "o1"}}}}}},
 		{Type: dashboardstream.RefreshEventTableCountErr, Target: "orders"},
 		{Type: dashboardstream.RefreshEventFilterOptions, Target: "state"},
 		{Type: dashboardstream.RefreshEventTargetError, Target: "visual:broken"},
@@ -36,6 +37,29 @@ func TestDashboardTelemetryObservesAcceptedProgressiveTargetEvents(t *testing.T)
 			t.Fatalf("target outcome %s = %v, want %v (all %#v)", labels, got[labels], count, got)
 		}
 	}
+	for _, name := range []string{"libredash_visualization_frame_rows", "libredash_visualization_frame_size_bytes", "libredash_visualization_cardinality"} {
+		if got := histogramSampleCount(t, telemetry, name); got != 2 {
+			t.Fatalf("%s sample count = %d, want 2", name, got)
+		}
+	}
+}
+
+func histogramSampleCount(t *testing.T, telemetry *httpTelemetry, name string) uint64 {
+	t.Helper()
+	families, err := telemetry.registry.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var count uint64
+	for _, family := range families {
+		if family.GetName() != name {
+			continue
+		}
+		for _, metric := range family.Metric {
+			count += metric.Histogram.GetSampleCount()
+		}
+	}
+	return count
 }
 
 func TestDashboardHTTPWiresProgressiveObservers(t *testing.T) {

@@ -56,6 +56,43 @@ func TestPostprocessGeneratedModelsIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestPostprocessGeneratedModelsRepairsDiscriminatorSelectors(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "models.gen.go")
+	source := `package signals
+
+type Visual struct{}
+
+func (value *Visual) UnmarshalJSON(data []byte) error {
+	var tag struct {
+		Value string ` + "`json:\"kind\"`" + `
+	}
+	if tag.Value == "" {
+		return nil
+	}
+	switch tag.Value {
+	case "chart":
+	}
+	return nil
+}
+`
+	if err := os.WriteFile(path, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := postprocessGeneratedModels(path); err != nil {
+		t.Fatalf("postprocess generated models: %v", err)
+	}
+	generated, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(generated)
+	if !strings.Contains(text, "Kind string `json:\"kind\"`") || strings.Contains(text, "tag.Value") || strings.Count(text, "tag.Kind") != 2 {
+		t.Fatalf("discriminator selector was not normalized:\n%s", text)
+	}
+}
+
 func TestPostprocessGeneratedTypescriptNarrowsInteractionValues(t *testing.T) {
 	t.Parallel()
 

@@ -151,12 +151,12 @@ func (s Service) selectionTargets(request Request, sourceKind, sourceID string) 
 	var ids []string
 	switch sourceKind {
 	case "visual":
-		if visual, ok := definition.Visuals[sourceID]; ok {
-			ids = visual.Interaction.PointSelection.Targets
-		} else if visual, ok := definition.Tables[sourceID]; ok {
-			ids = visual.Interaction.RowSelection.Targets
-		} else {
+		visual, ok := definition.Visualizations[sourceID]
+		if !ok {
 			return nil, fmt.Errorf("unknown source visual %q", sourceID)
+		}
+		if interaction, ok := compiledInteraction(visual); ok {
+			ids = interaction.Targets
 		}
 	default:
 		return nil, fmt.Errorf("unknown source kind %q", sourceKind)
@@ -166,14 +166,16 @@ func (s Service) selectionTargets(request Request, sourceKind, sourceID string) 
 	seen := map[string]struct{}{}
 	for _, id := range ids {
 		var target Target
-		if _, ok := definition.Visuals[id]; ok {
-			target = Target{Kind: TargetVisual, ID: id}
-		} else if _, ok := definition.Tables[id]; ok {
+		targetDefinition, ok := definition.Visualizations[id]
+		if !ok {
+			return nil, fmt.Errorf("interaction references unknown target %q", id)
+		}
+		if isGridVisualization(targetDefinition) {
 			requestForTable := tableRequest
 			requestForTable.Table = id
 			target = Target{Kind: TargetTable, ID: id, TableRequest: requestForTable}
 		} else {
-			return nil, fmt.Errorf("interaction references unknown target %q", id)
+			target = Target{Kind: TargetVisual, ID: id}
 		}
 		key := target.Key()
 		if _, duplicate := seen[key]; duplicate {

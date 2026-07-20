@@ -3,7 +3,7 @@ package compiler
 import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
-	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	"github.com/Yacobolo/libredash/internal/refreshpipeline"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
@@ -253,11 +253,11 @@ func schemaPayload(schema semanticmodel.TableSchema) schemaPayloadV1 {
 	return schemaPayloadV1{Columns: columns}
 }
 
-func dashboardPayload(report reportdef.Dashboard, tags []string) dashboardPayloadV1 {
+func dashboardPayload(report dashboarddefinition.Definition, tags []string) dashboardPayloadV1 {
 	return dashboardPayloadV1{ID: report.ID, Title: report.Title, Description: report.Description, SemanticModel: report.SemanticModel, Tags: tags}
 }
 
-func filterPayload(filter reportdef.FilterDefinition) filterPayloadV1 {
+func filterPayload(filter dashboarddefinition.FilterDefinition) filterPayloadV1 {
 	return filterPayloadV1{
 		Type:             filter.Type,
 		Label:            filter.Label,
@@ -280,7 +280,7 @@ func filterPayload(filter reportdef.FilterDefinition) filterPayloadV1 {
 	}
 }
 
-func filterPresetsPayload(presets []reportdef.FilterPreset) []filterPresetPayloadV1 {
+func filterPresetsPayload(presets []dashboarddefinition.FilterPreset) []filterPresetPayloadV1 {
 	out := make([]filterPresetPayloadV1, 0, len(presets))
 	for _, preset := range presets {
 		out = append(out, filterPresetPayloadV1{
@@ -294,11 +294,11 @@ func filterPresetsPayload(presets []reportdef.FilterPreset) []filterPresetPayloa
 	return out
 }
 
-func filterValuesPayload(values reportdef.FilterValues) filterValuesPayloadV1 {
+func filterValuesPayload(values dashboarddefinition.FilterValues) filterValuesPayloadV1 {
 	return filterValuesPayloadV1{Source: values.Source, Limit: values.Limit}
 }
 
-func filterOptionsPayload(options []reportdef.FilterOption) []filterOptionPayloadV1 {
+func filterOptionsPayload(options []dashboarddefinition.FilterOption) []filterOptionPayloadV1 {
 	out := make([]filterOptionPayloadV1, 0, len(options))
 	for _, option := range options {
 		out = append(out, filterOptionPayloadV1{Value: option.Value, Label: option.Label})
@@ -306,120 +306,10 @@ func filterOptionsPayload(options []reportdef.FilterOption) []filterOptionPayloa
 	return out
 }
 
-func filterTargetsPayload(targets reportdef.FilterTargets) filterTargetsPayloadV1 {
+func filterTargetsPayload(targets dashboarddefinition.FilterTargets) filterTargetsPayloadV1 {
 	visuals := append([]string{}, targets.Visuals...)
 	visuals = append(visuals, targets.Tables...)
 	return filterTargetsPayloadV1{Visuals: visuals}
-}
-
-func visualPayload(visual reportdef.Visual) visualPayloadV1 {
-	return visualPayloadV1{
-		Title:           visual.Title,
-		Description:     visual.Description,
-		Shape:           visual.ShapeOrDefault(),
-		Renderer:        visual.RendererOrDefault(),
-		Type:            visual.Type,
-		Query:           visualQueryPayload(visual.Query),
-		Options:         visual.CoreOptions(),
-		RendererOptions: visual.RendererOptions,
-		Encode:          visual.Encode,
-		Interaction:     selectionPayload(visual.Interaction.PointSelection),
-	}
-}
-
-func selectionPayload(selection reportdef.SelectionInteraction) selectionPayloadV1 {
-	mappings := make([]selectionMappingPayloadV1, 0, len(selection.Mappings))
-	for _, mapping := range selection.Mappings {
-		mappings = append(mappings, selectionMappingPayloadV1{
-			Field: mapping.Field,
-			Fact:  mapping.Fact,
-			Grain: mapping.Grain,
-			Value: mapping.Value,
-			Label: mapping.Label,
-		})
-	}
-	return selectionPayloadV1{
-		Toggle:   selection.Toggle,
-		Mappings: mappings,
-		Targets:  append([]string{}, selection.Targets...),
-	}
-}
-
-func visualQueryPayload(query reportdef.VisualQuery) visualQueryPayloadV1 {
-	return visualQueryPayloadV1{
-		Table:      query.Table,
-		Dimensions: fieldRefStrings(query.Dimensions),
-		Series:     query.Series.Field,
-		Measures:   fieldRefStrings(query.Measures),
-		Time:       queryTimePayload(query.Time),
-		Sort:       sortPayload(query.Sort),
-		Limit:      query.Limit,
-	}
-}
-
-func queryTimePayload(time reportdef.QueryTime) queryTimePayloadV1 {
-	return queryTimePayloadV1{Field: time.Field, Grain: time.Grain, Alias: time.Alias}
-}
-
-func sortPayload(sort []reportdef.Sort) []sortPayloadV1 {
-	out := make([]sortPayloadV1, 0, len(sort))
-	for _, entry := range sort {
-		out = append(out, sortPayloadV1{Field: entry.Field, Direction: entry.Direction, Expr: entry.Expr})
-	}
-	return out
-}
-
-func fieldRefStrings(refs []reportdef.FieldRef) []string {
-	out := make([]string, 0, len(refs))
-	for _, ref := range refs {
-		out = append(out, ref.Field)
-	}
-	return out
-}
-
-func fieldRefsPayload(refs []reportdef.FieldRef) []fieldRefPayloadV1 {
-	out := make([]fieldRefPayloadV1, 0, len(refs))
-	for _, ref := range refs {
-		out = append(out, fieldRefPayloadV1{Field: ref.Field, Alias: ref.Alias})
-	}
-	return out
-}
-
-func tableVisualPayload(table reportdef.TableVisual) tablePayloadV1 {
-	return tablePayloadV1{
-		Title:       table.Title,
-		Description: table.Description,
-		Type:        tabularVisualType(table.KindOrDefault()),
-		Query: tableQueryPayloadV1{
-			Table:    table.Query.Table,
-			Measures: fieldRefStrings(table.Query.Measures),
-		},
-		Rows:        table.Rows,
-		ColumnDims:  table.ColumnDims,
-		DataColumns: fieldRefsPayload(table.DataColumns),
-		Style:       tableStylePayload(table.Style),
-		DefaultSort: tableSortPayload(table.DefaultSort),
-		Interaction: selectionPayload(table.Interaction.RowSelection),
-	}
-}
-
-func tabularVisualType(kind string) string {
-	switch kind {
-	case "matrix_table":
-		return "matrix"
-	case "pivot_table":
-		return "pivot"
-	default:
-		return "table"
-	}
-}
-
-func tableStylePayload(style dashboard.TableStyle) tableStylePayloadV1 {
-	return tableStylePayloadV1{Density: style.Density, Zebra: style.Zebra, Grid: style.Grid}
-}
-
-func tableSortPayload(sort dashboard.TableSort) tableSortPayloadV1 {
-	return tableSortPayloadV1{Key: sort.Key, Direction: sort.Direction}
 }
 
 func pagePayload(page dashboard.Page) pagePayloadV1 {

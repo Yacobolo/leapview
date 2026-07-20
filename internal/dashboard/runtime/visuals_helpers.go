@@ -12,31 +12,163 @@ import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
+	visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
 )
+
+// visualPlan is the runtime query plan derived from the immutable compiled
+// visualization definition. It deliberately contains no authoring model or
+// renderer-native configuration.
+type visualPlan struct {
+	Definition visualizationdefinition.Definition
+	Table      string
+	Dimensions []visualizationdefinition.FieldBinding
+	Series     *visualizationdefinition.FieldBinding
+	Measures   []visualizationdefinition.FieldBinding
+	Time       *visualizationdefinition.TimeBinding
+	Sort       []visualizationdefinition.Sort
+	Limit      int
+}
+
+func newVisualPlan(definition visualizationdefinition.Definition) (visualPlan, error) {
+	plan := visualPlan{Definition: definition}
+	switch definition.Query.Kind {
+	case visualizationdefinition.QueryAggregate:
+		query := definition.Query.Aggregate
+		if query == nil {
+			return visualPlan{}, fmt.Errorf("visualization %q has no aggregate binding", definition.ID)
+		}
+		plan.Table, plan.Dimensions, plan.Series, plan.Measures, plan.Time, plan.Sort, plan.Limit = query.TableID, query.Dimensions, query.Series, query.Measures, query.Time, query.Sort, int(query.Limit)
+	case visualizationdefinition.QueryCustom:
+		query := definition.Query.Custom
+		if query == nil {
+			return visualPlan{}, fmt.Errorf("visualization %q has no custom binding", definition.ID)
+		}
+		plan.Table, plan.Dimensions, plan.Sort, plan.Limit = query.TableID, query.Fields, query.Sort, int(query.Limit)
+		base, err := visualizationir.SpecificationBase(definition.Spec)
+		if err != nil {
+			return visualPlan{}, err
+		}
+		for _, field := range base.Datasets[0].Fields {
+			for _, binding := range query.Fields {
+				if binding.Alias == field.ID && field.Role == visualizationir.VisualizationFieldRoleMeasure {
+					plan.Measures = append(plan.Measures, binding)
+				}
+			}
+		}
+	default:
+		return visualPlan{}, fmt.Errorf("visualization %q query kind %q is not a chart query", definition.ID, definition.Query.Kind)
+	}
+	return plan, nil
+}
+
+func (visual visualPlan) Shape() string {
+	switch value := visual.Definition.Spec.Value.(type) {
+	case *visualizationir.KPIVisualizationSpec:
+		return "single_value"
+	case *visualizationir.CartesianVisualizationSpec:
+		switch value.Mark {
+		case visualizationir.VisualizationCartesianMarkWaterfall:
+			return "category_delta"
+		case visualizationir.VisualizationCartesianMarkHistogram:
+			return "binned_measure"
+		case visualizationir.VisualizationCartesianMarkCandlestick:
+			return "ohlc"
+		case visualizationir.VisualizationCartesianMarkBoxplot:
+			return "distribution"
+		case visualizationir.VisualizationCartesianMarkHeatmap:
+			return "matrix"
+		case visualizationir.VisualizationCartesianMarkCombo:
+			return "category_multi_measure"
+		}
+	case *visualizationir.HierarchyVisualizationSpec:
+		if value.Mark == visualizationir.VisualizationHierarchyMarkGraph || value.Mark == visualizationir.VisualizationHierarchyMarkSankey {
+			return "graph"
+		}
+		return "hierarchy"
+	case *visualizationir.PolarVisualizationSpec:
+		if value.Mark == visualizationir.VisualizationPolarMarkGauge {
+			return "single_value"
+		}
+	case *visualizationir.GeographicVisualizationSpec:
+		return "geo"
+	}
+	if len(visual.Measures) > 1 {
+		return "category_multi_measure"
+	}
+	if visual.Series != nil {
+		return "category_series_value"
+	}
+	return "category_value"
+}
+
+func (visual visualPlan) Title() string {
+	base, err := visualizationir.SpecificationBase(visual.Definition.Spec)
+	if err != nil {
+		return visual.Definition.ID
+	}
+	return base.Title
+}
+
+func (visual visualPlan) KindAndType() (string, string) {
+	switch value := visual.Definition.Spec.Value.(type) {
+	case *visualizationir.KPIVisualizationSpec:
+		return "kpi", "kpi"
+	case *visualizationir.CartesianVisualizationSpec:
+		return "chart", string(value.Mark)
+	case *visualizationir.ProportionalVisualizationSpec:
+		return "chart", string(value.Mark)
+	case *visualizationir.HierarchyVisualizationSpec:
+		return "chart", string(value.Mark)
+	case *visualizationir.PolarVisualizationSpec:
+		return "chart", string(value.Mark)
+	case *visualizationir.GeographicVisualizationSpec:
+		return "chart", "map"
+	case *visualizationir.CustomVisualizationSpec:
+		return "chart", "custom"
+	default:
+		return "chart", ""
+	}
+}
+
+func (visual visualPlan) Interaction() (visualizationir.VisualizationInteraction, bool) {
+	base, err := visualizationir.SpecificationBase(visual.Definition.Spec)
+	if err != nil || len(base.Interactions) == 0 {
+		return visualizationir.VisualizationInteraction{}, false
+	}
+	return base.Interactions[0], true
+}
+
+func (visual visualPlan) HistogramBins() int {
+	if value, ok := visual.Definition.Spec.Value.(*visualizationir.CartesianVisualizationSpec); ok && value.Presentation.HistogramBins != nil {
+		return int(*value.Presentation.HistogramBins)
+	}
+	return 20
+}
 
 func fieldRef(field string, alias string) reportdef.QueryField {
 	return reportdef.QueryField{Field: field, Alias: alias}
 }
 
-func queryFieldRef(ref reportdef.FieldRef, alias string) reportdef.QueryField {
+func queryFieldRef(ref visualizationdefinition.FieldBinding, alias string) reportdef.QueryField {
 	return reportdef.QueryField{
-		Field: ref.Field,
+		Field: ref.FieldID,
 		Alias: alias,
 	}
 }
 
-func queryDimensionFields(dimensions []reportdef.FieldRef) []string {
+func queryDimensionFields(dimensions []visualizationdefinition.FieldBinding) []string {
 	fields := make([]string, len(dimensions))
 	for i, dimension := range dimensions {
-		fields[i] = dimension.Field
+		fields[i] = dimension.FieldID
 	}
 	return fields
 }
 
-func queryMeasureFields(measures []reportdef.FieldRef) []string {
+func queryMeasureFields(measures []visualizationdefinition.FieldBinding) []string {
 	fields := make([]string, len(measures))
 	for i, measure := range measures {
-		fields[i] = measure.Field
+		fields[i] = measure.FieldID
 	}
 	return fields
 }
@@ -54,24 +186,24 @@ func displayField(field string) string {
 	return parts[len(parts)-1]
 }
 
-func visualSorts(visual reportdef.Visual) []reportdef.QuerySort {
-	if len(visual.Query.Sort) == 0 {
+func visualSorts(visual visualPlan) []reportdef.QuerySort {
+	if len(visual.Sort) == 0 {
 		return []reportdef.QuerySort{{Field: defaultSortColumn(visual), Direction: "asc"}}
 	}
-	sorts := make([]reportdef.QuerySort, 0, len(visual.Query.Sort))
-	for _, sort := range visual.Query.Sort {
-		field := sort.Field
+	sorts := make([]reportdef.QuerySort, 0, len(visual.Sort))
+	for _, sort := range visual.Sort {
+		field := sort.FieldID
 		if field == "" {
 			field = defaultSortColumn(visual)
 		}
 		if field != "value" && field != "series" {
-			for index, dimension := range visual.Query.Dimensions {
-				if field == dimension.Field || field == dimension.Alias || field == displayField(dimension.Field) {
-					field = dimensionSortColumn(visual.ShapeOrDefault(), index)
+			for index, dimension := range visual.Dimensions {
+				if field == dimension.FieldID || field == dimension.Alias || field == displayField(dimension.FieldID) {
+					field = dimensionSortColumn(visual.Shape(), index)
 					break
 				}
 			}
-			if !visual.Query.Series.IsZero() && (field == visual.Query.Series.Field || field == visual.Query.Series.Alias || field == displayField(visual.Query.Series.Field)) {
+			if visual.Series != nil && (field == visual.Series.FieldID || field == visual.Series.Alias || field == displayField(visual.Series.FieldID)) {
 				field = "series"
 			}
 		}
@@ -158,13 +290,13 @@ func formatBinLabel(start, end float64) string {
 	return fmt.Sprintf("%s-%s", strconv.FormatFloat(round(start), 'f', -1, 64), strconv.FormatFloat(round(end), 'f', -1, 64))
 }
 
-func distributionSorts(visual reportdef.Visual) []reportdef.QuerySort {
-	if len(visual.Query.Sort) == 0 {
+func distributionSorts(visual visualPlan) []reportdef.QuerySort {
+	if len(visual.Sort) == 0 {
 		return nil
 	}
-	sorts := make([]reportdef.QuerySort, 0, len(visual.Query.Sort))
-	for _, sortSpec := range visual.Query.Sort {
-		field := sortSpec.Field
+	sorts := make([]reportdef.QuerySort, 0, len(visual.Sort))
+	for _, sortSpec := range visual.Sort {
+		field := sortSpec.FieldID
 		if field == "" {
 			field = "label"
 		}
@@ -176,8 +308,8 @@ func distributionSorts(visual reportdef.Visual) []reportdef.QuerySort {
 	return sorts
 }
 
-func defaultSortColumn(visual reportdef.Visual) string {
-	switch visual.ShapeOrDefault() {
+func defaultSortColumn(visual visualPlan) string {
+	switch visual.Shape() {
 	case "matrix":
 		return "row"
 	case "graph":
@@ -237,6 +369,24 @@ func interactionConfig(kind string, selection reportdef.SelectionInteraction) da
 		Mappings: mappings,
 		Targets:  append([]string{}, selection.Targets...),
 	}
+}
+
+func compiledInteractionConfig(interaction visualizationir.VisualizationInteraction) dashboard.InteractionConfig {
+	mappings := make([]dashboard.InteractionConfigMapping, 0, len(interaction.Mappings))
+	for _, mapping := range interaction.Mappings {
+		fact, grain, label := "", "", ""
+		if mapping.TargetFactID != nil {
+			fact = *mapping.TargetFactID
+		}
+		if mapping.Grain != nil {
+			grain = *mapping.Grain
+		}
+		if mapping.Label != nil {
+			label = mapping.Label.Field
+		}
+		mappings = append(mappings, dashboard.InteractionConfigMapping{Field: mapping.TargetFieldID, Fact: fact, Grain: grain, Value: mapping.Source.Field, Label: label})
+	}
+	return dashboard.InteractionConfig{Kind: interaction.ID, Toggle: interaction.Mode == visualizationir.VisualizationSelectionModeMultiple, Mappings: mappings, Targets: append([]string(nil), interaction.Targets...)}
 }
 
 func selectedEntries(filters dashboard.Filters, sourceKind, sourceID string) []dashboard.InteractionSelectionEntry {

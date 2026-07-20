@@ -367,33 +367,140 @@ package contracts
 	relative_days?: int
 })
 
-#Visual: #ChartVisual | #KPIVisual | #DataTableVisual | #MatrixVisual | #PivotVisual
+#Visual: #CartesianVisual | #ProportionalVisual | #HierarchyVisual | #PolarVisual | #GeographicVisual | #CustomVisual | #KPIVisual | #DataTableVisual | #MatrixVisual | #PivotVisual
 
 #VisualCommon: {
 	title?:            string
 	description?:      string
 	interaction?:      null | #Interaction
+	accessibility?: close({
+		title?:            string
+		description?:      string
+		summary?:          string
+		announce_changes?: bool
+	})
+	data_budget?: close({
+		max_rows?:              int & >0
+		required_completeness?: "complete" | "truncated" | "partial" | "empty"
+	})
 }
 
-#ChartVisual: close({
+#PresentationCommon: {
+	legend?:      "hidden" | "top" | "right" | "bottom" | "left"
+	show_labels?: bool
+}
+
+#CartesianPresentation: close({
+	#PresentationCommon
+	stacked?:       bool
+	smooth?:        bool
+	show_symbols?:  bool
+	data_zoom?:     bool
+	area?:          bool
+	step?:          bool
+	orientation?:   "horizontal" | "vertical"
+	label_position?: "automatic" | "inside" | "outside" | "top"
+	symbol_size?:    number & >0
+	histogram_bins?: int & >0
+	series_types?: close({[string]: "line" | "area" | "bar" | "column"})
+	dual_axis?: bool
+})
+
+#ProportionalPresentation: close({
+	#PresentationCommon
+	orientation?:   "horizontal" | "vertical"
+	rose?:          bool
+	center_label?:  string
+	label_position?: "automatic" | "inside" | "outside" | "top"
+	inner_radius?: number & >=0 & <=1
+	outer_radius?: number & >0 & <=1
+	align?: "left" | "center" | "right"
+	sort?: "ascending" | "descending"
+})
+
+#HierarchyPresentation: close({
+	#PresentationCommon
+	orientation?:  "horizontal" | "vertical"
+	initial_depth?: int & >=0
+	roam?:          bool
+	layout?:        "standard" | "circular"
+	breadcrumb?:    bool
+	node_gap?:      number & >=0
+	curveness?:     number & >=0 & <=1
+	focus?:         "none" | "adjacency"
+})
+
+#Threshold: close({value!: number, tone!: "neutral" | "ink" | "success" | "warning" | "danger"})
+
+#PolarPresentation: close({
+	#PresentationCommon
+	minimum?:       number
+	maximum?:       number
+	area?:          bool
+	progress_width?: number & >0
+	thresholds?: [...#Threshold]
+})
+
+#KPIVisualPresentation: close({
+	note?:       string
+	tone?:       "neutral" | "ink" | "success" | "warning" | "danger"
+	thresholds?: [...#Threshold]
+})
+
+#CartesianVisual: close({
 	#VisualCommon
-	type!:             "line" | "area" | "bar" | "column" | "pie" | "donut" | "scatter" | "funnel" | "treemap" | "gauge" | "heatmap" | "sankey" | "graph" | "map" | "candlestick" | "boxplot" | "combo" | "waterfall" | "histogram" | "radar" | "tree" | "sunburst"
-	shape?:            "category_value" | "category_series_value" | "category_multi_measure" | "category_delta" | "single_value" | "matrix" | "graph" | "geo" | "ohlc" | "distribution" | "binned_measure" | "hierarchy"
-	renderer?:         "echarts" | "html"
-	query!:            #VisualQuery
-	options?:          #AnyObject
-	renderer_options?: #AnyObject
-	encode?: close({
-		[string]: string
+	type!:         "line" | "area" | "bar" | "column" | "scatter" | "heatmap" | "candlestick" | "boxplot" | "combo" | "waterfall" | "histogram"
+	query!:        #VisualQuery
+	presentation?: #CartesianPresentation
+})
+
+#ProportionalVisual: close({
+	#VisualCommon
+	type!:         "pie" | "donut" | "funnel"
+	query!:        #VisualQuery
+	presentation?: #ProportionalPresentation
+})
+
+#HierarchyVisual: close({
+	#VisualCommon
+	type!:         "treemap" | "sankey" | "graph" | "tree" | "sunburst"
+	query!:        #VisualQuery
+	presentation?: #HierarchyPresentation
+})
+
+#PolarVisual: close({
+	#VisualCommon
+	type!:         "gauge" | "radar"
+	query!:        #VisualQuery
+	presentation?: #PolarPresentation
+})
+
+#GeographicVisual: close({
+	#VisualCommon
+	type!: "map"
+	query!: #VisualQuery
+	presentation?: close({
+		#PresentationCommon
+		roam?: bool
+	})
+	geo!: close({geometry_asset!: #Identifier})
+})
+
+#CustomVisual: close({
+	#VisualCommon
+	type!: "custom"
+	query!: #VisualQuery
+	custom!: close({
+		engine!: "vega_lite"
+		program!: #AnyObject
 	})
 })
 
 #KPIVisual: close({
 	#VisualCommon
 	type!:    "kpi"
-	shape?:   "single_value"
 	query!:   #VisualQuery
-	options?: #AnyObject
+	presentation?: #KPIVisualPresentation
 })
 
 #TabularVisualCommon: {
@@ -404,7 +511,7 @@ package contracts
 		key?:       string
 		direction?: "asc" | "desc" | string
 	})
-	style?: close({
+	presentation?: close({
 		density?: "compact" | "comfortable" | "spacious" | string
 		zebra?:   bool
 		grid?:    "none" | "rows" | "columns" | "full" | string

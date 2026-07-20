@@ -30,6 +30,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/app"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/dashboard/consumer"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	dashboardruntime "github.com/Yacobolo/libredash/internal/dashboard/runtime"
 	"github.com/Yacobolo/libredash/internal/dataquery"
@@ -39,6 +40,7 @@ import (
 	servingstatefs "github.com/Yacobolo/libredash/internal/servingstate/filesystem"
 	servingstatesqlite "github.com/Yacobolo/libredash/internal/servingstate/sqlite"
 	"github.com/Yacobolo/libredash/internal/testutil/ssetest"
+	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
@@ -74,7 +76,8 @@ type integrationMetrics interface {
 	Catalog() dashboard.Catalog
 	DefaultDashboardID() string
 	ModelIDForDashboard(dashboardID string) string
-	Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool)
+	Report(dashboardID string) (dashboarddefinition.Definition, *semanticmodel.Model, bool)
+	VisualizationDefinition(dashboardID, visualID string) (visualizationdefinition.Definition, bool)
 	SemanticModel(modelID string) (*semanticmodel.Model, bool)
 	DefaultFilters(dashboardID string) dashboard.Filters
 	NormalizeTableRequest(dashboardID string, request dashboard.TableRequest) dashboard.TableRequest

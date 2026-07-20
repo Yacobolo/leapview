@@ -19,9 +19,11 @@ import (
 	dashboardadapter "github.com/Yacobolo/libredash/internal/analytics/duckdb/dashboardadapter"
 	"github.com/Yacobolo/libredash/internal/configschema"
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	dashboardruntime "github.com/Yacobolo/libredash/internal/dashboard/runtime"
 	"github.com/Yacobolo/libredash/internal/visualdocs"
+	visualizationruntime "github.com/Yacobolo/libredash/internal/visualization/runtime"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
 	"gopkg.in/yaml.v3"
@@ -137,7 +139,15 @@ func generateVisualExamples(docsDir, projectPath, dataRoot string) (visualExampl
 	if err := workspacecompiler.ValidateDashboard(report, definition.Models); err != nil {
 		return visualExamplesArtifact{}, fmt.Errorf("validate executable examples: %w", err)
 	}
-	definition.Dashboards = map[string]*reportdef.Dashboard{report.ID: report}
+	visualizations, err := workspacecompiler.CompileVisualizationDefinitions(report, definition.Models[report.SemanticModel])
+	if err != nil {
+		return visualExamplesArtifact{}, fmt.Errorf("compile executable example visualizations: %w", err)
+	}
+	compiledDashboard, err := workspacecompiler.CompileDashboardDefinition(report, visualizations)
+	if err != nil {
+		return visualExamplesArtifact{}, fmt.Errorf("compile executable example dashboard: %w", err)
+	}
+	definition.Dashboards = map[string]dashboarddefinition.Definition{report.ID: compiledDashboard}
 	definition.Catalog.Dashboards = []workspace.CatalogDashboard{{ID: report.ID, Title: report.Title, Path: "docs/visuals", Description: report.Description}}
 	if err := bindFixtureRoot(definition, dataRoot); err != nil {
 		return visualExamplesArtifact{}, err
@@ -174,7 +184,15 @@ func generateVisualExamples(docsDir, projectPath, dataRoot string) (visualExampl
 					return visualExamplesArtifact{}, err
 				}
 				canonicalizePayloadData(*example.Chart, &payload)
-				payloads = append(payloads, visualdocs.ChartPayload(payload))
+				compiledVisualization, ok := visualizations[example.ID]
+				if !ok {
+					return visualExamplesArtifact{}, fmt.Errorf("visual example %q has no compiled definition", example.ID)
+				}
+				envelope, err := visualizationruntime.VisualEnvelopeFromDefinition(compiledVisualization, payload, 1, 1)
+				if err != nil {
+					return visualExamplesArtifact{}, fmt.Errorf("visual example %q envelope: %w", example.ID, err)
+				}
+				payloads = append(payloads, envelope)
 				continue
 			}
 			table, err := service.QueryTablePage(context.Background(), report.ID, document.Source, dashboard.Filters{}, dashboard.TableRequest{Table: example.ID, Block: "a", Start: 0, Count: dashboard.TableMaxRequestCount})
@@ -184,7 +202,15 @@ func generateVisualExamples(docsDir, projectPath, dataRoot string) (visualExampl
 			if len(table.Blocks["a"].Rows) == 0 {
 				return visualExamplesArtifact{}, fmt.Errorf("visual example %q returned no rows", example.ID)
 			}
-			payloads = append(payloads, visualdocs.TabularPayload(dashboard.NewTabularVisual(example.ID, table)))
+			compiledVisualization, ok := visualizations[example.ID]
+			if !ok {
+				return visualExamplesArtifact{}, fmt.Errorf("visual example %q has no compiled definition", example.ID)
+			}
+			envelope, err := visualizationruntime.TableEnvelopeFromDefinition(compiledVisualization, table, 1, 1)
+			if err != nil {
+				return visualExamplesArtifact{}, fmt.Errorf("visual example %q envelope: %w", example.ID, err)
+			}
+			payloads = append(payloads, envelope)
 		}
 		slug := "visuals/" + document.Source
 		artifact.Documents[slug] = payloads
@@ -226,7 +252,7 @@ func validateVisualPayload(example visualExample, payload dashboard.Visual) erro
 	if example.Chart.ShapeOrDefault() != "geo" {
 		return nil
 	}
-	mapID, _ := example.Chart.Options["map"].(string)
+	mapID := example.Chart.Geo.GeometryAsset
 	regions, ok := visualDocMapRegions[mapID]
 	if !ok {
 		return fmt.Errorf("visual example %q uses unsupported documentation map %q", example.ID, mapID)
@@ -312,7 +338,7 @@ func buildVisualDocumentReference(examples []visualExample) (visualDocumentRefer
 	renderers := map[string]struct{}{}
 	shapes := map[string]struct{}{}
 	queryFields := map[string]struct{}{}
-	options := map[string]struct{}{}
+	presentation := map[string]struct{}{}
 	reference := visualDocumentReference{Examples: make(map[string]visualExampleReference, len(examples))}
 	var previous *reportdef.Visual
 	for index := range examples {
@@ -321,8 +347,8 @@ func buildVisualDocumentReference(examples []visualExample) (visualDocumentRefer
 		renderers[visual.RendererOrDefault()] = struct{}{}
 		shapes[visual.ShapeOrDefault()] = struct{}{}
 		collectQueryFields(visual.Query, queryFields)
-		for key := range visual.Options {
-			options[key] = struct{}{}
+		for key := range visualPresentationValues(visual) {
+			presentation[key] = struct{}{}
 		}
 		reference.Examples[examples[index].ID] = visualExampleReference{KeyFields: visualKeyFields(previous, visual)}
 		previous = examples[index].Chart
@@ -331,8 +357,8 @@ func buildVisualDocumentReference(examples []visualExample) (visualDocumentRefer
 	reference.Renderer = strings.Join(sortedSet(renderers), ", ")
 	reference.Shapes = sortedSet(shapes)
 	reference.QueryFields = sortedSet(queryFields)
-	reference.Options = sortedSet(options)
-	fields, err := visualFieldReferences(reference.QueryFields, reference.Options, examples[0].Chart.Type)
+	reference.Presentation = sortedSet(presentation)
+	fields, err := visualFieldReferences(reference.QueryFields, reference.Presentation, examples[0].Chart.Type)
 	if err != nil {
 		return visualDocumentReference{}, err
 	}
@@ -393,16 +419,41 @@ func visualKeyFields(previous *reportdef.Visual, visual reportdef.Visual) []stri
 			fields = append(fields, "query."+check.name)
 		}
 	}
-	optionKeys := make(map[string]struct{}, len(visual.Options))
-	for key := range visual.Options {
+	values := visualPresentationValues(visual)
+	optionKeys := make(map[string]struct{}, len(values))
+	for key := range values {
 		optionKeys[key] = struct{}{}
 	}
+	previousValues := map[string]any{}
+	if previous != nil {
+		previousValues = visualPresentationValues(*previous)
+	}
 	for _, key := range sortedSet(optionKeys) {
-		if previous == nil || !reflect.DeepEqual(previous.Options[key], visual.Options[key]) {
-			fields = append(fields, "options."+key)
+		if previous == nil || !reflect.DeepEqual(previousValues[key], values[key]) {
+			fields = append(fields, "presentation."+key)
 		}
 	}
+	if visual.Geo.GeometryAsset != "" && (previous == nil || previous.Geo.GeometryAsset != visual.Geo.GeometryAsset) {
+		fields = append(fields, "geo.geometry_asset")
+	}
 	return fields
+}
+
+func visualPresentationValues(visual reportdef.Visual) map[string]any {
+	value := reflect.ValueOf(visual.Presentation)
+	typeInfo := value.Type()
+	out := make(map[string]any)
+	for index := 0; index < value.NumField(); index++ {
+		field := value.Field(index)
+		if field.IsZero() {
+			continue
+		}
+		name := typeInfo.Field(index).Tag.Get("yaml")
+		if name != "" && name != "-" {
+			out[name] = field.Interface()
+		}
+	}
+	return out
 }
 
 func valueIsSet(value any) bool {

@@ -1,11 +1,13 @@
 package app
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Yacobolo/libredash/internal/dashboard"
 	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 	"github.com/Yacobolo/libredash/internal/secret"
 	"github.com/go-chi/chi/v5"
@@ -25,6 +27,9 @@ type httpTelemetry struct {
 	dashboardRefreshCancellations *prometheus.CounterVec
 	dashboardCacheOutcomes        *prometheus.CounterVec
 	dashboardTargetOutcomes       *prometheus.CounterVec
+	visualizationFrameRows        *prometheus.HistogramVec
+	visualizationFrameBytes       *prometheus.HistogramVec
+	visualizationCardinality      *prometheus.HistogramVec
 	handlerOpts                   promhttp.HandlerOpts
 }
 
@@ -76,6 +81,18 @@ func newHTTPTelemetry() *httpTelemetry {
 			Name: "libredash_dashboard_target_outcomes_total",
 			Help: "Dashboard refresh target outcomes.",
 		}, []string{"kind", "outcome"}),
+		visualizationFrameRows: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name: "libredash_visualization_frame_rows", Help: "Rows shaped for a visualization envelope without recording governed values.",
+			Buckets: prometheus.ExponentialBuckets(1, 4, 10),
+		}, []string{"kind"}),
+		visualizationFrameBytes: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name: "libredash_visualization_frame_size_bytes", Help: "Encoded visualization frame size without recording governed values.",
+			Buckets: prometheus.ExponentialBuckets(256, 4, 10),
+		}, []string{"kind"}),
+		visualizationCardinality: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name: "libredash_visualization_cardinality", Help: "Known visualization result cardinality.",
+			Buckets: prometheus.ExponentialBuckets(1, 4, 10),
+		}, []string{"kind"}),
 		handlerOpts: promhttp.HandlerOpts{EnableOpenMetrics: true},
 	}
 	registry.MustRegister(
@@ -89,6 +106,9 @@ func newHTTPTelemetry() *httpTelemetry {
 		telemetry.dashboardRefreshCancellations,
 		telemetry.dashboardCacheOutcomes,
 		telemetry.dashboardTargetOutcomes,
+		telemetry.visualizationFrameRows,
+		telemetry.visualizationFrameBytes,
+		telemetry.visualizationCardinality,
 	)
 	return telemetry
 }
@@ -146,8 +166,22 @@ func (t *httpTelemetry) dashboardRefreshEventObserved(event dashboardstream.Refr
 		t.dashboardTargetObserved("filter_options", "success")
 	case dashboardstream.RefreshEventVisual:
 		t.dashboardTargetObserved("visual", "success")
+		if visual, ok := event.Value.(dashboard.Visual); ok {
+			t.observeVisualizationFrame("inline", len(visual.Data), len(visual.Data), visual)
+		}
 	case dashboardstream.RefreshEventTable:
 		t.dashboardTargetObserved("visual", "success")
+		if table, ok := event.Value.(dashboard.Table); ok {
+			rows := 0
+			for _, block := range table.Blocks {
+				rows += len(block.Rows)
+			}
+			cardinality := table.AvailableRows
+			if exact, ok := table.Cardinality.ExactValue(); ok {
+				cardinality = exact
+			}
+			t.observeVisualizationFrame("windowed", rows, cardinality, table)
+		}
 	case dashboardstream.RefreshEventTableCountErr:
 		t.dashboardTargetObserved("visual_count", "error")
 	case dashboardstream.RefreshEventTargetError:
@@ -156,6 +190,17 @@ func (t *httpTelemetry) dashboardRefreshEventObserved(event dashboardstream.Refr
 			kind = prefix
 		}
 		t.dashboardTargetObserved(kind, "error")
+	}
+}
+
+func (t *httpTelemetry) observeVisualizationFrame(kind string, rows, cardinality int, value any) {
+	if t == nil {
+		return
+	}
+	t.visualizationFrameRows.WithLabelValues(kind).Observe(float64(max(rows, 0)))
+	t.visualizationCardinality.WithLabelValues(kind).Observe(float64(max(cardinality, 0)))
+	if encoded, err := json.Marshal(value); err == nil {
+		t.visualizationFrameBytes.WithLabelValues(kind).Observe(float64(len(encoded)))
 	}
 }
 

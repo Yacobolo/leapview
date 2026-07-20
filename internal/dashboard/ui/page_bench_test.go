@@ -9,6 +9,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	uiactions "github.com/Yacobolo/libredash/internal/ui/actions"
+	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
 	"github.com/Yacobolo/libredash/pkg/pagestream"
 	g "maragu.dev/gomponents"
 	dsattr "maragu.dev/gomponents-datastar"
@@ -26,12 +27,20 @@ func BenchmarkDashboardDatastarLitBridge(b *testing.B) {
 func benchmarkDashboardBridge(b *testing.B, legacy bool) {
 	report, model, catalog := benchmarkDashboardFixture()
 	activePage := report.Pages[0]
+	definitions, err := workspacecompiler.CompileVisualizationDefinitions(&report, model)
+	if err != nil {
+		b.Fatal(err)
+	}
+	compiled, err := workspacecompiler.CompileDashboardDefinition(&report, definitions)
+	if err != nil {
+		b.Fatal(err)
+	}
 	htmlBytes := 0
 	jsonAttrBytes := 0
 
 	b.ReportAllocs()
 	for b.Loop() {
-		signals := BootstrapSignals("client", "benchmark-stream", catalog, report, model, report.Pages, activePage, dashboard.Filters{})
+		signals := BootstrapSignals("client", "benchmark-stream", catalog, compiled, model, definitions, report.Pages, activePage, dashboard.Filters{})
 		node := benchmarkDashboardDocument(catalog, report, model, activePage, signals, legacy)
 		var out strings.Builder
 		if err := node.Render(&out); err != nil {

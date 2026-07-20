@@ -6,7 +6,7 @@ Every preview on this page is generated from the YAML shown below it using a fix
 
 ## Basic
 
-Set `shape: geo`, select a registered map, and return region identifiers that match its boundaries. Here the state values use Brazilian two-letter codes.
+Use `type: map`, select a typed geometry asset, and return region identifiers that match its boundaries. Here the state values use Brazilian two-letter codes.
 
 {{< visual id="state_order_map" >}}
 
@@ -15,11 +15,8 @@ visuals:
   state_order_map:
     title: Orders by state
     description: Maps order count by customer state.
-    shape: geo
-    renderer: echarts
     type: map
-    options:
-      map: brazil_states
+    presentation: {}
     query:
       dimensions:
         state: orders.state
@@ -29,6 +26,8 @@ visuals:
         - field: value
           direction: desc
       limit: 27
+    geo:
+      geometry_asset: brazil_states
 ```
 
 ## Alternate measure
@@ -41,11 +40,8 @@ Keep the same geographic dimension and replace the measure with revenue to recol
 visuals:
   state_revenue_map:
     title: Revenue by state
-    shape: geo
-    renderer: echarts
     type: map
-    options:
-      map: brazil_states
+    presentation: {}
     query:
       dimensions:
         state: orders.state
@@ -55,6 +51,8 @@ visuals:
         - field: value
           direction: desc
       limit: 27
+    geo:
+      geometry_asset: brazil_states
 ```
 
 ## Labels and roaming
@@ -67,11 +65,8 @@ Enable `show_labels` for visible region codes and `roam` when readers need to pa
 visuals:
   state_revenue_map_labeled:
     title: Labeled revenue map
-    shape: geo
-    renderer: echarts
     type: map
-    options:
-      map: brazil_states
+    presentation:
       show_labels: true
       roam: true
     query:
@@ -83,4 +78,6 @@ visuals:
         - field: value
           direction: desc
       limit: 27
+    geo:
+      geometry_asset: brazil_states
 ```

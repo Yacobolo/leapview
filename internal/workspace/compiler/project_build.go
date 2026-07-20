@@ -9,6 +9,7 @@ import (
 	analyticsmaterialize "github.com/Yacobolo/libredash/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	"github.com/Yacobolo/libredash/internal/refreshpipeline"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
@@ -233,7 +234,7 @@ func (workspaceProject *WorkspaceProject) definition(project Project) (*workspac
 	definition := &workspace.Definition{
 		Catalog:    catalog,
 		Models:     map[string]*semanticmodel.Model{},
-		Dashboards: workspaceProject.Dashboards,
+		Dashboards: map[string]dashboarddefinition.Definition{},
 		Access: workspace.AccessPolicy{
 			Groups:       copyWorkspaceGroups(workspaceProject.AccessGroups),
 			RoleBindings: copyWorkspaceRoleBindings(workspaceProject.AccessRoleBindings),
@@ -263,6 +264,15 @@ func (workspaceProject *WorkspaceProject) definition(project Project) (*workspac
 		if err := ValidateDashboard(dashboard, definition.Models); err != nil {
 			return nil, resourceError(workspaceProject.DashboardPaths[name], "dashboard:"+workspaceProject.ID+"."+name, "spec", "loading dashboard %q: %s", name, err.Error())
 		}
+		visualizations, err := compileVisualizationDefinitions(dashboard, definition.Models[dashboard.SemanticModel])
+		if err != nil {
+			return nil, resourceError(workspaceProject.DashboardPaths[name], "dashboard:"+workspaceProject.ID+"."+name, "spec.visuals", "compiling dashboard %q visualizations: %s", name, err.Error())
+		}
+		compiledDashboard, err := CompileDashboardDefinition(dashboard, visualizations)
+		if err != nil {
+			return nil, resourceError(workspaceProject.DashboardPaths[name], "dashboard:"+workspaceProject.ID+"."+name, "spec", "compiling dashboard %q definition: %s", name, err.Error())
+		}
+		definition.Dashboards[name] = compiledDashboard
 		definition.Catalog.Dashboards = append(definition.Catalog.Dashboards, workspace.CatalogDashboard{
 			ID:          name,
 			Title:       firstNonEmpty(workspaceProject.DashboardTitles[name], dashboard.Title),

@@ -6,12 +6,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dataquery"
+	visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
+	visualizationruntime "github.com/Yacobolo/libredash/internal/visualization/runtime"
 	agentcore "github.com/Yacobolo/libredash/pkg/agent"
 )
 
@@ -50,23 +53,23 @@ type VisualAuthorizationRequest struct {
 }
 
 type agentVisualInput struct {
-	Workspace       string                    `json:"workspace"`
-	Model           string                    `json:"model"`
-	Dataset         string                    `json:"dataset"`
-	Title           string                    `json:"title"`
-	Type            string                    `json:"type"`
-	Shape           string                    `json:"shape"`
-	Dimensions      []agentVisualFieldRef     `json:"dimensions"`
-	Series          *agentVisualFieldRef      `json:"series"`
-	Measures        []agentVisualFieldRef     `json:"measures"`
-	Fields          []agentVisualFieldRef     `json:"fields"`
-	Rows            []agentVisualFieldRef     `json:"rows"`
-	Columns         []dashboard.TableColumn   `json:"columns"`
-	Sort            []agentVisualSort         `json:"sort"`
-	Limit           int                       `json:"limit"`
-	Options         map[string]any            `json:"options"`
-	RendererOptions map[string]map[string]any `json:"rendererOptions"`
+	Workspace    string                  `json:"workspace"`
+	Model        string                  `json:"model"`
+	Dataset      string                  `json:"dataset"`
+	Title        string                  `json:"title"`
+	Type         string                  `json:"type"`
+	Presentation agentVisualPresentation `json:"presentation"`
+	Dimensions   []agentVisualFieldRef   `json:"dimensions"`
+	Series       *agentVisualFieldRef    `json:"series"`
+	Measures     []agentVisualFieldRef   `json:"measures"`
+	Fields       []agentVisualFieldRef   `json:"fields"`
+	Rows         []agentVisualFieldRef   `json:"rows"`
+	Columns      []dashboard.TableColumn `json:"columns"`
+	Sort         []agentVisualSort       `json:"sort"`
+	Limit        int                     `json:"limit"`
 }
+
+type agentVisualPresentation = reportdef.VisualPresentation
 
 type agentVisualFieldRef struct {
 	Field string `json:"field"`
@@ -79,10 +82,10 @@ type agentVisualSort struct {
 }
 
 type agentVisualResult struct {
-	Type    string         `json:"type"`
-	ID      string         `json:"id"`
-	Patch   map[string]any `json:"patch"`
-	Summary string         `json:"summary"`
+	Type    string                                                      `json:"type"`
+	ID      string                                                      `json:"id"`
+	Patch   map[string]map[string]visualizationir.VisualizationEnvelope `json:"patch"`
+	Summary string                                                      `json:"summary"`
 }
 
 func (p VisualProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
@@ -165,14 +168,18 @@ func decodeAgentVisualInput(rawArgs json.RawMessage) (agentVisualInput, error) {
 		}
 	}
 	var input agentVisualInput
-	if err := json.Unmarshal(rawArgs, &input); err != nil {
+	decoder := json.NewDecoder(strings.NewReader(string(rawArgs)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
 		return agentVisualInput{}, err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return agentVisualInput{}, fmt.Errorf("arguments must contain exactly one JSON object")
 	}
 	input.Model = strings.TrimSpace(input.Model)
 	input.Dataset = strings.TrimSpace(input.Dataset)
 	input.Title = strings.TrimSpace(input.Title)
 	input.Type = strings.ToLower(strings.TrimSpace(input.Type))
-	input.Shape = strings.ToLower(strings.TrimSpace(input.Shape))
 	if !isAgentVisualType(input.Type) {
 		return agentVisualInput{}, fmt.Errorf("type must be a supported visual type")
 	}
@@ -216,7 +223,6 @@ func (p VisualProvider) queryAgentVisual(ctx context.Context, workspaceID string
 
 func (p VisualProvider) queryAgentChart(ctx context.Context, workspaceID string, model *semanticmodel.Model, input agentVisualInput, id string) (agentVisualResult, error) {
 	shape := agentVisualShape(input)
-	input.Shape = shape
 	if err := validateAgentChartContract(input); err != nil {
 		return agentVisualResult{}, err
 	}
@@ -246,15 +252,19 @@ func (p VisualProvider) queryAgentChart(ctx context.Context, workspaceID string,
 		Measure:         displayAgentField(input.Measures[0]),
 		Measures:        displayAgentFields(input.Measures),
 		Series:          agentVisualSeries(input.Series),
-		Options:         cloneMap(input.Options),
-		RendererOptions: cloneNestedMap(input.RendererOptions),
+		Options:         contract.CoreOptions(),
+		RendererOptions: map[string]map[string]any{},
 		Selection:       []dashboard.InteractionSelectionEntry{},
 		Data:            data,
+	}
+	envelope, err := visualizationruntime.VisualEnvelope(visual, 1, 1)
+	if err != nil {
+		return agentVisualResult{}, err
 	}
 	return agentVisualResult{
 		Type:    chartType,
 		ID:      id,
-		Patch:   map[string]any{"visuals": map[string]dashboard.Visual{id: visual}},
+		Patch:   map[string]map[string]visualizationir.VisualizationEnvelope{"visuals": {id: envelope}},
 		Summary: fmt.Sprintf("Created chart %q with %d data points.", title, len(data)),
 	}, nil
 }
@@ -277,9 +287,8 @@ func agentReportVisual(input agentVisualInput) reportdef.Visual {
 		series = reportdef.FieldRef{Field: input.Series.Field, Alias: input.Series.Alias}
 	}
 	return reportdef.Visual{
-		Title: firstNonEmpty(input.Title, "Agent visual"), Shape: input.Shape, Type: input.Type,
-		Query:   reportdef.VisualQuery{Table: input.Dataset, Dimensions: dimensions, Series: series, Measures: measures, Limit: input.Limit},
-		Options: input.Options,
+		Title: firstNonEmpty(input.Title, "Agent visual"), Type: input.Type, Presentation: input.Presentation,
+		Query: reportdef.VisualQuery{Table: input.Dataset, Dimensions: dimensions, Series: series, Measures: measures, Limit: input.Limit},
 	}
 }
 
@@ -309,12 +318,11 @@ func (p VisualProvider) agentChartData(ctx context.Context, workspaceID string, 
 		if p.Histogram == nil {
 			return nil, fmt.Errorf("histogram query provider is not configured")
 		}
-		binCount := 20
-		if value, ok := input.Options["bin_count"].(float64); ok {
-			binCount = max(5, min(60, int(value)))
-		} else if value, ok := input.Options["bin_count"].(int); ok {
-			binCount = max(5, min(60, value))
+		binCount := input.Presentation.HistogramBins
+		if binCount <= 0 {
+			binCount = 20
 		}
+		binCount = max(5, min(60, binCount))
 		bins, err := p.Histogram(ctx, workspaceID, input.Model, reportdef.RawValueQuery{
 			Table: input.Dataset, Measure: reportdef.QueryField{Field: input.Measures[0].Field, Alias: "value"},
 		}, binCount)
@@ -569,10 +577,14 @@ func (p VisualProvider) queryAgentTable(ctx context.Context, workspaceID string,
 		LoadingBlock: "",
 		Error:        "",
 	}
+	envelope, err := visualizationruntime.TableEnvelope(id, table, 1, 1)
+	if err != nil {
+		return agentVisualResult{}, err
+	}
 	return agentVisualResult{
 		Type:    input.Type,
 		ID:      id,
-		Patch:   map[string]any{"visuals": map[string]dashboard.TabularVisual{id: dashboard.NewTabularVisual(id, table)}},
+		Patch:   map[string]map[string]visualizationir.VisualizationEnvelope{"visuals": {id: envelope}},
 		Summary: fmt.Sprintf("Created table %q with %d rows.", title, len(tableRows)),
 	}, nil
 }
@@ -807,28 +819,6 @@ func mergeAgentTableColumn(base, override dashboard.TableColumn) dashboard.Table
 	return base
 }
 
-func cloneMap(in map[string]any) map[string]any {
-	if len(in) == 0 {
-		return map[string]any{}
-	}
-	out := make(map[string]any, len(in))
-	for key, value := range in {
-		out[key] = value
-	}
-	return out
-}
-
-func cloneNestedMap(in map[string]map[string]any) map[string]map[string]any {
-	if len(in) == 0 {
-		return map[string]map[string]any{}
-	}
-	out := make(map[string]map[string]any, len(in))
-	for key, value := range in {
-		out[key] = cloneMap(value)
-	}
-	return out
-}
-
 const agentVisualToolSchema = `{
   "type": "object",
   "additionalProperties": false,
@@ -838,7 +828,6 @@ const agentVisualToolSchema = `{
     "dataset": {"type": "string", "minLength": 1, "description": "Semantic dataset/table ID."},
     "title": {"type": "string", "description": "Optional display title."},
     "type": {"type": "string", "enum": ["line", "area", "bar", "column", "pie", "donut", "scatter", "funnel", "treemap", "gauge", "heatmap", "sankey", "graph", "map", "candlestick", "boxplot", "combo", "waterfall", "histogram", "radar", "tree", "sunburst", "kpi", "table", "matrix", "pivot"], "description": "Visual type."},
-    "shape": {"type": "string", "description": "Optional visual shape override."},
     "dimensions": {
       "type": "array",
       "description": "Dimension fields for chart grouping.",
@@ -916,11 +905,45 @@ const agentVisualToolSchema = `{
       }
     },
     "limit": {"type": "integer", "minimum": 1, "maximum": 50, "description": "Maximum result rows."},
-    "options": {"type": "object", "additionalProperties": true, "description": "Renderer-neutral options."},
-    "rendererOptions": {
-      "type": "object",
-      "description": "Renderer-specific options keyed by renderer name.",
-      "additionalProperties": {"type": "object", "additionalProperties": true}
-    }
+    "presentation": {
+	  "type": "object",
+	  "additionalProperties": false,
+	  "description": "Typed renderer-independent presentation settings.",
+	  "properties": {
+		"legend": {"type": "string", "enum": ["none", "top", "right", "bottom", "left"]},
+		"showLabels": {"type": "boolean"},
+		"stacked": {"type": "boolean"},
+		"smooth": {"type": "boolean"},
+		"showSymbols": {"type": "boolean"},
+		"dataZoom": {"type": "boolean"},
+		"area": {"type": "boolean"},
+		"step": {"type": "boolean"},
+		"orientation": {"type": "string", "enum": ["horizontal", "vertical"]},
+		"labelPosition": {"type": "string", "enum": ["inside", "outside", "top", "right", "bottom", "left", "center"]},
+		"symbolSize": {"type": "number", "minimum": 0},
+		"histogramBins": {"type": "integer", "minimum": 5, "maximum": 60},
+		"seriesTypes": {"type": "object", "additionalProperties": {"type": "string", "enum": ["line", "area", "bar", "column"]}},
+		"dualAxis": {"type": "boolean"},
+		"rose": {"type": "boolean"},
+		"centerLabel": {"type": "string"},
+		"innerRadius": {"type": "number", "minimum": 0},
+		"outerRadius": {"type": "number", "minimum": 0},
+		"align": {"type": "string"},
+		"sort": {"type": "string"},
+		"initialDepth": {"type": "integer", "minimum": 0},
+		"roam": {"type": "boolean"},
+		"layout": {"type": "string"},
+		"breadcrumb": {"type": "boolean"},
+		"nodeGap": {"type": "number", "minimum": 0},
+		"curveness": {"type": "number", "minimum": 0, "maximum": 1},
+		"focus": {"type": "string"},
+		"minimum": {"type": "number"},
+		"maximum": {"type": "number"},
+		"progressWidth": {"type": "number", "minimum": 0},
+		"thresholds": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["value", "tone"], "properties": {"value": {"type": "number"}, "tone": {"type": "string"}}}},
+		"note": {"type": "string"},
+		"tone": {"type": "string"}
+	  }
+	}
   }
 }`

@@ -15,8 +15,11 @@ import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/dashboard/consumer"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dataquery"
+	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
+	visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
 )
@@ -24,6 +27,30 @@ import (
 type runtimeAuditRecorder struct {
 	queries []dataquery.Query
 	results []dataquery.Result
+}
+
+func setCompiledInteractionTarget(spec *visualizationir.VisualizationSpec, target string, enabled bool) {
+	proportional, ok := spec.Value.(*visualizationir.ProportionalVisualizationSpec)
+	if !ok || len(proportional.Interactions) == 0 {
+		panic("orders visualization must have a proportional interaction")
+	}
+	targets := proportional.Interactions[0].Targets
+	if enabled {
+		for _, existing := range targets {
+			if existing == target {
+				return
+			}
+		}
+		proportional.Interactions[0].Targets = append(targets, target)
+		return
+	}
+	filtered := targets[:0]
+	for _, existing := range targets {
+		if existing != target {
+			filtered = append(filtered, existing)
+		}
+	}
+	proportional.Interactions[0].Targets = filtered
 }
 
 func (r *runtimeAuditRecorder) RecordDataQuery(_ context.Context, query dataquery.Query, result dataquery.Result) error {
@@ -156,7 +183,7 @@ func sharedOrdersWorkspaceDefinition(t *testing.T) *workspace.Definition {
 			"model_a": modelA,
 			"model_b": modelB,
 		},
-		Dashboards: map[string]*reportdef.Dashboard{"dashboard": {ID: "dashboard", Title: "Dashboard", SemanticModel: "model_a"}},
+		Dashboards: map[string]dashboarddefinition.Definition{"dashboard": {ID: "dashboard", Title: "Dashboard", SemanticModel: "model_a", Filters: map[string]dashboarddefinition.FilterDefinition{}, Pages: []dashboard.Page{}, Visualizations: map[string]visualizationdefinition.Definition{}}},
 	}
 }
 
@@ -329,7 +356,7 @@ c2,RJ
 	}
 	recorder.queries = nil
 	recorder.results = nil
-	visuals := map[string]dashboard.Visual{}
+	visuals := map[string]visualizationir.VisualizationEnvelope{}
 	progress := []consumer.Progress{}
 	err = metrics.ExecuteConsumersPage(ctx, consumer.Request{DashboardID: "fulfillment-operations", PageID: "overview", Progress: func(value consumer.Progress) {
 		progress = append(progress, value)
@@ -338,13 +365,14 @@ c2,RJ
 		{Kind: consumer.KindVisual, ID: "delivery_days"},
 		{Kind: consumer.KindVisual, ID: "review_score"},
 	}}, func(result consumer.Result) bool {
-		visuals[result.Target.ID] = result.Visual
+		visuals[result.Target.ID] = result.Envelope
 		return true
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(visuals) != 3 || len(visuals["total_orders"].Data) == 0 {
+	state, ok := visuals["total_orders"].DataState.Value.(*visualizationir.InlineVisualizationDataState)
+	if len(visuals) != 3 || !ok || len(state.Datasets) == 0 || len(state.Datasets[0].Rows) == 0 {
 		t.Fatalf("targeted visuals = %#v", visuals)
 	}
 	if len(recorder.queries) != 1 || len(recorder.queries[0].Measures) != 3 {
@@ -505,7 +533,7 @@ func TestServiceTableInteractiveCap(t *testing.T) {
 		t.Fatalf("next block queries = %#v, want independent rows and count", recorder.queries)
 	}
 
-	overshoot, err := metrics.queries.tables.queryTableRowsPage(ctx, "executive-sales", "", dashboard.Filters{}, dashboard.TableRequest{
+	overshoot, err := metrics.queries.visualizations.queryTableRowsPage(ctx, "executive-sales", "", dashboard.Filters{}, dashboard.TableRequest{
 		Table: "orders_table", Block: "b", Start: rows + dashboard.TableChunkSize, Count: dashboard.TableChunkSize, RequestSeq: 11,
 	})
 	if err != nil {
@@ -658,9 +686,9 @@ relogios_presentes,watches_gifts
 	}
 
 	report := metrics.reports.workspace.Dashboards["executive-sales"]
-	ordersVisual := report.Visuals["orders"]
-	ordersVisual.Interaction.PointSelection.Targets = append(ordersVisual.Interaction.PointSelection.Targets, "orders")
-	report.Visuals["orders"] = ordersVisual
+	ordersVisual := report.Visualizations["orders"]
+	setCompiledInteractionTarget(&ordersVisual.Spec, "orders", true)
+	report.Visualizations["orders"] = ordersVisual
 	metrics.reports.workspace.Dashboards["executive-sales"] = report
 	selfTargetPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "overview", selectedFilters)
 	if err != nil {
@@ -673,8 +701,8 @@ relogios_presentes,watches_gifts
 		t.Fatalf("self-targeted orders chart did not mark delivered as selected: %#v", selfTargetPatch.Visuals["orders"].Data)
 	}
 	report = metrics.reports.workspace.Dashboards["executive-sales"]
-	ordersVisual.Interaction.PointSelection.Targets = removeString(ordersVisual.Interaction.PointSelection.Targets, "orders")
-	report.Visuals["orders"] = ordersVisual
+	setCompiledInteractionTarget(&ordersVisual.Spec, "orders", false)
+	report.Visualizations["orders"] = ordersVisual
 	metrics.reports.workspace.Dashboards["executive-sales"] = report
 
 	columnPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-column", selectedFilters)

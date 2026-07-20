@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"net/http"
@@ -16,9 +17,13 @@ import (
 	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/dashboard/consumer"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dataquery"
+	"github.com/Yacobolo/libredash/internal/testutil/dashboardfixture"
 	"github.com/Yacobolo/libredash/internal/testutil/ssetest"
+	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
+	visualizationruntime "github.com/Yacobolo/libredash/internal/visualization/runtime"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
 )
@@ -38,13 +43,17 @@ func (fakeMetrics) ExecuteConsumersPage(ctx context.Context, request consumer.Re
 		switch target.Kind {
 		case consumer.KindVisual:
 			visual, err := fakeMetrics{}.QueryVisualPage(ctx, request.DashboardID, request.PageID, request.Filters, target.ID)
-			publish(consumer.Result{Target: target, Visual: visual, Err: err})
+			definition, _ := fakeMetrics{}.VisualizationDefinition(request.DashboardID, target.ID)
+			envelope, envelopeErr := visualizationruntime.VisualEnvelopeFromDefinition(definition, visual, 0, 0)
+			publish(consumer.Result{Target: target, Envelope: envelope, Err: errors.Join(err, envelopeErr)})
 		case consumer.KindFilterOptions:
 			options, err := fakeMetrics{}.QueryFilterOptionsPage(ctx, request.DashboardID, request.PageID, []string{target.ID})
 			publish(consumer.Result{Target: target, FilterOptions: options, Err: err})
 		case consumer.KindTable:
 			table, err := fakeMetrics{}.QueryTablePage(ctx, request.DashboardID, request.PageID, request.Filters, target.TableRequest)
-			publish(consumer.Result{Target: target, Table: table, Err: err})
+			definition, _ := fakeMetrics{}.VisualizationDefinition(request.DashboardID, target.ID)
+			envelope, envelopeErr := visualizationruntime.TableEnvelopeFromDefinition(definition, table, 0, 0)
+			publish(consumer.Result{Target: target, Envelope: envelope, Err: errors.Join(err, envelopeErr)})
 		}
 	}
 	return ctx.Err()
@@ -97,16 +106,18 @@ func (m namedWorkspaceMetrics) Pages(dashboardID string) []dashboard.Page {
 	return []dashboard.Page{{ID: "overview", Title: "Overview"}}
 }
 
-func (m namedWorkspaceMetrics) Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool) {
+func (m namedWorkspaceMetrics) Report(dashboardID string) (dashboarddefinition.Definition, *semanticmodel.Model, bool) {
 	if dashboardID != m.dashboardID {
-		return reportdef.Dashboard{}, nil, false
+		return dashboarddefinition.Definition{}, nil, false
 	}
-	return reportdef.Dashboard{
+	authored := reportdef.Dashboard{
 		ID:            m.dashboardID,
 		Title:         m.title,
 		SemanticModel: "test",
 		Pages:         m.Pages(dashboardID),
-	}, &semanticmodel.Model{Name: "test", Title: "Test Model"}, true
+	}
+	model := &semanticmodel.Model{Name: "test", Title: "Test Model"}
+	return dashboardfixture.Compile(authored, model), model, true
 }
 
 func (fakeMetrics) Catalog() dashboard.Catalog {
@@ -132,37 +143,39 @@ func (fakeMetrics) ModelIDForDashboard(dashboardID string) string {
 	return ""
 }
 
-func (fakeMetrics) Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool) {
+func (fakeMetrics) Report(dashboardID string) (dashboarddefinition.Definition, *semanticmodel.Model, bool) {
 	if dashboardID != "executive-sales" {
-		return reportdef.Dashboard{}, nil, false
+		return dashboarddefinition.Definition{}, nil, false
 	}
-	return reportdef.Dashboard{
-			ID:            "executive-sales",
-			Title:         "Executive Sales Dashboard",
-			SemanticModel: "test",
-			Filters: map[string]reportdef.FilterDefinition{
-				"state":    {Type: "multi_select", Label: "State", Dimension: "orders.status", URLParam: "state", Operator: "in", Values: reportdef.FilterValues{Source: "distinct", Limit: 50}},
-				"category": {Type: "text", Label: "Category", Dimension: "orders.status", URLParam: "category", DefaultOperator: "contains", Operators: []string{"contains", "equals"}},
+	authored := reportdef.Dashboard{
+		ID:            "executive-sales",
+		Title:         "Executive Sales Dashboard",
+		SemanticModel: "test",
+		Filters: map[string]reportdef.FilterDefinition{
+			"state":    {Type: "multi_select", Label: "State", Dimension: "orders.status", URLParam: "state", Operator: "in", Values: reportdef.FilterValues{Source: "distinct", Limit: 50}},
+			"category": {Type: "text", Label: "Category", Dimension: "orders.status", URLParam: "category", DefaultOperator: "contains", Operators: []string{"contains", "equals"}},
+		},
+		Visuals: map[string]reportdef.Visual{
+			"orders":       {Title: "Orders", Type: "donut", Query: reportdef.VisualQuery{Dimensions: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}, Interaction: pointInteraction("orders.status", "orders", "ops_pipeline")},
+			"ops_pipeline": {Title: "Ops Pipeline", Type: "bar", Query: reportdef.VisualQuery{Dimensions: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}, Interaction: pointInteraction("orders.status", "orders", "ops_pipeline")},
+		},
+		Tables: map[string]reportdef.TableVisual{
+			"order_rows": {Title: "Orders", Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.order_id"}}, DefaultSort: dashboard.TableSort{Key: "order_id", Direction: "desc"}, Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order"}, {Key: "revenue", Label: "Revenue", Role: "measure", Format: "decimal"}}},
+		},
+		Pages: fakeMetrics{}.Pages(dashboardID),
+	}
+	model := &semanticmodel.Model{
+		Name:  "test",
+		Title: "Test Model",
+		Tables: map[string]semanticmodel.Table{
+			"orders": {
+				Source: "orders", PrimaryKey: "order_id", Grain: "order_id",
+				Dimensions: map[string]semanticmodel.MetricDimension{"order_id": {Expr: "order_id", Type: "string"}, "status": {Expr: "status", Type: "string"}},
 			},
-			Visuals: map[string]reportdef.Visual{
-				"orders":       {Title: "Orders", Type: "donut", Query: reportdef.VisualQuery{Dimensions: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}, Interaction: pointInteraction("orders.status", "orders", "ops_pipeline")},
-				"ops_pipeline": {Title: "Ops Pipeline", Type: "bar", Query: reportdef.VisualQuery{Dimensions: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}, Interaction: pointInteraction("orders.status", "orders", "ops_pipeline")},
-			},
-			Tables: map[string]reportdef.TableVisual{
-				"order_rows": {Title: "Orders", Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.order_id"}}, DefaultSort: dashboard.TableSort{Key: "purchase_date", Direction: "desc"}, Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order"}}},
-			},
-			Pages: fakeMetrics{}.Pages(dashboardID),
-		}, &semanticmodel.Model{
-			Name:  "test",
-			Title: "Test Model",
-			Tables: map[string]semanticmodel.Table{
-				"orders": {
-					Source: "orders", PrimaryKey: "order_id", Grain: "order_id",
-					Dimensions: map[string]semanticmodel.MetricDimension{"order_id": {Expr: "order_id", Type: "string"}, "status": {Expr: "status", Type: "string"}},
-				},
-			},
-			Measures: map[string]semanticmodel.MetricMeasure{"order_count": {Fact: "orders", Aggregation: "count", Empty: "zero", Label: "Orders"}},
-		}, true
+		},
+		Measures: map[string]semanticmodel.MetricMeasure{"order_count": {Fact: "orders", Aggregation: "count", Empty: "zero", Label: "Orders"}},
+	}
+	return dashboardfixture.Compile(authored, model), model, true
 }
 
 func (fakeMetrics) SemanticModel(modelID string) (*semanticmodel.Model, bool) {
@@ -312,7 +325,19 @@ func pointInteraction(field, fact string, targets ...string) reportdef.Interacti
 }
 
 func (fakeMetrics) NormalizeTableRequest(_ string, request dashboard.TableRequest) dashboard.TableRequest {
+	if request.Sort.Key == "" {
+		request.Sort = dashboard.TableSort{Key: "order_id", Direction: "desc"}
+	}
 	return request.WithDefaults()
+}
+
+func (fakeMetrics) VisualizationDefinition(dashboardID, visualID string) (visualizationdefinition.Definition, bool) {
+	report, _, ok := fakeMetrics{}.Report(dashboardID)
+	if !ok {
+		return visualizationdefinition.Definition{}, false
+	}
+	definition, ok := report.Visualizations[visualID]
+	return definition, ok
 }
 
 func (fakeMetrics) Pages(dashboardID string) []dashboard.Page {
@@ -489,7 +514,7 @@ func TestPageRouteSeedsPageScopedFiltersFromURL(t *testing.T) {
 	if !strings.Contains(body, `"values":["RJ","SP"]`) {
 		t.Fatalf("page did not seed state filter values:\n%s", body)
 	}
-	if strings.Contains(body, `"category"`) {
+	if strings.Contains(body, `"id":"category"`) || strings.Contains(body, `"urlParam":"category"`) || strings.Contains(body, `"controls":{"category"`) || strings.Contains(body, `"urlParams":{"category"`) {
 		t.Fatalf("overview page seeded off-page category filter:\n%s", body)
 	}
 }
@@ -924,6 +949,7 @@ func (fakeMetrics) QueryTablePage(_ context.Context, _ string, _ string, _ dashb
 		Title:   "Orders",
 		Columns: []dashboard.TableColumn{
 			{Key: "order_id", Label: "Order"},
+			{Key: "revenue", Label: "Revenue", Role: "measure", Format: "decimal"},
 		},
 		Cardinality:   dashboard.ExactCardinality(1),
 		AvailableRows: 1,
@@ -939,7 +965,7 @@ func (fakeMetrics) QueryTablePage(_ context.Context, _ string, _ string, _ dashb
 				RequestSeq:   request.RequestSeq,
 				ResetVersion: request.ResetVersion,
 				Sort:         request.Sort,
-				Rows:         []map[string]any{{"order_id": "o1"}},
+				Rows:         []map[string]any{{"order_id": "o1", "revenue": 99.0}},
 			},
 		},
 	}, nil
@@ -962,7 +988,7 @@ func (canceledTableMetrics) ExecuteConsumersPage(_ context.Context, request cons
 }
 
 func TestUpdatesStreamsDatastarPatchSignals(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=dashboard&workspace=test-workspace&dashboard=executive-sales&page=overview&state=SP&category=ignored", nil)

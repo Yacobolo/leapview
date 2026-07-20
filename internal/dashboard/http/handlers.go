@@ -11,11 +11,12 @@ import (
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/dashboard/consumer"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	"github.com/Yacobolo/libredash/internal/dashboard/report"
-	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 	reportui "github.com/Yacobolo/libredash/internal/dashboard/ui"
 	"github.com/Yacobolo/libredash/internal/dataquery"
+	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
 	"github.com/Yacobolo/libredash/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
@@ -30,7 +31,8 @@ type Metrics interface {
 	Pages(dashboardID string) []dashboard.Page
 	QueryDashboardPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters) (dashboard.Patch, error)
 	QueryTablePage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error)
-	Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool)
+	Report(dashboardID string) (dashboarddefinition.Definition, *semanticmodel.Model, bool)
+	VisualizationDefinition(dashboardID, visualID string) (visualizationdefinition.Definition, bool)
 }
 
 type Handler struct {

@@ -9,7 +9,7 @@ import (
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
-	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	servingstate "github.com/Yacobolo/libredash/internal/servingstate"
 )
 
@@ -296,13 +296,13 @@ func (m workspaceSearchMetrics) ModelIDForDashboard(dashboardID string) string {
 	return ""
 }
 
-func (m workspaceSearchMetrics) Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool) {
+func (m workspaceSearchMetrics) Report(dashboardID string) (dashboarddefinition.Definition, *semanticmodel.Model, bool) {
 	if dashboardID != m.dashboardID {
-		return reportdef.Dashboard{}, nil, false
+		return dashboarddefinition.Definition{}, nil, false
 	}
 	report, model, ok := fakeMetrics{}.Report("executive-sales")
 	if !ok {
-		return reportdef.Dashboard{}, nil, false
+		return dashboarddefinition.Definition{}, nil, false
 	}
 	report.ID = m.dashboardID
 	report.Title = m.title

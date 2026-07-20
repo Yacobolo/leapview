@@ -59,7 +59,7 @@ visuals:
   category_treemap_roam:
     title: Navigable category treemap
     type: treemap
-    options:
+    presentation:
       roam: true
       breadcrumb: true
     query:

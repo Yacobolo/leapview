@@ -6,11 +6,14 @@ import (
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	"github.com/Yacobolo/libredash/internal/testutil/dashboardfixture"
+	visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
 )
 
 type fakeMetrics struct {
-	report *reportdef.Dashboard
+	report *dashboarddefinition.Definition
 }
 
 func (fakeMetrics) DefaultFilters(string) dashboard.Filters {
@@ -25,32 +28,32 @@ func (fakeMetrics) NormalizeTableRequest(_ string, request dashboard.TableReques
 func (fakeMetrics) QueryTablePage(context.Context, string, string, dashboard.Filters, dashboard.TableRequest) (dashboard.Table, error) {
 	return dashboard.Table{}, nil
 }
-func (m fakeMetrics) Report(string) (reportdef.Dashboard, *semanticmodel.Model, bool) {
-	definition := reportdef.Dashboard{
+func (m fakeMetrics) Report(string) (dashboarddefinition.Definition, *semanticmodel.Model, bool) {
+	authored := reportdef.Dashboard{
+		ID: "dash", SemanticModel: "model",
 		Filters: map[string]reportdef.FilterDefinition{"state": {Type: "multi_select", Label: "State", Operator: "in"}},
 		Visuals: map[string]reportdef.Visual{
 			"chart": {
+				Type:  "bar",
 				Query: reportdef.VisualQuery{Dimensions: []reportdef.FieldRef{{Field: "state", Alias: "label"}}, Measures: []reportdef.FieldRef{{Field: "order_count", Alias: "value"}}},
 				Interaction: reportdef.Interaction{PointSelection: reportdef.SelectionInteraction{
 					Toggle: true, Mappings: []reportdef.SelectionMapping{{Field: "state", Value: "label"}}, Targets: []string{"orders"},
 				}},
 			},
 			"boolean_chart": {
+				Type:  "bar",
 				Query: reportdef.VisualQuery{Dimensions: []reportdef.FieldRef{{Field: "active", Alias: "label"}}, Measures: []reportdef.FieldRef{{Field: "order_count", Alias: "value"}}},
 				Interaction: reportdef.Interaction{PointSelection: reportdef.SelectionInteraction{
 					Toggle: true, Mappings: []reportdef.SelectionMapping{{Field: "active", Value: "label"}}, Targets: []string{"orders"},
 				}},
 			},
 		},
-		Tables: map[string]reportdef.TableVisual{"orders": {Query: reportdef.TableQuery{Table: "orders"}}},
+		Tables: map[string]reportdef.TableVisual{"orders": {Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.state"}}}},
 		Pages: []dashboard.Page{{ID: "overview", Visuals: []dashboard.PageVisual{
 			{Kind: "filter_card", Filter: "state"}, {Kind: "visual", Visual: "chart"}, {Kind: "table", Table: "orders"},
 		}}},
 	}
-	if m.report != nil {
-		definition = *m.report
-	}
-	return definition, &semanticmodel.Model{
+	model := &semanticmodel.Model{
 		Name: "model",
 		Tables: map[string]semanticmodel.Table{"orders": {Dimensions: map[string]semanticmodel.MetricDimension{
 			"state": {Type: "string"}, "active": {Type: "boolean"},
@@ -60,7 +63,12 @@ func (m fakeMetrics) Report(string) (reportdef.Dashboard, *semanticmodel.Model, 
 			"active": {Type: "boolean", Bindings: map[string]semanticmodel.DimensionBinding{"orders": {Field: "orders.active"}}},
 		},
 		Measures: map[string]semanticmodel.MetricMeasure{"order_count": {Fact: "orders"}},
-	}, true
+	}
+	definition := dashboardfixture.Compile(authored, model)
+	if m.report != nil {
+		definition = *m.report
+	}
+	return definition, model, true
 }
 
 func TestPrepareSelectUsesAuthoritativeFiltersAndExplicitTargetsOnly(t *testing.T) {
@@ -116,9 +124,10 @@ func TestPrepareSelectRejectsForgedMapping(t *testing.T) {
 
 func TestPrepareClearSelectionPlansAffectedTargetUnion(t *testing.T) {
 	definition, _, _ := (fakeMetrics{}).Report("dash")
-	chart := definition.Visuals["chart"]
-	chart.Interaction.PointSelection.Targets = []string{"orders", "boolean_chart"}
-	definition.Visuals["chart"] = chart
+	chart := definition.Visualizations["chart"]
+	spec := chart.Spec.Value.(*visualizationir.CartesianVisualizationSpec)
+	spec.Interactions[0].Targets = []string{"orders", "boolean_chart"}
+	definition.Visualizations["chart"] = chart
 	prepared, err := (Service{Metrics: fakeMetrics{report: &definition}}).PrepareClearSelection(Request{
 		DashboardID: "dash", PageID: "overview",
 	}, dashboard.Filters{Selections: []dashboard.InteractionSelection{

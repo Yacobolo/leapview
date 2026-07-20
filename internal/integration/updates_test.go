@@ -153,7 +153,8 @@ func requireTable(t *testing.T, patches []map[string]any, tableID string) {
 	t.Helper()
 	requirePatch(t, patches, func(patch map[string]any) bool {
 		visual := mapAt(patch, "visuals", tableID)
-		return visual["type"] == "table" || visual["type"] == "matrix" || visual["type"] == "pivot"
+		kind := mapAt(visual, "spec")["kind"]
+		return kind == "table" || kind == "matrix" || kind == "pivot"
 	})
 }
 
@@ -222,7 +223,7 @@ func requireTableBlock(t *testing.T, patches []map[string]any, tableID, blockID 
 func requireTableResetVersion(t *testing.T, patches []map[string]any, tableID string, resetVersion int) {
 	t.Helper()
 	requirePatch(t, patches, func(patch map[string]any) bool {
-		table := mapAt(patch, "visuals", tableID)
+		table := mapAt(patch, "visuals", tableID, "dataState")
 		return numberValue(table["resetVersion"]) == float64(resetVersion)
 	})
 }
@@ -237,7 +238,7 @@ func requireNoTopLevelSignal(t *testing.T, patches []map[string]any, signal stri
 }
 
 func tableBlock(patch map[string]any, tableID, blockID string) map[string]any {
-	return mapAt(patch, "visuals", tableID, "blocks", blockID)
+	return mapAt(patch, "visuals", tableID, "dataState", "blocks", blockID)
 }
 
 func requirePatch(t *testing.T, patches []map[string]any, match func(map[string]any) bool) map[string]any {

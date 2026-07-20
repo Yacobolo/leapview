@@ -2,7 +2,7 @@ package workspace
 
 import (
 	"github.com/Yacobolo/libredash/internal/analytics/model"
-	"github.com/Yacobolo/libredash/internal/dashboard/report"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	"github.com/Yacobolo/libredash/internal/refreshpipeline"
 )
 
@@ -36,7 +36,7 @@ type CatalogDashboard struct {
 type Definition struct {
 	Catalog          Catalog
 	Models           map[string]*model.Model
-	Dashboards       map[string]*report.Dashboard
+	Dashboards       map[string]dashboarddefinition.Definition
 	Access           AccessPolicy
 	RefreshPipelines map[string]refreshpipeline.Definition
 	BaseDir          string

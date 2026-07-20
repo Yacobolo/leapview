@@ -9,9 +9,11 @@ import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dataquery"
 	"github.com/Yacobolo/libredash/internal/runtimehost"
+	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
@@ -56,7 +58,8 @@ type workspaceAssetRuntime interface {
 }
 
 type reportRuntime interface {
-	Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool)
+	Report(dashboardID string) (dashboarddefinition.Definition, *semanticmodel.Model, bool)
+	VisualizationDefinition(dashboardID, visualID string) (visualizationdefinition.Definition, bool)
 	SemanticModel(modelID string) (*semanticmodel.Model, bool)
 	DefaultFilters(dashboardID string) dashboard.Filters
 }
@@ -166,17 +169,30 @@ func (m runtimeMetrics) ModelIDForDashboard(dashboardID string) string {
 	return port.ModelIDForDashboard(dashboardID)
 }
 
-func (m runtimeMetrics) Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool) {
+func (m runtimeMetrics) Report(dashboardID string) (dashboarddefinition.Definition, *semanticmodel.Model, bool) {
 	runtime, release, err := m.active(context.Background())
 	if err != nil {
-		return reportdef.Dashboard{}, nil, false
+		return dashboarddefinition.Definition{}, nil, false
 	}
 	defer release()
 	port, ok := runtime.(reportRuntime)
 	if !ok {
-		return reportdef.Dashboard{}, nil, false
+		return dashboarddefinition.Definition{}, nil, false
 	}
 	return port.Report(dashboardID)
+}
+
+func (m runtimeMetrics) VisualizationDefinition(dashboardID, visualID string) (visualizationdefinition.Definition, bool) {
+	runtime, release, err := m.active(context.Background())
+	if err != nil {
+		return visualizationdefinition.Definition{}, false
+	}
+	defer release()
+	port, ok := runtime.(reportRuntime)
+	if !ok {
+		return visualizationdefinition.Definition{}, false
+	}
+	return port.VisualizationDefinition(dashboardID, visualID)
 }
 
 func (m runtimeMetrics) SemanticModel(modelID string) (*semanticmodel.Model, bool) {

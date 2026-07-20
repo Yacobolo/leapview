@@ -6,7 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
+	visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
@@ -244,24 +245,24 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, servingStateID workspace.
 		edge(pipelineID, modelID, workspace.AssetEdgeRefreshesSemanticModel)
 	}
 	for _, reportEntry := range definition.Catalog.Dashboards {
-		report := definition.Dashboards[reportEntry.ID]
+		compiledReport := definition.Dashboards[reportEntry.ID]
 		reportKey := workspaceKey(reportEntry.ID)
-		reportID, err := add(workspace.AssetTypeDashboard, reportKey, catalogID, reportEntry.Title, reportEntry.Description, dashboardPayload(*report, reportEntry.Tags))
+		reportID, err := add(workspace.AssetTypeDashboard, reportKey, catalogID, reportEntry.Title, reportEntry.Description, dashboardPayload(compiledReport, reportEntry.Tags))
 		if err != nil {
 			return workspace.AssetGraph{}, err
 		}
 		edge(catalogID, reportID, workspace.AssetEdgeContains)
-		modelKey := workspaceKey(report.SemanticModel)
+		modelKey := workspaceKey(compiledReport.SemanticModel)
 		modelID, err := assetID(workspace.AssetTypeSemanticModel, modelKey)
 		if err != nil {
 			return workspace.AssetGraph{}, err
 		}
 		edge(reportID, modelID, workspace.AssetEdgeUsesSemanticModel)
-		model := definition.Models[report.SemanticModel]
-		addMeasureUse := func(fromID workspace.AssetID, ref reportdef.FieldRef) error {
-			measure, err := model.ResolveMeasure(ref.Field)
+		model := definition.Models[compiledReport.SemanticModel]
+		addMeasureUse := func(fromID workspace.AssetID, fieldID string) error {
+			measure, err := model.ResolveMeasure(fieldID)
 			if err != nil {
-				if _, ok := model.Metrics[ref.Field]; ok {
+				if _, ok := model.Metrics[fieldID]; ok {
 					return nil
 				}
 				return err
@@ -311,8 +312,8 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, servingStateID workspace.
 			edge(fromID, measureID, workspace.AssetEdgeUsesMeasure)
 			return nil
 		}
-		for _, filterName := range sortedMapKeys(report.Filters) {
-			filter := report.Filters[filterName]
+		for _, filterName := range sortedMapKeys(compiledReport.Filters) {
+			filter := compiledReport.Filters[filterName]
 			filterID, err := add(workspace.AssetTypeFilter, reportKey+"."+filterName, reportID, filter.Label, filter.Description, filterPayload(filter))
 			if err != nil {
 				return workspace.AssetGraph{}, err
@@ -322,63 +323,26 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, servingStateID workspace.
 				return workspace.AssetGraph{}, err
 			}
 		}
-		for _, visualName := range sortedMapKeys(report.Visuals) {
-			visual := report.Visuals[visualName]
-			visualID, err := add(workspace.AssetTypeVisual, reportKey+"."+visualName, reportID, visual.Title, visual.Description, visualPayload(visual))
+		for _, visualName := range sortedMapKeys(compiledReport.Visualizations) {
+			compiledVisual := compiledReport.Visualizations[visualName]
+			visualID, err := add(workspace.AssetTypeVisual, reportKey+"."+visualName, reportID, visualizationTitle(compiledVisual), "", compiledVisual)
 			if err != nil {
 				return workspace.AssetGraph{}, err
 			}
 			edge(reportID, visualID, workspace.AssetEdgeContains)
-			for _, measure := range visual.Query.Measures {
-				if err := addMeasureUse(visualID, measure); err != nil {
+			fields, measures := visualizationLineageBindings(compiledVisual.Query)
+			for _, measure := range measures {
+				if err := addMeasureUse(visualID, measure.FieldID); err != nil {
 					return workspace.AssetGraph{}, err
 				}
 			}
-			for _, dimension := range visual.Query.Dimensions {
-				if err := addFieldUse(visualID, dimension.Field, workspace.AssetEdgeUsesField); err != nil {
-					return workspace.AssetGraph{}, err
-				}
-			}
-			if !visual.Query.Series.IsZero() {
-				if err := addFieldUse(visualID, visual.Query.Series.Field, workspace.AssetEdgeUsesField); err != nil {
-					return workspace.AssetGraph{}, err
-				}
-			}
-			if visual.Query.Time.Field != "" {
-				if err := addFieldUse(visualID, visual.Query.Time.Field, workspace.AssetEdgeUsesField); err != nil {
+			for _, field := range fields {
+				if err := addFieldUse(visualID, field.FieldID, workspace.AssetEdgeUsesField); err != nil {
 					return workspace.AssetGraph{}, err
 				}
 			}
 		}
-		for _, tableName := range sortedMapKeys(report.Tables) {
-			table := report.Tables[tableName]
-			tableID, err := add(workspace.AssetTypeVisual, reportKey+"."+tableName, reportID, table.Title, table.Description, tableVisualPayload(table))
-			if err != nil {
-				return workspace.AssetGraph{}, err
-			}
-			edge(reportID, tableID, workspace.AssetEdgeContains)
-			for _, column := range table.DataColumns {
-				if err := addFieldUse(tableID, column.Field, workspace.AssetEdgeUsesField); err != nil {
-					return workspace.AssetGraph{}, err
-				}
-			}
-			for _, row := range table.Rows {
-				if err := addFieldUse(tableID, row, workspace.AssetEdgeUsesField); err != nil {
-					return workspace.AssetGraph{}, err
-				}
-			}
-			for _, dimension := range table.ColumnDims {
-				if err := addFieldUse(tableID, dimension, workspace.AssetEdgeUsesField); err != nil {
-					return workspace.AssetGraph{}, err
-				}
-			}
-			for _, measure := range table.Query.Measures {
-				if err := addMeasureUse(tableID, measure); err != nil {
-					return workspace.AssetGraph{}, err
-				}
-			}
-		}
-		for _, page := range report.Pages {
+		for _, page := range compiledReport.Pages {
 			pageID, err := add(workspace.AssetTypePage, reportKey+"."+page.ID, reportID, page.Title, page.Description, pagePayload(page))
 			if err != nil {
 				return workspace.AssetGraph{}, err
@@ -419,4 +383,39 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, servingStateID workspace.
 		}
 	}
 	return graph, nil
+}
+
+func visualizationTitle(definition visualizationdefinition.Definition) string {
+	base, err := visualizationir.SpecificationBase(definition.Spec)
+	if err != nil || base.Title == "" {
+		return definition.ID
+	}
+	return base.Title
+}
+
+func visualizationLineageBindings(query visualizationdefinition.QueryBinding) (fields, measures []visualizationdefinition.FieldBinding) {
+	switch query.Kind {
+	case visualizationdefinition.QueryAggregate:
+		fields = append(fields, query.Aggregate.Dimensions...)
+		if query.Aggregate.Series != nil {
+			fields = append(fields, *query.Aggregate.Series)
+		}
+		if query.Aggregate.Time != nil {
+			fields = append(fields, visualizationdefinition.FieldBinding{FieldID: query.Aggregate.Time.FieldID, Alias: query.Aggregate.Time.Alias})
+		}
+		measures = append(measures, query.Aggregate.Measures...)
+	case visualizationdefinition.QueryDetail:
+		fields = append(fields, query.Detail.Fields...)
+	case visualizationdefinition.QueryMatrix:
+		fields = append(fields, query.Matrix.Rows...)
+		fields = append(fields, query.Matrix.Columns...)
+		measures = append(measures, query.Matrix.Measures...)
+	case visualizationdefinition.QueryPivot:
+		fields = append(fields, query.Pivot.Rows...)
+		fields = append(fields, query.Pivot.Columns...)
+		measures = append(measures, query.Pivot.Measures...)
+	case visualizationdefinition.QueryCustom:
+		fields = append(fields, query.Custom.Fields...)
+	}
+	return fields, measures
 }

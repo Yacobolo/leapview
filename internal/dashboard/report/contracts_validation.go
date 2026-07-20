@@ -101,37 +101,36 @@ func (d *Dashboard) validateContract() error {
 			return fmt.Errorf("visual %q has unsupported kind %q", name, kind)
 		}
 		shape := visual.ShapeOrDefault()
-		renderer := visual.RendererOrDefault()
 		if !supportsVisualShape(shape) {
 			return fmt.Errorf("visual %q has unsupported shape %q", name, shape)
 		}
-		if kind != "kpi" && !supportsRenderer(renderer) {
-			return fmt.Errorf("visual %q has unsupported renderer %q", name, renderer)
+		if kind != "kpi" && !rendererSupportsType("echarts", visual.Type) && visual.Type != "custom" {
+			return fmt.Errorf("visual %q has unsupported type %q", name, visual.Type)
 		}
-		if kind != "kpi" && !rendererSupportsType(renderer, visual.Type) {
-			return fmt.Errorf("visual %q renderer %q does not support type %q", name, renderer, visual.Type)
-		}
-		if kind != "kpi" && !rendererSupportsShapeType(renderer, shape, visual.Type) {
-			return fmt.Errorf("visual %q renderer %q type %q does not support shape %q", name, renderer, visual.Type, shape)
+		if kind != "kpi" && visual.Type != "custom" && !rendererSupportsShapeType("echarts", shape, visual.Type) {
+			return fmt.Errorf("visual %q type %q does not support data shape %q", name, visual.Type, shape)
 		}
 		if err := validateVisualQueryShape(name, visual); err != nil {
 			return err
 		}
-		if err := validateRendererOptions(name, visual.RendererOptions); err != nil {
+		if err := validateVisualPresentation(name, visual); err != nil {
 			return err
 		}
 		if !visual.Query.Series.IsZero() {
 			if !supportsSeries(shape) {
 				return fmt.Errorf("visual %q shape %q does not support series", name, shape)
 			}
-			if !rendererTypeSupportsSeries(renderer, visual.Type) {
-				return fmt.Errorf("visual %q renderer %q type %q does not support series", name, renderer, visual.Type)
+			if !rendererTypeSupportsSeries("echarts", visual.Type) {
+				return fmt.Errorf("visual %q type %q does not support series", name, visual.Type)
 			}
 		}
 		if shape == "geo" {
-			if mapName, ok := visual.Options["map"].(string); !ok || strings.TrimSpace(mapName) == "" {
-				return fmt.Errorf("visual %q shape geo requires options.map", name)
+			if strings.TrimSpace(visual.Geo.GeometryAsset) == "" {
+				return fmt.Errorf("visual %q geographic visualization requires geo.geometry_asset", name)
 			}
+		}
+		if visual.Type == "custom" && (visual.Custom.Engine != "vega_lite" || len(visual.Custom.Program) == 0) {
+			return fmt.Errorf("visual %q custom visualization requires a non-empty vega_lite program", name)
 		}
 		for _, sort := range visual.Query.Sort {
 			if sort.Field == "" && sort.Expr == "" {
@@ -217,6 +216,63 @@ func (d *Dashboard) validateContract() error {
 		return err
 	}
 	return d.validatePages()
+}
+
+func validateVisualPresentation(name string, visual Visual) error {
+	presentation := visual.Presentation
+	if !oneOf(presentation.Legend, "", "hidden", "top", "right", "bottom", "left") {
+		return fmt.Errorf("visual %q has unsupported presentation.legend %q", name, presentation.Legend)
+	}
+	if !oneOf(presentation.Orientation, "", "horizontal", "vertical") {
+		return fmt.Errorf("visual %q has unsupported presentation.orientation %q", name, presentation.Orientation)
+	}
+	if !oneOf(presentation.LabelPosition, "", "automatic", "inside", "outside", "top") {
+		return fmt.Errorf("visual %q has unsupported presentation.label_position %q", name, presentation.LabelPosition)
+	}
+	if !oneOf(presentation.Tone, "", "neutral", "ink", "success", "warning", "danger") {
+		return fmt.Errorf("visual %q has unsupported presentation.tone %q", name, presentation.Tone)
+	}
+	if presentation.HistogramBins > 0 && visual.Type != "histogram" {
+		return fmt.Errorf("visual %q presentation.histogram_bins is only valid for histogram", name)
+	}
+	if len(presentation.SeriesTypes) > 0 && visual.Type != "combo" {
+		return fmt.Errorf("visual %q presentation.series_types is only valid for combo", name)
+	}
+	if presentation.DualAxis && visual.Type != "combo" {
+		return fmt.Errorf("visual %q presentation.dual_axis is only valid for combo", name)
+	}
+	if presentation.InnerRadius < 0 || presentation.InnerRadius > 1 || presentation.OuterRadius < 0 || presentation.OuterRadius > 1 || (presentation.InnerRadius > 0 && presentation.OuterRadius > 0 && presentation.InnerRadius >= presentation.OuterRadius) {
+		return fmt.Errorf("visual %q has invalid presentation radii", name)
+	}
+	if (presentation.InnerRadius > 0 || presentation.OuterRadius > 0 || presentation.CenterLabel != "") && visual.Type != "donut" {
+		return fmt.Errorf("visual %q donut presentation is only valid for donut", name)
+	}
+	if (presentation.Minimum != nil || presentation.Maximum != nil || presentation.ProgressWidth > 0 || len(presentation.Thresholds) > 0) && visual.Type != "gauge" && visual.Type != "kpi" {
+		return fmt.Errorf("visual %q threshold presentation is only valid for gauge or kpi", name)
+	}
+	if presentation.Minimum != nil && presentation.Maximum != nil && *presentation.Minimum >= *presentation.Maximum {
+		return fmt.Errorf("visual %q presentation.minimum must be less than maximum", name)
+	}
+	previous := -1.0e308
+	for _, threshold := range presentation.Thresholds {
+		if threshold.Value < previous {
+			return fmt.Errorf("visual %q presentation.thresholds must be ordered", name)
+		}
+		if !oneOf(threshold.Tone, "neutral", "ink", "success", "warning", "danger") {
+			return fmt.Errorf("visual %q has unsupported threshold tone %q", name, threshold.Tone)
+		}
+		previous = threshold.Value
+	}
+	return nil
+}
+
+func oneOf(value string, allowed ...string) bool {
+	for _, candidate := range allowed {
+		if value == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func (d *Dashboard) validateSelectionInteraction(sourceKind, sourceID, kind string, selection SelectionInteraction) error {

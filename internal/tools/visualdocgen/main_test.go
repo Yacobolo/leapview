@@ -12,6 +12,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/visualdocs"
+	visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
 )
 
 func TestParseVisualExamplesUsesMarkedYAMLAsSource(t *testing.T) {
@@ -65,7 +66,7 @@ func TestGenerateVisualExamplesExecutesEveryDocumentedQuery(t *testing.T) {
 	if got, want := strings.Join(lineReference.Shapes, ","), "category_series_value,category_value"; got != want {
 		t.Fatalf("line reference shapes = %q, want %q", got, want)
 	}
-	if got := strings.Join(lineReference.Examples["revenue_line_step"].KeyFields, ","); !strings.Contains(got, "options.step") || strings.Contains(got, "query.series") {
+	if got := strings.Join(lineReference.Examples["revenue_line_step"].KeyFields, ","); !strings.Contains(got, "presentation.step") || strings.Contains(got, "query.series") {
 		t.Fatalf("stepped line key fields = %q", got)
 	}
 	fields := make(map[string]visualdocs.FieldReference, len(lineReference.Fields))
@@ -78,14 +79,14 @@ func TestGenerateVisualExamplesExecutesEveryDocumentedQuery(t *testing.T) {
 	if got, want := fields["query.limit"].Default, "no limit"; got != want {
 		t.Fatalf("query.limit default = %q, want %q", got, want)
 	}
-	if got, want := fields["options.step"].Type, "string | boolean"; got != want {
-		t.Fatalf("options.step type = %q, want %q", got, want)
+	if got, want := fields["presentation.step"].Type, "boolean"; got != want {
+		t.Fatalf("presentation.step type = %q, want %q", got, want)
 	}
-	if got, want := strings.Join(fields["options.step"].AllowedValues, ","), "start,middle,end,true"; got != want {
-		t.Fatalf("options.step values = %q, want %q", got, want)
+	if got, want := strings.Join(fields["presentation.step"].AllowedValues, ","), "true,false"; got != want {
+		t.Fatalf("presentation.step values = %q, want %q", got, want)
 	}
-	if fields["options.step"].Description == "" {
-		t.Fatal("options.step description is empty")
+	if fields["presentation.step"].Description == "" {
+		t.Fatal("presentation.step description is empty")
 	}
 	if got := artifact.References["visuals/map"].Accessibility; !strings.Contains(got, "map identifiers") {
 		t.Fatalf("map accessibility guidance = %q", got)
@@ -103,11 +104,8 @@ func TestGenerateVisualExamplesExecutesEveryDocumentedQuery(t *testing.T) {
 		}
 		for _, example := range examples {
 			count++
-			if example.Chart != nil && len(example.Chart.Data) == 0 {
-				t.Fatalf("%s/%s has no query data", slug, example.ID)
-			}
-			if example.Tabular != nil && len(example.Tabular.Blocks["a"].Rows) == 0 {
-				t.Fatalf("%s/%s has no query rows", slug, example.ID)
+			if visualizationEnvelopeRowCount(example) == 0 {
+				t.Fatalf("%s/%s has no query data", slug, example.VisualID)
 			}
 		}
 	}
@@ -118,11 +116,13 @@ func TestGenerateVisualExamplesExecutesEveryDocumentedQuery(t *testing.T) {
 		t.Fatalf("showcase examples = %d, want %d", got, want)
 	}
 	line := artifact.Documents["visuals/line"]
-	if got := line[1].Chart.Shape; got != "category_series_value" {
-		t.Fatalf("series line shape = %q", got)
+	seriesSpec, ok := line[1].Spec.Value.(*visualizationir.CartesianVisualizationSpec)
+	if !ok || seriesSpec.Series == nil {
+		t.Fatalf("series line spec = %#v", line[1].Spec.Value)
 	}
-	if got := line[2].Chart.Options["step"]; got != "middle" {
-		t.Fatalf("stepped line option = %#v", got)
+	stepSpec, ok := line[2].Spec.Value.(*visualizationir.CartesianVisualizationSpec)
+	if !ok || !stepSpec.Presentation.Step {
+		t.Fatalf("stepped line presentation was not compiled: %#v", line[2].Spec.Value)
 	}
 	first, err := json.Marshal(artifact)
 	if err != nil {
@@ -138,6 +138,25 @@ func TestGenerateVisualExamplesExecutesEveryDocumentedQuery(t *testing.T) {
 	}
 	if string(first) != string(second) {
 		t.Fatal("artifact JSON is not deterministic")
+	}
+}
+
+func visualizationEnvelopeRowCount(envelope visualizationir.VisualizationEnvelope) int {
+	switch state := envelope.DataState.Value.(type) {
+	case *visualizationir.InlineVisualizationDataState:
+		count := 0
+		for _, dataset := range state.Datasets {
+			count += len(dataset.Rows)
+		}
+		return count
+	case *visualizationir.WindowedVisualizationDataState:
+		count := 0
+		for _, block := range state.Blocks {
+			count += len(block.Rows)
+		}
+		return count
+	default:
+		return 0
 	}
 }
 
@@ -187,7 +206,11 @@ func TestValidateVisualPayloadRejectsInvalidGeneratedData(t *testing.T) {
 }
 
 func reportVisual(shape, visualType string, options map[string]any) reportdef.Visual {
-	return reportdef.Visual{Shape: shape, Type: visualType, Options: options}
+	value := reportdef.Visual{Shape: shape, Type: visualType}
+	if mapID, ok := options["map"].(string); ok {
+		value.Geo.GeometryAsset = mapID
+	}
+	return value
 }
 
 func reportVisualPointer(shape, visualType string, options map[string]any) *reportdef.Visual {

@@ -9,10 +9,11 @@ import (
 	"time"
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
-	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	"github.com/Yacobolo/libredash/internal/staticasset"
 	uiactions "github.com/Yacobolo/libredash/internal/ui/actions"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
+	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
 	"github.com/Yacobolo/libredash/pkg/pagestream"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
@@ -96,7 +97,7 @@ func csrfMeta(token string) g.Node {
 	return h.Meta(h.Name("csrf-token"), h.Content(token))
 }
 
-func Page(clientID, csrfToken string, catalog dashboard.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, chromeDecorators ...ChromeDecorator) g.Node {
+func Page(clientID, csrfToken string, catalog dashboard.Catalog, report dashboarddefinition.Definition, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, chromeDecorators ...ChromeDecorator) g.Node {
 	if activePage.ID == "" {
 		activePage = defaultPage()
 	}
@@ -157,8 +158,8 @@ func defaultPage() dashboard.Page {
 	}
 }
 
-func BootstrapSignals(clientID, streamInstanceID string, catalog dashboard.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, chromeDecorators ...ChromeDecorator) map[string]any {
-	envelope := uisignals.DashboardInitialEnvelope(clientID, streamInstanceID, catalog, report, model, pages, activePage, initialFilters)
+func BootstrapSignals(clientID, streamInstanceID string, catalog dashboard.Catalog, report dashboarddefinition.Definition, model *semanticmodel.Model, definitions map[string]visualizationdefinition.Definition, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, chromeDecorators ...ChromeDecorator) map[string]any {
+	envelope := uisignals.DashboardInitialEnvelope(clientID, streamInstanceID, catalog, report, model, definitions, pages, activePage, initialFilters)
 	envelope.Runtime.WorkspaceID = uisignals.Optional(catalog.Workspace.ID)
 	for _, decorate := range chromeDecorators {
 		if decorate != nil {
@@ -167,7 +168,6 @@ func BootstrapSignals(clientID, streamInstanceID string, catalog dashboard.Catal
 	}
 	return map[string]any{
 		"chrome":              envelope.Chrome,
-		"componentStatus":     envelope.ComponentStatus,
 		"page":                envelope.Page,
 		"runtime":             envelope.Runtime,
 		"filterConfig":        envelope.FilterConfig,

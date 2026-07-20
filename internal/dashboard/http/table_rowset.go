@@ -12,6 +12,7 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
@@ -49,7 +50,7 @@ func dashboardTableRowset(id string, table dashboard.Table, block string, start,
 	}
 }
 
-func writeDashboardTableRowset(w stdhttp.ResponseWriter, r *stdhttp.Request, response api.DashboardTableQueryResponse) {
+func writeDashboardTableRowset(w stdhttp.ResponseWriter, r *stdhttp.Request, response api.DashboardTableQueryResponse, envelope visualizationir.VisualizationEnvelope) {
 	if requestID := strings.TrimSpace(r.Header.Get("X-Request-ID")); requestID != "" {
 		response.QueryID = requestID
 	}
@@ -66,6 +67,9 @@ func writeDashboardTableRowset(w stdhttp.ResponseWriter, r *stdhttp.Request, res
 	w.Header().Set("Content-Type", dashboardArrowMediaType)
 	w.Header().Set("X-Query-ID", response.QueryID)
 	w.Header().Set("X-Serving-Snapshot", response.ServingSnapshot)
+	w.Header().Set("X-Visualization-Schema-Version", strconv.FormatInt(int64(envelope.SchemaVersion), 10))
+	w.Header().Set("X-Visualization-Spec-Revision", envelope.SpecRevision)
+	w.Header().Set("X-Visualization-Data-Revision", strconv.FormatInt(envelope.DataRevision, 10))
 	if response.Page.NextCursor != "" {
 		w.Header().Set("X-Next-Cursor", response.Page.NextCursor)
 	}

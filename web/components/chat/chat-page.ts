@@ -1,5 +1,5 @@
 import { LitElement, css, html } from 'lit'
-import type { ChatConversationSummary, ChatPageSignal, ChatSignal, DashboardVisual } from '../../generated/signals'
+import type { ChatConversationSummary, ChatPageSignal, ChatSignal, VisualizationEnvelope } from '../../generated/signals'
 import { DatastarLit } from '../shared/datastar-lit'
 import { checkSignalContract } from '../shared/signal-contract'
 import '../dashboard/visual-modal'
@@ -199,8 +199,8 @@ class LibreDashChatPage extends DatastarLit(LitElement) {
     return this.signal<ChatSignal>('agent', emptyAgent)
   }
 
-  get visuals(): Record<string, DashboardVisual> {
-    return this.signal<Record<string, DashboardVisual>>('visuals', {})
+  get visuals(): Record<string, VisualizationEnvelope> {
+    return this.signal<Record<string, VisualizationEnvelope>>('visuals', {})
   }
 
   get pending(): boolean {

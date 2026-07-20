@@ -1,6 +1,6 @@
 targets:
   - name: libredash-v1
-    typespec_dir: typespec
+    typespec_dir: .apigen/libredash-v1
     ir_out: gen/json-ir.json
     openapi_out: gen/openapi.yaml
     go_out:
@@ -11,8 +11,16 @@ targets:
       package: gen
   - name: ui-signals
     kind: contracts
-    typespec_dir: signals
+    typespec_dir: .apigen/ui-signals
     ir_out: gen/ui-signals-ir.json
     go_models_out: ../internal/ui/signals/models.gen.go
     go_models_package: signals
     ts_out: ../web/generated/signals/index.ts
+  - name: visualization-ir
+    kind: contracts
+    typespec_dir: visualization
+    ir_out: gen/visualization-ir.json
+    go_models_out: ../internal/visualization/ir/models.gen.go
+    go_models_package: ir
+    ts_out: ../web/generated/visualization/index.ts
+    json_schema_out: gen/visualization.schema.json

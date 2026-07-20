@@ -9,6 +9,7 @@ node_modules/
 bin/
 coverage.out
 api/gen/
+api/.apigen/
 internal/api/gen/
 internal/config/config_gen.go
 internal/configspec/names_gen.go

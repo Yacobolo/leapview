@@ -6,11 +6,12 @@ import (
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 )
 
 type Metrics interface {
 	DefaultFilters(dashboardID string) dashboard.Filters
-	Report(dashboardID string) (Dashboard, *semanticmodel.Model, bool)
+	Report(dashboardID string) (dashboarddefinition.Definition, *semanticmodel.Model, bool)
 	QueryTablePage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error)
 }
 
@@ -109,13 +110,15 @@ func Tables(ctx context.Context, metrics Metrics, dashboardID, pageID string, fi
 	}
 	tables := map[string]dashboard.Table{}
 	for _, name := range PageTableNames(report.Pages, pageID) {
-		table := report.Tables[name]
+		table := report.Visualizations[name]
 		request := baseRequest
 		request.Table = name
 		request.Block = "all"
 		request.Start = 0
 		request.Count = dashboard.TableChunkSize
-		request.Sort = table.DefaultSort
+		if table.Query.Detail != nil && len(table.Query.Detail.DefaultSort) > 0 {
+			request.Sort = dashboard.TableSort{Key: table.Query.Detail.DefaultSort[0].FieldID, Direction: table.Query.Detail.DefaultSort[0].Direction}
+		}
 		tables[name] = QueryTable(ctx, metrics, dashboardID, pageID, filters, request)
 	}
 	return tables

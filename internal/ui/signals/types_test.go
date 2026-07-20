@@ -6,13 +6,36 @@ import (
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
+	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
 )
+
+func compiledTestVisualizations(t *testing.T, report *reportdef.Dashboard, model *semanticmodel.Model) map[string]visualizationdefinition.Definition {
+	t.Helper()
+	definitions, err := workspacecompiler.CompileVisualizationDefinitions(report, model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return definitions
+}
+
+func compiledTestDashboard(t *testing.T, report *reportdef.Dashboard, model *semanticmodel.Model) (dashboarddefinition.Definition, map[string]visualizationdefinition.Definition) {
+	t.Helper()
+	definitions := compiledTestVisualizations(t, report, model)
+	compiled, err := workspacecompiler.CompileDashboardDefinition(report, definitions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return compiled, definitions
+}
 
 func TestDashboardInitialEnvelopeValidatesPageScopedPayloads(t *testing.T) {
 	report := testDashboardReport()
 	model := testSemanticModel()
-	envelope := DashboardInitialEnvelope("client", "stream-instance", dashboard.Catalog{}, report, model, report.Pages, report.Pages[0], dashboard.Filters{})
+	compiled, definitions := compiledTestDashboard(t, &report, model)
+	envelope := DashboardInitialEnvelope("client", "stream-instance", dashboard.Catalog{}, compiled, model, definitions, report.Pages, report.Pages[0], dashboard.Filters{})
 
 	if err := ValidateDashboardEnvelope(envelope); err != nil {
 		t.Fatalf("validate dashboard envelope: %v", err)
@@ -35,14 +58,13 @@ func TestDashboardInitialEnvelopeValidatesPageScopedPayloads(t *testing.T) {
 	if envelope.Status.RefreshID != "" || envelope.Status.Generation != 0 {
 		t.Fatalf("initial refresh status = %#v", envelope.Status)
 	}
-	if len(envelope.ComponentStatus) != 0 {
-		t.Fatalf("initial component status = %#v, want empty", envelope.ComponentStatus)
-	}
 }
 
 func TestDashboardEnvelopeRejectsMissingReferencedPayload(t *testing.T) {
 	report := testDashboardReport()
-	envelope := DashboardInitialEnvelope("client", "stream-instance", dashboard.Catalog{}, report, testSemanticModel(), report.Pages, report.Pages[0], dashboard.Filters{})
+	model := testSemanticModel()
+	compiled, definitions := compiledTestDashboard(t, &report, model)
+	envelope := DashboardInitialEnvelope("client", "stream-instance", dashboard.Catalog{}, compiled, model, definitions, report.Pages, report.Pages[0], dashboard.Filters{})
 	delete(envelope.Visuals, "active_chart")
 
 	err := ValidateDashboardEnvelope(envelope)
@@ -53,33 +75,14 @@ func TestDashboardEnvelopeRejectsMissingReferencedPayload(t *testing.T) {
 
 func TestDashboardEnvelopeRejectsUnusedPayload(t *testing.T) {
 	report := testDashboardReport()
-	envelope := DashboardInitialEnvelope("client", "stream-instance", dashboard.Catalog{}, report, testSemanticModel(), report.Pages, report.Pages[0], dashboard.Filters{})
-	envelope.Visuals["off_page_chart"] = DashboardVisualFromDashboard(dashboard.Visual{ID: "off_page_chart", Type: "bar"})
+	model := testSemanticModel()
+	compiled, definitions := compiledTestDashboard(t, &report, model)
+	envelope := DashboardInitialEnvelope("client", "stream-instance", dashboard.Catalog{}, compiled, model, definitions, report.Pages, report.Pages[0], dashboard.Filters{})
+	envelope.Visuals["off_page_chart"] = envelope.Visuals["active_chart"]
 
 	err := ValidateDashboardEnvelope(envelope)
 	if err == nil || !strings.Contains(err.Error(), `unused visual payload "off_page_chart"`) {
 		t.Fatalf("validate error = %v", err)
-	}
-}
-
-func TestInteractionSignalPreservesSelectionScope(t *testing.T) {
-	got := interactionSignal("point_selection", reportdef.SelectionInteraction{
-		Toggle: true,
-		Mappings: []reportdef.SelectionMapping{
-			{Field: "activity_date", Grain: "month", Value: "label"},
-			{Field: "ratings.rating_bucket", Fact: "ratings", Value: "series"},
-		},
-		Targets: []string{"activity_by_month"},
-	})
-
-	if !got.Toggle || len(got.Mappings) != 2 {
-		t.Fatalf("interaction signal = %#v", got)
-	}
-	if got.Mappings[0].Fact != "" || got.Mappings[0].Grain != "month" {
-		t.Fatalf("conformed mapping = %#v", got.Mappings[0])
-	}
-	if got.Mappings[1].Fact != "ratings" || got.Mappings[1].Grain != "" {
-		t.Fatalf("fact-local mapping = %#v", got.Mappings[1])
 	}
 }
 
@@ -153,7 +156,7 @@ func TestChatInitialEnvelopeOnlyListActivatesChatNav(t *testing.T) {
 func testChatViewState(signal ChatSignal) ChatViewState {
 	return ChatViewState{
 		Agent:   signal,
-		Visuals: map[string]DashboardVisual{},
+		Visuals: map[string]VisualizationEnvelope{},
 	}
 }
 

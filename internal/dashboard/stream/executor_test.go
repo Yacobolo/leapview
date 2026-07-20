@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/dashboard/command"
 	"github.com/Yacobolo/libredash/internal/dashboard/consumer"
 	"github.com/Yacobolo/libredash/internal/dataquery"
@@ -35,10 +34,10 @@ func TestTargetWorkPublishesProgressiveConsumerResultsWithoutPresentationKnowled
 			t.Fatalf("concurrency = %d", request.Concurrency)
 		}
 		request.Progress(consumer.Progress{Total: 2})
-		publish(consumer.Result{Target: request.Targets[1], Table: dashboard.Table{Title: "Orders"}})
-		publish(consumer.Result{Target: request.Targets[1], Table: dashboard.Table{Title: "Orders", Cardinality: dashboard.ExactCardinality(42)}, TableMetadata: true})
+		publish(consumer.Result{Target: request.Targets[1]})
+		publish(consumer.Result{Target: request.Targets[1], TableMetadata: true})
 		request.Progress(consumer.Progress{Completed: 1, Total: 2, WorkDuration: 20 * time.Millisecond})
-		publish(consumer.Result{Target: request.Targets[0], Visual: dashboard.Visual{ID: "revenue"}})
+		publish(consumer.Result{Target: request.Targets[0]})
 		request.Progress(consumer.Progress{Completed: 2, Total: 2, WorkDuration: 30 * time.Millisecond, CriticalPathDuration: 40 * time.Millisecond})
 		return nil
 	}}

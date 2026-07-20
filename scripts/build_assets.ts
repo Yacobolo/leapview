@@ -52,6 +52,7 @@ const builds: AssetBuild[] = [
         'web/components/login/topology-background.ts',
         'web/components/shared/semantic-model-graph.ts',
         'web/components/shared/asset-lineage-graph.ts',
+        'web/components/dashboard/visualization/vega-sandbox.ts',
       ],
       target: 'browser',
       format: 'esm',

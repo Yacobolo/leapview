@@ -22,6 +22,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/cursorsigning"
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dataquery"
 	"github.com/go-chi/chi/v5"
@@ -31,7 +32,7 @@ type Metrics interface {
 	Catalog() dashboard.Catalog
 	ExecuteDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Result, error)
 	Pages(dashboardID string) []dashboard.Page
-	Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool)
+	Report(dashboardID string) (dashboarddefinition.Definition, *semanticmodel.Model, bool)
 	SemanticModel(modelID string) (*semanticmodel.Model, bool)
 }
 

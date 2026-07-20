@@ -1,6 +1,8 @@
 import type { TableColumn, TableRow } from './types'
+import { formatValue } from '../visualization/format'
 
 export function formatCell(value: unknown, column: TableColumn): string {
+	if (column.visualizationFormat) return formatValue('en-US', column.visualizationFormat, value)
   if (value === null || value === undefined || value === '') return '-'
   const format = column.format || inferredFormat(column)
   if (format === 'currency' && Number.isFinite(Number(value))) {

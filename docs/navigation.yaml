@@ -355,8 +355,8 @@ sections:
             summary: Understand server-owned state and SSE response contracts.
             source: articles/architecture/datastar.md
           - slug: architecture/visual-plugins
-            title: Visual plugin architecture
-            summary: Understand renderer-neutral shapes and renderer adapters.
+            title: Visualization target architecture
+            summary: Understand the visualization IR, generated contracts, runtime data states, and renderer adapters.
             source: articles/architecture/visual-plugins.md
       - id: contributing
         title: Contributing

@@ -3,12 +3,11 @@ import { Blocks, Bot, Boxes, ChartNoAxesCombined, Check, CodeXml, Copy, Database
 import { DatastarLit } from '../../web/components/shared/datastar-lit'
 import { lucideIcon } from '../../web/components/shared/lucide-icons'
 import '../../web/components/shared/code-block'
-import type { ChartPayload } from '../../web/components/dashboard/charts/types'
-import type { TableSignal } from '../../web/components/dashboard/table/types'
+import type { VisualizationEnvelope } from '../../web/generated/visualization'
 import { visualExampleHighlightLines } from './visual-example-highlights'
 
 type ThemeMode = 'system' | 'light' | 'dark'
-type VisualPayload = ChartPayload | TableSignal
+type VisualPayload = VisualizationEnvelope
 
 const nextThemeMode: Record<ThemeMode, ThemeMode> = {
   system: 'light',
@@ -1383,9 +1382,7 @@ class SiteVisualExample extends DatastarLit(LitElement) {
       overflow: hidden;
     }
 
-    ld-echart,
-    ld-kpi-card,
-    ld-report-table {
+    ld-visualization-host {
       display: block;
       height: 28rem;
     }
@@ -1394,7 +1391,7 @@ class SiteVisualExample extends DatastarLit(LitElement) {
       min-height: 12rem;
     }
 
-    :host([type='kpi']) ld-kpi-card {
+    :host([type='kpi']) ld-visualization-host {
       height: 12rem;
     }
 
@@ -1402,21 +1399,15 @@ class SiteVisualExample extends DatastarLit(LitElement) {
 
   render() {
     const visuals = this.signal<VisualPayload[]>('visuals', [])
-    const visual = visuals.find((candidate) => candidate.id === this.exampleId) ?? null
-    const visualType = visual?.type ?? ''
+    const visual = visuals.find((candidate) => candidate.visualID === this.exampleId)
+    const visualType = visual?.spec.kind ?? ''
     if (this.getAttribute('type') !== visualType) {
       queueMicrotask(() => {
         if (visualType) this.setAttribute('type', visualType)
         else this.removeAttribute('type')
       })
     }
-    if (visual?.type === 'kpi') {
-      return html`<ld-kpi-card .visual=${visual}></ld-kpi-card>`
-    }
-    if (visual && isTabularVisualType(visual.type)) {
-      return html`<ld-report-table table-id=${this.exampleId} .table=${visual}></ld-report-table>`
-    }
-    return html`<ld-echart .chart=${visual}></ld-echart>`
+    return visual ? html`<ld-visualization-host .envelope=${visual}></ld-visualization-host>` : null
   }
 }
 
@@ -1481,8 +1472,7 @@ class SiteVisualShowcase extends DatastarLit(LitElement) {
       overflow: hidden;
     }
 
-    ld-echart,
-    ld-kpi-card {
+    ld-visualization-host {
       display: block;
       height: 20rem;
     }
@@ -1502,11 +1492,6 @@ class SiteVisualShowcase extends DatastarLit(LitElement) {
       height: 30rem;
     }
 
-    ld-report-table {
-      display: block;
-      height: 100%;
-    }
-
     @media (width < 48rem) {
       .table-grid {
         grid-template-columns: minmax(0, 1fr);
@@ -1520,15 +1505,15 @@ class SiteVisualShowcase extends DatastarLit(LitElement) {
 
   render() {
     const visuals = this.signal<VisualPayload[]>('visuals', [])
-    const charts = visuals.filter((visual): visual is ChartPayload => !isTabularVisualType(visual.type))
-    const tables = visuals.filter((visual): visual is TableSignal => isTabularVisualType(visual.type))
+    const charts = visuals.filter((visual) => !isTabularVisualType(visual.spec.kind))
+    const tables = visuals.filter((visual) => isTabularVisualType(visual.spec.kind))
     return html`
       <section class="showcase-section" aria-labelledby="chart-showcase-heading">
         <div class="section-heading">
           <h2 id="chart-showcase-heading">Charts and KPIs</h2>
           <p>Renderer-neutral visual payloads adapted by the built-in ECharts and KPI renderers.</p>
         </div>
-        <div class="chart-grid">${charts.map((chart) => html`<article class="chart">${chart.type === 'kpi' ? html`<ld-kpi-card .visual=${chart}></ld-kpi-card>` : html`<ld-echart .chart=${chart}></ld-echart>`}</article>`)}</div>
+        <div class="chart-grid">${charts.map((visual) => html`<article class="chart"><ld-visualization-host .envelope=${visual}></ld-visualization-host></article>`)}</div>
       </section>
       <section class="showcase-section" aria-labelledby="table-showcase-heading">
         <div class="section-heading">
@@ -1537,9 +1522,9 @@ class SiteVisualShowcase extends DatastarLit(LitElement) {
         </div>
         <div class="table-grid">
           ${tables.map(
-            (table, index) =>
+            (visual, index) =>
               html`<article class="table-card ${index === 0 ? 'featured' : ''}">
-                <ld-report-table table-id=${table.title} .table=${table}></ld-report-table>
+                <ld-visualization-host .envelope=${visual}></ld-visualization-host>
               </article>`,
           )}
         </div>
@@ -1559,10 +1544,7 @@ function isTabularVisualType(type: string): boolean {
 async function loadRouteComponents(): Promise<void> {
   const imports: Promise<unknown>[] = []
   if (document.querySelector('ld-site-visual-showcase, ld-site-visual-example')) {
-    imports.push(import('../../web/components/dashboard/charts/echart'))
-  }
-  if (document.querySelector('ld-site-visual-showcase, ld-site-visual-example')) {
-    imports.push(import('../../web/components/dashboard/table/report-table'))
+    imports.push(import('../../web/components/dashboard/visualization/host'))
   }
   if (document.querySelector('ld-site-flow-background')) {
     imports.push(import('./site-flow-background'))

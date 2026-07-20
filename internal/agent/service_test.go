@@ -13,7 +13,9 @@ import (
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	"github.com/Yacobolo/libredash/internal/testutil/dashboardfixture"
 	agentcore "github.com/Yacobolo/libredash/pkg/agent"
 )
 
@@ -836,23 +838,29 @@ func (fakeAgentMetrics) Catalog() dashboard.Catalog {
 	}
 }
 
-func (fakeAgentMetrics) Report(id string) (reportdef.Dashboard, *semanticmodel.Model, bool) {
+func (fakeAgentMetrics) Report(id string) (dashboarddefinition.Definition, *semanticmodel.Model, bool) {
 	if id != "executive-sales" {
-		return reportdef.Dashboard{}, nil, false
+		return dashboarddefinition.Definition{}, nil, false
 	}
+	report := fakeAgentAuthoringReport()
+	model := fakeSemanticModel()
+	return dashboardfixture.Compile(report, model), model, true
+}
+
+func fakeAgentAuthoringReport() reportdef.Dashboard {
 	return reportdef.Dashboard{
 		ID:            "executive-sales",
 		Title:         "Executive Sales",
 		Description:   "Sales dashboard",
 		SemanticModel: "test",
 		Visuals: map[string]reportdef.Visual{
-			"orders": {Title: "Orders", Query: reportdef.VisualQuery{Measures: []reportdef.FieldRef{{Field: "order_count"}}}},
+			"orders": {Title: "Orders", Type: "bar", Query: reportdef.VisualQuery{Measures: []reportdef.FieldRef{{Field: "order_count"}}}},
 		},
 		Tables: map[string]reportdef.TableVisual{
-			"orders": {Title: "Orders", Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.order_id"}}},
+			"orders_table": {Title: "Orders", Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.order_id"}}},
 		},
-		Pages: []dashboard.Page{{ID: "overview", Title: "Overview", Visuals: []dashboard.PageVisual{{ID: "orders", Visual: "orders"}, {ID: "orders-table", Table: "orders"}}}},
-	}, fakeSemanticModel(), true
+		Pages: []dashboard.Page{{ID: "overview", Title: "Overview", Visuals: []dashboard.PageVisual{{ID: "orders", Visual: "orders"}, {ID: "orders-table", Table: "orders_table"}}}},
+	}
 }
 
 func fakeSemanticModel() *semanticmodel.Model {
@@ -920,11 +928,11 @@ type largeDashboardMetrics struct {
 	fakeAgentMetrics
 }
 
-func (largeDashboardMetrics) Report(id string) (reportdef.Dashboard, *semanticmodel.Model, bool) {
+func (largeDashboardMetrics) Report(id string) (dashboarddefinition.Definition, *semanticmodel.Model, bool) {
 	if id != "executive-sales" {
-		return reportdef.Dashboard{}, nil, false
+		return dashboarddefinition.Definition{}, nil, false
 	}
-	report, model, _ := fakeAgentMetrics{}.Report(id)
+	report, model := fakeAgentAuthoringReport(), fakeSemanticModel()
 	report.Pages = make([]dashboard.Page, 0, 24)
 	report.Visuals = map[string]reportdef.Visual{}
 	report.Tables = map[string]reportdef.TableVisual{}
@@ -962,7 +970,7 @@ func (largeDashboardMetrics) Report(id string) (reportdef.Dashboard, *semanticmo
 			},
 		})
 	}
-	return report, model, true
+	return dashboardfixture.Compile(report, model), model, true
 }
 
 func (largeDashboardMetrics) Pages(id string) []dashboard.Page {

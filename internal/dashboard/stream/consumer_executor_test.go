@@ -22,7 +22,7 @@ func (*unifiedConsumerMetrics) QueryTablePage(context.Context, string, string, d
 func (m *unifiedConsumerMetrics) ExecuteConsumersPage(_ context.Context, request consumer.Request, publish consumer.Publisher) error {
 	m.called = true
 	for _, target := range request.Targets {
-		publish(consumer.Result{Target: target, Visual: dashboard.Visual{ID: target.ID}})
+		publish(consumer.Result{Target: target})
 	}
 	return nil
 }

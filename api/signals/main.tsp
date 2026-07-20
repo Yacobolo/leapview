@@ -1,4 +1,5 @@
 import "@yacobolo/apigen";
+import "../visualization/main.tsp";
 
 @apigen.`package`(#{
   title: "LibreDash UI Signal Contracts",
@@ -412,7 +413,7 @@ model ChatEnvelope {
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "runtime" })
   `runtime`: RouteRuntimeSignal;
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "merge", `x-libredash-signal-key`: "visuals" })
-  `visuals`: Record<DashboardVisual>;
+  `visuals`: Record<LibreDashVisualization.VisualizationEnvelope>;
 }
 
 @apigen.contract(#{ kind: "ui-signal", tags: #["chat", "signal"] })
@@ -518,20 +519,11 @@ model DashboardComponentSignal {
   `y`: float64;
 }
 
-/** Progressive refresh state for one visual target. */
-model DashboardComponentStatus {
-  `error`: string;
-  `generation`: int64;
-  `loading`: boolean;
-}
-
 @apigen.contract(#{ kind: "ui-envelope", tags: #["dashboard", "envelope"] })
 @apigen.`metadata`(#{ `x-libredash-contract-role`: "envelope", `x-libredash-surface`: "dashboard" })
 model DashboardEnvelope {
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "chrome" })
   `chrome`: ChromeSignal;
-  @apigen.`metadata`(#{ `x-libredash-patch-mode`: "merge", `x-libredash-signal-key`: "componentStatus" })
-  `componentStatus`: Record<DashboardComponentStatus>;
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "filterConfig" })
   `filterConfig`: ReportFilterConfig[];
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "merge", `x-libredash-signal-key`: "filterOptions" })
@@ -547,13 +539,13 @@ model DashboardEnvelope {
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "status" })
   `status`: DashboardStatus;
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "visualWindowCommand" })
-  `visualWindowCommand`: DashboardVisualWindowRequest;
+  `visualWindowCommand`: LibreDashVisualization.VisualizationWindowRequest;
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "merge", `x-libredash-signal-key`: "urlParamShape" })
   `urlParamShape`: Record<unknown>;
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "merge", `x-libredash-signal-key`: "urlParams" })
   `urlParams`: Record<unknown>;
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "merge", `x-libredash-signal-key`: "visuals" })
-  `visuals`: Record<DashboardVisual>;
+  `visuals`: Record<LibreDashVisualization.VisualizationEnvelope>;
 }
 
 model DashboardFilterControl {
@@ -690,125 +682,6 @@ model DashboardStatus {
   `refreshId`: string;
   `setupRequired`: boolean;
 }
-
-model DashboardVisualCardinality {
-  `kind`: "unknown" | "lower_bound" | "estimated" | "exact";
-  `value`: int64;
-}
-
-model DashboardVisualBlock {
-  `requestSeq`: int64;
-  `resetVersion`: int64;
-  `rows`: Record<unknown>[];
-  `sort`: DashboardVisualSort;
-  `start`: int64;
-}
-
-model DashboardVisualColumn {
-  `align`?: string;
-  `columnValue`?: string;
-  `format`?: string;
-  `formatting`?: DashboardVisualFormattingRule[];
-  `group`?: string;
-  `key`: string;
-  `label`: string;
-  `measure`?: string;
-  `role`?: string;
-  `width`?: int64;
-}
-
-model DashboardVisualFormattingRule {
-  `background`?: string;
-  `color`?: string;
-  `highColor`?: string;
-  `kind`: string;
-  `lowColor`?: string;
-  `max`?: float64;
-  `min`?: float64;
-  `values`?: Record<string>;
-}
-
-model DashboardVisualWindowRequest {
-  `block`: string;
-  `count`: int64;
-  `requestSeq`: int64;
-  `resetVersion`: int64;
-  `sort`: DashboardVisualSort;
-  `start`: int64;
-  `visual`: string;
-}
-
-model DashboardVisualSort {
-  `direction`: string;
-  `key`: string;
-}
-
-model DashboardVisualStyle {
-  `density`: string;
-  `grid`: string;
-  `zebra`: boolean;
-}
-
-@discriminator("type")
-model DashboardVisual {
-  `availableRows`?: int64;
-  `blocks`?: Record<DashboardVisualBlock>;
-  `cardinality`?: DashboardVisualCardinality;
-  `chunkSize`?: int64;
-  `columns`?: DashboardVisualColumn[];
-  `data`?: Record<unknown>[];
-  `dimensions`?: string[];
-  `error`?: string;
-  `format`?: string;
-  `id`: string;
-  `interaction`: DashboardInteractionConfig;
-  `isCapped`?: boolean;
-  `loadingBlock`?: string;
-  `measure`?: string;
-  `measures`?: string[];
-  `options`?: Record<unknown>;
-  `renderer`?: string;
-  `rendererOptions`?: Record<Record<unknown>>;
-  `resetVersion`?: int64;
-  `rowCap`?: int64;
-  `rowHeight`?: int64;
-  `selection`: DashboardInteractionSelectionEntry[];
-  `series`?: string[];
-  `shape`?: string;
-  `sort`?: DashboardVisualSort;
-  `style`?: DashboardVisualStyle;
-  `title`: string;
-  `type`: string;
-  `version`: int64;
-  `unit`: string;
-}
-
-model LineDashboardVisual extends DashboardVisual { `type`: "line"; }
-model AreaDashboardVisual extends DashboardVisual { `type`: "area"; }
-model BarDashboardVisual extends DashboardVisual { `type`: "bar"; }
-model ColumnDashboardVisual extends DashboardVisual { `type`: "column"; }
-model PieDashboardVisual extends DashboardVisual { `type`: "pie"; }
-model DonutDashboardVisual extends DashboardVisual { `type`: "donut"; }
-model ScatterDashboardVisual extends DashboardVisual { `type`: "scatter"; }
-model FunnelDashboardVisual extends DashboardVisual { `type`: "funnel"; }
-model TreemapDashboardVisual extends DashboardVisual { `type`: "treemap"; }
-model GaugeDashboardVisual extends DashboardVisual { `type`: "gauge"; }
-model HeatmapDashboardVisual extends DashboardVisual { `type`: "heatmap"; }
-model SankeyDashboardVisual extends DashboardVisual { `type`: "sankey"; }
-model GraphDashboardVisual extends DashboardVisual { `type`: "graph"; }
-model MapDashboardVisual extends DashboardVisual { `type`: "map"; }
-model CandlestickDashboardVisual extends DashboardVisual { `type`: "candlestick"; }
-model BoxplotDashboardVisual extends DashboardVisual { `type`: "boxplot"; }
-model ComboDashboardVisual extends DashboardVisual { `type`: "combo"; }
-model WaterfallDashboardVisual extends DashboardVisual { `type`: "waterfall"; }
-model HistogramDashboardVisual extends DashboardVisual { `type`: "histogram"; }
-model RadarDashboardVisual extends DashboardVisual { `type`: "radar"; }
-model TreeDashboardVisual extends DashboardVisual { `type`: "tree"; }
-model SunburstDashboardVisual extends DashboardVisual { `type`: "sunburst"; }
-model KPIDashboardVisual extends DashboardVisual { `type`: "kpi"; }
-model TableDashboardVisual extends DashboardVisual { `type`: "table"; }
-model MatrixDashboardVisual extends DashboardVisual { `type`: "matrix"; }
-model PivotDashboardVisual extends DashboardVisual { `type`: "pivot"; }
 
 @apigen.contract(#{ kind: "ui-command", tags: #["data", "command"] })
 @apigen.`metadata`(#{ `x-libredash-contract-role`: "command", `x-libredash-surface`: "data" })

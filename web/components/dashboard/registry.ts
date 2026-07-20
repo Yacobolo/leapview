@@ -2,17 +2,11 @@ import { defineElementOnce } from '../shared/lazy-registry'
 
 type DashboardComponentKind =
   | 'ld-filter-card'
-  | 'ld-kpi-card'
-  | 'ld-echart'
-  | 'ld-report-table'
   | string
 
 const dashboardComponentLoaders: Record<string, () => Promise<unknown>> = {
   'ld-filter-panel': () => import('./filters/filter-panel'),
   'ld-filter-card': () => import('./filters/filter-card'),
-  'ld-kpi-card': () => import('./charts/echart'),
-  'ld-echart': () => import('./charts/echart'),
-  'ld-report-table': () => import('./table/report-table'),
 }
 
 export function loadDashboardComponent(kind: DashboardComponentKind): Promise<void> {

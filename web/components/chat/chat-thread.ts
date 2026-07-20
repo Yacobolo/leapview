@@ -1,7 +1,7 @@
 import { LitElement, css, html, nothing } from 'lit'
 import { property, state } from 'lit/decorators.js'
 import { Box, ChevronRight, FileText, LayoutDashboard, LayoutPanelTop, Wrench, type IconNode } from 'lucide'
-import type { ChatArtifactSignal, ChatStatus, ChatTranscriptItemSignal, DashboardVisual } from '../../generated/signals'
+import type { ChatArtifactSignal, ChatStatus, ChatTranscriptItemSignal, VisualizationEnvelope } from '../../generated/signals'
 import { lucideIcon } from '../shared/lucide-icons'
 import '../shared/code-block'
 import '../shared/markdown-view'
@@ -34,8 +34,8 @@ const jsonConverter = <T,>(fallback: T) => ({
 class ChatThread extends LitElement {
   @property({ attribute: false }) transcript: ChatTranscriptItemSignal[] = []
   @property({ attribute: 'transcript', converter: jsonConverter<ChatTranscriptItemSignal[]>([]) }) transcriptAttribute: ChatTranscriptItemSignal[] = []
-  @property({ attribute: false }) visuals: Record<string, DashboardVisual> = {}
-  @property({ attribute: 'visuals', converter: jsonConverter<Record<string, DashboardVisual>>({}) }) visualsAttribute: Record<string, DashboardVisual> = {}
+  @property({ attribute: false }) visuals: Record<string, VisualizationEnvelope> = {}
+  @property({ attribute: 'visuals', converter: jsonConverter<Record<string, VisualizationEnvelope>>({}) }) visualsAttribute: Record<string, VisualizationEnvelope> = {}
   @property({ attribute: 'status', converter: jsonConverter<ChatStatus>({ enabled: false, running: false }) }) status: ChatStatus = { enabled: false, running: false }
   @property({ attribute: 'conversation-id' }) conversationId = ''
   @state() private expandedToolCalls = new Set<string>()
@@ -403,7 +403,7 @@ class ChatThread extends LitElement {
     return Array.isArray(this.transcript) && this.transcript.length > 0 ? this.transcript : this.transcriptAttribute
   }
 
-  private get resolvedVisuals(): Record<string, DashboardVisual> {
+  private get resolvedVisuals(): Record<string, VisualizationEnvelope> {
     return hasKeys(this.visuals) ? this.visuals : this.visualsAttribute
   }
 

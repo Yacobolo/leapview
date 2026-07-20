@@ -12,6 +12,7 @@ import (
 	lddatastar "github.com/Yacobolo/libredash/internal/dashboard/datastar"
 	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
 	reportui "github.com/Yacobolo/libredash/internal/dashboard/ui"
+	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
 	"github.com/Yacobolo/libredash/pkg/pagestream"
 )
 
@@ -37,6 +38,22 @@ func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
 		nethttp.NotFound(w, r)
 		return
 	}
+	definitions := make(map[string]visualizationdefinition.Definition)
+	for _, component := range activePage.Visuals {
+		id := component.Visual
+		if id == "" {
+			id = component.Table
+		}
+		if id == "" {
+			continue
+		}
+		definition, exists := metrics.VisualizationDefinition(dashboardID, id)
+		if !exists {
+			nethttp.Error(w, "compiled visualization definition is missing", nethttp.StatusInternalServerError)
+			return
+		}
+		definitions[id] = definition
+	}
 	initialFilters := reportDefinition.FiltersFromURLForPage(activePage.ID, r.URL.Query())
 	clientID := pagestream.ClientIDFromRequest(r, "")
 	streamInstanceID := strings.TrimSpace(r.URL.Query().Get("streamInstance"))
@@ -60,7 +77,7 @@ func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
 	updates := pagestream.NewSignalStream(w, r, pagestream.WithStreamTrace(
 		broker.TraceStore(), streamID, "dashboard.bootstrap",
 	))
-	bootstrap := reportui.BootstrapSignals(clientID, streamInstanceID, metrics.Catalog(), reportDefinition, model, pages, activePage, initialFilters)
+	bootstrap := reportui.BootstrapSignals(clientID, streamInstanceID, metrics.Catalog(), reportDefinition, model, definitions, pages, activePage, initialFilters)
 	status := lddatastar.LoadingPatch()["status"].(map[string]any)
 	environment := ""
 	if h.Environment != nil {

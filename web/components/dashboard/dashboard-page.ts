@@ -1,16 +1,14 @@
-import { LitElement, css, html, nothing } from 'lit'
+import { LitElement, css, html } from 'lit'
 import { property, state } from 'lit/decorators.js'
 import type {
   DashboardComponentSignal,
-  DashboardComponentStatus,
   DashboardFilters,
   DashboardInteractionSelection,
-  DashboardInteractionSelectionEntry,
   DashboardPageNavSignal,
   DashboardPageSignal,
   DashboardStatus,
-  DashboardVisual,
   ReportFilterConfig,
+  VisualizationEnvelope,
 } from '../../generated/signals'
 import { DatastarLit } from '../shared/datastar-lit'
 import { checkSignalContract } from '../shared/signal-contract'
@@ -20,11 +18,9 @@ import './report-canvas'
 import './report-footer'
 import './visual-modal'
 import { loadDashboardComponent } from './registry'
-import { normalizeTable } from './table/block-source'
-import type { TableSignal } from './table/types'
+import './visualization/host'
 import {
   applyOptimisticInteraction,
-  canonicalSelectionEntriesForSource,
   validateInteractionCommand,
   type CanonicalInteractionSelection,
   type InteractionConfigLike,
@@ -47,9 +43,8 @@ type DashboardRenderSnapshot = {
   filterConfig: ReportFilterConfig[]
   filters: DashboardFilters
   filterOptions: Record<string, unknown>
-  visuals: Record<string, DashboardVisual>
+  visuals: Record<string, VisualizationEnvelope>
   status: DashboardStatus
-  componentStatus: Record<string, DashboardComponentStatus>
 }
 
 type DashboardRefreshProgress = {
@@ -62,12 +57,9 @@ type DashboardRefreshProgress = {
 class LibreDashDashboardPage extends DatastarLit(LitElement) {
   @state() private unsupportedKinds = new Set<string>()
   @state() private optimisticSelections: CanonicalInteractionSelection[] | null = null
-  @state() private optimisticTargetKeys = new Set<string>()
   private optimisticExpectedGeneration = 0
   private optimisticRollbackTimer?: ReturnType<typeof setTimeout>
   private renderSnapshot?: DashboardRenderSnapshot
-  private visualProjectionCache = new Map<string, { signature: string; value: DashboardVisual }>()
-  private tableProjectionCache = new Map<string, { signature: string; value: TableSignal }>()
 
   static styles = css`
     :host {
@@ -358,16 +350,12 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     return this.signal<Record<string, unknown>>('filterOptions', {})
   }
 
-  private get visuals(): Record<string, DashboardVisual> {
-    return this.signal<Record<string, DashboardVisual>>('visuals', {})
+  private get visuals(): Record<string, VisualizationEnvelope> {
+    return this.signal<Record<string, VisualizationEnvelope>>('visuals', {})
   }
 
   private get status(): DashboardStatus {
     return this.signal<DashboardStatus>('status', emptyStatus)
-  }
-
-  private get componentStatus(): Record<string, DashboardComponentStatus> {
-    return this.signal<Record<string, DashboardComponentStatus>>('componentStatus', {})
   }
 
   render() {
@@ -380,7 +368,6 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
       filterOptions: this.filterOptions,
       visuals: this.visuals,
       status: this.status,
-      componentStatus: this.componentStatus,
     }
     this.renderSnapshot = snapshot
     const refreshProgress = this.refreshProgress(snapshot)
@@ -463,9 +450,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
 
   private renderCanvasComponent(component: DashboardComponentSignal) {
     const filterVisual = component.kind === 'filter'
-    const visualType = component.visual ? this.visuals[component.visual]?.type ?? '' : ''
-    const statusKey = this.componentStatusKey(component)
-    const componentRefreshStatus = statusKey ? this.refreshStatusFor(statusKey) : undefined
+    const visualType = component.visual ? this.visuals[component.visual]?.spec.kind ?? '' : ''
     return html`
               <ld-dashboard-visual-frame
                 data-canvas-visual
@@ -476,9 +461,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
         data-y=${component.y}
         data-w=${component.width}
         data-h=${component.height}
-        data-component-status-key=${statusKey || nothing}
         .transparent=${component.kind === 'header'}
-        .refreshStatus=${componentRefreshStatus}
       >
         ${this.renderComponentContent(component)}
       </ld-dashboard-visual-frame>
@@ -494,9 +477,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
       case 'visual': {
         const visual = this.visualFor(component)
         if (!visual) return this.missingPayload('visual')
-        if (visual.type === 'kpi') return this.renderKPI(component, visual)
-        if (isTabularVisualType(visual.type)) return this.renderTable(component, visual)
-        return this.renderChart(component, visual)
+        return html`<ld-visualization-host .envelope=${visual}></ld-visualization-host>`
       }
       default:
         return html`<div class="unsupported">Unsupported dashboard component: ${component.kind}</div>`
@@ -530,19 +511,6 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     `
   }
 
-  private renderKPI(component: DashboardComponentSignal, visual: DashboardVisual) {
-    return html`<ld-kpi-card visual-id=${component.visual ?? ''} .visual=${visual}></ld-kpi-card>`
-  }
-
-  private renderChart(component: DashboardComponentSignal, visual: DashboardVisual) {
-    return html`<ld-echart visual-id=${component.visual ?? ''} .chart=${visual}></ld-echart>`
-  }
-
-  private renderTable(component: DashboardComponentSignal, visual: DashboardVisual) {
-    const table = this.tableFor(component, visual)
-    return html`<ld-report-table table-id=${component.visual ?? ''} .table=${table}></ld-report-table>`
-  }
-
   private renderFilterDock() {
     return html`
       <ld-filter-dock
@@ -558,49 +526,9 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     return html`<div class="unsupported">Missing ${kind} payload</div>`
   }
 
-  private visualFor(component: DashboardComponentSignal): DashboardVisual | undefined {
+  private visualFor(component: DashboardComponentSignal): VisualizationEnvelope | undefined {
     const visuals = this.renderSnapshot?.visuals ?? this.visuals
-    const visual = component.visual ? visuals[component.visual] : undefined
-    if (!visual) return undefined
-    const selection = generatedSelectionEntries(canonicalSelectionEntriesForSource(this.effectiveFilters.selections, 'visual', component.visual ?? ''))
-    const signature = stableSignature([visual, selection])
-    const cached = this.visualProjectionCache.get(component.visual ?? '')
-    if (cached?.signature === signature) return cached.value
-    const value = {
-      ...visual,
-      selection,
-    }
-    this.visualProjectionCache.set(component.visual ?? '', { signature, value })
-    return value
-  }
-
-  private tableFor(component: DashboardComponentSignal, visual: DashboardVisual): TableSignal {
-    const visualID = component.visual ?? ''
-    const selection = generatedSelectionEntries(canonicalSelectionEntriesForSource(this.effectiveFilters.selections, 'visual', visualID))
-    const signature = stableSignature([visual, selection])
-    const cached = this.tableProjectionCache.get(visualID)
-    if (cached?.signature === signature) return cached.value
-    const value = normalizeTable({ ...(visual as unknown as Partial<TableSignal>), selection })
-    this.tableProjectionCache.set(visualID, { signature, value })
-    return value
-  }
-
-  private componentStatusKey(component: DashboardComponentSignal): string {
-    if (component.visual) return `visual:${component.visual}`
-    return ''
-  }
-
-  private refreshStatusFor(key: string): DashboardComponentStatus | undefined {
-    if (this.optimisticTargetKeys.has(key)) {
-      return { generation: this.optimisticExpectedGeneration, loading: true, error: '' }
-    }
-    const snapshot = this.renderSnapshot
-    const refreshStatus = (snapshot?.componentStatus ?? this.componentStatus)[key]
-    if (!refreshStatus) return undefined
-    return {
-      ...refreshStatus,
-      loading: refreshStatus.loading && refreshStatus.generation === (snapshot?.status ?? this.status).generation,
-    }
+    return component.visual ? visuals[component.visual] : undefined
   }
 
   private handleOptimisticInteraction = (event: CustomEvent<unknown>): void => {
@@ -614,7 +542,6 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
       ...command,
       toggle: configured?.toggle !== false,
     })
-    this.optimisticTargetKeys = this.targetStatusKeys(configured?.targets ?? [])
     this.optimisticExpectedGeneration = Math.max(
       this.status.generation + 1,
       this.optimisticExpectedGeneration + 1,
@@ -623,18 +550,20 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
   }
 
   private interactionConfigFor(sourceKind: 'visual', sourceId: string): InteractionConfigLike | undefined {
-    return this.visuals[sourceId]?.interaction
-  }
-
-  private targetStatusKeys(targets: readonly string[]): Set<string> {
-    const wanted = new Set(targets)
-    const keys = new Set<string>()
-    for (const component of this.page?.components ?? []) {
-      if (component.visual && (wanted.has(component.visual) || wanted.has(component.id))) {
-        keys.add(`visual:${component.visual}`)
-      }
+    const interaction = this.visuals[sourceId]?.spec.interactions[0]
+    if (!interaction) return undefined
+    return {
+      kind: interaction.id,
+      toggle: interaction.mode === 'multiple',
+      targets: interaction.targets,
+      mappings: interaction.mappings.map((mapping) => ({
+        field: mapping.targetFieldID,
+        ...(mapping.targetFactID ? { fact: mapping.targetFactID } : {}),
+        ...(mapping.grain ? { grain: mapping.grain } : {}),
+        value: mapping.source.field,
+        ...(mapping.label ? { label: mapping.label.field } : {}),
+      })),
     }
-    return keys
   }
 
   private scheduleOptimisticRollback(): void {
@@ -650,7 +579,6 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
   private clearOptimisticState(): void {
     this.clearOptimisticRollbackTimer()
     this.optimisticSelections = null
-    this.optimisticTargetKeys = new Set<string>()
     this.optimisticExpectedGeneration = this.status.generation
   }
 
@@ -658,7 +586,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     const kinds = new Set<string>(['ld-filter-panel'])
     for (const component of this.page?.components ?? []) {
       const tag = tagForComponent(component, this.visuals)
-      if (tag) kinds.add(tag)
+      if (tag && tag !== 'ld-visualization-host') kinds.add(tag)
     }
     for (const kind of kinds) {
       loadDashboardComponent(kind).catch(() => {
@@ -668,13 +596,6 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
       })
     }
   }
-}
-
-function generatedSelectionEntries(entries: ReturnType<typeof canonicalSelectionEntriesForSource>): DashboardInteractionSelectionEntry[] {
-  return entries.map((entry) => ({
-    ...entry,
-    mappings: entry.mappings ?? [],
-  }))
 }
 
 function optimisticCommand(value: unknown): OptimisticInteractionCommand | undefined {
@@ -687,13 +608,8 @@ function optimisticCommand(value: unknown): OptimisticInteractionCommand | undef
   return command as OptimisticInteractionCommand
 }
 
-function stableSignature(value: unknown): string {
-  return JSON.stringify(value)
-}
-
 class DashboardVisualFrame extends LitElement {
   @property({ type: Boolean, reflect: true }) transparent = false
-  @property({ type: Object, attribute: false }) refreshStatus?: DashboardComponentStatus
 
   static styles = css`
     :host {
@@ -737,95 +653,27 @@ class DashboardVisualFrame extends LitElement {
       height: 100%;
     }
 
-    .refresh-overlay {
-      position: absolute;
-      inset: 0;
-      z-index: 2;
-      display: grid;
-      place-items: center;
-      background: color-mix(in srgb, var(--ld-bg-panel) 78%, transparent);
-      color: var(--ld-fg-muted);
-      padding: var(--base-size-12);
-      box-sizing: border-box;
-      pointer-events: none;
-    }
-
-    .refresh-overlay.error {
-      align-content: center;
-      gap: var(--base-size-4);
-      border: var(--ld-border-danger);
-      background: color-mix(in srgb, var(--ld-bg-danger-muted) 92%, transparent);
-      color: var(--ld-fg-danger);
-      text-align: center;
-    }
-
-    .refresh-overlay strong {
-      font-size: var(--ld-font-size-body-sm);
-      font-weight: var(--ld-font-weight-strong);
-    }
-
-    .refresh-overlay span {
-      max-width: 100%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      font-size: var(--ld-font-size-caption);
-    }
-
-    .spinner {
-      width: var(--base-size-16);
-      height: var(--base-size-16);
-      border: 2px solid var(--ld-line-muted);
-      border-top-color: var(--ld-fg-link);
-      border-radius: 50%;
-      animation: spin 700ms linear infinite;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      .spinner { animation: none; }
-    }
   `
 
   render() {
-    const refreshStatus = this.refreshStatus
     return html`
-      <article class="frame" aria-busy=${refreshStatus?.loading ? 'true' : 'false'}>
+      <article class="frame">
         <slot></slot>
-        ${refreshStatus?.error ? html`
-          <div class="refresh-overlay error" role="alert">
-            <strong>Could not refresh this component</strong>
-            <span>${refreshStatus.error}</span>
-          </div>
-        ` : refreshStatus?.loading ? html`
-          <div class="refresh-overlay loading" role="status" aria-label="Refreshing component">
-            <span class="spinner" aria-hidden="true"></span>
-          </div>
-        ` : nothing}
       </article>
     `
   }
 }
 
-function tagForComponent(component: DashboardComponentSignal, visuals: Record<string, DashboardVisual>): string {
+function tagForComponent(component: DashboardComponentSignal, visuals: Record<string, VisualizationEnvelope>): string {
   switch (component.kind) {
     case 'filter':
       return 'ld-filter-card'
     case 'visual': {
-      const visualType = component.visual ? visuals[component.visual]?.type : undefined
-      if (visualType === 'kpi') return 'ld-kpi-card'
-      if (isTabularVisualType(visualType)) return 'ld-report-table'
-      return visualType ? 'ld-echart' : ''
+      return component.visual && visuals[component.visual] ? 'ld-visualization-host' : ''
     }
     default:
       return ''
   }
-}
-
-function isTabularVisualType(type: string | undefined): boolean {
-  return type === 'table' || type === 'matrix' || type === 'pivot'
 }
 
 function json(value: unknown): string {

@@ -9,7 +9,8 @@ import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/dashboard"
-	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
+	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
 	"github.com/Yacobolo/libredash/internal/workspace/search"
 	"github.com/go-chi/chi/v5"
 )
@@ -132,7 +133,7 @@ func workspaceSearchDocuments(workspaceID string, metrics Metrics) []search.Docu
 	return documents
 }
 
-func dashboardSearchDocuments(report reportdef.Dashboard, model *semanticmodel.Model, pages []dashboard.Page) []search.Document {
+func dashboardSearchDocuments(report dashboarddefinition.Definition, model *semanticmodel.Model, pages []dashboard.Page) []search.Document {
 	out := []search.Document{{
 		ID:          report.ID,
 		Type:        "dashboard",
@@ -176,22 +177,14 @@ func dashboardSearchDocuments(report reportdef.Dashboard, model *semanticmodel.M
 	return out
 }
 
-func dashboardDeepTerms(report reportdef.Dashboard) []string {
+func dashboardDeepTerms(report dashboarddefinition.Definition) []string {
 	terms := make([]string, 0)
 	for id, filter := range report.Filters {
 		terms = append(terms, id, filter.Label, filter.Description, filter.Dimension, filter.Type, filter.URLParam)
 	}
-	for id, visual := range report.Visuals {
-		terms = append(terms, id, visual.Title, visual.Description, visual.Type, visual.Kind, visual.Shape, visual.Query.Time.Field)
-		terms = append(terms, fieldRefTerms(visual.Query.Dimensions)...)
-		terms = append(terms, fieldRefTerms(visual.Query.Measures)...)
-	}
-	for id, table := range report.Tables {
-		terms = append(terms, id, table.Title, table.Description, table.Query.Table)
-		terms = append(terms, table.Query.Fields...)
-		terms = append(terms, fieldRefTerms(table.Query.Columns)...)
-		terms = append(terms, fieldRefTerms(table.Query.Rows)...)
-		terms = append(terms, fieldRefTerms(table.Query.Measures)...)
+	for id, visual := range report.Visualizations {
+		terms = append(terms, id, dashboarddefinition.SpecTitle(visual.Spec), string(visual.Query.Kind))
+		terms = append(terms, visualizationBindingTerms(visual.Query)...)
 	}
 	for _, page := range report.Pages {
 		terms = append(terms, page.ID, page.Title, page.Description)
@@ -202,12 +195,13 @@ func dashboardDeepTerms(report reportdef.Dashboard) []string {
 	return terms
 }
 
-func dashboardComponentSearchDocument(report reportdef.Dashboard, page dashboard.Page, component dashboard.PageVisual) search.Document {
+func dashboardComponentSearchDocument(report dashboarddefinition.Definition, page dashboard.Page, component dashboard.PageVisual) search.Document {
 	switch {
 	case component.Visual != "":
-		visual := report.Visuals[component.Visual]
-		name := firstNonEmpty(component.Title, visual.Title, component.Visual)
-		description := firstNonEmpty(component.Description, visual.Description, "Visual "+component.Visual+" on "+firstNonEmpty(page.Title, page.ID))
+		visual := report.Visualizations[component.Visual]
+		title := dashboarddefinition.SpecTitle(visual.Spec)
+		name := firstNonEmpty(component.Title, title, component.Visual)
+		description := firstNonEmpty(component.Description, "Visual "+component.Visual+" on "+firstNonEmpty(page.Title, page.ID))
 		return search.Document{
 			ID:          "visual:" + report.ID + "." + page.ID + "." + component.Visual,
 			Type:        "visual",
@@ -221,16 +215,15 @@ func dashboardComponentSearchDocument(report reportdef.Dashboard, page dashboard
 			},
 			Terms: []string{
 				report.ID, report.Title, page.ID, page.Title, component.ID, component.Kind,
-				component.Visual, component.Title, component.Description, visual.Title, visual.Description,
-				visual.Type, visual.Kind, visual.Shape, report.SemanticModel, strings.Join(fieldRefTerms(visual.Query.Dimensions), " "),
-				strings.Join(fieldRefTerms(visual.Query.Measures), " "), visual.Query.Time.Field,
+				component.Visual, component.Title, component.Description, title, string(visual.Query.Kind), report.SemanticModel, strings.Join(visualizationBindingTerms(visual.Query), " "),
 			},
 			Weight: 30,
 		}
 	case component.Table != "":
-		table := report.Tables[component.Table]
-		name := firstNonEmpty(component.Title, table.Title, component.Table)
-		description := firstNonEmpty(component.Description, table.Description, "Visual "+component.Table+" on "+firstNonEmpty(page.Title, page.ID))
+		table := report.Visualizations[component.Table]
+		title := dashboarddefinition.SpecTitle(table.Spec)
+		name := firstNonEmpty(component.Title, title, component.Table)
+		description := firstNonEmpty(component.Description, "Visual "+component.Table+" on "+firstNonEmpty(page.Title, page.ID))
 		return search.Document{
 			ID:          "visual:" + report.ID + "." + page.ID + "." + component.Table,
 			Type:        "visual",
@@ -241,13 +234,11 @@ func dashboardComponentSearchDocument(report reportdef.Dashboard, page dashboard
 				PageID:      page.ID,
 				VisualID:    component.Table,
 				ModelID:     report.SemanticModel,
-				DatasetID:   table.Query.Table,
+				DatasetID:   visualizationTableID(table.Query),
 			},
 			Terms: []string{
 				report.ID, report.Title, page.ID, page.Title, component.ID, component.Kind,
-				component.Table, component.Title, component.Description, table.Title, table.Description, table.KindOrDefault(),
-				table.Query.Table, strings.Join(table.Query.Fields, " "), strings.Join(fieldRefTerms(table.Query.Columns), " "),
-				strings.Join(fieldRefTerms(table.Query.Rows), " "), strings.Join(fieldRefTerms(table.Query.Measures), " "),
+				component.Table, component.Title, component.Description, title, string(table.Query.Kind), visualizationTableID(table.Query), strings.Join(visualizationBindingTerms(table.Query), " "),
 			},
 			Weight: 25,
 		}
@@ -288,6 +279,56 @@ func dashboardComponentSearchDocument(report reportdef.Dashboard, page dashboard
 			Terms: []string{report.ID, report.Title, page.ID, page.Title, component.ID, component.Kind, component.Title, component.Description},
 		}
 	}
+}
+
+func visualizationTableID(query visualizationdefinition.QueryBinding) string {
+	switch query.Kind {
+	case visualizationdefinition.QueryAggregate:
+		return query.Aggregate.TableID
+	case visualizationdefinition.QueryDetail:
+		return query.Detail.TableID
+	case visualizationdefinition.QueryMatrix:
+		return query.Matrix.TableID
+	case visualizationdefinition.QueryPivot:
+		return query.Pivot.TableID
+	case visualizationdefinition.QueryCustom:
+		return query.Custom.TableID
+	default:
+		return ""
+	}
+}
+
+func visualizationBindingTerms(query visualizationdefinition.QueryBinding) []string {
+	terms := []string{visualizationTableID(query)}
+	appendFields := func(fields []visualizationdefinition.FieldBinding) {
+		for _, field := range fields {
+			terms = append(terms, field.FieldID, field.Alias)
+		}
+	}
+	switch query.Kind {
+	case visualizationdefinition.QueryAggregate:
+		appendFields(query.Aggregate.Dimensions)
+		appendFields(query.Aggregate.Measures)
+		if query.Aggregate.Series != nil {
+			appendFields([]visualizationdefinition.FieldBinding{*query.Aggregate.Series})
+		}
+		if query.Aggregate.Time != nil {
+			terms = append(terms, query.Aggregate.Time.FieldID, query.Aggregate.Time.Alias, query.Aggregate.Time.Grain)
+		}
+	case visualizationdefinition.QueryDetail:
+		appendFields(query.Detail.Fields)
+	case visualizationdefinition.QueryMatrix:
+		appendFields(query.Matrix.Rows)
+		appendFields(query.Matrix.Columns)
+		appendFields(query.Matrix.Measures)
+	case visualizationdefinition.QueryPivot:
+		appendFields(query.Pivot.Rows)
+		appendFields(query.Pivot.Columns)
+		appendFields(query.Pivot.Measures)
+	case visualizationdefinition.QueryCustom:
+		appendFields(query.Custom.Fields)
+	}
+	return terms
 }
 
 func semanticModelSearchDocuments(modelID, title, description string, model *semanticmodel.Model) []search.Document {
@@ -352,14 +393,6 @@ func semanticModelSearchDocuments(modelID, title, description string, model *sem
 				Weight: 25,
 			})
 		}
-	}
-	return out
-}
-
-func fieldRefTerms(fields []reportdef.FieldRef) []string {
-	out := make([]string, 0, len(fields)*2)
-	for _, field := range fields {
-		out = append(out, field.Field, field.Alias)
 	}
 	return out
 }

@@ -6,6 +6,8 @@ import (
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dashboard/reportmodel"
+	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
+	visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
 )
 
 type Metrics interface {
@@ -36,15 +38,17 @@ func canonicalInteractionCommand(metrics Metrics, dashboardID string, command da
 	semanticMappingCount := 0
 	switch command.SourceKind {
 	case "visual":
-		if source, ok := definition.Visuals[command.SourceID]; ok {
-			toggle = source.Interaction.PointSelection.Toggle
-			semanticMappingCount = len(source.Interaction.PointSelection.Mappings)
-		} else if source, ok := definition.Tables[command.SourceID]; ok {
-			wantKind = "row_selection"
-			toggle = source.Interaction.RowSelection.Toggle
-			semanticMappingCount = len(source.Interaction.RowSelection.Mappings)
-		} else {
+		source, ok := definition.Visualizations[command.SourceID]
+		if !ok {
 			return dashboard.InteractionCommand{}, fmt.Errorf("unknown source visual %q", command.SourceID)
+		}
+		if isGridVisualization(source) {
+			wantKind = "row_selection"
+		}
+		interaction, hasInteraction := compiledInteraction(source)
+		if hasInteraction {
+			toggle = interaction.Mode == visualizationir.VisualizationSelectionModeMultiple
+			semanticMappingCount = len(interaction.Mappings)
 		}
 	default:
 		return dashboard.InteractionCommand{}, fmt.Errorf("unknown source kind %q", command.SourceKind)
@@ -69,7 +73,7 @@ func canonicalInteractionCommand(metrics Metrics, dashboardID string, command da
 	if semanticMappingCount == 0 {
 		return dashboard.InteractionCommand{}, fmt.Errorf("%s %q has no semantic selection mappings", command.SourceKind, command.SourceID)
 	}
-	resolved, err := reportmodel.ResolveSelectionInteraction(&definition, model, command.SourceKind, command.SourceID)
+	resolved, err := reportmodel.ResolveCompiledSelectionInteraction(&definition, model, command.SourceKind, command.SourceID)
 	if err != nil {
 		return dashboard.InteractionCommand{}, err
 	}
@@ -100,4 +104,16 @@ func canonicalInteractionCommand(metrics Metrics, dashboardID string, command da
 		command.Mappings = append(command.Mappings, value)
 	}
 	return command, nil
+}
+
+func isGridVisualization(definition visualizationdefinition.Definition) bool {
+	return definition.Query.Kind == visualizationdefinition.QueryDetail || definition.Query.Kind == visualizationdefinition.QueryMatrix || definition.Query.Kind == visualizationdefinition.QueryPivot
+}
+
+func compiledInteraction(definition visualizationdefinition.Definition) (visualizationir.VisualizationInteraction, bool) {
+	base, err := visualizationir.SpecificationBase(definition.Spec)
+	if err != nil || len(base.Interactions) == 0 {
+		return visualizationir.VisualizationInteraction{}, false
+	}
+	return base.Interactions[0], true
 }

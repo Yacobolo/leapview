@@ -2,25 +2,27 @@
 
 A visual type is complete only when resource validation, semantic query shape, server payload, renderer adaptation, interactions, documentation, examples, and tests agree. Start by deciding whether the requirement is truly a new type, a new renderer-neutral option, or only an adapter improvement for an existing shape.
 
+LibreDash compiles every built-in visual into the versioned IR described by the [visualization architecture](/docs/architecture/visual-plugins). Charts, KPIs, tables, matrices, and pivots share visual identity, page placement, envelopes, commands, interactions, and headless APIs. New product semantics must remain renderer-independent, closed, typed, and suitable for immutable specifications and validated inline or windowed data.
+
 ## Define the product contract
 
 Specify:
 
 - the visual type ID and compatible page component kind;
-- the renderer-neutral shape;
+- the renderer-independent specification kind and mark;
 - required and optional dimensions, measures, series, or table input;
 - sorting and cardinality rules;
 - stable payload fields and formatting behavior;
 - whether point selection is supported and which datum fields identify it;
 - empty, invalid, and partial data behavior.
 
-Add the type/shape to the configuration contract in `internal/configschema/contracts/contracts.cue` and to owning Go dashboard report validation. Update tests that reject unsupported combinations. Regenerate JSON Schema and configuration reference.
+Add the type to the closed authoring contract and canonical TypeSpec IR, then update compiler capability validation. Update tests that reject unsupported combinations. Regenerate Go, TypeScript, JSON Schema, and configuration reference artifacts.
 
 Do not begin by adding a raw ECharts option. The server and non-ECharts consumers need to understand the product meaning first.
 
 ## Produce the server payload
 
-Extend dashboard runtime normalization so a valid semantic query becomes the expected `ChartPayload`: type, shape, dimensions, measures, data, format, options, renderer, and interaction mappings.
+Extend compilation and data shaping so a valid semantic query becomes a `VisualizationSpec` plus validated inline or windowed `VisualizationDataState` inside one envelope.
 
 Test:
 

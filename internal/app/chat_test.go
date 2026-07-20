@@ -17,6 +17,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/platform"
+	visualizationruntime "github.com/Yacobolo/libredash/internal/visualization/runtime"
 	"github.com/Yacobolo/libredash/pkg/pagestream"
 )
 
@@ -24,11 +25,15 @@ func TestTypedChatArtifactsPreserveTabularTypeAcrossJSON(t *testing.T) {
 	for _, visualType := range []string{"table", "matrix", "pivot"} {
 		t.Run(visualType, func(t *testing.T) {
 			kind := map[string]string{"table": "data_table", "matrix": "matrix_table", "pivot": "pivot_table"}[visualType]
-			stored, err := json.Marshal(dashboard.NewTabularVisual("orders", dashboard.Table{
+			envelope, err := visualizationruntime.TableEnvelope("orders", dashboard.Table{
 				Kind: kind, Title: "Orders", Style: dashboard.TableStyle{}.WithDefaults(),
 				Interaction: dashboard.InteractionConfig{}, Selection: []dashboard.InteractionSelectionEntry{},
 				Columns: []dashboard.TableColumn{}, Cardinality: dashboard.ExactCardinality(0), Blocks: map[string]dashboard.TableBlock{},
-			}))
+			}, 1, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stored, err := json.Marshal(envelope)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -41,8 +46,8 @@ func TestTypedChatArtifactsPreserveTabularTypeAcrossJSON(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(string(encoded), `"type":"`+visualType+`"`) {
-				t.Fatalf("round-tripped visual = %s, want type %q", encoded, visualType)
+			if !strings.Contains(string(encoded), `"visualID":"orders"`) || !strings.Contains(string(encoded), `"kind":"`+visualType+`"`) {
+				t.Fatalf("round-tripped visual = %s, want visualization kind %q", encoded, visualType)
 			}
 		})
 	}
@@ -386,12 +391,25 @@ func TestChatConversationRouteLoadsArtifactSignalsOutsideTranscript(t *testing.T
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
 	}
+	artifactEnvelope, err := visualizationruntime.VisualEnvelope(dashboard.Visual{ID: "agent_visual_123", Type: "bar", Title: "Orders", Data: []dashboard.Datum{{"label": "delivered", "value": 42}}}, 1, 1)
+	if err != nil {
+		t.Fatalf("build artifact envelope: %v", err)
+	}
+	displayContent, err := json.Marshal(map[string]any{
+		"display_content": map[string]any{
+			"type": "bar", "id": "agent_visual_123", "summary": "Created chart.",
+			"patch": map[string]any{"visuals": map[string]any{"agent_visual_123": artifactEnvelope}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal artifact envelope: %v", err)
+	}
 	if _, err := testAgentRepository(store).AppendMessage(ctx, agent.MessageInput{
 		PrincipalID:    owner.ID,
 		ConversationID: conversation.ID,
 		Role:           agent.MessageRoleTool,
 		ContentText:    `{"ok":true,"type":"bar","id":"agent_visual_123","summary":"Created chart.","signal":"visuals.agent_visual_123"}`,
-		ContentJSON:    `{"display_content":{"type":"bar","id":"agent_visual_123","patch":{"visuals":{"agent_visual_123":{"id":"agent_visual_123","type":"bar","title":"Orders","data":[{"label":"delivered","value":42}]}}},"summary":"Created chart."}}`,
+		ContentJSON:    string(displayContent),
 		ToolCallID:     "call_1",
 		ToolName:       "query_visual",
 	}); err != nil {
@@ -413,7 +431,7 @@ func TestChatConversationRouteLoadsArtifactSignalsOutsideTranscript(t *testing.T
 	for _, want := range []string{
 		`"visuals":{"agent_visual_123":`,
 		`"title":"Orders"`,
-		`"data":[{"label":"delivered","value":42}]`,
+		`"rows":[["delivered",42]]`,
 		`"artifact":{"id":"agent_visual_123","type":"bar","summary":"Created chart."}`,
 		`"resultJson":"{\n  \"ok\": true,\n  \"type\": \"bar\"`,
 	} {

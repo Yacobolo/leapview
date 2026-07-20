@@ -9,7 +9,10 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/libredash/internal/configschema"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
+	visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
@@ -90,6 +93,32 @@ spec:
 	}
 	if got := compiled.Workspaces["sales"].Definition.Dashboards["executive-sales"].Pages[0].ID; got != "overview" {
 		t.Fatalf("compiled dashboard page id = %q, want authored page name overview", got)
+	}
+}
+
+func TestCompiledGaugePreservesTypedThresholdPresentation(t *testing.T) {
+	report := &reportdef.Dashboard{
+		ID: "dashboard", SemanticModel: "model",
+		Visuals: map[string]reportdef.Visual{
+			"score": {
+				Type:  "gauge",
+				Query: reportdef.VisualQuery{Measures: []reportdef.FieldRef{{Field: "score", Alias: "score"}}},
+				Presentation: reportdef.VisualPresentation{Thresholds: []reportdef.VisualThreshold{
+					{Value: 3, Tone: "danger"}, {Value: 4, Tone: "warning"}, {Value: 5, Tone: "success"},
+				}},
+			},
+		},
+	}
+	definitions, err := compileVisualizationDefinitions(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, ok := definitions["score"].Spec.Value.(*visualizationir.PolarVisualizationSpec)
+	if !ok || spec.Presentation.Thresholds == nil {
+		t.Fatalf("gauge presentation thresholds = %#v", definitions["score"].Spec.Value)
+	}
+	if got := len(*spec.Presentation.Thresholds); got != 3 {
+		t.Fatalf("gauge threshold count = %d, want 3", got)
 	}
 }
 
@@ -366,7 +395,25 @@ func TestCompileShowcaseProject(t *testing.T) {
 	if _, ok := visuals.Definition.Models["visuals"]; !ok {
 		t.Fatalf("visuals semantic models = %#v, want visuals", visuals.Definition.Models)
 	}
-	assertVisualShowcaseCoverage(t, showcase)
+	assertVisualShowcaseCoverage(t, &showcase)
+	servingState, err := json.Marshal(visuals.Definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serialized := string(servingState)
+	// Page layout legitimately uses a "visuals" collection; authored dashboard
+	// visual maps are gone because the dashboard root now exposes only
+	// "visualizations".
+	for _, legacy := range []string{`"tables":`, `"rendererOptions":`, `"options":`, `"shape":`} {
+		if strings.Contains(serialized, legacy) {
+			t.Fatalf("compiled serving state contains legacy authoring property %s", legacy)
+		}
+	}
+	for _, compiledProperty := range []string{`"visualizations":`, `"specRevision":`, `"query":`} {
+		if !strings.Contains(serialized, compiledProperty) {
+			t.Fatalf("compiled serving state missing %s", compiledProperty)
+		}
+	}
 }
 
 func TestPlanProjectIsStableAndSorted(t *testing.T) {
@@ -1176,15 +1223,21 @@ func writeProjectFixture(t *testing.T, files map[string]string) string {
 	return filepath.Join(dir, "libredash.yaml")
 }
 
-func assertVisualShowcaseCoverage(t *testing.T, report *reportdef.Dashboard) {
+func assertVisualShowcaseCoverage(t *testing.T, report *dashboarddefinition.Definition) {
 	t.Helper()
 	visualTypes := map[string]struct{}{}
-	for _, visual := range report.Visuals {
-		if visual.Type != "" {
-			visualTypes[visual.Type] = struct{}{}
-		}
-		if visual.Kind != "" {
-			visualTypes[visual.Kind] = struct{}{}
+	for _, visual := range report.Visualizations {
+		switch spec := visual.Spec.Value.(type) {
+		case *visualizationir.CartesianVisualizationSpec:
+			visualTypes[string(spec.Mark)] = struct{}{}
+		case *visualizationir.ProportionalVisualizationSpec:
+			visualTypes[string(spec.Mark)] = struct{}{}
+		case *visualizationir.HierarchyVisualizationSpec:
+			visualTypes[string(spec.Mark)] = struct{}{}
+		case *visualizationir.PolarVisualizationSpec:
+			visualTypes[string(spec.Mark)] = struct{}{}
+		case *visualizationir.GeographicVisualizationSpec:
+			visualTypes["map"] = struct{}{}
 		}
 	}
 	for _, typ := range []string{
@@ -1197,14 +1250,26 @@ func assertVisualShowcaseCoverage(t *testing.T, report *reportdef.Dashboard) {
 	}
 	tableKinds := map[string]struct{}{}
 	conditionalFormatting := map[string]struct{}{}
-	for _, table := range report.Tables {
-		tableKinds[table.Kind] = struct{}{}
-		for _, column := range table.Columns {
+	for _, table := range report.Visualizations {
+		var measures []visualizationdefinition.FieldBinding
+		switch table.Query.Kind {
+		case visualizationdefinition.QueryDetail:
+			tableKinds["data_table"] = struct{}{}
+		case visualizationdefinition.QueryMatrix:
+			tableKinds["matrix_table"] = struct{}{}
+			measures = table.Query.Matrix.Measures
+		case visualizationdefinition.QueryPivot:
+			tableKinds["pivot_table"] = struct{}{}
+			measures = table.Query.Pivot.Measures
+		default:
+			continue
+		}
+		for _, column := range dashboarddefinition.TableColumns(table.Spec) {
 			for _, rule := range column.Formatting {
 				conditionalFormatting[rule.Kind] = struct{}{}
 			}
 		}
-		for _, rules := range table.MeasureFormatting {
+		for _, rules := range dashboarddefinition.MeasureFormatting(table.Spec, measures) {
 			for _, rule := range rules {
 				conditionalFormatting[rule.Kind] = struct{}{}
 			}
@@ -1488,6 +1553,34 @@ spec:
             col_span: 3
             row_span: 2
 `
+}
+
+func TestCompileProjectProducesImmutableVisualizationDefinitions(t *testing.T) {
+	projectPath := writeProjectFixture(t, map[string]string{
+		"libredash.yaml":                                   projectYAML(),
+		"connections/olist.yaml":                           connectionYAML("olist"),
+		"sources/olist.orders.yaml":                        sourceYAML("olist.orders", "orders.csv", "order_id"),
+		"sources/olist.customers.yaml":                     sourceYAML("olist.customers", "customers.csv", "customer_id"),
+		"workspaces/sales/workspace.yaml":                  workspaceYAML("sales"),
+		"workspaces/sales/models/orders.yaml":              modelTableYAML("sales", "orders", "olist.orders", "order_id", "SELECT order_id FROM source.\"olist.orders\""),
+		"workspaces/sales/semantic-models/sales.yaml":      semanticModelYAML("sales", "orders", "order_count"),
+		"workspaces/sales/dashboards/executive-sales.yaml": dashboardYAML("sales", "executive-sales", "sales"),
+	})
+
+	compiled, err := CompileProject(projectPath, Options{ServingStateID: "state_1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := compiled.Workspaces["sales"].Definition.Dashboards["executive-sales"].Visualizations["total"]
+	if definition.ID != "total" || definition.RendererID != "html" || definition.SpecRevision == "" {
+		t.Fatalf("compiled visualization = %#v", definition)
+	}
+	if definition.Query.Kind != visualizationdefinition.QueryAggregate || definition.Query.ModelID != "sales" || definition.Query.Aggregate == nil || len(definition.Query.Aggregate.Measures) != 1 || definition.Query.Aggregate.Measures[0].FieldID != "order_count" {
+		t.Fatalf("compiled query binding = %#v", definition.Query)
+	}
+	if err := definition.Validate(); err != nil {
+		t.Fatalf("compiled definition is invalid: %v", err)
+	}
 }
 
 func workspaceGroupYAML(workspace, name, email string) string {

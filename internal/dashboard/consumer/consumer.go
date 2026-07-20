@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
 )
 
 type Kind string
@@ -55,8 +56,7 @@ type ProgressPublisher func(Progress)
 
 type Result struct {
 	Target         Target
-	Visual         dashboard.Visual
-	Table          dashboard.Table
+	Envelope       visualizationir.VisualizationEnvelope
 	FilterOptions  map[string][]dashboard.FilterOption
 	TableMetadata  bool
 	Err            error

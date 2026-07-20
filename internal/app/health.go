@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
-	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
@@ -139,7 +139,7 @@ func metricsMetadataReady(metrics QueryMetrics, workspaceID string) error {
 
 func reportMetadataReady(metrics interface {
 	Pages(string) []dashboard.Page
-}, dashboardID string, report reportdef.Dashboard, model any, ok bool) error {
+}, dashboardID string, report dashboarddefinition.Definition, model any, ok bool) error {
 	if !ok {
 		return fmt.Errorf("default dashboard %q is not available", dashboardID)
 	}

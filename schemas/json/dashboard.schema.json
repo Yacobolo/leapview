@@ -7,46 +7,83 @@
       "additionalProperties": true,
       "type": "object"
     },
-    "#ChartVisual": {
-      "$ref": "#/$defs/%23VisualCommon",
+    "#CartesianPresentation": {
+      "$ref": "#/$defs/%23PresentationCommon",
       "additionalProperties": false,
       "properties": {
-        "encode": {
+        "area": {
+          "type": "boolean"
+        },
+        "data_zoom": {
+          "type": "boolean"
+        },
+        "dual_axis": {
+          "type": "boolean"
+        },
+        "histogram_bins": {
+          "allOf": [
+            {
+              "type": "number"
+            },
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            }
+          ]
+        },
+        "label_position": {
+          "enum": [
+            "automatic",
+            "inside",
+            "outside",
+            "top"
+          ]
+        },
+        "orientation": {
+          "enum": [
+            "horizontal",
+            "vertical"
+          ]
+        },
+        "series_types": {
           "additionalProperties": {
-            "type": "string"
+            "enum": [
+              "line",
+              "area",
+              "bar",
+              "column"
+            ]
           },
           "type": "object"
         },
-        "options": {
-          "$ref": "#/$defs/%23AnyObject"
+        "show_symbols": {
+          "type": "boolean"
+        },
+        "smooth": {
+          "type": "boolean"
+        },
+        "stacked": {
+          "type": "boolean"
+        },
+        "step": {
+          "type": "boolean"
+        },
+        "symbol_size": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "#CartesianVisual": {
+      "$ref": "#/$defs/%23VisualCommon",
+      "additionalProperties": false,
+      "properties": {
+        "presentation": {
+          "$ref": "#/$defs/%23CartesianPresentation"
         },
         "query": {
           "$ref": "#/$defs/%23VisualQuery"
-        },
-        "renderer": {
-          "enum": [
-            "echarts",
-            "html"
-          ]
-        },
-        "renderer_options": {
-          "$ref": "#/$defs/%23AnyObject"
-        },
-        "shape": {
-          "enum": [
-            "category_value",
-            "category_series_value",
-            "category_multi_measure",
-            "category_delta",
-            "single_value",
-            "matrix",
-            "graph",
-            "geo",
-            "ohlc",
-            "distribution",
-            "binned_measure",
-            "hierarchy"
-          ]
         },
         "type": {
           "enum": [
@@ -54,28 +91,51 @@
             "area",
             "bar",
             "column",
-            "pie",
-            "donut",
             "scatter",
-            "funnel",
-            "treemap",
-            "gauge",
             "heatmap",
-            "sankey",
-            "graph",
-            "map",
             "candlestick",
             "boxplot",
             "combo",
             "waterfall",
-            "histogram",
-            "radar",
-            "tree",
-            "sunburst"
+            "histogram"
           ]
         }
       },
       "required": [
+        "query",
+        "type"
+      ],
+      "type": "object"
+    },
+    "#CustomVisual": {
+      "$ref": "#/$defs/%23VisualCommon",
+      "additionalProperties": false,
+      "properties": {
+        "custom": {
+          "additionalProperties": false,
+          "properties": {
+            "engine": {
+              "const": "vega_lite"
+            },
+            "program": {
+              "$ref": "#/$defs/%23AnyObject"
+            }
+          },
+          "required": [
+            "engine",
+            "program"
+          ],
+          "type": "object"
+        },
+        "query": {
+          "$ref": "#/$defs/%23VisualQuery"
+        },
+        "type": {
+          "const": "custom"
+        }
+      },
+      "required": [
+        "custom",
         "query",
         "type"
       ],
@@ -412,6 +472,46 @@
       ],
       "type": "object"
     },
+    "#GeographicVisual": {
+      "$ref": "#/$defs/%23VisualCommon",
+      "additionalProperties": false,
+      "properties": {
+        "geo": {
+          "additionalProperties": false,
+          "properties": {
+            "geometry_asset": {
+              "$ref": "#/$defs/%23Identifier"
+            }
+          },
+          "required": [
+            "geometry_asset"
+          ],
+          "type": "object"
+        },
+        "presentation": {
+          "$ref": "#/$defs/%23PresentationCommon",
+          "additionalProperties": false,
+          "properties": {
+            "roam": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "query": {
+          "$ref": "#/$defs/%23VisualQuery"
+        },
+        "type": {
+          "const": "map"
+        }
+      },
+      "required": [
+        "geo",
+        "query",
+        "type"
+      ],
+      "type": "object"
+    },
     "#HeaderComponent": {
       "$ref": "#/$defs/%23PageComponentCommon",
       "additionalProperties": false,
@@ -422,6 +522,83 @@
       },
       "required": [
         "kind"
+      ],
+      "type": "object"
+    },
+    "#HierarchyPresentation": {
+      "$ref": "#/$defs/%23PresentationCommon",
+      "additionalProperties": false,
+      "properties": {
+        "breadcrumb": {
+          "type": "boolean"
+        },
+        "curveness": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "focus": {
+          "enum": [
+            "none",
+            "adjacency"
+          ]
+        },
+        "initial_depth": {
+          "allOf": [
+            {
+              "type": "number"
+            },
+            {
+              "minimum": 0,
+              "type": "integer"
+            }
+          ]
+        },
+        "layout": {
+          "enum": [
+            "standard",
+            "circular"
+          ]
+        },
+        "node_gap": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "orientation": {
+          "enum": [
+            "horizontal",
+            "vertical"
+          ]
+        },
+        "roam": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "#HierarchyVisual": {
+      "$ref": "#/$defs/%23VisualCommon",
+      "additionalProperties": false,
+      "properties": {
+        "presentation": {
+          "$ref": "#/$defs/%23HierarchyPresentation"
+        },
+        "query": {
+          "$ref": "#/$defs/%23VisualQuery"
+        },
+        "type": {
+          "enum": [
+            "treemap",
+            "sankey",
+            "graph",
+            "tree",
+            "sunburst"
+          ]
+        }
+      },
+      "required": [
+        "query",
+        "type"
       ],
       "type": "object"
     },
@@ -445,14 +622,11 @@
       "$ref": "#/$defs/%23VisualCommon",
       "additionalProperties": false,
       "properties": {
-        "options": {
-          "$ref": "#/$defs/%23AnyObject"
+        "presentation": {
+          "$ref": "#/$defs/%23KPIVisualPresentation"
         },
         "query": {
           "$ref": "#/$defs/%23VisualQuery"
-        },
-        "shape": {
-          "const": "single_value"
         },
         "type": {
           "const": "kpi"
@@ -462,6 +636,30 @@
         "query",
         "type"
       ],
+      "type": "object"
+    },
+    "#KPIVisualPresentation": {
+      "additionalProperties": false,
+      "properties": {
+        "note": {
+          "type": "string"
+        },
+        "thresholds": {
+          "items": {
+            "$ref": "#/$defs/%23Threshold"
+          },
+          "type": "array"
+        },
+        "tone": {
+          "enum": [
+            "neutral",
+            "ink",
+            "success",
+            "warning",
+            "danger"
+          ]
+        }
+      },
       "type": "object"
     },
     "#MatrixVisual": {
@@ -683,6 +881,147 @@
         },
         "type": {
           "const": "pivot"
+        }
+      },
+      "required": [
+        "query",
+        "type"
+      ],
+      "type": "object"
+    },
+    "#PolarPresentation": {
+      "$ref": "#/$defs/%23PresentationCommon",
+      "additionalProperties": false,
+      "properties": {
+        "area": {
+          "type": "boolean"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "progress_width": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "thresholds": {
+          "items": {
+            "$ref": "#/$defs/%23Threshold"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "#PolarVisual": {
+      "$ref": "#/$defs/%23VisualCommon",
+      "additionalProperties": false,
+      "properties": {
+        "presentation": {
+          "$ref": "#/$defs/%23PolarPresentation"
+        },
+        "query": {
+          "$ref": "#/$defs/%23VisualQuery"
+        },
+        "type": {
+          "enum": [
+            "gauge",
+            "radar"
+          ]
+        }
+      },
+      "required": [
+        "query",
+        "type"
+      ],
+      "type": "object"
+    },
+    "#PresentationCommon": {
+      "additionalProperties": false,
+      "properties": {
+        "legend": {
+          "enum": [
+            "hidden",
+            "top",
+            "right",
+            "bottom",
+            "left"
+          ]
+        },
+        "show_labels": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "#ProportionalPresentation": {
+      "$ref": "#/$defs/%23PresentationCommon",
+      "additionalProperties": false,
+      "properties": {
+        "align": {
+          "enum": [
+            "left",
+            "center",
+            "right"
+          ]
+        },
+        "center_label": {
+          "type": "string"
+        },
+        "inner_radius": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "label_position": {
+          "enum": [
+            "automatic",
+            "inside",
+            "outside",
+            "top"
+          ]
+        },
+        "orientation": {
+          "enum": [
+            "horizontal",
+            "vertical"
+          ]
+        },
+        "outer_radius": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "type": "number"
+        },
+        "rose": {
+          "type": "boolean"
+        },
+        "sort": {
+          "enum": [
+            "ascending",
+            "descending"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "#ProportionalVisual": {
+      "$ref": "#/$defs/%23VisualCommon",
+      "additionalProperties": false,
+      "properties": {
+        "presentation": {
+          "$ref": "#/$defs/%23ProportionalPresentation"
+        },
+        "query": {
+          "$ref": "#/$defs/%23VisualQuery"
+        },
+        "type": {
+          "enum": [
+            "pie",
+            "donut",
+            "funnel"
+          ]
         }
       },
       "required": [
@@ -949,7 +1288,7 @@
           },
           "type": "object"
         },
-        "style": {
+        "presentation": {
           "additionalProperties": false,
           "properties": {
             "density": {
@@ -1002,10 +1341,47 @@
       ],
       "type": "object"
     },
+    "#Threshold": {
+      "additionalProperties": false,
+      "properties": {
+        "tone": {
+          "enum": [
+            "neutral",
+            "ink",
+            "success",
+            "warning",
+            "danger"
+          ]
+        },
+        "value": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "tone",
+        "value"
+      ],
+      "type": "object"
+    },
     "#Visual": {
       "anyOf": [
         {
-          "$ref": "#/$defs/%23ChartVisual"
+          "$ref": "#/$defs/%23CartesianVisual"
+        },
+        {
+          "$ref": "#/$defs/%23ProportionalVisual"
+        },
+        {
+          "$ref": "#/$defs/%23HierarchyVisual"
+        },
+        {
+          "$ref": "#/$defs/%23PolarVisual"
+        },
+        {
+          "$ref": "#/$defs/%23GeographicVisual"
+        },
+        {
+          "$ref": "#/$defs/%23CustomVisual"
         },
         {
           "$ref": "#/$defs/%23KPIVisual"
@@ -1024,6 +1400,49 @@
     "#VisualCommon": {
       "additionalProperties": false,
       "properties": {
+        "accessibility": {
+          "additionalProperties": false,
+          "properties": {
+            "announce_changes": {
+              "type": "boolean"
+            },
+            "description": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "data_budget": {
+          "additionalProperties": false,
+          "properties": {
+            "max_rows": {
+              "allOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                }
+              ]
+            },
+            "required_completeness": {
+              "enum": [
+                "complete",
+                "truncated",
+                "partial",
+                "empty"
+              ]
+            }
+          },
+          "type": "object"
+        },
         "description": {
           "type": "string"
         },

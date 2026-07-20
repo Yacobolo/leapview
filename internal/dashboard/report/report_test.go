@@ -8,6 +8,8 @@ import (
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
+	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
 	"gopkg.in/yaml.v3"
 )
 
@@ -22,8 +24,21 @@ func (m *fakeMetrics) DefaultFilters(string) dashboard.Filters {
 	}}
 }
 
-func (m *fakeMetrics) Report(string) (Dashboard, *semanticmodel.Model, bool) {
-	return m.report, &semanticmodel.Model{Name: "model"}, true
+func (m *fakeMetrics) Report(string) (dashboarddefinition.Definition, *semanticmodel.Model, bool) {
+	model := &semanticmodel.Model{Name: "model"}
+	filters := map[string]dashboarddefinition.FilterDefinition{}
+	for id, filter := range m.report.Filters {
+		filters[id] = dashboarddefinition.FilterDefinition{Type: filter.Type, Label: filter.Label, Dimension: filter.Dimension}
+	}
+	visualizations := map[string]visualizationdefinition.Definition{}
+	for id, table := range m.report.Tables {
+		fields := make([]visualizationdefinition.FieldBinding, len(table.DataColumns))
+		if len(fields) == 0 {
+			fields = []visualizationdefinition.FieldBinding{{FieldID: "value", Alias: "value"}}
+		}
+		visualizations[id] = visualizationdefinition.Definition{ID: id, Query: visualizationdefinition.QueryBinding{Kind: visualizationdefinition.QueryDetail, Detail: &visualizationdefinition.DetailQueryBinding{Fields: fields, DefaultSort: []visualizationdefinition.Sort{{FieldID: table.DefaultSort.Key, Direction: table.DefaultSort.Direction}}, Limit: 100}}}
+	}
+	return dashboarddefinition.Definition{ID: m.report.ID, Title: m.report.Title, SemanticModel: "model", Filters: filters, Pages: m.report.Pages, Visualizations: visualizations}, model, true
 }
 
 func (m *fakeMetrics) QueryTablePage(_ context.Context, _, _ string, _ dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {

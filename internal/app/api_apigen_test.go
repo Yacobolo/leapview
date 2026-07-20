@@ -57,8 +57,10 @@ func TestAPIGenUsesTypeSpecV053(t *testing.T) {
 		t.Fatalf("read manifest: %v", err)
 	}
 	manifestText := string(manifest)
-	if !strings.Contains(manifestText, "typespec_dir: typespec") {
-		t.Fatalf("manifest should use TypeSpec source, got:\n%s", manifestText)
+	for _, stagedSource := range []string{"typespec_dir: .apigen/libredash-v1", "typespec_dir: .apigen/ui-signals", "typespec_dir: visualization"} {
+		if !strings.Contains(manifestText, stagedSource) {
+			t.Fatalf("manifest should use isolated TypeSpec source %q, got:\n%s", stagedSource, manifestText)
+		}
 	}
 	if strings.Contains(manifestText, "cue_dir:") {
 		t.Fatalf("manifest should not use cue_dir after APIGen v0.3.0 migration")
@@ -131,7 +133,7 @@ func TestAPIGenOwnsUISignalContracts(t *testing.T) {
 	for _, want := range []string{
 		"name: ui-signals",
 		"kind: contracts",
-		"typespec_dir: signals",
+		"typespec_dir: .",
 		"go_models_out: ../internal/ui/signals/models.gen.go",
 		"ts_out: ../web/generated/signals/index.ts",
 	} {
@@ -224,18 +226,24 @@ func TestAPIGenOwnsUISignalContracts(t *testing.T) {
 	if irDoc.SchemaVersion != "v4" {
 		t.Fatalf("UI signal IR schema_version = %q, want v4", irDoc.SchemaVersion)
 	}
-	if len(irDoc.Contracts) != 75 {
-		t.Fatalf("UI signal IR contracts = %d, want 75", len(irDoc.Contracts))
+	if len(irDoc.Contracts) != 77 {
+		t.Fatalf("UI signal IR contracts = %d, want 77", len(irDoc.Contracts))
 	}
 	foundEnvelopeMetadata := false
+	foundVisualizationEnvelope := false
 	for _, contract := range irDoc.Contracts {
 		if contract.Name == "DashboardEnvelope" && contract.Kind == "ui-envelope" && contract.Extensions["x-libredash-contract-role"] == "envelope" {
 			foundEnvelopeMetadata = true
-			break
+		}
+		if contract.Name == "VisualizationEnvelope" {
+			foundVisualizationEnvelope = true
 		}
 	}
 	if !foundEnvelopeMetadata {
 		t.Fatal("DashboardEnvelope contract metadata was not preserved in IR")
+	}
+	if !foundVisualizationEnvelope {
+		t.Fatal("UI signals do not import the canonical visualization envelope")
 	}
 }
 

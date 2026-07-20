@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	queryauthz "github.com/Yacobolo/libredash/internal/analytics/query/authz"
-	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/dashboard/command"
 	"github.com/Yacobolo/libredash/internal/dashboard/consumer"
 	dashboardstream "github.com/Yacobolo/libredash/internal/dashboard/stream"
@@ -23,7 +22,7 @@ func (m *consumerForwardingMetrics) ExecuteConsumersPage(ctx context.Context, re
 	_, m.governed = dataquery.GovernorFromContext(ctx)
 	dataquery.ObservePhysicalQuery(ctx, dataquery.PhysicalQueryObservation{Count: 1})
 	for _, target := range request.Targets {
-		publish(consumer.Result{Target: target, Visual: dashboard.Visual{ID: target.ID}, Queries: 1})
+		publish(consumer.Result{Target: target, Queries: 1})
 	}
 	return nil
 }

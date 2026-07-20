@@ -750,10 +750,9 @@ test('chart documentation renders every executable variation from its YAML', asy
     expect(articleHeadings.indexOf('About this page')).toBeGreaterThan(articleHeadings.indexOf('API reference'))
     const fieldReference = page.getByRole('table', { name: 'API reference' })
     expect(await fieldReference.getByRole('columnheader').allTextContents()).toEqual(['Field', 'Type', 'Default', 'Allowed values', 'Description'])
-    const stepReference = fieldReference.getByRole('row').filter({ hasText: 'options.step' })
+    const stepReference = fieldReference.getByRole('row').filter({ hasText: 'presentation.step' })
     expect(await stepReference.count()).toBe(1)
-    expect(await stepReference.textContent()).toContain('string | boolean')
-    expect(await stepReference.textContent()).toContain('start')
+    expect(await stepReference.textContent()).toContain('boolean')
     const referenceColors = await page.locator('.site-docs-article').evaluate((article) => {
       const summaryCode = article.querySelector('#site-visual-api-reference + p code')
       const fieldCode = article.querySelector('table[aria-labelledby="site-visual-api-reference"] tbody th code')
@@ -778,8 +777,8 @@ test('chart documentation renders every executable variation from its YAML', asy
     await page.waitForFunction(() => {
       const examples = [...document.querySelectorAll('ld-site-visual-example')] as Array<HTMLElement & { shadowRoot: ShadowRoot }>
       return examples.length === 3 && examples.every((example) => {
-        const visual = example.shadowRoot?.querySelector('ld-echart') as HTMLElement & { chart?: { data?: unknown[] } }
-        return Boolean(visual?.chart?.data?.length)
+        const host = example.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { envelope?: { dataState?: { datasets?: Array<{ rows?: unknown[] }> } } }
+        return Boolean(host?.envelope?.dataState?.datasets?.some((dataset) => dataset.rows?.length))
       })
     })
     expect(await page.locator('ld-site-visual-example').count()).toBe(3)
@@ -787,16 +786,16 @@ test('chart documentation renders every executable variation from its YAML', asy
     expect(await page.locator('ld-site-visual-example').nth(2).getAttribute('example-id')).toBe('revenue_line_step')
     const configurations = await page.locator('.site-docs-article pre code').allTextContents()
     expect(configurations.some((source) => source.includes('visuals:\n  revenue_line:'))).toBe(true)
-    expect(configurations.some((source) => source.includes('shape: category_series_value'))).toBe(true)
-    expect(configurations.some((source) => source.includes('step: middle'))).toBe(true)
+    expect(configurations.every((source) => !source.includes('shape:'))).toBe(true)
+    expect(configurations.some((source) => source.includes('step: true'))).toBe(true)
     const keyFields = await page.locator('.site-visual-key-fields').allTextContents()
     expect(keyFields).toHaveLength(3)
-    expect(keyFields[2]).toContain('options.step')
+    expect(keyFields[2]).toContain('presentation.step')
     await page.waitForFunction(() => document.querySelectorAll('ld-code-block[data-visual-example="revenue_line_step"] .code-block-highlighted-line').length === 3)
     const steppedConfiguration = page.locator('ld-code-block[data-visual-example="revenue_line_step"]')
-    expect(await steppedConfiguration.getAttribute('data-highlighted-fields')).toBe('options.data_zoom,options.show_symbols,options.step')
+    expect(await steppedConfiguration.getAttribute('data-highlighted-fields')).toBe('presentation.data_zoom,presentation.show_symbols,presentation.step')
     expect(await steppedConfiguration.locator('.code-block-highlighted-line').allTextContents()).toEqual([
-      '      step: middle',
+      '      step: true',
       '      show_symbols: false',
       '      data_zoom: true',
     ])
@@ -805,19 +804,19 @@ test('chart documentation renders every executable variation from its YAML', asy
       marker: getComputedStyle(line, '::before').width,
       padding: getComputedStyle(line).paddingInlineStart,
     }))).toEqual({ display: 'inline-block', marker: '4px', padding: '0px' })
-    const stepField = page.getByRole('button', { name: 'Highlight options.step in YAML' })
+    const stepField = page.getByRole('button', { name: 'Highlight presentation.step in YAML' })
     expect(await stepField.count()).toBe(1)
     expect(await stepField.getAttribute('aria-controls')).toBe('visual-example-revenue_line_step-yaml')
     await stepField.focus()
     await page.waitForFunction(() => document.querySelectorAll('ld-code-block[data-visual-example="revenue_line_step"] .code-block-focused-line').length === 1)
-    expect(await steppedConfiguration.locator('.code-block-focused-line').allTextContents()).toEqual(['      step: middle'])
+    expect(await steppedConfiguration.locator('.code-block-focused-line').allTextContents()).toEqual(['      step: true'])
     await stepField.blur()
     await page.waitForFunction(() => document.querySelectorAll('ld-code-block[data-visual-example="revenue_line_step"] .code-block-focused-line').length === 0)
     const stepped = await page.locator('ld-site-visual-example').nth(2).evaluate((element) => {
-      const visual = element.shadowRoot?.querySelector('ld-echart') as HTMLElement & { chart?: { options?: Record<string, unknown> } }
-      return visual?.chart?.options?.step
+      const host = element.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { envelope?: { spec?: { presentation?: Record<string, unknown> } } }
+      return host?.envelope?.spec?.presentation?.step
     })
-    expect(stepped).toBe('middle')
+    expect(stepped).toBe(true)
   } finally {
     await page.close()
   }
@@ -848,10 +847,9 @@ test('every visual documentation page mounts its generated production payloads',
         ({ count }) => {
           const examples = [...document.querySelectorAll('ld-site-visual-example')]
           return examples.length === count && examples.every((example) => {
-            const visual = example.shadowRoot?.querySelector('ld-echart') as HTMLElement & { chart?: { data?: unknown[] } } | null
-            const kpi = example.shadowRoot?.querySelector('ld-kpi-card') as HTMLElement & { visual?: { data?: unknown[] } } | null
-            const table = example.shadowRoot?.querySelector('ld-report-table') as HTMLElement & { table?: { blocks?: Record<string, { rows?: unknown[] }> } } | null
-            return Boolean(visual?.chart?.data?.length || kpi?.visual?.data?.length || Object.values(table?.table?.blocks ?? {}).some((block) => block.rows?.length))
+            const host = example.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { envelope?: { dataState?: { datasets?: Array<{ rows?: unknown[] }>; blocks?: Record<string, { rows?: unknown[] }> } } } | null
+            const state = host?.envelope?.dataState
+            return Boolean(state?.datasets?.some((dataset) => dataset.rows?.length) || Object.values(state?.blocks ?? {}).some((block) => block.rows?.length))
           })
         },
         { count: expected },
@@ -862,33 +860,35 @@ test('every visual documentation page mounts its generated production payloads',
     await page.goto(`${baseURL}/docs/visuals/gauge`)
     await page.waitForFunction(() => document.querySelectorAll('ld-site-visual-example').length === 3)
     const thresholds = await page.locator('ld-site-visual-example').nth(2).evaluate((element) => {
-      const visual = element.shadowRoot?.querySelector('ld-echart') as HTMLElement & { chart?: { options?: { thresholds?: unknown[] } } }
-      return visual.chart?.options?.thresholds?.length
+      const host = element.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { envelope?: { spec?: { presentation?: { thresholds?: unknown[] } } } }
+      return host.envelope?.spec?.presentation?.thresholds?.length
     })
     expect(thresholds).toBe(3)
 
     await page.goto(`${baseURL}/docs/visuals/map`)
     await page.waitForFunction(() => document.querySelectorAll('ld-site-visual-example').length === 3)
     expect(await page.locator('ld-site-visual-example').first().evaluate((element) => {
-      const visual = element.shadowRoot?.querySelector('ld-echart') as HTMLElement & { chart?: { shape?: string; options?: { map?: string }; data?: Array<{ name?: string }> } }
-      return [visual.chart?.shape, visual.chart?.options?.map, visual.chart?.data?.length, new Set(visual.chart?.data?.map((row) => row.name)).size]
-    })).toEqual(['geo', 'brazil_states', 27, 27])
+      const host = element.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { envelope?: any }
+      const envelope = host.envelope
+      const rows = envelope?.dataState?.datasets?.[0]?.rows ?? []
+      return [envelope?.spec?.kind, envelope?.spec?.layers?.[0]?.geometry?.id, rows.length, new Set(rows.map((row: unknown[]) => row[0])).size]
+    })).toEqual(['geographic', 'br-states-ibge', 27, 27])
     await page.waitForFunction(() => {
       const example = document.querySelector('ld-site-visual-example') as HTMLElement & { shadowRoot: ShadowRoot }
-      const chart = example?.shadowRoot?.querySelector('ld-echart') as HTMLElement & { shadowRoot: ShadowRoot }
-      return Boolean(chart?.shadowRoot?.querySelector('.canvas[aria-label], .canvas [aria-label]'))
+      const host = example?.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { shadowRoot: ShadowRoot }
+      return Boolean(host?.shadowRoot?.querySelector('.renderer[aria-label]'))
     })
     expect(await page.locator('ld-site-visual-example').first().evaluate((element) => {
-      const chart = element.shadowRoot?.querySelector('ld-echart') as HTMLElement & { shadowRoot: ShadowRoot }
-      return chart?.shadowRoot?.querySelector('.canvas[aria-label], .canvas [aria-label]')?.getAttribute('aria-label')
+      const host = element.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { shadowRoot: ShadowRoot }
+      return host?.shadowRoot?.querySelector('.renderer[aria-label]')?.getAttribute('aria-label')
     })).not.toContain('NaN')
 
     await page.goto(`${baseURL}/docs/visuals/combo`)
     await page.waitForFunction(() => document.querySelectorAll('ld-site-visual-example').length === 3)
     expect(await page.locator('ld-site-visual-example').first().evaluate((element) => {
-      const visual = element.shadowRoot?.querySelector('ld-echart') as HTMLElement & { chart?: { shape?: string; data?: Array<{ series?: string }> } }
-      return [visual.chart?.shape, new Set(visual.chart?.data?.map((row) => row.series)).size]
-    })).toEqual(['category_multi_measure', 2])
+      const host = element.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { envelope?: any }
+      return [host.envelope?.spec?.kind, host.envelope?.spec?.presentation?.comboSeries?.length]
+    })).toEqual(['cartesian', 2])
   } finally {
     await page.close()
   }
@@ -1590,27 +1590,26 @@ test('visual showcase renders every supported visual type', async () => {
     await page.goto(`${baseURL}/visuals`)
     await page.waitForFunction(() => {
       const showcase = document.querySelector('ld-site-visual-showcase') as HTMLElement & { shadowRoot: ShadowRoot }
-      return showcase?.shadowRoot?.querySelectorAll('.chart').length === 23 && showcase?.shadowRoot?.querySelectorAll('ld-report-table').length === 3
+      return showcase?.shadowRoot?.querySelectorAll('.chart').length === 23 && showcase?.shadowRoot?.querySelectorAll('.table-card ld-visualization-host').length === 3
     })
     const visuals = await page.locator('ld-site-visual-showcase').evaluate((element) => {
       const root = element.shadowRoot
       return {
         cards: root?.querySelectorAll('.chart').length,
-        charts: root?.querySelectorAll('ld-echart').length,
-        kpis: root?.querySelectorAll('ld-kpi-card').length,
+        hosts: root?.querySelectorAll('.chart ld-visualization-host').length,
+        kpis: Array.from(root?.querySelectorAll('.chart ld-visualization-host') ?? []).filter((host: any) => host.envelope?.spec?.kind === 'kpi').length,
       }
     })
-    expect(visuals).toEqual({ cards: 23, charts: 22, kpis: 1 })
-    await page.getByRole('heading', { name: 'Category and status hierarchy' }).waitFor({ state: 'visible' })
+    expect(visuals).toEqual({ cards: 23, hosts: 23, kpis: 1 })
     await page.waitForFunction(() => {
       const showcase = document.querySelector('ld-site-visual-showcase') as HTMLElement & { shadowRoot: ShadowRoot }
-      return showcase?.shadowRoot?.querySelectorAll('ld-report-table').length === 3
+      return showcase?.shadowRoot?.querySelectorAll('.table-card ld-visualization-host').length === 3
     })
-    await page.waitForFunction(() => Array.from(document.querySelector('ld-site-visual-showcase')?.shadowRoot?.querySelectorAll('ld-report-table') ?? []).every((table) => Boolean(table.shadowRoot?.querySelector('h2'))))
+    await page.waitForFunction(() => Array.from(document.querySelector('ld-site-visual-showcase')?.shadowRoot?.querySelectorAll('.table-card ld-visualization-host') ?? []).every((host: any) => Boolean(host.envelope?.spec?.title) && !host.shadowRoot?.querySelector('[role="alert"]')))
     const tables = await page.locator('ld-site-visual-showcase').evaluate((element) => ({
       cards: element.shadowRoot?.querySelectorAll('.table-card').length,
-      tables: element.shadowRoot?.querySelectorAll('ld-report-table').length,
-      titles: Array.from(element.shadowRoot?.querySelectorAll('ld-report-table') ?? []).map((table: any) => table.table?.title),
+      tables: element.shadowRoot?.querySelectorAll('.table-card ld-visualization-host').length,
+      titles: Array.from(element.shadowRoot?.querySelectorAll('.table-card ld-visualization-host') ?? []).map((host: any) => host.envelope?.spec?.title),
     }))
     expect(tables.cards).toBe(3)
     expect(tables.tables).toBe(3)

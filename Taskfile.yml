@@ -158,6 +158,7 @@ tasks:
       - task: api:generate
       - task: ui-signals:generate
       - task: schema:generate
+      - task: visualization-ir:generate
       - task: cli-docs:generate
       - task: node:deps
       - task: docs:render
@@ -303,6 +304,8 @@ tasks:
       - Taskfile.yml
       - api/apigen.yaml
       - api/typespec/**/*.tsp
+      - api/visualization/**/*.tsp
+      - internal/tools/apigenstage/**/*.go
       - internal/tools/openapidocgen/**/*.go
     generates:
       - api/gen/json-ir.json
@@ -314,6 +317,7 @@ tasks:
       - docs/api/openapi.yaml
       - docs/api/operations.json
     cmds:
+      - go run ./internal/tools/apigenstage -target libredash-v1
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.5.3 typespec-compile -manifest api/apigen.yaml -target libredash-v1
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.5.3 all -manifest api/apigen.yaml -target libredash-v1
       - go run ./internal/tools/openapidocgen
@@ -350,15 +354,44 @@ tasks:
       - Taskfile.yml
       - api/apigen.yaml
       - api/signals/**/*.tsp
+      - api/visualization/**/*.tsp
+      - internal/tools/apigenstage/**/*.go
       - internal/tools/uisignalspostprocess/**/*.go
     generates:
       - api/gen/ui-signals-ir.json
       - internal/ui/signals/models.gen.go
       - web/generated/signals/index.ts
     cmds:
+      - go run ./internal/tools/apigenstage -target ui-signals
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.5.3 typespec-compile -manifest api/apigen.yaml -target ui-signals
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.5.3 all -manifest api/apigen.yaml -target ui-signals
       - go run ./internal/tools/uisignalspostprocess
+
+  visualization-ir:generate:
+    desc: Generate renderer-independent visualization IR contracts from TypeSpec
+    deps:
+      - node:deps
+    method: checksum
+    sources:
+      - Taskfile.yml
+      - api/apigen.yaml
+      - api/visualization/**/*.tsp
+      - scripts/generate_visualization_validator.ts
+      - scripts/generate_vega_lite_validator.ts
+      - internal/tools/uisignalspostprocess/**/*.go
+    generates:
+      - api/gen/visualization-ir.json
+      - internal/visualization/ir/models.gen.go
+      - web/generated/visualization/index.ts
+      - web/generated/visualization/validate.ts
+      - web/generated/vega-lite/validate.ts
+      - api/gen/visualization.schema.json
+    cmds:
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.5.3 typespec-compile -manifest api/apigen.yaml -target visualization-ir
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.5.3 all -manifest api/apigen.yaml -target visualization-ir
+      - go run ./internal/tools/uisignalspostprocess -go-models internal/visualization/ir/models.gen.go -typescript=
+      - bun scripts/generate_visualization_validator.ts
+      - bun scripts/generate_vega_lite_validator.ts
 
   test:
     desc: Run tests
@@ -371,6 +404,7 @@ tasks:
       - bun run test:theme
       - bun run test:site
       - bun run test:datastar-lit
+      - bun run test:visualization-ir
       - bun run test:app-shell
       - bun run test:interaction-selection
       - bun run test:movielens-performance-harness

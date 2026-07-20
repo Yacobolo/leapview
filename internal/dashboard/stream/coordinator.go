@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/dataquery"
+	visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
 )
 
 type RefreshEventType string
@@ -31,6 +33,7 @@ type RefreshEvent struct {
 	Type            RefreshEventType
 	RefreshID       string
 	Generation      uint64
+	DataRevision    int64
 	Command         string
 	Filters         dashboard.Filters
 	Targets         []string
@@ -101,6 +104,7 @@ type Coordinator struct {
 	workCancel context.CancelFunc
 	filters    dashboard.Filters
 	generation uint64
+	revisions  map[string]int64
 	closed     bool
 	publish    EventPublisher
 	started    StartObserver
@@ -130,10 +134,11 @@ func NewCoordinator(parent context.Context, publish EventPublisher) *Coordinator
 	}
 	ctx, cancel := context.WithCancel(parent)
 	return &Coordinator{
-		ctx:     ctx,
-		cancel:  cancel,
-		filters: cloneFilters(dashboard.Filters{}.WithDefaults()),
-		publish: publish,
+		ctx:       ctx,
+		cancel:    cancel,
+		filters:   cloneFilters(dashboard.Filters{}.WithDefaults()),
+		revisions: map[string]int64{},
+		publish:   publish,
 	}
 }
 
@@ -297,6 +302,23 @@ func (c *Coordinator) emitCurrent(refresh Refresh, event RefreshEvent) bool {
 	}
 	event.RefreshID = refresh.ID
 	event.Generation = refresh.Generation
+	if event.Target != "" && carriesVisualizationData(event.Type) {
+		if refresh.Generation > math.MaxInt64 {
+			event.Type, event.Err = RefreshEventTargetError, fmt.Errorf("visualization stream generation overflow")
+		} else if envelope, ok := event.Value.(visualizationir.VisualizationEnvelope); !ok {
+			event.Type, event.Err = RefreshEventTargetError, fmt.Errorf("visualization %q produced invalid envelope value %T", event.Target, event.Value)
+		} else {
+			nextRevision := c.revisions[event.Target] + 1
+			revised, err := visualizationir.WithStreamRevision(envelope, nextRevision, int64(refresh.Generation))
+			if err != nil {
+				event.Type, event.Err = RefreshEventTargetError, fmt.Errorf("visualization %q envelope: %w", event.Target, err)
+			} else {
+				c.revisions[event.Target] = nextRevision
+				event.DataRevision = nextRevision
+				event.Value = revised
+			}
+		}
+	}
 	if event.Command == "" {
 		event.Command = refresh.Command
 	}
@@ -357,6 +379,15 @@ func (c *Coordinator) emitCurrent(refresh Refresh, event RefreshEvent) bool {
 		c.publish(event)
 	}
 	return true
+}
+
+func carriesVisualizationData(eventType RefreshEventType) bool {
+	switch eventType {
+	case RefreshEventVisual, RefreshEventTable, RefreshEventTableMetadata:
+		return true
+	default:
+		return false
+	}
 }
 
 func progressRegresses(current, next *float64) bool {

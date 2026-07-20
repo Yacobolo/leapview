@@ -9,8 +9,11 @@ import (
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dashboard/reportmodel"
+	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
+	visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
 )
 
 func TestSemanticFiltersTranslateConformedAndFactLocalSelections(t *testing.T) {
@@ -112,7 +115,7 @@ func TestSemanticFiltersEmitConformedHalfOpenTimeRange(t *testing.T) {
 
 func TestSemanticFiltersPreserveOROfCompositeEntries(t *testing.T) {
 	report, model := selectionFilterFixture()
-	report.Visuals["composite"] = reportdef.Visual{
+	report.Visualizations["composite"] = compiledSelectionVisual("composite", reportdef.Visual{
 		Query: reportdef.VisualQuery{
 			Dimensions: []reportdef.FieldRef{{Field: "release_decade", Alias: "label"}, {Field: "activity_date", Alias: "series"}},
 			Measures:   []reportdef.FieldRef{{Field: "rating_count", Alias: "value"}},
@@ -121,7 +124,7 @@ func TestSemanticFiltersPreserveOROfCompositeEntries(t *testing.T) {
 			Mappings: []reportdef.SelectionMapping{{Field: "release_decade", Value: "label"}, {Field: "activity_date", Value: "series"}},
 			Targets:  []string{"cross"},
 		}},
-	}
+	})
 	selection := dashboard.InteractionSelection{
 		SourceKind: "visual", SourceID: "composite", InteractionKind: "point_selection",
 		Entries: []dashboard.InteractionSelectionEntry{
@@ -170,7 +173,7 @@ func TestSemanticFiltersRejectStoredSelectionWithOmittedJSONValue(t *testing.T) 
 	}
 }
 
-func selectionFilterFixture() (*reportdef.Dashboard, *semanticmodel.Model) {
+func selectionFilterFixture() (*dashboarddefinition.Definition, *semanticmodel.Model) {
 	model := &semanticmodel.Model{
 		Tables: map[string]semanticmodel.Table{
 			"ratings": {Dimensions: map[string]semanticmodel.MetricDimension{"rating_bucket": {Type: "string"}, "rated_at": {Type: "timestamp"}, "release_decade": {Type: "string"}}},
@@ -191,7 +194,58 @@ func selectionFilterFixture() (*reportdef.Dashboard, *semanticmodel.Model) {
 		},
 		Tables: map[string]reportdef.TableVisual{"plain_table": {Query: reportdef.TableQuery{Table: "ratings"}}},
 	}
-	return report, model
+	return compiledSelectionDashboard(report), model
+}
+
+func compiledSelectionDashboard(authored *reportdef.Dashboard) *dashboarddefinition.Definition {
+	visualizations := map[string]visualizationdefinition.Definition{}
+	for id, visual := range authored.Visuals {
+		visualizations[id] = compiledSelectionVisual(id, visual)
+	}
+	for id, table := range authored.Tables {
+		visualizations[id] = visualizationdefinition.Definition{ID: id, Query: visualizationdefinition.QueryBinding{Kind: visualizationdefinition.QueryDetail, Detail: &visualizationdefinition.DetailQueryBinding{TableID: table.Query.Table}}}
+	}
+	return &dashboarddefinition.Definition{Visualizations: visualizations}
+}
+
+func compiledSelectionVisual(id string, authored reportdef.Visual) visualizationdefinition.Definition {
+	dimensions := make([]visualizationdefinition.FieldBinding, len(authored.Query.Dimensions))
+	fields := make([]visualizationir.VisualizationField, 0, len(dimensions)+1)
+	for index, field := range authored.Query.Dimensions {
+		dimensions[index] = visualizationdefinition.FieldBinding{FieldID: field.Field, Alias: field.Alias}
+		fields = append(fields, visualizationir.VisualizationField{ID: field.Alias, Role: visualizationir.VisualizationFieldRoleDimension, DataType: visualizationir.VisualizationDataTypeString, Label: field.Alias})
+	}
+	var timeBinding *visualizationdefinition.TimeBinding
+	if authored.Query.Time.Field != "" {
+		timeBinding = &visualizationdefinition.TimeBinding{FieldID: authored.Query.Time.Field, Alias: authored.Query.Time.Alias, Grain: authored.Query.Time.Grain}
+		fields = append(fields, visualizationir.VisualizationField{ID: authored.Query.Time.Alias, Role: visualizationir.VisualizationFieldRoleDimension, DataType: visualizationir.VisualizationDataTypeString, Label: authored.Query.Time.Alias})
+	}
+	measures := make([]visualizationdefinition.FieldBinding, len(authored.Query.Measures))
+	for index, field := range authored.Query.Measures {
+		alias := field.Alias
+		if alias == "" {
+			alias = "value"
+		}
+		measures[index] = visualizationdefinition.FieldBinding{FieldID: field.Field, Alias: alias}
+	}
+	interactions := []visualizationir.VisualizationInteraction{}
+	if selection := authored.Interaction.PointSelection; len(selection.Mappings) > 0 {
+		mappings := make([]visualizationir.VisualizationInteractionMapping, len(selection.Mappings))
+		for index, mapping := range selection.Mappings {
+			item := visualizationir.VisualizationInteractionMapping{Source: visualizationir.VisualizationFieldRef{Dataset: "primary", Field: mapping.Value}, TargetFieldID: mapping.Field}
+			if mapping.Fact != "" {
+				item.TargetFactID = &mapping.Fact
+			}
+			if mapping.Grain != "" {
+				item.Grain = &mapping.Grain
+			}
+			mappings[index] = item
+		}
+		interactions = append(interactions, visualizationir.VisualizationInteraction{ID: "point_selection", Kind: visualizationir.VisualizationInteractionKindSelect, Mappings: mappings, Targets: selection.Targets, Mode: visualizationir.VisualizationSelectionModeSingle, RequiresStableIdentity: true})
+	}
+	base := visualizationir.VisualizationSpecBase{Kind: "cartesian", Title: id, Datasets: []visualizationir.VisualizationDatasetSchema{{ID: "primary", Fields: fields}}, Interactions: interactions}
+	spec := visualizationir.VisualizationSpec{Value: &visualizationir.CartesianVisualizationSpec{VisualizationSpecBase: base, Kind: "cartesian"}}
+	return visualizationdefinition.Definition{ID: id, Spec: spec, Query: visualizationdefinition.QueryBinding{Kind: visualizationdefinition.QueryAggregate, Aggregate: &visualizationdefinition.AggregateQueryBinding{Dimensions: dimensions, Measures: measures, Time: timeBinding, Limit: 100}}}
 }
 
 func selectionFilterVisual(dimensions []reportdef.FieldRef, queryTime reportdef.QueryTime, mappings []reportdef.SelectionMapping) reportdef.Visual {

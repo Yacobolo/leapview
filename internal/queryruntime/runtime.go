@@ -6,8 +6,10 @@ import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/dashboard/consumer"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dataquery"
+	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
 )
 
 type Metrics interface {
@@ -15,7 +17,8 @@ type Metrics interface {
 	Catalog() dashboard.Catalog
 	DefaultDashboardID() string
 	ModelIDForDashboard(dashboardID string) string
-	Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool)
+	Report(dashboardID string) (dashboarddefinition.Definition, *semanticmodel.Model, bool)
+	VisualizationDefinition(dashboardID, visualID string) (visualizationdefinition.Definition, bool)
 	SemanticModel(modelID string) (*semanticmodel.Model, bool)
 	DefaultFilters(dashboardID string) dashboard.Filters
 	NormalizeTableRequest(dashboardID string, request dashboard.TableRequest) dashboard.TableRequest

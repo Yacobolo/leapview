@@ -6,8 +6,10 @@ import (
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
+	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dataquery"
+	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
@@ -32,11 +34,18 @@ func (m multiWorkspaceMetrics) ModelIDForDashboard(dashboardID string) string {
 	return ""
 }
 
-func (m multiWorkspaceMetrics) Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool) {
+func (m multiWorkspaceMetrics) Report(dashboardID string) (dashboarddefinition.Definition, *semanticmodel.Model, bool) {
 	if metrics := m.defaultMetrics(); metrics != nil {
 		return metrics.Report(dashboardID)
 	}
-	return reportdef.Dashboard{}, nil, false
+	return dashboarddefinition.Definition{}, nil, false
+}
+
+func (m multiWorkspaceMetrics) VisualizationDefinition(dashboardID, visualID string) (visualizationdefinition.Definition, bool) {
+	if metrics := m.defaultMetrics(); metrics != nil {
+		return metrics.VisualizationDefinition(dashboardID, visualID)
+	}
+	return visualizationdefinition.Definition{}, false
 }
 
 func (m multiWorkspaceMetrics) SemanticModel(modelID string) (*semanticmodel.Model, bool) {
@@ -153,11 +162,18 @@ func (m *dynamicRuntimeMetrics) ModelIDForDashboard(dashboardID string) string {
 	return ""
 }
 
-func (m *dynamicRuntimeMetrics) Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool) {
+func (m *dynamicRuntimeMetrics) Report(dashboardID string) (dashboarddefinition.Definition, *semanticmodel.Model, bool) {
 	if metrics := m.defaultMetrics(); metrics != nil {
 		return metrics.Report(dashboardID)
 	}
-	return reportdef.Dashboard{}, nil, false
+	return dashboarddefinition.Definition{}, nil, false
+}
+
+func (m *dynamicRuntimeMetrics) VisualizationDefinition(dashboardID, visualID string) (visualizationdefinition.Definition, bool) {
+	if metrics := m.defaultMetrics(); metrics != nil {
+		return metrics.VisualizationDefinition(dashboardID, visualID)
+	}
+	return visualizationdefinition.Definition{}, false
 }
 
 func (m *dynamicRuntimeMetrics) SemanticModel(modelID string) (*semanticmodel.Model, bool) {

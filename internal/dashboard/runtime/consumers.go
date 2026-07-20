@@ -11,8 +11,9 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/dashboard/consumer"
-	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dataquery"
+	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
+	visualizationruntime "github.com/Yacobolo/libredash/internal/visualization/runtime"
 )
 
 func (m *Service) ExecuteConsumersPage(ctx context.Context, request consumer.Request, publish consumer.Publisher) error {
@@ -44,11 +45,15 @@ func (s *QueryService) ExecuteConsumersPage(ctx context.Context, request consume
 			if !pageVisuals[target.ID] {
 				return fmt.Errorf("visual %q is not on page %q", target.ID, page.ID)
 			}
-			visual, ok := report.Visuals[target.ID]
+			definition, ok := report.Visualizations[target.ID]
 			if !ok {
 				return fmt.Errorf("unknown visual %q", target.ID)
 			}
-			aggregate, compileErr := s.snapshots.visuals.bundleAggregateRequest(ctx, runtime, report, request.Filters, target.ID, visual)
+			visual, err := newVisualPlan(definition)
+			if err != nil {
+				return err
+			}
+			aggregate, compileErr := s.visualizations.bundleAggregateRequest(ctx, runtime, report, request.Filters, target.ID, visual)
 			if compileErr == nil {
 				item.Query = reportAggregateDataQuery(report.SemanticModel, aggregate)
 			} else if !dataquery.IsBundleIncompatible(compileErr) {
@@ -59,14 +64,14 @@ func (s *QueryService) ExecuteConsumersPage(ctx context.Context, request consume
 				return fmt.Errorf("filter %q is not on page %q", target.ID, page.ID)
 			}
 		case consumer.KindTable:
-			table, ok := report.Tables[target.ID]
+			table, ok := report.Visualizations[target.ID]
 			if !ok {
 				return fmt.Errorf("unknown table %q", target.ID)
 			}
 			if !pageTables[target.ID] {
 				return fmt.Errorf("table %q is not on page %q", target.ID, page.ID)
 			}
-			item.Target.ExactCardinality = table.CardinalityOrDefault() == reportdef.TableCardinalityExact
+			item.Target.ExactCardinality = table.Query.Kind == visualizationdefinition.QueryMatrix || table.Query.Kind == visualizationdefinition.QueryPivot
 		default:
 			return fmt.Errorf("unknown consumer kind %q", target.Kind)
 		}
@@ -220,22 +225,33 @@ func (s *QueryService) executeVisualConsumerJob(ctx context.Context, request con
 		if job.Strategy == consumer.StrategyBatch || dataquery.IsBundleIncompatible(err) || errors.As(err, &branchErr) {
 			for _, query := range job.Queries {
 				visual, queryErr := s.snapshots.queryVisualPage(ctx, request.DashboardID, request.PageID, request.Filters, query.Target.ID)
-				publish(consumer.Result{Target: query.Target, Visual: visual, Err: queryErr, Duration: time.Since(startedAt)})
+				definition, _ := s.snapshots.reports.VisualizationDefinition(request.DashboardID, query.Target.ID)
+				envelope, envelopeErr := visualizationruntime.VisualEnvelopeFromDefinition(definition, visual, 0, 0)
+				publish(consumer.Result{Target: query.Target, Envelope: envelope, Err: errors.Join(queryErr, envelopeErr), Duration: time.Since(startedAt)})
 			}
 			return
 		}
 	}
 	for _, query := range job.Queries {
-		publish(consumer.Result{Target: query.Target, Visual: visuals[query.Target.ID], Err: err, Duration: time.Since(startedAt)})
+		definition, _ := s.snapshots.reports.VisualizationDefinition(request.DashboardID, query.Target.ID)
+		envelope, envelopeErr := visualizationruntime.VisualEnvelopeFromDefinition(definition, visuals[query.Target.ID], 0, 0)
+		publish(consumer.Result{Target: query.Target, Envelope: envelope, Err: errors.Join(err, envelopeErr), Duration: time.Since(startedAt)})
 	}
 }
 
 func (s *QueryService) executeTableConsumer(ctx context.Context, request consumer.Request, target consumer.Target, startedAt time.Time, publish consumer.Publisher) {
-	table, err := s.tables.queryTableRowsPage(ctx, request.DashboardID, request.PageID, request.Filters, target.TableRequest)
+	definition, _ := s.snapshots.reports.VisualizationDefinition(request.DashboardID, target.ID)
+	table, err := s.visualizations.queryTableRowsPage(ctx, request.DashboardID, request.PageID, request.Filters, target.TableRequest)
 	if err == nil && table.Error != "" {
 		err = errors.New(table.Error)
 	}
-	if err != nil || !publish(consumer.Result{Target: target, Table: table, Err: err, Duration: time.Since(startedAt)}) {
+	envelope, envelopeErr := visualizationruntime.TableEnvelopeFromDefinition(definition, table, 0, 0)
+	err = errors.Join(err, envelopeErr)
+	if err != nil {
+		publish(consumer.Result{Target: target, Err: err, Duration: time.Since(startedAt)})
+		return
+	}
+	if !publish(consumer.Result{Target: target, Envelope: envelope, Duration: time.Since(startedAt)}) {
 		return
 	}
 	defaults := target.TableRequest.WithDefaults()
@@ -243,7 +259,7 @@ func (s *QueryService) executeTableConsumer(ctx context.Context, request consume
 	if totalKnown || !consumerTableNeedsExactCount(request.Command, defaults, target.ExactCardinality) {
 		return
 	}
-	total, err := s.tables.queryTableCountPage(ctx, request.DashboardID, request.PageID, request.Filters, target.TableRequest)
+	total, err := s.visualizations.queryTableCountPage(ctx, request.DashboardID, request.PageID, request.Filters, target.TableRequest)
 	if err != nil {
 		if ctx.Err() == nil {
 			publish(consumer.Result{Target: target, Err: err, TableMetadata: true})
@@ -251,7 +267,8 @@ func (s *QueryService) executeTableConsumer(ctx context.Context, request consume
 		return
 	}
 	applyTableTotal(&table, total)
-	publish(consumer.Result{Target: target, Table: table, TableMetadata: true})
+	envelope, err = visualizationruntime.TableEnvelopeFromDefinition(definition, table, 0, 0)
+	publish(consumer.Result{Target: target, Envelope: envelope, Err: err, TableMetadata: true})
 }
 
 func consumerTableNeedsExactCount(command string, request dashboard.TableRequest, exact bool) bool {

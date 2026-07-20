@@ -73,17 +73,84 @@ type FilterValues struct {
 }
 
 type Visual struct {
-	Title           string            `yaml:"title"`
-	Description     string            `yaml:"description"`
-	Kind            string            `yaml:"kind"`
-	Shape           string            `yaml:"shape"`
-	Renderer        string            `yaml:"renderer"`
-	Type            string            `yaml:"type"`
-	Query           VisualQuery       `yaml:"query"`
-	Options         map[string]any    `yaml:"options"`
-	RendererOptions map[string]any    `yaml:"renderer_options"`
-	Interaction     Interaction       `yaml:"interaction"`
-	Encode          map[string]string `yaml:"encode"`
+	Title           string              `yaml:"title"`
+	Description     string              `yaml:"description"`
+	Kind            string              `yaml:"-" json:"-"`
+	Shape           string              `yaml:"-" json:"-"`
+	Renderer        string              `yaml:"-" json:"-"`
+	Type            string              `yaml:"type"`
+	Query           VisualQuery         `yaml:"query"`
+	Presentation    VisualPresentation  `yaml:"presentation" json:"presentation"`
+	Accessibility   VisualAccessibility `yaml:"accessibility" json:"accessibility"`
+	DataBudget      VisualDataBudget    `yaml:"data_budget" json:"dataBudget"`
+	Geo             VisualGeo           `yaml:"geo" json:"geo"`
+	Custom          VisualCustom        `yaml:"custom" json:"custom"`
+	Options         map[string]any      `yaml:"-" json:"-"`
+	RendererOptions map[string]any      `yaml:"-" json:"-"`
+	Interaction     Interaction         `yaml:"interaction"`
+	Encode          map[string]string   `yaml:"-" json:"-"`
+}
+
+type VisualPresentation struct {
+	Legend        string            `yaml:"legend" json:"legend,omitempty"`
+	ShowLabels    bool              `yaml:"show_labels" json:"showLabels,omitempty"`
+	Stacked       bool              `yaml:"stacked" json:"stacked,omitempty"`
+	Smooth        bool              `yaml:"smooth" json:"smooth,omitempty"`
+	ShowSymbols   *bool             `yaml:"show_symbols" json:"showSymbols,omitempty"`
+	DataZoom      bool              `yaml:"data_zoom" json:"dataZoom,omitempty"`
+	Area          *bool             `yaml:"area" json:"area,omitempty"`
+	Step          bool              `yaml:"step" json:"step,omitempty"`
+	Orientation   string            `yaml:"orientation" json:"orientation,omitempty"`
+	LabelPosition string            `yaml:"label_position" json:"labelPosition,omitempty"`
+	SymbolSize    float64           `yaml:"symbol_size" json:"symbolSize,omitempty"`
+	HistogramBins int               `yaml:"histogram_bins" json:"histogramBins,omitempty"`
+	SeriesTypes   map[string]string `yaml:"series_types" json:"seriesTypes,omitempty"`
+	DualAxis      bool              `yaml:"dual_axis" json:"dualAxis,omitempty"`
+	Rose          bool              `yaml:"rose" json:"rose,omitempty"`
+	CenterLabel   string            `yaml:"center_label" json:"centerLabel,omitempty"`
+	InnerRadius   float64           `yaml:"inner_radius" json:"innerRadius,omitempty"`
+	OuterRadius   float64           `yaml:"outer_radius" json:"outerRadius,omitempty"`
+	Align         string            `yaml:"align" json:"align,omitempty"`
+	Sort          string            `yaml:"sort" json:"sort,omitempty"`
+	InitialDepth  int               `yaml:"initial_depth" json:"initialDepth,omitempty"`
+	Roam          bool              `yaml:"roam" json:"roam,omitempty"`
+	Layout        string            `yaml:"layout" json:"layout,omitempty"`
+	Breadcrumb    *bool             `yaml:"breadcrumb" json:"breadcrumb,omitempty"`
+	NodeGap       float64           `yaml:"node_gap" json:"nodeGap,omitempty"`
+	Curveness     float64           `yaml:"curveness" json:"curveness,omitempty"`
+	Focus         string            `yaml:"focus" json:"focus,omitempty"`
+	Minimum       *float64          `yaml:"minimum" json:"minimum,omitempty"`
+	Maximum       *float64          `yaml:"maximum" json:"maximum,omitempty"`
+	ProgressWidth float64           `yaml:"progress_width" json:"progressWidth,omitempty"`
+	Thresholds    []VisualThreshold `yaml:"thresholds" json:"thresholds,omitempty"`
+	Note          string            `yaml:"note" json:"note,omitempty"`
+	Tone          string            `yaml:"tone" json:"tone,omitempty"`
+}
+
+type VisualThreshold struct {
+	Value float64 `yaml:"value" json:"value"`
+	Tone  string  `yaml:"tone" json:"tone"`
+}
+
+type VisualAccessibility struct {
+	Title           string `yaml:"title"`
+	Description     string `yaml:"description"`
+	Summary         string `yaml:"summary"`
+	AnnounceChanges bool   `yaml:"announce_changes"`
+}
+
+type VisualDataBudget struct {
+	MaxRows              int    `yaml:"max_rows"`
+	RequiredCompleteness string `yaml:"required_completeness"`
+}
+
+type VisualGeo struct {
+	GeometryAsset string `yaml:"geometry_asset"`
+}
+
+type VisualCustom struct {
+	Engine  string         `yaml:"engine"`
+	Program map[string]any `yaml:"program"`
 }
 
 type VisualQuery struct {
@@ -356,7 +423,7 @@ type TableVisual struct {
 	Description       string                                     `yaml:"description"`
 	Query             TableQuery                                 `yaml:"query"`
 	DefaultSort       dashboard.TableSort                        `yaml:"default_sort"`
-	Style             dashboard.TableStyle                       `yaml:"style"`
+	Style             dashboard.TableStyle                       `yaml:"presentation"`
 	Columns           []dashboard.TableColumn                    `yaml:"columns"`
 	Interaction       Interaction                                `yaml:"interaction"`
 	Rows              []string                                   `yaml:"-"`
@@ -498,7 +565,63 @@ func (v Visual) RendererOrDefault() string {
 }
 
 func (v Visual) CoreOptions() map[string]any {
-	return copyMap(v.Options)
+	options := copyMap(v.Options)
+	presentation := v.Presentation
+	set := func(key string, value any, include bool) {
+		if include {
+			options[key] = value
+		}
+	}
+	set("legend", presentation.Legend, presentation.Legend != "")
+	set("show_labels", presentation.ShowLabels, presentation.ShowLabels)
+	set("stacked", presentation.Stacked, presentation.Stacked)
+	set("smooth", presentation.Smooth, presentation.Smooth)
+	if presentation.ShowSymbols != nil {
+		options["show_symbols"] = *presentation.ShowSymbols
+	}
+	set("data_zoom", presentation.DataZoom, presentation.DataZoom)
+	if presentation.Area != nil {
+		options["area"] = *presentation.Area
+	}
+	set("step", presentation.Step, presentation.Step)
+	set("orientation", presentation.Orientation, presentation.Orientation != "")
+	set("label_position", presentation.LabelPosition, presentation.LabelPosition != "")
+	set("symbol_size", presentation.SymbolSize, presentation.SymbolSize > 0)
+	set("bin_count", presentation.HistogramBins, presentation.HistogramBins > 0)
+	set("series_types", presentation.SeriesTypes, len(presentation.SeriesTypes) > 0)
+	set("dual_axis", presentation.DualAxis, presentation.DualAxis)
+	set("rose_type", "radius", presentation.Rose)
+	set("center_label", presentation.CenterLabel, presentation.CenterLabel != "")
+	set("inner_radius", presentation.InnerRadius, presentation.InnerRadius > 0)
+	set("outer_radius", presentation.OuterRadius, presentation.OuterRadius > 0)
+	set("align", presentation.Align, presentation.Align != "")
+	set("sort", presentation.Sort, presentation.Sort != "")
+	set("initial_depth", presentation.InitialDepth, presentation.InitialDepth > 0)
+	set("roam", presentation.Roam, presentation.Roam)
+	set("layout", presentation.Layout, presentation.Layout != "")
+	if presentation.Breadcrumb != nil {
+		options["breadcrumb"] = *presentation.Breadcrumb
+	}
+	set("node_gap", presentation.NodeGap, presentation.NodeGap > 0)
+	set("curveness", presentation.Curveness, presentation.Curveness > 0)
+	set("focus", presentation.Focus, presentation.Focus != "")
+	if presentation.Minimum != nil {
+		options["min"] = *presentation.Minimum
+	}
+	if presentation.Maximum != nil {
+		options["max"] = *presentation.Maximum
+	}
+	set("progress_width", presentation.ProgressWidth, presentation.ProgressWidth > 0)
+	set("note", presentation.Note, presentation.Note != "")
+	set("tone", presentation.Tone, presentation.Tone != "")
+	if len(presentation.Thresholds) > 0 {
+		thresholds := make([]map[string]any, len(presentation.Thresholds))
+		for index, threshold := range presentation.Thresholds {
+			thresholds[index] = map[string]any{"value": threshold.Value, "tone": threshold.Tone}
+		}
+		options["thresholds"] = thresholds
+	}
+	return options
 }
 
 func copyMap(source map[string]any) map[string]any {
