@@ -1619,7 +1619,7 @@
       "x-scope": "serve,admin"
     },
     "LIBREDASH_ENVIRONMENT": {
-      "description": "Single serving environment permanently bound to this LibreDash instance.",
+      "description": "Single serving environment permanently bound to this LeapView instance.",
       "type": "string",
       "x-lifecycle": "supported",
       "x-scope": "serve,admin"
@@ -1694,7 +1694,7 @@
       "x-scope": "serve,admin,client"
     },
     "LIBREDASH_IMAGE": {
-      "description": "Immutable LibreDash OCI image reference consumed by deployment tooling.",
+      "description": "Immutable LeapView OCI image reference consumed by deployment tooling.",
       "type": "string",
       "x-lifecycle": "tooling",
       "x-scope": "Hetzner provisioner"
@@ -1830,7 +1830,7 @@
       "x-scope": "serve"
     },
     "LIBREDASH_MCP_OAUTH_ISSUER_URL": {
-      "description": "Optional external OAuth issuer for MCP JWT access tokens; when omitted, LibreDash provides the MCP authorization server.",
+      "description": "Optional external OAuth issuer for MCP JWT access tokens; when omitted, LeapView provides the MCP authorization server.",
       "type": "string",
       "x-lifecycle": "supported",
       "x-scope": "serve"
@@ -1965,7 +1965,7 @@
       "x-scope": "serve,admin"
     },
     "LIBREDASH_PUBLIC_URL": {
-      "description": "Canonical externally visible LibreDash origin used for MCP resource identity and OAuth discovery.",
+      "description": "Canonical externally visible LeapView origin used for MCP resource identity and OAuth discovery.",
       "type": "string",
       "x-lifecycle": "supported",
       "x-scope": "serve"
@@ -2015,7 +2015,7 @@
       "x-scope": "production image smoke test"
     },
     "LIBREDASH_TARGET": {
-      "description": "Default LibreDash API target URL.",
+      "description": "Default LeapView API target URL.",
       "type": "string",
       "x-lifecycle": "supported",
       "x-scope": "client commands"
@@ -2043,6 +2043,6 @@
       "x-scope": "example connection"
     }
   },
-  "title": "LibreDash process-global environment",
+  "title": "LeapView process-global environment",
   "type": "object"
 }

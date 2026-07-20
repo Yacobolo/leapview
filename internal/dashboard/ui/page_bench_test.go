@@ -70,7 +70,7 @@ func benchmarkDashboardDocument(catalog dashboard.Catalog, report reportdef.Dash
 		)
 	}
 	return pagestream.RenderPage(pagestream.PageSpec{
-		Title:             "LibreDash",
+		Title:             "LeapView",
 		DatastarScriptURL: datastarScriptURL(),
 		HTMLAttrs: []g.Node{
 			g.Attr("data-color-mode", "auto"),

@@ -46,7 +46,7 @@ const defaultHTTPServerShutdownTimeout = 15 * time.Second
 func serveCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Run the LibreDash HTTP server",
+		Short: "Run the LeapView HTTP server",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.environment = serveEnvironmentFlagValue(cmd.Flags().Changed("environment"), opts.environment)
 			return runServe(ctx, opts)
@@ -87,7 +87,7 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 	serveCtx, stopServe := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stopServe()
 	server.StartBackgroundJobs(serveCtx)
-	slog.Info("LibreDash listening", "url", listenURL(addr), "environment", environment)
+	slog.Info("LeapView listening", "url", listenURL(addr), "environment", environment)
 	err = runHTTPServer(serveCtx, productionHTTPServer(addr, server.Routes()))
 	stopServe()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), defaultHTTPServerShutdownTimeout)

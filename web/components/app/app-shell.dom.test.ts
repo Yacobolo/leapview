@@ -118,6 +118,41 @@ test('app shell preserves slotted route geometry before route component upgrade'
   }
 })
 
+test('app shell renders the LeapView Aperture identity', async () => {
+  const page = await browser.newPage({ viewport: { width: 1320, height: 900 } })
+  try {
+    await page.goto(`${baseURL}/upgraded-shell`)
+    await page.waitForFunction(() => customElements.get('ld-app-shell') && customElements.get('ld-sidebar'))
+    const identity = await page.locator('ld-app-shell').evaluate((element: any) => {
+      const sidebar = element.shadowRoot.querySelector('ld-sidebar') as HTMLElement
+      const root = sidebar.shadowRoot!
+      const mark = root.querySelector('ld-brand-mark') as HTMLElement | null
+      const svg = mark?.shadowRoot?.querySelector('svg')
+      return {
+        navigationLabel: root.querySelector('aside')?.getAttribute('aria-label'),
+        name: root.querySelector('.brand .name')?.textContent?.trim(),
+        mobileName: root.querySelector('.mobile-drawer-title')?.textContent?.trim(),
+        markCount: root.querySelectorAll('ld-brand-mark').length,
+        circleCount: mark?.shadowRoot?.querySelectorAll('circle[cx="12"][cy="12"][r="10"]').length,
+        aperturePathCount: mark?.shadowRoot?.querySelectorAll('path[d="m14.31 8 5.74 9.94"]').length,
+        strokeWidth: svg?.getAttribute('stroke-width'),
+      }
+    })
+
+    expect(identity).toEqual({
+      navigationLabel: 'LeapView workspace',
+      name: 'LeapView',
+      mobileName: 'LeapView',
+      markCount: 1,
+      circleCount: 1,
+      aperturePathCount: 1,
+      strokeWidth: '1.8',
+    })
+  } finally {
+    await page.close()
+  }
+})
+
 test('upgraded compact app shell does not keep the fallback route grid column', async () => {
   const page = await browser.newPage({ viewport: { width: 1320, height: 900 } })
   try {

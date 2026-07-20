@@ -1,6 +1,6 @@
 # Architecture overview
 
-LibreDash is a Go monolith with explicit generated contracts and focused browser components. The monolith keeps routing, authorization, project compilation, query execution, and lifecycle state in one deployable application while package boundaries separate domains and infrastructure.
+LeapView is a Go monolith with explicit generated contracts and focused browser components. The monolith keeps routing, authorization, project compilation, query execution, and lifecycle state in one deployable application while package boundaries separate domains and infrastructure.
 
 ## Server domains
 
@@ -22,7 +22,7 @@ The platform SQLite database owns application state: identities, grants, environ
 
 One global DuckLake catalog owns analytical table metadata, snapshots, schema evolution, statistics, and physical-file manifests. Parquet holds analytical data. DuckDB attaches the resolved snapshot and executes materialization and governed BI queries.
 
-The active pointer is a LibreDash concern; snapshot and file ownership are DuckLake concerns. Cleanup reconciles both before expiring metadata or deleting physical files.
+The active pointer is a LeapView concern; snapshot and file ownership are DuckLake concerns. Cleanup reconciles both before expiring metadata or deleting physical files.
 
 ## Query execution
 

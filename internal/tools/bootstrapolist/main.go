@@ -149,7 +149,7 @@ func downloadArchive(client *http.Client, archivePath string) error {
 		_ = tmp.Close()
 		return fmt.Errorf("create Kaggle request: %w", err)
 	}
-	req.Header.Set("User-Agent", "LibreDash bootstrap")
+	req.Header.Set("User-Agent", "LeapView bootstrap")
 
 	resp, err := client.Do(req)
 	if err != nil {

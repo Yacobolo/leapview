@@ -92,7 +92,7 @@ func (p VisualProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
 	}
 	return []agentcore.ToolDefinition{{
 		Name:         agentVisualToolName,
-		Description:  "Create one read-only visual from LibreDash semantic model fields. Data is queried from semantic models; do not provide inline data.",
+		Description:  "Create one read-only visual from LeapView semantic model fields. Data is queried from semantic models; do not provide inline data.",
 		InputSchema:  inputSchema,
 		OutputSchema: json.RawMessage(`{"type":"object","properties":{"type":{"type":"string"},"id":{"type":"string"},"patch":{"type":"object"},"summary":{"type":"string"}},"required":["type","id","patch","summary"],"additionalProperties":false}`),
 		Effect:       "read",

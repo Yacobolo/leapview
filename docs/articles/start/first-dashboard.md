@@ -118,7 +118,7 @@ The plan should contain only the resources you intended to change. Unexpected ad
 
 Reload Executive Sales and confirm both label changes. Also change a date or state filter to verify that the KPI still participates in the shared query lifecycle.
 
-LibreDash validates all workspace candidates before switching the active project. A rejected candidate does not replace the last valid serving state. This makes validation and plan review normal parts of authoring rather than recovery steps.
+LeapView validates all workspace candidates before switching the active project. A rejected candidate does not replace the last valid serving state. This makes validation and plan review normal parts of authoring rather than recovery steps.
 
 ## Troubleshooting
 

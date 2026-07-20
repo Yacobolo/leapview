@@ -1,6 +1,6 @@
 # Health and observability
 
-Observe LibreDash at the process, dependency, delivery, data, and query layers. A single “up” signal cannot distinguish a healthy process with a broken active project from a slow query caused by an invalid model grain.
+Observe LeapView at the process, dependency, delivery, data, and query layers. A single “up” signal cannot distinguish a healthy process with a broken active project from a slow query caused by an invalid model grain.
 
 ## Liveness and readiness
 
@@ -16,7 +16,7 @@ Use liveness for process restart decisions and readiness for traffic admission. 
 
 ## Metrics
 
-LibreDash exposes Prometheus metrics behind `LIBREDASH_METRICS_BEARER_TOKEN`. Production validation requires a strong token. Restrict the endpoint by network policy as well, inject the token into the scraper securely, and avoid logging it.
+LeapView exposes Prometheus metrics behind `LIBREDASH_METRICS_BEARER_TOKEN`. Production validation requires a strong token. Restrict the endpoint by network policy as well, inject the token into the scraper securely, and avoid logging it.
 
 Monitor at least process resource use, request rate and latency, error status, read/write executor saturation, queue depth and timeouts, refresh activity, storage capacity, and managed upload failures. Alert on sustained conditions and user-visible symptoms rather than every transient supersession.
 

@@ -15,7 +15,7 @@ func TestControllerLockRejectsConcurrentOperationAndRecoversAfterRelease(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := acquireControllerLock(path); err == nil || !strings.Contains(err.Error(), "another LibreDash operation") {
+	if _, err := acquireControllerLock(path); err == nil || !strings.Contains(err.Error(), "another LeapView operation") {
 		t.Fatalf("concurrent lock error = %v", err)
 	}
 	if err := first.Release(); err != nil {

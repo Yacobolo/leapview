@@ -93,7 +93,7 @@ class LibreDashWorkspacePage extends DatastarLit(LitElement) {
 
   private renderCatalog(page: WorkspacePageSignal) {
     return html`
-      <section class="page catalog" aria-label="LibreDash workspaces">
+      <section class="page catalog" aria-label="LeapView workspaces">
         ${this.renderHeader('', page.title, page.description)}
         <div class="cards">
           ${page.cards?.map((card) => html`

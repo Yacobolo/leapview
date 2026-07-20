@@ -90,6 +90,12 @@ test('site explains the product, its workflow, and where it fits in the data sta
     expect(await lightProductScreenshot.isVisible()).toBe(true)
     expect(await darkProductScreenshot.isVisible()).toBe(false)
     expect(await page.locator('.site-product-caption').count()).toBe(0)
+    const agentPreview = page.locator('.site-agent-preview')
+    expect(await agentPreview.count()).toBe(1)
+    expect(await agentPreview.getByText('Why did revenue fall in October?', { exact: true }).count()).toBe(1)
+    expect(await agentPreview.getByText('21.4%', { exact: true }).count()).toBe(1)
+    expect(await agentPreview.getByText('Verified against the sales semantic model', { exact: true }).count()).toBe(1)
+    expect(await agentPreview.locator('.site-agent-evidence li').count()).toBe(3)
     const productFrameCenter = await page.locator('.site-product-frame').evaluate((element) => {
       const rect = element.getBoundingClientRect()
       return { frame: rect.left + rect.width / 2, viewport: window.innerWidth / 2 }
@@ -106,7 +112,8 @@ test('site explains the product, its workflow, and where it fits in the data sta
     const workflow = page.getByRole('list', {
       name: 'Analytics delivery workflow',
     })
-    expect(await page.locator('.site-workflow ld-code-block').count()).toBe(0)
+    expect(await page.locator('.site-workflow-artifact').count()).toBe(1)
+    expect(await page.locator('.site-workflow-artifact pre code').count()).toBe(1)
     expect(await workflow.locator('.site-workflow-card').count()).toBe(3)
     expect(await workflow.getByRole('heading', { name: 'Build in code' }).count()).toBe(1)
     expect(await workflow.getByRole('heading', { name: 'Review in Git' }).count()).toBe(1)
@@ -116,7 +123,8 @@ test('site explains the product, its workflow, and where it fits in the data sta
       'git-branch',
       'server',
     ])
-    expect(await page.getByText('apiVersion:', { exact: false }).count()).toBe(0)
+    expect(await page.getByText('apiVersion: libredash.dev/v1', { exact: false }).count()).toBe(1)
+    expect(await page.getByText('aggregation: sum', { exact: false }).count()).toBe(1)
     expect(
       await page
         .getByRole('heading', {
@@ -184,7 +192,7 @@ test('site explains the product, its workflow, and where it fits in the data sta
     expect(await mobileFlowMarkers.getAttribute('data-flow-path')).toBe('M50 0 V96')
     const productNode = stackFlow.locator('.site-stack-product-node')
     expect(await productNode.count()).toBe(1)
-    expect(await productNode.locator('ld-site-brand-mark[large]').count()).toBe(1)
+    expect(await productNode.locator('ld-brand-mark[large]').count()).toBe(1)
     const clientInterfaces = productNode.getByRole('list', { name: 'LeapView interfaces' })
     expect(await clientInterfaces.locator('.site-stack-client-interface').count()).toBe(4)
     for (const [label, icon] of [
@@ -197,21 +205,14 @@ test('site explains the product, its workflow, and where it fits in the data sta
       expect(await clientInterface.getAttribute('tabindex')).toBe('0')
       expect(await clientInterface.getAttribute('data-label')).toBe(label)
       expect(await clientInterface.locator(`ld-site-feature-icon[name="${icon}"][plain]`).count()).toBe(1)
-      expect(await clientInterface.evaluate((element) => element.childNodes.length)).toBe(1)
+      expect(await clientInterface.getByText(label, { exact: true }).count()).toBe(1)
+      expect(await clientInterface.evaluate((element) => element.childNodes.length)).toBe(2)
     }
     const mcpInterface = clientInterfaces.locator('.site-stack-client-interface[aria-label="MCP"]')
     expect(await mcpInterface.locator('.site-stack-mcp-mark[aria-hidden="true"] > svg').count()).toBe(1)
     expect(await mcpInterface.locator('ld-site-feature-icon').count()).toBe(0)
-    expect(await mcpInterface.evaluate((element) => element.childNodes.length)).toBe(1)
-    expect(
-      await mcpInterface.evaluate((element) => ({
-        content: getComputedStyle(element, '::after').content,
-        opacity: getComputedStyle(element, '::after').opacity,
-      })),
-    ).toEqual({ content: '"MCP"', opacity: '0' })
-    await mcpInterface.hover()
-    await page.waitForTimeout(250)
-    expect(Number(await mcpInterface.evaluate((element) => getComputedStyle(element, '::after').opacity))).toBeGreaterThan(0.95)
+    expect(await mcpInterface.getByText('MCP', { exact: true }).count()).toBe(1)
+    expect(await mcpInterface.evaluate((element) => element.childNodes.length)).toBe(2)
     expect(await productNode.getByText('Planned', { exact: true }).count()).toBe(0)
     expect(await productNode.getByText('Coming soon', { exact: true }).count()).toBe(0)
     expect(
@@ -252,6 +253,7 @@ test('site explains the product, its workflow, and where it fits in the data sta
     }
     const integrationLogos = stackFlow.locator('.site-stack-group .site-stack-integration')
     expect(await integrationLogos.count()).toBe(17)
+    expect(await stackFlow.locator('.site-stack-group .site-stack-integration-label').count()).toBe(17)
     expect(await stackFlow.locator('.site-stack-integration[aria-label="Text"]').count()).toBe(0)
     expect(await stackFlow.locator('.site-stack-integration[aria-label="Binary files"]').count()).toBe(0)
     const postgresqlLogo = stackFlow.locator('.site-stack-integration[aria-label="PostgreSQL"]')
@@ -261,6 +263,7 @@ test('site explains the product, its workflow, and where it fits in the data sta
     expect(await postgresqlMark.count()).toBe(1)
     expect(await postgresqlMark.evaluate((element) => element.tagName)).toBe('SPAN')
     expect(await postgresqlMark.locator('svg').count()).toBe(1)
+    expect(await postgresqlLogo.getByText('PostgreSQL', { exact: true }).count()).toBe(1)
     const postgresqlMarkFill = await postgresqlMark.evaluate((element) =>
       getComputedStyle(element.querySelector('svg path')!).fill,
     )
@@ -273,19 +276,6 @@ test('site explains the product, its workflow, and where it fits in the data sta
     )
     expect(icebergFills).toHaveLength(3)
     expect(icebergFills).toContain(postgresqlMarkFill)
-    expect(
-      await postgresqlLogo.evaluate((element) => ({
-        content: getComputedStyle(element, '::after').content,
-        opacity: getComputedStyle(element, '::after').opacity,
-      })),
-    ).toEqual({ content: '"PostgreSQL"', opacity: '0' })
-    await postgresqlLogo.hover()
-    await page.waitForTimeout(250)
-    expect(Number(await postgresqlLogo.evaluate((element) => getComputedStyle(element, '::after').opacity))).toBeGreaterThan(0.95)
-    await page.locator('.site-stack-heading').hover()
-    await postgresqlLogo.focus()
-    await page.waitForTimeout(250)
-    expect(Number(await postgresqlLogo.evaluate((element) => getComputedStyle(element, '::after').opacity))).toBeGreaterThan(0.95)
     expect(await stackFlow.locator('.site-stack-platforms').count()).toBe(0)
     expect(await stackFlow.getByText('Databricks', { exact: true }).count()).toBe(0)
     expect(await stackFlow.getByText('Microsoft Fabric', { exact: true }).count()).toBe(0)
@@ -294,22 +284,26 @@ test('site explains the product, its workflow, and where it fits in the data sta
     expect(await stackFlow.locator('.site-stack-connection-label').count()).toBe(0)
     expect(await page.getByRole('link', { name: 'View all supported connections' }).count()).toBe(0)
     const interfaces = page.locator('.site-interfaces-section')
-    expect(await interfaces.getByRole('heading', { name: 'Dashboards and agents, together.' }).count()).toBe(1)
+    expect(await interfaces.getByRole('heading', { name: 'One model. Two ways to explore.' }).count()).toBe(1)
     expect(await interfaces.locator('.site-interface-card').count()).toBe(2)
     expect(await interfaces.getByRole('heading', { name: 'Dashboards', exact: true }).count()).toBe(1)
     expect(await interfaces.getByRole('heading', { name: 'AI agents', exact: true }).count()).toBe(1)
     expect(await interfaces.getByRole('link', { name: 'Explore agent integrations' }).getAttribute('href')).toBe('/docs/guides/integrate/agent')
     expect(await interfaces.locator('.site-interface-core').count()).toBe(1)
+    const trust = page.locator('.site-trust-section')
+    expect(await trust.getByRole('heading', { name: 'Governed from question to answer.' }).count()).toBe(1)
+    expect(await trust.locator('.site-trust-card').count()).toBe(3)
     expect(await page.locator('.site-capabilities-section, .site-capabilities, .site-capability').count()).toBe(0)
     expect(await page.locator('.site-shell').evaluate((element) => Array.from(element.children).map((child) => child.className))).toEqual([
       'site-interfaces-section',
       'site-workflow',
       'site-stack-section',
+      'site-trust-section',
       'site-cta',
     ])
     expect(await page.getByRole('contentinfo').count()).toBe(1)
     expect(await page.locator('.site-product-proof, ld-site-chart-demo').count()).toBe(0)
-    expect(await page.getByRole('heading', { name: 'One model. Two ways to explore.' }).count()).toBe(0)
+    expect(await page.getByRole('heading', { name: 'One model. Two ways to explore.' }).count()).toBe(1)
     await page.evaluate(() => {
       document.documentElement.style.scrollBehavior = 'auto'
       window.scrollTo(0, 64)
@@ -421,36 +415,56 @@ test('homepage flow background stays centered and bounded on ultra-wide screens'
   }
 })
 
-test('site brand pairs the LeapView wordmark with the Lucide Eclipse mark', async () => {
+test('site brand pairs the LeapView wordmark with the Lucide Aperture ring mark', async () => {
   const page = await browser.newPage({
     viewport: { width: 1600, height: 900 },
   })
   try {
     await page.goto(baseURL)
     const brand = page.getByRole('link', { name: 'LeapView', exact: true }).first()
-    const mark = brand.locator('ld-site-brand-mark')
+    const mark = brand.locator('ld-brand-mark')
     expect(await mark.count()).toBe(1)
     expect(await mark.getAttribute('aria-hidden')).toBe('true')
     expect(await mark.evaluate((element) => element.shadowRoot?.querySelectorAll('svg').length)).toBe(1)
-    expect(await mark.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgba(0, 0, 0, 0)')
-    expect(await mark.evaluate((element) => getComputedStyle(element).borderWidth)).toBe('0px')
+    expect(
+      await mark.evaluate((element) => {
+        const style = getComputedStyle(element)
+        const wordmarkStyle = getComputedStyle(element.nextElementSibling!)
+        return {
+          backgroundColor: style.backgroundColor,
+          colorMatchesWordmark: style.color === wordmarkStyle.color,
+          borderRadius: style.borderRadius,
+          borderWidth: style.borderWidth,
+        }
+      }),
+    ).toEqual({ backgroundColor: 'rgba(0, 0, 0, 0)', colorMatchesWordmark: true, borderRadius: '0px', borderWidth: '0px' })
     const lockup = await brand.evaluate((element) => {
-      const mark = element.querySelector('ld-site-brand-mark')
+      const mark = element.querySelector('ld-brand-mark')
       const glyph = mark?.shadowRoot?.querySelector('svg')
       const wordmark = element.querySelector('span')
+      const markBounds = mark?.getBoundingClientRect()
       const glyphBounds = glyph?.getBoundingClientRect()
       const wordmarkBounds = wordmark?.getBoundingClientRect()
-      if (!glyphBounds || !wordmarkBounds) throw new Error('brand lockup is incomplete')
+      if (!markBounds || !glyphBounds || !wordmarkBounds) throw new Error('brand lockup is incomplete')
       return {
-        opticalGap: wordmarkBounds.left - glyphBounds.right,
-        centerDelta: Math.abs((glyphBounds.top + glyphBounds.bottom) / 2 - (wordmarkBounds.top + wordmarkBounds.bottom) / 2),
+        markWidth: markBounds.width,
+        markHeight: markBounds.height,
+        opticalGap: wordmarkBounds.left - markBounds.right,
+        centerDelta: Math.abs((markBounds.top + markBounds.bottom) / 2 - (wordmarkBounds.top + wordmarkBounds.bottom) / 2),
       }
     })
-    expect(lockup.opticalGap).toBeGreaterThanOrEqual(6)
-    expect(lockup.opticalGap).toBeLessThanOrEqual(8)
+    expect(lockup.markWidth).toBe(28)
+    expect(lockup.markHeight).toBe(28)
+    expect(lockup.opticalGap).toBe(6)
     expect(lockup.centerDelta).toBeLessThanOrEqual(1)
     expect(await mark.evaluate((element) => element.shadowRoot?.querySelectorAll('circle[cx="12"][cy="12"][r="10"]').length)).toBe(1)
-    expect(await mark.evaluate((element) => element.shadowRoot?.querySelectorAll('path[d="M12 2a7 7 0 1 0 10 10"]').length)).toBe(1)
+    expect(await mark.evaluate((element) => element.shadowRoot?.querySelectorAll('path[d="m14.31 8 5.74 9.94"]').length)).toBe(1)
+    expect(
+      await mark.evaluate((element) => {
+        const svg = element.shadowRoot?.querySelector('svg')
+        return { width: svg?.getAttribute('width'), height: svg?.getAttribute('height'), strokeWidth: svg?.getAttribute('stroke-width') }
+      }),
+    ).toEqual({ width: '28', height: '28', strokeWidth: '1.8' })
     const navigation = await page.locator('.site-nav').evaluate((element) => ({
       left: element.getBoundingClientRect().left,
       width: element.getBoundingClientRect().width,
@@ -643,14 +657,14 @@ test('getting started route gives users a code-native first path', async () => {
       })
     })
     expect(await page.getByRole('article').count()).toBe(1)
-    expect(await page.getByRole('heading', { name: 'Get started with LibreDash' }).isVisible()).toBe(true)
+    expect(await page.getByRole('heading', { name: 'Get started with LeapView' }).isVisible()).toBe(true)
     const sidebar = page.locator('.site-docs-sidebar')
     expect(await sidebar.count()).toBe(1)
     expect(await sidebar.evaluate((element) => getComputedStyle(element).position)).toBe('sticky')
     const docsNavigation = page.getByRole('navigation', {
       name: 'Documentation',
     })
-    expect(await docsNavigation.getByRole('link', { name: 'Get started with LibreDash' }).getAttribute('aria-current')).toBe('page')
+    expect(await docsNavigation.getByRole('link', { name: 'Get started with LeapView' }).getAttribute('aria-current')).toBe('page')
     const startGroup = sidebar.locator('details[data-site-docs-group="start"]')
     expect(await startGroup.count()).toBe(1)
     expect(await startGroup.getAttribute('open')).not.toBeNull()
@@ -676,17 +690,17 @@ test('getting started route gives users a code-native first path', async () => {
     const breadcrumb = page.getByRole('navigation', { name: 'Breadcrumb' })
     expect(await breadcrumb.getByRole('link', { name: 'Start here' }).getAttribute('href')).toBe('/docs/introduction')
     expect(await breadcrumb.getByRole('link', { name: 'Documentation' }).count()).toBe(0)
-    expect(await breadcrumb.getByRole('link', { name: 'LibreDash' }).count()).toBe(0)
+    expect(await breadcrumb.getByRole('link', { name: 'LeapView' }).count()).toBe(0)
     expect(await breadcrumb.getByText('Getting started', { exact: true }).getAttribute('aria-current')).toBe('page')
 
     const markdownCopy = page.locator('ld-site-markdown-copy')
-    expect(await markdownCopy.getAttribute('markdown')).toStartWith('# Get started with LibreDash')
-    expect(await markdownCopy.evaluate((element) => (element as HTMLElement & { markdown?: string }).markdown)).toStartWith('# Get started with LibreDash')
+    expect(await markdownCopy.getAttribute('markdown')).toStartWith('# Get started with LeapView')
+    expect(await markdownCopy.evaluate((element) => (element as HTMLElement & { markdown?: string }).markdown)).toStartWith('# Get started with LeapView')
     const copyMarkdown = page.getByRole('button', { name: 'Copy Markdown' })
     await copyMarkdown.click()
     await page.waitForFunction(() => document.querySelector('ld-site-markdown-copy')?.shadowRoot?.querySelector('button')?.getAttribute('aria-label') === 'Markdown copied')
     expect(await markdownCopy.evaluate((element) => element.shadowRoot?.querySelector('button')?.getAttribute('aria-label'))).toBe('Markdown copied')
-    expect(await page.locator('html').getAttribute('data-copied-markdown')).toStartWith('# Get started with LibreDash')
+    expect(await page.locator('html').getAttribute('data-copied-markdown')).toStartWith('# Get started with LeapView')
 
     expect(await page.locator('.site-guide-step').count()).toBe(0)
     expect((await page.locator('.site-docs-article pre code').allTextContents()).map((content) => content.trim())).toEqual(['task bootstrap', 'task dev', 'dashboards/\n  libredash.yaml\n  connections/\n    olist.yaml\n  sources/\n    olist.orders.yaml\n  workspaces/\n    sales/\n      workspace.yaml\n      models/\n        orders.yaml\n      semantic-models/\n        sales.yaml\n      dashboards/\n        executive-sales.yaml'])
@@ -956,9 +970,9 @@ test('documentation Mermaid fences render as accessible responsive diagrams', as
     const diagram = page.locator('ld-site-mermaid').first()
     await diagram.locator('svg').waitFor({ state: 'visible' })
 
-    expect(await diagram.getAttribute('aria-label')).toBe('LibreDash resource layers')
+    expect(await diagram.getAttribute('aria-label')).toBe('LeapView resource layers')
     expect(await diagram.locator('svg').getAttribute('role')).toBe('img')
-    expect(await diagram.locator('svg title').textContent()).toBe('LibreDash resource layers')
+    expect(await diagram.locator('svg title').textContent()).toBe('LeapView resource layers')
     expect(await page.locator('.site-docs-article ld-code-block[language="mermaid"]').count()).toBe(0)
 
     const desktop = await diagram.evaluate((element) => {
@@ -1270,9 +1284,9 @@ test('documentation CSS keeps site tokens available and fragment targets below t
     expect(Math.abs(runtimeStyles.articleWidth - runtimeStyles.shellWidth)).toBeLessThanOrEqual(1)
     expect(runtimeStyles.articleWidth).toBeLessThanOrEqual(1024)
 
-    await page.getByRole('navigation', { name: 'In this article' }).getByRole('link', { name: 'Run LibreDash' }).click()
-    await page.waitForFunction(() => location.hash === '#run-libredash')
-    const anchorPosition = await page.locator('#run-libredash').evaluate((heading) => ({
+    await page.getByRole('navigation', { name: 'In this article' }).getByRole('link', { name: 'Run LeapView' }).click()
+    await page.waitForFunction(() => location.hash === '#run-leapview')
+    const anchorPosition = await page.locator('#run-leapview').evaluate((heading) => ({
       headingTop: heading.getBoundingClientRect().top,
       headerBottom: document.querySelector('.site-header')?.getBoundingClientRect().bottom ?? 0,
     }))
@@ -1624,7 +1638,7 @@ async function waitForSite(): Promise<void> {
   const deadline = Date.now() + siteReadyTimeout
   while (Date.now() < deadline) {
     if (siteProcess.exitCode !== null) {
-      throw new Error(`LibreDash site exited before becoming ready (code ${siteProcess.exitCode})`)
+      throw new Error(`LeapView site exited before becoming ready (code ${siteProcess.exitCode})`)
     }
     try {
       const response = await fetch(baseURL)
@@ -1634,5 +1648,5 @@ async function waitForSite(): Promise<void> {
     }
     await Bun.sleep(100)
   }
-  throw new Error('LibreDash site did not become ready')
+  throw new Error('LeapView site did not become ready')
 }

@@ -2,6 +2,7 @@ import { LitElement, css, html } from 'lit'
 import { Monitor, Moon, Sun } from 'lucide'
 import type { LoginPageSignal } from '../../generated/signals'
 import { DatastarLit } from '../shared/datastar-lit'
+import { leapViewBrandName } from '../shared/brand-mark'
 import { checkSignalContract } from '../shared/signal-contract'
 import { lucideIcon } from '../shared/lucide-icons'
 
@@ -111,6 +112,16 @@ class LibreDashLoginPage extends DatastarLit(LitElement) {
       font-size: var(--ld-font-size-title-md);
       font-weight: var(--ld-font-weight-strong);
       line-height: var(--ld-line-height-compact);
+    }
+
+    .brand-lockup {
+      display: flex;
+      align-items: center;
+      gap: var(--base-size-12);
+    }
+
+    .brand-lockup ld-brand-mark {
+      --ld-brand-mark-size: var(--base-size-32);
     }
 
     .provider {
@@ -270,8 +281,11 @@ class LibreDashLoginPage extends DatastarLit(LitElement) {
         <span data-theme-icon="light" ?hidden=${this.themeMode !== 'light'}>${lucideIcon(Sun)}</span>
         <span data-theme-icon="dark" ?hidden=${this.themeMode !== 'dark'}>${lucideIcon(Moon)}</span>
       </button>
-      <section class="panel" aria-label="LibreDash login">
-        <h1>${page?.title ?? 'LibreDash'}</h1>
+      <section class="panel" aria-label="${leapViewBrandName} login">
+        <div class="brand-lockup">
+          <ld-brand-mark aria-hidden="true"></ld-brand-mark>
+          <h1>${page?.title ?? leapViewBrandName}</h1>
+        </div>
         ${mustChangePassword ? html`
           <form method="post" action="/auth/local/password">
             <input type="hidden" name="gorilla.csrf.Token" value=${csrfToken()}>

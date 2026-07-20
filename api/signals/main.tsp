@@ -1,9 +1,9 @@
 import "@yacobolo/apigen";
 
 @apigen.`package`(#{
-  title: "LibreDash UI Signal Contracts",
+  title: "LeapView UI Signal Contracts",
   version: "1.0.0",
-  description: "Typed Datastar payload contracts shared by the LibreDash Go backend and Lit web components.",
+  description: "Typed Datastar payload contracts shared by the LeapView Go backend and Lit web components.",
 })
 namespace LibreDashUISignals;
 

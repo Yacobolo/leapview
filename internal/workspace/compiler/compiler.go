@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Yacobolo/libredash/internal/brand"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
 
@@ -40,5 +41,5 @@ func workspaceTitle(value, workspaceID string) string {
 	if strings.TrimSpace(workspaceID) != "" {
 		return workspaceID
 	}
-	return "LibreDash"
+	return brand.Name
 }

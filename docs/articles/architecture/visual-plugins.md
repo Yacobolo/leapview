@@ -1,6 +1,6 @@
 # Visual plugin architecture
 
-LibreDash separates visual meaning, query shape, payload normalization, and rendering-library adaptation. A dashboard targets a LibreDash visual type and shape; a renderer plugin turns the normalized payload into a concrete canvas or DOM implementation.
+LeapView separates visual meaning, query shape, payload normalization, and rendering-library adaptation. A dashboard targets a LeapView visual type and shape; a renderer plugin turns the normalized payload into a concrete canvas or DOM implementation.
 
 ## Product contract
 
@@ -30,7 +30,7 @@ It also owns product-level actions such as focus, show/copy data, CSV export, an
 
 ## Adapter layer
 
-ECharts adapters convert LibreDash types/shapes and rows into library options. The renderer supplies theme tokens, container lifecycle, selection-event translation, and a bounded renderer-options escape hatch.
+ECharts adapters convert LeapView types/shapes and rows into library options. The renderer supplies theme tokens, container lifecycle, selection-event translation, and a bounded renderer-options escape hatch.
 
 Keep type/shape interpretation in adapters rather than scattering it through the custom element. Shared utilities should normalize values, labels, palettes, and interaction datum lookup consistently.
 

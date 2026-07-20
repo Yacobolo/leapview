@@ -1,6 +1,6 @@
 # Connect a data source
 
-Connections are project-global access definitions. Sources give individual files, objects, or tables stable logical names that workspaces can consume. Object storage is the normal production path; managed uploads remain the zero-dependency path when LibreDash should own immutable revisions.
+Connections are project-global access definitions. Sources give individual files, objects, or tables stable logical names that workspaces can consume. Object storage is the normal production path; managed uploads remain the zero-dependency path when LeapView should own immutable revisions.
 
 For scoped S3 Parquet with workload or instance identity:
 
@@ -48,7 +48,7 @@ The procedure is:
 
 Before writing YAML, decide:
 
-- whether LibreDash will own uploaded file revisions or read an external system;
+- whether LeapView will own uploaded file revisions or read an external system;
 - which credentials and defaults belong to the connection;
 - which physical objects deserve stable source identities;
 - which workspaces may consume each source;

@@ -1,7 +1,8 @@
 import { LitElement, css, html } from 'lit'
-import { Blocks, Bot, Boxes, ChartNoAxesCombined, Check, CodeXml, Copy, Database, Eclipse, GitBranch, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, Search, Server, SquareMousePointer, SquareTerminal, Sun, X, type IconNode } from 'lucide'
+import { Blocks, Bot, Boxes, ChartNoAxesCombined, Check, CodeXml, Copy, Database, GitBranch, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, Search, Server, SquareMousePointer, SquareTerminal, Sun, X, type IconNode } from 'lucide'
 import { DatastarLit } from '../../web/components/shared/datastar-lit'
 import { lucideIcon } from '../../web/components/shared/lucide-icons'
+import '../../web/components/shared/brand-mark'
 import '../../web/components/shared/code-block'
 import type { ChartPayload } from '../../web/components/dashboard/charts/types'
 import type { TableSignal } from '../../web/components/dashboard/table/types'
@@ -1086,37 +1087,6 @@ async function writeClipboard(value: string): Promise<void> {
 
 enhanceDocsCodeBlocks()
 enhanceDocsCallouts()
-
-class SiteBrandMark extends LitElement {
-  static styles = css`
-    :host {
-      display: inline-grid;
-      width: var(--base-size-24);
-      height: var(--base-size-24);
-      flex: 0 0 auto;
-      place-items: center;
-      color: var(--ld-fg-accent);
-    }
-
-    :host([large]) {
-      width: var(--base-size-40);
-      height: var(--base-size-40);
-    }
-
-    :host([large]) svg {
-      width: var(--base-size-32);
-      height: var(--base-size-32);
-    }
-  `
-
-  render() {
-    return lucideIcon(Eclipse, { size: 22, strokeWidth: 2.2 })
-  }
-}
-
-if (!customElements.get('ld-site-brand-mark')) {
-  customElements.define('ld-site-brand-mark', SiteBrandMark)
-}
 
 const featureIcons: Record<string, IconNode> = {
   agent: Bot,

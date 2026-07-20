@@ -44,7 +44,7 @@ func Acquire(home string) (*Lock, error) {
 	}
 	if !acquired {
 		_ = file.Close()
-		return nil, fmt.Errorf("another LibreDash process is already using LIBREDASH_HOME %q", home)
+		return nil, fmt.Errorf("another LeapView process is already using LIBREDASH_HOME %q", home)
 	}
 	return &Lock{file: file}, nil
 }

@@ -60,7 +60,7 @@ func deployCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 			})
 		},
 	}
-	command.Flags().StringVar(&opts.target, "target", "", "LibreDash server URL")
+	command.Flags().StringVar(&opts.target, "target", "", "LeapView server URL")
 	command.Flags().StringVar(&opts.token, "token", "", "API token")
 	command.Flags().StringVar(&opts.catalog, "project", filepath.Join("dashboards", "libredash.yaml"), "project path")
 	command.Flags().StringVar(&opts.environment, "environment", "", "assert the target instance environment")

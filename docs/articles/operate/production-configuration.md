@@ -1,6 +1,6 @@
 # Production configuration
 
-LibreDash configuration is process-global. Production instances must make every external boundary explicit and pass the generated relationship checks before serving traffic.
+LeapView configuration is process-global. Production instances must make every external boundary explicit and pass the generated relationship checks before serving traffic.
 
 ## Start with validation
 

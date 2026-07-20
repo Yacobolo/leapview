@@ -686,7 +686,7 @@ func TestWorkspaceListPageDoesNotRenderWorkspaceScopedChat(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	rendered := renderedWithBootstrap(t, server, rec.Body.String(), "Bearer dev")
-	for _, notWant := range []string{`/workspaces/test/chat`, `"workspaceTitle":"LibreDash Workspace"`} {
+	for _, notWant := range []string{`/workspaces/test/chat`, `"workspaceTitle":"LeapView Workspace"`} {
 		if strings.Contains(rendered, notWant) {
 			t.Fatalf("workspace list rendered workspace-scoped chat %q:\n%s", notWant, rec.Body.String())
 		}
@@ -694,7 +694,7 @@ func TestWorkspaceListPageDoesNotRenderWorkspaceScopedChat(t *testing.T) {
 	if !strings.Contains(rendered, `"id":"chat"`) || !strings.Contains(rendered, `"href":"/chats"`) {
 		t.Fatalf("workspace list did not render global chat navigation:\n%s", rec.Body.String())
 	}
-	if !strings.Contains(rendered, `"workspaceTitle":"LibreDash"`) {
+	if !strings.Contains(rendered, `"workspaceTitle":"LeapView"`) {
 		t.Fatalf("workspace list did not render global app chrome:\n%s", rec.Body.String())
 	}
 }

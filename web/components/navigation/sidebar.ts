@@ -20,6 +20,7 @@ import {
   type IconNode,
 } from 'lucide'
 import { lucideIcon } from '../shared/lucide-icons'
+import { leapViewBrandName } from '../shared/brand-mark'
 
 type NavItem = {
   id: string
@@ -98,7 +99,7 @@ type IconName =
 
 const defaultConfig: SidebarConfig = {
   active: 'dashboards',
-  workspaceTitle: 'LibreDash Workspace',
+  workspaceTitle: 'LeapView Workspace',
   groups: [
     { label: 'Workspace', items: [{ id: 'dashboards', label: 'Dashboards', href: '/', icon: 'dashboard' }] },
   ],
@@ -177,6 +178,10 @@ class LibreDashSidebar extends LitElement {
       min-width: 0;
       align-items: center;
       gap: var(--base-size-12);
+    }
+
+    .brand-mark {
+      --ld-brand-mark-size: var(--base-size-28);
     }
 
     .name {
@@ -850,10 +855,11 @@ class LibreDashSidebar extends LitElement {
     const collapsed = this.effectiveCollapsed
     const mobileNavigationClosed = this.isMobileViewport && !this.mobileOpen
     return html`
-      <aside aria-label="LibreDash workspace" ?data-mobile-open=${this.mobileOpen}>
+      <aside aria-label="${leapViewBrandName} workspace" ?data-mobile-open=${this.mobileOpen}>
         <header class="brand">
           <div class="brand-row">
-            <span class="name">LibreDash</span>
+            <ld-brand-mark class="brand-mark" aria-hidden="true"></ld-brand-mark>
+            <span class="name">${leapViewBrandName}</span>
             <button
               class="collapse-button"
               type="button"
@@ -886,7 +892,7 @@ class LibreDashSidebar extends LitElement {
 
         <nav id="mobile-navigation" aria-label="Primary" aria-hidden=${String(mobileNavigationClosed)} ?inert=${mobileNavigationClosed}>
           <div class="mobile-drawer-header">
-            <strong class="mobile-drawer-title">LibreDash</strong>
+            <strong class="mobile-drawer-title">${leapViewBrandName}</strong>
             <button class="mobile-close-button" type="button" aria-label="Close navigation" title="Close navigation" @click=${() => this.closeMobileNavigation(true)}>
               ${icon('close')}
             </button>

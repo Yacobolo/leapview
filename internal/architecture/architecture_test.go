@@ -792,7 +792,7 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 			"COPY --from=sourcegen /src/internal/configspec/names_gen.go ./internal/configspec/names_gen.go",
 		},
 		"Taskfile.yml": {
-			"desc: Build the LibreDash public site assets from generated contracts",
+			"desc: Build the LeapView public site assets from generated contracts",
 			"desc: Build the independently deployable public site from generated documentation",
 			"desc: Start the public site from generated documentation on http://localhost:8081",
 		},
@@ -944,11 +944,11 @@ func TestStorageArchitectureSpecDocumentsGlobalDuckLakeCatalog(t *testing.T) {
 	text := string(spec)
 	for _, want := range []string{
 		"one global DuckLake catalog",
-		"libredash.db              # LibreDash control-plane tables",
+		"libredash.db              # LeapView control-plane tables",
 		"ducklake/catalog.sqlite   # global DuckLake analytical metadata catalog",
 		"data/                     # DuckLake-managed Parquet files",
 		"ATTACH 'ducklake:sqlite:.libredash/ducklake/catalog.sqlite' AS lake",
-		"Use one global DuckLake catalog per LibreDash instance.",
+		"Use one global DuckLake catalog per LeapView instance.",
 		"Do not create per-workspace DuckLake catalogs.",
 	} {
 		if !strings.Contains(text, want) {
@@ -956,9 +956,9 @@ func TestStorageArchitectureSpecDocumentsGlobalDuckLakeCatalog(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
-		"LibreDash control-plane tables + DuckLake metadata tables",
+		"LeapView control-plane tables + DuckLake metadata tables",
 		"ducklake:sqlite:.libredash/libredash.db",
-		"Use one metadata catalog per LibreDash instance.",
+		"Use one metadata catalog per LeapView instance.",
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("storage architecture spec still contains obsolete shared-catalog contract fragment %q", forbidden)

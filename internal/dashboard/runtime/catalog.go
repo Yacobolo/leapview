@@ -4,6 +4,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Yacobolo/libredash/internal/brand"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
@@ -96,5 +97,5 @@ func workspaceTitle(workspace workspace.CatalogWorkspace) string {
 	if strings.TrimSpace(workspace.ID) != "" {
 		return workspace.ID
 	}
-	return "LibreDash"
+	return brand.Name
 }

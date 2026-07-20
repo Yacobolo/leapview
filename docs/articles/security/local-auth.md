@@ -1,6 +1,6 @@
 # Local authentication
 
-Local authentication supports self-hosted browser login and a controlled break-glass path. Local users are administrator-created; LibreDash does not provide public self-registration.
+Local authentication supports self-hosted browser login and a controlled break-glass path. Local users are administrator-created; LeapView does not provide public self-registration.
 
 ## Enable the mode
 
@@ -45,7 +45,7 @@ Do not place temporary passwords in tickets, chat rooms, shell history, deployme
 
 ## Reset access
 
-Use `POST /api/v1/principals/{principal}/password-reset` to issue a new temporary credential. LibreDash never reveals the previous password. A reset should force a password change and produce an audit event.
+Use `POST /api/v1/principals/{principal}/password-reset` to issue a new temporary credential. LeapView never reveals the previous password. A reset should force a password change and produce an audit event.
 
 When a principal is no longer trusted, deactivate the principal and revoke sessions and API tokens rather than only resetting the password. Review direct grants and group membership as part of offboarding.
 

@@ -138,5 +138,5 @@ func (s *Store) activeEnvironments(ctx context.Context) ([]string, error) {
 }
 
 func environmentMismatch(bound, requested string) error {
-	return fmt.Errorf("LibreDash instance is bound to environment %q, not %q; use a separate LIBREDASH_HOME for another environment", bound, requested)
+	return fmt.Errorf("LeapView instance is bound to environment %q, not %q; use a separate LIBREDASH_HOME for another environment", bound, requested)
 }

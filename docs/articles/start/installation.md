@@ -1,6 +1,6 @@
 # Installation
 
-LibreDash ships as a public multi-architecture container image. Pulling that image is the primary onboarding path; no source checkout, registry login, or installer is required. One running container with one persistent state volume is one LibreDash instance.
+LeapView ships as a public multi-architecture container image. Pulling that image is the primary onboarding path; no source checkout, registry login, or installer is required. One running container with one persistent state volume is one LeapView instance.
 
 ## Before you begin
 
@@ -41,7 +41,7 @@ docker run --detach --name libredash --init \
   ghcr.io/yacobolo/libredash:latest serve
 ```
 
-Open <http://localhost:8080> and sign in with the temporary password in `initial-credentials.json`. Keep that owner-readable file private: it also contains a restricted publisher token that expires after 24 hours. The acknowledgement command removes LibreDash's recovery copy only after the redirected file exists; delete your file when you no longer need either credential.
+Open <http://localhost:8080> and sign in with the temporary password in `initial-credentials.json`. Keep that owner-readable file private: it also contains a restricted publisher token that expires after 24 hours. The acknowledgement command removes LeapView's recovery copy only after the redirected file exists; delete your file when you no longer need either credential.
 
 The state survives removal or replacement of the container because it lives in `libredash-state`. To stop and remove only the container, run `docker rm --force libredash`. Removing the named volume deletes the instance and is not part of normal shutdown.
 
@@ -49,9 +49,9 @@ Use `latest` for this disposable evaluation path. Pin a release version or diges
 
 ## Run a durable production instance
 
-The released Compose package is the recommended operations layer around the same public image. It is not a separate LibreDash distribution. It supplies hardened container settings, generated production secrets, optional Caddy HTTPS, validated backup and restore, and paired image-and-state rollback.
+The released Compose package is the recommended operations layer around the same public image. It is not a separate LeapView distribution. It supplies hardened container settings, generated production secrets, optional Caddy HTTPS, validated backup and restore, and paired image-and-state rollback.
 
-1. Download the `libredash-compose-<version>-<os>-<arch>.tar.gz` asset and checksum matching the host from a LibreDash release.
+1. Download the `libredash-compose-<version>-<os>-<arch>.tar.gz` asset and checksum matching the host from a LeapView release.
 2. Verify the checksum and extract the archive into the host directory. The archive contains an immutable application image reference, the base Compose stack, an optional Caddy HTTPS overlay, and the native Go `libredashctl` operations binary.
 3. Copy the deployment template and initialize the instance:
 
@@ -73,7 +73,7 @@ cp deployment.env.example deployment.env
 
 Initialization generates production secrets, creates the persistent volume, validates configuration, and atomically creates a forced-change local administrator plus a restricted publisher token. `first-login` prints and deletes that one-time credential file.
 
-`libredashctl` is an optional production operations controller, not a prerequisite for pulling or running LibreDash. It invokes the installed Docker Compose CLI and does not require Bash or direct access to the Docker socket API. You may manage the image with your existing container platform if it preserves the same single-process, persistent-home, initialization, backup, and environment contracts.
+`libredashctl` is an optional production operations controller, not a prerequisite for pulling or running LeapView. It invokes the installed Docker Compose CLI and does not require Bash or direct access to the Docker socket API. You may manage the image with your existing container platform if it preserves the same single-process, persistent-home, initialization, backup, and environment contracts.
 
 The Caddy overlay is enabled by default. Pass `--no-https` only when an existing trusted HTTPS proxy fronts the localhost-bound application port. Keep secure cookies and the public allowed host configured for that proxy.
 

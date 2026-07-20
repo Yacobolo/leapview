@@ -1,6 +1,6 @@
 # Install and authenticate
 
-Run the CLI from the LibreDash release or from a checked-out repository.
+Run the CLI from the LeapView release or from a checked-out repository.
 
 Store an API token for a target before calling remote operations.
 

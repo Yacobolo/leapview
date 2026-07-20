@@ -1,10 +1,10 @@
-# Deploy and operate LibreDash
+# Deploy and operate LeapView
 
 Production delivery has two distinct layers: application delivery and project delivery. Keeping them separate lets operators upgrade the service without silently changing dashboards and lets data teams deploy reviewed projects without rebuilding the application image.
 
 ## Application delivery
 
-Application delivery changes the LibreDash binary or OCI image, browser assets, runtime configuration, and infrastructure. It also owns persistent storage attachment, TLS termination, health checks, backups, and upgrade rollback.
+Application delivery changes the LeapView binary or OCI image, browser assets, runtime configuration, and infrastructure. It also owns persistent storage attachment, TLS termination, health checks, backups, and upgrade rollback.
 
 Build an immutable artifact in CI from a reviewed commit. Pin the artifact by digest or another immutable identifier in deployment configuration. Validate production environment requirements before the process is allowed to serve traffic:
 

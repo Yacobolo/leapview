@@ -32,7 +32,7 @@ Audit access requires its own privilege. Restrict it to security and operational
 
 ## Correlate sources
 
-For authentication incidents, correlate LibreDash audit/application logs with identity-provider sign-in events, SCIM provider logs, reverse-proxy request IDs, and secret-manager access history.
+For authentication incidents, correlate LeapView audit/application logs with identity-provider sign-in events, SCIM provider logs, reverse-proxy request IDs, and secret-manager access history.
 
 For data or deployment incidents, correlate project commit, deployment ID, environment, managed revision digest, refresh generation, active serving state, and query request identity. Preserve timestamps in a consistent timezone.
 

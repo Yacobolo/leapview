@@ -387,7 +387,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     return html`
       <div class="route">
         <ld-sub-sidebar .config=${this.pageSidebar(page)}></ld-sub-sidebar>
-        <section class="main" aria-label="LibreDash report canvas">
+        <section class="main" aria-label="LeapView report canvas">
           <header class="header">
             <div class="title-block">
               <h1>${page.title}</h1>
@@ -507,7 +507,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     return html`
       <div class="heading-visual">
         <div>
-          <p class="eyebrow">${component.eyebrow || 'LibreDash report'}</p>
+          <p class="eyebrow">${component.eyebrow || 'LeapView report'}</p>
           <h2>${component.title || 'Dashboard'}</h2>
         </div>
         <div class="badges">

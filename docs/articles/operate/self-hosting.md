@@ -1,6 +1,6 @@
 # Self-hosting
 
-LibreDash v1 supports a single-instance topology. The public container image is the application distribution. The generic Docker Compose package is the recommended production operations layer, while the Hetzner Terraform module adds cloud provisioning, firewalling, scheduled backups, and Restic to the same application and initialization contracts.
+LeapView v1 supports a single-instance topology. The public container image is the application distribution. The generic Docker Compose package is the recommended production operations layer, while the Hetzner Terraform module adds cloud provisioning, firewalling, scheduled backups, and Restic to the same application and initialization contracts.
 
 ## Before you begin
 
@@ -8,7 +8,7 @@ Choose one environment, DNS name, Compose project name, and persistent-volume bo
 
 ## Topology
 
-One instance contains exactly one LibreDash process, environment, control-plane SQLite database, global DuckLake catalog, and analytical data store. The Compose stack mounts all local authoritative state beneath `/var/lib/libredash` and binds the application port to localhost. The optional Caddy overlay publishes ports 80 and 443 with automatic HTTPS.
+One instance contains exactly one LeapView process, environment, control-plane SQLite database, global DuckLake catalog, and analytical data store. The Compose stack mounts all local authoritative state beneath `/var/lib/libredash` and binds the application port to localhost. The optional Caddy overlay publishes ports 80 and 443 with automatic HTTPS.
 
 Horizontal replicas, a shared SQLite home, and a remote multi-writer DuckLake catalog are not supported in v1. Deploy another independent instance when you need another environment or capacity boundary.
 
@@ -39,7 +39,7 @@ The controller is optional if an existing container platform already provides eq
 
 The named state volume contains the control database, DuckLake catalog and Parquet data, deployed artifacts, runtime state, and local managed objects. Backups stop the application briefly and archive that complete boundary.
 
-Customer source data is configured per connection. Object storage is the recommended production source, but an instance may connect to many object stores, databases, and HTTP sources. External sources are direct reads and are not copied into instance backups. Use immutable object keys or versioned prefixes; use managed data when LibreDash must own a pinned revision.
+Customer source data is configured per connection. Object storage is the recommended production source, but an instance may connect to many object stores, databases, and HTTP sources. External sources are direct reads and are not copied into instance backups. Use immutable object keys or versioned prefixes; use managed data when LeapView must own a pinned revision.
 
 When managed data uses S3, instance backups contain its metadata and cache rather than authoritative objects. Enable bucket versioning and independent backup or replication.
 

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Yacobolo/libredash/internal/assetnav"
+	"github.com/Yacobolo/libredash/internal/brand"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	uiactions "github.com/Yacobolo/libredash/internal/ui/actions"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
@@ -27,7 +28,7 @@ func WorkspacesPageForEnvironment(catalog dashboard.Catalog, workspaces []worksp
 	page := workspaceCatalogPageSignal(workspaces)
 	page.Environment = uisignals.Optional(environment)
 	catalog = catalogWithoutWorkspaceContext(catalog)
-	return workspaceRouteDocument("LibreDash Workspaces", catalog, "workspaces", roleLabel, page, uisignals.RouteWorkspace,
+	return workspaceRouteDocument(brand.Name+" Workspaces", catalog, "workspaces", roleLabel, page, uisignals.RouteWorkspace,
 		g.El("ld-workspace-page",
 			g.Attr("slot", "page"),
 		),

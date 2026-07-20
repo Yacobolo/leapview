@@ -206,7 +206,7 @@ func TestSiteAssetsDoNotDependOnWorkingDirectory(t *testing.T) {
 
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()
-	for _, path := range []string{"/static/favicon.svg", "/static/site.css", "/static/site-page.js", "/shared/app.css", "/shared/theme.js", "/shared/files/inter-latin-wght-normal.woff2", "/static/vendor/datastar-1.0.2.js", "/static/vendor/github-mark.svg"} {
+	for _, path := range []string{"/static/favicon.svg", "/static/logo-lab.html", "/static/site.css", "/static/site-page.js", "/shared/app.css", "/shared/theme.js", "/shared/files/inter-latin-wght-normal.woff2", "/static/vendor/datastar-1.0.2.js", "/static/vendor/github-mark.svg"} {
 		response, err := server.Client().Get(server.URL + path)
 		if err != nil {
 			t.Fatalf("get %s: %v", path, err)
@@ -214,6 +214,47 @@ func TestSiteAssetsDoNotDependOnWorkingDirectory(t *testing.T) {
 		response.Body.Close()
 		if response.StatusCode != http.StatusOK {
 			t.Errorf("%s status = %d, want %d", path, response.StatusCode, http.StatusOK)
+		}
+	}
+}
+
+func TestLogoLabIsSelfContainedAndComparesFourDirections(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/static/logo-lab.html")
+	if err != nil {
+		t.Fatalf("get logo lab: %v", err)
+	}
+	defer response.Body.Close()
+	contents, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read logo lab: %v", err)
+	}
+	page := string(contents)
+	for _, want := range []string{
+		`<title>LeapView Logo Lab</title>`,
+		`data-logo="aperture"`,
+		`data-logo="aperture-ring"`,
+		`data-logo="aperture-ring" data-selected="true"`,
+		`Selected direction`,
+		`data-logo="mountain"`,
+		`data-logo="telescope"`,
+		`aria-label="Aperture logo study"`,
+		`aria-label="Aperture ring logo study"`,
+		`aria-label="Mountain logo study"`,
+		`aria-label="Telescope logo study"`,
+		`m14.31 8 5.74 9.94`,
+		`m8 3 4 8 5-5 5 15H2L8 3z`,
+		`m10.065 12.493-6.18 1.318`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("logo lab does not contain %q", want)
+		}
+	}
+	for _, unwanted := range []string{`<script`, `src=`, `href="/`} {
+		if strings.Contains(page, unwanted) {
+			t.Errorf("logo lab contains external dependency %q", unwanted)
 		}
 	}
 }
@@ -278,18 +319,27 @@ func TestSiteHomeRendersPageStreamDocument(t *testing.T) {
 		`<div class="site-hero-layout">`,
 		`<img class="site-product-screenshot site-product-screenshot-light" src="/static/product-dashboard-light.png"`,
 		`<img class="site-product-screenshot site-product-screenshot-dark" src="/static/product-dashboard-dark.png"`,
+		`<aside class="site-agent-preview" aria-label="Verified AI agent answer">`,
+		`Why did revenue fall in October?`,
+		`Verified against the sales semantic model`,
 		`<div class="site-proof-strip">`,
 		`<svg class="site-stack-edges site-stack-edges-desktop"`,
 		`<li class="site-stack-stage site-stack-node site-stack-product-node">`,
-		`<ld-site-brand-mark large="" aria-hidden="true"></ld-site-brand-mark>`,
+		`<ld-brand-mark large="" aria-hidden="true"></ld-brand-mark>`,
 		`<ld-site-feature-icon name="dashboard" aria-hidden="true"></ld-site-feature-icon>`,
 		`<ld-site-feature-icon name="git-branch" aria-hidden="true"></ld-site-feature-icon>`,
 		`<section id="product" class="site-workflow">`,
+		`<article class="site-workflow-artifact">`,
+		`apiVersion: libredash.dev/v1`,
 		`<ol class="site-stack-flow" aria-label="How LeapView connects to your data stack">`,
 		`<section class="site-interfaces-section">`,
+		`One model. Two ways to explore.`,
 		`<article class="site-interface-card">`,
 		`<ld-site-feature-icon name="agent" aria-hidden="true"></ld-site-feature-icon>`,
 		`<a class="site-interface-link" href="/docs/guides/integrate/agent">Explore agent integrations</a>`,
+		`<span class="site-stack-integration-label">PostgreSQL</span>`,
+		`<section class="site-trust-section">`,
+		`Governed from question to answer.`,
 		`<section class="site-cta">`,
 		`<footer class="site-footer" role="contentinfo">`,
 		`<header class="site-header">`,
@@ -298,9 +348,6 @@ func TestSiteHomeRendersPageStreamDocument(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("home page missing %q:\n%s", want, body)
 		}
-	}
-	if strings.Contains(body, "One model. Two ways to explore.") {
-		t.Error("home page still renders the removed live-interaction section")
 	}
 	if strings.Contains(body, "site-capabilities-section") {
 		t.Error("home page still renders the redundant capabilities section")
@@ -347,14 +394,14 @@ func TestSiteGettingStartedRendersGuide(t *testing.T) {
 
 	body := readBody(t, response)
 	for _, want := range []string{
-		"<title>Get started with LibreDash</title>",
+		"<title>Get started with LeapView</title>",
 		`<ld-site-docs-drawer-toggle></ld-site-docs-drawer-toggle>`,
 		`<nav class="site-docs-breadcrumb" aria-label="Breadcrumb"><ol><li><a href="/docs/introduction">Start here</a></li><li><span aria-current="page">Getting started</span></li></ol></nav>`,
 		`<button class="site-docs-drawer-backdrop" type="button" aria-label="Close documentation menu" aria-hidden="true" tabindex="-1" data-site-docs-drawer-close="true"></button>`,
 		`<ld-site-markdown-copy`,
 		`<article id="main-content" class="site-docs-article">`,
 		`<aside class="site-docs-sidebar" id="site-docs-sidebar">`,
-		`<a class="site-docs-link site-docs-link-current" href="/docs/getting-started" title="Get started with LibreDash" aria-current="page">Get started with LibreDash</a>`,
+		`<a class="site-docs-link site-docs-link-current" href="/docs/getting-started" title="Get started with LeapView" aria-current="page">Get started with LeapView</a>`,
 		`<details class="site-docs-nav-group" data-site-docs-group="reference-configuration">`,
 		`<a class="site-docs-link" href="/docs/configuration" title="Environment variable reference">Environment variable reference</a>`,
 		`<a class="site-docs-link" href="/docs/enterprise-auth" title="Overview">Overview</a>`,
@@ -365,7 +412,7 @@ func TestSiteGettingStartedRendersGuide(t *testing.T) {
 		`<summary title="Visuals"><span class="site-docs-nav-label">Visuals</span></summary>`,
 		`<ul class="site-docs-nav-tree">`,
 		`<a class="site-docs-link" href="/docs/visuals/overview" title="Overview">Overview</a>`,
-		"<h1>Get started with LibreDash</h1>",
+		"<h1>Get started with LeapView</h1>",
 		"<h2>Bootstrap the workspace</h2>",
 		"task bootstrap",
 		"task dev",
@@ -376,7 +423,7 @@ func TestSiteGettingStartedRendersGuide(t *testing.T) {
 			t.Errorf("getting started page missing %q:\n%s", want, body)
 		}
 	}
-	if strings.Contains(body, "LibreDash Docs") {
+	if strings.Contains(body, "LeapView Docs") {
 		t.Errorf("getting started page retains the redundant docs header:\n%s", body)
 	}
 	if strings.Contains(body, "Guides and reference") {
@@ -582,7 +629,7 @@ func TestSiteServesDeploymentScopedMCPGuide(t *testing.T) {
 	}
 	body := readBody(t, response)
 	for _, want := range []string{
-		"Connect an MCP host to LibreDash",
+		"Connect an MCP host to LeapView",
 		"https://bi.example.com/mcp",
 		"https://leapview.dev",
 		"remote MCP custom connector guide",
@@ -648,7 +695,7 @@ func TestSiteServesMachineDocumentationArtifacts(t *testing.T) {
 		contentType string
 		contains    []string
 	}{
-		{path: "/llms.txt", contentType: "text/plain", contains: []string{"# LibreDash", "/mcp", "/docs/cli/manifest.json", "/docs/api/operations.json"}},
+		{path: "/llms.txt", contentType: "text/plain", contains: []string{"# LeapView", "/mcp", "/docs/cli/manifest.json", "/docs/api/operations.json"}},
 		{path: "/docs/cli/manifest.json", contentType: "application/json", contains: []string{`"schemaVersion": 1`, `"id": "deploy"`, `"effect": "write"`}},
 		{path: "/docs/api/operations.json", contentType: "application/json", contains: []string{`"schemaVersion": 1`, `"operationId": "listWorkspaces"`}},
 		{path: "/docs/api/operations/listWorkspaces.json", contentType: "application/json", contains: []string{`"operationId": "listWorkspaces"`, `"method": "GET"`, `"schemas": {`, `"WorkspaceListResponse": {`}},

@@ -66,7 +66,7 @@ func NewHandler(options Options) (http.Handler, error) {
 			{
 				ID:          optional.NewString("User"),
 				Name:        "User",
-				Description: optional.NewString("LibreDash principal"),
+				Description: optional.NewString("LeapView principal"),
 				Endpoint:    "/Users",
 				Schema:      schema.CoreUserSchema(),
 				Handler:     users,
@@ -74,7 +74,7 @@ func NewHandler(options Options) (http.Handler, error) {
 			{
 				ID:          optional.NewString("Group"),
 				Name:        "Group",
-				Description: optional.NewString("LibreDash directory group"),
+				Description: optional.NewString("LeapView directory group"),
 				Endpoint:    "/Groups",
 				Schema:      schema.CoreGroupSchema(),
 				Handler:     groups,

@@ -1,6 +1,6 @@
 # Roles, grants, and policies
 
-LibreDash authorization assigns privileges on securable resources to principals, service principals, and groups. Authentication and provisioning establish identities; the grant engine determines what those identities may do.
+LeapView authorization assigns privileges on securable resources to principals, service principals, and groups. Authentication and provisioning establish identities; the grant engine determines what those identities may do.
 
 ## Securable hierarchy
 
