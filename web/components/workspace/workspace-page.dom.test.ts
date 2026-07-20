@@ -80,6 +80,7 @@ for (const viewport of [
         const workspaceHeaderCell = workspace.shadowRoot.querySelector('thead th') as HTMLElement
         const workspaceFirstRow = workspace.shadowRoot.querySelector('tbody tr:first-child') as HTMLElement
         const workspaceSearch = workspace.shadowRoot.querySelector('.search input[type="search"]') as HTMLInputElement
+        const workspaceSearchForm = workspace.shadowRoot.querySelector('.search') as HTMLElement
         const workspaceAssetTitle = workspace.shadowRoot.querySelector('tbody tr:first-child .record-entity-label') as HTMLElement
         const workspaceAssetEntity = workspace.shadowRoot.querySelector('tbody tr:first-child .record-entity') as HTMLElement
         const nameCellRight = workspaceNameCell.getBoundingClientRect().right
@@ -108,6 +109,7 @@ for (const viewport of [
           workspaceRowActionBorderColor: getComputedStyle(workspaceRowActionLink).borderTopColor,
           workspaceSearchFontSize: getComputedStyle(workspaceSearch).fontSize,
           workspaceSearchHeight: Math.round(workspaceSearch.getBoundingClientRect().height),
+          workspaceSearchSpansToolbar: Math.abs(workspaceSearchForm.getBoundingClientRect().width - workspaceToolbar.getBoundingClientRect().width) <= 1,
           workspaceHeaderFontSize: getComputedStyle(workspaceHeaderCell).fontSize,
           workspaceCellFontSize: getComputedStyle(workspaceTypeCell).fontSize,
           workspaceTitleFontSize: getComputedStyle(workspaceAssetTitle).fontSize,
@@ -141,6 +143,7 @@ for (const viewport of [
         workspaceRowActionBorderColor: 'rgba(0, 0, 0, 0)',
         workspaceSearchFontSize: '14px',
         workspaceSearchHeight: 32,
+        workspaceSearchSpansToolbar: true,
         workspaceHeaderFontSize: '12px',
         workspaceCellFontSize: '12px',
         workspaceTitleFontSize: '12px',

@@ -731,8 +731,8 @@ const workspaceStyles = css`
   .search {
     position: relative;
     display: block;
-    max-width: 34rem;
     min-width: 0;
+    width: 100%;
   }
 
   input[type='search'] {
