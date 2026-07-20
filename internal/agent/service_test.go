@@ -186,7 +186,7 @@ func TestServicePromptUsesStructuredTurnContextWithoutExposingItInUserTranscript
 			Filters: map[string]any{
 				"controls": map[string]any{"country": map[string]any{"type": "multi_select", "values": []string{"DK"}}},
 			},
-			References: []TurnReference{{Kind: "visual", ComponentID: "revenue-card", VisualID: "revenue_by_region", Title: "Revenue by region", VisualType: "bar"}},
+			References: []TurnReference{{Reference: TurnReferenceKey{WorkspaceID: "sales", Type: "visual", ID: "executive.revenue_by_region"}, ComponentID: "revenue-card", VisualID: "revenue_by_region", Name: "Revenue by region", VisualType: "bar"}},
 		},
 	})
 	if err != nil {

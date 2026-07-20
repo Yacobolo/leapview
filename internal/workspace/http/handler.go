@@ -35,7 +35,6 @@ type Handler struct {
 	CSRFToken        func(*nethttp.Request) string
 	CurrentRoleLabel func(*nethttp.Request) string
 	ChromeOptions    func(*nethttp.Request) []ui.ChromeOption
-	SearchIndexes    *SearchIndexCache
 }
 
 type workspaceAccessSignalPayload struct {

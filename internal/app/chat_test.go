@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"html"
 	"io"
 	"net/http"
@@ -17,13 +16,11 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/agent"
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	"github.com/Yacobolo/leapview/internal/api"
 	"github.com/Yacobolo/leapview/internal/dashboard"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	"github.com/Yacobolo/leapview/internal/platform"
+	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 	"github.com/Yacobolo/leapview/internal/workspace"
-	workspacehttp "github.com/Yacobolo/leapview/internal/workspace/http"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 
@@ -136,6 +133,7 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 
 func TestChatReferenceSearchReturnsTypedGovernedWorkspaceResults(t *testing.T) {
 	store := testStore(t)
+	seedEnvironmentAssetDeployment(t, store, "test", servingstate.DefaultEnvironment, "Orders by region", "Warehouse")
 	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
 
@@ -152,7 +150,7 @@ func TestChatReferenceSearchReturnsTypedGovernedWorkspaceResults(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`"agentReferenceSearch"`, `"query":"orders by"`, `"kind":"visual"`, `"title":"Orders"`, `"dashboardId":"executive-sales"`} {
+	for _, want := range []string{`"agentReferenceSearch"`, `"query":"orders by"`, `"type":"dashboard"`, `"name":"Orders by region"`, `"workspace":{"id":"test"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("reference search missing %q:\n%s", want, body)
 		}
@@ -164,6 +162,7 @@ func TestChatReferenceSearchReturnsTypedGovernedWorkspaceResults(t *testing.T) {
 
 func TestChatReferenceSearchWithoutWorkspaceSearchesVisibleWorkspaces(t *testing.T) {
 	store := testStore(t)
+	seedEnvironmentAssetDeployment(t, store, "sales", servingstate.DefaultEnvironment, "Orders dashboard", "Sales Warehouse")
 	auth := testAuth(store, "", AuthConfig{DevBypass: true})
 	server := NewWithOptions(NewMultiWorkspaceMetrics("sales", map[string]QueryMetrics{"sales": fakeMetrics{}}), Options{
 		Store: store, Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}),
@@ -188,7 +187,7 @@ func TestChatReferenceSearchWithoutWorkspaceSearchesVisibleWorkspaces(t *testing
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	for _, want := range []string{`"workspaceId":"sales"`, `"kind":"visual"`, `"title":"Orders"`, `"description":"Sales ·`} {
+	for _, want := range []string{`"workspaceId":"sales"`, `"type":"dashboard"`, `"name":"Orders dashboard"`, `"workspace":{"id":"sales"`} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("global reference search missing %q:\n%s", want, rec.Body.String())
 		}
@@ -197,54 +196,29 @@ func TestChatReferenceSearchWithoutWorkspaceSearchesVisibleWorkspaces(t *testing
 
 func TestGlobalChatReferenceSearchHonorsAPICredentialWorkspaceAndPrivileges(t *testing.T) {
 	store := testStore(t)
-	server := NewWithOptions(NewMultiWorkspaceMetrics("sales", map[string]QueryMetrics{
-		"sales": fakeMetrics{}, "marketing": fakeMetrics{},
-	}), Options{Store: store})
-	repo, err := server.workspaceRepository()
-	if err != nil {
-		t.Fatal(err)
+	server := NewWithOptions(nil, Options{Store: store})
+	request := httptest.NewRequest(http.MethodGet, "/chats/references/search", nil)
+	credential := access.APICredential{Principal: access.Principal{ID: "principal"}, Token: access.APIToken{
+		ID: "token", WorkspaceID: "sales", Privileges: []access.Privilege{access.PrivilegeViewItem},
+	}}
+	request = request.WithContext(context.WithValue(request.Context(), apiCredentialContextKey{}, credential))
+	subject, ok := server.searchSubject(request)
+	if !ok || subject.ID != "principal" || subject.DevBypass || !subject.CredentialRestricted || len(subject.WorkspaceIDs) != 1 || subject.WorkspaceIDs[0] != "sales" {
+		t.Fatalf("credential search subject = %#v", subject)
 	}
-	for _, workspaceID := range []string{"sales", "marketing"} {
-		if err := repo.Ensure(context.Background(), workspace.EnsureInput{ID: workspace.WorkspaceID(workspaceID), Title: workspaceID}); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	search := func(token access.APIToken) []string {
-		request := httptest.NewRequest(http.MethodGet, "/chats/references/search", nil)
-		credential := access.APICredential{Token: token}
-		request = request.WithContext(context.WithValue(request.Context(), apiCredentialContextKey{}, credential))
-		results, err := server.searchAgentReferences(request, "", "orders", 24)
-		if err != nil {
-			t.Fatal(err)
-		}
-		workspaceIDs := make([]string, 0, len(results))
-		for _, result := range results {
-			workspaceIDs = append(workspaceIDs, result.WorkspaceID)
-		}
-		return workspaceIDs
-	}
-
-	allowed := search(access.APIToken{WorkspaceID: "sales", Privileges: []access.Privilege{access.PrivilegeViewItem}})
-	if len(allowed) == 0 {
-		t.Fatal("workspace-scoped credential returned no accessible references")
-	}
-	for _, workspaceID := range allowed {
-		if workspaceID != "sales" {
-			t.Fatalf("workspace-scoped credential received %q reference", workspaceID)
-		}
-	}
-	if denied := search(access.APIToken{WorkspaceID: "sales", Privileges: []access.Privilege{access.PrivilegeUseAgent}}); len(denied) != 0 {
-		t.Fatalf("credential without view privilege received workspaces %v", denied)
+	denied := subject
+	denied.Privileges = []string{string(access.PrivilegeUseAgent)}
+	allowed, err := (appSearchAuthorizer{server: server}).CanView(context.Background(), denied, access.WorkspaceObject("sales"))
+	if err != nil || allowed {
+		t.Fatalf("credential without VIEW_ITEM allowed=%v err=%v", allowed, err)
 	}
 }
 
 func TestGlobalChatReferenceSearchRanksAcrossWorkspaces(t *testing.T) {
 	store := testStore(t)
-	server := NewWithOptions(NewMultiWorkspaceMetrics("archive", map[string]QueryMetrics{
-		"archive": globalRankSearchMetrics{workspaceSearchMetrics: workspaceSearchMetrics{workspaceID: "archive", dashboardID: "revenue-archive", title: "Revenue archive"}, visualTitle: "Revenue archive"},
-		"sales":   globalRankSearchMetrics{workspaceSearchMetrics: workspaceSearchMetrics{workspaceID: "sales", dashboardID: "revenue", title: "Revenue"}, visualTitle: "Revenue"},
-	}), Options{Store: store})
+	seedEnvironmentAssetDeployment(t, store, "archive", servingstate.DefaultEnvironment, "Revenue archive", "Archive Warehouse")
+	seedEnvironmentAssetDeployment(t, store, "sales", servingstate.DefaultEnvironment, "Revenue", "Sales Warehouse")
+	server := NewWithOptions(nil, Options{Store: store})
 	repo, err := server.workspaceRepository()
 	if err != nil {
 		t.Fatal(err)
@@ -255,120 +229,18 @@ func TestGlobalChatReferenceSearchRanksAcrossWorkspaces(t *testing.T) {
 		}
 	}
 
-	results, err := server.searchAgentReferences(httptest.NewRequest(http.MethodGet, "/chats/references/search", nil), "", "revenue", 5)
+	results, err := server.searchAgentReferences(httptest.NewRequest(http.MethodGet, "/chats/references/search", nil), agent.TurnContext{}, "revenue", 5)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(results) != 5 || results[0].WorkspaceID != "sales" || results[0].DashboardID == nil || *results[0].DashboardID != "revenue" {
+	if len(results) < 2 || results[0].Reference.WorkspaceID != "sales" || results[0].Reference.ID != "dev-dashboard" {
 		t.Fatalf("globally ranked results = %#v", results)
 	}
 }
 
-func TestChatReferenceSearchFillsLimitAfterObjectAuthorization(t *testing.T) {
-	store := testStore(t)
-	ctx := context.Background()
-	repo := testAccessRepository(store)
-	principal := testPrincipal(t, ctx, store, "limited-search@example.com", "Limited Search", "")
-	workspaceObject := access.WorkspaceObject("test")
-	if _, err := repo.UpsertSecurableObject(ctx, workspaceObject, ""); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := repo.CreateGrant(ctx, access.GrantInput{
-		Object: workspaceObject, SubjectType: access.SubjectPrincipal, SubjectID: principal.ID, Privilege: access.PrivilegeUseWorkspace,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	for index := 1; index <= 5; index++ {
-		dashboardID := fmt.Sprintf("match-%d", index)
-		object := access.ItemObjectWithParent(access.SecurableDashboard, "test", dashboardID, workspaceObject)
-		if _, err := repo.UpsertSecurableObject(ctx, object, ""); err != nil {
-			t.Fatal(err)
-		}
-		if index == 5 {
-			if _, err := repo.CreateGrant(ctx, access.GrantInput{
-				Object: object, SubjectType: access.SubjectPrincipal, SubjectID: principal.ID, Privilege: access.PrivilegeViewItem,
-			}); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-	server := NewWithOptions(authorizationFillMetrics{fakeMetrics: fakeMetrics{}}, Options{
-		Store: store, Auth: testAuth(store, "test", AuthConfig{APITokenOnly: true}), DefaultWorkspaceID: "test",
-	})
-	handler := server.workspaceHTTPHandler()
-	handler.ReadModel.CurrentPrincipal = func(*http.Request) (workspacehttp.Principal, bool) {
-		return workspacehttp.Principal{ID: principal.ID}, true
-	}
-	request := httptest.NewRequest(http.MethodGet, "/chats/references/search", nil)
-
-	results, err := handler.SearchResults(request, "test", "match", nil, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(results) != 1 || results[0].ID != "match-5" {
-		t.Fatalf("authorized results = %#v, want match-5", results)
-	}
-}
-
-type authorizationFillMetrics struct {
-	fakeMetrics
-}
-
-func (authorizationFillMetrics) Catalog() dashboard.Catalog {
-	dashboards := make([]dashboard.CatalogDashboard, 0, 5)
-	for index := 1; index <= 5; index++ {
-		dashboards = append(dashboards, dashboard.CatalogDashboard{
-			ID: fmt.Sprintf("match-%d", index), Title: fmt.Sprintf("Match %d", index),
-		})
-	}
-	return dashboard.Catalog{Workspace: dashboard.CatalogWorkspace{ID: "test", Title: "Test"}, Dashboards: dashboards}
-}
-
-func (authorizationFillMetrics) Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool) {
-	if !strings.HasPrefix(dashboardID, "match-") {
-		return reportdef.Dashboard{}, nil, false
-	}
-	return reportdef.Dashboard{ID: dashboardID, Title: "Match " + strings.TrimPrefix(dashboardID, "match-")}, nil, true
-}
-
-func (authorizationFillMetrics) Pages(string) []dashboard.Page { return nil }
-
-type globalRankSearchMetrics struct {
-	workspaceSearchMetrics
-	visualTitle string
-}
-
-func (m globalRankSearchMetrics) Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool) {
-	report, model, ok := m.workspaceSearchMetrics.Report(dashboardID)
-	if !ok {
-		return report, model, false
-	}
-	for id, visual := range report.Visuals {
-		visual.Title = m.visualTitle
-		report.Visuals[id] = visual
-	}
-	for id, table := range report.Tables {
-		table.Title = m.visualTitle
-		report.Tables[id] = table
-	}
-	return report, model, true
-}
-
-func (m globalRankSearchMetrics) Pages(dashboardID string) []dashboard.Page {
-	pages := m.workspaceSearchMetrics.Pages(dashboardID)
-	for pageIndex := range pages {
-		for componentIndex := range pages[pageIndex].Visuals {
-			component := &pages[pageIndex].Visuals[componentIndex]
-			if component.Visual != "" || component.Table != "" {
-				component.Title = m.visualTitle
-			}
-		}
-	}
-	return pages
-}
-
 func TestChatReferenceSearchRouteAuthorizesAcrossAccessibleWorkspaces(t *testing.T) {
 	store := testStore(t)
+	seedEnvironmentAssetDeployment(t, store, "sales", servingstate.DefaultEnvironment, "Orders dashboard", "Sales Warehouse")
 	ctx := context.Background()
 	workspaceRepo, err := NewWithOptions(fakeMetrics{}, Options{Store: store}).workspaceRepository()
 	if err != nil {
@@ -395,7 +267,7 @@ func TestChatReferenceSearchRouteAuthorizesAcrossAccessibleWorkspaces(t *testing
 		"test": fakeMetrics{}, "sales": fakeMetrics{},
 	}), Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
 	if _, err := accessRepo.UpsertSecurableObject(ctx, access.ItemObjectWithParent(
-		access.SecurableDashboard, "sales", "executive-sales", access.WorkspaceObject("sales"),
+		access.SecurableDashboard, "sales", "dev-dashboard", access.WorkspaceObject("sales"),
 	), ""); err != nil {
 		t.Fatal(err)
 	}

@@ -1109,7 +1109,7 @@ func TestAssetViewsDefaultToConfiguredEnvironment(t *testing.T) {
 	}{
 		{name: "workspace assets", path: "/workspaces/test", want: "Prod Dashboard"},
 		{name: "global connections", path: "/connections", want: "Prod Connection"},
-		{name: "workspace search", path: "/api/v1/workspaces/test/search?q=dashboard", want: "Prod Dashboard"},
+		{name: "global search", path: "/api/v1/search?workspace=test&q=dashboard", want: "Prod Dashboard"},
 		{name: "query cannot override instance", path: "/workspaces/test?environment=dev", want: "Prod Dashboard"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

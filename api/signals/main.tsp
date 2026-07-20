@@ -387,23 +387,33 @@ model ChatArtifactSignal {
   `summary`?: string;
 }
 
-model AgentReferenceSignal {
-  `kind`: string;
-  `id`: string;
-  `title`: string;
-  `description`?: string;
+model AgentReferenceKeySignal {
   `workspaceId`: string;
+  `type`: string;
+  `id`: string;
+}
+
+model AgentReferenceWorkspaceSignal {
+  `id`: string;
+  `name`: string;
+}
+
+model AgentReferenceLocationSignal {
   `dashboardId`?: string;
+  `dashboardName`?: string;
   `pageId`?: string;
-  `componentId`?: string;
-  `visualId`?: string;
-  `tableId`?: string;
-  `filterId`?: string;
-  `modelId`?: string;
-  `datasetId`?: string;
-  `fieldId`?: string;
-  `assetId`?: string;
-  `visualType`?: string;
+  `pageName`?: string;
+  `href`: string;
+}
+
+model AgentReferenceSignal {
+  `reference`: AgentReferenceKeySignal;
+  `name`: string;
+  `description`?: string;
+  `workspace`: AgentReferenceWorkspaceSignal;
+  `href`: string;
+  `locations`: AgentReferenceLocationSignal[];
+  `context`: string[];
 }
 
 @apigen.contract(#{ kind: "ui-signal", tags: #["agent", "search", "signal"] })

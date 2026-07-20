@@ -407,8 +407,8 @@ class ChatComposer extends LitElement {
 			${this.references.length ? html`
 				<div class="selected-references" aria-label="Attached context">
 					${this.references.map((reference) => html`
-						<button class="reference-chip" type="button" title="Remove ${reference.title}" @click=${() => this.removeReference(reference)}>
-							${referenceIcon(reference.kind)}<span>${reference.title}</span>${lucideIcon(X)}
+						<button class="reference-chip" type="button" title="Remove ${reference.name}" @click=${() => this.removeReference(reference)}>
+							${referenceIcon(reference.reference.type)}<span>${reference.name}</span>${lucideIcon(X)}
 						</button>
 					`)}
 				</div>
@@ -508,22 +508,22 @@ class ChatComposer extends LitElement {
 	}
 
 	private renderMentionOption(reference: ChatContextReference, index: number) {
-		const kindLabel = referenceKindLabel(reference.kind)
+		const kindLabel = referenceKindLabel(reference.reference.type)
 		return html`
 			<button
 				type="button"
 				class="mention-option"
 				role="option"
-				aria-label=${`${reference.title}, ${kindLabel}${reference.description ? `, ${reference.description}` : ''}`}
+				aria-label=${`${reference.name}, ${kindLabel}${reference.description ? `, ${reference.description}` : ''}`}
 				aria-selected=${String(index === this.mentionIndex)}
 				data-active=${String(index === this.mentionIndex)}
 				@mousedown=${(event: MouseEvent) => event.preventDefault()}
 				@click=${() => this.selectMention(reference)}
 			>
-				<span class="mention-icon" aria-hidden="true">${referenceIcon(reference.kind)}</span>
+				<span class="mention-icon" aria-hidden="true">${referenceIcon(reference.reference.type)}</span>
 				<span class="mention-copy">
-					<span class="mention-title">${reference.title}</span>
-					<span class="mention-description">${kindLabel}${reference.description ? ` · ${reference.description}` : ''}</span>
+					<span class="mention-title">${reference.name}</span>
+					<span class="mention-description">${kindLabel} · ${reference.workspace.name}${reference.description ? ` · ${reference.description}` : ''}</span>
 				</span>
 			</button>
 		`

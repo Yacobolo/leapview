@@ -22,7 +22,7 @@ export function normalizeReferenceLimit(limit: number | null | undefined): numbe
 }
 
 export function referenceIdentity(reference: AgentReferenceSignal): string {
-  return `${reference.workspaceId ?? ''}:${reference.kind}:${reference.id || reference.componentId || reference.visualId || reference.title}`
+  return `${reference.reference.workspaceId}:${reference.reference.type}:${reference.reference.id}`
 }
 
 export function referenceKindLabel(kind: string): string {
@@ -55,19 +55,15 @@ export function matchesReferenceQuery(reference: AgentReferenceSignal, query: st
     .split(/[^\p{L}\p{N}_]+/u)
     .filter((token) => token !== '' && !mentionStopWords.has(token))
   if (tokens.length === 0) return true
-  const haystack = `${reference.title} ${reference.description ?? ''} ${reference.kind}`.toLocaleLowerCase()
+  const haystack = `${reference.name} ${reference.description ?? ''} ${reference.reference.type} ${reference.workspace.name}`.toLocaleLowerCase()
   return tokens.every((token) => haystack.includes(token))
 }
 
 export function isOnPageReference(reference: AgentReferenceSignal, context: AgentContextSignal | null): boolean {
-  return Boolean(
-    context?.workspaceId
-    && context.dashboardId
-    && context.pageId
-    && reference.workspaceId === context.workspaceId
-    && reference.dashboardId === context.dashboardId
-    && reference.pageId === context.pageId,
-  )
+  if (reference.context.includes('current_page')) return true
+  return Boolean(context?.workspaceId && context.dashboardId && context.pageId
+    && reference.reference.workspaceId === context.workspaceId
+    && reference.locations.some((location) => location.dashboardId === context.dashboardId && location.pageId === context.pageId))
 }
 
 export function mergeReferences(...groups: AgentReferenceSignal[][]): AgentReferenceSignal[] {

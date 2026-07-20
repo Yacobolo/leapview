@@ -26,12 +26,18 @@ type TurnContext struct {
 }
 
 type TurnReference struct {
-	Kind        string `json:"kind"`
-	ID          string `json:"id"`
-	WorkspaceID string `json:"workspaceId,omitempty"`
+	Reference   TurnReferenceKey        `json:"reference"`
+	Name        string                  `json:"name,omitempty"`
+	Description string                  `json:"description,omitempty"`
+	Workspace   TurnReferenceWorkspace  `json:"workspace"`
+	Href        string                  `json:"href,omitempty"`
+	Locations   []TurnReferenceLocation `json:"locations,omitempty"`
+	Context     []string                `json:"context,omitempty"`
+
+	// The fields below are derived server-side and enrich model context. They
+	// are never trusted when supplied by a client.
 	ComponentID string `json:"componentId,omitempty"`
 	VisualID    string `json:"visualId,omitempty"`
-	Title       string `json:"title,omitempty"`
 	VisualType  string `json:"visualType,omitempty"`
 	DashboardID string `json:"dashboardId,omitempty"`
 	PageID      string `json:"pageId,omitempty"`
@@ -41,6 +47,25 @@ type TurnReference struct {
 	DatasetID   string `json:"datasetId,omitempty"`
 	FieldID     string `json:"fieldId,omitempty"`
 	AssetID     string `json:"assetId,omitempty"`
+}
+
+type TurnReferenceKey struct {
+	WorkspaceID string `json:"workspaceId"`
+	Type        string `json:"type"`
+	ID          string `json:"id"`
+}
+
+type TurnReferenceWorkspace struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type TurnReferenceLocation struct {
+	DashboardID   string `json:"dashboardId,omitempty"`
+	DashboardName string `json:"dashboardName,omitempty"`
+	PageID        string `json:"pageId,omitempty"`
+	PageName      string `json:"pageName,omitempty"`
+	Href          string `json:"href"`
 }
 
 func (c TurnContext) normalized() TurnContext {
@@ -54,12 +79,16 @@ func (c TurnContext) normalized() TurnContext {
 	refs := make([]TurnReference, 0, len(c.References))
 	seen := map[string]struct{}{}
 	for _, ref := range c.References {
-		ref.Kind = strings.ToLower(strings.TrimSpace(ref.Kind))
-		ref.ID = strings.TrimSpace(ref.ID)
-		ref.WorkspaceID = strings.TrimSpace(ref.WorkspaceID)
+		ref.Reference.Type = strings.ToLower(strings.TrimSpace(ref.Reference.Type))
+		ref.Reference.ID = strings.TrimSpace(ref.Reference.ID)
+		ref.Reference.WorkspaceID = strings.TrimSpace(ref.Reference.WorkspaceID)
+		ref.Name = strings.TrimSpace(ref.Name)
+		ref.Description = strings.TrimSpace(ref.Description)
+		ref.Workspace.ID = strings.TrimSpace(ref.Workspace.ID)
+		ref.Workspace.Name = strings.TrimSpace(ref.Workspace.Name)
+		ref.Href = strings.TrimSpace(ref.Href)
 		ref.ComponentID = strings.TrimSpace(ref.ComponentID)
 		ref.VisualID = strings.TrimSpace(ref.VisualID)
-		ref.Title = strings.TrimSpace(ref.Title)
 		ref.VisualType = strings.ToLower(strings.TrimSpace(ref.VisualType))
 		ref.DashboardID = strings.TrimSpace(ref.DashboardID)
 		ref.PageID = strings.TrimSpace(ref.PageID)
@@ -69,13 +98,10 @@ func (c TurnContext) normalized() TurnContext {
 		ref.DatasetID = strings.TrimSpace(ref.DatasetID)
 		ref.FieldID = strings.TrimSpace(ref.FieldID)
 		ref.AssetID = strings.TrimSpace(ref.AssetID)
-		if ref.ID == "" && ref.Kind == "visual" {
-			ref.ID = ref.VisualID
-		}
-		if ref.Kind == "" || ref.ID == "" {
+		if ref.Reference.Type == "" || ref.Reference.ID == "" || ref.Reference.WorkspaceID == "" {
 			continue
 		}
-		key := ref.WorkspaceID + ":" + ref.Kind + ":" + ref.ID
+		key := ref.Reference.WorkspaceID + ":" + ref.Reference.Type + ":" + ref.Reference.ID
 		if _, ok := seen[key]; ok {
 			continue
 		}

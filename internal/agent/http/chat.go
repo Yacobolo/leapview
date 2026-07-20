@@ -126,10 +126,9 @@ func (h *Handler) ChatReferenceSearch(w nethttp.ResponseWriter, r *nethttp.Reque
 	}
 	search := signals.AgentReferenceSearch
 	// Reference discovery follows the global agent boundary. SearchReferences
-	// applies the request principal or API credential to both workspace discovery
-	// and object-level results. The client pins current-page matches by comparing
-	// each result with the separately streamed agent context.
-	results, err := h.options.SearchReferences(r, "", strings.TrimSpace(search.Query), maxChatReferenceSearchResults)
+	// applies the request principal or API credential at object and location level,
+	// and marks current-page results for deterministic client grouping.
+	results, err := h.options.SearchReferences(r, signals.AgentContext, strings.TrimSpace(search.Query), maxChatReferenceSearchResults)
 	if err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
 		return

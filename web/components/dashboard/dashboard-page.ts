@@ -533,7 +533,8 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
     const componentRefreshStatus = statusKey ? this.refreshStatusFor(statusKey) : undefined
 			const currentPage = this.renderSnapshot?.page ?? this.page
 			const askReference = currentPage ? this.agentReference(component, currentPage) : undefined
-			const referenced = askReference ? this.agentReferences.some((reference) => reference.id === askReference.id) : false
+			const referenced = askReference ? this.agentReferences.some((reference) => reference.reference.workspaceId === askReference.reference.workspaceId
+				&& reference.reference.type === askReference.reference.type && reference.reference.id === askReference.reference.id) : false
     return html`
               <lv-dashboard-visual-frame
                 data-canvas-visual
@@ -547,8 +548,9 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
         data-component-status-key=${statusKey || nothing}
 		?data-agent-referenced=${referenced}
         .transparent=${component.kind === 'header'}
-        .refreshStatus=${componentRefreshStatus}
+		.refreshStatus=${componentRefreshStatus}
 		.askReference=${askReference}
+		.visualType=${visualType}
 		@lv-agent-reference=${this.handleAgentReference}
         .loadingPresentation=${this.loadingPresentationFor(component, visualType)}
       >
@@ -636,16 +638,15 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
 		if (component.kind !== 'visual' || !component.visual) return undefined
 		const visual = this.visuals[component.visual]
 		if (!visual) return undefined
+		const workspaceId = this.agentContext?.workspaceId ?? ''
+		const href = `/workspaces/${encodeURIComponent(workspaceId)}/dashboards/${encodeURIComponent(page.dashboardId)}/pages/${encodeURIComponent(page.pageId)}`
 		return {
-			kind: 'visual',
-			id: `visual:${page.dashboardId}.${page.pageId}.${component.visual}`,
-			workspaceId: this.agentContext?.workspaceId ?? '',
-			dashboardId: page.dashboardId,
-			pageId: page.pageId,
-			componentId: component.id,
-			visualId: component.visual,
-			title: component.title || visual.title || component.visual,
-			visualType: visual.type,
+			reference: { workspaceId, type: 'visual', id: `${page.dashboardId}.${component.visual}` },
+			name: component.title || visual.title || component.visual,
+			workspace: { id: workspaceId, name: workspaceId },
+			href,
+			locations: [{ dashboardId: page.dashboardId, dashboardName: this.agentContext?.dashboardTitle, pageId: page.pageId, pageName: page.pageTitle, href }],
+			context: ['current_page', 'current_dashboard', 'current_workspace'],
 		}
 	}
 
@@ -812,6 +813,7 @@ class DashboardVisualFrame extends LitElement {
   @property({ type: Boolean, reflect: true }) transparent = false
   @property({ type: Object, attribute: false }) refreshStatus?: DashboardComponentStatus
 	@property({ type: Object, attribute: false }) askReference?: AgentReferenceSignal
+	@property({ type: String, attribute: false }) visualType = ''
   @property({ type: String, attribute: false }) loadingPresentation: VisualLoadingPresentation = 'none'
 
   static styles = css`
@@ -1011,7 +1013,7 @@ class DashboardVisualFrame extends LitElement {
 
   render() {
     const refreshStatus = this.refreshStatus
-		const hasNativeActions = this.askReference?.visualType !== 'kpi'
+		const hasNativeActions = this.visualType !== 'kpi'
     return html`
       <article class="frame" aria-busy=${refreshStatus?.loading ? 'true' : 'false'}>
         <slot></slot>
@@ -1019,7 +1021,7 @@ class DashboardVisualFrame extends LitElement {
 					<button
 						class=${`ask-visual${hasNativeActions ? ' with-native-actions' : ''}`}
 						type="button"
-						title="Ask about ${this.askReference.title}"
+						title="Ask about ${this.askReference.name}"
 						@click=${this.askVisual}
 					>
 						${lucideIcon(MessageSquareText)}<span>Ask</span>

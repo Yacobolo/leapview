@@ -10,9 +10,9 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/agent"
-	"github.com/Yacobolo/leapview/internal/api"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
+	productsearch "github.com/Yacobolo/leapview/internal/search"
 )
 
 func (s *Server) resolveAgentTurnContext(r *http.Request, scope agent.Scope, candidate agent.TurnContext) (agent.TurnContext, error) {
@@ -23,11 +23,13 @@ func (s *Server) resolveAgentTurnContext(r *http.Request, scope agent.Scope, can
 	case "dashboard":
 		return s.resolveDashboardTurnContext(r.Context(), scope, candidate)
 	case "chat":
+		if s.search == nil {
+			return agent.TurnContext{}, errors.New("search is not configured")
+		}
 		defaultWorkspaceID := firstNonEmpty(candidate.WorkspaceID, s.defaultWorkspaceID)
-		workspaceKeys := map[string]map[string]struct{}{}
-		workspaceOrder := []string{}
+		references := make([]productsearch.Reference, 0, len(candidate.References))
 		for _, reference := range candidate.References {
-			workspaceID := firstNonEmpty(reference.WorkspaceID, defaultWorkspaceID)
+			workspaceID := firstNonEmpty(reference.Reference.WorkspaceID, defaultWorkspaceID)
 			if workspaceID == "" {
 				continue
 			}
@@ -36,49 +38,27 @@ func (s *Server) resolveAgentTurnContext(r *http.Request, scope agent.Scope, can
 			if !agentCredentialAllowsPrivilege(workspaceScope, access.PrivilegeViewItem) {
 				return agent.TurnContext{}, errors.New("credential cannot view referenced context")
 			}
-			if _, exists := workspaceKeys[workspaceID]; !exists {
-				workspaceKeys[workspaceID] = map[string]struct{}{}
-				workspaceOrder = append(workspaceOrder, workspaceID)
-			}
-			workspaceKeys[workspaceID][agentReferenceLookupKey(reference.Kind, reference.ID)] = struct{}{}
-		}
-		workspaceRows := map[string]map[string]api.SearchResult{}
-		for _, workspaceID := range workspaceOrder {
-			rows, err := s.workspaceHTTPHandler().SearchResultsByKeys(r, workspaceID, workspaceKeys[workspaceID])
-			if err != nil {
-				return agent.TurnContext{}, err
-			}
-			byKey := make(map[string]api.SearchResult, len(rows))
-			for _, row := range rows {
-				byKey[agentReferenceLookupKey(row.Type, row.ID)] = row
-			}
-			workspaceRows[workspaceID] = byKey
-		}
-		resolved := make([]agent.TurnReference, 0, min(len(candidate.References), agent.MaxTurnReferences))
-		seen := map[string]struct{}{}
-		resolvedWorkspaceID := ""
-		for _, reference := range candidate.References {
-			if len(resolved) == agent.MaxTurnReferences {
-				break
-			}
-			workspaceID := firstNonEmpty(reference.WorkspaceID, defaultWorkspaceID)
-			key := workspaceID + ":" + strings.ToLower(strings.TrimSpace(reference.Kind)) + ":" + strings.TrimSpace(reference.ID)
-			row, ok := workspaceRows[workspaceID][agentReferenceLookupKey(reference.Kind, reference.ID)]
-			if !ok {
-				continue
-			}
-			if _, exists := seen[key]; exists {
-				continue
-			}
-			seen[key] = struct{}{}
-			resolved = append(resolved, agent.TurnReference{
-				Kind: row.Type, ID: row.ID, Title: row.Name, WorkspaceID: workspaceID, ComponentID: row.ComponentID,
-				DashboardID: row.DashboardID, PageID: row.PageID, VisualID: row.VisualID, TableID: row.TableID,
-				FilterID: row.FilterID, ModelID: row.ModelID, DatasetID: row.DatasetID, FieldID: row.FieldID, AssetID: row.AssetID,
+			references = append(references, productsearch.Reference{
+				WorkspaceID: workspaceID,
+				Type:        productsearch.Type(reference.Reference.Type),
+				ID:          reference.Reference.ID,
 			})
+		}
+		subject, ok := s.searchSubject(r)
+		if !ok {
+			return agent.TurnContext{}, errors.New("search principal is unavailable")
+		}
+		rows, err := s.search.Resolve(r.Context(), subject, string(s.requestServingEnvironment(r)), references)
+		if err != nil {
+			return agent.TurnContext{}, err
+		}
+		resolved := make([]agent.TurnReference, 0, len(rows))
+		resolvedWorkspaceID := ""
+		for _, row := range rows {
+			resolved = append(resolved, agentTurnReference(row))
 			if len(resolved) == 1 {
-				resolvedWorkspaceID = workspaceID
-			} else if resolvedWorkspaceID != workspaceID {
+				resolvedWorkspaceID = row.Reference.WorkspaceID
+			} else if resolvedWorkspaceID != row.Reference.WorkspaceID {
 				resolvedWorkspaceID = ""
 			}
 		}
@@ -86,10 +66,6 @@ func (s *Server) resolveAgentTurnContext(r *http.Request, scope agent.Scope, can
 	default:
 		return agent.TurnContext{}, errors.New("unsupported agent context surface")
 	}
-}
-
-func agentReferenceLookupKey(kind, id string) string {
-	return strings.ToLower(strings.TrimSpace(kind)) + ":" + strings.TrimSpace(id)
 }
 
 func (s *Server) resolveDashboardTurnContext(ctx context.Context, scope agent.Scope, candidate agent.TurnContext) (agent.TurnContext, error) {
@@ -150,7 +126,7 @@ func (s *Server) resolveDashboardTurnContext(ctx context.Context, scope agent.Sc
 		ModelID:        metrics.ModelIDForDashboard(report.ID),
 		Generation:     candidate.Generation,
 		Filters:        filterMap,
-		References:     resolveDashboardTurnReferences(candidate.References, page, report.Visuals, report.Tables),
+		References:     resolveDashboardTurnReferences(candidate.References, report.ID, page, report.Visuals, report.Tables),
 	}, nil
 }
 
@@ -199,23 +175,22 @@ func turnContextFilters(filters dashboard.Filters) (map[string]any, error) {
 	return out, nil
 }
 
-func resolveDashboardTurnReferences(candidates []agent.TurnReference, page dashboard.Page, visuals map[string]reportdef.Visual, tables map[string]reportdef.TableVisual) []agent.TurnReference {
+func resolveDashboardTurnReferences(candidates []agent.TurnReference, dashboardID string, page dashboard.Page, visuals map[string]reportdef.Visual, tables map[string]reportdef.TableVisual) []agent.TurnReference {
 	resolved := make([]agent.TurnReference, 0, min(len(candidates), agent.MaxTurnReferences))
 	seen := map[string]struct{}{}
 	for _, candidate := range candidates {
 		if len(resolved) == agent.MaxTurnReferences {
 			break
 		}
-		if strings.ToLower(strings.TrimSpace(candidate.Kind)) != "visual" {
+		if strings.ToLower(strings.TrimSpace(candidate.Reference.Type)) != "visual" {
 			continue
 		}
-		componentID := strings.TrimSpace(candidate.ComponentID)
-		visualID := strings.TrimSpace(candidate.VisualID)
-		if componentID == "" || visualID == "" {
+		visualID := lastSearchReferencePart(candidate.Reference.ID)
+		if visualID == "" || candidate.Reference.ID != dashboardID+"."+visualID {
 			continue
 		}
 		for _, component := range page.Visuals {
-			if component.ID != componentID {
+			if component.Visual != visualID && component.Table != visualID {
 				continue
 			}
 			title, visualType, ok := resolvedVisualMetadata(component, visualID, visuals, tables)
@@ -227,11 +202,14 @@ func resolveDashboardTurnReferences(candidates []agent.TurnReference, page dashb
 			}
 			seen[component.ID] = struct{}{}
 			resolved = append(resolved, agent.TurnReference{
-				Kind:        "visual",
-				ID:          candidate.ID,
+				Reference:   candidate.Reference,
+				Name:        title,
+				Workspace:   candidate.Workspace,
+				Href:        candidate.Href,
+				Locations:   candidate.Locations,
+				Context:     candidate.Context,
 				ComponentID: component.ID,
 				VisualID:    visualID,
-				Title:       title,
 				VisualType:  visualType,
 			})
 			break

@@ -177,13 +177,13 @@ test('composer searches for and attaches typed @ references with spaces', async 
     await page.waitForFunction(() => customElements.get('lv-chat-composer'))
     const result = await page.locator('lv-chat-composer').evaluate(async (element: any) => {
       const reference = {
-        kind: 'visual',
-        id: 'visual:executive-sales.overview.orders_chart',
-        componentId: 'orders-chart',
-        visualId: 'orders_chart',
-        title: 'Orders',
+        reference: { workspaceId: 'sales', type: 'visual', id: 'executive-sales.orders_chart' },
+        name: 'Orders',
         description: 'Overview · Executive Sales',
-        visualType: 'bar',
+        workspace: { id: 'sales', name: 'Sales' },
+        href: '/workspaces/sales/dashboards/executive-sales/pages/overview',
+        locations: [],
+        context: [],
       }
       element.suggestions = [reference]
       await element.updateComplete
@@ -210,18 +210,18 @@ test('composer searches for and attaches typed @ references with spaces', async 
 
     expect(result).toEqual({
       searches: ['orders by'],
-      optionText: 'Orders Visual · Overview · Executive Sales',
+      optionText: 'Orders Visual · Sales · Overview · Executive Sales',
       draftAfterReference: 'Compare',
       submitted: {
         input: 'Compare this with last month',
         references: [{
-          kind: 'visual',
-          id: 'visual:executive-sales.overview.orders_chart',
-          componentId: 'orders-chart',
-          visualId: 'orders_chart',
-          title: 'Orders',
+          reference: { workspaceId: 'sales', type: 'visual', id: 'executive-sales.orders_chart' },
+          name: 'Orders',
           description: 'Overview · Executive Sales',
-          visualType: 'bar',
+          workspace: { id: 'sales', name: 'Sales' },
+          href: '/workspaces/sales/dashboards/executive-sales/pages/overview',
+          locations: [],
+          context: [],
         }],
       },
     })
@@ -237,10 +237,12 @@ test('composer distinguishes matching reference IDs from different workspaces', 
     await page.waitForFunction(() => customElements.get('lv-chat-composer'))
     const attached = await page.locator('lv-chat-composer').evaluate(async (element: any) => {
       const references = ['sales', 'visuals'].map((workspaceId) => ({
-        kind: 'field',
-        id: 'orders.revenue',
-        workspaceId,
-        title: `Revenue ${workspaceId}`,
+		reference: { workspaceId, type: 'field', id: 'orders.revenue' },
+		name: `Revenue ${workspaceId}`,
+		workspace: { id: workspaceId, name: workspaceId },
+		href: `/workspaces/${workspaceId}`,
+		locations: [],
+		context: [],
       }))
       element.suggestions = references
       await element.updateComplete
@@ -252,12 +254,12 @@ test('composer distinguishes matching reference IDs from different workspaces', 
         textarea.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }))
         await element.updateComplete
         const option = Array.from(element.shadowRoot.querySelectorAll('.mention-option'))
-          .find((candidate: any) => candidate.textContent.includes(reference.title)) as HTMLButtonElement
+		  .find((candidate: any) => candidate.textContent.includes(reference.name)) as HTMLButtonElement
         option.click()
         await element.updateComplete
       }
 
-      return element.references.map((reference: any) => reference.workspaceId)
+	  return element.references.map((reference: any) => reference.reference.workspaceId)
     })
 
     expect(attached).toEqual(['sales', 'visuals'])
@@ -287,11 +289,10 @@ test('mention picker opens immediately, renders compact rows, and scrolls with k
       }
 
       element.suggestions = Array.from({ length: 8 }, (_, index) => ({
-        kind: index % 2 === 0 ? 'visual' : 'measure',
-        id: `result-${index}`,
-        workspaceId: 'sales',
-        title: `Result ${index + 1}`,
+		reference: { workspaceId: 'sales', type: index % 2 === 0 ? 'visual' : 'measure', id: `result-${index}` },
+		name: `Result ${index + 1}`,
         description: `Compact description ${index + 1}`,
+		workspace: { id: 'sales', name: 'Sales' }, href: '/workspaces/sales', locations: [], context: [],
       }))
       await element.updateComplete
       await element.updateComplete
@@ -351,7 +352,7 @@ test('mention picker ignores search responses from an older request', async () =
       const first = requests[0]
       element.suggestionQuery = first.query
       element.suggestionRequestId = first.requestId
-      element.suggestions = [{ kind: 'visual', id: 'orders', workspaceId: 'sales', title: 'Orders' }]
+	  element.suggestions = [{ reference: { workspaceId: 'sales', type: 'visual', id: 'orders' }, name: 'Orders', workspace: { id: 'sales', name: 'Sales' }, href: '/orders', locations: [], context: [] }]
       await element.updateComplete
       const optionText = () => element.shadowRoot.querySelector('.mention-option')?.textContent?.replace(/\s+/g, ' ').trim()
       const firstVisible = optionText()
@@ -360,20 +361,20 @@ test('mention picker ignores search responses from an older request', async () =
       const second = requests[1]
       element.suggestionQuery = first.query
       element.suggestionRequestId = first.requestId
-      element.suggestions = [{ kind: 'visual', id: 'orders-old', workspaceId: 'sales', title: 'Old orders response' }]
+	  element.suggestions = [{ reference: { workspaceId: 'sales', type: 'visual', id: 'orders-old' }, name: 'Old orders response', workspace: { id: 'sales', name: 'Sales' }, href: '/orders-old', locations: [], context: [] }]
       await element.updateComplete
       const staleVisible = element.shadowRoot.querySelector('.mention-option')?.textContent?.trim() ?? ''
       const staleStatus = element.shadowRoot.querySelector('.mention-status')?.textContent?.replace(/\s+/g, ' ').trim()
 
       element.suggestionQuery = second.query
       element.suggestionRequestId = second.requestId
-      element.suggestions = [{ kind: 'measure', id: 'revenue', workspaceId: 'sales', title: 'Revenue' }]
+	  element.suggestions = [{ reference: { workspaceId: 'sales', type: 'measure', id: 'revenue' }, name: 'Revenue', workspace: { id: 'sales', name: 'Sales' }, href: '/revenue', locations: [], context: [] }]
       await element.updateComplete
       const currentVisible = optionText()
 
       element.suggestionQuery = first.query
       element.suggestionRequestId = first.requestId
-      element.suggestions = [{ kind: 'visual', id: 'orders-late', workspaceId: 'sales', title: 'Late orders response' }]
+	  element.suggestions = [{ reference: { workspaceId: 'sales', type: 'visual', id: 'orders-late' }, name: 'Late orders response', workspace: { id: 'sales', name: 'Sales' }, href: '/orders-late', locations: [], context: [] }]
       await element.updateComplete
       const afterLateStale = optionText()
 
@@ -384,11 +385,11 @@ test('mention picker ignores search responses from an older request', async () =
       { query: 'orders', requestId: 1 },
       { query: 'revenue', requestId: 2 },
     ])
-    expect(result.firstVisible).toBe('Orders Visual')
+	expect(result.firstVisible).toBe('Orders Visual · Sales')
     expect(result.staleVisible).toBe('')
     expect(result.staleStatus).toBe('Searching…')
-    expect(result.currentVisible).toBe('Revenue Measure')
-    expect(result.afterLateStale).toBe('Revenue Measure')
+	expect(result.currentVisible).toBe('Revenue Measure · Sales')
+	expect(result.afterLateStale).toBe('Revenue Measure · Sales')
   } finally {
     await page.close()
   }
@@ -401,13 +402,14 @@ test('mention picker pins on-page results above deduplicated accessible results'
     await page.waitForFunction(() => customElements.get('lv-chat-composer'))
     const result = await page.locator('lv-chat-composer').evaluate(async (element: any) => {
       const onPage = {
-        kind: 'visual', id: 'orders-on-page', workspaceId: 'sales', dashboardId: 'executive-sales', pageId: 'overview',
-        title: 'Orders on this page', description: 'Overview',
+		reference: { workspaceId: 'sales', type: 'visual', id: 'orders-on-page' },
+		name: 'Orders on this page', description: 'Overview', workspace: { id: 'sales', name: 'Sales' },
+		href: '/overview', locations: [{ dashboardId: 'executive-sales', pageId: 'overview', href: '/overview' }], context: ['current_page'],
       }
       element.pinnedSuggestions = [onPage]
       element.suggestions = [
         onPage,
-        { kind: 'measure', id: 'orders-workspace', workspaceId: 'sales', title: 'Orders workspace measure', description: 'Sales model' },
+		{ reference: { workspaceId: 'sales', type: 'measure', id: 'orders-workspace' }, name: 'Orders workspace measure', description: 'Sales model', workspace: { id: 'sales', name: 'Sales' }, href: '/measure', locations: [], context: [] },
       ]
       await element.updateComplete
       const textarea = element.shadowRoot.querySelector('textarea') as HTMLTextAreaElement
@@ -423,7 +425,7 @@ test('mention picker pins on-page results above deduplicated accessible results'
     })
 
     expect(result.labels).toEqual(['On this page', 'All accessible'])
-    expect(result.options).toEqual(['Orders on this page Visual · Overview', 'Orders workspace measure Measure · Sales model'])
+	expect(result.options).toEqual(['Orders on this page Visual · Sales · Overview', 'Orders workspace measure Measure · Sales · Sales model'])
   } finally {
     await page.close()
   }
@@ -440,7 +442,7 @@ test('composer enforces the server-provided reference limit', async () => {
       element.addEventListener('lv-chat-reference-search', (event: CustomEvent) => searches.push(event.detail.query))
       const textarea = element.shadowRoot.querySelector('textarea') as HTMLTextAreaElement
       for (const id of ['one', 'two', 'three']) {
-        element.suggestions = [{ kind: 'measure', id, workspaceId: 'sales', title: id }]
+		element.suggestions = [{ reference: { workspaceId: 'sales', type: 'measure', id }, name: id, workspace: { id: 'sales', name: 'Sales' }, href: `/${id}`, locations: [], context: [] }]
         textarea.value = `@${id}`
         textarea.setSelectionRange(textarea.value.length, textarea.value.length)
         textarea.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }))
@@ -453,7 +455,7 @@ test('composer enforces the server-provided reference limit', async () => {
       textarea.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }))
       await element.updateComplete
       const limited = {
-        references: element.references.map((reference: any) => reference.id),
+		references: element.references.map((reference: any) => reference.reference.id),
         status: element.shadowRoot.querySelector('.mention-status')?.textContent?.replace(/\s+/g, ' ').trim(),
         optionCount: element.shadowRoot.querySelectorAll('.mention-option').length,
       }

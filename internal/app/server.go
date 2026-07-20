@@ -33,12 +33,13 @@ import (
 	refreshpipelinesqlite "github.com/Yacobolo/leapview/internal/refreshpipeline/sqlite"
 	releasesqlite "github.com/Yacobolo/leapview/internal/release/sqlite"
 	"github.com/Yacobolo/leapview/internal/runtimehost"
+	productsearch "github.com/Yacobolo/leapview/internal/search"
+	searchsqlite "github.com/Yacobolo/leapview/internal/search/sqlite"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
 	"github.com/Yacobolo/leapview/internal/staticasset"
 	"github.com/Yacobolo/leapview/internal/ui"
 	"github.com/Yacobolo/leapview/internal/workspace"
-	workspacehttp "github.com/Yacobolo/leapview/internal/workspace/http"
 	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
@@ -94,7 +95,7 @@ type Server struct {
 	workspaceRepo                   workspace.Repository
 	assetCatalogMu                  sync.Mutex
 	assetCatalog                    workspace.AssetCatalogReader
-	workspaceSearchIndexes          workspacehttp.SearchIndexCache
+	search                          *productsearch.Service
 	accessRepo                      access.Repository
 	asyncJobs                       asyncjob.Repository
 	agent                           *agent.Service
@@ -260,6 +261,7 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 		if err := cursorsigningsqlite.Configure(context.Background(), options.Store.SQLDB()); err != nil {
 			server.logger.ErrorContext(context.Background(), "configure cursor signing failed", "error", err)
 		}
+		server.search = productsearch.NewService(searchsqlite.New(options.Store.SQLDB()), appSearchAuthorizer{server: server})
 	}
 	server.servingStateRepo = servingStateRepo
 	server.managedDataBindingRepo = managedDataBindingRepo

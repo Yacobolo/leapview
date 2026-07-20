@@ -10,16 +10,16 @@ func TestContextualModelInputIncludesResolvedWorkspaceReferences(t *testing.T) {
 		Surface:     "chat",
 		WorkspaceID: "sales",
 		References: []TurnReference{{
-			Kind:      "measure",
-			ID:        "measure:orders.order_count",
-			Title:     "Order count",
+			Reference: TurnReferenceKey{WorkspaceID: "sales", Type: "measure", ID: "orders.order_count"},
+			Name:      "Order count",
+			Workspace: TurnReferenceWorkspace{ID: "sales", Name: "Sales"},
 			ModelID:   "sales",
 			DatasetID: "orders",
 			FieldID:   "order_count",
 		}},
 	})
 
-	for _, want := range []string{"leapview_turn_context", `"surface":"chat"`, `"kind":"measure"`, "Order count", "How is this calculated?"} {
+	for _, want := range []string{"leapview_turn_context", `"surface":"chat"`, `"type":"measure"`, "Order count", "How is this calculated?"} {
 		if !strings.Contains(input, want) {
 			t.Fatalf("contextual input missing %q:\n%s", want, input)
 		}
@@ -30,8 +30,8 @@ func TestTurnContextNormalizationKeepsSameReferenceIDAcrossWorkspaces(t *testing
 	normalized := (TurnContext{
 		Surface: "chat",
 		References: []TurnReference{
-			{Kind: "field", ID: "orders.revenue", WorkspaceID: "sales"},
-			{Kind: "field", ID: "orders.revenue", WorkspaceID: "visuals"},
+			{Reference: TurnReferenceKey{WorkspaceID: "sales", Type: "field", ID: "orders.revenue"}},
+			{Reference: TurnReferenceKey{WorkspaceID: "visuals", Type: "field", ID: "orders.revenue"}},
 		},
 	}).normalized()
 

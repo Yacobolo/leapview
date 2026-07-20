@@ -2,21 +2,26 @@ package app
 
 import (
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/agent"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
+	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 )
 
 func TestResolveChatTurnReferencesUsesAuthorizedSearchMetadata(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
+	store := testStore(t)
+	seedEnvironmentAssetDeployment(t, store, "test", servingstate.DefaultEnvironment, "Orders dashboard", "Warehouse")
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
 	resolved, err := server.resolveAgentTurnContext(httptest.NewRequest("GET", "/chats/new", nil), agent.Scope{DevAuthBypass: true}, agent.TurnContext{
 		Surface:     "chat",
 		WorkspaceID: "test",
 		References: []agent.TurnReference{{
-			Kind: "measure", ID: "test.order_count", Title: "Untrusted browser title", WorkspaceID: "test", ModelID: "wrong-model",
+			Reference: agent.TurnReferenceKey{WorkspaceID: "test", Type: "dashboard", ID: "dev-dashboard"},
+			Name:      "Untrusted browser title", ModelID: "wrong-model",
 		}},
 	})
 	if err != nil {
@@ -26,13 +31,15 @@ func TestResolveChatTurnReferencesUsesAuthorizedSearchMetadata(t *testing.T) {
 		t.Fatalf("resolved references = %#v", resolved.References)
 	}
 	ref := resolved.References[0]
-	if ref.Kind != "measure" || ref.ID != "test.order_count" || ref.Title == "Untrusted browser title" || ref.ModelID != "test" {
+	if ref.Reference.Type != "dashboard" || ref.Reference.ID != "dev-dashboard" || ref.Name != "Orders dashboard" {
 		t.Fatalf("resolved reference trusted browser metadata: %#v", ref)
 	}
 }
 
 func TestResolveChatTurnReferencesAppliesCredentialToReferenceWorkspace(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
+	store := testStore(t)
+	seedEnvironmentAssetDeployment(t, store, "test", servingstate.DefaultEnvironment, "Orders dashboard", "Warehouse")
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
 	resolved, err := server.resolveAgentTurnContext(httptest.NewRequest("GET", "/chats/new", nil), agent.Scope{
 		DevAuthBypass: true,
 		Credential: agent.CredentialScope{
@@ -43,7 +50,7 @@ func TestResolveChatTurnReferencesAppliesCredentialToReferenceWorkspace(t *testi
 	}, agent.TurnContext{
 		Surface: "chat",
 		References: []agent.TurnReference{{
-			Kind: "measure", ID: "test.order_count", WorkspaceID: "test",
+			Reference: agent.TurnReferenceKey{WorkspaceID: "test", Type: "dashboard", ID: "dev-dashboard"},
 		}},
 	})
 	if err != nil {
@@ -63,7 +70,7 @@ func TestResolveChatTurnReferencesAppliesCredentialToReferenceWorkspace(t *testi
 	}, agent.TurnContext{
 		Surface: "chat",
 		References: []agent.TurnReference{{
-			Kind: "measure", ID: "test.order_count", WorkspaceID: "test",
+			Reference: agent.TurnReferenceKey{WorkspaceID: "test", Type: "dashboard", ID: "dev-dashboard"},
 		}},
 	})
 	if err == nil {
@@ -76,7 +83,7 @@ func TestResolveAgentTurnContextRejectsExcessReferences(t *testing.T) {
 	references := make([]agent.TurnReference, agent.MaxTurnReferences+1)
 	for index := range references {
 		references[index] = agent.TurnReference{
-			Kind: "measure", ID: "test.order_count", WorkspaceID: "test",
+			Reference: agent.TurnReferenceKey{WorkspaceID: "test", Type: "measure", ID: "test.order_count"},
 		}
 	}
 	_, err := server.resolveAgentTurnContext(httptest.NewRequest("GET", "/chats/new", nil), agent.Scope{DevAuthBypass: true}, agent.TurnContext{
@@ -93,10 +100,11 @@ func TestResolveDashboardTurnReferencesUsesCompiledMetadata(t *testing.T) {
 		{ID: "orders-table", Table: "orders", Title: "Recent orders"},
 	}}
 	resolved := resolveDashboardTurnReferences([]agent.TurnReference{
-		{Kind: "visual", ComponentID: "orders-chart", VisualID: "orders_chart", Title: "Ignore browser title", VisualType: "script"},
-		{Kind: "visual", ComponentID: "orders-table", VisualID: "orders", Title: "Ignore browser table title"},
-		{Kind: "visual", ComponentID: "off-page", VisualID: "secret", Title: "Not on page"},
-	}, page, map[string]reportdef.Visual{
+		{Reference: agent.TurnReferenceKey{WorkspaceID: "test", Type: "visual", ID: "executive-sales.orders_chart"}, Name: "Ignore browser title", VisualType: "script"},
+		{Reference: agent.TurnReferenceKey{WorkspaceID: "test", Type: "visual", ID: "executive-sales.orders"}, Name: "Ignore browser table title"},
+		{Reference: agent.TurnReferenceKey{WorkspaceID: "test", Type: "visual", ID: "executive-sales.secret"}, Name: "Not on page"},
+		{Reference: agent.TurnReferenceKey{WorkspaceID: "test", Type: "visual", ID: "other.orders_chart"}, Name: "Wrong dashboard"},
+	}, "executive-sales", page, map[string]reportdef.Visual{
 		"orders_chart": {Title: "Orders by status", Type: "bar"},
 		"secret":       {Title: "Secret", Type: "line"},
 	}, map[string]reportdef.TableVisual{
@@ -104,14 +112,14 @@ func TestResolveDashboardTurnReferencesUsesCompiledMetadata(t *testing.T) {
 	})
 
 	want := []agent.TurnReference{
-		{Kind: "visual", ComponentID: "orders-chart", VisualID: "orders_chart", Title: "Orders by status", VisualType: "bar"},
-		{Kind: "visual", ComponentID: "orders-table", VisualID: "orders", Title: "Recent orders", VisualType: "table"},
+		{Reference: agent.TurnReferenceKey{WorkspaceID: "test", Type: "visual", ID: "executive-sales.orders_chart"}, ComponentID: "orders-chart", VisualID: "orders_chart", Name: "Orders by status", VisualType: "bar"},
+		{Reference: agent.TurnReferenceKey{WorkspaceID: "test", Type: "visual", ID: "executive-sales.orders"}, ComponentID: "orders-table", VisualID: "orders", Name: "Recent orders", VisualType: "table"},
 	}
 	if len(resolved) != len(want) {
 		t.Fatalf("resolved references = %#v, want %#v", resolved, want)
 	}
 	for index := range want {
-		if resolved[index] != want[index] {
+		if !reflect.DeepEqual(resolved[index], want[index]) {
 			t.Fatalf("resolved[%d] = %#v, want %#v", index, resolved[index], want[index])
 		}
 	}
