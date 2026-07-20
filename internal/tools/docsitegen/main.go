@@ -278,6 +278,13 @@ func addDocument(root, section, group string, document documentSpec, seenSlugs, 
 	if err != nil {
 		return fmt.Errorf("read documentation source %s: %w", document.Source, err)
 	}
+	heading := documentHeading(contents)
+	if heading == "" {
+		return fmt.Errorf("documentation source %s is missing an h1", document.Source)
+	}
+	if heading != document.Title {
+		return fmt.Errorf("documentation title %q does not match h1 %q in %s", document.Title, heading, document.Source)
+	}
 	if document.Breadcrumb == "" {
 		document.Breadcrumb = document.Title
 	}
@@ -285,6 +292,29 @@ func addDocument(root, section, group string, document documentSpec, seenSlugs, 
 	*output = append(*output, document)
 	*search = append(*search, docsearch.Document{Slug: document.Slug, Title: document.Title, Summary: document.Summary, Section: section, Category: group, Body: string(contents), Generated: document.Generated})
 	return nil
+}
+
+func documentHeading(contents []byte) string {
+	inFence := false
+	fence := ""
+	for _, rawLine := range strings.Split(string(contents), "\n") {
+		line := strings.TrimSpace(rawLine)
+		if strings.HasPrefix(line, "```") || strings.HasPrefix(line, "~~~") {
+			marker := line[:3]
+			if !inFence {
+				inFence = true
+				fence = marker
+			} else if marker == fence {
+				inFence = false
+				fence = ""
+			}
+			continue
+		}
+		if !inFence && strings.HasPrefix(line, "# ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "# "))
+		}
+	}
+	return ""
 }
 
 func validateNoOrphanMarkdown(root string, seenSources map[string]struct{}) error {

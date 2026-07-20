@@ -528,9 +528,93 @@ func TestSiteDocumentationSupportsNestedArticleSlugs(t *testing.T) {
 			t.Errorf("nested documentation missing %q", want)
 		}
 	}
-	for _, unwanted := range []string{`class="site-docs-pagination"`, `aria-label="Documentation pagination"`} {
-		if strings.Contains(body, unwanted) {
-			t.Errorf("nested documentation unexpectedly contains %q", unwanted)
+	for _, want := range []string{`class="site-docs-pagination"`, `aria-label="Documentation pagination"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("nested documentation missing %q", want)
+		}
+	}
+}
+
+func TestSiteDocumentationRendersSequentialPagination(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	tests := []struct {
+		name          string
+		slug          string
+		previousHref  string
+		previousTitle string
+		nextHref      string
+		nextTitle     string
+	}{
+		{
+			name:      "first article",
+			slug:      "introduction",
+			nextHref:  "/docs/installation",
+			nextTitle: "Installation",
+		},
+		{
+			name:          "middle article",
+			slug:          "getting-started",
+			previousHref:  "/docs/installation",
+			previousTitle: "Installation",
+			nextHref:      "/docs/first-dashboard",
+			nextTitle:     "Build your first dashboard",
+		},
+		{
+			name:          "section boundary",
+			slug:          "project-structure",
+			previousHref:  "/docs/first-dashboard",
+			previousTitle: "Build your first dashboard",
+			nextHref:      "/docs/concepts",
+			nextTitle:     "Core concepts",
+		},
+		{
+			name:          "last article",
+			slug:          "contributing/documentation",
+			previousHref:  "/docs/contributing/configuration",
+			previousTitle: "Add a configuration resource",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			response, err := server.Client().Get(server.URL + "/docs/" + tt.slug)
+			if err != nil {
+				t.Fatalf("get documentation article: %v", err)
+			}
+			defer response.Body.Close()
+			body := readBody(t, response)
+			if !strings.Contains(body, `aria-label="Documentation pagination"`) {
+				t.Fatalf("documentation article missing pagination:\n%s", body)
+			}
+			assertPaginationLink(t, body, "previous", tt.previousHref, tt.previousTitle)
+			assertPaginationLink(t, body, "next", tt.nextHref, tt.nextTitle)
+		})
+	}
+}
+
+func assertPaginationLink(t *testing.T, body, direction, href, title string) {
+	t.Helper()
+	class := `site-docs-pagination-` + direction
+	if href == "" {
+		if strings.Contains(body, class) {
+			t.Errorf("documentation article unexpectedly renders %s pagination", direction)
+		}
+		return
+	}
+	label, rel := "Next", "next"
+	if direction == "previous" {
+		label, rel = "Previous", "prev"
+	}
+	for _, want := range []string{
+		`class="site-docs-pagination-card ` + class + `"`,
+		`href="` + href + `"`,
+		`rel="` + rel + `"`,
+		`aria-label="` + label + ` page: ` + title + `"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("%s pagination missing %q:\n%s", direction, want, body)
 		}
 	}
 }
@@ -629,7 +713,7 @@ func TestSiteServesDeploymentScopedMCPGuide(t *testing.T) {
 	}
 	body := readBody(t, response)
 	for _, want := range []string{
-		"Connect an MCP host to LeapView",
+		"Connect an MCP host",
 		"https://bi.example.com/mcp",
 		"https://leapview.dev",
 		"remote MCP custom connector guide",
@@ -743,7 +827,8 @@ func TestSiteCLIReferenceGroupsSubcommandsAndRedirectsLeafPages(t *testing.T) {
 	for _, want := range []string{
 		`<h1>leapview semantic-models</h1>`,
 		`<h2 id="subcommands">Subcommands</h2>`,
-		`<h2 id="query">query</h2>`,
+		`<h3 id="query">query</h3>`,
+		`<h4>Usage</h4>`,
 		`leapview semantic-models query &lt;model&gt; &lt;dataset&gt;`,
 		`href="/docs/cli/commands/semantic-models-query.json"`,
 	} {

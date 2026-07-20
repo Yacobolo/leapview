@@ -397,12 +397,13 @@ func renderTagDocument(tag openAPITag, operations []taggedOperation) string {
 	if tag.Description != "" {
 		markdown.WriteString(strings.TrimSpace(tag.Description) + "\n\n")
 	}
+	markdown.WriteString("## Operations\n\n")
 	for _, operation := range operations {
 		title := operation.Value.Summary
 		if title == "" {
 			title = operation.Method + " " + operation.Path
 		}
-		markdown.WriteString("## " + title + "\n\n")
+		markdown.WriteString("### " + title + "\n\n")
 		markdown.WriteString(fmt.Sprintf("`%s %s`\n\n", operation.Method, operation.Path))
 		if operation.Value.Description != "" {
 			markdown.WriteString(strings.TrimSpace(operation.Value.Description) + "\n\n")
@@ -437,7 +438,7 @@ func writeParameters(markdown *strings.Builder, parameters []parameter) {
 	if len(parameters) == 0 {
 		return
 	}
-	markdown.WriteString("### Parameters\n\n")
+	markdown.WriteString("#### Parameters\n\n")
 	markdown.WriteString("| Name | In | Required | Type | Description |\n| --- | --- | --- | --- | --- |\n")
 	for _, parameter := range parameters {
 		required := "No"
@@ -458,7 +459,7 @@ func writeRequestBody(markdown *strings.Builder, body requestBody) {
 		contentTypes = append(contentTypes, contentType)
 	}
 	sort.Strings(contentTypes)
-	markdown.WriteString("### Request body\n\n")
+	markdown.WriteString("#### Request body\n\n")
 	if body.Description != "" {
 		markdown.WriteString(tableText(body.Description) + "\n\n")
 	}
@@ -474,7 +475,7 @@ func writeResponses(markdown *strings.Builder, responses map[string]response) {
 		statuses = append(statuses, status)
 	}
 	sort.Strings(statuses)
-	markdown.WriteString("### Responses\n\n")
+	markdown.WriteString("#### Responses\n\n")
 	markdown.WriteString("| Status | Description |\n| --- | --- |\n")
 	for _, status := range statuses {
 		markdown.WriteString(fmt.Sprintf("| `%s` | %s |\n", status, tableText(responses[status].Description)))

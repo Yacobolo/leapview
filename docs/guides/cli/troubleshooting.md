@@ -1,4 +1,4 @@
-# Troubleshooting
+# CLI troubleshooting
 
 Start with the local validation error: it points to the project file and the invalid field. For remote operations, confirm the target URL, API token, and workspace selection.
 

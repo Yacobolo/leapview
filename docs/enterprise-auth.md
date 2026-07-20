@@ -1,4 +1,4 @@
-# Enterprise Auth
+# Authentication and authorization
 
 LeapView uses the standard enterprise split:
 

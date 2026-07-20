@@ -77,9 +77,14 @@ components:
 	if strings.HasSuffix(article, "\n\n") {
 		t.Errorf("article ends with an extra blank line: %q", article)
 	}
-	for _, want := range []string{"# Things", "## List things", "`GET /v1/things`", "Operation ID: `listThings`", "Effect: `read`", "Required privilege: `READ_THINGS`", "/docs/api/operations/listThings.json", "| `limit` | query | No | integer | Maximum results. |", "| `200` | Things returned. |"} {
+	for _, want := range []string{"# Things", "## Operations", "### List things", "#### Parameters", "#### Responses", "`GET /v1/things`", "Operation ID: `listThings`", "Effect: `read`", "Required privilege: `READ_THINGS`", "/docs/api/operations/listThings.json", "| `limit` | query | No | integer | Maximum results. |", "| `200` | Things returned. |"} {
 		if !strings.Contains(article, want) {
 			t.Errorf("article missing %q:\n%s", want, article)
+		}
+	}
+	for _, unwanted := range []string{"\n## List things\n", "\n### Parameters\n", "\n### Responses\n"} {
+		if strings.Contains(article, unwanted) {
+			t.Errorf("article contains obsolete heading %q:\n%s", unwanted, article)
 		}
 	}
 

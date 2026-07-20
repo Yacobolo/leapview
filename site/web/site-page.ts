@@ -629,8 +629,110 @@ document.addEventListener('keydown', (event) => {
 })
 
 window.addEventListener('resize', () => syncDocsDrawer(document.querySelector('.site-docs-layout')?.classList.contains('site-docs-drawer-open')))
-syncDocsDrawer()
-requestAnimationFrame(revealCurrentDocsLink)
+
+const docsSidebarScrollStorageKey = 'leapview:docs-sidebar-scroll:v1'
+
+type DocsSidebarScrollAnchor = {
+  id: string
+  kind: 'group' | 'link'
+  offset: number
+}
+
+type DocsSidebarScrollState = {
+  anchor?: DocsSidebarScrollAnchor
+  scrollTop: number
+}
+
+function initializeDocsSidebarScroll(): void {
+  const sidebar = document.querySelector<HTMLElement>('.site-docs-sidebar')
+  if (!sidebar) return
+
+  let persistenceFrame = 0
+  sidebar.addEventListener('scroll', () => {
+    if (persistenceFrame !== 0) return
+    persistenceFrame = requestAnimationFrame(() => {
+      persistenceFrame = 0
+      persistDocsSidebarScroll(sidebar)
+    })
+  }, { passive: true })
+  window.addEventListener('pagehide', () => persistDocsSidebarScroll(sidebar), { once: true })
+
+  requestAnimationFrame(() => {
+    restoreDocsSidebarScroll(sidebar)
+    revealCurrentDocsLink()
+  })
+}
+
+function persistDocsSidebarScroll(sidebar: HTMLElement): void {
+  const state: DocsSidebarScrollState = {
+    anchor: currentDocsSidebarAnchor(sidebar),
+    scrollTop: sidebar.scrollTop,
+  }
+  try {
+    sessionStorage.setItem(docsSidebarScrollStorageKey, JSON.stringify(state))
+  } catch {
+    // Storage can be unavailable in restricted browsing contexts. Navigation
+    // remains usable through the active-link reveal below.
+  }
+}
+
+function currentDocsSidebarAnchor(sidebar: HTMLElement): DocsSidebarScrollAnchor | undefined {
+  const sidebarTop = sidebar.getBoundingClientRect().top
+  for (const row of docsSidebarRows(sidebar)) {
+    const bounds = row.getBoundingClientRect()
+    if (bounds.height === 0 || bounds.bottom <= sidebarTop) continue
+    if (row.matches('a')) {
+      const href = row.getAttribute('href')
+      if (href) return { id: href, kind: 'link', offset: bounds.top - sidebarTop }
+    } else {
+      const group = row.parentElement?.getAttribute('data-site-docs-group')
+      if (group) return { id: group, kind: 'group', offset: bounds.top - sidebarTop }
+    }
+  }
+  return undefined
+}
+
+function restoreDocsSidebarScroll(sidebar: HTMLElement): void {
+  const state = storedDocsSidebarScroll()
+  if (!state) return
+
+  sidebar.scrollTop = state.scrollTop
+  const savedAnchor = state.anchor
+  if (!savedAnchor) return
+  const anchor = docsSidebarRows(sidebar).find((row) => docsSidebarRowMatchesAnchor(row, savedAnchor))
+  if (!anchor || anchor.getBoundingClientRect().height === 0) return
+
+  const currentOffset = anchor.getBoundingClientRect().top - sidebar.getBoundingClientRect().top
+  sidebar.scrollTop += currentOffset - savedAnchor.offset
+}
+
+function storedDocsSidebarScroll(): DocsSidebarScrollState | undefined {
+  try {
+    const value: unknown = JSON.parse(sessionStorage.getItem(docsSidebarScrollStorageKey) ?? 'null')
+    if (!value || typeof value !== 'object') return undefined
+    const state = value as Partial<DocsSidebarScrollState>
+    if (!Number.isFinite(state.scrollTop) || Number(state.scrollTop) < 0) return undefined
+    if (state.anchor !== undefined && !validDocsSidebarAnchor(state.anchor)) return undefined
+    return { anchor: state.anchor, scrollTop: Number(state.scrollTop) }
+  } catch {
+    return undefined
+  }
+}
+
+function validDocsSidebarAnchor(value: unknown): value is DocsSidebarScrollAnchor {
+  if (!value || typeof value !== 'object') return false
+  const anchor = value as Partial<DocsSidebarScrollAnchor>
+  return (anchor.kind === 'group' || anchor.kind === 'link') && typeof anchor.id === 'string' && anchor.id !== '' && Number.isFinite(anchor.offset)
+}
+
+function docsSidebarRows(sidebar: HTMLElement): HTMLElement[] {
+  return Array.from(sidebar.querySelectorAll<HTMLElement>('.site-docs-link, .site-docs-nav-group > summary'))
+}
+
+function docsSidebarRowMatchesAnchor(row: HTMLElement, anchor: DocsSidebarScrollAnchor): boolean {
+  if (anchor.kind === 'link') return row.matches('a') && row.getAttribute('href') === anchor.id
+  return row.matches('summary') && row.parentElement?.getAttribute('data-site-docs-group') === anchor.id
+}
 
 function revealCurrentDocsLink(): void {
   document.querySelector<HTMLElement>('.site-docs-link-current')?.scrollIntoView({
@@ -638,6 +740,9 @@ function revealCurrentDocsLink(): void {
     inline: 'nearest',
   })
 }
+
+syncDocsDrawer()
+initializeDocsSidebarScroll()
 
 class SiteMarkdownCopy extends LitElement {
   static properties = {
@@ -1251,7 +1356,8 @@ class SiteArticleToc extends LitElement {
   }
 
   private collectSections() {
-    const headings = Array.from(document.querySelectorAll<HTMLElement>('.site-docs-article h2, .site-docs-article h3, .site-docs-article h4'))
+    const article = document.querySelector<HTMLElement>('.site-docs-article')
+    const headings = Array.from(article?.querySelectorAll<HTMLElement>(':scope > h2, :scope > h3, :scope > h4') ?? [])
     const used = new Set<string>()
     this.sections = headings.map((heading) => {
       let id =
