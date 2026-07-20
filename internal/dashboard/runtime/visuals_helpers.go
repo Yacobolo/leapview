@@ -408,6 +408,11 @@ func selectedEntries(filters dashboard.Filters, sourceKind, sourceID string) []d
 	return entries
 }
 
+func applySourceSelectionToVisual(visual dashboard.Visual, filters dashboard.Filters) dashboard.Visual {
+	visual.Selection = selectedEntries(filters, "visual", visual.ID)
+	return visual
+}
+
 func copySelectionEntry(entry dashboard.InteractionSelectionEntry) dashboard.InteractionSelectionEntry {
 	next := dashboard.InteractionSelectionEntry{
 		Label:    entry.Label,

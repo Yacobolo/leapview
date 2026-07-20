@@ -132,6 +132,53 @@ test('dashboard refresh progress is owned by the latest stream generation', asyn
   } finally { await page.close() }
 })
 
+test('dashboard keeps the source visualization selected through canonicalization and clearing', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => (document.querySelector('ld-dashboard-page') as any)?.page?.title === 'Executive Sales Dashboard')
+    const selections = await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
+      const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev')
+      const readSelection = async () => {
+        await element.updateComplete
+        await Promise.resolve()
+        await element.updateComplete
+        const host = Array.from(element.shadowRoot.querySelectorAll('ld-visualization-host') as NodeListOf<any>)
+          .find((candidate: any) => candidate.envelope?.visualID === 'orders_chart')
+        return host.envelope.selection
+      }
+      await element.updateComplete
+      const source = Array.from(element.shadowRoot.querySelectorAll('ld-visualization-host') as NodeListOf<any>)
+        .find((host: any) => host.envelope?.visualID === 'orders_chart')
+      source.dispatchEvent(new CustomEvent('ld-interaction-select', { bubbles: true, composed: true, detail: {
+        sourceKind: 'visual', sourceId: 'orders_chart', interactionKind: 'selection', action: 'set', toggle: true,
+        mappings: [{ field: 'orders.status', fact: 'orders', value: 'delivered', label: 'Delivered' }],
+      } }))
+      const optimistic = await readSelection()
+
+      mergePatch({
+        filters: { selections: [{
+          sourceKind: 'visual', sourceId: 'orders_chart', interactionKind: 'selection',
+          entries: [{ label: 'Delivered', mappings: [{ field: 'orders.status', fact: 'orders', value: 'delivered' }] }],
+        }] },
+        status: { generation: 4, refreshId: 'refresh-4', loading: false, progressPercent: 100 },
+      })
+      const canonical = await readSelection()
+
+      mergePatch({
+        filters: { selections: [] },
+        status: { generation: 5, refreshId: 'refresh-5', loading: false, progressPercent: 100 },
+      })
+      const cleared = await readSelection()
+      return { optimistic, canonical, cleared }
+    })
+    const selected = [{
+      datum: { dataset: 'primary', dataRevision: 1, identity: { label: 'delivered' } }, label: 'Delivered',
+    }]
+    expect(selections).toEqual({ optimistic: selected, canonical: selected, cleared: [] })
+  } finally { await page.close() }
+})
+
 function testDocument(): string {
   const page = {
     kind: 'dashboard', title: 'Executive Sales Dashboard', dashboardId: 'executive-sales', dashboardTitle: 'Executive Sales Dashboard',

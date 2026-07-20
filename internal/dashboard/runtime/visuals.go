@@ -43,7 +43,7 @@ func (s *VisualizationDataService) visuals(ctx context.Context, runtime *modelRu
 				return nil, err
 			}
 		}
-		visuals[key] = buildVisualPayload(runtime, key, visual, data)
+		visuals[key] = applySourceSelectionToVisual(buildVisualPayload(runtime, key, visual, data), filters)
 	}
 	return visuals, nil
 }
@@ -121,7 +121,7 @@ func (s *VisualizationDataService) bundledVisuals(ctx context.Context, runtime *
 				}
 			}
 		}
-		visuals[key] = buildVisualPayload(runtime, key, visual, data)
+		visuals[key] = applySourceSelectionToVisual(buildVisualPayload(runtime, key, visual, data), filters)
 	}
 	return visuals, nil
 }

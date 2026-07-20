@@ -22,6 +22,7 @@ import './visualization/host'
 import {
   applyOptimisticInteraction,
   validateInteractionCommand,
+  visualizationSelectionEntries,
   type CanonicalInteractionSelection,
   type InteractionConfigLike,
   type OptimisticInteractionCommand,
@@ -528,7 +529,11 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
 
   private visualFor(component: DashboardComponentSignal): VisualizationEnvelope | undefined {
     const visuals = this.renderSnapshot?.visuals ?? this.visuals
-    return component.visual ? visuals[component.visual] : undefined
+    const visual = component.visual ? visuals[component.visual] : undefined
+    if (!visual) return undefined
+    const filters = this.renderSnapshot?.filters ?? this.filters
+    const selections = this.optimisticSelections ?? filters.selections
+    return { ...visual, selection: visualizationSelectionEntries(visual, selections) }
   }
 
   private handleOptimisticInteraction = (event: CustomEvent<unknown>): void => {
