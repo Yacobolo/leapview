@@ -181,9 +181,18 @@ for (const viewport of [
         const chart = chartFrame?.querySelector('ld-echart') as any
         const table = tableFrame?.querySelector('ld-report-table') as any
         await Promise.all([chartFrame?.updateComplete, tableFrame?.updateComplete, chart?.updateComplete, table?.updateComplete])
+        const chartSpinner = chartFrame?.shadowRoot?.querySelector('ld-loading-spinner') as any
+        await chartSpinner?.updateComplete
+        const chartSpinnerSvg = chartSpinner?.shadowRoot?.querySelector('svg') as SVGElement | null
+        const chartIndicator = chartFrame?.shadowRoot?.querySelector('.loading-indicator.header') as HTMLElement | null
         return {
           chartBusy: chartFrame?.shadowRoot?.querySelector('article')?.getAttribute('aria-busy'),
           chartLoadingLabel: chartFrame?.shadowRoot?.querySelector('[role="status"]')?.getAttribute('aria-label'),
+          chartIndicatorPlacement: chartIndicator?.className ?? '',
+          chartIndicatorDelay: chartIndicator ? getComputedStyle(chartIndicator).animationDelay : '',
+          chartHasFullOverlay: Boolean(chartFrame?.shadowRoot?.querySelector('.refresh-overlay.loading')),
+          chartSpinnerDuration: chartSpinnerSvg ? getComputedStyle(chartSpinnerSvg).animationDuration : '',
+          chartSpinnerIsNeutral: Boolean(chartSpinner && chartIndicator && getComputedStyle(chartSpinner).color === getComputedStyle(chartIndicator).color),
           tableAlert: tableFrame?.shadowRoot?.querySelector('[role="alert"]')?.textContent?.replace(/\s+/g, ' ').trim(),
           tableRetainedRow: table?.shadowRoot?.textContent?.includes('o1'),
           kpiHasOverlay: Boolean(kpiFrame?.shadowRoot?.querySelector('.refresh-overlay')),
@@ -195,6 +204,11 @@ for (const viewport of [
       expect(progressiveState).toEqual({
         chartBusy: 'true',
         chartLoadingLabel: 'Refreshing component',
+        chartIndicatorPlacement: 'loading-indicator header',
+        chartIndicatorDelay: '0.5s',
+        chartHasFullOverlay: false,
+        chartSpinnerDuration: '1.8s',
+        chartSpinnerIsNeutral: true,
         tableAlert: 'Could not refresh this component Ratings query failed',
         tableRetainedRow: true,
         kpiHasOverlay: false,
@@ -362,6 +376,47 @@ for (const viewport of [
   })
 }
 
+test('visual frame delays and distinguishes initial loading from background refresh', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('ld-dashboard-visual-frame'))
+    const state = await page.evaluate(async () => {
+      const frame = document.createElement('ld-dashboard-visual-frame') as any
+      frame.refreshStatus = { generation: 4, loading: true, error: '' }
+      frame.loadingPresentation = 'center'
+      document.body.append(frame)
+      await frame.updateComplete
+      const center = frame.shadowRoot.querySelector('.loading-indicator.center') as HTMLElement
+      const centerSpinner = center.querySelector('ld-loading-spinner') as HTMLElement
+      const initial = {
+        delay: getComputedStyle(center).animationDelay,
+        background: getComputedStyle(center).backgroundColor,
+        spinnerSize: getComputedStyle(centerSpinner).width,
+      }
+
+      frame.loadingPresentation = 'header'
+      await frame.updateComplete
+      const header = frame.shadowRoot.querySelector('.loading-indicator.header') as HTMLElement
+      const headerSpinner = header.querySelector('ld-loading-spinner') as HTMLElement
+      const refresh = {
+        delay: getComputedStyle(header).animationDelay,
+        background: getComputedStyle(header).backgroundColor,
+        spinnerSize: getComputedStyle(headerSpinner).width,
+      }
+      frame.remove()
+      return { initial, refresh }
+    })
+
+    expect(state).toEqual({
+      initial: { delay: '0.25s', background: 'rgb(255, 255, 255)', spinnerSize: '24px' },
+      refresh: { delay: '0.5s', background: 'rgba(0, 0, 0, 0)', spinnerSize: '12px' },
+    })
+  } finally {
+    await page.close()
+  }
+})
+
 test('dashboard refresh progress follows only the latest generation', async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
   try {
@@ -451,7 +506,7 @@ test('dashboard refresh progress follows only the latest generation', async () =
         indeterminate: false,
         width: 'width:50%',
         animationName: 'none',
-        fadeDelay: '0s',
+        fadeDelay: '0.25s',
       },
       planning: {
         active: 'true',
@@ -463,7 +518,7 @@ test('dashboard refresh progress follows only the latest generation', async () =
         indeterminate: false,
         width: 'width:0%',
         animationName: 'none',
-        fadeDelay: '0s',
+        fadeDelay: '0.25s',
       },
       started: {
         active: 'true',
@@ -475,7 +530,7 @@ test('dashboard refresh progress follows only the latest generation', async () =
         indeterminate: false,
         width: 'width:0%',
         animationName: 'none',
-        fadeDelay: '0s',
+        fadeDelay: '0.25s',
       },
       progressive: {
         active: 'true',
@@ -487,7 +542,7 @@ test('dashboard refresh progress follows only the latest generation', async () =
         indeterminate: false,
         width: 'width:33.33333333333333%',
         animationName: 'none',
-        fadeDelay: '0s',
+        fadeDelay: '0.25s',
       },
       complete: {
         active: 'false',
@@ -653,7 +708,8 @@ function testDocument(): string {
       <head>
         <style>
           html, body { margin: 0; min-height: 100%; }
-          body { --fontStack-system: system-ui; --ld-bg-app: #f6f8fa; --ld-bg-panel: #fff; --ld-bg-panel-muted: #f6f8fa; --ld-bg-control-hover: #f3f4f6; --ld-chart-surface: #fff; --ld-report-page-bg: #fff; --ld-report-canvas-bg: #eaeef2; --ld-report-rail-bg: #fff; --ld-bg-overlay: #fff; --ld-fg-default: #24292f; --ld-fg-muted: #57606a; --ld-fg-link: #0969da; --ld-line-muted: #d8dee4; --ld-border-default: 1px solid #d0d7de; --ld-border-muted: 1px solid #d8dee4; --ld-border-transparent: 1px solid transparent; --ld-radius-default: 6px; --ld-radius-full: 999px; --ld-dashboard-filter-width: 44px; --ld-dashboard-filter-open-width: 320px; --base-size-2: 2px; --base-size-4: 4px; --base-size-6: 6px; --base-size-8: 8px; --base-size-10: 10px; --base-size-12: 12px; --base-size-16: 16px; --base-size-20: 20px; --base-size-24: 24px; --control-medium-size: 32px; --control-xlarge-size: 40px; --ld-font-size-caption: 12px; --ld-font-size-body-sm: 14px; --ld-font-size-title-sm: 16px; --ld-font-size-title-lg: 28px; --ld-font-size-display: 32px; --ld-font-weight-medium: 500; --ld-font-weight-strong: 600; --ld-line-height-none: 1; --ld-line-height-tight: 1.2; --ld-line-height-compact: 1.3; --zIndex-dropdown: 100; --zIndex-modal: 200; --zIndex-sticky: 50; --shadow-resting-small: 0 1px 2px rgb(0 0 0 / .08); --shadow-floating-small: 0 8px 24px rgb(0 0 0 / .12); --ld-duration-fast: 160ms; --motion-easing-move: ease; --motion-transition-stateChange: 160ms ease; }
+          body { --fontStack-system: system-ui; --ld-bg-app: #f6f8fa; --ld-bg-panel: #fff; --ld-bg-panel-muted: #f6f8fa; --ld-bg-control-hover: #f3f4f6; --ld-chart-surface: #fff; --ld-report-page-bg: #fff; --ld-report-canvas-bg: #eaeef2; --ld-report-rail-bg: #fff; --ld-bg-overlay: #fff; --ld-fg-default: #24292f; --ld-fg-muted: #57606a; --ld-fg-link: #0969da; --ld-line-muted: #d8dee4; --ld-border-default: 1px solid #d0d7de; --ld-border-muted: 1px solid #d8dee4; --ld-border-transparent: 1px solid transparent; --ld-radius-default: 6px; --ld-radius-full: 999px; --ld-dashboard-filter-width: 44px; --ld-dashboard-filter-open-width: 320px; --base-size-2: 2px; --base-size-4: 4px; --base-size-6: 6px; --base-size-8: 8px; --base-size-10: 10px; --base-size-12: 12px; --base-size-16: 16px; --base-size-20: 20px; --base-size-24: 24px; --control-medium-size: 32px; --control-xlarge-size: 40px; --ld-font-size-caption: 12px; --ld-font-size-body-sm: 14px; --ld-font-size-title-sm: 16px; --ld-font-size-title-lg: 28px; --ld-font-size-display: 32px; --ld-font-weight-medium: 500; --ld-font-weight-strong: 600; --ld-line-height-none: 1; --ld-line-height-tight: 1.2; --ld-line-height-compact: 1.3; --zIndex-dropdown: 100; --zIndex-modal: 200; --zIndex-sticky: 50; --shadow-resting-small: 0 1px 2px rgb(0 0 0 / .08); --shadow-floating-small: 0 8px 24px rgb(0 0 0 / .12); --ld-duration-fast: 160ms; --ld-spinner-size-md: 16px; --ld-spinner-duration: 1800ms; --motion-easing-move: ease; --motion-transition-stateChange: 160ms ease; }
+          body { --ld-loading-delay-short: 250ms; --ld-loading-delay-long: 500ms; }
           ld-dashboard-page { min-height: 720px; }
         </style>
       </head>

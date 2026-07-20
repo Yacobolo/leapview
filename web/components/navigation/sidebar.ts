@@ -21,6 +21,7 @@ import {
 } from 'lucide'
 import { lucideIcon } from '../shared/lucide-icons'
 import { leapViewBrandName } from '../shared/brand-mark'
+import '../shared/loading-spinner'
 
 type NavItem = {
   id: string
@@ -180,10 +181,6 @@ class LibreDashSidebar extends LitElement {
       gap: var(--base-size-12);
     }
 
-    .brand-mark {
-      --ld-brand-mark-size: var(--base-size-28);
-    }
-
     .name {
       overflow: hidden;
       min-width: 0;
@@ -336,12 +333,7 @@ class LibreDashSidebar extends LitElement {
     }
 
     .pending-spinner {
-      width: var(--ld-spinner-size-sm);
-      height: var(--ld-spinner-size-sm);
-      border: var(--ld-spinner-border-width) solid var(--ld-line-muted);
-      border-top-color: var(--ld-fg-muted);
-      border-radius: var(--ld-radius-full);
-      animation: pending-spin var(--ld-duration-slow) linear infinite;
+      --ld-spinner-size: var(--ld-spinner-size-sm);
     }
 
     a,
@@ -756,11 +748,6 @@ class LibreDashSidebar extends LitElement {
       }
     }
 
-    @keyframes pending-spin {
-      to {
-        transform: rotate(360deg);
-      }
-    }
   `
 
   connectedCallback(): void {
@@ -858,8 +845,7 @@ class LibreDashSidebar extends LitElement {
       <aside aria-label="${leapViewBrandName} workspace" ?data-mobile-open=${this.mobileOpen}>
         <header class="brand">
           <div class="brand-row">
-            <ld-brand-mark class="brand-mark" aria-hidden="true"></ld-brand-mark>
-            <span class="name">${leapViewBrandName}</span>
+            ${collapsed ? null : html`<span class="name">${leapViewBrandName}</span>`}
             <button
               class="collapse-button"
               type="button"
@@ -1004,7 +990,7 @@ class LibreDashSidebar extends LitElement {
     return html`
       <a class="nav-item history-item" href=${item.href} aria-current=${item.active ? 'page' : 'false'} aria-label=${title} title=${title} @click=${(event: MouseEvent) => this.followInternalLink(event, item.href)}>
         <span class="history-title">${title}</span>
-        ${item.pending ? html`<span class="pending-spinner" aria-label="Title loading"></span>` : null}
+        ${item.pending ? html`<ld-loading-spinner class="pending-spinner" aria-label="Title loading"></ld-loading-spinner>` : null}
       </a>
     `
   }

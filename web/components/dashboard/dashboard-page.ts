@@ -14,6 +14,7 @@ import type {
 } from '../../generated/signals'
 import { DatastarLit } from '../shared/datastar-lit'
 import { checkSignalContract } from '../shared/signal-contract'
+import '../shared/loading-spinner'
 import '../navigation/sub-sidebar'
 import './filters/filter-dock'
 import './report-canvas'
@@ -58,6 +59,8 @@ type DashboardRefreshProgress = {
   generation: number
   percent: number
 }
+
+type VisualLoadingPresentation = 'none' | 'center' | 'header'
 
 class LibreDashDashboardPage extends DatastarLit(LitElement) {
   @state() private unsupportedKinds = new Set<string>()
@@ -199,7 +202,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
 
     .dashboard-refresh-progress[data-active='true'] {
       opacity: 1;
-      transition-delay: 0s;
+      transition-delay: var(--ld-loading-delay-short);
     }
 
     .dashboard-refresh-progress[data-active='false'][data-complete='true'] {
@@ -479,6 +482,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
         data-component-status-key=${statusKey || nothing}
         .transparent=${component.kind === 'header'}
         .refreshStatus=${componentRefreshStatus}
+        .loadingPresentation=${this.loadingPresentationFor(component, visualType)}
       >
         ${this.renderComponentContent(component)}
       </ld-dashboard-visual-frame>
@@ -603,6 +607,16 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     }
   }
 
+  private loadingPresentationFor(component: DashboardComponentSignal, visualType: string): VisualLoadingPresentation {
+    if (component.kind !== 'visual' || !component.visual || isTabularVisualType(visualType)) return 'none'
+    const visuals = this.renderSnapshot?.visuals ?? this.visuals
+    const visual = visuals[component.visual]
+    if (!visual) return 'center'
+    const hasData = (visual.data?.length ?? 0) > 0
+    if (visualType === 'kpi') return hasData ? 'none' : 'center'
+    return hasData ? 'header' : 'center'
+  }
+
   private handleOptimisticInteraction = (event: CustomEvent<unknown>): void => {
     const command = optimisticCommand(event.detail)
     if (!command) return
@@ -694,6 +708,7 @@ function stableSignature(value: unknown): string {
 class DashboardVisualFrame extends LitElement {
   @property({ type: Boolean, reflect: true }) transparent = false
   @property({ type: Object, attribute: false }) refreshStatus?: DashboardComponentStatus
+  @property({ type: String, attribute: false }) loadingPresentation: VisualLoadingPresentation = 'none'
 
   static styles = css`
     :host {
@@ -771,22 +786,59 @@ class DashboardVisualFrame extends LitElement {
       font-size: var(--ld-font-size-caption);
     }
 
-    .spinner {
-      width: var(--base-size-16);
-      height: var(--base-size-16);
-      border: 2px solid var(--ld-line-muted);
-      border-top-color: var(--ld-fg-link);
-      border-radius: 50%;
-      animation: spin 700ms linear infinite;
+    .loading-status {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
     }
 
-    @keyframes spin {
-      to { transform: rotate(360deg); }
+    .loading-indicator {
+      position: absolute;
+      z-index: 2;
+      display: grid;
+      color: var(--ld-fg-muted);
+      opacity: 0;
+      pointer-events: none;
+      visibility: hidden;
+      animation-name: reveal-loading-indicator;
+      animation-duration: 0s;
+      animation-fill-mode: forwards;
     }
 
-    @media (prefers-reduced-motion: reduce) {
-      .spinner { animation: none; }
+    .loading-indicator.header {
+      top: var(--base-size-12);
+      right: calc(var(--base-size-24) + var(--base-size-24) + var(--base-size-16));
+      width: var(--base-size-12);
+      height: var(--base-size-12);
+      place-items: center;
+      animation-delay: var(--ld-loading-delay-long);
     }
+
+    .loading-indicator.header ld-loading-spinner {
+      --ld-spinner-size: var(--base-size-12);
+    }
+
+    .loading-indicator.center {
+      inset: 0;
+      place-items: center;
+      background: var(--ld-bg-panel);
+      animation-delay: var(--ld-loading-delay-short);
+    }
+
+    .loading-indicator.center ld-loading-spinner {
+      --ld-spinner-size: var(--base-size-24);
+    }
+
+    @keyframes reveal-loading-indicator {
+      to {
+        opacity: 1;
+        visibility: visible;
+      }
+    }
+
   `
 
   render() {
@@ -800,9 +852,12 @@ class DashboardVisualFrame extends LitElement {
             <span>${refreshStatus.error}</span>
           </div>
         ` : refreshStatus?.loading ? html`
-          <div class="refresh-overlay loading" role="status" aria-label="Refreshing component">
-            <span class="spinner" aria-hidden="true"></span>
-          </div>
+          <span class="loading-status" role="status" aria-label="Refreshing component">Refreshing component</span>
+          ${this.loadingPresentation === 'none' ? nothing : html`
+            <div class=${`loading-indicator ${this.loadingPresentation}`} aria-hidden="true">
+              <ld-loading-spinner></ld-loading-spinner>
+            </div>
+          `}
         ` : nothing}
       </article>
     `

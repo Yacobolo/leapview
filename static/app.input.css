@@ -422,6 +422,10 @@
     --ld-sub-sidebar-width-expanded: calc(var(--base-size-128) + var(--base-size-16));
     --ld-sub-sidebar-width-collapsed: calc(var(--base-size-40) - var(--base-size-2));
     --ld-spinner-size-sm: calc(var(--base-size-8) + var(--base-size-2));
+    --ld-spinner-size-md: var(--base-size-16);
+    --ld-spinner-duration: 1800ms;
+    --ld-loading-delay-short: 250ms;
+    --ld-loading-delay-long: 500ms;
     --ld-spinner-border-width: var(--borderWidth-thick);
     --ld-chat-thread-padding: var(--base-size-20);
     --ld-chat-thread-padding-compact: var(--ld-space-lg);

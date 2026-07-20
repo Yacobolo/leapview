@@ -2,6 +2,7 @@ import { LitElement, css, html } from 'lit'
 import { property, state } from 'lit/decorators.js'
 import { Send } from 'lucide'
 import { lucideIcon } from '../shared/lucide-icons'
+import '../shared/loading-spinner'
 
 class ChatComposer extends LitElement {
   @property({ type: String }) value = ''
@@ -129,21 +130,6 @@ class ChatComposer extends LitElement {
       outline-offset: var(--focus-outline-offset, var(--ld-space-xs));
     }
 
-    .spinner {
-      width: 14px;
-      height: 14px;
-      border: var(--borderWidth-thick) solid transparent;
-      border-top-color: currentColor;
-      border-radius: 999px;
-      animation: spin 0.8s linear infinite;
-    }
-
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
-      }
-    }
-
     button:disabled {
       border-color: var(--ld-button-accent-border-disabled, var(--ld-line-default));
       background: var(--ld-button-accent-bg-disabled, var(--ld-bg-control));
@@ -202,7 +188,7 @@ class ChatComposer extends LitElement {
               title="Send"
               ?disabled=${this.disabled || this.pending || this.draft.trim() === ''}
             >
-              ${this.pending ? html`<span class="spinner" aria-hidden="true"></span>` : lucideIcon(Send)}
+              ${this.pending ? html`<ld-loading-spinner aria-hidden="true"></ld-loading-spinner>` : lucideIcon(Send)}
             </button>
           </div>
         </div>
