@@ -54,10 +54,10 @@ for (const viewport of [
     const page = await browser.newPage({ viewport })
     try {
       await page.goto(baseURL)
-      await page.waitForFunction(() => customElements.get('ld-catalog-page'))
-      await page.locator('ld-catalog-page').evaluate((element: any) => element.updateComplete)
+      await page.waitForFunction(() => customElements.get('lv-catalog-page'))
+      await page.locator('lv-catalog-page').evaluate((element: any) => element.updateComplete)
 
-      const state = await page.locator('ld-catalog-page').evaluate((element: any) => {
+      const state = await page.locator('lv-catalog-page').evaluate((element: any) => {
         const root = element.shadowRoot
         const section = root.querySelector('section') as HTMLElement
         const list = root.querySelector('.dashboard-list') as HTMLElement
@@ -106,6 +106,28 @@ for (const viewport of [
   })
 }
 
+test('catalog page explains an empty dashboard collection', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('lv-catalog-page'))
+    const state = await page.locator('lv-catalog-page').evaluate(async (element: any) => {
+      const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev') as any
+      mergePatch({ page: { ...element.page, dashboards: [] } })
+      await element.updateComplete
+      return {
+        empty: element.shadowRoot.querySelector('[role="status"]')?.textContent?.trim(),
+        cards: element.shadowRoot.querySelectorAll('article').length,
+      }
+    })
+
+    expect(state.empty).toContain('No dashboards')
+    expect(state.cards).toBe(0)
+  } finally {
+    await page.close()
+  }
+})
+
 function testDocument(): string {
   const page = {
     kind: 'catalog',
@@ -138,12 +160,12 @@ function testDocument(): string {
       <head>
         <style>
           html, body { margin: 0; min-height: 100%; }
-          body { --fontStack-system: system-ui; --ld-bg-app: #f6f8fa; --ld-bg-panel: #fff; --ld-bg-panel-muted: #f6f8fa; --ld-bg-control-hover: #f3f4f6; --ld-fg-default: #24292f; --ld-fg-muted: #57606a; --ld-fg-link: #0969da; --ld-line-muted: #d8dee4; --ld-line-accent: #0969da; --ld-border-default: 1px solid #d0d7de; --ld-border-muted: 1px solid #d8dee4; --ld-radius-default: 6px; --ld-radius-full: 999px; --ld-page-content-max-width: 72rem; --ld-asset-dashboard-bg: #fbefff; --ld-asset-dashboard-accent: #8250df; --ld-asset-dashboard-border: #d2bfff; --base-size-4: 4px; --base-size-6: 6px; --base-size-8: 8px; --base-size-10: 10px; --base-size-12: 12px; --base-size-16: 16px; --base-size-20: 20px; --borderWidth-default: 1px; --borderWidth-thick: 2px; --control-medium-size: 32px; --ld-font-size-caption: 12px; --ld-font-size-body-sm: 14px; --ld-font-size-body-md: 16px; --ld-font-size-title-sm: 20px; --ld-font-weight-medium: 500; --ld-font-weight-strong: 600; --ld-line-height-tight: 1.1; --ld-line-height-snug: 1.35; --ld-line-height-compact: 1.25; --motion-transition-stateChange: 160ms ease; }
+          body { --fontStack-system: system-ui; --lv-bg-app: #f6f8fa; --lv-bg-panel: #fff; --lv-bg-panel-muted: #f6f8fa; --lv-bg-control-hover: #f3f4f6; --lv-fg-default: #24292f; --lv-fg-muted: #57606a; --lv-fg-link: #0969da; --lv-line-muted: #d8dee4; --lv-line-accent: #0969da; --lv-border-default: 1px solid #d0d7de; --lv-border-muted: 1px solid #d8dee4; --lv-radius-default: 6px; --lv-radius-full: 999px; --lv-page-content-max-width: 72rem; --lv-asset-dashboard-bg: #fbefff; --lv-asset-dashboard-accent: #8250df; --lv-asset-dashboard-border: #d2bfff; --base-size-4: 4px; --base-size-6: 6px; --base-size-8: 8px; --base-size-10: 10px; --base-size-12: 12px; --base-size-16: 16px; --base-size-20: 20px; --borderWidth-default: 1px; --borderWidth-thick: 2px; --control-medium-size: 32px; --lv-font-size-caption: 12px; --lv-font-size-body-sm: 14px; --lv-font-size-body-md: 16px; --lv-font-size-title-sm: 20px; --lv-font-weight-medium: 500; --lv-font-weight-strong: 600; --lv-line-height-tight: 1.1; --lv-line-height-snug: 1.35; --lv-line-height-compact: 1.25; --motion-transition-stateChange: 160ms ease; }
         </style>
       </head>
       <body>
         <main data-signals="${escapeHTML(JSON.stringify({ page }))}">
-          <ld-catalog-page></ld-catalog-page>
+          <lv-catalog-page></lv-catalog-page>
         </main>
         <script type="module" src="/catalog-page-under-test.js"></script>
         <script type="module" src="/static/vendor/datastar-1.0.2.js?v=dev"></script>

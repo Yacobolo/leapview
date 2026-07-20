@@ -13,10 +13,10 @@ import (
 	"strconv"
 	"strings"
 
-	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
-	"github.com/Yacobolo/libredash/internal/manageddata"
-	"github.com/Yacobolo/libredash/internal/manageddata/control"
-	"github.com/Yacobolo/libredash/internal/manageddata/s3multipart"
+	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
+	"github.com/Yacobolo/leapview/internal/manageddata"
+	"github.com/Yacobolo/leapview/internal/manageddata/control"
+	"github.com/Yacobolo/leapview/internal/manageddata/s3multipart"
 )
 
 const (
@@ -587,7 +587,7 @@ func (h *Handler) writePublicError(w stdhttp.ResponseWriter, r *stdhttp.Request,
 	_ = details
 	w.Header().Set("Content-Type", "application/problem+json")
 	h.writeJSON(w, status, apigenapi.ProblemDetails{
-		Type: "https://libredash.dev/problems/managed-data", Title: stdhttp.StatusText(status), Status: int32(status),
+		Type: "https://leapview.dev/problems/managed-data", Title: stdhttp.StatusText(status), Status: int32(status),
 		Detail: message, Instance: r.URL.Path, Code: fmt.Sprintf("MANAGED_DATA_%d", status), RequestId: requestID,
 		Errors: []apigenapi.ProblemFieldError{},
 	})
@@ -698,10 +698,18 @@ func uploadResponse(result control.UploadResult, project, connection, expectedID
 		fileStatus := apigenapi.ManagedDataFileUploadStatusPending
 		if file.Status == control.FileStatusVerified {
 			fileStatus = apigenapi.ManagedDataFileUploadStatusVerified
+		} else if result.Status == manageddata.UploadStatusFailed {
+			fileStatus = apigenapi.ManagedDataFileUploadStatusFailed
+		} else if result.Status == manageddata.UploadStatusAborted || result.Status == manageddata.UploadStatusExpired {
+			fileStatus = apigenapi.ManagedDataFileUploadStatusSkipped
 		}
-		negotiation, err := negotiationToWire(file.Transport)
-		if err != nil {
-			return apigenapi.ManagedDataUploadSessionResponse{}, err
+		var negotiation *apigenapi.ManagedDataUploadNegotiation
+		if file.Transport.Protocol != "" {
+			value, negotiationErr := negotiationToWire(file.Transport)
+			if negotiationErr != nil {
+				return apigenapi.ManagedDataUploadSessionResponse{}, negotiationErr
+			}
+			negotiation = &value
 		}
 		files[i] = apigenapi.ManagedDataFileUploadResponse{File: metadata, Status: fileStatus, Negotiation: negotiation}
 	}
@@ -846,7 +854,7 @@ func pageSlice[T any](items []T, limitValue *int32, tokenValue *string, scope st
 	if end < len(items) {
 		next = stringPointer(encodePageToken(scope, key(items[end-1])))
 	}
-	return append([]T(nil), items[start:end]...), next, nil
+	return append(make([]T, 0, end-start), items[start:end]...), next, nil
 }
 
 type pageToken struct {

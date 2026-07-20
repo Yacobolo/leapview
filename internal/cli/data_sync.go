@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -15,10 +16,10 @@ import (
 	"strings"
 	"time"
 
-	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
-	"github.com/Yacobolo/libredash/internal/manageddata"
-	"github.com/Yacobolo/libredash/internal/manageddata/localplan"
-	workspacecompiler "github.com/Yacobolo/libredash/internal/workspace/compiler"
+	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
+	"github.com/Yacobolo/leapview/internal/manageddata"
+	"github.com/Yacobolo/leapview/internal/manageddata/localplan"
+	workspacecompiler "github.com/Yacobolo/leapview/internal/workspace/compiler"
 	"github.com/spf13/cobra"
 )
 
@@ -78,7 +79,7 @@ func dataSyncCommand(ctx context.Context, planner dataPlanner, opts *rootOptions
 			})
 		},
 	}
-	command.Flags().StringVar(&projectPath, "project", filepath.Join("dashboards", "libredash.yaml"), "project catalog path")
+	command.Flags().StringVar(&projectPath, "project", filepath.Join("dashboards", "leapview.yaml"), "project catalog path")
 	command.Flags().StringVar(&connection, "connection", "", "project-global managed connection")
 	command.Flags().StringVar(&from, "from", "", "local filesystem root to ingest")
 	command.Flags().StringVar(&opts.environment, "environment", "", "assert the target instance environment")
@@ -112,6 +113,29 @@ func runDataSync(ctx context.Context, request dataSyncRequest) error {
 	}
 	if err := validateSyncSession(session, request.ProjectID, request.Connection, request.Plan.Manifest); err != nil {
 		return err
+	}
+	if session.Status != apigenapi.ManagedDataUploadSessionStatusCompleted {
+		session, err = client.getUploadSession(ctx, request.ProjectID, request.Connection, session.Id)
+		if err != nil {
+			return err
+		}
+		if err := validateSyncSession(session, request.ProjectID, request.Connection, request.Plan.Manifest); err != nil {
+			return err
+		}
+	}
+	if terminalUploadSessionStatus(session.Status) {
+		recoveryID, recoveryErr := newDataSyncRecoveryID()
+		if recoveryErr != nil {
+			return recoveryErr
+		}
+		recoveryKey := dataSyncIdempotencyKey("recover", request.ProjectID, request.Connection, revisionID, recoveryID)
+		session, err = client.createUploadSession(ctx, request.ProjectID, request.Connection, recoveryKey, apigenapi.ManagedDataUploadSessionCreateRequest{Manifest: wireManifest})
+		if err != nil {
+			return err
+		}
+		if err := validateSyncSession(session, request.ProjectID, request.Connection, request.Plan.Manifest); err != nil {
+			return err
+		}
 	}
 	if session.Status == apigenapi.ManagedDataUploadSessionStatusFinalizing {
 		session, err = waitForUploadFinalization(ctx, client, request.ProjectID, request.Connection, session.Id, request.Plan.Manifest, session)
@@ -154,6 +178,23 @@ func runDataSync(ctx context.Context, request dataSyncRequest) error {
 	}
 	_, err = fmt.Fprintf(out, "staged %s\n", revisionID)
 	return err
+}
+
+func terminalUploadSessionStatus(status apigenapi.ManagedDataUploadSessionStatus) bool {
+	switch status {
+	case apigenapi.ManagedDataUploadSessionStatusCancelled, apigenapi.ManagedDataUploadSessionStatusFailed, apigenapi.ManagedDataUploadSessionStatusExpired:
+		return true
+	default:
+		return false
+	}
+}
+
+func newDataSyncRecoveryID() (string, error) {
+	var value [16]byte
+	if _, err := rand.Read(value[:]); err != nil {
+		return "", fmt.Errorf("generate managed data recovery identity: %w", err)
+	}
+	return hex.EncodeToString(value[:]), nil
 }
 
 func waitForUploadFinalization(ctx context.Context, client *managedDataCLIClient, project, connection, uploadID string, manifest manageddata.Manifest, current apigenapi.ManagedDataUploadSessionResponse) (apigenapi.ManagedDataUploadSessionResponse, error) {
@@ -203,6 +244,9 @@ func waitForUploadFinalization(ctx context.Context, client *managedDataCLIClient
 func transferManagedDataFile(ctx context.Context, client *managedDataCLIClient, request dataSyncRequest, uploadID string, file manageddata.File, upload apigenapi.ManagedDataFileUploadResponse) error {
 	if upload.File.Path != file.Path || int64(upload.File.Size) != file.Size || upload.File.Sha256 != file.SHA256 {
 		return fmt.Errorf("upload session file metadata does not match %q", file.Path)
+	}
+	if upload.Negotiation == nil {
+		return fmt.Errorf("upload instructions are unavailable for %q", file.Path)
 	}
 	switch upload.Negotiation.Protocol {
 	case apigenapi.ManagedDataUploadProtocolAlreadyPresent:
@@ -616,9 +660,6 @@ func validateSyncSession(session apigenapi.ManagedDataUploadSessionResponse, pro
 		if session.Manifest.Files[index] != wire.Files[index] {
 			return fmt.Errorf("upload session manifest does not match the planned revision")
 		}
-	}
-	if session.Status != apigenapi.ManagedDataUploadSessionStatusOpen && session.Status != apigenapi.ManagedDataUploadSessionStatusFinalizing && session.Status != apigenapi.ManagedDataUploadSessionStatusCompleted {
-		return fmt.Errorf("upload session is not usable")
 	}
 	if len(session.Files) != len(manifest.Files) {
 		return fmt.Errorf("upload session file set does not match the planned revision")

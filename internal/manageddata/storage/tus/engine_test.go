@@ -15,9 +15,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/Yacobolo/libredash/internal/manageddata/storage"
-	"github.com/Yacobolo/libredash/internal/manageddata/storage/filesystem"
-	managedtus "github.com/Yacobolo/libredash/internal/manageddata/storage/tus"
+	"github.com/Yacobolo/leapview/internal/manageddata/storage"
+	"github.com/Yacobolo/leapview/internal/manageddata/storage/filesystem"
+	managedtus "github.com/Yacobolo/leapview/internal/manageddata/storage/tus"
 )
 
 func TestEngineCreateResumeWriteAndFinalize(t *testing.T) {
@@ -146,6 +146,13 @@ func TestHTTPHandlerCompletesTusUploadIntoBlobStore(t *testing.T) {
 	}
 	if _, err := blobs.Stat(t.Context(), expected.SHA256); err != nil {
 		t.Fatalf("completed tus upload was not finalized: %v", err)
+	}
+	uploadID := filepath.Base(location.Path)
+	if err := engine.Abort(t.Context(), uploadID); err != nil {
+		t.Fatalf("Abort() after HTTP completion = %v", err)
+	}
+	if err := engine.Abort(t.Context(), uploadID); err != nil {
+		t.Fatalf("idempotent Abort() after HTTP completion = %v", err)
 	}
 }
 

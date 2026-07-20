@@ -6,9 +6,9 @@ export const catalogListStyles = css`
     min-width: 0;
     overflow: hidden;
     margin: 0;
-    border-radius: var(--ld-radius-default);
-    background: var(--ld-bg-panel);
-    box-shadow: inset 0 0 0 var(--borderWidth-default) var(--ld-line-muted);
+    border-radius: var(--lv-radius-default);
+    background: var(--lv-bg-panel);
+    box-shadow: inset 0 0 0 var(--borderWidth-default) var(--lv-line-muted);
     padding: 0;
     list-style: none;
   }
@@ -27,7 +27,7 @@ export const catalogListStyles = css`
     align-items: center;
     gap: var(--base-size-12);
     padding: var(--base-size-12) var(--base-size-16);
-    color: var(--ld-fg-default);
+    color: var(--lv-fg-default);
     text-decoration: none;
     transition: background-color var(--motion-transition-stateChange);
   }
@@ -38,18 +38,18 @@ export const catalogListStyles = css`
     right: var(--base-size-16);
     left: var(--base-size-16);
     height: var(--borderWidth-default);
-    background: var(--ld-line-muted);
+    background: var(--lv-line-muted);
     content: '';
   }
 
   .catalog-row:hover,
   .catalog-row:focus-visible {
-    background: var(--ld-bg-control-hover);
+    background: var(--lv-bg-control-hover);
   }
 
   .catalog-row:focus-visible {
     z-index: 1;
-    outline: var(--borderWidth-thick) solid var(--borderColor-accent-emphasis, var(--ld-line-accent));
+    outline: var(--borderWidth-thick) solid var(--borderColor-accent-emphasis, var(--lv-line-accent));
     outline-offset: calc(-1 * var(--borderWidth-thick));
   }
 
@@ -62,10 +62,10 @@ export const catalogListStyles = css`
   .catalog-icon {
     width: var(--control-medium-size);
     height: var(--control-medium-size);
-    border: var(--ld-border-muted);
-    border-radius: var(--ld-radius-default);
-    background: var(--ld-bg-panel-muted);
-    color: var(--ld-fg-link);
+    border: var(--lv-border-muted);
+    border-radius: var(--lv-radius-default);
+    background: var(--lv-bg-panel-muted);
+    color: var(--lv-fg-link);
   }
 
   .catalog-copy {
@@ -82,16 +82,16 @@ export const catalogListStyles = css`
   }
 
   .catalog-title {
-    font-size: var(--ld-font-size-body-sm);
-    font-weight: var(--ld-font-weight-strong);
-    line-height: var(--ld-line-height-tight);
+    font-size: var(--lv-font-size-body-sm);
+    font-weight: var(--lv-font-weight-strong);
+    line-height: var(--lv-line-height-tight);
   }
 
   .catalog-description,
   .catalog-meta {
-    color: var(--ld-fg-muted);
-    font-size: var(--ld-font-size-caption);
-    line-height: var(--ld-line-height-tight);
+    color: var(--lv-fg-muted);
+    font-size: var(--lv-font-size-caption);
+    line-height: var(--lv-line-height-tight);
   }
 
   .catalog-trailing {
@@ -108,6 +108,6 @@ export const catalogListStyles = css`
   .catalog-chevron {
     width: var(--base-size-16);
     height: var(--base-size-16);
-    color: var(--ld-fg-muted);
+    color: var(--lv-fg-muted);
   }
 `

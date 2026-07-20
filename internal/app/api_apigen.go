@@ -9,10 +9,10 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/Yacobolo/libredash/internal/access"
-	"github.com/Yacobolo/libredash/internal/access/httpauth"
-	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
-	"github.com/Yacobolo/libredash/internal/workspace"
+	"github.com/Yacobolo/leapview/internal/access"
+	"github.com/Yacobolo/leapview/internal/access/httpauth"
+	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
+	"github.com/Yacobolo/leapview/internal/workspace"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -114,7 +114,7 @@ func (responder apiGenTransportErrorResponder) RespondTransportError(ctx context
 		instance = r.URL.Path
 	}
 	problem := apigenapi.ProblemDetails{
-		Type:      "https://libredash.dev/problems/" + strings.ToLower(strings.ReplaceAll(failure.Code, "_", "-")),
+		Type:      "https://leapview.dev/problems/" + strings.ToLower(strings.ReplaceAll(failure.Code, "_", "-")),
 		Title:     http.StatusText(failure.StatusCode),
 		Status:    int32(failure.StatusCode),
 		Detail:    failure.PublicDetail,
@@ -274,6 +274,22 @@ func (w *apiGenResponseBuffer) normalizedBody(status int) []byte {
 	if err := json.Unmarshal(w.body.Bytes(), &value); err != nil {
 		return w.body.Bytes()
 	}
+	if strings.HasPrefix(w.header.Get("Content-Type"), "application/problem+json") {
+		if instance, _ := value["instance"].(string); strings.TrimSpace(instance) == "" {
+			value["instance"] = w.request.URL.Path
+		}
+		if requestID, _ := value["requestId"].(string); strings.TrimSpace(requestID) == "" {
+			value["requestId"] = w.request.Header.Get("X-Request-ID")
+		}
+		if errorsValue, present := value["errors"]; !present || errorsValue == nil {
+			value["errors"] = []apigenapi.ProblemFieldError{}
+		}
+		out, err := json.Marshal(value)
+		if err != nil {
+			return w.body.Bytes()
+		}
+		return append(out, '\n')
+	}
 	if _, ok := value["code"]; !ok {
 		return w.body.Bytes()
 	}
@@ -293,7 +309,7 @@ func (w *apiGenResponseBuffer) normalizedBody(status int) []byte {
 		}
 	}
 	problem := apigenapi.ProblemDetails{
-		Type: "https://libredash.dev/problems/" + strings.ToLower(code), Title: http.StatusText(status), Status: int32(status),
+		Type: "https://leapview.dev/problems/" + strings.ToLower(code), Title: http.StatusText(status), Status: int32(status),
 		Detail: message, Instance: w.request.URL.Path, Code: code, RequestId: requestID, Errors: errors,
 	}
 	w.header.Set("Content-Type", "application/problem+json")
