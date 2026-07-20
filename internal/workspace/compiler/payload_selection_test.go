@@ -115,6 +115,9 @@ func TestGeographicVisualCompilesEveryLayerKind(t *testing.T) {
 	if !ok {
 		t.Fatalf("geographic spec = %#v", definition.Spec.Value)
 	}
+	if got, want := spec.Presentation.Legend, visualizationir.VisualizationLegendPositionHidden; got != want {
+		t.Fatalf("geographic legend = %q, want %q", got, want)
+	}
 	if got, want := len(spec.Layers), 4; got != want {
 		t.Fatalf("layers = %d, want %d", got, want)
 	}

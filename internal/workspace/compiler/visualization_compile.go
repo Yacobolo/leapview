@@ -400,10 +400,14 @@ func compileGeographicVisualizationSpec(authored reportdef.Visual) (visualizatio
 		Accessibility: visualizationir.VisualizationAccessibility{Title: accessibilityTitle, Description: accessibilityDescription},
 		Interactions:  customVisualizationInteractions(authored.Interaction.PointSelection),
 	}
+	legend := visualizationir.VisualizationLegendPosition(authored.Presentation.Legend)
+	if legend == "" {
+		legend = visualizationir.VisualizationLegendPositionHidden
+	}
 	return visualizationir.VisualizationSpec{Value: &visualizationir.GeographicVisualizationSpec{
 		VisualizationSpecBase: base, Kind: "geographic", Layers: layers,
 		Presentation: visualizationir.GeographicVisualizationPresentation{
-			VisualizationPresentation: visualizationir.VisualizationPresentation{Legend: visualizationir.VisualizationLegendPosition(authored.Presentation.Legend), ShowLabels: authored.Presentation.ShowLabels},
+			VisualizationPresentation: visualizationir.VisualizationPresentation{Legend: legend, ShowLabels: authored.Presentation.ShowLabels},
 			Roam:                      authored.Presentation.Roam,
 		},
 	}}, nil

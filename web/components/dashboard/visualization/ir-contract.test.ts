@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 
 import type { VisualizationDataState, VisualizationEnvelope, VisualizationSpec } from '../../../generated/visualization'
 import validateEnvelope from '../../../generated/visualization/validate'
+import visualDocumentation from '../../../../docs/visuals/examples.gen.json'
 
 function specificationKind(spec: VisualizationSpec): string {
   switch (spec.kind) {
@@ -85,4 +86,12 @@ test('standalone JSON Schema validation fails closed', async () => {
   expect(validateEnvelope({ ...envelope, schemaVersion: 2 })).toBe(false)
   expect(validateEnvelope({ ...envelope, legacyOptions: {} })).toBe(false)
   expect(validateEnvelope({ ...envelope, spec: { ...envelope.spec, kind: 'unknown' } })).toBe(false)
+})
+
+test('every generated visual documentation envelope satisfies the public contract', () => {
+  for (const [document, examples] of Object.entries(visualDocumentation.documents)) {
+    for (const example of examples) {
+      expect(validateEnvelope(example), `${document}/${example.visualID}`).toBe(true)
+    }
+  }
 })

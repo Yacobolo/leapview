@@ -48,6 +48,23 @@ if (!result.success) {
   throw new Error('failed to build LibreDash site assets')
 }
 
+const sandboxResult = await Bun.build({
+  entrypoints: ['web/components/dashboard/visualization/vega-sandbox.ts'],
+  target: 'browser',
+  format: 'esm',
+  splitting: false,
+  minify: true,
+  define: { 'process.env.NODE_ENV': '"production"' },
+  outdir: 'site/static',
+  naming: { entry: '[name].[ext]' },
+})
+for (const log of sandboxResult.logs) {
+  console.error(log)
+}
+if (!sandboxResult.success) {
+  throw new Error('failed to build Vega-Lite sandbox asset')
+}
+
 const entry = Bun.file('site/static/site-page.js')
 if (entry.size >= 250_000) {
   throw new Error(`site entrypoint is ${entry.size} bytes; budget is 250000 bytes`)

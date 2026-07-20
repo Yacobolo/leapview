@@ -79,6 +79,9 @@ func (s *siteServer) productionHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
+		if r.URL.Path == "/static/vega-sandbox.js" {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
 		if s.baseURL != nil && s.baseURL.Scheme == "https" {
 			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}

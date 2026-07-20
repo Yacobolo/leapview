@@ -886,6 +886,10 @@ test('every visual documentation page mounts its generated production payloads',
       const host = element.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { shadowRoot: ShadowRoot }
       return host?.shadowRoot?.querySelector('.renderer[aria-label]')?.getAttribute('aria-label')
     })).not.toContain('NaN')
+    await page.waitForFunction(() => [...document.querySelectorAll('ld-site-visual-example')].every((element) => {
+      const host = element.shadowRoot?.querySelector('ld-visualization-host')
+      return Boolean(host?.shadowRoot?.querySelector('canvas.maplibregl-canvas'))
+    }))
 
     await page.goto(`${baseURL}/docs/visuals/custom`)
     await page.waitForFunction(() => {
@@ -897,6 +901,9 @@ test('every visual documentation page mounts its generated production payloads',
       const host = element.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { shadowRoot: ShadowRoot }
       return Boolean(host.shadowRoot?.querySelector('[role="alert"]'))
     })).toBe(false)
+    const sandboxFrame = page.frames().find((frame) => frame !== page.mainFrame())
+    expect(sandboxFrame).toBeDefined()
+    await sandboxFrame!.waitForSelector('#view canvas')
 
     await page.goto(`${baseURL}/docs/visuals/combo`)
     await page.waitForFunction(() => document.querySelectorAll('ld-site-visual-example').length === 3)

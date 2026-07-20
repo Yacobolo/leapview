@@ -299,6 +299,9 @@ func (s *Server) authLogout(w http.ResponseWriter, r *http.Request) {
 
 func staticAssetCache(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/static/vega-sandbox.js" {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
 		version := staticasset.Version()
 		switch {
 		case version != "dev" && r.URL.Query().Get("v") == version:

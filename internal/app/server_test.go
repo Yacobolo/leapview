@@ -714,6 +714,18 @@ func TestStaticAssetCacheHeaderClasses(t *testing.T) {
 	}
 }
 
+func TestVegaSandboxAssetAllowsOpaqueSandboxOrigin(t *testing.T) {
+	handler := staticAssetCache(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/static/vega-sandbox.js", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want *", got)
+	}
+}
+
 func assertDevDatastarRuntime(t *testing.T, body string) {
 	t.Helper()
 	for _, want := range []string{
