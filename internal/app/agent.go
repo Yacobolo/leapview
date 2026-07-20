@@ -76,6 +76,15 @@ func (s *Server) searchAgentReferences(r *http.Request, workspaceID, query strin
 			return nil, err
 		}
 	}
+	if credential, ok := apiCredentialFromContext(r.Context()); ok {
+		allowedWorkspaceIDs := workspaceIDs[:0]
+		for _, currentWorkspaceID := range workspaceIDs {
+			if apiTokenAllows(credential.Token, currentWorkspaceID, access.PrivilegeViewItem) {
+				allowedWorkspaceIDs = append(allowedWorkspaceIDs, currentWorkspaceID)
+			}
+		}
+		workspaceIDs = allowedWorkspaceIDs
+	}
 	groups := make([][]uisignals.AgentReferenceSignal, 0, len(workspaceIDs))
 	for _, currentWorkspaceID := range workspaceIDs {
 		rows, err := handler.SearchResults(r, currentWorkspaceID, query, nil)

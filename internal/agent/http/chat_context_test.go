@@ -12,20 +12,24 @@ import (
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
 )
 
-func TestChatReferenceSearchReturnsEnoughResultsForPinnedAndWorkspaceGroups(t *testing.T) {
+func TestChatReferenceSearchUsesGlobalScopeWhilePreservingDashboardContext(t *testing.T) {
 	results := make([]uisignals.AgentReferenceSignal, 30)
 	for index := range results {
 		results[index] = uisignals.AgentReferenceSignal{
 			Kind: "field", ID: "field-" + string(rune('a'+index)), Title: "Field", WorkspaceID: "sales",
 		}
 	}
+	searchedWorkspaceID := "not called"
 	handler := NewHandler(Options{
-		SearchReferences: func(*http.Request, string, string) ([]uisignals.AgentReferenceSignal, error) {
+		SearchReferences: func(_ *http.Request, workspaceID, _ string) ([]uisignals.AgentReferenceSignal, error) {
+			searchedWorkspaceID = workspaceID
 			return results, nil
 		},
 	})
 	signals, err := json.Marshal(map[string]any{
-		"agentReferenceSearch": map[string]any{"query": "field", "workspaceId": "sales"},
+		"agentReferenceSearch": map[string]any{
+			"query": "field", "workspaceId": "sales", "dashboardId": "executive-sales", "pageId": "overview",
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -39,8 +43,16 @@ func TestChatReferenceSearchReturnsEnoughResultsForPinnedAndWorkspaceGroups(t *t
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
 	}
+	if searchedWorkspaceID != "" {
+		t.Fatalf("searched workspace = %q, want global scope", searchedWorkspaceID)
+	}
 	if got := strings.Count(response.Body.String(), `"kind":"field"`); got != 24 {
 		t.Fatalf("result count = %d, want 24:\n%s", got, response.Body.String())
+	}
+	for _, want := range []string{`"workspaceId":"sales"`, `"dashboardId":"executive-sales"`, `"pageId":"overview"`} {
+		if !strings.Contains(response.Body.String(), want) {
+			t.Fatalf("dashboard context missing %s:\n%s", want, response.Body.String())
+		}
 	}
 }
 

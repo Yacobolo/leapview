@@ -654,7 +654,7 @@ test('dashboard agent drawer carries page context and explicit visual references
         options: Array.from(composer.shadowRoot.querySelectorAll('.mention-option')).map((node: any) => node.textContent.replace(/\s+/g, ' ').trim()),
       }
     })
-    expect(groupedSearch.labels).toEqual(['On this page', 'Workspace'])
+    expect(groupedSearch.labels).toEqual(['On this page', 'All accessible'])
     expect(groupedSearch.options[0]).toContain('Orders')
     expect(groupedSearch.options.at(-1)).toBe('Orders count Across the sales workspace')
 

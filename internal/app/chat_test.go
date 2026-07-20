@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Yacobolo/libredash/internal/access"
 	"github.com/Yacobolo/libredash/internal/agent"
 	"github.com/Yacobolo/libredash/internal/api"
 	"github.com/Yacobolo/libredash/internal/dashboard"
@@ -187,6 +188,50 @@ func TestChatReferenceSearchWithoutWorkspaceSearchesVisibleWorkspaces(t *testing
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("global reference search missing %q:\n%s", want, rec.Body.String())
 		}
+	}
+}
+
+func TestGlobalChatReferenceSearchHonorsAPICredentialWorkspaceAndPrivileges(t *testing.T) {
+	store := testStore(t)
+	server := NewWithOptions(NewMultiWorkspaceMetrics("sales", map[string]QueryMetrics{
+		"sales": fakeMetrics{}, "marketing": fakeMetrics{},
+	}), Options{Store: store})
+	repo, err := server.workspaceRepository()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, workspaceID := range []string{"sales", "marketing"} {
+		if err := repo.Ensure(context.Background(), workspace.EnsureInput{ID: workspace.WorkspaceID(workspaceID), Title: workspaceID}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	search := func(token access.APIToken) []string {
+		request := httptest.NewRequest(http.MethodGet, "/chats/references/search", nil)
+		credential := access.APICredential{Token: token}
+		request = request.WithContext(context.WithValue(request.Context(), apiCredentialContextKey{}, credential))
+		results, err := server.searchAgentReferences(request, "", "orders")
+		if err != nil {
+			t.Fatal(err)
+		}
+		workspaceIDs := make([]string, 0, len(results))
+		for _, result := range results {
+			workspaceIDs = append(workspaceIDs, result.WorkspaceID)
+		}
+		return workspaceIDs
+	}
+
+	allowed := search(access.APIToken{WorkspaceID: "sales", Privileges: []access.Privilege{access.PrivilegeViewItem}})
+	if len(allowed) == 0 {
+		t.Fatal("workspace-scoped credential returned no accessible references")
+	}
+	for _, workspaceID := range allowed {
+		if workspaceID != "sales" {
+			t.Fatalf("workspace-scoped credential received %q reference", workspaceID)
+		}
+	}
+	if denied := search(access.APIToken{WorkspaceID: "sales", Privileges: []access.Privilege{access.PrivilegeUseAgent}}); len(denied) != 0 {
+		t.Fatalf("credential without view privilege received workspaces %v", denied)
 	}
 }
 

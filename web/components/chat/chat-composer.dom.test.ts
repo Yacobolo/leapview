@@ -330,7 +330,7 @@ test('mention picker opens immediately, renders compact rows, and scrolls with k
   }
 })
 
-test('mention picker pins on-page results above deduplicated workspace results', async () => {
+test('mention picker pins on-page results above deduplicated accessible results', async () => {
   const page = await browser.newPage({ viewport: { width: 800, height: 600 } })
   try {
     await page.goto(baseURL)
@@ -358,7 +358,7 @@ test('mention picker pins on-page results above deduplicated workspace results',
       }
     })
 
-    expect(result.labels).toEqual(['On this page', 'Workspace'])
+    expect(result.labels).toEqual(['On this page', 'All accessible'])
     expect(result.options).toEqual(['Orders on this page Overview', 'Orders workspace measure Sales model'])
   } finally {
     await page.close()

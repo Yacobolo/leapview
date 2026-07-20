@@ -7,7 +7,7 @@ import { lucideIcon } from '../shared/lucide-icons'
 export type ChatContextReference = AgentReferenceSignal
 
 const maxPinnedMentionSuggestions = 8
-const maxWorkspaceMentionSuggestions = 8
+const maxGlobalMentionSuggestions = 8
 
 class ChatComposer extends LitElement {
   @property({ type: String }) value = ''
@@ -365,7 +365,7 @@ class ChatComposer extends LitElement {
     const blocked = this.disabled || this.pending
 		const activeMention = this.activeMention()
 		const mentionGroups = this.mentionSuggestionGroups()
-		const mentions = [...mentionGroups.pinned, ...mentionGroups.workspace]
+		const mentions = [...mentionGroups.pinned, ...mentionGroups.global]
     return html`
       <form @submit=${this.submit}>
 			${activeMention ? html`
@@ -376,10 +376,10 @@ class ChatComposer extends LitElement {
 							${mentionGroups.pinned.map((reference, index) => this.renderMentionOption(reference, index))}
 						</div>
 					` : null}
-					${mentionGroups.workspace.length > 0 ? html`
-						<div class="mention-group" role="group" aria-label=${mentionGroups.pinned.length > 0 ? 'Workspace' : 'Results'}>
-							${mentionGroups.pinned.length > 0 ? html`<div class="mention-section-label">Workspace</div>` : null}
-							${mentionGroups.workspace.map((reference, index) => this.renderMentionOption(reference, mentionGroups.pinned.length + index))}
+					${mentionGroups.global.length > 0 ? html`
+						<div class="mention-group" role="group" aria-label=${mentionGroups.pinned.length > 0 ? 'All accessible' : 'Results'}>
+							${mentionGroups.pinned.length > 0 ? html`<div class="mention-section-label">All accessible</div>` : null}
+							${mentionGroups.global.map((reference, index) => this.renderMentionOption(reference, mentionGroups.pinned.length + index))}
 						</div>
 					` : null}
 					${mentions.length === 0 ? html`
@@ -488,12 +488,12 @@ class ChatComposer extends LitElement {
 
 	private mentionSuggestions(): ChatContextReference[] {
 		const groups = this.mentionSuggestionGroups()
-		return [...groups.pinned, ...groups.workspace]
+		return [...groups.pinned, ...groups.global]
 	}
 
-	private mentionSuggestionGroups(): { pinned: ChatContextReference[]; workspace: ChatContextReference[] } {
+	private mentionSuggestionGroups(): { pinned: ChatContextReference[]; global: ChatContextReference[] } {
 		const mention = this.activeMention()
-		if (!mention) return { pinned: [], workspace: [] }
+		if (!mention) return { pinned: [], global: [] }
 		const query = mention.query.toLocaleLowerCase()
 		const selected = new Set(this.references.map(referenceIdentity))
 		const pinnedCandidates = uniqueReferences(this.pinnedSuggestions)
@@ -501,11 +501,11 @@ class ChatComposer extends LitElement {
 			.filter((reference) => matchesReferenceQuery(reference, query))
 		const pinned = pinnedCandidates.slice(0, maxPinnedMentionSuggestions)
 		const excluded = new Set([...selected, ...pinnedCandidates.map(referenceIdentity)])
-		const workspace = uniqueReferences(this.suggestions)
+		const global = uniqueReferences(this.suggestions)
 			.filter((reference) => !excluded.has(referenceIdentity(reference)))
 			.filter((reference) => matchesReferenceQuery(reference, query))
-			.slice(0, maxWorkspaceMentionSuggestions)
-		return { pinned, workspace }
+			.slice(0, maxGlobalMentionSuggestions)
+		return { pinned, global }
 	}
 
 	private renderMentionOption(reference: ChatContextReference, index: number) {
