@@ -9,6 +9,7 @@ import { ChevronDown, ChevronRight, X } from 'lucide'
 
 import { lucideIcon } from '../shared/lucide-icons'
 import type {
+  InspectorPosition,
   InspectorState,
   PageStreamSignalChange,
   PageStreamSignalLeaf,
@@ -26,6 +27,23 @@ const FLASH_DURATION = 400
 const STORAGE_KEY = 'ds-inspector'
 const SIGNAL_POLL_INTERVAL = 500
 const SIGNAL_HISTORY_LIMIT = 500
+const DRAG_THRESHOLD = 4
+const VIEWPORT_MARGIN = 8
+
+type DragTarget = 'toggle' | 'panel'
+
+interface InspectorDrag {
+  target: DragTarget
+  pointerId: number
+  startX: number
+  startY: number
+  originX: number
+  originY: number
+  width: number
+  height: number
+  moved: boolean
+  captureElement: HTMLElement
+}
 
 @customElement('datastar-inspector')
 export class DatastarInspector extends LitElement {
@@ -41,6 +59,8 @@ export class DatastarInspector extends LitElement {
   @state() private signalStreamID = ''
   @state() private selectedSignalPath = ''
   @state() private signalError = ''
+  @state() private togglePosition?: InspectorPosition
+  @state() private panelPosition?: InspectorPosition
 
   private observer: MutationObserver | null = null
   private signalsElementId = `ds-inspector-signals-${Math.random().toString(36).slice(2, 9)}`
@@ -52,6 +72,9 @@ export class DatastarInspector extends LitElement {
   private signalAfter = 0
   private signalLoading = false
   private signalAbort: AbortController | null = null
+  private drag?: InspectorDrag
+  private suppressToggleClick = false
+  private suppressToggleClickTimer: number | null = null
 
   static styles = css`
     :host {
@@ -84,37 +107,38 @@ export class DatastarInspector extends LitElement {
 
     .toggle {
       position: fixed;
-      right: 12px;
-      bottom: 88px;
+      right: 16px;
+      bottom: 16px;
       z-index: var(--zIndex-popover);
       display: grid;
-      width: 30px;
-      height: 30px;
+      width: 38px;
+      height: 38px;
       place-items: center;
-      border: 1px solid var(--ds-border);
+      border: 1px solid color-mix(in srgb, var(--ds-accent), white 18%);
       border-radius: 50%;
-      background: var(--ds-panel-muted);
-      color: var(--ds-muted);
+      background:
+        radial-gradient(circle at 35% 24%, rgb(255 255 255 / 22%), transparent 30%),
+        linear-gradient(145deg, color-mix(in srgb, var(--ds-accent), white 10%), var(--ds-accent));
+      color: var(--ds-accent-fg);
       cursor: pointer;
-      font-size: 10px;
+      font-size: 12px;
       font-weight: var(--ld-font-weight-strong);
       letter-spacing: 0;
       line-height: 1;
-      opacity: 0.68;
-      box-shadow: 0 6px 18px rgb(0 0 0 / 28%);
+      box-shadow: 0 10px 28px rgb(0 0 0 / 38%), 0 0 0 1px rgb(255 255 255 / 8%) inset;
+      touch-action: none;
       transition:
         transform var(--motion-transition-hover),
         box-shadow var(--motion-transition-hover),
-        opacity var(--motion-transition-hover),
         filter var(--motion-transition-hover);
+      user-select: none;
     }
 
     .toggle:hover,
     .toggle:focus-visible {
-      color: var(--ds-fg);
-      opacity: 1;
+      filter: brightness(1.08);
       transform: translateY(-1px);
-      box-shadow: 0 8px 22px rgb(0 0 0 / 34%);
+      box-shadow: 0 14px 34px rgb(0 0 0 / 44%), 0 0 0 1px rgb(255 255 255 / 14%) inset;
       outline: 0;
     }
 
@@ -169,6 +193,23 @@ export class DatastarInspector extends LitElement {
       font-size: 11px;
       font-weight: var(--ld-font-weight-strong);
       line-height: 1;
+    }
+
+    .drag-handle {
+      border: 0;
+      cursor: grab;
+      padding: 0;
+      touch-action: none;
+      user-select: none;
+    }
+
+    .drag-handle:active {
+      cursor: grabbing;
+    }
+
+    .drag-handle:focus-visible {
+      outline: 2px solid var(--ds-accent-fg);
+      outline-offset: 1px;
     }
 
     .filter {
@@ -471,6 +512,7 @@ export class DatastarInspector extends LitElement {
     super.connectedCallback()
     this.ensureSignalsElement()
     this.loadState()
+    window.addEventListener('resize', this.handleViewportResize)
   }
 
   override disconnectedCallback() {
@@ -486,11 +528,15 @@ export class DatastarInspector extends LitElement {
       clearInterval(this.signalTimer)
     }
     this.signalAbort?.abort()
+    if (this.suppressToggleClickTimer !== null) clearTimeout(this.suppressToggleClickTimer)
+    this.stopDrag()
+    window.removeEventListener('resize', this.handleViewportResize)
   }
 
   override firstUpdated() {
     this.setupSignalObserver()
     this.startSignalPolling()
+    this.handleViewportResize()
   }
 
   private ensureSignalsElement() {
@@ -513,6 +559,8 @@ export class DatastarInspector extends LitElement {
         this.expanded = state.expanded ?? false
         this.filter = state.filter ?? ''
         this.expandedPaths = new Set(state.expandedPaths ?? [])
+        this.togglePosition = validPosition(state.togglePosition)
+        this.panelPosition = validPosition(state.panelPosition)
       }
     } catch {
       /* ignore parse errors */
@@ -524,6 +572,8 @@ export class DatastarInspector extends LitElement {
       expanded: this.expanded,
       filter: this.filter,
       expandedPaths: [...this.expandedPaths],
+      togglePosition: this.togglePosition,
+      panelPosition: this.panelPosition,
     }
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   }
@@ -597,11 +647,131 @@ export class DatastarInspector extends LitElement {
     if (this.expanded) {
       this.hasUnseenChanges = false
     }
+    void this.updateComplete.then(this.handleViewportResize)
+  }
+
+  private handleToggleClick() {
+    if (this.suppressToggleClick) {
+      this.suppressToggleClick = false
+      if (this.suppressToggleClickTimer !== null) clearTimeout(this.suppressToggleClickTimer)
+      this.suppressToggleClickTimer = null
+      return
+    }
+    this.toggle()
+  }
+
+  private startDrag(target: DragTarget, event: PointerEvent) {
+    if (event.button !== 0) return
+    const captureElement = event.currentTarget
+    if (!(captureElement instanceof HTMLElement)) return
+    const element = target === 'panel' ? captureElement.closest('.panel') : captureElement
+    if (!(element instanceof HTMLElement)) return
+    captureElement.setPointerCapture(event.pointerId)
+    const rect = element.getBoundingClientRect()
+    this.drag = {
+      target,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: rect.x,
+      originY: rect.y,
+      width: rect.width,
+      height: rect.height,
+      moved: false,
+      captureElement,
+    }
+    window.addEventListener('pointermove', this.handleDragMove, { passive: false })
+    window.addEventListener('pointerup', this.handleDragEnd)
+    window.addEventListener('pointercancel', this.handleDragEnd)
+  }
+
+  private handleDragMove = (event: PointerEvent) => {
+    const drag = this.drag
+    if (!drag || event.pointerId !== drag.pointerId) return
+    const deltaX = event.clientX - drag.startX
+    const deltaY = event.clientY - drag.startY
+    if (!drag.moved && Math.hypot(deltaX, deltaY) < DRAG_THRESHOLD) return
+    drag.moved = true
+    event.preventDefault()
+    const position = clampPosition({ x: drag.originX + deltaX, y: drag.originY + deltaY }, drag.width, drag.height)
+    if (drag.target === 'toggle') {
+      this.togglePosition = position
+    } else {
+      this.panelPosition = position
+    }
+  }
+
+  private handleDragEnd = (event: PointerEvent) => {
+    if (!this.drag || event.pointerId !== this.drag.pointerId) return
+    const { target, moved } = this.drag
+    if (moved) {
+      this.saveState()
+      if (target === 'toggle') {
+        this.suppressToggleClick = true
+        this.suppressToggleClickTimer = window.setTimeout(() => {
+          this.suppressToggleClick = false
+          this.suppressToggleClickTimer = null
+        }, 0)
+      }
+    }
+    this.stopDrag()
+  }
+
+  private stopDrag() {
+    const drag = this.drag
+    if (drag?.captureElement.hasPointerCapture(drag.pointerId)) {
+      drag.captureElement.releasePointerCapture(drag.pointerId)
+    }
+    this.drag = undefined
+    window.removeEventListener('pointermove', this.handleDragMove)
+    window.removeEventListener('pointerup', this.handleDragEnd)
+    window.removeEventListener('pointercancel', this.handleDragEnd)
+  }
+
+  private moveWithKeyboard(target: DragTarget, event: KeyboardEvent) {
+    const movement: Record<string, InspectorPosition> = {
+      ArrowLeft: { x: -10, y: 0 },
+      ArrowRight: { x: 10, y: 0 },
+      ArrowUp: { x: 0, y: -10 },
+      ArrowDown: { x: 0, y: 10 },
+    }
+    const delta = movement[event.key]
+    if (!delta) return
+    const element = event.currentTarget instanceof HTMLElement
+      ? (target === 'panel' ? event.currentTarget.closest('.panel') : event.currentTarget)
+      : null
+    if (!(element instanceof HTMLElement)) return
+    event.preventDefault()
+    const rect = element.getBoundingClientRect()
+    const position = clampPosition({ x: rect.x + delta.x, y: rect.y + delta.y }, rect.width, rect.height)
+    if (target === 'toggle') {
+      this.togglePosition = position
+    } else {
+      this.panelPosition = position
+    }
+    this.saveState()
+  }
+
+  private handleViewportResize = () => {
+    const target: DragTarget = this.expanded ? 'panel' : 'toggle'
+    const element = this.shadowRoot?.querySelector<HTMLElement>(target === 'panel' ? '.panel' : '.toggle')
+    const current = target === 'panel' ? this.panelPosition : this.togglePosition
+    if (!element || !current) return
+    const rect = element.getBoundingClientRect()
+    const next = clampPosition(current, rect.width, rect.height)
+    if (next.x === current.x && next.y === current.y) return
+    if (target === 'panel') {
+      this.panelPosition = next
+    } else {
+      this.togglePosition = next
+    }
+    this.saveState()
   }
 
   private close() {
     this.expanded = false
     this.saveState()
+    void this.updateComplete.then(this.handleViewportResize)
   }
 
   private handleFilterInput(e: Event) {
@@ -714,9 +884,13 @@ export class DatastarInspector extends LitElement {
     return html`
       <button
         class="toggle"
+        style=${positionStyle(this.togglePosition)}
         ?data-unseen=${this.hasUnseenChanges}
-        @click=${this.toggle}
-        aria-label="Open Datastar Inspector"
+        @pointerdown=${(event: PointerEvent) => this.startDrag('toggle', event)}
+        @keydown=${(event: KeyboardEvent) => this.moveWithKeyboard('toggle', event)}
+        @click=${this.handleToggleClick}
+        aria-label="Open or move Datastar Inspector"
+        title="Drag to move · Click to open"
       >
         DS
       </button>
@@ -733,7 +907,7 @@ export class DatastarInspector extends LitElement {
   private renderPanel(content: unknown, filteredCount: number, totalCount: number) {
     const hasFilter = this.filter.trim().length > 0
     return html`
-      <div class="panel">
+      <div class="panel" style=${positionStyle(this.panelPosition)}>
         ${this.renderHeader(filteredCount, totalCount, hasFilter)}
         ${content}
       </div>
@@ -747,7 +921,14 @@ export class DatastarInspector extends LitElement {
 
     return html`
       <div class="header">
-        <span class="badge">DS</span>
+        <button
+          type="button"
+          class="badge drag-handle"
+          aria-label="Move Datastar Inspector"
+          title="Drag to move"
+          @pointerdown=${(event: PointerEvent) => this.startDrag('panel', event)}
+          @keydown=${(event: KeyboardEvent) => this.moveWithKeyboard('panel', event)}
+        >DS</button>
         <input
           type="text"
           class="filter"
@@ -958,6 +1139,26 @@ export class DatastarInspector extends LitElement {
     return false
   }
 
+}
+
+function validPosition(value: InspectorPosition | undefined): InspectorPosition | undefined {
+  if (!value || !Number.isFinite(value.x) || !Number.isFinite(value.y)) return undefined
+  return { x: value.x, y: value.y }
+}
+
+function clampPosition(position: InspectorPosition, width: number, height: number): InspectorPosition {
+  const maxX = Math.max(VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN)
+  const maxY = Math.max(VIEWPORT_MARGIN, window.innerHeight - height - VIEWPORT_MARGIN)
+  return {
+    x: Math.round(Math.min(maxX, Math.max(VIEWPORT_MARGIN, position.x))),
+    y: Math.round(Math.min(maxY, Math.max(VIEWPORT_MARGIN, position.y))),
+  }
+}
+
+function positionStyle(position: InspectorPosition | undefined): string {
+  return position
+    ? `left: ${position.x}px; top: ${position.y}px; right: auto; bottom: auto;`
+    : ''
 }
 
 declare global {
