@@ -71,8 +71,6 @@ for (const viewport of [
         const workspacePage = workspace.shadowRoot.querySelector('.page') as HTMLElement
         const workspaceToolbar = workspace.shadowRoot.querySelector('.toolbar') as HTMLElement
         const workspaceRecordTable = workspace.shadowRoot.querySelector('ld-record-table') as HTMLElement
-        const workspaceGlyph = workspace.shadowRoot.querySelector('.record-entity-icon') as HTMLElement
-        const workspaceDashboardGlyph = workspace.shadowRoot.querySelector('.record-icon-dashboard') as HTMLElement
         const workspaceRowActionIcon = workspace.shadowRoot.querySelector('.record-actions svg') as SVGElement
         const workspaceRowActionLink = workspace.shadowRoot.querySelector('.record-actions .record-icon-action') as HTMLElement
         const workspaceNameCell = workspace.shadowRoot.querySelector('tbody tr:first-child td:first-child') as HTMLElement
@@ -81,7 +79,6 @@ for (const viewport of [
         const workspaceFirstRow = workspace.shadowRoot.querySelector('tbody tr:first-child') as HTMLElement
         const workspaceSearch = workspace.shadowRoot.querySelector('.search input[type="search"]') as HTMLInputElement
         const workspaceAssetTitle = workspace.shadowRoot.querySelector('tbody tr:first-child .record-entity-label') as HTMLElement
-        const workspaceAssetDescription = workspace.shadowRoot.querySelector('tbody tr:first-child .record-entity-description') as HTMLElement
         const nameCellRight = workspaceNameCell.getBoundingClientRect().right
         const workspacePageRect = workspacePage.getBoundingClientRect()
         const isMobile = window.innerWidth <= 720
@@ -98,10 +95,9 @@ for (const viewport of [
           workspacePageCentered: isMobile || Math.abs((workspacePageRect.left + workspacePageRect.width / 2) - window.innerWidth / 2) <= 1,
           workspacePageConstrained: isMobile || Math.round(workspacePageRect.width) < window.innerWidth,
           workspaceToolbarDisplay: getComputedStyle(workspaceToolbar).display,
-          workspaceGlyphText: workspaceGlyph.textContent?.trim(),
-          workspaceGlyphBackground: getComputedStyle(workspaceGlyph).backgroundColor,
-          workspaceGlyphHasIcon: Boolean(workspaceGlyph.querySelector('svg')),
-          workspaceDashboardGlyphBorderColor: getComputedStyle(workspaceDashboardGlyph).borderTopColor,
+          workspaceHasGlyphs: Boolean(workspace.shadowRoot.querySelector('.record-entity-icon')),
+          workspaceHasDescriptions: Boolean(workspace.shadowRoot.querySelector('.record-entity-description')),
+          workspaceNamesUseFullWidth: Array.from(workspace.shadowRoot.querySelectorAll('.record-entity')).every((entity) => entity.classList.contains('record-entity-no-icon')),
           workspaceRowActionIconWidth: getComputedStyle(workspaceRowActionIcon).width,
           workspaceRowActionBorderColor: getComputedStyle(workspaceRowActionLink).borderTopColor,
           workspaceSearchFontSize: getComputedStyle(workspaceSearch).fontSize,
@@ -109,10 +105,8 @@ for (const viewport of [
           workspaceHeaderFontSize: getComputedStyle(workspaceHeaderCell).fontSize,
           workspaceCellFontSize: getComputedStyle(workspaceTypeCell).fontSize,
           workspaceTitleFontSize: getComputedStyle(workspaceAssetTitle).fontSize,
-          workspaceDescriptionFontSize: getComputedStyle(workspaceAssetDescription).fontSize,
           workspaceRowHeight: Math.round(workspaceFirstRow.getBoundingClientRect().height),
           workspaceTitleFitsNameColumn: workspaceAssetTitle.getBoundingClientRect().right <= nameCellRight,
-          workspaceDescriptionFitsNameColumn: workspaceAssetDescription.getBoundingClientRect().right <= nameCellRight,
         }
       })
 
@@ -129,10 +123,9 @@ for (const viewport of [
         workspacePageCentered: true,
         workspacePageConstrained: true,
         workspaceToolbarDisplay: 'grid',
-        workspaceGlyphText: '',
-        workspaceGlyphBackground: 'rgb(221, 244, 255)',
-        workspaceGlyphHasIcon: true,
-        workspaceDashboardGlyphBorderColor: 'rgb(210, 191, 255)',
+        workspaceHasGlyphs: false,
+        workspaceHasDescriptions: false,
+        workspaceNamesUseFullWidth: true,
         workspaceRowActionIconWidth: '16px',
         workspaceRowActionBorderColor: 'rgba(0, 0, 0, 0)',
         workspaceSearchFontSize: '14px',
@@ -140,10 +133,8 @@ for (const viewport of [
         workspaceHeaderFontSize: '12px',
         workspaceCellFontSize: '12px',
         workspaceTitleFontSize: '14px',
-        workspaceDescriptionFontSize: '12px',
-        workspaceRowHeight: 48,
+        workspaceRowHeight: 47,
         workspaceTitleFitsNameColumn: true,
-        workspaceDescriptionFitsNameColumn: true,
       })
 
       await page.goto(`${baseURL}/connections`)

@@ -506,9 +506,10 @@ class RecordTable extends LitElement {
     const href = cellHref(column, value, row)
     const label = cellLabel(value)
     const description = cellDescription(value)
+    const icon = cellIcon(value)
     const content = html`
-      <span class="record-entity">
-        ${this.renderIcon(cellIcon(value), `record-entity-icon record-icon-${iconToken(cellIcon(value))}`)}
+      <span class=${icon ? 'record-entity' : 'record-entity record-entity-no-icon'}>
+        ${icon ? this.renderIcon(icon, `record-entity-icon record-icon-${iconToken(icon)}`) : nothing}
         <span class="record-entity-copy">
           <span class="record-entity-label">${label}</span>
           ${description ? html`<span class="record-entity-description">${description}</span>` : nothing}
@@ -1322,6 +1323,11 @@ const recordTableStyles = `
     grid-template-columns: auto minmax(0, 1fr);
     align-items: start;
     gap: var(--base-size-8);
+  }
+
+  ld-record-table .record-entity-no-icon {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
   }
 
   ld-record-table .record-entity-icon,
