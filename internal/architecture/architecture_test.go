@@ -568,6 +568,7 @@ func TestDevelopmentServerTracksCompiledFallbackProcess(t *testing.T) {
 	for _, want := range []string{
 		`go build -o "$TMP_DIR/libredash-dev" ./cmd/libredash`,
 		`"$TMP_DIR/libredash-dev" >> "$LOG_FILE" 2>&1 &`,
+		`LIBREDASH_MANAGED_DATA_MIN_FREE_BYTES="${LIBREDASH_MANAGED_DATA_MIN_FREE_BYTES:-67108864}"`,
 	} {
 		if !strings.Contains(serverText, want) {
 			t.Fatalf("development server script missing tracked binary fragment %q", want)

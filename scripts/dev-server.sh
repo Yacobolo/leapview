@@ -330,6 +330,7 @@ start() {
   export PORT="$port"
   export LIBREDASH_ADDR=":$port"
   export LIBREDASH_DEV_WORKTREE="$ROOT"
+  export LIBREDASH_MANAGED_DATA_MIN_FREE_BYTES="${LIBREDASH_MANAGED_DATA_MIN_FREE_BYTES:-67108864}"
 
   : > "$LOG_FILE"
   if [[ "$runner" == "air" ]]; then
