@@ -105,7 +105,6 @@ class LibreDashWorkspacePage extends DatastarLit(LitElement) {
                   <span class="workspace-title">${card.title}</span>
                   <span class="workspace-description">${card.description}</span>
                 </span>
-                ${card.servingLabel ? html`<span class="workspace-status">${card.servingLabel}</span>` : nothing}
                 <span class="workspace-chevron">${lucideIcon(ChevronRight)}</span>
               </a>
             </li>
@@ -671,7 +670,7 @@ const workspaceStyles = css`
     box-sizing: border-box;
     height: 4.5rem;
     min-width: 0;
-    grid-template-columns: var(--control-medium-size) minmax(0, 1fr) auto var(--base-size-16);
+    grid-template-columns: var(--control-medium-size) minmax(0, 1fr) var(--base-size-16);
     align-items: center;
     gap: var(--base-size-12);
     padding: var(--base-size-12) var(--base-size-16);
@@ -739,18 +738,6 @@ const workspaceStyles = css`
     color: var(--ld-fg-muted);
     font-size: var(--ld-font-size-caption);
     line-height: var(--ld-line-height-tight);
-  }
-
-  .workspace-status {
-    border: var(--borderWidth-default) solid var(--ld-line-success-muted);
-    border-radius: var(--ld-radius-full);
-    background: var(--ld-bg-success-muted, var(--ld-bg-panel-muted));
-    color: var(--ld-fg-success, var(--ld-fg-muted));
-    padding: var(--base-size-4) var(--base-size-8);
-    font-size: var(--ld-font-size-caption);
-    font-weight: var(--ld-font-weight-medium);
-    line-height: var(--ld-line-height-tight);
-    white-space: nowrap;
   }
 
   .workspace-chevron {
