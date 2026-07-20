@@ -404,11 +404,24 @@ func compileGeographicVisualizationSpec(authored reportdef.Visual) (visualizatio
 	if legend == "" {
 		legend = visualizationir.VisualizationLegendPositionHidden
 	}
+	basemapID := strings.TrimSpace(authored.Presentation.Basemap)
+	if basemapID == "" {
+		basemapID = "world_countries"
+	}
+	var basemap *visualizationir.VisualizationGeometryAsset
+	if basemapID != "none" {
+		asset, err := visualizationgeometry.Resolve(basemapID)
+		if err != nil {
+			return visualizationir.VisualizationSpec{}, fmt.Errorf("geographic basemap: %w", err)
+		}
+		basemap = &asset
+	}
 	return visualizationir.VisualizationSpec{Value: &visualizationir.GeographicVisualizationSpec{
 		VisualizationSpecBase: base, Kind: "geographic", Layers: layers,
 		Presentation: visualizationir.GeographicVisualizationPresentation{
 			VisualizationPresentation: visualizationir.VisualizationPresentation{Legend: legend, ShowLabels: authored.Presentation.ShowLabels},
 			Roam:                      authored.Presentation.Roam,
+			Basemap:                   basemap,
 		},
 	}}, nil
 }

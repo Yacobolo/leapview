@@ -1,11 +1,11 @@
-import type { VisualizationEnvelope, VisualizationGeographicLayer } from '../../../../generated/visualization'
+import type { VisualizationEnvelope, VisualizationGeographicLayer, VisualizationGeometryAsset } from '../../../../generated/visualization'
 import { Map as MapLibre, type Map as MapLibreMap } from 'maplibre-gl'
 import type { Feature, FeatureCollection, Geometry, Position } from 'geojson'
 import type { RendererAdapter, RendererHandle } from '../host-controller'
 
 export const adapter: RendererAdapter = {
   async mount(container, envelope) {
-    const frame = document.createElement('div'); frame.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;background:var(--ld-bg-subtle,#f6f8fa)'
+    const frame = document.createElement('div'); frame.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;background:var(--ld-chart-surface,var(--ld-bg-panel,#fff))'
     const surface = document.createElement('div'); surface.style.cssText = 'position:absolute;inset:0'
     const attribution = document.createElement('div'); attribution.dataset.mapAttribution = ''; attribution.setAttribute('role', 'note'); attribution.setAttribute('aria-label', 'Map attribution')
     attribution.style.cssText = 'position:absolute;right:6px;bottom:6px;z-index:1;max-width:calc(100% - 12px);padding:2px 5px;border-radius:4px;background:color-mix(in srgb,var(--ld-bg-panel,#fff) 88%,transparent);color:var(--ld-fg-muted,#57606a);font:10px/1.3 var(--ld-font-family-ui,system-ui);pointer-events:none;text-align:right'
@@ -20,15 +20,24 @@ export const adapter: RendererAdapter = {
       interactive,
     })
     await new Promise<void>((resolve, reject) => { map.once('load', () => resolve()); map.once('error', (event) => reject(event.error)) })
-    const handle = new MapLibreHandle(container, map, attribution)
-    await handle.update(envelope)
-    return handle
+    const handle = new MapLibreHandle(container, frame, map, attribution)
+    try {
+      await handle.update(envelope)
+      return handle
+    } catch (error) {
+      handle.dispose()
+      throw error
+    }
   },
 }
 
 class MapLibreHandle implements RendererHandle {
   private sourceIDs: string[] = []
-  constructor(private readonly container: HTMLElement, private readonly map: MapLibreMap, private readonly attribution: HTMLElement) {}
+  private basemapID?: string
+  private readonly handleThemeApplied = () => this.applyTheme()
+  constructor(private readonly container: HTMLElement, private readonly frame: HTMLElement, private readonly map: MapLibreMap, private readonly attribution: HTMLElement) {
+    document.addEventListener('libredash-theme-applied', this.handleThemeApplied)
+  }
   async update(envelope: VisualizationEnvelope): Promise<void> {
     if (envelope.spec.kind !== 'geographic') throw new Error(`MapLibre cannot render ${envelope.spec.kind}`)
     for (const id of this.sourceIDs.reverse()) {
@@ -36,16 +45,21 @@ class MapLibreHandle implements RendererHandle {
       if (this.map.getSource(id)) this.map.removeSource(id)
     }
     this.sourceIDs = []
+    this.basemapID = undefined
     const collections: FeatureCollection[] = []
     const coordinateCollections: FeatureCollection[] = []
     const attributions = new Set<string>()
+    if (envelope.spec.presentation.basemap) {
+      await this.addBasemap(envelope.spec.presentation.basemap)
+      attributions.add(envelope.spec.presentation.basemap.attribution)
+    }
     for (const layer of envelope.spec.layers) {
       const collection = await this.addLayer(envelope, layer)
       collections.push(collection)
       if (layer.kind !== 'choropleth') coordinateCollections.push(collection)
       if (layer.geometry?.attribution) attributions.add(layer.geometry.attribution)
     }
-    this.addCoordinateReferenceGrid(coordinateCollections)
+    if (!envelope.spec.presentation.basemap) this.addCoordinateReferenceGrid(coordinateCollections)
     this.attribution.textContent = [...attributions].join(' · ')
     this.attribution.hidden = attributions.size === 0
     fitMapToGeographicData(this.map, collections)
@@ -53,10 +67,21 @@ class MapLibreHandle implements RendererHandle {
   }
   resize(): void { this.map.resize() }
   async snapshot(): Promise<Blob> {
+    await waitForMapIdle(this.map)
     const canvas = this.map.getCanvas()
     return new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('MapLibre snapshot failed')), 'image/png'))
   }
-  dispose(): void { this.map.remove(); this.container.replaceChildren() }
+  dispose(): void { document.removeEventListener('libredash-theme-applied', this.handleThemeApplied); this.map.remove(); this.container.replaceChildren() }
+
+  private async addBasemap(asset: VisualizationGeometryAsset): Promise<void> {
+    const data = await this.loadGeometry(asset)
+    let id = '__ld-basemap'
+    while (this.map.getSource(id) || this.map.getLayer(id)) id += '-'
+    this.map.addSource(id, { type: 'geojson', data })
+    this.map.addLayer(basemapLayer(id, this.currentBasemapColors()))
+    this.sourceIDs.push(id)
+    this.basemapID = id
+  }
 
   private addCoordinateReferenceGrid(collections: FeatureCollection[]): void {
     const data = coordinateReferenceGrid(collections)
@@ -77,12 +102,7 @@ class MapLibreHandle implements RendererHandle {
     let data: FeatureCollection
     if (layer.kind === 'choropleth') {
       if (!layer.geometry || !layer.join) throw new Error(`choropleth layer ${JSON.stringify(layer.id)} requires geometry and join`)
-      const url = sameOriginGeometryURL(layer.geometry.url, location.href)
-      const response = await fetch(url, { credentials: 'same-origin', redirect: 'error' })
-      if (!response.ok) throw new Error(`geometry asset ${JSON.stringify(layer.geometry.id)} returned ${response.status}`)
-      const bytes = new Uint8Array(await response.arrayBuffer())
-      await verifyGeometryDigest(bytes, layer.geometry.digest)
-      const geometry = JSON.parse(new TextDecoder().decode(bytes)) as FeatureCollection
+      const geometry = await this.loadGeometry(layer.geometry)
       data = joinGeometry(envelope, layer, geometry)
     } else {
       data = coordinateGeometry(envelope, layer)
@@ -94,6 +114,65 @@ class MapLibreHandle implements RendererHandle {
     this.sourceIDs.push(id)
     return data
   }
+
+  private async loadGeometry(asset: VisualizationGeometryAsset): Promise<FeatureCollection> {
+    return loadGeometryAsset(asset, location.href)
+  }
+
+  private applyTheme(): void {
+    this.map.setPaintProperty('__ld-background', 'background-color', getComputedStyle(this.frame).backgroundColor || '#ffffff')
+    if (this.basemapID && this.map.getLayer(this.basemapID)) {
+      const colors = this.currentBasemapColors()
+      this.map.setPaintProperty(this.basemapID, 'fill-color', colors.land)
+      this.map.setPaintProperty(this.basemapID, 'fill-outline-color', colors.boundary)
+    }
+    this.map.triggerRepaint()
+  }
+
+  private currentBasemapColors(): BasemapColors {
+    return {
+      boundary: resolveCSSColor(this.frame, 'var(--ld-line-default,#afb8c1)'),
+      land: resolveCSSColor(this.frame, 'var(--ld-bg-panel-muted,#eaeef2)'),
+    }
+  }
+}
+
+const geometryCache = new Map<string, Promise<FeatureCollection>>()
+
+async function loadGeometryAsset(asset: VisualizationGeometryAsset, baseURL: string): Promise<FeatureCollection> {
+  const url = sameOriginGeometryURL(asset.url, baseURL)
+  const key = `${url.href}\0${asset.digest}`
+  let pending = geometryCache.get(key)
+  if (!pending) {
+    pending = (async () => {
+      const response = await fetch(url, { credentials: 'same-origin', redirect: 'error' })
+      if (!response.ok) throw new Error(`geometry asset ${JSON.stringify(asset.id)} returned ${response.status}`)
+      const bytes = new Uint8Array(await response.arrayBuffer())
+      await verifyGeometryDigest(bytes, asset.digest)
+      const value = JSON.parse(new TextDecoder().decode(bytes)) as Partial<FeatureCollection>
+      if (value.type !== 'FeatureCollection' || !Array.isArray(value.features)) throw new Error(`geometry asset ${JSON.stringify(asset.id)} is not a GeoJSON FeatureCollection`)
+      return value as FeatureCollection
+    })()
+    geometryCache.set(key, pending)
+    void pending.catch(() => { if (geometryCache.get(key) === pending) geometryCache.delete(key) })
+  }
+  return pending
+}
+
+type BasemapColors = Readonly<{ boundary: string; land: string }>
+
+export function basemapLayer(id: string, colors: BasemapColors): any {
+  return { id, source: id, type: 'fill', paint: { 'fill-color': colors.land, 'fill-opacity': 1, 'fill-outline-color': colors.boundary } }
+}
+
+function resolveCSSColor(container: HTMLElement, value: string): string {
+  const probe = document.createElement('span')
+  probe.style.color = value
+  probe.hidden = true
+  container.append(probe)
+  const color = getComputedStyle(probe).color
+  probe.remove()
+  return color
 }
 
 function waitForMapIdle(map: MapLibreMap): Promise<void> {

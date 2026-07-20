@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 
 import type { VisualizationEnvelope, VisualizationGeographicLayer } from '../../../../generated/visualization'
 import type { FeatureCollection } from 'geojson'
-import { coordinateGeometry, coordinateReferenceGrid, fitMapToGeographicData, mapLayer, normalizeFeatureWeights, sameOriginGeometryURL, verifyGeometryDigest } from './maplibre'
+import { basemapLayer, coordinateGeometry, coordinateReferenceGrid, fitMapToGeographicData, mapLayer, normalizeFeatureWeights, sameOriginGeometryURL, verifyGeometryDigest } from './maplibre'
 
 test('MapLibre geometry assets are same-origin and content addressed', async () => {
   expect(sameOriginGeometryURL('/static/geometry/states.geojson', 'https://dash.example/workspaces/sales').href).toBe('https://dash.example/static/geometry/states.geojson')
@@ -90,4 +90,17 @@ test('MapLibre heat palettes increase monotonically from transparent to dark', (
       1, '#033d8b',
     ])
   }
+})
+
+test('MapLibre renders the typed basemap below data with theme-derived land and boundaries', () => {
+  expect(basemapLayer('world', { boundary: 'rgb(175, 184, 193)', land: 'rgb(234, 238, 242)' })).toEqual({
+    id: 'world',
+    source: 'world',
+    type: 'fill',
+    paint: {
+      'fill-color': 'rgb(234, 238, 242)',
+      'fill-opacity': 1,
+      'fill-outline-color': 'rgb(175, 184, 193)',
+    },
+  })
 })

@@ -307,6 +307,9 @@ func validateVisualPresentation(name string, visual Visual) error {
 	if presentation.DualAxis && visual.Type != "combo" {
 		return fmt.Errorf("visual %q presentation.dual_axis is only valid for combo", name)
 	}
+	if presentation.Basemap != "" && visual.Type != "map" {
+		return fmt.Errorf("visual %q presentation.basemap is only valid for map", name)
+	}
 	if presentation.InnerRadius < 0 || presentation.InnerRadius > 1 || presentation.OuterRadius < 0 || presentation.OuterRadius > 1 || (presentation.InnerRadius > 0 && presentation.OuterRadius > 0 && presentation.InnerRadius >= presentation.OuterRadius) {
 		return fmt.Errorf("visual %q has invalid presentation radii", name)
 	}

@@ -368,7 +368,7 @@ model KPIVisualizationPresentation {
 
 model GeographicVisualizationPresentation extends VisualizationPresentation {
   `roam`: boolean;
-  `showBasemap`: boolean;
+  `basemap`?: VisualizationGeometryAsset;
 }
 
 @apigen.contract(#{ kind: "visualization-spec", tags: #["visualization", "ir"] })

@@ -4,6 +4,8 @@ Use a map for regional comparisons or observations with geographic coordinates.
 
 Every preview on this page is generated from the YAML shown below it using a fixed documentation dataset.
 
+Maps use LibreDash's vendored, content-addressed Natural Earth world basemap by default. It is deterministic, works offline, and does not send coordinates or browsing activity to a third-party tile service. Set `presentation.basemap: none` when geographic context should be omitted.
+
 ## Choropleth
 
 A choropleth joins a query dimension to a content-addressed geometry asset. The `join` and `value` properties reference query aliases, not model field names.

@@ -95,7 +95,10 @@ func visualFieldReferences(queryFields, optionFields []string, chartType string)
 		result = append(result, reference)
 	}
 	if chartType == "map" {
-		result = append(result, visualdocs.FieldReference{Path: "geo.layers", Type: "geographic layer list", AllowedValues: []string{"choropleth", "point", "heat", "density"}, Description: "Declares typed geographic layers and binds their geometry or coordinates to query aliases."})
+		result = append(result,
+			visualdocs.FieldReference{Path: "presentation.basemap", Type: "string", Default: "world_countries", AllowedValues: []string{"world_countries", "none"}, Description: "Selects the vendored, content-addressed world basemap or disables geographic context explicitly."},
+			visualdocs.FieldReference{Path: "geo.layers", Type: "geographic layer list", AllowedValues: []string{"choropleth", "point", "heat", "density"}, Description: "Declares typed geographic layers and binds their geometry or coordinates to query aliases."},
+		)
 	}
 	if chartType == "custom" {
 		result = append(result,

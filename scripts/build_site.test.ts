@@ -28,10 +28,12 @@ test('site build publishes the isolated Vega-Lite sandbox entrypoint', async () 
 })
 
 test('site build publishes content-addressed geographic assets', async () => {
-  const source = Bun.file('static/geometry/br-states-ibge.geojson')
-  const published = Bun.file('site/static/geometry/br-states-ibge.geojson')
-  expect(await published.exists()).toBe(true)
-  expect(await published.arrayBuffer()).toEqual(await source.arrayBuffer())
+  for (const fileName of ['br-states-ibge.geojson', 'world-countries-natural-earth-110m.geojson']) {
+    const source = Bun.file(`static/geometry/${fileName}`)
+    const published = Bun.file(`site/static/geometry/${fileName}`)
+    expect(await published.exists()).toBe(true)
+    expect(await published.arrayBuffer()).toEqual(await source.arrayBuffer())
+  }
 })
 
 test('site build vendors the GitHub mark used by repository links', async () => {

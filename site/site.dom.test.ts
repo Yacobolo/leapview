@@ -942,13 +942,14 @@ test('map documentation renders fitted, attributed canvases without adapter erro
       }
     }))
     expect(states.map(({ alert, attribution, rendererChildren }) => ({ alert, attribution, rendererChildren }))).toEqual([
-      { alert: '', attribution: 'Instituto Brasileiro de Geografia e Estatística (IBGE)', rendererChildren: 1 },
-      { alert: '', attribution: '', rendererChildren: 1 },
-      { alert: '', attribution: '', rendererChildren: 1 },
-      { alert: '', attribution: '', rendererChildren: 1 },
+      { alert: '', attribution: 'Natural Earth · Instituto Brasileiro de Geografia e Estatística (IBGE)', rendererChildren: 1 },
+      { alert: '', attribution: 'Natural Earth', rendererChildren: 1 },
+      { alert: '', attribution: 'Natural Earth', rendererChildren: 1 },
+      { alert: '', attribution: 'Natural Earth', rendererChildren: 1 },
     ])
     expect(states.every(({ width, height }) => width > 500 && height >= 400)).toBe(true)
-    const snapshot = await page.locator('ld-site-visual-example').first().evaluate(async (element) => {
+    expect(await page.evaluate(() => performance.getEntriesByName(`${location.origin}/static/geometry/world-countries-natural-earth-110m.geojson`).length)).toBe(1)
+    const mapSnapshot = () => page.locator('ld-site-visual-example').first().evaluate(async (element) => {
       const host = element.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { snapshot(): Promise<Blob> }
       const blob = await host.snapshot()
       const bitmap = await createImageBitmap(blob)
@@ -958,11 +959,22 @@ test('map documentation renders fitted, attributed canvases without adapter erro
       const pixels = context.getImageData(0, 0, bitmap.width, bitmap.height).data
       let visiblePixels = 0
       for (let index = 3; index < pixels.length; index += 4) if (pixels[index]! > 0) visiblePixels++
-      return { height: bitmap.height, size: blob.size, type: blob.type, visiblePixels, width: bitmap.width }
+      return { corner: Array.from(pixels.slice(0, 4)), height: bitmap.height, size: blob.size, type: blob.type, visiblePixels, width: bitmap.width }
     })
+    const snapshot = await mapSnapshot()
     expect(snapshot.type).toBe('image/png')
     expect(snapshot.size).toBeGreaterThan(0)
     expect(snapshot.visiblePixels).toBeGreaterThan(10_000)
+
+    const applyTheme = (mode: 'dark' | 'light') => page.evaluate((nextMode) => new Promise<void>((resolve) => {
+      document.addEventListener('libredash-theme-applied', () => resolve(), { once: true })
+      document.dispatchEvent(new CustomEvent('libredash-theme-change', { detail: { mode: nextMode } }))
+    }), mode)
+    await applyTheme('dark')
+    const darkSnapshot = await mapSnapshot()
+    await applyTheme('light')
+    const lightSnapshot = await mapSnapshot()
+    expect(darkSnapshot.corner).not.toEqual(lightSnapshot.corner)
 
     await page.setViewportSize({ width: 390, height: 844 })
     await page.waitForFunction(() => document.querySelector('.site-docs-sidebar')?.getAttribute('aria-hidden') === 'true')

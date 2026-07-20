@@ -113,6 +113,7 @@ type VisualPresentation struct {
 	Align         string            `yaml:"align" json:"align,omitempty"`
 	Sort          string            `yaml:"sort" json:"sort,omitempty"`
 	InitialDepth  int               `yaml:"initial_depth" json:"initialDepth,omitempty"`
+	Basemap       string            `yaml:"basemap" json:"basemap,omitempty"`
 	Roam          bool              `yaml:"roam" json:"roam,omitempty"`
 	Layout        string            `yaml:"layout" json:"layout,omitempty"`
 	Breadcrumb    *bool             `yaml:"breadcrumb" json:"breadcrumb,omitempty"`

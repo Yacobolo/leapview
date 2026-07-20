@@ -3,6 +3,7 @@ package compiler
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
@@ -118,6 +119,9 @@ func TestGeographicVisualCompilesEveryLayerKind(t *testing.T) {
 	if got, want := spec.Presentation.Legend, visualizationir.VisualizationLegendPositionHidden; got != want {
 		t.Fatalf("geographic legend = %q, want %q", got, want)
 	}
+	if spec.Presentation.Basemap == nil || spec.Presentation.Basemap.ID != "world-countries-natural-earth-110m" || spec.Presentation.Basemap.Digest == "" {
+		t.Fatalf("geographic basemap = %#v, want content-addressed Natural Earth asset", spec.Presentation.Basemap)
+	}
 	if got, want := len(spec.Layers), 4; got != want {
 		t.Fatalf("layers = %d, want %d", got, want)
 	}
@@ -136,5 +140,32 @@ func TestGeographicVisualCompilesEveryLayerKind(t *testing.T) {
 	}
 	if spec.Layers[1].Latitude == nil || spec.Layers[1].Latitude.Field != "latitude" || spec.Layers[1].Longitude == nil || spec.Layers[1].Longitude.Field != "longitude" {
 		t.Fatalf("point layer = %#v", spec.Layers[1])
+	}
+}
+
+func TestGeographicVisualCanExplicitlyDisableTheDefaultBasemap(t *testing.T) {
+	dashboardDefinition := &report.Dashboard{SemanticModel: "model", Visuals: map[string]report.Visual{"locations": {
+		Type: "map", Presentation: report.VisualPresentation{Basemap: "none"}, Query: report.VisualQuery{
+			Table: "orders", Dimensions: []report.FieldRef{{Field: "orders.latitude", Alias: "latitude"}, {Field: "orders.longitude", Alias: "longitude"}}, Measures: []report.FieldRef{{Field: "orders.revenue", Alias: "revenue"}}, Limit: 100,
+		},
+		Geo: report.VisualGeo{Layers: []report.VisualGeoLayer{{ID: "stores", Kind: "point", Latitude: "latitude", Longitude: "longitude"}}},
+	}}}
+
+	definitions, err := compileVisualizationDefinitions(dashboardDefinition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := definitions["locations"].Spec.Value.(*visualizationir.GeographicVisualizationSpec)
+	if spec.Presentation.Basemap != nil {
+		t.Fatalf("geographic basemap = %#v, want none", spec.Presentation.Basemap)
+	}
+
+	dashboardDefinition.Visuals["locations"] = func() report.Visual {
+		visual := dashboardDefinition.Visuals["locations"]
+		visual.Presentation.Basemap = "unknown"
+		return visual
+	}()
+	if _, err := compileVisualizationDefinitions(dashboardDefinition); err == nil || !strings.Contains(err.Error(), `geographic basemap: unknown geometry asset "unknown"`) {
+		t.Fatalf("unknown basemap error = %v", err)
 	}
 }

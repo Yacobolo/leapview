@@ -39838,17 +39838,22 @@ components:
         - $ref: '#/components/schemas/VisualizationPresentation'
       required:
         - roam
-        - showBasemap
       properties:
         roam:
           type: boolean
           example: true
-        showBasemap:
-          type: boolean
-          example: true
+        basemap:
+          $ref: '#/components/schemas/VisualizationGeometryAsset'
       example:
+        basemap:
+          attribution: example
+          digest: example
+          id: example
+          identifierSystem: example
+          license: example
+          source: example
+          url: example
         roam: true
-        showBasemap: true
     GeographicVisualizationSpec:
       type: object
       allOf:
@@ -39918,8 +39923,15 @@ components:
               dataset: example
               field: example
         presentation:
+          basemap:
+            attribution: example
+            digest: example
+            id: example
+            identifierSystem: example
+            license: example
+            source: example
+            url: example
           roam: true
-          showBasemap: true
     GrantListResponse:
       type: object
       required:
