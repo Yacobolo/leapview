@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
-	"github.com/Yacobolo/libredash/internal/manageddata"
-	"github.com/Yacobolo/libredash/internal/manageddata/control"
-	managedhttp "github.com/Yacobolo/libredash/internal/manageddata/http"
-	"github.com/Yacobolo/libredash/internal/manageddata/s3multipart"
+	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
+	"github.com/Yacobolo/leapview/internal/manageddata"
+	"github.com/Yacobolo/leapview/internal/manageddata/control"
+	managedhttp "github.com/Yacobolo/leapview/internal/manageddata/http"
+	"github.com/Yacobolo/leapview/internal/manageddata/s3multipart"
 )
 
 const (
@@ -135,6 +135,30 @@ func TestUploadSessionsAreListedFromCollectionMetadata(t *testing.T) {
 	decodeResponse(t, recorder, &response)
 	if len(response.Items) != 1 || response.Items[0].Id != "upload-a" || uploads.recoverCalls != 1 {
 		t.Fatalf("upload sessions = %#v, recover calls = %d", response.Items, uploads.recoverCalls)
+	}
+}
+
+func TestCancelledUploadSessionResponseDoesNotRequireActiveNegotiation(t *testing.T) {
+	repo := metadataFixture()
+	repo.uploadSessions = []manageddata.UploadSession{{ID: "upload-a", CollectionID: "collection-a", CreatedAt: "2026-01-01T00:00:00Z"}}
+	result := uploadFixture()
+	result.Status = manageddata.UploadStatusAborted
+	result.Files[0].Transport = control.TransportDescription{}
+	handler := newHandler(repo, &fakeUploads{result: result}, nil)
+
+	recorder := call(t, ``, func(w http.ResponseWriter, r *http.Request) {
+		handler.ListManagedDataUploadSessions(w, r, "project-a", "orders", apigenapi.GenListManagedDataUploadSessionsParams{})
+	})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	var response map[string]any
+	decodeResponse(t, recorder, &response)
+	items := response["items"].([]any)
+	files := items[0].(map[string]any)["files"].([]any)
+	file := files[0].(map[string]any)
+	if _, present := file["negotiation"]; present {
+		t.Fatalf("terminal file retained upload negotiation: %#v", file)
 	}
 }
 

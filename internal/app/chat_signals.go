@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/Yacobolo/libredash/internal/agent"
-	"github.com/Yacobolo/libredash/internal/dashboard"
-	"github.com/Yacobolo/libredash/internal/ui"
-	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
+	"github.com/Yacobolo/leapview/internal/agent"
+	"github.com/Yacobolo/leapview/internal/dashboard"
+	"github.com/Yacobolo/leapview/internal/ui"
+	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
 )
 
 func chatSignalWithConversations(conversations []ui.ChatConversationSummary, activeID string, transcript []agent.ChatTranscriptItem, artifacts agent.ChatArtifactSignals, statusErr string, running, enabled bool) ui.ChatViewState {
@@ -125,13 +125,6 @@ func isChatVisualType(value string) bool {
 	}
 }
 
-func chatSignalPatch(signal ui.ChatViewState) map[string]any {
-	return map[string]any{
-		"agent":   signal.Agent,
-		"visuals": signal.Visuals,
-	}
-}
-
 func (s *Server) chatConversations(ctx context.Context, scope agent.Scope) []ui.ChatConversationSummary {
 	conversations := []ui.ChatConversationSummary{}
 	if s.agent == nil || scope.PrincipalID == "" {
@@ -143,7 +136,7 @@ func (s *Server) chatConversations(ctx context.Context, scope agent.Scope) []ui.
 	}
 	for _, row := range rows {
 		out := chatConversationSummary(row)
-		out.TitlePending = uisignals.Optional(s.isChatTitlePending(row.ID))
+		out.TitlePending = uisignals.Pointer(s.isChatTitlePending(row.ID))
 		conversations = append(conversations, out)
 	}
 	return conversations

@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/libredash/internal/access"
-	"github.com/Yacobolo/libredash/internal/api"
-	"github.com/Yacobolo/libredash/internal/queryaudit"
+	"github.com/Yacobolo/leapview/internal/access"
+	"github.com/Yacobolo/leapview/internal/api"
+	"github.com/Yacobolo/leapview/internal/queryaudit"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -2219,7 +2219,7 @@ func pageSliceForRequest[T any](w stdhttp.ResponseWriter, r *stdhttp.Request, it
 	if end < len(items) {
 		nextCursor = encodeKeyCursor(apiItemPageKey(items[end-1]))
 	}
-	return append([]T(nil), items[start:end]...), nextCursor, true
+	return append(make([]T, 0, end-start), items[start:end]...), nextCursor, true
 }
 
 const (

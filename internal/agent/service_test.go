@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
-	"github.com/Yacobolo/libredash/internal/dashboard"
-	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
-	agentcore "github.com/Yacobolo/libredash/pkg/agent"
+	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
+	"github.com/Yacobolo/leapview/internal/dashboard"
+	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
+	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 )
 
 func toolNames(tools []agentcore.ToolDefinition) []string {
@@ -199,7 +199,7 @@ func TestServicePromptUsesStructuredTurnContextWithoutExposingItInUserTranscript
 	}
 	modelPayload, _ := json.Marshal(requests[0].Messages)
 	modelText := string(modelPayload)
-	for _, want := range []string{"libredash_turn_context", "executive-sales", "revenue_by_region", "country", "DK", "Why did this decline?"} {
+	for _, want := range []string{"leapview_turn_context", "executive-sales", "revenue_by_region", "country", "DK", "Why did this decline?"} {
 		if !strings.Contains(modelText, want) {
 			t.Fatalf("model messages missing %q: %s", want, modelText)
 		}

@@ -36,11 +36,11 @@ class ChatDrawer extends DatastarLit(LitElement) {
       min-width: 0;
       height: 100svh;
       overflow: hidden;
-      border-left: 0 solid var(--ld-line-muted);
-      background: var(--ld-bg-app);
-      color: var(--ld-fg-default);
-      font-family: var(--ld-font-family-ui, var(--fontStack-system));
-      --ld-chat-stack-width: 100%;
+      border-left: 0 solid var(--lv-line-muted);
+      background: var(--lv-bg-app);
+      color: var(--lv-fg-default);
+      font-family: var(--lv-font-family-ui, var(--fontStack-system));
+      --lv-chat-stack-width: 100%;
     }
 
     :host([open]) {
@@ -54,13 +54,13 @@ class ChatDrawer extends DatastarLit(LitElement) {
       height: 100%;
       min-height: 0;
       grid-template-rows: auto minmax(0, 1fr) auto;
-      background: var(--ld-bg-app);
+      background: var(--lv-bg-app);
     }
 
     .header {
       display: grid;
-			gap: var(--ld-space-sm);
-			padding: var(--ld-space-md) var(--ld-space-lg) var(--ld-space-sm);
+			gap: var(--lv-space-sm);
+			padding: var(--lv-space-md) var(--lv-space-lg) var(--lv-space-sm);
     }
 
     .toolbar {
@@ -74,15 +74,15 @@ class ChatDrawer extends DatastarLit(LitElement) {
       min-width: 0;
       flex: 1;
       align-items: center;
-			gap: var(--ld-space-sm);
-      font-size: var(--ld-font-size-body-sm);
-      font-weight: var(--ld-font-weight-strong);
+			gap: var(--lv-space-sm);
+      font-size: var(--lv-font-size-body-sm);
+      font-weight: var(--lv-font-weight-strong);
     }
 
     .toolbar-actions {
       display: flex;
       align-items: center;
-      gap: var(--ld-space-2xs);
+      gap: var(--lv-space-2xs);
     }
 
     .title svg,
@@ -99,9 +99,9 @@ class ChatDrawer extends DatastarLit(LitElement) {
 			height: var(--control-medium-size);
       place-items: center;
       border: 0;
-      border-radius: var(--ld-radius-default);
+      border-radius: var(--lv-radius-default);
       background: transparent;
-      color: var(--ld-fg-muted);
+      color: var(--lv-fg-muted);
       cursor: pointer;
       padding: 0;
       text-decoration: none;
@@ -111,60 +111,60 @@ class ChatDrawer extends DatastarLit(LitElement) {
     button:focus-visible,
     a:hover,
     a:focus-visible {
-      background: var(--ld-bg-control-hover);
-      color: var(--ld-fg-default);
+      background: var(--lv-bg-control-hover);
+      color: var(--lv-fg-default);
       outline: 0;
     }
 
     .close-action {
-      margin-left: var(--ld-space-xs);
+      margin-left: var(--lv-space-xs);
     }
 
     .context {
       display: grid;
-			gap: var(--ld-space-sm);
+			gap: var(--lv-space-sm);
       border: 0;
 			padding: 0;
-      background: var(--ld-bg-app);
-      font-size: var(--ld-font-size-caption);
+      background: var(--lv-bg-app);
+      font-size: var(--lv-font-size-caption);
     }
 
     .context-line {
       display: flex;
       min-width: 0;
       align-items: center;
-			gap: var(--ld-space-xs);
+			gap: var(--lv-space-xs);
     }
 
     .page-context {
       overflow: hidden;
-      color: var(--ld-fg-default);
-      font-weight: var(--ld-font-weight-strong);
+      color: var(--lv-fg-default);
+      font-weight: var(--lv-font-weight-strong);
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
     .context-separator {
-      color: var(--ld-fg-muted);
+      color: var(--lv-fg-muted);
     }
 
     .filter-context {
-      color: var(--ld-fg-muted);
+      color: var(--lv-fg-muted);
       white-space: nowrap;
     }
 
     .reference-limit-status {
-      color: var(--ld-fg-muted);
+      color: var(--lv-fg-muted);
     }
 
-    ld-chat-thread {
+    lv-chat-thread {
       display: block;
       min-width: 0;
       min-height: 0;
       overflow: hidden;
     }
 
-    ld-chat-composer {
+    lv-chat-composer {
       display: block;
       border-top: 0;
       background: transparent;
@@ -218,7 +218,7 @@ class ChatDrawer extends DatastarLit(LitElement) {
   public openDrawer(): void {
     this.open = true
 		void this.updateComplete.then(() => {
-			const composer = this.shadowRoot?.querySelector('ld-chat-composer')
+			const composer = this.shadowRoot?.querySelector('lv-chat-composer')
 			composer?.shadowRoot?.querySelector('textarea')?.focus()
 		})
   }
@@ -241,7 +241,7 @@ class ChatDrawer extends DatastarLit(LitElement) {
 
   protected updated(changed: Map<string, unknown>): void {
     if (!changed.has('open') || !this.open) return
-    const composer = this.shadowRoot?.querySelector('ld-chat-composer') as (HTMLElement & { remeasure(): void }) | null
+    const composer = this.shadowRoot?.querySelector('lv-chat-composer') as (HTMLElement & { remeasure(): void }) | null
     composer?.remeasure()
   }
 
@@ -282,14 +282,14 @@ class ChatDrawer extends DatastarLit(LitElement) {
             ` : null}
           </section>
         </header>
-        <ld-chat-thread
+        <lv-chat-thread
           surface="drawer"
           .transcript=${agent.transcript ?? []}
           .visuals=${this.visuals}
           .status=${agent.status}
           conversation-id=${agent.activeConversationId ?? ''}
-        ></ld-chat-thread>
-        <ld-chat-composer
+        ></lv-chat-thread>
+        <lv-chat-composer
           .value=${agent.composer.value ?? ''}
           .disabled=${this.pending || agent.composer.disabled}
           .pending=${this.pending}
@@ -298,8 +298,8 @@ class ChatDrawer extends DatastarLit(LitElement) {
           .referenceLimit=${context?.referenceLimit ?? 12}
           .pinnedSuggestions=${pinnedSuggestions}
           .suggestions=${workspaceSuggestions}
-          @ld-chat-references-change=${this.referencesChanged}
-        ></ld-chat-composer>
+          @lv-chat-references-change=${this.referencesChanged}
+        ></lv-chat-composer>
       </aside>
     `
   }
@@ -308,12 +308,12 @@ class ChatDrawer extends DatastarLit(LitElement) {
     this.references = []
     this.referenceLimitMessage = ''
     this.notifyReferences()
-		this.dispatchEvent(new CustomEvent('ld-chat-new', { bubbles: true, composed: true }))
+		this.dispatchEvent(new CustomEvent('lv-chat-new', { bubbles: true, composed: true }))
   }
 
 	private closeDrawer() {
 		this.open = false
-		this.dispatchEvent(new CustomEvent('ld-chat-drawer-close', { bubbles: true, composed: true }))
+		this.dispatchEvent(new CustomEvent('lv-chat-drawer-close', { bubbles: true, composed: true }))
 	}
 
   private referencesChanged(event: CustomEvent<{ references: AgentReferenceSignal[] }>) {
@@ -328,7 +328,7 @@ class ChatDrawer extends DatastarLit(LitElement) {
   }
 
   private notifyReferences() {
-    this.dispatchEvent(new CustomEvent('ld-agent-references-change', {
+    this.dispatchEvent(new CustomEvent('lv-agent-references-change', {
       bubbles: true,
       composed: true,
       detail: { references: this.references },
@@ -361,4 +361,4 @@ function mergeReferences(...groups: AgentReferenceSignal[][]): AgentReferenceSig
 	})
 }
 
-if (!customElements.get('ld-chat-drawer')) customElements.define('ld-chat-drawer', ChatDrawer)
+if (!customElements.get('lv-chat-drawer')) customElements.define('lv-chat-drawer', ChatDrawer)

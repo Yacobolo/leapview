@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/Yacobolo/libredash/internal/access"
-	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
+	"github.com/Yacobolo/leapview/internal/access"
+	platformdb "github.com/Yacobolo/leapview/internal/platform/db"
 	"strings"
 )
 
@@ -33,6 +33,25 @@ func (r *Repository) ListPrincipals(ctx context.Context, filter access.Principal
 		out = append(out, mapPrincipal(row))
 	}
 	return out, nil
+}
+
+func (r *Repository) SearchPrincipals(ctx context.Context, query string, limit int) ([]access.Principal, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return []access.Principal{}, nil
+	}
+	if limit <= 0 {
+		limit = 8
+	}
+	rows, err := r.q.SearchPrincipals(ctx, platformdb.SearchPrincipalsParams{Search: query, ResultLimit: int64(limit)})
+	if err != nil {
+		return nil, err
+	}
+	principals := make([]access.Principal, 0, len(rows))
+	for _, row := range rows {
+		principals = append(principals, mapPrincipal(row))
+	}
+	return principals, nil
 }
 
 func (r *Repository) principalDisabled(ctx context.Context, principalID string) (bool, error) {

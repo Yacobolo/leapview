@@ -8,11 +8,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yacobolo/libredash/internal/access"
-	"github.com/Yacobolo/libredash/internal/agent"
-	agenthttp "github.com/Yacobolo/libredash/internal/agent/http"
-	"github.com/Yacobolo/libredash/internal/api"
-	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
+	"github.com/Yacobolo/leapview/internal/access"
+	"github.com/Yacobolo/leapview/internal/agent"
+	agenthttp "github.com/Yacobolo/leapview/internal/agent/http"
+	"github.com/Yacobolo/leapview/internal/api"
+	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
 	"golang.org/x/sync/errgroup"
 )
 

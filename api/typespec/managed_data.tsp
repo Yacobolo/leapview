@@ -2,7 +2,7 @@ using Http;
 using TypeSpec.OpenAPI;
 
 @route("/api/v1")
-namespace LibreDashAPI;
+namespace LeapViewAPI;
 
 model ManagedConnectionResponse {
   id: string;
@@ -219,7 +219,8 @@ model ManagedDataUploadNegotiation {
 model ManagedDataFileUploadResponse {
   file: ManagedDataFileMetadata;
   status: ManagedDataFileUploadStatus;
-  negotiation: ManagedDataUploadNegotiation;
+  @doc("Upload instructions, present only while the file can still be uploaded.")
+  negotiation?: ManagedDataUploadNegotiation;
   error?: ManagedDataErrorMessage;
 }
 

@@ -14,15 +14,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/libredash/internal/access"
-	"github.com/Yacobolo/libredash/internal/agent"
-	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
-	"github.com/Yacobolo/libredash/internal/api"
-	"github.com/Yacobolo/libredash/internal/dashboard"
-	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
-	"github.com/Yacobolo/libredash/internal/platform"
-	"github.com/Yacobolo/libredash/internal/workspace"
-	"github.com/Yacobolo/libredash/pkg/pagestream"
+	"github.com/Yacobolo/leapview/internal/access"
+	"github.com/Yacobolo/leapview/internal/agent"
+	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
+	"github.com/Yacobolo/leapview/internal/api"
+	"github.com/Yacobolo/leapview/internal/dashboard"
+	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
+	"github.com/Yacobolo/leapview/internal/platform"
+	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 
 func TestTypedChatArtifactsPreserveTabularTypeAcrossJSON(t *testing.T) {
@@ -83,13 +83,13 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 	for _, want := range []string{
 		`/static/app-shell.js`,
 		`/static/chat-page.js`,
-		`<ld-app-shell`,
-		`<ld-chat-page`,
+		`<lv-app-shell`,
+		`<lv-chat-page`,
 		`workspace-id=""`,
 		`view="new"`,
 		`data-indicator="agentTurnPending"`,
-		`data-on:ld-chat-submit`,
-		`data-on:ld-chat-reference-search__debounce.200ms`,
+		`data-on:lv-chat-submit`,
+		`data-on:lv-chat-reference-search__debounce.200ms`,
 		`/chats/references/search`,
 		`/chats/turns`,
 		`/updates?route=chat&amp;view=new`,
@@ -116,15 +116,15 @@ func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 	if strings.Contains(body, `aria-label="Agent conversations"`) {
 		t.Fatalf("chat page should render the conversation web component instead of the static rail:\n%s", body)
 	}
-	for _, legacy := range []string{`<ld-sub-sidebar`, `<ld-chat-thread`, `<ld-chat-composer`, `data-attr:transcript`, `$page.sidebar`} {
+	for _, legacy := range []string{`<lv-sub-sidebar`, `<lv-chat-thread`, `<lv-chat-composer`, `data-attr:transcript`, `$page.sidebar`} {
 		if strings.Contains(body, legacy) {
 			t.Fatalf("chat page rendered product internals below the route root (%q):\n%s", legacy, body)
 		}
 	}
-	if strings.Contains(body, `<ld-chat-conversation-sidebar`) {
+	if strings.Contains(body, `<lv-chat-conversation-sidebar`) {
 		t.Fatalf("chat page still rendered chat-specific conversation sidebar:\n%s", body)
 	}
-	if strings.Contains(body, `data-on:ld-sub-sidebar-select`) || strings.Contains(body, `/chat/conversations/select`) {
+	if strings.Contains(body, `data-on:lv-sub-sidebar-select`) || strings.Contains(body, `/chat/conversations/select`) {
 		t.Fatalf("chat page should use conversation URLs instead of select POST:\n%s", body)
 	}
 	if strings.Contains(body, `data-attr:events`) || strings.Contains(body, `$agent.events`) {
@@ -360,7 +360,7 @@ func TestChatPageDisabledState(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `<ld-chat-page`) || !strings.Contains(body, `/updates?route=chat&amp;view=list`) {
+	if !strings.Contains(body, `<lv-chat-page`) || !strings.Contains(body, `/updates?route=chat&amp;view=list`) {
 		t.Fatalf("disabled chat page did not render usable disabled state:\n%s", body)
 	}
 	updatesBody := readUpdatesUntil(t, server, "/updates?route=chat&view=list", "", `Agent is not configured`)
@@ -427,7 +427,7 @@ func TestChatRootRendersListWhenNoConversations(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`<ld-chat-page`, `view="list"`, `/updates?route=chat&amp;view=list`} {
+	for _, want := range []string{`<lv-chat-page`, `view="list"`, `/updates?route=chat&amp;view=list`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("chat list missing %q:\n%s", want, body)
 		}
@@ -472,7 +472,7 @@ func TestChatRootRendersConversationList(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`<ld-chat-page`, `view="list"`, `/updates?route=chat&amp;view=list`} {
+	for _, want := range []string{`<lv-chat-page`, `view="list"`, `/updates?route=chat&amp;view=list`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("chat list missing %q:\n%s", want, body)
 		}
@@ -500,7 +500,7 @@ func TestChatNewRendersDraftWithoutCreatingConversation(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`<ld-chat-page`, `view="new"`, `/updates?route=chat&amp;view=new`} {
+	for _, want := range []string{`<lv-chat-page`, `view="new"`, `/updates?route=chat&amp;view=new`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("draft chat page missing %q:\n%s", want, body)
 		}
@@ -573,7 +573,7 @@ func TestChatConversationRouteLoadsOwnedEventsAndRejectsOtherPrincipal(t *testin
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 	body := rec.Body.String()
-	if rec.Code != http.StatusOK || !strings.Contains(body, `<ld-chat-page`) || !strings.Contains(body, `view="conversation"`) {
+	if rec.Code != http.StatusOK || !strings.Contains(body, `<lv-chat-page`) || !strings.Contains(body, `view="conversation"`) {
 		t.Fatalf("owned route status=%d body=%s", rec.Code, body)
 	}
 	if strings.Contains(body, `&#34;active&#34;:&#34;chat&#34;`) {
@@ -676,7 +676,7 @@ func TestChatConversationRouteQueuesMissingTitleRepair(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/chats/"+conversation.ID, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "client-test"})
+	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "client-test"})
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -839,7 +839,7 @@ func TestChatDraftTurnRedirectsAndStreamsThroughUpdates(t *testing.T) {
 		"composer":             map[string]any{"value": "Draft redirect prompt"},
 	}}
 	req := chatSignalsRequest(http.MethodPost, "/chats/turns", token, signals)
-	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "client-draft"})
+	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "client-draft"})
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -891,16 +891,17 @@ func TestChatDraftTurnRedirectsAndStreamsThroughUpdates(t *testing.T) {
 	close(release)
 	waitForConversationMessage(t, service, principal.ID, conversationID, "Background complete.")
 	waitForRecorderBodyContains(t, updatesRec, `"running":false`)
+	waitForAgentConversationTitle(t, store, "test", principal.ID, conversationID, "Background complete")
+	waitForRecorderBodyContains(t, updatesRec, `"pending":false`)
 	cancelUpdates()
 	<-done
 
 	updatesBody := updatesRec.BodyString()
-	for _, want := range []string{`"running":true`, "Background complete.", `"running":false`} {
+	for _, want := range []string{`"running":true`, "Background complete.", `"running":false`, `"pending":true`, `"pending":false`} {
 		if !strings.Contains(updatesBody, want) {
 			t.Fatalf("updates stream missing %q:\n%s", want, updatesBody)
 		}
 	}
-	waitForAgentConversationTitle(t, store, "test", principal.ID, conversationID, "Background complete")
 }
 
 func TestDashboardChatDraftTurnStaysEmbeddedAndUsesResolvedContext(t *testing.T) {
@@ -972,7 +973,7 @@ func TestDashboardChatDraftTurnStaysEmbeddedAndUsesResolvedContext(t *testing.T)
 	requestBodiesMu.Lock()
 	modelRequests := strings.Join(requestBodies, "\n")
 	requestBodiesMu.Unlock()
-	for _, want := range []string{"libredash_turn_context", "Executive Sales Dashboard", "Orders", `\"SP\"`} {
+	for _, want := range []string{"leapview_turn_context", "Executive Sales Dashboard", "Orders", `\"SP\"`} {
 		if !strings.Contains(modelRequests, want) {
 			t.Fatalf("model requests missing trusted context %q:\n%s", want, modelRequests)
 		}
@@ -1025,7 +1026,7 @@ func TestChatUpdatesStreamsConversationPatches(t *testing.T) {
 	reqCtx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodGet, "/updates?route=chat", nil).WithContext(reqCtx)
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "client-test"})
+	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "client-test"})
 	rec := newSynchronizedRecorder()
 	done := make(chan struct{})
 	go func() {
@@ -1107,7 +1108,7 @@ func readUpdatesUntil(t *testing.T, server *Server, path, token string, wants ..
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: "client-read"})
+	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "client-read"})
 	rec := newSynchronizedRecorder()
 	done := make(chan struct{})
 	go func() {
@@ -1210,7 +1211,7 @@ func chatUpdatesSignalsRequest(ctx context.Context, token, clientID, activeID st
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=chat&view=conversation&conversation="+url.QueryEscape(activeID), nil)
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.AddCookie(&http.Cookie{Name: "ld_client_id", Value: clientID})
+	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: clientID})
 	return req
 }
 

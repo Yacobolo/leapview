@@ -5,12 +5,12 @@ import (
 	"strings"
 )
 
-func Post(path string, signalPaths ...string) string {
-	return request("post", path, signalPaths)
-}
-
 func Get(path string, signalPaths ...string) string {
 	return request("get", path, signalPaths)
+}
+
+func Post(path string, signalPaths ...string) string {
+	return request("post", path, signalPaths)
 }
 
 func Patch(path string, signalPaths ...string) string {
@@ -18,7 +18,7 @@ func Patch(path string, signalPaths ...string) string {
 }
 
 func request(method, path string, signalPaths []string) string {
-	options := "headers: window.LibreDashCommand.headers()"
+	options := "headers: window.LeapViewCommand.headers()"
 	if len(signalPaths) > 0 {
 		patterns := make([]string, 0, len(signalPaths))
 		for _, signalPath := range signalPaths {

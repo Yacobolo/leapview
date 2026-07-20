@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/libredash/internal/ui"
-	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
+	"github.com/Yacobolo/leapview/internal/ui"
+	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
 )
 
 func TestChatReferenceSearchUsesGlobalScopeWhilePreservingDashboardContext(t *testing.T) {

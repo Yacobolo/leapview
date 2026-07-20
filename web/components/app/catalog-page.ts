@@ -1,24 +1,25 @@
-import { LitElement, css, html, nothing } from 'lit'
-import { ExternalLink } from 'lucide'
+import { LitElement, css, html } from 'lit'
+import { ChevronRight, LayoutDashboard } from 'lucide'
 import type { CatalogPageSignal } from '../../generated/signals'
+import { catalogListStyles } from '../shared/catalog-list-styles'
 import { DatastarLit } from '../shared/datastar-lit'
 import { checkSignalContract } from '../shared/signal-contract'
 import { lucideIcon } from '../shared/lucide-icons'
 
-class LibreDashCatalogPage extends DatastarLit(LitElement) {
-  static styles = css`
+class LeapViewCatalogPage extends DatastarLit(LitElement) {
+  static styles = [catalogListStyles, css`
     :host {
       display: block;
       min-width: 0;
       min-height: 100svh;
-      background: var(--ld-bg-app);
-      color: var(--ld-fg-default);
-      font-family: var(--ld-font-family-ui, var(--fontStack-system));
+      background: var(--lv-bg-app);
+      color: var(--lv-fg-default);
+      font-family: var(--lv-font-family-ui, var(--fontStack-system));
     }
 
     section {
       display: grid;
-      width: min(100%, var(--ld-page-content-max-width));
+      width: min(100%, var(--lv-page-content-max-width));
       min-width: 0;
       min-height: 100svh;
       align-content: start;
@@ -33,115 +34,51 @@ class LibreDashCatalogPage extends DatastarLit(LitElement) {
     }
 
     h1,
-    h2,
     p {
       margin: 0;
     }
 
     h1 {
       overflow: hidden;
-      color: var(--ld-fg-default);
+      color: var(--lv-fg-default);
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: var(--ld-font-size-title-sm);
-      font-weight: var(--ld-font-weight-strong);
-      line-height: var(--ld-line-height-compact);
+      font-size: var(--lv-font-size-title-sm);
+      font-weight: var(--lv-font-weight-strong);
+      line-height: var(--lv-line-height-compact);
     }
 
-    .detail,
-    .muted {
+    .detail {
       margin-top: var(--base-size-4);
-      color: var(--ld-fg-muted);
-      font-size: var(--ld-font-size-body-sm);
-      line-height: var(--ld-line-height-snug);
+      color: var(--lv-fg-muted);
+      font-size: var(--lv-font-size-body-sm);
+      line-height: var(--lv-line-height-snug);
     }
 
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 22rem));
-      gap: var(--base-size-16);
-      align-items: start;
-      justify-content: start;
+    .dashboard-icon {
+      border-color: var(--lv-asset-dashboard-border);
+      background: var(--lv-asset-dashboard-bg);
+      color: var(--lv-asset-dashboard-accent);
     }
 
-    article {
+    .empty {
       display: grid;
       min-height: 10rem;
-      min-width: 0;
-      grid-template-rows: minmax(0, 1fr) auto;
-      overflow: hidden;
-      border: var(--ld-border-default);
-      border-radius: var(--ld-radius-default);
-      background: var(--ld-bg-panel);
-      padding: var(--base-size-16);
-      box-shadow: var(--ld-shadow-resting-sm, none);
+      place-content: center;
+      gap: var(--base-size-4);
+      border: var(--lv-border-muted);
+      border-radius: var(--lv-radius-default);
+      background: var(--lv-bg-panel);
+      color: var(--lv-fg-muted);
+      padding: var(--base-size-20);
+      text-align: center;
     }
 
-    .eyebrow {
-      margin-bottom: var(--base-size-4);
-      color: var(--ld-fg-muted);
-      font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-medium);
-      line-height: var(--ld-line-height-tight);
-      text-transform: uppercase;
+    .empty strong {
+      color: var(--lv-fg-default);
+      font-size: var(--lv-font-size-body-md);
     }
-
-    h2 {
-      margin-top: var(--base-size-4);
-      color: var(--ld-fg-default);
-      font-size: var(--ld-font-size-body-md);
-      font-weight: var(--ld-font-weight-strong);
-      line-height: var(--ld-line-height-snug);
-    }
-
-    .tags {
-      display: flex;
-      flex-wrap: wrap;
-      gap: var(--base-size-8);
-      margin-top: var(--base-size-16);
-    }
-
-    .tag {
-      border: var(--ld-border-muted);
-      border-radius: var(--ld-radius-full);
-      background: var(--ld-bg-panel-muted);
-      color: var(--ld-fg-muted);
-      padding: 0 var(--base-size-8);
-      font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-medium);
-      line-height: var(--ld-line-height-snug);
-      text-transform: uppercase;
-    }
-
-    footer {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--base-size-12);
-      margin-top: var(--base-size-16);
-      border-top: var(--ld-border-muted);
-      padding-top: var(--base-size-12);
-      color: var(--ld-fg-muted);
-      font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-medium);
-    }
-
-    a {
-      display: inline-grid;
-      min-height: var(--ld-button-height-sm);
-      grid-auto-flow: column;
-      place-items: center;
-      gap: var(--base-size-6);
-      border: var(--borderWidth-default) solid var(--ld-button-accent-border-rest);
-      border-radius: var(--ld-button-radius);
-      background: var(--ld-button-accent-bg-rest);
-      color: var(--ld-button-accent-fg-rest);
-      padding: 0 var(--ld-button-padding-inline-sm);
-      font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-strong);
-      text-decoration: none;
-    }
-  `
+  `]
 
   updated(): void {
     const page = this.page
@@ -157,32 +94,36 @@ class LibreDashCatalogPage extends DatastarLit(LitElement) {
     const page = this.page
     if (!page) return html`<slot></slot>`
     return html`
-      <section aria-label="LibreDash dashboard catalog">
+      <section aria-label="LeapView dashboard catalog">
         <header>
           <h1>${page.title}</h1>
           <p class="detail">${page.description}</p>
         </header>
-        <div class="grid">
+        ${page.dashboards.length ? html`<ul class="catalog-list dashboard-list" aria-label="Published dashboards">
           ${page.dashboards.map((dashboard) => html`
-            <article>
-              <div>
-                <p class="eyebrow">${dashboard.semanticModel || 'Dashboard'}</p>
-                <h2>${dashboard.title}</h2>
-                ${dashboard.description ? html`<p class="muted">${dashboard.description}</p>` : nothing}
-                ${dashboard.tags?.length ? html`
-                  <div class="tags">${dashboard.tags.map((tag) => html`<span class="tag">${tag}</span>`)}</div>
-                ` : nothing}
-              </div>
-              <footer>
-                <span>${dashboard.pageCount} ${dashboard.pageCount === 1 ? 'page' : 'pages'}</span>
-                <a href=${dashboard.href}>${lucideIcon(ExternalLink)}<span>Open</span></a>
-              </footer>
-            </article>
+            <li>
+              <a class="catalog-row dashboard-row" href=${dashboard.href}>
+                <span class="catalog-icon dashboard-icon">${lucideIcon(LayoutDashboard)}</span>
+                <span class="catalog-copy dashboard-copy">
+                  <span class="catalog-title dashboard-title">${dashboard.title}</span>
+                  <span class="catalog-description dashboard-description">${dashboard.description || dashboard.semanticModel || 'Dashboard'}</span>
+                </span>
+                <span class="catalog-trailing">
+                  <span class="catalog-meta dashboard-pages">${dashboard.pageCount} ${dashboard.pageCount === 1 ? 'page' : 'pages'}</span>
+                  <span class="catalog-chevron dashboard-chevron">${lucideIcon(ChevronRight)}</span>
+                </span>
+              </a>
+            </li>
           `)}
-        </div>
+        </ul>` : html`
+          <div class="empty" role="status">
+            <strong>No dashboards are available.</strong>
+            <span>Deploy a project with a dashboard to see it here.</span>
+          </div>
+        `}
       </section>
     `
   }
 }
 
-customElements.define('ld-catalog-page', LibreDashCatalogPage)
+customElements.define('lv-catalog-page', LeapViewCatalogPage)

@@ -3,6 +3,7 @@ import { property, state } from 'lit/decorators.js'
 import { BarChart3, Boxes, Columns3, Database, File, Filter, LayoutDashboard, PanelsTopLeft, Plug, Search, Send, Sigma, Table2, X } from 'lucide'
 import type { AgentReferenceSignal } from '../../generated/signals'
 import { lucideIcon } from '../shared/lucide-icons'
+import '../shared/loading-spinner'
 
 export type ChatContextReference = AgentReferenceSignal
 
@@ -30,53 +31,53 @@ class ChatComposer extends LitElement {
     :host {
       position: relative;
       display: block;
-      background: linear-gradient(to bottom, transparent, var(--ld-bg-app) var(--ld-space-lg));
-      color: var(--ld-fg-default);
+      background: linear-gradient(to bottom, transparent, var(--lv-bg-app) var(--lv-space-lg));
+      color: var(--lv-fg-default);
       font-family: var(--fontStack-system);
     }
 
     form {
 			position: relative;
-      width: min(calc(100% - var(--ld-space-lg) - var(--ld-space-lg)), var(--ld-chat-stack-width));
+      width: min(calc(100% - var(--lv-space-lg) - var(--lv-space-lg)), var(--lv-chat-stack-width));
       margin-inline: auto;
-      padding: calc(var(--ld-space-lg) + var(--ld-space-sm)) var(--ld-space-lg) var(--ld-space-lg);
+      padding: calc(var(--lv-space-lg) + var(--lv-space-sm)) var(--lv-space-lg) var(--lv-space-lg);
     }
 
     .composer-surface {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: end;
-      gap: var(--ld-space-sm);
-      border: var(--ld-border-muted);
-      border-radius: var(--ld-radius-large);
-      background: var(--ld-bg-panel);
-      padding: var(--ld-space-sm);
+      gap: var(--lv-space-sm);
+      border: var(--lv-border-muted);
+      border-radius: var(--lv-radius-large);
+      background: var(--lv-bg-panel);
+      padding: var(--lv-space-sm);
       box-shadow: none;
       transition:
-        background var(--ld-transition-fast),
-        border-color var(--ld-transition-fast),
-        box-shadow var(--ld-transition-fast);
+        background var(--lv-transition-fast),
+        border-color var(--lv-transition-fast),
+        box-shadow var(--lv-transition-fast);
     }
 
     .composer-surface:hover:not(.is-disabled) {
-      border-color: var(--ld-line-muted);
+      border-color: var(--lv-line-muted);
       box-shadow: none;
     }
 
     .composer-surface:focus-within {
-      border-color: var(--ld-line-accent-muted);
-      box-shadow: 0 0 0 var(--ld-border-width-focus) var(--ld-bg-accent-muted);
+      border-color: var(--lv-line-accent-muted);
+      box-shadow: 0 0 0 var(--lv-border-width-focus) var(--lv-bg-accent-muted);
     }
 
     .composer-surface.is-disabled {
-      background: var(--ld-bg-control);
-      color: var(--ld-fg-muted);
+      background: var(--lv-bg-control);
+      color: var(--lv-fg-muted);
       box-shadow: none;
     }
 
     textarea {
       box-sizing: border-box;
-      min-height: var(--ld-control-medium);
+      min-height: var(--lv-control-medium);
       max-height: 160px;
       width: 100%;
       grid-column: 1;
@@ -84,13 +85,13 @@ class ChatComposer extends LitElement {
       resize: none;
       overflow-y: auto;
       border: 0;
-      border-radius: calc(var(--ld-radius-default) - var(--ld-space-2xs));
+      border-radius: calc(var(--lv-radius-default) - var(--lv-space-2xs));
       background: transparent;
-      color: var(--ld-fg-default);
+      color: var(--lv-fg-default);
       font: inherit;
-      font-size: var(--ld-font-size-body-sm);
-      line-height: var(--ld-line-height-normal);
-      padding: var(--ld-space-xs) var(--ld-space-sm);
+      font-size: var(--lv-font-size-body-sm);
+      line-height: var(--lv-line-height-normal);
+      padding: var(--lv-space-xs) var(--lv-space-sm);
       outline: 0;
     }
 
@@ -99,14 +100,14 @@ class ChatComposer extends LitElement {
     }
 
     textarea::placeholder {
-      color: var(--ld-fg-muted);
+      color: var(--lv-fg-muted);
     }
 
     .actions {
       display: flex;
       grid-column: 2;
       grid-row: 1;
-      min-height: var(--ld-control-medium);
+      min-height: var(--lv-control-medium);
       align-items: center;
       justify-content: flex-end;
     }
@@ -114,30 +115,30 @@ class ChatComposer extends LitElement {
 		.mention-picker {
 			display: grid;
 			position: absolute;
-			inset: auto var(--ld-space-lg) calc(100% - var(--ld-space-lg) - var(--ld-space-sm));
+			inset: auto var(--lv-space-lg) calc(100% - var(--lv-space-lg) - var(--lv-space-sm));
 			z-index: var(--zIndex-dropdown);
 			max-height: 180px;
 			overflow: auto;
-			border: var(--ld-border-muted);
-			border-radius: var(--ld-radius-large);
-			background: var(--ld-bg-panel);
-			padding: var(--ld-space-xs);
-			box-shadow: var(--ld-shadow-floating-sm);
+			border: var(--lv-border-muted);
+			border-radius: var(--lv-radius-large);
+			background: var(--lv-bg-panel);
+			padding: var(--lv-space-xs);
+			box-shadow: var(--lv-shadow-floating-sm);
 		}
 
 		.mention-option {
 			display: grid;
 			width: 100%;
 			height: auto;
-			min-height: var(--ld-control-small);
+			min-height: var(--lv-control-small);
 			grid-template-columns: 16px minmax(0, 1fr);
 			align-items: center;
-			gap: var(--ld-space-xs);
+			gap: var(--lv-space-xs);
 			border: 0;
-			border-radius: var(--ld-radius-default);
+			border-radius: var(--lv-radius-default);
 			background: transparent;
-			color: var(--ld-fg-default);
-			padding: var(--ld-space-2xs) var(--ld-space-sm);
+			color: var(--lv-fg-default);
+			padding: var(--lv-space-2xs) var(--lv-space-sm);
 			box-shadow: none;
 			text-align: left;
 		}
@@ -148,10 +149,10 @@ class ChatComposer extends LitElement {
 
 		.mention-section-label {
 			min-width: 0;
-			padding: var(--ld-space-xs) var(--ld-space-sm) var(--ld-space-2xs);
-			color: var(--ld-fg-muted);
-			font-size: var(--ld-font-size-caption);
-			font-weight: var(--ld-font-weight-strong);
+			padding: var(--lv-space-xs) var(--lv-space-sm) var(--lv-space-2xs);
+			color: var(--lv-fg-muted);
+			font-size: var(--lv-font-size-caption);
+			font-weight: var(--lv-font-weight-strong);
 		}
 
 		.mention-icon {
@@ -159,7 +160,7 @@ class ChatComposer extends LitElement {
 			width: 16px;
 			height: 16px;
 			place-items: center;
-			color: var(--ld-fg-muted);
+			color: var(--lv-fg-muted);
 		}
 
 		.mention-icon svg {
@@ -171,7 +172,7 @@ class ChatComposer extends LitElement {
 			display: flex;
 			min-width: 0;
 			align-items: baseline;
-			gap: var(--ld-space-sm);
+			gap: var(--lv-space-sm);
 		}
 
 		.mention-title,
@@ -184,8 +185,8 @@ class ChatComposer extends LitElement {
 		.mention-description {
 			min-width: 0;
 			flex: 1 1 auto;
-			color: var(--ld-fg-muted);
-			font-size: var(--ld-font-size-caption);
+			color: var(--lv-fg-muted);
+			font-size: var(--lv-font-size-caption);
 		}
 
 		.mention-title {
@@ -194,12 +195,12 @@ class ChatComposer extends LitElement {
 
 		.mention-status {
 			display: flex;
-			min-height: var(--ld-control-small);
+			min-height: var(--lv-control-small);
 			align-items: center;
-			gap: var(--ld-space-sm);
-			padding: var(--ld-space-2xs) var(--ld-space-sm);
-			color: var(--ld-fg-muted);
-			font-size: var(--ld-font-size-caption);
+			gap: var(--lv-space-sm);
+			padding: var(--lv-space-2xs) var(--lv-space-sm);
+			color: var(--lv-fg-muted);
+			font-size: var(--lv-font-size-caption);
 		}
 
 		.mention-status svg {
@@ -212,8 +213,8 @@ class ChatComposer extends LitElement {
 			grid-column: 1 / -1;
 			grid-row: 1;
 			flex-wrap: wrap;
-			gap: var(--ld-space-xs);
-			padding: var(--ld-space-xs) var(--ld-space-sm) 0;
+			gap: var(--lv-space-xs);
+			padding: var(--lv-space-xs) var(--lv-space-sm) 0;
 		}
 
 		.reference-chip {
@@ -222,14 +223,14 @@ class ChatComposer extends LitElement {
 			height: 24px;
 			max-width: 100%;
 			align-items: center;
-			gap: var(--ld-space-xs);
+			gap: var(--lv-space-xs);
 			border: 0;
-			border-radius: var(--ld-radius-full);
-			background: var(--ld-bg-control);
-			color: var(--ld-fg-default);
-			padding: 0 var(--ld-space-sm);
+			border-radius: var(--lv-radius-full);
+			background: var(--lv-bg-control);
+			color: var(--lv-fg-default);
+			padding: 0 var(--lv-space-sm);
 			font: inherit;
-			font-size: var(--ld-font-size-caption);
+			font-size: var(--lv-font-size-caption);
 			cursor: pointer;
 		}
 
@@ -245,70 +246,55 @@ class ChatComposer extends LitElement {
 
 		.mention-option[data-active='true'],
 		.mention-option:hover {
-			background: var(--ld-bg-control-hover);
+			background: var(--lv-bg-control-hover);
 			transform: none;
 		}
 
     .send-button {
       display: inline-flex;
-      width: var(--ld-button-height, var(--ld-control-medium));
-      height: var(--ld-button-height, var(--ld-control-medium));
-      min-width: var(--ld-button-height, var(--ld-control-medium));
+      width: var(--lv-button-height, var(--lv-control-medium));
+      height: var(--lv-button-height, var(--lv-control-medium));
+      min-width: var(--lv-button-height, var(--lv-control-medium));
       align-items: center;
       justify-content: center;
-      border: var(--borderWidth-default, var(--ld-border-width)) solid var(--ld-button-accent-border-rest, var(--ld-accent));
-      border-radius: var(--ld-button-radius, var(--ld-radius-default));
-      background: var(--ld-button-accent-bg-rest, var(--ld-accent));
-      color: var(--ld-button-accent-fg-rest, var(--ld-accent-fg));
+      border: var(--borderWidth-default, var(--lv-border-width)) solid var(--lv-button-accent-border-rest, var(--lv-accent));
+      border-radius: var(--lv-button-radius, var(--lv-radius-default));
+      background: var(--lv-button-accent-bg-rest, var(--lv-accent));
+      color: var(--lv-button-accent-fg-rest, var(--lv-accent-fg));
       cursor: pointer;
       font: inherit;
-      font-size: var(--ld-font-size-body-sm);
-      font-weight: var(--ld-font-weight-strong);
+      font-size: var(--lv-font-size-body-sm);
+      font-weight: var(--lv-font-weight-strong);
       padding: 0;
-      box-shadow: var(--ld-button-shadow-resting, var(--shadow-resting-small));
+      box-shadow: var(--lv-button-shadow-resting, var(--shadow-resting-small));
       transition:
-        background var(--duration-fast) var(--ease-ld),
-        border-color var(--duration-fast) var(--ease-ld),
-        color var(--duration-fast) var(--ease-ld),
-        transform var(--duration-fast) var(--ease-ld);
+        background var(--duration-fast) var(--ease-lv),
+        border-color var(--duration-fast) var(--ease-lv),
+        color var(--duration-fast) var(--ease-lv),
+        transform var(--duration-fast) var(--ease-lv);
     }
 
     .send-button svg {
-      width: var(--ld-button-icon-size, var(--base-size-16));
-      height: var(--ld-button-icon-size, var(--base-size-16));
+      width: var(--lv-button-icon-size, var(--base-size-16));
+      height: var(--lv-button-icon-size, var(--base-size-16));
     }
 
     .send-button:hover:not(:disabled) {
-      border-color: var(--ld-button-accent-border-hover, var(--ld-accent));
-      background: var(--ld-button-accent-bg-hover, var(--ld-accent));
+      border-color: var(--lv-button-accent-border-hover, var(--lv-accent));
+      background: var(--lv-button-accent-bg-hover, var(--lv-accent));
       transform: translateY(-1px);
     }
 
     .send-button:focus-visible {
-      outline: var(--focus-outline, var(--ld-border-default));
-      outline-color: var(--borderColor-accent-emphasis, var(--ld-line-accent));
-      outline-offset: var(--focus-outline-offset, var(--ld-space-xs));
-    }
-
-    .spinner {
-      width: 14px;
-      height: 14px;
-      border: var(--borderWidth-thick) solid transparent;
-      border-top-color: currentColor;
-      border-radius: 999px;
-      animation: spin 0.8s linear infinite;
-    }
-
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
-      }
+      outline: var(--focus-outline, var(--lv-border-default));
+      outline-color: var(--borderColor-accent-emphasis, var(--lv-line-accent));
+      outline-offset: var(--focus-outline-offset, var(--lv-space-xs));
     }
 
     .send-button:disabled {
-      border-color: var(--ld-button-accent-border-disabled, var(--ld-line-default));
-      background: var(--ld-button-accent-bg-disabled, var(--ld-bg-control));
-      color: var(--ld-button-accent-fg-disabled, var(--ld-fg-muted));
+      border-color: var(--lv-button-accent-border-disabled, var(--lv-line-default));
+      background: var(--lv-button-accent-bg-disabled, var(--lv-bg-control));
+      color: var(--lv-button-accent-fg-disabled, var(--lv-fg-muted));
       cursor: not-allowed;
       opacity: 1;
       box-shadow: none;
@@ -316,13 +302,13 @@ class ChatComposer extends LitElement {
 
     textarea:disabled {
       cursor: not-allowed;
-      color: var(--ld-fg-muted);
+      color: var(--lv-fg-muted);
       opacity: 1;
     }
     @media (max-width: 560px) {
       form {
-        width: min(calc(100% - var(--ld-space-md) - var(--ld-space-md)), var(--ld-chat-stack-width));
-        padding: calc(var(--ld-space-lg) + var(--ld-space-sm)) var(--ld-space-md) var(--ld-space-md);
+        width: min(calc(100% - var(--lv-space-md) - var(--lv-space-md)), var(--lv-chat-stack-width));
+        padding: calc(var(--lv-space-lg) + var(--lv-space-sm)) var(--lv-space-md) var(--lv-space-md);
       }
     }
   `
@@ -372,7 +358,7 @@ class ChatComposer extends LitElement {
     return html`
       <form @submit=${this.submit}>
 			${activeMention ? html`
-				<div class="mention-picker" role="listbox" aria-label="Add LibreDash context" aria-busy=${String(this.mentionSearchPending)}>
+				<div class="mention-picker" role="listbox" aria-label="Add LeapView context" aria-busy=${String(this.mentionSearchPending)}>
 					${mentionGroups.pinned.length > 0 ? html`
 						<div class="mention-group" role="group" aria-label="On this page">
 							<div class="mention-section-label">On this page</div>
@@ -420,7 +406,7 @@ class ChatComposer extends LitElement {
               title="Send"
               ?disabled=${this.disabled || this.pending || this.draft.trim() === ''}
             >
-              ${this.pending ? html`<span class="spinner" aria-hidden="true"></span>` : lucideIcon(Send)}
+              ${this.pending ? html`<lv-loading-spinner aria-hidden="true"></lv-loading-spinner>` : lucideIcon(Send)}
             </button>
           </div>
         </div>
@@ -473,7 +459,7 @@ class ChatComposer extends LitElement {
   private dispatchSubmit() {
     const input = this.draft.trim()
     if (this.disabled || this.pending || input === '') return
-    this.dispatchEvent(new CustomEvent('ld-chat-submit', {
+    this.dispatchEvent(new CustomEvent('lv-chat-submit', {
       bubbles: true,
       composed: true,
 			detail: { input, references: this.references },
@@ -531,7 +517,7 @@ class ChatComposer extends LitElement {
 		}
 		this.mentionIndex = 0
 		this.lastSearchQuery = null
-		this.dispatchEvent(new CustomEvent('ld-chat-references-change', {
+		this.dispatchEvent(new CustomEvent('lv-chat-references-change', {
 			bubbles: true,
 			composed: true,
 			detail: { references: this.references },
@@ -554,7 +540,7 @@ class ChatComposer extends LitElement {
 		if (query === this.lastSearchQuery) return
 		this.lastSearchQuery = query
 		this.mentionSearchPending = true
-		this.dispatchEvent(new CustomEvent('ld-chat-reference-search', {
+		this.dispatchEvent(new CustomEvent('lv-chat-reference-search', {
 			bubbles: true,
 			composed: true,
 			detail: { query },
@@ -562,7 +548,7 @@ class ChatComposer extends LitElement {
 	}
 
 	private notifyReferences() {
-		this.dispatchEvent(new CustomEvent('ld-chat-references-change', {
+		this.dispatchEvent(new CustomEvent('lv-chat-references-change', {
 			bubbles: true,
 			composed: true,
 			detail: { references: this.references },
@@ -668,4 +654,4 @@ function referenceIcon(kind: string) {
 	}
 }
 
-if (!customElements.get('ld-chat-composer')) customElements.define('ld-chat-composer', ChatComposer)
+if (!customElements.get('lv-chat-composer')) customElements.define('lv-chat-composer', ChatComposer)

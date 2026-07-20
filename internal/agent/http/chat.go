@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/libredash/internal/agent"
-	"github.com/Yacobolo/libredash/internal/dashboard"
-	"github.com/Yacobolo/libredash/internal/ui"
-	"github.com/Yacobolo/libredash/pkg/pagestream"
+	"github.com/Yacobolo/leapview/internal/agent"
+	"github.com/Yacobolo/leapview/internal/dashboard"
+	"github.com/Yacobolo/leapview/internal/ui"
+	"github.com/Yacobolo/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -366,11 +366,10 @@ func chatTurnStatusError(err error) string {
 }
 
 func chatSignalPatch(signal ui.ChatViewState, embedded bool) pagestream.SignalPatch {
-	patch := pagestream.SignalPatch{"agent": signal.Agent}
+	patch := ui.ChatSignalPatch(signal)
 	if embedded {
+		delete(patch, "visuals")
 		patch["agentVisuals"] = signal.Visuals
-	} else {
-		patch["visuals"] = signal.Visuals
 	}
 	return patch
 }
@@ -412,7 +411,7 @@ func chatRoutePath(parts ...string) string {
 }
 
 func chatClientID(r *nethttp.Request) string {
-	if cookie, err := r.Cookie("ld_client_id"); err == nil && cookie.Value != "" {
+	if cookie, err := r.Cookie("lv_client_id"); err == nil && cookie.Value != "" {
 		return cookie.Value
 	}
 	return "default"

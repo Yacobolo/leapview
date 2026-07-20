@@ -18,6 +18,7 @@ import type {
 import { DatastarLit } from '../shared/datastar-lit'
 import { checkSignalContract } from '../shared/signal-contract'
 import { lucideIcon } from '../shared/lucide-icons'
+import '../shared/loading-spinner'
 import '../navigation/sub-sidebar'
 import '../chat/chat-drawer'
 import './filters/filter-dock'
@@ -64,7 +65,9 @@ type DashboardRefreshProgress = {
   percent: number
 }
 
-class LibreDashDashboardPage extends DatastarLit(LitElement) {
+type VisualLoadingPresentation = 'none' | 'center' | 'header'
+
+class LeapViewDashboardPage extends DatastarLit(LitElement) {
   @state() private unsupportedKinds = new Set<string>()
   @state() private optimisticSelections: CanonicalInteractionSelection[] | null = null
   @state() private optimisticTargetKeys = new Set<string>()
@@ -81,23 +84,23 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
       display: block;
       min-width: 0;
       min-height: 100svh;
-      color: var(--ld-fg-default);
-      font-family: var(--ld-font-family-ui, var(--fontStack-system));
-      background: var(--ld-bg-app);
+      color: var(--lv-fg-default);
+      font-family: var(--lv-font-family-ui, var(--fontStack-system));
+      background: var(--lv-bg-app);
     }
 
     .route {
       display: grid;
       min-height: 100svh;
-		grid-template-columns: auto minmax(0, 1fr) 0;
-      background: var(--ld-bg-app);
+      grid-template-columns: auto minmax(0, 1fr) 0;
+      background: var(--lv-bg-app);
     }
 
 		.route.agent-open {
 			grid-template-columns: auto minmax(0, 1fr) 420px;
 		}
 
-		.route.agent-open > ld-chat-drawer {
+		.route.agent-open > lv-chat-drawer {
 			width: 100%;
 		}
 
@@ -108,7 +111,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
       min-height: 0;
       grid-template-rows: auto minmax(0, 1fr) auto;
       overflow: hidden;
-      background: var(--ld-bg-app);
+      background: var(--lv-bg-app);
     }
 
     .header {
@@ -117,8 +120,8 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: center;
       gap: var(--base-size-8);
-      border-bottom: var(--ld-border-muted);
-      padding: var(--ld-space-control) var(--base-size-16);
+      border-bottom: var(--lv-border-muted);
+      padding: var(--lv-space-control) var(--base-size-16);
     }
 
     .title-block {
@@ -133,22 +136,22 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
 
     h1 {
       overflow: hidden;
-      color: var(--ld-fg-default);
+      color: var(--lv-fg-default);
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: var(--ld-font-size-title-sm);
-      font-weight: var(--ld-font-weight-strong);
-      line-height: var(--ld-line-height-compact);
+      font-size: var(--lv-font-size-title-sm);
+      font-weight: var(--lv-font-weight-strong);
+      line-height: var(--lv-line-height-compact);
     }
 
     .detail {
       margin-top: var(--base-size-4);
       overflow: hidden;
-      color: var(--ld-fg-muted);
+      color: var(--lv-fg-muted);
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: var(--ld-font-size-body-sm);
-      line-height: var(--ld-line-height-compact);
+      font-size: var(--lv-font-size-body-sm);
+      line-height: var(--lv-line-height-compact);
     }
 
     .actions {
@@ -169,17 +172,17 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
       height: var(--control-medium-size);
       min-height: var(--control-medium-size);
       place-items: center;
-      border: var(--ld-border-default);
-      border-radius: var(--ld-radius-default);
+      border: var(--lv-border-default);
+      border-radius: var(--lv-radius-default);
       background: transparent;
-      color: var(--ld-fg-default);
+      color: var(--lv-fg-default);
       cursor: pointer;
       padding: 0;
     }
 
     .icon-button:hover,
     .icon-button:focus-visible {
-      background: var(--ld-bg-control-hover);
+      background: var(--lv-bg-control-hover);
       outline: 0;
     }
 
@@ -189,14 +192,14 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
 			gap: var(--base-size-6);
 			border-color: transparent;
 			padding-inline: var(--base-size-8);
-			font-size: var(--ld-font-size-body-sm);
-			font-weight: var(--ld-font-weight-medium);
+			font-size: var(--lv-font-size-body-sm);
+			font-weight: var(--lv-font-weight-medium);
 		}
 
 		.agent-toggle[aria-expanded='true'] {
 			width: var(--control-medium-size);
 			padding-inline: 0;
-			background: var(--ld-bg-control-hover);
+			background: var(--lv-bg-control-hover);
 		}
 
 		.agent-toggle[aria-expanded='true'] span {
@@ -211,7 +214,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
 
     .icon-button[disabled] {
       cursor: not-allowed;
-      color: var(--ld-fg-muted);
+      color: var(--lv-fg-muted);
       opacity: 0.64;
     }
 
@@ -231,7 +234,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
       z-index: var(--zIndex-sticky, 50);
       height: 2px;
       overflow: hidden;
-      background: var(--ld-line-muted);
+      background: var(--lv-line-muted);
       opacity: 0;
       pointer-events: none;
       transition: opacity var(--motion-transition-stateChange);
@@ -240,7 +243,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
 
     .dashboard-refresh-progress[data-active='true'] {
       opacity: 1;
-      transition-delay: 0s;
+      transition-delay: var(--lv-loading-delay-short);
     }
 
     .dashboard-refresh-progress[data-active='false'][data-complete='true'] {
@@ -250,7 +253,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     .dashboard-refresh-progress-value {
       width: 0;
       height: 100%;
-      background: var(--ld-line-accent);
+      background: var(--lv-line-accent);
       transition: width var(--motion-transition-stateChange);
     }
 
@@ -275,18 +278,18 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
 
     .eyebrow {
       margin-bottom: var(--base-size-4);
-      color: var(--ld-fg-muted);
-      font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-medium);
-      line-height: var(--ld-line-height-tight);
+      color: var(--lv-fg-muted);
+      font-size: var(--lv-font-size-caption);
+      font-weight: var(--lv-font-weight-medium);
+      line-height: var(--lv-line-height-tight);
       text-transform: uppercase;
     }
 
     .heading-visual h2 {
-      color: var(--ld-fg-default);
-      font-size: var(--ld-font-size-title-lg);
-      font-weight: var(--ld-font-weight-strong);
-      line-height: var(--ld-line-height-tight);
+      color: var(--lv-fg-default);
+      font-size: var(--lv-font-size-title-lg);
+      font-weight: var(--lv-font-weight-strong);
+      line-height: var(--lv-line-height-tight);
     }
 
     .badges {
@@ -297,13 +300,13 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     }
 
     .badge {
-      border: var(--ld-border-muted);
-      border-radius: var(--ld-radius-full);
-      background: var(--ld-bg-panel-muted);
-      color: var(--ld-fg-muted);
+      border: var(--lv-border-muted);
+      border-radius: var(--lv-radius-full);
+      background: var(--lv-bg-panel-muted);
+      color: var(--lv-fg-muted);
       padding: var(--base-size-2) var(--base-size-8);
-      font-size: var(--ld-font-size-caption);
-      font-weight: var(--ld-font-weight-medium);
+      font-size: var(--lv-font-size-caption);
+      font-weight: var(--lv-font-weight-medium);
       text-transform: uppercase;
     }
 
@@ -311,14 +314,14 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
       display: grid;
       height: 100%;
       place-items: center;
-      border: var(--ld-border-default);
-      border-radius: var(--ld-radius-default);
-      background: var(--ld-bg-panel);
-      color: var(--ld-fg-muted);
+      border: var(--lv-border-default);
+      border-radius: var(--lv-radius-default);
+      background: var(--lv-bg-panel);
+      color: var(--lv-fg-muted);
       padding: var(--base-size-16);
       text-align: center;
-      font-size: var(--ld-font-size-body-sm);
-      font-weight: var(--ld-font-weight-medium);
+      font-size: var(--lv-font-size-body-sm);
+      font-weight: var(--lv-font-weight-medium);
     }
 
     @media (max-width: 640px) {
@@ -351,12 +354,12 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
 
   connectedCallback(): void {
     super.connectedCallback()
-    this.addEventListener('ld-interaction-select', this.handleOptimisticInteraction as EventListener, { capture: true })
+    this.addEventListener('lv-interaction-select', this.handleOptimisticInteraction as EventListener, { capture: true })
     this.loadRenderedComponents()
   }
 
   disconnectedCallback(): void {
-    this.removeEventListener('ld-interaction-select', this.handleOptimisticInteraction as EventListener, { capture: true })
+    this.removeEventListener('lv-interaction-select', this.handleOptimisticInteraction as EventListener, { capture: true })
     this.clearOptimisticRollbackTimer()
     super.disconnectedCallback()
   }
@@ -432,8 +435,8 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     const refreshProgress = this.refreshProgress(snapshot)
     return html`
 			<div class=${`route${this.agentDrawerOpen ? ' agent-open' : ''}`}>
-        <ld-sub-sidebar .config=${this.pageSidebar(page)}></ld-sub-sidebar>
-        <section class="main" aria-label="LibreDash report canvas">
+        <lv-sub-sidebar .config=${this.pageSidebar(page)}></lv-sub-sidebar>
+        <section class="main" aria-label="LeapView report canvas">
           <header class="header">
             <div class="title-block">
               <h1>${page.title}</h1>
@@ -452,23 +455,23 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
           <div class="body">
             ${this.renderRefreshProgress(refreshProgress)}
             <div class="canvas-wrap">
-              <ld-report-canvas width=${page.canvas.width} height=${page.canvas.height}>
+              <lv-report-canvas width=${page.canvas.width} height=${page.canvas.height}>
                 ${page.components.map((component) => this.renderCanvasComponent(component))}
-              </ld-report-canvas>
+              </lv-report-canvas>
             </div>
             ${this.renderFilterDock()}
           </div>
-          <ld-report-footer .status=${snapshot.status}></ld-report-footer>
+          <lv-report-footer .status=${snapshot.status}></lv-report-footer>
         </section>
-				<ld-chat-drawer
+				<lv-chat-drawer
 					?open=${this.agentDrawerOpen}
 					style=${this.agentDrawerOpen ? 'width:min(420px, 100vw)' : 'width:0'}
 					.suggestions=${this.agentSuggestions(page)}
-					@ld-chat-drawer-close=${() => { this.agentDrawerOpen = false }}
-					@ld-agent-references-change=${this.handleAgentReferencesChanged}
-				></ld-chat-drawer>
+					@lv-chat-drawer-close=${() => { this.agentDrawerOpen = false }}
+					@lv-agent-references-change=${this.handleAgentReferencesChanged}
+				></lv-chat-drawer>
       </div>
-      <ld-visual-modal></ld-visual-modal>
+      <lv-visual-modal></lv-visual-modal>
     `
   }
 
@@ -512,7 +515,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
       label: 'Pages',
       railLabel: 'Pages',
       ariaLabel: 'Report pages',
-      storageKey: 'libredash-report-sidebar-collapsed',
+      storageKey: 'leapview-report-sidebar-collapsed',
       activeId: page.pageId,
       items: page.pages.map((item: DashboardPageNavSignal) => ({
         id: item.id,
@@ -532,7 +535,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
 			const askReference = currentPage ? this.agentReference(component, currentPage) : undefined
 			const referenced = askReference ? this.agentReferences.some((reference) => reference.id === askReference.id) : false
     return html`
-              <ld-dashboard-visual-frame
+              <lv-dashboard-visual-frame
                 data-canvas-visual
                 data-component-kind=${component.kind}
                 data-visual-type=${visualType}
@@ -546,10 +549,11 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
         .transparent=${component.kind === 'header'}
         .refreshStatus=${componentRefreshStatus}
 		.askReference=${askReference}
-		@ld-agent-reference=${this.handleAgentReference}
+		@lv-agent-reference=${this.handleAgentReference}
+        .loadingPresentation=${this.loadingPresentationFor(component, visualType)}
       >
         ${this.renderComponentContent(component)}
-      </ld-dashboard-visual-frame>
+      </lv-dashboard-visual-frame>
     `
   }
 
@@ -575,7 +579,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     return html`
       <div class="heading-visual">
         <div>
-          <p class="eyebrow">${component.eyebrow || 'LibreDash report'}</p>
+          <p class="eyebrow">${component.eyebrow || 'LeapView report'}</p>
           <h2>${component.title || 'Dashboard'}</h2>
         </div>
         <div class="badges">
@@ -588,37 +592,37 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
   private renderFilterCard(component: DashboardComponentSignal) {
     if (!component.filter) return this.missingPayload('filter')
     return html`
-      <ld-filter-card
+      <lv-filter-card
         filter-id=${component.filter}
         config=${json(this.renderSnapshot?.filterConfig ?? this.filterConfig)}
         filters=${json(this.effectiveFilters)}
         options=${json(this.renderSnapshot?.filterOptions ?? this.filterOptions)}
         loading=${String((this.renderSnapshot?.status ?? this.status).loading)}
-      ></ld-filter-card>
+      ></lv-filter-card>
     `
   }
 
   private renderKPI(component: DashboardComponentSignal, visual: DashboardVisual) {
-    return html`<ld-kpi-card visual-id=${component.visual ?? ''} .visual=${visual}></ld-kpi-card>`
+    return html`<lv-kpi-card visual-id=${component.visual ?? ''} .visual=${visual}></lv-kpi-card>`
   }
 
   private renderChart(component: DashboardComponentSignal, visual: DashboardVisual) {
-    return html`<ld-echart visual-id=${component.visual ?? ''} .chart=${visual}></ld-echart>`
+    return html`<lv-echart visual-id=${component.visual ?? ''} .chart=${visual}></lv-echart>`
   }
 
   private renderTable(component: DashboardComponentSignal, visual: DashboardVisual) {
     const table = this.tableFor(component, visual)
-    return html`<ld-report-table table-id=${component.visual ?? ''} .table=${table}></ld-report-table>`
+    return html`<lv-report-table table-id=${component.visual ?? ''} .table=${table}></lv-report-table>`
   }
 
   private renderFilterDock() {
     return html`
-      <ld-filter-dock
+      <lv-filter-dock
         .config=${this.renderSnapshot?.filterConfig ?? this.filterConfig}
         .filters=${this.effectiveFilters}
         .options=${this.renderSnapshot?.filterOptions ?? this.filterOptions}
         .loading=${(this.renderSnapshot?.status ?? this.status).loading}
-      ></ld-filter-dock>
+      ></lv-filter-dock>
     `
   }
 
@@ -649,7 +653,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
 		const reference = event.detail
 		if (!reference) return
 		this.agentDrawerOpen = true
-		const drawer = this.shadowRoot?.querySelector('ld-chat-drawer') as (HTMLElement & { openWithReference(reference: AgentReferenceSignal): void }) | null
+		const drawer = this.shadowRoot?.querySelector('lv-chat-drawer') as (HTMLElement & { openWithReference(reference: AgentReferenceSignal): void }) | null
 		drawer?.openWithReference(reference)
 	}
 
@@ -706,6 +710,16 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     }
   }
 
+  private loadingPresentationFor(component: DashboardComponentSignal, visualType: string): VisualLoadingPresentation {
+    if (component.kind !== 'visual' || !component.visual || isTabularVisualType(visualType)) return 'none'
+    const visuals = this.renderSnapshot?.visuals ?? this.visuals
+    const visual = visuals[component.visual]
+    if (!visual) return 'center'
+    const hasData = (visual.data?.length ?? 0) > 0
+    if (visualType === 'kpi') return hasData ? 'none' : 'center'
+    return hasData ? 'header' : 'center'
+  }
+
   private handleOptimisticInteraction = (event: CustomEvent<unknown>): void => {
     const command = optimisticCommand(event.detail)
     if (!command) return
@@ -758,7 +772,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
   }
 
   private loadRenderedComponents(): void {
-    const kinds = new Set<string>(['ld-filter-panel'])
+    const kinds = new Set<string>(['lv-filter-panel'])
     for (const component of this.page?.components ?? []) {
       const tag = tagForComponent(component, this.visuals)
       if (tag) kinds.add(tag)
@@ -798,6 +812,7 @@ class DashboardVisualFrame extends LitElement {
   @property({ type: Boolean, reflect: true }) transparent = false
   @property({ type: Object, attribute: false }) refreshStatus?: DashboardComponentStatus
 	@property({ type: Object, attribute: false }) askReference?: AgentReferenceSignal
+  @property({ type: String, attribute: false }) loadingPresentation: VisualLoadingPresentation = 'none'
 
   static styles = css`
     :host {
@@ -815,9 +830,9 @@ class DashboardVisualFrame extends LitElement {
       min-width: 0;
       min-height: 0;
       overflow: hidden;
-      border: var(--ld-border-default);
-      border-radius: var(--ld-radius-default);
-      background: var(--ld-bg-panel);
+      border: var(--lv-border-default);
+      border-radius: var(--lv-radius-default);
+      background: var(--lv-bg-panel);
       box-sizing: border-box;
     }
 
@@ -830,20 +845,20 @@ class DashboardVisualFrame extends LitElement {
 			height: var(--control-medium-size);
 			align-items: center;
 			gap: var(--base-size-6);
-			border: var(--ld-border-default);
-			border-radius: var(--ld-radius-default);
-			background: var(--ld-bg-panel);
-			color: var(--ld-fg-default);
+			border: var(--lv-border-default);
+			border-radius: var(--lv-radius-default);
+			background: var(--lv-bg-panel);
+			color: var(--lv-fg-default);
 			cursor: pointer;
 			opacity: 0;
 			pointer-events: none;
 			padding: 0 var(--base-size-8);
 			box-shadow: var(--shadow-resting-small);
 			font: inherit;
-			font-size: var(--ld-font-size-caption);
-			font-weight: var(--ld-font-weight-medium);
+			font-size: var(--lv-font-size-caption);
+			font-weight: var(--lv-font-weight-medium);
 			transform: translateY(calc(-1 * var(--base-size-4)));
-			transition: opacity var(--ld-transition-fast), transform var(--ld-transition-fast);
+			transition: opacity var(--lv-transition-fast), transform var(--lv-transition-fast);
 		}
 
 		.ask-visual.with-native-actions {
@@ -865,7 +880,7 @@ class DashboardVisualFrame extends LitElement {
 		}
 
 		:host([data-agent-referenced]) .frame {
-			box-shadow: inset 0 0 0 2px var(--ld-line-accent);
+			box-shadow: inset 0 0 0 2px var(--lv-line-accent);
 		}
 
 		.ask-visual svg {
@@ -899,8 +914,8 @@ class DashboardVisualFrame extends LitElement {
       z-index: 2;
       display: grid;
       place-items: center;
-      background: color-mix(in srgb, var(--ld-bg-panel) 78%, transparent);
-      color: var(--ld-fg-muted);
+      background: color-mix(in srgb, var(--lv-bg-panel) 78%, transparent);
+      color: var(--lv-fg-muted);
       padding: var(--base-size-12);
       box-sizing: border-box;
       pointer-events: none;
@@ -909,39 +924,47 @@ class DashboardVisualFrame extends LitElement {
     .refresh-overlay.error {
       align-content: center;
       gap: var(--base-size-4);
-      border: var(--ld-border-danger);
-      background: color-mix(in srgb, var(--ld-bg-danger-muted) 92%, transparent);
-      color: var(--ld-fg-danger);
+      border: var(--lv-border-danger);
+      background: color-mix(in srgb, var(--lv-bg-danger-muted) 92%, transparent);
+      color: var(--lv-fg-danger);
       text-align: center;
     }
 
     .refresh-overlay strong {
-      font-size: var(--ld-font-size-body-sm);
-      font-weight: var(--ld-font-weight-strong);
+      font-size: var(--lv-font-size-body-sm);
+      font-weight: var(--lv-font-weight-strong);
     }
 
     .refresh-overlay span {
       max-width: 100%;
       overflow: hidden;
       text-overflow: ellipsis;
-      font-size: var(--ld-font-size-caption);
+      font-size: var(--lv-font-size-caption);
     }
 
-    .spinner {
-      width: var(--base-size-16);
-      height: var(--base-size-16);
-      border: 2px solid var(--ld-line-muted);
-      border-top-color: var(--ld-fg-link);
-      border-radius: 50%;
-      animation: spin 700ms linear infinite;
+    .loading-status {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
     }
 
-    @keyframes spin {
-      to { transform: rotate(360deg); }
+    .loading-indicator {
+      position: absolute;
+      z-index: 2;
+      display: grid;
+      color: var(--lv-fg-muted);
+      opacity: 0;
+      pointer-events: none;
+      visibility: hidden;
+      animation-name: reveal-loading-indicator;
+      animation-duration: 0s;
+      animation-fill-mode: forwards;
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .spinner { animation: none; }
 			.ask-visual { transition: none; }
 		}
 
@@ -952,6 +975,38 @@ class DashboardVisualFrame extends LitElement {
 				transform: translateY(0);
 			}
     }
+
+    .loading-indicator.header {
+      top: var(--base-size-12);
+      right: calc(var(--base-size-24) + var(--base-size-24) + var(--base-size-16));
+      width: var(--base-size-12);
+      height: var(--base-size-12);
+      place-items: center;
+      animation-delay: var(--lv-loading-delay-long);
+    }
+
+    .loading-indicator.header lv-loading-spinner {
+      --lv-spinner-size: var(--base-size-12);
+    }
+
+    .loading-indicator.center {
+      inset: 0;
+      place-items: center;
+      background: var(--lv-bg-panel);
+      animation-delay: var(--lv-loading-delay-short);
+    }
+
+    .loading-indicator.center lv-loading-spinner {
+      --lv-spinner-size: var(--base-size-24);
+    }
+
+    @keyframes reveal-loading-indicator {
+      to {
+        opacity: 1;
+        visibility: visible;
+      }
+    }
+
   `
 
   render() {
@@ -976,9 +1031,12 @@ class DashboardVisualFrame extends LitElement {
             <span>${refreshStatus.error}</span>
           </div>
         ` : refreshStatus?.loading ? html`
-          <div class="refresh-overlay loading" role="status" aria-label="Refreshing component">
-            <span class="spinner" aria-hidden="true"></span>
-          </div>
+          <span class="loading-status" role="status" aria-label="Refreshing component">Refreshing component</span>
+          ${this.loadingPresentation === 'none' ? nothing : html`
+            <div class=${`loading-indicator ${this.loadingPresentation}`} aria-hidden="true">
+              <lv-loading-spinner></lv-loading-spinner>
+            </div>
+          `}
         ` : nothing}
       </article>
     `
@@ -988,7 +1046,7 @@ class DashboardVisualFrame extends LitElement {
 		event.preventDefault()
 		event.stopPropagation()
 		if (!this.askReference) return
-		this.dispatchEvent(new CustomEvent('ld-agent-reference', {
+		this.dispatchEvent(new CustomEvent('lv-agent-reference', {
 			bubbles: true,
 			composed: true,
 			detail: this.askReference,
@@ -999,12 +1057,12 @@ class DashboardVisualFrame extends LitElement {
 function tagForComponent(component: DashboardComponentSignal, visuals: Record<string, DashboardVisual>): string {
   switch (component.kind) {
     case 'filter':
-      return 'ld-filter-card'
+      return 'lv-filter-card'
     case 'visual': {
       const visualType = component.visual ? visuals[component.visual]?.type : undefined
-      if (visualType === 'kpi') return 'ld-kpi-card'
-      if (isTabularVisualType(visualType)) return 'ld-report-table'
-      return visualType ? 'ld-echart' : ''
+      if (visualType === 'kpi') return 'lv-kpi-card'
+      if (isTabularVisualType(visualType)) return 'lv-report-table'
+      return visualType ? 'lv-echart' : ''
     }
     default:
       return ''
@@ -1019,5 +1077,5 @@ function json(value: unknown): string {
   return JSON.stringify(value ?? {})
 }
 
-if (!customElements.get('ld-dashboard-page')) customElements.define('ld-dashboard-page', LibreDashDashboardPage)
-if (!customElements.get('ld-dashboard-visual-frame')) customElements.define('ld-dashboard-visual-frame', DashboardVisualFrame)
+if (!customElements.get('lv-dashboard-page')) customElements.define('lv-dashboard-page', LeapViewDashboardPage)
+if (!customElements.get('lv-dashboard-visual-frame')) customElements.define('lv-dashboard-visual-frame', DashboardVisualFrame)

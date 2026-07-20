@@ -19,7 +19,7 @@ func TestContextualModelInputIncludesResolvedWorkspaceReferences(t *testing.T) {
 		}},
 	})
 
-	for _, want := range []string{"libredash_turn_context", `"surface":"chat"`, `"kind":"measure"`, "Order count", "How is this calculated?"} {
+	for _, want := range []string{"leapview_turn_context", `"surface":"chat"`, `"kind":"measure"`, "Order count", "How is this calculated?"} {
 		if !strings.Contains(input, want) {
 			t.Fatalf("contextual input missing %q:\n%s", want, input)
 		}

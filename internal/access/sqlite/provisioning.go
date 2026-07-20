@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/Yacobolo/libredash/internal/access"
-	platformdb "github.com/Yacobolo/libredash/internal/platform/db"
-	"github.com/Yacobolo/libredash/internal/workspace"
+	"github.com/Yacobolo/leapview/internal/access"
+	platformdb "github.com/Yacobolo/leapview/internal/platform/db"
+	"github.com/Yacobolo/leapview/internal/workspace"
 	"strings"
 )
 
@@ -298,6 +298,29 @@ func (r *Repository) UpsertGroup(ctx context.Context, input access.GroupInput) (
 
 func (r *Repository) ListGroups(ctx context.Context, workspaceID string) ([]access.Group, error) {
 	rows, err := r.q.ListGroupsByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	groups := make([]access.Group, 0, len(rows))
+	for _, row := range rows {
+		groups = append(groups, mapGroup(row))
+	}
+	return groups, nil
+}
+
+func (r *Repository) SearchGroups(ctx context.Context, workspaceID, query string, limit int) ([]access.Group, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return []access.Group{}, nil
+	}
+	if limit <= 0 {
+		limit = 8
+	}
+	rows, err := r.q.SearchGroups(ctx, platformdb.SearchGroupsParams{
+		WorkspaceID: workspaceID,
+		Search:      query,
+		ResultLimit: int64(limit),
+	})
 	if err != nil {
 		return nil, err
 	}

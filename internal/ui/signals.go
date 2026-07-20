@@ -1,13 +1,15 @@
 package ui
 
 import (
-	"github.com/Yacobolo/libredash/internal/agent"
-	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
+	"github.com/Yacobolo/leapview/internal/agent"
+	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
 )
 
 type WorkspaceAccessResponse = uisignals.WorkspaceAccessResponse
 type WorkspaceAccessStatus = uisignals.WorkspaceAccessStatus
 type WorkspaceAccessCommand = uisignals.WorkspaceAccessCommand
+type WorkspaceAccessCandidate = uisignals.WorkspaceAccessCandidate
+type WorkspaceAccessSearchStatus = uisignals.WorkspaceAccessSearchStatus
 type ChatSignal = uisignals.ChatSignal
 type AgentReferenceSignal = uisignals.AgentReferenceSignal
 type AgentReferenceSearchSignal = uisignals.AgentReferenceSearchSignal

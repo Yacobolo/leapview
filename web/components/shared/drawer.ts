@@ -12,14 +12,16 @@ const focusableSelector = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(', ')
 
-class LibreDashDrawer extends LitElement {
+class LeapViewDrawer extends LitElement {
   @property({ type: Boolean, reflect: true }) open = false
+  @property({ type: Boolean, reflect: true }) modal = true
   @property() label = 'Drawer'
+  @property({ reflect: true }) size: 'default' | 'wide' = 'default'
 
   static styles = css`
     :host {
-      color: var(--ld-fg-default);
-      font-family: var(--ld-font-family-ui, var(--fontStack-system));
+      color: var(--lv-fg-default);
+      font-family: var(--lv-font-family-ui, var(--fontStack-system));
     }
 
     button {
@@ -32,7 +34,16 @@ class LibreDashDrawer extends LitElement {
       z-index: calc(var(--z-index-inspector) - 1);
       display: flex;
       justify-content: flex-end;
-      background: var(--ld-modal-backdrop);
+      background: var(--lv-modal-backdrop);
+    }
+
+    .overlay-nonmodal {
+      background: transparent;
+      pointer-events: none;
+    }
+
+    .overlay-nonmodal .drawer {
+      pointer-events: auto;
     }
 
     .drawer {
@@ -42,10 +53,14 @@ class LibreDashDrawer extends LitElement {
       height: 100svh;
       grid-template-rows: auto minmax(0, 1fr);
       overflow: hidden;
-      border-left: var(--ld-border-default);
-      background: var(--ld-bg-panel);
-      box-shadow: var(--ld-shadow-floating-lg);
-      animation: drawer-slide-in var(--ld-transition-fast) ease;
+      border-left: var(--lv-border-default);
+      background: var(--lv-bg-panel);
+      box-shadow: var(--lv-shadow-floating-lg);
+      animation: drawer-slide-in var(--lv-transition-fast);
+    }
+
+    :host([size='wide']) .drawer {
+      width: min(34rem, 100vw);
     }
 
     .header {
@@ -53,7 +68,7 @@ class LibreDashDrawer extends LitElement {
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: start;
       gap: var(--base-size-16);
-      border-bottom: var(--ld-border-muted);
+      border-bottom: var(--lv-border-muted);
       padding: var(--base-size-16) var(--base-size-20);
     }
 
@@ -63,28 +78,28 @@ class LibreDashDrawer extends LitElement {
 
     .close {
       display: inline-flex;
-      width: var(--ld-control-medium);
-      height: var(--ld-control-medium);
+      width: var(--lv-control-medium);
+      height: var(--lv-control-medium);
       flex: 0 0 auto;
       align-items: center;
       justify-content: center;
-      border: var(--ld-border-transparent);
-      border-radius: var(--ld-radius-default);
+      border: var(--lv-border-transparent);
+      border-radius: var(--lv-radius-default);
       background: transparent;
-      color: var(--ld-fg-muted);
+      color: var(--lv-fg-muted);
       cursor: pointer;
       padding: 0;
       transition:
-        color var(--ld-transition-fast),
-        background-color var(--ld-transition-fast),
-        border-color var(--ld-transition-fast);
+        color var(--lv-transition-fast),
+        background-color var(--lv-transition-fast),
+        border-color var(--lv-transition-fast);
     }
 
     .close:hover,
     .close:focus-visible {
-      border-color: var(--ld-line-muted);
-      background: var(--ld-bg-control-hover);
-      color: var(--ld-fg-default);
+      border-color: var(--lv-line-muted);
+      background: var(--lv-bg-control-hover);
+      color: var(--lv-fg-default);
       outline: 0;
     }
 
@@ -96,8 +111,8 @@ class LibreDashDrawer extends LitElement {
 
     .icon {
       display: inline-flex;
-      width: var(--ld-icon-sm);
-      height: var(--ld-icon-sm);
+      width: var(--lv-icon-sm);
+      height: var(--lv-icon-sm);
       align-items: center;
       justify-content: center;
       color: currentColor;
@@ -107,6 +122,12 @@ class LibreDashDrawer extends LitElement {
       .drawer {
         width: 100vw;
         border-left: 0;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .drawer {
+        animation-duration: 1ms;
       }
     }
 
@@ -122,14 +143,24 @@ class LibreDashDrawer extends LitElement {
     }
   `
 
+  connectedCallback(): void {
+    super.connectedCallback()
+    window.addEventListener('keydown', this.handleWindowKeyDown)
+  }
+
+  disconnectedCallback(): void {
+    window.removeEventListener('keydown', this.handleWindowKeyDown)
+    super.disconnectedCallback()
+  }
+
   render() {
     if (!this.open) return nothing
     return html`
-      <div class="overlay" @click=${this.handleOverlayClick}>
+      <div class=${this.modal ? 'overlay' : 'overlay overlay-nonmodal'} @click=${this.handleOverlayClick}>
         <aside
           class="drawer"
           role="dialog"
-          aria-modal="true"
+          aria-modal=${this.modal ? 'true' : nothing}
           aria-label=${this.label}
           @keydown=${this.handleKeyDown}
         >
@@ -157,11 +188,17 @@ class LibreDashDrawer extends LitElement {
   }
 
   private readonly close = (): void => {
-    this.dispatchEvent(new CustomEvent('ld-drawer-close', { bubbles: true, composed: true }))
+    this.dispatchEvent(new CustomEvent('lv-drawer-close', { bubbles: true, composed: true }))
   }
 
   private readonly handleOverlayClick = (event: Event): void => {
-    if (event.target === event.currentTarget) this.close()
+    if (this.modal && event.target === event.currentTarget) this.close()
+  }
+
+  private readonly handleWindowKeyDown = (event: KeyboardEvent): void => {
+    if (!this.open || event.defaultPrevented || event.key !== 'Escape') return
+    event.preventDefault()
+    this.close()
   }
 
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
@@ -170,7 +207,7 @@ class LibreDashDrawer extends LitElement {
       this.close()
       return
     }
-    if (event.key !== 'Tab') return
+    if (event.key !== 'Tab' || !this.modal) return
     const focusable = this.focusableElements()
     if (focusable.length === 0) return
     const first = focusable[0]
@@ -198,10 +235,10 @@ class LibreDashDrawer extends LitElement {
   }
 }
 
-if (!customElements.get('ld-drawer')) customElements.define('ld-drawer', LibreDashDrawer)
+if (!customElements.get('lv-drawer')) customElements.define('lv-drawer', LeapViewDrawer)
 
 declare global {
   interface HTMLElementTagNameMap {
-    'ld-drawer': LibreDashDrawer
+    'lv-drawer': LeapViewDrawer
   }
 }
