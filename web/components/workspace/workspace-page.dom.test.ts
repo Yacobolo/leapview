@@ -346,8 +346,10 @@ test('workspace access drawer selects a role before searching and adds each resu
       const accessControl = workspace.shadowRoot.querySelector('ld-workspace-access-control') as any
       const searchEvents: unknown[] = []
       const upsertEvents: unknown[] = []
+      const removeEvents: unknown[] = []
       accessControl.addEventListener('ld-workspace-access-search', (event: CustomEvent) => searchEvents.push(event.detail))
       accessControl.addEventListener('ld-workspace-access-upsert', (event: CustomEvent) => upsertEvents.push(event.detail))
+      accessControl.addEventListener('ld-workspace-access-remove', (event: CustomEvent) => removeEvents.push(event.detail))
       accessControl.shadowRoot.querySelector('.trigger').click()
       await accessControl.updateComplete
       const drawer = accessControl.shadowRoot.querySelector('ld-drawer') as any
@@ -370,6 +372,7 @@ test('workspace access drawer selects a role before searching and adds each resu
       const candidateTypes = candidates.map((candidate) => candidate.dataset.subjectType)
       const addButtons = Array.from(accessControl.shadowRoot.querySelectorAll<HTMLButtonElement>('.candidate-add'))
       addButtons[0]?.click()
+      accessControl.shadowRoot.querySelector<HTMLButtonElement>('button[aria-label="Remove Operations Group"]')?.click()
       const rowRole = accessControl.shadowRoot.querySelector('.row select') as HTMLSelectElement | null
       return {
         hasDrawer: Boolean(drawer),
@@ -388,6 +391,7 @@ test('workspace access drawer selects a role before searching and adds each resu
         hasSelectedSubject: Boolean(accessControl.shadowRoot.querySelector('.selected-subject')),
         roleOptions,
         upsertEvents,
+        removeEvents,
         rowRoleValue: rowRole?.value,
         principal: accessControl.shadowRoot.querySelector('.name')?.textContent?.trim(),
       }
@@ -420,6 +424,12 @@ test('workspace access drawer selects a role before searching and adds each resu
         privilege: '',
         subjectType: 'principal',
         subjectId: 'principal_ana',
+      }],
+      removeEvents: [{
+        principalId: '',
+        bindingId: 'rolebinding_operations',
+        subjectType: 'group',
+        subjectId: 'group_operations',
       }],
       rowRoleValue: 'viewer',
       principal: 'analyst@example.com',
@@ -680,9 +690,21 @@ function testDocument(root: 'workspace' | 'connections' | 'asset'): string {
     workspace: { ID: 'libredash', Title: 'LibreDash Workspace' },
     roles: [{ Name: 'viewer' }, { Name: 'workspace_admin' }, { Name: 'data_deployer' }],
     bindings: [{
+      ID: 'rolebinding_analyst',
+      SubjectType: 'principal',
+      SubjectID: 'principal:analyst@example.com',
       PrincipalID: 'principal:analyst@example.com',
       Email: 'analyst@example.com',
       DisplayName: '',
+      Role: 'viewer',
+    }, {
+      ID: 'rolebinding_operations',
+      SubjectType: 'group',
+      SubjectID: 'group_operations',
+      PrincipalID: '',
+      GroupID: 'group_operations',
+      Email: '',
+      GroupName: 'Operations Group',
       Role: 'viewer',
     }],
     candidates: [

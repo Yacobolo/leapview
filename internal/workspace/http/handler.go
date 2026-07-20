@@ -711,6 +711,10 @@ func (h Handler) AccessRemove(w nethttp.ResponseWriter, r *nethttp.Request) {
 		if err := repo.DeleteGrant(r.Context(), workspaceID, command.BindingID); err != nil {
 			status = ui.WorkspaceAccessStatus{Error: err.Error()}
 		}
+	} else if bindingID := strings.TrimSpace(command.BindingID); bindingID != "" {
+		if err := repo.DeleteRoleBinding(r.Context(), workspaceID, bindingID); err != nil {
+			status = ui.WorkspaceAccessStatus{Error: err.Error()}
+		}
 	} else if err := repo.RemovePrincipalRoles(r.Context(), workspaceID, command.PrincipalID); err != nil {
 		status = ui.WorkspaceAccessStatus{Error: err.Error()}
 	}

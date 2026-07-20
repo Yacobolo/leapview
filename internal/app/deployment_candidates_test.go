@@ -1416,7 +1416,21 @@ func TestWorkspaceAccessCommandUpsertsAndPatchesSignals(t *testing.T) {
 		t.Fatalf("role binding missing after command:\n%s", listRec.Body.String())
 	}
 
-	removeSignals := `{"workspaceAccess":{"command":{"principalId":"` + analyst.ID + `"}}}`
+	bindings, err := testAccessRepository(store).ListRoleBindings(ctx, "test")
+	if err != nil {
+		t.Fatalf("list role bindings: %v", err)
+	}
+	bindingID := ""
+	for _, binding := range bindings {
+		if binding.SubjectType == access.SubjectPrincipal && binding.SubjectID == analyst.ID {
+			bindingID = binding.ID
+			break
+		}
+	}
+	if bindingID == "" {
+		t.Fatalf("analyst role binding missing: %#v", bindings)
+	}
+	removeSignals := `{"workspaceAccess":{"command":{"bindingId":"` + bindingID + `"}}}`
 	removeReq := httptest.NewRequest(http.MethodPost, "/workspaces/test/access/remove", bytes.NewBufferString(removeSignals))
 	removeReq.Header.Set("Authorization", "Bearer "+token)
 	removeRec := httptest.NewRecorder()
