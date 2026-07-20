@@ -368,6 +368,7 @@ function renderAssetTable(assets: WorkspaceAssetSummarySignal[], empty: string) 
         name: {
           label: asset.title,
           href: asset.detailHref,
+          icon: asset.type,
         },
         type: asset.typeLabel,
         actions,

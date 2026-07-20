@@ -71,6 +71,8 @@ for (const viewport of [
         const workspacePage = workspace.shadowRoot.querySelector('.page') as HTMLElement
         const workspaceToolbar = workspace.shadowRoot.querySelector('.toolbar') as HTMLElement
         const workspaceRecordTable = workspace.shadowRoot.querySelector('ld-record-table') as HTMLElement
+        const workspaceGlyph = workspace.shadowRoot.querySelector('.record-entity-icon') as HTMLElement | null
+        const workspaceDashboardGlyph = workspace.shadowRoot.querySelector('.record-icon-dashboard') as HTMLElement | null
         const workspaceRowActionIcon = workspace.shadowRoot.querySelector('.record-actions svg') as SVGElement
         const workspaceRowActionLink = workspace.shadowRoot.querySelector('.record-actions .record-icon-action') as HTMLElement
         const workspaceNameCell = workspace.shadowRoot.querySelector('tbody tr:first-child td:first-child') as HTMLElement
@@ -97,7 +99,10 @@ for (const viewport of [
           workspaceToolbarDisplay: getComputedStyle(workspaceToolbar).display,
           workspaceHasGlyphs: Boolean(workspace.shadowRoot.querySelector('.record-entity-icon')),
           workspaceHasDescriptions: Boolean(workspace.shadowRoot.querySelector('.record-entity-description')),
-          workspaceNamesUseFullWidth: Array.from(workspace.shadowRoot.querySelectorAll('.record-entity')).every((entity) => entity.classList.contains('record-entity-no-icon')),
+          workspaceNamesUseIconTrack: Array.from(workspace.shadowRoot.querySelectorAll('.record-entity')).every((entity) => !entity.classList.contains('record-entity-no-icon')),
+          workspaceGlyphHasIcon: Boolean(workspaceGlyph?.querySelector('svg')),
+          workspaceGlyphBackground: workspaceGlyph ? getComputedStyle(workspaceGlyph).backgroundColor : '',
+          workspaceDashboardGlyphBorderColor: workspaceDashboardGlyph ? getComputedStyle(workspaceDashboardGlyph).borderTopColor : '',
           workspaceRowActionIconWidth: getComputedStyle(workspaceRowActionIcon).width,
           workspaceRowActionBorderColor: getComputedStyle(workspaceRowActionLink).borderTopColor,
           workspaceSearchFontSize: getComputedStyle(workspaceSearch).fontSize,
@@ -123,9 +128,12 @@ for (const viewport of [
         workspacePageCentered: true,
         workspacePageConstrained: true,
         workspaceToolbarDisplay: 'grid',
-        workspaceHasGlyphs: false,
+        workspaceHasGlyphs: true,
         workspaceHasDescriptions: false,
-        workspaceNamesUseFullWidth: true,
+        workspaceNamesUseIconTrack: true,
+        workspaceGlyphHasIcon: true,
+        workspaceGlyphBackground: 'rgb(221, 244, 255)',
+        workspaceDashboardGlyphBorderColor: 'rgb(210, 191, 255)',
         workspaceRowActionIconWidth: '16px',
         workspaceRowActionBorderColor: 'rgba(0, 0, 0, 0)',
         workspaceSearchFontSize: '14px',
