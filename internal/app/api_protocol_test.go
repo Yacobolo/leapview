@@ -82,9 +82,10 @@ func TestPublicAPIRouterErrorsUseAuthenticatedProblemDetails(t *testing.T) {
 		authorization string
 		wantStatus    int
 		wantCode      string
+		wantAllow     string
 	}{
 		{name: "unknown route", method: http.MethodGet, path: "/api/v1/not-a-route", authorization: "Bearer dev", wantStatus: http.StatusNotFound, wantCode: "API_ROUTE_NOT_FOUND"},
-		{name: "unsupported method", method: http.MethodPost, path: "/api/v1/workspaces", authorization: "Bearer dev", wantStatus: http.StatusMethodNotAllowed, wantCode: "METHOD_NOT_ALLOWED"},
+		{name: "unsupported method", method: http.MethodPost, path: "/api/v1/workspaces", authorization: "Bearer dev", wantStatus: http.StatusMethodNotAllowed, wantCode: "METHOD_NOT_ALLOWED", wantAllow: http.MethodGet},
 		{name: "unknown route does not disclose authentication", method: http.MethodGet, path: "/api/v1/not-a-route", wantStatus: http.StatusNotFound, wantCode: "API_ROUTE_NOT_FOUND"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -95,6 +96,9 @@ func TestPublicAPIRouterErrorsUseAuthenticatedProblemDetails(t *testing.T) {
 
 			if response.Code != tc.wantStatus || response.Header().Get("Content-Type") != "application/problem+json" {
 				t.Fatalf("response = %d %q body=%s", response.Code, response.Header().Get("Content-Type"), response.Body.String())
+			}
+			if got := response.Header().Get("Allow"); got != tc.wantAllow {
+				t.Errorf("Allow = %q, want %q", got, tc.wantAllow)
 			}
 			var problem apigenapi.ProblemDetails
 			if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil {

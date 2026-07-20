@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -143,7 +144,9 @@ func (s *Server) Routes() http.Handler {
 		}
 		http.NotFound(w, r)
 	})
+	registeredMethods := registeredRouteMethods(mux)
 	mux.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+		setAllowedMethods(w.Header(), mux, registeredMethods, r.URL.Path)
 		if isPublicAPIPath(r.URL.Path) {
 			if s.authenticatePublicAPIRequest(w, r) {
 				writeAPIProblem(w, r, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "The requested method is not supported for this API route", nil)
@@ -154,6 +157,30 @@ func (s *Server) Routes() http.Handler {
 	})
 
 	return mux
+}
+
+func registeredRouteMethods(routes chi.Routes) []string {
+	registered := make(map[string]struct{})
+	_ = chi.Walk(routes, func(method, _ string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		if method != "*" {
+			registered[method] = struct{}{}
+		}
+		return nil
+	})
+	methods := make([]string, 0, len(registered))
+	for method := range registered {
+		methods = append(methods, method)
+	}
+	sort.Strings(methods)
+	return methods
+}
+
+func setAllowedMethods(header http.Header, routes chi.Routes, methods []string, path string) {
+	for _, method := range methods {
+		if routes.Match(chi.NewRouteContext(), method, path) {
+			header.Add("Allow", method)
+		}
+	}
 }
 
 func isPublicAPIPath(path string) bool {
