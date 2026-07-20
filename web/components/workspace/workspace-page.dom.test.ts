@@ -334,7 +334,7 @@ test('workspace asset search filters the current asset rows', async () => {
   }
 })
 
-test('workspace access drawer searches principals and groups before assigning a role', async () => {
+test('workspace access drawer selects a role before searching and adds each result directly', async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
   try {
     await page.goto(baseURL)
@@ -352,22 +352,24 @@ test('workspace access drawer searches principals and groups before assigning a 
       await accessControl.updateComplete
       const drawer = accessControl.shadowRoot.querySelector('ld-drawer') as any
       const dialog = drawer?.shadowRoot?.querySelector('[role="dialog"]')
-      const search = accessControl.shadowRoot.querySelector('.access-search input') as HTMLInputElement
-      search.value = 'finance'
-      search.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }))
-      await new Promise((resolve) => setTimeout(resolve, 250))
-      const candidates = Array.from(accessControl.shadowRoot.querySelectorAll<HTMLButtonElement>('.candidate'))
-      const candidateTypes = candidates.map((candidate) => candidate.dataset.subjectType)
-      candidates[0]?.click()
-      await accessControl.updateComplete
       const rolePicker = accessControl.shadowRoot.querySelector('.assignment-role') as HTMLSelectElement
+      const search = accessControl.shadowRoot.querySelector('.access-search input') as HTMLInputElement
+      const rolePrecedesSearch = Boolean(rolePicker.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING)
+      const searchDisabledBeforeRole = search.disabled
       const roleOptions = Array.from(rolePicker.options).map((option) => ({
         value: (option as HTMLOptionElement).value,
         label: option.textContent?.trim(),
       }))
-      rolePicker.value = 'workspace_admin'
+      rolePicker.value = 'data_deployer'
       rolePicker.dispatchEvent(new Event('change', { bubbles: true, composed: true }))
-      accessControl.shadowRoot.querySelector<HTMLButtonElement>('.assign')?.click()
+      await accessControl.updateComplete
+      search.value = 'finance'
+      search.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }))
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      const candidates = Array.from(accessControl.shadowRoot.querySelectorAll<HTMLElement>('.candidate'))
+      const candidateTypes = candidates.map((candidate) => candidate.dataset.subjectType)
+      const addButtons = Array.from(accessControl.shadowRoot.querySelectorAll<HTMLButtonElement>('.candidate-add'))
+      addButtons[0]?.click()
       const rowRole = accessControl.shadowRoot.querySelector('.row select') as HTMLSelectElement | null
       return {
         hasDrawer: Boolean(drawer),
@@ -375,11 +377,15 @@ test('workspace access drawer searches principals and groups before assigning a 
         modal: dialog?.getAttribute('aria-modal'),
         title: accessControl.shadowRoot.querySelector('.subtitle')?.textContent?.trim(),
         hasSubjectTypePicker: Boolean(accessControl.shadowRoot.querySelector('.composer-subject-type')),
+        rolePrecedesSearch,
+        searchDisabledBeforeRole,
+        searchDisabledAfterRole: search.disabled,
         searchPlaceholder: search.placeholder,
         searchEvents,
         candidateTypes,
         candidateLabels: candidates.map((candidate) => candidate.textContent?.replace(/\s+/g, ' ').trim()),
-        selectedSubject: accessControl.shadowRoot.querySelector('.selected-subject')?.textContent?.replace(/\s+/g, ' ').trim(),
+        addButtonLabels: addButtons.map((button) => button.getAttribute('aria-label')),
+        hasSelectedSubject: Boolean(accessControl.shadowRoot.querySelector('.selected-subject')),
         roleOptions,
         upsertEvents,
         rowRoleValue: rowRole?.value,
@@ -393,18 +399,24 @@ test('workspace access drawer searches principals and groups before assigning a 
       modal: 'true',
       title: 'LibreDash Workspace roles apply to every published asset in this workspace.',
       hasSubjectTypePicker: false,
+      rolePrecedesSearch: true,
+      searchDisabledBeforeRole: true,
+      searchDisabledAfterRole: false,
       searchPlaceholder: 'Search people and groups...',
       searchEvents: [{ search: 'finance' }],
       candidateTypes: ['principal', 'group'],
       candidateLabels: ['Ana Analyst ana@example.com', 'Analytics Group'],
-      selectedSubject: 'Ana Analyst ana@example.com',
+      addButtonLabels: ['Add Ana Analyst as Data Deployer', 'Add Analytics as Data Deployer'],
+      hasSelectedSubject: false,
       roleOptions: [
+        { value: '', label: 'Select a role' },
         { value: 'viewer', label: 'Viewer' },
         { value: 'workspace_admin', label: 'Workspace Admin' },
+        { value: 'data_deployer', label: 'Data Deployer' },
       ],
       upsertEvents: [{
         email: '',
-        role: 'workspace_admin',
+        role: 'data_deployer',
         privilege: '',
         subjectType: 'principal',
         subjectId: 'principal_ana',
@@ -666,7 +678,7 @@ function testDocument(root: 'workspace' | 'connections' | 'asset'): string {
   }
   const access = {
     workspace: { ID: 'libredash', Title: 'LibreDash Workspace' },
-    roles: [{ Name: 'viewer' }, { Name: 'workspace_admin' }],
+    roles: [{ Name: 'viewer' }, { Name: 'workspace_admin' }, { Name: 'data_deployer' }],
     bindings: [{
       PrincipalID: 'principal:analyst@example.com',
       Email: 'analyst@example.com',

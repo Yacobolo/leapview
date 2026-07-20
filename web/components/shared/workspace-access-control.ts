@@ -1,6 +1,6 @@
 import { LitElement, css, html, nothing } from 'lit'
 import { property, state } from 'lit/decorators.js'
-import { Search, Trash2, UserRound, Users } from 'lucide'
+import { Plus, Search, Trash2, UserRound, Users } from 'lucide'
 import { lucideIcon } from './lucide-icons'
 import './drawer'
 
@@ -94,9 +94,8 @@ class WorkspaceAccessControl extends LitElement {
   @property({ attribute: 'search' }) searchAttribute = ''
 
   @state() private open = false
-  @state() private selectedRole = 'viewer'
+  @state() private selectedRole = ''
   @state() private query = ''
-  @state() private selectedCandidate: AccessCandidate | null = null
 
   private previousFocus: HTMLElement | null = null
 
@@ -256,6 +255,20 @@ class WorkspaceAccessControl extends LitElement {
       min-height: var(--ld-control-large);
     }
 
+    .access-search input:disabled {
+      cursor: not-allowed;
+      opacity: var(--opacity-disabled);
+    }
+
+    .role-field {
+      display: grid;
+      gap: var(--base-size-6);
+    }
+
+    .assignment-role {
+      width: 100%;
+    }
+
     .candidate-list {
       display: grid;
       overflow: hidden;
@@ -267,27 +280,21 @@ class WorkspaceAccessControl extends LitElement {
     .candidate {
       display: grid;
       min-width: 0;
-      grid-template-columns: var(--base-size-32) minmax(0, 1fr);
+      grid-template-columns: var(--base-size-32) minmax(0, 1fr) auto;
       align-items: center;
       gap: var(--ld-space-control);
-      border: 0;
       border-bottom: var(--ld-border-muted);
       background: transparent;
       color: var(--ld-fg-default);
-      cursor: pointer;
       padding: var(--ld-space-control) var(--base-size-12);
-      text-align: left;
     }
 
     .candidate:last-child {
       border-bottom: 0;
     }
 
-    .candidate:hover,
-    .candidate:focus-visible,
-    .candidate-selected {
+    .candidate:hover {
       background: var(--ld-bg-control-hover);
-      outline: 0;
     }
 
     .subject-icon {
@@ -350,58 +357,6 @@ class WorkspaceAccessControl extends LitElement {
       color: var(--ld-fg-danger);
     }
 
-    .assignment {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(8rem, 10rem) auto;
-      align-items: center;
-      gap: var(--ld-space-control);
-      border: var(--ld-border-muted);
-      border-radius: var(--ld-radius-default);
-      background: var(--ld-bg-panel-muted);
-      padding: var(--base-size-12);
-    }
-
-    .selected-subject {
-      display: grid;
-      min-width: 0;
-      grid-template-columns: var(--base-size-32) minmax(0, 1fr);
-      align-items: center;
-      gap: var(--ld-space-control);
-    }
-
-    .assignment-role {
-      width: 100%;
-    }
-
-    .submit {
-      min-height: var(--ld-button-height);
-      min-width: var(--base-size-80);
-      border: var(--borderWidth-default) solid var(--ld-button-accent-border-rest);
-      border-radius: var(--ld-button-radius);
-      background: var(--ld-button-accent-bg-rest);
-      color: var(--ld-button-accent-fg-rest);
-      cursor: pointer;
-      font-size: var(--ld-font-size-body-sm);
-      font-weight: var(--ld-font-weight-strong);
-      line-height: var(--ld-line-height-tight);
-      padding: 0 var(--ld-button-padding-inline-spacious);
-    }
-
-    .submit:hover,
-    .submit:focus-visible {
-      border-color: var(--ld-button-accent-border-hover);
-      background: var(--ld-button-accent-bg-hover);
-      outline: var(--focus-outline, var(--ld-border-default));
-      outline-color: var(--borderColor-accent-emphasis, var(--ld-line-accent));
-      outline-offset: var(--focus-outline-offset, var(--base-size-2));
-    }
-
-    .submit:disabled {
-      border-color: var(--ld-button-accent-border-disabled);
-      background: var(--ld-button-accent-bg-disabled);
-      color: var(--ld-button-accent-fg-disabled);
-    }
-
     .row-action {
       display: inline-flex;
       width: var(--ld-control-medium);
@@ -429,7 +384,10 @@ class WorkspaceAccessControl extends LitElement {
       outline: 0;
     }
 
-    .submit:disabled,
+    .candidate-add {
+      color: var(--ld-fg-accent);
+    }
+
     .row-action:disabled {
       cursor: not-allowed;
       opacity: var(--opacity-disabled);
@@ -496,13 +454,8 @@ class WorkspaceAccessControl extends LitElement {
     }
 
     @media (max-width: 44rem) {
-      .assignment,
       .row {
         grid-template-columns: minmax(0, 1fr);
-      }
-
-      .submit {
-        justify-self: stretch;
       }
     }
   `
@@ -510,10 +463,6 @@ class WorkspaceAccessControl extends LitElement {
   updated(changed: Map<string, unknown>): void {
     if (changed.has('access') || changed.has('accessAttribute')) {
       this.ensureRole()
-      const status = this.resolvedAccess.status
-      if (status?.message && !status.error && !status.loading) {
-        this.selectedCandidate = null
-      }
     }
     if (changed.has('searchAttribute') && this.searchAttribute !== this.query) {
       this.query = this.searchAttribute
@@ -544,6 +493,19 @@ class WorkspaceAccessControl extends LitElement {
             <div class="label">Add people or groups</div>
             ${status.error ? html`<div class="status status-error" role="alert">${status.error}</div>` : nothing}
             ${status.message && !status.error ? html`<div class="status status-message" role="status">${status.message}</div>` : nothing}
+            <label class="role-field">
+              <span class="label">${this.modeIsObject(access) ? 'Privilege' : 'Role'}</span>
+              <select
+                class="assignment-role"
+                aria-label=${this.modeIsObject(access) ? 'Privilege to grant' : 'Role to assign'}
+                .value=${this.selectedRole}
+                ?disabled=${status.loading}
+                @change=${(event: Event) => { this.selectedRole = (event.currentTarget as HTMLSelectElement).value }}
+              >
+                <option value="">${this.modeIsObject(access) ? 'Select a privilege' : 'Select a role'}</option>
+                ${this.roles.map((role) => html`<option value=${role.name}>${roleLabel(role.name)}</option>`)}
+              </select>
+            </label>
             <label class="field-shell access-search">
               ${searchIcon()}
               <input
@@ -553,11 +515,11 @@ class WorkspaceAccessControl extends LitElement {
                 aria-controls="workspace-access-candidates"
                 placeholder="Search people and groups..."
                 .value=${this.query}
+                ?disabled=${!this.selectedRole || status.loading}
                 @input=${this.handleSearchInput}
               >
             </label>
-            ${this.renderCandidates(access)}
-            ${this.selectedCandidate ? this.renderAssignment(access, this.selectedCandidate, status) : nothing}
+            ${this.renderCandidates(access, status)}
           </section>
           <section class="card" aria-label="Current workspace access">
             <h3 class="section-title">${this.modeIsObject(access) ? 'Direct grants' : 'People with access'}</h3>
@@ -568,7 +530,10 @@ class WorkspaceAccessControl extends LitElement {
     `
   }
 
-  private renderCandidates(access: WorkspaceAccess) {
+  private renderCandidates(access: WorkspaceAccess, status: AccessStatus) {
+    if (!this.selectedRole) {
+      return html`<div class="search-state">Select a ${this.modeIsObject(access) ? 'privilege' : 'role'} to search people and groups.</div>`
+    }
     const searchStatus = access.searchStatus ?? {}
     if (!this.query.trim()) {
       return html`<div class="search-state">Search by name or email.</div>`
@@ -584,47 +549,30 @@ class WorkspaceAccessControl extends LitElement {
       return html`<div class="search-state">No people or groups found.</div>`
     }
     return html`
-      <div id="workspace-access-candidates" class="candidate-list" role="listbox" aria-label="People and groups">
+      <div id="workspace-access-candidates" class="candidate-list" role="list" aria-label="People and groups">
         ${candidates.map((candidate) => {
-          const selected = sameCandidate(candidate, this.selectedCandidate)
           return html`
-            <button
-              class=${selected ? 'candidate candidate-selected' : 'candidate'}
-              type="button"
-              role="option"
-              aria-selected=${String(selected)}
+            <div
+              class="candidate"
+              role="listitem"
               data-subject-type=${candidate.subjectType}
-              @click=${() => { this.selectedCandidate = candidate }}
             >
               ${subjectIcon(candidate.subjectType)}
               ${subjectCopy(candidate.label, candidate.detail)}
-            </button>
+              <button
+                class="row-action candidate-add"
+                type="button"
+                aria-label=${`Add ${candidate.label} as ${roleLabel(this.selectedRole)}`}
+                title=${`Add as ${roleLabel(this.selectedRole)}`}
+                ?disabled=${status.loading}
+                @click=${() => this.addCandidate(candidate)}
+              >
+                ${plusIcon()}
+              </button>
+            </div>
           `
         })}
       </div>
-    `
-  }
-
-  private renderAssignment(access: WorkspaceAccess, candidate: AccessCandidate, status: AccessStatus) {
-    return html`
-      <form class="assignment" @submit=${this.handleSubmit}>
-        <div class="selected-subject">
-          ${subjectIcon(candidate.subjectType)}
-          ${subjectCopy(candidate.label, candidate.detail)}
-        </div>
-        <select
-          class="assignment-role"
-          aria-label=${this.modeIsObject(access) ? 'Privilege to grant' : 'Role to assign'}
-          .value=${this.selectedRole}
-          ?disabled=${status.loading}
-          @change=${(event: Event) => { this.selectedRole = (event.currentTarget as HTMLSelectElement).value }}
-        >
-          ${this.roles.map((role) => html`<option value=${role.name}>${roleLabel(role.name)}</option>`)}
-        </select>
-        <button class="submit assign" type="submit" ?disabled=${status.loading || !this.selectedRole}>
-          ${status.loading ? 'Saving' : this.modeIsObject(access) ? 'Grant' : 'Assign'}
-        </button>
-      </form>
     `
   }
 
@@ -690,7 +638,7 @@ class WorkspaceAccessControl extends LitElement {
   private ensureRole(): void {
     const roles = this.roles
     if (roles.some((role) => role.name === this.selectedRole)) return
-    this.selectedRole = roles.find((role) => role.name === 'viewer')?.name ?? roles[0]?.name ?? ''
+    this.selectedRole = ''
   }
 
   private modeIsObject(access = this.resolvedAccess): boolean {
@@ -707,7 +655,6 @@ class WorkspaceAccessControl extends LitElement {
 
   private readonly handleSearchInput = (event: Event): void => {
     this.query = (event.currentTarget as HTMLInputElement).value
-    this.selectedCandidate = null
     this.dispatchEvent(new CustomEvent('ld-workspace-access-search', {
       bubbles: true,
       composed: true,
@@ -731,14 +678,13 @@ class WorkspaceAccessControl extends LitElement {
     }, 0)
   }
 
-  private readonly handleSubmit = (event: Event): void => {
-    event.preventDefault()
-    const candidate = this.selectedCandidate
-    if (!candidate || !this.selectedRole) return
+  private addCandidate(candidate: AccessCandidate): void {
+    const role = (this.renderRoot.querySelector('.assignment-role') as HTMLSelectElement | null)?.value.trim() ?? ''
+    if (!role) return
     const command: AccessCommand = {
       email: '',
-      role: this.modeIsObject() ? '' : this.selectedRole,
-      privilege: this.modeIsObject() ? this.selectedRole : '',
+      role: this.modeIsObject() ? '' : role,
+      privilege: this.modeIsObject() ? role : '',
       subjectType: candidate.subjectType,
       subjectId: candidate.subjectId,
     }
@@ -890,10 +836,6 @@ function displayLabel(binding: Binding): string {
   return binding.displayName || binding.groupName || binding.email || binding.subjectId || 'Principal'
 }
 
-function sameCandidate(left: AccessCandidate, right: AccessCandidate | null): boolean {
-  return Boolean(right && left.subjectType === right.subjectType && left.subjectId === right.subjectId)
-}
-
 function roleLabel(role: string): string {
   return role.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
@@ -915,6 +857,10 @@ function subjectIcon(subjectType: 'principal' | 'group', extraClass = '') {
 
 function trashIcon() {
   return html`<span class="icon" aria-hidden="true">${lucideIcon(Trash2, { size: 16 })}</span>`
+}
+
+function plusIcon() {
+  return html`<span class="icon" aria-hidden="true">${lucideIcon(Plus, { size: 16 })}</span>`
 }
 
 function searchIcon() {
