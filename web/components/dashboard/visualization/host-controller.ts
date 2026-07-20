@@ -57,7 +57,7 @@ export class RendererRegistry {
     if (!registration.kinds.includes(envelope.spec.kind)) {
       throw new Error(`renderer ${JSON.stringify(envelope.rendererID)} does not support kind ${JSON.stringify(envelope.spec.kind)}`)
     }
-    if (envelope.dataState.kind === 'windowed' && !registration.capabilities.windowed) {
+    if ((envelope.dataState.kind === 'windowed' || envelope.dataState.kind === 'spatial_windowed') && !registration.capabilities.windowed) {
       throw new Error(`renderer ${JSON.stringify(envelope.rendererID)} does not support windowed data`)
     }
     return registration
@@ -220,7 +220,7 @@ function sameJSON(left: unknown, right: unknown): boolean {
 export function validateEnvelopeBoundary(value: unknown): value is VisualizationEnvelope {
   if (!value || typeof value !== 'object') return false
   const envelope = value as Partial<VisualizationEnvelope>
-  if (envelope.schemaVersion !== 1 || typeof envelope.visualID !== 'string' || envelope.visualID.length === 0) return false
+  if (envelope.schemaVersion !== 2 || typeof envelope.visualID !== 'string' || envelope.visualID.length === 0) return false
   if (typeof envelope.rendererID !== 'string' || envelope.rendererID.length === 0 || typeof envelope.specRevision !== 'string') return false
   if (!envelope.spec || !envelope.dataState || typeof envelope.dataRevision !== 'number' || envelope.dataRevision < 0) return false
   if (envelope.dataState.specRevision !== envelope.specRevision || envelope.dataState.dataRevision !== envelope.dataRevision) return false

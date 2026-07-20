@@ -37,6 +37,10 @@ func ValidateEnvelope(envelope VisualizationEnvelope) error {
 		return validateWindowedState(*state, base.DataBudget)
 	case WindowedVisualizationDataState:
 		return validateWindowedState(state, base.DataBudget)
+	case *SpatialWindowedVisualizationDataState:
+		return validateSpatialWindowedState(*state, base.DataBudget)
+	case SpatialWindowedVisualizationDataState:
+		return validateSpatialWindowedState(state, base.DataBudget)
 	default:
 		return fmt.Errorf("unsupported visualization data state %T", state)
 	}
@@ -246,10 +250,31 @@ func specificationRefs(spec VisualizationSpec) []VisualizationFieldRef {
 		add(value.Trend)
 	case *GeographicVisualizationSpec:
 		for _, layer := range value.Layers {
-			add(layer.Join)
-			add(layer.Value)
-			add(layer.Latitude)
-			add(layer.Longitude)
+			base := geographicLayerBase(layer)
+			if base != nil {
+				add(base.Label)
+				refs = append(refs, base.Tooltip...)
+			}
+			switch layer := layer.Value.(type) {
+			case *VisualizationPointLayer:
+				refs = append(refs, layer.Latitude, layer.Longitude)
+				add(layer.Value)
+				add(layer.Category)
+			case *VisualizationChoroplethLayer:
+				refs = append(refs, layer.Join)
+				add(layer.Value)
+				add(layer.Category)
+			case *VisualizationHeatLayer:
+				refs = append(refs, layer.Latitude, layer.Longitude)
+				add(layer.Value)
+			case *VisualizationDensityLayer:
+				refs = append(refs, layer.Latitude, layer.Longitude)
+				add(layer.Value)
+			case *VisualizationPathLayer:
+				refs = append(refs, layer.Latitude, layer.Longitude, layer.Path, layer.Order)
+				add(layer.Value)
+				add(layer.Category)
+			}
 		}
 	}
 	return refs
@@ -265,29 +290,50 @@ func validateGeographicSpecification(spec VisualizationSpec) error {
 	}
 	seen := map[string]struct{}{}
 	for _, layer := range value.Layers {
-		if layer.ID == "" {
+		base := geographicLayerBase(layer)
+		if base == nil || base.ID == "" {
 			return fmt.Errorf("geographic layer ID is required")
 		}
-		if _, exists := seen[layer.ID]; exists {
-			return fmt.Errorf("duplicate geographic layer %q", layer.ID)
+		if _, exists := seen[base.ID]; exists {
+			return fmt.Errorf("duplicate geographic layer %q", base.ID)
 		}
-		seen[layer.ID] = struct{}{}
-		switch layer.Kind {
-		case VisualizationGeographicLayerKindChoropleth:
-			if layer.Geometry == nil || layer.Join == nil {
-				return fmt.Errorf("choropleth layer %q requires geometry and join field", layer.ID)
+		seen[base.ID] = struct{}{}
+		if base.Visibility.MinimumZoom < 0 || base.Visibility.MaximumZoom <= base.Visibility.MinimumZoom {
+			return fmt.Errorf("geographic layer %q has invalid visibility", base.ID)
+		}
+		switch typed := layer.Value.(type) {
+		case *VisualizationChoroplethLayer:
+			if err := validateGeometryAsset(typed.Geometry); err != nil {
+				return fmt.Errorf("choropleth layer %q: %w", base.ID, err)
 			}
-			geometry := layer.Geometry
-			if geometry.ID == "" || geometry.Source == "" || geometry.License == "" || geometry.Attribution == "" || geometry.IdentifierSystem == "" || geometry.URL == "" || len(geometry.Digest) != 71 || geometry.Digest[:7] != "sha256:" {
-				return fmt.Errorf("choropleth layer %q has incomplete geometry provenance", layer.ID)
+		case *VisualizationReferenceLayer:
+			if err := validateGeometryAsset(typed.Geometry); err != nil {
+				return fmt.Errorf("reference layer %q: %w", base.ID, err)
 			}
-		case VisualizationGeographicLayerKindPoint, VisualizationGeographicLayerKindHeat, VisualizationGeographicLayerKindDensity:
-			if layer.Latitude == nil || layer.Longitude == nil {
-				return fmt.Errorf("geographic layer %q requires latitude and longitude fields", layer.ID)
+		case *VisualizationPointLayer:
+			if typed.Size.MinimumRadius < 0 || typed.Size.MaximumRadius < typed.Size.MinimumRadius {
+				return fmt.Errorf("point layer %q has invalid size scale", base.ID)
 			}
+			if typed.Cluster.Radius <= 0 || typed.Cluster.MinimumPoints < 2 {
+				return fmt.Errorf("point layer %q has invalid cluster configuration", base.ID)
+			}
+		case *VisualizationHeatLayer, *VisualizationDensityLayer, *VisualizationPathLayer:
 		default:
-			return fmt.Errorf("unsupported geographic layer kind %q", layer.Kind)
+			return fmt.Errorf("unsupported geographic layer kind %q", layer.GetKind())
 		}
+	}
+	if value.Presentation.Basemap != nil {
+		asset := value.Presentation.Basemap
+		if asset.ID == "" || asset.StyleURL == "" || asset.ArchiveURL == "" || len(asset.StyleDigest) != 71 || len(asset.ArchiveDigest) != 71 || asset.Attribution == "" {
+			return fmt.Errorf("geographic basemap has incomplete provenance")
+		}
+	}
+	return nil
+}
+
+func validateGeometryAsset(geometry VisualizationGeometryAsset) error {
+	if geometry.ID == "" || geometry.Source == "" || geometry.License == "" || geometry.Attribution == "" || geometry.IdentifierSystem == "" || geometry.URL == "" || len(geometry.Digest) != 71 || geometry.Digest[:7] != "sha256:" {
+		return fmt.Errorf("incomplete geometry provenance")
 	}
 	return nil
 }
@@ -398,6 +444,51 @@ func validateWindowedState(state WindowedVisualizationDataState, budget Visualiz
 		if err := validateRows(state.Schema, columns, block.Rows); err != nil {
 			return fmt.Errorf("window block %q: %w", key, err)
 		}
+	}
+	return nil
+}
+
+func validateSpatialWindowedState(state SpatialWindowedVisualizationDataState, budget VisualizationDataBudget) error {
+	if err := validateSchema(state.Schema); err != nil {
+		return err
+	}
+	if state.RowCap <= 0 || state.RowCap > budget.MaxRows || state.FeatureCap <= 0 || state.FeatureCap > 5000 || state.ResetVersion < 0 {
+		return fmt.Errorf("invalid spatial window budgets")
+	}
+	if err := validateSpatialBounds(state.Extent); err != nil {
+		return fmt.Errorf("invalid spatial extent: %w", err)
+	}
+	if state.Window == nil {
+		return nil
+	}
+	window := state.Window
+	if window.ID == "" || window.RequestSeq < 0 || window.ResetVersion != state.ResetVersion || window.Width <= 0 || window.Height <= 0 || window.Zoom < 0 || window.Zoom > 24 || int64(len(window.Rows)) > state.FeatureCap {
+		return fmt.Errorf("invalid or stale spatial window")
+	}
+	if err := validateSpatialBounds(window.Bounds); err != nil {
+		return fmt.Errorf("invalid spatial window bounds: %w", err)
+	}
+	if window.Precision != VisualizationSpatialPrecisionRaw && window.Precision != VisualizationSpatialPrecisionAggregated {
+		return fmt.Errorf("unsupported spatial precision %q", window.Precision)
+	}
+	columns := make([]string, len(state.Schema.Fields))
+	for index, field := range state.Schema.Fields {
+		columns[index] = field.ID
+	}
+	if err := validateRows(state.Schema, columns, window.Rows); err != nil {
+		return fmt.Errorf("spatial window %q: %w", window.ID, err)
+	}
+	return nil
+}
+
+func validateSpatialBounds(bounds VisualizationSpatialBounds) error {
+	for _, coordinate := range []float64{bounds.West, bounds.South, bounds.East, bounds.North} {
+		if math.IsNaN(coordinate) || math.IsInf(coordinate, 0) {
+			return fmt.Errorf("coordinates must be finite")
+		}
+	}
+	if bounds.West < -180 || bounds.West > 180 || bounds.East < -180 || bounds.East > 180 || bounds.South < -90 || bounds.South > 90 || bounds.North < -90 || bounds.North > 90 || bounds.South >= bounds.North || bounds.West == bounds.East {
+		return fmt.Errorf("coordinates are outside geographic bounds")
 	}
 	return nil
 }

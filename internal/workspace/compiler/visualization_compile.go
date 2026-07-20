@@ -14,6 +14,7 @@ import (
 	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
 	visualizationgeometry "github.com/Yacobolo/libredash/internal/visualization/geometry"
 	visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
+	visualizationmapasset "github.com/Yacobolo/libredash/internal/visualization/mapasset"
 	visualizationruntime "github.com/Yacobolo/libredash/internal/visualization/runtime"
 )
 
@@ -359,26 +360,9 @@ func compileGeographicVisualizationSpec(authored reportdef.Visual) (visualizatio
 	}
 	layers := make([]visualizationir.VisualizationGeographicLayer, len(authored.Geo.Layers))
 	for index, authoredLayer := range authored.Geo.Layers {
-		layer := visualizationir.VisualizationGeographicLayer{ID: authoredLayer.ID, Kind: visualizationir.VisualizationGeographicLayerKind(authoredLayer.Kind)}
-		var err error
-		if layer.Join, err = fieldRef(layer.ID, "join", authoredLayer.Join); err != nil {
+		layer, err := compileGeographicLayer(authoredLayer, fieldRef)
+		if err != nil {
 			return visualizationir.VisualizationSpec{}, err
-		}
-		if layer.Value, err = fieldRef(layer.ID, "value", authoredLayer.Value); err != nil {
-			return visualizationir.VisualizationSpec{}, err
-		}
-		if layer.Latitude, err = fieldRef(layer.ID, "latitude", authoredLayer.Latitude); err != nil {
-			return visualizationir.VisualizationSpec{}, err
-		}
-		if layer.Longitude, err = fieldRef(layer.ID, "longitude", authoredLayer.Longitude); err != nil {
-			return visualizationir.VisualizationSpec{}, err
-		}
-		if authoredLayer.GeometryAsset != "" {
-			geometry, err := visualizationgeometry.Resolve(authoredLayer.GeometryAsset)
-			if err != nil {
-				return visualizationir.VisualizationSpec{}, fmt.Errorf("geographic layer %q: %w", layer.ID, err)
-			}
-			layer.Geometry = &geometry
 		}
 		layers[index] = layer
 	}
@@ -404,26 +388,258 @@ func compileGeographicVisualizationSpec(authored reportdef.Visual) (visualizatio
 	if legend == "" {
 		legend = visualizationir.VisualizationLegendPositionHidden
 	}
-	basemapID := strings.TrimSpace(authored.Presentation.Basemap)
+	basemapID := strings.TrimSpace(authored.Geo.Basemap)
 	if basemapID == "" {
-		basemapID = "world_countries"
+		basemapID = "streets"
 	}
-	var basemap *visualizationir.VisualizationGeometryAsset
-	if basemapID != "none" {
-		asset, err := visualizationgeometry.Resolve(basemapID)
+	var basemap *visualizationir.VisualizationMapStyleAsset
+	if basemapID != "blank" {
+		asset, err := visualizationmapasset.Resolve(basemapID)
 		if err != nil {
 			return visualizationir.VisualizationSpec{}, fmt.Errorf("geographic basemap: %w", err)
 		}
 		basemap = &asset
 	}
+	theme := visualizationir.VisualizationMapTheme(authored.Geo.Theme)
+	if theme == "" {
+		theme = visualizationir.VisualizationMapThemeAuto
+	}
+	labelDensity := visualizationir.VisualizationMapLabelDensity(authored.Geo.LabelDensity)
+	if labelDensity == "" {
+		labelDensity = visualizationir.VisualizationMapLabelDensityNormal
+	}
+	camera := compileMapCamera(authored.Geo.Camera)
+	controls := compileMapControls(authored.Geo.Controls)
 	return visualizationir.VisualizationSpec{Value: &visualizationir.GeographicVisualizationSpec{
 		VisualizationSpecBase: base, Kind: "geographic", Layers: layers,
 		Presentation: visualizationir.GeographicVisualizationPresentation{
 			VisualizationPresentation: visualizationir.VisualizationPresentation{Legend: legend, ShowLabels: authored.Presentation.ShowLabels},
-			Roam:                      authored.Presentation.Roam,
-			Basemap:                   basemap,
+			Roam:                      true, Basemap: basemap, Theme: theme, LabelDensity: labelDensity, Camera: camera, Controls: controls,
 		},
 	}}, nil
+}
+
+type geographicFieldResolver func(layerID, property, alias string) (*visualizationir.VisualizationFieldRef, error)
+
+func compileGeographicLayer(authored reportdef.VisualGeoLayer, fieldRef geographicFieldResolver) (visualizationir.VisualizationGeographicLayer, error) {
+	ref := func(property, alias string) (*visualizationir.VisualizationFieldRef, error) {
+		return fieldRef(authored.ID, property, alias)
+	}
+	value, err := ref("value", authored.Value)
+	if err != nil {
+		return visualizationir.VisualizationGeographicLayer{}, err
+	}
+	category, err := ref("category", authored.Category)
+	if err != nil {
+		return visualizationir.VisualizationGeographicLayer{}, err
+	}
+	label, err := ref("label", authored.Label)
+	if err != nil {
+		return visualizationir.VisualizationGeographicLayer{}, err
+	}
+	tooltip := make([]visualizationir.VisualizationFieldRef, 0, len(authored.Tooltip))
+	for _, alias := range authored.Tooltip {
+		field, err := ref("tooltip", alias)
+		if err != nil {
+			return visualizationir.VisualizationGeographicLayer{}, err
+		}
+		if field != nil {
+			tooltip = append(tooltip, *field)
+		}
+	}
+	base := visualizationir.VisualizationGeographicLayerBase{
+		ID: authored.ID, Kind: authored.Kind, Label: label, Tooltip: tooltip,
+		Position: mapLayerPosition(authored.Position), Visibility: mapVisibility(authored.Visibility),
+	}
+	color := mapColorScale(authored.Color)
+	stroke := mapStroke(authored.Stroke)
+	opacity := authored.Opacity
+	if opacity == 0 {
+		opacity = 0.82
+	}
+	coordinates := func() (visualizationir.VisualizationFieldRef, visualizationir.VisualizationFieldRef, error) {
+		latitude, err := ref("latitude", authored.Latitude)
+		if err != nil {
+			return visualizationir.VisualizationFieldRef{}, visualizationir.VisualizationFieldRef{}, err
+		}
+		longitude, err := ref("longitude", authored.Longitude)
+		if err != nil {
+			return visualizationir.VisualizationFieldRef{}, visualizationir.VisualizationFieldRef{}, err
+		}
+		if latitude == nil || longitude == nil {
+			return visualizationir.VisualizationFieldRef{}, visualizationir.VisualizationFieldRef{}, fmt.Errorf("geographic layer %q requires coordinates", authored.ID)
+		}
+		return *latitude, *longitude, nil
+	}
+	switch authored.Kind {
+	case "point":
+		latitude, longitude, err := coordinates()
+		if err != nil {
+			return visualizationir.VisualizationGeographicLayer{}, err
+		}
+		return visualizationir.VisualizationGeographicLayer{Value: &visualizationir.VisualizationPointLayer{
+			VisualizationGeographicLayerBase: base, Kind: "point", Latitude: latitude, Longitude: longitude, Value: value, Category: category,
+			Size: mapSizeScale(authored.Size), Color: color, Stroke: stroke, Cluster: mapCluster(authored.Cluster), Opacity: opacity,
+		}}, nil
+	case "choropleth":
+		geometry, err := visualizationgeometry.Resolve(authored.GeometryAsset)
+		if err != nil {
+			return visualizationir.VisualizationGeographicLayer{}, fmt.Errorf("geographic layer %q: %w", authored.ID, err)
+		}
+		join, err := ref("join", authored.Join)
+		if err != nil {
+			return visualizationir.VisualizationGeographicLayer{}, err
+		}
+		if join == nil {
+			return visualizationir.VisualizationGeographicLayer{}, fmt.Errorf("geographic layer %q requires join", authored.ID)
+		}
+		return visualizationir.VisualizationGeographicLayer{Value: &visualizationir.VisualizationChoroplethLayer{VisualizationGeographicLayerBase: base, Kind: "choropleth", Geometry: geometry, Join: *join, Value: value, Category: category, Color: color, Stroke: stroke, Opacity: opacity}}, nil
+	case "heat", "density":
+		latitude, longitude, err := coordinates()
+		if err != nil {
+			return visualizationir.VisualizationGeographicLayer{}, err
+		}
+		heat := mapHeatStyle(authored.Heat)
+		if authored.Kind == "heat" {
+			return visualizationir.VisualizationGeographicLayer{Value: &visualizationir.VisualizationHeatLayer{VisualizationGeographicLayerBase: base, Kind: "heat", Latitude: latitude, Longitude: longitude, Value: value, Color: color, Heat: heat, Opacity: opacity}}, nil
+		}
+		return visualizationir.VisualizationGeographicLayer{Value: &visualizationir.VisualizationDensityLayer{VisualizationGeographicLayerBase: base, Kind: "density", Latitude: latitude, Longitude: longitude, Value: value, Color: color, Heat: heat, Opacity: opacity}}, nil
+	case "reference":
+		geometry, err := visualizationgeometry.Resolve(authored.GeometryAsset)
+		if err != nil {
+			return visualizationir.VisualizationGeographicLayer{}, fmt.Errorf("geographic layer %q: %w", authored.ID, err)
+		}
+		return visualizationir.VisualizationGeographicLayer{Value: &visualizationir.VisualizationReferenceLayer{VisualizationGeographicLayerBase: base, Kind: "reference", Geometry: geometry, Color: color, Stroke: stroke, Opacity: opacity}}, nil
+	case "path":
+		latitude, longitude, err := coordinates()
+		if err != nil {
+			return visualizationir.VisualizationGeographicLayer{}, err
+		}
+		path, err := ref("path", authored.Path)
+		if err != nil {
+			return visualizationir.VisualizationGeographicLayer{}, err
+		}
+		order, err := ref("order", authored.Order)
+		if err != nil {
+			return visualizationir.VisualizationGeographicLayer{}, err
+		}
+		if path == nil || order == nil {
+			return visualizationir.VisualizationGeographicLayer{}, fmt.Errorf("geographic layer %q requires path and order", authored.ID)
+		}
+		return visualizationir.VisualizationGeographicLayer{Value: &visualizationir.VisualizationPathLayer{VisualizationGeographicLayerBase: base, Kind: "path", Latitude: latitude, Longitude: longitude, Path: *path, Order: *order, Value: value, Category: category, Color: color, Stroke: stroke, Line: mapLineStyle(authored.Line), Opacity: opacity}}, nil
+	default:
+		return visualizationir.VisualizationGeographicLayer{}, fmt.Errorf("geographic layer %q has unsupported kind %q", authored.ID, authored.Kind)
+	}
+}
+
+func compileMapCamera(authored reportdef.VisualGeoCamera) visualizationir.VisualizationMapCamera {
+	mode := visualizationir.VisualizationMapCameraMode(authored.Mode)
+	if mode == "" {
+		mode = visualizationir.VisualizationMapCameraModeFitData
+	}
+	padding := authored.Padding
+	if padding == 0 {
+		padding = 32
+	}
+	maximumZoom := authored.MaximumZoom
+	if maximumZoom == 0 {
+		maximumZoom = 14
+	}
+	var center *[]float64
+	if len(authored.Center) == 2 {
+		value := append([]float64(nil), authored.Center...)
+		center = &value
+	}
+	return visualizationir.VisualizationMapCamera{Mode: mode, Center: center, Zoom: authored.Zoom, Padding: int32(padding), MinimumZoom: authored.MinimumZoom, MaximumZoom: maximumZoom}
+}
+
+func compileMapControls(authored reportdef.VisualGeoControls) visualizationir.VisualizationMapControls {
+	if !authored.Zoom && !authored.Reset && !authored.Compass {
+		return visualizationir.VisualizationMapControls{Zoom: true, Reset: true, Compass: true}
+	}
+	return visualizationir.VisualizationMapControls{Zoom: authored.Zoom, Reset: authored.Reset, Compass: authored.Compass}
+}
+
+func mapLayerPosition(value string) visualizationir.VisualizationMapLayerPosition {
+	if value == "above_labels" {
+		return visualizationir.VisualizationMapLayerPositionAboveLabels
+	}
+	return visualizationir.VisualizationMapLayerPositionBelowLabels
+}
+func mapVisibility(value reportdef.VisualGeoVisibility) visualizationir.VisualizationMapVisibility {
+	maximum := value.MaximumZoom
+	if maximum == 0 {
+		maximum = 24
+	}
+	return visualizationir.VisualizationMapVisibility{MinimumZoom: value.MinimumZoom, MaximumZoom: maximum}
+}
+func mapSizeScale(value reportdef.VisualGeoSizeScale) visualizationir.VisualizationMapSizeScale {
+	minimum, maximum := value.MinimumRadius, value.MaximumRadius
+	if minimum == 0 {
+		minimum = 5
+	}
+	if maximum == 0 {
+		maximum = 28
+	}
+	return visualizationir.VisualizationMapSizeScale{MinimumRadius: minimum, MaximumRadius: maximum, DomainMinimum: value.DomainMinimum, DomainMaximum: value.DomainMaximum}
+}
+func mapColorScale(value reportdef.VisualGeoColorScale) visualizationir.VisualizationMapColorScale {
+	kind := visualizationir.VisualizationMapColorScaleKind(value.Kind)
+	if kind == "" {
+		kind = visualizationir.VisualizationMapColorScaleKindSequential
+	}
+	palette := value.Palette
+	if palette == "" {
+		palette = "blue"
+	}
+	nullColor := value.NullColor
+	if nullColor == "" {
+		nullColor = "#d0d7de"
+	}
+	return visualizationir.VisualizationMapColorScale{Kind: kind, Palette: palette, Reverse: value.Reverse, DomainMinimum: value.DomainMinimum, DomainMidpoint: value.DomainMidpoint, DomainMaximum: value.DomainMaximum, NullColor: nullColor}
+}
+func mapStroke(value reportdef.VisualGeoStroke) visualizationir.VisualizationMapStroke {
+	color, width, opacity := value.Color, value.Width, value.Opacity
+	if color == "" {
+		color = "#ffffff"
+	}
+	if width == 0 {
+		width = 1.5
+	}
+	if opacity == 0 {
+		opacity = 1
+	}
+	return visualizationir.VisualizationMapStroke{Color: color, Width: width, Opacity: opacity}
+}
+func mapCluster(value reportdef.VisualGeoCluster) visualizationir.VisualizationMapCluster {
+	radius, maximumZoom, minimumPoints := value.Radius, value.MaximumZoom, value.MinimumPoints
+	if radius == 0 {
+		radius = 50
+	}
+	if maximumZoom == 0 {
+		maximumZoom = 14
+	}
+	if minimumPoints == 0 {
+		minimumPoints = 2
+	}
+	return visualizationir.VisualizationMapCluster{Enabled: value.Enabled, Radius: int32(radius), MaximumZoom: int32(maximumZoom), MinimumPoints: int32(minimumPoints), ShowCount: value.ShowCount}
+}
+func mapHeatStyle(value reportdef.VisualGeoHeatStyle) visualizationir.VisualizationMapHeatStyle {
+	radius, intensity := value.Radius, value.Intensity
+	if radius == 0 {
+		radius = 32
+	}
+	if intensity == 0 {
+		intensity = 1
+	}
+	return visualizationir.VisualizationMapHeatStyle{Radius: radius, Intensity: intensity}
+}
+func mapLineStyle(value reportdef.VisualGeoLineStyle) visualizationir.VisualizationMapLineStyle {
+	width := value.Width
+	if width == 0 {
+		width = 3
+	}
+	return visualizationir.VisualizationMapLineStyle{Width: width, Curvature: value.Curvature}
 }
 
 func geographicVisualizationFields(authored reportdef.Visual) []visualizationir.VisualizationField {
@@ -597,6 +813,9 @@ func compiledVisualLimit(authored reportdef.Visual) int64 {
 	}
 	if authored.Type == "kpi" || authored.Type == "gauge" {
 		return 1
+	}
+	if authored.Type == "map" {
+		return 20_000
 	}
 	return 1000
 }

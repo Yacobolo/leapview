@@ -19,6 +19,12 @@ func (h Handler) VisualWindow(w nethttp.ResponseWriter, r *nethttp.Request) {
 	})
 }
 
+func (h Handler) VisualSpatialWindow(w nethttp.ResponseWriter, r *nethttp.Request) {
+	h.handleCommand(w, r, func(service command.Service, request command.Request, current dashboard.Filters) (command.PreparedRefresh, error) {
+		return service.PrepareVisualSpatialWindow(request, current)
+	})
+}
+
 func (h Handler) Select(w nethttp.ResponseWriter, r *nethttp.Request) {
 	h.handleCommand(w, r, func(service command.Service, request command.Request, current dashboard.Filters) (command.PreparedRefresh, error) {
 		return service.PrepareSelect(request, current)
@@ -66,12 +72,13 @@ func (h Handler) handleCommandWithBefore(w nethttp.ResponseWriter, r *nethttp.Re
 	modelID := lddatastar.ModelID(r, signals, dashboardID, metrics.ModelIDForDashboard)
 	streamID := lddatastar.ClientStreamID(r, signals, dashboardID, pageID)
 	request := command.Request{
-		DashboardID:         dashboardID,
-		PageID:              pageID,
-		ModelID:             modelID,
-		Filters:             signals.Filters,
-		VisualWindowCommand: signals.VisualWindowCommand,
-		InteractionCommand:  signals.InteractionCommand,
+		DashboardID:                dashboardID,
+		PageID:                     pageID,
+		ModelID:                    modelID,
+		Filters:                    signals.Filters,
+		VisualWindowCommand:        signals.VisualWindowCommand,
+		VisualSpatialWindowCommand: signals.VisualSpatialWindowCommand,
+		InteractionCommand:         signals.InteractionCommand,
 	}
 
 	registry := h.Coordinators

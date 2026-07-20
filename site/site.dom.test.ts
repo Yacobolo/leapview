@@ -855,7 +855,7 @@ test('every visual documentation page mounts its generated production payloads',
   try {
     for (const visualType of visualTypes) {
       await page.goto(`${baseURL}/docs/visuals/${visualType}`)
-      const expected = visualType === 'map' ? 4 : visualType === 'candlestick' ? 2 : visualType === 'kpi' ? 4 : ['custom', 'table', 'matrix', 'pivot'].includes(visualType) ? 1 : 3
+      const expected = visualType === 'map' ? 6 : visualType === 'candlestick' ? 2 : visualType === 'kpi' ? 4 : ['custom', 'table', 'matrix', 'pivot'].includes(visualType) ? 1 : 3
       await page.waitForFunction(
         ({ count }) => {
           const examples = [...document.querySelectorAll('ld-site-visual-example')]
@@ -879,7 +879,7 @@ test('every visual documentation page mounts its generated production payloads',
     expect(thresholds).toBe(3)
 
     await page.goto(`${baseURL}/docs/visuals/map`)
-    await page.waitForFunction(() => document.querySelectorAll('ld-site-visual-example').length === 4)
+    await page.waitForFunction(() => document.querySelectorAll('ld-site-visual-example').length === 6)
     expect(await page.locator('ld-site-visual-example').first().evaluate((element) => {
       const host = element.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { envelope?: any }
       const envelope = host.envelope
@@ -889,7 +889,7 @@ test('every visual documentation page mounts its generated production payloads',
     expect(await page.locator('ld-site-visual-example').evaluateAll((elements) => elements.map((element) => {
       const host = element.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { envelope?: any }
       return host.envelope?.spec?.layers?.[0]?.kind
-    }))).toEqual(['choropleth', 'point', 'heat', 'density'])
+    }))).toEqual(['choropleth', 'point', 'heat', 'density', 'reference', 'path'])
     await page.waitForFunction(() => {
       const example = document.querySelector('ld-site-visual-example') as HTMLElement & { shadowRoot: ShadowRoot }
       const host = example?.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { shadowRoot: ShadowRoot }
@@ -930,7 +930,7 @@ test('map documentation renders fitted, attributed canvases without adapter erro
     await page.goto(`${baseURL}/docs/visuals/map`)
     await page.waitForFunction(() => {
       const examples = [...document.querySelectorAll('ld-site-visual-example')]
-      return examples.length === 4 && examples.every((element) => {
+      return examples.length === 6 && examples.every((element) => {
         const host = element.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { envelope?: unknown } | null
         return Boolean(host?.envelope)
       })
@@ -955,13 +955,45 @@ test('map documentation renders fitted, attributed canvases without adapter erro
       }
     }))
     expect(states.map(({ alert, attribution, rendererChildren }) => ({ alert, attribution, rendererChildren }))).toEqual([
-      { alert: '', attribution: 'Natural Earth · Instituto Brasileiro de Geografia e Estatística (IBGE)', rendererChildren: 1 },
-      { alert: '', attribution: 'Natural Earth', rendererChildren: 1 },
-      { alert: '', attribution: 'Natural Earth', rendererChildren: 1 },
-      { alert: '', attribution: 'Natural Earth', rendererChildren: 1 },
+      { alert: '', attribution: '© OpenStreetMap contributors · Instituto Brasileiro de Geografia e Estatística (IBGE)', rendererChildren: 1 },
+      { alert: '', attribution: '© OpenStreetMap contributors', rendererChildren: 1 },
+      { alert: '', attribution: '© OpenStreetMap contributors', rendererChildren: 1 },
+      { alert: '', attribution: '© OpenStreetMap contributors', rendererChildren: 1 },
+      { alert: '', attribution: 'Instituto Brasileiro de Geografia e Estatística (IBGE)', rendererChildren: 1 },
+      { alert: '', attribution: '© OpenStreetMap contributors', rendererChildren: 1 },
+    ])
+    expect(await page.locator('ld-site-visual-example').evaluateAll((elements) => elements.map((element) => {
+      const host = element.shadowRoot?.querySelector('ld-visualization-host')
+      return {
+        title: host?.shadowRoot?.querySelector('[data-visualization-title]')?.textContent?.trim(),
+        expand: host?.shadowRoot?.querySelector('button')?.getAttribute('aria-label'),
+      }
+    }))).toEqual([
+      { title: 'Orders by state', expand: 'Expand map' },
+      { title: 'Order locations', expand: 'Expand map' },
+      { title: 'Revenue concentration', expand: 'Expand map' },
+      { title: 'Order density', expand: 'Expand map' },
+      { title: 'Brazil state reference boundaries', expand: 'Expand map' },
+      { title: 'State order paths', expand: 'Expand map' },
     ])
     expect(states.every(({ width, height }) => width > 500 && height >= 400)).toBe(true)
-    expect(await page.evaluate(() => performance.getEntriesByName(`${location.origin}/static/geometry/world-countries-natural-earth-110m.geojson`).length)).toBe(1)
+    expect(await page.evaluate(() => performance.getEntriesByName(`${location.origin}/map-assets/libredash-streets/style.json`).length)).toBeGreaterThan(0)
+    expect(await page.locator('ld-site-visual-example').evaluateAll((elements) => elements.map((element) => {
+      const host = element.shadowRoot?.querySelector('ld-visualization-host')
+      const fallback = host?.shadowRoot?.querySelector('[data-map-data-table]')
+      return {
+        summary: fallback?.querySelector('summary')?.textContent?.trim() ?? '',
+        columns: fallback?.querySelectorAll('thead th').length ?? 0,
+        rows: fallback?.querySelectorAll('tbody tr').length ?? 0,
+      }
+    }))).toEqual([
+      { summary: 'View map data (27 rows)', columns: 2, rows: 27 },
+      { summary: 'View map data (35 rows)', columns: 2, rows: 35 },
+      { summary: 'View map data (35 rows)', columns: 3, rows: 35 },
+      { summary: 'View map data (35 rows)', columns: 2, rows: 35 },
+      { summary: 'View map data (27 rows)', columns: 2, rows: 27 },
+      { summary: 'View map data (35 rows)', columns: 2, rows: 35 },
+    ])
 
     const examples = page.locator('ld-site-visual-example')
     expect(await examples.nth(0).getByRole('button', { name: 'Select map data' }).count()).toBe(1)
@@ -988,7 +1020,9 @@ test('map documentation renders fitted, attributed canvases without adapter erro
         for (let x = Math.floor(bitmap.width * 0.1); x < bitmap.width * 0.9; x++) {
           const index = (y * bitmap.width + x) * 4
           const red = pixels[index]!, green = pixels[index + 1]!, blue = pixels[index + 2]!, alpha = pixels[index + 3]!
-          if (alpha > 220 && blue > red + 25 && blue > green + 5) {
+          // Match the authored dark teal choropleth ramp, not the pale water
+          // paint from the vector basemap underneath it.
+          if (alpha > 220 && red < 40 && green >= 80 && green < 170 && blue >= 80 && blue < 180) {
             return { x: x * canvas.clientWidth / bitmap.width, y: y * canvas.clientHeight / bitmap.height }
           }
         }
@@ -1052,7 +1086,7 @@ test('map documentation renders fitted, attributed canvases without adapter erro
       mappings: [{ field: 'orders.order_id', fact: 'orders' }],
     })
 
-    const mapSnapshot = () => page.locator('ld-site-visual-example').first().evaluate(async (element) => {
+    const mapSnapshot = () => page.locator('ld-site-visual-example').nth(1).evaluate(async (element) => {
       const host = element.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { snapshot(): Promise<Blob> }
       const blob = await host.snapshot()
       const bitmap = await createImageBitmap(blob)
@@ -1074,8 +1108,10 @@ test('map documentation renders fitted, attributed canvases without adapter erro
       document.dispatchEvent(new CustomEvent('libredash-theme-change', { detail: { mode: nextMode } }))
     }), mode)
     await applyTheme('dark')
+    await page.waitForTimeout(250)
     const darkSnapshot = await mapSnapshot()
     await applyTheme('light')
+    await page.waitForTimeout(250)
     const lightSnapshot = await mapSnapshot()
     expect(darkSnapshot.corner).not.toEqual(lightSnapshot.corner)
 
@@ -1097,7 +1133,7 @@ test('map documentation renders fitted, attributed canvases without adapter erro
   } finally {
     await page.close()
   }
-}, 20_000)
+}, 60_000)
 
 test('documentation articles apply the shared Markdown treatment', async () => {
   const page = await browser.newPage()

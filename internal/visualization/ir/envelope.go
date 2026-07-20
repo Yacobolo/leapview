@@ -92,6 +92,17 @@ func WithStreamRevision(envelope VisualizationEnvelope, dataRevision, generation
 		state := *value
 		state.DataRevision, state.Generation = dataRevision, generation
 		revised.DataState.Value = &state
+	case SpatialWindowedVisualizationDataState:
+		state := value
+		state.DataRevision, state.Generation = dataRevision, generation
+		revised.DataState.Value = &state
+	case *SpatialWindowedVisualizationDataState:
+		if value == nil {
+			return VisualizationEnvelope{}, fmt.Errorf("visualization spatial windowed data state is nil")
+		}
+		state := *value
+		state.DataRevision, state.Generation = dataRevision, generation
+		revised.DataState.Value = &state
 	default:
 		return VisualizationEnvelope{}, fmt.Errorf("unsupported visualization data state variant %T", value)
 	}
@@ -144,6 +155,13 @@ func dataStateRevisions(state VisualizationDataState) (specRevision string, data
 	case *WindowedVisualizationDataState:
 		if value == nil {
 			return "", 0, 0, fmt.Errorf("visualization windowed data state is nil")
+		}
+		return value.SpecRevision, value.DataRevision, value.Generation, nil
+	case SpatialWindowedVisualizationDataState:
+		return value.SpecRevision, value.DataRevision, value.Generation, nil
+	case *SpatialWindowedVisualizationDataState:
+		if value == nil {
+			return "", 0, 0, fmt.Errorf("visualization spatial windowed data state is nil")
 		}
 		return value.SpecRevision, value.DataRevision, value.Generation, nil
 	case nil:

@@ -17,8 +17,12 @@ export function interactionCommandForRowIndex(
   datasetID: string,
   rowIndex: number,
 ): OptimisticInteractionCommand | undefined {
-  if (!Number.isSafeInteger(rowIndex) || rowIndex < 0 || envelope.dataState.kind !== 'inline') return undefined
-  const dataset = envelope.dataState.datasets.find((candidate) => candidate.id === datasetID)
+  if (!Number.isSafeInteger(rowIndex) || rowIndex < 0) return undefined
+  const dataset = envelope.dataState.kind === 'inline'
+    ? envelope.dataState.datasets.find((candidate) => candidate.id === datasetID)
+    : envelope.dataState.kind === 'spatial_windowed' && envelope.dataState.schema.id === datasetID && envelope.dataState.window
+      ? { columns: envelope.dataState.schema.fields.map((field) => field.id), rows: envelope.dataState.window.rows }
+      : undefined
   const row = dataset?.rows[rowIndex]
   if (!dataset || !row || row.length !== dataset.columns.length) return undefined
   return interactionCommandForRow(envelope, datasetID, row)
@@ -68,8 +72,12 @@ export function interactionCommandForRow(
 export function interactionOptions(envelope: VisualizationEnvelope): InteractionOption[] {
   const interaction = envelope.spec.interactions.find((candidate) => candidate.kind === 'select')
   const datasetID = interaction?.mappings[0]?.source.dataset
-  if (!interaction || !datasetID || envelope.dataState.kind !== 'inline') return []
-  const dataset = envelope.dataState.datasets.find((candidate) => candidate.id === datasetID)
+  if (!interaction || !datasetID) return []
+  const dataset = envelope.dataState.kind === 'inline'
+    ? envelope.dataState.datasets.find((candidate) => candidate.id === datasetID)
+    : envelope.dataState.kind === 'spatial_windowed' && envelope.dataState.schema.id === datasetID && envelope.dataState.window
+      ? { rows: envelope.dataState.window.rows }
+      : undefined
   if (!dataset) return []
   const unique = new Map<string, InteractionOption>()
   for (let rowIndex = 0; rowIndex < dataset.rows.length; rowIndex++) {

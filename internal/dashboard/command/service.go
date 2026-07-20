@@ -20,12 +20,13 @@ type Service struct {
 }
 
 type Request struct {
-	DashboardID         string
-	PageID              string
-	ModelID             string
-	Filters             dashboard.Filters
-	VisualWindowCommand dashboard.TableRequest
-	InteractionCommand  dashboard.InteractionCommand
+	DashboardID                string
+	PageID                     string
+	ModelID                    string
+	Filters                    dashboard.Filters
+	VisualWindowCommand        dashboard.TableRequest
+	VisualSpatialWindowCommand dashboard.SpatialWindowRequest
+	InteractionCommand         dashboard.InteractionCommand
 }
 
 func canonicalInteractionCommand(metrics Metrics, dashboardID string, command dashboard.InteractionCommand) (dashboard.InteractionCommand, error) {

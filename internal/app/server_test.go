@@ -726,6 +726,25 @@ func TestVegaSandboxAssetAllowsOpaqueSandboxOrigin(t *testing.T) {
 	}
 }
 
+func TestMapAssetCacheIsImmutableAndRangeCapable(t *testing.T) {
+	handler := mapAssetCache(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusPartialContent)
+	}))
+	request := httptest.NewRequest(http.MethodGet, "/map-assets/libredash-streets/basemap.pmtiles", nil)
+	request.Header.Set("Range", "bytes=0-126")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusPartialContent {
+		t.Fatalf("status = %d", response.Code)
+	}
+	if got := response.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
+		t.Fatalf("cache control = %q", got)
+	}
+	if got := response.Header().Get("Accept-Ranges"); got != "bytes" {
+		t.Fatalf("accept ranges = %q", got)
+	}
+}
+
 func assertDevDatastarRuntime(t *testing.T, body string) {
 	t.Helper()
 	for _, want := range []string{

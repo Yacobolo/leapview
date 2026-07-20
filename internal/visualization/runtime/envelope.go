@@ -3,6 +3,7 @@ package runtime
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -94,6 +95,214 @@ func VisualEnvelopeFromDefinition(definition visualizationdefinition.Definition,
 		return ir.VisualizationEnvelope{}, fmt.Errorf("compiled visualization %q: %w", definition.ID, err)
 	}
 	return envelope, nil
+}
+
+// SpatialEnvelopeFromDefinition shapes a governed geographic result into a
+// bounded viewport block. It never truncates in source order: when a viewport
+// exceeds the feature budget, deterministic Web-Mercator grid cells replace
+// raw points and are explicitly marked aggregated.
+func SpatialEnvelopeFromDefinition(definition visualizationdefinition.Definition, visual dashboard.Visual, request dashboard.SpatialWindowRequest, dataRevision, generation int64) (ir.VisualizationEnvelope, error) {
+	envelope, err := VisualEnvelopeFromDefinition(definition, visual, dataRevision, generation)
+	if err != nil {
+		return ir.VisualizationEnvelope{}, err
+	}
+	geographic, ok := definition.Spec.Value.(*ir.GeographicVisualizationSpec)
+	if !ok {
+		return ir.VisualizationEnvelope{}, fmt.Errorf("visualization %q is not geographic", definition.ID)
+	}
+	latitude, longitude, value, ok := spatialCoordinateFields(geographic)
+	if !ok {
+		return ir.VisualizationEnvelope{}, fmt.Errorf("visualization %q has no spatially windowable coordinate layer", definition.ID)
+	}
+	inline, ok := envelope.DataState.Value.(*ir.InlineVisualizationDataState)
+	if !ok || len(inline.Datasets) != 1 {
+		return ir.VisualizationEnvelope{}, fmt.Errorf("visualization %q does not have one inline source frame", definition.ID)
+	}
+	dataset := inline.Datasets[0]
+	latitudeIndex, longitudeIndex := columnIndex(dataset.Columns, latitude), columnIndex(dataset.Columns, longitude)
+	if latitudeIndex < 0 || longitudeIndex < 0 {
+		return ir.VisualizationEnvelope{}, fmt.Errorf("visualization %q spatial fields are absent from its frame", definition.ID)
+	}
+	valueIndex := columnIndex(dataset.Columns, value)
+	rows, extent := spatialViewportRows(dataset.Rows, latitudeIndex, longitudeIndex, request.Bounds)
+	precision := ir.VisualizationSpatialPrecisionRaw
+	const featureCap = 5000
+	if len(rows) > featureCap {
+		rows = aggregateSpatialRows(rows, latitudeIndex, longitudeIndex, valueIndex, request.Bounds, request.Width, request.Height, featureCap)
+		precision = ir.VisualizationSpatialPrecisionAggregated
+	}
+	base, _ := ir.SpecificationBase(definition.Spec)
+	count := int64(len(dataset.Rows))
+	state := ir.SpatialWindowedVisualizationDataState{
+		VisualizationDataStateBase: ir.VisualizationDataStateBase{Kind: "spatial_windowed", SpecRevision: definition.SpecRevision, DataRevision: dataRevision, Generation: generation},
+		Kind:                       "spatial_windowed", Schema: geographic.Datasets[0], Cardinality: ir.VisualizationCardinality{Kind: ir.VisualizationCardinalityKindEstimated, Count: &count},
+		Extent: extent, RowCap: base.DataBudget.MaxRows, FeatureCap: featureCap, ResetVersion: request.ResetVersion,
+		Window: &ir.VisualizationSpatialWindowBlock{ID: request.WindowID, Bounds: spatialBounds(request.Bounds), Zoom: request.Zoom, Width: int32(request.Width), Height: int32(request.Height), Precision: precision, Rows: rows, RequestSeq: request.RequestSeq, ResetVersion: request.ResetVersion},
+	}
+	envelope.DataState = ir.VisualizationDataState{Value: &state}
+	if len(rows) == 0 {
+		envelope.Status.Kind = ir.VisualizationStatusKindNoData
+	} else if precision == ir.VisualizationSpatialPrecisionAggregated {
+		envelope.Status.Kind = ir.VisualizationStatusKindPartial
+	} else {
+		envelope.Status.Kind = ir.VisualizationStatusKindReady
+	}
+	if err := ir.ValidateEnvelope(envelope); err != nil {
+		return ir.VisualizationEnvelope{}, fmt.Errorf("compiled spatial visualization %q: %w", definition.ID, err)
+	}
+	return envelope, nil
+}
+
+func spatialCoordinateFields(spec *ir.GeographicVisualizationSpec) (latitude, longitude, value string, ok bool) {
+	for _, candidate := range spec.Layers {
+		switch layer := candidate.Value.(type) {
+		case *ir.VisualizationPointLayer:
+			latitude, longitude = layer.Latitude.Field, layer.Longitude.Field
+			if layer.Value != nil {
+				value = layer.Value.Field
+			}
+			return latitude, longitude, value, true
+		case *ir.VisualizationHeatLayer:
+			latitude, longitude = layer.Latitude.Field, layer.Longitude.Field
+			if layer.Value != nil {
+				value = layer.Value.Field
+			}
+			return latitude, longitude, value, true
+		case *ir.VisualizationDensityLayer:
+			latitude, longitude = layer.Latitude.Field, layer.Longitude.Field
+			if layer.Value != nil {
+				value = layer.Value.Field
+			}
+			return latitude, longitude, value, true
+		case *ir.VisualizationPathLayer:
+			latitude, longitude = layer.Latitude.Field, layer.Longitude.Field
+			if layer.Value != nil {
+				value = layer.Value.Field
+			}
+			return latitude, longitude, value, true
+		}
+	}
+	return "", "", "", false
+}
+
+func columnIndex(columns []string, field string) int {
+	if field == "" {
+		return -1
+	}
+	for index, candidate := range columns {
+		if candidate == field {
+			return index
+		}
+	}
+	return -1
+}
+
+func spatialBounds(value dashboard.SpatialBounds) ir.VisualizationSpatialBounds {
+	return ir.VisualizationSpatialBounds{West: value.West, South: value.South, East: value.East, North: value.North}
+}
+
+func spatialViewportRows(rows [][]any, latitudeIndex, longitudeIndex int, bounds dashboard.SpatialBounds) ([][]any, ir.VisualizationSpatialBounds) {
+	out := make([][]any, 0, len(rows))
+	west, south, east, north := 180.0, 90.0, -180.0, -90.0
+	for _, row := range rows {
+		if latitudeIndex >= len(row) || longitudeIndex >= len(row) {
+			continue
+		}
+		latitude, latOK := scalarFloat(row[latitudeIndex])
+		longitude, lonOK := scalarFloat(row[longitudeIndex])
+		if !latOK || !lonOK || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 {
+			continue
+		}
+		west, south, east, north = math.Min(west, longitude), math.Min(south, latitude), math.Max(east, longitude), math.Max(north, latitude)
+		insideLongitude := longitude >= bounds.West && longitude <= bounds.East
+		if bounds.West > bounds.East {
+			insideLongitude = longitude >= bounds.West || longitude <= bounds.East
+		}
+		if insideLongitude && latitude >= bounds.South && latitude <= bounds.North {
+			out = append(out, append([]any{}, row...))
+		}
+	}
+	if west >= east || south >= north {
+		return out, ir.VisualizationSpatialBounds{West: -180, South: -85, East: 180, North: 85}
+	}
+	return out, ir.VisualizationSpatialBounds{West: west, South: south, East: east, North: north}
+}
+
+func aggregateSpatialRows(rows [][]any, latitudeIndex, longitudeIndex, valueIndex int, bounds dashboard.SpatialBounds, width, height, cap int) [][]any {
+	columns := max(1, min(width/48, int(math.Sqrt(float64(cap)*max(float64(width), 1)/max(float64(height), 1)))))
+	rowCount := max(1, min(height/48, cap/columns))
+	longitudeSpan := bounds.East - bounds.West
+	if longitudeSpan <= 0 {
+		longitudeSpan += 360
+	}
+	latitudeSpan := max(bounds.North-bounds.South, 0.000001)
+	type cell struct {
+		row                        []any
+		latitude, longitude, value float64
+		count                      int
+		hasValue                   bool
+	}
+	cells := map[[2]int]*cell{}
+	for _, row := range rows {
+		latitude, _ := scalarFloat(row[latitudeIndex])
+		longitude, _ := scalarFloat(row[longitudeIndex])
+		longitudeOffset := longitude - bounds.West
+		if longitudeOffset < 0 {
+			longitudeOffset += 360
+		}
+		key := [2]int{min(columns-1, max(0, int(longitudeOffset/longitudeSpan*float64(columns)))), min(rowCount-1, max(0, int((latitude-bounds.South)/latitudeSpan*float64(rowCount))))}
+		item := cells[key]
+		if item == nil {
+			item = &cell{row: append([]any{}, row...)}
+			cells[key] = item
+		}
+		item.latitude += latitude
+		item.longitude += longitude
+		item.count++
+		if valueIndex >= 0 && valueIndex < len(row) {
+			if value, ok := scalarFloat(row[valueIndex]); ok {
+				item.value += value
+				item.hasValue = true
+			}
+		}
+	}
+	keys := make([][2]int, 0, len(cells))
+	for key := range cells {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i][1] == keys[j][1] {
+			return keys[i][0] < keys[j][0]
+		}
+		return keys[i][1] < keys[j][1]
+	})
+	out := make([][]any, 0, len(keys))
+	for _, key := range keys {
+		item := cells[key]
+		item.row[latitudeIndex] = item.latitude / float64(item.count)
+		item.row[longitudeIndex] = item.longitude / float64(item.count)
+		if item.hasValue {
+			item.row[valueIndex] = item.value
+		}
+		out = append(out, item.row)
+	}
+	return out
+}
+
+func scalarFloat(value any) (float64, bool) {
+	switch value := value.(type) {
+	case float64:
+		return value, !math.IsNaN(value) && !math.IsInf(value, 0)
+	case float32:
+		return float64(value), !math.IsNaN(float64(value)) && !math.IsInf(float64(value), 0)
+	case int:
+		return float64(value), true
+	case int64:
+		return float64(value), true
+	case int32:
+		return float64(value), true
+	}
+	return 0, false
 }
 
 func compiledDatasetSchema(base ir.VisualizationSpecBase, datasetID string) (ir.VisualizationDatasetSchema, error) {
@@ -248,7 +457,21 @@ func EmptyEnvelopeFromDefinition(definition visualizationdefinition.Definition, 
 		SpecRevision: definition.SpecRevision, Spec: definition.Spec, DataRevision: dataRevision,
 		Selection: []ir.VisualizationSelectionEntry{}, Status: ir.VisualizationStatus{Kind: ir.VisualizationStatusKindNoData}, Diagnostics: []ir.VisualizationDiagnostic{},
 	}
-	if definition.Query.Kind == visualizationdefinition.QueryDetail || definition.Query.Kind == visualizationdefinition.QueryMatrix || definition.Query.Kind == visualizationdefinition.QueryPivot {
+	if geographic, ok := definition.Spec.Value.(*ir.GeographicVisualizationSpec); ok && base.DataBudget.MaxRows > 20_000 {
+		if _, _, _, windowable := spatialCoordinateFields(geographic); !windowable {
+			return ir.VisualizationEnvelope{}, fmt.Errorf("compiled spatial visualization %q has no coordinate layer", definition.ID)
+		}
+		extent := ir.VisualizationSpatialBounds{West: -180, South: -85, East: 180, North: 85}
+		if asset := geographic.Presentation.Basemap; asset != nil && len(asset.Bounds) == 4 {
+			extent = ir.VisualizationSpatialBounds{West: asset.Bounds[0], South: asset.Bounds[1], East: asset.Bounds[2], North: asset.Bounds[3]}
+		}
+		state := ir.SpatialWindowedVisualizationDataState{
+			VisualizationDataStateBase: ir.VisualizationDataStateBase{Kind: "spatial_windowed", SpecRevision: definition.SpecRevision, DataRevision: dataRevision, Generation: generation},
+			Kind:                       "spatial_windowed", Schema: schema, Cardinality: ir.VisualizationCardinality{Kind: ir.VisualizationCardinalityKindUnknown}, Extent: extent,
+			RowCap: base.DataBudget.MaxRows, FeatureCap: 5000, ResetVersion: resetVersion,
+		}
+		envelope.DataState = ir.VisualizationDataState{Value: &state}
+	} else if definition.Query.Kind == visualizationdefinition.QueryDetail || definition.Query.Kind == visualizationdefinition.QueryMatrix || definition.Query.Kind == visualizationdefinition.QueryPivot {
 		sort := emptyWindowSort(definition.Spec, schema)
 		state := ir.WindowedVisualizationDataState{
 			VisualizationDataStateBase: ir.VisualizationDataStateBase{Kind: "windowed", SpecRevision: definition.SpecRevision, DataRevision: dataRevision, Generation: generation},
@@ -533,8 +756,9 @@ func visualSpec(visual dashboard.Visual, base ir.VisualizationSpecBase, columns 
 			return ir.VisualizationSpec{}, "", err
 		}
 		join := field("name")
-		layer := ir.VisualizationGeographicLayer{ID: "states", Kind: ir.VisualizationGeographicLayerKindChoropleth, Geometry: &geometry, Join: &join, Value: optionalField(columns, "value")}
-		return ir.VisualizationSpec{Value: &ir.GeographicVisualizationSpec{VisualizationSpecBase: base, Kind: "geographic", Layers: []ir.VisualizationGeographicLayer{layer}, Presentation: ir.GeographicVisualizationPresentation{VisualizationPresentation: common, Roam: boolOption(visual.Options, "roam")}}}, "maplibre", nil
+		layerBase := ir.VisualizationGeographicLayerBase{ID: "states", Kind: "choropleth", Tooltip: []ir.VisualizationFieldRef{join}, Position: ir.VisualizationMapLayerPositionBelowLabels, Visibility: ir.VisualizationMapVisibility{MaximumZoom: 24}}
+		layer := ir.VisualizationGeographicLayer{Value: &ir.VisualizationChoroplethLayer{VisualizationGeographicLayerBase: layerBase, Kind: "choropleth", Geometry: geometry, Join: join, Value: optionalField(columns, "value"), Color: ir.VisualizationMapColorScale{Kind: ir.VisualizationMapColorScaleKindSequential, Palette: "blue", NullColor: "#d0d7de"}, Stroke: ir.VisualizationMapStroke{Color: "#ffffff", Width: 1.5, Opacity: 1}, Opacity: 0.82}}
+		return ir.VisualizationSpec{Value: &ir.GeographicVisualizationSpec{VisualizationSpecBase: base, Kind: "geographic", Layers: []ir.VisualizationGeographicLayer{layer}, Presentation: ir.GeographicVisualizationPresentation{VisualizationPresentation: common, Roam: boolOption(visual.Options, "roam"), Theme: ir.VisualizationMapThemeAuto, LabelDensity: ir.VisualizationMapLabelDensityNormal, Camera: ir.VisualizationMapCamera{Mode: ir.VisualizationMapCameraModeFitData, Padding: 32, MaximumZoom: 14}, Controls: ir.VisualizationMapControls{Zoom: true, Reset: true, Compass: true}}}}, "maplibre", nil
 	default:
 		mark := ir.VisualizationCartesianMark(visual.Type)
 		supported := map[ir.VisualizationCartesianMark]bool{ir.VisualizationCartesianMarkLine: true, ir.VisualizationCartesianMarkArea: true, ir.VisualizationCartesianMarkBar: true, ir.VisualizationCartesianMarkColumn: true, ir.VisualizationCartesianMarkScatter: true, ir.VisualizationCartesianMarkHistogram: true, ir.VisualizationCartesianMarkCombo: true, ir.VisualizationCartesianMarkWaterfall: true, ir.VisualizationCartesianMarkCandlestick: true, ir.VisualizationCartesianMarkBoxplot: true, ir.VisualizationCartesianMarkHeatmap: true}

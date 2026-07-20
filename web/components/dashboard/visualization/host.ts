@@ -2,6 +2,8 @@ import { LitElement, css, html } from 'lit'
 import { property, query, state } from 'lit/decorators.js'
 import type { VisualizationEnvelope } from '../../../generated/visualization'
 import validateGeneratedEnvelope from '../../../generated/visualization/validate'
+import { visualActionStyles } from '../visual-action-styles'
+import { visualMenuIcon } from '../visual-menu-icons'
 import { VisualizationController, validateEnvelopeBoundary } from './host-controller'
 import { visualizationRegistry } from './registry'
 
@@ -14,12 +16,40 @@ export class VisualizationHost extends LitElement {
   private resizeObserver?: ResizeObserver
   private applyGeneration = 0
 
-  static styles = css`
-    :host, .surface, .renderer { display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; }
-    .surface { position: relative; }
+  static styles = [visualActionStyles, css`
+    :host, .surface { display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; }
+    :host { color: var(--ld-fg-default); font-family: var(--fontStack-system); }
+    .surface { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--ld-chart-surface); }
+    .surface.headerless { grid-template-rows: minmax(0, 1fr); }
+    .renderer { display: block; width: 100%; min-width: 0; min-height: 0; overflow: hidden; }
+    .toolbar {
+      position: relative;
+      z-index: var(--zIndex-sticky);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--base-size-8);
+      min-height: calc(var(--control-small-size) + var(--base-size-6));
+      border-bottom: var(--ld-border-default);
+      background: var(--ld-chart-surface);
+      padding: var(--base-size-6) var(--base-size-8) var(--base-size-4) var(--control-small-paddingInline-normal);
+      box-sizing: border-box;
+    }
+    .toolbar-title { flex: 1 1 auto; min-width: 0; }
+    h2 {
+      min-width: 0;
+      margin: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: var(--ld-font-size-body-md);
+      font-weight: var(--ld-font-weight-strong);
+      letter-spacing: 0;
+      line-height: var(--ld-line-height-compact);
+    }
     .error { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ld-fg-danger); padding: 1rem; text-align: center; background: var(--ld-bg-panel); }
     .fallback { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-  `
+  `]
 
   protected firstUpdated(): void {
     if (!this.rendererContainer) return
@@ -33,7 +63,7 @@ export class VisualizationHost extends LitElement {
       if (!entry) return
       this.controller?.resize(entry.contentRect.width, entry.contentRect.height, window.devicePixelRatio || 1)
     })
-    this.resizeObserver.observe(this)
+    this.resizeObserver.observe(this.rendererContainer)
     void this.applyEnvelope()
   }
 
@@ -53,7 +83,16 @@ export class VisualizationHost extends LitElement {
   protected render() {
     const statusError = this.envelope?.status.kind === 'error' ? this.envelope.status.message ?? 'Visualization error' : ''
     const error = this.error || statusError
-    return html`<div class="surface">
+    const header = this.sharedHeader()
+    return html`<div class=${header ? 'surface' : 'surface headerless'}>
+      ${header ? html`
+        <header class="toolbar">
+          <div class="toolbar-title"><h2 data-visualization-title>${this.envelope?.spec.title}</h2></div>
+          <div class="visual-actions">
+            <button class="icon-action" type="button" data-visualization-id=${this.envelope?.visualID ?? ''} aria-label=${`Expand ${header}`} title=${`Expand ${header}`} @click=${this.expand}>${visualMenuIcon('focus')}</button>
+          </div>
+        </header>
+      ` : null}
       <div class="renderer" role="group" aria-label=${this.envelope?.spec.accessibility.title ?? 'Visualization'} aria-describedby="visualization-fallback" aria-busy=${String(this.applying)}></div>
       <div id="visualization-fallback" class="fallback">${this.accessibleFallback()}</div>
       ${error ? html`<div class="error" role="alert">${error}</div>` : null}
@@ -72,6 +111,33 @@ export class VisualizationHost extends LitElement {
     } finally {
       if (generation === this.applyGeneration) this.applying = false
     }
+  }
+
+  private sharedHeader(): 'chart' | 'map' | 'visualization' | undefined {
+    const kind = this.envelope?.spec.kind
+    if (!kind || kind === 'kpi' || kind === 'table' || kind === 'matrix' || kind === 'pivot') return undefined
+    if (kind === 'geographic') return 'map'
+    if (kind === 'custom') return 'visualization'
+    return 'chart'
+  }
+
+  private expand = (): void => {
+    const envelope = this.envelope
+    const visualType = this.sharedHeader()
+    if (!envelope || !visualType) return
+    this.dispatchEvent(new CustomEvent('ld-visual-action', {
+      bubbles: true,
+      composed: true,
+      detail: {
+        action: 'focus',
+        visualType,
+        visualId: envelope.visualID,
+        title: envelope.spec.title,
+        columns: [],
+        rows: [],
+        selection: envelope.selection.map((entry) => entry.label ?? Object.values(entry.datum.identity).join(' · ')),
+      },
+    }))
   }
 
   private accessibleFallback() {

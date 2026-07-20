@@ -113,6 +113,24 @@ func (s *SnapshotService) queryVisualPage(ctx context.Context, dashboardID, page
 	return visuals[visualID], nil
 }
 
+func (s *SnapshotService) querySpatialVisualPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, request dashboard.SpatialWindowRequest) (dashboard.Visual, error) {
+	report, runtime, err := s.reports.reportRuntime(dashboardID, s.runtimes)
+	if err != nil {
+		return dashboard.Visual{}, err
+	}
+	if !runtime.ready {
+		return dashboard.Visual{}, runtime.missing
+	}
+	page := dashboardPage(report, pageID)
+	filters = report.NormalizeFiltersForPage(page.ID, filters)
+	if !contains(pageVisualIDs(page), request.VisualID) {
+		return dashboard.Visual{}, fmt.Errorf("visual %q is not on page %q", request.VisualID, page.ID)
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.visualizations.spatialVisual(ctx, runtime, report, filters, request)
+}
+
 func (s *SnapshotService) queryVisualsPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, visualIDs []string) (map[string]dashboard.Visual, error) {
 	report, runtime, err := s.reports.reportRuntime(dashboardID, s.runtimes)
 	if err != nil {

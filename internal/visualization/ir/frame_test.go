@@ -64,17 +64,42 @@ func TestValidateSpecEnforcesGeographicLayerRequirements(t *testing.T) {
 	}
 	latitude := VisualizationFieldRef{Dataset: "primary", Field: "lat"}
 	longitude := VisualizationFieldRef{Dataset: "primary", Field: "lon"}
-	point := VisualizationSpec{Value: &GeographicVisualizationSpec{VisualizationSpecBase: base, Kind: "geographic", Layers: []VisualizationGeographicLayer{{ID: "stores", Kind: VisualizationGeographicLayerKindPoint, Latitude: &latitude, Longitude: &longitude}}, Presentation: GeographicVisualizationPresentation{}}}
+	layerBase := VisualizationGeographicLayerBase{ID: "stores", Kind: "point", Tooltip: []VisualizationFieldRef{}, Position: VisualizationMapLayerPositionBelowLabels, Visibility: VisualizationMapVisibility{MaximumZoom: 24}}
+	point := VisualizationSpec{Value: &GeographicVisualizationSpec{VisualizationSpecBase: base, Kind: "geographic", Layers: []VisualizationGeographicLayer{{Value: &VisualizationPointLayer{VisualizationGeographicLayerBase: layerBase, Kind: "point", Latitude: latitude, Longitude: longitude, Size: VisualizationMapSizeScale{MinimumRadius: 5, MaximumRadius: 28}, Cluster: VisualizationMapCluster{Radius: 50, MinimumPoints: 2}}}}, Presentation: GeographicVisualizationPresentation{}}}
 	if err := ValidateSpec(point); err != nil {
 		t.Fatalf("point layer: %v", err)
 	}
-	point.Value.(*GeographicVisualizationSpec).Layers[0].Longitude = nil
+	point.Value.(*GeographicVisualizationSpec).Layers[0].Value.(*VisualizationPointLayer).Longitude = VisualizationFieldRef{}
 	if err := ValidateSpec(point); err == nil {
 		t.Fatal("point layer without longitude was accepted")
 	}
 	join := VisualizationFieldRef{Dataset: "primary", Field: "lat"}
-	choropleth := VisualizationSpec{Value: &GeographicVisualizationSpec{VisualizationSpecBase: base, Kind: "geographic", Layers: []VisualizationGeographicLayer{{ID: "states", Kind: VisualizationGeographicLayerKindChoropleth, Join: &join}}, Presentation: GeographicVisualizationPresentation{}}}
+	choropleth := VisualizationSpec{Value: &GeographicVisualizationSpec{VisualizationSpecBase: base, Kind: "geographic", Layers: []VisualizationGeographicLayer{{Value: &VisualizationChoroplethLayer{VisualizationGeographicLayerBase: VisualizationGeographicLayerBase{ID: "states", Kind: "choropleth", Tooltip: []VisualizationFieldRef{}, Position: VisualizationMapLayerPositionBelowLabels, Visibility: VisualizationMapVisibility{MaximumZoom: 24}}, Kind: "choropleth", Join: join}}}, Presentation: GeographicVisualizationPresentation{}}}
 	if err := ValidateSpec(choropleth); err == nil {
 		t.Fatal("choropleth layer without geometry was accepted")
+	}
+}
+
+func TestValidateEnvelopeEnforcesSpatialWindowInvariants(t *testing.T) {
+	fields := []VisualizationField{
+		{ID: "lat", Role: VisualizationFieldRoleDimension, DataType: VisualizationDataTypeDecimal, Label: "Latitude"},
+		{ID: "lon", Role: VisualizationFieldRoleDimension, DataType: VisualizationDataTypeDecimal, Label: "Longitude"},
+	}
+	base := VisualizationSpecBase{Kind: "geographic", Title: "Stores", Datasets: []VisualizationDatasetSchema{{ID: "primary", Fields: fields}}, DataBudget: VisualizationDataBudget{MaxRows: 1_000_000, RequiredCompleteness: VisualizationCompletenessPartial}, Accessibility: VisualizationAccessibility{Title: "Stores", Description: "Stores"}, Interactions: []VisualizationInteraction{}}
+	layerBase := VisualizationGeographicLayerBase{ID: "stores", Kind: "point", Tooltip: []VisualizationFieldRef{}, Position: VisualizationMapLayerPositionBelowLabels, Visibility: VisualizationMapVisibility{MaximumZoom: 24}}
+	spec := VisualizationSpec{Value: &GeographicVisualizationSpec{VisualizationSpecBase: base, Kind: "geographic", Layers: []VisualizationGeographicLayer{{Value: &VisualizationPointLayer{VisualizationGeographicLayerBase: layerBase, Kind: "point", Latitude: VisualizationFieldRef{Dataset: "primary", Field: "lat"}, Longitude: VisualizationFieldRef{Dataset: "primary", Field: "lon"}, Size: VisualizationMapSizeScale{MinimumRadius: 5, MaximumRadius: 28}, Cluster: VisualizationMapCluster{Radius: 50, MinimumPoints: 2}}}}, Presentation: GeographicVisualizationPresentation{Theme: VisualizationMapThemeAuto, LabelDensity: VisualizationMapLabelDensityNormal, Camera: VisualizationMapCamera{Mode: VisualizationMapCameraModeFitData, MaximumZoom: 14}}}}
+	revision, err := ComputeSpecRevision(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := SpatialWindowedVisualizationDataState{VisualizationDataStateBase: VisualizationDataStateBase{Kind: "spatial_windowed", SpecRevision: revision.String(), DataRevision: 3, Generation: 1}, Kind: "spatial_windowed", Schema: base.Datasets[0], Cardinality: VisualizationCardinality{Kind: VisualizationCardinalityKindUnknown}, Extent: VisualizationSpatialBounds{West: 170, South: -40, East: -170, North: 20}, RowCap: 1_000_000, FeatureCap: 5000, Window: &VisualizationSpatialWindowBlock{ID: "z4-a", Bounds: VisualizationSpatialBounds{West: 170, South: -30, East: -175, North: 10}, Zoom: 4, Width: 800, Height: 500, Precision: VisualizationSpatialPrecisionAggregated, Rows: [][]any{{-20.0, 175.0}}, RequestSeq: 2}}
+	envelope := VisualizationEnvelope{SchemaVersion: CurrentSchemaVersion, VisualID: "stores", RendererID: "maplibre", SpecRevision: revision.String(), DataRevision: 3, Spec: spec, DataState: VisualizationDataState{Value: &state}, Selection: []VisualizationSelectionEntry{}, Status: VisualizationStatus{Kind: VisualizationStatusKindReady}, Diagnostics: []VisualizationDiagnostic{}}
+	if err := ValidateEnvelope(envelope); err != nil {
+		t.Fatalf("valid spatial envelope: %v", err)
+	}
+	state.Window.Rows = append(state.Window.Rows, []any{-10.0, 176.0})
+	state.FeatureCap = 1
+	if err := ValidateEnvelope(envelope); err == nil {
+		t.Fatal("spatial feature cap overflow accepted")
 	}
 }

@@ -2,10 +2,13 @@ package command
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/dashboard/consumer"
 	"github.com/Yacobolo/libredash/internal/dashboard/report"
+	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
+	visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
 )
 
 type TargetKind = consumer.Kind
@@ -14,6 +17,7 @@ const (
 	TargetFilterOptions TargetKind = consumer.KindFilterOptions
 	TargetVisual        TargetKind = consumer.KindVisual
 	TargetTable         TargetKind = consumer.KindTable
+	TargetSpatial       TargetKind = consumer.KindSpatial
 )
 
 type Target = consumer.Target
@@ -97,6 +101,41 @@ func (s Service) PrepareVisualWindow(request Request, authoritative dashboard.Fi
 	}, nil
 }
 
+func (s Service) PrepareVisualSpatialWindow(request Request, authoritative dashboard.Filters) (PreparedRefresh, error) {
+	filters := report.NormalizeFilters(s.Metrics, request.DashboardID, request.PageID, authoritative)
+	spatial := request.VisualSpatialWindowCommand
+	definition, _, ok := s.Metrics.Report(request.DashboardID)
+	if !ok {
+		return PreparedRefresh{}, fmt.Errorf("dashboard %q is not published", request.DashboardID)
+	}
+	visual, ok := definition.Visualizations[spatial.VisualID]
+	if !ok {
+		return PreparedRefresh{}, fmt.Errorf("unknown spatial visual %q", spatial.VisualID)
+	}
+	if _, ok := visual.Spec.Value.(*visualizationir.GeographicVisualizationSpec); !ok {
+		if _, valueOK := visual.Spec.Value.(visualizationir.GeographicVisualizationSpec); !valueOK {
+			return PreparedRefresh{}, fmt.Errorf("visual %q is not geographic", spatial.VisualID)
+		}
+	}
+	if spatial.SpecRevision != visual.SpecRevision {
+		return PreparedRefresh{}, fmt.Errorf("spatial visual %q specification revision is stale", spatial.VisualID)
+	}
+	values := []float64{spatial.Bounds.West, spatial.Bounds.South, spatial.Bounds.East, spatial.Bounds.North, spatial.Zoom}
+	for _, value := range values {
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return PreparedRefresh{}, fmt.Errorf("spatial viewport values must be finite")
+		}
+	}
+	if spatial.RequestSeq <= 0 || spatial.DataRevision < 0 || spatial.ResetVersion < 0 || spatial.Width <= 0 || spatial.Width > 16384 || spatial.Height <= 0 || spatial.Height > 16384 || spatial.Zoom < 0 || spatial.Zoom > 24 || spatial.Bounds.West < -180 || spatial.Bounds.West > 180 || spatial.Bounds.East < -180 || spatial.Bounds.East > 180 || spatial.Bounds.South < -90 || spatial.Bounds.South > 90 || spatial.Bounds.North < -90 || spatial.Bounds.North > 90 || spatial.Bounds.South > spatial.Bounds.North {
+		return PreparedRefresh{}, fmt.Errorf("invalid spatial viewport for visual %q", spatial.VisualID)
+	}
+	wantWindowID := fmt.Sprintf("%.6f,%.6f,%.6f,%.6f@%.3f:%dx%d", spatial.Bounds.West, spatial.Bounds.South, spatial.Bounds.East, spatial.Bounds.North, spatial.Zoom, spatial.Width, spatial.Height)
+	if spatial.WindowID != wantWindowID {
+		return PreparedRefresh{}, fmt.Errorf("spatial visual %q window identity mismatch", spatial.VisualID)
+	}
+	return PreparedRefresh{Filters: filters, Plan: RefreshPlan{Command: "visual_spatial_window", Targets: []Target{{Kind: TargetSpatial, ID: spatial.VisualID, SpatialRequest: spatial}}}}, nil
+}
+
 func (s Service) fullPlan(request Request, commandName string) RefreshPlan {
 	definition, _, ok := s.Metrics.Report(request.DashboardID)
 	if !ok {
@@ -115,7 +154,15 @@ func (s Service) fullPlan(request Request, commandName string) RefreshPlan {
 		case item.Kind == "filter_card" && item.Filter != "":
 			target = Target{Kind: TargetFilterOptions, ID: item.Filter}
 		case item.Visual != "":
-			target = Target{Kind: TargetVisual, ID: item.Visual}
+			if compiled, ok := definition.Visualizations[item.Visual]; ok {
+				if spatial, windowed := spatialTarget(compiled, request.VisualSpatialWindowCommand, commandName != "initial"); windowed {
+					target = spatial
+				} else {
+					target = Target{Kind: TargetVisual, ID: item.Visual}
+				}
+			} else {
+				target = Target{Kind: TargetVisual, ID: item.Visual}
+			}
 		case item.Table != "":
 			requestForTable := tableRequest
 			requestForTable.Table = item.Table
@@ -170,7 +217,9 @@ func (s Service) selectionTargets(request Request, sourceKind, sourceID string) 
 		if !ok {
 			return nil, fmt.Errorf("interaction references unknown target %q", id)
 		}
-		if isGridVisualization(targetDefinition) {
+		if spatial, windowed := spatialTarget(targetDefinition, request.VisualSpatialWindowCommand, true); windowed {
+			target = spatial
+		} else if isGridVisualization(targetDefinition) {
 			requestForTable := tableRequest
 			requestForTable.Table = id
 			target = Target{Kind: TargetTable, ID: id, TableRequest: requestForTable}
@@ -185,4 +234,35 @@ func (s Service) selectionTargets(request Request, sourceKind, sourceID string) 
 		targets = append(targets, target)
 	}
 	return targets, nil
+}
+
+func spatialTarget(definition visualizationdefinition.Definition, current dashboard.SpatialWindowRequest, reset bool) (Target, bool) {
+	base, err := visualizationir.SpecificationBase(definition.Spec)
+	if err != nil || base.DataBudget.MaxRows <= 20_000 {
+		return Target{}, false
+	}
+	geographic, ok := definition.Spec.Value.(*visualizationir.GeographicVisualizationSpec)
+	if !ok {
+		return Target{}, false
+	}
+	windowable := false
+	for _, candidate := range geographic.Layers {
+		switch candidate.Value.(type) {
+		case *visualizationir.VisualizationPointLayer, *visualizationir.VisualizationHeatLayer, *visualizationir.VisualizationDensityLayer, *visualizationir.VisualizationPathLayer:
+			windowable = true
+		}
+	}
+	if !windowable {
+		return Target{}, false
+	}
+	if current.VisualID != definition.ID || current.SpecRevision != definition.SpecRevision || current.Width <= 0 || current.Height <= 0 {
+		current = dashboard.SpatialWindowRequest{VisualID: definition.ID, SpecRevision: definition.SpecRevision, RequestSeq: 1, ResetVersion: 1, Bounds: dashboard.SpatialBounds{West: -180, South: -85, East: 180, North: 85}, Zoom: 1, Width: 1024, Height: 768}
+	} else {
+		current.RequestSeq++
+		if reset {
+			current.ResetVersion++
+		}
+	}
+	current.WindowID = fmt.Sprintf("%.6f,%.6f,%.6f,%.6f@%.3f:%dx%d", current.Bounds.West, current.Bounds.South, current.Bounds.East, current.Bounds.North, current.Zoom, current.Width, current.Height)
+	return Target{Kind: TargetSpatial, ID: definition.ID, SpatialRequest: current}, true
 }

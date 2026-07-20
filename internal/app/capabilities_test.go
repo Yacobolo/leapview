@@ -25,7 +25,7 @@ func TestCapabilitiesReportOnlyEnabledUploadProtocols(t *testing.T) {
 	if response.Environment != "prod" || len(response.UploadProtocols) != 0 {
 		t.Fatalf("capabilities = %#v", response)
 	}
-	if len(response.Visualization.SchemaVersions) != 1 || response.Visualization.SchemaVersions[0] != 1 || len(response.Visualization.Renderers) != 5 {
+	if len(response.Visualization.SchemaVersions) != 1 || response.Visualization.SchemaVersions[0] != 2 || len(response.Visualization.Renderers) != 5 {
 		t.Fatalf("visualization capabilities=%#v", response.Visualization)
 	}
 }

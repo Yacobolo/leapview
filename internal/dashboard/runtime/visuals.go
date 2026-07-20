@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 
@@ -12,6 +13,7 @@ import (
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
 	"github.com/Yacobolo/libredash/internal/dataquery"
 	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
+	visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
 )
 
 type VisualizationDataService struct {
@@ -46,6 +48,81 @@ func (s *VisualizationDataService) visuals(ctx context.Context, runtime *modelRu
 		visuals[key] = applySourceSelectionToVisual(buildVisualPayload(runtime, key, visual, data), filters)
 	}
 	return visuals, nil
+}
+
+func (s *VisualizationDataService) spatialVisual(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, filters dashboard.Filters, request dashboard.SpatialWindowRequest) (dashboard.Visual, error) {
+	definition, ok := report.Visualizations[request.VisualID]
+	if !ok {
+		return dashboard.Visual{}, fmt.Errorf("unknown spatial visual %q", request.VisualID)
+	}
+	visual, err := newVisualPlan(definition)
+	if err != nil {
+		return dashboard.Visual{}, err
+	}
+	geographic, ok := definition.Spec.Value.(*visualizationir.GeographicVisualizationSpec)
+	if !ok {
+		return dashboard.Visual{}, fmt.Errorf("visual %q is not geographic", request.VisualID)
+	}
+	latitudeAlias, longitudeAlias, ok := geographicCoordinateAliases(geographic)
+	if !ok {
+		return dashboard.Visual{}, fmt.Errorf("spatial visual %q has no coordinate layer", request.VisualID)
+	}
+	latitudeField, longitudeField := bindingFieldID(visual, latitudeAlias), bindingFieldID(visual, longitudeAlias)
+	if latitudeField == "" || longitudeField == "" {
+		return dashboard.Visual{}, fmt.Errorf("spatial visual %q coordinate fields are unresolved", request.VisualID)
+	}
+	queryFilters, err := s.filters.semanticFilters(ctx, runtime, report, filters, "visual", request.VisualID)
+	if err != nil {
+		return dashboard.Visual{}, err
+	}
+	queryFilters = append(queryFilters,
+		reportdef.QueryFilter{Field: latitudeField, Operator: "greater_than_or_equal", Values: []any{request.Bounds.South}},
+		reportdef.QueryFilter{Field: latitudeField, Operator: "less_than", Values: []any{math.Nextafter(request.Bounds.North, math.Inf(1))}},
+	)
+	if request.Bounds.West <= request.Bounds.East {
+		queryFilters = append(queryFilters,
+			reportdef.QueryFilter{Field: longitudeField, Operator: "greater_than_or_equal", Values: []any{request.Bounds.West}},
+			reportdef.QueryFilter{Field: longitudeField, Operator: "less_than", Values: []any{math.Nextafter(request.Bounds.East, math.Inf(1))}},
+		)
+	} else {
+		queryFilters = append(queryFilters, reportdef.QueryFilter{Groups: []reportdef.QueryFilterGroup{
+			{Filters: []reportdef.QueryFilter{{Field: longitudeField, Operator: "greater_than_or_equal", Values: []any{request.Bounds.West}}}},
+			{Filters: []reportdef.QueryFilter{{Field: longitudeField, Operator: "less_than", Values: []any{math.Nextafter(request.Bounds.East, math.Inf(1))}}}},
+		}})
+	}
+	data, err := s.querySemanticDatums(ctx, runtime, reportdef.AggregateQuery{
+		Table: visual.Table, Dimensions: aliasedQueryFields(visual.Dimensions), Measures: aliasedQueryFields(visual.Measures),
+		Filters: queryFilters, Sort: aliasedVisualSorts(visual), Limit: visual.Limit,
+	})
+	if err != nil {
+		return dashboard.Visual{}, err
+	}
+	return applySourceSelectionToVisual(buildVisualPayload(runtime, request.VisualID, visual, data), filters), nil
+}
+
+func geographicCoordinateAliases(spec *visualizationir.GeographicVisualizationSpec) (string, string, bool) {
+	for _, candidate := range spec.Layers {
+		switch layer := candidate.Value.(type) {
+		case *visualizationir.VisualizationPointLayer:
+			return layer.Latitude.Field, layer.Longitude.Field, true
+		case *visualizationir.VisualizationHeatLayer:
+			return layer.Latitude.Field, layer.Longitude.Field, true
+		case *visualizationir.VisualizationDensityLayer:
+			return layer.Latitude.Field, layer.Longitude.Field, true
+		case *visualizationir.VisualizationPathLayer:
+			return layer.Latitude.Field, layer.Longitude.Field, true
+		}
+	}
+	return "", "", false
+}
+
+func bindingFieldID(visual visualPlan, alias string) string {
+	for _, binding := range append(append([]visualizationdefinition.FieldBinding{}, visual.Dimensions...), visual.Measures...) {
+		if binding.Alias == alias {
+			return binding.FieldID
+		}
+	}
+	return ""
 }
 
 func buildVisualPayload(runtime *modelRuntime, key string, visual visualPlan, data []dashboard.Datum) dashboard.Visual {

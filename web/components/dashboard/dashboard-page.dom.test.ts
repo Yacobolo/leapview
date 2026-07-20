@@ -179,6 +179,50 @@ test('dashboard keeps the source visualization selected through canonicalization
   } finally { await page.close() }
 })
 
+test('visualization host renders the shared title and expands through the visual modal', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => (document.querySelector('ld-dashboard-page') as any)?.page?.title === 'Executive Sales Dashboard')
+    const state = await page.locator('ld-dashboard-page').evaluate(async (element: any) => {
+      await element.updateComplete
+      const hosts = Array.from(element.shadowRoot.querySelectorAll('ld-visualization-host') as NodeListOf<any>)
+      const host = hosts.find((candidate: any) => candidate.envelope?.visualID === 'orders_chart')
+      await host.updateComplete
+      const title = host.shadowRoot.querySelector('[data-visualization-title]')?.textContent?.trim()
+      const expand = host.shadowRoot.querySelector('button[aria-label="Expand chart"]') as HTMLButtonElement | null
+      expand?.click()
+
+      const modal = element.shadowRoot.querySelector('ld-visual-modal') as any
+      await modal.updateComplete
+      await Promise.resolve()
+      await modal.updateComplete
+      const focused = {
+        dialog: modal.shadowRoot.querySelector('[role="dialog"]')?.getAttribute('aria-label'),
+        slot: host.getAttribute('slot'),
+        parent: host.parentElement?.localName,
+      }
+
+      const close = modal.shadowRoot.querySelector('button[aria-label="Close visual modal"]') as HTMLButtonElement | null
+      close?.click()
+      await modal.updateComplete
+      await Promise.resolve()
+      return {
+        title,
+        expand: expand?.title,
+        focused,
+        restored: host.parentElement?.localName === 'ld-dashboard-visual-frame' && !host.hasAttribute('slot'),
+      }
+    })
+    expect(state).toEqual({
+      title: 'Orders by status',
+      expand: 'Expand chart',
+      focused: { dialog: 'Orders by status', slot: 'focus-visual', parent: 'ld-visual-modal' },
+      restored: true,
+    })
+  } finally { await page.close() }
+})
+
 function testDocument(): string {
   const page = {
     kind: 'dashboard', title: 'Executive Sales Dashboard', dashboardId: 'executive-sales', dashboardTitle: 'Executive Sales Dashboard',
@@ -217,9 +261,9 @@ function testVisualizationEnvelopes() {
   const base = (title: string, fields: unknown[]) => ({ title, datasets: [{ id: 'primary', fields }], dataBudget: { maxRows: 1000, requiredCompleteness: 'complete' }, accessibility: { title, description: title }, interactions: [] })
   const inline = (revision: string, columns: string[], rows: unknown[][]) => ({ kind: 'inline', specRevision: revision, dataRevision: 1, generation: 3, datasets: [{ id: 'primary', specRevision: revision, dataRevision: 1, generation: 3, columns, rows, completeness: 'complete' }] })
   return {
-    orders_kpi: { schemaVersion: 1, visualID: 'orders_kpi', rendererID: 'html', specRevision: kpiRevision, dataRevision: 1, spec: { ...base('Orders', [field('value', 'measure', 'decimal', 'Orders')]), kind: 'kpi', value: { dataset: 'primary', field: 'value' }, presentation: { trend: 'neutral', tone: 'ink', note: 'Filtered' } }, dataState: inline(kpiRevision, ['value'], [[42]]), selection: [], status: { kind: 'ready' }, diagnostics: [] },
-    orders_chart: { schemaVersion: 1, visualID: 'orders_chart', rendererID: 'echarts', specRevision: chartRevision, dataRevision: 1, spec: { ...base('Orders by status', [field('label', 'identity', 'string', 'Status'), field('value', 'measure', 'decimal', 'Orders')]), kind: 'cartesian', mark: 'bar', interactions: [{ id: 'selection', kind: 'select', mappings: [{ source: { dataset: 'primary', field: 'label' }, targetFieldID: 'orders.status', targetFactID: 'orders' }], targets: ['orders_kpi', 'orders'], mode: 'multiple', requiresStableIdentity: true }], x: { dataset: 'primary', field: 'label' }, y: [{ dataset: 'primary', field: 'value' }], presentation: { legend: 'hidden', showLabels: false, smooth: false, stacked: false, showSymbols: true, dataZoom: false, area: false, step: false } }, dataState: inline(chartRevision, ['label', 'value'], [['delivered', 42], ['shipped', 7]]), selection: [], status: { kind: 'loading', message: 'Refreshing' }, diagnostics: [] },
-    orders: { schemaVersion: 1, visualID: 'orders', rendererID: 'tanstack', specRevision: tableRevision, dataRevision: 1, spec: { ...base('Orders', [field('order_id', 'identity', 'string', 'Order')]), kind: 'table', dataBudget: { maxRows: 1000, requiredCompleteness: 'partial' }, columns: [{ field: { dataset: 'primary', field: 'order_id' }, label: 'Order', width: 180, formatting: [] }], defaultSort: [{ field: { dataset: 'primary', field: 'order_id' }, direction: 'ascending' }], presentation: { rowHeight: 28, striped: true, showHeader: true } }, dataState: { kind: 'windowed', specRevision: tableRevision, dataRevision: 1, generation: 3, schema: { id: 'primary', fields: [field('order_id', 'identity', 'string', 'Order')] }, cardinality: { kind: 'exact', count: 1 }, availableRows: 1, rowCap: 1000, chunkSize: 100, resetVersion: 0, sort: [{ field: { dataset: 'primary', field: 'order_id' }, direction: 'ascending' }], blocks: { a: { id: 'a', start: 0, rows: [['o1']], requestSeq: 0, resetVersion: 0, sort: [{ field: { dataset: 'primary', field: 'order_id' }, direction: 'ascending' }] } } }, selection: [], status: { kind: 'error', message: 'Ratings query failed' }, diagnostics: [{ code: 'query_failed', severity: 'error', message: 'Ratings query failed' }] },
+    orders_kpi: { schemaVersion: 2, visualID: 'orders_kpi', rendererID: 'html', specRevision: kpiRevision, dataRevision: 1, spec: { ...base('Orders', [field('value', 'measure', 'decimal', 'Orders')]), kind: 'kpi', value: { dataset: 'primary', field: 'value' }, presentation: { trend: 'neutral', tone: 'ink', note: 'Filtered' } }, dataState: inline(kpiRevision, ['value'], [[42]]), selection: [], status: { kind: 'ready' }, diagnostics: [] },
+    orders_chart: { schemaVersion: 2, visualID: 'orders_chart', rendererID: 'echarts', specRevision: chartRevision, dataRevision: 1, spec: { ...base('Orders by status', [field('label', 'identity', 'string', 'Status'), field('value', 'measure', 'decimal', 'Orders')]), kind: 'cartesian', mark: 'bar', interactions: [{ id: 'selection', kind: 'select', mappings: [{ source: { dataset: 'primary', field: 'label' }, targetFieldID: 'orders.status', targetFactID: 'orders' }], targets: ['orders_kpi', 'orders'], mode: 'multiple', requiresStableIdentity: true }], x: { dataset: 'primary', field: 'label' }, y: [{ dataset: 'primary', field: 'value' }], presentation: { legend: 'hidden', showLabels: false, smooth: false, stacked: false, showSymbols: true, dataZoom: false, area: false, step: false } }, dataState: inline(chartRevision, ['label', 'value'], [['delivered', 42], ['shipped', 7]]), selection: [], status: { kind: 'loading', message: 'Refreshing' }, diagnostics: [] },
+    orders: { schemaVersion: 2, visualID: 'orders', rendererID: 'tanstack', specRevision: tableRevision, dataRevision: 1, spec: { ...base('Orders', [field('order_id', 'identity', 'string', 'Order')]), kind: 'table', dataBudget: { maxRows: 1000, requiredCompleteness: 'partial' }, columns: [{ field: { dataset: 'primary', field: 'order_id' }, label: 'Order', width: 180, formatting: [] }], defaultSort: [{ field: { dataset: 'primary', field: 'order_id' }, direction: 'ascending' }], presentation: { rowHeight: 28, striped: true, showHeader: true } }, dataState: { kind: 'windowed', specRevision: tableRevision, dataRevision: 1, generation: 3, schema: { id: 'primary', fields: [field('order_id', 'identity', 'string', 'Order')] }, cardinality: { kind: 'exact', count: 1 }, availableRows: 1, rowCap: 1000, chunkSize: 100, resetVersion: 0, sort: [{ field: { dataset: 'primary', field: 'order_id' }, direction: 'ascending' }], blocks: { a: { id: 'a', start: 0, rows: [['o1']], requestSeq: 0, resetVersion: 0, sort: [{ field: { dataset: 'primary', field: 'order_id' }, direction: 'ascending' }] } } }, selection: [], status: { kind: 'error', message: 'Ratings query failed' }, diagnostics: [{ code: 'query_failed', severity: 'error', message: 'Ratings query failed' }] },
   }
 }
 

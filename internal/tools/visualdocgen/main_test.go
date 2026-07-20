@@ -110,7 +110,7 @@ func TestGenerateVisualExamplesExecutesEveryDocumentedQuery(t *testing.T) {
 			}
 		}
 	}
-	if got, want := count, 74; got != want {
+	if got, want := count, 76; got != want {
 		t.Fatalf("examples = %d, want %d", got, want)
 	}
 	if got, want := len(artifact.Showcase), 27; got != want {

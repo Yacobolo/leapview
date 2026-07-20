@@ -5,7 +5,7 @@ import { tableSignal } from './tanstack'
 
 test('TanStack adapter derives semantic row interactions from the typed IR', () => {
   const envelope = {
-    schemaVersion: 1, visualID: 'orders', rendererID: 'tanstack', specRevision: 'sha256:test', dataRevision: 3,
+    schemaVersion: 2, visualID: 'orders', rendererID: 'tanstack', specRevision: 'sha256:test', dataRevision: 3,
     spec: {
       kind: 'table', title: 'Orders',
       datasets: [{ id: 'primary', fields: [
@@ -44,7 +44,7 @@ test('TanStack adapter derives semantic row interactions from the typed IR', () 
 
 test('TanStack adapter leaves row interaction disabled when the IR declares none', () => {
   const envelope = {
-    schemaVersion: 1, visualID: 'orders', rendererID: 'tanstack', specRevision: 'sha256:test', dataRevision: 1,
+    schemaVersion: 2, visualID: 'orders', rendererID: 'tanstack', specRevision: 'sha256:test', dataRevision: 1,
     spec: {
       kind: 'table', title: 'Orders', datasets: [{ id: 'primary', fields: [{ id: 'order_id', role: 'identity', dataType: 'string', nullable: false, label: 'Order' }] }],
       dataBudget: { maxRows: 100, requiredCompleteness: 'complete' }, accessibility: { title: 'Orders', description: 'Orders' }, interactions: [],
@@ -59,7 +59,7 @@ test('TanStack adapter leaves row interaction disabled when the IR declares none
 
 test('TanStack matrix adapter renders dynamic window schema columns with compiled formatting', () => {
   const envelope = {
-    schemaVersion: 1, visualID: 'matrix', rendererID: 'tanstack', specRevision: 'sha256:matrix', dataRevision: 2,
+    schemaVersion: 2, visualID: 'matrix', rendererID: 'tanstack', specRevision: 'sha256:matrix', dataRevision: 2,
     spec: {
       kind: 'matrix', title: 'Matrix', datasets: [{ id: 'primary', fields: [
         { id: 'state', role: 'dimension', dataType: 'string', nullable: true, label: 'State' },

@@ -287,12 +287,23 @@ spec:
             direction: desc
         limit: 27
       geo:
+        theme: light
+        label_density: normal
+        controls:
+          zoom: true
+          reset: true
+          compass: true
         layers:
           - id: states
             kind: choropleth
             geometry_asset: brazil_states
             join: state
             value: order_count
+            tooltip: [state, order_count]
+            color:
+              kind: sequential
+              palette: teal
+              null_color: "#d8dee4"
       interaction:
         point_selection:
           toggle: true
@@ -860,7 +871,6 @@ spec:
       type: map
       presentation:
         show_labels: true
-        roam: true
       query:
         dimensions:
           state: customers.state
@@ -871,6 +881,10 @@ spec:
             direction: desc
         limit: 27
       geo:
+        controls:
+          zoom: true
+          reset: true
+          compass: true
         layers:
           - id: states
             kind: choropleth
@@ -881,8 +895,6 @@ spec:
       title: Customer locations
       description: Renders bounded synthetic customer coordinates as points.
       type: map
-      presentation:
-        roam: true
       query:
         dimensions:
           customer_id: customers.customer_id
@@ -892,12 +904,27 @@ spec:
           order_count: null
         limit: 500
       geo:
+        controls:
+          zoom: true
+          reset: true
+          compass: true
         layers:
           - id: customers
             kind: point
             latitude: latitude
             longitude: longitude
             value: order_count
+            label: customer_id
+            tooltip: [customer_id, order_count]
+            size:
+              minimum_radius: 5
+              maximum_radius: 28
+            cluster:
+              enabled: true
+              radius: 48
+              max_zoom: 10
+              minimum_points: 2
+              show_count: true
       interaction:
         point_selection:
           toggle: true
@@ -922,12 +949,20 @@ spec:
           revenue: null
         limit: 500
       geo:
+        theme: dark
+        controls:
+          zoom: true
+          reset: true
+          compass: true
         layers:
           - id: revenue
             kind: heat
             latitude: latitude
             longitude: longitude
             value: revenue
+            heat:
+              radius: 28
+              intensity: 1.15
     customer_density_map:
       title: Customer density
       description: Renders the density of bounded synthetic customer coordinates.
@@ -940,11 +975,74 @@ spec:
           order_count: null
         limit: 500
       geo:
+        controls:
+          zoom: true
+          reset: true
+          compass: true
         layers:
           - id: customers
             kind: density
             latitude: latitude
             longitude: longitude
+            heat:
+              radius: 22
+              intensity: 1.35
+    state_reference_map:
+      title: Brazil state reference boundaries
+      description: Renders an immutable reference polygon asset without a data join.
+      type: map
+      query:
+        dimensions:
+          state: customers.state
+        measures:
+          order_count: null
+        limit: 27
+      geo:
+        basemap: blank
+        layers:
+          - id: state_boundaries
+            kind: reference
+            geometry_asset: brazil_states
+            stroke:
+              color: "#57606a"
+              width: 1.5
+              opacity: 1
+            opacity: 0.12
+    customer_path_map:
+      title: Customer paths by state
+      description: Groups customer coordinates into deterministic state paths.
+      type: map
+      query:
+        dimensions:
+          state: customers.state
+          customer_id: customers.customer_id
+          latitude: customers.latitude
+          longitude: customers.longitude
+        measures:
+          revenue: null
+        limit: 500
+      geo:
+        controls:
+          zoom: true
+          reset: true
+          compass: true
+        layers:
+          - id: customer_paths
+            kind: path
+            latitude: latitude
+            longitude: longitude
+            path: state
+            order: customer_id
+            value: revenue
+            tooltip: [state, revenue]
+            stroke:
+              color: "#0969da"
+              width: 3
+              opacity: 0.9
+            line:
+              width: 3
+              curvature: 0
+            opacity: 0.9
     custom_monthly_revenue:
       title: Custom monthly revenue
       description: Exercises the sandboxed Vega-Lite adapter with governed data.
@@ -2390,10 +2488,10 @@ spec:
             row_span: 8
       id: chart-graph
     - title: Map
-      description: Choropleth, point, heat, and density layer variations
+      description: Choropleth, clustered point, heat, density, reference, and path layers
       canvas:
         width: 1366
-        height: 1200
+        height: 1800
       grid:
         columns: 12
         row_height: 48
@@ -2446,6 +2544,22 @@ spec:
           placement:
             col: 7
             row: 10
+            col_span: 6
+            row_span: 8
+        - id: state-reference-map
+          kind: visual
+          visual: state_reference_map
+          placement:
+            col: 1
+            row: 18
+            col_span: 6
+            row_span: 8
+        - id: customer-path-map
+          kind: visual
+          visual: customer_path_map
+          placement:
+            col: 7
+            row: 18
             col_span: 6
             row_span: 8
       id: chart-map

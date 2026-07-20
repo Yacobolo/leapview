@@ -62,8 +62,12 @@ type DurationVisualizationFormat struct {
 
 type GeographicVisualizationPresentation struct {
 	VisualizationPresentation
-	Roam    bool                        `json:"roam"`
-	Basemap *VisualizationGeometryAsset `json:"basemap,omitempty"`
+	Roam         bool                         `json:"roam"`
+	Basemap      *VisualizationMapStyleAsset  `json:"basemap,omitempty"`
+	Theme        VisualizationMapTheme        `json:"theme"`
+	LabelDensity VisualizationMapLabelDensity `json:"labelDensity"`
+	Camera       VisualizationMapCamera       `json:"camera"`
+	Controls     VisualizationMapControls     `json:"controls"`
 }
 
 type GeographicVisualizationSpec struct {
@@ -199,6 +203,18 @@ type ProportionalVisualizationSpec struct {
 	Value        VisualizationFieldRef                 `json:"value"`
 	Series       *VisualizationFieldRef                `json:"series,omitempty"`
 	Presentation ProportionalVisualizationPresentation `json:"presentation"`
+}
+
+type SpatialWindowedVisualizationDataState struct {
+	VisualizationDataStateBase
+	Kind         string                           `json:"kind"`
+	Schema       VisualizationDatasetSchema       `json:"schema"`
+	Cardinality  VisualizationCardinality         `json:"cardinality"`
+	Extent       VisualizationSpatialBounds       `json:"extent"`
+	RowCap       int64                            `json:"rowCap"`
+	FeatureCap   int64                            `json:"featureCap"`
+	ResetVersion int64                            `json:"resetVersion"`
+	Window       *VisualizationSpatialWindowBlock `json:"window,omitempty"`
 }
 
 type TableBackgroundScaleFormattingRule struct {
@@ -431,6 +447,18 @@ const (
 	VisualizationCartesianMarkHeatmap     VisualizationCartesianMark = "heatmap"
 )
 
+type VisualizationChoroplethLayer struct {
+	VisualizationGeographicLayerBase
+	Kind     string                     `json:"kind"`
+	Geometry VisualizationGeometryAsset `json:"geometry"`
+	Join     VisualizationFieldRef      `json:"join"`
+	Value    *VisualizationFieldRef     `json:"value,omitempty"`
+	Category *VisualizationFieldRef     `json:"category,omitempty"`
+	Color    VisualizationMapColorScale `json:"color"`
+	Stroke   VisualizationMapStroke     `json:"stroke"`
+	Opacity  float64                    `json:"opacity"`
+}
+
 type VisualizationComboSeries struct {
 	SeriesValue string                     `json:"seriesValue"`
 	Mark        VisualizationCartesianMark `json:"mark"`
@@ -465,14 +493,22 @@ type VisualizationDataState struct {
 	Value VisualizationDataStateVariant
 }
 
-func (InlineVisualizationDataState) isVisualizationDataStateVariant()   {}
-func (WindowedVisualizationDataState) isVisualizationDataStateVariant() {}
+func (InlineVisualizationDataState) isVisualizationDataStateVariant()          {}
+func (SpatialWindowedVisualizationDataState) isVisualizationDataStateVariant() {}
+func (WindowedVisualizationDataState) isVisualizationDataStateVariant()        {}
 
 func (value VisualizationDataState) MarshalJSON() ([]byte, error) {
 	switch variant := value.Value.(type) {
 	case InlineVisualizationDataState:
 		return json.Marshal(variant)
 	case *InlineVisualizationDataState:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationDataState variant is nil")
+		}
+		return json.Marshal(variant)
+	case SpatialWindowedVisualizationDataState:
+		return json.Marshal(variant)
+	case *SpatialWindowedVisualizationDataState:
 		if variant == nil {
 			return nil, fmt.Errorf("VisualizationDataState variant is nil")
 		}
@@ -531,6 +567,42 @@ func (value *VisualizationDataState) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("decode VisualizationDataState variant %q: required property specRevision is missing", tag.Kind)
 		}
 		var variant InlineVisualizationDataState
+		if err := decode(&variant); err != nil {
+			return fmt.Errorf("decode VisualizationDataState variant %q: %w", tag.Kind, err)
+		}
+		value.Value = &variant
+	case "spatial_windowed":
+		if _, ok := fields["cardinality"]; !ok {
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property cardinality is missing", tag.Kind)
+		}
+		if _, ok := fields["dataRevision"]; !ok {
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property dataRevision is missing", tag.Kind)
+		}
+		if _, ok := fields["extent"]; !ok {
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property extent is missing", tag.Kind)
+		}
+		if _, ok := fields["featureCap"]; !ok {
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property featureCap is missing", tag.Kind)
+		}
+		if _, ok := fields["generation"]; !ok {
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property generation is missing", tag.Kind)
+		}
+		if _, ok := fields["kind"]; !ok {
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property kind is missing", tag.Kind)
+		}
+		if _, ok := fields["resetVersion"]; !ok {
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property resetVersion is missing", tag.Kind)
+		}
+		if _, ok := fields["rowCap"]; !ok {
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property rowCap is missing", tag.Kind)
+		}
+		if _, ok := fields["schema"]; !ok {
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property schema is missing", tag.Kind)
+		}
+		if _, ok := fields["specRevision"]; !ok {
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property specRevision is missing", tag.Kind)
+		}
+		var variant SpatialWindowedVisualizationDataState
 		if err := decode(&variant); err != nil {
 			return fmt.Errorf("decode VisualizationDataState variant %q: %w", tag.Kind, err)
 		}
@@ -613,6 +685,17 @@ type VisualizationDatumRef struct {
 	Identity     map[string]any `json:"identity"`
 	ResetVersion *int64         `json:"resetVersion,omitempty"`
 	BlockID      *string        `json:"blockID,omitempty"`
+}
+
+type VisualizationDensityLayer struct {
+	VisualizationGeographicLayerBase
+	Kind      string                     `json:"kind"`
+	Latitude  VisualizationFieldRef      `json:"latitude"`
+	Longitude VisualizationFieldRef      `json:"longitude"`
+	Value     *VisualizationFieldRef     `json:"value,omitempty"`
+	Color     VisualizationMapColorScale `json:"color"`
+	Heat      VisualizationMapHeatStyle  `json:"heat"`
+	Opacity   float64                    `json:"opacity"`
 }
 
 type VisualizationDiagnostic struct {
@@ -829,24 +912,337 @@ type VisualizationFormatBase struct {
 	Kind string `json:"kind"`
 }
 
-type VisualizationGeographicLayer struct {
-	ID        string                           `json:"id"`
-	Kind      VisualizationGeographicLayerKind `json:"kind"`
-	Geometry  *VisualizationGeometryAsset      `json:"geometry,omitempty"`
-	Join      *VisualizationFieldRef           `json:"join,omitempty"`
-	Value     *VisualizationFieldRef           `json:"value,omitempty"`
-	Latitude  *VisualizationFieldRef           `json:"latitude,omitempty"`
-	Longitude *VisualizationFieldRef           `json:"longitude,omitempty"`
+type VisualizationGeographicLayerVariant interface {
+	isVisualizationGeographicLayerVariant()
 }
 
-type VisualizationGeographicLayerKind string
+type VisualizationGeographicLayer struct {
+	Value VisualizationGeographicLayerVariant
+}
 
-const (
-	VisualizationGeographicLayerKindChoropleth VisualizationGeographicLayerKind = "choropleth"
-	VisualizationGeographicLayerKindPoint      VisualizationGeographicLayerKind = "point"
-	VisualizationGeographicLayerKindHeat       VisualizationGeographicLayerKind = "heat"
-	VisualizationGeographicLayerKindDensity    VisualizationGeographicLayerKind = "density"
-)
+func (VisualizationChoroplethLayer) isVisualizationGeographicLayerVariant() {}
+func (VisualizationDensityLayer) isVisualizationGeographicLayerVariant()    {}
+func (VisualizationHeatLayer) isVisualizationGeographicLayerVariant()       {}
+func (VisualizationPathLayer) isVisualizationGeographicLayerVariant()       {}
+func (VisualizationPointLayer) isVisualizationGeographicLayerVariant()      {}
+func (VisualizationReferenceLayer) isVisualizationGeographicLayerVariant()  {}
+
+func (value VisualizationGeographicLayer) MarshalJSON() ([]byte, error) {
+	switch variant := value.Value.(type) {
+	case VisualizationChoroplethLayer:
+		return json.Marshal(variant)
+	case *VisualizationChoroplethLayer:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationGeographicLayer variant is nil")
+		}
+		return json.Marshal(variant)
+	case VisualizationDensityLayer:
+		return json.Marshal(variant)
+	case *VisualizationDensityLayer:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationGeographicLayer variant is nil")
+		}
+		return json.Marshal(variant)
+	case VisualizationHeatLayer:
+		return json.Marshal(variant)
+	case *VisualizationHeatLayer:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationGeographicLayer variant is nil")
+		}
+		return json.Marshal(variant)
+	case VisualizationPathLayer:
+		return json.Marshal(variant)
+	case *VisualizationPathLayer:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationGeographicLayer variant is nil")
+		}
+		return json.Marshal(variant)
+	case VisualizationPointLayer:
+		return json.Marshal(variant)
+	case *VisualizationPointLayer:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationGeographicLayer variant is nil")
+		}
+		return json.Marshal(variant)
+	case VisualizationReferenceLayer:
+		return json.Marshal(variant)
+	case *VisualizationReferenceLayer:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationGeographicLayer variant is nil")
+		}
+		return json.Marshal(variant)
+	case nil:
+		return nil, fmt.Errorf("VisualizationGeographicLayer variant is required")
+	default:
+		return nil, fmt.Errorf("unsupported VisualizationGeographicLayer variant %T", variant)
+	}
+}
+
+func (value *VisualizationGeographicLayer) UnmarshalJSON(data []byte) error {
+	if value == nil {
+		return fmt.Errorf("cannot unmarshal VisualizationGeographicLayer into nil receiver")
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return fmt.Errorf("decode VisualizationGeographicLayer object: %w", err)
+	}
+	var tag struct {
+		Kind string `json:"kind"`
+	}
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return fmt.Errorf("decode VisualizationGeographicLayer discriminator: %w", err)
+	}
+	if tag.Kind == "" {
+		return fmt.Errorf("VisualizationGeographicLayer discriminator kind is required")
+	}
+	decode := func(dest any) error {
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.DisallowUnknownFields()
+		return decoder.Decode(dest)
+	}
+	switch tag.Kind {
+	case "choropleth":
+		if _, ok := fields["color"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property color is missing", tag.Kind)
+		}
+		if _, ok := fields["geometry"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property geometry is missing", tag.Kind)
+		}
+		if _, ok := fields["id"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property id is missing", tag.Kind)
+		}
+		if _, ok := fields["join"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property join is missing", tag.Kind)
+		}
+		if _, ok := fields["kind"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property kind is missing", tag.Kind)
+		}
+		if _, ok := fields["opacity"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property opacity is missing", tag.Kind)
+		}
+		if _, ok := fields["position"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property position is missing", tag.Kind)
+		}
+		if _, ok := fields["stroke"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property stroke is missing", tag.Kind)
+		}
+		if _, ok := fields["tooltip"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property tooltip is missing", tag.Kind)
+		}
+		if _, ok := fields["visibility"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property visibility is missing", tag.Kind)
+		}
+		var variant VisualizationChoroplethLayer
+		if err := decode(&variant); err != nil {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: %w", tag.Kind, err)
+		}
+		value.Value = &variant
+	case "density":
+		if _, ok := fields["color"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property color is missing", tag.Kind)
+		}
+		if _, ok := fields["heat"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property heat is missing", tag.Kind)
+		}
+		if _, ok := fields["id"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property id is missing", tag.Kind)
+		}
+		if _, ok := fields["kind"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property kind is missing", tag.Kind)
+		}
+		if _, ok := fields["latitude"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property latitude is missing", tag.Kind)
+		}
+		if _, ok := fields["longitude"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property longitude is missing", tag.Kind)
+		}
+		if _, ok := fields["opacity"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property opacity is missing", tag.Kind)
+		}
+		if _, ok := fields["position"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property position is missing", tag.Kind)
+		}
+		if _, ok := fields["tooltip"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property tooltip is missing", tag.Kind)
+		}
+		if _, ok := fields["visibility"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property visibility is missing", tag.Kind)
+		}
+		var variant VisualizationDensityLayer
+		if err := decode(&variant); err != nil {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: %w", tag.Kind, err)
+		}
+		value.Value = &variant
+	case "heat":
+		if _, ok := fields["color"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property color is missing", tag.Kind)
+		}
+		if _, ok := fields["heat"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property heat is missing", tag.Kind)
+		}
+		if _, ok := fields["id"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property id is missing", tag.Kind)
+		}
+		if _, ok := fields["kind"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property kind is missing", tag.Kind)
+		}
+		if _, ok := fields["latitude"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property latitude is missing", tag.Kind)
+		}
+		if _, ok := fields["longitude"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property longitude is missing", tag.Kind)
+		}
+		if _, ok := fields["opacity"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property opacity is missing", tag.Kind)
+		}
+		if _, ok := fields["position"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property position is missing", tag.Kind)
+		}
+		if _, ok := fields["tooltip"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property tooltip is missing", tag.Kind)
+		}
+		if _, ok := fields["visibility"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property visibility is missing", tag.Kind)
+		}
+		var variant VisualizationHeatLayer
+		if err := decode(&variant); err != nil {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: %w", tag.Kind, err)
+		}
+		value.Value = &variant
+	case "path":
+		if _, ok := fields["color"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property color is missing", tag.Kind)
+		}
+		if _, ok := fields["id"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property id is missing", tag.Kind)
+		}
+		if _, ok := fields["kind"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property kind is missing", tag.Kind)
+		}
+		if _, ok := fields["latitude"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property latitude is missing", tag.Kind)
+		}
+		if _, ok := fields["line"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property line is missing", tag.Kind)
+		}
+		if _, ok := fields["longitude"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property longitude is missing", tag.Kind)
+		}
+		if _, ok := fields["opacity"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property opacity is missing", tag.Kind)
+		}
+		if _, ok := fields["order"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property order is missing", tag.Kind)
+		}
+		if _, ok := fields["path"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property path is missing", tag.Kind)
+		}
+		if _, ok := fields["position"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property position is missing", tag.Kind)
+		}
+		if _, ok := fields["stroke"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property stroke is missing", tag.Kind)
+		}
+		if _, ok := fields["tooltip"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property tooltip is missing", tag.Kind)
+		}
+		if _, ok := fields["visibility"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property visibility is missing", tag.Kind)
+		}
+		var variant VisualizationPathLayer
+		if err := decode(&variant); err != nil {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: %w", tag.Kind, err)
+		}
+		value.Value = &variant
+	case "point":
+		if _, ok := fields["cluster"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property cluster is missing", tag.Kind)
+		}
+		if _, ok := fields["color"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property color is missing", tag.Kind)
+		}
+		if _, ok := fields["id"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property id is missing", tag.Kind)
+		}
+		if _, ok := fields["kind"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property kind is missing", tag.Kind)
+		}
+		if _, ok := fields["latitude"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property latitude is missing", tag.Kind)
+		}
+		if _, ok := fields["longitude"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property longitude is missing", tag.Kind)
+		}
+		if _, ok := fields["opacity"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property opacity is missing", tag.Kind)
+		}
+		if _, ok := fields["position"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property position is missing", tag.Kind)
+		}
+		if _, ok := fields["size"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property size is missing", tag.Kind)
+		}
+		if _, ok := fields["stroke"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property stroke is missing", tag.Kind)
+		}
+		if _, ok := fields["tooltip"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property tooltip is missing", tag.Kind)
+		}
+		if _, ok := fields["visibility"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property visibility is missing", tag.Kind)
+		}
+		var variant VisualizationPointLayer
+		if err := decode(&variant); err != nil {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: %w", tag.Kind, err)
+		}
+		value.Value = &variant
+	case "reference":
+		if _, ok := fields["color"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property color is missing", tag.Kind)
+		}
+		if _, ok := fields["geometry"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property geometry is missing", tag.Kind)
+		}
+		if _, ok := fields["id"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property id is missing", tag.Kind)
+		}
+		if _, ok := fields["kind"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property kind is missing", tag.Kind)
+		}
+		if _, ok := fields["opacity"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property opacity is missing", tag.Kind)
+		}
+		if _, ok := fields["position"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property position is missing", tag.Kind)
+		}
+		if _, ok := fields["stroke"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property stroke is missing", tag.Kind)
+		}
+		if _, ok := fields["tooltip"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property tooltip is missing", tag.Kind)
+		}
+		if _, ok := fields["visibility"]; !ok {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property visibility is missing", tag.Kind)
+		}
+		var variant VisualizationReferenceLayer
+		if err := decode(&variant); err != nil {
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: %w", tag.Kind, err)
+		}
+		value.Value = &variant
+	default:
+		return fmt.Errorf("unknown VisualizationGeographicLayer discriminator %q", tag.Kind)
+	}
+	return nil
+}
+
+type VisualizationGeographicLayerBase struct {
+	ID         string                        `json:"id"`
+	Kind       string                        `json:"kind"`
+	Label      *VisualizationFieldRef        `json:"label,omitempty"`
+	Tooltip    []VisualizationFieldRef       `json:"tooltip"`
+	Position   VisualizationMapLayerPosition `json:"position"`
+	Visibility VisualizationMapVisibility    `json:"visibility"`
+}
 
 type VisualizationGeographicMetadata struct {
 	IdentifierSystem string `json:"identifierSystem"`
@@ -877,6 +1273,17 @@ type VisualizationGridFieldMetadata struct {
 	Measure     *string                            `json:"measure,omitempty"`
 	ColumnValue *string                            `json:"columnValue,omitempty"`
 	Formatting  []TableVisualizationFormattingRule `json:"formatting"`
+}
+
+type VisualizationHeatLayer struct {
+	VisualizationGeographicLayerBase
+	Kind      string                     `json:"kind"`
+	Latitude  VisualizationFieldRef      `json:"latitude"`
+	Longitude VisualizationFieldRef      `json:"longitude"`
+	Value     *VisualizationFieldRef     `json:"value,omitempty"`
+	Color     VisualizationMapColorScale `json:"color"`
+	Heat      VisualizationMapHeatStyle  `json:"heat"`
+	Opacity   float64                    `json:"opacity"`
 }
 
 type VisualizationHierarchyLayout string
@@ -959,12 +1366,158 @@ const (
 	VisualizationLegendPositionLeft   VisualizationLegendPosition = "left"
 )
 
+type VisualizationMapCamera struct {
+	Mode        VisualizationMapCameraMode `json:"mode"`
+	Center      *[]float64                 `json:"center,omitempty"`
+	Zoom        *float64                   `json:"zoom,omitempty"`
+	Padding     int32                      `json:"padding"`
+	MinimumZoom float64                    `json:"minimumZoom"`
+	MaximumZoom float64                    `json:"maximumZoom"`
+}
+
+type VisualizationMapCameraMode string
+
+const (
+	VisualizationMapCameraModeFitData  VisualizationMapCameraMode = "fit_data"
+	VisualizationMapCameraModeFixed    VisualizationMapCameraMode = "fixed"
+	VisualizationMapCameraModePreserve VisualizationMapCameraMode = "preserve"
+)
+
+type VisualizationMapCluster struct {
+	Enabled       bool  `json:"enabled"`
+	Radius        int32 `json:"radius"`
+	MaximumZoom   int32 `json:"maximumZoom"`
+	MinimumPoints int32 `json:"minimumPoints"`
+	ShowCount     bool  `json:"showCount"`
+}
+
+type VisualizationMapColorScale struct {
+	Kind           VisualizationMapColorScaleKind `json:"kind"`
+	Palette        string                         `json:"palette"`
+	Reverse        bool                           `json:"reverse"`
+	DomainMinimum  *float64                       `json:"domainMinimum,omitempty"`
+	DomainMidpoint *float64                       `json:"domainMidpoint,omitempty"`
+	DomainMaximum  *float64                       `json:"domainMaximum,omitempty"`
+	NullColor      string                         `json:"nullColor"`
+}
+
+type VisualizationMapColorScaleKind string
+
+const (
+	VisualizationMapColorScaleKindSequential  VisualizationMapColorScaleKind = "sequential"
+	VisualizationMapColorScaleKindDiverging   VisualizationMapColorScaleKind = "diverging"
+	VisualizationMapColorScaleKindCategorical VisualizationMapColorScaleKind = "categorical"
+)
+
+type VisualizationMapControls struct {
+	Zoom    bool `json:"zoom"`
+	Reset   bool `json:"reset"`
+	Compass bool `json:"compass"`
+}
+
+type VisualizationMapHeatStyle struct {
+	Radius    float64 `json:"radius"`
+	Intensity float64 `json:"intensity"`
+}
+
+type VisualizationMapLabelDensity string
+
+const (
+	VisualizationMapLabelDensityHidden VisualizationMapLabelDensity = "hidden"
+	VisualizationMapLabelDensityNormal VisualizationMapLabelDensity = "normal"
+	VisualizationMapLabelDensityDense  VisualizationMapLabelDensity = "dense"
+)
+
+type VisualizationMapLayerPosition string
+
+const (
+	VisualizationMapLayerPositionBelowLabels VisualizationMapLayerPosition = "below_labels"
+	VisualizationMapLayerPositionAboveLabels VisualizationMapLayerPosition = "above_labels"
+)
+
+type VisualizationMapLineStyle struct {
+	Width     float64 `json:"width"`
+	Curvature float64 `json:"curvature"`
+}
+
+type VisualizationMapSizeScale struct {
+	MinimumRadius float64  `json:"minimumRadius"`
+	MaximumRadius float64  `json:"maximumRadius"`
+	DomainMinimum *float64 `json:"domainMinimum,omitempty"`
+	DomainMaximum *float64 `json:"domainMaximum,omitempty"`
+}
+
+type VisualizationMapStroke struct {
+	Color   string  `json:"color"`
+	Width   float64 `json:"width"`
+	Opacity float64 `json:"opacity"`
+}
+
+type VisualizationMapStyleAsset struct {
+	ID            string    `json:"id"`
+	StyleURL      string    `json:"styleUrl"`
+	StyleDigest   string    `json:"styleDigest"`
+	ArchiveURL    string    `json:"archiveUrl"`
+	ArchiveDigest string    `json:"archiveDigest"`
+	GlyphsURL     string    `json:"glyphsUrl"`
+	SpriteURL     string    `json:"spriteUrl"`
+	Source        string    `json:"source"`
+	License       string    `json:"license"`
+	Attribution   string    `json:"attribution"`
+	MinimumZoom   float64   `json:"minimumZoom"`
+	MaximumZoom   float64   `json:"maximumZoom"`
+	Bounds        []float64 `json:"bounds"`
+	LabelAnchor   string    `json:"labelAnchor"`
+}
+
+type VisualizationMapTheme string
+
+const (
+	VisualizationMapThemeAuto  VisualizationMapTheme = "auto"
+	VisualizationMapThemeLight VisualizationMapTheme = "light"
+	VisualizationMapThemeDark  VisualizationMapTheme = "dark"
+)
+
+type VisualizationMapVisibility struct {
+	MinimumZoom float64 `json:"minimumZoom"`
+	MaximumZoom float64 `json:"maximumZoom"`
+}
+
 type VisualizationOrientation string
 
 const (
 	VisualizationOrientationHorizontal VisualizationOrientation = "horizontal"
 	VisualizationOrientationVertical   VisualizationOrientation = "vertical"
 )
+
+type VisualizationPathLayer struct {
+	VisualizationGeographicLayerBase
+	Kind      string                     `json:"kind"`
+	Latitude  VisualizationFieldRef      `json:"latitude"`
+	Longitude VisualizationFieldRef      `json:"longitude"`
+	Path      VisualizationFieldRef      `json:"path"`
+	Order     VisualizationFieldRef      `json:"order"`
+	Value     *VisualizationFieldRef     `json:"value,omitempty"`
+	Category  *VisualizationFieldRef     `json:"category,omitempty"`
+	Color     VisualizationMapColorScale `json:"color"`
+	Stroke    VisualizationMapStroke     `json:"stroke"`
+	Line      VisualizationMapLineStyle  `json:"line"`
+	Opacity   float64                    `json:"opacity"`
+}
+
+type VisualizationPointLayer struct {
+	VisualizationGeographicLayerBase
+	Kind      string                     `json:"kind"`
+	Latitude  VisualizationFieldRef      `json:"latitude"`
+	Longitude VisualizationFieldRef      `json:"longitude"`
+	Value     *VisualizationFieldRef     `json:"value,omitempty"`
+	Category  *VisualizationFieldRef     `json:"category,omitempty"`
+	Size      VisualizationMapSizeScale  `json:"size"`
+	Color     VisualizationMapColorScale `json:"color"`
+	Stroke    VisualizationMapStroke     `json:"stroke"`
+	Cluster   VisualizationMapCluster    `json:"cluster"`
+	Opacity   float64                    `json:"opacity"`
+}
 
 type VisualizationPolarMark string
 
@@ -985,6 +1538,15 @@ const (
 	VisualizationProportionalMarkDonut  VisualizationProportionalMark = "donut"
 	VisualizationProportionalMarkFunnel VisualizationProportionalMark = "funnel"
 )
+
+type VisualizationReferenceLayer struct {
+	VisualizationGeographicLayerBase
+	Kind     string                     `json:"kind"`
+	Geometry VisualizationGeometryAsset `json:"geometry"`
+	Color    VisualizationMapColorScale `json:"color"`
+	Stroke   VisualizationMapStroke     `json:"stroke"`
+	Opacity  float64                    `json:"opacity"`
+}
 
 type VisualizationSelectionEntry struct {
 	Datum VisualizationDatumRef `json:"datum"`
@@ -1009,6 +1571,32 @@ const (
 	VisualizationSortDirectionAscending  VisualizationSortDirection = "ascending"
 	VisualizationSortDirectionDescending VisualizationSortDirection = "descending"
 )
+
+type VisualizationSpatialBounds struct {
+	West  float64 `json:"west"`
+	South float64 `json:"south"`
+	East  float64 `json:"east"`
+	North float64 `json:"north"`
+}
+
+type VisualizationSpatialPrecision string
+
+const (
+	VisualizationSpatialPrecisionRaw        VisualizationSpatialPrecision = "raw"
+	VisualizationSpatialPrecisionAggregated VisualizationSpatialPrecision = "aggregated"
+)
+
+type VisualizationSpatialWindowBlock struct {
+	ID           string                        `json:"id"`
+	Bounds       VisualizationSpatialBounds    `json:"bounds"`
+	Zoom         float64                       `json:"zoom"`
+	Width        int32                         `json:"width"`
+	Height       int32                         `json:"height"`
+	Precision    VisualizationSpatialPrecision `json:"precision"`
+	Rows         [][]any                       `json:"rows"`
+	RequestSeq   int64                         `json:"requestSeq"`
+	ResetVersion int64                         `json:"resetVersion"`
+}
 
 type VisualizationSpecVariant interface {
 	isVisualizationSpecVariant()

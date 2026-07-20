@@ -499,11 +499,109 @@
           "$ref": "#/$defs/%23GeographicLayerCommon",
           "additionalProperties": false,
           "properties": {
+            "cluster": {
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "max_zoom": {
+                  "allOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "maximum": 24,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  ]
+                },
+                "minimum_points": {
+                  "allOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "minimum": 2,
+                      "type": "integer"
+                    }
+                  ]
+                },
+                "radius": {
+                  "allOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "exclusiveMinimum": 0,
+                      "type": "integer"
+                    }
+                  ]
+                },
+                "show_count": {
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "point"
+            },
+            "latitude": {
+              "$ref": "#/$defs/%23Identifier"
+            },
+            "longitude": {
+              "$ref": "#/$defs/%23Identifier"
+            },
+            "size": {
+              "additionalProperties": false,
+              "properties": {
+                "domain_maximum": {
+                  "type": "number"
+                },
+                "domain_minimum": {
+                  "type": "number"
+                },
+                "maximum_radius": {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "minimum_radius": {
+                  "minimum": 0,
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "latitude",
+            "longitude"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/%23GeographicLayerCommon",
+          "additionalProperties": false,
+          "properties": {
+            "heat": {
+              "additionalProperties": false,
+              "properties": {
+                "intensity": {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                "radius": {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            },
             "kind": {
               "anyOf": [
-                {
-                  "const": "point"
-                },
                 {
                   "const": "heat"
                 },
@@ -525,17 +623,166 @@
             "longitude"
           ],
           "type": "object"
+        },
+        {
+          "$ref": "#/$defs/%23GeographicLayerCommon",
+          "additionalProperties": false,
+          "properties": {
+            "geometry_asset": {
+              "$ref": "#/$defs/%23Identifier"
+            },
+            "kind": {
+              "const": "reference"
+            }
+          },
+          "required": [
+            "geometry_asset",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/%23GeographicLayerCommon",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "path"
+            },
+            "latitude": {
+              "$ref": "#/$defs/%23Identifier"
+            },
+            "line": {
+              "additionalProperties": false,
+              "properties": {
+                "curvature": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "width": {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            },
+            "longitude": {
+              "$ref": "#/$defs/%23Identifier"
+            },
+            "order": {
+              "$ref": "#/$defs/%23Identifier"
+            },
+            "path": {
+              "$ref": "#/$defs/%23Identifier"
+            }
+          },
+          "required": [
+            "kind",
+            "latitude",
+            "longitude",
+            "order",
+            "path"
+          ],
+          "type": "object"
         }
       ]
     },
     "#GeographicLayerCommon": {
       "additionalProperties": false,
       "properties": {
+        "category": {
+          "$ref": "#/$defs/%23Identifier"
+        },
+        "color": {
+          "additionalProperties": false,
+          "properties": {
+            "domain_maximum": {
+              "type": "number"
+            },
+            "domain_midpoint": {
+              "type": "number"
+            },
+            "domain_minimum": {
+              "type": "number"
+            },
+            "kind": {
+              "enum": [
+                "sequential",
+                "diverging",
+                "categorical"
+              ]
+            },
+            "null_color": {
+              "type": "string"
+            },
+            "palette": {
+              "$ref": "#/$defs/%23Identifier"
+            },
+            "reverse": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
         "id": {
           "$ref": "#/$defs/%23Identifier"
         },
+        "label": {
+          "$ref": "#/$defs/%23Identifier"
+        },
+        "opacity": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "position": {
+          "enum": [
+            "below_labels",
+            "above_labels"
+          ]
+        },
+        "stroke": {
+          "additionalProperties": false,
+          "properties": {
+            "color": {
+              "type": "string"
+            },
+            "opacity": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            "width": {
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "tooltip": {
+          "items": {
+            "$ref": "#/$defs/%23Identifier"
+          },
+          "type": "array"
+        },
         "value": {
           "$ref": "#/$defs/%23Identifier"
+        },
+        "visibility": {
+          "additionalProperties": false,
+          "properties": {
+            "max_zoom": {
+              "maximum": 24,
+              "minimum": 0,
+              "type": "number"
+            },
+            "min_zoom": {
+              "maximum": 24,
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          "type": "object"
         }
       },
       "required": [
@@ -550,6 +797,90 @@
         "geo": {
           "additionalProperties": false,
           "properties": {
+            "basemap": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/%23Identifier"
+                },
+                {
+                  "const": "blank"
+                }
+              ]
+            },
+            "camera": {
+              "additionalProperties": false,
+              "properties": {
+                "center": {
+                  "maxLength": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ],
+                  "type": "array"
+                },
+                "max_zoom": {
+                  "maximum": 24,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "min_zoom": {
+                  "maximum": 24,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "mode": {
+                  "enum": [
+                    "fit_data",
+                    "fixed",
+                    "preserve"
+                  ]
+                },
+                "padding": {
+                  "allOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  ]
+                },
+                "zoom": {
+                  "maximum": 24,
+                  "minimum": 0,
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            },
+            "controls": {
+              "additionalProperties": false,
+              "properties": {
+                "compass": {
+                  "type": "boolean"
+                },
+                "reset": {
+                  "type": "boolean"
+                },
+                "zoom": {
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
+            "label_density": {
+              "enum": [
+                "hidden",
+                "normal",
+                "dense"
+              ]
+            },
             "layers": {
               "items": {
                 "$ref": "#/$defs/%23GeographicLayer"
@@ -561,6 +892,13 @@
                 }
               ],
               "type": "array"
+            },
+            "theme": {
+              "enum": [
+                "auto",
+                "light",
+                "dark"
+              ]
             }
           },
           "required": [
@@ -569,10 +907,18 @@
           "type": "object"
         },
         "presentation": {
-          "$ref": "#/$defs/%23PresentationCommon",
           "additionalProperties": false,
           "properties": {
-            "roam": {
+            "legend": {
+              "enum": [
+                "hidden",
+                "top",
+                "right",
+                "bottom",
+                "left"
+              ]
+            },
+            "show_labels": {
               "type": "boolean"
             }
           },

@@ -83,7 +83,7 @@ test('standalone JSON Schema validation fails closed', async () => {
   const path = new URL('../../../../api/visualization/conformance/cartesian-inline.json', import.meta.url)
   const envelope = await Bun.file(path).json()
   expect(validateEnvelope(envelope)).toBe(true)
-  expect(validateEnvelope({ ...envelope, schemaVersion: 2 })).toBe(false)
+  expect(validateEnvelope({ ...envelope, schemaVersion: 1 })).toBe(false)
   expect(validateEnvelope({ ...envelope, legacyOptions: {} })).toBe(false)
   expect(validateEnvelope({ ...envelope, spec: { ...envelope.spec, kind: 'unknown' } })).toBe(false)
 })

@@ -127,7 +127,7 @@ func executeConsumers(ctx context.Context, executor consumer.Executor, request W
 		case consumer.KindFilterOptions:
 			event.Type = RefreshEventFilterOptions
 			event.Value = result.FilterOptions
-		case consumer.KindVisual:
+		case consumer.KindVisual, consumer.KindSpatial:
 			event.Type = RefreshEventVisual
 			event.Value = result.Envelope
 		case consumer.KindTable:

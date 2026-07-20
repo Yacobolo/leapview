@@ -96,6 +96,34 @@ func TestVisualEnvelopeFromDefinitionProjectsSelectionAsDatumRef(t *testing.T) {
 	}
 }
 
+func TestSpatialViewportRowsSupportsAntimeridianAndRejectsInvalidCoordinates(t *testing.T) {
+	rows := [][]any{{"east", 10.0, 175.0, 1.0}, {"west", -5.0, -175.0, 2.0}, {"middle", 0.0, 0.0, 3.0}, {"invalid", 92.0, 175.0, 4.0}}
+	window, extent := spatialViewportRows(rows, 1, 2, dashboard.SpatialBounds{West: 170, South: -20, East: -170, North: 25})
+	if len(window) != 2 || window[0][0] != "east" || window[1][0] != "west" {
+		t.Fatalf("window = %#v", window)
+	}
+	if extent.West != -175 || extent.East != 175 || extent.South != -5 || extent.North != 10 {
+		t.Fatalf("extent = %#v", extent)
+	}
+}
+
+func TestAggregateSpatialRowsIsDeterministicAndBounded(t *testing.T) {
+	rows := make([][]any, 0, 20_000)
+	for index := 0; index < 20_000; index++ {
+		rows = append(rows, []any{float64(index%180) - 90, float64(index%360) - 180, 1.0})
+	}
+	bounds := dashboard.SpatialBounds{West: -180, South: -90, East: 180, North: 90}
+	first := aggregateSpatialRows(rows, 0, 1, 2, bounds, 1920, 1080, 5000)
+	second := aggregateSpatialRows(rows, 0, 1, 2, bounds, 1920, 1080, 5000)
+	if len(first) > 5000 || len(first) == 0 { t.Fatalf("aggregate feature count = %d", len(first)) }
+	if len(first) != len(second) { t.Fatalf("determinism length = %d, %d", len(first), len(second)) }
+	for index := range first {
+		for column := range first[index] {
+			if first[index][column] != second[index][column] { t.Fatalf("aggregate differs at row %d column %d", index, column) }
+		}
+	}
+}
+
 func TestChartEnvelopeUsesColumnarTypedIR(t *testing.T) {
 	t.Parallel()
 	visual := dashboard.Visual{ID: "revenue", Type: "line", Title: "Revenue", Shape: "category_value", Renderer: "echarts", Dimensions: []string{"month"}, Measures: []string{"revenue"}, Data: []dashboard.Datum{{"label": "Jan", "value": 10.5}}}

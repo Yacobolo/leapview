@@ -862,7 +862,7 @@ func TestAPIGenAgentQueryDashboardPageUsesDeclarativeOutputShape(t *testing.T) {
 	spec, _ := orders["spec"].(map[string]any)
 	dataState, _ := orders["dataState"].(map[string]any)
 	datasets, _ := dataState["datasets"].([]any)
-	if orders["schemaVersion"] != float64(1) || orders["rendererID"] != "echarts" || spec["title"] != "Orders" || len(datasets) != 1 {
+	if orders["schemaVersion"] != float64(2) || orders["rendererID"] != "echarts" || spec["title"] != "Orders" || len(datasets) != 1 {
 		t.Fatalf("visualization envelope = %#v", orders)
 	}
 	if _, ok := visuals["order_rows"]; !ok {

@@ -481,16 +481,43 @@ package contracts
 	query!: #VisualQuery
 	presentation?: close({
 		#PresentationCommon
-		roam?: bool
 	})
 	geo!: close({
+		basemap?:       #Identifier | "blank"
+		theme?:         "auto" | "light" | "dark"
+		label_density?: "hidden" | "normal" | "dense"
+		camera?: close({
+			mode?:     "fit_data" | "fixed" | "preserve"
+			center?:   [number, number]
+			zoom?:     number & >=0 & <=24
+			padding?:  int & >=0
+			min_zoom?: number & >=0 & <=24
+			max_zoom?: number & >=0 & <=24
+		})
+		controls?: close({zoom?: bool, reset?: bool, compass?: bool})
 		layers!: [#GeographicLayer, ...#GeographicLayer]
 	})
 })
 
 #GeographicLayerCommon: {
-	id!:    #Identifier
-	value?: #Identifier
+	id!:         #Identifier
+	value?:      #Identifier
+	category?:   #Identifier
+	label?:      #Identifier
+	tooltip?:    [...#Identifier]
+	position?:   "below_labels" | "above_labels"
+	visibility?: close({min_zoom?: number & >=0 & <=24, max_zoom?: number & >=0 & <=24})
+	color?: close({
+		kind?:            "sequential" | "diverging" | "categorical"
+		palette?:         #Identifier
+		reverse?:         bool
+		domain_minimum?:  number
+		domain_midpoint?: number
+		domain_maximum?:  number
+		null_color?:      string
+	})
+	stroke?:  close({color?: string, width?: number & >=0, opacity?: number & >=0 & <=1})
+	opacity?: number & >=0 & <=1
 }
 
 #GeographicLayer: close({
@@ -500,9 +527,29 @@ package contracts
 	join!:           #Identifier
 }) | close({
 	#GeographicLayerCommon
-	kind!:      "point" | "heat" | "density"
+	kind!:      "point"
 	latitude!:  #Identifier
 	longitude!: #Identifier
+	size?: close({minimum_radius?: number & >=0, maximum_radius?: number & >=0, domain_minimum?: number, domain_maximum?: number})
+	cluster?: close({enabled?: bool, radius?: int & >0, max_zoom?: int & >=0 & <=24, minimum_points?: int & >=2, show_count?: bool})
+}) | close({
+	#GeographicLayerCommon
+	kind!:      "heat" | "density"
+	latitude!:  #Identifier
+	longitude!: #Identifier
+	heat?: close({radius?: number & >0, intensity?: number & >0})
+}) | close({
+	#GeographicLayerCommon
+	kind!:           "reference"
+	geometry_asset!: #Identifier
+}) | close({
+	#GeographicLayerCommon
+	kind!:      "path"
+	latitude!:  #Identifier
+	longitude!: #Identifier
+	path!:      #Identifier
+	order!:     #Identifier
+	line?: close({width?: number & >0, curvature?: number & >=0 & <=1})
 })
 
 #CustomVisual: close({

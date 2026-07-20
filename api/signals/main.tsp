@@ -540,6 +540,8 @@ model DashboardEnvelope {
   `status`: DashboardStatus;
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "visualWindowCommand" })
   `visualWindowCommand`: LibreDashVisualization.VisualizationWindowRequest;
+  @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "visualSpatialWindowCommand" })
+  `visualSpatialWindowCommand`: LibreDashVisualization.VisualizationSpatialWindowRequest;
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "merge", `x-libredash-signal-key`: "urlParamShape" })
   `urlParamShape`: Record<unknown>;
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "merge", `x-libredash-signal-key`: "urlParams" })

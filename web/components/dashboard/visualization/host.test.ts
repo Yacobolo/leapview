@@ -5,7 +5,7 @@ import { Change, RendererRegistry, VisualizationController, type RendererHandle 
 
 function envelope(dataRevision: number, specRevision = 'sha256:spec', rendererID = 'test'): VisualizationEnvelope {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     visualID: 'revenue',
     rendererID,
     specRevision,
@@ -40,7 +40,7 @@ test('controller mounts lazily, rejects stale revisions, and disposes determinis
   }
   const registry = new RendererRegistry()
   registry.register({
-    id: 'test', version: '1.0.0', schemaVersions: [1], kinds: ['kpi'], capabilities: { snapshot: true, windowed: false, interactive: false },
+    id: 'test', version: '1.0.0', schemaVersions: [2], kinds: ['kpi'], capabilities: { snapshot: true, windowed: false, interactive: false },
     load: async () => ({ mount: () => { mounts++; return handle } }),
   })
   const controller = new VisualizationController(registry, {} as HTMLElement, undefined, (value) => observations.push(value.stage))
@@ -70,7 +70,7 @@ test('controller coalesces resize and applies the latest size after a lazy mount
   }
   const registry = new RendererRegistry()
   registry.register({
-    id: 'test', version: '1.0.0', schemaVersions: [1], kinds: ['kpi'], capabilities: { snapshot: true, windowed: false, interactive: false },
+    id: 'test', version: '1.0.0', schemaVersions: [2], kinds: ['kpi'], capabilities: { snapshot: true, windowed: false, interactive: false },
     load: () => loading,
   })
   const controller = new VisualizationController(registry, {} as HTMLElement)
@@ -86,7 +86,7 @@ test('controller coalesces resize and applies the latest size after a lazy mount
 test('registry rejects duplicate IDs and unsupported capabilities fail closed', async () => {
   const registry = new RendererRegistry()
   const registration = {
-    id: 'test', version: '1.0.0', schemaVersions: [1] as const, kinds: ['table'] as const,
+    id: 'test', version: '1.0.0', schemaVersions: [2] as const, kinds: ['table'] as const,
     capabilities: { snapshot: false, windowed: true, interactive: true },
     load: async () => ({ mount: () => { throw new Error('not reached') } }),
   }
@@ -105,7 +105,7 @@ test('a superseded asynchronous mount cannot dispose the winning renderer', asyn
   })
   const registry = new RendererRegistry()
   registry.register({
-    id: 'test', version: '1.0.0', schemaVersions: [1], kinds: ['kpi'], capabilities: { snapshot: true, windowed: false, interactive: false },
+    id: 'test', version: '1.0.0', schemaVersions: [2], kinds: ['kpi'], capabilities: { snapshot: true, windowed: false, interactive: false },
     load: async () => ({ mount: (_container, value) => new Promise<RendererHandle>((resolve) => { releases.set(value.dataRevision, resolve) }) }),
   })
   const controller = new VisualizationController(registry, {} as HTMLElement)

@@ -13,8 +13,8 @@ func TestValidateGeographicVisualUsesClosedAliasBoundLayers(t *testing.T) {
 			Measures:   []FieldRef{{Field: "revenue", Alias: "revenue"}},
 		},
 		Geo: VisualGeo{Layers: []VisualGeoLayer{
-			{ID: "states", Kind: "choropleth", GeometryAsset: "brazil_states", Join: "state", Value: "revenue"},
-			{ID: "orders", Kind: "point", Latitude: "latitude", Longitude: "longitude", Value: "revenue"},
+			{ID: "states", Kind: "choropleth", GeometryAsset: "brazil_states", Join: "state", Value: "revenue", Tooltip: []string{"state", "revenue"}, Color: VisualGeoColorScale{Kind: "sequential", Palette: "blue"}},
+			{ID: "orders", Kind: "point", Latitude: "latitude", Longitude: "longitude", Value: "revenue", Label: "state", Size: VisualGeoSizeScale{MinimumRadius: 5, MaximumRadius: 28}, Cluster: VisualGeoCluster{Enabled: true, Radius: 48, MaximumZoom: 10, ShowCount: true}},
 		}},
 	}
 	if err := validateGeographicVisual("map", base); err != nil {
@@ -29,6 +29,9 @@ func TestValidateGeographicVisualUsesClosedAliasBoundLayers(t *testing.T) {
 		{name: "unknown alias", mutate: func(visual *Visual) { visual.Geo.Layers[1].Latitude = "missing" }, want: `references unknown query alias "missing"`},
 		{name: "duplicate layer", mutate: func(visual *Visual) { visual.Geo.Layers[1].ID = "states" }, want: `duplicate geographic layer "states"`},
 		{name: "mixed coordinate and geometry", mutate: func(visual *Visual) { visual.Geo.Layers[1].GeometryAsset = "brazil_states" }, want: "does not accept geometry_asset or join"},
+		{name: "point radius order", mutate: func(visual *Visual) { visual.Geo.Layers[1].Size.MinimumRadius = 30 }, want: "minimum_radius must not exceed maximum_radius"},
+		{name: "cluster on choropleth", mutate: func(visual *Visual) { visual.Geo.Layers[0].Cluster.Enabled = true }, want: "clustering is only supported for point layers"},
+		{name: "unknown tooltip", mutate: func(visual *Visual) { visual.Geo.Layers[0].Tooltip = []string{"missing"} }, want: `tooltip references unknown query alias "missing"`},
 		{name: "unknown kind", mutate: func(visual *Visual) { visual.Geo.Layers[1].Kind = "tiles" }, want: `unsupported kind "tiles"`},
 	}
 	for _, tt := range tests {

@@ -8,7 +8,7 @@ const schemaPath = 'api/gen/visualization.schema.json'
 const outputPath = 'web/generated/visualization/validate.ts'
 await mkdir(dirname(outputPath), { recursive: true })
 const document = await Bun.file(schemaPath).json()
-document.$defs.VisualizationEnvelope.properties.schemaVersion.const = 1
+document.$defs.VisualizationEnvelope.properties.schemaVersion.const = 2
 await Bun.write(schemaPath, `${JSON.stringify(document, null, 2)}\n`)
 const schema = { ...document, $ref: '#/$defs/VisualizationEnvelope' }
 const ajv = new Ajv2020({ allErrors: true, code: { source: true, esm: true }, strict: true })

@@ -15,7 +15,7 @@ var supportedVisualizationTypes = []string{
 	"area", "bar", "boxplot", "candlestick", "column", "combo", "custom", "donut", "funnel", "gauge", "graph", "heatmap", "histogram", "kpi", "line", "map", "matrix", "pie", "pivot", "radar", "sankey", "scatter", "sunburst", "table", "tree", "treemap", "waterfall",
 }
 
-var supportedGeographicLayerKinds = []string{"choropleth", "density", "heat", "point"}
+var supportedGeographicLayerKinds = []string{"choropleth", "density", "heat", "path", "point", "reference"}
 
 // SupportedVisualizationTypes is the canonical public authoring catalog. It is
 // consumed by documentation coverage tests so a new type cannot ship without

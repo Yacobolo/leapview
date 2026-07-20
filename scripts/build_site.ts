@@ -1,7 +1,7 @@
 import { datastarRuntimeURL } from '../web/components/shared/datastar-runtime'
 
-await Bun.$`rm -rf site/static/site-page.js site/static/chunks site/static/geometry site/static/shared site/static/vendor`.quiet()
-await Bun.$`mkdir -p site/static/geometry site/static/shared/files site/static/vendor/integrations`.quiet()
+await Bun.$`rm -rf site/static/site-page.js site/static/chunks site/static/geometry site/static/map-assets site/static/shared site/static/vendor`.quiet()
+await Bun.$`mkdir -p site/static/geometry site/static/map-assets/libredash-streets site/static/shared/files site/static/vendor/integrations`.quiet()
 
 const geometryCopies: Promise<number>[] = []
 const geometryGlob = new Bun.Glob('static/geometry/*.geojson')
@@ -28,6 +28,7 @@ for await (const sourcePath of fontGlob.scan({ cwd: '.', onlyFiles: true })) {
 if (fontCopies.length === 0) throw new Error('no Inter font assets found')
 
 await Promise.all([
+	Bun.write('site/static/map-assets/libredash-streets/style.json', Bun.file('static/map-assets/libredash-streets/style.json')),
   Bun.write('site/static/shared/app.css', Bun.file('static/app.css')),
   Bun.write('site/static/shared/theme.js', Bun.file('static/theme.js')),
   Bun.write('site/static/vendor/datastar-1.0.2.js', Bun.file('static/vendor/datastar-1.0.2.js')),

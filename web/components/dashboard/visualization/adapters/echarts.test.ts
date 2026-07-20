@@ -5,7 +5,7 @@ import { echartsOption, interactionCommandForRow } from './echarts'
 
 test('ECharts translation uses dataset and encode without native option passthrough', () => {
   const envelope = {
-    schemaVersion: 1, visualID: 'revenue', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
+    schemaVersion: 2, visualID: 'revenue', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
     spec: {
       kind: 'cartesian', title: 'Revenue', mark: 'line',
       datasets: [{ id: 'primary', fields: [
@@ -30,7 +30,7 @@ test('ECharts translation uses dataset and encode without native option passthro
 
 test('ECharts interactions translate stable IR field mappings without renderer row keys', () => {
   const envelope = {
-    schemaVersion: 1, visualID: 'orders', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 7,
+    schemaVersion: 2, visualID: 'orders', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 7,
     spec: {
       kind: 'cartesian', title: 'Orders', mark: 'bar',
       datasets: [{ id: 'primary', fields: [
@@ -62,7 +62,7 @@ test('ECharts interactions translate stable IR field mappings without renderer r
 
 test('ECharts translation preserves combo series marks and axes', () => {
   const base = {
-    schemaVersion: 1, visualID: 'combo', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
+    schemaVersion: 2, visualID: 'combo', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
     spec: {
       kind: 'cartesian', title: 'Combo', mark: 'combo',
       datasets: [{ id: 'primary', fields: [
@@ -93,7 +93,7 @@ test('ECharts translation preserves combo series marks and axes', () => {
 
 test('ECharts translation emits one multi-value financial series', () => {
   const envelope = {
-    schemaVersion: 1, visualID: 'ohlc', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
+    schemaVersion: 2, visualID: 'ohlc', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
     spec: {
       kind: 'cartesian', title: 'OHLC', mark: 'candlestick',
       datasets: [{ id: 'primary', fields: ['label', 'open', 'close', 'low', 'high'].map((id, index) => ({ id, role: index ? 'measure' : 'dimension', dataType: index ? 'decimal' : 'string', nullable: false, label: id })) }],
@@ -114,7 +114,7 @@ test('ECharts translation emits one multi-value financial series', () => {
 
 test('ECharts translation builds radar indicators and aligned series from typed fields', () => {
   const envelope = {
-    schemaVersion: 1, visualID: 'quality', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
+    schemaVersion: 2, visualID: 'quality', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
     spec: {
       kind: 'polar', title: 'Quality', mark: 'radar',
       datasets: [{ id: 'primary', fields: [

@@ -146,17 +146,97 @@ type VisualDataBudget struct {
 }
 
 type VisualGeo struct {
-	Layers []VisualGeoLayer `yaml:"layers" json:"layers"`
+	Basemap      string            `yaml:"basemap" json:"basemap"`
+	Theme        string            `yaml:"theme" json:"theme"`
+	LabelDensity string            `yaml:"label_density" json:"labelDensity"`
+	Camera       VisualGeoCamera   `yaml:"camera" json:"camera"`
+	Controls     VisualGeoControls `yaml:"controls" json:"controls"`
+	Layers       []VisualGeoLayer  `yaml:"layers" json:"layers"`
 }
 
 type VisualGeoLayer struct {
-	ID            string `yaml:"id" json:"id"`
-	Kind          string `yaml:"kind" json:"kind"`
-	GeometryAsset string `yaml:"geometry_asset" json:"geometryAsset,omitempty"`
-	Join          string `yaml:"join" json:"join,omitempty"`
-	Value         string `yaml:"value" json:"value,omitempty"`
-	Latitude      string `yaml:"latitude" json:"latitude,omitempty"`
-	Longitude     string `yaml:"longitude" json:"longitude,omitempty"`
+	ID            string              `yaml:"id" json:"id"`
+	Kind          string              `yaml:"kind" json:"kind"`
+	GeometryAsset string              `yaml:"geometry_asset" json:"geometryAsset,omitempty"`
+	Join          string              `yaml:"join" json:"join,omitempty"`
+	Value         string              `yaml:"value" json:"value,omitempty"`
+	Category      string              `yaml:"category" json:"category,omitempty"`
+	Label         string              `yaml:"label" json:"label,omitempty"`
+	Tooltip       []string            `yaml:"tooltip" json:"tooltip,omitempty"`
+	Latitude      string              `yaml:"latitude" json:"latitude,omitempty"`
+	Longitude     string              `yaml:"longitude" json:"longitude,omitempty"`
+	Path          string              `yaml:"path" json:"path,omitempty"`
+	Order         string              `yaml:"order" json:"order,omitempty"`
+	Position      string              `yaml:"position" json:"position,omitempty"`
+	Visibility    VisualGeoVisibility `yaml:"visibility" json:"visibility"`
+	Size          VisualGeoSizeScale  `yaml:"size" json:"size"`
+	Color         VisualGeoColorScale `yaml:"color" json:"color"`
+	Stroke        VisualGeoStroke     `yaml:"stroke" json:"stroke"`
+	Cluster       VisualGeoCluster    `yaml:"cluster" json:"cluster"`
+	Heat          VisualGeoHeatStyle  `yaml:"heat" json:"heat"`
+	Line          VisualGeoLineStyle  `yaml:"line" json:"line"`
+	Opacity       float64             `yaml:"opacity" json:"opacity,omitempty"`
+}
+
+type VisualGeoCamera struct {
+	Mode        string    `yaml:"mode" json:"mode"`
+	Center      []float64 `yaml:"center" json:"center,omitempty"`
+	Zoom        *float64  `yaml:"zoom" json:"zoom,omitempty"`
+	Padding     int       `yaml:"padding" json:"padding,omitempty"`
+	MinimumZoom float64   `yaml:"min_zoom" json:"minimumZoom,omitempty"`
+	MaximumZoom float64   `yaml:"max_zoom" json:"maximumZoom,omitempty"`
+}
+
+type VisualGeoControls struct {
+	Zoom    bool `yaml:"zoom" json:"zoom"`
+	Reset   bool `yaml:"reset" json:"reset"`
+	Compass bool `yaml:"compass" json:"compass"`
+}
+
+type VisualGeoVisibility struct {
+	MinimumZoom float64 `yaml:"min_zoom" json:"minimumZoom,omitempty"`
+	MaximumZoom float64 `yaml:"max_zoom" json:"maximumZoom,omitempty"`
+}
+
+type VisualGeoSizeScale struct {
+	MinimumRadius float64  `yaml:"minimum_radius" json:"minimumRadius,omitempty"`
+	MaximumRadius float64  `yaml:"maximum_radius" json:"maximumRadius,omitempty"`
+	DomainMinimum *float64 `yaml:"domain_minimum" json:"domainMinimum,omitempty"`
+	DomainMaximum *float64 `yaml:"domain_maximum" json:"domainMaximum,omitempty"`
+}
+
+type VisualGeoColorScale struct {
+	Kind           string   `yaml:"kind" json:"kind,omitempty"`
+	Palette        string   `yaml:"palette" json:"palette,omitempty"`
+	Reverse        bool     `yaml:"reverse" json:"reverse,omitempty"`
+	DomainMinimum  *float64 `yaml:"domain_minimum" json:"domainMinimum,omitempty"`
+	DomainMidpoint *float64 `yaml:"domain_midpoint" json:"domainMidpoint,omitempty"`
+	DomainMaximum  *float64 `yaml:"domain_maximum" json:"domainMaximum,omitempty"`
+	NullColor      string   `yaml:"null_color" json:"nullColor,omitempty"`
+}
+
+type VisualGeoStroke struct {
+	Color   string  `yaml:"color" json:"color,omitempty"`
+	Width   float64 `yaml:"width" json:"width,omitempty"`
+	Opacity float64 `yaml:"opacity" json:"opacity,omitempty"`
+}
+
+type VisualGeoCluster struct {
+	Enabled       bool `yaml:"enabled" json:"enabled"`
+	Radius        int  `yaml:"radius" json:"radius,omitempty"`
+	MaximumZoom   int  `yaml:"max_zoom" json:"maximumZoom,omitempty"`
+	MinimumPoints int  `yaml:"minimum_points" json:"minimumPoints,omitempty"`
+	ShowCount     bool `yaml:"show_count" json:"showCount"`
+}
+
+type VisualGeoHeatStyle struct {
+	Radius    float64 `yaml:"radius" json:"radius,omitempty"`
+	Intensity float64 `yaml:"intensity" json:"intensity,omitempty"`
+}
+
+type VisualGeoLineStyle struct {
+	Width     float64 `yaml:"width" json:"width,omitempty"`
+	Curvature float64 `yaml:"curvature" json:"curvature,omitempty"`
 }
 
 type VisualCustom struct {

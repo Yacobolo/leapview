@@ -8,10 +8,31 @@ import (
 )
 
 type Signals struct {
-	Filters             Filters            `json:"filters"`
-	Runtime             Runtime            `json:"runtime"`
-	VisualWindowCommand TableRequest       `json:"visualWindowCommand"`
-	InteractionCommand  InteractionCommand `json:"interactionCommand"`
+	Filters                    Filters              `json:"filters"`
+	Runtime                    Runtime              `json:"runtime"`
+	VisualWindowCommand        TableRequest         `json:"visualWindowCommand"`
+	VisualSpatialWindowCommand SpatialWindowRequest `json:"visualSpatialWindowCommand"`
+	InteractionCommand         InteractionCommand   `json:"interactionCommand"`
+}
+
+type SpatialBounds struct {
+	West  float64 `json:"west"`
+	South float64 `json:"south"`
+	East  float64 `json:"east"`
+	North float64 `json:"north"`
+}
+
+type SpatialWindowRequest struct {
+	VisualID     string        `json:"visualID"`
+	SpecRevision string        `json:"specRevision"`
+	DataRevision int64         `json:"dataRevision"`
+	RequestSeq   int64         `json:"requestSeq"`
+	ResetVersion int64         `json:"resetVersion"`
+	Bounds       SpatialBounds `json:"bounds"`
+	Zoom         float64       `json:"zoom"`
+	Width        int           `json:"width"`
+	Height       int           `json:"height"`
+	WindowID     string        `json:"windowID"`
 }
 
 type Catalog struct {

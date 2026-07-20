@@ -242,6 +242,30 @@ func validateGeographicVisual(name string, visual Visual) error {
 		}
 		return nil
 	}
+	optionalAlias := func(layerID, property, alias string) error {
+		if strings.TrimSpace(alias) == "" {
+			return nil
+		}
+		return requireAlias(layerID, property, alias)
+	}
+	if !oneOf(visual.Geo.Theme, "", "auto", "light", "dark") {
+		return fmt.Errorf("visual %q has unsupported geo.theme %q", name, visual.Geo.Theme)
+	}
+	if !oneOf(visual.Geo.LabelDensity, "", "hidden", "normal", "dense") {
+		return fmt.Errorf("visual %q has unsupported geo.label_density %q", name, visual.Geo.LabelDensity)
+	}
+	if !oneOf(visual.Geo.Camera.Mode, "", "fit_data", "fixed", "preserve") {
+		return fmt.Errorf("visual %q has unsupported geo.camera.mode %q", name, visual.Geo.Camera.Mode)
+	}
+	if len(visual.Geo.Camera.Center) != 0 && len(visual.Geo.Camera.Center) != 2 {
+		return fmt.Errorf("visual %q geo.camera.center requires longitude and latitude", name)
+	}
+	if len(visual.Geo.Camera.Center) == 2 && (visual.Geo.Camera.Center[0] < -180 || visual.Geo.Camera.Center[0] > 180 || visual.Geo.Camera.Center[1] < -90 || visual.Geo.Camera.Center[1] > 90) {
+		return fmt.Errorf("visual %q geo.camera.center is outside geographic bounds", name)
+	}
+	if visual.Geo.Camera.MinimumZoom < 0 || visual.Geo.Camera.MaximumZoom < 0 || (visual.Geo.Camera.MaximumZoom > 0 && visual.Geo.Camera.MinimumZoom > visual.Geo.Camera.MaximumZoom) {
+		return fmt.Errorf("visual %q has invalid geo.camera zoom range", name)
+	}
 	seen := map[string]struct{}{}
 	for _, layer := range visual.Geo.Layers {
 		if strings.TrimSpace(layer.ID) == "" {
@@ -256,6 +280,40 @@ func validateGeographicVisual(name string, visual Visual) error {
 				return err
 			}
 		}
+		for property, alias := range map[string]string{"category": layer.Category, "label": layer.Label, "path": layer.Path, "order": layer.Order} {
+			if err := optionalAlias(layer.ID, property, alias); err != nil {
+				return err
+			}
+		}
+		for _, alias := range layer.Tooltip {
+			if err := requireAlias(layer.ID, "tooltip", alias); err != nil {
+				return err
+			}
+		}
+		if !oneOf(layer.Position, "", "below_labels", "above_labels") {
+			return fmt.Errorf("visual %q geographic layer %q has unsupported position %q", name, layer.ID, layer.Position)
+		}
+		if layer.Visibility.MinimumZoom < 0 || layer.Visibility.MaximumZoom < 0 || (layer.Visibility.MaximumZoom > 0 && layer.Visibility.MinimumZoom > layer.Visibility.MaximumZoom) {
+			return fmt.Errorf("visual %q geographic layer %q has invalid visibility zoom range", name, layer.ID)
+		}
+		if layer.Size.MinimumRadius < 0 || layer.Size.MaximumRadius < 0 || (layer.Size.MaximumRadius > 0 && layer.Size.MinimumRadius > layer.Size.MaximumRadius) {
+			return fmt.Errorf("visual %q geographic layer %q size minimum_radius must not exceed maximum_radius", name, layer.ID)
+		}
+		if layer.Size.DomainMinimum != nil && layer.Size.DomainMaximum != nil && *layer.Size.DomainMinimum >= *layer.Size.DomainMaximum {
+			return fmt.Errorf("visual %q geographic layer %q has invalid size domain", name, layer.ID)
+		}
+		if !oneOf(layer.Color.Kind, "", "sequential", "diverging", "categorical") {
+			return fmt.Errorf("visual %q geographic layer %q has unsupported color kind %q", name, layer.ID, layer.Color.Kind)
+		}
+		if layer.Color.DomainMinimum != nil && layer.Color.DomainMaximum != nil && *layer.Color.DomainMinimum >= *layer.Color.DomainMaximum {
+			return fmt.Errorf("visual %q geographic layer %q has invalid color domain", name, layer.ID)
+		}
+		if layer.Opacity < 0 || layer.Opacity > 1 || layer.Stroke.Opacity < 0 || layer.Stroke.Opacity > 1 {
+			return fmt.Errorf("visual %q geographic layer %q opacity must be between zero and one", name, layer.ID)
+		}
+		if layer.Cluster.Enabled && layer.Kind != "point" && oneOf(layer.Kind, "choropleth", "heat", "density", "reference", "path") {
+			return fmt.Errorf("visual %q geographic layer %q clustering is only supported for point layers", name, layer.ID)
+		}
 		switch layer.Kind {
 		case "choropleth":
 			if strings.TrimSpace(layer.GeometryAsset) == "" {
@@ -267,7 +325,7 @@ func validateGeographicVisual(name string, visual Visual) error {
 			if layer.Latitude != "" || layer.Longitude != "" {
 				return fmt.Errorf("visual %q choropleth layer %q does not accept latitude or longitude", name, layer.ID)
 			}
-		case "point", "heat", "density":
+		case "point", "heat", "density", "path":
 			if layer.GeometryAsset != "" || layer.Join != "" {
 				return fmt.Errorf("visual %q geographic layer %q kind %q does not accept geometry_asset or join", name, layer.ID, layer.Kind)
 			}
@@ -276,6 +334,21 @@ func validateGeographicVisual(name string, visual Visual) error {
 			}
 			if err := requireAlias(layer.ID, "longitude", layer.Longitude); err != nil {
 				return err
+			}
+			if layer.Kind == "path" {
+				if err := requireAlias(layer.ID, "path", layer.Path); err != nil {
+					return err
+				}
+				if err := requireAlias(layer.ID, "order", layer.Order); err != nil {
+					return err
+				}
+			}
+		case "reference":
+			if strings.TrimSpace(layer.GeometryAsset) == "" {
+				return fmt.Errorf("visual %q reference layer %q requires geometry_asset", name, layer.ID)
+			}
+			if layer.Join != "" || layer.Latitude != "" || layer.Longitude != "" || layer.Value != "" || layer.Category != "" {
+				return fmt.Errorf("visual %q reference layer %q does not accept query field bindings", name, layer.ID)
 			}
 		default:
 			return fmt.Errorf("visual %q geographic layer %q has unsupported kind %q", name, layer.ID, layer.Kind)
@@ -309,6 +382,9 @@ func validateVisualPresentation(name string, visual Visual) error {
 	}
 	if presentation.Basemap != "" && visual.Type != "map" {
 		return fmt.Errorf("visual %q presentation.basemap is only valid for map", name)
+	}
+	if visual.Type == "map" && (presentation.Basemap != "" || presentation.Roam) {
+		return fmt.Errorf("visual %q map presentation.basemap and presentation.roam were replaced by geo.basemap and geo.controls", name)
 	}
 	if presentation.InnerRadius < 0 || presentation.InnerRadius > 1 || presentation.OuterRadius < 0 || presentation.OuterRadius > 1 || (presentation.InnerRadius > 0 && presentation.OuterRadius > 0 && presentation.InnerRadius >= presentation.OuterRadius) {
 		return fmt.Errorf("visual %q has invalid presentation radii", name)

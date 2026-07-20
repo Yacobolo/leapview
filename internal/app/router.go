@@ -83,6 +83,7 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/workspaces/{workspace}/dashboards/{dashboard}", s.protectedWithObjects(access.PrivilegeViewItem, dashboardhttp.DashboardObjectRefs, dashboardHTTP.Dashboard))
 		r.Get("/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}", s.protectedWithObjects(access.PrivilegeViewItem, dashboardhttp.DashboardObjectRefs, dashboardHTTP.Page))
 		r.Post("/workspaces/{workspace}/commands/visual-window", s.protected(access.PrivilegeViewItem, dashboardHTTP.VisualWindow))
+		r.Post("/workspaces/{workspace}/commands/visual-spatial-window", s.protected(access.PrivilegeViewItem, dashboardHTTP.VisualSpatialWindow))
 		r.Post("/workspaces/{workspace}/commands/select", s.protected(access.PrivilegeViewItem, dashboardHTTP.Select))
 		r.Post("/workspaces/{workspace}/commands/clear-selection", s.protected(access.PrivilegeViewItem, dashboardHTTP.ClearSelection))
 		r.Post("/workspaces/{workspace}/commands/reload", s.protected(access.PrivilegeViewItem, dashboardHTTP.Reload))
@@ -135,8 +136,17 @@ func (s *Server) Routes() http.Handler {
 		})
 	}
 	mux.Handle("/static/*", staticAssetCache(http.StripPrefix("/static/", http.FileServer(http.Dir("static")))))
+	mux.Handle("/map-assets/*", mapAssetCache(http.StripPrefix("/map-assets/", http.FileServer(http.Dir(".data/map-assets")))))
 
 	return mux
+}
+
+func mapAssetCache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		w.Header().Set("Accept-Ranges", "bytes")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func redirectLegacyChat(w http.ResponseWriter, r *http.Request) {

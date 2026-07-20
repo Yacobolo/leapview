@@ -84,6 +84,37 @@ enum VisualizationGeographicLayerKind {
   point: "point",
   heat: "heat",
   density: "density",
+  reference: "reference",
+  path: "path",
+}
+
+enum VisualizationMapTheme {
+  auto: "auto",
+  light: "light",
+  dark: "dark",
+}
+
+enum VisualizationMapLabelDensity {
+  hidden: "hidden",
+  normal: "normal",
+  dense: "dense",
+}
+
+enum VisualizationMapCameraMode {
+  fitData: "fit_data",
+  fixed: "fixed",
+  preserve: "preserve",
+}
+
+enum VisualizationMapLayerPosition {
+  belowLabels: "below_labels",
+  aboveLabels: "above_labels",
+}
+
+enum VisualizationMapColorScaleKind {
+  sequential: "sequential",
+  diverging: "diverging",
+  categorical: "categorical",
 }
 
 enum VisualizationInteractionKind {
@@ -161,6 +192,11 @@ enum VisualizationCardinalityKind {
   lowerBound: "lower_bound",
   estimated: "estimated",
   exact: "exact",
+}
+
+enum VisualizationSpatialPrecision {
+  raw: "raw",
+  aggregated: "aggregated",
 }
 
 enum VisualizationStatusKind {
@@ -368,7 +404,11 @@ model KPIVisualizationPresentation {
 
 model GeographicVisualizationPresentation extends VisualizationPresentation {
   `roam`: boolean;
-  `basemap`?: VisualizationGeometryAsset;
+  `basemap`?: VisualizationMapStyleAsset;
+  `theme`: VisualizationMapTheme;
+  `labelDensity`: VisualizationMapLabelDensity;
+  `camera`: VisualizationMapCamera;
+  `controls`: VisualizationMapControls;
 }
 
 @apigen.contract(#{ kind: "visualization-spec", tags: #["visualization", "ir"] })
@@ -513,14 +553,158 @@ model VisualizationGeometryAsset {
   `url`: string;
 }
 
+model VisualizationMapStyleAsset {
+  `id`: string;
+  `styleUrl`: string;
+  `styleDigest`: string;
+  `archiveUrl`: string;
+  `archiveDigest`: string;
+  `glyphsUrl`: string;
+  `spriteUrl`: string;
+  `source`: string;
+  `license`: string;
+  `attribution`: string;
+  `minimumZoom`: float64;
+  `maximumZoom`: float64;
+  `bounds`: float64[];
+  `labelAnchor`: string;
+}
+
+model VisualizationMapCamera {
+  `mode`: VisualizationMapCameraMode;
+  `center`?: float64[];
+  `zoom`?: float64;
+  `padding`: int32;
+  `minimumZoom`: float64;
+  `maximumZoom`: float64;
+}
+
+model VisualizationMapControls {
+  `zoom`: boolean;
+  `reset`: boolean;
+  `compass`: boolean;
+}
+
+model VisualizationMapVisibility {
+  `minimumZoom`: float64;
+  `maximumZoom`: float64;
+}
+
+model VisualizationMapSizeScale {
+  `minimumRadius`: float64;
+  `maximumRadius`: float64;
+  `domainMinimum`?: float64;
+  `domainMaximum`?: float64;
+}
+
+model VisualizationMapColorScale {
+  `kind`: VisualizationMapColorScaleKind;
+  `palette`: string;
+  `reverse`: boolean;
+  `domainMinimum`?: float64;
+  `domainMidpoint`?: float64;
+  `domainMaximum`?: float64;
+  `nullColor`: string;
+}
+
+model VisualizationMapStroke {
+  `color`: string;
+  `width`: float64;
+  `opacity`: float64;
+}
+
+model VisualizationMapCluster {
+  `enabled`: boolean;
+  `radius`: int32;
+  `maximumZoom`: int32;
+  `minimumPoints`: int32;
+  `showCount`: boolean;
+}
+
+model VisualizationMapHeatStyle {
+  `radius`: float64;
+  `intensity`: float64;
+}
+
+model VisualizationMapLineStyle {
+  `width`: float64;
+  `curvature`: float64;
+}
+
+@discriminator("kind")
 model VisualizationGeographicLayer {
   `id`: string;
-  `kind`: VisualizationGeographicLayerKind;
-  `geometry`?: VisualizationGeometryAsset;
-  `join`?: VisualizationFieldRef;
+  `kind`: string;
+  `label`?: VisualizationFieldRef;
+  `tooltip`: VisualizationFieldRef[];
+  `position`: VisualizationMapLayerPosition;
+  `visibility`: VisualizationMapVisibility;
+}
+
+model VisualizationPointLayer extends VisualizationGeographicLayer {
+  `kind`: "point";
+  `latitude`: VisualizationFieldRef;
+  `longitude`: VisualizationFieldRef;
   `value`?: VisualizationFieldRef;
-  `latitude`?: VisualizationFieldRef;
-  `longitude`?: VisualizationFieldRef;
+  `category`?: VisualizationFieldRef;
+  `size`: VisualizationMapSizeScale;
+  `color`: VisualizationMapColorScale;
+  `stroke`: VisualizationMapStroke;
+  `cluster`: VisualizationMapCluster;
+  `opacity`: float64;
+}
+
+model VisualizationChoroplethLayer extends VisualizationGeographicLayer {
+  `kind`: "choropleth";
+  `geometry`: VisualizationGeometryAsset;
+  `join`: VisualizationFieldRef;
+  `value`?: VisualizationFieldRef;
+  `category`?: VisualizationFieldRef;
+  `color`: VisualizationMapColorScale;
+  `stroke`: VisualizationMapStroke;
+  `opacity`: float64;
+}
+
+model VisualizationHeatLayer extends VisualizationGeographicLayer {
+  `kind`: "heat";
+  `latitude`: VisualizationFieldRef;
+  `longitude`: VisualizationFieldRef;
+  `value`?: VisualizationFieldRef;
+  `color`: VisualizationMapColorScale;
+  `heat`: VisualizationMapHeatStyle;
+  `opacity`: float64;
+}
+
+model VisualizationDensityLayer extends VisualizationGeographicLayer {
+  `kind`: "density";
+  `latitude`: VisualizationFieldRef;
+  `longitude`: VisualizationFieldRef;
+  `value`?: VisualizationFieldRef;
+  `color`: VisualizationMapColorScale;
+  `heat`: VisualizationMapHeatStyle;
+  `opacity`: float64;
+}
+
+model VisualizationReferenceLayer extends VisualizationGeographicLayer {
+  `kind`: "reference";
+  `geometry`: VisualizationGeometryAsset;
+  `color`: VisualizationMapColorScale;
+  `stroke`: VisualizationMapStroke;
+  `opacity`: float64;
+}
+
+model VisualizationPathLayer extends VisualizationGeographicLayer {
+  `kind`: "path";
+  `latitude`: VisualizationFieldRef;
+  `longitude`: VisualizationFieldRef;
+  `path`: VisualizationFieldRef;
+  `order`: VisualizationFieldRef;
+  `value`?: VisualizationFieldRef;
+  `category`?: VisualizationFieldRef;
+  `color`: VisualizationMapColorScale;
+  `stroke`: VisualizationMapStroke;
+  `line`: VisualizationMapLineStyle;
+  `opacity`: float64;
 }
 
 model GeographicVisualizationSpec extends VisualizationSpec {
@@ -572,6 +756,38 @@ model VisualizationWindowRequest {
   `blockID`: string;
 }
 
+model VisualizationSpatialBounds {
+  `west`: float64;
+  `south`: float64;
+  `east`: float64;
+  `north`: float64;
+}
+
+model VisualizationSpatialWindowBlock {
+  `id`: string;
+  `bounds`: VisualizationSpatialBounds;
+  `zoom`: float64;
+  `width`: int32;
+  `height`: int32;
+  `precision`: VisualizationSpatialPrecision;
+  `rows`: unknown[][];
+  `requestSeq`: int64;
+  `resetVersion`: int64;
+}
+
+model VisualizationSpatialWindowRequest {
+  `visualID`: string;
+  `specRevision`: string;
+  `dataRevision`: int64;
+  `requestSeq`: int64;
+  `resetVersion`: int64;
+  `bounds`: VisualizationSpatialBounds;
+  `zoom`: float64;
+  `width`: int32;
+  `height`: int32;
+  `windowID`: string;
+}
+
 @discriminator("kind")
 model VisualizationDataState {
   `kind`: string;
@@ -595,6 +811,17 @@ model WindowedVisualizationDataState extends VisualizationDataState {
   `resetVersion`: int64;
   `sort`: VisualizationSort[];
   `blocks`: Record<VisualizationWindowBlock>;
+}
+
+model SpatialWindowedVisualizationDataState extends VisualizationDataState {
+  `kind`: "spatial_windowed";
+  `schema`: VisualizationDatasetSchema;
+  `cardinality`: VisualizationCardinality;
+  `extent`: VisualizationSpatialBounds;
+  `rowCap`: int64;
+  `featureCap`: int64;
+  `resetVersion`: int64;
+  `window`?: VisualizationSpatialWindowBlock;
 }
 
 model VisualizationDatumRef {
@@ -625,7 +852,7 @@ model VisualizationDiagnostic {
 @apigen.contract(#{ kind: "visualization-envelope", tags: #["visualization", "ir"] })
 @apigen.`metadata`(#{ `x-libredash-contract-role`: "visualization-envelope" })
 model VisualizationEnvelope {
-  `schemaVersion`: 1;
+  `schemaVersion`: 2;
   `visualID`: string;
   `rendererID`: string;
   `specRevision`: string;

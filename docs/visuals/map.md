@@ -4,9 +4,9 @@ Use a map for regional comparisons or observations with geographic coordinates.
 
 Every preview on this page is generated from the YAML shown below it using a fixed documentation dataset.
 
-Maps use LibreDash's vendored, content-addressed Natural Earth world basemap by default. It is deterministic, works offline, and does not send coordinates or browsing activity to a third-party tile service. Set `presentation.basemap: none` when geographic context should be omitted.
+Maps use LibreDash's pinned, OSM-derived vector basemap by default. The PMTiles archive, style, glyphs, and sprites are content addressed and served from LibreDash's own origin, so rendering never sends governed coordinates or browsing activity to a third-party tile service. Set `geo.basemap: blank` when geographic context should be omitted.
 
-Point and choropleth maps can originate semantic crossfilters. Select a mark by click or tap, or use the visible **Select map data** menu for keyboard access. Blank map space clears only that map's selection. `presentation.roam` controls pan and zoom independently of selection.
+Point and choropleth maps can originate semantic crossfilters. Select a mark by click or tap, or use the visible **Select map data** menu for keyboard access. Blank map space clears only that map's selection. Camera, zoom, reset, compass, label density, and light/dark basemap themes are typed under `geo`.
 
 ## Choropleth
 
@@ -30,12 +30,20 @@ visuals:
           direction: desc
       limit: 27
     geo:
+      theme: light
+      label_density: normal
+      controls: {zoom: true, reset: true, compass: true}
       layers:
         - id: states
           kind: choropleth
           geometry_asset: brazil_states
           join: state
           value: order_count
+          tooltip: [state, order_count]
+          color:
+            kind: sequential
+            palette: teal
+            null_color: "#d8dee4"
     interaction:
       point_selection:
         toggle: true
@@ -58,8 +66,6 @@ visuals:
   order_point_map:
     title: Order locations
     type: map
-    presentation:
-      roam: true
     query:
       dimensions:
         order_id: orders.order_id
@@ -69,12 +75,18 @@ visuals:
         revenue: null
       limit: 100
     geo:
+      camera: {mode: fit_data, padding: 32, max_zoom: 9}
+      controls: {zoom: true, reset: true, compass: true}
       layers:
         - id: orders
           kind: point
           latitude: latitude
           longitude: longitude
           value: revenue
+          label: order_id
+          tooltip: [order_id, revenue]
+          size: {minimum_radius: 5, maximum_radius: 28}
+          stroke: {color: "#ffffff", width: 1.5, opacity: 1}
     interaction:
       point_selection:
         toggle: true
@@ -105,12 +117,14 @@ visuals:
         revenue: null
       limit: 100
     geo:
+      theme: dark
       layers:
         - id: revenue
           kind: heat
           latitude: latitude
           longitude: longitude
           value: revenue
+          heat: {radius: 28, intensity: 1.15}
 ```
 
 ## Density
@@ -137,6 +151,71 @@ visuals:
           kind: density
           latitude: latitude
           longitude: longitude
+          heat: {radius: 22, intensity: 1.35}
+```
+
+## Reference boundary
+
+Reference layers add immutable, content-addressed point, line, or polygon context without joining query values into the geometry. They are display-only.
+
+{{< visual id="state_reference_map" >}}
+
+```yaml visual-example=state_reference_map
+visuals:
+  state_reference_map:
+    title: Brazil state reference boundaries
+    type: map
+    query:
+      dimensions:
+        state: orders.state
+      measures:
+        order_count: null
+      limit: 27
+    geo:
+      basemap: blank
+      layers:
+        - id: state_boundaries
+          kind: reference
+          geometry_asset: brazil_states
+          color: {kind: sequential, palette: blue, null_color: "#d8dee4"}
+          stroke: {color: "#57606a", width: 1.5, opacity: 1}
+          opacity: 0.12
+```
+
+## Paths
+
+Path layers group coordinate rows by a stable path alias and order vertices deterministically. Use them for governed routes, flows, and trajectories rather than routing-service output.
+
+{{< visual id="state_order_paths" >}}
+
+```yaml visual-example=state_order_paths
+visuals:
+  state_order_paths:
+    title: State order paths
+    type: map
+    query:
+      dimensions:
+        state: orders.state
+        order_id: orders.order_id
+        latitude: orders.latitude
+        longitude: orders.longitude
+      measures:
+        revenue: null
+      limit: 100
+    geo:
+      controls: {zoom: true, reset: true, compass: true}
+      layers:
+        - id: state_paths
+          kind: path
+          latitude: latitude
+          longitude: longitude
+          path: state
+          order: order_id
+          value: revenue
+          tooltip: [state, revenue]
+          stroke: {color: "#0969da", width: 3, opacity: 0.9}
+          line: {width: 3, curvature: 0}
+          opacity: 0.9
 ```
 
 ## Crossfilter two maps
@@ -173,8 +252,6 @@ visuals:
   customer_locations:
     title: Customer locations
     type: map
-    presentation:
-      roam: true
     query:
       dimensions:
         customer_id: customers.customer_id
@@ -183,6 +260,7 @@ visuals:
       measures:
         order_count: null
     geo:
+      controls: {zoom: true, reset: true, compass: true}
       layers:
         - id: customers
           kind: point

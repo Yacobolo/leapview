@@ -51,6 +51,7 @@ class TanStackHandle implements RendererHandle {
 export function tableSignal(envelope: VisualizationEnvelope): TableSignal {
   const spec = envelope.spec
   if (spec.kind !== 'table' && spec.kind !== 'matrix' && spec.kind !== 'pivot') throw new Error(`TanStack cannot render ${spec.kind}`)
+  if (envelope.dataState.kind === 'spatial_windowed') throw new Error('TanStack cannot render spatial map data')
   const schema = envelope.dataState.kind === 'windowed' ? envelope.dataState.schema : spec.datasets[0]
   const fields = new Map((schema?.fields ?? []).map((field) => [field.id, field]))
   const fieldRefs = spec.kind === 'table' ? spec.columns.map((column) => column.field) : (schema?.fields ?? []).map((field) => ({ dataset: schema?.id ?? 'primary', field: field.id }))

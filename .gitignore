@@ -37,6 +37,7 @@ static/chunks/
 site/static/*.js
 site/static/chunks/
 site/static/geometry/
+site/static/map-assets/
 site/static/shared/
 site/static/vendor/
 static/asset-lineage-graph.css

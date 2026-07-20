@@ -95,14 +95,18 @@ func TestGeographicVisualCompilesEveryLayerKind(t *testing.T) {
 				{Field: "orders.latitude", Alias: "latitude"},
 				{Field: "orders.longitude", Alias: "longitude"},
 			},
-			Measures: []report.FieldRef{{Field: "orders.revenue", Alias: "revenue"}}, Limit: 100,
+			Measures: []report.FieldRef{{Field: "orders.revenue", Alias: "revenue"}},
 		},
-		Geo: report.VisualGeo{Layers: []report.VisualGeoLayer{
-			{ID: "states", Kind: "choropleth", GeometryAsset: "brazil_states", Join: "state", Value: "revenue"},
-			{ID: "stores", Kind: "point", Latitude: "latitude", Longitude: "longitude", Value: "revenue"},
-			{ID: "demand", Kind: "heat", Latitude: "latitude", Longitude: "longitude", Value: "revenue"},
-			{ID: "density", Kind: "density", Latitude: "latitude", Longitude: "longitude"},
-		}},
+		Geo: report.VisualGeo{
+			Basemap: "streets", Theme: "auto", LabelDensity: "normal",
+			Camera:   report.VisualGeoCamera{Mode: "fit_data", Padding: 32, MinimumZoom: 2, MaximumZoom: 14},
+			Controls: report.VisualGeoControls{Zoom: true, Reset: true, Compass: true},
+			Layers: []report.VisualGeoLayer{
+				{ID: "states", Kind: "choropleth", GeometryAsset: "brazil_states", Join: "state", Value: "revenue", Tooltip: []string{"state", "revenue"}, Color: report.VisualGeoColorScale{Kind: "sequential", Palette: "blue"}},
+				{ID: "stores", Kind: "point", Latitude: "latitude", Longitude: "longitude", Value: "revenue", Label: "state", Size: report.VisualGeoSizeScale{MinimumRadius: 5, MaximumRadius: 28}, Cluster: report.VisualGeoCluster{Enabled: true, Radius: 48, MaximumZoom: 10, ShowCount: true}},
+				{ID: "demand", Kind: "heat", Latitude: "latitude", Longitude: "longitude", Value: "revenue"},
+				{ID: "density", Kind: "density", Latitude: "latitude", Longitude: "longitude"},
+			}},
 		Interaction: report.Interaction{PointSelection: report.SelectionInteraction{
 			Toggle: true,
 			Mappings: []report.SelectionMapping{
@@ -125,30 +129,38 @@ func TestGeographicVisualCompilesEveryLayerKind(t *testing.T) {
 	if !ok {
 		t.Fatalf("geographic spec = %#v", definition.Spec.Value)
 	}
+	if got, want := spec.DataBudget.MaxRows, int64(20_000); got != want {
+		t.Fatalf("geographic data budget = %d, want %d", got, want)
+	}
 	if got, want := spec.Presentation.Legend, visualizationir.VisualizationLegendPositionHidden; got != want {
 		t.Fatalf("geographic legend = %q, want %q", got, want)
 	}
-	if spec.Presentation.Basemap == nil || spec.Presentation.Basemap.ID != "world-countries-natural-earth-110m" || spec.Presentation.Basemap.Digest == "" {
-		t.Fatalf("geographic basemap = %#v, want content-addressed Natural Earth asset", spec.Presentation.Basemap)
+	if spec.Presentation.Basemap == nil || spec.Presentation.Basemap.ID != "libredash-streets" || spec.Presentation.Basemap.ArchiveDigest == "" {
+		t.Fatalf("geographic basemap = %#v, want content-addressed streets asset", spec.Presentation.Basemap)
+	}
+	if spec.Presentation.Camera.Mode != visualizationir.VisualizationMapCameraModeFitData || !spec.Presentation.Controls.Reset {
+		t.Fatalf("geographic presentation = %#v", spec.Presentation)
 	}
 	if got, want := len(spec.Layers), 4; got != want {
 		t.Fatalf("layers = %d, want %d", got, want)
 	}
-	for index, want := range []visualizationir.VisualizationGeographicLayerKind{
-		visualizationir.VisualizationGeographicLayerKindChoropleth,
-		visualizationir.VisualizationGeographicLayerKindPoint,
-		visualizationir.VisualizationGeographicLayerKindHeat,
-		visualizationir.VisualizationGeographicLayerKindDensity,
+	for index, want := range []string{
+		"choropleth",
+		"point",
+		"heat",
+		"density",
 	} {
-		if got := spec.Layers[index].Kind; got != want {
+		if got := spec.Layers[index].GetKind(); got != want {
 			t.Fatalf("layer %d kind = %q, want %q", index, got, want)
 		}
 	}
-	if spec.Layers[0].Geometry == nil || spec.Layers[0].Geometry.Digest == "" || spec.Layers[0].Join == nil {
-		t.Fatalf("choropleth layer = %#v", spec.Layers[0])
+	choropleth, ok := spec.Layers[0].Value.(*visualizationir.VisualizationChoroplethLayer)
+	if !ok || choropleth.Geometry.Digest == "" || len(choropleth.Tooltip) != 2 {
+		t.Fatalf("choropleth layer = %#v", spec.Layers[0].Value)
 	}
-	if spec.Layers[1].Latitude == nil || spec.Layers[1].Latitude.Field != "latitude" || spec.Layers[1].Longitude == nil || spec.Layers[1].Longitude.Field != "longitude" {
-		t.Fatalf("point layer = %#v", spec.Layers[1])
+	point, ok := spec.Layers[1].Value.(*visualizationir.VisualizationPointLayer)
+	if !ok || point.Latitude.Field != "latitude" || point.Longitude.Field != "longitude" || !point.Cluster.Enabled || point.Size.MaximumRadius != 28 {
+		t.Fatalf("point layer = %#v", spec.Layers[1].Value)
 	}
 	if got, want := len(spec.Interactions), 1; got != want {
 		t.Fatalf("geographic interactions = %d, want %d", got, want)
@@ -171,10 +183,10 @@ func TestGeographicVisualCompilesEveryLayerKind(t *testing.T) {
 
 func TestGeographicVisualCanExplicitlyDisableTheDefaultBasemap(t *testing.T) {
 	dashboardDefinition := &report.Dashboard{SemanticModel: "model", Visuals: map[string]report.Visual{"locations": {
-		Type: "map", Presentation: report.VisualPresentation{Basemap: "none"}, Query: report.VisualQuery{
+		Type: "map", Query: report.VisualQuery{
 			Table: "orders", Dimensions: []report.FieldRef{{Field: "orders.latitude", Alias: "latitude"}, {Field: "orders.longitude", Alias: "longitude"}}, Measures: []report.FieldRef{{Field: "orders.revenue", Alias: "revenue"}}, Limit: 100,
 		},
-		Geo: report.VisualGeo{Layers: []report.VisualGeoLayer{{ID: "stores", Kind: "point", Latitude: "latitude", Longitude: "longitude"}}},
+		Geo: report.VisualGeo{Basemap: "blank", Layers: []report.VisualGeoLayer{{ID: "stores", Kind: "point", Latitude: "latitude", Longitude: "longitude"}}},
 	}}}
 
 	definitions, err := compileVisualizationDefinitions(dashboardDefinition)
@@ -188,10 +200,10 @@ func TestGeographicVisualCanExplicitlyDisableTheDefaultBasemap(t *testing.T) {
 
 	dashboardDefinition.Visuals["locations"] = func() report.Visual {
 		visual := dashboardDefinition.Visuals["locations"]
-		visual.Presentation.Basemap = "unknown"
+		visual.Geo.Basemap = "unknown"
 		return visual
 	}()
-	if _, err := compileVisualizationDefinitions(dashboardDefinition); err == nil || !strings.Contains(err.Error(), `geographic basemap: unknown geometry asset "unknown"`) {
+	if _, err := compileVisualizationDefinitions(dashboardDefinition); err == nil || !strings.Contains(err.Error(), `geographic basemap: unknown map style asset "unknown"`) {
 		t.Fatalf("unknown basemap error = %v", err)
 	}
 }

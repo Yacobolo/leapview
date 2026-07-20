@@ -127,6 +127,15 @@ func DashboardVisualWindowRequestFromDashboard(value dashboard.TableRequest) Vis
 	}
 }
 
+func DashboardVisualSpatialWindowRequestFromDashboard(value dashboard.SpatialWindowRequest) VisualizationSpatialWindowRequest {
+	return VisualizationSpatialWindowRequest{
+		VisualID: value.VisualID, SpecRevision: value.SpecRevision, DataRevision: value.DataRevision,
+		RequestSeq: value.RequestSeq, ResetVersion: value.ResetVersion,
+		Bounds: VisualizationSpatialBounds{West: value.Bounds.West, South: value.Bounds.South, East: value.Bounds.East, North: value.Bounds.North},
+		Zoom:   value.Zoom, Width: int32(value.Width), Height: int32(value.Height), WindowID: value.WindowID,
+	}
+}
+
 func DashboardVisualFromDefinitionAtRevision(definition visualizationdefinition.Definition, value dashboard.Visual, dataRevision, generation int64) VisualizationEnvelope {
 	envelope, err := visualizationruntime.VisualEnvelopeFromDefinition(definition, value, dataRevision, generation)
 	if err != nil {

@@ -17,7 +17,7 @@ type VisualRow = Record<string, unknown>
 
 type VisualActionDetail = {
   action: VisualActionName
-  visualType: 'chart' | 'table'
+  visualType: 'chart' | 'map' | 'table' | 'visualization'
   visualId: string
   title: string
   columns: VisualColumn[]

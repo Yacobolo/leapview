@@ -11,7 +11,7 @@ import (
 const (
 	// CurrentSchemaVersion is the visualization envelope and IR schema version
 	// emitted by this package.
-	CurrentSchemaVersion = 1
+	CurrentSchemaVersion = 2
 	specRevisionPrefix   = "sha256:"
 )
 

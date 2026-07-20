@@ -7,6 +7,7 @@ tasks:
       - task: generate
       - task: build
       - task: bootstrap
+      - task: map-assets:install
       - ./scripts/dev-server.sh start
 
   dev:movielens:
@@ -28,6 +29,24 @@ tasks:
     desc: Download/sync Olist CSVs if missing
     cmds:
       - go run ./internal/tools/bootstrapolist --out .data/olist
+
+  map-style:generate:
+    desc: Generate the pinned renderer-owned MapLibre style
+    deps:
+      - node:deps
+    sources:
+      - scripts/generate_map_style.ts
+      - package.json
+      - bun.lock
+    generates:
+      - static/map-assets/libredash-streets/style.json
+    cmds:
+      - bun scripts/generate_map_style.ts
+
+  map-assets:install:
+    desc: Install the pinned local PMTiles, glyph, and sprite assets used by development
+    cmds:
+      - go run ./internal/tools/mapassets --out .data/map-assets/libredash-streets
 
   bootstrap:movielens:
     desc: Download/sync MovieLens 32M CSVs if missing
@@ -159,6 +178,7 @@ tasks:
       - task: ui-signals:generate
       - task: schema:generate
       - task: visualization-ir:generate
+      - task: map-style:generate
       - task: cli-docs:generate
       - task: node:deps
       - task: docs:render
