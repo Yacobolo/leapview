@@ -1,4 +1,4 @@
-# Connect an MCP host to LeapView
+# Connect an MCP host
 
 LeapView exposes the same governed BI tool catalog used by its built-in agent through a tools-only MCP endpoint. The endpoint belongs to each LeapView deployment:
 

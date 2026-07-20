@@ -1,4 +1,4 @@
-# Install and authenticate
+# Install and authenticate the CLI
 
 Run the CLI from the LeapView release or from a checked-out repository.
 

@@ -36,13 +36,13 @@ func TestGenerateBuildsUnifiedCatalogFromArticlesAndGeneratedCollections(t *test
           slugPrefix: cli
           index:
             slug: cli
-            title: CLI reference
+            title: CLI command reference
             summary: Command index.
             source: reference/cli/index.md
 `)
 	writeFixture(t, root, "articles/getting-started.md", "# Getting started\n")
-	writeFixture(t, root, "reference/cli/index.md", "# CLI reference\n")
-	writeFixture(t, root, "reference/cli/deploy.md", "# Deploy\n")
+	writeFixture(t, root, "reference/cli/index.md", "# CLI command reference\n")
+	writeFixture(t, root, "reference/cli/deploy.md", "# leapview deploy\n")
 	writeFixture(t, root, "reference/cli/catalog.json", `{"documents":[{"slug":"deploy","title":"leapview deploy","summary":"Deploy a project."}]}`)
 
 	searchPath := filepath.Join(root, "search-index.sqlite3")
@@ -112,6 +112,25 @@ func TestGenerateRejectsUnknownNavigationFields(t *testing.T) {
 	err := generate(filepath.Join(root, "navigation.yaml"), filepath.Join(root, "catalog.json"), filepath.Join(root, "search-index.sqlite3"))
 	if err == nil || !strings.Contains(err.Error(), "field workspaces not found") {
 		t.Fatalf("generate error = %v, want strict unknown-field error", err)
+	}
+}
+
+func TestGenerateRejectsDocumentTitleThatDoesNotMatchHeading(t *testing.T) {
+	root := t.TempDir()
+	writeFixture(t, root, "navigation.yaml", `sections:
+  - id: concepts
+    title: Core concepts
+    documents:
+      - slug: projects
+        title: Projects and workspaces
+        navigationTitle: Projects
+        source: projects.md
+`)
+	writeFixture(t, root, "projects.md", "# Project concepts\n")
+
+	err := generate(filepath.Join(root, "navigation.yaml"), filepath.Join(root, "catalog.json"), filepath.Join(root, "search-index.sqlite3"))
+	if err == nil || !strings.Contains(err.Error(), `title "Projects and workspaces" does not match h1 "Project concepts"`) {
+		t.Fatalf("generate error = %v, want title/h1 mismatch", err)
 	}
 }
 
