@@ -144,7 +144,7 @@ for (const viewport of [
         workspaceHeaderFontSize: '12px',
         workspaceCellFontSize: '12px',
         workspaceTitleFontSize: '12px',
-        workspaceTitleFontWeight: '400',
+        workspaceTitleFontWeight: '600',
         workspaceAssetVerticalAlignment: 'center',
         workspaceRowHeight: 47,
         workspaceTitleFitsNameColumn: true,

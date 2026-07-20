@@ -1395,7 +1395,7 @@ const recordTableStyles = `
     overflow: hidden;
     overflow-wrap: normal;
     font-size: var(--ld-font-size-body-sm);
-    font-weight: var(--ld-font-weight-regular);
+    font-weight: var(--ld-font-weight-strong);
     line-height: var(--ld-line-height-normal);
     text-overflow: ellipsis;
     white-space: nowrap;
