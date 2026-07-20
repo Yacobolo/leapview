@@ -25,6 +25,15 @@ export function referenceIdentity(reference: AgentReferenceSignal): string {
   return `${reference.workspaceId ?? ''}:${reference.kind}:${reference.id || reference.componentId || reference.visualId || reference.title}`
 }
 
+export function referenceKindLabel(kind: string): string {
+  return kind
+    .trim()
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toLocaleUpperCase() + part.slice(1))
+    .join(' ')
+}
+
 export function uniqueReferences(references: AgentReferenceSignal[]): AgentReferenceSignal[] {
   const seen = new Set<string>()
   return references.filter((reference) => {

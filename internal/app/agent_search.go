@@ -16,12 +16,21 @@ const maxConcurrentAgentReferenceSearches = 8
 func (s *Server) searchAgentReferences(r *http.Request, workspaceID, query string, limit int) ([]uisignals.AgentReferenceSignal, error) {
 	handler := s.workspaceHTTPHandler()
 	workspaceIDs := []string{strings.TrimSpace(workspaceID)}
+	workspaceTitles := map[string]string{}
 	global := workspaceIDs[0] == ""
 	if global {
-		var err error
-		workspaceIDs, err = handler.VisibleWorkspaceIDs(r)
+		visibleWorkspaces, err := handler.VisibleWorkspaces(r)
 		if err != nil {
 			return nil, err
+		}
+		workspaceIDs = make([]string, 0, len(visibleWorkspaces))
+		for _, visibleWorkspace := range visibleWorkspaces {
+			currentWorkspaceID := strings.TrimSpace(visibleWorkspace.ID)
+			if currentWorkspaceID == "" {
+				continue
+			}
+			workspaceIDs = append(workspaceIDs, currentWorkspaceID)
+			workspaceTitles[currentWorkspaceID] = strings.TrimSpace(visibleWorkspace.Title)
 		}
 	}
 	if credential, ok := apiCredentialFromContext(r.Context()); ok {
@@ -87,7 +96,7 @@ func (s *Server) searchAgentReferences(r *http.Request, workspaceID, query strin
 	for _, item := range ranked {
 		reference := agentReferenceSignal(item.workspaceID, item.row)
 		if global {
-			description := item.workspaceID
+			description := firstNonEmpty(workspaceTitles[item.workspaceID], item.workspaceID)
 			if strings.TrimSpace(item.row.Description) != "" {
 				description += " · " + item.row.Description
 			}

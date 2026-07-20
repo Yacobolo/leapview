@@ -188,7 +188,7 @@ func TestChatReferenceSearchWithoutWorkspaceSearchesVisibleWorkspaces(t *testing
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	for _, want := range []string{`"workspaceId":"sales"`, `"kind":"visual"`, `"title":"Orders"`} {
+	for _, want := range []string{`"workspaceId":"sales"`, `"kind":"visual"`, `"title":"Orders"`, `"description":"Sales ·`} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("global reference search missing %q:\n%s", want, rec.Body.String())
 		}

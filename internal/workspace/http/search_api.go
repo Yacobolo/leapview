@@ -94,18 +94,8 @@ func (h Handler) SearchResultsByKeys(r *nethttp.Request, workspaceID string, key
 	return h.filterReadableSearchResults(r, workspaceID, candidates, len(keys))
 }
 
-func (h Handler) VisibleWorkspaceIDs(r *nethttp.Request) ([]string, error) {
-	workspaces, err := h.ReadModel.WorkspaceList(r)
-	if err != nil {
-		return nil, err
-	}
-	ids := make([]string, 0, len(workspaces))
-	for _, item := range workspaces {
-		if id := strings.TrimSpace(string(item.ID)); id != "" {
-			ids = append(ids, id)
-		}
-	}
-	return ids, nil
+func (h Handler) VisibleWorkspaces(r *nethttp.Request) ([]workspace.WorkspaceView, error) {
+	return h.ReadModel.WorkspaceList(r)
 }
 
 func (h Handler) filterReadableSearchResults(r *nethttp.Request, workspaceID string, rows []api.SearchResult, limit int) ([]api.SearchResult, error) {

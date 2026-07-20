@@ -14,6 +14,7 @@ import {
   normalizedReferenceQuery,
   referenceIcon,
   referenceIdentity,
+  referenceKindLabel,
   uniqueReferences,
 } from './reference'
 
@@ -507,12 +508,13 @@ class ChatComposer extends LitElement {
 	}
 
 	private renderMentionOption(reference: ChatContextReference, index: number) {
+		const kindLabel = referenceKindLabel(reference.kind)
 		return html`
 			<button
 				type="button"
 				class="mention-option"
 				role="option"
-				aria-label=${`${reference.title}, ${reference.kind}${reference.description ? `, ${reference.description}` : ''}`}
+				aria-label=${`${reference.title}, ${kindLabel}${reference.description ? `, ${reference.description}` : ''}`}
 				aria-selected=${String(index === this.mentionIndex)}
 				data-active=${String(index === this.mentionIndex)}
 				@mousedown=${(event: MouseEvent) => event.preventDefault()}
@@ -521,7 +523,7 @@ class ChatComposer extends LitElement {
 				<span class="mention-icon" aria-hidden="true">${referenceIcon(reference.kind)}</span>
 				<span class="mention-copy">
 					<span class="mention-title">${reference.title}</span>
-					${reference.description ? html`<span class="mention-description">${reference.description}</span>` : null}
+					<span class="mention-description">${kindLabel}${reference.description ? ` · ${reference.description}` : ''}</span>
 				</span>
 			</button>
 		`

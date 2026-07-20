@@ -210,7 +210,7 @@ test('composer searches for and attaches typed @ references with spaces', async 
 
     expect(result).toEqual({
       searches: ['orders by'],
-      optionText: 'Orders Overview · Executive Sales',
+      optionText: 'Orders Visual · Overview · Executive Sales',
       draftAfterReference: 'Compare',
       submitted: {
         input: 'Compare this with last month',
@@ -353,7 +353,8 @@ test('mention picker ignores search responses from an older request', async () =
       element.suggestionRequestId = first.requestId
       element.suggestions = [{ kind: 'visual', id: 'orders', workspaceId: 'sales', title: 'Orders' }]
       await element.updateComplete
-      const firstVisible = element.shadowRoot.querySelector('.mention-option')?.textContent?.trim()
+      const optionText = () => element.shadowRoot.querySelector('.mention-option')?.textContent?.replace(/\s+/g, ' ').trim()
+      const firstVisible = optionText()
 
       await search('@revenue')
       const second = requests[1]
@@ -368,13 +369,13 @@ test('mention picker ignores search responses from an older request', async () =
       element.suggestionRequestId = second.requestId
       element.suggestions = [{ kind: 'measure', id: 'revenue', workspaceId: 'sales', title: 'Revenue' }]
       await element.updateComplete
-      const currentVisible = element.shadowRoot.querySelector('.mention-option')?.textContent?.trim()
+      const currentVisible = optionText()
 
       element.suggestionQuery = first.query
       element.suggestionRequestId = first.requestId
       element.suggestions = [{ kind: 'visual', id: 'orders-late', workspaceId: 'sales', title: 'Late orders response' }]
       await element.updateComplete
-      const afterLateStale = element.shadowRoot.querySelector('.mention-option')?.textContent?.trim()
+      const afterLateStale = optionText()
 
       return { requests, firstVisible, staleVisible, staleStatus, currentVisible, afterLateStale }
     })
@@ -383,11 +384,11 @@ test('mention picker ignores search responses from an older request', async () =
       { query: 'orders', requestId: 1 },
       { query: 'revenue', requestId: 2 },
     ])
-    expect(result.firstVisible).toBe('Orders')
+    expect(result.firstVisible).toBe('Orders Visual')
     expect(result.staleVisible).toBe('')
     expect(result.staleStatus).toBe('Searching…')
-    expect(result.currentVisible).toBe('Revenue')
-    expect(result.afterLateStale).toBe('Revenue')
+    expect(result.currentVisible).toBe('Revenue Measure')
+    expect(result.afterLateStale).toBe('Revenue Measure')
   } finally {
     await page.close()
   }
@@ -422,7 +423,7 @@ test('mention picker pins on-page results above deduplicated accessible results'
     })
 
     expect(result.labels).toEqual(['On this page', 'All accessible'])
-    expect(result.options).toEqual(['Orders on this page Overview', 'Orders workspace measure Sales model'])
+    expect(result.options).toEqual(['Orders on this page Visual · Overview', 'Orders workspace measure Measure · Sales model'])
   } finally {
     await page.close()
   }
