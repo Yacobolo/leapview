@@ -1,12 +1,13 @@
 package agent
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
 
-func TestContextualModelInputIncludesResolvedWorkspaceReferences(t *testing.T) {
-	input := contextualModelInput("How is this calculated?", &TurnContext{
+func TestTurnContextItemsIncludeResolvedWorkspaceReferences(t *testing.T) {
+	items := turnContextItems(&TurnContext{
 		Surface:     "chat",
 		WorkspaceID: "sales",
 		References: []TurnReference{{
@@ -18,8 +19,16 @@ func TestContextualModelInputIncludesResolvedWorkspaceReferences(t *testing.T) {
 			FieldID:   "order_count",
 		}},
 	})
+	if len(items) != 1 || items[0].Key != "leapview_context" {
+		t.Fatalf("context items = %#v", items)
+	}
+	payload, err := json.Marshal(items[0].Value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := string(payload)
 
-	for _, want := range []string{"leapview_turn_context", `"surface":"chat"`, `"type":"measure"`, "Order count", "How is this calculated?"} {
+	for _, want := range []string{`"surface":"chat"`, `"type":"measure"`, "Order count"} {
 		if !strings.Contains(input, want) {
 			t.Fatalf("contextual input missing %q:\n%s", want, input)
 		}

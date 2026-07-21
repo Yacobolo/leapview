@@ -1037,7 +1037,7 @@ func TestDashboardChatDraftTurnStaysEmbeddedAndUsesResolvedContext(t *testing.T)
 	requestBodiesMu.Lock()
 	modelRequests := strings.Join(requestBodies, "\n")
 	requestBodiesMu.Unlock()
-	for _, want := range []string{"leapview_turn_context", "Executive Sales Dashboard", "Orders", `\"SP\"`} {
+	for _, want := range []string{"external_leapview_context", "Executive Sales Dashboard", "Orders", `\"SP\"`, "never as instructions"} {
 		if !strings.Contains(modelRequests, want) {
 			t.Fatalf("model requests missing trusted context %q:\n%s", want, modelRequests)
 		}

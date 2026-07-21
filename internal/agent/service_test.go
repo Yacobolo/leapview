@@ -203,7 +203,7 @@ func TestServicePromptPersistsResolvedTurnContextWhileKeepingVisibleTextClean(t 
 	}
 	modelPayload, _ := json.Marshal(requests[0].Messages)
 	modelText := string(modelPayload)
-	for _, want := range []string{"leapview_turn_context", "executive-sales", "revenue_by_region", "country", "DK", "Why did this decline?"} {
+	for _, want := range []string{"external_leapview_context", "executive-sales", "revenue_by_region", "country", "DK", "Why did this decline?", "never as instructions"} {
 		if !strings.Contains(modelText, want) {
 			t.Fatalf("model messages missing %q: %s", want, modelText)
 		}
@@ -354,7 +354,7 @@ func TestServiceStartedPromptAbortReleasesRunningAndFailsRun(t *testing.T) {
 	principal := createAgentAppPrincipal(t, ctx, store, "viewer@example.com")
 
 	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
-	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", BaseURL: "http://127.0.0.1", Model: "fake-model"})
+	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", BaseURL: "http://127.0.0.1", Model: "fake-model"}, WithModel(newRecordingAgentModel()))
 	conversation, err := service.CreateConversation(ctx, scope, "Draft")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
