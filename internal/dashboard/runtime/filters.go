@@ -14,6 +14,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/dashboard/reportmodel"
 	"github.com/Yacobolo/libredash/internal/dataquery"
 	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
+	visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
 )
 
 type FilterService struct{}
@@ -149,6 +150,23 @@ func (s *FilterService) semanticFilters(ctx context.Context, runtime *modelRunti
 			result = append(result, reportdef.QueryFilter{Groups: groups})
 		}
 	}
+	for _, selection := range filters.SpatialSelections {
+		if selection.VisualID == "" || selection.InteractionID == "" || selection.Geometry.Value == nil {
+			continue
+		}
+		resolved, err := reportmodel.ResolveCompiledSpatialSelectionInteraction(report, runtime.model, selection.VisualID, selection.InteractionID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve spatial interaction selection: %w", err)
+		}
+		if !resolvedSpatialSelectionTargets(resolved, targetKind, targetID) {
+			continue
+		}
+		spatial, err := spatialFilterFromSelection(resolved, selection.Geometry)
+		if err != nil {
+			return nil, fmt.Errorf("spatial selection source visual %q: %w", selection.VisualID, err)
+		}
+		result = append(result, reportdef.QueryFilter{Spatial: &spatial})
+	}
 	return result, nil
 }
 
@@ -159,6 +177,57 @@ func resolvedSelectionTargets(selection reportmodel.ResolvedSelectionInteraction
 		}
 	}
 	return false
+}
+
+func resolvedSpatialSelectionTargets(selection reportmodel.ResolvedSpatialSelectionInteraction, targetKind, targetID string) bool {
+	for _, target := range selection.Targets {
+		if target.Kind == targetKind && target.ID == targetID {
+			return true
+		}
+	}
+	return false
+}
+
+func spatialFilterFromSelection(selection reportmodel.ResolvedSpatialSelectionInteraction, geometry visualizationir.VisualizationSpatialSelectionGeometry) (reportdef.SpatialFilter, error) {
+	filter := reportdef.SpatialFilter{
+		LatitudeField: selection.Latitude.Field, LongitudeField: selection.Longitude.Field, Fact: selection.Latitude.Fact,
+	}
+	if selection.Latitude.Fact != selection.Longitude.Fact {
+		return reportdef.SpatialFilter{}, fmt.Errorf("coordinate fields must resolve to the same fact")
+	}
+	switch value := geometry.Value.(type) {
+	case *visualizationir.VisualizationSpatialBoxSelection:
+		if value == nil {
+			break
+		}
+		filter.Kind, filter.West, filter.South, filter.East, filter.North = "box", value.Bounds.West, value.Bounds.South, value.Bounds.East, value.Bounds.North
+	case visualizationir.VisualizationSpatialBoxSelection:
+		filter.Kind, filter.West, filter.South, filter.East, filter.North = "box", value.Bounds.West, value.Bounds.South, value.Bounds.East, value.Bounds.North
+	case *visualizationir.VisualizationSpatialLassoSelection:
+		if value == nil {
+			break
+		}
+		filter.Kind = "lasso"
+		for _, point := range value.Points {
+			filter.Points = append(filter.Points, reportdef.SpatialPoint{Longitude: point.Longitude, Latitude: point.Latitude})
+		}
+	case visualizationir.VisualizationSpatialLassoSelection:
+		filter.Kind = "lasso"
+		for _, point := range value.Points {
+			filter.Points = append(filter.Points, reportdef.SpatialPoint{Longitude: point.Longitude, Latitude: point.Latitude})
+		}
+	case *visualizationir.VisualizationSpatialRadiusSelection:
+		if value == nil {
+			break
+		}
+		filter.Kind, filter.Center, filter.RadiusMeters = "radius", reportdef.SpatialPoint{Longitude: value.Center.Longitude, Latitude: value.Center.Latitude}, value.RadiusMeters
+	case visualizationir.VisualizationSpatialRadiusSelection:
+		filter.Kind, filter.Center, filter.RadiusMeters = "radius", reportdef.SpatialPoint{Longitude: value.Center.Longitude, Latitude: value.Center.Latitude}, value.RadiusMeters
+	}
+	if filter.Kind == "" {
+		return reportdef.SpatialFilter{}, fmt.Errorf("spatial selection geometry is required")
+	}
+	return filter, nil
 }
 
 func canonicalSelectionEntry(selection reportmodel.ResolvedSelectionInteraction, entry dashboard.InteractionSelectionEntry) ([]dashboard.InteractionSelectionMapping, error) {

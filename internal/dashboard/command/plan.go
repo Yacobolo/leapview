@@ -49,6 +49,20 @@ func (s Service) PrepareSelect(request Request, authoritative dashboard.Filters)
 	return PreparedRefresh{Filters: filters, Plan: RefreshPlan{Command: "select", Targets: targets}}, nil
 }
 
+func (s Service) PrepareSpatialSelect(request Request, authoritative dashboard.Filters) (PreparedRefresh, error) {
+	filters := report.NormalizeFilters(s.Metrics, request.DashboardID, request.PageID, authoritative)
+	command, err := canonicalSpatialInteractionCommand(s.Metrics, request.DashboardID, request.SpatialInteractionCommand)
+	if err != nil {
+		return PreparedRefresh{}, fmt.Errorf("invalid spatial interaction selection: %w", err)
+	}
+	filters = report.NormalizeFilters(s.Metrics, request.DashboardID, request.PageID, filters.ApplySpatialInteraction(command))
+	targets, err := s.spatialSelectionTargets(request, command.VisualID, command.InteractionID)
+	if err != nil {
+		return PreparedRefresh{}, err
+	}
+	return PreparedRefresh{Filters: filters, Plan: RefreshPlan{Command: "spatial_select", Targets: targets}}, nil
+}
+
 // PrepareClearSelection queries the ordered union of targets affected by the
 // selections being removed.
 func (s Service) PrepareClearSelection(request Request, authoritative dashboard.Filters) (PreparedRefresh, error) {
@@ -69,7 +83,22 @@ func (s Service) PrepareClearSelection(request Request, authoritative dashboard.
 			targets = append(targets, target)
 		}
 	}
+	for _, selection := range filters.SpatialSelections {
+		selectionTargets, err := s.spatialSelectionTargets(request, selection.VisualID, selection.InteractionID)
+		if err != nil {
+			return PreparedRefresh{}, err
+		}
+		for _, target := range selectionTargets {
+			key := target.Key()
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			targets = append(targets, target)
+		}
+	}
 	filters.Selections = []dashboard.InteractionSelection{}
+	filters.SpatialSelections = []dashboard.SpatialInteractionSelection{}
 	return PreparedRefresh{Filters: filters, Plan: RefreshPlan{Command: "clear_selection", Targets: targets}}, nil
 }
 
@@ -234,6 +263,64 @@ func (s Service) selectionTargets(request Request, sourceKind, sourceID string) 
 			continue
 		}
 		seen[key] = struct{}{}
+		targets = append(targets, target)
+	}
+	return targets, nil
+}
+
+func (s Service) spatialSelectionTargets(request Request, sourceID, interactionID string) ([]Target, error) {
+	definition, _, ok := s.Metrics.Report(request.DashboardID)
+	if !ok {
+		return nil, fmt.Errorf("dashboard %q is not published", request.DashboardID)
+	}
+	source, ok := definition.Visualizations[sourceID]
+	if !ok {
+		return nil, fmt.Errorf("unknown source visual %q", sourceID)
+	}
+	spec, ok := source.Spec.Value.(*visualizationir.GeographicVisualizationSpec)
+	if !ok {
+		return nil, fmt.Errorf("visual %q is not geographic", sourceID)
+	}
+	var ids []string
+	for _, interaction := range spec.SpatialInteractions {
+		if interaction.ID == interactionID {
+			ids = interaction.Targets
+			break
+		}
+	}
+	if ids == nil {
+		return nil, fmt.Errorf("visual %q has no spatial interaction %q", sourceID, interactionID)
+	}
+	return s.targetsForIDs(request, ids)
+}
+
+func (s Service) targetsForIDs(request Request, ids []string) ([]Target, error) {
+	definition, _, ok := s.Metrics.Report(request.DashboardID)
+	if !ok {
+		return nil, fmt.Errorf("dashboard %q is not published", request.DashboardID)
+	}
+	tableRequest := s.Metrics.NormalizeTableRequest(request.DashboardID, request.VisualWindowCommand).Reset()
+	targets := make([]Target, 0, len(ids))
+	seen := map[string]struct{}{}
+	for _, id := range ids {
+		targetDefinition, ok := definition.Visualizations[id]
+		if !ok {
+			return nil, fmt.Errorf("interaction references unknown target %q", id)
+		}
+		var target Target
+		if spatial, windowed := spatialTarget(targetDefinition, request.VisualSpatialWindowCommand, true); windowed {
+			target = spatial
+		} else if isGridVisualization(targetDefinition) {
+			requestForTable := tableRequest
+			requestForTable.Table = id
+			target = Target{Kind: TargetTable, ID: id, TableRequest: requestForTable}
+		} else {
+			target = Target{Kind: TargetVisual, ID: id}
+		}
+		if _, duplicate := seen[target.Key()]; duplicate {
+			continue
+		}
+		seen[target.Key()] = struct{}{}
 		targets = append(targets, target)
 	}
 	return targets, nil

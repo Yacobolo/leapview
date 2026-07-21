@@ -53,6 +53,11 @@ func ValidateDashboard(d *report.Dashboard, models map[string]*semanticmodel.Mod
 				return err
 			}
 		}
+		if !visual.Interaction.SpatialSelection.IsZero() {
+			if _, err := reportmodel.ResolveSpatialSelectionInteraction(d, model, name); err != nil {
+				return err
+			}
+		}
 		if err := validateVisualQueryPlan(d, model, name, visual); err != nil {
 			return err
 		}

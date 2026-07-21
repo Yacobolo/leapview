@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "visualID": "orders",
   "rendererID": "tanstack",
   "specRevision": "sha256:8e2bcc88fa8dec7ee0588bcc09cfda7b28ff97679a1e2d2c67280a189f9a7fdc",

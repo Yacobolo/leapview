@@ -1,11 +1,12 @@
 import type {
   DashboardVisualizationSignal,
   VisualizationDataState,
+  VisualizationDataStateTransport,
   VisualizationEnvelope,
 } from '../../../generated/signals'
 
 type CachedDataState = {
-  encoded: string
+  payload: string
   value: VisualizationDataState
 }
 
@@ -30,22 +31,37 @@ export class DashboardVisualizationSignalDecoder {
   }
 
   decode(signal: DashboardVisualizationSignal): VisualizationEnvelope | undefined {
+    if (!validTransportHeader(signal.dataState, signal)) return undefined
     let dataState = this.dataStates.get(signal.visualID)
-    if (!dataState || dataState.encoded !== signal.dataStateJson) {
-      const decoded = decodeDataState(signal.dataStateJson)
+    if (!dataState || dataState.payload !== signal.dataState.payload) {
+      const decoded = decodeDataState(signal.dataState)
       if (!decoded) return undefined
-      dataState = { encoded: signal.dataStateJson, value: decoded }
+      dataState = { payload: signal.dataState.payload, value: decoded }
       this.dataStates.set(signal.visualID, dataState)
     }
-    const { dataStateJson: _, ...envelope } = signal
+    const { dataState: _, ...envelope } = signal
     return { ...envelope, dataState: dataState.value }
   }
 }
 
-function decodeDataState(encoded: string): VisualizationDataState | undefined {
+function validTransportHeader(transport: VisualizationDataStateTransport, signal: DashboardVisualizationSignal): boolean {
+  return transport.schemaVersion === 1
+    && transport.encoding === 'json'
+    && (transport.kind === 'inline' || transport.kind === 'windowed' || transport.kind === 'spatial_windowed')
+    && transport.specRevision === signal.specRevision
+    && transport.dataRevision === signal.dataRevision
+    && Number.isSafeInteger(transport.dataRevision) && transport.dataRevision >= 0
+    && Number.isSafeInteger(transport.generation) && transport.generation >= 0
+}
+
+function decodeDataState(transport: VisualizationDataStateTransport): VisualizationDataState | undefined {
   try {
-    const value = JSON.parse(encoded)
+    const value = JSON.parse(transport.payload)
     if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+    if (value.kind !== transport.kind
+      || value.specRevision !== transport.specRevision
+      || value.dataRevision !== transport.dataRevision
+      || value.generation !== transport.generation) return undefined
     return value as VisualizationDataState
   } catch {
     return undefined

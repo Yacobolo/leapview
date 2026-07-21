@@ -97,3 +97,49 @@ func TestValidateGeographicPointSelectionUsesStableQueryAliases(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateGeographicSpatialSelectionUsesTypedCoordinateMappings(t *testing.T) {
+	base := Visual{
+		Type: "map",
+		Query: VisualQuery{Dimensions: []FieldRef{
+			{Field: "customers.latitude", Alias: "latitude"},
+			{Field: "customers.longitude", Alias: "longitude"},
+		}},
+		Geo: VisualGeo{Layers: []VisualGeoLayer{{ID: "density", Kind: "density", Latitude: "latitude", Longitude: "longitude"}}},
+		Interaction: Interaction{SpatialSelection: SpatialSelectionInteraction{
+			Gestures:  []string{"box", "lasso", "radius"},
+			Latitude:  SpatialSelectionMapping{Source: "latitude", Field: "customers.latitude", Fact: "orders"},
+			Longitude: SpatialSelectionMapping{Source: "longitude", Field: "customers.longitude", Fact: "orders"},
+			Targets:   []string{"detail"},
+		}},
+	}
+	if err := validateSpatialSelectionInteraction("map", base); err != nil {
+		t.Fatalf("valid spatial interaction: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*Visual)
+		want   string
+	}{
+		{name: "unknown gesture", mutate: func(visual *Visual) { visual.Interaction.SpatialSelection.Gestures = []string{"pan"} }, want: `unsupported gesture "pan"`},
+		{name: "duplicate gesture", mutate: func(visual *Visual) { visual.Interaction.SpatialSelection.Gestures = []string{"box", "box"} }, want: `duplicate gesture "box"`},
+		{name: "unknown source", mutate: func(visual *Visual) { visual.Interaction.SpatialSelection.Latitude.Source = "missing" }, want: `unknown stable query alias "missing"`},
+		{name: "layer mismatch", mutate: func(visual *Visual) { visual.Geo.Layers[0].Latitude = "other" }, want: "must match one coordinate layer"},
+		{name: "missing fact", mutate: func(visual *Visual) { visual.Interaction.SpatialSelection.Latitude.Fact = "" }, want: "requires fact"},
+		{name: "missing targets", mutate: func(visual *Visual) { visual.Interaction.SpatialSelection.Targets = nil }, want: "requires targets"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			visual := base
+			visual.Geo.Layers = append([]VisualGeoLayer(nil), base.Geo.Layers...)
+			visual.Interaction.SpatialSelection.Gestures = append([]string(nil), base.Interaction.SpatialSelection.Gestures...)
+			visual.Interaction.SpatialSelection.Targets = append([]string(nil), base.Interaction.SpatialSelection.Targets...)
+			tt.mutate(&visual)
+			err := validateSpatialSelectionInteraction("map", visual)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want containing %q", err, tt.want)
+			}
+		})
+	}
+}

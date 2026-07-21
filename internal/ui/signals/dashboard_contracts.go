@@ -91,6 +91,7 @@ func DashboardFilterOptionsFromDashboard(values map[string][]dashboard.FilterOpt
 }
 
 func DashboardFiltersFromDashboard(value dashboard.Filters) DashboardFilters {
+	value = value.WithDefaults()
 	controls := make(map[string]DashboardFilterControl, len(value.Controls))
 	for key, control := range value.Controls {
 		controls[key] = DashboardFilterControl{
@@ -98,7 +99,7 @@ func DashboardFiltersFromDashboard(value dashboard.Filters) DashboardFilters {
 			From: optionalValue(control.From), To: optionalValue(control.To), Value: optionalValue(control.Value), Values: optionalSlice(control.Values),
 		}
 	}
-	return DashboardFilters{Controls: controls, Selections: dashboardInteractionSelections(value.Selections)}
+	return DashboardFilters{Controls: controls, Selections: dashboardInteractionSelections(value.Selections), SpatialSelections: dashboardSpatialSelections(value.SpatialSelections)}
 }
 
 func DashboardInteractionCommandFromDashboard(value dashboard.InteractionCommand) DashboardInteractionCommand {
@@ -162,22 +163,50 @@ func VisualizationEnvelopeFromIR(value visualizationir.VisualizationEnvelope) Vi
 
 func DashboardVisualizationSignalFromIR(value visualizationir.VisualizationEnvelope) DashboardVisualizationSignal {
 	envelope := visualizationEnvelope(value)
-	dataState, err := json.Marshal(envelope.DataState)
+	transport, err := visualizationir.EncodeDataStateTransport(value.DataState)
 	if err != nil {
-		panic(fmt.Sprintf("encode dashboard visualization data state: %v", err))
+		panic(fmt.Sprintf("encode dashboard visualization data-state transport: %v", err))
 	}
+	dataState := visualizationDataStateTransport(transport)
 	return DashboardVisualizationSignal{
-		SchemaVersion: envelope.SchemaVersion,
-		VisualID:      envelope.VisualID,
-		RendererID:    envelope.RendererID,
-		SpecRevision:  envelope.SpecRevision,
-		Spec:          envelope.Spec,
-		DataRevision:  envelope.DataRevision,
-		DataStateJSON: string(dataState),
-		Selection:     envelope.Selection,
-		Status:        envelope.Status,
-		Diagnostics:   envelope.Diagnostics,
+		SchemaVersion:    envelope.SchemaVersion,
+		VisualID:         envelope.VisualID,
+		RendererID:       envelope.RendererID,
+		SpecRevision:     envelope.SpecRevision,
+		Spec:             envelope.Spec,
+		DataRevision:     envelope.DataRevision,
+		DataState:        dataState,
+		Selection:        envelope.Selection,
+		SpatialSelection: envelope.SpatialSelection,
+		Status:           envelope.Status,
+		Diagnostics:      envelope.Diagnostics,
 	}
+}
+
+func dashboardSpatialSelections(values []dashboard.SpatialInteractionSelection) []VisualizationSpatialSelectionState {
+	out := make([]VisualizationSpatialSelectionState, len(values))
+	for index, value := range values {
+		data, err := json.Marshal(visualizationir.VisualizationSpatialSelectionState{VisualID: value.VisualID, InteractionID: value.InteractionID, Geometry: value.Geometry})
+		if err != nil {
+			panic(fmt.Sprintf("encode dashboard spatial selection: %v", err))
+		}
+		if err := json.Unmarshal(data, &out[index]); err != nil {
+			panic(fmt.Sprintf("decode dashboard spatial selection signal: %v", err))
+		}
+	}
+	return out
+}
+
+func visualizationDataStateTransport(value visualizationir.EncodedDataStateTransport) VisualizationDataStateTransport {
+	data, err := json.Marshal(value)
+	if err != nil {
+		panic(fmt.Sprintf("encode visualization data-state transport: %v", err))
+	}
+	var out VisualizationDataStateTransport
+	if err := json.Unmarshal(data, &out); err != nil {
+		panic(fmt.Sprintf("decode generated visualization data-state transport: %v", err))
+	}
+	return out
 }
 
 func dashboardInteractionSelections(values []dashboard.InteractionSelection) []DashboardInteractionSelection {

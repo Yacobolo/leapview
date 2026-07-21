@@ -143,6 +143,7 @@ func (definition Definition) NormalizeFiltersForPage(pageID string, filters dash
 		}
 	}
 	next.Selections = append([]dashboard.InteractionSelection(nil), filters.Selections...)
+	next.SpatialSelections = append([]dashboard.SpatialInteractionSelection(nil), filters.SpatialSelections...)
 	return next
 }
 

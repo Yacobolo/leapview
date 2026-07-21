@@ -2,6 +2,7 @@ package report
 
 import (
 	"fmt"
+	"strings"
 )
 
 func validateVisualQueryShape(name string, visual Visual) error {
@@ -188,6 +189,61 @@ func validateGeographicPointSelectionMappingKeys(name string, visual Visual) err
 		if mapping.Label != "" && !allAliases.Contains(mapping.Label) {
 			return fmt.Errorf("visual %q interaction mapping %d references unknown label query alias %q for shape %q", name, index, mapping.Label, visual.ShapeOrDefault())
 		}
+	}
+	return nil
+}
+
+func validateSpatialSelectionInteraction(name string, visual Visual) error {
+	selection := visual.Interaction.SpatialSelection
+	if len(selection.Gestures) == 0 {
+		return fmt.Errorf("visual %q spatial_selection requires gestures", name)
+	}
+	seen := map[string]struct{}{}
+	for _, gesture := range selection.Gestures {
+		if gesture != "box" && gesture != "lasso" && gesture != "radius" {
+			return fmt.Errorf("visual %q spatial_selection has unsupported gesture %q", name, gesture)
+		}
+		if _, ok := seen[gesture]; ok {
+			return fmt.Errorf("visual %q spatial_selection has duplicate gesture %q", name, gesture)
+		}
+		seen[gesture] = struct{}{}
+	}
+	if len(selection.Targets) == 0 {
+		return fmt.Errorf("visual %q spatial_selection requires targets", name)
+	}
+	if selection.Latitude.Source == "" || selection.Latitude.Field == "" || selection.Longitude.Source == "" || selection.Longitude.Field == "" {
+		return fmt.Errorf("visual %q spatial_selection latitude and longitude require source and field", name)
+	}
+	if selection.Latitude.Field == selection.Longitude.Field && selection.Latitude.Fact == selection.Longitude.Fact {
+		return fmt.Errorf("visual %q spatial_selection latitude and longitude target fields must differ", name)
+	}
+	stableAliases := payloadKeySet{}
+	for _, field := range visual.Query.Dimensions {
+		stableAliases[defaultString(field.Alias, fieldRefAlias(field.Field))] = struct{}{}
+	}
+	if visual.Query.Time.Field != "" {
+		stableAliases[defaultString(visual.Query.Time.Alias, fieldRefAlias(visual.Query.Time.Field))] = struct{}{}
+	}
+	for axis, mapping := range map[string]SpatialSelectionMapping{"latitude": selection.Latitude, "longitude": selection.Longitude} {
+		if !stableAliases.Contains(mapping.Source) {
+			return fmt.Errorf("visual %q spatial_selection %s references unknown stable query alias %q", name, axis, mapping.Source)
+		}
+		if strings.Contains(mapping.Field, ".") && mapping.Fact == "" {
+			return fmt.Errorf("visual %q spatial_selection %s physical field %q requires fact", name, axis, mapping.Field)
+		}
+		if !strings.Contains(mapping.Field, ".") && mapping.Fact != "" {
+			return fmt.Errorf("visual %q spatial_selection %s semantic field %q must not specify fact", name, axis, mapping.Field)
+		}
+	}
+	coordinateLayer := false
+	for _, layer := range visual.Geo.Layers {
+		if layer.Latitude == selection.Latitude.Source && layer.Longitude == selection.Longitude.Source && oneOf(layer.Kind, "point", "heat", "density", "path") {
+			coordinateLayer = true
+			break
+		}
+	}
+	if !coordinateLayer {
+		return fmt.Errorf("visual %q spatial_selection source coordinates must match one coordinate layer", name)
 	}
 	return nil
 }

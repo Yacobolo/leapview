@@ -49,3 +49,12 @@ func TestInstallTargetsContentAddressedPackagePaths(t *testing.T) {
 		t.Fatal("assetTarget accepted traversal")
 	}
 }
+
+func TestRegionalExtractionProfileExtendsTheGlobalArchive(t *testing.T) {
+	if regionalBounds != "-82,-56,-30,14" || regionalMinimumZoom != "7" || regionalMaximumZoom != "10" {
+		t.Fatalf("regional profile = bounds %q zoom %s..%s", regionalBounds, regionalMinimumZoom, regionalMaximumZoom)
+	}
+	if archiveDigest == globalArchiveDigest {
+		t.Fatal("regional detail was not merged into a distinct immutable archive")
+	}
+}

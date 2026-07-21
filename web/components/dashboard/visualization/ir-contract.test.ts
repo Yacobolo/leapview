@@ -84,6 +84,8 @@ test('standalone JSON Schema validation fails closed', async () => {
   const envelope = await Bun.file(path).json()
   expect(validateEnvelope(envelope)).toBe(true)
   expect(validateEnvelope({ ...envelope, schemaVersion: 1 })).toBe(false)
+  expect(validateEnvelope({ ...envelope, schemaVersion: 2 })).toBe(false)
+  expect(validateEnvelope({ ...envelope, schemaVersion: 4 })).toBe(false)
   expect(validateEnvelope({ ...envelope, legacyOptions: {} })).toBe(false)
   expect(validateEnvelope({ ...envelope, spec: { ...envelope.spec, kind: 'unknown' } })).toBe(false)
 })

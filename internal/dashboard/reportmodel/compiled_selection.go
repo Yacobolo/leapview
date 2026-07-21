@@ -50,6 +50,65 @@ func ResolveCompiledSelectionInteraction(definition *dashboarddefinition.Definit
 	return resolved, nil
 }
 
+// ResolveCompiledSpatialSelectionInteraction resolves compiler-owned
+// geographic mappings without reconstructing the authoring dashboard.
+func ResolveCompiledSpatialSelectionInteraction(definition *dashboarddefinition.Definition, model *semanticmodel.Model, sourceID, interactionID string) (ResolvedSpatialSelectionInteraction, error) {
+	source, ok := definition.Visualizations[sourceID]
+	if !ok {
+		return ResolvedSpatialSelectionInteraction{}, fmt.Errorf("unknown source visualization %q", sourceID)
+	}
+	spec, ok := source.Spec.Value.(*visualizationir.GeographicVisualizationSpec)
+	if !ok {
+		if value, valueOK := source.Spec.Value.(visualizationir.GeographicVisualizationSpec); valueOK {
+			spec = &value
+		} else {
+			return ResolvedSpatialSelectionInteraction{}, fmt.Errorf("visualization %q is not geographic", sourceID)
+		}
+	}
+	var interaction *visualizationir.VisualizationSpatialSelectionInteraction
+	for index := range spec.SpatialInteractions {
+		if spec.SpatialInteractions[index].ID == interactionID {
+			interaction = &spec.SpatialInteractions[index]
+			break
+		}
+	}
+	if interaction == nil {
+		return ResolvedSpatialSelectionInteraction{}, fmt.Errorf("visualization %q has no spatial interaction %q", sourceID, interactionID)
+	}
+	resolve := func(mapping visualizationir.VisualizationSpatialFieldMapping) (ResolvedSelectionMapping, error) {
+		compiled := visualizationir.VisualizationInteractionMapping{TargetFieldID: mapping.TargetFieldID, TargetFactID: mapping.TargetFactID}
+		resolved, err := resolveCompiledMapping(model, compiled)
+		if err != nil {
+			return ResolvedSelectionMapping{}, err
+		}
+		if resolved.Type != "number" {
+			return ResolvedSelectionMapping{}, fmt.Errorf("field %q must be numeric", resolved.Field)
+		}
+		return resolved, nil
+	}
+	latitude, err := resolve(interaction.Latitude)
+	if err != nil {
+		return ResolvedSpatialSelectionInteraction{}, fmt.Errorf("visualization %q spatial latitude: %w", sourceID, err)
+	}
+	longitude, err := resolve(interaction.Longitude)
+	if err != nil {
+		return ResolvedSpatialSelectionInteraction{}, fmt.Errorf("visualization %q spatial longitude: %w", sourceID, err)
+	}
+	resolved := ResolvedSpatialSelectionInteraction{Latitude: latitude, Longitude: longitude}
+	for _, targetID := range interaction.Targets {
+		target, ok := definition.Visualizations[targetID]
+		if !ok {
+			return ResolvedSpatialSelectionInteraction{}, fmt.Errorf("spatial interaction references unknown target %q", targetID)
+		}
+		kind := "visual"
+		if target.Query.Kind == visualizationdefinition.QueryDetail || target.Query.Kind == visualizationdefinition.QueryMatrix || target.Query.Kind == visualizationdefinition.QueryPivot {
+			kind = "table"
+		}
+		resolved.Targets = append(resolved.Targets, ResolvedSelectionTarget{Kind: kind, ID: targetID})
+	}
+	return resolved, nil
+}
+
 func resolveCompiledMapping(model *semanticmodel.Model, mapping visualizationir.VisualizationInteractionMapping) (ResolvedSelectionMapping, error) {
 	field, fact, grain := mapping.TargetFieldID, "", ""
 	if mapping.TargetFactID != nil {

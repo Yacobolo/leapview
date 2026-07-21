@@ -115,6 +115,11 @@ func TestGeographicVisualCompilesEveryLayerKind(t *testing.T) {
 				{Field: "orders.latitude", Fact: "orders", Value: "latitude", Label: "revenue"},
 			},
 			Targets: []string{"detail", "summary"},
+		}, SpatialSelection: report.SpatialSelectionInteraction{
+			Gestures:  []string{"box", "lasso", "radius"},
+			Latitude:  report.SpatialSelectionMapping{Source: "latitude", Field: "orders.latitude", Fact: "orders"},
+			Longitude: report.SpatialSelectionMapping{Source: "longitude", Field: "orders.longitude", Fact: "orders"},
+			Targets:   []string{"detail", "summary"},
 		}},
 	}}}
 
@@ -178,6 +183,16 @@ func TestGeographicVisualCompilesEveryLayerKind(t *testing.T) {
 	}
 	if got, want := interaction.Targets, []string{"detail", "summary"}; !slices.Equal(got, want) {
 		t.Fatalf("geographic targets = %#v, want %#v", got, want)
+	}
+	if got, want := len(spec.SpatialInteractions), 1; got != want {
+		t.Fatalf("geographic spatial interactions = %d, want %d", got, want)
+	}
+	spatial := spec.SpatialInteractions[0]
+	if spatial.ID != "spatial_selection" || spatial.Latitude.Source.Field != "latitude" || spatial.Longitude.TargetFieldID != "orders.longitude" || spatial.Longitude.TargetFactID == nil || *spatial.Longitude.TargetFactID != "orders" {
+		t.Fatalf("geographic spatial interaction = %#v", spatial)
+	}
+	if got, want := spatial.Gestures, []visualizationir.VisualizationSpatialSelectionGesture{"box", "lasso", "radius"}; !slices.Equal(got, want) {
+		t.Fatalf("geographic spatial gestures = %#v, want %#v", got, want)
 	}
 	roles := map[string]visualizationir.VisualizationFieldRole{}
 	for _, field := range spec.Datasets[0].Fields {

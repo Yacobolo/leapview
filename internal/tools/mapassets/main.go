@@ -15,12 +15,19 @@ import (
 	"time"
 
 	visualizationmapasset "github.com/Yacobolo/libredash/internal/visualization/mapasset"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 const (
-	planetURL        = "https://build.protomaps.com/20260720.pmtiles"
-	archiveDigest    = visualizationmapasset.ArchiveSHA256
-	basemapAssetsSHA = visualizationmapasset.BasemapAssetsRevision
+	planetURL           = "https://build.protomaps.com/20260720.pmtiles"
+	archiveDigest       = visualizationmapasset.ArchiveSHA256
+	globalArchiveDigest = "2d97ee8907670936ab722da7ca06eafec0734392f73fa1cd337d4debd85d676f"
+	regionalBounds      = "-82,-56,-30,14"
+	regionalMinimumZoom = "7"
+	regionalMaximumZoom = "10"
+	basemapAssetsSHA    = visualizationmapasset.BasemapAssetsRevision
 )
 
 var glyphRanges = []string{
@@ -37,11 +44,47 @@ var glyphRanges = []string{
 
 func main() {
 	out := flag.String("out", ".data/map-assets", "map asset root directory")
+	publishBucket := flag.String("publish-s3-bucket", "", "publish verified assets to this S3 bucket")
+	publishPrefix := flag.String("publish-s3-prefix", "map-assets", "S3 key prefix used for published assets")
+	publishRegion := flag.String("publish-s3-region", "", "AWS region override for map asset publication")
+	publishEndpoint := flag.String("publish-s3-endpoint", "", "S3-compatible endpoint override")
+	publishPathStyle := flag.Bool("publish-s3-path-style", false, "use path-style S3 addressing")
 	flag.Parse()
-	if err := install(context.Background(), *out); err != nil {
+	ctx := context.Background()
+	if err := install(ctx, *out); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	if strings.TrimSpace(*publishBucket) != "" {
+		summary, err := publishS3(ctx, *out, *publishBucket, *publishPrefix, *publishRegion, *publishEndpoint, *publishPathStyle)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Printf("published map assets: uploaded=%d reused=%d bytes=%d\n", summary.Uploaded, summary.Reused, summary.Bytes)
+	}
+}
+
+func publishS3(ctx context.Context, root, bucket, prefix, region, endpoint string, pathStyle bool) (visualizationmapasset.PublicationSummary, error) {
+	loadOptions := []func(*awsconfig.LoadOptions) error{}
+	if strings.TrimSpace(region) != "" {
+		loadOptions = append(loadOptions, awsconfig.WithRegion(strings.TrimSpace(region)))
+	}
+	config, err := awsconfig.LoadDefaultConfig(ctx, loadOptions...)
+	if err != nil {
+		return visualizationmapasset.PublicationSummary{}, fmt.Errorf("load AWS configuration for map asset publication: %w", err)
+	}
+	client := awss3.NewFromConfig(config, func(options *awss3.Options) {
+		options.UsePathStyle = pathStyle
+		if strings.TrimSpace(endpoint) != "" {
+			options.BaseEndpoint = aws.String(strings.TrimRight(strings.TrimSpace(endpoint), "/"))
+		}
+	})
+	store, err := visualizationmapasset.NewS3PublicationStore(client, visualizationmapasset.S3PublicationConfig{Bucket: bucket, Prefix: prefix})
+	if err != nil {
+		return visualizationmapasset.PublicationSummary{}, err
+	}
+	return visualizationmapasset.PublishInstalled(ctx, root, store)
 }
 
 func install(ctx context.Context, out string) error {
@@ -112,22 +155,35 @@ func ensureArchive(ctx context.Context, target, legacy string) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	if legacy != "" && legacy != target {
-		if err := verifyFile(legacy, archiveDigest); err == nil {
-			if err := copyFile(legacy, target); err != nil {
-				return fmt.Errorf("reuse verified map archive: %w", err)
-			}
-			return nil
-		}
-	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return err
 	}
+	build, err := os.MkdirTemp(filepath.Dir(target), ".map-build-")
+	if err != nil {
+		return fmt.Errorf("create map archive build directory: %w", err)
+	}
+	defer os.RemoveAll(build)
+	global := filepath.Join(build, "global-z0-z6.pmtiles")
+	installedGlobal := filepath.Join(filepath.Dir(filepath.Dir(target)), globalArchiveDigest, "basemap.pmtiles")
+	if err := reuseVerifiedArchive(installedGlobal, legacy, globalArchiveDigest, global); err != nil {
+		if err := runPMTiles(ctx, "extract", planetURL, global, "--maxzoom=6", "--download-threads=8", "--quiet"); err != nil {
+			return fmt.Errorf("extract pinned global PMTiles: %w", err)
+		}
+		if err := verifyFile(global, globalArchiveDigest); err != nil {
+			return err
+		}
+	}
+	regional := filepath.Join(build, "south-america-z7-z10.pmtiles")
+	if err := runPMTiles(ctx, "extract", planetURL, regional, "--bbox="+regionalBounds, "--minzoom="+regionalMinimumZoom, "--maxzoom="+regionalMaximumZoom, "--download-threads=8", "--quiet"); err != nil {
+		return fmt.Errorf("extract pinned regional PMTiles: %w", err)
+	}
 	temporary := target + ".partial"
-	command := exec.CommandContext(ctx, "go", "run", "github.com/protomaps/go-pmtiles@v1.31.1", "extract", planetURL, temporary, "--maxzoom=6", "--download-threads=8", "--quiet")
-	command.Stdout, command.Stderr = os.Stdout, os.Stderr
-	if err := command.Run(); err != nil {
-		return fmt.Errorf("extract pinned PMTiles: %w", err)
+	if err := os.Remove(temporary); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	defer os.Remove(temporary)
+	if err := runPMTiles(ctx, "merge", global, regional, temporary, "--quiet"); err != nil {
+		return fmt.Errorf("merge global and regional PMTiles: %w", err)
 	}
 	if err := verifyFile(temporary, archiveDigest); err != nil {
 		return err
@@ -136,6 +192,27 @@ func ensureArchive(ctx context.Context, target, legacy string) error {
 		return err
 	}
 	return nil
+}
+
+func reuseVerifiedArchive(primary, legacy, digest, target string) error {
+	for _, candidate := range []string{primary, legacy} {
+		if candidate == "" {
+			continue
+		}
+		if err := verifyFile(candidate, digest); err == nil {
+			if err := copyFile(candidate, target); err != nil {
+				return fmt.Errorf("reuse verified map archive: %w", err)
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("verified map archive %s is not installed", digest)
+}
+
+func runPMTiles(ctx context.Context, arguments ...string) error {
+	command := exec.CommandContext(ctx, "go", append([]string{"run", "github.com/protomaps/go-pmtiles@v1.31.1"}, arguments...)...)
+	command.Stdout, command.Stderr = os.Stdout, os.Stderr
+	return command.Run()
 }
 
 func downloadIfMissing(ctx context.Context, client *http.Client, remote, target, expected string) error {

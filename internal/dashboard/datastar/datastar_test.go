@@ -187,7 +187,7 @@ func TestTableMetadataUpdatesDataWithoutChangingComponentStatus(t *testing.T) {
 	visuals, ok := patch["visuals"].(map[string]uisignals.DashboardVisualizationSignal)
 	var dataState uisignals.VisualizationDataState
 	if ok {
-		if err := json.Unmarshal([]byte(visuals["orders"].DataStateJSON), &dataState); err != nil {
+		if err := json.Unmarshal([]byte(visuals["orders"].DataState.Payload), &dataState); err != nil {
 			t.Fatal(err)
 		}
 	}

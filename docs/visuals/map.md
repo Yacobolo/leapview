@@ -4,7 +4,9 @@ Use a map for regional comparisons or observations with geographic coordinates.
 
 Every preview on this page is generated from the YAML shown below it using a fixed documentation dataset.
 
-Maps use LibreDash's pinned, OSM-derived vector basemap by default. The PMTiles archive, style, glyphs, and sprites are content addressed and served from LibreDash's own origin, so rendering never sends governed coordinates or browsing activity to a third-party tile service. Set `geo.basemap: blank` when geographic context should be omitted.
+Maps use LibreDash's pinned, OSM-derived vector basemap by default. It retains global context through zoom 6 and adds South America business-region detail through zoom 10, including the roads and place labels needed by the Brazil showcase. The PMTiles archive, style, glyphs, and sprites are content addressed and served from LibreDash's own origin, so rendering never sends governed coordinates or browsing activity to a third-party tile service. Set `geo.basemap: blank` when geographic context should be omitted.
+
+Production operators can publish the verified inventory to S3-compatible managed object storage with `task map-assets:publish MAP_ASSET_S3_BUCKET=...`. Publication is conditional and idempotent: existing keys must match the compiled digest and size, and conflicting immutable objects are rejected instead of overwritten. Route the published `map-assets/` prefix through the application origin or edge proxy so browser requests remain same-origin.
 
 Point and choropleth maps can originate semantic crossfilters. Select a mark by click or tap, or use the visible **Select map data** menu for keyboard access. Blank map space clears only that map's selection. Camera, zoom, reset, compass, label density, and light/dark basemap themes are typed under `geo`.
 
@@ -276,6 +278,17 @@ visuals:
             value: customer_id
             label: customer_id
         targets: [orders_by_state]
+      spatial_selection:
+        gestures: [box, lasso, radius]
+        latitude:
+          source: latitude
+          field: customers.latitude
+          fact: orders
+        longitude:
+          source: longitude
+          field: customers.longitude
+          fact: orders
+        targets: [orders_by_state]
 ```
 
-Heat and density layers are display-only. They can receive filters from other visuals, but they cannot originate selections. Lasso, bounding-box, and radius filtering require a future typed spatial-selection interaction rather than semantic datum selection.
+Point and choropleth marks originate semantic datum selections. A map with stable coordinate fields can additionally originate exact bounding-box, lasso, and radius filters through `spatial_selection`; those filters are compiled against governed latitude and longitude fields and apply only to explicit targets. Heat and density layers remain display-only marks, but they can receive both semantic and spatial filters from another map.

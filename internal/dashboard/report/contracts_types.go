@@ -427,8 +427,9 @@ type Sort struct {
 }
 
 type Interaction struct {
-	PointSelection SelectionInteraction `yaml:"point_selection" json:"pointSelection,omitempty"`
-	RowSelection   SelectionInteraction `yaml:"row_selection" json:"rowSelection,omitempty"`
+	PointSelection   SelectionInteraction        `yaml:"point_selection" json:"pointSelection,omitempty"`
+	RowSelection     SelectionInteraction        `yaml:"row_selection" json:"rowSelection,omitempty"`
+	SpatialSelection SpatialSelectionInteraction `yaml:"spatial_selection" json:"spatialSelection,omitempty"`
 }
 
 type FilterTargets struct {
@@ -448,6 +449,54 @@ type SelectionMapping struct {
 	Grain string `yaml:"grain" json:"grain,omitempty"`
 	Value string `yaml:"value" json:"value"`
 	Label string `yaml:"label" json:"label,omitempty"`
+}
+
+type SpatialSelectionInteraction struct {
+	Gestures  []string                `yaml:"gestures" json:"gestures"`
+	Latitude  SpatialSelectionMapping `yaml:"latitude" json:"latitude"`
+	Longitude SpatialSelectionMapping `yaml:"longitude" json:"longitude"`
+	Targets   []string                `yaml:"targets" json:"targets"`
+}
+
+type SpatialSelectionMapping struct {
+	Source string `yaml:"source" json:"source"`
+	Field  string `yaml:"field" json:"field"`
+	Fact   string `yaml:"fact" json:"fact,omitempty"`
+}
+
+func (s SpatialSelectionInteraction) IsZero() bool {
+	return len(s.Gestures) == 0 && s.Latitude == (SpatialSelectionMapping{}) && s.Longitude == (SpatialSelectionMapping{}) && len(s.Targets) == 0
+}
+
+func (s *SpatialSelectionInteraction) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("spatial selection interaction must be a mapping")
+	}
+	for index := 0; index+1 < len(value.Content); index += 2 {
+		key := value.Content[index].Value
+		item := value.Content[index+1]
+		switch key {
+		case "gestures":
+			if err := item.Decode(&s.Gestures); err != nil {
+				return err
+			}
+		case "latitude":
+			if err := item.Decode(&s.Latitude); err != nil {
+				return err
+			}
+		case "longitude":
+			if err := item.Decode(&s.Longitude); err != nil {
+				return err
+			}
+		case "targets":
+			if err := item.Decode(&s.Targets); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("field %s not found in type report.SpatialSelectionInteraction", key)
+		}
+	}
+	return nil
 }
 
 func (s *SelectionInteraction) UnmarshalYAML(value *yaml.Node) error {
@@ -494,6 +543,10 @@ func (i *Interaction) UnmarshalYAML(value *yaml.Node) error {
 			}
 		case "row_selection":
 			if err := item.Decode(&i.RowSelection); err != nil {
+				return err
+			}
+		case "spatial_selection":
+			if err := item.Decode(&i.SpatialSelection); err != nil {
 				return err
 			}
 		default:

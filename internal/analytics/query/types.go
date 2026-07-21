@@ -41,6 +41,26 @@ type Filter struct {
 	Operator string
 	Values   []any
 	Groups   []FilterGroup
+	Spatial  *SpatialFilter
+}
+
+type SpatialFilter struct {
+	Kind           string
+	LatitudeField  string
+	LongitudeField string
+	Fact           string
+	West           float64
+	South          float64
+	East           float64
+	North          float64
+	Points         []SpatialPoint
+	Center         SpatialPoint
+	RadiusMeters   float64
+}
+
+type SpatialPoint struct {
+	Longitude float64
+	Latitude  float64
 }
 
 type FilterGroup struct {

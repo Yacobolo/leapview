@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"math"
 	"testing"
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
@@ -54,6 +55,12 @@ func (m fakeMetrics) Report(string) (dashboarddefinition.Definition, *semanticmo
 					Measures:   []reportdef.FieldRef{{Field: "order_count", Alias: "value"}},
 				},
 				Geo: reportdef.VisualGeo{Basemap: "blank", Layers: []reportdef.VisualGeoLayer{{ID: "customers", Kind: "point", Latitude: "latitude", Longitude: "longitude", Value: "value"}}},
+				Interaction: reportdef.Interaction{SpatialSelection: reportdef.SpatialSelectionInteraction{
+					Gestures:  []string{"box", "lasso", "radius"},
+					Latitude:  reportdef.SpatialSelectionMapping{Source: "latitude", Field: "latitude"},
+					Longitude: reportdef.SpatialSelectionMapping{Source: "longitude", Field: "longitude"},
+					Targets:   []string{"chart", "orders"},
+				}},
 			},
 		},
 		Tables: map[string]reportdef.TableVisual{"orders": {Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.state"}}}},
@@ -79,6 +86,36 @@ func (m fakeMetrics) Report(string) (dashboarddefinition.Definition, *semanticmo
 		definition = *m.report
 	}
 	return definition, model, true
+}
+
+func TestPrepareSpatialSelectValidatesGeometryAndUsesExplicitTargets(t *testing.T) {
+	definition, _, _ := (fakeMetrics{}).Report("dash")
+	command := dashboard.SpatialSelectionCommand{
+		VisualID: "customer_map", SpecRevision: definition.Visualizations["customer_map"].SpecRevision, DataRevision: 7,
+		InteractionID: "spatial_selection", Action: "set", Gesture: visualizationir.VisualizationSpatialSelectionGestureBox,
+		Geometry: visualizationir.VisualizationSpatialSelectionGeometry{Value: &visualizationir.VisualizationSpatialBoxSelection{
+			VisualizationSpatialSelectionGeometryBase: visualizationir.VisualizationSpatialSelectionGeometryBase{Kind: "box"}, Kind: "box",
+			Bounds: visualizationir.VisualizationSpatialBounds{West: -50, South: -25, East: -40, North: -15},
+		}},
+	}
+	prepared, err := (Service{Metrics: fakeMetrics{}}).PrepareSpatialSelect(Request{DashboardID: "dash", PageID: "overview", SpatialInteractionCommand: command}, dashboard.Filters{}.WithDefaults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prepared.Filters.SpatialSelections) != 1 || len(prepared.Plan.Targets) != 2 || prepared.Plan.Targets[0].ID != "chart" || prepared.Plan.Targets[1].ID != "orders" {
+		t.Fatalf("prepared = %#v", prepared)
+	}
+
+	command.Gesture = visualizationir.VisualizationSpatialSelectionGestureRadius
+	if _, err := (Service{Metrics: fakeMetrics{}}).PrepareSpatialSelect(Request{DashboardID: "dash", PageID: "overview", SpatialInteractionCommand: command}, dashboard.Filters{}); err == nil {
+		t.Fatal("mismatched gesture and geometry was accepted")
+	}
+	command.Gesture = visualizationir.VisualizationSpatialSelectionGestureBox
+	box := command.Geometry.Value.(*visualizationir.VisualizationSpatialBoxSelection)
+	box.Bounds.North = math.Inf(1)
+	if _, err := (Service{Metrics: fakeMetrics{}}).PrepareSpatialSelect(Request{DashboardID: "dash", PageID: "overview", SpatialInteractionCommand: command}, dashboard.Filters{}); err == nil {
+		t.Fatal("non-finite geometry was accepted")
+	}
 }
 
 func TestPrepareVisualSpatialWindowValidatesCompiledIdentity(t *testing.T) {

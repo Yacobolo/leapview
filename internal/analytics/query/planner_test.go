@@ -302,6 +302,27 @@ func TestPlannerSpatialRawRowsUseStableOrderingAndFeatureCap(t *testing.T) {
 	}
 }
 
+func TestPlannerAppliesSpatialInteractionPredicateBeforeAggregation(t *testing.T) {
+	plan, err := NewPlanner(testModel()).Plan(Request{
+		Table: "orders", Measures: []Field{{Field: "order_count"}},
+		Filters: []Filter{{Spatial: &SpatialFilter{
+			Kind: "radius", LatitudeField: "orders.latitude", LongitudeField: "orders.longitude", Fact: "orders",
+			Center: SpatialPoint{Longitude: -46.63, Latitude: -23.55}, RadiusMeters: 25_000,
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"ASIN", "RADIANS(t0.latitude - ?)", "RADIANS(t0.longitude - ?)"} {
+		if !strings.Contains(plan.SQL, want) {
+			t.Fatalf("spatial interaction SQL missing %q:\n%s", want, plan.SQL)
+		}
+	}
+	if len(plan.Args) != 4 {
+		t.Fatalf("spatial interaction args = %#v", plan.Args)
+	}
+}
+
 func testModel() *semanticmodel.Model {
 	return &semanticmodel.Model{
 		Name: "commerce",

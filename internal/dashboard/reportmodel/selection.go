@@ -34,6 +34,63 @@ type ResolvedSelectionTarget struct {
 	Facts []string
 }
 
+type ResolvedSpatialSelectionInteraction struct {
+	Latitude  ResolvedSelectionMapping
+	Longitude ResolvedSelectionMapping
+	Targets   []ResolvedSelectionTarget
+}
+
+// ResolveSpatialSelectionInteraction proves that both governed coordinate
+// fields are numeric and can be applied to every explicitly targeted query.
+func ResolveSpatialSelectionInteraction(d *report.Dashboard, model *semanticmodel.Model, sourceID string) (ResolvedSpatialSelectionInteraction, error) {
+	visual, ok := d.Visuals[sourceID]
+	if !ok {
+		return ResolvedSpatialSelectionInteraction{}, fmt.Errorf("unknown source visualization %q", sourceID)
+	}
+	selection := visual.Interaction.SpatialSelection
+	resolve := func(axis string, mapping report.SpatialSelectionMapping) (ResolvedSelectionMapping, error) {
+		resolved, err := resolveSelectionMapping(model, report.SelectionMapping{Field: mapping.Field, Fact: mapping.Fact, Value: mapping.Source})
+		if err != nil {
+			return ResolvedSelectionMapping{}, fmt.Errorf("visual %q spatial_selection %s: %w", sourceID, axis, err)
+		}
+		if resolved.Type != "number" {
+			return ResolvedSelectionMapping{}, fmt.Errorf("visual %q spatial_selection %s field %q must be numeric", sourceID, axis, mapping.Field)
+		}
+		return resolved, nil
+	}
+	latitude, err := resolve("latitude", selection.Latitude)
+	if err != nil {
+		return ResolvedSpatialSelectionInteraction{}, err
+	}
+	longitude, err := resolve("longitude", selection.Longitude)
+	if err != nil {
+		return ResolvedSpatialSelectionInteraction{}, err
+	}
+	mappings := []ResolvedSelectionMapping{latitude, longitude}
+	if err := validateSelectionTupleScope(mappings); err != nil {
+		return ResolvedSpatialSelectionInteraction{}, fmt.Errorf("visual %q spatial_selection coordinates %w", sourceID, err)
+	}
+	if err := validateSelectionSourceFacts(d, model, "visual", sourceID, mappings); err != nil {
+		return ResolvedSpatialSelectionInteraction{}, err
+	}
+	resolved := ResolvedSpatialSelectionInteraction{Latitude: latitude, Longitude: longitude, Targets: make([]ResolvedSelectionTarget, 0, len(selection.Targets))}
+	for _, targetID := range selection.Targets {
+		targetKind, err := selectionTargetKind(d, targetID)
+		if err != nil {
+			return ResolvedSpatialSelectionInteraction{}, err
+		}
+		facts, err := TargetFacts(d, model, targetKind, targetID)
+		if err != nil {
+			return ResolvedSpatialSelectionInteraction{}, fmt.Errorf("visual %q spatial_selection target %q: %w", sourceID, targetID, err)
+		}
+		if err := validateSelectionTarget(model, targetID, facts, mappings); err != nil {
+			return ResolvedSpatialSelectionInteraction{}, fmt.Errorf("visual %q spatial_selection: %w", sourceID, err)
+		}
+		resolved.Targets = append(resolved.Targets, ResolvedSelectionTarget{Kind: targetKind, ID: targetID, Facts: facts})
+	}
+	return resolved, nil
+}
+
 type SelectionMappingIdentity struct {
 	Field string
 	Fact  string

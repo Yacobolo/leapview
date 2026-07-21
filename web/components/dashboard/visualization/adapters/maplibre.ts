@@ -10,8 +10,9 @@ import { coordinateGeometry, joinGeometry, pathGeometry } from './maplibre/data'
 import { applyFeatureScales, mapLayer, mapOutlineLayer, paletteColors } from './maplibre/layers'
 import { clusterExpansionForRenderedFeatures, interactionCommandForRenderedFeatures, mapInteractionCommand, updateSelectionSources } from './maplibre/interactions'
 import { mapAccessibleData, mapTooltipEntries, type RenderedFeatureLocator } from './maplibre/overlays'
-import { emitMapObservation, installWebGLRecovery, mapNow, removeRendererFrame, waitForMapIdle, type MapObservationStage } from './maplibre/lifecycle'
+import { emitMapObservation, installWebGLRecovery, mapNow, removeRendererFrame, waitForMapIdle, waitForMapRender, type MapObservationStage } from './maplibre/lifecycle'
 import { spatialWindowRequest, type MapSpatialWindowRequest } from './maplibre/spatial'
+import { MapSpatialSelectionControl } from './maplibre/spatial-selection-control'
 import { coordinateReferenceGrid, fitMapToGeographicData } from './maplibre/viewport'
 
 export { loadMapStyleAsset, sameOriginGeometryURL, verifyGeometryDigest } from './maplibre/assets'
@@ -20,7 +21,7 @@ export { coordinateGeometry, joinGeometry, pathGeometry } from './maplibre/data'
 export { applyFeatureScales, mapLayer, mapOutlineLayer, normalizeFeatureWeights } from './maplibre/layers'
 export { clusterExpansionForRenderedFeatures, interactionCommandForRenderedFeatures, mapInteractionCommand, updateSelectionSources } from './maplibre/interactions'
 export { mapAccessibleData, mapTooltipEntries } from './maplibre/overlays'
-export { installWebGLRecovery, removeRendererFrame } from './maplibre/lifecycle'
+export { installWebGLRecovery, removeRendererFrame, waitForMapIdle, waitForMapRender } from './maplibre/lifecycle'
 export { spatialWindowRequest, type MapSpatialWindowRequest } from './maplibre/spatial'
 export { coordinateReferenceGrid, fitMapToGeographicData } from './maplibre/viewport'
 
@@ -58,9 +59,8 @@ export const adapter: RendererAdapter = {
 }
 
 export function mapPointerOptions(envelope: VisualizationEnvelope): Pick<MapOptions, 'interactive' | 'scrollZoom' | 'boxZoom' | 'dragRotate' | 'dragPan' | 'keyboard' | 'doubleClickZoom' | 'touchZoomRotate' | 'touchPitch'> {
-  const geographic = envelope.spec.kind === 'geographic'
   const roam = envelope.spec.kind === 'geographic' ? envelope.spec.presentation.roam : false
-  const selectable = geographic && envelope.spec.interactions.some((candidate) => candidate.kind === 'select')
+  const selectable = envelope.spec.kind === 'geographic' && (envelope.spec.interactions.some((candidate) => candidate.kind === 'select') || envelope.spec.spatialInteractions.length > 0)
   return {
     interactive: roam || selectable,
     scrollZoom: roam,
@@ -84,6 +84,7 @@ class MapLibreHandle implements RendererHandle {
   private clusterSources = new Map<string, string>()
   private envelope?: VisualizationEnvelope
   private selectionControl?: MapSelectionControl
+  private spatialSelectionControl?: MapSpatialSelectionControl
   private navigationControl?: NavigationControl
   private resetButton?: HTMLButtonElement
   private readonly tooltip: HTMLDivElement
@@ -134,6 +135,7 @@ class MapLibreHandle implements RendererHandle {
     this.map.setMaxZoom(envelope.spec.presentation.camera.maximumZoom)
     this.applyTheme()
     this.updateSelectionControl(envelope)
+    this.updateSpatialSelectionControl(envelope)
     if ((change & (Change.Spec | Change.Data)) === 0) {
       if ((change & Change.Selection) !== 0) this.updateSelectionData(envelope)
       return
@@ -173,7 +175,7 @@ class MapLibreHandle implements RendererHandle {
     this.updateLegend(envelope)
     this.handleMoveEnd()
     if (this.disposed) return
-    await waitForMapIdle(this.map)
+    await waitForMapRender(this.map)
   }
   resize(): void { this.map.resize() }
   async snapshot(): Promise<Blob> {
@@ -192,6 +194,7 @@ class MapLibreHandle implements RendererHandle {
     this.disposeWebGLRecovery()
     if (this.spatialRequestTimer !== undefined) window.clearTimeout(this.spatialRequestTimer)
     this.selectionControl?.dispose()
+    this.spatialSelectionControl?.dispose()
     if (this.navigationControl) this.map.removeControl(this.navigationControl)
     this.resetButton?.remove()
     this.map.remove()
@@ -284,6 +287,20 @@ class MapLibreHandle implements RendererHandle {
     this.selectionControl ??= new MapSelectionControl((command) => this.dispatchInteraction(command))
     if (!this.selectionControl.element.isConnected) this.frame.append(this.selectionControl.element)
     this.selectionControl.update(envelope)
+  }
+
+  private updateSpatialSelectionControl(envelope: VisualizationEnvelope): void {
+    const selectable = envelope.spec.kind === 'geographic' && envelope.spec.spatialInteractions.length > 0
+    if (!selectable) {
+      this.spatialSelectionControl?.dispose()
+      this.spatialSelectionControl = undefined
+      return
+    }
+    this.spatialSelectionControl ??= new MapSpatialSelectionControl(this.map, this.frame, (command) => {
+      this.container.dispatchEvent(new CustomEvent('ld-interaction-spatial-select', { bubbles: true, composed: true, detail: command }))
+    })
+    if (!this.spatialSelectionControl.element.isConnected) this.frame.append(this.spatialSelectionControl.element)
+    this.spatialSelectionControl.update(envelope)
   }
 
   private addClusterLayers(sourceID: string, layer: Extract<VisualizationGeographicLayer, { kind: 'point' }>, before?: string): void {
@@ -408,6 +425,7 @@ class MapLibreHandle implements RendererHandle {
 
   private readonly handleClick = (event: MapMouseEvent) => {
     if (!this.envelope) return
+    if (this.spatialSelectionControl?.consumeClick()) return
     const clusters = this.clusterLayerIDs.length ? this.map.queryRenderedFeatures(event.point, { layers: this.clusterLayerIDs }) : []
     const expansion = clusterExpansionForRenderedFeatures(clusters, this.clusterSources)
     if (expansion) {

@@ -86,6 +86,7 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/workspaces/{workspace}/commands/visual-window", s.protected(access.PrivilegeViewItem, dashboardHTTP.VisualWindow))
 		r.Post("/workspaces/{workspace}/commands/visual-spatial-window", s.protected(access.PrivilegeViewItem, dashboardHTTP.VisualSpatialWindow))
 		r.Post("/workspaces/{workspace}/commands/select", s.protected(access.PrivilegeViewItem, dashboardHTTP.Select))
+		r.Post("/workspaces/{workspace}/commands/spatial-select", s.protected(access.PrivilegeViewItem, dashboardHTTP.SpatialSelect))
 		r.Post("/workspaces/{workspace}/commands/clear-selection", s.protected(access.PrivilegeViewItem, dashboardHTTP.ClearSelection))
 		r.Post("/workspaces/{workspace}/commands/reload", s.protected(access.PrivilegeViewItem, dashboardHTTP.Reload))
 		r.Post("/workspaces/{workspace}/commands/reset-filters", s.protected(access.PrivilegeViewItem, dashboardHTTP.ResetFilters))

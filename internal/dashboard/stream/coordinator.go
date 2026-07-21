@@ -516,8 +516,9 @@ func (c *Coordinator) notifyStarted(refresh Refresh) {
 
 func cloneFilters(filters dashboard.Filters) dashboard.Filters {
 	clone := dashboard.Filters{
-		Controls:   make(map[string]dashboard.FilterControl, len(filters.Controls)),
-		Selections: make([]dashboard.InteractionSelection, len(filters.Selections)),
+		Controls:          make(map[string]dashboard.FilterControl, len(filters.Controls)),
+		Selections:        make([]dashboard.InteractionSelection, len(filters.Selections)),
+		SpatialSelections: make([]dashboard.SpatialInteractionSelection, len(filters.SpatialSelections)),
 	}
 	for id, control := range filters.Controls {
 		control.Values = append([]string(nil), control.Values...)
@@ -531,5 +532,6 @@ func cloneFilters(filters dashboard.Filters) dashboard.Filters {
 		}
 		clone.Selections[index] = selection
 	}
+	copy(clone.SpatialSelections, filters.SpatialSelections)
 	return clone.WithDefaults()
 }

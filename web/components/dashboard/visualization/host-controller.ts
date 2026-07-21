@@ -210,7 +210,7 @@ function changes(previous: VisualizationEnvelope | undefined, next: Visualizatio
   let result = Change.None
   if (previous.rendererID !== next.rendererID || previous.specRevision !== next.specRevision) result |= Change.Spec
   if (previous.specRevision !== next.specRevision || previous.dataRevision !== next.dataRevision) result |= Change.Data
-  if (!sameJSON(previous.selection, next.selection)) result |= Change.Selection
+  if (!sameJSON(previous.selection, next.selection) || !sameJSON(previous.spatialSelection, next.spatialSelection)) result |= Change.Selection
   if (!sameJSON(previous.status, next.status) || !sameJSON(previous.diagnostics, next.diagnostics)) result |= Change.Status
   return result
 }
@@ -225,7 +225,7 @@ function sameJSON(left: unknown, right: unknown): boolean {
 export function validateEnvelopeBoundary(value: unknown): value is VisualizationEnvelope {
   if (!value || typeof value !== 'object') return false
   const envelope = value as Partial<VisualizationEnvelope>
-  if (envelope.schemaVersion !== 2 || typeof envelope.visualID !== 'string' || envelope.visualID.length === 0) return false
+  if (envelope.schemaVersion !== 3 || typeof envelope.visualID !== 'string' || envelope.visualID.length === 0) return false
   if (typeof envelope.rendererID !== 'string' || envelope.rendererID.length === 0 || typeof envelope.specRevision !== 'string') return false
   if (!envelope.spec || !envelope.dataState || typeof envelope.dataRevision !== 'number' || envelope.dataRevision < 0) return false
   if (envelope.dataState.specRevision !== envelope.specRevision || envelope.dataState.dataRevision !== envelope.dataRevision) return false

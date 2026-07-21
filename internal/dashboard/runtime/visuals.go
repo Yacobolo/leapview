@@ -53,6 +53,7 @@ func (s *VisualizationDataService) visuals(ctx context.Context, runtime *modelRu
 		if err != nil {
 			return nil, err
 		}
+		envelope.SpatialSelection = selectedSpatialState(filters, key)
 		visuals[key] = envelope
 	}
 	return visuals, nil
@@ -125,7 +126,12 @@ func (s *VisualizationDataService) spatialEnvelope(ctx context.Context, runtime 
 	}
 	cardinality := int64(result.TotalRows)
 	irPrecision := visualizationir.VisualizationSpatialPrecision(precision)
-	return visualizationruntime.SpatialEnvelopeFromFrame(definition, visualizationruntime.Frame{Columns: columns, Rows: rows}, selectedEntries(filters, "visual", request.VisualID), request, irPrecision, cardinality, 0, 0)
+	envelope, err := visualizationruntime.SpatialEnvelopeFromFrame(definition, visualizationruntime.Frame{Columns: columns, Rows: rows}, selectedEntries(filters, "visual", request.VisualID), request, irPrecision, cardinality, 0, 0)
+	if err != nil {
+		return visualizationir.VisualizationEnvelope{}, err
+	}
+	envelope.SpatialSelection = selectedSpatialState(filters, request.VisualID)
+	return envelope, nil
 }
 
 func fieldBindingsToDataFields(bindings []visualizationdefinition.FieldBinding) []dataquery.Field {
@@ -214,6 +220,7 @@ func (s *VisualizationDataService) bundledVisuals(ctx context.Context, runtime *
 		if envelopeErr != nil {
 			return nil, envelopeErr
 		}
+		envelope.SpatialSelection = selectedSpatialState(filters, key)
 		visuals[key] = envelope
 	}
 	return visuals, nil

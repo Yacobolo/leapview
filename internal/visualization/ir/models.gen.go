@@ -72,9 +72,10 @@ type GeographicVisualizationPresentation struct {
 
 type GeographicVisualizationSpec struct {
 	VisualizationSpecBase
-	Kind         string                              `json:"kind"`
-	Layers       []VisualizationGeographicLayer      `json:"layers"`
-	Presentation GeographicVisualizationPresentation `json:"presentation"`
+	Kind                string                                     `json:"kind"`
+	Layers              []VisualizationGeographicLayer             `json:"layers"`
+	SpatialInteractions []VisualizationSpatialSelectionInteraction `json:"spatialInteractions"`
+	Presentation        GeographicVisualizationPresentation        `json:"presentation"`
 }
 
 type GridVisualizationPresentation struct {
@@ -714,16 +715,17 @@ const (
 )
 
 type VisualizationEnvelope struct {
-	SchemaVersion int32                         `json:"schemaVersion"`
-	VisualID      string                        `json:"visualID"`
-	RendererID    string                        `json:"rendererID"`
-	SpecRevision  string                        `json:"specRevision"`
-	Spec          VisualizationSpec             `json:"spec"`
-	DataRevision  int64                         `json:"dataRevision"`
-	DataState     VisualizationDataState        `json:"dataState"`
-	Selection     []VisualizationSelectionEntry `json:"selection"`
-	Status        VisualizationStatus           `json:"status"`
-	Diagnostics   []VisualizationDiagnostic     `json:"diagnostics"`
+	SchemaVersion    int32                               `json:"schemaVersion"`
+	VisualID         string                              `json:"visualID"`
+	RendererID       string                              `json:"rendererID"`
+	SpecRevision     string                              `json:"specRevision"`
+	Spec             VisualizationSpec                   `json:"spec"`
+	DataRevision     int64                               `json:"dataRevision"`
+	DataState        VisualizationDataState              `json:"dataState"`
+	Selection        []VisualizationSelectionEntry       `json:"selection"`
+	SpatialSelection *VisualizationSpatialSelectionState `json:"spatialSelection,omitempty"`
+	Status           VisualizationStatus                 `json:"status"`
+	Diagnostics      []VisualizationDiagnostic           `json:"diagnostics"`
 }
 
 type VisualizationField struct {
@@ -1579,12 +1581,178 @@ type VisualizationSpatialBounds struct {
 	North float64 `json:"north"`
 }
 
+type VisualizationSpatialBoxSelection struct {
+	VisualizationSpatialSelectionGeometryBase
+	Kind   string                     `json:"kind"`
+	Bounds VisualizationSpatialBounds `json:"bounds"`
+}
+
+type VisualizationSpatialCoordinate struct {
+	Longitude float64 `json:"longitude"`
+	Latitude  float64 `json:"latitude"`
+}
+
+type VisualizationSpatialFieldMapping struct {
+	Source        VisualizationFieldRef `json:"source"`
+	TargetFieldID string                `json:"targetFieldID"`
+	TargetFactID  *string               `json:"targetFactID,omitempty"`
+}
+
+type VisualizationSpatialLassoSelection struct {
+	VisualizationSpatialSelectionGeometryBase
+	Kind   string                           `json:"kind"`
+	Points []VisualizationSpatialCoordinate `json:"points"`
+}
+
 type VisualizationSpatialPrecision string
 
 const (
 	VisualizationSpatialPrecisionRaw        VisualizationSpatialPrecision = "raw"
 	VisualizationSpatialPrecisionAggregated VisualizationSpatialPrecision = "aggregated"
 )
+
+type VisualizationSpatialRadiusSelection struct {
+	VisualizationSpatialSelectionGeometryBase
+	Kind         string                         `json:"kind"`
+	Center       VisualizationSpatialCoordinate `json:"center"`
+	RadiusMeters float64                        `json:"radiusMeters"`
+}
+
+type VisualizationSpatialSelectionGeometryVariant interface {
+	isVisualizationSpatialSelectionGeometryVariant()
+}
+
+type VisualizationSpatialSelectionGeometry struct {
+	Value VisualizationSpatialSelectionGeometryVariant
+}
+
+func (VisualizationSpatialBoxSelection) isVisualizationSpatialSelectionGeometryVariant()    {}
+func (VisualizationSpatialLassoSelection) isVisualizationSpatialSelectionGeometryVariant()  {}
+func (VisualizationSpatialRadiusSelection) isVisualizationSpatialSelectionGeometryVariant() {}
+
+func (value VisualizationSpatialSelectionGeometry) MarshalJSON() ([]byte, error) {
+	switch variant := value.Value.(type) {
+	case VisualizationSpatialBoxSelection:
+		return json.Marshal(variant)
+	case *VisualizationSpatialBoxSelection:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationSpatialSelectionGeometry variant is nil")
+		}
+		return json.Marshal(variant)
+	case VisualizationSpatialLassoSelection:
+		return json.Marshal(variant)
+	case *VisualizationSpatialLassoSelection:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationSpatialSelectionGeometry variant is nil")
+		}
+		return json.Marshal(variant)
+	case VisualizationSpatialRadiusSelection:
+		return json.Marshal(variant)
+	case *VisualizationSpatialRadiusSelection:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationSpatialSelectionGeometry variant is nil")
+		}
+		return json.Marshal(variant)
+	case nil:
+		return nil, fmt.Errorf("VisualizationSpatialSelectionGeometry variant is required")
+	default:
+		return nil, fmt.Errorf("unsupported VisualizationSpatialSelectionGeometry variant %T", variant)
+	}
+}
+
+func (value *VisualizationSpatialSelectionGeometry) UnmarshalJSON(data []byte) error {
+	if value == nil {
+		return fmt.Errorf("cannot unmarshal VisualizationSpatialSelectionGeometry into nil receiver")
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return fmt.Errorf("decode VisualizationSpatialSelectionGeometry object: %w", err)
+	}
+	var tag struct {
+		Kind string `json:"kind"`
+	}
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return fmt.Errorf("decode VisualizationSpatialSelectionGeometry discriminator: %w", err)
+	}
+	if tag.Kind == "" {
+		return fmt.Errorf("VisualizationSpatialSelectionGeometry discriminator kind is required")
+	}
+	decode := func(dest any) error {
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.DisallowUnknownFields()
+		return decoder.Decode(dest)
+	}
+	switch tag.Kind {
+	case "box":
+		if _, ok := fields["bounds"]; !ok {
+			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: required property bounds is missing", tag.Kind)
+		}
+		if _, ok := fields["kind"]; !ok {
+			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: required property kind is missing", tag.Kind)
+		}
+		var variant VisualizationSpatialBoxSelection
+		if err := decode(&variant); err != nil {
+			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: %w", tag.Kind, err)
+		}
+		value.Value = &variant
+	case "lasso":
+		if _, ok := fields["kind"]; !ok {
+			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: required property kind is missing", tag.Kind)
+		}
+		if _, ok := fields["points"]; !ok {
+			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: required property points is missing", tag.Kind)
+		}
+		var variant VisualizationSpatialLassoSelection
+		if err := decode(&variant); err != nil {
+			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: %w", tag.Kind, err)
+		}
+		value.Value = &variant
+	case "radius":
+		if _, ok := fields["center"]; !ok {
+			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: required property center is missing", tag.Kind)
+		}
+		if _, ok := fields["kind"]; !ok {
+			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: required property kind is missing", tag.Kind)
+		}
+		if _, ok := fields["radiusMeters"]; !ok {
+			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: required property radiusMeters is missing", tag.Kind)
+		}
+		var variant VisualizationSpatialRadiusSelection
+		if err := decode(&variant); err != nil {
+			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: %w", tag.Kind, err)
+		}
+		value.Value = &variant
+	default:
+		return fmt.Errorf("unknown VisualizationSpatialSelectionGeometry discriminator %q", tag.Kind)
+	}
+	return nil
+}
+
+type VisualizationSpatialSelectionGeometryBase struct {
+	Kind string `json:"kind"`
+}
+
+type VisualizationSpatialSelectionGesture string
+
+const (
+	VisualizationSpatialSelectionGestureBox    VisualizationSpatialSelectionGesture = "box"
+	VisualizationSpatialSelectionGestureLasso  VisualizationSpatialSelectionGesture = "lasso"
+	VisualizationSpatialSelectionGestureRadius VisualizationSpatialSelectionGesture = "radius"
+)
+
+type VisualizationSpatialSelectionInteraction struct {
+	ID        string                                 `json:"id"`
+	Gestures  []VisualizationSpatialSelectionGesture `json:"gestures"`
+	Latitude  VisualizationSpatialFieldMapping       `json:"latitude"`
+	Longitude VisualizationSpatialFieldMapping       `json:"longitude"`
+	Targets   []string                               `json:"targets"`
+}
+
+type VisualizationSpatialSelectionState struct {
+	VisualID      string                                `json:"visualID"`
+	InteractionID string                                `json:"interactionID"`
+	Geometry      VisualizationSpatialSelectionGeometry `json:"geometry"`
+}
 
 type VisualizationSpatialWindowBlock struct {
 	ID           string                        `json:"id"`
@@ -1809,6 +1977,9 @@ func (value *VisualizationSpec) UnmarshalJSON(data []byte) error {
 		}
 		if _, ok := fields["presentation"]; !ok {
 			return fmt.Errorf("decode VisualizationSpec variant %q: required property presentation is missing", tag.Kind)
+		}
+		if _, ok := fields["spatialInteractions"]; !ok {
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property spatialInteractions is missing", tag.Kind)
 		}
 		if _, ok := fields["title"]; !ok {
 			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Kind)

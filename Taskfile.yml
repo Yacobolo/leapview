@@ -48,6 +48,20 @@ tasks:
     cmds:
       - go run ./internal/tools/mapassets --out .data/map-assets
 
+  map-assets:publish:
+    desc: Publish the verified content-addressed map package to managed S3 storage
+    requires:
+      vars: [MAP_ASSET_S3_BUCKET]
+    cmds:
+      - >-
+        go run ./internal/tools/mapassets
+        --out .data/map-assets
+        --publish-s3-bucket {{.MAP_ASSET_S3_BUCKET | quote}}
+        --publish-s3-prefix {{default "map-assets" .MAP_ASSET_S3_PREFIX | quote}}
+        {{if .MAP_ASSET_S3_REGION}}--publish-s3-region {{.MAP_ASSET_S3_REGION | quote}}{{end}}
+        {{if .MAP_ASSET_S3_ENDPOINT}}--publish-s3-endpoint {{.MAP_ASSET_S3_ENDPOINT | quote}}{{end}}
+        {{if .MAP_ASSET_S3_PATH_STYLE}}--publish-s3-path-style{{end}}
+
   bootstrap:movielens:
     desc: Download/sync MovieLens 32M CSVs if missing
     cmds:

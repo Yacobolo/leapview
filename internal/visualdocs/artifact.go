@@ -4,7 +4,7 @@ package visualdocs
 
 import visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
 
-const ArtifactVersion = 5
+const ArtifactVersion = 6
 
 type Artifact struct {
 	Version    int                          `json:"version"`

@@ -46,8 +46,27 @@ export function removeRendererFrame(container: ParentNode, frame: HTMLElement): 
 }
 
 export function waitForMapIdle(map: MapLibreMap): Promise<void> {
+  return waitForMapEvent(map, ['idle'], 10_000)
+}
+
+// A renderer is ready once MapLibre has painted the configured style and data
+// layers. Waiting for `idle` here is incorrect: that event also requires every
+// requested basemap tile to settle, so a slow or unavailable tile can leave the
+// visualization host permanently busy even though a useful frame is visible.
+export function waitForMapRender(map: MapLibreMap): Promise<void> {
+  return waitForMapEvent(map, ['idle', 'render'], 2_000)
+}
+
+function waitForMapEvent(map: MapLibreMap, events: Array<'idle' | 'render'>, timeoutMs: number): Promise<void> {
   return new Promise((resolve) => {
-    map.once('idle', () => resolve())
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const finish = () => {
+      if (timer !== undefined) clearTimeout(timer)
+      for (const event of events) map.off(event, finish)
+      resolve()
+    }
+    for (const event of events) map.once(event, finish)
+    timer = setTimeout(finish, timeoutMs)
     map.triggerRepaint()
   })
 }

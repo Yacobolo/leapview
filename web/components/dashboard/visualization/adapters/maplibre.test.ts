@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 
 import type { VisualizationEnvelope, VisualizationGeographicLayer } from '../../../../generated/visualization'
 import type { FeatureCollection } from 'geojson'
-import { applyFeatureScales, basemapBoundaryLayer, basemapLayer, clusterExpansionForRenderedFeatures, concreteCSSColor, coordinateGeometry, coordinateReferenceGrid, fitMapToGeographicData, installWebGLRecovery, interactionCommandForRenderedFeatures, joinGeometry, loadMapStyleAsset, mapAccessibleData, mapInteractionCommand, mapLayer, mapOutlineLayer, mapPointerOptions, mapThemeColors, mapTooltipEntries, normalizeFeatureWeights, pathGeometry, removeRendererFrame, sameOriginGeometryURL, spatialWindowRequest, updateSelectionSources, verifyGeometryDigest } from './maplibre'
+import { applyFeatureScales, basemapBoundaryLayer, basemapLayer, clusterExpansionForRenderedFeatures, concreteCSSColor, coordinateGeometry, coordinateReferenceGrid, fitMapToGeographicData, installWebGLRecovery, interactionCommandForRenderedFeatures, joinGeometry, loadMapStyleAsset, mapAccessibleData, mapInteractionCommand, mapLayer, mapOutlineLayer, mapPointerOptions, mapThemeColors, mapTooltipEntries, normalizeFeatureWeights, pathGeometry, removeRendererFrame, sameOriginGeometryURL, spatialWindowRequest, updateSelectionSources, verifyGeometryDigest, waitForMapRender } from './maplibre'
 import { adapterObservation } from '../telemetry'
 
 test('MapLibre geometry assets are same-origin and content addressed', async () => {
@@ -52,6 +52,30 @@ test('MapLibre prevents permanent WebGL loss, repaints after restoration, and re
   dispose()
   canvas.dispatchEvent(new Event('webglcontextrestored'))
   expect([resized, repainted]).toEqual([1, 1])
+})
+
+test('MapLibre becomes renderer-ready after a rendered frame without waiting for every basemap tile to idle', async () => {
+  const listeners = new Map<string, Set<() => void>>()
+  let repainted = 0
+  const map = {
+    once: (event: string, listener: () => void) => {
+      const eventListeners = listeners.get(event) ?? new Set()
+      eventListeners.add(listener)
+      listeners.set(event, eventListeners)
+    },
+    off: (event: string, listener: () => void) => listeners.get(event)?.delete(listener),
+    triggerRepaint: () => { repainted++ },
+  }
+
+  const ready = waitForMapRender(map as never)
+  expect(repainted).toBe(1)
+  expect(listeners.get('idle')?.size).toBe(1)
+  expect(listeners.get('render')?.size).toBe(1)
+  listeners.get('render')?.forEach((listener) => listener())
+  await ready
+
+  expect(listeners.get('idle')?.size).toBe(0)
+  expect(listeners.get('render')?.size).toBe(0)
 })
 
 test('MapLibre observations enter the shared visualization telemetry contract', () => {
@@ -360,7 +384,7 @@ test('MapLibre auto basemaps follow the resolved application color scheme', () =
 
 function selectableEnvelope(): VisualizationEnvelope {
   return {
-    schemaVersion: 2, visualID: 'state-map', rendererID: 'maplibre', specRevision: 'sha256:test', dataRevision: 4,
+    schemaVersion: 3, visualID: 'state-map', rendererID: 'maplibre', specRevision: 'sha256:test', dataRevision: 4,
     spec: {
       kind: 'geographic', title: 'States', datasets: [{ id: 'primary', fields: [
         { id: 'state', role: 'identity', dataType: 'string', nullable: false, label: 'State' },

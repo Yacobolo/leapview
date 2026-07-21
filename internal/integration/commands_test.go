@@ -143,7 +143,7 @@ func TestVisualWindowCommandDoesNotPublishCanceledVisualPatch(t *testing.T) {
 
 	patches := nextRefreshPatches(t, stream)
 	for _, patch := range patches {
-		if hasKey(mapAt(patch, "visuals", "orders_table"), "dataStateJson") {
+		if hasKey(mapAt(patch, "visuals", "orders_table"), "dataState") {
 			t.Fatalf("canceled visual-window command streamed visual data: %#v", patch)
 		}
 	}

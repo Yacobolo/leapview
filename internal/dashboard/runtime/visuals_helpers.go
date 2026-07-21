@@ -396,6 +396,16 @@ func selectedEntries(filters dashboard.Filters, sourceKind, sourceID string) []d
 	return entries
 }
 
+func selectedSpatialState(filters dashboard.Filters, visualID string) *visualizationir.VisualizationSpatialSelectionState {
+	for index := len(filters.SpatialSelections) - 1; index >= 0; index-- {
+		selection := filters.SpatialSelections[index]
+		if selection.VisualID == visualID {
+			return &visualizationir.VisualizationSpatialSelectionState{VisualID: visualID, InteractionID: selection.InteractionID, Geometry: selection.Geometry}
+		}
+	}
+	return nil
+}
+
 func copySelectionEntry(entry dashboard.InteractionSelectionEntry) dashboard.InteractionSelectionEntry {
 	next := dashboard.InteractionSelectionEntry{
 		Label:    entry.Label,

@@ -532,6 +532,8 @@ model DashboardEnvelope {
   `filters`: DashboardFilters;
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "interactionCommand" })
   `interactionCommand`: DashboardInteractionCommand;
+  @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "spatialInteractionCommand" })
+  `spatialInteractionCommand`: LibreDashVisualization.VisualizationSpatialSelectionCommand;
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "page" })
   `page`: DashboardPageSignal;
   @apigen.`metadata`(#{ `x-libredash-patch-mode`: "replace", `x-libredash-signal-key`: "runtime" })
@@ -568,6 +570,7 @@ model DashboardFilterOption {
 model DashboardFilters {
   `controls`: Record<DashboardFilterControl>;
   `selections`: DashboardInteractionSelection[];
+  `spatialSelections`: LibreDashVisualization.VisualizationSpatialSelectionState[];
 }
 
 model DashboardInteractionCommand {
@@ -580,21 +583,23 @@ model DashboardInteractionCommand {
 }
 
 /**
- * Dashboard visualization transport that keeps large renderer data outside
- * Datastar's recursively reactive object graph. The browser reconstructs the
- * canonical VisualizationEnvelope before passing it to the visualization host.
+ * Dashboard visualization transport that keeps large renderer data in one
+ * opaque payload outside Datastar's recursively reactive object graph. The
+ * browser validates the typed transport header and reconstructs the canonical
+ * VisualizationEnvelope before passing it to the visualization host.
  */
 @apigen.contract(#{ kind: "ui-signal", tags: #["dashboard", "signal"] })
 @apigen.`metadata`(#{ `x-libredash-contract-role`: "signal", `x-libredash-surface`: "dashboard" })
 model DashboardVisualizationSignal {
-  `schemaVersion`: 2;
+  `schemaVersion`: 3;
   `visualID`: string;
   `rendererID`: string;
   `specRevision`: string;
   `spec`: LibreDashVisualization.VisualizationSpec;
   `dataRevision`: int64;
-  `dataStateJson`: string;
+  `dataState`: LibreDashVisualization.VisualizationDataStateTransport;
   `selection`: LibreDashVisualization.VisualizationSelectionEntry[];
+  `spatialSelection`?: LibreDashVisualization.VisualizationSpatialSelectionState;
   `status`: LibreDashVisualization.VisualizationStatus;
   `diagnostics`: LibreDashVisualization.VisualizationDiagnostic[];
 }

@@ -149,6 +149,19 @@ func (d *Dashboard) validateContract() error {
 				return err
 			}
 		}
+		if !visual.Interaction.SpatialSelection.IsZero() {
+			if visual.Type != "map" {
+				return fmt.Errorf("visual %q type %q does not support spatial_selection", name, visual.Type)
+			}
+			if err := validateSpatialSelectionInteraction(name, visual); err != nil {
+				return err
+			}
+			for _, target := range visual.Interaction.SpatialSelection.Targets {
+				if err := d.validateInteractionTarget("visual", name, "spatial_selection", target); err != nil {
+					return err
+				}
+			}
+		}
 		d.Visuals[name] = visual
 	}
 	for name, table := range d.Tables {
@@ -205,6 +218,9 @@ func (d *Dashboard) validateContract() error {
 		}
 		if !table.Interaction.PointSelection.IsZero() {
 			return fmt.Errorf("table %q does not support point_selection", name)
+		}
+		if !table.Interaction.SpatialSelection.IsZero() {
+			return fmt.Errorf("table %q does not support spatial_selection", name)
 		}
 		if !table.Interaction.RowSelection.IsZero() {
 			if err := d.validateSelectionInteraction("visual", name, "row_selection", table.Interaction.RowSelection); err != nil {

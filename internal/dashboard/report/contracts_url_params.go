@@ -78,6 +78,7 @@ func (d *Dashboard) NormalizeFiltersForPage(pageID string, filters dashboard.Fil
 		}
 	}
 	next.Selections = append([]dashboard.InteractionSelection{}, filters.Selections...)
+	next.SpatialSelections = append([]dashboard.SpatialInteractionSelection{}, filters.SpatialSelections...)
 	return next
 }
 

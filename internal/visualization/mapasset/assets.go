@@ -17,7 +17,7 @@ import (
 
 const (
 	StyleSHA256              = "c62e1d3f357246401f8237f5416ab0e4421c7463ac4f00f899bcfe6eeace2bab"
-	ArchiveSHA256            = "2d97ee8907670936ab722da7ca06eafec0734392f73fa1cd337d4debd85d676f"
+	ArchiveSHA256            = "af527dbc24444b4f87e89190319f65bd6e6e6ef0db8d8054f19e2017932ab392"
 	BasemapAssetsRevision    = "028c18f713baecad011301ff7a69acc39bcc2ae7"
 	assetID                  = "libredash-streets"
 	mapAssetURLPrefix        = "/map-assets/" + assetID
@@ -33,11 +33,11 @@ var assets = map[string]visualizationir.VisualizationMapStyleAsset{
 		ArchiveDigest: "sha256:" + ArchiveSHA256,
 		GlyphsURL:     mapAssetURLPrefix + "/assets/" + BasemapAssetsRevision + "/glyphs/{fontstack}/{range}.pbf",
 		SpriteURL:     mapAssetURLPrefix + "/assets/" + BasemapAssetsRevision + "/sprites/libredash",
-		Source:        "OpenStreetMap contributors; packaged as an immutable LibreDash vector basemap",
+		Source:        "OpenStreetMap contributors; global context through zoom 6 with South America regional detail through zoom 10, packaged as an immutable LibreDash vector basemap",
 		License:       "Open Database License 1.0 (data); BSD-3-Clause (style)",
 		Attribution:   "© OpenStreetMap contributors",
 		MinimumZoom:   0,
-		MaximumZoom:   6,
+		MaximumZoom:   10,
 		Bounds:        []float64{-180, -85.051129, 180, 85.051129},
 		LabelAnchor:   "address_label",
 	},

@@ -791,13 +791,33 @@ func compileGeographicVisualizationSpec(authored reportdef.Visual) (visualizatio
 	}
 	camera := compileMapCamera(authored.Geo.Camera)
 	controls := compileMapControls(authored.Geo.Controls)
+	spatialInteractions := compiledSpatialSelectionInteractions(authored.Interaction.SpatialSelection)
 	return visualizationir.VisualizationSpec{Value: &visualizationir.GeographicVisualizationSpec{
-		VisualizationSpecBase: base, Kind: "geographic", Layers: layers,
+		VisualizationSpecBase: base, Kind: "geographic", Layers: layers, SpatialInteractions: spatialInteractions,
 		Presentation: visualizationir.GeographicVisualizationPresentation{
 			VisualizationPresentation: visualizationir.VisualizationPresentation{Legend: legend, ShowLabels: authored.Presentation.ShowLabels},
 			Roam:                      true, Basemap: basemap, Theme: theme, LabelDensity: labelDensity, Camera: camera, Controls: controls,
 		},
 	}}, nil
+}
+
+func compiledSpatialSelectionInteractions(selection reportdef.SpatialSelectionInteraction) []visualizationir.VisualizationSpatialSelectionInteraction {
+	if selection.IsZero() {
+		return []visualizationir.VisualizationSpatialSelectionInteraction{}
+	}
+	gestures := make([]visualizationir.VisualizationSpatialSelectionGesture, len(selection.Gestures))
+	for index, gesture := range selection.Gestures {
+		gestures[index] = visualizationir.VisualizationSpatialSelectionGesture(gesture)
+	}
+	mapping := func(value reportdef.SpatialSelectionMapping) visualizationir.VisualizationSpatialFieldMapping {
+		return visualizationir.VisualizationSpatialFieldMapping{
+			Source:        visualizationir.VisualizationFieldRef{Dataset: "primary", Field: value.Source},
+			TargetFieldID: value.Field, TargetFactID: optionalString(value.Fact),
+		}
+	}
+	return []visualizationir.VisualizationSpatialSelectionInteraction{{
+		ID: "spatial_selection", Gestures: gestures, Latitude: mapping(selection.Latitude), Longitude: mapping(selection.Longitude), Targets: append([]string(nil), selection.Targets...),
+	}}
 }
 
 type geographicFieldResolver func(layerID, property, alias string) (*visualizationir.VisualizationFieldRef, error)

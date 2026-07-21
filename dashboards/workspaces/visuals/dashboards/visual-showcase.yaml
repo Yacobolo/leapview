@@ -944,6 +944,20 @@ spec:
             - state_order_map
             - customer_revenue_heat_map
             - customer_density_map
+        spatial_selection:
+          gestures: [box, lasso, radius]
+          latitude:
+            source: latitude
+            field: customers.latitude
+            fact: orders
+          longitude:
+            source: longitude
+            field: customers.longitude
+            fact: orders
+          targets:
+            - state_order_map
+            - customer_revenue_heat_map
+            - customer_density_map
     customer_revenue_heat_map:
       title: Revenue concentration
       description: Renders revenue-weighted heat across real Olist ZIP-prefix centroids.

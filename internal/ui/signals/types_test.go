@@ -27,11 +27,18 @@ func TestVisualizationSignalKeepsDataStateOpaque(t *testing.T) {
 	if err := json.Unmarshal(encoded, &signal); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := signal["dataStateJson"].(string); !ok {
-		t.Fatalf("visualization signal must encode data state as one opaque signal: %s", encoded)
+	transport, ok := signal["dataState"].(map[string]any)
+	if !ok {
+		t.Fatalf("visualization signal must encode data state through one typed transport: %s", encoded)
 	}
-	if _, ok := signal["dataState"]; ok {
-		t.Fatalf("visualization signal recursively exposes dataState: %s", encoded)
+	if transport["schemaVersion"] != float64(1) || transport["encoding"] != "json" || transport["kind"] != "inline" {
+		t.Fatalf("visualization data-state transport header = %#v", transport)
+	}
+	if _, ok := transport["payload"].(string); !ok {
+		t.Fatalf("visualization data-state transport payload must stay opaque: %#v", transport)
+	}
+	if _, ok := signal["dataStateJson"]; ok {
+		t.Fatalf("legacy unversioned dataStateJson must not be emitted: %s", encoded)
 	}
 }
 

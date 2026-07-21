@@ -5,10 +5,16 @@ import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 const schemaPath = 'api/gen/visualization.schema.json'
+const contractPath = 'api/visualization/main.tsp'
 const outputPath = 'web/generated/visualization/validate.ts'
 await mkdir(dirname(outputPath), { recursive: true })
 const document = await Bun.file(schemaPath).json()
-document.$defs.VisualizationEnvelope.properties.schemaVersion.const = 2
+const contract = await Bun.file(contractPath).text()
+const envelope = contract.match(/model\s+VisualizationEnvelope\s*\{[\s\S]*?`schemaVersion`:\s*(\d+);/)
+if (!envelope) throw new Error(`could not resolve VisualizationEnvelope.schemaVersion from ${contractPath}`)
+const schemaVersion = Number(envelope[1])
+if (!Number.isSafeInteger(schemaVersion) || schemaVersion < 1) throw new Error(`invalid visualization schema version ${JSON.stringify(envelope[1])}`)
+document.$defs.VisualizationEnvelope.properties.schemaVersion.const = schemaVersion
 await Bun.write(schemaPath, `${JSON.stringify(document, null, 2)}\n`)
 const schema = { ...document, $ref: '#/$defs/VisualizationEnvelope' }
 const ajv = new Ajv2020({ allErrors: true, code: { source: true, esm: true }, strict: true })

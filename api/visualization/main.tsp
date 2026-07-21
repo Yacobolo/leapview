@@ -199,6 +199,22 @@ enum VisualizationSpatialPrecision {
   aggregated: "aggregated",
 }
 
+enum VisualizationSpatialSelectionGesture {
+  box: "box",
+  lasso: "lasso",
+  radius: "radius",
+}
+
+enum VisualizationDataStateKind {
+  inline: "inline",
+  windowed: "windowed",
+  spatialWindowed: "spatial_windowed",
+}
+
+enum VisualizationDataStateTransportEncoding {
+  json: "json",
+}
+
 enum VisualizationStatusKind {
   idle: "idle",
   loading: "loading",
@@ -631,6 +647,62 @@ model VisualizationMapLineStyle {
   `curvature`: float64;
 }
 
+model VisualizationSpatialFieldMapping {
+  `source`: VisualizationFieldRef;
+  `targetFieldID`: string;
+  `targetFactID`?: string;
+}
+
+model VisualizationSpatialSelectionInteraction {
+  `id`: string;
+  `gestures`: VisualizationSpatialSelectionGesture[];
+  `latitude`: VisualizationSpatialFieldMapping;
+  `longitude`: VisualizationSpatialFieldMapping;
+  `targets`: string[];
+}
+
+model VisualizationSpatialCoordinate {
+  `longitude`: float64;
+  `latitude`: float64;
+}
+
+@discriminator("kind")
+model VisualizationSpatialSelectionGeometry {
+  `kind`: string;
+}
+
+model VisualizationSpatialBoxSelection extends VisualizationSpatialSelectionGeometry {
+  `kind`: "box";
+  `bounds`: VisualizationSpatialBounds;
+}
+
+model VisualizationSpatialLassoSelection extends VisualizationSpatialSelectionGeometry {
+  `kind`: "lasso";
+  `points`: VisualizationSpatialCoordinate[];
+}
+
+model VisualizationSpatialRadiusSelection extends VisualizationSpatialSelectionGeometry {
+  `kind`: "radius";
+  `center`: VisualizationSpatialCoordinate;
+  `radiusMeters`: float64;
+}
+
+model VisualizationSpatialSelectionState {
+  `visualID`: string;
+  `interactionID`: string;
+  `geometry`: VisualizationSpatialSelectionGeometry;
+}
+
+model VisualizationSpatialSelectionCommand {
+  `visualID`: string;
+  `specRevision`: string;
+  `dataRevision`: int64;
+  `interactionID`: string;
+  `action`: "set" | "clear";
+  `gesture`: VisualizationSpatialSelectionGesture;
+  `geometry`?: VisualizationSpatialSelectionGeometry;
+}
+
 @discriminator("kind")
 model VisualizationGeographicLayer {
   `id`: string;
@@ -710,6 +782,7 @@ model VisualizationPathLayer extends VisualizationGeographicLayer {
 model GeographicVisualizationSpec extends VisualizationSpec {
   `kind`: "geographic";
   `layers`: VisualizationGeographicLayer[];
+  `spatialInteractions`: VisualizationSpatialSelectionInteraction[];
   `presentation`: GeographicVisualizationPresentation;
 }
 
@@ -824,6 +897,21 @@ model SpatialWindowedVisualizationDataState extends VisualizationDataState {
   `window`?: VisualizationSpatialWindowBlock;
 }
 
+/**
+ * Versioned transport header for carrying a data state as one opaque browser
+ * signal. The payload is decoded only after every repeated revision and
+ * discriminator field agrees with this header.
+ */
+model VisualizationDataStateTransport {
+  `schemaVersion`: 1;
+  `encoding`: VisualizationDataStateTransportEncoding;
+  `kind`: VisualizationDataStateKind;
+  `specRevision`: string;
+  `dataRevision`: int64;
+  `generation`: int64;
+  `payload`: string;
+}
+
 model VisualizationDatumRef {
   `dataset`: string;
   `dataRevision`: int64;
@@ -852,7 +940,7 @@ model VisualizationDiagnostic {
 @apigen.contract(#{ kind: "visualization-envelope", tags: #["visualization", "ir"] })
 @apigen.`metadata`(#{ `x-libredash-contract-role`: "visualization-envelope" })
 model VisualizationEnvelope {
-  `schemaVersion`: 2;
+  `schemaVersion`: 3;
   `visualID`: string;
   `rendererID`: string;
   `specRevision`: string;
@@ -860,6 +948,7 @@ model VisualizationEnvelope {
   `dataRevision`: int64;
   `dataState`: VisualizationDataState;
   `selection`: VisualizationSelectionEntry[];
+  `spatialSelection`?: VisualizationSpatialSelectionState;
   `status`: VisualizationStatus;
   `diagnostics`: VisualizationDiagnostic[];
 }

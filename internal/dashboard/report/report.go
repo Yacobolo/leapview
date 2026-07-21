@@ -80,6 +80,7 @@ func NormalizeFilters(metrics Metrics, dashboardID, pageID string, filters dashb
 		defaults.Controls[name] = control
 	}
 	defaults.Selections = append([]dashboard.InteractionSelection{}, filters.Selections...)
+	defaults.SpatialSelections = append([]dashboard.SpatialInteractionSelection{}, filters.SpatialSelections...)
 	return defaults.WithDefaults()
 }
 

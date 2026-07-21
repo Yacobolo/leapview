@@ -10,6 +10,8 @@ import type {
   DashboardVisualizationSignal,
   ReportFilterConfig,
   VisualizationEnvelope,
+  VisualizationSpatialSelectionCommand,
+  VisualizationSpatialSelectionState,
 } from '../../generated/signals'
 import { DatastarLit } from '../shared/datastar-lit'
 import { checkSignalContract } from '../shared/signal-contract'
@@ -30,7 +32,15 @@ import {
   type OptimisticInteractionCommand,
 } from './interaction-selection'
 
-const emptyFilters: DashboardFilters = { controls: {}, selections: [] }
+const emptyFilters: DashboardFilters = { controls: {}, selections: [], spatialSelections: [] }
+
+function normalizeDashboardFilters(filters: Partial<DashboardFilters> | null | undefined): DashboardFilters {
+  return {
+    controls: filters?.controls ?? {},
+    selections: filters?.selections ?? [],
+    spatialSelections: filters?.spatialSelections ?? [],
+  }
+}
 const emptyStatus: DashboardStatus = {
   loading: false,
   error: '',
@@ -60,6 +70,7 @@ type DashboardRefreshProgress = {
 class LibreDashDashboardPage extends DatastarLit(LitElement) {
   @state() private unsupportedKinds = new Set<string>()
   @state() private optimisticSelections: CanonicalInteractionSelection[] | null = null
+  @state() private optimisticSpatialSelections: VisualizationSpatialSelectionState[] | null = null
   private optimisticExpectedGeneration = 0
   private optimisticRollbackTimer?: ReturnType<typeof setTimeout>
   private renderSnapshot?: DashboardRenderSnapshot
@@ -306,11 +317,13 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
   connectedCallback(): void {
     super.connectedCallback()
     this.addEventListener('ld-interaction-select', this.handleOptimisticInteraction as EventListener, { capture: true })
+    this.addEventListener('ld-interaction-spatial-select', this.handleOptimisticSpatialInteraction as EventListener, { capture: true })
     this.loadRenderedComponents()
   }
 
   disconnectedCallback(): void {
     this.removeEventListener('ld-interaction-select', this.handleOptimisticInteraction as EventListener, { capture: true })
+    this.removeEventListener('ld-interaction-spatial-select', this.handleOptimisticSpatialInteraction as EventListener, { capture: true })
     this.clearOptimisticRollbackTimer()
     super.disconnectedCallback()
   }
@@ -338,15 +351,16 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
   }
 
   private get filters(): DashboardFilters {
-    return this.signal<DashboardFilters>('filters', emptyFilters)
+    return normalizeDashboardFilters(this.signal<Partial<DashboardFilters>>('filters', emptyFilters))
   }
 
   private get effectiveFilters(): DashboardFilters {
     const filters = this.renderSnapshot?.filters ?? this.filters
-    if (!this.optimisticSelections) return filters
+    if (!this.optimisticSelections && !this.optimisticSpatialSelections) return filters
     return {
       ...filters,
-      selections: this.optimisticSelections as DashboardInteractionSelection[],
+      selections: (this.optimisticSelections ?? filters.selections) as DashboardInteractionSelection[],
+      spatialSelections: this.optimisticSpatialSelections ?? filters.spatialSelections,
     }
   }
 
@@ -538,7 +552,9 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
     if (!visual) return undefined
     const filters = this.renderSnapshot?.filters ?? this.filters
     const selections = this.optimisticSelections ?? filters.selections
-    return { ...visual, selection: visualizationSelectionEntries(visual, selections) }
+    const spatialSelections = this.optimisticSpatialSelections ?? filters.spatialSelections
+    const spatialSelection = [...spatialSelections].reverse().find((selection) => selection.visualID === visual.visualID)
+    return { ...visual, selection: visualizationSelectionEntries(visual, selections), ...(spatialSelection ? { spatialSelection } : { spatialSelection: undefined }) }
   }
 
   private handleOptimisticInteraction = (event: CustomEvent<unknown>): void => {
@@ -556,6 +572,23 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
       this.status.generation + 1,
       this.optimisticExpectedGeneration + 1,
     )
+    this.scheduleOptimisticRollback()
+  }
+
+  private handleOptimisticSpatialInteraction = (event: CustomEvent<unknown>): void => {
+    const command = optimisticSpatialCommand(event.detail)
+    if (!command) return
+    const visual = this.visuals[command.visualID]
+    if (!visual || visual.spec.kind !== 'geographic' || visual.specRevision !== command.specRevision || visual.dataRevision !== command.dataRevision) return
+    const interaction = visual.spec.spatialInteractions.find((candidate) => candidate.id === command.interactionID)
+    if (!interaction || !interaction.gestures.includes(command.gesture)) return
+    if (command.action === 'set' && (!command.geometry || command.geometry.kind !== command.gesture)) return
+
+    const current = [...(this.optimisticSpatialSelections ?? this.filters.spatialSelections)]
+      .filter((selection) => selection.visualID !== command.visualID || selection.interactionID !== command.interactionID)
+    if (command.action === 'set' && command.geometry) current.push({ visualID: command.visualID, interactionID: command.interactionID, geometry: command.geometry })
+    this.optimisticSpatialSelections = current
+    this.optimisticExpectedGeneration = Math.max(this.status.generation + 1, this.optimisticExpectedGeneration + 1)
     this.scheduleOptimisticRollback()
   }
 
@@ -589,6 +622,7 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
   private clearOptimisticState(): void {
     this.clearOptimisticRollbackTimer()
     this.optimisticSelections = null
+    this.optimisticSpatialSelections = null
     this.optimisticExpectedGeneration = this.status.generation
   }
 
@@ -606,6 +640,16 @@ class LibreDashDashboardPage extends DatastarLit(LitElement) {
       })
     }
   }
+}
+
+function optimisticSpatialCommand(value: unknown): VisualizationSpatialSelectionCommand | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const command = value as Partial<VisualizationSpatialSelectionCommand>
+  if (typeof command.visualID !== 'string' || typeof command.specRevision !== 'string' || typeof command.dataRevision !== 'number') return undefined
+  if (typeof command.interactionID !== 'string' || (command.gesture !== 'box' && command.gesture !== 'lasso' && command.gesture !== 'radius')) return undefined
+  if (command.action !== 'set' && command.action !== 'clear') return undefined
+  if (command.action === 'set' && (!command.geometry || command.geometry.kind !== command.gesture)) return undefined
+  return command as VisualizationSpatialSelectionCommand
 }
 
 function optimisticCommand(value: unknown): OptimisticInteractionCommand | undefined {

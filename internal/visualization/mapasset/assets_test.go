@@ -31,6 +31,19 @@ func TestResolveReturnsImmutableSameOriginManifest(t *testing.T) {
 	}
 }
 
+func TestStreetsBasemapIncludesRegionalBusinessDetail(t *testing.T) {
+	asset, err := Resolve("streets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if asset.MinimumZoom != 0 || asset.MaximumZoom < 10 {
+		t.Fatalf("streets zoom range = %v..%v, want global context through regional zoom 10", asset.MinimumZoom, asset.MaximumZoom)
+	}
+	if len(asset.Bounds) != 4 || asset.Bounds[0] > -82 || asset.Bounds[1] > -56 || asset.Bounds[2] < -30 || asset.Bounds[3] < 14 {
+		t.Fatalf("streets bounds = %v, want complete South America regional coverage", asset.Bounds)
+	}
+}
+
 func TestVerifyInstalledFailsClosedForMissingOrChangedAssets(t *testing.T) {
 	root := t.TempDir()
 	files := ExpectedFiles()

@@ -1040,6 +1040,9 @@
         },
         "row_selection": {
           "$ref": "#/$defs/%23SelectionInteraction"
+        },
+        "spatial_selection": {
+          "$ref": "#/$defs/%23SpatialSelectionInteraction"
         }
       },
       "type": "object"
@@ -1539,6 +1542,66 @@
           "type": "string"
         }
       },
+      "type": "object"
+    },
+    "#SpatialSelectionInteraction": {
+      "additionalProperties": false,
+      "properties": {
+        "gestures": {
+          "items": {
+            "enum": [
+              "box",
+              "lasso",
+              "radius"
+            ]
+          },
+          "type": "array"
+        },
+        "latitude": {
+          "$ref": "#/$defs/%23SpatialSelectionMapping"
+        },
+        "longitude": {
+          "$ref": "#/$defs/%23SpatialSelectionMapping"
+        },
+        "targets": {
+          "items": {
+            "$ref": "#/$defs/%23Identifier"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "gestures",
+        "latitude",
+        "longitude",
+        "targets"
+      ],
+      "type": "object"
+    },
+    "#SpatialSelectionMapping": {
+      "additionalProperties": false,
+      "properties": {
+        "fact": {
+          "$ref": "#/$defs/%23Identifier"
+        },
+        "field": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/%23FieldRef"
+            },
+            {
+              "$ref": "#/$defs/%23Identifier"
+            }
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/%23Identifier"
+        }
+      },
+      "required": [
+        "field",
+        "source"
+      ],
       "type": "object"
     },
     "#TableColumn": {

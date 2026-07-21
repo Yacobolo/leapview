@@ -32,6 +32,12 @@ func (h Handler) Select(w nethttp.ResponseWriter, r *nethttp.Request) {
 	})
 }
 
+func (h Handler) SpatialSelect(w nethttp.ResponseWriter, r *nethttp.Request) {
+	h.handleCommand(w, r, func(service command.Service, request command.Request, current dashboard.Filters) (command.PreparedRefresh, error) {
+		return service.PrepareSpatialSelect(request, current)
+	})
+}
+
 func (h Handler) ClearSelection(w nethttp.ResponseWriter, r *nethttp.Request) {
 	h.handleCommand(w, r, func(service command.Service, request command.Request, current dashboard.Filters) (command.PreparedRefresh, error) {
 		return service.PrepareClearSelection(request, current)
@@ -80,6 +86,7 @@ func (h Handler) handleCommandWithBefore(w nethttp.ResponseWriter, r *nethttp.Re
 		VisualWindowCommand:        signals.VisualWindowCommand,
 		VisualSpatialWindowCommand: signals.VisualSpatialWindowCommand,
 		InteractionCommand:         signals.InteractionCommand,
+		SpatialInteractionCommand:  signals.SpatialInteractionCommand,
 	}
 
 	registry := h.Coordinators

@@ -243,7 +243,7 @@ func tableBlock(patch map[string]any, tableID, blockID string) map[string]any {
 }
 
 func visualizationDataState(patch map[string]any, visualID string) map[string]any {
-	encoded, ok := mapAt(patch, "visuals", visualID)["dataStateJson"].(string)
+	encoded, ok := mapAt(patch, "visuals", visualID, "dataState")["payload"].(string)
 	if !ok || encoded == "" {
 		return map[string]any{}
 	}

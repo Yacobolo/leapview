@@ -646,6 +646,7 @@ package contracts
 #Interaction: close({
 	point_selection?: #SelectionInteraction
 	row_selection?:   #SelectionInteraction
+	spatial_selection?: #SpatialSelectionInteraction
 })
 
 #SelectionInteraction: close({
@@ -658,6 +659,19 @@ package contracts
 		label?: string
 	})]
 	targets?: [...#Identifier]
+})
+
+#SpatialSelectionInteraction: close({
+	gestures!: [...("box" | "lasso" | "radius")]
+	latitude!:  #SpatialSelectionMapping
+	longitude!: #SpatialSelectionMapping
+	targets!: [...#Identifier]
+})
+
+#SpatialSelectionMapping: close({
+	source!: #Identifier
+	field!:  #FieldRef | #Identifier
+	fact?:   #Identifier
 })
 
 #TableQuery: close({

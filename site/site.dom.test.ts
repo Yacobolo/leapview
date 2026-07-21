@@ -319,7 +319,7 @@ test('site explains the product, its workflow, and where it fits in the data sta
   } finally {
     await page.close()
   }
-})
+}, 30_000)
 
 test('homepage flow background renders from design tokens and respects reduced motion', async () => {
   const context = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 1280, height: 800 } })
@@ -851,6 +851,8 @@ test('Custom Vega-Lite documentation is marked experimental', async () => {
 
 test('every visual documentation page mounts its generated production payloads', async () => {
   const page = await browser.newPage()
+  const pageErrors: Array<{ url: string; message: string; stack?: string }> = []
+  page.on('pageerror', (error) => pageErrors.push({ url: page.url(), message: error.message, stack: error.stack }))
   const visualTypes = ['line', 'area', 'bar', 'column', 'pie', 'donut', 'scatter', 'funnel', 'treemap', 'gauge', 'heatmap', 'sankey', 'graph', 'map', 'custom', 'candlestick', 'boxplot', 'combo', 'waterfall', 'histogram', 'radar', 'tree', 'sunburst', 'kpi', 'table', 'matrix', 'pivot']
   try {
     for (const visualType of visualTypes) {
@@ -869,7 +871,6 @@ test('every visual documentation page mounts its generated production payloads',
       )
       expect(await page.locator('ld-site-visual-example').count()).toBe(expected)
     }
-
     await page.goto(`${baseURL}/docs/visuals/gauge`)
     await page.waitForFunction(() => document.querySelectorAll('ld-site-visual-example').length === 3)
     const thresholds = await page.locator('ld-site-visual-example').nth(2).evaluate((element) => {
@@ -919,10 +920,11 @@ test('every visual documentation page mounts its generated production payloads',
       const host = element.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { envelope?: any }
       return [host.envelope?.spec?.kind, host.envelope?.spec?.presentation?.comboSeries?.length]
     })).toEqual(['cartesian', 2])
+    expect(pageErrors).toEqual([])
   } finally {
     await page.close()
   }
-}, 30_000)
+}, 120_000)
 
 test('map documentation renders fitted, attributed canvases without adapter errors', async () => {
   const page = await browser.newPage()
@@ -935,14 +937,28 @@ test('map documentation renders fitted, attributed canvases without adapter erro
         return Boolean(host?.envelope)
       })
     })
-    await page.waitForFunction(() => {
-      const examples = [...document.querySelectorAll('ld-site-visual-example')]
-      return examples.every((element) => {
+    try {
+      await page.waitForFunction(() => {
+        const examples = [...document.querySelectorAll('ld-site-visual-example')]
+        return examples.every((element) => {
+          const host = element.shadowRoot?.querySelector('ld-visualization-host')
+          const renderer = host?.shadowRoot?.querySelector('.renderer')
+          return Boolean(host?.shadowRoot?.querySelector('canvas.maplibregl-canvas')) && renderer?.getAttribute('aria-busy') === 'false' && !host?.shadowRoot?.querySelector('[role="alert"]')
+        }) && Boolean(examples[0]?.shadowRoot?.querySelector('ld-visualization-host')?.shadowRoot?.querySelector('[data-map-attribution]')?.textContent?.trim())
+      })
+    } catch (error) {
+      const diagnostics = await page.locator('ld-site-visual-example').evaluateAll((elements) => elements.map((element) => {
         const host = element.shadowRoot?.querySelector('ld-visualization-host')
         const renderer = host?.shadowRoot?.querySelector('.renderer')
-        return Boolean(host?.shadowRoot?.querySelector('canvas.maplibregl-canvas')) && renderer?.getAttribute('aria-busy') === 'false' && !host?.shadowRoot?.querySelector('[role="alert"]')
-      }) && Boolean(examples[0]?.shadowRoot?.querySelector('ld-visualization-host')?.shadowRoot?.querySelector('[data-map-attribution]')?.textContent?.trim())
-    })
+        return {
+          id: element.getAttribute('example-id'),
+          busy: renderer?.getAttribute('aria-busy'),
+          canvas: Boolean(host?.shadowRoot?.querySelector('canvas.maplibregl-canvas')),
+          alert: host?.shadowRoot?.querySelector('[role="alert"]')?.textContent?.trim() ?? '',
+        }
+      }))
+      throw new Error(`map examples did not settle: ${JSON.stringify(diagnostics)}`, { cause: error })
+    }
     const states = await page.locator('ld-site-visual-example').evaluateAll((elements) => elements.map((element) => {
       const host = element.shadowRoot?.querySelector('ld-visualization-host')
       const canvas = host?.shadowRoot?.querySelector('canvas.maplibregl-canvas') as HTMLCanvasElement | null

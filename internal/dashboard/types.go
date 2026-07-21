@@ -10,11 +10,12 @@ import (
 )
 
 type Signals struct {
-	Filters                    Filters              `json:"filters"`
-	Runtime                    Runtime              `json:"runtime"`
-	VisualWindowCommand        TableRequest         `json:"visualWindowCommand"`
-	VisualSpatialWindowCommand SpatialWindowRequest `json:"visualSpatialWindowCommand"`
-	InteractionCommand         InteractionCommand   `json:"interactionCommand"`
+	Filters                    Filters                 `json:"filters"`
+	Runtime                    Runtime                 `json:"runtime"`
+	VisualWindowCommand        TableRequest            `json:"visualWindowCommand"`
+	VisualSpatialWindowCommand SpatialWindowRequest    `json:"visualSpatialWindowCommand"`
+	InteractionCommand         InteractionCommand      `json:"interactionCommand"`
+	SpatialInteractionCommand  SpatialSelectionCommand `json:"spatialInteractionCommand"`
 }
 
 type SpatialBounds struct {
@@ -177,8 +178,9 @@ type PageVisual struct {
 }
 
 type Filters struct {
-	Controls   map[string]FilterControl `json:"controls"`
-	Selections []InteractionSelection   `json:"selections"`
+	Controls          map[string]FilterControl      `json:"controls"`
+	Selections        []InteractionSelection        `json:"selections"`
+	SpatialSelections []SpatialInteractionSelection `json:"spatialSelections"`
 }
 
 type FilterControl struct {
@@ -206,7 +208,28 @@ func (f Filters) WithDefaults() Filters {
 	if f.Selections == nil {
 		f.Selections = []InteractionSelection{}
 	}
+	if f.SpatialSelections == nil {
+		f.SpatialSelections = []SpatialInteractionSelection{}
+	}
 	return f
+}
+
+type SpatialSelectionCommand struct {
+	VisualID      string                                                `json:"visualID"`
+	SpecRevision  string                                                `json:"specRevision"`
+	DataRevision  int64                                                 `json:"dataRevision"`
+	InteractionID string                                                `json:"interactionID"`
+	Action        string                                                `json:"action"`
+	Gesture       visualizationir.VisualizationSpatialSelectionGesture  `json:"gesture"`
+	Geometry      visualizationir.VisualizationSpatialSelectionGeometry `json:"geometry"`
+}
+
+type SpatialInteractionSelection struct {
+	VisualID      string                                                `json:"visualID"`
+	InteractionID string                                                `json:"interactionID"`
+	Gesture       visualizationir.VisualizationSpatialSelectionGesture  `json:"gesture"`
+	Geometry      visualizationir.VisualizationSpatialSelectionGeometry `json:"geometry"`
+	Order         int                                                   `json:"order"`
 }
 
 type InteractionSelection struct {
@@ -462,6 +485,39 @@ func (f Filters) ApplyInteraction(command InteractionCommand) Filters {
 	}
 
 	f.Selections = next
+	return f
+}
+
+// ApplySpatialInteraction stores one canonical geometry per source visual and
+// interaction. Replacing a spatial selection moves it to the end of the stable
+// selection order; clearing it cannot affect selections owned by other maps.
+func (f Filters) ApplySpatialInteraction(command SpatialSelectionCommand) Filters {
+	f = f.WithDefaults()
+	if command.VisualID == "" || command.InteractionID == "" || (command.Action != "set" && command.Action != "clear") {
+		return f
+	}
+
+	next := make([]SpatialInteractionSelection, 0, len(f.SpatialSelections)+1)
+	maxOrder := 0
+	for _, selection := range f.SpatialSelections {
+		if selection.Order > maxOrder {
+			maxOrder = selection.Order
+		}
+		if selection.VisualID == command.VisualID && selection.InteractionID == command.InteractionID {
+			continue
+		}
+		next = append(next, selection)
+	}
+	if command.Action == "set" && command.Geometry.Value != nil {
+		next = append(next, SpatialInteractionSelection{
+			VisualID:      command.VisualID,
+			InteractionID: command.InteractionID,
+			Gesture:       command.Gesture,
+			Geometry:      command.Geometry,
+			Order:         maxOrder + 1,
+		})
+	}
+	f.SpatialSelections = next
 	return f
 }
 

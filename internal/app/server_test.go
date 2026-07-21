@@ -24,6 +24,7 @@ import (
 	"github.com/Yacobolo/libredash/internal/testutil/ssetest"
 	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
 	visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
+	visualizationmapasset "github.com/Yacobolo/libredash/internal/visualization/mapasset"
 	visualizationruntime "github.com/Yacobolo/libredash/internal/visualization/runtime"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
@@ -699,7 +700,7 @@ func TestMapAssetCacheIsImmutableAndRangeCapable(t *testing.T) {
 	handler := mapAssetCache(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusPartialContent)
 	}))
-	request := httptest.NewRequest(http.MethodGet, "/map-assets/libredash-streets/archives/2d97ee8907670936ab722da7ca06eafec0734392f73fa1cd337d4debd85d676f/basemap.pmtiles", nil)
+	request := httptest.NewRequest(http.MethodGet, "/map-assets/libredash-streets/archives/"+visualizationmapasset.ArchiveSHA256+"/basemap.pmtiles", nil)
 	request.Header.Set("Range", "bytes=0-126")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -1060,7 +1061,7 @@ func TestUpdatesStreamsDatastarPatchSignals(t *testing.T) {
 }
 
 func TestUpdatesStreamsPageScopedChartSignals(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=dashboard&workspace=test-workspace&dashboard=executive-sales&page=operations&datastar=%7B%22runtime%22%3A%7B%22clientId%22%3A%22test-client%22%2C%22dashboardId%22%3A%22executive-sales%22%2C%22pageId%22%3A%22operations%22%7D%7D", nil)
@@ -1209,7 +1210,7 @@ func TestWorkspaceAssetDetailsUpdatesExcludeRefreshesTableAndUnusedRefreshFields
 	seedActiveDeploymentFromWorkspaceAssets(t, store, "test", emptyPageRuntimeAssetMetrics{})
 	server := NewWithOptions(emptyPageRuntimeAssetMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
 	assetID := workspace.NewAssetID(workspace.AssetTypeSemanticModel, "olist")
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=workspace_asset&workspace=test&asset="+string(assetID)+"&section=details", nil)
 	rec := httptest.NewRecorder()

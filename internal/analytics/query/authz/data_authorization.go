@@ -289,9 +289,24 @@ func dataFiltersToSemanticFilters(filters []dataquery.Filter) []semanticquery.Fi
 		for _, group := range filter.Groups {
 			groups = append(groups, semanticquery.FilterGroup{Filters: dataFiltersToSemanticFilters(group.Filters)})
 		}
-		out = append(out, semanticquery.Filter{Field: filter.Field, Fact: filter.Fact, Operator: filter.Operator, Values: append([]any{}, filter.Values...), Groups: groups})
+		out = append(out, semanticquery.Filter{Field: filter.Field, Fact: filter.Fact, Operator: filter.Operator, Values: append([]any{}, filter.Values...), Groups: groups, Spatial: dataSpatialFilterToSemantic(filter.Spatial)})
 	}
 	return out
+}
+
+func dataSpatialFilterToSemantic(value *dataquery.SpatialFilter) *semanticquery.SpatialFilter {
+	if value == nil {
+		return nil
+	}
+	points := make([]semanticquery.SpatialPoint, len(value.Points))
+	for index, point := range value.Points {
+		points[index] = semanticquery.SpatialPoint{Longitude: point.Longitude, Latitude: point.Latitude}
+	}
+	return &semanticquery.SpatialFilter{
+		Kind: value.Kind, LatitudeField: value.LatitudeField, LongitudeField: value.LongitudeField, Fact: value.Fact,
+		West: value.West, South: value.South, East: value.East, North: value.North, Points: points,
+		Center: semanticquery.SpatialPoint{Longitude: value.Center.Longitude, Latitude: value.Center.Latitude}, RadiusMeters: value.RadiusMeters,
+	}
 }
 
 func (m Metrics) recordDataAccessAudit(ctx context.Context, request dataquery.Query, privilege access.Privilege, objects []access.ObjectRef, status string, cause error) {
