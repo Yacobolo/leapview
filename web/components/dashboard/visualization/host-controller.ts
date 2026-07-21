@@ -1,4 +1,7 @@
 import type { VisualizationEnvelope, VisualizationSpec } from '../../../generated/visualization'
+import { currentVisualizationSchemaVersion } from '../../../generated/visualization/schema-version'
+
+export { currentVisualizationSchemaVersion }
 
 export enum Change {
   None = 0,
@@ -29,7 +32,7 @@ export interface RendererAdapter {
 export type RendererRegistration = Readonly<{
   id: string
   version: string
-  schemaVersions: readonly number[]
+  schemaVersion: VisualizationEnvelope['schemaVersion']
   kinds: readonly VisualizationSpec['kind'][]
   capabilities: RendererCapabilities
   load(): Promise<RendererAdapter>
@@ -41,8 +44,8 @@ export class RendererRegistry {
   readonly #registrations = new Map<string, LoadedRegistration>()
 
   register(registration: RendererRegistration): void {
-    if (!registration.id || !registration.version || registration.schemaVersions.length === 0 || registration.kinds.length === 0) {
-      throw new Error('renderer registration requires identity, version, schema versions, and kinds')
+    if (!registration.id || !registration.version || registration.schemaVersion !== currentVisualizationSchemaVersion || registration.kinds.length === 0) {
+      throw new Error(`renderer registration requires identity, version, schema version ${currentVisualizationSchemaVersion}, and kinds`)
     }
     if (this.#registrations.has(registration.id)) throw new Error(`renderer ${JSON.stringify(registration.id)} is already registered`)
     this.#registrations.set(registration.id, { ...registration })
@@ -51,7 +54,7 @@ export class RendererRegistry {
   resolve(envelope: VisualizationEnvelope): LoadedRegistration {
     const registration = this.#registrations.get(envelope.rendererID)
     if (!registration) throw new Error(`unknown visualization renderer ${JSON.stringify(envelope.rendererID)}`)
-    if (!registration.schemaVersions.includes(envelope.schemaVersion)) {
+    if (registration.schemaVersion !== envelope.schemaVersion) {
       throw new Error(`renderer ${JSON.stringify(envelope.rendererID)} does not support schema version ${envelope.schemaVersion}`)
     }
     if (!registration.kinds.includes(envelope.spec.kind)) {
@@ -225,7 +228,7 @@ function sameJSON(left: unknown, right: unknown): boolean {
 export function validateEnvelopeBoundary(value: unknown): value is VisualizationEnvelope {
   if (!value || typeof value !== 'object') return false
   const envelope = value as Partial<VisualizationEnvelope>
-  if (envelope.schemaVersion !== 3 || typeof envelope.visualID !== 'string' || envelope.visualID.length === 0) return false
+  if (envelope.schemaVersion !== currentVisualizationSchemaVersion || typeof envelope.visualID !== 'string' || envelope.visualID.length === 0) return false
   if (typeof envelope.rendererID !== 'string' || envelope.rendererID.length === 0 || typeof envelope.specRevision !== 'string') return false
   if (!envelope.spec || !envelope.dataState || typeof envelope.dataRevision !== 'number' || envelope.dataRevision < 0) return false
   if (envelope.dataState.specRevision !== envelope.specRevision || envelope.dataState.dataRevision !== envelope.dataRevision) return false

@@ -7,6 +7,8 @@ import { dirname } from 'node:path'
 const schemaPath = 'api/gen/visualization.schema.json'
 const contractPath = 'api/visualization/main.tsp'
 const outputPath = 'web/generated/visualization/validate.ts'
+const versionOutputPath = 'web/generated/visualization/schema-version.ts'
+const goVersionOutputPath = 'internal/visualization/ir/schema_version.gen.go'
 await mkdir(dirname(outputPath), { recursive: true })
 const document = await Bun.file(schemaPath).json()
 const contract = await Bun.file(contractPath).text()
@@ -24,3 +26,5 @@ ajv.addKeyword('x-libredash-contract-role')
 const validate = ajv.compile(schema)
 const source = standaloneCode(ajv, validate)
 await Bun.write(outputPath, `// Code generated from api/visualization/main.tsp. DO NOT EDIT.\n// @ts-nocheck\n${source}\n`)
+await Bun.write(versionOutputPath, `// Code generated from api/visualization/main.tsp. DO NOT EDIT.\nexport const currentVisualizationSchemaVersion = ${schemaVersion} as const\n`)
+await Bun.write(goVersionOutputPath, `// Code generated from api/visualization/main.tsp. DO NOT EDIT.\n\npackage ir\n\nconst CurrentSchemaVersion int32 = ${schemaVersion}\n`)

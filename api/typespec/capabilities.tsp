@@ -42,12 +42,12 @@ enum VisualizationSpecKind {
 model VisualizationRendererCapability {
   id: VisualizationRendererID;
   version: string;
-  schemaVersions: int32[];
+  schemaVersion: 3;
   kinds: VisualizationSpecKind[];
 }
 
 model VisualizationCapabilities {
-  schemaVersions: int32[];
+  schemaVersion: 3;
   renderers: VisualizationRendererCapability[];
 }
 

@@ -416,7 +416,9 @@ tasks:
     generates:
       - api/gen/visualization-ir.json
       - internal/visualization/ir/models.gen.go
+      - internal/visualization/ir/schema_version.gen.go
       - web/generated/visualization/index.ts
+      - web/generated/visualization/schema-version.ts
       - web/generated/visualization/validate.ts
       - web/generated/vega-lite/validate.ts
       - api/gen/visualization.schema.json

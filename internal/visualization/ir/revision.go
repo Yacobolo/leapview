@@ -8,12 +8,7 @@ import (
 	"strings"
 )
 
-const (
-	// CurrentSchemaVersion is the visualization envelope and IR schema version
-	// emitted by this package.
-	CurrentSchemaVersion = 3
-	specRevisionPrefix   = "sha256:"
-)
+const specRevisionPrefix = "sha256:"
 
 // SpecRevision is the content address of a canonical generated visualization
 // specification. It is deliberately distinct from runtime data revisions.

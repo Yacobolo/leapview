@@ -3175,11 +3175,9 @@ paths:
                     - id: echarts
                       kinds:
                         - cartesian
-                      schemaVersions:
-                        - 1
+                      schemaVersion: 1
                       version: example
-                  schemaVersions:
-                    - 1
+                  schemaVersion: 1
         '400':
           description: The server could not understand the request due to invalid syntax.
           content:
@@ -38514,11 +38512,9 @@ components:
             - id: echarts
               kinds:
                 - cartesian
-              schemaVersions:
-                - 1
+              schemaVersion: 1
               version: example
-          schemaVersions:
-            - 1
+          schemaVersion: 1
     CartesianVisualizationPresentation:
       type: object
       allOf:
@@ -44366,16 +44362,12 @@ components:
     VisualizationCapabilities:
       type: object
       required:
-        - schemaVersions
+        - schemaVersion
         - renderers
       properties:
-        schemaVersions:
-          type: array
-          items:
-            type: integer
-            format: int32
-          example:
-            - 1
+        schemaVersion:
+          type: integer
+          example: 1
         renderers:
           type: array
           items:
@@ -44384,19 +44376,16 @@ components:
             - id: echarts
               kinds:
                 - cartesian
-              schemaVersions:
-                - 1
+              schemaVersion: 1
               version: example
       example:
         renderers:
           - id: echarts
             kinds:
               - cartesian
-            schemaVersions:
-              - 1
+            schemaVersion: 1
             version: example
-        schemaVersions:
-          - 1
+        schemaVersion: 1
     VisualizationCardinality:
       type: object
       required:
@@ -45945,7 +45934,7 @@ components:
       required:
         - id
         - version
-        - schemaVersions
+        - schemaVersion
         - kinds
       properties:
         id:
@@ -45953,13 +45942,9 @@ components:
         version:
           type: string
           example: example
-        schemaVersions:
-          type: array
-          items:
-            type: integer
-            format: int32
-          example:
-            - 1
+        schemaVersion:
+          type: integer
+          example: 1
         kinds:
           type: array
           items:
@@ -45970,8 +45955,7 @@ components:
         id: echarts
         kinds:
           - cartesian
-        schemaVersions:
-          - 1
+        schemaVersion: 1
         version: example
     VisualizationRendererID:
       type: string

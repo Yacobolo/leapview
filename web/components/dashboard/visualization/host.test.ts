@@ -1,11 +1,11 @@
 import { expect, test } from 'bun:test'
 
 import type { VisualizationEnvelope } from '../../../generated/visualization'
-import { Change, RendererRegistry, VisualizationController, type RendererHandle } from './host-controller'
+import { Change, currentVisualizationSchemaVersion, RendererRegistry, VisualizationController, type RendererHandle } from './host-controller'
 
 function envelope(dataRevision: number, specRevision = 'sha256:spec', rendererID = 'test'): VisualizationEnvelope {
   return {
-    schemaVersion: 3,
+    schemaVersion: currentVisualizationSchemaVersion,
     visualID: 'revenue',
     rendererID,
     specRevision,
@@ -40,7 +40,7 @@ test('controller mounts lazily, rejects stale revisions, and disposes determinis
   }
   const registry = new RendererRegistry()
   registry.register({
-    id: 'test', version: '1.0.0', schemaVersions: [3], kinds: ['kpi'], capabilities: { snapshot: true, windowed: false, interactive: false },
+    id: 'test', version: '1.0.0', schemaVersion: currentVisualizationSchemaVersion, kinds: ['kpi'], capabilities: { snapshot: true, windowed: false, interactive: false },
     load: async () => ({ mount: () => { mounts++; return handle } }),
   })
   const controller = new VisualizationController(registry, {} as HTMLElement, undefined, (value) => observations.push(value.stage))
@@ -70,7 +70,7 @@ test('controller coalesces resize and applies the latest size after a lazy mount
   }
   const registry = new RendererRegistry()
   registry.register({
-    id: 'test', version: '1.0.0', schemaVersions: [3], kinds: ['kpi'], capabilities: { snapshot: true, windowed: false, interactive: false },
+    id: 'test', version: '1.0.0', schemaVersion: currentVisualizationSchemaVersion, kinds: ['kpi'], capabilities: { snapshot: true, windowed: false, interactive: false },
     load: () => loading,
   })
   const controller = new VisualizationController(registry, {} as HTMLElement)
@@ -86,12 +86,17 @@ test('controller coalesces resize and applies the latest size after a lazy mount
 test('registry rejects duplicate IDs and unsupported capabilities fail closed', async () => {
   const registry = new RendererRegistry()
   const registration = {
-    id: 'test', version: '1.0.0', schemaVersions: [3] as const, kinds: ['table'] as const,
+    id: 'test', version: '1.0.0', schemaVersion: currentVisualizationSchemaVersion, kinds: ['table'] as const,
     capabilities: { snapshot: false, windowed: true, interactive: true },
     load: async () => ({ mount: () => { throw new Error('not reached') } }),
   }
   registry.register(registration)
   expect(() => registry.register(registration)).toThrow()
+  expect(() => registry.register({
+    ...registration,
+    id: 'future',
+    schemaVersion: (currentVisualizationSchemaVersion + 1) as typeof currentVisualizationSchemaVersion,
+  })).toThrow(/schema version 3/)
 
   const controller = new VisualizationController(registry, {} as HTMLElement)
   await expect(controller.apply(envelope(1))).rejects.toThrow(/does not support kind/)
@@ -105,7 +110,7 @@ test('a superseded asynchronous mount cannot dispose the winning renderer', asyn
   })
   const registry = new RendererRegistry()
   registry.register({
-    id: 'test', version: '1.0.0', schemaVersions: [3], kinds: ['kpi'], capabilities: { snapshot: true, windowed: false, interactive: false },
+    id: 'test', version: '1.0.0', schemaVersion: currentVisualizationSchemaVersion, kinds: ['kpi'], capabilities: { snapshot: true, windowed: false, interactive: false },
     load: async () => ({ mount: (_container, value) => new Promise<RendererHandle>((resolve) => { releases.set(value.dataRevision, resolve) }) }),
   })
   const controller = new VisualizationController(registry, {} as HTMLElement)
@@ -127,7 +132,7 @@ test('repeated mount and dispose cycles release every renderer exactly once', as
   let disposals = 0
   const registry = new RendererRegistry()
   registry.register({
-    id: 'test', version: '1.0.0', schemaVersions: [3], kinds: ['kpi'], capabilities: { snapshot: true, windowed: false, interactive: false },
+    id: 'test', version: '1.0.0', schemaVersion: currentVisualizationSchemaVersion, kinds: ['kpi'], capabilities: { snapshot: true, windowed: false, interactive: false },
     load: async () => ({ mount: () => {
       mounts++
       return { update: () => {}, resize: () => {}, snapshot: async () => new Blob(), dispose: () => { disposals++ } }

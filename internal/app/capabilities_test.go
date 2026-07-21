@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
+	visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
 )
 
 func TestCapabilitiesReportOnlyEnabledUploadProtocols(t *testing.T) {
@@ -25,7 +26,12 @@ func TestCapabilitiesReportOnlyEnabledUploadProtocols(t *testing.T) {
 	if response.Environment != "prod" || len(response.UploadProtocols) != 0 {
 		t.Fatalf("capabilities = %#v", response)
 	}
-	if len(response.Visualization.SchemaVersions) != 1 || response.Visualization.SchemaVersions[0] != 3 || len(response.Visualization.Renderers) != 5 {
+	if response.Visualization.SchemaVersion != visualizationir.CurrentSchemaVersion || len(response.Visualization.Renderers) != 5 {
 		t.Fatalf("visualization capabilities=%#v", response.Visualization)
+	}
+	for _, renderer := range response.Visualization.Renderers {
+		if renderer.SchemaVersion != response.Visualization.SchemaVersion {
+			t.Fatalf("renderer schema version=%d, want %d: %#v", renderer.SchemaVersion, response.Visualization.SchemaVersion, renderer)
+		}
 	}
 }
