@@ -413,11 +413,12 @@ func TestSiteGettingStartedRendersGuide(t *testing.T) {
 		`<ul class="site-docs-nav-tree">`,
 		`<a class="site-docs-link" href="/docs/visuals/overview" title="Overview">Overview</a>`,
 		"<h1>Get started with LeapView</h1>",
-		"<h2>Bootstrap the workspace</h2>",
-		"task bootstrap",
-		"task dev",
-		"leapview.yaml",
-		"workspaces/",
+		"<h2>Choose your starting point</h2>",
+		"<h2>What you will learn</h2>",
+		"<h2>Explore by goal</h2>",
+		`href="/docs/installation"`,
+		`href="/docs/first-dashboard"`,
+		`href="/docs/guides/build"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("getting started page missing %q:\n%s", want, body)
@@ -506,6 +507,27 @@ func TestSiteDocumentationCatalogRendersJourneySections(t *testing.T) {
 	for _, want := range []string{"Start here", "Core concepts", "Build dashboards", "Manage data", "Deploy and operate", "Security and administration", "Integrate", "Reference", "Architecture and contributing"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("docs index missing journey section %q", want)
+		}
+	}
+}
+
+func TestSiteDocumentationPreservesDiataxisTypes(t *testing.T) {
+	tests := map[string]string{
+		"getting-started":           "landing",
+		"first-dashboard":           "tutorial",
+		"guides/build/connect-data": "how-to",
+		"contributing/repository":   "how-to",
+		"concepts/managed-data":     "explanation",
+		"concepts/semantic-models":  "explanation",
+		"config/project":            "reference",
+	}
+	for slug, want := range tests {
+		document, ok := siteDocumentBySlug(slug)
+		if !ok {
+			t.Fatalf("documentation catalog missing %q", slug)
+		}
+		if document.documentType != want {
+			t.Errorf("document %q type = %q, want %q", slug, document.documentType, want)
 		}
 	}
 }

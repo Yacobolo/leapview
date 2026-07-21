@@ -39,12 +39,14 @@ type siteDocument struct {
 	groupID            string
 	source             string
 	navigationTitle    string
+	documentType       string
 	generated          bool
 }
 
 type siteCatalogDocument struct {
 	Slug            string `json:"slug"`
 	Title           string `json:"title"`
+	Type            string `json:"type"`
 	NavigationTitle string `json:"navigationTitle"`
 	Summary         string `json:"summary"`
 	Source          string `json:"source"`
@@ -157,6 +159,7 @@ func (loaded *loadedDocumentation) add(section siteCatalogSection, group siteCat
 		groupID:            group.ID,
 		source:             document.Source,
 		navigationTitle:    document.NavigationTitle,
+		documentType:       document.Type,
 		generated:          document.Generated,
 	}
 	loaded.documents = append(loaded.documents, entry)

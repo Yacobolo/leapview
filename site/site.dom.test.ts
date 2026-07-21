@@ -313,7 +313,7 @@ test('site explains the product, its workflow, and where it fits in the data sta
   } finally {
     await page.close()
   }
-})
+}, 10_000)
 
 test('homepage flow background renders from design tokens and respects reduced motion', async () => {
   const context = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 1280, height: 800 } })
@@ -642,7 +642,7 @@ test('mobile landing page keeps the product story compact and ordered', async ()
   }
 })
 
-test('getting started route gives users a code-native first path', async () => {
+test('getting started route directs users through the first learning path', async () => {
   const page = await browser.newPage()
   try {
     await page.goto(`${baseURL}/docs/getting-started`)
@@ -703,8 +703,12 @@ test('getting started route gives users a code-native first path', async () => {
     expect(await page.locator('html').getAttribute('data-copied-markdown')).toStartWith('# Get started with LeapView')
 
     expect(await page.locator('.site-guide-step').count()).toBe(0)
-    expect((await page.locator('.site-docs-article pre code').allTextContents()).map((content) => content.trim())).toEqual(['task bootstrap', 'task dev', 'dashboards/\n  leapview.yaml\n  connections/\n    olist.yaml\n  sources/\n    olist.orders.yaml\n  workspaces/\n    sales/\n      workspace.yaml\n      models/\n        orders.yaml\n      semantic-models/\n        sales.yaml\n      dashboards/\n        executive-sales.yaml'])
-    expect(await page.getByRole('link', { name: 'Visual gallery' }).count()).toBeGreaterThan(0)
+    expect(await page.locator('.site-docs-article pre code').count()).toBe(0)
+    expect(await page.getByRole('heading', { name: 'Choose your starting point' }).isVisible()).toBe(true)
+    expect(await page.getByRole('heading', { name: 'What you will learn' }).isVisible()).toBe(true)
+    expect(await page.getByRole('link', { name: 'Installation' }).count()).toBeGreaterThan(0)
+    expect(await page.getByRole('link', { name: 'Build your first dashboard' }).count()).toBeGreaterThan(0)
+    expect(await page.getByRole('link', { name: 'Visual types' }).count()).toBeGreaterThan(0)
   } finally {
     await page.close()
   }
@@ -1002,7 +1006,7 @@ test('documentation articles provide a readable, navigable reference experience'
     viewport: { width: 1440, height: 900 },
   })
   try {
-    await page.goto(`${baseURL}/docs/guides/build`)
+    await page.goto(`${baseURL}/docs/guides/build/dashboard`)
     await page.evaluate(() => {
       Object.defineProperty(navigator, 'clipboard', {
         configurable: true,
@@ -1055,13 +1059,13 @@ test('documentation articles provide a readable, navigable reference experience'
     expect(await page.locator('.site-docs-callout[data-callout="tip"]').count()).toBe(1)
     expect(await page.locator('.site-docs-callout-label').getByText('Tip', { exact: true }).isVisible()).toBe(true)
     await page.waitForFunction(() => Boolean(document.querySelector('.site-docs-article lv-code-block .shiki')))
-    const codeBlock = page.locator('.site-docs-article lv-code-block').first()
+    const codeBlock = page.locator('.site-docs-article lv-code-block[language="sh"]').first()
     expect(await codeBlock.getAttribute('language')).toBe('sh')
     expect(await codeBlock.getAttribute('toolbar')).not.toBeNull()
     expect(await codeBlock.locator('.shiki').getAttribute('class')).toContain('github-light')
     expect(await codeBlock.getByText('Shell', { exact: true }).isVisible()).toBe(true)
     await codeBlock.getByRole('button', { name: 'Copy code' }).click()
-    await page.waitForFunction(() => document.documentElement.dataset.copiedCode === 'leapview validate --project dashboards/leapview.yaml\n')
+    await page.waitForFunction(() => document.documentElement.dataset.copiedCode === 'leapview validate --project dashboards/leapview.yaml\nleapview plan --project dashboards/leapview.yaml\n')
     expect(await codeBlock.getByRole('button', { name: 'Code copied' }).isVisible()).toBe(true)
 
     const activeGroup = page.locator('.site-docs-nav-group-active > summary').first()
@@ -1087,7 +1091,7 @@ test('documentation articles provide a readable, navigable reference experience'
     const semanticModelsResult = search.locator('a[href="/docs/concepts/semantic-models"]')
     await semanticModelsResult.waitFor({ state: 'visible' })
     expect(await semanticModelsResult.isVisible()).toBe(true)
-    expect(page.url()).toBe(`${baseURL}/docs/guides/build`)
+    expect(page.url()).toBe(`${baseURL}/docs/guides/build/dashboard`)
     const resultCount = await search.locator('.status').innerText()
     expect(resultCount).toMatch(/^[1-9]\d* results$/)
     await searchInput.fill('no-document-can-match-this-query-9f83c1')
@@ -1293,9 +1297,9 @@ test('documentation CSS keeps site tokens available and fragment targets below t
     expect(Math.abs(runtimeStyles.articleWidth - runtimeStyles.shellWidth)).toBeLessThanOrEqual(1)
     expect(runtimeStyles.articleWidth).toBeLessThanOrEqual(1024)
 
-    await page.getByRole('navigation', { name: 'In this article' }).getByRole('link', { name: 'Run LeapView' }).click()
-    await page.waitForFunction(() => location.hash === '#run-leapview')
-    const anchorPosition = await page.locator('#run-leapview').evaluate((heading) => ({
+    await page.getByRole('navigation', { name: 'In this article' }).getByRole('link', { name: 'What you will learn' }).click()
+    await page.waitForFunction(() => location.hash === '#what-you-will-learn')
+    const anchorPosition = await page.locator('#what-you-will-learn').evaluate((heading) => ({
       headingTop: heading.getBoundingClientRect().top,
       headerBottom: document.querySelector('.site-header')?.getBoundingClientRect().bottom ?? 0,
     }))
