@@ -81,7 +81,6 @@ func (s *Server) workspaceRefreshService(runRepo refresh.RunRepository) (refresh
 			ManagedData:     s.managedDataResolver,
 		},
 		Runtime:                  appRefreshRuntimeHost{reloader: s.reloader},
-		Retention:                appRefreshRetention{server: s},
 		Publisher:                appRefreshPublisher{server: s},
 		DataVersions:             s.refreshPipelineRepo,
 		CandidateValidationHooks: hooks,
@@ -131,17 +130,6 @@ func (h appRefreshRuntimeHost) ActivatePrepared(prepared servingstate.PreparedRu
 		return fmt.Errorf("metadata activation is required")
 	}
 	return h.reloader.ActivatePrepared(prepared, activate)
-}
-
-type appRefreshRetention struct {
-	server *Server
-}
-
-func (r appRefreshRetention) Run(ctx context.Context, dryRun bool) error {
-	if r.server == nil {
-		return nil
-	}
-	return r.server.reconcileStorageRetention(ctx, dryRun)
 }
 
 type appRefreshPublisher struct {

@@ -23,7 +23,6 @@ import (
 	deploymentapiadapter "github.com/Yacobolo/leapview/internal/deployment/apiadapter"
 	deploymenthttp "github.com/Yacobolo/leapview/internal/deployment/http"
 	deploymentsqlite "github.com/Yacobolo/leapview/internal/deployment/sqlite"
-	"github.com/Yacobolo/leapview/internal/execution"
 	"github.com/Yacobolo/leapview/internal/instancelock"
 	manageddataapiadapter "github.com/Yacobolo/leapview/internal/manageddata/apiadapter"
 	manageddatahttp "github.com/Yacobolo/leapview/internal/manageddata/http"
@@ -36,6 +35,7 @@ import (
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
 	storagemaintenance "github.com/Yacobolo/leapview/internal/storage/maintenance"
+	"github.com/Yacobolo/leapview/internal/workload"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
 	"github.com/spf13/cobra"
@@ -370,6 +370,10 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 	rateLimits := app.ProductionRateLimitConfig()
 	rateLimits.Enabled = production && cfg.RateLimitingEnabled()
 	rateLimits.UseRealIP = cfg.RateLimitingUsesRealIP()
+	workloadController, err := workload.New(cfg.WorkloadConfig())
+	if err != nil {
+		return nil, nil, err
+	}
 	server := app.NewWithOptions(runtimeMetrics, app.Options{
 		Store:               store,
 		ServingStateRepo:    servingStateRepo,
@@ -395,8 +399,8 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 			IssuerURL: cfg.MCPOAuthIssuerURL,
 		},
 		AllowedHosts:    allowedHosts,
-		Executor:        execution.New(cfg.ExecutionConfig()),
-		JobLeaseTimeout: cfg.ExecJobLeaseTimeout,
+		Workload:        workloadController,
+		JobLeaseTimeout: cfg.RefreshJobLeaseTimeout,
 		ManagedData: manageddatahttp.Options{
 			Repository: managedDataAPI, Uploads: managedDataControl,
 			Multipart: managedDataMultipart,

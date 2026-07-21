@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -220,10 +221,25 @@ func writeJSON(w nethttp.ResponseWriter, status int, value any) {
 }
 
 func writeJSONError(w nethttp.ResponseWriter, err error, status int) {
+	details := map[string]any{}
+	var rejection interface{ WorkloadRejectionReason() string }
+	if errors.As(err, &rejection) {
+		if rejection.WorkloadRejectionReason() == "queue_timeout" {
+			status = nethttp.StatusGatewayTimeout
+			details["problemCode"] = "WORKLOAD_QUEUE_TIMEOUT"
+		} else {
+			status = nethttp.StatusServiceUnavailable
+			w.Header().Set("Retry-After", "1")
+			details["problemCode"] = "WORKLOAD_OVERLOADED"
+		}
+	} else if errors.Is(err, context.DeadlineExceeded) {
+		status = nethttp.StatusGatewayTimeout
+		details["problemCode"] = "WORKLOAD_EXECUTION_TIMEOUT"
+	}
 	writeJSON(w, status, map[string]any{
 		"code":      status,
 		"message":   err.Error(),
-		"details":   map[string]any{},
+		"details":   details,
 		"requestId": "",
 	})
 }

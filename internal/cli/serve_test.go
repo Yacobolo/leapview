@@ -27,7 +27,7 @@ func TestServeProductionModeHonorsConfigEnv(t *testing.T) {
 }
 
 func TestServeCommandConstructionDoesNotParseEnvironment(t *testing.T) {
-	t.Setenv("LEAPVIEW_EXEC_MAX_RUNNING_READS", "invalid")
+	t.Setenv("LEAPVIEW_WORKLOAD_INTERACTIVE_MAX_RUNNING", "invalid")
 	cmd := serveCommand(context.Background(), &rootOptions{})
 	if cmd == nil {
 		t.Fatal("serveCommand() returned nil")

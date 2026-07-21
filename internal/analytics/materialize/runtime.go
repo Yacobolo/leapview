@@ -3,6 +3,7 @@ package materialize
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,7 +17,7 @@ import (
 	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
 	"github.com/Yacobolo/leapview/internal/configspec"
 	"github.com/Yacobolo/leapview/internal/dataquery"
-	"github.com/Yacobolo/leapview/internal/execution"
+	"github.com/Yacobolo/leapview/internal/workload"
 )
 
 type RuntimeConfig struct {
@@ -242,7 +243,7 @@ func (r *Runtime) ExecuteDataQuery(ctx context.Context, request dataquery.Query)
 	}
 	execute := func() (dataquery.Result, error) {
 		execCtx, statements := withPhysicalStatementCounter(ctx)
-		result, err := execution.SubmitReadFromContext(execCtx, request, executePhysical)
+		result, err := admitPhysicalQuery(execCtx, request, executePhysical)
 		if count := int(statements.Load()); count > 0 {
 			dataquery.ObservePhysicalQuery(ctx, dataquery.PhysicalQueryObservation{Count: count, Result: result})
 		}
@@ -435,7 +436,7 @@ func (r *Runtime) ExecuteDataQueryBundle(ctx context.Context, requests []dataque
 	flight, shared, err := r.queryCache.coalesce(ctx, string(flightKey), func() (any, error) {
 		execCtx, statements := withPhysicalStatementCounter(ctx)
 		var decoded map[string]semanticquery.Rows
-		summary, executeErr := execution.SubmitReadFromContext(execCtx, representative, func(queryCtx context.Context) (dataquery.Result, error) {
+		summary, executeErr := admitPhysicalQuery(execCtx, representative, func(queryCtx context.Context) (dataquery.Result, error) {
 			queryResult, rows, queryErr := execute(queryCtx)
 			decoded = rows
 			return queryResult, queryErr
@@ -480,6 +481,70 @@ func (r *Runtime) ExecuteDataQueryBundle(ctx context.Context, requests []dataque
 		return dataquery.BundleResult{}, err
 	}
 	return result, nil
+}
+
+func admitPhysicalQuery(ctx context.Context, request dataquery.Query, execute func(context.Context) (dataquery.Result, error)) (dataquery.Result, error) {
+	admitter, ok := workload.FromContext(ctx)
+	if !ok {
+		return execute(ctx)
+	}
+	class := workload.Interactive
+	workspaceID := request.WorkspaceID
+	if request.Surface == dataquery.SurfaceAgent {
+		class = workload.Background
+		if activeClass, activeWorkspace, admitted := workload.Current(ctx); admitted && activeClass == workload.Background {
+			workspaceID = activeWorkspace
+		}
+	}
+	operation := request.Operation
+	if operation == "" {
+		operation = string(request.Kind)
+	}
+	lease, err := admitter.Acquire(ctx, workload.Request{Class: class, WorkspaceID: workspaceID, Operation: operation})
+	if err != nil {
+		state := dataquery.ExecutionRejected
+		if reason, found := workload.ReasonOf(err); found && reason == workload.QueueTimeout {
+			state = dataquery.ExecutionTimeout
+		}
+		result := dataquery.Result{ExecutionState: state}
+		var rejection *workload.Rejection
+		if errors.As(err, &rejection) {
+			result.QueueWaitMS = durationMillis(rejection.QueueWait)
+		}
+		return result, err
+	}
+	defer lease.Release()
+	started := time.Now()
+	result, err := execute(lease.Context())
+	if result.QueueWaitMS == 0 {
+		result.QueueWaitMS = durationMillis(lease.QueueWait())
+	}
+	if result.ExecutionMS == 0 {
+		result.ExecutionMS = durationMillis(time.Since(started))
+	}
+	if result.ExecutionState == "" {
+		switch {
+		case err == nil:
+			result.ExecutionState = dataquery.ExecutionSucceeded
+		case lease.Context().Err() == context.DeadlineExceeded:
+			result.ExecutionState = dataquery.ExecutionTimeout
+		case lease.Context().Err() == context.Canceled:
+			result.ExecutionState = dataquery.ExecutionCanceled
+		default:
+			result.ExecutionState = dataquery.ExecutionFailed
+		}
+	}
+	return result, err
+}
+
+func durationMillis(duration time.Duration) int64 {
+	if duration <= 0 {
+		return 0
+	}
+	if milliseconds := duration.Milliseconds(); milliseconds > 0 {
+		return milliseconds
+	}
+	return 1
 }
 
 func bundleOutputColumns(bundle semanticquery.BundlePlan, id string) []string {

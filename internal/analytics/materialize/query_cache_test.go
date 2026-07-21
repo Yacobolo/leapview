@@ -14,7 +14,7 @@ import (
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
 	"github.com/Yacobolo/leapview/internal/dataquery"
-	"github.com/Yacobolo/leapview/internal/execution"
+	"github.com/Yacobolo/leapview/internal/workload"
 )
 
 func TestQueryResultCacheUsesGovernedRequestAndReturnsDeepCopies(t *testing.T) {
@@ -674,21 +674,26 @@ func TestRuntimeDashboardCacheHitDoesNotConsumeReadPermit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	admission := execution.New(execution.Config{MaxRunningReads: 1, MaxQueuedReads: -1})
+	admission, err := workload.New(workload.Config{MaxRunning: 1, Classes: map[workload.Class]workload.Policy{workload.Interactive: {MaximumRunning: 1}}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	occupied := make(chan struct{})
 	release := make(chan struct{})
 	var occupying sync.WaitGroup
 	occupying.Add(1)
 	go func() {
 		defer occupying.Done()
-		_, _ = admission.SubmitRead(context.Background(), dataquery.Query{}, func(context.Context) (dataquery.Result, error) {
-			close(occupied)
-			<-release
-			return dataquery.Result{}, nil
-		})
+		lease, acquireErr := admission.Acquire(context.Background(), workload.Request{Class: workload.Interactive, WorkspaceID: "sales", Operation: "occupy"})
+		if acquireErr != nil {
+			return
+		}
+		close(occupied)
+		<-release
+		lease.Release()
 	}()
 	<-occupied
-	ctx := execution.WithReadAdmission(context.Background(), admission)
+	ctx := workload.WithAdmitter(context.Background(), admission)
 	result, err := runtime.ExecuteDataQuery(ctx, request)
 	close(release)
 	occupying.Wait()

@@ -1624,62 +1624,6 @@
       "x-lifecycle": "supported",
       "x-scope": "serve,admin"
     },
-    "LEAPVIEW_EXEC_JOB_LEASE_TIMEOUT": {
-      "default": "2m",
-      "description": "Lease duration before an abandoned refresh job may be reclaimed.",
-      "pattern": "^-?[0-9]+(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$",
-      "type": "string",
-      "x-lifecycle": "supported",
-      "x-scope": "serve"
-    },
-    "LEAPVIEW_EXEC_MAX_QUEUED_READS": {
-      "default": "64",
-      "description": "Maximum queued interactive read queries; negative disables queuing.",
-      "pattern": "^-?[0-9]+$",
-      "type": "string",
-      "x-lifecycle": "supported",
-      "x-scope": "serve"
-    },
-    "LEAPVIEW_EXEC_MAX_QUEUED_WRITES": {
-      "default": "64",
-      "description": "Maximum queued refresh jobs; negative disables queuing.",
-      "pattern": "^-?[0-9]+$",
-      "type": "string",
-      "x-lifecycle": "supported",
-      "x-scope": "serve"
-    },
-    "LEAPVIEW_EXEC_MAX_RUNNING_READS": {
-      "default": "4",
-      "description": "Maximum concurrently running interactive read queries.",
-      "pattern": "^-?[0-9]+$",
-      "type": "string",
-      "x-lifecycle": "supported",
-      "x-scope": "serve"
-    },
-    "LEAPVIEW_EXEC_MAX_RUNNING_WRITES": {
-      "default": "1",
-      "description": "Maximum concurrently running refresh jobs.",
-      "pattern": "^-?[0-9]+$",
-      "type": "string",
-      "x-lifecycle": "supported",
-      "x-scope": "serve"
-    },
-    "LEAPVIEW_EXEC_READ_QUEUE_TIMEOUT": {
-      "default": "30s",
-      "description": "Maximum time an interactive read may wait in the queue.",
-      "pattern": "^-?[0-9]+(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$",
-      "type": "string",
-      "x-lifecycle": "supported",
-      "x-scope": "serve"
-    },
-    "LEAPVIEW_EXEC_READ_TIMEOUT": {
-      "default": "2m",
-      "description": "Maximum execution time for an interactive read query.",
-      "pattern": "^-?[0-9]+(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$",
-      "type": "string",
-      "x-lifecycle": "supported",
-      "x-scope": "serve"
-    },
     "LEAPVIEW_HEALTHCHECK_URL": {
       "description": "Explicit readiness URL used by the healthcheck command.",
       "type": "string",
@@ -1993,6 +1937,14 @@
       "x-lifecycle": "supported",
       "x-scope": "serve"
     },
+    "LEAPVIEW_REFRESH_JOB_LEASE_TIMEOUT": {
+      "default": "2m",
+      "description": "Lease duration before an abandoned refresh job may be reclaimed.",
+      "pattern": "^-?[0-9]+(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
     "LEAPVIEW_SCIM_BEARER_TOKEN": {
       "description": "Bearer token enabling SCIM provisioning; production requires at least 32 characters when set.",
       "type": "string",
@@ -2041,6 +1993,262 @@
       "writeOnly": true,
       "x-lifecycle": "external",
       "x-scope": "example connection"
+    },
+    "LEAPVIEW_WORKLOAD_BACKGROUND_EXECUTION_TIMEOUT": {
+      "default": "15m",
+      "description": "Maximum execution time for background work.",
+      "pattern": "^-?[0-9]+(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_BACKGROUND_MAX_QUEUED": {
+      "default": "16",
+      "description": "Maximum queued background operations.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_BACKGROUND_MAX_QUEUED_PER_WORKSPACE": {
+      "default": "4",
+      "description": "Maximum queued background operations for one workspace.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_BACKGROUND_MAX_RUNNING": {
+      "default": "1",
+      "description": "Maximum concurrently running background operations.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_BACKGROUND_QUEUE_TIMEOUT": {
+      "default": "2m",
+      "description": "Maximum time background work may wait for admission.",
+      "pattern": "^-?[0-9]+(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_BACKGROUND_RESERVED_RUNNING": {
+      "default": "0",
+      "description": "Capacity reserved for background work when background demand is queued.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_CONTROL_EXECUTION_TIMEOUT": {
+      "default": "15m",
+      "description": "Maximum execution time for control work.",
+      "pattern": "^-?[0-9]+(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_CONTROL_MAX_QUEUED": {
+      "default": "16",
+      "description": "Maximum queued control operations.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_CONTROL_MAX_QUEUED_PER_WORKSPACE": {
+      "default": "16",
+      "description": "Maximum queued node-scoped control operations.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_CONTROL_MAX_RUNNING": {
+      "default": "1",
+      "description": "Maximum concurrently running control operations.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_CONTROL_QUEUE_TIMEOUT": {
+      "default": "2m",
+      "description": "Maximum time control work may wait for admission.",
+      "pattern": "^-?[0-9]+(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_CONTROL_RESERVED_RUNNING": {
+      "default": "1",
+      "description": "Capacity reserved for node-scoped control work when control demand is queued.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_INTERACTIVE_EXECUTION_TIMEOUT": {
+      "default": "2m",
+      "description": "Maximum execution time for interactive work.",
+      "pattern": "^-?[0-9]+(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_INTERACTIVE_MAX_QUEUED": {
+      "default": "64",
+      "description": "Maximum queued interactive operations.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_INTERACTIVE_MAX_QUEUED_PER_WORKSPACE": {
+      "default": "16",
+      "description": "Maximum queued interactive operations for one workspace.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_INTERACTIVE_MAX_RUNNING": {
+      "default": "4",
+      "description": "Maximum concurrently running interactive operations.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_INTERACTIVE_QUEUE_TIMEOUT": {
+      "default": "30s",
+      "description": "Maximum time interactive work may wait for admission.",
+      "pattern": "^-?[0-9]+(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_INTERACTIVE_RESERVED_RUNNING": {
+      "default": "3",
+      "description": "Capacity reserved for interactive work when interactive demand is queued.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_MAINTENANCE_EXECUTION_TIMEOUT": {
+      "default": "30m",
+      "description": "Maximum execution time for maintenance work.",
+      "pattern": "^-?[0-9]+(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_MAINTENANCE_MAX_QUEUED": {
+      "default": "0",
+      "description": "Maximum queued maintenance operations; zero makes maintenance skip when saturated.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_MAINTENANCE_MAX_QUEUED_PER_WORKSPACE": {
+      "default": "0",
+      "description": "Maximum queued node-scoped maintenance operations.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_MAINTENANCE_MAX_RUNNING": {
+      "default": "1",
+      "description": "Maximum concurrently running maintenance operations.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_MAINTENANCE_QUEUE_TIMEOUT": {
+      "default": "0s",
+      "description": "Maximum time maintenance may wait; zero means no wait.",
+      "pattern": "^-?[0-9]+(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_MAINTENANCE_RESERVED_RUNNING": {
+      "default": "0",
+      "description": "Capacity reserved for maintenance work when maintenance demand is queued.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_MAX_QUEUED": {
+      "default": "112",
+      "description": "Maximum queued operations across all workload classes.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_MAX_RUNNING": {
+      "default": "5",
+      "description": "Maximum operations running concurrently on this node.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_REFRESH_EXECUTION_TIMEOUT": {
+      "default": "0s",
+      "description": "Maximum execution time for refresh work; zero leaves the deadline to the workflow.",
+      "pattern": "^-?[0-9]+(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_REFRESH_MAX_QUEUED": {
+      "default": "16",
+      "description": "Maximum queued refresh operations.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_REFRESH_MAX_QUEUED_PER_WORKSPACE": {
+      "default": "1",
+      "description": "Maximum queued refresh operations for one workspace.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_REFRESH_MAX_RUNNING": {
+      "default": "1",
+      "description": "Maximum concurrently running refresh operations.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_REFRESH_QUEUE_TIMEOUT": {
+      "default": "2m",
+      "description": "Maximum time refresh work may wait for admission.",
+      "pattern": "^-?[0-9]+(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_REFRESH_RESERVED_RUNNING": {
+      "default": "1",
+      "description": "Capacity reserved for refresh work when refresh demand is queued.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
     }
   },
   "title": "LeapView process-global environment",

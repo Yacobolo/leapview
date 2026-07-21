@@ -24,6 +24,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	"github.com/Yacobolo/leapview/internal/dataquery"
+	"github.com/Yacobolo/leapview/internal/workload"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -980,6 +981,15 @@ func statusForDataExecutionError(err error) int {
 		// inaccessible IDs consistently with metadata handlers.
 		return nethttp.StatusNotFound
 	}
+	if reason, ok := workload.ReasonOf(err); ok {
+		if reason == workload.QueueTimeout {
+			return nethttp.StatusGatewayTimeout
+		}
+		return nethttp.StatusServiceUnavailable
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return nethttp.StatusGatewayTimeout
+	}
 	return nethttp.StatusBadRequest
 }
 
@@ -1303,10 +1313,24 @@ func writeJSON(w nethttp.ResponseWriter, status int, value any) {
 }
 
 func writeJSONError(w nethttp.ResponseWriter, err error, status int) {
+	details := map[string]any{}
+	if reason, ok := workload.ReasonOf(err); ok {
+		if reason == workload.QueueTimeout {
+			status = nethttp.StatusGatewayTimeout
+			details["problemCode"] = "WORKLOAD_QUEUE_TIMEOUT"
+		} else {
+			status = nethttp.StatusServiceUnavailable
+			w.Header().Set("Retry-After", "1")
+			details["problemCode"] = "WORKLOAD_OVERLOADED"
+		}
+	} else if errors.Is(err, context.DeadlineExceeded) {
+		status = nethttp.StatusGatewayTimeout
+		details["problemCode"] = "WORKLOAD_EXECUTION_TIMEOUT"
+	}
 	writeJSON(w, status, api.ErrorResponse{
 		Code:      status,
 		Message:   err.Error(),
-		Details:   map[string]any{},
+		Details:   details,
 		RequestID: "",
 	})
 }

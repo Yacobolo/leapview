@@ -30,7 +30,7 @@ func (m *consumerForwardingMetrics) ExecuteConsumersPage(ctx context.Context, re
 
 func TestProductionDashboardWrappersForwardGovernedConsumerPlan(t *testing.T) {
 	underlying := &consumerForwardingMetrics{}
-	metrics := dashboardCommandMetrics{QueryMetrics: queryAuditMetrics{QueryMetrics: executionMetrics{
+	metrics := dashboardCommandMetrics{QueryMetrics: queryAuditMetrics{QueryMetrics: workloadMetrics{
 		QueryMetrics: queryauthz.New(underlying, queryauthz.Options{}),
 	}}}
 

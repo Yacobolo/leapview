@@ -72,6 +72,55 @@ type goFile struct {
 	body    string
 }
 
+var targetCapabilities = map[string]struct{}{
+	"project": {}, "workspace": {}, "access": {}, "manageddata": {}, "analytics": {},
+	"dashboard": {}, "agent": {}, "release": {}, "deployment": {}, "servingstate": {},
+	"refresh": {}, "runtimehost": {}, "workload": {}, "platform": {},
+}
+
+func TestTargetCapabilityGraphDeclaresWorkload(t *testing.T) {
+	if _, ok := targetCapabilities["workload"]; !ok {
+		t.Fatal("workload is absent from the target capability graph")
+	}
+	if !packageDirExists(repoRoot(t), "internal/workload") {
+		t.Fatal("declared workload capability package does not exist")
+	}
+}
+
+func TestWorkloadImportsNoProductCapabilities(t *testing.T) {
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/workload" {
+			continue
+		}
+		for _, imported := range file.imports {
+			if strings.HasPrefix(imported, modulePath+"/internal/") {
+				t.Fatalf("%s imports product capability %s", file.path, imported)
+			}
+		}
+	}
+}
+
+func TestOnlyWorkloadAdaptersAndCompositionDependOnWorkload(t *testing.T) {
+	allowed := []string{"internal/app", "internal/cli", "internal/config", "internal/integration", "internal/workspace/refresh", "internal/analytics/materialize", "internal/analytics/query/http"}
+	for _, file := range productionGoFiles(t) {
+		for _, imported := range file.imports {
+			if imported != modulePath+"/internal/workload" {
+				continue
+			}
+			permitted := false
+			for _, prefix := range allowed {
+				if file.pkgDir == prefix || strings.HasPrefix(file.pkgDir, prefix+"/") {
+					permitted = true
+					break
+				}
+			}
+			if !permitted {
+				t.Fatalf("%s depends on workload outside composition or an execution/worker adapter", file.path)
+			}
+		}
+	}
+}
+
 func TestUseCasesDoNotImportAdapters(t *testing.T) {
 	for _, file := range productionGoFiles(t) {
 		if !isInternalPackage(file.pkgDir) || isAdapterOrCompositionPackage(file.pkgDir) {

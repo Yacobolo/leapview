@@ -132,6 +132,7 @@ internal/
   servingstate/
   refresh/
   runtimehost/
+  workload/
   platform/
 ```
 
@@ -147,6 +148,7 @@ internal/
 - `servingstate`: one workspace's immutable serving generation, artifact identity, validation state, analytical snapshot reference, and lifecycle invariants.
 - `refresh`: refresh definitions, schedules, jobs, generations, materialization orchestration, data-version cutover, and supersession behavior.
 - `runtimehost`: process-local active runtime lifecycle, prepared runtime publication, leases, draining, and closure.
+- `workload`: node-local admission policy, workload and workspace fairness, deadlines, queue bounds, and admission telemetry. It imports no product capabilities and stores no durable work.
 - `platform`: low-level node infrastructure: SQLite opening and migrations, process-level paths, backup primitives, and shared infrastructure configuration.
 
 `admin` is not a domain capability. It is an interface surface over capability-owned use cases and read models. `admin/http` may compose read models but must not own their business workflows.
@@ -189,6 +191,9 @@ dashboard
 
 agent
   -> governed product-operation ports
+
+composition, worker adapters, analytics execution adapters
+  -> workload admission port
 ```
 
 Rules:
@@ -598,6 +603,19 @@ Visual renderer plugins adapt renderer-neutral visual intent to concrete librari
 
 Page streams are node-local. Reconnection reconstructs canonical state from the active runtime and server-owned page state; correctness never depends on replaying an in-memory stream history.
 
+## Workload Admission
+
+`workload` is the node-wide capacity gate for `interactive`, `background`, `refresh`, `control`, and `maintenance` work. Admission is non-preemptive and hierarchical:
+
+1. queued classes below reserved running capacity receive the next permits;
+2. borrowable capacity is round-robin across eligible classes;
+3. workspaces are round-robin within a class, with FIFO preserved per workspace;
+4. idle reservations may be borrowed up to class maxima, but new borrowing stops when reserved demand appears.
+
+Interactive, background, and refresh work require a fairness identity. It is the workspace ID except for deliberately cross-workspace agent runs, which use the bounded internal `_global` identity. Control and maintenance are node-scoped. Node, class, and per-identity queues are bounded; maintenance never queues and skips a pass when saturated. Queue and execution deadlines are distinct and observable.
+
+Nested work reuses a permit only for the same controller, class, and workspace. Conflicting nested admission fails explicitly. Durable queues remain the source of truth: workers inspect at most one head per workspace, obtain admission, then atomically claim the exact durable ID. Losing that claim or admission never marks work failed.
+
 ## Analytics Runtime
 
 `analytics` owns:
@@ -620,8 +638,8 @@ Execution rules:
 - Request cancellation interrupts queued and running work.
 - Result row, byte, and cardinality limits are enforced before serialization.
 - DuckDB memory, temporary storage, threads, and external access are explicitly bounded.
-- Interactive reads and analytical writes have separate admission paths.
-- Admission control is fair across workspaces and prevents starvation.
+- Physical queries are admitted after governance and before DuckDB execution; one logical bundle or nested physical call holds one permit.
+- Dashboard, REST, CLI, and data-explorer reads are interactive; agent and nested agent-tool queries are background.
 - Query caches have per-runtime, per-workspace, and node-wide memory budgets.
 - Cache keys include every security, policy, serving-generation, source-revision, and query input that affects results.
 
@@ -747,7 +765,8 @@ Exactly-once delivery is not assumed. Consumers are idempotent, sequence-aware w
 
 Background workers:
 
-- claim durable jobs before execution
+- inspect durable heads, obtain workload admission, then atomically claim the exact ID
+- present at most one candidate per workspace to each workload class
 - renew leases while working
 - stop publication after lease loss
 - never hold SQLite transactions during analytical or network work

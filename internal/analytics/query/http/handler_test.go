@@ -11,9 +11,37 @@ import (
 
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
+	"github.com/Yacobolo/leapview/internal/workload"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 )
+
+func TestWorkloadRejectionsMapToStableOverloadProblems(t *testing.T) {
+	for _, test := range []struct {
+		reason workload.RejectionReason
+		status int
+		code   string
+		retry  string
+	}{
+		{reason: workload.ClassQueueFull, status: http.StatusServiceUnavailable, code: "WORKLOAD_OVERLOADED", retry: "1"},
+		{reason: workload.QueueTimeout, status: http.StatusGatewayTimeout, code: "WORKLOAD_QUEUE_TIMEOUT"},
+	} {
+		recorder := httptest.NewRecorder()
+		err := &workload.Rejection{Reason: test.reason, Class: workload.Interactive, WorkspaceID: "sales", Operation: "query"}
+		writeJSONError(recorder, err, http.StatusBadRequest)
+		if recorder.Code != test.status || recorder.Header().Get("Retry-After") != test.retry {
+			t.Fatalf("reason %s status=%d retry=%q", test.reason, recorder.Code, recorder.Header().Get("Retry-After"))
+		}
+		var response map[string]any
+		if decodeErr := json.Unmarshal(recorder.Body.Bytes(), &response); decodeErr != nil {
+			t.Fatal(decodeErr)
+		}
+		details := response["details"].(map[string]any)
+		if details["problemCode"] != test.code {
+			t.Fatalf("reason %s details=%#v", test.reason, details)
+		}
+	}
+}
 
 func TestSemanticQueryResponseUsesTypedColumnsAndPrecisionSafePositionalRows(t *testing.T) {
 	response := semanticQueryResponse([]string{"order_id", "amount", "active"}, reportdef.QueryRows{{

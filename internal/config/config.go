@@ -9,9 +9,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Yacobolo/leapview/internal/configspec"
-	"github.com/Yacobolo/leapview/internal/execution"
+	"github.com/Yacobolo/leapview/internal/workload"
 	"github.com/caarlos0/env/v11"
 )
 
@@ -174,22 +175,35 @@ func (c Config) Validate(profile Profile) error {
 	}
 	values := c.catalogValues()
 	values[configspec.EnvLEAPVIEW_COOKIE_SECURE] = cookieSecure
-	return configspec.Validate(values)
+	if err := configspec.Validate(values); err != nil {
+		return err
+	}
+	if err := c.WorkloadConfig().Validate(); err != nil {
+		return fmt.Errorf("invalid workload configuration: %w", err)
+	}
+	return nil
 }
 
 func (c Config) ValidateProductionAuth() error {
 	return c.Validate(ProfileServe)
 }
 
-func (c Config) ExecutionConfig() execution.Config {
-	return execution.Config{
-		MaxRunningReads:      c.ExecMaxRunningReads,
-		MaxQueuedReads:       c.ExecMaxQueuedReads,
-		ReadQueueWait:        c.ExecReadQueueTimeout,
-		ReadExecutionTimeout: c.ExecReadTimeout,
-		MaxRunningJobs:       c.ExecMaxRunningWrites,
-		MaxQueuedJobs:        c.ExecMaxQueuedWrites,
+func (c Config) WorkloadConfig() workload.Config {
+	return workload.Config{
+		MaxRunning:    c.WorkloadMaxRunning,
+		MaximumQueued: c.WorkloadMaxQueued,
+		Classes: map[workload.Class]workload.Policy{
+			workload.Interactive: workloadPolicy(c.WorkloadInteractiveReservedRunning, c.WorkloadInteractiveMaxRunning, c.WorkloadInteractiveMaxQueued, c.WorkloadInteractiveMaxQueuedPerWorkspace, c.WorkloadInteractiveQueueTimeout, c.WorkloadInteractiveExecutionTimeout),
+			workload.Background:  workloadPolicy(c.WorkloadBackgroundReservedRunning, c.WorkloadBackgroundMaxRunning, c.WorkloadBackgroundMaxQueued, c.WorkloadBackgroundMaxQueuedPerWorkspace, c.WorkloadBackgroundQueueTimeout, c.WorkloadBackgroundExecutionTimeout),
+			workload.Refresh:     workloadPolicy(c.WorkloadRefreshReservedRunning, c.WorkloadRefreshMaxRunning, c.WorkloadRefreshMaxQueued, c.WorkloadRefreshMaxQueuedPerWorkspace, c.WorkloadRefreshQueueTimeout, c.WorkloadRefreshExecutionTimeout),
+			workload.Control:     workloadPolicy(c.WorkloadControlReservedRunning, c.WorkloadControlMaxRunning, c.WorkloadControlMaxQueued, c.WorkloadControlMaxQueuedPerWorkspace, c.WorkloadControlQueueTimeout, c.WorkloadControlExecutionTimeout),
+			workload.Maintenance: workloadPolicy(c.WorkloadMaintenanceReservedRunning, c.WorkloadMaintenanceMaxRunning, c.WorkloadMaintenanceMaxQueued, c.WorkloadMaintenanceMaxQueuedPerWorkspace, c.WorkloadMaintenanceQueueTimeout, c.WorkloadMaintenanceExecutionTimeout),
+		},
 	}
+}
+
+func workloadPolicy(reserved, running, queued, perWorkspace int, queueTimeout, executionTimeout time.Duration) workload.Policy {
+	return workload.Policy{ReservedRunning: reserved, MaximumRunning: running, MaximumQueued: queued, MaximumQueuedPerWorkspace: perWorkspace, QueueTimeout: queueTimeout, ExecutionTimeout: executionTimeout}
 }
 
 func redactSecrets(err error) error {

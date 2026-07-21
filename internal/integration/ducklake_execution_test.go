@@ -25,7 +25,6 @@ import (
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	dashboardruntime "github.com/Yacobolo/leapview/internal/dashboard/runtime"
 	"github.com/Yacobolo/leapview/internal/dataquery"
-	"github.com/Yacobolo/leapview/internal/execution"
 	"github.com/Yacobolo/leapview/internal/manageddata"
 	manageddatasqlite "github.com/Yacobolo/leapview/internal/manageddata/sqlite"
 	"github.com/Yacobolo/leapview/internal/platform"
@@ -36,6 +35,7 @@ import (
 	servingstatefs "github.com/Yacobolo/leapview/internal/servingstate/filesystem"
 	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
 	storagemaintenance "github.com/Yacobolo/leapview/internal/storage/maintenance"
+	"github.com/Yacobolo/leapview/internal/workload"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
 	_ "github.com/duckdb/duckdb-go/v2"
@@ -136,7 +136,13 @@ func newDuckLakeHarness(t *testing.T, opts ...func(*app.Options)) *duckLakeHarne
 		ManagedDataResolver: staticIntegrationManagedDataResolver{root: dataDir},
 		DefaultWorkspaceID:  workspaceID,
 		DefaultEnvironment:  string(servingstate.DefaultEnvironment),
-		Executor:            execution.New(execution.DefaultConfig()),
+		Workload: func() *workload.Controller {
+			controller, err := workload.New(workload.DefaultConfig())
+			if err != nil {
+				t.Fatal(err)
+			}
+			return controller
+		}(),
 	}
 	for _, opt := range opts {
 		opt(&options)
@@ -538,46 +544,35 @@ func TestGlobalReadExecutionAuditsQueueTelemetry(t *testing.T) {
 	}
 }
 
-func TestReadOverloadDoesNotBlockWriteRefresh(t *testing.T) {
-	executor := execution.New(execution.Config{
-		MaxRunningReads: 1,
-		MaxQueuedReads:  -1,
-		ReadQueueWait:   50 * time.Millisecond,
-		MaxRunningJobs:  1,
-		MaxQueuedJobs:   4,
-	})
+func TestInteractiveOverloadDoesNotBlockReservedRefresh(t *testing.T) {
+	controller, err := workload.New(workload.Config{MaxRunning: 2, Classes: map[workload.Class]workload.Policy{
+		workload.Interactive: {MaximumRunning: 1},
+		workload.Refresh:     {ReservedRunning: 1, MaximumRunning: 1, MaximumQueued: 4, MaximumQueuedPerWorkspace: 1, QueueTimeout: time.Minute},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	h := newDuckLakeHarness(t, func(options *app.Options) {
-		options.Executor = executor
+		options.Workload = controller
 	})
-	started := make(chan struct{})
-	release := make(chan struct{})
-	readDone := make(chan error, 1)
-	go func() {
-		_, err := executor.SubmitRead(context.Background(), dataquery.Query{Kind: dataquery.KindSemanticAggregate}, func(context.Context) (dataquery.Result, error) {
-			close(started)
-			<-release
-			return dataquery.Result{}, nil
-		})
-		readDone <- err
-	}()
-	<-started
+	held, err := controller.Acquire(context.Background(), workload.Request{Class: workload.Interactive, WorkspaceID: "sales", Operation: "integration.hold"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	req := h.authedJSONRequest(t, http.MethodPost, "/api/v1/workspaces/sales/semantic-models/sales/query", `{"measures":[{"field":"revenue"}],"limit":1}`)
 	res, body := h.do(t, req)
-	if res.StatusCode == http.StatusOK || !strings.Contains(body, execution.ErrReadQueueFull.Error()) {
-		close(release)
-		t.Fatalf("overloaded read status=%d body=%s, want read queue full error", res.StatusCode, body)
+	if res.StatusCode != http.StatusServiceUnavailable || !strings.Contains(body, "WORKLOAD_OVERLOADED") || res.Header.Get("Retry-After") != "1" {
+		held.Release()
+		t.Fatalf("overloaded read status=%d body=%s retry=%q", res.StatusCode, body, res.Header.Get("Retry-After"))
 	}
 	writeMutatedOlistFixture(t, h.dataDir)
 	pipelineAssetID := integrationAssetID(t, h.store, "sales", "refresh_pipeline", "sales.sales-refresh")
 	if got := h.postAuthenticated(t, "/workspaces/sales/assets/"+pipelineAssetID+"/refresh"); got != http.StatusNoContent {
-		close(release)
+		held.Release()
 		t.Fatalf("refresh status = %d", got)
 	}
 	h.waitLatestRun(t, analyticsmaterialize.TargetRefreshPipeline, "sales.sales-refresh", analyticsmaterialize.RunStatusSucceeded)
-	close(release)
-	if err := <-readDone; err != nil {
-		t.Fatalf("held read returned error: %v", err)
-	}
+	held.Release()
 }
 
 func TestDuckLakeCleanupProtectsLeasedSnapshots(t *testing.T) {

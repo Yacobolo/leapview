@@ -197,7 +197,7 @@ func workspaceReaderCount(configured int) int {
 	if configured > 0 {
 		return configured
 	}
-	if value, err := strconv.Atoi(strings.TrimSpace(os.Getenv(configspec.EnvLEAPVIEW_EXEC_MAX_RUNNING_READS))); err == nil && value > 0 {
+	if value, err := strconv.Atoi(strings.TrimSpace(os.Getenv(configspec.EnvLEAPVIEW_WORKLOAD_INTERACTIVE_MAX_RUNNING))); err == nil && value > 0 {
 		return value
 	}
 	return 4

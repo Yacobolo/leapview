@@ -8,20 +8,21 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/configspec"
+	"github.com/Yacobolo/leapview/internal/workload"
 )
 
-func TestLoadRejectsMalformedExecutionConfiguration(t *testing.T) {
-	t.Setenv("LEAPVIEW_EXEC_MAX_RUNNING_READS", "many")
+func TestLoadRejectsMalformedWorkloadConfiguration(t *testing.T) {
+	t.Setenv("LEAPVIEW_WORKLOAD_INTERACTIVE_MAX_RUNNING", "many")
 	if _, err := Load(); err == nil {
-		t.Fatal("Load() accepted malformed execution concurrency")
-	} else if !strings.Contains(err.Error(), "LEAPVIEW_EXEC_MAX_RUNNING_READS") {
+		t.Fatal("Load() accepted malformed workload concurrency")
+	} else if !strings.Contains(err.Error(), "LEAPVIEW_WORKLOAD_INTERACTIVE_MAX_RUNNING") {
 		t.Fatalf("Load() error does not name the environment variable: %v", err)
 	}
 
-	t.Setenv("LEAPVIEW_EXEC_MAX_RUNNING_READS", "4")
-	t.Setenv("LEAPVIEW_EXEC_READ_TIMEOUT", "eventually")
+	t.Setenv("LEAPVIEW_WORKLOAD_INTERACTIVE_MAX_RUNNING", "4")
+	t.Setenv("LEAPVIEW_WORKLOAD_INTERACTIVE_EXECUTION_TIMEOUT", "eventually")
 	if _, err := Load(); err == nil {
-		t.Fatal("Load() accepted malformed execution timeout")
+		t.Fatal("Load() accepted malformed workload timeout")
 	}
 }
 
@@ -31,8 +32,8 @@ func TestLoadRejectsMalformedTypedValues(t *testing.T) {
 		value string
 	}{
 		{name: "LEAPVIEW_PRODUCTION", value: "sometimes"},
-		{name: "LEAPVIEW_EXEC_MAX_QUEUED_WRITES", value: "several"},
-		{name: "LEAPVIEW_EXEC_JOB_LEASE_TIMEOUT", value: "later"},
+		{name: "LEAPVIEW_WORKLOAD_REFRESH_MAX_QUEUED", value: "several"},
+		{name: "LEAPVIEW_REFRESH_JOB_LEASE_TIMEOUT", value: "later"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv(test.name, test.value)
@@ -107,22 +108,24 @@ func TestGeneratedEnvironmentExampleValidates(t *testing.T) {
 	}
 }
 
-func TestLoadIncludesExecutionConfiguration(t *testing.T) {
-	t.Setenv("LEAPVIEW_EXEC_MAX_RUNNING_READS", "7")
-	t.Setenv("LEAPVIEW_EXEC_MAX_QUEUED_READS", "9")
-	t.Setenv("LEAPVIEW_EXEC_READ_QUEUE_TIMEOUT", "11s")
-	t.Setenv("LEAPVIEW_EXEC_READ_TIMEOUT", "13s")
+func TestLoadIncludesWorkloadConfiguration(t *testing.T) {
+	t.Setenv("LEAPVIEW_WORKLOAD_MAX_RUNNING", "7")
+	t.Setenv("LEAPVIEW_WORKLOAD_INTERACTIVE_MAX_RUNNING", "7")
+	t.Setenv("LEAPVIEW_WORKLOAD_INTERACTIVE_MAX_QUEUED", "9")
+	t.Setenv("LEAPVIEW_WORKLOAD_INTERACTIVE_QUEUE_TIMEOUT", "11s")
+	t.Setenv("LEAPVIEW_WORKLOAD_INTERACTIVE_EXECUTION_TIMEOUT", "13s")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	execution := cfg.ExecutionConfig()
-	if execution.MaxRunningReads != 7 || execution.MaxQueuedReads != 9 {
-		t.Fatalf("execution concurrency = %#v", execution)
+	workloads := cfg.WorkloadConfig()
+	interactive := workloads.Classes[workload.Interactive]
+	if workloads.MaxRunning != 7 || interactive.MaximumRunning != 7 || interactive.MaximumQueued != 9 {
+		t.Fatalf("workload concurrency = %#v", workloads)
 	}
-	if execution.ReadQueueWait != 11*time.Second || execution.ReadExecutionTimeout != 13*time.Second {
-		t.Fatalf("execution timeouts = %#v", execution)
+	if interactive.QueueTimeout != 11*time.Second || interactive.ExecutionTimeout != 13*time.Second {
+		t.Fatalf("workload timeouts = %#v", workloads)
 	}
 }
 
