@@ -2,12 +2,12 @@ package http
 
 import (
 	"context"
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	"log/slog"
 	nethttp "net/http"
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/access"
+	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	"github.com/Yacobolo/leapview/internal/api"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
@@ -16,6 +16,7 @@ import (
 	dashboardstream "github.com/Yacobolo/leapview/internal/dashboard/stream"
 	reportui "github.com/Yacobolo/leapview/internal/dashboard/ui"
 	"github.com/Yacobolo/leapview/internal/dataquery"
+	"github.com/Yacobolo/leapview/internal/ui"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
@@ -49,6 +50,7 @@ type Handler struct {
 	ChromeDecorators     func(r *nethttp.Request) []reportui.ChromeDecorator
 	Environment          func(*nethttp.Request) string
 	DataRefreshedAt      func(context.Context, string, string, string) string
+	AgentBootstrap       func(*nethttp.Request, string) ui.ChatViewState
 }
 
 func (h Handler) filterAuthorizedDashboards(ctx context.Context, principalID, workspaceID string, rows []api.DashboardSummary) ([]api.DashboardSummary, error) {
