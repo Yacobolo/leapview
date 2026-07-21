@@ -85,6 +85,11 @@ func queryRows(ctx context.Context, conn *sql.Conn, plan semanticquery.Plan) (se
 		for i, column := range plan.Columns {
 			row[column] = cloneValue(values[i])
 		}
+		if budget, ok := dataquery.ResultBudgetFromContext(ctx); ok {
+			if err := budget.ConsumeRow(row); err != nil {
+				return nil, err
+			}
+		}
 		result = append(result, row)
 	}
 	return result, rows.Err()

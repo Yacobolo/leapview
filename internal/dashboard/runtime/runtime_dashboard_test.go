@@ -53,7 +53,7 @@ func newManagedFixtureRuntime(dataDir, workspaceID string) (*Service, error) {
 		return nil, fmt.Errorf("showcase project has no %s workspace", workspaceID)
 	}
 	bindManagedFixtureRoots(compiledWorkspace.Definition, dataDir)
-	return NewFromDefinition(filepath.Join(dataDir, workspaceID), testDataRuntimeFactory{}, compiledWorkspace.Definition)
+	return NewFromDefinition(context.Background(), filepath.Join(dataDir, workspaceID), testDataRuntimeFactory{}, compiledWorkspace.Definition)
 }
 
 func bindManagedFixtureRoots(definition *workspace.Definition, root string) {
@@ -76,7 +76,7 @@ o2,20
 `)
 	definition := sharedOrdersWorkspaceDefinition(t)
 	bindManagedFixtureRoots(definition, dir)
-	metrics, err := NewFromDefinition(dir, testDataRuntimeFactory{}, definition)
+	metrics, err := NewFromDefinition(context.Background(), dir, testDataRuntimeFactory{}, definition)
 	if err != nil {
 		t.Fatal(err)
 	}

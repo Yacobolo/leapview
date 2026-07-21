@@ -13,13 +13,16 @@ import (
 	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
 	"github.com/Yacobolo/leapview/internal/agent"
 	agentopenai "github.com/Yacobolo/leapview/internal/agent/openai"
+	analyticsduckdb "github.com/Yacobolo/leapview/internal/analytics/duckdb"
 	queryauthz "github.com/Yacobolo/leapview/internal/analytics/query/authz"
+	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
 	apiidempotencysqlite "github.com/Yacobolo/leapview/internal/apiidempotency/sqlite"
 	"github.com/Yacobolo/leapview/internal/asyncjob"
 	asyncjobsqlite "github.com/Yacobolo/leapview/internal/asyncjob/sqlite"
 	cursorsigningsqlite "github.com/Yacobolo/leapview/internal/cursorsigning/sqlite"
 	dashboardhttp "github.com/Yacobolo/leapview/internal/dashboard/http"
 	dashboardstream "github.com/Yacobolo/leapview/internal/dashboard/stream"
+	"github.com/Yacobolo/leapview/internal/dataquery"
 	deploymenthttp "github.com/Yacobolo/leapview/internal/deployment/http"
 	manageddatabinding "github.com/Yacobolo/leapview/internal/manageddata/binding"
 	"github.com/Yacobolo/leapview/internal/manageddata/control"
@@ -101,6 +104,9 @@ type Server struct {
 	duckDBDir                       string
 	duckLakeCatalogPath             string
 	duckLakeDataPath                string
+	duckDBEnginePool                *analyticsduckdb.EnginePool
+	queryResultCache                *resultcache.Pool
+	queryResultLimits               dataquery.ResultLimits
 	defaultWorkspaceID              string
 	defaultEnvironment              string
 	scimBearerToken                 string
@@ -176,6 +182,9 @@ type Options struct {
 	DuckDBDir                 string
 	DuckLakeCatalogPath       string
 	DuckLakeDataPath          string
+	DuckDBEnginePool          *analyticsduckdb.EnginePool
+	QueryResultCache          *resultcache.Pool
+	QueryResultLimits         dataquery.ResultLimits
 	DefaultWorkspaceID        string
 	DefaultEnvironment        string
 	SCIMBearerToken           string
@@ -204,6 +213,9 @@ type MCPOAuthConfig struct {
 
 func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	telemetry := newHTTPTelemetry()
+	if options.DuckDBEnginePool != nil || options.QueryResultCache != nil {
+		telemetry.registry.MustRegister(newAnalyticalCollector(options.DuckDBEnginePool, options.QueryResultCache))
+	}
 	controller := options.Workload
 	if controller == nil {
 		controller, _ = workload.New(workload.DefaultConfig(), workload.WithObserver(telemetry))
@@ -294,6 +306,9 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	server.duckDBDir = options.DuckDBDir
 	server.duckLakeCatalogPath = options.DuckLakeCatalogPath
 	server.duckLakeDataPath = options.DuckLakeDataPath
+	server.duckDBEnginePool = options.DuckDBEnginePool
+	server.queryResultCache = options.QueryResultCache
+	server.queryResultLimits = options.QueryResultLimits
 	server.defaultWorkspaceID = options.DefaultWorkspaceID
 	server.defaultEnvironment = string(servingstate.NormalizeEnvironment(servingstate.Environment(options.DefaultEnvironment)))
 	server.scimBearerToken = options.SCIMBearerToken

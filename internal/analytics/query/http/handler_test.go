@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
+	analyticsduckdb "github.com/Yacobolo/leapview/internal/analytics/duckdb"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
+	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/workload"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
@@ -39,6 +41,31 @@ func TestWorkloadRejectionsMapToStableOverloadProblems(t *testing.T) {
 		details := response["details"].(map[string]any)
 		if details["problemCode"] != test.code {
 			t.Fatalf("reason %s details=%#v", test.reason, details)
+		}
+	}
+}
+
+func TestAnalyticalLimitsMapToStableProblems(t *testing.T) {
+	for _, test := range []struct {
+		err         error
+		status      int
+		code, retry string
+	}{
+		{err: &dataquery.ResultLimitError{Reason: dataquery.ResultRows, Limit: 10, Observed: 11}, status: http.StatusUnprocessableEntity, code: "QUERY_RESULT_ROW_LIMIT"},
+		{err: &dataquery.ResultLimitError{Reason: dataquery.ResultBytes, Limit: 10, Observed: 11}, status: http.StatusUnprocessableEntity, code: "QUERY_RESULT_BYTE_LIMIT"},
+		{err: &analyticsduckdb.ResourceExhaustedError{Reason: analyticsduckdb.ResourceMemory, Err: errors.New("oom")}, status: http.StatusServiceUnavailable, code: "ANALYTICS_RESOURCE_EXHAUSTED", retry: "1"},
+	} {
+		recorder := httptest.NewRecorder()
+		writeJSONError(recorder, test.err, http.StatusInternalServerError)
+		if recorder.Code != test.status || recorder.Header().Get("Retry-After") != test.retry {
+			t.Fatalf("error=%T status=%d retry=%q", test.err, recorder.Code, recorder.Header().Get("Retry-After"))
+		}
+		var response map[string]any
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		if got := response["details"].(map[string]any)["problemCode"]; got != test.code {
+			t.Fatalf("code=%v", got)
 		}
 	}
 }

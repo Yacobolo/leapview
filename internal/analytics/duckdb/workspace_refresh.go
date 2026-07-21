@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
+	"github.com/Yacobolo/leapview/internal/dataquery"
 	manageddataruntimebinding "github.com/Yacobolo/leapview/internal/manageddata/runtimebinding"
 	"github.com/Yacobolo/leapview/internal/runtimehost"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
@@ -17,6 +19,9 @@ type WorkspaceRefreshMaterializer struct {
 	DuckLakeCatalog string
 	DuckLakeData    string
 	ManagedData     runtimehost.ManagedDataResolver
+	EnginePool      *EnginePool
+	QueryCachePool  *resultcache.Pool
+	ResultLimits    dataquery.ResultLimits
 }
 
 func (m WorkspaceRefreshMaterializer) Materialize(ctx context.Context, input refresh.MaterializeInput) (snapshotID int64, err error) {
@@ -55,6 +60,7 @@ func (m WorkspaceRefreshMaterializer) Materialize(ctx context.Context, input ref
 		SemanticDigest:     input.Candidate.Digest,
 		ArtifactDigest:     input.Artifact.Digest,
 		SkipInitialRefresh: true,
+		EnginePool:         m.EnginePool, QueryCachePool: m.QueryCachePool, ResultLimits: m.ResultLimits,
 	})
 	if err != nil {
 		return 0, err

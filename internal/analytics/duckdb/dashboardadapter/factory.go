@@ -10,6 +10,7 @@ import (
 
 	analyticsduckdb "github.com/Yacobolo/leapview/internal/analytics/duckdb"
 	analyticsmaterialize "github.com/Yacobolo/leapview/internal/analytics/materialize"
+	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	dashboardruntime "github.com/Yacobolo/leapview/internal/dashboard/runtime"
 	"github.com/Yacobolo/leapview/internal/dataquery"
@@ -25,6 +26,9 @@ type Options struct {
 	SemanticModelDigest string
 	ArtifactDigest      string
 	SourceDataDigest    string
+	EnginePool          *analyticsduckdb.EnginePool
+	QueryCachePool      *resultcache.Pool
+	ResultLimits        dataquery.ResultLimits
 }
 
 type Factory struct{ options Options }
@@ -41,6 +45,7 @@ func (f Factory) OpenDashboardWorkspaceDataRuntimes(ctx context.Context, config 
 		DuckLakeDataPath: options.DuckLakeDataPath, SnapshotID: options.SnapshotID,
 		ServingStateID: options.ServingStateID, WorkspaceID: options.WorkspaceID, Environment: options.Environment,
 		SemanticDigest: options.SemanticModelDigest, ArtifactDigest: options.ArtifactDigest, SourceDataDigest: options.SourceDataDigest,
+		EnginePool: options.EnginePool, QueryCachePool: options.QueryCachePool, ResultLimits: options.ResultLimits,
 	})
 	if err != nil {
 		return nil, err

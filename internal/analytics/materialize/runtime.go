@@ -5,17 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
-	"github.com/Yacobolo/leapview/internal/configspec"
+	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
 	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/workload"
 )
@@ -27,9 +25,9 @@ type RuntimeConfig struct {
 	// QueryCacheNamespace identifies the immutable serving snapshot and source
 	// digests backing this runtime. Mutable refreshes additionally advance the
 	// cache generation before any subsequent query can reuse results.
-	QueryCacheNamespace  string
-	QueryCacheMaxEntries int
-	QueryCacheMaxBytes   int64
+	QueryCacheNamespace string
+	QueryCache          *resultcache.Scope
+	ResultLimits        dataquery.ResultLimits
 
 	Database Database
 	Sources  SourceRegistrar
@@ -46,14 +44,15 @@ type ModelTableQuery struct {
 }
 
 type Runtime struct {
-	modelID     string
-	model       *semanticmodel.Model
-	planner     *semanticquery.Planner
-	db          Database
-	sources     SourceRegistrar
-	queries     *semanticquery.Service
-	queryCache  *queryResultCache
-	lastRefresh time.Time
+	modelID      string
+	model        *semanticmodel.Model
+	planner      *semanticquery.Planner
+	db           Database
+	sources      SourceRegistrar
+	queries      *semanticquery.Service
+	queryCache   *queryResultCache
+	resultLimits dataquery.ResultLimits
+	lastRefresh  time.Time
 }
 
 type Database interface {
@@ -100,15 +99,29 @@ func NewRuntimeView(ctx context.Context, config RuntimeConfig) (*Runtime, error)
 	if err != nil {
 		return nil, fmt.Errorf("compile semantic model: %w", err)
 	}
-	cacheEntries, cacheBytes := queryCacheLimits(config)
+	cache := newQueryResultCacheWithScope(config.QueryCache, config.QueryCacheNamespace)
+	if config.QueryCache == nil {
+		cache = newQueryResultCache(256, config.QueryCacheNamespace)
+	}
+	limits := config.ResultLimits
+	if limits.MaxRows <= 0 {
+		limits.MaxRows = 10000
+	}
+	if limits.MaxBytes <= 0 {
+		limits.MaxBytes = 32 << 20
+	}
+	if err := limits.Validate(); err != nil {
+		return nil, err
+	}
 	runtime := &Runtime{
-		modelID:    config.ModelID,
-		model:      config.Model,
-		planner:    planner,
-		db:         config.Database,
-		sources:    config.Sources,
-		queries:    semanticquery.NewService(planner, config.Database),
-		queryCache: newQueryResultCacheWithLimits(cacheEntries, cacheBytes, config.QueryCacheNamespace),
+		modelID:      config.ModelID,
+		model:        config.Model,
+		planner:      planner,
+		db:           config.Database,
+		sources:      config.Sources,
+		queries:      semanticquery.NewService(planner, config.Database),
+		queryCache:   cache,
+		resultLimits: limits,
 	}
 	return runtime, nil
 }
@@ -120,24 +133,6 @@ func (r *Runtime) queryPlanner() *semanticquery.Planner {
 	return semanticquery.NewPlanner(r.model)
 }
 
-func queryCacheLimits(config RuntimeConfig) (int, int64) {
-	entries := config.QueryCacheMaxEntries
-	if entries <= 0 {
-		entries = 256
-		if value, err := strconv.Atoi(strings.TrimSpace(os.Getenv(configspec.EnvLEAPVIEW_QUERY_CACHE_MAX_ENTRIES))); err == nil && value > 0 {
-			entries = value
-		}
-	}
-	bytes := config.QueryCacheMaxBytes
-	if bytes <= 0 {
-		bytes = 64 << 20
-		if value, err := strconv.ParseInt(strings.TrimSpace(os.Getenv(configspec.EnvLEAPVIEW_QUERY_CACHE_MAX_BYTES)), 10, 64); err == nil && value > 0 {
-			bytes = value
-		}
-	}
-	return entries, bytes
-}
-
 func DatabasePath(dbDir, modelID string) string {
 	return filepath.Join(dbDir, "leapview-"+modelID+".duckdb")
 }
@@ -146,7 +141,7 @@ func (r *Runtime) Close() error {
 	if r == nil {
 		return nil
 	}
-	return r.db.Close()
+	return errors.Join(r.db.Close(), r.queryCache.close())
 }
 
 func (r *Runtime) Refresh(ctx context.Context) error {
@@ -189,10 +184,22 @@ func (r *Runtime) Queries() *semanticquery.Service {
 	return r.queries
 }
 
+func (r *Runtime) queryResultLimits() dataquery.ResultLimits {
+	limits := r.resultLimits
+	if limits.MaxRows <= 0 {
+		limits.MaxRows = 10000
+	}
+	if limits.MaxBytes <= 0 {
+		limits.MaxBytes = 32 << 20
+	}
+	return limits
+}
+
 func (r *Runtime) ExecuteDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
 	if r == nil || r.db == nil {
 		return dataquery.Result{}, fmt.Errorf("materialization runtime is not initialized")
 	}
+	ctx = dataquery.WithResultBudget(ctx, r.queryResultLimits())
 	if request.ModelID == "" {
 		request.ModelID = r.modelID
 	}
@@ -242,7 +249,7 @@ func (r *Runtime) ExecuteDataQuery(ctx context.Context, request dataquery.Query)
 		return result, err
 	}
 	execute := func() (dataquery.Result, error) {
-		execCtx, statements := withPhysicalStatementCounter(ctx)
+		execCtx, statements := withPhysicalStatementCounter(dataquery.WithResultBudget(ctx, r.queryResultLimits()))
 		result, err := admitPhysicalQuery(execCtx, request, executePhysical)
 		if count := int(statements.Load()); count > 0 {
 			dataquery.ObservePhysicalQuery(ctx, dataquery.PhysicalQueryObservation{Count: count, Result: result})
@@ -258,6 +265,18 @@ func (r *Runtime) ExecuteDataQuery(ctx context.Context, request dataquery.Query)
 		observeQueryCacheOutcome(ctx, result, err)
 	} else {
 		result, err = execute()
+	}
+	if err == nil && result.CacheOutcome == dataquery.CacheHit {
+		if budget, ok := dataquery.ResultBudgetFromContext(ctx); ok {
+			err = budget.ConsumeRows(result.Rows)
+		}
+	}
+	if _, ok := dataquery.ResultLimitReasonOf(err); ok {
+		return dataquery.Result{Status: dataquery.StatusError, ExecutionState: dataquery.ExecutionFailed, Error: err.Error()}, err
+	}
+	if err == nil {
+		result.RowsReturned = len(result.Rows)
+		result.BytesEstimate = resultcache.EstimateResultBytes(result)
 	}
 	if transform != nil {
 		if transformErr := transform(&result, err); transformErr != nil {
@@ -279,6 +298,7 @@ func (r *Runtime) ExecuteDataQueryBundle(ctx context.Context, requests []dataque
 	if len(requests) < 2 {
 		return dataquery.BundleResult{}, &dataquery.BundleIncompatibleError{Err: fmt.Errorf("bundle requires at least two branches")}
 	}
+	ctx = dataquery.WithResultBudget(ctx, r.queryResultLimits())
 	governed := make([]dataquery.BundleRequest, 0, len(requests))
 	transforms := make(map[string]dataquery.ResultTransformer, len(requests))
 	result := dataquery.BundleResult{Results: make(map[string]dataquery.Result, len(requests))}
@@ -314,6 +334,11 @@ func (r *Runtime) ExecuteDataQueryBundle(ctx context.Context, requests []dataque
 			return dataquery.BundleResult{}, &dataquery.BundleBranchError{ID: branch.ID, Err: err}
 		}
 		if hit {
+			if budget, ok := dataquery.ResultBudgetFromContext(ctx); ok {
+				if err := budget.ConsumeRows(cached.Rows); err != nil {
+					return dataquery.BundleResult{}, err
+				}
+			}
 			dataquery.ObserveCacheOutcome(ctx, dataquery.CacheHit)
 			result.Results[branch.ID] = cached
 			continue
@@ -434,7 +459,7 @@ func (r *Runtime) ExecuteDataQueryBundle(ctx context.Context, requests []dataque
 		return dataquery.BundleResult{}, fmt.Errorf("encode aggregate bundle flight identity: %w", err)
 	}
 	flight, shared, err := r.queryCache.coalesce(ctx, string(flightKey), func() (any, error) {
-		execCtx, statements := withPhysicalStatementCounter(ctx)
+		execCtx, statements := withPhysicalStatementCounter(dataquery.WithResultBudget(ctx, r.queryResultLimits()))
 		var decoded map[string]semanticquery.Rows
 		summary, executeErr := admitPhysicalQuery(execCtx, representative, func(queryCtx context.Context) (dataquery.Result, error) {
 			queryResult, rows, queryErr := execute(queryCtx)
@@ -456,9 +481,20 @@ func (r *Runtime) ExecuteDataQueryBundle(ctx context.Context, requests []dataque
 	}
 	executionResult := flight.(bundleExecution)
 	result.SQL = bundle.Plan.SQL
+	type pendingCacheStore struct {
+		slot   cacheSlot
+		result dataquery.Result
+	}
+	pendingStores := make([]pendingCacheStore, 0, len(governed))
 	for _, branch := range governed {
 		rows := dataQueryRows(executionResult.decoded[branch.ID])
+		if budget, ok := dataquery.ResultBudgetFromContext(ctx); ok {
+			if err := budget.ConsumeRows(rows); err != nil {
+				return dataquery.BundleResult{}, err
+			}
+		}
 		branchResult := dataquery.Result{Rows: rows, Columns: dataquery.ColumnsFromNames(bundleOutputColumns(bundle, branch.ID)), SQL: bundle.Plan.SQL, PlanningMS: executionResult.summary.PlanningMS, ConnectionWaitMS: executionResult.summary.ConnectionWaitMS, DatabaseMS: executionResult.summary.DatabaseMS, ExecutionState: dataquery.ExecutionSucceeded, Status: dataquery.StatusSuccess, RowsReturned: len(rows)}
+		branchResult.BytesEstimate = resultcache.EstimateResultBytes(branchResult)
 		if slot, ok := cacheSlots[branch.ID]; ok {
 			if err := ctx.Err(); err != nil {
 				_ = applyTransforms(err)
@@ -468,14 +504,17 @@ func (r *Runtime) ExecuteDataQueryBundle(ctx context.Context, requests []dataque
 			if shared {
 				branchResult.CacheOutcome = dataquery.CacheCoalesced
 			}
-			r.queryCache.store(slot.key, slot.generation, branchResult)
-			dataquery.ObserveCacheOutcome(ctx, branchResult.CacheOutcome)
+			pendingStores = append(pendingStores, pendingCacheStore{slot: slot, result: branchResult})
 		}
 		result.Results[branch.ID] = branchResult
 	}
 	if err := ctx.Err(); err != nil {
 		_ = applyTransforms(err)
 		return dataquery.BundleResult{}, err
+	}
+	for _, pending := range pendingStores {
+		r.queryCache.store(pending.slot.key, pending.slot.generation, pending.result)
+		dataquery.ObserveCacheOutcome(ctx, pending.result.CacheOutcome)
 	}
 	if err := applyTransforms(nil); err != nil {
 		return dataquery.BundleResult{}, err

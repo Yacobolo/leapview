@@ -31,6 +31,10 @@ type Config struct {
 	DataPath    string
 	SnapshotID  int64
 	MaxReaders  int
+	MemoryBytes int64
+	TempBytes   int64
+	Threads     int
+	TempDir     string
 }
 
 type Layout struct {
@@ -84,11 +88,12 @@ func open(ctx context.Context, config Config, snapshot bool) (*Environment, erro
 	}
 	var env *Environment
 	if snapshot {
-		env, err = openSnapshotEnvironment(ctx, layout, config.SnapshotID, max(1, config.MaxReaders))
+		env, err = openSnapshotEnvironment(ctx, layout, config, max(1, config.MaxReaders))
 	} else {
-		var db *sql.DB
-		db, err = sql.Open("duckdb", ":memory:")
+		var connector *duckdb.Connector
+		connector, err = duckdb.NewConnector(":memory:", resourceInitializer(config, nil))
 		if err == nil {
+			db := sql.OpenDB(connector)
 			db.SetMaxOpenConns(1)
 			db.SetMaxIdleConns(1)
 			env = &Environment{db: db, layout: layout, readConcurrency: 1}
@@ -108,17 +113,14 @@ func open(ctx context.Context, config Config, snapshot bool) (*Environment, erro
 	return env, nil
 }
 
-func openSnapshotEnvironment(ctx context.Context, layout Layout, snapshotID int64, readers int) (*Environment, error) {
-	threads := max(1, runtime.GOMAXPROCS(0)/readers)
-	attach := fmt.Sprintf("ATTACH IF NOT EXISTS 'ducklake:sqlite:%s' AS %s (DATA_PATH '%s', SNAPSHOT_VERSION %d)", sqlLiteral(layout.CatalogPath), catalogAlias, sqlLiteral(layout.DataPath), snapshotID)
-	connector, err := duckdb.NewConnector(":memory:", func(execer driver.ExecerContext) error {
-		for _, statement := range []string{"LOAD sqlite", "LOAD ducklake", attach, "USE " + catalogAlias, fmt.Sprintf("SET threads = %d", threads)} {
-			if _, err := execer.ExecContext(context.Background(), statement, nil); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+func openSnapshotEnvironment(ctx context.Context, layout Layout, config Config, readers int) (*Environment, error) {
+	threads := config.Threads
+	if threads <= 0 {
+		threads = max(1, runtime.GOMAXPROCS(0)/readers)
+	}
+	config.Threads = threads
+	attach := fmt.Sprintf("ATTACH IF NOT EXISTS 'ducklake:sqlite:%s' AS %s (DATA_PATH '%s', SNAPSHOT_VERSION %d)", sqlLiteral(layout.CatalogPath), catalogAlias, sqlLiteral(layout.DataPath), config.SnapshotID)
+	connector, err := duckdb.NewConnector(":memory:", resourceInitializer(config, []string{"LOAD sqlite", "LOAD ducklake", attach, "USE " + catalogAlias}))
 	if err != nil {
 		return nil, err
 	}
@@ -131,6 +133,71 @@ func openSnapshotEnvironment(ctx context.Context, layout Layout, snapshotID int6
 		return nil, fmt.Errorf("initialize pinned DuckLake snapshot: %w", err)
 	}
 	return env, nil
+}
+
+func resourceInitializer(config Config, after []string) func(driver.ExecerContext) error {
+	var once sync.Once
+	var resourceErr error
+	return func(execer driver.ExecerContext) error {
+		once.Do(func() {
+			statements := []string{"SET allow_persistent_secrets = false"}
+			if config.MemoryBytes > 0 {
+				statements = append(statements, fmt.Sprintf("SET memory_limit = '%dB'", config.MemoryBytes))
+			}
+			if config.TempBytes > 0 {
+				statements = append(statements, fmt.Sprintf("SET max_temp_directory_size = '%dB'", config.TempBytes))
+			}
+			if config.Threads > 0 {
+				statements = append(statements, fmt.Sprintf("SET threads = %d", config.Threads))
+			}
+			if strings.TrimSpace(config.TempDir) != "" {
+				statements = append(statements, "SET temp_directory = '"+sqlLiteral(config.TempDir)+"'")
+			}
+			for _, statement := range statements {
+				if _, err := execer.ExecContext(context.Background(), statement, nil); err != nil {
+					resourceErr = err
+					return
+				}
+			}
+		})
+		if resourceErr != nil {
+			return resourceErr
+		}
+		for _, statement := range after {
+			if _, err := execer.ExecContext(context.Background(), statement, nil); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+func (e *Environment) LockConfiguration(ctx context.Context, allowedDirectories []string, disableExternal bool) error {
+	if e == nil || e.db == nil {
+		return fmt.Errorf("DuckLake environment is not initialized")
+	}
+	statements := []string{"SET autoinstall_known_extensions = false", "SET autoload_known_extensions = false"}
+	if len(allowedDirectories) > 0 {
+		parts := make([]string, 0, len(allowedDirectories))
+		for _, dir := range allowedDirectories {
+			if strings.TrimSpace(dir) != "" {
+				parts = append(parts, "'"+sqlLiteral(dir)+"'")
+			}
+		}
+		if len(parts) > 0 {
+			statements = append(statements, "SET allowed_directories = ["+strings.Join(parts, ",")+"]")
+		}
+	}
+	if disableExternal {
+		statements = append(statements, "SET enable_external_access = false")
+	}
+	statements = append(statements, "SET lock_configuration = true")
+	for _, statement := range statements {
+		if _, err := e.db.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("configure DuckDB isolation: %w", err)
+		}
+	}
+	return nil
 }
 
 func (c Config) layout() (Layout, error) {
@@ -398,6 +465,11 @@ func queryRows(ctx context.Context, conn *sql.Conn, plan semanticquery.Plan) (se
 		row := semanticquery.Row{}
 		for i, column := range plan.Columns {
 			row[column] = cloneValue(values[i])
+		}
+		if budget, ok := dataquery.ResultBudgetFromContext(ctx); ok {
+			if err := budget.ConsumeRow(row); err != nil {
+				return nil, err
+			}
 		}
 		result = append(result, row)
 	}

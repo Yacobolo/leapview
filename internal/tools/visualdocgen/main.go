@@ -148,7 +148,7 @@ func generateVisualExamples(docsDir, projectPath, dataRoot string) (visualExampl
 		return visualExamplesArtifact{}, err
 	}
 	defer os.RemoveAll(runtimeDir)
-	service, err := dashboardruntime.NewFromDefinition(runtimeDir, dashboardadapter.NewFactory(dashboardadapter.Options{}), definition)
+	service, err := dashboardruntime.NewFromDefinition(context.Background(), runtimeDir, dashboardadapter.NewFactory(dashboardadapter.Options{}), definition)
 	if err != nil {
 		return visualExamplesArtifact{}, fmt.Errorf("open fixture runtime: %w", err)
 	}

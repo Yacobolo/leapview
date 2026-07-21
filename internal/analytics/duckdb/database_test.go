@@ -46,6 +46,24 @@ func TestQueryConnectionWaitReportsPoolSaturation(t *testing.T) {
 	}
 }
 
+func TestQueryStopsAtLogicalResultBudget(t *testing.T) {
+	db, err := Open(context.Background(), filepath.Join(t.TempDir(), "budget.duckdb"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := dataquery.WithResultBudget(context.Background(), dataquery.ResultLimits{MaxRows: 2, MaxBytes: 1 << 20})
+	_, err = db.Query(ctx, semanticquery.Plan{SQL: "SELECT i FROM range(3) AS values(i)", Columns: []string{"i"}})
+	if reason, ok := dataquery.ResultLimitReasonOf(err); !ok || reason != dataquery.ResultRows {
+		t.Fatalf("error = %v reason=%q", err, reason)
+	}
+	budget, _ := dataquery.ResultBudgetFromContext(ctx)
+	rows, _ := budget.Usage()
+	if rows != 2 {
+		t.Fatalf("committed rows=%d, want 2", rows)
+	}
+}
+
 func TestHistogramAndDistributionObserveOneConnectionAcquisitionEach(t *testing.T) {
 	ctx := context.Background()
 	db, err := Open(ctx, filepath.Join(t.TempDir(), "operations.duckdb"))

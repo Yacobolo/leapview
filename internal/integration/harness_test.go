@@ -223,7 +223,7 @@ func newHarnessRuntime(dataDir, catalogPath, duckDBDir string) (*dashboardruntim
 	if err := bindManagedConnectionRoots(compiledWorkspace.Definition, dataDir); err != nil {
 		return nil, err
 	}
-	service, err := dashboardruntime.NewFromDefinition(filepath.Join(duckDBDir, "sales"), integrationDataRuntimeFactory{}, compiledWorkspace.Definition)
+	service, err := dashboardruntime.NewFromDefinition(context.Background(), filepath.Join(duckDBDir, "sales"), integrationDataRuntimeFactory{}, compiledWorkspace.Definition)
 	if err != nil {
 		return nil, fmt.Errorf("loading workspace %q: %w", "sales", err)
 	}

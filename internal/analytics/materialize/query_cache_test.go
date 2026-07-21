@@ -13,6 +13,7 @@ import (
 
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
+	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
 	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/workload"
 )
@@ -85,8 +86,8 @@ func TestQueryResultCacheEnforcesByteBudgetAndRejectsOversizedEntries(t *testing
 	if cache.currentBytes > cache.maxBytes {
 		t.Fatalf("cache bytes = %d, budget = %d", cache.currentBytes, cache.maxBytes)
 	}
-	if cache.lru.Len() != 1 {
-		t.Fatalf("entries = %d, want byte-budget eviction", cache.lru.Len())
+	if entries := cache.scope.Stats().Entries; entries != 1 {
+		t.Fatalf("entries = %d, want byte-budget eviction", entries)
 	}
 
 	_, largeKey, generation, _, err := cache.lookup(large)
@@ -223,12 +224,16 @@ func TestQueryResultCacheLiveWaiterRetriesCanceledFlightAndCachesResult(t *testi
 		}
 		flightStarted := make(chan struct{})
 		releaseCanceledFlight := make(chan struct{})
-		cache.group.DoChan(fmt.Sprintf("%d:%s", generation, key), func() (any, error) {
-			close(flightStarted)
-			<-releaseCanceledFlight
-			return dataquery.Result{}, canceledQueryCacheFlightError{err: context.Canceled}
-		})
+		ownerContext, cancelOwner := context.WithCancel(context.Background())
+		go func() {
+			_, _, _ = cache.scope.Coalesce(ownerContext, fmt.Sprintf("query:%d:%s", generation, key), func() (any, error) {
+				close(flightStarted)
+				<-releaseCanceledFlight
+				return dataquery.Result{}, resultcache.OwnerCanceled(ownerContext.Err())
+			})
+		}()
 		<-flightStarted
+		cancelOwner()
 
 		var physicalExecutions atomic.Int32
 		secondResult := make(chan dataquery.Result, 1)

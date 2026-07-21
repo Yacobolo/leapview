@@ -73,17 +73,17 @@ type modelRuntime struct {
 	missing   error
 }
 
-func NewFromDefinition(duckDBDir string, factory DataRuntimeFactory, definition *workspace.Definition) (*Service, error) {
+func NewFromDefinition(ctx context.Context, duckDBDir string, factory DataRuntimeFactory, definition *workspace.Definition) (*Service, error) {
 	if factory == nil {
 		return nil, fmt.Errorf("dashboard data runtime factory is required")
 	}
 	if definition == nil {
 		return nil, fmt.Errorf("workspace definition is required")
 	}
-	return newFromDefinition(duckDBDir, factory, definition)
+	return newFromDefinition(ctx, duckDBDir, factory, definition)
 }
 
-func newFromDefinition(duckDBDir string, factory DataRuntimeFactory, definition *workspace.Definition) (*Service, error) {
+func newFromDefinition(ctx context.Context, duckDBDir string, factory DataRuntimeFactory, definition *workspace.Definition) (*Service, error) {
 	service := &Service{
 		runtimes: map[string]*modelRuntime{},
 	}
@@ -119,7 +119,7 @@ func newFromDefinition(duckDBDir string, factory DataRuntimeFactory, definition 
 		service.runtimes[modelID] = &modelRuntime{model: model, optimizer: optimizer}
 	}
 	if workspaceFactory, ok := factory.(WorkspaceDataRuntimeFactory); ok {
-		dataRuntimes, err := workspaceFactory.OpenDashboardWorkspaceDataRuntimes(context.Background(), WorkspaceDataRuntimeConfig{
+		dataRuntimes, err := workspaceFactory.OpenDashboardWorkspaceDataRuntimes(ctx, WorkspaceDataRuntimeConfig{
 			Definition: definition,
 			DBDir:      duckDBDir,
 		})

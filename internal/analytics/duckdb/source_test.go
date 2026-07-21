@@ -426,7 +426,7 @@ func TestCompileConnectionSecret(t *testing.T) {
 	if !ok {
 		t.Fatal("secret ok = false, want true")
 	}
-	want := "CREATE OR REPLACE SECRET leapview_prod_lake (TYPE s3, PROVIDER config, KEY_ID 'key', REGION 'us-east-1', SECRET 'secret', SCOPE 's3://analytics-prod/')"
+	want := "CREATE OR REPLACE TEMPORARY SECRET leapview_prod_lake (TYPE s3, PROVIDER config, KEY_ID 'key', REGION 'us-east-1', SECRET 'secret', SCOPE 's3://analytics-prod/')"
 	if stmt != want {
 		t.Fatalf("s3 secret = %q, want %q", stmt, want)
 	}
@@ -438,7 +438,7 @@ func TestCompileConnectionSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = "CREATE OR REPLACE SECRET leapview_azure_lake (TYPE azure, PROVIDER config, CONNECTION_STRING 'DefaultEndpointsProtocol=https;AccountName=mystorageaccount')"
+	want = "CREATE OR REPLACE TEMPORARY SECRET leapview_azure_lake (TYPE azure, PROVIDER config, CONNECTION_STRING 'DefaultEndpointsProtocol=https;AccountName=mystorageaccount')"
 	if !ok || stmt != want {
 		t.Fatalf("azure secret = %q ok=%v, want %q ok=true", stmt, ok, want)
 	}
@@ -451,7 +451,7 @@ func TestCompileConnectionSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = "CREATE OR REPLACE SECRET leapview_azure_lake (TYPE azure, PROVIDER config, CONNECTION_STRING 'DefaultEndpointsProtocol=https;AccountName=envstorage')"
+	want = "CREATE OR REPLACE TEMPORARY SECRET leapview_azure_lake (TYPE azure, PROVIDER config, CONNECTION_STRING 'DefaultEndpointsProtocol=https;AccountName=envstorage')"
 	if !ok || stmt != want {
 		t.Fatalf("azure env credential secret = %q ok=%v, want %q ok=true", stmt, ok, want)
 	}
@@ -468,7 +468,7 @@ func TestCompileConnectionSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = "CREATE OR REPLACE SECRET leapview_azure_lake (TYPE azure, PROVIDER service_principal, ACCOUNT_NAME 'mystorageaccount', CLIENT_ID 'client', CLIENT_SECRET 'secret', TENANT_ID 'tenant')"
+	want = "CREATE OR REPLACE TEMPORARY SECRET leapview_azure_lake (TYPE azure, PROVIDER service_principal, ACCOUNT_NAME 'mystorageaccount', CLIENT_ID 'client', CLIENT_SECRET 'secret', TENANT_ID 'tenant')"
 	if !ok || stmt != want {
 		t.Fatalf("azure service principal secret = %q ok=%v, want %q ok=true", stmt, ok, want)
 	}
@@ -497,7 +497,7 @@ func TestCompileConnectionSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = "CREATE OR REPLACE SECRET leapview_lakehouse (TYPE ducklake, PROVIDER config, KEY_ID 'key', REGION 'us-east-1', SECRET 'secret', SCOPE 's3://analytics-prod/ducklake/')"
+	want = "CREATE OR REPLACE TEMPORARY SECRET leapview_lakehouse (TYPE ducklake, PROVIDER config, KEY_ID 'key', REGION 'us-east-1', SECRET 'secret', SCOPE 's3://analytics-prod/ducklake/')"
 	if !ok || stmt != want {
 		t.Fatalf("ducklake secret = %q ok=%v, want %q ok=true", stmt, ok, want)
 	}
@@ -510,7 +510,7 @@ func TestCompileConnectionSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = "CREATE OR REPLACE SECRET leapview_remote_quack (TYPE quack, TOKEN 'secret-token', SCOPE 'quack:quack.example.com:443')"
+	want = "CREATE OR REPLACE TEMPORARY SECRET leapview_remote_quack (TYPE quack, TOKEN 'secret-token', SCOPE 'quack:quack.example.com:443')"
 	if !ok || stmt != want {
 		t.Fatalf("quack secret = %q ok=%v, want %q ok=true", stmt, ok, want)
 	}
@@ -523,7 +523,7 @@ func TestCompileAmbientConnectionSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "CREATE OR REPLACE SECRET leapview_lake (TYPE s3, PROVIDER credential_chain, ENDPOINT 's3.eu-west-1.amazonaws.com', REGION 'eu-west-1', SCOPE 's3://analytics/')"
+	want := "CREATE OR REPLACE TEMPORARY SECRET leapview_lake (TYPE s3, PROVIDER credential_chain, ENDPOINT 's3.eu-west-1.amazonaws.com', REGION 'eu-west-1', SCOPE 's3://analytics/')"
 	if !ok || stmt != want {
 		t.Fatalf("ambient s3 secret = %q ok=%v, want %q", stmt, ok, want)
 	}
@@ -533,7 +533,7 @@ func TestCompileAmbientConnectionSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = "CREATE OR REPLACE SECRET leapview_azure (TYPE azure, PROVIDER credential_chain, ACCOUNT_NAME 'analytics', SCOPE 'az://container/')"
+	want = "CREATE OR REPLACE TEMPORARY SECRET leapview_azure (TYPE azure, PROVIDER credential_chain, ACCOUNT_NAME 'analytics', SCOPE 'az://container/')"
 	if !ok || stmt != want {
 		t.Fatalf("ambient azure secret = %q ok=%v, want %q", stmt, ok, want)
 	}
@@ -568,7 +568,7 @@ func TestCompileSourceSecretStatements(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"CREATE OR REPLACE SECRET leapview_prod_lake_lance (TYPE lance, PROVIDER config, KEY_ID 'key', SECRET 'secret', SCOPE 's3://analytics-prod/')"}
+	want := []string{"CREATE OR REPLACE TEMPORARY SECRET leapview_prod_lake_lance (TYPE lance, PROVIDER config, KEY_ID 'key', SECRET 'secret', SCOPE 's3://analytics-prod/')"}
 	if fmt.Sprint(statements) != fmt.Sprint(want) {
 		t.Fatalf("lance secrets = %#v, want %#v", statements, want)
 	}
@@ -813,7 +813,7 @@ func TestDuckDBQuackSmoke(t *testing.T) {
 		t.Fatalf("load quack: %v", err)
 	}
 	stmt := fmt.Sprintf(
-		"CREATE OR REPLACE SECRET leapview_quack_smoke (TYPE quack, TOKEN '%s', SCOPE '%s')",
+		"CREATE OR REPLACE TEMPORARY SECRET leapview_quack_smoke (TYPE quack, TOKEN '%s', SCOPE '%s')",
 		SQLString(token),
 		SQLString(uri),
 	)

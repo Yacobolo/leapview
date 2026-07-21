@@ -285,7 +285,7 @@ type duckLakeIntegrationRuntimeFactory struct {
 	duckLakeDataPath string
 }
 
-func (f duckLakeIntegrationRuntimeFactory) Prepare(_ context.Context, input runtimehost.RuntimeInput) (runtimehost.Runtime, error) {
+func (f duckLakeIntegrationRuntimeFactory) Prepare(ctx context.Context, input runtimehost.RuntimeInput) (runtimehost.Runtime, error) {
 	targetDir := filepath.Join(f.runtimeDir, string(input.State.ID))
 	if err := os.RemoveAll(targetDir); err != nil {
 		return nil, err
@@ -303,7 +303,7 @@ func (f duckLakeIntegrationRuntimeFactory) Prepare(_ context.Context, input runt
 	if err := bindManagedConnectionRoots(compiled.Definition, f.managedRoot); err != nil {
 		return nil, err
 	}
-	service, err := dashboardruntime.NewFromDefinition(filepath.Join(f.duckDBDir, string(servingstate.NormalizeEnvironment(input.State.Environment))), duckLakeIntegrationDataRuntimeFactory{
+	service, err := dashboardruntime.NewFromDefinition(ctx, filepath.Join(f.duckDBDir, string(servingstate.NormalizeEnvironment(input.State.Environment))), duckLakeIntegrationDataRuntimeFactory{
 		snapshotID:       input.State.DuckLakeSnapshotID,
 		catalogPath:      f.catalogPath,
 		duckLakeDataPath: f.duckLakeDataPath,
@@ -322,7 +322,7 @@ func (f duckLakeIntegrationRuntimeFactory) Prepare(_ context.Context, input runt
 			if err := service.Close(); err != nil {
 				return nil, err
 			}
-			service, err = dashboardruntime.NewFromDefinition(filepath.Join(f.duckDBDir, string(servingstate.NormalizeEnvironment(input.State.Environment))), duckLakeIntegrationDataRuntimeFactory{
+			service, err = dashboardruntime.NewFromDefinition(ctx, filepath.Join(f.duckDBDir, string(servingstate.NormalizeEnvironment(input.State.Environment))), duckLakeIntegrationDataRuntimeFactory{
 				snapshotID:       snapshotID,
 				catalogPath:      f.catalogPath,
 				duckLakeDataPath: f.duckLakeDataPath,

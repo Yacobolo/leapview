@@ -16,9 +16,12 @@ import (
 	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
 	"github.com/Yacobolo/leapview/internal/agent"
 	agentsqlite "github.com/Yacobolo/leapview/internal/agent/sqlite"
+	analyticsduckdb "github.com/Yacobolo/leapview/internal/analytics/duckdb"
 	materializesqlite "github.com/Yacobolo/leapview/internal/analytics/materialize/sqlite"
+	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
 	"github.com/Yacobolo/leapview/internal/app"
 	"github.com/Yacobolo/leapview/internal/config"
+	"github.com/Yacobolo/leapview/internal/dataquery"
 	projectdeployment "github.com/Yacobolo/leapview/internal/deployment"
 	deploymentapiadapter "github.com/Yacobolo/leapview/internal/deployment/apiadapter"
 	deploymenthttp "github.com/Yacobolo/leapview/internal/deployment/http"
@@ -173,6 +176,7 @@ func runHTTPServer(ctx context.Context, server *http.Server) error {
 }
 
 func servingStateBackedServer(ctx context.Context, cfg config.Config, production bool, environment servingstate.Environment) (*app.Server, func(), error) {
+	cfg = withAnalyticalDefaults(cfg)
 	cookieSecure, err := cfg.CookieSecure()
 	if err != nil {
 		return nil, nil, err
@@ -271,6 +275,27 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 	for _, summary := range summaries {
 		workspaceIDs = append(workspaceIDs, servingstate.WorkspaceID(summary.ID))
 	}
+	workloadPolicy := serveWorkloadConfig(cfg)
+	workloadController, err := workload.New(workloadPolicy)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	queryCachePool, err := resultcache.New(resultcache.Limits{RuntimeEntries: cfg.QueryCacheRuntimeMaxEntries, RuntimeBytes: cfg.QueryCacheRuntimeMaxBytes, WorkspaceEntries: cfg.QueryCacheWorkspaceMaxEntries, WorkspaceBytes: cfg.QueryCacheWorkspaceMaxBytes, NodeEntries: cfg.QueryCacheNodeMaxEntries, NodeBytes: cfg.QueryCacheNodeMaxBytes})
+	if err != nil {
+		workloadController.Close()
+		cleanup()
+		return nil, nil, err
+	}
+	enginePool, err := analyticsduckdb.NewEnginePool(analyticsduckdb.EnginePoolConfig{MaxOpen: workloadPolicy.MaxRunning, NodeMemoryBytes: cfg.DuckDBNodeMemoryMaxBytes, NodeTempBytes: cfg.DuckDBNodeTempMaxBytes, NodeThreads: cfg.DuckDBNodeMaxThreads, TempRoot: cfg.DuckDBTempDirPath()})
+	if err != nil {
+		_ = queryCachePool.Close()
+		workloadController.Close()
+		cleanup()
+		return nil, nil, err
+	}
+	resultLimits := dataquery.ResultLimits{MaxRows: cfg.QueryResultMaxRows, MaxBytes: cfg.QueryResultMaxBytes}
+	cleanupAnalyticalResources := func() { _ = enginePool.Close(); _ = queryCachePool.Close(); workloadController.Close() }
 	var registry *runtimehost.Registry
 	registry = runtimehost.NewRegistryWithFactory(runtimehost.RegistryOptions{
 		Repo:         servingStateRepo,
@@ -300,38 +325,57 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 			runtimeDir:       cfg.RuntimeDir(),
 			catalogPath:      duckLakeCatalogPath,
 			duckLakeDataPath: cfg.DuckLakeDataDir(),
+			enginePool:       enginePool,
+			queryCachePool:   queryCachePool,
+			resultLimits:     resultLimits,
 		},
 	})
-	if err := registry.Reload(ctx); err != nil {
+	reloadLease, err := workloadController.Acquire(ctx, workload.Request{Class: workload.Control, Operation: "runtime.reload"})
+	if err != nil {
+		_ = registry.Close()
+		cleanupAnalyticalResources()
+		cleanup()
+		return nil, nil, err
+	}
+	err = registry.Reload(reloadLease.Context())
+	reloadLease.Release()
+	if err != nil {
+		_ = registry.Close()
+		cleanupAnalyticalResources()
 		cleanup()
 		return nil, nil, err
 	}
 	deploymentRuntime, err := projectdeployment.NewRegistryRuntime(registry)
 	if err != nil {
 		_ = registry.Close()
+		cleanupAnalyticalResources()
 		cleanup()
 		return nil, nil, err
 	}
 	deploymentService, err := projectdeployment.New(deploymentsqlite.NewRepository(store.SQLDB()), servingStateRepo, deploymentRuntime, managedDataResolver)
 	if err != nil {
 		_ = registry.Close()
+		cleanupAnalyticalResources()
 		cleanup()
 		return nil, nil, err
 	}
 	deploymentAPI, err := deploymentapiadapter.New(deploymentService, managedDataRepo)
 	if err != nil {
 		_ = registry.Close()
+		cleanupAnalyticalResources()
 		cleanup()
 		return nil, nil, err
 	}
 	managedDataAPI, err := manageddataapiadapter.New(managedDataRepo)
 	if err != nil {
 		_ = registry.Close()
+		cleanupAnalyticalResources()
 		cleanup()
 		return nil, nil, err
 	}
 	cleanupWithRegistry := func() {
 		_ = registry.Close()
+		cleanupAnalyticalResources()
 		cleanup()
 	}
 	runtimeMetrics := app.NewDynamicRuntimeMetrics("", func(workspaceID string) runtimehost.Provider {
@@ -370,10 +414,6 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 	rateLimits := app.ProductionRateLimitConfig()
 	rateLimits.Enabled = production && cfg.RateLimitingEnabled()
 	rateLimits.UseRealIP = cfg.RateLimitingUsesRealIP()
-	workloadController, err := workload.New(cfg.WorkloadConfig())
-	if err != nil {
-		return nil, nil, err
-	}
 	server := app.NewWithOptions(runtimeMetrics, app.Options{
 		Store:               store,
 		ServingStateRepo:    servingStateRepo,
@@ -387,6 +427,9 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 		DuckDBDir:           cfg.DuckDBDirPath(),
 		DuckLakeCatalogPath: duckLakeCatalogPath,
 		DuckLakeDataPath:    cfg.DuckLakeDataDir(),
+		DuckDBEnginePool:    enginePool,
+		QueryResultCache:    queryCachePool,
+		QueryResultLimits:   resultLimits,
 		DefaultEnvironment:  string(environment),
 		RateLimits:          rateLimits,
 		SecurityHeaders:     app.SecurityHeaders(production && cfg.HSTSEnabled(cookieSecure)),
@@ -415,6 +458,50 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 		ManagedDataExpireInterval: cfg.ManagedDataGCInterval,
 	})
 	return server, cleanupWithRegistry, nil
+}
+
+func withAnalyticalDefaults(cfg config.Config) config.Config {
+	if cfg.DuckDBNodeMemoryMaxBytes <= 0 {
+		cfg.DuckDBNodeMemoryMaxBytes = 2684354560
+	}
+	if cfg.DuckDBNodeTempMaxBytes <= 0 {
+		cfg.DuckDBNodeTempMaxBytes = 10737418240
+	}
+	if cfg.DuckDBNodeMaxThreads <= 0 {
+		cfg.DuckDBNodeMaxThreads = 5
+	}
+	if cfg.QueryResultMaxRows <= 0 {
+		cfg.QueryResultMaxRows = 10000
+	}
+	if cfg.QueryResultMaxBytes <= 0 {
+		cfg.QueryResultMaxBytes = 32 << 20
+	}
+	if cfg.QueryCacheRuntimeMaxEntries <= 0 {
+		cfg.QueryCacheRuntimeMaxEntries = 256
+	}
+	if cfg.QueryCacheRuntimeMaxBytes <= 0 {
+		cfg.QueryCacheRuntimeMaxBytes = 64 << 20
+	}
+	if cfg.QueryCacheWorkspaceMaxEntries <= 0 {
+		cfg.QueryCacheWorkspaceMaxEntries = 512
+	}
+	if cfg.QueryCacheWorkspaceMaxBytes <= 0 {
+		cfg.QueryCacheWorkspaceMaxBytes = 128 << 20
+	}
+	if cfg.QueryCacheNodeMaxEntries <= 0 {
+		cfg.QueryCacheNodeMaxEntries = 2048
+	}
+	if cfg.QueryCacheNodeMaxBytes <= 0 {
+		cfg.QueryCacheNodeMaxBytes = 512 << 20
+	}
+	return cfg
+}
+
+func serveWorkloadConfig(cfg config.Config) workload.Config {
+	if cfg.WorkloadInteractiveMaxRunning == 0 && cfg.WorkloadBackgroundMaxRunning == 0 && cfg.WorkloadRefreshMaxRunning == 0 && cfg.WorkloadControlMaxRunning == 0 && cfg.WorkloadMaintenanceMaxRunning == 0 {
+		return workload.DefaultConfig()
+	}
+	return cfg.WorkloadConfig()
 }
 
 func firstConfigured(values ...string) string {

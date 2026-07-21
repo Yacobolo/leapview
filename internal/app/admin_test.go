@@ -454,32 +454,16 @@ func TestAdminQueryHistoryUpdatesForwardsPatches(t *testing.T) {
 	req := httptest.NewRequestWithContext(reqCtx, http.MethodGet, "/updates?route=admin&section=queries", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "test-client"})
-	rec := httptest.NewRecorder()
+	rec := newSynchronizedRecorder()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		server.Routes().ServeHTTP(rec, req)
 	}()
 
-	deadline := time.After(time.Second)
-	for server.broker.SubscriberCount("admin-queries:test-client") == 0 {
-		select {
-		case <-deadline:
-			t.Fatal("timed out waiting for query history updates subscriber")
-		default:
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
+	waitForBrokerSubscription(t, server, "admin-queries:test-client")
 	server.broker.Publish("admin-queries:test-client", pagestream.SignalPatch{"adminQueryHistory": map[string]any{"loadedCountLabel": "sentinel"}})
-	deadline = time.After(time.Second)
-	for !strings.Contains(rec.Body.String(), "sentinel") {
-		select {
-		case <-deadline:
-			t.Fatalf("timed out waiting for forwarded patch:\n%s", rec.Body.String())
-		default:
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
+	waitForRecorderBodyContains(t, rec, "sentinel")
 	cancel()
 	<-done
 	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/event-stream") {
@@ -518,32 +502,16 @@ func TestAdminStorageUpdatesSubscribesWithoutInitialRescan(t *testing.T) {
 	req := httptest.NewRequestWithContext(reqCtx, http.MethodGet, "/updates?route=admin&section=storage", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "test-client"})
-	rec := httptest.NewRecorder()
+	rec := newSynchronizedRecorder()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		server.Routes().ServeHTTP(rec, req)
 	}()
 
-	deadline := time.After(time.Second)
-	for server.broker.SubscriberCount("admin-storage:test-client") == 0 {
-		select {
-		case <-deadline:
-			t.Fatal("timed out waiting for storage updates subscriber")
-		default:
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
+	waitForBrokerSubscription(t, server, "admin-storage:test-client")
 	server.broker.Publish("admin-storage:test-client", pagestream.SignalPatch{"adminStorage": map[string]any{"selectedKey": "sentinel"}})
-	deadline = time.After(time.Second)
-	for !strings.Contains(rec.Body.String(), "sentinel") {
-		select {
-		case <-deadline:
-			t.Fatalf("timed out waiting for forwarded patch:\n%s", rec.Body.String())
-		default:
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
+	waitForRecorderBodyContains(t, rec, "sentinel")
 	cancel()
 	<-done
 	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/event-stream") {

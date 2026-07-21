@@ -48,6 +48,71 @@ func TestOpenCreatesPrivateCatalogAndDataDirectories(t *testing.T) {
 	assertFileMode(t, filepath.Join(root, "data"), 0o700)
 }
 
+func TestEnvironmentAppliesAndLocksAnalyticalResourceSettings(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	tempDir := filepath.Join(root, "engine-temp")
+	if err := os.Mkdir(tempDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	env, err := Open(ctx, Config{RootDir: filepath.Join(root, "lake"), MemoryBytes: 256 << 20, TempBytes: 512 << 20, Threads: 1, TempDir: tempDir})
+	if extensionUnavailable(err) {
+		t.Skipf("ducklake extension unavailable: %v", err)
+	}
+	if err != nil {
+		t.Fatalf("open writer: %v", err)
+	}
+	defer env.Close()
+
+	var threads int
+	var configuredTemp string
+	if err := env.SQLDB().QueryRowContext(ctx, "SELECT current_setting('threads'), current_setting('temp_directory')").Scan(&threads, &configuredTemp); err != nil {
+		t.Fatalf("read effective settings: %v", err)
+	}
+	if threads != 1 || configuredTemp != tempDir {
+		t.Fatalf("effective settings = threads %d temp %q, want 1 and %q", threads, configuredTemp, tempDir)
+	}
+	if err := env.LockConfiguration(ctx, []string{root, tempDir}, false); err != nil {
+		t.Fatalf("lock configuration: %v", err)
+	}
+	if _, err := env.SQLDB().ExecContext(ctx, "SET threads = 2"); err == nil {
+		t.Fatal("changing a locked DuckDB setting succeeded")
+	}
+}
+
+func TestEnvironmentRejectsPathsOutsideDeclaredAccessPolicy(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	allowedDir := filepath.Join(root, "allowed")
+	outsideDir := filepath.Join(root, "outside")
+	for _, dir := range []string{allowedDir, outsideDir} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "rows.csv"), []byte("id\n1\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	env, err := Open(ctx, Config{RootDir: filepath.Join(root, "lake")})
+	if extensionUnavailable(err) {
+		t.Skipf("ducklake extension unavailable: %v", err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer env.Close()
+	if err := env.LockConfiguration(ctx, []string{allowedDir, env.Layout().RootDir}, true); err != nil {
+		t.Fatal(err)
+	}
+	var id int
+	if err := env.SQLDB().QueryRowContext(ctx, "SELECT id FROM read_csv_auto(?)", filepath.Join(allowedDir, "rows.csv")).Scan(&id); err != nil || id != 1 {
+		t.Fatalf("read allowed source: id=%d err=%v", id, err)
+	}
+	if err := env.SQLDB().QueryRowContext(ctx, "SELECT id FROM read_csv_auto(?)", filepath.Join(outsideDir, "rows.csv")).Scan(&id); err == nil {
+		t.Fatal("read outside declared source policy succeeded")
+	}
+}
+
 func TestEnvironmentCommitsAndReadsStableSnapshots(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -86,7 +151,7 @@ func TestEnvironmentCommitsAndReadsStableSnapshots(t *testing.T) {
 		t.Fatalf("snapshot2 = %d, want > snapshot1 %d", snapshot2, snapshot1)
 	}
 
-	first, err := OpenSnapshot(ctx, Config{RootDir: dir, SnapshotID: snapshot1, MaxReaders: 2})
+	first, err := OpenSnapshot(ctx, Config{RootDir: dir, SnapshotID: snapshot1, MaxReaders: 2, Threads: 1})
 	if err != nil {
 		t.Fatalf("open first snapshot: %v", err)
 	}
@@ -113,6 +178,9 @@ func TestEnvironmentCommitsAndReadsStableSnapshots(t *testing.T) {
 	if first.ReadConcurrency() != 2 {
 		t.Fatalf("snapshot read concurrency = %d, want 2", first.ReadConcurrency())
 	}
+	if err := first.LockConfiguration(ctx, []string{dir}, true); err != nil {
+		t.Fatalf("lock snapshot configuration: %v", err)
+	}
 	connections := make([]*sql.Conn, 0, 2)
 	for range 2 {
 		connection, err := first.SQLDB().Conn(ctx)
@@ -123,11 +191,18 @@ func TestEnvironmentCommitsAndReadsStableSnapshots(t *testing.T) {
 	}
 	for index, connection := range connections {
 		var id int
-		if err := connection.QueryRowContext(ctx, "SELECT id FROM model.orders").Scan(&id); err != nil {
+		var threads int
+		if err := connection.QueryRowContext(ctx, "SELECT id, current_setting('threads') FROM model.orders").Scan(&id, &threads); err != nil {
 			t.Fatalf("query snapshot reader %d: %v", index, err)
 		}
 		if id != 1 {
 			t.Fatalf("snapshot reader %d id = %d, want 1", index, id)
+		}
+		if threads != 1 {
+			t.Fatalf("snapshot reader %d threads = %d, want 1", index, threads)
+		}
+		if _, err := connection.ExecContext(ctx, "SET threads = 2"); err == nil {
+			t.Fatalf("snapshot reader %d changed locked configuration", index)
 		}
 		connection.Close()
 	}

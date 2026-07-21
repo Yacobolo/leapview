@@ -18,18 +18,11 @@ import (
 var identifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func PrepareSourceRuntime(ctx context.Context, db *sql.DB, model *semanticmodel.Model, attachedConnections map[string]struct{}) error {
-	for _, extension := range RequiredExtensions(model) {
-		if err := validateIdentifier(extension); err != nil {
-			return fmt.Errorf("invalid extension %q: %w", extension, err)
-		}
-		if _, err := db.ExecContext(ctx, "INSTALL "+extension); err != nil {
-			return fmt.Errorf("installing DuckDB extension %s: %w", extension, err)
-		}
-		if _, err := db.ExecContext(ctx, "LOAD "+extension); err != nil {
-			return fmt.Errorf("loading DuckDB extension %s: %w", extension, err)
-		}
+	if err := loadExtensions(ctx, db, RequiredExtensions(model)); err != nil {
+		return err
 	}
 	for _, name := range sortedKeys(model.Connections) {
+
 		stmt, ok, err := compileConnectionSecret(name, model.Connections[name])
 		if err != nil {
 			return err
@@ -80,6 +73,21 @@ func PrepareSourceRuntime(ctx context.Context, db *sql.DB, model *semanticmodel.
 			return fmt.Errorf("attaching source connection %s: %w", source.Connection, err)
 		}
 		attachedConnections[source.Connection] = struct{}{}
+	}
+	return nil
+}
+
+func loadExtensions(ctx context.Context, db *sql.DB, extensions []string) error {
+	for _, extension := range extensions {
+		if err := validateIdentifier(extension); err != nil {
+			return fmt.Errorf("invalid extension %q: %w", extension, err)
+		}
+		if _, err := db.ExecContext(ctx, "INSTALL "+extension); err != nil {
+			return fmt.Errorf("installing DuckDB extension %s: %w", extension, err)
+		}
+		if _, err := db.ExecContext(ctx, "LOAD "+extension); err != nil {
+			return fmt.Errorf("loading DuckDB extension %s: %w", extension, err)
+		}
 	}
 	return nil
 }
@@ -533,7 +541,7 @@ func compileTypedConnectionSecret(name string, connection semanticmodel.Connecti
 	if scope := duckDBSecretScope(secretType, connection); scope != "" {
 		parts = append(parts, "SCOPE '"+sqlString(scope)+"'")
 	}
-	return fmt.Sprintf("CREATE OR REPLACE SECRET %s (%s)", secret, strings.Join(parts, ", ")), true, nil
+	return fmt.Sprintf("CREATE OR REPLACE TEMPORARY SECRET %s (%s)", secret, strings.Join(parts, ", ")), true, nil
 }
 
 func duckDBSecretScope(secretType string, connection semanticmodel.Connection) string {

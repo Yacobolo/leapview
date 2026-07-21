@@ -6,8 +6,11 @@ import (
 	"os"
 	"path/filepath"
 
+	analyticsduckdb "github.com/Yacobolo/leapview/internal/analytics/duckdb"
 	dashboardadapter "github.com/Yacobolo/leapview/internal/analytics/duckdb/dashboardadapter"
+	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
 	dashboardruntime "github.com/Yacobolo/leapview/internal/dashboard/runtime"
+	"github.com/Yacobolo/leapview/internal/dataquery"
 	manageddataruntimebinding "github.com/Yacobolo/leapview/internal/manageddata/runtimebinding"
 	"github.com/Yacobolo/leapview/internal/runtimehost"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
@@ -19,9 +22,12 @@ type servingStateRuntimeFactory struct {
 	runtimeDir       string
 	catalogPath      string
 	duckLakeDataPath string
+	enginePool       *analyticsduckdb.EnginePool
+	queryCachePool   *resultcache.Pool
+	resultLimits     dataquery.ResultLimits
 }
 
-func (f servingStateRuntimeFactory) Prepare(_ context.Context, input runtimehost.RuntimeInput) (runtimehost.Runtime, error) {
+func (f servingStateRuntimeFactory) Prepare(ctx context.Context, input runtimehost.RuntimeInput) (runtimehost.Runtime, error) {
 	duckDBDir := runtimeFirstNonEmpty(input.DuckDBDir, f.duckDBDir)
 	runtimeDir := runtimeFirstNonEmpty(input.RuntimeDir, f.runtimeDir)
 	targetDir := filepath.Join(runtimeDir, string(input.State.ID)+"-"+shortDigest(input.Artifact.Digest))
@@ -51,8 +57,9 @@ func (f servingStateRuntimeFactory) Prepare(_ context.Context, input runtimehost
 		ServingStateID: string(input.State.ID), WorkspaceID: string(input.State.WorkspaceID),
 		Environment: string(servingstate.NormalizeEnvironment(input.State.Environment)), SemanticModelDigest: input.State.Digest,
 		ArtifactDigest: input.Artifact.Digest, SourceDataDigest: input.ManagedData.RevisionID,
+		EnginePool: f.enginePool, QueryCachePool: f.queryCachePool, ResultLimits: f.resultLimits,
 	}
-	service, err := dashboardruntime.NewFromDefinition(duckDir, dashboardadapter.NewFactory(factoryOptions), compiled.Definition)
+	service, err := dashboardruntime.NewFromDefinition(ctx, duckDir, dashboardadapter.NewFactory(factoryOptions), compiled.Definition)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +70,7 @@ func (f servingStateRuntimeFactory) Prepare(_ context.Context, input runtimehost
 				return nil, err
 			}
 			factoryOptions.SnapshotID = snapshotID
-			service, err = dashboardruntime.NewFromDefinition(duckDir, dashboardadapter.NewFactory(factoryOptions), compiled.Definition)
+			service, err = dashboardruntime.NewFromDefinition(ctx, duckDir, dashboardadapter.NewFactory(factoryOptions), compiled.Definition)
 			if err != nil {
 				return nil, err
 			}

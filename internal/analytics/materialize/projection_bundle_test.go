@@ -35,11 +35,32 @@ func TestRuntimeProjectsAuthorizedCrossFactScalarFromCompleteGroupedBranch(t *te
 	if got := len(result.Results["activity_by_month"].Rows); got != 2 {
 		t.Fatalf("grouped rows = %d, want original two rows", got)
 	}
+	if result.Results["activity_by_month"].BytesEstimate <= 0 || result.Results["tags_per_rating"].BytesEstimate <= 0 {
+		t.Fatalf("result byte estimates are not populated: %#v", result.Results)
+	}
 	if _, err := runtime.ExecuteDataQueryBundle(dataquery.WithGovernor(context.Background(), governor), projectionBundleRequests(360)); err != nil {
 		t.Fatal(err)
 	}
 	if database.queries.Load() != 1 {
 		t.Fatalf("physical queries after warm repeat = %d, want projected results cached under ordinary branch keys", database.queries.Load())
+	}
+}
+
+func TestRuntimeProjectionResultLimitDoesNotLeavePartialCacheEntries(t *testing.T) {
+	database := &projectionBundleDatabase{}
+	runtime := projectionBundleRuntime(&budgetedProjectionDatabase{projectionBundleDatabase: database})
+	runtime.resultLimits = dataquery.ResultLimits{MaxRows: 2, MaxBytes: 1 << 20}
+
+	_, err := runtime.ExecuteDataQueryBundle(context.Background(), projectionBundleRequests(360))
+	if reason, ok := dataquery.ResultLimitReasonOf(err); !ok || reason != dataquery.ResultRows {
+		t.Fatalf("error = %v, want row result limit", err)
+	}
+	runtime.resultLimits.MaxRows = 100
+	if _, err := runtime.ExecuteDataQueryBundle(context.Background(), projectionBundleRequests(360)); err != nil {
+		t.Fatal(err)
+	}
+	if database.queries.Load() != 2 {
+		t.Fatalf("physical queries = %d, want limited execution followed by an uncached retry", database.queries.Load())
 	}
 }
 
@@ -468,6 +489,23 @@ type cancelingProjectionBundleDatabase struct {
 	started chan struct{}
 	release chan struct{}
 	once    sync.Once
+}
+
+type budgetedProjectionDatabase struct{ *projectionBundleDatabase }
+
+func (d *budgetedProjectionDatabase) Query(ctx context.Context, plan semanticquery.Plan) (semanticquery.Rows, error) {
+	rows, err := d.projectionBundleDatabase.Query(ctx, plan)
+	if err != nil {
+		return nil, err
+	}
+	if budget, ok := dataquery.ResultBudgetFromContext(ctx); ok {
+		for _, row := range rows {
+			if err := budget.ConsumeRow(row); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return rows, nil
 }
 
 func (d *cancelingProjectionBundleDatabase) Query(ctx context.Context, plan semanticquery.Plan) (semanticquery.Rows, error) {

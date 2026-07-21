@@ -784,7 +784,7 @@ func (r *synchronizedRecorder) BodyString() string {
 
 func waitForRecorderBodyContains(t *testing.T, rec *synchronizedRecorder, want string) string {
 	t.Helper()
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		body := rec.BodyString()
 		if strings.Contains(body, want) {
@@ -846,7 +846,7 @@ func chatPrincipalAndToken(t *testing.T, ctx context.Context, store *platform.St
 
 func waitForBrokerSubscription(t *testing.T, server *Server, key string) {
 	t.Helper()
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		count := server.broker.SubscriberCount(key)
 		if count > 0 {

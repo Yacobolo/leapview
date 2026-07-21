@@ -101,7 +101,7 @@ func TestWorkloadImportsNoProductCapabilities(t *testing.T) {
 }
 
 func TestOnlyWorkloadAdaptersAndCompositionDependOnWorkload(t *testing.T) {
-	allowed := []string{"internal/app", "internal/cli", "internal/config", "internal/integration", "internal/workspace/refresh", "internal/analytics/materialize", "internal/analytics/query/http"}
+	allowed := []string{"internal/app", "internal/cli", "internal/config", "internal/integration", "internal/workspace/refresh", "internal/analytics/duckdb", "internal/analytics/materialize", "internal/analytics/query/http"}
 	for _, file := range productionGoFiles(t) {
 		for _, imported := range file.imports {
 			if imported != modulePath+"/internal/workload" {
