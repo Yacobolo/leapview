@@ -50,10 +50,23 @@ type Metrics interface {
 	Report(dashboardID string) (reportdef.Dashboard, *semanticmodel.Model, bool)
 }
 
+type SignalBroker interface {
+	Subscribe(streamID string) (<-chan pagestream.SignalPatch, func())
+	PublishEnvelope(streamID string, envelope pagestream.Envelope)
+	TraceStore() *pagestream.TraceStore
+}
+
+type SharedCommandPrepare func(
+	r *nethttp.Request,
+	request command.Request,
+	signals dashboard.Signals,
+	prepare func(dashboard.Filters) (command.PreparedRefresh, error),
+) (command.PreparedRefresh, uint64, error)
+
 type Handler struct {
 	Metrics              Metrics
 	MetricsForWorkspace  func(workspaceID string) (Metrics, bool)
-	Broker               *pagestream.Broker
+	Broker               SignalBroker
 	Coordinators         *dashboardstream.Registry
 	Logger               *slog.Logger
 	RefreshStarted       dashboardstream.StartObserver
@@ -67,6 +80,7 @@ type Handler struct {
 	Environment          func(*nethttp.Request) string
 	DataRefreshedAt      func(context.Context, string, string, string) string
 	CommandGuard         func(*nethttp.Request, Metrics, command.Request, dashboard.Signals) error
+	SharedCommandPrepare SharedCommandPrepare
 }
 
 func (h Handler) filterAuthorizedDashboards(ctx context.Context, principalID, workspaceID string, rows []api.DashboardSummary) ([]api.DashboardSummary, error) {

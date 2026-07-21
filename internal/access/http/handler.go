@@ -317,6 +317,16 @@ func (h Handler) DeletePrincipal(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		writeJSONError(w, err, stdhttp.StatusInternalServerError)
 		return
 	}
+	id := chi.URLParam(r, "principal")
+	existing, err := repo.PrincipalByID(r.Context(), id)
+	if err != nil {
+		writeJSONError(w, err, statusForNotFound(err))
+		return
+	}
+	if !principalKindAllowsGenericMutation(existing.Kind) {
+		writeJSONError(w, fmt.Errorf("principal kind %q is managed by its owning subsystem", existing.Kind), stdhttp.StatusUnprocessableEntity)
+		return
+	}
 	deleter, ok := repo.(interface {
 		DeletePrincipal(context.Context, string) error
 	})
@@ -324,7 +334,6 @@ func (h Handler) DeletePrincipal(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		writeJSONError(w, fmt.Errorf("principal deletion is unavailable"), stdhttp.StatusServiceUnavailable)
 		return
 	}
-	id := chi.URLParam(r, "principal")
 	if err := deleter.DeletePrincipal(r.Context(), id); err != nil {
 		writeJSONError(w, err, statusForNotFound(err))
 		return
@@ -369,13 +378,17 @@ func (h Handler) UpdatePrincipal(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		writeJSONError(w, err, statusForNotFound(err))
 		return
 	}
+	if !principalKindAllowsGenericMutation(existing.Kind) {
+		writeJSONError(w, fmt.Errorf("principal kind %q is managed by its owning subsystem", existing.Kind), stdhttp.StatusUnprocessableEntity)
+		return
+	}
 	if !requireIfMatch(w, r, resourceETag(principalDTO(existing))) {
 		return
 	}
 	if strings.TrimSpace(input.DisplayName) != "" {
 		existing.DisplayName = input.DisplayName
 	}
-	principal, err := repo.UpsertPrincipal(r.Context(), access.PrincipalInput{ID: existing.ID, Email: existing.Email, DisplayName: existing.DisplayName})
+	principal, err := repo.UpsertPrincipal(r.Context(), access.PrincipalInput{ID: existing.ID, Kind: existing.Kind, Email: existing.Email, DisplayName: existing.DisplayName})
 	if err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
@@ -998,7 +1011,7 @@ func (h Handler) CreateGrant(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		return
 	}
 	subjectType := access.SubjectType(strings.TrimSpace(input.SubjectType))
-	if !knownSubjectType(subjectType) {
+	if !knownGrantSubjectType(subjectType) {
 		writeJSONError(w, fmt.Errorf("unsupported subject type %q", input.SubjectType), stdhttp.StatusBadRequest)
 		return
 	}
@@ -1080,7 +1093,7 @@ func (h Handler) UpdateGrant(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	}
 	subjectType := access.SubjectType(strings.TrimSpace(input.SubjectType))
 	privilege := access.Privilege(strings.TrimSpace(input.Privilege))
-	if !knownSubjectType(subjectType) || !knownPrivilege(privilege) {
+	if !knownGrantSubjectType(subjectType) || !knownPrivilege(privilege) {
 		writeJSONError(w, fmt.Errorf("unsupported grant subject or privilege"), stdhttp.StatusUnprocessableEntity)
 		return
 	}
@@ -1191,7 +1204,7 @@ func (h Handler) CreateDataPolicy(w stdhttp.ResponseWriter, r *stdhttp.Request) 
 	}
 	subjectType := access.SubjectType(strings.TrimSpace(input.SubjectType))
 	subjectID := strings.TrimSpace(input.SubjectID)
-	if subjectType != "" && !knownSubjectType(subjectType) {
+	if subjectType != "" && !knownDataPolicySubjectType(subjectType) {
 		writeJSONError(w, fmt.Errorf("unsupported subjectType %q", input.SubjectType), stdhttp.StatusBadRequest)
 		return
 	}
@@ -1286,7 +1299,7 @@ func (h Handler) UpdateDataPolicy(w stdhttp.ResponseWriter, r *stdhttp.Request) 
 		return
 	}
 	subjectType := access.SubjectType(strings.TrimSpace(input.SubjectType))
-	if subjectType != "" && (!knownSubjectType(subjectType) || strings.TrimSpace(input.SubjectID) == "") {
+	if subjectType != "" && (!knownDataPolicySubjectType(subjectType) || strings.TrimSpace(input.SubjectID) == "") {
 		writeJSONError(w, fmt.Errorf("invalid data policy subject"), stdhttp.StatusUnprocessableEntity)
 		return
 	}
@@ -1959,13 +1972,21 @@ func knownPrivilege(value access.Privilege) bool {
 	}
 }
 
-func knownSubjectType(value access.SubjectType) bool {
+func knownGrantSubjectType(value access.SubjectType) bool {
 	switch value {
-	case access.SubjectPrincipal, access.SubjectGroup, access.SubjectServicePrincipal, access.SubjectDashboardPublication:
+	case access.SubjectPrincipal, access.SubjectGroup, access.SubjectServicePrincipal:
 		return true
 	default:
 		return false
 	}
+}
+
+func knownDataPolicySubjectType(value access.SubjectType) bool {
+	return knownGrantSubjectType(value) || value == access.SubjectDashboardPublication
+}
+
+func principalKindAllowsGenericMutation(kind access.PrincipalKind) bool {
+	return kind == access.PrincipalKindUser
 }
 
 func knownDataPolicyType(value string) bool {

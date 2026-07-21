@@ -36,3 +36,21 @@ func TestRunAuditedMutationUsesRepositoryTransaction(t *testing.T) {
 		t.Fatalf("transaction called = %v, mutation called = %v", repo.called, mutationCalled)
 	}
 }
+
+func TestDashboardPublicationSubjectsAreLimitedToDataPolicies(t *testing.T) {
+	if knownGrantSubjectType(access.SubjectDashboardPublication) {
+		t.Fatal("dashboard publication subject was accepted for an RBAC grant")
+	}
+	if !knownDataPolicySubjectType(access.SubjectDashboardPublication) {
+		t.Fatal("dashboard publication subject was rejected for a data policy")
+	}
+}
+
+func TestDashboardPublicationPrincipalsRejectGenericIdentityMutations(t *testing.T) {
+	if principalKindAllowsGenericMutation(access.PrincipalKindDashboardPublication) {
+		t.Fatal("dashboard publication principal accepted a generic identity mutation")
+	}
+	if !principalKindAllowsGenericMutation(access.PrincipalKindUser) {
+		t.Fatal("user principal rejected a generic identity mutation")
+	}
+}

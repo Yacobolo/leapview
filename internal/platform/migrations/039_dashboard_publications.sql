@@ -40,8 +40,38 @@ CREATE TABLE dashboard_publication_events (
 CREATE INDEX dashboard_publication_events_publication_idx
   ON dashboard_publication_events(publication_id, id DESC);
 
+CREATE TABLE dashboard_publication_streams (
+  publication_id TEXT NOT NULL REFERENCES dashboard_publications(id) ON DELETE CASCADE,
+  stream_id TEXT NOT NULL,
+  public_id TEXT NOT NULL,
+  serving_state_id TEXT NOT NULL,
+  registration_id TEXT NOT NULL,
+  filters_json TEXT NOT NULL DEFAULT '{"controls":{},"selections":[]}',
+  generation INTEGER NOT NULL DEFAULT 1,
+  expires_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY(publication_id, stream_id)
+);
+
+CREATE INDEX dashboard_publication_streams_expiry_idx
+  ON dashboard_publication_streams(expires_at);
+
+CREATE TABLE dashboard_publication_stream_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  stream_id TEXT NOT NULL,
+  envelope_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX dashboard_publication_stream_events_stream_idx
+  ON dashboard_publication_stream_events(stream_id, id);
+
 -- +goose Down
 
+DROP INDEX dashboard_publication_stream_events_stream_idx;
+DROP TABLE dashboard_publication_stream_events;
+DROP INDEX dashboard_publication_streams_expiry_idx;
+DROP TABLE dashboard_publication_streams;
 DROP INDEX dashboard_publication_events_publication_idx;
 DROP TABLE dashboard_publication_events;
 DROP INDEX dashboard_publications_workspace_idx;

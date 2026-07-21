@@ -8,8 +8,9 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("dashboard publication not found")
-	ErrConflict = errors.New("dashboard publication conflict")
+	ErrNotFound               = errors.New("dashboard publication not found")
+	ErrConflict               = errors.New("dashboard publication conflict")
+	ErrStreamStateUnavailable = errors.New("durable publication stream state is unavailable")
 )
 
 type Status string

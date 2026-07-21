@@ -51,7 +51,7 @@ func (a apiGenAdapter) createDeployment(w http.ResponseWriter, r *http.Request, 
 		}
 		targets = append(targets, apiadapter.TargetRequest{Workspace: artifact.WorkspaceID, CandidateID: artifact.ServingStateID})
 	}
-	if err := a.server.authorizePublicationDeployment(r.Context(), principal, targets); err != nil {
+	if err := a.server.authorizePublicationDeployment(r.Context(), principal, a.server.defaultEnvironment, targets); err != nil {
 		if errors.Is(err, errPublicationDeploymentForbidden) {
 			writeAPIProblem(w, r, http.StatusForbidden, "PUBLICATION_MANAGEMENT_REQUIRED", "MANAGE_PUBLICATIONS is required to activate a workspace containing a public dashboard publication", nil)
 			return
@@ -84,7 +84,10 @@ func (a apiGenAdapter) createDeployment(w http.ResponseWriter, r *http.Request, 
 
 var errPublicationDeploymentForbidden = errors.New("publication deployment forbidden")
 
-func (s *Server) authorizePublicationDeployment(ctx context.Context, principal Principal, targets []apiadapter.TargetRequest) error {
+func (s *Server) authorizePublicationDeployment(ctx context.Context, principal Principal, environment string, targets []apiadapter.TargetRequest) error {
+	if servingstate.NormalizeEnvironment(servingstate.Environment(environment)) != servingstate.Environment("prod") {
+		return nil
+	}
 	states, err := s.servingStateRepository()
 	if err != nil {
 		return err

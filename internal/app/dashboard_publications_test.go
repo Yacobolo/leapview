@@ -14,12 +14,14 @@ import (
 	"github.com/Yacobolo/leapview/internal/dashboard/command"
 	lddatastar "github.com/Yacobolo/leapview/internal/dashboard/datastar"
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
+	publicationsqlite "github.com/Yacobolo/leapview/internal/dashboard/publication/sqlite"
 	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/deployment/apiadapter"
 	"github.com/Yacobolo/leapview/internal/platform"
 	"github.com/Yacobolo/leapview/internal/servingstate"
 	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
 	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 
 func TestPublicDashboardDocumentsAreAnonymousAndRouteAware(t *testing.T) {
@@ -107,16 +109,49 @@ func TestPublicationDeploymentRequiresManagementPrivilege(t *testing.T) {
 	if _, err := states.SaveValidated(ctx, created.ID, validation, zeroArtifact(created.ID, "test")); err != nil {
 		t.Fatal(err)
 	}
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, ServingStateRepo: states, DefaultWorkspaceID: "test"})
+	server := NewWithOptions(fakeMetrics{}, Options{Store: store, ServingStateRepo: states, DefaultWorkspaceID: "test", DefaultEnvironment: "prod"})
 	targets := []apiadapter.TargetRequest{{Workspace: "test", CandidateID: string(created.ID)}}
 
 	viewer := testPrincipal(t, ctx, store, "viewer-publication@example.com", "Viewer", "viewer")
-	if err := server.authorizePublicationDeployment(ctx, Principal{ID: viewer.ID}, targets); !errors.Is(err, errPublicationDeploymentForbidden) {
+	if err := server.authorizePublicationDeployment(ctx, Principal{ID: viewer.ID}, "prod", targets); !errors.Is(err, errPublicationDeploymentForbidden) {
 		t.Fatalf("viewer authorization error = %v", err)
 	}
 	owner := testPrincipal(t, ctx, store, "owner-publication@example.com", "Owner", "owner")
-	if err := server.authorizePublicationDeployment(ctx, Principal{ID: owner.ID}, targets); err != nil {
+	if err := server.authorizePublicationDeployment(ctx, Principal{ID: owner.ID}, "prod", targets); err != nil {
 		t.Fatalf("owner authorization: %v", err)
+	}
+	if err := server.authorizePublicationDeployment(ctx, Principal{ID: viewer.ID}, "dev", targets); err != nil {
+		t.Fatalf("development deployment authorization = %v, want publication check skipped", err)
+	}
+}
+
+func TestPublicationAdminAuthorizationUsesAnyManagedWorkspace(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	if _, err := store.SQLDB().ExecContext(ctx, `INSERT INTO workspaces (id, title) VALUES ('secondary', 'Secondary')`); err != nil {
+		t.Fatal(err)
+	}
+	repo := testAccessRepository(store)
+	principal, err := repo.SetPrincipalRole(ctx, access.PrincipalRoleInput{
+		WorkspaceID: "secondary", Email: "secondary-owner@example.com", DisplayName: "Secondary Owner", Role: access.RoleOwner,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := repo.CreateAPIToken(ctx, principal.ID, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewWithOptions(fakeMetrics{}, Options{
+		Store: store, DefaultWorkspaceID: "test", Auth: testAuth(store, "test", AuthConfig{APITokenOnly: true}),
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/admin/publications", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	recorder := httptest.NewRecorder()
+	server.Routes().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("secondary workspace publication manager status = %d, body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 
@@ -234,14 +269,25 @@ func TestPublicCommandsRequireMatchingLiveStreamAndSuspensionCancelsIt(t *testin
 	}
 	clientID, instanceID, pageID := "client-a", "stream-a", "overview"
 	streamID := lddatastar.StreamID(clientID, resolved.publication.Dashboard, pageID, instanceID)
-	version := publicationStreamVersion{PublicID: resolved.publication.PublicID, ServingStateID: resolved.publication.ServingStateID}
-	streamContext, unregister := server.publicationStreams.Register(context.Background(), resolved.publication.ID, streamID, version)
+	version := publication.StreamVersion{PublicID: resolved.publication.PublicID, ServingStateID: resolved.publication.ServingStateID}
+	streamContext, unregister, err := server.publicationStreams.Register(context.Background(), resolved.publication.ID, streamID, version)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer unregister()
 	guard := server.publicDashboardHTTP(resolved).CommandGuard
 	request := command.Request{DashboardID: resolved.publication.Dashboard, ModelID: resolved.modelID, PageID: pageID}
 	signals := dashboard.Signals{Runtime: dashboard.Runtime{ClientID: clientID, StreamInstanceID: instanceID}}
 	if err := guard(httptest.NewRequest(http.MethodPost, "/", nil), resolved.metrics, request, signals); err != nil {
 		t.Fatalf("matching stream rejected: %v", err)
+	}
+	secondServer := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "test-workspace"})
+	secondResolved, err := secondServer.resolvePublicDashboard(context.Background(), "opaque-public-id-12345678901234")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := secondServer.publicDashboardHTTP(secondResolved).CommandGuard(httptest.NewRequest(http.MethodPost, "/", nil), secondResolved.metrics, request, signals); err != nil {
+		t.Fatalf("matching stream was rejected by a second replica: %v", err)
 	}
 	signals.Runtime.StreamInstanceID = "other-stream"
 	if err := guard(httptest.NewRequest(http.MethodPost, "/", nil), resolved.metrics, request, signals); err == nil {
@@ -259,6 +305,55 @@ func TestPublicCommandsRequireMatchingLiveStreamAndSuspensionCancelsIt(t *testin
 	signals.Runtime.StreamInstanceID = instanceID
 	if err := guard(httptest.NewRequest(http.MethodPost, "/", nil), resolved.metrics, request, signals); err == nil {
 		t.Fatal("suspended publication command was accepted")
+	}
+}
+
+func TestPublicationBrokerRelaysEventsAcrossReplicas(t *testing.T) {
+	store := testStore(t)
+	first := publicationsqlite.NewBroker(store.SQLDB(), nil, nil)
+	second := publicationsqlite.NewBroker(store.SQLDB(), nil, nil)
+	updates, unsubscribe := first.Subscribe("shared-public-stream")
+	defer unsubscribe()
+
+	second.PublishEnvelope("shared-public-stream", pagestream.Envelope{
+		Signals:  pagestream.SignalPatch{"status": map[string]any{"generation": 2}},
+		Delivery: pagestream.DeliveryMetadata{Generation: 2, Boundary: true},
+	})
+	select {
+	case patch := <-updates:
+		status, ok := patch["status"].(map[string]any)
+		if !ok || status["generation"] != float64(2) {
+			t.Fatalf("relayed patch = %#v", patch)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("publication event was not relayed across replicas")
+	}
+}
+
+func TestPublicationCommandGenerationAdvancesAcrossReplicas(t *testing.T) {
+	store := testStore(t)
+	seedActivePublication(t, store, "opaque-public-id-12345678901234")
+	first := publicationsqlite.NewStreamRegistry(store.SQLDB())
+	second := publicationsqlite.NewStreamRegistry(store.SQLDB())
+	version := publication.StreamVersion{PublicID: "opaque-public-id-12345678901234", ServingStateID: "state_public"}
+	_, unregister, err := first.Register(context.Background(), "pub_website", "shared-command-stream", version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unregister()
+	prepare := func(filters dashboard.Filters) (command.PreparedRefresh, error) {
+		return command.PreparedRefresh{Filters: filters}, nil
+	}
+	_, firstGeneration, err := first.PrepareCommand(context.Background(), "pub_website", "shared-command-stream", version, prepare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, secondGeneration, err := second.PrepareCommand(context.Background(), "pub_website", "shared-command-stream", version, prepare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstGeneration != 2 || secondGeneration != 3 {
+		t.Fatalf("distributed generations = %d, %d; want 2, 3", firstGeneration, secondGeneration)
 	}
 }
 

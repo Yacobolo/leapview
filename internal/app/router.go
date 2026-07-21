@@ -88,8 +88,8 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/admin/storage/select-table", s.protected(access.PrivilegeManageGrants, adminHTTP.StorageTableSelect))
 		r.Get("/admin/queries", s.protected(access.PrivilegeViewAudit, adminHTTP.Queries))
 		r.Post("/admin/queries/command", s.protected(access.PrivilegeViewAudit, adminHTTP.QueryCommand))
-		r.Get("/admin/publications", s.protected(access.PrivilegeManagePublications, adminHTTP.Publications))
-		r.Post("/admin/publications/command", s.protected(access.PrivilegeManagePublications, adminHTTP.PublicationCommand))
+		r.Get("/admin/publications", s.protectedAnyWorkspace(access.PrivilegeManagePublications, adminHTTP.Publications))
+		r.Post("/admin/publications/command", s.protectedAnyWorkspace(access.PrivilegeManagePublications, adminHTTP.PublicationCommand))
 		r.Post("/workspaces/{workspace}/access/upsert", s.protected(access.PrivilegeManageGrants, workspaceHTTP.AccessUpsert))
 		r.Get("/workspaces/{workspace}/access/search", s.protected(access.PrivilegeManageGrants, workspaceHTTP.AccessSearch))
 		r.Post("/workspaces/{workspace}/access/remove", s.protected(access.PrivilegeManageGrants, workspaceHTTP.AccessRemove))
@@ -241,6 +241,10 @@ func (s *Server) protectedWithObjects(privilege access.Privilege, objectResolver
 	return s.protectWithObjects(privilege, objectResolver, handler).ServeHTTP
 }
 
+func (s *Server) protectedAnyWorkspace(privilege access.Privilege, handler http.HandlerFunc) http.HandlerFunc {
+	return s.protectAnyWorkspace(privilege, handler).ServeHTTP
+}
+
 func (s *Server) globalAgentProtected(privilege access.Privilege, handler http.HandlerFunc) http.HandlerFunc {
 	return s.protectGlobalAgent(privilege, handler).ServeHTTP
 }
@@ -280,6 +284,10 @@ func (s *Server) protectGlobalAgent(privilege access.Privilege, next http.Handle
 }
 
 func (s *Server) authorizeGlobalAgentPrivilege(ctx context.Context, principalID string, credential *access.APICredential, privilege access.Privilege) (bool, error) {
+	return s.authorizeAnyWorkspacePrivilege(ctx, principalID, credential, privilege)
+}
+
+func (s *Server) authorizeAnyWorkspacePrivilege(ctx context.Context, principalID string, credential *access.APICredential, privilege access.Privilege) (bool, error) {
 	workspaceRepo, err := s.workspaceRepository()
 	if err != nil {
 		return false, err
@@ -302,6 +310,40 @@ func (s *Server) authorizeGlobalAgentPrivilege(ctx context.Context, principalID 
 	}
 	decision, err := accessRepo.AuthorizeAny(ctx, principalID, privilege, objects)
 	return decision.Allowed, err
+}
+
+func (s *Server) protectAnyWorkspace(privilege access.Privilege, next http.Handler) http.Handler {
+	if s.auth == nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := context.WithValue(r.Context(), principalContextKey{}, localDeveloperPrincipal())
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+	return s.auth.Middleware("", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := s.auth.Principal(r)
+		if !ok {
+			writeAuthError(w, r, errUnauthorized, http.StatusUnauthorized)
+			return
+		}
+		if principal.DevBypass {
+			next.ServeHTTP(w, r)
+			return
+		}
+		var credential *access.APICredential
+		if resolved, ok := s.auth.APICredential(r); ok {
+			credential = &resolved
+		}
+		allowed, err := s.authorizeAnyWorkspacePrivilege(r.Context(), principal.ID, credential, privilege)
+		if err != nil {
+			writeAuthError(w, r, err, http.StatusInternalServerError)
+			return
+		}
+		if !allowed {
+			writeAuthError(w, r, errForbidden, http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	}))
 }
 
 func (s *Server) protect(privilege access.Privilege, next http.Handler) http.Handler {

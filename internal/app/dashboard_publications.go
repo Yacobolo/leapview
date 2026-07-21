@@ -106,8 +106,13 @@ func (s *Server) publicDashboardUpdates(w http.ResponseWriter, r *http.Request) 
 		presentation = reportui.PresentationPublic
 	}
 	streamID := lddatastar.StreamID(clientID, resolved.publication.Dashboard, pageID, streamInstanceID)
-	version := publicationStreamVersion{PublicID: resolved.publication.PublicID, ServingStateID: resolved.publication.ServingStateID}
-	ctx, unregister := s.publicationStreams.Register(r.Context(), resolved.publication.ID, streamID, version)
+	version := publication.StreamVersion{PublicID: resolved.publication.PublicID, ServingStateID: resolved.publication.ServingStateID}
+	initialFilters := resolved.report.NormalizeFiltersForPage(pageID, resolved.report.FiltersFromURLForPage(pageID, r.URL.Query()))
+	ctx, unregister, err := s.publicationStreams.Register(r.Context(), resolved.publication.ID, streamID, version, initialFilters)
+	if err != nil {
+		http.Error(w, "public dashboard stream is unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	defer unregister()
 	streamFinished := s.telemetry.publicStreamStarted(presentation)
 	defer streamFinished()
@@ -151,6 +156,7 @@ func (s *Server) publicDashboardCommand(commandName string, action func(dashboar
 func (s *Server) publicDashboardHTTP(resolved resolvedPublicDashboard) dashboardhttp.Handler {
 	handler := s.dashboardHTTP()
 	handler.Metrics = resolved.metrics
+	handler.Broker = s.publicationBroker
 	handler.MetricsForWorkspace = func(workspaceID string) (dashboardhttp.Metrics, bool) {
 		return resolved.metrics, workspaceID == resolved.publication.WorkspaceID
 	}
@@ -168,11 +174,16 @@ func (s *Server) publicDashboardHTTP(resolved resolvedPublicDashboard) dashboard
 			return fmt.Errorf("public command requires stream identity")
 		}
 		streamID := lddatastar.StreamID(signals.Runtime.ClientID, request.DashboardID, request.PageID, signals.Runtime.StreamInstanceID)
-		version := publicationStreamVersion{PublicID: resolved.publication.PublicID, ServingStateID: resolved.publication.ServingStateID}
+		version := publication.StreamVersion{PublicID: resolved.publication.PublicID, ServingStateID: resolved.publication.ServingStateID}
 		if !s.publicationStreams.Active(resolved.publication.ID, streamID, version) {
 			return fmt.Errorf("public command stream is not active")
 		}
 		return nil
+	}
+	handler.SharedCommandPrepare = func(r *http.Request, request command.Request, signals dashboard.Signals, prepare func(dashboard.Filters) (command.PreparedRefresh, error)) (command.PreparedRefresh, uint64, error) {
+		streamID := lddatastar.StreamID(signals.Runtime.ClientID, request.DashboardID, request.PageID, signals.Runtime.StreamInstanceID)
+		version := publication.StreamVersion{PublicID: resolved.publication.PublicID, ServingStateID: resolved.publication.ServingStateID}
+		return s.publicationStreams.PrepareCommand(r.Context(), resolved.publication.ID, streamID, version, prepare)
 	}
 	return handler
 }

@@ -50,6 +50,11 @@ func (s *Server) mutateAdminPublication(r *http.Request, command uisignals.Admin
 		return publication.ErrConflict
 	}
 	if !principal.DevBypass {
+		if s.auth != nil {
+			if credential, ok := s.auth.APICredential(r); ok && !apiTokenAllows(credential.Token, command.WorkspaceID, access.PrivilegeManagePublications) {
+				return publication.ErrNotFound
+			}
+		}
 		repo, err := s.accessRepository()
 		if err != nil {
 			return err
@@ -84,18 +89,26 @@ func (s *Server) adminPublications(r *http.Request) ([]ui.AdminPublication, bool
 	if err != nil {
 		return nil, false, err
 	}
+	var credential *access.APICredential
+	if s.auth != nil {
+		if resolved, ok := s.auth.APICredential(r); ok {
+			credential = &resolved
+		}
+	}
 	canManage := principal.DevBypass || accessRepo == nil
-	if !canManage && s.defaultWorkspaceID != "" {
-		decision, err := accessRepo.Authorize(r.Context(), principal.ID, access.PrivilegeManagePublications, access.WorkspaceObject(s.defaultWorkspaceID))
+	if !canManage {
+		canManage, err = s.authorizeAnyWorkspacePrivilege(r.Context(), principal.ID, credential, access.PrivilegeManagePublications)
 		if err != nil {
 			return nil, false, err
 		}
-		canManage = decision.Allowed
 	}
 	out := make([]ui.AdminPublication, 0, len(rows))
 	for _, row := range rows {
 		allowed := principal.DevBypass || accessRepo == nil
 		if !allowed {
+			if credential != nil && !apiTokenAllows(credential.Token, row.WorkspaceID, access.PrivilegeManagePublications) {
+				continue
+			}
 			decision, err := accessRepo.Authorize(r.Context(), principal.ID, access.PrivilegeManagePublications, access.WorkspaceObject(row.WorkspaceID))
 			if err != nil {
 				return nil, false, err

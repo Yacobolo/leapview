@@ -84,9 +84,10 @@ type Server struct {
 	metrics                         QueryMetrics
 	executor                        *execution.Service
 	broker                          *pagestream.Broker
+	publicationBroker               dashboardhttp.SignalBroker
 	pageStreamTrace                 *pagestream.TraceStore
 	dashboardRefreshes              *dashboardstream.Registry
-	publicationStreams              *publicationStreamRegistry
+	publicationStreams              publication.StreamRegistry
 	publicationRepo                 *publicationsqlite.Repository
 	publicationService              *publication.Service
 	store                           *platform.Store
@@ -160,7 +161,7 @@ func New(metrics QueryMetrics) *Server {
 		broker:             pagestream.NewBroker(pagestream.WithTraceStore(trace)),
 		pageStreamTrace:    trace,
 		dashboardRefreshes: dashboardstream.NewRegistry(),
-		publicationStreams: newPublicationStreamRegistry(),
+		publicationStreams: publication.NewMemoryStreamRegistry(),
 		requestBodyLimit:   DefaultRequestBodyLimitConfig(),
 		telemetry:          newHTTPTelemetry(),
 		logger:             logger,
@@ -253,6 +254,7 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 		}
 	}
 	server := New(metrics)
+	server.publicationBroker = server.broker
 	server.refreshPipelineClock = options.RefreshPipelineClock
 	if server.refreshPipelineClock == nil {
 		server.refreshPipelineClock = refreshpipeline.RealClock{}
@@ -264,6 +266,8 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 		server.apiIdempotencyStore = apiidempotencysqlite.NewStore(options.Store.SQLDB())
 		server.refreshPipelineRepo = refreshpipelinesqlite.NewRepository(options.Store.SQLDB())
 		server.publicationRepo = publicationsqlite.NewRepository(options.Store.SQLDB())
+		server.publicationStreams = publicationsqlite.NewStreamRegistry(options.Store.SQLDB())
+		server.publicationBroker = publicationsqlite.NewBroker(options.Store.SQLDB(), server.pageStreamTrace, server.logger)
 		server.publicationService = publication.NewService(server.publicationRepo, server.publicationStreams.ClosePublication)
 		if err := cursorsigningsqlite.Configure(context.Background(), options.Store.SQLDB()); err != nil {
 			server.logger.ErrorContext(context.Background(), "configure cursor signing failed", "error", err)

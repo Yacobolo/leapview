@@ -214,7 +214,7 @@ func (s *Server) executeAsyncJob(ctx context.Context, job asyncjob.Job) error {
 			targets = append(targets, apiadapter.TargetRequest{Workspace: target.Workspace, CandidateID: target.CandidateID})
 		}
 		principal := Principal{ID: payload.Actor, DevBypass: s.auth == nil || s.auth.devBypass}
-		if err := s.authorizePublicationDeployment(ctx, principal, targets); err != nil {
+		if err := s.authorizePublicationDeployment(ctx, principal, pending.Environment, targets); err != nil {
 			_ = s.appendAsyncEvent(context.WithoutCancel(ctx), "deployment", payload.Deployment, "deployment.failed", map[string]any{"deploymentId": payload.Deployment, "status": "failed"})
 			return err
 		}
