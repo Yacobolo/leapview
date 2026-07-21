@@ -115,15 +115,6 @@ func hasDatumValue(rows []dashboard.Datum, key string, value string) bool {
 	return false
 }
 
-func hasHierarchyPathValue(rows []dashboard.Datum, value string) bool {
-	for _, row := range rows {
-		if strings.Contains(fmt.Sprint(row["path"]), value) {
-			return true
-		}
-	}
-	return false
-}
-
 func tableRowsHaveKey(rows []map[string]any, key string) bool {
 	for _, row := range rows {
 		if _, ok := row[key]; ok {

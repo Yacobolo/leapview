@@ -103,3 +103,73 @@ func TestValidateEnvelopeEnforcesSpatialWindowInvariants(t *testing.T) {
 		t.Fatal("spatial feature cap overflow accepted")
 	}
 }
+
+func TestValidateEnvelopeEnforcesHierarchySemantics(t *testing.T) {
+	t.Parallel()
+
+	valid := hierarchyEnvelope(t, VisualizationHierarchyMarkTree, []VisualizationField{
+		{ID: "node", Role: VisualizationFieldRoleIdentity, DataType: VisualizationDataTypeString, Label: "Node"},
+		{ID: "parent", Role: VisualizationFieldRoleDimension, DataType: VisualizationDataTypeString, Nullable: true, Label: "Parent"},
+		{ID: "value", Role: VisualizationFieldRoleMeasure, DataType: VisualizationDataTypeDecimal, Label: "Value"},
+	}, [][]any{{"Americas", nil, 10.0}, {"Springfield", "Americas", 3.0}, {"Europe", nil, 5.0}, {"Springfield", "Europe", 5.0}})
+	if err := ValidateEnvelope(valid); err != nil {
+		t.Fatalf("valid hierarchy: %v", err)
+	}
+
+	tests := map[string][][]any{
+		"duplicate node identity": {{"Americas", nil, 10.0}, {"Americas", nil, 5.0}},
+		"missing parent":          {{"Springfield", "Americas", 3.0}},
+	}
+	for name, rows := range tests {
+		t.Run(name, func(t *testing.T) {
+			envelope := hierarchyEnvelope(t, VisualizationHierarchyMarkTree, []VisualizationField{
+				{ID: "node", Role: VisualizationFieldRoleIdentity, DataType: VisualizationDataTypeString, Label: "Node"},
+				{ID: "parent", Role: VisualizationFieldRoleDimension, DataType: VisualizationDataTypeString, Nullable: true, Label: "Parent"},
+				{ID: "value", Role: VisualizationFieldRoleMeasure, DataType: VisualizationDataTypeDecimal, Label: "Value"},
+			}, rows)
+			if err := ValidateEnvelope(envelope); err == nil {
+				t.Fatal("expected invalid hierarchy data to fail")
+			}
+		})
+	}
+}
+
+func TestValidateEnvelopeRejectsInvalidNetworkEndpoints(t *testing.T) {
+	t.Parallel()
+
+	envelope := hierarchyEnvelope(t, VisualizationHierarchyMarkGraph, []VisualizationField{
+		{ID: "source", Role: VisualizationFieldRoleDimension, DataType: VisualizationDataTypeString, Label: "Source"},
+		{ID: "target", Role: VisualizationFieldRoleDimension, DataType: VisualizationDataTypeString, Label: "Target"},
+		{ID: "value", Role: VisualizationFieldRoleMeasure, DataType: VisualizationDataTypeDecimal, Label: "Value"},
+	}, [][]any{{"orders", "", 3.0}})
+	if err := ValidateEnvelope(envelope); err == nil {
+		t.Fatal("expected an empty graph endpoint to fail")
+	}
+}
+
+func hierarchyEnvelope(t *testing.T, mark VisualizationHierarchyMark, fields []VisualizationField, rows [][]any) VisualizationEnvelope {
+	t.Helper()
+	base := VisualizationSpecBase{
+		Kind: "hierarchy", Title: "Hierarchy", Datasets: []VisualizationDatasetSchema{{ID: "primary", Fields: fields}},
+		DataBudget:    VisualizationDataBudget{MaxRows: 100, RequiredCompleteness: VisualizationCompletenessComplete},
+		Accessibility: VisualizationAccessibility{Title: "Hierarchy", Description: "Hierarchy data"}, Interactions: []VisualizationInteraction{},
+	}
+	field := func(id string) *VisualizationFieldRef { return &VisualizationFieldRef{Dataset: "primary", Field: id} }
+	specification := &HierarchyVisualizationSpec{VisualizationSpecBase: base, Kind: "hierarchy", Mark: mark, Node: *field(fields[0].ID), Value: field("value"), Presentation: HierarchyVisualizationPresentation{VisualizationPresentation: VisualizationPresentation{Legend: VisualizationLegendPositionHidden}}}
+	if mark == VisualizationHierarchyMarkGraph || mark == VisualizationHierarchyMarkSankey {
+		specification.Source, specification.Target = field("source"), field("target")
+	} else {
+		specification.Parent = field("parent")
+	}
+	spec := VisualizationSpec{Value: specification}
+	revision, err := ComputeSpecRevision(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	columns := make([]string, len(fields))
+	for index, item := range fields {
+		columns[index] = item.ID
+	}
+	state := InlineVisualizationDataState{VisualizationDataStateBase: VisualizationDataStateBase{Kind: "inline", SpecRevision: revision.String(), DataRevision: 1, Generation: 1}, Kind: "inline", Datasets: []VisualizationInlineDataset{{ID: "primary", SpecRevision: revision.String(), DataRevision: 1, Generation: 1, Columns: columns, Rows: rows, Completeness: VisualizationCompletenessComplete}}}
+	return VisualizationEnvelope{SchemaVersion: CurrentSchemaVersion, VisualID: "hierarchy", RendererID: "echarts", SpecRevision: revision.String(), DataRevision: 1, Spec: spec, DataState: VisualizationDataState{Value: &state}, Selection: []VisualizationSelectionEntry{}, Status: VisualizationStatus{Kind: VisualizationStatusKindReady}, Diagnostics: []VisualizationDiagnostic{}}
+}

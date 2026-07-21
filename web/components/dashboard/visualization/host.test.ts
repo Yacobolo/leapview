@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 
 import type { VisualizationEnvelope } from '../../../generated/visualization'
-import { Change, currentVisualizationSchemaVersion, RendererRegistry, VisualizationController, type RendererHandle } from './host-controller'
+import { Change, currentVisualizationSchemaVersion, defaultRendererContext, RendererRegistry, VisualizationController, type RendererHandle } from './host-controller'
 
 function envelope(dataRevision: number, specRevision = 'sha256:spec', rendererID = 'test'): VisualizationEnvelope {
   return {
@@ -81,6 +81,22 @@ test('controller coalesces resize and applies the latest size after a lazy mount
   await applying
   await Promise.resolve()
   expect(sizes).toEqual([[240, 160, 2]])
+})
+
+test('controller sends context-only changes without replacing visualization data', async () => {
+  const updates: Change[] = []
+  const handle: RendererHandle = {
+    update: (_value, change) => updates.push(change), resize: () => {}, snapshot: async () => new Blob(), dispose: () => {},
+  }
+  const registry = new RendererRegistry()
+  registry.register({
+    id: 'test', version: '1.0.0', schemaVersion: currentVisualizationSchemaVersion, kinds: ['kpi'], capabilities: { snapshot: true, windowed: false, interactive: false },
+    load: async () => ({ mount: () => handle }),
+  })
+  const controller = new VisualizationController(registry, {} as HTMLElement)
+  await controller.apply(envelope(1), defaultRendererContext)
+  await controller.apply(envelope(1), { ...defaultRendererContext, theme: 'dark' })
+  expect(updates).toEqual([Change.Context])
 })
 
 test('registry rejects duplicate IDs and unsupported capabilities fail closed', async () => {

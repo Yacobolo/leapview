@@ -8,6 +8,7 @@ import (
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/dashboard/report"
+	visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
 )
 
 func TestValidateDashboardUsesSemanticSelectionResolver(t *testing.T) {
@@ -38,23 +39,69 @@ func TestValidateDashboardUsesSemanticSelectionResolver(t *testing.T) {
 	}
 }
 
-func TestValidateDashboardRejectsPointSelectionForGraphRenderers(t *testing.T) {
-	for _, visualType := range []string{"graph", "sankey"} {
+func TestValidateDashboardRejectsPointSelectionForAggregateRadarPolygons(t *testing.T) {
+	for _, visualType := range []string{"radar"} {
 		t.Run(visualType, func(t *testing.T) {
 			dashboardDefinition, model := compilerSelectionFixture(report.SelectionMapping{Field: "release_decade", Value: "source"})
 			source := dashboardDefinition.Visuals["source"]
 			source.Type = visualType
-			source.Shape = "graph"
+			if visualType == "graph" || visualType == "sankey" {
+				source.Shape = "graph"
+			} else if visualType != "radar" {
+				source.Shape = "hierarchy"
+			}
+			source.Query.Dimensions = []report.FieldRef{
+				{Field: "release_decade", Alias: "source"},
+				{Field: "release_decade", Alias: "target"},
+			}
+			if visualType == "radar" {
+				source.Query.Dimensions = source.Query.Dimensions[:1]
+			}
+			dashboardDefinition.Visuals["source"] = source
+
+			err := ValidateDashboard(dashboardDefinition, map[string]*semanticmodel.Model{"model": model})
+			want := fmt.Sprintf(`visual "source" type %q shape %q does not support point_selection`, visualType, source.ShapeOrDefault())
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("ValidateDashboard() error = %v, want containing %q", err, want)
+			}
+		})
+	}
+}
+
+func TestValidateDashboardAllowsSelectionFromHierarchyNodesAndNetworkLinks(t *testing.T) {
+	for _, visualType := range []string{"graph", "sankey", "tree", "treemap", "sunburst"} {
+		t.Run(visualType, func(t *testing.T) {
+			dashboardDefinition, model := compilerSelectionFixture(report.SelectionMapping{Field: "release_decade", Value: "source"})
+			source := dashboardDefinition.Visuals["source"]
+			source.Type = visualType
+			if visualType == "graph" || visualType == "sankey" {
+				source.Shape = "graph"
+			} else {
+				source.Shape = "hierarchy"
+			}
 			source.Query.Dimensions = []report.FieldRef{
 				{Field: "release_decade", Alias: "source"},
 				{Field: "release_decade", Alias: "target"},
 			}
 			dashboardDefinition.Visuals["source"] = source
 
-			err := ValidateDashboard(dashboardDefinition, map[string]*semanticmodel.Model{"model": model})
-			want := fmt.Sprintf(`visual "source" type %q shape "graph" does not support point_selection`, visualType)
-			if err == nil || !strings.Contains(err.Error(), want) {
-				t.Fatalf("ValidateDashboard() error = %v, want containing %q", err, want)
+			if err := ValidateDashboard(dashboardDefinition, map[string]*semanticmodel.Model{"model": model}); err != nil {
+				t.Fatalf("ValidateDashboard() error = %v", err)
+			}
+			definitions, err := CompileVisualizationDefinitions(dashboardDefinition, model)
+			if err != nil {
+				t.Fatal(err)
+			}
+			base, err := visualizationir.SpecificationBase(definitions["source"].Spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			roles := map[string]string{}
+			for _, field := range base.Datasets[0].Fields {
+				roles[field.ID] = string(field.Role)
+			}
+			if roles["source"] != "identity" {
+				t.Fatalf("compiled field roles = %#v, want source identity", roles)
 			}
 		})
 	}

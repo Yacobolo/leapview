@@ -9,7 +9,45 @@ export enum Change {
   Data = 1 << 1,
   Selection = 1 << 2,
   Status = 1 << 3,
-  All = Spec | Data | Selection | Status,
+  Context = 1 << 4,
+  All = Spec | Data | Selection | Status | Context,
+}
+
+export type RendererLocale = 'en-US' | 'pt-BR'
+export type RendererTheme = 'light' | 'dark'
+export type RendererContext = Readonly<{
+  locale: RendererLocale
+  theme: RendererTheme
+  reducedMotion: boolean
+  devicePixelRatio: number
+  fontFamily: string
+  colors: Readonly<{
+    foreground: string
+    muted: string
+    grid: string
+    surface: string
+    accent: string
+    success: string
+    attention: string
+    danger: string
+    data: readonly string[]
+  }>
+}>
+
+export const defaultRendererContext: RendererContext = Object.freeze({
+  locale: 'en-US', theme: 'light', reducedMotion: true, devicePixelRatio: 1, fontFamily: 'system-ui',
+  colors: Object.freeze({
+    foreground: '#24292f', muted: '#57606a', grid: '#d8dee4', surface: '#ffffff', accent: '#0969da',
+    success: '#1a7f37', attention: '#9a6700', danger: '#cf222e',
+    data: Object.freeze(['#0969da', '#1a7f37', '#8250df', '#bc4c00', '#116329', '#bf3989', '#1b7c83', '#9a6700']),
+  }),
+})
+
+export function normalizeRendererLocale(value: string): RendererLocale {
+  const locale = value.trim().replaceAll('_', '-').toLowerCase()
+  if (locale === 'en' || locale === 'en-us') return 'en-US'
+  if (locale === 'pt' || locale === 'pt-br') return 'pt-BR'
+  throw new Error(`unsupported visualization locale ${JSON.stringify(value)}`)
 }
 
 export type RendererCapabilities = Readonly<{
@@ -19,14 +57,14 @@ export type RendererCapabilities = Readonly<{
 }>
 
 export interface RendererHandle {
-  update(envelope: VisualizationEnvelope, change: Change): void | Promise<void>
+  update(envelope: VisualizationEnvelope, change: Change, context: RendererContext): void | Promise<void>
   resize(width: number, height: number, devicePixelRatio: number): void
   snapshot(): Promise<Blob>
   dispose(): void
 }
 
 export interface RendererAdapter {
-  mount(container: HTMLElement, envelope: VisualizationEnvelope): RendererHandle | Promise<RendererHandle>
+  mount(container: HTMLElement, envelope: VisualizationEnvelope, context: RendererContext): RendererHandle | Promise<RendererHandle>
 }
 
 export type RendererRegistration = Readonly<{
@@ -93,6 +131,7 @@ export class VisualizationController {
   readonly #observe?: VisualizationObserver
   #envelope?: VisualizationEnvelope
   #handle?: RendererHandle
+  #context?: RendererContext
   #loadGeneration = 0
   #disposed = false
   #pendingResize?: readonly [number, number, number]
@@ -107,7 +146,7 @@ export class VisualizationController {
 
   get envelope(): VisualizationEnvelope | undefined { return this.#envelope }
 
-  async apply(next: VisualizationEnvelope): Promise<boolean> {
+  async apply(next: VisualizationEnvelope, context: RendererContext = defaultRendererContext): Promise<boolean> {
     if (this.#disposed) throw new Error('visualization controller is disposed')
     if (!this.#validate(next)) {
       this.#record('validation_failure', 0, next)
@@ -119,7 +158,7 @@ export class VisualizationController {
       this.#record('stale_result_drop', 0, next)
       return false
     }
-    const change = changes(previous, next)
+    const change = changes(previous, next) | (sameJSON(this.#context, context) ? Change.None : Change.Context)
     if (change === Change.None) return false
 
     if (!this.#handle || previous?.rendererID !== next.rendererID) {
@@ -133,7 +172,7 @@ export class VisualizationController {
       const mountStarted = now()
       let handle: RendererHandle
       try {
-        handle = await adapter.mount(this.#container, next)
+        handle = await adapter.mount(this.#container, next, context)
       } catch (error) {
         this.#record('adapter_error', now() - mountStarted, next)
         throw error
@@ -143,16 +182,18 @@ export class VisualizationController {
 		handle.dispose()
         return false
       }
-	  this.#handle = handle
+      this.#handle = handle
       this.#envelope = next
+      this.#context = context
       this.#flushResize()
       return true
     }
 
     this.#envelope = next
+    this.#context = context
     const updateStarted = now()
     try {
-      await this.#handle.update(next, change)
+      await this.#handle.update(next, change, context)
     } catch (error) {
       this.#record('adapter_error', now() - updateStarted, next)
       throw error
@@ -190,6 +231,7 @@ export class VisualizationController {
     if (this.#handle) this.#record('dispose', now() - disposeStarted, this.#envelope)
     this.#handle = undefined
     this.#envelope = undefined
+    this.#context = undefined
   }
 
   #flushResize(): void {

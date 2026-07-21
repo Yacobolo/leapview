@@ -380,6 +380,22 @@ func compiledVisualTitle(authored reportdef.Visual, id string, model *semanticmo
 func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model *semanticmodel.Model) (visualizationir.VisualizationSpec, error) {
 	shape := compiledVisualizationShape(authored)
 	columns := compiledShapeColumns(shape)
+	if shape == "hierarchy" {
+		seen := map[string]struct{}{"node": {}, "parent": {}, "value": {}}
+		for _, binding := range compiledFields(authored.Query.Dimensions) {
+			if _, exists := seen[binding.Alias]; exists {
+				return visualizationir.VisualizationSpec{}, fmt.Errorf("hierarchy query alias %q conflicts with a reserved frame field", binding.Alias)
+			}
+			seen[binding.Alias] = struct{}{}
+			columns = append(columns, binding.Alias)
+		}
+		if binding := compiledTime(authored.Query.Time); binding != nil {
+			if _, exists := seen[binding.Alias]; exists {
+				return visualizationir.VisualizationSpec{}, fmt.Errorf("hierarchy query alias %q conflicts with a reserved frame field", binding.Alias)
+			}
+			columns = append(columns, binding.Alias)
+		}
+	}
 	fields := make([]visualizationir.VisualizationField, len(columns))
 	identities := map[string]struct{}{}
 	for _, mapping := range authored.Interaction.PointSelection.Mappings {
@@ -417,7 +433,7 @@ func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model
 	}
 	base := visualizationir.VisualizationSpecBase{
 		Title: title, Datasets: []visualizationir.VisualizationDatasetSchema{{ID: "primary", Fields: fields}},
-		DataBudget:    visualizationir.VisualizationDataBudget{MaxRows: compiledVisualLimit(authored), RequiredCompleteness: completeness},
+		DataBudget:    visualizationir.VisualizationDataBudget{MaxRows: compiledVisualFrameLimit(authored, shape), RequiredCompleteness: completeness},
 		Accessibility: accessibility, Interactions: customVisualizationInteractions(authored.Interaction.PointSelection),
 	}
 	ref := func(field string) visualizationir.VisualizationFieldRef {
@@ -1219,6 +1235,21 @@ func compiledVisualLimit(authored reportdef.Visual) int64 {
 		return 20_000
 	}
 	return 1000
+}
+
+func compiledVisualFrameLimit(authored reportdef.Visual, shape string) int64 {
+	limit := compiledVisualLimit(authored)
+	if shape != "hierarchy" || authored.DataBudget.MaxRows > 0 {
+		return limit
+	}
+	levels := len(authored.Query.Dimensions)
+	if authored.Query.Time.Field != "" {
+		levels++
+	}
+	if levels < 1 {
+		levels = 1
+	}
+	return limit * int64(levels)
 }
 
 func visualizationSpecBase(spec *visualizationir.VisualizationSpec) *visualizationir.VisualizationSpecBase {

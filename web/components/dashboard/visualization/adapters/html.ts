@@ -1,14 +1,14 @@
 import type { VisualizationEnvelope, VisualizationFieldRef } from '../../../../generated/visualization'
-import type { RendererAdapter, RendererHandle } from '../host-controller'
+import { defaultRendererContext, type RendererAdapter, type RendererContext, type RendererHandle } from '../host-controller'
 import { formatValue } from '../format'
 
 export const adapter: RendererAdapter = {
-  mount(container, envelope) { return new HTMLHandle(container, envelope) },
+  mount(container, envelope, context) { return new HTMLHandle(container, envelope, context) },
 }
 
 class HTMLHandle implements RendererHandle {
-  constructor(private readonly container: HTMLElement, envelope: VisualizationEnvelope) { this.update(envelope) }
-  update(envelope: VisualizationEnvelope): void {
+  constructor(private readonly container: HTMLElement, envelope: VisualizationEnvelope, context: RendererContext) { this.update(envelope, 0, context) }
+  update(envelope: VisualizationEnvelope, _change: number, context: RendererContext): void {
     this.container.replaceChildren()
     const article = document.createElement('article')
     article.setAttribute('aria-label', envelope.spec.accessibility.title)
@@ -17,7 +17,7 @@ class HTMLHandle implements RendererHandle {
     label.textContent = envelope.spec.title
     const value = document.createElement('strong')
     value.className = 'ld-visualization-kpi'
-    value.textContent = kpiText(envelope)
+    value.textContent = kpiText(envelope, context)
     article.append(label, value)
     if (envelope.spec.kind === 'kpi' && envelope.spec.presentation.note) {
       const note = document.createElement('small'); note.textContent = envelope.spec.presentation.note; article.append(note)
@@ -29,12 +29,12 @@ class HTMLHandle implements RendererHandle {
   dispose(): void { this.container.replaceChildren() }
 }
 
-export function kpiText(envelope: VisualizationEnvelope): string {
+export function kpiText(envelope: VisualizationEnvelope, context: RendererContext = defaultRendererContext): string {
   const spec = envelope.spec
   if (spec.kind !== 'kpi') return '—'
   const value = scalar(envelope, spec.value)
   const field = spec.datasets.find((dataset) => dataset.id === spec.value.dataset)?.fields.find((candidate) => candidate.id === spec.value.field)
-  if (field?.format) return formatValue('en-US', field.format, value)
+  if (field?.format) return formatValue(context.locale, field.format, value)
   return value === null || value === undefined ? '—' : String(value)
 }
 

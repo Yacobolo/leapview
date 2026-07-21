@@ -5,7 +5,7 @@ import validateGeneratedEnvelope from '../../../generated/visualization/validate
 import { visualActionStyles } from '../visual-action-styles'
 import { visualMenuIcon } from '../visual-menu-icons'
 import type { VisualActionDetail } from '../visual-modal'
-import { VisualizationController, validateEnvelopeBoundary } from './host-controller'
+import { defaultRendererContext, normalizeRendererLocale, VisualizationController, validateEnvelopeBoundary, type RendererContext } from './host-controller'
 import { visualizationRegistry } from './registry'
 import { adapterObservation } from './telemetry'
 
@@ -22,6 +22,8 @@ export class VisualizationHost extends LitElement {
   private connectionGeneration = 0
   private presentedRendererID = ''
   private focusMirror?: VisualizationHost
+  private contextListenersConnected = false
+  private reducedMotionMedia?: MediaQueryList
 
   static styles = [visualActionStyles, css`
     :host, .surface { display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; }
@@ -84,7 +86,7 @@ export class VisualizationHost extends LitElement {
   `]
 
   protected firstUpdated(): void {
-    this.renderRoot.addEventListener('click', this.handleToolbarClick)
+    this.connectContextListeners()
     this.ensureController()
   }
 
@@ -93,7 +95,10 @@ export class VisualizationHost extends LitElement {
     const generation = ++this.connectionGeneration
     if (!this.hasUpdated || this.controller) return
     queueMicrotask(() => {
-      if (generation === this.connectionGeneration && this.isConnected) this.ensureController()
+      if (generation === this.connectionGeneration && this.isConnected) {
+        this.connectContextListeners()
+        this.ensureController()
+      }
     })
   }
 
@@ -130,6 +135,7 @@ export class VisualizationHost extends LitElement {
       if (generation !== this.connectionGeneration || this.isConnected) return
       this.resizeObserver?.disconnect()
       this.resizeObserver = undefined
+      this.disconnectContextListeners()
       this.controller?.dispose()
       this.controller = undefined
       this.presented = false
@@ -155,7 +161,7 @@ export class VisualizationHost extends LitElement {
         <header class="toolbar">
           <div class="toolbar-title"><h2 data-visualization-title>${this.envelope?.spec.title}</h2></div>
           <div class="visual-actions">
-            <button class="icon-action" type="button" data-visualization-expand data-visualization-id=${this.envelope?.visualID ?? ''} aria-label=${`Expand ${header}`} title=${`Expand ${header}`}>${visualMenuIcon('focus')}</button>
+            <button class="icon-action" type="button" data-visualization-expand data-visualization-id=${this.envelope?.visualID ?? ''} aria-label=${`Expand ${header}`} title=${`Expand ${header}`} @click=${this.expand}>${visualMenuIcon('focus')}</button>
           </div>
         </header>
       ` : null}
@@ -180,7 +186,7 @@ export class VisualizationHost extends LitElement {
     const generation = ++this.applyGeneration
     this.applying = true
     try {
-      await this.controller.apply(this.envelope)
+      await this.controller.apply(this.envelope, this.rendererContext())
       if (generation === this.applyGeneration) {
         this.error = ''
         this.presented = true
@@ -228,18 +234,56 @@ export class VisualizationHost extends LitElement {
     }))
   }
 
-  private handleToolbarClick = (event: Event): void => {
-    const expand = event.composedPath().some((target) => (
-      target instanceof HTMLElement && target.hasAttribute('data-visualization-expand')
-    ))
-    if (expand) this.expand()
-  }
-
   private forwardAdapterObservation = (event: CustomEvent<unknown>): void => {
     const detail = adapterObservation(event.detail)
     if (!detail) return
     event.stopPropagation()
     this.dispatchEvent(new CustomEvent('ld-visualization-observation', { bubbles: true, composed: true, detail }))
+  }
+
+  private connectContextListeners(): void {
+    if (this.contextListenersConnected) return
+    this.contextListenersConnected = true
+    document.addEventListener('libredash-theme-applied', this.handleRendererContextChange)
+    this.reducedMotionMedia = window.matchMedia?.('(prefers-reduced-motion: reduce)')
+    this.reducedMotionMedia?.addEventListener?.('change', this.handleRendererContextChange)
+  }
+
+  private disconnectContextListeners(): void {
+    if (!this.contextListenersConnected) return
+    this.contextListenersConnected = false
+    document.removeEventListener('libredash-theme-applied', this.handleRendererContextChange)
+    this.reducedMotionMedia?.removeEventListener?.('change', this.handleRendererContextChange)
+    this.reducedMotionMedia = undefined
+  }
+
+  private readonly handleRendererContextChange = (): void => { void this.applyEnvelope() }
+
+  private rendererContext(): RendererContext {
+    const target = this.rendererContainer
+    if (!target) return defaultRendererContext
+    const styles = getComputedStyle(target)
+    const color = (name: string, fallback: string): string => styles.getPropertyValue(name).trim() || fallback
+    const colorScheme = document.documentElement.style.colorScheme.trim()
+    const theme = colorScheme === 'dark' || (colorScheme !== 'light' && window.matchMedia?.('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light'
+    return {
+      locale: normalizeRendererLocale(document.documentElement.lang || 'en'),
+      theme,
+      reducedMotion: this.reducedMotionMedia?.matches ?? true,
+      devicePixelRatio: window.devicePixelRatio || 1,
+      fontFamily: styles.fontFamily || defaultRendererContext.fontFamily,
+      colors: {
+        foreground: color('--ld-fg-default', defaultRendererContext.colors.foreground),
+        muted: color('--ld-chart-axis', defaultRendererContext.colors.muted),
+        grid: color('--ld-chart-grid', defaultRendererContext.colors.grid),
+        surface: color('--ld-chart-surface', defaultRendererContext.colors.surface),
+        accent: color('--ld-fg-accent', defaultRendererContext.colors.accent),
+        success: color('--ld-fg-success', defaultRendererContext.colors.success),
+        attention: color('--ld-fg-warning', defaultRendererContext.colors.attention),
+        danger: color('--ld-fg-danger', defaultRendererContext.colors.danger),
+        data: Array.from({ length: 8 }, (_, index) => color(`--ld-data-${index + 1}`, defaultRendererContext.colors.data[index]!)),
+      },
+    }
   }
 
   private accessibleFallback() {

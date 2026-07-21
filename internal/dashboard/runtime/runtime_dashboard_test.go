@@ -855,8 +855,8 @@ relogios_presentes,watches_gifts
 	if !ok || sunburstSpec.Mark != visualizationir.VisualizationHierarchyMarkSunburst {
 		t.Fatalf("hierarchy chart spec = %#v, want sunburst", sunburstPatch.Visuals["category_status_sunburst"].Spec.Value)
 	}
-	if !hasHierarchyPathValue(envelopeRows(t, sunburstPatch.Visuals["category_status_sunburst"]), "health_beauty") {
-		t.Fatalf("hierarchy rows missing health_beauty path: %#v", envelopeRows(t, sunburstPatch.Visuals["category_status_sunburst"]))
+	if !hasDatumValue(envelopeRows(t, sunburstPatch.Visuals["category_status_sunburst"]), "node", "health_beauty") {
+		t.Fatalf("hierarchy rows missing health_beauty node: %#v", envelopeRows(t, sunburstPatch.Visuals["category_status_sunburst"]))
 	}
 
 	table, err := metrics.QueryTable(context.Background(), "executive-sales", dashboard.Filters{}, dashboard.TableRequest{

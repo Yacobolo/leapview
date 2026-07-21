@@ -38,6 +38,9 @@ test('row-index interaction translation validates the locator and compiled mappi
   expect(interactionCommandForRowIndex(envelope, 'primary', 3)).toBeUndefined()
   expect(interactionCommandForRowIndex(envelope, 'forged', 0)).toBeUndefined()
   expect(interactionCommandForRowIndex(envelope, 'primary', 0.5)).toBeUndefined()
+  const nullIdentity = structuredClone(envelope) as VisualizationEnvelope
+  if (nullIdentity.dataState.kind === 'inline') nullIdentity.dataState.datasets[0]!.rows[0]![0] = null
+  expect(interactionCommandForRowIndex(nullIdentity, 'primary', 0)).toBeUndefined()
 })
 
 test('keyboard interaction options collapse duplicate identity tuples and use composite labels', () => {

@@ -1,280 +1,164 @@
-import type { VisualizationEnvelope, VisualizationFieldRef } from '../../../../generated/visualization'
+import type { VisualizationEnvelope } from '../../../../generated/visualization'
 import type { ECharts, EChartsOption } from 'echarts'
-import type { RendererAdapter, RendererHandle } from '../host-controller'
+import { Change, defaultRendererContext, normalizeRendererLocale, type RendererAdapter, type RendererContext, type RendererHandle } from '../host-controller'
 import { interactionCommandForRow } from '../interaction-command'
+import { baseOption } from './echarts/common'
+import { cartesianOption } from './echarts/cartesian'
+import { hierarchyOption } from './echarts/hierarchy'
+import { polarOption } from './echarts/polar'
+import { proportionalOption } from './echarts/proportional'
 
-export { interactionCommandForRow } from '../interaction-command'
+export { interactionCommandForRow, normalizeRendererLocale }
 
-export function echartsOption(envelope: VisualizationEnvelope): EChartsOption {
-  const dataset = inlineDataset(envelope)
-  const source = dataset ? selectedDatasetSource(envelope, dataset) : []
-  const spec = envelope.spec
-  const base: EChartsOption = {
-    animation: false,
-    aria: { enabled: true, description: spec.accessibility.description },
-    dataset: { source: source as any },
-    tooltip: { trigger: 'item' },
-    title: envelope.status.kind === 'error' ? { text: envelope.status.message ?? 'Visualization error' } : undefined,
-    visualMap: envelope.selection.length > 0 ? { show: false, dimension: '__ld_selected', pieces: [{ value: true, opacity: 1 }, { value: false, opacity: 0.35 }] } as any : undefined,
+export function echartsOption(envelope: VisualizationEnvelope, context: RendererContext = defaultRendererContext): EChartsOption {
+  const base = baseOption(envelope, context)
+  let translated: Record<string, any>
+  switch (envelope.spec.kind) {
+    case 'cartesian': translated = cartesianOption(envelope, context); break
+    case 'proportional': translated = proportionalOption(envelope, context); break
+    case 'hierarchy': translated = hierarchyOption(envelope, context); break
+    case 'polar': translated = polarOption(envelope, context); break
+    default: throw new Error(`ECharts cannot render visualization kind ${JSON.stringify(envelope.spec.kind)}`)
   }
-
-  switch (spec.kind) {
-    case 'cartesian': {
-      return cartesianOption(base, envelope)
-    }
-    case 'proportional':
-      return {
-        ...base,
-        legend: legend(spec.presentation.legend),
-        series: [{
-          type: spec.mark === 'funnel' ? 'funnel' : 'pie',
-          radius: spec.mark === 'donut' ? ['45%', '72%'] : undefined,
-          encode: { itemName: spec.category.field, value: spec.value.field },
-          label: { show: spec.presentation.showLabels },
-          roseType: spec.presentation.rose ? 'radius' : false,
-          orient: spec.presentation.orientation,
-        } as any],
-      }
-    case 'hierarchy':
-      return hierarchyOption(base, envelope)
-    case 'polar':
-      if (spec.mark === 'gauge') {
-        const value = firstScalar(envelope, spec.value)
-        const minimum = spec.presentation.minimum ?? 0, maximum = spec.presentation.maximum ?? 100
-        const colors = (spec.presentation.thresholds ?? []).map((threshold) => [Math.max(0, Math.min(1, (threshold.value - minimum) / (maximum - minimum))), toneColor(threshold.tone)])
-        return { ...base, series: [{ type: 'gauge', min: minimum, max: maximum, data: [{ value }], pointer: { show: spec.presentation.showPointer }, progress: { show: true, width: spec.presentation.progressWidth }, axisLine: colors.length ? { lineStyle: { color: colors } } : undefined }] as any }
-      }
-      return radarOption(base, envelope)
-    default:
-      throw new Error(`ECharts cannot render visualization kind ${JSON.stringify(spec.kind)}`)
-  }
-}
-
-function selectedDatasetSource(envelope: VisualizationEnvelope, dataset: Extract<VisualizationEnvelope['dataState'], { kind: 'inline' }>['datasets'][number]): unknown[][] {
-  if (envelope.selection.length === 0) return [dataset.columns, ...dataset.rows]
-  const schema = envelope.spec.datasets.find((candidate) => candidate.id === dataset.id)
-  const identityFields = (schema?.fields ?? []).filter((field) => field.role === 'identity')
-  if (identityFields.length === 0) return [dataset.columns, ...dataset.rows]
-  const selected = envelope.selection.filter((entry) => entry.datum.dataset === dataset.id && entry.datum.dataRevision === envelope.dataRevision)
-  const rows = dataset.rows.map((row) => {
-    const matches = selected.some((entry) => identityFields.every((field) => Object.is(row[dataset.columns.indexOf(field.id)], entry.datum.identity[field.id])))
-    return [...row, matches]
-  })
-  return [[...dataset.columns, '__ld_selected'], ...rows]
-}
-
-function cartesianOption(base: EChartsOption, envelope: VisualizationEnvelope): EChartsOption {
-  const spec = envelope.spec
-  if (spec.kind !== 'cartesian') return base
-  const horizontal = spec.presentation.orientation === 'horizontal' || spec.mark === 'bar'
-  const axes: Pick<EChartsOption, 'xAxis' | 'yAxis'> = horizontal
-    ? { xAxis: { type: 'value' }, yAxis: { type: 'category' } }
-    : { xAxis: { type: 'category' }, yAxis: { type: 'value' } }
-  const dataZoom = spec.presentation.dataZoom ? [{ type: 'inside' }, { type: 'slider' }] : undefined
-  if (spec.mark === 'histogram') {
-    const value = spec.y.find((field) => field.field === 'value') ?? spec.y.at(-1)
-    return { ...base, ...axes, dataZoom, series: [{ type: 'bar', encode: { x: spec.x.field, y: value?.field }, label: { show: spec.presentation.showLabels } }] as any }
-  }
-  if (spec.mark === 'waterfall') {
-    const start = spec.y.find((field) => field.field === 'start')
-    const value = spec.y.find((field) => field.field === 'value') ?? spec.y[0]
-    return {
-      ...base, ...axes, dataZoom,
-      series: [
-        { type: 'bar', stack: 'waterfall', silent: true, itemStyle: { color: 'transparent' }, encode: { x: spec.x.field, y: start?.field } },
-        { type: 'bar', stack: 'waterfall', encode: { x: spec.x.field, y: value?.field }, label: { show: spec.presentation.showLabels } },
-      ] as any,
-    }
-  }
-  const multiValue = spec.mark === 'candlestick' || spec.mark === 'boxplot'
-  if (multiValue) {
-    return {
-      ...base, ...axes, dataZoom, legend: legend(spec.presentation.legend),
-      series: [{ type: cartesianSeriesType(spec.mark), name: spec.title, encode: { x: spec.x.field, y: spec.y.map((field) => field.field) } }] as any,
-    }
-  }
-  if (spec.mark === 'heatmap' && spec.y.length >= 2) {
-    return {
-      ...base, xAxis: { type: 'category' }, yAxis: { type: 'category' },
-      visualMap: { min: 0, calculable: true, orient: 'horizontal', left: 'center', bottom: 0 },
-      series: [{ type: 'heatmap', encode: { x: spec.x.field, y: spec.y[0]?.field, value: spec.y[1]?.field }, label: { show: spec.presentation.showLabels } }] as any,
-    }
-  }
-  const splitSeries = splitCartesianSeries(envelope)
-  if (splitSeries) {
-    const secondary = splitSeries.series.some((series) => series.yAxisIndex === 1)
-    return {
-      ...base,
-      dataset: splitSeries.datasets as any,
-      legend: legend(spec.presentation.legend),
-      xAxis: { type: 'category' },
-      yAxis: secondary ? [{ type: 'value' }, { type: 'value' }] : { type: 'value' },
-      dataZoom,
-      series: splitSeries.series as any,
-    }
-  }
-  const series = spec.y.map((value) => ({
-    type: cartesianSeriesType(spec.mark),
-    name: fieldLabel(spec, value),
-    encode: horizontal ? { x: value.field, y: spec.x.field } : { x: spec.x.field, y: value.field },
-    smooth: spec.presentation.smooth,
-    symbol: spec.presentation.showSymbols ? undefined : 'none',
-    symbolSize: spec.presentation.symbolSize,
-    stack: spec.presentation.stacked ? 'total' : undefined,
-    areaStyle: spec.presentation.area || spec.mark === 'area' ? {} : undefined,
-    step: spec.presentation.step ? 'middle' : false,
-    label: { show: spec.presentation.showLabels, position: spec.presentation.labelPosition },
-  }))
-  return { ...base, ...axes, legend: legend(spec.presentation.legend), dataZoom, series: series as any }
-}
-
-function splitCartesianSeries(envelope: VisualizationEnvelope): { datasets: object[]; series: Array<object & { yAxisIndex: number }> } | undefined {
-  const spec = envelope.spec
-  if (spec.kind !== 'cartesian' || !spec.series || spec.y.length !== 1) return undefined
-  const dataset = inlineDataset(envelope)
-  if (!dataset) return undefined
-  const seriesIndex = dataset.columns.indexOf(spec.series.field)
-  if (seriesIndex < 0) return undefined
-  const values = [...new Set(dataset.rows.map((row) => row[seriesIndex]).filter((value): value is string | number | boolean => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'))]
-  const configured = new Map((spec.presentation.comboSeries ?? []).map((item) => [String(item.seriesValue), item]))
-  const source = [dataset.columns, ...dataset.rows]
-  const datasets: object[] = [{ id: 'source', source }]
-  const series = values.map((value, index) => {
-    const datasetID = `series-${index}`
-    datasets.push({ id: datasetID, fromDatasetId: 'source', transform: { type: 'filter', config: { dimension: spec.series?.field, '=': value } } })
-    const combo = configured.get(String(value))
-    const mark = combo?.mark ?? (spec.mark === 'combo' ? 'line' : spec.mark)
-    return {
-      datasetId: datasetID,
-      name: String(value),
-      type: cartesianSeriesType(mark),
-      yAxisIndex: combo?.axis === 'secondary' ? 1 : 0,
-      encode: { x: spec.x.field, y: spec.y[0]?.field },
-      smooth: spec.presentation.smooth,
-      symbol: spec.presentation.showSymbols ? undefined : 'none',
-      stack: spec.presentation.stacked ? 'total' : undefined,
-      areaStyle: spec.presentation.area || mark === 'area' ? {} : undefined,
-      step: spec.presentation.step ? 'middle' : false,
-      label: { show: spec.presentation.showLabels, position: spec.presentation.labelPosition },
-    }
-  })
-  return { datasets, series }
+  const option = { ...base, ...translated } as Record<string, any>
+  if (base.graphic && translated.graphic) option.graphic = [...base.graphic, ...translated.graphic]
+  return option as EChartsOption
 }
 
 export const adapter: RendererAdapter = {
-  async mount(container, envelope) {
+  async mount(container, envelope, context) {
     const echarts = await import('echarts')
-    const chart = echarts.init(container, undefined, { renderer: 'canvas' })
-    return new EChartsHandle(container, chart, envelope)
+    const chart = echarts.init(container, undefined, { renderer: 'canvas', devicePixelRatio: context.devicePixelRatio })
+    const handle = new EChartsHandle(container, chart)
+    try {
+      await handle.mount(envelope, context)
+      return handle
+    } catch (error) {
+      handle.dispose()
+      throw error
+    }
   },
 }
 
 class EChartsHandle implements RendererHandle {
-  private envelope: VisualizationEnvelope
+  private envelope?: VisualizationEnvelope
+  private disposed = false
 
-  constructor(private readonly container: HTMLElement, private readonly chart: ECharts, envelope: VisualizationEnvelope) {
-    this.envelope = envelope
-    this.chart.setOption(echartsOption(envelope), { notMerge: true })
+  constructor(private readonly container: HTMLElement, private readonly chart: ECharts) {
     this.chart.on('click', this.handleClick)
   }
 
-  update(envelope: VisualizationEnvelope): void {
+  async mount(envelope: VisualizationEnvelope, context: RendererContext): Promise<void> {
     this.envelope = envelope
-    this.chart.setOption(echartsOption(envelope), { notMerge: true, lazyUpdate: true })
+    const ready = waitForEChartsFrame(this.chart)
+    this.chart.setOption(echartsOption(envelope, context), { notMerge: true, lazyUpdate: false })
+    await ready
   }
+
+  update(envelope: VisualizationEnvelope, change: Change, context: RendererContext): void {
+    if (this.disposed) return
+    this.envelope = envelope
+    const option = echartsOption(envelope, context)
+    const plan = echartsUpdatePlan(change, option)
+    this.chart.setOption(plan.option, plan.settings)
+  }
+
   resize(width: number, height: number): void { this.chart.resize({ width, height, silent: true }) }
+
   async snapshot(): Promise<Blob> {
     const response = await fetch(this.chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: 'transparent' }))
     return response.blob()
   }
+
   dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
     this.chart.off('click', this.handleClick)
     this.chart.dispose()
   }
 
   private readonly handleClick = (params: unknown) => {
-    const row = (params as { value?: unknown })?.value
-    if (!Array.isArray(row)) return
-    const interaction = this.envelope.spec.interactions.find((candidate) => candidate.kind === 'select')
-    const datasetID = interaction?.mappings[0]?.source.dataset
-    if (!datasetID) return
-    const command = interactionCommandForRow(this.envelope, datasetID, row)
+    const envelope = this.envelope
+    if (!envelope) return
+    const event = params as { value?: unknown; data?: { __ld_dataset?: unknown; __ld_row_index?: unknown } }
+    let datasetID: string | undefined
+    let row: unknown[] | undefined
+    if (Array.isArray(event.value)) {
+      datasetID = envelope.spec.interactions.find((candidate) => candidate.kind === 'select')?.mappings[0]?.source.dataset
+      row = event.value
+    } else if (typeof event.data?.__ld_dataset === 'string' && Number.isInteger(event.data.__ld_row_index)) {
+      datasetID = event.data.__ld_dataset
+      if (envelope.dataState.kind === 'inline') {
+        row = envelope.dataState.datasets.find((candidate) => candidate.id === datasetID)?.rows[event.data.__ld_row_index as number]
+      }
+    }
+    if (!datasetID || !row) return
+    const command = interactionCommandForRow(envelope, datasetID, row)
     if (!command) return
     this.container.dispatchEvent(new CustomEvent('ld-interaction-select', { bubbles: true, composed: true, detail: command }))
   }
 }
 
-function inlineDataset(envelope: VisualizationEnvelope) {
-  if (envelope.dataState.kind !== 'inline') return undefined
-  return envelope.dataState.datasets[0]
-}
+export type EChartsUpdatePlan = Readonly<{
+  option: Record<string, any>
+  settings: { notMerge: boolean; lazyUpdate: boolean; replaceMerge?: string[] }
+}>
 
-function firstScalar(envelope: VisualizationEnvelope, ref: VisualizationFieldRef): unknown {
-  if (envelope.dataState.kind !== 'inline') return undefined
-  const dataset = envelope.dataState.datasets.find((candidate) => candidate.id === ref.dataset)
-  const index = dataset?.columns.indexOf(ref.field) ?? -1
-  return index >= 0 ? dataset?.rows[0]?.[index] : undefined
-}
-
-function radarOption(base: EChartsOption, envelope: VisualizationEnvelope): EChartsOption {
-  const spec = envelope.spec
-  if (spec.kind !== 'polar' || spec.mark !== 'radar') return base
-  const dataset = inlineDataset(envelope)
-  if (!dataset) return base
-  const categoryIndex = spec.category ? dataset.columns.indexOf(spec.category.field) : -1
-  const valueIndex = dataset.columns.indexOf(spec.value.field)
-  const seriesIndex = spec.series ? dataset.columns.indexOf(spec.series.field) : -1
-  const categories = [...new Set(dataset.rows.map((row, index) => String(categoryIndex >= 0 ? row[categoryIndex] : index + 1)))]
-  const seriesValues = [...new Set(dataset.rows.map((row) => String(seriesIndex >= 0 ? row[seriesIndex] : spec.title)))]
-  const values = seriesValues.map((series) => ({
-    name: series,
-    value: categories.map((category) => dataset.rows.find((row, index) => String(seriesIndex >= 0 ? row[seriesIndex] : spec.title) === series && String(categoryIndex >= 0 ? row[categoryIndex] : index + 1) === category)?.[valueIndex] ?? null),
-  }))
-  const maxima = categories.map((_, index) => Math.max(1, ...values.map((series) => typeof series.value[index] === 'number' ? series.value[index] as number : 0)))
-  return { ...base, dataset: undefined, legend: legend(spec.presentation.legend), radar: { indicator: categories.map((name, index) => ({ name, max: maxima[index] })) }, series: [{ type: 'radar', data: values, areaStyle: spec.presentation.area ? {} : undefined }] as any }
-}
-
-function toneColor(tone: string): string {
-  switch (tone) {
-    case 'success': return '#1a7f37'
-    case 'warning': return '#9a6700'
-    case 'danger': return '#cf222e'
-    case 'ink': return '#24292f'
-    default: return '#0969da'
+export function echartsUpdatePlan(change: Change, option: EChartsOption): EChartsUpdatePlan {
+  if ((change & Change.Spec) !== 0) {
+    return { option: option as Record<string, any>, settings: { notMerge: true, lazyUpdate: false } }
+  }
+  const source = option as Record<string, any>
+  const patch: Record<string, any> = {}
+  const replaceMerge: string[] = []
+  if ((change & Change.Data) !== 0) {
+    patch.dataset = source.dataset
+    patch.series = source.series
+    patch.visualMap = source.visualMap ?? []
+    replaceMerge.push('dataset', 'series', 'visualMap')
+  } else if ((change & Change.Selection) !== 0) {
+    patch.dataset = source.dataset
+    patch.visualMap = source.visualMap ?? []
+    replaceMerge.push('dataset', 'visualMap')
+  }
+  if ((change & Change.Status) !== 0) {
+    patch.title = source.title ?? []
+    patch.graphic = source.graphic ?? []
+    replaceMerge.push('title', 'graphic')
+  }
+  if ((change & Change.Context) !== 0) Object.assign(patch, echartsContextPatch(source))
+  return {
+    option: patch,
+    settings: { notMerge: false, lazyUpdate: true, ...(replaceMerge.length ? { replaceMerge } : {}) },
   }
 }
 
-function fieldLabel(spec: VisualizationEnvelope['spec'], ref: VisualizationFieldRef): string {
-  return spec.datasets.find((dataset) => dataset.id === ref.dataset)?.fields.find((field) => field.id === ref.field)?.label ?? ref.field
-}
-
-function cartesianSeriesType(mark: Extract<VisualizationEnvelope['spec'], { kind: 'cartesian' }>['mark']): string {
-  switch (mark) {
-    case 'bar': case 'column': case 'waterfall': case 'histogram': return 'bar'
-    case 'scatter': return 'scatter'
-    case 'candlestick': return 'candlestick'
-    case 'boxplot': return 'boxplot'
-    default: return 'line'
+function echartsContextPatch(option: Record<string, any>): Record<string, any> {
+  const patch: Record<string, any> = {}
+  for (const key of ['backgroundColor', 'color', 'textStyle', 'tooltip', 'legend', 'xAxis', 'yAxis', 'radar', 'graphic', 'title']) {
+    if (option[key] !== undefined) patch[key] = option[key]
   }
-}
-
-function legend(position: string): object | undefined {
-  if (position === 'hidden') return undefined
-  return { show: true, orient: position === 'left' || position === 'right' ? 'vertical' : 'horizontal', [position]: 0 }
-}
-
-function hierarchyOption(base: EChartsOption, envelope: VisualizationEnvelope): EChartsOption {
-  const spec = envelope.spec
-  if (spec.kind !== 'hierarchy') return base
-  const dataset = inlineDataset(envelope)
-  const columns = dataset?.columns ?? []
-  const index = (ref?: VisualizationFieldRef) => ref ? columns.indexOf(ref.field) : -1
-  const nodeIndex = index(spec.node), valueIndex = index(spec.value), sourceIndex = index(spec.source), targetIndex = index(spec.target)
-  if (spec.mark === 'sankey' || spec.mark === 'graph') {
-    const links = (dataset?.rows ?? []).map((row) => ({ source: String(row[sourceIndex]), target: String(row[targetIndex]), value: valueIndex >= 0 ? row[valueIndex] : undefined }))
-    const names = [...new Set(links.flatMap((link) => [link.source, link.target]))]
-    return { ...base, dataset: undefined, series: [{ type: spec.mark, data: names.map((name) => ({ name })), links, roam: spec.presentation.roam }] as any }
+  if (Array.isArray(option.series)) {
+    patch.series = option.series.map((raw: Record<string, any>) => {
+      const { data: _data, links: _links, encode: _encode, datasetId: _datasetID, ...series } = raw
+      return series
+    })
   }
-  const data = (dataset?.rows ?? []).map((row) => ({ name: String(row[nodeIndex]), value: valueIndex >= 0 ? row[valueIndex] : undefined }))
-  return { ...base, dataset: undefined, series: [{ type: spec.mark, data, roam: spec.presentation.roam, initialTreeDepth: spec.presentation.initialDepth }] as any }
+  return patch
+}
+
+export function waitForEChartsFrame(chart: Pick<ECharts, 'on' | 'off'>, timeoutMs = 5_000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const finish = () => {
+      if (timer !== undefined) clearTimeout(timer)
+      chart.off('finished', finish)
+      resolve()
+    }
+    chart.on('finished', finish)
+    timer = setTimeout(() => {
+      chart.off('finished', finish)
+      reject(new Error('ECharts did not complete its first frame'))
+    }, timeoutMs)
+  })
 }

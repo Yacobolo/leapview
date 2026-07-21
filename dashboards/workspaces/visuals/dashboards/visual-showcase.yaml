@@ -716,7 +716,7 @@ spec:
             direction: desc
         limit: 18
     category_treemap_roam:
-      title: Navigable category treemap
+      title: Navigable category and status treemap
       type: treemap
       presentation:
         roam: true
@@ -724,12 +724,13 @@ spec:
       query:
         dimensions:
           category: orders.category
+          status: orders.status
         measures:
           revenue: null
         sort:
           - field: value
             direction: desc
-        limit: 18
+        limit: 80
     total_orders_gauge:
       title: Total orders gauge
       type: gauge

@@ -674,7 +674,7 @@ func (v Visual) ShapeOrDefault() string {
 		return "category_delta"
 	case "histogram":
 		return "binned_measure"
-	case "tree", "sunburst":
+	case "tree", "treemap", "sunburst":
 		return "hierarchy"
 	case "heatmap":
 		return "matrix"

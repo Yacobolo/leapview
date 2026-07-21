@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"sort"
 	"strings"
 	"sync"
 
@@ -553,14 +555,21 @@ func (s *VisualizationDataService) hierarchyData(ctx context.Context, runtime *m
 	}
 	dimensions := make([]reportdef.QueryField, 0, len(visual.Dimensions))
 	levelAliases := make([]string, 0, len(visual.Dimensions))
-	for index, dimensionName := range visual.Dimensions {
-		alias := fmt.Sprintf("level_%d", index)
+	for _, dimensionName := range visual.Dimensions {
+		alias := dimensionName.Alias
 		dimensions = append(dimensions, fieldRef(dimensionName.FieldID, alias))
+		levelAliases = append(levelAliases, alias)
+	}
+	queryTime := reportdef.QueryTime{}
+	if visual.Time != nil {
+		alias := visual.Time.Alias
+		queryTime = reportdef.QueryTime{Field: visual.Time.FieldID, Grain: visual.Time.Grain, Alias: alias}
 		levelAliases = append(levelAliases, alias)
 	}
 	rows, err := runtime.data.Query(ctx, reportdef.AggregateQuery{
 		Table:      visual.Table,
 		Dimensions: dimensions,
+		Time:       queryTime,
 		Measures:   []reportdef.QueryField{queryFieldRef(visual.Measures[0], "value")},
 		Filters:    queryFilters,
 		Sort:       visualSorts(visual),
@@ -569,22 +578,111 @@ func (s *VisualizationDataService) hierarchyData(ctx context.Context, runtime *m
 	if err != nil {
 		return nil, err
 	}
-	data := make([]dashboard.Datum, 0, len(rows))
-	for _, row := range rows {
-		path := make([]string, 0, len(levelAliases))
-		for _, alias := range levelAliases {
-			item := normalizeDatumValue(row[alias])
-			if item == nil || fmt.Sprint(item) == "" {
-				continue
-			}
-			path = append(path, fmt.Sprint(item))
-		}
-		data = append(data, dashboard.Datum{
-			"path":  path,
-			"value": normalizeDatumValue(row["value"]),
-		})
+	return flattenHierarchyRows(rows, levelAliases)
+}
+
+type hierarchyFrameNode struct {
+	name   string
+	parent any
+	value  float64
+	levels []any
+}
+
+// flattenHierarchyRows materializes the hierarchy declared by the compiled
+// node/parent/value frame. Parent values are stable, escaped path identities,
+// which permits the same display label under different parents without making
+// renderer-specific row identities part of the public contract.
+func flattenHierarchyRows(rows reportdef.QueryRows, levelAliases []string) ([]dashboard.Datum, error) {
+	if len(levelAliases) == 0 {
+		return nil, fmt.Errorf("hierarchy requires at least one level")
 	}
-	return data, nil
+	nodes := make(map[string]*hierarchyFrameNode)
+	for rowIndex, row := range rows {
+		value, ok := hierarchyNumericValue(normalizeDatumValue(row["value"]))
+		if !ok || math.IsNaN(value) || math.IsInf(value, 0) {
+			return nil, fmt.Errorf("hierarchy row %d has a nonnumeric value", rowIndex)
+		}
+		segments := make([]string, 0, len(levelAliases))
+		levelValues := make([]any, 0, len(levelAliases))
+		for _, alias := range levelAliases {
+			raw := normalizeDatumValue(row[alias])
+			if raw == nil || strings.TrimSpace(fmt.Sprint(raw)) == "" {
+				return nil, fmt.Errorf("hierarchy row %d has an empty level %q", rowIndex, alias)
+			}
+			segments = append(segments, fmt.Sprint(raw))
+			levelValues = append(levelValues, raw)
+		}
+		for level, name := range segments {
+			id := hierarchyPathID(segments[:level+1])
+			var parent any
+			if level > 0 {
+				parent = hierarchyPathID(segments[:level])
+			}
+			node, exists := nodes[id]
+			if !exists {
+				node = &hierarchyFrameNode{name: name, parent: parent, levels: append([]any(nil), levelValues[:level+1]...)}
+				nodes[id] = node
+			}
+			node.value += value
+		}
+	}
+	ids := make([]string, 0, len(nodes))
+	for id := range nodes {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	result := make([]dashboard.Datum, 0, len(ids))
+	for _, id := range ids {
+		node := nodes[id]
+		row := dashboard.Datum{"node": node.name, "parent": node.parent, "value": round(node.value)}
+		for index, alias := range levelAliases {
+			row[alias] = nil
+			if index < len(node.levels) {
+				row[alias] = node.levels[index]
+			}
+		}
+		result = append(result, row)
+	}
+	return result, nil
+}
+
+func hierarchyPathID(segments []string) string {
+	id := ""
+	for _, segment := range segments {
+		id = visualizationir.HierarchyNodeIdentity(id, segment)
+	}
+	return id
+}
+
+func hierarchyNumericValue(value any) (float64, bool) {
+	switch value := value.(type) {
+	case float64:
+		return value, true
+	case float32:
+		return float64(value), true
+	case int:
+		return float64(value), true
+	case int8:
+		return float64(value), true
+	case int16:
+		return float64(value), true
+	case int32:
+		return float64(value), true
+	case int64:
+		return float64(value), true
+	case uint:
+		return float64(value), true
+	case uint8:
+		return float64(value), true
+	case uint16:
+		return float64(value), true
+	case uint32:
+		return float64(value), true
+	case uint64:
+		return float64(value), true
+	default:
+		return 0, false
+	}
 }
 
 func (s *VisualizationDataService) singleValueData(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, visualID string, visual visualPlan, filters dashboard.Filters) ([]dashboard.Datum, error) {

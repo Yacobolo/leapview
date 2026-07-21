@@ -1,10 +1,11 @@
 import type { VisualizationEnvelope } from '../../../../../generated/visualization'
+import { defaultRendererContext, type RendererContext } from '../../host-controller'
 import { formatValue } from '../../format'
 import { geographicDataset } from './data'
 
 export type RenderedFeatureLocator = Readonly<{ layer?: { id?: string }; properties?: Record<string, unknown> | null }>
 
-export function mapTooltipEntries(envelope: VisualizationEnvelope, features: readonly RenderedFeatureLocator[]): Array<{ label: string; value: string }> {
+export function mapTooltipEntries(envelope: VisualizationEnvelope, features: readonly RenderedFeatureLocator[], context: RendererContext = defaultRendererContext): Array<{ label: string; value: string }> {
   if (envelope.spec.kind !== 'geographic') return []
   for (const feature of features) {
     const datasetID = feature.properties?.__ld_dataset, rowIndex = feature.properties?.__ld_row_index, layerID = feature.properties?.__ld_layer_id
@@ -22,14 +23,14 @@ export function mapTooltipEntries(envelope: VisualizationEnvelope, features: rea
       const field = schema?.fields.find((candidate) => candidate.id === reference.field)
       const raw = row[column]
       let value: string
-      try { value = field?.format ? formatValue('en-US', field.format, raw) : raw == null ? '—' : String(raw) } catch { value = raw == null ? '—' : String(raw) }
+      try { value = field?.format ? formatValue(context.locale, field.format, raw) : raw == null ? '—' : String(raw) } catch { value = raw == null ? '—' : String(raw) }
       return [{ label: field?.label ?? reference.field, value }]
     })
   }
   return []
 }
 
-export function mapAccessibleData(envelope: VisualizationEnvelope, limit = 100): {
+export function mapAccessibleData(envelope: VisualizationEnvelope, limit = 100, context: RendererContext = defaultRendererContext): {
   columns: Array<{ id: string; label: string }>
   rows: string[][]
   totalRows: number
@@ -62,7 +63,7 @@ export function mapAccessibleData(envelope: VisualizationEnvelope, limit = 100):
   const rows = dataset.rows.slice(0, Math.min(limit, dataset.rows.length)).map((row) => indexes.map((index, columnIndex) => {
     const raw = index >= 0 ? row[index] : null
     const field = fields[columnIndex]
-    try { return field?.format ? formatValue('en-US', field.format, raw) : raw == null ? '—' : String(raw) } catch { return raw == null ? '—' : String(raw) }
+    try { return field?.format ? formatValue(context.locale, field.format, raw) : raw == null ? '—' : String(raw) } catch { return raw == null ? '—' : String(raw) }
   }))
   return { columns, rows, totalRows: dataset.rows.length }
 }

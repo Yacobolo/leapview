@@ -57,7 +57,7 @@ Enable `breadcrumb` and `roam` when readers should navigate into dense or nested
 ```yaml visual-example=category_treemap_roam
 visuals:
   category_treemap_roam:
-    title: Navigable category treemap
+    title: Navigable category and status treemap
     type: treemap
     presentation:
       roam: true
@@ -65,10 +65,11 @@ visuals:
     query:
       dimensions:
         category: orders.category
+        status: orders.status
       measures:
         revenue: null
       sort:
         - field: value
           direction: desc
-      limit: 18
+      limit: 80
 ```

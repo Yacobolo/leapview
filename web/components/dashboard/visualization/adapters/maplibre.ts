@@ -2,7 +2,7 @@ import type { VisualizationEnvelope, VisualizationGeographicLayer, Visualization
 import { Map as MapLibre, NavigationControl, type GeoJSONSource, type Map as MapLibreMap, type MapMouseEvent, type MapOptions } from 'maplibre-gl'
 import type { FeatureCollection } from 'geojson'
 import type { OptimisticInteractionCommand } from '../../interaction-selection'
-import { Change, type RendererAdapter, type RendererHandle } from '../host-controller'
+import { Change, type RendererAdapter, type RendererContext, type RendererHandle } from '../host-controller'
 import { MapSelectionControl } from './map-selection-control'
 import { blankMapStyle, loadGeometryAsset, loadMapStyleAsset, registerPMTilesProtocol } from './maplibre/assets'
 import { applyBasemapTheme, mapThemeColors, type BasemapColors } from './maplibre/basemap'
@@ -26,7 +26,7 @@ export { spatialWindowRequest, type MapSpatialWindowRequest } from './maplibre/s
 export { coordinateReferenceGrid, fitMapToGeographicData } from './maplibre/viewport'
 
 export const adapter: RendererAdapter = {
-  async mount(container, envelope) {
+  async mount(container, envelope, context) {
     const frame = document.createElement('div'); frame.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;background:var(--ld-chart-surface,var(--ld-bg-panel,#fff))'
     setRendererFramePresented(frame, false)
     const surface = document.createElement('div'); surface.style.cssText = 'position:absolute;inset:0'
@@ -48,9 +48,9 @@ export const adapter: RendererAdapter = {
       ...pointerOptions,
     })
     await new Promise<void>((resolve) => { map.once('load', () => resolve()) })
-    const handle = new MapLibreHandle(container, frame, map, attribution)
+    const handle = new MapLibreHandle(container, frame, map, attribution, context)
     try {
-      await handle.update(envelope)
+      await handle.update(envelope, Change.All, context)
       setRendererFramePresented(frame, true)
       return handle
     } catch (error) {
@@ -106,8 +106,7 @@ class MapLibreHandle implements RendererHandle {
   private spatialRequestTimer?: number
   private disposed = false
   private readonly disposeWebGLRecovery: () => void
-  private readonly handleThemeApplied = () => this.applyTheme()
-  constructor(private readonly container: HTMLElement, private readonly frame: HTMLElement, private readonly map: MapLibreMap, private readonly attribution: HTMLElement) {
+  constructor(private readonly container: HTMLElement, private readonly frame: HTMLElement, private readonly map: MapLibreMap, private readonly attribution: HTMLElement, private context: RendererContext) {
     this.tooltip = document.createElement('div')
     this.tooltip.setAttribute('role', 'tooltip')
     this.tooltip.hidden = true
@@ -121,7 +120,6 @@ class MapLibreHandle implements RendererHandle {
     this.accessibleTable.dataset.mapDataTable = ''
     this.accessibleTable.style.cssText = 'position:absolute;z-index:3;left:10px;bottom:28px;max-width:min(520px,calc(100% - 20px));max-height:55%;overflow:auto;border:1px solid var(--ld-line-default,#d0d7de);border-radius:6px;background:color-mix(in srgb,var(--ld-bg-panel,#fff) 96%,transparent);color:var(--ld-fg-default,#1f2328);font:11px/1.35 var(--ld-font-family-ui,system-ui);box-shadow:0 1px 3px rgba(31,35,40,.12)'
     this.frame.append(this.tooltip, this.legend, this.accessibleTable)
-    document.addEventListener('libredash-theme-applied', this.handleThemeApplied)
     this.map.on('click', this.handleClick)
     this.map.on('mousemove', this.handlePointerMove)
     this.map.on('mouseout', this.handlePointerLeave)
@@ -130,8 +128,9 @@ class MapLibreHandle implements RendererHandle {
       if (this.envelope) emitMapObservation(this.frame, stage, 0, this.envelope)
     })
   }
-  update(envelope: VisualizationEnvelope, change: Change = Change.All): Promise<void> {
+  update(envelope: VisualizationEnvelope, change: Change = Change.All, context: RendererContext = this.context): Promise<void> {
     if (this.disposed) return Promise.resolve()
+    this.context = context
     const pending = this.updateQueue.then(() => this.applyUpdate(envelope, change))
     this.updateQueue = pending.catch(() => {})
     return pending
@@ -196,7 +195,6 @@ class MapLibreHandle implements RendererHandle {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
-    document.removeEventListener('libredash-theme-applied', this.handleThemeApplied)
     this.map.off('click', this.handleClick)
     this.map.off('mousemove', this.handlePointerMove)
     this.map.off('mouseout', this.handlePointerLeave)
@@ -338,7 +336,7 @@ class MapLibreHandle implements RendererHandle {
 
   private updateTooltip(event: MapMouseEvent, features: readonly RenderedFeatureLocator[]): void {
     if (!this.envelope) return
-    const entries = mapTooltipEntries(this.envelope, features)
+    const entries = mapTooltipEntries(this.envelope, features, this.context)
     if (!entries.length) { this.tooltip.hidden = true; return }
     const fragment = document.createDocumentFragment()
     for (const entry of entries) {
@@ -399,7 +397,7 @@ class MapLibreHandle implements RendererHandle {
   }
 
   private updateAccessibleFallback(envelope: VisualizationEnvelope): void {
-    const data = mapAccessibleData(envelope)
+    const data = mapAccessibleData(envelope, 100, this.context)
     const summary = document.createElement('summary')
     summary.textContent = `View map data (${data.rows.length}${data.totalRows > data.rows.length ? ` of ${data.totalRows}` : ''} rows)`
     summary.style.cssText = 'padding:6px 8px;cursor:pointer;font-weight:600;white-space:nowrap'
@@ -487,7 +485,6 @@ class MapLibreHandle implements RendererHandle {
 
   private currentBasemapColors(): BasemapColors {
     const theme = this.envelope?.spec.kind === 'geographic' ? this.envelope.spec.presentation.theme : 'auto'
-    const resolved = getComputedStyle(document.documentElement).colorScheme.includes('dark') ? 'dark' : 'light'
-    return mapThemeColors(theme, resolved)
+    return mapThemeColors(theme, this.context.theme)
   }
 }

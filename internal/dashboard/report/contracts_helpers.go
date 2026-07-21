@@ -127,7 +127,7 @@ func rendererSupportsShapeType(renderer, shape, chartType string) bool {
 	case "binned_measure":
 		return chartType == "histogram"
 	case "hierarchy":
-		return chartType == "tree" || chartType == "sunburst"
+		return chartType == "tree" || chartType == "treemap" || chartType == "sunburst"
 	}
 	return false
 }

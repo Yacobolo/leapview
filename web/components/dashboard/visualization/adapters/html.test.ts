@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 
 import type { VisualizationEnvelope } from '../../../../generated/visualization'
+import { defaultRendererContext } from '../host-controller'
 import { kpiText } from './html'
 
 test('HTML KPI values use the field formatting contract', () => {
@@ -16,4 +17,5 @@ test('HTML KPI values use the field formatting contract', () => {
   } as VisualizationEnvelope
 
   expect(kpiText(envelope)).toBe('R$1,234.50')
+  expect(kpiText(envelope, { ...defaultRendererContext, locale: 'pt-BR' })).toBe('R$\u00a01.234,50')
 })

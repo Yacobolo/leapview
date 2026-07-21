@@ -408,6 +408,36 @@ func validateVisualPresentation(name string, visual Visual) error {
 	if (presentation.InnerRadius > 0 || presentation.OuterRadius > 0 || presentation.CenterLabel != "") && visual.Type != "donut" {
 		return fmt.Errorf("visual %q donut presentation is only valid for donut", name)
 	}
+	if presentation.Rose && visual.Type != "pie" && visual.Type != "donut" {
+		return fmt.Errorf("visual %q presentation.rose is only valid for pie or donut", name)
+	}
+	if presentation.Align != "" && (visual.Type != "funnel" || !oneOf(presentation.Align, "left", "center", "right")) {
+		return fmt.Errorf("visual %q has unsupported presentation.align %q", name, presentation.Align)
+	}
+	if presentation.Sort != "" && (visual.Type != "funnel" || !oneOf(presentation.Sort, "ascending", "descending")) {
+		return fmt.Errorf("visual %q has unsupported presentation.sort %q", name, presentation.Sort)
+	}
+	if presentation.Layout != "" && (!oneOf(visual.Type, "tree", "graph") || !oneOf(presentation.Layout, "standard", "circular")) {
+		return fmt.Errorf("visual %q has unsupported presentation.layout %q", name, presentation.Layout)
+	}
+	if presentation.Focus != "" && (!oneOf(visual.Type, "graph", "sankey") || !oneOf(presentation.Focus, "none", "adjacency")) {
+		return fmt.Errorf("visual %q has unsupported presentation.focus %q", name, presentation.Focus)
+	}
+	if presentation.InitialDepth < 0 || (presentation.InitialDepth > 0 && !oneOf(visual.Type, "tree", "treemap", "sunburst")) {
+		return fmt.Errorf("visual %q has unsupported presentation.initial_depth %d", name, presentation.InitialDepth)
+	}
+	if presentation.NodeGap < 0 || (presentation.NodeGap > 0 && visual.Type != "sankey") {
+		return fmt.Errorf("visual %q has unsupported presentation.node_gap %v", name, presentation.NodeGap)
+	}
+	if presentation.Curveness < 0 || presentation.Curveness > 1 || (presentation.Curveness > 0 && !oneOf(visual.Type, "graph", "sankey")) {
+		return fmt.Errorf("visual %q has unsupported presentation.curveness %v", name, presentation.Curveness)
+	}
+	if presentation.Breadcrumb != nil && visual.Type != "treemap" {
+		return fmt.Errorf("visual %q presentation.breadcrumb is only valid for treemap", name)
+	}
+	if presentation.Roam && !oneOf(visual.Type, "tree", "treemap", "sunburst", "graph") {
+		return fmt.Errorf("visual %q presentation.roam is unsupported for type %q", name, visual.Type)
+	}
 	if (presentation.Minimum != nil || presentation.Maximum != nil || presentation.ProgressWidth > 0 || len(presentation.Thresholds) > 0) && visual.Type != "gauge" && visual.Type != "kpi" {
 		return fmt.Errorf("visual %q threshold presentation is only valid for gauge or kpi", name)
 	}

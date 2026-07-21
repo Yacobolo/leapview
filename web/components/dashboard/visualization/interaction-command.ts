@@ -48,7 +48,7 @@ export function interactionCommandForRow(
     if (!sourceField || (interaction.requiresStableIdentity && sourceField.role !== 'identity')) return undefined
     const valueIndex = fieldOrder.indexOf(mapping.source.field)
     const value = valueIndex >= 0 ? interactionSelectionValue(row[valueIndex]) : undefined
-    if (value === undefined) return undefined
+    if (value === undefined || (interaction.requiresStableIdentity && value === null)) return undefined
     const labelIndex = mapping.label ? fieldOrder.indexOf(mapping.label.field) : valueIndex
     if (mapping.label && !schema.fields.some((field) => field.id === mapping.label?.field)) return undefined
     const labelValue = labelIndex >= 0 ? interactionSelectionValue(row[labelIndex]) : undefined

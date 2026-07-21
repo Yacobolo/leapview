@@ -253,12 +253,7 @@ func supportsPointSelection(visual Visual) bool {
 	case "radar":
 		return false
 	}
-	switch visual.ShapeOrDefault() {
-	case "graph", "hierarchy":
-		return false
-	default:
-		return true
-	}
+	return true
 }
 
 type payloadKeySet map[string]struct{}
@@ -277,7 +272,14 @@ func visualPayloadKeys(visual Visual) payloadKeySet {
 	case "binned_measure":
 		return payloadKeys("label", "binStart", "binEnd", "value")
 	case "hierarchy":
-		return payloadKeys("path", "value")
+		keys := payloadKeys("node", "parent", "value")
+		for _, field := range visual.Query.Dimensions {
+			keys[defaultString(field.Alias, fieldRefAlias(field.Field))] = struct{}{}
+		}
+		if visual.Query.Time.Field != "" {
+			keys[defaultString(visual.Query.Time.Alias, fieldRefAlias(visual.Query.Time.Field))] = struct{}{}
+		}
+		return keys
 	case "single_value":
 		return payloadKeys("label", "value", "series", "selected")
 	case "matrix":

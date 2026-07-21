@@ -1,4 +1,4 @@
-# Visualization target architecture
+# Visualization architecture
 
 This document defines the architecture for LibreDash visualizations. A versioned, renderer-independent visualization intermediate representation (IR) connects compiled authoring intent to every runtime and browser surface. ECharts remains the built-in BI chart engine, TanStack owns tabular interaction, MapLibre owns geographic rendering, and a sandboxed Vega-Lite surface supports custom declarative visuals.
 
@@ -75,7 +75,7 @@ flowchart LR
   host --> adapters["ECharts, TanStack, MapLibre, HTML, or sandboxed Vega-Lite adapter"]
 ```
 
-The target has two data paths:
+The production pipeline has two data paths:
 
 - Deployment compilation produces immutable visualization specifications and query bindings.
 - Runtime execution produces bounded dataset frames compatible with those specifications.
@@ -120,17 +120,14 @@ The envelope may be patched at nested signal paths, but its logical state is com
 
 The specification is a discriminated union. Each kind has only meaningful fields. A geographic specification cannot accidentally contain a Cartesian axis; a single-value specification cannot accidentally declare a color series.
 
-Representative kinds are:
+The closed kinds are:
 
-- `cartesian` for line, area, bar, column, scatter, histogram, combo, and waterfall marks;
-- `partToWhole` for pie, donut, funnel, and treemap;
-- `heatmap` for encoded two-dimensional chart grids;
-- `distribution` for box plots and related summaries;
-- `hierarchy` for tree and sunburst;
-- `network` for graph and Sankey;
-- `geographic` for choropleth, point, heat, and density layers;
-- `financial` for OHLC and candlestick;
-- `singleValue` for KPI and gauge presentations;
+- `cartesian` for line, area, bar, column, scatter, histogram, combo, waterfall, heatmap, candlestick, and boxplot marks;
+- `proportional` for pie, donut, and funnel;
+- `hierarchy` for treemap, sunburst, tree, graph, and Sankey;
+- `polar` for radar and gauge;
+- `geographic` for choropleth, point, heat, density, reference, and path layers;
+- `kpi` for single-value summaries;
 - `table` for windowed detail rows;
 - `matrix` for row-and-column analytical comparison;
 - `pivot` for grouped, expandable multidimensional summaries;
@@ -198,7 +195,7 @@ Arrays-of-scalars are the canonical row wire format because the schema already o
 
 ### Source-row identity
 
-Renderer data carries an internal `DatumRef` containing dataset ID, data revision, and an opaque row key. The host resolves the reference against the currently mounted data state, then shared interaction code creates semantic command mappings. Inline adapters may use a row index as a private lookup optimization; it is not durable identity. Windowed adapters additionally bind lookup to reset and block identity so an event from an evicted or superseded block cannot select a different row.
+Selection state carries a `DatumRef` containing dataset ID, data revision, and compiled identity-field values. The host resolves renderer-private dataset and row locators against the currently mounted data state, then shared interaction code creates semantic command mappings. A row index is only a private lookup optimization; it is never durable identity. Windowed adapters additionally bind lookup to reset and block identity so an event from an evicted or superseded block cannot select a different row.
 
 Generated nodes, totals, stack helpers, layout artifacts, cluster centroids, and synthetic annotations do not receive a `DatumRef` unless the compiler explicitly defines how they map to source rows. This prevents graph nodes, Sankey nodes, aggregated map clusters, or renderer helper series from inventing filter identity.
 
@@ -235,7 +232,7 @@ All data is published beneath the `visuals` signal root. Window requests identif
 
 ## TypeSpec and code generation
 
-TypeSpec is the source of truth for the cross-language visualization contract. The existing `DashboardVisual` discriminator and its chart, KPI, table, matrix, and pivot subtypes establish the shared surface. The target evolves that foundation into a shared visualization contract package rather than hand-maintaining parallel Go and TypeScript interfaces or accumulating optional fields on the base model.
+TypeSpec is the source of truth for the cross-language visualization contract. `api/visualization` defines the shared closed unions used by signals, APIs, Go, and TypeScript instead of hand-maintaining parallel models or accumulating optional fields on a permissive base type.
 
 ```mermaid
 flowchart LR
@@ -250,7 +247,7 @@ flowchart LR
   ts --> browser["Lit host and adapters"]
 ```
 
-The target contract lives under `api/visualization/` and is referenced by `api/signals`. APIGen gains first-class shared-contract imports so UI signal generation can reference the generated visualization package instead of duplicating models or relying on post-processing substitutions.
+The contract lives under `api/visualization/` and is referenced by `api/signals`. APIGen shared-contract imports let signal generation reference the generated visualization package without duplicating models.
 
 Generated outputs are:
 
@@ -260,7 +257,7 @@ Generated outputs are:
 - a JSON Schema or equivalent structural contract for fixtures and external tooling;
 - cross-language conformance fixtures for representative and boundary values.
 
-Hand-written code owns builders, semantic validation, canonicalization, migrations, formatting behavior, datum resolution, and renderer adaptation. Generated files contain data structures and serialization contracts only.
+Hand-written code owns builders, semantic validation, canonicalization, formatting behavior, datum resolution, and renderer adaptation. Generated files contain data structures and serialization contracts only.
 
 The existing `api/signals` target remains the authority for pagestream signal roots and commands. It imports or references the shared visualization models. Generated artifacts are never edited directly.
 
@@ -274,21 +271,16 @@ internal/visualization/compile/     semantic model and dashboard -> immutable sp
 internal/visualization/data/        query result -> validated inline or windowed state
 internal/visualization/format/      format contract and Go implementation
 internal/visualization/interaction/ datum resolution and semantic commands
-internal/visualization/migrate/     supported IR migrations
 ```
 
 Target browser packages:
 
 ```text
 web/generated/visualization/                    generated TypeScript contract
-web/components/visualization/host.ts            product lifecycle and actions
-web/components/visualization/format.ts          browser format implementation
-web/components/visualization/registry.ts        renderer capability registry
-web/components/visualization/renderers/echarts/
-web/components/visualization/renderers/tanstack/
-web/components/visualization/renderers/html/
-web/components/visualization/renderers/maplibre/
-web/components/visualization/renderers/vega-lite/
+web/components/dashboard/visualization/host.ts       product lifecycle and actions
+web/components/dashboard/visualization/format.ts     browser format implementation
+web/components/dashboard/visualization/registry.ts   renderer capability registry
+web/components/dashboard/visualization/adapters/     built-in renderer adapters
 ```
 
 Dashboard runtime packages may depend on visualization compilation and frame interfaces. Visualization packages do not depend on HTTP, Datastar, Lit, ECharts, MapLibre, or Vega-Lite.
@@ -350,8 +342,8 @@ The adapter:
 - Uses stable series IDs and explicit replacement scopes.
 - Preserves zoom, legend, brush, and selection state across compatible data updates.
 - Coalesces resize and avoids unconditional remounts or full option replacement.
-- Selects SVG or canvas from declared visual kind, cardinality, export mode, and browser capability.
-- Disables nonessential dashboard animation and honors reduced motion.
+- Uses canvas consistently so compatible updates never remount merely because cardinality changed.
+- Disables dashboard animation and honors reduced motion.
 - Loads rare chart modules in separate chunks where that materially reduces initial dashboard code.
 
 ### TanStack and HTML
@@ -463,17 +455,9 @@ The [visual catalog](/docs/visuals/overview) exercises production lazy loading, 
 
 ## Versioning and compatibility
 
-The IR uses explicit integer schema versions. Changes follow these rules:
+The product is pre-release and supports exactly one current visualization schema and one current compiled-workspace artifact version. The version fields remain explicit compatibility guards, not a promise to operate several schemas concurrently.
 
-- Additive optional fields may remain within a version when defaults are unambiguous.
-- Changed meaning, removed fields, new required invariants, or different scalar encoding requires a new version.
-- Serving artifacts record the IR version they contain.
-- Migrations are pure, deterministic, tested functions between adjacent supported versions.
-- Compiler output always targets the current version.
-- The browser fails closed on unsupported versions rather than interpreting them approximately.
-- Renderer registrations declare supported versions.
-
-The server and browser ship together, but explicit versioning still protects cached documents, rolling process replacement, persisted serving artifacts, screenshots, test fixtures, and future embedded clients.
+When a breaking contract change is required, TypeSpec, generated models, compiler output, serving artifacts, browser validators, fixtures, examples, and first-party dashboards move atomically. Older artifacts are rejected with a redeployment-required error. LibreDash does not carry adjacent-version migrations, dual readers, or legacy renderer adapters.
 
 ## Observability
 
@@ -481,41 +465,20 @@ Tracing records visual ID, kind, specification revision, data revision, renderer
 
 Browser measurements use the existing tracing/telemetry boundary and avoid raw result values. Metrics distinguish initial mount, compatible data update, full specification replacement, resize, snapshot, and disposal. Development tooling can inspect validated IR and adapter output separately.
 
-## Migration from the unified visual surface
+## Implementation status
 
-The first foundation slice is complete: charts, KPIs, tables, matrices, and pivots share the `visuals` definition namespace, `kind: visual` page references, a discriminated `DashboardVisual` signal, one interaction source kind, one visual query surface, and one visual-window command. The target preserves that product model and replaces the permissive payload internals.
+The envelope cutover is complete. Charts, KPIs, tables, matrices, pivots, maps, and custom visuals share the generated contract, immutable compiled definitions, revisioned `visuals` signal, common host lifecycle, interaction command path, and public query surface. Production code no longer emits legacy shape payloads, generic renderer options, table-specific visual signals, or renderer inference.
 
-The first IR slice is also complete: `api/visualization` generates the standalone contract package, shared fixtures cover Cartesian/inline and table/windowed envelopes, and the Go compatibility boundary computes canonical specification revisions and rejects incompatible data revisions. It does not change production rendering.
+The ECharts migration is complete. Type-specific translators consume Cartesian, proportional, hierarchy, network, and polar IR; real hierarchy frames are validated before rendering; formatting and theme values come from the shared renderer context; initial readiness waits for the first completed canvas frame; and stable dataset and series IDs enable scoped data, selection, status, and context updates without unconditional full option replacement.
 
-The remaining migration proceeds by vertical slices with red-green-refactor discipline:
+The remaining renderer-specific work is ongoing product hardening rather than architecture migration: broader visual-regression baselines, performance budgets, accessibility audits, and stabilization of the explicitly experimental Vega-Lite sandbox.
 
-1. Compile one representative Cartesian visual and one table visual into IR specifications, then prove semantic metadata, deterministic hashing, inline-frame validation, and windowed-state validation.
-2. Add IR-to-ECharts and IR-to-TanStack adapters beside the legacy projection adapters and run both against shared fixtures.
-3. Switch the visual host to the revisioned envelope and incremental renderer lifecycle.
-4. Migrate all built-in kinds, including matrix and pivot, adding contract, data-state, adapter, interaction, accessibility, and visual-regression tests for each slice.
-5. Replace geographic ECharts maps and placeholder boundaries with the MapLibre renderer and verified geometry assets.
-6. Add the sandboxed custom Vega-Lite kind.
-7. Migrate shared KPI, chart, table, matrix, pivot, and export formatting primitives.
-8. Stop producing legacy payloads, reject new `renderer_options`, migrate supported product behavior into typed IR, and remove the legacy adapters.
+## Production guarantees
 
-During dual operation, a test-only canonical comparison tool reports semantic differences between legacy and IR payloads. There is one production renderer path per visual at any time; the browser does not render both paths and choose whichever succeeds.
-
-## Acceptance criteria
-
-The target architecture is complete when:
-
-- TypeSpec generates the canonical Go and TypeScript visualization models and contract artifacts.
-- Charts, KPIs, tables, matrices, and pivots retain one visual definition, component, signal, command, status, interaction, agent, and headless API identity.
-- The workspace compiler emits deterministic, versioned specifications for every supported built-in visual kind.
-- Inline frames and windowed data states validate against declared schemas and preserve null, scalar type, ordering, completeness, cardinality, stale-response identity, and source identity.
-- ECharts consumes IR without reading legacy shape rows or generic renderer options.
-- TanStack consumes typed tabular IR and window state without depending on a separate table signal or public TanStack state.
-- Geographic visuals use verified geometry through MapLibre and report unmatched identifiers.
-- Custom Vega-Lite visuals execute only through the sandboxed contract.
-- Go and TypeScript pass the same formatting conformance suite.
-- Point, row, and interval interactions resolve only through valid `DatumRef` source rows.
-- Browser rendering rejects stale frames and unsupported versions deterministically.
-- Accessible fallback data and reduced-motion behavior are available for every visual kind.
-- Performance tests prove linear frame/adapter shaping and bounded mount, update, resize, and disposal behavior.
-- Visual regression covers every built-in kind in light, dark, compact, empty, partial, error, selected, and representative high-cardinality states.
-- The legacy generic chart fields, optional-field table projection, browser type inference, placeholder map geometry, and arbitrary `renderer_options` path are removed.
+- TypeSpec generates the canonical Go, TypeScript, and JSON Schema visualization contracts.
+- The workspace compiler emits deterministic specifications and rejects unsupported presentation or interaction capabilities.
+- Inline, windowed, and spatial-windowed data validate against declared schemas, budgets, revisions, and source identities.
+- ECharts, TanStack, HTML, MapLibre, and sandboxed Vega-Lite consume the same envelope through one host lifecycle.
+- Go and TypeScript use the shared formatting contract and conformance fixtures.
+- Browser rendering rejects stale frames, malformed data, and unsupported versions deterministically.
+- Arbitrary renderer options, browser type inference, placeholder geography, and legacy projection adapters are absent from the production path.
