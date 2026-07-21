@@ -23,7 +23,7 @@ import (
 
 var markdownRenderer = goldmark.New(
 	goldmark.WithExtensions(extension.GFM),
-	goldmark.WithParserOptions(parser.WithAttribute()),
+	goldmark.WithParserOptions(parser.WithAttribute(), parser.WithAutoHeadingID()),
 	goldmark.WithRendererOptions(renderer.WithNodeRenderers(util.Prioritized(semanticTableCellRenderer{}, 100))),
 )
 
@@ -39,12 +39,14 @@ type siteDocument struct {
 	groupID            string
 	source             string
 	navigationTitle    string
+	documentType       string
 	generated          bool
 }
 
 type siteCatalogDocument struct {
 	Slug            string `json:"slug"`
 	Title           string `json:"title"`
+	Type            string `json:"type"`
 	NavigationTitle string `json:"navigationTitle"`
 	Summary         string `json:"summary"`
 	Source          string `json:"source"`
@@ -157,6 +159,7 @@ func (loaded *loadedDocumentation) add(section siteCatalogSection, group siteCat
 		groupID:            group.ID,
 		source:             document.Source,
 		navigationTitle:    document.NavigationTitle,
+		documentType:       document.Type,
 		generated:          document.Generated,
 	}
 	loaded.documents = append(loaded.documents, entry)
