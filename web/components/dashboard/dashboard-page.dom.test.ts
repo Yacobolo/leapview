@@ -376,7 +376,7 @@ for (const viewport of [
   })
 }
 
-test('embed presentation keeps the responsive dashboard surface and removes standalone chrome', async () => {
+test('embed presentation keeps page navigation and removes non-navigation chrome', async () => {
   const page = await browser.newPage({ viewport: { width: 760, height: 620 } })
   try {
     await page.goto(baseURL)
@@ -400,7 +400,7 @@ test('embed presentation keeps the responsive dashboard surface and removes stan
       }
     })
     expect(state.reflected).toBe('embed')
-    expect(state.sidebarVisible).toBe(false)
+    expect(state.sidebarVisible).toBe(true)
     expect(state.headerVisible).toBe(false)
     expect(state.footerVisible).toBe(false)
     expect(state.canvasWidth).toBeGreaterThan(500)

@@ -90,11 +90,6 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
       background: var(--lv-bg-app);
     }
 
-		:host([presentation='embed']) .route {
-			grid-template-columns: minmax(0, 1fr);
-		}
-
-		:host([presentation='embed']) lv-sub-sidebar,
 		:host([presentation='embed']) .header,
 		:host([presentation='embed']) lv-report-footer {
 			display: none;
