@@ -15,18 +15,45 @@ export class VisualizationHost extends LitElement {
   @query('.renderer') private rendererContainer?: HTMLDivElement
   @state() private error = ''
   @state() private applying = false
+  @state() private presented = false
   private controller?: VisualizationController
   private resizeObserver?: ResizeObserver
   private applyGeneration = 0
   private connectionGeneration = 0
+  private presentedRendererID = ''
   private focusMirror?: VisualizationHost
 
   static styles = [visualActionStyles, css`
     :host, .surface { display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; }
-    :host { color: var(--ld-fg-default); font-family: var(--fontStack-system); }
+    :host { color: var(--ld-fg-default); background: var(--ld-chart-surface); font-family: var(--fontStack-system); }
     .surface { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--ld-chart-surface); }
     .surface.headerless { grid-template-rows: minmax(0, 1fr); }
-    .renderer { display: block; width: 100%; min-width: 0; min-height: 0; overflow: hidden; }
+    .renderer-stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: var(--ld-chart-surface); }
+    .renderer { display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
+    .initial-loading {
+      position: absolute;
+      inset: 0;
+      z-index: var(--zIndex-sticky);
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      gap: var(--base-size-8);
+      background: var(--ld-chart-surface);
+      color: var(--ld-fg-muted);
+      font-size: var(--ld-font-size-body-sm);
+      font-weight: var(--ld-font-weight-medium);
+    }
+    .loading-spinner {
+      width: var(--base-size-20);
+      height: var(--base-size-20);
+      box-sizing: border-box;
+      border: var(--base-size-2) solid var(--ld-line-muted);
+      border-top-color: var(--ld-fg-link);
+      border-radius: var(--ld-radius-full);
+      animation: visualization-loading-spin var(--ld-duration-slow) linear infinite;
+    }
+    @keyframes visualization-loading-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .loading-spinner { animation: none; } }
     .toolbar {
       position: relative;
       z-index: var(--zIndex-sticky);
@@ -105,6 +132,8 @@ export class VisualizationHost extends LitElement {
       this.resizeObserver = undefined
       this.controller?.dispose()
       this.controller = undefined
+      this.presented = false
+      this.presentedRendererID = ''
     })
   }
 
@@ -119,6 +148,8 @@ export class VisualizationHost extends LitElement {
     const statusError = this.envelope?.status.kind === 'error' ? this.envelope.status.message ?? 'Visualization error' : ''
     const error = this.error || statusError
     const header = this.sharedHeader()
+    const showInitialLoading = !this.presented && !error
+    const loadingLabel = `Loading ${header ?? 'visualization'}…`
     return html`<div class=${header ? 'surface' : 'surface headerless'}>
       ${header ? html`
         <header class="toolbar">
@@ -128,7 +159,13 @@ export class VisualizationHost extends LitElement {
           </div>
         </header>
       ` : null}
-      <div class="renderer" role="group" aria-label=${this.envelope?.spec.accessibility.title ?? 'Visualization'} aria-describedby="visualization-fallback" aria-busy=${String(this.applying)} @ld-map-observation=${this.forwardAdapterObservation}></div>
+      <div class="renderer-stage" aria-busy=${String(this.applying)}>
+        <div class="renderer" role="group" aria-label=${this.envelope?.spec.accessibility.title ?? 'Visualization'} aria-describedby="visualization-fallback" aria-busy=${String(this.applying)} aria-hidden=${String(!this.presented)} ?inert=${!this.presented} @ld-map-observation=${this.forwardAdapterObservation}></div>
+        ${showInitialLoading ? html`<div class="initial-loading" data-visualization-loading role="status" aria-live="polite">
+          <span class="loading-spinner" aria-hidden="true"></span>
+          <span>${loadingLabel}</span>
+        </div>` : null}
+      </div>
       <div id="visualization-fallback" class="fallback">${this.accessibleFallback()}</div>
       ${error ? html`<div class="error" role="alert">${error}</div>` : null}
     </div>`
@@ -136,11 +173,18 @@ export class VisualizationHost extends LitElement {
 
   private async applyEnvelope(): Promise<void> {
     if (!this.envelope || !this.controller) return
+    if (this.presentedRendererID !== this.envelope.rendererID) {
+      this.presentedRendererID = this.envelope.rendererID
+      this.presented = false
+    }
     const generation = ++this.applyGeneration
     this.applying = true
     try {
       await this.controller.apply(this.envelope)
-      if (generation === this.applyGeneration) this.error = ''
+      if (generation === this.applyGeneration) {
+        this.error = ''
+        this.presented = true
+      }
     } catch (error) {
       if (generation === this.applyGeneration) this.error = error instanceof Error ? error.message : String(error)
     } finally {

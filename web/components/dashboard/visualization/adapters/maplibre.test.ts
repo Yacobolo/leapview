@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 
 import type { VisualizationEnvelope, VisualizationGeographicLayer } from '../../../../generated/visualization'
 import type { FeatureCollection } from 'geojson'
-import { applyFeatureScales, basemapBoundaryLayer, basemapLayer, clusterExpansionForRenderedFeatures, concreteCSSColor, coordinateGeometry, coordinateReferenceGrid, fitMapToGeographicData, installWebGLRecovery, interactionCommandForRenderedFeatures, joinGeometry, loadMapStyleAsset, mapAccessibleData, mapInteractionCommand, mapLayer, mapOutlineLayer, mapPointerOptions, mapThemeColors, mapTooltipEntries, normalizeFeatureWeights, pathGeometry, removeRendererFrame, sameOriginGeometryURL, spatialWindowRequest, updateSelectionSources, verifyGeometryDigest, waitForMapRender } from './maplibre'
+import { applyFeatureScales, basemapBoundaryLayer, basemapLayer, clusterExpansionForRenderedFeatures, concreteCSSColor, coordinateGeometry, coordinateReferenceGrid, fitMapToGeographicData, installWebGLRecovery, interactionCommandForRenderedFeatures, joinGeometry, loadMapStyleAsset, mapAccessibleData, mapInteractionCommand, mapLayer, mapOutlineLayer, mapPointerOptions, mapThemeColors, mapTooltipEntries, normalizeFeatureWeights, pathGeometry, removeRendererFrame, sameOriginGeometryURL, setRendererFramePresented, spatialWindowRequest, updateSelectionSources, verifyGeometryDigest, waitForMapRender } from './maplibre'
 import { adapterObservation } from '../telemetry'
 
 test('MapLibre geometry assets are same-origin and content addressed', async () => {
@@ -76,6 +76,23 @@ test('MapLibre becomes renderer-ready after a rendered frame without waiting for
 
   expect(listeners.get('idle')?.size).toBe(0)
   expect(listeners.get('render')?.size).toBe(0)
+})
+
+test('MapLibre keeps its frame hidden and inaccessible until the final fitted frame is presented', () => {
+  const attributes = new Map<string, string>()
+  const frame = {
+    style: { visibility: '' },
+    setAttribute: (name: string, value: string) => attributes.set(name, value),
+    removeAttribute: (name: string) => attributes.delete(name),
+  }
+
+  setRendererFramePresented(frame, false)
+  expect(frame.style.visibility).toBe('hidden')
+  expect(attributes.get('aria-hidden')).toBe('true')
+
+  setRendererFramePresented(frame, true)
+  expect(frame.style.visibility).toBe('visible')
+  expect(attributes.has('aria-hidden')).toBe(false)
 })
 
 test('MapLibre observations enter the shared visualization telemetry contract', () => {

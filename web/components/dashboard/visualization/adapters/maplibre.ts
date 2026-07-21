@@ -28,6 +28,7 @@ export { coordinateReferenceGrid, fitMapToGeographicData } from './maplibre/view
 export const adapter: RendererAdapter = {
   async mount(container, envelope) {
     const frame = document.createElement('div'); frame.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;background:var(--ld-chart-surface,var(--ld-bg-panel,#fff))'
+    setRendererFramePresented(frame, false)
     const surface = document.createElement('div'); surface.style.cssText = 'position:absolute;inset:0'
     const attribution = document.createElement('div'); attribution.dataset.mapAttribution = ''; attribution.setAttribute('role', 'note'); attribution.setAttribute('aria-label', 'Map attribution')
     attribution.style.cssText = 'position:absolute;right:6px;bottom:6px;z-index:1;max-width:calc(100% - 12px);padding:2px 5px;border-radius:4px;background:color-mix(in srgb,var(--ld-bg-panel,#fff) 88%,transparent);color:var(--ld-fg-muted,#57606a);font:10px/1.3 var(--ld-font-family-ui,system-ui);pointer-events:none;text-align:right'
@@ -50,12 +51,21 @@ export const adapter: RendererAdapter = {
     const handle = new MapLibreHandle(container, frame, map, attribution)
     try {
       await handle.update(envelope)
+      setRendererFramePresented(frame, true)
       return handle
     } catch (error) {
       handle.dispose()
       throw error
     }
   },
+}
+
+type RendererFramePresentationTarget = Pick<HTMLElement, 'style' | 'setAttribute' | 'removeAttribute'>
+
+export function setRendererFramePresented(frame: RendererFramePresentationTarget, presented: boolean): void {
+  frame.style.visibility = presented ? 'visible' : 'hidden'
+  if (presented) frame.removeAttribute('aria-hidden')
+  else frame.setAttribute('aria-hidden', 'true')
 }
 
 export function mapPointerOptions(envelope: VisualizationEnvelope): Pick<MapOptions, 'interactive' | 'scrollZoom' | 'boxZoom' | 'dragRotate' | 'dragPan' | 'keyboard' | 'doubleClickZoom' | 'touchZoomRotate' | 'touchPitch'> {
