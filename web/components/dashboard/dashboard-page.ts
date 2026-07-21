@@ -220,6 +220,8 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
 		.agent-toggle {
 			display: inline-flex;
 			width: auto;
+			align-items: center;
+			justify-content: center;
 			gap: var(--base-size-6);
 			border-color: var(--lv-line-muted);
 			background: var(--lv-bg-control, var(--lv-bg-panel-muted));

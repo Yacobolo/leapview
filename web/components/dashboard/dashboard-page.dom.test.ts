@@ -680,6 +680,9 @@ test('dashboard agent drawer carries page context and explicit visual references
       const toolbarAction = drawerRoot.querySelector('.toolbar-actions button') as HTMLElement
       const thread = drawerRoot.querySelector('lv-chat-thread') as any
       const composer = drawerRoot.querySelector('lv-chat-composer') as any
+      const toggle = root.querySelector('.agent-toggle') as HTMLButtonElement
+      const toggleRect = toggle.getBoundingClientRect()
+      const toggleIconRect = toggle.querySelector('svg')!.getBoundingClientRect()
       return {
         open: drawer.open,
         drawerWidth: Math.round(drawer.getBoundingClientRect().width),
@@ -695,6 +698,7 @@ test('dashboard agent drawer carries page context and explicit visual references
         composerDockBorder: getComputedStyle(composer).borderTopStyle,
         composerShadow: getComputedStyle(composer.shadowRoot.querySelector('.composer-surface')).boxShadow,
         composerHeight: Math.round(composer.shadowRoot.querySelector('.composer-surface').getBoundingClientRect().height),
+        toggleIconCenterOffset: Math.abs((toggleRect.left + toggleRect.width / 2) - (toggleIconRect.left + toggleIconRect.width / 2)),
       }
     })
     expect(opened).toMatchObject({
@@ -708,6 +712,7 @@ test('dashboard agent drawer carries page context and explicit visual references
       contextSharesSurface: true,
       toolbarActionBorder: 'none',
       threadSharesSurface: true,
+      toggleIconCenterOffset: 0,
       composerDockBorder: 'none',
       composerShadow: 'none',
     })
