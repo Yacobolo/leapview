@@ -28,6 +28,7 @@ COPY scripts ./scripts
 COPY static ./static
 COPY web ./web
 COPY --from=sourcegen /src/api/gen ./api/gen
+COPY --from=sourcegen /src/api/visualization ./api/visualization
 COPY --from=sourcegen /src/web/generated ./web/generated
 
 RUN bun install --frozen-lockfile --no-cache

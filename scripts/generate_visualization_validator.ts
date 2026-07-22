@@ -9,7 +9,10 @@ const contractPath = 'api/visualization/main.tsp'
 const outputPath = 'web/generated/visualization/validate.ts'
 const versionOutputPath = 'web/generated/visualization/schema-version.ts'
 const goVersionOutputPath = 'internal/visualization/ir/schema_version.gen.go'
-await mkdir(dirname(outputPath), { recursive: true })
+await Promise.all([
+  mkdir(dirname(outputPath), { recursive: true }),
+  mkdir(dirname(goVersionOutputPath), { recursive: true }),
+])
 const document = await Bun.file(schemaPath).json()
 const contract = await Bun.file(contractPath).text()
 const envelope = contract.match(/model\s+VisualizationEnvelope\s*\{[\s\S]*?`schemaVersion`:\s*(\d+);/)
