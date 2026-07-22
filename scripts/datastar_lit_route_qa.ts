@@ -157,11 +157,15 @@ async function verifySpatialMapWindowing(): Promise<void> {
       const dashboard = document.querySelector('lv-dashboard-page') as HTMLElement & { shadowRoot: ShadowRoot }
       const host = dashboard?.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & { envelope?: any }
       const envelope = host?.envelope
+      const zoom = host?.shadowRoot?.querySelector('button.maplibregl-ctrl-zoom-in') as HTMLButtonElement | null
+      const zoomStyle = zoom ? getComputedStyle(zoom) : undefined
       return envelope?.dataState?.kind === 'spatial_windowed'
         && envelope.dataState.window?.rows?.length > 0
         && envelope.dataRevision >= 2
         && envelope.status?.kind !== 'loading'
         && !envelope.status?.message
+        && Number.parseFloat(zoomStyle?.width ?? '0') === 30
+        && Number.parseFloat(zoomStyle?.height ?? '0') === 30
     }, undefined, { timeout: 120_000 })
     const readyDurationMs = performance.now() - readyStarted
     const readyBudgetMs = 10_000
