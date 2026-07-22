@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/Yacobolo/leapview/internal/analytics/arrowresult"
 	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
 	"github.com/Yacobolo/leapview/internal/dataquery"
 )
@@ -26,6 +27,78 @@ type queryResultCache struct {
 	maxBytes     int64
 	currentBytes int64
 	generation   uint64
+}
+
+type arrowQueryExecution struct {
+	data     *arrowresult.Result
+	metadata resultcache.Metadata
+	summary  dataquery.Result
+}
+
+func (c *queryResultCache) executeArrow(ctx context.Context, request dataquery.Query, execute func() (arrowQueryExecution, error)) (dataquery.Result, error) {
+	key, generation, err := c.cacheKey(request)
+	if err != nil {
+		return dataquery.Result{}, err
+	}
+	if cached, ok, err := c.getArrow(ctx, request, key); err != nil || ok {
+		return cached, err
+	}
+	value, shared, err := c.scope.Coalesce(ctx, fmt.Sprintf("arrow-query:%d:%s", generation, key), func() (any, error) {
+		if cached, ok, lookupErr := c.getArrow(ctx, request, key); lookupErr != nil || ok {
+			return cached, lookupErr
+		}
+		execution, executeErr := execute()
+		if execution.data != nil {
+			defer execution.data.Release()
+		}
+		if ownerErr := ctx.Err(); ownerErr != nil {
+			return dataquery.Result{}, canceledQueryCacheFlightError{err: ownerErr}
+		}
+		if executeErr != nil {
+			return execution.summary, executeErr
+		}
+		lease, acquireErr := execution.data.Acquire()
+		if acquireErr != nil {
+			return dataquery.Result{}, acquireErr
+		}
+		result, decodeErr := decodeArrowQueryResult(request, lease, execution.metadata, execution.summary)
+		lease.Release()
+		if decodeErr != nil {
+			return dataquery.Result{}, decodeErr
+		}
+		result.CacheOutcome = dataquery.CacheMiss
+		c.scope.StoreArrow(key, resultcache.Token(generation), execution.data, execution.metadata)
+		c.syncStats()
+		return result, nil
+	})
+	if err != nil {
+		return dataquery.Result{}, err
+	}
+	result := cloneDataQueryResult(value.(dataquery.Result))
+	if shared && result.CacheOutcome == dataquery.CacheMiss {
+		result.CacheOutcome = dataquery.CacheCoalesced
+	}
+	return result, nil
+}
+
+func (c *queryResultCache) getArrow(ctx context.Context, request dataquery.Query, key string) (dataquery.Result, bool, error) {
+	entry, _, ok, err := c.scope.LookupArrow(key)
+	if err != nil || !ok {
+		return dataquery.Result{}, false, err
+	}
+	defer entry.Release()
+	if budget, found := dataquery.ResultBudgetFromContext(ctx); found {
+		if err := budget.ConsumeSize(int(entry.Data().Rows()), entry.Data().Bytes()); err != nil {
+			return dataquery.Result{}, false, err
+		}
+	}
+	result, err := decodeArrowQueryResult(request, entry.Data(), entry.Metadata(), dataquery.Result{CacheOutcome: dataquery.CacheHit})
+	if err != nil {
+		return dataquery.Result{}, false, err
+	}
+	result.CacheOutcome = dataquery.CacheHit
+	c.syncStats()
+	return result, true, nil
 }
 
 func newQueryResultCache(capacity int, namespace string) *queryResultCache {
@@ -55,39 +128,6 @@ func newQueryResultCacheWithScope(scope *resultcache.Scope, namespace string) *q
 	return &queryResultCache{namespace: namespace, scope: scope}
 }
 
-func (c *queryResultCache) execute(ctx context.Context, request dataquery.Query, execute func() (dataquery.Result, error)) (dataquery.Result, error) {
-	key, generation, err := c.cacheKey(request)
-	if err != nil {
-		return dataquery.Result{}, err
-	}
-	if cached, ok := c.get(key); ok {
-		return cached, nil
-	}
-	value, shared, err := c.scope.Coalesce(ctx, fmt.Sprintf("query:%d:%s", generation, key), func() (any, error) {
-		if cached, ok := c.get(key); ok {
-			return cached, nil
-		}
-		result, executeErr := execute()
-		if ownerErr := ctx.Err(); ownerErr != nil {
-			return dataquery.Result{}, canceledQueryCacheFlightError{err: ownerErr}
-		}
-		if executeErr != nil {
-			return result, executeErr
-		}
-		result.CacheOutcome = dataquery.CacheMiss
-		c.put(key, generation, result)
-		return resultcache.CloneResult(result), nil
-	})
-	if err != nil {
-		return dataquery.Result{}, err
-	}
-	result := resultcache.CloneResult(value.(dataquery.Result))
-	if shared {
-		result.CacheOutcome = dataquery.CacheCoalesced
-	}
-	return result, nil
-}
-
 func (c *queryResultCache) coalesce(ctx context.Context, key string, execute func() (any, error)) (any, bool, error) {
 	return c.scope.Coalesce(ctx, "bundle:"+key, func() (any, error) {
 		result, err := execute()
@@ -98,27 +138,13 @@ func (c *queryResultCache) coalesce(ctx context.Context, key string, execute fun
 	})
 }
 
-func (c *queryResultCache) lookup(request dataquery.Query) (dataquery.Result, string, uint64, bool, error) {
+func (c *queryResultCache) lookupArrow(ctx context.Context, request dataquery.Query) (dataquery.Result, string, uint64, bool, error) {
 	key, generation, err := c.cacheKey(request)
 	if err != nil {
 		return dataquery.Result{}, "", 0, false, err
 	}
-	result, ok := c.get(key)
-	return result, key, generation, ok, nil
-}
-
-func (c *queryResultCache) store(key string, generation uint64, result dataquery.Result) {
-	result.CacheOutcome = dataquery.CacheMiss
-	c.put(key, generation, result)
-}
-
-func (c *queryResultCache) remove(request dataquery.Query) {
-	key, _, err := c.cacheKey(request)
-	if err != nil {
-		return
-	}
-	c.scope.Delete(key)
-	c.syncStats()
+	result, hit, err := c.getArrow(ctx, request, key)
+	return result, key, generation, hit, err
 }
 
 func (c *queryResultCache) cacheKey(request dataquery.Query) (string, uint64, error) {
@@ -159,20 +185,6 @@ type queryResultCacheKey struct {
 	IncludeTotal        bool
 }
 
-func (c *queryResultCache) get(key string) (dataquery.Result, bool) {
-	result, _, ok, err := c.scope.Lookup(key)
-	if err != nil {
-		return dataquery.Result{}, false
-	}
-	c.syncStats()
-	return result, ok
-}
-
-func (c *queryResultCache) put(key string, generation uint64, result dataquery.Result) {
-	c.scope.Store(key, resultcache.Token(generation), result)
-	c.syncStats()
-}
-
 func (c *queryResultCache) clear() {
 	c.scope.Invalidate()
 	c.mu.Lock()
@@ -195,9 +207,37 @@ func (c *queryResultCache) syncStats() {
 	c.mu.Unlock()
 }
 
-func estimateDataQueryResultBytes(result dataquery.Result) int64 {
-	return resultcache.EstimateResultBytes(result)
-}
 func cloneDataQueryResult(result dataquery.Result) dataquery.Result {
-	return resultcache.CloneResult(result)
+	clone := result
+	clone.Columns = append([]dataquery.Column{}, result.Columns...)
+	clone.Rows = make([]dataquery.Row, len(result.Rows))
+	for index, row := range result.Rows {
+		clone.Rows[index] = make(dataquery.Row, len(row))
+		for key, value := range row {
+			clone.Rows[index][key] = cloneDataQueryValue(value)
+		}
+	}
+	clone.Warnings = append([]string{}, result.Warnings...)
+	return clone
+}
+
+func cloneDataQueryValue(value any) any {
+	switch value := value.(type) {
+	case []byte:
+		return append([]byte{}, value...)
+	case []any:
+		clone := make([]any, len(value))
+		for index := range value {
+			clone[index] = cloneDataQueryValue(value[index])
+		}
+		return clone
+	case map[string]any:
+		clone := make(map[string]any, len(value))
+		for key, item := range value {
+			clone[key] = cloneDataQueryValue(item)
+		}
+		return clone
+	default:
+		return value
+	}
 }

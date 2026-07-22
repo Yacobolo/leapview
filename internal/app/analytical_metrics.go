@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/Yacobolo/leapview/internal/analytics/arrowresult"
 	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
 	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
 	"github.com/prometheus/client_golang/prometheus"
@@ -11,6 +12,7 @@ type analyticalCollector struct {
 	cache                                                 *resultcache.Pool
 	connectionsOpen, connectionsActive, connectionsIdle   *prometheus.Desc
 	cacheEntries, cacheBytes, cacheEvictions, cacheStores *prometheus.Desc
+	arrowResults, arrowLeases, arrowBytes                 *prometheus.Desc
 	connectionAcquisitions, extensionInitializations      *prometheus.Desc
 	sourceAcquisitions, scopeContention, commitRetries    *prometheus.Desc
 	refreshCleanup, fatalHealth                           *prometheus.Desc
@@ -24,7 +26,10 @@ func newAnalyticalCollector(database *analyticsducklake.Environment, cache *resu
 		connectionsActive:        prometheus.NewDesc("leapview_duckdb_connections_active", "Connections currently in use in the process-owned DuckDB instance.", nil, nil),
 		connectionsIdle:          prometheus.NewDesc("leapview_duckdb_connections_idle", "Idle connections in the process-owned DuckDB instance.", nil, nil),
 		cacheEntries:             prometheus.NewDesc("leapview_query_cache_entries", "Retained governed query-result entries.", nil, nil),
-		cacheBytes:               prometheus.NewDesc("leapview_query_cache_bytes", "Estimated retained governed query-result bytes.", nil, nil),
+		cacheBytes:               prometheus.NewDesc("leapview_query_cache_bytes", "Conservatively retained Arrow query-result bytes.", nil, nil),
+		arrowResults:             prometheus.NewDesc("leapview_arrow_results", "Live owned Arrow analytical results.", nil, nil),
+		arrowLeases:              prometheus.NewDesc("leapview_arrow_result_leases", "Active Arrow analytical result leases.", nil, nil),
+		arrowBytes:               prometheus.NewDesc("leapview_arrow_result_bytes", "Conservatively retained bytes in live Arrow analytical results.", nil, nil),
 		cacheEvictions:           prometheus.NewDesc("leapview_query_cache_evictions_total", "Query-result cache evictions by limiting constraint.", []string{"constraint"}, nil),
 		cacheStores:              prometheus.NewDesc("leapview_query_cache_store_total", "Query-result cache store outcomes.", []string{"outcome"}, nil),
 		connectionAcquisitions:   prometheus.NewDesc("leapview_duckdb_connection_acquisitions_total", "Admitted analytical connection acquisitions.", nil, nil),
@@ -38,12 +43,16 @@ func newAnalyticalCollector(database *analyticsducklake.Environment, cache *resu
 }
 
 func (c *analyticalCollector) Describe(ch chan<- *prometheus.Desc) {
-	for _, description := range []*prometheus.Desc{c.connectionsOpen, c.connectionsActive, c.connectionsIdle, c.cacheEntries, c.cacheBytes, c.cacheEvictions, c.cacheStores, c.connectionAcquisitions, c.extensionInitializations, c.sourceAcquisitions, c.scopeContention, c.commitRetries, c.refreshCleanup, c.fatalHealth} {
+	for _, description := range []*prometheus.Desc{c.connectionsOpen, c.connectionsActive, c.connectionsIdle, c.cacheEntries, c.cacheBytes, c.cacheEvictions, c.cacheStores, c.arrowResults, c.arrowLeases, c.arrowBytes, c.connectionAcquisitions, c.extensionInitializations, c.sourceAcquisitions, c.scopeContention, c.commitRetries, c.refreshCleanup, c.fatalHealth} {
 		ch <- description
 	}
 }
 
 func (c *analyticalCollector) Collect(ch chan<- prometheus.Metric) {
+	arrowStats := arrowresult.Stats()
+	ch <- prometheus.MustNewConstMetric(c.arrowResults, prometheus.GaugeValue, float64(arrowStats.Results))
+	ch <- prometheus.MustNewConstMetric(c.arrowLeases, prometheus.GaugeValue, float64(arrowStats.Leases))
+	ch <- prometheus.MustNewConstMetric(c.arrowBytes, prometheus.GaugeValue, float64(arrowStats.Bytes))
 	if c.database != nil {
 		stats := c.database.ConnectionStats()
 		ch <- prometheus.MustNewConstMetric(c.connectionsOpen, prometheus.GaugeValue, float64(stats.OpenConnections))

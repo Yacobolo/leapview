@@ -897,12 +897,7 @@ func (f integrationDataRuntimeFactory) OpenDashboardWorkspaceDataRuntimes(ctx co
 	closer := &integrationRuntimeCloser{runtime: runtime, environment: f.environment}
 	runtimes := make(map[string]dashboardruntime.DataRuntime, len(config.Definition.Models))
 	for modelID := range config.Definition.Models {
-		queries, queryErr := runtime.Queries(modelID)
-		if queryErr != nil {
-			_ = closer.Close()
-			return nil, queryErr
-		}
-		runtimes[modelID] = integrationDataRuntime{modelID: modelID, runtime: runtime, close: closer, data: reportdef.NewDataQueryService(modelID, reportdef.NewAnalyticsDataService(queries), runtime)}
+		runtimes[modelID] = integrationDataRuntime{modelID: modelID, runtime: runtime, close: closer, data: reportdef.NewDataQueryService(modelID, runtime)}
 	}
 	return runtimes, nil
 }

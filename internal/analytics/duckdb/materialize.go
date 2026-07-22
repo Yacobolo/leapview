@@ -373,7 +373,6 @@ type WorkspaceRuntime struct {
 	sources              *SourceRuntime
 	models               map[string]*semanticmodel.Model
 	materializationModel *semanticmodel.Model
-	queries              map[string]*semanticquery.Service
 	views                map[string]*analyticsmaterialize.Runtime
 	lastRefresh          time.Time
 	lastSnapshotID       int64
@@ -415,7 +414,6 @@ func OpenWorkspaceMaterializeRuntime(ctx context.Context, config WorkspaceRuntim
 		sources:              sources,
 		models:               config.Models,
 		materializationModel: materializationModel,
-		queries:              map[string]*semanticquery.Service{},
 		views:                map[string]*analyticsmaterialize.Runtime{},
 		commitMetadata:       workspaceCommitMetadata(config),
 		cacheScope:           config.QueryCache,
@@ -442,7 +440,6 @@ func OpenWorkspaceMaterializeRuntime(ctx context.Context, config WorkspaceRuntim
 			return nil, fmt.Errorf("compile semantic model %q runtime: %w", modelID, err)
 		}
 		runtime.views[modelID] = view
-		runtime.queries[modelID] = view.Queries()
 	}
 	if config.SnapshotID > 0 {
 		runtime.lastSnapshotID = config.SnapshotID
@@ -465,17 +462,6 @@ func workspaceQueryCacheNamespace(config WorkspaceRuntimeConfig) string {
 		config.ArtifactDigest,
 		config.SourceDataDigest,
 	)
-}
-
-func (r *WorkspaceRuntime) Queries(modelID string) (*semanticquery.Service, error) {
-	if r == nil {
-		return nil, fmt.Errorf("workspace runtime is not initialized")
-	}
-	queries, ok := r.queries[modelID]
-	if !ok {
-		return nil, fmt.Errorf("unknown semantic model %q", modelID)
-	}
-	return queries, nil
 }
 
 func (r *WorkspaceRuntime) ExecuteDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {

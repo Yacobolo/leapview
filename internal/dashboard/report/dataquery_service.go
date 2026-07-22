@@ -12,12 +12,11 @@ type DataQueryExecutor interface {
 
 type dataQueryService struct {
 	modelID  string
-	base     DataService
 	executor DataQueryExecutor
 }
 
-func NewDataQueryService(modelID string, base DataService, executor DataQueryExecutor) DataService {
-	return dataQueryService{modelID: modelID, base: base, executor: executor}
+func NewDataQueryService(modelID string, executor DataQueryExecutor) DataService {
+	return dataQueryService{modelID: modelID, executor: executor}
 }
 
 func (s dataQueryService) Query(ctx context.Context, request AggregateQuery) (QueryRows, error) {

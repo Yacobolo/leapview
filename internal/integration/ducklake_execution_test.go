@@ -397,16 +397,11 @@ func (f duckLakeIntegrationDataRuntimeFactory) OpenDashboardWorkspaceDataRuntime
 	closer := &sharedDuckLakeRuntimeCloser{runtime: runtime}
 	runtimes := make(map[string]dashboardruntime.DataRuntime, len(config.Definition.Models))
 	for modelID := range config.Definition.Models {
-		queries, err := runtime.Queries(modelID)
-		if err != nil {
-			_ = runtime.Close()
-			return nil, err
-		}
 		runtimes[modelID] = duckLakeIntegrationDataRuntime{
 			modelID: modelID,
 			runtime: runtime,
 			close:   closer,
-			data:    reportdef.NewDataQueryService(modelID, reportdef.NewAnalyticsDataService(queries), runtime),
+			data:    reportdef.NewDataQueryService(modelID, runtime),
 		}
 	}
 	return runtimes, nil
