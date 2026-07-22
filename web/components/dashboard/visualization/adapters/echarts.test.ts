@@ -2,7 +2,32 @@ import { expect, test } from 'bun:test'
 
 import type { VisualizationEnvelope } from '../../../../generated/visualization'
 import { Change, defaultRendererContext } from '../host-controller'
-import { echartsOption, echartsUpdatePlan, interactionCommandForRow, normalizeRendererLocale, waitForEChartsFrame } from './echarts'
+import { createEChartsRendererFrame, echartsOption, echartsUpdatePlan, interactionCommandForRow, normalizeRendererLocale, removeEChartsRendererFrame, waitForEChartsFrame } from './echarts'
+
+test('superseded ECharts mounts own isolated renderer frames', () => {
+  const mounted: HTMLElement[] = []
+  const container = {
+    replaceChildren: (frame: HTMLElement) => { mounted.push(frame) },
+  } as unknown as HTMLElement
+  const frames: HTMLElement[] = []
+  const createFrame = () => {
+    const frame = { style: { cssText: '' } } as unknown as HTMLElement
+    frames.push(frame)
+    return frame
+  }
+
+  const stale = createEChartsRendererFrame(container, createFrame)
+  const current = createEChartsRendererFrame(container, createFrame)
+
+  expect(stale).not.toBe(current)
+  expect(mounted).toEqual([stale, current])
+  expect(current.style.cssText).toContain('width:100%')
+  expect(current.style.cssText).toContain('height:100%')
+
+  let staleRemoved = false
+  removeEChartsRendererFrame(container, { parentNode: null, remove: () => { staleRemoved = true } } as unknown as HTMLElement)
+  expect(staleRemoved).toBe(false)
+})
 
 test('ECharts translation uses dataset and encode without native option passthrough', () => {
   const envelope = {
@@ -280,7 +305,7 @@ test('ECharts network links retain source-row selection while aggregate nodes st
   expect(option.series[0].data[0].__lv_dataset).toBeUndefined()
 })
 
-test('ECharts incremental plans preserve interaction state and do not resend data for context changes', () => {
+test('ECharts incremental plans commit data synchronously, preserve interaction state, and do not resend data for context changes', () => {
   const option = {
     dataset: { id: 'dataset:primary', source: [['month', 'value'], ['Jan', 10]] },
     series: [{ id: 'series:primary:value', type: 'line', encode: { x: 'month', y: 'value' }, data: [10], label: { color: '#fff' } }],
@@ -288,7 +313,7 @@ test('ECharts incremental plans preserve interaction state and do not resend dat
   } as any
 
   const data = echartsUpdatePlan(Change.Data, option)
-  expect(data.settings).toEqual({ notMerge: false, lazyUpdate: true, replaceMerge: ['dataset', 'series', 'visualMap'] })
+  expect(data.settings).toEqual({ notMerge: false, lazyUpdate: false, replaceMerge: ['dataset', 'series', 'visualMap'] })
   expect(data.option).toEqual({ dataset: option.dataset, series: option.series, visualMap: [] })
 
   const selection = echartsUpdatePlan(Change.Selection, option)

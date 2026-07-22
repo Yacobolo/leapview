@@ -139,6 +139,7 @@ export class VisualizationController {
   #pendingResize?: readonly [number, number, number]
   #pendingViewState?: { value: unknown }
   #resizeFrame?: number
+  #applyQueue: Promise<void> = Promise.resolve()
 
   constructor(registry: RendererRegistry, container: HTMLElement, validate: EnvelopeValidator = validateEnvelopeBoundary, observe?: VisualizationObserver) {
     this.#registry = registry
@@ -149,8 +150,15 @@ export class VisualizationController {
 
   get envelope(): VisualizationEnvelope | undefined { return this.#envelope }
 
-  async apply(next: VisualizationEnvelope, context: RendererContext = defaultRendererContext): Promise<boolean> {
-    if (this.#disposed) throw new Error('visualization controller is disposed')
+  apply(next: VisualizationEnvelope, context: RendererContext = defaultRendererContext): Promise<boolean> {
+    if (this.#disposed) return Promise.reject(new Error('visualization controller is disposed'))
+    const pending = this.#applyQueue.then(() => this.#applyEnvelope(next, context))
+    this.#applyQueue = pending.then(() => undefined, () => undefined)
+    return pending
+  }
+
+  async #applyEnvelope(next: VisualizationEnvelope, context: RendererContext): Promise<boolean> {
+    if (this.#disposed) return false
     if (!this.#validate(next)) {
       this.#record('validation_failure', 0, next)
       throw new Error('invalid visualization envelope')
@@ -272,7 +280,7 @@ function changes(previous: VisualizationEnvelope | undefined, next: Visualizatio
   if (!previous) return Change.All
   let result = Change.None
   if (previous.rendererID !== next.rendererID || previous.specRevision !== next.specRevision) result |= Change.Spec
-  if (previous.specRevision !== next.specRevision || previous.dataRevision !== next.dataRevision) result |= Change.Data
+  if (previous.specRevision !== next.specRevision || previous.dataRevision !== next.dataRevision || !sameJSON(previous.dataState, next.dataState)) result |= Change.Data
   if (!sameJSON(previous.selection, next.selection) || !sameJSON(previous.spatialSelection, next.spatialSelection)) result |= Change.Selection
   if (!sameJSON(previous.status, next.status) || !sameJSON(previous.diagnostics, next.diagnostics)) result |= Change.Status
   return result

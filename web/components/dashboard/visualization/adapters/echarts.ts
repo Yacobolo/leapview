@@ -28,8 +28,9 @@ export function echartsOption(envelope: VisualizationEnvelope, context: Renderer
 export const adapter: RendererAdapter = {
   async mount(container, envelope, context) {
     const echarts = await import('echarts')
-    const chart = echarts.init(container, undefined, { renderer: 'canvas', devicePixelRatio: context.devicePixelRatio })
-    const handle = new EChartsHandle(container, chart)
+    const frame = createEChartsRendererFrame(container)
+    const chart = echarts.init(frame, undefined, { renderer: 'canvas', devicePixelRatio: context.devicePixelRatio })
+    const handle = new EChartsHandle(container, frame, chart)
     try {
       await handle.mount(envelope, context)
       return handle
@@ -40,11 +41,22 @@ export const adapter: RendererAdapter = {
   },
 }
 
+export function createEChartsRendererFrame(container: HTMLElement, createFrame: () => HTMLElement = () => document.createElement('div')): HTMLElement {
+  const frame = createFrame()
+  frame.style.cssText = 'display:block;width:100%;height:100%;min-width:0;min-height:0;overflow:hidden'
+  container.replaceChildren(frame)
+  return frame
+}
+
+export function removeEChartsRendererFrame(container: ParentNode, frame: HTMLElement): void {
+  if (frame.parentNode === container) frame.remove()
+}
+
 class EChartsHandle implements RendererHandle {
   private envelope?: VisualizationEnvelope
   private disposed = false
 
-  constructor(private readonly container: HTMLElement, private readonly chart: ECharts) {
+  constructor(private readonly container: HTMLElement, private readonly frame: HTMLElement, private readonly chart: ECharts) {
     this.chart.on('click', this.handleClick)
   }
 
@@ -75,6 +87,7 @@ class EChartsHandle implements RendererHandle {
     this.disposed = true
     this.chart.off('click', this.handleClick)
     this.chart.dispose()
+    removeEChartsRendererFrame(this.container, this.frame)
   }
 
   private readonly handleClick = (params: unknown) => {
@@ -129,7 +142,7 @@ export function echartsUpdatePlan(change: Change, option: EChartsOption): EChart
   if ((change & Change.Context) !== 0) Object.assign(patch, echartsContextPatch(source))
   return {
     option: patch,
-    settings: { notMerge: false, lazyUpdate: true, ...(replaceMerge.length ? { replaceMerge } : {}) },
+    settings: { notMerge: false, lazyUpdate: (change & Change.Data) === 0, ...(replaceMerge.length ? { replaceMerge } : {}) },
   }
 }
 

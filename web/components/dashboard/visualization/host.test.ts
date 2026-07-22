@@ -27,6 +27,21 @@ function envelope(dataRevision: number, specRevision = 'sha256:spec', rendererID
   }
 }
 
+function envelopeWithRows(dataRevision: number, rows: unknown[][], status: VisualizationEnvelope['status']): VisualizationEnvelope {
+  const value = envelope(dataRevision)
+  return {
+    ...value,
+    dataState: {
+      kind: 'inline', specRevision: value.specRevision, dataRevision, generation: 1,
+      datasets: [{
+        id: 'primary', specRevision: value.specRevision, dataRevision, generation: 1,
+        columns: ['value'], rows, completeness: rows.length > 0 ? 'complete' : 'empty',
+      }],
+    },
+    status,
+  }
+}
+
 test('controller mounts lazily, rejects stale revisions, and disposes deterministically', async () => {
   const updates: Change[] = []
   const observations: string[] = []
@@ -99,6 +114,23 @@ test('controller sends context-only changes without replacing visualization data
   expect(updates).toEqual([Change.Context])
 })
 
+test('controller updates data when a loading envelope is populated at the same revision', async () => {
+  const updates: Change[] = []
+  const handle: RendererHandle = {
+    update: (_value, change) => updates.push(change), resize: () => {}, snapshot: async () => new Blob(), dispose: () => {},
+  }
+  const registry = new RendererRegistry()
+  registry.register({
+    id: 'test', version: '1.0.0', schemaVersion: currentVisualizationSchemaVersion, kinds: ['kpi'], capabilities: { snapshot: true, windowed: false, interactive: false },
+    load: async () => ({ mount: () => handle }),
+  })
+  const controller = new VisualizationController(registry, {} as HTMLElement)
+  await controller.apply(envelopeWithRows(1, [], { kind: 'loading' }))
+  await controller.apply(envelopeWithRows(1, [[42]], { kind: 'ready' }))
+
+  expect(updates).toEqual([Change.Data | Change.Status])
+})
+
 test('controller transfers renderer view state across a lazy focus mount', async () => {
   const camera = { center: [-46.63, -23.55], zoom: 7 }
   const restored: unknown[] = []
@@ -139,29 +171,37 @@ test('registry rejects duplicate IDs and unsupported capabilities fail closed', 
   await expect(controller.apply(envelope(1))).rejects.toThrow(/does not support kind/)
 })
 
-test('a superseded asynchronous mount cannot dispose the winning renderer', async () => {
-  const releases = new Map<number, (handle: RendererHandle) => void>()
+test('controller serializes newer envelopes behind an asynchronous mount', async () => {
+  let release!: (handle: RendererHandle) => void
+  const mounted: number[] = []
+  const updated: number[] = []
   const disposed: number[] = []
-  const handles = (revision: number): RendererHandle => ({
-    update: () => {}, resize: () => {}, snapshot: async () => new Blob([String(revision)]), dispose: () => { disposed.push(revision) },
-  })
+  const handle: RendererHandle = {
+    update: (value) => { updated.push(value.dataRevision) }, resize: () => {}, snapshot: async () => new Blob(['mounted']), dispose: () => { disposed.push(1) },
+  }
   const registry = new RendererRegistry()
   registry.register({
     id: 'test', version: '1.0.0', schemaVersion: currentVisualizationSchemaVersion, kinds: ['kpi'], capabilities: { snapshot: true, windowed: false, interactive: false },
-    load: async () => ({ mount: (_container, value) => new Promise<RendererHandle>((resolve) => { releases.set(value.dataRevision, resolve) }) }),
+    load: async () => ({ mount: (_container, value) => {
+      mounted.push(value.dataRevision)
+      return new Promise<RendererHandle>((resolve) => { release = resolve })
+    } }),
   })
   const controller = new VisualizationController(registry, {} as HTMLElement)
   const first = controller.apply(envelope(1))
   await Promise.resolve()
   const second = controller.apply(envelope(2))
   await Promise.resolve()
-  releases.get(2)?.(handles(2))
-  await second
-  releases.get(1)?.(handles(1))
-  await first
+  await Promise.resolve()
 
-  expect(await (await controller.snapshot()).text()).toBe('2')
-  expect(disposed).toEqual([1])
+  expect(mounted).toEqual([1])
+  release(handle)
+  await Promise.all([first, second])
+
+  expect(mounted).toEqual([1])
+  expect(updated).toEqual([2])
+  expect(await (await controller.snapshot()).text()).toBe('mounted')
+  expect(disposed).toEqual([])
 })
 
 test('repeated mount and dispose cycles release every renderer exactly once', async () => {

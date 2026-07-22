@@ -24,6 +24,7 @@ try {
   for (const route of routes) {
     await verifyRoute(route)
   }
+  await verifyEChartsFirstNavigation()
   await verifyDashboardCommandDoesNotReopenUpdates()
   await verifySpatialMapWindowing()
   console.log(`DatastarLit route QA passed for ${routes.length} routes at ${baseURL}`)
@@ -68,6 +69,82 @@ async function verifyRoute(route: RouteExpectation): Promise<void> {
     if (state.datastarScriptCount !== 1) throw new Error(`${route.path}: Datastar script count=${state.datastarScriptCount}, want 1`)
     if (updates.length !== 1) throw new Error(`${route.path}: /updates request count=${updates.length}, want 1`)
     assertNoBlockingConsoleMessages(route.path, messages)
+  } finally {
+    await page.close()
+  }
+}
+
+async function verifyEChartsFirstNavigation(): Promise<void> {
+  const workspacePath = '/workspaces/sales'
+  const dashboardHref = '/workspaces/sales/dashboards/executive-sales'
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  const messages = collectBlockingConsoleMessages(page)
+
+  try {
+    const response = await page.goto(new URL(workspacePath, baseURL).toString(), { waitUntil: 'domcontentloaded' })
+    if (!response?.ok()) throw new Error(`${workspacePath}: status ${response?.status() ?? 'unknown'}`)
+    await page.locator(`a[href="${dashboardHref}"]`).click()
+    await page.waitForURL(`**${dashboardHref}/pages/overview`)
+    try {
+      await page.waitForFunction(() => {
+        const dashboard = document.querySelector('lv-dashboard-page') as HTMLElement & { shadowRoot: ShadowRoot }
+        const hosts = Array.from(dashboard?.shadowRoot?.querySelectorAll('lv-visualization-host') ?? []) as Array<HTMLElement & { envelope?: any; shadowRoot: ShadowRoot }>
+        const chart = hosts.find((host) => host.envelope?.visualID === 'revenue_by_month')
+        const renderer = chart?.shadowRoot?.querySelector('.renderer')
+        const canvas = renderer?.querySelector('canvas') as HTMLCanvasElement | null
+        const context = canvas?.getContext('2d', { willReadFrequently: true })
+        const pixels = context && canvas ? context.getImageData(0, 0, canvas.width, canvas.height).data : undefined
+        let dataPixels = 0
+        if (pixels) {
+          for (let offset = 0; offset < pixels.length; offset += 16) {
+            const red = pixels[offset] ?? 0
+            const green = pixels[offset + 1] ?? 0
+            const blue = pixels[offset + 2] ?? 0
+            const alpha = pixels[offset + 3] ?? 0
+            if (alpha > 0 && blue > red + 50 && blue > green + 35) dataPixels++
+          }
+        }
+        return chart?.envelope?.status?.kind === 'ready'
+          && renderer?.getAttribute('aria-hidden') === 'false'
+          && canvas?.localName === 'canvas'
+          && canvas.width > 0
+          && canvas.height > 0
+          && dataPixels > 500
+      }, undefined, { timeout: 30_000, polling: 100 })
+    } catch (error) {
+      const state = await page.evaluate(() => {
+        const dashboard = document.querySelector('lv-dashboard-page') as HTMLElement & { shadowRoot: ShadowRoot }
+        return Array.from(dashboard?.shadowRoot?.querySelectorAll('lv-visualization-host') ?? []).map((candidate) => {
+          const host = candidate as HTMLElement & { envelope?: any; shadowRoot: ShadowRoot }
+          const renderer = host.shadowRoot?.querySelector('.renderer')
+          const canvas = renderer?.querySelector('canvas') as HTMLCanvasElement | null
+          const context = canvas?.getContext('2d', { willReadFrequently: true })
+          const pixels = context && canvas ? context.getImageData(0, 0, canvas.width, canvas.height).data : undefined
+          let dataPixels = 0
+          if (pixels) {
+            for (let offset = 0; offset < pixels.length; offset += 16) {
+              const red = pixels[offset] ?? 0
+              const green = pixels[offset + 1] ?? 0
+              const blue = pixels[offset + 2] ?? 0
+              const alpha = pixels[offset + 3] ?? 0
+              if (alpha > 0 && blue > red + 50 && blue > green + 35) dataPixels++
+            }
+          }
+          return {
+            visualID: host.envelope?.visualID,
+            status: host.envelope?.status,
+            dataRevision: host.envelope?.dataRevision,
+            rows: host.envelope?.dataState?.datasets?.map((dataset: any) => dataset.rows?.length),
+            ariaHidden: renderer?.getAttribute('aria-hidden'),
+            canvas: canvas ? { width: canvas.width, height: canvas.height } : null,
+            dataPixels,
+            alert: host.shadowRoot?.querySelector('[role="alert"]')?.textContent,
+          }
+        })
+      })
+      throw new Error(`ECharts first navigation did not paint: ${JSON.stringify(state)}; ${String(error)}`)
+    }
+    assertNoBlockingConsoleMessages('ECharts first navigation', messages)
   } finally {
     await page.close()
   }
