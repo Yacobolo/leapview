@@ -8,8 +8,12 @@ import (
 	arrowutil "github.com/apache/arrow-go/v18/arrow/util"
 )
 
-// Sink consumes DuckDB-owned record batches synchronously. Implementations must
-// not retain schemas, records, arrays, or their buffers after a method returns.
+// Sink consumes DuckDB-owned record batches. Schema and record arguments are
+// borrowed for the duration of each callback. A synchronous sink must not keep
+// them after returning. An owning sink must establish independent ownership
+// before returning and later release it. Retain is sufficient only when the
+// producer's buffers are themselves Arrow-owned; duckdb-go batches require a
+// deep copy because their buffers belong to the advancing DuckDB data chunk.
 type Sink interface {
 	WriteSchema(*arrow.Schema) error
 	WriteRecord(arrow.RecordBatch) error

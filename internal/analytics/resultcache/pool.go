@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/Yacobolo/leapview/internal/dataquery"
+	"github.com/Yacobolo/leapview/internal/analytics/arrowresult"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -86,8 +86,46 @@ type usage struct {
 }
 type entry struct {
 	composite, key, scope string
-	result                dataquery.Result
+	arrowResult           *arrowresult.Result
+	arrowHold             *arrowresult.Lease
+	metadata              Metadata
 	bytes                 int64
+}
+
+// Metadata is stable result information that may be retained across requests.
+// Request-specific audit state and timing deliberately live outside the cache.
+type Metadata struct {
+	SQL            string
+	TotalRows      int
+	TotalRowsKnown bool
+	Warnings       []string
+}
+
+type EntryLease struct {
+	data     *arrowresult.Lease
+	metadata Metadata
+}
+
+func (l *EntryLease) Data() *arrowresult.Lease {
+	if l == nil {
+		return nil
+	}
+	return l.data
+}
+
+func (l *EntryLease) Metadata() Metadata {
+	if l == nil {
+		return Metadata{}
+	}
+	return cloneMetadata(l.metadata)
+}
+
+func (l *EntryLease) Release() {
+	if l == nil || l.data == nil {
+		return
+	}
+	l.data.Release()
+	l.data = nil
 }
 
 type UsageSnapshot struct {
@@ -161,30 +199,39 @@ func (s *Scope) Generation() Token {
 	return 0
 }
 
-func (s *Scope) Lookup(key string) (dataquery.Result, Token, bool, error) {
+// LookupArrow returns an independently retained lease. Eviction, invalidation,
+// or scope closure can remove the cache's reference without invalidating it.
+func (s *Scope) LookupArrow(key string) (*EntryLease, Token, bool, error) {
 	if s == nil || s.pool == nil {
-		return dataquery.Result{}, 0, false, fmt.Errorf("result cache scope is required")
+		return nil, 0, false, fmt.Errorf("result cache scope is required")
 	}
 	p := s.pool
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	state := p.scopes[s.key]
-	if state == nil || state.closed {
-		return dataquery.Result{}, 0, false, fmt.Errorf("result cache scope is closed")
+	if p.closed || state == nil || state.closed {
+		return nil, 0, false, fmt.Errorf("result cache scope is closed")
 	}
 	element := p.entries[s.key+"\x00"+key]
 	if element == nil {
-		return dataquery.Result{}, state.generation, false, nil
+		return nil, state.generation, false, nil
+	}
+	e := element.Value.(entry)
+	if e.arrowResult == nil {
+		return nil, state.generation, false, nil
+	}
+	lease, err := e.arrowResult.Acquire()
+	if err != nil {
+		return nil, state.generation, false, err
 	}
 	p.lru.MoveToFront(element)
-	result := cloneResult(element.Value.(entry).result)
-	result.CacheOutcome = dataquery.CacheHit
-	result.QueueWaitMS, result.PlanningMS, result.ConnectionWaitMS, result.DatabaseMS, result.ExecutionMS = 0, 0, 0, 0, 0
-	return result, state.generation, true, nil
+	return &EntryLease{data: lease, metadata: cloneMetadata(e.metadata)}, state.generation, true, nil
 }
 
-func (s *Scope) Store(key string, token Token, result dataquery.Result) StoreOutcome {
-	if s == nil || s.pool == nil {
+// StoreArrow retains one cache-owned reference when the value fits every
+// applicable budget. The caller retains ownership of its original reference.
+func (s *Scope) StoreArrow(key string, token Token, result *arrowresult.Result, metadata Metadata) StoreOutcome {
+	if s == nil || s.pool == nil || result == nil {
 		return StoreClosed
 	}
 	p := s.pool
@@ -199,16 +246,21 @@ func (s *Scope) Store(key string, token Token, result dataquery.Result) StoreOut
 		p.stores[StoreStale]++
 		return StoreStale
 	}
-	bytes := int64(len(key)) + EstimateResultBytes(result)
+	bytes := int64(len(key)) + result.Bytes() + metadataBytes(metadata)
 	if bytes > p.limits.RuntimeBytes || bytes > p.limits.WorkspaceBytes || bytes > p.limits.NodeBytes {
 		p.stores[StoreOversized]++
 		return StoreOversized
+	}
+	hold, err := result.Acquire()
+	if err != nil {
+		p.stores[StoreClosed]++
+		return StoreClosed
 	}
 	composite := s.key + "\x00" + key
 	if old := p.entries[composite]; old != nil {
 		p.removeLocked(old, "")
 	}
-	e := entry{composite: composite, key: key, scope: s.key, result: cloneResult(result), bytes: bytes}
+	e := entry{composite: composite, key: key, scope: s.key, arrowResult: result, arrowHold: hold, metadata: cloneMetadata(metadata), bytes: bytes}
 	element := p.lru.PushFront(e)
 	p.entries[composite] = element
 	state.entries[composite] = struct{}{}
@@ -263,6 +315,9 @@ func (p *Pool) removeLocked(element *list.Element, constraint Constraint) {
 		return
 	}
 	e := element.Value.(entry)
+	if e.arrowHold != nil {
+		e.arrowHold.Release()
+	}
 	state := p.scopes[e.scope]
 	delete(p.entries, e.composite)
 	p.lru.Remove(element)
@@ -278,6 +333,19 @@ func (p *Pool) removeLocked(element *list.Element, constraint Constraint) {
 	if constraint != "" {
 		p.evictions[constraint]++
 	}
+}
+
+func cloneMetadata(metadata Metadata) Metadata {
+	metadata.Warnings = append([]string{}, metadata.Warnings...)
+	return metadata
+}
+
+func metadataBytes(metadata Metadata) int64 {
+	bytes := int64(len(metadata.SQL) + 16)
+	for _, warning := range metadata.Warnings {
+		bytes += int64(len(warning) + 16)
+	}
+	return bytes
 }
 func (p *Pool) workspaceLocked(id string) *usage {
 	if p.workspaces[id] == nil {
@@ -407,90 +475,4 @@ func (p *Pool) Close() error {
 	}
 	p.scopes = map[string]*scopeState{}
 	return nil
-}
-
-func EstimateResultBytes(result dataquery.Result) int64 {
-	size := int64(len(result.SQL)+len(result.PlanText)+len(result.Error)+len(result.ExecutionState)+len(result.CacheOutcome)+len(result.Status)) + 128
-	for _, column := range result.Columns {
-		size += int64(len(column.Name)) + 16
-	}
-	for _, warning := range result.Warnings {
-		size += int64(len(warning)) + 16
-	}
-	for _, row := range result.Rows {
-		size += 48
-		for key, value := range row {
-			size += int64(len(key)) + estimateValue(value)
-		}
-	}
-	return size
-}
-
-func CloneResult(result dataquery.Result) dataquery.Result { return cloneResult(result) }
-func estimateValue(value any) int64 {
-	switch v := value.(type) {
-	case nil:
-		return 1
-	case string:
-		return int64(len(v)) + 16
-	case []byte:
-		return int64(len(v)) + 24
-	case []string:
-		n := int64(24)
-		for _, x := range v {
-			n += int64(len(x)) + 16
-		}
-		return n
-	case []any:
-		n := int64(24)
-		for _, x := range v {
-			n += estimateValue(x)
-		}
-		return n
-	case map[string]any:
-		n := int64(48)
-		for k, x := range v {
-			n += int64(len(k)) + estimateValue(x)
-		}
-		return n
-	case bool:
-		return 1
-	default:
-		return 16
-	}
-}
-func cloneResult(result dataquery.Result) dataquery.Result {
-	clone := result
-	clone.Columns = append([]dataquery.Column{}, result.Columns...)
-	clone.Rows = make([]dataquery.Row, len(result.Rows))
-	for i, row := range result.Rows {
-		clone.Rows[i] = make(dataquery.Row, len(row))
-		for k, v := range row {
-			clone.Rows[i][k] = cloneValue(v)
-		}
-	}
-	clone.Warnings = append([]string{}, result.Warnings...)
-	return clone
-}
-func cloneValue(value any) any {
-	switch v := value.(type) {
-	case []byte:
-		return append([]byte{}, v...)
-	case []string:
-		return append([]string{}, v...)
-	case []any:
-		out := make([]any, len(v))
-		for i, x := range v {
-			out[i] = cloneValue(x)
-		}
-		return out
-	case map[string]any:
-		out := make(map[string]any, len(v))
-		for k, x := range v {
-			out[k] = cloneValue(x)
-		}
-		return out
-	default:
-		return value
-	}
 }

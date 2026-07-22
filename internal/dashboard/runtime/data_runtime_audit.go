@@ -18,7 +18,7 @@ type governedDataRuntime struct {
 
 func newGovernedDataRuntime(workspaceID, modelID string, runtime DataRuntime) DataRuntime {
 	wrapped := &governedDataRuntime{DataRuntime: runtime, workspaceID: workspaceID}
-	wrapped.service = reportdef.NewDataQueryService(modelID, runtime, wrapped)
+	wrapped.service = reportdef.NewDataQueryService(modelID, wrapped)
 	return wrapped
 }
 

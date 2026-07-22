@@ -121,6 +121,35 @@ func TestOnlyWorkloadAdaptersAndCompositionDependOnWorkload(t *testing.T) {
 	}
 }
 
+func TestArrowImportsStayInsideAnalyticalDataPlaneAndExplicitEncoders(t *testing.T) {
+	allowed := []string{
+		"internal/analytics/arrowquery",
+		"internal/analytics/arrowresult",
+		"internal/analytics/resultcache",
+		"internal/analytics/materialize",
+		"internal/analytics/ducklake",
+		"internal/analytics/query/http",
+		"internal/dashboard/http",
+	}
+	for _, file := range productionGoFiles(t) {
+		for _, imported := range file.imports {
+			if !strings.HasPrefix(imported, "github.com/apache/arrow-go/") {
+				continue
+			}
+			permitted := false
+			for _, prefix := range allowed {
+				if file.pkgDir == prefix || strings.HasPrefix(file.pkgDir, prefix+"/") {
+					permitted = true
+					break
+				}
+			}
+			if !permitted {
+				t.Fatalf("%s imports Arrow outside the analytical data plane or an explicit Arrow encoder", file.path)
+			}
+		}
+	}
+}
+
 func TestUseCasesDoNotImportAdapters(t *testing.T) {
 	for _, file := range productionGoFiles(t) {
 		if !isInternalPackage(file.pkgDir) || isAdapterOrCompositionPackage(file.pkgDir) {

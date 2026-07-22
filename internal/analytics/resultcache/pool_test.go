@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/dataquery"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
 func TestPoolEnforcesRuntimeWorkspaceAndNodeBudgets(t *testing.T) {
@@ -44,9 +44,11 @@ func TestScopeInvalidationPreventsStaleStoreAndCloseBalancesAccounting(t *testin
 	scope := mustScope(t, pool, ScopeID{WorkspaceID: "a", RuntimeID: "one"})
 	token := scope.Generation()
 	scope.Invalidate()
-	if outcome := scope.Store("stale", token, result("stale")); outcome != StoreStale {
+	stale := testArrowResult(t, memory.DefaultAllocator, "stale")
+	if outcome := scope.StoreArrow("stale", token, stale, Metadata{}); outcome != StoreStale {
 		t.Fatalf("outcome = %q", outcome)
 	}
+	stale.Release()
 	put(t, scope, "live", "live")
 	if err := scope.Close(); err != nil {
 		t.Fatal(err)
@@ -54,17 +56,21 @@ func TestScopeInvalidationPreventsStaleStoreAndCloseBalancesAccounting(t *testin
 	if stats := pool.Stats(); stats.Entries != 0 || stats.Bytes != 0 {
 		t.Fatalf("stats after close = %#v", stats)
 	}
-	if outcome := scope.Store("closed", scope.Generation(), result("closed")); outcome != StoreClosed {
+	closed := testArrowResult(t, memory.DefaultAllocator, "closed")
+	if outcome := scope.StoreArrow("closed", scope.Generation(), closed, Metadata{}); outcome != StoreClosed {
 		t.Fatalf("outcome = %q", outcome)
 	}
+	closed.Release()
 }
 
 func TestOversizedEntryIsSkipped(t *testing.T) {
 	pool, _ := New(Limits{RuntimeEntries: 2, RuntimeBytes: 64, WorkspaceEntries: 2, WorkspaceBytes: 64, NodeEntries: 2, NodeBytes: 64})
 	scope := mustScope(t, pool, ScopeID{WorkspaceID: "a", RuntimeID: "one"})
-	if outcome := scope.Store("large", scope.Generation(), result(string(make([]byte, 256)))); outcome != StoreOversized {
+	large := testArrowResult(t, memory.DefaultAllocator, string(make([]byte, 256)))
+	if outcome := scope.StoreArrow("large", scope.Generation(), large, Metadata{}); outcome != StoreOversized {
 		t.Fatalf("outcome = %q", outcome)
 	}
+	large.Release()
 	if pool.Stats().Entries != 0 {
 		t.Fatal("oversized entry was retained")
 	}
@@ -107,7 +113,9 @@ func TestPoolConcurrentStatsInvalidateAndClose(t *testing.T) {
 			defer wg.Done()
 			_ = pool.Stats()
 			scope.Invalidate()
-			scope.Store("key", scope.Generation(), result("value"))
+			value := testArrowResult(t, memory.DefaultAllocator, "value")
+			scope.StoreArrow("key", scope.Generation(), value, Metadata{})
+			value.Release()
 		}()
 	}
 	wg.Wait()
@@ -130,18 +138,17 @@ func mustScope(t *testing.T, p *Pool, id ScopeID) *Scope {
 	}
 	return s
 }
-func result(value string) dataquery.Result {
-	return dataquery.Result{Rows: []dataquery.Row{{"value": value}}}
-}
 func put(t *testing.T, s *Scope, key, value string) {
 	t.Helper()
-	if got := s.Store(key, s.Generation(), result(value)); got != StoreStored {
+	result := testArrowResult(t, memory.DefaultAllocator, value)
+	defer result.Release()
+	if got := s.StoreArrow(key, s.Generation(), result, Metadata{}); got != StoreStored {
 		t.Fatalf("store %q = %q", key, got)
 	}
 }
 func assertMiss(t *testing.T, s *Scope, key string) {
 	t.Helper()
-	if _, _, ok, err := s.Lookup(key); err != nil || ok {
+	if _, _, ok, err := s.LookupArrow(key); err != nil || ok {
 		t.Fatalf("lookup %q ok=%v err=%v", key, ok, err)
 	}
 }

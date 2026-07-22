@@ -17,7 +17,7 @@ import (
 	analyticsmaterialize "github.com/Yacobolo/leapview/internal/analytics/materialize"
 	analyticsmaterializesqlite "github.com/Yacobolo/leapview/internal/analytics/materialize/sqlite"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
+	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/platform"
 	"github.com/Yacobolo/leapview/internal/refreshpipeline"
 	"github.com/Yacobolo/leapview/internal/workload"
@@ -726,16 +726,14 @@ func writeOrdersCSV(t *testing.T, dir string, firstRevenue, secondRevenue int) {
 
 func queryRevenue(t *testing.T, ctx context.Context, runtime *analyticsduckdb.WorkspaceRuntime) float64 {
 	t.Helper()
-	queries, err := runtime.Queries("sales")
-	if err != nil {
-		t.Fatal(err)
-	}
-	rows, err := queries.Query(ctx, semanticquery.Request{
-		Measures: []semanticquery.Field{{Field: "revenue", Alias: "revenue"}},
+	result, err := runtime.ExecuteDataQuery(ctx, dataquery.Query{
+		ModelID: "sales", Kind: dataquery.KindSemanticAggregate,
+		Measures: []dataquery.Field{{Field: "revenue", Alias: "revenue"}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	rows := result.Rows
 	if len(rows) != 1 {
 		t.Fatalf("rows = %#v, want one row", rows)
 	}

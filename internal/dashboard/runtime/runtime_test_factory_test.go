@@ -48,16 +48,11 @@ func (testDataRuntimeFactory) OpenDashboardWorkspaceDataRuntimes(ctx context.Con
 	sharedClose := &testSharedDataRuntimeCloser{runtime: runtime, database: database, controller: controller}
 	runtimes := make(map[string]DataRuntime, len(config.Definition.Models))
 	for modelID := range config.Definition.Models {
-		queries, err := runtime.Queries(modelID)
-		if err != nil {
-			runtime.Close()
-			return nil, err
-		}
 		runtimes[modelID] = testWorkspaceDataRuntime{
 			modelID: modelID,
 			runtime: runtime,
 			close:   sharedClose,
-			data:    reportdef.NewDataQueryService(modelID, reportdef.NewAnalyticsDataService(queries), runtime),
+			data:    reportdef.NewDataQueryService(modelID, runtime),
 		}
 	}
 	return runtimes, nil
