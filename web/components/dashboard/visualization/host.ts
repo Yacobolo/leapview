@@ -22,6 +22,7 @@ export class VisualizationHost extends LitElement {
   private connectionGeneration = 0
   private presentedRendererID = ''
   private focusMirror?: VisualizationHost
+  private pendingViewState?: { value: unknown }
   private contextListenersConnected = false
   private reducedMotionMedia?: MediaQueryList
 
@@ -166,6 +167,10 @@ export class VisualizationHost extends LitElement {
       this.controller?.resize(entry.contentRect.width, entry.contentRect.height, window.devicePixelRatio || 1)
     })
     this.resizeObserver.observe(this.rendererContainer)
+    if (this.pendingViewState) {
+      this.controller.restoreViewState(this.pendingViewState.value)
+      this.pendingViewState = undefined
+    }
     void this.applyEnvelope()
   }
 
@@ -198,7 +203,19 @@ export class VisualizationHost extends LitElement {
 
   setFocusMirror(mirror?: VisualizationHost): void {
     this.focusMirror = mirror
-    if (mirror) mirror.envelope = this.envelope
+    if (mirror) {
+      mirror.envelope = this.envelope
+      const state = this.controller?.captureViewState()
+      if (state !== undefined) mirror.restoreViewState(state)
+    }
+  }
+
+  private restoreViewState(state: unknown): void {
+    if (this.controller) {
+      this.controller.restoreViewState(state)
+      return
+    }
+    this.pendingViewState = { value: state }
   }
 
   protected render() {

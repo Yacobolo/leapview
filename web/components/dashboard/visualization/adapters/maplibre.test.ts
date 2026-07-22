@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 
 import type { VisualizationEnvelope, VisualizationGeographicLayer } from '../../../../generated/visualization'
 import type { FeatureCollection } from 'geojson'
-import { applyFeatureScales, basemapBoundaryLayer, basemapLayer, clusterExpansionForRenderedFeatures, concreteCSSColor, coordinateGeometry, coordinateReferenceGrid, fitMapToGeographicData, installWebGLRecovery, interactionCommandForRenderedFeatures, joinGeometry, loadMapStyleAsset, mapAccessibleData, mapInteractionCommand, mapLayer, mapLibreChromeCSS, mapOutlineLayer, mapPointerOptions, mapThemeColors, mapTooltipEntries, nextSpatialRequestSequence, normalizeFeatureWeights, pathGeometry, removeRendererFrame, sameOriginGeometryURL, setRendererFramePresented, spatialWindowAlreadyCurrent, spatialWindowRequest, updateSelectionSources, verifyGeometryDigest, waitForMapRender } from './maplibre'
+import { applyFeatureScales, basemapBoundaryLayer, basemapLayer, clusterExpansionForRenderedFeatures, concreteCSSColor, coordinateGeometry, coordinateReferenceGrid, fitMapToGeographicData, installWebGLRecovery, interactionCommandForRenderedFeatures, joinGeometry, loadMapStyleAsset, mapAccessibleData, mapInteractionCommand, mapLayer, mapLibreChromeCSS, mapOutlineLayer, mapPointerOptions, mapThemeColors, mapTooltipEntries, nextSpatialRequestSequence, normalizeFeatureWeights, pathGeometry, removeRendererFrame, resetMapToHome, sameOriginGeometryURL, setRendererFramePresented, spatialWindowAlreadyCurrent, spatialWindowRequest, updateSelectionSources, verifyGeometryDigest, waitForMapRender } from './maplibre'
 import { adapterObservation } from '../telemetry'
 
 test('MapLibre owns usable shadow-DOM styles for map navigation controls', () => {
@@ -361,6 +361,17 @@ test('MapLibre fits the combined valid feature extent with bounded padding and z
   expect(fitMapToGeographicData(map, [data])).toBe(true)
   expect(calls).toEqual([[[[-74, -34], [-34, 5]], { padding: 24, duration: 0, maxZoom: 10 }]])
   expect(fitMapToGeographicData(map, [{ type: 'FeatureCollection', features: [] }])).toBe(false)
+})
+
+test('MapLibre reset cancels queued camera motion before restoring the home camera', () => {
+  const calls: string[] = []
+  const home = { center: [-46.63, -23.55] as [number, number], zoom: 5, bearing: 0, pitch: 0 }
+  const map = {
+    stop: () => { calls.push('stop') },
+    jumpTo: (camera: unknown) => { calls.push(`jump:${JSON.stringify(camera)}`) },
+  }
+  resetMapToHome(map, home)
+  expect(calls).toEqual(['stop', `jump:${JSON.stringify(home)}`])
 })
 
 test('MapLibre coordinate maps get a bounded geographic reference grid', () => {

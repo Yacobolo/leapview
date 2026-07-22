@@ -60,6 +60,8 @@ export interface RendererHandle {
   update(envelope: VisualizationEnvelope, change: Change, context: RendererContext): void | Promise<void>
   resize(width: number, height: number, devicePixelRatio: number): void
   snapshot(): Promise<Blob>
+  captureViewState?(): unknown
+  restoreViewState?(state: unknown): void | Promise<void>
   dispose(): void
 }
 
@@ -135,6 +137,7 @@ export class VisualizationController {
   #loadGeneration = 0
   #disposed = false
   #pendingResize?: readonly [number, number, number]
+  #pendingViewState?: { value: unknown }
   #resizeFrame?: number
 
   constructor(registry: RendererRegistry, container: HTMLElement, validate: EnvelopeValidator = validateEnvelopeBoundary, observe?: VisualizationObserver) {
@@ -183,6 +186,11 @@ export class VisualizationController {
         return false
       }
       this.#handle = handle
+      if (this.#pendingViewState) {
+        const pending = this.#pendingViewState
+        await handle.restoreViewState?.(pending.value)
+        if (this.#pendingViewState === pending) this.#pendingViewState = undefined
+      }
       this.#envelope = next
       this.#context = context
       this.#flushResize()
@@ -219,6 +227,15 @@ export class VisualizationController {
     return this.#handle.snapshot()
   }
 
+  captureViewState(): unknown {
+    return this.#handle?.captureViewState?.()
+  }
+
+  restoreViewState(state: unknown): void | Promise<void> {
+    if (this.#handle?.restoreViewState) return this.#handle.restoreViewState(state)
+    this.#pendingViewState = { value: state }
+  }
+
   dispose(): void {
     if (this.#disposed) return
     this.#disposed = true
@@ -226,6 +243,7 @@ export class VisualizationController {
     if (this.#resizeFrame !== undefined && this.#resizeFrame >= 0 && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(this.#resizeFrame)
     this.#resizeFrame = undefined
     this.#pendingResize = undefined
+    this.#pendingViewState = undefined
     const disposeStarted = now()
     this.#handle?.dispose()
     if (this.#handle) this.#record('dispose', now() - disposeStarted, this.#envelope)

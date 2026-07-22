@@ -6,6 +6,13 @@ type GeographicViewport = {
   jumpTo?(options: { center?: [number, number]; zoom?: number }): unknown
 }
 
+export type MapHomeCamera = Readonly<{ center: [number, number]; zoom: number; bearing: number; pitch: number }>
+
+export function resetMapToHome(map: { stop(): unknown; jumpTo(camera: MapHomeCamera): unknown }, home: MapHomeCamera): void {
+  map.stop()
+  map.jumpTo(home)
+}
+
 export function fitMapToGeographicData(map: GeographicViewport, collections: FeatureCollection[], camera?: VisualizationMapCamera): boolean {
   if (camera?.mode === 'preserve') return false
   if (camera?.mode === 'fixed' && camera.center && camera.center.length === 2) {

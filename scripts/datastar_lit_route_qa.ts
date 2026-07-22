@@ -148,6 +148,7 @@ async function verifySpatialMapWindowing(): Promise<void> {
   })
 
   try {
+    const readyStarted = performance.now()
     const response = await page.goto(new URL(path, baseURL).toString(), { waitUntil: 'domcontentloaded', timeout: 120_000 })
     if (!response?.ok()) throw new Error(`${path}: status ${response?.status() ?? 'unknown'}`)
     await page.waitForSelector('ld-dashboard-page')
@@ -162,6 +163,9 @@ async function verifySpatialMapWindowing(): Promise<void> {
         && envelope.status?.kind !== 'loading'
         && !envelope.status?.message
     }, undefined, { timeout: 120_000 })
+    const readyDurationMs = performance.now() - readyStarted
+    const readyBudgetMs = 10_000
+    if (readyDurationMs > readyBudgetMs) throw new Error(`${path}: initial map readiness ${Math.round(readyDurationMs)}ms exceeds ${readyBudgetMs}ms`)
 
     const initial = await spatialWindowSnapshot(page)
     assertSpatialWindow(path, initial)
@@ -174,12 +178,23 @@ async function verifySpatialMapWindowing(): Promise<void> {
 
     const zoomIn = page.locator('ld-dashboard-page').locator('ld-visualization-host').locator('button.maplibregl-ctrl-zoom-in')
     let current = initial
+    let slowestViewportMs = 0
+    const viewportBudgetMs = 5_000
+    const rapidStarted = performance.now()
+    await zoomIn.evaluate((button) => { button.click(); button.click(); button.click() })
+    await waitForSpatialRevision(page, current)
+    slowestViewportMs = Math.max(slowestViewportMs, performance.now() - rapidStarted)
+    current = await spatialWindowSnapshot(page)
+    assertSpatialWindow(path, current)
     for (let attempt = 0; attempt < 10 && current.precision !== 'raw'; attempt++) {
+      const viewportStarted = performance.now()
       await zoomIn.click()
       await waitForSpatialRevision(page, current)
+      slowestViewportMs = Math.max(slowestViewportMs, performance.now() - viewportStarted)
       current = await spatialWindowSnapshot(page)
       assertSpatialWindow(path, current)
     }
+    if (slowestViewportMs > viewportBudgetMs) throw new Error(`${path}: viewport readiness ${Math.round(slowestViewportMs)}ms exceeds ${viewportBudgetMs}ms`)
     if (current.precision !== 'raw') throw new Error(`${path}: viewport never transitioned from aggregated to raw precision`)
     if (current.requestSeq <= initial.requestSeq || current.dataRevision <= initial.dataRevision) {
       throw new Error(`${path}: revisions did not advance from ${JSON.stringify(initial)} to ${JSON.stringify(current)}`)
@@ -204,6 +219,7 @@ async function verifySpatialMapWindowing(): Promise<void> {
       }
     }
     assertNoBlockingConsoleMessages(path, messages)
+    console.log(`${path}: ready=${Math.round(readyDurationMs)}ms slowestViewport=${Math.round(slowestViewportMs)}ms`)
   } finally {
     await page.close()
   }

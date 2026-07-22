@@ -99,6 +99,27 @@ test('controller sends context-only changes without replacing visualization data
   expect(updates).toEqual([Change.Context])
 })
 
+test('controller transfers renderer view state across a lazy focus mount', async () => {
+  const camera = { center: [-46.63, -23.55], zoom: 7 }
+  const restored: unknown[] = []
+  const handle: RendererHandle = {
+    update: () => {}, resize: () => {}, snapshot: async () => new Blob(), dispose: () => {},
+    captureViewState: () => camera,
+    restoreViewState: (state) => { restored.push(state) },
+  }
+  const registry = new RendererRegistry()
+  registry.register({
+    id: 'test', version: '1.0.0', schemaVersion: currentVisualizationSchemaVersion, kinds: ['kpi'], capabilities: { snapshot: true, windowed: false, interactive: false },
+    load: async () => ({ mount: () => handle }),
+  })
+  const controller = new VisualizationController(registry, {} as HTMLElement)
+  controller.restoreViewState(camera)
+  await controller.apply(envelope(1))
+
+  expect(restored).toEqual([camera])
+  expect(controller.captureViewState()).toBe(camera)
+})
+
 test('registry rejects duplicate IDs and unsupported capabilities fail closed', async () => {
   const registry = new RendererRegistry()
   const registration = {

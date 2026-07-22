@@ -14,7 +14,7 @@ import { mapAccessibleData, mapTooltipEntries, type RenderedFeatureLocator } fro
 import { emitMapObservation, installWebGLRecovery, mapNow, removeRendererFrame, waitForMapIdle, waitForMapRender, type MapObservationStage } from './maplibre/lifecycle'
 import { nextSpatialRequestSequence, spatialWindowAlreadyCurrent, spatialWindowRequest, type MapSpatialWindowRequest } from './maplibre/spatial'
 import { MapSpatialSelectionControl } from './maplibre/spatial-selection-control'
-import { coordinateReferenceGrid, fitMapToGeographicData } from './maplibre/viewport'
+import { coordinateReferenceGrid, fitMapToGeographicData, resetMapToHome, type MapHomeCamera } from './maplibre/viewport'
 
 export { loadMapStyleAsset, sameOriginGeometryURL, verifyGeometryDigest } from './maplibre/assets'
 export { applyBasemapTheme, basemapBoundaryLayer, basemapLayer, concreteCSSColor, mapThemeColors } from './maplibre/basemap'
@@ -25,7 +25,7 @@ export { clusterExpansionForRenderedFeatures, interactionCommandForRenderedFeatu
 export { mapAccessibleData, mapTooltipEntries } from './maplibre/overlays'
 export { installWebGLRecovery, removeRendererFrame, waitForMapIdle, waitForMapRender } from './maplibre/lifecycle'
 export { nextSpatialRequestSequence, spatialWindowAlreadyCurrent, spatialWindowRequest, type MapSpatialWindowRequest } from './maplibre/spatial'
-export { coordinateReferenceGrid, fitMapToGeographicData } from './maplibre/viewport'
+export { coordinateReferenceGrid, fitMapToGeographicData, resetMapToHome } from './maplibre/viewport'
 
 export const adapter: RendererAdapter = {
   async mount(container, envelope, context) {
@@ -195,6 +195,14 @@ class MapLibreHandle implements RendererHandle {
     await waitForMapIdle(this.map)
     const canvas = this.map.getCanvas()
     return new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('MapLibre snapshot failed')), 'image/png'))
+  }
+  captureViewState(): MapHomeCamera {
+    const center = this.map.getCenter()
+    return { center: [center.lng, center.lat], zoom: this.map.getZoom(), bearing: this.map.getBearing(), pitch: this.map.getPitch() }
+  }
+  restoreViewState(state: unknown): void {
+    const camera = mapHomeCamera(state)
+    if (camera) resetMapToHome(this.map, camera)
   }
   dispose(): void {
     if (this.disposed) return
@@ -366,7 +374,7 @@ class MapLibreHandle implements RendererHandle {
       const button = document.createElement('button')
       button.type = 'button'; button.className = 'ld-map-reset'; button.textContent = 'Reset view'; button.setAttribute('aria-label', 'Reset map view')
       button.style.cssText = 'position:absolute;z-index:3;top:10px;right:50px;padding:5px 8px;border:1px solid var(--ld-line-default,#d0d7de);border-radius:4px;background:var(--ld-bg-panel,#fff);color:var(--ld-fg-default,#1f2328);font:600 11px/1.2 var(--ld-font-family-ui,system-ui);cursor:pointer;box-shadow:0 1px 2px rgba(31,35,40,.08)'
-      button.addEventListener('click', () => { if (this.homeCamera) this.map.easeTo(this.homeCamera) })
+      button.addEventListener('click', () => { if (this.homeCamera) resetMapToHome(this.map, this.homeCamera) })
       this.frame.append(button); this.resetButton = button
     }
   }
@@ -497,4 +505,13 @@ class MapLibreHandle implements RendererHandle {
     const theme = this.envelope?.spec.kind === 'geographic' ? this.envelope.spec.presentation.theme : 'auto'
     return mapThemeColors(theme, this.context.theme)
   }
+
+}
+
+function mapHomeCamera(value: unknown): MapHomeCamera | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const camera = value as Partial<MapHomeCamera>
+  if (!Array.isArray(camera.center) || camera.center.length !== 2 || !camera.center.every((coordinate) => typeof coordinate === 'number' && Number.isFinite(coordinate))) return undefined
+  if (![camera.zoom, camera.bearing, camera.pitch].every((coordinate) => typeof coordinate === 'number' && Number.isFinite(coordinate))) return undefined
+  return { center: [camera.center[0]!, camera.center[1]!], zoom: camera.zoom!, bearing: camera.bearing!, pitch: camera.pitch! }
 }
