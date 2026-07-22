@@ -206,7 +206,7 @@ async function verifySpatialMapWindowing(): Promise<void> {
 
     const reset = page.locator('lv-dashboard-page').locator('lv-visualization-host').locator('button[aria-label="Reset map view"]')
     await reset.click()
-    await waitForSpatialRevision(page, current)
+    await waitForSpatialReset(page, current, initial)
     const restored = await spatialWindowSnapshot(page)
     assertSpatialWindow(path, restored)
     if (restored.windowID !== initial.windowID || restored.precision !== initial.precision) {
@@ -264,6 +264,25 @@ async function waitForSpatialRevision(page: Page, previous: SpatialWindowSnapsho
       && envelope?.status?.kind !== 'loading'
       && !envelope?.status?.message
   }, { dataRevision: previous.dataRevision, requestSeq: previous.requestSeq }, { timeout: 120_000 })
+}
+
+async function waitForSpatialReset(page: Page, previous: SpatialWindowSnapshot, initial: SpatialWindowSnapshot): Promise<void> {
+  await page.waitForFunction(({ dataRevision, requestSeq, windowID, precision }) => {
+    const dashboard = document.querySelector('lv-dashboard-page') as HTMLElement & { shadowRoot: ShadowRoot }
+    const host = dashboard?.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & { envelope?: any }
+    const envelope = host?.envelope
+    const window = envelope?.dataState?.window
+    return envelope?.dataRevision > dataRevision
+      && window?.requestSeq > requestSeq
+      && window?.id === windowID
+      && window?.precision === precision
+      && envelope?.status?.kind !== 'loading'
+  }, {
+    dataRevision: previous.dataRevision,
+    requestSeq: previous.requestSeq,
+    windowID: initial.windowID,
+    precision: initial.precision,
+  }, { timeout: 120_000 })
 }
 
 function assertSpatialWindow(path: string, snapshot: SpatialWindowSnapshot): void {
