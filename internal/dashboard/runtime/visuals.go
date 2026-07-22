@@ -194,15 +194,15 @@ func (s *VisualizationDataService) bundledVisuals(ctx context.Context, runtime *
 	for _, key := range keys {
 		visual := definitions[key]
 		data := datumsFromDataQuery(bundle.Results[key].Rows)
-		switch visual.Shape() {
-		case "single_value":
+		switch visual.ResultShape() {
+		case visualizationdefinition.ResultScalar:
 			for _, row := range data {
 				if _, ok := row["label"]; !ok {
 					row["label"] = singleValueTitle(runtime, visual)
 				}
 				row["series"] = ""
 			}
-		case "category_multi_measure":
+		case visualizationdefinition.ResultCategoryMultiMeasure:
 			data = categoryMultiMeasureDatums(runtime, visual, data)
 		default:
 			if visual.Series != nil {
@@ -233,8 +233,8 @@ func (s *VisualizationDataService) bundleAggregateRequest(ctx context.Context, r
 	if err != nil {
 		return reportdef.AggregateQuery{}, err
 	}
-	switch visual.Shape() {
-	case "single_value":
+	switch visual.ResultShape() {
+	case visualizationdefinition.ResultScalar:
 		dimensions := []reportdef.QueryField{}
 		if len(visual.Dimensions) == 1 {
 			dimensions = append(dimensions, fieldRef(visual.Dimensions[0].FieldID, "label"))
@@ -244,7 +244,7 @@ func (s *VisualizationDataService) bundleAggregateRequest(ctx context.Context, r
 			sorts = nil
 		}
 		return reportdef.AggregateQuery{Table: visual.Table, Dimensions: dimensions, Measures: []reportdef.QueryField{queryFieldRef(visual.Measures[0], "value")}, Filters: queryFilters, Sort: sorts, Limit: visual.Limit}, nil
-	case "category_value", "category_series_value":
+	case visualizationdefinition.ResultCategoryValue, visualizationdefinition.ResultCategorySeriesValue:
 		dimensions, queryTime := categoryDimension(visual, "label")
 		if visual.Series != nil {
 			dimensions = append(dimensions, fieldRef(visual.Series.FieldID, "series"))
@@ -254,7 +254,7 @@ func (s *VisualizationDataService) bundleAggregateRequest(ctx context.Context, r
 			sorts = []reportdef.QuerySort{{Field: "label", Direction: "asc"}}
 		}
 		return reportdef.AggregateQuery{Table: visual.Table, Dimensions: dimensions, Measures: []reportdef.QueryField{queryFieldRef(visual.Measures[0], "value")}, Time: queryTime, Filters: queryFilters, Sort: sorts, Limit: visual.Limit}, nil
-	case "category_multi_measure":
+	case visualizationdefinition.ResultCategoryMultiMeasure:
 		dimensions, queryTime := categoryDimension(visual, "label")
 		measures := make([]reportdef.QueryField, 0, len(visual.Measures))
 		for index, measure := range visual.Measures {
@@ -262,7 +262,7 @@ func (s *VisualizationDataService) bundleAggregateRequest(ctx context.Context, r
 		}
 		return reportdef.AggregateQuery{Table: visual.Table, Dimensions: dimensions, Measures: measures, Time: queryTime, Filters: queryFilters, Sort: visualSorts(visual), Limit: visual.Limit}, nil
 	default:
-		return reportdef.AggregateQuery{}, &dataquery.BundleIncompatibleError{Err: fmt.Errorf("visual %q shape %q is not bundleable", visualID, visual.Shape())}
+		return reportdef.AggregateQuery{}, &dataquery.BundleIncompatibleError{Err: fmt.Errorf("visual %q result shape %q is not bundleable", visualID, visual.ResultShape())}
 	}
 }
 
@@ -311,7 +311,7 @@ func (s *VisualizationDataService) batchedSingleValueData(ctx context.Context, r
 		if err != nil {
 			return nil, err
 		}
-		if visual.Shape() != "single_value" || len(visual.Dimensions) != 0 || visual.Time != nil || len(visual.Measures) != 1 {
+		if visual.ResultShape() != visualizationdefinition.ResultScalar || len(visual.Dimensions) != 0 || visual.Time != nil || len(visual.Measures) != 1 {
 			continue
 		}
 		queryFilters, err := s.filters.semanticFilters(ctx, runtime, report, filters, "visual", visualID)
@@ -395,28 +395,28 @@ func singleValueTitle(runtime *modelRuntime, visual visualPlan) string {
 }
 
 func (s *VisualizationDataService) visualData(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, visualID string, visual visualPlan, filters dashboard.Filters) ([]dashboard.Datum, error) {
-	switch visual.Shape() {
-	case "single_value":
+	switch visual.ResultShape() {
+	case visualizationdefinition.ResultScalar:
 		return s.singleValueData(ctx, runtime, report, visualID, visual, filters)
-	case "category_multi_measure":
+	case visualizationdefinition.ResultCategoryMultiMeasure:
 		return s.categoryMultiMeasureData(ctx, runtime, report, visualID, visual, filters)
-	case "category_delta":
+	case visualizationdefinition.ResultCategoryDelta:
 		return s.categoryDeltaData(ctx, runtime, report, visualID, visual, filters)
-	case "binned_measure":
+	case visualizationdefinition.ResultHistogramBins:
 		return s.binnedMeasureData(ctx, runtime, report, visualID, visual, filters)
-	case "hierarchy":
+	case visualizationdefinition.ResultHierarchyNodes:
 		return s.hierarchyData(ctx, runtime, report, visualID, visual, filters)
-	case "matrix":
+	case visualizationdefinition.ResultMatrixCells:
 		return s.matrixData(ctx, runtime, report, visualID, visual, filters)
-	case "graph":
+	case visualizationdefinition.ResultGraphEdges:
 		return s.graphData(ctx, runtime, report, visualID, visual, filters)
-	case "geo":
+	case visualizationdefinition.ResultGeographicFeatures:
 		return s.geoData(ctx, runtime, report, visualID, visual, filters)
-	case "custom":
+	case visualizationdefinition.ResultCustomRows:
 		return s.customData(ctx, runtime, report, visualID, visual, filters)
-	case "ohlc":
+	case visualizationdefinition.ResultOHLC:
 		return s.ohlcData(ctx, runtime, report, visualID, visual, filters)
-	case "distribution":
+	case visualizationdefinition.ResultDistribution:
 		return s.distributionData(ctx, runtime, report, visualID, visual, filters)
 	default:
 		return s.categoryData(ctx, runtime, report, visualID, visual, filters)

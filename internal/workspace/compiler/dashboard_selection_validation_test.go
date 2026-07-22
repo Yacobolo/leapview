@@ -43,13 +43,8 @@ func TestValidateDashboardRejectsPointSelectionForAggregateRadarPolygons(t *test
 	for _, visualType := range []string{"radar"} {
 		t.Run(visualType, func(t *testing.T) {
 			dashboardDefinition, model := compilerSelectionFixture(report.SelectionMapping{Field: "release_decade", Value: "source"})
-			source := dashboardDefinition.Visuals["source"]
+			source := *dashboardDefinition.Visuals["source"].Chart
 			source.Type = visualType
-			if visualType == "graph" || visualType == "sankey" {
-				source.Shape = "graph"
-			} else if visualType != "radar" {
-				source.Shape = "hierarchy"
-			}
 			source.Query.Dimensions = []report.FieldRef{
 				{Field: "release_decade", Alias: "source"},
 				{Field: "release_decade", Alias: "target"},
@@ -57,10 +52,10 @@ func TestValidateDashboardRejectsPointSelectionForAggregateRadarPolygons(t *test
 			if visualType == "radar" {
 				source.Query.Dimensions = source.Query.Dimensions[:1]
 			}
-			dashboardDefinition.Visuals["source"] = source
+			dashboardDefinition.Visuals["source"] = report.ChartVisualization(source)
 
 			err := ValidateDashboard(dashboardDefinition, map[string]*semanticmodel.Model{"model": model})
-			want := fmt.Sprintf(`visual "source" type %q shape %q does not support point_selection`, visualType, source.ShapeOrDefault())
+			want := fmt.Sprintf(`visual "source" type %q shape %q does not support point_selection`, visualType, source.ResultShape())
 			if err == nil || !strings.Contains(err.Error(), want) {
 				t.Fatalf("ValidateDashboard() error = %v, want containing %q", err, want)
 			}
@@ -72,18 +67,13 @@ func TestValidateDashboardAllowsSelectionFromHierarchyNodesAndNetworkLinks(t *te
 	for _, visualType := range []string{"graph", "sankey", "tree", "treemap", "sunburst"} {
 		t.Run(visualType, func(t *testing.T) {
 			dashboardDefinition, model := compilerSelectionFixture(report.SelectionMapping{Field: "release_decade", Value: "source"})
-			source := dashboardDefinition.Visuals["source"]
+			source := *dashboardDefinition.Visuals["source"].Chart
 			source.Type = visualType
-			if visualType == "graph" || visualType == "sankey" {
-				source.Shape = "graph"
-			} else {
-				source.Shape = "hierarchy"
-			}
 			source.Query.Dimensions = []report.FieldRef{
 				{Field: "release_decade", Alias: "source"},
 				{Field: "release_decade", Alias: "target"},
 			}
-			dashboardDefinition.Visuals["source"] = source
+			dashboardDefinition.Visuals["source"] = report.ChartVisualization(source)
 
 			if err := ValidateDashboard(dashboardDefinition, map[string]*semanticmodel.Model{"model": model}); err != nil {
 				t.Fatalf("ValidateDashboard() error = %v", err)
@@ -113,9 +103,9 @@ func TestValidateDashboardResolvesNumericSpatialSelectionCoordinates(t *testing.
 		t.Fatalf("ValidateDashboard() error = %v", err)
 	}
 
-	source := dashboardDefinition.Visuals["source"]
+	source := *dashboardDefinition.Visuals["source"].Chart
 	source.Interaction.SpatialSelection.Latitude.Field = "ratings.release_decade"
-	dashboardDefinition.Visuals["source"] = source
+	dashboardDefinition.Visuals["source"] = report.ChartVisualization(source)
 	if err := ValidateDashboard(dashboardDefinition, map[string]*semanticmodel.Model{"model": model}); err == nil || !strings.Contains(err.Error(), `field "ratings.release_decade" must be numeric`) {
 		t.Fatalf("nonnumeric spatial coordinate error = %v", err)
 	}
@@ -145,7 +135,7 @@ func compilerSpatialSelectionFixture() (*report.Dashboard, *semanticmodel.Model)
 	target := report.Visual{Title: "Target", Type: "kpi", Query: report.VisualQuery{Table: "ratings", Measures: []report.FieldRef{{Field: "rating_count", Alias: "value"}}, Limit: 1}}
 	return &report.Dashboard{
 		ID: "dashboard", Title: "Dashboard", SemanticModel: "model",
-		Visuals: map[string]report.Visual{"source": source, "target": target},
+		Visuals: report.ChartVisualizations(map[string]report.Visual{"source": source, "target": target}),
 		Pages:   []dashboard.Page{{ID: "overview", Title: "Overview"}},
 	}, model
 }
@@ -190,7 +180,7 @@ func compilerSelectionFixture(mapping report.SelectionMapping) (*report.Dashboar
 	}
 	return &report.Dashboard{
 		ID: "dashboard", Title: "Dashboard", SemanticModel: "model",
-		Visuals: map[string]report.Visual{"source": source, "target": target},
+		Visuals: report.ChartVisualizations(map[string]report.Visual{"source": source, "target": target}),
 		Pages:   []dashboard.Page{{ID: "overview", Title: "Overview"}},
 	}, model
 }

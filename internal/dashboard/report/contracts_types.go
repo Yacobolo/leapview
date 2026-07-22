@@ -9,14 +9,109 @@ import (
 )
 
 type Dashboard struct {
-	ID            string                      `yaml:"id"`
-	Title         string                      `yaml:"title"`
-	Description   string                      `yaml:"description"`
-	SemanticModel string                      `yaml:"semantic_model"`
-	Filters       map[string]FilterDefinition `yaml:"filters"`
-	Visuals       map[string]Visual           `yaml:"visuals"`
-	Tables        map[string]TableVisual      `yaml:"tables"`
-	Pages         []dashboard.Page            `yaml:"pages"`
+	ID            string                            `yaml:"id"`
+	Title         string                            `yaml:"title"`
+	Description   string                            `yaml:"description"`
+	SemanticModel string                            `yaml:"semantic_model"`
+	Filters       map[string]FilterDefinition       `yaml:"filters"`
+	Visuals       map[string]AuthoringVisualization `yaml:"visuals"`
+	Pages         []dashboard.Page                  `yaml:"pages"`
+}
+
+// AuthoringVisualization is the closed visualization union used from YAML
+// loading through compilation. Exactly one variant is populated.
+type AuthoringVisualization struct {
+	Type    string
+	Chart   *Visual
+	Tabular *TableVisual
+}
+
+func (v *AuthoringVisualization) UnmarshalYAML(value *yaml.Node) error {
+	var discriminator struct {
+		Type string `yaml:"type"`
+	}
+	if err := value.Decode(&discriminator); err != nil {
+		return err
+	}
+	if discriminator.Type == "" {
+		return fmt.Errorf("visualization requires type")
+	}
+	v.Type = discriminator.Type
+	switch discriminator.Type {
+	case "table", "matrix", "pivot":
+		if err := rejectUnknownVisualizationFields(value, map[string]struct{}{
+			"type": {}, "title": {}, "description": {}, "cardinality": {}, "query": {}, "default_sort": {},
+			"presentation": {}, "columns": {}, "interaction": {}, "measure_formatting": {},
+		}); err != nil {
+			return err
+		}
+		var definition TableVisual
+		if err := value.Decode(&definition); err != nil {
+			return err
+		}
+		v.Tabular = &definition
+	default:
+		if err := rejectUnknownVisualizationFields(value, map[string]struct{}{
+			"type": {}, "title": {}, "description": {}, "query": {}, "presentation": {}, "accessibility": {},
+			"data_budget": {}, "interaction": {}, "geo": {}, "custom": {},
+		}); err != nil {
+			return err
+		}
+		var definition Visual
+		if err := value.Decode(&definition); err != nil {
+			return err
+		}
+		definition.Type = discriminator.Type
+		v.Chart = &definition
+	}
+	return nil
+}
+
+func rejectUnknownVisualizationFields(value *yaml.Node, allowed map[string]struct{}) error {
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("visual must be a mapping")
+	}
+	for index := 0; index+1 < len(value.Content); index += 2 {
+		field := value.Content[index].Value
+		if _, ok := allowed[field]; !ok {
+			return fmt.Errorf("unsupported visualization property %q", field)
+		}
+	}
+	return nil
+}
+
+func ChartVisualization(value Visual) AuthoringVisualization {
+	return AuthoringVisualization{Type: value.Type, Chart: &value}
+}
+
+func TabularVisualization(kind string, value TableVisual) AuthoringVisualization {
+	return AuthoringVisualization{Type: kind, Tabular: &value}
+}
+
+func ChartVisualizations(values map[string]Visual) map[string]AuthoringVisualization {
+	result := make(map[string]AuthoringVisualization, len(values))
+	for id, value := range values {
+		result[id] = ChartVisualization(value)
+	}
+	return result
+}
+
+func TabularVisualizations(kind string, values map[string]TableVisual) map[string]AuthoringVisualization {
+	result := make(map[string]AuthoringVisualization, len(values))
+	for id, value := range values {
+		result[id] = TabularVisualization(kind, value)
+	}
+	return result
+}
+
+func MergeVisualizations(groups ...map[string]AuthoringVisualization) map[string]AuthoringVisualization {
+	result := map[string]AuthoringVisualization{}
+	for _, group := range groups {
+		for id, value := range group {
+			result[id] = value
+		}
+	}
+	return result
 }
 
 type FilterDefinition struct {
@@ -73,22 +168,16 @@ type FilterValues struct {
 }
 
 type Visual struct {
-	Title           string              `yaml:"title"`
-	Description     string              `yaml:"description"`
-	Kind            string              `yaml:"-" json:"-"`
-	Shape           string              `yaml:"-" json:"-"`
-	Renderer        string              `yaml:"-" json:"-"`
-	Type            string              `yaml:"type"`
-	Query           VisualQuery         `yaml:"query"`
-	Presentation    VisualPresentation  `yaml:"presentation" json:"presentation"`
-	Accessibility   VisualAccessibility `yaml:"accessibility" json:"accessibility"`
-	DataBudget      VisualDataBudget    `yaml:"data_budget" json:"dataBudget"`
-	Geo             VisualGeo           `yaml:"geo" json:"geo"`
-	Custom          VisualCustom        `yaml:"custom" json:"custom"`
-	Options         map[string]any      `yaml:"-" json:"-"`
-	RendererOptions map[string]any      `yaml:"-" json:"-"`
-	Interaction     Interaction         `yaml:"interaction"`
-	Encode          map[string]string   `yaml:"-" json:"-"`
+	Title         string              `yaml:"title"`
+	Description   string              `yaml:"description"`
+	Type          string              `yaml:"type"`
+	Query         VisualQuery         `yaml:"query"`
+	Presentation  VisualPresentation  `yaml:"presentation" json:"presentation"`
+	Accessibility VisualAccessibility `yaml:"accessibility" json:"accessibility"`
+	DataBudget    VisualDataBudget    `yaml:"data_budget" json:"dataBudget"`
+	Geo           VisualGeo           `yaml:"geo" json:"geo"`
+	Custom        VisualCustom        `yaml:"custom" json:"custom"`
+	Interaction   Interaction         `yaml:"interaction"`
 }
 
 type VisualPresentation struct {
@@ -434,7 +523,6 @@ type Interaction struct {
 
 type FilterTargets struct {
 	Visuals []string `yaml:"visuals" json:"visuals,omitempty"`
-	Tables  []string `yaml:"tables" json:"tables,omitempty"`
 }
 
 type SelectionInteraction struct {
@@ -561,7 +649,6 @@ func (s SelectionInteraction) IsZero() bool {
 }
 
 type TableVisual struct {
-	Kind              string                                     `yaml:"kind"`
 	Cardinality       string                                     `yaml:"cardinality"`
 	Title             string                                     `yaml:"title"`
 	Description       string                                     `yaml:"description"`
@@ -643,144 +730,27 @@ func (q *TableQuery) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-func (t TableVisual) KindOrDefault() string {
-	if t.Kind != "" {
-		return t.Kind
-	}
-	return "data_table"
-}
-
 func (v Visual) KindOrDefault() string {
-	if v.Type == "kpi" {
-		return "kpi"
-	}
-	if v.Kind != "" {
-		return v.Kind
+	if capability, ok := VisualizationCapabilityForType(v.Type); ok {
+		return capability.Kind
 	}
 	return "chart"
 }
 
-func (v Visual) ShapeOrDefault() string {
-	if v.Shape != "" {
-		return v.Shape
-	}
-	if v.KindOrDefault() == "kpi" {
-		return "single_value"
-	}
-	switch v.Type {
-	case "combo":
-		return "category_multi_measure"
-	case "waterfall":
-		return "category_delta"
-	case "histogram":
-		return "binned_measure"
-	case "tree", "treemap", "sunburst":
-		return "hierarchy"
-	case "heatmap":
-		return "matrix"
-	case "sankey", "graph":
-		return "graph"
-	case "map":
-		return "geo"
-	case "candlestick":
-		return "ohlc"
-	case "boxplot":
-		return "distribution"
-	case "gauge":
-		return "single_value"
-	}
-	if v.Type == "gauge" {
-		return "single_value"
-	}
-	if !v.Query.Series.IsZero() {
+func (v Visual) ResultShape() string {
+	capability, ok := VisualizationCapabilityForType(v.Type)
+	if ok && capability.SupportsSeries && !v.Query.Series.IsZero() {
 		return "category_series_value"
+	}
+	if ok {
+		return capability.ResultShape
 	}
 	return "category_value"
 }
 
-func (v Visual) RendererOrDefault() string {
-	if v.Renderer != "" {
-		return v.Renderer
+func (v Visual) ownedRenderer() string {
+	if capability, ok := VisualizationCapabilityForType(v.Type); ok {
+		return capability.Renderer
 	}
-	if v.KindOrDefault() == "kpi" {
-		return "html"
-	}
-	if v.Type == "map" {
-		return "maplibre"
-	}
-	if v.Type == "custom" {
-		return "vega-lite-sandbox"
-	}
-	return "echarts"
-}
-
-func (v Visual) CoreOptions() map[string]any {
-	options := copyMap(v.Options)
-	presentation := v.Presentation
-	set := func(key string, value any, include bool) {
-		if include {
-			options[key] = value
-		}
-	}
-	set("legend", presentation.Legend, presentation.Legend != "")
-	set("show_labels", presentation.ShowLabels, presentation.ShowLabels)
-	set("stacked", presentation.Stacked, presentation.Stacked)
-	set("smooth", presentation.Smooth, presentation.Smooth)
-	if presentation.ShowSymbols != nil {
-		options["show_symbols"] = *presentation.ShowSymbols
-	}
-	set("data_zoom", presentation.DataZoom, presentation.DataZoom)
-	if presentation.Area != nil {
-		options["area"] = *presentation.Area
-	}
-	set("step", presentation.Step, presentation.Step)
-	set("orientation", presentation.Orientation, presentation.Orientation != "")
-	set("label_position", presentation.LabelPosition, presentation.LabelPosition != "")
-	set("symbol_size", presentation.SymbolSize, presentation.SymbolSize > 0)
-	set("bin_count", presentation.HistogramBins, presentation.HistogramBins > 0)
-	set("series_types", presentation.SeriesTypes, len(presentation.SeriesTypes) > 0)
-	set("dual_axis", presentation.DualAxis, presentation.DualAxis)
-	set("rose_type", "radius", presentation.Rose)
-	set("center_label", presentation.CenterLabel, presentation.CenterLabel != "")
-	set("inner_radius", presentation.InnerRadius, presentation.InnerRadius > 0)
-	set("outer_radius", presentation.OuterRadius, presentation.OuterRadius > 0)
-	set("align", presentation.Align, presentation.Align != "")
-	set("sort", presentation.Sort, presentation.Sort != "")
-	set("initial_depth", presentation.InitialDepth, presentation.InitialDepth > 0)
-	set("roam", presentation.Roam, presentation.Roam)
-	set("layout", presentation.Layout, presentation.Layout != "")
-	if presentation.Breadcrumb != nil {
-		options["breadcrumb"] = *presentation.Breadcrumb
-	}
-	set("node_gap", presentation.NodeGap, presentation.NodeGap > 0)
-	set("curveness", presentation.Curveness, presentation.Curveness > 0)
-	set("focus", presentation.Focus, presentation.Focus != "")
-	if presentation.Minimum != nil {
-		options["min"] = *presentation.Minimum
-	}
-	if presentation.Maximum != nil {
-		options["max"] = *presentation.Maximum
-	}
-	set("progress_width", presentation.ProgressWidth, presentation.ProgressWidth > 0)
-	set("note", presentation.Note, presentation.Note != "")
-	set("tone", presentation.Tone, presentation.Tone != "")
-	if len(presentation.Thresholds) > 0 {
-		thresholds := make([]map[string]any, len(presentation.Thresholds))
-		for index, threshold := range presentation.Thresholds {
-			thresholds[index] = map[string]any{"value": threshold.Value, "tone": threshold.Tone}
-		}
-		options["thresholds"] = thresholds
-	}
-	return options
-}
-
-func copyMap(source map[string]any) map[string]any {
-	if len(source) == 0 {
-		return map[string]any{}
-	}
-	next := make(map[string]any, len(source))
-	for key, value := range source {
-		next[key] = value
-	}
-	return next
+	return ""
 }

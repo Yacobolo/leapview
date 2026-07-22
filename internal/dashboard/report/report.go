@@ -133,14 +133,14 @@ func PageTableNames(pages []dashboard.Page, pageID string) []string {
 	seen := map[string]struct{}{}
 	names := []string{}
 	for _, visual := range page.Visuals {
-		if visual.Table == "" {
+		if visual.Kind != "table" || visual.Visual == "" {
 			continue
 		}
-		if _, ok := seen[visual.Table]; ok {
+		if _, ok := seen[visual.Visual]; ok {
 			continue
 		}
-		seen[visual.Table] = struct{}{}
-		names = append(names, visual.Table)
+		seen[visual.Visual] = struct{}{}
+		names = append(names, visual.Visual)
 	}
 	return names
 }

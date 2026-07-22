@@ -364,7 +364,7 @@ MapLibre exclusively owns built-in geographic rendering; ECharts `geo` is not a 
 
 ### Vega-Lite
 
-Vega-Lite supports the `custom` visualization kind. A custom Vega-Lite specification is not treated as built-in IR and cannot use `renderer_options` to bypass product contracts.
+Vega-Lite supports the `custom` visualization kind. A custom Vega-Lite specification is not treated as built-in IR and cannot bypass product contracts with renderer-native options.
 
 Custom rendering occurs in an isolated sandbox with:
 

@@ -71,46 +71,8 @@ func newVisualPlan(definition visualizationdefinition.Definition) (visualPlan, e
 	return plan, nil
 }
 
-func (visual visualPlan) Shape() string {
-	switch value := visual.Definition.Spec.Value.(type) {
-	case *visualizationir.KPIVisualizationSpec:
-		return "single_value"
-	case *visualizationir.CartesianVisualizationSpec:
-		switch value.Mark {
-		case visualizationir.VisualizationCartesianMarkWaterfall:
-			return "category_delta"
-		case visualizationir.VisualizationCartesianMarkHistogram:
-			return "binned_measure"
-		case visualizationir.VisualizationCartesianMarkCandlestick:
-			return "ohlc"
-		case visualizationir.VisualizationCartesianMarkBoxplot:
-			return "distribution"
-		case visualizationir.VisualizationCartesianMarkHeatmap:
-			return "matrix"
-		case visualizationir.VisualizationCartesianMarkCombo:
-			return "category_multi_measure"
-		}
-	case *visualizationir.HierarchyVisualizationSpec:
-		if value.Mark == visualizationir.VisualizationHierarchyMarkGraph || value.Mark == visualizationir.VisualizationHierarchyMarkSankey {
-			return "graph"
-		}
-		return "hierarchy"
-	case *visualizationir.PolarVisualizationSpec:
-		if value.Mark == visualizationir.VisualizationPolarMarkGauge {
-			return "single_value"
-		}
-	case *visualizationir.GeographicVisualizationSpec:
-		return "geo"
-	case *visualizationir.CustomVisualizationSpec:
-		return "custom"
-	}
-	if len(visual.Measures) > 1 {
-		return "category_multi_measure"
-	}
-	if visual.Series != nil {
-		return "category_series_value"
-	}
-	return "category_value"
+func (visual visualPlan) ResultShape() visualizationdefinition.ResultShape {
+	return visual.Definition.Query.ResultShape
 }
 
 func (visual visualPlan) Title() string {
@@ -194,7 +156,7 @@ func visualSorts(visual visualPlan) []reportdef.QuerySort {
 		if field != "value" && field != "series" {
 			for index, dimension := range visual.Dimensions {
 				if field == dimension.FieldID || field == dimension.Alias || field == displayField(dimension.FieldID) {
-					field = dimensionSortColumn(visual.Shape(), index)
+					field = dimensionSortColumn(visual.ResultShape(), index)
 					break
 				}
 			}
@@ -304,35 +266,35 @@ func distributionSorts(visual visualPlan) []reportdef.QuerySort {
 }
 
 func defaultSortColumn(visual visualPlan) string {
-	switch visual.Shape() {
-	case "matrix":
+	switch visual.ResultShape() {
+	case visualizationdefinition.ResultMatrixCells:
 		return "row"
-	case "graph":
+	case visualizationdefinition.ResultGraphEdges:
 		return "source"
-	case "geo":
+	case visualizationdefinition.ResultGeographicFeatures:
 		return "name"
-	case "hierarchy":
+	case visualizationdefinition.ResultHierarchyNodes:
 		return "value"
 	default:
 		return "label"
 	}
 }
 
-func dimensionSortColumn(shape string, index int) string {
+func dimensionSortColumn(shape visualizationdefinition.ResultShape, index int) string {
 	switch shape {
-	case "matrix":
+	case visualizationdefinition.ResultMatrixCells:
 		if index == 1 {
 			return "chart_column"
 		}
 		return "row"
-	case "graph":
+	case visualizationdefinition.ResultGraphEdges:
 		if index == 1 {
 			return "target"
 		}
 		return "source"
-	case "geo":
+	case visualizationdefinition.ResultGeographicFeatures:
 		return "name"
-	case "hierarchy":
+	case visualizationdefinition.ResultHierarchyNodes:
 		return fmt.Sprintf("level_%d", index)
 	default:
 		return "label"

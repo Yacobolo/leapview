@@ -166,38 +166,6 @@ func (h Handler) QueryDashboardPage(w nethttp.ResponseWriter, r *nethttp.Request
 	for id, envelope := range patch.Visuals {
 		visuals[id] = envelope
 	}
-	if report, _, exists := metrics.Report(dashboardID); exists {
-		page, pageExists := streamActivePage(metrics.Pages(dashboardID), pageID)
-		if !pageExists {
-			page, pageExists = streamActivePage(report.Pages, pageID)
-		}
-		if !pageExists {
-			writeJSONError(w, fmt.Errorf("page %q not found", pageID), nethttp.StatusNotFound)
-			return
-		}
-		for _, component := range page.PlacedVisuals() {
-			if component.Table == "" {
-				continue
-			}
-			request := metrics.NormalizeTableRequest(dashboardID, dashboard.TableRequest{Table: component.Table, Block: "a", Count: dashboard.TableChunkSize})
-			table, err := metrics.QueryTablePage(ctx, dashboardID, pageID, filters, request)
-			if err != nil {
-				writeJSONError(w, err, nethttp.StatusBadRequest)
-				return
-			}
-			definition, exists := metrics.VisualizationDefinition(dashboardID, component.Table)
-			if !exists {
-				writeJSONError(w, fmt.Errorf("compiled visualization %q not found", component.Table), nethttp.StatusInternalServerError)
-				return
-			}
-			envelope, err := visualizationruntime.TableEnvelopeFromDefinition(definition, table, 1, 1)
-			if err != nil {
-				writeJSONError(w, err, nethttp.StatusInternalServerError)
-				return
-			}
-			visuals[component.Table] = envelope
-		}
-	}
 	writeJSON(w, nethttp.StatusOK, map[string]any{"filters": patch.Filters, "filterOptions": patch.FilterOptions, "status": patch.Status, "visuals": visuals})
 }
 
@@ -582,12 +550,6 @@ func dashboardComponentSummary(component dashboard.PageVisual, report dashboardd
 			title = dashboarddefinition.SpecTitle(report.Visualizations[component.Visual].Spec)
 		}
 		return api.DashboardManifestComponent{ID: component.ID, Kind: "visual", Ref: component.Visual, Title: title}
-	case component.Table != "":
-		title := component.Title
-		if title == "" {
-			title = dashboarddefinition.SpecTitle(report.Visualizations[component.Table].Spec)
-		}
-		return api.DashboardManifestComponent{ID: component.ID, Kind: "visual", Ref: component.Table, Title: title}
 	case component.Filter != "":
 		title := component.Title
 		if title == "" {
@@ -614,7 +576,7 @@ func pageComponentForVisual(page dashboard.Page, visualID string) (dashboard.Pag
 
 func pageComponentForTable(page dashboard.Page, tableID string) (dashboard.PageVisual, bool) {
 	for _, component := range page.PlacedVisuals() {
-		if component.Table == tableID {
+		if component.Kind == "table" && component.Visual == tableID {
 			return component, true
 		}
 	}

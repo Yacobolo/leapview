@@ -186,13 +186,12 @@ func selectionFilterFixture() (*dashboarddefinition.Definition, *semanticmodel.M
 		Measures: map[string]semanticmodel.MetricMeasure{"rating_count": {Fact: "ratings"}, "tag_count": {Fact: "tags"}},
 	}
 	report := &reportdef.Dashboard{
-		Visuals: map[string]reportdef.Visual{
+		Visuals: reportdef.MergeVisualizations(reportdef.ChartVisualizations(map[string]reportdef.Visual{
 			"decades": selectionFilterVisual([]reportdef.FieldRef{{Field: "release_decade", Alias: "label"}}, reportdef.QueryTime{}, []reportdef.SelectionMapping{{Field: "release_decade", Value: "label"}}),
 			"buckets": selectionFilterVisual([]reportdef.FieldRef{{Field: "ratings.rating_bucket", Alias: "label"}}, reportdef.QueryTime{}, []reportdef.SelectionMapping{{Field: "ratings.rating_bucket", Fact: "ratings", Value: "label"}}),
 			"months":  selectionFilterVisual(nil, reportdef.QueryTime{Field: "activity_date", Grain: "month", Alias: "label"}, []reportdef.SelectionMapping{{Field: "activity_date", Grain: "month", Value: "label"}}),
 			"cross":   {Query: reportdef.VisualQuery{Measures: []reportdef.FieldRef{{Field: "rating_count"}, {Field: "tag_count"}}}},
-		},
-		Tables: map[string]reportdef.TableVisual{"plain_table": {Query: reportdef.TableQuery{Table: "ratings"}}},
+		}), reportdef.TabularVisualizations("table", map[string]reportdef.TableVisual{"plain_table": {Query: reportdef.TableQuery{Table: "ratings"}}})),
 	}
 	return compiledSelectionDashboard(report), model
 }
@@ -200,10 +199,11 @@ func selectionFilterFixture() (*dashboarddefinition.Definition, *semanticmodel.M
 func compiledSelectionDashboard(authored *reportdef.Dashboard) *dashboarddefinition.Definition {
 	visualizations := map[string]visualizationdefinition.Definition{}
 	for id, visual := range authored.Visuals {
-		visualizations[id] = compiledSelectionVisual(id, visual)
-	}
-	for id, table := range authored.Tables {
-		visualizations[id] = visualizationdefinition.Definition{ID: id, Query: visualizationdefinition.QueryBinding{Kind: visualizationdefinition.QueryDetail, Detail: &visualizationdefinition.DetailQueryBinding{TableID: table.Query.Table}}}
+		if visual.Chart != nil {
+			visualizations[id] = compiledSelectionVisual(id, *visual.Chart)
+		} else if visual.Tabular != nil {
+			visualizations[id] = visualizationdefinition.Definition{ID: id, Query: visualizationdefinition.QueryBinding{Kind: visualizationdefinition.QueryDetail, ResultShape: visualizationdefinition.ResultDetailWindow, Detail: &visualizationdefinition.DetailQueryBinding{TableID: visual.Tabular.Query.Table}}}
+		}
 	}
 	return &dashboarddefinition.Definition{Visualizations: visualizations}
 }
@@ -245,7 +245,7 @@ func compiledSelectionVisual(id string, authored reportdef.Visual) visualization
 	}
 	base := visualizationir.VisualizationSpecBase{Kind: "cartesian", Title: id, Datasets: []visualizationir.VisualizationDatasetSchema{{ID: "primary", Fields: fields}}, Interactions: interactions}
 	spec := visualizationir.VisualizationSpec{Value: &visualizationir.CartesianVisualizationSpec{VisualizationSpecBase: base, Kind: "cartesian"}}
-	return visualizationdefinition.Definition{ID: id, Spec: spec, Query: visualizationdefinition.QueryBinding{Kind: visualizationdefinition.QueryAggregate, Aggregate: &visualizationdefinition.AggregateQueryBinding{Dimensions: dimensions, Measures: measures, Time: timeBinding, Limit: 100}}}
+	return visualizationdefinition.Definition{ID: id, Spec: spec, Query: visualizationdefinition.QueryBinding{Kind: visualizationdefinition.QueryAggregate, ResultShape: visualizationdefinition.ResultCategoryValue, Aggregate: &visualizationdefinition.AggregateQueryBinding{Dimensions: dimensions, Measures: measures, Time: timeBinding, Limit: 100}}}
 }
 
 func selectionFilterVisual(dimensions []reportdef.FieldRef, queryTime reportdef.QueryTime, mappings []reportdef.SelectionMapping) reportdef.Visual {

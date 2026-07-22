@@ -932,13 +932,12 @@ func fakeAgentAuthoringReport() reportdef.Dashboard {
 		Title:         "Executive Sales",
 		Description:   "Sales dashboard",
 		SemanticModel: "test",
-		Visuals: map[string]reportdef.Visual{
+		Visuals: reportdef.MergeVisualizations(reportdef.ChartVisualizations(map[string]reportdef.Visual{
 			"orders": {Title: "Orders", Type: "bar", Query: reportdef.VisualQuery{Measures: []reportdef.FieldRef{{Field: "order_count"}}}},
-		},
-		Tables: map[string]reportdef.TableVisual{
+		}), reportdef.TabularVisualizations("table", map[string]reportdef.TableVisual{
 			"orders_table": {Title: "Orders", Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.order_id"}}},
-		},
-		Pages: []dashboard.Page{{ID: "overview", Title: "Overview", Visuals: []dashboard.PageVisual{{ID: "orders", Visual: "orders"}, {ID: "orders-table", Table: "orders_table"}}}},
+		})),
+		Pages: []dashboard.Page{{ID: "overview", Title: "Overview", Visuals: []dashboard.PageVisual{{ID: "orders", Visual: "orders"}, {ID: "orders-table", Kind: "table", Visual: "orders_table"}}}},
 	}
 }
 
@@ -1017,39 +1016,38 @@ func (largeDashboardMetrics) Report(id string) (dashboarddefinition.Definition, 
 	}
 	report, model := fakeAgentAuthoringReport(), fakeSemanticModel()
 	report.Pages = make([]dashboard.Page, 0, 24)
-	report.Visuals = map[string]reportdef.Visual{}
-	report.Tables = map[string]reportdef.TableVisual{}
+	report.Visuals = map[string]reportdef.AuthoringVisualization{}
 	for pageIndex := 1; pageIndex <= 24; pageIndex++ {
 		chartID := fmt.Sprintf("chart_%02d", pageIndex)
 		kpiID := fmt.Sprintf("kpi_%02d", pageIndex)
 		tableID := fmt.Sprintf("table_%02d", pageIndex)
-		report.Visuals[chartID] = reportdef.Visual{
-			Title:           fmt.Sprintf("Chart %02d", pageIndex),
-			Type:            "bar",
-			Query:           reportdef.VisualQuery{Measures: []reportdef.FieldRef{{Field: "order_count"}}},
-			RendererOptions: map[string]any{"large": largeDashboardPayloadMarker + strings.Repeat("x", 4096)},
-		}
-		report.Visuals[kpiID] = reportdef.Visual{
-			Title:   fmt.Sprintf("KPI %02d", pageIndex),
-			Kind:    "kpi",
-			Query:   reportdef.VisualQuery{Measures: []reportdef.FieldRef{{Field: "order_count"}}},
-			Options: map[string]any{"large": largeDashboardPayloadMarker + strings.Repeat("y", 4096)},
-		}
-		report.Tables[tableID] = reportdef.TableVisual{
+		report.Visuals[chartID] = reportdef.ChartVisualization(reportdef.Visual{
+			Title:       fmt.Sprintf("Chart %02d", pageIndex),
+			Description: largeDashboardPayloadMarker + strings.Repeat("x", 4096),
+			Type:        "bar",
+			Query:       reportdef.VisualQuery{Measures: []reportdef.FieldRef{{Field: "order_count"}}},
+		})
+		report.Visuals[kpiID] = reportdef.ChartVisualization(reportdef.Visual{
+			Title:       fmt.Sprintf("KPI %02d", pageIndex),
+			Description: largeDashboardPayloadMarker + strings.Repeat("y", 4096),
+			Type:        "kpi",
+			Query:       reportdef.VisualQuery{Measures: []reportdef.FieldRef{{Field: "order_count"}}},
+		})
+		report.Visuals[tableID] = reportdef.TabularVisualization("table", reportdef.TableVisual{
 			Title: fmt.Sprintf("Table %02d", pageIndex),
 			Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.order_id"}},
 			Columns: []dashboard.TableColumn{{
 				Key:   largeDashboardPayloadMarker + strings.Repeat("z", 4096),
 				Label: "Large Column",
 			}},
-		}
+		})
 		report.Pages = append(report.Pages, dashboard.Page{
 			ID:    fmt.Sprintf("page_%02d", pageIndex),
 			Title: fmt.Sprintf("Page %02d", pageIndex),
 			Visuals: []dashboard.PageVisual{
 				{ID: chartID, Visual: chartID},
 				{ID: kpiID, Visual: kpiID},
-				{ID: tableID, Table: tableID},
+				{ID: tableID, Kind: "table", Visual: tableID},
 			},
 		})
 	}

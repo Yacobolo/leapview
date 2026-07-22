@@ -1,7 +1,6 @@
 package compiler
 
 import (
-	"fmt"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	"github.com/Yacobolo/leapview/internal/dashboard/report"
@@ -82,109 +81,10 @@ type projectSemanticModelSpec struct {
 }
 
 type dashboardSpec struct {
-	SemanticModel string                             `yaml:"semanticModel"`
-	Filters       map[string]report.FilterDefinition `yaml:"filters"`
-	Visuals       map[string]dashboardVisualSpec     `yaml:"visuals"`
-	Pages         []projectDashboardPage             `yaml:"pages"`
-}
-
-type dashboardVisualSpec struct {
-	Type    string
-	Chart   *report.Visual
-	Tabular *report.TableVisual
-}
-
-func (v *dashboardVisualSpec) UnmarshalYAML(value *yaml.Node) error {
-	var discriminator struct {
-		Type string `yaml:"type"`
-	}
-	if err := value.Decode(&discriminator); err != nil {
-		return err
-	}
-	v.Type = discriminator.Type
-	switch discriminator.Type {
-	case "table", "matrix", "pivot":
-		if err := rejectUnknownVisualFields(value, map[string]struct{}{
-			"type": {}, "title": {}, "description": {}, "cardinality": {}, "query": {}, "default_sort": {},
-			"presentation": {}, "columns": {}, "interaction": {}, "measure_formatting": {},
-		}); err != nil {
-			return err
-		}
-		var definition report.TableVisual
-		if err := value.Decode(&definition); err != nil {
-			return err
-		}
-		switch discriminator.Type {
-		case "table":
-			definition.Kind = "data_table"
-		case "matrix":
-			definition.Kind = "matrix_table"
-		case "pivot":
-			definition.Kind = "pivot_table"
-		}
-		v.Tabular = &definition
-	default:
-		if err := rejectUnknownVisualFields(value, map[string]struct{}{
-			"type": {}, "title": {}, "description": {}, "query": {}, "presentation": {}, "accessibility": {},
-			"data_budget": {}, "interaction": {}, "geo": {}, "custom": {},
-		}); err != nil {
-			return err
-		}
-		var definition report.Visual
-		if err := value.Decode(&definition); err != nil {
-			return err
-		}
-		definition.Type = discriminator.Type
-		v.Chart = &definition
-	}
-	return nil
-}
-
-func rejectUnknownVisualFields(value *yaml.Node, allowed map[string]struct{}) error {
-	if value.Kind != yaml.MappingNode {
-		return fmt.Errorf("visual must be a mapping")
-	}
-	for index := 0; index+1 < len(value.Content); index += 2 {
-		field := value.Content[index].Value
-		if _, ok := allowed[field]; !ok {
-			return fmt.Errorf("unsupported visualization property %q", field)
-		}
-	}
-	return nil
-}
-
-func splitDashboardVisuals(in map[string]dashboardVisualSpec) (map[string]report.Visual, map[string]report.TableVisual) {
-	charts := make(map[string]report.Visual)
-	tables := make(map[string]report.TableVisual)
-	for id, visual := range in {
-		if visual.Chart != nil {
-			charts[id] = *visual.Chart
-		}
-		if visual.Tabular != nil {
-			tables[id] = *visual.Tabular
-		}
-	}
-	return charts, tables
-}
-
-// splitDashboardFilterTargets keeps the renderer-specific query services
-// internal while presenting a single visual target namespace to authors.
-func splitDashboardFilterTargets(filters map[string]report.FilterDefinition, tables map[string]report.TableVisual) map[string]report.FilterDefinition {
-	for id, filter := range filters {
-		visuals := make([]string, 0, len(filter.Targets.Visuals))
-		tabular := make([]string, 0, len(filter.Targets.Visuals))
-		for _, target := range filter.Targets.Visuals {
-			if _, ok := tables[target]; ok {
-				tabular = append(tabular, target)
-			} else {
-				visuals = append(visuals, target)
-			}
-		}
-		filter.Targets.Visuals = visuals
-		filter.Targets.Tables = tabular
-		filters[id] = filter
-	}
-	return filters
+	SemanticModel string                                   `yaml:"semanticModel"`
+	Filters       map[string]report.FilterDefinition       `yaml:"filters"`
+	Visuals       map[string]report.AuthoringVisualization `yaml:"visuals"`
+	Pages         []projectDashboardPage                   `yaml:"pages"`
 }
 
 type projectModelTableSpec struct {

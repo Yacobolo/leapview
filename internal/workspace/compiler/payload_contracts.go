@@ -284,7 +284,6 @@ type pageItemPayloadV1 struct {
 	ID          string          `json:"ID"`
 	Kind        string          `json:"Kind"`
 	Visual      string          `json:"Visual"`
-	Table       string          `json:"Table"`
 	Filter      string          `json:"Filter"`
 	Description string          `json:"Description"`
 	Placement   pagePlacementV1 `json:"Placement"`

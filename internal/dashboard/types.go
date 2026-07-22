@@ -178,7 +178,6 @@ type PageVisual struct {
 	ID          string        `json:"id" yaml:"id"`
 	Kind        string        `json:"kind" yaml:"kind"`
 	Visual      string        `json:"visual,omitempty" yaml:"visual"`
-	Table       string        `json:"table,omitempty" yaml:"table"`
 	Filter      string        `json:"filter,omitempty" yaml:"filter"`
 	Description string        `json:"description,omitempty" yaml:"description"`
 	Placement   PagePlacement `json:"placement" yaml:"placement"`

@@ -24,7 +24,7 @@ func TestDashboardContractConversionsPreserveJSON(t *testing.T) {
 			Default: dashboarddefinition.FilterDefault{Operator: "in", Values: []string{"SP"}}, Operator: "in", DefaultOperator: "in", Operators: []string{"in"},
 			Options: []dashboarddefinition.FilterOption{{Value: "SP", Label: "Sao Paulo"}}, Presets: []dashboarddefinition.FilterPreset{{Value: "recent", Label: "Recent", From: "2026-01-01", To: "2026-12-31", RelativeDays: 30}},
 			Values: dashboarddefinition.FilterValues{Source: "orders.state", Limit: 100}, URLParam: "state", FromURLParam: "from", ToURLParam: "to", OperatorURLParam: "op",
-			Targets: dashboarddefinition.FilterTargets{Visuals: []string{"orders"}, Tables: []string{"orders_table"}},
+			Targets: dashboarddefinition.FilterTargets{Visuals: []string{"orders", "orders_table"}},
 		},
 	}}
 

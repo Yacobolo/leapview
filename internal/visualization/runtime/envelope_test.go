@@ -20,7 +20,7 @@ func testCartesianDefinition(t *testing.T, id string, fields []ir.VisualizationF
 		X: ir.VisualizationFieldRef{Dataset: "primary", Field: "label"}, Y: []ir.VisualizationFieldRef{{Dataset: "primary", Field: "value"}},
 	}}
 	definition, err := visualizationdefinition.New(id, spec, visualizationdefinition.QueryBinding{
-		Kind: visualizationdefinition.QueryAggregate, ModelID: "sales", DatasetID: "primary",
+		Kind: visualizationdefinition.QueryAggregate, ResultShape: visualizationdefinition.ResultCategoryValue, ModelID: "sales", DatasetID: "primary",
 		Aggregate: &visualizationdefinition.AggregateQueryBinding{Measures: []visualizationdefinition.FieldBinding{{FieldID: "revenue", Alias: "value"}}, Limit: 100},
 	})
 	if err != nil {

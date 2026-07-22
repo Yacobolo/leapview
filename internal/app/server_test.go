@@ -157,13 +157,12 @@ func (fakeMetrics) Report(dashboardID string) (dashboarddefinition.Definition, *
 			"state":    {Type: "multi_select", Label: "State", Dimension: "orders.status", URLParam: "state", Operator: "in", Values: reportdef.FilterValues{Source: "distinct", Limit: 50}},
 			"category": {Type: "text", Label: "Category", Dimension: "orders.status", URLParam: "category", DefaultOperator: "contains", Operators: []string{"contains", "equals"}},
 		},
-		Visuals: map[string]reportdef.Visual{
+		Visuals: reportdef.MergeVisualizations(reportdef.ChartVisualizations(map[string]reportdef.Visual{
 			"orders":       {Title: "Orders", Type: "donut", Query: reportdef.VisualQuery{Dimensions: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}, Interaction: pointInteraction("orders.status", "orders", "ops_pipeline")},
 			"ops_pipeline": {Title: "Ops Pipeline", Type: "bar", Query: reportdef.VisualQuery{Dimensions: fieldRefs("orders.status"), Measures: fieldRefs("order_count")}, Interaction: pointInteraction("orders.status", "orders", "ops_pipeline")},
-		},
-		Tables: map[string]reportdef.TableVisual{
+		}), reportdef.TabularVisualizations("table", map[string]reportdef.TableVisual{
 			"order_rows": {Title: "Orders", Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.order_id"}}, DefaultSort: dashboard.TableSort{Key: "order_id", Direction: "desc"}, Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order"}, {Key: "revenue", Label: "Revenue", Role: "measure", Format: "decimal"}}},
-		},
+		})),
 		Pages: fakeMetrics{}.Pages(dashboardID),
 	}
 	model := &semanticmodel.Model{
@@ -356,7 +355,7 @@ func (fakeMetrics) Pages(dashboardID string) []dashboard.Page {
 				{ID: "header", Kind: "header", X: 0, Y: 0, Width: 100, Height: 40, Title: "Test"},
 				{ID: "state-filter", Kind: "filter_card", Filter: "state", X: 0, Y: 42, Width: 100, Height: 32},
 				{ID: "orders-chart", Kind: "donut_chart", Visual: "orders", X: 0, Y: 48, Width: 100, Height: 100},
-				{ID: "orders-table", Kind: "table", Table: "order_rows", X: 0, Y: 160, Width: 100, Height: 100},
+				{ID: "orders-table", Kind: "table", Visual: "order_rows", X: 0, Y: 160, Width: 100, Height: 100},
 			},
 		},
 		{
@@ -386,6 +385,19 @@ func (fakeMetrics) QueryDashboardPage(_ context.Context, _ string, pageID string
 	if err != nil {
 		return dashboard.Patch{}, err
 	}
+	visuals := map[string]visualizationir.VisualizationEnvelope{chartID: envelope}
+	if pageID == "" || pageID == "overview" {
+		definition, _ := fakeMetrics{}.VisualizationDefinition("executive-sales", "order_rows")
+		table, tableErr := fakeMetrics{}.QueryTablePage(context.Background(), "executive-sales", "overview", filters, dashboard.TableRequest{Table: "order_rows", Block: "a", Count: dashboard.TableChunkSize}.WithDefaults())
+		if tableErr != nil {
+			return dashboard.Patch{}, tableErr
+		}
+		tableEnvelope, tableEnvelopeErr := visualizationruntime.TableEnvelopeFromDefinition(definition, table, 0, 0)
+		if tableEnvelopeErr != nil {
+			return dashboard.Patch{}, tableEnvelopeErr
+		}
+		visuals["order_rows"] = tableEnvelope
+	}
 	return dashboard.Patch{
 		Filters: filters.WithDefaults(),
 		FilterOptions: map[string][]dashboard.FilterOption{
@@ -395,7 +407,7 @@ func (fakeMetrics) QueryDashboardPage(_ context.Context, _ string, pageID string
 			Loading:     false,
 			LastUpdated: "12:00:00",
 		},
-		Visuals: map[string]visualizationir.VisualizationEnvelope{chartID: envelope},
+		Visuals: visuals,
 	}, nil
 }
 

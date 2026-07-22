@@ -226,9 +226,8 @@ func ReportFilterConfigsFromReport(values []dashboarddefinition.FilterConfig) []
 			}
 		}
 		var targets *ReportFilterTargets
-		if len(definition.Targets.Visuals) > 0 || len(definition.Targets.Tables) > 0 {
-			allTargets := append(append([]string{}, definition.Targets.Visuals...), definition.Targets.Tables...)
-			targets = &ReportFilterTargets{Visuals: optionalSlice(allTargets)}
+		if len(definition.Targets.Visuals) > 0 {
+			targets = &ReportFilterTargets{Visuals: optionalSlice(definition.Targets.Visuals)}
 		}
 		var filterValues *ReportFilterValues
 		if definition.Values.Source != "" || definition.Values.Limit != 0 {

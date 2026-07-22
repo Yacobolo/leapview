@@ -385,16 +385,13 @@ func loadWorkspaceDashboards(workspaceProject *WorkspaceProject, baseDir string,
 		if _, exists := workspaceProject.Dashboards[name]; exists {
 			return resourceError(path, "dashboard:"+workspaceProject.ID+"."+name, "metadata.name", "duplicate Dashboard %q in workspace %q", name, workspaceProject.ID)
 		}
-		visuals, tables := splitDashboardVisuals(spec.Visuals)
-		filters := splitDashboardFilterTargets(spec.Filters, tables)
 		dashboard := &report.Dashboard{
 			ID:            name,
 			Title:         envelope.Metadata.Title,
 			Description:   envelope.Metadata.Description,
 			SemanticModel: spec.SemanticModel,
-			Filters:       filters,
-			Visuals:       visuals,
-			Tables:        tables,
+			Filters:       spec.Filters,
+			Visuals:       spec.Visuals,
 			Pages:         projectDashboardPages(spec.Pages, spec.Visuals),
 		}
 		workspaceProject.Dashboards[name] = dashboard

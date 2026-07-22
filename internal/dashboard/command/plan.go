@@ -264,16 +264,16 @@ func (s Service) fullPlan(request Request, commandName string) RefreshPlan {
 			if compiled, ok := definition.Visualizations[item.Visual]; ok {
 				if spatial, windowed := spatialTarget(compiled, request.VisualSpatialWindowCommand, commandName != "initial"); windowed {
 					target = spatial
+				} else if isGridVisualization(compiled) {
+					requestForTable := tableRequest
+					requestForTable.Table = item.Visual
+					target = Target{Kind: TargetTable, ID: item.Visual, TableRequest: requestForTable}
 				} else {
 					target = Target{Kind: TargetVisual, ID: item.Visual}
 				}
 			} else {
 				target = Target{Kind: TargetVisual, ID: item.Visual}
 			}
-		case item.Table != "":
-			requestForTable := tableRequest
-			requestForTable.Table = item.Table
-			target = Target{Kind: TargetTable, ID: item.Table, TableRequest: requestForTable}
 		default:
 			continue
 		}
@@ -439,9 +439,6 @@ func visualizationIDsForPage(definition dashboarddefinition.Definition, pageID s
 	for _, placement := range page.Visuals {
 		if placement.Visual != "" {
 			ids[placement.Visual] = struct{}{}
-		}
-		if placement.Table != "" {
-			ids[placement.Table] = struct{}{}
 		}
 	}
 	return ids, nil

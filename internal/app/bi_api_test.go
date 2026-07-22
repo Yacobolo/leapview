@@ -14,6 +14,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/queryaudit"
 	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
+	visualizationruntime "github.com/Yacobolo/leapview/internal/visualization/runtime"
 )
 
 func newPublicAPIRequest(method, target string, body io.Reader) *http.Request {
@@ -459,7 +460,22 @@ func (m auditedDashboardMetrics) QueryDashboardPage(ctx context.Context, dashboa
 	if err != nil {
 		return dashboard.Patch{}, err
 	}
-	return m.fakeMetrics.QueryDashboardPage(ctx, dashboardID, pageID, filters)
+	patch, err := m.fakeMetrics.QueryDashboardPage(ctx, dashboardID, pageID, filters)
+	if err != nil {
+		return dashboard.Patch{}, err
+	}
+	request := dashboard.TableRequest{Table: "order_rows", Block: "a", Count: dashboard.TableChunkSize}.WithDefaults()
+	table, err := m.QueryTablePage(ctx, dashboardID, pageID, filters, request)
+	if err != nil {
+		return dashboard.Patch{}, err
+	}
+	definition, _ := m.VisualizationDefinition(dashboardID, "order_rows")
+	envelope, err := visualizationruntime.TableEnvelopeFromDefinition(definition, table, 0, 0)
+	if err != nil {
+		return dashboard.Patch{}, err
+	}
+	patch.Visuals["order_rows"] = envelope
+	return patch, nil
 }
 
 func (m auditedDashboardMetrics) QueryTablePage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {

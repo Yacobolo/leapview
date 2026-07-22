@@ -167,14 +167,7 @@ func TestVisualDocumentationCoversEveryPublicTypeAndGeographicLayer(t *testing.T
 		}
 		for _, example := range examples {
 			if example.Tabular != nil {
-				switch example.Tabular.Kind {
-				case "data_table":
-					documentedTypes["table"] = true
-				case "matrix_table":
-					documentedTypes["matrix"] = true
-				case "pivot_table":
-					documentedTypes["pivot"] = true
-				}
+				documentedTypes[example.Type] = true
 				continue
 			}
 			if example.Chart == nil {
@@ -313,7 +306,7 @@ func TestValidateVisualPayloadRejectsInvalidGeneratedData(t *testing.T) {
 }
 
 func reportVisual(shape, visualType string, options map[string]any) reportdef.Visual {
-	value := reportdef.Visual{Shape: shape, Type: visualType}
+	value := reportdef.Visual{Type: visualType}
 	if mapID, ok := options["map"].(string); ok {
 		value.Geo.Layers = []reportdef.VisualGeoLayer{{ID: "regions", Kind: "choropleth", GeometryAsset: mapID, Join: "name", Value: "value"}}
 	}

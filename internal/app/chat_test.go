@@ -682,7 +682,7 @@ func TestChatConversationRouteLoadsArtifactSignalsOutsideTranscript(t *testing.T
 	}
 	definitions, err := workspacecompiler.CompileVisualizationDefinitions(&reportdef.Dashboard{
 		ID: "agent", SemanticModel: "sales",
-		Visuals: map[string]reportdef.Visual{"agent_visual_123": {Type: "bar", Title: "Orders", Query: reportdef.VisualQuery{Table: "orders", Measures: []reportdef.FieldRef{{Field: "order_count"}}}}},
+		Visuals: reportdef.ChartVisualizations(map[string]reportdef.Visual{"agent_visual_123": {Type: "bar", Title: "Orders", Query: reportdef.VisualQuery{Table: "orders", Measures: []reportdef.FieldRef{{Field: "order_count"}}}}}),
 	})
 	if err != nil {
 		t.Fatalf("compile artifact definition: %v", err)

@@ -14,7 +14,7 @@ import (
 )
 
 func TestVisualPayloadIncludesPointSelectionContract(t *testing.T) {
-	dashboardDefinition := &report.Dashboard{SemanticModel: "model", Visuals: map[string]report.Visual{"source": {Type: "bar", Title: "Source", Query: report.VisualQuery{
+	dashboardDefinition := &report.Dashboard{SemanticModel: "model", Visuals: report.ChartVisualizations(map[string]report.Visual{"source": {Type: "bar", Title: "Source", Query: report.VisualQuery{
 		Dimensions: []report.FieldRef{{Field: "activity_date", Alias: "label"}}, Measures: []report.FieldRef{{Field: "event_count", Alias: "value"}}, Limit: 100,
 	}, Interaction: report.Interaction{PointSelection: report.SelectionInteraction{
 		Toggle: true,
@@ -25,7 +25,7 @@ func TestVisualPayloadIncludesPointSelectionContract(t *testing.T) {
 			Label: "label",
 		}},
 		Targets: []string{"tags_per_rating"},
-	}}}}}
+	}}}})}
 
 	definitions, err := compileVisualizationDefinitions(dashboardDefinition)
 	if err != nil {
@@ -43,14 +43,14 @@ func TestVisualPayloadIncludesPointSelectionContract(t *testing.T) {
 }
 
 func TestTablePayloadIncludesFactLocalRowSelectionContract(t *testing.T) {
-	dashboardDefinition := &report.Dashboard{SemanticModel: "model", Tables: map[string]report.TableVisual{"source": {Title: "Source", Query: report.TableQuery{Table: "ratings", Fields: []string{"ratings.rating_bucket"}}, Columns: []dashboard.TableColumn{{Key: "rating_bucket", Label: "Rating"}}, Interaction: report.Interaction{RowSelection: report.SelectionInteraction{
+	dashboardDefinition := &report.Dashboard{SemanticModel: "model", Visuals: report.TabularVisualizations("table", map[string]report.TableVisual{"source": {Title: "Source", Query: report.TableQuery{Table: "ratings", Fields: []string{"ratings.rating_bucket"}}, Columns: []dashboard.TableColumn{{Key: "rating_bucket", Label: "Rating"}}, Interaction: report.Interaction{RowSelection: report.SelectionInteraction{
 		Mappings: []report.SelectionMapping{{
 			Field: "ratings.rating_bucket",
 			Fact:  "ratings",
 			Value: "rating_bucket",
 		}},
 		Targets: []string{"tags_per_rating"},
-	}}}}}
+	}}}})}
 
 	definitions, err := compileVisualizationDefinitions(dashboardDefinition)
 	if err != nil {
@@ -68,10 +68,10 @@ func TestTablePayloadIncludesFactLocalRowSelectionContract(t *testing.T) {
 }
 
 func TestCustomVisualCompilesToSandboxedVegaLiteDefinition(t *testing.T) {
-	dashboardDefinition := &report.Dashboard{SemanticModel: "model", Visuals: map[string]report.Visual{"custom": {
+	dashboardDefinition := &report.Dashboard{SemanticModel: "model", Visuals: report.ChartVisualizations(map[string]report.Visual{"custom": {
 		Type: "custom", Title: "Custom", Query: report.VisualQuery{Table: "orders", Dimensions: []report.FieldRef{{Field: "orders.month", Alias: "month"}}, Measures: []report.FieldRef{{Field: "orders.revenue", Alias: "revenue"}}, Limit: 100},
 		Custom: report.VisualCustom{Engine: "vega_lite", Program: map[string]any{"mark": "bar", "data": map[string]any{"name": "primary"}, "encoding": map[string]any{"x": map[string]any{"field": "month"}, "y": map[string]any{"field": "revenue"}}}},
-	}}}
+	}})}
 
 	definitions, err := compileVisualizationDefinitions(dashboardDefinition)
 	if err != nil {
@@ -88,7 +88,7 @@ func TestCustomVisualCompilesToSandboxedVegaLiteDefinition(t *testing.T) {
 }
 
 func TestGeographicVisualCompilesEveryLayerKind(t *testing.T) {
-	dashboardDefinition := &report.Dashboard{SemanticModel: "model", Visuals: map[string]report.Visual{"locations": {
+	dashboardDefinition := &report.Dashboard{SemanticModel: "model", Visuals: report.ChartVisualizations(map[string]report.Visual{"locations": {
 		Type: "map", Title: "Locations", Query: report.VisualQuery{
 			Table: "orders",
 			Dimensions: []report.FieldRef{
@@ -121,7 +121,7 @@ func TestGeographicVisualCompilesEveryLayerKind(t *testing.T) {
 			Longitude: report.SpatialSelectionMapping{Source: "longitude", Field: "orders.longitude", Fact: "orders"},
 			Targets:   []string{"detail", "summary"},
 		}},
-	}}}
+	}})}
 
 	definitions, err := compileVisualizationDefinitions(dashboardDefinition)
 	if err != nil {
@@ -204,12 +204,12 @@ func TestGeographicVisualCompilesEveryLayerKind(t *testing.T) {
 }
 
 func TestGeographicVisualCanExplicitlyDisableTheDefaultBasemap(t *testing.T) {
-	dashboardDefinition := &report.Dashboard{SemanticModel: "model", Visuals: map[string]report.Visual{"locations": {
+	dashboardDefinition := &report.Dashboard{SemanticModel: "model", Visuals: report.ChartVisualizations(map[string]report.Visual{"locations": {
 		Type: "map", Query: report.VisualQuery{
 			Table: "orders", Dimensions: []report.FieldRef{{Field: "orders.latitude", Alias: "latitude"}, {Field: "orders.longitude", Alias: "longitude"}}, Measures: []report.FieldRef{{Field: "orders.revenue", Alias: "revenue"}}, Limit: 100,
 		},
 		Geo: report.VisualGeo{Basemap: "blank", Layers: []report.VisualGeoLayer{{ID: "stores", Kind: "point", Latitude: "latitude", Longitude: "longitude"}}},
-	}}}
+	}})}
 
 	definitions, err := compileVisualizationDefinitions(dashboardDefinition)
 	if err != nil {
@@ -220,10 +220,10 @@ func TestGeographicVisualCanExplicitlyDisableTheDefaultBasemap(t *testing.T) {
 		t.Fatalf("geographic basemap = %#v, want none", spec.Presentation.Basemap)
 	}
 
-	dashboardDefinition.Visuals["locations"] = func() report.Visual {
-		visual := dashboardDefinition.Visuals["locations"]
+	dashboardDefinition.Visuals["locations"] = func() report.AuthoringVisualization {
+		visual := *dashboardDefinition.Visuals["locations"].Chart
 		visual.Geo.Basemap = "unknown"
-		return visual
+		return report.ChartVisualization(visual)
 	}()
 	if _, err := compileVisualizationDefinitions(dashboardDefinition); err == nil || !strings.Contains(err.Error(), `geographic basemap: unknown map style asset "unknown"`) {
 		t.Fatalf("unknown basemap error = %v", err)

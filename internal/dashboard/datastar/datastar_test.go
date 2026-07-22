@@ -20,7 +20,7 @@ func testVisualDefinition(t *testing.T, id string) visualizationdefinition.Defin
 	t.Helper()
 	definitions, err := workspacecompiler.CompileVisualizationDefinitions(&reportdef.Dashboard{
 		ID: "test", SemanticModel: "model",
-		Visuals: map[string]reportdef.Visual{id: {Type: "bar", Title: id, Query: reportdef.VisualQuery{Table: "table", Measures: []reportdef.FieldRef{{Field: "measure"}}}}},
+		Visuals: reportdef.ChartVisualizations(map[string]reportdef.Visual{id: {Type: "bar", Title: id, Query: reportdef.VisualQuery{Table: "table", Measures: []reportdef.FieldRef{{Field: "measure"}}}}}),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -35,7 +35,7 @@ func testTableDefinition(t *testing.T, id string, table dashboard.Table) visuali
 		t.Fatal(err)
 	}
 	definition, err := visualizationdefinition.New(id, envelope.Spec, visualizationdefinition.QueryBinding{
-		Kind: visualizationdefinition.QueryDetail, ModelID: "model", DatasetID: "primary",
+		Kind: visualizationdefinition.QueryDetail, ResultShape: visualizationdefinition.ResultDetailWindow, ModelID: "model", DatasetID: "primary",
 		Detail: &visualizationdefinition.DetailQueryBinding{TableID: "table", Fields: []visualizationdefinition.FieldBinding{{FieldID: "id", Alias: "id"}}, Limit: 1},
 	})
 	if err != nil {

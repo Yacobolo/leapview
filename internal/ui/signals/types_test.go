@@ -287,13 +287,12 @@ func testDashboardReport() reportdef.Dashboard {
 			"state":    {Type: "multi_select", Label: "State", Dimension: "orders.state", URLParam: "state", Operator: "in"},
 			"category": {Type: "text", Label: "Category", Dimension: "orders.category", URLParam: "category", DefaultOperator: "contains"},
 		},
-		Visuals: map[string]reportdef.Visual{
+		Visuals: reportdef.MergeVisualizations(reportdef.ChartVisualizations(map[string]reportdef.Visual{
 			"active_chart":   {Title: "Active", Type: "bar", Query: reportdef.VisualQuery{Dimensions: testFieldRefs("orders.status"), Measures: testFieldRefs("order_count")}},
 			"off_page_chart": {Title: "Off Page", Type: "bar", Query: reportdef.VisualQuery{Dimensions: testFieldRefs("orders.status"), Measures: testFieldRefs("order_count")}},
-		},
-		Tables: map[string]reportdef.TableVisual{
+		}), reportdef.TabularVisualizations("table", map[string]reportdef.TableVisual{
 			"orders": {Title: "Orders", Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.order_id"}}, Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order"}}},
-		},
+		})),
 		Pages: []dashboard.Page{
 			{
 				ID:     "overview",
@@ -309,7 +308,7 @@ func testDashboardReport() reportdef.Dashboard {
 				Title:  "Detail",
 				Canvas: dashboard.PageCanvas{Width: 1200, Height: 800},
 				Visuals: []dashboard.PageVisual{
-					{ID: "orders", Kind: "table", Table: "orders", X: 0, Y: 0, Width: 100, Height: 100},
+					{ID: "orders", Kind: "table", Visual: "orders", X: 0, Y: 0, Width: 100, Height: 100},
 				},
 			},
 		},

@@ -605,10 +605,7 @@ func dashboardComponents(page dashboard.Page) []DashboardComponentSignal {
 	for _, visual := range page.PlacedVisuals() {
 		kind := visual.Kind
 		visualID := visual.Visual
-		if visual.Table != "" {
-			kind = "visual"
-			visualID = visual.Table
-		} else if visual.Visual != "" {
+		if visual.Visual != "" {
 			kind = "visual"
 		} else if visual.Filter != "" {
 			kind = "filter"
@@ -692,14 +689,14 @@ func pageTableIDs(page dashboard.Page) []string {
 	seen := map[string]struct{}{}
 	ids := []string{}
 	for _, item := range page.Visuals {
-		if item.Table == "" {
+		if item.Kind != "table" || item.Visual == "" {
 			continue
 		}
-		if _, ok := seen[item.Table]; ok {
+		if _, ok := seen[item.Visual]; ok {
 			continue
 		}
-		seen[item.Table] = struct{}{}
-		ids = append(ids, item.Table)
+		seen[item.Visual] = struct{}{}
+		ids = append(ids, item.Visual)
 	}
 	sort.Strings(ids)
 	return ids

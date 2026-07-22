@@ -10,6 +10,7 @@ import (
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
+	"github.com/Yacobolo/leapview/internal/dashboard/report"
 	"github.com/Yacobolo/leapview/internal/refreshpipeline"
 	"github.com/Yacobolo/leapview/internal/workspace"
 )
@@ -48,7 +49,7 @@ func projectModelTable(spec projectModelTableSpec) semanticmodel.Table {
 	return table
 }
 
-func projectDashboardPages(pages []projectDashboardPage, visuals map[string]dashboardVisualSpec) []dashboard.Page {
+func projectDashboardPages(pages []projectDashboardPage, visuals map[string]report.AuthoringVisualization) []dashboard.Page {
 	out := make([]dashboard.Page, 0, len(pages))
 	for _, page := range pages {
 		components := make([]dashboard.PageVisual, 0, len(page.Components))
@@ -58,8 +59,6 @@ func projectDashboardPages(pages []projectDashboardPage, visuals map[string]dash
 				definition := visuals[component.Visual]
 				if definition.Tabular != nil {
 					component.Kind = "table"
-					component.Table = component.Visual
-					component.Visual = ""
 				} else if definition.Type == "kpi" {
 					component.Kind = "kpi_card"
 				} else {

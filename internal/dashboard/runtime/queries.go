@@ -11,6 +11,7 @@ import (
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
 	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
+	visualizationruntime "github.com/Yacobolo/leapview/internal/visualization/runtime"
 )
 
 type QueryService struct {
@@ -100,6 +101,22 @@ func (s *SnapshotService) QueryDashboardPage(ctx context.Context, dashboardID, p
 	visuals, err := s.visualizations.visuals(ctx, runtime, report, filters, pageVisualIDs(page))
 	if err != nil {
 		return dashboard.EmptyPatch(filters, err), nil
+	}
+	for _, visualID := range pageTableIDs(page) {
+		request := dashboard.TableRequest{Table: visualID, Block: "a", Count: dashboard.TableChunkSize}.WithDefaults()
+		table, queryErr := s.visualizations.queryTablePage(ctx, dashboardID, page.ID, filters, request, true)
+		if queryErr != nil {
+			return dashboard.EmptyPatch(filters, queryErr), nil
+		}
+		definition, ok := report.Visualizations[visualID]
+		if !ok {
+			return dashboard.EmptyPatch(filters, fmt.Errorf("compiled visualization %q not found", visualID)), nil
+		}
+		envelope, envelopeErr := visualizationruntime.TableEnvelopeFromDefinition(definition, table, 0, 0)
+		if envelopeErr != nil {
+			return dashboard.EmptyPatch(filters, envelopeErr), nil
+		}
+		visuals[visualID] = envelope
 	}
 	patch.Visuals = visuals
 
@@ -219,7 +236,7 @@ func pageVisualIDs(page dashboard.Page) []string {
 	seen := map[string]struct{}{}
 	ids := []string{}
 	for _, item := range page.Visuals {
-		if item.Visual == "" {
+		if item.Kind == "table" || item.Visual == "" {
 			continue
 		}
 		if _, ok := seen[item.Visual]; ok {
@@ -236,14 +253,14 @@ func pageTableIDs(page dashboard.Page) []string {
 	seen := map[string]struct{}{}
 	ids := []string{}
 	for _, item := range page.Visuals {
-		if item.Table == "" {
+		if item.Kind != "table" || item.Visual == "" {
 			continue
 		}
-		if _, ok := seen[item.Table]; ok {
+		if _, ok := seen[item.Visual]; ok {
 			continue
 		}
-		seen[item.Table] = struct{}{}
-		ids = append(ids, item.Table)
+		seen[item.Visual] = struct{}{}
+		ids = append(ids, item.Visual)
 	}
 	sort.Strings(ids)
 	return ids

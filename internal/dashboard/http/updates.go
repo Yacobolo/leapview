@@ -43,9 +43,6 @@ func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
 	for _, component := range activePage.Visuals {
 		id := component.Visual
 		if id == "" {
-			id = component.Table
-		}
-		if id == "" {
 			continue
 		}
 		definition, exists := metrics.VisualizationDefinition(dashboardID, id)

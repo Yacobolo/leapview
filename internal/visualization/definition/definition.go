@@ -19,6 +19,8 @@ const (
 
 type QueryKind string
 
+type ResultShape string
+
 const (
 	QueryAggregate QueryKind = "aggregate"
 	QueryDetail    QueryKind = "detail"
@@ -28,15 +30,35 @@ const (
 	QuerySpatial   QueryKind = "spatial"
 )
 
+const (
+	ResultScalar               ResultShape = "scalar"
+	ResultCategoryValue        ResultShape = "category_value"
+	ResultCategorySeriesValue  ResultShape = "category_series_value"
+	ResultCategoryMultiMeasure ResultShape = "category_multi_measure"
+	ResultCategoryDelta        ResultShape = "category_delta"
+	ResultHistogramBins        ResultShape = "histogram_bins"
+	ResultMatrixCells          ResultShape = "matrix_cells"
+	ResultHierarchyNodes       ResultShape = "hierarchy_nodes"
+	ResultGraphEdges           ResultShape = "graph_edges"
+	ResultOHLC                 ResultShape = "ohlc"
+	ResultDistribution         ResultShape = "distribution"
+	ResultDetailWindow         ResultShape = "detail_window"
+	ResultMatrixWindow         ResultShape = "matrix_window"
+	ResultPivotWindow          ResultShape = "pivot_window"
+	ResultGeographicFeatures   ResultShape = "geographic_features"
+	ResultCustomRows           ResultShape = "custom_rows"
+)
+
 // QueryBinding is the closed compiler/runtime boundary. Exactly one branch is
 // present and must match Kind. It contains stable semantic member IDs and
 // compiler-resolved output aliases; authoring query objects never cross this
 // boundary.
 type QueryBinding struct {
-	Kind      QueryKind `json:"kind" yaml:"kind"`
-	ModelID   string    `json:"modelID" yaml:"model_id"`
-	DatasetID string    `json:"datasetID" yaml:"dataset_id"`
-	Identity  []string  `json:"identity,omitempty" yaml:"identity,omitempty"`
+	Kind        QueryKind   `json:"kind" yaml:"kind"`
+	ResultShape ResultShape `json:"resultShape" yaml:"result_shape"`
+	ModelID     string      `json:"modelID" yaml:"model_id"`
+	DatasetID   string      `json:"datasetID" yaml:"dataset_id"`
+	Identity    []string    `json:"identity,omitempty" yaml:"identity,omitempty"`
 
 	Aggregate *AggregateQueryBinding `json:"aggregate,omitempty" yaml:"aggregate,omitempty"`
 	Detail    *DetailQueryBinding    `json:"detail,omitempty" yaml:"detail,omitempty"`
@@ -122,8 +144,8 @@ type Sort struct {
 }
 
 func (query QueryBinding) Validate() error {
-	if query.Kind == "" || query.ModelID == "" || query.DatasetID == "" {
-		return fmt.Errorf("visualization query binding requires kind, model ID, and dataset ID")
+	if query.Kind == "" || query.ResultShape == "" || query.ModelID == "" || query.DatasetID == "" {
+		return fmt.Errorf("visualization query binding requires kind, result shape, model ID, and dataset ID")
 	}
 	branches := 0
 	for _, present := range []bool{query.Aggregate != nil, query.Detail != nil, query.Matrix != nil, query.Pivot != nil, query.Custom != nil, query.Spatial != nil} {
@@ -191,6 +213,9 @@ func (query QueryBinding) Validate() error {
 	default:
 		return fmt.Errorf("unsupported visualization query kind %q", query.Kind)
 	}
+	if !queryKindSupportsResult(query.Kind, query.ResultShape) {
+		return fmt.Errorf("visualization query kind %q does not support result shape %q", query.Kind, query.ResultShape)
+	}
 	if (query.Kind == QueryDetail && tableID == "") || len(fields) == 0 || limit <= 0 {
 		return fmt.Errorf("visualization %s query requires fields and positive limit", query.Kind)
 	}
@@ -200,6 +225,27 @@ func (query QueryBinding) Validate() error {
 		}
 	}
 	return nil
+}
+
+func queryKindSupportsResult(kind QueryKind, shape ResultShape) bool {
+	switch kind {
+	case QueryAggregate:
+		switch shape {
+		case ResultScalar, ResultCategoryValue, ResultCategorySeriesValue, ResultCategoryMultiMeasure, ResultCategoryDelta, ResultHistogramBins, ResultMatrixCells, ResultHierarchyNodes, ResultGraphEdges, ResultOHLC, ResultDistribution:
+			return true
+		}
+	case QueryDetail:
+		return shape == ResultDetailWindow
+	case QueryMatrix:
+		return shape == ResultMatrixWindow
+	case QueryPivot:
+		return shape == ResultPivotWindow
+	case QuerySpatial:
+		return shape == ResultGeographicFeatures
+	case QueryCustom:
+		return shape == ResultCustomRows
+	}
+	return false
 }
 
 func containsFieldBinding(fields []FieldBinding, target FieldBinding) bool {
@@ -261,6 +307,9 @@ func (definition Definition) Validate() error {
 	if definition.Query.Kind != queryKind {
 		return fmt.Errorf("visualization %q query kind %q, want %q", definition.ID, definition.Query.Kind, queryKind)
 	}
+	if !specSupportsResultShape(definition.Spec, definition.Query.ResultShape) {
+		return fmt.Errorf("visualization %q specification does not support result shape %q", definition.ID, definition.Query.ResultShape)
+	}
 	revision, err := ir.ComputeSpecRevision(definition.Spec)
 	if err != nil {
 		return err
@@ -269,6 +318,54 @@ func (definition Definition) Validate() error {
 		return fmt.Errorf("visualization %q specification revision mismatch", definition.ID)
 	}
 	return nil
+}
+
+func specSupportsResultShape(spec ir.VisualizationSpec, shape ResultShape) bool {
+	switch value := spec.Value.(type) {
+	case *ir.CartesianVisualizationSpec:
+		switch value.Mark {
+		case ir.VisualizationCartesianMarkWaterfall:
+			return shape == ResultCategoryDelta
+		case ir.VisualizationCartesianMarkHistogram:
+			return shape == ResultHistogramBins
+		case ir.VisualizationCartesianMarkHeatmap:
+			return shape == ResultMatrixCells
+		case ir.VisualizationCartesianMarkCandlestick:
+			return shape == ResultOHLC
+		case ir.VisualizationCartesianMarkBoxplot:
+			return shape == ResultDistribution
+		case ir.VisualizationCartesianMarkCombo:
+			return shape == ResultCategoryMultiMeasure
+		default:
+			return shape == ResultCategoryValue || shape == ResultCategorySeriesValue || shape == ResultCategoryMultiMeasure
+		}
+	case *ir.ProportionalVisualizationSpec:
+		return shape == ResultCategoryValue || shape == ResultCategorySeriesValue
+	case *ir.HierarchyVisualizationSpec:
+		if value.Mark == ir.VisualizationHierarchyMarkGraph || value.Mark == ir.VisualizationHierarchyMarkSankey {
+			return shape == ResultGraphEdges
+		}
+		return shape == ResultHierarchyNodes
+	case *ir.PolarVisualizationSpec:
+		if value.Mark == ir.VisualizationPolarMarkGauge {
+			return shape == ResultScalar
+		}
+		return shape == ResultCategoryValue || shape == ResultCategorySeriesValue
+	case *ir.KPIVisualizationSpec:
+		return shape == ResultScalar
+	case *ir.GeographicVisualizationSpec:
+		return shape == ResultGeographicFeatures
+	case *ir.CustomVisualizationSpec:
+		return shape == ResultCustomRows
+	case *ir.TableVisualizationSpec:
+		return shape == ResultDetailWindow
+	case *ir.MatrixVisualizationSpec:
+		return shape == ResultMatrixWindow
+	case *ir.PivotVisualizationSpec:
+		return shape == ResultPivotWindow
+	default:
+		return false
+	}
 }
 
 func ownership(spec ir.VisualizationSpec) (string, QueryKind, error) {

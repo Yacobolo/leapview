@@ -44,10 +44,10 @@ type ResolvedSpatialSelectionInteraction struct {
 // fields are numeric and can be applied to every explicitly targeted query.
 func ResolveSpatialSelectionInteraction(d *report.Dashboard, model *semanticmodel.Model, sourceID string) (ResolvedSpatialSelectionInteraction, error) {
 	visual, ok := d.Visuals[sourceID]
-	if !ok {
+	if !ok || visual.Chart == nil {
 		return ResolvedSpatialSelectionInteraction{}, fmt.Errorf("unknown source visualization %q", sourceID)
 	}
-	selection := visual.Interaction.SpatialSelection
+	selection := visual.Chart.Interaction.SpatialSelection
 	resolve := func(axis string, mapping report.SpatialSelectionMapping) (ResolvedSelectionMapping, error) {
 		resolved, err := resolveSelectionMapping(model, report.SelectionMapping{Field: mapping.Field, Fact: mapping.Fact, Value: mapping.Source})
 		if err != nil {
@@ -173,10 +173,12 @@ func sourceSelection(d *report.Dashboard, sourceKind, sourceID string) (report.S
 	switch sourceKind {
 	case "visual":
 		if visual, ok := d.Visuals[sourceID]; ok {
-			return visual.Interaction.PointSelection, nil
-		}
-		if visual, ok := d.Tables[sourceID]; ok {
-			return visual.Interaction.RowSelection, nil
+			if visual.Chart != nil {
+				return visual.Chart.Interaction.PointSelection, nil
+			}
+			if visual.Tabular != nil {
+				return visual.Tabular.Interaction.RowSelection, nil
+			}
 		}
 		return report.SelectionInteraction{}, fmt.Errorf("unknown source visual %q", sourceID)
 	default:
@@ -188,37 +190,30 @@ func sourceSelectionFields(d *report.Dashboard, sourceKind, sourceID string) (ma
 	fields := map[string]bool{}
 	if sourceKind == "visual" {
 		if visual, ok := d.Visuals[sourceID]; ok {
-			for _, dimension := range visual.Query.Dimensions {
-				fields[dimension.Field] = true
+			if visual.Chart != nil {
+				for _, dimension := range visual.Chart.Query.Dimensions {
+					fields[dimension.Field] = true
+				}
+				if !visual.Chart.Query.Series.IsZero() {
+					fields[visual.Chart.Query.Series.Field] = true
+				}
+				if visual.Chart.Query.Time.Field != "" {
+					fields[visual.Chart.Query.Time.Field] = true
+				}
+				return fields, visual.Chart.Query.Time
 			}
-			if !visual.Query.Series.IsZero() {
-				fields[visual.Query.Series.Field] = true
-			}
-			if visual.Query.Time.Field != "" {
-				fields[visual.Query.Time.Field] = true
-			}
-			return fields, visual.Query.Time
-		}
-		if table, ok := d.Tables[sourceID]; ok {
-			for _, field := range table.Query.Fields {
-				fields[field] = true
-			}
-			for _, columns := range [][]report.FieldRef{table.Query.Columns, table.Query.Rows} {
-				for _, field := range columns {
-					fields[field.Field] = true
+			if visual.Tabular != nil {
+				for _, field := range visual.Tabular.Query.Fields {
+					fields[field] = true
+				}
+				for _, columns := range [][]report.FieldRef{visual.Tabular.Query.Columns, visual.Tabular.Query.Rows} {
+					for _, field := range columns {
+						fields[field.Field] = true
+					}
 				}
 			}
 		}
 		return fields, report.QueryTime{}
-	}
-	table := d.Tables[sourceID]
-	for _, field := range table.Query.Fields {
-		fields[field] = true
-	}
-	for _, columns := range [][]report.FieldRef{table.Query.Columns, table.Query.Rows} {
-		for _, field := range columns {
-			fields[field.Field] = true
-		}
 	}
 	return fields, report.QueryTime{}
 }
@@ -322,18 +317,10 @@ func validateSelectionCompatibility(model *semanticmodel.Model, role, id string,
 }
 
 func selectionTargetKind(d *report.Dashboard, targetID string) (string, error) {
-	_, visualOK := d.Visuals[targetID]
-	_, tableOK := d.Tables[targetID]
-	if visualOK == tableOK {
-		if visualOK {
-			return "", fmt.Errorf("interaction target %q is ambiguous across visuals and tables", targetID)
-		}
+	if _, ok := d.Visuals[targetID]; !ok {
 		return "", fmt.Errorf("interaction references unknown target %q", targetID)
 	}
-	if visualOK {
-		return "visual", nil
-	}
-	return "table", nil
+	return "visual", nil
 }
 
 func containsFact(facts []string, fact string) bool {

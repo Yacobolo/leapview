@@ -62,18 +62,16 @@ type FilterValues struct {
 }
 type FilterTargets struct {
 	Visuals []string `json:"visuals,omitempty"`
-	Tables  []string `json:"tables,omitempty"`
 }
 
 func (targets FilterTargets) IsEmpty() bool {
-	return len(targets.Visuals) == 0 && len(targets.Tables) == 0
+	return len(targets.Visuals) == 0
 }
 func (targets FilterTargets) Contains(kind, id string) bool {
-	values := targets.Visuals
-	if kind == "table" {
-		values = targets.Tables
+	if kind != "visual" {
+		return false
 	}
-	for _, value := range values {
+	for _, value := range targets.Visuals {
 		if value == id {
 			return true
 		}

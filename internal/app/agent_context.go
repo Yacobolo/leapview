@@ -219,7 +219,7 @@ func resolveDashboardTurnReferences(candidates []agent.TurnReference, context da
 			continue
 		}
 		for _, component := range context.Page.Visuals {
-			if component.Visual != visualID && component.Table != visualID {
+			if component.Visual != visualID {
 				continue
 			}
 			title, visualType, ok := resolvedVisualMetadata(component, visualID, visualizations)
@@ -249,7 +249,7 @@ func resolveDashboardTurnReferences(candidates []agent.TurnReference, context da
 }
 
 func resolvedVisualMetadata(component dashboard.PageVisual, visualID string, visualizations map[string]visualizationdefinition.Definition) (string, string, bool) {
-	if component.Visual != visualID && component.Table != visualID {
+	if component.Visual != visualID {
 		return "", "", false
 	}
 	visual, ok := visualizations[visualID]

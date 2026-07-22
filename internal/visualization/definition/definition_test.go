@@ -11,8 +11,8 @@ func TestDefinitionValidateRejectsRendererAndQueryMismatches(t *testing.T) {
 
 	tests := map[string]Definition{
 		"missing identity": {ID: "orders", RendererID: RendererTanStack, Query: QueryBinding{}},
-		"wrong renderer":   {ID: "orders", RendererID: RendererECharts, Query: QueryBinding{Kind: QueryDetail}, Spec: tableSpec()},
-		"wrong query":      {ID: "orders", RendererID: RendererTanStack, Query: QueryBinding{Kind: QueryAggregate}, Spec: tableSpec()},
+		"wrong renderer":   {ID: "orders", RendererID: RendererECharts, Query: QueryBinding{Kind: QueryDetail, ResultShape: ResultDetailWindow}, Spec: tableSpec()},
+		"wrong query":      {ID: "orders", RendererID: RendererTanStack, Query: QueryBinding{Kind: QueryAggregate, ResultShape: ResultCategoryValue}, Spec: tableSpec()},
 	}
 	for name, definition := range tests {
 		definition := definition
@@ -29,7 +29,7 @@ func TestNewComputesRevisionAndSelectsOwnedRenderer(t *testing.T) {
 	t.Parallel()
 
 	definition, err := New("orders", tableSpec(), QueryBinding{
-		Kind: QueryDetail, ModelID: "sales", DatasetID: "primary",
+		Kind: QueryDetail, ResultShape: ResultDetailWindow, ModelID: "sales", DatasetID: "primary",
 		Detail: &DetailQueryBinding{TableID: "orders", Fields: []FieldBinding{{FieldID: "orders.order_id", Alias: "order_id"}}, Limit: 1000},
 	})
 	if err != nil {
@@ -51,14 +51,14 @@ func TestQueryBindingRejectsMissingAndConflictingBranches(t *testing.T) {
 	t.Parallel()
 
 	for name, binding := range map[string]QueryBinding{
-		"missing branch": {Kind: QueryDetail, ModelID: "sales", DatasetID: "primary"},
+		"missing branch": {Kind: QueryDetail, ResultShape: ResultDetailWindow, ModelID: "sales", DatasetID: "primary"},
 		"conflicting branch": {
-			Kind: QueryDetail, ModelID: "sales", DatasetID: "primary",
+			Kind: QueryDetail, ResultShape: ResultDetailWindow, ModelID: "sales", DatasetID: "primary",
 			Detail:    &DetailQueryBinding{TableID: "orders", Fields: []FieldBinding{{FieldID: "orders.id", Alias: "id"}}, Limit: 100},
 			Aggregate: &AggregateQueryBinding{TableID: "orders", Measures: []FieldBinding{{FieldID: "orders.count", Alias: "value"}}, Limit: 1},
 		},
 		"spatial viewport without coordinates": {
-			Kind: QuerySpatial, ModelID: "sales", DatasetID: "primary",
+			Kind: QuerySpatial, ResultShape: ResultGeographicFeatures, ModelID: "sales", DatasetID: "primary",
 			Spatial: &SpatialQueryBinding{
 				TableID: "orders", Dimensions: []FieldBinding{{FieldID: "orders.state", Alias: "state"}}, Limit: 1_000_000,
 				Viewport: &SpatialViewportBinding{FeatureCap: 5000},
@@ -75,11 +75,22 @@ func TestQueryBindingRejectsMissingAndConflictingBranches(t *testing.T) {
 	}
 }
 
+func TestQueryBindingRejectsIncompatibleResultShape(t *testing.T) {
+	t.Parallel()
+	binding := QueryBinding{
+		Kind: QueryDetail, ResultShape: ResultGeographicFeatures, ModelID: "sales", DatasetID: "primary",
+		Detail: &DetailQueryBinding{TableID: "orders", Fields: []FieldBinding{{FieldID: "orders.id", Alias: "id"}}, Limit: 100},
+	}
+	if err := binding.Validate(); err == nil {
+		t.Fatal("incompatible query kind and result shape passed validation")
+	}
+}
+
 func TestGeographicDefinitionOwnsExplicitSpatialQuery(t *testing.T) {
 	t.Parallel()
 
 	binding := QueryBinding{
-		Kind: QuerySpatial, ModelID: "sales", DatasetID: "primary", Identity: []string{"order_id"},
+		Kind: QuerySpatial, ResultShape: ResultGeographicFeatures, ModelID: "sales", DatasetID: "primary", Identity: []string{"order_id"},
 		Spatial: &SpatialQueryBinding{
 			TableID: "orders",
 			Dimensions: []FieldBinding{

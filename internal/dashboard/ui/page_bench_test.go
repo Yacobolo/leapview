@@ -200,15 +200,14 @@ func benchmarkDashboardFixture() (reportdef.Dashboard, *semanticmodel.Model, das
 				{Key: "category", Label: "Category", Width: 180, Format: "text"},
 			},
 		}
-		components = append(components, dashboard.PageVisual{ID: id, Kind: "table", Table: id, X: float64(i * 300), Y: 540, Width: 280, Height: 220})
+		components = append(components, dashboard.PageVisual{ID: id, Kind: "table", Visual: id, X: float64(i * 300), Y: 540, Width: 280, Height: 220})
 	}
 	report := reportdef.Dashboard{
 		ID:            "benchmark-dashboard",
 		Title:         "Benchmark Dashboard",
 		SemanticModel: "benchmark",
 		Filters:       filters,
-		Visuals:       visuals,
-		Tables:        tables,
+		Visuals:       reportdef.MergeVisualizations(reportdef.ChartVisualizations(visuals), reportdef.TabularVisualizations("table", tables)),
 		Pages: []dashboard.Page{{
 			ID:      "overview",
 			Title:   "Overview",

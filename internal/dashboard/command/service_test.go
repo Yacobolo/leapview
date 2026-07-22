@@ -33,7 +33,7 @@ func (m fakeMetrics) Report(string) (dashboarddefinition.Definition, *semanticmo
 	authored := reportdef.Dashboard{
 		ID: "dash", SemanticModel: "model",
 		Filters: map[string]reportdef.FilterDefinition{"state": {Type: "multi_select", Label: "State", Operator: "in"}},
-		Visuals: map[string]reportdef.Visual{
+		Visuals: reportdef.MergeVisualizations(reportdef.ChartVisualizations(map[string]reportdef.Visual{
 			"chart": {
 				Type:  "bar",
 				Query: reportdef.VisualQuery{Dimensions: []reportdef.FieldRef{{Field: "state", Alias: "label"}}, Measures: []reportdef.FieldRef{{Field: "order_count", Alias: "value"}}},
@@ -62,13 +62,12 @@ func (m fakeMetrics) Report(string) (dashboarddefinition.Definition, *semanticmo
 					Targets:   []string{"chart", "orders"},
 				}},
 			},
-		},
-		Tables: map[string]reportdef.TableVisual{"orders": {Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.state"}}}},
+		}), reportdef.TabularVisualizations("table", map[string]reportdef.TableVisual{"orders": {Query: reportdef.TableQuery{Table: "orders", Fields: []string{"orders.state"}}}})),
 		Pages: []dashboard.Page{
 			{ID: "overview", Visuals: []dashboard.PageVisual{
-				{Kind: "filter_card", Filter: "state"}, {Kind: "visual", Visual: "chart"}, {Kind: "visual", Visual: "customer_map"}, {Kind: "table", Table: "orders"},
+				{Kind: "filter_card", Filter: "state"}, {Kind: "visual", Visual: "chart"}, {Kind: "visual", Visual: "customer_map"}, {Kind: "table", Visual: "orders"},
 			}},
-			{ID: "boolean", Visuals: []dashboard.PageVisual{{Kind: "visual", Visual: "boolean_chart"}, {Kind: "table", Table: "orders"}}},
+			{ID: "boolean", Visuals: []dashboard.PageVisual{{Kind: "visual", Visual: "boolean_chart"}, {Kind: "table", Visual: "orders"}}},
 		},
 	}
 	model := &semanticmodel.Model{

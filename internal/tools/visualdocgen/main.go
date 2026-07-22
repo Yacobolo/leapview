@@ -37,6 +37,7 @@ type visualExample struct {
 	ID      string
 	Source  string
 	Line    int
+	Type    string
 	Chart   *reportdef.Visual
 	Tabular *reportdef.TableVisual
 }
@@ -247,7 +248,7 @@ func validateVisualData(example visualExample, payload []dashboard.Datum) error 
 	if finiteNumbers == 0 {
 		return fmt.Errorf("visual example %q has no finite numeric values", example.ID)
 	}
-	if example.Chart.ShapeOrDefault() != "geo" {
+	if example.Chart.ResultShape() != "geo" {
 		return nil
 	}
 	for _, layer := range example.Chart.Geo.Layers {
@@ -418,9 +419,8 @@ func inspectPayloadValue(value any, path string, finiteNumbers *int) error {
 
 func buildVisualDocumentReference(examples []visualExample) (visualDocumentReference, error) {
 	if len(examples) > 0 && examples[0].Tabular != nil {
-		visualType := dashboard.NewTabularVisual("reference", dashboard.Table{Kind: examples[0].Tabular.Kind}).Type
 		return visualDocumentReference{
-			Kind: "visual", Renderer: "tabular", Shapes: []string{visualType},
+			Kind: "visual", Renderer: "tabular", Shapes: []string{examples[0].Type},
 			QueryFields: []string{"table", "fields", "rows", "columns", "measures"},
 			Fields: []visualdocs.FieldReference{
 				{Path: "type", Type: "string", AllowedValues: []string{"table", "matrix", "pivot"}, Description: "Selects the tabular visual behavior."},
@@ -441,8 +441,9 @@ func buildVisualDocumentReference(examples []visualExample) (visualDocumentRefer
 	for index := range examples {
 		visual := *examples[index].Chart
 		kinds[visual.KindOrDefault()] = struct{}{}
-		renderers[visual.RendererOrDefault()] = struct{}{}
-		shapes[visual.ShapeOrDefault()] = struct{}{}
+		capability, _ := reportdef.VisualizationCapabilityForType(visual.Type)
+		renderers[capability.Renderer] = struct{}{}
+		shapes[visual.ResultShape()] = struct{}{}
 		collectQueryFields(visual.Query, queryFields)
 		for key := range visualPresentationValues(visual) {
 			presentation[key] = struct{}{}
@@ -492,9 +493,6 @@ func visualKeyFields(previous *reportdef.Visual, visual reportdef.Visual) []stri
 	fields := make([]string, 0, 12)
 	changedToValue := func(before, after any) bool {
 		return valueIsSet(after) && (previous == nil || !reflect.DeepEqual(before, after))
-	}
-	if changedToValue(valueOrZero(previous, func(item reportdef.Visual) any { return item.Shape }), visual.Shape) {
-		fields = append(fields, "shape")
 	}
 	queryChecks := []struct {
 		name string
@@ -598,20 +596,20 @@ func visualAccessibilityGuidance(visual reportdef.Visual) string {
 }
 
 func buildExampleDashboard(catalog visualCatalog, examplesByPage map[string][]visualExample) *reportdef.Dashboard {
-	report := &reportdef.Dashboard{ID: "visual-docs", Title: "Visual documentation", Description: "Executable documentation examples.", SemanticModel: "visual_examples", Visuals: map[string]reportdef.Visual{}, Tables: map[string]reportdef.TableVisual{}, Pages: make([]dashboard.Page, 0, len(catalog.Documents))}
+	report := &reportdef.Dashboard{ID: "visual-docs", Title: "Visual documentation", Description: "Executable documentation examples.", SemanticModel: "visual_examples", Visuals: map[string]reportdef.AuthoringVisualization{}, Pages: make([]dashboard.Page, 0, len(catalog.Documents))}
 	for _, document := range catalog.Documents {
 		page := dashboard.Page{ID: document.Source, Title: document.Title, Canvas: dashboard.PageCanvas{Width: 1366, Height: 3000}, Grid: dashboard.PageGrid{Columns: 12, RowHeight: 48, Gap: 16, Padding: 16}, Visuals: make([]dashboard.PageVisual, 0, len(examplesByPage[document.Source]))}
 		for index, example := range examplesByPage[document.Source] {
 			component := dashboard.PageVisual{ID: example.ID, Placement: dashboard.PagePlacement{Col: 1, Row: 1 + index*8, ColSpan: 6, RowSpan: 7}}
 			if example.Chart != nil {
-				report.Visuals[example.ID] = *example.Chart
+				report.Visuals[example.ID] = reportdef.ChartVisualization(*example.Chart)
 				component.Kind, component.Visual = example.Chart.Type+"_chart", example.ID
 				if example.Chart.KindOrDefault() == "kpi" {
 					component.Kind = "kpi_card"
 				}
 			} else {
-				report.Tables[example.ID] = *example.Tabular
-				component.Kind, component.Table = "table", example.ID
+				report.Visuals[example.ID] = reportdef.TabularVisualization(example.Type, *example.Tabular)
+				component.Kind, component.Visual = "table", example.ID
 			}
 			page.Visuals = append(page.Visuals, component)
 		}
@@ -732,22 +730,11 @@ func decodeVisualExample(id, filename string, line int, node yaml.Node) (visualE
 	if err := validateVisualExampleContract(id, filename, node); err != nil {
 		return visualExample{}, fmt.Errorf("%s:%d: visual %q: %w", filename, line, id, err)
 	}
-	example := visualExample{ID: id, Source: filename, Line: line}
-	switch tag.Type {
-	case "table", "matrix", "pivot":
-		var value reportdef.TableVisual
-		if err := node.Decode(&value); err != nil {
-			return visualExample{}, fmt.Errorf("%s:%d: decode visual %q: %w", filename, line, id, err)
-		}
-		value.Kind = map[string]string{"table": "data_table", "matrix": "matrix_table", "pivot": "pivot_table"}[tag.Type]
-		example.Tabular = &value
-	default:
-		var value reportdef.Visual
-		if err := node.Decode(&value); err != nil {
-			return visualExample{}, fmt.Errorf("%s:%d: decode visual %q: %w", filename, line, id, err)
-		}
-		example.Chart = &value
+	var authored reportdef.AuthoringVisualization
+	if err := node.Decode(&authored); err != nil {
+		return visualExample{}, fmt.Errorf("%s:%d: decode visual %q: %w", filename, line, id, err)
 	}
+	example := visualExample{ID: id, Source: filename, Line: line, Type: authored.Type, Chart: authored.Chart, Tabular: authored.Tabular}
 	return example, nil
 }
 

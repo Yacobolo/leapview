@@ -44,7 +44,7 @@ Add the type/shape to `web/components/dashboard/charts/types.ts`. Implement the 
 
 The adapter must handle theme tokens, resize, update without remount when safe, clear, and dispose. Avoid global listeners or renderer instances that survive component disconnect.
 
-Use `rendererOptions` only for a bounded exceptional setting. Prefer a product-level option when the behavior could apply to several renderer implementations.
+Do not add renderer-native options to YAML or the IR. Add a typed product-level presentation field, validate it during compilation, and translate it inside the owning adapter.
 
 ## Implement interactions
 

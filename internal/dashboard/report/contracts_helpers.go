@@ -8,11 +8,45 @@ import (
 var supportedVisualShapes = map[string]struct{}{
 	"category_value": {}, "category_series_value": {}, "category_multi_measure": {}, "category_delta": {},
 	"single_value": {}, "matrix": {}, "graph": {}, "geo": {}, "ohlc": {}, "distribution": {},
-	"binned_measure": {}, "hierarchy": {},
+	"binned_measure": {}, "hierarchy": {}, "custom": {},
 }
 
-var supportedVisualizationTypes = []string{
-	"area", "bar", "boxplot", "candlestick", "column", "combo", "custom", "donut", "funnel", "gauge", "graph", "heatmap", "histogram", "kpi", "line", "map", "matrix", "pie", "pivot", "radar", "sankey", "scatter", "sunburst", "table", "tree", "treemap", "waterfall",
+type VisualizationCapability struct {
+	Type           string
+	Kind           string
+	Renderer       string
+	ResultShape    string
+	SupportsSeries bool
+}
+
+var visualizationCapabilities = map[string]VisualizationCapability{
+	"area":        {Type: "area", Kind: "chart", Renderer: "echarts", ResultShape: "category_value", SupportsSeries: true},
+	"bar":         {Type: "bar", Kind: "chart", Renderer: "echarts", ResultShape: "category_value", SupportsSeries: true},
+	"boxplot":     {Type: "boxplot", Kind: "chart", Renderer: "echarts", ResultShape: "distribution"},
+	"candlestick": {Type: "candlestick", Kind: "chart", Renderer: "echarts", ResultShape: "ohlc"},
+	"column":      {Type: "column", Kind: "chart", Renderer: "echarts", ResultShape: "category_value", SupportsSeries: true},
+	"combo":       {Type: "combo", Kind: "chart", Renderer: "echarts", ResultShape: "category_multi_measure"},
+	"custom":      {Type: "custom", Kind: "chart", Renderer: "vega-lite-sandbox", ResultShape: "custom"},
+	"donut":       {Type: "donut", Kind: "chart", Renderer: "echarts", ResultShape: "category_value"},
+	"funnel":      {Type: "funnel", Kind: "chart", Renderer: "echarts", ResultShape: "category_value"},
+	"gauge":       {Type: "gauge", Kind: "chart", Renderer: "echarts", ResultShape: "single_value"},
+	"graph":       {Type: "graph", Kind: "chart", Renderer: "echarts", ResultShape: "graph"},
+	"heatmap":     {Type: "heatmap", Kind: "chart", Renderer: "echarts", ResultShape: "matrix"},
+	"histogram":   {Type: "histogram", Kind: "chart", Renderer: "echarts", ResultShape: "binned_measure"},
+	"kpi":         {Type: "kpi", Kind: "kpi", Renderer: "html", ResultShape: "single_value"},
+	"line":        {Type: "line", Kind: "chart", Renderer: "echarts", ResultShape: "category_value", SupportsSeries: true},
+	"map":         {Type: "map", Kind: "chart", Renderer: "maplibre", ResultShape: "geo"},
+	"matrix":      {Type: "matrix", Kind: "grid", Renderer: "tanstack", ResultShape: "matrix_window"},
+	"pie":         {Type: "pie", Kind: "chart", Renderer: "echarts", ResultShape: "category_value"},
+	"pivot":       {Type: "pivot", Kind: "grid", Renderer: "tanstack", ResultShape: "pivot_window"},
+	"radar":       {Type: "radar", Kind: "chart", Renderer: "echarts", ResultShape: "category_value"},
+	"sankey":      {Type: "sankey", Kind: "chart", Renderer: "echarts", ResultShape: "graph"},
+	"scatter":     {Type: "scatter", Kind: "chart", Renderer: "echarts", ResultShape: "category_value", SupportsSeries: true},
+	"sunburst":    {Type: "sunburst", Kind: "chart", Renderer: "echarts", ResultShape: "hierarchy"},
+	"table":       {Type: "table", Kind: "grid", Renderer: "tanstack", ResultShape: "detail_window"},
+	"tree":        {Type: "tree", Kind: "chart", Renderer: "echarts", ResultShape: "hierarchy"},
+	"treemap":     {Type: "treemap", Kind: "chart", Renderer: "echarts", ResultShape: "hierarchy"},
+	"waterfall":   {Type: "waterfall", Kind: "chart", Renderer: "echarts", ResultShape: "category_delta"},
 }
 
 var supportedGeographicLayerKinds = []string{"choropleth", "density", "heat", "path", "point", "reference"}
@@ -21,7 +55,17 @@ var supportedGeographicLayerKinds = []string{"choropleth", "density", "heat", "p
 // consumed by documentation coverage tests so a new type cannot ship without
 // an executable example.
 func SupportedVisualizationTypes() []string {
-	return slices.Clone(supportedVisualizationTypes)
+	types := make([]string, 0, len(visualizationCapabilities))
+	for visualType := range visualizationCapabilities {
+		types = append(types, visualType)
+	}
+	slices.Sort(types)
+	return types
+}
+
+func VisualizationCapabilityForType(visualType string) (VisualizationCapability, bool) {
+	capability, ok := visualizationCapabilities[visualType]
+	return capability, ok
 }
 
 // SupportedGeographicLayerKinds returns the closed geographic authoring union.
@@ -63,24 +107,8 @@ func supportsVisualShape(shape string) bool {
 }
 
 func rendererSupportsType(renderer, chartType string) bool {
-	if renderer == "html" {
-		return chartType == "kpi" || chartType == ""
-	}
-	if renderer == "maplibre" {
-		return chartType == "map"
-	}
-	if renderer == "vega-lite-sandbox" {
-		return chartType == "custom"
-	}
-	if renderer != "echarts" {
-		return false
-	}
-	switch chartType {
-	case "line", "area", "bar", "column", "pie", "donut", "scatter", "funnel", "treemap", "gauge", "heatmap", "sankey", "graph", "map", "candlestick", "boxplot", "combo", "waterfall", "histogram", "radar", "tree", "sunburst":
-		return true
-	default:
-		return false
-	}
+	capability, ok := visualizationCapabilities[chartType]
+	return ok && capability.Renderer == renderer
 }
 
 func supportsSeries(shape string) bool {
@@ -95,7 +123,7 @@ func rendererSupportsShapeType(renderer, shape, chartType string) bool {
 		return shape == "geo" && chartType == "map"
 	}
 	if renderer == "vega-lite-sandbox" {
-		return chartType == "custom"
+		return shape == "custom" && chartType == "custom"
 	}
 	if renderer != "echarts" {
 		return false
@@ -133,13 +161,6 @@ func rendererSupportsShapeType(renderer, shape, chartType string) bool {
 }
 
 func rendererTypeSupportsSeries(renderer, chartType string) bool {
-	if renderer != "echarts" {
-		return false
-	}
-	switch chartType {
-	case "line", "area", "bar", "column", "scatter":
-		return true
-	default:
-		return false
-	}
+	capability, ok := visualizationCapabilities[chartType]
+	return ok && capability.Renderer == renderer && capability.SupportsSeries
 }

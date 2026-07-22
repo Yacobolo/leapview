@@ -31,12 +31,16 @@ func (m *fakeMetrics) Report(string) (dashboarddefinition.Definition, *semanticm
 		filters[id] = dashboarddefinition.FilterDefinition{Type: filter.Type, Label: filter.Label, Dimension: filter.Dimension}
 	}
 	visualizations := map[string]visualizationdefinition.Definition{}
-	for id, table := range m.report.Tables {
+	for id, authored := range m.report.Visuals {
+		if authored.Tabular == nil {
+			continue
+		}
+		table := *authored.Tabular
 		fields := make([]visualizationdefinition.FieldBinding, len(table.DataColumns))
 		if len(fields) == 0 {
 			fields = []visualizationdefinition.FieldBinding{{FieldID: "value", Alias: "value"}}
 		}
-		visualizations[id] = visualizationdefinition.Definition{ID: id, Query: visualizationdefinition.QueryBinding{Kind: visualizationdefinition.QueryDetail, Detail: &visualizationdefinition.DetailQueryBinding{Fields: fields, DefaultSort: []visualizationdefinition.Sort{{FieldID: table.DefaultSort.Key, Direction: table.DefaultSort.Direction}}, Limit: 100}}}
+		visualizations[id] = visualizationdefinition.Definition{ID: id, Query: visualizationdefinition.QueryBinding{Kind: visualizationdefinition.QueryDetail, ResultShape: visualizationdefinition.ResultDetailWindow, Detail: &visualizationdefinition.DetailQueryBinding{Fields: fields, DefaultSort: []visualizationdefinition.Sort{{FieldID: table.DefaultSort.Key, Direction: table.DefaultSort.Direction}}, Limit: 100}}}
 	}
 	return dashboarddefinition.Definition{ID: m.report.ID, Title: m.report.Title, SemanticModel: "model", Filters: filters, Pages: m.report.Pages, Visualizations: visualizations}, model, true
 }
@@ -97,14 +101,14 @@ func TestNormalizeFiltersUsesActivePageDefinitions(t *testing.T) {
 
 func TestTablesBuildsPageScopedRequests(t *testing.T) {
 	metrics := &fakeMetrics{report: Dashboard{
-		Tables: map[string]TableVisual{
+		Visuals: TabularVisualizations("table", map[string]TableVisual{
 			"orders": {DefaultSort: dashboard.TableSort{Key: "purchase_date", Direction: "desc"}},
 			"states": {DefaultSort: dashboard.TableSort{Key: "state", Direction: "asc"}},
-		},
+		}),
 		Pages: []dashboard.Page{{ID: "overview", Visuals: []dashboard.PageVisual{
-			{Kind: "table", Table: "orders"},
-			{Kind: "table", Table: "orders"},
-			{Kind: "table", Table: "states"},
+			{Kind: "table", Visual: "orders"},
+			{Kind: "table", Visual: "orders"},
+			{Kind: "table", Visual: "states"},
 		}}},
 	}}
 

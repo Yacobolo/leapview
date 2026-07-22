@@ -319,9 +319,7 @@ func filterOptionsPayload(options []dashboarddefinition.FilterOption) []filterOp
 }
 
 func filterTargetsPayload(targets dashboarddefinition.FilterTargets) filterTargetsPayloadV1 {
-	visuals := append([]string{}, targets.Visuals...)
-	visuals = append(visuals, targets.Tables...)
-	return filterTargetsPayloadV1{Visuals: visuals}
+	return filterTargetsPayloadV1{Visuals: append([]string{}, targets.Visuals...)}
 }
 
 func pagePayload(page dashboard.Page) pagePayloadV1 {
@@ -394,7 +392,6 @@ func pageItemPayload(item dashboard.PageVisual) pageItemPayloadV1 {
 		ID:          item.ID,
 		Kind:        item.Kind,
 		Visual:      item.Visual,
-		Table:       item.Table,
 		Filter:      item.Filter,
 		Description: item.Description,
 		Placement:   pagePlacementPayload(item.Placement),

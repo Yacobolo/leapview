@@ -226,49 +226,43 @@ func ValidateSpec(spec VisualizationSpec) error {
 }
 
 func specificationBase(spec VisualizationSpec) (VisualizationSpecBase, error) {
+	base, err := SpecificationBaseRef(&spec)
+	if err != nil {
+		return VisualizationSpecBase{}, err
+	}
+	return *base, nil
+}
+
+// SpecificationBaseRef returns the embedded base owned by a pointer-normalized
+// visualization union. Generated and decoded specifications must use pointer
+// variants so callers never mutate a detached union value.
+func SpecificationBaseRef(spec *VisualizationSpec) (*VisualizationSpecBase, error) {
+	if spec == nil {
+		return nil, fmt.Errorf("visualization specification is nil")
+	}
 	switch value := spec.Value.(type) {
 	case *CartesianVisualizationSpec:
-		return value.VisualizationSpecBase, nil
-	case CartesianVisualizationSpec:
-		return value.VisualizationSpecBase, nil
+		return &value.VisualizationSpecBase, nil
 	case *ProportionalVisualizationSpec:
-		return value.VisualizationSpecBase, nil
-	case ProportionalVisualizationSpec:
-		return value.VisualizationSpecBase, nil
+		return &value.VisualizationSpecBase, nil
 	case *HierarchyVisualizationSpec:
-		return value.VisualizationSpecBase, nil
-	case HierarchyVisualizationSpec:
-		return value.VisualizationSpecBase, nil
+		return &value.VisualizationSpecBase, nil
 	case *PolarVisualizationSpec:
-		return value.VisualizationSpecBase, nil
-	case PolarVisualizationSpec:
-		return value.VisualizationSpecBase, nil
+		return &value.VisualizationSpecBase, nil
 	case *TableVisualizationSpec:
-		return value.VisualizationSpecBase, nil
-	case TableVisualizationSpec:
-		return value.VisualizationSpecBase, nil
+		return &value.VisualizationSpecBase, nil
 	case *MatrixVisualizationSpec:
-		return value.VisualizationSpecBase, nil
-	case MatrixVisualizationSpec:
-		return value.VisualizationSpecBase, nil
+		return &value.VisualizationSpecBase, nil
 	case *PivotVisualizationSpec:
-		return value.VisualizationSpecBase, nil
-	case PivotVisualizationSpec:
-		return value.VisualizationSpecBase, nil
+		return &value.VisualizationSpecBase, nil
 	case *KPIVisualizationSpec:
-		return value.VisualizationSpecBase, nil
-	case KPIVisualizationSpec:
-		return value.VisualizationSpecBase, nil
+		return &value.VisualizationSpecBase, nil
 	case *GeographicVisualizationSpec:
-		return value.VisualizationSpecBase, nil
-	case GeographicVisualizationSpec:
-		return value.VisualizationSpecBase, nil
+		return &value.VisualizationSpecBase, nil
 	case *CustomVisualizationSpec:
-		return value.VisualizationSpecBase, nil
-	case CustomVisualizationSpec:
-		return value.VisualizationSpecBase, nil
+		return &value.VisualizationSpecBase, nil
 	default:
-		return VisualizationSpecBase{}, fmt.Errorf("unsupported visualization specification %T", value)
+		return nil, fmt.Errorf("unsupported visualization specification %T; union values must be pointers", value)
 	}
 }
 

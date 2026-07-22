@@ -57,7 +57,7 @@ func (fakeMetrics) Report(dashboardID string) (dashboarddefinition.Definition, *
 		ID:            "dash",
 		Title:         "Dashboard",
 		SemanticModel: "model",
-		Tables:        map[string]reportdef.TableVisual{},
+		Visuals:       map[string]reportdef.AuthoringVisualization{},
 		Pages:         fakeMetrics{}.Pages(dashboardID),
 	}
 	model := &semanticmodel.Model{Name: "model", Title: "Model"}

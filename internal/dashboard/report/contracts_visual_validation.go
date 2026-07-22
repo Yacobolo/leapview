@@ -11,7 +11,7 @@ func validateVisualQueryShape(name string, visual Visual) error {
 		dimensionCount++
 	}
 	if visual.KindOrDefault() == "kpi" {
-		if visual.ShapeOrDefault() != "single_value" {
+		if visual.ResultShape() != "single_value" {
 			return fmt.Errorf("visual %q kind kpi requires shape single_value", name)
 		}
 		if len(visual.Query.Measures) != 1 {
@@ -25,7 +25,7 @@ func validateVisualQueryShape(name string, visual Visual) error {
 		}
 		return nil
 	}
-	shape := visual.ShapeOrDefault()
+	shape := visual.ResultShape()
 	if (shape == "binned_measure" || shape == "distribution") && strings.TrimSpace(visual.Query.Table) == "" {
 		return fmt.Errorf("visual %q shape %s requires query.table", name, shape)
 	}
@@ -137,18 +137,18 @@ func validateVisualQueryShape(name string, visual Visual) error {
 
 func ValidateVisualPointSelectionMappingKeys(name string, visual Visual) error {
 	if !supportsPointSelection(visual) {
-		return fmt.Errorf("visual %q type %q shape %q does not support point_selection", name, visual.Type, visual.ShapeOrDefault())
+		return fmt.Errorf("visual %q type %q shape %q does not support point_selection", name, visual.Type, visual.ResultShape())
 	}
-	if visual.ShapeOrDefault() == "geo" {
+	if visual.ResultShape() == "geo" {
 		return validateGeographicPointSelectionMappingKeys(name, visual)
 	}
 	keys := visualPayloadKeys(visual)
 	for index, mapping := range visual.Interaction.PointSelection.Mappings {
 		if !keys.Contains(mapping.Value) {
-			return fmt.Errorf("visual %q interaction mapping %d references unknown value key %q for shape %q", name, index, mapping.Value, visual.ShapeOrDefault())
+			return fmt.Errorf("visual %q interaction mapping %d references unknown value key %q for shape %q", name, index, mapping.Value, visual.ResultShape())
 		}
 		if mapping.Label != "" && !keys.Contains(mapping.Label) {
-			return fmt.Errorf("visual %q interaction mapping %d references unknown label key %q for shape %q", name, index, mapping.Label, visual.ShapeOrDefault())
+			return fmt.Errorf("visual %q interaction mapping %d references unknown label key %q for shape %q", name, index, mapping.Label, visual.ResultShape())
 		}
 	}
 	return nil
@@ -184,13 +184,13 @@ func validateGeographicPointSelectionMappingKeys(name string, visual Visual) err
 	}
 	for index, mapping := range visual.Interaction.PointSelection.Mappings {
 		if !allAliases.Contains(mapping.Value) {
-			return fmt.Errorf("visual %q interaction mapping %d references unknown value query alias %q for shape %q", name, index, mapping.Value, visual.ShapeOrDefault())
+			return fmt.Errorf("visual %q interaction mapping %d references unknown value query alias %q for shape %q", name, index, mapping.Value, visual.ResultShape())
 		}
 		if !stableAliases.Contains(mapping.Value) {
 			return fmt.Errorf("visual %q interaction mapping %d value query alias %q must reference a dimension or time field", name, index, mapping.Value)
 		}
 		if mapping.Label != "" && !allAliases.Contains(mapping.Label) {
-			return fmt.Errorf("visual %q interaction mapping %d references unknown label query alias %q for shape %q", name, index, mapping.Label, visual.ShapeOrDefault())
+			return fmt.Errorf("visual %q interaction mapping %d references unknown label query alias %q for shape %q", name, index, mapping.Label, visual.ResultShape())
 		}
 	}
 	return nil
@@ -267,7 +267,7 @@ func (keys payloadKeySet) Contains(key string) bool {
 }
 
 func visualPayloadKeys(visual Visual) payloadKeySet {
-	switch visual.ShapeOrDefault() {
+	switch visual.ResultShape() {
 	case "category_series_value", "category_multi_measure":
 		return payloadKeys("label", "series", "value", "selected")
 	case "category_delta":

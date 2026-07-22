@@ -434,13 +434,6 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, servingStateID workspace.
 					}
 					edge(itemID, visualID, workspace.AssetEdgeUsesVisual)
 				}
-				if item.Table != "" {
-					tableID, err := assetID(workspace.AssetTypeVisual, reportKey+"."+item.Table)
-					if err != nil {
-						return workspace.AssetGraph{}, err
-					}
-					edge(itemID, tableID, workspace.AssetEdgeUsesVisual)
-				}
 				if item.Filter != "" {
 					filterID, err := assetID(workspace.AssetTypeFilter, reportKey+"."+item.Filter)
 					if err != nil {

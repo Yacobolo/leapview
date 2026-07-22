@@ -241,7 +241,7 @@ func (p VisualProvider) queryAgentChart(ctx context.Context, workspaceID string,
 	authored.Title = title
 	definitions, err := workspacecompiler.CompileVisualizationDefinitions(&reportdef.Dashboard{
 		ID: "agent-visual", Title: "Agent visual", SemanticModel: input.Model,
-		Visuals: map[string]reportdef.Visual{id: authored},
+		Visuals: reportdef.ChartVisualizations(map[string]reportdef.Visual{id: authored}),
 	}, model)
 	if err != nil {
 		return agentVisualResult{}, fmt.Errorf("compile agent visualization: %w", err)
@@ -271,7 +271,7 @@ func (p VisualProvider) queryAgentChart(ctx context.Context, workspaceID string,
 }
 
 func agentVisualShape(input agentVisualInput) string {
-	return agentReportVisual(input).ShapeOrDefault()
+	return agentReportVisual(input).ResultShape()
 }
 
 func agentReportVisual(input agentVisualInput) reportdef.Visual {
@@ -295,14 +295,13 @@ func agentReportVisual(input agentVisualInput) reportdef.Visual {
 
 func validateAgentChartContract(input agentVisualInput) error {
 	visual := agentReportVisual(input)
-	visual.Shape = visual.ShapeOrDefault()
 	componentKind := visual.Type + "_chart"
 	if visual.Type == "kpi" {
 		componentKind = "kpi_card"
 	}
 	definition := reportdef.Dashboard{
 		ID: "agent-visual", Title: "Agent visual", SemanticModel: "agent",
-		Visuals: map[string]reportdef.Visual{"visual": visual},
+		Visuals: reportdef.ChartVisualizations(map[string]reportdef.Visual{"visual": visual}),
 		Pages: []dashboard.Page{{
 			ID: "page", Title: "Page",
 			Visuals: []dashboard.PageVisual{{ID: "visual", Kind: componentKind, Visual: "visual", Placement: dashboard.PagePlacement{Col: 1, Row: 1, ColSpan: 6, RowSpan: 4}}},

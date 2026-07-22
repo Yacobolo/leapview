@@ -14,7 +14,7 @@ import (
 func TestDashboardVisualizationDescriptionContainsOnlyCompiledContract(t *testing.T) {
 	definitions, err := workspacecompiler.CompileVisualizationDefinitions(&reportdef.Dashboard{
 		ID: "sales", SemanticModel: "sales",
-		Visuals: map[string]reportdef.Visual{"revenue": {Type: "line", Title: "Revenue", Query: reportdef.VisualQuery{Table: "orders", Dimensions: []reportdef.FieldRef{{Field: "orders.month"}}, Measures: []reportdef.FieldRef{{Field: "orders.revenue"}}}}},
+		Visuals: reportdef.ChartVisualizations(map[string]reportdef.Visual{"revenue": {Type: "line", Title: "Revenue", Query: reportdef.VisualQuery{Table: "orders", Dimensions: []reportdef.FieldRef{{Field: "orders.month"}}, Measures: []reportdef.FieldRef{{Field: "orders.revenue"}}}}}),
 	})
 	if err != nil {
 		t.Fatalf("compile definitions: %v", err)
