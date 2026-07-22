@@ -46,6 +46,40 @@ afterAll(async () => {
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
 }, 15_000)
 
+test('publications admin renders lifecycle controls and emits typed commands', async () => {
+  const page = await browser.newPage({ viewport: { width: 1100, height: 760 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('lv-admin-page'))
+    const state = await page.evaluate(async () => {
+      const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev') as any
+      mergePatch({ page: {
+        kind: 'admin', title: 'Publications', active: 'publications', headerTitle: 'Publications',
+        headerDetail: 'Public dashboard lifecycle.',
+        sidebar: { label: 'Admin', railLabel: 'Admin', ariaLabel: 'Admin navigation', storageKey: 'admin', activeId: 'publications', numbered: false, collapsible: false, items: [{ id: 'publications', title: 'Publications', href: '/admin/publications', active: true }] },
+        publications: [{ workspaceId: 'visuals', name: 'website-showcase', dashboard: 'visual-showcase', defaultPage: 'overview', status: 'active', origins: ['https://leapview.dev'], generation: 'state-2', publicUrl: 'https://app.leapview.dev/public/dashboards/id', embedUrl: 'https://app.leapview.dev/embed/dashboards/id', iframeSnippet: '<iframe></iframe>', configuredAt: '2026-07-20', history: ['2026-07-20 · configured · owner'] }],
+      } })
+      const element = document.querySelector('lv-admin-page') as any
+      await element.updateComplete
+      let detail: unknown = null
+      element.addEventListener('lv-publication-command', (event: CustomEvent) => { detail = event.detail })
+      const buttons = Array.from(element.shadowRoot.querySelectorAll('button')) as HTMLButtonElement[]
+      buttons.find((button) => button.textContent?.trim() === 'Suspend')?.click()
+      return {
+        text: element.shadowRoot.textContent.replace(/\s+/g, ' ').trim(),
+        cards: element.shadowRoot.querySelectorAll('.publication-card').length,
+        detail,
+      }
+    })
+    expect(state.cards).toBe(1)
+    expect(state.text).toContain('website-showcase')
+    expect(state.text).toContain('Lifecycle history')
+    expect(state.detail).toEqual({ workspaceId: 'visuals', publication: 'website-showcase', action: 'suspend' })
+  } finally {
+    await page.close()
+  }
+})
+
 for (const viewport of [
   { name: 'desktop', width: 1440, height: 820 },
   { name: 'mobile', width: 390, height: 820 },

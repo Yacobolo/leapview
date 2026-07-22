@@ -158,6 +158,7 @@ func loadWorkspaces(project *Project, includes []string) error {
 			Models:                map[string]semanticmodel.Table{},
 			SemanticModels:        map[string]projectSemanticModelSpec{},
 			Dashboards:            map[string]*report.Dashboard{},
+			Publications:          map[string]workspace.DashboardPublication{},
 			AccessGroups:          map[string]workspace.WorkspaceGroup{},
 			AccessRoleBindings:    map[string]workspace.WorkspaceRoleBinding{},
 			AccessGrants:          map[string]workspace.WorkspaceGrant{},
@@ -172,6 +173,7 @@ func loadWorkspaces(project *Project, includes []string) error {
 			ModelPaths:            map[string]string{},
 			SemanticModelPaths:    map[string]string{},
 			DashboardPaths:        map[string]string{},
+			PublicationPaths:      map[string]string{},
 			AccessPaths:           map[string]string{},
 			RefreshPipelinePaths:  map[string]string{},
 		}
@@ -191,10 +193,50 @@ func loadWorkspaces(project *Project, includes []string) error {
 		if err := loadWorkspaceDashboards(workspaceProject, workspaceDir, spec.Dashboards.Include); err != nil {
 			return err
 		}
+		if err := loadWorkspacePublications(workspaceProject, workspaceDir, spec.Publications.Include); err != nil {
+			return err
+		}
 		if err := loadWorkspaceAccess(workspaceProject, workspaceDir, spec.Access.Include); err != nil {
 			return err
 		}
 		project.Workspaces[id] = workspaceProject
+	}
+	return nil
+}
+
+func loadWorkspacePublications(workspaceProject *WorkspaceProject, baseDir string, includes []string) error {
+	paths, err := expandIncludes(baseDir, includes)
+	if err != nil {
+		return err
+	}
+	for _, path := range paths {
+		envelope, err := readEnvelope(path)
+		if err != nil {
+			return err
+		}
+		resourceID := envelopeResourceID(envelope, workspaceProject.ID)
+		if envelope.Kind != "DashboardPublication" {
+			return resourceError(path, resourceID, "kind", "%s kind = %q, want DashboardPublication", path, envelope.Kind)
+		}
+		if envelope.Metadata.Workspace != "" && envelope.Metadata.Workspace != workspaceProject.ID {
+			return resourceError(path, resourceID, "metadata.workspace", "%s workspace = %q, want %q", path, envelope.Metadata.Workspace, workspaceProject.ID)
+		}
+		var spec dashboardPublicationSpec
+		if err := envelope.Spec.Decode(&spec); err != nil {
+			return resourceError(path, resourceID, "spec", "%s spec: %s", path, err.Error())
+		}
+		name := strings.TrimSpace(envelope.Metadata.Name)
+		if name == "" {
+			return resourceError(path, "", "metadata.name", "%s metadata.name is required", path)
+		}
+		if _, exists := workspaceProject.Publications[name]; exists {
+			return resourceError(path, "dashboard_publication:"+workspaceProject.ID+"."+name, "metadata.name", "duplicate DashboardPublication %q in workspace %q", name, workspaceProject.ID)
+		}
+		workspaceProject.Publications[name] = workspace.DashboardPublication{
+			Name: name, Dashboard: strings.TrimSpace(spec.Dashboard), DefaultPage: strings.TrimSpace(spec.DefaultPage),
+			AllowedOrigins: append([]string(nil), spec.Embedding.AllowedOrigins...),
+		}
+		workspaceProject.PublicationPaths[name] = path
 	}
 	return nil
 }
@@ -496,6 +538,11 @@ func envelopeResourceID(envelope resourceEnvelope, fallbackWorkspace string) str
 			return ""
 		}
 		return "dashboard:" + workspaceID + "." + name
+	case "DashboardPublication":
+		if workspaceID == "" {
+			return ""
+		}
+		return "dashboard_publication:" + workspaceID + "." + name
 	case "WorkspaceGroup":
 		if workspaceID == "" {
 			return ""
@@ -562,6 +609,8 @@ func schemaKindForEnvelope(content []byte) (configschema.Kind, bool) {
 		return configschema.KindSemanticModelResource, true
 	case "Dashboard":
 		return configschema.KindDashboardResource, true
+	case "DashboardPublication":
+		return configschema.KindDashboardPublication, true
 	default:
 		return "", false
 	}

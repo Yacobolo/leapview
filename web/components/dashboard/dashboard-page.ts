@@ -97,11 +97,12 @@ function writeDashboardAgentState(state: DashboardAgentStoredState): void {
 }
 
 class LeapViewDashboardPage extends DatastarLit(LitElement) {
+  @property({ type: String, reflect: true }) presentation: 'app' | 'public' | 'embed' = 'app'
   @state() private unsupportedKinds = new Set<string>()
   @state() private optimisticSelections: CanonicalInteractionSelection[] | null = null
   @state() private optimisticTargetKeys = new Set<string>()
-	@state() private agentDrawerOpen = false
-	@state() private agentReferences: AgentReferenceSignal[] = []
+  @state() private agentDrawerOpen = false
+  @state() private agentReferences: AgentReferenceSignal[] = []
   private agentStateInitialized = false
   private agentRestoreDispatched = false
   private restoredAgentConversationID = ''
@@ -131,9 +132,18 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
       transition: grid-template-columns var(--lv-duration-fast) var(--motion-easing-move);
     }
 
-		.route.agent-open {
-			grid-template-columns: auto minmax(0, 1fr) var(--lv-dashboard-agent-width);
-		}
+    :host([presentation='embed']) .header,
+    :host([presentation='embed']) lv-report-footer {
+      display: none;
+    }
+
+    :host([presentation='embed']) .main {
+      grid-template-rows: minmax(0, 1fr);
+    }
+
+    .route.agent-open {
+      grid-template-columns: auto minmax(0, 1fr) var(--lv-dashboard-agent-width);
+    }
 
     .main {
       display: grid;
@@ -442,7 +452,7 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
   `
 
   connectedCallback(): void {
-    if (!this.agentStateInitialized) {
+    if (this.presentation === 'app' && !this.agentStateInitialized) {
       const stored = readDashboardAgentState()
       this.agentDrawerOpen = stored.open
       this.restoredAgentConversationID = stored.conversationId
@@ -462,8 +472,10 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
   }
 
   updated(): void {
-    const agent = this.signal<{ activeConversationId?: string } | null>('agent', null)
-    if (agent) {
+    const agent = this.presentation === 'app'
+      ? this.signal<{ activeConversationId?: string } | null>('agent', null)
+      : null
+    if (agent !== null) {
       const activeConversationID = agent.activeConversationId?.trim() ?? ''
       if (activeConversationID) {
         this.restoredAgentConversationID = activeConversationID
@@ -544,8 +556,9 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
     }
     this.renderSnapshot = snapshot
     const refreshProgress = this.refreshProgress(snapshot)
+    const agentEnabled = this.presentation === 'app'
     return html`
-			<div class=${`route${this.agentDrawerOpen ? ' agent-open' : ''}`}>
+			<div class=${`route${agentEnabled && this.agentDrawerOpen ? ' agent-open' : ''}`}>
         <lv-sub-sidebar .config=${this.pageSidebar(page)}></lv-sub-sidebar>
         <section class="main" aria-label="LeapView report canvas">
           <header class="header">
@@ -553,7 +566,7 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
               <h1>${page.title}</h1>
               <p class="detail">${page.headerDetail}</p>
             </div>
-						<div class="actions">
+						${agentEnabled ? html`<div class="actions">
 							<button
 								type="button"
 								class="icon-button agent-toggle"
@@ -561,7 +574,7 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
 								aria-expanded=${String(this.agentDrawerOpen)}
 								@click=${() => { this.setAgentDrawerOpen(!this.agentDrawerOpen) }}
 							>${agentIcon()}<span>Ask</span></button>
-						</div>
+						</div>` : nothing}
           </header>
           <div class="body">
             ${this.renderRefreshProgress(refreshProgress)}
@@ -574,13 +587,13 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
           </div>
           <lv-report-footer .status=${snapshot.status}></lv-report-footer>
         </section>
-				<lv-chat-drawer
+				${agentEnabled ? html`<lv-chat-drawer
 					?open=${this.agentDrawerOpen}
 					.suggestions=${this.agentSuggestions(page)}
 					@lv-chat-drawer-close=${() => { this.setAgentDrawerOpen(false) }}
 					@lv-chat-new=${this.handleAgentNew}
 					@lv-agent-references-change=${this.handleAgentReferencesChanged}
-				></lv-chat-drawer>
+				></lv-chat-drawer>` : nothing}
       </div>
       <lv-visual-modal></lv-visual-modal>
     `
@@ -727,7 +740,7 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
   }
 
 	private renderAskAction(reference?: AgentReferenceSignal, referenced = false) {
-		if (!reference) return nothing
+		if (this.presentation !== 'app' || !reference) return nothing
 		return html`
 			<button
 				slot="agent-action"
@@ -771,6 +784,7 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
 	}
 
 	private agentReference(component: DashboardComponentSignal, page: DashboardPageSignal): AgentReferenceSignal | undefined {
+		if (this.presentation !== 'app') return undefined
 		if (component.kind !== 'visual' || !component.visual) return undefined
 		const visual = this.visuals[component.visual]
 		if (!visual) return undefined

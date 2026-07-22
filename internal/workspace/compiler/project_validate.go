@@ -2,6 +2,8 @@ package compiler
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -61,6 +63,42 @@ func validateProject(project Project) error {
 				return resourceError(workspaceProject.DashboardPaths[name], "dashboard:"+workspaceProject.ID+"."+name, "spec.semanticModel", "Dashboard %q.%q references unknown SemanticModel %q", workspaceProject.ID, name, dashboard.SemanticModel)
 			}
 		}
+		for _, name := range sortedMapKeys(workspaceProject.Publications) {
+			publication := workspaceProject.Publications[name]
+			path := workspaceProject.PublicationPaths[name]
+			resourceID := "dashboard_publication:" + workspaceProject.ID + "." + name
+			dashboard, ok := workspaceProject.Dashboards[publication.Dashboard]
+			if !ok {
+				return resourceError(path, resourceID, "spec.dashboard", "DashboardPublication %q.%q references unknown Dashboard %q", workspaceProject.ID, name, publication.Dashboard)
+			}
+			pageFound := false
+			for _, page := range dashboard.Pages {
+				if page.ID == publication.DefaultPage {
+					pageFound = true
+					break
+				}
+			}
+			if !pageFound {
+				return resourceError(path, resourceID, "spec.defaultPage", "DashboardPublication %q.%q references unknown page %q in Dashboard %q", workspaceProject.ID, name, publication.DefaultPage, publication.Dashboard)
+			}
+			origins := make([]string, 0, len(publication.AllowedOrigins))
+			seenOrigins := map[string]struct{}{}
+			for index, authored := range publication.AllowedOrigins {
+				origin, err := validatePublicationOrigin(authored)
+				field := fmt.Sprintf("spec.embedding.allowedOrigins[%d]", index)
+				if err != nil {
+					return resourceError(path, resourceID, field, "DashboardPublication %q.%q origin %q %s", workspaceProject.ID, name, authored, err.Error())
+				}
+				if _, duplicate := seenOrigins[origin]; duplicate {
+					return resourceError(path, resourceID, field, "DashboardPublication %q.%q has duplicate origin %q", workspaceProject.ID, name, origin)
+				}
+				seenOrigins[origin] = struct{}{}
+				origins = append(origins, origin)
+			}
+			sort.Strings(origins)
+			publication.AllowedOrigins = origins
+			workspaceProject.Publications[name] = publication
+		}
 		pipelinesByModel := map[string]string{}
 		for _, name := range sortedMapKeys(workspaceProject.RefreshPipelines) {
 			pipeline := workspaceProject.RefreshPipelines[name]
@@ -78,6 +116,39 @@ func validateProject(project Project) error {
 		}
 	}
 	return nil
+}
+
+func validatePublicationOrigin(authored string) (string, error) {
+	if authored == "" || strings.TrimSpace(authored) != authored {
+		return "", fmt.Errorf("must be a non-empty exact origin")
+	}
+	if strings.Contains(authored, "*") {
+		return "", fmt.Errorf("must not contain wildcards")
+	}
+	parsed, err := url.Parse(authored)
+	if err != nil || parsed.IsAbs() == false || parsed.Host == "" || parsed.Opaque != "" {
+		return "", fmt.Errorf("must be an absolute HTTP(S) origin")
+	}
+	if parsed.User != nil {
+		return "", fmt.Errorf("must not contain credentials")
+	}
+	if parsed.Path != "" || parsed.RawPath != "" || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" {
+		return "", fmt.Errorf("must contain an origin only, without path, query, or fragment")
+	}
+	hostname := parsed.Hostname()
+	if hostname == "" {
+		return "", fmt.Errorf("must include a hostname")
+	}
+	if parsed.Scheme != "https" {
+		loopback := strings.EqualFold(hostname, "localhost")
+		if ip := net.ParseIP(hostname); ip != nil {
+			loopback = ip.IsLoopback()
+		}
+		if parsed.Scheme != "http" || !loopback {
+			return "", fmt.Errorf("must use https except for loopback development origins")
+		}
+	}
+	return parsed.Scheme + "://" + parsed.Host, nil
 }
 
 func validateWorkspaceAccess(workspaceProject *WorkspaceProject) error {
@@ -121,6 +192,9 @@ func validateWorkspaceAccess(workspaceProject *WorkspaceProject) error {
 	}
 	for name, grant := range workspaceProject.AccessGrants {
 		path := workspaceProject.AccessPaths["Grant:"+name]
+		if grant.Subject.Kind == string(access.SubjectDashboardPublication) {
+			return resourceError(path, "grant:"+workspaceProject.ID+"."+name, "spec.subject.kind", "Grant %q.%q dashboard_publication subjects are only supported by DataPolicy", workspaceProject.ID, name)
+		}
 		if err := validateWorkspaceObjectRef(path, "grant:"+workspaceProject.ID+"."+name, "Grant", workspaceProject.ID, name, grant.Object); err != nil {
 			return err
 		}
@@ -148,6 +222,11 @@ func validateWorkspaceAccess(workspaceProject *WorkspaceProject) error {
 			if err := validateWorkspaceAccessSubject(path, "data_policy:"+workspaceProject.ID+"."+name, "DataPolicy", workspaceProject.ID, name, policy.Subject, workspaceProject.AccessGroups); err != nil {
 				return err
 			}
+			if policy.Subject.Kind == "dashboard_publication" {
+				if _, ok := workspaceProject.Publications[policy.Subject.Publication]; !ok {
+					return resourceError(path, "data_policy:"+workspaceProject.ID+"."+name, "spec.subject.publication", "DataPolicy %q.%q references unknown DashboardPublication %q", workspaceProject.ID, name, policy.Subject.Publication)
+				}
+			}
 		}
 	}
 	return nil
@@ -169,6 +248,10 @@ func validateWorkspaceAccessSubject(path, resourceID, kind, workspaceID, name st
 	case string(access.SubjectServicePrincipal):
 		if subject.PrincipalID == "" {
 			return resourceError(path, resourceID, "spec.subject.principalId", "%s %q.%q service_principal subject requires principalId", kind, workspaceID, name)
+		}
+	case "dashboard_publication":
+		if subject.Publication == "" {
+			return resourceError(path, resourceID, "spec.subject.publication", "%s %q.%q dashboard_publication subject requires publication", kind, workspaceID, name)
 		}
 	default:
 		return resourceError(path, resourceID, "spec.subject.kind", "%s %q.%q has unsupported subject kind %q", kind, workspaceID, name, subject.Kind)
@@ -207,6 +290,7 @@ func validPrivilege(privilege access.Privilege) bool {
 		access.PrivilegeRefreshData,
 		access.PrivilegeDeploy,
 		access.PrivilegeActivateDeployment,
+		access.PrivilegeManagePublications,
 		access.PrivilegeUseAgent,
 		access.PrivilegeViewAgent,
 		access.PrivilegeManageGrants,

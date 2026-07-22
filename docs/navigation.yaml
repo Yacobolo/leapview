@@ -285,6 +285,11 @@ sections:
         type: how-to
         summary: Query dashboards and semantic models through stable contracts.
         source: articles/integrate/headless-bi.md
+      - slug: guides/integrate/public-dashboards
+        title: Public and embedded dashboards
+        type: how-to
+        summary: Publish an anonymous governed dashboard and embed it on an allowed origin.
+        source: articles/integrate/public-dashboards.md
       - slug: guides/integrate/agent
         title: Agent integrations
         type: how-to

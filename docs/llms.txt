@@ -82,6 +82,7 @@ Focused slices are available at `/docs/cli/commands/{id}.json|md` and `/docs/api
 - [API quickstart](/docs/guides/integrate/api-quickstart): Authenticate and call the headless API.
 - [API conventions](/docs/guides/integrate/api-conventions): Handle authentication, errors, and pagination consistently.
 - [Headless BI queries](/docs/guides/integrate/headless-bi): Query dashboards and semantic models through stable contracts.
+- [Public and embedded dashboards](/docs/guides/integrate/public-dashboards): Publish an anonymous governed dashboard and embed it on an allowed origin.
 - [Agent integrations](/docs/guides/integrate/agent): Use global conversations and the shared governed tool catalog.
 - [Connect an MCP host](/docs/guides/integrate/mcp): Connect Claude and other MCP hosts to a LeapView deployment over OAuth.
 - [Automation and CI](/docs/cli/automation): Run validation and deployments safely in CI.
@@ -108,6 +109,7 @@ Focused slices are available at `/docs/cli/commands/{id}.json|md` and `/docs/api
 - [Grant configuration](/docs/config/grant): Fields and validation rules for the Grant YAML resource.
 - [Data Policy configuration](/docs/config/data-policy): Fields and validation rules for the DataPolicy YAML resource.
 - [Refresh Pipeline configuration](/docs/config/refresh-pipeline): Fields and validation rules for the RefreshPipeline YAML resource.
+- [Dashboard Publication configuration](/docs/config/dashboard-publication): Fields and validation rules for the DashboardPublication YAML resource.
 
 #### CLI commands
 
@@ -145,6 +147,7 @@ Focused slices are available at `/docs/cli/commands/{id}.json|md` and `/docs/api
 - [Agent](/docs/api/agent): Headless agent conversation and run operations.
 - [Access](/docs/api/access): Principals, groups, roles, and role bindings.
 - [Audit](/docs/api/audit): Workspace audit event discovery.
+- [Publications](/docs/api/publications): Anonymous public dashboard publication lifecycle.
 - [Managed Data](/docs/api/managed-data): Project-global managed-data revisions and uploads.
 
 #### Visuals

@@ -39,7 +39,7 @@ func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
 		return
 	}
 	initialFilters := reportDefinition.FiltersFromURLForPage(activePage.ID, r.URL.Query())
-	clientID := pagestream.ClientIDFromRequest(r, "")
+	clientID := pagestream.ClientIDFromRequest(r, strings.TrimSpace(r.URL.Query().Get("clientId")))
 	streamInstanceID := strings.TrimSpace(r.URL.Query().Get("streamInstance"))
 	if streamInstanceID == "" {
 		streamInstanceID = fallbackStreamInstanceID()
@@ -62,7 +62,9 @@ func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
 		broker.TraceStore(), streamID, "dashboard.bootstrap",
 	))
 	bootstrap := reportui.BootstrapSignals(clientID, streamInstanceID, metrics.Catalog(), reportDefinition, model, pages, activePage, initialFilters)
-	if hasClientAgentState(r) {
+	if presentation, ok := publicPresentationFromContext(r.Context()); ok {
+		bootstrap = reportui.PublicBootstrapSignals(clientID, streamInstanceID, presentation.PublicID, presentation.Presentation, metrics.Catalog(), reportDefinition, model, pages, activePage, initialFilters)
+	} else if hasClientAgentState(r) {
 		delete(bootstrap, "agent")
 		delete(bootstrap, "agentVisuals")
 	} else if h.AgentBootstrap != nil {

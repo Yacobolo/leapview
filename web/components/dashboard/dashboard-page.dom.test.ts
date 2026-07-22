@@ -376,6 +376,46 @@ for (const viewport of [
   })
 }
 
+test('embed presentation keeps page navigation and removes non-navigation chrome', async () => {
+  const page = await browser.newPage({ viewport: { width: 760, height: 620 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => (document.querySelector('lv-dashboard-page') as any)?.page?.title === 'Executive Sales Dashboard')
+    const state = await page.locator('lv-dashboard-page').evaluate(async (element: any) => {
+      element.presentation = 'embed'
+      await element.updateComplete
+      const root = element.shadowRoot
+      const visible = (selector: string) => {
+        const node = root.querySelector(selector) as HTMLElement | null
+        return Boolean(node && getComputedStyle(node).display !== 'none')
+      }
+      const canvas = root.querySelector('lv-report-canvas') as HTMLElement
+      return {
+        reflected: element.getAttribute('presentation'),
+        sidebarVisible: visible('lv-sub-sidebar'),
+        headerVisible: visible('.header'),
+        footerVisible: visible('lv-report-footer'),
+        hasAgentToggle: Boolean(root.querySelector('.agent-toggle')),
+        hasAgentDrawer: Boolean(root.querySelector('lv-chat-drawer')),
+        agentActionCount: root.querySelectorAll('.ask-visual').length,
+        canvasWidth: canvas.getBoundingClientRect().width,
+        documentOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      }
+    })
+    expect(state.reflected).toBe('embed')
+    expect(state.sidebarVisible).toBe(true)
+    expect(state.headerVisible).toBe(false)
+    expect(state.footerVisible).toBe(false)
+    expect(state.hasAgentToggle).toBe(false)
+    expect(state.hasAgentDrawer).toBe(false)
+    expect(state.agentActionCount).toBe(0)
+    expect(state.canvasWidth).toBeGreaterThan(500)
+    expect(state.documentOverflow).toBe(0)
+  } finally {
+    await page.close()
+  }
+})
+
 test('visual frame delays and distinguishes initial loading from background refresh', async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
   try {

@@ -33,6 +33,7 @@ type WorkspaceRoleBindingSubject struct {
 	Email       string `json:"email,omitempty"`
 	DisplayName string `json:"displayName,omitempty"`
 	Group       string `json:"group,omitempty"`
+	Publication string `json:"publication,omitempty"`
 }
 
 type WorkspaceSecurableObjectRef struct {

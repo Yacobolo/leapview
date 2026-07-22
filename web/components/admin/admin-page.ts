@@ -1,7 +1,7 @@
 import { LitElement, css, html, nothing } from 'lit'
 import { state } from 'lit/decorators.js'
 import { CheckCircle2, Clock3, Copy, XCircle } from 'lucide'
-import type { AdminPageSignal, AdminContentSectionSignal, AdminQueryDetailSignal, AdminQueryHistoryFilters, AdminQueryHistorySignal, AdminStorageSignal, FilterMenuCommand, FilterMenuSignal, RecordTableSignal } from '../../generated/signals'
+import type { AdminPageSignal, AdminContentSectionSignal, AdminPublicationSignal, AdminQueryDetailSignal, AdminQueryHistoryFilters, AdminQueryHistorySignal, AdminStorageSignal, FilterMenuCommand, FilterMenuSignal, RecordTableSignal } from '../../generated/signals'
 import { DatastarLit } from '../shared/datastar-lit'
 import { lucideIcon } from '../shared/lucide-icons'
 import { checkSignalContract } from '../shared/signal-contract'
@@ -39,6 +39,8 @@ const emptyStorage: AdminStorageSignal = {
 class LeapViewAdminPage extends DatastarLit(LitElement) {
   @state() private queryFilters: AdminQueryHistoryFilters = {}
   @state() private copiedQueryDetailValue = ''
+  @state() private publicationBusy = ''
+  @state() private publicationMessage = ''
   private queryFilterTimer: ReturnType<typeof setTimeout> | null = null
   private lastQueryHistoryKey = ''
 
@@ -204,6 +206,91 @@ class LeapViewAdminPage extends DatastarLit(LitElement) {
       min-width: 0;
       align-content: start;
       gap: var(--base-size-12);
+    }
+
+    .publication-list {
+      display: grid;
+      gap: var(--base-size-12);
+    }
+
+    .publication-card {
+      display: grid;
+      min-width: 0;
+      gap: var(--base-size-12);
+      border: var(--lv-border-muted);
+      border-radius: var(--lv-radius-default);
+      background: var(--lv-bg-panel);
+      padding: var(--base-size-16);
+    }
+
+    .publication-heading,
+    .publication-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--base-size-8);
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .publication-heading strong,
+    .publication-heading code {
+      overflow-wrap: anywhere;
+    }
+
+    .publication-status {
+      border-radius: var(--lv-radius-large);
+      background: var(--lv-bg-control);
+      padding: var(--base-size-2) var(--base-size-8);
+      color: var(--lv-fg-muted);
+      font-size: var(--lv-font-size-caption);
+      text-transform: capitalize;
+    }
+
+    .publication-details {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+      gap: var(--base-size-8);
+      color: var(--lv-fg-muted);
+      font-size: var(--lv-font-size-body-sm);
+    }
+
+    .publication-details span {
+      display: grid;
+      gap: var(--base-size-2);
+    }
+
+    .publication-details code {
+      overflow-wrap: anywhere;
+      color: var(--lv-fg-default);
+    }
+
+    .publication-actions button,
+    .publication-actions a {
+      min-height: var(--control-medium-size);
+      border: var(--lv-border-muted);
+      border-radius: var(--lv-radius-default);
+      background: var(--lv-bg-control);
+      padding: 0 var(--base-size-12);
+      color: var(--lv-fg-default);
+      cursor: pointer;
+      font: inherit;
+      font-size: var(--lv-font-size-body-sm);
+      line-height: var(--control-medium-size);
+      text-decoration: none;
+    }
+
+    .publication-actions button:disabled {
+      cursor: wait;
+      opacity: 0.6;
+    }
+
+    .publication-history {
+      display: grid;
+      gap: var(--base-size-4);
+      margin: 0;
+      padding-left: var(--base-size-20);
+      color: var(--lv-fg-muted);
+      font-size: var(--lv-font-size-caption);
     }
 
     h2 {
@@ -609,7 +696,7 @@ class LeapViewAdminPage extends DatastarLit(LitElement) {
             </div>
           ` : nothing}
           ${this.renderLocalUserAdmin(page)}
-          ${page.active === 'storage' ? this.renderStorage(page) : page.active === 'agent' ? this.renderAgent(page) : page.active === 'queries' ? this.renderQueries(page) : page.sections?.map(renderSection)}
+          ${page.active === 'storage' ? this.renderStorage(page) : page.active === 'agent' ? this.renderAgent(page) : page.active === 'queries' ? this.renderQueries(page) : page.active === 'publications' ? this.renderPublications(page.publications ?? []) : page.sections?.map(renderSection)}
         </section>
       </div>
     `
@@ -704,6 +791,73 @@ class LeapViewAdminPage extends DatastarLit(LitElement) {
         ${detail.eventId || detail.loading || detail.error ? this.renderQueryDetail(detail) : nothing}
       </section>
     `
+  }
+
+  private renderPublications(publications: AdminPublicationSignal[]) {
+    return html`
+      <section class="publication-list" aria-label="Dashboard publications">
+        ${publications.map((publication) => {
+          const key = `${publication.workspaceId}/${publication.name}`
+          const busy = this.publicationBusy === key
+          return html`
+            <article class="publication-card">
+              <div class="publication-heading">
+                <strong>${publication.name}</strong>
+                <span class="publication-status">${publication.status}</span>
+              </div>
+              <div class="publication-details">
+                <span>Workspace <code>${publication.workspaceId}</code></span>
+                <span>Dashboard <code>${publication.dashboard}${publication.defaultPage ? ` / ${publication.defaultPage}` : ''}</code></span>
+                <span>Generation <code>${publication.generation || '-'}</code></span>
+                <span>Allowed origins <code>${publication.origins.length ? publication.origins.join(', ') : 'Direct view only'}</code></span>
+                <span>Suspended <code>${publication.suspendedAt || '-'}</code></span>
+                <span>Rotated <code>${publication.rotatedAt || '-'}</code></span>
+              </div>
+              <div class="publication-actions">
+                <a href=${publication.publicUrl} target="_blank" rel="noreferrer">Open</a>
+                <button type="button" @click=${() => this.copyPublication(publication.publicUrl, 'Public link copied')}>Copy link</button>
+                <button type="button" @click=${() => this.copyPublication(publication.iframeSnippet, 'Iframe copied')}>Copy iframe</button>
+                ${publication.status === 'suspended'
+                  ? html`<button type="button" ?disabled=${busy} @click=${() => this.mutatePublication(publication, 'resume')}>Resume</button>`
+                  : publication.status === 'active'
+                    ? html`<button type="button" ?disabled=${busy} @click=${() => this.mutatePublication(publication, 'suspend')}>Suspend</button>`
+                    : nothing}
+                <button type="button" ?disabled=${busy || publication.status === 'unconfigured'} @click=${() => this.rotatePublication(publication)}>Rotate URL</button>
+              </div>
+              ${publication.history.length ? html`
+                <details>
+                  <summary>Lifecycle history</summary>
+                  <ul class="publication-history">${publication.history.map((event) => html`<li>${event}</li>`)}</ul>
+                </details>
+              ` : nothing}
+            </article>
+          `
+        })}
+        <span class="local-user-result" aria-live="polite">${this.publicationMessage}</span>
+      </section>
+    `
+  }
+
+  private async copyPublication(value: string, message: string): Promise<void> {
+    await navigator.clipboard.writeText(value)
+    this.publicationMessage = message
+  }
+
+  private rotatePublication(publication: AdminPublicationSignal): void {
+    if (window.confirm(`Rotate ${publication.name}? The current public URL will stop working immediately.`)) {
+      void this.mutatePublication(publication, 'rotate')
+    }
+  }
+
+  private mutatePublication(publication: AdminPublicationSignal, action: 'suspend' | 'resume' | 'rotate'): void {
+    const key = `${publication.workspaceId}/${publication.name}`
+    this.publicationBusy = key
+    this.publicationMessage = ''
+    this.dispatchEvent(new CustomEvent('lv-publication-command', {
+      bubbles: true,
+      composed: true,
+      detail: { workspaceId: publication.workspaceId, publication: publication.name, action },
+    }))
   }
 
   private renderTextFilter(key: keyof AdminQueryHistoryFilters, label: string) {

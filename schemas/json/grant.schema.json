@@ -72,6 +72,7 @@
         "REFRESH_DATA",
         "DEPLOY",
         "ACTIVATE_DEPLOYMENT",
+        "MANAGE_PUBLICATIONS",
         "USE_AGENT",
         "VIEW_AGENT",
         "MANAGE_GRANTS",

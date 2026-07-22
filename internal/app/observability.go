@@ -25,6 +25,10 @@ type httpTelemetry struct {
 	dashboardRefreshCancellations *prometheus.CounterVec
 	dashboardCacheOutcomes        *prometheus.CounterVec
 	dashboardTargetOutcomes       *prometheus.CounterVec
+	publicDashboardDocuments      *prometheus.CounterVec
+	publicDashboardStreams        *prometheus.GaugeVec
+	publicDashboardCommands       *prometheus.CounterVec
+	publicDashboardRateLimits     *prometheus.CounterVec
 	handlerOpts                   promhttp.HandlerOpts
 }
 
@@ -76,6 +80,22 @@ func newHTTPTelemetry() *httpTelemetry {
 			Name: "leapview_dashboard_target_outcomes_total",
 			Help: "Dashboard refresh target outcomes.",
 		}, []string{"kind", "outcome"}),
+		publicDashboardDocuments: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "leapview_public_dashboard_documents_total",
+			Help: "Public dashboard document load outcomes.",
+		}, []string{"presentation", "outcome"}),
+		publicDashboardStreams: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "leapview_public_dashboard_streams_active",
+			Help: "Active anonymous dashboard streams.",
+		}, []string{"presentation"}),
+		publicDashboardCommands: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "leapview_public_dashboard_commands_total",
+			Help: "Anonymous dashboard command attempts.",
+		}, []string{"command", "outcome"}),
+		publicDashboardRateLimits: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "leapview_public_dashboard_rate_limit_rejections_total",
+			Help: "Anonymous dashboard requests rejected by public traffic family.",
+		}, []string{"family"}),
 		handlerOpts: promhttp.HandlerOpts{EnableOpenMetrics: true},
 	}
 	registry.MustRegister(
@@ -89,6 +109,10 @@ func newHTTPTelemetry() *httpTelemetry {
 		telemetry.dashboardRefreshCancellations,
 		telemetry.dashboardCacheOutcomes,
 		telemetry.dashboardTargetOutcomes,
+		telemetry.publicDashboardDocuments,
+		telemetry.publicDashboardStreams,
+		telemetry.publicDashboardCommands,
+		telemetry.publicDashboardRateLimits,
 	)
 	return telemetry
 }
@@ -157,6 +181,53 @@ func (t *httpTelemetry) dashboardRefreshEventObserved(event dashboardstream.Refr
 		}
 		t.dashboardTargetObserved(kind, "error")
 	}
+}
+
+func (t *httpTelemetry) publicDocumentObserved(presentation, outcome string) {
+	if t == nil {
+		return
+	}
+	if presentation != "embed" {
+		presentation = "public"
+	}
+	if outcome != "success" {
+		outcome = "not_found"
+	}
+	t.publicDashboardDocuments.WithLabelValues(presentation, outcome).Inc()
+}
+
+func (t *httpTelemetry) publicStreamStarted(presentation string) func() {
+	if t == nil {
+		return func() {}
+	}
+	if presentation != "embed" {
+		presentation = "public"
+	}
+	t.publicDashboardStreams.WithLabelValues(presentation).Inc()
+	return func() { t.publicDashboardStreams.WithLabelValues(presentation).Dec() }
+}
+
+func (t *httpTelemetry) publicCommandObserved(command, outcome string) {
+	if t == nil {
+		return
+	}
+	command = dashboardCommandLabel(command)
+	if outcome != "accepted" {
+		outcome = "rejected"
+	}
+	t.publicDashboardCommands.WithLabelValues(command, outcome).Inc()
+}
+
+func (t *httpTelemetry) publicRateLimitObserved(family string) {
+	if t == nil {
+		return
+	}
+	switch family {
+	case "page", "command", "stream":
+	default:
+		family = "unknown"
+	}
+	t.publicDashboardRateLimits.WithLabelValues(family).Inc()
 }
 
 func dashboardCommandLabel(value string) string {

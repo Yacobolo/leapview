@@ -15,22 +15,32 @@ import (
 )
 
 type AdminData struct {
-	Workspace         workspaceview.WorkspaceView
-	CSRFToken         string
-	AuthConfigured    bool
-	AccessConfigured  bool
-	AccessStatusLabel string
-	PrincipalCount    int
-	GroupCount        int
-	BindingCount      int
-	RoleCount         int
-	Principals        []AdminPrincipal
-	SelectedPrincipal *AdminPrincipal
-	Groups            []AdminGroup
-	SelectedGroup     *AdminGroup
-	Agent             AdminAgentData
-	Storage           AdminStorageData
-	QueryHistory      AdminQueryHistoryData
+	Workspace             workspaceview.WorkspaceView
+	CSRFToken             string
+	AuthConfigured        bool
+	AccessConfigured      bool
+	AccessStatusLabel     string
+	PrincipalCount        int
+	GroupCount            int
+	BindingCount          int
+	RoleCount             int
+	Principals            []AdminPrincipal
+	SelectedPrincipal     *AdminPrincipal
+	Groups                []AdminGroup
+	SelectedGroup         *AdminGroup
+	Agent                 AdminAgentData
+	Storage               AdminStorageData
+	QueryHistory          AdminQueryHistoryData
+	Publications          []AdminPublication
+	CanManagePublications bool
+}
+
+type AdminPublication struct {
+	WorkspaceID, Name, Dashboard, DefaultPage, Status string
+	Origins                                           []string
+	History                                           []string
+	Generation, PublicURL, EmbedURL, IFrameSnippet    string
+	ConfiguredAt, SuspendedAt, DisabledAt, RotatedAt  string
 }
 
 type AdminAgentData struct {
@@ -172,6 +182,11 @@ func AdminPage(catalog dashboard.Catalog, active, roleLabel string, data AdminDa
 			g.Attr("data-on:lv-query-history-command", "$adminQueryHistoryCommand = evt.detail; evt.detail.action == 'select_detail' ? ($adminQueryDetail = {eventId: evt.detail.eventId, loading: true, error: ''}) : evt.detail.action == 'close_detail' ? ($adminQueryDetail = {eventId: '', loading: false, error: ''}) : ($adminQueryHistory.loading = true, $adminQueryHistory.error = ''); "+uiactions.Post("/admin/queries/command")),
 		)
 	}
+	if active == "publications" {
+		adminAttrs = append(adminAttrs,
+			g.Attr("data-on:lv-publication-command", "$adminPublicationCommand = evt.detail; "+uiactions.Post("/admin/publications/command", "adminPublicationCommand")),
+		)
+	}
 	return pagestream.RenderPage(pagestream.PageSpec{
 		Title:             "Admin - " + title,
 		DatastarScriptURL: datastarScriptURL(),
@@ -221,6 +236,9 @@ func AdminBootstrapSignals(catalog dashboard.Catalog, active, roleLabel string, 
 		signals["adminQueryDetail"] = uisignals.AdminQueryDetailSignal{}
 		signals["adminQueryHistoryCommand"] = uisignals.AdminQueryHistoryCommand{Action: "load_more", Filters: queryHistory.Filters, PageToken: uisignals.Optional(queryHistory.NextCursor), Limit: uisignals.Pointer(queryHistory.Limit)}
 	}
+	if active == "publications" {
+		signals["adminPublicationCommand"] = uisignals.AdminPublicationCommand{}
+	}
 	return signals
 }
 
@@ -229,7 +247,7 @@ func adminPageSignal(active string, data AdminData) uisignals.AdminPageSignal {
 		Kind:    uisignals.RouteAdmin,
 		Title:   adminPageTitle(active),
 		Active:  active,
-		Sidebar: adminSidebarSignal(active),
+		Sidebar: adminSidebarSignal(active, data.CanManagePublications),
 	}
 	switch active {
 	case "principals":
@@ -304,6 +322,13 @@ func adminPageSignal(active string, data AdminData) uisignals.AdminPageSignal {
 	case "queries":
 		page.HeaderTitle = "Query History"
 		page.HeaderDetail = "Product query audit across dashboards, API, agents, and Data Explorer."
+	case "publications":
+		page.HeaderTitle = "Publications"
+		page.HeaderDetail = "Public dashboard URLs, embedding policy, and immediate lifecycle controls. Configuration remains YAML-only."
+		page.Publications = uisignals.OptionalSlice(adminPublicationSignals(data.Publications))
+		if len(data.Publications) == 0 {
+			page.Empty = uisignals.Pointer("No dashboard publications have been configured.")
+		}
 	default:
 		page.HeaderTitle = "General"
 		page.HeaderDetail = "Read-only workspace administration."
@@ -428,12 +453,23 @@ func adminQueryEventSignals(events []AdminQueryEvent) []uisignals.AdminQueryEven
 	return out
 }
 
-func adminSidebarSignal(active string) uisignals.SubSidebarSignal {
+func adminSidebarSignal(active string, canManagePublications bool) uisignals.SubSidebarSignal {
 	principalsActive := active == "principals" || active == "principal-detail"
 	groupsActive := active == "groups" || active == "group-detail"
 	agentActive := active == "agent"
 	storageActive := active == "storage"
 	queriesActive := active == "queries"
+	items := []uisignals.SubSidebarItemSignal{
+		{ID: "general", Title: "General", Href: "/admin", Active: active == "general"},
+		{ID: "principals", Title: "Principals", Href: "/admin/principals", Active: principalsActive},
+		{ID: "groups", Title: "Groups", Href: "/admin/groups", Active: groupsActive},
+		{ID: "agent", Title: "Agent", Href: "/admin/agent", Active: agentActive},
+		{ID: "storage", Title: "Storage", Href: "/admin/storage", Active: storageActive},
+		{ID: "queries", Title: "Query History", Href: "/admin/queries", Active: queriesActive},
+	}
+	if canManagePublications {
+		items = append(items, uisignals.SubSidebarItemSignal{ID: "publications", Title: "Publications", Href: "/admin/publications", Active: active == "publications"})
+	}
 	return uisignals.SubSidebarSignal{
 		Label:       "Admin",
 		RailLabel:   "Admin",
@@ -442,15 +478,22 @@ func adminSidebarSignal(active string) uisignals.SubSidebarSignal {
 		ActiveID:    active,
 		Numbered:    false,
 		Collapsible: false,
-		Items: []uisignals.SubSidebarItemSignal{
-			{ID: "general", Title: "General", Href: "/admin", Active: active == "general"},
-			{ID: "principals", Title: "Principals", Href: "/admin/principals", Active: principalsActive},
-			{ID: "groups", Title: "Groups", Href: "/admin/groups", Active: groupsActive},
-			{ID: "agent", Title: "Agent", Href: "/admin/agent", Active: agentActive},
-			{ID: "storage", Title: "Storage", Href: "/admin/storage", Active: storageActive},
-			{ID: "queries", Title: "Query History", Href: "/admin/queries", Active: queriesActive},
-		},
+		Items:       items,
 	}
+}
+
+func adminPublicationSignals(rows []AdminPublication) []uisignals.AdminPublicationSignal {
+	out := make([]uisignals.AdminPublicationSignal, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, uisignals.AdminPublicationSignal{
+			WorkspaceID: row.WorkspaceID, Name: row.Name, Dashboard: row.Dashboard, DefaultPage: row.DefaultPage,
+			Status: row.Status, Origins: row.Origins, Generation: uisignals.Optional(row.Generation), PublicURL: row.PublicURL,
+			EmbedURL: row.EmbedURL, IframeSnippet: row.IFrameSnippet, ConfiguredAt: uisignals.Optional(row.ConfiguredAt),
+			SuspendedAt: uisignals.Optional(row.SuspendedAt), DisabledAt: uisignals.Optional(row.DisabledAt), RotatedAt: uisignals.Optional(row.RotatedAt),
+			History: append([]string(nil), row.History...),
+		})
+	}
+	return out
 }
 
 func adminAgentSignal(data AdminAgentData) uisignals.AdminAgentSignal {
@@ -778,6 +821,8 @@ func adminPageTitle(active string) string {
 		return "Storage"
 	case "queries":
 		return "Query History"
+	case "publications":
+		return "Publications"
 	default:
 		return "General"
 	}

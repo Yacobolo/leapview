@@ -38,8 +38,19 @@ type workspaceSpec struct {
 	Models           includeList   `yaml:"models"`
 	SemanticModels   includeList   `yaml:"semanticModels"`
 	Dashboards       includeList   `yaml:"dashboards"`
+	Publications     includeList   `yaml:"publications"`
 	Access           includeList   `yaml:"access"`
 	RefreshPipelines includeList   `yaml:"refreshPipelines"`
+}
+
+type dashboardPublicationSpec struct {
+	Dashboard   string                            `yaml:"dashboard"`
+	DefaultPage string                            `yaml:"defaultPage"`
+	Embedding   dashboardPublicationEmbeddingSpec `yaml:"embedding"`
+}
+
+type dashboardPublicationEmbeddingSpec struct {
+	AllowedOrigins []string `yaml:"allowedOrigins"`
 }
 
 type workspaceUses struct {
@@ -202,6 +213,7 @@ type workspaceRoleBindingSubjectSpec struct {
 	Email       string `yaml:"email"`
 	DisplayName string `yaml:"displayName"`
 	Group       string `yaml:"group"`
+	Publication string `yaml:"publication"`
 }
 
 type workspaceSecurableObjectSpec struct {
