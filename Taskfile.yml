@@ -480,7 +480,11 @@ tasks:
       - bun run test:semantic-model-graph
       - bun run typecheck:app
       - bun run typecheck:contracts
-      - go test ./...
+      # CUE-heavy compiler/application packages can each saturate a core and
+      # starve timing-sensitive integration tests when every package runs at
+      # once. Bound package parallelism while retaining Go's in-package
+      # parallelism so local and hosted CI exercise the same reliable suite.
+      - go test -p 2 ./...
 
   ci:
     desc: Run the full CI test suite
