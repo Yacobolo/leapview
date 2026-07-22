@@ -37,6 +37,16 @@ export function spatialWindowRequest(
   }
 }
 
+export function nextSpatialRequestSequence(envelope: VisualizationEnvelope, localSequence: number): number {
+  const serverSequence = envelope.dataState.kind === 'spatial_windowed' ? envelope.dataState.window?.requestSeq ?? 0 : 0
+  return Math.max(0, localSequence, serverSequence) + 1
+}
+
+export function spatialWindowAlreadyCurrent(envelope: VisualizationEnvelope, request: MapSpatialWindowRequest): boolean {
+  if (envelope.dataState.kind !== 'spatial_windowed' || !envelope.dataState.window) return false
+  return envelope.dataState.resetVersion === request.resetVersion && envelope.dataState.window.id === request.windowID
+}
+
 function normalizeSpatialBounds(bounds: VisualizationSpatialBounds): VisualizationSpatialBounds | undefined {
   const values = [bounds.west, bounds.south, bounds.east, bounds.north]
   if (!values.every(Number.isFinite) || bounds.south < -90 || bounds.south > 90 || bounds.north < -90 || bounds.north > 90 || bounds.south >= bounds.north) return undefined

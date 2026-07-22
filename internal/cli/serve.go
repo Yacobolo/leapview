@@ -75,9 +75,6 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 	if err := cfg.Validate(config.ProfileServe); err != nil {
 		return err
 	}
-	if err := visualizationmapasset.VerifyInstalled(cfg.MapAssetDir); err != nil {
-		return fmt.Errorf("verify map assets: %w", err)
-	}
 	environment := serveEnvironment(production, opts.environment, cfg.Environment)
 	instanceLock, err := instancelock.Acquire(cfg.HomeDir)
 	if err != nil {
@@ -178,6 +175,14 @@ func runHTTPServer(ctx context.Context, server *http.Server) error {
 }
 
 func servingStateBackedServer(ctx context.Context, cfg config.Config, production bool, environment servingstate.Environment) (*app.Server, func(), error) {
+	var mapAssetReadiness app.MapAssetReadiness
+	if strings.TrimSpace(cfg.MapAssetDir) != "" {
+		verifier := visualizationmapasset.NewVerifier(cfg.MapAssetDir)
+		if err := verifier.Verify(ctx); err != nil {
+			return nil, nil, fmt.Errorf("verify map assets: %w", err)
+		}
+		mapAssetReadiness = verifier
+	}
 	cookieSecure, err := cfg.CookieSecure()
 	if err != nil {
 		return nil, nil, err
@@ -415,6 +420,7 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 		},
 		ManagedDataExpireInterval: cfg.ManagedDataGCInterval,
 		MapAssetDir:               cfg.MapAssetDir,
+		MapAssetReadiness:         mapAssetReadiness,
 	})
 	return server, cleanupWithRegistry, nil
 }

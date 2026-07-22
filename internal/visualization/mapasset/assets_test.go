@@ -1,10 +1,14 @@
 package mapasset
 
 import (
+	"context"
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestResolveReturnsImmutableSameOriginManifest(t *testing.T) {
@@ -67,6 +71,56 @@ func TestVerifyInstalledFailsClosedForMissingOrChangedAssets(t *testing.T) {
 	}
 	if err := VerifyInstalled(root); err == nil || !strings.Contains(err.Error(), "missing") {
 		t.Fatalf("VerifyInstalled() error = %v, want missing asset", err)
+	}
+}
+
+func TestVerifierCachesUnchangedFilesAndDetectsRuntimeCorruption(t *testing.T) {
+	root := t.TempDir()
+	contents := []byte("verified map package")
+	digest := fmt.Sprintf("%x", sha256.Sum256(contents))
+	file := File{Path: "libredash-streets/test/asset.bin", Digest: digest}
+	name := filepath.Join(root, filepath.FromSlash(file.Path))
+	if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(name, contents, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	verifier := newVerifier(root, []File{file})
+	if err := verifier.Verify(context.Background()); err != nil {
+		t.Fatalf("initial Verify() error = %v", err)
+	}
+	if got := verifier.hashedFiles(); got != 1 {
+		t.Fatalf("initial hashed files = %d, want 1", got)
+	}
+	if err := verifier.Verify(context.Background()); err != nil {
+		t.Fatalf("cached Verify() error = %v", err)
+	}
+	if got := verifier.hashedFiles(); got != 1 {
+		t.Fatalf("unchanged verification rehashed %d files, want 1 total", got)
+	}
+
+	corrupt := []byte("corrupted map asset!")
+	if len(corrupt) != len(contents) {
+		t.Fatalf("test corruption length = %d, want %d", len(corrupt), len(contents))
+	}
+	if err := os.WriteFile(name, corrupt, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	future := time.Now().Add(time.Second)
+	if err := os.Chtimes(name, future, future); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifier.Verify(context.Background()); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
+		t.Fatalf("corrupt Verify() error = %v, want digest mismatch", err)
+	}
+
+	if err := os.Remove(name); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifier.Verify(context.Background()); err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("missing Verify() error = %v, want missing asset", err)
 	}
 }
 

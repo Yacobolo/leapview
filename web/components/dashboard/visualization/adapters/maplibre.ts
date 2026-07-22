@@ -6,29 +6,32 @@ import { Change, type RendererAdapter, type RendererContext, type RendererHandle
 import { MapSelectionControl } from './map-selection-control'
 import { blankMapStyle, loadGeometryAsset, loadMapStyleAsset, registerPMTilesProtocol } from './maplibre/assets'
 import { applyBasemapTheme, mapThemeColors, type BasemapColors } from './maplibre/basemap'
+import { installMapLibreChromeStyles } from './maplibre/chrome'
 import { coordinateGeometry, joinGeometry, pathGeometry } from './maplibre/data'
 import { applyFeatureScales, mapLayer, mapOutlineLayer, paletteColors } from './maplibre/layers'
 import { clusterExpansionForRenderedFeatures, interactionCommandForRenderedFeatures, mapInteractionCommand, updateSelectionSources } from './maplibre/interactions'
 import { mapAccessibleData, mapTooltipEntries, type RenderedFeatureLocator } from './maplibre/overlays'
 import { emitMapObservation, installWebGLRecovery, mapNow, removeRendererFrame, waitForMapIdle, waitForMapRender, type MapObservationStage } from './maplibre/lifecycle'
-import { spatialWindowRequest, type MapSpatialWindowRequest } from './maplibre/spatial'
+import { nextSpatialRequestSequence, spatialWindowAlreadyCurrent, spatialWindowRequest, type MapSpatialWindowRequest } from './maplibre/spatial'
 import { MapSpatialSelectionControl } from './maplibre/spatial-selection-control'
 import { coordinateReferenceGrid, fitMapToGeographicData } from './maplibre/viewport'
 
 export { loadMapStyleAsset, sameOriginGeometryURL, verifyGeometryDigest } from './maplibre/assets'
 export { applyBasemapTheme, basemapBoundaryLayer, basemapLayer, concreteCSSColor, mapThemeColors } from './maplibre/basemap'
+export { mapLibreChromeCSS } from './maplibre/chrome'
 export { coordinateGeometry, joinGeometry, pathGeometry } from './maplibre/data'
 export { applyFeatureScales, mapLayer, mapOutlineLayer, normalizeFeatureWeights } from './maplibre/layers'
 export { clusterExpansionForRenderedFeatures, interactionCommandForRenderedFeatures, mapInteractionCommand, updateSelectionSources } from './maplibre/interactions'
 export { mapAccessibleData, mapTooltipEntries } from './maplibre/overlays'
 export { installWebGLRecovery, removeRendererFrame, waitForMapIdle, waitForMapRender } from './maplibre/lifecycle'
-export { spatialWindowRequest, type MapSpatialWindowRequest } from './maplibre/spatial'
+export { nextSpatialRequestSequence, spatialWindowAlreadyCurrent, spatialWindowRequest, type MapSpatialWindowRequest } from './maplibre/spatial'
 export { coordinateReferenceGrid, fitMapToGeographicData } from './maplibre/viewport'
 
 export const adapter: RendererAdapter = {
   async mount(container, envelope, context) {
     const frame = document.createElement('div'); frame.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;background:var(--ld-chart-surface,var(--ld-bg-panel,#fff))'
     setRendererFramePresented(frame, false)
+    installMapLibreChromeStyles(frame)
     const surface = document.createElement('div'); surface.style.cssText = 'position:absolute;inset:0'
     const attribution = document.createElement('div'); attribution.dataset.mapAttribution = ''; attribution.setAttribute('role', 'note'); attribution.setAttribute('aria-label', 'Map attribution')
     attribution.style.cssText = 'position:absolute;right:6px;bottom:6px;z-index:1;max-width:calc(100% - 12px);padding:2px 5px;border-radius:4px;background:color-mix(in srgb,var(--ld-bg-panel,#fff) 88%,transparent);color:var(--ld-fg-muted,#57606a);font:10px/1.3 var(--ld-font-family-ui,system-ui);pointer-events:none;text-align:right'
@@ -104,6 +107,7 @@ class MapLibreHandle implements RendererHandle {
   private updateQueue: Promise<void> = Promise.resolve()
   private spatialRequestSeq = 0
   private spatialRequestTimer?: number
+  private lastSpatialRequest?: { key: string; at: number }
   private disposed = false
   private readonly disposeWebGLRecovery: () => void
   constructor(private readonly container: HTMLElement, private readonly frame: HTMLElement, private readonly map: MapLibreMap, private readonly attribution: HTMLElement, private context: RendererContext) {
@@ -454,10 +458,16 @@ class MapLibreHandle implements RendererHandle {
       this.spatialRequestTimer = undefined
       if (!this.envelope || this.envelope.dataState.kind !== 'spatial_windowed' || this.disposed) return
       const bounds = this.map.getBounds()
+      const requestSeq = nextSpatialRequestSequence(this.envelope, this.spatialRequestSeq)
       const request = spatialWindowRequest(this.envelope, {
         west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth(),
-      }, this.map.getZoom(), this.map.getCanvas().clientWidth, this.map.getCanvas().clientHeight, ++this.spatialRequestSeq)
-      if (!request) return
+      }, this.map.getZoom(), this.map.getCanvas().clientWidth, this.map.getCanvas().clientHeight, requestSeq)
+      if (!request || spatialWindowAlreadyCurrent(this.envelope, request)) return
+      const key = `${request.resetVersion}:${request.windowID}`
+      const now = performance.now()
+      if (this.lastSpatialRequest?.key === key && now - this.lastSpatialRequest.at < 500) return
+      this.spatialRequestSeq = requestSeq
+      this.lastSpatialRequest = { key, at: now }
       this.container.dispatchEvent(new CustomEvent('ld-visual-spatial-window-change', { bubbles: true, composed: true, detail: request }))
     }, 120)
   }

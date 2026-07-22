@@ -2,8 +2,15 @@ import { expect, test } from 'bun:test'
 
 import type { VisualizationEnvelope, VisualizationGeographicLayer } from '../../../../generated/visualization'
 import type { FeatureCollection } from 'geojson'
-import { applyFeatureScales, basemapBoundaryLayer, basemapLayer, clusterExpansionForRenderedFeatures, concreteCSSColor, coordinateGeometry, coordinateReferenceGrid, fitMapToGeographicData, installWebGLRecovery, interactionCommandForRenderedFeatures, joinGeometry, loadMapStyleAsset, mapAccessibleData, mapInteractionCommand, mapLayer, mapOutlineLayer, mapPointerOptions, mapThemeColors, mapTooltipEntries, normalizeFeatureWeights, pathGeometry, removeRendererFrame, sameOriginGeometryURL, setRendererFramePresented, spatialWindowRequest, updateSelectionSources, verifyGeometryDigest, waitForMapRender } from './maplibre'
+import { applyFeatureScales, basemapBoundaryLayer, basemapLayer, clusterExpansionForRenderedFeatures, concreteCSSColor, coordinateGeometry, coordinateReferenceGrid, fitMapToGeographicData, installWebGLRecovery, interactionCommandForRenderedFeatures, joinGeometry, loadMapStyleAsset, mapAccessibleData, mapInteractionCommand, mapLayer, mapLibreChromeCSS, mapOutlineLayer, mapPointerOptions, mapThemeColors, mapTooltipEntries, nextSpatialRequestSequence, normalizeFeatureWeights, pathGeometry, removeRendererFrame, sameOriginGeometryURL, setRendererFramePresented, spatialWindowAlreadyCurrent, spatialWindowRequest, updateSelectionSources, verifyGeometryDigest, waitForMapRender } from './maplibre'
 import { adapterObservation } from '../telemetry'
+
+test('MapLibre owns usable shadow-DOM styles for map navigation controls', () => {
+  expect(mapLibreChromeCSS).toContain('.maplibregl-ctrl-top-right')
+  expect(mapLibreChromeCSS).toContain('width:30px')
+  expect(mapLibreChromeCSS).toContain('.maplibregl-ctrl-zoom-in::before')
+  expect(mapLibreChromeCSS).toContain('.maplibregl-ctrl-compass')
+})
 
 test('MapLibre geometry assets are same-origin and content addressed', async () => {
   expect(sameOriginGeometryURL('/static/geometry/states.geojson', 'https://dash.example/workspaces/sales').href).toBe('https://dash.example/static/geometry/states.geojson')
@@ -232,6 +239,29 @@ test('MapLibre spatial requests normalize wrapped worlds and bound browser-contr
   expect(spatialWindowRequest(envelope, { west: 0, south: 0, east: 1, north: 1 }, 1, Number.POSITIVE_INFINITY, 100, 1)).toBeUndefined()
   expect(spatialWindowRequest(envelope, { west: 0, south: 0, east: 1, north: 1 }, 1, 100, 100, 0)).toBeUndefined()
   expect(spatialWindowRequest(envelope, { west: 0, south: 0, east: 1, north: 1 }, 1, 100, 100, 1.5)).toBeUndefined()
+})
+
+test('MapLibre viewport requests advance server sequence and suppress an already-current window', () => {
+	const envelope = {
+		...selectableEnvelope(),
+		dataRevision: 14,
+		dataState: {
+			kind: 'spatial_windowed', specRevision: 'sha256:test', dataRevision: 14, generation: 3,
+			schema: selectableEnvelope().spec.datasets[0], cardinality: { kind: 'exact', count: 1_000_000 },
+			extent: { west: -180, south: -85, east: 180, north: 85 }, rowCap: 1_000_000, featureCap: 5000, resetVersion: 6,
+			window: {
+				id: '-74.000000,-34.000000,-34.000000,6.000000@5.000:1200x700',
+				bounds: { west: -74, south: -34, east: -34, north: 6 }, zoom: 5, width: 1200, height: 700,
+				precision: 'aggregated', rows: [], requestSeq: 21, resetVersion: 6,
+			},
+		},
+	} as VisualizationEnvelope
+
+	expect(nextSpatialRequestSequence(envelope, 3)).toBe(22)
+	const current = spatialWindowRequest(envelope, { west: -74, south: -34, east: -34, north: 6 }, 5, 1200, 700, 22)!
+	expect(spatialWindowAlreadyCurrent(envelope, current)).toBe(true)
+	expect(spatialWindowAlreadyCurrent(envelope, { ...current, resetVersion: 7 })).toBe(false)
+	expect(spatialWindowAlreadyCurrent(envelope, { ...current, windowID: '-73.000000,-34.000000,-34.000000,6.000000@5.000:1200x700' })).toBe(false)
 })
 
 test('a superseded MapLibre mount cannot remove the winning renderer frame', () => {

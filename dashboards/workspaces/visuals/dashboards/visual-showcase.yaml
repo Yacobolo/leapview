@@ -1047,6 +1047,49 @@ spec:
               width: 1.5
               opacity: 1
             opacity: 0.12
+    million_point_map:
+      title: One million governed locations
+      description: Exercises viewport aggregation over exactly one million deterministic points while rendering at most 5,000 features.
+      type: map
+      query:
+        table: spatial_load_points
+        dimensions:
+          point_id: spatial_load_points.point_id
+          city: spatial_load_points.city
+          state: spatial_load_points.state
+          latitude: spatial_load_points.latitude
+          longitude: spatial_load_points.longitude
+        measures:
+          point_count:
+            measure: fixture_points
+        sort:
+          - field: point_id
+            direction: asc
+        limit: 1000000
+      geo:
+        controls:
+          zoom: true
+          reset: true
+          compass: true
+        camera:
+          mode: fit_data
+          padding: 36
+          min_zoom: 2
+          max_zoom: 14
+        layers:
+          - id: fixture
+            kind: point
+            latitude: latitude
+            longitude: longitude
+            value: point_count
+            label: city
+            tooltip: [city, state, point_count]
+            size:
+              minimum_radius: 3
+              maximum_radius: 16
+            color:
+              kind: sequential
+              palette: blue
     customer_path_map:
       title: Highest-value delivery routes
       description: Connects seller origins to customer destinations for the highest-value real Olist deliveries.
@@ -2615,6 +2658,26 @@ spec:
             col_span: 6
             row_span: 8
       id: chart-map
+    - title: Spatial scale
+      description: Production-scale governed viewport aggregation
+      canvas:
+        width: 1366
+        height: 720
+      grid:
+        columns: 12
+        row_height: 48
+        gap: 16
+        padding: 16
+      components:
+        - id: million-point-map
+          kind: visual
+          visual: million_point_map
+          placement:
+            col: 1
+            row: 1
+            col_span: 12
+            row_span: 13
+      id: chart-map-scale
     - title: Custom Vega-Lite
       description: Sandboxed custom declarative visualization
       canvas:

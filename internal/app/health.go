@@ -35,6 +35,14 @@ func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	checks["platformStore"] = "ok"
+	if s.mapAssetReadiness != nil {
+		if err := s.mapAssetReadiness.Verify(ctx); err != nil {
+			checks["mapAssets"] = err.Error()
+			writeJSON(w, http.StatusServiceUnavailable, healthResponse{Status: "not_ready", Checks: checks})
+			return
+		}
+		checks["mapAssets"] = "ok"
+	}
 	if !s.runtimeReady(ctx, checks) {
 		writeJSON(w, http.StatusServiceUnavailable, healthResponse{Status: "not_ready", Checks: checks})
 		return

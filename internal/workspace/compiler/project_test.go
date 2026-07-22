@@ -1263,6 +1263,11 @@ func assertVisualShowcaseCoverage(t *testing.T, report *dashboarddefinition.Defi
 	assertSpatialDimensions(t, report, "customer_revenue_heat_map", "customers.zip_prefix", "customers.latitude", "customers.longitude")
 	assertSpatialDimensions(t, report, "customer_density_map", "customers.zip_prefix", "customers.latitude", "customers.longitude")
 	assertSpatialDimensions(t, report, "customer_path_map", "delivery_routes.route_id", "delivery_routes.point_order", "delivery_routes.latitude", "delivery_routes.longitude")
+	assertSpatialDimensions(t, report, "million_point_map", "spatial_load_points.point_id", "spatial_load_points.latitude", "spatial_load_points.longitude")
+	million := report.Visualizations["million_point_map"]
+	if million.Query.Spatial == nil || million.Query.Spatial.Viewport == nil || million.Query.Spatial.Limit != 1_000_000 || million.Query.Spatial.Viewport.FeatureCap != 5_000 {
+		t.Errorf("million-point showcase must compile to a 5,000-feature spatial viewport: %#v", million.Query)
+	}
 	for _, id := range []string{"customer_point_map", "customer_revenue_heat_map", "customer_density_map", "customer_path_map"} {
 		visual := report.Visualizations[id]
 		if visual.Query.Spatial == nil || len(visual.Query.Spatial.Sort) == 0 {

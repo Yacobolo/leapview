@@ -11,6 +11,7 @@ spec:
   - customers
   - zip_geolocations
   - delivery_routes
+  - spatial_load_points
   relationships:
   - id: orders_customers
     description: Links each order to the customer who placed it.
@@ -23,6 +24,14 @@ spec:
     to: orders.order_id
     cardinality: many_to_one
   measures:
+    fixture_points:
+      label: Fixture points
+      description: Count of deterministic locations in the spatial load fixture.
+      fact: spatial_load_points
+      aggregation: count
+      empty: zero
+      unit: points
+      format: integer
     order_count:
       label: Orders
       description: Distinct order count.

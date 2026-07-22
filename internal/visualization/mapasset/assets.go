@@ -3,6 +3,7 @@
 package mapasset
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
 )
@@ -50,6 +52,32 @@ var assets = map[string]visualizationir.VisualizationMapStyleAsset{
 type File struct {
 	Path   string
 	Digest string
+}
+
+type verifiedFile struct {
+	size    int64
+	mode    os.FileMode
+	modTime int64
+}
+
+// Verifier continuously proves the installed immutable package matches the
+// inventory compiled into the binary. Unchanged files are checked with cheap
+// metadata reads; files whose size, mode, or modification time changed are
+// rehashed before readiness succeeds.
+type Verifier struct {
+	root   string
+	files  []File
+	mu     sync.Mutex
+	cache  map[string]verifiedFile
+	hashed int
+}
+
+func NewVerifier(root string) *Verifier {
+	return newVerifier(root, ExpectedFiles())
+}
+
+func newVerifier(root string, files []File) *Verifier {
+	return &Verifier{root: strings.TrimSpace(root), files: append([]File(nil), files...), cache: map[string]verifiedFile{}}
 }
 
 var supportingDigests = map[string]string{
@@ -128,33 +156,88 @@ func buildExpectedURLSet(files []File) map[string]struct{} {
 // VerifyInstalled proves that every file in the configured package exists and
 // matches the digest compiled into this binary.
 func VerifyInstalled(root string) error {
-	if strings.TrimSpace(root) == "" {
+	return NewVerifier(root).Verify(context.Background())
+}
+
+func (v *Verifier) Verify(ctx context.Context) error {
+	if v == nil || v.root == "" {
 		return fmt.Errorf("map asset root is required")
 	}
-	for _, expected := range ExpectedFiles() {
-		name := filepath.Join(root, filepath.FromSlash(expected.Path))
-		file, err := os.Open(name)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	for _, expected := range v.files {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		name := filepath.Join(v.root, filepath.FromSlash(expected.Path))
+		info, err := os.Stat(name)
 		if os.IsNotExist(err) {
+			delete(v.cache, expected.Path)
 			return fmt.Errorf("map asset %s is missing", expected.Path)
 		}
 		if err != nil {
-			return fmt.Errorf("open map asset %s: %w", expected.Path, err)
+			delete(v.cache, expected.Path)
+			return fmt.Errorf("stat map asset %s: %w", expected.Path, err)
 		}
-		hash := sha256.New()
-		_, copyErr := io.Copy(hash, file)
-		closeErr := file.Close()
-		if copyErr != nil {
-			return fmt.Errorf("hash map asset %s: %w", expected.Path, copyErr)
+		fingerprint := verifiedFile{size: info.Size(), mode: info.Mode(), modTime: info.ModTime().UnixNano()}
+		if fingerprint == v.cache[expected.Path] {
+			continue
 		}
-		if closeErr != nil {
-			return fmt.Errorf("close map asset %s: %w", expected.Path, closeErr)
+		actual, err := hashInstalledFile(ctx, name)
+		v.hashed++
+		if err != nil {
+			delete(v.cache, expected.Path)
+			return fmt.Errorf("hash map asset %s: %w", expected.Path, err)
 		}
-		actual := fmt.Sprintf("%x", hash.Sum(nil))
 		if actual != expected.Digest {
+			delete(v.cache, expected.Path)
 			return fmt.Errorf("map asset %s digest mismatch: got %s", expected.Path, actual)
 		}
+		v.cache[expected.Path] = fingerprint
 	}
 	return nil
+}
+
+func (v *Verifier) hashedFiles() int {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.hashed
+}
+
+func hashInstalledFile(ctx context.Context, name string) (string, error) {
+	file, err := os.Open(name)
+	if err != nil {
+		return "", err
+	}
+	hash := sha256.New()
+	buffer := make([]byte, 256*1024)
+	for {
+		if err := ctx.Err(); err != nil {
+			file.Close()
+			return "", err
+		}
+		count, readErr := file.Read(buffer)
+		if count > 0 {
+			if _, err := hash.Write(buffer[:count]); err != nil {
+				file.Close()
+				return "", err
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			file.Close()
+			return "", readErr
+		}
+	}
+	if err := file.Close(); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", hash.Sum(nil)), nil
 }
 
 // IsContentAddressedURLPath reports whether path identifies one exact file in

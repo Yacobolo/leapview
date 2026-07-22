@@ -3,6 +3,7 @@ package runtime
 import (
 	"fmt"
 	"math"
+	"math/big"
 	"strconv"
 	"strings"
 	"time"
@@ -421,6 +422,16 @@ func normalizeDatumValue(value any) any {
 		return round(typed)
 	case float32:
 		return round(float64(typed))
+	case *big.Int:
+		if typed != nil && typed.BitLen() <= 53 {
+			return float64(typed.Int64())
+		}
+		return typed
+	case big.Int:
+		if typed.BitLen() <= 53 {
+			return float64(typed.Int64())
+		}
+		return typed
 	default:
 		return typed
 	}

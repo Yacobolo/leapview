@@ -8,6 +8,8 @@ Maps use LibreDash's pinned, OSM-derived vector basemap by default. It retains g
 
 Production operators can publish the verified inventory to S3-compatible managed object storage with `task map-assets:publish MAP_ASSET_S3_BUCKET=...`. Publication is conditional and idempotent: existing keys must match the compiled digest, size, content type, and immutable cache policy, and conflicting objects are rejected instead of overwritten. Route the published `map-assets/` prefix through the application origin or edge proxy so browser requests remain same-origin.
 
+LibreDash verifies the complete installed package before opening instance state. The same verifier backs the `mapAssets` readiness check: unchanged files use cached metadata, while any changed file is rehashed and a missing or mismatched asset immediately makes `/readyz` return `503`.
+
 Point and choropleth maps can originate semantic crossfilters. Select a mark by click or tap, or use the visible **Select map data** menu for keyboard access. Blank map space clears only that map's selection. Camera, zoom, reset, compass, label density, and light/dark basemap themes are typed under `geo`.
 
 ## Choropleth
@@ -60,6 +62,8 @@ visuals:
 ## Points
 
 Point layers bind numeric latitude and longitude query aliases. An optional value controls marker size without exposing MapLibre configuration. Coordinate layers include a subtle geographic reference grid when no basemap asset is present.
+
+The Visual Showcase includes a dedicated `chart-map-scale` page backed by exactly one million deterministic locations. It demonstrates the production spatial-window path: LibreDash aggregates the governed viewport at low zoom, returns raw governed points only when the visible cardinality fits, and never sends more than 5,000 rendered features to the browser.
 
 {{< visual id="order_point_map" >}}
 
