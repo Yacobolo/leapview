@@ -358,6 +358,10 @@ sections:
             title: Visualization target architecture
             summary: Understand the visualization IR, generated contracts, runtime data states, and renderer adapters.
             source: articles/architecture/visual-plugins.md
+          - slug: architecture/geographic-rendering
+            title: Geographic rendering decision
+            summary: Understand why MapLibre exclusively owns built-in geographic rendering.
+            source: articles/architecture/geographic-rendering.md
       - id: contributing
         title: Contributing
         summary: Develop LibreDash and extend its generated contracts safely.

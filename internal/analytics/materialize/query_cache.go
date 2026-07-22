@@ -161,6 +161,7 @@ func (c *queryResultCache) cacheKey(request dataquery.Query) (string, uint64, er
 		Limit:               request.Limit,
 		BinCount:            request.BinCount,
 		IncludeTotal:        request.IncludeTotal,
+		Spatial:             request.Spatial,
 	})
 	if err != nil {
 		return "", 0, fmt.Errorf("encode governed query cache key: %w", err)
@@ -202,6 +203,7 @@ type queryResultCacheKey struct {
 	Limit               int
 	BinCount            int
 	IncludeTotal        bool
+	Spatial             *dataquery.SpatialWindow
 }
 
 func (c *queryResultCache) get(key string) (dataquery.Result, bool) {

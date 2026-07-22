@@ -25,6 +25,7 @@ import (
 	visualizationdefinition "github.com/Yacobolo/libredash/internal/visualization/definition"
 	visualizationir "github.com/Yacobolo/libredash/internal/visualization/ir"
 	visualizationmapasset "github.com/Yacobolo/libredash/internal/visualization/mapasset"
+	mapassethttp "github.com/Yacobolo/libredash/internal/visualization/mapasset/http"
 	visualizationruntime "github.com/Yacobolo/libredash/internal/visualization/runtime"
 	"github.com/Yacobolo/libredash/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/libredash/internal/workspace/sqlite"
@@ -697,7 +698,7 @@ func TestVegaSandboxAssetAllowsOpaqueSandboxOrigin(t *testing.T) {
 }
 
 func TestMapAssetCacheIsImmutableAndRangeCapable(t *testing.T) {
-	handler := mapAssetCache(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := mapassethttp.CacheHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusPartialContent)
 	}))
 	request := httptest.NewRequest(http.MethodGet, "/map-assets/libredash-streets/archives/"+visualizationmapasset.ArchiveSHA256+"/basemap.pmtiles", nil)
@@ -716,7 +717,7 @@ func TestMapAssetCacheIsImmutableAndRangeCapable(t *testing.T) {
 }
 
 func TestMapAssetCacheRejectsUnversionedPaths(t *testing.T) {
-	handler := mapAssetCache(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := mapassethttp.CacheHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Fatal("unversioned request reached asset filesystem")
 	}))
 	request := httptest.NewRequest(http.MethodGet, "/map-assets/libredash-streets/basemap.pmtiles", nil)

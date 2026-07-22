@@ -590,7 +590,7 @@ func validateSpatialWindowedState(state SpatialWindowedVisualizationDataState, b
 		return nil
 	}
 	window := state.Window
-	if window.ID == "" || window.RequestSeq < 0 || window.ResetVersion != state.ResetVersion || window.Width <= 0 || window.Height <= 0 || window.Zoom < 0 || window.Zoom > 24 || int64(len(window.Rows)) > state.FeatureCap {
+	if window.ID == "" || window.RequestSeq <= 0 || window.ResetVersion != state.ResetVersion || window.Width <= 0 || window.Width > 16384 || window.Height <= 0 || window.Height > 16384 || window.Zoom < 0 || window.Zoom > 24 || int64(len(window.Rows)) > state.FeatureCap {
 		return fmt.Errorf("invalid or stale spatial window")
 	}
 	if err := validateSpatialBounds(window.Bounds); err != nil {

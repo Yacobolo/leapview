@@ -211,6 +211,29 @@ test('MapLibre spatial requests preserve revision and viewport identity', () => 
   expect(spatialWindowRequest(selectableEnvelope(), { west: 0, south: 0, east: 1, north: 1 }, 1, 100, 100, 1)).toBeUndefined()
 })
 
+test('MapLibre spatial requests normalize wrapped worlds and bound browser-controlled coordinates', () => {
+  const envelope = {
+    ...selectableEnvelope(),
+    dataState: {
+      kind: 'spatial_windowed', specRevision: 'sha256:test', dataRevision: 12, generation: 2,
+      schema: selectableEnvelope().spec.datasets[0], cardinality: { kind: 'estimate', count: 1_000_000 },
+      extent: { west: -180, south: -85, east: 180, north: 85 }, rowCap: 1_000_000, featureCap: 5000,
+      resetVersion: 4,
+    },
+  } as VisualizationEnvelope
+
+  expect(spatialWindowRequest(envelope, { west: 170, south: -20, east: 190, north: 25 }, 3, 20_000, 18_000, 9)).toMatchObject({
+    bounds: { west: 170, south: -20, east: -170, north: 25 }, width: 16_384, height: 16_384,
+    windowID: '170.000000,-20.000000,-170.000000,25.000000@3.000:16384x16384',
+  })
+  expect(spatialWindowRequest(envelope, { west: -540, south: -85, east: 540, north: 85 }, 1, 100, 100, 10)).toMatchObject({
+    bounds: { west: -180, south: -85, east: 180, north: 85 },
+  })
+  expect(spatialWindowRequest(envelope, { west: 0, south: 0, east: 1, north: 1 }, 1, Number.POSITIVE_INFINITY, 100, 1)).toBeUndefined()
+  expect(spatialWindowRequest(envelope, { west: 0, south: 0, east: 1, north: 1 }, 1, 100, 100, 0)).toBeUndefined()
+  expect(spatialWindowRequest(envelope, { west: 0, south: 0, east: 1, north: 1 }, 1, 100, 100, 1.5)).toBeUndefined()
+})
+
 test('a superseded MapLibre mount cannot remove the winning renderer frame', () => {
   const container = {} as ParentNode
   let staleRemoved = false

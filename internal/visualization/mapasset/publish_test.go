@@ -68,6 +68,35 @@ func TestPublishFilesRejectsConflictingRemoteObject(t *testing.T) {
 	}
 }
 
+func TestPublishFilesRejectsRemoteObjectWithMutableOrIncorrectHTTPMetadata(t *testing.T) {
+	root := t.TempDir()
+	content := []byte("expected")
+	digest := fmt.Sprintf("%x", sha256.Sum256(content))
+	file := File{Path: "maps/styles/" + digest + "/style.json", Digest: digest}
+	name := filepath.Join(root, filepath.FromSlash(file.Path))
+	if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(name, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, remote := range []PublicationObject{
+		{Key: file.Path, Digest: digest, Size: int64(len(content)), ContentType: "text/plain", CacheControl: ImmutableCacheControl},
+		{Key: file.Path, Digest: digest, Size: int64(len(content)), ContentType: "application/json", CacheControl: "no-cache"},
+	} {
+		store := &memoryPublicationStore{objects: map[string]publishedMemoryObject{
+			file.Path: {spec: remote},
+		}}
+		if _, err := publishFiles(context.Background(), root, []File{file}, store); err == nil || !errors.Is(err, ErrPublicationConflict) {
+			t.Fatalf("publishFiles() error = %v, want publication conflict for metadata %#v", err, remote)
+		}
+		if store.puts != 0 {
+			t.Fatal("conflicting immutable metadata was overwritten")
+		}
+	}
+}
+
 type publishedMemoryObject struct {
 	spec PublicationObject
 	body []byte

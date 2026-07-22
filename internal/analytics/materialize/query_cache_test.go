@@ -167,6 +167,7 @@ func TestDashboardResultCacheEligibility(t *testing.T) {
 		dataquery.OperationDashboardHistogram,
 		dataquery.OperationDashboardDistribution,
 		dataquery.OperationDashboardFilterOptions,
+		dataquery.OperationDashboardSpatial,
 	} {
 		request := dataquery.Query{Surface: dataquery.SurfaceDashboard, Operation: operation}
 		if !dashboardQueryResultCacheable(request) {
@@ -180,6 +181,51 @@ func TestDashboardResultCacheEligibility(t *testing.T) {
 	} {
 		if dashboardQueryResultCacheable(request) {
 			t.Errorf("non-dashboard request was cacheable: %#v", request)
+		}
+	}
+}
+
+func TestQueryResultCacheKeysEverySpatialViewportCoordinate(t *testing.T) {
+	cache := newQueryResultCache(256, "snapshot=1")
+	request := dataquery.Query{
+		Surface: dataquery.SurfaceDashboard, Operation: dataquery.OperationDashboardSpatial,
+		ModelID: "sales", Kind: dataquery.KindSemanticSpatial, Target: "orders",
+		Fields: []dataquery.Field{{Field: "orders.latitude", Alias: "latitude"}, {Field: "orders.longitude", Alias: "longitude"}},
+		Spatial: &dataquery.SpatialWindow{
+			Latitude: dataquery.Field{Field: "orders.latitude", Alias: "latitude"}, Longitude: dataquery.Field{Field: "orders.longitude", Alias: "longitude"},
+			West: 170, South: -20, East: -170, North: 25, Width: 960, Height: 540, FeatureCap: 5000, Precision: dataquery.SpatialPrecisionAggregated,
+		},
+	}
+	baseline, _, err := cache.cacheKey(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identical, _, err := cache.cacheKey(request)
+	if err != nil || identical != baseline {
+		t.Fatalf("identical spatial cache key = %q, %v; want %q", identical, err, baseline)
+	}
+
+	variants := []func(*dataquery.SpatialWindow){
+		func(window *dataquery.SpatialWindow) { window.West = 160 },
+		func(window *dataquery.SpatialWindow) { window.South = -30 },
+		func(window *dataquery.SpatialWindow) { window.East = -160 },
+		func(window *dataquery.SpatialWindow) { window.North = 35 },
+		func(window *dataquery.SpatialWindow) { window.Width = 1200 },
+		func(window *dataquery.SpatialWindow) { window.Height = 800 },
+		func(window *dataquery.SpatialWindow) { window.FeatureCap = 1000 },
+		func(window *dataquery.SpatialWindow) { window.Precision = dataquery.SpatialPrecisionRaw },
+	}
+	for index, mutate := range variants {
+		variant := request
+		window := *request.Spatial
+		variant.Spatial = &window
+		mutate(variant.Spatial)
+		key, _, err := cache.cacheKey(variant)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if key == baseline {
+			t.Fatalf("spatial cache variant %d reused the baseline key", index)
 		}
 	}
 }

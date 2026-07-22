@@ -20,6 +20,8 @@ Add the type to the closed authoring contract and canonical TypeSpec IR, then up
 
 Do not begin by adding a raw ECharts option. The server and non-ECharts consumers need to understand the product meaning first.
 
+MapLibre exclusively owns geographic visuals. New map behavior must be a closed geographic IR layer rendered within the existing MapLibre camera and interaction lifecycle, not an ECharts `geo` fallback or a second canvas overlay. See the [geographic rendering decision](/docs/architecture/geographic-rendering).
+
 ## Produce the server payload
 
 Extend compilation and data shaping so a valid semantic query becomes a `VisualizationSpec` plus validated inline or windowed `VisualizationDataState` inside one envelope.

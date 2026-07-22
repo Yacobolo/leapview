@@ -13,7 +13,7 @@ import (
 	"os"
 	"strings"
 
-	visualizationmapasset "github.com/Yacobolo/libredash/internal/visualization/mapasset"
+	mapassethttp "github.com/Yacobolo/libredash/internal/visualization/mapasset/http"
 	"github.com/Yacobolo/libredash/pkg/pagestream"
 	siteassets "github.com/Yacobolo/libredash/site"
 )
@@ -63,7 +63,7 @@ func NewHandlerWithOptions(options Options) http.Handler {
 	mux.HandleFunc("GET /updates", updates)
 	mux.Handle("GET /static/", compressedAssets(http.StripPrefix("/static/", http.FileServer(http.FS(siteassets.Static())))))
 	mux.Handle("GET /shared/", compressedAssets(http.StripPrefix("/shared/", http.FileServer(http.FS(siteassets.Shared())))))
-	mux.Handle("GET /map-assets/", mapAssetCache(http.StripPrefix("/map-assets/", siteMapAssets())))
+	mux.Handle("GET /map-assets/", mapassethttp.CacheHandler(http.StripPrefix("/map-assets/", siteMapAssets())))
 	mux.HandleFunc("GET /{path...}", server.notFound)
 	return server.productionHeaders(mux)
 }
@@ -81,19 +81,6 @@ func siteMapAssets() http.Handler {
 			}
 		}
 		embedded.ServeHTTP(w, r)
-	})
-}
-
-func mapAssetCache(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !visualizationmapasset.IsContentAddressedURLPath(r.URL.Path) {
-			w.Header().Set("Cache-Control", "no-store")
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		w.Header().Set("Accept-Ranges", "bytes")
-		next.ServeHTTP(w, r)
 	})
 }
 

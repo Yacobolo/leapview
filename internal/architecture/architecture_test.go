@@ -491,6 +491,36 @@ func TestProductionContainerContractExists(t *testing.T) {
 	}
 }
 
+func TestGeographicRendererDecisionIsExplicitAndNavigable(t *testing.T) {
+	root := repoRoot(t)
+	decision, err := os.ReadFile(filepath.Join(root, "docs", "articles", "architecture", "geographic-rendering.md"))
+	if err != nil {
+		t.Fatalf("read geographic rendering decision: %v", err)
+	}
+	text := string(decision)
+	for _, want := range []string{
+		"# Geographic rendering decision",
+		"Status: accepted",
+		"MapLibre is the sole geographic renderer",
+		"ECharts `geo`",
+		"one geographic camera",
+		"same-origin",
+		"spatial-windowed",
+		"| Capability | MapLibre | ECharts `geo` |",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("geographic rendering decision missing %q", want)
+		}
+	}
+	navigation, err := os.ReadFile(filepath.Join(root, "docs", "navigation.yaml"))
+	if err != nil {
+		t.Fatalf("read docs navigation: %v", err)
+	}
+	if !strings.Contains(string(navigation), "source: articles/architecture/geographic-rendering.md") {
+		t.Fatal("geographic rendering decision is not registered in documentation navigation")
+	}
+}
+
 func TestPublicSiteProductionContainerContractExists(t *testing.T) {
 	root := repoRoot(t)
 	dockerfile, err := os.ReadFile(filepath.Join(root, "Dockerfile.site"))

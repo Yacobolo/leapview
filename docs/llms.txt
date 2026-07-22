@@ -187,6 +187,7 @@ Focused slices are available at `/docs/cli/commands/{id}.json|md` and `/docs/api
 - [Storage architecture](/docs/storage-architecture): Understand DuckLake, DuckDB, snapshots, and serving pointers.
 - [Datastar signal flow](/docs/architecture/datastar): Understand server-owned state and SSE response contracts.
 - [Visualization target architecture](/docs/architecture/visual-plugins): Understand the visualization IR, generated contracts, runtime data states, and renderer adapters.
+- [Geographic rendering decision](/docs/architecture/geographic-rendering): Understand why MapLibre exclusively owns built-in geographic rendering.
 
 #### Contributing
 

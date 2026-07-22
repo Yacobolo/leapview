@@ -84,14 +84,14 @@ func publishFiles(ctx context.Context, root string, files []File, store Publicat
 		}
 		object := PublicationObject{
 			Key: expected.Path, Digest: expected.Digest, Size: info.Size(),
-			ContentType: publicationContentType(expected.Path), CacheControl: ImmutableCacheControl,
+			ContentType: ContentType(expected.Path), CacheControl: ImmutableCacheControl,
 		}
 		remote, statErr := store.Stat(ctx, object.Key)
 		switch {
 		case statErr == nil:
 			file.Close()
-			if remote.Digest != object.Digest || remote.Size != object.Size {
-				return PublicationSummary{}, fmt.Errorf("%w: object %q has digest %q and size %d, want %q and %d", ErrPublicationConflict, object.Key, remote.Digest, remote.Size, object.Digest, object.Size)
+			if !publicationObjectsMatch(remote, object) {
+				return PublicationSummary{}, publicationConflict(object, remote)
 			}
 			summary.Reused++
 			summary.Bytes += object.Size
@@ -113,8 +113,11 @@ func publishFiles(ctx context.Context, root string, files []File, store Publicat
 			return PublicationSummary{}, fmt.Errorf("close map asset %q: %w", object.Key, closeErr)
 		}
 		remote, err = store.Stat(ctx, object.Key)
-		if err != nil || remote.Digest != object.Digest || remote.Size != object.Size {
-			return PublicationSummary{}, fmt.Errorf("verify published map asset %q: %w", object.Key, ErrPublicationConflict)
+		if err != nil {
+			return PublicationSummary{}, fmt.Errorf("verify published map asset %q: %w", object.Key, err)
+		}
+		if !publicationObjectsMatch(remote, object) {
+			return PublicationSummary{}, publicationConflict(object, remote)
 		}
 		summary.Uploaded++
 		summary.Bytes += object.Size
@@ -122,7 +125,17 @@ func publishFiles(ctx context.Context, root string, files []File, store Publicat
 	return summary, nil
 }
 
-func publicationContentType(path string) string {
+func publicationObjectsMatch(actual, expected PublicationObject) bool {
+	return actual.Digest == expected.Digest && actual.Size == expected.Size && actual.ContentType == expected.ContentType && actual.CacheControl == expected.CacheControl
+}
+
+func publicationConflict(expected, actual PublicationObject) error {
+	return fmt.Errorf("%w: object %q has digest %q, size %d, content type %q, and cache control %q; want %q, %d, %q, and %q", ErrPublicationConflict, expected.Key, actual.Digest, actual.Size, actual.ContentType, actual.CacheControl, expected.Digest, expected.Size, expected.ContentType, expected.CacheControl)
+}
+
+// ContentType returns the canonical HTTP representation metadata for an
+// immutable package path. Serving and object publication share this mapping.
+func ContentType(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".pmtiles":
 		return "application/vnd.pmtiles"

@@ -360,6 +360,8 @@ MapLibre owns geographic visuals. Maps use versioned, verified geometry or vecto
 
 The map adapter supports choropleth, point, heat, and density layers without pretending schematic rectangles are geographic boundaries. It reports unmatched identifiers and never guesses region mappings. Geometry is loaded from LibreDash-controlled same-origin assets and cached by content digest; query refreshes transmit measure frames, not repeated boundary geometry.
 
+MapLibre exclusively owns built-in geographic rendering; ECharts `geo` is not a fallback map adapter. The rationale and the boundary for future typed map glyphs are recorded in the [geographic rendering decision](/docs/architecture/geographic-rendering).
+
 ### Vega-Lite
 
 Vega-Lite supports the `custom` visualization kind. A custom Vega-Lite specification is not treated as built-in IR and cannot use `renderer_options` to bypass product contracts.

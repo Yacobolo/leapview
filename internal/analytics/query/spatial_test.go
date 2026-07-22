@@ -63,6 +63,61 @@ func TestSpatialAggregationExecutesAcrossEveryGovernedRowBeforeFeatureCap(t *tes
 	}
 }
 
+func TestSpatialAggregationExecutesAcrossAntimeridianViewport(t *testing.T) {
+	db, err := sql.Open("duckdb", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, statement := range []string{
+		"CREATE SCHEMA model",
+		"CREATE TABLE model.orders(order_id VARCHAR, customer_id VARCHAR, ordered_at TIMESTAMP, revenue DOUBLE, status VARCHAR, latitude DOUBLE, longitude DOUBLE)",
+		"INSERT INTO model.orders VALUES ('east', 'one', TIMESTAMP '2026-01-01', 1, 'paid', 0, 175), ('west', 'two', TIMESTAMP '2026-01-01', 1, 'paid', 0, -175), ('outside', 'three', TIMESTAMP '2026-01-01', 100, 'paid', 0, 0)",
+	} {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan, err := NewPlanner(testModel()).PlanSpatial(SpatialRequest{
+		Table: "orders",
+		Dimensions: []Field{
+			{Field: "orders.order_id", Alias: "order_id"},
+			{Field: "orders.latitude", Alias: "latitude"},
+			{Field: "orders.longitude", Alias: "longitude"},
+		},
+		Measures: []Field{{Field: "revenue", Alias: "revenue"}},
+		Latitude: Field{Field: "orders.latitude", Alias: "latitude"}, Longitude: Field{Field: "orders.longitude", Alias: "longitude"},
+		West: 170, South: -10, East: -170, North: 10, Width: 800, Height: 500, FeatureCap: 10, Precision: SpatialPrecisionAggregated,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := db.Query(plan.SQL, plan.Args...)
+	if err != nil {
+		t.Fatalf("execute antimeridian spatial plan: %v\n%s", err, plan.SQL)
+	}
+	defer rows.Close()
+	var rendered, total int
+	var revenue float64
+	for rows.Next() {
+		var orderID string
+		var latitude, longitude, cellRevenue float64
+		var cellTotal int
+		if err := rows.Scan(&orderID, &latitude, &longitude, &cellRevenue, &cellTotal); err != nil {
+			t.Fatal(err)
+		}
+		rendered++
+		revenue += cellRevenue
+		total = cellTotal
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if rendered == 0 || rendered > 10 || total != 2 || revenue != 2 {
+		t.Fatalf("antimeridian result = rendered %d, total %d, revenue %v; want bounded rows over both matching points", rendered, total, revenue)
+	}
+}
+
 func TestSpatialAggregationMillionRowsIsCompleteAndBounded(t *testing.T) {
 	db := spatialScaleFixture(t, 1_000_000)
 	defer db.Close()

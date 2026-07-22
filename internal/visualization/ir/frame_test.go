@@ -97,6 +97,16 @@ func TestValidateEnvelopeEnforcesSpatialWindowInvariants(t *testing.T) {
 	if err := ValidateEnvelope(envelope); err != nil {
 		t.Fatalf("valid spatial envelope: %v", err)
 	}
+	state.Window.RequestSeq = 0
+	if err := ValidateEnvelope(envelope); err == nil {
+		t.Fatal("non-positive spatial request sequence accepted")
+	}
+	state.Window.RequestSeq = 2
+	state.Window.Width = 16_385
+	if err := ValidateEnvelope(envelope); err == nil {
+		t.Fatal("oversized spatial viewport accepted")
+	}
+	state.Window.Width = 800
 	state.Window.Rows = append(state.Window.Rows, []any{-10.0, 176.0})
 	state.FeatureCap = 1
 	if err := ValidateEnvelope(envelope); err == nil {
