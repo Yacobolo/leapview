@@ -8,6 +8,8 @@ Maps use LibreDash's pinned, OSM-derived vector basemap by default. It retains g
 
 Production operators can publish the verified inventory to S3-compatible managed object storage with `task map-assets:publish MAP_ASSET_S3_BUCKET=...`. Publication is conditional and idempotent: existing keys must match the compiled digest, size, content type, and immutable cache policy, and conflicting objects are rejected instead of overwritten. Route the published `map-assets/` prefix through the application origin or edge proxy so browser requests remain same-origin.
 
+After the edge route is live, run `task map-assets:verify MAP_ASSET_BASE_URL=https://dash.example`. The verifier checks every content-addressed URL, immutable caching, media types, byte-range support, complete digests for styles, glyphs, and sprites, and exact first/last ranges for the PMTiles archive. `map-assets:publish` accepts the same optional `MAP_ASSET_BASE_URL` to make this a single publish-and-verify gate.
+
 LibreDash verifies the complete installed package before opening instance state. The same verifier backs the `mapAssets` readiness check: unchanged files use cached metadata, while any changed file is rehashed and a missing or mismatched asset immediately makes `/readyz` return `503`.
 
 Point and choropleth maps can originate semantic crossfilters. Select a mark by click or tap, or use the visible **Select map data** menu for keyboard access. Blank map space clears only that map's selection. Camera, zoom, reset, compass, label density, and light/dark basemap themes are typed under `geo`.

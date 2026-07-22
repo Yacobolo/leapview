@@ -15,6 +15,7 @@ import (
 	"time"
 
 	visualizationmapasset "github.com/Yacobolo/libredash/internal/visualization/mapasset"
+	visualizationmapassethttp "github.com/Yacobolo/libredash/internal/visualization/mapasset/http"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
@@ -49,6 +50,7 @@ func main() {
 	publishRegion := flag.String("publish-s3-region", "", "AWS region override for map asset publication")
 	publishEndpoint := flag.String("publish-s3-endpoint", "", "S3-compatible endpoint override")
 	publishPathStyle := flag.Bool("publish-s3-path-style", false, "use path-style S3 addressing")
+	verifyBaseURL := flag.String("verify-base-url", "", "verify the installed package through this same-origin HTTP(S) endpoint")
 	flag.Parse()
 	ctx := context.Background()
 	if err := install(ctx, *out); err != nil {
@@ -62,6 +64,15 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Printf("published map assets: uploaded=%d reused=%d bytes=%d\n", summary.Uploaded, summary.Reused, summary.Bytes)
+	}
+	if strings.TrimSpace(*verifyBaseURL) != "" {
+		client := &http.Client{Timeout: 2 * time.Minute}
+		summary, err := visualizationmapassethttp.VerifyDelivery(ctx, *out, *verifyBaseURL, client)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Printf("verified map asset delivery: files=%d full=%d ranges=%d bytes=%d\n", summary.Files, summary.FullResponses, summary.RangeResponses, summary.Bytes)
 	}
 }
 

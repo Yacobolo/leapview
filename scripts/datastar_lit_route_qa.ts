@@ -25,6 +25,7 @@ try {
     await verifyRoute(route)
   }
   await verifyDashboardCommandDoesNotReopenUpdates()
+  await verifySpatialMapWindowing()
   console.log(`DatastarLit route QA passed for ${routes.length} routes at ${baseURL}`)
 } finally {
   await browser.close()
@@ -109,6 +110,151 @@ async function verifyDashboardCommandDoesNotReopenUpdates(): Promise<void> {
     assertNoBlockingConsoleMessages('dashboard command', messages)
   } finally {
     await page.close()
+  }
+}
+
+type SpatialWindowSnapshot = {
+  status: string
+  message: string
+  dataRevision: number
+  requestSeq: number
+  windowID: string
+  precision: string
+  rows: number
+  rowCap: number
+  featureCap: number
+  zoomControlWidth: number
+  zoomControlHeight: number
+}
+
+async function verifySpatialMapWindowing(): Promise<void> {
+  const path = '/workspaces/visuals/dashboards/visual-showcase/pages/chart-map-scale'
+  const origin = new URL(baseURL).origin
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  const messages = collectBlockingConsoleMessages(page)
+  const updates: string[] = []
+  const spatialResponses: number[] = []
+  const basemapResponses: Array<{ url: string; status: number; cacheControl: string; acceptRanges: string }> = []
+  page.on('request', (request) => {
+    const url = new URL(request.url())
+    if (url.pathname === '/updates') updates.push(request.url())
+  })
+  page.on('response', (response) => {
+    const url = new URL(response.url())
+    if (url.pathname.endsWith('/commands/visual-spatial-window')) spatialResponses.push(response.status())
+    if (!url.pathname.endsWith('.pmtiles')) return
+    const headers = response.headers()
+    basemapResponses.push({ url: response.url(), status: response.status(), cacheControl: headers['cache-control'] ?? '', acceptRanges: headers['accept-ranges'] ?? '' })
+  })
+
+  try {
+    const response = await page.goto(new URL(path, baseURL).toString(), { waitUntil: 'domcontentloaded', timeout: 120_000 })
+    if (!response?.ok()) throw new Error(`${path}: status ${response?.status() ?? 'unknown'}`)
+    await page.waitForSelector('ld-dashboard-page')
+    await waitForUpdatesRequest(path, updates)
+    await page.waitForFunction(() => {
+      const dashboard = document.querySelector('ld-dashboard-page') as HTMLElement & { shadowRoot: ShadowRoot }
+      const host = dashboard?.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { envelope?: any }
+      const envelope = host?.envelope
+      return envelope?.dataState?.kind === 'spatial_windowed'
+        && envelope.dataState.window?.rows?.length > 0
+        && envelope.dataRevision >= 2
+        && envelope.status?.kind !== 'loading'
+        && !envelope.status?.message
+    }, undefined, { timeout: 120_000 })
+
+    const initial = await spatialWindowSnapshot(page)
+    assertSpatialWindow(path, initial)
+    if (initial.rowCap !== 1_000_000 || initial.featureCap !== 5_000) {
+      throw new Error(`${path}: budgets rowCap=${initial.rowCap}, featureCap=${initial.featureCap}; want 1000000 and 5000`)
+    }
+    if (initial.zoomControlWidth !== 30 || initial.zoomControlHeight !== 30) {
+      throw new Error(`${path}: zoom control is ${initial.zoomControlWidth}x${initial.zoomControlHeight} CSS pixels; want 30x30`)
+    }
+
+    const zoomIn = page.locator('ld-dashboard-page').locator('ld-visualization-host').locator('button.maplibregl-ctrl-zoom-in')
+    let current = initial
+    for (let attempt = 0; attempt < 10 && current.precision !== 'raw'; attempt++) {
+      await zoomIn.click()
+      await waitForSpatialRevision(page, current)
+      current = await spatialWindowSnapshot(page)
+      assertSpatialWindow(path, current)
+    }
+    if (current.precision !== 'raw') throw new Error(`${path}: viewport never transitioned from aggregated to raw precision`)
+    if (current.requestSeq <= initial.requestSeq || current.dataRevision <= initial.dataRevision) {
+      throw new Error(`${path}: revisions did not advance from ${JSON.stringify(initial)} to ${JSON.stringify(current)}`)
+    }
+
+    const reset = page.locator('ld-dashboard-page').locator('ld-visualization-host').locator('button[aria-label="Reset map view"]')
+    await reset.click()
+    await waitForSpatialRevision(page, current)
+    const restored = await spatialWindowSnapshot(page)
+    assertSpatialWindow(path, restored)
+    if (restored.windowID !== initial.windowID || restored.precision !== initial.precision) {
+      throw new Error(`${path}: reset restored ${restored.windowID} (${restored.precision}), want ${initial.windowID} (${initial.precision})`)
+    }
+    if (updates.length !== 1) throw new Error(`${path}: /updates request count=${updates.length}, want 1`)
+    if (spatialResponses.length === 0 || spatialResponses.some((status) => status !== 200)) {
+      throw new Error(`${path}: spatial command statuses=${JSON.stringify(spatialResponses)}, want only 200 responses`)
+    }
+    if (basemapResponses.length === 0) throw new Error(`${path}: no PMTiles byte-range response observed`)
+    for (const basemap of basemapResponses) {
+      if (new URL(basemap.url).origin !== origin || basemap.status !== 206 || basemap.acceptRanges !== 'bytes' || !basemap.cacheControl.includes('immutable')) {
+        throw new Error(`${path}: invalid basemap delivery ${JSON.stringify(basemap)}`)
+      }
+    }
+    assertNoBlockingConsoleMessages(path, messages)
+  } finally {
+    await page.close()
+  }
+}
+
+async function spatialWindowSnapshot(page: Page): Promise<SpatialWindowSnapshot> {
+  return page.evaluate(() => {
+    const dashboard = document.querySelector('ld-dashboard-page') as HTMLElement & { shadowRoot: ShadowRoot }
+    const host = dashboard?.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { envelope?: any; shadowRoot: ShadowRoot }
+    const envelope = host?.envelope
+    const state = envelope?.dataState
+    const window = state?.window
+    const zoom = host?.shadowRoot?.querySelector('button.maplibregl-ctrl-zoom-in') as HTMLButtonElement | null
+    const style = zoom ? getComputedStyle(zoom) : undefined
+    return {
+      status: String(envelope?.status?.kind ?? ''),
+      message: String(envelope?.status?.message ?? ''),
+      dataRevision: Number(envelope?.dataRevision ?? 0),
+      requestSeq: Number(window?.requestSeq ?? 0),
+      windowID: String(window?.id ?? ''),
+      precision: String(window?.precision ?? ''),
+      rows: Array.isArray(window?.rows) ? window.rows.length : 0,
+      rowCap: Number(state?.rowCap ?? 0),
+      featureCap: Number(state?.featureCap ?? 0),
+      zoomControlWidth: Number.parseFloat(style?.width ?? '0'),
+      zoomControlHeight: Number.parseFloat(style?.height ?? '0'),
+    }
+  })
+}
+
+async function waitForSpatialRevision(page: Page, previous: SpatialWindowSnapshot): Promise<void> {
+  await page.waitForFunction(({ dataRevision, requestSeq }) => {
+    const dashboard = document.querySelector('ld-dashboard-page') as HTMLElement & { shadowRoot: ShadowRoot }
+    const host = dashboard?.shadowRoot?.querySelector('ld-visualization-host') as HTMLElement & { envelope?: any }
+    const envelope = host?.envelope
+    return envelope?.dataRevision > dataRevision
+      && envelope?.dataState?.window?.requestSeq > requestSeq
+      && envelope?.status?.kind !== 'loading'
+      && !envelope?.status?.message
+  }, { dataRevision: previous.dataRevision, requestSeq: previous.requestSeq }, { timeout: 120_000 })
+}
+
+function assertSpatialWindow(path: string, snapshot: SpatialWindowSnapshot): void {
+  if (!['partial', 'ready'].includes(snapshot.status) || snapshot.message) {
+    throw new Error(`${path}: invalid spatial status ${JSON.stringify(snapshot)}`)
+  }
+  if (!snapshot.windowID || snapshot.dataRevision < 1 || snapshot.requestSeq < 1 || snapshot.rows < 1) {
+    throw new Error(`${path}: incomplete spatial window ${JSON.stringify(snapshot)}`)
+  }
+  if (snapshot.rows > snapshot.featureCap) {
+    throw new Error(`${path}: rendered rows=${snapshot.rows} exceeds featureCap=${snapshot.featureCap}`)
   }
 }
 
