@@ -12,6 +12,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
+	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
 	visualizationruntime "github.com/Yacobolo/leapview/internal/visualization/runtime"
 	workspaceview "github.com/Yacobolo/leapview/internal/workspace"
 )
@@ -169,7 +170,7 @@ type WorkspaceAccessResponse struct {
 
 type ChatViewState struct {
 	Agent   ChatSignal
-	Visuals map[string]VisualizationEnvelope
+	Visuals map[string]visualizationir.VisualizationEnvelope
 }
 
 func ChatTranscriptItems(items []agent.ChatTranscriptItem) []ChatTranscriptItemSignal {
@@ -310,7 +311,7 @@ func DashboardInitialEnvelope(clientID, streamInstanceID string, catalog dashboa
 		AgentReferenceSearch: AgentReferenceSearchSignal{
 			Results: []AgentReferenceSignal{},
 		},
-		AgentVisuals: map[string]VisualizationEnvelope{},
+		AgentVisuals: map[string]visualizationir.VisualizationEnvelope{},
 		Chrome:       ChromeSignal{Sidebar: sidebarConfig(catalog, "workspaces", report.ID, workspaceDisplayTitle(catalog), report.Title, activePage.Title, modelID, modelTitle, true, "", strings.TrimSpace(catalog.Workspace.ID) != "")},
 		Page: DashboardPageSignal{
 			Kind:           RouteDashboard,

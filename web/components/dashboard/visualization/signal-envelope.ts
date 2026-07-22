@@ -1,9 +1,9 @@
 import type {
-  DashboardVisualizationSignal,
   VisualizationDataState,
   VisualizationDataStateTransport,
   VisualizationEnvelope,
-} from '../../../generated/signals'
+} from '../../../generated/visualization'
+import type { DashboardVisualizationSignal } from '../../../generated/signals'
 
 type CachedDataState = {
   payload: string

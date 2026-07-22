@@ -1,7 +1,6 @@
 package signals
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/Yacobolo/leapview/internal/dashboard"
@@ -116,97 +115,73 @@ func DashboardInteractionCommandFromDashboard(value dashboard.InteractionCommand
 	}
 }
 
-func DashboardVisualWindowRequestFromDashboard(value dashboard.TableRequest) VisualizationWindowRequest {
-	direction := VisualizationSortDirectionAscending
+func DashboardVisualWindowRequestFromDashboard(value dashboard.TableRequest) visualizationir.VisualizationWindowRequest {
+	direction := visualizationir.VisualizationSortDirectionAscending
 	if value.Sort.Direction == "desc" {
-		direction = VisualizationSortDirectionDescending
+		direction = visualizationir.VisualizationSortDirectionDescending
 	}
-	return VisualizationWindowRequest{
+	return visualizationir.VisualizationWindowRequest{
 		VisualID: value.Table, RequestSeq: int64(value.RequestSeq), ResetVersion: int64(value.ResetVersion),
 		Start: int64(value.Start), Limit: int64(value.Count), BlockID: value.Block,
-		Sort: []VisualizationSort{{Field: VisualizationFieldRef{Dataset: "primary", Field: value.Sort.Key}, Direction: direction}},
+		Sort: []visualizationir.VisualizationSort{{Field: visualizationir.VisualizationFieldRef{Dataset: "primary", Field: value.Sort.Key}, Direction: direction}},
 	}
 }
 
-func DashboardVisualSpatialWindowRequestFromDashboard(value dashboard.SpatialWindowRequest) VisualizationSpatialWindowRequest {
-	return VisualizationSpatialWindowRequest{
+func DashboardVisualSpatialWindowRequestFromDashboard(value dashboard.SpatialWindowRequest) visualizationir.VisualizationSpatialWindowRequest {
+	return visualizationir.VisualizationSpatialWindowRequest{
 		VisualID: value.VisualID, SpecRevision: value.SpecRevision, DataRevision: value.DataRevision,
 		RequestSeq: value.RequestSeq, ResetVersion: value.ResetVersion,
-		Bounds: VisualizationSpatialBounds{West: value.Bounds.West, South: value.Bounds.South, East: value.Bounds.East, North: value.Bounds.North},
+		Bounds: visualizationir.VisualizationSpatialBounds{West: value.Bounds.West, South: value.Bounds.South, East: value.Bounds.East, North: value.Bounds.North},
 		Zoom:   value.Zoom, Width: int32(value.Width), Height: int32(value.Height), WindowID: value.WindowID,
 	}
 }
 
-func DashboardTabularVisualFromDefinitionAtRevision(definition visualizationdefinition.Definition, value dashboard.Table, dataRevision, generation int64) VisualizationEnvelope {
+func DashboardTabularVisualFromDefinitionAtRevision(definition visualizationdefinition.Definition, value dashboard.Table, dataRevision, generation int64) visualizationir.VisualizationEnvelope {
 	envelope, err := visualizationruntime.TableEnvelopeFromDefinition(definition, value, dataRevision, generation)
 	if err != nil {
 		panic(fmt.Sprintf("compiled tabular visualization %q reached the signal boundary with invalid data: %v", definition.ID, err))
 	}
-	return visualizationEnvelope(envelope)
-}
-
-func visualizationEnvelope(value any) VisualizationEnvelope {
-	data, err := json.Marshal(value)
-	if err != nil {
-		panic(fmt.Sprintf("encode visualization envelope: %v", err))
-	}
-	var out VisualizationEnvelope
-	if err := json.Unmarshal(data, &out); err != nil {
-		panic(fmt.Sprintf("decode generated visualization signal envelope: %v", err))
-	}
-	return out
-}
-
-func VisualizationEnvelopeFromIR(value visualizationir.VisualizationEnvelope) VisualizationEnvelope {
-	return visualizationEnvelope(value)
+	return envelope
 }
 
 func DashboardVisualizationSignalFromIR(value visualizationir.VisualizationEnvelope) DashboardVisualizationSignal {
-	envelope := visualizationEnvelope(value)
 	transport, err := visualizationir.EncodeDataStateTransport(value.DataState)
 	if err != nil {
 		panic(fmt.Sprintf("encode dashboard visualization data-state transport: %v", err))
 	}
-	dataState := visualizationDataStateTransport(transport)
 	return DashboardVisualizationSignal{
-		SchemaVersion:    envelope.SchemaVersion,
-		VisualID:         envelope.VisualID,
-		RendererID:       envelope.RendererID,
-		SpecRevision:     envelope.SpecRevision,
-		Spec:             envelope.Spec,
-		DataRevision:     envelope.DataRevision,
-		DataState:        dataState,
-		Selection:        envelope.Selection,
-		SpatialSelection: envelope.SpatialSelection,
-		Status:           envelope.Status,
-		Diagnostics:      envelope.Diagnostics,
+		SchemaVersion:    value.SchemaVersion,
+		VisualID:         value.VisualID,
+		RendererID:       value.RendererID,
+		SpecRevision:     value.SpecRevision,
+		Spec:             value.Spec,
+		DataRevision:     value.DataRevision,
+		DataState:        visualizationDataStateTransport(transport),
+		Selection:        value.Selection,
+		SpatialSelection: value.SpatialSelection,
+		Status:           value.Status,
+		Diagnostics:      value.Diagnostics,
 	}
 }
 
-func dashboardSpatialSelections(values []dashboard.SpatialInteractionSelection) []VisualizationSpatialSelectionState {
-	out := make([]VisualizationSpatialSelectionState, len(values))
+func dashboardSpatialSelections(values []dashboard.SpatialInteractionSelection) []visualizationir.VisualizationSpatialSelectionState {
+	out := make([]visualizationir.VisualizationSpatialSelectionState, len(values))
 	for index, value := range values {
-		data, err := json.Marshal(visualizationir.VisualizationSpatialSelectionState{VisualID: value.VisualID, InteractionID: value.InteractionID, Geometry: value.Geometry})
-		if err != nil {
-			panic(fmt.Sprintf("encode dashboard spatial selection: %v", err))
-		}
-		if err := json.Unmarshal(data, &out[index]); err != nil {
-			panic(fmt.Sprintf("decode dashboard spatial selection signal: %v", err))
-		}
+		out[index] = visualizationir.VisualizationSpatialSelectionState{VisualID: value.VisualID, InteractionID: value.InteractionID, Geometry: value.Geometry}
 	}
 	return out
 }
 
-func visualizationDataStateTransport(value visualizationir.EncodedDataStateTransport) VisualizationDataStateTransport {
-	data, err := json.Marshal(value)
-	if err != nil {
-		panic(fmt.Sprintf("encode visualization data-state transport: %v", err))
+func visualizationDataStateTransport(value visualizationir.EncodedDataStateTransport) visualizationir.VisualizationDataStateTransport {
+	return visualizationir.VisualizationDataStateTransport{
+		SchemaVersion: value.SchemaVersion,
+		Encoding:      visualizationir.VisualizationDataStateTransportEncoding(value.Encoding),
+		Kind:          visualizationir.VisualizationDataStateKind(value.Kind),
+		SpecRevision:  value.SpecRevision,
+		DataRevision:  value.DataRevision,
+		Generation:    value.Generation,
+		Payload:       value.Payload,
 	}
-	var out VisualizationDataStateTransport
-	if err := json.Unmarshal(data, &out); err != nil {
-		panic(fmt.Sprintf("decode generated visualization data-state transport: %v", err))
-	}
-	return out
 }
 
 func dashboardInteractionSelections(values []dashboard.InteractionSelection) []DashboardInteractionSelection {

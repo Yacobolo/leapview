@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit'
 import { state } from 'lit/decorators.js'
-import type { AgentContextSignal, AgentReferenceSearchSignal, AgentReferenceSignal, ChatConversationSummary, ChatPageSignal, ChatSignal, VisualizationEnvelope } from '../../generated/signals'
+import type { AgentContextSignal, AgentReferenceSearchSignal, AgentReferenceSignal, ChatConversationSummary, ChatPageSignal, ChatSignal } from '../../generated/signals'
+import type { VisualizationEnvelope } from '../../generated/visualization'
 import { DatastarLit } from '../shared/datastar-lit'
 import { checkSignalContract } from '../shared/signal-contract'
 import '../dashboard/visual-modal'

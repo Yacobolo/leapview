@@ -11,6 +11,7 @@ import (
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
+	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
 	workspacecompiler "github.com/Yacobolo/leapview/internal/workspace/compiler"
 )
 
@@ -220,7 +221,7 @@ func TestChatInitialEnvelopeOnlyListActivatesChatNav(t *testing.T) {
 func testChatViewState(signal ChatSignal) ChatViewState {
 	return ChatViewState{
 		Agent:   signal,
-		Visuals: map[string]VisualizationEnvelope{},
+		Visuals: map[string]visualizationir.VisualizationEnvelope{},
 	}
 }
 

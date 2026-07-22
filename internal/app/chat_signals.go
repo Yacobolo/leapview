@@ -84,8 +84,8 @@ func normalizeChatArtifacts(artifacts agent.ChatArtifactSignals) agent.ChatArtif
 	return artifacts
 }
 
-func typedChatArtifacts(artifacts agent.ChatArtifactSignals) map[string]uisignals.VisualizationEnvelope {
-	visuals := map[string]uisignals.VisualizationEnvelope{}
+func typedChatArtifacts(artifacts agent.ChatArtifactSignals) map[string]visualizationir.VisualizationEnvelope {
+	visuals := map[string]visualizationir.VisualizationEnvelope{}
 	for key, value := range artifacts.Visuals {
 		raw, err := json.Marshal(value)
 		if err != nil {
@@ -95,10 +95,7 @@ func typedChatArtifacts(artifacts agent.ChatArtifactSignals) map[string]uisignal
 		if err := json.Unmarshal(raw, &envelope); err != nil || envelope.VisualID != key || visualizationir.ValidateEnvelope(envelope) != nil {
 			continue
 		}
-		var signalEnvelope uisignals.VisualizationEnvelope
-		if err := json.Unmarshal(raw, &signalEnvelope); err == nil {
-			visuals[key] = signalEnvelope
-		}
+		visuals[key] = envelope
 	}
 	return visuals
 }

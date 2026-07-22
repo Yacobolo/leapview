@@ -8,9 +8,7 @@ import (
 const CurrentDataStateTransportSchemaVersion int32 = 1
 
 // EncodedDataStateTransport is the internal serialization result corresponding
-// to the public TypeSpec VisualizationDataStateTransport contract. The latter
-// is generated only into signal packages because it is not part of the public
-// VisualizationEnvelope itself.
+// to the canonical TypeSpec VisualizationDataStateTransport contract.
 type EncodedDataStateTransport struct {
 	SchemaVersion int32  `json:"schemaVersion"`
 	Encoding      string `json:"encoding"`

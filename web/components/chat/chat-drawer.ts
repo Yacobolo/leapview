@@ -6,8 +6,8 @@ import type {
 	AgentReferenceSearchSignal,
 	AgentReferenceSignal,
 	ChatSignal,
-	VisualizationEnvelope,
 } from '../../generated/signals'
+import type { VisualizationEnvelope } from '../../generated/visualization'
 import { DatastarLit } from '../shared/datastar-lit'
 import { domainEvents, emitDomainEvent } from '../shared/events'
 import { lucideIcon } from '../shared/lucide-icons'

@@ -3,8 +3,8 @@ import type {
   VisualizationSpatialCoordinate,
   VisualizationSpatialSelectionGeometry,
   VisualizationSpatialSelectionGesture,
+  VisualizationSpatialSelectionCommand,
 } from '../../../../../generated/visualization'
-import type { VisualizationSpatialSelectionCommand } from '../../../../../generated/signals'
 
 export type ScreenPoint = Readonly<{ x: number; y: number }>
 export type Unproject = (point: ScreenPoint) => VisualizationSpatialCoordinate

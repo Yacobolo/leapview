@@ -693,6 +693,7 @@ model VisualizationSpatialSelectionState {
   `geometry`: VisualizationSpatialSelectionGeometry;
 }
 
+@apigen.contract(#{ kind: "visualization-command", tags: #["visualization", "interaction"] })
 model VisualizationSpatialSelectionCommand {
   `visualID`: string;
   `specRevision`: string;
@@ -817,6 +818,7 @@ model VisualizationWindowBlock {
   `sort`: VisualizationSort[];
 }
 
+@apigen.contract(#{ kind: "visualization-command", tags: #["visualization", "window"] })
 model VisualizationWindowRequest {
   `visualID`: string;
   `specRevision`: string;
@@ -848,6 +850,7 @@ model VisualizationSpatialWindowBlock {
   `resetVersion`: int64;
 }
 
+@apigen.contract(#{ kind: "visualization-command", tags: #["visualization", "spatial-window"] })
 model VisualizationSpatialWindowRequest {
   `visualID`: string;
   `specRevision`: string;
@@ -902,6 +905,7 @@ model SpatialWindowedVisualizationDataState extends VisualizationDataState {
  * signal. The payload is decoded only after every repeated revision and
  * discriminator field agrees with this header.
  */
+@apigen.contract(#{ kind: "visualization-transport", tags: #["visualization", "data"] })
 model VisualizationDataStateTransport {
   `schemaVersion`: 1;
   `encoding`: VisualizationDataStateTransportEncoding;

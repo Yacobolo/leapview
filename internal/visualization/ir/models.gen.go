@@ -320,12 +320,12 @@ func (value *TableVisualizationFormattingRule) UnmarshalJSON(data []byte) error 
 		return fmt.Errorf("decode TableVisualizationFormattingRule object: %w", err)
 	}
 	var tag struct {
-		Kind string `json:"kind"`
+		Value string `json:"kind"`
 	}
 	if err := json.Unmarshal(data, &tag); err != nil {
 		return fmt.Errorf("decode TableVisualizationFormattingRule discriminator: %w", err)
 	}
-	if tag.Kind == "" {
+	if tag.Value == "" {
 		return fmt.Errorf("TableVisualizationFormattingRule discriminator kind is required")
 	}
 	decode := func(dest any) error {
@@ -333,54 +333,54 @@ func (value *TableVisualizationFormattingRule) UnmarshalJSON(data []byte) error 
 		decoder.DisallowUnknownFields()
 		return decoder.Decode(dest)
 	}
-	switch tag.Kind {
+	switch tag.Value {
 	case "background_scale":
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: required property kind is missing", tag.Value)
 		}
 		var variant TableBackgroundScaleFormattingRule
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "badge":
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["values"]; !ok {
-			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: required property values is missing", tag.Kind)
+			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: required property values is missing", tag.Value)
 		}
 		var variant TableBadgeFormattingRule
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "data_bar":
 		if _, ok := fields["color"]; !ok {
-			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: required property color is missing", tag.Kind)
+			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: required property color is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: required property kind is missing", tag.Value)
 		}
 		var variant TableDataBarFormattingRule
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "text_color":
 		if _, ok := fields["color"]; !ok {
-			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: required property color is missing", tag.Kind)
+			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: required property color is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: required property kind is missing", tag.Value)
 		}
 		var variant TableTextColorFormattingRule
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode TableVisualizationFormattingRule variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	default:
-		return fmt.Errorf("unknown TableVisualizationFormattingRule discriminator %q", tag.Kind)
+		return fmt.Errorf("unknown TableVisualizationFormattingRule discriminator %q", tag.Value)
 	}
 	return nil
 }
@@ -537,12 +537,12 @@ func (value *VisualizationDataState) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("decode VisualizationDataState object: %w", err)
 	}
 	var tag struct {
-		Kind string `json:"kind"`
+		Value string `json:"kind"`
 	}
 	if err := json.Unmarshal(data, &tag); err != nil {
 		return fmt.Errorf("decode VisualizationDataState discriminator: %w", err)
 	}
-	if tag.Kind == "" {
+	if tag.Value == "" {
 		return fmt.Errorf("VisualizationDataState discriminator kind is required")
 	}
 	decode := func(dest any) error {
@@ -550,108 +550,108 @@ func (value *VisualizationDataState) UnmarshalJSON(data []byte) error {
 		decoder.DisallowUnknownFields()
 		return decoder.Decode(dest)
 	}
-	switch tag.Kind {
+	switch tag.Value {
 	case "inline":
 		if _, ok := fields["dataRevision"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property dataRevision is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property dataRevision is missing", tag.Value)
 		}
 		if _, ok := fields["datasets"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property datasets is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property datasets is missing", tag.Value)
 		}
 		if _, ok := fields["generation"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property generation is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property generation is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["specRevision"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property specRevision is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property specRevision is missing", tag.Value)
 		}
 		var variant InlineVisualizationDataState
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationDataState variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationDataState variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "spatial_windowed":
 		if _, ok := fields["cardinality"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property cardinality is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property cardinality is missing", tag.Value)
 		}
 		if _, ok := fields["dataRevision"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property dataRevision is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property dataRevision is missing", tag.Value)
 		}
 		if _, ok := fields["extent"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property extent is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property extent is missing", tag.Value)
 		}
 		if _, ok := fields["featureCap"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property featureCap is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property featureCap is missing", tag.Value)
 		}
 		if _, ok := fields["generation"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property generation is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property generation is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["resetVersion"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property resetVersion is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property resetVersion is missing", tag.Value)
 		}
 		if _, ok := fields["rowCap"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property rowCap is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property rowCap is missing", tag.Value)
 		}
 		if _, ok := fields["schema"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property schema is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property schema is missing", tag.Value)
 		}
 		if _, ok := fields["specRevision"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property specRevision is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property specRevision is missing", tag.Value)
 		}
 		var variant SpatialWindowedVisualizationDataState
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationDataState variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationDataState variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "windowed":
 		if _, ok := fields["availableRows"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property availableRows is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property availableRows is missing", tag.Value)
 		}
 		if _, ok := fields["blocks"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property blocks is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property blocks is missing", tag.Value)
 		}
 		if _, ok := fields["cardinality"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property cardinality is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property cardinality is missing", tag.Value)
 		}
 		if _, ok := fields["chunkSize"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property chunkSize is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property chunkSize is missing", tag.Value)
 		}
 		if _, ok := fields["dataRevision"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property dataRevision is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property dataRevision is missing", tag.Value)
 		}
 		if _, ok := fields["generation"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property generation is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property generation is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["resetVersion"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property resetVersion is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property resetVersion is missing", tag.Value)
 		}
 		if _, ok := fields["rowCap"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property rowCap is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property rowCap is missing", tag.Value)
 		}
 		if _, ok := fields["schema"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property schema is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property schema is missing", tag.Value)
 		}
 		if _, ok := fields["sort"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property sort is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property sort is missing", tag.Value)
 		}
 		if _, ok := fields["specRevision"]; !ok {
-			return fmt.Errorf("decode VisualizationDataState variant %q: required property specRevision is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationDataState variant %q: required property specRevision is missing", tag.Value)
 		}
 		var variant WindowedVisualizationDataState
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationDataState variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationDataState variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	default:
-		return fmt.Errorf("unknown VisualizationDataState discriminator %q", tag.Kind)
+		return fmt.Errorf("unknown VisualizationDataState discriminator %q", tag.Value)
 	}
 	return nil
 }
@@ -662,6 +662,30 @@ type VisualizationDataStateBase struct {
 	DataRevision int64  `json:"dataRevision"`
 	Generation   int64  `json:"generation"`
 }
+
+type VisualizationDataStateKind string
+
+const (
+	VisualizationDataStateKindInline          VisualizationDataStateKind = "inline"
+	VisualizationDataStateKindWindowed        VisualizationDataStateKind = "windowed"
+	VisualizationDataStateKindSpatialWindowed VisualizationDataStateKind = "spatial_windowed"
+)
+
+type VisualizationDataStateTransport struct {
+	SchemaVersion int32                                   `json:"schemaVersion"`
+	Encoding      VisualizationDataStateTransportEncoding `json:"encoding"`
+	Kind          VisualizationDataStateKind              `json:"kind"`
+	SpecRevision  string                                  `json:"specRevision"`
+	DataRevision  int64                                   `json:"dataRevision"`
+	Generation    int64                                   `json:"generation"`
+	Payload       string                                  `json:"payload"`
+}
+
+type VisualizationDataStateTransportEncoding string
+
+const (
+	VisualizationDataStateTransportEncodingJson VisualizationDataStateTransportEncoding = "json"
+)
 
 type VisualizationDataType string
 
@@ -830,12 +854,12 @@ func (value *VisualizationFormat) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("decode VisualizationFormat object: %w", err)
 	}
 	var tag struct {
-		Kind string `json:"kind"`
+		Value string `json:"kind"`
 	}
 	if err := json.Unmarshal(data, &tag); err != nil {
 		return fmt.Errorf("decode VisualizationFormat discriminator: %w", err)
 	}
-	if tag.Kind == "" {
+	if tag.Value == "" {
 		return fmt.Errorf("VisualizationFormat discriminator kind is required")
 	}
 	decode := func(dest any) error {
@@ -843,69 +867,69 @@ func (value *VisualizationFormat) UnmarshalJSON(data []byte) error {
 		decoder.DisallowUnknownFields()
 		return decoder.Decode(dest)
 	}
-	switch tag.Kind {
+	switch tag.Value {
 	case "compact":
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationFormat variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationFormat variant %q: required property kind is missing", tag.Value)
 		}
 		var variant CompactVisualizationFormat
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationFormat variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationFormat variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "currency":
 		if _, ok := fields["currency"]; !ok {
-			return fmt.Errorf("decode VisualizationFormat variant %q: required property currency is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationFormat variant %q: required property currency is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationFormat variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationFormat variant %q: required property kind is missing", tag.Value)
 		}
 		var variant CurrencyVisualizationFormat
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationFormat variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationFormat variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "duration":
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationFormat variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationFormat variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["unit"]; !ok {
-			return fmt.Errorf("decode VisualizationFormat variant %q: required property unit is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationFormat variant %q: required property unit is missing", tag.Value)
 		}
 		var variant DurationVisualizationFormat
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationFormat variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationFormat variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "number":
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationFormat variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationFormat variant %q: required property kind is missing", tag.Value)
 		}
 		var variant NumberVisualizationFormat
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationFormat variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationFormat variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "percent":
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationFormat variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationFormat variant %q: required property kind is missing", tag.Value)
 		}
 		var variant PercentVisualizationFormat
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationFormat variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationFormat variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "temporal":
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationFormat variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationFormat variant %q: required property kind is missing", tag.Value)
 		}
 		var variant TemporalVisualizationFormat
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationFormat variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationFormat variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	default:
-		return fmt.Errorf("unknown VisualizationFormat discriminator %q", tag.Kind)
+		return fmt.Errorf("unknown VisualizationFormat discriminator %q", tag.Value)
 	}
 	return nil
 }
@@ -989,12 +1013,12 @@ func (value *VisualizationGeographicLayer) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("decode VisualizationGeographicLayer object: %w", err)
 	}
 	var tag struct {
-		Kind string `json:"kind"`
+		Value string `json:"kind"`
 	}
 	if err := json.Unmarshal(data, &tag); err != nil {
 		return fmt.Errorf("decode VisualizationGeographicLayer discriminator: %w", err)
 	}
-	if tag.Kind == "" {
+	if tag.Value == "" {
 		return fmt.Errorf("VisualizationGeographicLayer discriminator kind is required")
 	}
 	decode := func(dest any) error {
@@ -1002,237 +1026,237 @@ func (value *VisualizationGeographicLayer) UnmarshalJSON(data []byte) error {
 		decoder.DisallowUnknownFields()
 		return decoder.Decode(dest)
 	}
-	switch tag.Kind {
+	switch tag.Value {
 	case "choropleth":
 		if _, ok := fields["color"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property color is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property color is missing", tag.Value)
 		}
 		if _, ok := fields["geometry"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property geometry is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property geometry is missing", tag.Value)
 		}
 		if _, ok := fields["id"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property id is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property id is missing", tag.Value)
 		}
 		if _, ok := fields["join"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property join is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property join is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["opacity"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property opacity is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property opacity is missing", tag.Value)
 		}
 		if _, ok := fields["position"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property position is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property position is missing", tag.Value)
 		}
 		if _, ok := fields["stroke"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property stroke is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property stroke is missing", tag.Value)
 		}
 		if _, ok := fields["tooltip"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property tooltip is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property tooltip is missing", tag.Value)
 		}
 		if _, ok := fields["visibility"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property visibility is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property visibility is missing", tag.Value)
 		}
 		var variant VisualizationChoroplethLayer
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "density":
 		if _, ok := fields["color"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property color is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property color is missing", tag.Value)
 		}
 		if _, ok := fields["heat"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property heat is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property heat is missing", tag.Value)
 		}
 		if _, ok := fields["id"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property id is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property id is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["latitude"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property latitude is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property latitude is missing", tag.Value)
 		}
 		if _, ok := fields["longitude"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property longitude is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property longitude is missing", tag.Value)
 		}
 		if _, ok := fields["opacity"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property opacity is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property opacity is missing", tag.Value)
 		}
 		if _, ok := fields["position"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property position is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property position is missing", tag.Value)
 		}
 		if _, ok := fields["tooltip"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property tooltip is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property tooltip is missing", tag.Value)
 		}
 		if _, ok := fields["visibility"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property visibility is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property visibility is missing", tag.Value)
 		}
 		var variant VisualizationDensityLayer
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "heat":
 		if _, ok := fields["color"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property color is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property color is missing", tag.Value)
 		}
 		if _, ok := fields["heat"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property heat is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property heat is missing", tag.Value)
 		}
 		if _, ok := fields["id"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property id is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property id is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["latitude"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property latitude is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property latitude is missing", tag.Value)
 		}
 		if _, ok := fields["longitude"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property longitude is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property longitude is missing", tag.Value)
 		}
 		if _, ok := fields["opacity"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property opacity is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property opacity is missing", tag.Value)
 		}
 		if _, ok := fields["position"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property position is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property position is missing", tag.Value)
 		}
 		if _, ok := fields["tooltip"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property tooltip is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property tooltip is missing", tag.Value)
 		}
 		if _, ok := fields["visibility"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property visibility is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property visibility is missing", tag.Value)
 		}
 		var variant VisualizationHeatLayer
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "path":
 		if _, ok := fields["color"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property color is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property color is missing", tag.Value)
 		}
 		if _, ok := fields["id"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property id is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property id is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["latitude"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property latitude is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property latitude is missing", tag.Value)
 		}
 		if _, ok := fields["line"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property line is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property line is missing", tag.Value)
 		}
 		if _, ok := fields["longitude"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property longitude is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property longitude is missing", tag.Value)
 		}
 		if _, ok := fields["opacity"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property opacity is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property opacity is missing", tag.Value)
 		}
 		if _, ok := fields["order"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property order is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property order is missing", tag.Value)
 		}
 		if _, ok := fields["path"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property path is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property path is missing", tag.Value)
 		}
 		if _, ok := fields["position"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property position is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property position is missing", tag.Value)
 		}
 		if _, ok := fields["stroke"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property stroke is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property stroke is missing", tag.Value)
 		}
 		if _, ok := fields["tooltip"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property tooltip is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property tooltip is missing", tag.Value)
 		}
 		if _, ok := fields["visibility"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property visibility is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property visibility is missing", tag.Value)
 		}
 		var variant VisualizationPathLayer
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "point":
 		if _, ok := fields["cluster"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property cluster is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property cluster is missing", tag.Value)
 		}
 		if _, ok := fields["color"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property color is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property color is missing", tag.Value)
 		}
 		if _, ok := fields["id"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property id is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property id is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["latitude"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property latitude is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property latitude is missing", tag.Value)
 		}
 		if _, ok := fields["longitude"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property longitude is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property longitude is missing", tag.Value)
 		}
 		if _, ok := fields["opacity"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property opacity is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property opacity is missing", tag.Value)
 		}
 		if _, ok := fields["position"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property position is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property position is missing", tag.Value)
 		}
 		if _, ok := fields["size"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property size is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property size is missing", tag.Value)
 		}
 		if _, ok := fields["stroke"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property stroke is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property stroke is missing", tag.Value)
 		}
 		if _, ok := fields["tooltip"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property tooltip is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property tooltip is missing", tag.Value)
 		}
 		if _, ok := fields["visibility"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property visibility is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property visibility is missing", tag.Value)
 		}
 		var variant VisualizationPointLayer
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "reference":
 		if _, ok := fields["color"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property color is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property color is missing", tag.Value)
 		}
 		if _, ok := fields["geometry"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property geometry is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property geometry is missing", tag.Value)
 		}
 		if _, ok := fields["id"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property id is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property id is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["opacity"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property opacity is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property opacity is missing", tag.Value)
 		}
 		if _, ok := fields["position"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property position is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property position is missing", tag.Value)
 		}
 		if _, ok := fields["stroke"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property stroke is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property stroke is missing", tag.Value)
 		}
 		if _, ok := fields["tooltip"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property tooltip is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property tooltip is missing", tag.Value)
 		}
 		if _, ok := fields["visibility"]; !ok {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property visibility is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: required property visibility is missing", tag.Value)
 		}
 		var variant VisualizationReferenceLayer
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationGeographicLayer variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	default:
-		return fmt.Errorf("unknown VisualizationGeographicLayer discriminator %q", tag.Kind)
+		return fmt.Errorf("unknown VisualizationGeographicLayer discriminator %q", tag.Value)
 	}
 	return nil
 }
@@ -1618,6 +1642,16 @@ type VisualizationSpatialRadiusSelection struct {
 	RadiusMeters float64                        `json:"radiusMeters"`
 }
 
+type VisualizationSpatialSelectionCommand struct {
+	VisualID      string                                 `json:"visualID"`
+	SpecRevision  string                                 `json:"specRevision"`
+	DataRevision  int64                                  `json:"dataRevision"`
+	InteractionID string                                 `json:"interactionID"`
+	Action        string                                 `json:"action"`
+	Gesture       VisualizationSpatialSelectionGesture   `json:"gesture"`
+	Geometry      *VisualizationSpatialSelectionGeometry `json:"geometry,omitempty"`
+}
+
 type VisualizationSpatialSelectionGeometryVariant interface {
 	isVisualizationSpatialSelectionGeometryVariant()
 }
@@ -1669,12 +1703,12 @@ func (value *VisualizationSpatialSelectionGeometry) UnmarshalJSON(data []byte) e
 		return fmt.Errorf("decode VisualizationSpatialSelectionGeometry object: %w", err)
 	}
 	var tag struct {
-		Kind string `json:"kind"`
+		Value string `json:"kind"`
 	}
 	if err := json.Unmarshal(data, &tag); err != nil {
 		return fmt.Errorf("decode VisualizationSpatialSelectionGeometry discriminator: %w", err)
 	}
-	if tag.Kind == "" {
+	if tag.Value == "" {
 		return fmt.Errorf("VisualizationSpatialSelectionGeometry discriminator kind is required")
 	}
 	decode := func(dest any) error {
@@ -1682,48 +1716,48 @@ func (value *VisualizationSpatialSelectionGeometry) UnmarshalJSON(data []byte) e
 		decoder.DisallowUnknownFields()
 		return decoder.Decode(dest)
 	}
-	switch tag.Kind {
+	switch tag.Value {
 	case "box":
 		if _, ok := fields["bounds"]; !ok {
-			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: required property bounds is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: required property bounds is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: required property kind is missing", tag.Value)
 		}
 		var variant VisualizationSpatialBoxSelection
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "lasso":
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["points"]; !ok {
-			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: required property points is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: required property points is missing", tag.Value)
 		}
 		var variant VisualizationSpatialLassoSelection
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "radius":
 		if _, ok := fields["center"]; !ok {
-			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: required property center is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: required property center is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["radiusMeters"]; !ok {
-			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: required property radiusMeters is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: required property radiusMeters is missing", tag.Value)
 		}
 		var variant VisualizationSpatialRadiusSelection
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationSpatialSelectionGeometry variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	default:
-		return fmt.Errorf("unknown VisualizationSpatialSelectionGeometry discriminator %q", tag.Kind)
+		return fmt.Errorf("unknown VisualizationSpatialSelectionGeometry discriminator %q", tag.Value)
 	}
 	return nil
 }
@@ -1764,6 +1798,19 @@ type VisualizationSpatialWindowBlock struct {
 	Rows         [][]any                       `json:"rows"`
 	RequestSeq   int64                         `json:"requestSeq"`
 	ResetVersion int64                         `json:"resetVersion"`
+}
+
+type VisualizationSpatialWindowRequest struct {
+	VisualID     string                     `json:"visualID"`
+	SpecRevision string                     `json:"specRevision"`
+	DataRevision int64                      `json:"dataRevision"`
+	RequestSeq   int64                      `json:"requestSeq"`
+	ResetVersion int64                      `json:"resetVersion"`
+	Bounds       VisualizationSpatialBounds `json:"bounds"`
+	Zoom         float64                    `json:"zoom"`
+	Width        int32                      `json:"width"`
+	Height       int32                      `json:"height"`
+	WindowID     string                     `json:"windowID"`
 }
 
 type VisualizationSpecVariant interface {
@@ -1873,12 +1920,12 @@ func (value *VisualizationSpec) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("decode VisualizationSpec object: %w", err)
 	}
 	var tag struct {
-		Kind string `json:"kind"`
+		Value string `json:"kind"`
 	}
 	if err := json.Unmarshal(data, &tag); err != nil {
 		return fmt.Errorf("decode VisualizationSpec discriminator: %w", err)
 	}
-	if tag.Kind == "" {
+	if tag.Value == "" {
 		return fmt.Errorf("VisualizationSpec discriminator kind is required")
 	}
 	decode := func(dest any) error {
@@ -1886,351 +1933,351 @@ func (value *VisualizationSpec) UnmarshalJSON(data []byte) error {
 		decoder.DisallowUnknownFields()
 		return decoder.Decode(dest)
 	}
-	switch tag.Kind {
+	switch tag.Value {
 	case "cartesian":
 		if _, ok := fields["accessibility"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Value)
 		}
 		if _, ok := fields["dataBudget"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Value)
 		}
 		if _, ok := fields["datasets"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Value)
 		}
 		if _, ok := fields["interactions"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["mark"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property mark is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property mark is missing", tag.Value)
 		}
 		if _, ok := fields["presentation"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property presentation is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property presentation is missing", tag.Value)
 		}
 		if _, ok := fields["title"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Value)
 		}
 		if _, ok := fields["x"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property x is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property x is missing", tag.Value)
 		}
 		if _, ok := fields["y"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property y is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property y is missing", tag.Value)
 		}
 		var variant CartesianVisualizationSpec
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "custom":
 		if _, ok := fields["accessibility"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Value)
 		}
 		if _, ok := fields["dataBudget"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Value)
 		}
 		if _, ok := fields["datasets"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Value)
 		}
 		if _, ok := fields["engine"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property engine is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property engine is missing", tag.Value)
 		}
 		if _, ok := fields["interactions"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["program"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property program is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property program is missing", tag.Value)
 		}
 		if _, ok := fields["programDigest"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property programDigest is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property programDigest is missing", tag.Value)
 		}
 		if _, ok := fields["title"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Value)
 		}
 		var variant CustomVisualizationSpec
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "geographic":
 		if _, ok := fields["accessibility"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Value)
 		}
 		if _, ok := fields["dataBudget"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Value)
 		}
 		if _, ok := fields["datasets"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Value)
 		}
 		if _, ok := fields["interactions"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["layers"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property layers is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property layers is missing", tag.Value)
 		}
 		if _, ok := fields["presentation"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property presentation is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property presentation is missing", tag.Value)
 		}
 		if _, ok := fields["spatialInteractions"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property spatialInteractions is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property spatialInteractions is missing", tag.Value)
 		}
 		if _, ok := fields["title"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Value)
 		}
 		var variant GeographicVisualizationSpec
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "hierarchy":
 		if _, ok := fields["accessibility"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Value)
 		}
 		if _, ok := fields["dataBudget"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Value)
 		}
 		if _, ok := fields["datasets"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Value)
 		}
 		if _, ok := fields["interactions"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["mark"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property mark is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property mark is missing", tag.Value)
 		}
 		if _, ok := fields["node"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property node is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property node is missing", tag.Value)
 		}
 		if _, ok := fields["presentation"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property presentation is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property presentation is missing", tag.Value)
 		}
 		if _, ok := fields["title"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Value)
 		}
 		var variant HierarchyVisualizationSpec
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "kpi":
 		if _, ok := fields["accessibility"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Value)
 		}
 		if _, ok := fields["dataBudget"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Value)
 		}
 		if _, ok := fields["datasets"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Value)
 		}
 		if _, ok := fields["interactions"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["presentation"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property presentation is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property presentation is missing", tag.Value)
 		}
 		if _, ok := fields["title"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Value)
 		}
 		if _, ok := fields["value"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property value is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property value is missing", tag.Value)
 		}
 		var variant KPIVisualizationSpec
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "matrix":
 		if _, ok := fields["accessibility"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Value)
 		}
 		if _, ok := fields["columns"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property columns is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property columns is missing", tag.Value)
 		}
 		if _, ok := fields["dataBudget"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Value)
 		}
 		if _, ok := fields["datasets"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Value)
 		}
 		if _, ok := fields["interactions"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["measureFormatting"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property measureFormatting is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property measureFormatting is missing", tag.Value)
 		}
 		if _, ok := fields["measures"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property measures is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property measures is missing", tag.Value)
 		}
 		if _, ok := fields["presentation"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property presentation is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property presentation is missing", tag.Value)
 		}
 		if _, ok := fields["rows"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property rows is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property rows is missing", tag.Value)
 		}
 		if _, ok := fields["title"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Value)
 		}
 		var variant MatrixVisualizationSpec
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "pivot":
 		if _, ok := fields["accessibility"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Value)
 		}
 		if _, ok := fields["columns"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property columns is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property columns is missing", tag.Value)
 		}
 		if _, ok := fields["dataBudget"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Value)
 		}
 		if _, ok := fields["datasets"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Value)
 		}
 		if _, ok := fields["interactions"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["measureFormatting"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property measureFormatting is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property measureFormatting is missing", tag.Value)
 		}
 		if _, ok := fields["measures"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property measures is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property measures is missing", tag.Value)
 		}
 		if _, ok := fields["presentation"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property presentation is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property presentation is missing", tag.Value)
 		}
 		if _, ok := fields["rows"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property rows is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property rows is missing", tag.Value)
 		}
 		if _, ok := fields["title"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Value)
 		}
 		var variant PivotVisualizationSpec
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "polar":
 		if _, ok := fields["accessibility"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Value)
 		}
 		if _, ok := fields["dataBudget"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Value)
 		}
 		if _, ok := fields["datasets"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Value)
 		}
 		if _, ok := fields["interactions"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["mark"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property mark is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property mark is missing", tag.Value)
 		}
 		if _, ok := fields["presentation"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property presentation is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property presentation is missing", tag.Value)
 		}
 		if _, ok := fields["title"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Value)
 		}
 		if _, ok := fields["value"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property value is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property value is missing", tag.Value)
 		}
 		var variant PolarVisualizationSpec
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "proportional":
 		if _, ok := fields["accessibility"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Value)
 		}
 		if _, ok := fields["category"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property category is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property category is missing", tag.Value)
 		}
 		if _, ok := fields["dataBudget"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Value)
 		}
 		if _, ok := fields["datasets"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Value)
 		}
 		if _, ok := fields["interactions"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["mark"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property mark is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property mark is missing", tag.Value)
 		}
 		if _, ok := fields["presentation"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property presentation is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property presentation is missing", tag.Value)
 		}
 		if _, ok := fields["title"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Value)
 		}
 		if _, ok := fields["value"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property value is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property value is missing", tag.Value)
 		}
 		var variant ProportionalVisualizationSpec
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	case "table":
 		if _, ok := fields["accessibility"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Value)
 		}
 		if _, ok := fields["columns"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property columns is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property columns is missing", tag.Value)
 		}
 		if _, ok := fields["dataBudget"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Value)
 		}
 		if _, ok := fields["datasets"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Value)
 		}
 		if _, ok := fields["interactions"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Value)
 		}
 		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Value)
 		}
 		if _, ok := fields["presentation"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property presentation is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property presentation is missing", tag.Value)
 		}
 		if _, ok := fields["title"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Kind)
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Value)
 		}
 		var variant TableVisualizationSpec
 		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Kind, err)
+			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
 	default:
-		return fmt.Errorf("unknown VisualizationSpec discriminator %q", tag.Kind)
+		return fmt.Errorf("unknown VisualizationSpec discriminator %q", tag.Value)
 	}
 	return nil
 }
@@ -2309,6 +2356,18 @@ type VisualizationWindowBlock struct {
 	RequestSeq   int64               `json:"requestSeq"`
 	ResetVersion int64               `json:"resetVersion"`
 	Sort         []VisualizationSort `json:"sort"`
+}
+
+type VisualizationWindowRequest struct {
+	VisualID     string              `json:"visualID"`
+	SpecRevision string              `json:"specRevision"`
+	DataRevision int64               `json:"dataRevision"`
+	RequestSeq   int64               `json:"requestSeq"`
+	ResetVersion int64               `json:"resetVersion"`
+	Start        int64               `json:"start"`
+	Limit        int64               `json:"limit"`
+	Sort         []VisualizationSort `json:"sort"`
+	BlockID      string              `json:"blockID"`
 }
 
 type WindowedVisualizationDataState struct {

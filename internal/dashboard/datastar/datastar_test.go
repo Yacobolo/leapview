@@ -185,14 +185,14 @@ func TestTableMetadataUpdatesDataWithoutChangingComponentStatus(t *testing.T) {
 		Type: dashboardstream.RefreshEventTableMetadata, Target: "orders", Value: testTableEnvelope(t, "orders", table, 1, 1),
 	})
 	visuals, ok := patch["visuals"].(map[string]uisignals.DashboardVisualizationSignal)
-	var dataState uisignals.VisualizationDataState
+	var dataState visualizationir.VisualizationDataState
 	if ok {
 		if err := json.Unmarshal([]byte(visuals["orders"].DataState.Payload), &dataState); err != nil {
 			t.Fatal(err)
 		}
 	}
-	state, stateOK := dataState.Value.(*uisignals.WindowedVisualizationDataState)
-	if !ok || !stateOK || state.Cardinality.Count == nil || *state.Cardinality.Count != 42 || state.Cardinality.Kind != uisignals.VisualizationCardinalityKindExact {
+	state, stateOK := dataState.Value.(*visualizationir.WindowedVisualizationDataState)
+	if !ok || !stateOK || state.Cardinality.Count == nil || *state.Cardinality.Count != 42 || state.Cardinality.Kind != visualizationir.VisualizationCardinalityKindExact {
 		t.Fatalf("metadata patch = %#v", patch)
 	}
 	if _, ok := patch["componentStatus"]; ok {
@@ -210,7 +210,7 @@ func TestVisualizationEnvelopeUsesStreamOwnedRevisionAndStatus(t *testing.T) {
 		t.Fatalf("visual patch = %#v", patch)
 	}
 	envelope := visuals["orders"]
-	if envelope.DataRevision != 11 || envelope.Status.Kind != uisignals.VisualizationStatusKindNoData {
+	if envelope.DataRevision != 11 || envelope.Status.Kind != visualizationir.VisualizationStatusKindNoData {
 		t.Fatalf("visual envelope = %#v", envelope)
 	}
 	if _, legacy := patch["componentStatus"]; legacy {

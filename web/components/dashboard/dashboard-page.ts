@@ -11,10 +11,8 @@ import type {
   DashboardStatus,
   DashboardVisualizationSignal,
   ReportFilterConfig,
-  VisualizationEnvelope,
-  VisualizationSpatialSelectionCommand,
-  VisualizationSpatialSelectionState,
 } from '../../generated/signals'
+import type { VisualizationEnvelope, VisualizationSpatialSelectionCommand, VisualizationSpatialSelectionState } from '../../generated/visualization'
 import { DatastarLit } from '../shared/datastar-lit'
 import { domainEvents, emitDomainEvent } from '../shared/events'
 import { checkSignalContract } from '../shared/signal-contract'

@@ -577,13 +577,10 @@ func TestBuildSourceGenerationContract(t *testing.T) {
 	commands := []string{
 		"go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate",
 		"go run ./internal/tools/configgen",
-		"apigenstage -target leapview-v1",
 		"typespec-compile -manifest api/apigen.yaml -target leapview-v1",
-		"apigenstage -target ui-signals",
 		"typespec-compile -manifest api/apigen.yaml -target ui-signals",
 		"typespec-compile -manifest api/apigen.yaml -target visualization-ir",
 		"all -manifest api/apigen.yaml -target visualization-ir",
-		"uisignalspostprocess -go-models internal/visualization/ir/models.gen.go -typescript=",
 		"schema export --format json-schema --out schemas/json",
 	}
 	previous := -1

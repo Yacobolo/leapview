@@ -707,7 +707,14 @@ model DashboardInteractionCommandMapping {
   `grain`?: string;
   `label`?: string;
   /** A typed JSON scalar. Runtime command validation rejects arrays and objects. */
-  `value`: unknown;
+  `value`: JSONScalar;
+}
+
+union JSONScalar {
+  text: string,
+  number: float64,
+  boolean: boolean,
+  nil: null,
 }
 
 model DashboardInteractionConfig {
@@ -746,7 +753,7 @@ model DashboardInteractionSelectionMapping {
   `grain`?: string;
   `label`?: string;
   /** A typed JSON scalar. Runtime selection validation rejects arrays and objects. */
-  `value`: unknown;
+  `value`: JSONScalar;
 }
 
 model DashboardPageCanvas {
