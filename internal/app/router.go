@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/access/httpauth"
 	"github.com/Yacobolo/leapview/internal/access/scimprov"
 	dashboardhttp "github.com/Yacobolo/leapview/internal/dashboard/http"
+	reportui "github.com/Yacobolo/leapview/internal/dashboard/ui"
 	"github.com/Yacobolo/leapview/internal/staticasset"
 	mapassethttp "github.com/Yacobolo/leapview/internal/visualization/mapasset/http"
 	workspacehttp "github.com/Yacobolo/leapview/internal/workspace/http"
@@ -31,6 +33,24 @@ func (s *Server) Routes() http.Handler {
 	mux.Get("/readyz", s.readyz)
 	mux.Get("/api/openapi.json", s.openAPIDescription)
 	mux.Get("/api/docs", s.publicDocs)
+	mux.Group(func(r chi.Router) {
+		r.Use(s.rateLimits.publicPageMiddleware(s.telemetry))
+		r.Get("/public/dashboards/{publicId}", s.publicDashboardDocument(reportui.PresentationPublic))
+		r.Get("/public/dashboards/{publicId}/pages/{page}", s.publicDashboardDocument(reportui.PresentationPublic))
+		r.Get("/embed/dashboards/{publicId}", s.publicDashboardDocument(reportui.PresentationEmbed))
+		r.Get("/embed/dashboards/{publicId}/pages/{page}", s.publicDashboardDocument(reportui.PresentationEmbed))
+	})
+	mux.Group(func(r chi.Router) {
+		r.Use(s.rateLimits.publicCommandMiddleware(s.telemetry))
+		r.Post("/public/dashboards/{publicId}/commands/reload", s.publicDashboardCommand("reload", func(h dashboardhttp.Handler, w http.ResponseWriter, r *http.Request) { h.Reload(w, r) }))
+		r.Post("/public/dashboards/{publicId}/commands/reset-filters", s.publicDashboardCommand("reset_filters", func(h dashboardhttp.Handler, w http.ResponseWriter, r *http.Request) { h.ResetFilters(w, r) }))
+		r.Post("/public/dashboards/{publicId}/commands/select", s.publicDashboardCommand("select", func(h dashboardhttp.Handler, w http.ResponseWriter, r *http.Request) { h.Select(w, r) }))
+		r.Post("/public/dashboards/{publicId}/commands/spatial-select", s.publicDashboardCommand("spatial_select", func(h dashboardhttp.Handler, w http.ResponseWriter, r *http.Request) { h.SpatialSelect(w, r) }))
+		r.Post("/public/dashboards/{publicId}/commands/clear-selection", s.publicDashboardCommand("clear_selection", func(h dashboardhttp.Handler, w http.ResponseWriter, r *http.Request) { h.ClearSelection(w, r) }))
+		r.Post("/public/dashboards/{publicId}/commands/visual-window", s.publicDashboardCommand("visual_window", func(h dashboardhttp.Handler, w http.ResponseWriter, r *http.Request) { h.VisualWindow(w, r) }))
+		r.Post("/public/dashboards/{publicId}/commands/visual-spatial-window", s.publicDashboardCommand("visual_spatial_window", func(h dashboardhttp.Handler, w http.ResponseWriter, r *http.Request) { h.VisualSpatialWindow(w, r) }))
+	})
+	mux.With(s.rateLimits.publicStreamMiddleware(s.telemetry)).Get("/public/dashboards/{publicId}/updates", s.publicDashboardUpdates)
 	if s.pageStreamTrace != nil {
 		mux.Get("/__dev/pagestream/traces", s.pageStreamTraces)
 		mux.Get("/__dev/pagestream/signals", s.pageStreamSignals)
@@ -53,6 +73,8 @@ func (s *Server) Routes() http.Handler {
 		agentHTTP := s.agentHTTPHandler()
 		r.Get("/chats", s.globalAgentProtected(access.PrivilegeViewAgent, agentHTTP.Chat))
 		r.Get("/chats/new", s.globalAgentProtected(access.PrivilegeViewAgent, agentHTTP.ChatNew))
+		r.Get("/chats/references/search", s.globalAgentProtected(access.PrivilegeViewItem, agentHTTP.ChatReferenceSearch))
+		r.Get("/chats/restore", s.globalAgentProtected(access.PrivilegeViewAgent, agentHTTP.ChatRestore))
 		r.Get("/chats/{conversation}", s.globalAgentProtected(access.PrivilegeViewAgent, agentHTTP.ChatConversation))
 		r.Post("/chats/turns", s.globalAgentProtected(access.PrivilegeUseAgent, agentHTTP.ChatTurn))
 		r.Get("/chat", redirectLegacyChat)
@@ -71,7 +93,10 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/admin/storage/select-table", s.protected(access.PrivilegeManageGrants, adminHTTP.StorageTableSelect))
 		r.Get("/admin/queries", s.protected(access.PrivilegeViewAudit, adminHTTP.Queries))
 		r.Post("/admin/queries/command", s.protected(access.PrivilegeViewAudit, adminHTTP.QueryCommand))
+		r.Get("/admin/publications", s.protectedAnyWorkspace(access.PrivilegeManagePublications, adminHTTP.Publications))
+		r.Post("/admin/publications/command", s.protectedAnyWorkspace(access.PrivilegeManagePublications, adminHTTP.PublicationCommand))
 		r.Post("/workspaces/{workspace}/access/upsert", s.protected(access.PrivilegeManageGrants, workspaceHTTP.AccessUpsert))
+		r.Get("/workspaces/{workspace}/access/search", s.protected(access.PrivilegeManageGrants, workspaceHTTP.AccessSearch))
 		r.Post("/workspaces/{workspace}/access/remove", s.protected(access.PrivilegeManageGrants, workspaceHTTP.AccessRemove))
 		r.Post("/workspaces/{workspace}/assets/{asset}/access/upsert", s.protectedWithObjects(access.PrivilegeManageGrants, workspacehttp.AssetObjectRefs, workspaceHTTP.AccessUpsert))
 		r.Post("/workspaces/{workspace}/assets/{asset}/access/remove", s.protectedWithObjects(access.PrivilegeManageGrants, workspacehttp.AssetObjectRefs, workspaceHTTP.AccessRemove))
@@ -139,8 +164,55 @@ func (s *Server) Routes() http.Handler {
 	}
 	mux.Handle("/static/*", staticAssetCache(http.StripPrefix("/static/", http.FileServer(http.Dir("static")))))
 	mux.Handle("/map-assets/*", mapassethttp.CacheHandler(http.StripPrefix("/map-assets/", http.FileServer(http.Dir(s.mapAssetDir)))))
+	mux.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		if isPublicAPIPath(r.URL.Path) {
+			preparePublicAPIRequest(w, r)
+			writeAPIProblem(w, r, http.StatusNotFound, "API_ROUTE_NOT_FOUND", "The requested API route does not exist", nil)
+			return
+		}
+		http.NotFound(w, r)
+	})
+	registeredMethods := registeredRouteMethods(mux)
+	mux.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+		setAllowedMethods(w.Header(), mux, registeredMethods, r.URL.Path)
+		if isPublicAPIPath(r.URL.Path) {
+			if s.authenticatePublicAPIRequest(w, r) {
+				writeAPIProblem(w, r, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "The requested method is not supported for this API route", nil)
+			}
+			return
+		}
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+	})
 
 	return mux
+}
+
+func registeredRouteMethods(routes chi.Routes) []string {
+	registered := make(map[string]struct{})
+	_ = chi.Walk(routes, func(method, _ string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		if method != "*" {
+			registered[method] = struct{}{}
+		}
+		return nil
+	})
+	methods := make([]string, 0, len(registered))
+	for method := range registered {
+		methods = append(methods, method)
+	}
+	sort.Strings(methods)
+	return methods
+}
+
+func setAllowedMethods(header http.Header, routes chi.Routes, methods []string, path string) {
+	for _, method := range methods {
+		if routes.Match(chi.NewRouteContext(), method, path) {
+			header.Add("Allow", method)
+		}
+	}
+}
+
+func isPublicAPIPath(path string) bool {
+	return path == "/api/v1" || strings.HasPrefix(path, "/api/v1/") || path == "/upload-protocols" || strings.HasPrefix(path, "/upload-protocols/")
 }
 
 func redirectLegacyChat(w http.ResponseWriter, r *http.Request) {
@@ -175,6 +247,10 @@ func (s *Server) protected(privilege access.Privilege, handler http.HandlerFunc)
 
 func (s *Server) protectedWithObjects(privilege access.Privilege, objectResolver httpauth.ObjectResolver, handler http.HandlerFunc) http.HandlerFunc {
 	return s.protectWithObjects(privilege, objectResolver, handler).ServeHTTP
+}
+
+func (s *Server) protectedAnyWorkspace(privilege access.Privilege, handler http.HandlerFunc) http.HandlerFunc {
+	return s.protectAnyWorkspace(privilege, handler).ServeHTTP
 }
 
 func (s *Server) globalAgentProtected(privilege access.Privilege, handler http.HandlerFunc) http.HandlerFunc {
@@ -216,6 +292,10 @@ func (s *Server) protectGlobalAgent(privilege access.Privilege, next http.Handle
 }
 
 func (s *Server) authorizeGlobalAgentPrivilege(ctx context.Context, principalID string, credential *access.APICredential, privilege access.Privilege) (bool, error) {
+	return s.authorizeAnyWorkspacePrivilege(ctx, principalID, credential, privilege)
+}
+
+func (s *Server) authorizeAnyWorkspacePrivilege(ctx context.Context, principalID string, credential *access.APICredential, privilege access.Privilege) (bool, error) {
 	workspaceRepo, err := s.workspaceRepository()
 	if err != nil {
 		return false, err
@@ -238,6 +318,40 @@ func (s *Server) authorizeGlobalAgentPrivilege(ctx context.Context, principalID 
 	}
 	decision, err := accessRepo.AuthorizeAny(ctx, principalID, privilege, objects)
 	return decision.Allowed, err
+}
+
+func (s *Server) protectAnyWorkspace(privilege access.Privilege, next http.Handler) http.Handler {
+	if s.auth == nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := context.WithValue(r.Context(), principalContextKey{}, localDeveloperPrincipal())
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+	return s.auth.Middleware("", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := s.auth.Principal(r)
+		if !ok {
+			writeAuthError(w, r, errUnauthorized, http.StatusUnauthorized)
+			return
+		}
+		if principal.DevBypass {
+			next.ServeHTTP(w, r)
+			return
+		}
+		var credential *access.APICredential
+		if resolved, ok := s.auth.APICredential(r); ok {
+			credential = &resolved
+		}
+		allowed, err := s.authorizeAnyWorkspacePrivilege(r.Context(), principal.ID, credential, privilege)
+		if err != nil {
+			writeAuthError(w, r, err, http.StatusInternalServerError)
+			return
+		}
+		if !allowed {
+			writeAuthError(w, r, errForbidden, http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	}))
 }
 
 func (s *Server) protect(privilege access.Privilege, next http.Handler) http.Handler {

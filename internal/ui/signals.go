@@ -8,7 +8,11 @@ import (
 type WorkspaceAccessResponse = uisignals.WorkspaceAccessResponse
 type WorkspaceAccessStatus = uisignals.WorkspaceAccessStatus
 type WorkspaceAccessCommand = uisignals.WorkspaceAccessCommand
+type WorkspaceAccessCandidate = uisignals.WorkspaceAccessCandidate
+type WorkspaceAccessSearchStatus = uisignals.WorkspaceAccessSearchStatus
 type ChatSignal = uisignals.ChatSignal
+type AgentReferenceSignal = uisignals.AgentReferenceSignal
+type AgentReferenceSearchSignal = uisignals.AgentReferenceSearchSignal
 type ChatViewState = uisignals.ChatViewState
 type ChatConversationSummary = uisignals.ChatConversationSummary
 type ChatStatus = uisignals.ChatStatus

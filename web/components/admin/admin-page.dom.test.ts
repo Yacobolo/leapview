@@ -46,6 +46,40 @@ afterAll(async () => {
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
 }, 15_000)
 
+test('publications admin renders lifecycle controls and emits typed commands', async () => {
+  const page = await browser.newPage({ viewport: { width: 1100, height: 760 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('lv-admin-page'))
+    const state = await page.evaluate(async () => {
+      const { mergePatch } = await import('/static/vendor/datastar-1.0.2.js?v=dev') as any
+      mergePatch({ page: {
+        kind: 'admin', title: 'Publications', active: 'publications', headerTitle: 'Publications',
+        headerDetail: 'Public dashboard lifecycle.',
+        sidebar: { label: 'Admin', railLabel: 'Admin', ariaLabel: 'Admin navigation', storageKey: 'admin', activeId: 'publications', numbered: false, collapsible: false, items: [{ id: 'publications', title: 'Publications', href: '/admin/publications', active: true }] },
+        publications: [{ workspaceId: 'visuals', name: 'website-showcase', dashboard: 'visual-showcase', defaultPage: 'overview', status: 'active', origins: ['https://leapview.dev'], generation: 'state-2', publicUrl: 'https://app.leapview.dev/public/dashboards/id', embedUrl: 'https://app.leapview.dev/embed/dashboards/id', iframeSnippet: '<iframe></iframe>', configuredAt: '2026-07-20', history: ['2026-07-20 · configured · owner'] }],
+      } })
+      const element = document.querySelector('lv-admin-page') as any
+      await element.updateComplete
+      let detail: unknown = null
+      element.addEventListener('lv-publication-command', (event: CustomEvent) => { detail = event.detail })
+      const buttons = Array.from(element.shadowRoot.querySelectorAll('button')) as HTMLButtonElement[]
+      buttons.find((button) => button.textContent?.trim() === 'Suspend')?.click()
+      return {
+        text: element.shadowRoot.textContent.replace(/\s+/g, ' ').trim(),
+        cards: element.shadowRoot.querySelectorAll('.publication-card').length,
+        detail,
+      }
+    })
+    expect(state.cards).toBe(1)
+    expect(state.text).toContain('website-showcase')
+    expect(state.text).toContain('Lifecycle history')
+    expect(state.detail).toEqual({ workspaceId: 'visuals', publication: 'website-showcase', action: 'suspend' })
+  } finally {
+    await page.close()
+  }
+})
+
 for (const viewport of [
   { name: 'desktop', width: 1440, height: 820 },
   { name: 'mobile', width: 390, height: 820 },
@@ -82,6 +116,10 @@ for (const viewport of [
           mainConstrained: isMobile || Math.round(mainRect.width) < Math.round(availableRight - availableLeft),
           hasRecordTable: Boolean(root.querySelector('lv-record-table')),
           recordTableVariant: root.querySelector('lv-record-table')?.getAttribute('variant'),
+          documentOverflow: document.documentElement.scrollWidth - window.innerWidth,
+          mainRight: Math.round(mainRect.right),
+          sidebarRight: Math.round(sidebarRect.right),
+          formRight: Math.round((root.querySelector('.local-user-form') as HTMLElement).getBoundingClientRect().right),
           text: root.textContent,
         }
       })
@@ -97,6 +135,12 @@ for (const viewport of [
       expect(state.hasRecordTable).toBe(true)
       expect(state.recordTableVariant).toBe('compact')
       expect(state.text ?? '').toMatch(/analyst@example\.com/)
+      if (viewport.width <= 640) {
+        expect(state.documentOverflow).toBe(0)
+        expect(state.mainRight).toBeLessThanOrEqual(viewport.width)
+        expect(state.sidebarRight).toBeLessThanOrEqual(viewport.width)
+        expect(state.formRight).toBeLessThanOrEqual(viewport.width)
+      }
     } finally {
       await page.close()
     }
@@ -472,7 +516,7 @@ test('query audit page filters table rows and exposes optional metadata columns'
       const expandedQueryText = expandedCodeBlock?.shadowRoot?.querySelector('code')?.textContent
         ?? table.querySelector('.record-query-expanded-cell')?.textContent
         ?? ''
-      const drawerAfterExpand = root.querySelector('.query-detail-drawer')?.textContent ?? ''
+      const drawerAfterExpand = root.querySelector('lv-drawer')?.textContent ?? ''
       table.querySelector<HTMLButtonElement>('.record-query-expand')?.click()
       await table.updateComplete
       table.querySelector<HTMLElement>('tbody tr.record-row')?.click()
@@ -480,12 +524,13 @@ test('query audit page filters table rows and exposes optional metadata columns'
       const detailCommand = (window as any).queryHistoryCommands.at(-1)
       mergePatch({ adminQueryDetail: fixture.queryDetail })
       await element.updateComplete
-      const drawer = root.querySelector('.query-detail-drawer') as HTMLElement | null
+      const drawer = root.querySelector('lv-drawer') as any
+      const drawerPanel = drawer?.shadowRoot?.querySelector('.drawer') as HTMLElement | null
       const drawerText = drawer?.textContent ?? ''
       const drawerCodeBlock = drawer?.querySelector('lv-code-block') as (HTMLElement & { updateComplete: Promise<boolean> }) | null
       await drawerCodeBlock?.updateComplete
       const drawerCode = drawerCodeBlock?.shadowRoot?.querySelector('code')?.textContent ?? drawerCodeBlock?.querySelector('code')?.textContent ?? ''
-      const drawerAnimationName = drawer ? getComputedStyle(drawer).animationName : ''
+      const drawerAnimationName = drawerPanel ? getComputedStyle(drawerPanel).animationName : ''
       const status = drawer?.querySelector('.query-detail-status') as HTMLElement | null
       const statusIcon = status?.querySelector('svg') as SVGElement | null
       const statusText = status?.querySelector('span') as HTMLElement | null
@@ -493,12 +538,20 @@ test('query audit page filters table rows and exposes optional metadata columns'
       const statusTextColor = statusText ? getComputedStyle(statusText).color : ''
       const statusIconColor = statusIcon ? getComputedStyle(statusIcon).color : ''
       const hasSubtitle = Boolean(drawer?.querySelector('.query-detail-subtitle'))
-      root.querySelector<HTMLButtonElement>('.query-detail-close')?.click()
+      const usesSharedDrawer = drawer?.tagName === 'LV-DRAWER'
+      const drawerIsModal = drawer?.modal
+      const drawerModal = drawerPanel?.getAttribute('aria-modal') ?? null
+      const drawerClose = drawer?.shadowRoot?.querySelector<HTMLButtonElement>('.close')
+      drawerClose?.focus()
+      const tabEvent = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true, composed: true })
+      drawerClose?.dispatchEvent(tabEvent)
+      const nonModalAllowsTab = !tabEvent.defaultPrevented
+      drawerClose?.click()
       await element.updateComplete
       const closeCommand = (window as any).queryHistoryCommands.at(-1)
       mergePatch({ adminQueryDetail: { eventId: '', loading: false, error: '' } })
       await element.updateComplete
-      const hasDrawerAfterClose = Boolean(root.querySelector('.query-detail-drawer'))
+      const hasDrawerAfterClose = Boolean(root.querySelector('lv-drawer'))
       table.querySelector<HTMLElement>('tbody tr.record-row')?.click()
       await element.updateComplete
       mergePatch({ adminQueryDetail: fixture.queryDetail })
@@ -508,7 +561,7 @@ test('query audit page filters table rows and exposes optional metadata columns'
       const escapeCommand = (window as any).queryHistoryCommands.at(-1)
       mergePatch({ adminQueryDetail: { eventId: '', loading: false, error: '' } })
       await element.updateComplete
-      const hasDrawerAfterEscape = Boolean(root.querySelector('.query-detail-drawer'))
+      const hasDrawerAfterEscape = Boolean(root.querySelector('lv-drawer'))
       Array.from(table.querySelectorAll('label'))
         .find((label) => label.textContent?.includes('Operation'))
         ?.querySelector('input')
@@ -547,6 +600,10 @@ test('query audit page filters table rows and exposes optional metadata columns'
         drawerHasCodeBlock: Boolean(drawerCodeBlock),
         drawerCode,
         drawerAnimationName,
+        usesSharedDrawer,
+        drawerIsModal,
+        drawerModal,
+        nonModalAllowsTab,
         statusColor,
         statusTextColor,
         statusIconColor,
@@ -607,7 +664,11 @@ test('query audit page filters table rows and exposes optional metadata columns'
     expect(state.drawerText).toMatch(/semantic_aggregate/)
     expect(state.drawerText).toMatch(/semantic_dataset:sales:orders/)
     expect(state.drawerText).toMatch(/Rows returned/)
-    expect(state.drawerAnimationName).toContain('query-detail-slide-in')
+    expect(state.drawerAnimationName).toContain('drawer-slide-in')
+    expect(state.usesSharedDrawer).toBe(true)
+    expect(state.drawerIsModal).toBe(false)
+    expect(state.drawerModal).toBeNull()
+    expect(state.nonModalAllowsTab).toBe(true)
     expect(state.closeCommand).toMatchObject({ action: 'close_detail' })
     expect(state.escapeCommand).toMatchObject({ action: 'close_detail' })
     expect(state.hasDrawerAfterClose).toBe(false)
@@ -700,15 +761,19 @@ test('query audit detail drawer behaves as a mobile overlay', async () => {
       await element.updateComplete
       mergePatch({ adminQueryDetail: fixture.queryDetail })
       await element.updateComplete
-      const drawer = root.querySelector('.query-detail-drawer') as HTMLElement
-      const drawerRect = drawer.getBoundingClientRect()
+      const drawer = root.querySelector('lv-drawer') as any
+      const overlay = drawer.shadowRoot.querySelector('.overlay') as HTMLElement
+      const drawerPanel = drawer.shadowRoot.querySelector('.drawer') as HTMLElement
+      const overlayRect = overlay.getBoundingClientRect()
+      const drawerRect = drawerPanel.getBoundingClientRect()
       const tableRect = table.getBoundingClientRect()
       return {
         drawerText: drawer.textContent ?? '',
-        drawerPosition: getComputedStyle(drawer).position,
+        drawerPosition: getComputedStyle(overlay).position,
         drawerWidth: Math.round(drawerRect.width),
         viewportWidth: window.innerWidth,
-        drawerCoversTableHorizontally: drawerRect.left <= tableRect.left && drawerRect.right >= tableRect.right,
+        drawerCoversTableHorizontally: overlayRect.left <= Math.max(0, tableRect.left) && overlayRect.right >= Math.min(window.innerWidth, tableRect.right),
+        drawerModal: drawerPanel.getAttribute('aria-modal'),
       }
     }, queryAuditFixturePage())
 
@@ -716,6 +781,7 @@ test('query audit detail drawer behaves as a mobile overlay', async () => {
     expect(state.drawerPosition).toBe('fixed')
     expect(state.drawerWidth).toBe(state.viewportWidth)
     expect(state.drawerCoversTableHorizontally).toBe(true)
+    expect(state.drawerModal).toBeNull()
   } finally {
     await page.close()
   }
@@ -739,8 +805,11 @@ test('query audit drawer does not block selecting another row', async () => {
       await element.updateComplete
       mergePatch({ adminQueryDetail: fixture.queryDetail })
       await element.updateComplete
-      const firstDrawerText = root.querySelector('.query-detail-drawer')?.textContent ?? ''
-      const hasBackdrop = Boolean(root.querySelector('.query-detail-backdrop'))
+      const firstDrawer = root.querySelector('lv-drawer') as any
+      const firstDrawerText = firstDrawer?.textContent ?? ''
+      const firstOverlay = firstDrawer?.shadowRoot?.querySelector('.overlay') as HTMLElement | null
+      const overlayPointerEvents = firstOverlay ? getComputedStyle(firstOverlay).pointerEvents : ''
+      const overlayBackground = firstOverlay ? getComputedStyle(firstOverlay).backgroundColor : ''
       rows[1]?.click()
       await element.updateComplete
       mergePatch({ adminQueryDetail: {
@@ -768,15 +837,17 @@ test('query audit drawer does not block selecting another row', async () => {
         createdAt: '2026-07-02T10:01:00Z',
       } })
       await element.updateComplete
-      const secondDrawerText = root.querySelector('.query-detail-drawer')?.textContent ?? ''
+      const secondDrawerText = root.querySelector('lv-drawer')?.textContent ?? ''
       return {
-        hasBackdrop,
         firstDrawerText,
         secondDrawerText,
+        overlayPointerEvents,
+        overlayBackground,
       }
     }, queryAuditFixturePage())
 
-    expect(state.hasBackdrop).toBe(false)
+    expect(state.overlayPointerEvents).toBe('none')
+    expect(state.overlayBackground).toBe('rgba(0, 0, 0, 0)')
     expect(state.firstDrawerText).toMatch(/queryevent_1/)
     expect(state.firstDrawerText).toMatch(/analyst/)
     expect(state.secondDrawerText).toMatch(/queryevent_2/)
@@ -1665,6 +1736,9 @@ function testDocument(): string {
         { id: 'general', title: 'General', href: '/admin', active: false },
         { id: 'principals', title: 'Principals', href: '/admin/principals', active: true },
         { id: 'groups', title: 'Groups', href: '/admin/groups', active: false },
+        { id: 'agent', title: 'Agent', href: '/admin/agent', active: false },
+        { id: 'storage', title: 'Storage', href: '/admin/storage', active: false },
+        { id: 'queries', title: 'Queries', href: '/admin/queries', active: false },
       ],
     },
     headerTitle: 'Principals',
@@ -1676,8 +1750,11 @@ function testDocument(): string {
           { id: 'name', header: 'Name', kind: 'link', hrefKey: 'name_href' },
           { id: 'email', header: 'Email' },
           { id: 'roles', header: 'Direct roles', kind: 'tags' },
+          { id: 'kind', header: 'Kind' },
+          { id: 'status', header: 'Status' },
+          { id: 'created', header: 'Created' },
         ],
-        rows: [{ name: 'Analyst', name_href: '/admin/principals/p1', email: 'analyst@example.com', roles: ['viewer'] }],
+        rows: [{ name: 'Analyst', name_href: '/admin/principals/p1', email: 'analyst@example.com', roles: ['viewer'], kind: 'local user', status: 'active', created: '2026-07-20' }],
         empty: 'No principals found.',
       },
     }],
@@ -1689,7 +1766,7 @@ function testDocument(): string {
       <head>
         <style>
           html, body { margin: 0; min-height: 100%; }
-          body { --fontStack-system: system-ui; --lv-bg-app: #f6f8fa; --lv-bg-panel: #fff; --lv-bg-panel-muted: #f6f8fa; --lv-bg-control: #f6f8fa; --lv-bg-control-hover: #f3f4f6; --lv-bg-accent: #0969da; --lv-bg-accent-muted: #ddf4ff; --lv-sidebar-bg: #f1f3f5; --lv-report-rail-bg: #ffffff; --lv-fg-default: #24292f; --lv-fg-muted: #57606a; --lv-fg-accent: #0969da; --lv-fg-link: #0969da; --lv-fg-success: #1a7f37; --lv-fg-warning: #9a6700; --lv-fg-danger: #d1242f; --lv-fg-on-accent: #fff; --lv-icon-muted: #57606a; --lv-line-muted: #d8dee4; --lv-border-width: 1px; --lv-border-default: 1px solid #d0d7de; --lv-border-muted: 1px solid #d8dee4; --lv-radius-default: 6px; --lv-radius-full: 999px; --lv-page-content-max-width: 72rem; --lv-workspace-detail-max-width: 72rem; --base-size-4: 4px; --base-size-6: 6px; --base-size-8: 8px; --base-size-12: 12px; --base-size-16: 16px; --lv-font-size-caption: 12px; --lv-font-size-body-sm: 14px; --lv-font-size-body-md: 16px; --lv-font-size-title-sm: 18px; --lv-font-size-title-md: 22px; --lv-font-weight-medium: 500; --lv-font-weight-strong: 600; --lv-line-height-tight: 1.2; --lv-line-height-compact: 1.3; --lv-line-height-normal: 1.5; }
+          body { --fontStack-system: system-ui; --lv-bg-app: #f6f8fa; --lv-bg-panel: #fff; --lv-bg-panel-muted: #f6f8fa; --lv-bg-control: #f6f8fa; --lv-bg-control-hover: #f3f4f6; --lv-bg-accent: #0969da; --lv-bg-accent-muted: #ddf4ff; --lv-sidebar-bg: #f1f3f5; --lv-report-rail-bg: #ffffff; --lv-fg-default: #24292f; --lv-fg-muted: #57606a; --lv-fg-accent: #0969da; --lv-fg-link: #0969da; --lv-fg-success: #1a7f37; --lv-fg-warning: #9a6700; --lv-fg-danger: #d1242f; --lv-fg-on-accent: #fff; --lv-icon-muted: #57606a; --lv-line-muted: #d8dee4; --lv-border-width: 1px; --lv-border-default: 1px solid #d0d7de; --lv-border-muted: 1px solid #d8dee4; --lv-radius-default: 6px; --lv-radius-full: 999px; --lv-page-content-max-width: 72rem; --lv-workspace-detail-max-width: 72rem; --base-size-4: 4px; --base-size-6: 6px; --base-size-8: 8px; --base-size-12: 12px; --base-size-16: 16px; --lv-font-size-caption: 12px; --lv-font-size-body-sm: 14px; --lv-font-size-body-md: 16px; --lv-font-size-title-sm: 18px; --lv-font-size-title-md: 22px; --lv-font-weight-medium: 500; --lv-font-weight-strong: 600; --lv-line-height-tight: 1.2; --lv-line-height-compact: 1.3; --lv-line-height-normal: 1.5; --lv-transition-fast: 160ms ease; }
           lv-admin-page { min-height: 720px; }
         </style>
       </head>

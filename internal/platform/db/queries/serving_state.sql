@@ -85,7 +85,7 @@ WHERE status = 'delete_scheduled'
 
 -- name: UpdateServingStateValidated :exec
 UPDATE serving_states
-SET status = ?, project_id = ?, project_digest = ?, project_workspaces_json = ?, access_policy_json = ?, digest = ?, manifest_json = ?, error = ''
+SET status = ?, project_id = ?, project_digest = ?, project_workspaces_json = ?, access_policy_json = ?, dashboard_publications_json = ?, digest = ?, manifest_json = ?, error = ''
 WHERE id = ?;
 
 -- name: UpdateServingStateDuckLakeSnapshot :exec

@@ -3,7 +3,11 @@
     "#APIVersion": {
       "const": "leapview.dev/v1"
     },
-    "#AccessSubject": {
+    "#AnyObject": {
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "#DataPolicySubject": {
       "additionalProperties": false,
       "properties": {
         "displayName": {
@@ -19,20 +23,20 @@
           "enum": [
             "principal",
             "group",
-            "service_principal"
+            "service_principal",
+            "dashboard_publication"
           ]
         },
         "principalId": {
+          "$ref": "#/$defs/%23ResourceID"
+        },
+        "publication": {
           "$ref": "#/$defs/%23ResourceID"
         }
       },
       "required": [
         "kind"
       ],
-      "type": "object"
-    },
-    "#AnyObject": {
-      "additionalProperties": true,
       "type": "object"
     },
     "#Metadata": {
@@ -122,7 +126,7 @@
           ]
         },
         "subject": {
-          "$ref": "#/$defs/%23AccessSubject"
+          "$ref": "#/$defs/%23DataPolicySubject"
         }
       },
       "required": [

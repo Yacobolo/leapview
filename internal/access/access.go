@@ -23,6 +23,7 @@ const (
 	PrivilegeRefreshData        Privilege = "REFRESH_DATA"
 	PrivilegeDeploy             Privilege = "DEPLOY"
 	PrivilegeActivateDeployment Privilege = "ACTIVATE_DEPLOYMENT"
+	PrivilegeManagePublications Privilege = "MANAGE_PUBLICATIONS"
 	PrivilegeUseAgent           Privilege = "USE_AGENT"
 	PrivilegeViewAgent          Privilege = "VIEW_AGENT"
 	PrivilegeManageGrants       Privilege = "MANAGE_GRANTS"
@@ -38,7 +39,7 @@ func ParsePrivilege(value string) (Privilege, bool) {
 	switch privilege {
 	case PrivilegeUseWorkspace, PrivilegeViewItem, PrivilegeEditItem, PrivilegeManageItem,
 		PrivilegeQueryData, PrivilegePreviewData, PrivilegeRefreshData, PrivilegeDeploy,
-		PrivilegeActivateDeployment, PrivilegeUseAgent, PrivilegeViewAgent,
+		PrivilegeActivateDeployment, PrivilegeManagePublications, PrivilegeUseAgent, PrivilegeViewAgent,
 		PrivilegeManageGrants, PrivilegeViewAudit, PrivilegeManageWorkspace,
 		PrivilegeManagePlatform, PrivilegeViewData, PrivilegeIngestData:
 		return privilege, true
@@ -72,6 +73,7 @@ var defaultRoles = []Role{
 			PrivilegeRefreshData,
 			PrivilegeDeploy,
 			PrivilegeActivateDeployment,
+			PrivilegeManagePublications,
 			PrivilegeUseAgent,
 			PrivilegeViewAgent,
 			PrivilegeManageGrants,
@@ -91,6 +93,7 @@ var defaultRoles = []Role{
 			PrivilegeRefreshData,
 			PrivilegeDeploy,
 			PrivilegeActivateDeployment,
+			PrivilegeManagePublications,
 			PrivilegeUseAgent,
 			PrivilegeViewAgent,
 			PrivilegeManageGrants,
@@ -180,6 +183,7 @@ var defaultRoles = []Role{
 			PrivilegeRefreshData,
 			PrivilegeDeploy,
 			PrivilegeActivateDeployment,
+			PrivilegeManagePublications,
 			PrivilegeUseAgent,
 			PrivilegeViewAgent,
 			PrivilegeManageGrants,
@@ -207,9 +211,10 @@ type Role struct {
 type PrincipalKind string
 
 const (
-	PrincipalKindUser             PrincipalKind = "user"
-	PrincipalKindGroup            PrincipalKind = "group"
-	PrincipalKindServicePrincipal PrincipalKind = "service_principal"
+	PrincipalKindUser                 PrincipalKind = "user"
+	PrincipalKindGroup                PrincipalKind = "group"
+	PrincipalKindServicePrincipal     PrincipalKind = "service_principal"
+	PrincipalKindDashboardPublication PrincipalKind = "dashboard_publication"
 )
 
 type SecurableType string
@@ -348,9 +353,10 @@ type AuthorizationCheck struct {
 type SubjectType string
 
 const (
-	SubjectPrincipal        SubjectType = "principal"
-	SubjectGroup            SubjectType = "group"
-	SubjectServicePrincipal SubjectType = "service_principal"
+	SubjectPrincipal            SubjectType = "principal"
+	SubjectGroup                SubjectType = "group"
+	SubjectServicePrincipal     SubjectType = "service_principal"
+	SubjectDashboardPublication SubjectType = "dashboard_publication"
 )
 
 type RoleBinding struct {
@@ -608,6 +614,7 @@ type AuditEvent struct {
 type Repository interface {
 	PrincipalByID(ctx context.Context, id string) (Principal, error)
 	ListPrincipals(ctx context.Context, filter PrincipalFilter) ([]Principal, error)
+	SearchPrincipals(ctx context.Context, query string, limit int) ([]Principal, error)
 	UpsertPrincipal(ctx context.Context, input PrincipalInput) (Principal, error)
 	CreateLocalUser(ctx context.Context, input LocalUserInput) (LocalPasswordReset, error)
 	VerifyLocalPassword(ctx context.Context, email, password string) (Principal, LocalCredential, error)
@@ -655,6 +662,7 @@ type Repository interface {
 	DisableSCIMUser(ctx context.Context, principalID string) (SCIMUser, error)
 	UpsertGroup(ctx context.Context, input GroupInput) (Group, error)
 	ListGroups(ctx context.Context, workspaceID string) ([]Group, error)
+	SearchGroups(ctx context.Context, workspaceID, query string, limit int) ([]Group, error)
 	ListAllGroups(ctx context.Context) ([]Group, error)
 	DeleteGroup(ctx context.Context, workspaceID, groupID string) error
 	AddGroupMember(ctx context.Context, workspaceID, groupID, principalID string) error
@@ -718,6 +726,7 @@ func KnownPrivileges() []Privilege {
 		PrivilegeRefreshData,
 		PrivilegeDeploy,
 		PrivilegeActivateDeployment,
+		PrivilegeManagePublications,
 		PrivilegeUseAgent,
 		PrivilegeViewAgent,
 		PrivilegeManageGrants,
@@ -727,6 +736,10 @@ func KnownPrivileges() []Privilege {
 		PrivilegeViewData,
 		PrivilegeIngestData,
 	}
+}
+
+func DashboardPublicationSubjectID(workspaceID, publication string) string {
+	return "dashboard_publication:" + strings.TrimSpace(workspaceID) + "." + strings.TrimSpace(publication)
 }
 
 func PrincipalIDForEmail(email string) string {

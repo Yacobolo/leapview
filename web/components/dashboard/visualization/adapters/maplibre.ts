@@ -5,7 +5,7 @@ import type { OptimisticInteractionCommand } from '../../interaction-selection'
 import { Change, type RendererAdapter, type RendererContext, type RendererHandle } from '../host-controller'
 import { MapSelectionControl } from './map-selection-control'
 import { blankMapStyle, loadGeometryAsset, loadMapStyleAsset, registerPMTilesProtocol } from './maplibre/assets'
-import { applyBasemapTheme, mapThemeColors, type BasemapColors } from './maplibre/basemap'
+import { applyBasemapTheme, basemapThemeKey, createBasemapThemeScheduler, mapThemeColors, scheduleBasemapThemeMutation, type BasemapColors } from './maplibre/basemap'
 import { installMapLibreChromeStyles } from './maplibre/chrome'
 import { coordinateGeometry, joinGeometry, pathGeometry } from './maplibre/data'
 import { applyFeatureScales, mapLayer, mapOutlineLayer, paletteColors } from './maplibre/layers'
@@ -17,7 +17,7 @@ import { MapSpatialSelectionControl } from './maplibre/spatial-selection-control
 import { coordinateReferenceGrid, fitMapToGeographicData, resetMapToHome, type MapHomeCamera } from './maplibre/viewport'
 
 export { loadMapStyleAsset, sameOriginGeometryURL, verifyGeometryDigest } from './maplibre/assets'
-export { applyBasemapTheme, basemapBoundaryLayer, basemapLayer, concreteCSSColor, mapThemeColors } from './maplibre/basemap'
+export { applyBasemapTheme, basemapBoundaryLayer, basemapLayer, basemapThemeKey, concreteCSSColor, createBasemapThemeScheduler, mapThemeColors } from './maplibre/basemap'
 export { mapLibreChromeCSS } from './maplibre/chrome'
 export { coordinateGeometry, joinGeometry, pathGeometry } from './maplibre/data'
 export { applyFeatureScales, mapLayer, mapOutlineLayer, normalizeFeatureWeights } from './maplibre/layers'
@@ -108,6 +108,7 @@ class MapLibreHandle implements RendererHandle {
   private spatialRequestSeq = 0
   private spatialRequestTimer?: number
   private lastSpatialRequest?: { key: string; at: number }
+  private lastBasemapThemeKey = ''
   private disposed = false
   private readonly disposeWebGLRecovery: () => void
   constructor(private readonly container: HTMLElement, private readonly frame: HTMLElement, private readonly map: MapLibreMap, private readonly attribution: HTMLElement, private context: RendererContext) {
@@ -146,7 +147,8 @@ class MapLibreHandle implements RendererHandle {
     this.updateAccessibleFallback(envelope)
     this.map.setMinZoom(envelope.spec.presentation.camera.minimumZoom)
     this.map.setMaxZoom(envelope.spec.presentation.camera.maximumZoom)
-    this.applyTheme()
+    await this.applyTheme()
+    if (this.disposed) return
     this.updateSelectionControl(envelope)
     this.updateSpatialSelectionControl(envelope)
     if ((change & (Change.Spec | Change.Data)) === 0) {
@@ -495,10 +497,18 @@ class MapLibreHandle implements RendererHandle {
     return loadGeometryAsset(asset, location.href)
   }
 
-  private applyTheme(): void {
+  private async applyTheme(): Promise<void> {
     const labelDensity = this.envelope?.spec.kind === 'geographic' ? this.envelope.spec.presentation.labelDensity : 'normal'
-    applyBasemapTheme(this.map, this.currentBasemapColors(), getComputedStyle(this.frame).backgroundColor || '#ffffff', labelDensity)
-    this.map.triggerRepaint()
+    const colors = this.currentBasemapColors()
+    const background = getComputedStyle(this.frame).backgroundColor || '#ffffff'
+    const key = basemapThemeKey(colors, background, labelDensity)
+    if (key === this.lastBasemapThemeKey) return
+    await scheduleBasemapThemeMutation(() => {
+      if (this.disposed) return
+      applyBasemapTheme(this.map, colors, background, labelDensity)
+      this.map.triggerRepaint()
+    })
+    if (!this.disposed) this.lastBasemapThemeKey = key
   }
 
   private currentBasemapColors(): BasemapColors {

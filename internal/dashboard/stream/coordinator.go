@@ -62,6 +62,9 @@ type RefreshPreparation struct {
 	SequenceKey   string
 	Sequence      int64
 	SequenceEpoch int64
+	// Generation is reserved for coordinators whose canonical state is owned by
+	// a shared store. Zero keeps the normal process-local increment behavior.
+	Generation uint64
 }
 
 type RefreshSummary struct {
@@ -197,6 +200,10 @@ func (c *Coordinator) BeginPrepared(prepare RefreshPrepare, work func(RefreshPre
 	}
 	filters := cloneFilters(preparation.Filters.WithDefaults())
 	preparation.Filters = cloneFilters(filters)
+	if preparation.Generation > 0 && preparation.Generation <= c.generation {
+		c.mu.Unlock()
+		return Refresh{}, fmt.Errorf("refresh generation %d does not advance current generation %d", preparation.Generation, c.generation)
+	}
 	var canceledSummary *RefreshSummary
 	if c.workCancel != nil {
 		c.workCancel()
@@ -209,7 +216,11 @@ func (c *Coordinator) BeginPrepared(prepare RefreshPrepare, work func(RefreshPre
 	ctx, cancel := context.WithCancel(c.ctx)
 	c.workCancel = cancel
 	c.filters = filters
-	c.generation++
+	if preparation.Generation > 0 {
+		c.generation = preparation.Generation
+	} else {
+		c.generation++
+	}
 	refresh := Refresh{
 		ID:         fmt.Sprintf("refresh-%d", refreshSequence.Add(1)),
 		Generation: c.generation,

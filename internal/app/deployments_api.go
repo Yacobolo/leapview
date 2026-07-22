@@ -1,13 +1,17 @@
 package app
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 
+	"github.com/Yacobolo/leapview/internal/access"
 	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
 	"github.com/Yacobolo/leapview/internal/deployment"
 	"github.com/Yacobolo/leapview/internal/deployment/apiadapter"
 	"github.com/Yacobolo/leapview/internal/release"
+	"github.com/Yacobolo/leapview/internal/servingstate"
 )
 
 func (a apiGenAdapter) CreateDeployment(w http.ResponseWriter, r *http.Request, project string, headers apigenapi.GenCreateDeploymentHeaders) {
@@ -47,6 +51,14 @@ func (a apiGenAdapter) createDeployment(w http.ResponseWriter, r *http.Request, 
 		}
 		targets = append(targets, apiadapter.TargetRequest{Workspace: artifact.WorkspaceID, CandidateID: artifact.ServingStateID})
 	}
+	if err := a.server.authorizePublicationDeployment(r.Context(), principal, a.server.defaultEnvironment, targets); err != nil {
+		if errors.Is(err, errPublicationDeploymentForbidden) {
+			writeAPIProblem(w, r, http.StatusForbidden, "PUBLICATION_MANAGEMENT_REQUIRED", "MANAGE_PUBLICATIONS is required to activate a workspace containing a public dashboard publication", nil)
+			return
+		}
+		writeAPIProblem(w, r, http.StatusServiceUnavailable, "AUTHORIZATION_UNAVAILABLE", "Publication activation authorization could not be evaluated", nil)
+		return
+	}
 	created, err := a.server.deploymentOptions.Coordinator.Create(r.Context(), apiadapter.CreateRequest{
 		Project: project, Environment: a.server.defaultEnvironment, Targets: targets, Actor: principal.ID, IdempotencyKey: idempotencyKey,
 	})
@@ -68,6 +80,48 @@ func (a apiGenAdapter) createDeployment(w http.ResponseWriter, r *http.Request, 
 	}
 	w.Header().Set("Location", deploymentLocation(project, created.ID))
 	writeAPIJSON(w, http.StatusAccepted, deploymentResponse(created, releaseID, principal.ID))
+}
+
+var errPublicationDeploymentForbidden = errors.New("publication deployment forbidden")
+
+func (s *Server) authorizePublicationDeployment(ctx context.Context, principal Principal, environment string, targets []apiadapter.TargetRequest) error {
+	if servingstate.NormalizeEnvironment(servingstate.Environment(environment)) != servingstate.Environment("prod") {
+		return nil
+	}
+	states, err := s.servingStateRepository()
+	if err != nil {
+		return err
+	}
+	accessRepo, err := s.accessRepository()
+	if err != nil {
+		return err
+	}
+	for _, target := range targets {
+		state, err := states.ByID(ctx, servingstate.ID(target.CandidateID))
+		if err != nil {
+			return err
+		}
+		var configured map[string]json.RawMessage
+		if state.DashboardPublicationsJSON != "" {
+			if err := json.Unmarshal([]byte(state.DashboardPublicationsJSON), &configured); err != nil {
+				return err
+			}
+		}
+		if len(configured) == 0 {
+			continue
+		}
+		if principal.DevBypass || accessRepo == nil {
+			continue
+		}
+		decision, err := accessRepo.Authorize(ctx, principal.ID, access.PrivilegeManagePublications, access.WorkspaceObject(target.Workspace))
+		if err != nil {
+			return err
+		}
+		if !decision.Allowed {
+			return errPublicationDeploymentForbidden
+		}
+	}
+	return nil
 }
 
 func (a apiGenAdapter) GetDeployment(w http.ResponseWriter, r *http.Request, project, deploymentID string) {

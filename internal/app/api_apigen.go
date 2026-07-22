@@ -71,7 +71,7 @@ func (a apiGenAdapter) HandleAPIGen(operationID string, w http.ResponseWriter, r
 
 func isGlobalAgentOperation(operationID string) bool {
 	switch operationID {
-	case "listAgentConversations", "createAgentConversation", "archiveAgentConversation", "getAgentConversation", "updateAgentConversation",
+	case "search", "listAgentConversations", "createAgentConversation", "archiveAgentConversation", "getAgentConversation", "updateAgentConversation",
 		"listAgentMessages", "listAgentRuns", "createAgentRun", "getAgentRun", "cancelAgentRun", "listAgentEvents":
 		return true
 	default:
@@ -274,6 +274,22 @@ func (w *apiGenResponseBuffer) normalizedBody(status int) []byte {
 	if err := json.Unmarshal(w.body.Bytes(), &value); err != nil {
 		return w.body.Bytes()
 	}
+	if strings.HasPrefix(w.header.Get("Content-Type"), "application/problem+json") {
+		if instance, _ := value["instance"].(string); strings.TrimSpace(instance) == "" {
+			value["instance"] = w.request.URL.Path
+		}
+		if requestID, _ := value["requestId"].(string); strings.TrimSpace(requestID) == "" {
+			value["requestId"] = w.request.Header.Get("X-Request-ID")
+		}
+		if errorsValue, present := value["errors"]; !present || errorsValue == nil {
+			value["errors"] = []apigenapi.ProblemFieldError{}
+		}
+		out, err := json.Marshal(value)
+		if err != nil {
+			return w.body.Bytes()
+		}
+		return append(out, '\n')
+	}
 	if _, ok := value["code"]; !ok {
 		return w.body.Bytes()
 	}
@@ -402,8 +418,8 @@ func (a apiGenAdapter) ListWorkspaces(w http.ResponseWriter, r *http.Request, _ 
 	a.server.workspaceHTTPHandler().Workspaces(w, r)
 }
 
-func (a apiGenAdapter) SearchWorkspace(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenSearchWorkspaceParams) {
-	a.server.workspaceHTTPHandler().SearchWorkspace(w, r)
+func (a apiGenAdapter) Search(w http.ResponseWriter, r *http.Request, params apigenapi.GenSearchParams) {
+	a.server.searchAPI(w, r, params)
 }
 
 func (a apiGenAdapter) ListWorkspaceAssets(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListWorkspaceAssetsParams) {

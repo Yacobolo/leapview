@@ -121,7 +121,7 @@ func (s *Server) chatConversations(ctx context.Context, scope agent.Scope) []ui.
 	}
 	for _, row := range rows {
 		out := chatConversationSummary(row)
-		out.TitlePending = uisignals.Optional(s.isChatTitlePending(row.ID))
+		out.TitlePending = uisignals.Pointer(s.isChatTitlePending(row.ID))
 		conversations = append(conversations, out)
 	}
 	return conversations

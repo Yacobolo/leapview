@@ -2,6 +2,41 @@ import type { Map as MapLibreMap } from 'maplibre-gl'
 
 export type BasemapColors = Readonly<{ boundary: string; land: string; background?: string; water?: string; road?: string; building?: string; label?: string }>
 
+type FrameScheduler = (callback: () => void) => void
+
+export function basemapThemeKey(colors: BasemapColors, background: string, labelDensity: 'hidden' | 'normal' | 'dense'): string {
+  return [colors.background, colors.land, colors.water, colors.boundary, colors.road, colors.building, colors.label, background, labelDensity].join('\u0000')
+}
+
+// Updating several MapLibre styles synchronously can overwhelm the browser's
+// shared WebGL process on map-heavy dashboards. Serialize style mutations one
+// animation frame at a time while allowing each map to keep its own viewport.
+export function createBasemapThemeScheduler(scheduleFrame: FrameScheduler): (update: () => void) => Promise<void> {
+  let tail = Promise.resolve()
+  return (update) => {
+    const pending = tail.then(() => new Promise<void>((resolve, reject) => {
+      scheduleFrame(() => {
+        try {
+          update()
+          resolve()
+        } catch (error) {
+          reject(error)
+        }
+      })
+    }))
+    tail = pending.catch(() => {})
+    return pending
+  }
+}
+
+export const scheduleBasemapThemeMutation = createBasemapThemeScheduler((callback) => {
+  if (typeof requestAnimationFrame === 'function' && document.visibilityState !== 'hidden') {
+    requestAnimationFrame(() => callback())
+    return
+  }
+  queueMicrotask(callback)
+})
+
 export function mapThemeColors(theme: 'auto' | 'light' | 'dark', resolved: 'light' | 'dark'): BasemapColors {
   const effective = theme === 'auto' ? resolved : theme
   if (effective === 'dark') return { background: '#0d1821', land: '#18232d', water: '#0d1821', boundary: '#657383', road: '#394957', building: '#263540', label: '#d6dee6' }

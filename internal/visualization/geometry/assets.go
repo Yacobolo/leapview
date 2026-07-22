@@ -11,7 +11,7 @@ import (
 var assets = map[string]visualizationir.VisualizationGeometryAsset{
 	"world_countries": {
 		ID:               "world-countries-natural-earth-110m",
-		Digest:           "sha256:0264d14b05b334c0ac0b317efe19000454851245ae74ffe81027e9ee0625b310",
+		Digest:           "sha256:49a9d42f383d3d567bf1a19189c6f8e14f14f880dc6d972bab577d13ceebb2e7",
 		Source:           "Natural Earth 1:110m Admin 0 Countries, pinned at ca96624a56bd078437bca8184e78163e5039ad19",
 		License:          "Public domain",
 		Attribution:      "Natural Earth",
@@ -20,7 +20,7 @@ var assets = map[string]visualizationir.VisualizationGeometryAsset{
 	},
 	"brazil_states": {
 		ID:               "br-states-ibge",
-		Digest:           "sha256:439a3603cf12f49707a34821c68a170f04de75dbe3e8dfcd1a8af7f85df86964",
+		Digest:           "sha256:48af4bcdf332d11e5ad250f954ffead366791b3738376bafd34f4298c4337b92",
 		Source:           "IBGE API de Malhas",
 		License:          "IBGE data reuse terms",
 		Attribution:      "Instituto Brasileiro de Geografia e Estatística (IBGE)",

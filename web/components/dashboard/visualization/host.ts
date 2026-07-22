@@ -122,6 +122,11 @@ export class VisualizationHost extends LitElement {
       box-sizing: border-box;
     }
     .toolbar-title { flex: 1 1 auto; min-width: 0; }
+    .headerless-actions {
+      position: absolute;
+      inset: var(--base-size-6) var(--base-size-8) auto auto;
+      z-index: var(--zIndex-sticky);
+    }
     h2 {
       min-width: 0;
       margin: 0;
@@ -229,10 +234,11 @@ export class VisualizationHost extends LitElement {
         <header class="toolbar">
           <div class="toolbar-title"><h2 data-visualization-title>${this.envelope?.spec.title}</h2></div>
           <div class="visual-actions">
+            <slot name="agent-action"></slot>
             <button class="icon-action" type="button" data-visualization-expand data-visualization-id=${this.envelope?.visualID ?? ''} aria-label=${`Expand ${header}`} title=${`Expand ${header}`} @click=${this.expand}>${visualMenuIcon('focus')}</button>
           </div>
         </header>
-      ` : null}
+      ` : html`<div class="headerless-actions"><slot name="agent-action"></slot></div>`}
       <div class="renderer-stage" aria-busy=${String(this.applying)}>
         <div class="renderer" role="group" aria-label=${this.envelope?.spec.accessibility.title ?? 'Visualization'} aria-describedby="visualization-fallback" aria-busy=${String(this.applying)} aria-hidden=${String(!this.presented)} ?inert=${!this.presented} @lv-map-observation=${this.forwardAdapterObservation}></div>
         ${showInitialLoading ? html`<div class="initial-loading" data-visualization-loading role="status" aria-live="polite">

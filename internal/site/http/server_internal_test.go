@@ -70,6 +70,56 @@ func TestSiteUnknownRouteReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestSiteShowcaseIsRegisteredOnlyWhenConfigured(t *testing.T) {
+	embedURL, err := url.Parse("https://app.leapview.dev/embed/dashboards/publication-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(NewHandlerWithOptions(Options{ShowcaseEmbedURL: embedURL}))
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/showcase")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := readBody(t, response)
+	response.Body.Close()
+	for _, want := range []string{
+		`src="https://app.leapview.dev/embed/dashboards/publication-id"`,
+		`sandbox="allow-scripts allow-same-origin"`,
+		`referrerpolicy="no-referrer"`,
+		`href="https://app.leapview.dev/public/dashboards/publication-id"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("showcase missing %q:\n%s", want, body)
+		}
+	}
+	if got := response.Header.Get("Content-Security-Policy"); !strings.Contains(got, "frame-src https://app.leapview.dev") {
+		t.Errorf("showcase CSP = %q", got)
+	}
+
+	home, err := server.Client().Get(server.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	homeBody := readBody(t, home)
+	home.Body.Close()
+	if !strings.Contains(homeBody, `href="/showcase"`) {
+		t.Fatalf("configured home navigation has no showcase link")
+	}
+
+	unconfigured := httptest.NewServer(NewHandler())
+	defer unconfigured.Close()
+	missing, err := unconfigured.Client().Get(unconfigured.URL + "/showcase")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer missing.Body.Close()
+	if missing.StatusCode != http.StatusNotFound {
+		t.Fatalf("unconfigured showcase status = %d, want 404", missing.StatusCode)
+	}
+}
+
 func TestSiteArticlePublishesSearchAndSocialMetadata(t *testing.T) {
 	baseURL, err := url.Parse("https://docs.leapview.dev")
 	if err != nil {
@@ -427,12 +477,13 @@ func TestSiteGettingStartedRendersGuide(t *testing.T) {
 		`<summary title="Visuals"><span class="site-docs-nav-label">Visuals</span></summary>`,
 		`<ul class="site-docs-nav-tree">`,
 		`<a class="site-docs-link" href="/docs/visuals/overview" title="Overview">Overview</a>`,
-		"<h1>Get started with LeapView</h1>",
-		"<h2>Bootstrap the workspace</h2>",
-		"task bootstrap",
-		"task dev",
-		"leapview.yaml",
-		"workspaces/",
+		`<h1 id="get-started-with-leapview">Get started with LeapView</h1>`,
+		`<h2 id="choose-your-starting-point">Choose your starting point</h2>`,
+		`<h2 id="what-you-will-learn">What you will learn</h2>`,
+		`<h2 id="explore-by-goal">Explore by goal</h2>`,
+		`href="/docs/installation"`,
+		`href="/docs/first-dashboard"`,
+		`href="/docs/guides/build"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("getting started page missing %q:\n%s", want, body)
@@ -525,6 +576,27 @@ func TestSiteDocumentationCatalogRendersJourneySections(t *testing.T) {
 	}
 }
 
+func TestSiteDocumentationPreservesDiataxisTypes(t *testing.T) {
+	tests := map[string]string{
+		"getting-started":           "landing",
+		"first-dashboard":           "tutorial",
+		"guides/build/connect-data": "how-to",
+		"contributing/repository":   "how-to",
+		"concepts/managed-data":     "explanation",
+		"concepts/semantic-models":  "explanation",
+		"config/project":            "reference",
+	}
+	for slug, want := range tests {
+		document, ok := siteDocumentBySlug(slug)
+		if !ok {
+			t.Fatalf("documentation catalog missing %q", slug)
+		}
+		if document.documentType != want {
+			t.Errorf("document %q type = %q, want %q", slug, document.documentType, want)
+		}
+	}
+}
+
 func TestSiteDocumentationSupportsNestedArticleSlugs(t *testing.T) {
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()
@@ -538,14 +610,98 @@ func TestSiteDocumentationSupportsNestedArticleSlugs(t *testing.T) {
 		t.Fatalf("nested documentation status = %d, want %d", response.StatusCode, http.StatusOK)
 	}
 	body := readBody(t, response)
-	for _, want := range []string{"<h1>Query and interaction lifecycle</h1>", "Core concepts", "Datastar signal flow", "About this page", "Edit this page"} {
+	for _, want := range []string{`<h1 id="query-and-interaction-lifecycle">Query and interaction lifecycle</h1>`, "Core concepts", "Datastar signal flow", "About this page", "Edit this page"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("nested documentation missing %q", want)
 		}
 	}
-	for _, unwanted := range []string{`class="site-docs-pagination"`, `aria-label="Documentation pagination"`} {
-		if strings.Contains(body, unwanted) {
-			t.Errorf("nested documentation unexpectedly contains %q", unwanted)
+	for _, want := range []string{`class="site-docs-pagination"`, `aria-label="Documentation pagination"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("nested documentation missing %q", want)
+		}
+	}
+}
+
+func TestSiteDocumentationRendersSequentialPagination(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	tests := []struct {
+		name          string
+		slug          string
+		previousHref  string
+		previousTitle string
+		nextHref      string
+		nextTitle     string
+	}{
+		{
+			name:      "first article",
+			slug:      "introduction",
+			nextHref:  "/docs/installation",
+			nextTitle: "Installation",
+		},
+		{
+			name:          "middle article",
+			slug:          "getting-started",
+			previousHref:  "/docs/installation",
+			previousTitle: "Installation",
+			nextHref:      "/docs/first-dashboard",
+			nextTitle:     "Build your first dashboard",
+		},
+		{
+			name:          "section boundary",
+			slug:          "project-structure",
+			previousHref:  "/docs/first-dashboard",
+			previousTitle: "Build your first dashboard",
+			nextHref:      "/docs/concepts",
+			nextTitle:     "Core concepts",
+		},
+		{
+			name:          "last article",
+			slug:          "contributing/documentation",
+			previousHref:  "/docs/contributing/configuration",
+			previousTitle: "Add a configuration resource",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			response, err := server.Client().Get(server.URL + "/docs/" + tt.slug)
+			if err != nil {
+				t.Fatalf("get documentation article: %v", err)
+			}
+			defer response.Body.Close()
+			body := readBody(t, response)
+			if !strings.Contains(body, `aria-label="Documentation pagination"`) {
+				t.Fatalf("documentation article missing pagination:\n%s", body)
+			}
+			assertPaginationLink(t, body, "previous", tt.previousHref, tt.previousTitle)
+			assertPaginationLink(t, body, "next", tt.nextHref, tt.nextTitle)
+		})
+	}
+}
+
+func assertPaginationLink(t *testing.T, body, direction, href, title string) {
+	t.Helper()
+	class := `site-docs-pagination-` + direction
+	if href == "" {
+		if strings.Contains(body, class) {
+			t.Errorf("documentation article unexpectedly renders %s pagination", direction)
+		}
+		return
+	}
+	label, rel := "Next", "next"
+	if direction == "previous" {
+		label, rel = "Previous", "prev"
+	}
+	for _, want := range []string{
+		`class="site-docs-pagination-card ` + class + `"`,
+		`href="` + href + `"`,
+		`rel="` + rel + `"`,
+		`aria-label="` + label + ` page: ` + title + `"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("%s pagination missing %q:\n%s", direction, want, body)
 		}
 	}
 }
@@ -615,6 +771,21 @@ func TestSiteDocumentationActiveSearchStreamsRankedResults(t *testing.T) {
 	}
 }
 
+func TestDocumentationMarkdownTablesExposeRowHeaders(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/docs/configuration")
+	if err != nil {
+		t.Fatalf("get configuration documentation: %v", err)
+	}
+	defer response.Body.Close()
+	body := readBody(t, response)
+	if !strings.Contains(body, `<th scope="row">`) {
+		t.Fatalf("configuration table does not expose body row headers")
+	}
+}
+
 func TestEveryCatalogDocumentHasAReachableRoute(t *testing.T) {
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()
@@ -644,7 +815,7 @@ func TestSiteServesDeploymentScopedMCPGuide(t *testing.T) {
 	}
 	body := readBody(t, response)
 	for _, want := range []string{
-		"Connect an MCP host to LeapView",
+		"Connect an MCP host",
 		"https://bi.example.com/mcp",
 		"https://leapview.dev",
 		"remote MCP custom connector guide",
@@ -682,7 +853,7 @@ func TestSiteAPIReferenceIsGeneratedFromOpenAPI(t *testing.T) {
 		t.Fatalf("API reference status = %d, want %d", response.StatusCode, http.StatusOK)
 	}
 	body := readBody(t, response)
-	for _, want := range []string{"<title>Workspaces</title>", "<h1>Workspaces</h1>", "Get the active asset graph", "<code>GET /api/v1/workspaces"} {
+	for _, want := range []string{"<title>Workspaces</title>", `<h1 id="workspaces">Workspaces</h1>`, "Get the active asset graph", "<code>GET /api/v1/workspaces"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("API reference missing %q:\n%s", want, body)
 		}
@@ -756,9 +927,10 @@ func TestSiteCLIReferenceGroupsSubcommandsAndRedirectsLeafPages(t *testing.T) {
 	}
 	body := readBody(t, article)
 	for _, want := range []string{
-		`<h1>leapview semantic-models</h1>`,
+		`<h1 id="leapview-semantic-models">leapview semantic-models</h1>`,
 		`<h2 id="subcommands">Subcommands</h2>`,
-		`<h2 id="query">query</h2>`,
+		`<h3 id="query">query</h3>`,
+		`<h4 id="usage-1">Usage</h4>`,
 		`leapview semantic-models query &lt;model&gt; &lt;dataset&gt;`,
 		`href="/docs/cli/commands/semantic-models-query.json"`,
 	} {
@@ -863,7 +1035,7 @@ func TestSiteChartDocumentationArticleRendersConfiguration(t *testing.T) {
 		"<title>Line chart</title>",
 		`data-init="@get(&#39;/updates?view=visual-docs&amp;document=visuals%2Fline&#39;, {openWhenHidden: true})"`,
 		`<nav class="site-docs-breadcrumb" aria-label="Breadcrumb"><ol><li><a href="/docs/visuals/overview">Visuals</a></li><li><span aria-current="page">Line chart</span></li></ol></nav>`,
-		"<h1>Line chart</h1>",
+		`<h1 id="line-chart">Line chart</h1>`,
 		`<h2 id="site-visual-api-reference">API reference</h2>`,
 		`<table aria-labelledby="site-visual-api-reference">`,
 		`<th scope="col">Field</th><th scope="col">Type</th><th scope="col">Default</th><th scope="col">Allowed values</th><th scope="col">Description</th>`,
@@ -874,7 +1046,7 @@ func TestSiteChartDocumentationArticleRendersConfiguration(t *testing.T) {
 		`<lv-site-visual-example example-id="revenue_line_step"></lv-site-visual-example>`,
 		`<div class="site-visual-key-fields" aria-label="Key fields" data-key-fields="[&#34;query.dimensions&#34;,&#34;query.measures&#34;]">`,
 		`<button type="button" class="site-visual-key-field" data-visual-key-field="presentation.step" aria-label="Highlight presentation.step in YAML"><code>presentation.step</code></button>`,
-		"<h2>Basic</h2>",
+		`<h2 id="basic">Basic</h2>`,
 		"type: line",
 		"visual-example=revenue_line_step",
 		`href="/docs/visuals/line"`,
@@ -888,7 +1060,7 @@ func TestSiteChartDocumentationArticleRendersConfiguration(t *testing.T) {
 	if strings.Contains(body, `class="site-visual-api-summary"`) || strings.Contains(body, `class="site-visual-field-reference"`) {
 		t.Error("API reference is rendered inside a visual-specific container instead of the article's Markdown flow")
 	}
-	stepped := strings.Index(body, "<h2>Stepped line</h2>")
+	stepped := strings.Index(body, `<h2 id="stepped-line">Stepped line</h2>`)
 	api := strings.Index(body, `<h2 id="site-visual-api-reference">API reference</h2>`)
 	about := strings.Index(body, `<h2 id="site-docs-about-this-page">About this page</h2>`)
 	if stepped < 0 || api < stepped || about < api {
@@ -936,7 +1108,7 @@ func TestSiteServesGeneratedConfigurationReferenceAndSchema(t *testing.T) {
 		t.Fatalf("project configuration status = %d, want %d", article.StatusCode, http.StatusOK)
 	}
 	body := readBody(t, article)
-	for _, want := range []string{"<h1>Project configuration</h1>", "<h2>Example</h2>", "<h2>Fields</h2>", "/docs/schemas/project.schema.json", `href="/docs/config/project"`} {
+	for _, want := range []string{`<h1 id="project-configuration">Project configuration</h1>`, `<h2 id="example">Example</h2>`, `<h2 id="fields">Fields</h2>`, "/docs/schemas/project.schema.json", `href="/docs/config/project"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("project configuration reference missing %q:\n%s", want, body)
 		}

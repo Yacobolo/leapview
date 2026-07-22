@@ -344,7 +344,7 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 		_ = registry.Close()
 		cleanup()
 	}
-	runtimeMetrics := app.NewDynamicRuntimeMetrics("", func(workspaceID string) app.RuntimeProvider {
+	runtimeMetrics := app.NewDynamicRuntimeMetrics("", func(workspaceID string) runtimehost.Provider {
 		return registry.ProviderForWorkspace(servingstate.WorkspaceID(workspaceID))
 	})
 	assetCatalog := workspace.NewAssetCatalogService(workspaceRepo)
@@ -394,6 +394,7 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 		DuckLakeCatalogPath: duckLakeCatalogPath,
 		DuckLakeDataPath:    cfg.DuckLakeDataDir(),
 		DefaultEnvironment:  string(environment),
+		PublicURL:           firstConfigured(cfg.PublicURL, listenURL(cfg.ListenAddr())),
 		RateLimits:          rateLimits,
 		SecurityHeaders:     app.SecurityHeaders(production && cfg.HSTSEnabled(cookieSecure)),
 		RequestLogging:      production && cfg.RequestLoggingEnabled(),

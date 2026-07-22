@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 
 import type { VisualizationEnvelope, VisualizationGeographicLayer } from '../../../../generated/visualization'
 import type { FeatureCollection } from 'geojson'
-import { applyFeatureScales, basemapBoundaryLayer, basemapLayer, clusterExpansionForRenderedFeatures, concreteCSSColor, coordinateGeometry, coordinateReferenceGrid, fitMapToGeographicData, installWebGLRecovery, interactionCommandForRenderedFeatures, joinGeometry, loadMapStyleAsset, mapAccessibleData, mapInteractionCommand, mapLayer, mapLibreChromeCSS, mapOutlineLayer, mapPointerOptions, mapThemeColors, mapTooltipEntries, nextSpatialRequestSequence, normalizeFeatureWeights, pathGeometry, removeRendererFrame, resetMapToHome, sameOriginGeometryURL, setRendererFramePresented, spatialWindowAlreadyCurrent, spatialWindowRequest, updateSelectionSources, verifyGeometryDigest, waitForMapRender } from './maplibre'
+import { applyFeatureScales, basemapBoundaryLayer, basemapLayer, basemapThemeKey, clusterExpansionForRenderedFeatures, concreteCSSColor, coordinateGeometry, coordinateReferenceGrid, createBasemapThemeScheduler, fitMapToGeographicData, installWebGLRecovery, interactionCommandForRenderedFeatures, joinGeometry, loadMapStyleAsset, mapAccessibleData, mapInteractionCommand, mapLayer, mapLibreChromeCSS, mapOutlineLayer, mapPointerOptions, mapThemeColors, mapTooltipEntries, nextSpatialRequestSequence, normalizeFeatureWeights, pathGeometry, removeRendererFrame, resetMapToHome, sameOriginGeometryURL, setRendererFramePresented, spatialWindowAlreadyCurrent, spatialWindowRequest, updateSelectionSources, verifyGeometryDigest, waitForMapRender } from './maplibre'
 import { adapterObservation } from '../telemetry'
 
 test('MapLibre owns usable shadow-DOM styles for map navigation controls', () => {
@@ -461,6 +461,28 @@ test('MapLibre auto basemaps follow the resolved application color scheme', () =
   expect(mapThemeColors('auto', 'dark')).toEqual(mapThemeColors('dark', 'light'))
   expect(mapThemeColors('auto', 'light')).toEqual(mapThemeColors('light', 'dark'))
   expect(mapThemeColors('auto', 'dark')).not.toEqual(mapThemeColors('auto', 'light'))
+})
+
+test('MapLibre coalesces unchanged themes and serializes WebGL style mutations by frame', async () => {
+  const colors = mapThemeColors('auto', 'dark')
+  expect(basemapThemeKey(colors, '#0d1821', 'normal')).toBe(basemapThemeKey({ ...colors }, '#0d1821', 'normal'))
+  expect(basemapThemeKey(colors, '#0d1821', 'normal')).not.toBe(basemapThemeKey(colors, '#0d1821', 'dense'))
+
+  const frames: Array<() => void> = []
+  const schedule = createBasemapThemeScheduler((callback) => frames.push(callback))
+  const applied: string[] = []
+  const first = schedule(() => applied.push('first'))
+  const second = schedule(() => applied.push('second'))
+  await Promise.resolve()
+  expect(frames).toHaveLength(1)
+  frames.shift()!()
+  await first
+  await Promise.resolve()
+  expect(frames).toHaveLength(1)
+  expect(applied).toEqual(['first'])
+  frames.shift()!()
+  await second
+  expect(applied).toEqual(['first', 'second'])
 })
 
 function selectableEnvelope(): VisualizationEnvelope {

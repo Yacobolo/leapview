@@ -75,6 +75,7 @@ package contracts
 		models!:         #IncludeList
 		semanticModels!: #IncludeList
 		dashboards!:     #IncludeList
+		publications?:   #IncludeList
 		access!:           #IncludeList
 		refreshPipelines?: #IncludeList
 	})
@@ -115,7 +116,7 @@ package contracts
 	id?:   string
 })
 
-#Privilege: "USE_WORKSPACE" | "VIEW_ITEM" | "EDIT_ITEM" | "MANAGE_ITEM" | "QUERY_DATA" | "PREVIEW_DATA" | "REFRESH_DATA" | "DEPLOY" | "ACTIVATE_DEPLOYMENT" | "USE_AGENT" | "VIEW_AGENT" | "MANAGE_GRANTS" | "VIEW_AUDIT" | "MANAGE_WORKSPACE" | "MANAGE_PLATFORM"
+#Privilege: "USE_WORKSPACE" | "VIEW_ITEM" | "EDIT_ITEM" | "MANAGE_ITEM" | "QUERY_DATA" | "PREVIEW_DATA" | "REFRESH_DATA" | "DEPLOY" | "ACTIVATE_DEPLOYMENT" | "MANAGE_PUBLICATIONS" | "USE_AGENT" | "VIEW_AGENT" | "MANAGE_GRANTS" | "VIEW_AUDIT" | "MANAGE_WORKSPACE" | "MANAGE_PLATFORM"
 
 #AccessSubject: close({
 	kind!:        "principal" | "group" | "service_principal"
@@ -123,6 +124,15 @@ package contracts
 	email?:       string
 	displayName?: string
 	group?:       #ResourceID
+})
+
+#DataPolicySubject: close({
+	kind!:        "principal" | "group" | "service_principal" | "dashboard_publication"
+	principalId?: #ResourceID
+	email?:       string
+	displayName?: string
+	group?:       #ResourceID
+	publication?: #ResourceID
 })
 
 #GrantResource: close({
@@ -142,7 +152,7 @@ package contracts
 	metadata!:   #Metadata
 	spec!: close({
 		object!:     #SecurableObjectRef
-		subject?:    #AccessSubject
+		subject?:    #DataPolicySubject
 		policyType!: "row_filter" | "column_mask"
 		expression!: #AnyObject
 	})
@@ -181,6 +191,19 @@ package contracts
 	kind!:       "Dashboard"
 	metadata!:   #Metadata
 	spec!:        #DashboardSpec
+})
+
+#DashboardPublicationResource: close({
+	apiVersion!: #APIVersion
+	kind!:       "DashboardPublication"
+	metadata!:   #Metadata
+	spec!: close({
+		dashboard!:   #ResourceID
+		defaultPage!: #ResourceID
+		embedding!: close({
+			allowedOrigins!: [...string]
+		})
+	})
 })
 
 #Connection: close({

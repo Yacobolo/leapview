@@ -226,8 +226,8 @@ func TestAPIGenOwnsUISignalContracts(t *testing.T) {
 	if irDoc.SchemaVersion != "v4" {
 		t.Fatalf("UI signal IR schema_version = %q, want v4", irDoc.SchemaVersion)
 	}
-	if len(irDoc.Contracts) != 78 {
-		t.Fatalf("UI signal IR contracts = %d, want 78", len(irDoc.Contracts))
+	if len(irDoc.Contracts) != 82 {
+		t.Fatalf("UI signal IR contracts = %d, want 82", len(irDoc.Contracts))
 	}
 	foundEnvelopeMetadata := false
 	foundVisualizationEnvelope := false
@@ -273,9 +273,9 @@ func TestAPIGenRoutesCoverHeadlessAPINotUITransports(t *testing.T) {
 		"/api/v1/me/sessions/{session}",
 		"/api/v1/principals",
 		"/api/v1/principals/{principal}",
+		"/api/v1/search",
 		"/api/v1/workspaces",
 		"/api/v1/workspaces/{workspace}",
-		"/api/v1/workspaces/{workspace}/search",
 		"/api/v1/workspaces/{workspace}/assets",
 		"/api/v1/workspaces/{workspace}/asset-edges",
 		"/api/v1/workspaces/{workspace}/dashboards",
@@ -490,7 +490,7 @@ func TestAPIGenOperationExtensions(t *testing.T) {
 		"listWorkspaceAssetEdges":   "list_workspace_asset_edges",
 		"listWorkspaceAssets":       "list_assets",
 		"listWorkspaces":            "list_workspaces",
-		"searchWorkspace":           "search_workspace",
+		"search":                    "search",
 		"queryDashboardVisualData":  "query_dashboard_visual",
 		"queryDashboardPage":        "query_dashboard_page",
 		"previewSemanticDataset":    "preview_semantic_dataset",
@@ -616,7 +616,7 @@ func TestAPIGenListOperationsUseStandardEnvelope(t *testing.T) {
 		method string
 	}{
 		{"/api/v1/workspaces", "get"},
-		{"/api/v1/workspaces/{workspace}/search", "get"},
+		{"/api/v1/search", "get"},
 		{"/api/v1/workspaces/{workspace}/assets", "get"},
 		{"/api/v1/workspaces/{workspace}/asset-edges", "get"},
 		{"/api/v1/workspaces/{workspace}/dashboards", "get"},

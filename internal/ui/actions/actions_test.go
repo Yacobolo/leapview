@@ -11,7 +11,18 @@ func TestRequestEscapesPathAndSignalPatterns(t *testing.T) {
 }
 
 func TestRequestWithoutSignalFilter(t *testing.T) {
+	if got, want := Get("/search"), `@get('/search', {headers: window.LeapViewCommand.headers()})`; got != want {
+		t.Fatalf("Get() = %q, want %q", got, want)
+	}
 	if got, want := Patch("/api/config"), `@patch('/api/config', {headers: window.LeapViewCommand.headers()})`; got != want {
 		t.Fatalf("Patch() = %q, want %q", got, want)
+	}
+}
+
+func TestGetScopesActiveSearchSignals(t *testing.T) {
+	got := Get("/chats/references/search", "agentReferenceSearch", "agentContext")
+	want := `@get('/chats/references/search', {filterSignals: {include: /^(?:agentReferenceSearch|agentContext)(?:[.]|$)/}, headers: window.LeapViewCommand.headers()})`
+	if got != want {
+		t.Fatalf("Get() = %q, want %q", got, want)
 	}
 }

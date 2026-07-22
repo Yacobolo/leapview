@@ -2013,6 +2013,12 @@
       "x-lifecycle": "supported",
       "x-scope": "public site"
     },
+    "LEAPVIEW_SITE_SHOWCASE_EMBED_URL": {
+      "description": "Optional public dashboard embed URL that enables the live /showcase route and its exact frame-src policy.",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "public site"
+    },
     "LEAPVIEW_SMOKE_PORT": {
       "default": "18080",
       "description": "Host port used by the production image smoke test.",

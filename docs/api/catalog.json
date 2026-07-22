@@ -69,6 +69,11 @@
       "summary": "Workspace audit event discovery."
     },
     {
+      "slug": "publications",
+      "title": "Publications",
+      "summary": "Anonymous public dashboard publication lifecycle."
+    },
+    {
       "slug": "managed-data",
       "title": "Managed Data",
       "summary": "Project-global managed-data revisions and uploads."

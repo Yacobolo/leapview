@@ -17,7 +17,7 @@ Focused slices are available at `/docs/cli/commands/{id}.json|md` and `/docs/api
 
 - [What is LeapView?](/docs/introduction): Understand the problems LeapView solves and its code-native model.
 - [Installation](/docs/installation): Pull the public image locally or prepare a durable production instance.
-- [Get started with LeapView](/docs/getting-started): Bootstrap, edit, and run the included project from a source checkout.
+- [Get started with LeapView](/docs/getting-started): Choose a path from installation through your first validated dashboard change.
 - [Build your first dashboard](/docs/first-dashboard): Change a model and dashboard and deploy it locally.
 - [Project structure](/docs/project-structure): Learn how project-global resources and workspace resources are organized.
 
@@ -26,6 +26,7 @@ Focused slices are available at `/docs/cli/commands/{id}.json|md` and `/docs/api
 - [Core concepts](/docs/concepts): A map of the concepts used throughout LeapView.
 - [Projects, workspaces, and environments](/docs/concepts/projects-workspaces-environments): Understand ownership, isolation, and deployment scope.
 - [Connections and sources](/docs/concepts/connections-sources): Separate physical data access from reusable logical source definitions.
+- [Managed data and revisions](/docs/concepts/managed-data): Understand immutable revisions, staging, activation, upload boundaries, and storage ownership.
 - [Model tables](/docs/concepts/model-tables): Materialize reusable analytical tables from source data.
 - [Semantic models](/docs/concepts/semantic-models): Define datasets, dimensions, measures, and relationships once.
 - [Dashboards, pages, and visuals](/docs/concepts/dashboards): Understand the presentation resources rendered by the BI workspace.
@@ -81,6 +82,7 @@ Focused slices are available at `/docs/cli/commands/{id}.json|md` and `/docs/api
 - [API quickstart](/docs/guides/integrate/api-quickstart): Authenticate and call the headless API.
 - [API conventions](/docs/guides/integrate/api-conventions): Handle authentication, errors, and pagination consistently.
 - [Headless BI queries](/docs/guides/integrate/headless-bi): Query dashboards and semantic models through stable contracts.
+- [Public and embedded dashboards](/docs/guides/integrate/public-dashboards): Publish an anonymous governed dashboard and embed it on an allowed origin.
 - [Agent integrations](/docs/guides/integrate/agent): Use global conversations and the shared governed tool catalog.
 - [Connect an MCP host](/docs/guides/integrate/mcp): Connect Claude and other MCP hosts to a LeapView deployment over OAuth.
 - [Automation and CI](/docs/cli/automation): Run validation and deployments safely in CI.
@@ -107,6 +109,7 @@ Focused slices are available at `/docs/cli/commands/{id}.json|md` and `/docs/api
 - [Grant configuration](/docs/config/grant): Fields and validation rules for the Grant YAML resource.
 - [Data Policy configuration](/docs/config/data-policy): Fields and validation rules for the DataPolicy YAML resource.
 - [Refresh Pipeline configuration](/docs/config/refresh-pipeline): Fields and validation rules for the RefreshPipeline YAML resource.
+- [Dashboard Publication configuration](/docs/config/dashboard-publication): Fields and validation rules for the DashboardPublication YAML resource.
 
 #### CLI commands
 
@@ -122,7 +125,7 @@ Focused slices are available at `/docs/cli/commands/{id}.json|md` and `/docs/api
 - [leapview login](/docs/cli/login): Store a LeapView API token for a target
 - [leapview plan](/docs/cli/plan): Emit a deterministic configuration-as-code plan
 - [leapview schema](/docs/cli/schema): Inspect LeapView YAML schemas
-- [leapview search](/docs/cli/search): Search workspace assets
+- [leapview search](/docs/cli/search): Search accessible product objects
 - [leapview semantic-models](/docs/cli/semantic-models): Inspect semantic models
 - [leapview serve](/docs/cli/serve): Run the LeapView HTTP server
 - [leapview validate](/docs/cli/validate): Validate a configuration-as-code project
@@ -144,6 +147,7 @@ Focused slices are available at `/docs/cli/commands/{id}.json|md` and `/docs/api
 - [Agent](/docs/api/agent): Headless agent conversation and run operations.
 - [Access](/docs/api/access): Principals, groups, roles, and role bindings.
 - [Audit](/docs/api/audit): Workspace audit event discovery.
+- [Publications](/docs/api/publications): Anonymous public dashboard publication lifecycle.
 - [Managed Data](/docs/api/managed-data): Project-global managed-data revisions and uploads.
 
 #### Visuals
@@ -186,7 +190,7 @@ Focused slices are available at `/docs/cli/commands/{id}.json|md` and `/docs/api
 - [Runtime architecture](/docs/architecture/runtime): Follow routing, query execution, and streamed UI updates.
 - [Storage architecture](/docs/storage-architecture): Understand DuckLake, DuckDB, snapshots, and serving pointers.
 - [Datastar signal flow](/docs/architecture/datastar): Understand server-owned state and SSE response contracts.
-- [Visualization target architecture](/docs/architecture/visual-plugins): Understand the visualization IR, generated contracts, runtime data states, and renderer adapters.
+- [Visualization architecture](/docs/architecture/visual-plugins): Understand the visualization IR, generated contracts, runtime data states, and renderer adapters.
 - [Geographic rendering decision](/docs/architecture/geographic-rendering): Understand why MapLibre exclusively owns built-in geographic rendering.
 
 #### Contributing

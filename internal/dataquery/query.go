@@ -191,11 +191,12 @@ func (e *BundleBranchError) Error() string {
 func (e *BundleBranchError) Unwrap() error { return e.Err }
 
 const (
-	SurfaceDashboard    = "dashboard"
-	SurfaceAPI          = "api"
-	SurfaceAgent        = "agent"
-	SurfaceCLI          = "cli"
-	SurfaceDataExplorer = "data_explorer"
+	SurfaceDashboard       = "dashboard"
+	SurfaceAPI             = "api"
+	SurfaceAgent           = "agent"
+	SurfaceCLI             = "cli"
+	SurfaceDataExplorer    = "data_explorer"
+	SurfacePublicDashboard = "public_dashboard"
 
 	OperationDashboardAggregate     = "dashboard_aggregate"
 	OperationDashboardRows          = "dashboard_rows"

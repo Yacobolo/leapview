@@ -31,12 +31,13 @@ func ChatPage(catalog dashboard.Catalog, workspaceID, csrfToken, roleLabel, view
 		UpdatesURL: chatUpdatesURL,
 		Body: []g.Node{
 			g.El("lv-app-shell",
+				g.Attr("data-on:lv-chat-reference-search__debounce.200ms", "$agentReferenceSearch.query = evt.detail.query; $agentReferenceSearch.requestId = evt.detail.requestId; "+uiactions.Get(chatBasePath+"/references/search", "agentReferenceSearch", "agentContext")),
 				g.El("lv-chat-page",
 					g.Attr("slot", "page"),
 					g.Attr("workspace-id", workspaceID),
 					g.Attr("view", view),
 					g.Attr("data-indicator", "agentTurnPending"),
-					g.Attr("data-on:lv-chat-submit", "$agent.composer.value = evt.detail.input; "+uiactions.Post(chatBasePath+"/turns")),
+					g.Attr("data-on:lv-chat-submit", "$agent.composer.value = evt.detail.input; $agentContext.references = evt.detail.references; "+uiactions.Post(chatBasePath+"/turns", "agent", "agentContext")),
 				),
 			),
 			inspectorElement(),
@@ -48,10 +49,43 @@ func ChatBootstrapSignals(catalog dashboard.Catalog, workspaceID, roleLabel, vie
 	envelope := uisignals.ChatInitialEnvelope(catalog, workspaceID, roleLabel, view, state)
 	envelope.Runtime = uisignals.RouteRuntimeSignal{Kind: uisignals.RouteChat, WorkspaceID: uisignals.Optional(workspaceID)}
 	return map[string]any{
-		"chrome":  envelope.Chrome,
-		"page":    envelope.Page,
-		"runtime": envelope.Runtime,
-		"agent":   envelope.Agent,
-		"visuals": envelope.Visuals,
+		"chrome":               envelope.Chrome,
+		"page":                 envelope.Page,
+		"runtime":              envelope.Runtime,
+		"agent":                envelope.Agent,
+		"agentContext":         envelope.AgentContext,
+		"agentReferenceSearch": envelope.AgentReferenceSearch,
+		"visuals":              envelope.Visuals,
+	}
+}
+
+// ChatSignalPatch keeps the chat body and the sidebar history synchronized.
+// The sidebar renders from the chrome signal, so conversation changes must be
+// streamed to both roots in the same patch.
+func ChatSignalPatch(state ChatViewState) pagestream.SignalPatch {
+	patch := ChatConversationsPatch(state.Agent.Conversations, state.Agent.ActiveConversationID)
+	patch["agent"] = state.Agent
+	patch["visuals"] = state.Visuals
+	return patch
+}
+
+// ChatConversationsPatch updates conversation state without replacing the
+// rest of the agent or chrome signal trees.
+func ChatConversationsPatch(conversations []ChatConversationSummary, activeConversationID string) pagestream.SignalPatch {
+	agent := ChatSignal{
+		ActiveConversationID: activeConversationID,
+		Conversations:        conversations,
+	}
+	return pagestream.SignalPatch{
+		"agent": map[string]any{
+			"conversations": conversations,
+		},
+		"chrome": map[string]any{
+			"sidebar": map[string]any{
+				"history": map[string]any{
+					"items": uisignals.ChatHistoryItems(agent),
+				},
+			},
+		},
 	}
 }

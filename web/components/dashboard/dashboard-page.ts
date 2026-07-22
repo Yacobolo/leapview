@@ -1,6 +1,8 @@
-import { LitElement, css, html } from 'lit'
+import { LitElement, css, html, nothing } from 'lit'
 import { property, state } from 'lit/decorators.js'
 import type {
+  AgentContextSignal,
+  AgentReferenceSignal,
   DashboardComponentSignal,
   DashboardFilters,
   DashboardInteractionSelection,
@@ -14,8 +16,11 @@ import type {
   VisualizationSpatialSelectionState,
 } from '../../generated/signals'
 import { DatastarLit } from '../shared/datastar-lit'
+import { domainEvents, emitDomainEvent } from '../shared/events'
 import { checkSignalContract } from '../shared/signal-contract'
+import { agentIcon } from '../chat/agent-icon'
 import '../navigation/sub-sidebar'
+import '../chat/chat-drawer'
 import './filters/filter-dock'
 import './report-canvas'
 import './report-footer'
@@ -68,10 +73,47 @@ type DashboardRefreshProgress = {
   percent: number
 }
 
+const dashboardAgentStorageKey = 'leapview-dashboard-agent-state'
+
+type DashboardAgentStoredState = {
+  open: boolean
+  conversationId: string
+}
+
+function readDashboardAgentState(): DashboardAgentStoredState {
+  const fallback = { open: false, conversationId: '' }
+  try {
+    const value = JSON.parse(localStorage.getItem(dashboardAgentStorageKey) ?? '') as Partial<DashboardAgentStoredState>
+    return {
+      open: value.open === true,
+      conversationId: typeof value.conversationId === 'string' ? value.conversationId.trim() : '',
+    }
+  } catch {
+    return fallback
+  }
+}
+
+function writeDashboardAgentState(state: DashboardAgentStoredState): void {
+  try {
+    localStorage.setItem(dashboardAgentStorageKey, JSON.stringify(state))
+  } catch {
+    // Storage can be unavailable in privacy-constrained browser contexts. The
+    // drawer remains fully functional for the current page in that case.
+  }
+}
+
 class LeapViewDashboardPage extends DatastarLit(LitElement) {
+  @property({ type: String, reflect: true }) presentation: 'app' | 'public' | 'embed' = 'app'
   @state() private unsupportedKinds = new Set<string>()
   @state() private optimisticSelections: CanonicalInteractionSelection[] | null = null
   @state() private optimisticSpatialSelections: VisualizationSpatialSelectionState[] | null = null
+  @state() private agentDrawerOpen = false
+  @state() private agentReferences: AgentReferenceSignal[] = []
+  private agentStateInitialized = false
+  private agentRestoreDispatched = false
+  private restoredAgentConversationID = ''
+  private persistedAgentOpen = false
+  private persistedAgentConversationID = ''
   private optimisticExpectedGeneration = 0
   private optimisticRollbackTimer?: ReturnType<typeof setTimeout>
   private renderSnapshot?: DashboardRenderSnapshot
@@ -90,8 +132,22 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
     .route {
       display: grid;
       min-height: 100svh;
-      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-columns: auto minmax(0, 1fr) 0px;
       background: var(--lv-bg-app);
+      transition: grid-template-columns var(--lv-duration-fast) var(--motion-easing-move);
+    }
+
+    :host([presentation='embed']) .header,
+    :host([presentation='embed']) lv-report-footer {
+      display: none;
+    }
+
+    :host([presentation='embed']) .main {
+      grid-template-rows: minmax(0, 1fr);
+    }
+
+    .route.agent-open {
+      grid-template-columns: auto minmax(0, 1fr) var(--lv-dashboard-agent-width);
     }
 
     .main {
@@ -175,6 +231,78 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
       background: var(--lv-bg-control-hover);
       outline: 0;
     }
+
+		.agent-toggle {
+			display: inline-flex;
+			width: auto;
+			align-items: center;
+			justify-content: center;
+			gap: var(--base-size-6);
+			border-color: var(--lv-line-muted);
+			background: var(--lv-bg-control, var(--lv-bg-panel-muted));
+			padding-inline: var(--base-size-12);
+			font-size: var(--lv-font-size-body-sm);
+			font-weight: var(--lv-font-weight-medium);
+		}
+
+		.agent-toggle[aria-expanded='true'] {
+			width: var(--control-medium-size);
+			padding-inline: 0;
+			background: var(--lv-bg-control-hover);
+		}
+
+		.agent-toggle[aria-expanded='true'] span {
+			display: none;
+		}
+
+		.agent-toggle svg,
+		.ask-visual svg {
+			width: var(--base-size-16);
+			height: var(--base-size-16);
+		}
+
+		.ask-visual {
+			display: inline-flex;
+			height: var(--lv-button-height-xs, var(--control-xsmall-size));
+			min-height: var(--lv-button-height-xs, var(--control-xsmall-size));
+			align-items: center;
+			gap: var(--base-size-4);
+			border: var(--borderWidth-default, var(--lv-border-width)) solid transparent;
+			border-radius: var(--lv-radius-tight);
+			background: transparent;
+			color: var(--lv-button-invisible-icon-rest, var(--lv-icon-muted));
+			cursor: pointer;
+			opacity: 0;
+			pointer-events: none;
+			padding: 0 var(--base-size-6);
+			font-size: var(--lv-font-size-caption);
+			font-weight: var(--lv-font-weight-medium);
+			line-height: var(--lv-line-height-none);
+			transition: opacity var(--lv-transition-fast), background-color var(--lv-transition-fast), color var(--lv-transition-fast);
+		}
+
+		lv-dashboard-visual-frame:hover .ask-visual,
+		lv-dashboard-visual-frame:focus-within .ask-visual,
+		.ask-visual:focus-visible,
+		lv-dashboard-visual-frame[data-agent-referenced] .ask-visual {
+			opacity: 1;
+			pointer-events: auto;
+		}
+
+		.ask-visual:hover,
+		.ask-visual:focus-visible,
+		.ask-visual[aria-pressed='true'] {
+			border-color: var(--lv-button-invisible-border-hover, var(--control-transparent-borderColor-hover, var(--lv-line-default)));
+			background: var(--lv-button-invisible-bg-hover, var(--control-transparent-bgColor-hover, var(--lv-bg-panel-muted)));
+			color: var(--lv-icon-default, var(--lv-fg-default));
+			outline: 0;
+		}
+
+		.ask-visual:focus-visible {
+			outline: var(--focus-outline, var(--lv-border-default));
+			outline-color: var(--borderColor-accent-emphasis, var(--lv-line-accent));
+			outline-offset: var(--focus-outline-offset, var(--base-size-2));
+		}
 
     .icon-button[disabled] {
       cursor: not-allowed;
@@ -290,6 +418,7 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
 
     @media (max-width: 640px) {
       .route,
+			.route.agent-open,
       .body {
         grid-template-columns: 1fr;
       }
@@ -308,14 +437,34 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
     }
 
     @media (prefers-reduced-motion: reduce) {
+      .route,
       .dashboard-refresh-progress,
       .dashboard-refresh-progress-value {
         transition: none;
       }
+
+			.ask-visual {
+				transition: none;
+			}
     }
+
+		@media (hover: none), (pointer: coarse) {
+			.ask-visual {
+				opacity: 1;
+				pointer-events: auto;
+			}
+		}
   `
 
   connectedCallback(): void {
+    if (this.presentation === 'app' && !this.agentStateInitialized) {
+      const stored = readDashboardAgentState()
+      this.agentDrawerOpen = stored.open
+      this.restoredAgentConversationID = stored.conversationId
+      this.persistedAgentOpen = stored.open
+      this.persistedAgentConversationID = stored.conversationId
+      this.agentStateInitialized = true
+    }
     super.connectedCallback()
     this.addEventListener('lv-interaction-select', this.handleOptimisticInteraction as EventListener, { capture: true })
     this.addEventListener('lv-interaction-spatial-select', this.handleOptimisticSpatialInteraction as EventListener, { capture: true })
@@ -330,6 +479,22 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
   }
 
   updated(): void {
+    const agent = this.presentation === 'app'
+      ? this.signal<{ activeConversationId?: string } | null>('agent', null)
+      : null
+    if (agent !== null) {
+      const activeConversationID = agent.activeConversationId?.trim() ?? ''
+      if (activeConversationID) {
+        this.restoredAgentConversationID = activeConversationID
+        this.persistAgentState()
+      }
+      if (this.restoredAgentConversationID && !this.agentRestoreDispatched) {
+        this.agentRestoreDispatched = true
+        emitDomainEvent(this, domainEvents.chatRestore, {
+          conversationId: this.restoredAgentConversationID,
+        })
+      }
+    }
     const page = this.page
     if (!page) return
     checkSignalContract('dashboard page', page, {
@@ -346,6 +511,10 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
   get page(): DashboardPageSignal | null {
     return this.signal<DashboardPageSignal | null>('page', null)
   }
+
+	private get agentContext(): AgentContextSignal | null {
+		return this.signal<AgentContextSignal | null>('agentContext', null)
+	}
 
   private get filterConfig(): ReportFilterConfig[] {
     return this.signal<ReportFilterConfig[]>('filterConfig', [])
@@ -392,8 +561,9 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
     }
     this.renderSnapshot = snapshot
     const refreshProgress = this.refreshProgress(snapshot)
+    const agentEnabled = this.presentation === 'app'
     return html`
-      <div class="route">
+			<div class=${`route${agentEnabled && this.agentDrawerOpen ? ' agent-open' : ''}`}>
         <lv-sub-sidebar .config=${this.pageSidebar(page)}></lv-sub-sidebar>
         <section class="main" aria-label="LeapView report canvas">
           <header class="header">
@@ -401,6 +571,15 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
               <h1>${page.title}</h1>
               <p class="detail">${page.headerDetail}</p>
             </div>
+						${agentEnabled ? html`<div class="actions">
+							<button
+								type="button"
+								class="icon-button agent-toggle"
+								aria-label="Toggle dashboard agent"
+								aria-expanded=${String(this.agentDrawerOpen)}
+								@click=${() => { this.setAgentDrawerOpen(!this.agentDrawerOpen) }}
+							>${agentIcon()}<span>Ask</span></button>
+						</div>` : nothing}
           </header>
           <div class="body">
             ${this.renderRefreshProgress(refreshProgress)}
@@ -413,6 +592,13 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
           </div>
           <lv-report-footer .status=${snapshot.status}></lv-report-footer>
         </section>
+				${agentEnabled ? html`<lv-chat-drawer
+					?open=${this.agentDrawerOpen}
+					.suggestions=${this.agentSuggestions(page)}
+					@lv-chat-drawer-close=${() => { this.setAgentDrawerOpen(false) }}
+					@lv-chat-new=${this.handleAgentNew}
+					@lv-agent-references-change=${this.handleAgentReferencesChanged}
+				></lv-chat-drawer>` : nothing}
       </div>
       <lv-visual-modal></lv-visual-modal>
     `
@@ -472,24 +658,31 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
   private renderCanvasComponent(component: DashboardComponentSignal) {
     const filterVisual = component.kind === 'filter'
     const visualType = component.visual ? this.visuals[component.visual]?.spec.kind ?? '' : ''
+		const currentPage = this.renderSnapshot?.page ?? this.page
+		const askReference = currentPage ? this.agentReference(component, currentPage) : undefined
+		const referenced = askReference ? this.agentReferences.some((reference) => reference.reference.workspaceId === askReference.reference.workspaceId
+			&& reference.reference.type === askReference.reference.type && reference.reference.id === askReference.reference.id) : false
     return html`
               <lv-dashboard-visual-frame
                 data-canvas-visual
                 data-component-kind=${component.kind}
                 data-visual-type=${visualType}
+		data-visual-id=${component.visual || nothing}
         ?data-canvas-filter-visual=${filterVisual}
         data-x=${component.x}
         data-y=${component.y}
         data-w=${component.width}
         data-h=${component.height}
         .transparent=${component.kind === 'header'}
+		?data-agent-referenced=${referenced}
+		@lv-agent-reference=${this.handleAgentReference}
       >
-        ${this.renderComponentContent(component)}
+        ${this.renderComponentContent(component, askReference, referenced)}
       </lv-dashboard-visual-frame>
     `
   }
 
-  private renderComponentContent(component: DashboardComponentSignal) {
+  private renderComponentContent(component: DashboardComponentSignal, askReference?: AgentReferenceSignal, referenced = false) {
     switch (component.kind) {
       case 'header':
         return this.renderHeadingComponent(component)
@@ -498,7 +691,7 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
       case 'visual': {
         const visual = this.visualFor(component)
         if (!visual) return this.missingPayload('visual')
-        return html`<lv-visualization-host .envelope=${visual} .openVisualFocus=${this.openVisualFocus}></lv-visualization-host>`
+        return html`<lv-visualization-host .envelope=${visual} .openVisualFocus=${this.openVisualFocus}>${this.renderAskAction(askReference, referenced)}</lv-visualization-host>`
       }
       default:
         return html`<div class="unsupported">Unsupported dashboard component: ${component.kind}</div>`
@@ -536,6 +729,33 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
     `
   }
 
+	private renderAskAction(reference?: AgentReferenceSignal, referenced = false) {
+		if (this.presentation !== 'app' || !reference) return nothing
+		return html`
+			<button
+				slot="agent-action"
+				class="ask-visual"
+				type="button"
+				aria-label=${`Ask about ${reference.name}`}
+				aria-pressed=${String(referenced)}
+				title=${`Ask about ${reference.name}`}
+				@click=${(event: MouseEvent) => this.dispatchAgentReference(event, reference)}
+			>
+				${agentIcon()}<span>Ask</span>
+			</button>
+		`
+	}
+
+	private dispatchAgentReference(event: MouseEvent, reference: AgentReferenceSignal) {
+		event.preventDefault()
+		event.stopPropagation()
+		;(event.currentTarget as HTMLElement).dispatchEvent(new CustomEvent('lv-agent-reference', {
+			bubbles: true,
+			composed: true,
+			detail: reference,
+		}))
+	}
+
   private renderFilterDock() {
     return html`
       <lv-filter-dock
@@ -545,6 +765,67 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
         .loading=${(this.renderSnapshot?.status ?? this.status).loading}
       ></lv-filter-dock>
     `
+  }
+
+	private agentSuggestions(page: DashboardPageSignal): AgentReferenceSignal[] {
+		return page.components
+			.map((component) => this.agentReference(component, page))
+			.filter((reference): reference is AgentReferenceSignal => Boolean(reference))
+	}
+
+	private agentReference(component: DashboardComponentSignal, page: DashboardPageSignal): AgentReferenceSignal | undefined {
+		if (this.presentation !== 'app') return undefined
+		if (component.kind !== 'visual' || !component.visual) return undefined
+		const visual = this.visuals[component.visual]
+		if (!visual) return undefined
+		const workspaceId = this.agentContext?.workspaceId ?? ''
+		const href = `/workspaces/${encodeURIComponent(workspaceId)}/dashboards/${encodeURIComponent(page.dashboardId)}/pages/${encodeURIComponent(page.pageId)}`
+		return {
+			reference: { workspaceId, type: 'visual', id: `${page.dashboardId}.${component.visual}` },
+			name: component.title || visual.spec.title || component.visual,
+			visualType: visualizationType(visual),
+			workspace: { id: workspaceId, name: workspaceId },
+			hierarchy: [workspaceId, this.agentContext?.dashboardTitle ?? page.dashboardTitle, page.pageTitle].filter(Boolean),
+			href,
+			locations: [{ dashboardId: page.dashboardId, dashboardName: this.agentContext?.dashboardTitle, pageId: page.pageId, pageName: page.pageTitle, href }],
+			context: ['current_page', 'current_dashboard', 'current_workspace'],
+		}
+	}
+
+	private handleAgentReference = (event: CustomEvent<AgentReferenceSignal>) => {
+		const reference = event.detail
+		if (!reference) return
+		this.setAgentDrawerOpen(true)
+		const drawer = this.shadowRoot?.querySelector('lv-chat-drawer') as (HTMLElement & { openWithReference(reference: AgentReferenceSignal): void }) | null
+		drawer?.openWithReference(reference)
+	}
+
+	private handleAgentReferencesChanged = (event: CustomEvent<{ references: AgentReferenceSignal[] }>) => {
+		this.agentReferences = [...(event.detail.references ?? [])]
+	}
+
+  private handleAgentNew = () => {
+    this.restoredAgentConversationID = ''
+    this.agentRestoreDispatched = true
+    this.persistAgentState()
+  }
+
+  private setAgentDrawerOpen(open: boolean): void {
+    this.agentDrawerOpen = open
+    this.persistAgentState()
+  }
+
+  private persistAgentState(): void {
+    if (
+      this.persistedAgentOpen === this.agentDrawerOpen
+      && this.persistedAgentConversationID === this.restoredAgentConversationID
+    ) return
+    this.persistedAgentOpen = this.agentDrawerOpen
+    this.persistedAgentConversationID = this.restoredAgentConversationID
+    writeDashboardAgentState({
+      open: this.agentDrawerOpen,
+      conversationId: this.restoredAgentConversationID,
+    })
   }
 
   private missingPayload(kind: string) {
@@ -667,6 +948,11 @@ function optimisticCommand(value: unknown): OptimisticInteractionCommand | undef
   return command as OptimisticInteractionCommand
 }
 
+function visualizationType(visual: VisualizationEnvelope): string {
+  const spec = visual.spec as VisualizationEnvelope['spec'] & { mark?: unknown }
+  return typeof spec.mark === 'string' && spec.mark ? spec.mark : spec.kind
+}
+
 class DashboardVisualFrame extends LitElement {
   @property({ type: Boolean, reflect: true }) transparent = false
 
@@ -691,6 +977,10 @@ class DashboardVisualFrame extends LitElement {
       background: var(--lv-bg-panel);
       box-sizing: border-box;
     }
+
+		:host([data-agent-referenced]) .frame {
+			box-shadow: inset 0 0 0 2px var(--lv-line-accent);
+		}
 
     :host([transparent]) .frame {
       border-color: transparent;

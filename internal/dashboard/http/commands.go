@@ -88,6 +88,12 @@ func (h Handler) handleCommandWithBefore(w nethttp.ResponseWriter, r *nethttp.Re
 		InteractionCommand:         signals.InteractionCommand,
 		SpatialInteractionCommand:  signals.SpatialInteractionCommand,
 	}
+	if h.CommandGuard != nil {
+		if err := h.CommandGuard(r, metrics, request, signals); err != nil {
+			nethttp.NotFound(w, r)
+			return
+		}
+	}
 
 	registry := h.Coordinators
 	if registry == nil {
@@ -102,6 +108,14 @@ func (h Handler) handleCommandWithBefore(w nethttp.ResponseWriter, r *nethttp.Re
 	})
 	h.observeRefreshes(coordinator, dashboardID, pageID)
 	_, err := coordinator.BeginPrepared(func(current dashboard.Filters) (dashboardstream.RefreshPreparation, error) {
+		if h.SharedCommandPrepare != nil {
+			prepared, generation, err := h.SharedCommandPrepare(r, request, signals, func(shared dashboard.Filters) (command.PreparedRefresh, error) {
+				return prepare(command.Service{Metrics: metrics}, request, shared)
+			})
+			preparation := streamPreparation(prepared)
+			preparation.Generation = generation
+			return preparation, err
+		}
 		prepared, err := prepare(command.Service{Metrics: metrics}, request, current)
 		return streamPreparation(prepared), err
 	}, func(preparation dashboardstream.RefreshPreparation) dashboardstream.RefreshWork {

@@ -23,10 +23,15 @@ type Options struct {
 	// BaseURL is the externally visible site origin. When omitted, canonical URLs
 	// are derived from each request, which is convenient for local development.
 	BaseURL *url.URL
+	// ShowcaseEmbedURL is the live public dashboard iframe URL. When omitted,
+	// the showcase route and navigation are not registered.
+	ShowcaseEmbedURL *url.URL
 }
 
 type siteServer struct {
-	baseURL *url.URL
+	baseURL          *url.URL
+	showcaseEmbedURL *url.URL
+	showcaseOrigin   string
 }
 
 // NewHandler builds the public site HTTP handler without starting a server.
@@ -36,7 +41,10 @@ func NewHandler() http.Handler {
 
 // NewHandlerWithOptions builds the public site HTTP handler with deployment settings.
 func NewHandlerWithOptions(options Options) http.Handler {
-	server := &siteServer{baseURL: cloneURL(options.BaseURL)}
+	server := &siteServer{baseURL: cloneURL(options.BaseURL), showcaseEmbedURL: cloneURL(options.ShowcaseEmbedURL)}
+	if server.showcaseEmbedURL != nil {
+		server.showcaseOrigin = (&url.URL{Scheme: server.showcaseEmbedURL.Scheme, Host: server.showcaseEmbedURL.Host}).String()
+	}
 	mux := http.NewServeMux()
 	documentationMCP := newDocumentationMCPHandler()
 	mux.Handle("GET /mcp", documentationMCP)
@@ -44,6 +52,9 @@ func NewHandlerWithOptions(options Options) http.Handler {
 	mux.Handle("DELETE /mcp", documentationMCP)
 	mux.HandleFunc("GET /{$}", server.home)
 	mux.HandleFunc("GET /visuals", server.visuals)
+	if server.showcaseEmbedURL != nil {
+		mux.HandleFunc("GET /showcase", server.showcase)
+	}
 	mux.HandleFunc("GET /docs", server.docsIndex)
 	mux.HandleFunc("GET /docs/search", server.docsSearch)
 	mux.HandleFunc("GET /docs/search/active", docsActiveSearch)
@@ -94,7 +105,11 @@ func cloneURL(value *url.URL) *url.URL {
 
 func (s *siteServer) productionHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob:; object-src 'none'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:")
+		policy := "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob:; object-src 'none'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:"
+		if r.URL.Path == "/showcase" && s.showcaseOrigin != "" {
+			policy += "; frame-src " + s.showcaseOrigin
+		}
+		w.Header().Set("Content-Security-Policy", policy)
 		w.Header().Set("Permissions-Policy", "camera=(), geolocation=(), microphone=()")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -181,6 +196,11 @@ func (s *siteServer) visuals(w http.ResponseWriter, r *http.Request) {
 	renderHTML(w, http.StatusOK, visualsPage(metadata), "render visuals page")
 }
 
+func (s *siteServer) showcase(w http.ResponseWriter, r *http.Request) {
+	metadata := s.metadata(r, siteBrandName+" live dashboard showcase", "Explore a live, interactive "+siteBrandName+" dashboard.", "website", "")
+	renderHTML(w, http.StatusOK, showcasePage(metadata, s.showcaseEmbedURL), "render dashboard showcase")
+}
+
 func gettingStarted(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/docs/getting-started", http.StatusPermanentRedirect)
 }
@@ -224,6 +244,7 @@ func docsActiveSearch(w http.ResponseWriter, r *http.Request) {
 
 	_ = pagestream.PatchResponse(w, r, pagestream.SignalPatch{
 		"docsSearch": map[string]any{
+			"loading":     false,
 			"resultQuery": query,
 			"results":     results,
 			"total":       len(matches),
@@ -277,6 +298,7 @@ func (s *siteServer) metadata(r *http.Request, title, description, contentType, 
 		canonical:   s.absoluteURL(r, r.URL.Path),
 		contentType: contentType,
 		robots:      robots,
+		showcase:    s.showcaseEmbedURL != nil,
 	}
 }
 
@@ -300,6 +322,9 @@ func (s *siteServer) absoluteURL(r *http.Request, requestedPath string) string {
 
 func (s *siteServer) sitemap(w http.ResponseWriter, r *http.Request) {
 	paths := []string{"/", "/visuals", "/docs"}
+	if s.showcaseEmbedURL != nil {
+		paths = append(paths, "/showcase")
+	}
 	for _, document := range siteDocuments {
 		paths = append(paths, "/docs/"+document.slug)
 	}

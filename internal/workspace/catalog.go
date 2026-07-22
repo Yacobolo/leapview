@@ -37,6 +37,7 @@ type Definition struct {
 	Catalog          Catalog
 	Models           map[string]*model.Model
 	Dashboards       map[string]dashboarddefinition.Definition
+	Publications     map[string]DashboardPublication
 	Access           AccessPolicy
 	RefreshPipelines map[string]refreshpipeline.Definition
 	BaseDir          string

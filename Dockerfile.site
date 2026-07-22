@@ -67,6 +67,7 @@ COPY --from=sourcegen /src/.data/map-assets /.data/map-assets
 USER nonroot:nonroot
 
 ENV LEAPVIEW_SITE_BASE_URL=
+ENV LEAPVIEW_SITE_SHOWCASE_EMBED_URL=
 
 EXPOSE 8081
 

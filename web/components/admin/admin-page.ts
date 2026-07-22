@@ -1,12 +1,13 @@
 import { LitElement, css, html, nothing } from 'lit'
 import { state } from 'lit/decorators.js'
-import { CheckCircle2, Clock3, Copy, X, XCircle } from 'lucide'
-import type { AdminPageSignal, AdminContentSectionSignal, AdminQueryDetailSignal, AdminQueryHistoryFilters, AdminQueryHistorySignal, AdminStorageSignal, FilterMenuCommand, FilterMenuSignal, RecordTableSignal } from '../../generated/signals'
+import { CheckCircle2, Clock3, Copy, XCircle } from 'lucide'
+import type { AdminPageSignal, AdminContentSectionSignal, AdminPublicationSignal, AdminQueryDetailSignal, AdminQueryHistoryFilters, AdminQueryHistorySignal, AdminStorageSignal, FilterMenuCommand, FilterMenuSignal, RecordTableSignal } from '../../generated/signals'
 import { DatastarLit } from '../shared/datastar-lit'
 import { lucideIcon } from '../shared/lucide-icons'
 import { checkSignalContract } from '../shared/signal-contract'
 import '../navigation/sub-sidebar'
 import '../shared/code-block'
+import '../shared/drawer'
 import '../shared/filter-menu'
 import '../shared/record-table'
 import './agent-tools'
@@ -38,6 +39,8 @@ const emptyStorage: AdminStorageSignal = {
 class LeapViewAdminPage extends DatastarLit(LitElement) {
   @state() private queryFilters: AdminQueryHistoryFilters = {}
   @state() private copiedQueryDetailValue = ''
+  @state() private publicationBusy = ''
+  @state() private publicationMessage = ''
   private queryFilterTimer: ReturnType<typeof setTimeout> | null = null
   private lastQueryHistoryKey = ''
 
@@ -205,6 +208,91 @@ class LeapViewAdminPage extends DatastarLit(LitElement) {
       gap: var(--base-size-12);
     }
 
+    .publication-list {
+      display: grid;
+      gap: var(--base-size-12);
+    }
+
+    .publication-card {
+      display: grid;
+      min-width: 0;
+      gap: var(--base-size-12);
+      border: var(--lv-border-muted);
+      border-radius: var(--lv-radius-default);
+      background: var(--lv-bg-panel);
+      padding: var(--base-size-16);
+    }
+
+    .publication-heading,
+    .publication-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--base-size-8);
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .publication-heading strong,
+    .publication-heading code {
+      overflow-wrap: anywhere;
+    }
+
+    .publication-status {
+      border-radius: var(--lv-radius-large);
+      background: var(--lv-bg-control);
+      padding: var(--base-size-2) var(--base-size-8);
+      color: var(--lv-fg-muted);
+      font-size: var(--lv-font-size-caption);
+      text-transform: capitalize;
+    }
+
+    .publication-details {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+      gap: var(--base-size-8);
+      color: var(--lv-fg-muted);
+      font-size: var(--lv-font-size-body-sm);
+    }
+
+    .publication-details span {
+      display: grid;
+      gap: var(--base-size-2);
+    }
+
+    .publication-details code {
+      overflow-wrap: anywhere;
+      color: var(--lv-fg-default);
+    }
+
+    .publication-actions button,
+    .publication-actions a {
+      min-height: var(--control-medium-size);
+      border: var(--lv-border-muted);
+      border-radius: var(--lv-radius-default);
+      background: var(--lv-bg-control);
+      padding: 0 var(--base-size-12);
+      color: var(--lv-fg-default);
+      cursor: pointer;
+      font: inherit;
+      font-size: var(--lv-font-size-body-sm);
+      line-height: var(--control-medium-size);
+      text-decoration: none;
+    }
+
+    .publication-actions button:disabled {
+      cursor: wait;
+      opacity: 0.6;
+    }
+
+    .publication-history {
+      display: grid;
+      gap: var(--base-size-4);
+      margin: 0;
+      padding-left: var(--base-size-20);
+      color: var(--lv-fg-muted);
+      font-size: var(--lv-font-size-caption);
+    }
+
     h2 {
       color: var(--lv-fg-default);
       font-size: var(--lv-font-size-body-sm);
@@ -266,6 +354,10 @@ class LeapViewAdminPage extends DatastarLit(LitElement) {
       font-size: var(--lv-font-size-body-sm);
       font-weight: var(--lv-font-weight-medium);
       padding: 0 var(--base-size-12);
+    }
+
+    .section {
+      min-width: 0;
     }
 
     .local-user-action:hover,
@@ -370,35 +462,11 @@ class LeapViewAdminPage extends DatastarLit(LitElement) {
       opacity: 0.64;
     }
 
-    .query-detail-drawer {
-      position: fixed;
-      z-index: 31;
-      inset: 0 0 0 auto;
-      display: grid;
-      width: min(34rem, 100vw);
-      grid-template-rows: auto minmax(0, 1fr);
-      border-left: var(--lv-border-muted);
-      background: var(--lv-bg-panel);
-      box-shadow: var(--lv-shadow-floating-lg);
-      color: var(--lv-fg-default);
-      animation: query-detail-slide-in 180ms cubic-bezier(0.2, 0, 0, 1) both;
-    }
-
-    .query-detail-header {
-      border-bottom: var(--lv-border-muted);
-      padding: var(--base-size-16);
-    }
-
-    .query-detail-header-row,
     .query-detail-copy-row {
       display: flex;
       min-width: 0;
       align-items: center;
       gap: var(--base-size-8);
-    }
-
-    .query-detail-header-row {
-      justify-content: space-between;
     }
 
     .query-detail-status {
@@ -432,7 +500,6 @@ class LeapViewAdminPage extends DatastarLit(LitElement) {
       color: var(--lv-fg-muted);
     }
 
-    .query-detail-close,
     .query-detail-copy {
       display: inline-flex;
       align-items: center;
@@ -445,11 +512,6 @@ class LeapViewAdminPage extends DatastarLit(LitElement) {
       font: inherit;
     }
 
-    .query-detail-close {
-      width: var(--lv-control-medium);
-      height: var(--lv-control-medium);
-    }
-
     .query-detail-copy {
       width: var(--base-size-20);
       height: var(--base-size-20);
@@ -457,8 +519,6 @@ class LeapViewAdminPage extends DatastarLit(LitElement) {
       padding: 0;
     }
 
-    .query-detail-close:hover,
-    .query-detail-close:focus-visible,
     .query-detail-copy:hover,
     .query-detail-copy:focus-visible {
       border-color: var(--lv-line-muted);
@@ -472,8 +532,6 @@ class LeapViewAdminPage extends DatastarLit(LitElement) {
       align-content: start;
       gap: var(--base-size-16);
       min-width: 0;
-      overflow: auto;
-      padding: var(--base-size-16);
     }
 
     .query-detail-section {
@@ -548,30 +606,6 @@ class LeapViewAdminPage extends DatastarLit(LitElement) {
       cursor: pointer;
     }
 
-    @keyframes query-detail-slide-in {
-      from {
-        transform: translateX(100%);
-      }
-      to {
-        transform: translateX(0);
-      }
-    }
-
-    @keyframes query-detail-mobile-slide-in {
-      from {
-        transform: translateY(100%);
-      }
-      to {
-        transform: translateY(0);
-      }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      .query-detail-drawer {
-        animation-duration: 1ms;
-      }
-    }
-
     @media (max-width: 640px) {
       .route {
         grid-template-columns: 1fr;
@@ -587,25 +621,17 @@ class LeapViewAdminPage extends DatastarLit(LitElement) {
         padding: var(--base-size-12);
       }
 
-      .query-detail-drawer {
-        inset: auto 0 0 0;
-        width: 100vw;
-        height: min(88svh, 44rem);
-        border-top: var(--lv-border-muted);
-        border-left: 0;
-        box-shadow: var(--lv-shadow-floating-lg);
-        animation-name: query-detail-mobile-slide-in;
+      .local-user-form {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .local-user-action {
+        width: 100%;
       }
     }
   `
 
-  connectedCallback(): void {
-    super.connectedCallback()
-    window.addEventListener('keydown', this.handleWindowKeydown)
-  }
-
   disconnectedCallback(): void {
-    window.removeEventListener('keydown', this.handleWindowKeydown)
     if (this.queryFilterTimer) clearTimeout(this.queryFilterTimer)
     super.disconnectedCallback()
   }
@@ -670,7 +696,7 @@ class LeapViewAdminPage extends DatastarLit(LitElement) {
             </div>
           ` : nothing}
           ${this.renderLocalUserAdmin(page)}
-          ${page.active === 'storage' ? this.renderStorage(page) : page.active === 'agent' ? this.renderAgent(page) : page.active === 'queries' ? this.renderQueries(page) : page.sections?.map(renderSection)}
+          ${page.active === 'storage' ? this.renderStorage(page) : page.active === 'agent' ? this.renderAgent(page) : page.active === 'queries' ? this.renderQueries(page) : page.active === 'publications' ? this.renderPublications(page.publications ?? []) : page.sections?.map(renderSection)}
         </section>
       </div>
     `
@@ -767,6 +793,73 @@ class LeapViewAdminPage extends DatastarLit(LitElement) {
     `
   }
 
+  private renderPublications(publications: AdminPublicationSignal[]) {
+    return html`
+      <section class="publication-list" aria-label="Dashboard publications">
+        ${publications.map((publication) => {
+          const key = `${publication.workspaceId}/${publication.name}`
+          const busy = this.publicationBusy === key
+          return html`
+            <article class="publication-card">
+              <div class="publication-heading">
+                <strong>${publication.name}</strong>
+                <span class="publication-status">${publication.status}</span>
+              </div>
+              <div class="publication-details">
+                <span>Workspace <code>${publication.workspaceId}</code></span>
+                <span>Dashboard <code>${publication.dashboard}${publication.defaultPage ? ` / ${publication.defaultPage}` : ''}</code></span>
+                <span>Generation <code>${publication.generation || '-'}</code></span>
+                <span>Allowed origins <code>${publication.origins.length ? publication.origins.join(', ') : 'Direct view only'}</code></span>
+                <span>Suspended <code>${publication.suspendedAt || '-'}</code></span>
+                <span>Rotated <code>${publication.rotatedAt || '-'}</code></span>
+              </div>
+              <div class="publication-actions">
+                <a href=${publication.publicUrl} target="_blank" rel="noreferrer">Open</a>
+                <button type="button" @click=${() => this.copyPublication(publication.publicUrl, 'Public link copied')}>Copy link</button>
+                <button type="button" @click=${() => this.copyPublication(publication.iframeSnippet, 'Iframe copied')}>Copy iframe</button>
+                ${publication.status === 'suspended'
+                  ? html`<button type="button" ?disabled=${busy} @click=${() => this.mutatePublication(publication, 'resume')}>Resume</button>`
+                  : publication.status === 'active'
+                    ? html`<button type="button" ?disabled=${busy} @click=${() => this.mutatePublication(publication, 'suspend')}>Suspend</button>`
+                    : nothing}
+                <button type="button" ?disabled=${busy || publication.status === 'unconfigured'} @click=${() => this.rotatePublication(publication)}>Rotate URL</button>
+              </div>
+              ${publication.history.length ? html`
+                <details>
+                  <summary>Lifecycle history</summary>
+                  <ul class="publication-history">${publication.history.map((event) => html`<li>${event}</li>`)}</ul>
+                </details>
+              ` : nothing}
+            </article>
+          `
+        })}
+        <span class="local-user-result" aria-live="polite">${this.publicationMessage}</span>
+      </section>
+    `
+  }
+
+  private async copyPublication(value: string, message: string): Promise<void> {
+    await navigator.clipboard.writeText(value)
+    this.publicationMessage = message
+  }
+
+  private rotatePublication(publication: AdminPublicationSignal): void {
+    if (window.confirm(`Rotate ${publication.name}? The current public URL will stop working immediately.`)) {
+      void this.mutatePublication(publication, 'rotate')
+    }
+  }
+
+  private mutatePublication(publication: AdminPublicationSignal, action: 'suspend' | 'resume' | 'rotate'): void {
+    const key = `${publication.workspaceId}/${publication.name}`
+    this.publicationBusy = key
+    this.publicationMessage = ''
+    this.dispatchEvent(new CustomEvent('lv-publication-command', {
+      bubbles: true,
+      composed: true,
+      detail: { workspaceId: publication.workspaceId, publication: publication.name, action },
+    }))
+  }
+
   private renderTextFilter(key: keyof AdminQueryHistoryFilters, label: string) {
     return html`
       <div class="query-filter">
@@ -852,27 +945,20 @@ class LeapViewAdminPage extends DatastarLit(LitElement) {
     this.emitQueryHistoryCommand('close_detail', this.currentQueryHistory().filters, '')
   }
 
-  private handleWindowKeydown = (event: KeyboardEvent) => {
-    const detail = this.queryDetail ?? emptyQueryDetail
-    if (event.key !== 'Escape' || (!detail.eventId && !detail.loading && !detail.error)) return
-    this.closeQueryDetail()
-  }
-
   private renderQueryDetail(event: AdminQueryDetailSignal) {
     const statusTone = queryEventStatusTone(event.status ?? '')
     return html`
-      <aside class="query-detail-drawer" role="dialog" aria-modal="true" aria-label="Query event detail">
-        <header class="query-detail-header">
-          <div class="query-detail-header-row">
-            <div class=${`query-detail-status query-detail-status-${statusTone}`}>
-              ${lucideIcon(queryEventStatusIconComponent(event.status ?? ''), { size: 16, strokeWidth: 2 })}
-              <span>${event.loading ? 'Loading' : event.statusLabel || queryEventStatusLabel(event.status ?? '')}</span>
-            </div>
-            <button class="query-detail-close" type="button" aria-label="Close query details" @click=${this.closeQueryDetail}>
-              ${lucideIcon(X, { size: 18, strokeWidth: 2 })}
-            </button>
-          </div>
-        </header>
+      <lv-drawer
+        open
+        size="wide"
+        label="Query event detail"
+        .modal=${false}
+        @lv-drawer-close=${this.closeQueryDetail}
+      >
+        <div slot="title" class=${`query-detail-status query-detail-status-${statusTone}`}>
+          ${lucideIcon(queryEventStatusIconComponent(event.status ?? ''), { size: 16, strokeWidth: 2 })}
+          <span>${event.loading ? 'Loading' : event.statusLabel || queryEventStatusLabel(event.status ?? '')}</span>
+        </div>
         <div class="query-detail-body">
           ${event.loading ? html`<section class="query-detail-section"><p class="detail">Loading query details...</p></section>` : nothing}
           ${event.error && !event.status ? html`<section class="query-detail-section"><pre class="query-detail-code query-detail-error"><code>${event.error}</code></pre></section>` : nothing}
@@ -927,7 +1013,7 @@ class LeapViewAdminPage extends DatastarLit(LitElement) {
             </details>
           ` : nothing}
         </div>
-      </aside>
+      </lv-drawer>
     `
   }
 

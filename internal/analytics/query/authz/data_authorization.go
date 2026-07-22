@@ -122,12 +122,37 @@ func (m Metrics) GovernDataQuery(ctx context.Context, request dataquery.Query) (
 	}
 	privilege := dataQueryPrivilege(request)
 	objects := dataQueryObjects(request)
-	semanticObjects, physicalObjects, err := m.resolvedDependencyObjects(request)
+	capability, publicationQuery := dashboardPublicationCapabilityFromContext(ctx)
+	semanticObjects, physicalObjects, err := m.resolvedDependencyObjects(request, publicationQuery)
 	if err != nil {
 		return request, nil, err
 	}
 	objects = append(objects, semanticObjects...)
 	objects = append(objects, physicalObjects...)
+	if publicationQuery {
+		objects = append(objects, dataQueryColumnObjects(request)...)
+		request.PrincipalID = access.DashboardPublicationSubjectID(capability.WorkspaceID, capability.Publication)
+		if err := validateDashboardPublicationQuery(capability, request, objects); err != nil {
+			if auditErr := m.recordDataAccessAudit(ctx, request, access.PrivilegeQueryData, objects, "denied", err); auditErr != nil {
+				return request, nil, errors.Join(err, auditErr)
+			}
+			return request, nil, err
+		}
+		governed, err := m.applyDataPolicies(ctx, request, objects)
+		if err != nil {
+			if auditErr := m.recordDataAccessAudit(ctx, request, access.PrivilegeQueryData, objects, "error", err); auditErr != nil {
+				return request, nil, errors.Join(err, auditErr)
+			}
+			return request, nil, err
+		}
+		return governed, func(result *dataquery.Result, executeErr error) error {
+			status := "success"
+			if executeErr != nil || (result != nil && result.Status == dataquery.StatusError) {
+				status = "error"
+			}
+			return m.recordDataAccessAudit(ctx, governed, access.PrivilegeQueryData, objects, status, executeErr)
+		}, nil
+	}
 	principalID := strings.TrimSpace(request.PrincipalID)
 	if principal, ok := m.currentPrincipal(ctx); ok {
 		if principal.DevBypass {
@@ -140,37 +165,37 @@ func (m Metrics) GovernDataQuery(ctx context.Context, request dataquery.Query) (
 	}
 	if principalID == "" {
 		err := dataquery.ErrMissingPrincipal
-		m.recordDataAccessAudit(ctx, request, "", objects, "denied", err)
+		_ = m.recordDataAccessAudit(ctx, request, "", objects, "denied", err)
 		return request, nil, err
 	}
 	if credential, ok := m.currentCredential(ctx); ok && !m.allowsToken(credential.Token, request.WorkspaceID, privilege) {
 		err := DeniedError{PrincipalID: principalID, Privilege: privilege, Credential: true}
-		m.recordDataAccessAudit(ctx, request, privilege, objects, "denied", err)
+		_ = m.recordDataAccessAudit(ctx, request, privilege, objects, "denied", err)
 		return request, nil, err
 	}
 	if ok, err := m.authorizeDataQuery(ctx, principalID, privilege, request, objects); err != nil {
-		m.recordDataAccessAudit(ctx, request, privilege, objects, "error", err)
+		_ = m.recordDataAccessAudit(ctx, request, privilege, objects, "error", err)
 		return request, nil, err
 	} else if !ok {
 		err := DeniedError{PrincipalID: principalID, Privilege: privilege}
-		m.recordDataAccessAudit(ctx, request, privilege, objects, "denied", err)
+		_ = m.recordDataAccessAudit(ctx, request, privilege, objects, "denied", err)
 		return request, nil, err
 	}
 	governed, err := m.applyDataPolicies(ctx, request, objects)
 	if err != nil {
-		m.recordDataAccessAudit(ctx, request, privilege, objects, "error", err)
+		_ = m.recordDataAccessAudit(ctx, request, privilege, objects, "error", err)
 		return request, nil, err
 	}
 	return governed, func(result *dataquery.Result, executeErr error) error {
 		if executeErr != nil {
-			m.recordDataAccessAudit(ctx, governed, privilege, objects, "error", executeErr)
+			_ = m.recordDataAccessAudit(ctx, governed, privilege, objects, "error", executeErr)
 			return nil
 		}
 		status := "success"
 		if result != nil && result.Status == dataquery.StatusError {
 			status = "error"
 		}
-		m.recordDataAccessAudit(ctx, governed, privilege, objects, status, nil)
+		_ = m.recordDataAccessAudit(ctx, governed, privilege, objects, status, nil)
 		return nil
 	}, nil
 }
@@ -213,20 +238,44 @@ func (m Metrics) authorizeDataQuery(ctx context.Context, principalID string, pri
 	return true, nil
 }
 
-func (m Metrics) resolvedDependencyObjects(request dataquery.Query) ([]access.ObjectRef, []access.ObjectRef, error) {
-	if request.Kind != dataquery.KindSemanticAggregate && request.Kind != dataquery.KindSemanticSpatial {
+func (m Metrics) resolvedDependencyObjects(request dataquery.Query, includePublicInteractions bool) ([]access.ObjectRef, []access.ObjectRef, error) {
+	switch request.Kind {
+	case dataquery.KindSemanticAggregate, dataquery.KindSemanticSpatial:
+	case dataquery.KindSemanticRows, dataquery.KindSemanticHistogram, dataquery.KindSemanticDistribution:
+		if !includePublicInteractions {
+			return nil, nil, nil
+		}
+	default:
 		return nil, nil, nil
 	}
 	model, ok := m.Metrics.SemanticModel(request.ModelID)
 	if !ok || model == nil {
 		return nil, nil, fmt.Errorf("unknown semantic model %q", request.ModelID)
 	}
+	dimensions := dataFieldsToSemanticFields(request.Fields)
+	measures := dataFieldsToSemanticFields(request.Measures)
+	for _, field := range request.AuthorizationFields {
+		if semanticFieldIsMeasure(model, field.Field) {
+			measures = append(measures, semanticquery.Field{Field: field.Field, Alias: field.Alias})
+		} else {
+			dimensions = append(dimensions, semanticquery.Field{Field: field.Field, Alias: field.Alias})
+		}
+	}
+	if request.Value.Field != "" {
+		field := semanticquery.Field{Field: request.Value.Field, Alias: request.Value.Alias}
+		if semanticFieldIsMeasure(model, request.Value.Field) {
+			measures = append(measures, field)
+		} else {
+			dimensions = append(dimensions, field)
+		}
+	}
 	queryRequest := semanticquery.Request{
 		Table:      request.Target,
-		Dimensions: dataFieldsToSemanticFields(request.Fields),
-		Measures:   dataFieldsToSemanticFields(request.Measures),
+		Dimensions: dimensions,
+		Measures:   measures,
 		Time:       semanticquery.Time{Field: request.Time.Field, Grain: request.Time.Grain, Alias: request.Time.Alias},
 		Filters:    dataFiltersToSemanticFilters(request.Filters),
+		Sort:       dataSortToSemanticSort(request.Sort),
 	}
 	dependencies, err := semanticquery.ResolveDependencies(model, queryRequest)
 	if err != nil {
@@ -261,6 +310,17 @@ func (m Metrics) resolvedDependencyObjects(request dataquery.Query) ([]access.Ob
 		physicalObjects = append(physicalObjects, access.ItemObjectWithParent(access.SecurableColumn, request.WorkspaceID, request.ModelID+"/"+table+"/"+column, tableObject))
 	}
 	return semanticObjects, physicalObjects, nil
+}
+
+func semanticFieldIsMeasure(model *semanticmodel.Model, field string) bool {
+	if model == nil {
+		return false
+	}
+	if _, ok := model.Measures[field]; ok {
+		return true
+	}
+	_, ok := model.Metrics[field]
+	return ok
 }
 
 func isSemanticField(model *semanticmodel.Model, field string) bool {
@@ -309,9 +369,17 @@ func dataSpatialFilterToSemantic(value *dataquery.SpatialFilter) *semanticquery.
 	}
 }
 
-func (m Metrics) recordDataAccessAudit(ctx context.Context, request dataquery.Query, privilege access.Privilege, objects []access.ObjectRef, status string, cause error) {
+func dataSortToSemanticSort(sort []dataquery.Sort) []semanticquery.Sort {
+	out := make([]semanticquery.Sort, 0, len(sort))
+	for _, item := range sort {
+		out = append(out, semanticquery.Sort{Field: item.Field, Direction: item.Direction})
+	}
+	return out
+}
+
+func (m Metrics) recordDataAccessAudit(ctx context.Context, request dataquery.Query, privilege access.Privilege, objects []access.ObjectRef, status string, cause error) error {
 	if m.repo == nil {
-		return
+		return nil
 	}
 	action := "data_query.executed"
 	if privilege == access.PrivilegePreviewData {
@@ -344,7 +412,7 @@ func (m Metrics) recordDataAccessAudit(ctx context.Context, request dataquery.Qu
 		metadata["error"] = cause.Error()
 	}
 	bytes, _ := json.Marshal(metadata)
-	_ = access.PersistAuditEvent(ctx, m.repo, access.AuditEventInput{
+	return access.PersistAuditEvent(ctx, m.repo, access.AuditEventInput{
 		WorkspaceID:   request.WorkspaceID,
 		PrincipalID:   request.PrincipalID,
 		Action:        action,
@@ -593,7 +661,7 @@ func dataQueryPrivilege(request dataquery.Query) access.Privilege {
 	case dataquery.KindModelTableRows, dataquery.KindSourceRows:
 		return access.PrivilegePreviewData
 	case dataquery.KindSemanticRows:
-		if request.Surface == dataquery.SurfaceDashboard {
+		if request.Surface == dataquery.SurfaceDashboard || request.Surface == dataquery.SurfacePublicDashboard {
 			return access.PrivilegeQueryData
 		}
 		return access.PrivilegePreviewData

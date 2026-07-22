@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
 	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
 	"github.com/Yacobolo/leapview/internal/workspace"
@@ -196,6 +197,30 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, servingStateID workspace.
 				edge(semanticTableID, fieldID, workspace.AssetEdgeContains)
 			}
 		}
+		for _, dimensionName := range sortedMapKeys(model.Dimensions) {
+			dimension := model.Dimensions[dimensionName]
+			logical := semanticmodel.MetricDimension{
+				Field: dimensionName, Name: dimensionName, Label: dimension.Label,
+				Description: dimension.Description, Type: dimension.Type,
+			}
+			dimensionID, err := add(workspace.AssetTypeField, modelKey+"."+dimensionName, modelID, dimensionLabel(dimensionName, dimension.Label), dimension.Description, fieldPayload(logical))
+			if err != nil {
+				return workspace.AssetGraph{}, err
+			}
+			edge(modelID, dimensionID, workspace.AssetEdgeContains)
+			bindings := make([]string, 0, len(dimension.Bindings))
+			for _, binding := range dimension.Bindings {
+				bindings = append(bindings, binding.Field)
+			}
+			sort.Strings(bindings)
+			for _, binding := range bindings {
+				fieldID, err := assetID(workspace.AssetTypeField, modelKey+"."+binding)
+				if err != nil {
+					return workspace.AssetGraph{}, err
+				}
+				edge(dimensionID, fieldID, workspace.AssetEdgeUsesField)
+			}
+		}
 		for _, relationship := range model.Relationships {
 			id, err := add(workspace.AssetTypeRelationship, modelKey+"."+relationship.ID, modelID, relationship.ID, relationship.Description, relationshipPayload(relationship))
 			if err != nil {
@@ -230,6 +255,32 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, servingStateID workspace.
 				edge(id, fieldID, workspace.AssetEdgeUsesField)
 			}
 		}
+		for _, metricName := range sortedMapKeys(model.Metrics) {
+			metric := model.Metrics[metricName]
+			id, err := add(workspace.AssetTypeMeasure, modelKey+"."+metricName, modelID, measureLabel(metricName, metric.Label), metric.Description, metricMeasurePayload(metric))
+			if err != nil {
+				return workspace.AssetGraph{}, err
+			}
+			edge(modelID, id, workspace.AssetEdgeContains)
+		}
+		for _, metricName := range sortedMapKeys(model.Metrics) {
+			metric := model.Metrics[metricName]
+			metricID, err := assetID(workspace.AssetTypeMeasure, modelKey+"."+metricName)
+			if err != nil {
+				return workspace.AssetGraph{}, err
+			}
+			expression, err := semanticmodel.ParseExpression(metric.Expression)
+			if err != nil {
+				return workspace.AssetGraph{}, err
+			}
+			for _, ref := range expression.References() {
+				dependencyID, err := assetID(workspace.AssetTypeMeasure, modelKey+"."+ref)
+				if err != nil {
+					return workspace.AssetGraph{}, err
+				}
+				edge(metricID, dependencyID, workspace.AssetEdgeUsesMeasure)
+			}
+		}
 	}
 	for _, pipelineName := range sortedMapKeys(definition.RefreshPipelines) {
 		pipeline := definition.RefreshPipelines[pipelineName]
@@ -260,11 +311,16 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, servingStateID workspace.
 		edge(reportID, modelID, workspace.AssetEdgeUsesSemanticModel)
 		model := definition.Models[compiledReport.SemanticModel]
 		addMeasureUse := func(fromID workspace.AssetID, fieldID string) error {
+			if metric, ok := model.Metrics[fieldID]; ok {
+				metricID, err := assetID(workspace.AssetTypeMeasure, modelKey+"."+metric.Name)
+				if err != nil {
+					return err
+				}
+				edge(fromID, metricID, workspace.AssetEdgeUsesMeasure)
+				return nil
+			}
 			measure, err := model.ResolveMeasure(fieldID)
 			if err != nil {
-				if _, ok := model.Metrics[fieldID]; ok {
-					return nil
-				}
 				return err
 			}
 			measureID, err := assetID(workspace.AssetTypeMeasure, modelKey+"."+measure.Name)
@@ -278,19 +334,12 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, servingStateID workspace.
 			if ref == "" {
 				return nil
 			}
-			if dimension, ok := model.Dimensions[ref]; ok {
-				bindings := make([]string, 0, len(dimension.Bindings))
-				for _, binding := range dimension.Bindings {
-					bindings = append(bindings, binding.Field)
+			if _, ok := model.Dimensions[ref]; ok {
+				fieldID, err := assetID(workspace.AssetTypeField, modelKey+"."+ref)
+				if err != nil {
+					return err
 				}
-				sort.Strings(bindings)
-				for _, binding := range bindings {
-					fieldID, err := assetID(workspace.AssetTypeField, modelKey+"."+binding)
-					if err != nil {
-						return err
-					}
-					edge(fromID, fieldID, edgeType)
-				}
+				edge(fromID, fieldID, edgeType)
 				return nil
 			}
 			if dimension, err := model.ResolveDimension(ref); err == nil {
@@ -339,6 +388,26 @@ func ExtractLineage(workspaceID workspace.WorkspaceID, servingStateID workspace.
 			for _, field := range fields {
 				if err := addFieldUse(visualID, field.FieldID, workspace.AssetEdgeUsesField); err != nil {
 					return workspace.AssetGraph{}, err
+				}
+			}
+			base, err := visualizationir.SpecificationBase(compiledVisual.Spec)
+			if err != nil {
+				return workspace.AssetGraph{}, err
+			}
+			for _, interaction := range base.Interactions {
+				for _, mapping := range interaction.Mappings {
+					if err := addFieldUse(visualID, mapping.TargetFieldID, workspace.AssetEdgeFiltersField); err != nil {
+						return workspace.AssetGraph{}, err
+					}
+				}
+			}
+			if geographic, ok := compiledVisual.Spec.Value.(visualizationir.GeographicVisualizationSpec); ok {
+				for _, interaction := range geographic.SpatialInteractions {
+					for _, mapping := range []visualizationir.VisualizationSpatialFieldMapping{interaction.Latitude, interaction.Longitude} {
+						if err := addFieldUse(visualID, mapping.TargetFieldID, workspace.AssetEdgeFiltersField); err != nil {
+							return workspace.AssetGraph{}, err
+						}
+					}
 				}
 			}
 		}
