@@ -563,10 +563,8 @@ func (r *WorkspaceRuntime) Refresh(ctx context.Context) error {
 		return err
 	}
 	r.clearQueryCaches()
-	for modelID, model := range r.models {
-		if err := discoverSchemas(ctx, r.sessions, model); err != nil {
-			return fmt.Errorf("discovering semantic model %q schemas: %w", modelID, err)
-		}
+	if err := r.discoverServingSchemas(ctx, r.materializationModel); err != nil {
+		return err
 	}
 	r.lastRefresh = lastRefresh
 	r.lastSnapshotID = snapshotID
@@ -595,10 +593,8 @@ func (r *WorkspaceRuntime) RefreshModelTables(ctx context.Context, modelID strin
 		return err
 	}
 	r.clearQueryCaches()
-	for discoverModelID, discoverModel := range r.models {
-		if err := discoverSchemas(ctx, r.sessions, discoverModel); err != nil {
-			return fmt.Errorf("discovering semantic model %q schemas: %w", discoverModelID, err)
-		}
+	if err := r.discoverServingSchemas(ctx, model); err != nil {
+		return err
 	}
 	r.lastRefresh = lastRefresh
 	r.lastSnapshotID = snapshotID
@@ -626,10 +622,8 @@ func (r *WorkspaceRuntime) RefreshWorkspaceTables(ctx context.Context, tableName
 		return err
 	}
 	r.clearQueryCaches()
-	for discoverModelID, discoverModel := range r.models {
-		if err := discoverSchemas(ctx, r.sessions, discoverModel); err != nil {
-			return fmt.Errorf("discovering semantic model %q schemas: %w", discoverModelID, err)
-		}
+	if err := r.discoverServingSchemas(ctx, r.materializationModel); err != nil {
+		return err
 	}
 	r.lastRefresh = lastRefresh
 	r.lastSnapshotID = snapshotID
@@ -640,6 +634,54 @@ func (r *WorkspaceRuntime) clearQueryCaches() {
 	for _, view := range r.views {
 		view.ClearQueryCache()
 	}
+}
+
+func (r *WorkspaceRuntime) discoverServingSchemas(ctx context.Context, refreshed *semanticmodel.Model) error {
+	applyDiscoveredSourceSchemas(refreshed, r.models)
+	for modelID, model := range r.models {
+		if err := discoverSchemas(ctx, r.sessions, model); err != nil {
+			return fmt.Errorf("discovering semantic model %q schemas: %w", modelID, err)
+		}
+	}
+	return nil
+}
+
+// applyDiscoveredSourceSchemas carries refresh-scoped source metadata into the
+// authored semantic models before serving schema discovery. This is the
+// boundary that prevents the post-commit pass from reopening an external
+// source after its temporary credentials and attachments have been removed.
+func applyDiscoveredSourceSchemas(refreshed *semanticmodel.Model, models map[string]*semanticmodel.Model) {
+	if refreshed == nil {
+		return
+	}
+	for sourceName, discovered := range refreshed.Sources {
+		if len(discovered.Schema.Columns) == 0 {
+			continue
+		}
+		for _, model := range models {
+			if model == nil {
+				continue
+			}
+			source, ok := model.Sources[sourceName]
+			if !ok {
+				continue
+			}
+			source.Schema = cloneTableSchema(discovered.Schema)
+			model.Sources[sourceName] = source
+		}
+	}
+}
+
+func cloneTableSchema(schema semanticmodel.TableSchema) semanticmodel.TableSchema {
+	clone := semanticmodel.TableSchema{Columns: append([]semanticmodel.ColumnSchema(nil), schema.Columns...)}
+	for index := range clone.Columns {
+		if clone.Columns[index].Nullable == nil {
+			continue
+		}
+		nullable := *clone.Columns[index].Nullable
+		clone.Columns[index].Nullable = &nullable
+	}
+	return clone
 }
 
 func WorkspaceModelTableDependencyOrder(models map[string]*semanticmodel.Model, selectedTable string) ([]string, error) {
