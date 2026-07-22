@@ -128,6 +128,9 @@ func TestBuilderOwnsSlicedDictionaryBuffers(t *testing.T) {
 	if err := collector.WriteRecord(record); err != nil {
 		t.Fatal(err)
 	}
+	// A retained dictionary array is not sufficient for duckdb-go batches: its
+	// values can still point at the reader's reusable native chunk.
+	record.Column(0).(*array.Dictionary).Dictionary().(*array.String).Data().Buffers()[2].Bytes()[0] = 'z'
 	record.Release()
 	result, err := collector.Finish()
 	if err != nil {
