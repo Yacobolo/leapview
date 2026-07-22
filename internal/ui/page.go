@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/Yacobolo/libredash/internal/brand"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	"github.com/Yacobolo/libredash/internal/staticasset"
 	uisignals "github.com/Yacobolo/libredash/internal/ui/signals"
@@ -57,6 +58,7 @@ func inspectorElement() g.Node {
 
 func pageHead(extra ...g.Node) []g.Node {
 	nodes := []g.Node{
+		h.Link(h.Rel("icon"), h.Href(staticAsset(brand.FaviconPath)), h.Type("image/svg+xml")),
 		h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
 		h.Script(h.Src(staticAsset("/static/theme.js"))),
 		h.Script(h.Type("module"), h.Src(staticAsset("/static/command.js"))),
@@ -87,10 +89,9 @@ func LoginPage(options ...LoginPageOptions) g.Node {
 			opts.ProviderLabel = "Sign in with Azure Active Directory"
 		}
 	}
-	favicon := "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%230969da'/%3E%3Ctext x='32' y='39' text-anchor='middle' font-family='Arial,sans-serif' font-size='20' font-weight='700' fill='white'%3ELD%3C/text%3E%3C/svg%3E"
 	loginUpdatesURL := updatesURL(uisignals.RouteLogin)
 	return pagestream.RenderPage(pagestream.PageSpec{
-		Title:             "LibreDash Login",
+		Title:             brand.Name + " Login",
 		DatastarScriptURL: datastarScriptURL(),
 		HTMLAttrs: []g.Node{
 			g.Attr("data-color-mode", "auto"),
@@ -99,7 +100,7 @@ func LoginPage(options ...LoginPageOptions) g.Node {
 		},
 		Head: []g.Node{
 			csrfMeta(opts.CSRFToken),
-			h.Link(h.Rel("icon"), h.Href(favicon)),
+			h.Link(h.Rel("icon"), h.Href(staticAsset(brand.FaviconPath)), h.Type("image/svg+xml")),
 			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
 			h.Script(h.Src(staticAsset("/static/theme.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/login-page.js"))),
@@ -119,7 +120,7 @@ func LoginBootstrapSignals() map[string]any {
 	return map[string]any{
 		"page": uisignals.LoginPageSignal{
 			Kind:                uisignals.RouteLogin,
-			Title:               "LibreDash",
+			Title:               brand.Name,
 			ProviderLabel:       "Sign in with Azure Active Directory",
 			LocalAuth:           false,
 			SSOAuth:             true,
@@ -175,7 +176,7 @@ func catalogPageDocument(catalog dashboard.Catalog, page uisignals.CatalogPageSi
 	applyChromeOptions(&chrome, chromeOptions)
 	catalogUpdatesURL := updatesURL(uisignals.RouteCatalog)
 	return pagestream.RenderPage(pagestream.PageSpec{
-		Title:             "LibreDash Dashboards",
+		Title:             brand.Name + " Dashboards",
 		DatastarScriptURL: datastarScriptURL(),
 		HTMLAttrs: []g.Node{
 			g.Attr("data-color-mode", "auto"),

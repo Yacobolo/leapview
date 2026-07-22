@@ -1,6 +1,6 @@
 # Managed data ingestion
 
-LibreDash managed data turns local files into immutable, project-global data
+LeapView managed data turns local files into immutable, project-global data
 revisions. A connection belongs to the project, not to an individual workspace.
 DuckDB reads the active revision through its native CSV, Parquet, and other file
 scanners; ingestion does not insert rows one at a time.
@@ -112,11 +112,11 @@ revision.
 
 The Hetzner single-node deployment uses the local backend and stores managed
 objects under `/var/lib/libredash/home/managed-data`. Its stopped-state application
-backup contains the object store and LibreDash metadata, so backup and restore
+backup contains the object store and LeapView metadata, so backup and restore
 recover a complete local deployment.
 
-With the S3 backend, LibreDash backups still contain the control-plane metadata
+With the S3 backend, LeapView backups still contain the control-plane metadata
 and local runtime cache, but not the authoritative S3 objects. Enable bucket
 versioning and a bucket-native backup or replication policy. A recoverable S3
-deployment requires both the LibreDash metadata backup and the corresponding
+deployment requires both the LeapView metadata backup and the corresponding
 bucket objects.

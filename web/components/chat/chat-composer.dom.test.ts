@@ -142,7 +142,13 @@ test('composer preserves submit, multiline, disabled, and pending behavior', asy
       element.pending = true
       await element.updateComplete
       const pendingDisabled = button.disabled
-      const hasSpinner = Boolean(root.querySelector('.spinner'))
+      const spinner = root.querySelector('ld-loading-spinner') as any
+      await spinner?.updateComplete
+      const hasSpinner = Boolean(spinner)
+      const spinnerAnimationDuration = spinner?.shadowRoot?.querySelector('svg')
+        ? getComputedStyle(spinner.shadowRoot.querySelector('svg')).animationDuration
+        : ''
+      const spinnerInheritsButtonColor = spinner ? getComputedStyle(spinner).color === getComputedStyle(button).color : false
 
       element.pending = false
       element.disabled = true
@@ -150,7 +156,7 @@ test('composer preserves submit, multiline, disabled, and pending behavior', asy
       const textareaDisabled = textarea.disabled
       const disabledButton = button.disabled
 
-      return { received, enabledAfterInput, singleLineHeight, multilineHeight, multilineOverflowY, afterShiftEnter, afterEnter, pendingDisabled, hasSpinner, textareaDisabled, disabledButton }
+      return { received, enabledAfterInput, singleLineHeight, multilineHeight, multilineOverflowY, afterShiftEnter, afterEnter, pendingDisabled, hasSpinner, spinnerAnimationDuration, spinnerInheritsButtonColor, textareaDisabled, disabledButton }
     })
 
     expect(events.received).toEqual(['Revenue trend'])
@@ -163,6 +169,8 @@ test('composer preserves submit, multiline, disabled, and pending behavior', asy
     expect(events.afterEnter).toBe(1)
     expect(events.pendingDisabled).toBe(true)
     expect(events.hasSpinner).toBe(true)
+    expect(events.spinnerAnimationDuration).toBe('1.8s')
+    expect(events.spinnerInheritsButtonColor).toBe(true)
     expect(events.textareaDisabled).toBe(true)
     expect(events.disabledButton).toBe(true)
   } finally {
@@ -210,6 +218,8 @@ function testDocument(): string {
             --ld-line-height-normal: 1.5;
             --ld-transition-fast: 160ms ease;
             --ld-shadow-floating-sm: 0 8px 24px rgb(0 0 0 / .12);
+            --ld-spinner-size-md: 16px;
+            --ld-spinner-duration: 1800ms;
             --duration-fast: 160ms;
             --ease-ld: ease;
           }

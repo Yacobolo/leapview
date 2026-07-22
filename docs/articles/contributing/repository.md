@@ -1,6 +1,6 @@
 # Repository and development workflow
 
-LibreDash is a monorepo containing the product application, browser components, resource examples, generators, deployment contracts, documentation, and independently deployable public site. Keeping these surfaces together lets one pull request update behavior and its contracts atomically.
+LeapView is a monorepo containing the product application, browser components, resource examples, generators, deployment contracts, documentation, and independently deployable public site. Keeping these surfaces together lets one pull request update behavior and its contracts atomically.
 
 ## Important locations
 

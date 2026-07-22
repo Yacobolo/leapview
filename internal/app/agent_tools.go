@@ -159,7 +159,7 @@ func agentScopeFromTools(scope agenttools.Scope) agentcap.Scope {
 func (s *Server) authorizeAPIGenAgentOperation(ctx context.Context, scope agentcap.Scope, operationID string) (agentcore.ToolResult, bool) {
 	privilege, ok := apigenOperationPrivilege(operationID)
 	if !ok {
-		return agenttools.ToolError("forbidden", "operation has no generated LibreDash privilege metadata"), false
+		return agenttools.ToolError("forbidden", "operation has no generated LeapView privilege metadata"), false
 	}
 	if operationID == "listWorkspaces" && strings.TrimSpace(scope.WorkspaceID) == "" {
 		if strings.TrimSpace(scope.PrincipalID) == "" {

@@ -626,7 +626,7 @@ func (a *Auth) authenticate(r *http.Request) (Principal, *access.APICredential, 
 	return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, nil, true
 }
 
-// authenticateBearer resolves LibreDash REST API tokens. MCP OAuth tokens use
+// authenticateBearer resolves LeapView REST API tokens. MCP OAuth tokens use
 // the resource-server verifier and never enter the REST credential path.
 func (a *Auth) authenticateBearer(r *http.Request) (Principal, *access.APICredential, bool) {
 	if a == nil || bearerToken(r) == "" {

@@ -157,7 +157,7 @@ class LibreDashCatalogPage extends DatastarLit(LitElement) {
     const page = this.page
     if (!page) return html`<slot></slot>`
     return html`
-      <section aria-label="LibreDash dashboard catalog">
+      <section aria-label="LeapView dashboard catalog">
         <header>
           <h1>${page.title}</h1>
           <p class="detail">${page.description}</p>

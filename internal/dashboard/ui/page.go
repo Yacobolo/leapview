@@ -9,6 +9,7 @@ import (
 	"time"
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
+	"github.com/Yacobolo/libredash/internal/brand"
 	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	"github.com/Yacobolo/libredash/internal/staticasset"
 	uiactions "github.com/Yacobolo/libredash/internal/ui/actions"
@@ -83,6 +84,7 @@ func inspectorElement() g.Node {
 
 func pageHead(extra ...g.Node) []g.Node {
 	nodes := []g.Node{
+		h.Link(h.Rel("icon"), h.Href(staticAsset(brand.FaviconPath)), h.Type("image/svg+xml")),
 		h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
 		h.Script(h.Src(staticAsset("/static/theme.js"))),
 		h.Script(h.Type("module"), h.Src(staticAsset("/static/command.js"))),
@@ -109,7 +111,7 @@ func Page(clientID, csrfToken string, catalog dashboard.Catalog, report dashboar
 	reloadAction := uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/reload", "runtime", "filters.controls")
 	filtersUpdate := "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); " + visualReset
 	return pagestream.RenderPage(pagestream.PageSpec{
-		Title:             "LibreDash",
+		Title:             brand.Name,
 		DatastarScriptURL: datastarScriptURL(),
 		HTMLAttrs: []g.Node{
 			g.Attr("data-color-mode", "auto"),

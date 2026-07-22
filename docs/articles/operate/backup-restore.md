@@ -1,6 +1,6 @@
 # Backup and restore
 
-Use LibreDash administrative commands and backend-native protection so the control plane, analytical catalog, analytical files, and managed source objects can be recovered to a consistent point.
+Use LeapView administrative commands and backend-native protection so the control plane, analytical catalog, analytical files, and managed source objects can be recovered to a consistent point.
 
 ## Define recovery objectives
 
@@ -16,7 +16,7 @@ Write the archive outside the active instance directory:
 libredash admin backup --out /srv/backups/libredash-2026-07-16.tar
 ```
 
-The output path must not already exist. Record a checksum, creation time, LibreDash version, storage-backend configuration, and the identity of any corresponding external catalog or object-store recovery point.
+The output path must not already exist. Record a checksum, creation time, LeapView version, storage-backend configuration, and the identity of any corresponding external catalog or object-store recovery point.
 
 `--database-only` intentionally captures only the platform database. It is useful for narrow administration but is not a complete analytical recovery artifact.
 
@@ -65,6 +65,6 @@ After the process starts:
 7. Check storage cleanup in dry-run mode.
 8. Create and validate a new backup.
 
-If a remote object store or catalog was restored independently, reconcile its point with LibreDash metadata before serving. Preserve the failed and pre-restore artifacts until the incident is closed.
+If a remote object store or catalog was restored independently, reconcile its point with LeapView metadata before serving. Preserve the failed and pre-restore artifacts until the incident is closed.
 
 See [Storage and recovery](/docs/guides/data/storage-recovery) and the generated [`admin backup`](/docs/cli/admin-backup) and [`admin restore`](/docs/cli/admin-restore) references.

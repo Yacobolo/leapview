@@ -1,6 +1,6 @@
 # Build dashboards
 
-LibreDash authoring follows the dependency direction of the project. Start with governed data inputs and finish with presentation. Working in that order makes validation errors local and prevents dashboards from becoming the place where source cleanup and business logic accumulate.
+LeapView authoring follows the dependency direction of the project. Start with governed data inputs and finish with presentation. Working in that order makes validation errors local and prevents dashboards from becoming the place where source cleanup and business logic accumulate.
 
 > [!TIP]
 > Treat this sequence as a diagnostic boundary as well as a build order. Verify each layer before moving upward so a dashboard never has to compensate for an ambiguous source, grain, or measure.

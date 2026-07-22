@@ -69,8 +69,11 @@ test('login page composes route UI', async () => {
       const hostRect = element.getBoundingClientRect()
       const panelRect = panel.getBoundingClientRect()
       const visibleThemeIcon = root.querySelector('[data-theme-icon]:not([hidden])') as HTMLElement | null
+      const brandMark = root.querySelector('ld-brand-mark') as HTMLElement | null
       return {
         title: root.querySelector('h1')?.textContent?.trim(),
+        brandMarkCount: root.querySelectorAll('ld-brand-mark').length,
+        apertureCircleCount: brandMark?.shadowRoot?.querySelectorAll('circle[cx="12"][cy="12"][r="10"]').length,
         hasBackground: Boolean(root.querySelector('ld-topology-background[data-login-background]')),
         backgroundRegistered: Boolean(customElements.get('ld-topology-background')),
         moduleSrc: root.querySelector('ld-topology-background')?.getAttribute('data-module-src'),
@@ -85,7 +88,9 @@ test('login page composes route UI', async () => {
     })
 
     expect(state).toEqual({
-      title: 'LibreDash',
+      title: 'LeapView',
+      brandMarkCount: 1,
+      apertureCircleCount: 1,
       hasBackground: true,
       backgroundRegistered: false,
       moduleSrc: '/static/topology-background.js?v=dev',
@@ -167,7 +172,7 @@ test('login theme toggle cycles shadow DOM icon and dispatches theme change', as
 function testDocument(): string {
   const page = {
     kind: 'login',
-    title: 'LibreDash',
+    title: 'LeapView',
     providerLabel: 'Sign in with Azure Active Directory',
     backgroundModuleSrc: '/static/topology-background.js?v=dev',
   }

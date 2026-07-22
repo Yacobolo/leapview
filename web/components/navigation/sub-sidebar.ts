@@ -2,6 +2,7 @@ import { LitElement, css, html, type PropertyValues } from 'lit'
 import { property, state } from 'lit/decorators.js'
 import { ChevronLeft, ChevronRight, type IconNode } from 'lucide'
 import { lucideIcon } from '../shared/lucide-icons'
+import '../shared/loading-spinner'
 
 type SubSidebarItem = {
   id: string
@@ -311,13 +312,8 @@ class SubSidebar extends LitElement {
     }
 
     .pending-spinner {
-      width: var(--ld-spinner-size-sm);
-      height: var(--ld-spinner-size-sm);
+      --ld-spinner-size: var(--ld-spinner-size-sm);
       flex: 0 0 auto;
-      border: var(--ld-spinner-border-width) solid var(--ld-line-muted);
-      border-top-color: var(--ld-fg-muted);
-      border-radius: var(--ld-radius-full);
-      animation: pending-spin var(--ld-duration-slow) linear infinite;
     }
 
     .item-link:hover .item-title,
@@ -524,11 +520,6 @@ class SubSidebar extends LitElement {
       }
     }
 
-    @keyframes pending-spin {
-      to {
-        transform: rotate(360deg);
-      }
-    }
   `
 
   updated(changed: PropertyValues<this>): void {
@@ -610,7 +601,7 @@ class SubSidebar extends LitElement {
       <span class="item-text">
         <span class="item-title-row">
           <span class="item-title">${title}</span>
-          ${item.pending ? html`<span class="pending-spinner" aria-label="Title loading"></span>` : null}
+          ${item.pending ? html`<ld-loading-spinner class="pending-spinner" aria-label="Title loading"></ld-loading-spinner>` : null}
         </span>
         ${cleanText(item.meta) ? html`<span class="item-meta">${item.meta}</span>` : null}
       </span>

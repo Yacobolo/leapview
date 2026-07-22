@@ -39,6 +39,7 @@ import type {
 import { DatastarLit } from '../shared/datastar-lit'
 import { checkSignalContract } from '../shared/signal-contract'
 import { lucideIcon } from '../shared/lucide-icons'
+import '../shared/loading-spinner'
 import '../shared/record-table'
 import '../shared/code-block'
 import '../shared/workspace-access-control'
@@ -93,7 +94,7 @@ class LibreDashWorkspacePage extends DatastarLit(LitElement) {
 
   private renderCatalog(page: WorkspacePageSignal) {
     return html`
-      <section class="page catalog" aria-label="LibreDash workspaces">
+      <section class="page catalog" aria-label="LeapView workspaces">
         ${this.renderHeader('', page.title, page.description)}
         <div class="cards">
           ${page.cards?.map((card) => html`
@@ -266,7 +267,7 @@ class LibreDashWorkspaceAssetPage extends DatastarLit(LitElement) {
           ?disabled=${Boolean(action.disabled || page.refresh?.running)}
           @click=${() => this.dispatchEvent(new CustomEvent('ld-run-refresh-pipeline', { bubbles: true, composed: true }))}
         >
-          ${lucideIcon(RefreshCw, { className: page.refresh?.running ? 'spin' : '' })}
+          ${page.refresh?.running ? html`<ld-loading-spinner aria-hidden="true"></ld-loading-spinner>` : lucideIcon(RefreshCw)}
         </button>
       `
     }
@@ -730,16 +731,6 @@ const workspaceStyles = css`
   .icon-link:disabled {
     opacity: 0.6;
     cursor: wait;
-  }
-
-  .spin {
-    animation: ld-spin 900ms linear infinite;
-  }
-
-  @keyframes ld-spin {
-    to {
-      transform: rotate(360deg);
-    }
   }
 
   .icon-button {

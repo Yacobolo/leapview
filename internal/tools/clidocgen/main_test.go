@@ -25,7 +25,7 @@ func TestGenerateWritesVersionedMachineManifest(t *testing.T) {
 		},
 	}
 	deploy.Flags().Bool("apply", false, "Apply the deployment")
-	root.PersistentFlags().String("target", "", "LibreDash server URL")
+	root.PersistentFlags().String("target", "", "LeapView server URL")
 	root.AddCommand(deploy)
 
 	out := t.TempDir()

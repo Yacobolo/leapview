@@ -16,7 +16,7 @@ func TestGenerateBuildsUnifiedCatalogFromArticlesAndGeneratedCollections(t *test
 	writeFixture(t, root, "navigation.yaml", `sections:
   - id: start
     title: Start here
-    summary: Learn LibreDash.
+    summary: Learn LeapView.
     documents:
       - slug: getting-started
         title: Getting started
@@ -71,7 +71,7 @@ func TestGenerateBuildsUnifiedCatalogFromArticlesAndGeneratedCollections(t *test
 		t.Fatal("generated collection document is not marked as generated")
 	}
 	llms := readFixture(t, filepath.Join(root, "llms.txt"))
-	for _, want := range []string{"# LibreDash", "[Documentation MCP](/mcp)", "[libredash deploy](/docs/cli/deploy)"} {
+	for _, want := range []string{"# LeapView", "[Documentation MCP](/mcp)", "[libredash deploy](/docs/cli/deploy)"} {
 		if !strings.Contains(llms, want) {
 			t.Errorf("llms.txt missing %q:\n%s", want, llms)
 		}

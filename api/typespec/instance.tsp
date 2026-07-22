@@ -9,7 +9,7 @@ model InstanceResponse {
 }
 
 @tag("Instance")
-@summary("Get this LibreDash instance identity")
+@summary("Get this LeapView instance identity")
 @route("/instance")
 @get
 @apigen.authz(#{ mode: "authenticated" })

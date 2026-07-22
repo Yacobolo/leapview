@@ -318,7 +318,7 @@ func setCommitMessage(ctx context.Context, tx *sql.Tx, servingStateID string, ex
 	}
 	_, err = tx.ExecContext(ctx,
 		"CALL "+catalogAlias+".set_commit_message(?, ?, extra_info => ?)",
-		"LibreDash",
+		"LeapView",
 		"serving-state "+servingStateID,
 		string(bytes),
 	)

@@ -1,6 +1,6 @@
-# Integrate with LibreDash
+# Integrate with LeapView
 
-LibreDash exposes CLI, HTTP API, built-in agent, and remote MCP surfaces backed by the same active projects, authorization, data policies, and semantic contracts. Choose the highest-level stable operation that fits the task instead of reconstructing internal workflows from low-level calls.
+LeapView exposes CLI, HTTP API, built-in agent, and remote MCP surfaces backed by the same active projects, authorization, data policies, and semantic contracts. Choose the highest-level stable operation that fits the task instead of reconstructing internal workflows from low-level calls.
 
 ## CLI
 
@@ -31,7 +31,7 @@ Use the agent when a user benefits from iterative question/answer and can valida
 
 ## MCP
 
-Use the deployment-specific `${LIBREDASH_PUBLIC_URL}/mcp` endpoint to make the same governed BI tools available in Claude or another remote MCP host. MCP is tools-only and does not expose LibreDash conversations, prompts, resources, or unrestricted SQL. Interactive clients use OAuth discovery and consent; automated workloads exchange a service-principal credential for an audience-bound MCP access token.
+Use the deployment-specific `${LIBREDASH_PUBLIC_URL}/mcp` endpoint to make the same governed BI tools available in Claude or another remote MCP host. MCP is tools-only and does not expose LeapView conversations, prompts, resources, or unrestricted SQL. Interactive clients use OAuth discovery and consent; automated workloads exchange a service-principal credential for an audience-bound MCP access token.
 
 ## Identity and scope
 

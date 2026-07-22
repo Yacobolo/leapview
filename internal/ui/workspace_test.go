@@ -28,7 +28,7 @@ func TestWorkspaceAssetDetailsRenderSharedShapeForSemanticModel(t *testing.T) {
 		"<ld-workspace-asset-page",
 		`"breadcrumbs":[`,
 		"Workspaces",
-		"LibreDash Workspace",
+		"LeapView Workspace",
 		"Olist Commerce",
 		"Details",
 		"Lineage",
@@ -181,7 +181,7 @@ func TestConnectionAssetPagesHideVersionsSurface(t *testing.T) {
 }
 
 func TestSemanticModelDetailsSignalIncludesModelGraph(t *testing.T) {
-	workspace := workspaceview.WorkspaceView{ID: "libredash", Title: "LibreDash Workspace"}
+	workspace := workspaceview.WorkspaceView{ID: "libredash", Title: "LeapView Workspace"}
 	asset := workspaceview.AssetView{
 		ID:          "semantic_model:commerce",
 		WorkspaceID: workspace.ID,
@@ -1288,7 +1288,7 @@ func tableHasRelation(grid recordTable, relation string) bool {
 }
 
 func testWorkspaceAssetFixtures() (workspaceview.WorkspaceView, dashboard.Catalog, []workspaceview.AssetView, []workspaceview.AssetEdgeView) {
-	workspace := workspaceview.WorkspaceView{ID: "libredash", Title: "LibreDash Workspace", Description: "Local BI workspace."}
+	workspace := workspaceview.WorkspaceView{ID: "libredash", Title: "LeapView Workspace", Description: "Local BI workspace."}
 	catalog := dashboard.Catalog{Workspace: dashboard.CatalogWorkspace{ID: workspace.ID, Title: workspace.Title, Description: workspace.Description}}
 	assets := []workspaceview.AssetView{
 		{ID: "catalog:libredash", WorkspaceID: workspace.ID, Type: "catalog", Key: workspace.ID, Title: workspace.Title, Description: workspace.Description},

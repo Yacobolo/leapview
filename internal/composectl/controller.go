@@ -598,7 +598,7 @@ func (c *Controller) startUnlocked(ctx context.Context) error {
 		return err
 	}
 	if err := c.waitHealthy(ctx); err != nil {
-		return fmt.Errorf("LibreDash did not become healthy: %w", err)
+		return fmt.Errorf("LeapView did not become healthy: %w", err)
 	}
 	return nil
 }

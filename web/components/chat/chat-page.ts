@@ -223,7 +223,7 @@ class LibreDashChatPage extends DatastarLit(LitElement) {
     const title = conversationTitle(agent)
     return html`
       <div class="route">
-        <section class=${['main', isList ? 'list-main' : '', isNew ? 'new-main' : ''].filter(Boolean).join(' ')} aria-label="LibreDash chats">
+        <section class=${['main', isList ? 'list-main' : '', isNew ? 'new-main' : ''].filter(Boolean).join(' ')} aria-label="LeapView chats">
           ${isList || isNew ? null : this.renderConversationTitlebar(title)}
           <div class="body">
             ${isList ? this.renderListView(agent) : isNew ? this.renderNewView(composer, status) : this.renderConversationView(agent, status, composer)}

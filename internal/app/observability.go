@@ -40,7 +40,7 @@ func newHTTPTelemetry() *httpTelemetry {
 		registry: registry,
 		requests: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "libredash_http_requests_total",
-			Help: "Total HTTP requests served by LibreDash.",
+			Help: "Total HTTP requests served by LeapView.",
 		}, []string{"method", "route", "status"}),
 		duration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "libredash_http_request_duration_seconds",
@@ -54,7 +54,7 @@ func newHTTPTelemetry() *httpTelemetry {
 		}, []string{"method", "route", "status"}),
 		inFlight: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "libredash_http_requests_in_flight",
-			Help: "HTTP requests currently being served by LibreDash.",
+			Help: "HTTP requests currently being served by LeapView.",
 		}),
 		dashboardRefreshDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "libredash_dashboard_refresh_duration_seconds",

@@ -8,6 +8,7 @@ import (
 
 	semanticmodel "github.com/Yacobolo/libredash/internal/analytics/model"
 	semanticquery "github.com/Yacobolo/libredash/internal/analytics/query"
+	"github.com/Yacobolo/libredash/internal/brand"
 	"github.com/Yacobolo/libredash/internal/dashboard"
 	dashboarddefinition "github.com/Yacobolo/libredash/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/libredash/internal/dashboard/report"
@@ -129,7 +130,7 @@ func (m runtimeMetrics) Catalog() dashboard.Catalog {
 	if err != nil {
 		title := strings.TrimSpace(m.workspaceID)
 		if title == "" {
-			title = "LibreDash"
+			title = brand.Name
 		}
 		return dashboard.Catalog{
 			Workspace: dashboard.CatalogWorkspace{ID: m.workspaceID, Title: title, Description: "No active serving state."},

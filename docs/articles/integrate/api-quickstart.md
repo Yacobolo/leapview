@@ -4,7 +4,7 @@ The headless API is served beneath `/api/v1`. This guide verifies authentication
 
 ## Before you begin
 
-Choose a non-production or read-only workspace, create a narrowly scoped credential, and install `curl` plus the LibreDash CLI version compatible with the target. Keep a request-size limit and timeout policy ready for the client you will build.
+Choose a non-production or read-only workspace, create a narrowly scoped credential, and install `curl` plus the LeapView CLI version compatible with the target. Keep a request-size limit and timeout policy ready for the client you will build.
 
 Follow this discovery path:
 

@@ -57,7 +57,7 @@ func TestSemanticModelDesignDetailsVocabulary(t *testing.T) {
 }
 
 func semanticDesignUIFixtures() (workspaceview.WorkspaceView, dashboard.Catalog, []workspaceview.AssetView, WorkspaceAccessResponse) {
-	workspace := workspaceview.WorkspaceView{ID: "libredash", Title: "LibreDash Workspace", Description: "Local BI workspace."}
+	workspace := workspaceview.WorkspaceView{ID: "libredash", Title: "LeapView Workspace", Description: "Local BI workspace."}
 	catalog := dashboard.Catalog{Workspace: dashboard.CatalogWorkspace{ID: workspace.ID, Title: workspace.Title, Description: workspace.Description}}
 	assets := []workspaceview.AssetView{
 		{

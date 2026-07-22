@@ -1,6 +1,6 @@
 # CLI overview
 
-The `libredash` CLI runs the local server, validates a dashboard-as-code project, and deploys it to a LibreDash instance.
+The `libredash` CLI runs the local server, validates a dashboard-as-code project, and deploys it to a LeapView instance.
 
 ## Common workflow
 

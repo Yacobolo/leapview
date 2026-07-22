@@ -2,7 +2,7 @@ version: '3'
 
 tasks:
   dev:
-    desc: Start the managed LibreDash dev server for this worktree
+    desc: Start the managed LeapView dev server for this worktree
     cmds:
       - task: generate
       - task: build
@@ -11,7 +11,7 @@ tasks:
       - ./scripts/dev-server.sh start
 
   dev:movielens:
-    desc: Start the managed LibreDash dev server with the MovieLens 32M experiment project
+    desc: Start the managed LeapView dev server with the MovieLens 32M experiment project
     cmds:
       - task: generate
       - task: build
@@ -19,7 +19,7 @@ tasks:
       - LIBREDASH_DEV_RESTART=1 LIBREDASH_DEV_READY_ATTEMPTS=1800 ./scripts/dev-server.sh start dashboards/experiments/movielens/libredash.yaml movielens .data/movielens
 
   dev:quack:
-    desc: Start the managed LibreDash dev server with the local Quack profile
+    desc: Start the managed LeapView dev server with the local Quack profile
     cmds:
       - task: generate
       - task: build
@@ -79,17 +79,17 @@ tasks:
       - go run ./internal/tools/bootstrapmovielens --out .data/movielens
 
   dev:stop:
-    desc: Stop the managed LibreDash dev server for this worktree
+    desc: Stop the managed LeapView dev server for this worktree
     cmds:
       - ./scripts/dev-server.sh stop
 
   dev:quack:stop:
-    desc: Stop the managed LibreDash dev server with the local Quack profile
+    desc: Stop the managed LeapView dev server with the local Quack profile
     cmds:
       - ./scripts/dev-profile.sh quack stop
 
   dev:status:
-    desc: Show managed LibreDash dev server status
+    desc: Show managed LeapView dev server status
     cmds:
       - ./scripts/dev-server.sh status
 
@@ -107,17 +107,17 @@ tasks:
         go run ./cmd/libredash deploy --project dashboards/libredash.yaml --revision "olist=$REVISION" --target "http://localhost:${PORT}" --token dev --auto-approve
 
   dev:quack:status:
-    desc: Show managed LibreDash dev server status with the local Quack profile
+    desc: Show managed LeapView dev server status with the local Quack profile
     cmds:
       - ./scripts/dev-profile.sh quack status
 
   dev:logs:
-    desc: Tail managed LibreDash dev server logs
+    desc: Tail managed LeapView dev server logs
     cmds:
       - ./scripts/dev-server.sh logs
 
   dev:quack:logs:
-    desc: Tail managed LibreDash dev server logs with the local Quack profile
+    desc: Tail managed LeapView dev server logs with the local Quack profile
     cmds:
       - ./scripts/dev-profile.sh quack logs
 
@@ -134,7 +134,7 @@ tasks:
       - bun run build
 
   site:build:
-    desc: Build the LibreDash public site assets from generated contracts
+    desc: Build the LeapView public site assets from generated contracts
     cmds:
       - task: ui-signals:generate
       - task: node:deps
@@ -148,7 +148,7 @@ tasks:
       - go build -o bin/libredash-site ./cmd/libredash-site
 
   site:image:
-    desc: Build the production LibreDash public site OCI image
+    desc: Build the production LeapView public site OCI image
     cmds:
       - docker build --file Dockerfile.site --tag libredash-site:local .
 
@@ -368,7 +368,7 @@ tasks:
       - go run ./internal/tools/openapidocgen
 
   schema:generate:
-    desc: Generate JSON Schema artifacts for LibreDash YAML contracts
+    desc: Generate JSON Schema artifacts for LeapView YAML contracts
     deps:
       - db:generate
       - config:generate

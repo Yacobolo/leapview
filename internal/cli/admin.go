@@ -66,7 +66,7 @@ func adminCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 	maintenance.Flags().IntVar(&opts.authStateDays, "auth-state-days", defaultAuthStateRetentionDays, "expired or revoked auth state retention in days; 0 disables auth-state pruning")
 	backup := &cobra.Command{
 		Use:   "backup",
-		Short: "Create a consistent LibreDash instance backup",
+		Short: "Create a consistent LeapView instance backup",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAdminBackup(ctx, opts, cmd.OutOrStdout())
 		},
@@ -75,20 +75,20 @@ func adminCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 	backup.Flags().BoolVar(&opts.databaseOnly, "database-only", false, "backup only the platform SQLite database")
 	restore := &cobra.Command{
 		Use:   "restore",
-		Short: "Restore LibreDash from a validated instance backup",
+		Short: "Restore LeapView from a validated instance backup",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAdminRestore(ctx, opts, cmd.InOrStdin(), cmd.OutOrStdout())
 		},
 	}
 	restore.Flags().StringVar(&opts.restoreFrom, "from", "", "backup archive path to restore")
 	restore.Flags().StringVar(&opts.restoreBefore, "current-out", "", "path for a backup of the current instance before replacement; - creates and discards a validated temporary checkpoint")
-	restore.Flags().BoolVar(&opts.confirmRestore, "confirm", false, "confirm replacement of the configured LibreDash instance")
+	restore.Flags().BoolVar(&opts.confirmRestore, "confirm", false, "confirm replacement of the configured LeapView instance")
 	restore.Flags().BoolVar(&opts.databaseOnly, "database-only", false, "restore only the platform SQLite database")
 	parent.AddCommand(initialize, storage, maintenance, backup, restore)
 	return parent
 }
 
-var errInstanceAlreadyInitialized = errors.New("LibreDash instance is already initialized")
+var errInstanceAlreadyInitialized = errors.New("LeapView instance is already initialized")
 
 const (
 	instanceInitializedSetting        = "instance.initialized"
@@ -219,7 +219,7 @@ func acknowledgeInitialCredentials(ctx context.Context) error {
 	}
 	if _, err := store.GetSetting(ctx, instanceInitializedSetting); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("LibreDash instance has not been initialized")
+			return fmt.Errorf("LeapView instance has not been initialized")
 		}
 		return err
 	}
@@ -599,7 +599,7 @@ func offlineInstanceEnvironment(ctx context.Context, store *platform.Store, cfg 
 	bound, err := store.InstanceEnvironment(ctx)
 	if err == nil {
 		if requested := strings.TrimSpace(cfg.Environment); requested != "" && requested != bound {
-			return "", fmt.Errorf("LibreDash instance is bound to environment %q, not %q", bound, requested)
+			return "", fmt.Errorf("LeapView instance is bound to environment %q, not %q", bound, requested)
 		}
 		return servingstate.Environment(bound), nil
 	}

@@ -42,7 +42,7 @@ The result is normalized into API or UI-owned types rather than exposing driver 
 
 Refresh commands create explicit jobs and generations. The write executor limits simultaneous materialization. Workspace refresh planning orders dependent model tables and writes isolated replacement state.
 
-After successful materialization and validation, DuckLake commits a snapshot and LibreDash flips the active serving pointer. Older state drains until no active reference or query lease protects it. Failed and superseded jobs do not activate.
+After successful materialization and validation, DuckLake commits a snapshot and LeapView flips the active serving pointer. Older state drains until no active reference or query lease protects it. Failed and superseded jobs do not activate.
 
 ## UI delivery
 

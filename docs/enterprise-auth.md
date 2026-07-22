@@ -1,17 +1,17 @@
 # Enterprise Auth
 
-LibreDash uses the standard enterprise split:
+LeapView uses the standard enterprise split:
 
 ```text
 OIDC = interactive human login
 SCIM = enterprise user and group provisioning
-Grant engine = LibreDash authorization
+Grant engine = LeapView authorization
 Service principals = non-human workload identity
 API tokens = scoped credentials, not identities
 ```
 
 OIDC proves who a user is. SCIM syncs users, groups, and memberships.
-LibreDash grants remain the only source of product authorization.
+LeapView grants remain the only source of product authorization.
 
 ## Local Auth
 
@@ -58,7 +58,7 @@ Register the callback URL as:
 https://<host>/auth/{provider_id}/callback
 ```
 
-LibreDash maps identity by OIDC issuer plus subject. Email and display name are
+LeapView maps identity by OIDC issuer plus subject. Email and display name are
 metadata and may change.
 
 ## SCIM
@@ -69,7 +69,7 @@ Enable SCIM by setting a dedicated provisioning bearer token:
 LIBREDASH_SCIM_BEARER_TOKEN=<long-random-secret>
 ```
 
-When the token is set, LibreDash mounts:
+When the token is set, LeapView mounts:
 
 ```text
 https://<host>/scim/v2
@@ -96,7 +96,7 @@ of truth.
 
 ## Authorization
 
-After OIDC or SCIM establishes identities, grant access in LibreDash:
+After OIDC or SCIM establishes identities, grant access in LeapView:
 
 ```text
 principal/group/service_principal -> privilege -> securable_object

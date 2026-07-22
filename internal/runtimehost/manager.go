@@ -367,7 +367,7 @@ func (m *Manager) Acquire() (Lease, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.current == nil || m.current.closing {
-		return nil, fmt.Errorf("no active LibreDash serving state")
+		return nil, fmt.Errorf("no active LeapView serving state")
 	}
 	m.current.refs++
 	return &runtimeLease{manager: m, managed: m.current}, nil

@@ -118,6 +118,33 @@ test('app shell preserves slotted route geometry before route component upgrade'
   }
 })
 
+test('app shell renders a restrained text-only LeapView identity', async () => {
+  const page = await browser.newPage({ viewport: { width: 1320, height: 900 } })
+  try {
+    await page.goto(`${baseURL}/upgraded-shell`)
+    await page.waitForFunction(() => customElements.get('ld-app-shell') && customElements.get('ld-sidebar'))
+    const identity = await page.locator('ld-app-shell').evaluate((element: any) => {
+      const sidebar = element.shadowRoot.querySelector('ld-sidebar') as HTMLElement
+      const root = sidebar.shadowRoot!
+      return {
+        navigationLabel: root.querySelector('aside')?.getAttribute('aria-label'),
+        name: root.querySelector('.brand .name')?.textContent?.trim(),
+        mobileName: root.querySelector('.mobile-drawer-title')?.textContent?.trim(),
+        markCount: root.querySelectorAll('ld-brand-mark').length,
+      }
+    })
+
+    expect(identity).toEqual({
+      navigationLabel: 'LeapView workspace',
+      name: 'LeapView',
+      mobileName: 'LeapView',
+      markCount: 0,
+    })
+  } finally {
+    await page.close()
+  }
+})
+
 test('upgraded compact app shell does not keep the fallback route grid column', async () => {
   const page = await browser.newPage({ viewport: { width: 1320, height: 900 } })
   try {
@@ -133,12 +160,29 @@ test('upgraded compact app shell does not keep the fallback route grid column', 
     await page.locator('ld-app-shell').evaluate((element: any) => element.updateComplete)
 
     const state = await shellGeometry(page)
+    const compactIdentity = await page.locator('ld-app-shell').evaluate((element: any) => {
+      const sidebar = element.shadowRoot.querySelector('ld-sidebar') as HTMLElement
+      const root = sidebar.shadowRoot!
+      const expand = root.querySelector('.collapse-button') as HTMLButtonElement
+      return {
+        name: root.querySelector('.brand .name')?.textContent?.trim() ?? null,
+        markCount: root.querySelectorAll('ld-brand-mark').length,
+        expandLabel: expand.getAttribute('aria-label'),
+        expandVisible: getComputedStyle(expand).display !== 'none',
+      }
+    })
 
     expect(state.routeDefined).toBe(false)
     expect(state.sidebar.width).toBe(48)
     expect(state.shellMain.x).toBe(state.sidebar.right)
     expect(state.route.x).toBe(state.sidebar.right)
     expect(state.route.gridColumnStart).toBe('auto')
+    expect(compactIdentity).toEqual({
+      name: null,
+      markCount: 0,
+      expandLabel: 'Expand navigation',
+      expandVisible: true,
+    })
   } finally {
     await page.close()
   }
@@ -297,6 +341,13 @@ test('sidebar renders global chat action and recent history', async () => {
           }
         })(),
         historyLabel: root.querySelector('.history-label')?.textContent?.trim(),
+        historySpinner: (() => {
+          const spinner = root.querySelector('ld-loading-spinner') as HTMLElement | null
+          return {
+            present: Boolean(spinner),
+            label: spinner?.getAttribute('aria-label'),
+          }
+        })(),
         hasHistorySearch: Boolean(root.querySelector('.history-search')),
         historyStyle: (() => {
           const history = root.querySelector('.history') as HTMLElement
@@ -333,6 +384,7 @@ test('sidebar renders global chat action and recent history', async () => {
     })
 
     expect(state.historyLabel).toBe('Chats')
+    expect(state.historySpinner).toEqual({ present: true, label: 'Title loading' })
     expect(state.links).toContainEqual({ href: '/chats/new', text: 'New chat', current: 'false', ariaLabel: 'New chat', title: 'New chat' })
     expect(state.links).toContainEqual({ href: '/chats', text: 'Chats', current: 'page', ariaLabel: 'Chats', title: 'Chats' })
     expect(state.links).toContainEqual({ href: '/chats/c1', text: 'Revenue check', current: 'page', ariaLabel: 'Revenue check', title: 'Revenue check' })
@@ -556,7 +608,7 @@ function testDocument(includeShellScript: boolean, compact = false, history = fa
         label: 'Chats',
         emptyText: 'No conversations yet.',
         items: [
-          { id: 'c1', title: 'Revenue check', href: '/chats/c1', active: true },
+          { id: 'c1', title: 'Revenue check', href: '/chats/c1', active: true, pending: true },
           { id: 'c2', title: 'Inventory status', href: '/chats/c2' },
         ],
       } : undefined,
@@ -584,6 +636,9 @@ function testDocument(includeShellScript: boolean, compact = false, history = fa
             --ld-border-width: 1px;
             --ld-fg-muted: #57606a;
             --ld-shadow-floating: 0 8px 24px rgb(0 0 0 / 12%);
+            --ld-spinner-size-md: 16px;
+            --ld-spinner-size-sm: 10px;
+            --ld-spinner-duration: 1800ms;
           }
         </style>
       </head>

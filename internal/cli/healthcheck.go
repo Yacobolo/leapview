@@ -19,7 +19,7 @@ const defaultHealthcheckURL = "http://127.0.0.1:8080/readyz"
 func healthcheckCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "healthcheck",
-		Short: "Check the local LibreDash readiness endpoint",
+		Short: "Check the local LeapView readiness endpoint",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runHealthcheck(ctx, opts, cmd.OutOrStdout())
 		},

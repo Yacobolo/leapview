@@ -282,7 +282,7 @@ WHERE type = 'table'
 	}
 	for _, name := range []string{"platform_settings", "workspaces", "serving_states", "roles"} {
 		if !seen[name] {
-			return fmt.Errorf("backup is not a LibreDash platform database: missing table %s", name)
+			return fmt.Errorf("backup is not a LeapView platform database: missing table %s", name)
 		}
 	}
 	return nil

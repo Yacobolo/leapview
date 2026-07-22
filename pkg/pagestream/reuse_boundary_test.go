@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestPackageHasNoLibreDashSpecificDependencies(t *testing.T) {
+func TestPackageHasNoLeapViewSpecificDependencies(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
@@ -21,10 +21,10 @@ func TestPackageHasNoLibreDashSpecificDependencies(t *testing.T) {
 			t.Fatal(err)
 		}
 		if strings.Contains(string(body), "window.LibreDash") {
-			t.Fatalf("%s references a LibreDash-specific browser global", file)
+			t.Fatalf("%s references a LeapView-specific browser global", file)
 		}
 		if strings.Contains(string(body), "github.com/Yacobolo/libredash/internal/") {
-			t.Fatalf("%s imports a LibreDash-internal package", file)
+			t.Fatalf("%s imports a LeapView-internal package", file)
 		}
 	}
 }

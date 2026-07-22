@@ -234,7 +234,7 @@ func adminPageSignal(active string, data AdminData) uisignals.AdminPageSignal {
 	switch active {
 	case "principals":
 		page.HeaderTitle = "Principals"
-		page.HeaderDetail = "Users and service principals known to LibreDash."
+		page.HeaderDetail = "Users and service principals known to LeapView."
 		page.Sections = uisignals.OptionalSlice([]uisignals.AdminContentSectionSignal{{Title: "Principals", Table: uisignals.Pointer(adminPrincipalsGrid(data.Principals))}})
 	case "principal-detail":
 		page.HeaderTitle = "Principals"

@@ -1,10 +1,10 @@
-# LibreDash
+# LeapView
 
-LibreDash is a dashboards-as-code BI monolith using Go, Datastar, Lit, DuckDB, and one global DuckLake catalog per instance.
+LeapView is a dashboards-as-code BI monolith using Go, Datastar, Lit, DuckDB, and one global DuckLake catalog per instance.
 
 ## Install
 
-The public container image is the quickest way to try LibreDash. This starts a
+The public container image is the quickest way to try LeapView. This starts a
 single development instance on localhost with persistent state:
 
 ```sh
@@ -85,7 +85,7 @@ go run ./cmd/libredash data sync --project dashboards/libredash.yaml --connectio
 
 ## Source Model
 
-Semantic model YAML declares user-facing `sources` and named `connections`. LibreDash compiles these declarations into DuckDB `raw.*` and `source.*` views and keeps DuckDB extension, secret, and scan setup behind the source contract. Each source is an object with exactly one of `path` or `object`.
+Semantic model YAML declares user-facing `sources` and named `connections`. LeapView compiles these declarations into DuckDB `raw.*` and `source.*` views and keeps DuckDB extension, secret, and scan setup behind the source contract. Each source is an object with exactly one of `path` or `object`.
 
 Model tables live under `models` and contain light preparation SQL or direct source references. They are not a general transformation framework; they are the place to align grain, clean fields, and prepare fact/dimension tables before the governed semantic model consumes them.
 
@@ -163,7 +163,7 @@ sources:
     path: olist_order_items_dataset.csv
 ```
 
-S3 Parquet with LibreDash-managed auth:
+S3 Parquet with LeapView-managed auth:
 
 ```yaml
 connections:
@@ -269,9 +269,9 @@ sources:
     object: information_schema.schemata
 ```
 
-LibreDash owns the credential contract. Use `credentials.provider: env` with an environment-variable name for explicit JSON credentials, `provider: ambient` for the S3 or Azure default credential chain, and `provider: none` only for deliberately public S3/HTTP data. LibreDash validates each mode and compiles temporary, path-scoped DuckDB secrets internally.
+LeapView owns the credential contract. Use `credentials.provider: env` with an environment-variable name for explicit JSON credentials, `provider: ambient` for the S3 or Azure default credential chain, and `provider: none` only for deliberately public S3/HTTP data. LeapView validates each mode and compiles temporary, path-scoped DuckDB secrets internally.
 
-For file and table paths, LibreDash infers `format` from clear extensions such as `.csv`, `.csv.gz`, `.json`, `.jsonl`, `.ndjson`, `.parquet`, `.xlsx`, `.txt`, `.blob`, `.vortex`, and `.lance`. Set source-level `format` explicitly for ambiguous paths or table directories such as `events/*`, `format: delta`, and `format: iceberg`. Advanced DuckDB integrations should be modeled explicitly before being exposed in source YAML.
+For file and table paths, LeapView infers `format` from clear extensions such as `.csv`, `.csv.gz`, `.json`, `.jsonl`, `.ndjson`, `.parquet`, `.xlsx`, `.txt`, `.blob`, `.vortex`, and `.lance`. Set source-level `format` explicitly for ambiguous paths or table directories such as `events/*`, `format: delta`, and `format: iceberg`. Advanced DuckDB integrations should be modeled explicitly before being exposed in source YAML.
 
 ## Deploy
 
@@ -354,7 +354,7 @@ docker run --rm -p 8080:8080 \
 
 The image runs as a non-root user, serves generated browser assets from `/app/static`, and keeps SQLite, DuckLake, artifacts, runtime files, and backups outside the image layer under `LIBREDASH_HOME`.
 
-LibreDash uses one process-global environment contract. A minimal local-auth
+LeapView uses one process-global environment contract. A minimal local-auth
 production configuration is:
 
 ```sh
@@ -380,7 +380,7 @@ users from Admin / Principals and copy the one-time temporary password shown in
 the response. Local users and local groups use the same grants and workspace
 roles as OIDC/SCIM identities.
 
-LibreDash reads production secrets from environment variables. Infisical is the recommended production workflow, but any env-based secret manager works:
+LeapView reads production secrets from environment variables. Infisical is the recommended production workflow, but any env-based secret manager works:
 
 ```sh
 infisical run --env=prod -- libredash serve --production

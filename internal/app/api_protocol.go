@@ -16,6 +16,7 @@ import (
 
 	apigenapi "github.com/Yacobolo/libredash/internal/api/gen"
 	apiidempotencysqlite "github.com/Yacobolo/libredash/internal/apiidempotency/sqlite"
+	"github.com/Yacobolo/libredash/internal/brand"
 	"github.com/Yacobolo/libredash/internal/cursorsigning"
 	"github.com/Yacobolo/libredash/internal/workspace"
 )
@@ -462,5 +463,5 @@ func (s *Server) openAPIDescription(w http.ResponseWriter, r *http.Request) {
 func (s *Server) publicDocs(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=300")
-	_, _ = w.Write([]byte(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>LibreDash API</title></head><body><main><h1>LibreDash API v1</h1><p><a href="/api/openapi.json">OpenAPI description</a></p></main></body></html>`))
+	_, _ = fmt.Fprintf(w, `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>%s API</title></head><body><main><h1>%s API v1</h1><p><a href="/api/openapi.json">OpenAPI description</a></p></main></body></html>`, brand.Name, brand.Name)
 }

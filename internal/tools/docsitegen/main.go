@@ -232,7 +232,7 @@ func checkGenerated(navigationPath, catalogPath, searchPath string) error {
 
 func renderLLMs(catalog generatedCatalog) string {
 	var out strings.Builder
-	out.WriteString("# LibreDash\n\n")
+	out.WriteString("# LeapView\n\n")
 	out.WriteString("> Dashboards-as-code BI with generated, machine-readable CLI, API, configuration, and visual documentation.\n\n")
 	out.WriteString("## Agent entry points\n\n")
 	out.WriteString("- [Documentation MCP](/mcp): read-only Streamable HTTP MCP with docs_catalog, docs_search, and docs_read tools.\n")

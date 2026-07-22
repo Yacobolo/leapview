@@ -26,7 +26,7 @@ type apiCallOptions struct {
 }
 
 func apiCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
-	parent := &cobra.Command{Use: "api", Short: "Call any generated LibreDash API operation"}
+	parent := &cobra.Command{Use: "api", Short: "Call any generated LeapView API operation"}
 	list := &cobra.Command{
 		Use:   "list",
 		Short: "List generated API operations",

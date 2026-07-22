@@ -220,7 +220,7 @@ func TestWorkspaceSidebarUsesGlobalChat(t *testing.T) {
 
 func TestSidebarWorkspaceTitleDoesNotInventDefaultWorkspace(t *testing.T) {
 	global := SidebarConfigForCatalog(dashboard.Catalog{})
-	if global.WorkspaceTitle != "LibreDash" {
+	if global.WorkspaceTitle != "LeapView" {
 		t.Fatalf("global workspace title = %q, want app title", global.WorkspaceTitle)
 	}
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/Yacobolo/libredash/internal/access"
 	agentcap "github.com/Yacobolo/libredash/internal/agent"
+	"github.com/Yacobolo/libredash/internal/brand"
 	"github.com/Yacobolo/libredash/internal/staticasset"
 	agentcore "github.com/Yacobolo/libredash/pkg/agent"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -50,7 +51,7 @@ func (s *Server) mcpServer(r *http.Request) (*mcp.Server, error) {
 	}
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "libredash",
-		Title:   "LibreDash",
+		Title:   brand.Name,
 		Version: version,
 	}, &mcp.ServerOptions{Capabilities: &mcp.ServerCapabilities{}})
 	for _, definition := range catalog.Definitions() {

@@ -43,7 +43,7 @@ func TestLoadRejectsMalformedTypedValues(t *testing.T) {
 	}
 }
 
-func TestListenAddressUsesExplicitLibreDashSetting(t *testing.T) {
+func TestListenAddressUsesExplicitLeapViewSetting(t *testing.T) {
 	t.Setenv("ADDR", "127.0.0.1:9002")
 	t.Setenv("PORT", "9003")
 	cfg, err := Load()

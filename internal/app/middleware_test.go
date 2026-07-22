@@ -358,7 +358,7 @@ func TestMetricsRouteRequiresConfiguredBearerToken(t *testing.T) {
 		t.Fatalf("metrics status with valid token = %d, want %d body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 	if body := rec.Body.String(); !strings.Contains(body, "libredash_http_requests_total") {
-		t.Fatalf("metrics output missing LibreDash metrics:\n%s", body)
+		t.Fatalf("metrics output missing LeapView metrics:\n%s", body)
 	}
 
 	for _, header := range []string{

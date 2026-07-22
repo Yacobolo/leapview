@@ -1,13 +1,13 @@
 openapi: 3.0.0
 info:
-  title: LibreDash Headless API
+  title: LeapView Headless API
   version: 1.0.0
-  description: Headless API for LibreDash workspaces, deployments, managed data, access control, refreshes, and agent operations.
+  description: Headless API for LeapView workspaces, deployments, managed data, access control, refreshes, and agent operations.
 tags:
   - name: System
     description: API capabilities and protocol discovery.
   - name: Instance
-    description: The immutable serving identity of this LibreDash installation.
+    description: The immutable serving identity of this LeapView installation.
   - name: Projects
     description: Read-only project registry.
   - name: Releases
@@ -3420,7 +3420,7 @@ paths:
   /api/v1/instance:
     get:
       operationId: getInstance
-      summary: Get this LibreDash instance identity
+      summary: Get this LeapView instance identity
       parameters: []
       responses:
         '200':

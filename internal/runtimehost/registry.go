@@ -341,7 +341,7 @@ func (r *Registry) AcquireForWorkspace(ctx context.Context, workspaceID servings
 	manager := r.managers[workspaceID]
 	r.mu.RUnlock()
 	if manager == nil {
-		return nil, fmt.Errorf("no active LibreDash serving state")
+		return nil, fmt.Errorf("no active LeapView serving state")
 	}
 	return manager.Acquire()
 }
