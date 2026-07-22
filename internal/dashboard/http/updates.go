@@ -3,6 +3,7 @@ package http
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"log/slog"
 	nethttp "net/http"
 	"strings"
@@ -38,7 +39,7 @@ func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
 		return
 	}
 	initialFilters := reportDefinition.FiltersFromURLForPage(activePage.ID, r.URL.Query())
-	clientID := pagestream.ClientIDFromRequest(r, "")
+	clientID := pagestream.ClientIDFromRequest(r, strings.TrimSpace(r.URL.Query().Get("clientId")))
 	streamInstanceID := strings.TrimSpace(r.URL.Query().Get("streamInstance"))
 	if streamInstanceID == "" {
 		streamInstanceID = fallbackStreamInstanceID()
@@ -61,6 +62,16 @@ func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
 		broker.TraceStore(), streamID, "dashboard.bootstrap",
 	))
 	bootstrap := reportui.BootstrapSignals(clientID, streamInstanceID, metrics.Catalog(), reportDefinition, model, pages, activePage, initialFilters)
+	if presentation, ok := publicPresentationFromContext(r.Context()); ok {
+		bootstrap = reportui.PublicBootstrapSignals(clientID, streamInstanceID, presentation.PublicID, presentation.Presentation, metrics.Catalog(), reportDefinition, model, pages, activePage, initialFilters)
+	} else if hasClientAgentState(r) {
+		delete(bootstrap, "agent")
+		delete(bootstrap, "agentVisuals")
+	} else if h.AgentBootstrap != nil {
+		agentState := h.AgentBootstrap(r, metrics.Catalog().Workspace.ID)
+		bootstrap["agent"] = agentState.Agent
+		bootstrap["agentVisuals"] = agentState.Visuals
+	}
 	status := lddatastar.LoadingPatch()["status"].(map[string]any)
 	environment := ""
 	if h.Environment != nil {
@@ -116,6 +127,13 @@ func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
 		return
 	}
 	_ = updates.ForwardUpdates(r.Context(), mailbox)
+}
+
+func hasClientAgentState(r *nethttp.Request) bool {
+	var signals struct {
+		Agent *json.RawMessage `json:"agent"`
+	}
+	return pagestream.ReadSignals(r, &signals) == nil && signals.Agent != nil
 }
 
 func streamActivePage(pages []dashboard.Page, pageID string) (dashboard.Page, bool) {

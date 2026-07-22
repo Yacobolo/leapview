@@ -27,6 +27,7 @@ var schemaKinds = map[string]configschema.Kind{
 	"ModelTable":           configschema.KindModelTable,
 	"SemanticModel":        configschema.KindSemanticModelResource,
 	"Dashboard":            configschema.KindDashboardResource,
+	"DashboardPublication": configschema.KindDashboardPublication,
 }
 
 // Issue identifies an invalid Markdown example at its authored location.

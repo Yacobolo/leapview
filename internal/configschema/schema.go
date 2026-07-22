@@ -36,6 +36,7 @@ const (
 	KindModelTable            Kind = "model-table"
 	KindSemanticModelResource Kind = "semantic-model-resource"
 	KindDashboardResource     Kind = "dashboard-resource"
+	KindDashboardPublication  Kind = "dashboard-publication"
 )
 
 type Severity string
@@ -160,7 +161,7 @@ func compiledDefinition(kind Kind) (*cue.Context, cue.Value, string, error) {
 }
 
 func JSONSchemaFiles() (map[string][]byte, error) {
-	kinds := []Kind{KindProject, KindConnection, KindSource, KindWorkspace, KindWorkspaceGroup, KindWorkspaceRoleBinding, KindGrant, KindDataPolicy, KindRefreshPipeline, KindModelTable, KindSemanticModelResource, KindDashboardResource}
+	kinds := []Kind{KindProject, KindConnection, KindSource, KindWorkspace, KindWorkspaceGroup, KindWorkspaceRoleBinding, KindGrant, KindDataPolicy, KindRefreshPipeline, KindModelTable, KindSemanticModelResource, KindDashboardResource, KindDashboardPublication}
 	files := map[string][]byte{}
 	for _, kind := range kinds {
 		content, err := JSONSchema(kind)
@@ -198,6 +199,8 @@ func JSONSchemaFilename(kind Kind) string {
 		return "semantic-model.schema.json"
 	case KindDashboardResource:
 		return "dashboard.schema.json"
+	case KindDashboardPublication:
+		return "dashboard-publication.schema.json"
 	default:
 		return string(kind) + ".schema.json"
 	}
@@ -254,6 +257,8 @@ func definitionName(kind Kind) (string, error) {
 		return "SemanticModelResource", nil
 	case KindDashboardResource:
 		return "DashboardResource", nil
+	case KindDashboardPublication:
+		return "DashboardPublicationResource", nil
 	default:
 		return "", fmt.Errorf("unknown schema kind %q", kind)
 	}
@@ -444,6 +449,9 @@ var schemaOverlays = map[Kind]schemaOverlay{
 			definitionCollection("#DashboardSpec", "visuals", collectionMapping),
 			definitionCollection("#DashboardSpec", "pages", collectionSequence),
 		},
+	},
+	KindDashboardPublication: {
+		required: []string{"apiVersion", "kind", "metadata", "spec"},
 	},
 }
 

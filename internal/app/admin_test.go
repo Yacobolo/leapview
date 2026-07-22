@@ -119,6 +119,7 @@ func TestAdminPagesRenderReadOnlyAccessData(t *testing.T) {
 		{path: "/admin/agent", want: []string{"<lv-admin-page", `section="agent"`, `/updates?route=admin&amp;section=agent`, "/admin/agent/config"}},
 		{path: "/admin/storage", want: []string{"<lv-admin-page", `section="storage"`, `/updates?route=admin&amp;section=storage`, "/admin/storage/select-table"}},
 		{path: "/admin/queries", want: []string{"<lv-admin-page", `section="queries"`, `/updates?route=admin&amp;section=queries`, "/admin/queries/command"}},
+		{path: "/admin/publications", want: []string{"<lv-admin-page", `section="publications"`, `/updates?route=admin&amp;section=publications`, "/admin/publications/command"}},
 	}
 	for _, tc := range cases {
 		req := httptest.NewRequest(http.MethodGet, tc.path, nil)

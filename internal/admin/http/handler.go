@@ -8,6 +8,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	"github.com/Yacobolo/leapview/internal/queryaudit"
 	"github.com/Yacobolo/leapview/internal/ui"
+	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
@@ -15,16 +16,21 @@ import (
 type QueryAuditRepositoryProvider func() (queryaudit.Repository, error)
 
 type Handler struct {
-	Catalog          func() dashboard.Catalog
-	ReadModel        ReadModel
-	CurrentRoleLabel func(*nethttp.Request) string
-	ChromeOption     func(*nethttp.Request) ui.ChromeOption
-	EnsureClientID   func(nethttp.ResponseWriter, *nethttp.Request)
-	Broker           *pagestream.Broker
+	Catalog             func() dashboard.Catalog
+	ReadModel           ReadModel
+	CurrentRoleLabel    func(*nethttp.Request) string
+	ChromeOption        func(*nethttp.Request) ui.ChromeOption
+	EnsureClientID      func(nethttp.ResponseWriter, *nethttp.Request)
+	Broker              *pagestream.Broker
+	PublicationMutation func(*nethttp.Request, uisignals.AdminPublicationCommand) error
 }
 
 type storageCommandSignals struct {
 	AdminStorageCommand ui.AdminStorageCommand `json:"adminStorageCommand"`
+}
+
+type publicationCommandSignals struct {
+	AdminPublicationCommand uisignals.AdminPublicationCommand `json:"adminPublicationCommand"`
 }
 
 func (h Handler) General(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -87,12 +93,44 @@ func (h Handler) Queries(w nethttp.ResponseWriter, r *nethttp.Request) {
 	h.renderPage(w, r, "queries")
 }
 
+func (h Handler) Publications(w nethttp.ResponseWriter, r *nethttp.Request) {
+	data, err := h.readModel().PublicationData(r)
+	if err != nil {
+		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
+		return
+	}
+	h.writePage(w, r, "publications", data)
+}
+
+func (h Handler) PublicationCommand(w nethttp.ResponseWriter, r *nethttp.Request) {
+	var signals publicationCommandSignals
+	if err := pagestream.ReadSignals(r, &signals); err != nil {
+		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
+		return
+	}
+	if h.PublicationMutation == nil {
+		nethttp.Error(w, "publication management is unavailable", nethttp.StatusServiceUnavailable)
+		return
+	}
+	if err := h.PublicationMutation(r, signals.AdminPublicationCommand); err != nil {
+		nethttp.Error(w, err.Error(), nethttp.StatusConflict)
+		return
+	}
+	_ = pagestream.Redirect(w, r, "/admin/publications")
+}
+
 func (h Handler) BootstrapUpdates(w nethttp.ResponseWriter, r *nethttp.Request) {
 	active := strings.TrimSpace(r.URL.Query().Get("section"))
 	if active == "" {
 		active = "general"
 	}
-	data, err := h.adminDataForUpdates(r, active)
+	var data ui.AdminData
+	var err error
+	if active == "publications" {
+		data, err = h.readModel().PublicationData(r)
+	} else {
+		data, err = h.adminDataForUpdates(r, active)
+	}
 	if err != nil {
 		if err == sql.ErrNoRows {
 			nethttp.NotFound(w, r)

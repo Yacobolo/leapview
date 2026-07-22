@@ -103,8 +103,8 @@ func validateUpdatesURL(raw string) string {
 		panic("pagestream: UpdatesURL is required")
 	}
 	parsed, err := url.Parse(trimmed)
-	if err != nil || parsed.IsAbs() || parsed.Path != "/updates" {
-		panic(fmt.Sprintf("pagestream: UpdatesURL must be a relative /updates URL, got %q", raw))
+	if err != nil || parsed.IsAbs() || parsed.Host != "" || !strings.HasPrefix(parsed.Path, "/") || strings.HasPrefix(parsed.Path, "//") || parsed.Fragment != "" {
+		panic(fmt.Sprintf("pagestream: UpdatesURL must be a same-origin absolute path, got %q", raw))
 	}
 	return trimmed
 }

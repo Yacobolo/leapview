@@ -70,6 +70,56 @@ func TestSiteUnknownRouteReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestSiteShowcaseIsRegisteredOnlyWhenConfigured(t *testing.T) {
+	embedURL, err := url.Parse("https://app.leapview.dev/embed/dashboards/publication-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(NewHandlerWithOptions(Options{ShowcaseEmbedURL: embedURL}))
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/showcase")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := readBody(t, response)
+	response.Body.Close()
+	for _, want := range []string{
+		`src="https://app.leapview.dev/embed/dashboards/publication-id"`,
+		`sandbox="allow-scripts allow-same-origin"`,
+		`referrerpolicy="no-referrer"`,
+		`href="https://app.leapview.dev/public/dashboards/publication-id"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("showcase missing %q:\n%s", want, body)
+		}
+	}
+	if got := response.Header.Get("Content-Security-Policy"); !strings.Contains(got, "frame-src https://app.leapview.dev") {
+		t.Errorf("showcase CSP = %q", got)
+	}
+
+	home, err := server.Client().Get(server.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	homeBody := readBody(t, home)
+	home.Body.Close()
+	if !strings.Contains(homeBody, `href="/showcase"`) {
+		t.Fatalf("configured home navigation has no showcase link")
+	}
+
+	unconfigured := httptest.NewServer(NewHandler())
+	defer unconfigured.Close()
+	missing, err := unconfigured.Client().Get(unconfigured.URL + "/showcase")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer missing.Body.Close()
+	if missing.StatusCode != http.StatusNotFound {
+		t.Fatalf("unconfigured showcase status = %d, want 404", missing.StatusCode)
+	}
+}
+
 func TestSiteArticlePublishesSearchAndSocialMetadata(t *testing.T) {
 	baseURL, err := url.Parse("https://docs.leapview.dev")
 	if err != nil {

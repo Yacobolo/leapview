@@ -20,18 +20,39 @@ import (
 func main() {
 	address := flag.String("addr", ":8081", "listen address")
 	baseURLFlag := flag.String("base-url", os.Getenv("LEAPVIEW_SITE_BASE_URL"), "externally visible site origin (or LEAPVIEW_SITE_BASE_URL)")
+	showcaseEmbedURLFlag := flag.String("showcase-embed-url", os.Getenv("LEAPVIEW_SITE_SHOWCASE_EMBED_URL"), "live showcase dashboard embed URL (or LEAPVIEW_SITE_SHOWCASE_EMBED_URL)")
 	flag.Parse()
 
 	baseURL, err := parseBaseURL(*baseURLFlag)
 	if err != nil {
 		log.Fatal(err)
 	}
+	showcaseEmbedURL, err := parseShowcaseEmbedURL(*showcaseEmbedURLFlag)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, *address, baseURL); err != nil {
+	if err := run(ctx, *address, baseURL, showcaseEmbedURL); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func parseShowcaseEmbedURL(raw string) (*url.URL, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, nil
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("parse showcase embed URL: %w", err)
+	}
+	publicID := strings.TrimPrefix(parsed.Path, "/embed/dashboards/")
+	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || publicID == parsed.Path || publicID == "" || strings.Contains(publicID, "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return nil, fmt.Errorf("showcase embed URL must be an HTTP(S) URL without credentials, query, or fragment: %q", raw)
+	}
+	return parsed, nil
 }
 
 func parseBaseURL(raw string) (*url.URL, error) {
@@ -50,10 +71,10 @@ func parseBaseURL(raw string) (*url.URL, error) {
 	return parsed, nil
 }
 
-func run(ctx context.Context, address string, baseURL *url.URL) error {
+func run(ctx context.Context, address string, baseURL, showcaseEmbedURL *url.URL) error {
 	server := &http.Server{
 		Addr:              address,
-		Handler:           sitehttp.NewHandlerWithOptions(sitehttp.Options{BaseURL: baseURL}),
+		Handler:           sitehttp.NewHandlerWithOptions(sitehttp.Options{BaseURL: baseURL, ShowcaseEmbedURL: showcaseEmbedURL}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,

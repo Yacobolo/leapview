@@ -11,11 +11,14 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Yacobolo/leapview/internal/dashboard/publication"
+	publicationsqlite "github.com/Yacobolo/leapview/internal/dashboard/publication/sqlite"
 	"github.com/Yacobolo/leapview/internal/deployment"
 	"github.com/Yacobolo/leapview/internal/manageddata"
 	platformdb "github.com/Yacobolo/leapview/internal/platform/db"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
+	"github.com/Yacobolo/leapview/internal/workspace"
 )
 
 type Repository struct {
@@ -266,6 +269,21 @@ func (r *Repository) ActivateDeployment(ctx context.Context, id string) (deploym
 		}
 		if err := servingstatesqlite.ApplyAccessSnapshotTx(ctx, tx, q, candidate); err != nil {
 			return deployment.Deployment{}, fmt.Errorf("%w: apply access snapshot for workspace %q: %v", deployment.ErrConflict, target.WorkspaceID, err)
+		}
+		if row.Environment == "prod" {
+			var publications map[string]workspace.DashboardPublication
+			if err := json.Unmarshal([]byte(candidate.DashboardPublicationsJson), &publications); err != nil {
+				return deployment.Deployment{}, fmt.Errorf("%w: decode publication snapshot for workspace %q: %v", deployment.ErrConflict, target.WorkspaceID, err)
+			}
+			if publications == nil {
+				publications = map[string]workspace.DashboardPublication{}
+			}
+			if err := publicationsqlite.ReconcileTx(ctx, tx, publication.ReconcileInput{
+				ProjectID: candidate.ProjectID, WorkspaceID: candidate.WorkspaceID, ServingStateID: candidate.ID,
+				ActorID: row.CreatedBy, Publications: publications,
+			}); err != nil {
+				return deployment.Deployment{}, fmt.Errorf("%w: reconcile publications for workspace %q: %v", deployment.ErrConflict, target.WorkspaceID, err)
+			}
 		}
 		if err := q.MarkOtherServingStatesDraining(ctx, platformdb.MarkOtherServingStatesDrainingParams{WorkspaceID: target.WorkspaceID, Environment: row.Environment, ID: target.ServingStateID}); err != nil {
 			return deployment.Deployment{}, err

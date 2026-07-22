@@ -40,3 +40,41 @@ func TestParseBaseURL(t *testing.T) {
 		})
 	}
 }
+
+func TestParseShowcaseEmbedURL(t *testing.T) {
+	for _, test := range []struct {
+		raw     string
+		want    string
+		wantErr bool
+	}{
+		{raw: "", want: ""},
+		{raw: "https://app.leapview.dev/embed/dashboards/public-id", want: "https://app.leapview.dev/embed/dashboards/public-id"},
+		{raw: "http://localhost:8080/embed/dashboards/public-id", want: "http://localhost:8080/embed/dashboards/public-id"},
+		{raw: "ftp://app.leapview.dev/embed/dashboards/id", wantErr: true},
+		{raw: "https://user:secret@app.leapview.dev/embed/dashboards/id", wantErr: true},
+		{raw: "https://app.leapview.dev/embed/dashboards/id?theme=x", wantErr: true},
+		{raw: "https://app.leapview.dev/embed/dashboards/id#x", wantErr: true},
+		{raw: "https://app.leapview.dev/not-an-embed", wantErr: true},
+	} {
+		got, err := parseShowcaseEmbedURL(test.raw)
+		if test.wantErr {
+			if err == nil {
+				t.Errorf("parseShowcaseEmbedURL(%q) succeeded", test.raw)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("parseShowcaseEmbedURL(%q): %v", test.raw, err)
+			continue
+		}
+		if got == nil {
+			if test.want != "" {
+				t.Errorf("parseShowcaseEmbedURL(%q) = nil", test.raw)
+			}
+			continue
+		}
+		if got.String() != test.want {
+			t.Errorf("parseShowcaseEmbedURL(%q) = %q, want %q", test.raw, got, test.want)
+		}
+	}
+}

@@ -195,6 +195,10 @@ func (r *Repository) SaveValidated(ctx context.Context, servingStateID servingst
 	if err != nil {
 		return servingstate.State{}, err
 	}
+	publicationsJSON, err := json.Marshal(validation.DashboardPublications)
+	if err != nil {
+		return servingstate.State{}, err
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return servingstate.State{}, err
@@ -222,7 +226,7 @@ func (r *Repository) SaveValidated(ctx context.Context, servingStateID servingst
 	case servingstate.StatusPending:
 	case servingstate.StatusValidated:
 		existingArtifact, existingErr := q.GetArtifactByServingState(ctx, current.ID)
-		if existingErr == nil && current.ProjectID == validation.ProjectID && current.ProjectDigest == validation.ProjectDigest && current.ProjectWorkspacesJson == string(projectWorkspacesJSON) && current.AccessPolicyJson == string(accessPolicyJSON) && current.Digest == validation.Digest && current.ManifestJson == validation.ManifestJSON && sameArtifact(existingArtifact, artifact) {
+		if existingErr == nil && current.ProjectID == validation.ProjectID && current.ProjectDigest == validation.ProjectDigest && current.ProjectWorkspacesJson == string(projectWorkspacesJSON) && current.AccessPolicyJson == string(accessPolicyJSON) && current.DashboardPublicationsJson == string(publicationsJSON) && current.Digest == validation.Digest && current.ManifestJson == validation.ManifestJSON && sameArtifact(existingArtifact, artifact) {
 			return mapServingState(current), nil
 		}
 		return servingstate.State{}, fmt.Errorf("validated serving state %s is immutable", servingStateID)
@@ -273,14 +277,15 @@ func (r *Repository) SaveValidated(ctx context.Context, servingStateID servingst
 		}
 	}
 	if err := q.UpdateServingStateValidated(ctx, platformdb.UpdateServingStateValidatedParams{
-		Status:                string(servingstate.StatusValidated),
-		ProjectID:             validation.ProjectID,
-		ProjectDigest:         validation.ProjectDigest,
-		ProjectWorkspacesJson: string(projectWorkspacesJSON),
-		AccessPolicyJson:      string(accessPolicyJSON),
-		Digest:                validation.Digest,
-		ManifestJson:          validation.ManifestJSON,
-		ID:                    string(servingStateID),
+		Status:                    string(servingstate.StatusValidated),
+		ProjectID:                 validation.ProjectID,
+		ProjectDigest:             validation.ProjectDigest,
+		ProjectWorkspacesJson:     string(projectWorkspacesJSON),
+		AccessPolicyJson:          string(accessPolicyJSON),
+		DashboardPublicationsJson: string(publicationsJSON),
+		Digest:                    validation.Digest,
+		ManifestJson:              validation.ManifestJSON,
+		ID:                        string(servingStateID),
 	}); err != nil {
 		return servingstate.State{}, err
 	}
@@ -592,6 +597,11 @@ func policySubjectTx(ctx context.Context, q *platformdb.Queries, workspaceID str
 			return "", "", err
 		}
 		return access.SubjectServicePrincipal, id, nil
+	case string(access.SubjectDashboardPublication):
+		if strings.TrimSpace(subject.Publication) == "" {
+			return "", "", fmt.Errorf("dashboard publication subject requires publication")
+		}
+		return access.SubjectDashboardPublication, access.DashboardPublicationSubjectID(workspaceID, subject.Publication), nil
 	default:
 		return "", "", fmt.Errorf("unsupported subject kind %q in workspace %q", subject.Kind, workspaceID)
 	}
@@ -838,21 +848,22 @@ func mapServingState(row platformdb.ServingState) servingstate.State {
 	var projectWorkspaces []string
 	_ = json.Unmarshal([]byte(row.ProjectWorkspacesJson), &projectWorkspaces)
 	out := servingstate.State{
-		ID:                 servingstate.ID(row.ID),
-		WorkspaceID:        servingstate.WorkspaceID(row.WorkspaceID),
-		ProjectID:          row.ProjectID,
-		ProjectDigest:      row.ProjectDigest,
-		ProjectWorkspaces:  projectWorkspaces,
-		AccessPolicyJSON:   row.AccessPolicyJson,
-		Environment:        servingstate.Environment(row.Environment),
-		Status:             servingstate.Status(row.Status),
-		Source:             servingstate.NormalizeSource(servingstate.Source(row.Source)),
-		Digest:             row.Digest,
-		ManifestJSON:       row.ManifestJson,
-		CreatedBy:          row.CreatedBy,
-		CreatedAt:          row.CreatedAt,
-		Error:              row.Error,
-		DuckLakeSnapshotID: row.DucklakeSnapshotID,
+		ID:                        servingstate.ID(row.ID),
+		WorkspaceID:               servingstate.WorkspaceID(row.WorkspaceID),
+		ProjectID:                 row.ProjectID,
+		ProjectDigest:             row.ProjectDigest,
+		ProjectWorkspaces:         projectWorkspaces,
+		AccessPolicyJSON:          row.AccessPolicyJson,
+		DashboardPublicationsJSON: row.DashboardPublicationsJson,
+		Environment:               servingstate.Environment(row.Environment),
+		Status:                    servingstate.Status(row.Status),
+		Source:                    servingstate.NormalizeSource(servingstate.Source(row.Source)),
+		Digest:                    row.Digest,
+		ManifestJSON:              row.ManifestJson,
+		CreatedBy:                 row.CreatedBy,
+		CreatedAt:                 row.CreatedAt,
+		Error:                     row.Error,
+		DuckLakeSnapshotID:        row.DucklakeSnapshotID,
 	}
 	if row.ActivatedAt.Valid {
 		out.ActivatedAt = row.ActivatedAt.String

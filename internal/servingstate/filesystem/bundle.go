@@ -390,15 +390,16 @@ func ValidateArtifactWithOptions(path string, workspaceID servingstate.Workspace
 		return servingstate.Validation{}, err
 	}
 	return servingstate.Validation{
-		Digest:               digest,
-		ManifestJSON:         string(manifestJSON),
-		RootDir:              root,
-		ProjectID:            compiled.ProjectID,
-		ProjectDigest:        compiled.ProjectDigest,
-		ProjectWorkspaces:    append([]string(nil), compiled.ProjectWorkspaces...),
-		AccessPolicy:         compiled.Definition.Access,
-		ManagedDataRevisions: cloneStringMap(compiled.ManagedDataRevisions),
-		Graph:                compiled.Graph,
+		Digest:                digest,
+		ManifestJSON:          string(manifestJSON),
+		RootDir:               root,
+		ProjectID:             compiled.ProjectID,
+		ProjectDigest:         compiled.ProjectDigest,
+		ProjectWorkspaces:     append([]string(nil), compiled.ProjectWorkspaces...),
+		AccessPolicy:          compiled.Definition.Access,
+		DashboardPublications: compiled.Definition.Publications,
+		ManagedDataRevisions:  cloneStringMap(compiled.ManagedDataRevisions),
+		Graph:                 compiled.Graph,
 	}, nil
 }
 

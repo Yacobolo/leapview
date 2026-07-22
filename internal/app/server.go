@@ -21,6 +21,8 @@ import (
 	asyncjobsqlite "github.com/Yacobolo/leapview/internal/asyncjob/sqlite"
 	cursorsigningsqlite "github.com/Yacobolo/leapview/internal/cursorsigning/sqlite"
 	dashboardhttp "github.com/Yacobolo/leapview/internal/dashboard/http"
+	"github.com/Yacobolo/leapview/internal/dashboard/publication"
+	publicationsqlite "github.com/Yacobolo/leapview/internal/dashboard/publication/sqlite"
 	dashboardstream "github.com/Yacobolo/leapview/internal/dashboard/stream"
 	deploymenthttp "github.com/Yacobolo/leapview/internal/deployment/http"
 	manageddatabinding "github.com/Yacobolo/leapview/internal/manageddata/binding"
@@ -34,6 +36,8 @@ import (
 	refreshpipelinesqlite "github.com/Yacobolo/leapview/internal/refreshpipeline/sqlite"
 	releasesqlite "github.com/Yacobolo/leapview/internal/release/sqlite"
 	"github.com/Yacobolo/leapview/internal/runtimehost"
+	productsearch "github.com/Yacobolo/leapview/internal/search"
+	searchsqlite "github.com/Yacobolo/leapview/internal/search/sqlite"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
 	"github.com/Yacobolo/leapview/internal/staticasset"
@@ -84,8 +88,12 @@ type Server struct {
 	metrics                         QueryMetrics
 	workloads                       *workload.Controller
 	broker                          *pagestream.Broker
+	publicationBroker               dashboardhttp.SignalBroker
 	pageStreamTrace                 *pagestream.TraceStore
 	dashboardRefreshes              *dashboardstream.Registry
+	publicationStreams              publication.StreamRegistry
+	publicationRepo                 *publicationsqlite.Repository
+	publicationService              *publication.Service
 	store                           *platform.Store
 	servingStateRepo                servingStateRepository
 	managedDataBindingRepo          manageddatabinding.Repository
@@ -93,7 +101,9 @@ type Server struct {
 	refreshPipelineRepo             refreshpipeline.Repository
 	refreshPipelineClock            refreshpipeline.Clock
 	workspaceRepo                   workspace.Repository
+	assetCatalogMu                  sync.Mutex
 	assetCatalog                    workspace.AssetCatalogReader
+	search                          *productsearch.Service
 	accessRepo                      access.Repository
 	asyncJobs                       asyncjob.Repository
 	agent                           *agent.Service
@@ -133,6 +143,7 @@ type Server struct {
 	managedDataExpirer              managedDataUploadExpirer
 	managedDataExpireInterval       time.Duration
 	managedDataMaintenanceStarted   bool
+	publicationMonitorStarted       bool
 	refreshPipelineSchedulerStarted bool
 	apiIdempotencyMu                sync.Mutex
 	apiIdempotency                  map[string]*apiIdempotencyRecord
@@ -140,6 +151,7 @@ type Server struct {
 	mcpOAuth                        *mcpoauth.Service
 	mcpOAuthResource                mcpoauth.ResourceServer
 	mcpOAuthInitErr                 error
+	publicURL                       string
 }
 
 func New(metrics QueryMetrics) *Server {
@@ -157,6 +169,7 @@ func New(metrics QueryMetrics) *Server {
 		broker:             pagestream.NewBroker(pagestream.WithTraceStore(trace)),
 		pageStreamTrace:    trace,
 		dashboardRefreshes: dashboardstream.NewRegistry(),
+		publicationStreams: publication.NewMemoryStreamRegistry(),
 		requestBodyLimit:   DefaultRequestBodyLimitConfig(),
 		telemetry:          newHTTPTelemetry(),
 		logger:             logger,
@@ -200,6 +213,7 @@ type Options struct {
 	ManagedDataExpirer        managedDataUploadExpirer
 	ManagedDataExpireInterval time.Duration
 	MCPOAuth                  MCPOAuthConfig
+	PublicURL                 string
 	RefreshPipelineClock      refreshpipeline.Clock
 }
 
@@ -246,7 +260,7 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	if dataAccessRepo == nil && options.Auth != nil && options.Store != nil {
 		dataAccessRepo = accesssqlite.NewRepository(options.Store.SQLDB())
 	}
-	if metrics != nil && dataAccessRepo != nil && options.Auth != nil {
+	if metrics != nil && dataAccessRepo != nil {
 		metrics = queryauthz.New(metrics, queryauthz.Options{
 			Repo:               dataAccessRepo,
 			DefaultWorkspaceID: options.DefaultWorkspaceID,
@@ -277,6 +291,7 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	}
 	server := New(metrics)
 	server.telemetry = telemetry
+	server.publicationBroker = server.broker
 	server.refreshPipelineClock = options.RefreshPipelineClock
 	if server.refreshPipelineClock == nil {
 		server.refreshPipelineClock = refreshpipeline.RealClock{}
@@ -287,9 +302,14 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 		server.asyncJobs = asyncjobsqlite.NewRepository(options.Store.SQLDB())
 		server.apiIdempotencyStore = apiidempotencysqlite.NewStore(options.Store.SQLDB())
 		server.refreshPipelineRepo = refreshpipelinesqlite.NewRepository(options.Store.SQLDB())
+		server.publicationRepo = publicationsqlite.NewRepository(options.Store.SQLDB())
+		server.publicationStreams = publicationsqlite.NewStreamRegistry(options.Store.SQLDB())
+		server.publicationBroker = publicationsqlite.NewBroker(options.Store.SQLDB(), server.pageStreamTrace, server.logger)
+		server.publicationService = publication.NewService(server.publicationRepo, server.publicationStreams.ClosePublication)
 		if err := cursorsigningsqlite.Configure(context.Background(), options.Store.SQLDB()); err != nil {
 			server.logger.ErrorContext(context.Background(), "configure cursor signing failed", "error", err)
 		}
+		server.search = productsearch.NewService(searchsqlite.New(options.Store.SQLDB()), appSearchAuthorizer{server: server})
 	}
 	server.servingStateRepo = servingStateRepo
 	server.managedDataBindingRepo = managedDataBindingRepo
@@ -327,6 +347,10 @@ func NewWithOptions(metrics QueryMetrics, options Options) *Server {
 	server.queryResultCache = options.QueryResultCache
 	server.defaultWorkspaceID = options.DefaultWorkspaceID
 	server.defaultEnvironment = string(servingstate.NormalizeEnvironment(servingstate.Environment(options.DefaultEnvironment)))
+	server.publicURL = strings.TrimSuffix(strings.TrimSpace(options.PublicURL), "/")
+	if server.publicURL == "" {
+		server.publicURL = strings.TrimSuffix(strings.TrimSpace(options.MCPOAuth.PublicURL), "/")
+	}
 	server.scimBearerToken = options.SCIMBearerToken
 	server.metricsBearerToken = options.MetricsBearerToken
 	server.allowedHosts = append([]string(nil), options.AllowedHosts...)
@@ -387,12 +411,19 @@ func (s *Server) StartBackgroundJobs(ctx context.Context) {
 	if startManagedDataMaintenance {
 		s.managedDataMaintenanceStarted = true
 	}
+	startPublicationMonitor := s.publicationRepo != nil && !s.publicationMonitorStarted
+	if startPublicationMonitor {
+		s.publicationMonitorStarted = true
+	}
 	s.backgroundMu.Unlock()
 	s.dispatchQueuedRefreshJobs(backgroundCtx)
 	s.dispatchQueuedAsyncJobs(backgroundCtx)
 	s.startRefreshPipelineScheduler(backgroundCtx)
 	if startManagedDataMaintenance {
 		s.startManagedDataMaintenance(backgroundCtx)
+	}
+	if startPublicationMonitor {
+		s.startPublicationMonitor(backgroundCtx)
 	}
 }
 
@@ -425,6 +456,7 @@ func (s *Server) StopBackgroundJobs(ctx context.Context) error {
 		s.backgroundCancel = nil
 		s.backgroundStopping = false
 		s.managedDataMaintenanceStarted = false
+		s.publicationMonitorStarted = false
 		s.refreshPipelineSchedulerStarted = false
 		s.backgroundMu.Unlock()
 		return nil
@@ -690,6 +722,9 @@ func (s *Server) dashboardHTTP() dashboardhttp.Handler {
 				return ""
 			}
 			return version.RefreshedAt.Format(time.RFC3339)
+		},
+		AgentBootstrap: func(r *http.Request, workspaceID string) ui.ChatViewState {
+			return s.agentHTTPHandler().DashboardBootstrap(r, workspaceID)
 		},
 	}
 }

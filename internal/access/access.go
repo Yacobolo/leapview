@@ -23,6 +23,7 @@ const (
 	PrivilegeRefreshData        Privilege = "REFRESH_DATA"
 	PrivilegeDeploy             Privilege = "DEPLOY"
 	PrivilegeActivateDeployment Privilege = "ACTIVATE_DEPLOYMENT"
+	PrivilegeManagePublications Privilege = "MANAGE_PUBLICATIONS"
 	PrivilegeUseAgent           Privilege = "USE_AGENT"
 	PrivilegeViewAgent          Privilege = "VIEW_AGENT"
 	PrivilegeManageGrants       Privilege = "MANAGE_GRANTS"
@@ -38,7 +39,7 @@ func ParsePrivilege(value string) (Privilege, bool) {
 	switch privilege {
 	case PrivilegeUseWorkspace, PrivilegeViewItem, PrivilegeEditItem, PrivilegeManageItem,
 		PrivilegeQueryData, PrivilegePreviewData, PrivilegeRefreshData, PrivilegeDeploy,
-		PrivilegeActivateDeployment, PrivilegeUseAgent, PrivilegeViewAgent,
+		PrivilegeActivateDeployment, PrivilegeManagePublications, PrivilegeUseAgent, PrivilegeViewAgent,
 		PrivilegeManageGrants, PrivilegeViewAudit, PrivilegeManageWorkspace,
 		PrivilegeManagePlatform, PrivilegeViewData, PrivilegeIngestData:
 		return privilege, true
@@ -72,6 +73,7 @@ var defaultRoles = []Role{
 			PrivilegeRefreshData,
 			PrivilegeDeploy,
 			PrivilegeActivateDeployment,
+			PrivilegeManagePublications,
 			PrivilegeUseAgent,
 			PrivilegeViewAgent,
 			PrivilegeManageGrants,
@@ -91,6 +93,7 @@ var defaultRoles = []Role{
 			PrivilegeRefreshData,
 			PrivilegeDeploy,
 			PrivilegeActivateDeployment,
+			PrivilegeManagePublications,
 			PrivilegeUseAgent,
 			PrivilegeViewAgent,
 			PrivilegeManageGrants,
@@ -180,6 +183,7 @@ var defaultRoles = []Role{
 			PrivilegeRefreshData,
 			PrivilegeDeploy,
 			PrivilegeActivateDeployment,
+			PrivilegeManagePublications,
 			PrivilegeUseAgent,
 			PrivilegeViewAgent,
 			PrivilegeManageGrants,
@@ -207,9 +211,10 @@ type Role struct {
 type PrincipalKind string
 
 const (
-	PrincipalKindUser             PrincipalKind = "user"
-	PrincipalKindGroup            PrincipalKind = "group"
-	PrincipalKindServicePrincipal PrincipalKind = "service_principal"
+	PrincipalKindUser                 PrincipalKind = "user"
+	PrincipalKindGroup                PrincipalKind = "group"
+	PrincipalKindServicePrincipal     PrincipalKind = "service_principal"
+	PrincipalKindDashboardPublication PrincipalKind = "dashboard_publication"
 )
 
 type SecurableType string
@@ -348,9 +353,10 @@ type AuthorizationCheck struct {
 type SubjectType string
 
 const (
-	SubjectPrincipal        SubjectType = "principal"
-	SubjectGroup            SubjectType = "group"
-	SubjectServicePrincipal SubjectType = "service_principal"
+	SubjectPrincipal            SubjectType = "principal"
+	SubjectGroup                SubjectType = "group"
+	SubjectServicePrincipal     SubjectType = "service_principal"
+	SubjectDashboardPublication SubjectType = "dashboard_publication"
 )
 
 type RoleBinding struct {
@@ -720,6 +726,7 @@ func KnownPrivileges() []Privilege {
 		PrivilegeRefreshData,
 		PrivilegeDeploy,
 		PrivilegeActivateDeployment,
+		PrivilegeManagePublications,
 		PrivilegeUseAgent,
 		PrivilegeViewAgent,
 		PrivilegeManageGrants,
@@ -729,6 +736,10 @@ func KnownPrivileges() []Privilege {
 		PrivilegeViewData,
 		PrivilegeIngestData,
 	}
+}
+
+func DashboardPublicationSubjectID(workspaceID, publication string) string {
+	return "dashboard_publication:" + strings.TrimSpace(workspaceID) + "." + strings.TrimSpace(publication)
 }
 
 func PrincipalIDForEmail(email string) string {

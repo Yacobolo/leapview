@@ -23,6 +23,9 @@ spec:
   dashboards:
     include:
     - dashboards/*.yaml
+  publications:
+    include:
+    - publications/*.yaml
   access:
     include:
     - access/*.yaml

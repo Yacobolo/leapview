@@ -25,7 +25,11 @@ func (s *Server) pageStream(w http.ResponseWriter, r *http.Request) {
 		s.servePageStream(w, r, route)
 		return
 	}
-	s.protect(privilege, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	protect := s.protect
+	if uisignals.RouteKind(route) == uisignals.RouteAdmin && strings.TrimSpace(r.URL.Query().Get("section")) == "publications" {
+		protect = s.protectAnyWorkspace
+	}
+	protect(privilege, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.servePageStream(w, r, route)
 	})).ServeHTTP(w, r)
 }
@@ -45,6 +49,9 @@ func streamPrivilege(route, section string) (access.Privilege, bool) {
 	case uisignals.RouteAdmin:
 		if strings.TrimSpace(section) == "queries" {
 			return access.PrivilegeViewAudit, true
+		}
+		if strings.TrimSpace(section) == "publications" {
+			return access.PrivilegeManagePublications, true
 		}
 		return access.PrivilegeManageGrants, true
 	default:

@@ -62,8 +62,17 @@ func datastarScriptURL() string {
 }
 
 const (
-	appRootClass = "min-h-svh bg-app text-fg-default"
+	appRootClass       = "min-h-svh bg-app text-fg-default"
+	PresentationApp    = "app"
+	PresentationPublic = "public"
+	PresentationEmbed  = "embed"
 )
+
+type PublicPageOptions struct {
+	PublicID     string
+	ClientID     string
+	Presentation string
+}
 
 type ChromeDecorator func(*uisignals.ChromeSignal)
 
@@ -109,6 +118,8 @@ func Page(clientID, csrfToken string, catalog dashboard.Catalog, report reportde
 	dashboardUpdatesURL := updatesURLWithParams(catalog.Workspace.ID, report.ID, activePage.ID, initialURLParams)
 	reloadAction := uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/reload", "runtime", "filters.controls")
 	filtersUpdate := "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); " + visualReset
+	agentTurn := "$agent.composer.value = evt.detail.input; $agentContext.references = evt.detail.references; $agentContext.filters = $filters; $agentContext.generation = $status.generation; " + uiactions.Post("/chats/turns", "agent", "agentContext")
+	agentRestore := "$agent.activeConversationId = evt.detail.conversationId; " + uiactions.Get("/chats/restore", "agent")
 	return pagestream.RenderPage(pagestream.PageSpec{
 		Title:             brand.Name,
 		DatastarScriptURL: datastarScriptURL(),
@@ -132,11 +143,16 @@ func Page(clientID, csrfToken string, catalog dashboard.Catalog, report reportde
 		UpdatesURL: dashboardUpdatesURL,
 		Body: []g.Node{
 			g.El("lv-app-shell",
+				g.Attr("data-on:lv-chat-reference-search__debounce.200ms", "$agentReferenceSearch.query = evt.detail.query; $agentReferenceSearch.requestId = evt.detail.requestId; "+uiactions.Get("/chats/references/search", "agentReferenceSearch", "agentContext")),
 				g.El("lv-dashboard-page",
 					g.Attr("slot", "page"),
 					g.Attr("workspace-id", catalog.Workspace.ID),
 					g.Attr("dashboard-id", report.ID),
 					g.Attr("page-id", activePage.ID),
+					g.Attr("data-indicator", "agentTurnPending"),
+					g.Attr("data-on:lv-chat-submit", agentTurn),
+					g.Attr("data-on:lv-chat-restore", agentRestore),
+					g.Attr("data-on:lv-chat-new", "$agent.activeConversationId = ''; $agent.transcript = []; $agent.composer.value = ''; $agentVisuals = {}"),
 					g.Attr("data-on:lv-filters-change", filtersUpdate+reloadAction),
 					g.Attr("data-on:lv-filters-reset", filtersUpdate+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/reset-filters", "runtime")),
 					g.Attr("data-on:lv-filters-refresh", reloadAction),
@@ -146,6 +162,68 @@ func Page(clientID, csrfToken string, catalog dashboard.Catalog, report reportde
 				),
 			),
 			inspectorElement(),
+		},
+	})
+}
+
+// PublicPage renders the report component without authenticated application
+// chrome or cookies. Every command is scoped beneath the opaque publication
+// route and carries the document-generated client and stream identities.
+func PublicPage(options PublicPageOptions, catalog dashboard.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters) g.Node {
+	presentation := options.Presentation
+	if presentation != PresentationEmbed {
+		presentation = PresentationPublic
+	}
+	if options.ClientID == "" {
+		options.ClientID = newStreamInstanceID()
+	}
+	initialFilters = report.NormalizeFiltersForPage(activePage.ID, initialFilters)
+	params := report.URLParamsFromFiltersForPage(activePage.ID, initialFilters)
+	params["streamInstance"] = newStreamInstanceID()
+	params["clientId"] = options.ClientID
+	values := url.Values{}
+	values.Set("page", activePage.ID)
+	values.Set("presentation", presentation)
+	for key, raw := range params {
+		switch typed := raw.(type) {
+		case []string:
+			for _, value := range typed {
+				values.Add(key, value)
+			}
+		case string:
+			values.Set(key, typed)
+		}
+	}
+	base := "/public/dashboards/" + options.PublicID
+	commandBase := base + "/commands/"
+	visualReset := visualResetExpression()
+	reloadAction := uiactions.Post(commandBase+"reload", "runtime", "filters.controls")
+	filtersUpdate := "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); " + visualReset
+	return pagestream.RenderPage(pagestream.PageSpec{
+		Title:             report.Title,
+		DatastarScriptURL: datastarScriptURL(),
+		HTMLAttrs: []g.Node{
+			g.Attr("data-color-mode", "auto"), g.Attr("data-light-theme", "light"), g.Attr("data-dark-theme", "dark"),
+		},
+		Head: pageHead(
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/dashboard-page.js"))),
+			h.Script(h.Type("module"), h.Src(staticAsset("/static/url-sync.js"))),
+		),
+		MainAttrs: []g.Node{
+			h.ID("dashboard"), h.Class(appRootClass),
+			g.Attr("data-on:datastar-url-params-sync__window", "$urlParams = evt.detail.params; $filters = window.LeapViewFilterURL.fromParams($filterConfig, $filters, $urlParams); "+visualReset+reloadAction),
+		},
+		UpdatesURL: base + "/updates?" + values.Encode(),
+		Body: []g.Node{
+			g.El("lv-dashboard-page",
+				g.Attr("workspace-id", catalog.Workspace.ID), g.Attr("dashboard-id", report.ID), g.Attr("page-id", activePage.ID), g.Attr("presentation", presentation),
+				g.Attr("data-on:lv-filters-change", filtersUpdate+reloadAction),
+				g.Attr("data-on:lv-filters-reset", filtersUpdate+uiactions.Post(commandBase+"reset-filters", "runtime")),
+				g.Attr("data-on:lv-filters-refresh", reloadAction),
+				g.Attr("data-on:lv-selection-clear", "$filters.selections = []; "+uiactions.Post(commandBase+"clear-selection", "runtime")),
+				g.Attr("data-on:lv-interaction-select", "$interactionCommand = evt.detail; "+uiactions.Post(commandBase+"select", "runtime", "interactionCommand")),
+				g.Attr("data-on:lv-visual-window-change", "$visualWindowCommand = evt.detail; "+uiactions.Post(commandBase+"visual-window", "runtime", "visualWindowCommand")),
+			),
 		},
 	})
 }
@@ -168,19 +246,41 @@ func BootstrapSignals(clientID, streamInstanceID string, catalog dashboard.Catal
 		}
 	}
 	return map[string]any{
-		"chrome":              envelope.Chrome,
-		"componentStatus":     envelope.ComponentStatus,
-		"page":                envelope.Page,
-		"runtime":             envelope.Runtime,
-		"filterConfig":        envelope.FilterConfig,
-		"filters":             envelope.Filters,
-		"urlParams":           envelope.URLParams,
-		"urlParamShape":       envelope.URLParamShape,
-		"filterOptions":       envelope.FilterOptions,
-		"interactionCommand":  envelope.InteractionCommand,
-		"visualWindowCommand": envelope.VisualWindowCommand,
-		"visuals":             envelope.Visuals,
-		"status":              envelope.Status,
+		"agent":                envelope.Agent,
+		"agentContext":         envelope.AgentContext,
+		"agentReferenceSearch": envelope.AgentReferenceSearch,
+		"agentVisuals":         envelope.AgentVisuals,
+		"chrome":               envelope.Chrome,
+		"componentStatus":      envelope.ComponentStatus,
+		"page":                 envelope.Page,
+		"runtime":              envelope.Runtime,
+		"filterConfig":         envelope.FilterConfig,
+		"filters":              envelope.Filters,
+		"urlParams":            envelope.URLParams,
+		"urlParamShape":        envelope.URLParamShape,
+		"filterOptions":        envelope.FilterOptions,
+		"interactionCommand":   envelope.InteractionCommand,
+		"visualWindowCommand":  envelope.VisualWindowCommand,
+		"visuals":              envelope.Visuals,
+		"status":               envelope.Status,
+	}
+}
+
+func PublicBootstrapSignals(clientID, streamInstanceID, publicID, presentation string, catalog dashboard.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters) map[string]any {
+	envelope := uisignals.DashboardInitialEnvelope(clientID, streamInstanceID, catalog, report, model, pages, activePage, initialFilters)
+	family := "public"
+	if presentation == PresentationEmbed {
+		family = "embed"
+	}
+	for index := range envelope.Page.Pages {
+		envelope.Page.Pages[index].Href = "/" + family + "/dashboards/" + publicID + "/pages/" + envelope.Page.Pages[index].ID
+	}
+	envelope.Page.Presentation = presentation
+	return map[string]any{
+		"chrome":       envelope.Chrome, "componentStatus": envelope.ComponentStatus, "page": envelope.Page, "runtime": envelope.Runtime,
+		"filterConfig": envelope.FilterConfig, "filters": envelope.Filters, "urlParams": envelope.URLParams, "urlParamShape": envelope.URLParamShape,
+		"filterOptions": envelope.FilterOptions, "interactionCommand": envelope.InteractionCommand, "visualWindowCommand": envelope.VisualWindowCommand,
+		"visuals": envelope.Visuals, "status": envelope.Status,
 	}
 }
 
