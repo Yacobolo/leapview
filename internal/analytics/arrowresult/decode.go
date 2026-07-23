@@ -17,14 +17,19 @@ func DecodeRows(lease *Lease) ([]map[string]any, error) {
 	}
 	rows := make([]map[string]any, 0, lease.Rows())
 	err := lease.VisitRecords(func(record arrow.RecordBatch) error {
+		decoders := make([]columnDecoder, int(record.NumCols()))
+		for columnIndex := range decoders {
+			name := record.ColumnName(columnIndex)
+			decode, err := compileValueDecoder(record.Column(columnIndex))
+			if err != nil {
+				return fmt.Errorf("decode Arrow column %q: %w", name, err)
+			}
+			decoders[columnIndex] = columnDecoder{name: name, value: decode}
+		}
 		for rowIndex := 0; rowIndex < int(record.NumRows()); rowIndex++ {
-			row := make(map[string]any, int(record.NumCols()))
-			for columnIndex := 0; columnIndex < int(record.NumCols()); columnIndex++ {
-				value, err := decodeValue(record.Column(columnIndex), rowIndex)
-				if err != nil {
-					return fmt.Errorf("decode Arrow column %q: %w", record.ColumnName(columnIndex), err)
-				}
-				row[record.ColumnName(columnIndex)] = value
+			row := make(map[string]any, len(decoders))
+			for _, decoder := range decoders {
+				row[decoder.name] = decoder.value(rowIndex)
 			}
 			rows = append(rows, row)
 		}
@@ -34,71 +39,140 @@ func DecodeRows(lease *Lease) ([]map[string]any, error) {
 }
 
 type marshalValue interface{ GetOneForMarshal(int) interface{} }
+type valueDecoder func(int) any
 
-func decodeValue(values arrow.Array, index int) (any, error) {
-	if values == nil || values.IsNull(index) {
-		return nil, nil
+type columnDecoder struct {
+	name  string
+	value valueDecoder
+}
+
+func compileValueDecoder(values arrow.Array) (valueDecoder, error) {
+	if values == nil {
+		return func(int) any { return nil }, nil
 	}
+	var decode valueDecoder
 	switch values := values.(type) {
 	case *array.Boolean:
-		return values.Value(index), nil
+		decode = func(index int) any { return values.Value(index) }
 	case *array.Int8:
-		return values.Value(index), nil
+		decode = func(index int) any { return values.Value(index) }
 	case *array.Int16:
-		return values.Value(index), nil
+		decode = func(index int) any { return values.Value(index) }
 	case *array.Int32:
-		return values.Value(index), nil
+		decode = func(index int) any { return values.Value(index) }
 	case *array.Int64:
-		return values.Value(index), nil
+		decode = func(index int) any { return values.Value(index) }
 	case *array.Uint8:
-		return values.Value(index), nil
+		decode = func(index int) any { return values.Value(index) }
 	case *array.Uint16:
-		return values.Value(index), nil
+		decode = func(index int) any { return values.Value(index) }
 	case *array.Uint32:
-		return values.Value(index), nil
+		decode = func(index int) any { return values.Value(index) }
 	case *array.Uint64:
-		return values.Value(index), nil
+		decode = func(index int) any { return values.Value(index) }
 	case *array.Float32:
-		return values.Value(index), nil
+		decode = func(index int) any { return values.Value(index) }
 	case *array.Float64:
-		return values.Value(index), nil
+		decode = func(index int) any { return values.Value(index) }
 	case *array.String:
-		return values.Value(index), nil
+		decode = ownedStringDecoder(values)
 	case *array.LargeString:
-		return values.Value(index), nil
+		decode = ownedLargeStringDecoder(values)
 	case *array.Binary:
-		return append([]byte{}, values.Value(index)...), nil
+		decode = ownedBinaryDecoder(values)
 	case *array.LargeBinary:
-		return append([]byte{}, values.Value(index)...), nil
+		decode = ownedLargeBinaryDecoder(values)
 	case *array.Date32:
-		return values.Value(index).ToTime(), nil
+		decode = func(index int) any { return values.Value(index).ToTime() }
 	case *array.Date64:
-		return values.Value(index).ToTime(), nil
+		decode = func(index int) any { return values.Value(index).ToTime() }
 	case *array.Timestamp:
 		typeInfo, ok := values.DataType().(*arrow.TimestampType)
 		if !ok {
 			return nil, fmt.Errorf("timestamp has invalid data type %T", values.DataType())
 		}
-		return values.Value(index).ToTime(typeInfo.Unit).In(time.UTC), nil
+		decode = func(index int) any { return values.Value(index).ToTime(typeInfo.Unit).In(time.UTC) }
 	case *array.Decimal32:
 		typeInfo := values.DataType().(*arrow.Decimal32Type)
-		return decodeDecimal(values.Value(index).ToString(typeInfo.Scale), typeInfo.Scale), nil
+		decode = func(index int) any {
+			return decodeDecimal(values.Value(index).ToString(typeInfo.Scale), typeInfo.Scale)
+		}
 	case *array.Decimal64:
 		typeInfo := values.DataType().(*arrow.Decimal64Type)
-		return decodeDecimal(values.Value(index).ToString(typeInfo.Scale), typeInfo.Scale), nil
+		decode = func(index int) any {
+			return decodeDecimal(values.Value(index).ToString(typeInfo.Scale), typeInfo.Scale)
+		}
 	case *array.Decimal128:
 		typeInfo := values.DataType().(*arrow.Decimal128Type)
-		return decodeDecimal(values.Value(index).ToString(typeInfo.Scale), typeInfo.Scale), nil
+		decode = func(index int) any {
+			return decodeDecimal(values.Value(index).ToString(typeInfo.Scale), typeInfo.Scale)
+		}
 	case *array.Decimal256:
 		typeInfo := values.DataType().(*arrow.Decimal256Type)
-		return decodeDecimal(values.Value(index).ToString(typeInfo.Scale), typeInfo.Scale), nil
+		decode = func(index int) any {
+			return decodeDecimal(values.Value(index).ToString(typeInfo.Scale), typeInfo.Scale)
+		}
 	case *array.Dictionary:
-		return decodeValue(values.Dictionary(), values.GetValueIndex(index))
+		dictionary, err := compileValueDecoder(values.Dictionary())
+		if err != nil {
+			return nil, err
+		}
+		decode = func(index int) any { return dictionary(values.GetValueIndex(index)) }
 	default:
 		if marshal, ok := values.(marshalValue); ok {
-			return marshal.GetOneForMarshal(index), nil
+			decode = func(index int) any { return marshal.GetOneForMarshal(index) }
+			break
 		}
 		return nil, fmt.Errorf("unsupported Arrow type %s", values.DataType())
+	}
+	if values.NullN() == 0 {
+		return decode, nil
+	}
+	return func(index int) any {
+		if values.IsNull(index) {
+			return nil
+		}
+		return decode(index)
+	}, nil
+}
+
+func ownedStringDecoder(values *array.String) valueDecoder {
+	offsets := values.ValueOffsets()
+	base := int(offsets[0])
+	owned := string(values.ValueBytes())
+	return func(index int) any {
+		start, end := int(offsets[index])-base, int(offsets[index+1])-base
+		return owned[start:end]
+	}
+}
+
+func ownedLargeStringDecoder(values *array.LargeString) valueDecoder {
+	offsets := values.ValueOffsets()
+	base := int(offsets[0])
+	owned := string(values.ValueBytes())
+	return func(index int) any {
+		start, end := int(offsets[index])-base, int(offsets[index+1])-base
+		return owned[start:end]
+	}
+}
+
+func ownedBinaryDecoder(values *array.Binary) valueDecoder {
+	offsets := values.ValueOffsets()
+	base := int(offsets[0])
+	owned := append([]byte(nil), values.ValueBytes()...)
+	return func(index int) any {
+		start, end := int(offsets[index])-base, int(offsets[index+1])-base
+		return owned[start:end:end]
+	}
+}
+
+func ownedLargeBinaryDecoder(values *array.LargeBinary) valueDecoder {
+	offsets := values.ValueOffsets()
+	base := int(offsets[0])
+	owned := append([]byte(nil), values.ValueBytes()...)
+	return func(index int) any {
+		start, end := int(offsets[index])-base, int(offsets[index+1])-base
+		return owned[start:end:end]
 	}
 }
 

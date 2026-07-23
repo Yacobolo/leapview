@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 
 	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	arrowutil "github.com/apache/arrow-go/v18/arrow/util"
@@ -47,12 +48,10 @@ func Stats() StatsSnapshot {
 type Builder struct {
 	mu        sync.Mutex
 	schema    *arrow.Schema
-	buffer    bytes.Buffer
-	writer    *ipc.Writer
+	records   []arrow.RecordBatch
 	allocator memory.Allocator
 	rows      int64
 	transient int64
-	decoded   int64
 	finished  bool
 }
 
@@ -82,8 +81,6 @@ func (b *Builder) WriteSchema(schema *arrow.Schema) error {
 	}
 	metadata := schema.Metadata()
 	b.schema = arrow.NewSchema(append([]arrow.Field{}, schema.Fields()...), &metadata)
-	b.writer = ipc.NewWriter(&b.buffer, ipc.WithSchema(b.schema), ipc.WithAllocator(b.allocator))
-	b.updateTransientLocked()
 	return nil
 }
 
@@ -107,15 +104,90 @@ func (b *Builder) WriteRecord(record arrow.RecordBatch) error {
 	}
 	// duckdb-go's record references memory owned by the current DuckDB data
 	// chunk. Arrow Retain pins the Go array object but not that chunk after the
-	// reader advances. IPC materialization is the type-complete deep-copy
-	// boundary into Go-owned Arrow buffers.
-	if err := b.writer.Write(record); err != nil {
-		b.updateTransientLocked()
-		return fmt.Errorf("copy Arrow record: %w", err)
+	// reader advances, so every accepted batch crosses a deep-copy boundary.
+	// Concatenation copies the common scalar buffers directly. Complex layouts
+	// whose concatenation may retain child buffers use IPC as the safe fallback.
+	copied, err := copyRecord(record, b.schema, b.allocator)
+	if err != nil {
+		return err
 	}
-	b.updateTransientLocked()
+	recordBytes := arrowutil.TotalRecordSize(copied)
+	b.records = append(b.records, copied)
 	b.rows += record.NumRows()
+	b.transient += recordBytes
+	globalStats.transientBytes.Add(recordBytes)
 	return nil
+}
+
+func copyRecord(record arrow.RecordBatch, schema *arrow.Schema, allocator memory.Allocator) (arrow.RecordBatch, error) {
+	for index := 0; index < int(record.NumCols()); index++ {
+		if !concatenateDeepCopies(record.Column(index).DataType()) {
+			return copyRecordIPC(record, allocator)
+		}
+	}
+	columns := make([]arrow.Array, int(record.NumCols()))
+	for index := range columns {
+		copied, err := array.Concatenate([]arrow.Array{record.Column(index)}, allocator)
+		if err != nil {
+			for _, column := range columns[:index] {
+				column.Release()
+			}
+			return nil, fmt.Errorf("copy Arrow column %q: %w", record.ColumnName(index), err)
+		}
+		columns[index] = copied
+	}
+	copied := array.NewRecordBatch(schema, columns, record.NumRows())
+	for _, column := range columns {
+		column.Release()
+	}
+	return copied, nil
+}
+
+func concatenateDeepCopies(dataType arrow.DataType) bool {
+	switch dataType.ID() {
+	case arrow.DICTIONARY, arrow.EXTENSION, arrow.STRING_VIEW, arrow.BINARY_VIEW:
+		return false
+	}
+	switch dataType.(type) {
+	case *arrow.NullType, *arrow.BooleanType, arrow.FixedWidthDataType, arrow.BinaryDataType:
+		return true
+	default:
+		return false
+	}
+}
+
+func copyRecordIPC(record arrow.RecordBatch, allocator memory.Allocator) (arrow.RecordBatch, error) {
+	var buffer bytes.Buffer
+	writer := ipc.NewWriter(&buffer, ipc.WithSchema(record.Schema()), ipc.WithAllocator(allocator))
+	if err := writer.Write(record); err != nil {
+		_ = writer.Close()
+		return nil, fmt.Errorf("copy Arrow record: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("finish copied Arrow record: %w", err)
+	}
+	reader, err := ipc.NewReader(bytes.NewReader(buffer.Bytes()), ipc.WithAllocator(allocator))
+	if err != nil {
+		return nil, fmt.Errorf("open copied Arrow record: %w", err)
+	}
+	defer reader.Release()
+	if !reader.Next() {
+		if err := reader.Err(); err != nil {
+			return nil, fmt.Errorf("decode copied Arrow record: %w", err)
+		}
+		return nil, fmt.Errorf("copied Arrow record stream is empty")
+	}
+	copied := reader.RecordBatch()
+	copied.Retain()
+	if reader.Next() {
+		copied.Release()
+		return nil, fmt.Errorf("copied Arrow record stream contains multiple batches")
+	}
+	if err := reader.Err(); err != nil {
+		copied.Release()
+		return nil, fmt.Errorf("decode copied Arrow record: %w", err)
+	}
+	return copied, nil
 }
 
 func (b *Builder) Finish() (*Result, error) {
@@ -130,63 +202,27 @@ func (b *Builder) Finish() (*Result, error) {
 	if b.schema == nil {
 		return nil, ErrSchemaRequired
 	}
-	if err := b.writer.Close(); err != nil {
-		b.finished = true
-		b.releaseTransientLocked()
-		return nil, fmt.Errorf("finish Arrow result stream: %w", err)
-	}
-	b.updateTransientLocked()
 	b.finished = true
-	defer b.releaseTransientLocked()
-	reader, err := ipc.NewReader(bytes.NewReader(b.buffer.Bytes()), ipc.WithAllocator(b.allocator))
-	if err != nil {
-		return nil, fmt.Errorf("open copied Arrow result: %w", err)
-	}
-	records := make([]arrow.RecordBatch, 0)
-	retainedBytes := SchemaBytes(reader.Schema())
-	for reader.Next() {
-		record := reader.RecordBatch()
-		record.Retain()
-		records = append(records, record)
-		recordBytes := arrowutil.TotalRecordSize(record)
-		retainedBytes += recordBytes
-		b.decoded += recordBytes
-		globalStats.transientBytes.Add(recordBytes)
-	}
-	if err := reader.Err(); err != nil {
-		for _, record := range records {
-			record.Release()
-		}
-		reader.Release()
-		return nil, fmt.Errorf("decode copied Arrow result: %w", err)
-	}
-	resultSchema := reader.Schema()
-	reader.Release()
-	result := &Result{schema: resultSchema, records: records, rows: b.rows, bytes: retainedBytes}
+	retainedBytes := SchemaBytes(b.schema) + b.transient
+	result := &Result{schema: b.schema, records: b.records, rows: b.rows, bytes: retainedBytes}
 	result.refs.Store(1)
 	globalStats.results.Add(1)
 	globalStats.bytes.Add(retainedBytes)
-	globalStats.transientBytes.Add(-b.decoded)
-	b.decoded = 0
+	globalStats.transientBytes.Add(-b.transient)
+	b.schema = nil
+	b.records = nil
+	b.transient = 0
 	return result, nil
 }
 
-func (b *Builder) updateTransientLocked() {
-	// Capacity is the memory retained by bytes.Buffer; Len would under-report
-	// allocation after geometric growth.
-	current := int64(b.buffer.Cap())
-	globalStats.transientBytes.Add(current - b.transient)
-	b.transient = current
-}
-
 func (b *Builder) releaseTransientLocked() {
-	globalStats.transientBytes.Add(-b.transient - b.decoded)
+	for _, record := range b.records {
+		record.Release()
+	}
+	globalStats.transientBytes.Add(-b.transient)
 	b.transient = 0
-	b.decoded = 0
-	b.schema, b.writer = nil, nil
-	// Reset keeps the backing allocation. Replace the buffer so a completed or
-	// aborted builder cannot retain the complete IPC copy until garbage collection.
-	b.buffer = bytes.Buffer{}
+	b.schema = nil
+	b.records = nil
 }
 
 // SchemaBytes conservatively accounts the stable Arrow schema retained with a
@@ -222,9 +258,6 @@ func (b *Builder) Abort() {
 		return
 	}
 	b.finished = true
-	if b.writer != nil {
-		_ = b.writer.Close()
-	}
 	b.releaseTransientLocked()
 }
 

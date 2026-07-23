@@ -9,6 +9,64 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+func TestDecodeRowsOwnsVariableWidthValues(t *testing.T) {
+	allocator := memory.NewCheckedAllocator(memory.DefaultAllocator)
+	defer allocator.AssertSize(t, 0)
+
+	stringsBuilder := array.NewStringBuilder(allocator)
+	stringsBuilder.Append("alpha")
+	stringsArray := stringsBuilder.NewArray()
+	stringsBuilder.Release()
+	binaryBuilder := array.NewBinaryBuilder(allocator, arrow.BinaryTypes.Binary)
+	binaryBuilder.Append([]byte("bravo"))
+	binaryArray := binaryBuilder.NewArray()
+	binaryBuilder.Release()
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "text", Type: arrow.BinaryTypes.String},
+		{Name: "bytes", Type: arrow.BinaryTypes.Binary},
+	}, nil)
+	record := array.NewRecordBatch(schema, []arrow.Array{stringsArray, binaryArray}, 1)
+	stringsArray.Release()
+	binaryArray.Release()
+
+	collector := NewBuilderWithAllocator(allocator)
+	if err := collector.WriteSchema(schema); err != nil {
+		t.Fatal(err)
+	}
+	if err := collector.WriteRecord(record); err != nil {
+		t.Fatal(err)
+	}
+	record.Release()
+	result, err := collector.Finish()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := result.Acquire()
+	result.Release()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := DecodeRows(lease)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lease.VisitRecords(func(record arrow.RecordBatch) error {
+		record.Column(0).Data().Buffers()[2].Bytes()[0] = 'z'
+		record.Column(1).Data().Buffers()[2].Bytes()[0] = 'z'
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	lease.Release()
+
+	if got := rows[0]["text"]; got != "alpha" {
+		t.Fatalf("decoded string changed with Arrow buffer: %q", got)
+	}
+	if got := string(rows[0]["bytes"].([]byte)); got != "bravo" {
+		t.Fatalf("decoded binary changed with Arrow buffer: %q", got)
+	}
+}
+
 func TestDecodeRowsPreservesPhysicalValuesAndNulls(t *testing.T) {
 	allocator := memory.NewCheckedAllocator(memory.DefaultAllocator)
 	defer allocator.AssertSize(t, 0)
