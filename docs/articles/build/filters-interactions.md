@@ -2,6 +2,8 @@
 
 Filters and selections let users change a report without giving the browser unrestricted query control. Dashboard YAML defines allowed fields, operators, option sources, URL state, semantic mappings, and targets; the server validates and applies each command.
 
+This guide describes the currently accepted dashboard configuration. See [Filter and slicer target architecture](/docs/architecture/filters-slicers) for the planned separation between semantic filter definitions, scoped bindings, the Filters pane, and canvas slicers.
+
 ## Define dashboard filters
 
 ### Define a multi-select filter
