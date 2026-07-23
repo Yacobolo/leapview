@@ -11,7 +11,7 @@ This document defines the target architecture. Existing dashboard configuration 
 The target covers:
 
 - Semantic filter definitions and typed predicates.
-- Report-, page-, and component-scoped bindings.
+- Report- and page-scoped bindings with optional component target sets.
 - Filters pane and slicer presentations.
 - Canonical applied state, optional shared draft state, defaults, clear, reset, and apply.
 - URL state and future saved reader views.
@@ -48,15 +48,15 @@ Cross-filtering and cross-highlighting from chart, map, or table selections rema
 
 | Term | Meaning |
 | --- | --- |
-| Filter definition | Reusable semantic predicate policy: field, value type, legal predicate shapes, defaults, option source, and URL identity. |
-| Filter binding | An instance of a definition with report, page, or component scope, compiled targets, pane policy, and canonical state identity. |
+| Filter definition | Reusable semantic predicate policy: field, value type, legal predicate shapes, and option source. |
+| Filter binding | An instance of a definition with report or page scope, compiled targets, defaults, URL identity, edit policy, and canonical state identity. |
 | Filter state | Typed applied values for a binding plus optional pending draft values and revision metadata. |
 | Filter presentation | A reader-facing editor bound to filter state, either a pane card or a canvas slicer. |
 | Slicer | An on-page presentation of a filter binding. It is a page component, not a separate predicate system. |
-| Filters pane | A centralized presentation of bindings exposed to the reader on the active report/page/component. |
+| Filters pane | A centralized presentation of report bindings, active-page bindings, and explicitly component-targeted page bindings exposed to the reader. |
 | Option domain | The authorized, context-sensitive values available to a categorical control. |
 | Clear | Replace one binding with its unfiltered identity, when the binding is editable. |
-| Reset | Restore authored defaults for the requested binding, page, or report scope. |
+| Reset | Restore authored defaults for the requested binding, page, or dashboard scope. |
 | Apply | Atomically promote shared draft state to applied state. |
 
 ## Architectural invariants
@@ -65,7 +65,7 @@ Cross-filtering and cross-highlighting from chart, map, or table selections rema
 2. A binding establishes applicability independently of whether any presentation is visible.
 3. A slicer and pane card bound to the same binding always show the same applied and pending state.
 4. Presentation components emit typed mutations; they never replace the complete dashboard filter envelope.
-5. The route-level filter controller is the only browser owner that merges filter mutations.
+5. The route-level filter controller is the only browser owner that projects optimistic filter mutations; server state remains canonical.
 6. The server validates every binding, value, operator, target, revision, and option request.
 7. The workspace compiler resolves semantic field types and produces exact compatible target sets.
 8. Explicitly targeted incompatible components fail compilation; implicit scope excludes incompatible components deterministically.
@@ -82,10 +82,10 @@ Cross-filtering and cross-highlighting from chart, map, or table selections rema
 ```mermaid
 flowchart LR
   accTitle: LeapView filter and slicer target architecture
-  accDescr: Dashboard definitions compile into semantic filter definitions and scoped bindings. Canonical state is edited through a shared controller and rendered by both the Filters pane and canvas slicers. Applied state drives governed option and visual queries.
+  accDescr: Dashboard definitions compile into semantic filter definitions and scoped bindings. A shared browser controller sends typed commands to server-owned canonical state and renders both the Filters pane and canvas slicers. Applied state drives governed option and visual queries.
   authored["Dashboard YAML and semantic model"] --> compiler["Workspace compiler"]
   compiler --> contract["Compiled definitions, bindings, and targets"]
-  contract --> state["Canonical filter state"]
+  contract --> state["Server-owned canonical filter state"]
   pane["Filters pane"] <--> controller["Shared filter controller"]
   slicer["Canvas slicers"] <--> controller
   controller <--> state
@@ -104,9 +104,7 @@ A definition owns reusable semantic policy:
 - Semantic field and optional fact identity.
 - Compiler-resolved value type.
 - Allowed predicate variants and operators.
-- Authored default expression.
 - Static or governed dynamic option source.
-- Stable URL parameter identity and encoding policy.
 - Optional formatting metadata shared across presentations.
 
 Predicate and presentation are separate axes. A categorical set predicate can appear as a dropdown, list, or button group. A range predicate can appear as numeric inputs, a slider, or a date picker. An input presentation can produce an equality, comparison, or string-match predicate only when the definition allows it.
@@ -116,6 +114,8 @@ The compiled predicate union is closed and typed:
 ```text
 FilterExpression
   Unfiltered
+  NullCheck
+    operator: is_null | is_not_null
   Set
     operator: in | not_in
     values: FilterValue[]
@@ -125,18 +125,22 @@ FilterExpression
               greater_than_or_equal | less_than | less_than_or_equal
     value: FilterValue
   Range
-    lower?: FilterBound
-    upper?: FilterBound
+    lower?: {value: FilterValue, inclusive: boolean}
+    upper?: {value: FilterValue, inclusive: boolean}
   RelativePeriod
     direction: previous | current | next
     count: positive integer
     unit: minute | hour | day | week | month | quarter | year
     includeCurrent: boolean
+    anchor: current_time | first_available | last_available | fixed
+    anchorValue?: FilterValue
 ```
 
 The compiler restricts variants and operators by semantic type. For example, `contains` is valid for strings but not dates, and a relative period requires a date or timestamp.
 
-`FilterValue` is a discriminated scalar rather than an arbitrary JSON value. Strings and booleans remain native; integers and decimals use canonical precision-safe representations; dates and timestamps use canonical ISO representations with compiled calendar and timezone semantics. Null filtering is expressed by an explicit predicate, not by overloading an empty string.
+`FilterValue` is a discriminated scalar rather than an arbitrary JSON value. Strings and booleans remain native; integers and decimals use canonical precision-safe representations; dates and timestamps use canonical ISO representations with compiled calendar and timezone semantics. `NullCheck` represents null filtering instead of overloading an empty string.
+
+The server canonicalizes equivalent expressions before revisioning, URL serialization, caching, or query planning. An empty `Set`, a `Range` without bounds, and an omitted control normalize to `Unfiltered`; set values are typed, deduplicated, and deterministically ordered. A relative period preserves its relative rule for sharing and future report loads, but the server resolves it once per accepted filter revision to an absolute `Range`. Every option and visual query for that revision uses the same resolved range, evaluation instant, compiled timezone, and calendar. `fixed` requires a compatible `anchorValue`; data-relative anchors resolve against the same serving-state snapshot and incoming option-dependency context, excluding the binding itself.
 
 ### Filter bindings
 
@@ -144,13 +148,18 @@ A binding owns state identity and applicability:
 
 - Stable binding ID.
 - Referenced definition ID.
-- Scope: report, page, or component.
-- Included or excluded page component IDs.
-- Pane visibility, editability, order, and optional reader-facing label override.
-- Application mode inherited from or overriding the page/report policy.
-- Optional synchronization identity for deliberately shared report state.
+- Scope: report or page.
+- Included or excluded component targets.
+- Authored default expression.
+- Stable URL parameter identity and encoding policy.
+- State constraints such as single or multiple set selection and a maximum selected-value count.
+- Reader editability and lock policy shared by every presentation.
+- Pane visibility, order, and optional reader-facing label override.
+- Optional binding-to-binding option interaction overrides.
 
-Targets use page component IDs at the authoring boundary. The compiler resolves them to runtime consumers and records an exact target set. An omitted target list means all semantically compatible consumers within scope, not every consumer unconditionally.
+Targets on a page binding use page-local component IDs. Targets on a report binding use qualified `pageID/componentID` identities. The compiler resolves both forms to canonical qualified runtime consumers and records an exact target set. An omitted target list means all semantically compatible consumers within scope, not every consumer unconditionally. A binding targeting one component is the LeapView equivalent of a visual-level filter; it does not introduce a third state scope.
+
+Authored page-binding IDs are local to their page; report-binding IDs are local to the dashboard. The compiler issues every binding an opaque, stable `bindingKey` containing its resolved scope identity. Generated contracts and runtime state use that key rather than concatenating or parsing author-facing IDs. Presentations and authored option-interaction overrides use typed binding references that the compiler resolves to keys. This allows several pages to use a local binding ID such as `state` without colliding in report-wide state.
 
 A report binding can be presented by slicers on several pages without duplicating state. Each presentation keeps its own placement and visual formatting. Hiding a slicer on one page does not remove the binding or its effect.
 
@@ -159,13 +168,12 @@ A report binding can be presented by slicers on several pages without duplicatin
 Pane cards and slicers reference a binding. They may configure presentation-only behavior:
 
 - Style: dropdown, list, buttons, input, numeric range, date range, or relative period.
-- Single or multiple selection where permitted.
-- Search, select-all, option counts, and summary display.
+- Search, visibility of a semantically valid select-all action, option counts, and summary display.
 - Compact or expanded layout.
 - Title, description, and accessibility text.
 - Responsive arrangement and page placement for slicers.
 
-Presentation configuration cannot broaden allowed operators, change the semantic field, override security, or alter compiled targets.
+Presentation configuration cannot broaden allowed operators, change selection cardinality, change reader editability, change the semantic field, override security, or alter compiled targets.
 
 The following target shape is illustrative:
 
@@ -174,9 +182,7 @@ filters:
   state:
     field: customers.state
     predicate: set
-    default: {operator: in, values: []}
     values: {source: distinct}
-    url_param: state
 
 pages:
   - id: overview
@@ -185,14 +191,17 @@ pages:
         filter: state
         scope: page
         targets: [revenue, orders]
-        pane: {visible: true, editable: true, order: 10}
+        default: {operator: in, values: []}
+        selection: multiple
+        reader_editable: true
+        url_param: state
+        pane: {visible: true, order: 10}
     components:
       - id: state-slicer
         kind: slicer
         filter: state
         presentation:
           style: dropdown
-          selection: multiple
           search: true
         placement: {col: 1, row: 1, col_span: 3, row_span: 2}
 ```
@@ -201,36 +210,41 @@ The binding exists even if `state-slicer` is absent. Conversely, the pane can hi
 
 ## Canonical state
 
-Filter state is keyed by binding ID rather than presentation ID:
+Server-owned filter state is keyed by compiled `bindingKey` rather than author-facing binding or presentation ID:
 
 ```text
 DashboardFilterState
   revision
-  appliedControls: binding ID -> FilterExpression
-  draftControls?: binding ID -> FilterExpression
-  dirtyBindings: binding ID[]
+  appliedControls: bindingKey -> AppliedFilterState
+  draftControls?: bindingKey -> FilterExpression
+  dirtyBindings: bindingKey[]
   defaultsRevision
+
+AppliedFilterState
+  expression: FilterExpression
+  resolvedExpression: Unfiltered | NullCheck | Set | Comparison | Range
+  evaluatedAt?: timestamp
 ```
 
-Interaction selections and spatial selections remain sibling state, not optional fields copied by each filter control.
+`expression` preserves shareable reader intent. `resolvedExpression` is the exact predicate used for governed queries in this revision; it differs when a relative period is resolved to absolute bounds. Interaction selections and spatial selections remain sibling state, not optional fields copied by each filter control.
 
 ### Immediate and deferred application
 
-Immediate mode validates and applies each completed mutation. Text input is debounced; range and date editors apply only a complete value unless the presentation has an explicit Apply action.
+One dashboard-level filter policy selects immediate or deferred application for every binding and presentation in that dashboard. Binding- or presentation-specific application modes are not supported because they would make shared state and Apply transaction boundaries ambiguous.
 
-Deferred mode writes shared draft state. Every pane card and slicer bound to the same binding displays the draft and pending indicator. Applying promotes all dirty bindings in the selected page/report transaction to applied state and advances the filter revision once. Cancelling discards drafts without issuing visual queries.
+Immediate mode validates and applies each completed mutation. Text input is debounced; range and date editors apply only a complete value unless the shared control has an explicit Apply action.
 
-Application mode is a page or report policy, not an accidental difference between the pane and slicers.
+Deferred mode writes shared server-owned draft state for the active route. Every pane card and slicer bound to the same binding displays the draft and pending indicator. Apply promotes all dirty report and active-page bindings reachable from that route in one state transition, resolves relative expressions once, and advances the filter revision once. Cancel discards those drafts without issuing visual queries. Navigating with dirty drafts requires Apply, Discard, or an explicit product policy that selects one of those outcomes; drafts never silently become applied state.
 
 ### Clear and reset
 
 Clear replaces an editable binding with `Unfiltered`. Reset restores the authored default:
 
 - Reset binding restores one binding.
-- Reset page restores page bindings and page presentations.
-- Reset report restores report and page defaults according to the route contract.
+- Reset page restores bindings scoped to the active page; report bindings remain unchanged.
+- Reset dashboard restores report bindings and every persisted page-binding state to authored defaults.
 
-Locked bindings cannot be cleared or edited by readers but may be restored by an authorized authoring or administrative operation. Hidden bindings are not shown, but their applied state remains explainable through authorized diagnostics.
+Reset does not alter presentation ephemera such as open popovers, search text, focus, or responsive layout. Locked bindings cannot be cleared or edited by readers but may be restored by an authorized authoring or administrative operation. Hidden bindings are not shown, but their applied state remains explainable through authorized diagnostics.
 
 ### URL and saved state
 
@@ -247,19 +261,20 @@ The browser uses shared leaf controls and separate surface shells:
 - Typed categorical, input, range, date, and relative-period controls own accessible input behavior.
 - A pane-card shell owns grouping, scope labels, lock/visibility affordances, clear/reset actions, and expanded layout.
 - A slicer shell owns page placement, compact/expanded canvas presentation, title, and responsive behavior.
-- The route-level controller owns state merging, draft coordination, optimistic revisions, URL updates, and command dispatch.
+- The route-level controller owns optimistic projection, draft coordination, URL updates, command serialization, and reconciliation with canonical server patches.
 
 A leaf control emits a mutation such as:
 
 ```text
 FilterMutation
-  bindingID
+  bindingKey
   baseRevision
+  clientMutationID
   operation
   expression?
 ```
 
-It does not emit the whole `DashboardFilters` object. The controller applies the mutation to one typed state root, preserving selections, spatial selections, and unrelated controls. The server returns canonical state; rejected or superseded optimistic state reconciles to it.
+It does not emit the whole `DashboardFilters` object. The controller projects the mutation onto one optimistic typed state root, preserving selections, spatial selections, and unrelated controls, then sends the typed command. Only the server advances canonical state and revisions. Rejected or superseded optimistic state reconciles to the returned canonical patch.
 
 The TypeSpec signal contract generates the filter definition, binding, presentation, state, option page, mutation, validation, and status models used by Go and TypeScript. Handwritten structural duplicates are forbidden by tests.
 
@@ -269,13 +284,14 @@ The workspace compiler:
 
 1. Resolves each definition field against the semantic model.
 2. Derives value type, nullability, formatting, timezone, and calendar semantics.
-3. Validates predicate variants, operators, defaults, and static options.
-4. Resolves each binding scope and page/component identity.
-5. Computes compatible runtime targets and validates explicit targets.
-6. Validates presentation style against predicate and value type.
-7. Checks binding, presentation, URL parameter, and synchronization identities for collisions.
-8. Validates locked/hidden/default combinations and application policies.
-9. Produces deterministic compiled definitions, bindings, target sets, and revisions.
+3. Validates predicate variants, operators, relative anchors, and static options.
+4. Resolves each binding scope, authored default, URL identity, state constraints, edit policy, and canonical binding key.
+5. Resolves page-local or report-qualified component targets into canonical qualified runtime consumers.
+6. Computes the binding-to-binding option dependency graph and validates explicit overrides.
+7. Validates presentation style against predicate, value type, and binding state constraints.
+8. Checks binding, presentation, and route-visible URL parameter identities for collisions.
+9. Validates locked/hidden/default combinations and the dashboard application policy.
+10. Produces deterministic compiled definitions, bindings, target sets, option dependencies, and revisions.
 
 The same normalized resource graph produces byte-equivalent compiled filter content and the same revision digest.
 
@@ -283,23 +299,34 @@ The same normalized resource graph produces byte-equivalent compiled filter cont
 
 ### Applying filters
 
-The server accepts a typed mutation with dashboard, page, binding, and base revision. It authorizes the route, verifies that the binding is editable, validates the expression, rejects stale or incompatible state, and computes the next canonical revision.
+The server accepts a typed mutation with dashboard, page, binding key, client mutation ID, and base revision. It authorizes the route, verifies that the binding is editable, validates the expression, deduplicates retries, rejects stale or incompatible state, and computes the next canonical revision.
 
-Each affected visual query receives the conjunction of applicable report, page, and component bindings plus targeted interaction selections and spatial selections. Within a set expression, values are disjunctive. The query planner preserves predicate grouping explicitly rather than relying on SQL precedence.
+Each affected visual query receives the conjunction of applicable report and page bindings plus targeted interaction selections and spatial selections. Within a set expression, values are disjunctive. The query planner preserves predicate grouping explicitly rather than relying on SQL precedence.
 
 A binding does not apply to its slicer as a visual target. Its state influences the slicer's option domain through the separate option-query rules.
+
+Every visual, table window, and option result carries the serving-state identity and filter revision it satisfies. When canonical state advances, affected targets enter an updating state immediately. They may retain their previous result for visual continuity only with an explicit stale/updating indicator, and interactions from that older result are disabled or rejected by revision validation. A target becomes settled only after it displays a result or terminal error for the current filter revision. Streaming completion may be partial, but the UI never presents mismatched data as current.
 
 ### Option domains
 
 Static options are compiled into serving state. Dynamic options use a governed endpoint or command with:
 
-- Binding ID.
+- Binding key.
 - Search text.
 - Opaque page cursor and bounded limit.
 - Applied filter revision.
 - Serving-state identity.
 
-By default, an option query applies all active bindings that can govern the option field except the binding being populated. This lets slicers constrain one another without causing a selected value to disappear solely because it filters itself. Selected values are resolved and returned even when they fall outside the current page or search result, with availability metadata when another filter excludes them.
+The compiler produces a directed option dependency graph between bindings. By default, an edge `source -> target` exists only when:
+
+- Both bindings can be active on the same page.
+- The source predicate is semantically applicable to the target option query.
+- Their compiled non-control consumer target sets overlap.
+- The author has not explicitly disabled the option interaction.
+
+Authors can explicitly include or exclude typed binding references when the derived behavior is not the intended report experience. The compiler resolves them to binding keys, validates every override, and records the resulting graph in serving state. Cycles are allowed because each option query evaluates one stable applied-state revision; option results never feed back into canonical filter state.
+
+An option query applies the incoming edges for the binding being populated and excludes the binding itself. This lets related slicers constrain one another without causing a selected value to disappear solely because it filters itself, while a narrowly targeted filter cannot unexpectedly constrain an unrelated slicer. Selected values remain selected and are returned even when they fall outside the current page or search result. Availability metadata explains when another binding excludes them; the runtime never silently removes an applied value.
 
 Option results contain typed values, display labels, optional counts, completeness, and continuation state. Client search never pretends that a bounded first page is the complete domain. High-cardinality fields require server search or a more appropriate input control.
 
@@ -307,7 +334,7 @@ Data policies and principal authorization apply before distinct values or counts
 
 ### Concurrency and supersession
 
-Every mutation advances or proposes a filter revision. Query work is keyed by dashboard page, serving state, filter revision, target, and window state. A newer revision cancels or supersedes older option and visual work. Late results cannot patch a newer revision.
+Every mutation advances or proposes a filter revision. The route controller serializes state-changing commands per dashboard stream. Later local mutations queue behind an in-flight mutation and rebase on the returned canonical revision; each command carries a stable client mutation ID so retries cannot duplicate a transition. Query work is keyed by dashboard page, serving state, filter revision, target, and window state. A newer revision cancels or supersedes older option and visual work. Late results cannot patch a newer revision.
 
 Deferred apply coalesces several edits into one revision. Immediate mode may debounce text input and coalesce target queries, but it cannot reorder accepted state. Status signals distinguish pending validation, pending apply, querying, partial completion, error, and settled state.
 
@@ -325,7 +352,7 @@ Report bindings extend the same model:
 - A report binding affects compatible components on all included pages.
 - Any page may show zero or more presentations of that binding.
 
-Component scope is an explicit binding whose compiled target set contains one or more selected components. It does not depend on whichever visual currently has browser focus.
+A component-targeted filter is a page binding with an explicit component target set. A report binding can also name qualified targets such as `overview/revenue`. Targeted filtering does not depend on whichever visual currently has browser focus.
 
 Synchronization is state identity, not event forwarding. Presentations that should remain synchronized reference the same binding. Separate bindings do not become synchronized merely because they use the same semantic field.
 
@@ -362,6 +389,7 @@ Filter operations record:
 - Base and resulting filter revision.
 - Affected target count.
 - Option versus visual query counts.
+- Current, updating, stale, and terminal-error target counts by filter revision.
 - Cache/coalescing outcome, queue time, execution time, cancellation, and supersession.
 - Validation or authorization failure category without unsafe values.
 
@@ -389,7 +417,8 @@ See the official Power BI documentation for [slicers](https://learn.microsoft.co
 
 - Add explicit page bindings independent of page components.
 - Generate a discriminated filter state and mutation contract.
-- Make the route controller merge mutations and preserve selection/spatial roots.
+- Make the route controller project typed optimistic mutations while preserving selection/spatial roots.
+- Move defaults, URL identity, selection constraints, and reader editability to bindings.
 - Define and test unfiltered, clear, reset, default, and revision semantics.
 
 ### Phase 2: Shared presentations
@@ -401,19 +430,19 @@ See the official Power BI documentation for [slicers](https://learn.microsoft.co
 
 ### Phase 3: Governed option domains
 
-- Apply other active bindings while excluding self.
+- Compile target-aware binding-to-binding option dependencies and exclude self.
 - Add typed values, server search, pagination, selected-value resolution, and cache partitioning.
 - Add request generations, cancellation, and stale-option rejection.
 
 ### Phase 4: Rich predicates and application
 
-- Add numeric ranges, comparison inputs, and relative date/time periods.
+- Add null checks, inclusive/exclusive numeric ranges, comparison inputs, and deterministically resolved relative date/time periods.
 - Add shared deferred draft state and atomic Apply/Cancel.
 - Add query fan-out metrics and adaptive guidance for expensive immediate mode.
 
 ### Phase 5: Wider scope and persistence
 
-- Add report and component scope.
+- Add report scope and qualified cross-page target sets.
 - Add cross-page presentations of report bindings.
 - Add versioned saved reader views and explicit persistence policy.
 - Add authorized “filters affecting this visual” explanations.
@@ -424,8 +453,11 @@ Contract and compiler tests must prove:
 
 - Pane-only and slicer-only bindings compile and apply.
 - Multiple presentations of one binding cannot diverge.
+- Defaults, URL serialization, selection cardinality, and editability remain binding-specific when definitions are reused.
 - Invalid predicate/type/presentation combinations fail.
+- Binding or presentation attempts to override the dashboard application policy fail.
 - Explicit incompatible targets fail and implicit targets compile deterministically.
+- Page-local binding IDs, report binding IDs, and page-local/report-qualified target identities compile to noncolliding canonical keys.
 - URL parsing and serialization round-trip typed applied state.
 - Clear differs from reset when the authored default is filtered.
 
@@ -433,8 +465,10 @@ Runtime tests must prove:
 
 - Filter mutation preserves interaction and spatial selections.
 - Target queries receive exactly the applicable binding expressions.
-- Option queries apply other bindings, exclude self, retain selected values, enforce policies, and paginate.
+- Relative expressions resolve once per revision and every consumer uses identical absolute bounds.
+- Option queries follow the compiled dependency graph, exclude self, retain unavailable selected values, enforce policies, and paginate.
 - Deferred Apply advances one revision and executes each affected consumer once.
+- Mutation retries are idempotent, and queued mutations rebase on canonical revisions without losing edits.
 - Cancelled, stale, or superseded visual and option results cannot replace newer state.
 
 Browser tests must prove:
@@ -443,6 +477,7 @@ Browser tests must prove:
 - Keyboard, focus, labels, summaries, errors, locked state, and pending state are accessible.
 - Responsive presentation does not change state identity or keyboard order.
 - Browser history reflects canonical applied state, never drafts.
+- A target displaying an older filter revision is visibly updating and cannot emit accepted interactions.
 - Disconnecting a presentation disposes observers without deleting bound state.
 
 These tests are architectural gates, not optional component coverage. A new filter or slicer variant is complete only when compiler, runtime, generated contract, pane, canvas, URL, authorization, and supersession behavior agree.
