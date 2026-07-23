@@ -109,6 +109,20 @@ type Expression struct {
 	AnchorValue    *Value            `json:"anchorValue,omitempty" yaml:"anchor_value,omitempty"`
 }
 
+func (expression Expression) MarshalJSON() ([]byte, error) {
+	type expressionJSON Expression
+	encoded, err := json.Marshal(expressionJSON(expression))
+	if err != nil || expression.Kind != ExpressionRelativePeriod || expression.IncludeCurrent {
+		return encoded, err
+	}
+	var object map[string]any
+	if err := json.Unmarshal(encoded, &object); err != nil {
+		return nil, err
+	}
+	object["includeCurrent"] = false
+	return json.Marshal(object)
+}
+
 type Scope string
 
 const (

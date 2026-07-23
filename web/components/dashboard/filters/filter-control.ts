@@ -4,6 +4,7 @@ import type {
   DashboardCompiledFilterBinding,
   DashboardCompiledFilterDefinition,
   DashboardFilterExpression,
+  DashboardFilterOptionItem,
   DashboardFilterOptionPage,
   DashboardFilterPresentation,
   DashboardFilterValue,
@@ -32,6 +33,8 @@ export class DashboardFilterLeaf extends LitElement {
   @property({ type: Boolean, reflect: true }) pending = false
   @property({ type: Boolean, reflect: true }) stale = false
 
+  private hasRequestedOptions = false
+
   static styles = css`
     :host { display: block; min-width: 0; font: inherit; }
     fieldset { display: grid; min-width: 0; gap: var(--base-size-6); border: 0; margin: 0; padding: 0; }
@@ -56,12 +59,13 @@ export class DashboardFilterLeaf extends LitElement {
   `
 
   protected firstUpdated() {
-    this.requestOptions()
+    this.requestInitialOptions()
   }
 
   protected updated(changed: Map<PropertyKey, unknown>) {
     if (changed.has('stale') && changed.get('stale') === true && !this.stale) {
-      this.requestOptions()
+      if (this.hasRequestedOptions) this.requestOptions()
+      else this.requestInitialOptions()
     }
   }
 
@@ -105,7 +109,7 @@ export class DashboardFilterLeaf extends LitElement {
     return html`
       <select aria-label=${this.presentation?.ariaLabel || this.definition?.label || 'Filter'} @focus=${this.requestOptions} @change=${this.onDropdown}>
         <option value="">All</option>
-        ${(this.options?.items ?? []).map((option) => html`
+        ${this.optionItems().map((option) => html`
           <option
             value=${valueKey(option.value)}
             ?selected=${selected.has(valueKey(option.value))}
@@ -121,7 +125,7 @@ export class DashboardFilterLeaf extends LitElement {
     const multiple = this.binding?.selectionMode !== 'single'
     if (buttons) {
       return html`<div class="buttons" role="group" aria-label=${this.definition?.label ?? 'Filter options'}>
-        ${(this.options?.items ?? []).map((option) => html`
+        ${this.optionItems().map((option) => html`
           <button
             type="button"
             aria-pressed=${String(selected.has(valueKey(option.value)))}
@@ -132,7 +136,7 @@ export class DashboardFilterLeaf extends LitElement {
       </div>`
     }
     return html`<div class="options" role=${multiple ? 'group' : 'radiogroup'}>
-      ${(this.options?.items ?? []).map((option) => html`
+      ${this.optionItems().map((option) => html`
         <label class="option" data-unavailable=${String(!option.available)}>
           <input
             type=${multiple ? 'checkbox' : 'radio'}
@@ -251,8 +255,48 @@ export class DashboardFilterLeaf extends LitElement {
     }))
   }
 
+  private optionItems(): DashboardFilterOptionItem[] {
+    const selected = selectedValues(this.expression)
+    const base = this.options
+      ? this.options.items
+      : this.definition?.options.kind === 'static'
+        ? this.definition.options.values.map((option) => ({
+            ...option,
+            selected: selected.has(valueKey(option.value)),
+            available: true,
+          }))
+        : []
+    const items = base.map((option) => ({
+      ...option,
+      selected: selected.has(valueKey(option.value)),
+    }))
+    const present = new Set(items.map((option) => valueKey(option.value)))
+    for (const value of selectedValueObjects(this.expression)) {
+      if (present.has(valueKey(value))) continue
+      items.push({
+        value,
+        label: String(value.value),
+        selected: true,
+        available: false,
+      })
+    }
+    return items
+  }
+
+  private requestInitialOptions() {
+    const style = (this.presentation ?? (this.definition ? defaultPresentation(this.definition) : undefined))?.style
+    if (style === 'list' || style === 'buttons') this.requestOptions()
+  }
+
   private requestOptions = () => {
-    if (this.stale || !this.binding || !this.definition || this.definition.options.kind === 'none') return
+    if (
+      this.stale
+      || !this.binding
+      || !this.definition
+      || this.definition.options.kind === 'none'
+      || this.definition.options.kind === 'static'
+    ) return
+    this.hasRequestedOptions = true
     this.dispatchEvent(new CustomEvent<FilterOptionsNeededDetail>('lv-filter-options-needed', {
       bubbles: true, composed: true,
       detail: {

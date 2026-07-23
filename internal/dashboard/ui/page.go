@@ -150,7 +150,7 @@ func Page(clientID, csrfToken string, catalog dashboard.Catalog, report dashboar
 					g.Attr("data-on:lv-chat-submit", agentTurn),
 					g.Attr("data-on:lv-chat-restore", agentRestore),
 					g.Attr("data-on:lv-chat-new", "$agent.activeConversationId = ''; $agent.transcript = []; $agent.composer.value = ''; $agentVisuals = {}"),
-					g.Attr("data-on:lv-filter-command", "$filterCommand = evt.detail; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/filter", "runtime", "filterCommand")+"; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams)"),
+					g.Attr("data-on:lv-filter-command", "$filterCommand = evt.detail; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/filter", "runtime", "filterCommand")),
 					g.Attr("data-on:lv-filter-options-request", "$filterOptionRequest = evt.detail; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/filter-options", "runtime", "filterOptionRequest")),
 					g.Attr("data-on:lv-page-navigate", "$navigationCommand = evt.detail; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/navigate", "runtime", "navigationCommand")),
 					g.Attr("data-on:lv-selection-clear", "$interactionSelections = []; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/clear-selection", "runtime")),
@@ -212,7 +212,7 @@ func PublicPage(options PublicPageOptions, catalog dashboard.Catalog, report das
 		Body: []g.Node{
 			g.El("lv-dashboard-page",
 				g.Attr("workspace-id", catalog.Workspace.ID), g.Attr("dashboard-id", report.ID), g.Attr("page-id", activePage.ID), g.Attr("presentation", presentation),
-				g.Attr("data-on:lv-filter-command", "$filterCommand = evt.detail; "+uiactions.Post(commandBase+"filter", "runtime", "filterCommand")+"; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams)"),
+				g.Attr("data-on:lv-filter-command", "$filterCommand = evt.detail; "+uiactions.Post(commandBase+"filter", "runtime", "filterCommand")),
 				g.Attr("data-on:lv-filter-options-request", "$filterOptionRequest = evt.detail; "+uiactions.Post(commandBase+"filter-options", "runtime", "filterOptionRequest")),
 				g.Attr("data-on:lv-page-navigate", "$navigationCommand = evt.detail; "+uiactions.Post(commandBase+"navigate", "runtime", "navigationCommand")),
 				g.Attr("data-on:lv-selection-clear", "$interactionSelections = []; "+uiactions.Post(commandBase+"clear-selection", "runtime")),

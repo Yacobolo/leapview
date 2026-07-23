@@ -81,11 +81,19 @@ func (h Handler) FilterOptions(w nethttp.ResponseWriter, r *nethttp.Request) {
 		BindingKeysByRef: keysByRef,
 	}, request)
 	if err != nil {
-		nethttp.Error(w, err.Error(), nethttp.StatusConflict)
+		writeFilterOptionError(w, err)
 		return
 	}
 	page.StreamGeneration = record.State.StreamGeneration
 	writeJSON(w, nethttp.StatusOK, map[string]any{
 		"filterOptionPages": map[string]any{binding.Key: page},
 	})
+}
+
+func writeFilterOptionError(w nethttp.ResponseWriter, err error) {
+	if errors.Is(err, dashboardfilter.ErrStaleOptionRequest) {
+		writeJSON(w, nethttp.StatusOK, map[string]any{"filterOptionPages": map[string]any{}})
+		return
+	}
+	nethttp.Error(w, err.Error(), nethttp.StatusConflict)
 }

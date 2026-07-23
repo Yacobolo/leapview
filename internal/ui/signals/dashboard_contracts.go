@@ -124,7 +124,7 @@ func DashboardFilterStateFromDomain(value dashboardfilter.State) DashboardFilter
 	}
 	return DashboardFilterState{
 		Revision: int64(value.Revision), AppliedControls: applied, DraftControls: drafts,
-		DirtyBindings: append([]string(nil), value.DirtyBindings...), DefaultsRevision: value.DefaultsRevision,
+		DirtyBindings: append([]string{}, value.DirtyBindings...), DefaultsRevision: value.DefaultsRevision,
 	}
 }
 

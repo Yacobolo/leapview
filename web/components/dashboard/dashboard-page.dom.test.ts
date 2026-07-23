@@ -686,7 +686,7 @@ test('collapsed filters and page navigation use the same rail width', async () =
   }
 })
 
-test('filter controls wait for the canonical session before requesting options', async () => {
+test('visible dynamic list controls wait for the canonical session before requesting options', async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
   try {
     await page.goto(baseURL)
@@ -718,6 +718,10 @@ test('filter controls wait for the canonical session before requesting options',
         targets: [],
         incomingDependencies: [],
       }
+      leaf.presentation = {
+        style: 'list', search: false, selectAll: false,
+        showCounts: false, showSummary: true, compact: false,
+      }
       leaf.stale = true
       const seen: unknown[] = []
       leaf.addEventListener('lv-filter-options-needed', (event: CustomEvent) => seen.push(event.detail))
@@ -732,6 +736,134 @@ test('filter controls wait for the canonical session before requesting options',
       whileStale: 0,
       afterCurrent: 1,
       detail: { bindingKey: 'fb_state', search: '', limit: 50 },
+    })
+  } finally {
+    await page.close()
+  }
+})
+
+test('static filter controls render compiled options without requesting an option page', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('lv-filter-leaf'))
+    const state = await page.evaluate(async () => {
+      const leaf = document.createElement('lv-filter-leaf') as any
+      leaf.definition = {
+        id: 'delivered',
+        label: 'Delivery state',
+        field: 'orders.is_delivered',
+        valueKind: 'boolean',
+        predicates: [{ kind: 'set', operators: ['in'] }],
+        options: {
+          kind: 'static',
+          limit: 2,
+          values: [
+            { value: { kind: 'boolean', value: true }, label: 'Delivered' },
+            { value: { kind: 'boolean', value: false }, label: 'Not delivered' },
+          ],
+        },
+        format: {},
+      }
+      leaf.binding = {
+        key: 'fb_delivered',
+        id: 'delivered',
+        filter: 'delivered',
+        scope: 'page',
+        pageID: 'overview',
+        default: { kind: 'unfiltered' },
+        selectionMode: 'single',
+        selectionLimit: 1,
+        readerEditable: true,
+        paneVisible: true,
+        paneOrder: 0,
+        paneLabel: 'Delivery state',
+        targets: [],
+        incomingDependencies: [],
+      }
+      leaf.presentation = {
+        style: 'buttons', search: false, selectAll: false,
+        showCounts: false, showSummary: true, compact: false,
+      }
+      const requests: unknown[] = []
+      leaf.addEventListener('lv-filter-options-needed', (event: CustomEvent) => requests.push(event.detail))
+      document.body.append(leaf)
+      await leaf.updateComplete
+      return {
+        requests: requests.length,
+        buttons: Array.from(leaf.shadowRoot.querySelectorAll('button')).map((button: HTMLButtonElement) => button.textContent?.trim()),
+      }
+    })
+    expect(state).toEqual({ requests: 0, buttons: ['Delivered', 'Not delivered'] })
+  } finally {
+    await page.close()
+  }
+})
+
+test('opened dynamic dropdowns refresh their option page after stale data becomes current', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('lv-filter-leaf'))
+    const requests = await page.evaluate(async () => {
+      const leaf = document.createElement('lv-filter-leaf') as any
+      leaf.definition = {
+        id: 'state',
+        label: 'State',
+        field: 'orders.state',
+        valueKind: 'string',
+        predicates: [{ kind: 'set', operators: ['in'] }],
+        options: { kind: 'distinct', limit: 50, values: [] },
+        format: {},
+      }
+      leaf.binding = {
+        key: 'fb_state',
+        id: 'state',
+        filter: 'state',
+        scope: 'page',
+        pageID: 'overview',
+        default: { kind: 'unfiltered' },
+        selectionMode: 'multiple',
+        selectionLimit: 50,
+        readerEditable: true,
+        paneVisible: true,
+        paneOrder: 0,
+        paneLabel: 'State',
+        targets: [],
+        incomingDependencies: [],
+      }
+      leaf.presentation = {
+        style: 'dropdown', search: false, selectAll: false,
+        showCounts: false, showSummary: true, compact: false,
+      }
+      leaf.expression = {
+        kind: 'set', operator: 'in',
+        values: [{ kind: 'string', value: 'AC' }],
+      }
+      const seen: unknown[] = []
+      leaf.addEventListener('lv-filter-options-needed', (event: CustomEvent) => seen.push(event.detail))
+      document.body.append(leaf)
+      await leaf.updateComplete
+      const retained = Array.from(leaf.shadowRoot.querySelectorAll('option')).map((option: HTMLOptionElement) => ({
+        label: option.textContent?.trim(),
+        selected: option.selected,
+      }))
+      leaf.shadowRoot.querySelector('select').focus()
+      await leaf.updateComplete
+      const afterOpen = seen.length
+      leaf.stale = true
+      await leaf.updateComplete
+      leaf.stale = false
+      await leaf.updateComplete
+      return { retained, afterOpen, afterRefresh: seen.length }
+    })
+    expect(requests).toEqual({
+      retained: [
+        { label: 'All', selected: false },
+        { label: 'AC', selected: true },
+      ],
+      afterOpen: 1,
+      afterRefresh: 2,
     })
   } finally {
     await page.close()

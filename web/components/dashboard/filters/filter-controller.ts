@@ -193,16 +193,16 @@ function cloneState(state: DashboardFilterState): DashboardFilterState {
   return {
     revision: state.revision,
     defaultsRevision: state.defaultsRevision,
-    dirtyBindings: [...state.dirtyBindings],
+    dirtyBindings: [...(state.dirtyBindings ?? [])],
     appliedControls: Object.fromEntries(
-      Object.entries(state.appliedControls).map(([key, applied]) => [key, {
+      Object.entries(state.appliedControls ?? {}).map(([key, applied]) => [key, {
         expression: cloneExpression(applied.expression),
         resolvedExpression: cloneExpression(applied.resolvedExpression),
         ...(applied.evaluatedAt ? { evaluatedAt: applied.evaluatedAt } : {}),
       }]),
     ),
     draftControls: Object.fromEntries(
-      Object.entries(state.draftControls).map(([key, expression]) => [key, cloneExpression(expression)]),
+      Object.entries(state.draftControls ?? {}).map(([key, expression]) => [key, cloneExpression(expression)]),
     ),
   }
 }
