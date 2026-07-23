@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	projectartifact "github.com/Yacobolo/leapview/internal/project/artifact"
 	"github.com/Yacobolo/leapview/internal/project/manifest"
@@ -312,7 +313,7 @@ func TestCompileProjectRejectsInvalidAccessResources(t *testing.T) {
 			_, err := CompileProject(projectPath, Options{ServingStateID: "dep_test"})
 			assertCompileErrorContains(t, err, tc.want)
 			if tc.field != "" {
-				diagnostics := configschema.Diagnostics(err)
+				diagnostics := schema.Diagnostics(err)
 				if len(diagnostics) == 0 || diagnostics[0].FieldPath != tc.field {
 					t.Fatalf("diagnostics = %#v, want field %q", diagnostics, tc.field)
 				}
@@ -347,7 +348,7 @@ spec:
 	if !strings.Contains(err.Error(), "outside uses.sources") {
 		t.Fatalf("CompileProject() error = %v, want outside uses.sources", err)
 	}
-	diagnostic := configschema.Diagnostics(err)[0]
+	diagnostic := schema.Diagnostics(err)[0]
 	if diagnostic.ResourceID != "model_table:sales.orders" || diagnostic.FieldPath != "spec.sources" || diagnostic.File == "" {
 		t.Fatalf("diagnostic = %#v, want resource, field, and file context", diagnostic)
 	}
@@ -1212,6 +1213,7 @@ func writeProjectFixture(t *testing.T, files map[string]string) string {
 
 func assertVisualShowcaseCoverage(t *testing.T, report *reportdef.Dashboard) {
 	t.Helper()
+	assertFilterShowcaseCoverage(t, report)
 	visualTypes := map[string]struct{}{}
 	for _, visual := range report.Visuals {
 		if visual.Type != "" {
@@ -1253,6 +1255,56 @@ func assertVisualShowcaseCoverage(t *testing.T, report *reportdef.Dashboard) {
 	for _, kind := range []string{"badge", "data_bar", "text_color", "background_scale"} {
 		if _, ok := conditionalFormatting[kind]; !ok {
 			t.Fatalf("visual-showcase missing conditional formatting kind %q", kind)
+		}
+	}
+}
+
+func assertFilterShowcaseCoverage(t *testing.T, report *reportdef.Dashboard) {
+	t.Helper()
+	valueKinds := map[dashboardfilter.ValueKind]struct{}{}
+	for _, definition := range report.FilterDefinitions {
+		valueKinds[definition.ValueKind] = struct{}{}
+	}
+	for _, kind := range []dashboardfilter.ValueKind{
+		dashboardfilter.ValueString,
+		dashboardfilter.ValueBoolean,
+		dashboardfilter.ValueInteger,
+		dashboardfilter.ValueDecimal,
+		dashboardfilter.ValueDate,
+		dashboardfilter.ValueTimestamp,
+	} {
+		if _, ok := valueKinds[kind]; !ok {
+			t.Errorf("visual-showcase missing filter value kind %q", kind)
+		}
+	}
+
+	presentations := map[dashboardfilter.PresentationStyle]struct{}{}
+	filterPageFound := false
+	for _, page := range report.Pages {
+		if page.ID != "filters" {
+			continue
+		}
+		filterPageFound = true
+		for _, component := range page.Visuals {
+			if component.Kind == "slicer" {
+				presentations[component.Presentation.Style] = struct{}{}
+			}
+		}
+	}
+	if !filterPageFound {
+		t.Error("visual-showcase missing dedicated filters page")
+	}
+	for _, style := range []dashboardfilter.PresentationStyle{
+		dashboardfilter.PresentationDropdown,
+		dashboardfilter.PresentationList,
+		dashboardfilter.PresentationButtons,
+		dashboardfilter.PresentationInput,
+		dashboardfilter.PresentationNumericRange,
+		dashboardfilter.PresentationDateRange,
+		dashboardfilter.PresentationRelativePeriod,
+	} {
+		if _, ok := presentations[style]; !ok {
+			t.Errorf("visual-showcase filters page missing presentation %q", style)
 		}
 	}
 }
@@ -1572,7 +1624,7 @@ func assertCompileErrorContains(t *testing.T, err error, want string) {
 
 func assertDiagnostic(t *testing.T, err error, resourceID, fieldPath string) {
 	t.Helper()
-	diagnostics := configschema.Diagnostics(err)
+	diagnostics := schema.Diagnostics(err)
 	if len(diagnostics) == 0 {
 		t.Fatalf("diagnostics empty, want resource=%q field=%q", resourceID, fieldPath)
 	}

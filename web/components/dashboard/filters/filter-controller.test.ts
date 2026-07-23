@@ -39,6 +39,22 @@ test('filter controller serializes commands and rebases queued mutations after r
   expect(sent[1]?.baseRevision).toBe(5)
 })
 
+test('filter controller normalizes sparse empty collections at the signal boundary', () => {
+  const sent: DashboardFilterCommand[] = []
+  const controller = new DashboardFilterController((command) => sent.push(command), () => 'mutation-id')
+  controller.reconcile({
+    revision: 3,
+    defaultsRevision: 'defaults',
+    appliedControls: {},
+    draftControls: {},
+  } as DashboardFilterState)
+
+  controller.mutate('state', setExpression('CA'))
+
+  expect(sent[0]?.baseRevision).toBe(3)
+  expect(controller.projected.dirtyBindings).toEqual([])
+})
+
 test('filter controller projects optimistic state without replacing unrelated controls', () => {
   const controller = new DashboardFilterController(() => {}, () => 'mutation-id')
   const current = state(2)

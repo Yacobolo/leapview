@@ -3,9 +3,11 @@ package signals
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/dashboard"
+	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
 )
 
 func TestDashboardContractConversionsPreserveJSON(t *testing.T) {
@@ -15,6 +17,42 @@ func TestDashboardContractConversionsPreserveJSON(t *testing.T) {
 	assertSameJSON(t, selections, DashboardInteractionSelectionsFromDashboard(selections))
 	spatial := []dashboard.SpatialInteractionSelection{}
 	assertSameJSON(t, spatial, DashboardSpatialSelectionsFromDashboard(spatial))
+}
+
+func TestDashboardFilterStateUsesEmptyJSONCollections(t *testing.T) {
+	t.Parallel()
+
+	contract := DashboardFilterStateFromDomain(dashboardfilter.State{})
+	encoded, err := json.Marshal(contract)
+	if err != nil {
+		t.Fatalf("marshal filter state: %v", err)
+	}
+	if contract.DirtyBindings == nil {
+		t.Fatalf("dirty bindings must be an empty collection: %s", encoded)
+	}
+	if got := string(encoded); !strings.Contains(got, `"dirtyBindings":[]`) {
+		t.Fatalf("filter state = %s, want empty dirtyBindings array", got)
+	}
+}
+
+func TestDashboardRelativePeriodExpressionPreservesFalseIncludeCurrent(t *testing.T) {
+	t.Parallel()
+
+	contract := DashboardFilterExpressionFromDomain(dashboardfilter.Expression{
+		Kind:           dashboardfilter.ExpressionRelativePeriod,
+		Direction:      dashboardfilter.DirectionPrevious,
+		Count:          10,
+		Unit:           dashboardfilter.UnitYear,
+		IncludeCurrent: false,
+		Anchor:         dashboardfilter.AnchorCurrentTime,
+	})
+	encoded, err := json.Marshal(contract)
+	if err != nil {
+		t.Fatalf("marshal relative-period expression: %v", err)
+	}
+	if got := string(encoded); !strings.Contains(got, `"includeCurrent":false`) {
+		t.Fatalf("relative-period expression = %s, want explicit false includeCurrent", got)
+	}
 }
 
 func assertSameJSON(t *testing.T, left, right any) {

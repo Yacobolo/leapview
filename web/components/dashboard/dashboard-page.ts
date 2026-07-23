@@ -997,6 +997,7 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
     this.filterStateFingerprint = fingerprint
     this.filterController.setApplicationMode(this.filterContract.applicationMode)
     this.filterController.reconcile(state)
+    window.DatastarURLSync?.replace(this.signal<Record<string, string | string[]>>('urlParams', {}))
   }
 
   private handleOptimisticSpatialInteraction = (event: CustomEvent<unknown>): void => {
