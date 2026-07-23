@@ -64,11 +64,10 @@ func (s *Server) configureAgentTools() {
 // built-in agent and protocol adapters such as MCP.
 func (s *Server) agentToolDefinitions(scope agentcap.Scope) []agentcore.ToolDefinition {
 	toolScope := agentToolsScope(scope)
-	definitions := s.agentDocsToolProvider().Definitions()
-	definitions = append(definitions, s.agentCatalogToolProvider().Definitions(toolScope)...)
-	definitions = append(definitions, s.agentVisualToolProvider().Definitions(toolScope)...)
-	definitions = append(definitions, s.agentAPIGenToolProvider().Definitions(toolScope)...)
-	return definitions
+	return (agenttools.ProviderSet{
+		Docs: s.agentDocsToolProvider(), Catalog: s.agentCatalogToolProvider(),
+		Visual: s.agentVisualToolProvider(), APIGen: s.agentAPIGenToolProvider(),
+	}).Definitions(toolScope)
 }
 
 func (s *Server) agentDocsToolProvider() agenttools.DocsProvider {

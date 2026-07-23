@@ -8,14 +8,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"sort"
 	"text/tabwriter"
 	"time"
 
 	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
 	"github.com/Yacobolo/leapview/internal/api"
-	agentcore "github.com/Yacobolo/leapview/pkg/agent"
-	apigenagenttool "github.com/Yacobolo/toolbelt/apigen/runtime/agenttool"
 	"github.com/spf13/cobra"
 )
 
@@ -131,70 +128,16 @@ func runAgentConversations(ctx context.Context, opts *rootOptions) error {
 }
 
 func runAgentTools() error {
-	type row struct {
-		name        string
-		operationID string
-		privilege   string
-		effect      string
-		defaults    string
-		inputSchema string
+	reference, err := agenttools.ReferenceCatalog()
+	if err != nil {
+		return err
 	}
-	definitions := map[string]agentcore.ToolDefinition{}
-	for _, definition := range (agenttools.DocsProvider{}).Definitions() {
-		definitions[definition.Name] = definition
-	}
-	for _, definition := range (agenttools.CatalogProvider{}).Definitions(agenttools.Scope{}) {
-		definitions[definition.Name] = definition
-	}
-	for _, definition := range (agenttools.APIGenProvider{}).Definitions(agenttools.Scope{}) {
-		definitions[definition.Name] = definition
-	}
-	for _, definition := range (agenttools.VisualProvider{}).Definitions(agenttools.Scope{}) {
-		definitions[definition.Name] = definition
-	}
-	rows := make([]row, 0, len(definitions))
-	for _, operation := range agenttools.APIGenOperations() {
-		tool, contract := operation.Tool, operation.Contract
-		authz, _ := contract.Extensions["x-authz"].(map[string]any)
-		definition := definitions[tool.Name]
-		rows = append(rows, row{
-			name:        tool.Name,
-			operationID: contract.OperationID,
-			privilege:   cliStringFromMap(authz, "privilege"),
-			effect:      string(tool.Effect),
-			defaults:    cliAgentToolDefaults(tool.Bindings),
-			inputSchema: cliCompactJSON(definition.InputSchema),
-		})
-	}
-	manualPrivileges := map[string]string{
-		agenttools.CatalogSearchToolName: "VIEW_ITEM",
-		agenttools.CatalogListToolName:   "VIEW_ITEM",
-		agenttools.CatalogGetToolName:    "VIEW_ITEM",
-		agenttools.QueryVisualToolName:   "QUERY_DATA",
-		agenttools.DocsSearchToolName:    "USE_AGENT",
-		agenttools.DocsReadToolName:      "USE_AGENT",
-	}
-	for name, privilege := range manualPrivileges {
-		definition, ok := definitions[name]
-		if !ok {
-			continue
-		}
-		rows = append(rows, row{
-			name:        definition.Name,
-			operationID: "manual",
-			privilege:   privilege,
-			effect:      definition.Effect,
-			defaults:    `{}`,
-			inputSchema: cliCompactJSON(definition.InputSchema),
-		})
-	}
-	sort.Slice(rows, func(i, j int) bool {
-		return rows[i].name < rows[j].name
-	})
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "NAME\tPRIVILEGE\tEFFECT\tDEFAULTS\tINPUT_SCHEMA\tOPERATION")
-	for _, row := range rows {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", row.name, row.privilege, row.effect, row.defaults, row.inputSchema, row.operationID)
+	for _, tool := range reference {
+		defaults, _ := json.Marshal(tool.Defaults)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			tool.Name, tool.Privilege, tool.Effect, defaults, cliCompactJSON(tool.InputSchema), tool.OperationID)
 	}
 	return tw.Flush()
 }
@@ -205,17 +148,6 @@ func cliCompactJSON(value json.RawMessage) string {
 		return string(value)
 	}
 	return output.String()
-}
-
-func cliAgentToolDefaults(bindings []apigenagenttool.Binding) string {
-	defaults := map[string]any{}
-	for _, binding := range bindings {
-		if binding.Argument != "" && binding.Default != nil {
-			defaults[binding.Argument] = binding.Default
-		}
-	}
-	encoded, _ := json.Marshal(defaults)
-	return string(encoded)
 }
 
 func agentConversationEndpoint(target string, query url.Values) string {
@@ -237,11 +169,4 @@ func agentRunEndpoint(target, conversationID, runID string) string {
 func agentMessagesEndpoint(target, conversationID string) string {
 	u, _ := apiOperationURL(target, "listAgentMessages", map[string]string{"conversation": conversationID}, nil)
 	return u
-}
-
-func cliStringFromMap(values map[string]any, key string) string {
-	if value, ok := values[key].(string); ok {
-		return value
-	}
-	return ""
 }

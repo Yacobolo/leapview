@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"slices"
 	"testing"
 
@@ -55,5 +56,47 @@ func TestToolNamesAreTheCuratedSurface(t *testing.T) {
 	}
 	if got := ToolNames(); !slices.Equal(got, want) {
 		t.Fatalf("ToolNames() = %#v, want %#v", got, want)
+	}
+}
+
+func TestReferenceCatalogComesFromCanonicalProviderDefinitions(t *testing.T) {
+	reference, err := ReferenceCatalog()
+	if err != nil {
+		t.Fatalf("ReferenceCatalog(): %v", err)
+	}
+	if len(reference) != len(ToolNames()) {
+		t.Fatalf("ReferenceCatalog() count = %d, want %d", len(reference), len(ToolNames()))
+	}
+	definitions := (ProviderSet{}).Definitions(Scope{})
+	if len(definitions) != len(reference) {
+		t.Fatalf("ProviderSet definitions = %d, reference = %d", len(definitions), len(reference))
+	}
+	wantDefaults := map[string]map[string]any{
+		"catalog_get": {}, "catalog_list": {"limit": 25}, "catalog_search": {"limit": 10},
+		"docs_read": {"limit": 200, "offset": 1}, "docs_search": {"limit": 8},
+		"query_dashboard_visual": {}, "query_semantic_model": {"limit": 25}, "query_visual": {"limit": 50},
+	}
+	for index, tool := range reference {
+		definition := definitions[index]
+		if tool.Name != definition.Name {
+			t.Fatalf("reference[%d].Name = %q, definition = %q", index, tool.Name, definition.Name)
+		}
+		if !json.Valid(tool.InputSchema) || !json.Valid(tool.OutputSchema) {
+			t.Fatalf("tool %q has invalid generated schemas", tool.Name)
+		}
+		if string(tool.InputSchema) != string(definition.InputSchema) || string(tool.OutputSchema) != string(definition.OutputSchema) {
+			t.Fatalf("tool %q reference schemas drifted from provider definitions", tool.Name)
+		}
+		if tool.Effect != "read" || !tool.Annotations.ReadOnlyHint || !tool.Annotations.IdempotentHint || tool.Annotations.DestructiveHint || tool.Annotations.OpenWorldHint {
+			t.Fatalf("tool %q annotations = %#v", tool.Name, tool.Annotations)
+		}
+		if tool.Privilege == "" || tool.OperationID == "" {
+			t.Fatalf("tool %q metadata = %#v", tool.Name, tool)
+		}
+		gotDefaults, _ := json.Marshal(tool.Defaults)
+		expectedDefaults, _ := json.Marshal(wantDefaults[tool.Name])
+		if string(gotDefaults) != string(expectedDefaults) {
+			t.Fatalf("tool %q defaults = %#v, want %#v", tool.Name, tool.Defaults, wantDefaults[tool.Name])
+		}
 	}
 }

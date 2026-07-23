@@ -58,7 +58,7 @@ docs_read
 
 The same names, input schemas, output schemas, read-only annotations, and handlers are used by built-in chat. There are no model-visible compatibility aliases for the superseded tool catalog. Rediscover tools after upgrading LeapView.
 
-Use `catalog_search` when the workspace or parent is unknown, `catalog_list` to browse a known parent, and `catalog_get` before querying when an exact definition is needed. Follow [Use the agent tool catalog](/docs/guides/integrate/agent-tools) for refs, hierarchy, locations, pagination, errors, and query-tool selection.
+Use `catalog_search` when the workspace or parent is unknown, `catalog_list` to browse a known parent, and `catalog_get` before querying when an exact definition is needed. Follow [Use the agent tool catalog](/docs/guides/integrate/agent-tools) for refs, hierarchy, locations, pagination, errors, and query-tool selection. The generated [Agent tool reference](/docs/agent-tools) publishes the same schemas and annotations as `tools/list`.
 
 ## Understand the sign-in flow
 

@@ -136,7 +136,7 @@ Use the capabilities returned with a catalog item to choose the next tool.
 - Use `query_dashboard_visual` with the workspace, dashboard, page, and visual location of an existing visual. It preserves the dashboard definition, filters, authorization, and data-policy boundary.
 - Use `query_visual` when no saved visual fits. Provide a workspace, semantic model, dataset, visual type, and semantic fields. It returns a renderer-independent visualization artifact and does not save or mutate the dashboard.
 
-The exact query schemas are versioned with the running LeapView release. Inspect them with:
+The exact contracts are versioned with the running LeapView release. Use the generated [Agent tool reference](/docs/agent-tools) for readable input and output schemas, or download the [machine-readable manifest](/docs/agent-tools/manifest.json). You can also inspect the matching local release with:
 
 ```sh
 leapview agent tools

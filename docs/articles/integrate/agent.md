@@ -16,7 +16,7 @@ Built-in chat, MCP discovery, and `leapview agent tools` expose the same fixed e
 
 Catalog search and list silently omit inaccessible resources. Exact lookup returns the same not-found result for missing and inaccessible refs. All eight tools are read-only, idempotent, non-destructive, and closed-world; connections, raw sources, lineage, refresh runs, raw SQL, and mutation operations are intentionally absent.
 
-See [Use the agent tool catalog](/docs/guides/integrate/agent-tools) for exact refs, hierarchy, pagination, shared-resource locations, tool-selection guidance, and stable error behavior.
+See [Use the agent tool catalog](/docs/guides/integrate/agent-tools) for refs, hierarchy, pagination, shared-resource locations, tool-selection guidance, and stable error behavior. Use the generated [Agent tool reference](/docs/agent-tools) for exact schemas and metadata.
 
 ## Product documentation tools
 
