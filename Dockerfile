@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 
-FROM node:24-bookworm@sha256:392e1e23f34da768d8d1f4e502b64f200d3be3465934d4b7930f57d7e2fc1989 AS node
+FROM node:26-bookworm@sha256:219fc9da91e7f29a9f32290ff598cdf8886fd68f421ff515c8f93434da39a271 AS node
 
-FROM golang:1.25-bookworm@sha256:a9c020ee3d1508c7be5435c262434e3d3fc1d0e76a11afeb9ddae7d60bc86aa4 AS sourcegen
+FROM golang:1.26-bookworm@sha256:1ecb7edf62a0408027bd5729dfd6b1b8766e578e8df93995b225dfd0944eb651 AS sourcegen
 WORKDIR /src
 
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
@@ -20,7 +20,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     ./scripts/generate_build_sources.sh && \
     go run ./internal/tools/mapassets --out .data/map-assets
 
-FROM oven/bun:1.3.7@sha256:6cd5f00020e48b77a253bc8249f6b6dd3d92b3c04c2607f1f5a6d7dbf0a6fca3 AS web
+FROM oven/bun:1.3.14@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4 AS web
 WORKDIR /src
 
 COPY package.json bun.lock tsconfig.json ./
@@ -36,7 +36,7 @@ RUN bun scripts/generate_visualization_validator.ts && \
     bun scripts/generate_vega_lite_validator.ts && \
     bun run build
 
-FROM golang:1.25-bookworm@sha256:a9c020ee3d1508c7be5435c262434e3d3fc1d0e76a11afeb9ddae7d60bc86aa4 AS build
+FROM golang:1.26-bookworm@sha256:1ecb7edf62a0408027bd5729dfd6b1b8766e578e8df93995b225dfd0944eb651 AS build
 WORKDIR /src
 
 COPY go.mod go.sum ./
@@ -61,7 +61,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=1 go build -tags=duckdb_arrow -trimpath -ldflags="-s -w" -o /out/leapview ./cmd/leapview && \
     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/leapviewctl ./cmd/leapviewctl
 
-FROM debian:bookworm-slim@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df AS runtime
+FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818 AS runtime
 
 ARG BUILD_VERSION=dev
 ARG BUILD_REVISION=unknown
