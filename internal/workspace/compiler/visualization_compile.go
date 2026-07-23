@@ -12,19 +12,14 @@ import (
 )
 
 // compileContext is immutable per authored visualization. It keeps semantic
-// resolution, renderer capabilities, dataset identity, and diagnostics at the
-// compilation boundary instead of letting focused compilers rediscover them.
+// model, renderer capability, and dataset identity at the compilation boundary
+// instead of letting focused compilers rediscover them.
 type compileContext struct {
-	visualID    string
-	modelID     string
-	datasetID   string
-	fields      semanticFieldResolver
-	capability  reportdef.VisualizationCapability
-	diagnostics []string
-}
-
-type semanticFieldResolver struct {
-	model *semanticmodel.Model
+	visualID   string
+	modelID    string
+	datasetID  string
+	model      *semanticmodel.Model
+	capability reportdef.VisualizationCapability
 }
 
 func newCompileContext(visualID, modelID, visualType string, model *semanticmodel.Model) (compileContext, error) {
@@ -34,8 +29,7 @@ func newCompileContext(visualID, modelID, visualType string, model *semanticmode
 	}
 	return compileContext{
 		visualID: visualID, modelID: modelID, datasetID: "primary",
-		fields: semanticFieldResolver{model: model}, capability: capability,
-		diagnostics: []string{},
+		model: model, capability: capability,
 	}, nil
 }
 
@@ -88,7 +82,7 @@ func compileVisualizationDefinitions(report *reportdef.Dashboard, models ...*sem
 func compileAuthoringVisualization(ctx compileContext, authoring reportdef.AuthoringVisualization) (visualizationdefinition.Definition, error) {
 	if authoring.Tabular != nil {
 		authored := *authoring.Tabular
-		columns := compiledDashboardTableColumns(authoring.Type, authored, ctx.fields.model)
+		columns := compiledDashboardTableColumns(authoring.Type, authored, ctx.model)
 		binding := compiledTableBinding(ctx.modelID, authoring.Type, authored)
 		spec, err := compileTabularVisualizationSpec(ctx.visualID, authoring.Type, authored, columns, binding)
 		if err != nil {
@@ -110,7 +104,7 @@ func compileAuthoringVisualization(ctx compileContext, authoring reportdef.Autho
 	case visualizationdefinition.RendererMapLibre:
 		spec, err = compileGeographicVisualizationSpec(authored)
 	default:
-		spec, err = compileBuiltInVisualizationSpec(ctx.visualID, authored, ctx.fields.model)
+		spec, err = compileBuiltInVisualizationSpec(ctx.visualID, authored, ctx.model)
 	}
 	if err != nil {
 		return visualizationdefinition.Definition{}, err

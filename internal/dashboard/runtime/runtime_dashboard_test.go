@@ -275,6 +275,53 @@ c2,20040,Rio de Janeiro,RJ
 	assertVisualKeys(t, visualPatch, []string{"delivery_days", "delivery_speed", "orders_by_status", "review_by_status", "review_score", "total_orders"})
 }
 
+func TestDashboardPageQueryIsolatesOneVisualizationFailure(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, "olist_orders_dataset.csv", `order_id,customer_id,order_status,order_purchase_timestamp,order_delivered_customer_date
+o1,c1,delivered,2018-01-01 10:00:00,2018-01-03 10:00:00
+o2,c2,shipped,2018-01-05 10:00:00,2018-01-15 10:00:00
+`)
+	writeFixture(t, dir, "olist_order_reviews_dataset.csv", `order_id,review_score
+o1,5
+o2,3
+`)
+	writeFixture(t, dir, "olist_customers_dataset.csv", `customer_id,customer_zip_code_prefix,customer_city,customer_state
+c1,01001,Sao Paulo,SP
+c2,20040,Rio de Janeiro,RJ
+`)
+
+	metrics, err := newOperationsRuntime(t, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer metrics.Close()
+
+	report := metrics.reports.workspace.Dashboards["fulfillment-operations"]
+	broken := report.Visualizations["delivery_speed"]
+	broken.Query.Aggregate.TableID = "missing_table"
+	report.Visualizations["delivery_speed"] = broken
+	metrics.reports.workspace.Dashboards["fulfillment-operations"] = report
+
+	patch, err := metrics.QueryDashboardPage(context.Background(), "fulfillment-operations", "overview", dashboard.Filters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if patch.Status.Error != "" {
+		t.Fatalf("page status error = %q, want target-local error", patch.Status.Error)
+	}
+	assertVisualKeys(t, patch, []string{"delivery_days", "delivery_speed", "orders_by_status", "review_by_status", "review_score", "total_orders"})
+	failed := patch.Visuals["delivery_speed"]
+	if failed.Status.Kind != visualizationir.VisualizationStatusKindError || failed.Status.Message == nil || !strings.Contains(*failed.Status.Message, "missing_table") {
+		t.Fatalf("failed visual envelope = %#v", failed)
+	}
+	if len(failed.Diagnostics) != 1 || failed.Diagnostics[0].Code != "query_failed" {
+		t.Fatalf("failed visual diagnostics = %#v", failed.Diagnostics)
+	}
+	if patch.Visuals["total_orders"].Status.Kind != visualizationir.VisualizationStatusKindReady {
+		t.Fatalf("successful visual was discarded: %#v", patch.Visuals["total_orders"].Status)
+	}
+}
+
 func TestDashboardPageQueriesFlowThroughAuditedDataQueryBoundary(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, "olist_orders_dataset.csv", `order_id,customer_id,order_status,order_purchase_timestamp,order_delivered_customer_date

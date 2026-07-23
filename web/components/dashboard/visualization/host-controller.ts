@@ -205,15 +205,17 @@ export class VisualizationController {
       return true
     }
 
-    this.#envelope = next
-    this.#context = context
     const updateStarted = now()
     try {
       await this.#handle.update(next, change, context)
     } catch (error) {
       this.#record('adapter_error', now() - updateStarted, next)
+      this.#handle.dispose()
+      this.#handle = undefined
       throw error
     }
+    this.#envelope = next
+    this.#context = context
     this.#record('update', now() - updateStarted, next)
     return true
   }
@@ -270,7 +272,7 @@ export class VisualizationController {
   }
 
   #record(stage: VisualizationObservation['stage'], durationMs: number, envelope?: VisualizationEnvelope): void {
-    this.#observe?.({ stage, durationMs, rendererID: envelope?.rendererID, kind: envelope?.spec.kind })
+    this.#observe?.({ stage, durationMs, rendererID: envelope?.rendererID, kind: envelope?.spec.kind, visualID: envelope?.visualID })
   }
 }
 

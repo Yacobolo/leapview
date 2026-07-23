@@ -86,11 +86,89 @@ func TestQueryBindingRejectsIncompatibleResultShape(t *testing.T) {
 	}
 }
 
+func TestQueryBindingRejectsIncompleteCompiledReferences(t *testing.T) {
+	valid := func() QueryBinding {
+		return QueryBinding{
+			Kind: QueryAggregate, ResultShape: ResultCategoryValue, ModelID: "sales", DatasetID: "primary",
+			Identity: []string{"orders.state"},
+			Aggregate: &AggregateQueryBinding{
+				TableID:    "orders",
+				Dimensions: []FieldBinding{{FieldID: "orders.state", Alias: "state"}},
+				Measures:   []FieldBinding{{FieldID: "orders.revenue", Alias: "value"}},
+				Sort:       []Sort{{FieldID: "value", Direction: "desc"}},
+				Limit:      100,
+			},
+		}
+	}
+
+	tests := map[string]func(*QueryBinding){
+		"invalid dimension": func(binding *QueryBinding) {
+			binding.Aggregate.Dimensions[0].Alias = ""
+		},
+		"duplicate alias": func(binding *QueryBinding) {
+			binding.Aggregate.Measures[0].Alias = "state"
+		},
+		"unknown identity": func(binding *QueryBinding) {
+			binding.Identity = []string{"orders.customer_id"}
+		},
+		"empty sort": func(binding *QueryBinding) {
+			binding.Aggregate.Sort[0].FieldID = ""
+		},
+		"invalid sort direction": func(binding *QueryBinding) {
+			binding.Aggregate.Sort[0].Direction = "sideways"
+		},
+		"missing time grain": func(binding *QueryBinding) {
+			binding.Aggregate.Time = &TimeBinding{FieldID: "orders.created_at", Alias: "created_at"}
+		},
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			binding := valid()
+			mutate(&binding)
+			if err := binding.Validate(); err == nil {
+				t.Fatal("expected invalid compiled reference to fail")
+			}
+		})
+	}
+}
+
+func TestDefinitionRejectsSortOutsideCompiledDataset(t *testing.T) {
+	_, err := New("orders", tableSpec(), QueryBinding{
+		Kind: QueryDetail, ResultShape: ResultDetailWindow, ModelID: "sales", DatasetID: "primary",
+		Detail: &DetailQueryBinding{
+			TableID: "orders",
+			Fields:  []FieldBinding{{FieldID: "orders.order_id", Alias: "order_id"}},
+			DefaultSort: []Sort{{
+				FieldID: "missing", Direction: "asc",
+			}},
+			Limit: 100,
+		},
+	})
+	if err == nil {
+		t.Fatal("sort outside the compiled dataset passed validation")
+	}
+}
+
+func TestQueryBindingValidatesEveryMatrixField(t *testing.T) {
+	binding := QueryBinding{
+		Kind: QueryMatrix, ResultShape: ResultMatrixWindow, ModelID: "sales", DatasetID: "primary",
+		Matrix: &MatrixQueryBinding{
+			TableID:  "orders",
+			Rows:     []FieldBinding{{FieldID: "orders.state", Alias: ""}},
+			Measures: []FieldBinding{{FieldID: "orders.revenue", Alias: "revenue"}},
+			Limit:    100,
+		},
+	}
+	if err := binding.Validate(); err == nil {
+		t.Fatal("invalid matrix row binding passed validation")
+	}
+}
+
 func TestGeographicDefinitionOwnsExplicitSpatialQuery(t *testing.T) {
 	t.Parallel()
 
 	binding := QueryBinding{
-		Kind: QuerySpatial, ResultShape: ResultGeographicFeatures, ModelID: "sales", DatasetID: "primary", Identity: []string{"order_id"},
+		Kind: QuerySpatial, ResultShape: ResultGeographicFeatures, ModelID: "sales", DatasetID: "primary", Identity: []string{"orders.order_id"},
 		Spatial: &SpatialQueryBinding{
 			TableID: "orders",
 			Dimensions: []FieldBinding{

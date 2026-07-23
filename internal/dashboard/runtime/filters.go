@@ -170,6 +170,43 @@ func (s *FilterService) semanticFilters(ctx context.Context, runtime *modelRunti
 	return result, nil
 }
 
+func (s *FilterService) validateSelections(runtime *modelRuntime, report *dashboarddefinition.Definition, filters dashboard.Filters) error {
+	for _, selection := range filters.Selections {
+		if selection.SourceKind == "" || selection.SourceID == "" || len(selection.Entries) == 0 || isUIOnlyRowSelection(selection) {
+			continue
+		}
+		wantInteractionKind := "point_selection"
+		if source, ok := report.Visualizations[selection.SourceID]; ok && isGridQuery(source.Query.Kind) && selection.SourceKind == "visual" {
+			wantInteractionKind = "row_selection"
+		}
+		if selection.InteractionKind != wantInteractionKind {
+			return fmt.Errorf("selection source %s %q has invalid interaction kind %q", selection.SourceKind, selection.SourceID, selection.InteractionKind)
+		}
+		resolved, err := reportmodel.ResolveCompiledSelectionInteraction(report, runtime.model, selection.SourceKind, selection.SourceID)
+		if err != nil {
+			return fmt.Errorf("resolve interaction selection: %w", err)
+		}
+		for _, entry := range selection.Entries {
+			if _, err := canonicalSelectionEntry(resolved, entry); err != nil {
+				return fmt.Errorf("selection source %s %q: %w", selection.SourceKind, selection.SourceID, err)
+			}
+		}
+	}
+	for _, selection := range filters.SpatialSelections {
+		if selection.VisualID == "" || selection.InteractionID == "" || selection.Geometry.Value == nil {
+			continue
+		}
+		resolved, err := reportmodel.ResolveCompiledSpatialSelectionInteraction(report, runtime.model, selection.VisualID, selection.InteractionID)
+		if err != nil {
+			return fmt.Errorf("resolve spatial interaction selection: %w", err)
+		}
+		if _, err := spatialFilterFromSelection(resolved, selection.Geometry); err != nil {
+			return fmt.Errorf("spatial selection source visual %q: %w", selection.VisualID, err)
+		}
+	}
+	return nil
+}
+
 func resolvedSelectionTargets(selection reportmodel.ResolvedSelectionInteraction, targetKind, targetID string) bool {
 	for _, target := range selection.Targets {
 		if target.Kind == targetKind && target.ID == targetID {

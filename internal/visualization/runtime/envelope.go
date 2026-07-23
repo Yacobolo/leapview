@@ -325,6 +325,29 @@ func EmptyEnvelopeFromDefinition(definition visualizationdefinition.Definition, 
 	return envelope, nil
 }
 
+// ErrorEnvelopeFromDefinition preserves the immutable visualization boundary
+// when querying or shaping one visual fails. The data state remains valid and
+// empty for the compiled result shape, while status and diagnostics carry the
+// target-local failure.
+func ErrorEnvelopeFromDefinition(definition visualizationdefinition.Definition, queryErr error, dataRevision, generation int64) (ir.VisualizationEnvelope, error) {
+	if queryErr == nil {
+		return ir.VisualizationEnvelope{}, fmt.Errorf("visualization error envelope requires an error")
+	}
+	envelope, err := EmptyEnvelopeFromDefinition(definition, dataRevision, generation, 0)
+	if err != nil {
+		return ir.VisualizationEnvelope{}, err
+	}
+	message := queryErr.Error()
+	envelope.Status = ir.VisualizationStatus{Kind: ir.VisualizationStatusKindError, Message: &message}
+	envelope.Diagnostics = []ir.VisualizationDiagnostic{{
+		Code: "query_failed", Severity: ir.VisualizationDiagnosticSeverityError, Message: message,
+	}}
+	if err := ir.ValidateEnvelope(envelope); err != nil {
+		return ir.VisualizationEnvelope{}, fmt.Errorf("compiled visualization %q error envelope: %w", definition.ID, err)
+	}
+	return envelope, nil
+}
+
 func emptyWindowSort(spec ir.VisualizationSpec, schema ir.VisualizationDatasetSchema) []ir.VisualizationSort {
 	if value, ok := spec.Value.(*ir.TableVisualizationSpec); ok && value.DefaultSort != nil && len(*value.DefaultSort) > 0 {
 		return append([]ir.VisualizationSort(nil), (*value.DefaultSort)...)

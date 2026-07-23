@@ -156,72 +156,64 @@ func (query QueryBinding) Validate() error {
 	if branches != 1 {
 		return fmt.Errorf("visualization query binding requires exactly one query branch, got %d", branches)
 	}
-	var tableID string
-	var fields []FieldBinding
-	var limit int64
-	switch query.Kind {
-	case QueryAggregate:
-		if query.Aggregate == nil {
-			return fmt.Errorf("aggregate query binding requires aggregate branch")
+	view, err := query.validationView()
+	if err != nil {
+		return err
+	}
+	if viewport := view.viewport; viewport != nil {
+		if viewport.FeatureCap <= 0 || viewport.FeatureCap > view.limit {
+			return fmt.Errorf("spatial viewport requires a positive feature cap no greater than its row limit")
 		}
-		tableID, fields, limit = query.Aggregate.TableID, query.Aggregate.Measures, query.Aggregate.Limit
-	case QueryDetail:
-		if query.Detail == nil {
-			return fmt.Errorf("detail query binding requires detail branch")
+		if viewport.RawMinimumZoom < 0 || viewport.RawMinimumZoom > 24 {
+			return fmt.Errorf("spatial viewport raw minimum zoom must be between 0 and 24")
 		}
-		tableID, fields, limit = query.Detail.TableID, query.Detail.Fields, query.Detail.Limit
-	case QueryMatrix:
-		if query.Matrix == nil {
-			return fmt.Errorf("matrix query binding requires matrix branch")
+		if !containsFieldBinding(view.fields, viewport.Latitude) || !containsFieldBinding(view.fields, viewport.Longitude) {
+			return fmt.Errorf("spatial viewport coordinates must reference compiled query fields")
 		}
-		tableID, fields, limit = query.Matrix.TableID, query.Matrix.Measures, query.Matrix.Limit
-	case QueryPivot:
-		if query.Pivot == nil {
-			return fmt.Errorf("pivot query binding requires pivot branch")
-		}
-		tableID, fields, limit = query.Pivot.TableID, query.Pivot.Measures, query.Pivot.Limit
-	case QueryCustom:
-		if query.Custom == nil {
-			return fmt.Errorf("custom query binding requires custom branch")
-		}
-		tableID, fields, limit = query.Custom.TableID, query.Custom.Fields, query.Custom.Limit
-	case QuerySpatial:
-		if query.Spatial == nil {
-			return fmt.Errorf("spatial query binding requires spatial branch")
-		}
-		tableID = query.Spatial.TableID
-		fields = append(fields, query.Spatial.Dimensions...)
-		if query.Spatial.Series != nil {
-			fields = append(fields, *query.Spatial.Series)
-		}
-		if query.Spatial.Time != nil {
-			fields = append(fields, FieldBinding{FieldID: query.Spatial.Time.FieldID, Alias: query.Spatial.Time.Alias})
-		}
-		fields = append(fields, query.Spatial.Measures...)
-		limit = query.Spatial.Limit
-		if viewport := query.Spatial.Viewport; viewport != nil {
-			if viewport.FeatureCap <= 0 || viewport.FeatureCap > limit {
-				return fmt.Errorf("spatial viewport requires a positive feature cap no greater than its row limit")
-			}
-			if viewport.RawMinimumZoom < 0 || viewport.RawMinimumZoom > 24 {
-				return fmt.Errorf("spatial viewport raw minimum zoom must be between 0 and 24")
-			}
-			if !containsFieldBinding(fields, viewport.Latitude) || !containsFieldBinding(fields, viewport.Longitude) {
-				return fmt.Errorf("spatial viewport coordinates must reference compiled query fields")
-			}
-		}
-	default:
-		return fmt.Errorf("unsupported visualization query kind %q", query.Kind)
 	}
 	if !queryKindSupportsResult(query.Kind, query.ResultShape) {
 		return fmt.Errorf("visualization query kind %q does not support result shape %q", query.Kind, query.ResultShape)
 	}
-	if (query.Kind == QueryDetail && tableID == "") || len(fields) == 0 || limit <= 0 {
+	if query.Kind == QueryDetail && view.tableID == "" {
+		return fmt.Errorf("visualization detail query requires table ID")
+	}
+	if len(view.fields) == 0 || view.limit <= 0 {
 		return fmt.Errorf("visualization %s query requires fields and positive limit", query.Kind)
 	}
-	for index, field := range fields {
+	aliases := make(map[string]int, len(view.fields))
+	fieldIDs := make(map[string]struct{}, len(view.fields))
+	for index, field := range view.fields {
 		if field.FieldID == "" || field.Alias == "" {
 			return fmt.Errorf("visualization %s query field %d requires field ID and alias", query.Kind, index)
+		}
+		if previous, exists := aliases[field.Alias]; exists {
+			return fmt.Errorf("visualization %s query fields %d and %d use duplicate alias %q", query.Kind, previous, index, field.Alias)
+		}
+		aliases[field.Alias] = index
+		fieldIDs[field.FieldID] = struct{}{}
+	}
+	if view.time != nil && view.time.Grain == "" {
+		return fmt.Errorf("visualization %s time field requires grain", query.Kind)
+	}
+	identities := make(map[string]struct{}, len(query.Identity))
+	for index, identity := range query.Identity {
+		if identity == "" {
+			return fmt.Errorf("visualization %s identity %d is empty", query.Kind, index)
+		}
+		if _, exists := identities[identity]; exists {
+			return fmt.Errorf("visualization %s identity %q is duplicated", query.Kind, identity)
+		}
+		if _, exists := fieldIDs[identity]; !exists {
+			return fmt.Errorf("visualization %s identity %q does not reference a query field", query.Kind, identity)
+		}
+		identities[identity] = struct{}{}
+	}
+	for index, sort := range view.sorts {
+		if sort.FieldID == "" {
+			return fmt.Errorf("visualization %s sort %d requires a field", query.Kind, index)
+		}
+		if sort.Direction != "asc" && sort.Direction != "desc" {
+			return fmt.Errorf("visualization %s sort %d has unsupported direction %q", query.Kind, index, sort.Direction)
 		}
 	}
 	return nil
@@ -258,6 +250,73 @@ func containsFieldBinding(fields []FieldBinding, target FieldBinding) bool {
 		}
 	}
 	return false
+}
+
+type queryBindingView struct {
+	tableID  string
+	fields   []FieldBinding
+	sorts    []Sort
+	time     *TimeBinding
+	limit    int64
+	viewport *SpatialViewportBinding
+}
+
+func (query QueryBinding) validationView() (queryBindingView, error) {
+	var view queryBindingView
+	addAggregateFields := func(dimensions []FieldBinding, series *FieldBinding, time *TimeBinding, measures []FieldBinding) {
+		view.fields = append(view.fields, dimensions...)
+		if series != nil {
+			view.fields = append(view.fields, *series)
+		}
+		view.time = time
+		if time != nil {
+			view.fields = append(view.fields, FieldBinding{FieldID: time.FieldID, Alias: time.Alias})
+		}
+		view.fields = append(view.fields, measures...)
+	}
+	switch query.Kind {
+	case QueryAggregate:
+		if query.Aggregate == nil {
+			return queryBindingView{}, fmt.Errorf("aggregate query binding requires aggregate branch")
+		}
+		view.tableID, view.sorts, view.limit = query.Aggregate.TableID, query.Aggregate.Sort, query.Aggregate.Limit
+		addAggregateFields(query.Aggregate.Dimensions, query.Aggregate.Series, query.Aggregate.Time, query.Aggregate.Measures)
+	case QueryDetail:
+		if query.Detail == nil {
+			return queryBindingView{}, fmt.Errorf("detail query binding requires detail branch")
+		}
+		view.tableID, view.fields, view.sorts, view.limit = query.Detail.TableID, query.Detail.Fields, query.Detail.DefaultSort, query.Detail.Limit
+	case QueryMatrix:
+		if query.Matrix == nil {
+			return queryBindingView{}, fmt.Errorf("matrix query binding requires matrix branch")
+		}
+		view.tableID, view.limit = query.Matrix.TableID, query.Matrix.Limit
+		view.fields = append(view.fields, query.Matrix.Rows...)
+		view.fields = append(view.fields, query.Matrix.Columns...)
+		view.fields = append(view.fields, query.Matrix.Measures...)
+	case QueryPivot:
+		if query.Pivot == nil {
+			return queryBindingView{}, fmt.Errorf("pivot query binding requires pivot branch")
+		}
+		view.tableID, view.limit = query.Pivot.TableID, query.Pivot.Limit
+		view.fields = append(view.fields, query.Pivot.Rows...)
+		view.fields = append(view.fields, query.Pivot.Columns...)
+		view.fields = append(view.fields, query.Pivot.Measures...)
+	case QueryCustom:
+		if query.Custom == nil {
+			return queryBindingView{}, fmt.Errorf("custom query binding requires custom branch")
+		}
+		view.tableID, view.fields, view.sorts, view.limit = query.Custom.TableID, query.Custom.Fields, query.Custom.Sort, query.Custom.Limit
+	case QuerySpatial:
+		if query.Spatial == nil {
+			return queryBindingView{}, fmt.Errorf("spatial query binding requires spatial branch")
+		}
+		view.tableID, view.sorts, view.limit, view.viewport = query.Spatial.TableID, query.Spatial.Sort, query.Spatial.Limit, query.Spatial.Viewport
+		addAggregateFields(query.Spatial.Dimensions, query.Spatial.Series, query.Spatial.Time, query.Spatial.Measures)
+	default:
+		return queryBindingView{}, fmt.Errorf("unsupported visualization query kind %q", query.Kind)
+	}
+	return view, nil
 }
 
 type Definition struct {
@@ -310,12 +369,48 @@ func (definition Definition) Validate() error {
 	if !specSupportsResultShape(definition.Spec, definition.Query.ResultShape) {
 		return fmt.Errorf("visualization %q specification does not support result shape %q", definition.ID, definition.Query.ResultShape)
 	}
+	if err := validateQuerySortFields(definition.Spec, definition.Query); err != nil {
+		return fmt.Errorf("visualization %q query: %w", definition.ID, err)
+	}
 	revision, err := ir.ComputeSpecRevision(definition.Spec)
 	if err != nil {
 		return err
 	}
 	if definition.SpecRevision != revision.String() {
 		return fmt.Errorf("visualization %q specification revision mismatch", definition.ID)
+	}
+	return nil
+}
+
+func validateQuerySortFields(spec ir.VisualizationSpec, query QueryBinding) error {
+	base, err := ir.SpecificationBase(spec)
+	if err != nil {
+		return err
+	}
+	available := map[string]struct{}{}
+	for _, dataset := range base.Datasets {
+		if dataset.ID != query.DatasetID {
+			continue
+		}
+		for _, field := range dataset.Fields {
+			available[field.ID] = struct{}{}
+			if field.SourceRef != nil {
+				available[*field.SourceRef] = struct{}{}
+			}
+		}
+	}
+	view, err := query.validationView()
+	if err != nil {
+		return err
+	}
+	for _, field := range view.fields {
+		available[field.FieldID] = struct{}{}
+		available[field.Alias] = struct{}{}
+	}
+	for _, sort := range view.sorts {
+		if _, ok := available[sort.FieldID]; !ok {
+			return fmt.Errorf("sort field %q does not reference a compiled query or dataset field", sort.FieldID)
+		}
 	}
 	return nil
 }

@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/dashboard"
@@ -23,7 +24,7 @@ func testCartesianDefinition(t *testing.T, id string, fields []ir.VisualizationF
 	}}
 	definition, err := visualizationdefinition.New(id, spec, visualizationdefinition.QueryBinding{
 		Kind: visualizationdefinition.QueryAggregate, ResultShape: visualizationdefinition.ResultCategoryValue, ModelID: "sales", DatasetID: "primary",
-		Aggregate: &visualizationdefinition.AggregateQueryBinding{Measures: []visualizationdefinition.FieldBinding{{FieldID: "revenue", Alias: "value"}}, Limit: 100},
+		Aggregate: &visualizationdefinition.AggregateQueryBinding{TableID: "orders", Measures: []visualizationdefinition.FieldBinding{{FieldID: "revenue", Alias: "value"}}, Limit: 100},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -167,5 +168,30 @@ func TestTableEnvelopeOmitsUnknownCardinalityCount(t *testing.T) {
 	}
 	if state.Cardinality.Count != nil {
 		t.Fatalf("unknown cardinality count = %v, want nil", *state.Cardinality.Count)
+	}
+}
+
+func TestErrorEnvelopeFromDefinitionPreservesCompiledBoundary(t *testing.T) {
+	table := dashboard.Table{
+		Kind: "data_table", Title: "Orders",
+		Columns: []dashboard.TableColumn{{Key: "order_id", Label: "Order", Role: "row_header"}},
+	}
+	definition := testGridDefinition(t, "orders", table)
+
+	envelope, err := ErrorEnvelopeFromDefinition(definition, errors.New("query failed"), 7, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if envelope.VisualID != "orders" || envelope.SpecRevision != definition.SpecRevision || envelope.DataRevision != 7 {
+		t.Fatalf("error envelope identity = %#v", envelope)
+	}
+	if envelope.Status.Kind != ir.VisualizationStatusKindError || envelope.Status.Message == nil || *envelope.Status.Message != "query failed" {
+		t.Fatalf("error envelope status = %#v", envelope.Status)
+	}
+	if len(envelope.Diagnostics) != 1 || envelope.Diagnostics[0].Code != "query_failed" || envelope.Diagnostics[0].Severity != ir.VisualizationDiagnosticSeverityError {
+		t.Fatalf("error envelope diagnostics = %#v", envelope.Diagnostics)
+	}
+	if err := ir.ValidateEnvelope(envelope); err != nil {
+		t.Fatalf("error envelope validation: %v", err)
 	}
 }

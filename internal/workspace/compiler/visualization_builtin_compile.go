@@ -14,7 +14,7 @@ import (
 // for first-party charts. Runtime data never participates in specification
 // construction; it is shaped later against the immutable dataset schema.
 func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model *semanticmodel.Model) (visualizationir.VisualizationSpec, error) {
-	shape := compiledVisualizationShape(authored)
+	shape := authored.ResultShape()
 	columns := compiledShapeColumns(shape)
 	if shape == "hierarchy" {
 		seen := map[string]struct{}{"node": {}, "parent": {}, "value": {}}

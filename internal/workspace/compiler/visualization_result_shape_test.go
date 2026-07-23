@@ -31,10 +31,20 @@ func TestCompiledVisualizationResultShapes(t *testing.T) {
 		test := test
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			if got := compiledVisualResultShape(test.visual); got != test.want {
+			got, err := compiledVisualResultShape(test.visual)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
 				t.Fatalf("result shape = %q, want %q", got, test.want)
 			}
 		})
+	}
+}
+
+func TestCompiledVisualizationResultShapeFailsClosed(t *testing.T) {
+	if _, err := compiledVisualResultShape(report.Visual{Type: "unknown"}); err == nil {
+		t.Fatal("unknown visualization result shape passed compilation")
 	}
 }
 

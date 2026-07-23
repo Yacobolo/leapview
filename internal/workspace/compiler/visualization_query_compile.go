@@ -12,8 +12,12 @@ import (
 
 func compileVisualizationQueryBinding(ctx compileContext, authored reportdef.Visual) (visualizationdefinition.QueryBinding, error) {
 	limit := compiledVisualLimit(authored)
+	resultShape, err := compiledVisualResultShape(authored)
+	if err != nil {
+		return visualizationdefinition.QueryBinding{}, err
+	}
 	binding := visualizationdefinition.QueryBinding{
-		Kind: visualizationdefinition.QueryAggregate, ResultShape: compiledVisualResultShape(authored), ModelID: ctx.modelID, DatasetID: ctx.datasetID,
+		Kind: visualizationdefinition.QueryAggregate, ResultShape: resultShape, ModelID: ctx.modelID, DatasetID: ctx.datasetID,
 		Identity: interactionIdentity(authored.Interaction.PointSelection),
 		Aggregate: &visualizationdefinition.AggregateQueryBinding{
 			TableID: authored.Query.Table, Dimensions: compiledFields(authored.Query.Dimensions), Measures: compiledFields(authored.Query.Measures),
@@ -22,7 +26,7 @@ func compileVisualizationQueryBinding(ctx compileContext, authored reportdef.Vis
 	}
 	switch ctx.capability.Renderer {
 	case visualizationdefinition.RendererMapLibre:
-		return compiledSpatialBinding(ctx.modelID, authored, ctx.fields.model)
+		return compiledSpatialBinding(ctx.modelID, authored, ctx.model)
 	case visualizationdefinition.RendererVegaLite:
 		binding.Kind = visualizationdefinition.QueryCustom
 		binding.ResultShape = visualizationdefinition.ResultCustomRows
@@ -32,34 +36,39 @@ func compileVisualizationQueryBinding(ctx compileContext, authored reportdef.Vis
 	return binding, nil
 }
 
-func compiledVisualResultShape(authored reportdef.Visual) visualizationdefinition.ResultShape {
+func compiledVisualResultShape(authored reportdef.Visual) (visualizationdefinition.ResultShape, error) {
+	if _, ok := reportdef.VisualizationCapabilityForType(authored.Type); !ok {
+		return "", fmt.Errorf("unsupported visualization type %q", authored.Type)
+	}
 	switch authored.ResultShape() {
 	case "single_value":
-		return visualizationdefinition.ResultScalar
+		return visualizationdefinition.ResultScalar, nil
 	case "category_multi_measure":
-		return visualizationdefinition.ResultCategoryMultiMeasure
+		return visualizationdefinition.ResultCategoryMultiMeasure, nil
 	case "category_delta":
-		return visualizationdefinition.ResultCategoryDelta
+		return visualizationdefinition.ResultCategoryDelta, nil
 	case "binned_measure":
-		return visualizationdefinition.ResultHistogramBins
+		return visualizationdefinition.ResultHistogramBins, nil
 	case "hierarchy":
-		return visualizationdefinition.ResultHierarchyNodes
+		return visualizationdefinition.ResultHierarchyNodes, nil
 	case "matrix":
-		return visualizationdefinition.ResultMatrixCells
+		return visualizationdefinition.ResultMatrixCells, nil
 	case "graph":
-		return visualizationdefinition.ResultGraphEdges
+		return visualizationdefinition.ResultGraphEdges, nil
 	case "geo":
-		return visualizationdefinition.ResultGeographicFeatures
+		return visualizationdefinition.ResultGeographicFeatures, nil
 	case "ohlc":
-		return visualizationdefinition.ResultOHLC
+		return visualizationdefinition.ResultOHLC, nil
 	case "distribution":
-		return visualizationdefinition.ResultDistribution
+		return visualizationdefinition.ResultDistribution, nil
 	case "custom":
-		return visualizationdefinition.ResultCustomRows
+		return visualizationdefinition.ResultCustomRows, nil
 	case "category_series_value":
-		return visualizationdefinition.ResultCategorySeriesValue
+		return visualizationdefinition.ResultCategorySeriesValue, nil
+	case "category_value":
+		return visualizationdefinition.ResultCategoryValue, nil
 	default:
-		return visualizationdefinition.ResultCategoryValue
+		return "", fmt.Errorf("unsupported visualization result shape %q", authored.ResultShape())
 	}
 }
 
@@ -130,35 +139,6 @@ func fieldBindingByAlias(fields []visualizationdefinition.FieldBinding, alias st
 		}
 	}
 	return visualizationdefinition.FieldBinding{}, false
-}
-
-func compiledVisualizationShape(authored reportdef.Visual) string {
-	switch authored.Type {
-	case "kpi", "gauge":
-		return "single_value"
-	case "combo":
-		return "category_multi_measure"
-	case "waterfall":
-		return "category_delta"
-	case "histogram":
-		return "binned_measure"
-	case "treemap", "sunburst", "tree":
-		return "hierarchy"
-	case "heatmap":
-		return "matrix"
-	case "sankey", "graph":
-		return "graph"
-	case "map":
-		return "geo"
-	case "candlestick":
-		return "ohlc"
-	case "boxplot":
-		return "distribution"
-	}
-	if !authored.Query.Series.IsZero() {
-		return "category_series_value"
-	}
-	return "category_value"
 }
 
 func compiledVisualLimit(authored reportdef.Visual) int64 {

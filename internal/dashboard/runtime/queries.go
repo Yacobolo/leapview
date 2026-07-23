@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -93,6 +94,9 @@ func (s *SnapshotService) QueryDashboardPage(ctx context.Context, dashboardID, p
 	if !runtime.ready {
 		return dashboard.EmptyPatch(filters, runtime.missing), nil
 	}
+	if err := s.filters.validateSelections(runtime, report, filters); err != nil {
+		return dashboard.EmptyPatch(filters, err), nil
+	}
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -130,13 +134,32 @@ func (s *SnapshotService) QueryDashboardPage(ctx context.Context, dashboardID, p
 	}
 	visuals, err := s.visualizations.visuals(ctx, runtime, report, filters, inlineIDs)
 	if err != nil {
-		return dashboard.EmptyPatch(filters, err), nil
+		visuals = make(map[string]visualizationir.VisualizationEnvelope, len(inlineIDs))
+		for _, visualID := range inlineIDs {
+			target, queryErr := s.visualizations.visuals(ctx, runtime, report, filters, []string{visualID})
+			if queryErr == nil {
+				visuals[visualID] = target[visualID]
+				continue
+			}
+			definition := report.Visualizations[visualID]
+			envelope, envelopeErr := visualizationruntime.ErrorEnvelopeFromDefinition(definition, queryErr, 0, 0)
+			if envelopeErr != nil {
+				return dashboard.EmptyPatch(filters, errors.Join(queryErr, envelopeErr)), nil
+			}
+			visuals[visualID] = envelope
+		}
 	}
 	for _, visualID := range windowIDs {
 		request := dashboard.TableRequest{Table: visualID, Block: "a", Count: dashboard.TableChunkSize}.WithDefaults()
 		table, queryErr := s.visualizations.queryTablePage(ctx, dashboardID, page.ID, filters, request, true)
 		if queryErr != nil {
-			return dashboard.EmptyPatch(filters, queryErr), nil
+			definition := report.Visualizations[visualID]
+			envelope, envelopeErr := visualizationruntime.ErrorEnvelopeFromDefinition(definition, queryErr, 0, 0)
+			if envelopeErr != nil {
+				return dashboard.EmptyPatch(filters, errors.Join(queryErr, envelopeErr)), nil
+			}
+			visuals[visualID] = envelope
+			continue
 		}
 		definition, ok := report.Visualizations[visualID]
 		if !ok {
@@ -144,7 +167,12 @@ func (s *SnapshotService) QueryDashboardPage(ctx context.Context, dashboardID, p
 		}
 		envelope, envelopeErr := visualizationruntime.WindowEnvelopeFromDefinition(definition, table, 0, 0)
 		if envelopeErr != nil {
-			return dashboard.EmptyPatch(filters, envelopeErr), nil
+			envelope, errorEnvelopeErr := visualizationruntime.ErrorEnvelopeFromDefinition(definition, envelopeErr, 0, 0)
+			if errorEnvelopeErr != nil {
+				return dashboard.EmptyPatch(filters, errors.Join(envelopeErr, errorEnvelopeErr)), nil
+			}
+			visuals[visualID] = envelope
+			continue
 		}
 		visuals[visualID] = envelope
 	}

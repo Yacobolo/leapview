@@ -114,6 +114,44 @@ test('controller sends context-only changes without replacing visualization data
   expect(updates).toEqual([Change.Context])
 })
 
+test('controller disposes a failed update and remounts the same envelope on retry', async () => {
+  const observations: Array<{ stage: string; visualID?: string }> = []
+  let mounts = 0
+  let disposals = 0
+  let failUpdate = true
+  const registry = new RendererRegistry()
+  registry.register({
+    id: 'test', version: '1.0.0', schemaVersion: currentVisualizationSchemaVersion, kinds: ['kpi'], capabilities: { snapshot: true, windowed: false, interactive: false },
+    load: async () => ({
+      mount: () => {
+        mounts++
+        return {
+          update: () => {
+            if (failUpdate) {
+              failUpdate = false
+              throw new Error('renderer update failed')
+            }
+          },
+          resize: () => {},
+          snapshot: async () => new Blob(),
+          dispose: () => { disposals++ },
+        }
+      },
+    }),
+  })
+  const controller = new VisualizationController(registry, {} as HTMLElement, undefined, (value) => observations.push(value))
+
+  await controller.apply(envelope(1))
+  await expect(controller.apply(envelope(2))).rejects.toThrow('renderer update failed')
+
+  expect(controller.envelope?.dataRevision).toBe(1)
+  expect(disposals).toBe(1)
+  expect(await controller.apply(envelope(2))).toBe(true)
+  expect(controller.envelope?.dataRevision).toBe(2)
+  expect(mounts).toBe(2)
+  expect(observations.find((value) => value.stage === 'adapter_error')?.visualID).toBe('revenue')
+})
+
 test('controller updates data when a loading envelope is populated at the same revision', async () => {
   const updates: Change[] = []
   const handle: RendererHandle = {
