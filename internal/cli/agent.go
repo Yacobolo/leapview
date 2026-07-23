@@ -49,6 +49,7 @@ func agentCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 	tools := &cobra.Command{
 		Use:   "tools",
 		Short: "List the canonical agent tools",
+		Long:  "List the canonical agent tools exposed by built-in chat and deployment MCP, including each tool's privilege, effect, defaults, closed input schema, and backing operation.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAgentTools()
 		},

@@ -16,6 +16,8 @@ Built-in chat, MCP discovery, and `leapview agent tools` expose the same fixed e
 
 Catalog search and list silently omit inaccessible resources. Exact lookup returns the same not-found result for missing and inaccessible refs. All eight tools are read-only, idempotent, non-destructive, and closed-world; connections, raw sources, lineage, refresh runs, raw SQL, and mutation operations are intentionally absent.
 
+See [Use the agent tool catalog](/docs/guides/integrate/agent-tools) for exact refs, hierarchy, pagination, shared-resource locations, tool-selection guidance, and stable error behavior.
+
 ## Product documentation tools
 
 The built-in agent and deployment MCP catalog expose `docs_search` and `docs_read`. Documentation search returns ranked, bounded matches from the immutable documentation index embedded in the running LeapView release. Each match includes a stable `doc:` ID, documentation path, public URL, summary, and focused excerpt.
@@ -57,7 +59,7 @@ A typical client creates or selects a conversation, starts a run, records its id
 
 Set `LEAPVIEW_PUBLIC_URL` to the deployment's canonical HTTPS origin, then give an MCP host such as Claude the deployment-specific URL `${LEAPVIEW_PUBLIC_URL}/mcp`. The host discovers authorization automatically and opens LeapView's sign-in and consent flow. LeapView implements Streamable HTTP 2025-11-25 with stateless JSON responses and exposes tools only—no resources, prompts, nested conversation tools, or stdio transport.
 
-MCP and built-in chat consume the same catalog, schemas, handlers, authorization, projections, audit path, and execution errors. Successful tool calls return both `structuredContent` and equivalent JSON text. MCP access requires `USE_AGENT`; catalog operations additionally require `VIEW_ITEM`, while data tools require `QUERY_DATA`.
+MCP and built-in chat consume the same catalog, schemas, handlers, authorization, projections, audit path, and execution errors. Successful tool calls return both `structuredContent` and equivalent JSON text. MCP access requires `USE_AGENT`; catalog operations additionally require `VIEW_ITEM`, while data tools require `QUERY_DATA`. Rediscover tools after a LeapView upgrade instead of caching schemas across releases.
 
 By default, LeapView is the MCP authorization server. It supports authorization code with S256 PKCE, refresh-token rotation, OAuth protected-resource and authorization-server discovery, Client ID Metadata Documents, and Dynamic Client Registration. The user approves the coarse `mcp:use` scope; live LeapView RBAC and data policies remain authoritative for every tool call. Access tokens last 15 minutes and refresh tokens last 30 days.
 
