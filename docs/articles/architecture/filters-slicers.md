@@ -6,7 +6,7 @@ This design follows the useful part of the Power BI mental model: filters are sc
 
 ## Status and scope
 
-This document defines the target architecture. Existing dashboard configuration continues to use the generated configuration reference until the target contract is implemented and published. Illustrative shapes in this document communicate architectural boundaries; they are not accepted configuration syntax.
+This architecture is the current filter contract. Dashboard configuration, compiled serving state, commands, option requests, and browser signals use the typed definitions and bindings described here. Older compiled artifacts are rejected and must be redeployed. Saved reader views remain a follow-up built on the versioned applied-state contract.
 
 The target covers:
 
@@ -175,31 +175,35 @@ Pane cards and slicers reference a binding. They may configure presentation-only
 
 Presentation configuration cannot broaden allowed operators, change selection cardinality, change reader editability, change the semantic field, override security, or alter compiled targets.
 
-The following target shape is illustrative:
+The following is accepted dashboard configuration syntax:
 
-```text
+```yaml
 filters:
   state:
-    field: customers.state
-    predicate: set
-    values: {source: distinct}
+    label: State
+    field: customer_state
+    predicates:
+      - kind: set
+        operators: [in, not_in]
+    options: {kind: distinct, limit: 50}
+
+filter_application: {mode: immediate}
 
 pages:
   - id: overview
     filter_bindings:
       state:
         filter: state
-        scope: page
-        targets: [revenue, orders]
-        default: {operator: in, values: []}
-        selection: multiple
+        targets: {include: [revenue, orders]}
+        default: {kind: unfiltered}
+        selection: {mode: multiple, max_selected_values: 50}
         reader_editable: true
-        url_param: state
+        url: {param: state, encoding: typed_v1}
         pane: {visible: true, order: 10}
     components:
       - id: state-slicer
         kind: slicer
-        filter: state
+        binding: {scope: page, id: state}
         presentation:
           style: dropdown
           search: true
@@ -274,7 +278,7 @@ FilterMutation
   expression?
 ```
 
-It does not emit the whole `DashboardFilters` object. The controller projects the mutation onto one optimistic typed state root, preserving selections, spatial selections, and unrelated controls, then sends the typed command. Only the server advances canonical state and revisions. Rejected or superseded optimistic state reconciles to the returned canonical patch.
+It does not emit the whole dashboard filter-state object. The controller projects the mutation onto one optimistic typed state root while preserving unrelated bindings, then sends the typed command. Interaction and spatial selections remain independent roots. Only the server advances canonical state and revisions. Rejected or superseded optimistic state reconciles to the returned canonical patch.
 
 The TypeSpec signal contract generates the filter definition, binding, presentation, state, option page, mutation, validation, and status models used by Go and TypeScript. Handwritten structural duplicates are forbidden by tests.
 
@@ -411,41 +415,18 @@ LeapView deliberately differs:
 
 See the official Power BI documentation for [slicers](https://learn.microsoft.com/power-bi/visuals/power-bi-visualization-slicers), [filter scopes](https://learn.microsoft.com/power-bi/create-reports/power-bi-report-add-filter), and [filter-pane behavior](https://learn.microsoft.com/power-bi/create-reports/power-bi-report-filter).
 
-## Delivery sequence
+## Implemented delivery
 
-### Phase 1: Correct state ownership
+The contract is delivered as one public cutover backed by staged internal layers:
 
-- Add explicit page bindings independent of page components.
-- Generate a discriminated filter state and mutation contract.
-- Make the route controller project typed optimistic mutations while preserving selection/spatial roots.
-- Move defaults, URL identity, selection constraints, and reader editability to bindings.
-- Define and test unfiltered, clear, reset, default, and revision semantics.
+- The compiler owns typed definitions, report/page bindings, opaque keys, exact consumer targets, presentation compatibility, time semantics, and option dependencies.
+- Dashboard-view sessions own canonical applied/draft filter state independently from interaction and spatial selections, with compare-and-swap persistence and bounded mutation idempotency.
+- Commands mutate one binding or apply, cancel, or reset a scope; every command reconciles against a base revision.
+- Option pages are lazy, governed, dependency-aware, paginated, cache-partitioned, and protected against stale requests.
+- Pane cards and slicers wrap the same generated-type leaf controls and share one route-level controller.
+- YAML, generated schemas, examples, browser contracts, and compiled artifact versions changed atomically.
 
-### Phase 2: Shared presentations
-
-- Extract shared categorical, text, and date controls.
-- Render the same controls inside pane-card and slicer shells.
-- Add dropdown, list, and button categorical presentations.
-- Add compile-time presentation compatibility and accessibility tests.
-
-### Phase 3: Governed option domains
-
-- Compile target-aware binding-to-binding option dependencies and exclude self.
-- Add typed values, server search, pagination, selected-value resolution, and cache partitioning.
-- Add request generations, cancellation, and stale-option rejection.
-
-### Phase 4: Rich predicates and application
-
-- Add null checks, inclusive/exclusive numeric ranges, comparison inputs, and deterministically resolved relative date/time periods.
-- Add shared deferred draft state and atomic Apply/Cancel.
-- Add query fan-out metrics and adaptive guidance for expensive immediate mode.
-
-### Phase 5: Wider scope and persistence
-
-- Add report scope and qualified cross-page target sets.
-- Add cross-page presentations of report bindings.
-- Add versioned saved reader views and explicit persistence policy.
-- Add authorized “filters affecting this visual” explanations.
+Saved reader views are intentionally excluded. They will persist the existing versioned applied-state representation rather than introduce another filter model.
 
 ## Required tests
 

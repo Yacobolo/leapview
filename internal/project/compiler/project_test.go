@@ -383,6 +383,24 @@ func TestCompileShowcaseProject(t *testing.T) {
 		t.Fatalf("visuals semantic models = %#v, want visuals", visuals.Definition.Models)
 	}
 	assertVisualShowcaseCoverage(t, showcase)
+	servingState, err := json.Marshal(visuals.Definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serialized := string(servingState)
+	// Page layout legitimately uses a "visuals" collection; authored dashboard
+	// visual maps are gone because the dashboard root now exposes only
+	// "visualizations".
+	for _, legacy := range []string{`"tables":`, `"rendererOptions":`, `"shape":`} {
+		if strings.Contains(serialized, legacy) {
+			t.Fatalf("compiled serving state contains legacy authoring property %s", legacy)
+		}
+	}
+	for _, compiledProperty := range []string{`"visualizations":`, `"specRevision":`, `"query":`} {
+		if !strings.Contains(serialized, compiledProperty) {
+			t.Fatalf("compiled serving state missing %s", compiledProperty)
+		}
+	}
 }
 
 func TestPlanProjectIsStableAndSorted(t *testing.T) {

@@ -175,14 +175,29 @@ async function verifyDashboardCommandDoesNotReopenUpdates(): Promise<void> {
     await page.waitForTimeout(1000)
     const beforeUpdates = updates.length
     await page.evaluate(() => {
-      document.querySelector('lv-dashboard-page')?.dispatchEvent(new CustomEvent('lv-filters-refresh', { bubbles: true, composed: true }))
+      const dashboard = document.querySelector('lv-dashboard-page') as any
+      const bindingKey = Object.keys(dashboard?.filterContract?.bindings ?? {})[0]
+      if (!bindingKey) throw new Error('dashboard exposes no compiled filter binding')
+      const baseRevision = dashboard?.canonicalFilterState?.revision
+      if (typeof baseRevision !== 'number') throw new Error('dashboard exposes no canonical filter revision')
+      dashboard.dispatchEvent(new CustomEvent('lv-filter-command', {
+        bubbles: true,
+        composed: true,
+        detail: {
+          kind: 'mutate',
+          operation: 'clear',
+          bindingKey,
+          baseRevision,
+          clientMutationID: 'route-qa-filter-command',
+        },
+      }))
     })
     await page.waitForTimeout(1000)
 
     if (beforeUpdates !== 1) throw new Error(`dashboard command: initial /updates count=${beforeUpdates}, want 1`)
     if (updates.length !== 1) throw new Error(`dashboard command reopened /updates: count=${updates.length}`)
-    if (!commands.includes('POST /workspaces/visuals/commands/reload')) {
-      throw new Error(`dashboard command requests=${JSON.stringify(commands)}, want reload POST`)
+    if (!commands.includes('POST /workspaces/visuals/commands/filter')) {
+      throw new Error(`dashboard command requests=${JSON.stringify(commands)}, want filter POST`)
     }
     assertNoBlockingConsoleMessages('dashboard command', messages)
   } finally {

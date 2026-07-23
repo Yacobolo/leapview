@@ -217,7 +217,7 @@ func (t *Telemetry) PublicRateLimitObserved(family string) {
 
 func commandLabel(value string) string {
 	switch normalizedLabel(value) {
-	case "initial", "reload", "reset_filters", "filter_change", "select", "clear_selection", "visual_window", "refresh_materializations":
+	case "initial", "filter_change", "navigate", "select", "clear_selection", "visual_window", "refresh_materializations":
 		return normalizedLabel(value)
 	default:
 		return "other"

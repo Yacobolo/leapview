@@ -25,7 +25,7 @@ const (
 	BundleFormat                     = "tar.gz"
 	ProjectFile                      = "leapview.yaml"
 	CompiledProjectFile              = "compiled/workspace.json"
-	compiledWorkspaceArtifactVersion = 2
+	compiledWorkspaceArtifactVersion = 3
 )
 
 type Validation struct {

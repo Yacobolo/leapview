@@ -28,8 +28,9 @@ func (m *Module) MountPublicCommands(r chi.Router) {
 	if m == nil {
 		return
 	}
-	r.Post("/public/dashboards/{publicId}/commands/reload", m.PublicDashboardCommand("reload"))
-	r.Post("/public/dashboards/{publicId}/commands/reset-filters", m.PublicDashboardCommand("reset_filters"))
+	r.Post("/public/dashboards/{publicId}/commands/filter", m.PublicDashboardCommand("filter"))
+	r.Post("/public/dashboards/{publicId}/commands/filter-options", m.PublicDashboardCommand("filter_options"))
+	r.Post("/public/dashboards/{publicId}/commands/navigate", m.PublicDashboardCommand("navigate"))
 	r.Post("/public/dashboards/{publicId}/commands/select", m.PublicDashboardCommand("select"))
 	r.Post("/public/dashboards/{publicId}/commands/spatial-select", m.PublicDashboardCommand("spatial_select"))
 	r.Post("/public/dashboards/{publicId}/commands/clear-selection", m.PublicDashboardCommand("clear_selection"))
@@ -55,6 +56,7 @@ func (m *Module) MountAuthenticated(r chi.Router, guard RouteGuard) {
 	r.Post("/workspaces/{workspace}/commands/select", guard.Protect(access.PrivilegeViewItem, h.Select))
 	r.Post("/workspaces/{workspace}/commands/spatial-select", guard.Protect(access.PrivilegeViewItem, h.SpatialSelect))
 	r.Post("/workspaces/{workspace}/commands/clear-selection", guard.Protect(access.PrivilegeViewItem, h.ClearSelection))
-	r.Post("/workspaces/{workspace}/commands/reload", guard.Protect(access.PrivilegeViewItem, h.Reload))
-	r.Post("/workspaces/{workspace}/commands/reset-filters", guard.Protect(access.PrivilegeViewItem, h.ResetFilters))
+	r.Post("/workspaces/{workspace}/commands/filter", guard.Protect(access.PrivilegeViewItem, h.FilterCommand))
+	r.Post("/workspaces/{workspace}/commands/filter-options", guard.Protect(access.PrivilegeViewItem, h.FilterOptions))
+	r.Post("/workspaces/{workspace}/commands/navigate", guard.Protect(access.PrivilegeViewItem, h.Navigate))
 }

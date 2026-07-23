@@ -7,6 +7,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	"github.com/Yacobolo/leapview/internal/dashboard/command"
 	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
+	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
 	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
 	queryauthz "github.com/Yacobolo/leapview/internal/dashboard/queryauthz"
 	dashboardstream "github.com/Yacobolo/leapview/internal/dashboard/stream"
@@ -30,6 +31,13 @@ func (m *consumerForwardingMetrics) ExecuteConsumersPage(ctx context.Context, re
 		publish(consumer.Result{Target: target, Envelope: visualizationir.VisualizationEnvelope{VisualID: target.ID}, Queries: 1})
 	}
 	return nil
+}
+
+func (m *consumerForwardingMetrics) QueryCompiledFilterOptions(ctx context.Context, _ string, _ dashboardfilter.OptionQuery) (dashboardfilter.OptionResult, error) {
+	m.calls++
+	_, m.governed = dataquery.GovernorFromContext(ctx)
+	_, m.admitter = workload.FromContext(ctx)
+	return dashboardfilter.OptionResult{Complete: true}, nil
 }
 
 func TestProductionDashboardWrappersForwardGovernedConsumerPlan(t *testing.T) {
@@ -61,5 +69,32 @@ func TestProductionDashboardWrappersForwardGovernedConsumerPlan(t *testing.T) {
 
 	if underlying.calls != 1 || !underlying.governed || !underlying.admitter || visuals != 2 {
 		t.Fatalf("calls=%d governed=%v admitter=%v visuals=%d", underlying.calls, underlying.governed, underlying.admitter, visuals)
+	}
+}
+
+func TestProductionDashboardWrappersForwardGovernedFilterOptions(t *testing.T) {
+	underlying := &consumerForwardingMetrics{}
+	controller, err := workload.New(workload.DefaultConfig())
+	if err != nil {
+		t.Fatalf("new workload controller: %v", err)
+	}
+	t.Cleanup(controller.Close)
+	metrics := dashboardmodule.WithQueryAudit(
+		dashboardmodule.WithAdmission(queryauthz.New(underlying, queryauthz.Options{}), controller, ""),
+		nil, "", nil,
+	)
+
+	provider, ok := metrics.(interface {
+		QueryCompiledFilterOptions(context.Context, string, dashboardfilter.OptionQuery) (dashboardfilter.OptionResult, error)
+	})
+	if !ok {
+		t.Fatalf("%T does not expose compiled filter options", metrics)
+	}
+	result, err := provider.QueryCompiledFilterOptions(context.Background(), "sales-dashboard", dashboardfilter.OptionQuery{Field: "orders.state"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if underlying.calls != 1 || !underlying.governed || !underlying.admitter || !result.Complete {
+		t.Fatalf("calls=%d governed=%v admitter=%v complete=%v", underlying.calls, underlying.governed, underlying.admitter, result.Complete)
 	}
 }

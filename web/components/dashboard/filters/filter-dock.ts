@@ -1,16 +1,20 @@
 import { LitElement, css, html } from 'lit'
 import { property, state } from 'lit/decorators.js'
 import { SlidersHorizontal } from 'lucide'
-import type { DashboardFilters, DashboardStatus, ReportFilterConfig } from '../../../generated/signals'
-import { jsonAttribute } from '../../shared/json-attribute'
+import type {
+  DashboardFilterContract,
+  DashboardFilterOptionPage,
+  DashboardFilterState,
+  DashboardStatus,
+} from '../../../generated/signals'
 import { lucideIcon } from '../../shared/lucide-icons'
-
-const emptyFilters: DashboardFilters = { controls: {}, selections: [], spatialSelections: [] }
+import './filter-control'
 
 class LeapViewFilterDock extends LitElement {
-  @property({ converter: jsonAttribute<ReportFilterConfig[]>([]) }) config: ReportFilterConfig[] = []
-  @property({ converter: jsonAttribute<DashboardFilters>(emptyFilters) }) filters: DashboardFilters = emptyFilters
-  @property({ converter: jsonAttribute<Record<string, unknown>>({}) }) options: Record<string, unknown> = {}
+  @property({ attribute: false }) contract?: DashboardFilterContract
+  @property({ attribute: false }) filterState?: DashboardFilterState
+  @property({ attribute: false }) optionPages: Record<string, DashboardFilterOptionPage> = {}
+  @property({ type: String }) pageId = ''
   @property({ type: Boolean, reflect: true }) loading: DashboardStatus['loading'] = false
 
   @state() private open = storedFilterDockOpen()
@@ -128,15 +132,37 @@ class LeapViewFilterDock extends LitElement {
           <span>Filters</span>
         </button>
         <div class="panel">
-          <lv-filter-panel
-            .config=${this.config}
-            .filters=${this.filters}
-            .options=${this.options}
-            .loading=${this.loading}
-            @lv-filters-close=${this.close}
-          ></lv-filter-panel>
+          ${this.contract && this.filterState ? this.renderCompiledPane() : html`
+            <p role="status">Filter state is unavailable.</p>
+          `}
         </div>
       </aside>
+    `
+  }
+
+  private renderCompiledPane() {
+    const bindings = Object.values(this.contract?.bindings ?? {})
+      .filter((binding) => binding.paneVisible && (binding.scope === 'report' || binding.pageID === this.pageId))
+      .sort((left, right) => left.paneOrder - right.paneOrder || left.key.localeCompare(right.key))
+    return html`
+      <header>
+        <strong>Filters</strong>
+        <button type="button" aria-label="Close filters" @click=${this.close}>Close</button>
+      </header>
+      ${bindings.map((binding) => {
+        const definition = this.contract?.definitions[binding.filter]
+        const expression = this.filterState?.draftControls[binding.key]
+          ?? this.filterState?.appliedControls[binding.key]?.expression
+          ?? binding.default
+        return html`<lv-filter-pane-card
+          .definition=${definition}
+          .binding=${binding}
+          .expression=${expression}
+          .options=${this.optionPages[binding.key]}
+          .pending=${this.loading}
+          .stale=${this.loading}
+        ></lv-filter-pane-card>`
+      })}
     `
   }
 

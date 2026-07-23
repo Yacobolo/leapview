@@ -12,6 +12,7 @@ import (
 	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
+	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
@@ -57,6 +58,10 @@ type reportRuntime interface {
 
 type dashboardRuntime interface {
 	QueryDashboardPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters) (dashboard.Patch, error)
+}
+
+type filterOptionRuntime interface {
+	QueryCompiledFilterOptions(context.Context, string, dashboardfilter.OptionQuery) (dashboardfilter.OptionResult, error)
 }
 
 type visualizationRuntime interface {
@@ -233,6 +238,19 @@ func (m runtimeMetrics) NormalizeVisualizationWindow(dashboardID string, request
 
 func (m runtimeMetrics) QueryDashboard(ctx context.Context, dashboardID string, filters dashboard.Filters) (dashboard.Patch, error) {
 	return m.QueryDashboardPage(ctx, dashboardID, "", filters)
+}
+
+func (m runtimeMetrics) QueryCompiledFilterOptions(ctx context.Context, dashboardID string, query dashboardfilter.OptionQuery) (dashboardfilter.OptionResult, error) {
+	runtime, release, err := m.active(ctx)
+	if err != nil {
+		return dashboardfilter.OptionResult{}, err
+	}
+	defer release()
+	port, ok := runtime.(filterOptionRuntime)
+	if !ok {
+		return dashboardfilter.OptionResult{}, fmt.Errorf("compiled filter options are not supported by this runtime")
+	}
+	return port.QueryCompiledFilterOptions(ctx, dashboardID, query)
 }
 
 func (m runtimeMetrics) QueryDashboardPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters) (dashboard.Patch, error) {

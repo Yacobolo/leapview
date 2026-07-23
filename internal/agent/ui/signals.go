@@ -23,7 +23,7 @@ type ChatStatus = signalcontracts.ChatStatus
 type ChatTranscriptItemSignal = signalcontracts.ChatTranscriptItemSignal
 type ComposerSignal = signalcontracts.ComposerSignal
 type AgentContextSignal = signalcontracts.AgentContextSignal
-type DashboardFilters = signalcontracts.DashboardFilters
+type DashboardFilterState = signalcontracts.DashboardFilterState
 type ChatPageSignal = signalcontracts.ChatPageSignal
 type ChromeSignal = signalcontracts.ChromeSignal
 type SidebarActionSignal = signalcontracts.SidebarActionSignal
@@ -126,10 +126,10 @@ func chatInitialSignals(workspaceID, view string, state ChatViewState) map[strin
 		"agent":   state.Agent,
 		"agentContext": AgentContextSignal{
 			Surface: "chat", WorkspaceID: workspaceID,
-			Filters: DashboardFilters{
-				Controls:          map[string]signalcontracts.DashboardFilterControl{},
-				Selections:        []signalcontracts.DashboardInteractionSelection{},
-				SpatialSelections: []visualizationir.VisualizationSpatialSelectionState{},
+			Filters: DashboardFilterState{
+				AppliedControls: map[string]signalcontracts.DashboardAppliedFilterState{},
+				DraftControls:   map[string]signalcontracts.DashboardFilterExpression{},
+				DirtyBindings:   []string{},
 			},
 			ReferenceLimit: agent.MaxTurnReferences, References: []AgentReferenceSignal{},
 		},

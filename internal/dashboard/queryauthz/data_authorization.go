@@ -13,6 +13,7 @@ import (
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
 	"github.com/Yacobolo/leapview/internal/dashboard"
+	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
 	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
@@ -557,6 +558,16 @@ func queryRowsFromDataResult(rows []dataquery.Row) reportdef.QueryRows {
 
 func (m Metrics) QueryDashboard(ctx context.Context, dashboardID string, filters dashboard.Filters) (dashboard.Patch, error) {
 	return m.QueryDashboardPage(ctx, dashboardID, "", filters)
+}
+
+func (m Metrics) QueryCompiledFilterOptions(ctx context.Context, dashboardID string, query dashboardfilter.OptionQuery) (dashboardfilter.OptionResult, error) {
+	provider, ok := m.Metrics.(interface {
+		QueryCompiledFilterOptions(context.Context, string, dashboardfilter.OptionQuery) (dashboardfilter.OptionResult, error)
+	})
+	if !ok {
+		return dashboardfilter.OptionResult{}, errors.New("compiled filter options are not supported by this runtime")
+	}
+	return provider.QueryCompiledFilterOptions(dataquery.WithGovernor(ctx, m), dashboardID, query)
 }
 
 func (m Metrics) QueryDashboardPage(ctx context.Context, dashboardID, pageID string, filters dashboard.Filters) (dashboard.Patch, error) {

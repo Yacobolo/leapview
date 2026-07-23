@@ -4,13 +4,15 @@ import type {
   AgentContextSignal,
   AgentReferenceSignal,
   DashboardComponentSignal,
-  DashboardFilters,
+  DashboardFilterContract,
+  DashboardFilterOptionPage,
+  DashboardFilterState,
   DashboardInteractionSelection,
   DashboardPageNavSignal,
   DashboardPageSignal,
   DashboardStatus,
   DashboardVisualizationSignal,
-  ReportFilterConfig,
+  RouteRuntimeSignal,
 } from '../../generated/signals'
 import type { VisualizationEnvelope, VisualizationSpatialSelectionCommand, VisualizationSpatialSelectionState } from '../../generated/visualization'
 import { DatastarLit } from '../shared/datastar-lit'
@@ -20,11 +22,14 @@ import { agentIcon } from '../chat/agent-icon'
 import '../navigation/sub-sidebar'
 import '../chat/chat-drawer'
 import './filters/filter-dock'
+import './filters/filter-control'
+import { DashboardFilterController } from './filters/filter-controller'
+import type { FilterMutationDetail } from './filters/filter-control'
+import type { FilterOptionsNeededDetail } from './filters/filter-control'
 import './report-canvas'
 import './report-footer'
 import './visual-modal'
 import type { VisualActionDetail } from './visual-modal'
-import { loadDashboardComponent } from './registry'
 import './visualization/host'
 import { DashboardVisualizationSignalDecoder } from './visualization/signal-envelope'
 import {
@@ -36,15 +41,6 @@ import {
   type OptimisticInteractionCommand,
 } from './interaction-selection'
 
-const emptyFilters: DashboardFilters = { controls: {}, selections: [], spatialSelections: [] }
-
-function normalizeDashboardFilters(filters: Partial<DashboardFilters> | null | undefined): DashboardFilters {
-  return {
-    controls: filters?.controls ?? {},
-    selections: filters?.selections ?? [],
-    spatialSelections: filters?.spatialSelections ?? [],
-  }
-}
 const emptyStatus: DashboardStatus = {
   loading: false,
   error: '',
@@ -57,9 +53,9 @@ const emptyStatus: DashboardStatus = {
 
 type DashboardRenderSnapshot = {
   page: DashboardPageSignal
-  filterConfig: ReportFilterConfig[]
-  filters: DashboardFilters
-  filterOptions: Record<string, unknown>
+  filterContract: DashboardFilterContract
+  filterState: DashboardFilterState
+  filterOptionPages: Record<string, DashboardFilterOptionPage>
   visuals: Record<string, VisualizationEnvelope>
   status: DashboardStatus
 }
@@ -115,6 +111,17 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
   private optimisticExpectedGeneration = 0
   private optimisticRollbackTimer?: ReturnType<typeof setTimeout>
   private renderSnapshot?: DashboardRenderSnapshot
+  private filterStateFingerprint = ''
+  private pendingPageNavigation = ''
+  private pendingPageID = ''
+  private navigationRequested = false
+  private readonly filterOptionGenerations = new Map<string, number>()
+  private readonly filterController = new DashboardFilterController((command) => {
+    this.dispatchEvent(new CustomEvent('lv-filter-command', {
+      bubbles: true, composed: true, detail: command,
+    }))
+    this.requestUpdate()
+  })
   private readonly visualizationDecoder = new DashboardVisualizationSignalDecoder()
 
   static styles = css`
@@ -466,12 +473,16 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
     super.connectedCallback()
     this.addEventListener('lv-interaction-select', this.handleOptimisticInteraction as EventListener, { capture: true })
     this.addEventListener('lv-interaction-spatial-select', this.handleOptimisticSpatialInteraction as EventListener, { capture: true })
+    this.addEventListener('lv-filter-mutate', this.handleFilterMutation as EventListener, { capture: true })
+    this.addEventListener('lv-filter-options-needed', this.handleFilterOptionsNeeded as EventListener, { capture: true })
     this.loadRenderedComponents()
   }
 
   disconnectedCallback(): void {
     this.removeEventListener('lv-interaction-select', this.handleOptimisticInteraction as EventListener, { capture: true })
     this.removeEventListener('lv-interaction-spatial-select', this.handleOptimisticSpatialInteraction as EventListener, { capture: true })
+    this.removeEventListener('lv-filter-mutate', this.handleFilterMutation as EventListener, { capture: true })
+    this.removeEventListener('lv-filter-options-needed', this.handleFilterOptionsNeeded as EventListener, { capture: true })
     this.clearOptimisticRollbackTimer()
     super.disconnectedCallback()
   }
@@ -501,6 +512,24 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
       components: 'required',
     })
     this.loadRenderedComponents()
+    this.reconcileFilterController()
+    if (this.pendingPageID && page.pageId === this.pendingPageID) {
+      const path = new URL(this.pendingPageNavigation, window.location.href).pathname
+      window.DatastarURLSync?.push(this.signal<Record<string, string | string[]>>('urlParams', {}), path)
+      this.pendingPageNavigation = ''
+      this.pendingPageID = ''
+      this.navigationRequested = false
+      return
+    }
+    if (
+      this.pendingPageNavigation
+      && this.canonicalFilterState.dirtyBindings.length === 0
+      && !this.filterController.pending
+      && !this.navigationRequested
+    ) {
+      this.dispatchPageNavigation()
+      return
+    }
     if (this.optimisticSelections && this.status.generation >= this.optimisticExpectedGeneration) {
       this.clearOptimisticState()
     }
@@ -514,32 +543,48 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
 		return this.signal<AgentContextSignal | null>('agentContext', null)
 	}
 
-  private get filterConfig(): ReportFilterConfig[] {
-    return this.signal<ReportFilterConfig[]>('filterConfig', [])
+  private get filterContract(): DashboardFilterContract {
+    return this.signal<DashboardFilterContract>('filterContract', {
+      applicationMode: 'immediate', definitions: {}, bindings: {},
+    })
   }
 
-  private get filters(): DashboardFilters {
-    return normalizeDashboardFilters(this.signal<Partial<DashboardFilters>>('filters', emptyFilters))
+  private get canonicalFilterState(): DashboardFilterState {
+    return this.signal<DashboardFilterState>('filterState', {
+      revision: 0, appliedControls: {}, draftControls: {}, dirtyBindings: [], defaultsRevision: '',
+    })
   }
 
-  private get effectiveFilters(): DashboardFilters {
-    const filters = this.renderSnapshot?.filters ?? this.filters
-    if (!this.optimisticSelections && !this.optimisticSpatialSelections) return filters
-    return {
-      ...filters,
-      selections: (this.optimisticSelections ?? filters.selections) as DashboardInteractionSelection[],
-      spatialSelections: this.optimisticSpatialSelections ?? filters.spatialSelections,
-    }
+  private get filterOptionPages(): Record<string, DashboardFilterOptionPage> {
+    return this.signal<Record<string, DashboardFilterOptionPage>>('filterOptionPages', {})
   }
 
-  private get filterOptions(): Record<string, unknown> {
-    return this.signal<Record<string, unknown>>('filterOptions', {})
+  private get currentFilterOptionPages(): Record<string, DashboardFilterOptionPage> {
+    const runtime = this.signal<RouteRuntimeSignal>('runtime', { kind: 'dashboard' })
+    return Object.fromEntries(Object.entries(this.filterOptionPages).filter(([key, page]) =>
+      page.bindingKey === key
+      && page.servingStateID === (runtime.servingStateId ?? '')
+      && page.streamGeneration === this.status.generation
+      && page.filterRevision === this.canonicalFilterState.revision
+      && page.requestGeneration === (this.filterOptionGenerations.get(key) ?? page.requestGeneration)))
+  }
+
+  private get interactionSelections(): DashboardInteractionSelection[] {
+    return this.signal<DashboardInteractionSelection[]>('interactionSelections', [])
+  }
+
+  private get spatialSelections(): VisualizationSpatialSelectionState[] {
+    return this.signal<VisualizationSpatialSelectionState[]>('spatialSelections', [])
   }
 
   private get visuals(): Record<string, VisualizationEnvelope> {
     return this.visualizationDecoder.decodeAll(
       this.signal<Record<string, DashboardVisualizationSignal>>('visuals', {}),
     )
+  }
+
+  private get visualSignals(): Record<string, DashboardVisualizationSignal> {
+    return this.signal<Record<string, DashboardVisualizationSignal>>('visuals', {})
   }
 
   private get status(): DashboardStatus {
@@ -551,9 +596,11 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
     if (!page) return html`<slot></slot>`
     const snapshot: DashboardRenderSnapshot = {
       page,
-      filterConfig: this.filterConfig,
-      filters: this.filters,
-      filterOptions: this.filterOptions,
+      filterContract: this.filterContract,
+      filterState: this.filterController.projected.revision > 0
+        ? this.filterController.projected
+        : this.canonicalFilterState,
+      filterOptionPages: this.currentFilterOptionPages,
       visuals: this.visuals,
       status: this.status,
     }
@@ -562,7 +609,7 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
     const agentEnabled = this.presentation === 'app'
     return html`
 			<div class=${`route${agentEnabled && this.agentDrawerOpen ? ' agent-open' : ''}`}>
-        <lv-sub-sidebar .config=${this.pageSidebar(page)}></lv-sub-sidebar>
+        <lv-sub-sidebar .config=${this.pageSidebar(page)} @click=${this.handlePageNavigation}></lv-sub-sidebar>
         <section class="main" aria-label="LeapView report canvas">
           <header class="header">
             <div class="title-block">
@@ -653,8 +700,52 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
     }
   }
 
+  private handlePageNavigation = (event: MouseEvent): void => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    const anchor = event.composedPath().find((node): node is HTMLAnchorElement => node instanceof HTMLAnchorElement)
+    if (!anchor?.href) return
+    const target = this.page?.pages.find((item) => new URL(item.href, window.location.href).href === anchor.href)
+    if (!target || target.active) return
+    event.preventDefault()
+    event.stopPropagation()
+    this.pendingPageNavigation = anchor.href
+    this.pendingPageID = target.id
+    this.navigationRequested = false
+    if (this.filterContract.applicationMode === 'deferred' && this.canonicalFilterState.dirtyBindings.length > 0) {
+      if (window.confirm('Apply pending filter changes before leaving this page?')) {
+        this.filterController.apply()
+        this.requestUpdate()
+        return
+      }
+      if (window.confirm('Discard pending filter changes and leave this page?')) {
+        this.filterController.cancel()
+        this.requestUpdate()
+        return
+      }
+      this.pendingPageNavigation = ''
+      this.pendingPageID = ''
+      return
+    }
+    this.dispatchPageNavigation()
+  }
+
+  private dispatchPageNavigation(): void {
+    if (!this.pendingPageID || this.navigationRequested) return
+    this.navigationRequested = true
+    this.dispatchEvent(new CustomEvent('lv-page-navigate', {
+      bubbles: true,
+      composed: true,
+      detail: {
+        pageID: this.pendingPageID,
+        baseFilterRevision: this.canonicalFilterState.revision,
+        clientMutationID: crypto.randomUUID(),
+      },
+    }))
+    this.requestUpdate()
+  }
+
   private renderCanvasComponent(component: DashboardComponentSignal) {
-    const filterVisual = component.kind === 'filter'
+    const filterVisual = component.kind === 'slicer'
     const visualType = component.visual ? this.visuals[component.visual]?.spec.kind ?? '' : ''
 		const currentPage = this.renderSnapshot?.page ?? this.page
 		const askReference = currentPage ? this.agentReference(component, currentPage) : undefined
@@ -684,8 +775,8 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
     switch (component.kind) {
       case 'header':
         return this.renderHeadingComponent(component)
-      case 'filter':
-        return this.renderFilterCard(component)
+      case 'slicer':
+        return this.renderSlicer(component)
       case 'visual': {
         const visual = this.visualFor(component)
         if (!visual) return this.missingPayload('visual')
@@ -714,17 +805,30 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
     this.renderRoot.querySelector('lv-visual-modal')?.openVisualFocus(source, detail)
   }
 
-  private renderFilterCard(component: DashboardComponentSignal) {
-    if (!component.filter) return this.missingPayload('filter')
-    return html`
-      <lv-filter-card
-        filter-id=${component.filter}
-        config=${json(this.renderSnapshot?.filterConfig ?? this.filterConfig)}
-        filters=${json(this.effectiveFilters)}
-        options=${json(this.renderSnapshot?.filterOptions ?? this.filterOptions)}
-        loading=${String((this.renderSnapshot?.status ?? this.status).loading)}
-      ></lv-filter-card>
-    `
+  private renderSlicer(component: DashboardComponentSignal) {
+    const reference = component.binding
+    if (!reference) return this.missingPayload('slicer binding')
+    const snapshot = this.renderSnapshot
+    const binding = Object.values(snapshot?.filterContract.bindings ?? {}).find((candidate) =>
+      candidate.scope === reference.scope
+      && candidate.id === reference.id
+      && (candidate.scope === 'report' || candidate.pageID === snapshot?.page.pageId))
+    if (!binding) return this.missingPayload('slicer binding')
+    const definition = snapshot?.filterContract.definitions[binding.filter]
+    if (!definition) return this.missingPayload('slicer definition')
+    const state = snapshot?.filterState
+    const expression = state?.draftControls[binding.key]
+      ?? state?.appliedControls[binding.key]?.expression
+      ?? binding.default
+    return html`<lv-slicer
+      .definition=${definition}
+      .binding=${binding}
+      .expression=${expression}
+      .options=${snapshot?.filterOptionPages[binding.key]}
+      .presentation=${component.presentation}
+      .pending=${this.filterController.pending}
+      .stale=${(snapshot?.status.loading ?? false)}
+    ></lv-slicer>`
   }
 
 	private renderAskAction(reference?: AgentReferenceSignal, referenced = false) {
@@ -757,10 +861,11 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
   private renderFilterDock() {
     return html`
       <lv-filter-dock
-        .config=${this.renderSnapshot?.filterConfig ?? this.filterConfig}
-        .filters=${this.effectiveFilters}
-        .options=${this.renderSnapshot?.filterOptions ?? this.filterOptions}
         .loading=${(this.renderSnapshot?.status ?? this.status).loading}
+        .contract=${this.renderSnapshot?.filterContract ?? this.filterContract}
+        .filterState=${this.renderSnapshot?.filterState ?? this.canonicalFilterState}
+        .optionPages=${this.renderSnapshot?.filterOptionPages ?? this.filterOptionPages}
+        .pageId=${(this.renderSnapshot?.page ?? this.page)?.pageId ?? ''}
       ></lv-filter-dock>
     `
   }
@@ -834,9 +939,8 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
     const visuals = this.renderSnapshot?.visuals ?? this.visuals
     const visual = component.visual ? visuals[component.visual] : undefined
     if (!visual) return undefined
-    const filters = this.renderSnapshot?.filters ?? this.filters
-    const selections = this.optimisticSelections ?? filters.selections
-    const spatialSelections = this.optimisticSpatialSelections ?? filters.spatialSelections
+    const selections = this.optimisticSelections ?? this.interactionSelections
+    const spatialSelections = this.optimisticSpatialSelections ?? this.spatialSelections
     const spatialSelection = [...spatialSelections].reverse().find((selection) => selection.visualID === visual.visualID)
     return { ...visual, selection: visualizationSelectionEntries(visual, selections), ...(spatialSelection ? { spatialSelection } : { spatialSelection: undefined }) }
   }
@@ -844,10 +948,12 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
   private handleOptimisticInteraction = (event: CustomEvent<unknown>): void => {
     const command = optimisticCommand(event.detail)
     if (!command) return
+    const source = this.visualSignals[command.sourceId]
+    if (!source || source.filterRevision !== this.canonicalFilterState.revision || this.status.loading) return
     const configured = this.interactionConfigFor(command.sourceKind, command.sourceId)
     if (!validateInteractionCommand(command, configured)) return
 
-    const current = this.optimisticSelections ?? this.filters.selections
+    const current = this.optimisticSelections ?? this.interactionSelections
     this.optimisticSelections = applyOptimisticInteraction(current, {
       ...command,
       toggle: configured?.toggle !== false,
@@ -859,16 +965,52 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
     this.scheduleOptimisticRollback()
   }
 
+  private handleFilterMutation = (event: CustomEvent<FilterMutationDetail>): void => {
+    if (!event.detail?.bindingKey || !event.detail.expression) return
+    event.stopPropagation()
+    this.filterController.mutate(event.detail.bindingKey, event.detail.expression)
+    this.requestUpdate()
+  }
+
+  private handleFilterOptionsNeeded = (event: CustomEvent<FilterOptionsNeededDetail>): void => {
+    const detail = event.detail
+    if (!detail?.bindingKey) return
+    event.stopPropagation()
+    const generation = (this.filterOptionGenerations.get(detail.bindingKey) ?? 0) + 1
+    this.filterOptionGenerations.set(detail.bindingKey, generation)
+    const runtime = this.signal<{ servingStateId?: string }>('runtime', {})
+    this.dispatchEvent(new CustomEvent('lv-filter-options-request', {
+      bubbles: true, composed: true,
+      detail: {
+        ...detail,
+        servingStateID: runtime.servingStateId ?? '',
+        filterRevision: this.canonicalFilterState.revision,
+        requestGeneration: generation,
+      },
+    }))
+  }
+
+  private reconcileFilterController(): void {
+    const state = this.canonicalFilterState
+    const fingerprint = JSON.stringify(state)
+    if (fingerprint === this.filterStateFingerprint) return
+    this.filterStateFingerprint = fingerprint
+    this.filterController.setApplicationMode(this.filterContract.applicationMode)
+    this.filterController.reconcile(state)
+  }
+
   private handleOptimisticSpatialInteraction = (event: CustomEvent<unknown>): void => {
     const command = optimisticSpatialCommand(event.detail)
     if (!command) return
+    const source = this.visualSignals[command.visualID]
+    if (!source || source.filterRevision !== this.canonicalFilterState.revision || this.status.loading) return
     const visual = this.visuals[command.visualID]
     if (!visual || visual.spec.kind !== 'geographic' || visual.specRevision !== command.specRevision || visual.dataRevision !== command.dataRevision) return
     const interaction = visual.spec.spatialInteractions.find((candidate) => candidate.id === command.interactionID)
     if (!interaction || !interaction.gestures.includes(command.gesture)) return
     if (command.action === 'set' && (!command.geometry || command.geometry.kind !== command.gesture)) return
 
-    const current = [...(this.optimisticSpatialSelections ?? this.filters.spatialSelections)]
+    const current = [...(this.optimisticSpatialSelections ?? this.spatialSelections)]
       .filter((selection) => selection.visualID !== command.visualID || selection.interactionID !== command.interactionID)
     if (command.action === 'set' && command.geometry) current.push({ visualID: command.visualID, interactionID: command.interactionID, geometry: command.geometry })
     this.optimisticSpatialSelections = current
@@ -911,18 +1053,7 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
   }
 
   private loadRenderedComponents(): void {
-    const kinds = new Set<string>(['lv-filter-panel'])
-    for (const component of this.page?.components ?? []) {
-      const tag = tagForComponent(component, this.visuals)
-      if (tag && tag !== 'lv-visualization-host') kinds.add(tag)
-    }
-    for (const kind of kinds) {
-      loadDashboardComponent(kind).catch(() => {
-        if (!this.unsupportedKinds.has(kind)) {
-          this.unsupportedKinds = new Set([...this.unsupportedKinds, kind])
-        }
-      })
-    }
+    // Slicers and visualization hosts are statically registered by this route.
   }
 }
 
@@ -1013,8 +1144,8 @@ class DashboardVisualFrame extends LitElement {
 
 function tagForComponent(component: DashboardComponentSignal, visuals: Record<string, VisualizationEnvelope>): string {
   switch (component.kind) {
-    case 'filter':
-      return 'lv-filter-card'
+    case 'slicer':
+      return 'lv-slicer'
     case 'visual': {
       return component.visual && visuals[component.visual] ? 'lv-visualization-host' : ''
     }
