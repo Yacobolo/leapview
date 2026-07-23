@@ -140,6 +140,8 @@ POST /public/dashboards/{publicId}/commands/clear-selection
 POST /public/dashboards/{publicId}/commands/reload
 POST /public/dashboards/{publicId}/commands/reset-filters
 POST /public/dashboards/{publicId}/commands/select
+POST /public/dashboards/{publicId}/commands/spatial-select
+POST /public/dashboards/{publicId}/commands/visual-spatial-window
 POST /public/dashboards/{publicId}/commands/visual-window
 POST /static/*
 POST /workspaces/{workspace}/access/remove
@@ -151,6 +153,8 @@ POST /workspaces/{workspace}/commands/clear-selection
 POST /workspaces/{workspace}/commands/reload
 POST /workspaces/{workspace}/commands/reset-filters
 POST /workspaces/{workspace}/commands/select
+POST /workspaces/{workspace}/commands/spatial-select
+POST /workspaces/{workspace}/commands/visual-spatial-window
 POST /workspaces/{workspace}/commands/visual-window
 PUT /metrics
 PUT /static/*

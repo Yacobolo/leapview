@@ -31,8 +31,10 @@ func (m *Module) MountPublicCommands(r chi.Router) {
 	r.Post("/public/dashboards/{publicId}/commands/reload", m.PublicDashboardCommand("reload"))
 	r.Post("/public/dashboards/{publicId}/commands/reset-filters", m.PublicDashboardCommand("reset_filters"))
 	r.Post("/public/dashboards/{publicId}/commands/select", m.PublicDashboardCommand("select"))
+	r.Post("/public/dashboards/{publicId}/commands/spatial-select", m.PublicDashboardCommand("spatial_select"))
 	r.Post("/public/dashboards/{publicId}/commands/clear-selection", m.PublicDashboardCommand("clear_selection"))
 	r.Post("/public/dashboards/{publicId}/commands/visual-window", m.PublicDashboardCommand("visual_window"))
+	r.Post("/public/dashboards/{publicId}/commands/visual-spatial-window", m.PublicDashboardCommand("visual_spatial_window"))
 }
 
 func (m *Module) MountPublicStream(r chi.Router) {
@@ -49,7 +51,9 @@ func (m *Module) MountAuthenticated(r chi.Router, guard RouteGuard) {
 	r.Get("/workspaces/{workspace}/dashboards/{dashboard}", guard.ProtectWithObjects(access.PrivilegeViewItem, dashboardhttp.DashboardObjectRefs, h.Dashboard))
 	r.Get("/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}", guard.ProtectWithObjects(access.PrivilegeViewItem, dashboardhttp.DashboardObjectRefs, h.Page))
 	r.Post("/workspaces/{workspace}/commands/visual-window", guard.Protect(access.PrivilegeViewItem, h.VisualWindow))
+	r.Post("/workspaces/{workspace}/commands/visual-spatial-window", guard.Protect(access.PrivilegeViewItem, h.VisualSpatialWindow))
 	r.Post("/workspaces/{workspace}/commands/select", guard.Protect(access.PrivilegeViewItem, h.Select))
+	r.Post("/workspaces/{workspace}/commands/spatial-select", guard.Protect(access.PrivilegeViewItem, h.SpatialSelect))
 	r.Post("/workspaces/{workspace}/commands/clear-selection", guard.Protect(access.PrivilegeViewItem, h.ClearSelection))
 	r.Post("/workspaces/{workspace}/commands/reload", guard.Protect(access.PrivilegeViewItem, h.Reload))
 	r.Post("/workspaces/{workspace}/commands/reset-filters", guard.Protect(access.PrivilegeViewItem, h.ResetFilters))

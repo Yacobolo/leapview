@@ -181,10 +181,14 @@ func (m *Module) PublicDashboardCommand(commandName string) http.HandlerFunc {
 			handler.ResetFilters(recorder, r.WithContext(ctx))
 		case "select":
 			handler.Select(recorder, r.WithContext(ctx))
+		case "spatial_select":
+			handler.SpatialSelect(recorder, r.WithContext(ctx))
 		case "clear_selection":
 			handler.ClearSelection(recorder, r.WithContext(ctx))
 		case "visual_window":
 			handler.VisualWindow(recorder, r.WithContext(ctx))
+		case "visual_spatial_window":
+			handler.VisualSpatialWindow(recorder, r.WithContext(ctx))
 		default:
 			http.NotFound(recorder, r)
 		}
