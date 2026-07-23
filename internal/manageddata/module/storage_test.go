@@ -45,7 +45,7 @@ func TestBuildKeepsPersistencePrivateAndExposesNamedServices(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if module.BindingValidator() == nil || module.RuntimeResolver() == nil || module.DeploymentMetadata() == nil {
+	if module.BindingValidation() == nil || module.RuntimeResolution() == nil || module.DeploymentMetadata() == nil {
 		t.Fatal("managed-data module did not expose its named cross-capability services")
 	}
 }

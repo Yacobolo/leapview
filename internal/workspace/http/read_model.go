@@ -22,7 +22,7 @@ type Principal struct {
 type PrincipalProvider func(*nethttp.Request) (Principal, bool)
 
 type ReadModel struct {
-	WorkspaceRepository func() (workspace.Repository, error)
+	WorkspaceRepository func() (workspace.ReadModel, error)
 	AccessService       func() (access.WorkspaceAccessService, error)
 	AssetCatalogReader  func() (AssetCatalogReader, error)
 	MetricsForWorkspace func(string) (Metrics, bool)
@@ -400,14 +400,14 @@ func (m ReadModel) activeAssetCatalog(ctx context.Context, workspaceID, environm
 	return reader.ActiveAssetCatalog(ctx, workspace.WorkspaceID(workspaceID), environment)
 }
 
-func (m ReadModel) listWorkspaceRows(ctx context.Context, repo workspace.Repository, environment string) ([]workspace.Summary, error) {
+func (m ReadModel) listWorkspaceRows(ctx context.Context, repo workspace.ReadModel, environment string) ([]workspace.Summary, error) {
 	if activeRepo, ok := repo.(activeWorkspaceMetadataRepository); ok {
 		return activeRepo.ListWithActiveMetadata(ctx, environment)
 	}
 	return repo.List(ctx)
 }
 
-func (m ReadModel) workspaceRepository() (workspace.Repository, error) {
+func (m ReadModel) workspaceRepository() (workspace.ReadModel, error) {
 	if m.WorkspaceRepository == nil {
 		return nil, nil
 	}

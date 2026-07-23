@@ -146,7 +146,7 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 	}
 
 	h := &harness{
-		handler:     newRuntimeRouter(metricsForApp).Routes(),
+		handler:     newApplicationAssembly(metricsForApp).Routes(),
 		workspaceID: metricsForApp.Catalog().Workspace.ID,
 	}
 	h.server = httptest.NewServer(h.handler)

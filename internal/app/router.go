@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"net/http"
 	"sort"
 	"strings"
@@ -20,21 +19,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func (s *runtimeRouter) Routes() http.Handler {
-	if s.apiProtocol == nil {
-		if err := s.configureAPIProtocol(context.Background(), nil); err != nil {
-			s.logger.ErrorContext(context.Background(), "configure API protocol failed", "error", err)
-			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
-			})
-		}
-	}
-	if err := s.configureModules(context.Background(), nil); err != nil {
-		s.logger.ErrorContext(context.Background(), "configure application routes failed", "error", err)
-		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
-		})
-	}
+func (s *applicationAssembly) Routes() http.Handler {
 	mux := chi.NewRouter()
 	if s.requestLogging {
 		mux.Use(apihttpmiddleware.RequestLogger(s.logger))
@@ -200,27 +185,27 @@ func managedDataTusHandler(next http.Handler) http.Handler {
 	})
 }
 
-func (s *runtimeRouter) protectGlobalAgent(privilege accessmodule.Privilege, next http.Handler) http.Handler {
+func (s *applicationAssembly) protectGlobalAgent(privilege accessmodule.Privilege, next http.Handler) http.Handler {
 	return s.accessModule.ProtectGlobal(privilege, next.ServeHTTP)
 }
 
-func (s *runtimeRouter) protectAnyWorkspace(privilege accessmodule.Privilege, next http.Handler) http.Handler {
+func (s *applicationAssembly) protectAnyWorkspace(privilege accessmodule.Privilege, next http.Handler) http.Handler {
 	return s.accessModule.ProtectAnyWorkspace(privilege, next.ServeHTTP)
 }
 
-func (s *runtimeRouter) protect(privilege accessmodule.Privilege, next http.Handler) http.Handler {
+func (s *applicationAssembly) protect(privilege accessmodule.Privilege, next http.Handler) http.Handler {
 	return s.accessModule.ProtectHandler(privilege, next)
 }
 
-func (s *runtimeRouter) protectGlobal(privilege accessmodule.Privilege, next http.Handler) http.Handler {
+func (s *applicationAssembly) protectGlobal(privilege accessmodule.Privilege, next http.Handler) http.Handler {
 	return s.accessModule.ProtectGlobal(privilege, next.ServeHTTP)
 }
 
-func (s *runtimeRouter) protectWithObjects(privilege accessmodule.Privilege, objectResolver accessmodule.ObjectResolver, next http.Handler) http.Handler {
+func (s *applicationAssembly) protectWithObjects(privilege accessmodule.Privilege, objectResolver accessmodule.ObjectResolver, next http.Handler) http.Handler {
 	return s.accessModule.ProtectHandlerWithObjects(privilege, objectResolver, next)
 }
 
-func (s *runtimeRouter) csrf(next http.Handler) http.Handler {
+func (s *applicationAssembly) csrf(next http.Handler) http.Handler {
 	return s.accessModule.CSRFMiddleware(next)
 }
 

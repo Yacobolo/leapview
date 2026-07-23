@@ -97,6 +97,7 @@ type Auth struct {
 }
 
 type AuthConfig struct {
+	Disabled        bool
 	DevBypass       bool
 	DevAPIToken     string
 	APITokenOnly    bool

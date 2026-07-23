@@ -10,20 +10,20 @@ import (
 	refreshmodule "github.com/Yacobolo/leapview/internal/refresh/module"
 )
 
-func (s *runtimeRouter) configureRefreshModule(ctx context.Context, database *sql.DB) error {
+func (s *applicationAssembly) configureRefreshModule(ctx context.Context, database *sql.DB, inputs moduleAssemblyInputs) error {
 	if s == nil || s.refreshModule != nil {
 		return nil
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	service, err := s.workspaceRefreshService()
+	service, err := s.workspaceRefreshService(inputs)
 	if err != nil && database != nil {
 		return fmt.Errorf("configure refresh service: %w", err)
 	}
 	config := refreshmodule.Config{
 		Database: database, Service: service,
-		Analytics: s.analyticsModule.WorkspaceMaterializer(), ManagedData: s.construction.managedDataResolver,
+		Analytics: s.analyticsModule.WorkspaceMaterializer(), ManagedData: inputs.managedDataResolver,
 		HTTP: refreshmodule.HTTPConfig{
 			RunnerConfigured: func() bool { return s.metrics != nil },
 			CurrentPrincipal: func(r *http.Request) (refreshmodule.HTTPPrincipal, bool) {
@@ -42,17 +42,17 @@ func (s *runtimeRouter) configureRefreshModule(ctx context.Context, database *sq
 				return accessmodule.APICredentialFromContext(r.Context())
 			},
 			ResolvePipelineModel: refreshmodule.PipelineModelResolver(
-				s.construction.servingStateRepo,
+				inputs.servingStateRepo,
 				nil,
 				s.defaultServingEnvironment(),
 			),
 			AuthorizeObject: s.accessModule.AuthorizeObject,
 		},
 		ApplyAccessSnapshot: accessmodule.ApplySnapshot,
-		Admission:           s.workloadController(), LeaseTimeout: s.construction.jobLeaseTimeout,
-		Environment: string(s.defaultServingEnvironment()), Clock: s.construction.refreshPipelineClock,
+		Admission:           s.workloadController(), LeaseTimeout: inputs.jobLeaseTimeout,
+		Environment: string(s.defaultServingEnvironment()), Clock: inputs.refreshPipelineClock,
 		EnableDispatcher: database != nil && s.metrics != nil,
-		EnableScheduler:  database != nil && s.construction.servingStateRepo != nil,
+		EnableScheduler:  database != nil && inputs.servingStateRepo != nil,
 		Logger:           s.logger, Events: s.asyncJobs,
 		WorkloadStats: func() refreshmodule.WorkloadStats {
 			return s.workloadController().Stats()

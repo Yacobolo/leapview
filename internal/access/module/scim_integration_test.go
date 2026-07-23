@@ -1,4 +1,4 @@
-package app
+package module
 
 import (
 	"bytes"
@@ -370,7 +370,7 @@ func TestSCIMAuditIncludesRequestMetadataOnSuccessAndFailure(t *testing.T) {
 	}
 }
 
-func createSCIMUser(t *testing.T, server *runtimeRouter, externalID, email, displayName string) string {
+func createSCIMUser(t *testing.T, server *applicationAssembly, externalID, email, displayName string) string {
 	t.Helper()
 	body := map[string]any{
 		"schemas":     []string{"urn:ietf:params:scim:schemas:core:2.0:User"},
@@ -389,7 +389,7 @@ func createSCIMUser(t *testing.T, server *runtimeRouter, externalID, email, disp
 	return resourceID(t, rec.Body.Bytes())
 }
 
-func createSCIMGroup(t *testing.T, server *runtimeRouter, externalID, displayName string, members []string) string {
+func createSCIMGroup(t *testing.T, server *applicationAssembly, externalID, displayName string, members []string) string {
 	t.Helper()
 	memberAttrs := make([]map[string]any, 0, len(members))
 	for _, member := range members {

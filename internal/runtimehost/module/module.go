@@ -9,8 +9,12 @@ import (
 	"github.com/Yacobolo/leapview/internal/servingstate"
 )
 
+type ServingStatePort interface {
+	runtimehost.ServingStateRepository
+}
+
 type Config struct {
-	States           runtimehost.ServingStateRepository
+	States           ServingStatePort
 	WorkspaceIDs     []servingstate.WorkspaceID
 	Environment      servingstate.Environment
 	Factory          runtimehost.RuntimeFactory

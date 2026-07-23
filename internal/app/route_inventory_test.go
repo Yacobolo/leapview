@@ -1,6 +1,8 @@
 package app
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -31,11 +33,32 @@ func TestRouteInventory(t *testing.T) {
 	}
 
 	want := map[string]struct{}{}
+	metadata := map[string]routeMetadata{}
 	for _, route := range strings.Split(strings.TrimSpace(nonAPIRouteInventory), "\n") {
-		want[strings.TrimSpace(route)] = struct{}{}
+		key := strings.TrimSpace(route)
+		want[key] = struct{}{}
+		method, path, ok := strings.Cut(key, " ")
+		if !ok {
+			t.Fatalf("invalid route inventory row %q", key)
+		}
+		contract, ok := nonAPIRouteMetadata(method, path)
+		if !ok {
+			t.Fatalf("%s has no owner/access/privilege contract", key)
+		}
+		metadata[key] = contract
 	}
 	for _, contract := range apigenapi.GetAPIGenOperationContracts() {
-		want[contract.Method+" "+contract.Path] = struct{}{}
+		key := contract.Method + " " + contract.Path
+		want[key] = struct{}{}
+		owner, ok := apiOwner(contract.Tags)
+		if !ok {
+			t.Fatalf("%s has no capability owner for tags %v", contract.OperationID, contract.Tags)
+		}
+		privilege := ""
+		if authz, ok := contract.Extensions["x-authz"].(map[string]any); ok {
+			privilege, _ = authz["privilege"].(string)
+		}
+		metadata[key] = routeMetadata{owner: owner, access: contract.AuthzMode, privilege: privilege}
 	}
 
 	var problems []string
@@ -56,6 +79,130 @@ func TestRouteInventory(t *testing.T) {
 	if len(problems) != 0 {
 		t.Fatalf("route inventory changed:\n%s", strings.Join(problems, "\n"))
 	}
+	rows := make([]string, 0, len(metadata))
+	for key, contract := range metadata {
+		rows = append(rows, fmt.Sprintf("%s|%s|%s|%s", key, contract.owner, contract.access, contract.privilege))
+	}
+	sort.Strings(rows)
+	const expectedRouteContractDigest = "673faf082a004054684f6c68f73cf06e6ab20fa8b29473ec0c5fd6e8ad475199"
+	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(rows, "\n"))))
+	if digest != expectedRouteContractDigest {
+		t.Fatalf("route ownership/auth contract changed: got digest %s\n%s", digest, strings.Join(rows, "\n"))
+	}
+}
+
+type routeMetadata struct {
+	owner     string
+	access    string
+	privilege string
+}
+
+func nonAPIRouteMetadata(method, path string) (routeMetadata, bool) {
+	public := routeMetadata{access: "public"}
+	switch {
+	case path == "/favicon.ico" || path == "/static/*":
+		public.owner = "ui"
+		return public, true
+	case path == "/healthz" || path == "/readyz" || path == "/metrics" || strings.HasPrefix(path, "/__dev/"):
+		public.owner = "platform"
+		return public, true
+	case path == "/api/docs" || path == "/api/openapi.json":
+		public.owner = "api"
+		return public, true
+	case path == "/login" || strings.HasPrefix(path, "/auth/") || strings.HasPrefix(path, "/oauth/") || strings.HasPrefix(path, "/.well-known/"):
+		public.owner = "access"
+		if path == "/auth/logout" || path == "/auth/local/password" {
+			public.access = "authenticated"
+		}
+		return public, true
+	case strings.HasPrefix(path, "/public/dashboards/") || strings.HasPrefix(path, "/embed/dashboards/"):
+		public.owner = "dashboard"
+		return public, true
+	}
+
+	authenticated := routeMetadata{access: "authenticated"}
+	switch {
+	case path == "/admin/agent" || path == "/admin/agent/config":
+		authenticated.owner = "agent"
+		authenticated.privilege = "MANAGE_GRANTS"
+	case strings.HasPrefix(path, "/admin/publications"):
+		authenticated.owner = "admin"
+		authenticated.privilege = "MANAGE_PUBLICATIONS"
+	case strings.HasPrefix(path, "/admin/queries"):
+		authenticated.owner = "admin"
+		authenticated.privilege = "VIEW_AUDIT"
+	case strings.HasPrefix(path, "/admin"):
+		authenticated.owner = "admin"
+		authenticated.privilege = "MANAGE_GRANTS"
+	case strings.HasPrefix(path, "/chats"):
+		authenticated.owner = "agent"
+		switch {
+		case path == "/chats/turns":
+			authenticated.privilege = "USE_AGENT"
+		case path == "/chats/references/search":
+			authenticated.privilege = "VIEW_ITEM"
+		default:
+			authenticated.privilege = "VIEW_AGENT"
+		}
+	case strings.HasPrefix(path, "/chat"):
+		authenticated.owner = "agent"
+	case strings.Contains(path, "/dashboards/") || strings.Contains(path, "/commands/"):
+		authenticated.owner = "dashboard"
+		authenticated.privilege = "VIEW_ITEM"
+	case strings.Contains(path, "/assets/") && strings.HasSuffix(path, "/refresh"):
+		authenticated.owner = "workspace"
+		authenticated.privilege = "REFRESH_DATA"
+	case strings.Contains(path, "/access/") || strings.HasSuffix(path, "/access/upsert") || strings.HasSuffix(path, "/access/remove"):
+		authenticated.owner = "workspace"
+		authenticated.privilege = "MANAGE_GRANTS"
+	case path == "/" || path == "/data" || path == "/data/command" ||
+		strings.HasPrefix(path, "/workspaces") || strings.HasPrefix(path, "/connections"):
+		authenticated.owner = "workspace"
+		authenticated.privilege = "VIEW_ITEM"
+	case path == "/updates":
+		authenticated.owner = "ui"
+	default:
+		return routeMetadata{}, false
+	}
+	_ = method
+	return authenticated, true
+}
+
+func apiOwner(tags []string) (string, bool) {
+	owners := map[string]string{
+		"Access": "access", "Current User": "access", "Service Principals": "access",
+		"Agent": "agent", "BI": "dashboard", "Dashboards": "dashboard", "Publications": "dashboard",
+		"Deployments": "deployment", "Managed Data": "manageddata", "Refresh": "refresh",
+		"Releases": "release", "Projects": "release", "Workspaces": "workspace",
+		"Instance": "platform", "System": "platform",
+	}
+	for _, tag := range tags {
+		if owner := owners[tag]; owner != "" {
+			return owner, true
+		}
+		switch {
+		case strings.Contains(tag, "Refresh"):
+			return "refresh", true
+		case strings.Contains(tag, "Publication") || strings.Contains(tag, "Dashboard") || strings.Contains(tag, "Semantic"):
+			return "dashboard", true
+		case strings.Contains(tag, "Managed Data"):
+			return "manageddata", true
+		case strings.Contains(tag, "Deployment"):
+			return "deployment", true
+		case strings.Contains(tag, "Release") || strings.Contains(tag, "Project"):
+			return "release", true
+		case strings.Contains(tag, "Workspace") || strings.Contains(tag, "Search"):
+			return "workspace", true
+		case strings.Contains(tag, "Agent"):
+			return "agent", true
+		case strings.Contains(tag, "Access") || strings.Contains(tag, "Principal") ||
+			strings.Contains(tag, "Grant") || strings.Contains(tag, "Policy") ||
+			strings.Contains(tag, "Group") || strings.Contains(tag, "Role") ||
+			strings.Contains(tag, "Audit") || strings.Contains(tag, "Authorization"):
+			return "access", true
+		}
+	}
+	return "", false
 }
 
 const nonAPIRouteInventory = `

@@ -7,7 +7,6 @@ import (
 	"log/slog"
 
 	"github.com/Yacobolo/leapview/internal/deployment/apiadapter"
-	deploymenthttp "github.com/Yacobolo/leapview/internal/deployment/http"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 )
 
@@ -20,11 +19,18 @@ type ActivateJob struct {
 	IdempotencyKey string
 }
 
+type DeploymentCoordinator interface {
+	Create(context.Context, apiadapter.CreateRequest) (apiadapter.Deployment, error)
+	Get(context.Context, apiadapter.Scope) (apiadapter.Deployment, error)
+	Activate(context.Context, apiadapter.ActivateRequest) (apiadapter.Deployment, error)
+	Cancel(context.Context, apiadapter.Scope) (apiadapter.Deployment, error)
+}
+
 // JobConfig contains deployment-owned workflow ports. Authorization is a
 // consumer-defined port; schedule reconciliation is an explicit downstream
 // notification rather than repository reach-through.
 type JobConfig struct {
-	Coordinator deploymenthttp.Coordinator
+	Coordinator DeploymentCoordinator
 	Authorize   func(context.Context, string, string, []apiadapter.TargetRequest) error
 	Reconcile   func(context.Context) error
 	Events      jobs.EventAppender

@@ -14,7 +14,7 @@ func TestReleaseStoresAreConstructedInsideModule(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	releases, catalog, deployments, err := releaseStores(Config{Database: store.SQLDB()})
+	releases, catalog, deployments, err := releaseStores(store.SQLDB())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,8 +23,8 @@ func TestReleaseStoresAreConstructedInsideModule(t *testing.T) {
 	}
 }
 
-func TestReleaseStoresRequireDatabaseOrExplicitPorts(t *testing.T) {
-	if _, _, _, err := releaseStores(Config{}); err == nil {
+func TestReleaseStoresRequireDatabase(t *testing.T) {
+	if _, _, _, err := releaseStores(nil); err == nil {
 		t.Fatal("release module accepted missing persistence")
 	}
 }

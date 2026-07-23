@@ -6,7 +6,7 @@ import (
 	workloadmodule "github.com/Yacobolo/leapview/internal/workload/module"
 )
 
-func (s *runtimeRouter) workloadController() workloadControl {
+func (s *applicationAssembly) workloadController() workloadControl {
 	if s.workloads == nil {
 		s.workloads, _ = workloadmodule.Build(context.Background(), workloadmodule.Config{Policy: workloadmodule.DefaultConfig()})
 	}

@@ -30,7 +30,7 @@ type PackageRule struct {
 // made public merely because their capability has an allowed edge.
 var PublicContractPrefixes = map[string][]string{
 	"access":       {"internal/access"},
-	"analytics":    {"internal/analytics/model", "internal/analytics/query", "internal/analytics/materialize", "internal/analytics/connectors", "internal/analytics/arrowquery", "internal/analytics/resource", "internal/analytics/queryaudit", "internal/dataquery", "internal/queryruntime"},
+	"analytics":    {"internal/analytics/model", "internal/analytics/query", "internal/analytics/materialize", "internal/analytics/connectors", "internal/analytics/arrowquery", "internal/analytics/resource", "internal/analytics/runtime", "internal/analytics/queryaudit", "internal/dataquery", "internal/queryruntime"},
 	"dashboard":    {"internal/dashboard", "internal/dashboard/report", "internal/visualization/definition", "internal/visualization/format", "internal/visualization/geometry", "internal/visualization/ir", "internal/visualization/mapasset", "internal/visualization/runtime"},
 	"manageddata":  {"internal/manageddata", "internal/manageddata/binding"},
 	"workspace":    {"internal/workspace", "internal/search"},
@@ -119,6 +119,7 @@ var PackageRules = []PackageRule{
 	{Prefix: "pkg/pagestream", Capability: "ui", Layer: LayerAdapter},
 	{Prefix: "internal/project/compiler", Capability: "project", Layer: LayerUseCase},
 	{Prefix: "internal/project/artifact", Capability: "project", Layer: LayerContract},
+	{Prefix: "internal/analytics/runtime", Capability: "analytics", Layer: LayerContract},
 	{Prefix: "internal/refresh/plan", Capability: "refresh", Layer: LayerUseCase},
 	{Prefix: "internal/refresh/run", Capability: "refresh", Layer: LayerUseCase},
 	{Prefix: "internal/refresh/schedule", Capability: "refresh", Layer: LayerUseCase},

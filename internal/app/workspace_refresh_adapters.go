@@ -11,7 +11,7 @@ import (
 	workspacemodule "github.com/Yacobolo/leapview/internal/workspace/module"
 )
 
-func (s *runtimeRouter) workspaceRefreshSupport() refreshmodule.WorkspaceSupport {
+func (s *applicationAssembly) workspaceRefreshSupport() refreshmodule.WorkspaceSupport {
 	support := refreshmodule.WorkspaceSupport{
 		Runs: func() (refreshmodule.RunReader, error) {
 			if s.refreshModule == nil {
@@ -59,8 +59,8 @@ func (s *runtimeRouter) workspaceRefreshSupport() refreshmodule.WorkspaceSupport
 	return support
 }
 
-func (s *runtimeRouter) workspaceRefreshService() (refreshmodule.Service, error) {
-	repo, err := s.servingStateRepository()
+func (s *applicationAssembly) workspaceRefreshService(inputs moduleAssemblyInputs) (refreshmodule.Service, error) {
+	repo, err := s.servingStateRepository(inputs)
 	if err != nil {
 		return refreshmodule.Service{}, err
 	}
@@ -68,12 +68,12 @@ func (s *runtimeRouter) workspaceRefreshService() (refreshmodule.Service, error)
 		return refreshmodule.Service{}, fmt.Errorf("serving state repository is required")
 	}
 	hooks := []refreshmodule.CandidateValidationHook{}
-	if s.construction.managedDataValidation != nil {
-		hooks = append(hooks, s.construction.managedDataValidation)
+	if inputs.managedDataValidation != nil {
+		hooks = append(hooks, inputs.managedDataValidation)
 	}
 	return refreshmodule.Service{
 		ServingStates: repo,
-		Runtime:       s.construction.reloader,
+		Runtime:       inputs.reloader,
 		Publisher: refreshmodule.Publisher{
 			Workspace: s.workspaceRefreshSupport,
 			SemanticModelVersion: func(ctx context.Context, workspaceID, environment, modelID string) {

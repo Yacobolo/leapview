@@ -9,10 +9,14 @@ import (
 )
 
 type managedDataResolver struct {
-	resolver *manageddataresolver.Resolver
+	resolver ManagedDataSource
 }
 
-func NewManagedDataResolver(resolver *manageddataresolver.Resolver) runtimehost.ManagedDataResolver {
+type ManagedDataSource interface {
+	ResolveManagedData(context.Context, servingstate.ID) (manageddataresolver.Resolution, error)
+}
+
+func NewManagedDataResolver(resolver ManagedDataSource) runtimehost.ManagedDataResolver {
 	if resolver == nil {
 		return nil
 	}

@@ -10,7 +10,7 @@ import (
 	apiprotocol "github.com/Yacobolo/leapview/internal/api/protocol"
 )
 
-func (s *runtimeRouter) configureAPIProtocol(ctx context.Context, database *sql.DB) error {
+func (s *applicationAssembly) configureAPIProtocol(ctx context.Context, database *sql.DB) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -36,19 +36,19 @@ func (s *runtimeRouter) configureAPIProtocol(ctx context.Context, database *sql.
 	return nil
 }
 
-func (s *runtimeRouter) publicProtocolMiddleware(next http.Handler) http.Handler {
+func (s *applicationAssembly) publicProtocolMiddleware(next http.Handler) http.Handler {
 	return s.apiProtocol.Middleware(next)
 }
 
-func (s *runtimeRouter) openAPIDescription(w http.ResponseWriter, r *http.Request) {
+func (s *applicationAssembly) openAPIDescription(w http.ResponseWriter, r *http.Request) {
 	s.apiProtocol.OpenAPIDescription(w, r)
 }
 
-func (s *runtimeRouter) publicDocs(w http.ResponseWriter, r *http.Request) {
+func (s *applicationAssembly) publicDocs(w http.ResponseWriter, r *http.Request) {
 	s.apiProtocol.PublicDocs(w, r)
 }
 
-func (s *runtimeRouter) cursorSnapshot(r *http.Request) string {
+func (s *applicationAssembly) cursorSnapshot(r *http.Request) string {
 	segments := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	for index, segment := range segments {
 		if index+1 >= len(segments) {

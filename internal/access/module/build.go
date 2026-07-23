@@ -19,27 +19,37 @@ type Config struct {
 	WorkspaceIDs func(context.Context) ([]string, error)
 	PublicURL    string
 	MCPIssuerURL string
-	Surface      *SurfaceConfig
 }
 
 func newRepository(database *sql.DB) access.Repository { return accesssqlite.NewRepository(database) }
 
 func Build(ctx context.Context, config Config) (*Module, error) {
 	if config.Database == nil {
-		if config.Surface == nil {
-			return newSurface(SurfaceConfig{}), nil
+		auth := config.ExistingAuth
+		surface := surfaceConfig{
+			Auth: auth, WorkspaceIDs: config.WorkspaceIDs, DefaultWorkspaceID: config.WorkspaceID,
+			WorkspaceID: func(value string) string {
+				if value != "" {
+					return value
+				}
+				return config.WorkspaceID
+			},
 		}
-		return newSurface(*config.Surface), nil
+		if auth != nil {
+			surface.CurrentPrincipal = auth.Principal
+			surface.CurrentCredential = auth.APICredential
+		}
+		return newSurface(surface), nil
 	}
 	if err := accesssqlite.Initialize(ctx, config.Database); err != nil {
 		return nil, err
 	}
 	repository := newRepository(config.Database)
 	auth := config.ExistingAuth
-	if auth == nil {
+	if auth == nil && !config.Auth.Disabled {
 		auth = NewAuth(repository, config.WorkspaceID, config.Auth)
 	}
-	module := newSurface(SurfaceConfig{
+	surface := surfaceConfig{
 		Repository: func() (access.Repository, error) { return repository, nil },
 		Auth:       auth, WorkspaceIDs: config.WorkspaceIDs,
 		DefaultWorkspaceID: config.WorkspaceID,
@@ -49,12 +59,18 @@ func Build(ctx context.Context, config Config) (*Module, error) {
 			}
 			return config.WorkspaceID
 		},
-		CurrentPrincipal: func(r *http.Request) (Principal, bool) {
+	}
+	if auth != nil {
+		surface.CurrentPrincipal = func(r *http.Request) (Principal, bool) {
 			principal, ok := auth.Principal(r)
 			return principal, ok
-		},
-		CurrentCredential: auth.APICredential,
-	})
+		}
+		surface.CurrentCredential = auth.APICredential
+	}
+	module := newSurface(surface)
+	if auth == nil {
+		return module, nil
+	}
 	publicURL := strings.TrimSuffix(strings.TrimSpace(config.PublicURL), "/")
 	if publicURL == "" {
 		publicURL = "http://localhost:8080"

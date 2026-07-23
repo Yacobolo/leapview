@@ -22,11 +22,8 @@ type Module struct {
 
 type Config struct {
 	Database          *sql.DB
-	Releases          release.Repository
-	Catalog           release.CatalogRepository
-	DeploymentLinkage release.DeploymentLinkage
 	States            ServingStateRepository
-	Workspaces        release.WorkspaceRepository
+	Workspaces        WorkspaceProvisioner
 	ManagedDataPins   release.PinValidator
 	ManagedDataHook   validate.Hook
 	ArtifactDirectory string
@@ -39,8 +36,12 @@ type ServingStateRepository interface {
 	validate.Repository
 }
 
+type WorkspaceProvisioner interface {
+	release.WorkspaceRepository
+}
+
 func Build(_ context.Context, config Config) (*Module, error) {
-	releases, catalog, deployments, err := releaseStores(config)
+	releases, catalog, deployments, err := releaseStores(config.Database)
 	if err != nil {
 		return nil, err
 	}
@@ -63,25 +64,12 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	}, nil
 }
 
-func releaseStores(config Config) (release.Repository, release.CatalogRepository, release.DeploymentLinkage, error) {
-	releases, catalog, deployments := config.Releases, config.Catalog, config.DeploymentLinkage
-	if releases != nil && catalog != nil && deployments != nil {
-		return releases, catalog, deployments, nil
+func releaseStores(database *sql.DB) (release.Repository, release.CatalogRepository, release.DeploymentLinkage, error) {
+	if database == nil {
+		return nil, nil, nil, errors.New("release database is required")
 	}
-	if config.Database == nil {
-		return nil, nil, nil, errors.New("release database is required when release stores are not supplied")
-	}
-	owned := releasesqlite.NewRepository(config.Database)
-	if releases == nil {
-		releases = owned
-	}
-	if catalog == nil {
-		catalog = owned
-	}
-	if deployments == nil {
-		deployments = owned
-	}
-	return releases, catalog, deployments, nil
+	owned := releasesqlite.NewRepository(database)
+	return owned, owned, owned, nil
 }
 
 func (m *Module) DeploymentLinkage() release.DeploymentLinkage {

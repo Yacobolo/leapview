@@ -19,21 +19,21 @@ type servingStateRepository interface {
 	ListActiveScopes(context.Context) ([]servingstatemodule.ActiveScope, error)
 }
 
-func (s *runtimeRouter) servingStateRepository() (servingStateRepository, error) {
-	if s.construction.servingStateRepo != nil {
-		return s.construction.servingStateRepo, nil
+func (s *applicationAssembly) servingStateRepository(inputs moduleAssemblyInputs) (servingStateRepository, error) {
+	if inputs.servingStateRepo != nil {
+		return inputs.servingStateRepo, nil
 	}
 	return nil, fmt.Errorf("serving state repository is not configured")
 }
 
-func (s *runtimeRouter) workspaceID(value string) string {
+func (s *applicationAssembly) workspaceID(value string) string {
 	return value
 }
 
-func (s *runtimeRouter) defaultServingEnvironment() servingstatemodule.Environment {
+func (s *applicationAssembly) defaultServingEnvironment() servingstatemodule.Environment {
 	return servingstatemodule.NormalizeEnvironment(servingstatemodule.Environment(s.defaultEnvironment))
 }
 
-func (s *runtimeRouter) requestServingEnvironment(r *http.Request) servingstatemodule.Environment {
+func (s *applicationAssembly) requestServingEnvironment(r *http.Request) servingstatemodule.Environment {
 	return s.defaultServingEnvironment()
 }

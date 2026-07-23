@@ -9,26 +9,26 @@ import (
 
 var errPublicationDeploymentForbidden = deploymentmodule.ErrPublicationForbidden
 
-func (a apiGenAdapter) CreateDeployment(w http.ResponseWriter, r *http.Request, project string, headers apigenapi.GenCreateDeploymentHeaders) {
-	a.server.deploymentModule.CreateDeployment(w, r, project, headers)
+func (a apiGenDispatcher) CreateDeployment(w http.ResponseWriter, r *http.Request, project string, headers apigenapi.GenCreateDeploymentHeaders) {
+	a.deploymentModule.CreateDeployment(w, r, project, headers)
 }
 
-func (a apiGenAdapter) GetDeployment(w http.ResponseWriter, r *http.Request, project, deploymentID string) {
-	a.server.deploymentModule.GetDeployment(w, r, project, deploymentID)
+func (a apiGenDispatcher) GetDeployment(w http.ResponseWriter, r *http.Request, project, deploymentID string) {
+	a.deploymentModule.GetDeployment(w, r, project, deploymentID)
 }
 
-func (a apiGenAdapter) ListDeployments(w http.ResponseWriter, r *http.Request, project string, params apigenapi.GenListDeploymentsParams) {
-	a.server.deploymentModule.ListDeployments(w, r, project, params)
+func (a apiGenDispatcher) ListDeployments(w http.ResponseWriter, r *http.Request, project string, params apigenapi.GenListDeploymentsParams) {
+	a.deploymentModule.ListDeployments(w, r, project, params)
 }
 
-func (a apiGenAdapter) CancelDeployment(w http.ResponseWriter, r *http.Request, project, deploymentID string, headers apigenapi.GenCancelDeploymentHeaders) {
-	a.server.deploymentModule.CancelDeployment(w, r, project, deploymentID, headers)
+func (a apiGenDispatcher) CancelDeployment(w http.ResponseWriter, r *http.Request, project, deploymentID string, headers apigenapi.GenCancelDeploymentHeaders) {
+	a.deploymentModule.CancelDeployment(w, r, project, deploymentID, headers)
 }
 
-func (a apiGenAdapter) RollbackDeployment(w http.ResponseWriter, r *http.Request, project, deploymentID string, headers apigenapi.GenRollbackDeploymentHeaders) {
-	a.server.deploymentModule.RollbackDeployment(w, r, project, deploymentID, headers)
+func (a apiGenDispatcher) RollbackDeployment(w http.ResponseWriter, r *http.Request, project, deploymentID string, headers apigenapi.GenRollbackDeploymentHeaders) {
+	a.deploymentModule.RollbackDeployment(w, r, project, deploymentID, headers)
 }
 
-func (a apiGenAdapter) ListDeploymentEvents(w http.ResponseWriter, r *http.Request, project, deploymentID string, params apigenapi.GenListDeploymentEventsParams, headers apigenapi.GenListDeploymentEventsHeaders) {
-	a.server.deploymentModule.ListDeploymentEvents(w, r, project, deploymentID, params, headers)
+func (a apiGenDispatcher) ListDeploymentEvents(w http.ResponseWriter, r *http.Request, project, deploymentID string, params apigenapi.GenListDeploymentEventsParams, headers apigenapi.GenListDeploymentEventsHeaders) {
+	a.deploymentModule.ListDeploymentEvents(w, r, project, deploymentID, params, headers)
 }

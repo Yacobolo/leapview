@@ -152,6 +152,49 @@ func TestApplicationAPIGenHandlerIsDirectDelegation(t *testing.T) {
 	}
 }
 
+func TestApplicationHasNoServerShapedDependencyContainer(t *testing.T) {
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/app" {
+			continue
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), file.path, file.body, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", file.path, err)
+		}
+		for _, declaration := range parsed.Decls {
+			generic, ok := declaration.(*ast.GenDecl)
+			if !ok || generic.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range generic.Specs {
+				typeSpec, ok := spec.(*ast.TypeSpec)
+				if !ok {
+					continue
+				}
+				switch typeSpec.Name.Name {
+				case "runtimeRouter", "assemblyConfig", "capabilityConstruction":
+					t.Errorf("%s retains transitional dependency container %s", file.path, typeSpec.Name.Name)
+				}
+				structure, ok := typeSpec.Type.(*ast.StructType)
+				if !ok {
+					continue
+				}
+				fields := 0
+				for _, field := range structure.Fields.List {
+					if len(field.Names) == 0 {
+						fields++
+					} else {
+						fields += len(field.Names)
+					}
+				}
+				if fields > 12 {
+					t.Errorf("%s struct %s has %d fields; split composition state into narrow route, lifecycle, health, and cleanup surfaces", file.path, typeSpec.Name.Name, fields)
+				}
+			}
+		}
+	}
+}
+
 func TestRefreshPersistenceIsConstructedOnlyByItsModule(t *testing.T) {
 	constructors := 0
 	for _, file := range productionGoFiles(t) {

@@ -10,7 +10,7 @@ import (
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 
-func (s *runtimeRouter) configurePageStream() {
+func (s *applicationAssembly) configurePageStream() {
 	s.pageStreams = uitransport.NewPageStream(uitransport.PageStreamConfig{
 		Trace: s.pageStreamTrace,
 		Protect: func(privilege string, next http.Handler) http.Handler {
@@ -53,7 +53,7 @@ func (s *runtimeRouter) configurePageStream() {
 	})
 }
 
-func (s *runtimeRouter) workspaceAssetUpdates(w http.ResponseWriter, r *http.Request) {
+func (s *applicationAssembly) workspaceAssetUpdates(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(r.URL.Query().Get("asset")) != "" {
 		s.workspaceModule.HTTP().AssetUpdatesStream(w, r)
 		return

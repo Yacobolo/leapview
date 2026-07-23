@@ -43,17 +43,27 @@ import (
 type QueryMetrics = dashboardmodule.Metrics
 type workspaceMetrics = dashboardmodule.WorkspaceMetrics
 
-type runtimeRouter struct {
-	accessModule          *accessmodule.Module
-	workspaceModule       *workspacemodule.Module
-	managedDataModule     *manageddatamodule.Module
-	deploymentModule      *deploymentmodule.Module
-	dashboardModule       *dashboardmodule.Module
-	dashboardAssets       dashboardmodule.Assets
-	agentModule           *agentmodule.Module
-	releaseModule         *releasemodule.Module
-	refreshModule         *refreshmodule.Module
-	adminModule           *adminmodule.Module
+type applicationAssembly struct {
+	capabilityRoutes
+	runtimeServices
+	platformServices
+	httpPolicy
+}
+
+type capabilityRoutes struct {
+	accessModule      *accessmodule.Module
+	workspaceModule   *workspacemodule.Module
+	managedDataModule *manageddatamodule.Module
+	deploymentModule  *deploymentmodule.Module
+	dashboardModule   *dashboardmodule.Module
+	dashboardAssets   dashboardmodule.Assets
+	agentModule       *agentmodule.Module
+	releaseModule     *releasemodule.Module
+	refreshModule     *refreshmodule.Module
+	adminModule       *adminmodule.Module
+}
+
+type runtimeServices struct {
 	analyticsModule       *analyticsmodule.Module
 	metrics               QueryMetrics
 	workloads             workloadControl
@@ -65,54 +75,67 @@ type runtimeRouter struct {
 	storageRetention      *servingstatemodule.Retention
 	queryAuditProvider    adminmodule.QueryAuditReaderProvider
 	queryAuditEvents      http.HandlerFunc
-	asyncJobs             jobs.Repository
-	jobModule             *jobsmodule.Module
-	auth                  *accessmodule.Auth
-	defaultWorkspaceID    string
-	defaultEnvironment    string
-	scimBearerToken       string
-	metricsBearerToken    string
-	allowedHosts          []string
-	rateLimits            apihttpmiddleware.RateLimitConfig
-	securityHeaders       apihttpmiddleware.SecurityHeadersConfig
-	requestBodyLimit      apihttpmiddleware.RequestBodyLimitConfig
-	requestLogging        bool
-	telemetry             *observability.Telemetry
-	health                *observability.Health
-	logger                *slog.Logger
-	workers               *platformlifecycle.Group
-	managedDataTus        http.Handler
-	apiProtocol           *apiprotocol.Protocol
-	apiGenHandler         *apiapigenruntime.Handler
-	construction          *capabilityConstruction
 }
 
-// capabilityConstruction exists only while app.Build assembles capability
-// modules. It is deliberately reachable through one pointer so the completed
-// request runtime can discard every repository and adapter-building input in a
-// single operation.
-type capabilityConstruction struct {
+type platformServices struct {
+	asyncJobs     jobs.Repository
+	jobModule     *jobsmodule.Module
+	auth          *accessmodule.Auth
+	telemetry     *observability.Telemetry
+	health        *observability.Health
+	logger        *slog.Logger
+	workers       *platformlifecycle.Group
+	apiProtocol   *apiprotocol.Protocol
+	apiGenHandler *apiapigenruntime.Handler
+}
+
+type httpPolicy struct {
+	defaultWorkspaceID string
+	defaultEnvironment string
+	scimBearerToken    string
+	metricsBearerToken string
+	allowedHosts       []string
+	rateLimits         apihttpmiddleware.RateLimitConfig
+	securityHeaders    apihttpmiddleware.SecurityHeadersConfig
+	requestBodyLimit   apihttpmiddleware.RequestBodyLimitConfig
+	requestLogging     bool
+	managedDataTus     http.Handler
+}
+
+type moduleAssemblyInputs struct {
+	persistenceInputs
+	workflowInputs
+	storageInputs
+}
+
+type persistenceInputs struct {
 	agentSettings         agentmodule.Settings
 	adminDatabase         *sql.DB
 	servingStateRepo      servingStateRepository
+	workspaceReadModel    workspacemodule.ReadModel
+	workspaceDirectory    workspacemodule.Directory
+	workspaceAssetCatalog workspacemodule.AssetCatalogReader
+	accessRepo            accessmodule.Repository
+}
+
+type workflowInputs struct {
 	managedDataValidation refreshmodule.CandidateValidationHook
 	managedDataResolver   runtimehostmodule.ManagedDataResolver
 	refreshPipelineClock  refreshmodule.Clock
-	workspaceRepo         workspacemodule.Repository
-	workspacePersistence  *workspacemodule.Persistence
-	workspaceAssetCatalog workspacemodule.AssetCatalogReader
-	accessRepo            accessmodule.Repository
 	agent                 *agentmodule.Service
 	agentConfig           agentmodule.ModelConfig
 	reloader              runtimeReloader
-	duckLakeCatalogPath   string
-	duckLakeDataPath      string
-	jobLeaseTimeout       time.Duration
 	deploymentConfig      deploymentmodule.Config
-	publicURL             string
 }
 
-func newRuntimeRouter(metrics QueryMetrics) *runtimeRouter {
+type storageInputs struct {
+	duckLakeCatalogPath string
+	duckLakeDataPath    string
+	jobLeaseTimeout     time.Duration
+	publicURL           string
+}
+
+func newHTTPAssembly(metrics QueryMetrics) *applicationAssembly {
 	logger := slog.Default()
 	var trace *pagestream.TraceStore
 	if !staticasset.Production() {
@@ -122,64 +145,81 @@ func newRuntimeRouter(metrics QueryMetrics) *runtimeRouter {
 			IncludePayloads:   true,
 		})
 	}
-	server := &runtimeRouter{
-		metrics:          metrics,
-		broker:           pagestream.NewBroker(pagestream.WithTraceStore(trace)),
-		pageStreamTrace:  trace,
-		requestBodyLimit: apihttpmiddleware.DefaultRequestBodyLimitConfig(),
-		telemetry:        observability.New(),
-		logger:           logger,
-		construction:     &capabilityConstruction{},
+	server := &applicationAssembly{
+		runtimeServices: runtimeServices{
+			metrics: metrics, broker: pagestream.NewBroker(pagestream.WithTraceStore(trace)),
+			pageStreamTrace: trace,
+		},
+		platformServices: platformServices{telemetry: observability.New(), logger: logger},
+		httpPolicy:       httpPolicy{requestBodyLimit: apihttpmiddleware.DefaultRequestBodyLimitConfig()},
 	}
 	return server
 }
 
-type assemblyConfig struct {
-	// Database is construction-only. assembleRuntime creates concrete adapters
-	// and never retains the connection on the request router.
-	Database              *sql.DB
-	PlatformHealth        platformHealth
+type assemblyInputs struct {
+	dataAssemblyInputs
+	capabilityAssemblyInputs
+	workflowAssemblyInputs
+	runtimeAssemblyInputs
+	httpAssemblyInputs
+}
+
+type dataAssemblyInputs struct {
+	Database           *sql.DB
+	PlatformHealth     platformHealth
+	AdminDatabase      *sql.DB
+	ServingStateRepo   servingStateRepository
+	StorageRetention   *servingstatemodule.Retention
+	WorkspaceReadModel workspacemodule.ReadModel
+	WorkspaceDirectory workspacemodule.Directory
+	AssetCatalog       workspacemodule.AssetCatalogReader
+	AccessRepo         accessmodule.Repository
+}
+
+type capabilityAssemblyInputs struct {
+	ReleaseModule     *releasemodule.Module
+	JobModule         *jobsmodule.Module
+	AccessModule      *accessmodule.Module
+	Agent             *agentmodule.Service
+	ManagedDataModule *manageddatamodule.Module
+	AnalyticsModule   *analyticsmodule.Module
+	DashboardAssets   dashboardmodule.Assets
+}
+
+type workflowAssemblyInputs struct {
 	AgentSettings         agentmodule.Settings
-	AdminDatabase         *sql.DB
-	ServingStateRepo      servingStateRepository
-	StorageRetention      *servingstatemodule.Retention
 	ManagedDataValidation refreshmodule.CandidateValidationHook
 	ManagedDataResolver   runtimehostmodule.ManagedDataResolver
-	WorkspaceRepo         workspacemodule.Repository
-	WorkspacePersistence  *workspacemodule.Persistence
-	AssetCatalog          workspacemodule.AssetCatalogReader
-	ReleaseModule         *releasemodule.Module
-	JobModule             *jobsmodule.Module
-	AccessRepo            accessmodule.Repository
-	AccessModule          *accessmodule.Module
-	Agent                 *agentmodule.Service
 	AgentConfig           agentmodule.ModelConfig
 	Auth                  *accessmodule.Auth
 	Reloader              runtimeReloader
-	DuckDBDir             string
-	DuckLakeCatalogPath   string
-	DuckLakeDataPath      string
-	DefaultWorkspaceID    string
-	DefaultEnvironment    string
-	SCIMBearerToken       string
-	MetricsBearerToken    string
-	AllowedHosts          []string
-	RateLimits            apihttpmiddleware.RateLimitConfig
-	SecurityHeaders       apihttpmiddleware.SecurityHeadersConfig
-	RequestBodyLimit      apihttpmiddleware.RequestBodyLimitConfig
-	RequestLogging        bool
-	Logger                *slog.Logger
 	Workload              workloadControl
-	JobLeaseTimeout       time.Duration
-	ManagedDataModule     *manageddatamodule.Module
 	DeploymentConfig      deploymentmodule.Config
-	ManagedDataTus        http.Handler
-	MCPOAuth              MCPOAuthConfig
-	PublicURL             string
 	RefreshPipelineClock  refreshmodule.Clock
-	AnalyticsModule       *analyticsmodule.Module
-	DashboardAssets       dashboardmodule.Assets
 	QueryAudit            *analyticsmodule.QueryAuditSurface
+}
+
+type runtimeAssemblyInputs struct {
+	DuckDBDir           string
+	DuckLakeCatalogPath string
+	DuckLakeDataPath    string
+	DefaultWorkspaceID  string
+	DefaultEnvironment  string
+	SCIMBearerToken     string
+	MetricsBearerToken  string
+	AllowedHosts        []string
+}
+
+type httpAssemblyInputs struct {
+	RateLimits       apihttpmiddleware.RateLimitConfig
+	SecurityHeaders  apihttpmiddleware.SecurityHeadersConfig
+	RequestBodyLimit apihttpmiddleware.RequestBodyLimitConfig
+	RequestLogging   bool
+	Logger           *slog.Logger
+	JobLeaseTimeout  time.Duration
+	ManagedDataTus   http.Handler
+	MCPOAuth         MCPOAuthConfig
+	PublicURL        string
 }
 
 type MCPOAuthConfig struct {
@@ -198,37 +238,27 @@ type workloadControl interface {
 	Close()
 }
 
-func (s *runtimeRouter) AnalyticalFatal() <-chan struct{} {
+func (s *applicationAssembly) AnalyticalFatal() <-chan struct{} {
 	if s == nil || s.analyticsModule == nil {
 		return nil
 	}
 	return s.analyticsModule.Fatal()
 }
 
-func (s *runtimeRouter) AnalyticalHealth() error {
+func (s *applicationAssembly) AnalyticalHealth() error {
 	if s == nil || s.analyticsModule == nil {
 		return nil
 	}
 	return s.analyticsModule.Healthy()
 }
 
-func (s *runtimeRouter) StopWorkloadAdmission() {
+func (s *applicationAssembly) StopWorkloadAdmission() {
 	if s != nil && s.workloads != nil {
 		s.workloads.Close()
 	}
 }
 
-// releaseConstructionInputs severs references that are needed only while
-// capability modules are being built. Route handlers and lifecycle management
-// retain module contracts, never repositories or adapter-construction inputs.
-func (s *runtimeRouter) releaseConstructionInputs() {
-	if s == nil {
-		return
-	}
-	s.construction = nil
-}
-
-func assembleRuntimeChecked(ctx context.Context, metrics QueryMetrics, options assemblyConfig) (*runtimeRouter, error) {
+func buildApplicationAssembly(ctx context.Context, metrics QueryMetrics, options assemblyInputs) (*applicationAssembly, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -251,7 +281,7 @@ func assembleRuntimeChecked(ctx context.Context, metrics QueryMetrics, options a
 	} else {
 		controller.SetObserver(workloadTelemetry)
 	}
-	fail := func(err error) (*runtimeRouter, error) {
+	fail := func(err error) (*applicationAssembly, error) {
 		if ownsController && controller != nil {
 			controller.Close()
 		}
@@ -261,7 +291,7 @@ func assembleRuntimeChecked(ctx context.Context, metrics QueryMetrics, options a
 		metrics = dashboardmodule.WithAdmission(metrics, controller, options.DefaultWorkspaceID)
 	}
 	dataAccessRepo := options.AccessRepo
-	workspaceRepo := options.WorkspaceRepo
+	workspaceReadModel := options.WorkspaceReadModel
 	var dataAuthorization accessmodule.DataAuthorizationService = dataAccessRepo
 	if options.AccessModule != nil {
 		dataAuthorization = options.AccessModule.DataAuthorizationService()
@@ -301,7 +331,8 @@ func assembleRuntimeChecked(ctx context.Context, metrics QueryMetrics, options a
 		})
 	}
 	servingStateRepo := options.ServingStateRepo
-	server := newRuntimeRouter(metrics)
+	server := newHTTPAssembly(metrics)
+	inputs := moduleAssemblyInputs{}
 	server.queryAuditEvents = queryAuditEvents
 	if server.queryAuditEvents == nil {
 		server.queryAuditEvents = analyticsmodule.NewQueryAuditEvents(nil, server.workspaceID)
@@ -310,16 +341,16 @@ func assembleRuntimeChecked(ctx context.Context, metrics QueryMetrics, options a
 		server.queryAuditEvents = options.AnalyticsModule.QueryAuditEvents(server.workspaceID)
 	}
 	server.telemetry = telemetry
-	server.construction.refreshPipelineClock = options.RefreshPipelineClock
+	inputs.refreshPipelineClock = options.RefreshPipelineClock
 	server.queryAuditProvider = queryAuditProvider
-	if server.construction.refreshPipelineClock == nil {
-		server.construction.refreshPipelineClock = refreshmodule.NewRealClock()
+	if inputs.refreshPipelineClock == nil {
+		inputs.refreshPipelineClock = refreshmodule.NewRealClock()
 	}
 	server.workloads = controller
 	server.persistenceConfigured = options.Database != nil
 	server.platformHealth = options.PlatformHealth
-	server.construction.agentSettings = options.AgentSettings
-	server.construction.adminDatabase = options.AdminDatabase
+	inputs.agentSettings = options.AgentSettings
+	inputs.adminDatabase = options.AdminDatabase
 	if options.Database != nil {
 		server.jobModule = options.JobModule
 		if server.jobModule == nil {
@@ -342,7 +373,7 @@ func assembleRuntimeChecked(ctx context.Context, metrics QueryMetrics, options a
 			return fail(fmt.Errorf("build API protocol: %w", err))
 		}
 	}
-	server.construction.servingStateRepo = servingStateRepo
+	inputs.servingStateRepo = servingStateRepo
 	retentionStates, _ := servingStateRepo.(servingstatemodule.RetentionRepository)
 	server.storageRetention = options.StorageRetention
 	if server.storageRetention == nil {
@@ -358,25 +389,25 @@ func assembleRuntimeChecked(ctx context.Context, metrics QueryMetrics, options a
 			},
 		})
 	}
-	server.construction.managedDataValidation = options.ManagedDataValidation
-	server.construction.managedDataResolver = options.ManagedDataResolver
+	inputs.managedDataValidation = options.ManagedDataValidation
+	inputs.managedDataResolver = options.ManagedDataResolver
 	server.analyticsModule = options.AnalyticsModule
 	server.dashboardAssets = options.DashboardAssets
-	server.construction.workspaceRepo = workspaceRepo
-	server.construction.workspacePersistence = options.WorkspacePersistence
-	server.construction.workspaceAssetCatalog = options.AssetCatalog
+	inputs.workspaceReadModel = workspaceReadModel
+	inputs.workspaceDirectory = options.WorkspaceDirectory
+	inputs.workspaceAssetCatalog = options.AssetCatalog
 	server.releaseModule = options.ReleaseModule
-	server.construction.accessRepo = options.AccessRepo
-	server.construction.agent = options.Agent
-	server.construction.agentConfig = options.AgentConfig
+	inputs.accessRepo = options.AccessRepo
+	inputs.agent = options.Agent
+	inputs.agentConfig = options.AgentConfig
 	server.auth = options.Auth
 	server.accessModule = options.AccessModule
-	server.construction.reloader = options.Reloader
-	server.construction.duckLakeCatalogPath = options.DuckLakeCatalogPath
-	server.construction.duckLakeDataPath = options.DuckLakeDataPath
+	inputs.reloader = options.Reloader
+	inputs.duckLakeCatalogPath = options.DuckLakeCatalogPath
+	inputs.duckLakeDataPath = options.DuckLakeDataPath
 	server.defaultWorkspaceID = options.DefaultWorkspaceID
 	server.defaultEnvironment = string(servingstatemodule.NormalizeEnvironment(servingstatemodule.Environment(options.DefaultEnvironment)))
-	server.construction.publicURL = strings.TrimSuffix(strings.TrimSpace(options.PublicURL), "/")
+	inputs.publicURL = strings.TrimSuffix(strings.TrimSpace(options.PublicURL), "/")
 	server.scimBearerToken = options.SCIMBearerToken
 	server.metricsBearerToken = options.MetricsBearerToken
 	server.allowedHosts = append([]string(nil), options.AllowedHosts...)
@@ -388,11 +419,11 @@ func assembleRuntimeChecked(ctx context.Context, metrics QueryMetrics, options a
 	}
 	server.requestLogging = options.RequestLogging
 	server.managedDataModule = options.ManagedDataModule
-	server.construction.deploymentConfig = options.DeploymentConfig
+	inputs.deploymentConfig = options.DeploymentConfig
 	server.managedDataTus = options.ManagedDataTus
-	server.construction.jobLeaseTimeout = options.JobLeaseTimeout
-	if server.construction.jobLeaseTimeout <= 0 {
-		server.construction.jobLeaseTimeout = 2 * time.Minute
+	inputs.jobLeaseTimeout = options.JobLeaseTimeout
+	if inputs.jobLeaseTimeout <= 0 {
+		inputs.jobLeaseTimeout = 2 * time.Minute
 	}
 	if options.Logger != nil {
 		server.logger = options.Logger
@@ -400,10 +431,10 @@ func assembleRuntimeChecked(ctx context.Context, metrics QueryMetrics, options a
 			server.pageStreamTrace.SetLogger(options.Logger)
 		}
 	}
-	if err := server.configureRefreshModule(ctx, options.Database); err != nil {
+	if err := server.configureRefreshModule(ctx, options.Database, inputs); err != nil {
 		return fail(err)
 	}
-	if err := server.configureModules(ctx, options.Database); err != nil {
+	if err := server.configureModules(ctx, options.Database, inputs); err != nil {
 		return fail(err)
 	}
 	if server.asyncJobs != nil {
@@ -427,19 +458,23 @@ func assembleRuntimeChecked(ctx context.Context, metrics QueryMetrics, options a
 	return server, nil
 }
 
-func (s *runtimeRouter) configureModules(ctx context.Context, database *sql.DB) error {
+func (s *applicationAssembly) configureModules(ctx context.Context, database *sql.DB, inputs moduleAssemblyInputs) error {
 	if s == nil {
 		return errors.New("runtime router is required")
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	var apiDispatcher *apiGenDispatcher
 	if s.accessModule == nil {
-		accessSurface := accessmodule.SurfaceConfig{
-			Repository: s.accessRepository, Auth: s.auth,
-			DefaultWorkspaceID: s.defaultWorkspaceID,
+		var err error
+		s.accessModule, err = accessmodule.Build(ctx, accessmodule.Config{
+			Database: database, ExistingAuth: s.auth, WorkspaceID: s.defaultWorkspaceID,
 			WorkspaceIDs: func(ctx context.Context) ([]string, error) {
-				repository, err := s.workspaceRepository()
+				if inputs.workspaceDirectory != nil {
+					return inputs.workspaceDirectory.WorkspaceIDs(ctx)
+				}
+				repository, err := s.workspaceReadModel(inputs)
 				if err != nil || repository == nil {
 					return nil, err
 				}
@@ -453,20 +488,7 @@ func (s *runtimeRouter) configureModules(ctx context.Context, database *sql.DB) 
 				}
 				return ids, nil
 			},
-			CurrentPrincipal: func(r *http.Request) (accessmodule.Principal, bool) {
-				principal, ok := s.accessModule.CurrentPrincipal(r)
-				return principal, ok
-			},
-			CurrentCredential: func(r *http.Request) (accessmodule.APICredential, bool) {
-				if s.auth == nil {
-					return accessmodule.APICredential{}, false
-				}
-				return s.auth.APICredential(r)
-			},
-			WorkspaceID: s.workspaceID,
-		}
-		var err error
-		s.accessModule, err = accessmodule.Build(ctx, accessmodule.Config{Surface: &accessSurface})
+		})
 		if err != nil {
 			return fmt.Errorf("build access module: %w", err)
 		}
@@ -476,10 +498,10 @@ func (s *runtimeRouter) configureModules(ctx context.Context, database *sql.DB) 
 		var err error
 		s.workspaceModule, err = workspacemodule.Build(ctx, workspacemodule.Config{
 			Database:            database,
-			Repository:          s.construction.workspaceRepo,
-			Persistence:         s.construction.workspacePersistence,
+			Directory:           inputs.workspaceDirectory,
+			ReadModel:           inputs.workspaceReadModel,
 			AccessService:       s.accessModule.WorkspaceAccessService(),
-			AssetCatalog:        s.construction.workspaceAssetCatalog,
+			AssetCatalog:        inputs.workspaceAssetCatalog,
 			WorkspaceID:         s.workspaceID,
 			Environment:         func(r *http.Request) string { return string(s.requestServingEnvironment(r)) },
 			MetricsForWorkspace: s.metricsForWorkspace,
@@ -512,10 +534,10 @@ func (s *runtimeRouter) configureModules(ctx context.Context, database *sql.DB) 
 		if err != nil {
 			return fmt.Errorf("build workspace module: %w", err)
 		}
-		s.construction.workspaceAssetCatalog = nil
+		inputs.workspaceAssetCatalog = nil
 	}
 	if s.deploymentModule == nil {
-		config := s.construction.deploymentConfig
+		config := inputs.deploymentConfig
 		config.Logger = s.logger
 		config.InstanceEnvironment = s.defaultEnvironment
 		config.CurrentPrincipal = func(r *http.Request) (deploymentmodule.Principal, bool) {
@@ -534,7 +556,7 @@ func (s *runtimeRouter) configureModules(ctx context.Context, database *sql.DB) 
 		}
 		config.API = deploymentmodule.APIConfig{Releases: s.releaseModule.DeploymentLinkage(), Jobs: s.asyncJobs}
 		config.PublicationAuthorization = deploymentmodule.PublicationAuthorizationConfig{
-			States: s.construction.servingStateRepo, AuthorizeObject: s.accessModule.AuthorizeObject,
+			States: inputs.servingStateRepo, AuthorizeObject: s.accessModule.AuthorizeObject,
 			Bypass: func(actor string) bool {
 				return (s.auth == nil || s.auth.DevBypass()) && actor == accessmodule.LocalDeveloperPrincipal().ID
 			},
@@ -600,7 +622,7 @@ func (s *runtimeRouter) configureModules(ctx context.Context, database *sql.DB) 
 			},
 			Logger:    s.logger,
 			Trace:     s.pageStreamTrace,
-			PublicURL: s.construction.publicURL,
+			PublicURL: inputs.publicURL,
 			CurrentActor: func(r *http.Request) string {
 				principal, ok := accessmodule.PrincipalFromContext(r.Context())
 				if !ok {
@@ -623,8 +645,8 @@ func (s *runtimeRouter) configureModules(ctx context.Context, database *sql.DB) 
 	if s.agentModule == nil {
 		var err error
 		s.agentModule, err = agentmodule.Build(ctx, agentmodule.Config{
-			Database: database, Metrics: s.metrics, Model: s.construction.agentConfig,
-			Service: s.construction.agent, Jobs: s.asyncJobs, DefaultWorkspaceID: s.defaultWorkspaceID,
+			Database: database, Metrics: s.metrics, Model: inputs.agentConfig,
+			Service: inputs.agent, Jobs: s.asyncJobs, DefaultWorkspaceID: s.defaultWorkspaceID,
 			RunWorkloadClass: string(workloadmodule.BackgroundClass), GlobalWorkspaceID: workloadmodule.GlobalWorkspace,
 			Search: s.workspaceModule,
 			Environment: func(r *http.Request) string {
@@ -667,13 +689,16 @@ func (s *runtimeRouter) configureModules(ctx context.Context, database *sql.DB) 
 				}
 				request = request.WithContext(ctx)
 				recorder := httptest.NewRecorder()
-				if ok := apigenapi.DispatchAPIGenOperation(operationID, apiGenAdapter{server: s}, apiprotocol.TransportErrorResponder{Logger: s.logger}, recorder, request); !ok {
+				if apiDispatcher == nil {
+					return nil, false
+				}
+				if ok := apigenapi.DispatchAPIGenOperation(operationID, apiDispatcher, apiprotocol.TransportErrorResponder{Logger: s.logger}, recorder, request); !ok {
 					return nil, false
 				}
 				return recorder.Result(), true
 			},
 			HTTP: agentmodule.HTTPConfig{
-				Settings: s.construction.agentSettings, Broker: s.broker,
+				Settings: inputs.agentSettings, Broker: s.broker,
 				CSRFToken:        s.accessModule.CSRFToken,
 				CurrentRoleLabel: s.accessModule.CurrentRoleLabel,
 				CurrentPrincipal: func(r *http.Request) (agentmodule.Principal, bool) {
@@ -696,7 +721,7 @@ func (s *runtimeRouter) configureModules(ctx context.Context, database *sql.DB) 
 		}
 	}
 	if s.refreshModule == nil {
-		if err := s.configureRefreshModule(ctx, nil); err != nil {
+		if err := s.configureRefreshModule(ctx, nil, inputs); err != nil {
 			return err
 		}
 	}
@@ -735,8 +760,8 @@ func (s *runtimeRouter) configureModules(ctx context.Context, database *sql.DB) 
 			AuthConfigured:        s.auth != nil,
 			AccessConfigured:      accessReader != nil,
 			Storage: adminmodule.StorageConfig{
-				CatalogPath: s.construction.duckLakeCatalogPath, DataPath: s.construction.duckLakeDataPath,
-				Environment: s.defaultEnvironment, ControlPlane: s.construction.adminDatabase,
+				CatalogPath: inputs.duckLakeCatalogPath, DataPath: inputs.duckLakeDataPath,
+				Environment: s.defaultEnvironment, ControlPlane: inputs.adminDatabase,
 				Analytics: s.analyticsModule.AdminResources(), Admitter: s.workloadController(),
 			},
 			CurrentRoleLabel: func(r *http.Request) string {
@@ -756,6 +781,7 @@ func (s *runtimeRouter) configureModules(ctx context.Context, database *sql.DB) 
 	if s.managedDataModule == nil {
 		var err error
 		s.managedDataModule, err = manageddatamodule.Build(ctx, manageddatamodule.Config{
+			Disabled:    true,
 			Environment: s.defaultEnvironment, Jobs: s.asyncJobs,
 			CurrentPrincipal: func(r *http.Request) (manageddatamodule.Principal, bool) {
 				if s.auth == nil {
@@ -776,6 +802,14 @@ func (s *runtimeRouter) configureModules(ctx context.Context, database *sql.DB) 
 	if err := s.accessModule.RegisterSecurables(ctx, objects); err != nil {
 		return fmt.Errorf("register workspace securables: %w", err)
 	}
+	apiDispatcher = &apiGenDispatcher{
+		accessModule: s.accessModule, agentModule: s.agentModule,
+		dashboardModule: s.dashboardModule, deploymentModule: s.deploymentModule,
+		managedDataModule: s.managedDataModule, refreshModule: s.refreshModule,
+		releaseModule: s.releaseModule, workspaceModule: s.workspaceModule,
+		defaultEnvironment: s.defaultEnvironment, managedDataTus: s.managedDataTus,
+		queryAuditEvents: s.queryAuditEvents,
+	}
 	apiGenAuthorizer, err := s.accessModule.APIGenAuthorizer(accessmodule.APIGenObjectResolvers{
 		Dashboard:      dashboardmodule.DashboardObjectRefs,
 		SemanticModel:  dashboardmodule.SemanticDatasetObjectRefs,
@@ -786,7 +820,7 @@ func (s *runtimeRouter) configureModules(ctx context.Context, database *sql.DB) 
 	}
 	s.apiGenHandler, err = apiapigenruntime.Build(
 		apiGenAuthorizer,
-		apiGenAdapter{server: s},
+		apiDispatcher,
 		apiprotocol.TransportErrorResponder{Logger: s.logger},
 	)
 	if err != nil {
@@ -829,29 +863,25 @@ func (s *runtimeRouter) configureModules(ctx context.Context, database *sql.DB) 
 	return nil
 }
 
-func (s *runtimeRouter) StartBackgroundJobs(ctx context.Context) error {
+func (s *applicationAssembly) StartBackgroundJobs(ctx context.Context) error {
 	if s == nil || s.workers == nil {
 		return nil
 	}
 	return s.workers.Start(ctx)
 }
 
-func (s *runtimeRouter) StopBackgroundJobs(ctx context.Context) error {
+func (s *applicationAssembly) StopBackgroundJobs(ctx context.Context) error {
 	if s == nil || s.workers == nil {
 		return nil
 	}
 	return s.workers.Stop(ctx)
 }
 
-func (s *runtimeRouter) workspaceRepository() (workspacemodule.Repository, error) {
-	return s.construction.workspaceRepo, nil
+func (s *applicationAssembly) workspaceReadModel(inputs moduleAssemblyInputs) (workspacemodule.ReadModel, error) {
+	return inputs.workspaceReadModel, nil
 }
 
-func (s *runtimeRouter) accessRepository() (accessmodule.Repository, error) {
-	return s.construction.accessRepo, nil
-}
-
-func (s *runtimeRouter) authorizeListObject(ctx context.Context, principalID string, object accessmodule.ObjectRef) (bool, error) {
+func (s *applicationAssembly) authorizeListObject(ctx context.Context, principalID string, object accessmodule.ObjectRef) (bool, error) {
 	if s.auth == nil {
 		return true, nil
 	}
@@ -861,7 +891,7 @@ func (s *runtimeRouter) authorizeListObject(ctx context.Context, principalID str
 	return s.accessModule.AuthorizeObject(ctx, principalID, accessmodule.PrivilegeViewItem, object)
 }
 
-func (s *runtimeRouter) metricsForWorkspace(workspaceID string) (QueryMetrics, bool) {
+func (s *applicationAssembly) metricsForWorkspace(workspaceID string) (QueryMetrics, bool) {
 	if workspaceID == "" {
 		return nil, false
 	}

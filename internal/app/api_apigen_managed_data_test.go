@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -37,15 +36,12 @@ func TestReleaseArtifactGeneratedSizeIsInt64(t *testing.T) {
 }
 
 func TestManagedDataAPIGenAdapterImplementsEveryGeneratedOperation(t *testing.T) {
-	var _ apigenapi.GenOperationDispatcher = apiGenAdapter{}
+	var _ apigenapi.GenOperationDispatcher = apiGenDispatcher{}
 
-	server := newRuntimeRouter(nil)
-	if err := server.configureModules(context.Background(), nil); err != nil {
-		t.Fatal(err)
-	}
+	server := newApplicationAssembly(nil)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
-	apiGenAdapter{server: server}.GetManagedDataRevision(recorder, request, "project-a", "orders", "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	apiGenDispatcherForTest(server).GetManagedDataRevision(recorder, request, "project-a", "orders", "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	if recorder.Code != http.StatusServiceUnavailable {
 		t.Fatalf("unconfigured managed-data adapter status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}

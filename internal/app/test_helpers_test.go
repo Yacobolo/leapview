@@ -2,17 +2,145 @@ package app
 
 import (
 	"context"
+	"database/sql"
+	"log/slog"
+	"net/http"
+	"time"
 
+	accessmodule "github.com/Yacobolo/leapview/internal/access/module"
+	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
+	analyticsmodule "github.com/Yacobolo/leapview/internal/analytics/module"
+	apihttpmiddleware "github.com/Yacobolo/leapview/internal/api/httpmiddleware"
 	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
+	deploymentmodule "github.com/Yacobolo/leapview/internal/deployment/module"
+	manageddatamodule "github.com/Yacobolo/leapview/internal/manageddata/module"
+	jobsmodule "github.com/Yacobolo/leapview/internal/platform/jobs/module"
+	refreshmodule "github.com/Yacobolo/leapview/internal/refresh/module"
+	releasemodule "github.com/Yacobolo/leapview/internal/release/module"
 	"github.com/Yacobolo/leapview/internal/runtimehost"
+	runtimehostmodule "github.com/Yacobolo/leapview/internal/runtimehost/module"
+	servingstatemodule "github.com/Yacobolo/leapview/internal/servingstate/module"
+	workspacemodule "github.com/Yacobolo/leapview/internal/workspace/module"
 )
 
-func assembleRuntime(metrics QueryMetrics, options assemblyConfig) *runtimeRouter {
+// assemblyConfig is deliberately test-only. Focused capability tests use it
+// while they are moved beside their owners; production has no general
+// dependency bag.
+type assemblyConfig struct {
+	Database              *sql.DB
+	PlatformHealth        platformHealth
+	AgentSettings         agentmodule.Settings
+	AdminDatabase         *sql.DB
+	ServingStateRepo      servingStateRepository
+	StorageRetention      *servingstatemodule.Retention
+	ManagedDataValidation refreshmodule.CandidateValidationHook
+	ManagedDataResolver   runtimehostmodule.ManagedDataResolver
+	WorkspaceRepo         workspacemodule.Repository
+	WorkspaceDirectory    workspacemodule.Directory
+	AssetCatalog          workspacemodule.AssetCatalogReader
+	ReleaseModule         *releasemodule.Module
+	JobModule             *jobsmodule.Module
+	AccessRepo            accessmodule.Repository
+	AccessModule          *accessmodule.Module
+	Agent                 *agentmodule.Service
+	AgentConfig           agentmodule.ModelConfig
+	Auth                  *accessmodule.Auth
+	Reloader              runtimeReloader
+	DuckDBDir             string
+	DuckLakeCatalogPath   string
+	DuckLakeDataPath      string
+	DefaultWorkspaceID    string
+	DefaultEnvironment    string
+	SCIMBearerToken       string
+	MetricsBearerToken    string
+	AllowedHosts          []string
+	RateLimits            apihttpmiddleware.RateLimitConfig
+	SecurityHeaders       apihttpmiddleware.SecurityHeadersConfig
+	RequestBodyLimit      apihttpmiddleware.RequestBodyLimitConfig
+	RequestLogging        bool
+	Logger                *slog.Logger
+	Workload              workloadControl
+	JobLeaseTimeout       time.Duration
+	ManagedDataModule     *manageddatamodule.Module
+	DeploymentConfig      deploymentmodule.Config
+	ManagedDataTus        http.Handler
+	MCPOAuth              MCPOAuthConfig
+	PublicURL             string
+	RefreshPipelineClock  refreshmodule.Clock
+	AnalyticsModule       *analyticsmodule.Module
+	DashboardAssets       dashboardmodule.Assets
+	QueryAudit            *analyticsmodule.QueryAuditSurface
+}
+
+func assembleRuntime(metrics QueryMetrics, options assemblyConfig) *applicationAssembly {
 	server, err := assembleRuntimeChecked(context.Background(), metrics, options)
 	if err != nil {
 		panic(err)
 	}
 	return server
+}
+
+func newApplicationAssembly(metrics QueryMetrics) *applicationAssembly {
+	return assembleRuntime(metrics, assemblyConfig{})
+}
+
+func apiGenDispatcherForTest(server *applicationAssembly) apiGenDispatcher {
+	return apiGenDispatcher{
+		accessModule: server.accessModule, agentModule: server.agentModule,
+		dashboardModule: server.dashboardModule, deploymentModule: server.deploymentModule,
+		managedDataModule: server.managedDataModule, refreshModule: server.refreshModule,
+		releaseModule: server.releaseModule, workspaceModule: server.workspaceModule,
+		defaultEnvironment: server.defaultEnvironment, managedDataTus: server.managedDataTus,
+		queryAuditEvents: server.queryAuditEvents,
+	}
+}
+
+func assembleRuntimeChecked(ctx context.Context, metrics QueryMetrics, options assemblyConfig) (*applicationAssembly, error) {
+	if options.AccessModule == nil {
+		var err error
+		options.AccessModule, err = accessmodule.Build(ctx, accessmodule.Config{
+			Database: options.Database, WorkspaceID: options.DefaultWorkspaceID,
+			ExistingAuth: options.Auth, Auth: accessmodule.AuthConfig{Disabled: options.Auth == nil},
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return buildApplicationAssembly(ctx, metrics, assemblyInputs{
+		dataAssemblyInputs: dataAssemblyInputs{
+			Database: options.Database, PlatformHealth: options.PlatformHealth,
+			AdminDatabase: options.AdminDatabase, ServingStateRepo: options.ServingStateRepo,
+			StorageRetention: options.StorageRetention, WorkspaceReadModel: options.WorkspaceRepo,
+			WorkspaceDirectory: options.WorkspaceDirectory, AssetCatalog: options.AssetCatalog,
+			AccessRepo: options.AccessRepo,
+		},
+		capabilityAssemblyInputs: capabilityAssemblyInputs{
+			ReleaseModule: options.ReleaseModule, JobModule: options.JobModule,
+			AccessModule: options.AccessModule, Agent: options.Agent,
+			ManagedDataModule: options.ManagedDataModule, AnalyticsModule: options.AnalyticsModule,
+			DashboardAssets: options.DashboardAssets,
+		},
+		workflowAssemblyInputs: workflowAssemblyInputs{
+			AgentSettings: options.AgentSettings, ManagedDataValidation: options.ManagedDataValidation,
+			ManagedDataResolver: options.ManagedDataResolver, AgentConfig: options.AgentConfig,
+			Auth: options.Auth, Reloader: options.Reloader, Workload: options.Workload,
+			DeploymentConfig: options.DeploymentConfig, RefreshPipelineClock: options.RefreshPipelineClock,
+			QueryAudit: options.QueryAudit,
+		},
+		runtimeAssemblyInputs: runtimeAssemblyInputs{
+			DuckDBDir: options.DuckDBDir, DuckLakeCatalogPath: options.DuckLakeCatalogPath,
+			DuckLakeDataPath: options.DuckLakeDataPath, DefaultWorkspaceID: options.DefaultWorkspaceID,
+			DefaultEnvironment: options.DefaultEnvironment, SCIMBearerToken: options.SCIMBearerToken,
+			MetricsBearerToken: options.MetricsBearerToken, AllowedHosts: options.AllowedHosts,
+		},
+		httpAssemblyInputs: httpAssemblyInputs{
+			RateLimits: options.RateLimits, SecurityHeaders: options.SecurityHeaders,
+			RequestBodyLimit: options.RequestBodyLimit, RequestLogging: options.RequestLogging,
+			Logger: options.Logger, JobLeaseTimeout: options.JobLeaseTimeout,
+			ManagedDataTus: options.ManagedDataTus, MCPOAuth: options.MCPOAuth,
+			PublicURL: options.PublicURL,
+		},
+	})
 }
 
 func NewRuntimeMetrics(provider runtimehost.Provider, workspaceID string) QueryMetrics {

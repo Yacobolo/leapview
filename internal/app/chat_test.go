@@ -27,6 +27,7 @@ import (
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 	visualizationruntime "github.com/Yacobolo/leapview/internal/visualization/runtime"
 	"github.com/Yacobolo/leapview/internal/workspace"
+	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 
@@ -193,10 +194,7 @@ func TestChatReferenceSearchWithoutWorkspaceSearchesVisibleWorkspaces(t *testing
 	server := assembleRuntime(NewMultiWorkspaceMetrics("sales", map[string]QueryMetrics{"sales": fakeMetrics{}}), testStoreOptions(store, assemblyConfig{
 		Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}),
 	}))
-	repo, err := server.workspaceRepository()
-	if err != nil {
-		t.Fatal(err)
-	}
+	repo := workspacesqlite.NewRepository(store.SQLDB())
 	if err := repo.Ensure(context.Background(), workspace.EnsureInput{ID: "sales", Title: "Sales"}); err != nil {
 		t.Fatal(err)
 	}
@@ -302,10 +300,7 @@ func TestGlobalChatReferenceSearchRanksAcrossWorkspaces(t *testing.T) {
 	seedEnvironmentAssetDeployment(t, store, "archive", servingstate.DefaultEnvironment, "Revenue archive", "Archive Warehouse")
 	seedEnvironmentAssetDeployment(t, store, "sales", servingstate.DefaultEnvironment, "Revenue", "Sales Warehouse")
 	server := assembleRuntime(nil, testStoreOptions(store, assemblyConfig{}))
-	repo, err := server.workspaceRepository()
-	if err != nil {
-		t.Fatal(err)
-	}
+	repo := workspacesqlite.NewRepository(store.SQLDB())
 	for _, workspaceID := range []string{"archive", "sales"} {
 		if err := repo.Ensure(context.Background(), workspace.EnsureInput{ID: workspace.WorkspaceID(workspaceID), Title: workspaceID}); err != nil {
 			t.Fatal(err)
@@ -325,10 +320,7 @@ func TestChatReferenceSearchRouteAuthorizesAcrossAccessibleWorkspaces(t *testing
 	store := testStore(t)
 	seedEnvironmentAssetDeployment(t, store, "sales", servingstate.DefaultEnvironment, "Orders dashboard", "Sales Warehouse")
 	ctx := context.Background()
-	workspaceRepo, err := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{})).workspaceRepository()
-	if err != nil {
-		t.Fatal(err)
-	}
+	workspaceRepo := workspacesqlite.NewRepository(store.SQLDB())
 	if err := workspaceRepo.Ensure(ctx, workspace.EnsureInput{ID: "sales", Title: "Sales"}); err != nil {
 		t.Fatal(err)
 	}
@@ -1201,7 +1193,7 @@ func waitForRecorderBodyContains(t *testing.T, rec *synchronizedRecorder, want s
 	return ""
 }
 
-func readUpdatesUntil(t *testing.T, server *runtimeRouter, path, token string, wants ...string) string {
+func readUpdatesUntil(t *testing.T, server *applicationAssembly, path, token string, wants ...string) string {
 	t.Helper()
 	reqCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1248,7 +1240,7 @@ func chatPrincipalAndToken(t *testing.T, ctx context.Context, store *platform.St
 	return testPrincipalRef{ID: principal.ID}, token
 }
 
-func waitForBrokerSubscription(t *testing.T, server *runtimeRouter, key string) {
+func waitForBrokerSubscription(t *testing.T, server *applicationAssembly, key string) {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {

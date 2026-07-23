@@ -21,7 +21,7 @@ func testStoreOptions(store *platform.Store, options assemblyConfig) assemblyCon
 	if options.AccessRepo == nil {
 		options.AccessRepo = accesssqlite.NewRepository(store.SQLDB())
 	}
-	if options.WorkspaceRepo == nil && options.WorkspacePersistence == nil {
+	if options.WorkspaceRepo == nil && options.WorkspaceDirectory == nil {
 		options.WorkspaceRepo = workspacesqlite.NewRepository(store.SQLDB())
 	}
 	if options.AccessModule == nil && options.Auth != nil {
@@ -34,8 +34,8 @@ func testStoreOptions(store *platform.Store, options assemblyConfig) assemblyCon
 			ExistingAuth: options.Auth, PublicURL: publicURL,
 			MCPIssuerURL: options.MCPOAuth.IssuerURL,
 			WorkspaceIDs: func(ctx context.Context) ([]string, error) {
-				if options.WorkspacePersistence != nil {
-					return options.WorkspacePersistence.WorkspaceIDs(ctx)
+				if options.WorkspaceDirectory != nil {
+					return options.WorkspaceDirectory.WorkspaceIDs(ctx)
 				}
 				rows, err := options.WorkspaceRepo.List(ctx)
 				if err != nil {
@@ -66,7 +66,7 @@ func testStoreOptions(store *platform.Store, options assemblyConfig) assemblyCon
 	return options
 }
 
-func queryAuditRepositoryForTest(t *testing.T, server *runtimeRouter) queryaudit.Repository {
+func queryAuditRepositoryForTest(t *testing.T, server *applicationAssembly) queryaudit.Repository {
 	t.Helper()
 	if server.queryAuditProvider == nil {
 		t.Fatal("query audit provider is not configured")

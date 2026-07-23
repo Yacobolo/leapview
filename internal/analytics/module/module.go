@@ -13,6 +13,7 @@ import (
 	queryauditsqlite "github.com/Yacobolo/leapview/internal/analytics/queryaudit/sqlite"
 	"github.com/Yacobolo/leapview/internal/analytics/resource"
 	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
+	analyticsruntime "github.com/Yacobolo/leapview/internal/analytics/runtime"
 	storagemaintenance "github.com/Yacobolo/leapview/internal/storage/maintenance"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -119,18 +120,11 @@ func Build(ctx context.Context, config Config) (*Module, error) {
 	return &Module{environment: environment, cache: cache, queryAudit: queryAudit}, nil
 }
 
-func (m *Module) Environment() *analyticsducklake.Environment {
+func (m *Module) RuntimeResources() analyticsruntime.Resources {
 	if m == nil {
 		return nil
 	}
-	return m.environment
-}
-
-func (m *Module) Cache() *resultcache.Pool {
-	if m == nil {
-		return nil
-	}
-	return m.cache
+	return analyticsruntime.NewResources(m.environment, m.cache)
 }
 
 func (m *Module) WorkspaceMaterializer() analyticsmaterialization.WorkspaceExecutor {

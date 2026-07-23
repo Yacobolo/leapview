@@ -15,7 +15,7 @@ func TestPersistenceOwnsWorkspaceSQLiteAdapter(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	persistence, err := BuildPersistence(store.SQLDB(), nil)
+	persistence, err := BuildDirectory(store.SQLDB(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

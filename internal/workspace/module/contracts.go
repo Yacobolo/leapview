@@ -3,6 +3,7 @@ package module
 import "github.com/Yacobolo/leapview/internal/workspace"
 
 type Repository = workspace.Repository
+type ReadModel = workspace.ReadModel
 type AssetCatalogReader = workspace.AssetCatalogReader
 type WorkspaceView = workspace.WorkspaceView
 type AssetView = workspace.AssetView

@@ -21,7 +21,7 @@ type Module struct {
 	logger        *slog.Logger
 }
 
-type SurfaceConfig struct {
+type surfaceConfig struct {
 	Repository         func() (access.Repository, error)
 	CurrentPrincipal   func(*http.Request) (Principal, bool)
 	CurrentCredential  func(*http.Request) (access.APICredential, bool)
@@ -34,7 +34,7 @@ type SurfaceConfig struct {
 	OAuthResource      mcpoauth.ResourceServer
 }
 
-func newSurface(config SurfaceConfig) *Module {
+func newSurface(config surfaceConfig) *Module {
 	logger := config.Logger
 	if logger == nil {
 		logger = slog.Default()

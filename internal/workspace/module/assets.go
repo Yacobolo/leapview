@@ -17,10 +17,10 @@ func (m *Module) AssetCatalogReader() (workspacehttp.AssetCatalogReader, error) 
 
 func (m *Module) AssetVersionsState(ctx context.Context, workspaceID, environment string, asset workspace.AssetView, section string) (ui.AssetVersionsState, error) {
 	state := ui.AssetVersionsState{CurrentContentHash: asset.ContentHash}
-	if section != "versions" || m == nil || m.repository == nil {
+	if section != "versions" || m == nil || m.readModel == nil {
 		return state, nil
 	}
-	versions, err := m.repository.AssetVersions(ctx, workspace.WorkspaceID(workspaceID), environment, workspace.AssetID(asset.ID))
+	versions, err := m.readModel.AssetVersions(ctx, workspace.WorkspaceID(workspaceID), environment, workspace.AssetID(asset.ID))
 	if err != nil {
 		return state, err
 	}

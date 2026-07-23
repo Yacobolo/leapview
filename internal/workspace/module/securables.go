@@ -25,10 +25,10 @@ func (m *Module) SecurableObjects(ctx context.Context, defaultWorkspaceID string
 		seen[id] = struct{}{}
 	}
 	appendWorkspace(defaultWorkspaceID, "")
-	if m == nil || m.repository == nil {
+	if m == nil || m.readModel == nil {
 		return objects, nil
 	}
-	rows, err := m.repository.List(ctx)
+	rows, err := m.readModel.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -39,9 +39,9 @@ func (m *Module) SecurableObjects(ctx context.Context, defaultWorkspaceID string
 }
 
 func (m *Module) ActiveServingStateID(ctx context.Context, workspaceID string) (string, error) {
-	if m == nil || m.repository == nil {
+	if m == nil || m.readModel == nil {
 		return "", nil
 	}
-	row, err := m.repository.ByID(ctx, workspace.WorkspaceID(workspaceID))
+	row, err := m.readModel.ByID(ctx, workspace.WorkspaceID(workspaceID))
 	return string(row.ActiveServingStateID), err
 }

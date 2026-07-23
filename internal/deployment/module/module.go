@@ -22,9 +22,13 @@ type Principal struct {
 	ID string
 }
 
+type ServingStatePort interface {
+	deployment.ServingStateRepository
+}
+
 type Config struct {
 	Database                 *sql.DB
-	States                   deployment.ServingStateRepository
+	States                   ServingStatePort
 	Runtime                  deployment.Runtime
 	ManagedData              deployment.ManagedDataResolver
 	DeploymentMetadata       apiadapter.Metadata

@@ -27,6 +27,7 @@ import (
 	managedtus "github.com/Yacobolo/leapview/internal/manageddata/storage/tus"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	"github.com/Yacobolo/leapview/internal/securefs"
+	"github.com/Yacobolo/leapview/internal/servingstate"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -88,20 +89,20 @@ type Principal struct {
 
 type Config struct {
 	Database         *sql.DB
+	Disabled         bool
 	Product          appconfig.Config
 	Worker           MaintenanceWorkerConfig
-	Uploads          manageddatahttp.UploadCoordinator
-	HTTPRepository   manageddatahttp.Repository
-	Multipart        s3multipart.Coordinator
 	MaxJSONBodyBytes int64
 	Environment      string
 	CurrentPrincipal func(*http.Request) (Principal, bool)
 	Jobs             JobStore
-	ServingStates    manageddataresolver.ServingStateRepository
+	ServingStates    ServingStateReader
 }
 
-// Build constructs managed-data adapters. HTTP and Uploads support narrow
-// alternate-entrypoint composition without exposing the internal storage bundle.
+type ServingStateReader interface {
+	ByID(context.Context, servingstate.ID) (servingstate.State, error)
+}
+
 func Build(ctx context.Context, cfg Config) (*Module, error) {
 	currentPrincipal := func(r *http.Request) (manageddatahttp.Principal, bool) {
 		if cfg.CurrentPrincipal == nil {
@@ -110,17 +111,16 @@ func Build(ctx context.Context, cfg Config) (*Module, error) {
 		principal, ok := cfg.CurrentPrincipal(r)
 		return manageddatahttp.Principal{ID: principal.ID}, ok
 	}
-	if cfg.Database == nil {
-		module := &Module{
-			finalizer: cfg.Uploads, multipart: cfg.Multipart, jobs: cfg.Jobs,
-		}
+	if cfg.Disabled {
+		module := &Module{jobs: cfg.Jobs}
 		module.handler = manageddatahttp.NewHandler(manageddatahttp.Options{
-			Repository: cfg.HTTPRepository, Uploads: cfg.Uploads, Multipart: cfg.Multipart,
 			CurrentPrincipal: currentPrincipal, MaxJSONBodyBytes: cfg.MaxJSONBodyBytes,
-			Environment: cfg.Environment, EnqueueFinalize: module.enqueueFinalize,
-			RecordUploadCreated: module.recordUploadCreated,
+			Environment: cfg.Environment,
 		})
 		return module, nil
+	}
+	if cfg.Database == nil {
+		return nil, errors.New("managed-data database is required")
 	}
 	repository := manageddatasqlite.NewRepository(cfg.Database)
 	services, err := newManagedDataStorage(ctx, cfg.Product)
@@ -186,22 +186,29 @@ func Build(ctx context.Context, cfg Config) (*Module, error) {
 	return module, nil
 }
 
-func (m *Module) Uploads() *control.Service { return m.uploads }
-
 func (m *Module) HasFinalizeJobs() bool { return m.finalizer != nil }
 
-func (m *Module) Multipart() s3multipart.Coordinator { return m.multipart }
+func (m *Module) SupportsS3Multipart() bool { return m != nil && m.multipart != nil }
 
 func (m *Module) Materializer() manageddata.RevisionMaterializer { return m.materializer }
 
-func (m *Module) BindingValidator() *binding.Binder {
+type BindingValidation interface {
+	AfterArtifactValidation(context.Context, servingstate.State, servingstate.Validation) error
+	ValidateServingStatePins(context.Context, string, string, map[string]string) error
+}
+
+func (m *Module) BindingValidation() BindingValidation {
 	if m == nil {
 		return nil
 	}
 	return m.bindings
 }
 
-func (m *Module) RuntimeResolver() *manageddataresolver.Resolver {
+type RuntimeResolver interface {
+	ResolveManagedData(context.Context, servingstate.ID) (manageddataresolver.Resolution, error)
+}
+
+func (m *Module) RuntimeResolution() RuntimeResolver {
 	if m == nil {
 		return nil
 	}

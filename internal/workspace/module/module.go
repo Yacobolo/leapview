@@ -18,7 +18,7 @@ type Module struct {
 	handler            workspacehttp.Handler
 	search             searchService
 	currentCredential  func(*http.Request) (access.APICredential, bool)
-	repository         workspace.Repository
+	readModel          workspace.ReadModel
 	assetCatalog       workspace.AssetCatalogReader
 	rootMetrics        queryruntime.Metrics
 	runtimeEnvironment string
@@ -57,10 +57,11 @@ func (f AssetRefreshFunc) RefreshAsset(ctx context.Context, input AssetRefreshIn
 
 type Config struct {
 	Database            *sql.DB
-	Persistence         *Persistence
+	Directory           Directory
+	ReadModel           ReadModel
+	Securables          SecurableRegistrar
 	WorkspaceID         func(string) string
 	Environment         func(*http.Request) string
-	Repository          workspace.Repository
 	AccessService       access.WorkspaceAccessService
 	AssetCatalog        workspace.AssetCatalogReader
 	MetricsForWorkspace func(string) (queryruntime.Metrics, bool)
@@ -80,18 +81,30 @@ type Config struct {
 }
 
 func Build(_ context.Context, config Config) (*Module, error) {
-	repository := config.Repository
-	if repository == nil && config.Persistence != nil {
-		repository = config.Persistence.repository
+	directoryPort := config.Directory
+	if directoryPort == nil && config.Database != nil {
+		var err error
+		directoryPort, err = BuildDirectory(config.Database, config.Securables)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var repository workspace.Repository
+	if owned, ok := directoryPort.(*directory); ok {
+		repository = owned.repository
+	}
+	readModel := config.ReadModel
+	if readModel == nil {
+		readModel = repository
 	}
 	m := &Module{
-		repository: repository, currentCredential: config.CurrentCredential,
+		readModel: readModel, currentCredential: config.CurrentCredential,
 		rootMetrics: config.RootMetrics, runtimeEnvironment: config.RuntimeEnvironment,
 		defaultWorkspaceID: config.DefaultWorkspaceID, chromeOptions: config.ChromeOptions,
 	}
 	m.assetCatalog = config.AssetCatalog
-	if m.assetCatalog == nil && repository != nil {
-		m.assetCatalog = workspace.NewAssetCatalogService(repository)
+	if m.assetCatalog == nil && readModel != nil {
+		m.assetCatalog = workspace.NewAssetCatalogService(readModel)
 	}
 	currentPrincipal := func(r *http.Request) (workspacehttp.Principal, bool) {
 		if config.CurrentPrincipal == nil {
@@ -103,8 +116,8 @@ func Build(_ context.Context, config Config) (*Module, error) {
 			DisplayName: principal.DisplayName, DevBypass: principal.DevBypass,
 		}, ok
 	}
-	readModel := workspacehttp.ReadModel{
-		WorkspaceRepository: func() (workspace.Repository, error) { return repository, nil },
+	httpReadModel := workspacehttp.ReadModel{
+		WorkspaceRepository: func() (workspace.ReadModel, error) { return readModel, nil },
 		AccessService:       func() (access.WorkspaceAccessService, error) { return config.AccessService, nil },
 		AssetCatalogReader:  m.AssetCatalogReader,
 		MetricsForWorkspace: func(workspaceID string) (workspacehttp.Metrics, bool) {
@@ -143,7 +156,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		refreshRunner = moduleRefreshRunner{upstream: config.RefreshRunner}
 	}
 	m.handler = workspacehttp.Handler{
-		WorkspaceID: config.WorkspaceID, Environment: config.Environment, ReadModel: readModel,
+		WorkspaceID: config.WorkspaceID, Environment: config.Environment, ReadModel: httpReadModel,
 		RefreshState:  moduleRefreshState{module: m, upstream: config.RefreshState},
 		RefreshRunner: refreshRunner, Broker: config.Broker,
 		CSRFToken: config.CSRFToken, CurrentRoleLabel: config.CurrentRoleLabel, ChromeOptions: config.ChromeOptions,

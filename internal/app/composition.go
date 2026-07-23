@@ -46,14 +46,13 @@ func assemble(ctx context.Context, cfg config.Config) (http.Handler, Lifecycle, 
 	}
 	handler := runtime.Routes()
 	lifecycle := newRuntimeLifecycle(runtime.workers, runtime.analyticsModule, runtime.workloads)
-	runtime.releaseConstructionInputs()
 	return handler, lifecycle, func(context.Context) error {
 		cleanup()
 		return nil
 	}, nil
 }
 
-func buildRuntime(ctx context.Context, cfg config.Config, production bool, environment servingstatemodule.Environment) (*runtimeRouter, func(), error) {
+func buildRuntime(ctx context.Context, cfg config.Config, production bool, environment servingstatemodule.Environment) (*applicationAssembly, func(), error) {
 	dashboardAssets, err := dashboardmodule.BuildAssets(ctx, cfg.MapAssetDir)
 	if err != nil {
 		return nil, nil, err
@@ -81,23 +80,17 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	if err != nil {
 		return nil, nil, err
 	}
-	var analyticsModule *analyticsmodule.Module
-	var workloadController *workloadmodule.Module
-	cleanup := func() {
-		if workloadController != nil {
-			workloadController.Close()
-		}
-		if analyticsModule != nil {
-			_ = analyticsModule.Close()
-		}
-		_ = store.Close()
-	}
-	if err := store.BindInstanceEnvironment(ctx, string(environment)); err != nil {
-		cleanup()
+	cleanup := &cleanupStack{}
+	cleanup.Push("sqlite", func(context.Context) error { return store.Close() })
+	fail := func(err error) (*applicationAssembly, func(), error) {
+		_ = cleanup.Close(context.WithoutCancel(ctx))
 		return nil, nil, err
 	}
+	if err := store.BindInstanceEnvironment(ctx, string(environment)); err != nil {
+		return fail(err)
+	}
 	workloadConfig := cfg.WorkloadConfig()
-	analyticsModule, err = analyticsmodule.Build(ctx, analyticsmodule.Config{
+	analyticsModule, err := analyticsmodule.Build(ctx, analyticsmodule.Config{
 		Database: store.SQLDB(), RootDir: cfg.DuckDBDirPath(),
 		CatalogPath: duckLakeCatalogPath, DataPath: cfg.DuckLakeDataDir(),
 		MaxConnections: workloadConfig.MaxRunning, MemoryMaxBytes: cfg.DuckDBNodeMemoryMaxBytes,
@@ -108,56 +101,53 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 		NodeCacheEntries: cfg.QueryCacheNodeMaxEntries, NodeCacheBytes: cfg.QueryCacheNodeMaxBytes,
 	})
 	if err != nil {
-		cleanup()
-		return nil, nil, err
+		return fail(err)
 	}
-	duckDBEnvironment := analyticsModule.Environment()
-	resultCachePool := analyticsModule.Cache()
-	var workspacePersistence *workspacemodule.Persistence
+	cleanup.Push("analytics", func(context.Context) error { return analyticsModule.Close() })
+	analyticsRuntimeResources := analyticsModule.RuntimeResources()
+	var workspaceDirectory workspacemodule.Directory
 	accessModule, err := accessmodule.Build(ctx, accessmodule.Config{
 		Database: store.SQLDB(), Auth: accessAuthConfig(cfg, production, cookieSecure),
 		WorkspaceID: platform.DefaultWorkspaceID,
 		PublicURL:   firstConfigured(cfg.PublicURL, configuredListenURL(cfg.ListenAddr())), MCPIssuerURL: cfg.MCPOAuthIssuerURL,
 		WorkspaceIDs: func(ctx context.Context) ([]string, error) {
-			if workspacePersistence == nil {
+			if workspaceDirectory == nil {
 				return nil, nil
 			}
-			return workspacePersistence.WorkspaceIDs(ctx)
+			return workspaceDirectory.WorkspaceIDs(ctx)
 		},
 	})
 	if err != nil {
-		cleanup()
-		return nil, nil, err
+		return fail(err)
 	}
 	accessSecurables := accessModule.Securables()
-	workspacePersistence, err = workspacemodule.BuildPersistence(store.SQLDB(), accessSecurables)
+	workspaceDirectory, err = workspacemodule.BuildDirectory(store.SQLDB(), accessSecurables)
 	if err != nil {
-		cleanup()
-		return nil, nil, err
+		return fail(err)
 	}
 	if !production {
 		if err := accessModule.SeedLocalDeveloperPlatformAdmin(ctx); err != nil {
-			cleanup()
-			return nil, nil, err
+			return fail(err)
 		}
 	}
 	servingStateRepo, err := servingstatemodule.Build(ctx, servingstatemodule.Config{Database: store.SQLDB()})
 	if err != nil {
-		cleanup()
-		return nil, nil, err
+		return fail(err)
 	}
-	workloadController, err = workloadmodule.Build(ctx, workloadmodule.Config{Policy: workloadConfig})
+	workloadController, err := workloadmodule.Build(ctx, workloadmodule.Config{Policy: workloadConfig})
 	if err != nil {
-		cleanup()
-		return nil, nil, err
+		return fail(err)
 	}
+	cleanup.Push("workload", func(context.Context) error {
+		workloadController.Close()
+		return nil
+	})
 	jobModule, err := jobsmodule.Build(ctx, jobsmodule.Config{
 		Database: store.SQLDB(), Admission: workloadController,
 		LeaseTimeout: cfg.RefreshJobLeaseTimeout, Logger: slog.Default(),
 	})
 	if err != nil {
-		cleanup()
-		return nil, nil, err
+		return fail(err)
 	}
 	managedDataModule, err := manageddatamodule.Build(ctx, manageddatamodule.Config{
 		Database: store.SQLDB(), Product: cfg, ServingStates: servingStateRepo,
@@ -180,13 +170,12 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 		},
 	})
 	if err != nil {
-		cleanup()
-		return nil, nil, err
+		return fail(err)
 	}
 	releaseModule, err := releasemodule.Build(ctx, releasemodule.Config{
 		Database: store.SQLDB(),
-		States:   servingStateRepo, Workspaces: workspacePersistence,
-		ManagedDataPins: managedDataModule.BindingValidator(), ManagedDataHook: managedDataModule.BindingValidator(),
+		States:   servingStateRepo, Workspaces: workspaceDirectory,
+		ManagedDataPins: managedDataModule.BindingValidation(), ManagedDataHook: managedDataModule.BindingValidation(),
 		ArtifactDirectory: cfg.ArtifactDir(), Environment: environment,
 		API: releasemodule.APIConfig{
 			CurrentPrincipal: func(r *http.Request) (releasemodule.Principal, bool) {
@@ -202,32 +191,27 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 		},
 	})
 	if err != nil {
-		cleanup()
-		return nil, nil, err
+		return fail(err)
 	}
-	managedDataResolution := managedDataModule.RuntimeResolver()
+	managedDataResolution := managedDataModule.RuntimeResolution()
 	if managedDataResolution == nil {
-		cleanup()
-		return nil, nil, errors.New("managed-data runtime resolver is required")
+		return fail(errors.New("managed-data runtime resolver is required"))
 	}
 	managedDataResolver := runtimehostmodule.NewManagedDataResolver(managedDataResolution)
 	if err := refreshmodule.Recover(ctx, store.SQLDB(), string(environment)); err != nil {
-		cleanup()
-		return nil, nil, err
+		return fail(err)
 	}
 	retention := servingstatemodule.NewRetention(servingstatemodule.RetentionConfig{
-		States: servingStateRepo, Snapshots: duckDBEnvironment,
+		States: servingStateRepo, Snapshots: analyticsModule.RetentionSnapshots(),
 		Admission: workloadController, Environment: string(environment),
 		CatalogPath: duckLakeCatalogPath, DataPath: cfg.DuckLakeDataDir(),
 	})
 	if err := retention.Run(ctx, false); err != nil {
-		cleanup()
-		return nil, nil, err
+		return fail(err)
 	}
-	workspaceIDValues, err := workspacePersistence.WorkspaceIDs(ctx)
+	workspaceIDValues, err := workspaceDirectory.WorkspaceIDs(ctx)
 	if err != nil {
-		cleanup()
-		return nil, nil, err
+		return fail(err)
 	}
 	workspaceIDs := make([]servingstatemodule.WorkspaceID, 0, len(workspaceIDValues))
 	for _, workspaceID := range workspaceIDValues {
@@ -248,20 +232,18 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 		Factory: runtimehostmodule.NewFactory(runtimehostmodule.FactoryConfig{
 			DuckDBDir: cfg.DuckDBDirPath(), RuntimeDir: cfg.RuntimeDir(),
 			DashboardRuntime: dashboardmodule.NewRuntimeFactory(dashboardmodule.RuntimeFactoryConfig{
-				Database: duckDBEnvironment, Cache: resultCachePool,
-				MaxRows: cfg.QueryResultMaxRows, MaxBytes: cfg.QueryResultMaxBytes,
+				Resources: analyticsRuntimeResources,
+				MaxRows:   cfg.QueryResultMaxRows, MaxBytes: cfg.QueryResultMaxBytes,
 			}),
 		}),
 	})
 	if err != nil {
-		cleanup()
-		return nil, nil, err
+		return fail(err)
 	}
+	cleanup.Push("runtime-host", func(context.Context) error { return runtimeHostModule.Close() })
 	deploymentRuntime, err := deploymentmodule.NewRuntime(runtimeHostModule)
 	if err != nil {
-		_ = runtimeHostModule.Close()
-		cleanup()
-		return nil, nil, err
+		return fail(err)
 	}
 	deploymentConfig := deploymentmodule.Config{
 		Database: store.SQLDB(), States: servingStateRepo, Runtime: deploymentRuntime,
@@ -277,10 +259,6 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 			},
 		},
 	}
-	cleanupWithRegistry := func() {
-		_ = runtimeHostModule.Close()
-		cleanup()
-	}
 	runtimeMetrics := dashboardmodule.NewDynamicRuntimeMetrics("", func(workspaceID string) runtimehostmodule.Provider {
 		return runtimeHostModule.ProviderForWorkspace(servingstatemodule.WorkspaceID(workspaceID))
 	})
@@ -288,46 +266,42 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	rateLimits := apihttpmiddleware.ProductionRateLimitConfig()
 	rateLimits.Enabled = production && cfg.RateLimitingEnabled()
 	rateLimits.UseRealIP = cfg.RateLimitingUsesRealIP()
-	server, err := assembleRuntimeChecked(ctx, runtimeMetrics, assemblyConfig{
-		Database:              store.SQLDB(),
-		PlatformHealth:        store,
-		AgentSettings:         store,
-		AdminDatabase:         store.SQLDB(),
-		AnalyticsModule:       analyticsModule,
-		DashboardAssets:       dashboardAssets,
-		ServingStateRepo:      servingStateRepo,
-		StorageRetention:      retention,
-		WorkspacePersistence:  workspacePersistence,
-		ReleaseModule:         releaseModule,
-		JobModule:             jobModule,
-		AccessModule:          accessModule,
-		AgentConfig:           agentmodule.ModelConfig{APIKey: cfg.AgentAPIKey, BaseURL: cfg.AgentBaseURL, Model: cfg.AgentModel},
-		Auth:                  auth,
-		Reloader:              runtimeHostModule,
-		DuckLakeCatalogPath:   duckLakeCatalogPath,
-		DuckLakeDataPath:      cfg.DuckLakeDataDir(),
-		DefaultEnvironment:    string(environment),
-		PublicURL:             firstConfigured(cfg.PublicURL, configuredListenURL(cfg.ListenAddr())),
-		RateLimits:            rateLimits,
-		SecurityHeaders:       apihttpmiddleware.SecurityHeaders(production && cfg.HSTSEnabled(cookieSecure)),
-		RequestLogging:        production && cfg.RequestLoggingEnabled(),
-		Logger:                slog.Default(),
-		SCIMBearerToken:       cfg.SCIMBearerToken,
-		MetricsBearerToken:    cfg.MetricsBearerToken,
-		AllowedHosts:          allowedHosts,
-		Workload:              workloadController,
-		JobLeaseTimeout:       cfg.RefreshJobLeaseTimeout,
-		ManagedDataModule:     managedDataModule,
-		ManagedDataValidation: managedDataModule.BindingValidator(),
-		ManagedDataResolver:   managedDataResolver,
-		DeploymentConfig:      deploymentConfig,
-		ManagedDataTus:        managedDataModule.TusHandler(),
+	server, err := buildApplicationAssembly(ctx, runtimeMetrics, assemblyInputs{
+		dataAssemblyInputs: dataAssemblyInputs{
+			Database: store.SQLDB(), PlatformHealth: store, AdminDatabase: store.SQLDB(),
+			ServingStateRepo: servingStateRepo, StorageRetention: retention,
+			WorkspaceDirectory: workspaceDirectory,
+		},
+		capabilityAssemblyInputs: capabilityAssemblyInputs{
+			AnalyticsModule: analyticsModule, DashboardAssets: dashboardAssets,
+			ReleaseModule: releaseModule, JobModule: jobModule,
+			AccessModule: accessModule, ManagedDataModule: managedDataModule,
+		},
+		workflowAssemblyInputs: workflowAssemblyInputs{
+			AgentSettings: store,
+			AgentConfig:   agentmodule.ModelConfig{APIKey: cfg.AgentAPIKey, BaseURL: cfg.AgentBaseURL, Model: cfg.AgentModel},
+			Auth:          auth, Reloader: runtimeHostModule, Workload: workloadController,
+			ManagedDataValidation: managedDataModule.BindingValidation(),
+			ManagedDataResolver:   managedDataResolver,
+			DeploymentConfig:      deploymentConfig,
+		},
+		runtimeAssemblyInputs: runtimeAssemblyInputs{
+			DuckLakeCatalogPath: duckLakeCatalogPath, DuckLakeDataPath: cfg.DuckLakeDataDir(),
+			DefaultEnvironment: string(environment), SCIMBearerToken: cfg.SCIMBearerToken,
+			MetricsBearerToken: cfg.MetricsBearerToken, AllowedHosts: allowedHosts,
+		},
+		httpAssemblyInputs: httpAssemblyInputs{
+			PublicURL:       firstConfigured(cfg.PublicURL, configuredListenURL(cfg.ListenAddr())),
+			RateLimits:      rateLimits,
+			SecurityHeaders: apihttpmiddleware.SecurityHeaders(production && cfg.HSTSEnabled(cookieSecure)),
+			RequestLogging:  production && cfg.RequestLoggingEnabled(), Logger: slog.Default(),
+			JobLeaseTimeout: cfg.RefreshJobLeaseTimeout, ManagedDataTus: managedDataModule.TusHandler(),
+		},
 	})
 	if err != nil {
-		cleanupWithRegistry()
-		return nil, nil, err
+		return fail(err)
 	}
-	return server, cleanupWithRegistry, nil
+	return server, func() { _ = cleanup.Close(context.Background()) }, nil
 }
 
 func firstConfigured(values ...string) string {

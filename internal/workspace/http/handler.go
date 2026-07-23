@@ -1014,7 +1014,7 @@ func (h Handler) environment(r *nethttp.Request) string {
 	return h.Environment(r)
 }
 
-func (h Handler) workspaceRepository() (workspace.Repository, error) {
+func (h Handler) workspaceRepository() (workspace.ReadModel, error) {
 	return h.ReadModel.workspaceRepository()
 }
 
