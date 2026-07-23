@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"reflect"
 	"testing"
+
+	deploymentmodule "github.com/Yacobolo/leapview/internal/deployment/module"
 )
 
 type recordedLifecycle struct {
@@ -93,5 +95,20 @@ func TestApplicationShutdownIsReverseOrderedAndIdempotent(t *testing.T) {
 	want := []string{"start:one", "start:two", "stop:two", "stop:one", "cleanup:two", "cleanup:one"}
 	if !reflect.DeepEqual(events, want) {
 		t.Fatalf("events = %v, want %v", events, want)
+	}
+}
+
+func TestAssembleRuntimeRejectsCapabilityBuildFailure(t *testing.T) {
+	store := testStore(t)
+	options := testStoreOptions(store, assemblyConfig{
+		DefaultWorkspaceID: "test",
+		DeploymentConfig: deploymentmodule.Config{
+			Database: store.SQLDB(),
+		},
+	})
+
+	_, err := assembleRuntimeChecked(context.Background(), fakeMetrics{}, options)
+	if err == nil {
+		t.Fatal("assembleRuntimeChecked accepted an incomplete deployment capability")
 	}
 }

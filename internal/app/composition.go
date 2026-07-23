@@ -82,7 +82,11 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 		return nil, nil, err
 	}
 	var analyticsModule *analyticsmodule.Module
+	var workloadController *workloadmodule.Module
 	cleanup := func() {
+		if workloadController != nil {
+			workloadController.Close()
+		}
 		if analyticsModule != nil {
 			_ = analyticsModule.Close()
 		}
@@ -142,7 +146,7 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 		cleanup()
 		return nil, nil, err
 	}
-	workloadController, err := workloadmodule.Build(ctx, workloadmodule.Config{Policy: workloadConfig})
+	workloadController, err = workloadmodule.Build(ctx, workloadmodule.Config{Policy: workloadConfig})
 	if err != nil {
 		cleanup()
 		return nil, nil, err
@@ -284,7 +288,7 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	rateLimits := apihttpmiddleware.ProductionRateLimitConfig()
 	rateLimits.Enabled = production && cfg.RateLimitingEnabled()
 	rateLimits.UseRealIP = cfg.RateLimitingUsesRealIP()
-	server := assembleRuntime(runtimeMetrics, assemblyConfig{
+	server, err := assembleRuntimeChecked(ctx, runtimeMetrics, assemblyConfig{
 		Database:              store.SQLDB(),
 		PlatformHealth:        store,
 		AgentSettings:         store,
@@ -319,6 +323,10 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 		DeploymentConfig:      deploymentConfig,
 		ManagedDataTus:        managedDataModule.TusHandler(),
 	})
+	if err != nil {
+		cleanupWithRegistry()
+		return nil, nil, err
+	}
 	return server, cleanupWithRegistry, nil
 }
 

@@ -3,9 +3,7 @@ package app
 import (
 	"net/http"
 
-	accessmodule "github.com/Yacobolo/leapview/internal/access/module"
 	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
-	apiprotocol "github.com/Yacobolo/leapview/internal/api/protocol"
 	apitransport "github.com/Yacobolo/leapview/internal/api/transport"
 	"github.com/go-chi/chi/v5"
 )
@@ -23,70 +21,7 @@ func (a apiGenAdapter) GetInstance(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (a apiGenAdapter) HandleAPIGen(operationID string, w http.ResponseWriter, r *http.Request) {
-	contract, ok := apigenapi.GetAPIGenOperationContract(operationID)
-	if !ok || !contract.Protected {
-		http.NotFound(w, r)
-		return
-	}
-	var privilege accessmodule.Privilege
-	if contract.AuthzMode == "privilege" {
-		privilege, ok = apigenOperationPrivilege(operationID)
-		if !ok {
-			http.NotFound(w, r)
-			return
-		}
-	} else if contract.AuthzMode != "authenticated" {
-		http.NotFound(w, r)
-		return
-	}
-	var objectResolver accessmodule.ObjectResolver
-	if !isGlobalAgentOperation(operationID) {
-		objectResolver, ok = apigenOperationObjectResolver(operationID)
-		if !ok {
-			http.NotFound(w, r)
-			return
-		}
-	}
-	protected := a.server.protectWithObjects
-	if isGlobalAgentOperation(operationID) {
-		protected = func(privilege accessmodule.Privilege, _ accessmodule.ObjectResolver, next http.Handler) http.Handler {
-			return a.server.protectGlobalAgent(privilege, next)
-		}
-	}
-	protected(privilege, objectResolver, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		buffered := apiprotocol.NewResponseBuffer(w, r)
-		if ok := apigenapi.DispatchAPIGenOperation(operationID, a, apiprotocol.TransportErrorResponder{Logger: a.server.logger}, buffered, r); !ok {
-			http.NotFound(w, r)
-			return
-		}
-		buffered.Flush()
-	})).ServeHTTP(w, r)
-}
-
-func isGlobalAgentOperation(operationID string) bool {
-	switch operationID {
-	case "search", "listAgentConversations", "createAgentConversation", "archiveAgentConversation", "getAgentConversation", "updateAgentConversation",
-		"listAgentMessages", "listAgentRuns", "createAgentRun", "getAgentRun", "cancelAgentRun", "listAgentEvents":
-		return true
-	default:
-		return false
-	}
-}
-
-func apigenOperationPrivilege(operationID string) (accessmodule.Privilege, bool) {
-	contract, ok := apigenapi.GetAPIGenOperationContract(operationID)
-	if !ok || !contract.Protected || contract.AuthzMode != "privilege" {
-		return "", false
-	}
-	authz, ok := contract.Extensions["x-authz"].(map[string]any)
-	if !ok || authz["mode"] != "privilege" {
-		return "", false
-	}
-	value, ok := authz["privilege"].(string)
-	if !ok {
-		return "", false
-	}
-	return accessmodule.ParsePrivilege(value)
+	a.server.apiGenHandler.HandleAPIGen(operationID, w, r)
 }
 
 func (a apiGenAdapter) GetCurrentPrincipal(w http.ResponseWriter, r *http.Request) {

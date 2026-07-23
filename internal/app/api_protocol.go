@@ -10,8 +10,11 @@ import (
 	apiprotocol "github.com/Yacobolo/leapview/internal/api/protocol"
 )
 
-func (s *runtimeRouter) configureAPIProtocol(database *sql.DB) {
-	protocol, err := apiprotocol.Build(context.Background(), apiprotocol.Config{
+func (s *runtimeRouter) configureAPIProtocol(ctx context.Context, database *sql.DB) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	protocol, err := apiprotocol.Build(ctx, apiprotocol.Config{
 		Database:    database,
 		BearerToken: accessmodule.BearerToken,
 		AcceptsBearer: func(r *http.Request) bool {
@@ -27,10 +30,10 @@ func (s *runtimeRouter) configureAPIProtocol(database *sql.DB) {
 		CursorSnapshot: s.cursorSnapshot,
 	})
 	if err != nil {
-		s.logger.ErrorContext(context.Background(), "configure API protocol failed", "error", err)
-		return
+		return err
 	}
 	s.apiProtocol = protocol
+	return nil
 }
 
 func (s *runtimeRouter) publicProtocolMiddleware(next http.Handler) http.Handler {

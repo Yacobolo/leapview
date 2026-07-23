@@ -1,9 +1,19 @@
 package app
 
 import (
+	"context"
+
 	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
 	"github.com/Yacobolo/leapview/internal/runtimehost"
 )
+
+func assembleRuntime(metrics QueryMetrics, options assemblyConfig) *runtimeRouter {
+	server, err := assembleRuntimeChecked(context.Background(), metrics, options)
+	if err != nil {
+		panic(err)
+	}
+	return server
+}
 
 func NewRuntimeMetrics(provider runtimehost.Provider, workspaceID string) QueryMetrics {
 	return dashboardmodule.NewRuntimeMetrics(provider, workspaceID)

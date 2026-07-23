@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
 	analyticsmodule "github.com/Yacobolo/leapview/internal/analytics/module"
 	"github.com/Yacobolo/leapview/internal/api"
+	apiapigenruntime "github.com/Yacobolo/leapview/internal/api/apigenruntime"
 	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
 	apihttpmiddleware "github.com/Yacobolo/leapview/internal/api/httpmiddleware"
 	apiprotocol "github.com/Yacobolo/leapview/internal/api/protocol"
@@ -81,6 +83,7 @@ type runtimeRouter struct {
 	workers               *platformlifecycle.Group
 	managedDataTus        http.Handler
 	apiProtocol           *apiprotocol.Protocol
+	apiGenHandler         *apiapigenruntime.Handler
 	construction          *capabilityConstruction
 }
 
@@ -128,7 +131,6 @@ func newRuntimeRouter(metrics QueryMetrics) *runtimeRouter {
 		logger:           logger,
 		construction:     &capabilityConstruction{},
 	}
-	server.configureAPIProtocol(nil)
 	return server
 }
 
@@ -226,19 +228,34 @@ func (s *runtimeRouter) releaseConstructionInputs() {
 	s.construction = nil
 }
 
-func assembleRuntime(metrics QueryMetrics, options assemblyConfig) *runtimeRouter {
+func assembleRuntimeChecked(ctx context.Context, metrics QueryMetrics, options assemblyConfig) (*runtimeRouter, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	telemetry := observability.New()
 	if options.AnalyticsModule != nil {
 		telemetry.Register(options.AnalyticsModule.Collector())
 	}
 	controller := options.Workload
+	ownsController := false
 	workloadTelemetry := workloadmodule.NewTelemetryObserver(telemetry)
 	if controller == nil {
-		controller, _ = workloadmodule.Build(context.Background(), workloadmodule.Config{
+		var err error
+		controller, err = workloadmodule.Build(ctx, workloadmodule.Config{
 			Policy: workloadmodule.DefaultConfig(), Observer: workloadTelemetry,
 		})
+		if err != nil {
+			return nil, fmt.Errorf("build workload module: %w", err)
+		}
+		ownsController = true
 	} else {
 		controller.SetObserver(workloadTelemetry)
+	}
+	fail := func(err error) (*runtimeRouter, error) {
+		if ownsController && controller != nil {
+			controller.Close()
+		}
+		return nil, err
 	}
 	if metrics != nil {
 		metrics = dashboardmodule.WithAdmission(metrics, controller, options.DefaultWorkspaceID)
@@ -306,16 +323,24 @@ func assembleRuntime(metrics QueryMetrics, options assemblyConfig) *runtimeRoute
 	if options.Database != nil {
 		server.jobModule = options.JobModule
 		if server.jobModule == nil {
-			server.jobModule, _ = jobsmodule.Build(context.Background(), jobsmodule.Config{
+			var err error
+			server.jobModule, err = jobsmodule.Build(ctx, jobsmodule.Config{
 				Database: options.Database, Admission: server.workloads,
 				LeaseTimeout: options.JobLeaseTimeout, Logger: options.Logger,
 			})
+			if err != nil {
+				return fail(fmt.Errorf("build platform jobs module: %w", err))
+			}
 		}
 		server.asyncJobs = server.jobModule
-		server.configureAPIProtocol(options.Database)
+		if err := server.configureAPIProtocol(ctx, options.Database); err != nil {
+			return fail(fmt.Errorf("build API protocol: %w", err))
+		}
 	}
 	if server.apiProtocol == nil {
-		server.configureAPIProtocol(nil)
+		if err := server.configureAPIProtocol(ctx, nil); err != nil {
+			return fail(fmt.Errorf("build API protocol: %w", err))
+		}
 	}
 	server.construction.servingStateRepo = servingStateRepo
 	retentionStates, _ := servingStateRepo.(servingstatemodule.RetentionRepository)
@@ -375,8 +400,12 @@ func assembleRuntime(metrics QueryMetrics, options assemblyConfig) *runtimeRoute
 			server.pageStreamTrace.SetLogger(options.Logger)
 		}
 	}
-	server.configureRefreshModule(options.Database)
-	server.configureModules(options.Database)
+	if err := server.configureRefreshModule(ctx, options.Database); err != nil {
+		return fail(err)
+	}
+	if err := server.configureModules(ctx, options.Database); err != nil {
+		return fail(err)
+	}
 	if server.asyncJobs != nil {
 		handlers := make([]jobs.Handler, 0, 4)
 		if server.releaseModule != nil {
@@ -392,19 +421,18 @@ func assembleRuntime(metrics QueryMetrics, options assemblyConfig) *runtimeRoute
 			handlers = append(handlers, server.agentModule.JobHandlers(server.asyncJobs)...)
 		}
 		if err := server.jobModule.RegisterHandlers(handlers); err != nil {
-			server.logger.ErrorContext(context.Background(), "register async job handlers failed", "error", err)
+			return fail(fmt.Errorf("register async job handlers: %w", err))
 		}
 	}
-	return server
+	return server, nil
 }
 
-func (s *runtimeRouter) configureModules(databases ...*sql.DB) {
-	var database *sql.DB
-	if len(databases) > 0 {
-		database = databases[0]
-	}
+func (s *runtimeRouter) configureModules(ctx context.Context, database *sql.DB) error {
 	if s == nil {
-		return
+		return errors.New("runtime router is required")
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	if s.accessModule == nil {
 		accessSurface := accessmodule.SurfaceConfig{
@@ -437,11 +465,16 @@ func (s *runtimeRouter) configureModules(databases ...*sql.DB) {
 			},
 			WorkspaceID: s.workspaceID,
 		}
-		s.accessModule, _ = accessmodule.Build(context.Background(), accessmodule.Config{Surface: &accessSurface})
+		var err error
+		s.accessModule, err = accessmodule.Build(ctx, accessmodule.Config{Surface: &accessSurface})
+		if err != nil {
+			return fmt.Errorf("build access module: %w", err)
+		}
 	}
 	if s.workspaceModule == nil {
 		refreshSupport := s.workspaceRefreshSupport()
-		s.workspaceModule, _ = workspacemodule.Build(context.Background(), workspacemodule.Config{
+		var err error
+		s.workspaceModule, err = workspacemodule.Build(ctx, workspacemodule.Config{
 			Database:            database,
 			Repository:          s.construction.workspaceRepo,
 			Persistence:         s.construction.workspacePersistence,
@@ -476,6 +509,9 @@ func (s *runtimeRouter) configureModules(databases ...*sql.DB) {
 			},
 			AuthorizeObject: s.accessModule.AuthorizeObject,
 		})
+		if err != nil {
+			return fmt.Errorf("build workspace module: %w", err)
+		}
 		s.construction.workspaceAssetCatalog = nil
 	}
 	if s.deploymentModule == nil {
@@ -503,10 +539,15 @@ func (s *runtimeRouter) configureModules(databases ...*sql.DB) {
 				return (s.auth == nil || s.auth.DevBypass()) && actor == accessmodule.LocalDeveloperPrincipal().ID
 			},
 		}
-		s.deploymentModule, _ = deploymentmodule.Build(context.Background(), config)
+		var err error
+		s.deploymentModule, err = deploymentmodule.Build(ctx, config)
+		if err != nil {
+			return fmt.Errorf("build deployment module: %w", err)
+		}
 	}
 	if s.dashboardModule == nil {
-		s.dashboardModule, _ = dashboardmodule.Build(context.Background(), dashboardmodule.Config{
+		var err error
+		s.dashboardModule, err = dashboardmodule.Build(ctx, dashboardmodule.Config{
 			Database: database,
 			HTTP: dashboardmodule.HTTPConfig{
 				Metrics:             s.metrics,
@@ -575,9 +616,13 @@ func (s *runtimeRouter) configureModules(databases ...*sql.DB) {
 				return s.workspaceModule.ActiveServingStateID(ctx, s.workspaceID(workspaceID))
 			},
 		})
+		if err != nil {
+			return fmt.Errorf("build dashboard module: %w", err)
+		}
 	}
 	if s.agentModule == nil {
-		s.agentModule, _ = agentmodule.Build(context.Background(), agentmodule.Config{
+		var err error
+		s.agentModule, err = agentmodule.Build(ctx, agentmodule.Config{
 			Database: database, Metrics: s.metrics, Model: s.construction.agentConfig,
 			Service: s.construction.agent, Jobs: s.asyncJobs, DefaultWorkspaceID: s.defaultWorkspaceID,
 			RunWorkloadClass: string(workloadmodule.BackgroundClass), GlobalWorkspaceID: workloadmodule.GlobalWorkspace,
@@ -646,9 +691,14 @@ func (s *runtimeRouter) configureModules(databases ...*sql.DB) {
 				},
 			},
 		})
+		if err != nil {
+			return fmt.Errorf("build agent module: %w", err)
+		}
 	}
 	if s.refreshModule == nil {
-		s.configureRefreshModule(nil)
+		if err := s.configureRefreshModule(ctx, nil); err != nil {
+			return err
+		}
 	}
 	if s.adminModule == nil {
 		var accessReader adminmodule.AccessReader
@@ -661,7 +711,8 @@ func (s *runtimeRouter) configureModules(databases ...*sql.DB) {
 				ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName, DevBypass: principal.DevBypass,
 			}, ok
 		}
-		s.adminModule, _ = adminmodule.Build(context.Background(), adminmodule.Config{
+		var err error
+		s.adminModule, err = adminmodule.Build(ctx, adminmodule.Config{
 			Catalog: func() catalog.Catalog {
 				return s.metrics.Catalog()
 			},
@@ -698,9 +749,13 @@ func (s *runtimeRouter) configureModules(databases ...*sql.DB) {
 			},
 			Broker: s.broker,
 		})
+		if err != nil {
+			return fmt.Errorf("build admin module: %w", err)
+		}
 	}
 	if s.managedDataModule == nil {
-		s.managedDataModule, _ = manageddatamodule.Build(context.Background(), manageddatamodule.Config{
+		var err error
+		s.managedDataModule, err = manageddatamodule.Build(ctx, manageddatamodule.Config{
 			Environment: s.defaultEnvironment, Jobs: s.asyncJobs,
 			CurrentPrincipal: func(r *http.Request) (manageddatamodule.Principal, bool) {
 				if s.auth == nil {
@@ -710,11 +765,32 @@ func (s *runtimeRouter) configureModules(databases ...*sql.DB) {
 				return manageddatamodule.Principal{ID: principal.ID}, ok
 			},
 		})
+		if err != nil {
+			return fmt.Errorf("build managed data module: %w", err)
+		}
 	}
-	if objects, err := s.workspaceModule.SecurableObjects(context.Background(), s.defaultWorkspaceID); err != nil {
-		s.logger.ErrorContext(context.Background(), "resolve workspace securables failed", "error", err)
-	} else if err := s.accessModule.RegisterSecurables(context.Background(), objects); err != nil {
-		s.logger.ErrorContext(context.Background(), "register workspace securables failed", "error", err)
+	objects, err := s.workspaceModule.SecurableObjects(ctx, s.defaultWorkspaceID)
+	if err != nil {
+		return fmt.Errorf("resolve workspace securables: %w", err)
+	}
+	if err := s.accessModule.RegisterSecurables(ctx, objects); err != nil {
+		return fmt.Errorf("register workspace securables: %w", err)
+	}
+	apiGenAuthorizer, err := s.accessModule.APIGenAuthorizer(accessmodule.APIGenObjectResolvers{
+		Dashboard:      dashboardmodule.DashboardObjectRefs,
+		SemanticModel:  dashboardmodule.SemanticDatasetObjectRefs,
+		WorkspaceAsset: workspacemodule.AssetObjectRefs,
+	})
+	if err != nil {
+		return fmt.Errorf("build APIGen authorizer: %w", err)
+	}
+	s.apiGenHandler, err = apiapigenruntime.Build(
+		apiGenAuthorizer,
+		apiGenAdapter{server: s},
+		apiprotocol.TransportErrorResponder{Logger: s.logger},
+	)
+	if err != nil {
+		return fmt.Errorf("build APIGen transport: %w", err)
 	}
 	s.configurePageStream()
 	s.health = observability.NewHealth(observability.HealthConfig{
@@ -750,6 +826,7 @@ func (s *runtimeRouter) configureModules(databases ...*sql.DB) {
 		platformlifecycle.Component{Start: s.dashboardModule.Start, Stop: s.dashboardModule.Stop},
 		platformlifecycle.Component{Start: s.jobModule.Start, Stop: s.jobModule.Stop},
 	)
+	return nil
 }
 
 func (s *runtimeRouter) StartBackgroundJobs(ctx context.Context) error {

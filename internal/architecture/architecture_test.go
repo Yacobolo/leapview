@@ -101,6 +101,57 @@ func TestCapabilityModulesDoNotExposeRepositories(t *testing.T) {
 	}
 }
 
+func TestApplicationAPIGenHandlerIsDirectDelegation(t *testing.T) {
+	found := false
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/app" {
+			continue
+		}
+		for _, forbidden := range []string{
+			"apigenOperationPrivilege",
+			"apigenOperationObjectResolver",
+			"apiGenObjectScopes",
+			"isGlobalAgentOperation",
+		} {
+			if strings.Contains(file.body, forbidden) {
+				t.Errorf("%s retains APIGen authorization behavior %q; access owns authorization", file.path, forbidden)
+			}
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), file.path, file.body, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", file.path, err)
+		}
+		for _, declaration := range parsed.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Name.Name != "HandleAPIGen" {
+				continue
+			}
+			found = true
+			if function.Body == nil || len(function.Body.List) != 1 {
+				t.Errorf("%s HandleAPIGen must contain one direct delegation", file.path)
+				continue
+			}
+			statement, ok := function.Body.List[0].(*ast.ExprStmt)
+			if !ok {
+				t.Errorf("%s HandleAPIGen contains non-delegation logic", file.path)
+				continue
+			}
+			call, ok := statement.X.(*ast.CallExpr)
+			if !ok {
+				t.Errorf("%s HandleAPIGen is not a direct call", file.path)
+				continue
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || selector.Sel.Name != "HandleAPIGen" {
+				t.Errorf("%s HandleAPIGen does not delegate to an owned handler", file.path)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("internal/app APIGen delegation method is missing")
+	}
+}
+
 func TestRefreshPersistenceIsConstructedOnlyByItsModule(t *testing.T) {
 	constructors := 0
 	for _, file := range productionGoFiles(t) {

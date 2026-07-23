@@ -3,20 +3,23 @@ package app
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
 
 	accessmodule "github.com/Yacobolo/leapview/internal/access/module"
 	refreshmodule "github.com/Yacobolo/leapview/internal/refresh/module"
 )
 
-func (s *runtimeRouter) configureRefreshModule(database *sql.DB) {
+func (s *runtimeRouter) configureRefreshModule(ctx context.Context, database *sql.DB) error {
 	if s == nil || s.refreshModule != nil {
-		return
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	service, err := s.workspaceRefreshService()
 	if err != nil && database != nil {
-		s.logger.ErrorContext(context.Background(), "configure refresh service failed", "error", err)
-		return
+		return fmt.Errorf("configure refresh service: %w", err)
 	}
 	config := refreshmodule.Config{
 		Database: database, Service: service,
@@ -60,10 +63,10 @@ func (s *runtimeRouter) configureRefreshModule(database *sql.DB) {
 			}
 		},
 	}
-	module, err := refreshmodule.Build(context.Background(), config)
+	module, err := refreshmodule.Build(ctx, config)
 	if err != nil {
-		s.logger.ErrorContext(context.Background(), "configure refresh module failed", "error", err)
-		return
+		return fmt.Errorf("build refresh module: %w", err)
 	}
 	s.refreshModule = module
+	return nil
 }

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"net/http"
 	"sort"
 	"strings"
@@ -20,7 +21,20 @@ import (
 )
 
 func (s *runtimeRouter) Routes() http.Handler {
-	s.configureModules()
+	if s.apiProtocol == nil {
+		if err := s.configureAPIProtocol(context.Background(), nil); err != nil {
+			s.logger.ErrorContext(context.Background(), "configure API protocol failed", "error", err)
+			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+			})
+		}
+	}
+	if err := s.configureModules(context.Background(), nil); err != nil {
+		s.logger.ErrorContext(context.Background(), "configure application routes failed", "error", err)
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+		})
+	}
 	mux := chi.NewRouter()
 	if s.requestLogging {
 		mux.Use(apihttpmiddleware.RequestLogger(s.logger))
