@@ -18,7 +18,7 @@ type governedDataRuntime struct {
 
 func newGovernedDataRuntime(workspaceID, modelID string, runtime DataRuntime) DataRuntime {
 	wrapped := &governedDataRuntime{DataRuntime: runtime, workspaceID: workspaceID}
-	wrapped.service = reportdef.NewDataQueryService(modelID, runtime, wrapped)
+	wrapped.service = reportdef.NewDataQueryService(modelID, wrapped)
 	return wrapped
 }
 
@@ -100,6 +100,7 @@ func (r *governedDataRuntime) ExecuteDataQueryBundle(ctx context.Context, reques
 		}
 		for _, result := range bundle.Results {
 			summary.RowsReturned += len(result.Rows)
+			summary.BytesEstimate += result.BytesEstimate
 			summary.PlanningMS = max(summary.PlanningMS, result.PlanningMS)
 			summary.ConnectionWaitMS = max(summary.ConnectionWaitMS, result.ConnectionWaitMS)
 			summary.DatabaseMS = max(summary.DatabaseMS, result.DatabaseMS)

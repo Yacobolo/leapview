@@ -17,14 +17,16 @@ import (
 	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
 	"github.com/Yacobolo/leapview/internal/agent"
 	agentsqlite "github.com/Yacobolo/leapview/internal/agent/sqlite"
+	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
 	materializesqlite "github.com/Yacobolo/leapview/internal/analytics/materialize/sqlite"
+	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
 	"github.com/Yacobolo/leapview/internal/app"
 	"github.com/Yacobolo/leapview/internal/config"
+	"github.com/Yacobolo/leapview/internal/dataquery"
 	projectdeployment "github.com/Yacobolo/leapview/internal/deployment"
 	deploymentapiadapter "github.com/Yacobolo/leapview/internal/deployment/apiadapter"
 	deploymenthttp "github.com/Yacobolo/leapview/internal/deployment/http"
 	deploymentsqlite "github.com/Yacobolo/leapview/internal/deployment/sqlite"
-	"github.com/Yacobolo/leapview/internal/execution"
 	"github.com/Yacobolo/leapview/internal/instancelock"
 	manageddataapiadapter "github.com/Yacobolo/leapview/internal/manageddata/apiadapter"
 	manageddatahttp "github.com/Yacobolo/leapview/internal/manageddata/http"
@@ -38,6 +40,7 @@ import (
 	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
 	storagemaintenance "github.com/Yacobolo/leapview/internal/storage/maintenance"
 	visualizationmapasset "github.com/Yacobolo/leapview/internal/visualization/mapasset"
+	"github.com/Yacobolo/leapview/internal/workload"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
 	"github.com/spf13/cobra"
@@ -89,6 +92,18 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 	serveCtx, stopServe := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stopServe()
 	server.StartBackgroundJobs(serveCtx)
+	analyticalFatal := make(chan struct{})
+	if fatal := server.AnalyticalFatal(); fatal != nil {
+		go func() {
+			select {
+			case <-serveCtx.Done():
+			case <-fatal:
+				server.StopWorkloadAdmission()
+				close(analyticalFatal)
+				stopServe()
+			}
+		}()
+	}
 	slog.Info("LeapView listening", "url", listenURL(addr), "environment", environment)
 	err = runHTTPServer(serveCtx, productionHTTPServer(addr, server.Routes()))
 	stopServe()
@@ -96,6 +111,13 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 	defer cancel()
 	if stopErr := server.StopBackgroundJobs(shutdownCtx); err == nil && stopErr != nil {
 		err = stopErr
+	}
+	select {
+	case <-analyticalFatal:
+		if healthErr := server.AnalyticalHealth(); healthErr != nil {
+			return fmt.Errorf("analytical environment became unhealthy: %w", healthErr)
+		}
+	default:
 	}
 	return err
 }
@@ -206,8 +228,42 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 	if err != nil {
 		return nil, nil, err
 	}
-	cleanup := func() { _ = store.Close() }
+	var duckDBEnvironment *analyticsducklake.Environment
+	var resultCachePool *resultcache.Pool
+	cleanup := func() {
+		if resultCachePool != nil {
+			_ = resultCachePool.Close()
+		}
+		if duckDBEnvironment != nil {
+			_ = duckDBEnvironment.Close()
+		}
+		_ = store.Close()
+	}
 	if err := store.BindInstanceEnvironment(ctx, string(environment)); err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	workloadConfig := cfg.WorkloadConfig()
+	duckDBEnvironment, err = analyticsducklake.Open(ctx, analyticsducklake.Config{
+		RootDir:        cfg.DuckDBDirPath(),
+		CatalogPath:    duckLakeCatalogPath,
+		DataPath:       cfg.DuckLakeDataDir(),
+		MaxConnections: workloadConfig.MaxRunning,
+		MemoryMaxBytes: cfg.DuckDBNodeMemoryMaxBytes,
+		TempMaxBytes:   cfg.DuckDBNodeTempMaxBytes,
+		MaxThreads:     cfg.DuckDBNodeMaxThreads,
+		TempDir:        cfg.DuckDBTempDirPath(),
+	})
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	resultCachePool, err = resultcache.New(resultcache.Limits{
+		RuntimeEntries: cfg.QueryCacheRuntimeMaxEntries, RuntimeBytes: cfg.QueryCacheRuntimeMaxBytes,
+		WorkspaceEntries: cfg.QueryCacheWorkspaceMaxEntries, WorkspaceBytes: cfg.QueryCacheWorkspaceMaxBytes,
+		NodeEntries: cfg.QueryCacheNodeMaxEntries, NodeBytes: cfg.QueryCacheNodeMaxBytes,
+	})
+	if err != nil {
 		cleanup()
 		return nil, nil, err
 	}
@@ -262,11 +318,12 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 		return nil, nil, err
 	}
 	if _, err := storagemaintenance.Run(ctx, servingStateRepo, storagemaintenance.Options{
-		Environment: environment,
-		RootDir:     cfg.HomeDir,
-		CatalogPath: duckLakeCatalogPath,
-		DataPath:    cfg.DuckLakeDataDir(),
-		DryRun:      false,
+		DuckDBEnvironment: duckDBEnvironment,
+		Environment:       environment,
+		RootDir:           cfg.HomeDir,
+		CatalogPath:       duckLakeCatalogPath,
+		DataPath:          cfg.DuckLakeDataDir(),
+		DryRun:            false,
 	}); err != nil {
 		cleanup()
 		return nil, nil, err
@@ -294,6 +351,7 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 					protected = registry.LeasedSnapshots()
 				}
 				if _, err := storagemaintenance.Run(context.Background(), servingStateRepo, storagemaintenance.Options{
+					DuckDBEnvironment:            duckDBEnvironment,
 					Environment:                  environment,
 					RootDir:                      cfg.HomeDir,
 					CatalogPath:                  duckLakeCatalogPath,
@@ -306,10 +364,11 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 			}()
 		},
 		Factory: servingStateRuntimeFactory{
-			duckDBDir:        cfg.DuckDBDirPath(),
-			runtimeDir:       cfg.RuntimeDir(),
-			catalogPath:      duckLakeCatalogPath,
-			duckLakeDataPath: cfg.DuckLakeDataDir(),
+			duckDBDir:    cfg.DuckDBDirPath(),
+			runtimeDir:   cfg.RuntimeDir(),
+			environment:  duckDBEnvironment,
+			cachePool:    resultCachePool,
+			resultLimits: dataquery.ResultLimits{MaxRows: cfg.QueryResultMaxRows, MaxBytes: cfg.QueryResultMaxBytes},
 		},
 	})
 	if err := registry.Reload(ctx); err != nil {
@@ -380,6 +439,10 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 	rateLimits := app.ProductionRateLimitConfig()
 	rateLimits.Enabled = production && cfg.RateLimitingEnabled()
 	rateLimits.UseRealIP = cfg.RateLimitingUsesRealIP()
+	workloadController, err := workload.New(workloadConfig)
+	if err != nil {
+		return nil, nil, err
+	}
 	server := app.NewWithOptions(runtimeMetrics, app.Options{
 		Store:               store,
 		ServingStateRepo:    servingStateRepo,
@@ -393,6 +456,8 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 		DuckDBDir:           cfg.DuckDBDirPath(),
 		DuckLakeCatalogPath: duckLakeCatalogPath,
 		DuckLakeDataPath:    cfg.DuckLakeDataDir(),
+		DuckDBEnvironment:   duckDBEnvironment,
+		QueryResultCache:    resultCachePool,
 		DefaultEnvironment:  string(environment),
 		PublicURL:           firstConfigured(cfg.PublicURL, listenURL(cfg.ListenAddr())),
 		RateLimits:          rateLimits,
@@ -406,8 +471,8 @@ func servingStateBackedServer(ctx context.Context, cfg config.Config, production
 			IssuerURL: cfg.MCPOAuthIssuerURL,
 		},
 		AllowedHosts:    allowedHosts,
-		Executor:        execution.New(cfg.ExecutionConfig()),
-		JobLeaseTimeout: cfg.ExecJobLeaseTimeout,
+		Workload:        workloadController,
+		JobLeaseTimeout: cfg.RefreshJobLeaseTimeout,
 		ManagedData: manageddatahttp.Options{
 			Repository: managedDataAPI, Uploads: managedDataControl,
 			Multipart: managedDataMultipart,

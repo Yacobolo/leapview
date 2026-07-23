@@ -100,12 +100,14 @@ model AcceptedJson<T> {
   ...Body<T>;
 }
 
+@extension("x-leapview-response-trailers", #["X-Next-Cursor"])
 model ArrowStreamResponse {
   ...OkResponse;
   @header contentType: "application/vnd.apache.arrow.stream";
   @header("X-Query-ID") queryId: string;
   @header("X-Serving-Snapshot") servingSnapshot: string;
-  @header("X-Next-Cursor") nextCursor?: string;
+  @header("X-LeapView-Arrow-Contract") arrowContract: "native-v1";
+  @header("Trailer") trailers: "X-Next-Cursor";
   @header cacheControl: "no-store";
   @body body: bytes;
 }

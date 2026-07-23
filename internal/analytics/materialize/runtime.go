@@ -3,35 +3,36 @@ package materialize
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/Yacobolo/leapview/internal/analytics/arrowquery"
+	"github.com/Yacobolo/leapview/internal/analytics/arrowresult"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
-	"github.com/Yacobolo/leapview/internal/configspec"
+	analyticsresource "github.com/Yacobolo/leapview/internal/analytics/resource"
+	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
 	"github.com/Yacobolo/leapview/internal/dataquery"
-	"github.com/Yacobolo/leapview/internal/execution"
+	"github.com/Yacobolo/leapview/internal/workload"
 )
 
 type RuntimeConfig struct {
 	ModelID string
 	Model   *semanticmodel.Model
-	DBDir   string
 	// QueryCacheNamespace identifies the immutable serving snapshot and source
 	// digests backing this runtime. Mutable refreshes additionally advance the
 	// cache generation before any subsequent query can reuse results.
-	QueryCacheNamespace  string
-	QueryCacheMaxEntries int
-	QueryCacheMaxBytes   int64
+	QueryCacheNamespace string
+	QueryCache          *resultcache.Scope
+	ResultLimits        dataquery.ResultLimits
+	TableRelation       semanticquery.TableRelation
 
 	Database Database
-	Sources  SourceRegistrar
+	Sources  SourcePreparer
 	Resolver SourcePathResolver
 }
 
@@ -45,21 +46,24 @@ type ModelTableQuery struct {
 }
 
 type Runtime struct {
-	modelID     string
-	model       *semanticmodel.Model
-	planner     *semanticquery.Planner
-	db          Database
-	sources     SourceRegistrar
-	queries     *semanticquery.Service
-	queryCache  *queryResultCache
-	lastRefresh time.Time
+	modelID      string
+	model        *semanticmodel.Model
+	planner      *semanticquery.Planner
+	db           Database
+	sources      SourcePreparer
+	queryCache   *queryResultCache
+	resultLimits dataquery.ResultLimits
+	lastRefresh  time.Time
 }
 
 type Database interface {
 	Executor
-	semanticquery.Executor
 	Close() error
 	Path() string
+}
+
+type arrowDatabase interface {
+	QueryArrow(context.Context, semanticquery.Plan, arrowquery.Sink) error
 }
 
 type schemaDiscoverer interface {
@@ -86,7 +90,7 @@ func NewRuntimeView(ctx context.Context, config RuntimeConfig) (*Runtime, error)
 		return nil, fmt.Errorf("materialization database is required")
 	}
 	if config.Sources == nil {
-		return nil, fmt.Errorf("source registrar is required")
+		return nil, fmt.Errorf("source preparer is required")
 	}
 	resolver := config.Resolver
 	if resolver == nil {
@@ -95,19 +99,32 @@ func NewRuntimeView(ctx context.Context, config RuntimeConfig) (*Runtime, error)
 	if err := ValidateFilesWithResolver(config.Model, resolver); err != nil {
 		return nil, err
 	}
-	planner, err := semanticquery.NewCompiledPlanner(config.Model)
+	plannerOptions := []semanticquery.PlannerOption{}
+	if config.TableRelation != nil {
+		plannerOptions = append(plannerOptions, semanticquery.WithTableRelation(config.TableRelation))
+	}
+	planner, err := semanticquery.NewCompiledPlanner(config.Model, plannerOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("compile semantic model: %w", err)
 	}
-	cacheEntries, cacheBytes := queryCacheLimits(config)
+	cache := newQueryResultCacheWithScope(config.QueryCache, config.QueryCacheNamespace)
+	if config.QueryCache == nil {
+		cache = newQueryResultCache(256, config.QueryCacheNamespace)
+	}
+	limits := config.ResultLimits
+	if limits.MaxRows <= 0 {
+		limits.MaxRows = 10000
+	}
+	if limits.MaxBytes <= 0 {
+		limits.MaxBytes = 32 << 20
+	}
+	if err := limits.Validate(); err != nil {
+		return nil, err
+	}
 	runtime := &Runtime{
-		modelID:    config.ModelID,
-		model:      config.Model,
-		planner:    planner,
-		db:         config.Database,
+		modelID: config.ModelID, model: config.Model, planner: planner, db: config.Database,
 		sources:    config.Sources,
-		queries:    semanticquery.NewService(planner, config.Database),
-		queryCache: newQueryResultCacheWithLimits(cacheEntries, cacheBytes, config.QueryCacheNamespace),
+		queryCache: cache, resultLimits: limits,
 	}
 	return runtime, nil
 }
@@ -119,37 +136,29 @@ func (r *Runtime) queryPlanner() *semanticquery.Planner {
 	return semanticquery.NewPlanner(r.model)
 }
 
-func queryCacheLimits(config RuntimeConfig) (int, int64) {
-	entries := config.QueryCacheMaxEntries
-	if entries <= 0 {
-		entries = 256
-		if value, err := strconv.Atoi(strings.TrimSpace(os.Getenv(configspec.EnvLEAPVIEW_QUERY_CACHE_MAX_ENTRIES))); err == nil && value > 0 {
-			entries = value
-		}
-	}
-	bytes := config.QueryCacheMaxBytes
-	if bytes <= 0 {
-		bytes = 64 << 20
-		if value, err := strconv.ParseInt(strings.TrimSpace(os.Getenv(configspec.EnvLEAPVIEW_QUERY_CACHE_MAX_BYTES)), 10, 64); err == nil && value > 0 {
-			bytes = value
-		}
-	}
-	return entries, bytes
-}
-
-func DatabasePath(dbDir, modelID string) string {
-	return filepath.Join(dbDir, "leapview-"+modelID+".duckdb")
-}
-
 func (r *Runtime) Close() error {
 	if r == nil {
 		return nil
 	}
-	return r.db.Close()
+	return errors.Join(r.db.Close(), r.queryCache.close())
+}
+
+// CloseView releases generation-scoped cache state without closing the
+// process-owned analytical database shared by other runtimes.
+func (r *Runtime) CloseView() error {
+	if r == nil || r.queryCache == nil {
+		return nil
+	}
+	return r.queryCache.close()
 }
 
 func (r *Runtime) Refresh(ctx context.Context) error {
-	lastRefresh, err := Refresh(ctx, r.db, r.sources, r.model)
+	prepared, err := r.sources.Prepare(ctx, r.model)
+	if err != nil {
+		return err
+	}
+	lastRefresh, err := Refresh(ctx, r.db, prepared, r.model)
+	err = errors.Join(err, prepared.Close())
 	if err != nil {
 		return err
 	}
@@ -167,7 +176,12 @@ func (r *Runtime) Refresh(ctx context.Context) error {
 }
 
 func (r *Runtime) RefreshModelTables(ctx context.Context, tableNames []string) error {
-	lastRefresh, err := RefreshModelTables(ctx, r.db, r.sources, r.model, tableNames)
+	prepared, err := r.sources.Prepare(ctx, r.model)
+	if err != nil {
+		return err
+	}
+	lastRefresh, err := RefreshModelTables(ctx, r.db, prepared, r.model, tableNames)
+	err = errors.Join(err, prepared.Close())
 	if err != nil {
 		return err
 	}
@@ -181,17 +195,22 @@ func (r *Runtime) RefreshModelTables(ctx context.Context, tableNames []string) e
 	return nil
 }
 
-func (r *Runtime) Queries() *semanticquery.Service {
-	if r == nil {
-		return nil
+func (r *Runtime) queryResultLimits() dataquery.ResultLimits {
+	limits := r.resultLimits
+	if limits.MaxRows <= 0 {
+		limits.MaxRows = 10000
 	}
-	return r.queries
+	if limits.MaxBytes <= 0 {
+		limits.MaxBytes = 32 << 20
+	}
+	return limits
 }
 
 func (r *Runtime) ExecuteDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
 	if r == nil || r.db == nil {
 		return dataquery.Result{}, fmt.Errorf("materialization runtime is not initialized")
 	}
+	ctx = dataquery.WithResultBudget(ctx, r.queryResultLimits())
 	if request.ModelID == "" {
 		request.ModelID = r.modelID
 	}
@@ -211,54 +230,95 @@ func (r *Runtime) ExecuteDataQuery(ctx context.Context, request dataquery.Query)
 	if err := request.Validate(); err != nil {
 		return dataquery.Result{}, err
 	}
-	executePhysical := func(execCtx context.Context) (dataquery.Result, error) {
-		execCtx, connectionWait := dataquery.WithConnectionWaitCounter(execCtx)
-		var result dataquery.Result
-		var err error
-		switch request.Kind {
-		case dataquery.KindSemanticAggregate:
-			result, err = r.executeSemanticAggregate(execCtx, request)
-		case dataquery.KindSemanticRows:
-			result, err = r.executeSemanticRows(execCtx, request)
-		case dataquery.KindModelTableRows:
-			result, err = r.executeModelTableRows(execCtx, request)
-		case dataquery.KindSourceRows:
-			result, err = r.executeSourceRows(execCtx, request)
-		case dataquery.KindSemanticHistogram:
-			result, err = r.executeSemanticHistogram(execCtx, request)
-		case dataquery.KindSemanticDistribution:
-			result, err = r.executeSemanticDistribution(execCtx, request)
-		case dataquery.KindSemanticSpatial:
-			result, err = r.executeSemanticSpatial(execCtx, request)
-		default:
-			return dataquery.Result{}, fmt.Errorf("unsupported data query kind %q", request.Kind)
+	if _, ok := r.db.(arrowDatabase); !ok {
+		return dataquery.Result{}, fmt.Errorf("analytical database does not support native Arrow execution")
+	}
+	return r.executeGovernedDataQueryArrow(ctx, request, transform)
+}
+
+// ExecuteDataQueryArrow is the native, streaming execution path for Arrow
+// transports. It deliberately bypasses the retained-result cache because API
+// queries are not cacheable and this contract must remain batch-streaming and
+// unbuffered.
+func (r *Runtime) ExecuteDataQueryArrow(ctx context.Context, request dataquery.Query, sink arrowquery.Sink) (dataquery.Result, error) {
+	if r == nil || r.db == nil {
+		return dataquery.Result{}, fmt.Errorf("materialization runtime is not initialized")
+	}
+	if sink == nil {
+		return dataquery.Result{}, fmt.Errorf("Arrow sink is required")
+	}
+	db, ok := r.db.(arrowDatabase)
+	if !ok {
+		return dataquery.Result{}, fmt.Errorf("analytical database does not support native Arrow execution")
+	}
+	ctx = dataquery.WithResultBudget(ctx, r.queryResultLimits())
+	if request.ModelID == "" {
+		request.ModelID = r.modelID
+	}
+	if r.modelID != "" && request.ModelID != "" && request.ModelID != r.modelID {
+		return dataquery.Result{}, fmt.Errorf("semantic model %q is not available in runtime for %q", request.ModelID, r.modelID)
+	}
+	var transform dataquery.ResultTransformer
+	if governor, found := dataquery.GovernorFromContext(ctx); found && !dataquery.GovernanceApplied(ctx) {
+		governed, nextTransform, err := governor.GovernDataQuery(ctx, request)
+		if err != nil {
+			return dataquery.Result{Status: dataquery.StatusError, ExecutionState: dataquery.ExecutionRejected, Error: err.Error()}, err
 		}
-		waitMS := connectionWait.Duration().Milliseconds()
-		result.ConnectionWaitMS += waitMS
-		if waitMS >= result.DatabaseMS {
+		request, transform = governed, nextTransform
+		ctx = dataquery.WithGovernanceApplied(ctx)
+	}
+	if err := request.Validate(); err != nil {
+		return dataquery.Result{}, err
+	}
+
+	executePhysical := func(execCtx context.Context) (dataquery.Result, error) {
+		planningStarted := time.Now()
+		plan, err := r.planArrowQuery(request)
+		planningMS := elapsedStageMS(planningStarted)
+		if err != nil {
+			return dataquery.Result{PlanningMS: planningMS}, err
+		}
+		lease, leasedCtx, err := acquireDatabaseLease(execCtx, r.db)
+		if err != nil {
+			return dataquery.Result{}, err
+		}
+		if lease != nil {
+			defer lease.Release()
+			execCtx = leasedCtx
+		}
+		execCtx, connectionWait := dataquery.WithConnectionWaitCounter(execCtx)
+		databaseStarted := time.Now()
+		markPhysicalStatement(execCtx)
+		err = db.QueryArrow(execCtx, plan, sink)
+		databaseMS := elapsedStageMS(databaseStarted)
+		rows, bytes := 0, int64(0)
+		if budget, found := dataquery.ResultBudgetFromContext(execCtx); found {
+			rows, bytes = budget.Usage()
+		}
+		if stats, found := sink.(arrowquery.SinkStats); found {
+			rows = stats.RowsWritten()
+		}
+		result := dataquery.Result{
+			Columns: dataquery.ColumnsFromNames(plan.Columns), SQL: plan.SQL,
+			PlanningMS: planningMS, DatabaseMS: databaseMS,
+			ConnectionWaitMS: connectionWait.Duration().Milliseconds(),
+			RowsReturned:     rows, BytesEstimate: bytes,
+		}
+		if result.ConnectionWaitMS >= result.DatabaseMS {
 			result.DatabaseMS = 0
 		} else {
-			result.DatabaseMS -= waitMS
+			result.DatabaseMS -= result.ConnectionWaitMS
 		}
 		return result, err
 	}
-	execute := func() (dataquery.Result, error) {
-		execCtx, statements := withPhysicalStatementCounter(ctx)
-		result, err := execution.SubmitReadFromContext(execCtx, request, executePhysical)
-		if count := int(statements.Load()); count > 0 {
-			dataquery.ObservePhysicalQuery(ctx, dataquery.PhysicalQueryObservation{Count: count, Result: result})
-		}
-		return result, err
+
+	execCtx, statements := withPhysicalStatementCounter(ctx)
+	result, err := admitPhysicalQuery(execCtx, request, executePhysical)
+	if count := int(statements.Load()); count > 0 {
+		dataquery.ObservePhysicalQuery(ctx, dataquery.PhysicalQueryObservation{Count: count, Result: result})
 	}
-	var (
-		result dataquery.Result
-		err    error
-	)
-	if dashboardQueryResultCacheable(request) {
-		result, err = r.queryCache.execute(ctx, request, execute)
-		observeQueryCacheOutcome(ctx, result, err)
-	} else {
-		result, err = execute()
+	if _, found := dataquery.ResultLimitReasonOf(err); found {
+		result.Status, result.ExecutionState, result.Error = dataquery.StatusError, dataquery.ExecutionFailed, err.Error()
 	}
 	if transform != nil {
 		if transformErr := transform(&result, err); transformErr != nil {
@@ -266,6 +326,29 @@ func (r *Runtime) ExecuteDataQuery(ctx context.Context, request dataquery.Query)
 		}
 	}
 	return result, err
+}
+
+func (r *Runtime) planArrowQuery(request dataquery.Query) (semanticquery.Plan, error) {
+	switch request.Kind {
+	case dataquery.KindSemanticAggregate:
+		return r.queryPlanner().Plan(semanticquery.Request{
+			Table: request.Target, Dimensions: dataQueryFields(request.Fields), Measures: dataQueryFields(request.Measures),
+			Time:    semanticquery.Time{Field: request.Time.Field, Grain: request.Time.Grain, Alias: request.Time.Alias},
+			Filters: dataQueryFilters(request.Filters), Sort: dataQuerySorts(request.Sort),
+			ColumnMasks: dataQueryColumnMasks(request.ColumnMasks), Limit: request.Limit, Offset: request.Offset,
+		})
+	case dataquery.KindSemanticRows:
+		if request.IncludeTotal {
+			return semanticquery.Plan{}, fmt.Errorf("native Arrow row queries do not include an auxiliary total")
+		}
+		return r.queryPlanner().PlanRows(semanticquery.RowRequest{
+			Table: request.Target, Dimensions: dataQueryFields(request.Fields), Measures: dataQueryFields(request.Measures),
+			Filters: dataQueryFilters(request.Filters), Sort: dataQuerySorts(request.Sort),
+			ColumnMasks: dataQueryColumnMasks(request.ColumnMasks), Limit: request.Limit, Offset: request.Offset,
+		})
+	default:
+		return semanticquery.Plan{}, fmt.Errorf("data query kind %q does not support native Arrow streaming", request.Kind)
+	}
 }
 
 // ExecuteDataQueryBundle authorizes every branch before compiling one
@@ -280,6 +363,10 @@ func (r *Runtime) ExecuteDataQueryBundle(ctx context.Context, requests []dataque
 	if len(requests) < 2 {
 		return dataquery.BundleResult{}, &dataquery.BundleIncompatibleError{Err: fmt.Errorf("bundle requires at least two branches")}
 	}
+	if _, ok := r.db.(arrowDatabase); !ok {
+		return dataquery.BundleResult{}, fmt.Errorf("analytical database does not support native Arrow execution")
+	}
+	ctx = dataquery.WithResultBudget(ctx, r.queryResultLimits())
 	governed := make([]dataquery.BundleRequest, 0, len(requests))
 	transforms := make(map[string]dataquery.ResultTransformer, len(requests))
 	result := dataquery.BundleResult{Results: make(map[string]dataquery.Result, len(requests))}
@@ -310,7 +397,7 @@ func (r *Runtime) ExecuteDataQueryBundle(ctx context.Context, requests []dataque
 		if !dashboardQueryResultCacheable(request) {
 			return dataquery.BundleResult{}, &dataquery.BundleIncompatibleError{Err: fmt.Errorf("branch %q is not a cache-governed dashboard query", branch.ID)}
 		}
-		cached, key, generation, hit, err := r.queryCache.lookup(request)
+		cached, key, generation, hit, err := r.queryCache.lookupArrow(ctx, request)
 		if err != nil {
 			return dataquery.BundleResult{}, &dataquery.BundleBranchError{ID: branch.ID, Err: err}
 		}
@@ -338,20 +425,6 @@ func (r *Runtime) ExecuteDataQueryBundle(ctx context.Context, requests []dataque
 			}
 		}
 		return nil
-	}
-	if len(governed) == len(requests) {
-		projection, handled, projectionErr := r.executeProjectionBundle(ctx, governed, transforms)
-		if handled {
-			if projectionErr != nil {
-				_ = applyTransforms(projectionErr)
-				return dataquery.BundleResult{}, projectionErr
-			}
-			result = projection
-			if err := applyTransforms(nil); err != nil {
-				return dataquery.BundleResult{}, err
-			}
-			return result, nil
-		}
 	}
 	if len(governed) == 0 {
 		if err := ctx.Err(); err != nil {
@@ -397,13 +470,69 @@ func (r *Runtime) ExecuteDataQueryBundle(ctx context.Context, requests []dataque
 	representative := governed[0].Query
 	type bundleExecution struct {
 		decoded map[string]semanticquery.Rows
+		bytes   map[string]int64
 		summary dataquery.Result
 	}
-	execute := func(execCtx context.Context) (dataquery.Result, map[string]semanticquery.Rows, error) {
+	execute := func(execCtx context.Context) (dataquery.Result, map[string]semanticquery.Rows, map[string]int64, error) {
+		lease, leasedCtx, err := acquireDatabaseLease(execCtx, r.db)
+		if err != nil {
+			return dataquery.Result{}, nil, nil, err
+		}
+		if lease != nil {
+			defer lease.Release()
+			execCtx = leasedCtx
+		}
 		execCtx, connectionWait := dataquery.WithConnectionWaitCounter(execCtx)
 		databaseStarted := time.Now()
-		markPhysicalStatement(execCtx)
-		rows, queryErr := r.db.Query(execCtx, bundle.Plan)
+		var decoded map[string]semanticquery.Rows
+		branchBytes := map[string]int64{}
+		var queryErr error
+		data, arrowErr := r.captureArrowPlan(execCtx, bundle.Plan)
+		if arrowErr != nil {
+			queryErr = arrowErr
+		} else {
+			branches, splitErr := splitArrowBundle(execCtx, bundle, data)
+			data.Release()
+			if splitErr != nil {
+				queryErr = splitErr
+			} else if err := execCtx.Err(); err != nil {
+				for _, branch := range branches {
+					branch.Release()
+				}
+				queryErr = err
+			} else {
+				decoded = make(map[string]semanticquery.Rows, len(branches))
+				for _, request := range governed {
+					branch := branches[request.ID]
+					branchBytes[request.ID] = branch.Bytes()
+					branchLease, acquireErr := branch.Acquire()
+					if acquireErr != nil {
+						queryErr = acquireErr
+						break
+					}
+					values, decodeErr := arrowresult.DecodeRows(branchLease)
+					branchLease.Release()
+					if decodeErr != nil {
+						queryErr = decodeErr
+						break
+					}
+					decoded[request.ID] = make(semanticquery.Rows, len(values))
+					for index := range values {
+						decoded[request.ID][index] = semanticquery.Row(values[index])
+					}
+				}
+				if queryErr == nil {
+					for _, request := range governed {
+						slot := cacheSlots[request.ID]
+						r.queryCache.scope.StoreArrow(slot.key, resultcache.Token(slot.generation), branches[request.ID], resultcache.Metadata{SQL: bundle.Plan.SQL})
+					}
+					r.queryCache.syncStats()
+				}
+				for _, branch := range branches {
+					branch.Release()
+				}
+			}
+		}
 		databaseMS := elapsedStageMS(databaseStarted)
 		waitMS := connectionWait.Duration().Milliseconds()
 		if waitMS >= databaseMS {
@@ -412,10 +541,9 @@ func (r *Runtime) ExecuteDataQueryBundle(ctx context.Context, requests []dataque
 			databaseMS -= waitMS
 		}
 		if queryErr != nil {
-			return dataquery.Result{PlanningMS: planningMS, ConnectionWaitMS: waitMS, DatabaseMS: databaseMS, SQL: bundle.Plan.SQL}, nil, queryErr
+			return dataquery.Result{PlanningMS: planningMS, ConnectionWaitMS: waitMS, DatabaseMS: databaseMS, SQL: bundle.Plan.SQL}, nil, nil, queryErr
 		}
-		decoded, decodeErr := bundle.Decode(rows)
-		return dataquery.Result{PlanningMS: planningMS, ConnectionWaitMS: waitMS, DatabaseMS: databaseMS, SQL: bundle.Plan.SQL, ExecutionState: dataquery.ExecutionSucceeded}, decoded, decodeErr
+		return dataquery.Result{PlanningMS: planningMS, ConnectionWaitMS: waitMS, DatabaseMS: databaseMS, SQL: bundle.Plan.SQL, ExecutionState: dataquery.ExecutionSucceeded}, decoded, branchBytes, queryErr
 	}
 	flightIdentity := make([]struct {
 		ID         string `json:"id"`
@@ -435,17 +563,19 @@ func (r *Runtime) ExecuteDataQueryBundle(ctx context.Context, requests []dataque
 		return dataquery.BundleResult{}, fmt.Errorf("encode aggregate bundle flight identity: %w", err)
 	}
 	flight, shared, err := r.queryCache.coalesce(ctx, string(flightKey), func() (any, error) {
-		execCtx, statements := withPhysicalStatementCounter(ctx)
+		execCtx, statements := withPhysicalStatementCounter(dataquery.WithIndependentResultBudget(ctx, r.queryResultLimits()))
 		var decoded map[string]semanticquery.Rows
-		summary, executeErr := execution.SubmitReadFromContext(execCtx, representative, func(queryCtx context.Context) (dataquery.Result, error) {
-			queryResult, rows, queryErr := execute(queryCtx)
+		var branchBytes map[string]int64
+		summary, executeErr := admitPhysicalQuery(execCtx, representative, func(queryCtx context.Context) (dataquery.Result, error) {
+			queryResult, rows, bytes, queryErr := execute(queryCtx)
 			decoded = rows
+			branchBytes = bytes
 			return queryResult, queryErr
 		})
 		if count := int(statements.Load()); count > 0 {
 			dataquery.ObservePhysicalQuery(ctx, dataquery.PhysicalQueryObservation{Count: count, Result: summary})
 		}
-		return bundleExecution{decoded: decoded, summary: summary}, executeErr
+		return bundleExecution{decoded: decoded, bytes: branchBytes, summary: summary}, executeErr
 	})
 	if err != nil {
 		_ = applyTransforms(err)
@@ -460,7 +590,8 @@ func (r *Runtime) ExecuteDataQueryBundle(ctx context.Context, requests []dataque
 	for _, branch := range governed {
 		rows := dataQueryRows(executionResult.decoded[branch.ID])
 		branchResult := dataquery.Result{Rows: rows, Columns: dataquery.ColumnsFromNames(bundleOutputColumns(bundle, branch.ID)), SQL: bundle.Plan.SQL, PlanningMS: executionResult.summary.PlanningMS, ConnectionWaitMS: executionResult.summary.ConnectionWaitMS, DatabaseMS: executionResult.summary.DatabaseMS, ExecutionState: dataquery.ExecutionSucceeded, Status: dataquery.StatusSuccess, RowsReturned: len(rows)}
-		if slot, ok := cacheSlots[branch.ID]; ok {
+		branchResult.BytesEstimate = executionResult.bytes[branch.ID]
+		if _, ok := cacheSlots[branch.ID]; ok {
 			if err := ctx.Err(); err != nil {
 				_ = applyTransforms(err)
 				return dataquery.BundleResult{}, err
@@ -469,7 +600,6 @@ func (r *Runtime) ExecuteDataQueryBundle(ctx context.Context, requests []dataque
 			if shared {
 				branchResult.CacheOutcome = dataquery.CacheCoalesced
 			}
-			r.queryCache.store(slot.key, slot.generation, branchResult)
 			dataquery.ObserveCacheOutcome(ctx, branchResult.CacheOutcome)
 		}
 		result.Results[branch.ID] = branchResult
@@ -482,6 +612,85 @@ func (r *Runtime) ExecuteDataQueryBundle(ctx context.Context, requests []dataque
 		return dataquery.BundleResult{}, err
 	}
 	return result, nil
+}
+
+// acquireDatabaseLease is mandatory for production analytical environments.
+// Lightweight pure-Go test executors do not own physical connections and are
+// intentionally allowed to omit the capability.
+func acquireDatabaseLease(ctx context.Context, database Database) (analyticsresource.Lease, context.Context, error) {
+	provider, ok := database.(analyticsresource.Provider)
+	if !ok {
+		return nil, ctx, nil
+	}
+	lease, err := provider.Acquire(ctx)
+	if err != nil {
+		return nil, ctx, err
+	}
+	return lease, lease.Context(), nil
+}
+
+func admitPhysicalQuery(ctx context.Context, request dataquery.Query, execute func(context.Context) (dataquery.Result, error)) (dataquery.Result, error) {
+	admitter, ok := workload.FromContext(ctx)
+	if !ok {
+		return execute(ctx)
+	}
+	class := workload.Interactive
+	workspaceID := request.WorkspaceID
+	if request.Surface == dataquery.SurfaceAgent {
+		class = workload.Background
+		if activeClass, activeWorkspace, admitted := workload.Current(ctx); admitted && activeClass == workload.Background {
+			workspaceID = activeWorkspace
+		}
+	}
+	operation := request.Operation
+	if operation == "" {
+		operation = string(request.Kind)
+	}
+	lease, err := admitter.Acquire(ctx, workload.Request{Class: class, WorkspaceID: workspaceID, Operation: operation})
+	if err != nil {
+		state := dataquery.ExecutionRejected
+		if reason, found := workload.ReasonOf(err); found && reason == workload.QueueTimeout {
+			state = dataquery.ExecutionTimeout
+		}
+		result := dataquery.Result{ExecutionState: state}
+		var rejection *workload.Rejection
+		if errors.As(err, &rejection) {
+			result.QueueWaitMS = durationMillis(rejection.QueueWait)
+		}
+		return result, err
+	}
+	defer lease.Release()
+	started := time.Now()
+	result, err := execute(lease.Context())
+	if result.QueueWaitMS == 0 {
+		result.QueueWaitMS = durationMillis(lease.QueueWait())
+	}
+	if result.ExecutionMS == 0 {
+		result.ExecutionMS = durationMillis(time.Since(started))
+	}
+	if result.ExecutionState == "" {
+		switch {
+		case err == nil:
+			result.ExecutionState = dataquery.ExecutionSucceeded
+		case lease.Context().Err() == context.DeadlineExceeded:
+			result.ExecutionState = dataquery.ExecutionTimeout
+		case lease.Context().Err() == context.Canceled:
+			result.ExecutionState = dataquery.ExecutionCanceled
+		default:
+			result.ExecutionState = dataquery.ExecutionFailed
+		}
+	}
+	return result, err
+}
+
+func durationMillis(duration time.Duration) int64 {
+	if duration <= 0 {
+		return 0
+	}
+	if milliseconds := duration.Milliseconds(); milliseconds > 0 {
+		return milliseconds
+	}
+	return 1
 }
 
 func bundleOutputColumns(bundle semanticquery.BundlePlan, id string) []string {
@@ -539,156 +748,10 @@ func dashboardQueryResultCacheable(request dataquery.Query) bool {
 	}
 }
 
-func (r *Runtime) executeSemanticSpatial(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
-	if request.Spatial == nil {
-		return dataquery.Result{}, fmt.Errorf("semantic spatial query requires spatial window")
-	}
-	precision := semanticquery.SpatialPrecision(request.Spatial.Precision)
-	planningStarted := time.Now()
-	plan, err := r.queryPlanner().PlanSpatial(semanticquery.SpatialRequest{
-		Table: request.Target, Dimensions: dataQueryFields(request.Fields), Measures: dataQueryFields(request.Measures),
-		Time: semanticquery.Time{Field: request.Time.Field, Grain: request.Time.Grain, Alias: request.Time.Alias}, Filters: dataQueryFilters(request.Filters), Sort: dataQuerySorts(request.Sort), ColumnMasks: dataQueryColumnMasks(request.ColumnMasks),
-		Latitude:  semanticquery.Field{Field: request.Spatial.Latitude.Field, Alias: request.Spatial.Latitude.Alias},
-		Longitude: semanticquery.Field{Field: request.Spatial.Longitude.Field, Alias: request.Spatial.Longitude.Alias},
-		West:      request.Spatial.West, South: request.Spatial.South, East: request.Spatial.East, North: request.Spatial.North,
-		Width: request.Spatial.Width, Height: request.Spatial.Height, FeatureCap: request.Spatial.FeatureCap, Precision: precision,
-	})
-	planningMS := elapsedStageMS(planningStarted)
-	if err != nil {
-		return dataquery.Result{}, err
-	}
-	databaseStarted := time.Now()
-	markPhysicalStatement(ctx)
-	rows, err := r.db.Query(ctx, plan)
-	databaseMS := elapsedStageMS(databaseStarted)
-	if err != nil {
-		return dataquery.Result{}, err
-	}
-	result := dataquery.Result{Columns: dataquery.ColumnsFromNames(plan.Columns[:len(plan.Columns)-1]), Rows: dataQueryRows(rows), SQL: plan.SQL, PlanningMS: planningMS, DatabaseMS: databaseMS, TotalRowsKnown: true}
-	if len(result.Rows) > 0 {
-		result.TotalRows = intFromDataQueryValue(result.Rows[0][semanticquery.SpatialTotalColumn])
-	}
-	for _, row := range result.Rows {
-		delete(row, semanticquery.SpatialTotalColumn)
-	}
-	return result, nil
-}
-
 func (r *Runtime) ClearQueryCache() {
 	if r != nil && r.queryCache != nil {
 		r.queryCache.clear()
 	}
-}
-
-func (r *Runtime) executeSemanticAggregate(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
-	semanticRequest := semanticquery.Request{
-		Table:       request.Target,
-		Dimensions:  dataQueryFields(request.Fields),
-		Measures:    dataQueryFields(request.Measures),
-		Time:        semanticquery.Time{Field: request.Time.Field, Grain: request.Time.Grain, Alias: request.Time.Alias},
-		Filters:     dataQueryFilters(request.Filters),
-		Sort:        dataQuerySorts(request.Sort),
-		ColumnMasks: dataQueryColumnMasks(request.ColumnMasks),
-		Limit:       request.Limit,
-		Offset:      request.Offset,
-	}
-	planningStarted := time.Now()
-	plan, err := r.queryPlanner().Plan(semanticRequest)
-	planningMS := elapsedStageMS(planningStarted)
-	if err != nil {
-		return dataquery.Result{}, err
-	}
-	databaseStarted := time.Now()
-	markPhysicalStatement(ctx)
-	rows, err := r.db.Query(ctx, plan)
-	databaseMS := elapsedStageMS(databaseStarted)
-	if err != nil {
-		return dataquery.Result{}, err
-	}
-	return dataquery.Result{Columns: dataquery.ColumnsFromNames(plan.Columns), Rows: dataQueryRows(rows), SQL: plan.SQL, PlanningMS: planningMS, DatabaseMS: databaseMS}, nil
-}
-
-func (r *Runtime) executeSemanticRows(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
-	planner := r.queryPlanner()
-	if len(request.Fields) == 0 && len(request.Measures) == 0 && request.IncludeTotal {
-		if len(request.ColumnMasks) > 0 {
-			return dataquery.Result{}, fmt.Errorf("table count is unavailable because its authorization projection contains masked fields")
-		}
-		planningStarted := time.Now()
-		countPlan, err := planner.PlanCount(semanticquery.CountRequest{Table: request.Target, Filters: dataQueryFilters(request.Filters)})
-		planningMS := elapsedStageMS(planningStarted)
-		if err != nil {
-			return dataquery.Result{}, err
-		}
-		databaseStarted := time.Now()
-		markPhysicalStatement(ctx)
-		total, err := r.db.Count(ctx, countPlan)
-		databaseMS := elapsedStageMS(databaseStarted)
-		if err != nil {
-			return dataquery.Result{}, err
-		}
-		return dataquery.Result{TotalRows: total, TotalRowsKnown: true, SQL: countPlan.SQL, PlanningMS: planningMS, DatabaseMS: databaseMS}, nil
-	}
-	semanticRequest := semanticquery.RowRequest{
-		Table:       request.Target,
-		Dimensions:  dataQueryFields(request.Fields),
-		Measures:    dataQueryFields(request.Measures),
-		Filters:     dataQueryFilters(request.Filters),
-		Sort:        dataQuerySorts(request.Sort),
-		ColumnMasks: dataQueryColumnMasks(request.ColumnMasks),
-		Limit:       request.Limit,
-		Offset:      request.Offset,
-	}
-	planningStarted := time.Now()
-	plan, err := planner.PlanRows(semanticRequest)
-	if err != nil {
-		return dataquery.Result{}, err
-	}
-	if request.IncludeTotal {
-		plan, err = rowPlanWithTotal(plan)
-		if err != nil {
-			return dataquery.Result{}, err
-		}
-	}
-	planningMS := elapsedStageMS(planningStarted)
-	databaseStarted := time.Now()
-	markPhysicalStatement(ctx)
-	rows, err := r.db.Query(ctx, plan)
-	databaseMS := elapsedStageMS(databaseStarted)
-	if err != nil {
-		return dataquery.Result{}, err
-	}
-	result := dataquery.Result{Columns: dataquery.ColumnsFromNames(plan.Columns), Rows: dataQueryRows(rows), SQL: plan.SQL, PlanningMS: planningMS, DatabaseMS: databaseMS}
-	if request.IncludeTotal {
-		if len(result.Rows) > 0 {
-			result.TotalRows = intFromDataQueryValue(result.Rows[0][totalRowsColumn])
-			result.TotalRowsKnown = true
-		} else if request.Offset == 0 {
-			result.TotalRowsKnown = true
-		}
-		for _, row := range result.Rows {
-			delete(row, totalRowsColumn)
-		}
-		result.Columns = dataquery.ColumnsFromNames(plan.Columns[:len(plan.Columns)-1])
-		if !result.TotalRowsKnown {
-			planningStarted = time.Now()
-			countPlan, err := planner.PlanCount(semanticquery.CountRequest{Table: request.Target, Filters: dataQueryFilters(request.Filters)})
-			result.PlanningMS += elapsedStageMS(planningStarted)
-			if err != nil {
-				return dataquery.Result{}, err
-			}
-			databaseStarted = time.Now()
-			markPhysicalStatement(ctx)
-			total, err := r.db.Count(ctx, countPlan)
-			result.DatabaseMS += elapsedStageMS(databaseStarted)
-			if err != nil {
-				return dataquery.Result{}, err
-			}
-			result.TotalRows = total
-			result.TotalRowsKnown = true
-		}
-	}
-	return result, nil
 }
 
 const totalRowsColumn = "__leapview_total_rows"
@@ -724,214 +787,12 @@ func intFromDataQueryValue(value any) int {
 	}
 }
 
-func (r *Runtime) executeModelTableRows(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
-	planningStarted := time.Now()
-	plan, err := r.modelTableQueryPlan(ModelTableQuery{
-		Table:       request.Target,
-		Columns:     dataquery.FieldNames(request.Fields),
-		Sort:        dataQuerySorts(request.Sort),
-		ColumnMasks: dataQueryColumnMasks(request.ColumnMasks),
-		Limit:       request.Limit,
-		Offset:      request.Offset,
-	})
-	if err != nil {
-		return dataquery.Result{}, err
-	}
-	planningMS := elapsedStageMS(planningStarted)
-	databaseStarted := time.Now()
-	markPhysicalStatement(ctx)
-	rows, err := r.db.Query(ctx, plan)
-	databaseMS := elapsedStageMS(databaseStarted)
-	if err != nil {
-		return dataquery.Result{}, err
-	}
-	result := dataquery.Result{Columns: dataquery.ColumnsFromNames(plan.Columns), Rows: dataQueryRows(rows), SQL: plan.SQL, PlanningMS: planningMS, DatabaseMS: databaseMS}
-	if request.IncludeTotal {
-		databaseStarted = time.Now()
-		total, err := r.CountModelTable(ctx, request.Target)
-		result.DatabaseMS += elapsedStageMS(databaseStarted)
-		if err != nil {
-			return dataquery.Result{}, err
-		}
-		result.TotalRows = total
-		result.TotalRowsKnown = true
-	}
-	return result, nil
-}
-
-func (r *Runtime) executeSourceRows(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
-	planningStarted := time.Now()
-	source, ok := sourceInModel(r.model, request.Target)
-	if !ok {
-		return dataquery.Result{}, fmt.Errorf("source %q is not available in semantic model %q", request.Target, r.modelID)
-	}
-	planner, ok := r.sources.(sourceRelationPlanner)
-	if !ok {
-		return dataquery.Result{}, fmt.Errorf("source %q is not available for raw inspection", request.Target)
-	}
-	if err := r.sources.PrepareSourceRuntime(ctx, r.model); err != nil {
-		return dataquery.Result{}, err
-	}
-	relation, err := planner.SourceRelation(r.model, source)
-	if err != nil {
-		return dataquery.Result{}, err
-	}
-	columns, err := sourceQueryColumns(source, dataquery.FieldNames(request.Fields))
-	if err != nil {
-		return dataquery.Result{}, err
-	}
-	plan, err := rawRelationPlan(relation, columns, request.Sort, request.ColumnMasks, request.Offset, request.Limit)
-	if err != nil {
-		return dataquery.Result{}, err
-	}
-	planningMS := elapsedStageMS(planningStarted)
-	databaseStarted := time.Now()
-	markPhysicalStatement(ctx)
-	rows, err := r.db.Query(ctx, plan)
-	databaseMS := elapsedStageMS(databaseStarted)
-	if err != nil {
-		return dataquery.Result{}, err
-	}
-	result := dataquery.Result{Columns: dataquery.ColumnsFromNames(plan.Columns), Rows: dataQueryRows(rows), SQL: plan.SQL, PlanningMS: planningMS, DatabaseMS: databaseMS}
-	if request.IncludeTotal {
-		databaseStarted = time.Now()
-		markPhysicalStatement(ctx)
-		total, err := r.db.Count(ctx, semanticquery.Plan{SQL: "WITH data AS (" + relation + ")\nSELECT COUNT(*) FROM data", Columns: []string{"count"}})
-		result.DatabaseMS += elapsedStageMS(databaseStarted)
-		if err != nil {
-			return dataquery.Result{}, err
-		}
-		result.TotalRows = total
-		result.TotalRowsKnown = true
-	}
-	return result, nil
-}
-
-func (r *Runtime) executeSemanticHistogram(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
-	rawRequest := semanticquery.RawValueRequest{
-		Table:       request.Target,
-		Dimensions:  dataQueryFields(request.Fields),
-		Measure:     dataQueryFields([]dataquery.Field{request.Value})[0],
-		Filters:     dataQueryFilters(request.Filters),
-		ColumnMasks: dataQueryColumnMasks(request.ColumnMasks),
-	}
-	planningStarted := time.Now()
-	plan, err := r.queryPlanner().PlanRawValues(rawRequest)
-	planningMS := elapsedStageMS(planningStarted)
-	if err != nil {
-		return dataquery.Result{}, err
-	}
-	valueColumn := rawRequest.Measure.Alias
-	if valueColumn == "" {
-		valueColumn = "value"
-	}
-	databaseStarted := time.Now()
-	markPhysicalStatement(ctx)
-	bins, err := r.db.Histogram(ctx, plan, semanticquery.HistogramSpec{
-		ValueColumn: valueColumn,
-		BinCount:    request.BinCount,
-	})
-	databaseMS := elapsedStageMS(databaseStarted)
-	if err != nil {
-		return dataquery.Result{}, err
-	}
-	rows := make([]dataquery.Row, 0, len(bins))
-	for _, bin := range bins {
-		rows = append(rows, dataquery.Row{
-			"bucket": bin.Bucket,
-			"count":  bin.Count,
-			"start":  bin.Start,
-			"end":    bin.End,
-		})
-	}
-	return dataquery.Result{
-		Columns:    dataquery.ColumnsFromNames([]string{"bucket", "count", "start", "end"}),
-		Rows:       rows,
-		SQL:        plan.SQL,
-		PlanningMS: planningMS,
-		DatabaseMS: databaseMS,
-	}, nil
-}
-
-func (r *Runtime) executeSemanticDistribution(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
-	rawRequest := semanticquery.RawValueRequest{
-		Table:       request.Target,
-		Dimensions:  dataQueryFields(request.Fields),
-		Measure:     dataQueryFields([]dataquery.Field{request.Value})[0],
-		Filters:     dataQueryFilters(request.Filters),
-		ColumnMasks: dataQueryColumnMasks(request.ColumnMasks),
-	}
-	planningStarted := time.Now()
-	plan, err := r.queryPlanner().PlanRawValues(rawRequest)
-	planningMS := elapsedStageMS(planningStarted)
-	if err != nil {
-		return dataquery.Result{}, err
-	}
-	valueColumn := rawRequest.Measure.Alias
-	if valueColumn == "" {
-		valueColumn = "value"
-	}
-	groupColumn := "label"
-	if len(rawRequest.Dimensions) > 0 && rawRequest.Dimensions[0].Alias != "" {
-		groupColumn = rawRequest.Dimensions[0].Alias
-	}
-	databaseStarted := time.Now()
-	markPhysicalStatement(ctx)
-	rows, err := r.db.Distribution(ctx, plan, semanticquery.DistributionSpec{
-		GroupColumn: groupColumn,
-		ValueColumn: valueColumn,
-		Sort:        dataQuerySorts(request.Sort),
-		Limit:       request.Limit,
-	})
-	databaseMS := elapsedStageMS(databaseStarted)
-	if err != nil {
-		return dataquery.Result{}, err
-	}
-	return dataquery.Result{
-		Columns:    dataquery.ColumnsFromNames([]string{"label", "min", "q1", "median", "q3", "max"}),
-		Rows:       dataQueryRows(rows),
-		SQL:        plan.SQL,
-		PlanningMS: planningMS,
-		DatabaseMS: databaseMS,
-	}, nil
-}
-
 func elapsedStageMS(started time.Time) int64 {
 	elapsed := time.Since(started).Milliseconds()
 	if elapsed <= 0 {
 		return 1
 	}
 	return elapsed
-}
-
-func (r *Runtime) CountModelTable(ctx context.Context, tableName string) (int, error) {
-	if r == nil || r.db == nil {
-		return 0, fmt.Errorf("materialization runtime is not initialized")
-	}
-	if _, err := r.modelTable(tableName); err != nil {
-		return 0, err
-	}
-	quotedTable, err := quotedModelTableName(tableName)
-	if err != nil {
-		return 0, err
-	}
-	markPhysicalStatement(ctx)
-	return r.db.Count(ctx, semanticquery.Plan{
-		SQL:     "SELECT count(*) FROM model." + quotedTable,
-		Columns: []string{"count"},
-	})
-}
-
-func (r *Runtime) ModelTableRows(ctx context.Context, request ModelTableQuery) (semanticquery.Rows, error) {
-	if r == nil || r.db == nil {
-		return nil, fmt.Errorf("materialization runtime is not initialized")
-	}
-	plan, err := r.modelTableQueryPlan(request)
-	if err != nil {
-		return nil, err
-	}
-	markPhysicalStatement(ctx)
-	return r.db.Query(ctx, plan)
 }
 
 func (r *Runtime) modelTableQueryPlan(request ModelTableQuery) (semanticquery.Plan, error) {
@@ -943,7 +804,7 @@ func (r *Runtime) modelTableQueryPlan(request ModelTableQuery) (semanticquery.Pl
 	if err != nil {
 		return semanticquery.Plan{}, err
 	}
-	quotedTable, err := quotedModelTableName(request.Table)
+	relation, err := r.physicalModelTable(request.Table)
 	if err != nil {
 		return semanticquery.Plan{}, err
 	}
@@ -969,8 +830,8 @@ func (r *Runtime) modelTableQueryPlan(request ModelTableQuery) (semanticquery.Pl
 			sql.WriteString(quoteMaterializedIdentifier(column))
 		}
 	}
-	sql.WriteString("\nFROM model.")
-	sql.WriteString(quotedTable)
+	sql.WriteString("\nFROM ")
+	sql.WriteString(relation)
 	if len(request.Sort) > 0 {
 		orderParts := []string{}
 		columnSet := modelTableColumnSet(table)
@@ -999,6 +860,17 @@ func (r *Runtime) modelTableQueryPlan(request ModelTableQuery) (semanticquery.Pl
 		sql.WriteString(fmt.Sprintf("\nOFFSET %d", request.Offset))
 	}
 	return semanticquery.Plan{SQL: sql.String(), Columns: columns}, nil
+}
+
+func (r *Runtime) physicalModelTable(tableName string) (string, error) {
+	quoted, err := quotedModelTableName(tableName)
+	if err != nil {
+		return "", err
+	}
+	if r != nil && r.planner != nil && r.planner.TableRelation() != nil {
+		return r.planner.TableRelation()(tableName)
+	}
+	return "model." + quoted, nil
 }
 
 func (r *Runtime) modelTable(tableName string) (semanticmodel.Table, error) {

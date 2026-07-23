@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -18,7 +19,7 @@ var errIntentionalFailure = errors.New("intentional failure")
 func TestLayoutUsesOneCatalogAndDataStore(t *testing.T) {
 	layout := NewLayout(filepath.Join("tmp", "env"))
 
-	if layout.CatalogPath != filepath.Join("tmp", "env", "catalog.sqlite") {
+	if layout.CatalogPath != filepath.Join("tmp", "env", "catalog.duckdb") {
 		t.Fatalf("CatalogPath = %q", layout.CatalogPath)
 	}
 	if layout.DataPath != filepath.Join("tmp", "env", "data") {
@@ -26,6 +27,97 @@ func TestLayoutUsesOneCatalogAndDataStore(t *testing.T) {
 	}
 	if _, ok := reflect.TypeOf(layout).FieldByName("LegacyDuckDBPath"); ok {
 		t.Fatal("Layout still exposes LegacyDuckDBPath")
+	}
+}
+
+func TestOpenMigratesSiblingLegacySQLiteCatalog(t *testing.T) {
+	ctx := context.Background()
+	root := filepath.Join(t.TempDir(), "ducklake")
+	legacyPath := filepath.Join(root, "catalog.sqlite")
+	targetPath := filepath.Join(root, "catalog.duckdb")
+	dataPath := filepath.Join(root, "data")
+	createLegacySQLiteCatalog(t, ctx, legacyPath, dataPath)
+
+	env, err := Open(ctx, Config{RootDir: root, CatalogPath: targetPath, DataPath: dataPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = env.Close() })
+	assertMigratedCatalogReadWrite(t, ctx, env)
+	if _, err := os.Stat(legacyPath); err != nil {
+		t.Fatalf("legacy catalog backup missing: %v", err)
+	}
+}
+
+func TestOpenMigratesConfiguredSQLiteCatalogInPlace(t *testing.T) {
+	ctx := context.Background()
+	root := filepath.Join(t.TempDir(), "ducklake")
+	catalogPath := filepath.Join(root, "metadata.sqlite")
+	dataPath := filepath.Join(root, "data")
+	createLegacySQLiteCatalog(t, ctx, catalogPath, dataPath)
+
+	env, err := Open(ctx, Config{RootDir: root, CatalogPath: catalogPath, DataPath: dataPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = env.Close() })
+	assertMigratedCatalogReadWrite(t, ctx, env)
+	if _, err := os.Stat(catalogPath + ".legacy.sqlite"); err != nil {
+		t.Fatalf("in-place legacy catalog backup missing: %v", err)
+	}
+	if sqlite, exists, err := sqliteCatalogFile(catalogPath); err != nil || !exists || sqlite {
+		t.Fatalf("migrated configured catalog: sqlite=%t exists=%t error=%v", sqlite, exists, err)
+	}
+}
+
+func createLegacySQLiteCatalog(t *testing.T, ctx context.Context, catalogPath, dataPath string) {
+	t.Helper()
+	if err := os.MkdirAll(dataPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := sql.Open("duckdb", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyAttach := fmt.Sprintf("ATTACH 'ducklake:sqlite:%s' AS legacy (DATA_PATH '%s')", sqlLiteral(catalogPath), sqlLiteral(dataPath))
+	for _, statement := range []string{
+		"LOAD ducklake",
+		"LOAD sqlite",
+		legacyAttach,
+		"CREATE SCHEMA legacy.model",
+		"CREATE TABLE legacy.model.orders(id BIGINT, amount DOUBLE)",
+		"INSERT INTO legacy.model.orders VALUES (1, 10.5), (2, 20.25)",
+	} {
+		if _, err := legacy.ExecContext(ctx, statement); err != nil {
+			_ = legacy.Close()
+			t.Fatalf("legacy statement %q: %v", statement, err)
+		}
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertMigratedCatalogReadWrite(t *testing.T, ctx context.Context, env *Environment) {
+	t.Helper()
+	var count int
+	if err := env.db.QueryRowContext(ctx, "SELECT count(*) FROM lake.model.orders").Scan(&count); err != nil {
+		t.Fatalf("query migrated DuckLake table: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("migrated row count = %d, want 2", count)
+	}
+	if _, err := env.Commit(ctx, "post_migration", nil, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "INSERT INTO model.orders VALUES (3, 30.75)")
+		return err
+	}); err != nil {
+		t.Fatalf("commit after catalog migration: %v", err)
+	}
+	if err := env.db.QueryRowContext(ctx, "SELECT count(*) FROM lake.model.orders").Scan(&count); err != nil {
+		t.Fatalf("query after post-migration commit: %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("post-migration row count = %d, want 3", count)
 	}
 }
 
@@ -86,54 +178,23 @@ func TestEnvironmentCommitsAndReadsStableSnapshots(t *testing.T) {
 		t.Fatalf("snapshot2 = %d, want > snapshot1 %d", snapshot2, snapshot1)
 	}
 
-	first, err := OpenSnapshot(ctx, Config{RootDir: dir, SnapshotID: snapshot1, MaxReaders: 2})
-	if err != nil {
-		t.Fatalf("open first snapshot: %v", err)
-	}
-	defer first.Close()
-	second, err := OpenSnapshot(ctx, Config{RootDir: dir, SnapshotID: snapshot2})
-	if err != nil {
-		t.Fatalf("open second snapshot: %v", err)
-	}
-	defer second.Close()
-
-	assertOrder := func(t *testing.T, db *Environment, wantID int, wantLabel string) {
+	assertOrder := func(t *testing.T, snapshotID int64, wantID int, wantLabel string) {
 		t.Helper()
 		var gotID int
 		var gotLabel string
-		if err := db.SQLDB().QueryRowContext(ctx, "SELECT id, label FROM model.orders").Scan(&gotID, &gotLabel); err != nil {
+		query := "SELECT id, label FROM " + SnapshotRelation(snapshotID, "orders")
+		if err := env.sqlDB().QueryRowContext(ctx, query).Scan(&gotID, &gotLabel); err != nil {
 			t.Fatalf("query order: %v", err)
 		}
 		if gotID != wantID || gotLabel != wantLabel {
 			t.Fatalf("order = (%d, %q), want (%d, %q)", gotID, gotLabel, wantID, wantLabel)
 		}
 	}
-	assertOrder(t, first, 1, "first")
-	assertOrder(t, second, 2, "second")
-	if first.ReadConcurrency() != 2 {
-		t.Fatalf("snapshot read concurrency = %d, want 2", first.ReadConcurrency())
-	}
-	connections := make([]*sql.Conn, 0, 2)
-	for range 2 {
-		connection, err := first.SQLDB().Conn(ctx)
-		if err != nil {
-			t.Fatalf("acquire snapshot reader: %v", err)
-		}
-		connections = append(connections, connection)
-	}
-	for index, connection := range connections {
-		var id int
-		if err := connection.QueryRowContext(ctx, "SELECT id FROM model.orders").Scan(&id); err != nil {
-			t.Fatalf("query snapshot reader %d: %v", index, err)
-		}
-		if id != 1 {
-			t.Fatalf("snapshot reader %d id = %d, want 1", index, id)
-		}
-		connection.Close()
-	}
+	assertOrder(t, snapshot1, 1, "first")
+	assertOrder(t, snapshot2, 2, "second")
 
-	if _, err := os.Stat(filepath.Join(dir, "catalog.sqlite")); err != nil {
-		t.Fatalf("catalog.sqlite missing: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, "catalog.duckdb")); err != nil {
+		t.Fatalf("catalog.duckdb missing: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "data")); err != nil {
 		t.Fatalf("data dir missing: %v", err)
@@ -143,7 +204,7 @@ func TestEnvironmentCommitsAndReadsStableSnapshots(t *testing.T) {
 	}
 }
 
-func TestOpenSnapshotRejectsMissingSnapshot(t *testing.T) {
+func TestValidateSnapshotRejectsMissingSnapshot(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	env, err := Open(ctx, Config{RootDir: dir})
@@ -162,8 +223,8 @@ func TestOpenSnapshotRejectsMissingSnapshot(t *testing.T) {
 		t.Fatalf("commit: %v", err)
 	}
 
-	if _, err := OpenSnapshot(ctx, Config{RootDir: dir, SnapshotID: 999}); err == nil {
-		t.Fatal("OpenSnapshot missing snapshot error = nil")
+	if err := env.ValidateSnapshot(ctx, 999); err == nil {
+		t.Fatal("ValidateSnapshot missing snapshot error = nil")
 	}
 }
 
@@ -204,7 +265,7 @@ func TestFailedCommitDoesNotAdvanceVisibleSnapshot(t *testing.T) {
 		}
 	}
 	var id int
-	if err := env.SQLDB().QueryRowContext(ctx, "SELECT id FROM model_orders").Scan(&id); err != nil {
+	if err := env.sqlDB().QueryRowContext(ctx, "SELECT id FROM model_orders").Scan(&id); err != nil {
 		t.Fatalf("query visible table: %v", err)
 	}
 	if id != 1 {

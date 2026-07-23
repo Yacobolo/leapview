@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -11,11 +12,205 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/Yacobolo/leapview/internal/analytics/arrowquery"
+	"github.com/Yacobolo/leapview/internal/analytics/arrowresult"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
+	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
 	"github.com/Yacobolo/leapview/internal/dataquery"
-	"github.com/Yacobolo/leapview/internal/execution"
+	"github.com/Yacobolo/leapview/internal/workload"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 )
+
+// The row-shaped helpers below exist only to preserve cache-policy tests while
+// production cache storage is Arrow-only.
+func (c *queryResultCache) execute(ctx context.Context, request dataquery.Query, execute func() (dataquery.Result, error)) (dataquery.Result, error) {
+	key, generation, err := c.cacheKey(request)
+	if err != nil {
+		return dataquery.Result{}, err
+	}
+	if cached, ok := c.get(key); ok {
+		return cached, nil
+	}
+	value, shared, err := c.scope.Coalesce(ctx, fmt.Sprintf("test-query:%d:%s", generation, key), func() (any, error) {
+		if cached, ok := c.get(key); ok {
+			return cached, nil
+		}
+		result, executeErr := execute()
+		if executeErr != nil {
+			return result, executeErr
+		}
+		result.CacheOutcome = dataquery.CacheMiss
+		c.store(key, generation, result)
+		return cloneDataQueryResult(result), nil
+	})
+	if err != nil {
+		return dataquery.Result{}, err
+	}
+	result := cloneDataQueryResult(value.(dataquery.Result))
+	if shared {
+		result.CacheOutcome = dataquery.CacheCoalesced
+	}
+	return result, nil
+}
+
+func (c *queryResultCache) lookup(request dataquery.Query) (dataquery.Result, string, uint64, bool, error) {
+	key, generation, err := c.cacheKey(request)
+	if err != nil {
+		return dataquery.Result{}, "", 0, false, err
+	}
+	result, ok := c.get(key)
+	return result, key, generation, ok, nil
+}
+
+func (c *queryResultCache) store(key string, generation uint64, result dataquery.Result) {
+	columns := make([]string, len(result.Columns))
+	for index := range result.Columns {
+		columns[index] = result.Columns[index].Name
+	}
+	if len(columns) == 0 && len(result.Rows) > 0 {
+		for column := range result.Rows[0] {
+			columns = append(columns, column)
+		}
+		sort.Strings(columns)
+	}
+	rows := make(semanticquery.Rows, len(result.Rows))
+	for index := range result.Rows {
+		rows[index] = semanticquery.Row(result.Rows[index])
+	}
+	collector := arrowresult.NewBuilder()
+	if err := writeTestRowsArrow(context.Background(), semanticquery.Plan{Columns: columns}, rows, collector); err != nil {
+		panic(err)
+	}
+	owned, err := collector.Finish()
+	if err != nil {
+		panic(err)
+	}
+	c.scope.StoreArrow(key, resultcache.Token(generation), owned, resultcache.Metadata{SQL: result.SQL, TotalRows: result.TotalRows, TotalRowsKnown: result.TotalRowsKnown, Warnings: result.Warnings})
+	owned.Release()
+	c.syncStats()
+}
+
+func (c *queryResultCache) get(key string) (dataquery.Result, bool) {
+	entry, _, ok, err := c.scope.LookupArrow(key)
+	if err != nil || !ok {
+		return dataquery.Result{}, false
+	}
+	defer entry.Release()
+	rows, err := arrowresult.DecodeRows(entry.Data())
+	if err != nil {
+		return dataquery.Result{}, false
+	}
+	result := dataquery.Result{SQL: entry.Metadata().SQL, TotalRows: entry.Metadata().TotalRows, TotalRowsKnown: entry.Metadata().TotalRowsKnown, Warnings: entry.Metadata().Warnings, CacheOutcome: dataquery.CacheHit}
+	if schema := entry.Data().Schema(); schema != nil {
+		columns := make([]string, len(schema.Fields()))
+		for index, field := range schema.Fields() {
+			columns[index] = field.Name
+		}
+		result.Columns = dataquery.ColumnsFromNames(columns)
+	}
+	result.Rows = make([]dataquery.Row, len(rows))
+	for index := range rows {
+		result.Rows[index] = dataquery.Row(rows[index])
+	}
+	c.syncStats()
+	return result, true
+}
+
+func TestRuntimeCachesOwnedArrowAndRebuildsRequestTimingOnHit(t *testing.T) {
+	database := &arrowCountingRuntimeDatabase{}
+	runtime := &Runtime{
+		modelID: "sales",
+		model: &semanticmodel.Model{Name: "sales", Tables: map[string]semanticmodel.Table{
+			"orders": {Columns: map[string]semanticmodel.ModelColumn{"id": {Name: "id"}}},
+		}},
+		db:         database,
+		queryCache: newQueryResultCache(256, ""),
+	}
+	request := dataquery.Query{Surface: dataquery.SurfaceDashboard, Operation: dataquery.OperationDashboardRows, ModelID: "sales", Kind: dataquery.KindModelTableRows, Target: "orders", Fields: []dataquery.Field{{Field: "id"}}, Limit: 1}
+	first, err := runtime.ExecuteDataQuery(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := runtime.ExecuteDataQuery(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.CacheOutcome != dataquery.CacheMiss || second.CacheOutcome != dataquery.CacheHit {
+		t.Fatalf("outcomes = (%q, %q)", first.CacheOutcome, second.CacheOutcome)
+	}
+	if second.DatabaseMS != 0 || second.ConnectionWaitMS != 0 || second.PlanningMS != 0 {
+		t.Fatalf("cache hit retained request timing: %#v", second)
+	}
+	if got := database.queries.Load(); got != 1 {
+		t.Fatalf("Arrow executions = %d, want 1", got)
+	}
+	if got := second.Rows[0]["id"]; got != int64(1) {
+		t.Fatalf("cached id = %#v", got)
+	}
+}
+
+func TestRuntimeExecutesSpatialQueriesThroughOwnedArrowResults(t *testing.T) {
+	database := &arrowCountingRuntimeDatabase{}
+	runtime := &Runtime{
+		modelID: "sales",
+		model: &semanticmodel.Model{
+			Name: "sales",
+			Tables: map[string]semanticmodel.Table{
+				"orders": {Dimensions: map[string]semanticmodel.MetricDimension{
+					"latitude":  {Expr: "latitude", Type: "number"},
+					"longitude": {Expr: "longitude", Type: "number"},
+				}},
+			},
+			Measures: map[string]semanticmodel.MetricMeasure{
+				"order_count": {Fact: "orders", Aggregation: "count", Empty: "zero"},
+			},
+		},
+		db:         database,
+		queryCache: newQueryResultCache(256, ""),
+	}
+	request := dataquery.Query{
+		Surface: dataquery.SurfaceDashboard, Operation: dataquery.OperationDashboardSpatial,
+		ModelID: "sales", Kind: dataquery.KindSemanticSpatial, Target: "orders",
+		Fields:   []dataquery.Field{{Field: "orders.latitude", Alias: "latitude"}, {Field: "orders.longitude", Alias: "longitude"}},
+		Measures: []dataquery.Field{{Field: "order_count", Alias: "value"}},
+		Spatial: &dataquery.SpatialWindow{
+			Latitude: dataquery.Field{Field: "orders.latitude", Alias: "latitude"}, Longitude: dataquery.Field{Field: "orders.longitude", Alias: "longitude"},
+			West: -180, South: -85, East: 180, North: 85, Width: 800, Height: 600, FeatureCap: 5000,
+			Precision: dataquery.SpatialPrecisionAggregated,
+		},
+	}
+
+	first, err := runtime.ExecuteDataQuery(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := runtime.ExecuteDataQuery(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.CacheOutcome != dataquery.CacheMiss || second.CacheOutcome != dataquery.CacheHit {
+		t.Fatalf("cache outcomes = (%q, %q), want (miss, hit)", first.CacheOutcome, second.CacheOutcome)
+	}
+	if got := database.queries.Load(); got != 1 {
+		t.Fatalf("Arrow executions = %d, want 1", got)
+	}
+	if !first.TotalRowsKnown || first.TotalRows != 1 {
+		t.Fatalf("spatial total = (%d, %t), want (1, true)", first.TotalRows, first.TotalRowsKnown)
+	}
+	for _, result := range []dataquery.Result{first, second} {
+		for _, column := range result.Columns {
+			if column.Name == semanticquery.SpatialTotalColumn {
+				t.Fatalf("spatial transport column leaked through result schema: %#v", result.Columns)
+			}
+		}
+		if _, ok := result.Rows[0][semanticquery.SpatialTotalColumn]; ok {
+			t.Fatalf("spatial transport column leaked through result row: %#v", result.Rows[0])
+		}
+	}
+}
 
 func TestQueryResultCacheUsesGovernedRequestAndReturnsDeepCopies(t *testing.T) {
 	cache := newQueryResultCache(256, "")
@@ -85,8 +280,8 @@ func TestQueryResultCacheEnforcesByteBudgetAndRejectsOversizedEntries(t *testing
 	if cache.currentBytes > cache.maxBytes {
 		t.Fatalf("cache bytes = %d, budget = %d", cache.currentBytes, cache.maxBytes)
 	}
-	if cache.lru.Len() != 1 {
-		t.Fatalf("entries = %d, want byte-budget eviction", cache.lru.Len())
+	if entries := cache.scope.Stats().Entries; entries != 1 {
+		t.Fatalf("entries = %d, want byte-budget eviction", entries)
 	}
 
 	_, largeKey, generation, _, err := cache.lookup(large)
@@ -269,12 +464,16 @@ func TestQueryResultCacheLiveWaiterRetriesCanceledFlightAndCachesResult(t *testi
 		}
 		flightStarted := make(chan struct{})
 		releaseCanceledFlight := make(chan struct{})
-		cache.group.DoChan(fmt.Sprintf("%d:%s", generation, key), func() (any, error) {
-			close(flightStarted)
-			<-releaseCanceledFlight
-			return dataquery.Result{}, canceledQueryCacheFlightError{err: context.Canceled}
-		})
+		ownerContext, cancelOwner := context.WithCancel(context.Background())
+		go func() {
+			_, _, _ = cache.scope.Coalesce(ownerContext, fmt.Sprintf("query:%d:%s", generation, key), func() (any, error) {
+				close(flightStarted)
+				<-releaseCanceledFlight
+				return dataquery.Result{}, resultcache.OwnerCanceled(ownerContext.Err())
+			})
+		}()
 		<-flightStarted
+		cancelOwner()
 
 		var physicalExecutions atomic.Int32
 		secondResult := make(chan dataquery.Result, 1)
@@ -444,6 +643,37 @@ func TestRuntimeBundleCacheAllHitExecutesZeroAdditionalSQL(t *testing.T) {
 	}
 }
 
+func TestRuntimeBundleChargesLogicalRowsOnceOnCacheMiss(t *testing.T) {
+	database := &budgetConsumingBundleDatabase{}
+	runtime := bundleCacheRuntime(database)
+	runtime.resultLimits = dataquery.ResultLimits{MaxRows: 2, MaxBytes: 1 << 20}
+
+	result, err := runtime.ExecuteDataQueryBundle(context.Background(), bundleCacheRequests())
+	if err != nil {
+		t.Fatalf("bundle within logical row limit: %v", err)
+	}
+	if got := result.Results["orders"].RowsReturned + result.Results["events"].RowsReturned; got != 2 {
+		t.Fatalf("logical rows = %d, want 2", got)
+	}
+}
+
+type budgetConsumingBundleDatabase struct{ bundleCountingDatabase }
+
+func (d *budgetConsumingBundleDatabase) Query(ctx context.Context, plan semanticquery.Plan) (semanticquery.Rows, error) {
+	rows, err := d.bundleCountingDatabase.Query(ctx, plan)
+	if err != nil {
+		return nil, err
+	}
+	if budget, ok := dataquery.ResultBudgetFromContext(ctx); ok {
+		for _, row := range rows {
+			if err := budget.ConsumeRow(row); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return rows, nil
+}
+
 func TestRuntimeBundleRejectsNonDashboardBranchesBeforeFlightCoalescing(t *testing.T) {
 	database := &bundleCountingDatabase{}
 	runtime := bundleCacheRuntime(database)
@@ -584,6 +814,14 @@ func (d *cancelIgnoringBundleDatabase) Query(ctx context.Context, plan semanticq
 	return d.bundleCountingDatabase.Query(ctx, plan)
 }
 
+func (d *cancelIgnoringBundleDatabase) QueryArrow(ctx context.Context, plan semanticquery.Plan, sink arrowquery.Sink) error {
+	rows, err := d.Query(ctx, plan)
+	if err != nil {
+		return err
+	}
+	return writeTestRowsArrow(ctx, plan, rows, sink)
+}
+
 func TestRuntimeBundleGovernsEveryBranchAndFailsClosedOnMask(t *testing.T) {
 	database := &bundleCountingDatabase{}
 	runtime := bundleCacheRuntime(database)
@@ -649,6 +887,14 @@ func (d *bundleCountingDatabase) Query(_ context.Context, plan semanticquery.Pla
 		row[column] = int64(1)
 	}
 	return semanticquery.Rows{row}, nil
+}
+
+func (d *bundleCountingDatabase) QueryArrow(ctx context.Context, plan semanticquery.Plan, sink arrowquery.Sink) error {
+	rows, err := d.Query(ctx, plan)
+	if err != nil {
+		return err
+	}
+	return writeTestRowsArrow(ctx, plan, rows, sink)
 }
 
 func TestRuntimeDoesNotCacheNonDashboardQueries(t *testing.T) {
@@ -720,21 +966,26 @@ func TestRuntimeDashboardCacheHitDoesNotConsumeReadPermit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	admission := execution.New(execution.Config{MaxRunningReads: 1, MaxQueuedReads: -1})
+	admission, err := workload.New(workload.Config{MaxRunning: 1, Classes: map[workload.Class]workload.Policy{workload.Interactive: {MaximumRunning: 1}}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	occupied := make(chan struct{})
 	release := make(chan struct{})
 	var occupying sync.WaitGroup
 	occupying.Add(1)
 	go func() {
 		defer occupying.Done()
-		_, _ = admission.SubmitRead(context.Background(), dataquery.Query{}, func(context.Context) (dataquery.Result, error) {
-			close(occupied)
-			<-release
-			return dataquery.Result{}, nil
-		})
+		lease, acquireErr := admission.Acquire(context.Background(), workload.Request{Class: workload.Interactive, WorkspaceID: "sales", Operation: "occupy"})
+		if acquireErr != nil {
+			return
+		}
+		close(occupied)
+		<-release
+		lease.Release()
 	}()
 	<-occupied
-	ctx := execution.WithReadAdmission(context.Background(), admission)
+	ctx := workload.WithAdmitter(context.Background(), admission)
 	result, err := runtime.ExecuteDataQuery(ctx, request)
 	close(release)
 	occupying.Wait()
@@ -784,6 +1035,130 @@ type countingCacheRuntimeDatabase struct {
 	queries atomic.Int32
 }
 
+type arrowCountingRuntimeDatabase struct {
+	cacheRuntimeDatabase
+	queries atomic.Int32
+}
+
+func (d *arrowCountingRuntimeDatabase) QueryArrow(ctx context.Context, plan semanticquery.Plan, sink arrowquery.Sink) error {
+	d.queries.Add(1)
+	fields := make([]arrow.Field, len(plan.Columns))
+	arrays := make([]arrow.Array, len(plan.Columns))
+	for index, column := range plan.Columns {
+		fields[index] = arrow.Field{Name: column, Type: arrow.PrimitiveTypes.Int64}
+		builder := array.NewInt64Builder(memory.DefaultAllocator)
+		builder.Append(1)
+		arrays[index] = builder.NewArray()
+		builder.Release()
+	}
+	schema := arrow.NewSchema(fields, nil)
+	if err := sink.WriteSchema(schema); err != nil {
+		return err
+	}
+	record := array.NewRecordBatch(schema, arrays, 1)
+	for _, values := range arrays {
+		values.Release()
+	}
+	defer record.Release()
+	if err := arrowquery.ConsumeResultBudget(ctx, record); err != nil {
+		return err
+	}
+	return sink.WriteRecord(record)
+}
+
+func writeTestRowsArrow(ctx context.Context, plan semanticquery.Plan, rows semanticquery.Rows, sink arrowquery.Sink) error {
+	fields := make([]arrow.Field, len(plan.Columns))
+	arrays := make([]arrow.Array, len(plan.Columns))
+	for columnIndex, column := range plan.Columns {
+		kind := "int"
+		for _, row := range rows {
+			switch row[column].(type) {
+			case string:
+				kind = "string"
+			case float32, float64:
+				kind = "float"
+			case bool:
+				kind = "bool"
+			}
+			if row[column] != nil {
+				break
+			}
+		}
+		switch kind {
+		case "string":
+			fields[columnIndex] = arrow.Field{Name: column, Type: arrow.BinaryTypes.String, Nullable: true}
+			builder := array.NewStringBuilder(memory.DefaultAllocator)
+			for _, row := range rows {
+				value, ok := row[column].(string)
+				builder.Append(value)
+				if !ok {
+					builder.SetNull(builder.Len() - 1)
+				}
+			}
+			arrays[columnIndex] = builder.NewArray()
+			builder.Release()
+		case "float":
+			fields[columnIndex] = arrow.Field{Name: column, Type: arrow.PrimitiveTypes.Float64, Nullable: true}
+			builder := array.NewFloat64Builder(memory.DefaultAllocator)
+			for _, row := range rows {
+				switch value := row[column].(type) {
+				case float32:
+					builder.Append(float64(value))
+				case float64:
+					builder.Append(value)
+				default:
+					builder.AppendNull()
+				}
+			}
+			arrays[columnIndex] = builder.NewArray()
+			builder.Release()
+		case "bool":
+			fields[columnIndex] = arrow.Field{Name: column, Type: arrow.FixedWidthTypes.Boolean, Nullable: true}
+			builder := array.NewBooleanBuilder(memory.DefaultAllocator)
+			for _, row := range rows {
+				value, ok := row[column].(bool)
+				if ok {
+					builder.Append(value)
+				} else {
+					builder.AppendNull()
+				}
+			}
+			arrays[columnIndex] = builder.NewArray()
+			builder.Release()
+		default:
+			fields[columnIndex] = arrow.Field{Name: column, Type: arrow.PrimitiveTypes.Int64, Nullable: true}
+			builder := array.NewInt64Builder(memory.DefaultAllocator)
+			for _, row := range rows {
+				switch value := row[column].(type) {
+				case int:
+					builder.Append(int64(value))
+				case int32:
+					builder.Append(int64(value))
+				case int64:
+					builder.Append(value)
+				default:
+					builder.AppendNull()
+				}
+			}
+			arrays[columnIndex] = builder.NewArray()
+			builder.Release()
+		}
+	}
+	schema := arrow.NewSchema(fields, nil)
+	if err := sink.WriteSchema(schema); err != nil {
+		return err
+	}
+	record := array.NewRecordBatch(schema, arrays, int64(len(rows)))
+	for _, values := range arrays {
+		values.Release()
+	}
+	defer record.Release()
+	if err := arrowquery.ConsumeResultBudget(ctx, record); err != nil {
+		return err
+	}
+	return sink.WriteRecord(record)
+}
+
 type failingDiscoveryRuntimeDatabase struct{ cacheRuntimeDatabase }
 
 func (failingDiscoveryRuntimeDatabase) DiscoverSchemas(context.Context, *semanticmodel.Model) error {
@@ -792,17 +1167,29 @@ func (failingDiscoveryRuntimeDatabase) DiscoverSchemas(context.Context, *semanti
 
 type cacheSourceRegistrar struct{}
 
-func (cacheSourceRegistrar) PrepareSourceRuntime(context.Context, *semanticmodel.Model) error {
-	return nil
+func (registrar cacheSourceRegistrar) Prepare(context.Context, *semanticmodel.Model) (PreparedSources, error) {
+	return cachePreparedSources{cacheSourceRegistrar: registrar}, nil
 }
 
 func (cacheSourceRegistrar) PlanModelTable(context.Context, *semanticmodel.Model, string, semanticmodel.Table) (ModelTablePlan, error) {
 	return ModelTablePlan{}, errors.New("unexpected model table")
 }
 
+type cachePreparedSources struct{ cacheSourceRegistrar }
+
+func (cachePreparedSources) Close() error { return nil }
+
 func (d *countingCacheRuntimeDatabase) Query(ctx context.Context, plan semanticquery.Plan) (semanticquery.Rows, error) {
 	d.queries.Add(1)
 	return d.cacheRuntimeDatabase.Query(ctx, plan)
+}
+
+func (d *countingCacheRuntimeDatabase) QueryArrow(ctx context.Context, plan semanticquery.Plan, sink arrowquery.Sink) error {
+	rows, err := d.Query(ctx, plan)
+	if err != nil {
+		return err
+	}
+	return writeTestRowsArrow(ctx, plan, rows, sink)
 }
 
 func TestRuntimeSeparatesConnectionWaitFromDatabaseExecution(t *testing.T) {
@@ -822,25 +1209,42 @@ func TestRuntimeSeparatesConnectionWaitFromDatabaseExecution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ConnectionWaitMS != 20 {
-		t.Fatalf("connection wait = %dms, want 20ms", result.ConnectionWaitMS)
+	if result.ConnectionWaitMS != 10_000 {
+		t.Fatalf("connection wait = %dms, want 10000ms", result.ConnectionWaitMS)
 	}
-	if result.DatabaseMS < 5 || result.DatabaseMS > 20 {
-		t.Fatalf("database execution = %dms, want connection wait excluded", result.DatabaseMS)
+	if result.DatabaseMS != 0 {
+		t.Fatalf("database execution = %dms, want observed connection wait excluded", result.DatabaseMS)
 	}
 }
 
 type timingRuntimeDatabase struct{ cacheRuntimeDatabase }
 
 func (timingRuntimeDatabase) Query(ctx context.Context, _ semanticquery.Plan) (semanticquery.Rows, error) {
-	dataquery.ObserveConnectionWait(ctx, 20*time.Millisecond)
+	// Use a synthetic wait larger than any execution jitter. The runtime must
+	// clamp the remaining database duration at zero instead of underflowing.
+	dataquery.ObserveConnectionWait(ctx, 10*time.Second)
 	time.Sleep(30 * time.Millisecond)
 	return semanticquery.Rows{{"id": 1}}, nil
+}
+
+func (d timingRuntimeDatabase) QueryArrow(ctx context.Context, plan semanticquery.Plan, sink arrowquery.Sink) error {
+	rows, err := d.Query(ctx, plan)
+	if err != nil {
+		return err
+	}
+	return writeTestRowsArrow(ctx, plan, rows, sink)
 }
 
 func (cacheRuntimeDatabase) Exec(context.Context, string) error { return nil }
 func (cacheRuntimeDatabase) Query(context.Context, semanticquery.Plan) (semanticquery.Rows, error) {
 	return semanticquery.Rows{{"id": 1}}, nil
+}
+func (d cacheRuntimeDatabase) QueryArrow(ctx context.Context, plan semanticquery.Plan, sink arrowquery.Sink) error {
+	rows, err := d.Query(ctx, plan)
+	if err != nil {
+		return err
+	}
+	return writeTestRowsArrow(ctx, plan, rows, sink)
 }
 func (cacheRuntimeDatabase) Count(context.Context, semanticquery.Plan) (int, error) { return 1, nil }
 func (cacheRuntimeDatabase) FloatBounds(context.Context, semanticquery.Plan, string) (semanticquery.FloatBounds, error) {
