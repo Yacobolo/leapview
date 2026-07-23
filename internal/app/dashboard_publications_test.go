@@ -13,6 +13,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	"github.com/Yacobolo/leapview/internal/dashboard/command"
 	lddatastar "github.com/Yacobolo/leapview/internal/dashboard/datastar"
+	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
 	publicationsqlite "github.com/Yacobolo/leapview/internal/dashboard/publication/sqlite"
 	"github.com/Yacobolo/leapview/internal/dataquery"
@@ -20,16 +21,15 @@ import (
 	"github.com/Yacobolo/leapview/internal/platform"
 	"github.com/Yacobolo/leapview/internal/servingstate"
 	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
-	"github.com/Yacobolo/leapview/internal/workspace"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 
 func TestPublicDashboardDocumentsAreAnonymousAndRouteAware(t *testing.T) {
 	store := testStore(t)
 	seedActivePublication(t, store, "opaque-public-id-12345678901234")
-	server := NewWithOptions(fakeMetrics{}, Options{
-		Store: store, DefaultWorkspaceID: "test-workspace", SecurityHeaders: SecurityHeaders(false),
-	})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{
+		DefaultWorkspaceID: "test-workspace", SecurityHeaders: SecurityHeaders(false),
+	}))
 
 	public := httptest.NewRecorder()
 	server.Routes().ServeHTTP(public, httptest.NewRequest(http.MethodGet, "/public/dashboards/opaque-public-id-12345678901234", nil))
@@ -77,14 +77,13 @@ func TestPublicDashboardDocumentsAreAnonymousAndRouteAware(t *testing.T) {
 }
 
 func TestPublicDashboardExecutionContextUsesPublicationPrincipal(t *testing.T) {
-	server := &Server{}
-	resolved := resolvedPublicDashboard{publication: publication.Publication{
+	row := publication.Publication{
 		WorkspaceID: "visuals",
 		Name:        "website-showcase",
 		Dashboard:   "visual-showcase",
-	}}
+	}
 
-	metadata := dataquery.MetadataFromContext(server.publicDashboardExecutionContext(context.Background(), resolved))
+	metadata := dataquery.MetadataFromContext(dashboardmodule.PublicationExecutionContext(context.Background(), row, ""))
 	want := access.DashboardPublicationSubjectID("visuals", "website-showcase")
 	if metadata.PrincipalID != want {
 		t.Fatalf("public principal id = %q, want %q", metadata.PrincipalID, want)
@@ -104,23 +103,23 @@ func TestPublicationDeploymentRequiresManagementPrivilege(t *testing.T) {
 	}
 	validation := completeTestValidation("test", servingstate.Validation{
 		Digest: "digest", ManifestJSON: "{}", ProjectID: "project",
-		DashboardPublications: map[string]workspace.DashboardPublication{"website": {Name: "website", Dashboard: "showcase"}},
+		DashboardPublicationsJSON: `{"website":{"name":"website","dashboard":"showcase","defaultPage":"","dependencyAssetIds":null,"configurationDigest":""}}`,
 	})
 	if _, err := states.SaveValidated(ctx, created.ID, validation, zeroArtifact(created.ID, "test")); err != nil {
 		t.Fatal(err)
 	}
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, ServingStateRepo: states, DefaultWorkspaceID: "test", DefaultEnvironment: "prod"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{ServingStateRepo: states, DefaultWorkspaceID: "test", DefaultEnvironment: "prod"}))
 	targets := []apiadapter.TargetRequest{{Workspace: "test", CandidateID: string(created.ID)}}
 
 	viewer := testPrincipal(t, ctx, store, "viewer-publication@example.com", "Viewer", "viewer")
-	if err := server.authorizePublicationDeployment(ctx, Principal{ID: viewer.ID}, "prod", targets); !errors.Is(err, errPublicationDeploymentForbidden) {
+	if err := server.deploymentModule.AuthorizePublicationDeployment(ctx, viewer.ID, "prod", targets); !errors.Is(err, errPublicationDeploymentForbidden) {
 		t.Fatalf("viewer authorization error = %v", err)
 	}
 	owner := testPrincipal(t, ctx, store, "owner-publication@example.com", "Owner", "owner")
-	if err := server.authorizePublicationDeployment(ctx, Principal{ID: owner.ID}, "prod", targets); err != nil {
+	if err := server.deploymentModule.AuthorizePublicationDeployment(ctx, owner.ID, "prod", targets); err != nil {
 		t.Fatalf("owner authorization: %v", err)
 	}
-	if err := server.authorizePublicationDeployment(ctx, Principal{ID: viewer.ID}, "dev", targets); err != nil {
+	if err := server.deploymentModule.AuthorizePublicationDeployment(ctx, viewer.ID, "dev", targets); err != nil {
 		t.Fatalf("development deployment authorization = %v, want publication check skipped", err)
 	}
 }
@@ -142,9 +141,9 @@ func TestPublicationAdminAuthorizationUsesAnyManagedWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := NewWithOptions(fakeMetrics{}, Options{
-		Store: store, DefaultWorkspaceID: "test", Auth: testAuth(store, "test", AuthConfig{APITokenOnly: true}),
-	})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{
+		DefaultWorkspaceID: "test", Auth: testAuth(store, "test", AuthConfig{APITokenOnly: true}),
+	}))
 
 	request := httptest.NewRequest(http.MethodGet, "/admin/publications", nil)
 	request.Header.Set("Authorization", "Bearer "+token)
@@ -158,7 +157,7 @@ func TestPublicationAdminAuthorizationUsesAnyManagedWorkspace(t *testing.T) {
 func TestDisabledSuspendedAndRotatedPublicationIDsReturnNotFound(t *testing.T) {
 	store := testStore(t)
 	seedActivePublication(t, store, "opaque-public-id-12345678901234")
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "test-workspace"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{DefaultWorkspaceID: "test-workspace"}))
 	request := func(path string) int {
 		recorder := httptest.NewRecorder()
 		server.Routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
@@ -187,7 +186,7 @@ func TestDisabledSuspendedAndRotatedPublicationIDsReturnNotFound(t *testing.T) {
 
 func TestEmbedWithNoAllowedOriginsOmitsLegacyFrameHeaderAndDeniesFraming(t *testing.T) {
 	header := http.Header{}
-	setPublicDashboardSecurityHeaders(header, "embed", nil)
+	dashboardmodule.SetPublicDashboardSecurityHeaders(header, "embed", nil)
 	if got := header.Get("X-Frame-Options"); got != "" {
 		t.Fatalf("X-Frame-Options = %q, want omitted", got)
 	}
@@ -199,10 +198,10 @@ func TestEmbedWithNoAllowedOriginsOmitsLegacyFrameHeaderAndDeniesFraming(t *test
 func TestPublicDashboardDocumentsUseDedicatedRateLimitBucket(t *testing.T) {
 	store := testStore(t)
 	seedActivePublication(t, store, "opaque-public-id-12345678901234")
-	server := NewWithOptions(fakeMetrics{}, Options{
-		Store: store, DefaultWorkspaceID: "test-workspace",
-		RateLimits: RateLimitConfig{Enabled: true, PublicPageLimit: 1, PublicPageWindow: time.Minute},
-	})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{
+		DefaultWorkspaceID: "test-workspace",
+		RateLimits:         RateLimitConfig{Enabled: true, PublicPageLimit: 1, PublicPageWindow: time.Minute},
+	}))
 	handler := server.Routes()
 	path := "/public/dashboards/opaque-public-id-12345678901234"
 	request := func() int {
@@ -220,10 +219,10 @@ func TestPublicDashboardDocumentsUseDedicatedRateLimitBucket(t *testing.T) {
 func TestDashboardPublicationManagementAPIRequiresAndReplaysIdempotencyKeys(t *testing.T) {
 	store := testStore(t)
 	seedActivePublication(t, store, "opaque-public-id-12345678901234")
-	server := NewWithOptions(fakeMetrics{}, Options{
-		Store: store, DefaultWorkspaceID: "test-workspace", PublicURL: "https://app.leapview.dev",
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{
+		DefaultWorkspaceID: "test-workspace", PublicURL: "https://app.leapview.dev",
 		Auth: testAuth(store, "test-workspace", AuthConfig{DevBypass: true, DevAPIToken: "local-secret"}),
-	})
+	}))
 
 	list := httptest.NewRecorder()
 	listRequest := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test-workspace/dashboard-publications", nil)
@@ -262,48 +261,49 @@ func TestDashboardPublicationManagementAPIRequiresAndReplaysIdempotencyKeys(t *t
 func TestPublicCommandsRequireMatchingLiveStreamAndSuspensionCancelsIt(t *testing.T) {
 	store := testStore(t)
 	seedActivePublication(t, store, "opaque-public-id-12345678901234")
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "test-workspace"})
-	resolved, err := server.resolvePublicDashboard(context.Background(), "opaque-public-id-12345678901234")
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{DefaultWorkspaceID: "test-workspace"}))
+	resolved, err := server.dashboardModule.ResolvePublicDashboard(context.Background(), "opaque-public-id-12345678901234")
 	if err != nil {
 		t.Fatal(err)
 	}
 	clientID, instanceID, pageID := "client-a", "stream-a", "overview"
-	streamID := lddatastar.StreamID(clientID, resolved.publication.Dashboard, pageID, instanceID)
-	version := publication.StreamVersion{PublicID: resolved.publication.PublicID, ServingStateID: resolved.publication.ServingStateID}
-	streamContext, unregister, err := server.publicationStreams.Register(context.Background(), resolved.publication.ID, streamID, version)
+	streamID := lddatastar.StreamID(clientID, resolved.Publication.Dashboard, pageID, instanceID)
+	version := publication.StreamVersion{PublicID: resolved.Publication.PublicID, ServingStateID: resolved.Publication.ServingStateID}
+	streams := publicationsqlite.NewStreamRegistry(store.SQLDB())
+	streamContext, unregister, err := streams.Register(context.Background(), resolved.Publication.ID, streamID, version)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer unregister()
-	guard := server.publicDashboardHTTP(resolved).CommandGuard
-	request := command.Request{DashboardID: resolved.publication.Dashboard, ModelID: resolved.modelID, PageID: pageID}
+	guard := server.dashboardModule.PublicDashboardHTTP(resolved).CommandGuard
+	request := command.Request{DashboardID: resolved.Publication.Dashboard, ModelID: resolved.ModelID, PageID: pageID}
 	signals := dashboard.Signals{Runtime: dashboard.Runtime{ClientID: clientID, StreamInstanceID: instanceID}}
-	if err := guard(httptest.NewRequest(http.MethodPost, "/", nil), resolved.metrics, request, signals); err != nil {
+	if err := guard(httptest.NewRequest(http.MethodPost, "/", nil), resolved.Metrics, request, signals); err != nil {
 		t.Fatalf("matching stream rejected: %v", err)
 	}
-	secondServer := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "test-workspace"})
-	secondResolved, err := secondServer.resolvePublicDashboard(context.Background(), "opaque-public-id-12345678901234")
+	secondServer := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{DefaultWorkspaceID: "test-workspace"}))
+	secondResolved, err := secondServer.dashboardModule.ResolvePublicDashboard(context.Background(), "opaque-public-id-12345678901234")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := secondServer.publicDashboardHTTP(secondResolved).CommandGuard(httptest.NewRequest(http.MethodPost, "/", nil), secondResolved.metrics, request, signals); err != nil {
+	if err := secondServer.dashboardModule.PublicDashboardHTTP(secondResolved).CommandGuard(httptest.NewRequest(http.MethodPost, "/", nil), secondResolved.Metrics, request, signals); err != nil {
 		t.Fatalf("matching stream was rejected by a second replica: %v", err)
 	}
 	signals.Runtime.StreamInstanceID = "other-stream"
-	if err := guard(httptest.NewRequest(http.MethodPost, "/", nil), resolved.metrics, request, signals); err == nil {
+	if err := guard(httptest.NewRequest(http.MethodPost, "/", nil), resolved.Metrics, request, signals); err == nil {
 		t.Fatal("mismatched stream was accepted")
 	}
-	if _, err := store.SQLDB().Exec(`UPDATE dashboard_publications SET suspended_at = CURRENT_TIMESTAMP WHERE id = ?`, resolved.publication.ID); err != nil {
+	if _, err := store.SQLDB().Exec(`UPDATE dashboard_publications SET suspended_at = CURRENT_TIMESTAMP WHERE id = ?`, resolved.Publication.ID); err != nil {
 		t.Fatal(err)
 	}
-	server.publicationStreams.ClosePublication(resolved.publication.ID)
+	streams.ClosePublication(resolved.Publication.ID)
 	select {
 	case <-streamContext.Done():
 	default:
 		t.Fatal("suspension did not cancel the live publication stream")
 	}
 	signals.Runtime.StreamInstanceID = instanceID
-	if err := guard(httptest.NewRequest(http.MethodPost, "/", nil), resolved.metrics, request, signals); err == nil {
+	if err := guard(httptest.NewRequest(http.MethodPost, "/", nil), resolved.Metrics, request, signals); err == nil {
 		t.Fatal("suspended publication command was accepted")
 	}
 }

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	platformdb "github.com/Yacobolo/leapview/internal/platform/db"
+	platformdb "github.com/Yacobolo/leapview/internal/access/sqlite/accessdb"
 )
 
 func (r *Repository) RecordAuditEvent(ctx context.Context, input access.AuditEventInput) error {

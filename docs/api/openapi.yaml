@@ -3927,6 +3927,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: USE_WORKSPACE
+      x-leapview-object-scope: principal
   /api/v1/me/api-tokens:
     get:
       operationId: listCurrentAPITokens
@@ -4210,6 +4211,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: MANAGE_GRANTS
+      x-leapview-object-scope: principal
     post:
       operationId: createCurrentAPIToken
       summary: Create current API token
@@ -4497,6 +4499,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: MANAGE_GRANTS
+      x-leapview-object-scope: principal
   /api/v1/me/api-tokens/{token}:
     delete:
       operationId: revokeCurrentAPIToken
@@ -4750,6 +4753,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: MANAGE_GRANTS
+      x-leapview-object-scope: principal
   /api/v1/me/effective-privileges:
     get:
       operationId: listCurrentEffectivePrivileges
@@ -5012,6 +5016,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: USE_WORKSPACE
+      x-leapview-object-scope: principal
   /api/v1/me/sessions:
     get:
       operationId: listCurrentSessions
@@ -5290,6 +5295,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: USE_WORKSPACE
+      x-leapview-object-scope: principal
   /api/v1/me/sessions/{session}:
     delete:
       operationId: revokeCurrentSession
@@ -5543,6 +5549,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: USE_WORKSPACE
+      x-leapview-object-scope: principal
   /api/v1/principals:
     get:
       operationId: listPrincipals
@@ -5837,6 +5844,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: MANAGE_GRANTS
+      x-leapview-object-scope: grant-management
     post:
       operationId: createPrincipal
       summary: Create a local principal
@@ -6118,6 +6126,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: MANAGE_GRANTS
+      x-leapview-object-scope: grant-management
   /api/v1/principals/{principal}:
     delete:
       operationId: deletePrincipal
@@ -6371,6 +6380,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: MANAGE_GRANTS
+      x-leapview-object-scope: grant-management
     get:
       operationId: getPrincipal
       summary: Get a principal
@@ -6634,6 +6644,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: MANAGE_GRANTS
+      x-leapview-object-scope: grant-management
     patch:
       operationId: updatePrincipal
       summary: Update a principal
@@ -6911,6 +6922,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: MANAGE_GRANTS
+      x-leapview-object-scope: grant-management
   /api/v1/principals/{principal}/password-reset:
     post:
       operationId: resetPrincipalPassword
@@ -7185,6 +7197,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: MANAGE_GRANTS
+      x-leapview-object-scope: grant-management
   /api/v1/projects:
     get:
       operationId: listProjects

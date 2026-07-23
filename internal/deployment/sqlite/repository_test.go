@@ -11,10 +11,12 @@ import (
 	"testing"
 	"time"
 
+	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
 	publicationsqlite "github.com/Yacobolo/leapview/internal/dashboard/publication/sqlite"
 	"github.com/Yacobolo/leapview/internal/deployment"
-	refreshpipelinesqlite "github.com/Yacobolo/leapview/internal/refreshpipeline/sqlite"
+	"github.com/Yacobolo/leapview/internal/platform/transaction"
+	refreshpipelinesqlite "github.com/Yacobolo/leapview/internal/refresh/sqlite"
 	"github.com/Yacobolo/leapview/internal/runtimehost"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
@@ -140,7 +142,7 @@ func TestActivateDeploymentAtomicallyReconcilesDashboardPublications(t *testing.
 	insertWorkspaceCandidate(t, ctx, db, "sales", "sales_old", "sales_new", "prod")
 	targets := []deployment.TargetInput{{WorkspaceID: "sales", ServingStateID: "sales_new"}}
 	setCandidateProjectMetadata(t, ctx, db, targets)
-	snapshot, err := json.Marshal(map[string]workspace.DashboardPublication{
+	snapshot, err := json.Marshal(map[string]publication.Definition{
 		"website": {Name: "website", Dashboard: "executive", DefaultPage: "overview", ConfigurationDigest: "sha256:publication", AllowedOrigins: []string{"https://leapview.dev"}},
 	})
 	if err != nil {
@@ -498,7 +500,25 @@ func testRepository(t *testing.T) (context.Context, *sql.DB, *Repository) {
 		t.Fatalf("migrate platform store: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	return ctx, db, NewRepository(db)
+	return ctx, db, NewRepositoryWithHooks(db, ActivationHooks{
+		ApplyAccessSnapshot: func(ctx context.Context, tx transaction.Transaction, servingStateID string) error {
+			return accesssqlite.ApplySnapshotTx(ctx, tx, servingStateID)
+		},
+		ReconcilePublications: func(ctx context.Context, tx transaction.Transaction, input PublicationReconcileInput) error {
+			publications := make(map[string]publication.Definition, len(input.Publications))
+			for name, raw := range input.Publications {
+				var definition publication.Definition
+				if err := json.Unmarshal(raw, &definition); err != nil {
+					return err
+				}
+				publications[name] = definition
+			}
+			return publicationsqlite.ReconcileTx(ctx, tx, publication.ReconcileInput{
+				ProjectID: input.ProjectID, WorkspaceID: input.WorkspaceID, ServingStateID: input.ServingStateID,
+				ActorID: input.ActorID, Publications: publications,
+			})
+		},
+	})
 }
 
 func insertWorkspaceCandidate(t *testing.T, ctx context.Context, db *sql.DB, workspaceID, oldID, candidateID, environment string) {

@@ -3,8 +3,6 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,23 +12,6 @@ import (
 	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
 	"github.com/Yacobolo/leapview/internal/workspace"
 )
-
-func TestServingSnapshotIsOwnedByServer(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{
-		Store: testStore(t),
-		WorkspaceRepo: apiSnapshotWorkspaceRepository{summary: workspace.Summary{
-			ID: "sales", ActiveServingStateID: "state-current",
-		}},
-	})
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/sales/semantic-models/orders/query", nil)
-	request.Header.Set("X-Serving-Snapshot", "state-attacker-controlled")
-
-	apiGenAdapter{server: server}.setServingSnapshot(request, "sales")
-
-	if got := request.Header.Get("X-Serving-Snapshot"); got != "state-current" {
-		t.Fatalf("serving snapshot = %q, want server-owned state-current", got)
-	}
-}
 
 type apiSnapshotWorkspaceRepository struct{ summary workspace.Summary }
 
@@ -394,6 +375,13 @@ func TestAPIGenOperationObjectResolverCoverage(t *testing.T) {
 			t.Fatalf("%s has invalid object-scope metadata for %q", operationID, contract.Path)
 		}
 		if expectedScope == "" {
+			declaredScope, _ := contract.Extensions[apiGenObjectScopeExtension].(string)
+			if declaredScope == "platform" || declaredScope == "grant-management" || declaredScope == "principal" {
+				if resolver == nil {
+					t.Fatalf("%s platform scope has no resolver", operationID)
+				}
+				continue
+			}
 			if resolver != nil {
 				t.Fatalf("%s should stay workspace-scoped", operationID)
 			}

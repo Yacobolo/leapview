@@ -14,10 +14,27 @@ import (
 	"sort"
 	"strings"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	"github.com/Yacobolo/leapview/internal/manageddata"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/workspace/compiler"
 )
+
+type Connection struct {
+	Kind  string
+	Root  string
+	Scope string
+}
+
+type Source struct {
+	Connection string
+	Path       string
+	Format     string
+}
+
+type Project struct {
+	Connections map[string]Connection
+	Sources     map[string]Source
+}
+
+type ProjectLoader func(string) (Project, error)
 
 type Request struct {
 	ProjectPath string
@@ -36,13 +53,13 @@ type Result struct {
 }
 
 type Service struct {
-	loadProject func(string) (workspacecompiler.Project, error)
+	loadProject ProjectLoader
 	files       fileSystem
 }
 
-func NewService() *Service {
+func NewService(loadProject ProjectLoader) *Service {
 	return &Service{
-		loadProject: workspacecompiler.LoadProject,
+		loadProject: loadProject,
 		files:       osFileSystem{},
 	}
 }
@@ -129,7 +146,7 @@ func (s *Service) Plan(ctx context.Context, request Request) (Result, error) {
 	}, nil
 }
 
-func planningRoot(from string, connection semanticmodel.Connection) (string, error) {
+func planningRoot(from string, connection Connection) (string, error) {
 	if connection.Kind != "managed" {
 		return "", fmt.Errorf("connection kind %q cannot plan managed data", connection.Kind)
 	}
@@ -164,7 +181,7 @@ func validateRoot(files fileSystem, root string) error {
 	return nil
 }
 
-func selectedSourceNames(project workspacecompiler.Project, connection string) []string {
+func selectedSourceNames(project Project, connection string) []string {
 	names := make([]string, 0)
 	for name, source := range project.Sources {
 		if source.Connection == connection {
@@ -181,12 +198,12 @@ type sourcePattern struct {
 	matched bool
 }
 
-func discoverFiles(files fileSystem, root string, sourceNames []string, project workspacecompiler.Project) (map[string]string, error) {
+func discoverFiles(files fileSystem, root string, sourceNames []string, project Project) (map[string]string, error) {
 	discovered := make(map[string]string)
 	patterns := make([]sourcePattern, 0)
 	for _, sourceName := range sourceNames {
 		source := project.Sources[sourceName]
-		if !semanticmodel.IsLocalPath(source.Path) {
+		if !isLocalPath(source.Path) {
 			return nil, fmt.Errorf("source %q managed path must be local: %q", sourceName, source.Path)
 		}
 		if filepath.IsAbs(filepath.FromSlash(source.Path)) {
@@ -259,6 +276,15 @@ func discoverFiles(files fileSystem, root string, sourceNames []string, project 
 		}
 	}
 	return discovered, nil
+}
+
+func isLocalPath(value string) bool {
+	for _, prefix := range []string{"s3://", "r2://", "gcs://", "gs://", "az://", "azure://", "abfss://", "http://", "https://", "file://"} {
+		if strings.HasPrefix(value, prefix) {
+			return false
+		}
+	}
+	return !strings.Contains(value, "://")
 }
 
 func normalizeSourcePath(root, value string) (string, bool, error) {

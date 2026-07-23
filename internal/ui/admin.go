@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/Yacobolo/leapview/internal/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	uiactions "github.com/Yacobolo/leapview/internal/ui/actions"
 	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
@@ -148,7 +149,7 @@ type AdminStorageSnapshotSignal = uisignals.AdminStorageSnapshotSignal
 type AdminStorageServingStateSignal = uisignals.AdminStorageServingStateSignal
 type AdminStorageCommand = uisignals.AdminStorageCommand
 
-func AdminPage(catalog dashboard.Catalog, active, roleLabel string, data AdminData, chromeOptions ...ChromeOption) g.Node {
+func AdminPage(catalog catalog.Catalog, active, roleLabel string, data AdminData, chromeOptions ...ChromeOption) g.Node {
 	title := adminPageTitle(active)
 	page := adminPageSignal(active, data)
 	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfigForWorkspace(catalog, "admin", roleLabel)}
@@ -213,7 +214,7 @@ func AdminPage(catalog dashboard.Catalog, active, roleLabel string, data AdminDa
 	})
 }
 
-func AdminBootstrapSignals(catalog dashboard.Catalog, active, roleLabel string, data AdminData, chromeOptions ...ChromeOption) map[string]any {
+func AdminBootstrapSignals(catalog catalog.Catalog, active, roleLabel string, data AdminData, chromeOptions ...ChromeOption) map[string]any {
 	page := adminPageSignal(active, data)
 	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfigForWorkspace(catalog, "admin", roleLabel)}
 	applyChromeOptions(&chrome, chromeOptions)

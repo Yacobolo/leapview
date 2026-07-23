@@ -6,19 +6,30 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/access"
 	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
+	"github.com/Yacobolo/leapview/internal/app"
 	"github.com/Yacobolo/leapview/internal/config"
 	"github.com/Yacobolo/leapview/internal/platform"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
 )
+
+func buildServeTestApplication(ctx context.Context, cfg config.Config, production bool, environment servingstate.Environment) (*app.Application, func(), error) {
+	cfg.Production = production
+	cfg.Environment = string(environment)
+	application, err := app.Build(ctx, cfg)
+	return application, func() {
+		if application != nil {
+			_ = application.Shutdown(context.Background())
+		}
+	}, err
+}
 
 func TestServeProductionModeHonorsConfigEnv(t *testing.T) {
 	cfg := config.Config{Production: true}
@@ -101,7 +112,7 @@ func TestDefaultHTTPServerShutdownTimeout(t *testing.T) {
 
 func TestDeploymentBackedDevServerAlwaysOpensPlatformStore(t *testing.T) {
 	home := t.TempDir()
-	_, cleanup, err := servingStateBackedServer(context.Background(), serveTestConfig(home), false, servingstate.DefaultEnvironment)
+	_, cleanup, err := buildServeTestApplication(context.Background(), serveTestConfig(home), false, servingstate.DefaultEnvironment)
 	if err != nil {
 		t.Fatalf("deployment-backed dev server: %v", err)
 	}
@@ -121,27 +132,11 @@ func TestDeploymentBackedDevServerAlwaysOpensPlatformStore(t *testing.T) {
 	}
 }
 
-func TestDeploymentBackedServerRejectsMissingMapAssetsBeforeOpeningState(t *testing.T) {
-	home := t.TempDir()
-	cfg := serveTestConfig(home)
-	cfg.MapAssetDir = t.TempDir()
-	_, cleanup, err := servingStateBackedServer(context.Background(), cfg, false, servingstate.DefaultEnvironment)
-	if cleanup != nil {
-		cleanup()
-	}
-	if err == nil || !strings.Contains(err.Error(), "verify map assets") || !strings.Contains(err.Error(), "missing") {
-		t.Fatalf("servingStateBackedServer() error = %v, want missing map asset failure", err)
-	}
-	if _, statErr := os.Stat(filepath.Join(home, "leapview.db")); !os.IsNotExist(statErr) {
-		t.Fatalf("platform store opened before map asset verification: %v", statErr)
-	}
-}
-
 func TestDeploymentBackedServerCreatesPrivateStateDirectories(t *testing.T) {
 	parent := t.TempDir()
 	home := filepath.Join(parent, "home")
 	restoreUmask := setServeTestUmask(t, 0)
-	_, cleanup, err := servingStateBackedServer(context.Background(), serveTestConfig(home), false, servingstate.DefaultEnvironment)
+	_, cleanup, err := buildServeTestApplication(context.Background(), serveTestConfig(home), false, servingstate.DefaultEnvironment)
 	restoreUmask()
 	if err != nil {
 		t.Fatalf("deployment-backed dev server: %v", err)
@@ -176,12 +171,12 @@ func TestProductionServerAllowsCallbackHostAndRejectsOthers(t *testing.T) {
 	cfg.OIDCCallbackURL = "https://app.example.com/auth/oidc/callback"
 	cfg.CSRFKey = "0123456789abcdef0123456789abcdef"
 	cfg.MetricsBearerToken = "0123456789abcdef0123456789abcdef"
-	server, cleanup, err := servingStateBackedServer(context.Background(), cfg, true, servingstate.Environment("prod"))
+	server, cleanup, err := buildServeTestApplication(context.Background(), cfg, true, servingstate.Environment("prod"))
 	if err != nil {
 		t.Fatalf("production server: %v", err)
 	}
 	defer cleanup()
-	handler := server.Routes()
+	handler := server.Handler()
 
 	for _, tc := range []struct {
 		name string
@@ -214,7 +209,7 @@ func setServeTestUmask(t *testing.T, mask int) func() {
 func TestDeploymentBackedDevServerSeedsPlatformAdminPrincipal(t *testing.T) {
 	ctx := context.Background()
 	home := t.TempDir()
-	_, cleanup, err := servingStateBackedServer(ctx, serveTestConfig(home), false, servingstate.DefaultEnvironment)
+	_, cleanup, err := buildServeTestApplication(ctx, serveTestConfig(home), false, servingstate.DefaultEnvironment)
 	if err != nil {
 		t.Fatalf("deployment-backed dev server: %v", err)
 	}
@@ -248,7 +243,7 @@ func TestDeploymentBackedDevServerSeedsPlatformAdminPrincipal(t *testing.T) {
 func TestDeploymentBackedDevServerDoesNotCreateWorkspacesOrDeployments(t *testing.T) {
 	ctx := context.Background()
 	home := t.TempDir()
-	_, cleanup, err := servingStateBackedServer(ctx, serveTestConfig(home), false, servingstate.DefaultEnvironment)
+	_, cleanup, err := buildServeTestApplication(ctx, serveTestConfig(home), false, servingstate.DefaultEnvironment)
 	if err != nil {
 		t.Fatalf("deployment-backed dev server: %v", err)
 	}

@@ -9,13 +9,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	platformdb "github.com/Yacobolo/leapview/internal/platform/db"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	platformdb "github.com/Yacobolo/leapview/internal/access/sqlite/accessdb"
 )
 
 type Repository struct {
@@ -39,6 +37,38 @@ var secretRandomReader io.Reader = rand.Reader
 
 func NewRepository(sqlDB *sql.DB) *Repository {
 	return &Repository{root: sqlDB, db: sqlDB, q: platformdb.New(sqlDB)}
+}
+
+// Initialize reconciles access-owned system roles and the platform securable.
+// It is intentionally capability-owned rather than part of opening the shared
+// SQLite connection.
+func Initialize(ctx context.Context, sqlDB *sql.DB) error {
+	repository := NewRepository(sqlDB)
+	for _, role := range access.DefaultRoles() {
+		privileges, err := json.Marshal(role.Privileges)
+		if err != nil {
+			return err
+		}
+		roleID := "role_" + role.Name
+		if err := repository.q.UpsertRole(ctx, platformdb.UpsertRoleParams{
+			ID: roleID, Name: role.Name, PrivilegesJson: string(privileges),
+		}); err != nil {
+			return err
+		}
+		if err := repository.q.DeleteRoleGrantTemplates(ctx, role.Name); err != nil {
+			return err
+		}
+		for _, privilege := range role.Privileges {
+			if err := repository.q.InsertRoleGrantTemplate(ctx, platformdb.InsertRoleGrantTemplateParams{
+				RoleName: role.Name, Privilege: string(privilege),
+			}); err != nil {
+				return err
+			}
+		}
+	}
+	return repository.q.UpsertSecurableObject(ctx, platformdb.UpsertSecurableObjectParams{
+		ID: "platform", ObjectType: "platform", DisplayName: "Platform",
+	})
 }
 
 // InsertPlatformSettingIfMissing participates in the repository's current
@@ -222,42 +252,6 @@ func firstNonEmpty(values ...string) string {
 
 func stableAccessID(prefix, workspaceID, name string) string {
 	return "cac_" + prefix + "_" + stableID(workspaceID+"|"+name)
-}
-
-func sortedWorkspaceGroupNames(values map[string]workspace.WorkspaceGroup) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedWorkspaceRoleBindingNames(values map[string]workspace.WorkspaceRoleBinding) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedWorkspaceGrantNames(values map[string]workspace.WorkspaceGrant) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedWorkspaceDataPolicyNames(values map[string]workspace.WorkspaceDataPolicy) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func newID(prefix string) (string, error) {

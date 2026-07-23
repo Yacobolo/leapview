@@ -5,18 +5,18 @@ import (
 	nethttp "net/http"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	"github.com/Yacobolo/leapview/internal/queryaudit"
+	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
+	"github.com/Yacobolo/leapview/internal/catalog"
 	"github.com/Yacobolo/leapview/internal/ui"
 	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
 
-type QueryAuditRepositoryProvider func() (queryaudit.Repository, error)
+type QueryAuditReaderProvider func() (queryaudit.Reader, error)
 
 type Handler struct {
-	Catalog             func() dashboard.Catalog
+	Catalog             func() catalog.Catalog
 	ReadModel           ReadModel
 	CurrentRoleLabel    func(*nethttp.Request) string
 	ChromeOption        func(*nethttp.Request) ui.ChromeOption
@@ -257,9 +257,9 @@ func (h Handler) patchAndWait(w nethttp.ResponseWriter, r *nethttp.Request, patc
 	updates.Wait(r.Context())
 }
 
-func (h Handler) catalog() dashboard.Catalog {
+func (h Handler) catalog() catalog.Catalog {
 	if h.Catalog == nil {
-		return dashboard.Catalog{}
+		return catalog.Catalog{}
 	}
 	return h.Catalog()
 }

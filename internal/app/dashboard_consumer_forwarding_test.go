@@ -4,11 +4,13 @@ import (
 	"context"
 	"testing"
 
-	queryauthz "github.com/Yacobolo/leapview/internal/analytics/query/authz"
 	"github.com/Yacobolo/leapview/internal/dashboard/command"
 	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
+	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
+	queryauthz "github.com/Yacobolo/leapview/internal/dashboard/queryauthz"
 	dashboardstream "github.com/Yacobolo/leapview/internal/dashboard/stream"
 	"github.com/Yacobolo/leapview/internal/dataquery"
+	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
 	"github.com/Yacobolo/leapview/internal/workload"
 )
 
@@ -25,7 +27,7 @@ func (m *consumerForwardingMetrics) ExecuteConsumersPage(ctx context.Context, re
 	_, m.admitter = workload.FromContext(ctx)
 	dataquery.ObservePhysicalQuery(ctx, dataquery.PhysicalQueryObservation{Count: 1})
 	for _, target := range request.Targets {
-		publish(consumer.Result{Target: target, Queries: 1})
+		publish(consumer.Result{Target: target, Envelope: visualizationir.VisualizationEnvelope{VisualID: target.ID}, Queries: 1})
 	}
 	return nil
 }
@@ -37,10 +39,10 @@ func TestProductionDashboardWrappersForwardGovernedConsumerPlan(t *testing.T) {
 		t.Fatalf("new workload controller: %v", err)
 	}
 	t.Cleanup(controller.Close)
-	metrics := dashboardCommandMetrics{QueryMetrics: queryAuditMetrics{QueryMetrics: workloadMetrics{
-		QueryMetrics: queryauthz.New(underlying, queryauthz.Options{}),
-		admitter:     controller,
-	}}}
+	metrics := dashboardmodule.WithQueryAudit(
+		dashboardmodule.WithAdmission(queryauthz.New(underlying, queryauthz.Options{}), controller, ""),
+		nil, "", nil,
+	)
 
 	visuals := 0
 	dashboardstream.TargetWork(metrics, dashboardstream.WorkRequest{

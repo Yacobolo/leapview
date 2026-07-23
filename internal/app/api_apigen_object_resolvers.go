@@ -1,31 +1,40 @@
 package app
 
 import (
+	"net/http"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/access/httpauth"
-	queryhttp "github.com/Yacobolo/leapview/internal/analytics/query/http"
+	accessmodule "github.com/Yacobolo/leapview/internal/access/module"
 	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
-	dashboardhttp "github.com/Yacobolo/leapview/internal/dashboard/http"
-	workspacehttp "github.com/Yacobolo/leapview/internal/workspace/http"
+	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
+	workspacemodule "github.com/Yacobolo/leapview/internal/workspace/module"
 )
 
 const apiGenObjectScopeExtension = "x-leapview-object-scope"
 
 type apiGenObjectScope struct {
 	pathParameter string
-	resolver      httpauth.ObjectResolver
+	resolver      accessmodule.ObjectResolver
 }
 
 // TypeSpec assigns operations to these domain scopes. The handwritten boundary
 // only maps a stable scope name to the domain behavior that resolves objects.
 var apiGenObjectScopes = map[string]apiGenObjectScope{
-	"dashboard":       {pathParameter: "dashboard", resolver: dashboardhttp.DashboardObjectRefs},
-	"semantic-model":  {pathParameter: "model", resolver: queryhttp.SemanticDatasetObjectRefs},
-	"workspace-asset": {pathParameter: "assetId", resolver: workspacehttp.AssetObjectRefs},
+	"dashboard": {pathParameter: "dashboard", resolver: dashboardmodule.DashboardObjectRefs},
+	"grant-management": {resolver: func(_ *http.Request, workspaceID string) []accessmodule.ObjectRef {
+		return []accessmodule.ObjectRef{accessmodule.PlatformObject(), accessmodule.WorkspaceObject(workspaceID)}
+	}},
+	"principal": {resolver: func(_ *http.Request, workspaceID string) []accessmodule.ObjectRef {
+		return []accessmodule.ObjectRef{accessmodule.PlatformObject(), accessmodule.WorkspaceObject(workspaceID)}
+	}},
+	"platform": {resolver: func(*http.Request, string) []accessmodule.ObjectRef {
+		return []accessmodule.ObjectRef{accessmodule.PlatformObject()}
+	}},
+	"semantic-model":  {pathParameter: "model", resolver: dashboardmodule.SemanticDatasetObjectRefs},
+	"workspace-asset": {pathParameter: "assetId", resolver: workspacemodule.AssetObjectRefs},
 }
 
-func apigenOperationObjectResolver(operationID string) (httpauth.ObjectResolver, bool) {
+func apigenOperationObjectResolver(operationID string) (accessmodule.ObjectResolver, bool) {
 	contract, ok := apigenapi.GetAPIGenOperationContract(operationID)
 	if !ok {
 		return nil, false
@@ -33,7 +42,7 @@ func apigenOperationObjectResolver(operationID string) (httpauth.ObjectResolver,
 	return apigenObjectResolverForContract(contract)
 }
 
-func apigenObjectResolverForContract(contract apigenapi.GenOperationContract) (httpauth.ObjectResolver, bool) {
+func apigenObjectResolverForContract(contract apigenapi.GenOperationContract) (accessmodule.ObjectResolver, bool) {
 	expectedScope, ambiguous := apigenObjectScopeForPath(contract.Path)
 	if ambiguous {
 		return nil, false
@@ -43,11 +52,14 @@ func apigenObjectResolverForContract(contract apigenapi.GenOperationContract) (h
 		return nil, expectedScope == ""
 	}
 	scope, ok := rawScope.(string)
-	if !ok || scope == "" || scope != expectedScope {
+	if !ok || scope == "" {
 		return nil, false
 	}
 	definition, ok := apiGenObjectScopes[scope]
 	if !ok || definition.resolver == nil {
+		return nil, false
+	}
+	if (expectedScope != "" && scope != expectedScope) || (expectedScope == "" && definition.pathParameter != "") {
 		return nil, false
 	}
 	return definition.resolver, true
@@ -56,6 +68,9 @@ func apigenObjectResolverForContract(contract apigenapi.GenOperationContract) (h
 func apigenObjectScopeForPath(path string) (string, bool) {
 	matched := ""
 	for scope, definition := range apiGenObjectScopes {
+		if definition.pathParameter == "" {
+			continue
+		}
 		if !strings.Contains(path, "{"+definition.pathParameter+"}") {
 			continue
 		}

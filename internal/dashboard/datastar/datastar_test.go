@@ -13,7 +13,7 @@ import (
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
 	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
 	visualizationruntime "github.com/Yacobolo/leapview/internal/visualization/runtime"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/workspace/compiler"
+	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 )
 
 func testVisualDefinition(t *testing.T, id string) visualizationdefinition.Definition {

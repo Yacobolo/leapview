@@ -39,7 +39,8 @@ func TestReleaseArtifactGeneratedSizeIsInt64(t *testing.T) {
 func TestManagedDataAPIGenAdapterImplementsEveryGeneratedOperation(t *testing.T) {
 	var _ apigenapi.GenOperationDispatcher = apiGenAdapter{}
 
-	server := New(nil)
+	server := newRuntimeRouter(nil)
+	server.configureModules()
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	apiGenAdapter{server: server}.GetManagedDataRevision(recorder, request, "project-a", "orders", "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")

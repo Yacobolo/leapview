@@ -49,14 +49,18 @@ func TestRuntimeMetricsDashboardRefreshLeasePinsOneRuntimeAcrossTargets(t *testi
 	first := &targetLeaseRuntime{id: "first"}
 	second := &targetLeaseRuntime{id: "second"}
 	provider := &switchingLeaseProvider{current: first}
-	metrics := runtimeMetrics{provider: provider, workspaceID: "test"}
+	metrics := NewRuntimeMetrics(provider, "test")
+	refreshMetrics := metrics.(interface {
+		WithDashboardRefreshLease(context.Context, func(context.Context) error) error
+		ExecuteConsumersPage(context.Context, consumer.Request, consumer.Publisher) error
+	})
 
-	err := metrics.WithDashboardRefreshLease(context.Background(), func(ctx context.Context) error {
+	err := refreshMetrics.WithDashboardRefreshLease(context.Background(), func(ctx context.Context) error {
 		provider.current = second
-		if err := metrics.ExecuteConsumersPage(ctx, consumer.Request{DashboardID: "dashboard", PageID: "page", Targets: []consumer.Target{{Kind: consumer.KindVisual, ID: "one"}}}, func(consumer.Result) bool { return true }); err != nil {
+		if err := refreshMetrics.ExecuteConsumersPage(ctx, consumer.Request{DashboardID: "dashboard", PageID: "page", Targets: []consumer.Target{{Kind: consumer.KindVisual, ID: "one"}}}, func(consumer.Result) bool { return true }); err != nil {
 			return err
 		}
-		if err := metrics.ExecuteConsumersPage(ctx, consumer.Request{DashboardID: "dashboard", PageID: "page", Targets: []consumer.Target{{Kind: consumer.KindVisual, ID: "two"}}}, func(consumer.Result) bool { return true }); err != nil {
+		if err := refreshMetrics.ExecuteConsumersPage(ctx, consumer.Request{DashboardID: "dashboard", PageID: "page", Targets: []consumer.Target{{Kind: consumer.KindVisual, ID: "two"}}}, func(consumer.Result) bool { return true }); err != nil {
 			return err
 		}
 		if provider.lease.released {

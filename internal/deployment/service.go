@@ -47,10 +47,15 @@ type Runtime interface {
 	Activate(Prepared, func() error) error
 }
 
-type registryRuntime struct{ registry *runtimehost.Registry }
+type runtimeRegistry interface {
+	PrepareServingStateCandidates(context.Context, []runtimehost.ServingStateCandidate) (*runtimehost.PreparedSet, error)
+	ActivatePreparedSet(*runtimehost.PreparedSet, func() error) error
+}
+
+type registryRuntime struct{ registry runtimeRegistry }
 type registryPrepared struct{ set *runtimehost.PreparedSet }
 
-func NewRegistryRuntime(registry *runtimehost.Registry) (Runtime, error) {
+func NewRegistryRuntime(registry runtimeRegistry) (Runtime, error) {
 	if registry == nil {
 		return nil, fmt.Errorf("runtime registry is required")
 	}

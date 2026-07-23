@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/agent"
-	"github.com/Yacobolo/leapview/internal/dashboard"
+	"github.com/Yacobolo/leapview/internal/catalog"
 	"github.com/Yacobolo/leapview/internal/ui"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
@@ -186,7 +186,7 @@ func (h *Handler) ChatUpdates(w nethttp.ResponseWriter, r *nethttp.Request) {
 	scope := h.chatScope(r)
 	signal, view := h.chatBootstrapSignal(r, scope)
 	workspaceID := ""
-	catalog := dashboard.Catalog{}
+	catalog := catalog.Catalog{}
 	streamID := chatStreamID(scope, chatClientID(r))
 	var trace *pagestream.TraceStore
 	if h.options.Broker != nil {
@@ -208,7 +208,7 @@ func (h *Handler) renderChat(w nethttp.ResponseWriter, r *nethttp.Request, view 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(nethttp.StatusOK)
 	workspaceID := ""
-	catalog := dashboard.Catalog{}
+	catalog := catalog.Catalog{}
 	if err := ui.ChatPage(catalog, workspaceID, h.csrfToken(r), h.currentRoleLabel(r), view, signal).Render(w); err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
 	}
@@ -353,6 +353,13 @@ func (h *Handler) chatScope(r *nethttp.Request) agent.Scope {
 		}
 	}
 	return scope
+}
+
+func (h *Handler) Scope(r *nethttp.Request) agent.Scope {
+	if h == nil {
+		return agent.Scope{}
+	}
+	return h.chatScope(r)
 }
 
 func (h *Handler) chatSignal(ctx context.Context, scope agent.Scope, activeID, statusErr string, running bool) ui.ChatViewState {

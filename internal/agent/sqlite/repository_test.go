@@ -10,6 +10,7 @@ import (
 	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
 	"github.com/Yacobolo/leapview/internal/agent"
 	"github.com/Yacobolo/leapview/internal/platform"
+	jobsqlite "github.com/Yacobolo/leapview/internal/platform/jobs/sqlite"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
 )
@@ -270,7 +271,7 @@ func openAgentRepo(t *testing.T, ctx context.Context) (*platform.Store, *Reposit
 	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
 		t.Fatalf("ensure workspace: %v", err)
 	}
-	return store, NewRepository(store.SQLDB())
+	return store, NewRepositoryWithEvents(store.SQLDB(), jobsqlite.NewRepository(store.SQLDB()))
 }
 
 func createAgentPrincipal(t *testing.T, ctx context.Context, store *platform.Store, email string) access.Principal {

@@ -14,19 +14,22 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/agent"
-	"github.com/Yacobolo/leapview/internal/asyncjob"
-	asyncjobsqlite "github.com/Yacobolo/leapview/internal/asyncjob/sqlite"
-	platformdb "github.com/Yacobolo/leapview/internal/platform/db"
+	platformdb "github.com/Yacobolo/leapview/internal/agent/sqlite/agentdb"
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
 )
 
 type Repository struct {
 	db     *sql.DB
 	q      *platformdb.Queries
-	events asyncjob.Repository
+	events jobs.Repository
 }
 
 func NewRepository(sqlDB *sql.DB) *Repository {
-	return &Repository{db: sqlDB, q: platformdb.New(sqlDB), events: asyncjobsqlite.NewRepository(sqlDB)}
+	return NewRepositoryWithEvents(sqlDB, nil)
+}
+
+func NewRepositoryWithEvents(sqlDB *sql.DB, events jobs.Repository) *Repository {
+	return &Repository{db: sqlDB, q: platformdb.New(sqlDB), events: events}
 }
 
 func (r *Repository) CreateConversation(ctx context.Context, input agent.ConversationInput) (agent.Conversation, error) {
@@ -362,6 +365,9 @@ func (r *Repository) GetRunByID(ctx context.Context, principalID, runID string) 
 }
 
 func (r *Repository) AppendEvent(ctx context.Context, input agent.EventInput) (agent.Event, error) {
+	if r.events == nil {
+		return agent.Event{}, fmt.Errorf("agent event repository is not configured")
+	}
 	payload, err := normalizedJSONObject(input.PayloadJSON)
 	if err != nil {
 		return agent.Event{}, err
@@ -404,6 +410,9 @@ func (r *Repository) ListEvents(ctx context.Context, principalID, runID string) 
 }
 
 func (r *Repository) ListEventsPage(ctx context.Context, principalID, runID string, page agent.Page) ([]agent.Event, error) {
+	if r.events == nil {
+		return nil, fmt.Errorf("agent event repository is not configured")
+	}
 	principalID, err := agentPrincipalID(principalID)
 	if err != nil {
 		return nil, err

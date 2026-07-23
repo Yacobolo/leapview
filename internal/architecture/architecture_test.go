@@ -1,6 +1,7 @@
 package architecture
 
 import (
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
@@ -33,6 +34,441 @@ func TestTargetCapabilityGraphDeclaresWorkload(t *testing.T) {
 	}
 }
 
+func TestRefreshOwnsDurableRunState(t *testing.T) {
+	if !packageDirExists(repoRoot(t), "internal/refresh/run") {
+		t.Fatal("refresh run contract package does not exist")
+	}
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/analytics/materialize" {
+			continue
+		}
+		for _, declaration := range []string{"type RunRecord struct", "type RunInput struct", "RunStatusQueued"} {
+			if strings.Contains(file.body, declaration) {
+				t.Errorf("%s retains refresh lifecycle declaration %q", file.path, declaration)
+			}
+		}
+	}
+}
+
+func TestCapabilityModuleSurfacesExist(t *testing.T) {
+	root := repoRoot(t)
+	for _, capability := range []string{"access", "analytics", "workspace", "manageddata", "release", "deployment", "refresh", "dashboard", "agent", "runtimehost", "servingstate", "workload", "admin"} {
+		dir := "internal/" + capability + "/module"
+		if !packageDirExists(root, dir) {
+			t.Errorf("capability composition package %s does not exist", dir)
+		}
+	}
+}
+
+func TestCapabilityModulesUseBuildAsTheirConstructor(t *testing.T) {
+	for _, file := range productionGoFiles(t) {
+		rule, ok := ClassifyPackage(file.pkgDir)
+		if !ok || rule.Layer != LayerModule {
+			continue
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), file.path, file.body, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", file.path, err)
+		}
+		for _, declaration := range parsed.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if ok && function.Recv == nil && function.Name.Name == "New" {
+				t.Errorf("%s exports New; capability modules expose Build(ctx, Config)", file.path)
+			}
+		}
+	}
+}
+
+func TestCapabilityModulesDoNotExposeRepositories(t *testing.T) {
+	for _, file := range productionGoFiles(t) {
+		rule, ok := ClassifyPackage(file.pkgDir)
+		if !ok || rule.Layer != LayerModule {
+			continue
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), file.path, file.body, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", file.path, err)
+		}
+		for _, declaration := range parsed.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Recv == nil {
+				continue
+			}
+			if function.Name.Name == "Repository" {
+				t.Errorf("%s exposes a repository from a capability module; export a named read or write port", file.path)
+			}
+		}
+	}
+}
+
+func TestRefreshPersistenceIsConstructedOnlyByItsModule(t *testing.T) {
+	constructors := 0
+	for _, file := range productionGoFiles(t) {
+		for _, imported := range file.imports {
+			if imported != modulePath+"/internal/refresh/sqlite" {
+				continue
+			}
+			if file.pkgDir != "internal/refresh/module" {
+				t.Errorf("%s imports refresh persistence outside refresh/module", file.path)
+			}
+		}
+		if file.pkgDir == "internal/refresh/module" {
+			constructors += strings.Count(file.body, "refreshsqlite.NewSQLRunRepository(")
+			constructors += strings.Count(file.body, "refreshsqlite.NewRepository(")
+		}
+	}
+	if constructors != 3 {
+		t.Fatalf("refresh/module persistence constructors = %d, want 3 (run, schedule, recovery)", constructors)
+	}
+}
+
+func TestPlatformJobModuleSurfaceExists(t *testing.T) {
+	if !packageDirExists(repoRoot(t), "internal/platform/jobs/module") {
+		t.Fatal("platform durable job module does not exist")
+	}
+}
+
+func TestCapabilityModulesDoNotImportOtherModules(t *testing.T) {
+	for _, file := range productionGoFiles(t) {
+		source, ok := ClassifyPackage(file.pkgDir)
+		if !ok || source.Layer != LayerModule {
+			continue
+		}
+		for _, imported := range file.imports {
+			if !strings.HasPrefix(imported, modulePath+"/internal/") || !strings.HasSuffix(imported, "/module") {
+				continue
+			}
+			packagePath := strings.TrimPrefix(imported, modulePath+"/")
+			target, ok := ClassifyPackage(packagePath)
+			if ok && target.Capability != source.Capability {
+				t.Errorf("%s imports capability module %s; only internal/app may assemble modules", file.path, packagePath)
+			}
+		}
+	}
+}
+
+func TestCapabilityModulesDoNotImportOtherCapabilityAdapters(t *testing.T) {
+	for _, file := range productionGoFiles(t) {
+		source, ok := ClassifyPackage(file.pkgDir)
+		if !ok || source.Layer != LayerModule {
+			continue
+		}
+		for _, imported := range file.imports {
+			if !strings.HasPrefix(imported, modulePath+"/internal/") {
+				continue
+			}
+			packagePath := strings.TrimPrefix(imported, modulePath+"/")
+			target, ok := ClassifyPackage(packagePath)
+			if !ok || target.Layer != LayerAdapter || target.Capability == source.Capability {
+				continue
+			}
+			if target.Capability == "platform" || target.Capability == "api" || target.Capability == "ui" {
+				continue
+			}
+			t.Errorf("%s imports another capability's adapter %s; accept a consumer-owned port", file.path, packagePath)
+		}
+	}
+}
+
+func TestCapabilityModulesDoNotImportOtherCapabilityPersistenceAdapters(t *testing.T) {
+	for _, file := range productionGoFiles(t) {
+		source, ok := ClassifyPackage(file.pkgDir)
+		if !ok || source.Layer != LayerModule {
+			continue
+		}
+		for _, imported := range file.imports {
+			if !strings.HasPrefix(imported, modulePath+"/internal/") {
+				continue
+			}
+			packagePath := strings.TrimPrefix(imported, modulePath+"/")
+			target, ok := ClassifyPackage(packagePath)
+			if !ok || target.Layer != LayerAdapter || target.Capability == source.Capability || !strings.Contains(packagePath, "/sqlite") {
+				continue
+			}
+			if target.Capability == "platform" || target.Capability == "api" || target.Capability == "ui" {
+				continue
+			}
+			t.Errorf("%s imports another capability's adapter %s; receive a contract through Config instead", file.path, packagePath)
+		}
+	}
+}
+
+func TestCapabilityModulesDoNotImportOtherCapabilityTransportAdapters(t *testing.T) {
+	for _, file := range productionGoFiles(t) {
+		source, ok := ClassifyPackage(file.pkgDir)
+		if !ok || source.Layer != LayerModule {
+			continue
+		}
+		for _, imported := range file.imports {
+			if !strings.HasPrefix(imported, modulePath+"/internal/") {
+				continue
+			}
+			packagePath := strings.TrimPrefix(imported, modulePath+"/")
+			target, ok := ClassifyPackage(packagePath)
+			if !ok || target.Layer != LayerAdapter || target.Capability == source.Capability {
+				continue
+			}
+			if target.Capability == "platform" || target.Capability == "api" || target.Capability == "ui" {
+				continue
+			}
+			if strings.Contains(packagePath, "/http") || strings.Contains(packagePath, "/datastar") {
+				t.Errorf("%s imports another capability's transport adapter %s; accept a consumer-owned port", file.path, packagePath)
+			}
+		}
+	}
+}
+
+func TestCompositionOwnershipIsAnExplicitClosedSet(t *testing.T) {
+	allowed := []string{
+		"cmd",
+		"internal/app",
+		"internal/cli",
+		"internal/tools",
+		// Transitional packages removed before PR #124 is marked ready.
+		"internal/dashboard/analyticsduckdb",
+		"internal/refresh/analyticsduckdb",
+	}
+	for _, file := range productionGoFiles(t) {
+		rule, ok := ClassifyPackage(file.pkgDir)
+		if !ok || rule.Layer != LayerComposition {
+			continue
+		}
+		permitted := false
+		for _, prefix := range allowed {
+			if file.pkgDir == prefix || strings.HasPrefix(file.pkgDir, prefix+"/") {
+				permitted = true
+				break
+			}
+		}
+		if !permitted {
+			t.Errorf("%s claims undeclared composition ownership", file.path)
+		}
+	}
+}
+
+func TestEveryProductionPackageHasAnArchitecturalOwner(t *testing.T) {
+	seen := map[string]bool{}
+	for _, file := range productionGoFiles(t) {
+		if seen[file.pkgDir] {
+			continue
+		}
+		seen[file.pkgDir] = true
+		if _, ok := ClassifyPackage(file.pkgDir); !ok {
+			t.Errorf("%s has no declared capability owner and layer", file.pkgDir)
+		}
+	}
+}
+
+func TestDeclaredCapabilityGraphHasNoReciprocalEdges(t *testing.T) {
+	for source, dependencies := range CapabilityDependencies {
+		for target := range dependencies {
+			if CapabilityDependencies[target][source] {
+				t.Errorf("capability graph contains reciprocal edges %s -> %s and %s -> %s", source, target, target, source)
+			}
+		}
+	}
+}
+
+func TestProductionImportsFollowCapabilityGraph(t *testing.T) {
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir == "internal/testutil" || strings.HasPrefix(file.pkgDir, "internal/testutil/") {
+			continue
+		}
+		source, ok := ClassifyPackage(file.pkgDir)
+		if !ok {
+			continue
+		}
+		for _, imported := range file.imports {
+			if !strings.HasPrefix(imported, modulePath+"/") {
+				continue
+			}
+			packagePath := strings.TrimPrefix(imported, modulePath+"/")
+			target, ok := ClassifyPackage(packagePath)
+			if !ok || source.Capability == target.Capability {
+				continue
+			}
+			_, sourceIsProductCapability := targetCapabilities[source.Capability]
+			if !sourceIsProductCapability || source.Layer == LayerComposition || source.Layer == LayerModule || target.Capability == "platform" || target.Capability == "api" || target.Capability == "ui" {
+				continue
+			}
+			if target.Capability == "workload" && AllowsWorkloadImport(file.pkgDir) {
+				// The narrower workload allowlist test below validates exactly which
+				// execution and worker adapters may use admission.
+				continue
+			}
+			if IsDeferredPackageEdge(file.pkgDir, target.Capability) {
+				continue
+			}
+			if !CapabilityDependencies[source.Capability][target.Capability] {
+				t.Errorf("%s imports %s: undeclared capability edge %s -> %s", file.path, packagePath, source.Capability, target.Capability)
+				continue
+			}
+			if target.Layer == LayerAdapter {
+				t.Errorf("%s imports adapter package %s owned by capability %s", file.path, packagePath, target.Capability)
+				continue
+			}
+			if source.Layer != LayerModule && !IsPublicContractImport(target.Capability, packagePath) {
+				t.Errorf("%s imports non-contract package %s from capability %s", file.path, packagePath, target.Capability)
+			}
+		}
+	}
+}
+
+func TestApplicationImportsProductCapabilitiesOnlyThroughModules(t *testing.T) {
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/app" {
+			continue
+		}
+		for _, imported := range file.imports {
+			if !strings.HasPrefix(imported, modulePath+"/internal/") {
+				continue
+			}
+			packagePath := strings.TrimPrefix(imported, modulePath+"/")
+			target, ok := ClassifyPackage(packagePath)
+			if !ok || target.Capability == "platform" || target.Capability == "composition" || target.Capability == "api" || target.Capability == "ui" {
+				continue
+			}
+			if target.Layer != LayerModule {
+				t.Errorf("%s imports product package %s instead of its module surface", file.path, packagePath)
+			}
+		}
+	}
+}
+
+func TestApplicationDoesNotReclaimAccessOrAnalyticsConstruction(t *testing.T) {
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/app" {
+			continue
+		}
+		for _, forbidden := range []string{"analyticsducklake.Open(", "accesssqlite.NewRepository("} {
+			if strings.Contains(file.body, forbidden) {
+				t.Errorf("%s constructs a migrated capability adapter via %s", file.path, forbidden)
+			}
+		}
+		if strings.HasSuffix(file.path, "/auth.go") {
+			t.Errorf("%s owns authentication behavior; move it to access/module", file.path)
+		}
+	}
+}
+
+func TestAppDoesNotRetainPlatformStore(t *testing.T) {
+	root := repoRoot(t)
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/app" {
+			continue
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), filepath.Join(root, filepath.FromSlash(file.path)), nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			selector, ok := node.(*ast.SelectorExpr)
+			if !ok || selector.Sel.Name != "Store" {
+				return true
+			}
+			if ident, ok := selector.X.(*ast.Ident); ok && ident.Name == "platform" {
+				t.Errorf("%s retains platform.Store; keep the store local to application assembly", file.path)
+			}
+			return true
+		})
+	}
+}
+
+func TestOnlyCompositionImportsApplicationPackage(t *testing.T) {
+	for _, file := range productionGoFiles(t) {
+		for _, imported := range file.imports {
+			if imported != modulePath+"/internal/app" {
+				continue
+			}
+			rule, ok := ClassifyPackage(file.pkgDir)
+			if !ok || rule.Layer != LayerComposition {
+				t.Errorf("%s imports internal/app outside process composition", file.path)
+			}
+		}
+	}
+}
+
+func TestLegacyApplicationContainerAPIIsAbsent(t *testing.T) {
+	root := repoRoot(t)
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/app" {
+			continue
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), filepath.Join(root, filepath.FromSlash(file.path)), nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, declaration := range parsed.Decls {
+			switch value := declaration.(type) {
+			case *ast.GenDecl:
+				for _, specification := range value.Specs {
+					if named, ok := specification.(*ast.TypeSpec); ok {
+						switch named.Name.Name {
+						case "Server", "server", "Options", "serverOptions", "Host", "host":
+							t.Errorf("%s declares legacy application container type %s", file.path, named.Name.Name)
+						}
+					}
+				}
+			case *ast.FuncDecl:
+				if value.Recv == nil {
+					switch value.Name.Name {
+					case "New", "NewWithOptions", "newServer", "newServerWithOptions", "buildServer":
+						t.Errorf("%s declares legacy application constructor %s", file.path, value.Name.Name)
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestRequestRuntimeDoesNotRetainConstructionDependencies(t *testing.T) {
+	root := repoRoot(t)
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/app" {
+			continue
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), filepath.Join(root, filepath.FromSlash(file.path)), nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, declaration := range parsed.Decls {
+			generic, ok := declaration.(*ast.GenDecl)
+			if !ok {
+				continue
+			}
+			for _, specification := range generic.Specs {
+				named, ok := specification.(*ast.TypeSpec)
+				if !ok || named.Name.Name != "runtimeRouter" {
+					continue
+				}
+				structure, ok := named.Type.(*ast.StructType)
+				if !ok {
+					t.Fatalf("%s runtimeRouter must be a struct", file.path)
+				}
+				for _, field := range structure.Fields.List {
+					for _, name := range field.Names {
+						switch name.Name {
+						case "adminDatabase", "servingStateRepo", "managedDataResolver",
+							"workspaceRepo", "workspacePersistence", "workspaceAssetCatalog",
+							"accessRepo", "reloader", "duckLakeCatalogPath", "duckLakeDataPath",
+							"jobLeaseTimeout", "deploymentConfig":
+							t.Errorf("%s runtimeRouter retains construction dependency %s", file.path, name.Name)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestAppDoesNotConstructRepositoriesFromSQLDB(t *testing.T) {
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir == "internal/app" && file.path != "internal/app/composition.go" && strings.Contains(file.body, ".SQLDB()") {
+			t.Errorf("%s constructs adapters from platform.Store; capability modules must receive construction ownership", file.path)
+		}
+	}
+}
+
 func TestWorkloadImportsNoProductCapabilities(t *testing.T) {
 	for _, file := range productionGoFiles(t) {
 		if file.pkgDir != "internal/workload" {
@@ -47,20 +483,12 @@ func TestWorkloadImportsNoProductCapabilities(t *testing.T) {
 }
 
 func TestOnlyWorkloadAdaptersAndCompositionDependOnWorkload(t *testing.T) {
-	allowed := []string{"internal/app", "internal/cli", "internal/config", "internal/integration", "internal/tools", "internal/admin/storage", "internal/workspace/refresh", "internal/analytics/materialize", "internal/analytics/ducklake", "internal/analytics/query/http"}
 	for _, file := range productionGoFiles(t) {
 		for _, imported := range file.imports {
 			if imported != modulePath+"/internal/workload" {
 				continue
 			}
-			permitted := false
-			for _, prefix := range allowed {
-				if file.pkgDir == prefix || strings.HasPrefix(file.pkgDir, prefix+"/") {
-					permitted = true
-					break
-				}
-			}
-			if !permitted {
+			if !AllowsWorkloadImport(file.pkgDir) {
 				t.Fatalf("%s depends on workload outside composition or an execution/worker adapter", file.path)
 			}
 		}
@@ -74,7 +502,7 @@ func TestArrowImportsStayInsideAnalyticalDataPlaneAndExplicitEncoders(t *testing
 		"internal/analytics/resultcache",
 		"internal/analytics/materialize",
 		"internal/analytics/ducklake",
-		"internal/analytics/query/http",
+		"internal/dashboard/semanticapi",
 		"internal/dashboard/http",
 	}
 	for _, file := range productionGoFiles(t) {
@@ -158,10 +586,10 @@ func TestStaticSQLiteAdaptersUseGeneratedQueries(t *testing.T) {
 		"internal/workspace/sqlite":    true,
 	}
 	generatedOnlyFiles := map[string]bool{
-		"internal/access/sqlite/api_symmetry.go":        true,
-		"internal/access/sqlite/authorization.go":       true,
-		"internal/analytics/materialize/sqlite/runs.go": true,
-		"internal/queryaudit/sqlite/repository.go":      true,
+		"internal/access/sqlite/api_symmetry.go":             true,
+		"internal/access/sqlite/authorization.go":            true,
+		"internal/refresh/sqlite/runs.go":                    true,
+		"internal/analytics/queryaudit/sqlite/repository.go": true,
 	}
 	for _, file := range productionGoFiles(t) {
 		if !generatedOnly[file.pkgDir] && !generatedOnlyFiles[file.path] {
@@ -175,9 +603,43 @@ func TestStaticSQLiteAdaptersUseGeneratedQueries(t *testing.T) {
 	}
 }
 
+func TestCapabilitySQLiteAdaptersDoNotImportOtherSQLiteAdapters(t *testing.T) {
+	for _, file := range productionGoFiles(t) {
+		if !strings.Contains(file.pkgDir, "/sqlite") {
+			continue
+		}
+		for _, imported := range file.imports {
+			if !strings.HasPrefix(imported, modulePath+"/internal/") || !strings.Contains(imported, "/sqlite") {
+				continue
+			}
+			packagePath := strings.TrimPrefix(imported, modulePath+"/")
+			source, sourceOK := ClassifyPackage(file.pkgDir)
+			target, targetOK := ClassifyPackage(packagePath)
+			if sourceOK && targetOK && source.Capability == target.Capability {
+				continue
+			}
+			t.Errorf("%s imports persistence implementation %s; use a consumer-owned port or module bridge", file.path, imported)
+		}
+	}
+}
+
+func TestGeneratedPlatformQueriesStayInsidePlatform(t *testing.T) {
+	const sharedQueries = modulePath + "/internal/platform/db"
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir == "internal/platform" || strings.HasPrefix(file.pkgDir, "internal/platform/db") {
+			continue
+		}
+		for _, imported := range file.imports {
+			if imported == sharedQueries {
+				t.Errorf("%s imports the shared generated query package; generate capability-private queries instead", file.path)
+			}
+		}
+	}
+}
+
 func TestFixedOperationalRetentionQueriesUseSQLC(t *testing.T) {
 	for _, file := range productionGoFiles(t) {
-		if file.path != "internal/platform/maintenance.go" {
+		if file.path != "internal/admin/sqlite/retention.go" {
 			continue
 		}
 		if strings.Contains(file.body, "DELETE FROM api_async_events") {
@@ -188,19 +650,24 @@ func TestFixedOperationalRetentionQueriesUseSQLC(t *testing.T) {
 
 func TestSQLCQueriesAreSplitByDomain(t *testing.T) {
 	root := repoRoot(t)
-	queryDir := filepath.Join(root, "internal", "platform", "db", "queries")
 	for _, domain := range []string{
-		"access.sql",
-		"agent.sql",
-		"deployment.sql",
-		"managed_data.sql",
-		"materialization.sql",
-		"platform.sql",
-		"query_history.sql",
-		"serving_state.sql",
-		"workspace.sql",
+		"internal/admin/sqlite/queries/retention.sql",
+		"internal/access/sqlite/queries/access.sql",
+		"internal/agent/sqlite/queries/agent.sql",
+		"internal/apiidempotency/sqlite/queries/idempotency.sql",
+		"internal/cursorsigning/sqlite/queries/cursor_signing.sql",
+		"internal/deployment/sqlite/queries/deployment.sql",
+		"internal/manageddata/sqlite/queries/managed_data.sql",
+		"internal/refresh/sqlite/runqueries/materialization.sql",
+		"internal/platform/jobs/sqlite/queries/async_job.sql",
+		"internal/platform/db/queries/platform.sql",
+		"internal/analytics/queryaudit/sqlite/queries/query_history.sql",
+		"internal/refresh/sqlite/schedulequeries/refresh_pipeline.sql",
+		"internal/release/sqlite/queries/release.sql",
+		"internal/servingstate/sqlite/queries/serving_state.sql",
+		"internal/workspace/sqlite/queries/workspace.sql",
 	} {
-		contents, err := os.ReadFile(filepath.Join(queryDir, domain))
+		contents, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(domain)))
 		if err != nil {
 			t.Fatalf("read sqlc query domain %s: %v", domain, err)
 		}
@@ -227,39 +694,6 @@ func TestSQLCUsesRuntimeMigrationsAsItsSchemaSource(t *testing.T) {
 	}
 }
 
-func TestAppIsCompositionOnly(t *testing.T) {
-	for _, file := range productionGoFiles(t) {
-		if file.pkgDir != "internal/app" {
-			continue
-		}
-		for _, forbidden := range []string{
-			".SQLDB().QueryContext(",
-			".SQLDB().QueryRowContext(",
-			".SQLDB().ExecContext(",
-			"func (s *Server) api",
-			"func (s *Server) list",
-			"func (s *Server) get",
-			"func (s *Server) create",
-			"func (s *Server) update",
-			"func (s *Server) delete",
-			"func (s *Server) upload",
-			"func (s *Server) validate",
-			"func (s *Server) activate",
-			"type dataAuthorizationMetrics",
-			"func routeObjectRefs(",
-			"func authObjectsForRequest(",
-			"func dataQueryObjects(",
-			"func dataQueryPrivilege(",
-			"func rowFiltersFromPolicy(",
-			"func columnMaskFromPolicy(",
-		} {
-			if strings.Contains(file.body, forbidden) {
-				t.Fatalf("%s contains product behavior marker %q", file.path, forbidden)
-			}
-		}
-	}
-}
-
 func TestRequiredCapabilityAdaptersExist(t *testing.T) {
 	root := repoRoot(t)
 	for _, dir := range []string{
@@ -267,211 +701,14 @@ func TestRequiredCapabilityAdaptersExist(t *testing.T) {
 		"internal/admin/http",
 		"internal/agent/http",
 		"internal/analytics/connectors",
-		"internal/analytics/materialize/http",
-		"internal/analytics/query/http",
+		"internal/refresh/http",
+		"internal/dashboard/semanticapi",
 		"internal/dashboard/http",
 		"internal/workspace/datastar",
 		"internal/workspace/http",
 	} {
 		if !packageDirExists(root, dir) {
 			t.Fatalf("required capability adapter package %s does not exist", dir)
-		}
-	}
-}
-
-func TestAppDoesNotOwnKnownProductRouteFamilies(t *testing.T) {
-	for _, file := range productionGoFiles(t) {
-		if file.pkgDir != "internal/app" {
-			continue
-		}
-		for _, forbidden := range []string{
-			"func (s *Server) workspaceAPI",
-			"func (s *Server) workspaces(",
-			"func (s *Server) workspaceAssets(",
-			"func (s *Server) workspaceAsset(",
-			"func (s *Server) workspaceAssetSection(",
-			"func (s *Server) connections(",
-			"func (s *Server) connectionAsset(",
-			"func (s *Server) connectionAssetSection(",
-			"func (s *Server) connectionSourceAsset(",
-			"func (s *Server) connectionSourceAssetSection(",
-			"func (s *Server) workspacePermissions(",
-			"func (s *Server) workspacePermissionUpdate(",
-			"func (s *Server) workspaceAssetUpdates(",
-			"func (s *Server) refreshWorkspaceAsset(",
-			"func (s *Server) refreshWorkspaceAssetMaterializations(",
-			"func (s *Server) adminGeneral(",
-			"func (s *Server) adminPrincipals(",
-			"func (s *Server) adminPrincipalDetail(",
-			"func (s *Server) adminGroups(",
-			"func (s *Server) adminGroupDetail(",
-			"func (s *Server) adminStorage(",
-			"func (s *Server) adminQueries(",
-			"func (s *Server) chat(",
-			"func (s *Server) chatNew(",
-			"func (s *Server) chatConversation(",
-			"func (s *Server) chatTurn(",
-			"func (s *Server) chatUpdates(",
-			"func (s *Server) dataExplorer(",
-			"func (s *Server) dataExplorerUpdates(",
-			"func (s *Server) dataExplorerCommand(",
-			"func (s *Server) workspaceDataExplorerRedirect(",
-			"func (s *Server) searchWorkspace(",
-			"func (s *Server) renderWorkspacesPage(",
-			"func (s *Server) renderWorkspaceAssetsPage(",
-			"func (s *Server) renderConnectionsPage(",
-			"func (s *Server) renderWorkspaceAssetRedirect(",
-			"func (s *Server) renderWorkspaceAssetSection(",
-			"func (s *Server) renderConnectionAssetRedirect(",
-			"func (s *Server) renderConnectionAssetSection(",
-			"func (s *Server) renderConnectionSourceAssetRedirect(",
-			"func (s *Server) renderConnectionSourceAssetSection(",
-			"func (s *Server) assetRefreshPost(",
-			"func (s *Server) assetUpdatesStream(",
-			"func (s *Server) refreshWorkspaceAssetWithPatches(",
-			"func (s *Server) refreshWorkspaceAssetDeploymentWithPatches(",
-			"func (s *Server) openWorkspaceRefreshRuntime(",
-			"func (s *Server) runWorkspaceAssetRefreshWithPatches(",
-			"func (s *Server) queueWorkspaceAssetRefreshWithPatches(",
-			"func (s *Server) refreshSemanticModelAssetWithPatches(",
-			"func (s *Server) refreshModelTableAssetWithPatches(",
-			"func (s *Server) publishWorkspaceAssetRefreshPatch(",
-			"func (s *Server) publishModelRefreshPatches(",
-			"func (s *Server) publishWorkspaceAssetRefreshPatchesForTarget(",
-			"func (s *Server) assetRefreshStateForContext(",
-		} {
-			if strings.Contains(file.body, forbidden) {
-				t.Fatalf("%s still owns product route family %q", file.path, forbidden)
-			}
-		}
-	}
-}
-
-func TestAppDoesNotOwnAgentToolBehavior(t *testing.T) {
-	for _, file := range productionGoFiles(t) {
-		if file.pkgDir != "internal/app" {
-			continue
-		}
-		for _, forbidden := range []string{
-			"func (s *Server) agentAPIGenToolDefinitions(",
-			"func (s *Server) runAPIGenAgentTool(",
-			"func (s *Server) agentVisualToolDefinitions(",
-			"func (s *Server) runAgentVisualTool(",
-			"func (s *Server) queryAgentVisual(",
-		} {
-			if strings.Contains(file.body, forbidden) {
-				t.Fatalf("%s still owns agent tool behavior %q", file.path, forbidden)
-			}
-		}
-	}
-}
-
-func TestAppDoesNotKeepStaleBIAPIHelpers(t *testing.T) {
-	for _, file := range productionGoFiles(t) {
-		if file.pkgDir != "internal/app" {
-			continue
-		}
-		for _, forbidden := range []string{
-			"func boundedPatch(",
-			"func boundedVisual(",
-			"func boundedTable(",
-			"func dashboardSummaryDTO(",
-			"func semanticModelSummaryDTO(",
-			"func (s *Server) semanticModelForRequest(",
-			"func (s *Server) semanticDatasetForRequest(",
-			"func semanticDatasetDTO(",
-			"func semanticAggregateRequest(",
-			"func semanticRowRequest(",
-		} {
-			if strings.Contains(file.body, forbidden) {
-				t.Fatalf("%s still keeps stale BI API helper %q", file.path, forbidden)
-			}
-		}
-	}
-}
-
-func TestAppDoesNotOwnRemainingAdminWorkspaceBehavior(t *testing.T) {
-	for _, file := range productionGoFiles(t) {
-		if file.pkgDir != "internal/app" {
-			continue
-		}
-		for _, forbidden := range []string{
-			"database/sql",
-			"github.com/duckdb/duckdb-go",
-			"datastar.ReadSignals(",
-			"MarshalAndPatchSignals(",
-			".QueryContext(",
-			".QueryRowContext(",
-			".ExecContext(",
-			"func (s *Server) adminStorage",
-			"func (s *Server) adminQueryHistory",
-			"func (s *Server) adminData(",
-			"func (s *Server) adminAgentData(",
-			"func (s *Server) adminPrincipalsData(",
-			"func (s *Server) adminGroupsData(",
-			"func (s *Server) adminGroupMembersData(",
-			"func (s *Server) adminRoleBindings",
-			"func buildAdmin",
-			"func (s *Server) upsertWorkspaceAccess(",
-			"func (s *Server) removeWorkspaceAccess(",
-			"func (s *Server) workspaceList(",
-			"func (s *Server) workspaceResponse(",
-			"func (s *Server) workspaceAssetsAndEdges(",
-			"func (s *Server) platformConnectionAssetsAndEdges(",
-			"func (s *Server) roleBindingsAndRoles(",
-			"func (s *Server) workspaceAccessResponse(",
-			"func (s *Server) canManageWorkspaceAccess(",
-			"func apiWorkspaceDTOs(",
-			"func apiAssetDTOs(",
-			"func apiWorkspaceAssetGraphDTO(",
-		} {
-			if strings.Contains(file.body, forbidden) || importListContains(file.imports, forbidden) {
-				t.Fatalf("%s still owns app behavior marker %q", file.path, forbidden)
-			}
-		}
-	}
-}
-
-func TestAdminHTTPDoesNotDelegateStorageAndQueryHistoryBackToApp(t *testing.T) {
-	for _, file := range productionGoFiles(t) {
-		if file.pkgDir != "internal/admin/http" {
-			continue
-		}
-		for _, forbidden := range []string{
-			"QueryHistoryUpdates nethttp.HandlerFunc",
-			"QueryHistoryCommand nethttp.HandlerFunc",
-			"StorageUpdates      nethttp.HandlerFunc",
-			"StorageSelectTable  nethttp.HandlerFunc",
-		} {
-			if strings.Contains(file.body, forbidden) {
-				t.Fatalf("%s delegates admin behavior through %q", file.path, forbidden)
-			}
-		}
-	}
-}
-
-func TestWorkspaceHTTPDoesNotDelegateProductRoutesBackToApp(t *testing.T) {
-	for _, file := range productionGoFiles(t) {
-		if file.pkgDir != "internal/workspace/http" {
-			continue
-		}
-		for _, forbidden := range []string{
-			"WorkspaceCatalogPage   nethttp.HandlerFunc",
-			"WorkspaceAssetsPage    nethttp.HandlerFunc",
-			"WorkspaceAssetPage     nethttp.HandlerFunc",
-			"WorkspaceAssetDetail   nethttp.HandlerFunc",
-			"ConnectionsPage        nethttp.HandlerFunc",
-			"ConnectionSourcePage   nethttp.HandlerFunc",
-			"ConnectionSourceDetail nethttp.HandlerFunc",
-			"ConnectionAssetPage    nethttp.HandlerFunc",
-			"ConnectionAssetDetail  nethttp.HandlerFunc",
-			"AssetUpdates           nethttp.HandlerFunc",
-			"AssetRefresh           nethttp.HandlerFunc",
-			"AssetMaterialize       nethttp.HandlerFunc",
-		} {
-			if strings.Contains(file.body, forbidden) {
-				t.Fatalf("%s delegates product route behavior through %q", file.path, forbidden)
-			}
 		}
 	}
 }
@@ -1057,14 +1294,14 @@ func generatedCheckCommand(taskfile string) string {
 func TestFixedPlatformSQLiteQueriesUseSQLC(t *testing.T) {
 	root := repoRoot(t)
 	queryContracts := map[string][]string{
-		filepath.Join("internal", "platform", "db", "queries", "access.sql"): {
+		filepath.Join("internal", "access", "sqlite", "queries", "access.sql"): {
 			"-- name: DeleteRoleGrantTemplates :exec",
 			"-- name: InsertRoleGrantTemplate :exec",
 		},
 		filepath.Join("internal", "platform", "db", "queries", "platform.sql"): {
 			"-- name: InsertPlatformSettingIfMissing :exec",
 		},
-		filepath.Join("internal", "platform", "db", "queries", "managed_data.sql"): {
+		filepath.Join("internal", "manageddata", "sqlite", "queries", "managed_data.sql"): {
 			"-- name: ListManagedDataReachabilitySources :many",
 		},
 	}
@@ -1108,7 +1345,7 @@ func TestFixedPlatformSQLiteQueriesUseSQLC(t *testing.T) {
 func TestAPIv1SQLiteAdaptersUseSQLC(t *testing.T) {
 	packages := map[string]struct{}{
 		"internal/apiidempotency/sqlite": {},
-		"internal/asyncjob/sqlite":       {},
+		"internal/jobs/sqlite":           {},
 		"internal/cursorsigning/sqlite":  {},
 		"internal/release/sqlite":        {},
 	}
@@ -1154,20 +1391,22 @@ func TestStorageArchitectureSpecDocumentsProcessOwnedDuckDB(t *testing.T) {
 	}
 }
 
-func TestServingRuntimeConstructsDuckDBOnlyInComposition(t *testing.T) {
+func TestAnalyticsModuleConstructsTheProcessDuckDBExactlyOnce(t *testing.T) {
+	constructors := []string{}
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir == "internal/analytics/module" && strings.Contains(file.body, "analyticsducklake.Open(") {
+			constructors = append(constructors, file.path)
+		}
+	}
+	if len(constructors) != 1 {
+		t.Fatalf("analytics module constructs DuckDB in %v, want exactly one constructor", constructors)
+	}
 	root := repoRoot(t)
-	serve, err := os.ReadFile(filepath.Join(root, "internal", "cli", "serve.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.Count(string(serve), "analyticsducklake.Open("); got != 1 {
-		t.Fatalf("serve composition constructs DuckDB %d times, want exactly once", got)
-	}
 	for _, path := range []string{
-		"internal/cli/runtime_factory.go",
+		"internal/runtimehost/module/factory.go",
 		"internal/analytics/duckdb/materialize.go",
-		"internal/analytics/duckdb/workspace_refresh.go",
-		"internal/analytics/duckdb/dashboardadapter/factory.go",
+		"internal/refresh/analyticsduckdb/materializer.go",
+		"internal/dashboard/analyticsduckdb/factory.go",
 		"internal/runtimehost/manager.go",
 	} {
 		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
@@ -1184,7 +1423,7 @@ func TestGovernedAnalyticalSessionBoundaryHasNoLegacyServingEscape(t *testing.T)
 	root := repoRoot(t)
 	for _, path := range []string{
 		"internal/analytics/ducklake/environment.go",
-		"internal/analytics/duckdb/dashboardadapter/factory.go",
+		"internal/dashboard/analyticsduckdb/factory.go",
 		"internal/dashboard/runtime/service.go",
 		"internal/dataquery/query.go",
 	} {
@@ -1268,9 +1507,13 @@ func TestProductionUIDoesNotDependOnCDNScripts(t *testing.T) {
 }
 
 func isSQLDBAllowedFile(file goFile) bool {
+	if rule, ok := ClassifyPackage(file.pkgDir); ok && (rule.Layer == LayerComposition || rule.Layer == LayerModule) {
+		return true
+	}
 	if file.pkgDir == "internal/app" {
 		switch file.path {
-		case "internal/app/server.go",
+		case "internal/app/build.go",
+			"internal/app/server.go",
 			"internal/app/publishes.go",
 			"internal/app/refresh_runs.go",
 			"internal/app/query_audit.go":
@@ -1386,6 +1629,12 @@ func isInternalPackage(pkgDir string) bool {
 }
 
 func isAdapterOrCompositionPackage(pkgDir string) bool {
+	if rule, ok := ClassifyPackage(pkgDir); ok {
+		switch rule.Layer {
+		case LayerAdapter, LayerModule, LayerComposition, LayerPlatform:
+			return true
+		}
+	}
 	if pkgDir == "internal/app" ||
 		pkgDir == "internal/api" ||
 		strings.HasPrefix(pkgDir, "internal/api/") ||
@@ -1403,6 +1652,9 @@ func isAdapterOrCompositionPackage(pkgDir string) bool {
 		pkgDir == "internal/agent/tools" ||
 		strings.HasPrefix(pkgDir, "internal/tools/") ||
 		strings.HasPrefix(pkgDir, "internal/testutil/") {
+		return true
+	}
+	if strings.HasSuffix(pkgDir, "/module") {
 		return true
 	}
 	for _, suffix := range []string{"/http", "/sqlite", "/filesystem", "/s3", "/tus", "/duckdb", "/ducklake", "/datastar", "/openai", "/ui"} {

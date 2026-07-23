@@ -16,18 +16,19 @@ import (
 	"sort"
 	"strings"
 
-	dashboardadapter "github.com/Yacobolo/leapview/internal/analytics/duckdb/dashboardadapter"
 	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
 	"github.com/Yacobolo/leapview/internal/configschema"
 	"github.com/Yacobolo/leapview/internal/dashboard"
+	dashboardadapter "github.com/Yacobolo/leapview/internal/dashboard/analyticsduckdb"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	dashboardruntime "github.com/Yacobolo/leapview/internal/dashboard/runtime"
+	projectartifact "github.com/Yacobolo/leapview/internal/project/artifact"
+	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
+	"github.com/Yacobolo/leapview/internal/project/manifest"
 	"github.com/Yacobolo/leapview/internal/visualdocs"
 	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
 	"github.com/Yacobolo/leapview/internal/workload"
-	"github.com/Yacobolo/leapview/internal/workspace"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/workspace/compiler"
 	"gopkg.in/yaml.v3"
 )
 
@@ -133,16 +134,19 @@ func generateVisualExamples(docsDir, projectPath, dataRoot string) (visualExampl
 	if err != nil {
 		return visualExamplesArtifact{}, fmt.Errorf("compile fixture project: %w", err)
 	}
-	compiledWorkspace, ok := compiled.Workspaces["visual_examples"]
+	compiledWorkspace, ok := compiled.Workspace("visual_examples")
 	if !ok {
 		return visualExamplesArtifact{}, fmt.Errorf("fixture project has no visual_examples workspace")
 	}
-	definition := compiledWorkspace.Definition
+	workspaceManifest := compiledWorkspace.Manifest()
+	if workspaceManifest == nil {
+		return visualExamplesArtifact{}, fmt.Errorf("fixture project has no visual_examples manifest")
+	}
 	report := buildExampleDashboard(catalog, examplesByPage)
-	if err := workspacecompiler.ValidateDashboard(report, definition.Models); err != nil {
+	if err := workspacecompiler.ValidateDashboard(report, workspaceManifest.Models); err != nil {
 		return visualExamplesArtifact{}, fmt.Errorf("validate executable examples: %w", err)
 	}
-	visualizations, err := workspacecompiler.CompileVisualizationDefinitions(report, definition.Models[report.SemanticModel])
+	visualizations, err := workspacecompiler.CompileVisualizationDefinitions(report, workspaceManifest.Models[report.SemanticModel])
 	if err != nil {
 		return visualExamplesArtifact{}, fmt.Errorf("compile executable example visualizations: %w", err)
 	}
@@ -150,11 +154,12 @@ func generateVisualExamples(docsDir, projectPath, dataRoot string) (visualExampl
 	if err != nil {
 		return visualExamplesArtifact{}, fmt.Errorf("compile executable example dashboard: %w", err)
 	}
-	definition.Dashboards = map[string]dashboarddefinition.Definition{report.ID: compiledDashboard}
-	definition.Catalog.Dashboards = []workspace.CatalogDashboard{{ID: report.ID, Title: report.Title, Path: "docs/visuals", Description: report.Description}}
-	if err := bindFixtureRoot(definition, dataRoot); err != nil {
+	workspaceManifest.DashboardDefinitions = map[string]dashboarddefinition.Definition{report.ID: compiledDashboard}
+	workspaceManifest.Catalog.Dashboards = []manifest.CatalogDashboard{{ID: report.ID, Title: report.Title, Path: "docs/visuals", Description: report.Description}}
+	if err := bindFixtureRoot(workspaceManifest, dataRoot); err != nil {
 		return visualExamplesArtifact{}, err
 	}
+	definition := projectartifact.DashboardProjection(workspaceManifest)
 
 	runtimeDir, err := os.MkdirTemp("", "leapview-visual-docs-*")
 	if err != nil {
@@ -658,7 +663,7 @@ func buildExampleDashboard(catalog visualCatalog, examplesByPage map[string][]vi
 	return report
 }
 
-func bindFixtureRoot(definition *workspace.Definition, dataRoot string) error {
+func bindFixtureRoot(definition *manifest.Workspace, dataRoot string) error {
 	root, err := filepath.Abs(dataRoot)
 	if err != nil {
 		return err

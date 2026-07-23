@@ -17,7 +17,6 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/api"
-	"github.com/Yacobolo/leapview/internal/queryaudit"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -33,17 +32,15 @@ type Principal struct {
 }
 
 type RepositoryProvider func() (access.Repository, error)
-type QueryAuditRepositoryProvider func() (queryaudit.Repository, error)
 type PrincipalProvider func(*stdhttp.Request) (Principal, bool)
 type CredentialProvider func(*stdhttp.Request) (access.APICredential, bool)
 type WorkspaceIDNormalizer func(string) string
 
 type Handler struct {
-	Repository           RepositoryProvider
-	QueryAuditRepository QueryAuditRepositoryProvider
-	CurrentPrincipal     PrincipalProvider
-	CurrentCredential    CredentialProvider
-	WorkspaceID          WorkspaceIDNormalizer
+	Repository        RepositoryProvider
+	CurrentPrincipal  PrincipalProvider
+	CurrentCredential CredentialProvider
+	WorkspaceID       WorkspaceIDNormalizer
 }
 
 func (h Handler) GetCurrentPrincipal(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -1537,70 +1534,11 @@ func (h Handler) ListAuditEvents(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	writeJSON(w, stdhttp.StatusOK, pagedResponseWithCursor(out, nextCursor))
 }
 
-func (h Handler) ListQueryEvents(w stdhttp.ResponseWriter, r *stdhttp.Request) {
-	repo, err := h.queryAuditRepository()
-	if err != nil {
-		writeJSONError(w, err, stdhttp.StatusInternalServerError)
-		return
-	}
-	if repo == nil {
-		writeJSON(w, stdhttp.StatusOK, pagedResponseWithCursor([]map[string]any{}, ""))
-		return
-	}
-	limit, ok := apiLimitForRequest(w, r)
-	if !ok {
-		return
-	}
-	cursorTime, cursorID := decodeCursor(r.URL.Query().Get("pageToken"))
-	rows, err := repo.ListQueryEvents(r.Context(), queryaudit.Filter{
-		WorkspaceID:  h.workspaceID(chi.URLParam(r, "workspace")),
-		PrincipalID:  r.URL.Query().Get("principal"),
-		PrincipalIDs: cleanQueryValues(r.URL.Query()["principal"]),
-		Surface:      r.URL.Query().Get("surface"),
-		Surfaces:     cleanQueryValues(r.URL.Query()["surface"]),
-		Operation:    r.URL.Query().Get("operation"),
-		QueryKind:    r.URL.Query().Get("kind"),
-		QueryKinds:   cleanQueryValues(r.URL.Query()["kind"]),
-		ModelID:      firstNonEmpty(r.URL.Query().Get("modelId"), r.URL.Query().Get("model")),
-		Target:       r.URL.Query().Get("target"),
-		Status:       r.URL.Query().Get("status"),
-		Statuses:     cleanQueryValues(r.URL.Query()["status"]),
-		Search:       r.URL.Query().Get("search"),
-		From:         r.URL.Query().Get("from"),
-		To:           r.URL.Query().Get("to"),
-		CursorTime:   cursorTime,
-		CursorID:     cursorID,
-		Limit:        limit + 1,
-	})
-	if err != nil {
-		writeJSONError(w, err, stdhttp.StatusInternalServerError)
-		return
-	}
-	nextCursor := ""
-	if len(rows) > limit {
-		last := rows[limit-1]
-		nextCursor = encodeCursor(last.CreatedAt, last.ID)
-		rows = rows[:limit]
-	}
-	out := make([]map[string]any, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, queryEventDTO(row))
-	}
-	writeJSON(w, stdhttp.StatusOK, pagedResponseWithCursor(out, nextCursor))
-}
-
 func (h Handler) repository() (access.Repository, error) {
 	if h.Repository == nil {
 		return nil, nil
 	}
 	return h.Repository()
-}
-
-func (h Handler) queryAuditRepository() (queryaudit.Repository, error) {
-	if h.QueryAuditRepository == nil {
-		return nil, nil
-	}
-	return h.QueryAuditRepository()
 }
 
 func (h Handler) currentPrincipal(r *stdhttp.Request) (Principal, bool) {
@@ -1838,39 +1776,6 @@ func auditEventDTO(row access.AuditEvent) map[string]any {
 		"requestId":     row.RequestID,
 		"correlationId": row.CorrelationID,
 		"metadata":      metadata,
-		"createdAt":     row.CreatedAt,
-	}
-}
-
-func queryEventDTO(row queryaudit.Event) map[string]any {
-	var query map[string]any
-	if strings.TrimSpace(row.QueryJSON) != "" {
-		_ = json.Unmarshal([]byte(row.QueryJSON), &query)
-	}
-	if query == nil {
-		query = map[string]any{}
-	}
-	return map[string]any{
-		"id":            row.ID,
-		"workspaceId":   row.WorkspaceID,
-		"principalId":   emptyToNil(row.PrincipalID),
-		"surface":       row.Surface,
-		"operation":     row.Operation,
-		"queryKind":     row.QueryKind,
-		"modelId":       row.ModelID,
-		"target":        row.Target,
-		"objectType":    row.ObjectType,
-		"objectId":      row.ObjectID,
-		"requestId":     row.RequestID,
-		"correlationId": row.CorrelationID,
-		"status":        row.Status,
-		"durationMs":    row.DurationMS,
-		"rowsReturned":  row.RowsReturned,
-		"bytesEstimate": row.BytesEstimate,
-		"error":         emptyToNil(row.Error),
-		"sql":           emptyToNil(row.SQL),
-		"planText":      emptyToNil(row.PlanText),
-		"query":         query,
 		"createdAt":     row.CreatedAt,
 	}
 }

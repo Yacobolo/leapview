@@ -7,6 +7,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/agent"
+	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	productsearch "github.com/Yacobolo/leapview/internal/search"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
@@ -15,7 +16,7 @@ import (
 )
 
 func TestAgentReferenceSignalIncludesSearchVisualSubtype(t *testing.T) {
-	result := agentReferenceSignal(productsearch.Result{
+	result := agentmodule.ReferenceSignal(productsearch.Result{
 		Reference:  productsearch.Reference{WorkspaceID: "sales", Type: productsearch.TypeVisual, ID: "orders.revenue"},
 		Name:       "Revenue",
 		VisualType: "line",
@@ -31,8 +32,8 @@ func TestAgentReferenceSignalIncludesSearchVisualSubtype(t *testing.T) {
 func TestResolveChatTurnReferencesUsesAuthorizedSearchMetadata(t *testing.T) {
 	store := testStore(t)
 	seedEnvironmentAssetDeployment(t, store, "test", servingstate.DefaultEnvironment, "Orders dashboard", "Warehouse")
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
-	resolved, err := server.resolveAgentTurnContext(httptest.NewRequest("GET", "/chats/new", nil), agent.Scope{DevAuthBypass: true}, agent.TurnContext{
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{DefaultWorkspaceID: "test"}))
+	resolved, err := server.agentModule.ResolveTurnContext(httptest.NewRequest("GET", "/chats/new", nil), agent.Scope{DevAuthBypass: true}, agent.TurnContext{
 		Surface:     "chat",
 		WorkspaceID: "test",
 		References: []agent.TurnReference{{
@@ -55,8 +56,8 @@ func TestResolveChatTurnReferencesUsesAuthorizedSearchMetadata(t *testing.T) {
 func TestResolveChatTurnReferencesRejectsNonAttachableTypes(t *testing.T) {
 	store := testStore(t)
 	seedEnvironmentAssetDeployment(t, store, "test", servingstate.DefaultEnvironment, "Orders dashboard", "Warehouse")
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
-	resolved, err := server.resolveAgentTurnContext(httptest.NewRequest("GET", "/chats/new", nil), agent.Scope{DevAuthBypass: true}, agent.TurnContext{
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{DefaultWorkspaceID: "test"}))
+	resolved, err := server.agentModule.ResolveTurnContext(httptest.NewRequest("GET", "/chats/new", nil), agent.Scope{DevAuthBypass: true}, agent.TurnContext{
 		Surface: "chat",
 		References: []agent.TurnReference{
 			{Reference: agent.TurnReferenceKey{WorkspaceID: "test", Type: "source", ID: "dev.orders"}},
@@ -74,8 +75,8 @@ func TestResolveChatTurnReferencesRejectsNonAttachableTypes(t *testing.T) {
 func TestResolveChatTurnReferencesAppliesCredentialToReferenceWorkspace(t *testing.T) {
 	store := testStore(t)
 	seedEnvironmentAssetDeployment(t, store, "test", servingstate.DefaultEnvironment, "Orders dashboard", "Warehouse")
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
-	resolved, err := server.resolveAgentTurnContext(httptest.NewRequest("GET", "/chats/new", nil), agent.Scope{
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{DefaultWorkspaceID: "test"}))
+	resolved, err := server.agentModule.ResolveTurnContext(httptest.NewRequest("GET", "/chats/new", nil), agent.Scope{
 		DevAuthBypass: true,
 		Credential: agent.CredentialScope{
 			WorkspaceID: "test",
@@ -95,7 +96,7 @@ func TestResolveChatTurnReferencesAppliesCredentialToReferenceWorkspace(t *testi
 		t.Fatalf("resolved context = %#v", resolved)
 	}
 
-	_, err = server.resolveAgentTurnContext(httptest.NewRequest("GET", "/chats/new", nil), agent.Scope{
+	_, err = server.agentModule.ResolveTurnContext(httptest.NewRequest("GET", "/chats/new", nil), agent.Scope{
 		DevAuthBypass: true,
 		Credential: agent.CredentialScope{
 			WorkspaceID: "other",
@@ -114,14 +115,14 @@ func TestResolveChatTurnReferencesAppliesCredentialToReferenceWorkspace(t *testi
 }
 
 func TestResolveAgentTurnContextRejectsExcessReferences(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(testStore(t), assemblyConfig{DefaultWorkspaceID: "test"}))
 	references := make([]agent.TurnReference, agent.MaxTurnReferences+1)
 	for index := range references {
 		references[index] = agent.TurnReference{
 			Reference: agent.TurnReferenceKey{WorkspaceID: "test", Type: "measure", ID: "test.order_count"},
 		}
 	}
-	_, err := server.resolveAgentTurnContext(httptest.NewRequest("GET", "/chats/new", nil), agent.Scope{DevAuthBypass: true}, agent.TurnContext{
+	_, err := server.agentModule.ResolveTurnContext(httptest.NewRequest("GET", "/chats/new", nil), agent.Scope{DevAuthBypass: true}, agent.TurnContext{
 		Surface: "chat", References: references,
 	})
 	if err == nil {
@@ -134,13 +135,13 @@ func TestResolveDashboardTurnReferencesUsesCompiledMetadata(t *testing.T) {
 		{ID: "orders-chart", Kind: "visual", Visual: "orders_chart"},
 		{ID: "orders-table", Kind: "visual", Visual: "orders", Title: "Recent orders"},
 	}}
-	resolved := resolveDashboardTurnReferences([]agent.TurnReference{
+	resolved := agentmodule.ResolveDashboardTurnReferences([]agent.TurnReference{
 		{Reference: agent.TurnReferenceKey{WorkspaceID: "test", Type: "visual", ID: "executive-sales.orders_chart"}, Name: "Ignore browser title", VisualType: "script", Href: "javascript:alert(1)", Hierarchy: []string{"Forged"}},
 		{Reference: agent.TurnReferenceKey{WorkspaceID: "test", Type: "visual", ID: "executive-sales.orders"}, Name: "Ignore browser table title"},
 		{Reference: agent.TurnReferenceKey{WorkspaceID: "test", Type: "visual", ID: "executive-sales.secret"}, Name: "Not on page"},
 		{Reference: agent.TurnReferenceKey{WorkspaceID: "test", Type: "visual", ID: "other.orders_chart"}, Name: "Wrong dashboard"},
 		{Reference: agent.TurnReferenceKey{WorkspaceID: "other", Type: "visual", ID: "executive-sales.orders_chart"}, Name: "Wrong workspace"},
-	}, dashboardTurnReferenceContext{
+	}, agentmodule.DashboardTurnReferenceContext{
 		Workspace:   agent.TurnReferenceWorkspace{ID: "test", Name: "Test workspace"},
 		DashboardID: "executive-sales", DashboardTitle: "Executive Sales", Page: page,
 	}, map[string]visualizationdefinition.Definition{

@@ -4,155 +4,90 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 
-	analyticsduckdb "github.com/Yacobolo/leapview/internal/analytics/duckdb"
-	manageddatabinding "github.com/Yacobolo/leapview/internal/manageddata/binding"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
-	servingstatefs "github.com/Yacobolo/leapview/internal/servingstate/filesystem"
-	"github.com/Yacobolo/leapview/internal/workspace"
-	workspacehttp "github.com/Yacobolo/leapview/internal/workspace/http"
-	"github.com/Yacobolo/leapview/internal/workspace/refresh"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
+	refreshmodule "github.com/Yacobolo/leapview/internal/refresh/module"
+	servingstatemodule "github.com/Yacobolo/leapview/internal/servingstate/module"
+	workspacemodule "github.com/Yacobolo/leapview/internal/workspace/module"
 )
 
-func (s *Server) workspaceRefreshSupport() workspacehttp.Support {
-	return workspacehttp.Support{
-		Runs: func() (workspacehttp.RunRepository, error) {
-			return s.refreshRunRepository()
+func (s *runtimeRouter) workspaceRefreshSupport() refreshmodule.WorkspaceSupport {
+	support := refreshmodule.WorkspaceSupport{
+		Runs: func() (refreshmodule.RunReader, error) {
+			if s.refreshModule == nil {
+				return nil, fmt.Errorf("refresh module is required")
+			}
+			return s.refreshModule, nil
 		},
-		Service: func(repo workspacehttp.RunRepository) (refresh.Service, error) {
-			return s.workspaceRefreshService(repo)
+		QueuePipeline: func(ctx context.Context, input refreshmodule.QueuePipelineInput) (refreshmodule.QueueAssetResult, error) {
+			if s.refreshModule == nil {
+				return refreshmodule.QueueAssetResult{}, fmt.Errorf("refresh module is required")
+			}
+			return s.refreshModule.QueuePipelineRefresh(ctx, input)
 		},
-		Environment: func(r *http.Request) servingstate.Environment {
+		Environment: func(r *http.Request) servingstatemodule.Environment {
 			return s.requestServingEnvironment(r)
 		},
 		PrincipalID: func(r *http.Request) string {
-			principal, _ := currentPrincipal(s, r)
+			principal, _ := s.accessModule.CurrentPrincipal(r)
 			return principal.ID
 		},
 		DispatchQueued: func() {
-			s.dispatchQueuedRefreshJobs(context.Background())
+			if s.refreshModule != nil {
+				s.refreshModule.Dispatch(context.Background())
+			}
 		},
 		Broker: s.broker,
-		AssetCatalog: func(ctx context.Context, workspaceID string) ([]workspace.AssetView, []workspace.AssetEdgeView, bool) {
-			assets, edges, err := s.workspaceHTTPReadModel().WorkspaceAssetsAndEdgesForData(ctx, workspaceID, string(s.defaultServingEnvironment()))
+		AssetCatalog: func(ctx context.Context, workspaceID string) ([]workspacemodule.AssetView, []workspacemodule.AssetEdgeView, bool) {
+			assets, edges, err := s.workspaceModule.WorkspaceAssetsAndEdgesForData(ctx, workspaceID, string(s.defaultServingEnvironment()))
 			if err != nil || (len(assets) == 0 && len(edges) == 0) {
 				return nil, nil, false
 			}
 			return assets, edges, true
 		},
-		WorkspaceView: func(r *http.Request, workspaceID string) workspace.WorkspaceView {
-			return s.workspaceHTTPReadModel().WorkspaceResponse(r, workspaceID)
+		WorkspaceView: func(r *http.Request, workspaceID string) workspacemodule.WorkspaceView {
+			return s.workspaceModule.WorkspaceResponse(r, workspaceID)
 		},
-		WorkspaceViewContext: func(ctx context.Context, workspaceID string) workspace.WorkspaceView {
-			return s.workspaceHTTPReadModel().WorkspaceViewContext(ctx, workspaceID)
+		WorkspaceViewContext: func(ctx context.Context, workspaceID string) workspacemodule.WorkspaceView {
+			return s.workspaceModule.WorkspaceViewContext(ctx, workspaceID)
 		},
-		WorkspaceVersions: s.assetVersionsStateForSection,
-		DataVersions:      s.refreshPipelineRepo,
+		Presentation: workspacemodule.RefreshPresentation{},
 	}
+	if s.persistenceConfigured {
+		support.DataVersions = s.refreshModule
+	}
+	return support
 }
 
-func (s *Server) workspaceRefreshService(runRepo refresh.RunRepository) (refresh.Service, error) {
+func (s *runtimeRouter) workspaceRefreshService() (refreshmodule.Service, error) {
 	repo, err := s.servingStateRepository()
 	if err != nil {
-		return refresh.Service{}, err
+		return refreshmodule.Service{}, err
 	}
 	if repo == nil {
-		return refresh.Service{}, fmt.Errorf("serving state repository is required")
+		return refreshmodule.Service{}, fmt.Errorf("serving state repository is required")
 	}
-	hooks := []refresh.CandidateValidationHook{}
-	if s.managedDataBindingRepo != nil {
-		binder, err := manageddatabinding.New(s.managedDataBindingRepo)
-		if err != nil {
-			return refresh.Service{}, err
-		}
-		hooks = append(hooks, binder)
+	hooks := []refreshmodule.CandidateValidationHook{}
+	if s.construction.managedDataValidation != nil {
+		hooks = append(hooks, s.construction.managedDataValidation)
 	}
-	return refresh.Service{
+	return refreshmodule.Service{
 		ServingStates: repo,
-		Runs:          runRepo,
-		Artifacts:     appRefreshArtifactLoader{},
-		Materializer: analyticsduckdb.WorkspaceRefreshMaterializer{
-			Environment: s.duckDBEnvironment,
-			ManagedData: s.managedDataResolver,
-			Credentials: analyticsduckdb.EnvironmentCredentialResolver{},
+		Runtime:       s.construction.reloader,
+		Publisher: refreshmodule.Publisher{
+			Workspace: s.workspaceRefreshSupport,
+			SemanticModelVersion: func(ctx context.Context, workspaceID, environment, modelID string) {
+				refreshedAt := ""
+				if s.refreshModule != nil {
+					if version, ok, err := s.refreshModule.DataVersion(ctx, workspaceID, environment, modelID); err == nil && ok {
+						refreshedAt = version.RefreshedAt.Format(time.RFC3339)
+					}
+				}
+				if s.dashboardModule != nil {
+					s.dashboardModule.PublishSemanticModelRefresh(workspaceID, environment, modelID, refreshedAt)
+				}
+			},
 		},
-		Runtime:                  appRefreshRuntimeHost{reloader: s.reloader},
-		Publisher:                appRefreshPublisher{server: s},
-		DataVersions:             s.refreshPipelineRepo,
 		CandidateValidationHooks: hooks,
 	}, nil
-}
-
-type appRefreshArtifactLoader struct{}
-
-func (appRefreshArtifactLoader) Load(_ context.Context, artifact servingstate.Artifact) (refresh.LoadedArtifact, error) {
-	root, err := os.MkdirTemp("", "leapview-refresh-artifact-*")
-	if err != nil {
-		return refresh.LoadedArtifact{}, err
-	}
-	defer os.RemoveAll(root)
-	if err := servingstatefs.ExtractArtifact(artifact.Path, root); err != nil {
-		return refresh.LoadedArtifact{}, err
-	}
-	compiled, _, err := servingstatefs.LoadCompiledWorkspaceArtifact(root)
-	if err != nil {
-		return refresh.LoadedArtifact{}, err
-	}
-	return refresh.LoadedArtifact{
-		Definition: compiled.Definition, Graph: compiled.Graph,
-		ManagedDataRevisions: compiled.ManagedDataRevisions,
-	}, nil
-}
-
-type appRefreshRuntimeHost struct {
-	reloader runtimeReloader
-}
-
-func (h appRefreshRuntimeHost) PrepareServingState(ctx context.Context, servingStateID string) (servingstate.PreparedRuntime, error) {
-	if h.reloader == nil {
-		return nil, fmt.Errorf("runtime host is not configured")
-	}
-	return h.reloader.PrepareServingState(ctx, servingStateID)
-}
-
-func (h appRefreshRuntimeHost) ActivatePrepared(prepared servingstate.PreparedRuntime, activate func() error) error {
-	if h.reloader == nil {
-		return fmt.Errorf("runtime host is not configured")
-	}
-	if prepared == nil {
-		return fmt.Errorf("prepared runtime is required")
-	}
-	if activate == nil {
-		return fmt.Errorf("metadata activation is required")
-	}
-	return h.reloader.ActivatePrepared(prepared, activate)
-}
-
-type appRefreshPublisher struct {
-	server *Server
-}
-
-func (p appRefreshPublisher) PublishRefreshTarget(ctx context.Context, workspaceID, environment, targetType, targetID string) {
-	if p.server == nil {
-		return
-	}
-	p.server.workspaceRefreshSupport().PublishWorkspaceAssetRefreshPatchesForTarget(ctx, workspaceID, environment, targetType, targetID)
-}
-
-func (p appRefreshPublisher) PublishSemanticModelVersion(ctx context.Context, workspaceID, environment, modelID string) {
-	if p.server == nil {
-		return
-	}
-	refreshedAt := ""
-	if p.server.refreshPipelineRepo != nil {
-		if version, ok, err := p.server.refreshPipelineRepo.DataVersion(ctx, workspaceID, environment, modelID); err == nil && ok {
-			refreshedAt = version.RefreshedAt.Format(time.RFC3339)
-		}
-	}
-	for _, streamID := range p.server.dashboardRefreshes.RefreshSemanticModel(workspaceID, environment, modelID) {
-		p.server.broker.Publish(streamID, pagestream.SignalPatch{"status": map[string]any{"lastUpdated": refreshedAt}})
-	}
 }

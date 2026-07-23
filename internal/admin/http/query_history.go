@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/queryaudit"
+	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
 	"github.com/Yacobolo/leapview/internal/ui"
 	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
@@ -51,7 +51,7 @@ func (h Handler) queryHistoryCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	command := normalizeQueryHistoryCommand(signals.AdminQueryHistoryCommand)
-	repo, err := h.readModel().queryAuditRepository()
+	repo, err := h.readModel().queryAuditReader()
 	if err != nil || repo == nil {
 		errorText := queryHistoryErrorText(err)
 		if errorText == "" {
@@ -266,7 +266,7 @@ func queryHistoryLoadedCountLabel(count int) string {
 	return strconv.Itoa(count) + " queries loaded"
 }
 
-func (m ReadModel) queryHistoryFilterMenus(r *http.Request, repo queryaudit.Repository, filters uisignals.AdminQueryHistoryFilters, searchMenuID, search string) []uisignals.FilterMenuSignal {
+func (m ReadModel) queryHistoryFilterMenus(r *http.Request, repo queryaudit.Reader, filters uisignals.AdminQueryHistoryFilters, searchMenuID, search string) []uisignals.FilterMenuSignal {
 	menus := []struct {
 		id          string
 		label       string
@@ -424,7 +424,7 @@ func queryHistoryStreamID(clientID string) string {
 	return "admin-queries:" + clientID
 }
 
-func queryHistoryPage(r *http.Request, repo queryaudit.Repository, filters uisignals.AdminQueryHistoryFilters, pageToken string, limit int) ([]ui.AdminQueryEvent, string, bool, error) {
+func queryHistoryPage(r *http.Request, repo queryaudit.Reader, filters uisignals.AdminQueryHistoryFilters, pageToken string, limit int) ([]ui.AdminQueryEvent, string, bool, error) {
 	limit = normalizeQueryHistoryLimit(limit)
 	rows, err := repo.ListQueryEvents(r.Context(), queryaudit.Filter{
 		WorkspaceIDs: cleanStringSlice(uisignals.ValueOrZero(filters.Workspaces)),

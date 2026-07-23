@@ -22,10 +22,10 @@ import (
 
 func TestMCPRequiresBearerAndSupportsInitializeAndTools(t *testing.T) {
 	store := testStore(t)
-	server := NewWithOptions(fakeMetrics{}, Options{
-		Store: store,
-		Auth:  testAuth(store, "test", AuthConfig{DevBypass: true, DevAPIToken: "mcp-secret"}),
-	})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{
+
+		Auth: testAuth(store, "test", AuthConfig{DevBypass: true, DevAPIToken: "mcp-secret"}),
+	}))
 	handler := server.Routes()
 
 	unauthorized := mcpRequest(t, handler, "", "", `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
@@ -72,7 +72,7 @@ func TestMCPRequiresBearerAndSupportsInitializeAndTools(t *testing.T) {
 		output      map[string]any
 		effect      string
 	}{}
-	for _, definition := range server.agentToolDefinitions(agentcap.Scope{PrincipalID: "dev", DevAuthBypass: true}) {
+	for _, definition := range server.agentModule.ToolDefinitions(agentcap.Scope{PrincipalID: "dev", DevAuthBypass: true}) {
 		var input, output map[string]any
 		if err := json.Unmarshal(definition.InputSchema, &input); err != nil {
 			t.Fatalf("decode built-in input schema %s: %v", definition.Name, err)
@@ -161,10 +161,10 @@ func TestMCPRequiresBearerAndSupportsInitializeAndTools(t *testing.T) {
 
 func TestMCPGoSDKClientInteroperability(t *testing.T) {
 	store := testStore(t)
-	server := NewWithOptions(fakeMetrics{}, Options{
-		Store: store,
-		Auth:  testAuth(store, "test", AuthConfig{DevBypass: true, DevAPIToken: "mcp-secret"}),
-	})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{
+
+		Auth: testAuth(store, "test", AuthConfig{DevBypass: true, DevAPIToken: "mcp-secret"}),
+	}))
 	live := httptest.NewServer(server.Routes())
 	defer live.Close()
 
@@ -224,10 +224,10 @@ func (t bearerRoundTripper) RoundTrip(request *http.Request) (*http.Response, er
 
 func TestMCPReturnsValidationFailuresAsToolErrorsAndRejectsOrigins(t *testing.T) {
 	store := testStore(t)
-	server := NewWithOptions(fakeMetrics{}, Options{
-		Store: store,
-		Auth:  testAuth(store, "test", AuthConfig{DevBypass: true, DevAPIToken: "mcp-secret"}),
-	})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{
+
+		Auth: testAuth(store, "test", AuthConfig{DevBypass: true, DevAPIToken: "mcp-secret"}),
+	}))
 	handler := server.Routes()
 
 	invalid := mcpRequest(t, handler, "mcp-secret", "2025-11-25", `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"query_visual","arguments":{}}}`)
@@ -279,10 +279,10 @@ func TestMCPAcceptsOAuthTokensAndRejectsGeneralAPITokens(t *testing.T) {
 		t.Fatalf("create REST API token: %v", err)
 	}
 
-	server := NewWithOptions(fakeMetrics{}, Options{
-		Store: store, Auth: testAuth(store, "test", AuthConfig{APITokenOnly: true}),
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{
+		Auth:     testAuth(store, "test", AuthConfig{APITokenOnly: true}),
 		MCPOAuth: MCPOAuthConfig{PublicURL: "https://leapview.example"},
-	})
+	}))
 	handler := server.Routes()
 	initialize := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`
 	apiAttempt := mcpRequest(t, handler, apiSecret, "", initialize)
@@ -334,10 +334,10 @@ func TestMCPOAuthDiscoveryAndBrowserConsent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	server := NewWithOptions(fakeMetrics{}, Options{
-		Store: store, Auth: testAuth(store, "test", AuthConfig{LocalAuth: true, CSRFKey: "0123456789abcdef0123456789abcdef"}),
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{
+		Auth:     testAuth(store, "test", AuthConfig{LocalAuth: true, CSRFKey: "0123456789abcdef0123456789abcdef"}),
 		MCPOAuth: MCPOAuthConfig{PublicURL: "https://leapview.example"},
-	})
+	}))
 	handler := server.Routes()
 
 	for path, want := range map[string]string{
@@ -405,13 +405,13 @@ func TestMCPOAuthDiscoveryAndBrowserConsent(t *testing.T) {
 	}
 }
 
-func issueMCPUserToken(t *testing.T, server *Server, principalID string) string {
+func issueMCPUserToken(t *testing.T, server *runtimeRouter, principalID string) string {
 	t.Helper()
 	registrationBody := `{"client_name":"Test MCP Client","redirect_uris":["https://client.example/callback"],"grant_types":["authorization_code","refresh_token"],"response_types":["code"],"token_endpoint_auth_method":"none"}`
 	registrationRequest := httptest.NewRequest(http.MethodPost, "/oauth/register", strings.NewReader(registrationBody))
 	registrationRequest.Header.Set("Content-Type", "application/json")
 	registrationResponse := httptest.NewRecorder()
-	server.mcpOAuth.Register(registrationResponse, registrationRequest)
+	server.accessModule.OAuthService().Register(registrationResponse, registrationRequest)
 	if registrationResponse.Code != http.StatusCreated {
 		t.Fatalf("register OAuth client = %d body=%s", registrationResponse.Code, registrationResponse.Body.String())
 	}
@@ -429,7 +429,7 @@ func issueMCPUserToken(t *testing.T, server *Server, principalID string) string 
 	}
 	authorizeRequest := httptest.NewRequest(http.MethodPost, "/oauth/authorize?"+values.Encode(), nil)
 	authorizeResponse := httptest.NewRecorder()
-	server.mcpOAuth.Authorize(authorizeResponse, authorizeRequest, principalID, true)
+	server.accessModule.OAuthService().Authorize(authorizeResponse, authorizeRequest, principalID, true)
 	callback, err := url.Parse(authorizeResponse.Header().Get("Location"))
 	if err != nil || callback.Query().Get("code") == "" {
 		t.Fatalf("OAuth callback = %q err=%v body=%s", authorizeResponse.Header().Get("Location"), err, authorizeResponse.Body.String())
@@ -442,7 +442,7 @@ func issueMCPUserToken(t *testing.T, server *Server, principalID string) string 
 	tokenRequest := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(tokenValues.Encode()))
 	tokenRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	tokenResponse := httptest.NewRecorder()
-	server.mcpOAuth.Token(tokenResponse, tokenRequest)
+	server.accessModule.OAuthService().Token(tokenResponse, tokenRequest)
 	if tokenResponse.Code != http.StatusOK {
 		t.Fatalf("exchange OAuth code = %d body=%s", tokenResponse.Code, tokenResponse.Body.String())
 	}
@@ -455,16 +455,16 @@ func issueMCPUserToken(t *testing.T, server *Server, principalID string) string 
 
 func TestMCPUsesAPIRateAndBodyLimits(t *testing.T) {
 	store := testStore(t)
-	server := NewWithOptions(fakeMetrics{}, Options{
-		Store: store,
-		Auth:  testAuth(store, "test", AuthConfig{DevBypass: true, DevAPIToken: "mcp-secret"}),
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{
+
+		Auth: testAuth(store, "test", AuthConfig{DevBypass: true, DevAPIToken: "mcp-secret"}),
 		RateLimits: RateLimitConfig{
 			Enabled:   true,
 			APILimit:  1,
 			APIWindow: time.Minute,
 		},
 		RequestBodyLimit: RequestBodyLimitConfig{Enabled: true, MaxBytes: 512},
-	})
+	}))
 	handler := server.Routes()
 	initialize := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`
 	if first := mcpRequest(t, handler, "mcp-secret", "", initialize); first.Code != http.StatusOK {
@@ -475,11 +475,11 @@ func TestMCPUsesAPIRateAndBodyLimits(t *testing.T) {
 	}
 
 	bodyStore := testStore(t)
-	bodyLimited := NewWithOptions(fakeMetrics{}, Options{
-		Store:            bodyStore,
+	bodyLimited := assembleRuntime(fakeMetrics{}, testStoreOptions(bodyStore, assemblyConfig{
+
 		Auth:             testAuth(bodyStore, "test", AuthConfig{DevBypass: true, DevAPIToken: "mcp-secret"}),
 		RequestBodyLimit: RequestBodyLimitConfig{Enabled: true, MaxBytes: 16},
-	})
+	}))
 	oversized := mcpRequest(t, bodyLimited.Routes(), "mcp-secret", "", initialize)
 	if oversized.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("oversized MCP request = %d, want 413 body=%s", oversized.Code, oversized.Body.String())

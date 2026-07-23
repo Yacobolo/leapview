@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/access/http/mcpoauth"
-	"github.com/Yacobolo/leapview/internal/dashboard"
+	"github.com/Yacobolo/leapview/internal/catalog"
 	g "maragu.dev/gomponents"
 )
 
@@ -18,7 +18,7 @@ func TestProductDocumentsUseLeapViewBrandAndFavicon(t *testing.T) {
 		wantTitle string
 	}{
 		{name: "login", document: LoginPage(), wantTitle: "LeapView Login"},
-		{name: "catalog", document: CatalogPage(dashboard.Catalog{}), wantTitle: "LeapView Dashboards"},
+		{name: "catalog", document: CatalogPage(catalog.Catalog{}), wantTitle: "LeapView Dashboards"},
 		{name: "OAuth consent", document: OAuthConsentPage(mcpoauth.Consent{ClientName: "Agent", Resource: "https://example.test"}, nil, "csrf"), wantTitle: "Authorize MCP access · LeapView"},
 	}
 

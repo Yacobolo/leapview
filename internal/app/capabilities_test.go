@@ -11,7 +11,7 @@ import (
 )
 
 func TestCapabilitiesReportOnlyEnabledUploadProtocols(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{DefaultEnvironment: "prod"})
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{DefaultEnvironment: "prod"})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/capabilities", nil)
 	rec := httptest.NewRecorder()
 	(apiGenAdapter{server: server}).GetCapabilities(rec, req)

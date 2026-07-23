@@ -12,6 +12,7 @@ import (
 	"time"
 
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
+	"github.com/Yacobolo/leapview/internal/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
@@ -905,13 +906,13 @@ func (m *recordingAgentModel) Requests() []agentcore.ModelRequest {
 
 type fakeAgentMetrics struct{}
 
-func (fakeAgentMetrics) Catalog() dashboard.Catalog {
-	return dashboard.Catalog{
-		Workspace: dashboard.CatalogWorkspace{ID: "test", Title: "Test Workspace"},
-		Models: []dashboard.CatalogModel{
+func (fakeAgentMetrics) Catalog() catalog.Catalog {
+	return catalog.Catalog{
+		Workspace: catalog.Workspace{ID: "test", Title: "Test Workspace"},
+		Models: []catalog.Model{
 			{ID: "test", Title: "Test Model", Description: "Fixture model"},
 		},
-		Dashboards: []dashboard.CatalogDashboard{
+		Dashboards: []catalog.Dashboard{
 			{ID: "executive-sales", Title: "Executive Sales", Description: "Sales dashboard", SemanticModel: "test", PageCount: 1},
 		},
 	}

@@ -1,266 +1,43 @@
 package app
 
 import (
-	"errors"
 	"net/http"
-	"strings"
 
-	"github.com/Yacobolo/leapview/internal/analytics/materialize"
-	materializehttp "github.com/Yacobolo/leapview/internal/analytics/materialize/http"
 	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
-	"github.com/Yacobolo/leapview/internal/manageddata/control"
-	"github.com/Yacobolo/leapview/internal/workspace"
 )
 
 func (a apiGenAdapter) ListProjects(w http.ResponseWriter, r *http.Request, params apigenapi.GenListProjectsParams) {
-	repo := a.server.releaseRepository()
-	if repo == nil {
-		writeAPIJSON(w, http.StatusOK, apigenapi.ProjectListResponse{Items: []apigenapi.ProjectResponse{}, Page: apigenapi.PageInfo{}})
-		return
-	}
-	rows, err := repo.ListProjects(r.Context())
-	if err != nil {
-		writeAPIProblem(w, r, http.StatusInternalServerError, "PROJECT_LIST_FAILED", "Projects could not be loaded", nil)
-		return
-	}
-	items := []apigenapi.ProjectResponse{}
-	for _, row := range rows {
-		item := apigenapi.ProjectResponse{Id: row.ID, Title: row.ID, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
-		if row.LatestReleaseID != "" {
-			item.LatestReleaseId = &row.LatestReleaseID
-		}
-		if row.ActiveDeploymentID != "" {
-			item.ActiveDeploymentId = &row.ActiveDeploymentID
-		}
-		items = append(items, item)
-	}
-	page, next, err := keysetPage(items, params.Limit, params.PageToken, func(item apigenapi.ProjectResponse) string { return item.Id })
-	if err != nil {
-		writeAPIProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", err.Error(), nil)
-		return
-	}
-	writeAPIJSON(w, http.StatusOK, apigenapi.ProjectListResponse{Items: page, Page: apigenapi.PageInfo{NextCursor: next}})
+	a.server.releaseModule.ListProjects(w, r, params)
 }
 
 func (a apiGenAdapter) GetProject(w http.ResponseWriter, r *http.Request, projectID string) {
-	repo := a.server.releaseRepository()
-	if repo == nil {
-		writeAPIProblem(w, r, http.StatusNotFound, "PROJECT_NOT_FOUND", "Project not found", nil)
-		return
-	}
-	row, err := repo.GetProject(r.Context(), projectID)
-	if err != nil {
-		writeAPIProblem(w, r, http.StatusNotFound, "PROJECT_NOT_FOUND", "Project not found", nil)
-		return
-	}
-	item := apigenapi.ProjectResponse{Id: projectID, Title: projectID, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
-	if row.LatestReleaseID != "" {
-		item.LatestReleaseId = &row.LatestReleaseID
-	}
-	if row.ActiveDeploymentID != "" {
-		item.ActiveDeploymentId = &row.ActiveDeploymentID
-	}
-	writeAPIJSON(w, http.StatusOK, item)
+	a.server.releaseModule.GetProject(w, r, projectID)
 }
 
 func (a apiGenAdapter) ListProjectWorkspaces(w http.ResponseWriter, r *http.Request, projectID string, params apigenapi.GenListProjectWorkspacesParams) {
-	repo := a.server.releaseRepository()
-	if repo == nil {
-		writeAPIProblem(w, r, http.StatusNotFound, "PROJECT_NOT_FOUND", "Project not found", nil)
-		return
-	}
-	rows, err := repo.ListProjectWorkspaces(r.Context(), projectID, a.server.defaultEnvironment)
-	if err != nil {
-		writeAPIProblem(w, r, http.StatusInternalServerError, "PROJECT_WORKSPACES_FAILED", "Project workspaces could not be loaded", nil)
-		return
-	}
-	items := []apigenapi.ProjectWorkspaceResponse{}
-	for _, row := range rows {
-		item := apigenapi.ProjectWorkspaceResponse{Id: row.ID, Title: row.Title}
-		if row.Description != "" {
-			item.Description = &row.Description
-		}
-		if row.ActiveServingStateID != "" {
-			item.ActiveServingStateId = &row.ActiveServingStateID
-		}
-		items = append(items, item)
-	}
-	page, next, err := keysetPage(items, params.Limit, params.PageToken, func(item apigenapi.ProjectWorkspaceResponse) string { return item.Id })
-	if err != nil {
-		writeAPIProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", err.Error(), nil)
-		return
-	}
-	writeAPIJSON(w, http.StatusOK, apigenapi.ProjectWorkspaceListResponse{Items: page, Page: apigenapi.PageInfo{NextCursor: next}})
+	a.server.releaseModule.ListProjectWorkspaces(w, r, projectID, params)
 }
 
 func (a apiGenAdapter) ListManagedConnections(w http.ResponseWriter, r *http.Request, projectID string, params apigenapi.GenListManagedConnectionsParams) {
-	repo := a.server.releaseRepository()
-	if repo == nil {
-		writeAPIJSON(w, http.StatusOK, apigenapi.ManagedConnectionListResponse{Items: []apigenapi.ManagedConnectionResponse{}, Page: apigenapi.PageInfo{}})
-		return
-	}
-	rows, err := repo.ListConnections(r.Context(), projectID, a.server.defaultEnvironment)
-	if err != nil {
-		writeAPIProblem(w, r, http.StatusInternalServerError, "CONNECTION_LIST_FAILED", "Connections could not be loaded", nil)
-		return
-	}
-	items := []apigenapi.ManagedConnectionResponse{}
-	for _, row := range rows {
-		item := apigenapi.ManagedConnectionResponse{Id: row.ID, ProjectId: projectID, Title: row.Title}
-		if row.Description != "" {
-			item.Description = &row.Description
-		}
-		if row.ActiveRevisionID != "" {
-			item.ActiveRevisionId = &row.ActiveRevisionID
-		}
-		items = append(items, item)
-	}
-	page, next, err := keysetPage(items, params.Limit, params.PageToken, func(item apigenapi.ManagedConnectionResponse) string { return item.Id })
-	if err != nil {
-		writeAPIProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", err.Error(), nil)
-		return
-	}
-	writeAPIJSON(w, http.StatusOK, apigenapi.ManagedConnectionListResponse{Items: page, Page: apigenapi.PageInfo{NextCursor: next}})
+	a.server.releaseModule.ListManagedConnections(w, r, projectID, params)
 }
 
 func (a apiGenAdapter) GetManagedConnection(w http.ResponseWriter, r *http.Request, projectID, connectionID string) {
-	repo := a.server.releaseRepository()
-	if repo == nil {
-		writeAPIProblem(w, r, http.StatusNotFound, "CONNECTION_NOT_FOUND", "Connection not found", nil)
-		return
-	}
-	row, err := repo.GetConnection(r.Context(), projectID, connectionID, a.server.defaultEnvironment)
-	if err != nil {
-		writeAPIProblem(w, r, http.StatusNotFound, "CONNECTION_NOT_FOUND", "Connection not found", nil)
-		return
-	}
-	item := apigenapi.ManagedConnectionResponse{Id: connectionID, ProjectId: projectID, Title: row.Title}
-	if row.Description != "" {
-		item.Description = &row.Description
-	}
-	if row.ActiveRevisionID != "" {
-		item.ActiveRevisionId = &row.ActiveRevisionID
-	}
-	writeAPIJSON(w, http.StatusOK, item)
+	a.server.releaseModule.GetManagedConnection(w, r, projectID, connectionID)
 }
 
-func (a apiGenAdapter) ListManagedDataUploadSessionEvents(w http.ResponseWriter, r *http.Request, projectID, connectionID, sessionID string, params apigenapi.GenListManagedDataUploadSessionEventsParams, _ apigenapi.GenListManagedDataUploadSessionEventsHeaders) {
-	if a.server.managedDataOptions.Uploads == nil {
-		writeAPIProblem(w, r, http.StatusServiceUnavailable, "UPLOAD_SERVICE_UNAVAILABLE", "Managed-data uploads are unavailable", nil)
-		return
-	}
-	_, err := a.server.managedDataOptions.Uploads.RecoverUpload(r.Context(), control.UploadRequest{Project: projectID, Connection: connectionID, UploadID: sessionID})
-	if err != nil {
-		writeAPIProblem(w, r, http.StatusNotFound, "UPLOAD_SESSION_NOT_FOUND", "Upload session not found", nil)
-		return
-	}
-	eventsRepo, repoErr := a.server.asyncRepository()
-	if repoErr != nil {
-		writeAPIProblem(w, r, http.StatusServiceUnavailable, "ASYNC_EVENT_STORE_UNAVAILABLE", "Upload events are unavailable", nil)
-		return
-	}
-	writeStoredAsyncEventPage(w, r, eventsRepo, "upload", sessionID, params.Limit, params.PageToken, "upload:"+projectID+":"+connectionID+":"+sessionID)
+func (a apiGenAdapter) ListManagedDataUploadSessionEvents(w http.ResponseWriter, r *http.Request, projectID, connectionID, sessionID string, params apigenapi.GenListManagedDataUploadSessionEventsParams, headers apigenapi.GenListManagedDataUploadSessionEventsHeaders) {
+	a.server.managedDataModule.ListUploadSessionEvents(w, r, projectID, connectionID, sessionID, params, headers)
 }
 
 func (a apiGenAdapter) GetWorkspace(w http.ResponseWriter, r *http.Request, workspaceID string) {
-	repo, err := a.server.workspaceRepository()
-	if err != nil || repo == nil {
-		writeAPIProblem(w, r, http.StatusServiceUnavailable, "WORKSPACE_SERVICE_UNAVAILABLE", "Workspace service is unavailable", nil)
-		return
-	}
-	row, err := repo.ByID(r.Context(), workspace.WorkspaceID(workspaceID))
-	if err != nil {
-		writeAPIProblem(w, r, http.StatusNotFound, "WORKSPACE_NOT_FOUND", "Workspace not found", nil)
-		return
-	}
-	item := apigenapi.WorkspaceResponse{Id: string(row.ID), Title: row.Title, Description: row.Description, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
-	if row.ActiveServingStateID != "" {
-		value := string(row.ActiveServingStateID)
-		item.ActiveServingStateId = &value
-	}
-	writeAPIJSON(w, http.StatusOK, item)
+	a.server.workspaceModule.GetWorkspace(w, r, workspaceID)
 }
 
-func (a apiGenAdapter) CancelRefreshRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string, _ apigenapi.GenCancelRefreshRunHeaders) {
-	repo, err := a.server.refreshRunRepository()
-	if err != nil {
-		writeAPIProblem(w, r, http.StatusServiceUnavailable, "REFRESH_SERVICE_UNAVAILABLE", "Refresh service is unavailable", nil)
-		return
-	}
-	resolvedWorkspaceID := a.server.workspaceID(workspaceID)
-	prior, err := repo.GetRun(r.Context(), resolvedWorkspaceID, runID)
-	if err != nil || prior.Environment != string(a.server.defaultServingEnvironment()) {
-		writeAPIProblem(w, r, http.StatusNotFound, "REFRESH_RUN_NOT_FOUND", "Refresh run not found", nil)
-		return
-	}
-	publicPrior, ok := materializehttp.PipelineRunResponseFor(prior)
-	if !ok {
-		writeAPIProblem(w, r, http.StatusNotFound, "REFRESH_RUN_NOT_FOUND", "Refresh run not found", nil)
-		return
-	}
-	allowed, err := a.server.authorizeRefreshPipelineExecution(r, resolvedWorkspaceID, publicPrior.PipelineID)
-	if err != nil {
-		writeAPIProblem(w, r, http.StatusInternalServerError, "REFRESH_AUTHORIZATION_FAILED", "Refresh authorization failed", nil)
-		return
-	}
-	if !allowed {
-		writeAPIProblem(w, r, http.StatusForbidden, "FORBIDDEN", "Refresh run is not accessible", nil)
-		return
-	}
-	row, err := repo.CancelRun(r.Context(), resolvedWorkspaceID, runID)
-	if err != nil {
-		if errors.Is(err, materialize.ErrRunNotCancellable) {
-			writeAPIProblem(w, r, http.StatusConflict, "REFRESH_NOT_CANCELLABLE", "Only queued refresh runs can be cancelled", nil)
-			return
-		}
-		writeAPIProblem(w, r, http.StatusNotFound, "REFRESH_RUN_NOT_FOUND", "Refresh run not found", nil)
-		return
-	}
-	response, ok := materializehttp.PipelineRunResponseFor(row)
-	if !ok {
-		writeAPIProblem(w, r, http.StatusInternalServerError, "REFRESH_RESPONSE_INVALID", "Refresh response is invalid", nil)
-		return
-	}
-	if err := a.server.appendAsyncEvent(r.Context(), "refresh", runID, "refresh.cancelled", response); err != nil {
-		writeAPIProblem(w, r, http.StatusServiceUnavailable, "ASYNC_EVENT_STORE_UNAVAILABLE", "Refresh cancellation could not be recorded", nil)
-		return
-	}
-	w.Header().Set("Location", "/api/v1/workspaces/"+workspaceID+"/refresh-runs/"+runID)
-	writeAPIJSON(w, http.StatusAccepted, response)
+func (a apiGenAdapter) CancelRefreshRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string, headers apigenapi.GenCancelRefreshRunHeaders) {
+	a.server.refreshModule.CancelRefreshRun(w, r, workspaceID, runID, headers)
 }
 
-func (a apiGenAdapter) ListRefreshRunEvents(w http.ResponseWriter, r *http.Request, workspaceID, runID string, params apigenapi.GenListRefreshRunEventsParams, _ apigenapi.GenListRefreshRunEventsHeaders) {
-	repo, err := a.server.refreshRunRepository()
-	if err != nil {
-		writeAPIProblem(w, r, http.StatusServiceUnavailable, "REFRESH_SERVICE_UNAVAILABLE", "Refresh service is unavailable", nil)
-		return
-	}
-	resolvedWorkspaceID := a.server.workspaceID(workspaceID)
-	run, err := repo.GetRun(r.Context(), resolvedWorkspaceID, runID)
-	if err != nil || run.Environment != string(a.server.defaultServingEnvironment()) {
-		writeAPIProblem(w, r, http.StatusNotFound, "REFRESH_RUN_NOT_FOUND", "Refresh run not found", nil)
-		return
-	}
-	response, ok := materializehttp.PipelineRunResponseFor(run)
-	if !ok {
-		writeAPIProblem(w, r, http.StatusNotFound, "REFRESH_RUN_NOT_FOUND", "Refresh run not found", nil)
-		return
-	}
-	allowed, err := a.server.authorizeRefreshPipelineVisibility(r, resolvedWorkspaceID, response.PipelineID)
-	if err != nil {
-		writeAPIProblem(w, r, http.StatusInternalServerError, "REFRESH_AUTHORIZATION_FAILED", "Refresh authorization failed", nil)
-		return
-	}
-	if !allowed {
-		writeAPIProblem(w, r, http.StatusForbidden, "FORBIDDEN", "Refresh run is not accessible", nil)
-		return
-	}
-	eventsRepo, repoErr := a.server.asyncRepository()
-	if repoErr != nil {
-		writeAPIProblem(w, r, http.StatusServiceUnavailable, "ASYNC_EVENT_STORE_UNAVAILABLE", "Refresh events are unavailable", nil)
-		return
-	}
-	writeStoredAsyncEventPage(w, r, eventsRepo, "refresh", runID, params.Limit, params.PageToken, "refresh:"+workspaceID+":"+runID)
+func (a apiGenAdapter) ListRefreshRunEvents(w http.ResponseWriter, r *http.Request, workspaceID, runID string, params apigenapi.GenListRefreshRunEventsParams, headers apigenapi.GenListRefreshRunEventsHeaders) {
+	a.server.refreshModule.ListRefreshRunEvents(w, r, workspaceID, runID, params, headers)
 }
-
-func _normalizeProjectID(value string) string { return strings.TrimSpace(value) }

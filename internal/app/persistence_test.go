@@ -1,0 +1,83 @@
+package app
+
+import (
+	"context"
+	"testing"
+
+	accessmodule "github.com/Yacobolo/leapview/internal/access/module"
+	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
+	analyticsmodule "github.com/Yacobolo/leapview/internal/analytics/module"
+	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
+	"github.com/Yacobolo/leapview/internal/platform"
+	servingstatemodule "github.com/Yacobolo/leapview/internal/servingstate/module"
+	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
+)
+
+func testStoreOptions(store *platform.Store, options assemblyConfig) assemblyConfig {
+	options.Database = store.SQLDB()
+	options.PlatformHealth = store
+	options.AgentSettings = store
+	options.AdminDatabase = store.SQLDB()
+	if options.AccessRepo == nil {
+		options.AccessRepo = accesssqlite.NewRepository(store.SQLDB())
+	}
+	if options.WorkspaceRepo == nil && options.WorkspacePersistence == nil {
+		options.WorkspaceRepo = workspacesqlite.NewRepository(store.SQLDB())
+	}
+	if options.AccessModule == nil && options.Auth != nil {
+		publicURL := options.PublicURL
+		if publicURL == "" {
+			publicURL = options.MCPOAuth.PublicURL
+		}
+		module, err := accessmodule.Build(context.Background(), accessmodule.Config{
+			Database: store.SQLDB(), WorkspaceID: options.DefaultWorkspaceID,
+			ExistingAuth: options.Auth, PublicURL: publicURL,
+			MCPIssuerURL: options.MCPOAuth.IssuerURL,
+			WorkspaceIDs: func(ctx context.Context) ([]string, error) {
+				if options.WorkspacePersistence != nil {
+					return options.WorkspacePersistence.WorkspaceIDs(ctx)
+				}
+				rows, err := options.WorkspaceRepo.List(ctx)
+				if err != nil {
+					return nil, err
+				}
+				ids := make([]string, 0, len(rows))
+				for _, row := range rows {
+					ids = append(ids, string(row.ID))
+				}
+				return ids, nil
+			},
+		})
+		if err != nil {
+			panic(err)
+		}
+		options.AccessModule = module
+	}
+	if options.ServingStateRepo == nil {
+		states, err := servingstatemodule.Build(context.Background(), servingstatemodule.Config{Database: store.SQLDB()})
+		if err != nil {
+			panic(err)
+		}
+		options.ServingStateRepo = states
+	}
+	if options.QueryAudit == nil && (options.AnalyticsModule == nil || options.AnalyticsModule.QueryAuditReader() == nil) {
+		options.QueryAudit = analyticsmodule.BuildQueryAuditSurface(store.SQLDB())
+	}
+	return options
+}
+
+func queryAuditRepositoryForTest(t *testing.T, server *runtimeRouter) queryaudit.Repository {
+	t.Helper()
+	if server.queryAuditProvider == nil {
+		t.Fatal("query audit provider is not configured")
+	}
+	reader, err := server.queryAuditProvider()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository, ok := reader.(queryaudit.Repository)
+	if !ok || repository == nil {
+		t.Fatal("query audit repository is not configured")
+	}
+	return repository
+}

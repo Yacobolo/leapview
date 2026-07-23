@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	platformdb "github.com/Yacobolo/leapview/internal/platform/db"
+	platformdb "github.com/Yacobolo/leapview/internal/apiidempotency/sqlite/idempotencydb"
 )
 
 type Record struct {

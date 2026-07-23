@@ -10,9 +10,13 @@ import (
 	"testing"
 	"time"
 
+	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
 	"github.com/Yacobolo/leapview/internal/platform"
-	"github.com/Yacobolo/leapview/internal/refreshpipeline"
+	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
+	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
+	refreshsqlite "github.com/Yacobolo/leapview/internal/refresh/sqlite"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
+	"github.com/Yacobolo/leapview/internal/snapshot"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
 )
@@ -117,7 +121,7 @@ func TestRepositorySaveValidatedIsIdempotentAndRejectsCandidateMutation(t *testi
 	}
 }
 
-func TestRepositoryActivateRegistersSecurablesFromDeploymentGraph(t *testing.T) {
+func TestAccessSnapshotRegistersSecurablesFromDeploymentGraph(t *testing.T) {
 	ctx := context.Background()
 	store, repo := openRepo(t, ctx)
 	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
@@ -140,16 +144,27 @@ func TestRepositoryActivateRegistersSecurablesFromDeploymentGraph(t *testing.T) 
 		ProjectID:         "project",
 		ProjectDigest:     "sha256:" + strings.Repeat("a", 64),
 		ProjectWorkspaces: []string{"test"},
-		Graph: workspace.AssetGraph{
+		Graph: mustSnapshotGraph(workspace.AssetGraph{
 			Assets: []workspace.Asset{model, table, field, dashboard},
 			Edges: []workspace.AssetEdge{
 				workspace.NewAssetEdge(workspaceID, servingStateID, dashboard.ID, model.ID, workspace.AssetEdgeUsesSemanticModel),
 				workspace.NewAssetEdge(workspaceID, servingStateID, field.ID, table.ID, workspace.AssetEdgeUsesSemanticTable),
 			},
-		},
+		}),
 	}
 	if _, err := repo.SaveValidated(ctx, created.ID, validation, artifact(created.ID, "test")); err != nil {
 		t.Fatalf("save validated: %v", err)
+	}
+	tx, err := store.SQLDB().BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin access snapshot: %v", err)
+	}
+	if err := accesssqlite.ApplySnapshotTx(ctx, tx, string(created.ID)); err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("apply access snapshot: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit access snapshot: %v", err)
 	}
 	if _, err := repo.Activate(ctx, "test", servingstate.DefaultEnvironment, created.ID); err != nil {
 		t.Fatalf("activate: %v", err)
@@ -318,17 +333,41 @@ func TestRepositoryActivateRefreshAtomicallyAdvancesAllDataVersions(t *testing.T
 		t.Fatal(err)
 	}
 	if _, err := store.SQLDB().ExecContext(ctx, `
-INSERT INTO refresh_jobs (id, workspace_id, serving_state_id, model_id, kind, status) VALUES ('job_1', 'test', ?, 'b', 'refresh_pipeline', 'running');
-INSERT INTO refresh_job_runs (id, job_id, environment, target_type, target_id, trigger_type, status) VALUES ('run_1', 'job_1', 'dev', 'refresh_pipeline', 'test.daily', 'manual', 'running');
+INSERT INTO refresh_jobs (id, workspace_id, serving_state_id, model_id, kind, status, lease_owner, lease_generation) VALUES ('job_1', 'test', ?, 'b', 'refresh_pipeline', 'running', 'worker-1', 1);
+INSERT INTO refresh_job_runs (id, job_id, environment, target_type, target_id, target_generation, trigger_type, status, created_sequence) VALUES ('run_1', 'job_1', 'dev', 'refresh_pipeline', 'test.daily', 1, 'manual', 'prepared', 1);
 `, second.ID); err != nil {
 		t.Fatal(err)
 	}
 	refreshedAt := time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)
-	if _, err := repo.ActivateRefresh(ctx, "test", servingstate.DefaultEnvironment, second.ID, refreshpipeline.DataVersion{
+	version := refreshschedule.DataVersion{
 		WorkspaceID: "test", Environment: "dev", SemanticModel: "b", SnapshotID: 9, ServingStateID: string(second.ID),
-		RefreshedAt: refreshedAt, Source: refreshpipeline.DataVersionSourceRefresh, PipelineID: "daily", RunID: "run_1",
-	}); err != nil {
+		RefreshedAt: refreshedAt, Source: refreshschedule.DataVersionSourceRefresh, PipelineID: "daily", RunID: "run_1",
+		TargetGeneration: 1, LeaseOwner: "worker-1", LeaseGeneration: 1,
+	}
+	publication := refreshsqlite.NewPublicationUnitOfWork(store.SQLDB(), nil)
+	if _, err := store.SQLDB().ExecContext(ctx, `
+INSERT INTO refresh_jobs (id, workspace_id, serving_state_id, model_id, kind, status) VALUES ('job_2', 'test', ?, 'b', 'refresh_pipeline', 'queued');
+INSERT INTO refresh_job_runs (id, job_id, environment, target_type, target_id, target_generation, trigger_type, status, created_sequence) VALUES ('run_2', 'job_2', 'dev', 'refresh_pipeline', 'test.daily', 2, 'manual', 'queued', 2);
+`, second.ID); err != nil {
 		t.Fatal(err)
+	}
+	if err := publication.Publish(ctx, "test", servingstate.DefaultEnvironment, second.ID, version); !errors.Is(err, refreshrun.ErrLeaseLost) {
+		t.Fatalf("stale generation activation error = %v, want ErrLeaseLost", err)
+	}
+	if _, err := store.SQLDB().ExecContext(ctx, `DELETE FROM refresh_jobs WHERE id = 'job_2'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := publication.Publish(ctx, "test", servingstate.DefaultEnvironment, second.ID, version); err != nil {
+		t.Fatal(err)
+	}
+	var runStatus, jobStatus string
+	if err := store.SQLDB().QueryRowContext(ctx, `
+SELECT r.status, j.status FROM refresh_job_runs r JOIN refresh_jobs j ON j.id = r.job_id WHERE r.id = 'run_1'
+`).Scan(&runStatus, &jobStatus); err != nil {
+		t.Fatal(err)
+	}
+	if runStatus != "succeeded" || jobStatus != "succeeded" {
+		t.Fatalf("publication statuses = %q/%q, want succeeded/succeeded", runStatus, jobStatus)
 	}
 	rows, err := store.SQLDB().QueryContext(ctx, `SELECT semantic_model_id, snapshot_id, serving_state_id, refreshed_at, source, COALESCE(pipeline_id, '') FROM semantic_model_data_versions ORDER BY semantic_model_id`)
 	if err != nil {
@@ -619,7 +658,7 @@ func TestRepositoryReconcileRetentionDeletesDrainingDeploymentsOnlyInEnvironment
 		t.Fatalf("mark prod draining: %v", err)
 	}
 	requireDeploymentStatus(t, ctx, repo, first.ID, servingstate.StatusDraining)
-	if err := repo.ReconcileRetention(ctx, servingstate.DefaultEnvironment, time.Now()); err != nil {
+	if err := repo.ReconcileRetention(ctx, string(servingstate.DefaultEnvironment), time.Now()); err != nil {
 		t.Fatalf("reconcile retention: %v", err)
 	}
 	requireDeploymentStatus(t, ctx, repo, first.ID, servingstate.StatusDeleted)
@@ -706,14 +745,14 @@ func TestRepositorySaveValidatedRejectsMismatchedAssetGraph(t *testing.T) {
 			name: "edge from",
 			mutate: func(validation *servingstate.Validation) {
 				edge := validation.Graph.Edges[0]
-				validation.Graph.Edges[0] = workspace.NewAssetEdge(edge.WorkspaceID, edge.ServingStateID, "dashboard:missing", edge.ToAssetID, edge.Type)
+				validation.Graph.Edges[0] = snapshot.NewAssetEdge(edge.WorkspaceID, edge.ServingStateID, "dashboard:missing", edge.ToAssetID, edge.Type)
 			},
 		},
 		{
 			name: "edge to",
 			mutate: func(validation *servingstate.Validation) {
 				edge := validation.Graph.Edges[0]
-				validation.Graph.Edges[0] = workspace.NewAssetEdge(edge.WorkspaceID, edge.ServingStateID, edge.FromAssetID, "semantic_model:missing", edge.Type)
+				validation.Graph.Edges[0] = snapshot.NewAssetEdge(edge.WorkspaceID, edge.ServingStateID, edge.FromAssetID, "semantic_model:missing", edge.Type)
 			},
 		},
 	}
@@ -778,14 +817,22 @@ func validationGraph(servingStateID servingstate.ID) servingstate.Validation {
 		ProjectID:         "project",
 		ProjectDigest:     "sha256:" + strings.Repeat("a", 64),
 		ProjectWorkspaces: []string{"test"},
-		Graph: workspace.AssetGraph{
+		Graph: mustSnapshotGraph(workspace.AssetGraph{
 			Assets: []workspace.Asset{assetA, assetB},
 			Edges: []workspace.AssetEdge{
 				workspace.NewAssetEdge(workspaceID, workspace.ServingStateID(servingStateID), assetA.ID, assetB.ID, workspace.AssetEdgeUsesSemanticModel),
 				workspace.NewAssetEdge(workspaceID, workspace.ServingStateID(servingStateID), assetB.ID, assetA.ID, workspace.AssetEdgeContains),
 			},
-		},
+		}),
 	}
+}
+
+func mustSnapshotGraph(graph workspace.AssetGraph) snapshot.AssetGraph {
+	converted, err := snapshot.ConvertAssetGraph(graph)
+	if err != nil {
+		panic(err)
+	}
+	return converted
 }
 
 func mustTestAsset(workspaceID workspace.WorkspaceID, servingStateID workspace.ServingStateID, typ workspace.AssetType, key string, parent workspace.AssetID) workspace.Asset {

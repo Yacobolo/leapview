@@ -629,6 +629,19 @@ func (e *Environment) Snapshots(ctx context.Context) ([]Snapshot, error) {
 	return snapshots, rows.Err()
 }
 
+// SnapshotIDs exposes the narrow storage-retention view of the catalog.
+func (e *Environment) SnapshotIDs(ctx context.Context) ([]int64, error) {
+	snapshots, err := e.Snapshots(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]int64, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		ids = append(ids, snapshot.ID)
+	}
+	return ids, nil
+}
+
 func (e *Environment) ValidateSnapshot(ctx context.Context, snapshotID int64) error {
 	if e == nil || e.db == nil {
 		return fmt.Errorf("ducklake environment is not initialized")

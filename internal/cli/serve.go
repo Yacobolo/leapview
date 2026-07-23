@@ -3,46 +3,18 @@ package cli
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
-	oidcauth "github.com/Yacobolo/leapview/internal/access/oidc"
-	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
-	"github.com/Yacobolo/leapview/internal/agent"
-	agentsqlite "github.com/Yacobolo/leapview/internal/agent/sqlite"
-	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
-	materializesqlite "github.com/Yacobolo/leapview/internal/analytics/materialize/sqlite"
-	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
 	"github.com/Yacobolo/leapview/internal/app"
 	"github.com/Yacobolo/leapview/internal/config"
-	"github.com/Yacobolo/leapview/internal/dataquery"
-	projectdeployment "github.com/Yacobolo/leapview/internal/deployment"
-	deploymentapiadapter "github.com/Yacobolo/leapview/internal/deployment/apiadapter"
-	deploymenthttp "github.com/Yacobolo/leapview/internal/deployment/http"
-	deploymentsqlite "github.com/Yacobolo/leapview/internal/deployment/sqlite"
 	"github.com/Yacobolo/leapview/internal/instancelock"
-	manageddataapiadapter "github.com/Yacobolo/leapview/internal/manageddata/apiadapter"
-	manageddatahttp "github.com/Yacobolo/leapview/internal/manageddata/http"
-	manageddataresolver "github.com/Yacobolo/leapview/internal/manageddata/resolver"
-	"github.com/Yacobolo/leapview/internal/manageddata/s3multipart"
-	manageddatasqlite "github.com/Yacobolo/leapview/internal/manageddata/sqlite"
-	"github.com/Yacobolo/leapview/internal/platform"
-	"github.com/Yacobolo/leapview/internal/runtimehost"
-	"github.com/Yacobolo/leapview/internal/securefs"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
-	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
-	storagemaintenance "github.com/Yacobolo/leapview/internal/storage/maintenance"
-	visualizationmapasset "github.com/Yacobolo/leapview/internal/visualization/mapasset"
-	"github.com/Yacobolo/leapview/internal/workload"
-	"github.com/Yacobolo/leapview/internal/workspace"
-	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
 	"github.com/spf13/cobra"
 )
 
@@ -79,44 +51,42 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 		return err
 	}
 	environment := serveEnvironment(production, opts.environment, cfg.Environment)
+	cfg.Environment = string(environment)
 	instanceLock, err := instancelock.Acquire(cfg.HomeDir)
 	if err != nil {
 		return err
 	}
 	defer instanceLock.Release()
-	server, cleanup, err := servingStateBackedServer(ctx, cfg, production, environment)
+	application, err := app.Build(ctx, cfg)
 	if err != nil {
 		return err
 	}
-	defer cleanup()
 	serveCtx, stopServe := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stopServe()
-	server.StartBackgroundJobs(serveCtx)
-	analyticalFatal := make(chan struct{})
-	if fatal := server.AnalyticalFatal(); fatal != nil {
-		go func() {
-			select {
-			case <-serveCtx.Done():
-			case <-fatal:
-				server.StopWorkloadAdmission()
-				close(analyticalFatal)
-				stopServe()
-			}
-		}()
+	if err := application.Start(serveCtx); err != nil {
+		_ = application.Shutdown(context.Background())
+		return err
 	}
+	fatalErr := make(chan error, 1)
+	go func() {
+		select {
+		case <-serveCtx.Done():
+		case err := <-application.Fatal():
+			fatalErr <- err
+			stopServe()
+		}
+	}()
 	slog.Info("LeapView listening", "url", listenURL(addr), "environment", environment)
-	err = runHTTPServer(serveCtx, productionHTTPServer(addr, server.Routes()))
+	err = runHTTPServer(serveCtx, productionHTTPServer(addr, application.Handler()))
 	stopServe()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), defaultHTTPServerShutdownTimeout)
 	defer cancel()
-	if stopErr := server.StopBackgroundJobs(shutdownCtx); err == nil && stopErr != nil {
+	if stopErr := application.Shutdown(shutdownCtx); err == nil && stopErr != nil {
 		err = stopErr
 	}
 	select {
-	case <-analyticalFatal:
-		if healthErr := server.AnalyticalHealth(); healthErr != nil {
-			return fmt.Errorf("analytical environment became unhealthy: %w", healthErr)
-		}
+	case fatal := <-fatalErr:
+		return fatal
 	default:
 	}
 	return err
@@ -194,308 +164,4 @@ func runHTTPServer(ctx context.Context, server *http.Server) error {
 		}
 		return <-errCh
 	}
-}
-
-func servingStateBackedServer(ctx context.Context, cfg config.Config, production bool, environment servingstate.Environment) (*app.Server, func(), error) {
-	var mapAssetReadiness app.MapAssetReadiness
-	if strings.TrimSpace(cfg.MapAssetDir) != "" {
-		verifier := visualizationmapasset.NewVerifier(cfg.MapAssetDir)
-		if err := verifier.Verify(ctx); err != nil {
-			return nil, nil, fmt.Errorf("verify map assets: %w", err)
-		}
-		mapAssetReadiness = verifier
-	}
-	cookieSecure, err := cfg.CookieSecure()
-	if err != nil {
-		return nil, nil, err
-	}
-	var allowedHosts []string
-	if production {
-		allowedHosts, err = cfg.ProductionAllowedHosts()
-	} else {
-		allowedHosts, err = cfg.AllowedHostList()
-	}
-	if err != nil {
-		return nil, nil, err
-	}
-	duckLakeCatalogPath := cfg.DuckLakeCatalogPath()
-	for _, dir := range []string{cfg.HomeDir, cfg.ArtifactDir(), cfg.DuckDBDirPath(), cfg.RuntimeDir(), cfg.DuckLakeDataDir(), filepath.Dir(duckLakeCatalogPath)} {
-		if err := securefs.EnsurePrivateDir(dir); err != nil {
-			return nil, nil, err
-		}
-	}
-	store, err := platform.Open(ctx, cfg.DBPath())
-	if err != nil {
-		return nil, nil, err
-	}
-	var duckDBEnvironment *analyticsducklake.Environment
-	var resultCachePool *resultcache.Pool
-	cleanup := func() {
-		if resultCachePool != nil {
-			_ = resultCachePool.Close()
-		}
-		if duckDBEnvironment != nil {
-			_ = duckDBEnvironment.Close()
-		}
-		_ = store.Close()
-	}
-	if err := store.BindInstanceEnvironment(ctx, string(environment)); err != nil {
-		cleanup()
-		return nil, nil, err
-	}
-	workloadConfig := cfg.WorkloadConfig()
-	duckDBEnvironment, err = analyticsducklake.Open(ctx, analyticsducklake.Config{
-		RootDir:        cfg.DuckDBDirPath(),
-		CatalogPath:    duckLakeCatalogPath,
-		DataPath:       cfg.DuckLakeDataDir(),
-		MaxConnections: workloadConfig.MaxRunning,
-		MemoryMaxBytes: cfg.DuckDBNodeMemoryMaxBytes,
-		TempMaxBytes:   cfg.DuckDBNodeTempMaxBytes,
-		MaxThreads:     cfg.DuckDBNodeMaxThreads,
-		TempDir:        cfg.DuckDBTempDirPath(),
-	})
-	if err != nil {
-		cleanup()
-		return nil, nil, err
-	}
-	resultCachePool, err = resultcache.New(resultcache.Limits{
-		RuntimeEntries: cfg.QueryCacheRuntimeMaxEntries, RuntimeBytes: cfg.QueryCacheRuntimeMaxBytes,
-		WorkspaceEntries: cfg.QueryCacheWorkspaceMaxEntries, WorkspaceBytes: cfg.QueryCacheWorkspaceMaxBytes,
-		NodeEntries: cfg.QueryCacheNodeMaxEntries, NodeBytes: cfg.QueryCacheNodeMaxBytes,
-	})
-	if err != nil {
-		cleanup()
-		return nil, nil, err
-	}
-	accessRepo := accesssqlite.NewRepository(store.SQLDB())
-	workspaceRepo := workspacesqlite.NewRepositoryWithSecurables(store.SQLDB(), accessRepo)
-	if !production {
-		if err := app.SeedLocalDeveloperPlatformAdmin(ctx, accessRepo); err != nil {
-			cleanup()
-			return nil, nil, err
-		}
-	}
-	servingStateRepo := servingstatesqlite.NewRepository(store.SQLDB())
-	managedDataRepo := manageddatasqlite.NewRepository(store.SQLDB())
-	managedDataStorage, err := newManagedDataStorage(ctx, cfg)
-	if err != nil {
-		cleanup()
-		return nil, nil, err
-	}
-	managedDataControl, err := newManagedDataControl(managedDataRepo, managedDataStorage, cfg)
-	if err != nil {
-		cleanup()
-		return nil, nil, err
-	}
-	managedDataCollector, err := newManagedDataCollector(store.SQLDB(), managedDataStorage, cfg)
-	if err != nil {
-		cleanup()
-		return nil, nil, err
-	}
-	managedDataRuntimeCollector, err := newManagedDataRuntimeCollector(managedDataStorage, cfg)
-	if err != nil {
-		cleanup()
-		return nil, nil, err
-	}
-	managedDataResolver, err := manageddataresolver.New(managedDataRepo, servingStateRepo, managedDataStorage.materializer)
-	if err != nil {
-		cleanup()
-		return nil, nil, err
-	}
-	var managedDataMultipart s3multipart.Coordinator
-	var managedDataMultipartService *s3multipart.Service
-	if managedDataStorage.s3 != nil {
-		multipartService, multipartErr := s3multipart.New(managedDataRepo, managedDataStorage.s3, s3multipart.Config{Backend: "s3"})
-		if multipartErr != nil {
-			cleanup()
-			return nil, nil, multipartErr
-		}
-		managedDataMultipart = multipartService
-		managedDataMultipartService = multipartService
-	}
-	if err := materializesqlite.NewSQLRunRepository(store.SQLDB()).FailRunsForTerminalServingStates(ctx, string(environment), "refresh did not complete"); err != nil {
-		cleanup()
-		return nil, nil, err
-	}
-	if _, err := storagemaintenance.Run(ctx, servingStateRepo, storagemaintenance.Options{
-		DuckDBEnvironment: duckDBEnvironment,
-		Environment:       environment,
-		RootDir:           cfg.HomeDir,
-		CatalogPath:       duckLakeCatalogPath,
-		DataPath:          cfg.DuckLakeDataDir(),
-		DryRun:            false,
-	}); err != nil {
-		cleanup()
-		return nil, nil, err
-	}
-	agentRepo := agentsqlite.NewRepository(store.SQLDB())
-	summaries, err := workspaceRepo.List(ctx)
-	if err != nil {
-		cleanup()
-		return nil, nil, err
-	}
-	workspaceIDs := make([]servingstate.WorkspaceID, 0, len(summaries))
-	for _, summary := range summaries {
-		workspaceIDs = append(workspaceIDs, servingstate.WorkspaceID(summary.ID))
-	}
-	var registry *runtimehost.Registry
-	registry = runtimehost.NewRegistryWithFactory(runtimehost.RegistryOptions{
-		Repo:         servingStateRepo,
-		WorkspaceIDs: workspaceIDs,
-		Environment:  environment,
-		ManagedData:  managedDataResolver,
-		OnDrained: func(servingstate.ID, int64) {
-			go func() {
-				protected := []int64(nil)
-				if registry != nil {
-					protected = registry.LeasedSnapshots()
-				}
-				if _, err := storagemaintenance.Run(context.Background(), servingStateRepo, storagemaintenance.Options{
-					DuckDBEnvironment:            duckDBEnvironment,
-					Environment:                  environment,
-					RootDir:                      cfg.HomeDir,
-					CatalogPath:                  duckLakeCatalogPath,
-					DataPath:                     cfg.DuckLakeDataDir(),
-					AdditionalProtectedSnapshots: protected,
-					DryRun:                       false,
-				}); err != nil {
-					slog.Default().Warn("storage retention cleanup failed after runtime drain", "error", err)
-				}
-			}()
-		},
-		Factory: servingStateRuntimeFactory{
-			duckDBDir:    cfg.DuckDBDirPath(),
-			runtimeDir:   cfg.RuntimeDir(),
-			environment:  duckDBEnvironment,
-			cachePool:    resultCachePool,
-			resultLimits: dataquery.ResultLimits{MaxRows: cfg.QueryResultMaxRows, MaxBytes: cfg.QueryResultMaxBytes},
-		},
-	})
-	if err := registry.Reload(ctx); err != nil {
-		cleanup()
-		return nil, nil, err
-	}
-	deploymentRuntime, err := projectdeployment.NewRegistryRuntime(registry)
-	if err != nil {
-		_ = registry.Close()
-		cleanup()
-		return nil, nil, err
-	}
-	deploymentService, err := projectdeployment.New(deploymentsqlite.NewRepository(store.SQLDB()), servingStateRepo, deploymentRuntime, managedDataResolver)
-	if err != nil {
-		_ = registry.Close()
-		cleanup()
-		return nil, nil, err
-	}
-	deploymentAPI, err := deploymentapiadapter.New(deploymentService, managedDataRepo)
-	if err != nil {
-		_ = registry.Close()
-		cleanup()
-		return nil, nil, err
-	}
-	managedDataAPI, err := manageddataapiadapter.New(managedDataRepo)
-	if err != nil {
-		_ = registry.Close()
-		cleanup()
-		return nil, nil, err
-	}
-	cleanupWithRegistry := func() {
-		_ = registry.Close()
-		cleanup()
-	}
-	runtimeMetrics := app.NewDynamicRuntimeMetrics("", func(workspaceID string) runtimehost.Provider {
-		return registry.ProviderForWorkspace(servingstate.WorkspaceID(workspaceID))
-	})
-	assetCatalog := workspace.NewAssetCatalogService(workspaceRepo)
-	authConfig := app.AuthConfig{DevBypass: true, DevAPIToken: cfg.DevAPIToken, CSRFKey: cfg.CSRFKey, CookieSecure: false}
-	if production {
-		oidcProviders := []oidcauth.Config{}
-		if cfg.OIDCConfigured() {
-			oidcProviders = append(oidcProviders, oidcauth.Config{
-				ID:           cfg.OIDCProviderID,
-				IssuerURL:    cfg.OIDCIssuerURL,
-				ClientID:     cfg.OIDCClientID,
-				ClientSecret: cfg.OIDCSecret,
-				RedirectURL:  cfg.OIDCCallbackURL,
-				Scopes:       cfg.OIDCScopesList(),
-			})
-		}
-		authConfig = app.AuthConfig{
-			DevBypass:       cfg.DevAuthBypass,
-			DevAPIToken:     cfg.DevAPIToken,
-			APITokenOnly:    cfg.APITokenOnlyAuth,
-			LocalAuth:       cfg.LocalAuth,
-			AzureClientID:   cfg.AzureClientID,
-			AzureSecret:     cfg.AzureSecret,
-			AzureCallback:   cfg.AzureCallbackURL,
-			AzureTenant:     cfg.AzureTenant,
-			CSRFKey:         cfg.CSRFKey,
-			CookieSecure:    cookieSecure,
-			BootstrapTenant: cfg.AzureTenant,
-			OIDCProviders:   oidcProviders,
-		}
-	}
-	auth := app.NewAuth(accessRepo, "", authConfig)
-	rateLimits := app.ProductionRateLimitConfig()
-	rateLimits.Enabled = production && cfg.RateLimitingEnabled()
-	rateLimits.UseRealIP = cfg.RateLimitingUsesRealIP()
-	workloadController, err := workload.New(workloadConfig)
-	if err != nil {
-		return nil, nil, err
-	}
-	server := app.NewWithOptions(runtimeMetrics, app.Options{
-		Store:               store,
-		ServingStateRepo:    servingStateRepo,
-		WorkspaceRepo:       workspaceRepo,
-		AssetCatalog:        assetCatalog,
-		AccessRepo:          accessRepo,
-		Agent:               agent.NewService(runtimeMetrics, agentRepo, agent.Config{APIKey: cfg.AgentAPIKey, BaseURL: cfg.AgentBaseURL, Model: cfg.AgentModel}),
-		Auth:                auth,
-		Reloader:            registry,
-		ArtifactDir:         cfg.ArtifactDir(),
-		DuckDBDir:           cfg.DuckDBDirPath(),
-		DuckLakeCatalogPath: duckLakeCatalogPath,
-		DuckLakeDataPath:    cfg.DuckLakeDataDir(),
-		DuckDBEnvironment:   duckDBEnvironment,
-		QueryResultCache:    resultCachePool,
-		DefaultEnvironment:  string(environment),
-		PublicURL:           firstConfigured(cfg.PublicURL, listenURL(cfg.ListenAddr())),
-		RateLimits:          rateLimits,
-		SecurityHeaders:     app.SecurityHeaders(production && cfg.HSTSEnabled(cookieSecure)),
-		RequestLogging:      production && cfg.RequestLoggingEnabled(),
-		Logger:              slog.Default(),
-		SCIMBearerToken:     cfg.SCIMBearerToken,
-		MetricsBearerToken:  cfg.MetricsBearerToken,
-		MCPOAuth: app.MCPOAuthConfig{
-			PublicURL: firstConfigured(cfg.PublicURL, listenURL(cfg.ListenAddr())),
-			IssuerURL: cfg.MCPOAuthIssuerURL,
-		},
-		AllowedHosts:    allowedHosts,
-		Workload:        workloadController,
-		JobLeaseTimeout: cfg.RefreshJobLeaseTimeout,
-		ManagedData: manageddatahttp.Options{
-			Repository: managedDataAPI, Uploads: managedDataControl,
-			Multipart: managedDataMultipart,
-		},
-		ManagedDataResolver: managedDataResolver,
-		Deployment:          deploymenthttp.Options{Coordinator: deploymentAPI},
-		ManagedDataTus:      managedDataStorage.tus,
-		ManagedDataExpirer: managedDataMaintenance{
-			uploads: managedDataControl, multipart: managedDataMultipartService,
-			uploadTTL: cfg.ManagedDataUploadSessionTTL, collector: managedDataCollector, runtime: managedDataRuntimeCollector,
-		},
-		ManagedDataExpireInterval: cfg.ManagedDataGCInterval,
-		MapAssetDir:               cfg.MapAssetDir,
-		MapAssetReadiness:         mapAssetReadiness,
-	})
-	return server, cleanupWithRegistry, nil
-}
-
-func firstConfigured(values ...string) string {
-	for _, value := range values {
-		if value = strings.TrimSpace(value); value != "" {
-			return value
-		}
-	}
-	return ""
 }

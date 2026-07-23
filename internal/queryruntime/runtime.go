@@ -4,6 +4,7 @@ import (
 	"context"
 
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
+	"github.com/Yacobolo/leapview/internal/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
@@ -15,7 +16,7 @@ import (
 
 type Metrics interface {
 	consumer.Executor
-	Catalog() dashboard.Catalog
+	Catalog() catalog.Catalog
 	DefaultDashboardID() string
 	ModelIDForDashboard(dashboardID string) string
 	Report(dashboardID string) (dashboarddefinition.Definition, *semanticmodel.Model, bool)
