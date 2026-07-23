@@ -404,7 +404,7 @@ func TestCompileShowcaseProject(t *testing.T) {
 	// Page layout legitimately uses a "visuals" collection; authored dashboard
 	// visual maps are gone because the dashboard root now exposes only
 	// "visualizations".
-	for _, legacy := range []string{`"tables":`, `"rendererOptions":`, `"options":`, `"shape":`} {
+	for _, legacy := range []string{`"tables":`, `"rendererOptions":`, `"shape":`} {
 		if strings.Contains(serialized, legacy) {
 			t.Fatalf("compiled serving state contains legacy authoring property %s", legacy)
 		}

@@ -13,53 +13,35 @@ spec:
   semanticModel: visuals
   filters:
     purchase_date:
-      type: date_range
       label: Period
       description: Filters dashboard content by order purchase date.
-      url_param: period
-      from_url_param: from
-      to_url_param: to
-      default:
-        preset: all
-      custom: true
-      presets:
-        - value: all
-          label: All orders
-        - value: recent
-          label: Latest 90 days
-          relative_days: 90
-        - value: '2018'
-          label: '2018'
-          from: '2018-01-01'
-          to: '2019-01-01'
-        - value: '2017'
-          label: '2017'
-          from: '2017-01-01'
-          to: '2018-01-01'
-      field: orders.purchase_timestamp
+      field: purchase_timestamp
+      predicates:
+        - kind: range
+        - kind: relative_period
     state:
-      type: multi_select
       label: State
       description: Filters dashboard content by customer state.
-      url_param: state
-      operator: in
-      values:
-        source: distinct
+      field: state
+      predicates:
+        - kind: set
+          operators: [in, not_in]
+      options:
+        kind: distinct
         limit: 50
-      field: customers.state
-    category:
-      type: text
-      label: Category
-      description: Filters dashboard content by product category text.
-      url_param: category
-      operator_url_param: category_op
-      default_operator: contains
-      operators:
-        - contains
-        - equals
-        - starts_with
-        - not_contains
-      field: orders.category
+  filter_bindings:
+    purchase_date:
+      filter: purchase_date
+      default: {kind: unfiltered}
+      url: {param: period, encoding: typed_v1}
+      pane: {visible: true, order: 10}
+    state:
+      filter: state
+      default: {kind: unfiltered}
+      selection: {mode: multiple, max_selected_values: 50}
+      url: {param: state, encoding: typed_v1}
+      pane: {visible: true, order: 20}
+  filter_application: {mode: immediate}
   visuals:
     total_orders:
       type: kpi
@@ -1807,8 +1789,9 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           description: Period filter placement in the overview header.
           placement:
             col: 1
@@ -1816,8 +1799,9 @@ spec:
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           description: State filter placement in the overview header.
           placement:
             col: 4
@@ -1918,16 +1902,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -1970,16 +1956,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -2022,16 +2010,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -2074,16 +2064,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -2126,16 +2118,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -2178,16 +2172,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -2230,16 +2226,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -2282,16 +2280,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -2334,16 +2334,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -2386,16 +2388,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -2438,16 +2442,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -2490,16 +2496,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -2542,16 +2550,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -2594,16 +2604,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -2710,16 +2722,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -2754,16 +2768,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -2806,16 +2822,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -2858,16 +2876,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -2910,16 +2930,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -2962,16 +2984,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -3014,16 +3038,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -3066,16 +3092,18 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding: {scope: report, id: purchase_date}
+          presentation: {style: date_range}
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding: {scope: report, id: state}
+          presentation: {style: dropdown, search: true}
           placement:
             col: 4
             row: 1
@@ -3118,16 +3146,25 @@ spec:
         padding: 16
       components:
         - id: period-filter
-          kind: filter
-          filter: purchase_date
+          kind: slicer
+          binding:
+            scope: report
+            id: purchase_date
+          presentation:
+            style: date_range
           placement:
             col: 1
             row: 1
             col_span: 3
             row_span: 1
         - id: state-filter
-          kind: filter
-          filter: state
+          kind: slicer
+          binding:
+            scope: report
+            id: state
+          presentation:
+            style: dropdown
+            search: true
           placement:
             col: 4
             row: 1
