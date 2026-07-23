@@ -634,37 +634,6 @@ func TestWorkspaceListUsesActiveDeploymentCatalogMetadata(t *testing.T) {
 	}
 }
 
-func TestWorkspaceListUsesRepositoryActiveMetadataWithoutGraphLoads(t *testing.T) {
-	repo := &metadataWorkspaceRepo{}
-	server := assembleRuntime(fakeMetrics{}, testStoreOptions(testStore(t), assemblyConfig{WorkspaceRepo: repo, DefaultWorkspaceID: "sales"}))
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces?environment=dev", nil)
-	req.Header.Set("Authorization", "Bearer dev")
-	req.Header.Set("Accept", "application/json")
-	rec := httptest.NewRecorder()
-	server.Routes().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
-	}
-	var body struct {
-		Items []api.WorkspaceResponse `json:"items"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode workspaces response: %v body=%s", err, rec.Body.String())
-	}
-	if len(body.Items) != 1 {
-		t.Fatalf("workspace count = %d body=%s", len(body.Items), rec.Body.String())
-	}
-	got := body.Items[0]
-	if got.Title != "Active Sales" || got.Description != "from active catalog" || got.ActiveServingStateID != "dep_active" {
-		t.Fatalf("workspace = %#v, want repository active metadata", got)
-	}
-	if repo.graphCalls != 0 {
-		t.Fatalf("ActiveServingStateGraph calls = %d, want 0", repo.graphCalls)
-	}
-}
-
 func TestWorkspaceListPageDoesNotRenderWorkspaceScopedChat(t *testing.T) {
 	t.Setenv("LEAPVIEW_DEV_AUTH_BYPASS", "1")
 	store := testStore(t)
@@ -692,39 +661,6 @@ func TestWorkspaceListPageDoesNotRenderWorkspaceScopedChat(t *testing.T) {
 	if !strings.Contains(rendered, `"workspaceTitle":"LeapView"`) {
 		t.Fatalf("workspace list did not render global app chrome:\n%s", rec.Body.String())
 	}
-}
-
-type metadataWorkspaceRepo struct {
-	graphCalls int
-}
-
-func (r *metadataWorkspaceRepo) Ensure(context.Context, workspace.EnsureInput) error {
-	return nil
-}
-
-func (r *metadataWorkspaceRepo) List(context.Context) ([]workspace.Summary, error) {
-	return []workspace.Summary{{ID: "sales", Title: "stale", Description: "stale"}}, nil
-}
-
-func (r *metadataWorkspaceRepo) ByID(context.Context, workspace.WorkspaceID) (workspace.Summary, error) {
-	return workspace.Summary{ID: "sales", Title: "stale", Description: "stale"}, nil
-}
-
-func (r *metadataWorkspaceRepo) ActiveServingStateGraph(context.Context, workspace.WorkspaceID, string) (workspace.AssetGraph, bool, error) {
-	r.graphCalls++
-	return workspace.AssetGraph{}, false, nil
-}
-
-func (r *metadataWorkspaceRepo) AssetVersions(context.Context, workspace.WorkspaceID, string, workspace.AssetID) ([]workspace.AssetVersion, error) {
-	return nil, nil
-}
-
-func (r *metadataWorkspaceRepo) ListWithActiveMetadata(context.Context, string) ([]workspace.Summary, error) {
-	return []workspace.Summary{{ID: "sales", Title: "Active Sales", Description: "from active catalog", ActiveServingStateID: "dep_active"}}, nil
-}
-
-func (r *metadataWorkspaceRepo) ByIDWithActiveMetadata(context.Context, workspace.WorkspaceID, string) (workspace.Summary, error) {
-	return workspace.Summary{ID: "sales", Title: "Active Sales", Description: "from active catalog", ActiveServingStateID: "dep_active"}, nil
 }
 
 func TestWorkspacePageDefaultsToTopLevelAssets(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	appconfig "github.com/Yacobolo/leapview/internal/config"
 	"github.com/Yacobolo/leapview/internal/manageddata"
@@ -239,7 +240,33 @@ func (m *Module) DeploymentMetadata() DeploymentMetadata {
 	return m.metadata
 }
 
-func (m *Module) TusHandler() http.Handler { return m.tus }
+func (m *Module) TusHandler() http.Handler {
+	if m == nil || m.tus == nil {
+		return nil
+	}
+	return TusProtocolHandler(m.tus)
+}
+
+func TusProtocolHandler(next http.Handler) http.Handler {
+	if next == nil {
+		return nil
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPatch:
+			// Upload chunks are capacity protected and session expiry bounds
+			// abandoned bodies, so they must not inherit the general API read
+			// deadline.
+			_ = http.NewResponseController(w).SetReadDeadline(time.Time{})
+			next.ServeHTTP(w, r)
+		case http.MethodOptions, http.MethodHead, http.MethodDelete:
+			next.ServeHTTP(w, r)
+		default:
+			w.Header().Set("Allow", "OPTIONS, HEAD, PATCH, DELETE")
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		}
+	})
+}
 
 func (m *Module) Start(ctx context.Context) {
 	if m != nil {

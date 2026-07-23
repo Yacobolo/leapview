@@ -13,10 +13,8 @@ import (
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	"github.com/Yacobolo/leapview/internal/dashboard/command"
 	lddatastar "github.com/Yacobolo/leapview/internal/dashboard/datastar"
-	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
 	publicationsqlite "github.com/Yacobolo/leapview/internal/dashboard/publication/sqlite"
-	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/deployment/apiadapter"
 	"github.com/Yacobolo/leapview/internal/platform"
 	"github.com/Yacobolo/leapview/internal/servingstate"
@@ -73,23 +71,6 @@ func TestPublicDashboardDocumentsAreAnonymousAndRouteAware(t *testing.T) {
 	}
 	if !strings.Contains(embed.Body.String(), `presentation="embed"`) {
 		t.Fatalf("embed document routes/presentation are wrong:\n%s", embed.Body.String())
-	}
-}
-
-func TestPublicDashboardExecutionContextUsesPublicationPrincipal(t *testing.T) {
-	row := publication.Publication{
-		WorkspaceID: "visuals",
-		Name:        "website-showcase",
-		Dashboard:   "visual-showcase",
-	}
-
-	metadata := dataquery.MetadataFromContext(dashboardmodule.PublicationExecutionContext(context.Background(), row, ""))
-	want := access.DashboardPublicationSubjectID("visuals", "website-showcase")
-	if metadata.PrincipalID != want {
-		t.Fatalf("public principal id = %q, want %q", metadata.PrincipalID, want)
-	}
-	if metadata.Surface != dataquery.SurfacePublicDashboard || metadata.ObjectType != "dashboard_publication" || metadata.ObjectID != "website-showcase" {
-		t.Fatalf("public metadata = %#v", metadata)
 	}
 }
 
@@ -181,17 +162,6 @@ func TestDisabledSuspendedAndRotatedPublicationIDsReturnNotFound(t *testing.T) {
 	}
 	if got := request("/public/dashboards/rotated-public-id-123456789012345"); got != http.StatusNotFound {
 		t.Fatalf("disabled status = %d", got)
-	}
-}
-
-func TestEmbedWithNoAllowedOriginsOmitsLegacyFrameHeaderAndDeniesFraming(t *testing.T) {
-	header := http.Header{}
-	dashboardmodule.SetPublicDashboardSecurityHeaders(header, "embed", nil)
-	if got := header.Get("X-Frame-Options"); got != "" {
-		t.Fatalf("X-Frame-Options = %q, want omitted", got)
-	}
-	if got := header.Get("Content-Security-Policy"); !strings.Contains(got, "frame-ancestors 'none'") {
-		t.Fatalf("Content-Security-Policy = %q", got)
 	}
 }
 

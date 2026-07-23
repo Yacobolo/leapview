@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -100,6 +101,39 @@ func TestCapacityProtectedTusRejectsChunkWithoutReserve(t *testing.T) {
 	handler.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusInsufficientStorage || called {
 		t.Fatalf("status = %d, called = %v", recorder.Code, called)
+	}
+}
+
+func TestTusMethodsAreClosedByDefault(t *testing.T) {
+	handler := TusProtocolHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodPost, http.MethodConnect, http.MethodTrace} {
+		t.Run(method, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, httptest.NewRequest(method, "/upload-protocols/tus/tus_abc", nil))
+			if recorder.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("status = %d, want %d", recorder.Code, http.StatusMethodNotAllowed)
+			}
+		})
+	}
+}
+
+func TestTusMethodsForwardsResumableOperations(t *testing.T) {
+	var methods []string
+	handler := TusProtocolHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		methods = append(methods, r.Method)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	for _, method := range []string{http.MethodOptions, http.MethodHead, http.MethodPatch, http.MethodDelete} {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(method, "/upload-protocols/tus/tus_abc", nil))
+		if recorder.Code != http.StatusNoContent {
+			t.Fatalf("%s status = %d, want %d", method, recorder.Code, http.StatusNoContent)
+		}
+	}
+	if want := []string{http.MethodOptions, http.MethodHead, http.MethodPatch, http.MethodDelete}; !reflect.DeepEqual(methods, want) {
+		t.Fatalf("forwarded methods = %v, want %v", methods, want)
 	}
 }
 

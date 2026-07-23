@@ -46,13 +46,10 @@ func assemble(ctx context.Context, cfg config.Config) (http.Handler, Lifecycle, 
 	}
 	handler := runtime.Routes()
 	lifecycle := newRuntimeLifecycle(runtime.workers, runtime.analyticsModule, runtime.workloads)
-	return handler, lifecycle, func(context.Context) error {
-		cleanup()
-		return nil
-	}, nil
+	return handler, lifecycle, cleanup, nil
 }
 
-func buildRuntime(ctx context.Context, cfg config.Config, production bool, environment servingstatemodule.Environment) (*applicationAssembly, func(), error) {
+func buildRuntime(ctx context.Context, cfg config.Config, production bool, environment servingstatemodule.Environment) (*applicationAssembly, cleanupFunc, error) {
 	dashboardAssets, err := dashboardmodule.BuildAssets(ctx, cfg.MapAssetDir)
 	if err != nil {
 		return nil, nil, err
@@ -82,9 +79,9 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	}
 	cleanup := &cleanupStack{}
 	cleanup.Push("sqlite", func(context.Context) error { return store.Close() })
-	fail := func(err error) (*applicationAssembly, func(), error) {
-		_ = cleanup.Close(context.WithoutCancel(ctx))
-		return nil, nil, err
+	fail := func(err error) (*applicationAssembly, cleanupFunc, error) {
+		cleanupErr := cleanup.Close(context.WithoutCancel(ctx))
+		return nil, nil, errors.Join(err, cleanupErr)
 	}
 	if err := store.BindInstanceEnvironment(ctx, string(environment)); err != nil {
 		return fail(err)
@@ -301,7 +298,7 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	if err != nil {
 		return fail(err)
 	}
-	return server, func() { _ = cleanup.Close(context.Background()) }, nil
+	return server, cleanup.Close, nil
 }
 
 func firstConfigured(values ...string) string {

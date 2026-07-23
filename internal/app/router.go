@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-	"time"
 
 	accessmodule "github.com/Yacobolo/leapview/internal/access/module"
 	adminmodule "github.com/Yacobolo/leapview/internal/admin/module"
@@ -97,7 +96,7 @@ func (s *applicationAssembly) Routes() http.Handler {
 			r.Use(s.rateLimits.API())
 			r.Use(s.publicProtocolMiddleware)
 			if s.managedDataTus != nil {
-				tus := s.accessModule.ProtectIngestData(managedDataTusHandler(s.managedDataTus))
+				tus := s.accessModule.ProtectIngestData(s.managedDataTus)
 				r.Handle("/upload-protocols/tus", tus)
 				r.Handle("/upload-protocols/tus/*", tus)
 			}
@@ -165,24 +164,6 @@ func redirectLegacyChat(w http.ResponseWriter, r *http.Request) {
 		target += "?" + r.URL.RawQuery
 	}
 	http.Redirect(w, r, target, http.StatusPermanentRedirect)
-}
-
-func managedDataTusHandler(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodPatch:
-			// Authentication and headers have already completed. The upload
-			// session TTL bounds abandoned bodies, while large chunks must not
-			// inherit the general page/API read deadline.
-			_ = http.NewResponseController(w).SetReadDeadline(time.Time{})
-			next.ServeHTTP(w, r)
-		case http.MethodOptions, http.MethodHead, http.MethodDelete:
-			next.ServeHTTP(w, r)
-		default:
-			w.Header().Set("Allow", "OPTIONS, HEAD, PATCH, DELETE")
-			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		}
-	})
 }
 
 func (s *applicationAssembly) protectGlobalAgent(privilege accessmodule.Privilege, next http.Handler) http.Handler {
