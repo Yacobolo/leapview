@@ -10,7 +10,7 @@ import (
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 )
 
-func TestGlobalAPIGenDefinitionsRequireWorkspaceForWorkspaceRoutes(t *testing.T) {
+func TestAPIGenDefinitionsRequireAndUseExplicitWorkspace(t *testing.T) {
 	var authorizedScope Scope
 	var dispatchedPath string
 	provider := APIGenProvider{
@@ -29,7 +29,7 @@ func TestGlobalAPIGenDefinitionsRequireWorkspaceForWorkspaceRoutes(t *testing.T)
 	}
 
 	var definition agentcore.ToolDefinition
-	for _, candidate := range provider.Definitions(Scope{PrincipalID: "principal-1"}) {
+	for _, candidate := range provider.Definitions(Scope{WorkspaceID: "embedded", PrincipalID: "principal-1"}) {
 		if candidate.Name == "query_semantic_model" {
 			definition = candidate
 			break
@@ -46,7 +46,7 @@ func TestGlobalAPIGenDefinitionsRequireWorkspaceForWorkspaceRoutes(t *testing.T)
 		t.Fatalf("decode input schema: %v", err)
 	}
 	if _, ok := schema.Properties["workspace"]; !ok || !containsString(schema.Required, "workspace") {
-		t.Fatalf("global input schema = %s, want required workspace", definition.InputSchema)
+		t.Fatalf("input schema = %s, want required workspace", definition.InputSchema)
 	}
 
 	result, err := definition.Handler.Run(context.Background(), agentcore.ToolCall{ID: "call-1", Arguments: json.RawMessage(`{"workspace":"sales","model":"orders"}`)})
@@ -125,8 +125,15 @@ func TestCuratedQueryArgumentsAcceptCatalogReferenceIDs(t *testing.T) {
 	}
 }
 
-func TestGlobalVisualDefinitionRequiresWorkspace(t *testing.T) {
-	definition := (VisualProvider{}).Definitions(Scope{PrincipalID: "principal-1"})[0]
+func TestVisualDefinitionRequiresAndUsesExplicitWorkspace(t *testing.T) {
+	var authorizedScope Scope
+	provider := VisualProvider{
+		Authorize: func(_ context.Context, scope Scope, _ VisualAuthorizationRequest) (agentcore.ToolResult, bool) {
+			authorizedScope = scope
+			return apigenAgentToolError("authorization_failed", "stop after scope capture"), false
+		},
+	}
+	definition := provider.Definitions(Scope{WorkspaceID: "embedded", PrincipalID: "principal-1"})[0]
 	var schema struct {
 		Properties map[string]any `json:"properties"`
 		Required   []string       `json:"required"`
@@ -135,7 +142,17 @@ func TestGlobalVisualDefinitionRequiresWorkspace(t *testing.T) {
 		t.Fatalf("decode input schema: %v", err)
 	}
 	if _, ok := schema.Properties["workspace"]; !ok || !containsString(schema.Required, "workspace") {
-		t.Fatalf("global visual schema = %s, want required workspace", definition.InputSchema)
+		t.Fatalf("visual schema = %s, want required workspace", definition.InputSchema)
+	}
+	_, err := definition.Handler.Run(context.Background(), agentcore.ToolCall{
+		ID:        "call-visual",
+		Arguments: json.RawMessage(`{"workspace":"sales","type":"bar","model":"orders","dataset":"orders"}`),
+	})
+	if err != nil {
+		t.Fatalf("run tool: %v", err)
+	}
+	if authorizedScope.WorkspaceID != "sales" {
+		t.Fatalf("authorized workspace = %q, want sales", authorizedScope.WorkspaceID)
 	}
 }
 

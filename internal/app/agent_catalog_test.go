@@ -166,6 +166,11 @@ func TestAgentCatalogListCursorBindsScopeRequestAndSnapshot(t *testing.T) {
 			t.Fatalf("snapshot error = %v", err)
 		}
 	}
+	metadataChanged := append([]agenttools.CatalogItem(nil), items...)
+	metadataChanged[1].Description = "Changed after the first page"
+	if _, err := decodeCatalogListCursor(cursor, scope, request, catalogItemsSnapshot(metadataChanged)); err == nil {
+		t.Fatal("cursor accepted changed item metadata")
+	}
 }
 
 func TestAgentCatalogCredentialRestrictionDoesNotLeakOtherWorkspaces(t *testing.T) {
@@ -197,6 +202,60 @@ func TestAgentCatalogCredentialRestrictionDoesNotLeakOtherWorkspaces(t *testing.
 		if !errors.As(err, &catalogErr) || catalogErr.Code != "catalog_not_found" {
 			t.Fatalf("%s ref error = %v, want catalog_not_found", name, err)
 		}
+	}
+}
+
+func TestAgentCatalogSemanticModelUsageFiltersUnauthorizedDashboards(t *testing.T) {
+	server := catalogTestServer(t)
+	ctx := context.Background()
+	repository := testAccessRepository(server.store)
+	principal, err := repository.UpsertPrincipal(ctx, access.PrincipalInput{
+		ID: "catalog-model-only", Email: "catalog-model-only@example.com", DisplayName: "Catalog Model Only",
+	})
+	if err != nil {
+		t.Fatalf("upsert principal: %v", err)
+	}
+	modelObject := access.ItemObjectWithParent(
+		access.SecurableSemanticModel,
+		"test-workspace",
+		"test",
+		access.WorkspaceObject("test-workspace"),
+	)
+	if _, err := repository.CreateGrant(ctx, access.GrantInput{
+		Object: modelObject, SubjectType: access.SubjectPrincipal, SubjectID: principal.ID, Privilege: access.PrivilegeViewItem,
+	}); err != nil {
+		t.Fatalf("grant semantic model view: %v", err)
+	}
+
+	result, err := (agentCatalogService{server: server}).Get(ctx, agenttools.Scope{PrincipalID: principal.ID}, agenttools.CatalogGetRequest{
+		Ref: agenttools.CatalogRef{WorkspaceID: "test-workspace", Type: agenttools.CatalogTypeSemanticModel, ID: "test"},
+	})
+	if err != nil {
+		t.Fatalf("get semantic model: %v", err)
+	}
+	if got := result.Details["dashboardCount"]; got != 0 {
+		t.Fatalf("dashboardCount = %#v, want 0 for unauthorized dashboard", got)
+	}
+	if got, ok := result.Details["dashboardUsage"].([]agenttools.CatalogRef); !ok || len(got) != 0 {
+		t.Fatalf("dashboardUsage = %#v, want no unauthorized refs", result.Details["dashboardUsage"])
+	}
+}
+
+func TestAgentCatalogWorkspaceLookupPropagatesRepositoryFailures(t *testing.T) {
+	sentinel := errors.New("workspace repository unavailable")
+	server := NewWithOptions(fakeMetrics{}, Options{
+		WorkspaceRepo:      activeMetadataWorkspaceRepo{err: sentinel},
+		DefaultWorkspaceID: "test",
+	})
+	_, err := (agentCatalogService{server: server}).Get(
+		context.Background(),
+		agenttools.Scope{PrincipalID: "dev", DevAuthBypass: true},
+		agenttools.CatalogGetRequest{
+			Ref: agenttools.CatalogRef{WorkspaceID: "test", Type: agenttools.CatalogTypeWorkspace, ID: "test"},
+		},
+	)
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("workspace lookup error = %v, want %v", err, sentinel)
 	}
 }
 

@@ -100,3 +100,22 @@ func TestReferenceCatalogComesFromCanonicalProviderDefinitions(t *testing.T) {
 		}
 	}
 }
+
+func TestCanonicalProviderSchemasDoNotVaryByWorkspaceContext(t *testing.T) {
+	global := (ProviderSet{}).Definitions(Scope{})
+	workspace := (ProviderSet{}).Definitions(Scope{WorkspaceID: "sales"})
+	if len(global) != len(workspace) {
+		t.Fatalf("global definitions = %d, workspace definitions = %d", len(global), len(workspace))
+	}
+	for index := range global {
+		if global[index].Name != workspace[index].Name {
+			t.Fatalf("definition[%d] names = %q and %q", index, global[index].Name, workspace[index].Name)
+		}
+		if string(global[index].InputSchema) != string(workspace[index].InputSchema) {
+			t.Fatalf("tool %q input schema varies by workspace context", global[index].Name)
+		}
+		if string(global[index].OutputSchema) != string(workspace[index].OutputSchema) {
+			t.Fatalf("tool %q output schema varies by workspace context", global[index].Name)
+		}
+	}
+}

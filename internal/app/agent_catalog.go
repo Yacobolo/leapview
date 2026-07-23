@@ -163,7 +163,7 @@ func (c agentCatalogService) get(ctx context.Context, scope agenttools.Scope, re
 	if err != nil {
 		return agenttools.CatalogGetResult{}, err
 	}
-	details, err := c.details(request.Ref, location)
+	details, err := c.details(ctx, scope, request.Ref, location)
 	if err != nil {
 		return agenttools.CatalogGetResult{}, err
 	}
@@ -256,7 +256,10 @@ func (c agentCatalogService) workspaceItem(ctx context.Context, scope agenttools
 			summary, err = repository.ByID(ctx, workspace.WorkspaceID(workspaceID))
 		}
 		if err != nil {
-			return agenttools.CatalogItem{}, workspace.Summary{}, false, nil
+			if errors.Is(err, workspace.ErrNotFound) {
+				return agenttools.CatalogItem{}, workspace.Summary{}, false, nil
+			}
+			return agenttools.CatalogItem{}, workspace.Summary{}, false, err
 		}
 		return catalogWorkspaceItem(summary), summary, true, nil
 	}
@@ -410,7 +413,7 @@ func (c agentCatalogService) childReferences(parent agenttools.CatalogRef, reque
 	return references, nil
 }
 
-func (c agentCatalogService) details(ref agenttools.CatalogRef, location agenttools.CatalogLocation) (map[string]any, error) {
+func (c agentCatalogService) details(ctx context.Context, scope agenttools.Scope, ref agenttools.CatalogRef, location agenttools.CatalogLocation) (map[string]any, error) {
 	metrics, ok := c.server.metricsForWorkspace(ref.WorkspaceID)
 	if !ok || metrics == nil {
 		return nil, catalogNotFound()
@@ -449,7 +452,7 @@ func (c agentCatalogService) details(ref agenttools.CatalogRef, location agentto
 	case agenttools.CatalogTypeFilter:
 		return catalogFilterDetails(metrics, ref, location)
 	case agenttools.CatalogTypeSemanticModel:
-		return catalogSemanticModelDetails(metrics, ref)
+		return c.semanticModelDetails(ctx, scope, metrics, ref)
 	case agenttools.CatalogTypeSemanticTable:
 		return catalogSemanticTableDetails(metrics, ref)
 	case agenttools.CatalogTypeField:
@@ -648,11 +651,9 @@ func catalogScopeDigest(scope agenttools.Scope) string {
 }
 
 func catalogItemsSnapshot(items []agenttools.CatalogItem) string {
-	hash := sha256.New()
-	for _, item := range items {
-		_, _ = fmt.Fprintf(hash, "%s\x00%s\x00%s\x00%s\x00", item.Ref.WorkspaceID, item.Ref.Type, item.Ref.ID, item.Name)
-	}
-	return hex.EncodeToString(hash.Sum(nil))
+	encoded, _ := json.Marshal(items)
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:])
 }
 
 func catalogRefsEqual(left, right *agenttools.CatalogRef) bool {
@@ -789,7 +790,7 @@ func catalogFilterDetails(metrics QueryMetrics, ref agenttools.CatalogRef, locat
 	}, nil
 }
 
-func catalogSemanticModelDetails(metrics QueryMetrics, ref agenttools.CatalogRef) (map[string]any, error) {
+func (c agentCatalogService) semanticModelDetails(ctx context.Context, scope agenttools.Scope, metrics QueryMetrics, ref agenttools.CatalogRef) (map[string]any, error) {
 	model, ok := metrics.SemanticModel(ref.ID)
 	if !ok || model == nil {
 		return nil, catalogNotFound()
@@ -798,9 +799,21 @@ func catalogSemanticModelDetails(metrics QueryMetrics, ref agenttools.CatalogRef
 	if !ok {
 		return nil, catalogNotFound()
 	}
-	usage := make([]agenttools.CatalogRef, 0, len(projection.Dashboards))
+	references := make([]productsearch.Reference, 0, len(projection.Dashboards))
 	for _, dashboardUsage := range projection.Dashboards {
-		usage = append(usage, catalogRefValue(ref.WorkspaceID, agenttools.CatalogTypeDashboard, dashboardUsage.ID))
+		references = append(references, productsearch.Reference{
+			WorkspaceID: ref.WorkspaceID,
+			Type:        productsearch.TypeDashboard,
+			ID:          dashboardUsage.ID,
+		})
+	}
+	authorized, err := c.server.search.Resolve(ctx, catalogSearchSubject(scope), c.server.defaultEnvironment, references)
+	if err != nil {
+		return nil, err
+	}
+	usage := make([]agenttools.CatalogRef, 0, len(authorized))
+	for _, dashboardUsage := range authorized {
+		usage = append(usage, catalogRefValue(ref.WorkspaceID, agenttools.CatalogTypeDashboard, dashboardUsage.Reference.ID))
 	}
 	fieldCount := 0
 	if projection.Counts != nil {
@@ -808,7 +821,7 @@ func catalogSemanticModelDetails(metrics QueryMetrics, ref agenttools.CatalogRef
 	}
 	return map[string]any{
 		"type": string(ref.Type), "semanticTableCount": len(projection.Tables), "fieldCount": fieldCount,
-		"measureCount": len(model.Measures) + len(model.Metrics), "dashboardCount": len(projection.Dashboards), "dashboardUsage": usage,
+		"measureCount": len(model.Measures) + len(model.Metrics), "dashboardCount": len(usage), "dashboardUsage": usage,
 	}, nil
 }
 

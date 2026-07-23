@@ -39,7 +39,7 @@ func (p APIGenProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
 	operations := APIGenOperations()
 	definitions := make([]agentcore.ToolDefinition, 0, len(operations))
 	for _, operation := range operations {
-		operation := operationForScope(operation, scope)
+		operation := operationWithExplicitWorkspace(operation)
 		definitions = append(definitions, agentcore.ToolDefinition{
 			Name:         operation.Tool.Name,
 			Description:  operation.Tool.Description,
@@ -82,9 +82,7 @@ func (p APIGenProvider) Run(ctx context.Context, scope Scope, operation APIGenOp
 	}
 	request = withAPIGenRouteContext(request, operation.Tool.Path)
 	runScope := scope
-	if runScope.WorkspaceID == "" {
-		runScope.WorkspaceID = strings.TrimSpace(chi.URLParam(request, "workspace"))
-	}
+	runScope.WorkspaceID = strings.TrimSpace(chi.URLParam(request, "workspace"))
 	if errResult, ok := p.Authorize(ctx, runScope, operation.Contract.OperationID); !ok {
 		return errResult
 	}
@@ -187,10 +185,7 @@ func stripCatalogRefString(value, parentID string) string {
 	return normalized
 }
 
-func operationForScope(operation APIGenOperation, scope Scope) APIGenOperation {
-	if strings.TrimSpace(scope.WorkspaceID) != "" {
-		return operation
-	}
+func operationWithExplicitWorkspace(operation APIGenOperation) APIGenOperation {
 	tool := agenttool.CloneContract(operation.Tool)
 	promoted := false
 	for index := range tool.Bindings {

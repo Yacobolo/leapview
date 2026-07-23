@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -97,8 +98,8 @@ func TestAPIGenAgentToolsExposeOnlyGovernedQueryOperations(t *testing.T) {
 	if err := json.Unmarshal(names["query_semantic_model"].InputSchema, &schema); err != nil {
 		t.Fatalf("decode query_semantic_model schema: %v", err)
 	}
-	if _, ok := schema.Properties["workspace"]; ok {
-		t.Fatalf("workspace must be hidden from workspace-scoped model input: %s", names["query_semantic_model"].InputSchema)
+	if _, ok := schema.Properties["workspace"]; !ok || !slices.Contains(schema.Required, "workspace") {
+		t.Fatalf("workspace must remain explicit in every model input: %s", names["query_semantic_model"].InputSchema)
 	}
 	for _, want := range []string{"model", "dimensions", "measures", "limit", "pageToken"} {
 		if _, ok := schema.Properties[want]; !ok {
@@ -136,6 +137,7 @@ func TestAgentVisualToolAcceptsCatalogReferenceIDs(t *testing.T) {
 			ID:   "catalog-ref-visual",
 			Name: agenttools.QueryVisualToolName,
 			Arguments: json.RawMessage(`{
+				"workspace":"test",
 				"type":"bar",
 				"model":"test",
 				"dataset":"test.orders",
@@ -166,6 +168,7 @@ func TestAgentAPIGenQueryAuditSurface(t *testing.T) {
 		ID:   "call_agent_query",
 		Name: "query_semantic_model",
 		Arguments: json.RawMessage(`{
+			"workspace":"test",
 			"model":"test",
 			"dimensions":[{"field":"orders.status","alias":"status"}],
 			"measures":[{"field":"order_count"}],
@@ -195,6 +198,7 @@ func TestAgentVisualToolReturnsChartPatchFromSemanticData(t *testing.T) {
 		ID:   "call_1",
 		Name: "query_visual",
 		Arguments: json.RawMessage(`{
+			"workspace":"test",
 			"model":"test",
 			"dataset":"orders",
 			"title":"Orders by status",
@@ -284,6 +288,7 @@ func TestAgentVisualToolAuthorizesAgainstRequestedDataset(t *testing.T) {
 		ID:   "call_dataset_auth",
 		Name: "query_visual",
 		Arguments: json.RawMessage(`{
+			"workspace":"test",
 			"type":"bar",
 			"model":"test",
 			"dataset":"orders",
@@ -309,6 +314,7 @@ func TestAgentVisualToolReturnsTablePatchFromSemanticData(t *testing.T) {
 		ID:   "call_1",
 		Name: "query_visual",
 		Arguments: json.RawMessage(`{
+			"workspace":"test",
 			"type":"table",
 			"model":"test",
 			"dataset":"orders",
@@ -377,6 +383,7 @@ func TestAgentVisualToolReturnsAggregateTableFromRowsAndMeasures(t *testing.T) {
 		ID:   "call_1",
 		Name: "query_visual",
 		Arguments: json.RawMessage(`{
+			"workspace":"test",
 			"type":"table",
 			"model":"test",
 			"dataset":"orders",
@@ -420,6 +427,7 @@ func TestAgentVisualToolUsesToolCallScopedArtifactIDs(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
 	tool := agentVisualToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true})[0]
 	args := json.RawMessage(`{
+		"workspace":"test",
 		"model":"test",
 		"dataset":"orders",
 		"title":"Orders by status",
@@ -484,8 +492,8 @@ func TestAPIGenAgentToolsExposeTypeSpecArgumentNamesAndBodyFields(t *testing.T) 
 		}
 	}
 	for toolName, wantProps := range map[string][]string{
-		"query_dashboard_visual": {"dashboard", "page", "visual", "filters", "limit", "pageToken"},
-		"query_semantic_model":   {"model", "dimensions", "measures", "filters", "sort", "limit", "pageToken"},
+		"query_dashboard_visual": {"workspace", "dashboard", "page", "visual", "filters", "limit", "pageToken"},
+		"query_semantic_model":   {"workspace", "model", "dimensions", "measures", "filters", "sort", "limit", "pageToken"},
 	} {
 		var schema struct {
 			Properties map[string]any `json:"properties"`
@@ -546,7 +554,7 @@ func TestAPIGenAgentToolDispatchesTabularVisualQuery(t *testing.T) {
 	result, err := queryVisual.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:        "call_1",
 		Name:      "query_dashboard_visual",
-		Arguments: json.RawMessage(`{"dashboard":"executive-sales","page":"overview","visual":"order_rows","limit":500}`),
+		Arguments: json.RawMessage(`{"workspace":"test","dashboard":"executive-sales","page":"overview","visual":"order_rows","limit":500}`),
 	})
 	if err != nil {
 		t.Fatalf("run tool: %v", err)
@@ -598,7 +606,7 @@ func TestAPIGenAgentToolFetchesSingleDashboardVisualData(t *testing.T) {
 	result, err := catalog.Execute(context.Background(), agentcore.ToolCall{
 		ID:        "call_1",
 		Name:      "query_dashboard_visual",
-		Arguments: json.RawMessage(`{"dashboard":"executive-sales","page":"overview","visual":"orders"}`),
+		Arguments: json.RawMessage(`{"workspace":"test","dashboard":"executive-sales","page":"overview","visual":"orders"}`),
 	})
 	if err != nil {
 		t.Fatalf("run tool: %v", err)
@@ -637,7 +645,7 @@ func TestAPIGenAgentSemanticQueryToolInjectsBodyDefaultLimit(t *testing.T) {
 	result, err := querySemantic.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:        "call_1",
 		Name:      "query_semantic_model",
-		Arguments: json.RawMessage(`{"model":"test","dimensions":[{"field":"orders.status","alias":"status"}],"measures":[{"field":"order_count"}],"sort":[{"field":"status","direction":"asc"}]}`),
+		Arguments: json.RawMessage(`{"workspace":"test","model":"test","dimensions":[{"field":"orders.status","alias":"status"}],"measures":[{"field":"order_count"}],"sort":[{"field":"status","direction":"asc"}]}`),
 	})
 	if err != nil {
 		t.Fatalf("run tool: %v", err)
@@ -696,7 +704,7 @@ func TestAPIGenAgentToolEnforcesCredentialPrivilegeAllowlistAndWorkspace(t *test
 		tools := agentAPIGenToolsForTest(server, scope)
 		for _, tool := range tools {
 			if tool.Name == "query_semantic_model" {
-				result, err := tool.Handler.Run(ctx, agentcore.ToolCall{ID: "call_1", Name: "query_semantic_model", Arguments: json.RawMessage(`{"model":"test","measures":[{"field":"order_count"}]}`)})
+				result, err := tool.Handler.Run(ctx, agentcore.ToolCall{ID: "call_1", Name: "query_semantic_model", Arguments: json.RawMessage(`{"workspace":"test","model":"test","measures":[{"field":"order_count"}]}`)})
 				if err != nil {
 					t.Fatalf("run query_semantic_model: %v", err)
 				}
