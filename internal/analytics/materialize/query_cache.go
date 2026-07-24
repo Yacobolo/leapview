@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 
 	"github.com/Yacobolo/leapview/internal/analytics/arrowresult"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
-	"github.com/Yacobolo/leapview/internal/dataquery"
 )
 
 var localCacheID atomic.Uint64

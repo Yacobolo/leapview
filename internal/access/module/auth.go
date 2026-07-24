@@ -20,8 +20,8 @@ import (
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/access/httpauth"
 	oidcauth "github.com/Yacobolo/leapview/internal/access/oidc"
-	"github.com/Yacobolo/leapview/internal/api"
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
+	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	api "github.com/Yacobolo/leapview/internal/platform/http/model"
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
 )

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/Yacobolo/leapview/internal/configschema"
+	"github.com/Yacobolo/leapview/internal/project/schema"
 )
 
 type ResourceError struct {

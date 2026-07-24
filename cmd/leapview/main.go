@@ -4,7 +4,7 @@ import (
 	"context"
 	"log"
 
-	"github.com/Yacobolo/leapview/internal/cli"
+	"github.com/Yacobolo/leapview/internal/app/cli"
 )
 
 func main() {

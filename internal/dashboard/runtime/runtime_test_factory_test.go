@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	analyticsduckdb "github.com/Yacobolo/leapview/internal/analytics/duckdb"
 	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/workload"
 )
 

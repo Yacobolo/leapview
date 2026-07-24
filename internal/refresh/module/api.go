@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net/http"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
-	apitransport "github.com/Yacobolo/leapview/internal/api/transport"
+	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	jobhttp "github.com/Yacobolo/leapview/internal/platform/jobs/http"
 	materializehttp "github.com/Yacobolo/leapview/internal/refresh/http"

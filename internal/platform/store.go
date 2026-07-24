@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/configspec"
+	"github.com/Yacobolo/leapview/internal/platform/config/spec"
 	"github.com/Yacobolo/leapview/internal/platform/db"
-	"github.com/Yacobolo/leapview/internal/securefs"
+	"github.com/Yacobolo/leapview/internal/platform/filesystem"
 	"github.com/pressly/goose/v3"
 	_ "modernc.org/sqlite"
 )

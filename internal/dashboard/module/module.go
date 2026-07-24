@@ -12,13 +12,13 @@ import (
 	dashboardhttp "github.com/Yacobolo/leapview/internal/dashboard/http"
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
 	publicationsqlite "github.com/Yacobolo/leapview/internal/dashboard/publication/sqlite"
+	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
 	semanticapi "github.com/Yacobolo/leapview/internal/dashboard/semanticapi"
 	dashboardstream "github.com/Yacobolo/leapview/internal/dashboard/stream"
 	dashboardui "github.com/Yacobolo/leapview/internal/dashboard/ui"
-	"github.com/Yacobolo/leapview/internal/queryruntime"
-	"github.com/Yacobolo/leapview/internal/ui"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	"github.com/Yacobolo/leapview/internal/workload"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 
@@ -70,6 +70,7 @@ type HTTPConfig struct {
 	Environment         func(*http.Request) string
 	DataRefreshedAt     func(context.Context, string, string, string) string
 	AgentBootstrap      func(*http.Request, string) ui.ChatViewState
+	Presentation        dashboardui.Presentation
 }
 
 type SemanticConfig struct {
@@ -84,6 +85,8 @@ type SignalBroker interface {
 	PublishEnvelope(string, pagestream.Envelope)
 	TraceStore() *pagestream.TraceStore
 }
+
+type Presentation = dashboardui.Presentation
 
 type DashboardTelemetry interface {
 	DashboardRefreshStarted(string)
@@ -145,7 +148,8 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		},
 		CurrentPrincipalID: config.HTTP.CurrentPrincipalID, AuthorizeListObject: config.HTTP.AuthorizeListObject,
 		CSRFToken: config.HTTP.CSRFToken, ChromeDecorators: chromeDecorators,
-		Environment: config.HTTP.Environment, DataRefreshedAt: config.HTTP.DataRefreshedAt,
+		Presentation: config.HTTP.Presentation,
+		Environment:  config.HTTP.Environment, DataRefreshedAt: config.HTTP.DataRefreshedAt,
 		AgentBootstrap: config.HTTP.AgentBootstrap,
 	}
 	module := &Module{

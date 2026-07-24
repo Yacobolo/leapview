@@ -251,7 +251,7 @@ The contract lives under `api/visualization/` and is referenced by `api/signals`
 
 Generated outputs are:
 
-- `internal/visualization/ir/models.gen.go` for canonical Go data models;
+- `internal/dashboard/visualization/ir/models.gen.go` for canonical Go data models;
 - `web/generated/visualization/index.ts` for canonical browser types;
 - `api/gen/visualization-ir.json` for generator inspection;
 - a JSON Schema or equivalent structural contract for fixtures and external tooling;
@@ -266,11 +266,11 @@ The existing `api/signals` target remains the authority for pagestream signal ro
 Target server packages:
 
 ```text
-internal/visualization/ir/          generated models, canonicalization, versions
-internal/visualization/definition/  immutable compiled definition and query-result contracts
+internal/dashboard/visualization/ir/          generated models, canonicalization, versions
+internal/dashboard/visualization/definition/  immutable compiled definition and query-result contracts
 internal/workspace/compiler/        semantic model and dashboard -> immutable spec
-internal/visualization/runtime/     query result -> validated inline or windowed state
-internal/visualization/format/      format contract and Go implementation
+internal/dashboard/visualization/runtime/     query result -> validated inline or windowed state
+internal/dashboard/visualization/format/      format contract and Go implementation
 internal/dashboard/command/         datum and spatial selection -> semantic commands
 ```
 

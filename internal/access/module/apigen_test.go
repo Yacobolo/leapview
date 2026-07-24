@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
+	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 )
 
 func testAPIGenAuthorizer(t *testing.T) *APIGenAuthorizer {

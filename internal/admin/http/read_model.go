@@ -7,11 +7,11 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/admin/storage"
+	"github.com/Yacobolo/leapview/internal/agent/api"
 	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
-	"github.com/Yacobolo/leapview/internal/api"
-	"github.com/Yacobolo/leapview/internal/ui"
-	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
 	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
+	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 )
 
 type Principal struct {

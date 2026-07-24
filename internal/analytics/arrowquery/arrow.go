@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/Yacobolo/leapview/internal/analytics/arrowresult"
-	"github.com/Yacobolo/leapview/internal/dataquery"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	"github.com/apache/arrow-go/v18/arrow"
 	arrowutil "github.com/apache/arrow-go/v18/arrow/util"
 )

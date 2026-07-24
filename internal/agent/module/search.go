@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/agent"
-	productsearch "github.com/Yacobolo/leapview/internal/search"
-	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
+	productsearch "github.com/Yacobolo/leapview/internal/workspace/search"
+	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 )
 
 var referenceTypes = []productsearch.Type{

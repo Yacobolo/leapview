@@ -3,7 +3,7 @@ package module
 import (
 	"net/http"
 
-	"github.com/Yacobolo/leapview/internal/ui"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	"github.com/gorilla/csrf"
 )
 

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 )

@@ -3,9 +3,9 @@ package module
 import (
 	"context"
 
-	"github.com/Yacobolo/leapview/internal/ui"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	workspacehttp "github.com/Yacobolo/leapview/internal/workspace/http"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
 )
 
 func (m *Module) AssetCatalogReader() (workspacehttp.AssetCatalogReader, error) {

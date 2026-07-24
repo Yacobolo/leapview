@@ -9,10 +9,11 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/api"
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
-	productsearch "github.com/Yacobolo/leapview/internal/search"
-	searchsqlite "github.com/Yacobolo/leapview/internal/search/sqlite"
+	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	"github.com/Yacobolo/leapview/internal/platform/http/cursorsigning"
+	api "github.com/Yacobolo/leapview/internal/platform/http/model"
+	productsearch "github.com/Yacobolo/leapview/internal/workspace/search"
+	searchsqlite "github.com/Yacobolo/leapview/internal/workspace/search/sqlite"
 )
 
 type searchService interface {
@@ -27,7 +28,17 @@ func buildSearch(database *sql.DB, authorize func(context.Context, string, acces
 	if database == nil {
 		return nil
 	}
-	return productsearch.NewService(searchsqlite.New(database), searchAuthorizer{authorize: authorize})
+	return productsearch.NewService(searchsqlite.New(database), searchAuthorizer{authorize: authorize}, searchCursorSigner{})
+}
+
+type searchCursorSigner struct{}
+
+func (searchCursorSigner) Sign(prefix string, payload []byte) string {
+	return cursorsigning.Sign(prefix, payload)
+}
+
+func (searchCursorSigner) Verify(prefix, token string) ([]byte, error) {
+	return cursorsigning.Verify(prefix, token)
 }
 
 func (a searchAuthorizer) CanView(ctx context.Context, subject productsearch.Subject, object access.ObjectRef) (bool, error) {

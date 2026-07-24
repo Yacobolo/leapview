@@ -16,7 +16,8 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/api"
+	accessapi "github.com/Yacobolo/leapview/internal/access/api"
+	httpmodel "github.com/Yacobolo/leapview/internal/platform/http/model"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -857,9 +858,9 @@ func (h Handler) ListWorkspaceRoles(w stdhttp.ResponseWriter, r *stdhttp.Request
 		writeJSONError(w, err, stdhttp.StatusInternalServerError)
 		return
 	}
-	out := make([]api.RoleResponse, 0, len(roles))
+	out := make([]accessapi.RoleResponse, 0, len(roles))
 	for _, role := range roles {
-		out = append(out, api.RoleResponse{Name: role.Name, Privileges: privilegeStrings(role.Privileges)})
+		out = append(out, accessapi.RoleResponse{Name: role.Name, Privileges: privilegeStrings(role.Privileges)})
 	}
 	_ = writePagedJSON(w, r, out)
 }
@@ -2303,7 +2304,7 @@ func writeSecretJSON(w stdhttp.ResponseWriter, status int, value any) {
 }
 
 func writeJSONError(w stdhttp.ResponseWriter, err error, status int) {
-	writeJSON(w, status, api.ErrorResponse{
+	writeJSON(w, status, httpmodel.ErrorResponse{
 		Code:      status,
 		Message:   err.Error(),
 		Details:   map[string]any{},

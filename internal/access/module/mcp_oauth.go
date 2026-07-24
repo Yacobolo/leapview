@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/ui"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	"github.com/gorilla/csrf"
 )
 

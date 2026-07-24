@@ -9,12 +9,11 @@ import (
 	"time"
 
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/brand"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
-	"github.com/Yacobolo/leapview/internal/staticasset"
-	uiactions "github.com/Yacobolo/leapview/internal/ui/actions"
-	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
+	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
+	uiactions "github.com/Yacobolo/leapview/internal/platform/web/actions"
+	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
+	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 
 	"github.com/Yacobolo/leapview/internal/dashboard"
@@ -75,6 +74,11 @@ type PublicPageOptions struct {
 	Presentation string
 }
 
+type Presentation struct {
+	ProductName string
+	FaviconPath string
+}
+
 type ChromeDecorator func(*uisignals.ChromeSignal)
 
 func inspectorScript() g.Node {
@@ -91,12 +95,14 @@ func inspectorElement() g.Node {
 	return g.El("datastar-inspector", g.Attr("signals-url", "/__dev/pagestream/signals"))
 }
 
-func pageHead(extra ...g.Node) []g.Node {
+func pageHead(presentation Presentation, extra ...g.Node) []g.Node {
 	nodes := []g.Node{
-		h.Link(h.Rel("icon"), h.Href(staticAsset(brand.FaviconPath)), h.Type("image/svg+xml")),
 		h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
 		h.Script(h.Src(staticAsset("/static/theme.js"))),
 		h.Script(h.Type("module"), h.Src(staticAsset("/static/command.js"))),
+	}
+	if strings.TrimSpace(presentation.FaviconPath) != "" {
+		nodes = append([]g.Node{h.Link(h.Rel("icon"), h.Href(staticAsset(presentation.FaviconPath)), h.Type("image/svg+xml"))}, nodes...)
 	}
 	return append(nodes, extra...)
 }
@@ -109,6 +115,10 @@ func csrfMeta(token string) g.Node {
 }
 
 func Page(clientID, csrfToken string, catalog dashboard.Catalog, report dashboarddefinition.Definition, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, chromeDecorators ...ChromeDecorator) g.Node {
+	return PageWithPresentation(Presentation{ProductName: "Application", FaviconPath: "/static/favicon.svg"}, clientID, csrfToken, catalog, report, model, pages, activePage, initialFilters, chromeDecorators...)
+}
+
+func PageWithPresentation(presentation Presentation, clientID, csrfToken string, catalog dashboard.Catalog, report dashboarddefinition.Definition, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, chromeDecorators ...ChromeDecorator) g.Node {
 	if activePage.ID == "" {
 		activePage = defaultPage()
 	}
@@ -121,15 +131,19 @@ func Page(clientID, csrfToken string, catalog dashboard.Catalog, report dashboar
 	filtersUpdate := "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); " + visualReset
 	agentTurn := "$agent.composer.value = evt.detail.input; $agentContext.references = evt.detail.references; $agentContext.filters = $filters; $agentContext.generation = $status.generation; " + uiactions.Post("/chats/turns", "agent", "agentContext")
 	agentRestore := "$agent.activeConversationId = evt.detail.conversationId; " + uiactions.Get("/chats/restore", "agent")
+	productName := strings.TrimSpace(presentation.ProductName)
+	if productName == "" {
+		productName = "Application"
+	}
 	return pagestream.RenderPage(pagestream.PageSpec{
-		Title:             brand.Name,
+		Title:             productName,
 		DatastarScriptURL: datastarScriptURL(),
 		HTMLAttrs: []g.Node{
 			g.Attr("data-color-mode", "auto"),
 			g.Attr("data-light-theme", "light"),
 			g.Attr("data-dark-theme", "dark"),
 		},
-		Head: pageHead(
+		Head: pageHead(presentation,
 			csrfMeta(csrfToken),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/app-shell.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/dashboard-page.js"))),
@@ -208,7 +222,7 @@ func PublicPage(options PublicPageOptions, catalog dashboard.Catalog, report das
 		HTMLAttrs: []g.Node{
 			g.Attr("data-color-mode", "auto"), g.Attr("data-light-theme", "light"), g.Attr("data-dark-theme", "dark"),
 		},
-		Head: pageHead(
+		Head: pageHead(Presentation{},
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/dashboard-page.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/url-sync.js"))),
 		),

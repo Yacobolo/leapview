@@ -4,9 +4,9 @@ import (
 	"context"
 	nethttp "net/http"
 
-	"github.com/Yacobolo/leapview/internal/catalog"
-	"github.com/Yacobolo/leapview/internal/ui"
+	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
 	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
 )
 
 type Metrics interface {

@@ -11,16 +11,16 @@ import (
 	"time"
 
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard"
+	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/testutil/dashboardfixture"
-	"github.com/Yacobolo/leapview/internal/testutil/ssetest"
-	"github.com/Yacobolo/leapview/internal/ui"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
+	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	"github.com/Yacobolo/leapview/internal/platform/testing/ssetest"
+	"github.com/Yacobolo/leapview/internal/project/testing/dashboardfixture"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	"github.com/go-chi/chi/v5"
 )
 

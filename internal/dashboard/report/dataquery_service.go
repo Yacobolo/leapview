@@ -3,7 +3,7 @@ package report
 import (
 	"context"
 
-	"github.com/Yacobolo/leapview/internal/dataquery"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 )
 
 type DataQueryExecutor interface {

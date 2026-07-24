@@ -9,11 +9,11 @@ import (
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	dashboardstream "github.com/Yacobolo/leapview/internal/dashboard/stream"
-	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
-	visualizationruntime "github.com/Yacobolo/leapview/internal/visualization/runtime"
+	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	visualizationruntime "github.com/Yacobolo/leapview/internal/dashboard/visualization/runtime"
 	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
+	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 )
 
 func testVisualDefinition(t *testing.T, id string) visualizationdefinition.Definition {

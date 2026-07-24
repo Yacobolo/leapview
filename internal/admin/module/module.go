@@ -8,14 +8,14 @@ import (
 	"github.com/Yacobolo/leapview/internal/access"
 	adminhttp "github.com/Yacobolo/leapview/internal/admin/http"
 	adminstorage "github.com/Yacobolo/leapview/internal/admin/storage"
+	"github.com/Yacobolo/leapview/internal/agent/api"
 	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
 	"github.com/Yacobolo/leapview/internal/analytics/resource"
-	"github.com/Yacobolo/leapview/internal/api"
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
-	"github.com/Yacobolo/leapview/internal/catalog"
+	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
-	"github.com/Yacobolo/leapview/internal/ui"
 	"github.com/Yacobolo/leapview/internal/workload"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 

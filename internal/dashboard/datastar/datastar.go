@@ -8,8 +8,8 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	dashboardstream "github.com/Yacobolo/leapview/internal/dashboard/stream"
-	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 

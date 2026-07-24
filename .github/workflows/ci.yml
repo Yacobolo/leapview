@@ -56,7 +56,7 @@ jobs:
 
       - name: Check generated build inputs are untracked
         run: |
-          tracked="$(git ls-files -- docs/catalog.json docs/search-index.sqlite3 docs/configuration.md docs/visuals/examples.gen.json 'docs/api/*.md' docs/api/operations.json docs/reference/cli docs/reference/config internal/config/config_gen.go internal/configspec/names_gen.go web/generated)"
+          tracked="$(git ls-files -- docs/catalog.json docs/search-index.sqlite3 docs/configuration.md docs/visuals/examples.gen.json 'docs/api/*.md' docs/api/operations.json docs/reference/cli docs/reference/config internal/app/config/config_gen.go internal/platform/config/spec/names_gen.go web/generated)"
           if [ -n "$tracked" ]; then
             printf 'derived build inputs must be generated, not committed:\n%s\n' "$tracked" >&2
             exit 1
@@ -88,14 +88,14 @@ jobs:
             docs/reference/config
             docs/search-index.sqlite3
             docs/visuals/examples.gen.json
-            internal/api/gen
-            internal/cli/gen
-            internal/config/config_gen.go
-            internal/configspec/names_gen.go
+            internal/app/api/gen
+            internal/app/cli/gen
+            internal/app/config/config_gen.go
+            internal/platform/config/spec/names_gen.go
             internal/platform/db/db.go
             internal/platform/db/models.go
             internal/platform/db/*.sql.go
-            internal/ui/signals/models.gen.go
+            internal/workspace/ui/signals/models.gen.go
             schemas
             web/generated
           )
@@ -105,8 +105,8 @@ jobs:
             api/gen \
             docs/reference/cli \
             docs/reference/config \
-            internal/api/gen \
-            internal/cli/gen \
+            internal/app/api/gen \
+            internal/app/cli/gen \
             schemas/config \
             schemas/json \
             web/generated
@@ -118,12 +118,12 @@ jobs:
             docs/configuration.md \
             docs/search-index.sqlite3 \
             docs/visuals/examples.gen.json \
-            internal/config/config_gen.go \
-            internal/configspec/names_gen.go \
+            internal/app/config/config_gen.go \
+            internal/platform/config/spec/names_gen.go \
             internal/platform/db/db.go \
             internal/platform/db/models.go \
             internal/platform/db/*.sql.go \
-            internal/ui/signals/models.gen.go
+            internal/workspace/ui/signals/models.gen.go
           task generate
           find "${generated_paths[@]}" -type f -print0 | sort -z | xargs -0 sha256sum > /tmp/generated-after.sha256
           diff -u /tmp/generated-before.sha256 /tmp/generated-after.sha256
@@ -142,14 +142,14 @@ jobs:
           if-no-files-found: error
           path: |
             api/gen/
-            internal/api/gen/
-            internal/cli/gen/
-            internal/config/config_gen.go
-            internal/configspec/names_gen.go
+            internal/app/api/gen/
+            internal/app/cli/gen/
+            internal/app/config/config_gen.go
+            internal/platform/config/spec/names_gen.go
             internal/platform/db/db.go
             internal/platform/db/models.go
             internal/platform/db/*.sql.go
-            internal/ui/signals/models.gen.go
+            internal/workspace/ui/signals/models.gen.go
             docs/catalog.json
             docs/search-index.sqlite3
             docs/visuals/examples.gen.json
@@ -293,7 +293,7 @@ jobs:
 
       - name: Install pinned documentation basemap
         if: matrix.name == 'site'
-        run: go run ./internal/tools/mapassets --out .data/map-assets
+        run: go run ./internal/app/tools/mapassets --out .data/map-assets
 
       - name: Install browser dependencies
         run: bunx playwright install --with-deps chromium

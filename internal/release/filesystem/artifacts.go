@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Yacobolo/leapview/internal/platform/filesystem"
 	projectbundle "github.com/Yacobolo/leapview/internal/project/bundle"
-	"github.com/Yacobolo/leapview/internal/securefs"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 )
 

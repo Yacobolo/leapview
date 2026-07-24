@@ -10,8 +10,8 @@ import (
 	refresh "github.com/Yacobolo/leapview/internal/refresh/run"
 	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
 	"github.com/Yacobolo/leapview/internal/servingstate"
-	"github.com/Yacobolo/leapview/internal/ui"
 	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 

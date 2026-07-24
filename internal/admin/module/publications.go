@@ -6,8 +6,8 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
-	"github.com/Yacobolo/leapview/internal/ui"
-	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
+	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 )
 
 func (m *Module) mutatePublication(r *http.Request, command uisignals.AdminPublicationCommand) error {

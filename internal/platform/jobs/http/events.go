@@ -10,10 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/api"
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
-	apitransport "github.com/Yacobolo/leapview/internal/api/transport"
-	"github.com/Yacobolo/leapview/internal/cursorsigning"
+	"github.com/Yacobolo/leapview/internal/platform/http/cursorsigning"
+	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 )
 
@@ -26,6 +24,38 @@ const (
 
 type EventReader interface {
 	ListEvents(ctx context.Context, kind, id string, after int64, limit int) ([]jobs.Event, error)
+}
+
+type eventListResponse struct {
+	Items []eventResponse `json:"items"`
+	Page  pageInfo        `json:"page"`
+}
+
+type eventResponse struct {
+	CreatedAt    string           `json:"createdAt"`
+	Data         map[string]any   `json:"data"`
+	Error        *structuredError `json:"error,omitempty"`
+	Event        string           `json:"event"`
+	ID           string           `json:"id"`
+	Progress     *progress        `json:"progress,omitempty"`
+	ResourceID   string           `json:"resourceId"`
+	ResourceType string           `json:"resourceType"`
+}
+
+type progress struct {
+	Current *int64   `json:"current,omitempty"`
+	Message *string  `json:"message,omitempty"`
+	Percent *float64 `json:"percent,omitempty"`
+	Total   *int64   `json:"total,omitempty"`
+}
+
+type structuredError struct {
+	Code   string `json:"code"`
+	Detail string `json:"detail"`
+}
+
+type pageInfo struct {
+	NextCursor *string `json:"nextCursor,omitempty"`
 }
 
 func WriteEventPage(w stdhttp.ResponseWriter, r *stdhttp.Request, repo EventReader, resourceKind, resourceID string, limit *int32, token *string, scope string) {
@@ -71,11 +101,11 @@ func WriteEventPage(w stdhttp.ResponseWriter, r *stdhttp.Request, repo EventRead
 			next = encodeCursor(eventCursor{Scope: scope, LastID: fmt.Sprintf("%020d", rows[len(rows)-1].ID), Expires: time.Now().Add(cursorLifetime).Unix()})
 		}
 	}
-	page := apigenapi.PageInfo{}
+	page := pageInfo{}
 	if next != "" {
 		page.NextCursor = &next
 	}
-	apitransport.WriteJSON(w, stdhttp.StatusOK, apigenapi.AsyncEventListResponse{Items: items, Page: page})
+	apitransport.WriteJSON(w, stdhttp.StatusOK, eventListResponse{Items: items, Page: page})
 }
 
 func eventCursorAfter(token, scope string) (int64, error) {
@@ -93,36 +123,36 @@ func eventCursorAfter(token, scope string) (int64, error) {
 	return after, nil
 }
 
-func eventResponses(rows []jobs.Event) ([]apigenapi.AsyncEventResponse, error) {
-	events := make([]apigenapi.AsyncEventResponse, 0, len(rows))
+func eventResponses(rows []jobs.Event) ([]eventResponse, error) {
+	events := make([]eventResponse, 0, len(rows))
 	for _, row := range rows {
 		data := map[string]any{}
 		if err := json.Unmarshal(row.Data, &data); err != nil {
 			return nil, err
 		}
-		createdAt, err := api.NormalizeTimestamp(row.CreatedAt)
+		createdAt, err := normalizeTimestamp(row.CreatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("normalize async event timestamp: %w", err)
 		}
 		if createdAt == "" {
 			return nil, fmt.Errorf("normalize async event timestamp: timestamp is required")
 		}
-		response := apigenapi.AsyncEventResponse{
-			Id: fmt.Sprintf("%020d", row.ID), Event: row.EventType,
-			ResourceType: row.ResourceKind, ResourceId: row.ResourceID,
+		response := eventResponse{
+			ID: fmt.Sprintf("%020d", row.ID), Event: row.EventType,
+			ResourceType: row.ResourceKind, ResourceID: row.ResourceID,
 			Data: data, CreatedAt: createdAt,
 		}
 		if raw, ok := data["progress"].(map[string]any); ok {
 			encoded, _ := json.Marshal(raw)
-			var progress apigenapi.AsyncProgress
-			if json.Unmarshal(encoded, &progress) == nil {
-				response.Progress = &progress
+			var value progress
+			if json.Unmarshal(encoded, &value) == nil {
+				response.Progress = &value
 				delete(data, "progress")
 			}
 		}
 		if raw, ok := data["error"].(map[string]any); ok {
 			encoded, _ := json.Marshal(raw)
-			var problem apigenapi.AsyncStructuredError
+			var problem structuredError
 			if json.Unmarshal(encoded, &problem) == nil && problem.Code != "" && problem.Detail != "" {
 				response.Error = &problem
 				delete(data, "error")
@@ -131,6 +161,20 @@ func eventResponses(rows []jobs.Event) ([]apigenapi.AsyncEventResponse, error) {
 		events = append(events, response)
 	}
 	return events, nil
+}
+
+func normalizeTimestamp(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02 15:04:05.999999999", "2006-01-02 15:04:05"} {
+		parsed, err := time.Parse(layout, value)
+		if err == nil {
+			return parsed.UTC().Format(time.RFC3339Nano), nil
+		}
+	}
+	return "", fmt.Errorf("timestamp %q is not RFC3339 or a supported persisted timestamp", value)
 }
 
 func writeEventStream(w stdhttp.ResponseWriter, r *stdhttp.Request, repo EventReader, resourceKind, resourceID string) {

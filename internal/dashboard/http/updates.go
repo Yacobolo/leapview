@@ -13,7 +13,7 @@ import (
 	lddatastar "github.com/Yacobolo/leapview/internal/dashboard/datastar"
 	dashboardstream "github.com/Yacobolo/leapview/internal/dashboard/stream"
 	reportui "github.com/Yacobolo/leapview/internal/dashboard/ui"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
+	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 

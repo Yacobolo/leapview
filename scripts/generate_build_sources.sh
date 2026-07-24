@@ -4,7 +4,7 @@ set -eu
 APIGEN=github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.6.5
 
 go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate
-go run ./internal/tools/configgen
+go run ./internal/app/tools/configgen
 
 go run "$APIGEN" typespec-compile -manifest api/apigen.yaml -target leapview-v1
 go run "$APIGEN" all -manifest api/apigen.yaml -target leapview-v1

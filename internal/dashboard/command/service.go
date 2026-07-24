@@ -7,8 +7,8 @@ import (
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	"github.com/Yacobolo/leapview/internal/dashboard/report"
 	"github.com/Yacobolo/leapview/internal/dashboard/reportmodel"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
+	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 )
 
 type Metrics interface {

@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/dashboard"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 )
 
 type Kind string

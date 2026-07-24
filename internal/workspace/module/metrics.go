@@ -3,8 +3,8 @@ package module
 import (
 	"context"
 
-	"github.com/Yacobolo/leapview/internal/dataquery"
-	"github.com/Yacobolo/leapview/internal/queryruntime"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
+	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
 	workspacehttp "github.com/Yacobolo/leapview/internal/workspace/http"
 )
 

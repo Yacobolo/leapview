@@ -11,19 +11,19 @@ import (
 	accessmodule "github.com/Yacobolo/leapview/internal/access/module"
 	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
 	analyticsmodule "github.com/Yacobolo/leapview/internal/analytics/module"
-	apihttpmiddleware "github.com/Yacobolo/leapview/internal/api/httpmiddleware"
+	"github.com/Yacobolo/leapview/internal/app/config"
 	appruntimefactory "github.com/Yacobolo/leapview/internal/app/runtimefactory"
-	"github.com/Yacobolo/leapview/internal/config"
 	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
 	deploymentmodule "github.com/Yacobolo/leapview/internal/deployment/module"
 	manageddatamodule "github.com/Yacobolo/leapview/internal/manageddata/module"
 	"github.com/Yacobolo/leapview/internal/platform"
+	"github.com/Yacobolo/leapview/internal/platform/filesystem"
+	apihttpmiddleware "github.com/Yacobolo/leapview/internal/platform/http/middleware"
 	jobsmodule "github.com/Yacobolo/leapview/internal/platform/jobs/module"
 	"github.com/Yacobolo/leapview/internal/platform/transaction"
 	refreshmodule "github.com/Yacobolo/leapview/internal/refresh/module"
 	releasemodule "github.com/Yacobolo/leapview/internal/release/module"
 	runtimehostmodule "github.com/Yacobolo/leapview/internal/runtimehost/module"
-	"github.com/Yacobolo/leapview/internal/securefs"
 	servingstatemodule "github.com/Yacobolo/leapview/internal/servingstate/module"
 	workloadmodule "github.com/Yacobolo/leapview/internal/workload/module"
 	workspacemodule "github.com/Yacobolo/leapview/internal/workspace/module"
@@ -135,14 +135,14 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 		return nil
 	})
 	jobModule, err := jobsmodule.Build(ctx, jobsmodule.Config{
-		Database: store.SQLDB(), Admission: workloadController,
+		Database: store.SQLDB(), Admission: workloadmodule.JobAdmitter(workloadController),
 		LeaseTimeout: cfg.RefreshJobLeaseTimeout, Logger: slog.Default(),
 	})
 	if err != nil {
 		return fail(err)
 	}
 	managedDataModule, err := manageddatamodule.Build(ctx, manageddatamodule.Config{
-		Database: store.SQLDB(), Product: cfg, ServingStates: servingStateRepo,
+		Database: store.SQLDB(), Product: managedDataProductConfig(cfg), ServingStates: servingStateRepo,
 		Environment: string(environment),
 		CurrentPrincipal: func(r *http.Request) (manageddatamodule.Principal, bool) {
 			auth := accessModule.Auth()

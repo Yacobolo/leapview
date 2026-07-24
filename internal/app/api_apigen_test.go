@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
+	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	"github.com/Yacobolo/leapview/internal/workspace"
 )
 
@@ -116,7 +116,7 @@ func TestAPIGenOwnsUISignalContracts(t *testing.T) {
 		"kind: contracts",
 		"typespec_dir: .",
 		"typespec_entrypoint: signals/main.tsp",
-		"go_models_out: ../internal/ui/signals/models.gen.go",
+		"go_models_out: ../internal/workspace/ui/signals/models.gen.go",
 		"ts_out: ../web/generated/signals/index.ts",
 	} {
 		if !strings.Contains(manifestText, want) {
@@ -140,7 +140,7 @@ func TestAPIGenOwnsUISignalContracts(t *testing.T) {
 			t.Fatalf("Taskfile.yml missing UI signal generation command %q", want)
 		}
 	}
-	if strings.Contains(taskText, "go run ./internal/tools/uisignalsgen") {
+	if strings.Contains(taskText, "go run ./internal/app/tools/uisignalsgen") {
 		t.Fatal("Taskfile.yml still uses the Go reflection UI signal generator")
 	}
 	if strings.Contains(taskText, "schemas/signals/ui-signals.schema.json") {
@@ -151,7 +151,7 @@ func TestAPIGenOwnsUISignalContracts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read .gitignore: %v", err)
 	}
-	if !strings.Contains(string(gitignore), "internal/ui/signals/models.gen.go") {
+	if !strings.Contains(string(gitignore), "internal/workspace/ui/signals/models.gen.go") {
 		t.Fatal("generated Go UI signal models should be ignored build output")
 	}
 
@@ -160,7 +160,7 @@ func TestAPIGenOwnsUISignalContracts(t *testing.T) {
 		t.Fatalf("read CI workflow: %v", err)
 	}
 	workflowText := string(workflow)
-	if !strings.Contains(workflowText, "internal/ui/signals/models.gen.go") {
+	if !strings.Contains(workflowText, "internal/workspace/ui/signals/models.gen.go") {
 		t.Fatal("CI generated-assets artifact does not include Go UI signal models")
 	}
 	if strings.Contains(workflowText, "schemas/signals/") {
@@ -178,7 +178,7 @@ func TestAPIGenOwnsUISignalContracts(t *testing.T) {
 		}
 	}
 
-	generatedGo, err := os.ReadFile(filepath.Join(root, "internal", "ui", "signals", "models.gen.go"))
+	generatedGo, err := os.ReadFile(filepath.Join(root, "internal", "workspace", "ui", "signals", "models.gen.go"))
 	if err != nil {
 		t.Fatalf("read generated Go UI signal models: %v", err)
 	}

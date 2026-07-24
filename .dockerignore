@@ -18,14 +18,14 @@ node_modules
 infisical-export.*
 
 api/gen
-internal/api/gen
-internal/cli/gen
-internal/config/config_gen.go
-internal/configspec/names_gen.go
+internal/app/api/gen
+internal/app/cli/gen
+internal/app/config/config_gen.go
+internal/platform/config/spec/names_gen.go
 internal/platform/db/db.go
 internal/platform/db/models.go
 internal/platform/db/*.sql.go
-internal/ui/signals/models.gen.go
+internal/workspace/ui/signals/models.gen.go
 web/generated
 
 docs/catalog.json

@@ -9,13 +9,14 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/agent"
+	agentapi "github.com/Yacobolo/leapview/internal/agent/api"
 	agenthttp "github.com/Yacobolo/leapview/internal/agent/http"
 	agentopenai "github.com/Yacobolo/leapview/internal/agent/openai"
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
+	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
-	"github.com/Yacobolo/leapview/internal/queryruntime"
-	productsearch "github.com/Yacobolo/leapview/internal/search"
-	"github.com/Yacobolo/leapview/internal/ui"
+	productsearch "github.com/Yacobolo/leapview/internal/workspace/search"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
@@ -41,9 +42,11 @@ type Module struct {
 	pendingChatTitles        map[string]struct{}
 	mcpScope                 func(*http.Request) (agent.Scope, bool)
 	mcpProtect               func(http.Handler) http.Handler
+	productName              string
 }
 
 type Service = agent.Service
+type AdminAgentResponse = agentapi.AdminAgentResponse
 
 type Config struct {
 	Database                 *sql.DB
@@ -64,6 +67,7 @@ type Config struct {
 	Logger                   *slog.Logger
 	MCPScope                 func(*http.Request) (Scope, bool)
 	MCPProtect               func(http.Handler) http.Handler
+	ProductName              string
 	HTTP                     HTTPConfig
 }
 
@@ -159,6 +163,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		enableSystemPrompt: config.EnableSystemPrompt, broker: config.HTTP.Broker, logger: config.Logger,
 		pendingChatTitles: map[string]struct{}{},
 		mcpScope:          mcpScope, mcpProtect: config.MCPProtect,
+		productName: config.ProductName,
 	}
 	if ownedService && durableWorkflow {
 		service.SetPromptWorkflow(m.runWorkflow)

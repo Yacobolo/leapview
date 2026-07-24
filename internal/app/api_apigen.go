@@ -5,11 +5,11 @@ import (
 
 	accessmodule "github.com/Yacobolo/leapview/internal/access/module"
 	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
-	apitransport "github.com/Yacobolo/leapview/internal/api/transport"
+	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
 	deploymentmodule "github.com/Yacobolo/leapview/internal/deployment/module"
 	manageddatamodule "github.com/Yacobolo/leapview/internal/manageddata/module"
+	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
 	refreshmodule "github.com/Yacobolo/leapview/internal/refresh/module"
 	releasemodule "github.com/Yacobolo/leapview/internal/release/module"
 	workspacemodule "github.com/Yacobolo/leapview/internal/workspace/module"

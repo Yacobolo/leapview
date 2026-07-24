@@ -24,29 +24,30 @@ import (
 	"testing"
 	"time"
 
+	accesssnapshot "github.com/Yacobolo/leapview/internal/access/snapshot"
 	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	analyticsduckdb "github.com/Yacobolo/leapview/internal/analytics/duckdb"
 	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard"
+	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	dashboardruntime "github.com/Yacobolo/leapview/internal/dashboard/runtime"
-	"github.com/Yacobolo/leapview/internal/dataquery"
+	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	"github.com/Yacobolo/leapview/internal/manageddata"
 	"github.com/Yacobolo/leapview/internal/platform"
+	"github.com/Yacobolo/leapview/internal/platform/testing/ssetest"
 	projectartifact "github.com/Yacobolo/leapview/internal/project/artifact"
 	projectbundle "github.com/Yacobolo/leapview/internal/project/bundle"
 	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 	"github.com/Yacobolo/leapview/internal/project/manifest"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
-	"github.com/Yacobolo/leapview/internal/snapshot"
-	"github.com/Yacobolo/leapview/internal/testutil/ssetest"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
+	servingstatevalidation "github.com/Yacobolo/leapview/internal/servingstate/validation"
 	"github.com/Yacobolo/leapview/internal/workload"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
@@ -988,22 +989,22 @@ func (r integrationDataRuntime) LastRefresh() time.Time {
 	return r.runtime.LastRefresh()
 }
 
-func testSnapshotGraph(t *testing.T, value any) snapshot.AssetGraph {
+func testSnapshotGraph(t *testing.T, value any) servingstatevalidation.AssetGraph {
 	t.Helper()
-	graph, err := snapshot.ConvertAssetGraph(value)
+	graph, err := servingstatevalidation.ConvertAssetGraph(value)
 	if err != nil {
 		t.Fatalf("convert asset graph snapshot: %v", err)
 	}
 	return graph
 }
 
-func testSnapshotAccessPolicy(t *testing.T, value any) snapshot.AccessPolicy {
+func testSnapshotAccessPolicy(t *testing.T, value any) accesssnapshot.AccessPolicy {
 	t.Helper()
 	data, err := json.Marshal(value)
 	if err != nil {
 		t.Fatalf("marshal access policy snapshot: %v", err)
 	}
-	policy, err := snapshot.DecodeAccessPolicy(data)
+	policy, err := accesssnapshot.Decode(data)
 	if err != nil {
 		t.Fatalf("decode access policy snapshot: %v", err)
 	}

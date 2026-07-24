@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/dataquery"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 )
 
 // DashboardPublicationCapability is installed in a server-created context.

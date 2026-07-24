@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 
 	"github.com/Yacobolo/leapview/internal/agent"
-	"github.com/Yacobolo/leapview/internal/ui"
-	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
+	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 )
 
 func chatSignalWithConversations(conversations []ui.ChatConversationSummary, activeID string, transcript []agent.ChatTranscriptItem, artifacts agent.ChatArtifactSignals, statusErr string, running, enabled bool) ui.ChatViewState {

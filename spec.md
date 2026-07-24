@@ -121,22 +121,27 @@ Top-level capability ownership:
 
 ```text
 internal/
-  project/
-  workspace/
+  app/
+  platform/
+
   access/
-  manageddata/
+  admin/
+  agent/
   analytics/
   dashboard/
-  agent/
-  release/
   deployment/
-  servingstate/
+  manageddata/
+  project/
   refresh/
+  release/
   runtimehost/
+  servingstate/
   workload/
-  platform/
+  workspace/
 ```
 
+- `app`: process composition, CLI/process entrypoints, global route assembly, public-site composition, API dispatch, generators, lifecycle, and cleanup.
+- `platform`: capability-agnostic technical mechanisms such as configuration specifications, database primitives, digests, filesystems, HTTP mechanics, jobs, lifecycle, locking, observability, security, testing, transactions, and web transport.
 - `project`: authored project manifest, cross-capability compilation, normalized immutable workspace bundles, and stable asset graph extraction.
 - `workspace`: workspace identity, node-local catalog surface, asset discovery, asset graph views, and workspace read models.
 - `access`: principals, groups, roles, permissions, authorization decisions, credentials, tokens, sessions, and access auditing.
@@ -154,7 +159,9 @@ internal/
 
 `admin` is not a domain capability. It is an interface surface over capability-owned use cases and read models. `admin/http` may compose read models but must not own their business workflows.
 
-`internal/api` contains framework-neutral public wire contracts. `internal/ui` contains shared render primitives and typed UI transport contracts. Neither is a business capability.
+There are no generic `internal/api`, `internal/ui`, or `internal/modules` roots. Capability HTTP and UI adapters live with their owners. `app/api` owns global API dispatch and generated server integration; `platform/http` and `platform/web` contain only product-agnostic protocol mechanics. The workspace UI package owns the application shell and generated browser signal wire contract consumed by capability adapters.
+
+A package belongs to a capability when it mentions product language, to `platform` when it implements a generic technical mechanism, and to `app` when it assembles or exposes the application.
 
 ## Capability Context Map
 
@@ -561,14 +568,15 @@ None owns product behavior. Each translates its transport contract into capabili
 Rules:
 
 - TypeSpec/APIGen owns the canonical headless REST contract and generator metadata.
-- API DTOs live in `internal/api` as framework-neutral wire contracts only.
+- Capability-owned API DTOs live under packages such as `access/api`, `agent/api`, `dashboard/api`, and `workspace/api`.
+- `app/api` owns global dispatch, protocol assembly, and the generated public wire contract; it owns no capability behavior.
 - CLI commands call capability use cases or generated API operations; they do not implement parallel business workflows.
 - The built-in agent and MCP consume one governed tool catalog derived from product-operation metadata, with shared risk, permission, workspace, credential, execution, projection, audit, and error behavior.
 - UI routes call the same capability use cases as API, CLI, and agent interfaces for equivalent behavior.
 - Datastar signal shapes are UI-private adapter contracts and never become headless API DTOs.
 - A versioned, paginated asset catalog API exposes node-local discovery without exposing storage internals.
 
-Avoid a single cross-capability `internal/api/http` package.
+Avoid a single cross-capability API adapter package. Shared HTTP code under `platform/http` is limited to generic mechanics such as middleware, problem encoding, cursor signing, and idempotency.
 
 ## UI And Datastar
 
@@ -585,7 +593,7 @@ Datastar-specific logic lives near the owning capability:
 
 Domain and analytics packages speak in typed commands, snapshots, events, query intents, and results.
 
-Gomponents renderers are edge adapters. Shared `internal/ui` contains only design-system primitives, document shells, and generated signal contracts. Capability-specific pages live under capability `ui` packages.
+Gomponents renderers are edge adapters. Product renderers and signal projections live under capability `ui` packages. `workspace/ui` owns the application shell and generated browser signal contract; `dashboard/ui` owns dashboard presentation. Generic page-stream and web mechanics live under `platform/web`.
 
 Shared UI code performs no workflow orchestration, storage access, semantic planning, cross-contract validation, or domain mutation.
 
@@ -765,7 +773,7 @@ internal/app
   -> admin/http
 ```
 
-The CLI is a transport and process entrypoint. Server assembly is defined once and reused by CLI startup rather than duplicated across `internal/cli` and `internal/app`.
+The CLI is a transport and process entrypoint. Server assembly is defined once and reused by CLI startup rather than duplicated across `internal/app/cli` and `internal/app`.
 
 ## Reliability And Consistency
 
@@ -950,8 +958,10 @@ Guardrails include:
 - Domain and use-case packages cannot import `net/http`, chi, Datastar, gomponents, sqlc generated packages, DuckDB adapters, filesystem adapters, object-storage adapters, or model-provider adapters.
 - Capabilities import another capability only through its declared public contract packages.
 - Capability-private `internal` packages prevent unauthorized imports where Go visibility rules can enforce the boundary.
-- `internal/api` remains transport-contract only.
-- shared `internal/ui` remains render-only and capability-neutral.
+- Only the sixteen approved `internal` roots exist; architecture tests reject every undeclared root.
+- Capability `api` packages remain transport-contract only, while global API dispatch stays in `app/api`.
+- Capability `ui` packages remain render-only; generic web and page-stream mechanics stay in `platform/web`.
+- Platform production code imports no product capability or app package.
 - `platform.Store`, `database/sql`, and sqlc types do not leak into handlers, use cases, runtime managers, or domain packages.
 - SQL query generation is capability-private even though migrations are globally ordered.
 - Compiled artifact types are immutable by construction.
