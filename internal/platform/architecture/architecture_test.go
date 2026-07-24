@@ -610,6 +610,20 @@ func TestAgentOwnsChatUIExceptExplicitChromeCompatibility(t *testing.T) {
 	}
 }
 
+func TestRefreshDoesNotImportWorkspaceUI(t *testing.T) {
+	const sharedUI = modulePath + "/internal/workspace/ui"
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/refresh" && !strings.HasPrefix(file.pkgDir, "internal/refresh/") {
+			continue
+		}
+		for _, imported := range file.imports {
+			if imported == sharedUI || strings.HasPrefix(imported, sharedUI+"/") {
+				t.Errorf("%s imports workspace-owned UI instead of a refresh-owned presentation contract", file.path)
+			}
+		}
+	}
+}
+
 func TestApplicationDoesNotReclaimAccessOrAnalyticsConstruction(t *testing.T) {
 	for _, file := range productionGoFiles(t) {
 		if file.pkgDir != "internal/app" {
