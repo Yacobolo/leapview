@@ -175,7 +175,11 @@ func TestMCPRequiresBearerAndSupportsInitializeAndTools(t *testing.T) {
 	if err := json.Unmarshal(visual.Body.Bytes(), &visualResponse); err != nil {
 		t.Fatalf("decode query_visual: %v", err)
 	}
-	if visualResponse.Result.IsError || visualResponse.Result.StructuredContent["patch"] == nil {
+	if visualResponse.Result.IsError ||
+		visualResponse.Result.StructuredContent["queryId"] == nil ||
+		visualResponse.Result.StructuredContent["fields"] == nil ||
+		visualResponse.Result.StructuredContent["completeness"] == nil ||
+		visualResponse.Result.StructuredContent["patch"] != nil {
 		t.Fatalf("query_visual result = %#v body=%s", visualResponse.Result, visual.Body.String())
 	}
 }
@@ -227,7 +231,11 @@ func TestMCPGoSDKClientInteroperability(t *testing.T) {
 		t.Fatalf("call query_visual through MCP SDK: %v", err)
 	}
 	structured, ok := result.StructuredContent.(map[string]any)
-	if result.IsError || !ok || structured["patch"] == nil {
+	if result.IsError || !ok ||
+		structured["queryId"] == nil ||
+		structured["fields"] == nil ||
+		structured["completeness"] == nil ||
+		structured["patch"] != nil {
 		t.Fatalf("MCP SDK query_visual result = %#v", result)
 	}
 }

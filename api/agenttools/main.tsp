@@ -86,3 +86,53 @@ model DashboardVisualQueryResult {
   hasMore: boolean;
   nextCursor?: string;
 }
+
+model CatalogRef {
+  workspaceId: string;
+  type: "workspace" | "dashboard" | "page" | "visual" | "filter" | "semantic_model" | "semantic_table" | "field" | "measure";
+  id: string;
+}
+
+model QueryVisualFieldUsage {
+  ref: CatalogRef;
+  role: "dimension" | "series" | "measure" | "table_field" | "table_row";
+  `alias`?: string;
+  label: string;
+  dataType?: string;
+  unit?: string;
+  format?: string;
+}
+
+model QueryVisualFilterUsage {
+  fieldRef: CatalogRef;
+  factRef?: CatalogRef;
+  operator: "equals" | "in" | "contains" | "not_contains" | "starts_with" | "greater_than_or_equal" | "less_than" | "is_null" | "is_not_null";
+  values: string[];
+  groupPath: int32[];
+}
+
+model QueryVisualCompleteness {
+  returnedRows: int32;
+  limit: int32;
+  status: "complete" | "limit_reached" | "empty";
+}
+
+@apigen.contract(#{ kind: "agent-tool-output", tags: #["semantic-model", "visual", "query"] })
+model QueryVisualResult {
+  ok: true;
+  queryId: string;
+  servingSnapshot: string;
+  freshness?: QueryFreshness;
+  type: string;
+  id: string;
+  title: string;
+  modelRef: CatalogRef;
+  datasetRef: CatalogRef;
+  fields: QueryVisualFieldUsage[];
+  filters: QueryVisualFilterUsage[];
+  completeness: QueryVisualCompleteness;
+  status: DashboardVisualStatus;
+  diagnostics: DashboardVisualDiagnostic[];
+  summary: string;
+  signal: string;
+}
