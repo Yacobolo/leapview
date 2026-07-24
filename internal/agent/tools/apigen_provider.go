@@ -39,7 +39,6 @@ func (p APIGenProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
 	operations := APIGenOperations()
 	definitions := make([]agentcore.ToolDefinition, 0, len(operations))
 	for _, operation := range operations {
-		operation := operationWithExplicitWorkspace(operation)
 		definitions = append(definitions, agentcore.ToolDefinition{
 			Name:         operation.Tool.Name,
 			Description:  operation.Tool.Description,
@@ -183,27 +182,6 @@ func stripCatalogRefPrefix(value any, parentID string) any {
 func stripCatalogRefString(value, parentID string) string {
 	normalized, _ := stripCatalogRefPrefix(value, parentID).(string)
 	return normalized
-}
-
-func operationWithExplicitWorkspace(operation APIGenOperation) APIGenOperation {
-	tool := agenttool.CloneContract(operation.Tool)
-	promoted := false
-	for index := range tool.Bindings {
-		binding := &tool.Bindings[index]
-		if binding.Mode != "context" || binding.ContextKey != "workspace" {
-			continue
-		}
-		binding.Argument = "workspace"
-		binding.Mode = "model"
-		binding.ContextKey = ""
-		binding.Required = true
-		promoted = true
-	}
-	if promoted {
-		tool.InputSchema = requireToolStringProperty(tool.InputSchema, "workspace")
-	}
-	operation.Tool = tool
-	return operation
 }
 
 func requireToolStringProperty(input json.RawMessage, name string) json.RawMessage {

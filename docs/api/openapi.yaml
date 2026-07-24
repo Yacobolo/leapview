@@ -25115,6 +25115,7 @@ paths:
           required: true
           schema:
             type: string
+            minLength: 1
           example: example
         - name: dashboard
           in: path
@@ -25452,8 +25453,8 @@ paths:
         effect: read
         input:
           fields:
-            - context_key: workspace
-              mode: context
+            - description: Workspace ID to query.
+              mode: model
               name: workspace
               source: path
         name: query_dashboard_visual
@@ -37047,6 +37048,7 @@ paths:
           required: true
           schema:
             type: string
+            minLength: 1
           example: example
         - name: model
           in: path
@@ -37354,8 +37356,8 @@ paths:
         effect: read
         input:
           fields:
-            - context_key: workspace
-              mode: context
+            - description: Workspace ID to query.
+              mode: model
               name: workspace
               source: path
             - default: !!float 25

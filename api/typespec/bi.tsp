@@ -505,10 +505,10 @@ op listSemanticModelFields(@path workspace: string, @path("model") modelName: st
 @apigen.cli(#{ command: #["semantic-models", "model-query"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "model", displayName: "model" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "query_semantic_model", effect: "read", tags: #["semantic-model", "query"],
-  input: #{ fields: #[#{ source: "path", name: "workspace", mode: "context", contextKey: "workspace" }, #{ source: "body", name: "limit", default: 25 }] },
+  input: #{ fields: #[#{ source: "path", name: "workspace", mode: "model", description: "Workspace ID to query." }, #{ source: "body", name: "limit", default: 25 }] },
   output: #{ mode: "project", select: #[#{ source: "/columns" }, #{ source: "/rows", countAs: "count" }], cursor: #{ source: "/page/nextCursor" } },
 })
-op querySemanticModel(@path workspace: string, @path("model") modelName: string, @header accept?: string, @body body?: SemanticQueryRequest): RowsetResponse<SemanticQueryResponse> | CommonErrors;
+op querySemanticModel(@path workspace: WorkspaceId, @path("model") modelName: string, @header accept?: string, @body body?: SemanticQueryRequest): RowsetResponse<SemanticQueryResponse> | CommonErrors;
 
 @tag("BI")
 @summary("Explain semantic model query")
@@ -584,10 +584,10 @@ op queryDashboardPage(@path workspace: string, @path dashboard: string, @path pa
 @apigen.cli(#{ command: #["dashboards", "visual-data"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "dashboard", displayName: "dashboard" }, #{ source: "path", name: "page", displayName: "page" }, #{ source: "path", name: "visual", displayName: "visual" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "query_dashboard_visual", effect: "read", tags: #["dashboard", "visual", "query"],
-  input: #{ fields: #[#{ source: "path", name: "workspace", mode: "context", contextKey: "workspace" }] },
+  input: #{ fields: #[#{ source: "path", name: "workspace", mode: "model", description: "Workspace ID to query." }] },
   output: #{ mode: "raw" },
 })
-op queryDashboardVisualData(@path workspace: string, @path dashboard: string, @path page: string, @path visual: string, @header accept?: string, @body body?: DashboardVisualQueryRequest): RowsetResponse<LeapViewVisualization.VisualizationEnvelope> | CommonErrors;
+op queryDashboardVisualData(@path workspace: WorkspaceId, @path dashboard: string, @path page: string, @path visual: string, @header accept?: string, @body body?: DashboardVisualQueryRequest): RowsetResponse<LeapViewVisualization.VisualizationEnvelope> | CommonErrors;
 
 @tag("BI")
 @summary("List dashboard filter values")

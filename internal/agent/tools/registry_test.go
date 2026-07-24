@@ -43,6 +43,36 @@ func TestAPIGenOperationsUseGeneratedReadOnlyToolContracts(t *testing.T) {
 	}
 }
 
+func TestAPIGenQueryWorkspaceBindingsAreExplicitModelArguments(t *testing.T) {
+	for _, operation := range APIGenOperations() {
+		found := false
+		for _, binding := range operation.Tool.Bindings {
+			if binding.Source != "path" || binding.WireName != "workspace" {
+				continue
+			}
+			found = true
+			if binding.Mode != "model" || binding.Argument != "workspace" || binding.ContextKey != "" || !binding.Required {
+				t.Fatalf("tool %q workspace binding = %#v, want required model argument", operation.Tool.Name, binding)
+			}
+		}
+		if !found {
+			t.Fatalf("tool %q has no workspace path binding", operation.Tool.Name)
+		}
+		var schema struct {
+			Properties map[string]struct {
+				MinLength int `json:"minLength"`
+			} `json:"properties"`
+			Required []string `json:"required"`
+		}
+		if err := json.Unmarshal(operation.Tool.InputSchema, &schema); err != nil {
+			t.Fatalf("decode tool %q input schema: %v", operation.Tool.Name, err)
+		}
+		if schema.Properties["workspace"].MinLength != 1 || !slices.Contains(schema.Required, "workspace") {
+			t.Fatalf("tool %q input schema = %s, want required non-empty workspace", operation.Tool.Name, operation.Tool.InputSchema)
+		}
+	}
+}
+
 func TestToolNamesAreTheCuratedSurface(t *testing.T) {
 	want := []string{
 		"catalog_get",
