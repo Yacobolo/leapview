@@ -21,6 +21,29 @@ class LeapViewFilterDock extends LitElement {
   @property({ type: Boolean, reflect: true }) pending = false
 
   @state() private open = storedFilterDockOpen()
+  @state() private mobile = isMobileFilterDock()
+
+  private mobileQuery: MediaQueryList | null = null
+
+  connectedCallback(): void {
+    super.connectedCallback()
+    this.mobileQuery = window.matchMedia(mobileFilterDockQuery)
+    this.mobile = this.mobileQuery.matches
+    this.mobileQuery.addEventListener('change', this.onMobileQueryChange)
+    window.addEventListener('keydown', this.onWindowKeyDown, true)
+  }
+
+  disconnectedCallback(): void {
+    this.mobileQuery?.removeEventListener('change', this.onMobileQueryChange)
+    this.mobileQuery = null
+    window.removeEventListener('keydown', this.onWindowKeyDown, true)
+    super.disconnectedCallback()
+  }
+
+  protected firstUpdated(): void {
+    this.syncDialogMode()
+    if (this.open) this.focusCloseButton()
+  }
 
   static styles = css`
     :host {
@@ -124,15 +147,29 @@ class LeapViewFilterDock extends LitElement {
 
     .panel {
       display: none;
+      position: static;
+      width: auto;
+      height: auto;
+      max-width: none;
+      max-height: none;
+      box-sizing: border-box;
       min-width: 0;
       min-height: 0;
       grid-template-rows: auto minmax(0, 1fr) auto;
       overflow: hidden;
+      margin: 0;
+      border: 0;
       background: var(--lv-bg-app);
+      color: inherit;
+      padding: 0;
     }
 
-    aside[data-open] .panel {
+    aside[data-open] .panel[open] {
       display: grid;
+    }
+
+    .panel::backdrop {
+      background: transparent;
     }
 
     .panel-header,
@@ -302,6 +339,13 @@ class LeapViewFilterDock extends LitElement {
         box-shadow: none;
       }
 
+      .panel[open] {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100dvh;
+      }
+
       .rail {
         min-height: 68px;
         height: auto;
@@ -358,7 +402,13 @@ class LeapViewFilterDock extends LitElement {
           <span>Filters</span>
           ${activeCount > 0 ? html`<span class="rail-count" aria-hidden="true">${activeCount}</span>` : nothing}
         </button>
-        <div class="panel" role="region" aria-label="Filters pane">
+        <dialog
+          class="panel"
+          role=${this.mobile ? 'dialog' : 'region'}
+          aria-label="Filters pane"
+          aria-modal=${this.mobile && this.open ? 'true' : nothing}
+          @cancel=${this.onDialogCancel}
+        >
           ${this.contract && this.filterState ? this.renderCompiledPane(visibleBindings, activeCount) : html`
             <header class="panel-header">
               <strong>Filters</strong>
@@ -366,7 +416,7 @@ class LeapViewFilterDock extends LitElement {
             </header>
             <p class="panel-scroll" role="status">Filter state is unavailable.</p>
           `}
-        </div>
+        </dialog>
       </aside>
     `
   }
@@ -490,20 +540,92 @@ class LeapViewFilterDock extends LitElement {
     this.open = true
     storeFilterDockOpen(true)
     await this.updateComplete
-    this.renderRoot.querySelector<HTMLButtonElement>('.close-button')?.focus()
+    this.syncDialogMode()
+    this.focusCloseButton()
   }
 
   private close = async (): Promise<void> => {
+    this.closeDialog()
     this.open = false
     storeFilterDockOpen(false)
     await this.updateComplete
-    this.renderRoot.querySelector<HTMLButtonElement>('.rail')?.focus()
+    this.renderRoot.querySelector<HTMLButtonElement>('.rail')?.focus({ preventScroll: true })
   }
 
   private onKeyDown = (event: KeyboardEvent): void => {
     if (event.key !== 'Escape' || !this.open) return
     event.preventDefault()
     void this.close()
+  }
+
+  private onDialogCancel = (event: Event): void => {
+    event.preventDefault()
+    void this.close()
+  }
+
+  private onWindowKeyDown = (event: KeyboardEvent): void => {
+    if (event.key !== 'Tab' || !this.open || !this.mobile) return
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>('.panel')
+    if (!dialog?.matches(':modal')) return
+    this.trapFocus(event, dialog)
+  }
+
+  private onMobileQueryChange = (event: MediaQueryListEvent): void => {
+    this.mobile = event.matches
+    void this.updateComplete.then(() => {
+      this.syncDialogMode()
+      if (this.open) this.focusCloseButton()
+    })
+  }
+
+  private syncDialogMode(): void {
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>('.panel')
+    if (!dialog) return
+    if (!this.open) {
+      if (dialog.open) dialog.close()
+      return
+    }
+    if (this.mobile) {
+      if (dialog.matches(':modal')) return
+      if (dialog.open) dialog.close()
+      dialog.showModal()
+      return
+    }
+    if (dialog.matches(':modal')) dialog.close()
+    if (!dialog.open) dialog.show()
+  }
+
+  private closeDialog(): void {
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>('.panel')
+    if (dialog?.open) {
+      dialog.close()
+    }
+  }
+
+  private trapFocus(event: KeyboardEvent, dialog: HTMLDialogElement): void {
+    const focusable = deepFocusableElements(dialog)
+    if (focusable.length === 0) {
+      event.preventDefault()
+      dialog.focus({ preventScroll: true })
+      return
+    }
+    const active = deepActiveElement()
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    const activeInsideDialog = Boolean(active && focusable.includes(active))
+    if (event.shiftKey && (!activeInsideDialog || active === first)) {
+      event.preventDefault()
+      last.focus({ preventScroll: true })
+      return
+    }
+    if (!event.shiftKey && (!activeInsideDialog || active === last)) {
+      event.preventDefault()
+      first.focus({ preventScroll: true })
+    }
+  }
+
+  private focusCloseButton(): void {
+    this.renderRoot.querySelector<HTMLButtonElement>('.close-button')?.focus({ preventScroll: true })
   }
 
   private resetScope(scope: 'page' | 'dashboard', bindingKeys: string[]): void {
@@ -524,6 +646,46 @@ class LeapViewFilterDock extends LitElement {
 }
 
 const filterDockStorageKey = 'leapview:filters-open'
+const mobileFilterDockQuery = '(max-width: 640px)'
+
+function isMobileFilterDock(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia(mobileFilterDockQuery).matches
+}
+
+function deepFocusableElements(root: HTMLElement | ShadowRoot): HTMLElement[] {
+  const elements: HTMLElement[] = []
+  for (const child of root.children) {
+    if (!(child instanceof HTMLElement)) continue
+    if (isFocusable(child)) elements.push(child)
+    if (child.shadowRoot) {
+      elements.push(...deepFocusableElements(child.shadowRoot))
+    } else {
+      elements.push(...deepFocusableElements(child))
+    }
+  }
+  return elements
+}
+
+function isFocusable(element: HTMLElement): boolean {
+  if (!element.matches([
+    'button:not([disabled])',
+    'a[href]',
+    'input:not([disabled])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(','))) return false
+  const style = getComputedStyle(element)
+  return style.display !== 'none'
+    && style.visibility !== 'hidden'
+    && element.getClientRects().length > 0
+}
+
+function deepActiveElement(): HTMLElement | null {
+  let active = document.activeElement
+  while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement
+  return active instanceof HTMLElement ? active : null
+}
 
 function storedFilterDockOpen(): boolean {
   try {

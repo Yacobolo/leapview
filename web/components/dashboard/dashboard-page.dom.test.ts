@@ -728,30 +728,63 @@ test('mobile filter dock is reachable before the canvas and opens with pointer a
     const opened = await dashboard.evaluate(async (element: any) => {
       const dock = element.shadowRoot.querySelector('lv-filter-dock') as any
       await dock.updateComplete
+      const panel = dock.shadowRoot.querySelector('.panel')
+      const background = element.shadowRoot.querySelector('.agent-toggle')
+      background.focus()
       return {
         expanded: dock.shadowRoot.querySelector('button.rail').getAttribute('aria-expanded'),
-        panelDisplay: getComputedStyle(dock.shadowRoot.querySelector('.panel')).display,
+        panelDisplay: getComputedStyle(panel).display,
+        panelRole: panel.getAttribute('role'),
+        panelModal: panel.getAttribute('aria-modal'),
+        panelTopLayer: panel.matches(':modal'),
         asidePosition: getComputedStyle(dock.shadowRoot.querySelector('aside')).position,
         focused: dock.shadowRoot.activeElement?.getAttribute('aria-label'),
+        backgroundFocusBlocked: element.shadowRoot.activeElement !== background,
       }
     })
     expect(opened).toEqual({
       expanded: 'true',
       panelDisplay: 'grid',
+      panelRole: 'dialog',
+      panelModal: 'true',
+      panelTopLayer: true,
       asidePosition: 'fixed',
       focused: 'Close filters',
+      backgroundFocusBlocked: true,
     })
+
+    await page.keyboard.press('Shift+Tab')
+    const wrappedFocus = await dashboard.evaluate((element: any) => {
+      const dock = element.shadowRoot.querySelector('lv-filter-dock') as any
+      const active = dock.shadowRoot.activeElement
+      return {
+        insideDrawer: active instanceof HTMLElement,
+        focusedClass: active?.className,
+        backgroundFocused: element.shadowRoot.activeElement?.classList.contains('agent-toggle') ?? false,
+      }
+    })
+    expect(wrappedFocus.insideDrawer).toBe(true)
+    expect(wrappedFocus.focusedClass).toContain('close-button')
+    expect(wrappedFocus.backgroundFocused).toBe(false)
 
     await page.keyboard.press('Escape')
     const closed = await dashboard.evaluate(async (element: any) => {
       const dock = element.shadowRoot.querySelector('lv-filter-dock') as any
       await dock.updateComplete
+      const focused = dock.shadowRoot.activeElement?.className
+      const background = element.shadowRoot.querySelector('.agent-toggle')
+      background.focus()
       return {
         expanded: dock.shadowRoot.querySelector('button.rail').getAttribute('aria-expanded'),
-        focused: dock.shadowRoot.activeElement?.className,
+        focused,
+        backgroundFocusRestored: element.shadowRoot.activeElement === background,
       }
     })
-    expect(closed).toEqual({ expanded: 'false', focused: 'rail' })
+    expect(closed).toEqual({
+      expanded: 'false',
+      focused: 'rail',
+      backgroundFocusRestored: true,
+    })
   } finally {
     await page.close()
   }
