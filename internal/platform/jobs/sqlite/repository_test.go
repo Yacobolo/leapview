@@ -93,6 +93,82 @@ func TestRepositoryRejectsIdempotentJobIDWithDifferentPayload(t *testing.T) {
 	}
 }
 
+func TestRepositoryRejectsWorkerMutationsAfterLeaseExpiry(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(context.Context, *Repository, jobs.Job) error
+	}{
+		{
+			name: "renew",
+			mutate: func(ctx context.Context, repo *Repository, job jobs.Job) error {
+				return repo.Renew(ctx, job.ID, job.Fence(), time.Minute)
+			},
+		},
+		{
+			name: "complete",
+			mutate: func(ctx context.Context, repo *Repository, job jobs.Job) error {
+				return repo.Complete(ctx, job.ID, job.Fence())
+			},
+		},
+		{
+			name: "fail",
+			mutate: func(ctx context.Context, repo *Repository, job jobs.Job) error {
+				return repo.Fail(ctx, job.ID, job.Fence(), []byte(`{"code":"FAILED"}`))
+			},
+		},
+		{
+			name: "cancel claimed",
+			mutate: func(ctx context.Context, repo *Repository, job jobs.Job) error {
+				return repo.CancelClaimed(ctx, job.ID, job.Fence())
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store, repo, claimed := claimAsyncJob(t)
+			if _, err := store.SQLDB().ExecContext(t.Context(),
+				`UPDATE api_async_jobs SET lease_expires_at = datetime('now', '-1 second') WHERE id = ?`,
+				claimed.ID,
+			); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := test.mutate(t.Context(), repo, claimed); !errors.Is(err, jobs.ErrConflict) {
+				t.Fatalf("expired %s error = %v, want ErrConflict", test.name, err)
+			}
+			stored, err := repo.Get(t.Context(), claimed.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stored.Status != jobs.StatusRunning || stored.FinishedAt != "" {
+				t.Fatalf("job after expired %s = %#v, want recoverable running claim", test.name, stored)
+			}
+		})
+	}
+}
+
+func claimAsyncJob(t *testing.T) (*platform.Store, *Repository, jobs.Job) {
+	t.Helper()
+	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "platform.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	repo := NewRepository(store.SQLDB())
+	created, err := repo.Enqueue(t.Context(), jobs.EnqueueInput{
+		ID: "job-1", Kind: "release.finalize", WorkloadClass: "control", WorkspaceID: "_node",
+		ResourceKind: "release", ResourceID: "release-1", Payload: []byte(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, ok, err := repo.ClaimByID(t.Context(), created.ID, "control", "worker-a", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("ClaimByID() = %#v, %v, %v", claimed, ok, err)
+	}
+	return store, repo, claimed
+}
+
 func TestRepositoryListsOnlyEachWorkspacesDurableHead(t *testing.T) {
 	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "platform.db"))
 	if err != nil {

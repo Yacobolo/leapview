@@ -37,7 +37,7 @@ func TestRunnerFailsUnknownJobKindExplicitly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner.executeClaimed(t.Context(), "worker", Job{ID: "job-1", Kind: "unknown"})
+	runner.executeClaimed(t.Context(), Job{ID: "job-1", Kind: "unknown"})
 	if repository.failed != "job-1" || !strings.Contains(string(repository.problem), "unsupported async job kind") {
 		t.Fatalf("failed=%q problem=%s", repository.failed, repository.problem)
 	}
@@ -60,7 +60,7 @@ func TestRunnerRenewsLeaseDuringLongHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner.executeClaimed(t.Context(), "worker", Job{ID: "job-1", Kind: "slow"})
+	runner.executeClaimed(t.Context(), Job{ID: "job-1", Kind: "slow"})
 	repository.mu.Lock()
 	defer repository.mu.Unlock()
 	if repository.renewed < 2 || repository.completed != "job-1" {
@@ -68,15 +68,17 @@ func TestRunnerRenewsLeaseDuringLongHandler(t *testing.T) {
 	}
 }
 
-func TestRunnerCancelsClaimWhenWorkerContextStops(t *testing.T) {
+func TestRunnerLeavesClaimRecoverableWhenWorkerContextStops(t *testing.T) {
 	controller, err := workload.New(workload.DefaultConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer controller.Close()
 	repository := &recordingRunnerRepository{}
+	started := make(chan struct{})
 	runner, err := NewRunner(RunnerConfig{Repository: repository, Workload: controller, Handlers: []Handler{
 		HandlerFunc{JobKind: "blocking", Run: func(ctx context.Context, _ Job) error {
+			close(started)
 			<-ctx.Done()
 			return ctx.Err()
 		}},
@@ -85,12 +87,18 @@ func TestRunnerCancelsClaimWhenWorkerContextStops(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		runner.executeClaimed(ctx, Job{ID: "job-1", Kind: "blocking"})
+	}()
+	<-started
 	cancel()
-	runner.executeClaimed(ctx, "worker", Job{ID: "job-1", Kind: "blocking"})
+	<-finished
 	repository.mu.Lock()
 	defer repository.mu.Unlock()
-	if repository.cancelled != "job-1" || repository.failed != "" {
-		t.Fatalf("cancelled=%q failed=%q", repository.cancelled, repository.failed)
+	if repository.cancelled != "" || repository.failed != "" || repository.completed != "" {
+		t.Fatalf("cancelled=%q failed=%q completed=%q", repository.cancelled, repository.failed, repository.completed)
 	}
 }
 

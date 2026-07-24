@@ -131,10 +131,10 @@ func (r *Runner) dispatchCandidate(ctx context.Context, owner string, class work
 	if err != nil || !ok {
 		return
 	}
-	r.executeClaimed(lease.Context(), owner, job)
+	r.executeClaimed(lease.Context(), job)
 }
 
-func (r *Runner) executeClaimed(parent context.Context, owner string, job Job) {
+func (r *Runner) executeClaimed(parent context.Context, job Job) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	done := make(chan struct{})
@@ -168,7 +168,6 @@ func (r *Runner) executeClaimed(parent context.Context, owner string, job Job) {
 	}
 	close(done)
 	if ctx.Err() != nil {
-		_ = r.repository.CancelClaimed(context.WithoutCancel(ctx), job.ID, job.Fence())
 		return
 	}
 	if err == nil {

@@ -58,6 +58,7 @@ UPDATE api_async_jobs SET status = 'cancelled', finished_at = CURRENT_TIMESTAMP,
   lease_owner = '', lease_expires_at = NULL
 WHERE id = ?1 AND status = 'running' AND lease_owner = ?2
   AND lease_generation = ?3
+  AND lease_expires_at IS NOT NULL AND lease_expires_at > CURRENT_TIMESTAMP
 `
 
 type CancelClaimedAPIAsyncJobParams struct {
@@ -93,7 +94,7 @@ UPDATE api_async_jobs SET status = 'running', started_at = COALESCE(started_at, 
   attempt_count = attempt_count + 1, lease_generation = lease_generation + 1
 WHERE id = ?3
   AND workload_class = ?4
-  AND (status = 'queued' OR (status = 'running' AND lease_expires_at < CURRENT_TIMESTAMP))
+  AND (status = 'queued' OR (status = 'running' AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)))
 RETURNING id, job_kind, workload_class, workspace_id, resource_kind, resource_id, payload_json, status, attempt_count, lease_owner, lease_generation,
   COALESCE(lease_expires_at, '') AS lease_expires_at, created_at, COALESCE(started_at, '') AS started_at,
   COALESCE(finished_at, '') AS finished_at, error_json
@@ -159,6 +160,7 @@ UPDATE api_async_jobs SET status = 'succeeded', finished_at = CURRENT_TIMESTAMP,
   lease_owner = '', lease_expires_at = NULL, error_json = '{}'
 WHERE id = ?1 AND status = 'running' AND lease_owner = ?2
   AND lease_generation = ?3
+  AND lease_expires_at IS NOT NULL AND lease_expires_at > CURRENT_TIMESTAMP
 `
 
 type CompleteAPIAsyncJobParams struct {
@@ -212,6 +214,7 @@ UPDATE api_async_jobs SET status = 'failed', finished_at = CURRENT_TIMESTAMP,
   lease_owner = '', lease_expires_at = NULL, error_json = ?
 WHERE id = ?2 AND status = 'running' AND lease_owner = ?3
   AND lease_generation = ?4
+  AND lease_expires_at IS NOT NULL AND lease_expires_at > CURRENT_TIMESTAMP
 `
 
 type FailAPIAsyncJobParams struct {
@@ -393,7 +396,7 @@ WITH eligible AS (
     ROW_NUMBER() OVER (PARTITION BY workspace_id ORDER BY created_at, id) AS workspace_position
   FROM api_async_jobs
   WHERE workload_class = ?2
-    AND (status = 'queued' OR (status = 'running' AND lease_expires_at < CURRENT_TIMESTAMP))
+    AND (status = 'queued' OR (status = 'running' AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)))
 )
 SELECT id, job_kind, workload_class, workspace_id, resource_kind, resource_id, payload_json, status,
   attempt_count, lease_owner, lease_generation, lease_expires_at, created_at, started_at, finished_at, error_json
@@ -471,6 +474,7 @@ const renewAPIAsyncJob = `-- name: RenewAPIAsyncJob :execrows
 UPDATE api_async_jobs SET lease_expires_at = datetime('now', ?1)
 WHERE id = ?2 AND status = 'running' AND lease_owner = ?3
   AND lease_generation = ?4
+  AND lease_expires_at IS NOT NULL AND lease_expires_at > CURRENT_TIMESTAMP
 `
 
 type RenewAPIAsyncJobParams struct {
