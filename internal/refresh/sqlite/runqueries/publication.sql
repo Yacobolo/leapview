@@ -16,6 +16,8 @@ SELECT EXISTS(
     AND candidate_job.status = 'running'
     AND candidate_job.lease_owner = sqlc.arg(lease_owner)
     AND candidate_job.lease_generation = sqlc.arg(lease_generation)
+    AND candidate_job.lease_expires_at IS NOT NULL
+    AND candidate_job.lease_expires_at > CURRENT_TIMESTAMP
     AND NOT EXISTS (
       SELECT 1
       FROM refresh_job_runs newer
@@ -79,6 +81,8 @@ WHERE refresh_job_runs.id = sqlc.arg(run_id) AND refresh_job_runs.status = 'prep
     SELECT refresh_jobs.id FROM refresh_jobs
     WHERE refresh_jobs.status = 'running' AND refresh_jobs.lease_owner = sqlc.arg(lease_owner)
       AND refresh_jobs.lease_generation = sqlc.arg(lease_generation)
+      AND refresh_jobs.lease_expires_at IS NOT NULL
+      AND refresh_jobs.lease_expires_at > CURRENT_TIMESTAMP
   );
 
 -- name: CompleteRefreshPublicationJob :execrows
@@ -87,4 +91,6 @@ SET status = 'succeeded', updated_at = CURRENT_TIMESTAMP, finished_at = CURRENT_
     lease_owner = '', lease_expires_at = NULL, last_error = ''
 WHERE refresh_jobs.id = (SELECT refresh_job_runs.job_id FROM refresh_job_runs WHERE refresh_job_runs.id = sqlc.arg(run_id))
   AND refresh_jobs.status = 'running' AND refresh_jobs.lease_owner = sqlc.arg(lease_owner)
-  AND refresh_jobs.lease_generation = sqlc.arg(lease_generation);
+  AND refresh_jobs.lease_generation = sqlc.arg(lease_generation)
+  AND refresh_jobs.lease_expires_at IS NOT NULL
+  AND refresh_jobs.lease_expires_at > CURRENT_TIMESTAMP;

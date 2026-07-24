@@ -54,6 +54,8 @@ SET status = 'succeeded', updated_at = CURRENT_TIMESTAMP, finished_at = CURRENT_
 WHERE refresh_jobs.id = (SELECT refresh_job_runs.job_id FROM refresh_job_runs WHERE refresh_job_runs.id = ?1)
   AND refresh_jobs.status = 'running' AND refresh_jobs.lease_owner = ?2
   AND refresh_jobs.lease_generation = ?3
+  AND refresh_jobs.lease_expires_at IS NOT NULL
+  AND refresh_jobs.lease_expires_at > CURRENT_TIMESTAMP
 `
 
 type CompleteRefreshPublicationJobParams struct {
@@ -79,6 +81,8 @@ WHERE refresh_job_runs.id = ?1 AND refresh_job_runs.status = 'prepared'
     SELECT refresh_jobs.id FROM refresh_jobs
     WHERE refresh_jobs.status = 'running' AND refresh_jobs.lease_owner = ?3
       AND refresh_jobs.lease_generation = ?4
+      AND refresh_jobs.lease_expires_at IS NOT NULL
+      AND refresh_jobs.lease_expires_at > CURRENT_TIMESTAMP
   )
 `
 
@@ -162,6 +166,8 @@ SELECT EXISTS(
     AND candidate_job.status = 'running'
     AND candidate_job.lease_owner = ?3
     AND candidate_job.lease_generation = ?4
+    AND candidate_job.lease_expires_at IS NOT NULL
+    AND candidate_job.lease_expires_at > CURRENT_TIMESTAMP
     AND NOT EXISTS (
       SELECT 1
       FROM refresh_job_runs newer

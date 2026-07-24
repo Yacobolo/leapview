@@ -333,7 +333,7 @@ func TestRepositoryActivateRefreshAtomicallyAdvancesAllDataVersions(t *testing.T
 		t.Fatal(err)
 	}
 	if _, err := store.SQLDB().ExecContext(ctx, `
-INSERT INTO refresh_jobs (id, workspace_id, serving_state_id, model_id, kind, status, lease_owner, lease_generation) VALUES ('job_1', 'test', ?, 'b', 'refresh_pipeline', 'running', 'worker-1', 1);
+INSERT INTO refresh_jobs (id, workspace_id, serving_state_id, model_id, kind, status, lease_owner, lease_generation, lease_expires_at) VALUES ('job_1', 'test', ?, 'b', 'refresh_pipeline', 'running', 'worker-1', 1, datetime('now', '+5 minutes'));
 INSERT INTO refresh_job_runs (id, job_id, environment, target_type, target_id, target_generation, trigger_type, status, created_sequence) VALUES ('run_1', 'job_1', 'dev', 'refresh_pipeline', 'test.daily', 1, 'manual', 'prepared', 1);
 `, second.ID); err != nil {
 		t.Fatal(err)
@@ -355,6 +355,22 @@ INSERT INTO refresh_job_runs (id, job_id, environment, target_type, target_id, t
 		t.Fatalf("stale generation activation error = %v, want ErrLeaseLost", err)
 	}
 	if _, err := store.SQLDB().ExecContext(ctx, `DELETE FROM refresh_jobs WHERE id = 'job_2'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SQLDB().ExecContext(ctx, `UPDATE refresh_jobs SET lease_expires_at = datetime('now', '-1 second') WHERE id = 'job_1'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := publication.Publish(ctx, "test", servingstate.DefaultEnvironment, second.ID, version); !errors.Is(err, refreshrun.ErrLeaseLost) {
+		t.Fatalf("expired lease activation error = %v, want ErrLeaseLost", err)
+	}
+	active, _, err := repo.ActiveArtifact(ctx, "test", servingstate.DefaultEnvironment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active.ID != first.ID {
+		t.Fatalf("active serving state after expired publication = %s, want %s", active.ID, first.ID)
+	}
+	if _, err := store.SQLDB().ExecContext(ctx, `UPDATE refresh_jobs SET lease_expires_at = datetime('now', '+5 minutes') WHERE id = 'job_1'`); err != nil {
 		t.Fatal(err)
 	}
 	if err := publication.Publish(ctx, "test", servingstate.DefaultEnvironment, second.ID, version); err != nil {
