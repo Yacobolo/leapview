@@ -20,7 +20,7 @@ See [Use the agent tool catalog](/docs/guides/integrate/agent-tools) for refs, h
 
 ## Product documentation tools
 
-The built-in agent and deployment MCP catalog expose `docs_search` and `docs_read`. Documentation search returns ranked, bounded matches from the immutable documentation index embedded in the running LeapView release. Each match includes a stable `doc:` ID, documentation path, public URL, summary, and focused excerpt.
+The built-in agent and deployment MCP catalog expose `docs_search` and `docs_read`. Documentation search returns ranked, bounded matches from the immutable documentation index embedded in the running LeapView release. Each page reports `count` and `hasMore`; continue with its opaque, snapshot-bound `nextCursor` when needed. Each match includes a stable `doc:` ID, documentation path, public URL, summary, and focused excerpt.
 
 Pass a returned ID to `docs_read`. Reads are line- and byte-bounded and return `nextOffset` when more content remains. Continue from that offset only when the current window is insufficient. The tools can read authored guides and generated CLI, API, configuration, and visual references, but cannot access arbitrary deployment files or execute documented operations.
 

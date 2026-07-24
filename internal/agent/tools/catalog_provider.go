@@ -131,6 +131,8 @@ type CatalogGetRequest struct {
 
 type CatalogPage struct {
 	Items      []CatalogItem `json:"items"`
+	Count      int           `json:"count"`
+	HasMore    bool          `json:"hasMore"`
 	NextCursor string        `json:"nextCursor,omitempty"`
 }
 
@@ -195,7 +197,7 @@ func (p CatalogProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
 				if err != nil {
 					return catalogToolError("catalog_search_failed", err), nil
 				}
-				return agentcore.ToolResult{Content: result}, nil
+				return agentcore.ToolResult{Content: catalogPageResult(result)}, nil
 			}),
 		},
 		{
@@ -237,7 +239,7 @@ func (p CatalogProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
 				if err != nil {
 					return catalogToolError("catalog_list_failed", err), nil
 				}
-				return agentcore.ToolResult{Content: result}, nil
+				return agentcore.ToolResult{Content: catalogPageResult(result)}, nil
 			}),
 		},
 		{
@@ -274,6 +276,15 @@ func (p CatalogProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
 			}),
 		},
 	}
+}
+
+func catalogPageResult(page CatalogPage) CatalogPage {
+	if page.Items == nil {
+		page.Items = []CatalogItem{}
+	}
+	page.Count = len(page.Items)
+	page.HasMore = strings.TrimSpace(page.NextCursor) != ""
+	return page
 }
 
 func decodeCatalogArguments(arguments json.RawMessage, value any) error {
@@ -435,8 +446,13 @@ var catalogItemSchema = fmt.Sprintf(`{
 
 var catalogPageOutputSchema = json.RawMessage(fmt.Sprintf(`{
 	"type":"object",
-	"properties":{"items":{"type":"array","items":%s},"nextCursor":{"type":"string"}},
-	"required":["items"],
+	"properties":{
+		"items":{"type":"array","items":%s},
+		"count":{"type":"integer","minimum":0},
+		"hasMore":{"type":"boolean"},
+		"nextCursor":{"type":"string"}
+	},
+	"required":["items","count","hasMore"],
 	"additionalProperties":false
 }`, catalogItemSchema))
 

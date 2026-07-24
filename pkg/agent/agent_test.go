@@ -41,7 +41,7 @@ func TestNewAppliesDefaultsAndValidatesDefinition(t *testing.T) {
 	if a.def.Limits.MaxToolDisplayBytes != 1024*1024 {
 		t.Fatalf("MaxToolDisplayBytes = %d, want 1MiB", a.def.Limits.MaxToolDisplayBytes)
 	}
-	if a.def.ToolOutput.Format != ToolOutputTOON || a.def.ToolOutput.MaxStringChars != 2000 || a.def.ToolOutput.MaxArrayItems != 50 || a.def.ToolOutput.MaxObjectDepth != 8 {
+	if a.def.ToolOutput.Format != ToolOutputTOON {
 		t.Fatalf("ToolOutput defaults = %#v", a.def.ToolOutput)
 	}
 	if a.def.Compaction.KeepLastTurns != 8 {

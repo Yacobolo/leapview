@@ -156,7 +156,7 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_dashboard_visual.
       "type": "object"
     },
     "limit": {
-      "maximum": 1000,
+      "maximum": 50,
       "minimum": 1,
       "type": "integer"
     },

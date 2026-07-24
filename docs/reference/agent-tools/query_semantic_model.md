@@ -84,7 +84,7 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_semantic_model.js
       "type": "array"
     },
     "limit": {
-      "maximum": 1000,
+      "maximum": 50,
       "minimum": 1,
       "type": "integer"
     },

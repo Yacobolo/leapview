@@ -40,7 +40,7 @@ func TestDocsProviderExposesBoundedSearchAndReadTools(t *testing.T) {
 
 	searchResult, err := definitions[0].Handler.Run(context.Background(), agentcore.ToolCall{
 		ID: "call-search", Name: DocsSearchToolName,
-		Arguments: json.RawMessage(`{"query":"semantic relationships","path":"guides","limit":4}`),
+		Arguments: json.RawMessage(`{"query":"semantic relationships","path":"guides","cursor":"opaque","limit":4}`),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -48,7 +48,7 @@ func TestDocsProviderExposesBoundedSearchAndReadTools(t *testing.T) {
 	if searchResult.IsError {
 		t.Fatalf("search result = %#v", searchResult.Content)
 	}
-	if want := (productdocs.SearchRequest{Query: "semantic relationships", Path: "guides", Limit: 4}); searchRequest != want {
+	if want := (productdocs.SearchRequest{Query: "semantic relationships", Path: "guides", Cursor: "opaque", Limit: 4}); searchRequest != want {
 		t.Fatalf("search request = %#v, want %#v", searchRequest, want)
 	}
 

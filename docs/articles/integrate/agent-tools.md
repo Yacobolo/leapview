@@ -54,7 +54,7 @@ Search and list results use the same compact item envelope. It contains the ref,
 
 Only `query` is required. Type and workspace filters constrain the search; optional dashboard/page context influences ranking without changing authorization. The default limit is 10 and the maximum is 25.
 
-Use `nextCursor` unchanged to continue the same search. Cursors are opaque and bound to the search, caller, and catalog snapshot. Restart from the first page if the catalog changed.
+Every search page includes `count` and `hasMore`. Use `nextCursor` unchanged when `hasMore` is true. Cursors are opaque and bound to the search, caller, and catalog snapshot. Restart from the first page if the catalog changed.
 
 ## Browse a known hierarchy
 
@@ -81,7 +81,7 @@ Call `catalog_list` without a parent to list accessible workspaces. Pass a retur
 }
 ```
 
-`childTypes` is optional, but every requested type must be valid for the parent. Results are deterministically ordered. The default limit is 25 and the maximum is 50. Pass `nextCursor` back as `cursor` to continue; do not parse or edit it.
+`childTypes` is optional, but every requested type must be valid for the parent. Results are deterministically ordered. The default limit is 25 and the maximum is 50. Every page includes `count` and `hasMore`; pass `nextCursor` back as `cursor` when `hasMore` is true. Do not parse or edit the cursor.
 
 Listing an exact parent first resolves and authorizes that parent. Search and list silently omit inaccessible results.
 
@@ -132,8 +132,8 @@ A visual or filter can appear on more than one page. If `catalog_get` returns `c
 
 Use the capabilities returned with a catalog item to choose the next tool.
 
-- Use `query_semantic_model` with a semantic-model ref and the field and measure IDs discovered through catalog browsing. It returns governed row data and supports bounded pagination.
-- Use `query_dashboard_visual` with the workspace, dashboard, page, and visual location of an existing visual. It preserves the dashboard definition, filters, authorization, and data-policy boundary.
+- Use `query_semantic_model` with a semantic-model ref and the field and measure IDs discovered through catalog browsing. It returns governed row data and supports bounded pagination. Agent calls default to 25 rows and accept at most 50 rows per page even though the corresponding REST operation supports larger application-oriented pages.
+- Use `query_dashboard_visual` with the workspace, dashboard, page, and visual location of an existing visual. It preserves the dashboard definition, filters, authorization, and data-policy boundary. Paginated table, matrix, and pivot calls accept at most 50 rows per agent page.
 - Use `query_visual` when no saved visual fits. Provide a workspace, semantic model, dataset, visual type, and semantic fields. It returns a renderer-independent visualization artifact and does not save or mutate the dashboard.
 
 The exact contracts are versioned with the running LeapView release. Use the generated [Agent tool reference](/docs/agent-tools) for readable input and output schemas, or download the [machine-readable manifest](/docs/agent-tools/manifest.json). You can also inspect the matching local release with:
@@ -155,6 +155,8 @@ Use `docs_search` for product behavior, configuration, CLI commands, API operati
   "limit": 8
 }
 ```
+
+Search pages include `count` and `hasMore`. When `hasMore` is true, pass the returned opaque `nextCursor` as `cursor` with the same query and path. Documentation cursors are bound to the embedded release snapshot; restart the search if the documentation changed.
 
 Pass a returned `doc:` ID unchanged to `docs_read`:
 
@@ -182,6 +184,8 @@ Catalog lookup deliberately does not reveal inaccessible resources:
 | `catalog_snapshot_changed` | The catalog changed during cursor pagination. | Restart the search or list from its first page. |
 
 Expected tool failures are returned as tool errors. Transport and protocol failures are separate from resource and query errors.
+
+Tool providers calculate every semantic page before it reaches the agent harness. The harness does not shorten arrays, strings, or nested objects after a tool returns because doing so could make a cursor skip unseen rows. If a provider unexpectedly exceeds the absolute model-result ceiling, the call fails transparently with `tool_output_contract_violation`, including the actual and maximum byte counts; no partial result is presented as successful.
 
 ## Verify the exposed surface
 

@@ -2,7 +2,7 @@
 
 # docs_search
 
-Search LeapView's version-matched product documentation. Returns ranked, bounded matches with stable document IDs and excerpts. Use the optional path prefix to narrow broad searches.
+Search LeapView's version-matched product documentation. Returns ranked, bounded matches with stable document IDs and excerpts. Continue with nextCursor when hasMore is true, or use the optional path prefix to narrow broad searches.
 
 Machine-readable: [focused JSON](/docs/agent-tools/tools/docs_search.json) · [complete manifest](/docs/agent-tools/manifest.json)
 
@@ -31,6 +31,11 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/docs_search.json) · [c
     "path": {
       "type": "string",
       "description": "Optional documentation path prefix, such as guides/build, api, cli, or visuals."
+    },
+    "cursor": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Opaque nextCursor from a previous call with the same query and path."
     },
     "limit": {
       "type": "integer",
@@ -93,14 +98,22 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/docs_search.json) · [c
         "additionalProperties": false
       }
     },
-    "truncated": {
+    "count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "hasMore": {
       "type": "boolean"
+    },
+    "nextCursor": {
+      "type": "string"
     }
   },
   "required": [
     "query",
     "matches",
-    "truncated"
+    "count",
+    "hasMore"
   ],
   "additionalProperties": false
 }

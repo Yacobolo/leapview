@@ -272,12 +272,21 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/catalog_search.json) ·
         "additionalProperties": false
       }
     },
+    "count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "hasMore": {
+      "type": "boolean"
+    },
     "nextCursor": {
       "type": "string"
     }
   },
   "required": [
-    "items"
+    "items",
+    "count",
+    "hasMore"
   ],
   "additionalProperties": false
 }

@@ -29,13 +29,14 @@ func (p DocsProvider) Definitions() []agentcore.ToolDefinition {
 	return []agentcore.ToolDefinition{
 		{
 			Name:        DocsSearchToolName,
-			Description: "Search LeapView's version-matched product documentation. Returns ranked, bounded matches with stable document IDs and excerpts. Use the optional path prefix to narrow broad searches.",
+			Description: "Search LeapView's version-matched product documentation. Returns ranked, bounded matches with stable document IDs and excerpts. Continue with nextCursor when hasMore is true, or use the optional path prefix to narrow broad searches.",
 			InputSchema: json.RawMessage(fmt.Sprintf(`{
 				"type":"object",
 				"properties":{
-					"query":{"type":"string","minLength":1,"description":"Words or phrases to find in LeapView documentation."},
-					"path":{"type":"string","description":"Optional documentation path prefix, such as guides/build, api, cli, or visuals."},
-					"limit":{"type":"integer","minimum":1,"maximum":%d,"description":"Maximum matches to return; defaults to %d."}
+						"query":{"type":"string","minLength":1,"description":"Words or phrases to find in LeapView documentation."},
+						"path":{"type":"string","description":"Optional documentation path prefix, such as guides/build, api, cli, or visuals."},
+						"cursor":{"type":"string","minLength":1,"description":"Opaque nextCursor from a previous call with the same query and path."},
+						"limit":{"type":"integer","minimum":1,"maximum":%d,"description":"Maximum matches to return; defaults to %d."}
 				},
 				"required":["query"],
 				"additionalProperties":false
@@ -112,6 +113,8 @@ func documentationToolError(fallback string, err error) agentcore.ToolResult {
 		return ToolError("invalid_arguments", err.Error())
 	case errors.Is(err, productdocs.ErrNotFound):
 		return ToolError("documentation_not_found", err.Error())
+	case errors.Is(err, productdocs.ErrSnapshotChanged):
+		return ToolError("documentation_snapshot_changed", "documentation changed during pagination; restart the search from its first page")
 	default:
 		return ToolError(fallback, err.Error())
 	}
@@ -137,10 +140,12 @@ var docsSearchOutputSchema = json.RawMessage(`{
 				"required":["id","path","title","summary","url","excerpt"],
 				"additionalProperties":false
 			}
+			},
+			"count":{"type":"integer","minimum":0},
+			"hasMore":{"type":"boolean"},
+			"nextCursor":{"type":"string"}
 		},
-		"truncated":{"type":"boolean"}
-	},
-	"required":["query","matches","truncated"],
+		"required":["query","matches","count","hasMore"],
 	"additionalProperties":false
 }`)
 

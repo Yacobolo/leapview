@@ -28,10 +28,27 @@ func TestServiceSearchReturnsRankedBoundedReferences(t *testing.T) {
 			URL:     "/docs/concepts/semantic-models",
 			Excerpt: "# Semantic models\n\nSemantic models define governed dimensions, measures, and relationships.\nContinue reading.",
 		}},
-		Truncated: true,
+		Count:   1,
+		HasMore: true,
 	}
+	if result.NextCursor == "" {
+		t.Fatal("Search() did not return an opaque continuation cursor")
+	}
+	want.NextCursor = result.NextCursor
 	if !equalJSON(result, want) {
 		t.Fatalf("Search() = %#v, want %#v", result, want)
+	}
+
+	next, err := service.Search(context.Background(), SearchRequest{
+		Query:  "semantic models",
+		Limit:  1,
+		Cursor: result.NextCursor,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Count != 1 || next.HasMore || next.NextCursor != "" || next.Matches[0].ID != "doc:guides/build/semantic-model" {
+		t.Fatalf("continued Search() = %#v", next)
 	}
 }
 
@@ -56,9 +73,29 @@ func TestServiceSearchCanNarrowByDocumentationPath(t *testing.T) {
 			URL:     "/docs/guides/build/semantic-model",
 			Excerpt: "# Build a semantic model\n\nConfigure reusable relationships in semantic models.",
 		}},
+		Count: 1,
 	}
 	if !equalJSON(result, want) {
 		t.Fatalf("Search() = %#v, want %#v", result, want)
+	}
+}
+
+func TestServiceSearchCursorIsBoundToQueryAndSnapshot(t *testing.T) {
+	service := testService(t)
+	first, err := service.Search(context.Background(), SearchRequest{Query: "relationships", Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.NextCursor == "" {
+		t.Fatal("Search() did not return a cursor")
+	}
+	if _, err := service.Search(context.Background(), SearchRequest{Query: "different", Limit: 1, Cursor: first.NextCursor}); err == nil {
+		t.Fatal("Search() accepted a cursor from another query")
+	}
+
+	changed := testServiceWithTitle(t, "Changed semantic models")
+	if _, err := changed.Search(context.Background(), SearchRequest{Query: "relationships", Limit: 1, Cursor: first.NextCursor}); err == nil {
+		t.Fatal("Search() accepted a cursor from another documentation snapshot")
 	}
 }
 
@@ -118,10 +155,14 @@ func TestServiceReadHasAHardModelOutputByteLimit(t *testing.T) {
 }
 
 func testService(t *testing.T) *Service {
+	return testServiceWithTitle(t, "Semantic models")
+}
+
+func testServiceWithTitle(t *testing.T, semanticTitle string) *Service {
 	t.Helper()
 	documents := []Document{
 		{
-			Slug: "concepts/semantic-models", Title: "Semantic models",
+			Slug: "concepts/semantic-models", Title: semanticTitle,
 			Summary:  "Define governed analytical relationships.",
 			Source:   "articles/concepts/semantic-models.md",
 			Markdown: "# Semantic models\n\nSemantic models define governed dimensions, measures, and relationships.\nContinue reading.\n",

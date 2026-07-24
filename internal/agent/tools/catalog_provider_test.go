@@ -59,8 +59,11 @@ func TestCatalogProviderDefinesClosedCuratedTools(t *testing.T) {
 
 func TestCatalogProviderAppliesDefaultsAndDelegates(t *testing.T) {
 	service := &fakeCatalogService{
-		searchResult: CatalogPage{Items: []CatalogItem{}},
-		listResult:   CatalogPage{Items: []CatalogItem{}},
+		searchResult: CatalogPage{
+			Items:      []CatalogItem{{Ref: CatalogRef{WorkspaceID: "acme", Type: CatalogTypeDashboard, ID: "sales"}, Name: "Sales"}},
+			NextCursor: "opaque",
+		},
+		listResult: CatalogPage{Items: []CatalogItem{}},
 		getResult: CatalogGetResult{
 			Item:    CatalogItem{Ref: CatalogRef{WorkspaceID: "acme", Type: CatalogTypeDashboard, ID: "sales"}, Name: "Sales"},
 			Details: map[string]any{"pageCount": 2},
@@ -69,9 +72,13 @@ func TestCatalogProviderAppliesDefaultsAndDelegates(t *testing.T) {
 	provider := CatalogProvider{Catalog: service}
 	definitions := provider.Definitions(Scope{PrincipalID: "p1"})
 
-	runCatalogTool(t, definitions, CatalogSearchToolName, `{"query":"sales"}`)
+	searchResult := runCatalogTool(t, definitions, CatalogSearchToolName, `{"query":"sales"}`)
 	if service.searchRequest.Limit != DefaultCatalogSearchLimit {
 		t.Fatalf("search limit = %d, want %d", service.searchRequest.Limit, DefaultCatalogSearchLimit)
+	}
+	page, ok := searchResult.Content.(CatalogPage)
+	if !ok || page.Count != 1 || !page.HasMore || page.NextCursor != "opaque" {
+		t.Fatalf("search page metadata = %#v", searchResult.Content)
 	}
 
 	runCatalogTool(t, definitions, CatalogListToolName, `{}`)

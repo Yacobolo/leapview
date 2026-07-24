@@ -35,6 +35,8 @@ type APIGenProvider struct {
 	Dispatch  APIGenDispatchFunc
 }
 
+const maxAgentQueryRows = 50
+
 func (p APIGenProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
 	operations := APIGenOperations()
 	definitions := make([]agentcore.ToolDefinition, 0, len(operations))
@@ -42,7 +44,7 @@ func (p APIGenProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
 		definitions = append(definitions, agentcore.ToolDefinition{
 			Name:         operation.Tool.Name,
 			Description:  operation.Tool.Description,
-			InputSchema:  append(json.RawMessage(nil), operation.Tool.InputSchema...),
+			InputSchema:  boundCuratedQueryInputSchema(operation.Tool.Name, operation.Tool.InputSchema),
 			OutputSchema: requireToolObjectSchema(operation.Tool.OutputSchema),
 			Effect:       string(operation.Tool.Effect),
 			Tags:         append([]string(nil), operation.Tool.Tags...),
@@ -52,6 +54,27 @@ func (p APIGenProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
 		})
 	}
 	return definitions
+}
+
+func boundCuratedQueryInputSchema(toolName string, input json.RawMessage) json.RawMessage {
+	if toolName != "query_semantic_model" && toolName != "query_dashboard_visual" {
+		return append(json.RawMessage(nil), input...)
+	}
+	var schema map[string]any
+	if err := json.Unmarshal(input, &schema); err != nil {
+		return append(json.RawMessage(nil), input...)
+	}
+	properties, _ := schema["properties"].(map[string]any)
+	limit, _ := properties["limit"].(map[string]any)
+	if limit == nil {
+		return append(json.RawMessage(nil), input...)
+	}
+	limit["maximum"] = maxAgentQueryRows
+	encoded, err := json.Marshal(schema)
+	if err != nil {
+		return append(json.RawMessage(nil), input...)
+	}
+	return encoded
 }
 
 func requireToolObjectSchema(input json.RawMessage) json.RawMessage {

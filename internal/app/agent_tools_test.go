@@ -43,8 +43,24 @@ func TestAgentDocsToolsSearchAndReadEmbeddedDocumentation(t *testing.T) {
 		t.Fatalf("docs_search result = %#v", search.Content)
 	}
 	searchResult, ok := search.Content.(productdocs.SearchResult)
-	if !ok || len(searchResult.Matches) != 1 {
+	if !ok || len(searchResult.Matches) != 1 || searchResult.Count != 1 || !searchResult.HasMore || searchResult.NextCursor == "" {
 		t.Fatalf("docs_search content = %#v", search.Content)
+	}
+	nextArguments, err := json.Marshal(productdocs.SearchRequest{
+		Query: "semantic relationships", Path: "concepts", Cursor: searchResult.NextCursor, Limit: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := definitions[0].Handler.Run(context.Background(), agentcore.ToolCall{
+		ID: "docs-search-next", Name: agenttools.DocsSearchToolName, Arguments: nextArguments,
+	})
+	if err != nil || next.IsError {
+		t.Fatalf("continued docs_search = %#v, error=%v", next.Content, err)
+	}
+	nextResult, ok := next.Content.(productdocs.SearchResult)
+	if !ok || nextResult.Count != 1 || nextResult.Matches[0].ID == searchResult.Matches[0].ID {
+		t.Fatalf("continued docs_search content = %#v", next.Content)
 	}
 
 	readArguments, err := json.Marshal(productdocs.ReadRequest{ID: searchResult.Matches[0].ID, Limit: 3})

@@ -48,6 +48,10 @@ func TestAPIGenDefinitionsRequireAndUseExplicitWorkspace(t *testing.T) {
 	if _, ok := schema.Properties["workspace"]; !ok || !containsString(schema.Required, "workspace") {
 		t.Fatalf("input schema = %s, want required workspace", definition.InputSchema)
 	}
+	limit, _ := schema.Properties["limit"].(map[string]any)
+	if limit["maximum"] != float64(maxAgentQueryRows) {
+		t.Fatalf("agent query limit maximum = %#v, want %d", limit["maximum"], maxAgentQueryRows)
+	}
 
 	result, err := definition.Handler.Run(context.Background(), agentcore.ToolCall{ID: "call-1", Arguments: json.RawMessage(`{"workspace":"sales","model":"orders"}`)})
 	if err != nil {
