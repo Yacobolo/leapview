@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	jobhttp "github.com/Yacobolo/leapview/internal/platform/jobs/http"
@@ -44,11 +43,11 @@ func (m *Module) runFinished(after func(context.Context, refreshrun.RunRecord)) 
 	}
 }
 
-func (m *Module) CreateRefreshRun(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenCreateRefreshRunHeaders) {
+func (m *Module) CreateRefreshRun(w http.ResponseWriter, r *http.Request, _ string) {
 	m.handler.CreateRun(w, r)
 }
 
-func (m *Module) ListRefreshRuns(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListRefreshRunsParams) {
+func (m *Module) ListRefreshRuns(w http.ResponseWriter, r *http.Request, _ string) {
 	m.handler.ListRuns(w, r)
 }
 
@@ -56,7 +55,7 @@ func (m *Module) GetRefreshRun(w http.ResponseWriter, r *http.Request, _, _ stri
 	m.handler.GetRun(w, r)
 }
 
-func (m *Module) CancelRefreshRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string, _ apigenapi.GenCancelRefreshRunHeaders) {
+func (m *Module) CancelRefreshRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
 	if m == nil || m.runs == nil {
 		apitransport.WriteProblem(w, r, http.StatusServiceUnavailable, "REFRESH_SERVICE_UNAVAILABLE", "Refresh service is unavailable", nil)
 		return
@@ -103,7 +102,7 @@ func (m *Module) CancelRefreshRun(w http.ResponseWriter, r *http.Request, worksp
 	apitransport.WriteJSON(w, http.StatusAccepted, response)
 }
 
-func (m *Module) ListRefreshRunEvents(w http.ResponseWriter, r *http.Request, workspaceID, runID string, params apigenapi.GenListRefreshRunEventsParams, _ apigenapi.GenListRefreshRunEventsHeaders) {
+func (m *Module) ListRefreshRunEvents(w http.ResponseWriter, r *http.Request, workspaceID, runID string, limit *int32, pageToken *string) {
 	if m == nil || m.runs == nil {
 		apitransport.WriteProblem(w, r, http.StatusServiceUnavailable, "REFRESH_SERVICE_UNAVAILABLE", "Refresh service is unavailable", nil)
 		return
@@ -132,7 +131,7 @@ func (m *Module) ListRefreshRunEvents(w http.ResponseWriter, r *http.Request, wo
 		apitransport.WriteProblem(w, r, http.StatusServiceUnavailable, "ASYNC_EVENT_STORE_UNAVAILABLE", "Refresh events are unavailable", nil)
 		return
 	}
-	jobhttp.WriteEventPage(w, r, m.events, "refresh", runID, params.Limit, params.PageToken, "refresh:"+workspaceID+":"+runID)
+	jobhttp.WriteEventPage(w, r, m.events, "refresh", runID, limit, pageToken, "refresh:"+workspaceID+":"+runID)
 }
 
 func (m *Module) workspaceID(workspaceID string) string {

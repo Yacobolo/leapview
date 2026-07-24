@@ -7,6 +7,23 @@ type ErrorResponse struct {
 	RequestID string         `json:"requestId"`
 }
 
+type ProblemFieldError struct {
+	Code   string `json:"code"`
+	Detail string `json:"detail"`
+	Field  string `json:"field"`
+}
+
+type ProblemDetails struct {
+	Code      string              `json:"code"`
+	Detail    string              `json:"detail"`
+	Errors    []ProblemFieldError `json:"errors"`
+	Instance  string              `json:"instance"`
+	RequestID string              `json:"requestId"`
+	Status    int32               `json:"status"`
+	Title     string              `json:"title"`
+	Type      string              `json:"type"`
+}
+
 type PageInfo struct {
 	NextCursor string `json:"nextCursor"`
 }

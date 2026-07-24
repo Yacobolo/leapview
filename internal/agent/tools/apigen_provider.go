@@ -33,14 +33,14 @@ type APIGenAuthorizeFunc func(ctx context.Context, scope Scope, operationID stri
 type APIGenDispatchFunc func(scope Scope, operationID string, writer http.ResponseWriter, request *http.Request) bool
 
 type APIGenProvider struct {
-	Authorize APIGenAuthorizeFunc
-	Dispatch  APIGenDispatchFunc
+	Authorize  APIGenAuthorizeFunc
+	Dispatch   APIGenDispatchFunc
+	Operations []APIGenOperation
 }
 
 func (p APIGenProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
-	operations := APIGenOperations()
-	definitions := make([]agentcore.ToolDefinition, 0, len(operations))
-	for _, operation := range operations {
+	definitions := make([]agentcore.ToolDefinition, 0, len(p.Operations))
+	for _, operation := range p.Operations {
 		operation := operationForScope(operation, scope)
 		definitions = append(definitions, agentcore.ToolDefinition{
 			Name:         operation.Tool.Name,

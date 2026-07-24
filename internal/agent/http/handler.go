@@ -17,11 +17,11 @@ import (
 	"github.com/Yacobolo/leapview/internal/agent"
 	"github.com/Yacobolo/leapview/internal/agent/api"
 	agentconfig "github.com/Yacobolo/leapview/internal/agent/config"
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	httpmodel "github.com/Yacobolo/leapview/internal/platform/http/model"
 	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
+	"github.com/Yacobolo/toolbelt/apigen/runtime/agenttool"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -51,6 +51,7 @@ type Options struct {
 	ExecuteStartedChatTurn func(context.Context, *agent.Service, agent.Scope, *agent.StartedPrompt, ChatTurnExecution) (agent.PromptResult, error)
 	EnqueueRun             func(context.Context, agent.Scope, *agent.StartedPrompt) error
 	CancelQueuedRun        func(context.Context, agent.Scope, string, string) (bool, error)
+	APIGenToolContracts    map[string]agenttool.Contract
 }
 
 func (h *Handler) DashboardBootstrap(r *stdhttp.Request, workspaceID string) ui.ChatViewState {
@@ -292,17 +293,13 @@ func (h *Handler) CreateRun(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	if !ok {
 		return
 	}
-	var input apigenapi.AgentRunCreateRequest
+	var input api.AgentTurnRequest
 	if err := decodeAgentJSON(r, &input); err != nil {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
-	correlationID := ""
-	if input.CorrelationId != nil {
-		correlationID = *input.CorrelationId
-	}
 	started, err := service.StartPrompt(r.Context(), agent.PromptInput{
-		Scope: scope, ConversationID: chi.URLParam(r, "conversation"), Input: input.Input, CorrelationID: correlationID,
+		Scope: scope, ConversationID: chi.URLParam(r, "conversation"), Input: input.Input, CorrelationID: input.CorrelationID,
 	})
 	if err != nil {
 		status := stdhttp.StatusInternalServerError
@@ -586,7 +583,7 @@ func (h *Handler) AdminDetails(ctx context.Context) (api.AdminAgentResponse, err
 	}
 	if h.options.Service != nil {
 		out.Model = h.options.Service.Model()
-		out.Tools = adminAgentToolDTOs(h.options.Service.ToolDefinitions(agent.Scope{PrincipalID: "admin", DevAuthBypass: true}))
+		out.Tools = adminAgentToolDTOs(h.options.Service.ToolDefinitions(agent.Scope{PrincipalID: "admin", DevAuthBypass: true}), h.options.APIGenToolContracts)
 	}
 	return out, nil
 }
@@ -758,8 +755,7 @@ func pageAgentEvents(events []agent.Event, page agent.Page) []agent.Event {
 	return append([]agent.Event(nil), events[start:end]...)
 }
 
-func adminAgentToolDTOs(tools []agentcore.ToolDefinition) []api.AdminAgentToolResponse {
-	contracts := apigenapi.GetAPIGenToolContracts()
+func adminAgentToolDTOs(tools []agentcore.ToolDefinition, contracts map[string]agenttool.Contract) []api.AdminAgentToolResponse {
 	out := make([]api.AdminAgentToolResponse, 0, len(tools))
 	for _, tool := range tools {
 		dto := api.AdminAgentToolResponse{

@@ -11,7 +11,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/agent/api"
 	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
 	"github.com/Yacobolo/leapview/internal/analytics/resource"
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	dashboardapi "github.com/Yacobolo/leapview/internal/dashboard/api"
 	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
 	"github.com/Yacobolo/leapview/internal/workload"
@@ -23,7 +23,7 @@ type PublicationService interface {
 	PublicationsConfigured() bool
 	AllPublications(context.Context) ([]publication.Publication, error)
 	PublicationEvents(context.Context, string) ([]publication.Event, error)
-	PublicationDTO(publication.Publication) apigenapi.DashboardPublicationResponse
+	PublicationDTO(publication.Publication) dashboardapi.PublicationResponse
 	MutatePublication(context.Context, string, string, string, publication.Action) (publication.Publication, error)
 }
 

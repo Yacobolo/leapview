@@ -9,9 +9,9 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	"github.com/Yacobolo/leapview/internal/platform/http/cursorsigning"
 	api "github.com/Yacobolo/leapview/internal/platform/http/model"
+	workspaceapi "github.com/Yacobolo/leapview/internal/workspace/api"
 	productsearch "github.com/Yacobolo/leapview/internal/workspace/search"
 	searchsqlite "github.com/Yacobolo/leapview/internal/workspace/search/sqlite"
 )
@@ -19,6 +19,8 @@ import (
 type searchService interface {
 	Search(context.Context, productsearch.Subject, productsearch.Query) (productsearch.Page, error)
 }
+
+type SearchParams = workspaceapi.SearchParams
 
 type searchAuthorizer struct {
 	authorize func(context.Context, string, access.Privilege, access.ObjectRef) (bool, error)
@@ -115,7 +117,7 @@ func (m *Module) ResolveSearchReferences(ctx context.Context, subject productsea
 	return service.Resolve(ctx, subject, environment, references)
 }
 
-func (m *Module) SearchAPI(w http.ResponseWriter, r *http.Request, params apigenapi.GenSearchParams) {
+func (m *Module) SearchAPI(w http.ResponseWriter, r *http.Request, params workspaceapi.SearchParams) {
 	subject, ok := m.SearchSubject(r)
 	if !ok {
 		writeSearchJSONError(w, errors.New("search principal is unavailable"), http.StatusUnauthorized)
@@ -126,15 +128,15 @@ func (m *Module) SearchAPI(w http.ResponseWriter, r *http.Request, params apigen
 		environment = m.handler.Environment(r)
 	}
 	query := productsearch.Query{Environment: environment}
-	if params.Q != nil {
-		query.Text = *params.Q
+	if params.Query != nil {
+		query.Text = *params.Query
 	}
-	if params.Workspace != nil {
-		query.Workspaces = append([]string(nil), (*params.Workspace)...)
+	if params.Workspaces != nil {
+		query.Workspaces = append([]string(nil), (*params.Workspaces)...)
 	}
-	if params.Type != nil {
-		query.Types = make([]productsearch.Type, 0, len(*params.Type))
-		for _, typ := range *params.Type {
+	if params.Types != nil {
+		query.Types = make([]productsearch.Type, 0, len(*params.Types))
+		for _, typ := range *params.Types {
 			query.Types = append(query.Types, productsearch.Type(typ))
 		}
 	}
@@ -166,28 +168,28 @@ func (m *Module) SearchAPI(w http.ResponseWriter, r *http.Request, params apigen
 		writeSearchJSONError(w, err, status)
 		return
 	}
-	writeSearchJSON(w, http.StatusOK, apigenapi.SearchResponse{Items: searchAPIResults(page.Items), Page: apigenapi.PageInfo{NextCursor: searchStringPointer(page.NextCursor)}})
+	writeSearchJSON(w, http.StatusOK, workspaceapi.SearchResponse{Items: searchAPIResults(page.Items), Page: workspaceapi.PageInfo{NextCursor: searchStringPointer(page.NextCursor)}})
 }
 
-func searchAPIResults(items []productsearch.Result) []apigenapi.SearchResult {
-	out := make([]apigenapi.SearchResult, 0, len(items))
+func searchAPIResults(items []productsearch.Result) []workspaceapi.SearchResult {
+	out := make([]workspaceapi.SearchResult, 0, len(items))
 	for _, item := range items {
-		locations := make([]apigenapi.SearchLocation, 0, len(item.Locations))
+		locations := make([]workspaceapi.SearchLocation, 0, len(item.Locations))
 		for _, location := range item.Locations {
-			locations = append(locations, apigenapi.SearchLocation{
-				DashboardId: searchOptionalString(location.DashboardID), DashboardName: searchOptionalString(location.DashboardName),
-				PageId: searchOptionalString(location.PageID), PageName: searchOptionalString(location.PageName), Href: location.Href,
+			locations = append(locations, workspaceapi.SearchLocation{
+				DashboardID: searchOptionalString(location.DashboardID), DashboardName: searchOptionalString(location.DashboardName),
+				PageID: searchOptionalString(location.PageID), PageName: searchOptionalString(location.PageName), Href: location.Href,
 			})
 		}
-		contextTags := make([]apigenapi.SearchContextTag, 0, len(item.Context))
+		contextTags := make([]workspaceapi.SearchContextTag, 0, len(item.Context))
 		for _, tag := range item.Context {
-			contextTags = append(contextTags, apigenapi.SearchContextTag(tag))
+			contextTags = append(contextTags, workspaceapi.SearchContextTag(tag))
 		}
-		out = append(out, apigenapi.SearchResult{
-			Reference: apigenapi.SearchReference{WorkspaceId: item.Reference.WorkspaceID, Type: apigenapi.SearchResultType(item.Reference.Type), Id: item.Reference.ID},
+		out = append(out, workspaceapi.SearchResult{
+			Reference: workspaceapi.SearchReference{WorkspaceID: item.Reference.WorkspaceID, Type: string(item.Reference.Type), ID: item.Reference.ID},
 			Name:      item.Name, Description: searchOptionalString(item.Description),
 			VisualType: searchOptionalString(item.VisualType),
-			Workspace:  apigenapi.SearchWorkspaceSummary{Id: item.Workspace.ID, Name: item.Workspace.Name},
+			Workspace:  workspaceapi.SearchWorkspaceSummary{ID: item.Workspace.ID, Name: item.Workspace.Name},
 			Href:       item.Href, Locations: locations, Context: contextTags,
 		})
 	}

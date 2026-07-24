@@ -8,6 +8,40 @@ type PageInfo struct {
 	NextCursor string `json:"nextCursor"`
 }
 
+type PublicationStatus string
+
+const (
+	PublicationStatusActive       PublicationStatus = "active"
+	PublicationStatusSuspended    PublicationStatus = "suspended"
+	PublicationStatusUnconfigured PublicationStatus = "unconfigured"
+)
+
+type PublicationResponse struct {
+	ActiveServingStateID *string           `json:"activeServingStateId,omitempty"`
+	AllowedOrigins       []string          `json:"allowedOrigins"`
+	Configured           bool              `json:"configured"`
+	ConfiguredAt         *string           `json:"configuredAt,omitempty"`
+	CreatedAt            string            `json:"createdAt"`
+	Dashboard            string            `json:"dashboard"`
+	DefaultPage          string            `json:"defaultPage"`
+	DisabledAt           *string           `json:"disabledAt,omitempty"`
+	EmbedURL             string            `json:"embedUrl"`
+	IFrameSnippet        string            `json:"iframeSnippet"`
+	Name                 string            `json:"name"`
+	ProjectID            string            `json:"projectId"`
+	PublicURL            string            `json:"publicUrl"`
+	RotatedAt            *string           `json:"rotatedAt,omitempty"`
+	Status               PublicationStatus `json:"status"`
+	SuspendedAt          *string           `json:"suspendedAt,omitempty"`
+	SuspendedBy          *string           `json:"suspendedBy,omitempty"`
+	UpdatedAt            string            `json:"updatedAt"`
+	WorkspaceID          string            `json:"workspaceId"`
+}
+
+type PublicationListResponse struct {
+	Items []PublicationResponse `json:"items"`
+}
+
 type DashboardSummary struct {
 	ID            string   `json:"id"`
 	Title         string   `json:"title"`

@@ -12,13 +12,14 @@ import (
 	agentapi "github.com/Yacobolo/leapview/internal/agent/api"
 	agenthttp "github.com/Yacobolo/leapview/internal/agent/http"
 	agentopenai "github.com/Yacobolo/leapview/internal/agent/openai"
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
 	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	productsearch "github.com/Yacobolo/leapview/internal/workspace/search"
 	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
+	"github.com/Yacobolo/toolbelt/apigen/runtime/agenttool"
 )
 
 type Module struct {
@@ -43,10 +44,17 @@ type Module struct {
 	mcpScope                 func(*http.Request) (agent.Scope, bool)
 	mcpProtect               func(http.Handler) http.Handler
 	productName              string
+	apiOperations            []agenttools.APIGenOperation
 }
 
 type Service = agent.Service
 type AdminAgentResponse = agentapi.AdminAgentResponse
+type APIGenOperation = agenttools.APIGenOperation
+type APIGenOperationContract = agenttools.OperationContract
+
+func BuildAPIGenOperations(operationContracts map[string]APIGenOperationContract, toolContracts map[string]agenttool.Contract) []APIGenOperation {
+	return agenttools.BuildAPIGenOperations(operationContracts, toolContracts)
+}
 
 type Config struct {
 	Database                 *sql.DB
@@ -68,6 +76,7 @@ type Config struct {
 	MCPScope                 func(*http.Request) (Scope, bool)
 	MCPProtect               func(http.Handler) http.Handler
 	ProductName              string
+	APIGenOperations         []agenttools.APIGenOperation
 	HTTP                     HTTPConfig
 }
 
@@ -163,7 +172,8 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		enableSystemPrompt: config.EnableSystemPrompt, broker: config.HTTP.Broker, logger: config.Logger,
 		pendingChatTitles: map[string]struct{}{},
 		mcpScope:          mcpScope, mcpProtect: config.MCPProtect,
-		productName: config.ProductName,
+		productName:   config.ProductName,
+		apiOperations: append([]agenttools.APIGenOperation(nil), config.APIGenOperations...),
 	}
 	if ownedService && durableWorkflow {
 		service.SetPromptWorkflow(m.runWorkflow)
@@ -192,6 +202,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		ResolveTurnContext: resolveTurnContext, QueueMissingTitle: m.queueMissingChatTitle,
 		ExecuteStartedChatTurn: m.executeStartedChatTurn,
 		EnqueueRun:             m.EnqueueRun, CancelQueuedRun: m.CancelQueuedRun,
+		APIGenToolContracts: apiGenToolContracts(m.apiOperations),
 	})
 	m.configureTools()
 	return m, nil
@@ -223,7 +234,7 @@ func scopeToAgent(scope Scope) agent.Scope {
 
 func (m *Module) HTTP() *agenthttp.Handler { return m.handler }
 
-func (m *Module) UpdateConversation(w http.ResponseWriter, r *http.Request, headers apigenapi.GenUpdateAgentConversationHeaders) {
-	r.Header.Set("If-Match", headers.IfMatch)
+func (m *Module) UpdateConversation(w http.ResponseWriter, r *http.Request, ifMatch string) {
+	r.Header.Set("If-Match", ifMatch)
 	m.handler.UpdateConversation(w, r)
 }

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	"github.com/Yacobolo/leapview/internal/platform"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	"github.com/Yacobolo/leapview/internal/refresh/artifact"
@@ -21,11 +20,11 @@ import (
 )
 
 type generatedRefreshAPI interface {
-	CreateRefreshRun(http.ResponseWriter, *http.Request, string, apigenapi.GenCreateRefreshRunHeaders)
-	ListRefreshRuns(http.ResponseWriter, *http.Request, string, apigenapi.GenListRefreshRunsParams)
+	CreateRefreshRun(http.ResponseWriter, *http.Request, string)
+	ListRefreshRuns(http.ResponseWriter, *http.Request, string)
 	GetRefreshRun(http.ResponseWriter, *http.Request, string, string)
-	CancelRefreshRun(http.ResponseWriter, *http.Request, string, string, apigenapi.GenCancelRefreshRunHeaders)
-	ListRefreshRunEvents(http.ResponseWriter, *http.Request, string, string, apigenapi.GenListRefreshRunEventsParams, apigenapi.GenListRefreshRunEventsHeaders)
+	CancelRefreshRun(http.ResponseWriter, *http.Request, string, string)
+	ListRefreshRunEvents(http.ResponseWriter, *http.Request, string, string, *int32, *string)
 }
 
 var _ generatedRefreshAPI = (*Module)(nil)

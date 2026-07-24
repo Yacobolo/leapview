@@ -2,16 +2,14 @@ package module
 
 import (
 	"net/http"
-
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 )
 
-func (m *Module) QuerySemanticModel(w http.ResponseWriter, r *http.Request, workspaceID string, _ apigenapi.GenQuerySemanticModelHeaders) {
+func (m *Module) QuerySemanticModel(w http.ResponseWriter, r *http.Request, workspaceID string) {
 	m.setServingSnapshot(r, workspaceID)
 	m.semantic.QuerySemanticModel(w, r)
 }
 
-func (m *Module) PreviewSemanticDataset(w http.ResponseWriter, r *http.Request, workspaceID string, _ apigenapi.GenPreviewSemanticDatasetHeaders) {
+func (m *Module) PreviewSemanticDataset(w http.ResponseWriter, r *http.Request, workspaceID string) {
 	m.setServingSnapshot(r, workspaceID)
 	m.semantic.PreviewSemanticDataset(w, r)
 }
@@ -21,12 +19,12 @@ func (m *Module) QueryDashboardPage(w http.ResponseWriter, r *http.Request, work
 	m.handler.QueryDashboardPage(w, r)
 }
 
-func (m *Module) QueryDashboardVisualData(w http.ResponseWriter, r *http.Request, workspaceID string, _ apigenapi.GenQueryDashboardVisualDataHeaders) {
+func (m *Module) QueryDashboardVisualData(w http.ResponseWriter, r *http.Request, workspaceID string) {
 	m.setServingSnapshot(r, workspaceID)
 	m.handler.QueryDashboardVisualData(w, r)
 }
 
-func (m *Module) ListDashboardFilterValues(w http.ResponseWriter, r *http.Request, workspaceID string, _ apigenapi.GenListDashboardFilterValuesParams) {
+func (m *Module) ListDashboardFilterValues(w http.ResponseWriter, r *http.Request, workspaceID string) {
 	m.setServingSnapshot(r, workspaceID)
 	m.handler.ListDashboardFilterOptions(w, r)
 }

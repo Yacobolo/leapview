@@ -3,9 +3,9 @@ package module
 import (
 	"net/http"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
 	"github.com/Yacobolo/leapview/internal/workspace"
+	workspaceapi "github.com/Yacobolo/leapview/internal/workspace/api"
 )
 
 func (m *Module) GetWorkspace(w http.ResponseWriter, r *http.Request, workspaceID string) {
@@ -23,13 +23,12 @@ func (m *Module) GetWorkspace(w http.ResponseWriter, r *http.Request, workspaceI
 		apitransport.WriteProblem(w, r, http.StatusNotFound, "WORKSPACE_NOT_FOUND", "Workspace not found", nil)
 		return
 	}
-	item := apigenapi.WorkspaceResponse{
-		Id: string(row.ID), Title: row.Title, Description: row.Description,
+	item := workspaceapi.WorkspaceResponse{
+		ID: string(row.ID), Title: row.Title, Description: row.Description,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
 	if row.ActiveServingStateID != "" {
-		value := string(row.ActiveServingStateID)
-		item.ActiveServingStateId = &value
+		item.ActiveServingStateID = string(row.ActiveServingStateID)
 	}
 	apitransport.WriteJSON(w, http.StatusOK, item)
 }

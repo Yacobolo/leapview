@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	"github.com/Yacobolo/leapview/internal/release"
+	releaseapi "github.com/Yacobolo/leapview/internal/release/api"
 )
 
 type catalogRepository struct {
@@ -37,7 +37,7 @@ func TestReleaseModuleOwnsProjectCatalogMapping(t *testing.T) {
 		LatestReleaseID: "release-1", ActiveDeploymentID: "deployment-1",
 	}}}}
 	recorder := httptest.NewRecorder()
-	module.ListProjects(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil), apigenapi.GenListProjectsParams{})
+	module.ListProjects(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil), releaseapi.PageParams{})
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
