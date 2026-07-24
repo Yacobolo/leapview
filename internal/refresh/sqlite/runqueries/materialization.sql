@@ -145,6 +145,7 @@ WHERE refresh_job_runs.id = sqlc.arg(run_id) AND refresh_job_runs.status = 'runn
 	SELECT refresh_jobs.id FROM refresh_jobs
     WHERE workspace_id = sqlc.arg(workspace_id) AND status = 'running'
       AND lease_owner = sqlc.arg(lease_owner) AND lease_generation = sqlc.arg(lease_generation)
+      AND lease_expires_at IS NOT NULL AND lease_expires_at > CURRENT_TIMESTAMP
   );
 
 -- name: RefreshRunMayPublish :one
@@ -159,6 +160,8 @@ SELECT EXISTS(
     AND candidate_job.status = 'running'
     AND candidate_job.lease_owner = sqlc.arg(lease_owner)
     AND candidate_job.lease_generation = sqlc.arg(lease_generation)
+    AND candidate_job.lease_expires_at IS NOT NULL
+    AND candidate_job.lease_expires_at > CURRENT_TIMESTAMP
     AND NOT EXISTS (
       SELECT 1
       FROM refresh_job_runs newer
@@ -182,7 +185,8 @@ WHERE refresh_job_runs.id = sqlc.arg(run_id)
 UPDATE refresh_jobs
 SET lease_expires_at = datetime('now', CAST(sqlc.arg(lease_modifier) AS TEXT)), updated_at = CURRENT_TIMESTAMP
 WHERE id = sqlc.arg(id) AND lease_owner = sqlc.arg(lease_owner)
-  AND lease_generation = sqlc.arg(lease_generation) AND status = sqlc.arg(status);
+  AND lease_generation = sqlc.arg(lease_generation) AND status = sqlc.arg(status)
+  AND lease_expires_at IS NOT NULL AND lease_expires_at > CURRENT_TIMESTAMP;
 
 -- name: GetRefreshJobQueueStats :one
 SELECT

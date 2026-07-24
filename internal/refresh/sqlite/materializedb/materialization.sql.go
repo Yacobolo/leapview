@@ -1019,6 +1019,7 @@ WHERE refresh_job_runs.id = ?1 AND refresh_job_runs.status = 'running'
 	SELECT refresh_jobs.id FROM refresh_jobs
     WHERE workspace_id = ?2 AND status = 'running'
       AND lease_owner = ?3 AND lease_generation = ?4
+      AND lease_expires_at IS NOT NULL AND lease_expires_at > CURRENT_TIMESTAMP
   )
 `
 
@@ -1146,6 +1147,8 @@ SELECT EXISTS(
     AND candidate_job.status = 'running'
     AND candidate_job.lease_owner = ?4
     AND candidate_job.lease_generation = ?5
+    AND candidate_job.lease_expires_at IS NOT NULL
+    AND candidate_job.lease_expires_at > CURRENT_TIMESTAMP
     AND NOT EXISTS (
       SELECT 1
       FROM refresh_job_runs newer
@@ -1185,6 +1188,7 @@ UPDATE refresh_jobs
 SET lease_expires_at = datetime('now', CAST(?1 AS TEXT)), updated_at = CURRENT_TIMESTAMP
 WHERE id = ?2 AND lease_owner = ?3
   AND lease_generation = ?4 AND status = ?5
+  AND lease_expires_at IS NOT NULL AND lease_expires_at > CURRENT_TIMESTAMP
 `
 
 type RenewRefreshJobLeaseParams struct {
