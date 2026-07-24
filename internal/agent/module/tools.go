@@ -97,11 +97,11 @@ func (m *Module) APIGenToolProvider() agenttools.APIGenProvider {
 		Authorize: func(ctx context.Context, scope agenttools.Scope, operationID string) (agentcore.ToolResult, bool) {
 			return m.authorizeAPIGenOperation(ctx, scopeFromTools(scope), operationID)
 		},
-		Dispatch: func(scope agenttools.Scope, operationID string, request *http.Request) (*http.Response, bool) {
+		Dispatch: func(scope agenttools.Scope, operationID string, writer http.ResponseWriter, request *http.Request) bool {
 			if m.dispatchAPIGen == nil {
-				return nil, false
+				return false
 			}
-			return m.dispatchAPIGen(scopeFromTools(scope), operationID, request)
+			return m.dispatchAPIGen(scopeFromTools(scope), operationID, writer, request)
 		},
 	}
 }

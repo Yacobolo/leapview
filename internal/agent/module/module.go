@@ -32,7 +32,7 @@ type Module struct {
 	authorizeAnyObject       func(context.Context, string, access.Privilege, []access.ObjectRef) (bool, error)
 	skipContextAuthorization bool
 	recordAudit              func(context.Context, access.AuditEventInput) error
-	dispatchAPIGen           func(agent.Scope, string, *http.Request) (*http.Response, bool)
+	dispatchAPIGen           func(agent.Scope, string, http.ResponseWriter, *http.Request) bool
 	enableSystemPrompt       bool
 	broker                   *pagestream.Broker
 	logger                   *slog.Logger
@@ -58,7 +58,7 @@ type Config struct {
 	AuthorizeAnyObject       func(context.Context, string, access.Privilege, []access.ObjectRef) (bool, error)
 	SkipContextAuthorization bool
 	RecordAudit              func(context.Context, access.AuditEventInput) error
-	DispatchAPIGen           func(Scope, string, *http.Request) (*http.Response, bool)
+	DispatchAPIGen           func(Scope, string, http.ResponseWriter, *http.Request) bool
 	EnableSystemPrompt       bool
 	Logger                   *slog.Logger
 	MCPScope                 func(*http.Request) (Scope, bool)
@@ -130,10 +130,10 @@ func Build(_ context.Context, config Config) (*Module, error) {
 			return agentopenai.NewModel(modelConfig, nil)
 		})
 	}
-	var dispatchAPIGen func(agent.Scope, string, *http.Request) (*http.Response, bool)
+	var dispatchAPIGen func(agent.Scope, string, http.ResponseWriter, *http.Request) bool
 	if config.DispatchAPIGen != nil {
-		dispatchAPIGen = func(scope agent.Scope, operationID string, request *http.Request) (*http.Response, bool) {
-			return config.DispatchAPIGen(scopeFromAgent(scope), operationID, request)
+		dispatchAPIGen = func(scope agent.Scope, operationID string, writer http.ResponseWriter, request *http.Request) bool {
+			return config.DispatchAPIGen(scopeFromAgent(scope), operationID, writer, request)
 		}
 	}
 	var mcpScope func(*http.Request) (agent.Scope, bool)

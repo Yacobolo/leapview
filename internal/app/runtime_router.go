@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"time"
 
@@ -676,7 +675,7 @@ func (s *applicationAssembly) configureModules(ctx context.Context, database *sq
 				}
 				return scope, true
 			},
-			DispatchAPIGen: func(scope agentmodule.Scope, operationID string, request *http.Request) (*http.Response, bool) {
+			DispatchAPIGen: func(scope agentmodule.Scope, operationID string, writer http.ResponseWriter, request *http.Request) bool {
 				principal := accessmodule.Principal{ID: scope.PrincipalID, DevBypass: scope.DevAuthBypass}
 				if s.platform.auth == nil {
 					principal = accessmodule.LocalDeveloperPrincipal()
@@ -688,14 +687,10 @@ func (s *applicationAssembly) configureModules(ctx context.Context, database *sq
 					))
 				}
 				request = request.WithContext(ctx)
-				recorder := httptest.NewRecorder()
 				if apiDispatcher == nil {
-					return nil, false
+					return false
 				}
-				if ok := apigenapi.DispatchAPIGenOperation(operationID, apiDispatcher, apiprotocol.TransportErrorResponder{Logger: s.platform.logger}, recorder, request); !ok {
-					return nil, false
-				}
-				return recorder.Result(), true
+				return apigenapi.DispatchAPIGenOperation(operationID, apiDispatcher, apiprotocol.TransportErrorResponder{Logger: s.platform.logger}, writer, request)
 			},
 			HTTP: agentmodule.HTTPConfig{
 				Settings: inputs.persistence.agentSettings, Broker: s.runtime.broker,

@@ -291,6 +291,19 @@ func TestGeneratedQueryPackagesDoNotCombineCapabilitySQL(t *testing.T) {
 	}
 }
 
+func TestCompositionDoesNotUseTestTransports(t *testing.T) {
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/app" {
+			continue
+		}
+		for _, imported := range file.imports {
+			if imported == "net/http/httptest" {
+				t.Errorf("%s uses httptest in process composition; response capture belongs to the consuming transport adapter", file.path)
+			}
+		}
+	}
+}
+
 func TestRefreshPersistenceIsConstructedOnlyByItsModule(t *testing.T) {
 	constructors := 0
 	for _, file := range productionGoFiles(t) {

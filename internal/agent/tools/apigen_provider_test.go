@@ -18,13 +18,11 @@ func TestGlobalAPIGenDefinitionsRequireWorkspaceForWorkspaceRoutes(t *testing.T)
 			authorizedScope = scope
 			return agentcore.ToolResult{}, true
 		},
-		Dispatch: func(_ Scope, _ string, request *http.Request) (*http.Response, bool) {
+		Dispatch: func(_ Scope, _ string, writer http.ResponseWriter, request *http.Request) bool {
 			dispatchedPath = request.URL.Path
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body:       http.NoBody,
-			}, true
+			writer.Header().Set("Content-Type", "application/json")
+			writer.WriteHeader(http.StatusOK)
+			return true
 		},
 	}
 
