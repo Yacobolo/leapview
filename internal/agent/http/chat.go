@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/agent"
+	"github.com/Yacobolo/leapview/internal/agent/ui"
 	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
-	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )

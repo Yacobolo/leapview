@@ -596,7 +596,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 					return version.RefreshedAt.Format(time.RFC3339)
 				},
 				AgentBootstrap: func(r *http.Request, workspaceID string) ui.ChatViewState {
-					return routes.agentModule.HTTP().DashboardBootstrap(r, workspaceID)
+					return routes.agentModule.DashboardBootstrap(r, workspaceID)
 				},
 				Presentation: dashboardmodule.Presentation{ProductName: brand.Name, FaviconPath: brand.FaviconPath},
 			},

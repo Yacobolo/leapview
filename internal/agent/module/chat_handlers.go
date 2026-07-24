@@ -5,7 +5,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/agent"
 	agenthttp "github.com/Yacobolo/leapview/internal/agent/http"
-	"github.com/Yacobolo/leapview/internal/workspace/ui"
+	"github.com/Yacobolo/leapview/internal/agent/ui"
 )
 
 func (m *Module) executeStartedChatTurn(ctx context.Context, service *agent.Service, scope agent.Scope, started *agent.StartedPrompt, execution agenthttp.ChatTurnExecution) (agent.PromptResult, error) {

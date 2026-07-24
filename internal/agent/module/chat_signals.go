@@ -5,9 +5,8 @@ import (
 	"encoding/json"
 
 	"github.com/Yacobolo/leapview/internal/agent"
+	"github.com/Yacobolo/leapview/internal/agent/ui"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
-	"github.com/Yacobolo/leapview/internal/workspace/ui"
-	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 )
 
 func chatSignalWithConversations(conversations []ui.ChatConversationSummary, activeID string, transcript []agent.ChatTranscriptItem, artifacts agent.ChatArtifactSignals, statusErr string, running, enabled bool) ui.ChatViewState {
@@ -27,7 +26,7 @@ func chatSignalWithConversations(conversations []ui.ChatConversationSummary, act
 			Status: ui.ChatStatus{
 				Enabled: enabled,
 				Running: running,
-				Error:   uisignals.Optional(statusErr),
+				Error:   ui.Optional(statusErr),
 			},
 			Composer: ui.ComposerSignal{
 				Value:       "",
@@ -66,7 +65,7 @@ func (m *Module) ChatSignalWith(ctx context.Context, scope agent.Scope, activeID
 			Status: ui.ChatStatus{
 				Enabled: enabled,
 				Running: running,
-				Error:   uisignals.Optional(statusErr),
+				Error:   ui.Optional(statusErr),
 			},
 			Composer: ui.ComposerSignal{
 				Value:       "",
@@ -116,7 +115,7 @@ func (m *Module) chatConversations(ctx context.Context, scope agent.Scope) []ui.
 	}
 	for _, row := range rows {
 		out := chatConversationSummary(row)
-		out.TitlePending = uisignals.Pointer(m.isChatTitlePending(row.ID))
+		out.TitlePending = ui.Pointer(m.isChatTitlePending(row.ID))
 		conversations = append(conversations, out)
 	}
 	return conversations
@@ -130,7 +129,7 @@ func chatConversationSummary(row agent.Conversation) ui.ChatConversationSummary 
 		Status:      row.Status,
 		CreatedAt:   row.CreatedAt,
 		UpdatedAt:   row.UpdatedAt,
-		ArchivedAt:  uisignals.Optional(row.ArchivedAt),
+		ArchivedAt:  ui.Optional(row.ArchivedAt),
 	}
 }
 

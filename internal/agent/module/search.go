@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/agent"
+	"github.com/Yacobolo/leapview/internal/agent/ui"
 	productsearch "github.com/Yacobolo/leapview/internal/workspace/search"
-	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 )
 
 var referenceTypes = []productsearch.Type{
@@ -28,7 +28,7 @@ func (m *Module) IsReferenceType(typ productsearch.Type) bool {
 	}
 }
 
-func (m *Module) SearchReferences(r *http.Request, turnContext agent.TurnContext, query string, limit int) ([]uisignals.AgentReferenceSignal, error) {
+func (m *Module) SearchReferences(r *http.Request, turnContext agent.TurnContext, query string, limit int) ([]ui.AgentReferenceSignal, error) {
 	if m == nil || m.search == nil {
 		return nil, errors.New("search is not configured")
 	}
@@ -52,30 +52,30 @@ func (m *Module) SearchReferences(r *http.Request, turnContext agent.TurnContext
 	if err != nil {
 		return nil, err
 	}
-	out := make([]uisignals.AgentReferenceSignal, 0, len(page.Items))
+	out := make([]ui.AgentReferenceSignal, 0, len(page.Items))
 	for _, result := range page.Items {
 		out = append(out, ReferenceSignal(result))
 	}
 	return out, nil
 }
 
-func ReferenceSignal(result productsearch.Result) uisignals.AgentReferenceSignal {
-	locations := make([]uisignals.AgentReferenceLocationSignal, 0, len(result.Locations))
+func ReferenceSignal(result productsearch.Result) ui.AgentReferenceSignal {
+	locations := make([]ui.AgentReferenceLocationSignal, 0, len(result.Locations))
 	for _, location := range result.Locations {
-		locations = append(locations, uisignals.AgentReferenceLocationSignal{
-			DashboardID: uisignals.Optional(location.DashboardID), DashboardName: uisignals.Optional(location.DashboardName),
-			PageID: uisignals.Optional(location.PageID), PageName: uisignals.Optional(location.PageName), Href: location.Href,
+		locations = append(locations, ui.AgentReferenceLocationSignal{
+			DashboardID: ui.Optional(location.DashboardID), DashboardName: ui.Optional(location.DashboardName),
+			PageID: ui.Optional(location.PageID), PageName: ui.Optional(location.PageName), Href: location.Href,
 		})
 	}
 	contextTags := make([]string, 0, len(result.Context))
 	for _, tag := range result.Context {
 		contextTags = append(contextTags, string(tag))
 	}
-	return uisignals.AgentReferenceSignal{
-		Reference: uisignals.AgentReferenceKeySignal{WorkspaceID: result.Reference.WorkspaceID, Type: string(result.Reference.Type), ID: result.Reference.ID},
-		Name:      result.Name, Description: uisignals.Optional(result.Description),
-		VisualType: uisignals.Optional(result.VisualType),
-		Workspace:  uisignals.AgentReferenceWorkspaceSignal{ID: result.Workspace.ID, Name: result.Workspace.Name},
+	return ui.AgentReferenceSignal{
+		Reference: ui.AgentReferenceKeySignal{WorkspaceID: result.Reference.WorkspaceID, Type: string(result.Reference.Type), ID: result.Reference.ID},
+		Name:      result.Name, Description: ui.Optional(result.Description),
+		VisualType: ui.Optional(result.VisualType),
+		Workspace:  ui.AgentReferenceWorkspaceSignal{ID: result.Workspace.ID, Name: result.Workspace.Name},
 		Hierarchy:  referenceHierarchy(result),
 		Href:       result.Href, Locations: locations, Context: contextTags,
 	}
