@@ -516,7 +516,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			CSRFToken:        routes.accessModule.CSRFToken,
 			CurrentRoleLabel: routes.accessModule.CurrentRoleLabel,
 			ChromeOptions: func(r *http.Request) []ui.ChromeOption {
-				return []ui.ChromeOption{routes.agentModule.ChromeOption(r)}
+				return []ui.ChromeOption{agentChromeOption(routes.agentModule, r)}
 			},
 			CurrentCredential: func(r *http.Request) (accessmodule.APICredential, bool) {
 				return accessmodule.APICredentialFromContext(r.Context())
@@ -580,8 +580,10 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				AuthorizeListObject: func(ctx context.Context, principalID string, object accessmodule.ObjectRef) (bool, error) {
 					return authorizeListObject(routes, runtime, platform, policy, ctx, principalID, object)
 				},
-				CSRFToken:        routes.accessModule.CSRFToken,
-				ChatChromeSignal: routes.agentModule.ChromeSignal,
+				CSRFToken: routes.accessModule.CSRFToken,
+				ChatChromeSignal: func(r *http.Request) ui.ChatSignal {
+					return workspaceChatSignal(routes.agentModule.ChromeSignal(r))
+				},
 				Environment: func(r *http.Request) string {
 					return string(requestServingEnvironment(routes, runtime, platform, policy, r))
 				},
@@ -596,7 +598,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 					return version.RefreshedAt.Format(time.RFC3339)
 				},
 				AgentBootstrap: func(r *http.Request, workspaceID string) ui.ChatViewState {
-					return routes.agentModule.DashboardBootstrap(r, workspaceID)
+					return workspaceChatViewState(routes.agentModule.DashboardBootstrap(r, workspaceID))
 				},
 				Presentation: dashboardmodule.Presentation{ProductName: brand.Name, FaviconPath: brand.FaviconPath},
 			},
@@ -769,7 +771,9 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				principal, ok := currentAdminPrincipal(r)
 				return adminmodule.RoleLabel(platform.auth != nil, principal, ok)
 			},
-			ChromeOption: routes.agentModule.ChromeOption,
+			ChromeOption: func(r *http.Request) ui.ChromeOption {
+				return agentChromeOption(routes.agentModule, r)
+			},
 			EnsureClientID: func(w http.ResponseWriter, r *http.Request) {
 				_ = pagestream.EnsureClientID(w, r)
 			},
