@@ -15,6 +15,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
 	publicationsqlite "github.com/Yacobolo/leapview/internal/dashboard/publication/sqlite"
 	"github.com/Yacobolo/leapview/internal/deployment"
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	"github.com/Yacobolo/leapview/internal/platform/transaction"
 	refreshpipelinesqlite "github.com/Yacobolo/leapview/internal/refresh/sqlite"
 	"github.com/Yacobolo/leapview/internal/runtimehost"
@@ -65,6 +66,30 @@ func TestCreateDeploymentSnapshotsCompleteTargetsAndManagedPointers(t *testing.T
 	})
 	if !errors.Is(err, deployment.ErrConflict) {
 		t.Fatalf("conflicting replay error = %v", err)
+	}
+}
+
+func TestCreateDeploymentRollsBackWhenWorkflowCannotBeRecorded(t *testing.T) {
+	ctx, db, _ := testRepository(t)
+	injected := errors.New("injected workflow failure")
+	repository := NewRepositoryWithHooks(db, ActivationHooks{
+		RecordWorkflow: jobs.WorkflowRecorderFunc(func(context.Context, transaction.Transaction, jobs.WorkflowIntent) error {
+			return injected
+		}),
+	})
+	insertWorkspaceCandidate(t, ctx, db, "sales", "sales_old", "sales_new", "prod")
+	targets := []deployment.TargetInput{{WorkspaceID: "sales", ServingStateID: "sales_new"}}
+	setCandidateProjectMetadata(t, ctx, db, targets)
+	_, err := repository.CreateDeployment(ctx, deployment.CreateInput{
+		ID: "deployment_atomic", ProjectID: "project", Environment: "prod", RequestDigest: "sha256:request",
+		CreatedBy: "principal", Targets: targets,
+		Workflow: jobs.WorkflowIntent{Job: jobs.EnqueueInput{ID: "deployment:deployment_atomic:activate"}},
+	})
+	if !errors.Is(err, injected) {
+		t.Fatalf("CreateDeployment() error = %v, want injected failure", err)
+	}
+	if _, err := repository.DeploymentByID(ctx, "deployment_atomic"); !errors.Is(err, deployment.ErrNotFound) {
+		t.Fatalf("rolled-back deployment error = %v, want ErrNotFound", err)
 	}
 }
 

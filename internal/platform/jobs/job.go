@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/Yacobolo/leapview/internal/platform/transaction"
 )
 
 var (
@@ -59,6 +61,33 @@ type Event struct {
 	ResourceID, EventType string
 	Data                  []byte
 	CreatedAt             string
+}
+
+type EventInput struct {
+	Key          string
+	ResourceKind string
+	ResourceID   string
+	EventType    string
+	Data         []byte
+}
+
+// WorkflowIntent is the durable consequence of one capability-owned state
+// transition. Event keys and job IDs make replay safe after ambiguous commits.
+type WorkflowIntent struct {
+	Event EventInput
+	Job   EnqueueInput
+}
+
+// WorkflowRecorder writes an event and its required job using the transaction
+// owned by the capability making the state transition.
+type WorkflowRecorder interface {
+	RecordWorkflow(context.Context, transaction.Transaction, WorkflowIntent) error
+}
+
+type WorkflowRecorderFunc func(context.Context, transaction.Transaction, WorkflowIntent) error
+
+func (f WorkflowRecorderFunc) RecordWorkflow(ctx context.Context, tx transaction.Transaction, intent WorkflowIntent) error {
+	return f(ctx, tx, intent)
 }
 
 type EventAppender interface {

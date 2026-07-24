@@ -7,6 +7,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/deployment"
 	deploymentsqlite "github.com/Yacobolo/leapview/internal/deployment/sqlite"
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	"github.com/Yacobolo/leapview/internal/platform/transaction"
 )
 
@@ -20,7 +21,7 @@ type PublicationActivationInput struct {
 	Publications                                    map[string]json.RawMessage
 }
 
-func newPersistence(database *sql.DB, hooks ActivationHooks) (deployment.Repository, deployment.ActivationUnitOfWork) {
+func newPersistence(database *sql.DB, hooks ActivationHooks, releases ReleasePort, workflow jobs.WorkflowRecorder) (deployment.Repository, deployment.ActivationUnitOfWork) {
 	sqliteHooks := deploymentsqlite.ActivationHooks{
 		ApplyAccessSnapshot: hooks.ApplyAccessSnapshot,
 	}
@@ -32,6 +33,12 @@ func newPersistence(database *sql.DB, hooks ActivationHooks) (deployment.Reposit
 			})
 		}
 	}
+	if releases != nil {
+		sqliteHooks.LinkRelease = func(ctx context.Context, tx transaction.Transaction, input deployment.CreateInput) error {
+			return releases.LinkDeploymentTx(ctx, tx, input.ProjectID, input.ID, input.ReleaseID, input.RollbackOf)
+		}
+	}
+	sqliteHooks.RecordWorkflow = workflow
 	owned := deploymentsqlite.NewRepositoryWithHooks(database, sqliteHooks)
 	return owned, owned
 }

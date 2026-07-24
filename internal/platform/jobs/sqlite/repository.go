@@ -13,6 +13,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	platformdb "github.com/Yacobolo/leapview/internal/platform/jobs/sqlite/jobdb"
+	"github.com/Yacobolo/leapview/internal/platform/transaction"
 )
 
 type Repository struct{ q *platformdb.Queries }
@@ -132,6 +133,27 @@ func (r *Repository) AppendEvent(ctx context.Context, resourceKind, resourceID, 
 		return jobs.Event{}, err
 	}
 	return eventFromValues(row.EventID, row.ResourceKind, row.ResourceID, row.EventType, row.DataJson, row.CreatedAt), nil
+}
+
+func (r *Repository) RecordWorkflow(ctx context.Context, tx transaction.Transaction, intent jobs.WorkflowIntent) error {
+	if tx == nil {
+		return fmt.Errorf("workflow transaction is required")
+	}
+	event := intent.Event
+	event.Key, event.ResourceKind = strings.TrimSpace(event.Key), strings.TrimSpace(event.ResourceKind)
+	event.ResourceID, event.EventType = strings.TrimSpace(event.ResourceID), strings.TrimSpace(event.EventType)
+	if event.Key == "" || event.ResourceKind == "" || event.ResourceID == "" || event.EventType == "" || !json.Valid(event.Data) {
+		return fmt.Errorf("invalid workflow event")
+	}
+	transactional := NewRepository(tx)
+	if _, err := transactional.q.AppendAPIAsyncWorkflowEvent(ctx, platformdb.AppendAPIAsyncWorkflowEventParams{
+		ResourceKind: event.ResourceKind, ResourceID: event.ResourceID, EventType: event.EventType,
+		DataJson: string(event.Data), EventKey: event.Key,
+	}); err != nil {
+		return err
+	}
+	_, err := transactional.Enqueue(ctx, intent.Job)
+	return err
 }
 
 func (r *Repository) ListEvents(ctx context.Context, resourceKind, resourceID string, after int64, limit int) ([]jobs.Event, error) {

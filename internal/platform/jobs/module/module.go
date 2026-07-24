@@ -11,6 +11,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	jobsqlite "github.com/Yacobolo/leapview/internal/platform/jobs/sqlite"
+	"github.com/Yacobolo/leapview/internal/platform/transaction"
 	"github.com/Yacobolo/leapview/internal/workload"
 )
 
@@ -147,6 +148,16 @@ func (m *Module) CancelClaimed(ctx context.Context, id string, fence jobs.Fence)
 }
 func (m *Module) AppendEvent(ctx context.Context, kind, id, event string, data []byte) (jobs.Event, error) {
 	return m.repository.AppendEvent(ctx, kind, id, event, data)
+}
+func (m *Module) RecordWorkflow(ctx context.Context, tx transaction.Transaction, intent jobs.WorkflowIntent) error {
+	m.mu.Lock()
+	_, registered := m.handlers[intent.Job.Kind]
+	configured := m.handlers != nil
+	m.mu.Unlock()
+	if !configured || !registered {
+		return errors.Join(jobs.ErrUnknownKind, errors.New(intent.Job.Kind))
+	}
+	return m.repository.RecordWorkflow(ctx, tx, intent)
 }
 func (m *Module) ListEvents(ctx context.Context, kind, id string, after int64, limit int) ([]jobs.Event, error) {
 	return m.repository.ListEvents(ctx, kind, id, after, limit)

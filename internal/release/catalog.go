@@ -1,6 +1,10 @@
 package release
 
-import "context"
+import (
+	"context"
+
+	"github.com/Yacobolo/leapview/internal/platform/transaction"
+)
 
 type ProjectRecord struct {
 	ID, CreatedAt, UpdatedAt, LatestReleaseID, ActiveDeploymentID string
@@ -25,6 +29,7 @@ type CatalogRepository interface {
 type DeploymentLinkage interface {
 	Get(context.Context, string, string) (Release, error)
 	LinkDeployment(context.Context, string, string, string, string) error
+	LinkDeploymentTx(context.Context, transaction.Transaction, string, string, string, string) error
 	DeploymentRelease(context.Context, string, string) (string, string, error)
 	ListDeploymentIDs(context.Context, string) ([]string, error)
 	PriorDeploymentRelease(context.Context, string, string) (string, error)

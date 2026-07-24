@@ -13,23 +13,30 @@ import (
 	jobhttp "github.com/Yacobolo/leapview/internal/platform/jobs/http"
 )
 
-func (m *Module) enqueueFinalize(ctx context.Context, request control.UploadRequest) error {
-	if err := m.appendEvent(ctx, request.UploadID, "upload_session.finalizing", map[string]any{"uploadSessionId": request.UploadID, "status": "finalizing"}); err != nil {
-		return err
-	}
+func (m *Module) beginFinalize(ctx context.Context, request control.UploadRequest) (control.UploadResult, error) {
 	payload, err := json.Marshal(FinalizeUploadJob{Project: request.Project, Connection: request.Connection, UploadSession: request.UploadID})
 	if err != nil {
-		return err
+		return control.UploadResult{}, err
 	}
-	if m == nil || m.jobs == nil {
-		return errors.New("managed-data job queue is unavailable")
+	event, err := json.Marshal(map[string]any{"uploadSessionId": request.UploadID, "status": "finalizing"})
+	if err != nil {
+		return control.UploadResult{}, err
 	}
-	_, err = m.jobs.Enqueue(ctx, jobs.EnqueueInput{
-		ID: "upload:" + request.UploadID + ":finalize", Kind: FinalizeUploadJobKind,
-		WorkloadClass: "control", WorkspaceID: "_node",
-		ResourceKind: "upload", ResourceID: request.UploadID, Payload: payload,
-	})
-	return err
+	request.Workflow = jobs.WorkflowIntent{
+		Event: jobs.EventInput{
+			Key: "upload_session.finalizing", ResourceKind: "upload", ResourceID: request.UploadID,
+			EventType: "upload_session.finalizing", Data: event,
+		},
+		Job: jobs.EnqueueInput{
+			ID: "upload:" + request.UploadID + ":finalize", Kind: FinalizeUploadJobKind,
+			WorkloadClass: "control", WorkspaceID: "_node",
+			ResourceKind: "upload", ResourceID: request.UploadID, Payload: payload,
+		},
+	}
+	if m == nil || m.uploads == nil {
+		return control.UploadResult{}, errors.New("managed-data finalization is unavailable")
+	}
+	return m.uploads.BeginFinalizeUpload(ctx, request)
 }
 
 func (m *Module) recordUploadCreated(ctx context.Context, result control.UploadResult) error {

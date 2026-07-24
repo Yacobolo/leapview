@@ -2,6 +2,7 @@ package module
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/Yacobolo/leapview/internal/agent"
@@ -18,6 +19,9 @@ func (m *Module) EnqueueRun(ctx context.Context, scope agent.Scope, started *age
 	if m == nil || started == nil {
 		return errors.New("agent run queue is unavailable")
 	}
+	if started.DurablyQueued() {
+		return nil
+	}
 	if err := jobs.AppendJSONEvent(ctx, m.jobs, "agent_run", started.RunID, "agent_run.queued", map[string]any{
 		"runId": started.RunID, "conversationId": started.ConversationID, "status": "running",
 	}); err != nil {
@@ -32,6 +36,28 @@ func (m *Module) EnqueueRun(ctx context.Context, scope agent.Scope, started *age
 			Run: started.RunID, CorrelationID: started.CorrelationID,
 		},
 	})
+}
+
+func (m *Module) runWorkflow(input agent.PromptInput, runID string) jobs.WorkflowIntent {
+	scope := input.Scope
+	payload, _ := json.Marshal(RunJob{
+		Scope: scope, Conversation: input.ConversationID, Run: runID, CorrelationID: input.CorrelationID,
+	})
+	event, _ := json.Marshal(map[string]any{
+		"runId": runID, "conversationId": input.ConversationID, "status": "running",
+	})
+	return jobs.WorkflowIntent{
+		Event: jobs.EventInput{
+			Key: "agent_run.queued", ResourceKind: "agent_run", ResourceID: runID,
+			EventType: "agent_run.queued", Data: event,
+		},
+		Job: jobs.EnqueueInput{
+			ID: "agent:" + runID + ":run", Kind: RunJobKind,
+			WorkloadClass: m.runWorkloadClass,
+			WorkspaceID:   runWorkspaceID(scope, m.defaultWorkspaceID, m.globalWorkspaceID),
+			ResourceKind:  "agent_run", ResourceID: runID, Payload: payload,
+		},
+	}
 }
 
 func (m *Module) CancelQueuedRun(ctx context.Context, scope agent.Scope, conversationID, runID string) (bool, error) {

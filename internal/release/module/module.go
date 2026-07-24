@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	"github.com/Yacobolo/leapview/internal/release"
 	releasefilesystem "github.com/Yacobolo/leapview/internal/release/filesystem"
 	releasesqlite "github.com/Yacobolo/leapview/internal/release/sqlite"
@@ -41,7 +42,7 @@ type WorkspaceProvisioner interface {
 }
 
 func Build(_ context.Context, config Config) (*Module, error) {
-	releases, finalization, catalog, deployments, err := releaseStores(config.Database)
+	releases, finalization, catalog, deployments, err := releaseStores(config.Database, config.API.Workflow)
 	if err != nil {
 		return nil, err
 	}
@@ -64,11 +65,15 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	}, nil
 }
 
-func releaseStores(database *sql.DB) (release.Repository, release.FinalizationUnitOfWork, release.CatalogRepository, release.DeploymentLinkage, error) {
+func releaseStores(database *sql.DB, workflow ...jobs.WorkflowRecorder) (release.Repository, release.FinalizationUnitOfWork, release.CatalogRepository, release.DeploymentLinkage, error) {
 	if database == nil {
 		return nil, nil, nil, nil, errors.New("release database is required")
 	}
-	owned := releasesqlite.NewRepository(database)
+	var recorder jobs.WorkflowRecorder
+	if len(workflow) > 0 {
+		recorder = workflow[0]
+	}
+	owned := releasesqlite.NewRepositoryWithWorkflow(database, recorder)
 	return owned, owned, owned, owned, nil
 }
 

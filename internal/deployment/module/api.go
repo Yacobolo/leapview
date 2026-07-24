@@ -13,6 +13,7 @@ import (
 	deploymenthttp "github.com/Yacobolo/leapview/internal/deployment/http"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	jobhttp "github.com/Yacobolo/leapview/internal/platform/jobs/http"
+	"github.com/Yacobolo/leapview/internal/platform/transaction"
 	"github.com/Yacobolo/leapview/internal/release"
 )
 
@@ -21,6 +22,7 @@ var ErrPublicationForbidden = errors.New("publication deployment forbidden")
 type ReleasePort interface {
 	Get(context.Context, string, string) (release.Release, error)
 	LinkDeployment(context.Context, string, string, string, string) error
+	LinkDeploymentTx(context.Context, transaction.Transaction, string, string, string, string) error
 	DeploymentRelease(context.Context, string, string) (string, string, error)
 	ListDeploymentIDs(context.Context, string) ([]string, error)
 	PriorDeploymentRelease(context.Context, string, string) (string, error)
@@ -36,6 +38,7 @@ type JobStore interface {
 type APIConfig struct {
 	Releases ReleasePort
 	Jobs     JobStore
+	Workflow jobs.WorkflowRecorder
 }
 
 func (m *Module) CreateDeployment(w http.ResponseWriter, r *http.Request, project string, headers apigenapi.GenCreateDeploymentHeaders) {
@@ -86,30 +89,25 @@ func (m *Module) createDeployment(w http.ResponseWriter, r *http.Request, projec
 	}
 	created, err := m.jobs.Coordinator.Create(r.Context(), apiadapter.CreateRequest{
 		Project: project, Environment: m.handlerEnvironment(), Targets: targets, Actor: principal.ID, IdempotencyKey: idempotencyKey,
+		ReleaseID: releaseID, RollbackOf: rollbackOf,
+		Workflow: func(deploymentID string) jobs.WorkflowIntent {
+			payload, _ := json.Marshal(ActivateJob{Project: project, Deployment: deploymentID, Actor: principal.ID, IdempotencyKey: idempotencyKey + ":cutover"})
+			event, _ := json.Marshal(map[string]any{"deploymentId": deploymentID, "projectId": project, "releaseId": releaseID, "status": "queued"})
+			return jobs.WorkflowIntent{
+				Event: jobs.EventInput{
+					Key: "deployment.queued", ResourceKind: "deployment", ResourceID: deploymentID,
+					EventType: "deployment.queued", Data: event,
+				},
+				Job: jobs.EnqueueInput{
+					ID: "deployment:" + deploymentID + ":activate", Kind: ActivateJobKind,
+					WorkloadClass: "control", WorkspaceID: "_node",
+					ResourceKind: "deployment", ResourceID: deploymentID, Payload: payload,
+				},
+			}
+		},
 	})
 	if err != nil {
 		writeAPIError(w, r, err)
-		return
-	}
-	if err := m.api.Releases.LinkDeployment(r.Context(), project, created.ID, releaseID, rollbackOf); err != nil {
-		writeAPIError(w, r, err)
-		return
-	}
-	if err := m.appendAPIEvent(r.Context(), created.ID, "deployment.queued", map[string]any{"deploymentId": created.ID, "projectId": project, "releaseId": releaseID, "status": "queued"}); err != nil {
-		apitransport.WriteProblem(w, r, http.StatusServiceUnavailable, "ASYNC_EVENT_STORE_UNAVAILABLE", "Deployment event history could not be persisted", nil)
-		return
-	}
-	payload, _ := json.Marshal(ActivateJob{Project: project, Deployment: created.ID, Actor: principal.ID, IdempotencyKey: idempotencyKey + ":cutover"})
-	if m.api.Jobs == nil {
-		apitransport.WriteProblem(w, r, http.StatusServiceUnavailable, "ASYNC_QUEUE_UNAVAILABLE", "Deployment could not be queued", nil)
-		return
-	}
-	if _, err := m.api.Jobs.Enqueue(r.Context(), jobs.EnqueueInput{
-		ID: "deployment:" + created.ID + ":activate", Kind: ActivateJobKind,
-		WorkloadClass: "control", WorkspaceID: "_node",
-		ResourceKind: "deployment", ResourceID: created.ID, Payload: payload,
-	}); err != nil {
-		apitransport.WriteProblem(w, r, http.StatusServiceUnavailable, "ASYNC_QUEUE_UNAVAILABLE", "Deployment could not be queued", nil)
 		return
 	}
 	w.Header().Set("Location", deploymentLocation(project, created.ID))

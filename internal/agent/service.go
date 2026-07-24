@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	agentconfig "github.com/Yacobolo/leapview/internal/agent/config"
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 )
 
@@ -52,8 +53,15 @@ type Service struct {
 	toolProviders        []ToolProvider
 	systemPromptProvider SystemPromptProvider
 
-	mu      sync.Mutex
-	running map[string]runningPrompt
+	mu             sync.Mutex
+	running        map[string]runningPrompt
+	promptWorkflow func(PromptInput, string) jobs.WorkflowIntent
+}
+
+func (s *Service) SetPromptWorkflow(factory func(PromptInput, string) jobs.WorkflowIntent) {
+	if s != nil {
+		s.promptWorkflow = factory
+	}
 }
 
 type runningPrompt struct {

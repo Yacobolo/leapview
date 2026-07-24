@@ -53,6 +53,53 @@ func (q *Queries) AppendAPIAsyncEvent(ctx context.Context, arg AppendAPIAsyncEve
 	return i, err
 }
 
+const appendAPIAsyncWorkflowEvent = `-- name: AppendAPIAsyncWorkflowEvent :one
+INSERT INTO api_async_events (resource_kind, resource_id, event_id, event_type, data_json, event_key)
+SELECT ?1, ?2, COALESCE(MAX(event_id), 0) + 1,
+  ?3, ?4, ?5
+FROM api_async_events existing
+WHERE existing.resource_kind = ?1 AND existing.resource_id = ?2
+ON CONFLICT(resource_kind, resource_id, event_key) WHERE event_key <> '' DO UPDATE SET event_key = excluded.event_key
+RETURNING event_id, resource_kind, resource_id, event_type, data_json, created_at
+`
+
+type AppendAPIAsyncWorkflowEventParams struct {
+	ResourceKind string `json:"resource_kind"`
+	ResourceID   string `json:"resource_id"`
+	EventType    string `json:"event_type"`
+	DataJson     string `json:"data_json"`
+	EventKey     string `json:"event_key"`
+}
+
+type AppendAPIAsyncWorkflowEventRow struct {
+	EventID      int64  `json:"event_id"`
+	ResourceKind string `json:"resource_kind"`
+	ResourceID   string `json:"resource_id"`
+	EventType    string `json:"event_type"`
+	DataJson     string `json:"data_json"`
+	CreatedAt    string `json:"created_at"`
+}
+
+func (q *Queries) AppendAPIAsyncWorkflowEvent(ctx context.Context, arg AppendAPIAsyncWorkflowEventParams) (AppendAPIAsyncWorkflowEventRow, error) {
+	row := q.db.QueryRowContext(ctx, appendAPIAsyncWorkflowEvent,
+		arg.ResourceKind,
+		arg.ResourceID,
+		arg.EventType,
+		arg.DataJson,
+		arg.EventKey,
+	)
+	var i AppendAPIAsyncWorkflowEventRow
+	err := row.Scan(
+		&i.EventID,
+		&i.ResourceKind,
+		&i.ResourceID,
+		&i.EventType,
+		&i.DataJson,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const cancelClaimedAPIAsyncJob = `-- name: CancelClaimedAPIAsyncJob :execrows
 UPDATE api_async_jobs SET status = 'cancelled', finished_at = CURRENT_TIMESTAMP,
   lease_owner = '', lease_expires_at = NULL

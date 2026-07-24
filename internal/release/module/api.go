@@ -27,6 +27,7 @@ type JobStore interface {
 type APIConfig struct {
 	CurrentPrincipal func(*http.Request) (Principal, bool)
 	Jobs             JobStore
+	Workflow         jobs.WorkflowRecorder
 }
 
 func (m *Module) CreateRelease(w http.ResponseWriter, r *http.Request, project string, headers apigenapi.GenCreateReleaseHeaders) {
@@ -103,30 +104,33 @@ func (m *Module) UploadReleaseArtifact(w http.ResponseWriter, r *http.Request, p
 }
 
 func (m *Module) FinalizeRelease(w http.ResponseWriter, r *http.Request, project, releaseID string, _ apigenapi.GenFinalizeReleaseHeaders) {
-	row, err := m.service.BeginFinalization(r.Context(), project, releaseID)
-	if err != nil {
-		writeError(w, r, err)
-		return
-	}
-	if err := m.appendEvent(r.Context(), releaseID, "release.validating", response(row)); err != nil {
-		apitransport.WriteProblem(w, r, http.StatusServiceUnavailable, "ASYNC_EVENT_STORE_UNAVAILABLE", "Release finalization could not be queued", nil)
-		return
-	}
 	payload, err := json.Marshal(FinalizeJob{Project: project, Release: releaseID})
 	if err != nil {
 		apitransport.WriteProblem(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Release finalization could not be queued", nil)
 		return
 	}
-	if m.api.Jobs == nil {
+	event, err := json.Marshal(map[string]any{"releaseId": releaseID, "projectId": project, "status": release.StatusValidating})
+	if err != nil {
+		apitransport.WriteProblem(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Release finalization could not be queued", nil)
+		return
+	}
+	if m.api.Workflow == nil {
 		apitransport.WriteProblem(w, r, http.StatusServiceUnavailable, "ASYNC_QUEUE_UNAVAILABLE", "Release finalization could not be queued", nil)
 		return
 	}
-	if _, err := m.api.Jobs.Enqueue(r.Context(), jobs.EnqueueInput{
-		ID: "release:" + releaseID + ":finalize", Kind: FinalizeJobKind,
-		WorkloadClass: "control", WorkspaceID: "_node",
-		ResourceKind: "release", ResourceID: releaseID, Payload: payload,
-	}); err != nil {
-		apitransport.WriteProblem(w, r, http.StatusServiceUnavailable, "ASYNC_QUEUE_UNAVAILABLE", "Release finalization could not be queued", nil)
+	row, err := m.service.BeginFinalization(r.Context(), project, releaseID, jobs.WorkflowIntent{
+		Event: jobs.EventInput{
+			Key: "release.validating", ResourceKind: "release", ResourceID: releaseID,
+			EventType: "release.validating", Data: event,
+		},
+		Job: jobs.EnqueueInput{
+			ID: "release:" + releaseID + ":finalize", Kind: FinalizeJobKind,
+			WorkloadClass: "control", WorkspaceID: "_node",
+			ResourceKind: "release", ResourceID: releaseID, Payload: payload,
+		},
+	})
+	if err != nil {
+		writeError(w, r, err)
 		return
 	}
 	w.Header().Set("Location", location(project, releaseID))

@@ -14,6 +14,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/deployment"
 	platformdb "github.com/Yacobolo/leapview/internal/deployment/sqlite/deploymentdb"
 	"github.com/Yacobolo/leapview/internal/platform/digest"
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	"github.com/Yacobolo/leapview/internal/platform/transaction"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 )
@@ -27,6 +28,8 @@ type Repository struct {
 type ActivationHooks struct {
 	ApplyAccessSnapshot   func(context.Context, transaction.Transaction, string) error
 	ReconcilePublications func(context.Context, transaction.Transaction, PublicationReconcileInput) error
+	LinkRelease           func(context.Context, transaction.Transaction, deployment.CreateInput) error
+	RecordWorkflow        jobs.WorkflowRecorder
 }
 
 type PublicationReconcileInput struct {
@@ -45,6 +48,9 @@ func (r *Repository) CreateDeployment(ctx context.Context, input deployment.Crea
 	}
 	if existing, err := r.DeploymentByID(ctx, input.ID); err == nil {
 		if sameCreateRequest(existing, input) {
+			if err := r.recordCreationConsequences(ctx, input); err != nil {
+				return deployment.Deployment{}, err
+			}
 			return existing, nil
 		}
 		return deployment.Deployment{}, fmt.Errorf("%w: deployment id is already used", deployment.ErrConflict)
@@ -144,10 +150,48 @@ func (r *Repository) CreateDeployment(ctx context.Context, input deployment.Crea
 			return deployment.Deployment{}, mapError(err)
 		}
 	}
+	if err := r.applyCreationConsequences(ctx, tx, input); err != nil {
+		return deployment.Deployment{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return deployment.Deployment{}, mapError(err)
 	}
 	return r.DeploymentByID(ctx, input.ID)
+}
+
+func (r *Repository) recordCreationConsequences(ctx context.Context, input deployment.CreateInput) error {
+	if input.ReleaseID == "" && input.Workflow.Job.ID == "" {
+		return nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := r.applyCreationConsequences(ctx, tx, input); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *Repository) applyCreationConsequences(ctx context.Context, tx transaction.Transaction, input deployment.CreateInput) error {
+	if input.ReleaseID != "" {
+		if r.hooks.LinkRelease == nil {
+			return fmt.Errorf("deployment release linkage is required")
+		}
+		if err := r.hooks.LinkRelease(ctx, tx, input); err != nil {
+			return err
+		}
+	}
+	if input.Workflow.Job.ID != "" {
+		if r.hooks.RecordWorkflow == nil {
+			return fmt.Errorf("deployment workflow recorder is required")
+		}
+		if err := r.hooks.RecordWorkflow.RecordWorkflow(ctx, tx, input.Workflow); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *Repository) DeploymentByID(ctx context.Context, id string) (deployment.Deployment, error) {
@@ -409,6 +453,8 @@ func normalizeCreateInput(input deployment.CreateInput) deployment.CreateInput {
 	input.Environment = strings.TrimSpace(input.Environment)
 	input.RequestDigest = strings.TrimSpace(input.RequestDigest)
 	input.CreatedBy = strings.TrimSpace(input.CreatedBy)
+	input.ReleaseID = strings.TrimSpace(input.ReleaseID)
+	input.RollbackOf = strings.TrimSpace(input.RollbackOf)
 	input.Targets = append([]deployment.TargetInput(nil), input.Targets...)
 	for index := range input.Targets {
 		input.Targets[index].WorkspaceID = strings.TrimSpace(input.Targets[index].WorkspaceID)
