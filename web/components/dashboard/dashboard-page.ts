@@ -327,6 +327,11 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
       overflow: hidden;
     }
 
+    lv-filter-dock {
+      grid-column: 2;
+      grid-row: 1;
+    }
+
     .dashboard-refresh-progress {
       position: absolute;
       inset: 0 0 auto;
@@ -374,6 +379,8 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
 
     .canvas-wrap {
       display: grid;
+      grid-column: 1;
+      grid-row: 1;
       min-width: 0;
       min-height: 0;
       overflow: hidden;
@@ -447,6 +454,7 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
       }
 
       lv-filter-dock {
+        grid-column: 1;
         grid-row: 1;
       }
 
@@ -634,6 +642,9 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
   render() {
     const page = this.page
     if (!page) return html`<slot></slot>`
+    this.filterController.setDefaults(Object.fromEntries(
+      Object.values(this.filterContract.bindings).map(binding => [binding.key, binding.default]),
+    ))
     const snapshot: DashboardRenderSnapshot = {
       page,
       filterContract: this.filterContract,
@@ -669,12 +680,12 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
           <div class="body">
             ${this.renderRefreshProgress(refreshProgress)}
             ${this.renderFilterValidation()}
+            ${this.renderFilterDock()}
             <div class="canvas-wrap">
               <lv-report-canvas width=${page.canvas.width} height=${page.canvas.height}>
                 ${page.components.map((component) => this.renderCanvasComponent(component))}
               </lv-report-canvas>
             </div>
-            ${this.renderFilterDock()}
           </div>
           <lv-report-footer .status=${snapshot.status}></lv-report-footer>
         </section>
@@ -909,10 +920,16 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
     return html`
       <lv-filter-dock
         .loading=${(this.renderSnapshot?.status ?? this.status).loading}
+        .pending=${this.filterController.pending}
         .contract=${this.renderSnapshot?.filterContract ?? this.filterContract}
         .filterState=${this.renderSnapshot?.filterState ?? this.canonicalFilterState}
         .optionPages=${this.renderSnapshot?.filterOptionPages ?? this.filterOptionPages}
         .pageId=${(this.renderSnapshot?.page ?? this.page)?.pageId ?? ''}
+        @lv-filter-clear=${this.handleFilterClear}
+        @lv-filter-reset-binding=${this.handleFilterResetBinding}
+        @lv-filter-reset-scope=${this.handleFilterResetScope}
+        @lv-filter-apply=${this.handleFilterApply}
+        @lv-filter-cancel=${this.handleFilterCancel}
       ></lv-filter-dock>
     `
   }
@@ -1016,6 +1033,54 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
     if (!event.detail?.bindingKey || !event.detail.expression) return
     event.stopPropagation()
     this.filterController.mutate(event.detail.bindingKey, event.detail.expression)
+    this.requestUpdate()
+  }
+
+  private handleFilterClear = (event: CustomEvent<{ bindingKey: string }>): void => {
+    event.stopPropagation()
+    const binding = this.filterContract.bindings[event.detail?.bindingKey]
+    if (!binding?.readerEditable) return
+    this.filterController.clear(binding.key)
+    this.requestUpdate()
+  }
+
+  private handleFilterResetBinding = (event: CustomEvent<{ bindingKey: string }>): void => {
+    event.stopPropagation()
+    const binding = this.filterContract.bindings[event.detail?.bindingKey]
+    if (!binding?.readerEditable) return
+    this.filterController.resetBinding(binding.key)
+    this.requestUpdate()
+  }
+
+  private handleFilterResetScope = (event: CustomEvent<{
+    scope: 'page' | 'dashboard'
+    bindingKeys: string[]
+  }>): void => {
+    event.stopPropagation()
+    if (event.detail?.scope !== 'page' && event.detail?.scope !== 'dashboard') return
+    const pageID = (this.renderSnapshot?.page ?? this.page)?.pageId
+    const allowed = Object.values(this.filterContract.bindings)
+      .filter(binding => binding.readerEditable && (
+        event.detail.scope === 'dashboard'
+        || (binding.scope === 'page' && binding.pageID === pageID)
+      ))
+      .map(binding => binding.key)
+      .sort()
+    this.filterController.reset(event.detail.scope, allowed)
+    this.requestUpdate()
+  }
+
+  private handleFilterApply = (event: Event): void => {
+    event.stopPropagation()
+    if (this.filterContract.applicationMode !== 'deferred') return
+    this.filterController.apply()
+    this.requestUpdate()
+  }
+
+  private handleFilterCancel = (event: Event): void => {
+    event.stopPropagation()
+    if (this.filterContract.applicationMode !== 'deferred') return
+    this.filterController.cancel()
     this.requestUpdate()
   }
 

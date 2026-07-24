@@ -1,5 +1,5 @@
 import { LitElement, css, html, nothing } from 'lit'
-import { property } from 'lit/decorators.js'
+import { property, state } from 'lit/decorators.js'
 import type {
   DashboardCompiledFilterBinding,
   DashboardCompiledFilterDefinition,
@@ -32,13 +32,27 @@ export class DashboardFilterLeaf extends LitElement {
   @property({ attribute: false }) presentation?: DashboardFilterPresentation
   @property({ type: Boolean, reflect: true }) pending = false
   @property({ type: Boolean, reflect: true }) stale = false
+  @property({ type: Boolean }) showTitle = true
 
   private hasRequestedOptions = false
+  private optionRequestAttempts = 0
+  private optionRetryTimer?: ReturnType<typeof setTimeout>
+  private optionRetryDelay = 1_200
+  @state() private optionLoading = false
 
   static styles = css`
     :host { display: block; min-width: 0; font: inherit; }
     fieldset { display: grid; min-width: 0; gap: var(--base-size-6); border: 0; margin: 0; padding: 0; }
     legend { padding: 0; font-size: var(--lv-font-size-caption); font-weight: var(--lv-font-weight-strong); }
+    legend.visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
     input, select, button { min-height: var(--control-medium-size); font: inherit; }
     input, select {
       width: 100%; min-width: 0; border: var(--lv-border-default);
@@ -52,6 +66,18 @@ export class DashboardFilterLeaf extends LitElement {
     .buttons { display: flex; flex-wrap: wrap; gap: 4px; }
     .buttons button[aria-pressed='true'] { background: var(--bgColor-accent-muted); }
     .range { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .range label { display: grid; min-width: 0; gap: var(--base-size-4); }
+    .field-label {
+      color: var(--lv-fg-muted);
+      font-size: var(--lv-font-size-caption);
+      font-weight: var(--lv-font-weight-medium);
+    }
+    .input-control { display: grid; gap: var(--base-size-4); }
+    .operator {
+      color: var(--lv-fg-muted);
+      font-size: var(--lv-font-size-caption);
+      font-weight: var(--lv-font-weight-medium);
+    }
     .relative { display: grid; grid-template-columns: 1fr 72px 1fr; gap: 6px; }
     .status { min-height: 1em; color: var(--lv-fg-muted); font-size: var(--lv-font-size-caption); }
     :host([pending]) fieldset { opacity: .78; }
@@ -62,7 +88,24 @@ export class DashboardFilterLeaf extends LitElement {
     this.requestInitialOptions()
   }
 
+  disconnectedCallback(): void {
+    this.clearOptionRetry()
+    super.disconnectedCallback()
+  }
+
   protected updated(changed: Map<PropertyKey, unknown>) {
+    if (changed.has('options')) {
+      if (this.options) {
+        this.optionRequestAttempts = 0
+        this.clearOptionRetry()
+        this.optionLoading = false
+      } else if (changed.get('options') !== undefined) {
+        this.optionRequestAttempts = 0
+        this.clearOptionRetry()
+        this.optionLoading = this.hasRequestedOptions
+        if (this.hasRequestedOptions && !this.stale) this.requestOptions()
+      }
+    }
     if (changed.has('stale') && changed.get('stale') === true && !this.stale) {
       if (this.hasRequestedOptions) this.requestOptions()
       else this.requestInitialOptions()
@@ -76,10 +119,16 @@ export class DashboardFilterLeaf extends LitElement {
     const presentation = this.presentation ?? defaultPresentation(definition)
     return html`
       <fieldset ?disabled=${!binding.readerEditable || this.stale} aria-busy=${String(this.pending)}>
-        <legend>${presentation.title || binding.paneLabel || definition.label}</legend>
+        <legend class=${this.showTitle ? '' : 'visually-hidden'}>${presentation.title || binding.paneLabel || definition.label}</legend>
         ${this.renderControl(presentation)}
         <span class="status" aria-live="polite">
-          ${this.stale ? 'Waiting for current data' : this.pending ? 'Updating' : expressionSummary(this.expression)}
+          ${this.stale
+            ? 'Waiting for current data'
+            : this.optionLoading
+              ? 'Loading values'
+              : this.pending
+                ? 'Updating'
+                : expressionSummary(this.expression)}
         </span>
       </fieldset>
     `
@@ -155,35 +204,45 @@ export class DashboardFilterLeaf extends LitElement {
     const comparison = this.expression.kind === 'comparison' ? this.expression : undefined
     const operator = comparison?.operator ?? firstComparisonOperator(this.definition)
     return html`
-      <input
-        type=${this.definition?.valueKind === 'integer' || this.definition?.valueKind === 'decimal' ? 'number' : 'text'}
-        .value=${comparison ? String(comparison.value.value) : ''}
-        aria-label=${this.presentation?.ariaLabel || this.definition?.label || 'Filter value'}
-        @change=${(event: Event) => {
-          const value = (event.currentTarget as HTMLInputElement).value
-          this.commit(value === '' ? unfiltered : {
-            kind: 'comparison', operator, value: typedValue(this.definition!, value),
-          })
-        }}
-      >
+      <div class="input-control">
+        <span class="operator">${operatorLabel(operator)}</span>
+        <input
+          type=${this.definition?.valueKind === 'integer' || this.definition?.valueKind === 'decimal' ? 'number' : 'text'}
+          .value=${comparison ? String(comparison.value.value) : ''}
+          placeholder="Enter value"
+          aria-label=${`${this.presentation?.ariaLabel || this.definition?.label || 'Filter value'}, ${operatorLabel(operator)}`}
+          @change=${(event: Event) => {
+            const value = (event.currentTarget as HTMLInputElement).value
+            this.commit(value === '' ? unfiltered : {
+              kind: 'comparison', operator, value: typedValue(this.definition!, value),
+            })
+          }}
+        >
+      </div>
     `
   }
 
   private renderRange(type: 'number' | 'date') {
     const range = this.expression.kind === 'range' ? this.expression : undefined
     return html`<div class="range">
-      <input
-        type=${type}
-        aria-label="From"
-        .value=${range?.lower ? String(range.lower.value.value) : ''}
-        @change=${this.onRange}
-      >
-      <input
-        type=${type}
-        aria-label="To"
-        .value=${range?.upper ? String(range.upper.value.value) : ''}
-        @change=${this.onRange}
-      >
+      <label>
+        <span class="field-label">${type === 'number' ? 'Minimum' : 'Start'}</span>
+        <input
+          type=${type}
+          aria-label=${type === 'number' ? 'Minimum' : 'Start date'}
+          .value=${range?.lower ? String(range.lower.value.value) : ''}
+          @change=${this.onRange}
+        >
+      </label>
+      <label>
+        <span class="field-label">${type === 'number' ? 'Maximum' : 'End'}</span>
+        <input
+          type=${type}
+          aria-label=${type === 'number' ? 'Maximum' : 'End date'}
+          .value=${range?.upper ? String(range.upper.value.value) : ''}
+          @change=${this.onRange}
+        >
+      </label>
     </div>`
   }
 
@@ -289,6 +348,11 @@ export class DashboardFilterLeaf extends LitElement {
   }
 
   private requestOptions = () => {
+    this.optionRequestAttempts = 0
+    this.loadOptions()
+  }
+
+  private loadOptions() {
     if (
       this.stale
       || !this.binding
@@ -297,6 +361,8 @@ export class DashboardFilterLeaf extends LitElement {
       || this.definition.options.kind === 'static'
     ) return
     this.hasRequestedOptions = true
+    this.optionLoading = true
+    this.optionRequestAttempts++
     this.dispatchEvent(new CustomEvent<FilterOptionsNeededDetail>('lv-filter-options-needed', {
       bubbles: true, composed: true,
       detail: {
@@ -305,6 +371,17 @@ export class DashboardFilterLeaf extends LitElement {
         limit: this.definition.options.limit || 50,
       },
     }))
+    this.clearOptionRetry()
+    if (this.optionRequestAttempts >= 2) return
+    this.optionRetryTimer = setTimeout(() => {
+      this.optionRetryTimer = undefined
+      if (!this.options && !this.stale && this.optionLoading && this.isConnected) this.loadOptions()
+    }, this.optionRetryDelay)
+  }
+
+  private clearOptionRetry() {
+    if (this.optionRetryTimer !== undefined) clearTimeout(this.optionRetryTimer)
+    this.optionRetryTimer = undefined
   }
 }
 
@@ -316,8 +393,10 @@ abstract class FilterShell extends LitElement {
   @property({ attribute: false }) presentation?: DashboardFilterPresentation
   @property({ type: Boolean, reflect: true }) pending = false
   @property({ type: Boolean, reflect: true }) stale = false
+  @property({ type: Boolean, reflect: true }) active = false
+  @property({ type: Boolean, reflect: true }) dirty = false
 
-  protected leaf() {
+  protected leaf(showTitle = true) {
     return html`<lv-filter-leaf
       .definition=${this.definition}
       .binding=${this.binding}
@@ -326,6 +405,7 @@ abstract class FilterShell extends LitElement {
       .presentation=${this.presentation}
       .pending=${this.pending}
       .stale=${this.stale}
+      .showTitle=${showTitle}
     ></lv-filter-leaf>`
   }
 }
@@ -333,11 +413,99 @@ abstract class FilterShell extends LitElement {
 export class DashboardFilterPaneCard extends FilterShell {
   static styles = css`
     :host { display: block; }
-    section { border: var(--lv-border-muted); border-radius: var(--lv-radius-default); padding: var(--base-size-8); background: var(--lv-bg-panel); }
+    section {
+      display: grid;
+      gap: var(--base-size-8);
+      border: var(--lv-border-muted);
+      border-radius: var(--lv-radius-default);
+      padding: var(--lv-space-control);
+      background: var(--lv-bg-panel);
+      transition: border-color var(--lv-duration-fast), background-color var(--lv-duration-fast);
+    }
+    :host([active]) section {
+      border-color: var(--lv-line-accent);
+      background: var(--lv-accent-muted);
+    }
+    .card-header {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--base-size-8);
+    }
+    .title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: var(--lv-font-size-body-sm);
+      font-weight: var(--lv-font-weight-strong);
+    }
+    .pending-badge {
+      margin-left: var(--base-size-4);
+      color: var(--lv-fg-muted);
+      font-size: var(--lv-font-size-caption);
+      font-weight: var(--lv-font-weight-medium);
+    }
+    .actions { display: flex; flex: 0 0 auto; gap: var(--base-size-4); }
+    button {
+      min-height: var(--lv-control-compact);
+      border: 0;
+      border-radius: var(--lv-radius-tight, var(--lv-radius-default));
+      background: transparent;
+      color: var(--lv-fg-muted);
+      cursor: pointer;
+      padding: 0 var(--base-size-6);
+      font: inherit;
+      font-size: var(--lv-font-size-caption);
+    }
+    button:hover:not(:disabled) { background: var(--lv-bg-control-hover); color: var(--lv-fg-default); }
+    button:focus-visible {
+      outline: var(--lv-border-width-focus) solid var(--lv-line-accent);
+      outline-offset: var(--base-size-2);
+    }
+    button:disabled { cursor: default; opacity: .45; }
   `
 
   render() {
-    return html`<section aria-label=${this.binding?.paneLabel || this.definition?.label || 'Filter'}>${this.leaf()}</section>`
+    const label = this.binding?.paneLabel || this.definition?.label || 'Filter'
+    const editable = this.binding?.readerEditable === true && !this.pending && !this.stale
+    return html`
+      <section aria-label=${label}>
+        <div class="card-header">
+          <span class="title">${label}${this.dirty ? html`<span class="pending-badge">Pending</span>` : nothing}</span>
+          <div class="actions">
+            <button
+              type="button"
+              aria-label=${`Clear ${label}`}
+              title="Clear filter"
+              ?disabled=${!editable || this.expression.kind === 'unfiltered'}
+              @click=${this.clear}
+            >Clear</button>
+            <button
+              type="button"
+              aria-label=${`Reset ${label} to default`}
+              title="Reset to default"
+              ?disabled=${!editable || sameExpression(this.expression, this.binding?.default)}
+              @click=${this.reset}
+            >Reset</button>
+          </div>
+        </div>
+        ${this.leaf(false)}
+      </section>
+    `
+  }
+
+  private clear = () => this.dispatchAction('lv-filter-clear')
+  private reset = () => this.dispatchAction('lv-filter-reset-binding')
+
+  private dispatchAction(type: 'lv-filter-clear' | 'lv-filter-reset-binding') {
+    if (!this.binding?.key) return
+    this.dispatchEvent(new CustomEvent(type, {
+      bubbles: true,
+      composed: true,
+      detail: { bindingKey: this.binding.key },
+    }))
   }
 }
 
@@ -368,6 +536,14 @@ function firstComparisonOperator(definition?: DashboardCompiledFilterDefinition)
   const allowed = definition?.predicates.find((predicate) => predicate.kind === 'comparison')?.operators ?? []
   const operator = allowed[0] ?? 'equals'
   return operator as ReturnType<typeof firstComparisonOperator>
+}
+
+function operatorLabel(operator: ReturnType<typeof firstComparisonOperator>): string {
+  return operator.replaceAll('_', ' ').replace(/^\w/, character => character.toUpperCase())
+}
+
+function sameExpression(left: DashboardFilterExpression, right?: DashboardFilterExpression): boolean {
+  return JSON.stringify(left) === JSON.stringify(right ?? unfiltered)
 }
 
 function typedValue(definition: DashboardCompiledFilterDefinition, value: string): DashboardFilterValue {

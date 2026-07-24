@@ -319,8 +319,8 @@ async function verifyFilterShowcase(): Promise<void> {
         bindingID: 'purchase_date',
         mutate: async () => {
           const control = page.getByRole('region', { name: 'Filter by purchase date range' })
-          const from = control.locator('input[type="date"][aria-label="From"]')
-          const to = control.locator('input[type="date"][aria-label="To"]')
+          const from = control.getByLabel('Start date')
+          const to = control.getByLabel('End date')
           await from.fill('2017-01-01')
           await from.press('Tab')
           await to.fill('2018-12-31')
@@ -333,11 +333,12 @@ async function verifyFilterShowcase(): Promise<void> {
         bindingID: 'delivery_days_range',
         mutate: async () => {
           const control = page.getByRole('region', { name: 'Filter by delivery days' })
-          const inputs = control.locator('input[type="number"][aria-label="From"], input[type="number"][aria-label="To"]')
-          await inputs.nth(0).fill('0')
-          await inputs.nth(0).press('Tab')
-          await inputs.nth(1).fill('60')
-          await inputs.nth(1).press('Tab')
+          const minimum = control.getByLabel('Minimum')
+          const maximum = control.getByLabel('Maximum')
+          await minimum.fill('0')
+          await minimum.press('Tab')
+          await maximum.fill('60')
+          await maximum.press('Tab')
         },
         expressionKind: 'range',
       },
@@ -346,11 +347,12 @@ async function verifyFilterShowcase(): Promise<void> {
         bindingID: 'revenue_range',
         mutate: async () => {
           const control = page.getByRole('region', { name: 'Filter by order revenue' })
-          const inputs = control.locator('input[type="number"][aria-label="From"], input[type="number"][aria-label="To"]')
-          await inputs.nth(0).fill('1.25')
-          await inputs.nth(0).press('Tab')
-          await inputs.nth(1).fill('1000.50')
-          await inputs.nth(1).press('Tab')
+          const minimum = control.getByLabel('Minimum')
+          const maximum = control.getByLabel('Maximum')
+          await minimum.fill('1.25')
+          await minimum.press('Tab')
+          await maximum.fill('1000.50')
+          await maximum.press('Tab')
         },
         expressionKind: 'range',
       },
