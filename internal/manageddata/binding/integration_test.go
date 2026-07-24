@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/deployment"
-	deploymentsqlite "github.com/Yacobolo/leapview/internal/deployment/sqlite"
 	"github.com/Yacobolo/leapview/internal/manageddata"
 	manageddatasqlite "github.com/Yacobolo/leapview/internal/manageddata/sqlite"
 	"github.com/Yacobolo/leapview/internal/platform"
@@ -43,7 +41,7 @@ func TestBinderPinsRevisionAfterEnvironmentPointerChanges(t *testing.T) {
 	}
 	firstRevision := createReadyRevision(t, ctx, repository, collection.ID, "orders-v1.csv", "a")
 	firstTarget := createValidatedState(t, ctx, store, servingStates, "sales", "prod")
-	activateRevision(t, ctx, store, repository, collection.ID, firstRevision.ID, firstTarget.ID)
+	activateRevision(t, ctx, servingStates, repository, collection.ID, firstRevision.ID, firstTarget.ID)
 
 	validation := servingstate.Validation{
 		ProjectID:            "project-a",
@@ -51,7 +49,7 @@ func TestBinderPinsRevisionAfterEnvironmentPointerChanges(t *testing.T) {
 	}
 	secondRevision := createReadyRevision(t, ctx, repository, collection.ID, "orders-v2.csv", "b")
 	secondTarget := createValidatedState(t, ctx, store, servingStates, "sales", "prod")
-	activateRevision(t, ctx, store, repository, collection.ID, secondRevision.ID, secondTarget.ID)
+	activateRevision(t, ctx, servingStates, repository, collection.ID, secondRevision.ID, secondTarget.ID)
 	binder, err := New(repository)
 	if err != nil {
 		t.Fatal(err)
@@ -103,22 +101,14 @@ func createValidatedState(t *testing.T, ctx context.Context, store *platform.Sto
 	return state
 }
 
-func activateRevision(t *testing.T, ctx context.Context, store *platform.Store, repository *manageddatasqlite.Repository, collectionID, revisionID string, targetID servingstate.ID) {
+func activateRevision(t *testing.T, ctx context.Context, states *servingstatesqlite.Repository, repository *manageddatasqlite.Repository, collectionID, revisionID string, targetID servingstate.ID) {
 	t.Helper()
 	if err := repository.ReplaceServingStateBindings(ctx, string(targetID), []manageddata.ServingStateBinding{{
 		ServingStateID: string(targetID), CollectionID: collectionID, RevisionID: revisionID, Environment: "prod",
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	deployments := deploymentsqlite.NewRepository(store.SQLDB())
-	created, err := deployments.CreateDeployment(ctx, deployment.CreateInput{
-		ID: "deployment-" + revisionID, ProjectID: "project-a", Environment: "prod", RequestDigest: "sha256:" + strings.Repeat("d", 64),
-		Targets: []deployment.TargetInput{{WorkspaceID: "sales", ServingStateID: string(targetID)}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := deployments.ActivateDeployment(ctx, created.ID); err != nil {
+	if _, err := states.Activate(ctx, "sales", "prod", targetID); err != nil {
 		t.Fatal(err)
 	}
 }

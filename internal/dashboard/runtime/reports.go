@@ -12,11 +12,10 @@ import (
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	"github.com/Yacobolo/leapview/internal/dataquery"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
-	"github.com/Yacobolo/leapview/internal/workspace"
 )
 
 type ReportService struct {
-	workspace *workspace.Definition
+	workspace *dashboarddefinition.Workspace
 	defaultID string
 }
 

@@ -19,13 +19,9 @@ type Service struct {
 	CatalogPath  string
 	DataPath     string
 	Environment  string
-	ControlPlane DatabaseProvider
+	ControlPlane *sql.DB
 	Analytics    AnalyticalProvider
 	Admitter     workload.Admitter
-}
-
-type DatabaseProvider interface {
-	SQLDB() *sql.DB
 }
 
 type AnalyticalProvider interface {
@@ -85,7 +81,7 @@ func (s Service) Data(ctx context.Context) ui.AdminStorageData {
 		return data
 	}
 	defer release()
-	metadata, err := inspectDuckLakeStorage(ctx, data.CatalogPath, data.DataPath, providedDatabase(s.ControlPlane), analytics, s.Environment)
+	metadata, err := inspectDuckLakeStorage(ctx, data.CatalogPath, data.DataPath, s.ControlPlane, analytics, s.Environment)
 	if err != nil {
 		data.Status = err.Error()
 		return data
@@ -122,7 +118,7 @@ func (s Service) SelectTable(ctx context.Context, command ui.AdminStorageCommand
 		return nil, err
 	}
 	defer release()
-	metadata, err := inspectDuckLakeStorage(ctx, s.CatalogPath, s.DataPath, providedDatabase(s.ControlPlane), analytics, s.Environment)
+	metadata, err := inspectDuckLakeStorage(ctx, s.CatalogPath, s.DataPath, s.ControlPlane, analytics, s.Environment)
 	if err != nil {
 		return nil, err
 	}
@@ -143,13 +139,6 @@ type duckLakeStorageMetadata struct {
 	SnapshotCount      int
 	DataFileCount      int
 	TotalDataSizeBytes int64
-}
-
-func providedDatabase(provider DatabaseProvider) *sql.DB {
-	if provider == nil {
-		return nil
-	}
-	return provider.SQLDB()
 }
 
 func (s Service) acquireAnalytics(ctx context.Context, operation string) (context.Context, analyticsresource.Session, func(), error) {

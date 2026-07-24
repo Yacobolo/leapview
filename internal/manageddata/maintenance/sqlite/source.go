@@ -18,8 +18,8 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/manageddata"
 	"github.com/Yacobolo/leapview/internal/manageddata/maintenance"
+	platformdb "github.com/Yacobolo/leapview/internal/manageddata/sqlite/manageddb"
 	"github.com/Yacobolo/leapview/internal/manageddata/storage"
-	platformdb "github.com/Yacobolo/leapview/internal/platform/db"
 )
 
 const transactionCleanupTimeout = 5 * time.Second

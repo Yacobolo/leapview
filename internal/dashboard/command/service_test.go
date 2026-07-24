@@ -1,4 +1,4 @@
-package command
+package command_test
 
 import (
 	"math"
@@ -6,6 +6,7 @@ import (
 
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	"github.com/Yacobolo/leapview/internal/dashboard"
+	. "github.com/Yacobolo/leapview/internal/dashboard/command"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	"github.com/Yacobolo/leapview/internal/testutil/dashboardfixture"

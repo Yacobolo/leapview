@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/analytics/materialize"
-	materializesqlite "github.com/Yacobolo/leapview/internal/analytics/materialize/sqlite"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
 	"github.com/Yacobolo/leapview/internal/dashboard"
@@ -20,12 +18,12 @@ import (
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	"github.com/Yacobolo/leapview/internal/dataquery"
+	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
+	materializesqlite "github.com/Yacobolo/leapview/internal/refresh/sqlite"
 	"github.com/Yacobolo/leapview/internal/testutil/dashboardfixture"
 	"github.com/Yacobolo/leapview/internal/testutil/ssetest"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
 	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
-	visualizationmapasset "github.com/Yacobolo/leapview/internal/visualization/mapasset"
-	mapassethttp "github.com/Yacobolo/leapview/internal/visualization/mapasset/http"
 	visualizationruntime "github.com/Yacobolo/leapview/internal/visualization/runtime"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
@@ -477,7 +475,7 @@ func TestPageRouteRendersRequestedYamlPage(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/workspaces/test-workspace/dashboards/executive-sales/pages/operations", nil)
 	rec := httptest.NewRecorder()
 
-	server := New(fakeMetrics{})
+	server := newAppTestHarness(fakeMetrics{})
 	server.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -524,7 +522,7 @@ func TestPageRouteSeedsPageScopedFiltersFromURL(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/workspaces/test-workspace/dashboards/executive-sales/pages/overview?state=SP&state=RJ&category=ignored", nil)
 	rec := httptest.NewRecorder()
 
-	server := New(fakeMetrics{})
+	server := newAppTestHarness(fakeMetrics{})
 	server.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -549,7 +547,7 @@ func TestPageRouteSeedsOperationsPageFiltersFromURL(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/workspaces/test-workspace/dashboards/executive-sales/pages/operations?state=SP&category=ops", nil)
 	rec := httptest.NewRecorder()
 
-	server := New(fakeMetrics{})
+	server := newAppTestHarness(fakeMetrics{})
 	server.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -575,7 +573,7 @@ func TestHTMLRoutesIncludeSelfHostedDatastarRuntimeAndDevInspector(t *testing.T)
 			req := httptest.NewRequest(http.MethodGet, path, nil)
 			rec := httptest.NewRecorder()
 
-			New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+			newAppTestHarness(fakeMetrics{}).Routes().ServeHTTP(rec, req)
 
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -596,7 +594,7 @@ func TestHTMLRoutesOmitDatastarInspectorInProduction(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, path, nil)
 			rec := httptest.NewRecorder()
 
-			New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+			newAppTestHarness(fakeMetrics{}).Routes().ServeHTTP(rec, req)
 
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -625,7 +623,7 @@ func TestHTMLRoutesHonorConfiguredStaticAssetVersion(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
-	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+	newAppTestHarness(fakeMetrics{}).Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -640,10 +638,10 @@ func TestHTMLRoutesHonorConfiguredStaticAssetVersion(t *testing.T) {
 }
 
 func TestStaticAssetsCacheOnlyCurrentVersionedURLs(t *testing.T) {
-	t.Chdir("../..")
+	t.Chdir(projectRoot(t))
 	t.Setenv("LEAPVIEW_PRODUCTION", "")
 	t.Setenv("LEAPVIEW_ASSET_VERSION", "prod-build-123")
-	handler := New(fakeMetrics{}).Routes()
+	handler := newAppTestHarness(fakeMetrics{}).Routes()
 
 	for _, tc := range []struct {
 		name string
@@ -709,9 +707,9 @@ func TestStaticAssetCacheHeaderClasses(t *testing.T) {
 			want: "public, max-age=31536000, immutable",
 		},
 		{
-			name: "split chunk asset",
+			name: "hashed chunk asset",
 			path: "/static/chunks/shared-app-shell-sv895r5c.js",
-			want: "no-cache",
+			want: "public, max-age=31536000, immutable",
 		},
 		{
 			name: "font asset",
@@ -740,52 +738,6 @@ func TestStaticAssetCacheHeaderClasses(t *testing.T) {
 	}
 }
 
-func TestVegaSandboxAssetAllowsOpaqueSandboxOrigin(t *testing.T) {
-	handler := staticAssetCache(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	req := httptest.NewRequest(http.MethodGet, "/static/vega-sandbox.js", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
-		t.Fatalf("Access-Control-Allow-Origin = %q, want *", got)
-	}
-}
-
-func TestMapAssetCacheIsImmutableAndRangeCapable(t *testing.T) {
-	handler := mapassethttp.CacheHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusPartialContent)
-	}))
-	request := httptest.NewRequest(http.MethodGet, "/map-assets/leapview-streets/archives/"+visualizationmapasset.ArchiveSHA256+"/basemap.pmtiles", nil)
-	request.Header.Set("Range", "bytes=0-126")
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusPartialContent {
-		t.Fatalf("status = %d", response.Code)
-	}
-	if got := response.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
-		t.Fatalf("cache control = %q", got)
-	}
-	if got := response.Header().Get("Accept-Ranges"); got != "bytes" {
-		t.Fatalf("accept ranges = %q", got)
-	}
-}
-
-func TestMapAssetCacheRejectsUnversionedPaths(t *testing.T) {
-	handler := mapassethttp.CacheHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		t.Fatal("unversioned request reached asset filesystem")
-	}))
-	request := httptest.NewRequest(http.MethodGet, "/map-assets/leapview-streets/basemap.pmtiles", nil)
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
-	}
-	if got := response.Header().Get("Cache-Control"); got != "no-store" {
-		t.Fatalf("cache control = %q, want no-store", got)
-	}
-}
-
 func assertDevDatastarRuntime(t *testing.T, body string) {
 	t.Helper()
 	for _, want := range []string{
@@ -807,7 +759,7 @@ func TestHomeRouteRendersDashboardCatalog(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
-	server := New(fakeMetrics{})
+	server := newAppTestHarness(fakeMetrics{})
 	server.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -866,7 +818,7 @@ func TestHomeRouteAggregatesDBBackedWorkspaceCatalogs(t *testing.T) {
 		"sales":      namedWorkspaceMetrics{workspaceID: "sales", dashboardID: "executive-sales", title: "Executive Sales"},
 		"visuals":    namedWorkspaceMetrics{workspaceID: "visuals", dashboardID: "visual-showcase", title: "Visual Showcase"},
 	})
-	server := NewWithOptions(metrics, Options{Store: store, WorkspaceRepo: workspaceRepo, DefaultWorkspaceID: "operations"})
+	server := assembleRuntime(metrics, testStoreOptions(store, assemblyConfig{WorkspaceRepo: workspaceRepo, DefaultWorkspaceID: "operations"}))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -894,7 +846,7 @@ func TestLoginRouteRendersAzureADLogin(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/login", nil)
 	rec := httptest.NewRecorder()
 
-	server := New(fakeMetrics{})
+	server := newAppTestHarness(fakeMetrics{})
 	server.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -934,7 +886,7 @@ func TestDashboardRouteRedirectsToFirstPage(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/workspaces/test-workspace/dashboards/executive-sales", nil)
 	rec := httptest.NewRecorder()
 
-	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+	newAppTestHarness(fakeMetrics{}).Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusFound)
@@ -945,7 +897,7 @@ func TestDashboardRouteRedirectsToFirstPage(t *testing.T) {
 }
 
 func TestServerDoesNotResolveBlankWorkspaceToDefault(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{DefaultWorkspaceID: "test"})
 
 	if got := server.workspaceID(""); got != "" {
 		t.Fatalf("workspaceID(\"\") = %q, want blank", got)
@@ -960,7 +912,7 @@ func TestWorkspaceScopedDashboardRoutesRejectCrossWorkspaceLookup(t *testing.T) 
 		"sales":      namedWorkspaceMetrics{workspaceID: "sales", dashboardID: "executive-sales", title: "Executive Sales"},
 		"operations": namedWorkspaceMetrics{workspaceID: "operations", dashboardID: "fulfillment-operations", title: "Fulfillment Operations"},
 	})
-	server := NewWithOptions(metrics, Options{DefaultWorkspaceID: "sales"})
+	server := assembleRuntime(metrics, assemblyConfig{DefaultWorkspaceID: "sales"})
 
 	okReq := httptest.NewRequest(http.MethodGet, "/workspaces/operations/dashboards/fulfillment-operations/pages/overview", nil)
 	okRec := httptest.NewRecorder()
@@ -981,7 +933,7 @@ func TestUnknownPageRouteReturnsNotFound(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/workspaces/test-workspace/dashboards/executive-sales/pages/missing", nil)
 	rec := httptest.NewRecorder()
 
-	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+	newAppTestHarness(fakeMetrics{}).Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
@@ -1002,7 +954,7 @@ func TestLegacyRoutesReturnNotFound(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
 
-		New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+		newAppTestHarness(fakeMetrics{}).Routes().ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("%s status = %d, want %d", path, rec.Code, http.StatusNotFound)
@@ -1056,13 +1008,13 @@ func (canceledTableMetrics) ExecuteConsumersPage(_ context.Context, request cons
 }
 
 func TestUpdatesStreamsDatastarPatchSignals(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
 
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=dashboard&workspace=test-workspace&dashboard=executive-sales&page=overview&state=SP&category=ignored", nil)
 	rec := httptest.NewRecorder()
 
-	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+	newAppTestHarness(fakeMetrics{}).Routes().ServeHTTP(rec, req)
 
 	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/event-stream") {
 		t.Fatalf("content type = %q, want text/event-stream", got)
@@ -1113,13 +1065,13 @@ func TestUpdatesStreamsDatastarPatchSignals(t *testing.T) {
 }
 
 func TestUpdatesStreamsPageScopedChartSignals(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
 
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=dashboard&workspace=test-workspace&dashboard=executive-sales&page=operations&datastar=%7B%22runtime%22%3A%7B%22clientId%22%3A%22test-client%22%2C%22dashboardId%22%3A%22executive-sales%22%2C%22pageId%22%3A%22operations%22%7D%7D", nil)
 	rec := httptest.NewRecorder()
 
-	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+	newAppTestHarness(fakeMetrics{}).Routes().ServeHTTP(rec, req)
 
 	body := rec.Body.String()
 	if !strings.Contains(body, `"visuals":{"ops_pipeline"`) {
@@ -1137,12 +1089,12 @@ func TestUpdatesStreamsPageScopedChartSignals(t *testing.T) {
 }
 
 func TestDashboardRefreshCommandRouteIsRemoved(t *testing.T) {
-	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"runtime":{"clientId":"test-client"},"visualWindowCommand":{"visualID":"order_rows","blockID":"all","start":0,"limit":50,"sort":[]}}`)
+	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"runtime":{"clientId":"test-client"},"visualWindowCommand":{"visual":"order_rows","block":"all","start":0,"count":50}}`)
 	req := httptest.NewRequest(http.MethodPost, "/workspaces/test-workspace/commands/refresh", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
-	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+	newAppTestHarness(fakeMetrics{}).Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNotFound, rec.Body.String())
@@ -1150,12 +1102,12 @@ func TestDashboardRefreshCommandRouteIsRemoved(t *testing.T) {
 }
 
 func TestSelectCommandAcceptsDatastarSignals(t *testing.T) {
-	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}},"selections":[]},"runtime":{"clientId":"test-client"},"interactionCommand":{"sourceKind":"visual","sourceId":"orders","interactionKind":"point_selection","action":"set","toggle":true,"mappings":[{"field":"orders.status","fact":"orders","value":"delivered","label":"delivered"}]},"visualWindowCommand":{"visualID":"order_rows","blockID":"all","start":0,"limit":50,"sort":[]}}`)
+	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}},"selections":[]},"runtime":{"clientId":"test-client"},"interactionCommand":{"sourceKind":"visual","sourceId":"orders","interactionKind":"point_selection","action":"set","toggle":true,"mappings":[{"field":"orders.status","fact":"orders","value":"delivered","label":"delivered"}]},"visualWindowCommand":{"visual":"order_rows","block":"all","start":0,"count":50}}`)
 	req := httptest.NewRequest(http.MethodPost, "/workspaces/test-workspace/commands/select", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
-	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+	newAppTestHarness(fakeMetrics{}).Routes().ServeHTTP(rec, req)
 
 	assertDatastarCommandAccepted(t, rec)
 }
@@ -1183,24 +1135,24 @@ func TestPageCommandsQueryActivePage(t *testing.T) {
 		{
 			name:    "interaction select",
 			path:    "/workspaces/test-workspace/commands/select",
-			body:    `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"selections":[]},"interactionCommand":{"sourceKind":"visual","sourceId":"ops_pipeline","interactionKind":"point_selection","action":"set","toggle":true,"mappings":[{"field":"orders.status","fact":"orders","value":"delivered","label":"delivered"}]},"visualWindowCommand":{"blockID":"all","start":0,"limit":50,"sort":[]}}`,
+			body:    `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"selections":[]},"interactionCommand":{"sourceKind":"visual","sourceId":"ops_pipeline","interactionKind":"point_selection","action":"set","toggle":true,"mappings":[{"field":"orders.status","fact":"orders","value":"delivered","label":"delivered"}]},"visualWindowCommand":{"block":"all","start":0,"count":50}}`,
 			queries: 1,
 		},
 		{
 			name: "clear selection",
 			path: "/workspaces/test-workspace/commands/clear-selection",
-			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"selections":[{"sourceKind":"visual","sourceId":"ops_pipeline","interactionKind":"point_selection","entries":[{"mappings":[{"field":"orders.status","fact":"orders","value":"delivered","label":"delivered"}]}]}]},"visualWindowCommand":{"blockID":"all","start":0,"limit":50,"sort":[]}}`,
+			body: `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"selections":[{"sourceKind":"visual","sourceId":"ops_pipeline","interactionKind":"point_selection","entries":[{"mappings":[{"field":"orders.status","fact":"orders","value":"delivered","label":"delivered"}]}]}]},"visualWindowCommand":{"block":"all","start":0,"count":50}}`,
 		},
 		{
 			name:    "reload",
 			path:    "/workspaces/test-workspace/commands/reload",
-			body:    `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"visualWindowCommand":{"blockID":"all","start":200,"limit":50,"sort":[]}}`,
+			body:    `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"visualWindowCommand":{"block":"all","start":200,"count":50}}`,
 			queries: 2,
 		},
 		{
 			name:    "reset filters",
 			path:    "/workspaces/test-workspace/commands/reset-filters",
-			body:    `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"visualWindowCommand":{"blockID":"all","start":200,"limit":50,"sort":[]}}`,
+			body:    `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}},"visualWindowCommand":{"block":"all","start":200,"count":50}}`,
 			queries: 2,
 		},
 	}
@@ -1212,7 +1164,7 @@ func TestPageCommandsQueryActivePage(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 
-			New(metrics).Routes().ServeHTTP(rec, req)
+			newAppTestHarness(metrics).Routes().ServeHTTP(rec, req)
 
 			assertDatastarCommandAccepted(t, rec)
 			for i := 0; i < tt.queries; i++ {
@@ -1235,8 +1187,8 @@ func TestDashboardRefreshCommandDoesNotPersistRefreshRun(t *testing.T) {
 	principal := testPrincipal(t, ctx, store, "editor@example.com", "Editor", "editor")
 	token := testAPIToken(t, ctx, store, principal.ID, "dashboard-refresh")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
-	body := strings.NewReader(`{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations","modelId":"test"},"filters":{},"visualWindowCommand":{"blockID":"all","start":0,"limit":50,"sort":[]}}`)
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test"}))
+	body := strings.NewReader(`{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations","modelId":"test"},"filters":{},"visualWindowCommand":{"block":"all","start":0,"count":50}}`)
 	req := httptest.NewRequest(http.MethodPost, "/workspaces/test/commands/refresh", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -1248,7 +1200,7 @@ func TestDashboardRefreshCommandDoesNotPersistRefreshRun(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body:\n%s", rec.Code, http.StatusNotFound, rec.Body.String())
 	}
 	repo := materializesqlite.NewSQLRunRepository(store.SQLDB())
-	runs, err := repo.ListRuns(context.Background(), "test", materialize.RunPage{Limit: 10})
+	runs, err := repo.ListRuns(context.Background(), "test", refreshrun.RunPage{Limit: 10})
 	if err != nil {
 		t.Fatalf("list model runs: %v", err)
 	}
@@ -1260,9 +1212,9 @@ func TestDashboardRefreshCommandDoesNotPersistRefreshRun(t *testing.T) {
 func TestWorkspaceAssetDetailsUpdatesExcludeRefreshesTableAndUnusedRefreshFields(t *testing.T) {
 	store := testStore(t)
 	seedActiveDeploymentFromWorkspaceAssets(t, store, "test", emptyPageRuntimeAssetMetrics{})
-	server := NewWithOptions(emptyPageRuntimeAssetMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
+	server := assembleRuntime(emptyPageRuntimeAssetMetrics{}, testStoreOptions(store, assemblyConfig{DefaultWorkspaceID: "test"}))
 	assetID := workspace.NewAssetID(workspace.AssetTypeSemanticModel, "olist")
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=workspace_asset&workspace=test&asset="+string(assetID)+"&section=details", nil)
 	rec := newSynchronizedRecorder()
@@ -1310,7 +1262,7 @@ func TestWorkspaceAssetDetailsUpdatesExcludeRefreshesTableAndUnusedRefreshFields
 func TestLegacySemanticModelRefreshRouteIsRemoved(t *testing.T) {
 	store := testStore(t)
 	seedActiveDeploymentFromWorkspaceAssets(t, store, "test", emptyPageRuntimeAssetMetrics{})
-	server := NewWithOptions(emptyPageRuntimeAssetMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
+	server := assembleRuntime(emptyPageRuntimeAssetMetrics{}, testStoreOptions(store, assemblyConfig{DefaultWorkspaceID: "test"}))
 	assetID := workspace.NewAssetID(workspace.AssetTypeSemanticModel, "olist")
 	req := httptest.NewRequest(http.MethodPost, "/workspaces/test/assets/"+string(assetID)+"/refresh", nil)
 	rec := httptest.NewRecorder()
@@ -1321,23 +1273,23 @@ func TestLegacySemanticModelRefreshRouteIsRemoved(t *testing.T) {
 }
 
 func TestClearSelectionCommandAcceptsDatastarSignals(t *testing.T) {
-	body := strings.NewReader(`{"filters":{"selections":[{"sourceKind":"visual","sourceId":"orders","interactionKind":"point_selection","entries":[{"mappings":[{"field":"orders.status","fact":"orders","value":"delivered","label":"delivered"}]}]}]},"runtime":{"clientId":"test-client"},"visualWindowCommand":{"visualID":"order_rows","blockID":"all","start":0,"limit":50,"sort":[]}}`)
+	body := strings.NewReader(`{"filters":{"selections":[{"sourceKind":"visual","sourceId":"orders","interactionKind":"point_selection","entries":[{"mappings":[{"field":"orders.status","fact":"orders","value":"delivered","label":"delivered"}]}]}]},"runtime":{"clientId":"test-client"},"visualWindowCommand":{"visual":"order_rows","block":"all","start":0,"count":50}}`)
 	req := httptest.NewRequest(http.MethodPost, "/workspaces/test-workspace/commands/clear-selection", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
-	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+	newAppTestHarness(fakeMetrics{}).Routes().ServeHTTP(rec, req)
 
 	assertDatastarCommandAccepted(t, rec)
 }
 
 func TestResetFiltersCommandAcceptsDatastarSignals(t *testing.T) {
-	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}},"selections":[{"sourceKind":"visual","sourceId":"orders","interactionKind":"point_selection","entries":[{"mappings":[{"field":"orders.status","fact":"orders","value":"delivered","label":"delivered"}]}]}]},"runtime":{"clientId":"test-client"},"visualWindowCommand":{"visualID":"order_rows","blockID":"all","start":200,"limit":50,"sort":[]}}`)
+	body := strings.NewReader(`{"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}},"selections":[{"sourceKind":"visual","sourceId":"orders","interactionKind":"point_selection","entries":[{"mappings":[{"field":"orders.status","fact":"orders","value":"delivered","label":"delivered"}]}]}]},"runtime":{"clientId":"test-client"},"visualWindowCommand":{"visual":"order_rows","block":"all","start":200,"count":50}}`)
 	req := httptest.NewRequest(http.MethodPost, "/workspaces/test-workspace/commands/reset-filters", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
-	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+	newAppTestHarness(fakeMetrics{}).Routes().ServeHTTP(rec, req)
 
 	assertDatastarCommandAccepted(t, rec)
 }
@@ -1348,17 +1300,17 @@ func TestTableWindowCommandAcceptsDatastarSignals(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
-	New(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+	newAppTestHarness(fakeMetrics{}).Routes().ServeHTTP(rec, req)
 
 	assertDatastarCommandAccepted(t, rec)
 }
 
 func TestTableWindowCommandDoesNotPublishCanceledQueries(t *testing.T) {
-	server := New(canceledTableMetrics{})
-	updates, unsubscribe := server.broker.Subscribe("test-client:executive-sales:overview")
+	server := newAppTestHarness(canceledTableMetrics{})
+	updates, unsubscribe := server.runtime.broker.Subscribe("test-client:executive-sales:overview")
 	defer unsubscribe()
 
-	body := strings.NewReader(`{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"overview"},"visualWindowCommand":{"visualID":"order_rows","specRevision":"","dataRevision":3,"blockID":"all","start":400,"limit":50,"requestSeq":42,"resetVersion":0,"sort":[]}}`)
+	body := strings.NewReader(`{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"overview"},"visualWindowCommand":{"visual":"order_rows","block":"all","start":400,"count":50,"requestSeq":42}}`)
 	req := httptest.NewRequest(http.MethodPost, "/workspaces/test-workspace/commands/visual-window", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()

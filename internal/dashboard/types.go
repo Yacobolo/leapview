@@ -6,6 +6,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/Yacobolo/leapview/internal/catalog"
 	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
 )
 
@@ -24,32 +25,10 @@ type VisualizationWindowRequest = visualizationir.VisualizationWindowRequest
 type SpatialBounds = visualizationir.VisualizationSpatialBounds
 type SpatialWindowRequest = visualizationir.VisualizationSpatialWindowRequest
 
-type Catalog struct {
-	Workspace  CatalogWorkspace   `json:"workspace"`
-	Models     []CatalogModel     `json:"models"`
-	Dashboards []CatalogDashboard `json:"dashboards"`
-}
-
-type CatalogWorkspace struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-}
-
-type CatalogModel struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-}
-
-type CatalogDashboard struct {
-	ID            string   `json:"id"`
-	Title         string   `json:"title"`
-	Description   string   `json:"description"`
-	SemanticModel string   `json:"semanticModel"`
-	Tags          []string `json:"tags"`
-	PageCount     int      `json:"pageCount"`
-}
+type Catalog = catalog.Catalog
+type CatalogWorkspace = catalog.Workspace
+type CatalogModel = catalog.Model
+type CatalogDashboard = catalog.Dashboard
 
 type Page struct {
 	ID          string       `json:"id" yaml:"id"`

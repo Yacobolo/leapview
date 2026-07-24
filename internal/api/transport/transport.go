@@ -1,0 +1,139 @@
+// Package transport contains capability-neutral HTTP protocol mechanics.
+package transport
+
+import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strconv"
+	"strings"
+
+	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
+)
+
+const (
+	DefaultListLimit = 50
+	MaxListLimit     = 200
+)
+
+func DecodeBody(w http.ResponseWriter, r *http.Request, target any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<20)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return fmt.Errorf("request body must contain exactly one JSON value")
+	}
+	return nil
+}
+
+func WriteJSON(w http.ResponseWriter, status int, value any) {
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/json")
+	}
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
+}
+
+func WriteProblem(w http.ResponseWriter, r *http.Request, status int, code, detail string, violations []apigenapi.ProblemFieldError) {
+	if violations == nil {
+		violations = []apigenapi.ProblemFieldError{}
+	}
+	requestID := r.Header.Get("X-Request-ID")
+	if requestID == "" {
+		requestID = w.Header().Get("X-Request-ID")
+	}
+	if requestID == "" {
+		requestID = NewRequestID()
+		r.Header.Set("X-Request-ID", requestID)
+	}
+	w.Header().Set("X-Request-ID", requestID)
+	w.Header().Set("Content-Type", "application/problem+json")
+	WriteJSON(w, status, apigenapi.ProblemDetails{
+		Type: "https://leapview.dev/problems/" + strings.ToLower(code), Title: http.StatusText(status), Status: int32(status),
+		Detail: detail, Instance: r.URL.Path, Code: code, RequestId: requestID, Errors: violations,
+	})
+}
+
+func StrongETag(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return strconv.Quote(hex.EncodeToString(sum[:]))
+}
+
+func NewRequestID() string {
+	var value [16]byte
+	if _, err := rand.Read(value[:]); err != nil {
+		return "req_unavailable"
+	}
+	return "req_" + hex.EncodeToString(value[:])
+}
+
+type keysetPageCursor struct {
+	Key string `json:"key"`
+}
+
+func KeysetPage[T any](items []T, limitValue *int32, tokenValue *string, key func(T) string) ([]T, *string, error) {
+	limit := DefaultListLimit
+	if limitValue != nil {
+		if *limitValue < 1 || *limitValue > MaxListLimit {
+			return nil, nil, fmt.Errorf("limit must be between 1 and 200")
+		}
+		limit = int(*limitValue)
+	}
+	start := 0
+	if tokenValue != nil && strings.TrimSpace(*tokenValue) != "" {
+		cursor, err := decodeKeysetCursor(*tokenValue)
+		if err != nil {
+			return nil, nil, err
+		}
+		start = -1
+		for index, item := range items {
+			if key(item) == cursor.Key {
+				start = index + 1
+				break
+			}
+		}
+		if start < 0 {
+			return nil, nil, fmt.Errorf("cursor key is unavailable")
+		}
+	}
+	end := start + limit
+	if end > len(items) {
+		end = len(items)
+	}
+	page := append(make([]T, 0, end-start), items[start:end]...)
+	var next *string
+	if end < len(items) && len(page) > 0 {
+		value := encodeKeysetCursor(key(page[len(page)-1]))
+		next = &value
+	}
+	return page, next, nil
+}
+
+func encodeKeysetCursor(key string) string {
+	payload, _ := json.Marshal(keysetPageCursor{Key: key})
+	return "k1." + base64.RawURLEncoding.EncodeToString(payload)
+}
+
+func decodeKeysetCursor(value string) (keysetPageCursor, error) {
+	if !strings.HasPrefix(value, "k1.") {
+		return keysetPageCursor{}, fmt.Errorf("invalid keyset cursor")
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(value, "k1."))
+	if err != nil {
+		return keysetPageCursor{}, fmt.Errorf("invalid keyset cursor")
+	}
+	var cursor keysetPageCursor
+	if json.Unmarshal(raw, &cursor) != nil || cursor.Key == "" {
+		return keysetPageCursor{}, fmt.Errorf("invalid keyset cursor")
+	}
+	return cursor, nil
+}

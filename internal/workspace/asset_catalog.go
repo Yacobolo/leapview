@@ -37,10 +37,10 @@ type AssetEdgeRecord struct {
 }
 
 type AssetCatalogService struct {
-	repo Repository
+	repo ReadModel
 }
 
-func NewAssetCatalogService(repo Repository) *AssetCatalogService {
+func NewAssetCatalogService(repo ReadModel) *AssetCatalogService {
 	return &AssetCatalogService{repo: repo}
 }
 

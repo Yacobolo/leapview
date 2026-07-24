@@ -5,16 +5,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/asyncjob"
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
+	jobsqlite "github.com/Yacobolo/leapview/internal/platform/jobs/sqlite"
 )
 
 func TestBackgroundLifecycleReclaimsPersistedAPIJobs(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), JobLeaseTimeout: time.Second})
-	repo, err := server.asyncRepository()
-	if err != nil {
-		t.Fatal(err)
+	store := testStore(t)
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{JobLeaseTimeout: time.Second}))
+	repo := server.platform.asyncJobs
+	if repo == nil {
+		t.Fatal("async job repository is required")
 	}
-	if _, err := repo.Enqueue(t.Context(), asyncjob.EnqueueInput{ID: "job-restart", Kind: "test.unsupported", WorkloadClass: "control", WorkspaceID: "_node", ResourceKind: "test", ResourceID: "resource-1", Payload: []byte(`{}`)}); err != nil {
+	// Seed through persistence to simulate an unknown kind left by a former
+	// process version; the module intentionally rejects new unknown enqueues.
+	if _, err := jobsqlite.NewRepository(store.SQLDB()).Enqueue(t.Context(), jobs.EnqueueInput{ID: "job-restart", Kind: "test.unsupported", WorkloadClass: "control", WorkspaceID: "_node", ResourceKind: "test", ResourceID: "resource-1", Payload: []byte(`{}`)}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -30,7 +34,7 @@ func TestBackgroundLifecycleReclaimsPersistedAPIJobs(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		job, getErr := repo.Get(t.Context(), "job-restart")
-		if getErr == nil && job.Status == asyncjob.StatusFailed {
+		if getErr == nil && job.Status == jobs.StatusFailed {
 			if job.Attempts != 1 || job.FinishedAt == "" {
 				t.Fatalf("failed job = %#v", job)
 			}

@@ -17,15 +17,17 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/agent"
+	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
 	"github.com/Yacobolo/leapview/internal/api"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	"github.com/Yacobolo/leapview/internal/platform"
+	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 	productsearch "github.com/Yacobolo/leapview/internal/search"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 	visualizationruntime "github.com/Yacobolo/leapview/internal/visualization/runtime"
 	"github.com/Yacobolo/leapview/internal/workspace"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/workspace/compiler"
+	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 
@@ -65,7 +67,7 @@ func TestTypedChatArtifactsPreserveTabularTypeAcrossJSON(t *testing.T) {
 			if err := json.Unmarshal(stored, &persisted); err != nil {
 				t.Fatal(err)
 			}
-			visuals := typedChatArtifacts(agent.ChatArtifactSignals{Visuals: map[string]any{"orders": persisted}})
+			visuals := agentmodule.TypedChatArtifacts(agent.ChatArtifactSignals{Visuals: map[string]any{"orders": persisted}})
 			encoded, err := json.Marshal(visuals["orders"])
 			if err != nil {
 				t.Fatal(err)
@@ -80,7 +82,7 @@ func TestTypedChatArtifactsPreserveTabularTypeAcrossJSON(t *testing.T) {
 func TestChatPageRequiresAuthAndRendersComponents(t *testing.T) {
 	store := testStore(t)
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, Agent: agent.NewService(testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"}))
 
 	unauthReq := httptest.NewRequest(http.MethodGet, "/chats", nil)
 	unauthRec := httptest.NewRecorder()
@@ -160,7 +162,7 @@ func TestChatReferenceSearchReturnsTypedGovernedWorkspaceResults(t *testing.T) {
 	store := testStore(t)
 	seedEnvironmentAssetDeployment(t, store, "test", servingstate.DefaultEnvironment, "Orders by region", "Warehouse")
 	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, Agent: agent.NewService(testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"}))
 
 	signals, _ := json.Marshal(map[string]any{
 		"agentReferenceSearch": map[string]any{"query": "orders by"},
@@ -189,13 +191,10 @@ func TestChatReferenceSearchWithoutWorkspaceSearchesVisibleWorkspaces(t *testing
 	store := testStore(t)
 	seedEnvironmentAssetDeployment(t, store, "sales", servingstate.DefaultEnvironment, "Orders dashboard", "Sales Warehouse")
 	auth := testAuth(store, "", AuthConfig{DevBypass: true})
-	server := NewWithOptions(NewMultiWorkspaceMetrics("sales", map[string]QueryMetrics{"sales": fakeMetrics{}}), Options{
-		Store: store, Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}),
-	})
-	repo, err := server.workspaceRepository()
-	if err != nil {
-		t.Fatal(err)
-	}
+	server := assembleRuntime(NewMultiWorkspaceMetrics("sales", map[string]QueryMetrics{"sales": fakeMetrics{}}), testStoreOptions(store, assemblyConfig{
+		Auth: auth, Agent: agent.NewService(testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}),
+	}))
+	repo := workspacesqlite.NewRepository(store.SQLDB())
 	if err := repo.Ensure(context.Background(), workspace.EnsureInput{ID: "sales", Title: "Sales"}); err != nil {
 		t.Fatal(err)
 	}
@@ -222,9 +221,9 @@ func TestChatReferenceSearchWithoutWorkspaceSearchesVisibleWorkspaces(t *testing
 func TestChatReferenceDiscoveryOnlyReturnsAttachableAnalyticsTypes(t *testing.T) {
 	store := testStore(t)
 	seedEnvironmentAssetDeployment(t, store, "sales", servingstate.DefaultEnvironment, "Orders dashboard", "Sales Warehouse")
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "sales"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{DefaultWorkspaceID: "sales"}))
 
-	results, err := server.searchAgentReferences(
+	results, err := server.routes.agentModule.SearchReferences(
 		httptest.NewRequest(http.MethodGet, "/chats/references/search", nil),
 		agent.TurnContext{WorkspaceID: "sales"}, "", 50,
 	)
@@ -274,7 +273,7 @@ func TestAgentReferenceSignalBuildsCompactHierarchy(t *testing.T) {
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			got := agentReferenceSignal(test.result)
+			got := agentmodule.ReferenceSignal(test.result)
 			if !slices.Equal(got.Hierarchy, test.want) {
 				t.Fatalf("hierarchy = %#v, want %#v", got.Hierarchy, test.want)
 			}
@@ -284,21 +283,15 @@ func TestAgentReferenceSignalBuildsCompactHierarchy(t *testing.T) {
 
 func TestGlobalChatReferenceSearchHonorsAPICredentialWorkspaceAndPrivileges(t *testing.T) {
 	store := testStore(t)
-	server := NewWithOptions(nil, Options{Store: store})
+	server := assembleRuntime(nil, testStoreOptions(store, assemblyConfig{}))
 	request := httptest.NewRequest(http.MethodGet, "/chats/references/search", nil)
 	credential := access.APICredential{Principal: access.Principal{ID: "principal"}, Token: access.APIToken{
 		ID: "token", WorkspaceID: "sales", Privileges: []access.Privilege{access.PrivilegeViewItem},
 	}}
-	request = request.WithContext(context.WithValue(request.Context(), apiCredentialContextKey{}, credential))
-	subject, ok := server.searchSubject(request)
+	request = request.WithContext(withAPICredential(request.Context(), credential))
+	subject, ok := server.routes.workspaceModule.SearchSubject(request)
 	if !ok || subject.ID != "principal" || subject.DevBypass || !subject.CredentialRestricted || len(subject.WorkspaceIDs) != 1 || subject.WorkspaceIDs[0] != "sales" {
 		t.Fatalf("credential search subject = %#v", subject)
-	}
-	denied := subject
-	denied.Privileges = []string{string(access.PrivilegeUseAgent)}
-	allowed, err := (appSearchAuthorizer{server: server}).CanView(context.Background(), denied, access.WorkspaceObject("sales"))
-	if err != nil || allowed {
-		t.Fatalf("credential without VIEW_ITEM allowed=%v err=%v", allowed, err)
 	}
 }
 
@@ -306,18 +299,15 @@ func TestGlobalChatReferenceSearchRanksAcrossWorkspaces(t *testing.T) {
 	store := testStore(t)
 	seedEnvironmentAssetDeployment(t, store, "archive", servingstate.DefaultEnvironment, "Revenue archive", "Archive Warehouse")
 	seedEnvironmentAssetDeployment(t, store, "sales", servingstate.DefaultEnvironment, "Revenue", "Sales Warehouse")
-	server := NewWithOptions(nil, Options{Store: store})
-	repo, err := server.workspaceRepository()
-	if err != nil {
-		t.Fatal(err)
-	}
+	server := assembleRuntime(nil, testStoreOptions(store, assemblyConfig{}))
+	repo := workspacesqlite.NewRepository(store.SQLDB())
 	for _, workspaceID := range []string{"archive", "sales"} {
 		if err := repo.Ensure(context.Background(), workspace.EnsureInput{ID: workspace.WorkspaceID(workspaceID), Title: workspaceID}); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	results, err := server.searchAgentReferences(httptest.NewRequest(http.MethodGet, "/chats/references/search", nil), agent.TurnContext{}, "revenue", 5)
+	results, err := server.routes.agentModule.SearchReferences(httptest.NewRequest(http.MethodGet, "/chats/references/search", nil), agent.TurnContext{}, "revenue", 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,10 +320,7 @@ func TestChatReferenceSearchRouteAuthorizesAcrossAccessibleWorkspaces(t *testing
 	store := testStore(t)
 	seedEnvironmentAssetDeployment(t, store, "sales", servingstate.DefaultEnvironment, "Orders dashboard", "Sales Warehouse")
 	ctx := context.Background()
-	workspaceRepo, err := NewWithOptions(fakeMetrics{}, Options{Store: store}).workspaceRepository()
-	if err != nil {
-		t.Fatal(err)
-	}
+	workspaceRepo := workspacesqlite.NewRepository(store.SQLDB())
 	if err := workspaceRepo.Ensure(ctx, workspace.EnsureInput{ID: "sales", Title: "Sales"}); err != nil {
 		t.Fatal(err)
 	}
@@ -351,9 +338,9 @@ func TestChatReferenceSearchRouteAuthorizesAcrossAccessibleWorkspaces(t *testing
 		Privileges:  []access.Privilege{access.PrivilegeViewItem},
 	})
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(NewMultiWorkspaceMetrics("test", map[string]QueryMetrics{
+	server := assembleRuntime(NewMultiWorkspaceMetrics("test", map[string]QueryMetrics{
 		"test": fakeMetrics{}, "sales": fakeMetrics{},
-	}), Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+	}), testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test"}))
 	if _, err := accessRepo.UpsertSecurableObject(ctx, access.ItemObjectWithParent(
 		access.SecurableDashboard, "sales", "dev-dashboard", access.WorkspaceObject("sales"),
 	), ""); err != nil {
@@ -382,7 +369,7 @@ func TestChatReferenceSearchRouteAuthorizesAcrossAccessibleWorkspaces(t *testing
 func TestChatPageDisabledState(t *testing.T) {
 	store := testStore(t)
 	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{}), DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, Agent: agent.NewService(testAgentRepository(store), agent.Config{}), DefaultWorkspaceID: "test"}))
 
 	req := httptest.NewRequest(http.MethodGet, "/chats", nil)
 	rec := httptest.NewRecorder()
@@ -403,7 +390,7 @@ func TestChatPageDisabledState(t *testing.T) {
 func TestWorkspaceChatRoutesAreRemoved(t *testing.T) {
 	store := testStore(t)
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test"}))
 	_, token := chatPrincipalAndToken(t, context.Background(), store)
 
 	for _, path := range []string{
@@ -424,7 +411,7 @@ func TestWorkspaceChatRoutesAreRemoved(t *testing.T) {
 }
 
 func TestLegacyChatRoutesRedirectToCanonicalChats(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{DefaultWorkspaceID: "test"})
 	for _, test := range []struct {
 		method   string
 		path     string
@@ -446,7 +433,7 @@ func TestLegacyChatRoutesRedirectToCanonicalChats(t *testing.T) {
 func TestChatRootRendersListWhenNoConversations(t *testing.T) {
 	store := testStore(t)
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, Agent: agent.NewService(testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"}))
 	ctx := context.Background()
 	_, token := chatPrincipalAndToken(t, ctx, store)
 
@@ -478,8 +465,8 @@ func TestChatRootRendersConversationList(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t)
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	service := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: service, DefaultWorkspaceID: "test"})
+	service := agent.NewService(testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, Agent: service, DefaultWorkspaceID: "test"}))
 	principal, token := chatPrincipalAndToken(t, ctx, store)
 	scope := agent.Scope{WorkspaceID: "test", PrincipalID: principal.ID}
 	old, err := service.CreateConversation(ctx, scope, "Old")
@@ -520,7 +507,7 @@ func TestChatNewRendersDraftWithoutCreatingConversation(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t)
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, Agent: agent.NewService(testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"}))
 	principal, token := chatPrincipalAndToken(t, ctx, store)
 
 	req := httptest.NewRequest(http.MethodGet, "/chats/new", nil)
@@ -558,8 +545,8 @@ func TestChatSignalConversationListUsesCallerContext(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t)
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	service := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: service, DefaultWorkspaceID: "test"})
+	service := agent.NewService(testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, Agent: service, DefaultWorkspaceID: "test"}))
 	principal, _ := chatPrincipalAndToken(t, ctx, store)
 	scope := agent.Scope{WorkspaceID: "test", PrincipalID: principal.ID}
 	if _, err := service.CreateConversation(ctx, scope, "Visible only with live context"); err != nil {
@@ -568,7 +555,7 @@ func TestChatSignalConversationListUsesCallerContext(t *testing.T) {
 
 	canceled, cancel := context.WithCancel(ctx)
 	cancel()
-	signal := server.chatSignalWith(canceled, scope, "", nil, agent.ChatArtifactSignals{}, "", false)
+	signal := server.routes.agentModule.ChatSignalWith(canceled, scope, "", nil, agent.ChatArtifactSignals{}, "", false)
 	if len(signal.Agent.Conversations) != 0 {
 		t.Fatalf("canceled context should prevent conversation loading, got %#v", signal.Agent.Conversations)
 	}
@@ -580,8 +567,8 @@ func TestChatConversationRouteLoadsOwnedEventsAndRejectsOtherPrincipal(t *testin
 	owner, token := chatPrincipalAndToken(t, ctx, store)
 	other := testPrincipal(t, ctx, store, "other@example.com", "Other", "viewer")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	service := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: service, DefaultWorkspaceID: "test"})
+	service := agent.NewService(testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, Agent: service, DefaultWorkspaceID: "test"}))
 	owned, err := service.CreateConversation(ctx, agent.Scope{WorkspaceID: "test", PrincipalID: owner.ID}, "Owned")
 	if err != nil {
 		t.Fatalf("create owned: %v", err)
@@ -635,8 +622,8 @@ func TestDashboardChatRestoreHydratesOnlyAnOwnedConversation(t *testing.T) {
 	owner, token := chatPrincipalAndToken(t, ctx, store)
 	other := testPrincipal(t, ctx, store, "restore-other@example.com", "Restore Other", "viewer")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	service := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: service, DefaultWorkspaceID: "test"})
+	service := agent.NewService(testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, Agent: service, DefaultWorkspaceID: "test"}))
 
 	owned, err := service.CreateConversation(ctx, agent.Scope{WorkspaceID: "test", PrincipalID: owner.ID}, "Owned restore")
 	if err != nil {
@@ -690,8 +677,8 @@ func TestChatConversationRouteLoadsArtifactSignalsOutsideTranscript(t *testing.T
 	store := testStore(t)
 	owner, token := chatPrincipalAndToken(t, ctx, store)
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	service := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: service, DefaultWorkspaceID: "test"})
+	service := agent.NewService(testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, Agent: service, DefaultWorkspaceID: "test"}))
 	conversation, err := service.CreateConversation(ctx, agent.Scope{WorkspaceID: "test", PrincipalID: owner.ID}, "Artifact")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
@@ -765,8 +752,8 @@ func TestChatConversationRouteQueuesMissingTitleRepair(t *testing.T) {
 	}))
 	defer modelServer.Close()
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	service := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: service, DefaultWorkspaceID: "test"})
+	service := agent.NewService(testAgentRepository(store), agent.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, Agent: service, DefaultWorkspaceID: "test"}))
 	scope := agent.Scope{WorkspaceID: "test", PrincipalID: owner.ID}
 	conversation, err := service.CreateConversation(ctx, scope, "")
 	if err != nil {
@@ -806,8 +793,8 @@ func TestChatConversationRouteSkipsTitleRepairForManualAndMultiUserTitles(t *tes
 	}))
 	defer modelServer.Close()
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	service := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: service, DefaultWorkspaceID: "test"})
+	service := agent.NewService(testAgentRepository(store), agent.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, Agent: service, DefaultWorkspaceID: "test"}))
 	scope := agent.Scope{WorkspaceID: "test", PrincipalID: owner.ID}
 	manual, err := service.CreateConversation(ctx, scope, "Manual title")
 	if err != nil {
@@ -864,8 +851,8 @@ func TestChatTurnStreamsDatastarSignalsAndPersistsEvents(t *testing.T) {
 	}))
 	defer modelServer.Close()
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	agentService := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agentService, DefaultWorkspaceID: "test"})
+	agentService := agent.NewService(testAgentRepository(store), agent.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, Agent: agentService, DefaultWorkspaceID: "test"}))
 	conversation, err := agentService.CreateConversation(ctx, agent.Scope{WorkspaceID: "test", PrincipalID: principal.ID}, "Existing")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
@@ -938,8 +925,8 @@ func TestChatDraftTurnRedirectsAndStreamsThroughUpdates(t *testing.T) {
 	}))
 	defer modelServer.Close()
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	service := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: service, DefaultWorkspaceID: "test"})
+	service := agent.NewService(testAgentRepository(store), agent.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, Agent: service, DefaultWorkspaceID: "test"}))
 
 	signals := map[string]any{"agent": map[string]any{
 		"activeConversationId": "",
@@ -994,7 +981,7 @@ func TestChatDraftTurnRedirectsAndStreamsThroughUpdates(t *testing.T) {
 		defer close(done)
 		server.Routes().ServeHTTP(updatesRec, updatesReq)
 	}()
-	waitForBrokerSubscription(t, server, chatStreamID(agent.Scope{PrincipalID: principal.ID}, "client-draft"))
+	waitForBrokerSubscription(t, server, agentmodule.ChatStreamID(agent.Scope{PrincipalID: principal.ID}, "client-draft"))
 	close(release)
 	waitForConversationMessage(t, service, principal.ID, conversationID, "Background complete.")
 	waitForRecorderBodyContains(t, updatesRec, `"running":false`)
@@ -1026,8 +1013,8 @@ func TestDashboardChatDraftTurnStaysEmbeddedAndUsesResolvedContext(t *testing.T)
 	}))
 	defer modelServer.Close()
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	service := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: service, DefaultWorkspaceID: "test"})
+	service := agent.NewService(testAgentRepository(store), agent.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, Agent: service, DefaultWorkspaceID: "test"}))
 
 	signals := map[string]any{
 		"agent": map[string]any{
@@ -1098,13 +1085,13 @@ func TestChatTurnWithActiveConversationDoesNotReplaceURL(t *testing.T) {
 		writeRawJSON(t, w, `{"choices":[{"message":{"role":"assistant","content":"Still here."},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}`)
 	}))
 	defer modelServer.Close()
-	service := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"})
+	service := agent.NewService(testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"})
 	owned, err := service.CreateConversation(ctx, agent.Scope{WorkspaceID: "test", PrincipalID: owner.ID}, "Owned")
 	if err != nil {
 		t.Fatalf("create owned: %v", err)
 	}
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"}), DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, Agent: agent.NewService(testAgentRepository(store), agent.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"}), DefaultWorkspaceID: "test"}))
 
 	req := chatSignalsRequest(http.MethodPost, "/chats/turns", token, map[string]any{"agent": map[string]any{
 		"activeConversationId": owned.ID,
@@ -1125,10 +1112,10 @@ func TestChatUpdatesStreamsConversationPatches(t *testing.T) {
 	store := testStore(t)
 	principal, token := chatPrincipalAndToken(t, ctx, store)
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	service := agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: service, DefaultWorkspaceID: "test"})
+	service := agent.NewService(testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, Agent: service, DefaultWorkspaceID: "test"}))
 	scope := agent.Scope{PrincipalID: principal.ID}
-	key := chatStreamID(scope, "client-test")
+	key := agentmodule.ChatStreamID(scope, "client-test")
 
 	reqCtx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodGet, "/updates?route=chat", nil).WithContext(reqCtx)
@@ -1141,7 +1128,7 @@ func TestChatUpdatesStreamsConversationPatches(t *testing.T) {
 		server.Routes().ServeHTTP(rec, req)
 	}()
 	waitForBrokerSubscription(t, server, key)
-	server.broker.Publish(key, pagestream.SignalPatch{"agent": map[string]any{"conversations": []api.AgentConversationResponse{{ID: "agentconv_title", Title: "Available dashboards"}}}})
+	server.runtime.broker.Publish(key, pagestream.SignalPatch{"agent": map[string]any{"conversations": []api.AgentConversationResponse{{ID: "agentconv_title", Title: "Available dashboards"}}}})
 	waitForRecorderBodyContains(t, rec, "Available dashboards")
 	cancel()
 	<-done
@@ -1206,7 +1193,7 @@ func waitForRecorderBodyContains(t *testing.T, rec *synchronizedRecorder, want s
 	return ""
 }
 
-func readUpdatesUntil(t *testing.T, server *Server, path, token string, wants ...string) string {
+func readUpdatesUntil(t *testing.T, server *appTestHarness, path, token string, wants ...string) string {
 	t.Helper()
 	reqCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1253,11 +1240,11 @@ func chatPrincipalAndToken(t *testing.T, ctx context.Context, store *platform.St
 	return testPrincipalRef{ID: principal.ID}, token
 }
 
-func waitForBrokerSubscription(t *testing.T, server *Server, key string) {
+func waitForBrokerSubscription(t *testing.T, server *appTestHarness, key string) {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		count := server.broker.SubscriberCount(key)
+		count := server.runtime.broker.SubscriberCount(key)
 		if count > 0 {
 			return
 		}

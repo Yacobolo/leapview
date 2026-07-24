@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	platformdb "github.com/Yacobolo/leapview/internal/platform/db"
 	"github.com/Yacobolo/leapview/internal/release"
+	platformdb "github.com/Yacobolo/leapview/internal/release/sqlite/releasedb"
 )
 
 type Repository struct {

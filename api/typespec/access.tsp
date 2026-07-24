@@ -246,6 +246,7 @@ alias ListPrincipalsOK = OkJson<PrincipalListResponse>;
 @route("/principals")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@extension("x-leapview-object-scope", "grant-management")
 op listPrincipals(@query email?: string, @query q?: string, @query limit?: ListLimit, @query pageToken?: PageToken): ListPrincipalsOK | CommonErrors;
 
 alias CreatePrincipalCreated = CreatedJson<LocalPasswordResetResponse>;
@@ -255,6 +256,7 @@ alias CreatePrincipalCreated = CreatedJson<LocalPasswordResetResponse>;
 @route("/principals")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@extension("x-leapview-object-scope", "grant-management")
 op createPrincipal(@header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: PrincipalCreateRequest): CreatePrincipalCreated | CommonErrors;
 
 alias GetPrincipalOK = OkJson<PrincipalResponse>;
@@ -264,6 +266,7 @@ alias GetPrincipalOK = OkJson<PrincipalResponse>;
 @route("/principals/{principal}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@extension("x-leapview-object-scope", "grant-management")
 op getPrincipal(@path principal: string): GetPrincipalOK | CommonErrors;
 
 alias UpdatePrincipalOK = OkJson<PrincipalResponse>;
@@ -273,6 +276,7 @@ alias UpdatePrincipalOK = OkJson<PrincipalResponse>;
 @route("/principals/{principal}")
 @patch
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@extension("x-leapview-object-scope", "grant-management")
 op updatePrincipal(@path principal: string, @header("If-Match") ifMatch: string, @body body: PrincipalPatchRequest): UpdatePrincipalOK | CommonErrors;
 
 @tag("Access")
@@ -280,6 +284,7 @@ op updatePrincipal(@path principal: string, @header("If-Match") ifMatch: string,
 @route("/principals/{principal}")
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@extension("x-leapview-object-scope", "grant-management")
 op deletePrincipal(@path principal: string): NoContentResponse | CommonErrors;
 
 alias ResetPrincipalPasswordOK = OkJson<LocalPasswordResetResponse>;
@@ -289,6 +294,7 @@ alias ResetPrincipalPasswordOK = OkJson<LocalPasswordResetResponse>;
 @route("/principals/{principal}/password-reset")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@extension("x-leapview-object-scope", "grant-management")
 op resetPrincipalPassword(@path principal: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): ResetPrincipalPasswordOK | CommonErrors;
 
 alias ListServicePrincipalsOK = OkJson<ServicePrincipalListResponse>;

@@ -15,7 +15,6 @@ import (
 	"sync"
 
 	"github.com/Yacobolo/leapview/internal/manageddata"
-	"github.com/Yacobolo/leapview/internal/runtimehost"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 )
 
@@ -39,6 +38,18 @@ type Repository interface {
 // ServingStateRepository supplies the environment that bindings must match.
 type ServingStateRepository interface {
 	ByID(context.Context, servingstate.ID) (servingstate.State, error)
+}
+
+type Lifetime interface {
+	Release() error
+}
+
+// Resolution is the managed-data-owned result of resolving immutable serving
+// bindings. Runtime-host mapping is supplied by process composition.
+type Resolution struct {
+	RevisionID string
+	Roots      map[string]string
+	Lifetime   Lifetime
 }
 
 // Resolver validates persisted bindings and materializes their immutable views.
@@ -65,10 +76,10 @@ func New(repository Repository, servingStates ServingStateRepository, materializ
 // ResolveManagedData resolves the bindings already persisted for servingStateID.
 // RevisionID is a SHA-256 digest over canonical JSON containing the sorted
 // (project, connection, manifest digest) tuples, including for one binding.
-func (r *Resolver) ResolveManagedData(ctx context.Context, servingStateID servingstate.ID) (runtimehost.ManagedDataResolution, error) {
+func (r *Resolver) ResolveManagedData(ctx context.Context, servingStateID servingstate.ID) (Resolution, error) {
 	bindings, err := r.loadBindings(ctx, servingStateID)
 	if err != nil {
-		return runtimehost.ManagedDataResolution{}, err
+		return Resolution{}, err
 	}
 	return r.resolveBindings(ctx, servingStateID, bindings)
 }
@@ -80,20 +91,20 @@ type resolvedBinding struct {
 	manifest       manageddata.Manifest
 }
 
-func (r *Resolver) resolveBindings(ctx context.Context, servingStateID servingstate.ID, bindings []manageddata.ServingStateBinding) (runtimehost.ManagedDataResolution, error) {
+func (r *Resolver) resolveBindings(ctx context.Context, servingStateID servingstate.ID, bindings []manageddata.ServingStateBinding) (Resolution, error) {
 	if !canonicalIdentifier(string(servingStateID)) {
-		return runtimehost.ManagedDataResolution{}, invalidMetadata("serving state id is invalid")
+		return Resolution{}, invalidMetadata("serving state id is invalid")
 	}
 	state, err := r.servingStates.ByID(ctx, servingStateID)
 	if err != nil {
-		return runtimehost.ManagedDataResolution{}, sanitizeRepositoryError(ctx, "load serving state", err)
+		return Resolution{}, sanitizeRepositoryError(ctx, "load serving state", err)
 	}
 	stateEnvironment, normalizeErr := manageddata.NormalizeEnvironment(string(state.Environment))
 	if state.ID != servingStateID || normalizeErr != nil || string(stateEnvironment) != string(state.Environment) {
-		return runtimehost.ManagedDataResolution{}, invalidMetadata("serving state relationship or environment is invalid")
+		return Resolution{}, invalidMetadata("serving state relationship or environment is invalid")
 	}
 	if len(bindings) == 0 {
-		return runtimehost.ManagedDataResolution{Roots: map[string]string{}}, nil
+		return Resolution{Roots: map[string]string{}}, nil
 	}
 
 	resolved := make([]resolvedBinding, 0, len(bindings))
@@ -101,53 +112,53 @@ func (r *Resolver) resolveBindings(ctx context.Context, servingStateID servingst
 	collections := make(map[string]struct{}, len(bindings))
 	for _, binding := range bindings {
 		if binding.ServingStateID != string(servingStateID) || !canonicalIdentifier(binding.CollectionID) || !canonicalIdentifier(binding.RevisionID) {
-			return runtimehost.ManagedDataResolution{}, invalidMetadata("binding relationship is invalid")
+			return Resolution{}, invalidMetadata("binding relationship is invalid")
 		}
 		if _, duplicate := collections[binding.CollectionID]; duplicate {
-			return runtimehost.ManagedDataResolution{}, invalidMetadata("collection has duplicate bindings")
+			return Resolution{}, invalidMetadata("collection has duplicate bindings")
 		}
 		collections[binding.CollectionID] = struct{}{}
 
 		normalizedEnvironment, normalizeErr := manageddata.NormalizeEnvironment(string(binding.Environment))
 		if normalizeErr != nil || normalizedEnvironment != binding.Environment {
-			return runtimehost.ManagedDataResolution{}, invalidMetadata("binding environment is invalid")
+			return Resolution{}, invalidMetadata("binding environment is invalid")
 		}
 		if binding.Environment != stateEnvironment {
-			return runtimehost.ManagedDataResolution{}, invalidMetadata("binding environment does not match serving state")
+			return Resolution{}, invalidMetadata("binding environment does not match serving state")
 		}
 
 		collection, loadErr := r.repository.CollectionByID(ctx, binding.CollectionID)
 		if loadErr != nil {
-			return runtimehost.ManagedDataResolution{}, sanitizeRepositoryError(ctx, "load collection", loadErr)
+			return Resolution{}, sanitizeRepositoryError(ctx, "load collection", loadErr)
 		}
 		if collection.ID != binding.CollectionID || !validAuthoredIdentity(collection.ProjectID) || !validAuthoredIdentity(collection.ConnectionName) {
-			return runtimehost.ManagedDataResolution{}, invalidMetadata("collection relationship or identity is invalid")
+			return Resolution{}, invalidMetadata("collection relationship or identity is invalid")
 		}
 		if _, duplicate := connections[collection.ConnectionName]; duplicate {
-			return runtimehost.ManagedDataResolution{}, fmt.Errorf("%w: authored connection name %q is bound more than once", ErrAmbiguousConnection, collection.ConnectionName)
+			return Resolution{}, fmt.Errorf("%w: authored connection name %q is bound more than once", ErrAmbiguousConnection, collection.ConnectionName)
 		}
 		connections[collection.ConnectionName] = struct{}{}
 
 		revision, loadErr := r.repository.RevisionByID(ctx, binding.RevisionID)
 		if loadErr != nil {
-			return runtimehost.ManagedDataResolution{}, sanitizeRepositoryError(ctx, "load revision", loadErr)
+			return Resolution{}, sanitizeRepositoryError(ctx, "load revision", loadErr)
 		}
 		if revision.ID != binding.RevisionID || revision.CollectionID != collection.ID {
-			return runtimehost.ManagedDataResolution{}, invalidMetadata("revision relationship is invalid")
+			return Resolution{}, invalidMetadata("revision relationship is invalid")
 		}
 		if revision.Status != manageddata.RevisionStatusReady {
-			return runtimehost.ManagedDataResolution{}, ErrRevisionNotReady
+			return Resolution{}, ErrRevisionNotReady
 		}
 		manifest, manifestErr := validateRevisionManifest(revision)
 		if manifestErr != nil {
-			return runtimehost.ManagedDataResolution{}, manifestErr
+			return Resolution{}, manifestErr
 		}
 		files, loadErr := r.repository.ListRevisionFiles(ctx, revision.ID)
 		if loadErr != nil {
-			return runtimehost.ManagedDataResolution{}, sanitizeRepositoryError(ctx, "load revision files", loadErr)
+			return Resolution{}, sanitizeRepositoryError(ctx, "load revision files", loadErr)
 		}
 		if metadataErr := validateRevisionFiles(revision, manifest, files); metadataErr != nil {
-			return runtimehost.ManagedDataResolution{}, metadataErr
+			return Resolution{}, metadataErr
 		}
 		resolved = append(resolved, resolvedBinding{
 			project: collection.ProjectID, connection: collection.ConnectionName,
@@ -171,16 +182,16 @@ func (r *Resolver) resolveBindings(ctx context.Context, servingStateID servingst
 		lease, materializeErr := r.materializer.MaterializeRevision(ctx, binding.manifestDigest, binding.manifest)
 		if materializeErr != nil {
 			_ = (&managedDataLifetime{leases: leases}).Release()
-			return runtimehost.ManagedDataResolution{}, sanitizeMaterializationError(ctx, materializeErr)
+			return Resolution{}, sanitizeMaterializationError(ctx, materializeErr)
 		}
 		if lease == nil || strings.TrimSpace(lease.Root()) == "" {
 			_ = (&managedDataLifetime{leases: append(leases, lease)}).Release()
-			return runtimehost.ManagedDataResolution{}, ErrMaterialization
+			return Resolution{}, ErrMaterialization
 		}
 		leases = append(leases, lease)
 		roots[binding.connection] = lease.Root()
 	}
-	return runtimehost.ManagedDataResolution{
+	return Resolution{
 		RevisionID: aggregateRevisionID(resolved), Roots: roots, Lifetime: &managedDataLifetime{leases: leases},
 	}, nil
 }
@@ -355,5 +366,3 @@ func validAuthoredIdentity(value string) bool {
 	}
 	return true
 }
-
-var _ runtimehost.ManagedDataResolver = (*Resolver)(nil)

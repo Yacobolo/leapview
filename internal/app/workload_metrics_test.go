@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/dashboard"
+	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/workload"
@@ -23,11 +24,7 @@ func TestWorkloadMetricsBoundsDataQueries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	metrics := workloadMetrics{
-		QueryMetrics:       inner,
-		admitter:           controller,
-		defaultWorkspaceID: "sales",
-	}
+	metrics := dashboardmodule.WithAdmission(inner, controller, "sales")
 
 	go func() {
 		_, _ = metrics.ExecuteDataQuery(context.Background(), dataquery.SemanticRows("sales", "orders", []dataquery.Field{{Field: "orders.id"}}, nil, nil, nil, 0, 1, false))
@@ -67,11 +64,7 @@ func TestWorkloadMetricsDoesNotAdmitWholeDashboardReads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	metrics := workloadMetrics{
-		QueryMetrics:       inner,
-		admitter:           controller,
-		defaultWorkspaceID: "sales",
-	}
+	metrics := dashboardmodule.WithAdmission(inner, controller, "sales")
 
 	done := make(chan error, 2)
 	for range 2 {
@@ -107,7 +100,7 @@ func TestWorkloadMetricsClassifiesAgentAndReleasesFailedQueries(t *testing.T) {
 			t.Fatalf("agent admission stats = %#v", stats)
 		}
 	}}
-	metrics := workloadMetrics{QueryMetrics: inner, admitter: controller, defaultWorkspaceID: "sales"}
+	metrics := dashboardmodule.WithAdmission(inner, controller, "sales")
 	request := dataquery.SemanticRows("sales", "orders", []dataquery.Field{{Field: "orders.id"}}, nil, nil, nil, 0, 1, false)
 	request.Surface = dataquery.SurfaceAgent
 	request.Operation = dataquery.OperationAgentQuery

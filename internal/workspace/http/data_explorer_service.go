@@ -9,9 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	"github.com/Yacobolo/leapview/internal/assetnav"
-	"github.com/Yacobolo/leapview/internal/dataquery"
 	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
 	"github.com/Yacobolo/leapview/internal/workspace"
 )
@@ -137,9 +135,9 @@ func dataExplorerObjects(workspaceID, workspaceTitle string, metrics Metrics, as
 				Columns:        uisignals.OptionalSlice(columns),
 			})
 		case string(workspace.AssetTypeModelTable):
-			model, _ := metrics.SemanticModel(modelID)
-			table := semanticmodel.Table{}
-			if model != nil {
+			model, _ := metrics.DataExplorerModel(modelID)
+			table := DataExplorerTable{}
+			if model.Tables != nil {
 				table = model.Tables[name]
 			}
 			columns := dataColumnsFromTable(table, false)
@@ -188,14 +186,14 @@ func dataExplorerObjects(workspaceID, workspaceTitle string, metrics Metrics, as
 	return out, warnings
 }
 
-func dataExplorerSourceForAsset(metrics Metrics, sourceKey string) (string, string, semanticmodel.Source, bool) {
+func dataExplorerSourceForAsset(metrics Metrics, sourceKey string) (string, string, DataExplorerSource, bool) {
 	sourceKey = strings.TrimSpace(sourceKey)
 	if sourceKey == "" || metrics == nil {
-		return "", "", semanticmodel.Source{}, false
+		return "", "", DataExplorerSource{}, false
 	}
 	for _, modelSummary := range metrics.Catalog().Models {
-		model, ok := metrics.SemanticModel(modelSummary.ID)
-		if !ok || model == nil {
+		model, ok := metrics.DataExplorerModel(modelSummary.ID)
+		if !ok {
 			continue
 		}
 		source, ok := dataExplorerSourceInModel(model, sourceKey)
@@ -205,30 +203,27 @@ func dataExplorerSourceForAsset(metrics Metrics, sourceKey string) (string, stri
 	}
 	modelID, name := keyParts(sourceKey)
 	if modelID == "" || name == "" {
-		return "", "", semanticmodel.Source{}, false
+		return "", "", DataExplorerSource{}, false
 	}
-	model, ok := metrics.SemanticModel(modelID)
-	if !ok || model == nil {
-		return "", "", semanticmodel.Source{}, false
+	model, ok := metrics.DataExplorerModel(modelID)
+	if !ok {
+		return "", "", DataExplorerSource{}, false
 	}
 	source, ok := model.Sources[name]
 	if !ok {
-		return "", "", semanticmodel.Source{}, false
+		return "", "", DataExplorerSource{}, false
 	}
 	return modelID, name, source, true
 }
 
-func dataExplorerSourceInModel(model *semanticmodel.Model, sourceKey string) (semanticmodel.Source, bool) {
-	if model == nil {
-		return semanticmodel.Source{}, false
-	}
+func dataExplorerSourceInModel(model DataExplorerModel, sourceKey string) (DataExplorerSource, bool) {
 	if source, ok := model.Sources[sourceKey]; ok {
 		return source, true
 	}
 	if source, ok := model.Sources[dataExplorerLocalSourceName(sourceKey)]; ok {
 		return source, true
 	}
-	return semanticmodel.Source{}, false
+	return DataExplorerSource{}, false
 }
 
 func dataExplorerLocalSourceName(sourceID string) string {
@@ -251,8 +246,8 @@ func dataExplorerLocalSourceName(sourceID string) string {
 func dataExplorerObjectsFromMetrics(workspaceID, workspaceTitle string, metrics Metrics) []uisignals.DataExplorerObjectSignal {
 	out := []uisignals.DataExplorerObjectSignal{}
 	for _, modelSummary := range metrics.Catalog().Models {
-		model, ok := metrics.SemanticModel(modelSummary.ID)
-		if !ok || model == nil {
+		model, ok := metrics.DataExplorerModel(modelSummary.ID)
+		if !ok {
 			continue
 		}
 		sourceNames := make([]string, 0, len(model.Sources))
@@ -530,7 +525,7 @@ func dataPreviewCanceled(preview uisignals.DataPreviewSignal) bool {
 func (h Handler) countDataPreview(ctx context.Context, metrics Metrics, object uisignals.DataExplorerObjectSignal) (string, error) {
 	switch object.Layer {
 	case "model_table":
-		result, err := metrics.ExecuteDataQuery(ctx, dataPreviewQuery(object, uisignals.DataExplorerCommand{}, 0, 1, true))
+		result, err := metrics.ExecuteDataPreview(ctx, dataPreviewQuery(object, uisignals.DataExplorerCommand{}, 0, 1, true))
 		if err != nil {
 			return "Unknown", err
 		}
@@ -546,11 +541,11 @@ func (h Handler) countDataPreview(ctx context.Context, metrics Metrics, object u
 }
 
 func (h Handler) previewRows(ctx context.Context, metrics Metrics, object uisignals.DataExplorerObjectSignal, command uisignals.DataExplorerCommand, start, count int) ([]map[string]any, string, error) {
-	result, err := metrics.ExecuteDataQuery(ctx, dataPreviewQuery(object, command, start, count, false))
+	result, err := metrics.ExecuteDataPreview(ctx, dataPreviewQuery(object, command, start, count, false))
 	if err != nil {
 		return nil, "", err
 	}
-	return dataRowsFromQuery(result.Rows), result.SQL, nil
+	return result.Rows, result.SQL, nil
 }
 
 func dataPreviewColumnKeys(columns []uisignals.DataPreviewColumnSignal) []string {
@@ -563,50 +558,20 @@ func dataPreviewColumnKeys(columns []uisignals.DataPreviewColumnSignal) []string
 	return keys
 }
 
-func dataPreviewQuery(object uisignals.DataExplorerObjectSignal, command uisignals.DataExplorerCommand, start, count int, includeTotal bool) dataquery.Query {
-	columns := dataPreviewColumnKeys(uisignals.ValueOrZero(object.Columns))
-	sortSpec := dataPreviewSort(command.Sort)
-	metadata := dataquery.Metadata{
-		Surface:    dataquery.SurfaceDataExplorer,
-		Operation:  dataquery.OperationPreviewWindow,
-		ObjectType: object.Layer,
-		ObjectID:   object.WorkspaceID + ":" + object.Key,
+func dataPreviewQuery(object uisignals.DataExplorerObjectSignal, command uisignals.DataExplorerCommand, start, count int, includeTotal bool) DataPreviewRequest {
+	return DataPreviewRequest{
+		WorkspaceID:  object.WorkspaceID,
+		ObjectKey:    object.Key,
+		Layer:        object.Layer,
+		ModelID:      uisignals.ValueOrZero(object.ModelID),
+		Table:        uisignals.ValueOrZero(object.Table),
+		Columns:      dataPreviewColumnKeys(uisignals.ValueOrZero(object.Columns)),
+		SortColumn:   uisignals.ValueOrZero(command.Sort.Column),
+		Direction:    uisignals.ValueOrZero(command.Sort.Direction),
+		Offset:       start,
+		Limit:        count,
+		IncludeTotal: includeTotal,
 	}
-	withMetadata := func(query dataquery.Query) dataquery.Query {
-		query.WorkspaceID = object.WorkspaceID
-		return query.WithMetadata(metadata)
-	}
-	switch object.Layer {
-	case "model_table":
-		return withMetadata(dataquery.ModelTableRows(uisignals.ValueOrZero(object.ModelID), uisignals.ValueOrZero(object.Table), columns, sortSpec, start, count, includeTotal))
-	case "semantic_view":
-		fields := make([]dataquery.Field, 0, len(columns))
-		for _, column := range columns {
-			fields = append(fields, dataquery.Field{Field: uisignals.ValueOrZero(object.Table) + "." + column, Alias: column})
-		}
-		return withMetadata(dataquery.SemanticRows(uisignals.ValueOrZero(object.ModelID), uisignals.ValueOrZero(object.Table), fields, nil, nil, sortSpec, start, count, includeTotal))
-	default:
-		return withMetadata(dataquery.Query{ModelID: uisignals.ValueOrZero(object.ModelID), Kind: dataquery.Kind(object.Layer), Target: uisignals.ValueOrZero(object.Table), Limit: count, Offset: start, IncludeTotal: includeTotal})
-	}
-}
-
-func dataPreviewSort(sort uisignals.DataPreviewSortSignal) []dataquery.Sort {
-	if uisignals.ValueOrZero(sort.Column) == "" {
-		return nil
-	}
-	return []dataquery.Sort{{Field: uisignals.ValueOrZero(sort.Column), Direction: uisignals.ValueOrZero(sort.Direction)}}
-}
-
-func dataRowsFromQuery(rows []dataquery.Row) []map[string]any {
-	out := make([]map[string]any, 0, len(rows))
-	for _, row := range rows {
-		converted := map[string]any{}
-		for key, value := range row {
-			converted[key] = value
-		}
-		out = append(out, converted)
-	}
-	return out
 }
 
 func dataPreviewSortForColumns(columns []uisignals.DataPreviewColumnSignal, sort uisignals.DataPreviewSortSignal) uisignals.DataPreviewSortSignal {
@@ -619,9 +584,9 @@ func dataPreviewSortForColumns(columns []uisignals.DataPreviewColumnSignal, sort
 	return sort
 }
 
-func dataColumnsFromSource(source semanticmodel.Source) []uisignals.DataPreviewColumnSignal {
-	if len(source.Schema.Columns) > 0 {
-		return dataColumnsFromSchema(source.Schema.Columns)
+func dataColumnsFromSource(source DataExplorerSource) []uisignals.DataPreviewColumnSignal {
+	if len(source.Columns) > 0 {
+		return dataColumnsFromSchema(source.Columns)
 	}
 	names := make([]string, 0, len(source.Fields))
 	for name := range source.Fields {
@@ -636,7 +601,7 @@ func dataColumnsFromSource(source semanticmodel.Source) []uisignals.DataPreviewC
 	return out
 }
 
-func dataColumnsFromTable(table semanticmodel.Table, semanticOnly bool) []uisignals.DataPreviewColumnSignal {
+func dataColumnsFromTable(table DataExplorerTable, semanticOnly bool) []uisignals.DataPreviewColumnSignal {
 	if semanticOnly {
 		names := make([]string, 0, len(table.Dimensions))
 		for name := range table.Dimensions {
@@ -650,8 +615,8 @@ func dataColumnsFromTable(table semanticmodel.Table, semanticOnly bool) []uisign
 		}
 		return out
 	}
-	if len(table.Schema.Columns) > 0 {
-		return dataColumnsFromSchema(table.Schema.Columns)
+	if len(table.Schema) > 0 {
+		return dataColumnsFromSchema(table.Schema)
 	}
 	names := make([]string, 0, len(table.Columns))
 	for name := range table.Columns {
@@ -666,9 +631,9 @@ func dataColumnsFromTable(table semanticmodel.Table, semanticOnly bool) []uisign
 	return out
 }
 
-func dataColumnsFromSchema(columns []semanticmodel.ColumnSchema) []uisignals.DataPreviewColumnSignal {
+func dataColumnsFromSchema(columns []DataExplorerColumn) []uisignals.DataPreviewColumnSignal {
 	out := make([]uisignals.DataPreviewColumnSignal, 0, len(columns))
-	sorted := append([]semanticmodel.ColumnSchema{}, columns...)
+	sorted := append([]DataExplorerColumn{}, columns...)
 	sort.SliceStable(sorted, func(i, j int) bool {
 		return sorted[i].Ordinal < sorted[j].Ordinal
 	})

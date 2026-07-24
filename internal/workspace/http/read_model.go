@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/dashboard"
+	"github.com/Yacobolo/leapview/internal/catalog"
 	"github.com/Yacobolo/leapview/internal/ui"
 	"github.com/Yacobolo/leapview/internal/workspace"
 )
@@ -22,12 +22,12 @@ type Principal struct {
 type PrincipalProvider func(*nethttp.Request) (Principal, bool)
 
 type ReadModel struct {
-	WorkspaceRepository func() (workspace.Repository, error)
-	AccessRepository    func() (access.Repository, error)
+	WorkspaceRepository func() (workspace.ReadModel, error)
+	AccessService       func() (access.WorkspaceAccessService, error)
 	AssetCatalogReader  func() (AssetCatalogReader, error)
 	MetricsForWorkspace func(string) (Metrics, bool)
-	CatalogForWorkspace func(string) dashboard.Catalog
-	RootCatalog         func() dashboard.Catalog
+	CatalogForWorkspace func(string) catalog.Catalog
+	RootCatalog         func() catalog.Catalog
 	Environment         func(*nethttp.Request) string
 	CurrentPrincipal    PrincipalProvider
 	AuthConfigured      bool
@@ -61,12 +61,12 @@ func (m ReadModel) WorkspaceList(r *nethttp.Request) ([]workspace.WorkspaceView,
 	return out, nil
 }
 
-func (m ReadModel) CatalogsForVisibleWorkspaces(r *nethttp.Request) []dashboard.Catalog {
+func (m ReadModel) CatalogsForVisibleWorkspaces(r *nethttp.Request) []catalog.Catalog {
 	workspaces, err := m.WorkspaceList(r)
 	if err != nil || len(workspaces) == 0 {
-		return []dashboard.Catalog{m.rootCatalog()}
+		return []catalog.Catalog{m.rootCatalog()}
 	}
-	catalogs := make([]dashboard.Catalog, 0, len(workspaces))
+	catalogs := make([]catalog.Catalog, 0, len(workspaces))
 	for _, row := range workspaces {
 		metrics, ok := m.metricsForWorkspace(row.ID)
 		if !ok || metrics == nil {
@@ -80,7 +80,7 @@ func (m ReadModel) CatalogsForVisibleWorkspaces(r *nethttp.Request) []dashboard.
 	return catalogs
 }
 
-func (m ReadModel) CatalogForWorkspacesPage(r *nethttp.Request, workspaces []workspace.WorkspaceView) dashboard.Catalog {
+func (m ReadModel) CatalogForWorkspacesPage(r *nethttp.Request, workspaces []workspace.WorkspaceView) catalog.Catalog {
 	if len(workspaces) == 0 {
 		var err error
 		workspaces, err = m.WorkspaceList(r)
@@ -400,25 +400,25 @@ func (m ReadModel) activeAssetCatalog(ctx context.Context, workspaceID, environm
 	return reader.ActiveAssetCatalog(ctx, workspace.WorkspaceID(workspaceID), environment)
 }
 
-func (m ReadModel) listWorkspaceRows(ctx context.Context, repo workspace.Repository, environment string) ([]workspace.Summary, error) {
+func (m ReadModel) listWorkspaceRows(ctx context.Context, repo workspace.ReadModel, environment string) ([]workspace.Summary, error) {
 	if activeRepo, ok := repo.(activeWorkspaceMetadataRepository); ok {
 		return activeRepo.ListWithActiveMetadata(ctx, environment)
 	}
 	return repo.List(ctx)
 }
 
-func (m ReadModel) workspaceRepository() (workspace.Repository, error) {
+func (m ReadModel) workspaceRepository() (workspace.ReadModel, error) {
 	if m.WorkspaceRepository == nil {
 		return nil, nil
 	}
 	return m.WorkspaceRepository()
 }
 
-func (m ReadModel) accessRepository() (access.Repository, error) {
-	if m.AccessRepository == nil {
+func (m ReadModel) accessRepository() (access.WorkspaceAccessService, error) {
+	if m.AccessService == nil {
 		return nil, nil
 	}
-	return m.AccessRepository()
+	return m.AccessService()
 }
 
 func (m ReadModel) assetCatalogReader() (AssetCatalogReader, error) {
@@ -435,16 +435,16 @@ func (m ReadModel) metricsForWorkspace(workspaceID string) (Metrics, bool) {
 	return m.MetricsForWorkspace(workspaceID)
 }
 
-func (m ReadModel) catalogForWorkspace(workspaceID string) dashboard.Catalog {
+func (m ReadModel) catalogForWorkspace(workspaceID string) catalog.Catalog {
 	if m.CatalogForWorkspace == nil {
-		return dashboard.Catalog{Workspace: dashboard.CatalogWorkspace{ID: workspaceID}}
+		return catalog.Catalog{Workspace: catalog.Workspace{ID: workspaceID}}
 	}
 	return m.CatalogForWorkspace(workspaceID)
 }
 
-func (m ReadModel) rootCatalog() dashboard.Catalog {
+func (m ReadModel) rootCatalog() catalog.Catalog {
 	if m.RootCatalog == nil {
-		return dashboard.Catalog{}
+		return catalog.Catalog{}
 	}
 	return m.RootCatalog()
 }
@@ -479,7 +479,7 @@ func AssetCatalogEdgeViews(catalog workspace.AssetCatalog) []workspace.AssetEdge
 	return edges
 }
 
-func CatalogWorkspaceView(catalog dashboard.Catalog) workspace.WorkspaceView {
+func CatalogWorkspaceView(catalog catalog.Catalog) workspace.WorkspaceView {
 	return workspace.WorkspaceView{
 		ID:          catalog.Workspace.ID,
 		Title:       catalog.Workspace.Title,

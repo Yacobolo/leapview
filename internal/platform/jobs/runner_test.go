@@ -1,0 +1,156 @@
+package jobs
+
+import (
+	"context"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/Yacobolo/leapview/internal/workload"
+)
+
+func TestNewRunnerRejectsDuplicateHandlerKinds(t *testing.T) {
+	controller, err := workload.New(workload.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer controller.Close()
+	repository := &runnerTestRepository{}
+	_, err = NewRunner(RunnerConfig{Repository: repository, Workload: controller, Handlers: []Handler{
+		HandlerFunc{JobKind: "release.finalize", Run: func(context.Context, Job) error { return nil }},
+		HandlerFunc{JobKind: "release.finalize", Run: func(context.Context, Job) error { return nil }},
+	}})
+	if err == nil {
+		t.Fatal("duplicate job kinds were accepted")
+	}
+}
+
+func TestRunnerFailsUnknownJobKindExplicitly(t *testing.T) {
+	controller, err := workload.New(workload.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer controller.Close()
+	repository := &recordingRunnerRepository{}
+	runner, err := NewRunner(RunnerConfig{Repository: repository, Workload: controller})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.executeClaimed(t.Context(), "worker", Job{ID: "job-1", Kind: "unknown"})
+	if repository.failed != "job-1" || !strings.Contains(string(repository.problem), "unsupported async job kind") {
+		t.Fatalf("failed=%q problem=%s", repository.failed, repository.problem)
+	}
+}
+
+func TestRunnerRenewsLeaseDuringLongHandler(t *testing.T) {
+	controller, err := workload.New(workload.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer controller.Close()
+	repository := &recordingRunnerRepository{}
+	runner, err := NewRunner(RunnerConfig{
+		Repository: repository, Workload: controller, LeaseTimeout: 20 * time.Millisecond,
+		Handlers: []Handler{HandlerFunc{JobKind: "slow", Run: func(context.Context, Job) error {
+			time.Sleep(55 * time.Millisecond)
+			return nil
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.executeClaimed(t.Context(), "worker", Job{ID: "job-1", Kind: "slow"})
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+	if repository.renewed < 2 || repository.completed != "job-1" {
+		t.Fatalf("renewed=%d completed=%q", repository.renewed, repository.completed)
+	}
+}
+
+func TestRunnerCancelsClaimWhenWorkerContextStops(t *testing.T) {
+	controller, err := workload.New(workload.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer controller.Close()
+	repository := &recordingRunnerRepository{}
+	runner, err := NewRunner(RunnerConfig{Repository: repository, Workload: controller, Handlers: []Handler{
+		HandlerFunc{JobKind: "blocking", Run: func(ctx context.Context, _ Job) error {
+			<-ctx.Done()
+			return ctx.Err()
+		}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runner.executeClaimed(ctx, "worker", Job{ID: "job-1", Kind: "blocking"})
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+	if repository.cancelled != "job-1" || repository.failed != "" {
+		t.Fatalf("cancelled=%q failed=%q", repository.cancelled, repository.failed)
+	}
+}
+
+type runnerTestRepository struct{}
+
+func (*runnerTestRepository) Enqueue(context.Context, EnqueueInput) (Job, error) { return Job{}, nil }
+func (*runnerTestRepository) Get(context.Context, string) (Job, error)           { return Job{}, nil }
+func (*runnerTestRepository) Candidates(context.Context, string, int) ([]Job, error) {
+	return nil, nil
+}
+func (*runnerTestRepository) ClaimByID(context.Context, string, string, string, time.Duration) (Job, bool, error) {
+	return Job{}, false, nil
+}
+func (*runnerTestRepository) Renew(context.Context, string, Fence, time.Duration) error { return nil }
+func (*runnerTestRepository) Complete(context.Context, string, Fence) error             { return nil }
+func (*runnerTestRepository) Fail(context.Context, string, Fence, []byte) error         { return nil }
+func (*runnerTestRepository) Cancel(context.Context, string) error                      { return nil }
+func (*runnerTestRepository) CancelClaimed(context.Context, string, Fence) error        { return nil }
+func (*runnerTestRepository) AppendEvent(context.Context, string, string, string, []byte) (Event, error) {
+	return Event{}, nil
+}
+func (*runnerTestRepository) ListEvents(context.Context, string, string, int64, int) ([]Event, error) {
+	return nil, nil
+}
+
+type recordingRunnerRepository struct {
+	runnerTestRepository
+	mu        sync.Mutex
+	renewed   int
+	completed string
+	failed    string
+	cancelled string
+	problem   []byte
+}
+
+func (r *recordingRunnerRepository) Renew(context.Context, string, Fence, time.Duration) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.renewed++
+	return nil
+}
+
+func (r *recordingRunnerRepository) Complete(_ context.Context, id string, _ Fence) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.completed = id
+	return nil
+}
+
+func (r *recordingRunnerRepository) Fail(_ context.Context, id string, _ Fence, problem []byte) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.failed = id
+	r.problem = append([]byte(nil), problem...)
+	return nil
+}
+
+func (r *recordingRunnerRepository) CancelClaimed(_ context.Context, id string, _ Fence) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.cancelled = id
+	return nil
+}

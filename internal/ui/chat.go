@@ -2,7 +2,7 @@ package ui
 
 import (
 	"github.com/Yacobolo/leapview/internal/brand"
-	"github.com/Yacobolo/leapview/internal/dashboard"
+	"github.com/Yacobolo/leapview/internal/catalog"
 	uiactions "github.com/Yacobolo/leapview/internal/ui/actions"
 	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
@@ -10,7 +10,7 @@ import (
 	h "maragu.dev/gomponents/html"
 )
 
-func ChatPage(catalog dashboard.Catalog, workspaceID, csrfToken, roleLabel, view string, state ChatViewState) g.Node {
+func ChatPage(catalog catalog.Catalog, workspaceID, csrfToken, roleLabel, view string, state ChatViewState) g.Node {
 	chatUpdatesURL := updatesURL(uisignals.RouteChat, "workspace", workspaceID, "view", view, "conversation", state.Agent.ActiveConversationID)
 	chatBasePath := "/chats"
 	return pagestream.RenderPage(pagestream.PageSpec{
@@ -45,7 +45,7 @@ func ChatPage(catalog dashboard.Catalog, workspaceID, csrfToken, roleLabel, view
 	})
 }
 
-func ChatBootstrapSignals(catalog dashboard.Catalog, workspaceID, roleLabel, view string, state ChatViewState) map[string]any {
+func ChatBootstrapSignals(catalog catalog.Catalog, workspaceID, roleLabel, view string, state ChatViewState) map[string]any {
 	envelope := uisignals.ChatInitialEnvelope(catalog, workspaceID, roleLabel, view, state)
 	envelope.Runtime = uisignals.RouteRuntimeSignal{Kind: uisignals.RouteChat, WorkspaceID: uisignals.Optional(workspaceID)}
 	return map[string]any{

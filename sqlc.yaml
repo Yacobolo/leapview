@@ -9,3 +9,159 @@ sql:
         out: "internal/platform/db"
         emit_json_tags: true
         emit_empty_slices: true
+
+  - engine: "sqlite"
+    queries: "internal/analytics/queryaudit/sqlite/queries"
+    schema: "internal/platform/migrations"
+    gen:
+      go:
+        package: "querydb"
+        out: "internal/analytics/queryaudit/sqlite/querydb"
+        emit_json_tags: true
+        emit_empty_slices: true
+        omit_unused_structs: true
+
+  - engine: "sqlite"
+    queries: "internal/admin/sqlite/queries"
+    schema: "internal/platform/migrations"
+    gen:
+      go:
+        package: "retentiondb"
+        out: "internal/admin/sqlite/retentiondb"
+        emit_json_tags: true
+        emit_empty_slices: true
+        omit_unused_structs: true
+
+  - engine: "sqlite"
+    queries: "internal/access/sqlite/queries"
+    schema: "internal/platform/migrations"
+    gen:
+      go:
+        package: "accessdb"
+        out: "internal/access/sqlite/accessdb"
+        emit_json_tags: true
+        emit_empty_slices: true
+        omit_unused_structs: true
+
+  - engine: "sqlite"
+    queries: "internal/agent/sqlite/queries"
+    schema: "internal/platform/migrations"
+    gen:
+      go:
+        package: "agentdb"
+        out: "internal/agent/sqlite/agentdb"
+        emit_json_tags: true
+        emit_empty_slices: true
+        omit_unused_structs: true
+
+  - engine: "sqlite"
+    queries: "internal/platform/jobs/sqlite/queries"
+    schema: "internal/platform/migrations"
+    gen:
+      go:
+        package: "jobdb"
+        out: "internal/platform/jobs/sqlite/jobdb"
+        emit_json_tags: true
+        emit_empty_slices: true
+        omit_unused_structs: true
+
+  - engine: "sqlite"
+    queries: "internal/refresh/sqlite/schedulequeries"
+    schema: "internal/platform/migrations"
+    gen:
+      go:
+        package: "refreshdb"
+        out: "internal/refresh/sqlite/refreshdb"
+        emit_json_tags: true
+        emit_empty_slices: true
+        omit_unused_structs: true
+
+  - engine: "sqlite"
+    queries: "internal/release/sqlite/queries"
+    schema: "internal/platform/migrations"
+    gen:
+      go:
+        package: "releasedb"
+        out: "internal/release/sqlite/releasedb"
+        emit_json_tags: true
+        emit_empty_slices: true
+        omit_unused_structs: true
+
+  - engine: "sqlite"
+    queries: "internal/apiidempotency/sqlite/queries"
+    schema: "internal/platform/migrations"
+    gen:
+      go:
+        package: "idempotencydb"
+        out: "internal/apiidempotency/sqlite/idempotencydb"
+        emit_json_tags: true
+        emit_empty_slices: true
+        omit_unused_structs: true
+
+  - engine: "sqlite"
+    queries: "internal/cursorsigning/sqlite/queries"
+    schema: "internal/platform/migrations"
+    gen:
+      go:
+        package: "cursordb"
+        out: "internal/cursorsigning/sqlite/cursordb"
+        emit_json_tags: true
+        emit_empty_slices: true
+        omit_unused_structs: true
+
+  - engine: "sqlite"
+    queries:
+      - "internal/refresh/sqlite/runqueries"
+      - "internal/refresh/sqlite/schedulequeries"
+    schema: "internal/platform/migrations"
+    gen:
+      go:
+        package: "materializedb"
+        out: "internal/refresh/sqlite/materializedb"
+        emit_json_tags: true
+        emit_empty_slices: true
+        omit_unused_structs: true
+
+  - engine: "sqlite"
+    queries: "internal/workspace/sqlite/queries"
+    schema: "internal/platform/migrations"
+    gen:
+      go:
+        package: "workspacedb"
+        out: "internal/workspace/sqlite/workspacedb"
+        emit_json_tags: true
+        emit_empty_slices: true
+        omit_unused_structs: true
+
+  - engine: "sqlite"
+    queries: "internal/manageddata/sqlite/queries"
+    schema: "internal/platform/migrations"
+    gen:
+      go:
+        package: "manageddb"
+        out: "internal/manageddata/sqlite/manageddb"
+        emit_json_tags: true
+        emit_empty_slices: true
+        omit_unused_structs: true
+
+  - engine: "sqlite"
+    queries: "internal/deployment/sqlite/queries"
+    schema: "internal/platform/migrations"
+    gen:
+      go:
+        package: "deploymentdb"
+        out: "internal/deployment/sqlite/deploymentdb"
+        emit_json_tags: true
+        emit_empty_slices: true
+        omit_unused_structs: true
+
+  - engine: "sqlite"
+    queries: "internal/servingstate/sqlite/queries"
+    schema: "internal/platform/migrations"
+    gen:
+      go:
+        package: "servingdb"
+        out: "internal/servingstate/sqlite/servingdb"
+        emit_json_tags: true
+        emit_empty_slices: true
+        omit_unused_structs: true

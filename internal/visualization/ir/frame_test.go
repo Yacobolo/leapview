@@ -1,9 +1,32 @@
 package ir
 
 import (
+	"encoding/json"
 	"math"
 	"testing"
 )
+
+func TestSpecificationBasePreservesVariantKindAcrossJSONRoundTrip(t *testing.T) {
+	spec := VisualizationSpec{Value: &KPIVisualizationSpec{
+		VisualizationSpecBase: VisualizationSpecBase{Kind: "kpi", Title: "Orders"},
+		Kind:                  "kpi",
+	}}
+	encoded, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded VisualizationSpec
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	base, err := SpecificationBase(decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base.Kind != "kpi" {
+		t.Fatalf("kind = %q, want kpi", base.Kind)
+	}
+}
 
 func TestValidateEnvelopeRejectsInvalidInlineFrames(t *testing.T) {
 	t.Parallel()

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/brand"
+	"github.com/Yacobolo/leapview/internal/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	"github.com/Yacobolo/leapview/internal/staticasset"
 	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
@@ -144,13 +145,13 @@ func LoginBootstrapSignalsForOptions(opts LoginPageOptions) map[string]any {
 	return signals
 }
 
-func CatalogPage(catalog dashboard.Catalog, chromeOptions ...ChromeOption) g.Node {
+func CatalogPage(catalog catalog.Catalog, chromeOptions ...ChromeOption) g.Node {
 	return catalogPageDocument(catalog, catalogPageSignal(catalog), chromeOptions...)
 }
 
-func CatalogPageForCatalogs(catalogs []dashboard.Catalog, chromeOptions ...ChromeOption) g.Node {
+func CatalogPageForCatalogs(catalogs []catalog.Catalog, chromeOptions ...ChromeOption) g.Node {
 	if len(catalogs) == 0 {
-		return CatalogPage(dashboard.Catalog{}, chromeOptions...)
+		return CatalogPage(catalog.Catalog{}, chromeOptions...)
 	}
 	dashboards := []uisignals.CatalogDashboardSignal{}
 	for _, catalog := range catalogs {
@@ -171,7 +172,7 @@ func CatalogPageForCatalogs(catalogs []dashboard.Catalog, chromeOptions ...Chrom
 	return catalogPageDocument(catalogs[0], page, chromeOptions...)
 }
 
-func catalogPageDocument(catalog dashboard.Catalog, page uisignals.CatalogPageSignal, chromeOptions ...ChromeOption) g.Node {
+func catalogPageDocument(catalog catalog.Catalog, page uisignals.CatalogPageSignal, chromeOptions ...ChromeOption) g.Node {
 	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfigForCatalog(catalog)}
 	applyChromeOptions(&chrome, chromeOptions)
 	catalogUpdatesURL := updatesURL(uisignals.RouteCatalog)
@@ -201,13 +202,13 @@ func catalogPageDocument(catalog dashboard.Catalog, page uisignals.CatalogPageSi
 	})
 }
 
-func CatalogBootstrapSignals(catalog dashboard.Catalog, chromeOptions ...ChromeOption) map[string]any {
+func CatalogBootstrapSignals(catalog catalog.Catalog, chromeOptions ...ChromeOption) map[string]any {
 	return CatalogBootstrapSignalsForPage(catalog, catalogPageSignal(catalog), chromeOptions...)
 }
 
-func CatalogBootstrapSignalsForCatalogs(catalogs []dashboard.Catalog, chromeOptions ...ChromeOption) map[string]any {
+func CatalogBootstrapSignalsForCatalogs(catalogs []catalog.Catalog, chromeOptions ...ChromeOption) map[string]any {
 	if len(catalogs) == 0 {
-		return CatalogBootstrapSignals(dashboard.Catalog{}, chromeOptions...)
+		return CatalogBootstrapSignals(catalog.Catalog{}, chromeOptions...)
 	}
 	dashboards := []uisignals.CatalogDashboardSignal{}
 	for _, catalog := range catalogs {
@@ -228,7 +229,7 @@ func CatalogBootstrapSignalsForCatalogs(catalogs []dashboard.Catalog, chromeOpti
 	return CatalogBootstrapSignalsForPage(catalogs[0], page, chromeOptions...)
 }
 
-func CatalogBootstrapSignalsForPage(catalog dashboard.Catalog, page uisignals.CatalogPageSignal, chromeOptions ...ChromeOption) map[string]any {
+func CatalogBootstrapSignalsForPage(catalog catalog.Catalog, page uisignals.CatalogPageSignal, chromeOptions ...ChromeOption) map[string]any {
 	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfigForCatalog(catalog)}
 	applyChromeOptions(&chrome, chromeOptions)
 	return map[string]any{
@@ -258,7 +259,7 @@ func applyChromeOptions(chrome *uisignals.ChromeSignal, options []ChromeOption) 
 	}
 }
 
-func catalogPageSignal(catalog dashboard.Catalog) uisignals.CatalogPageSignal {
+func catalogPageSignal(catalog catalog.Catalog) uisignals.CatalogPageSignal {
 	dashboards := make([]uisignals.CatalogDashboardSignal, 0, len(catalog.Dashboards))
 	for _, report := range catalog.Dashboards {
 		dashboards = append(dashboards, uisignals.CatalogDashboardSignal{

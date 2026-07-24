@@ -20,6 +20,6 @@ func emptyDataPreviewBlocks(count int, sort uisignals.DataPreviewSortSignal, res
 	return workspacehttp.EmptyDataPreviewBlocks(count, sort, resetVersion)
 }
 
-func (s *Server) globalDataExplorerState(r *http.Request, command uisignals.DataExplorerCommand) (uisignals.DataExplorerPageSignal, uisignals.DataExplorerSignal, error) {
-	return s.workspaceHTTPHandler().DataExplorerState(r, command)
+func (s *appTestHarness) globalDataExplorerState(r *http.Request, command uisignals.DataExplorerCommand) (uisignals.DataExplorerPageSignal, uisignals.DataExplorerSignal, error) {
+	return s.routes.workspaceModule.HTTP().DataExplorerState(r, command)
 }

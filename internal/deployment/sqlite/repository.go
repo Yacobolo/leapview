@@ -11,23 +11,31 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/dashboard/publication"
-	publicationsqlite "github.com/Yacobolo/leapview/internal/dashboard/publication/sqlite"
 	"github.com/Yacobolo/leapview/internal/deployment"
-	"github.com/Yacobolo/leapview/internal/manageddata"
-	platformdb "github.com/Yacobolo/leapview/internal/platform/db"
+	platformdb "github.com/Yacobolo/leapview/internal/deployment/sqlite/deploymentdb"
+	"github.com/Yacobolo/leapview/internal/platform/digest"
+	"github.com/Yacobolo/leapview/internal/platform/transaction"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
-	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
-	"github.com/Yacobolo/leapview/internal/workspace"
 )
 
 type Repository struct {
-	db *sql.DB
-	q  *platformdb.Queries
+	db    *sql.DB
+	q     *platformdb.Queries
+	hooks ActivationHooks
 }
 
-func NewRepository(db *sql.DB) *Repository {
-	return &Repository{db: db, q: platformdb.New(db)}
+type ActivationHooks struct {
+	ApplyAccessSnapshot   func(context.Context, transaction.Transaction, string) error
+	ReconcilePublications func(context.Context, transaction.Transaction, PublicationReconcileInput) error
+}
+
+type PublicationReconcileInput struct {
+	ProjectID, WorkspaceID, ServingStateID, ActorID string
+	Publications                                    map[string]json.RawMessage
+}
+
+func NewRepositoryWithHooks(db *sql.DB, hooks ActivationHooks) *Repository {
+	return &Repository{db: db, q: platformdb.New(db), hooks: hooks}
 }
 
 func (r *Repository) CreateDeployment(ctx context.Context, input deployment.CreateInput) (deployment.Deployment, error) {
@@ -267,18 +275,24 @@ func (r *Repository) ActivateDeployment(ctx context.Context, id string) (deploym
 		if err != nil {
 			return deployment.Deployment{}, mapError(err)
 		}
-		if err := servingstatesqlite.ApplyAccessSnapshotTx(ctx, tx, q, candidate); err != nil {
+		if r.hooks.ApplyAccessSnapshot == nil {
+			return deployment.Deployment{}, fmt.Errorf("%w: access snapshot activation is not configured", deployment.ErrConflict)
+		}
+		if err := r.hooks.ApplyAccessSnapshot(ctx, tx, candidate.ID); err != nil {
 			return deployment.Deployment{}, fmt.Errorf("%w: apply access snapshot for workspace %q: %v", deployment.ErrConflict, target.WorkspaceID, err)
 		}
 		if row.Environment == "prod" {
-			var publications map[string]workspace.DashboardPublication
+			var publications map[string]json.RawMessage
 			if err := json.Unmarshal([]byte(candidate.DashboardPublicationsJson), &publications); err != nil {
 				return deployment.Deployment{}, fmt.Errorf("%w: decode publication snapshot for workspace %q: %v", deployment.ErrConflict, target.WorkspaceID, err)
 			}
 			if publications == nil {
-				publications = map[string]workspace.DashboardPublication{}
+				publications = map[string]json.RawMessage{}
 			}
-			if err := publicationsqlite.ReconcileTx(ctx, tx, publication.ReconcileInput{
+			if r.hooks.ReconcilePublications == nil {
+				return deployment.Deployment{}, fmt.Errorf("%w: publication activation is not configured", deployment.ErrConflict)
+			}
+			if err := r.hooks.ReconcilePublications(ctx, tx, PublicationReconcileInput{
 				ProjectID: candidate.ProjectID, WorkspaceID: candidate.WorkspaceID, ServingStateID: candidate.ID,
 				ActorID: row.CreatedBy, Publications: publications,
 			}); err != nil {
@@ -334,7 +348,7 @@ type projectContract struct {
 }
 
 func parseProjectContract(candidate platformdb.ServingState) (projectContract, error) {
-	if err := manageddata.ValidateRevisionID(candidate.ProjectDigest); err != nil {
+	if err := digest.ValidateSHA256Identity(candidate.ProjectDigest); err != nil {
 		return projectContract{}, err
 	}
 	var workspaces []string

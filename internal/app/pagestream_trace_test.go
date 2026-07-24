@@ -15,10 +15,10 @@ import (
 func TestDevelopmentPageStreamTraceEndpointReturnsSanitizedEvents(t *testing.T) {
 	t.Setenv("LEAPVIEW_PRODUCTION", "")
 	var logs bytes.Buffer
-	server := NewWithOptions(fakeMetrics{}, Options{
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{
 		Logger: slog.New(slog.NewJSONHandler(&logs, nil)),
 	})
-	server.broker.PublishEnvelope("trace:test", pagestream.Envelope{
+	server.runtime.broker.PublishEnvelope("trace:test", pagestream.Envelope{
 		Signals: pagestream.SignalPatch{"status": "ready", "token": "private"},
 		Trace:   pagestream.TraceMetadata{Origin: "test.publisher"},
 	})
@@ -46,7 +46,7 @@ func TestDevelopmentPageStreamTraceEndpointReturnsSanitizedEvents(t *testing.T) 
 
 func TestProductionOmitsPageStreamTraceEndpoint(t *testing.T) {
 	t.Setenv("LEAPVIEW_PRODUCTION", "1")
-	server := New(fakeMetrics{})
+	server := newAppTestHarness(fakeMetrics{})
 	req := httptest.NewRequest(http.MethodGet, "/__dev/pagestream/traces", nil)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
@@ -57,13 +57,13 @@ func TestProductionOmitsPageStreamTraceEndpoint(t *testing.T) {
 
 func TestDevelopmentPageStreamSignalsEndpointReturnsStateAndSelectedHistory(t *testing.T) {
 	t.Setenv("LEAPVIEW_PRODUCTION", "")
-	server := New(fakeMetrics{})
-	server.pageStreamTrace.Record(pagestream.TraceRecord{
+	server := newAppTestHarness(fakeMetrics{})
+	server.runtime.pageStreamTrace.Record(pagestream.TraceRecord{
 		StreamID: "trace:test", Stage: pagestream.TraceStageDelivered,
 		Signals:    pagestream.SignalPatch{"status": map[string]any{"progressPercent": 0}},
 		Generation: 7, Origin: "dashboard.refresh", CorrelationID: "refresh-7",
 	})
-	server.pageStreamTrace.Record(pagestream.TraceRecord{
+	server.runtime.pageStreamTrace.Record(pagestream.TraceRecord{
 		StreamID: "trace:test", Stage: pagestream.TraceStageDelivered,
 		Signals:    pagestream.SignalPatch{"status": map[string]any{"progressPercent": 50}},
 		Generation: 7, Origin: "dashboard.refresh", CorrelationID: "refresh-7",
@@ -99,7 +99,7 @@ func TestDevelopmentPageStreamSignalsEndpointReturnsStateAndSelectedHistory(t *t
 
 func TestProductionOmitsPageStreamSignalsEndpoint(t *testing.T) {
 	t.Setenv("LEAPVIEW_PRODUCTION", "1")
-	server := New(fakeMetrics{})
+	server := newAppTestHarness(fakeMetrics{})
 	req := httptest.NewRequest(http.MethodGet, "/__dev/pagestream/signals", nil)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)

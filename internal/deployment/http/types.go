@@ -41,3 +41,12 @@ func NewHandler(options Options) *Handler {
 	}
 	return &Handler{options: options}
 }
+
+func (h *Handler) Principal(r *stdhttp.Request) (Principal, bool) { return h.principal(r) }
+
+func (h *Handler) Environment() string {
+	if h == nil {
+		return ""
+	}
+	return h.options.InstanceEnvironment
+}

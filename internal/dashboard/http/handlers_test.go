@@ -11,6 +11,7 @@ import (
 	"time"
 
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
+	"github.com/Yacobolo/leapview/internal/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
@@ -29,8 +30,8 @@ func (fakeMetrics) ExecuteConsumersPage(_ context.Context, _ consumer.Request, _
 	return nil
 }
 
-func (fakeMetrics) Catalog() dashboard.Catalog {
-	return dashboard.Catalog{Workspace: dashboard.CatalogWorkspace{ID: "workspace", Title: "Workspace"}}
+func (fakeMetrics) Catalog() catalog.Catalog {
+	return catalog.Catalog{Workspace: catalog.Workspace{ID: "workspace", Title: "Workspace"}}
 }
 func (fakeMetrics) DefaultDashboardID() string {
 	return "dash"

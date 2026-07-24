@@ -21,6 +21,7 @@ import (
 	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
 	analyticsresource "github.com/Yacobolo/leapview/internal/analytics/resource"
 	"github.com/Yacobolo/leapview/internal/dataquery"
+	"github.com/Yacobolo/leapview/internal/platform/transaction"
 	"github.com/Yacobolo/leapview/internal/securefs"
 	"github.com/Yacobolo/leapview/internal/workload"
 	duckdb "github.com/duckdb/duckdb-go/v2"
@@ -578,6 +579,17 @@ func (e *Environment) Commit(ctx context.Context, servingStateID string, extra m
 	return 0, fmt.Errorf("DuckLake commit retry exhausted")
 }
 
+// CommitTransaction exposes analytical publication through the narrow
+// cross-capability transaction contract.
+func (e *Environment) CommitTransaction(ctx context.Context, servingStateID string, extra map[string]string, fn func(transaction.Transaction) error) (int64, error) {
+	if fn == nil {
+		return 0, fmt.Errorf("commit function is required")
+	}
+	return e.Commit(ctx, servingStateID, extra, func(tx *sql.Tx) error {
+		return fn(tx)
+	})
+}
+
 func newCommitAttemptID() (string, error) {
 	var value [16]byte
 	if _, err := rand.Read(value[:]); err != nil {
@@ -627,6 +639,19 @@ func (e *Environment) Snapshots(ctx context.Context) ([]Snapshot, error) {
 		snapshots = append(snapshots, snapshot)
 	}
 	return snapshots, rows.Err()
+}
+
+// SnapshotIDs exposes the narrow storage-retention view of the catalog.
+func (e *Environment) SnapshotIDs(ctx context.Context) ([]int64, error) {
+	snapshots, err := e.Snapshots(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]int64, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		ids = append(ids, snapshot.ID)
+	}
+	return ids, nil
 }
 
 func (e *Environment) ValidateSnapshot(ctx context.Context, snapshotID int64) error {

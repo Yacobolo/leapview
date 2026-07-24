@@ -13,6 +13,7 @@ import (
 	"time"
 
 	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
+	apiprotocol "github.com/Yacobolo/leapview/internal/api/protocol"
 	apiidempotencysqlite "github.com/Yacobolo/leapview/internal/apiidempotency/sqlite"
 	"github.com/Yacobolo/leapview/internal/cursorsigning"
 	"github.com/Yacobolo/leapview/internal/workspace"
@@ -22,11 +23,11 @@ func TestAPIGenResponseBufferNormalizesLegacyErrorsAsProblemDetails(t *testing.T
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/sales/assets", nil)
 	req.Header.Set("X-Request-ID", "req_problem")
 	recorder := httptest.NewRecorder()
-	buffer := newAPIGenResponseBuffer(recorder, req)
+	buffer := apiprotocol.NewResponseBuffer(recorder, req)
 	buffer.Header().Set("Content-Type", "application/json")
 	buffer.WriteHeader(http.StatusUnprocessableEntity)
 	_, _ = buffer.Write([]byte(`{"code":422,"message":"invalid field","details":{"field":"name"}}`))
-	buffer.flush()
+	buffer.Flush()
 
 	if recorder.Code != http.StatusUnprocessableEntity || recorder.Header().Get("Content-Type") != "application/problem+json" {
 		t.Fatalf("response = %d %q body=%s", recorder.Code, recorder.Header().Get("Content-Type"), recorder.Body.String())
@@ -55,11 +56,11 @@ func TestAPIGenResponseBufferNormalizesLegacyErrorsAsProblemDetails(t *testing.T
 func TestAPIGenResponseBufferPreservesBoundedProblemCode(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/sales/query", nil)
 	recorder := httptest.NewRecorder()
-	buffer := newAPIGenResponseBuffer(recorder, req)
+	buffer := apiprotocol.NewResponseBuffer(recorder, req)
 	buffer.Header().Set("Content-Type", "application/json")
 	buffer.WriteHeader(http.StatusServiceUnavailable)
 	_, _ = buffer.Write([]byte(`{"code":503,"message":"overloaded","details":{"problemCode":"WORKLOAD_OVERLOADED"}}`))
-	buffer.flush()
+	buffer.Flush()
 
 	var problem apigenapi.ProblemDetails
 	if err := json.Unmarshal(recorder.Body.Bytes(), &problem); err != nil {
@@ -74,11 +75,11 @@ func TestAPIGenResponseBufferCompletesProblemDetailsIdentifiers(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces?limit=bad", nil)
 	req.Header.Set("X-Request-ID", "req_existing_problem")
 	recorder := httptest.NewRecorder()
-	buffer := newAPIGenResponseBuffer(recorder, req)
+	buffer := apiprotocol.NewResponseBuffer(recorder, req)
 	buffer.Header().Set("Content-Type", "application/problem+json")
 	buffer.WriteHeader(http.StatusBadRequest)
 	_, _ = buffer.Write([]byte(`{"type":"https://leapview.dev/problems/invalid","title":"Bad Request","status":400,"detail":"invalid limit","instance":"","code":"INVALID_LIMIT","requestId":"","errors":null}`))
-	buffer.flush()
+	buffer.Flush()
 
 	var problem apigenapi.ProblemDetails
 	if err := json.Unmarshal(recorder.Body.Bytes(), &problem); err != nil {
@@ -90,7 +91,7 @@ func TestAPIGenResponseBufferCompletesProblemDetailsIdentifiers(t *testing.T) {
 }
 
 func TestPublicAPIRouterErrorsUseAuthenticatedProblemDetails(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t)})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(testStore(t), assemblyConfig{}))
 	handler := server.Routes()
 
 	for _, tc := range []struct {
@@ -133,7 +134,7 @@ func TestAPIGenTransportErrorsUseProblemDetailsWithoutLeakingCause(t *testing.T)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects?limit=bad", nil)
 	req.Header.Set("X-Request-ID", "req_transport")
 	recorder := httptest.NewRecorder()
-	apiGenTransportErrorResponder{}.RespondTransportError(req.Context(), recorder, req, apigenapi.GenTransportError{
+	apiprotocol.TransportErrorResponder{}.RespondTransportError(req.Context(), recorder, req, apigenapi.GenTransportError{
 		OperationID: "listProjects", Kind: "query_parameter", StatusCode: http.StatusBadRequest,
 		Code: "INVALID_REQUEST", PublicDetail: "Invalid query parameter.", Cause: errors.New("secret parser detail"),
 	})
@@ -156,7 +157,7 @@ func TestAPIGenTransportErrorsUseProblemDetailsWithoutLeakingCause(t *testing.T)
 func TestAPIGenTransportErrorsIdentifyInvalidParameterWithoutLeakingValue(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects?limit=secret-value", nil)
 	recorder := httptest.NewRecorder()
-	apiGenTransportErrorResponder{}.RespondTransportError(req.Context(), recorder, req, apigenapi.GenTransportError{
+	apiprotocol.TransportErrorResponder{}.RespondTransportError(req.Context(), recorder, req, apigenapi.GenTransportError{
 		OperationID: "listProjects", Kind: "query_parameter", StatusCode: http.StatusBadRequest,
 		Code: "INVALID_REQUEST", PublicDetail: "Invalid query parameter.", Cause: errors.New(`invalid query parameter "limit": invalid integer "secret-value"`),
 	})
@@ -174,7 +175,7 @@ func TestAPIGenTransportErrorsIdentifyInvalidParameterWithoutLeakingValue(t *tes
 }
 
 func TestPublicProtocolIdempotencyReplaysAndRejectsDigestReuse(t *testing.T) {
-	server := New(fakeMetrics{})
+	server := newAppTestHarness(fakeMetrics{})
 	calls := 0
 	handler := server.publicProtocolMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -218,7 +219,7 @@ func TestPublicProtocolIdempotencyReplaysAfterServerRestart(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"id":"p-restart"}`))
 	})
-	request := func(server *Server) *httptest.ResponseRecorder {
+	request := func(server *appTestHarness) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/principals", bytes.NewBufferString(`{"email":"restart@example.com"}`))
 		req.Header.Set("Authorization", "Bearer token-a")
 		req.Header.Set("Content-Type", "application/json")
@@ -228,8 +229,8 @@ func TestPublicProtocolIdempotencyReplaysAfterServerRestart(t *testing.T) {
 		return rec
 	}
 
-	first := request(NewWithOptions(fakeMetrics{}, Options{Store: store}))
-	second := request(NewWithOptions(fakeMetrics{}, Options{Store: store}))
+	first := request(assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{})))
+	second := request(assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{})))
 	if first.Code != http.StatusCreated || second.Code != http.StatusCreated || calls != 1 {
 		t.Fatalf("first=%d second=%d calls=%d firstBody=%s secondBody=%s", first.Code, second.Code, calls, first.Body.String(), second.Body.String())
 	}
@@ -249,7 +250,7 @@ func TestDurableIdempotencyReclaimsExpiredPendingLease(t *testing.T) {
 		now.Add(-time.Hour).Format(time.RFC3339Nano), now.Add(-time.Minute).Format(time.RFC3339Nano), now.Add(time.Hour).Format(time.RFC3339Nano)); err != nil {
 		t.Fatalf("seed stale lease: %v", err)
 	}
-	record, execute, err := apiidempotencysqlite.NewStore(db).Claim(context.Background(), "stale-scope", "same-digest", "replacement-server", apiIdempotencyLease, apiIdempotencyLifetime)
+	record, execute, err := apiidempotencysqlite.NewStore(db).Claim(context.Background(), "stale-scope", "same-digest", "replacement-server", apiprotocol.IdempotencyLease, apiprotocol.IdempotencyLifetime)
 	if err != nil {
 		t.Fatalf("reclaim stale lease: %v", err)
 	}
@@ -260,7 +261,7 @@ func TestDurableIdempotencyReclaimsExpiredPendingLease(t *testing.T) {
 
 func TestDurableIdempotencyDoesNotReplayTransientServerFailures(t *testing.T) {
 	store := testStore(t)
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{}))
 	calls := 0
 	handler := server.publicProtocolMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
@@ -289,7 +290,7 @@ func TestDurableIdempotencyDoesNotReplayTransientServerFailures(t *testing.T) {
 }
 
 func TestPublicProtocolMapsStreamedBodyLimitTo413(t *testing.T) {
-	server := New(fakeMetrics{})
+	server := newAppTestHarness(fakeMetrics{})
 	handler := requestBodyLimit(RequestBodyLimitConfig{Enabled: true, MaxBytes: 4})(server.publicProtocolMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 	})))
@@ -306,7 +307,7 @@ func TestPublicProtocolMapsStreamedBodyLimitTo413(t *testing.T) {
 }
 
 func TestPublicProtocolRequiresIdempotencyKeyForMutationsOnly(t *testing.T) {
-	server := New(fakeMetrics{})
+	server := newAppTestHarness(fakeMetrics{})
 	handler := server.publicProtocolMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
 	for _, tc := range []struct {
 		path string
@@ -327,7 +328,7 @@ func TestPublicProtocolRequiresIdempotencyKeyForMutationsOnly(t *testing.T) {
 }
 
 func TestPublicProtocolAlwaysRequiresBearerCredentials(t *testing.T) {
-	server := New(fakeMetrics{})
+	server := newAppTestHarness(fakeMetrics{})
 	handler := server.publicProtocolMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -358,7 +359,7 @@ func TestPublicProtocolAlwaysRequiresBearerCredentials(t *testing.T) {
 }
 
 func TestPublicProtocolValidatesConfiguredDevelopmentBearer(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{Auth: NewAuth(nil, "", AuthConfig{DevBypass: true, DevAPIToken: "local-secret"})})
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{Auth: NewAuth(nil, "", AuthConfig{DevBypass: true, DevAPIToken: "local-secret"})})
 	handler := server.publicProtocolMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -377,10 +378,10 @@ func TestPublicProtocolValidatesConfiguredDevelopmentBearer(t *testing.T) {
 func TestPublicListCursorsAreSignedBoundAndUnwrapped(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/sales/assets?limit=1", nil)
 	recorder := httptest.NewRecorder()
-	buffer := newAPIGenResponseBuffer(recorder, req)
+	buffer := apiprotocol.NewResponseBuffer(recorder, req)
 	buffer.Header().Set("Content-Type", "application/json")
 	_, _ = buffer.Write([]byte(`{"items":[{"id":"a"}],"page":{"nextCursor":"raw-row-id"}}`))
-	buffer.flush()
+	buffer.Flush()
 	var response struct {
 		Page struct {
 			NextCursor string `json:"nextCursor"`
@@ -390,7 +391,7 @@ func TestPublicListCursorsAreSignedBoundAndUnwrapped(t *testing.T) {
 		t.Fatalf("signed cursor response=%s err=%v", recorder.Body.String(), err)
 	}
 
-	server := New(fakeMetrics{})
+	server := newAppTestHarness(fakeMetrics{})
 	seen := ""
 	handler := server.publicProtocolMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen = r.URL.Query().Get("pageToken")
@@ -414,10 +415,10 @@ func TestPublicListCursorsAreSignedBoundAndUnwrapped(t *testing.T) {
 }
 
 func TestPublicListCursorRejectsUnavailableServingSnapshot(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), WorkspaceRepo: apiSnapshotWorkspaceRepository{summary: workspace.Summary{ID: "sales", ActiveServingStateID: "state-new"}}})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(testStore(t), assemblyConfig{WorkspaceRepo: apiSnapshotWorkspaceRepository{summary: workspace.Summary{ID: "sales", ActiveServingStateID: "state-new"}}}))
 	first := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/sales/assets?limit=1", nil)
-	first.Header.Set(apiCursorSnapshotHeader, "state-old")
-	cursor := signAPIPageCursor(first, "last-asset")
+	first.Header.Set(apiprotocol.CursorSnapshotHeader, "state-old")
+	cursor := apiprotocol.SignPageCursor(first, "last-asset")
 	handler := server.publicProtocolMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
 	next := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/sales/assets?limit=1&pageToken="+url.QueryEscape(cursor), nil)
 	next.Header.Set("Authorization", "Bearer token")
@@ -430,13 +431,13 @@ func TestPublicListCursorRejectsUnavailableServingSnapshot(t *testing.T) {
 
 func TestPublicListCursorSurvivesServerRestartFromDurableKeyRing(t *testing.T) {
 	store := testStore(t)
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{}))
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/sales/assets?limit=1", nil)
-	cursor := signAPIPageCursor(request, "asset-a")
+	cursor := apiprotocol.SignPageCursor(request, "asset-a")
 	if err := cursorsigning.Configure("transient", map[string][]byte{"transient": bytes.Repeat([]byte{9}, 32)}); err != nil {
 		t.Fatal(err)
 	}
-	server = NewWithOptions(fakeMetrics{}, Options{Store: store})
+	server = assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{}))
 	handler := server.publicProtocolMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Query().Get("pageToken"); got != "asset-a" {
 			t.Fatalf("unwrapped cursor = %q", got)

@@ -15,6 +15,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
+	"github.com/Yacobolo/leapview/internal/platform/transaction"
 )
 
 type Repository struct{ db *sql.DB }
@@ -179,7 +180,7 @@ func (r *Repository) mutateWithArgs(ctx context.Context, workspaceID, name, acto
 	return r.Get(ctx, workspaceID, name)
 }
 
-func ReconcileTx(ctx context.Context, tx *sql.Tx, input publication.ReconcileInput) error {
+func ReconcileTx(ctx context.Context, tx transaction.Transaction, input publication.ReconcileInput) error {
 	input.ProjectID = strings.TrimSpace(input.ProjectID)
 	input.WorkspaceID = strings.TrimSpace(input.WorkspaceID)
 	input.ServingStateID = strings.TrimSpace(input.ServingStateID)
@@ -276,7 +277,7 @@ ON CONFLICT(id) DO UPDATE SET display_name = excluded.display_name, kind = exclu
 	return nil
 }
 
-func disableSupersededProjectPublications(ctx context.Context, tx *sql.Tx, input publication.ReconcileInput) error {
+func disableSupersededProjectPublications(ctx context.Context, tx transaction.Transaction, input publication.ReconcileInput) error {
 	rows, err := tx.QueryContext(ctx, `SELECT id FROM dashboard_publications WHERE workspace_id = ? AND project_id <> ? AND configured = 1`, input.WorkspaceID, input.ProjectID)
 	if err != nil {
 		return err
@@ -304,7 +305,7 @@ func disableSupersededProjectPublications(ctx context.Context, tx *sql.Tx, input
 	return nil
 }
 
-func insertEvent(ctx context.Context, tx *sql.Tx, id, eventType, actorID, servingStateID string) error {
+func insertEvent(ctx context.Context, tx transaction.Transaction, id, eventType, actorID, servingStateID string) error {
 	_, err := tx.ExecContext(ctx, `INSERT INTO dashboard_publication_events (publication_id, event_type, actor_id, serving_state_id) VALUES (?, ?, ?, NULLIF(?, ''))`, id, eventType, strings.TrimSpace(actorID), servingStateID)
 	return err
 }

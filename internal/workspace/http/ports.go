@@ -4,20 +4,64 @@ import (
 	"context"
 	nethttp "net/http"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
-	"github.com/Yacobolo/leapview/internal/dataquery"
+	"github.com/Yacobolo/leapview/internal/catalog"
 	"github.com/Yacobolo/leapview/internal/ui"
 	"github.com/Yacobolo/leapview/internal/workspace"
 )
 
 type Metrics interface {
-	Catalog() dashboard.Catalog
-	Report(dashboardID string) (dashboarddefinition.Definition, *semanticmodel.Model, bool)
-	SemanticModel(modelID string) (*semanticmodel.Model, bool)
-	ExecuteDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Result, error)
-	Pages(dashboardID string) []dashboard.Page
+	Catalog() catalog.Catalog
+	DataExplorerModel(modelID string) (DataExplorerModel, bool)
+	ExecuteDataPreview(ctx context.Context, request DataPreviewRequest) (DataPreviewResult, error)
+}
+
+type DataPreviewRequest struct {
+	WorkspaceID  string
+	ObjectKey    string
+	Layer        string
+	ModelID      string
+	Table        string
+	Columns      []string
+	SortColumn   string
+	Direction    string
+	Offset       int
+	Limit        int
+	IncludeTotal bool
+}
+
+type DataPreviewResult struct {
+	Rows           []map[string]any
+	TotalRows      int
+	TotalRowsKnown bool
+	SQL            string
+}
+
+type DataExplorerModel struct {
+	Sources map[string]DataExplorerSource
+	Tables  map[string]DataExplorerTable
+}
+
+type DataExplorerSource struct {
+	Fields  map[string]DataExplorerField
+	Columns []DataExplorerColumn
+}
+
+type DataExplorerTable struct {
+	Dimensions map[string]DataExplorerField
+	Columns    map[string]DataExplorerField
+	Schema     []DataExplorerColumn
+}
+
+type DataExplorerField struct {
+	Name  string
+	Label string
+	Type  string
+}
+
+type DataExplorerColumn struct {
+	Name         string
+	PhysicalType string
+	Ordinal      int
 }
 
 type AssetCatalogReader interface {

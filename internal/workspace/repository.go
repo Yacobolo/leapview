@@ -32,10 +32,14 @@ type EnsureInput struct {
 	Description string
 }
 
-type Repository interface {
-	Ensure(ctx context.Context, input EnsureInput) error
+type ReadModel interface {
 	List(ctx context.Context) ([]Summary, error)
 	ByID(ctx context.Context, id WorkspaceID) (Summary, error)
 	ActiveServingStateGraph(ctx context.Context, id WorkspaceID, environment string) (AssetGraph, bool, error)
 	AssetVersions(ctx context.Context, workspaceID WorkspaceID, environment string, assetID AssetID) ([]AssetVersion, error)
+}
+
+type Repository interface {
+	ReadModel
+	Ensure(ctx context.Context, input EnsureInput) error
 }

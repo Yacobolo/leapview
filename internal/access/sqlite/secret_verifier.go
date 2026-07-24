@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/configspec"
 	"github.com/alexedwards/argon2id"
 )
 
@@ -36,8 +35,8 @@ func verifySecret(secret, verifier string) bool {
 
 var tokenFingerprintKey = func() []byte {
 	source := firstNonEmpty(
-		strings.TrimSpace(os.Getenv(configspec.EnvLEAPVIEW_TOKEN_HASH_KEY)),
-		strings.TrimSpace(os.Getenv(configspec.EnvLEAPVIEW_CSRF_KEY)),
+		strings.TrimSpace(os.Getenv("LEAPVIEW_TOKEN_HASH_KEY")),
+		strings.TrimSpace(os.Getenv("LEAPVIEW_CSRF_KEY")),
 		"leapview-development-token-hash-key",
 	)
 	sum := sha256.Sum256([]byte("leapview-token-fingerprint:" + source))

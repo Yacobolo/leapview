@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
 	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/platform"
-	"github.com/Yacobolo/leapview/internal/queryaudit"
 )
 
 func TestAuditedQueryMetricsRecordsSuccessWithoutRows(t *testing.T) {
@@ -18,16 +18,16 @@ func TestAuditedQueryMetricsRecordsSuccessWithoutRows(t *testing.T) {
 	}
 	defer store.Close()
 
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{DefaultWorkspaceID: "test"}))
 	request := dataquery.ModelTableRows("test", "orders", []string{"order_id", "status"}, nil, 0, 2, false)
 	request.WorkspaceID = "test"
 	request.Surface = dataquery.SurfaceDataExplorer
 	request.Operation = dataquery.OperationPreviewWindow
 	request.ObjectType = "model_table"
 	request.ObjectID = "test:model_table:test.orders"
-	ctx = context.WithValue(ctx, principalContextKey{}, Principal{ID: "principal_admin@example.test"})
+	ctx = withPrincipal(ctx, Principal{ID: "principal_admin@example.test"})
 
-	if _, err := server.metrics.ExecuteDataQuery(ctx, request); err != nil {
+	if _, err := server.runtime.metrics.ExecuteDataQuery(ctx, request); err != nil {
 		t.Fatal(err)
 	}
 
@@ -64,8 +64,8 @@ func TestAuditedQueryMetricsRecordsExecutionError(t *testing.T) {
 	}
 	defer store.Close()
 
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
-	ctx = context.WithValue(ctx, principalContextKey{}, Principal{ID: "principal_admin@example.test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{DefaultWorkspaceID: "test"}))
+	ctx = withPrincipal(ctx, Principal{ID: "principal_admin@example.test"})
 	request := dataquery.Query{
 		WorkspaceID: "test",
 		Surface:     dataquery.SurfaceAPI,
@@ -76,7 +76,7 @@ func TestAuditedQueryMetricsRecordsExecutionError(t *testing.T) {
 		Limit:       1,
 	}
 
-	if _, err := server.metrics.ExecuteDataQuery(ctx, request); err == nil {
+	if _, err := server.runtime.metrics.ExecuteDataQuery(ctx, request); err == nil {
 		t.Fatal("expected query execution error")
 	}
 
@@ -96,12 +96,9 @@ func TestAuditedQueryMetricsRecordsExecutionError(t *testing.T) {
 	}
 }
 
-func queryEventsForTest(t *testing.T, server *Server, filter queryaudit.Filter) []queryaudit.Event {
+func queryEventsForTest(t *testing.T, server *appTestHarness, filter queryaudit.Filter) []queryaudit.Event {
 	t.Helper()
-	repo, err := server.queryAuditRepository()
-	if err != nil {
-		t.Fatal(err)
-	}
+	repo := queryAuditRepositoryForTest(t, server)
 	events, err := repo.ListQueryEvents(context.Background(), filter)
 	if err != nil {
 		t.Fatal(err)

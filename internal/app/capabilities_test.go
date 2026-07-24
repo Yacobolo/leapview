@@ -11,10 +11,10 @@ import (
 )
 
 func TestCapabilitiesReportOnlyEnabledUploadProtocols(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{DefaultEnvironment: "prod"})
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{DefaultEnvironment: "prod"})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/capabilities", nil)
 	rec := httptest.NewRecorder()
-	(apiGenAdapter{server: server}).GetCapabilities(rec, req)
+	apiGenDispatcherForTest(server).GetCapabilities(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())

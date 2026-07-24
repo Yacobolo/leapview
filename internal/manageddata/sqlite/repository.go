@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/manageddata"
-	platformdb "github.com/Yacobolo/leapview/internal/platform/db"
+	platformdb "github.com/Yacobolo/leapview/internal/manageddata/sqlite/manageddb"
 )
 
 type Repository struct {

@@ -15,7 +15,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/dataquery"
 	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
 	visualizationruntime "github.com/Yacobolo/leapview/internal/visualization/runtime"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/workspace/compiler"
+	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 )
 

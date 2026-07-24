@@ -6,10 +6,11 @@ import (
 	"testing"
 
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
+	"github.com/Yacobolo/leapview/internal/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	uiactions "github.com/Yacobolo/leapview/internal/ui/actions"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/workspace/compiler"
+	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	g "maragu.dev/gomponents"
 	dsattr "maragu.dev/gomponents-datastar"
@@ -58,7 +59,7 @@ func benchmarkDashboardBridge(b *testing.B, legacy bool) {
 	}
 }
 
-func benchmarkDashboardDocument(catalog dashboard.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, activePage dashboard.Page, signals map[string]any, legacy bool) g.Node {
+func benchmarkDashboardDocument(catalog catalog.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, activePage dashboard.Page, signals map[string]any, legacy bool) g.Node {
 	dashboardUpdatesURL := updatesURL(catalog.Workspace.ID, report.ID, activePage.ID)
 	reloadAction := uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/reload", "runtime", "filters.controls")
 	visualReset := visualResetExpression()
@@ -109,14 +110,14 @@ func jsonString(value any) string {
 	return string(bytes)
 }
 
-func benchmarkDatastarLitDashboardRoot(catalog dashboard.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, filtersUpdate, reloadAction string) g.Node {
+func benchmarkDatastarLitDashboardRoot(catalog catalog.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, filtersUpdate, reloadAction string) g.Node {
 	attrs := append([]g.Node{g.Attr("slot", "page")}, benchmarkDashboardCommandAttrs(catalog, report, model, filtersUpdate, reloadAction)...)
 	return g.El("lv-app-shell",
 		g.El("lv-dashboard-page", attrs...),
 	)
 }
 
-func benchmarkLegacyDashboardRoot(catalog dashboard.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, signals map[string]any, filtersUpdate, reloadAction string) g.Node {
+func benchmarkLegacyDashboardRoot(catalog catalog.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, signals map[string]any, filtersUpdate, reloadAction string) g.Node {
 	attrs := []g.Node{
 		g.Attr("slot", "page"),
 		g.Attr("page", jsonString(signals["page"])),
@@ -142,7 +143,7 @@ func benchmarkLegacyDashboardRoot(catalog dashboard.Catalog, report reportdef.Da
 	)
 }
 
-func benchmarkDashboardCommandAttrs(catalog dashboard.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, filtersUpdate, reloadAction string) []g.Node {
+func benchmarkDashboardCommandAttrs(catalog catalog.Catalog, report reportdef.Dashboard, model *semanticmodel.Model, filtersUpdate, reloadAction string) []g.Node {
 	return []g.Node{
 		g.Attr("data-on:lv-filters-change", filtersUpdate+reloadAction),
 		g.Attr("data-on:lv-filters-reset", filtersUpdate+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/reset-filters", "runtime")),
@@ -161,7 +162,7 @@ func benchmarkDashboardJSONAttrBytes(signals map[string]any) int {
 	return total
 }
 
-func benchmarkDashboardFixture() (reportdef.Dashboard, *semanticmodel.Model, dashboard.Catalog) {
+func benchmarkDashboardFixture() (reportdef.Dashboard, *semanticmodel.Model, catalog.Catalog) {
 	zebra := true
 	filters := map[string]reportdef.FilterDefinition{
 		"state":    {Type: "multi_select", Label: "State", Dimension: "orders.state", URLParam: "state", Operator: "in"},
@@ -235,6 +236,6 @@ func benchmarkDashboardFixture() (reportdef.Dashboard, *semanticmodel.Model, das
 		},
 		Measures: map[string]semanticmodel.MetricMeasure{"order_count": {Fact: "orders", Aggregation: "count", Empty: "zero", Label: "Orders"}},
 	}
-	catalog := dashboard.Catalog{Workspace: dashboard.CatalogWorkspace{ID: "benchmark", Title: "Benchmark Workspace"}}
+	catalog := catalog.Catalog{Workspace: catalog.Workspace{ID: "benchmark", Title: "Benchmark Workspace"}}
 	return report, model, catalog
 }

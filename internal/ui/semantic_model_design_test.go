@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
+	"github.com/Yacobolo/leapview/internal/catalog"
 	workspaceview "github.com/Yacobolo/leapview/internal/workspace"
 )
 
@@ -56,9 +56,9 @@ func TestSemanticModelDesignDetailsVocabulary(t *testing.T) {
 	}
 }
 
-func semanticDesignUIFixtures() (workspaceview.WorkspaceView, dashboard.Catalog, []workspaceview.AssetView, WorkspaceAccessResponse) {
+func semanticDesignUIFixtures() (workspaceview.WorkspaceView, catalog.Catalog, []workspaceview.AssetView, WorkspaceAccessResponse) {
 	workspace := workspaceview.WorkspaceView{ID: "leapview", Title: "LeapView Workspace", Description: "Local BI workspace."}
-	catalog := dashboard.Catalog{Workspace: dashboard.CatalogWorkspace{ID: workspace.ID, Title: workspace.Title, Description: workspace.Description}}
+	catalog := catalog.Catalog{Workspace: catalog.Workspace{ID: workspace.ID, Title: workspace.Title, Description: workspace.Description}}
 	assets := []workspaceview.AssetView{
 		{
 			ID:          "model",

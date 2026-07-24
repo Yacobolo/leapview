@@ -12,6 +12,7 @@ import (
 	"time"
 
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
+	"github.com/Yacobolo/leapview/internal/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
@@ -30,7 +31,7 @@ func toolNames(tools []agentcore.ToolDefinition) []string {
 }
 
 func TestServiceUsesHostProvidedTools(t *testing.T) {
-	service := NewService(fakeAgentMetrics{}, nil, Config{APIKey: "key", Model: "model"})
+	service := NewService(nil, Config{APIKey: "key", Model: "model"})
 	service.SetToolProviders(func(scope Scope) []agentcore.ToolDefinition {
 		if scope.WorkspaceID != "test" || scope.PrincipalID != "principal" {
 			t.Fatalf("scope = %#v", scope)
@@ -52,7 +53,7 @@ func TestServiceUsesHostProvidedTools(t *testing.T) {
 }
 
 func TestServiceAppendsHostProvidedTools(t *testing.T) {
-	service := NewService(fakeAgentMetrics{}, nil, Config{APIKey: "key", Model: "model"})
+	service := NewService(nil, Config{APIKey: "key", Model: "model"})
 	service.SetToolProviders(fakeToolProvider("one"))
 	service.AppendToolProviders(fakeToolProvider("two"))
 	tools := service.toolDefinitions(Scope{WorkspaceID: "test", PrincipalID: "principal"})
@@ -65,7 +66,7 @@ func TestServiceAppendsHostProvidedTools(t *testing.T) {
 }
 
 func TestServiceRejectsGloballyDisabledAgent(t *testing.T) {
-	service := NewService(fakeAgentMetrics{}, nil, Config{})
+	service := NewService(nil, Config{})
 
 	_, err := service.Prompt(context.Background(), PromptInput{
 		Scope:          Scope{WorkspaceID: "test", PrincipalID: "principal"},
@@ -78,7 +79,7 @@ func TestServiceRejectsGloballyDisabledAgent(t *testing.T) {
 }
 
 func TestServiceUsesConfiguredSystemPrompt(t *testing.T) {
-	service := NewService(fakeAgentMetrics{}, nil, Config{APIKey: "key", Model: "model"})
+	service := NewService(nil, Config{APIKey: "key", Model: "model"})
 	service.SetSystemPromptProvider(func(context.Context) (string, error) {
 		return "Stored platform system prompt.", nil
 	})
@@ -109,7 +110,7 @@ func TestServicePromptPersistsRunEventsMessagesAndTranscript(t *testing.T) {
 			Usage:        agentcore.Usage{InputTokens: 30, OutputTokens: 9, TotalTokens: 39},
 		},
 	)
-	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", BaseURL: "http://model.test", Model: "fake-model"}, WithModel(model))
+	service := NewService(store, Config{APIKey: "key", BaseURL: "http://model.test", Model: "fake-model"}, WithModel(model))
 	service.SetToolProviders(fakeToolProvider("list_dashboards"))
 	conversation, err := service.CreateConversation(ctx, Scope{WorkspaceID: "test", PrincipalID: principal.ID}, "Dashboards")
 	if err != nil {
@@ -167,7 +168,7 @@ func TestServicePromptPersistsResolvedTurnContextWhileKeepingVisibleTextClean(t 
 	defer store.Close()
 	principal := createAgentAppPrincipal(t, ctx, store, "context@example.com")
 	model := newRecordingAgentModel(agentcore.ModelResponse{Content: "The decline is concentrated in Denmark.", FinishReason: agentcore.FinishReasonStop})
-	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", Model: "fake-model"}, WithModel(model))
+	service := NewService(store, Config{APIKey: "key", Model: "fake-model"}, WithModel(model))
 	scope := Scope{WorkspaceID: "sales", PrincipalID: principal.ID}
 	conversation, err := service.CreateConversation(ctx, scope, "Dashboard context")
 	if err != nil {
@@ -244,7 +245,7 @@ func TestServiceStartPromptPersistsUserBeforeRunCompletes(t *testing.T) {
 	defer store.Close()
 	principal := createAgentAppPrincipal(t, ctx, store, "viewer@example.com")
 	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
-	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", Model: "fake-model"}, WithModel(newRecordingAgentModel(agentcore.ModelResponse{
+	service := NewService(store, Config{APIKey: "key", Model: "fake-model"}, WithModel(newRecordingAgentModel(agentcore.ModelResponse{
 		Content:      "Done.",
 		FinishReason: agentcore.FinishReasonStop,
 	})))
@@ -292,7 +293,7 @@ func TestServiceResumesPersistedPromptAfterProcessRestart(t *testing.T) {
 	defer store.Close()
 	principal := createAgentAppPrincipal(t, ctx, store, "restart@example.com")
 	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
-	first := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", Model: "fake-model"}, WithModel(newRecordingAgentModel()))
+	first := NewService(store, Config{APIKey: "key", Model: "fake-model"}, WithModel(newRecordingAgentModel()))
 	conversation, err := first.CreateConversation(ctx, scope, "Restart")
 	if err != nil {
 		t.Fatal(err)
@@ -302,7 +303,7 @@ func TestServiceResumesPersistedPromptAfterProcessRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	restarted := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", Model: "fake-model"}, WithModel(newRecordingAgentModel(agentcore.ModelResponse{Content: "Resumed.", FinishReason: agentcore.FinishReasonStop})))
+	restarted := NewService(store, Config{APIKey: "key", Model: "fake-model"}, WithModel(newRecordingAgentModel(agentcore.ModelResponse{Content: "Resumed.", FinishReason: agentcore.FinishReasonStop})))
 	resumed, err := restarted.ResumePrompt(ctx, scope, conversation.ID, started.RunID, "correlation-1")
 	if err != nil {
 		t.Fatalf("ResumePrompt() error = %v", err)
@@ -323,7 +324,7 @@ func TestServiceCompletePromptFailureLeavesSubmittedUserMessage(t *testing.T) {
 	defer store.Close()
 	principal := createAgentAppPrincipal(t, ctx, store, "viewer@example.com")
 	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
-	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", Model: "fake-model"}, WithModel(newFailingAgentModel(errors.New("model down"))))
+	service := NewService(store, Config{APIKey: "key", Model: "fake-model"}, WithModel(newFailingAgentModel(errors.New("model down"))))
 	conversation, err := service.CreateConversation(ctx, scope, "Draft")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
@@ -358,7 +359,7 @@ func TestServiceStartedPromptAbortReleasesRunningAndFailsRun(t *testing.T) {
 	principal := createAgentAppPrincipal(t, ctx, store, "viewer@example.com")
 
 	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
-	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", BaseURL: "http://127.0.0.1", Model: "fake-model"}, WithModel(newRecordingAgentModel()))
+	service := NewService(store, Config{APIKey: "key", BaseURL: "http://127.0.0.1", Model: "fake-model"}, WithModel(newRecordingAgentModel()))
 	conversation, err := service.CreateConversation(ctx, scope, "Draft")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
@@ -403,7 +404,7 @@ func TestServiceCancelsAnActiveRun(t *testing.T) {
 	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
 	model := newRecordingAgentModel()
 	model.delay = time.Minute
-	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", Model: "fake-model"}, WithModel(model))
+	service := NewService(store, Config{APIKey: "key", Model: "fake-model"}, WithModel(model))
 	conversation, err := service.CreateConversation(ctx, scope, "Draft")
 	if err != nil {
 		t.Fatal(err)
@@ -447,7 +448,7 @@ func TestServicePromptPersistsDisplayContentButSendsCompactToolResult(t *testing
 		},
 		agentcore.ModelResponse{Content: "Created the artifact.", FinishReason: agentcore.FinishReasonStop},
 	)
-	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", Model: "fake-model"}, WithModel(model))
+	service := NewService(store, Config{APIKey: "key", Model: "fake-model"}, WithModel(model))
 	service.SetToolProviders(func(Scope) []agentcore.ToolDefinition {
 		return []agentcore.ToolDefinition{{
 			Name:        "query_visual",
@@ -522,7 +523,7 @@ func TestServiceGenerateConversationTitleUsesNoToolsAndSavesCleanTitle(t *testin
 		FinishReason: agentcore.FinishReasonStop,
 		Usage:        agentcore.Usage{InputTokens: 12, OutputTokens: 3, TotalTokens: 15},
 	})
-	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", Model: "fake-model"}, WithModel(model))
+	service := NewService(store, Config{APIKey: "key", Model: "fake-model"}, WithModel(model))
 	conversation, err := service.CreateConversation(ctx, scope, "")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
@@ -567,7 +568,7 @@ func TestServiceGenerateConversationTitleFallsBackWhenModelReturnsEmptyContent(t
 	defer store.Close()
 	principal := createAgentAppPrincipal(t, ctx, store, "viewer@example.com")
 	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
-	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", Model: "fake-model"}, WithModel(newRecordingAgentModel(agentcore.ModelResponse{
+	service := NewService(store, Config{APIKey: "key", Model: "fake-model"}, WithModel(newRecordingAgentModel(agentcore.ModelResponse{
 		Content:      "",
 		FinishReason: agentcore.FinishReasonTruncated,
 		Usage:        agentcore.Usage{InputTokens: 12, OutputTokens: 64, TotalTokens: 76},
@@ -600,7 +601,7 @@ func TestServiceGenerateConversationTitleIsBestEffortAndSkipsUnsafeCases(t *test
 	principal := createAgentAppPrincipal(t, ctx, store, "viewer@example.com")
 	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
 	model := newFailingAgentModel(errors.New("provider down"))
-	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", Model: "fake-model"}, WithModel(model))
+	service := NewService(store, Config{APIKey: "key", Model: "fake-model"}, WithModel(model))
 
 	titled, err := service.CreateConversation(ctx, scope, "Manual title")
 	if err != nil {
@@ -659,7 +660,7 @@ func TestServiceConversationTranscriptDerivesDisplayItems(t *testing.T) {
 	store := openAgentAppStore(t, ctx)
 	defer store.Close()
 	principal := createAgentAppPrincipal(t, ctx, store, "viewer@example.com")
-	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", Model: "fake-model"})
+	service := NewService(store, Config{APIKey: "key", Model: "fake-model"})
 	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
 	conversation, err := service.CreateConversation(ctx, scope, "Transcript")
 	if err != nil {
@@ -749,7 +750,7 @@ func TestServiceConversationTranscriptExtractsVisualArtifact(t *testing.T) {
 	store := openAgentAppStore(t, ctx)
 	defer store.Close()
 	principal := createAgentAppPrincipal(t, ctx, store, "viewer@example.com")
-	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", Model: "fake-model"})
+	service := NewService(store, Config{APIKey: "key", Model: "fake-model"})
 	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
 	conversation, err := service.CreateConversation(ctx, scope, "Artifact")
 	if err != nil {
@@ -790,7 +791,7 @@ func TestServiceConversationTranscriptRejectsVerboseArtifactPayload(t *testing.T
 	store := openAgentAppStore(t, ctx)
 	defer store.Close()
 	principal := createAgentAppPrincipal(t, ctx, store, "viewer@example.com")
-	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", Model: "fake-model"})
+	service := NewService(store, Config{APIKey: "key", Model: "fake-model"})
 	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
 	conversation, err := service.CreateConversation(ctx, scope, "Invalid artifact")
 	if err != nil {
@@ -828,7 +829,7 @@ func TestServiceRejectsConcurrentConversationTurns(t *testing.T) {
 	principal := createAgentAppPrincipal(t, ctx, store, "viewer@example.com")
 	model := newRecordingAgentModel(agentcore.ModelResponse{Content: "ok", FinishReason: agentcore.FinishReasonStop})
 	model.delay = 100 * time.Millisecond
-	service := NewService(fakeAgentMetrics{}, store, Config{APIKey: "key", Model: "fake-model"}, WithModel(model))
+	service := NewService(store, Config{APIKey: "key", Model: "fake-model"}, WithModel(model))
 	conversation, err := service.CreateConversation(ctx, Scope{WorkspaceID: "test", PrincipalID: principal.ID}, "Dashboards")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
@@ -905,13 +906,13 @@ func (m *recordingAgentModel) Requests() []agentcore.ModelRequest {
 
 type fakeAgentMetrics struct{}
 
-func (fakeAgentMetrics) Catalog() dashboard.Catalog {
-	return dashboard.Catalog{
-		Workspace: dashboard.CatalogWorkspace{ID: "test", Title: "Test Workspace"},
-		Models: []dashboard.CatalogModel{
+func (fakeAgentMetrics) Catalog() catalog.Catalog {
+	return catalog.Catalog{
+		Workspace: catalog.Workspace{ID: "test", Title: "Test Workspace"},
+		Models: []catalog.Model{
 			{ID: "test", Title: "Test Model", Description: "Fixture model"},
 		},
-		Dashboards: []dashboard.CatalogDashboard{
+		Dashboards: []catalog.Dashboard{
 			{ID: "executive-sales", Title: "Executive Sales", Description: "Sales dashboard", SemanticModel: "test", PageCount: 1},
 		},
 	}

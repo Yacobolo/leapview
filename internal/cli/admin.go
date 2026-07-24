@@ -15,6 +15,8 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access"
 	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
+	adminsqlite "github.com/Yacobolo/leapview/internal/admin/sqlite"
+	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
 	"github.com/Yacobolo/leapview/internal/config"
 	"github.com/Yacobolo/leapview/internal/instancelock"
 	"github.com/Yacobolo/leapview/internal/platform"
@@ -581,9 +583,16 @@ func runAdminStorageCleanup(ctx context.Context, opts *rootOptions, out io.Write
 	if err != nil {
 		return err
 	}
+	snapshots, err := analyticsducklake.Open(ctx, analyticsducklake.Config{
+		RootDir: cfg.HomeDir, CatalogPath: cfg.DuckLakeCatalogPath(), DataPath: cfg.DuckLakeDataDir(),
+	})
+	if err != nil {
+		return err
+	}
+	defer snapshots.Close()
 	_, err = storagemaintenance.Run(ctx, repo, storagemaintenance.Options{
-		Environment: environment,
-		RootDir:     cfg.HomeDir,
+		Environment: string(environment),
+		Snapshots:   snapshots,
 		CatalogPath: cfg.DuckLakeCatalogPath(),
 		DataPath:    cfg.DuckLakeDataDir(),
 		DryRun:      !opts.apply,
@@ -628,7 +637,7 @@ func runAdminMaintenance(ctx context.Context, opts *rootOptions, out io.Writer) 
 		return err
 	}
 	defer store.Close()
-	result, err := store.PruneOperationalHistory(ctx, platform.OperationalRetentionOptions{
+	result, err := adminsqlite.PruneOperationalHistory(ctx, store.SQLDB(), adminsqlite.RetentionOptions{
 		AuditEventsMaxAge:             days(opts.auditDays),
 		QueryEventsMaxAge:             days(opts.queryDays),
 		ArchivedAgentConversationsAge: days(opts.archivedAgentDays),
