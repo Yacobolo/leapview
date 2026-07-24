@@ -91,7 +91,7 @@ func (m *Module) adminPublications(r *http.Request) ([]ui.AdminPublication, bool
 		out = append(out, ui.AdminPublication{
 			WorkspaceID: row.WorkspaceID, Name: row.Name, Dashboard: row.Dashboard, DefaultPage: row.DefaultPage,
 			Status: string(row.Status()), Origins: append([]string(nil), row.AllowedOrigins...), Generation: row.ServingStateID,
-			PublicURL: dto.PublicUrl, EmbedURL: dto.EmbedUrl, IFrameSnippet: dto.IframeSnippet,
+			PublicURL: dto.PublicURL, EmbedURL: dto.EmbedURL, IFrameSnippet: dto.IFrameSnippet,
 			ConfiguredAt: row.ConfiguredAt, SuspendedAt: row.SuspendedAt, DisabledAt: row.DisabledAt, RotatedAt: row.RotatedAt,
 			History: history,
 		})

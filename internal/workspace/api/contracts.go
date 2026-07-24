@@ -1,5 +1,9 @@
 package api
 
+type PageInfo struct {
+	NextCursor *string `json:"nextCursor,omitempty"`
+}
+
 type WorkspaceResponse struct {
 	ID                   string `json:"id"`
 	Title                string `json:"title"`
@@ -7,6 +11,54 @@ type WorkspaceResponse struct {
 	ActiveServingStateID string `json:"activeServingStateId,omitempty"`
 	CreatedAt            string `json:"createdAt"`
 	UpdatedAt            string `json:"updatedAt"`
+}
+
+type SearchParams struct {
+	Query            *string
+	Workspaces       *[]string
+	Types            *[]string
+	ContextWorkspace *string
+	ContextDashboard *string
+	ContextPage      *string
+	Limit            *int32
+	PageToken        *string
+}
+
+type SearchContextTag string
+
+type SearchLocation struct {
+	DashboardID   *string `json:"dashboardId,omitempty"`
+	DashboardName *string `json:"dashboardName,omitempty"`
+	Href          string  `json:"href"`
+	PageID        *string `json:"pageId,omitempty"`
+	PageName      *string `json:"pageName,omitempty"`
+}
+
+type SearchReference struct {
+	ID          string `json:"id"`
+	Type        string `json:"type"`
+	WorkspaceID string `json:"workspaceId"`
+}
+
+type SearchWorkspaceSummary struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type SearchResult struct {
+	Context     []SearchContextTag     `json:"context"`
+	Description *string                `json:"description,omitempty"`
+	Href        string                 `json:"href"`
+	Locations   []SearchLocation       `json:"locations"`
+	Name        string                 `json:"name"`
+	Reference   SearchReference        `json:"reference"`
+	VisualType  *string                `json:"visualType,omitempty"`
+	Workspace   SearchWorkspaceSummary `json:"workspace"`
+}
+
+type SearchResponse struct {
+	Items []SearchResult `json:"items"`
+	Page  PageInfo       `json:"page"`
 }
 
 type AssetResponse struct {

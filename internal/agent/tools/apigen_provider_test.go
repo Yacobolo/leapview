@@ -8,12 +8,14 @@ import (
 	"testing"
 
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
+	"github.com/Yacobolo/toolbelt/apigen/runtime/agenttool"
 )
 
 func TestGlobalAPIGenDefinitionsRequireWorkspaceForWorkspaceRoutes(t *testing.T) {
 	var authorizedScope Scope
 	var dispatchedPath string
 	provider := APIGenProvider{
+		Operations: testProviderOperations(),
 		Authorize: func(_ context.Context, scope Scope, _ string) (agentcore.ToolResult, bool) {
 			authorizedScope = scope
 			return agentcore.ToolResult{}, true
@@ -63,7 +65,7 @@ func TestGlobalAPIGenDefinitionsRequireWorkspaceForWorkspaceRoutes(t *testing.T)
 }
 
 func TestAPIGenDefinitionsExposeClosedVisualizationEnvelopeOutputSchemas(t *testing.T) {
-	for _, definition := range (APIGenProvider{}).Definitions(Scope{PrincipalID: "principal-1"}) {
+	for _, definition := range (APIGenProvider{Operations: testProviderOperations()}).Definitions(Scope{PrincipalID: "principal-1"}) {
 		if definition.Name != "query_dashboard_visual" {
 			continue
 		}
@@ -93,6 +95,32 @@ func TestAPIGenDefinitionsExposeClosedVisualizationEnvelopeOutputSchemas(t *test
 		return
 	}
 	t.Fatal("query_dashboard_visual definition not found")
+}
+
+func testProviderOperations() []APIGenOperation {
+	return []APIGenOperation{
+		{
+			Contract: OperationContract{OperationID: "listDashboards", Method: "GET", Path: "/api/v1/workspaces/{workspace}/dashboards"},
+			Tool: agenttool.Contract{
+				Name: "list_dashboards", OperationID: "listDashboards", Method: "GET",
+				Path: "/api/v1/workspaces/{workspace}/dashboards", Effect: agenttool.EffectRead,
+				InputSchema: json.RawMessage(`{"additionalProperties":false,"properties":{},"type":"object"}`),
+				Bindings: []agenttool.Binding{{
+					Source: "path", WireName: "workspace", Mode: "context", ContextKey: "workspace",
+					Required: true, Schema: agenttool.ValueSchema{Type: "string"},
+				}},
+			},
+		},
+		{
+			Contract: OperationContract{OperationID: "queryDashboardVisual", Method: "POST", Path: "/api/v1/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/visuals/{visual}/query"},
+			Tool: agenttool.Contract{
+				Name: "query_dashboard_visual", OperationID: "queryDashboardVisual", Method: "POST",
+				Path:   "/api/v1/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/visuals/{visual}/query",
+				Effect: agenttool.EffectRead, InputSchema: json.RawMessage(`{"type":"object"}`),
+				OutputSchema: json.RawMessage(`{"additionalProperties":false,"properties":{"spec":{"oneOf":[{"type":"object"}]},"dataState":{"oneOf":[{"type":"object"}]}},"required":["spec","dataState"],"type":"object"}`),
+			},
+		},
+	}
 }
 
 func TestGlobalVisualDefinitionRequiresWorkspace(t *testing.T) {

@@ -6,12 +6,16 @@ import (
 	"errors"
 	"net/http"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	apigenapi "github.com/Yacobolo/leapview/internal/manageddata/api"
 	"github.com/Yacobolo/leapview/internal/manageddata/control"
 	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	jobhttp "github.com/Yacobolo/leapview/internal/platform/jobs/http"
 )
+
+type PageParams = apigenapi.PageParams
+type IdempotencyHeaders = apigenapi.IdempotencyHeaders
+type EventHeaders = apigenapi.GenListManagedDataUploadSessionEventsHeaders
 
 func (m *Module) enqueueFinalize(ctx context.Context, request control.UploadRequest) error {
 	if err := m.appendEvent(ctx, request.UploadID, "upload_session.finalizing", map[string]any{"uploadSessionId": request.UploadID, "status": "finalizing"}); err != nil {

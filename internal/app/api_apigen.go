@@ -16,6 +16,31 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+func agentAPIGenOperations() []agentmodule.APIGenOperation {
+	generated := apigenapi.GetAPIGenOperationContracts()
+	contracts := make(map[string]agentmodule.APIGenOperationContract, len(generated))
+	for operationID, contract := range generated {
+		contracts[operationID] = agentmodule.APIGenOperationContract{
+			OperationID: contract.OperationID, Method: contract.Method, Path: contract.Path,
+			Protected: contract.Protected, AuthzMode: contract.AuthzMode, Manual: contract.Manual,
+			Extensions: contract.Extensions,
+		}
+	}
+	return agentmodule.BuildAPIGenOperations(contracts, apigenapi.GetAPIGenToolContracts())
+}
+
+func accessAPIGenOperationContracts() map[string]accessmodule.APIGenOperationContract {
+	generated := apigenapi.GetAPIGenOperationContracts()
+	contracts := make(map[string]accessmodule.APIGenOperationContract, len(generated))
+	for operationID, contract := range generated {
+		contracts[operationID] = accessmodule.APIGenOperationContract{
+			OperationID: contract.OperationID, Path: contract.Path, Protected: contract.Protected,
+			AuthzMode: contract.AuthzMode, Extensions: contract.Extensions,
+		}
+	}
+	return contracts
+}
+
 func registerAPIGenRoutes(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, r chi.Router) {
 	apigenapi.RegisterAPIGenRoutes(r, apiGenRouteHandler{handler: platform.apiGenHandler})
 }
@@ -79,7 +104,7 @@ func (a apiGenDispatcher) GetActiveManagedDataRevision(w http.ResponseWriter, r 
 }
 
 func (a apiGenDispatcher) ListManagedDataRevisions(w http.ResponseWriter, r *http.Request, project, connection string, params apigenapi.GenListManagedDataRevisionsParams) {
-	a.managedDataModule.HTTP().ListManagedDataRevisions(w, r, project, connection, params)
+	a.managedDataModule.HTTP().ListManagedDataRevisions(w, r, project, connection, manageddatamodule.PageParams{Limit: params.Limit, PageToken: params.PageToken})
 }
 
 func (a apiGenDispatcher) GetManagedDataRevision(w http.ResponseWriter, r *http.Request, project, connection, revision string) {
@@ -87,7 +112,7 @@ func (a apiGenDispatcher) GetManagedDataRevision(w http.ResponseWriter, r *http.
 }
 
 func (a apiGenDispatcher) CreateManagedDataUploadSession(w http.ResponseWriter, r *http.Request, project, connection string, headers apigenapi.GenCreateManagedDataUploadSessionHeaders) {
-	a.managedDataModule.HTTP().CreateManagedDataUploadSession(w, r, project, connection, headers)
+	a.managedDataModule.HTTP().CreateManagedDataUploadSession(w, r, project, connection, manageddatamodule.IdempotencyHeaders{IdempotencyKey: headers.IdempotencyKey})
 }
 
 func (a apiGenDispatcher) GetManagedDataUploadSession(w http.ResponseWriter, r *http.Request, project, connection, uploadSession string) {
@@ -95,27 +120,27 @@ func (a apiGenDispatcher) GetManagedDataUploadSession(w http.ResponseWriter, r *
 }
 
 func (a apiGenDispatcher) ListManagedDataUploadSessions(w http.ResponseWriter, r *http.Request, project, connection string, params apigenapi.GenListManagedDataUploadSessionsParams) {
-	a.managedDataModule.HTTP().ListManagedDataUploadSessions(w, r, project, connection, params)
+	a.managedDataModule.HTTP().ListManagedDataUploadSessions(w, r, project, connection, manageddatamodule.PageParams{Limit: params.Limit, PageToken: params.PageToken})
 }
 
 func (a apiGenDispatcher) CancelManagedDataUploadSession(w http.ResponseWriter, r *http.Request, project, connection, uploadSession string, headers apigenapi.GenCancelManagedDataUploadSessionHeaders) {
-	a.managedDataModule.HTTP().CancelManagedDataUploadSession(w, r, project, connection, uploadSession, headers)
+	a.managedDataModule.HTTP().CancelManagedDataUploadSession(w, r, project, connection, uploadSession, manageddatamodule.IdempotencyHeaders{IdempotencyKey: headers.IdempotencyKey})
 }
 
 func (a apiGenDispatcher) FinalizeManagedDataUploadSession(w http.ResponseWriter, r *http.Request, project, connection, uploadSession string, headers apigenapi.GenFinalizeManagedDataUploadSessionHeaders) {
-	a.managedDataModule.HTTP().FinalizeManagedDataUploadSession(w, r, project, connection, uploadSession, headers)
+	a.managedDataModule.HTTP().FinalizeManagedDataUploadSession(w, r, project, connection, uploadSession, manageddatamodule.IdempotencyHeaders{IdempotencyKey: headers.IdempotencyKey})
 }
 
 func (a apiGenDispatcher) CreateManagedDataS3MultipartUpload(w http.ResponseWriter, r *http.Request, project, connection, uploadSession string, headers apigenapi.GenCreateManagedDataS3MultipartUploadHeaders) {
-	a.managedDataModule.HTTP().CreateManagedDataS3MultipartUpload(w, r, project, connection, uploadSession, headers)
+	a.managedDataModule.HTTP().CreateManagedDataS3MultipartUpload(w, r, project, connection, uploadSession, manageddatamodule.IdempotencyHeaders{IdempotencyKey: headers.IdempotencyKey})
 }
 
 func (a apiGenDispatcher) AbortManagedDataS3MultipartUpload(w http.ResponseWriter, r *http.Request, project, connection, uploadSession, multipartUpload string, headers apigenapi.GenAbortManagedDataS3MultipartUploadHeaders) {
-	a.managedDataModule.HTTP().AbortManagedDataS3MultipartUpload(w, r, project, connection, uploadSession, multipartUpload, headers)
+	a.managedDataModule.HTTP().AbortManagedDataS3MultipartUpload(w, r, project, connection, uploadSession, multipartUpload, manageddatamodule.IdempotencyHeaders{IdempotencyKey: headers.IdempotencyKey})
 }
 
 func (a apiGenDispatcher) CompleteManagedDataS3MultipartUpload(w http.ResponseWriter, r *http.Request, project, connection, uploadSession, multipartUpload string, headers apigenapi.GenCompleteManagedDataS3MultipartUploadHeaders) {
-	a.managedDataModule.HTTP().CompleteManagedDataS3MultipartUpload(w, r, project, connection, uploadSession, multipartUpload, headers)
+	a.managedDataModule.HTTP().CompleteManagedDataS3MultipartUpload(w, r, project, connection, uploadSession, multipartUpload, manageddatamodule.IdempotencyHeaders{IdempotencyKey: headers.IdempotencyKey})
 }
 
 func (a apiGenDispatcher) SignManagedDataS3MultipartPart(w http.ResponseWriter, r *http.Request, project, connection, uploadSession, multipartUpload string, partNumber int32, _ apigenapi.GenSignManagedDataS3MultipartPartHeaders) {
@@ -131,7 +156,19 @@ func (a apiGenDispatcher) ListWorkspaces(w http.ResponseWriter, r *http.Request,
 }
 
 func (a apiGenDispatcher) Search(w http.ResponseWriter, r *http.Request, params apigenapi.GenSearchParams) {
-	a.workspaceModule.SearchAPI(w, r, params)
+	var types *[]string
+	if params.Type != nil {
+		values := make([]string, len(*params.Type))
+		for i, value := range *params.Type {
+			values[i] = string(value)
+		}
+		types = &values
+	}
+	a.workspaceModule.SearchAPI(w, r, workspacemodule.SearchParams{
+		Query: params.Q, Workspaces: params.Workspace, Types: types,
+		ContextWorkspace: params.ContextWorkspace, ContextDashboard: params.ContextDashboard,
+		ContextPage: params.ContextPage, Limit: params.Limit, PageToken: params.PageToken,
+	})
 }
 
 func (a apiGenDispatcher) ListWorkspaceAssets(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListWorkspaceAssetsParams) {
@@ -195,7 +232,7 @@ func (a apiGenDispatcher) ListSemanticSources(w http.ResponseWriter, r *http.Req
 }
 
 func (a apiGenDispatcher) QuerySemanticModel(w http.ResponseWriter, r *http.Request, workspaceID, _ string, headers apigenapi.GenQuerySemanticModelHeaders) {
-	a.dashboardModule.QuerySemanticModel(w, r, workspaceID, headers)
+	a.dashboardModule.QuerySemanticModel(w, r, workspaceID)
 }
 
 func (a apiGenDispatcher) ExplainSemanticModelQuery(w http.ResponseWriter, r *http.Request, _, _ string) {
@@ -207,7 +244,7 @@ func (a apiGenDispatcher) ListSemanticFields(w http.ResponseWriter, r *http.Requ
 }
 
 func (a apiGenDispatcher) PreviewSemanticDataset(w http.ResponseWriter, r *http.Request, workspaceID, _, _ string, headers apigenapi.GenPreviewSemanticDatasetHeaders) {
-	a.dashboardModule.PreviewSemanticDataset(w, r, workspaceID, headers)
+	a.dashboardModule.PreviewSemanticDataset(w, r, workspaceID)
 }
 
 func (a apiGenDispatcher) ExplainSemanticPreview(w http.ResponseWriter, r *http.Request, _, _, _ string) {
@@ -219,19 +256,19 @@ func (a apiGenDispatcher) QueryDashboardPage(w http.ResponseWriter, r *http.Requ
 }
 
 func (a apiGenDispatcher) QueryDashboardVisualData(w http.ResponseWriter, r *http.Request, workspaceID, _, _, _ string, headers apigenapi.GenQueryDashboardVisualDataHeaders) {
-	a.dashboardModule.QueryDashboardVisualData(w, r, workspaceID, headers)
+	a.dashboardModule.QueryDashboardVisualData(w, r, workspaceID)
 }
 
 func (a apiGenDispatcher) ListDashboardFilterValues(w http.ResponseWriter, r *http.Request, workspaceID, _, _, _ string, params apigenapi.GenListDashboardFilterValuesParams) {
-	a.dashboardModule.ListDashboardFilterValues(w, r, workspaceID, params)
+	a.dashboardModule.ListDashboardFilterValues(w, r, workspaceID)
 }
 
 func (a apiGenDispatcher) CreateRefreshRun(w http.ResponseWriter, r *http.Request, workspaceID string, headers apigenapi.GenCreateRefreshRunHeaders) {
-	a.refreshModule.CreateRefreshRun(w, r, workspaceID, headers)
+	a.refreshModule.CreateRefreshRun(w, r, workspaceID)
 }
 
 func (a apiGenDispatcher) ListRefreshRuns(w http.ResponseWriter, r *http.Request, workspaceID string, params apigenapi.GenListRefreshRunsParams) {
-	a.refreshModule.ListRefreshRuns(w, r, workspaceID, params)
+	a.refreshModule.ListRefreshRuns(w, r, workspaceID)
 }
 
 func (a apiGenDispatcher) GetRefreshRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
@@ -251,7 +288,7 @@ func (a apiGenDispatcher) GetAgentConversation(w http.ResponseWriter, r *http.Re
 }
 
 func (a apiGenDispatcher) UpdateAgentConversation(w http.ResponseWriter, r *http.Request, _ string, headers apigenapi.GenUpdateAgentConversationHeaders) {
-	a.agentModule.UpdateConversation(w, r, headers)
+	a.agentModule.UpdateConversation(w, r, headers.IfMatch)
 }
 
 func (a apiGenDispatcher) ArchiveAgentConversation(w http.ResponseWriter, r *http.Request, _ string) {
@@ -295,7 +332,7 @@ func (a apiGenDispatcher) GetPrincipal(w http.ResponseWriter, r *http.Request, _
 }
 
 func (a apiGenDispatcher) UpdatePrincipal(w http.ResponseWriter, r *http.Request, _ string, headers apigenapi.GenUpdatePrincipalHeaders) {
-	a.accessModule.UpdatePrincipal(w, r, headers)
+	a.accessModule.UpdatePrincipal(w, r, headers.IfMatch)
 }
 
 func (a apiGenDispatcher) DeletePrincipal(w http.ResponseWriter, r *http.Request, _ string) {
@@ -319,7 +356,7 @@ func (a apiGenDispatcher) GetServicePrincipal(w http.ResponseWriter, r *http.Req
 }
 
 func (a apiGenDispatcher) UpdateServicePrincipal(w http.ResponseWriter, r *http.Request, _ string, headers apigenapi.GenUpdateServicePrincipalHeaders) {
-	a.accessModule.UpdateServicePrincipal(w, r, headers)
+	a.accessModule.UpdateServicePrincipal(w, r, headers.IfMatch)
 }
 
 func (a apiGenDispatcher) DeleteServicePrincipal(w http.ResponseWriter, r *http.Request, _ string) {
@@ -363,7 +400,7 @@ func (a apiGenDispatcher) GetGrant(w http.ResponseWriter, r *http.Request, _, _ 
 }
 
 func (a apiGenDispatcher) UpdateGrant(w http.ResponseWriter, r *http.Request, _, _ string, headers apigenapi.GenUpdateGrantHeaders) {
-	a.accessModule.UpdateGrant(w, r, headers)
+	a.accessModule.UpdateGrant(w, r, headers.IfMatch)
 }
 
 func (a apiGenDispatcher) DeleteGrant(w http.ResponseWriter, r *http.Request, _, _ string) {
@@ -383,7 +420,7 @@ func (a apiGenDispatcher) GetDataPolicy(w http.ResponseWriter, r *http.Request, 
 }
 
 func (a apiGenDispatcher) UpdateDataPolicy(w http.ResponseWriter, r *http.Request, _, _ string, headers apigenapi.GenUpdateDataPolicyHeaders) {
-	a.accessModule.UpdateDataPolicy(w, r, headers)
+	a.accessModule.UpdateDataPolicy(w, r, headers.IfMatch)
 }
 
 func (a apiGenDispatcher) CheckAuthorizationBatch(w http.ResponseWriter, r *http.Request, _ string) {
@@ -419,7 +456,7 @@ func (a apiGenDispatcher) GetGroup(w http.ResponseWriter, r *http.Request, _, _ 
 }
 
 func (a apiGenDispatcher) UpdateGroup(w http.ResponseWriter, r *http.Request, _, _ string, headers apigenapi.GenUpdateGroupHeaders) {
-	a.accessModule.UpdateGroup(w, r, headers)
+	a.accessModule.UpdateGroup(w, r, headers.IfMatch)
 }
 
 func (a apiGenDispatcher) DeleteGroup(w http.ResponseWriter, r *http.Request, _, _ string) {
@@ -451,7 +488,7 @@ func (a apiGenDispatcher) GetRoleBinding(w http.ResponseWriter, r *http.Request,
 }
 
 func (a apiGenDispatcher) UpdateRoleBinding(w http.ResponseWriter, r *http.Request, _, _ string, headers apigenapi.GenUpdateRoleBindingHeaders) {
-	a.accessModule.UpdateRoleBinding(w, r, headers)
+	a.accessModule.UpdateRoleBinding(w, r, headers.IfMatch)
 }
 
 func (a apiGenDispatcher) DeleteRoleBinding(w http.ResponseWriter, r *http.Request, _, _ string) {

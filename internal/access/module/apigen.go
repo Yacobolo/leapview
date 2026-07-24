@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 )
 
 const apiGenObjectScopeExtension = "x-leapview-object-scope"
@@ -21,17 +19,27 @@ type apiGenObjectScope struct {
 	resolver      ObjectResolver
 }
 
-type APIGenAuthorizer struct {
-	module *Module
-	scopes map[string]apiGenObjectScope
+type APIGenOperationContract struct {
+	OperationID string
+	Path        string
+	Protected   bool
+	AuthzMode   string
+	Extensions  map[string]any
 }
 
-func (m *Module) APIGenAuthorizer(resolvers APIGenObjectResolvers) (*APIGenAuthorizer, error) {
+type APIGenAuthorizer struct {
+	module     *Module
+	scopes     map[string]apiGenObjectScope
+	operations map[string]APIGenOperationContract
+}
+
+func (m *Module) APIGenAuthorizer(operations map[string]APIGenOperationContract, resolvers APIGenObjectResolvers) (*APIGenAuthorizer, error) {
 	if m == nil {
 		return nil, fmt.Errorf("access module is required")
 	}
 	authorizer := &APIGenAuthorizer{
-		module: m,
+		module:     m,
+		operations: operations,
 		scopes: map[string]apiGenObjectScope{
 			"dashboard":       {pathParameter: "dashboard", resolver: resolvers.Dashboard},
 			"semantic-model":  {pathParameter: "model", resolver: resolvers.SemanticModel},
@@ -56,7 +64,7 @@ func (m *Module) APIGenAuthorizer(resolvers APIGenObjectResolvers) (*APIGenAutho
 }
 
 func (a *APIGenAuthorizer) Protect(operationID string, next http.Handler) (http.Handler, bool) {
-	contract, ok := apigenapi.GetAPIGenOperationContract(operationID)
+	contract, ok := a.operations[operationID]
 	if !ok || !contract.Protected {
 		return nil, false
 	}
@@ -74,7 +82,7 @@ func (a *APIGenAuthorizer) Protect(operationID string, next http.Handler) (http.
 	return a.module.ProtectHandlerWithObjects(privilege, resolver, next), true
 }
 
-func apiGenOperationPrivilege(contract apigenapi.GenOperationContract) (Privilege, bool) {
+func apiGenOperationPrivilege(contract APIGenOperationContract) (Privilege, bool) {
 	if contract.AuthzMode == "authenticated" {
 		return "", true
 	}
@@ -102,7 +110,7 @@ func isGlobalAgentOperation(operationID string) bool {
 	}
 }
 
-func (a *APIGenAuthorizer) objectResolverForContract(contract apigenapi.GenOperationContract) (ObjectResolver, bool) {
+func (a *APIGenAuthorizer) objectResolverForContract(contract APIGenOperationContract) (ObjectResolver, bool) {
 	expectedScope, ambiguous := a.objectScopeForPath(contract.Path)
 	if ambiguous {
 		return nil, false

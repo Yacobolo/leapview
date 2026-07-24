@@ -6,17 +6,19 @@ import (
 	"errors"
 	"net/http"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	jobhttp "github.com/Yacobolo/leapview/internal/platform/jobs/http"
 	"github.com/Yacobolo/leapview/internal/release"
+	releaseapi "github.com/Yacobolo/leapview/internal/release/api"
 	releasefilesystem "github.com/Yacobolo/leapview/internal/release/filesystem"
 )
 
 type Principal struct {
 	ID string
 }
+
+type PageParams = releaseapi.PageParams
 
 type JobStore interface {
 	Enqueue(context.Context, jobs.EnqueueInput) (jobs.Job, error)
@@ -29,23 +31,23 @@ type APIConfig struct {
 	Jobs             JobStore
 }
 
-func (m *Module) CreateRelease(w http.ResponseWriter, r *http.Request, project string, headers apigenapi.GenCreateReleaseHeaders) {
+func (m *Module) CreateRelease(w http.ResponseWriter, r *http.Request, project, idempotencyKey string) {
 	principal, ok := m.currentPrincipal(r)
 	if !ok {
 		apitransport.WriteProblem(w, r, http.StatusUnauthorized, "AUTHENTICATION_REQUIRED", "Bearer authentication is required", nil)
 		return
 	}
-	var body apigenapi.ReleaseCreateRequest
+	var body releaseapi.CreateRequest
 	if err := apitransport.DecodeBody(w, r, &body); err != nil {
 		apitransport.WriteProblem(w, r, http.StatusBadRequest, "INVALID_JSON", err.Error(), nil)
 		return
 	}
-	input := release.CreateInput{ProjectID: project, ProjectDigest: body.ProjectDigest, IdempotencyKey: headers.IdempotencyKey, CreatedBy: principal.ID}
+	input := release.CreateInput{ProjectID: project, ProjectDigest: body.ProjectDigest, IdempotencyKey: idempotencyKey, CreatedBy: principal.ID}
 	for _, item := range body.Workspaces {
 		input.Workspaces = append(input.Workspaces, release.WorkspaceManifest{WorkspaceID: item.Workspace, ArtifactDigest: item.ArtifactDigest})
 	}
 	for _, item := range body.Connections {
-		input.Connections = append(input.Connections, release.ConnectionPin{ConnectionID: item.Connection, RevisionID: item.RevisionId})
+		input.Connections = append(input.Connections, release.ConnectionPin{ConnectionID: item.Connection, RevisionID: item.RevisionID})
 	}
 	created, err := m.service.Create(r.Context(), input)
 	if err != nil {
@@ -60,22 +62,22 @@ func (m *Module) CreateRelease(w http.ResponseWriter, r *http.Request, project s
 	apitransport.WriteJSON(w, http.StatusCreated, response(created))
 }
 
-func (m *Module) ListReleases(w http.ResponseWriter, r *http.Request, project string, params apigenapi.GenListReleasesParams) {
+func (m *Module) ListReleases(w http.ResponseWriter, r *http.Request, project string, params releaseapi.PageParams) {
 	rows, err := m.service.List(r.Context(), project)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	items := make([]apigenapi.ReleaseResponse, 0, len(rows))
+	items := make([]releaseapi.Response, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, response(row))
 	}
-	page, next, err := apitransport.KeysetPage(items, params.Limit, params.PageToken, func(item apigenapi.ReleaseResponse) string { return item.CreatedAt + "\x00" + item.Id })
+	page, next, err := apitransport.KeysetPage(items, params.Limit, params.PageToken, func(item releaseapi.Response) string { return item.CreatedAt + "\x00" + item.ID })
 	if err != nil {
 		apitransport.WriteProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", err.Error(), nil)
 		return
 	}
-	apitransport.WriteJSON(w, http.StatusOK, apigenapi.ReleaseListResponse{Items: page, Page: apigenapi.PageInfo{NextCursor: next}})
+	apitransport.WriteJSON(w, http.StatusOK, releaseapi.ListResponse{Items: page, Page: releaseapi.PageInfo{NextCursor: next}})
 }
 
 func (m *Module) GetRelease(w http.ResponseWriter, r *http.Request, project, releaseID string) {
@@ -88,21 +90,21 @@ func (m *Module) GetRelease(w http.ResponseWriter, r *http.Request, project, rel
 	apitransport.WriteJSON(w, http.StatusOK, response(row))
 }
 
-func (m *Module) UploadReleaseArtifact(w http.ResponseWriter, r *http.Request, project, releaseID, workspaceID string, headers apigenapi.GenUploadReleaseArtifactHeaders) {
-	if headers.ContentType != "application/octet-stream" {
+func (m *Module) UploadReleaseArtifact(w http.ResponseWriter, r *http.Request, project, releaseID, workspaceID, contentType, contentDigest string) {
+	if contentType != "application/octet-stream" {
 		apitransport.WriteProblem(w, r, http.StatusUnsupportedMediaType, "UNSUPPORTED_MEDIA_TYPE", "Release artifacts require application/octet-stream", nil)
 		return
 	}
-	artifact, err := m.service.UploadArtifact(r.Context(), project, releaseID, workspaceID, headers.ContentDigest, http.MaxBytesReader(w, r.Body, releasefilesystem.MaxUploadBytes))
+	artifact, err := m.service.UploadArtifact(r.Context(), project, releaseID, workspaceID, contentDigest, http.MaxBytesReader(w, r.Body, releasefilesystem.MaxUploadBytes))
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
 	w.Header().Set("Location", location(project, releaseID)+"/workspaces/"+workspaceID+"/artifact")
-	apitransport.WriteJSON(w, http.StatusCreated, apigenapi.ReleaseArtifactResponse{ReleaseId: releaseID, WorkspaceId: workspaceID, Digest: artifact.ExpectedDigest, SizeBytes: artifact.SizeBytes})
+	apitransport.WriteJSON(w, http.StatusCreated, releaseapi.ArtifactResponse{ReleaseID: releaseID, WorkspaceID: workspaceID, Digest: artifact.ExpectedDigest, SizeBytes: artifact.SizeBytes})
 }
 
-func (m *Module) FinalizeRelease(w http.ResponseWriter, r *http.Request, project, releaseID string, _ apigenapi.GenFinalizeReleaseHeaders) {
+func (m *Module) FinalizeRelease(w http.ResponseWriter, r *http.Request, project, releaseID string) {
 	row, err := m.service.BeginFinalization(r.Context(), project, releaseID)
 	if err != nil {
 		writeError(w, r, err)
@@ -133,7 +135,7 @@ func (m *Module) FinalizeRelease(w http.ResponseWriter, r *http.Request, project
 	apitransport.WriteJSON(w, http.StatusAccepted, response(row))
 }
 
-func (m *Module) ListReleaseEvents(w http.ResponseWriter, r *http.Request, project, releaseID string, params apigenapi.GenListReleaseEventsParams, _ apigenapi.GenListReleaseEventsHeaders) {
+func (m *Module) ListReleaseEvents(w http.ResponseWriter, r *http.Request, project, releaseID string, params releaseapi.PageParams) {
 	if _, err := m.service.Get(r.Context(), project, releaseID); err != nil {
 		writeError(w, r, err)
 		return
@@ -164,21 +166,21 @@ func (m *Module) appendEvent(ctx context.Context, releaseID, eventType string, d
 	return err
 }
 
-func response(row release.Release) apigenapi.ReleaseResponse {
-	result := apigenapi.ReleaseResponse{
-		Id: row.ID, ProjectId: row.ProjectID, ProjectDigest: row.ProjectDigest, Status: apigenapi.ReleaseStatus(row.Status),
-		CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt, Workspaces: make([]apigenapi.ReleaseWorkspaceManifest, 0, len(row.Manifest.Workspaces)),
-		Connections: make([]apigenapi.ReleaseConnectionPin, 0, len(row.Manifest.Connections)),
+func response(row release.Release) releaseapi.Response {
+	result := releaseapi.Response{
+		ID: row.ID, ProjectID: row.ProjectID, ProjectDigest: row.ProjectDigest, Status: releaseapi.Status(row.Status),
+		CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt, Workspaces: make([]releaseapi.WorkspaceManifest, 0, len(row.Manifest.Workspaces)),
+		Connections: make([]releaseapi.ConnectionPin, 0, len(row.Manifest.Connections)),
 	}
 	for _, item := range row.Manifest.Workspaces {
-		mapped := apigenapi.ReleaseWorkspaceManifest{Workspace: item.WorkspaceID, ArtifactDigest: item.ArtifactDigest}
+		mapped := releaseapi.WorkspaceManifest{Workspace: item.WorkspaceID, ArtifactDigest: item.ArtifactDigest}
 		if item.ServingStateID != "" {
-			mapped.ServingStateId = &item.ServingStateID
+			mapped.ServingStateID = &item.ServingStateID
 		}
 		result.Workspaces = append(result.Workspaces, mapped)
 	}
 	for _, item := range row.Manifest.Connections {
-		result.Connections = append(result.Connections, apigenapi.ReleaseConnectionPin{Connection: item.ConnectionID, RevisionId: item.RevisionID})
+		result.Connections = append(result.Connections, releaseapi.ConnectionPin{Connection: item.ConnectionID, RevisionID: item.RevisionID})
 	}
 	if row.FinalizedAt != "" {
 		result.FinalizedAt = &row.FinalizedAt

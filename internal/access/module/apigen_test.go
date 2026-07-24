@@ -11,7 +11,7 @@ import (
 func testAPIGenAuthorizer(t *testing.T) *APIGenAuthorizer {
 	t.Helper()
 	resolver := func(*http.Request, string) []ObjectRef { return nil }
-	authorizer, err := (&Module{}).APIGenAuthorizer(APIGenObjectResolvers{
+	authorizer, err := (&Module{}).APIGenAuthorizer(testAPIGenContracts(), APIGenObjectResolvers{
 		Dashboard: resolver, SemanticModel: resolver, WorkspaceAsset: resolver,
 	})
 	if err != nil {
@@ -20,9 +20,21 @@ func testAPIGenAuthorizer(t *testing.T) *APIGenAuthorizer {
 	return authorizer
 }
 
+func testAPIGenContracts() map[string]APIGenOperationContract {
+	generated := apigenapi.GetAPIGenOperationContracts()
+	contracts := make(map[string]APIGenOperationContract, len(generated))
+	for operationID, contract := range generated {
+		contracts[operationID] = APIGenOperationContract{
+			OperationID: contract.OperationID, Path: contract.Path, Protected: contract.Protected,
+			AuthzMode: contract.AuthzMode, Extensions: contract.Extensions,
+		}
+	}
+	return contracts
+}
+
 func TestAPIGenAuthorizationContractCoverage(t *testing.T) {
 	authorizer := testAPIGenAuthorizer(t)
-	contracts := apigenapi.GetAPIGenOperationContracts()
+	contracts := authorizer.operations
 	if len(contracts) == 0 {
 		t.Fatal("no generated operation contracts")
 	}
@@ -51,7 +63,7 @@ func TestAPIGenAuthorizationContractCoverage(t *testing.T) {
 			t.Fatalf("%s has invalid object scope for %q", operationID, contract.Path)
 		}
 	}
-	contract, ok := apigenapi.GetAPIGenOperationContract("uploadReleaseArtifact")
+	contract, ok := contracts["uploadReleaseArtifact"]
 	if !ok {
 		t.Fatal("uploadReleaseArtifact contract is missing")
 	}
@@ -64,24 +76,24 @@ func TestAPIGenObjectResolverRejectsInvalidContracts(t *testing.T) {
 	authorizer := testAPIGenAuthorizer(t)
 	tests := []struct {
 		name         string
-		contract     apigenapi.GenOperationContract
+		contract     APIGenOperationContract
 		wantOK       bool
 		wantResolver bool
 	}{
-		{name: "workspace scoped", contract: apigenapi.GenOperationContract{Path: "/api/v1/workspaces/{workspace}/dashboards", Extensions: map[string]any{}}, wantOK: true},
-		{name: "supported exact scope", contract: apigenapi.GenOperationContract{Path: "/api/v1/workspaces/{workspace}/dashboards/{dashboard}", Extensions: map[string]any{apiGenObjectScopeExtension: "dashboard"}}, wantOK: true, wantResolver: true},
-		{name: "missing exact scope", contract: apigenapi.GenOperationContract{Path: "/api/v1/workspaces/{workspace}/dashboards/{dashboard}", Extensions: map[string]any{}}},
-		{name: "wrong exact scope", contract: apigenapi.GenOperationContract{Path: "/api/v1/workspaces/{workspace}/dashboards/{dashboard}", Extensions: map[string]any{apiGenObjectScopeExtension: "semantic-model"}}},
-		{name: "unknown exact scope", contract: apigenapi.GenOperationContract{Path: "/api/v1/workspaces/{workspace}/dashboards/{dashboard}", Extensions: map[string]any{apiGenObjectScopeExtension: "tenant"}}},
+		{name: "workspace scoped", contract: APIGenOperationContract{Path: "/api/v1/workspaces/{workspace}/dashboards", Extensions: map[string]any{}}, wantOK: true},
+		{name: "supported exact scope", contract: APIGenOperationContract{Path: "/api/v1/workspaces/{workspace}/dashboards/{dashboard}", Extensions: map[string]any{apiGenObjectScopeExtension: "dashboard"}}, wantOK: true, wantResolver: true},
+		{name: "missing exact scope", contract: APIGenOperationContract{Path: "/api/v1/workspaces/{workspace}/dashboards/{dashboard}", Extensions: map[string]any{}}},
+		{name: "wrong exact scope", contract: APIGenOperationContract{Path: "/api/v1/workspaces/{workspace}/dashboards/{dashboard}", Extensions: map[string]any{apiGenObjectScopeExtension: "semantic-model"}}},
+		{name: "unknown exact scope", contract: APIGenOperationContract{Path: "/api/v1/workspaces/{workspace}/dashboards/{dashboard}", Extensions: map[string]any{apiGenObjectScopeExtension: "tenant"}}},
 		{
 			name: "malformed exact scope",
-			contract: apigenapi.GenOperationContract{
+			contract: APIGenOperationContract{
 				Path:       "/api/v1/workspaces/{workspace}/dashboards/{dashboard}",
 				Extensions: map[string]any{apiGenObjectScopeExtension: map[string]any{"kind": "dashboard"}},
 			},
 		},
-		{name: "unexpected exact scope", contract: apigenapi.GenOperationContract{Path: "/api/v1/workspaces/{workspace}/dashboards", Extensions: map[string]any{apiGenObjectScopeExtension: "dashboard"}}},
-		{name: "ambiguous exact scope", contract: apigenapi.GenOperationContract{Path: "/api/v1/workspaces/{workspace}/dashboards/{dashboard}/semantic-models/{model}", Extensions: map[string]any{apiGenObjectScopeExtension: "dashboard"}}},
+		{name: "unexpected exact scope", contract: APIGenOperationContract{Path: "/api/v1/workspaces/{workspace}/dashboards", Extensions: map[string]any{apiGenObjectScopeExtension: "dashboard"}}},
+		{name: "ambiguous exact scope", contract: APIGenOperationContract{Path: "/api/v1/workspaces/{workspace}/dashboards/{dashboard}/semantic-models/{model}", Extensions: map[string]any{apiGenObjectScopeExtension: "dashboard"}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -121,7 +133,7 @@ func TestManagedDataAndDeploymentAPIGenPrivilegesArePlatformGlobal(t *testing.T)
 		"rollbackDeployment":                   access.PrivilegeActivateDeployment,
 	}
 	for operationID, expected := range want {
-		contract, ok := apigenapi.GetAPIGenOperationContract(operationID)
+		contract, ok := authorizer.operations[operationID]
 		if !ok {
 			t.Errorf("%s contract is missing", operationID)
 			continue

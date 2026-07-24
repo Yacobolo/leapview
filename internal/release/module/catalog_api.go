@@ -3,13 +3,13 @@ package module
 import (
 	"net/http"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
+	releaseapi "github.com/Yacobolo/leapview/internal/release/api"
 )
 
-func (m *Module) ListProjects(w http.ResponseWriter, r *http.Request, params apigenapi.GenListProjectsParams) {
+func (m *Module) ListProjects(w http.ResponseWriter, r *http.Request, params releaseapi.PageParams) {
 	if m == nil || m.catalog == nil {
-		apitransport.WriteJSON(w, http.StatusOK, apigenapi.ProjectListResponse{Items: []apigenapi.ProjectResponse{}, Page: apigenapi.PageInfo{}})
+		apitransport.WriteJSON(w, http.StatusOK, releaseapi.ProjectListResponse{Items: []releaseapi.ProjectResponse{}, Page: releaseapi.PageInfo{}})
 		return
 	}
 	rows, err := m.catalog.ListProjects(r.Context())
@@ -17,23 +17,23 @@ func (m *Module) ListProjects(w http.ResponseWriter, r *http.Request, params api
 		apitransport.WriteProblem(w, r, http.StatusInternalServerError, "PROJECT_LIST_FAILED", "Projects could not be loaded", nil)
 		return
 	}
-	items := make([]apigenapi.ProjectResponse, 0, len(rows))
+	items := make([]releaseapi.ProjectResponse, 0, len(rows))
 	for _, row := range rows {
-		item := apigenapi.ProjectResponse{Id: row.ID, Title: row.ID, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
+		item := releaseapi.ProjectResponse{ID: row.ID, Title: row.ID, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
 		if row.LatestReleaseID != "" {
-			item.LatestReleaseId = &row.LatestReleaseID
+			item.LatestReleaseID = &row.LatestReleaseID
 		}
 		if row.ActiveDeploymentID != "" {
-			item.ActiveDeploymentId = &row.ActiveDeploymentID
+			item.ActiveDeploymentID = &row.ActiveDeploymentID
 		}
 		items = append(items, item)
 	}
-	page, next, err := apitransport.KeysetPage(items, params.Limit, params.PageToken, func(item apigenapi.ProjectResponse) string { return item.Id })
+	page, next, err := apitransport.KeysetPage(items, params.Limit, params.PageToken, func(item releaseapi.ProjectResponse) string { return item.ID })
 	if err != nil {
 		apitransport.WriteProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", err.Error(), nil)
 		return
 	}
-	apitransport.WriteJSON(w, http.StatusOK, apigenapi.ProjectListResponse{Items: page, Page: apigenapi.PageInfo{NextCursor: next}})
+	apitransport.WriteJSON(w, http.StatusOK, releaseapi.ProjectListResponse{Items: page, Page: releaseapi.PageInfo{NextCursor: next}})
 }
 
 func (m *Module) GetProject(w http.ResponseWriter, r *http.Request, projectID string) {
@@ -46,17 +46,17 @@ func (m *Module) GetProject(w http.ResponseWriter, r *http.Request, projectID st
 		apitransport.WriteProblem(w, r, http.StatusNotFound, "PROJECT_NOT_FOUND", "Project not found", nil)
 		return
 	}
-	item := apigenapi.ProjectResponse{Id: projectID, Title: projectID, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
+	item := releaseapi.ProjectResponse{ID: projectID, Title: projectID, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
 	if row.LatestReleaseID != "" {
-		item.LatestReleaseId = &row.LatestReleaseID
+		item.LatestReleaseID = &row.LatestReleaseID
 	}
 	if row.ActiveDeploymentID != "" {
-		item.ActiveDeploymentId = &row.ActiveDeploymentID
+		item.ActiveDeploymentID = &row.ActiveDeploymentID
 	}
 	apitransport.WriteJSON(w, http.StatusOK, item)
 }
 
-func (m *Module) ListProjectWorkspaces(w http.ResponseWriter, r *http.Request, projectID string, params apigenapi.GenListProjectWorkspacesParams) {
+func (m *Module) ListProjectWorkspaces(w http.ResponseWriter, r *http.Request, projectID string, params releaseapi.PageParams) {
 	if m == nil || m.catalog == nil {
 		apitransport.WriteProblem(w, r, http.StatusNotFound, "PROJECT_NOT_FOUND", "Project not found", nil)
 		return
@@ -66,28 +66,28 @@ func (m *Module) ListProjectWorkspaces(w http.ResponseWriter, r *http.Request, p
 		apitransport.WriteProblem(w, r, http.StatusInternalServerError, "PROJECT_WORKSPACES_FAILED", "Project workspaces could not be loaded", nil)
 		return
 	}
-	items := make([]apigenapi.ProjectWorkspaceResponse, 0, len(rows))
+	items := make([]releaseapi.ProjectWorkspaceResponse, 0, len(rows))
 	for _, row := range rows {
-		item := apigenapi.ProjectWorkspaceResponse{Id: row.ID, Title: row.Title}
+		item := releaseapi.ProjectWorkspaceResponse{ID: row.ID, Title: row.Title}
 		if row.Description != "" {
 			item.Description = &row.Description
 		}
 		if row.ActiveServingStateID != "" {
-			item.ActiveServingStateId = &row.ActiveServingStateID
+			item.ActiveServingStateID = &row.ActiveServingStateID
 		}
 		items = append(items, item)
 	}
-	page, next, err := apitransport.KeysetPage(items, params.Limit, params.PageToken, func(item apigenapi.ProjectWorkspaceResponse) string { return item.Id })
+	page, next, err := apitransport.KeysetPage(items, params.Limit, params.PageToken, func(item releaseapi.ProjectWorkspaceResponse) string { return item.ID })
 	if err != nil {
 		apitransport.WriteProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", err.Error(), nil)
 		return
 	}
-	apitransport.WriteJSON(w, http.StatusOK, apigenapi.ProjectWorkspaceListResponse{Items: page, Page: apigenapi.PageInfo{NextCursor: next}})
+	apitransport.WriteJSON(w, http.StatusOK, releaseapi.ProjectWorkspaceListResponse{Items: page, Page: releaseapi.PageInfo{NextCursor: next}})
 }
 
-func (m *Module) ListManagedConnections(w http.ResponseWriter, r *http.Request, projectID string, params apigenapi.GenListManagedConnectionsParams) {
+func (m *Module) ListManagedConnections(w http.ResponseWriter, r *http.Request, projectID string, params releaseapi.PageParams) {
 	if m == nil || m.catalog == nil {
-		apitransport.WriteJSON(w, http.StatusOK, apigenapi.ManagedConnectionListResponse{Items: []apigenapi.ManagedConnectionResponse{}, Page: apigenapi.PageInfo{}})
+		apitransport.WriteJSON(w, http.StatusOK, releaseapi.ManagedConnectionListResponse{Items: []releaseapi.ManagedConnectionResponse{}, Page: releaseapi.PageInfo{}})
 		return
 	}
 	rows, err := m.catalog.ListConnections(r.Context(), projectID, m.environment)
@@ -95,23 +95,23 @@ func (m *Module) ListManagedConnections(w http.ResponseWriter, r *http.Request, 
 		apitransport.WriteProblem(w, r, http.StatusInternalServerError, "CONNECTION_LIST_FAILED", "Connections could not be loaded", nil)
 		return
 	}
-	items := make([]apigenapi.ManagedConnectionResponse, 0, len(rows))
+	items := make([]releaseapi.ManagedConnectionResponse, 0, len(rows))
 	for _, row := range rows {
-		item := apigenapi.ManagedConnectionResponse{Id: row.ID, ProjectId: projectID, Title: row.Title}
+		item := releaseapi.ManagedConnectionResponse{ID: row.ID, ProjectID: projectID, Title: row.Title}
 		if row.Description != "" {
 			item.Description = &row.Description
 		}
 		if row.ActiveRevisionID != "" {
-			item.ActiveRevisionId = &row.ActiveRevisionID
+			item.ActiveRevisionID = &row.ActiveRevisionID
 		}
 		items = append(items, item)
 	}
-	page, next, err := apitransport.KeysetPage(items, params.Limit, params.PageToken, func(item apigenapi.ManagedConnectionResponse) string { return item.Id })
+	page, next, err := apitransport.KeysetPage(items, params.Limit, params.PageToken, func(item releaseapi.ManagedConnectionResponse) string { return item.ID })
 	if err != nil {
 		apitransport.WriteProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", err.Error(), nil)
 		return
 	}
-	apitransport.WriteJSON(w, http.StatusOK, apigenapi.ManagedConnectionListResponse{Items: page, Page: apigenapi.PageInfo{NextCursor: next}})
+	apitransport.WriteJSON(w, http.StatusOK, releaseapi.ManagedConnectionListResponse{Items: page, Page: releaseapi.PageInfo{NextCursor: next}})
 }
 
 func (m *Module) GetManagedConnection(w http.ResponseWriter, r *http.Request, projectID, connectionID string) {
@@ -124,12 +124,12 @@ func (m *Module) GetManagedConnection(w http.ResponseWriter, r *http.Request, pr
 		apitransport.WriteProblem(w, r, http.StatusNotFound, "CONNECTION_NOT_FOUND", "Connection not found", nil)
 		return
 	}
-	item := apigenapi.ManagedConnectionResponse{Id: connectionID, ProjectId: projectID, Title: row.Title}
+	item := releaseapi.ManagedConnectionResponse{ID: connectionID, ProjectID: projectID, Title: row.Title}
 	if row.Description != "" {
 		item.Description = &row.Description
 	}
 	if row.ActiveRevisionID != "" {
-		item.ActiveRevisionId = &row.ActiveRevisionID
+		item.ActiveRevisionID = &row.ActiveRevisionID
 	}
 	apitransport.WriteJSON(w, http.StatusOK, item)
 }

@@ -20,7 +20,6 @@ import (
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/access/httpauth"
 	oidcauth "github.com/Yacobolo/leapview/internal/access/oidc"
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	api "github.com/Yacobolo/leapview/internal/platform/http/model"
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
@@ -988,9 +987,9 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
-func writeAPIProblem(w http.ResponseWriter, r *http.Request, status int, code, detail string, violations []apigenapi.ProblemFieldError) {
+func writeAPIProblem(w http.ResponseWriter, r *http.Request, status int, code, detail string, violations []api.ProblemFieldError) {
 	if violations == nil {
-		violations = []apigenapi.ProblemFieldError{}
+		violations = []api.ProblemFieldError{}
 	}
 	requestID := r.Header.Get("X-Request-ID")
 	if requestID == "" {
@@ -1007,9 +1006,9 @@ func writeAPIProblem(w http.ResponseWriter, r *http.Request, status int, code, d
 	}
 	w.Header().Set("X-Request-ID", requestID)
 	w.Header().Set("Content-Type", "application/problem+json")
-	writeJSON(w, status, apigenapi.ProblemDetails{
+	writeJSON(w, status, api.ProblemDetails{
 		Type: "https://leapview.dev/problems/" + strings.ToLower(code), Title: http.StatusText(status), Status: int32(status),
-		Detail: detail, Instance: r.URL.Path, Code: code, RequestId: requestID, Errors: violations,
+		Detail: detail, Instance: r.URL.Path, Code: code, RequestID: requestID, Errors: violations,
 	})
 }
 

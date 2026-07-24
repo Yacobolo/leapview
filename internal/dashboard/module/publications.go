@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	dashboardapi "github.com/Yacobolo/leapview/internal/dashboard/api"
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
 	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
 )
@@ -51,7 +51,7 @@ func (m *Module) PublicationEvents(ctx context.Context, publicationID string) ([
 	return m.publications.ListEvents(ctx, publicationID)
 }
 
-func (m *Module) PublicationDTO(row publication.Publication) apigenapi.DashboardPublicationResponse {
+func (m *Module) PublicationDTO(row publication.Publication) dashboardapi.PublicationResponse {
 	return m.dashboardPublicationDTO(row)
 }
 
@@ -65,11 +65,11 @@ func (m *Module) ListDashboardPublications(w http.ResponseWriter, r *http.Reques
 		apitransport.WriteProblem(w, r, http.StatusInternalServerError, "PUBLICATION_LIST_FAILED", "Dashboard publications could not be loaded", nil)
 		return
 	}
-	items := make([]apigenapi.DashboardPublicationResponse, 0, len(rows))
+	items := make([]dashboardapi.PublicationResponse, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, m.dashboardPublicationDTO(row))
 	}
-	writeJSON(w, http.StatusOK, apigenapi.DashboardPublicationListResponse{Items: items})
+	writeJSON(w, http.StatusOK, dashboardapi.PublicationListResponse{Items: items})
 }
 
 func (m *Module) GetDashboardPublication(w http.ResponseWriter, r *http.Request, workspaceID, name string) {
@@ -80,15 +80,15 @@ func (m *Module) GetDashboardPublication(w http.ResponseWriter, r *http.Request,
 	writeJSON(w, http.StatusOK, m.dashboardPublicationDTO(row))
 }
 
-func (m *Module) SuspendDashboardPublication(w http.ResponseWriter, r *http.Request, workspaceID, name string, _ apigenapi.GenSuspendDashboardPublicationHeaders) {
+func (m *Module) SuspendDashboardPublication(w http.ResponseWriter, r *http.Request, workspaceID, name string) {
 	m.mutateDashboardPublication(w, r, workspaceID, name, publication.ActionSuspend)
 }
 
-func (m *Module) ResumeDashboardPublication(w http.ResponseWriter, r *http.Request, workspaceID, name string, _ apigenapi.GenResumeDashboardPublicationHeaders) {
+func (m *Module) ResumeDashboardPublication(w http.ResponseWriter, r *http.Request, workspaceID, name string) {
 	m.mutateDashboardPublication(w, r, workspaceID, name, publication.ActionResume)
 }
 
-func (m *Module) RotateDashboardPublication(w http.ResponseWriter, r *http.Request, workspaceID, name string, _ apigenapi.GenRotateDashboardPublicationHeaders) {
+func (m *Module) RotateDashboardPublication(w http.ResponseWriter, r *http.Request, workspaceID, name string) {
 	m.mutateDashboardPublication(w, r, workspaceID, name, publication.ActionRotate)
 }
 
@@ -139,16 +139,16 @@ func (m *Module) writePublicationMutation(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, m.dashboardPublicationDTO(row))
 }
 
-func (m *Module) dashboardPublicationDTO(row publication.Publication) apigenapi.DashboardPublicationResponse {
+func (m *Module) dashboardPublicationDTO(row publication.Publication) dashboardapi.PublicationResponse {
 	publicPath := "/public/dashboards/" + row.PublicID
 	embedPath := "/embed/dashboards/" + row.PublicID
 	publicURL := m.absolutePublicURL(publicPath)
 	embedURL := m.absolutePublicURL(embedPath)
 	iframe := `<iframe src="` + html.EscapeString(embedURL) + `" title="` + html.EscapeString(row.Name) + `" loading="lazy" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe>`
-	dto := apigenapi.DashboardPublicationResponse{
-		Name: row.Name, WorkspaceId: row.WorkspaceID, ProjectId: row.ProjectID, Dashboard: row.Dashboard,
-		DefaultPage: row.DefaultPage, Status: apigenapi.DashboardPublicationStatus(row.Status()), Configured: row.Configured,
-		AllowedOrigins: append([]string(nil), row.AllowedOrigins...), PublicUrl: publicURL, EmbedUrl: embedURL, IframeSnippet: iframe,
+	dto := dashboardapi.PublicationResponse{
+		Name: row.Name, WorkspaceID: row.WorkspaceID, ProjectID: row.ProjectID, Dashboard: row.Dashboard,
+		DefaultPage: row.DefaultPage, Status: dashboardapi.PublicationStatus(row.Status()), Configured: row.Configured,
+		AllowedOrigins: append([]string(nil), row.AllowedOrigins...), PublicURL: publicURL, EmbedURL: embedURL, IFrameSnippet: iframe,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
 	optionalString := func(value string) *string {
@@ -158,7 +158,7 @@ func (m *Module) dashboardPublicationDTO(row publication.Publication) apigenapi.
 		copy := value
 		return &copy
 	}
-	dto.ActiveServingStateId = optionalString(row.ServingStateID)
+	dto.ActiveServingStateID = optionalString(row.ServingStateID)
 	dto.ConfiguredAt = optionalString(row.ConfiguredAt)
 	dto.DisabledAt = optionalString(row.DisabledAt)
 	dto.SuspendedAt = optionalString(row.SuspendedAt)

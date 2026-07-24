@@ -6,8 +6,8 @@ import (
 	"errors"
 	"net/http"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	"github.com/Yacobolo/leapview/internal/deployment"
+	deploymentapi "github.com/Yacobolo/leapview/internal/deployment/api"
 	"github.com/Yacobolo/leapview/internal/deployment/apiadapter"
 	deploymenthttp "github.com/Yacobolo/leapview/internal/deployment/http"
 	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
@@ -17,6 +17,8 @@ import (
 )
 
 var ErrPublicationForbidden = errors.New("publication deployment forbidden")
+
+type PageParams = deploymentapi.PageParams
 
 type ReleasePort interface {
 	Get(context.Context, string, string) (release.Release, error)
@@ -38,13 +40,13 @@ type APIConfig struct {
 	Jobs     JobStore
 }
 
-func (m *Module) CreateDeployment(w http.ResponseWriter, r *http.Request, project string, headers apigenapi.GenCreateDeploymentHeaders) {
-	var body apigenapi.DeploymentCreateRequest
+func (m *Module) CreateDeployment(w http.ResponseWriter, r *http.Request, project, idempotencyKey string) {
+	var body deploymentapi.CreateRequest
 	if err := apitransport.DecodeBody(w, r, &body); err != nil {
 		apitransport.WriteProblem(w, r, http.StatusBadRequest, "INVALID_JSON", err.Error(), nil)
 		return
 	}
-	m.createDeployment(w, r, project, body.ReleaseId, headers.IdempotencyKey, "")
+	m.createDeployment(w, r, project, body.ReleaseID, idempotencyKey, "")
 }
 
 func (m *Module) createDeployment(w http.ResponseWriter, r *http.Request, project, releaseID, idempotencyKey, rollbackOf string) {
@@ -134,7 +136,7 @@ func (m *Module) GetDeployment(w http.ResponseWriter, r *http.Request, project, 
 	apitransport.WriteJSON(w, http.StatusOK, deploymentResponse(row, releaseID, ""))
 }
 
-func (m *Module) ListDeployments(w http.ResponseWriter, r *http.Request, project string, params apigenapi.GenListDeploymentsParams) {
+func (m *Module) ListDeployments(w http.ResponseWriter, r *http.Request, project string, params deploymentapi.PageParams) {
 	if m.jobs.Coordinator == nil || m.api.Releases == nil {
 		apitransport.WriteProblem(w, r, http.StatusServiceUnavailable, "DEPLOYMENT_SERVICE_UNAVAILABLE", "Deployment service is unavailable", nil)
 		return
@@ -144,7 +146,7 @@ func (m *Module) ListDeployments(w http.ResponseWriter, r *http.Request, project
 		writeAPIError(w, r, err)
 		return
 	}
-	items := make([]apigenapi.DeploymentResponse, 0, len(ids))
+	items := make([]deploymentapi.Response, 0, len(ids))
 	for _, id := range ids {
 		releaseID, _, err := m.api.Releases.DeploymentRelease(r.Context(), project, id)
 		if err != nil {
@@ -156,15 +158,15 @@ func (m *Module) ListDeployments(w http.ResponseWriter, r *http.Request, project
 		}
 		items = append(items, deploymentResponse(row, releaseID, ""))
 	}
-	page, next, err := apitransport.KeysetPage(items, params.Limit, params.PageToken, func(item apigenapi.DeploymentResponse) string { return item.CreatedAt + "\x00" + item.Id })
+	page, next, err := apitransport.KeysetPage(items, params.Limit, params.PageToken, func(item deploymentapi.Response) string { return item.CreatedAt + "\x00" + item.ID })
 	if err != nil {
 		apitransport.WriteProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", err.Error(), nil)
 		return
 	}
-	apitransport.WriteJSON(w, http.StatusOK, apigenapi.DeploymentListResponse{Items: page, Page: apigenapi.PageInfo{NextCursor: next}})
+	apitransport.WriteJSON(w, http.StatusOK, deploymentapi.ListResponse{Items: page, Page: deploymentapi.PageInfo{NextCursor: next}})
 }
 
-func (m *Module) CancelDeployment(w http.ResponseWriter, r *http.Request, project, deploymentID string, _ apigenapi.GenCancelDeploymentHeaders) {
+func (m *Module) CancelDeployment(w http.ResponseWriter, r *http.Request, project, deploymentID string) {
 	if m.jobs.Coordinator == nil || m.api.Releases == nil || m.api.Jobs == nil {
 		apitransport.WriteProblem(w, r, http.StatusServiceUnavailable, "DEPLOYMENT_SERVICE_UNAVAILABLE", "Deployment service is unavailable", nil)
 		return
@@ -188,7 +190,7 @@ func (m *Module) CancelDeployment(w http.ResponseWriter, r *http.Request, projec
 	apitransport.WriteJSON(w, http.StatusAccepted, deploymentResponse(row, releaseID, ""))
 }
 
-func (m *Module) RollbackDeployment(w http.ResponseWriter, r *http.Request, project, deploymentID string, headers apigenapi.GenRollbackDeploymentHeaders) {
+func (m *Module) RollbackDeployment(w http.ResponseWriter, r *http.Request, project, deploymentID, idempotencyKey string) {
 	if m.api.Releases == nil {
 		apitransport.WriteProblem(w, r, http.StatusServiceUnavailable, "DEPLOYMENT_SERVICE_UNAVAILABLE", "Deployment service is unavailable", nil)
 		return
@@ -198,10 +200,10 @@ func (m *Module) RollbackDeployment(w http.ResponseWriter, r *http.Request, proj
 		writeAPIError(w, r, err)
 		return
 	}
-	m.createDeployment(w, r, project, releaseID, headers.IdempotencyKey, deploymentID)
+	m.createDeployment(w, r, project, releaseID, idempotencyKey, deploymentID)
 }
 
-func (m *Module) ListDeploymentEvents(w http.ResponseWriter, r *http.Request, project, deploymentID string, params apigenapi.GenListDeploymentEventsParams, _ apigenapi.GenListDeploymentEventsHeaders) {
+func (m *Module) ListDeploymentEvents(w http.ResponseWriter, r *http.Request, project, deploymentID string, params deploymentapi.PageParams) {
 	if m.api.Releases == nil || m.jobs.Coordinator == nil {
 		apitransport.WriteProblem(w, r, http.StatusServiceUnavailable, "DEPLOYMENT_SERVICE_UNAVAILABLE", "Deployment service is unavailable", nil)
 		return
@@ -247,21 +249,21 @@ func (m *Module) appendAPIEvent(ctx context.Context, deploymentID, eventType str
 	return err
 }
 
-func deploymentResponse(row apiadapter.Deployment, releaseID, actor string) apigenapi.DeploymentResponse {
-	status := apigenapi.DeploymentStatus(row.Status)
+func deploymentResponse(row apiadapter.Deployment, releaseID, actor string) deploymentapi.Response {
+	status := deploymentapi.Status(row.Status)
 	if row.Status == apiadapter.StatusPending {
-		status = apigenapi.DeploymentStatusQueued
+		status = deploymentapi.StatusQueued
 	}
-	result := apigenapi.DeploymentResponse{
-		Id: row.ID, ProjectId: row.Project, ReleaseId: releaseID, Environment: row.Environment, Status: status,
-		CreatedBy: actor, CreatedAt: row.CreatedAt, Targets: make([]apigenapi.DeploymentTargetResponse, 0, len(row.Targets)),
-		Connections: make([]apigenapi.DeploymentConnectionResponse, 0, len(row.Connections)),
+	result := deploymentapi.Response{
+		ID: row.ID, ProjectID: row.Project, ReleaseID: releaseID, Environment: row.Environment, Status: status,
+		CreatedBy: actor, CreatedAt: row.CreatedAt, Targets: make([]deploymentapi.TargetResponse, 0, len(row.Targets)),
+		Connections: make([]deploymentapi.ConnectionResponse, 0, len(row.Connections)),
 	}
 	for _, target := range row.Targets {
 		stateID := target.CandidateID
-		mapped := apigenapi.DeploymentTargetResponse{WorkspaceId: target.Workspace, ServingStateId: &stateID, Status: string(target.Status)}
+		mapped := deploymentapi.TargetResponse{WorkspaceID: target.Workspace, ServingStateID: &stateID, Status: string(target.Status)}
 		if target.PriorCandidateID != "" {
-			mapped.PriorServingStateId = &target.PriorCandidateID
+			mapped.PriorServingStateID = &target.PriorCandidateID
 		}
 		if target.Error != "" {
 			mapped.Error = &target.Error
@@ -269,9 +271,9 @@ func deploymentResponse(row apiadapter.Deployment, releaseID, actor string) apig
 		result.Targets = append(result.Targets, mapped)
 	}
 	for _, connection := range row.Connections {
-		mapped := apigenapi.DeploymentConnectionResponse{ConnectionId: connection.Connection, RevisionId: connection.RevisionID}
+		mapped := deploymentapi.ConnectionResponse{ConnectionID: connection.Connection, RevisionID: connection.RevisionID}
 		if connection.PriorRevisionID != "" {
-			mapped.PriorRevisionId = &connection.PriorRevisionID
+			mapped.PriorRevisionID = &connection.PriorRevisionID
 		}
 		result.Connections = append(result.Connections, mapped)
 	}

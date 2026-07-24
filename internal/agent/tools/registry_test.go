@@ -8,43 +8,20 @@ import (
 )
 
 func TestAPIGenOperationsUseGeneratedReadOnlyToolContracts(t *testing.T) {
-	operations := APIGenOperations()
-	if len(operations) != 25 {
-		t.Fatalf("APIGenOperations() count = %d, want 25", len(operations))
+	operations := testAPIGenOperations()
+	if len(operations) != 1 {
+		t.Fatalf("BuildAPIGenOperations() count = %d, want 1", len(operations))
 	}
-	operationsByName := make(map[string]APIGenOperation, len(operations))
-	for _, operation := range operations {
-		operationsByName[operation.Tool.Name] = operation
-		if operation.Tool.Effect != agenttool.EffectRead {
-			t.Fatalf("tool %q effect = %q, want read", operation.Tool.Name, operation.Tool.Effect)
-		}
-		if operation.Tool.OperationID != operation.Contract.OperationID {
-			t.Fatalf("tool %q operation = %q, registry operation = %q", operation.Tool.Name, operation.Tool.OperationID, operation.Contract.OperationID)
-		}
+	if operation := operations[0]; operation.Tool.OperationID != operation.Contract.OperationID {
+		t.Fatalf("tool operation = %q, registry operation = %q", operation.Tool.OperationID, operation.Contract.OperationID)
 	}
-	for name, operationID := range map[string]string{
-		"list_semantic_model_fields":   "listSemanticModelFields",
-		"query_semantic_model":         "querySemanticModel",
-		"explain_semantic_model_query": "explainSemanticModelQuery",
-	} {
-		operation, ok := operationsByName[name]
-		if !ok {
-			t.Fatalf("APIGenOperations() missing generated tool %q", name)
-		}
-		if operation.Tool.OperationID != operationID {
-			t.Fatalf("tool %q operation = %q, want %q", name, operation.Tool.OperationID, operationID)
-		}
-		if operation.Tool.Effect != agenttool.EffectRead {
-			t.Fatalf("tool %q effect = %q, want read", name, operation.Tool.Effect)
-		}
-	}
-	if !slices.Contains(APIGenToolNames(), "query_dashboard_page") {
-		t.Fatalf("APIGenToolNames() = %#v, want query_dashboard_page", APIGenToolNames())
+	if !slices.Contains(APIGenToolNames(operations), "list_dashboards") {
+		t.Fatalf("APIGenToolNames() = %#v, want list_dashboards", APIGenToolNames(operations))
 	}
 }
 
 func TestWorkspaceBindingIsTrustedContext(t *testing.T) {
-	for _, operation := range APIGenOperations() {
+	for _, operation := range testAPIGenOperations() {
 		if operation.Tool.Name != "list_dashboards" {
 			continue
 		}
@@ -59,4 +36,27 @@ func TestWorkspaceBindingIsTrustedContext(t *testing.T) {
 		t.Fatal("list_dashboards has no workspace binding")
 	}
 	t.Fatal("list_dashboards tool not found")
+}
+
+func testAPIGenOperations() []APIGenOperation {
+	contracts := map[string]OperationContract{
+		"listDashboards": {
+			OperationID: "listDashboards", Method: "GET", Path: "/api/v1/workspaces/{workspace}/dashboards",
+			Protected: true, AuthzMode: "privilege",
+			Extensions: map[string]any{"x-authz": map[string]any{"privilege": "VIEW_ITEM"}},
+		},
+		"mutateDashboard": {
+			OperationID: "mutateDashboard", Method: "DELETE", Path: "/api/v1/workspaces/{workspace}/dashboards/{dashboard}",
+			Protected: true, AuthzMode: "privilege",
+			Extensions: map[string]any{"x-authz": map[string]any{"privilege": "VIEW_ITEM"}},
+		},
+	}
+	tools := map[string]agenttool.Contract{
+		"list_dashboards": {
+			Name: "list_dashboards", OperationID: "listDashboards", Effect: agenttool.EffectRead,
+			Bindings: []agenttool.Binding{{WireName: "workspace", Mode: "context", ContextKey: "workspace"}},
+		},
+		"mutate_dashboard": {Name: "mutate_dashboard", OperationID: "mutateDashboard", Effect: agenttool.EffectRead},
+	}
+	return BuildAPIGenOperations(contracts, tools)
 }

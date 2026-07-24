@@ -73,10 +73,6 @@ func TestCapabilitiesDoNotImportApplicationComposition(t *testing.T) {
 			continue
 		}
 		for _, imported := range file.imports {
-			if imported == modulePath+"/internal/app/api/gen" ||
-				strings.HasPrefix(imported, modulePath+"/internal/app/api/gen/") {
-				continue
-			}
 			if imported == modulePath+"/internal/app" || strings.HasPrefix(imported, modulePath+"/internal/app/") {
 				t.Errorf("%s imports application composition package %s", file.path, imported)
 			}

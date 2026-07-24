@@ -619,7 +619,7 @@ func TestAPIGenAgentToolsExposeTypeSpecArgumentNamesAndBodyFields(t *testing.T) 
 }
 
 func TestAPIGenAgentOperationsDeclareOutputMetadata(t *testing.T) {
-	for _, operation := range agenttools.APIGenOperations() {
+	for _, operation := range agentAPIGenOperations() {
 		if operation.Tool.Output.Mode == "" || len(operation.Tool.OutputSchema) == 0 {
 			t.Fatalf("agent operation %s (%s) has no typed output contract", operation.Contract.OperationID, operation.Tool.Name)
 		}
@@ -630,7 +630,7 @@ func TestAPIGenAgentOperationsDeclareOutputMetadata(t *testing.T) {
 }
 
 func TestAPIGenVisualToolUsesGeneratedUnionProjection(t *testing.T) {
-	for _, operation := range agenttools.APIGenOperations() {
+	for _, operation := range agentAPIGenOperations() {
 		if operation.Tool.Name != "query_dashboard_visual" {
 			continue
 		}
@@ -1135,7 +1135,7 @@ func TestRuntimeAgentToolsMatchPolicyRegistry(t *testing.T) {
 	var runtimeTools []agentcore.ToolDefinition
 	runtimeTools = append(runtimeTools, agentVisualToolsForTest(server, scope)...)
 	runtimeTools = append(runtimeTools, agentAPIGenToolsForTest(server, scope)...)
-	if got, want := sortedToolNames(runtimeTools), agenttools.ToolNames(); !reflect.DeepEqual(got, want) {
+	if got, want := sortedToolNames(runtimeTools), agenttools.ToolNames(agentAPIGenOperations()); !reflect.DeepEqual(got, want) {
 		t.Fatalf("runtime tools = %#v, policy registry = %#v", got, want)
 	}
 }

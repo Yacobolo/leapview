@@ -649,6 +649,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			Database: database, Model: moduleWorkflow.agentConfig,
 			Service: moduleWorkflow.agent, Jobs: platform.asyncJobs, DefaultWorkspaceID: policy.defaultWorkspaceID,
 			ProductName:      brand.Name,
+			APIGenOperations: agentAPIGenOperations(),
 			RunWorkloadClass: string(workloadmodule.BackgroundClass), GlobalWorkspaceID: workloadmodule.GlobalWorkspace,
 			Search: routes.workspaceModule,
 			Environment: func(r *http.Request) string {
@@ -810,7 +811,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		defaultEnvironment: policy.defaultEnvironment, managedDataTus: policy.managedDataTus,
 		queryAuditEvents: runtime.queryAuditEvents,
 	}
-	apiGenAuthorizer, err := routes.accessModule.APIGenAuthorizer(accessmodule.APIGenObjectResolvers{
+	apiGenAuthorizer, err := routes.accessModule.APIGenAuthorizer(accessAPIGenOperationContracts(), accessmodule.APIGenObjectResolvers{
 		Dashboard:      dashboardmodule.DashboardObjectRefs,
 		SemanticModel:  dashboardmodule.SemanticDatasetObjectRefs,
 		WorkspaceAsset: workspacemodule.AssetObjectRefs,
