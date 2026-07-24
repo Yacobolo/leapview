@@ -152,3 +152,63 @@ test('filter controller ignores rejection acknowledgements for another mutation'
   expect(controller.projected.appliedControls.state.expression).toEqual(setExpression('CA'))
   expect(controller.pending).toBe(true)
 })
+
+test('filter controller projects binding and scope resets to compiled defaults', () => {
+  const sent: DashboardFilterCommand[] = []
+  const controller = new DashboardFilterController(command => sent.push(command), () => 'reset-mutation')
+  controller.setDefaults({
+    state: setExpression('SP'),
+    category: unfiltered,
+  })
+  const current = state(9)
+  current.appliedControls.state = {
+    expression: setExpression('CA'),
+    resolvedExpression: setExpression('CA'),
+  }
+  current.appliedControls.category = {
+    expression: setExpression('books'),
+    resolvedExpression: setExpression('books'),
+  }
+  controller.reconcile(current)
+
+  controller.resetBinding('state')
+  expect(controller.projected.appliedControls.state.expression).toEqual(setExpression('SP'))
+  expect(sent[0]).toMatchObject({
+    kind: 'mutate',
+    operation: 'reset_binding',
+    bindingKey: 'state',
+    baseRevision: 9,
+  })
+
+  controller.reconcile({
+    ...current,
+    revision: 10,
+  })
+  controller.reset('page', ['category', 'state'])
+  expect(controller.projected.appliedControls.state.expression).toEqual(setExpression('SP'))
+  expect(controller.projected.appliedControls.category.expression).toEqual(unfiltered)
+  expect(sent[1]).toMatchObject({
+    kind: 'reset',
+    resetScope: 'page',
+    bindingKeys: ['category', 'state'],
+    baseRevision: 10,
+  })
+})
+
+test('filter controller keeps deferred resets in the draft until apply', () => {
+  const controller = new DashboardFilterController(() => {}, () => 'reset-draft')
+  controller.setApplicationMode('deferred')
+  controller.setDefaults({ state: setExpression('SP') })
+  const current = state(3)
+  current.appliedControls.state = {
+    expression: setExpression('CA'),
+    resolvedExpression: setExpression('CA'),
+  }
+  controller.reconcile(current)
+
+  controller.resetBinding('state')
+
+  expect(controller.projected.appliedControls.state.expression).toEqual(setExpression('CA'))
+  expect(controller.projected.draftControls.state).toEqual(setExpression('SP'))
+  expect(controller.projected.dirtyBindings).toEqual(['state'])
+})

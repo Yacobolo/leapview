@@ -26,6 +26,7 @@ export class DashboardFilterController {
   private queue: PendingCommand[] = []
   private inFlight: DashboardFilterCommand | null = null
   private mode: 'immediate' | 'deferred' = 'immediate'
+  private defaults: Record<string, DashboardFilterExpression> = {}
 
   constructor(
     private readonly send: CommandSink,
@@ -34,6 +35,12 @@ export class DashboardFilterController {
 
   setApplicationMode(mode: 'immediate' | 'deferred') {
     this.mode = mode
+  }
+
+  setDefaults(defaults: Record<string, DashboardFilterExpression>) {
+    this.defaults = Object.fromEntries(
+      Object.entries(defaults).map(([key, expression]) => [key, cloneExpression(expression)]),
+    )
   }
 
   reconcile(state: DashboardFilterState) {
@@ -133,7 +140,9 @@ export class DashboardFilterController {
 
   private projectCommand(command: PendingCommand | DashboardFilterCommand) {
     if (command.kind === 'mutate' && command.bindingKey) {
-      const expression = optimisticExpression(command, this.optimistic, command.bindingKey)
+      const expression = command.operation === 'reset_binding'
+        ? cloneExpression(this.defaults[command.bindingKey] ?? { kind: 'unfiltered' })
+        : optimisticExpression(command)
       if (this.mode === 'deferred') {
         this.optimistic.draftControls[command.bindingKey] = expression
         if (!this.optimistic.dirtyBindings.includes(command.bindingKey)) {
@@ -143,6 +152,23 @@ export class DashboardFilterController {
       }
       const current = this.optimistic.appliedControls[command.bindingKey]
       this.optimistic.appliedControls[command.bindingKey] = optimisticApplied(current, expression)
+      return
+    }
+    if (command.kind === 'reset') {
+      for (const bindingKey of command.bindingKeys) {
+        const expression = cloneExpression(this.defaults[bindingKey] ?? { kind: 'unfiltered' })
+        if (this.mode === 'deferred') {
+          this.optimistic.draftControls[bindingKey] = expression
+          if (!this.optimistic.dirtyBindings.includes(bindingKey)) {
+            this.optimistic.dirtyBindings = [...this.optimistic.dirtyBindings, bindingKey].sort()
+          }
+          continue
+        }
+        this.optimistic.appliedControls[bindingKey] = optimisticApplied(
+          this.optimistic.appliedControls[bindingKey],
+          expression,
+        )
+      }
       return
     }
     if (command.kind === 'cancel') {
@@ -167,18 +193,12 @@ export class DashboardFilterController {
 
 function optimisticExpression(
   command: MutateCommand,
-  state: DashboardFilterState,
-  bindingKey: string,
 ): DashboardFilterExpression {
   switch (command.operation) {
     case 'set':
       return cloneExpression(command.expression ?? { kind: 'unfiltered' })
     case 'clear':
       return { kind: 'unfiltered' }
-    case 'reset_binding':
-      return cloneExpression(
-        state.appliedControls[bindingKey]?.expression ?? { kind: 'unfiltered' },
-      )
     default:
       return { kind: 'unfiltered' }
   }
