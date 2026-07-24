@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	apihttpmiddleware "github.com/Yacobolo/leapview/internal/api/httpmiddleware"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	"github.com/Yacobolo/leapview/internal/dashboard/command"
 	lddatastar "github.com/Yacobolo/leapview/internal/dashboard/datastar"
@@ -18,7 +18,7 @@ import (
 	queryauthz "github.com/Yacobolo/leapview/internal/dashboard/queryauthz"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	reportui "github.com/Yacobolo/leapview/internal/dashboard/ui"
-	"github.com/Yacobolo/leapview/internal/dataquery"
+	apihttpmiddleware "github.com/Yacobolo/leapview/internal/platform/http/middleware"
 	"github.com/go-chi/chi/v5"
 )
 

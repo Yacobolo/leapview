@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	analyticsresource "github.com/Yacobolo/leapview/internal/analytics/resource"
-	"github.com/Yacobolo/leapview/internal/ui"
 	"github.com/Yacobolo/leapview/internal/workload"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
 )
 
 type Service struct {

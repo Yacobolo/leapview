@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/dashboard/report"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
+	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
 )
 
 func TestCompiledVisualizationResultShapes(t *testing.T) {

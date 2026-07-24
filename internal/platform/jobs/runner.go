@@ -8,9 +8,33 @@ import (
 	"log/slog"
 	"sync"
 	"time"
-
-	"github.com/Yacobolo/leapview/internal/workload"
 )
+
+const (
+	WorkloadClassBackground = "background"
+	WorkloadClassControl    = "control"
+)
+
+type AdmissionRequest struct {
+	Class       string
+	WorkspaceID string
+	Operation   string
+}
+
+type AdmissionLease interface {
+	Context() context.Context
+	Release()
+}
+
+type Admitter interface {
+	Acquire(context.Context, AdmissionRequest) (AdmissionLease, error)
+}
+
+type AdmitterFunc func(context.Context, AdmissionRequest) (AdmissionLease, error)
+
+func (f AdmitterFunc) Acquire(ctx context.Context, request AdmissionRequest) (AdmissionLease, error) {
+	return f(ctx, request)
+}
 
 type Handler interface {
 	Kind() string
@@ -33,7 +57,7 @@ func (h HandlerFunc) Handle(ctx context.Context, job Job) error {
 
 type RunnerConfig struct {
 	Repository   Repository
-	Workload     workload.Admitter
+	Admission    Admitter
 	Handlers     []Handler
 	LeaseTimeout time.Duration
 	PollInterval time.Duration
@@ -44,7 +68,7 @@ type RunnerConfig struct {
 // persistence. Capability handlers own payload decoding and business behavior.
 type Runner struct {
 	repository   Repository
-	workload     workload.Admitter
+	admission    Admitter
 	handlers     map[string]Handler
 	leaseTimeout time.Duration
 	pollInterval time.Duration
@@ -52,7 +76,7 @@ type Runner struct {
 }
 
 func NewRunner(config RunnerConfig) (*Runner, error) {
-	if config.Repository == nil || config.Workload == nil {
+	if config.Repository == nil || config.Admission == nil {
 		return nil, errors.New("job repository and workload controller are required")
 	}
 	leaseTimeout := config.LeaseTimeout
@@ -77,13 +101,13 @@ func NewRunner(config RunnerConfig) (*Runner, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Runner{repository: config.Repository, workload: config.Workload, handlers: handlers, leaseTimeout: leaseTimeout, pollInterval: pollInterval, logger: logger}, nil
+	return &Runner{repository: config.Repository, admission: config.Admission, handlers: handlers, leaseTimeout: leaseTimeout, pollInterval: pollInterval, logger: logger}, nil
 }
 
 func (r *Runner) Run(ctx context.Context) {
 	owner := fmt.Sprintf("leapview-jobs-%d", time.Now().UnixNano())
 	var pumps sync.WaitGroup
-	for _, class := range []workload.Class{workload.Control, workload.Background} {
+	for _, class := range []string{WorkloadClassControl, WorkloadClassBackground} {
 		class := class
 		pumps.Add(1)
 		go func() {
@@ -94,7 +118,7 @@ func (r *Runner) Run(ctx context.Context) {
 	pumps.Wait()
 }
 
-func (r *Runner) runPump(ctx context.Context, owner string, class workload.Class) {
+func (r *Runner) runPump(ctx context.Context, owner, class string) {
 	poll := time.NewTicker(r.pollInterval)
 	defer poll.Stop()
 	for {
@@ -121,8 +145,8 @@ func (r *Runner) runPump(ctx context.Context, owner string, class workload.Class
 	}
 }
 
-func (r *Runner) dispatchCandidate(ctx context.Context, owner string, class workload.Class, candidate Job) {
-	lease, err := r.workload.Acquire(ctx, workload.Request{Class: class, WorkspaceID: candidate.WorkspaceID, Operation: candidate.Kind})
+func (r *Runner) dispatchCandidate(ctx context.Context, owner, class string, candidate Job) {
+	lease, err := r.admission.Acquire(ctx, AdmissionRequest{Class: class, WorkspaceID: candidate.WorkspaceID, Operation: candidate.Kind})
 	if err != nil {
 		return
 	}

@@ -14,13 +14,14 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/api"
-	"github.com/Yacobolo/leapview/internal/assetnav"
-	"github.com/Yacobolo/leapview/internal/catalog"
-	"github.com/Yacobolo/leapview/internal/ui"
-	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
+	accessapi "github.com/Yacobolo/leapview/internal/access/api"
+	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
 	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/Yacobolo/leapview/internal/workspace/api"
+	"github.com/Yacobolo/leapview/internal/workspace/assetnav"
 	workspacedatastar "github.com/Yacobolo/leapview/internal/workspace/datastar"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
+	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
@@ -1301,10 +1302,10 @@ func assetLineageEndpointIDs(edges []workspace.AssetEdgeView, assetID string, up
 	return out
 }
 
-func apiRoleDTOs(rows []workspace.RoleView) []api.RoleResponse {
-	out := make([]api.RoleResponse, 0, len(rows))
+func apiRoleDTOs(rows []workspace.RoleView) []accessapi.RoleResponse {
+	out := make([]accessapi.RoleResponse, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, api.RoleResponse{Name: row.Name, Privileges: row.Privileges})
+		out = append(out, accessapi.RoleResponse{Name: row.Name, Privileges: row.Privileges})
 	}
 	return out
 }

@@ -4,13 +4,13 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	"github.com/Yacobolo/leapview/internal/dashboard/command"
 	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
 	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
 	queryauthz "github.com/Yacobolo/leapview/internal/dashboard/queryauthz"
 	dashboardstream "github.com/Yacobolo/leapview/internal/dashboard/stream"
-	"github.com/Yacobolo/leapview/internal/dataquery"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	"github.com/Yacobolo/leapview/internal/workload"
 )
 

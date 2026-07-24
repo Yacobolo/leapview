@@ -6,7 +6,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
-	"github.com/Yacobolo/leapview/internal/queryruntime"
+	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
 )
 
 type runtimeReadiness interface {

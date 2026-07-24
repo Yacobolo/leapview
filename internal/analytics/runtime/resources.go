@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/analytics/arrowquery"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	analyticsmaterialize "github.com/Yacobolo/leapview/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	"github.com/Yacobolo/leapview/internal/analytics/resource"
-	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/platform/transaction"
 )
 

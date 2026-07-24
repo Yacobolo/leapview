@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
-	apitransport "github.com/Yacobolo/leapview/internal/api/transport"
+	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
+	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
 )
 
 func (m *Module) PublicationsConfigured() bool {

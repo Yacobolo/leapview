@@ -1,0 +1,705 @@
+package signals
+
+import (
+	"fmt"
+	"net/url"
+	"sort"
+	"strings"
+
+	"github.com/Yacobolo/leapview/internal/agent"
+	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
+	"github.com/Yacobolo/leapview/internal/dashboard"
+	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
+	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	visualizationruntime "github.com/Yacobolo/leapview/internal/dashboard/visualization/runtime"
+	workspaceview "github.com/Yacobolo/leapview/internal/workspace"
+)
+
+const (
+	RouteDashboard       RouteKind = "dashboard"
+	RouteCatalog         RouteKind = "catalog"
+	RouteChat            RouteKind = "chat"
+	RouteWorkspace       RouteKind = "workspace"
+	RouteWorkspaceAsset  RouteKind = "workspace_asset"
+	RouteConnections     RouteKind = "connections"
+	RouteConnectionAsset RouteKind = "connection_asset"
+	RouteData            RouteKind = "data"
+	RouteAdmin           RouteKind = "admin"
+	RouteLogin           RouteKind = "login"
+)
+
+type AdminStorageData struct {
+	CatalogPath        string
+	DataPath           string
+	Status             string
+	DatabaseCount      int
+	CatalogSizeBytes   int64
+	CatalogSizeLabel   string
+	DataSizeBytes      int64
+	DataSizeLabel      string
+	TotalSizeBytes     int64
+	TotalSizeLabel     string
+	TotalDataSizeBytes int64
+	TotalDataSizeLabel string
+	TableCount         int
+	SnapshotCount      int
+	DataFileCount      int
+	Databases          []AdminStorageDatabase
+	Tables             []AdminStorageTable
+	Snapshots          []AdminStorageSnapshot
+	ServingStates      []AdminStorageServingState
+	Warnings           []string
+}
+
+type AdminStorageDatabase struct {
+	ID        string
+	Name      string
+	Path      string
+	ModelID   string
+	ModelName string
+	SizeBytes int64
+	SizeLabel string
+}
+
+type AdminStorageTable struct {
+	DatabaseID    string
+	DatabaseName  string
+	DatabasePath  string
+	ModelID       string
+	ModelName     string
+	Schema        string
+	Name          string
+	Type          string
+	TableID       int64
+	TableUUID     string
+	DuckLakePath  string
+	BeginSnapshot int64
+	EndSnapshot   int64
+	RowCount      int64
+	RowCountLabel string
+	ColumnCount   int
+	FileCount     int
+	SizeBytes     int64
+	SizeLabel     string
+	Columns       []AdminStorageColumn
+	Files         []AdminStorageFile
+	History       []AdminStorageTableHistory
+	ServingStates []AdminStorageServingState
+}
+
+type AdminStorageColumn struct {
+	ID                  int64
+	Name                string
+	Type                string
+	Ordinal             int
+	Nullable            string
+	Default             string
+	InitialDefault      string
+	DefaultValueType    string
+	DefaultValueDialect string
+	BeginSnapshot       int64
+	ContainsNull        string
+	ContainsNaN         string
+	MinValue            string
+	MaxValue            string
+	ExtraStats          string
+}
+
+type AdminStorageFile struct {
+	ID               int64
+	Path             string
+	Format           string
+	RecordCount      int64
+	RecordCountLabel string
+	SizeBytes        int64
+	SizeLabel        string
+	BeginSnapshot    int64
+	EndSnapshot      int64
+}
+
+type AdminStorageTableHistory struct {
+	SnapshotID    int64
+	Time          string
+	SchemaVersion int64
+	Source        string
+	Changes       string
+	Author        string
+	Message       string
+	ExtraInfo     string
+}
+
+type AdminStorageSnapshot struct {
+	ID                int64
+	Time              string
+	SchemaVersion     int64
+	Author            string
+	Message           string
+	Changes           string
+	ExtraInfo         string
+	Protected         bool
+	ServingStateCount int
+}
+
+type AdminStorageServingState struct {
+	WorkspaceID    string
+	Environment    string
+	ServingStateID string
+	Status         string
+	SnapshotID     int64
+	Digest         string
+	Active         bool
+	ActivatedAt    string
+}
+
+type WorkspaceAccessResponse struct {
+	Workspace    workspaceview.WorkspaceView     `json:"workspace"`
+	ObjectType   string                          `json:"objectType,omitempty"`
+	ObjectID     string                          `json:"objectId,omitempty"`
+	ObjectTitle  string                          `json:"objectTitle,omitempty"`
+	Mode         string                          `json:"mode,omitempty"`
+	Roles        []workspaceview.RoleView        `json:"roles"`
+	Bindings     []workspaceview.RoleBindingView `json:"bindings"`
+	Candidates   []WorkspaceAccessCandidate      `json:"candidates"`
+	CanManage    bool                            `json:"canManage"`
+	Search       string                          `json:"search"`
+	SearchStatus WorkspaceAccessSearchStatus     `json:"searchStatus"`
+	Status       WorkspaceAccessStatus           `json:"status"`
+}
+
+type ChatViewState struct {
+	Agent   ChatSignal
+	Visuals map[string]visualizationir.VisualizationEnvelope
+}
+
+func ChatTranscriptItems(items []agent.ChatTranscriptItem) []ChatTranscriptItemSignal {
+	out := make([]ChatTranscriptItemSignal, 0, len(items))
+	for _, item := range items {
+		out = append(out, ChatTranscriptItem(item))
+	}
+	return out
+}
+
+func ChatTranscriptItem(item agent.ChatTranscriptItem) ChatTranscriptItemSignal {
+	out := ChatTranscriptItemSignal{
+		ID:             item.ID,
+		Kind:           item.Kind,
+		Text:           optionalValue(item.Text),
+		Markdown:       optionalValue(item.Markdown),
+		ToolCallID:     optionalValue(item.ToolCallID),
+		Name:           optionalValue(item.Name),
+		Title:          optionalValue(item.Title),
+		Status:         optionalValue(item.Status),
+		Summary:        optionalValue(item.Summary),
+		ResultSummary:  optionalValue(item.ResultSummary),
+		InputJSON:      optionalValue(item.InputJSON),
+		InputFormat:    optionalValue(item.InputFormat),
+		ArgumentsJSON:  optionalValue(item.ArgumentsJSON),
+		ResultJSON:     optionalValue(item.ResultJSON),
+		ResultFormat:   optionalValue(item.ResultFormat),
+		Error:          optionalValue(item.Error),
+		ConversationID: optionalValue(item.ConversationID),
+		RunID:          optionalValue(item.RunID),
+		CreatedAt:      optionalValue(item.CreatedAt),
+	}
+	if len(item.References) > 0 {
+		references := make([]AgentReferenceSignal, 0, len(item.References))
+		for _, reference := range item.References {
+			references = append(references, agentReferenceSignalFromTurn(reference))
+		}
+		out.References = &references
+	}
+	if item.Artifact != nil {
+		out.Artifact = &ChatArtifactSignal{
+			Type:    item.Artifact.Type,
+			ID:      item.Artifact.ID,
+			Summary: optionalValue(item.Artifact.Summary),
+		}
+	}
+	return out
+}
+
+func agentReferenceSignalFromTurn(reference agent.TurnReference) AgentReferenceSignal {
+	locations := make([]AgentReferenceLocationSignal, 0, len(reference.Locations))
+	for _, location := range reference.Locations {
+		locations = append(locations, AgentReferenceLocationSignal{
+			DashboardID:   optionalValue(location.DashboardID),
+			DashboardName: optionalValue(location.DashboardName),
+			PageID:        optionalValue(location.PageID),
+			PageName:      optionalValue(location.PageName),
+			Href:          location.Href,
+		})
+	}
+	hierarchy := append([]string(nil), reference.Hierarchy...)
+	if len(hierarchy) == 0 {
+		hierarchy = referenceHierarchyFromTurn(reference)
+	}
+	return AgentReferenceSignal{
+		Reference: AgentReferenceKeySignal{
+			WorkspaceID: reference.Reference.WorkspaceID,
+			Type:        reference.Reference.Type,
+			ID:          reference.Reference.ID,
+		},
+		Name:        reference.Name,
+		Description: optionalValue(reference.Description),
+		VisualType:  optionalValue(reference.VisualType),
+		Workspace:   AgentReferenceWorkspaceSignal{ID: reference.Workspace.ID, Name: reference.Workspace.Name},
+		Hierarchy:   hierarchy,
+		Href:        reference.Href,
+		Locations:   locations,
+		Context:     append([]string(nil), reference.Context...),
+	}
+}
+
+func referenceHierarchyFromTurn(reference agent.TurnReference) []string {
+	hierarchy := make([]string, 0, 3)
+	appendUnique := func(value string) {
+		value = strings.TrimSpace(value)
+		if value != "" && (len(hierarchy) == 0 || hierarchy[len(hierarchy)-1] != value) {
+			hierarchy = append(hierarchy, value)
+		}
+	}
+	appendUnique(reference.Workspace.Name)
+	if len(reference.Locations) > 0 {
+		location := reference.Locations[0]
+		if reference.Reference.Type == "page" || reference.Reference.Type == "visual" {
+			appendUnique(location.DashboardName)
+		}
+		if reference.Reference.Type == "visual" {
+			appendUnique(location.PageName)
+		}
+	}
+	return hierarchy
+}
+
+func DashboardInitialEnvelope(clientID, streamInstanceID string, catalog dashboard.Catalog, report dashboarddefinition.Definition, model *semanticmodel.Model, definitions map[string]visualizationdefinition.Definition, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters) DashboardEnvelope {
+	activePage = activePage.WithDefaults()
+	tableRequest := DefaultTableRequest(report, activePage)
+	initialFilters = report.NormalizeFiltersForPage(activePage.ID, initialFilters).WithDefaults()
+	modelID, modelTitle := "", ""
+	if model != nil {
+		modelID = model.Name
+		modelTitle = model.Title
+	}
+	return DashboardEnvelope{
+		Agent: ChatSignal{
+			Conversations: []ChatConversationSummary{},
+			Transcript:    []ChatTranscriptItemSignal{},
+			Status: ChatStatus{
+				Enabled: false,
+				Running: false,
+				Error:   optionalValue("Agent is not configured"),
+			},
+			Composer: ComposerSignal{
+				Disabled:    true,
+				Placeholder: "Agent is not configured",
+			},
+		},
+		AgentContext: AgentContextSignal{
+			Surface:        "dashboard",
+			WorkspaceID:    catalog.Workspace.ID,
+			DashboardID:    report.ID,
+			DashboardTitle: report.Title,
+			PageID:         activePage.ID,
+			PageTitle:      activePage.Title,
+			ModelID:        modelID,
+			Filters:        DashboardFiltersFromDashboard(initialFilters),
+			ReferenceLimit: agent.MaxTurnReferences,
+			References:     []AgentReferenceSignal{},
+		},
+		AgentReferenceSearch: AgentReferenceSearchSignal{
+			Results: []AgentReferenceSignal{},
+		},
+		AgentVisuals: map[string]visualizationir.VisualizationEnvelope{},
+		Chrome:       ChromeSignal{Sidebar: sidebarConfig(catalog, "workspaces", report.ID, workspaceDisplayTitle(catalog), report.Title, activePage.Title, modelID, modelTitle, true, "", strings.TrimSpace(catalog.Workspace.ID) != "")},
+		Page: DashboardPageSignal{
+			Kind:           RouteDashboard,
+			Presentation:   "app",
+			Title:          report.Title,
+			Description:    optionalValue(report.Description),
+			DashboardID:    report.ID,
+			DashboardTitle: report.Title,
+			PageID:         activePage.ID,
+			PageTitle:      activePage.Title,
+			HeaderDetail:   ReportPageHeaderDetail(pages, activePage),
+			ModelID:        modelID,
+			ModelTitle:     modelTitle,
+			Canvas:         DashboardPageCanvasFromDashboard(activePage.Canvas),
+			Grid:           DashboardPageGridFromDashboard(activePage.Grid),
+			Pages:          dashboardPageNav(catalog.Workspace.ID, report.ID, pages, activePage),
+			Components:     dashboardComponents(activePage),
+		},
+		Runtime: RouteRuntimeSignal{
+			Kind:             RouteDashboard,
+			ClientID:         optionalValue(clientID),
+			StreamInstanceID: optionalValue(streamInstanceID),
+			DashboardID:      optionalValue(report.ID),
+			PageID:           optionalValue(activePage.ID),
+			ModelID:          optionalValue(modelID),
+		},
+		FilterConfig:               ReportFilterConfigsFromReport(report.FilterConfigForPage(activePage.ID)),
+		Filters:                    DashboardFiltersFromDashboard(initialFilters),
+		URLParams:                  report.URLParamsFromFiltersForPage(activePage.ID, initialFilters),
+		URLParamShape:              report.URLParamShapeForPage(activePage.ID),
+		FilterOptions:              map[string][]DashboardFilterOption{},
+		InteractionCommand:         DashboardInteractionCommandFromDashboard(dashboard.InteractionCommand{Toggle: true, Mappings: []dashboard.InteractionCommandMapping{}}),
+		VisualWindowCommand:        DashboardVisualWindowRequestFromDashboard(tableRequest),
+		VisualSpatialWindowCommand: DashboardVisualSpatialWindowRequestFromDashboard(dashboard.SpatialWindowRequest{}),
+		Visuals:                    InitialVisualizationEnvelopes(definitions, activePage, tableRequest),
+		Status: DashboardStatusFromDashboard(dashboard.Status{
+			Loading:       false,
+			Error:         "",
+			LastUpdated:   "",
+			SetupRequired: false,
+		}),
+	}
+}
+
+func ChatInitialEnvelope(catalog dashboard.Catalog, workspaceID, roleLabel, view string, state ChatViewState) ChatEnvelope {
+	chrome := ChromeSignal{Sidebar: SidebarConfigForChat(catalog, workspaceID, roleLabel, view)}
+	AttachChatSidebar(&chrome.Sidebar, state.Agent)
+	return ChatEnvelope{
+		Chrome:  chrome,
+		Page:    ChatPage(workspaceID, view, state.Agent),
+		Runtime: RouteRuntimeSignal{Kind: RouteChat, WorkspaceID: optionalValue(workspaceID)},
+		Agent:   state.Agent,
+		AgentContext: AgentContextSignal{
+			Surface:        "chat",
+			WorkspaceID:    workspaceID,
+			Filters:        DashboardFilters{Controls: map[string]DashboardFilterControl{}, Selections: []DashboardInteractionSelection{}},
+			ReferenceLimit: agent.MaxTurnReferences,
+			References:     []AgentReferenceSignal{},
+		},
+		AgentReferenceSearch: AgentReferenceSearchSignal{Results: []AgentReferenceSignal{}},
+		Visuals:              state.Visuals,
+	}
+}
+
+func ChatPage(workspaceID, view string, agent ChatSignal) ChatPageSignal {
+	if strings.TrimSpace(view) == "" {
+		view = "conversation"
+	}
+	return ChatPageSignal{
+		Kind:        RouteChat,
+		View:        view,
+		Title:       "Chats",
+		Description: "Ask read-only questions about dashboards, semantic models, measures, and fields.",
+	}
+}
+
+func AttachChatSidebar(sidebar *SidebarSignal, agent ChatSignal) {
+	if sidebar == nil {
+		return
+	}
+	sidebar.PrimaryAction = &SidebarActionSignal{Label: "New chat", Href: chatPath("new"), Icon: "plus"}
+	sidebar.History = &SidebarHistorySignal{
+		Label:     "Chats",
+		EmptyText: optionalValue("No chats yet."),
+		Items:     ChatHistoryItems(agent),
+	}
+}
+
+func ChatHistoryItems(agent ChatSignal) []SidebarHistoryItemSignal {
+	items := make([]SidebarHistoryItemSignal, 0, len(agent.Conversations))
+	for _, conversation := range agent.Conversations {
+		title := conversation.Title
+		if title == "" {
+			title = "Conversation"
+		}
+		items = append(items, SidebarHistoryItemSignal{
+			ID:      conversation.ID,
+			Title:   title,
+			Href:    chatPath(conversation.ID),
+			Active:  conversation.ID == agent.ActiveConversationID,
+			Pending: conversation.TitlePending,
+		})
+	}
+	return items
+}
+
+func WorkspaceAccessSignals(access WorkspaceAccessResponse) WorkspaceAccessSignal {
+	roles := make([]any, len(access.Roles))
+	for index := range access.Roles {
+		roles[index] = access.Roles[index]
+	}
+	bindings := make([]any, len(access.Bindings))
+	for index := range access.Bindings {
+		bindings[index] = access.Bindings[index]
+	}
+	candidates := access.Candidates
+	if candidates == nil {
+		candidates = []WorkspaceAccessCandidate{}
+	}
+	return WorkspaceAccessSignal{
+		Workspace:    access.Workspace,
+		ObjectType:   optionalValue(access.ObjectType),
+		ObjectID:     optionalValue(access.ObjectID),
+		ObjectTitle:  optionalValue(access.ObjectTitle),
+		Mode:         optionalValue(access.Mode),
+		Roles:        roles,
+		Bindings:     bindings,
+		Candidates:   candidates,
+		CanManage:    access.CanManage,
+		Status:       access.Status,
+		Command:      WorkspaceAccessCommand{},
+		Search:       access.Search,
+		SearchStatus: access.SearchStatus,
+	}
+}
+
+func SidebarConfigForCatalog(catalog dashboard.Catalog) SidebarSignal {
+	modelID, modelTitle := "", ""
+	if len(catalog.Models) > 0 {
+		modelID = catalog.Models[0].ID
+		modelTitle = catalog.Models[0].Title
+	}
+	return sidebarConfig(catalog, "dashboards", "", "LeapView", "Dashboards", "Discovery", modelID, modelTitle, false, "", false)
+}
+
+func SidebarConfigForWorkspace(catalog dashboard.Catalog, active, roleLabel string) SidebarSignal {
+	return sidebarConfig(catalog, active, "", workspaceDisplayTitle(catalog), "Workspace", "Published assets", "", "", false, roleLabel, strings.TrimSpace(catalog.Workspace.ID) != "")
+}
+
+func SidebarConfigForChat(catalog dashboard.Catalog, workspaceID, roleLabel, view string) SidebarSignal {
+	if strings.TrimSpace(workspaceID) != "" {
+		catalog.Workspace.ID = workspaceID
+	}
+	active := ""
+	if strings.TrimSpace(view) == "list" {
+		active = "chat"
+	}
+	config := SidebarConfigForWorkspace(catalog, active, roleLabel)
+	return config
+}
+
+func sidebarConfig(catalog dashboard.Catalog, active, dashboardID, workspaceTitle, dashboardTitle, pageTitle, modelID, modelTitle string, compact bool, roleLabel string, includeWorkspaceScoped bool) SidebarSignal {
+	return SidebarSignal{
+		WorkspaceTitle: workspaceTitle,
+		Active:         active,
+		DashboardID:    optionalValue(dashboardID),
+		DashboardTitle: dashboardTitle,
+		PageTitle:      pageTitle,
+		ModelID:        optionalValue(modelID),
+		ModelTitle:     optionalValue(modelTitle),
+		Compact:        compact,
+		UserRole:       optionalValue(roleLabel),
+		Groups:         sidebarGroups(catalog, includeWorkspaceScoped),
+	}
+}
+
+func DefaultTableRequest(report dashboarddefinition.Definition, page dashboard.Page) dashboard.TableRequest {
+	request := dashboard.TableRequest{Block: "all", Start: 0, Count: dashboard.TableChunkSize}
+	for _, name := range pageVisualIDs(page) {
+		table, ok := report.Visualizations[name]
+		if !ok || table.Query.Kind != visualizationdefinition.QueryDetail {
+			continue
+		}
+		request.Table = name
+		if len(table.Query.Detail.DefaultSort) > 0 {
+			request.Sort = dashboard.TableSort{Key: table.Query.Detail.DefaultSort[0].FieldID, Direction: table.Query.Detail.DefaultSort[0].Direction}
+		}
+		break
+	}
+	return request
+}
+
+func InitialVisualizationEnvelopes(definitions map[string]visualizationdefinition.Definition, page dashboard.Page, request dashboard.TableRequest) map[string]DashboardVisualizationSignal {
+	ids := pageVisualIDs(page)
+	out := make(map[string]DashboardVisualizationSignal, len(ids))
+	for _, id := range ids {
+		definition, ok := definitions[id]
+		if !ok {
+			panic(fmt.Sprintf("compiled dashboard visualization %q is missing from initial signals", id))
+		}
+		dataRevision := int64(1)
+		resetVersion := int64(0)
+		if definition.Query.Kind == visualizationdefinition.QueryDetail || definition.Query.Kind == visualizationdefinition.QueryMatrix || definition.Query.Kind == visualizationdefinition.QueryPivot {
+			resetVersion = int64(request.ResetVersion)
+			dataRevision = int64(max(request.ResetVersion, 1))
+		}
+		envelope, err := visualizationruntime.EmptyEnvelopeFromDefinition(definition, dataRevision, 1, resetVersion)
+		if err != nil {
+			panic(fmt.Sprintf("compiled dashboard visualization %q has invalid initial envelope: %v", id, err))
+		}
+		out[id] = DashboardVisualizationSignalFromIR(envelope)
+	}
+	return out
+}
+
+func ReportPageHeaderDetail(pages []dashboard.Page, activePage dashboard.Page) string {
+	title := displayLabel(activePage.Title, activePage.ID)
+	for index, page := range pages {
+		if page.ID == activePage.ID {
+			return formatReportPageNumber(index, len(pages)) + ". " + title
+		}
+	}
+	return title
+}
+
+func ValidateDashboardEnvelope(envelope DashboardEnvelope) error {
+	if envelope.Page.Kind != RouteDashboard {
+		return fmt.Errorf("dashboard envelope page kind = %q", envelope.Page.Kind)
+	}
+	if envelope.Runtime.Kind != RouteDashboard {
+		return fmt.Errorf("dashboard envelope runtime kind = %q", envelope.Runtime.Kind)
+	}
+	if envelope.Page.DashboardID == "" || envelope.Page.PageID == "" {
+		return fmt.Errorf("dashboard envelope requires dashboardId and pageId")
+	}
+	usedVisuals := map[string]struct{}{}
+	usedFilters := map[string]struct{}{}
+	for _, component := range envelope.Page.Components {
+		switch {
+		case component.Visual != nil && *component.Visual != "":
+			usedVisuals[*component.Visual] = struct{}{}
+			if _, ok := envelope.Visuals[*component.Visual]; !ok {
+				return fmt.Errorf("component %q references missing visual %q", component.ID, *component.Visual)
+			}
+		case component.Filter != nil && *component.Filter != "":
+			usedFilters[*component.Filter] = struct{}{}
+			if !filterConfigContains(envelope.FilterConfig, *component.Filter) {
+				return fmt.Errorf("component %q references missing filter config %q", component.ID, *component.Filter)
+			}
+			if _, ok := envelope.Filters.Controls[*component.Filter]; !ok {
+				return fmt.Errorf("component %q references missing filter control %q", component.ID, *component.Filter)
+			}
+		}
+	}
+	for id := range envelope.Visuals {
+		if _, ok := usedVisuals[id]; !ok {
+			return fmt.Errorf("unused visual payload %q", id)
+		}
+	}
+	return nil
+}
+
+func ValidateChatEnvelope(envelope ChatEnvelope) error {
+	if envelope.Page.Kind != RouteChat {
+		return fmt.Errorf("chat envelope page kind = %q", envelope.Page.Kind)
+	}
+	if envelope.Runtime.Kind != RouteChat {
+		return fmt.Errorf("chat envelope runtime kind = %q", envelope.Runtime.Kind)
+	}
+	if envelope.Page.Title == "" {
+		return fmt.Errorf("chat envelope requires page title")
+	}
+	return nil
+}
+
+func dashboardPageNav(workspaceID, reportID string, pages []dashboard.Page, activePage dashboard.Page) []DashboardPageNavSignal {
+	items := make([]DashboardPageNavSignal, 0, len(pages))
+	for _, page := range pages {
+		items = append(items, DashboardPageNavSignal{
+			ID:     page.ID,
+			Title:  page.Title,
+			Href:   "/workspaces/" + workspaceID + "/dashboards/" + reportID + "/pages/" + page.ID,
+			Active: page.ID == activePage.ID,
+		})
+	}
+	return items
+}
+
+func dashboardComponents(page dashboard.Page) []DashboardComponentSignal {
+	components := make([]DashboardComponentSignal, 0, len(page.Visuals))
+	for _, visual := range page.PlacedVisuals() {
+		components = append(components, DashboardComponentSignal{
+			ID:          visual.ID,
+			Kind:        visual.Kind,
+			Visual:      optionalValue(visual.Visual),
+			Filter:      optionalValue(visual.Filter),
+			Description: optionalValue(visual.Description),
+			Placement:   DashboardPagePlacementFromDashboard(visual.Placement),
+			X:           visual.X,
+			Y:           visual.Y,
+			Width:       visual.Width,
+			Height:      visual.Height,
+			Eyebrow:     optionalValue(visual.Eyebrow),
+			Title:       optionalValue(visual.Title),
+			Subtitle:    optionalValue(visual.Subtitle),
+			Badges:      optionalSlice(visual.Badges),
+		})
+	}
+	return components
+}
+
+func sidebarGroups(catalog dashboard.Catalog, includeWorkspaceScoped bool) []SidebarGroupSignal {
+	return []SidebarGroupSignal{
+		{
+			Label: "Navigation",
+			Items: []SidebarItemSignal{
+				{ID: "dashboards", Label: "Dashboards", Href: "/", Icon: "dashboard", Meta: optionalValue("Reports")},
+				{ID: "chat", Label: "Chats", Href: chatPath(), Icon: "chat", Meta: optionalValue("Agent interface")},
+				{ID: "workspaces", Label: "Workspaces", Href: "/workspaces", Icon: "catalog", Meta: optionalValue("Published assets")},
+				{ID: "data", Label: "Data", Href: "/data", Icon: "cache", Meta: optionalValue("Inspect rows")},
+				{ID: "connections", Label: "Connections", Href: "/connections", Icon: "data", Meta: optionalValue("Data access")},
+				{ID: "admin", Label: "Admin", Href: "/admin", Icon: "settings", Meta: optionalValue("Read-only administration")},
+			},
+		},
+	}
+}
+
+func chatPath(parts ...string) string {
+	path := "/chats"
+	for _, part := range parts {
+		part = strings.Trim(part, "/")
+		if part == "" {
+			continue
+		}
+		path += "/" + url.PathEscape(part)
+	}
+	return path
+}
+
+func workspaceDisplayTitle(catalog dashboard.Catalog) string {
+	if strings.TrimSpace(catalog.Workspace.Title) != "" {
+		return catalog.Workspace.Title
+	}
+	if strings.TrimSpace(catalog.Workspace.ID) != "" {
+		return catalog.Workspace.ID
+	}
+	return "LeapView"
+}
+
+func pageVisualIDs(page dashboard.Page) []string {
+	seen := map[string]struct{}{}
+	ids := []string{}
+	for _, item := range page.Visuals {
+		if item.Visual == "" {
+			continue
+		}
+		if _, ok := seen[item.Visual]; ok {
+			continue
+		}
+		seen[item.Visual] = struct{}{}
+		ids = append(ids, item.Visual)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func displayLabel(label, fallback string) string {
+	if strings.TrimSpace(label) != "" {
+		return label
+	}
+	return fallback
+}
+
+func formatReportPageNumber(index, pageCount int) string {
+	pageNumber := fmt.Sprintf("%d", index+1)
+	if pageCount >= 10 {
+		width := len(fmt.Sprintf("%d", pageCount))
+		if len(pageNumber) < width {
+			return strings.Repeat("0", width-len(pageNumber)) + pageNumber
+		}
+	}
+	return pageNumber
+}
+
+func filterConfigContains(config []ReportFilterConfig, id string) bool {
+	for _, item := range config {
+		if item.ID == id {
+			return true
+		}
+	}
+	return false
+}

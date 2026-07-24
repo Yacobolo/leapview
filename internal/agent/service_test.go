@@ -12,13 +12,13 @@ import (
 	"time"
 
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard"
+	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/testutil/dashboardfixture"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
-	visualizationruntime "github.com/Yacobolo/leapview/internal/visualization/runtime"
+	"github.com/Yacobolo/leapview/internal/project/testing/dashboardfixture"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	visualizationruntime "github.com/Yacobolo/leapview/internal/dashboard/visualization/runtime"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 )
 

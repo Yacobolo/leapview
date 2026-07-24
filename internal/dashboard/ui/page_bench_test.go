@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard"
+	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	uiactions "github.com/Yacobolo/leapview/internal/ui/actions"
+	uiactions "github.com/Yacobolo/leapview/internal/platform/web/actions"
 	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	g "maragu.dev/gomponents"
@@ -87,7 +87,7 @@ func benchmarkDashboardDocument(catalog catalog.Catalog, report reportdef.Dashbo
 			g.Attr("data-light-theme", "light"),
 			g.Attr("data-dark-theme", "dark"),
 		},
-		Head: pageHead(
+		Head: pageHead(Presentation{FaviconPath: "/static/favicon.svg"},
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/app-shell.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/dashboard-page.js"))),
 			h.Script(h.Type("module"), h.Src(staticAsset("/static/url-sync.js"))),

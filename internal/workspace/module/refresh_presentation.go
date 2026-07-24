@@ -1,9 +1,9 @@
 package module
 
 import (
-	"github.com/Yacobolo/leapview/internal/ui"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	workspacedatastar "github.com/Yacobolo/leapview/internal/workspace/datastar"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 

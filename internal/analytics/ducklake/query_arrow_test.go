@@ -7,8 +7,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
-	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/workload"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"

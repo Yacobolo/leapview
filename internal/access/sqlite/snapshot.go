@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/access"
+	accesssnapshot "github.com/Yacobolo/leapview/internal/access/snapshot"
 	platformdb "github.com/Yacobolo/leapview/internal/access/sqlite/accessdb"
 	"github.com/Yacobolo/leapview/internal/platform/transaction"
-	"github.com/Yacobolo/leapview/internal/snapshot"
 )
 
 type snapshotAsset struct {
@@ -47,7 +47,7 @@ ORDER BY asset_type, asset_key`, servingStateID)
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	var policy snapshot.AccessPolicy
+	var policy accesssnapshot.AccessPolicy
 	decoder := json.NewDecoder(strings.NewReader(policyJSON))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&policy); err != nil {
@@ -135,7 +135,7 @@ func installSemanticFields(ctx context.Context, repository *Repository, workspac
 	return nil
 }
 
-func installPolicy(ctx context.Context, repository *Repository, workspaceID string, policy snapshot.AccessPolicy) error {
+func installPolicy(ctx context.Context, repository *Repository, workspaceID string, policy accesssnapshot.AccessPolicy) error {
 	bindings, err := repository.ListRoleBindings(ctx, workspaceID)
 	if err != nil {
 		return err
@@ -231,7 +231,7 @@ func installPolicy(ctx context.Context, repository *Repository, workspaceID stri
 	return nil
 }
 
-func snapshotSubject(ctx context.Context, repository *Repository, workspaceID string, subject snapshot.Subject, groupIDs map[string]string) (access.SubjectType, string, error) {
+func snapshotSubject(ctx context.Context, repository *Repository, workspaceID string, subject accesssnapshot.Subject, groupIDs map[string]string) (access.SubjectType, string, error) {
 	switch access.SubjectType(subject.Kind) {
 	case access.SubjectGroup:
 		if groupIDs[subject.Group] == "" {
@@ -257,7 +257,7 @@ func snapshotSubject(ctx context.Context, repository *Repository, workspaceID st
 	}
 }
 
-func snapshotObject(workspaceID string, object snapshot.ObjectRef) access.ObjectRef {
+func snapshotObject(workspaceID string, object accesssnapshot.ObjectRef) access.ObjectRef {
 	typ := access.SecurableType(strings.TrimSpace(object.Type))
 	id := strings.TrimSpace(object.ID)
 	if typ == access.SecurableWorkspace {

@@ -18,11 +18,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
 	analyticsresource "github.com/Yacobolo/leapview/internal/analytics/resource"
-	"github.com/Yacobolo/leapview/internal/dataquery"
+	"github.com/Yacobolo/leapview/internal/platform/filesystem"
 	"github.com/Yacobolo/leapview/internal/platform/transaction"
-	"github.com/Yacobolo/leapview/internal/securefs"
 	"github.com/Yacobolo/leapview/internal/workload"
 	duckdb "github.com/duckdb/duckdb-go/v2"
 )

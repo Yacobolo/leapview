@@ -17,11 +17,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/catalog"
-	"github.com/Yacobolo/leapview/internal/dataquery"
-	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
+	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
 	"github.com/Yacobolo/leapview/internal/workspace"
+	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 	_ "github.com/duckdb/duckdb-go/v2"
 )
 

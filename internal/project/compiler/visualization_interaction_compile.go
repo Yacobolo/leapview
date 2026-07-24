@@ -2,7 +2,7 @@ package compiler
 
 import (
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 )
 
 func compiledSelectionInteractions(id string, selection reportdef.SelectionInteraction) []visualizationir.VisualizationInteraction {

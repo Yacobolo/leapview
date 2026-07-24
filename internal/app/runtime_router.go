@@ -14,28 +14,27 @@ import (
 	adminmodule "github.com/Yacobolo/leapview/internal/admin/module"
 	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
 	analyticsmodule "github.com/Yacobolo/leapview/internal/analytics/module"
-	"github.com/Yacobolo/leapview/internal/api"
-	apiapigenruntime "github.com/Yacobolo/leapview/internal/api/apigenruntime"
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
-	apihttpmiddleware "github.com/Yacobolo/leapview/internal/api/httpmiddleware"
-	apiprotocol "github.com/Yacobolo/leapview/internal/api/protocol"
-	"github.com/Yacobolo/leapview/internal/catalog"
+	apiapigenruntime "github.com/Yacobolo/leapview/internal/app/api/apigenruntime"
+	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	apiprotocol "github.com/Yacobolo/leapview/internal/app/api/protocol"
+	"github.com/Yacobolo/leapview/internal/app/brand"
 	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
 	deploymentmodule "github.com/Yacobolo/leapview/internal/deployment/module"
 	manageddatamodule "github.com/Yacobolo/leapview/internal/manageddata/module"
-	"github.com/Yacobolo/leapview/internal/observability"
+	apihttpmiddleware "github.com/Yacobolo/leapview/internal/platform/http/middleware"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	jobsmodule "github.com/Yacobolo/leapview/internal/platform/jobs/module"
 	platformlifecycle "github.com/Yacobolo/leapview/internal/platform/lifecycle"
+	"github.com/Yacobolo/leapview/internal/platform/observability"
+	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
+	uitransport "github.com/Yacobolo/leapview/internal/platform/web/transport"
 	refreshmodule "github.com/Yacobolo/leapview/internal/refresh/module"
 	releasemodule "github.com/Yacobolo/leapview/internal/release/module"
 	runtimehostmodule "github.com/Yacobolo/leapview/internal/runtimehost/module"
 	servingstatemodule "github.com/Yacobolo/leapview/internal/servingstate/module"
-	"github.com/Yacobolo/leapview/internal/staticasset"
-	"github.com/Yacobolo/leapview/internal/ui"
-	uitransport "github.com/Yacobolo/leapview/internal/ui/transport"
 	workloadmodule "github.com/Yacobolo/leapview/internal/workload/module"
 	workspacemodule "github.com/Yacobolo/leapview/internal/workspace/module"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 
@@ -343,7 +342,7 @@ func buildApplicationSurfaces(
 		if platform.jobModule == nil {
 			var err error
 			platform.jobModule, err = jobsmodule.Build(ctx, jobsmodule.Config{
-				Database: data.Database, Admission: runtime.workloads,
+				Database: data.Database, Admission: workloadmodule.JobAdmitter(runtime.workloads),
 				LeaseTimeout: httpConfig.JobLeaseTimeout, Logger: httpConfig.Logger,
 			})
 			if err != nil {
@@ -599,6 +598,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				AgentBootstrap: func(r *http.Request, workspaceID string) ui.ChatViewState {
 					return routes.agentModule.HTTP().DashboardBootstrap(r, workspaceID)
 				},
+				Presentation: dashboardmodule.Presentation{ProductName: brand.Name, FaviconPath: brand.FaviconPath},
 			},
 			Semantic: dashboardmodule.SemanticConfig{
 				Metrics: runtime.metrics,
@@ -648,6 +648,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		routes.agentModule, err = agentmodule.Build(ctx, agentmodule.Config{
 			Database: database, Model: moduleWorkflow.agentConfig,
 			Service: moduleWorkflow.agent, Jobs: platform.asyncJobs, DefaultWorkspaceID: policy.defaultWorkspaceID,
+			ProductName:      brand.Name,
 			RunWorkloadClass: string(workloadmodule.BackgroundClass), GlobalWorkspaceID: workloadmodule.GlobalWorkspace,
 			Search: routes.workspaceModule,
 			Environment: func(r *http.Request) string {
@@ -737,11 +738,11 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		}
 		var err error
 		routes.adminModule, err = adminmodule.Build(ctx, adminmodule.Config{
-			Catalog: func() catalog.Catalog {
+			Catalog: func() dashboardmodule.Catalog {
 				return runtime.metrics.Catalog()
 			},
 			Access: accessReader,
-			AgentDetails: func(ctx context.Context) (api.AdminAgentResponse, error) {
+			AgentDetails: func(ctx context.Context) (agentmodule.AdminAgentResponse, error) {
 				return routes.agentModule.HTTP().AdminDetails(ctx)
 			},
 			QueryAuditReader: runtime.queryAuditProvider,

@@ -6,8 +6,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/catalog"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
+	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 )
 
 type Signals struct {

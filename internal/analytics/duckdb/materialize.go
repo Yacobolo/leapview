@@ -13,6 +13,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/analytics/arrowquery"
 	"github.com/Yacobolo/leapview/internal/analytics/connectors"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
 	analyticsmaterialize "github.com/Yacobolo/leapview/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
@@ -20,7 +21,6 @@ import (
 	analyticsresource "github.com/Yacobolo/leapview/internal/analytics/resource"
 	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
 	analyticsruntime "github.com/Yacobolo/leapview/internal/analytics/runtime"
-	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/platform/transaction"
 )
 

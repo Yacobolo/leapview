@@ -10,8 +10,8 @@ import (
 	agentcap "github.com/Yacobolo/leapview/internal/agent"
 	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
 	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	queryauthz "github.com/Yacobolo/leapview/internal/dashboard/queryauthz"
-	"github.com/Yacobolo/leapview/internal/dataquery"
 )
 
 func TestDataAuthorizationPassesSelectedColumnMaskToExecution(t *testing.T) {

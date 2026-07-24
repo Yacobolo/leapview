@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/brand"
 	projectartifact "github.com/Yacobolo/leapview/internal/project/artifact"
 	"github.com/Yacobolo/leapview/internal/workspace"
 )
@@ -37,5 +36,5 @@ func workspaceTitle(value, workspaceID string) string {
 	if strings.TrimSpace(workspaceID) != "" {
 		return workspaceID
 	}
-	return brand.Name
+	return "Workspace"
 }

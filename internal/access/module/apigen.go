@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
+	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 )
 
 const apiGenObjectScopeExtension = "x-leapview-object-scope"

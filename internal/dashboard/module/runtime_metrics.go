@@ -7,22 +7,25 @@ import (
 	"sync"
 
 	"github.com/Yacobolo/leapview/internal/analytics/arrowquery"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
-	"github.com/Yacobolo/leapview/internal/brand"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/dataquery"
+	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	"github.com/Yacobolo/leapview/internal/runtimehost"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
 )
 
 type runtimeMetrics struct {
 	provider    runtimehost.Provider
 	workspaceID string
 }
+
+// Catalog is the dashboard-owned catalog contract exposed through the module
+// surface for application composition.
+type Catalog = dashboard.Catalog
 
 type dashboardRefreshRuntimeKey struct{}
 
@@ -123,7 +126,7 @@ func (m runtimeMetrics) Catalog() dashboard.Catalog {
 	if err != nil {
 		title := strings.TrimSpace(m.workspaceID)
 		if title == "" {
-			title = brand.Name
+			title = "Workspace"
 		}
 		return dashboard.Catalog{
 			Workspace: dashboard.CatalogWorkspace{ID: m.workspaceID, Title: title, Description: "No active serving state."},

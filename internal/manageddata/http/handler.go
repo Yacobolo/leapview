@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
+	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	"github.com/Yacobolo/leapview/internal/manageddata"
 	"github.com/Yacobolo/leapview/internal/manageddata/control"
 	"github.com/Yacobolo/leapview/internal/manageddata/s3multipart"

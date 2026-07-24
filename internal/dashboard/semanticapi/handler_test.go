@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/analytics/arrowquery"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	analyticsresource "github.com/Yacobolo/leapview/internal/analytics/resource"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/workload"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"

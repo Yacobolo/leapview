@@ -18,7 +18,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/access"
 	oidcauth "github.com/Yacobolo/leapview/internal/access/oidc"
 	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
-	"github.com/Yacobolo/leapview/internal/config"
+	"github.com/Yacobolo/leapview/internal/app/config"
 	"github.com/Yacobolo/leapview/internal/workspace"
 )
 

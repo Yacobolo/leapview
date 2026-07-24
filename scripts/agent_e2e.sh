@@ -15,7 +15,7 @@ if [[ -z "$DEEPSEEK_KEY" ]]; then
   exit 1
 fi
 
-go run ./internal/tools/bootstrapolist
+go run ./internal/app/tools/bootstrapolist
 
 TMP_DIR="$(mktemp -d)"
 cleanup() {

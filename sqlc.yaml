@@ -88,23 +88,23 @@ sql:
         omit_unused_structs: true
 
   - engine: "sqlite"
-    queries: "internal/apiidempotency/sqlite/queries"
+    queries: "internal/platform/http/idempotency/sqlite/queries"
     schema: "internal/platform/migrations"
     gen:
       go:
         package: "idempotencydb"
-        out: "internal/apiidempotency/sqlite/idempotencydb"
+        out: "internal/platform/http/idempotency/sqlite/idempotencydb"
         emit_json_tags: true
         emit_empty_slices: true
         omit_unused_structs: true
 
   - engine: "sqlite"
-    queries: "internal/cursorsigning/sqlite/queries"
+    queries: "internal/platform/http/cursorsigning/sqlite/queries"
     schema: "internal/platform/migrations"
     gen:
       go:
         package: "cursordb"
-        out: "internal/cursorsigning/sqlite/cursordb"
+        out: "internal/platform/http/cursorsigning/sqlite/cursordb"
         emit_json_tags: true
         emit_empty_slices: true
         omit_unused_structs: true

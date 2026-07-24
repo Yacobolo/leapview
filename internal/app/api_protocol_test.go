@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
-	apiprotocol "github.com/Yacobolo/leapview/internal/api/protocol"
-	apiidempotencysqlite "github.com/Yacobolo/leapview/internal/apiidempotency/sqlite"
-	"github.com/Yacobolo/leapview/internal/cursorsigning"
+	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	apiprotocol "github.com/Yacobolo/leapview/internal/app/api/protocol"
+	"github.com/Yacobolo/leapview/internal/platform/http/cursorsigning"
+	apiidempotencysqlite "github.com/Yacobolo/leapview/internal/platform/http/idempotency/sqlite"
 	"github.com/Yacobolo/leapview/internal/workspace"
 )
 

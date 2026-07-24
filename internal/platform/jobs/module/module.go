@@ -11,12 +11,11 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	jobsqlite "github.com/Yacobolo/leapview/internal/platform/jobs/sqlite"
-	"github.com/Yacobolo/leapview/internal/workload"
 )
 
 type Config struct {
 	Database     *sql.DB
-	Admission    workload.Admitter
+	Admission    jobs.Admitter
 	LeaseTimeout time.Duration
 	PollInterval time.Duration
 	Logger       *slog.Logger
@@ -49,7 +48,7 @@ func (m *Module) RegisterHandlers(handlers []jobs.Handler) error {
 		return errors.New("job handlers are already registered")
 	}
 	runner, err := jobs.NewRunner(jobs.RunnerConfig{
-		Repository: m.repository, Workload: m.config.Admission, Handlers: handlers,
+		Repository: m.repository, Admission: m.config.Admission, Handlers: handlers,
 		LeaseTimeout: m.config.LeaseTimeout, PollInterval: m.config.PollInterval, Logger: m.config.Logger,
 	})
 	if err != nil {

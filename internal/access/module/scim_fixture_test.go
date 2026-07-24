@@ -8,8 +8,8 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access"
 	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
-	apihttpmiddleware "github.com/Yacobolo/leapview/internal/api/httpmiddleware"
 	"github.com/Yacobolo/leapview/internal/platform"
+	apihttpmiddleware "github.com/Yacobolo/leapview/internal/platform/http/middleware"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
 )

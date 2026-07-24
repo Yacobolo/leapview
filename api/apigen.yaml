@@ -5,14 +5,14 @@ targets:
     ir_out: gen/json-ir.json
     openapi_out: gen/openapi.yaml
     go_out:
-      dir: ../internal/api/gen
+      dir: ../internal/app/api/gen
       package: gen
     cli_out:
-      dir: ../internal/cli/gen
+      dir: ../internal/app/cli/gen
       package: gen
     contract_imports:
       LeapViewVisualization:
-        go_package: github.com/Yacobolo/leapview/internal/visualization/ir
+        go_package: github.com/Yacobolo/leapview/internal/dashboard/visualization/ir
         go_alias: visualizationir
         typescript_module: ../visualization
   - name: ui-signals
@@ -20,12 +20,12 @@ targets:
     typespec_dir: .
     typespec_entrypoint: signals/main.tsp
     ir_out: gen/ui-signals-ir.json
-    go_models_out: ../internal/ui/signals/models.gen.go
+    go_models_out: ../internal/workspace/ui/signals/models.gen.go
     go_models_package: signals
     ts_out: ../web/generated/signals/index.ts
     contract_imports:
       LeapViewVisualization:
-        go_package: github.com/Yacobolo/leapview/internal/visualization/ir
+        go_package: github.com/Yacobolo/leapview/internal/dashboard/visualization/ir
         go_alias: visualizationir
         typescript_module: ../visualization
   - name: visualization-ir
@@ -33,7 +33,7 @@ targets:
     typespec_dir: .
     typespec_entrypoint: visualization/main.tsp
     ir_out: gen/visualization-ir.json
-    go_models_out: ../internal/visualization/ir/models.gen.go
+    go_models_out: ../internal/dashboard/visualization/ir/models.gen.go
     go_models_package: ir
     ts_out: ../web/generated/visualization/index.ts
     json_schema_out: gen/visualization.schema.json

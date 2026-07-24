@@ -9,9 +9,9 @@ import (
 	"strings"
 
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/configschema"
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
 	"github.com/Yacobolo/leapview/internal/dashboard/report"
+	"github.com/Yacobolo/leapview/internal/project/schema"
 	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	"gopkg.in/yaml.v3"

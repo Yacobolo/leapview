@@ -13,11 +13,11 @@ import (
 	agentcap "github.com/Yacobolo/leapview/internal/agent"
 	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
 	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/dataquery"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 )

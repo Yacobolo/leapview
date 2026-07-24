@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/configschema"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	projectartifact "github.com/Yacobolo/leapview/internal/project/artifact"
 	"github.com/Yacobolo/leapview/internal/project/manifest"
+	"github.com/Yacobolo/leapview/internal/project/schema"
 	"github.com/Yacobolo/leapview/internal/workspace"
 )
 

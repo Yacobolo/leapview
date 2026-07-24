@@ -8,11 +8,12 @@ import (
 	"strings"
 	"time"
 
+	accesssnapshot "github.com/Yacobolo/leapview/internal/access/snapshot"
 	refreshartifact "github.com/Yacobolo/leapview/internal/refresh/artifact"
 	refreshplan "github.com/Yacobolo/leapview/internal/refresh/plan"
 	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
-	"github.com/Yacobolo/leapview/internal/snapshot"
+	servingstatevalidation "github.com/Yacobolo/leapview/internal/servingstate/validation"
 	"github.com/Yacobolo/leapview/internal/workspace"
 )
 
@@ -405,7 +406,7 @@ func (s Service) CreateRefreshCandidate(ctx context.Context, input RefreshCandid
 	active := input.Active
 	workspaceID := servingstate.WorkspaceID(input.WorkspaceID)
 	environment := servingstate.NormalizeEnvironment(input.Environment)
-	accessPolicy, err := snapshot.DecodeAccessPolicy([]byte(active.State.AccessPolicyJSON))
+	accessPolicy, err := accesssnapshot.Decode([]byte(active.State.AccessPolicyJSON))
 	if err != nil {
 		return ServingState{}, fmt.Errorf("decode active access policy: %w", err)
 	}
@@ -435,7 +436,7 @@ func (s Service) CreateRefreshCandidate(ctx context.Context, input RefreshCandid
 	if err != nil {
 		return ServingState{}, fmt.Errorf("encode refresh asset snapshot: %w", err)
 	}
-	graph, err := snapshot.DecodeAssetGraph(graphJSON)
+	graph, err := servingstatevalidation.DecodeAssetGraph(graphJSON)
 	if err != nil {
 		return ServingState{}, fmt.Errorf("decode refresh asset snapshot: %w", err)
 	}

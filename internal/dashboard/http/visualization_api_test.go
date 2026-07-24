@@ -6,8 +6,8 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
-	visualizationruntime "github.com/Yacobolo/leapview/internal/visualization/runtime"
+	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
+	visualizationruntime "github.com/Yacobolo/leapview/internal/dashboard/visualization/runtime"
 	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 )
 

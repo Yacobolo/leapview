@@ -7,7 +7,8 @@ import (
 	"strings"
 
 	accessmodule "github.com/Yacobolo/leapview/internal/access/module"
-	apiprotocol "github.com/Yacobolo/leapview/internal/api/protocol"
+	apiprotocol "github.com/Yacobolo/leapview/internal/app/api/protocol"
+	"github.com/Yacobolo/leapview/internal/app/brand"
 )
 
 func configureAPIProtocol(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, ctx context.Context, database *sql.DB) error {
@@ -16,6 +17,7 @@ func configureAPIProtocol(routes *capabilityRoutes, runtime *runtimeServices, pl
 	}
 	protocol, err := apiprotocol.Build(ctx, apiprotocol.Config{
 		Database:    database,
+		ProductName: brand.Name,
 		BearerToken: accessmodule.BearerToken,
 		AcceptsBearer: func(r *http.Request) bool {
 			return platform.auth == nil || platform.auth.AcceptsPublicBearer(r)

@@ -15,10 +15,11 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/agent"
+	"github.com/Yacobolo/leapview/internal/agent/api"
 	agentconfig "github.com/Yacobolo/leapview/internal/agent/config"
-	"github.com/Yacobolo/leapview/internal/api"
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
-	"github.com/Yacobolo/leapview/internal/ui"
+	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	httpmodel "github.com/Yacobolo/leapview/internal/platform/http/model"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
@@ -843,7 +844,7 @@ func writeJSON(w stdhttp.ResponseWriter, status int, value any) {
 }
 
 func writeJSONError(w stdhttp.ResponseWriter, err error, status int) {
-	writeJSON(w, status, api.ErrorResponse{
+	writeJSON(w, status, httpmodel.ErrorResponse{
 		Code:      status,
 		Message:   err.Error(),
 		Details:   map[string]any{},

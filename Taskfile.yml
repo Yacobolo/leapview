@@ -24,7 +24,7 @@ tasks:
   bootstrap:
     desc: Download/sync Olist CSVs if missing
     cmds:
-      - go run ./internal/tools/bootstrapolist --out .data/olist
+      - go run ./internal/app/tools/bootstrapolist --out .data/olist
 
   map-style:generate:
     desc: Generate the pinned renderer-owned MapLibre style
@@ -42,7 +42,7 @@ tasks:
   map-assets:install:
     desc: Install the pinned local PMTiles, glyph, and sprite assets used by development
     cmds:
-      - go run ./internal/tools/mapassets --out .data/map-assets
+      - go run ./internal/app/tools/mapassets --out .data/map-assets
 
   map-assets:publish:
     desc: Publish the verified content-addressed map package to managed S3 storage and optionally verify its public delivery
@@ -50,7 +50,7 @@ tasks:
       vars: [MAP_ASSET_S3_BUCKET]
     cmds:
       - >-
-        go run ./internal/tools/mapassets
+        go run ./internal/app/tools/mapassets
         --out .data/map-assets
         --publish-s3-bucket {{.MAP_ASSET_S3_BUCKET | quote}}
         --publish-s3-prefix {{default "map-assets" .MAP_ASSET_S3_PREFIX | quote}}
@@ -65,14 +65,14 @@ tasks:
       vars: [MAP_ASSET_BASE_URL]
     cmds:
       - >-
-        go run ./internal/tools/mapassets
+        go run ./internal/app/tools/mapassets
         --out .data/map-assets
         --verify-base-url {{.MAP_ASSET_BASE_URL | quote}}
 
   bootstrap:movielens:
     desc: Download/sync MovieLens 32M CSVs if missing
     cmds:
-      - go run ./internal/tools/bootstrapmovielens --out .data/movielens
+      - go run ./internal/app/tools/bootstrapmovielens --out .data/movielens
 
   dev:stop:
     desc: Stop the managed LeapView dev server for this worktree
@@ -218,14 +218,14 @@ tasks:
       - docs/reference/config/catalog.json
       - docs/visuals/*.md
       - docs/visuals/catalog.json
-      - internal/tools/docsitegen/**/*.go
+      - internal/app/tools/docsitegen/**/*.go
     generates:
       - docs/catalog.json
       - docs/llms.txt
       - docs/search-index.sqlite3
     cmds:
       - bun run docs:validate-diagrams
-      - go run ./internal/tools/docsitegen
+      - go run ./internal/app/tools/docsitegen
 
   docs:check:
     desc: Verify the unified documentation catalog and FTS5 search index are current
@@ -233,9 +233,9 @@ tasks:
       - node:deps
     cmds:
       - bun run docs:validate-diagrams
-      - go run ./internal/tools/visualdocgen --check
-      - go run ./internal/tools/docsitegen --check
-      - go test ./internal/site/http -run '^TestEveryRenderedDocumentationLinkResolves$' -count=1
+      - go run ./internal/app/tools/visualdocgen --check
+      - go run ./internal/app/tools/docsitegen --check
+      - go test ./internal/app/site/http -run '^TestEveryRenderedDocumentationLinkResolves$' -count=1
 
   visual-docs:generate:
     desc: Compile executable visual documentation examples into browser payloads
@@ -249,16 +249,16 @@ tasks:
       - Taskfile.yml
       - docs/visuals/*.md
       - docs/visuals/catalog.json
-      - internal/tools/visualdocgen/**/*.go
-      - internal/tools/visualdocgen/testdata/**/*
-      - internal/visualdocs/**/*.go
+      - internal/app/tools/visualdocgen/**/*.go
+      - internal/app/tools/visualdocgen/testdata/**/*
+      - internal/app/site/visualdocs/**/*.go
       - internal/dashboard/**/*.go
       - internal/analytics/**/*.go
       - internal/workspace/compiler/**/*.go
     generates:
       - docs/visuals/examples.gen.json
     cmds:
-      - go run ./internal/tools/visualdocgen
+      - go run ./internal/app/tools/visualdocgen
 
   cli-docs:generate:
     desc: Generate public CLI reference documentation from Cobra commands
@@ -270,13 +270,13 @@ tasks:
     method: checksum
     sources:
       - Taskfile.yml
-      - internal/cli/**/*.go
-      - internal/tools/clidocgen/**/*.go
+      - internal/app/cli/**/*.go
+      - internal/app/tools/clidocgen/**/*.go
     generates:
       - docs/reference/cli/catalog.json
       - docs/reference/cli/manifest.json
     cmds:
-      - go run ./internal/tools/clidocgen
+      - go run ./internal/app/tools/clidocgen
 
   db:generate:
     desc: Generate SQLite adapter code from the checked-in schema and queries
@@ -298,21 +298,21 @@ tasks:
     method: checksum
     sources:
       - Taskfile.yml
-      - internal/configspec/spec.go
-      - internal/tools/configgen/main.go
+      - internal/platform/config/spec/spec.go
+      - internal/app/tools/configgen/main.go
     generates:
-      - internal/config/config_gen.go
-      - internal/configspec/names_gen.go
+      - internal/app/config/config_gen.go
+      - internal/platform/config/spec/names_gen.go
       - docs/configuration.md
       - .env.example
       - schemas/config/environment.schema.json
     cmds:
-      - go run ./internal/tools/configgen
+      - go run ./internal/app/tools/configgen
 
   config:check:
     desc: Verify generated configuration artifacts are current
     cmds:
-      - go run ./internal/tools/configgen --check
+      - go run ./internal/app/tools/configgen --check
 
   generated:check:
     desc: Verify intentional public contract snapshots are current
@@ -332,20 +332,20 @@ tasks:
       - api/apigen.yaml
       - api/typespec/**/*.tsp
       - api/visualization/**/*.tsp
-      - internal/tools/openapidocgen/**/*.go
+      - internal/app/tools/openapidocgen/**/*.go
     generates:
       - api/gen/json-ir.json
       - api/gen/openapi.yaml
-      - internal/api/gen/request_models.gen.go
-      - internal/api/gen/server.apigen.gen.go
-      - internal/cli/gen/apigen_registry.gen.go
+      - internal/app/api/gen/request_models.gen.go
+      - internal/app/api/gen/server.apigen.gen.go
+      - internal/app/cli/gen/apigen_registry.gen.go
       - docs/api/catalog.json
       - docs/api/openapi.yaml
       - docs/api/operations.json
     cmds:
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.6.5 typespec-compile -manifest api/apigen.yaml -target leapview-v1
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.6.5 all -manifest api/apigen.yaml -target leapview-v1
-      - go run ./internal/tools/openapidocgen
+      - go run ./internal/app/tools/openapidocgen
 
   schema:generate:
     desc: Generate JSON Schema artifacts for LeapView YAML contracts
@@ -358,12 +358,12 @@ tasks:
     sources:
       - Taskfile.yml
       - cmd/leapview/**/*.go
-      - internal/cli/**/*.go
-      - internal/configschema/**/*.go
-      - internal/configschema/**/*.cue
+      - internal/app/cli/**/*.go
+      - internal/project/schema/**/*.go
+      - internal/project/schema/**/*.cue
       - internal/dashboard/report/**/*.go
       - internal/semantic/**/*.go
-      - internal/tools/schemadocgen/**/*.go
+      - internal/app/tools/schemadocgen/**/*.go
       - dashboards/**/*.yaml
     generates:
       - schemas/json/dashboard.schema.json
@@ -371,7 +371,7 @@ tasks:
       - docs/reference/config/catalog.json
     cmds:
       - go run ./cmd/leapview schema export --format json-schema --out schemas/json
-      - go run ./internal/tools/schemadocgen
+      - go run ./internal/app/tools/schemadocgen
 
   ui-signals:generate:
     desc: Generate UI signal Go and TypeScript contracts from TypeSpec
@@ -383,7 +383,7 @@ tasks:
       - api/visualization/**/*.tsp
     generates:
       - api/gen/ui-signals-ir.json
-      - internal/ui/signals/models.gen.go
+      - internal/workspace/ui/signals/models.gen.go
       - web/generated/signals/index.ts
     cmds:
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.6.5 typespec-compile -manifest api/apigen.yaml -target ui-signals
@@ -402,8 +402,8 @@ tasks:
       - scripts/generate_vega_lite_validator.ts
     generates:
       - api/gen/visualization-ir.json
-      - internal/visualization/ir/models.gen.go
-      - internal/visualization/ir/schema_version.gen.go
+      - internal/dashboard/visualization/ir/models.gen.go
+      - internal/dashboard/visualization/ir/schema_version.gen.go
       - web/generated/visualization/index.ts
       - web/generated/visualization/schema-version.ts
       - web/generated/visualization/validate.ts
@@ -473,7 +473,7 @@ tasks:
   deploy:check:
     desc: Validate the supported single-node deployment and lifecycle contracts
     cmds:
-      - go test ./cmd/leapviewctl ./internal/composectl ./deploy/compose
+      - go test ./cmd/leapviewctl ./internal/app/cli/composectl ./deploy/compose
       - go test ./deploy/hetzner
       - terraform fmt -check -recursive deploy/hetzner
       - terraform -chdir=deploy/hetzner init -backend=false -input=false

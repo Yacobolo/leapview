@@ -7,8 +7,8 @@ import (
 	"sort"
 
 	"github.com/Yacobolo/leapview/internal/dashboard"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
-	"github.com/Yacobolo/leapview/internal/visualization/ir"
+	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
+	"github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 )
 
 type FilterDefinition struct {

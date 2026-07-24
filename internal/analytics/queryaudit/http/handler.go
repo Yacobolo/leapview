@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
-	"github.com/Yacobolo/leapview/internal/api"
+	api "github.com/Yacobolo/leapview/internal/platform/http/model"
 	"github.com/go-chi/chi/v5"
 )
 

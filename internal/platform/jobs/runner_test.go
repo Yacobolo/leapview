@@ -10,6 +10,14 @@ import (
 	"github.com/Yacobolo/leapview/internal/workload"
 )
 
+func testAdmitter(controller workload.Admitter) Admitter {
+	return AdmitterFunc(func(ctx context.Context, request AdmissionRequest) (AdmissionLease, error) {
+		return controller.Acquire(ctx, workload.Request{
+			Class: workload.Class(request.Class), WorkspaceID: request.WorkspaceID, Operation: request.Operation,
+		})
+	})
+}
+
 func TestNewRunnerRejectsDuplicateHandlerKinds(t *testing.T) {
 	controller, err := workload.New(workload.DefaultConfig())
 	if err != nil {
@@ -17,7 +25,7 @@ func TestNewRunnerRejectsDuplicateHandlerKinds(t *testing.T) {
 	}
 	defer controller.Close()
 	repository := &runnerTestRepository{}
-	_, err = NewRunner(RunnerConfig{Repository: repository, Workload: controller, Handlers: []Handler{
+	_, err = NewRunner(RunnerConfig{Repository: repository, Admission: testAdmitter(controller), Handlers: []Handler{
 		HandlerFunc{JobKind: "release.finalize", Run: func(context.Context, Job) error { return nil }},
 		HandlerFunc{JobKind: "release.finalize", Run: func(context.Context, Job) error { return nil }},
 	}})
@@ -33,7 +41,7 @@ func TestRunnerFailsUnknownJobKindExplicitly(t *testing.T) {
 	}
 	defer controller.Close()
 	repository := &recordingRunnerRepository{}
-	runner, err := NewRunner(RunnerConfig{Repository: repository, Workload: controller})
+	runner, err := NewRunner(RunnerConfig{Repository: repository, Admission: testAdmitter(controller)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +59,7 @@ func TestRunnerRenewsLeaseDuringLongHandler(t *testing.T) {
 	defer controller.Close()
 	repository := &recordingRunnerRepository{}
 	runner, err := NewRunner(RunnerConfig{
-		Repository: repository, Workload: controller, LeaseTimeout: 20 * time.Millisecond,
+		Repository: repository, Admission: testAdmitter(controller), LeaseTimeout: 20 * time.Millisecond,
 		Handlers: []Handler{HandlerFunc{JobKind: "slow", Run: func(context.Context, Job) error {
 			time.Sleep(55 * time.Millisecond)
 			return nil
@@ -75,7 +83,7 @@ func TestRunnerCancelsClaimWhenWorkerContextStops(t *testing.T) {
 	}
 	defer controller.Close()
 	repository := &recordingRunnerRepository{}
-	runner, err := NewRunner(RunnerConfig{Repository: repository, Workload: controller, Handlers: []Handler{
+	runner, err := NewRunner(RunnerConfig{Repository: repository, Admission: testAdmitter(controller), Handlers: []Handler{
 		HandlerFunc{JobKind: "blocking", Run: func(ctx context.Context, _ Job) error {
 			<-ctx.Done()
 			return ctx.Err()

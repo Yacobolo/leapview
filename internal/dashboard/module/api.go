@@ -3,7 +3,7 @@ package module
 import (
 	"net/http"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
+	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 )
 
 func (m *Module) QuerySemanticModel(w http.ResponseWriter, r *http.Request, workspaceID string, _ apigenapi.GenQuerySemanticModelHeaders) {

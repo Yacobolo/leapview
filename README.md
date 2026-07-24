@@ -55,7 +55,7 @@ Generated implementation code, documentation indexes/reference pages, CSS, route
 bun install
 task generate
 bun run build
-go run ./internal/tools/bootstrapolist --out .data/olist
+go run ./internal/app/tools/bootstrapolist --out .data/olist
 go run ./cmd/leapview
 ```
 

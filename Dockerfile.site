@@ -18,11 +18,11 @@ COPY . .
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     ./scripts/generate_build_sources.sh && \
-    go run ./internal/tools/mapassets --out .data/map-assets && \
-    go run ./internal/tools/clidocgen && \
-    go run ./internal/tools/schemadocgen && \
-    go run ./internal/tools/openapidocgen && \
-    go run ./internal/tools/docsitegen
+    go run ./internal/app/tools/mapassets --out .data/map-assets && \
+    go run ./internal/app/tools/clidocgen && \
+    go run ./internal/app/tools/schemadocgen && \
+    go run ./internal/app/tools/openapidocgen && \
+    go run ./internal/app/tools/docsitegen
 
 FROM oven/bun:1.3.7@sha256:6cd5f00020e48b77a253bc8249f6b6dd3d92b3c04c2607f1f5a6d7dbf0a6fca3 AS web
 WORKDIR /src

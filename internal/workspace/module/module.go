@@ -6,11 +6,11 @@ import (
 	"net/http"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/catalog"
-	"github.com/Yacobolo/leapview/internal/queryruntime"
-	"github.com/Yacobolo/leapview/internal/ui"
+	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
+	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	workspacehttp "github.com/Yacobolo/leapview/internal/workspace/http"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 

@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/Yacobolo/leapview/internal/agent"
-	"github.com/Yacobolo/leapview/internal/ui"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
 )
 
 func (m *Module) ChromeOption(r *http.Request) ui.ChromeOption {

@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/dataquery"
 )
 
 type governedDataRuntime struct {

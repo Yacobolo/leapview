@@ -1,7 +1,7 @@
 package module
 
 import (
-	"github.com/Yacobolo/leapview/internal/observability"
+	"github.com/Yacobolo/leapview/internal/platform/observability"
 	"github.com/Yacobolo/leapview/internal/workload"
 )
 

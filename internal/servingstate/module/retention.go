@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	storagemaintenance "github.com/Yacobolo/leapview/internal/storage/maintenance"
+	storagemaintenance "github.com/Yacobolo/leapview/internal/servingstate/retention"
 	"github.com/Yacobolo/leapview/internal/workload"
 )
 

@@ -16,7 +16,7 @@ import (
 	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
 	refreshsqlite "github.com/Yacobolo/leapview/internal/refresh/sqlite"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
-	"github.com/Yacobolo/leapview/internal/snapshot"
+	servingstatevalidation "github.com/Yacobolo/leapview/internal/servingstate/validation"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
 )
@@ -745,14 +745,14 @@ func TestRepositorySaveValidatedRejectsMismatchedAssetGraph(t *testing.T) {
 			name: "edge from",
 			mutate: func(validation *servingstate.Validation) {
 				edge := validation.Graph.Edges[0]
-				validation.Graph.Edges[0] = snapshot.NewAssetEdge(edge.WorkspaceID, edge.ServingStateID, "dashboard:missing", edge.ToAssetID, edge.Type)
+				validation.Graph.Edges[0] = servingstatevalidation.NewAssetEdge(edge.WorkspaceID, edge.ServingStateID, "dashboard:missing", edge.ToAssetID, edge.Type)
 			},
 		},
 		{
 			name: "edge to",
 			mutate: func(validation *servingstate.Validation) {
 				edge := validation.Graph.Edges[0]
-				validation.Graph.Edges[0] = snapshot.NewAssetEdge(edge.WorkspaceID, edge.ServingStateID, edge.FromAssetID, "semantic_model:missing", edge.Type)
+				validation.Graph.Edges[0] = servingstatevalidation.NewAssetEdge(edge.WorkspaceID, edge.ServingStateID, edge.FromAssetID, "semantic_model:missing", edge.Type)
 			},
 		},
 	}
@@ -827,8 +827,8 @@ func validationGraph(servingStateID servingstate.ID) servingstate.Validation {
 	}
 }
 
-func mustSnapshotGraph(graph workspace.AssetGraph) snapshot.AssetGraph {
-	converted, err := snapshot.ConvertAssetGraph(graph)
+func mustSnapshotGraph(graph workspace.AssetGraph) servingstatevalidation.AssetGraph {
+	converted, err := servingstatevalidation.ConvertAssetGraph(graph)
 	if err != nil {
 		panic(err)
 	}

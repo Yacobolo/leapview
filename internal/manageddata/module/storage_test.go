@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/config"
 	"github.com/Yacobolo/leapview/internal/manageddata/control"
 	"github.com/Yacobolo/leapview/internal/manageddata/maintenance"
 	"github.com/Yacobolo/leapview/internal/manageddata/storage"
@@ -33,14 +32,14 @@ func TestBuildKeepsPersistencePrivateAndExposesNamedServices(t *testing.T) {
 	}
 	module, err := Build(t.Context(), Config{
 		Database: store.SQLDB(), ServingStates: states,
-		Product: config.Config{
-			ManagedDataBackend:          "local",
-			ManagedDataDir:              filepath.Join(t.TempDir(), "managed"),
-			ManagedDataUploadSessionTTL: time.Hour,
-			ManagedDataGCGracePeriod:    time.Hour,
-			ManagedDataMaxFiles:         10,
-			ManagedDataMaxFileBytes:     1024,
-			ManagedDataMaxRevisionBytes: 4096,
+		Product: ProductConfig{
+			Backend:          "local",
+			Dir:              filepath.Join(t.TempDir(), "managed"),
+			UploadSessionTTL: time.Hour,
+			GCGracePeriod:    time.Hour,
+			MaxFiles:         10,
+			MaxFileBytes:     1024,
+			MaxRevisionBytes: 4096,
 		},
 	})
 	if err != nil {
@@ -53,10 +52,10 @@ func TestBuildKeepsPersistencePrivateAndExposesNamedServices(t *testing.T) {
 
 func TestNewManagedDataStorageLocal(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "managed")
-	services, err := newManagedDataStorage(context.Background(), config.Config{
-		ManagedDataBackend:      "local",
-		ManagedDataDir:          root,
-		ManagedDataMaxFileBytes: 1024,
+	services, err := newManagedDataStorage(context.Background(), ProductConfig{
+		Backend:      "local",
+		Dir:          root,
+		MaxFileBytes: 1024,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -67,7 +66,7 @@ func TestNewManagedDataStorageLocal(t *testing.T) {
 	if services.runtimeCache != nil {
 		t.Fatal("local backend unexpectedly allocated a copying runtime cache")
 	}
-	collector, err := newManagedDataRuntimeCollector(services, config.Config{ManagedDataGCGracePeriod: time.Hour})
+	collector, err := newManagedDataRuntimeCollector(services, ProductConfig{GCGracePeriod: time.Hour})
 	if err != nil || collector != nil {
 		t.Fatalf("local runtime collector = %#v, %v; want nil", collector, err)
 	}
@@ -138,9 +137,9 @@ func TestTusMethodsForwardsResumableOperations(t *testing.T) {
 }
 
 func TestNewManagedDataStorageRejectsUnknownBackend(t *testing.T) {
-	_, err := newManagedDataStorage(context.Background(), config.Config{
-		ManagedDataBackend: "shared-filesystem",
-		ManagedDataDir:     t.TempDir(),
+	_, err := newManagedDataStorage(context.Background(), ProductConfig{
+		Backend: "shared-filesystem",
+		Dir:     t.TempDir(),
 	})
 	if err == nil || !errors.Is(err, storage.ErrInvalid) {
 		t.Fatalf("error = %v, want storage.ErrInvalid", err)
@@ -148,7 +147,7 @@ func TestNewManagedDataStorageRejectsUnknownBackend(t *testing.T) {
 }
 
 func TestNewManagedDataControlRequiresStorage(t *testing.T) {
-	_, err := newManagedDataControl(nil, managedDataStorage{}, config.Config{})
+	_, err := newManagedDataControl(nil, managedDataStorage{}, ProductConfig{})
 	if err == nil || !errors.Is(err, control.ErrInvalid) {
 		t.Fatalf("error = %v, want control.ErrInvalid", err)
 	}

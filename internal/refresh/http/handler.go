@@ -9,7 +9,8 @@ import (
 	nethttp "net/http"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/api"
+	httpmodel "github.com/Yacobolo/leapview/internal/platform/http/model"
+	httptransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
 	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
 	"github.com/Yacobolo/leapview/internal/servingstate"
 	"github.com/go-chi/chi/v5"
@@ -65,15 +66,15 @@ func PipelineRunResponseFor(run refreshrun.RunRecord) (PipelineRunResponse, bool
 	if pipelineID == "" {
 		return PipelineRunResponse{}, false
 	}
-	createdAt, err := api.NormalizeTimestamp(run.CreatedAt)
+	createdAt, err := httptransport.NormalizeTimestamp(run.CreatedAt)
 	if err != nil || createdAt == "" {
 		return PipelineRunResponse{}, false
 	}
-	startedAt, err := api.NormalizeTimestamp(run.StartedAt)
+	startedAt, err := httptransport.NormalizeTimestamp(run.StartedAt)
 	if err != nil {
 		return PipelineRunResponse{}, false
 	}
-	finishedAt, err := api.NormalizeTimestamp(run.FinishedAt)
+	finishedAt, err := httptransport.NormalizeTimestamp(run.FinishedAt)
 	if err != nil {
 		return PipelineRunResponse{}, false
 	}
@@ -333,7 +334,7 @@ func writeJSON(w nethttp.ResponseWriter, status int, value any) {
 }
 
 func writeJSONError(w nethttp.ResponseWriter, err error, status int) {
-	writeJSON(w, status, api.ErrorResponse{
+	writeJSON(w, status, httpmodel.ErrorResponse{
 		Code:      status,
 		Message:   err.Error(),
 		Details:   map[string]any{},

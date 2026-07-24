@@ -18,7 +18,7 @@ COPY . .
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     ./scripts/generate_build_sources.sh && \
-    go run ./internal/tools/mapassets --out .data/map-assets
+    go run ./internal/app/tools/mapassets --out .data/map-assets
 
 FROM oven/bun:1.3.7@sha256:6cd5f00020e48b77a253bc8249f6b6dd3d92b3c04c2607f1f5a6d7dbf0a6fca3 AS web
 WORKDIR /src
@@ -44,14 +44,14 @@ RUN go mod download
 
 COPY . .
 COPY --from=sourcegen /src/api/gen ./api/gen
-COPY --from=sourcegen /src/internal/api/gen ./internal/api/gen
-COPY --from=sourcegen /src/internal/cli/gen ./internal/cli/gen
-COPY --from=sourcegen /src/internal/config/config_gen.go ./internal/config/config_gen.go
-COPY --from=sourcegen /src/internal/configspec/names_gen.go ./internal/configspec/names_gen.go
+COPY --from=sourcegen /src/internal/app/api/gen ./internal/app/api/gen
+COPY --from=sourcegen /src/internal/app/cli/gen ./internal/app/cli/gen
+COPY --from=sourcegen /src/internal/app/config/config_gen.go ./internal/app/config/config_gen.go
+COPY --from=sourcegen /src/internal/platform/config/spec/names_gen.go ./internal/platform/config/spec/names_gen.go
 COPY --from=sourcegen /src/internal/platform/db/db.go ./internal/platform/db/db.go
 COPY --from=sourcegen /src/internal/platform/db/models.go ./internal/platform/db/models.go
 COPY --from=sourcegen /src/internal/platform/db/*.sql.go ./internal/platform/db/
-COPY --from=sourcegen /src/internal/ui/signals/models.gen.go ./internal/ui/signals/models.gen.go
+COPY --from=sourcegen /src/internal/workspace/ui/signals/models.gen.go ./internal/workspace/ui/signals/models.gen.go
 COPY --from=sourcegen /src/schemas ./schemas
 COPY --from=sourcegen /src/web/generated ./web/generated
 COPY --from=web /src/static ./static

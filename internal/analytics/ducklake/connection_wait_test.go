@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
-	"github.com/Yacobolo/leapview/internal/dataquery"
 )
 
 func TestEnvironmentQueryConnectionWaitReportsPoolSaturation(t *testing.T) {

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	appconfig "github.com/Yacobolo/leapview/internal/config"
 	"github.com/Yacobolo/leapview/internal/manageddata"
 	"github.com/Yacobolo/leapview/internal/manageddata/apiadapter"
 	"github.com/Yacobolo/leapview/internal/manageddata/binding"
@@ -26,8 +25,8 @@ import (
 	managedfilesystem "github.com/Yacobolo/leapview/internal/manageddata/storage/filesystem"
 	manageds3 "github.com/Yacobolo/leapview/internal/manageddata/storage/s3"
 	managedtus "github.com/Yacobolo/leapview/internal/manageddata/storage/tus"
+	"github.com/Yacobolo/leapview/internal/platform/filesystem"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
-	"github.com/Yacobolo/leapview/internal/securefs"
 	"github.com/Yacobolo/leapview/internal/servingstate"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -91,13 +90,32 @@ type Principal struct {
 type Config struct {
 	Database         *sql.DB
 	Disabled         bool
-	Product          appconfig.Config
+	Product          ProductConfig
 	Worker           MaintenanceWorkerConfig
 	MaxJSONBodyBytes int64
 	Environment      string
 	CurrentPrincipal func(*http.Request) (Principal, bool)
 	Jobs             JobStore
 	ServingStates    ServingStateReader
+}
+
+type ProductConfig struct {
+	Backend           string
+	Dir               string
+	MaxFiles          int
+	MaxFileBytes      int64
+	MaxRevisionBytes  int64
+	MinFreeBytes      int64
+	UploadSessionTTL  time.Duration
+	GCGracePeriod     time.Duration
+	S3Region          string
+	S3AccessKeyID     string
+	S3SecretAccessKey string
+	S3SessionToken    string
+	S3PathStyle       bool
+	S3Endpoint        string
+	S3Bucket          string
+	S3Prefix          string
 }
 
 type ServingStateReader interface {
@@ -172,7 +190,7 @@ func Build(ctx context.Context, cfg Config) (*Module, error) {
 		materializer:     services.materializer,
 		tus:              services.tus,
 		maintenance: Maintenance{
-			uploads: uploads, multipart: multipartService, uploadTTL: cfg.Product.ManagedDataUploadSessionTTL,
+			uploads: uploads, multipart: multipartService, uploadTTL: cfg.Product.UploadSessionTTL,
 			collector: collector, runtime: runtimeCollector,
 		},
 		jobs: cfg.Jobs, bindings: bindings, runtimeResolver: runtimeResolver,
@@ -283,9 +301,9 @@ func (m *Module) Stop(ctx context.Context) error {
 
 func (m *Module) HTTP() *manageddatahttp.Handler { return m.handler }
 
-func newManagedDataStorage(ctx context.Context, cfg appconfig.Config) (managedDataStorage, error) {
-	root, err := filepath.Abs(strings.TrimSpace(cfg.ManagedDataDir))
-	if err != nil || strings.TrimSpace(cfg.ManagedDataDir) == "" {
+func newManagedDataStorage(ctx context.Context, cfg ProductConfig) (managedDataStorage, error) {
+	root, err := filepath.Abs(strings.TrimSpace(cfg.Dir))
+	if err != nil || strings.TrimSpace(cfg.Dir) == "" {
 		return managedDataStorage{}, fmt.Errorf("%w: managed-data directory is required", storage.ErrInvalid)
 	}
 	if err := securefs.EnsurePrivateDir(root); err != nil {
@@ -293,7 +311,7 @@ func newManagedDataStorage(ctx context.Context, cfg appconfig.Config) (managedDa
 	}
 
 	var result managedDataStorage
-	switch strings.TrimSpace(cfg.ManagedDataBackend) {
+	switch strings.TrimSpace(cfg.Backend) {
 	case "local":
 		blobs, err := managedfilesystem.New(filepath.Join(root, "objects"))
 		if err != nil {
@@ -307,11 +325,11 @@ func newManagedDataStorage(ctx context.Context, cfg appconfig.Config) (managedDa
 		if err != nil {
 			return managedDataStorage{}, err
 		}
-		handler, err := engine.HTTPHandler(managedtus.HTTPConfig{BasePath: managedDataTusPath, MaxSize: cfg.ManagedDataMaxFileBytes})
+		handler, err := engine.HTTPHandler(managedtus.HTTPConfig{BasePath: managedDataTusPath, MaxSize: cfg.MaxFileBytes})
 		if err != nil {
 			return managedDataStorage{}, err
 		}
-		capacity, err := maintenance.NewCapacityChecker(root, cfg.ManagedDataMinFreeBytes)
+		capacity, err := maintenance.NewCapacityChecker(root, cfg.MinFreeBytes)
 		if err != nil {
 			return managedDataStorage{}, err
 		}
@@ -346,22 +364,22 @@ func newManagedDataStorage(ctx context.Context, cfg appconfig.Config) (managedDa
 	return result, nil
 }
 
-func newManagedDataCollector(db *sql.DB, services managedDataStorage, cfg appconfig.Config) (*maintenance.BlobCollector, error) {
+func newManagedDataCollector(db *sql.DB, services managedDataStorage, cfg ProductConfig) (*maintenance.BlobCollector, error) {
 	reachability, err := maintenancesqlite.New(db)
 	if err != nil {
 		return nil, err
 	}
 	return maintenance.NewBlobCollector(services.inventory, reachability, maintenance.BlobGCConfig{
-		GraceAge: cfg.ManagedDataGCGracePeriod,
+		GraceAge: cfg.GCGracePeriod,
 	})
 }
 
-func newManagedDataRuntimeCollector(services managedDataStorage, cfg appconfig.Config) (*maintenance.RuntimeViewCollector, error) {
+func newManagedDataRuntimeCollector(services managedDataStorage, cfg ProductConfig) (*maintenance.RuntimeViewCollector, error) {
 	if services.runtimeCache == nil {
 		return nil, nil
 	}
 	return maintenance.NewRuntimeViewCollector(services.runtimeCache, maintenance.RuntimeViewGCConfig{
-		GraceAge: cfg.ManagedDataGCGracePeriod,
+		GraceAge: cfg.GCGracePeriod,
 		Limit:    100,
 	})
 }
@@ -390,13 +408,13 @@ func capacityProtectedTus(next http.Handler, capacity *maintenance.CapacityCheck
 	})
 }
 
-func newManagedDataS3Store(ctx context.Context, cfg appconfig.Config) (*manageds3.Store, error) {
-	loadOptions := []func(*awsconfig.LoadOptions) error{awsconfig.WithRegion(strings.TrimSpace(cfg.ManagedDataS3Region))}
-	if cfg.ManagedDataS3AccessKeyID != "" {
+func newManagedDataS3Store(ctx context.Context, cfg ProductConfig) (*manageds3.Store, error) {
+	loadOptions := []func(*awsconfig.LoadOptions) error{awsconfig.WithRegion(strings.TrimSpace(cfg.S3Region))}
+	if cfg.S3AccessKeyID != "" {
 		provider := credentials.NewStaticCredentialsProvider(
-			cfg.ManagedDataS3AccessKeyID,
-			cfg.ManagedDataS3SecretAccessKey,
-			cfg.ManagedDataS3SessionToken,
+			cfg.S3AccessKeyID,
+			cfg.S3SecretAccessKey,
+			cfg.S3SessionToken,
 		)
 		loadOptions = append(loadOptions, awsconfig.WithCredentialsProvider(provider))
 	}
@@ -405,25 +423,25 @@ func newManagedDataS3Store(ctx context.Context, cfg appconfig.Config) (*manageds
 		return nil, fmt.Errorf("initialize managed-data S3 client: %w", err)
 	}
 	client := awss3.NewFromConfig(awsConfig, func(options *awss3.Options) {
-		options.UsePathStyle = cfg.ManagedDataS3PathStyle
-		if endpoint := strings.TrimSpace(cfg.ManagedDataS3Endpoint); endpoint != "" {
+		options.UsePathStyle = cfg.S3PathStyle
+		if endpoint := strings.TrimSpace(cfg.S3Endpoint); endpoint != "" {
 			options.BaseEndpoint = aws.String(endpoint)
 		}
 	})
 	return manageds3.New(client, awss3.NewPresignClient(client), manageds3.Config{
-		Bucket: cfg.ManagedDataS3Bucket,
-		Prefix: cfg.ManagedDataS3Prefix,
+		Bucket: cfg.S3Bucket,
+		Prefix: cfg.S3Prefix,
 	})
 }
 
-func newManagedDataControl(repo control.Repository, services managedDataStorage, cfg appconfig.Config) (*control.Service, error) {
+func newManagedDataControl(repo control.Repository, services managedDataStorage, cfg ProductConfig) (*control.Service, error) {
 	return control.New(repo, services.blobs, control.Config{
 		Limits: manageddata.Limits{
-			MaxFiles:         cfg.ManagedDataMaxFiles,
-			MaxFileBytes:     cfg.ManagedDataMaxFileBytes,
-			MaxRevisionBytes: cfg.ManagedDataMaxRevisionBytes,
+			MaxFiles:         cfg.MaxFiles,
+			MaxFileBytes:     cfg.MaxFileBytes,
+			MaxRevisionBytes: cfg.MaxRevisionBytes,
 		},
-		UploadTTL: cfg.ManagedDataUploadSessionTTL,
+		UploadTTL: cfg.UploadSessionTTL,
 		Transport: services.transport,
 	})
 }

@@ -17,7 +17,6 @@ import (
 	"github.com/Yacobolo/leapview/internal/agent"
 	agentsqlite "github.com/Yacobolo/leapview/internal/agent/sqlite"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/api"
 	"github.com/Yacobolo/leapview/internal/manageddata"
 	manageddatasqlite "github.com/Yacobolo/leapview/internal/manageddata/sqlite"
 	"github.com/Yacobolo/leapview/internal/platform"
@@ -27,6 +26,7 @@ import (
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
 	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/Yacobolo/leapview/internal/workspace/api"
 	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
 	"github.com/gorilla/csrf"
 )

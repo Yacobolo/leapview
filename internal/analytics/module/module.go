@@ -13,7 +13,7 @@ import (
 	queryauditsqlite "github.com/Yacobolo/leapview/internal/analytics/queryaudit/sqlite"
 	"github.com/Yacobolo/leapview/internal/analytics/resource"
 	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
-	storagemaintenance "github.com/Yacobolo/leapview/internal/storage/maintenance"
+	storagemaintenance "github.com/Yacobolo/leapview/internal/servingstate/retention"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
