@@ -112,11 +112,10 @@ type agentVisualResult struct {
 }
 
 func (p VisualProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
-	inputSchema := requireToolStringProperty(json.RawMessage(agentVisualToolSchema), "workspace")
 	return []agentcore.ToolDefinition{{
 		Name:         agentVisualToolName,
 		Description:  "Create one read-only visual from LeapView semantic model fields. Data is queried from semantic models; do not provide inline data.",
-		InputSchema:  inputSchema,
+		InputSchema:  json.RawMessage(agentcontracts.QueryVisualInputSchemaJSON),
 		OutputSchema: json.RawMessage(agentcontracts.QueryVisualResultSchemaJSON),
 		Effect:       "read",
 		Tags:         []string{"analytics", "visualization"},
@@ -385,7 +384,7 @@ func compactAgentVisualResult(
 }
 
 func agentVisualCatalogRef(workspaceID, typ, id string) agentcontracts.CatalogRef {
-	return agentcontracts.CatalogRef{WorkspaceID: workspaceID, Type: typ, ID: id}
+	return agentcontracts.CatalogRef{WorkspaceID: workspaceID, Type: agentcontracts.CatalogType(typ), ID: id}
 }
 
 func agentVisualReturnedRows(envelope visualizationir.VisualizationEnvelope) int {
@@ -503,14 +502,20 @@ func agentVisualFilterUsages(
 	for _, filter := range filters {
 		if filter.Field != "" {
 			usage := agentcontracts.QueryVisualFilterUsage{
-				FieldRef:  agentVisualCatalogRef(workspaceID, "field", modelID+"."+filter.Field),
-				Operator:  filter.Operator,
-				Values:    append([]string{}, filter.Values...),
-				GroupPath: append([]int32{}, groupPath...),
+				Ref:      agentVisualCatalogRef(workspaceID, "field", modelID+"."+filter.Field),
+				Operator: filter.Operator,
+			}
+			if len(filter.Values) > 0 {
+				values := append([]string{}, filter.Values...)
+				usage.Values = &values
+			}
+			if len(groupPath) > 0 {
+				path := append([]int32{}, groupPath...)
+				usage.Path = &path
 			}
 			if filter.Fact != "" {
 				ref := agentVisualCatalogRef(workspaceID, "semantic_table", modelID+"."+filter.Fact)
-				usage.FactRef = &ref
+				usage.ResolvedFactRef = &ref
 			}
 			out = append(out, usage)
 		}
@@ -1148,156 +1153,3 @@ func mergeAgentTableColumn(base, override dashboard.TableColumn) dashboard.Table
 	}
 	return base
 }
-
-const agentVisualToolSchema = `{
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["type", "model", "dataset"],
-  "properties": {
-    "model": {"type": "string", "minLength": 1, "description": "Semantic model ID."},
-    "dataset": {"type": "string", "minLength": 1, "description": "Semantic dataset/table ID."},
-    "title": {"type": "string", "description": "Optional display title."},
-    "type": {"type": "string", "enum": ["line", "area", "bar", "column", "pie", "donut", "scatter", "funnel", "treemap", "gauge", "heatmap", "sankey", "graph", "map", "candlestick", "boxplot", "combo", "waterfall", "histogram", "radar", "tree", "sunburst", "kpi", "table", "matrix", "pivot"], "description": "Visual type."},
-    "dimensions": {
-      "type": "array",
-      "description": "Dimension fields for chart grouping.",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["field"],
-        "properties": {
-          "field": {"type": "string", "minLength": 1, "description": "Semantic field ID."},
-          "alias": {"type": "string", "description": "Optional output alias."}
-        }
-      }
-    },
-    "series": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["field"],
-      "description": "Optional series field for split charts.",
-      "properties": {
-        "field": {"type": "string", "minLength": 1, "description": "Semantic field ID."},
-        "alias": {"type": "string", "description": "Optional output alias."}
-      }
-    },
-    "measures": {
-      "type": "array",
-      "description": "Measure fields for chart values.",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["field"],
-        "properties": {
-          "field": {"type": "string", "minLength": 1, "description": "Semantic field ID."},
-          "alias": {"type": "string", "description": "Optional output alias."}
-        }
-      }
-    },
-    "fields": {
-      "type": "array",
-      "description": "Fields for table output.",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["field"],
-        "properties": {
-          "field": {"type": "string", "minLength": 1, "description": "Semantic field ID."},
-          "alias": {"type": "string", "description": "Optional output alias."}
-        }
-      }
-    },
-    "rows": {
-      "type": "array",
-      "description": "Row fields for matrix-style table output.",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["field"],
-        "properties": {
-          "field": {"type": "string", "minLength": 1, "description": "Semantic field ID."},
-          "alias": {"type": "string", "description": "Optional output alias."}
-        }
-      }
-    },
-    "columns": {"type": "array", "description": "Optional table column display configuration.", "items": {"type": "object", "additionalProperties": true}},
-    "filters": {
-      "type": "array",
-      "description": "Governed semantic filters applied before visualization. Inline data and arbitrary expressions are not accepted.",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "field": {"type": "string", "description": "Semantic field ID. Omit only when groups supplies nested filters."},
-          "fact": {"type": "string", "description": "Fact table used to resolve an otherwise ambiguous conformed dimension."},
-          "operator": {"type": "string", "enum": ["equals", "in", "contains", "not_contains", "starts_with", "greater_than_or_equal", "less_than", "is_null", "is_not_null"], "description": "Governed comparison operator. Defaults to equals."},
-          "values": {"type": "array", "items": {"type": "string"}, "description": "Comparison values. is_null and is_not_null accept no values."},
-          "groups": {
-            "type": "array",
-            "description": "Nested filter groups.",
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["filters"],
-              "properties": {"filters": {"type": "array", "items": {"type": "object"}}}
-            }
-          }
-        }
-      }
-    },
-    "sort": {
-      "type": "array",
-      "description": "Sort fields applied to the query result.",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["field"],
-        "properties": {
-          "field": {"type": "string", "minLength": 1, "description": "Semantic field ID."},
-          "direction": {"type": "string", "enum": ["asc", "desc"], "description": "Sort direction."}
-        }
-      }
-    },
-    "limit": {"type": "integer", "minimum": 1, "maximum": 50, "description": "Maximum result rows."},
-    "presentation": {
-	  "type": "object",
-	  "additionalProperties": false,
-	  "description": "Typed renderer-independent presentation settings.",
-	  "properties": {
-		"legend": {"type": "string", "enum": ["none", "top", "right", "bottom", "left"]},
-		"showLabels": {"type": "boolean"},
-		"stacked": {"type": "boolean"},
-		"smooth": {"type": "boolean"},
-		"showSymbols": {"type": "boolean"},
-		"dataZoom": {"type": "boolean"},
-		"area": {"type": "boolean"},
-		"step": {"type": "boolean"},
-		"orientation": {"type": "string", "enum": ["horizontal", "vertical"]},
-		"labelPosition": {"type": "string", "enum": ["inside", "outside", "top", "right", "bottom", "left", "center"]},
-		"symbolSize": {"type": "number", "minimum": 0},
-		"histogramBins": {"type": "integer", "minimum": 5, "maximum": 60},
-		"seriesTypes": {"type": "object", "additionalProperties": {"type": "string", "enum": ["line", "area", "bar", "column"]}},
-		"dualAxis": {"type": "boolean"},
-		"rose": {"type": "boolean"},
-		"centerLabel": {"type": "string"},
-		"innerRadius": {"type": "number", "minimum": 0},
-		"outerRadius": {"type": "number", "minimum": 0},
-		"align": {"type": "string"},
-		"sort": {"type": "string"},
-		"initialDepth": {"type": "integer", "minimum": 0},
-		"roam": {"type": "boolean"},
-		"layout": {"type": "string"},
-		"breadcrumb": {"type": "boolean"},
-		"nodeGap": {"type": "number", "minimum": 0},
-		"curveness": {"type": "number", "minimum": 0, "maximum": 1},
-		"focus": {"type": "string"},
-		"minimum": {"type": "number"},
-		"maximum": {"type": "number"},
-		"progressWidth": {"type": "number", "minimum": 0},
-		"thresholds": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["value", "tone"], "properties": {"value": {"type": "number"}, "tone": {"type": "string"}}}},
-		"note": {"type": "string"},
-		"tone": {"type": "string"}
-	  }
-	}
-  }
-}`

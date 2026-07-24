@@ -21,29 +21,29 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/docs_read.json) · [com
 
 ```json
 {
-  "type": "object",
+  "additionalProperties": false,
   "properties": {
     "id": {
-      "type": "string",
+      "description": "Stable doc:\u003cpath\u003e ID returned by docs_search.",
       "minLength": 1,
-      "description": "Stable doc:<path> ID returned by docs_search."
-    },
-    "offset": {
-      "type": "integer",
-      "minimum": 1,
-      "description": "First line to read, starting at 1; defaults to 1."
+      "type": "string"
     },
     "limit": {
-      "type": "integer",
-      "minimum": 1,
+      "description": "Maximum lines to read; defaults to 200 and is also byte-bounded.",
       "maximum": 500,
-      "description": "Maximum lines to read; defaults to 200 and is also byte-bounded."
+      "minimum": 1,
+      "type": "integer"
+    },
+    "offset": {
+      "description": "First line to read, starting at 1; defaults to 1.",
+      "minimum": 1,
+      "type": "integer"
     }
   },
   "required": [
     "id"
   ],
-  "additionalProperties": false
+  "type": "object"
 }
 ```
 
@@ -51,10 +51,22 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/docs_read.json) · [com
 
 ```json
 {
-  "type": "object",
+  "additionalProperties": false,
   "properties": {
+    "content": {
+      "type": "string"
+    },
     "id": {
       "type": "string"
+    },
+    "lineEnd": {
+      "type": "integer"
+    },
+    "lineStart": {
+      "type": "integer"
+    },
+    "nextOffset": {
+      "type": "integer"
     },
     "path": {
       "type": "string"
@@ -62,39 +74,27 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/docs_read.json) · [com
     "title": {
       "type": "string"
     },
-    "url": {
-      "type": "string"
-    },
-    "content": {
-      "type": "string"
-    },
-    "lineStart": {
-      "type": "integer"
-    },
-    "lineEnd": {
-      "type": "integer"
-    },
     "totalLines": {
-      "type": "integer"
-    },
-    "nextOffset": {
       "type": "integer"
     },
     "truncated": {
       "type": "boolean"
+    },
+    "url": {
+      "type": "string"
     }
   },
   "required": [
+    "content",
     "id",
+    "lineEnd",
+    "lineStart",
     "path",
     "title",
-    "url",
-    "content",
-    "lineStart",
-    "lineEnd",
     "totalLines",
-    "truncated"
+    "truncated",
+    "url"
   ],
-  "additionalProperties": false
+  "type": "object"
 }
 ```

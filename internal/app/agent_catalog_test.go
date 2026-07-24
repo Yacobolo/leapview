@@ -411,6 +411,22 @@ func TestAgentCatalogProviderOutputMatchesClosedSchema(t *testing.T) {
 	if err != nil || result.IsError {
 		t.Fatalf("execute catalog_get: result=%#v err=%v", result, err)
 	}
+	for _, args := range []string{
+		`{"ref":{"workspaceId":"test-workspace","type":"workspace","id":"test-workspace"}}`,
+		`{"ref":{"workspaceId":"test-workspace","type":"dashboard","id":"executive-sales"}}`,
+		`{"ref":{"workspaceId":"test-workspace","type":"page","id":"executive-sales.overview"}}`,
+		`{
+			"ref":{"workspaceId":"test-workspace","type":"filter","id":"executive-sales.state"},
+			"location":{"dashboardId":"executive-sales","pageId":"overview"}
+		}`,
+	} {
+		result, err = catalog.Execute(context.Background(), agentcore.ToolCall{
+			ID: "catalog-get-domain", Name: agenttools.CatalogGetToolName, Arguments: json.RawMessage(args),
+		})
+		if err != nil || result.IsError {
+			t.Fatalf("execute catalog_get %s: result=%#v err=%v", args, result, err)
+		}
+	}
 	for _, ref := range []string{
 		`{"workspaceId":"test-workspace","type":"semantic_model","id":"test"}`,
 		`{"workspaceId":"test-workspace","type":"semantic_table","id":"test.orders"}`,

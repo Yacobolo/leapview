@@ -27,6 +27,10 @@ func (h Handler) dashboardVisualAgentProjection(
 	if err != nil {
 		return agentcontracts.DashboardVisualQueryResult{}, err
 	}
+	kind, err := envelope.Spec.Kind()
+	if err != nil {
+		return agentcontracts.DashboardVisualQueryResult{}, err
+	}
 	if limit <= 0 || limit > maxAgentDashboardVisualRows {
 		limit = maxAgentDashboardVisualRows
 	}
@@ -50,7 +54,7 @@ func (h Handler) dashboardVisualAgentProjection(
 		ServingSnapshot: snapshot,
 		VisualID:        envelope.VisualID,
 		Title:           base.Title,
-		Type:            base.Kind,
+		Type:            kind,
 		Mark:            dashboardVisualMark(envelope.Spec),
 		DatasetID:       datasetID,
 		Columns:         dashboardVisualColumns(fields),

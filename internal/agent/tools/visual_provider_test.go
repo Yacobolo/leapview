@@ -39,8 +39,9 @@ func TestAgentVisualInputRejectsLegacyAndUnknownProperties(t *testing.T) {
 			}
 		})
 	}
+	schema := string((VisualProvider{}).Definitions(Scope{})[0].InputSchema)
 	for _, property := range []string{`"shape"`, `"options"`, `"rendererOptions"`} {
-		if strings.Contains(agentVisualToolSchema, property) {
+		if strings.Contains(schema, property) {
 			t.Fatalf("agent schema still exposes legacy property %s", property)
 		}
 	}

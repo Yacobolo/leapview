@@ -43,11 +43,6 @@ type agentCatalogService struct {
 	server *Server
 }
 
-type activeWorkspaceCatalogRepository interface {
-	ListWithActiveMetadata(context.Context, string) ([]workspace.Summary, error)
-	ByIDWithActiveMetadata(context.Context, workspace.WorkspaceID, string) (workspace.Summary, error)
-}
-
 func (c agentCatalogService) Search(ctx context.Context, scope agenttools.Scope, request agenttools.CatalogSearchRequest) (agenttools.CatalogPage, error) {
 	if c.server == nil || c.server.search == nil {
 		return agenttools.CatalogPage{}, errors.New("catalog search is not configured")
@@ -211,7 +206,7 @@ func (c agentCatalogService) listWorkspaceItems(ctx context.Context, scope agent
 	}
 	var summaries []workspace.Summary
 	if repository != nil {
-		if active, ok := repository.(activeWorkspaceCatalogRepository); ok {
+		if active, ok := repository.(activeWorkspaceRepository); ok {
 			summaries, err = active.ListWithActiveMetadata(ctx, c.server.defaultEnvironment)
 		} else {
 			summaries, err = repository.List(ctx)
@@ -251,7 +246,7 @@ func (c agentCatalogService) workspaceItem(ctx context.Context, scope agenttools
 	}
 	if repository != nil {
 		var summary workspace.Summary
-		if active, ok := repository.(activeWorkspaceCatalogRepository); ok {
+		if active, ok := repository.(activeWorkspaceRepository); ok {
 			summary, err = active.ByIDWithActiveMetadata(ctx, workspace.WorkspaceID(workspaceID), c.server.defaultEnvironment)
 		} else {
 			summary, err = repository.ByID(ctx, workspace.WorkspaceID(workspaceID))

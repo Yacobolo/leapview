@@ -18,7 +18,6 @@ import (
 	apiidempotencysqlite "github.com/Yacobolo/leapview/internal/apiidempotency/sqlite"
 	"github.com/Yacobolo/leapview/internal/brand"
 	"github.com/Yacobolo/leapview/internal/cursorsigning"
-	"github.com/Yacobolo/leapview/internal/workspace"
 )
 
 type apiIdempotencyRecord struct {
@@ -158,12 +157,9 @@ func (s *Server) cursorSnapshot(r *http.Request) string {
 		}
 		switch segment {
 		case "workspaces":
-			repo, err := s.workspaceRepository()
-			if err == nil && repo != nil {
-				row, rowErr := repo.ByID(r.Context(), workspace.WorkspaceID(s.workspaceID(segments[index+1])))
-				if rowErr == nil && row.ActiveServingStateID != "" {
-					return string(row.ActiveServingStateID)
-				}
+			row, err := s.workspaceWithActiveMetadata(r.Context(), segments[index+1])
+			if err == nil && row.ActiveServingStateID != "" {
+				return string(row.ActiveServingStateID)
 			}
 		case "projects":
 			if repo := s.releaseRepository(); repo != nil {

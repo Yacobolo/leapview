@@ -50,10 +50,31 @@ func TestCatalogProviderDefinesClosedCuratedTools(t *testing.T) {
 		if schema["additionalProperties"] != false {
 			t.Fatalf("%s input schema is not closed", definition.Name)
 		}
+		if definition.Name == CatalogSearchToolName {
+			assertToolLimitMaximum(t, definition.InputSchema, MaxCatalogSearchLimit)
+		}
+		if definition.Name == CatalogListToolName {
+			assertToolLimitMaximum(t, definition.InputSchema, MaxCatalogListLimit)
+		}
 	}
 	slices.Sort(names)
 	if want := []string{CatalogGetToolName, CatalogListToolName, CatalogSearchToolName}; !slices.Equal(names, want) {
 		t.Fatalf("catalog definitions = %#v, want %#v", names, want)
+	}
+}
+
+func assertToolLimitMaximum(t *testing.T, raw json.RawMessage, want int) {
+	t.Helper()
+	var schema struct {
+		Properties map[string]struct {
+			Maximum float64 `json:"maximum"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		t.Fatalf("decode tool schema: %v", err)
+	}
+	if got := schema.Properties["limit"].Maximum; got != float64(want) {
+		t.Fatalf("schema limit maximum = %v, want %d", got, want)
 	}
 }
 

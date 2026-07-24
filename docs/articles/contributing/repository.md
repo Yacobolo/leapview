@@ -6,6 +6,7 @@ LeapView is a monorepo containing the product application, browser components, r
 
 - `cmd/leapview/` — application and CLI entry point.
 - `internal/` — domain, transport, query, runtime, storage, access, agent, and generator packages.
+- `api/agenttools/` — curated agent input/output DTOs and portable tool-schema source contracts.
 - `api/typespec/` — headless API source contract.
 - `api/signals/` — UI signal source contract.
 - `dashboards/` — complete example configuration-as-code projects.
@@ -54,7 +55,7 @@ task generate
 
 It produces database code, configuration surfaces, API and UI-signal contracts, JSON Schemas, CLI docs, and the unified documentation catalog/search index. Individual generator tasks exist for focused work.
 
-Do not manually edit a file marked generated. Change TypeSpec, CUE/config contracts, Cobra commands, configuration specs, or the owning generator. Generated implementation code, reference prose, catalogs, and search indexes are build inputs and stay out of Git. Only intentional public snapshots—`.env.example`, JSON Schemas, and the OpenAPI contract—are committed so integrations and reviewers can consume their exact version.
+Do not manually edit a file marked generated. Change TypeSpec, CUE/config contracts, Cobra commands, configuration specs, or the owning generator. Agent provider schemas are generated from `api/agenttools/main.tsp`; their readable and machine-readable presentation under `docs/reference/agent-tools/` is generated from the canonical runtime catalog. Generated implementation code, reference prose, catalogs, and search indexes are build inputs and stay out of Git unless they are intentional public contract snapshots.
 
 Use `task docs:check` and `task config:check` to validate generated output. `task generated:check` detects drift in the public snapshots. CI generates build-only inputs once, verifies deterministic output, and shares them with downstream jobs.
 

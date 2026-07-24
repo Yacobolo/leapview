@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	agentcontracts "github.com/Yacobolo/leapview/internal/agent/contracts"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 )
 
@@ -24,18 +25,18 @@ const (
 	MaxCatalogListLimit       = 50
 )
 
-type CatalogType string
+type CatalogType = agentcontracts.CatalogType
 
 const (
-	CatalogTypeWorkspace     CatalogType = "workspace"
-	CatalogTypeDashboard     CatalogType = "dashboard"
-	CatalogTypePage          CatalogType = "page"
-	CatalogTypeVisual        CatalogType = "visual"
-	CatalogTypeFilter        CatalogType = "filter"
-	CatalogTypeSemanticModel CatalogType = "semantic_model"
-	CatalogTypeSemanticTable CatalogType = "semantic_table"
-	CatalogTypeField         CatalogType = "field"
-	CatalogTypeMeasure       CatalogType = "measure"
+	CatalogTypeWorkspace     = agentcontracts.CatalogTypeWorkspace
+	CatalogTypeDashboard     = agentcontracts.CatalogTypeDashboard
+	CatalogTypePage          = agentcontracts.CatalogTypePage
+	CatalogTypeVisual        = agentcontracts.CatalogTypeVisual
+	CatalogTypeFilter        = agentcontracts.CatalogTypeFilter
+	CatalogTypeSemanticModel = agentcontracts.CatalogTypeSemanticModel
+	CatalogTypeSemanticTable = agentcontracts.CatalogTypeSemanticTable
+	CatalogTypeField         = agentcontracts.CatalogTypeField
+	CatalogTypeMeasure       = agentcontracts.CatalogTypeMeasure
 )
 
 var catalogTypes = map[CatalogType]struct{}{
@@ -72,11 +73,7 @@ var catalogChildren = map[CatalogType]map[CatalogType]struct{}{
 	},
 }
 
-type CatalogRef struct {
-	WorkspaceID string      `json:"workspaceId"`
-	Type        CatalogType `json:"type"`
-	ID          string      `json:"id"`
-}
+type CatalogRef = agentcontracts.CatalogRef
 
 type CatalogLocation struct {
 	DashboardID   string `json:"dashboardId"`
@@ -177,8 +174,8 @@ func (p CatalogProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
 		{
 			Name:         CatalogSearchToolName,
 			Description:  "Search the complete authorized LeapView BI catalog across workspaces. Use this when you know words from a resource name or description but not its exact location.",
-			InputSchema:  catalogSearchInputSchema,
-			OutputSchema: catalogPageOutputSchema,
+			InputSchema:  json.RawMessage(agentcontracts.CatalogSearchInputSchemaJSON),
+			OutputSchema: json.RawMessage(agentcontracts.CatalogPageSchemaJSON),
 			Effect:       "read",
 			Tags:         []string{"catalog", "search"},
 			Handler: agentcore.ToolHandlerFunc(func(ctx context.Context, call agentcore.ToolCall) (agentcore.ToolResult, error) {
@@ -212,8 +209,8 @@ func (p CatalogProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
 		{
 			Name:         CatalogListToolName,
 			Description:  "Browse one deterministic level of the authorized LeapView catalog hierarchy. Omit parent to list workspaces, then pass returned refs to continue browsing.",
-			InputSchema:  catalogListInputSchema,
-			OutputSchema: catalogPageOutputSchema,
+			InputSchema:  json.RawMessage(agentcontracts.CatalogListInputSchemaJSON),
+			OutputSchema: json.RawMessage(agentcontracts.CatalogPageSchemaJSON),
 			Effect:       "read",
 			Tags:         []string{"catalog", "browse"},
 			Handler: agentcore.ToolHandlerFunc(func(ctx context.Context, call agentcore.ToolCall) (agentcore.ToolResult, error) {
@@ -254,8 +251,8 @@ func (p CatalogProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
 		{
 			Name:         CatalogGetToolName,
 			Description:  "Get the compact definition and type-specific metadata for one exact catalog ref. A dashboard/page location is required when a visual or filter is shared.",
-			InputSchema:  catalogGetInputSchema,
-			OutputSchema: catalogGetOutputSchema,
+			InputSchema:  json.RawMessage(agentcontracts.CatalogGetInputSchemaJSON),
+			OutputSchema: json.RawMessage(agentcontracts.CatalogGetResultSchemaJSON),
 			Effect:       "read",
 			Tags:         []string{"catalog", "describe"},
 			Handler: agentcore.ToolHandlerFunc(func(ctx context.Context, call agentcore.ToolCall) (agentcore.ToolResult, error) {
@@ -383,285 +380,3 @@ func catalogToolError(fallback string, err error) agentcore.ToolResult {
 	}
 	return ToolError(fallback, err.Error())
 }
-
-var catalogRefSchema = `{
-	"type":"object",
-	"properties":{
-		"workspaceId":{"type":"string","minLength":1},
-		"type":{"type":"string","enum":["workspace","dashboard","page","visual","filter","semantic_model","semantic_table","field","measure"]},
-		"id":{"type":"string","minLength":1}
-	},
-	"required":["workspaceId","type","id"],
-	"additionalProperties":false
-}`
-
-var catalogLocationInputSchema = `{
-	"type":"object",
-	"properties":{
-		"dashboardId":{"type":"string","minLength":1},
-		"pageId":{"type":"string","minLength":1}
-	},
-	"required":["dashboardId","pageId"],
-	"additionalProperties":false
-}`
-
-var catalogLocationOutputSchema = `{
-	"type":"object",
-	"properties":{
-		"dashboardId":{"type":"string","minLength":1},
-		"dashboardName":{"type":"string"},
-		"pageId":{"type":"string","minLength":1},
-		"pageName":{"type":"string"},
-		"href":{"type":"string"}
-	},
-	"required":["dashboardId","pageId"],
-	"additionalProperties":false
-}`
-
-var catalogSearchInputSchema = json.RawMessage(fmt.Sprintf(`{
-	"type":"object",
-	"properties":{
-		"query":{"type":"string","minLength":1},
-		"types":{"type":"array","items":{"type":"string","enum":["workspace","dashboard","page","visual","filter","semantic_model","semantic_table","field","measure"]}},
-		"workspaceIds":{"type":"array","items":{"type":"string","minLength":1}},
-		"context":{"type":"object","properties":{"dashboardId":{"type":"string"},"pageId":{"type":"string"}},"additionalProperties":false},
-		"cursor":{"type":"string"},
-		"limit":{"type":"integer","minimum":1,"maximum":%d}
-	},
-	"required":["query"],
-	"additionalProperties":false
-}`, MaxCatalogSearchLimit))
-
-var catalogListInputSchema = json.RawMessage(fmt.Sprintf(`{
-	"type":"object",
-	"properties":{
-		"parent":%s,
-		"childTypes":{"type":"array","items":{"type":"string","enum":["workspace","dashboard","page","visual","filter","semantic_model","semantic_table","field","measure"]}},
-		"cursor":{"type":"string"},
-		"limit":{"type":"integer","minimum":1,"maximum":%d}
-	},
-	"additionalProperties":false
-}`, catalogRefSchema, MaxCatalogListLimit))
-
-var catalogGetInputSchema = json.RawMessage(fmt.Sprintf(`{
-	"type":"object",
-	"properties":{"ref":%s,"location":%s},
-	"required":["ref"],
-	"additionalProperties":false
-}`, catalogRefSchema, catalogLocationInputSchema))
-
-var catalogItemSchema = fmt.Sprintf(`{
-	"type":"object",
-	"properties":{
-		"ref":%s,
-		"name":{"type":"string"},
-		"description":{"type":"string"},
-		"workspace":{"type":"object","properties":{"ref":%s,"name":{"type":"string"}},"required":["ref","name"],"additionalProperties":false},
-		"hierarchy":{"type":"array","items":{"type":"object","properties":{"ref":%s,"name":{"type":"string"}},"required":["ref","name"],"additionalProperties":false}},
-		"locations":{"type":"array","items":%s},
-		"href":{"type":"string"},
-		"capabilities":{"type":"array","items":{"type":"string","enum":["catalog_get","catalog_list","query_semantic_model","query_dashboard_visual","query_visual"]}}
-	},
-	"required":["ref","name","workspace","hierarchy","capabilities"],
-	"additionalProperties":false
-}`, catalogRefSchema, catalogRefSchema, catalogRefSchema, catalogLocationOutputSchema)
-
-var catalogPageOutputSchema = json.RawMessage(fmt.Sprintf(`{
-	"type":"object",
-	"properties":{
-		"items":{"type":"array","items":%s},
-		"count":{"type":"integer","minimum":0},
-		"hasMore":{"type":"boolean"},
-		"nextCursor":{"type":"string"}
-	},
-	"required":["items","count","hasMore"],
-	"additionalProperties":false
-}`, catalogItemSchema))
-
-var catalogPlacementSchema = `{
-	"type":"object",
-	"properties":{
-		"col":{"type":"integer"},"row":{"type":"integer"},"colSpan":{"type":"integer"},"rowSpan":{"type":"integer"},
-		"x":{"type":"number"},"y":{"type":"number"},"width":{"type":"number"},"height":{"type":"number"}
-	},
-	"additionalProperties":false
-}`
-
-var catalogColumnSchema = `{
-	"type":"object",
-	"properties":{"key":{"type":"string"},"label":{"type":"string"},"role":{"type":"string"},"format":{"type":"string"}},
-	"required":["key","label"],
-	"additionalProperties":false
-}`
-
-var catalogDetailsSchema = `{
-	"oneOf":[
-		{
-			"type":"object",
-			"properties":{"type":{"type":"string","enum":["workspace"]},"activeServingStateId":{"type":"string"}},
-			"required":["type","activeServingStateId"],
-			"additionalProperties":false
-		},
-		{
-			"type":"object",
-			"properties":{
-				"type":{"type":"string","enum":["dashboard"]},
-				"semanticModelRef":` + catalogRefSchema + `,
-				"pageCount":{"type":"integer"},
-				"visualCount":{"type":"integer"},
-				"filterCount":{"type":"integer"}
-			},
-			"required":["type","semanticModelRef","pageCount","visualCount","filterCount"],
-			"additionalProperties":false
-		},
-		{
-			"type":"object",
-			"properties":{
-				"type":{"type":"string","enum":["page"]},
-				"components":{
-					"type":"array",
-					"items":{
-						"type":"object",
-						"properties":{
-							"id":{"type":"string"},"kind":{"type":"string"},"ref":{"type":"string"},
-							"title":{"type":"string"},"description":{"type":"string"},
-							"placement":` + catalogPlacementSchema + `,
-							"x":{"type":"number"},"y":{"type":"number"},"width":{"type":"number"},"height":{"type":"number"},
-							"visualId":{"type":"string"},"filterId":{"type":"string"}
-						},
-						"required":["id","kind"],
-						"additionalProperties":false
-					}
-				}
-			},
-			"required":["type","components"],
-			"additionalProperties":false
-		},
-		{
-			"type":"object",
-			"properties":{
-				"type":{"type":"string","enum":["visual"]},
-				"visualType":{"type":"string"},"shape":{"type":"string"},"renderer":{"type":"string"},
-				"query":{"type":"object","additionalProperties":true},
-				"columns":{"type":"array","items":` + catalogColumnSchema + `},
-				"placement":` + catalogPlacementSchema + `
-			},
-			"required":["type","visualType","shape","renderer","query","columns","placement"],
-			"additionalProperties":false
-		},
-		{
-			"type":"object",
-			"properties":{
-				"type":{"type":"string","enum":["filter"]},
-				"field":{"type":"string"},
-				"configuration":{"type":"object","additionalProperties":true},
-				"placement":` + catalogPlacementSchema + `
-			},
-			"required":["type","field","configuration","placement"],
-			"additionalProperties":false
-		},
-		{
-			"type":"object",
-			"properties":{
-				"type":{"type":"string","enum":["semantic_model"]},
-				"semanticTableCount":{"type":"integer"},"fieldCount":{"type":"integer"},
-				"conformedDimensionCount":{"type":"integer"},"atomicMeasureCount":{"type":"integer"},
-				"metricCount":{"type":"integer"},"factCount":{"type":"integer"},"relationshipCount":{"type":"integer"},
-				"relationships":{
-					"type":"array",
-					"items":{
-						"type":"object",
-						"properties":{
-							"id":{"type":"string"},"description":{"type":"string"},
-							"fromFieldRef":` + catalogRefSchema + `,"toFieldRef":` + catalogRefSchema + `,
-							"cardinality":{"type":"string"},"active":{"type":"boolean"}
-						},
-						"required":["id","description","fromFieldRef","toFieldRef","cardinality","active"],
-						"additionalProperties":false
-					}
-				},
-				"dashboardCount":{"type":"integer"},
-				"dashboardUsage":{"type":"array","items":` + catalogRefSchema + `}
-			},
-			"required":[
-				"type","semanticTableCount","fieldCount","conformedDimensionCount","atomicMeasureCount",
-				"metricCount","factCount","relationshipCount","relationships","dashboardCount","dashboardUsage"
-			],
-			"additionalProperties":false
-		},
-		{
-			"type":"object",
-			"properties":{
-				"type":{"type":"string","enum":["semantic_table"]},
-				"source":{"type":"string"},"sources":{"type":"array","items":{"type":"string"}},
-				"grain":{"type":"string"},"primaryKey":{"type":"string"},"keys":{"type":"array","items":{"type":"string"}},
-				"roles":{"type":"array","items":{"type":"string","enum":["fact","dimension"]}},
-				"fieldCount":{"type":"integer"},"measureCount":{"type":"integer"}
-			},
-			"required":["type","source","sources","grain","primaryKey","keys","roles","fieldCount","measureCount"],
-			"additionalProperties":false
-		},
-		{
-			"type":"object",
-			"properties":{
-				"type":{"type":"string","enum":["field"]},"kind":{"type":"string"},
-				"table":{"type":"string"},"label":{"type":"string"},"dataType":{"type":"string"},
-				"grain":{"type":"string"},"timeGrains":{"type":"array","items":{"type":"string"}},
-				"expression":{"type":"string"},"sourceField":{"type":"string"},
-				"nullable":{"type":"boolean"},"primaryKey":{"type":"boolean"},
-				"bindings":{
-					"type":"array",
-					"items":{
-						"type":"object",
-						"properties":{
-							"semanticTableRef":` + catalogRefSchema + `,
-							"fieldRef":` + catalogRefSchema + `,
-							"relationshipPath":{"type":"array","items":{"type":"string"}}
-						},
-						"required":["semanticTableRef","fieldRef","relationshipPath"],
-						"additionalProperties":false
-					}
-				}
-			},
-			"required":["type","kind","label","dataType"],
-			"additionalProperties":false
-		},
-		{
-			"type":"object",
-			"properties":{
-				"type":{"type":"string","enum":["measure"]},"kind":{"type":"string"},
-				"table":{"type":"string"},"label":{"type":"string"},"aggregation":{"type":"string"},
-				"factRef":` + catalogRefSchema + `,
-				"input":{
-					"type":"object",
-					"properties":{"fieldRef":` + catalogRefSchema + `,"expression":{"type":"string"}},
-					"additionalProperties":false
-				},
-				"filters":{
-					"type":"array",
-					"items":{
-						"type":"object",
-						"properties":{
-							"fieldRef":` + catalogRefSchema + `,"operator":{"type":"string"},
-							"values":{"type":"array","items":{}}
-						},
-						"required":["fieldRef","operator","values"],
-						"additionalProperties":false
-					}
-				},
-				"empty":{"type":"string"},"expression":{"type":"string"},
-				"dependencyRefs":{"type":"array","items":` + catalogRefSchema + `},
-				"unit":{"type":"string"},"format":{"type":"string"},"hidden":{"type":"boolean"}
-			},
-			"required":["type","kind","label","dependencyRefs","unit","format","hidden"],
-			"additionalProperties":false
-		}
-	]
-}`
-
-var catalogGetOutputSchema = json.RawMessage(fmt.Sprintf(`{
-	"type":"object",
-	"properties":{"item":%s,"details":%s},
-	"required":["item","details"],
-	"additionalProperties":false
-}`, catalogItemSchema, catalogDetailsSchema))

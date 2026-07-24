@@ -26,7 +26,79 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_visual.json) · [
     "columns": {
       "description": "Optional table column display configuration.",
       "items": {
-        "additionalProperties": true,
+        "additionalProperties": false,
+        "properties": {
+          "align": {
+            "type": "string"
+          },
+          "columnValue": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "formatting": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "background": {
+                  "type": "string"
+                },
+                "color": {
+                  "type": "string"
+                },
+                "highColor": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "lowColor": {
+                  "type": "string"
+                },
+                "max": {
+                  "type": "number"
+                },
+                "min": {
+                  "type": "number"
+                },
+                "values": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "group": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "measure": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "width": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ],
         "type": "object"
       },
       "type": "array"
@@ -99,7 +171,9 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_visual.json) · [
               "additionalProperties": false,
               "properties": {
                 "filters": {
+                  "description": "Nested governed filters. The next recursive level is validated by the tool provider.",
                   "items": {
+                    "additionalProperties": {},
                     "type": "object"
                   },
                   "type": "array"
@@ -174,13 +248,15 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_visual.json) · [
     },
     "presentation": {
       "additionalProperties": false,
-      "description": "Typed renderer-independent presentation settings.",
       "properties": {
         "align": {
           "type": "string"
         },
         "area": {
           "type": "boolean"
+        },
+        "basemap": {
+          "type": "string"
         },
         "breadcrumb": {
           "type": "boolean"
@@ -320,8 +396,8 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_visual.json) · [
               }
             },
             "required": [
-              "value",
-              "tone"
+              "tone",
+              "value"
             ],
             "type": "object"
           },
@@ -357,7 +433,6 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_visual.json) · [
     },
     "series": {
       "additionalProperties": false,
-      "description": "Optional series field for split charts.",
       "properties": {
         "alias": {
           "description": "Optional output alias.",
@@ -405,7 +480,6 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_visual.json) · [
       "type": "string"
     },
     "type": {
-      "description": "Visual type.",
       "enum": [
         "line",
         "area",
@@ -437,15 +511,14 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_visual.json) · [
       "type": "string"
     },
     "workspace": {
-      "description": "Workspace ID to query.",
       "minLength": 1,
       "type": "string"
     }
   },
   "required": [
-    "type",
-    "model",
     "dataset",
+    "model",
+    "type",
     "workspace"
   ],
   "type": "object"
@@ -487,6 +560,7 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_visual.json) · [
       "additionalProperties": false,
       "properties": {
         "id": {
+          "minLength": 1,
           "type": "string"
         },
         "type": {
@@ -504,6 +578,7 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_visual.json) · [
           "type": "string"
         },
         "workspaceId": {
+          "minLength": 1,
           "type": "string"
         }
       },
@@ -565,6 +640,7 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_visual.json) · [
             "additionalProperties": false,
             "properties": {
               "id": {
+                "minLength": 1,
                 "type": "string"
               },
               "type": {
@@ -582,6 +658,7 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_visual.json) · [
                 "type": "string"
               },
               "workspaceId": {
+                "minLength": 1,
                 "type": "string"
               }
             },
@@ -619,74 +696,6 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_visual.json) · [
       "items": {
         "additionalProperties": false,
         "properties": {
-          "factRef": {
-            "additionalProperties": false,
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "type": {
-                "enum": [
-                  "workspace",
-                  "dashboard",
-                  "page",
-                  "visual",
-                  "filter",
-                  "semantic_model",
-                  "semantic_table",
-                  "field",
-                  "measure"
-                ],
-                "type": "string"
-              },
-              "workspaceId": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id",
-              "type",
-              "workspaceId"
-            ],
-            "type": "object"
-          },
-          "fieldRef": {
-            "additionalProperties": false,
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "type": {
-                "enum": [
-                  "workspace",
-                  "dashboard",
-                  "page",
-                  "visual",
-                  "filter",
-                  "semantic_model",
-                  "semantic_table",
-                  "field",
-                  "measure"
-                ],
-                "type": "string"
-              },
-              "workspaceId": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id",
-              "type",
-              "workspaceId"
-            ],
-            "type": "object"
-          },
-          "groupPath": {
-            "items": {
-              "type": "integer"
-            },
-            "type": "array"
-          },
           "operator": {
             "enum": [
               "equals",
@@ -701,7 +710,81 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_visual.json) · [
             ],
             "type": "string"
           },
+          "path": {
+            "description": "Zero-based nested group path. Omitted for a root-level filter.",
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "ref": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "workspace",
+                  "dashboard",
+                  "page",
+                  "visual",
+                  "filter",
+                  "semantic_model",
+                  "semantic_table",
+                  "field",
+                  "measure"
+                ],
+                "type": "string"
+              },
+              "workspaceId": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "workspaceId"
+            ],
+            "type": "object"
+          },
+          "resolvedFactRef": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "workspace",
+                  "dashboard",
+                  "page",
+                  "visual",
+                  "filter",
+                  "semantic_model",
+                  "semantic_table",
+                  "field",
+                  "measure"
+                ],
+                "type": "string"
+              },
+              "workspaceId": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "workspaceId"
+            ],
+            "type": "object"
+          },
           "values": {
+            "description": "Comparison values. Omitted for unary operators.",
             "items": {
               "type": "string"
             },
@@ -709,10 +792,8 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_visual.json) · [
           }
         },
         "required": [
-          "fieldRef",
-          "groupPath",
           "operator",
-          "values"
+          "ref"
         ],
         "type": "object"
       },
@@ -766,6 +847,7 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_visual.json) · [
       "additionalProperties": false,
       "properties": {
         "id": {
+          "minLength": 1,
           "type": "string"
         },
         "type": {
@@ -783,6 +865,7 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_visual.json) · [
           "type": "string"
         },
         "workspaceId": {
+          "minLength": 1,
           "type": "string"
         }
       },

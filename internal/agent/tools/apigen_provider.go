@@ -204,39 +204,6 @@ func stripCatalogRefString(value, parentID string) string {
 	return normalized
 }
 
-func requireToolStringProperty(input json.RawMessage, name string) json.RawMessage {
-	var schema map[string]any
-	if err := json.Unmarshal(input, &schema); err != nil {
-		return input
-	}
-	properties, _ := schema["properties"].(map[string]any)
-	if properties == nil {
-		properties = map[string]any{}
-		schema["properties"] = properties
-	}
-	properties[name] = map[string]any{
-		"type":        "string",
-		"minLength":   1,
-		"description": "Workspace ID to query.",
-	}
-	required, _ := schema["required"].([]any)
-	for _, item := range required {
-		if item == name {
-			encoded, err := json.Marshal(schema)
-			if err == nil {
-				return encoded
-			}
-			return input
-		}
-	}
-	schema["required"] = append(required, name)
-	encoded, err := json.Marshal(schema)
-	if err != nil {
-		return input
-	}
-	return encoded
-}
-
 func withAPIGenRouteContext(request *http.Request, pathTemplate string) *http.Request {
 	templateSegments := strings.Split(strings.Trim(pathTemplate, "/"), "/")
 	requestSegments := strings.Split(strings.Trim(request.URL.EscapedPath(), "/"), "/")

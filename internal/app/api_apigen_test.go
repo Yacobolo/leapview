@@ -38,9 +38,17 @@ func (r apiSnapshotWorkspaceRepository) Ensure(context.Context, workspace.Ensure
 	return nil
 }
 func (r apiSnapshotWorkspaceRepository) ByID(context.Context, workspace.WorkspaceID) (workspace.Summary, error) {
-	return r.summary, nil
+	summary := r.summary
+	summary.ActiveServingStateID = ""
+	return summary, nil
 }
 func (r apiSnapshotWorkspaceRepository) List(context.Context) ([]workspace.Summary, error) {
+	return []workspace.Summary{r.summary}, nil
+}
+func (r apiSnapshotWorkspaceRepository) ByIDWithActiveMetadata(context.Context, workspace.WorkspaceID, string) (workspace.Summary, error) {
+	return r.summary, nil
+}
+func (r apiSnapshotWorkspaceRepository) ListWithActiveMetadata(context.Context, string) ([]workspace.Summary, error) {
 	return []workspace.Summary{r.summary}, nil
 }
 func (r apiSnapshotWorkspaceRepository) ActiveServingStateGraph(context.Context, workspace.WorkspaceID, string) (workspace.AssetGraph, bool, error) {

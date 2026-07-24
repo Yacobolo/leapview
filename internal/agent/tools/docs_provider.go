@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 
+	agentcontracts "github.com/Yacobolo/leapview/internal/agent/contracts"
 	productdocs "github.com/Yacobolo/leapview/internal/productdocs"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 )
@@ -28,20 +28,10 @@ type DocsProvider struct {
 func (p DocsProvider) Definitions() []agentcore.ToolDefinition {
 	return []agentcore.ToolDefinition{
 		{
-			Name:        DocsSearchToolName,
-			Description: "Search LeapView's version-matched product documentation. Returns ranked, bounded matches with stable document IDs and excerpts. Continue with nextCursor when hasMore is true, or use the optional path prefix to narrow broad searches.",
-			InputSchema: json.RawMessage(fmt.Sprintf(`{
-				"type":"object",
-				"properties":{
-						"query":{"type":"string","minLength":1,"description":"Words or phrases to find in LeapView documentation."},
-						"path":{"type":"string","description":"Optional documentation path prefix, such as guides/build, api, cli, or visuals."},
-						"cursor":{"type":"string","minLength":1,"description":"Opaque nextCursor from a previous call with the same query and path."},
-						"limit":{"type":"integer","minimum":1,"maximum":%d,"description":"Maximum matches to return; defaults to %d."}
-				},
-				"required":["query"],
-				"additionalProperties":false
-			}`, productdocs.MaxSearchLimit, productdocs.DefaultSearchLimit)),
-			OutputSchema: docsSearchOutputSchema,
+			Name:         DocsSearchToolName,
+			Description:  "Search LeapView's version-matched product documentation. Returns ranked, bounded matches with stable document IDs and excerpts. Continue with nextCursor when hasMore is true, or use the optional path prefix to narrow broad searches.",
+			InputSchema:  json.RawMessage(agentcontracts.DocsSearchInputSchemaJSON),
+			OutputSchema: json.RawMessage(agentcontracts.DocsSearchResultSchemaJSON),
 			Effect:       "read",
 			Tags:         []string{"documentation", "search"},
 			Handler: agentcore.ToolHandlerFunc(func(ctx context.Context, call agentcore.ToolCall) (agentcore.ToolResult, error) {
@@ -49,19 +39,10 @@ func (p DocsProvider) Definitions() []agentcore.ToolDefinition {
 			}),
 		},
 		{
-			Name:        DocsReadToolName,
-			Description: "Read a bounded line window from one LeapView document returned by docs_search. Continue with nextOffset when truncated is true.",
-			InputSchema: json.RawMessage(fmt.Sprintf(`{
-				"type":"object",
-				"properties":{
-					"id":{"type":"string","minLength":1,"description":"Stable doc:<path> ID returned by docs_search."},
-					"offset":{"type":"integer","minimum":1,"description":"First line to read, starting at 1; defaults to 1."},
-					"limit":{"type":"integer","minimum":1,"maximum":%d,"description":"Maximum lines to read; defaults to %d and is also byte-bounded."}
-				},
-				"required":["id"],
-				"additionalProperties":false
-			}`, productdocs.MaxReadLimit, productdocs.DefaultReadLimit)),
-			OutputSchema: docsReadOutputSchema,
+			Name:         DocsReadToolName,
+			Description:  "Read a bounded line window from one LeapView document returned by docs_search. Continue with nextOffset when truncated is true.",
+			InputSchema:  json.RawMessage(agentcontracts.DocsReadInputSchemaJSON),
+			OutputSchema: json.RawMessage(agentcontracts.DocsReadResultSchemaJSON),
 			Effect:       "read",
 			Tags:         []string{"documentation"},
 			Handler: agentcore.ToolHandlerFunc(func(ctx context.Context, call agentcore.ToolCall) (agentcore.ToolResult, error) {
@@ -119,50 +100,3 @@ func documentationToolError(fallback string, err error) agentcore.ToolResult {
 		return ToolError(fallback, err.Error())
 	}
 }
-
-var docsSearchOutputSchema = json.RawMessage(`{
-	"type":"object",
-	"properties":{
-		"query":{"type":"string"},
-		"path":{"type":"string"},
-		"matches":{
-			"type":"array",
-			"items":{
-				"type":"object",
-				"properties":{
-					"id":{"type":"string"},
-					"path":{"type":"string"},
-					"title":{"type":"string"},
-					"summary":{"type":"string"},
-					"url":{"type":"string"},
-					"excerpt":{"type":"string"}
-				},
-				"required":["id","path","title","summary","url","excerpt"],
-				"additionalProperties":false
-			}
-			},
-			"count":{"type":"integer","minimum":0},
-			"hasMore":{"type":"boolean"},
-			"nextCursor":{"type":"string"}
-		},
-		"required":["query","matches","count","hasMore"],
-	"additionalProperties":false
-}`)
-
-var docsReadOutputSchema = json.RawMessage(`{
-	"type":"object",
-	"properties":{
-		"id":{"type":"string"},
-		"path":{"type":"string"},
-		"title":{"type":"string"},
-		"url":{"type":"string"},
-		"content":{"type":"string"},
-		"lineStart":{"type":"integer"},
-		"lineEnd":{"type":"integer"},
-		"totalLines":{"type":"integer"},
-		"nextOffset":{"type":"integer"},
-		"truncated":{"type":"boolean"}
-	},
-	"required":["id","path","title","url","content","lineStart","lineEnd","totalLines","truncated"],
-	"additionalProperties":false
-}`)

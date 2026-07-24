@@ -21,45 +21,10 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/catalog_list.json) · [
 
 ```json
 {
-  "type": "object",
+  "additionalProperties": false,
   "properties": {
-    "parent": {
-      "type": "object",
-      "properties": {
-        "workspaceId": {
-          "type": "string",
-          "minLength": 1
-        },
-        "type": {
-          "type": "string",
-          "enum": [
-            "workspace",
-            "dashboard",
-            "page",
-            "visual",
-            "filter",
-            "semantic_model",
-            "semantic_table",
-            "field",
-            "measure"
-          ]
-        },
-        "id": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "required": [
-        "workspaceId",
-        "type",
-        "id"
-      ],
-      "additionalProperties": false
-    },
     "childTypes": {
-      "type": "array",
       "items": {
-        "type": "string",
         "enum": [
           "workspace",
           "dashboard",
@@ -70,19 +35,54 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/catalog_list.json) · [
           "semantic_table",
           "field",
           "measure"
-        ]
-      }
+        ],
+        "type": "string"
+      },
+      "type": "array"
     },
     "cursor": {
       "type": "string"
     },
     "limit": {
-      "type": "integer",
+      "maximum": 50,
       "minimum": 1,
-      "maximum": 50
+      "type": "integer"
+    },
+    "parent": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "workspace",
+            "dashboard",
+            "page",
+            "visual",
+            "filter",
+            "semantic_model",
+            "semantic_table",
+            "field",
+            "measure"
+          ],
+          "type": "string"
+        },
+        "workspaceId": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "workspaceId"
+      ],
+      "type": "object"
     }
   },
-  "additionalProperties": false
+  "type": "object"
 }
 ```
 
@@ -90,112 +90,50 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/catalog_list.json) · [
 
 ```json
 {
-  "type": "object",
+  "additionalProperties": false,
   "properties": {
+    "count": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "hasMore": {
+      "type": "boolean"
+    },
     "items": {
-      "type": "array",
       "items": {
-        "type": "object",
+        "additionalProperties": false,
         "properties": {
-          "ref": {
-            "type": "object",
-            "properties": {
-              "workspaceId": {
-                "type": "string",
-                "minLength": 1
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "workspace",
-                  "dashboard",
-                  "page",
-                  "visual",
-                  "filter",
-                  "semantic_model",
-                  "semantic_table",
-                  "field",
-                  "measure"
-                ]
-              },
-              "id": {
-                "type": "string",
-                "minLength": 1
-              }
+          "capabilities": {
+            "items": {
+              "enum": [
+                "catalog_get",
+                "catalog_list",
+                "query_semantic_model",
+                "query_dashboard_visual",
+                "query_visual"
+              ],
+              "type": "string"
             },
-            "required": [
-              "workspaceId",
-              "type",
-              "id"
-            ],
-            "additionalProperties": false
-          },
-          "name": {
-            "type": "string"
+            "type": "array"
           },
           "description": {
             "type": "string"
           },
-          "workspace": {
-            "type": "object",
-            "properties": {
-              "ref": {
-                "type": "object",
-                "properties": {
-                  "workspaceId": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "type": {
-                    "type": "string",
-                    "enum": [
-                      "workspace",
-                      "dashboard",
-                      "page",
-                      "visual",
-                      "filter",
-                      "semantic_model",
-                      "semantic_table",
-                      "field",
-                      "measure"
-                    ]
-                  },
-                  "id": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "required": [
-                  "workspaceId",
-                  "type",
-                  "id"
-                ],
-                "additionalProperties": false
-              },
-              "name": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "ref",
-              "name"
-            ],
-            "additionalProperties": false
-          },
           "hierarchy": {
-            "type": "array",
             "items": {
-              "type": "object",
+              "additionalProperties": false,
               "properties": {
+                "name": {
+                  "type": "string"
+                },
                 "ref": {
-                  "type": "object",
+                  "additionalProperties": false,
                   "properties": {
-                    "workspaceId": {
-                      "type": "string",
-                      "minLength": 1
+                    "id": {
+                      "minLength": 1,
+                      "type": "string"
                     },
                     "type": {
-                      "type": "string",
                       "enum": [
                         "workspace",
                         "dashboard",
@@ -206,51 +144,52 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/catalog_list.json) · [
                         "semantic_table",
                         "field",
                         "measure"
-                      ]
+                      ],
+                      "type": "string"
                     },
-                    "id": {
-                      "type": "string",
-                      "minLength": 1
+                    "workspaceId": {
+                      "minLength": 1,
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "id",
                     "type",
-                    "id"
+                    "workspaceId"
                   ],
-                  "additionalProperties": false
-                },
-                "name": {
-                  "type": "string"
+                  "type": "object"
                 }
               },
               "required": [
-                "ref",
-                "name"
+                "name",
+                "ref"
               ],
-              "additionalProperties": false
-            }
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "href": {
+            "type": "string"
           },
           "locations": {
-            "type": "array",
             "items": {
-              "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "dashboardId": {
-                  "type": "string",
-                  "minLength": 1
+                  "minLength": 1,
+                  "type": "string"
                 },
                 "dashboardName": {
                   "type": "string"
                 },
-                "pageId": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "pageName": {
+                "href": {
                   "type": "string"
                 },
-                "href": {
+                "pageId": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "pageName": {
                   "type": "string"
                 }
               },
@@ -258,52 +197,113 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/catalog_list.json) · [
                 "dashboardId",
                 "pageId"
               ],
-              "additionalProperties": false
-            }
+              "type": "object"
+            },
+            "type": "array"
           },
-          "href": {
+          "name": {
             "type": "string"
           },
-          "capabilities": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "catalog_get",
-                "catalog_list",
-                "query_semantic_model",
-                "query_dashboard_visual",
-                "query_visual"
-              ]
-            }
+          "ref": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "workspace",
+                  "dashboard",
+                  "page",
+                  "visual",
+                  "filter",
+                  "semantic_model",
+                  "semantic_table",
+                  "field",
+                  "measure"
+                ],
+                "type": "string"
+              },
+              "workspaceId": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "workspaceId"
+            ],
+            "type": "object"
+          },
+          "workspace": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "ref": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "enum": [
+                      "workspace",
+                      "dashboard",
+                      "page",
+                      "visual",
+                      "filter",
+                      "semantic_model",
+                      "semantic_table",
+                      "field",
+                      "measure"
+                    ],
+                    "type": "string"
+                  },
+                  "workspaceId": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "type",
+                  "workspaceId"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "name",
+              "ref"
+            ],
+            "type": "object"
           }
         },
         "required": [
-          "ref",
-          "name",
-          "workspace",
+          "capabilities",
           "hierarchy",
-          "capabilities"
+          "name",
+          "ref",
+          "workspace"
         ],
-        "additionalProperties": false
-      }
-    },
-    "count": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "hasMore": {
-      "type": "boolean"
+        "type": "object"
+      },
+      "type": "array"
     },
     "nextCursor": {
       "type": "string"
     }
   },
   "required": [
-    "items",
     "count",
-    "hasMore"
+    "hasMore",
+    "items"
   ],
-  "additionalProperties": false
+  "type": "object"
 }
 ```

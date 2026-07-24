@@ -21,33 +21,33 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/docs_search.json) · [c
 
 ```json
 {
-  "type": "object",
+  "additionalProperties": false,
   "properties": {
-    "query": {
-      "type": "string",
-      "minLength": 1,
-      "description": "Words or phrases to find in LeapView documentation."
-    },
-    "path": {
-      "type": "string",
-      "description": "Optional documentation path prefix, such as guides/build, api, cli, or visuals."
-    },
     "cursor": {
-      "type": "string",
+      "description": "Opaque nextCursor from a previous call with the same query and path.",
       "minLength": 1,
-      "description": "Opaque nextCursor from a previous call with the same query and path."
+      "type": "string"
     },
     "limit": {
-      "type": "integer",
-      "minimum": 1,
+      "description": "Maximum matches to return; defaults to 8.",
       "maximum": 25,
-      "description": "Maximum matches to return; defaults to 8."
+      "minimum": 1,
+      "type": "integer"
+    },
+    "path": {
+      "description": "Optional documentation path prefix, such as guides/build, api, cli, or visuals.",
+      "type": "string"
+    },
+    "query": {
+      "description": "Words or phrases to find in LeapView documentation.",
+      "minLength": 1,
+      "type": "string"
     }
   },
   "required": [
     "query"
   ],
-  "additionalProperties": false
+  "type": "object"
 }
 ```
 
@@ -55,66 +55,66 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/docs_search.json) · [c
 
 ```json
 {
-  "type": "object",
+  "additionalProperties": false,
   "properties": {
-    "query": {
-      "type": "string"
+    "count": {
+      "minimum": 0,
+      "type": "integer"
     },
-    "path": {
-      "type": "string"
+    "hasMore": {
+      "type": "boolean"
     },
     "matches": {
-      "type": "array",
       "items": {
-        "type": "object",
+        "additionalProperties": false,
         "properties": {
+          "excerpt": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },
           "path": {
             "type": "string"
           },
-          "title": {
+          "summary": {
             "type": "string"
           },
-          "summary": {
+          "title": {
             "type": "string"
           },
           "url": {
             "type": "string"
-          },
-          "excerpt": {
-            "type": "string"
           }
         },
         "required": [
+          "excerpt",
           "id",
           "path",
-          "title",
           "summary",
-          "url",
-          "excerpt"
+          "title",
+          "url"
         ],
-        "additionalProperties": false
-      }
-    },
-    "count": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "hasMore": {
-      "type": "boolean"
+        "type": "object"
+      },
+      "type": "array"
     },
     "nextCursor": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "query": {
       "type": "string"
     }
   },
   "required": [
-    "query",
-    "matches",
     "count",
-    "hasMore"
+    "hasMore",
+    "matches",
+    "query"
   ],
-  "additionalProperties": false
+  "type": "object"
 }
 ```

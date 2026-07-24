@@ -25,6 +25,7 @@ import (
 	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
+	toon "github.com/toon-format/toon-go"
 )
 
 func agentAPIGenToolsForTest(server *Server, scope agentcap.Scope) []agentcore.ToolDefinition {
@@ -253,6 +254,21 @@ func TestAgentVisualToolReturnsChartPatchFromSemanticData(t *testing.T) {
 	if result.IsError {
 		t.Fatalf("query_visual returned error: %#v", result.Content)
 	}
+	normalizedJSON, err := json.Marshal(result.Content)
+	if err != nil {
+		t.Fatalf("normalize query_visual model result: %v", err)
+	}
+	var normalized any
+	if err := json.Unmarshal(normalizedJSON, &normalized); err != nil {
+		t.Fatalf("decode normalized query_visual model result: %v", err)
+	}
+	toonBody, err := toon.Marshal(normalized)
+	if err != nil {
+		t.Fatalf("encode query_visual model result as TOON: %v", err)
+	}
+	if _, err := toon.Decode(toonBody); err != nil {
+		t.Fatalf("query_visual model result does not round-trip through TOON: %v\n%s", err, toonBody)
+	}
 	compact, err := json.Marshal(result.Content)
 	if err != nil {
 		t.Fatalf("marshal result: %v", err)
@@ -272,7 +288,7 @@ func TestAgentVisualToolReturnsChartPatchFromSemanticData(t *testing.T) {
 		compactResult.Completeness.ReturnedRows != 2 || compactResult.Completeness.Status != "complete" ||
 		len(compactResult.Fields) != 2 || compactResult.Fields[0].Role != "dimension" ||
 		compactResult.Fields[1].Role != "measure" || compactResult.Fields[1].Label != "Orders" ||
-		len(compactResult.Filters) != 1 || compactResult.Filters[0].FieldRef.ID != "test.orders.status" ||
+		len(compactResult.Filters) != 1 || compactResult.Filters[0].Ref.ID != "test.orders.status" ||
 		compactResult.Filters[0].Operator != "not_contains" || compactResult.Status.Kind != "ready" {
 		t.Fatalf("compact chart metadata = %#v", compactResult)
 	}

@@ -36,7 +36,16 @@ func TestDocsProviderExposesBoundedSearchAndReadTools(t *testing.T) {
 		if definition.Effect != "read" {
 			t.Fatalf("tool %q effect = %q, want read", definition.Name, definition.Effect)
 		}
+		var schema map[string]any
+		if err := json.Unmarshal(definition.InputSchema, &schema); err != nil {
+			t.Fatalf("decode %s input schema: %v", definition.Name, err)
+		}
+		if schema["additionalProperties"] != false {
+			t.Fatalf("%s input schema is not closed: %s", definition.Name, definition.InputSchema)
+		}
 	}
+	assertToolLimitMaximum(t, definitions[0].InputSchema, productdocs.MaxSearchLimit)
+	assertToolLimitMaximum(t, definitions[1].InputSchema, productdocs.MaxReadLimit)
 
 	searchResult, err := definitions[0].Handler.Run(context.Background(), agentcore.ToolCall{
 		ID: "call-search", Name: DocsSearchToolName,
@@ -64,6 +73,40 @@ func TestDocsProviderExposesBoundedSearchAndReadTools(t *testing.T) {
 	}
 	if want := (productdocs.ReadRequest{ID: "doc:guides/build/semantic-model", Offset: 101, Limit: 50}); readRequest != want {
 		t.Fatalf("read request = %#v, want %#v", readRequest, want)
+	}
+}
+
+func TestDocsProviderGeneratedOutputsMatchRuntimeDTOs(t *testing.T) {
+	provider := DocsProvider{Documentation: fakeDocumentation{
+		search: func(_ context.Context, request productdocs.SearchRequest) (productdocs.SearchResult, error) {
+			return productdocs.SearchResult{
+				Query: request.Query,
+				Matches: []productdocs.Reference{{
+					ID: "doc:guides/semantic-models", Path: "guides/semantic-models", Title: "Semantic models",
+					Summary: "Governed semantics.", URL: "/docs/guides/semantic-models", Excerpt: "Measures and dimensions",
+				}},
+				Count: 1, HasMore: true, NextCursor: "opaque",
+			}, nil
+		},
+		read: func(_ context.Context, request productdocs.ReadRequest) (productdocs.ReadResult, error) {
+			return productdocs.ReadResult{
+				ID: request.ID, Path: "guides/semantic-models", Title: "Semantic models", URL: "/docs/guides/semantic-models",
+				Content: "1: Semantic models", LineStart: 1, LineEnd: 1, TotalLines: 2, NextOffset: 2, Truncated: true,
+			}, nil
+		},
+	}}
+	catalog, err := agentcore.NewToolCatalog(provider.Definitions())
+	if err != nil {
+		t.Fatalf("compile generated documentation schemas: %v", err)
+	}
+	for _, call := range []agentcore.ToolCall{
+		{ID: "search", Name: DocsSearchToolName, Arguments: json.RawMessage(`{"query":"semantic"}`)},
+		{ID: "read", Name: DocsReadToolName, Arguments: json.RawMessage(`{"id":"doc:guides/semantic-models"}`)},
+	} {
+		result, err := catalog.Execute(context.Background(), call)
+		if err != nil || result.IsError {
+			t.Fatalf("%s generated contract rejected runtime DTO: result=%#v err=%v", call.Name, result, err)
+		}
 	}
 }
 

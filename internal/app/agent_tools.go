@@ -19,7 +19,6 @@ import (
 	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/productdocs"
 	docsearch "github.com/Yacobolo/leapview/internal/site/search/sqlite"
-	"github.com/Yacobolo/leapview/internal/workspace"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 )
 
@@ -128,12 +127,9 @@ func (s *Server) agentVisualToolProvider() agenttools.VisualProvider {
 		},
 		QueryMetadata: func(ctx context.Context, workspaceID, modelID string) agenttools.VisualQueryMetadata {
 			metadata := agenttools.VisualQueryMetadata{ServingSnapshot: "unversioned"}
-			repository, err := s.workspaceRepository()
-			if err == nil && repository != nil {
-				summary, summaryErr := repository.ByID(ctx, workspace.WorkspaceID(workspaceID))
-				if summaryErr == nil && summary.ActiveServingStateID != "" {
-					metadata.ServingSnapshot = string(summary.ActiveServingStateID)
-				}
+			summary, err := s.workspaceWithActiveMetadata(ctx, workspaceID)
+			if err == nil && summary.ActiveServingStateID != "" {
+				metadata.ServingSnapshot = string(summary.ActiveServingStateID)
 			}
 			if freshness, ok := s.dashboardQueryFreshness(ctx, workspaceID, modelID, metadata.ServingSnapshot); ok {
 				metadata.Freshness = &freshness
