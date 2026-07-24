@@ -9,24 +9,23 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/agent"
+	"github.com/Yacobolo/leapview/internal/agent/ui"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
-	"github.com/Yacobolo/leapview/internal/workspace/ui"
-	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 )
 
 func TestChatReferenceSearchUsesGlobalScopeAndEchoesRequestIdentity(t *testing.T) {
-	results := make([]uisignals.AgentReferenceSignal, 30)
+	results := make([]ui.AgentReferenceSignal, 30)
 	for index := range results {
-		results[index] = uisignals.AgentReferenceSignal{
-			Reference: uisignals.AgentReferenceKeySignal{WorkspaceID: "sales", Type: "field", ID: "field-" + string(rune('a'+index))},
-			Name:      "Field", Workspace: uisignals.AgentReferenceWorkspaceSignal{ID: "sales", Name: "Sales"},
-			Locations: []uisignals.AgentReferenceLocationSignal{}, Context: []string{},
+		results[index] = ui.AgentReferenceSignal{
+			Reference: ui.AgentReferenceKeySignal{WorkspaceID: "sales", Type: "field", ID: "field-" + string(rune('a'+index))},
+			Name:      "Field", Workspace: ui.AgentReferenceWorkspaceSignal{ID: "sales", Name: "Sales"},
+			Locations: []ui.AgentReferenceLocationSignal{}, Context: []string{},
 		}
 	}
 	searchedContext := agent.TurnContext{Surface: "invalid"}
 	searchedLimit := 0
 	handler := NewHandler(Options{
-		SearchReferences: func(_ *http.Request, context agent.TurnContext, _ string, limit int) ([]uisignals.AgentReferenceSignal, error) {
+		SearchReferences: func(_ *http.Request, context agent.TurnContext, _ string, limit int) ([]ui.AgentReferenceSignal, error) {
 			searchedContext = context
 			searchedLimit = limit
 			return results, nil
