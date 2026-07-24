@@ -7,6 +7,7 @@ import type {
   DashboardFilterContract,
   DashboardFilterOptionPage,
   DashboardFilterState,
+  DashboardFilterValidationResult,
   DashboardInteractionSelection,
   DashboardPageNavSignal,
   DashboardPageSignal,
@@ -112,6 +113,7 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
   private optimisticRollbackTimer?: ReturnType<typeof setTimeout>
   private renderSnapshot?: DashboardRenderSnapshot
   private filterStateFingerprint = ''
+  private filterValidationMutationID = ''
   private pendingPageNavigation = ''
   private pendingPageID = ''
   private navigationRequested = false
@@ -354,6 +356,22 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
       transition: width var(--motion-transition-stateChange);
     }
 
+    .filter-validation {
+      position: absolute;
+      z-index: var(--zIndex-sticky, 50);
+      top: var(--base-size-8);
+      left: 50%;
+      max-width: min(36rem, calc(100% - var(--base-size-24)));
+      border: var(--lv-border-danger);
+      border-radius: var(--lv-radius-default);
+      background: var(--lv-bg-panel);
+      color: var(--lv-fg-danger);
+      padding: var(--base-size-8) var(--base-size-12);
+      box-shadow: var(--shadow-floating-small);
+      font-size: var(--lv-font-size-body-sm);
+      transform: translateX(-50%);
+    }
+
     .canvas-wrap {
       display: grid;
       min-width: 0;
@@ -428,6 +446,18 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
         grid-template-columns: 1fr;
       }
 
+      lv-filter-dock {
+        grid-row: 1;
+      }
+
+      .filter-validation {
+        position: static;
+        grid-row: 2;
+        justify-self: center;
+        margin: var(--base-size-8);
+        transform: none;
+      }
+
       .main {
         height: auto;
         min-height: 0;
@@ -435,6 +465,7 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
       }
 
       .canvas-wrap {
+        grid-row: 3;
         padding: var(--base-size-12);
         overflow: auto;
       }
@@ -555,6 +586,15 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
     })
   }
 
+  private get filterValidation(): DashboardFilterValidationResult {
+    return this.signal<DashboardFilterValidationResult>('filterValidation', {
+      accepted: true,
+      message: '',
+      currentRevision: this.canonicalFilterState.revision,
+      clientMutationID: '',
+    })
+  }
+
   private get filterOptionPages(): Record<string, DashboardFilterOptionPage> {
     return this.signal<Record<string, DashboardFilterOptionPage>>('filterOptionPages', {})
   }
@@ -628,6 +668,7 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
           </header>
           <div class="body">
             ${this.renderRefreshProgress(refreshProgress)}
+            ${this.renderFilterValidation()}
             <div class="canvas-wrap">
               <lv-report-canvas width=${page.canvas.width} height=${page.canvas.height}>
                 ${page.components.map((component) => this.renderCanvasComponent(component))}
@@ -672,6 +713,12 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
         ></div>
       </div>
     `
+  }
+
+  private renderFilterValidation() {
+    const validation = this.filterValidation
+    if (validation.accepted || !validation.message) return nothing
+    return html`<div class="filter-validation" role="alert">${validation.message}</div>`
   }
 
   private refreshProgress(snapshot: DashboardRenderSnapshot): DashboardRefreshProgress {
@@ -993,11 +1040,23 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
   private reconcileFilterController(): void {
     const state = this.canonicalFilterState
     const fingerprint = JSON.stringify(state)
-    if (fingerprint === this.filterStateFingerprint) return
-    this.filterStateFingerprint = fingerprint
     this.filterController.setApplicationMode(this.filterContract.applicationMode)
-    this.filterController.reconcile(state)
-    window.DatastarURLSync?.replace(this.signal<Record<string, string | string[]>>('urlParams', {}))
+    if (fingerprint !== this.filterStateFingerprint) {
+      this.filterStateFingerprint = fingerprint
+      this.filterController.reconcile(state)
+      window.DatastarURLSync?.replace(this.signal<Record<string, string | string[]>>('urlParams', {}))
+    }
+    const validation = this.filterValidation
+    if (
+      !validation.accepted
+      && validation.clientMutationID
+      && validation.clientMutationID !== this.filterValidationMutationID
+    ) {
+      this.filterValidationMutationID = validation.clientMutationID
+      if (this.filterController.reject(validation.clientMutationID, state)) {
+        this.requestUpdate()
+      }
+    }
   }
 
   private handleOptimisticSpatialInteraction = (event: CustomEvent<unknown>): void => {

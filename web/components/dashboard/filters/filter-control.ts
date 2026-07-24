@@ -358,6 +358,9 @@ function defaultPresentation(definition: DashboardCompiledFilterDefinition): Das
   if (definition.predicates.some((predicate) => predicate.kind === 'range')) {
     style = definition.valueKind === 'date' || definition.valueKind === 'timestamp' ? 'date_range' : 'numeric_range'
   }
+  if (definition.predicates.some((predicate) => predicate.kind === 'relative_period')) {
+    style = 'relative_period'
+  }
   return { style, search: false, selectAll: false, showCounts: false, showSummary: true, compact: false }
 }
 

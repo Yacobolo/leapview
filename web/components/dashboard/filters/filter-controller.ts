@@ -44,6 +44,12 @@ export class DashboardFilterController {
     this.flush()
   }
 
+  reject(clientMutationID: string, state: DashboardFilterState): boolean {
+    if (!this.inFlight || this.inFlight.clientMutationID !== clientMutationID) return false
+    this.reconcile(state)
+    return true
+  }
+
   get projected(): DashboardFilterState {
     return cloneState(this.optimistic)
   }

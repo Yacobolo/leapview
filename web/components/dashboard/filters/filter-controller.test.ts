@@ -108,3 +108,47 @@ test('filter controller optimistically applies all deferred drafts together', ()
   expect(controller.projected.dirtyBindings).toEqual([])
   expect(sent[0]?.baseRevision).toBe(4)
 })
+
+test('filter controller restores canonical state when a mutation is rejected at the same revision', () => {
+  const controller = new DashboardFilterController(() => {}, () => 'invalid-range')
+  const canonical = state(4)
+  canonical.appliedControls.state = {
+    expression: {
+      kind: 'range',
+      lower: { value: { kind: 'integer', value: '5' }, inclusive: true },
+      upper: { value: { kind: 'integer', value: '10' }, inclusive: true },
+    },
+    resolvedExpression: {
+      kind: 'range',
+      lower: { value: { kind: 'integer', value: '5' }, inclusive: true },
+      upper: { value: { kind: 'integer', value: '10' }, inclusive: true },
+    },
+  }
+  controller.reconcile(canonical)
+
+  controller.mutate('state', {
+    kind: 'range',
+    lower: { value: { kind: 'integer', value: '20' }, inclusive: true },
+    upper: { value: { kind: 'integer', value: '10' }, inclusive: true },
+  })
+  expect(controller.projected.appliedControls.state.expression).toMatchObject({
+    kind: 'range',
+    lower: { value: { value: '20' } },
+  })
+
+  expect(controller.reject('invalid-range', canonical)).toBe(true)
+  expect(controller.projected.appliedControls.state.expression).toEqual(
+    canonical.appliedControls.state.expression,
+  )
+  expect(controller.pending).toBe(false)
+})
+
+test('filter controller ignores rejection acknowledgements for another mutation', () => {
+  const controller = new DashboardFilterController(() => {}, () => 'pending-mutation')
+  controller.reconcile(state(4))
+  controller.mutate('state', setExpression('CA'))
+
+  expect(controller.reject('older-mutation', state(4))).toBe(false)
+  expect(controller.projected.appliedControls.state.expression).toEqual(setExpression('CA'))
+  expect(controller.pending).toBe(true)
+})

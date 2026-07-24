@@ -71,22 +71,27 @@ func (h Handler) FilterCommand(w nethttp.ResponseWriter, r *nethttp.Request) {
 	}
 	result, err := sessionService.ExecuteFilterCommand(r.Context(), key, signals.FilterCommand)
 	if err != nil {
-		status := nethttp.StatusBadRequest
-		if errors.Is(err, dashboardfilter.ErrStaleRevision) || errors.Is(err, dashboardsession.ErrConflict) {
-			status = nethttp.StatusConflict
-		}
-		writeJSON(w, status, map[string]any{
-			"filterState":      uisignals.DashboardFilterStateFromDomain(result.FilterState),
-			"filterValidation": map[string]any{"accepted": false, "message": err.Error(), "currentRevision": result.FilterState.Revision},
+		// Datastar applies JSON signal patches only for successful transport
+		// responses. Command validation is part of the typed signal protocol,
+		// so return a successful transport envelope with accepted=false.
+		writeJSON(w, nethttp.StatusOK, map[string]any{
+			"filterState": uisignals.DashboardFilterStateFromDomain(result.FilterState),
+			"filterValidation": map[string]any{
+				"accepted": false, "message": err.Error(), "currentRevision": result.FilterState.Revision,
+				"clientMutationID": signals.FilterCommand.ClientMutationID,
+			},
 		})
 		return
 	}
-	response, err := filterCommandResponse(definition, pageID, result.FilterState)
+	response, err := filterCommandResponse(
+		definition, pageID, result.FilterState, signals.FilterCommand.ClientMutationID,
+	)
 	if err != nil {
 		writeJSON(w, nethttp.StatusInternalServerError, map[string]any{
 			"filterState": uisignals.DashboardFilterStateFromDomain(result.FilterState),
 			"filterValidation": map[string]any{
 				"accepted": false, "message": err.Error(), "currentRevision": result.FilterState.Revision,
+				"clientMutationID": signals.FilterCommand.ClientMutationID,
 			},
 		})
 		return
@@ -140,8 +145,11 @@ func (h Handler) FilterCommand(w nethttp.ResponseWriter, r *nethttp.Request) {
 		})
 	})
 	if refreshErr != nil {
-		response["filterValidation"] = map[string]any{"accepted": false, "message": refreshErr.Error(), "currentRevision": result.FilterState.Revision}
-		writeJSON(w, nethttp.StatusBadRequest, response)
+		response["filterValidation"] = map[string]any{
+			"accepted": false, "message": refreshErr.Error(), "currentRevision": result.FilterState.Revision,
+			"clientMutationID": signals.FilterCommand.ClientMutationID,
+		}
+		writeJSON(w, nethttp.StatusOK, response)
 		return
 	}
 	writeJSON(w, nethttp.StatusOK, response)
@@ -188,12 +196,29 @@ func changedFilterBindings(command dashboardfilter.Command, before dashboardfilt
 	}
 }
 
-func filterCommandResponse(definition dashboarddefinition.Definition, pageID string, state dashboardfilter.State) (map[string]any, error) {
+func filterCommandResponse(
+	definition dashboarddefinition.Definition,
+	pageID string,
+	state dashboardfilter.State,
+	clientMutationID string,
+) (map[string]any, error) {
 	params, err := definition.URLParamsFromFilterState(pageID, state)
 	if err != nil {
 		return nil, err
 	}
 	values := map[string]any{}
+	for _, binding := range definition.CompiledFilterBindings() {
+		if binding.URL.Param == "" {
+			continue
+		}
+		if binding.Scope == dashboardfilter.ScopePage && binding.PageID != pageID {
+			continue
+		}
+		// Datastar command responses merge signal objects. Null is therefore
+		// the explicit tombstone for a canonical filter parameter that is no
+		// longer present (unfiltered or reset to its default).
+		values[binding.URL.Param] = nil
+	}
 	for key, entries := range params {
 		if len(entries) == 1 {
 			values[key] = entries[0]
@@ -202,8 +227,11 @@ func filterCommandResponse(definition dashboarddefinition.Definition, pageID str
 		}
 	}
 	return map[string]any{
-		"filterState":      uisignals.DashboardFilterStateFromDomain(state),
-		"urlParams":        values,
-		"filterValidation": map[string]any{"accepted": true, "message": "", "currentRevision": state.Revision},
+		"filterState": uisignals.DashboardFilterStateFromDomain(state),
+		"urlParams":   values,
+		"filterValidation": map[string]any{
+			"accepted": true, "message": "", "currentRevision": state.Revision,
+			"clientMutationID": clientMutationID,
+		},
 	}, nil
 }
