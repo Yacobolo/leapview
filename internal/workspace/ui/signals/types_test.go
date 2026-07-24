@@ -13,6 +13,7 @@ import (
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
+	"github.com/Yacobolo/leapview/internal/workspace/navigation"
 )
 
 func TestVisualizationSignalKeepsDataStateOpaque(t *testing.T) {
@@ -146,7 +147,7 @@ func TestDashboardEnvelopeRejectsUnusedPayload(t *testing.T) {
 }
 
 func TestChatInitialEnvelopeValidates(t *testing.T) {
-	envelope := ChatInitialEnvelope(dashboard.Catalog{}, "test", "", "list", testChatViewState(ChatSignal{
+	envelope := ChatInitialEnvelope(navigation.Catalog{}, "test", "", "list", testChatViewState(ChatSignal{
 		ActiveConversationID: "",
 		Conversations:        []ChatConversationSummary{},
 		Transcript:           nil,
@@ -178,7 +179,7 @@ func TestChatInitialEnvelopeValidates(t *testing.T) {
 }
 
 func TestChatInitialEnvelopeOnlyListActivatesChatNav(t *testing.T) {
-	list := ChatInitialEnvelope(dashboard.Catalog{}, "test", "", "list", testChatViewState(ChatSignal{
+	list := ChatInitialEnvelope(navigation.Catalog{}, "test", "", "list", testChatViewState(ChatSignal{
 		ActiveConversationID: "",
 		Conversations:        []ChatConversationSummary{},
 		Transcript:           nil,
@@ -189,7 +190,7 @@ func TestChatInitialEnvelopeOnlyListActivatesChatNav(t *testing.T) {
 		t.Fatalf("list chat sidebar active = %q, want chat", list.Chrome.Sidebar.Active)
 	}
 
-	draft := ChatInitialEnvelope(dashboard.Catalog{}, "test", "", "new", testChatViewState(ChatSignal{
+	draft := ChatInitialEnvelope(navigation.Catalog{}, "test", "", "new", testChatViewState(ChatSignal{
 		ActiveConversationID: "",
 		Conversations:        []ChatConversationSummary{},
 		Transcript:           nil,
@@ -200,7 +201,7 @@ func TestChatInitialEnvelopeOnlyListActivatesChatNav(t *testing.T) {
 		t.Fatalf("draft chat sidebar active = %q, want none", draft.Chrome.Sidebar.Active)
 	}
 
-	conversation := ChatInitialEnvelope(dashboard.Catalog{}, "test", "", "conversation", testChatViewState(ChatSignal{
+	conversation := ChatInitialEnvelope(navigation.Catalog{}, "test", "", "conversation", testChatViewState(ChatSignal{
 		ActiveConversationID: "agentconv_1",
 		Conversations: []ChatConversationSummary{{
 			ID:    "agentconv_1",
@@ -226,8 +227,8 @@ func testChatViewState(signal ChatSignal) ChatViewState {
 }
 
 func TestCatalogSidebarUsesGlobalChat(t *testing.T) {
-	sidebar := SidebarConfigForCatalog(dashboard.Catalog{
-		Workspace: dashboard.CatalogWorkspace{ID: "operations", Title: "Operations"},
+	sidebar := SidebarConfigForCatalog(navigation.Catalog{
+		Workspace: navigation.Workspace{ID: "operations", Title: "Operations"},
 	})
 
 	item, ok := sidebarItem(sidebar, "chat")
@@ -240,8 +241,8 @@ func TestCatalogSidebarUsesGlobalChat(t *testing.T) {
 }
 
 func TestWorkspaceSidebarUsesGlobalChat(t *testing.T) {
-	sidebar := SidebarConfigForWorkspace(dashboard.Catalog{
-		Workspace: dashboard.CatalogWorkspace{ID: "operations", Title: "Operations"},
+	sidebar := SidebarConfigForWorkspace(navigation.Catalog{
+		Workspace: navigation.Workspace{ID: "operations", Title: "Operations"},
 	}, "workspaces", "Viewer")
 
 	item, ok := sidebarItem(sidebar, "chat")
@@ -254,13 +255,13 @@ func TestWorkspaceSidebarUsesGlobalChat(t *testing.T) {
 }
 
 func TestSidebarWorkspaceTitleDoesNotInventDefaultWorkspace(t *testing.T) {
-	global := SidebarConfigForCatalog(dashboard.Catalog{})
+	global := SidebarConfigForCatalog(navigation.Catalog{})
 	if global.WorkspaceTitle != "LeapView" {
 		t.Fatalf("global workspace title = %q, want app title", global.WorkspaceTitle)
 	}
 
-	workspace := SidebarConfigForWorkspace(dashboard.Catalog{
-		Workspace: dashboard.CatalogWorkspace{ID: "operations"},
+	workspace := SidebarConfigForWorkspace(navigation.Catalog{
+		Workspace: navigation.Workspace{ID: "operations"},
 	}, "workspaces", "Viewer")
 	if workspace.WorkspaceTitle != "operations" {
 		t.Fatalf("workspace title = %q, want workspace id fallback", workspace.WorkspaceTitle)

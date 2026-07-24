@@ -739,8 +739,8 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		}
 		var err error
 		routes.adminModule, err = adminmodule.Build(ctx, adminmodule.Config{
-			Catalog: func() dashboardmodule.Catalog {
-				return runtime.metrics.Catalog()
+			Catalog: func() adminmodule.Catalog {
+				return routes.workspaceModule.NavigationCatalog()
 			},
 			Access: accessReader,
 			AgentDetails: func(ctx context.Context) (agentmodule.AdminAgentResponse, error) {

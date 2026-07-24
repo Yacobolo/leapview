@@ -570,6 +570,27 @@ func TestApplicationImportsProductCapabilitiesOnlyThroughModules(t *testing.T) {
 	}
 }
 
+func TestDashboardCatalogHasOnlyExplicitProjectionConsumers(t *testing.T) {
+	allowed := map[string]bool{
+		"internal/project/artifact/artifact.go": true,
+		"internal/workspace/module/module.go":   true,
+	}
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir == "internal/dashboard" || strings.HasPrefix(file.pkgDir, "internal/dashboard/") {
+			continue
+		}
+		for _, imported := range file.imports {
+			if imported != modulePath+"/internal/dashboard/catalog" {
+				continue
+			}
+			path := strings.TrimPrefix(file.path, repoRoot(t)+"/")
+			if !allowed[path] {
+				t.Errorf("%s imports dashboard catalog instead of an owner-specific projection", file.path)
+			}
+		}
+	}
+}
+
 func TestApplicationDoesNotReclaimAccessOrAnalyticsConstruction(t *testing.T) {
 	for _, file := range productionGoFiles(t) {
 		if file.pkgDir != "internal/app" {

@@ -15,11 +15,11 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access"
 	accessapi "github.com/Yacobolo/leapview/internal/access/api"
-	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	"github.com/Yacobolo/leapview/internal/workspace/api"
 	"github.com/Yacobolo/leapview/internal/workspace/assetnav"
 	workspacedatastar "github.com/Yacobolo/leapview/internal/workspace/datastar"
+	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
 	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 	"github.com/Yacobolo/leapview/pkg/pagestream"

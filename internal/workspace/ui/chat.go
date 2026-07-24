@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
 	uiactions "github.com/Yacobolo/leapview/internal/platform/web/actions"
+	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
 	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	g "maragu.dev/gomponents"
