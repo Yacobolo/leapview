@@ -14,6 +14,7 @@ import (
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	visualizationruntime "github.com/Yacobolo/leapview/internal/dashboard/visualization/runtime"
 	workspaceview "github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/Yacobolo/leapview/internal/workspace/navigation"
 )
 
 const (
@@ -273,6 +274,7 @@ func referenceHierarchyFromTurn(reference agent.TurnReference) []string {
 }
 
 func DashboardInitialEnvelope(clientID, streamInstanceID string, catalog dashboard.Catalog, report dashboarddefinition.Definition, model *semanticmodel.Model, definitions map[string]visualizationdefinition.Definition, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters) DashboardEnvelope {
+	navigationCatalog := navigationFromDashboard(catalog)
 	activePage = activePage.WithDefaults()
 	tableRequest := DefaultTableRequest(report, activePage)
 	initialFilters = report.NormalizeFiltersForPage(activePage.ID, initialFilters).WithDefaults()
@@ -311,7 +313,7 @@ func DashboardInitialEnvelope(clientID, streamInstanceID string, catalog dashboa
 			Results: []AgentReferenceSignal{},
 		},
 		AgentVisuals: map[string]visualizationir.VisualizationEnvelope{},
-		Chrome:       ChromeSignal{Sidebar: sidebarConfig(catalog, "workspaces", report.ID, workspaceDisplayTitle(catalog), report.Title, activePage.Title, modelID, modelTitle, true, "", strings.TrimSpace(catalog.Workspace.ID) != "")},
+		Chrome:       ChromeSignal{Sidebar: sidebarConfig(navigationCatalog, "workspaces", report.ID, workspaceDisplayTitle(navigationCatalog), report.Title, activePage.Title, modelID, modelTitle, true, "", strings.TrimSpace(catalog.Workspace.ID) != "")},
 		Page: DashboardPageSignal{
 			Kind:           RouteDashboard,
 			Presentation:   "app",
@@ -355,7 +357,7 @@ func DashboardInitialEnvelope(clientID, streamInstanceID string, catalog dashboa
 	}
 }
 
-func ChatInitialEnvelope(catalog dashboard.Catalog, workspaceID, roleLabel, view string, state ChatViewState) ChatEnvelope {
+func ChatInitialEnvelope(catalog navigation.Catalog, workspaceID, roleLabel, view string, state ChatViewState) ChatEnvelope {
 	chrome := ChromeSignal{Sidebar: SidebarConfigForChat(catalog, workspaceID, roleLabel, view)}
 	AttachChatSidebar(&chrome.Sidebar, state.Agent)
 	return ChatEnvelope{
@@ -447,7 +449,7 @@ func WorkspaceAccessSignals(access WorkspaceAccessResponse) WorkspaceAccessSigna
 	}
 }
 
-func SidebarConfigForCatalog(catalog dashboard.Catalog) SidebarSignal {
+func SidebarConfigForCatalog(catalog navigation.Catalog) SidebarSignal {
 	modelID, modelTitle := "", ""
 	if len(catalog.Models) > 0 {
 		modelID = catalog.Models[0].ID
@@ -456,11 +458,11 @@ func SidebarConfigForCatalog(catalog dashboard.Catalog) SidebarSignal {
 	return sidebarConfig(catalog, "dashboards", "", "LeapView", "Dashboards", "Discovery", modelID, modelTitle, false, "", false)
 }
 
-func SidebarConfigForWorkspace(catalog dashboard.Catalog, active, roleLabel string) SidebarSignal {
+func SidebarConfigForWorkspace(catalog navigation.Catalog, active, roleLabel string) SidebarSignal {
 	return sidebarConfig(catalog, active, "", workspaceDisplayTitle(catalog), "Workspace", "Published assets", "", "", false, roleLabel, strings.TrimSpace(catalog.Workspace.ID) != "")
 }
 
-func SidebarConfigForChat(catalog dashboard.Catalog, workspaceID, roleLabel, view string) SidebarSignal {
+func SidebarConfigForChat(catalog navigation.Catalog, workspaceID, roleLabel, view string) SidebarSignal {
 	if strings.TrimSpace(workspaceID) != "" {
 		catalog.Workspace.ID = workspaceID
 	}
@@ -472,7 +474,7 @@ func SidebarConfigForChat(catalog dashboard.Catalog, workspaceID, roleLabel, vie
 	return config
 }
 
-func sidebarConfig(catalog dashboard.Catalog, active, dashboardID, workspaceTitle, dashboardTitle, pageTitle, modelID, modelTitle string, compact bool, roleLabel string, includeWorkspaceScoped bool) SidebarSignal {
+func sidebarConfig(catalog navigation.Catalog, active, dashboardID, workspaceTitle, dashboardTitle, pageTitle, modelID, modelTitle string, compact bool, roleLabel string, includeWorkspaceScoped bool) SidebarSignal {
 	return SidebarSignal{
 		WorkspaceTitle: workspaceTitle,
 		Active:         active,
@@ -622,7 +624,7 @@ func dashboardComponents(page dashboard.Page) []DashboardComponentSignal {
 	return components
 }
 
-func sidebarGroups(catalog dashboard.Catalog, includeWorkspaceScoped bool) []SidebarGroupSignal {
+func sidebarGroups(catalog navigation.Catalog, includeWorkspaceScoped bool) []SidebarGroupSignal {
 	return []SidebarGroupSignal{
 		{
 			Label: "Navigation",
@@ -650,7 +652,7 @@ func chatPath(parts ...string) string {
 	return path
 }
 
-func workspaceDisplayTitle(catalog dashboard.Catalog) string {
+func workspaceDisplayTitle(catalog navigation.Catalog) string {
 	if strings.TrimSpace(catalog.Workspace.Title) != "" {
 		return catalog.Workspace.Title
 	}
@@ -658,6 +660,26 @@ func workspaceDisplayTitle(catalog dashboard.Catalog) string {
 		return catalog.Workspace.ID
 	}
 	return "LeapView"
+}
+
+func navigationFromDashboard(source dashboard.Catalog) navigation.Catalog {
+	result := navigation.Catalog{
+		Workspace: navigation.Workspace{
+			ID: source.Workspace.ID, Title: source.Workspace.Title, Description: source.Workspace.Description,
+		},
+		Models:     make([]navigation.Model, 0, len(source.Models)),
+		Dashboards: make([]navigation.Dashboard, 0, len(source.Dashboards)),
+	}
+	for _, model := range source.Models {
+		result.Models = append(result.Models, navigation.Model{ID: model.ID, Title: model.Title, Description: model.Description})
+	}
+	for _, item := range source.Dashboards {
+		result.Dashboards = append(result.Dashboards, navigation.Dashboard{
+			ID: item.ID, Title: item.Title, Description: item.Description, SemanticModel: item.SemanticModel,
+			Tags: append([]string(nil), item.Tags...), PageCount: item.PageCount,
+		})
+	}
+	return result
 }
 
 func pageVisualIDs(page dashboard.Page) []string {

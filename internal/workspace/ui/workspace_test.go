@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
 	workspaceview "github.com/Yacobolo/leapview/internal/workspace"
+	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
 	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 )
 

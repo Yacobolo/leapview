@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/dashboard"
-	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
 	uiactions "github.com/Yacobolo/leapview/internal/platform/web/actions"
 	workspaceview "github.com/Yacobolo/leapview/internal/workspace"
 	"github.com/Yacobolo/leapview/internal/workspace/assetnav"
+	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
 	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	g "maragu.dev/gomponents"

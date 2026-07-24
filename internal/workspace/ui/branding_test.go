@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/access/http/mcpoauth"
-	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
+	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
 	g "maragu.dev/gomponents"
 )
 

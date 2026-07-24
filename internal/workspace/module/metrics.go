@@ -6,9 +6,14 @@ import (
 	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
 	workspacehttp "github.com/Yacobolo/leapview/internal/workspace/http"
+	"github.com/Yacobolo/leapview/internal/workspace/navigation"
 )
 
 type MetricsAdapter struct{ queryruntime.Metrics }
+
+func (m MetricsAdapter) Catalog() navigation.Catalog {
+	return navigationCatalog(m.Metrics.Catalog())
+}
 
 func (m MetricsAdapter) DataExplorerModel(modelID string) (workspacehttp.DataExplorerModel, bool) {
 	model, ok := m.Metrics.SemanticModel(modelID)

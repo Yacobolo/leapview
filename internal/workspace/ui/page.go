@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/dashboard"
-	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
 	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
+	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
 	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	g "maragu.dev/gomponents"

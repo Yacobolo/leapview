@@ -12,9 +12,9 @@ import (
 	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
 	"github.com/Yacobolo/leapview/internal/analytics/resource"
 	dashboardapi "github.com/Yacobolo/leapview/internal/dashboard/api"
-	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
 	"github.com/Yacobolo/leapview/internal/workload"
+	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
 	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
@@ -26,6 +26,8 @@ type PublicationService interface {
 	PublicationDTO(publication.Publication) dashboardapi.PublicationResponse
 	MutatePublication(context.Context, string, string, string, publication.Action) (publication.Publication, error)
 }
+
+type Catalog = catalog.Catalog
 
 // Principal is the authenticated identity information needed by platform
 // administration. Transport-specific principal representations stay private to

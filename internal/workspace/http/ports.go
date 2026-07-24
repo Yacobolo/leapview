@@ -4,13 +4,13 @@ import (
 	"context"
 	nethttp "net/http"
 
-	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
 	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/Yacobolo/leapview/internal/workspace/navigation"
 	"github.com/Yacobolo/leapview/internal/workspace/ui"
 )
 
 type Metrics interface {
-	Catalog() catalog.Catalog
+	Catalog() navigation.Catalog
 	DataExplorerModel(modelID string) (DataExplorerModel, bool)
 	ExecuteDataPreview(ctx context.Context, request DataPreviewRequest) (DataPreviewResult, error)
 }
