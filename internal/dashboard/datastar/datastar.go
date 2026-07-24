@@ -9,7 +9,6 @@ import (
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	dashboardstream "github.com/Yacobolo/leapview/internal/dashboard/stream"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
-	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 
@@ -110,11 +109,11 @@ func RefreshEventPatch(event dashboardstream.RefreshEvent) pagestream.SignalPatc
 	case dashboardstream.RefreshEventVisual:
 		envelope := visualizationEnvelopeSignal(event)
 		return pagestream.SignalPatch{
-			"visuals": map[string]uisignals.DashboardVisualizationSignal{event.Target: envelope},
+			"visuals": map[string]VisualizationSignal{event.Target: envelope},
 		}
 	case dashboardstream.RefreshEventVisualMetadata:
 		envelope := visualizationEnvelopeSignal(event)
-		return pagestream.SignalPatch{"visuals": map[string]uisignals.DashboardVisualizationSignal{event.Target: envelope}}
+		return pagestream.SignalPatch{"visuals": map[string]VisualizationSignal{event.Target: envelope}}
 	case dashboardstream.RefreshEventTargetError:
 		if event.Target == "refresh" {
 			return pagestream.SignalPatch{"status": status(false, event.Err)}
@@ -134,12 +133,26 @@ func RefreshEventPatch(event dashboardstream.RefreshEvent) pagestream.SignalPatc
 	}
 }
 
-func visualizationEnvelopeSignal(event dashboardstream.RefreshEvent) uisignals.DashboardVisualizationSignal {
+func visualizationEnvelopeSignal(event dashboardstream.RefreshEvent) VisualizationSignal {
 	envelope, ok := event.Value.(visualizationir.VisualizationEnvelope)
 	if !ok {
 		panic(fmt.Sprintf("dashboard visualization %q has invalid envelope value %T", event.Target, event.Value))
 	}
-	return uisignals.DashboardVisualizationSignalFromIR(envelope)
+	transport, err := visualizationir.EncodeDataStateTransport(envelope.DataState)
+	if err != nil {
+		panic(fmt.Sprintf("encode dashboard visualization data-state transport: %v", err))
+	}
+	return VisualizationSignal{
+		SchemaVersion: envelope.SchemaVersion, VisualID: envelope.VisualID, RendererID: envelope.RendererID,
+		SpecRevision: envelope.SpecRevision, Spec: envelope.Spec, DataRevision: envelope.DataRevision,
+		DataState: visualizationir.VisualizationDataStateTransport{
+			SchemaVersion: transport.SchemaVersion, Encoding: visualizationir.VisualizationDataStateTransportEncoding(transport.Encoding),
+			Kind: visualizationir.VisualizationDataStateKind(transport.Kind), SpecRevision: transport.SpecRevision,
+			DataRevision: transport.DataRevision, Generation: transport.Generation, Payload: transport.Payload,
+		},
+		Selection: envelope.Selection, SpatialSelection: envelope.SpatialSelection,
+		Status: envelope.Status, Diagnostics: envelope.Diagnostics,
+	}
 }
 
 // RefreshEventEnvelope keeps refresh ordering and mailbox behavior outside the

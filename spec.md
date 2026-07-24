@@ -141,7 +141,7 @@ internal/
 ```
 
 - `app`: process composition, CLI/process entrypoints, global route assembly, public-site composition, API dispatch, generators, lifecycle, and cleanup.
-- `platform`: capability-agnostic technical mechanisms such as configuration specifications, database primitives, digests, filesystems, HTTP mechanics, jobs, lifecycle, locking, observability, security, testing, transactions, and web transport.
+- `platform`: capability-agnostic technical mechanisms such as database primitives, digests, filesystems, HTTP mechanics, jobs, lifecycle, locking, observability, security, testing, transactions, and web transport.
 - `project`: authored project manifest, cross-capability compilation, normalized immutable workspace bundles, and stable asset graph extraction.
 - `workspace`: workspace identity, node-local catalog surface, asset discovery, asset graph views, and workspace read models.
 - `access`: principals, groups, roles, permissions, authorization decisions, credentials, tokens, sessions, and access auditing.
@@ -155,11 +155,11 @@ internal/
 - `refresh`: refresh definitions, schedules, jobs, generations, materialization orchestration, data-version cutover, and supersession behavior.
 - `runtimehost`: process-local active runtime lifecycle, prepared runtime publication, leases, draining, and closure.
 - `workload`: node-local admission policy, workload and workspace fairness, deadlines, queue bounds, and admission telemetry. It imports no product capabilities and stores no durable work.
-- `platform`: low-level node infrastructure: SQLite opening and migrations, process-level paths, backup primitives, and shared infrastructure configuration.
+- `app/config`: the product-wide process and tooling configuration contract, including the LeapView environment-variable catalog.
 
 `admin` is not a domain capability. It is an interface surface over capability-owned use cases and read models. `admin/http` may compose read models but must not own their business workflows.
 
-There are no generic `internal/api`, `internal/ui`, or `internal/modules` roots. Capability HTTP and UI adapters live with their owners. `app/api` owns global API dispatch and generated server integration; `platform/http` and `platform/web` contain only product-agnostic protocol mechanics. The workspace UI package owns the application shell and generated browser signal wire contract consumed by capability adapters.
+There are no generic `internal/api`, `internal/ui`, or `internal/modules` roots. Capability HTTP and UI adapters live with their owners. `app/api` owns global API dispatch and generated server integration; `app` composes the application shell and global navigation; `platform/http` and `platform/web` contain only product-agnostic protocol mechanics. Browser signal contracts and projections live with the capability whose product language they express.
 
 A package belongs to a capability when it mentions product language, to `platform` when it implements a generic technical mechanism, and to `app` when it assembles or exposes the application.
 
@@ -302,10 +302,11 @@ refresh/
   sqlite/         refresh persistence adapter
 
 workspace/
-  catalog/        node-local asset discovery and workspace identity
+  navigation/     workspace-owned navigation projection
   sqlite/         read models and repositories
   http/           REST and UI handlers
   datastar/       workspace signal patches
+  ui/             workspace pages and workspace-owned signal projections
 ```
 
 Avoid global horizontal packages:
@@ -593,7 +594,9 @@ Datastar-specific logic lives near the owning capability:
 
 Domain and analytics packages speak in typed commands, snapshots, events, query intents, and results.
 
-Gomponents renderers are edge adapters. Product renderers and signal projections live under capability `ui` packages. `workspace/ui` owns the application shell and generated browser signal contract; `dashboard/ui` owns dashboard presentation. Generic page-stream and web mechanics live under `platform/web`.
+Gomponents renderers are edge adapters. Product renderers and signal projections live under capability `ui` packages: access owns login and OAuth UI, agent owns chat UI, dashboard owns dashboard UI, admin owns administration UI, and workspace owns workspace discovery and asset UI. `app` composes shared application chrome without becoming the owner of capability signal types. Generic page-stream, document, asset-serving, and web mechanics live under `platform/web`.
+
+Generated browser contracts follow the same ownership rule. Generation may begin from one schema source, but its Go outputs are capability-private; it must not create a shared product DTO package that capabilities import as a convenience model.
 
 Shared UI code performs no workflow orchestration, storage access, semantic planning, cross-contract validation, or domain mutation.
 
