@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
+	refreshpresentation "github.com/Yacobolo/leapview/internal/refresh/presentation"
 	refresh "github.com/Yacobolo/leapview/internal/refresh/run"
 	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
 	"github.com/Yacobolo/leapview/internal/servingstate"
 	"github.com/Yacobolo/leapview/internal/workspace"
-	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 
@@ -28,7 +28,7 @@ type DataVersionReader interface {
 type WorkspaceRefreshPresentation interface {
 	Sections() []string
 	StreamID(workspaceID, assetID, section string) string
-	Signals(workspace.WorkspaceView, workspace.AssetView, []workspace.AssetView, []workspace.AssetEdgeView, ui.AssetRefreshState, string) pagestream.SignalPatch
+	Signals(workspace.WorkspaceView, workspace.AssetView, []workspace.AssetView, []workspace.AssetEdgeView, refreshpresentation.AssetRefreshState, string) pagestream.SignalPatch
 }
 
 type WorkspaceSupport struct {
@@ -43,7 +43,6 @@ type WorkspaceSupport struct {
 	AssetCatalog         func(context.Context, string) ([]workspace.AssetView, []workspace.AssetEdgeView, bool)
 	WorkspaceView        func(*nethttp.Request, string) workspace.WorkspaceView
 	WorkspaceViewContext func(context.Context, string) workspace.WorkspaceView
-	WorkspaceVersions    func(context.Context, string, string, workspace.AssetView, string) (ui.AssetVersionsState, error)
 	DataVersions         DataVersionReader
 	Presentation         WorkspaceRefreshPresentation
 }
@@ -52,27 +51,27 @@ func (s WorkspaceSupport) RefreshAsset(_ context.Context, r *nethttp.Request, wo
 	return s.queueAssetRefreshWithPatches(r, workspaceID, asset, assets, edges)
 }
 
-func (s WorkspaceSupport) AssetRefreshState(ctx context.Context, workspaceID, environment string, asset workspace.AssetView) (ui.AssetRefreshState, error) {
+func (s WorkspaceSupport) AssetRefreshState(ctx context.Context, workspaceID, environment string, asset workspace.AssetView) (refreshpresentation.AssetRefreshState, error) {
 	if !workspaceAssetRefreshable(asset) {
-		return ui.AssetRefreshState{}, nil
+		return refreshpresentation.AssetRefreshState{}, nil
 	}
 	repo, err := s.runRepository()
 	if err != nil {
-		return ui.AssetRefreshState{}, err
+		return refreshpresentation.AssetRefreshState{}, err
 	}
 	targetType := refresh.TargetRefreshPipeline
 	targetID := assetRefreshTargetID(asset)
 	environment = string(servingstate.NormalizeEnvironment(servingstate.Environment(environment)))
 	runs, err := repo.ListTargetRuns(ctx, workspaceID, targetType, targetID, refresh.RunPage{Limit: 50, Environment: environment})
 	if err != nil {
-		return ui.AssetRefreshState{}, err
+		return refreshpresentation.AssetRefreshState{}, err
 	}
-	state := ui.AssetRefreshState{Runs: uiRefreshRuns(runs)}
+	state := refreshpresentation.AssetRefreshState{Runs: uiRefreshRuns(runs)}
 	pipelineID := strings.TrimPrefix(asset.Key, workspaceID+".")
 	if s.DataVersions != nil {
 		nextRun, ok, err := s.DataVersions.NextRun(ctx, workspaceID, environment, pipelineID)
 		if err != nil {
-			return ui.AssetRefreshState{}, err
+			return refreshpresentation.AssetRefreshState{}, err
 		}
 		if ok {
 			state.NextRun = nextRun
@@ -82,16 +81,16 @@ func (s WorkspaceSupport) AssetRefreshState(ctx context.Context, workspaceID, en
 		state.Latest = state.Runs[0]
 	}
 	if latest, ok, err := repo.LatestSuccessfulTargetRun(ctx, workspaceID, environment, targetType, targetID); err != nil {
-		return ui.AssetRefreshState{}, err
+		return refreshpresentation.AssetRefreshState{}, err
 	} else if ok {
 		state.LatestSuccessful = uiRefreshRun(latest)
 	}
 	if s.DataVersions != nil {
 		modelID := refreshPipelineModelID(asset)
 		if version, ok, err := s.DataVersions.DataVersion(ctx, workspaceID, environment, modelID); err != nil {
-			return ui.AssetRefreshState{}, err
+			return refreshpresentation.AssetRefreshState{}, err
 		} else if ok {
-			state.DataVersion = ui.AssetDataVersion{
+			state.DataVersion = refreshpresentation.AssetDataVersion{
 				SnapshotID: version.SnapshotID, ServingStateID: version.ServingStateID,
 				RefreshedAt: version.RefreshedAt, Source: version.Source,
 			}
@@ -107,13 +106,6 @@ func refreshPipelineModelID(asset workspace.AssetView) string {
 		}
 	}
 	return ""
-}
-
-func (s WorkspaceSupport) AssetVersionsState(ctx context.Context, workspaceID, environment string, asset workspace.AssetView, section string) (ui.AssetVersionsState, error) {
-	if s.WorkspaceVersions == nil {
-		return ui.AssetVersionsState{CurrentContentHash: asset.ContentHash}, nil
-	}
-	return s.WorkspaceVersions(ctx, workspaceID, environment, asset, section)
 }
 
 func (s WorkspaceSupport) queueAssetRefreshWithPatches(r *nethttp.Request, workspaceID string, asset workspace.AssetView, assets []workspace.AssetView, edges []workspace.AssetEdgeView) error {
@@ -202,7 +194,7 @@ func (s WorkspaceSupport) workspaceAssetRefreshPatch(r *nethttp.Request, workspa
 	}
 	refresh, err := s.AssetRefreshState(r.Context(), workspaceID, environment, asset)
 	if err != nil {
-		refresh = ui.AssetRefreshState{Latest: ui.AssetRefreshRun{Status: "failed"}}
+		refresh = refreshpresentation.AssetRefreshState{Latest: refreshpresentation.AssetRefreshRun{Status: "failed"}}
 	}
 	view := workspace.WorkspaceView{ID: workspaceID}
 	if s.WorkspaceView != nil {
@@ -242,16 +234,16 @@ func (s WorkspaceSupport) publish(streamID string, patch pagestream.SignalPatch)
 	s.Broker.Publish(streamID, patch)
 }
 
-func uiRefreshRuns(runs []refresh.RunRecord) []ui.AssetRefreshRun {
-	out := make([]ui.AssetRefreshRun, 0, len(runs))
+func uiRefreshRuns(runs []refresh.RunRecord) []refreshpresentation.AssetRefreshRun {
+	out := make([]refreshpresentation.AssetRefreshRun, 0, len(runs))
 	for _, run := range runs {
 		out = append(out, uiRefreshRun(run))
 	}
 	return out
 }
 
-func uiRefreshRun(run refresh.RunRecord) ui.AssetRefreshRun {
-	return ui.AssetRefreshRun{
+func uiRefreshRun(run refresh.RunRecord) refreshpresentation.AssetRefreshRun {
+	return refreshpresentation.AssetRefreshRun{
 		ID:                   run.ID,
 		PrincipalDisplayName: run.PrincipalDisplayName,
 		TriggerType:          run.TriggerType,
