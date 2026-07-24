@@ -9,6 +9,7 @@ sql:
         out: "internal/platform/db"
         emit_json_tags: true
         emit_empty_slices: true
+        omit_unused_structs: true
 
   - engine: "sqlite"
     queries: "internal/analytics/queryaudit/sqlite/queries"

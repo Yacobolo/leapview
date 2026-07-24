@@ -56,7 +56,7 @@ jobs:
 
       - name: Check generated build inputs are untracked
         run: |
-          tracked="$(git ls-files -- docs/catalog.json docs/search-index.sqlite3 docs/configuration.md docs/visuals/examples.gen.json 'docs/api/*.md' docs/api/operations.json docs/reference/cli docs/reference/config internal/app/config/config_gen.go internal/platform/config/spec/names_gen.go web/generated)"
+          tracked="$(git ls-files -- docs/catalog.json docs/search-index.sqlite3 docs/configuration.md docs/visuals/examples.gen.json 'docs/api/*.md' docs/api/operations.json docs/reference/cli docs/reference/config internal/app/config/config_gen.go internal/app/config/spec/names_gen.go web/generated)"
           if [ -n "$tracked" ]; then
             printf 'derived build inputs must be generated, not committed:\n%s\n' "$tracked" >&2
             exit 1
@@ -91,7 +91,7 @@ jobs:
             internal/app/api/gen
             internal/app/cli/gen
             internal/app/config/config_gen.go
-            internal/platform/config/spec/names_gen.go
+            internal/app/config/spec/names_gen.go
             internal/platform/db/db.go
             internal/platform/db/models.go
             internal/platform/db/*.sql.go
@@ -119,7 +119,7 @@ jobs:
             docs/search-index.sqlite3 \
             docs/visuals/examples.gen.json \
             internal/app/config/config_gen.go \
-            internal/platform/config/spec/names_gen.go \
+            internal/app/config/spec/names_gen.go \
             internal/platform/db/db.go \
             internal/platform/db/models.go \
             internal/platform/db/*.sql.go \
@@ -145,7 +145,7 @@ jobs:
             internal/app/api/gen/
             internal/app/cli/gen/
             internal/app/config/config_gen.go
-            internal/platform/config/spec/names_gen.go
+            internal/app/config/spec/names_gen.go
             internal/platform/db/db.go
             internal/platform/db/models.go
             internal/platform/db/*.sql.go

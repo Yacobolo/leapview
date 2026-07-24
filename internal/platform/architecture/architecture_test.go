@@ -47,6 +47,16 @@ func TestInternalRootTaxonomyIsClosed(t *testing.T) {
 	}
 }
 
+func TestApplicationOwnsProductConfigurationContract(t *testing.T) {
+	root := repoRoot(t)
+	if !packageDirExists(root, "internal/app/config/spec") {
+		t.Fatal("application configuration contract is missing")
+	}
+	if packageDirExists(root, "internal/platform/config/spec") {
+		t.Fatal("platform retains the product configuration contract")
+	}
+}
+
 func TestPlatformProductionCodeDoesNotImportProductCapabilities(t *testing.T) {
 	for _, file := range productionGoFiles(t) {
 		if file.pkgDir != "internal/platform" && !strings.HasPrefix(file.pkgDir, "internal/platform/") {
@@ -925,6 +935,22 @@ func TestGeneratedPlatformQueriesStayInsidePlatform(t *testing.T) {
 	}
 }
 
+func TestPlatformSQLCOmitsUnusedCapabilityModels(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join(repoRoot(t), "sqlc.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := string(body)
+	start := strings.Index(config, `queries: "internal/platform/db/queries"`)
+	end := strings.Index(config, `queries: "internal/analytics/queryaudit/sqlite/queries"`)
+	if start < 0 || end < 0 || end <= start {
+		t.Fatal("platform sqlc generation block is missing")
+	}
+	if !strings.Contains(config[start:end], "omit_unused_structs: true") {
+		t.Fatal("platform sqlc generation exposes unused product-capability models")
+	}
+}
+
 func TestFixedOperationalRetentionQueriesUseSQLC(t *testing.T) {
 	for _, file := range productionGoFiles(t) {
 		if file.path != "internal/admin/sqlite/retention.go" {
@@ -1423,7 +1449,7 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 	files := map[string][]string{
 		".gitignore": {
 			"internal/app/config/config_gen.go",
-			"internal/platform/config/spec/names_gen.go",
+			"internal/app/config/spec/names_gen.go",
 			"web/generated/",
 			"docs/catalog.json",
 			"docs/search-index.sqlite3",
@@ -1435,7 +1461,7 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 		},
 		".dockerignore": {
 			"internal/app/config/config_gen.go",
-			"internal/platform/config/spec/names_gen.go",
+			"internal/app/config/spec/names_gen.go",
 			"web/generated",
 			"docs/catalog.json",
 			"docs/search-index.sqlite3",
@@ -1449,7 +1475,7 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 			"Check generated build inputs are untracked",
 			"docs/catalog.json docs/search-index.sqlite3 docs/configuration.md",
 			"'docs/api/*.md' docs/api/operations.json docs/reference/cli docs/reference/config",
-			"internal/app/config/config_gen.go internal/platform/config/spec/names_gen.go web/generated",
+			"internal/app/config/config_gen.go internal/app/config/spec/names_gen.go web/generated",
 			"Check public contract snapshots",
 			".env.example docs/api/openapi.yaml schemas/config schemas/json",
 			"Check generation is deterministic",
@@ -1466,7 +1492,7 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 		},
 		"Dockerfile": {
 			"COPY --from=sourcegen /src/internal/app/config/config_gen.go ./internal/app/config/config_gen.go",
-			"COPY --from=sourcegen /src/internal/platform/config/spec/names_gen.go ./internal/platform/config/spec/names_gen.go",
+			"COPY --from=sourcegen /src/internal/app/config/spec/names_gen.go ./internal/app/config/spec/names_gen.go",
 		},
 		filepath.Join("scripts", "generate_build_sources.sh"): {
 			"go run ./internal/app/tools/configgen",

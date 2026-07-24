@@ -173,7 +173,6 @@ var PackageRules = []PackageRule{
 	{Prefix: "internal/app/cli/composectl", Capability: "project", Layer: LayerAdapter},
 	{Prefix: "internal/app/config", Capability: "composition", Layer: LayerComposition},
 	{Prefix: "internal/project/schema", Capability: "project", Layer: LayerContract},
-	{Prefix: "internal/platform/config/spec", Capability: "platform", Layer: LayerPlatform},
 	{Prefix: "internal/platform/http/cursorsigning", Capability: "platform", Layer: LayerAdapter},
 	{Prefix: "internal/analytics/dataquery", Capability: "analytics", Layer: LayerContract},
 	{Prefix: "internal/project/docvalidation", Capability: "project", Layer: LayerUseCase},

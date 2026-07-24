@@ -21,7 +21,7 @@ api/gen
 internal/app/api/gen
 internal/app/cli/gen
 internal/app/config/config_gen.go
-internal/platform/config/spec/names_gen.go
+internal/app/config/spec/names_gen.go
 internal/platform/db/db.go
 internal/platform/db/models.go
 internal/platform/db/*.sql.go

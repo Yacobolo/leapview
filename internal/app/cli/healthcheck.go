@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/platform/config/spec"
+	"github.com/Yacobolo/leapview/internal/app/config/spec"
 	"github.com/spf13/cobra"
 )
 
