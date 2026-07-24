@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/platform/config/spec"
 	"github.com/Yacobolo/leapview/internal/platform/db"
 	"github.com/Yacobolo/leapview/internal/platform/filesystem"
 	"github.com/pressly/goose/v3"
@@ -33,7 +32,7 @@ type Paths struct {
 }
 
 func DefaultPaths() Paths {
-	home := os.Getenv(configspec.EnvLEAPVIEW_HOME)
+	home := os.Getenv("LEAPVIEW_HOME")
 	if home == "" {
 		home = ".leapview"
 	}

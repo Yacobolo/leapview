@@ -469,7 +469,7 @@ func documentationSourceLink(document siteDocument) (string, string) {
 	}
 	switch {
 	case document.source == "configuration.md":
-		return "View source contract on GitHub", repository + "blob/main/internal/platform/config/spec/spec.go"
+		return "View source contract on GitHub", repository + "blob/main/internal/app/config/spec/spec.go"
 	case strings.HasPrefix(document.source, "reference/config/"):
 		return "View source contract on GitHub", repository + "blob/main/internal/project/schema/contracts/contracts.cue"
 	case strings.HasPrefix(document.source, "reference/cli/"):

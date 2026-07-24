@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/platform/config/spec"
+	"github.com/Yacobolo/leapview/internal/app/config/spec"
 )
 
 const (

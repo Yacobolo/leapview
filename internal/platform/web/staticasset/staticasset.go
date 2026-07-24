@@ -5,11 +5,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
-
-	"github.com/Yacobolo/leapview/internal/platform/config/spec"
 )
 
-const versionEnv = configspec.EnvLEAPVIEW_ASSET_VERSION
+const versionEnv = "LEAPVIEW_ASSET_VERSION"
 const generatedVersionPath = "static/asset-version.txt"
 
 const DatastarScriptPath = "/static/vendor/datastar-1.0.2.js"
@@ -34,7 +32,7 @@ func Version() string {
 }
 
 func Production() bool {
-	value := strings.TrimSpace(os.Getenv(configspec.EnvLEAPVIEW_PRODUCTION))
+	value := strings.TrimSpace(os.Getenv("LEAPVIEW_PRODUCTION"))
 	if value == "" {
 		return false
 	}

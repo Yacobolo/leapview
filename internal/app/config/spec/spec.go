@@ -1,4 +1,4 @@
-// Package configspec defines LeapView's process-global environment contract.
+// Package configspec defines LeapView's application-wide environment contract.
 // It intentionally contains data only so runtime configuration and generators
 // consume the same source of truth.
 package configspec

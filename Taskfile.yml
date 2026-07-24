@@ -298,11 +298,11 @@ tasks:
     method: checksum
     sources:
       - Taskfile.yml
-      - internal/platform/config/spec/spec.go
+      - internal/app/config/spec/spec.go
       - internal/app/tools/configgen/main.go
     generates:
       - internal/app/config/config_gen.go
-      - internal/platform/config/spec/names_gen.go
+      - internal/app/config/spec/names_gen.go
       - docs/configuration.md
       - .env.example
       - schemas/config/environment.schema.json
