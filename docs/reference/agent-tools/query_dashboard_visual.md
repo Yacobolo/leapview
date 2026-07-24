@@ -2,7 +2,7 @@
 
 # query_dashboard_visual
 
-Query dashboard visual
+Query an existing dashboard visual with governed filters and compact analytical output
 
 Machine-readable: [focused JSON](/docs/agent-tools/tools/query_dashboard_visual.json) · [complete manifest](/docs/agent-tools/manifest.json)
 
@@ -14,7 +14,7 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_dashboard_visual.
 | Effect | `read` |
 | Operation | `queryDashboardVisualData` |
 | Tags | `dashboard`, `visual`, `query` |
-| Defaults | `{}` |
+| Defaults | `{"limit":50}` |
 | MCP annotations | read-only, idempotent, non-destructive, closed-world |
 
 ## Input schema
@@ -189,4 +189,310 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_dashboard_visual.
 
 ## Output schema
 
-This closed schema is too large to inline usefully. Read the exact generated schema in the [focused JSON contract](/docs/agent-tools/tools/query_dashboard_visual.json).
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "appliedFilters": {
+      "additionalProperties": false,
+      "properties": {
+        "controls": {
+          "additionalProperties": {
+            "additionalProperties": false,
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "operator": {
+                "type": "string"
+              },
+              "preset": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              },
+              "values": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          "type": "object"
+        },
+        "selections": {
+          "items": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "spatialSelections": {
+          "items": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "controls",
+        "selections",
+        "spatialSelections"
+      ],
+      "type": "object"
+    },
+    "columns": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "dataType": {
+            "enum": [
+              "string",
+              "boolean",
+              "integer",
+              "decimal",
+              "temporal",
+              "date",
+              "geographic"
+            ],
+            "type": "string"
+          },
+          "format": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "grain": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "nullable": {
+            "type": "boolean"
+          },
+          "role": {
+            "enum": [
+              "dimension",
+              "measure",
+              "metadata",
+              "identity"
+            ],
+            "type": "string"
+          },
+          "sourceRef": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataType",
+          "id",
+          "label",
+          "nullable",
+          "role"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "completeness": {
+      "additionalProperties": false,
+      "properties": {
+        "availableRows": {
+          "type": "integer"
+        },
+        "cardinality": {
+          "enum": [
+            "unknown",
+            "lower_bound",
+            "estimated",
+            "exact"
+          ],
+          "type": "string"
+        },
+        "cardinalityCount": {
+          "type": "integer"
+        },
+        "returnedRows": {
+          "type": "integer"
+        },
+        "state": {
+          "enum": [
+            "complete",
+            "truncated",
+            "partial",
+            "empty"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "cardinality",
+        "returnedRows",
+        "state"
+      ],
+      "type": "object"
+    },
+    "datasetId": {
+      "type": "string"
+    },
+    "diagnostics": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "fieldId": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "severity"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "freshness": {
+      "additionalProperties": false,
+      "properties": {
+        "lastSuccessfulRefreshAt": {
+          "description": "Completion time of the last successful publish or refresh. This is not an upstream event-time watermark.",
+          "type": "string"
+        },
+        "servingStateId": {
+          "description": "Serving state that produced the successful data version.",
+          "type": "string"
+        },
+        "snapshotId": {
+          "description": "DuckLake snapshot ID recorded for the successful data version.",
+          "type": "string"
+        },
+        "source": {
+          "description": "Whether the data version came from publish or refresh.",
+          "enum": [
+            "publish",
+            "refresh"
+          ],
+          "type": "string"
+        },
+        "status": {
+          "description": "current when the successful data version belongs to the queried serving snapshot; stale otherwise.",
+          "enum": [
+            "current",
+            "stale"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "lastSuccessfulRefreshAt",
+        "servingStateId",
+        "snapshotId",
+        "source",
+        "status"
+      ],
+      "type": "object"
+    },
+    "hasMore": {
+      "type": "boolean"
+    },
+    "mark": {
+      "type": "string"
+    },
+    "nextCursor": {
+      "type": "string"
+    },
+    "queryId": {
+      "type": "string"
+    },
+    "rows": {
+      "items": {
+        "items": {},
+        "type": "array"
+      },
+      "type": "array"
+    },
+    "servingSnapshot": {
+      "type": "string"
+    },
+    "status": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "idle",
+            "loading",
+            "ready",
+            "no_data",
+            "partial",
+            "error"
+          ],
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "title": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "visualId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "appliedFilters",
+    "columns",
+    "completeness",
+    "datasetId",
+    "diagnostics",
+    "hasMore",
+    "queryId",
+    "rows",
+    "servingSnapshot",
+    "status",
+    "title",
+    "type",
+    "visualId"
+  ],
+  "type": "object"
+}
+```

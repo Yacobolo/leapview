@@ -68,10 +68,13 @@ func TestAPIGenDefinitionsRequireAndUseExplicitWorkspace(t *testing.T) {
 	}
 }
 
-func TestAPIGenDefinitionsExposeClosedVisualizationEnvelopeOutputSchemas(t *testing.T) {
+func TestAPIGenDefinitionsExposeCompactDashboardVisualOutputSchema(t *testing.T) {
 	for _, definition := range (APIGenProvider{}).Definitions(Scope{PrincipalID: "principal-1"}) {
 		if definition.Name != "query_dashboard_visual" {
 			continue
+		}
+		if len(definition.OutputSchema) >= 24*1024 {
+			t.Fatalf("dashboard visual output schema is %d bytes, want compact schema under 24 KiB", len(definition.OutputSchema))
 		}
 		var schema map[string]any
 		if err := json.Unmarshal(definition.OutputSchema, &schema); err != nil {
@@ -87,13 +90,25 @@ func TestAPIGenDefinitionsExposeClosedVisualizationEnvelopeOutputSchemas(t *test
 		if !ok {
 			t.Fatalf("output schema properties = %#v", schema["properties"])
 		}
-		for _, property := range []string{"spec", "dataState"} {
-			propertySchema, ok := properties[property].(map[string]any)
-			if !ok {
-				t.Fatalf("output schema property %q = %#v", property, properties[property])
+		for _, property := range []string{
+			"queryId", "servingSnapshot", "visualId", "title", "type", "columns", "rows",
+			"appliedFilters", "status", "diagnostics", "completeness", "hasMore", "nextCursor",
+		} {
+			if _, ok := properties[property]; !ok {
+				t.Fatalf("compact output schema missing %q: %s", property, definition.OutputSchema)
 			}
-			if _, ok := propertySchema["oneOf"]; !ok {
-				t.Fatalf("output schema property %q lost its discriminated union: %s", property, definition.OutputSchema)
+		}
+		columns, _ := properties["columns"].(map[string]any)
+		items, _ := columns["items"].(map[string]any)
+		columnProperties, _ := items["properties"].(map[string]any)
+		for _, property := range []string{"id", "sourceRef", "label", "role", "dataType", "nullable", "format", "grain"} {
+			if _, ok := columnProperties[property]; !ok {
+				t.Fatalf("compact column schema missing %q: %#v", property, items)
+			}
+		}
+		for _, property := range []string{"spec", "dataState", "rendererID", "selection"} {
+			if _, ok := properties[property]; ok {
+				t.Fatalf("compact output schema kept renderer field %q: %s", property, definition.OutputSchema)
 			}
 		}
 		return

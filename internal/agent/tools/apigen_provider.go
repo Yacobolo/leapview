@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 
+	agentcontracts "github.com/Yacobolo/leapview/internal/agent/contracts"
 	"github.com/Yacobolo/leapview/internal/dataquery"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 	"github.com/Yacobolo/toolbelt/apigen/runtime/agenttool"
@@ -41,11 +42,15 @@ func (p APIGenProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
 	operations := APIGenOperations()
 	definitions := make([]agentcore.ToolDefinition, 0, len(operations))
 	for _, operation := range operations {
+		outputSchema := requireToolObjectSchema(operation.Tool.OutputSchema)
+		if operation.Tool.Name == "query_dashboard_visual" {
+			outputSchema = json.RawMessage(agentcontracts.DashboardVisualQueryResultSchemaJSON)
+		}
 		definitions = append(definitions, agentcore.ToolDefinition{
 			Name:         operation.Tool.Name,
 			Description:  operation.Tool.Description,
 			InputSchema:  boundCuratedQueryInputSchema(operation.Tool.Name, operation.Tool.InputSchema),
-			OutputSchema: requireToolObjectSchema(operation.Tool.OutputSchema),
+			OutputSchema: outputSchema,
 			Effect:       string(operation.Tool.Effect),
 			Tags:         append([]string(nil), operation.Tool.Tags...),
 			Handler: agentcore.ToolHandlerFunc(func(ctx context.Context, call agentcore.ToolCall) (agentcore.ToolResult, error) {
@@ -117,6 +122,9 @@ func (p APIGenProvider) Run(ctx context.Context, scope Scope, operation APIGenOp
 		ObjectType:  "agent_tool",
 		ObjectID:    operation.Tool.Name,
 	})
+	if operation.Tool.Name == "query_dashboard_visual" {
+		ctx = agentcontracts.WithDashboardVisualProjection(ctx)
+	}
 	request = request.WithContext(ctx)
 	if strings.TrimSpace(call.ID) != "" {
 		request.Header.Set("X-Request-ID", call.ID)
@@ -129,29 +137,15 @@ func (p APIGenProvider) Run(ctx context.Context, scope Scope, operation APIGenOp
 	if !ok {
 		return apigenAgentToolError("operation_not_found", "APIGen operation is not dispatchable")
 	}
-	result, err := agenttool.ProjectResponse(operation.Tool, response)
+	responseContract := operation.Tool
+	if operation.Tool.Name == "query_dashboard_visual" {
+		responseContract.OutputSchema = json.RawMessage(agentcontracts.DashboardVisualQueryResultSchemaJSON)
+	}
+	result, err := agenttool.ProjectResponse(responseContract, response)
 	if err != nil {
 		return agentToolRuntimeError(err)
 	}
-	if operation.Tool.Name == "query_dashboard_visual" {
-		omitNilDashboardVisualFields(result.Content)
-	}
 	return agentcore.ToolResult{Content: result.Content, IsError: result.IsError}
-}
-
-func omitNilDashboardVisualFields(content any) {
-	object, ok := content.(map[string]any)
-	if !ok {
-		return
-	}
-	for _, name := range []string{"dimensions", "measures", "series", "selection"} {
-		if object[name] == nil {
-			delete(object, name)
-		}
-	}
-	if interaction, ok := object["interaction"].(map[string]any); ok && interaction["mappings"] == nil {
-		interaction["mappings"] = []any{}
-	}
 }
 
 func normalizeCuratedQueryArguments(toolName string, arguments json.RawMessage) json.RawMessage {

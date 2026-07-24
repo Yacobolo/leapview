@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/access"
+	agentcontracts "github.com/Yacobolo/leapview/internal/agent/contracts"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	"github.com/Yacobolo/leapview/internal/api"
 	"github.com/Yacobolo/leapview/internal/dashboard"
@@ -84,6 +85,7 @@ type Handler struct {
 	ChromeDecorators     func(r *nethttp.Request) []reportui.ChromeDecorator
 	Environment          func(*nethttp.Request) string
 	DataRefreshedAt      func(context.Context, string, string, string) string
+	QueryFreshness       func(context.Context, string, string, string) (agentcontracts.QueryFreshness, bool)
 	CommandGuard         func(*nethttp.Request, Metrics, command.Request, dashboard.Signals) error
 	SharedCommandPrepare SharedCommandPrepare
 	AgentBootstrap       func(*nethttp.Request, string) ui.ChatViewState

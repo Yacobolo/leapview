@@ -181,6 +181,7 @@ tasks:
       - task: db:generate
       - task: config:generate
       - task: api:generate
+      - task: agent-contracts:generate
       - task: ui-signals:generate
       - task: schema:generate
       - task: visualization-ir:generate
@@ -289,10 +290,13 @@ tasks:
     desc: Generate the public agent tool reference from the canonical runtime catalog
     deps:
       - api:generate
+      - agent-contracts:generate
     method: checksum
     sources:
       - Taskfile.yml
+      - api/agenttools/**/*.tsp
       - api/typespec/**/*.tsp
+      - internal/agent/contracts/**/*.go
       - internal/api/gen/**/*.go
       - internal/agent/tools/**/*.go
       - internal/tools/agenttooldocgen/**/*.go
@@ -346,8 +350,26 @@ tasks:
     cmds:
       - task: config:check
       - |
-        changed="$(git status --porcelain -- .env.example docs/api/openapi.yaml docs/llms.txt docs/reference/agent-tools schemas/config schemas/json)"
+        changed="$(git status --porcelain -- .env.example docs/api/openapi.yaml docs/llms.txt docs/reference/agent-tools internal/agent/contracts schemas/config schemas/json)"
         test -z "$changed" || { printf 'public contract snapshots are stale:\n%s\n' "$changed" >&2; exit 1; }
+
+  agent-contracts:generate:
+    desc: Generate compact agent-tool DTOs and JSON Schemas
+    method: checksum
+    sources:
+      - Taskfile.yml
+      - api/apigen.yaml
+      - api/agenttools/**/*.tsp
+      - internal/tools/agentcontractgen/**/*.go
+    generates:
+      - api/gen/agent-tools-ir.json
+      - api/gen/agent-tools.schema.json
+      - internal/agent/contracts/models.gen.go
+      - internal/agent/contracts/schemas.gen.go
+    cmds:
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.6.5 typespec-compile -manifest api/apigen.yaml -target agent-tool-contracts
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.6.5 all -manifest api/apigen.yaml -target agent-tool-contracts
+      - go run ./internal/tools/agentcontractgen
 
   api:generate:
     desc: Generate headless API contract artifacts and APIGen Go surfaces

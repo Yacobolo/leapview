@@ -104,7 +104,7 @@ func TestReferenceCatalogComesFromCanonicalProviderDefinitions(t *testing.T) {
 	wantDefaults := map[string]map[string]any{
 		"catalog_get": {}, "catalog_list": {"limit": 25}, "catalog_search": {"limit": 10},
 		"docs_read": {"limit": 200, "offset": 1}, "docs_search": {"limit": 8},
-		"query_dashboard_visual": {}, "query_semantic_model": {"limit": 25}, "query_visual": {"limit": 50},
+		"query_dashboard_visual": {"limit": 50}, "query_semantic_model": {"limit": 25}, "query_visual": {"limit": 50},
 	}
 	for index, tool := range reference {
 		definition := definitions[index]

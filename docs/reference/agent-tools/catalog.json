@@ -29,7 +29,7 @@
     {
       "slug": "query_dashboard_visual",
       "title": "query_dashboard_visual",
-      "summary": "Query dashboard visual"
+      "summary": "Query an existing dashboard visual with governed filters and compact analytical output"
     },
     {
       "slug": "query_semantic_model",

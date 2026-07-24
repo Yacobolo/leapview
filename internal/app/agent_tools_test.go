@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"slices"
 	"sort"
@@ -14,6 +15,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/access"
 	agentcap "github.com/Yacobolo/leapview/internal/agent"
 	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
+	"github.com/Yacobolo/leapview/internal/dashboard"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/productdocs"
@@ -543,13 +545,13 @@ func TestAPIGenAgentOperationsDeclareOutputMetadata(t *testing.T) {
 	}
 }
 
-func TestAPIGenVisualToolUsesGeneratedUnionProjection(t *testing.T) {
+func TestAPIGenVisualToolKeepsRESTEnvelopeAndUsesProviderProjection(t *testing.T) {
 	for _, operation := range agenttools.APIGenOperations() {
 		if operation.Tool.Name != "query_dashboard_visual" {
 			continue
 		}
 		if operation.Tool.Output.Mode != "raw" || len(operation.Tool.Output.Select) != 0 {
-			t.Fatalf("visual tool output = %#v, want raw discriminated union", operation.Tool.Output)
+			t.Fatalf("visual REST operation output = %#v, want raw discriminated union", operation.Tool.Output)
 		}
 		return
 	}
@@ -572,7 +574,7 @@ func TestAPIGenAgentToolDispatchesTabularVisualQuery(t *testing.T) {
 	result, err := queryVisual.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:        "call_1",
 		Name:      "query_dashboard_visual",
-		Arguments: json.RawMessage(`{"workspace":"test","dashboard":"executive-sales","page":"overview","visual":"order_rows","limit":500}`),
+		Arguments: json.RawMessage(`{"workspace":"test","dashboard":"executive-sales","page":"overview","visual":"order_rows","limit":50}`),
 	})
 	if err != nil {
 		t.Fatalf("run tool: %v", err)
@@ -584,20 +586,67 @@ func TestAPIGenAgentToolDispatchesTabularVisualQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal result content: %v", err)
 	}
-	var table visualizationir.VisualizationEnvelope
+	var table struct {
+		QueryID         string `json:"queryId"`
+		ServingSnapshot string `json:"servingSnapshot"`
+		VisualID        string `json:"visualId"`
+		Title           string `json:"title"`
+		Type            string `json:"type"`
+		Columns         []struct {
+			ID       string `json:"id"`
+			Label    string `json:"label"`
+			Role     string `json:"role"`
+			DataType string `json:"dataType"`
+		} `json:"columns"`
+		Rows         [][]any `json:"rows"`
+		Completeness struct {
+			ReturnedRows  int    `json:"returnedRows"`
+			AvailableRows int    `json:"availableRows"`
+			Cardinality   string `json:"cardinality"`
+		} `json:"completeness"`
+		HasMore    bool   `json:"hasMore"`
+		NextCursor string `json:"nextCursor"`
+	}
 	if err := json.Unmarshal(body, &table); err != nil {
 		t.Fatalf("decode table result: %v\n%s", err, body)
 	}
-	tableSpec, specOK := table.Spec.Value.(*visualizationir.TableVisualizationSpec)
-	tableState, stateOK := table.DataState.Value.(*visualizationir.WindowedVisualizationDataState)
-	if !specOK || len(tableSpec.Columns) == 0 || !stateOK || tableState.AvailableRows != 500 || len(tableState.Blocks["a"].Rows) != 500 {
-		t.Fatalf("table envelope did not honor the bounded query limit: %#v", table)
+	if table.QueryID != "call_1" || table.ServingSnapshot == "" || table.VisualID != "order_rows" ||
+		table.Title == "" || table.Type != "table" || len(table.Columns) == 0 || len(table.Rows) != 50 ||
+		table.Completeness.ReturnedRows != 50 || table.Completeness.AvailableRows != 500 ||
+		!table.HasMore || table.NextCursor == "" {
+		t.Fatalf("compact table result = %#v", table)
+	}
+	next, err := queryVisual.Handler.Run(context.Background(), agentcore.ToolCall{
+		ID:   "call_2",
+		Name: "query_dashboard_visual",
+		Arguments: json.RawMessage(fmt.Sprintf(
+			`{"workspace":"test","dashboard":"executive-sales","page":"overview","visual":"order_rows","limit":50,"pageToken":%q}`,
+			table.NextCursor,
+		)),
+	})
+	if err != nil || next.IsError {
+		t.Fatalf("continue tool result=%#v err=%v", next, err)
+	}
+	nextBody, _ := json.Marshal(next.Content)
+	var nextPage struct {
+		Rows         [][]any `json:"rows"`
+		Completeness struct {
+			ReturnedRows int `json:"returnedRows"`
+		} `json:"completeness"`
+		HasMore bool `json:"hasMore"`
+	}
+	if err := json.Unmarshal(nextBody, &nextPage); err != nil {
+		t.Fatalf("decode continued table result: %v body=%s", err, nextBody)
+	}
+	if len(nextPage.Rows) != 50 || nextPage.Rows[0][0] != "order-50" ||
+		nextPage.Completeness.ReturnedRows != 50 || !nextPage.HasMore {
+		t.Fatalf("continued compact table result = %#v", nextPage)
 	}
 	var tableMap map[string]any
 	if err := json.Unmarshal(body, &tableMap); err != nil {
 		t.Fatalf("decode table map: %v", err)
 	}
-	for _, forbidden := range []string{"style", "interaction", "loadingBlock", "type", "shape", "rendererOptions", "options"} {
+	for _, forbidden := range []string{"spec", "dataState", "rendererID", "selection", "style", "rendererOptions"} {
 		if _, ok := tableMap[forbidden]; ok {
 			t.Fatalf("table result kept noisy field %q: %#v", forbidden, tableMap)
 		}
@@ -622,9 +671,15 @@ func TestAPIGenAgentToolFetchesSingleDashboardVisualData(t *testing.T) {
 		t.Fatalf("compile agent tool catalog: %v", err)
 	}
 	result, err := catalog.Execute(context.Background(), agentcore.ToolCall{
-		ID:        "call_1",
-		Name:      "query_dashboard_visual",
-		Arguments: json.RawMessage(`{"workspace":"test","dashboard":"executive-sales","page":"overview","visual":"orders"}`),
+		ID:   "call_1",
+		Name: "query_dashboard_visual",
+		Arguments: json.RawMessage(`{
+			"workspace":"test",
+			"dashboard":"executive-sales",
+			"page":"overview",
+			"visual":"orders",
+			"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}}
+		}`),
 	})
 	if err != nil {
 		t.Fatalf("run tool: %v", err)
@@ -636,13 +691,35 @@ func TestAPIGenAgentToolFetchesSingleDashboardVisualData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal result content: %v", err)
 	}
-	var visual visualizationir.VisualizationEnvelope
+	var visual struct {
+		QueryID  string `json:"queryId"`
+		VisualID string `json:"visualId"`
+		Title    string `json:"title"`
+		Type     string `json:"type"`
+		Mark     string `json:"mark"`
+		Columns  []struct {
+			ID       string `json:"id"`
+			Label    string `json:"label"`
+			Role     string `json:"role"`
+			DataType string `json:"dataType"`
+		} `json:"columns"`
+		Rows         [][]any `json:"rows"`
+		Completeness struct {
+			ReturnedRows int    `json:"returnedRows"`
+			Cardinality  string `json:"cardinality"`
+		} `json:"completeness"`
+		Status struct {
+			Kind string `json:"kind"`
+		} `json:"status"`
+		AppliedFilters dashboard.Filters `json:"appliedFilters"`
+	}
 	if err := json.Unmarshal(body, &visual); err != nil {
 		t.Fatalf("decode visual result: %v body=%s", err, body)
 	}
-	visualSpec, specOK := visual.Spec.Value.(*visualizationir.ProportionalVisualizationSpec)
-	visualState, stateOK := visual.DataState.Value.(*visualizationir.InlineVisualizationDataState)
-	if !specOK || visualSpec.Title != "Orders" || visualSpec.Mark != visualizationir.VisualizationProportionalMarkDonut || !stateOK || len(visualState.Datasets) != 1 || len(visualState.Datasets[0].Rows) != 1 {
+	if visual.QueryID != "call_1" || visual.VisualID != "orders" || visual.Title != "Orders" ||
+		visual.Type != "proportional" || visual.Mark != "donut" || len(visual.Columns) == 0 ||
+		len(visual.Rows) != 1 || visual.Completeness.ReturnedRows != 1 ||
+		visual.Status.Kind != "ready" || visual.AppliedFilters.Controls["state"].Values[0] != "SP" {
 		t.Fatalf("visual result = %#v", visual)
 	}
 }
@@ -778,6 +855,45 @@ func TestAPIGenAgentSemanticQueryReturnsLastSuccessfulFreshness(t *testing.T) {
 		decoded.Freshness.Source != "refresh" ||
 		decoded.Freshness.Status != "current" {
 		t.Fatalf("freshness = %#v", decoded.Freshness)
+	}
+
+	var queryDashboardVisual agentcore.ToolDefinition
+	for _, tool := range agentAPIGenToolsForTest(server, agentcap.Scope{
+		WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true,
+	}) {
+		if tool.Name == "query_dashboard_visual" {
+			queryDashboardVisual = tool
+			break
+		}
+	}
+	visualResult, err := queryDashboardVisual.Handler.Run(context.Background(), agentcore.ToolCall{
+		ID:   "freshness_visual",
+		Name: "query_dashboard_visual",
+		Arguments: json.RawMessage(`{
+			"workspace":"test",
+			"dashboard":"executive-sales",
+			"page":"overview",
+			"visual":"orders"
+		}`),
+	})
+	if err != nil || visualResult.IsError {
+		t.Fatalf("visual result=%#v err=%v", visualResult, err)
+	}
+	visualBody, _ := json.Marshal(visualResult.Content)
+	var visualDecoded struct {
+		Freshness struct {
+			LastSuccessfulRefreshAt string `json:"lastSuccessfulRefreshAt"`
+			SnapshotID              string `json:"snapshotId"`
+			ServingStateID          string `json:"servingStateId"`
+			Source                  string `json:"source"`
+			Status                  string `json:"status"`
+		} `json:"freshness"`
+	}
+	if err := json.Unmarshal(visualBody, &visualDecoded); err != nil {
+		t.Fatalf("decode visual result: %v body=%s", err, visualBody)
+	}
+	if !reflect.DeepEqual(visualDecoded.Freshness, decoded.Freshness) {
+		t.Fatalf("visual freshness = %#v, semantic freshness = %#v", visualDecoded.Freshness, decoded.Freshness)
 	}
 }
 

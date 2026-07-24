@@ -25108,7 +25108,7 @@ paths:
   /api/v1/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/visuals/{visual}/query:
     post:
       operationId: queryDashboardVisualData
-      summary: Query dashboard visual
+      summary: Query an existing dashboard visual with governed filters and compact analytical output
       parameters:
         - name: workspace
           in: path
@@ -25457,6 +25457,9 @@ paths:
               mode: model
               name: workspace
               source: path
+            - default: !!float 50
+              name: limit
+              source: body
         name: query_dashboard_visual
         output:
           mode: raw

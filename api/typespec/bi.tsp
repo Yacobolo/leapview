@@ -694,7 +694,7 @@ op explainSemanticPreview(@path workspace: string, @path("model") modelName: str
 op queryDashboardPage(@path workspace: string, @path dashboard: string, @path page: string, @body body?: DashboardPageQueryRequest): OkJson<DashboardPageQueryResponse> | CommonErrors;
 
 @tag("BI")
-@summary("Query dashboard visual")
+@summary("Query an existing dashboard visual with governed filters and compact analytical output")
 @route("/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/visuals/{visual}/query")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "QUERY_DATA" })
@@ -703,7 +703,7 @@ op queryDashboardPage(@path workspace: string, @path dashboard: string, @path pa
 @apigen.cli(#{ command: #["dashboards", "visual-data"], args: #[#{ source: "path", name: "workspace", displayName: "workspace" }, #{ source: "path", name: "dashboard", displayName: "dashboard" }, #{ source: "path", name: "page", displayName: "page" }, #{ source: "path", name: "visual", displayName: "visual" }], output: #{ mode: "raw" } })
 @apigen.tool(#{
   name: "query_dashboard_visual", effect: "read", tags: #["dashboard", "visual", "query"],
-  input: #{ fields: #[#{ source: "path", name: "workspace", mode: "model", description: "Workspace ID to query." }] },
+  input: #{ fields: #[#{ source: "path", name: "workspace", mode: "model", description: "Workspace ID to query." }, #{ source: "body", name: "limit", default: 50 }] },
   output: #{ mode: "raw" },
 })
 op queryDashboardVisualData(@path workspace: WorkspaceId, @path dashboard: string, @path page: string, @path visual: string, @header accept?: string, @body body?: DashboardVisualQueryRequest): RowsetResponse<LeapViewVisualization.VisualizationEnvelope> | CommonErrors;

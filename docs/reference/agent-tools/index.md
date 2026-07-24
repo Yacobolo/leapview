@@ -15,6 +15,6 @@ Machine-readable: [complete tool manifest](/docs/agent-tools/manifest.json). Foc
 | [`catalog_search`](/docs/agent-tools/catalog_search) | `VIEW_ITEM` | `read` | Search the complete authorized LeapView BI catalog across workspaces. |
 | [`docs_read`](/docs/agent-tools/docs_read) | `USE_AGENT` | `read` | Read a bounded line window from one LeapView document returned by docs_search. |
 | [`docs_search`](/docs/agent-tools/docs_search) | `USE_AGENT` | `read` | Search LeapView's version-matched product documentation. |
-| [`query_dashboard_visual`](/docs/agent-tools/query_dashboard_visual) | `QUERY_DATA` | `read` | Query dashboard visual |
+| [`query_dashboard_visual`](/docs/agent-tools/query_dashboard_visual) | `QUERY_DATA` | `read` | Query an existing dashboard visual with governed filters and compact analytical output |
 | [`query_semantic_model`](/docs/agent-tools/query_semantic_model) | `QUERY_DATA` | `read` | Query governed semantic data with typed columns, filters, pagination, and provenance |
 | [`query_visual`](/docs/agent-tools/query_visual) | `QUERY_DATA` | `read` | Create one read-only visual from LeapView semantic model fields. |

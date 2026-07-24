@@ -57,7 +57,12 @@ func TestAPIGenUsesTypeSpecV065(t *testing.T) {
 		t.Fatalf("read manifest: %v", err)
 	}
 	manifestText := string(manifest)
-	for _, source := range []string{"typespec_entrypoint: typespec/main.tsp", "typespec_entrypoint: signals/main.tsp", "typespec_entrypoint: visualization/main.tsp"} {
+	for _, source := range []string{
+		"typespec_entrypoint: typespec/main.tsp",
+		"typespec_entrypoint: signals/main.tsp",
+		"typespec_entrypoint: visualization/main.tsp",
+		"typespec_entrypoint: agenttools/main.tsp",
+	} {
 		if !strings.Contains(manifestText, source) {
 			t.Fatalf("manifest should select shared-root TypeSpec source %q, got:\n%s", source, manifestText)
 		}
@@ -72,7 +77,7 @@ func TestAPIGenUsesTypeSpecV065(t *testing.T) {
 	}
 	taskText := string(taskfile)
 	for _, want := range []string{
-		"- task: api:generate\n      - task: ui-signals:generate\n      - task: schema:generate",
+		"- task: api:generate\n      - task: agent-contracts:generate\n      - task: ui-signals:generate\n      - task: schema:generate",
 		"schema:generate:\n    desc: Generate JSON Schema artifacts for LeapView YAML contracts\n    deps:\n      - db:generate\n      - config:generate\n      - api:generate\n      - ui-signals:generate",
 	} {
 		if !strings.Contains(taskText, want) {

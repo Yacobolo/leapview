@@ -180,7 +180,8 @@ func (h Handler) QueryDashboardVisualData(w nethttp.ResponseWriter, r *nethttp.R
 		h.queryDashboardTabularVisual(w, r, metrics, page, visualID, input)
 		return
 	}
-	if input.Limit != 0 || input.PageToken != "" {
+	compact := requestsCompactDashboardVisual(r)
+	if !compact && (input.Limit != 0 || input.PageToken != "") {
 		writeJSONError(w, fmt.Errorf("pagination is only supported for table, matrix, and pivot visuals"), nethttp.StatusBadRequest)
 		return
 	}
@@ -193,6 +194,25 @@ func (h Handler) QueryDashboardVisualData(w nethttp.ResponseWriter, r *nethttp.R
 	if !dashboardFiltersProvided(filters) {
 		filters = metrics.DefaultFilters(dashboardID)
 	}
+	start, limit := 0, maxAgentDashboardVisualRows
+	cursorInput := input
+	cursorInput.PageToken = ""
+	scope, snapshot := dashboardRequestCursorScope(r, cursorInput), dashboardServingSnapshot(r)
+	if compact {
+		if input.Limit > 0 {
+			limit = min(input.Limit, maxAgentDashboardVisualRows)
+		}
+		var err error
+		start, err = decodeIndexCursor(input.PageToken, scope, snapshot)
+		if err != nil {
+			status := nethttp.StatusBadRequest
+			if errors.Is(err, errDashboardCursorSnapshot) {
+				status = nethttp.StatusConflict
+			}
+			writeJSONError(w, err, status)
+			return
+		}
+	}
 	ctx := dataquery.WithMetadata(r.Context(), h.requestQueryMetadata(r, dataquery.SurfaceAPI, dataquery.OperationAPIQuery, "dashboard_visual", dashboardID+":"+visualID))
 	patch, err := metrics.QueryDashboardPage(ctx, dashboardID, page.ID, filters)
 	if err != nil {
@@ -202,6 +222,15 @@ func (h Handler) QueryDashboardVisualData(w nethttp.ResponseWriter, r *nethttp.R
 	visual, ok := patch.Visuals[visualID]
 	if !ok {
 		writeJSONError(w, fmt.Errorf("visual %q data not found", visualID), nethttp.StatusNotFound)
+		return
+	}
+	if compact {
+		result, err := h.dashboardVisualAgentProjection(r, metrics, visual, filters, start, limit, scope, snapshot)
+		if err != nil {
+			writeJSONError(w, err, nethttp.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, nethttp.StatusOK, result)
 		return
 	}
 	writeJSON(w, nethttp.StatusOK, visual)
@@ -215,6 +244,9 @@ func (h Handler) queryDashboardTabularVisual(w nethttp.ResponseWriter, r *nethtt
 	limit := input.Limit
 	if limit <= 0 {
 		limit = 100
+	}
+	if requestsCompactDashboardVisual(r) && limit > maxAgentDashboardVisualRows {
+		limit = maxAgentDashboardVisualRows
 	}
 	if limit > dashboard.TableMaxRequestCount {
 		limit = dashboard.TableMaxRequestCount
@@ -246,6 +278,15 @@ func (h Handler) queryDashboardTabularVisual(w nethttp.ResponseWriter, r *nethtt
 	envelope, err := metrics.QueryVisualizationWindow(ctx, dashboardID, page.ID, filters, request)
 	if err != nil {
 		writeJSONError(w, err, nethttp.StatusBadRequest)
+		return
+	}
+	if requestsCompactDashboardVisual(r) {
+		result, err := h.dashboardVisualAgentProjection(r, metrics, envelope, filters, start, limit, scope, snapshot)
+		if err != nil {
+			writeJSONError(w, err, nethttp.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, nethttp.StatusOK, result)
 		return
 	}
 	if !acceptsDashboardMediaType(r.Header.Get("Accept"), dashboardArrowMediaType) {
