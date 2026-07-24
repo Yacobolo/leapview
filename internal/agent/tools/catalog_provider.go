@@ -64,6 +64,7 @@ var catalogChildren = map[CatalogType]map[CatalogType]struct{}{
 	},
 	CatalogTypeSemanticModel: {
 		CatalogTypeSemanticTable: {},
+		CatalogTypeField:         {},
 		CatalogTypeMeasure:       {},
 	},
 	CatalogTypeSemanticTable: {
@@ -78,6 +79,14 @@ type CatalogRef struct {
 }
 
 type CatalogLocation struct {
+	DashboardID   string `json:"dashboardId"`
+	DashboardName string `json:"dashboardName,omitempty"`
+	PageID        string `json:"pageId"`
+	PageName      string `json:"pageName,omitempty"`
+	Href          string `json:"href,omitempty"`
+}
+
+type CatalogLocationSelection struct {
 	DashboardID string `json:"dashboardId"`
 	PageID      string `json:"pageId"`
 }
@@ -125,8 +134,8 @@ type CatalogListRequest struct {
 }
 
 type CatalogGetRequest struct {
-	Ref      CatalogRef       `json:"ref"`
-	Location *CatalogLocation `json:"location,omitempty"`
+	Ref      CatalogRef                `json:"ref"`
+	Location *CatalogLocationSelection `json:"location,omitempty"`
 }
 
 type CatalogPage struct {
@@ -386,11 +395,24 @@ var catalogRefSchema = `{
 	"additionalProperties":false
 }`
 
-var catalogLocationSchema = `{
+var catalogLocationInputSchema = `{
 	"type":"object",
 	"properties":{
 		"dashboardId":{"type":"string","minLength":1},
 		"pageId":{"type":"string","minLength":1}
+	},
+	"required":["dashboardId","pageId"],
+	"additionalProperties":false
+}`
+
+var catalogLocationOutputSchema = `{
+	"type":"object",
+	"properties":{
+		"dashboardId":{"type":"string","minLength":1},
+		"dashboardName":{"type":"string"},
+		"pageId":{"type":"string","minLength":1},
+		"pageName":{"type":"string"},
+		"href":{"type":"string"}
 	},
 	"required":["dashboardId","pageId"],
 	"additionalProperties":false
@@ -426,7 +448,7 @@ var catalogGetInputSchema = json.RawMessage(fmt.Sprintf(`{
 	"properties":{"ref":%s,"location":%s},
 	"required":["ref"],
 	"additionalProperties":false
-}`, catalogRefSchema, catalogLocationSchema))
+}`, catalogRefSchema, catalogLocationInputSchema))
 
 var catalogItemSchema = fmt.Sprintf(`{
 	"type":"object",
@@ -442,7 +464,7 @@ var catalogItemSchema = fmt.Sprintf(`{
 	},
 	"required":["ref","name","workspace","hierarchy","capabilities"],
 	"additionalProperties":false
-}`, catalogRefSchema, catalogRefSchema, catalogRefSchema, catalogLocationSchema)
+}`, catalogRefSchema, catalogRefSchema, catalogRefSchema, catalogLocationOutputSchema)
 
 var catalogPageOutputSchema = json.RawMessage(fmt.Sprintf(`{
 	"type":"object",
@@ -543,10 +565,28 @@ var catalogDetailsSchema = `{
 			"properties":{
 				"type":{"type":"string","enum":["semantic_model"]},
 				"semanticTableCount":{"type":"integer"},"fieldCount":{"type":"integer"},
-				"measureCount":{"type":"integer"},"dashboardCount":{"type":"integer"},
+				"conformedDimensionCount":{"type":"integer"},"atomicMeasureCount":{"type":"integer"},
+				"metricCount":{"type":"integer"},"factCount":{"type":"integer"},"relationshipCount":{"type":"integer"},
+				"relationships":{
+					"type":"array",
+					"items":{
+						"type":"object",
+						"properties":{
+							"id":{"type":"string"},"description":{"type":"string"},
+							"fromFieldRef":` + catalogRefSchema + `,"toFieldRef":` + catalogRefSchema + `,
+							"cardinality":{"type":"string"},"active":{"type":"boolean"}
+						},
+						"required":["id","description","fromFieldRef","toFieldRef","cardinality","active"],
+						"additionalProperties":false
+					}
+				},
+				"dashboardCount":{"type":"integer"},
 				"dashboardUsage":{"type":"array","items":` + catalogRefSchema + `}
 			},
-			"required":["type","semanticTableCount","fieldCount","measureCount","dashboardCount","dashboardUsage"],
+			"required":[
+				"type","semanticTableCount","fieldCount","conformedDimensionCount","atomicMeasureCount",
+				"metricCount","factCount","relationshipCount","relationships","dashboardCount","dashboardUsage"
+			],
 			"additionalProperties":false
 		},
 		{
@@ -555,9 +595,10 @@ var catalogDetailsSchema = `{
 				"type":{"type":"string","enum":["semantic_table"]},
 				"source":{"type":"string"},"sources":{"type":"array","items":{"type":"string"}},
 				"grain":{"type":"string"},"primaryKey":{"type":"string"},"keys":{"type":"array","items":{"type":"string"}},
+				"roles":{"type":"array","items":{"type":"string","enum":["fact","dimension"]}},
 				"fieldCount":{"type":"integer"},"measureCount":{"type":"integer"}
 			},
-			"required":["type","source","sources","grain","primaryKey","keys","fieldCount","measureCount"],
+			"required":["type","source","sources","grain","primaryKey","keys","roles","fieldCount","measureCount"],
 			"additionalProperties":false
 		},
 		{
@@ -565,7 +606,22 @@ var catalogDetailsSchema = `{
 			"properties":{
 				"type":{"type":"string","enum":["field"]},"kind":{"type":"string"},
 				"table":{"type":"string"},"label":{"type":"string"},"dataType":{"type":"string"},
-				"grain":{"type":"string"},"timeGrains":{"type":"array","items":{"type":"string"}}
+				"grain":{"type":"string"},"timeGrains":{"type":"array","items":{"type":"string"}},
+				"expression":{"type":"string"},"sourceField":{"type":"string"},
+				"nullable":{"type":"boolean"},"primaryKey":{"type":"boolean"},
+				"bindings":{
+					"type":"array",
+					"items":{
+						"type":"object",
+						"properties":{
+							"semanticTableRef":` + catalogRefSchema + `,
+							"fieldRef":` + catalogRefSchema + `,
+							"relationshipPath":{"type":"array","items":{"type":"string"}}
+						},
+						"required":["semanticTableRef","fieldRef","relationshipPath"],
+						"additionalProperties":false
+					}
+				}
 			},
 			"required":["type","kind","label","dataType"],
 			"additionalProperties":false
@@ -575,9 +631,29 @@ var catalogDetailsSchema = `{
 			"properties":{
 				"type":{"type":"string","enum":["measure"]},"kind":{"type":"string"},
 				"table":{"type":"string"},"label":{"type":"string"},"aggregation":{"type":"string"},
+				"factRef":` + catalogRefSchema + `,
+				"input":{
+					"type":"object",
+					"properties":{"fieldRef":` + catalogRefSchema + `,"expression":{"type":"string"}},
+					"additionalProperties":false
+				},
+				"filters":{
+					"type":"array",
+					"items":{
+						"type":"object",
+						"properties":{
+							"fieldRef":` + catalogRefSchema + `,"operator":{"type":"string"},
+							"values":{"type":"array","items":{}}
+						},
+						"required":["fieldRef","operator","values"],
+						"additionalProperties":false
+					}
+				},
+				"empty":{"type":"string"},"expression":{"type":"string"},
+				"dependencyRefs":{"type":"array","items":` + catalogRefSchema + `},
 				"unit":{"type":"string"},"format":{"type":"string"},"hidden":{"type":"boolean"}
 			},
-			"required":["type","kind","label","unit","format","hidden"],
+			"required":["type","kind","label","dependencyRefs","unit","format","hidden"],
 			"additionalProperties":false
 		}
 	]

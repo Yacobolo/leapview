@@ -66,7 +66,7 @@ Call `catalog_list` without a parent to list accessible workspaces. Pass a retur
 | workspace | dashboards and semantic models |
 | dashboard | pages |
 | page | visuals and filters |
-| semantic model | semantic tables and measures |
+| semantic model | semantic tables, conformed-dimension fields, and measures |
 | semantic table | fields |
 
 ```json
@@ -106,9 +106,12 @@ The result combines the normalized item envelope with type-specific `details`:
 - pages include their components;
 - visuals include the compiled definition, query fields, columns, and placement;
 - filters include their field, configuration, and placement;
-- semantic models include counts and dashboard usage;
-- semantic tables include source, grain, keys, and counts;
-- fields and measures include their semantic metadata.
+- semantic models separately count tables, physical fields, conformed dimensions, facts, atomic measures, metrics, and relationships; they also include relationship definitions and authorized dashboard usage;
+- semantic tables include source, grain, keys, fact/dimension roles, and counts;
+- model-level fields include their bindings to physical fields and relationship paths;
+- table fields include their expression, source field, key status, grain, and nullability when known;
+- atomic measures include their fact ref, aggregation, input, filters, empty-result behavior, and field dependencies;
+- derived metrics include their expression and measure dependencies.
 
 The result is a compact domain projection, not the raw deployed asset payload.
 
@@ -127,6 +130,8 @@ A visual or filter can appear on more than one page. If `catalog_get` returns `c
   }
 }
 ```
+
+Returned locations include dashboard and page names plus a browser `href`; the retry input intentionally needs only `dashboardId` and `pageId`.
 
 ## Query governed data
 

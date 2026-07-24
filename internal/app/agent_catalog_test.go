@@ -36,8 +36,42 @@ func (m sharedCatalogMetrics) Report(dashboardID string) (dashboarddefinition.De
 	report, model, ok := m.fakeMetrics.Report(dashboardID)
 	if ok {
 		report.Pages = m.Pages(dashboardID)
+		orders := model.Tables["orders"]
+		orders.Dimensions["customer_id"] = semanticmodel.MetricDimension{Expr: "customer_id", Type: "string"}
+		model.Tables["orders"] = orders
+		model.Tables["customers"] = semanticmodel.Table{
+			Source: "customers", PrimaryKey: "customer_id", Grain: "customer_id",
+			Dimensions: map[string]semanticmodel.MetricDimension{
+				"customer_id": {Expr: "customer_id", Type: "string"},
+				"status":      {Expr: "status", Type: "string"},
+			},
+		}
+		model.Relationships = []semanticmodel.Relationship{{
+			ID: "orders_customer", Description: "Each order belongs to one customer",
+			From: "orders.customer_id", To: "customers.customer_id", Cardinality: "many_to_one",
+		}}
+		model.Dimensions = map[string]semanticmodel.SemanticDimension{
+			"order_status": {
+				Label: "Order status", Description: "Status shared across facts", Type: "string",
+				Bindings: map[string]semanticmodel.DimensionBinding{"orders": {Field: "orders.status"}},
+			},
+		}
+		model.Metrics = map[string]semanticmodel.Metric{
+			"orders_per_order": {
+				Label: "Orders per order", Description: "Fixture derived metric",
+				Expression: "safe_divide(${order_count}, ${order_count})", Format: "decimal",
+			},
+		}
 	}
 	return report, model, ok
+}
+
+func (m sharedCatalogMetrics) SemanticModel(modelID string) (*semanticmodel.Model, bool) {
+	_, model, ok := m.Report("executive-sales")
+	if !ok || model.Name != modelID {
+		return nil, false
+	}
+	return model, true
 }
 
 func TestAgentCatalogBrowsesEverySupportedRelationship(t *testing.T) {
@@ -71,12 +105,22 @@ func TestAgentCatalogBrowsesEverySupportedRelationship(t *testing.T) {
 	modelChildren := catalogListForTest(t, service, ctx, scope, agenttools.CatalogListRequest{
 		Parent: catalogRefPointer("test-workspace", agenttools.CatalogTypeSemanticModel, "test"), Limit: 50,
 	})
-	assertCatalogRefs(t, modelChildren.Items, "measure:test.order_count", "semantic_table:test.orders")
+	assertCatalogRefs(t, modelChildren.Items,
+		"field:test.order_status",
+		"measure:test.order_count",
+		"measure:test.orders_per_order",
+		"semantic_table:test.customers",
+		"semantic_table:test.orders",
+	)
 
 	tableChildren := catalogListForTest(t, service, ctx, scope, agenttools.CatalogListRequest{
 		Parent: catalogRefPointer("test-workspace", agenttools.CatalogTypeSemanticTable, "test.orders"), Limit: 50,
 	})
-	assertCatalogRefs(t, tableChildren.Items, "field:test.orders.order_id", "field:test.orders.status")
+	assertCatalogRefs(t, tableChildren.Items,
+		"field:test.orders.customer_id",
+		"field:test.orders.order_id",
+		"field:test.orders.status",
+	)
 }
 
 func TestAgentCatalogGetRequiresSharedLocationAndReturnsTypedDetails(t *testing.T) {
@@ -93,7 +137,7 @@ func TestAgentCatalogGetRequiresSharedLocationAndReturnsTypedDetails(t *testing.
 	}
 	result, err := service.Get(ctx, scope, agenttools.CatalogGetRequest{
 		Ref: visualRef,
-		Location: &agenttools.CatalogLocation{
+		Location: &agenttools.CatalogLocationSelection{
 			DashboardID: "executive-sales",
 			PageID:      "overview",
 		},
@@ -104,6 +148,12 @@ func TestAgentCatalogGetRequiresSharedLocationAndReturnsTypedDetails(t *testing.
 	if result.Details["type"] != "visual" || result.Details["visualType"] != "donut" || result.Details["query"] == nil {
 		t.Fatalf("visual details = %#v", result.Details)
 	}
+	if len(result.Item.Locations) != 2 ||
+		result.Item.Locations[0].DashboardName == "" ||
+		result.Item.Locations[0].PageName == "" ||
+		result.Item.Locations[0].Href == "" {
+		t.Fatalf("visual locations = %#v, want named navigable locations", result.Item.Locations)
+	}
 
 	for _, ref := range []agenttools.CatalogRef{
 		{WorkspaceID: "test-workspace", Type: agenttools.CatalogTypeWorkspace, ID: "test-workspace"},
@@ -111,8 +161,10 @@ func TestAgentCatalogGetRequiresSharedLocationAndReturnsTypedDetails(t *testing.
 		{WorkspaceID: "test-workspace", Type: agenttools.CatalogTypePage, ID: "executive-sales.overview"},
 		{WorkspaceID: "test-workspace", Type: agenttools.CatalogTypeSemanticModel, ID: "test"},
 		{WorkspaceID: "test-workspace", Type: agenttools.CatalogTypeSemanticTable, ID: "test.orders"},
+		{WorkspaceID: "test-workspace", Type: agenttools.CatalogTypeField, ID: "test.order_status"},
 		{WorkspaceID: "test-workspace", Type: agenttools.CatalogTypeField, ID: "test.orders.status"},
 		{WorkspaceID: "test-workspace", Type: agenttools.CatalogTypeMeasure, ID: "test.order_count"},
+		{WorkspaceID: "test-workspace", Type: agenttools.CatalogTypeMeasure, ID: "test.orders_per_order"},
 	} {
 		got, err := service.Get(ctx, scope, agenttools.CatalogGetRequest{Ref: ref})
 		if err != nil {
@@ -121,6 +173,83 @@ func TestAgentCatalogGetRequiresSharedLocationAndReturnsTypedDetails(t *testing.
 		if got.Details["type"] != string(ref.Type) {
 			t.Fatalf("get %s details = %#v", ref.Type, got.Details)
 		}
+	}
+}
+
+func TestAgentCatalogGetReturnsSemanticDefinitions(t *testing.T) {
+	service := agentCatalogService{server: catalogTestServer(t)}
+	scope := agenttools.Scope{PrincipalID: "dev", DevAuthBypass: true}
+	ctx := context.Background()
+
+	model, err := service.Get(ctx, scope, agenttools.CatalogGetRequest{
+		Ref: agenttools.CatalogRef{WorkspaceID: "test-workspace", Type: agenttools.CatalogTypeSemanticModel, ID: "test"},
+	})
+	if err != nil {
+		t.Fatalf("get model: %v", err)
+	}
+	for key, want := range map[string]any{
+		"semanticTableCount":      2,
+		"conformedDimensionCount": 1,
+		"atomicMeasureCount":      1,
+		"metricCount":             1,
+		"factCount":               1,
+		"relationshipCount":       1,
+	} {
+		if got := model.Details[key]; got != want {
+			t.Fatalf("model %s = %#v, want %#v", key, got, want)
+		}
+	}
+	relationships, ok := model.Details["relationships"].([]map[string]any)
+	if !ok || len(relationships) != 1 ||
+		relationships[0]["fromFieldRef"] != catalogRefValue("test-workspace", agenttools.CatalogTypeField, "test.orders.customer_id") ||
+		relationships[0]["toFieldRef"] != catalogRefValue("test-workspace", agenttools.CatalogTypeField, "test.customers.customer_id") {
+		t.Fatalf("model relationships = %#v", model.Details["relationships"])
+	}
+
+	table, err := service.Get(ctx, scope, agenttools.CatalogGetRequest{
+		Ref: agenttools.CatalogRef{WorkspaceID: "test-workspace", Type: agenttools.CatalogTypeSemanticTable, ID: "test.orders"},
+	})
+	if err != nil {
+		t.Fatalf("get table: %v", err)
+	}
+	if roles, ok := table.Details["roles"].([]string); !ok || !slices.Equal(roles, []string{"fact"}) {
+		t.Fatalf("table roles = %#v, want fact", table.Details["roles"])
+	}
+
+	field, err := service.Get(ctx, scope, agenttools.CatalogGetRequest{
+		Ref: agenttools.CatalogRef{WorkspaceID: "test-workspace", Type: agenttools.CatalogTypeField, ID: "test.order_status"},
+	})
+	if err != nil {
+		t.Fatalf("get conformed field: %v", err)
+	}
+	bindings, ok := field.Details["bindings"].([]map[string]any)
+	if !ok || len(bindings) != 1 {
+		t.Fatalf("field bindings = %#v", field.Details["bindings"])
+	}
+	if got := bindings[0]["semanticTableRef"]; got != catalogRefValue("test-workspace", agenttools.CatalogTypeSemanticTable, "test.orders") {
+		t.Fatalf("semanticTableRef = %#v", got)
+	}
+	if got := bindings[0]["fieldRef"]; got != catalogRefValue("test-workspace", agenttools.CatalogTypeField, "test.orders.status") {
+		t.Fatalf("fieldRef = %#v", got)
+	}
+	if path, ok := bindings[0]["relationshipPath"].([]string); !ok || len(path) != 0 {
+		t.Fatalf("relationshipPath = %#v", bindings[0]["relationshipPath"])
+	}
+
+	metric, err := service.Get(ctx, scope, agenttools.CatalogGetRequest{
+		Ref: agenttools.CatalogRef{WorkspaceID: "test-workspace", Type: agenttools.CatalogTypeMeasure, ID: "test.orders_per_order"},
+	})
+	if err != nil {
+		t.Fatalf("get metric: %v", err)
+	}
+	if metric.Details["expression"] != "safe_divide(${order_count}, ${order_count})" {
+		t.Fatalf("metric expression = %#v", metric.Details["expression"])
+	}
+	dependencies, ok := metric.Details["dependencyRefs"].([]agenttools.CatalogRef)
+	if !ok || !slices.Equal(dependencies, []agenttools.CatalogRef{
+		catalogRefValue("test-workspace", agenttools.CatalogTypeMeasure, "test.order_count"),
+	}) {
+		t.Fatalf("metric dependencies = %#v", metric.Details["dependencyRefs"])
 	}
 }
 
@@ -281,6 +410,22 @@ func TestAgentCatalogProviderOutputMatchesClosedSchema(t *testing.T) {
 	})
 	if err != nil || result.IsError {
 		t.Fatalf("execute catalog_get: result=%#v err=%v", result, err)
+	}
+	for _, ref := range []string{
+		`{"workspaceId":"test-workspace","type":"semantic_model","id":"test"}`,
+		`{"workspaceId":"test-workspace","type":"semantic_table","id":"test.orders"}`,
+		`{"workspaceId":"test-workspace","type":"field","id":"test.order_status"}`,
+		`{"workspaceId":"test-workspace","type":"field","id":"test.orders.status"}`,
+		`{"workspaceId":"test-workspace","type":"measure","id":"test.order_count"}`,
+		`{"workspaceId":"test-workspace","type":"measure","id":"test.orders_per_order"}`,
+	} {
+		result, err = catalog.Execute(context.Background(), agentcore.ToolCall{
+			ID: "catalog-get-semantic", Name: agenttools.CatalogGetToolName,
+			Arguments: json.RawMessage(`{"ref":` + ref + `}`),
+		})
+		if err != nil || result.IsError {
+			t.Fatalf("execute catalog_get %s: result=%#v err=%v", ref, result, err)
+		}
 	}
 }
 

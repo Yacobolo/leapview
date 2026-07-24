@@ -13,6 +13,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access"
 	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
+	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	analyticsqueryhttp "github.com/Yacobolo/leapview/internal/analytics/query/http"
 	"github.com/Yacobolo/leapview/internal/api"
 	"github.com/Yacobolo/leapview/internal/cursorsigning"
@@ -384,6 +385,11 @@ func (c agentCatalogService) childReferences(parent agenttools.CatalogRef, reque
 				references = append(references, productsearch.Reference{WorkspaceID: parent.WorkspaceID, Type: productsearch.TypeSemanticTable, ID: parent.ID + "." + id})
 			}
 		}
+		if allows(agenttools.CatalogTypeField) {
+			for _, id := range sortedCatalogKeys(model.Dimensions) {
+				references = append(references, productsearch.Reference{WorkspaceID: parent.WorkspaceID, Type: productsearch.TypeField, ID: parent.ID + "." + id})
+			}
+		}
 		if allows(agenttools.CatalogTypeMeasure) {
 			for _, id := range append(sortedCatalogKeys(model.Measures), sortedCatalogKeys(model.Metrics)...) {
 				references = append(references, productsearch.Reference{WorkspaceID: parent.WorkspaceID, Type: productsearch.TypeMeasure, ID: parent.ID + "." + id})
@@ -504,7 +510,10 @@ func catalogItem(result productsearch.Result) agenttools.CatalogItem {
 		if location.DashboardID == "" || location.PageID == "" {
 			continue
 		}
-		locations = append(locations, agenttools.CatalogLocation{DashboardID: location.DashboardID, PageID: location.PageID})
+		locations = append(locations, agenttools.CatalogLocation{
+			DashboardID: location.DashboardID, DashboardName: location.DashboardName,
+			PageID: location.PageID, PageName: location.PageName, Href: location.Href,
+		})
 	}
 	return agenttools.CatalogItem{
 		Ref: ref, Name: result.Name, Description: result.Description,
@@ -559,7 +568,7 @@ func catalogRequestedChildren(parent agenttools.CatalogType, requested []agentto
 	case agenttools.CatalogTypePage:
 		return []agenttools.CatalogType{agenttools.CatalogTypeVisual, agenttools.CatalogTypeFilter}
 	case agenttools.CatalogTypeSemanticModel:
-		return []agenttools.CatalogType{agenttools.CatalogTypeSemanticTable, agenttools.CatalogTypeMeasure}
+		return []agenttools.CatalogType{agenttools.CatalogTypeSemanticTable, agenttools.CatalogTypeField, agenttools.CatalogTypeMeasure}
 	case agenttools.CatalogTypeSemanticTable:
 		return []agenttools.CatalogType{agenttools.CatalogTypeField}
 	default:
@@ -583,7 +592,7 @@ func catalogGetLocation(request agenttools.CatalogGetRequest, locations []agentt
 		return agenttools.CatalogLocation{}, catalogNotFound()
 	}
 	for _, location := range locations {
-		if location == *request.Location {
+		if location.DashboardID == request.Location.DashboardID && location.PageID == request.Location.PageID {
 			return location, nil
 		}
 	}
@@ -815,13 +824,22 @@ func (c agentCatalogService) semanticModelDetails(ctx context.Context, scope age
 	for _, dashboardUsage := range authorized {
 		usage = append(usage, catalogRefValue(ref.WorkspaceID, agenttools.CatalogTypeDashboard, dashboardUsage.Reference.ID))
 	}
-	fieldCount := 0
-	if projection.Counts != nil {
-		fieldCount = projection.Counts.Fields
+	counts := projection.Counts
+	if counts == nil {
+		counts = &api.SemanticModelCounts{}
 	}
 	return map[string]any{
-		"type": string(ref.Type), "semanticTableCount": len(projection.Tables), "fieldCount": fieldCount,
-		"measureCount": len(model.Measures) + len(model.Metrics), "dashboardCount": len(usage), "dashboardUsage": usage,
+		"type":                    string(ref.Type),
+		"semanticTableCount":      len(projection.Tables),
+		"fieldCount":              counts.Fields,
+		"conformedDimensionCount": counts.ConformedDimensions,
+		"atomicMeasureCount":      counts.AtomicMeasures,
+		"metricCount":             counts.Metrics,
+		"factCount":               counts.Facts,
+		"relationshipCount":       counts.Relationships,
+		"relationships":           catalogRelationshipDetails(ref.WorkspaceID, ref.ID, model.Relationships),
+		"dashboardCount":          len(usage),
+		"dashboardUsage":          usage,
 	}, nil
 }
 
@@ -845,7 +863,8 @@ func catalogSemanticTableDetails(metrics QueryMetrics, ref agenttools.CatalogRef
 	}
 	return map[string]any{
 		"type": string(ref.Type), "source": projection.Source, "sources": projection.Sources, "grain": projection.Grain,
-		"primaryKey": projection.PrimaryKey, "keys": keys, "fieldCount": projection.FieldCount, "measureCount": projection.MeasureCount,
+		"primaryKey": projection.PrimaryKey, "keys": keys, "roles": catalogSemanticTableRoles(model, tableID),
+		"fieldCount": projection.FieldCount, "measureCount": projection.MeasureCount,
 	}, nil
 }
 
@@ -863,9 +882,18 @@ func catalogFieldDetails(metrics QueryMetrics, ref agenttools.CatalogRef) (map[s
 		if !ok {
 			return nil, catalogNotFound()
 		}
+		bindings := make([]map[string]any, 0, len(field.Bindings))
+		for _, tableID := range sortedCatalogKeys(field.Bindings) {
+			binding := field.Bindings[tableID]
+			bindings = append(bindings, map[string]any{
+				"semanticTableRef": catalogRefValue(ref.WorkspaceID, agenttools.CatalogTypeSemanticTable, parts[0]+"."+tableID),
+				"fieldRef":         catalogRefValue(ref.WorkspaceID, agenttools.CatalogTypeField, parts[0]+"."+binding.Field),
+				"relationshipPath": append([]string{}, binding.Path...),
+			})
+		}
 		return map[string]any{
 			"type": string(ref.Type), "kind": "dimension", "label": field.Label, "dataType": field.Type,
-			"timeGrains": append([]string(nil), field.Grains...),
+			"timeGrains": append([]string{}, field.Grains...), "bindings": bindings,
 		}, nil
 	}
 	table, ok := model.Tables[parts[len(parts)-2]]
@@ -876,10 +904,22 @@ func catalogFieldDetails(metrics QueryMetrics, ref agenttools.CatalogRef) (map[s
 	if !ok {
 		return nil, catalogNotFound()
 	}
-	return map[string]any{
+	details := map[string]any{
 		"type": string(ref.Type), "kind": "dimension", "table": parts[len(parts)-2],
 		"label": field.Label, "dataType": field.Type, "grain": table.Grain,
-	}, nil
+		"expression": firstNonEmpty(field.Expression, field.Expr),
+		"primaryKey": parts[len(parts)-1] == table.PrimaryKey,
+	}
+	if column, ok := table.Columns[parts[len(parts)-1]]; ok && column.SourceField != "" {
+		details["sourceField"] = column.SourceField
+	}
+	for _, column := range table.Schema.Columns {
+		if column.Name == parts[len(parts)-1] && column.Nullable != nil {
+			details["nullable"] = *column.Nullable
+			break
+		}
+	}
+	return details, nil
 }
 
 func catalogMeasureDetails(metrics QueryMetrics, ref agenttools.CatalogRef) (map[string]any, error) {
@@ -892,18 +932,119 @@ func catalogMeasureDetails(metrics QueryMetrics, ref agenttools.CatalogRef) (map
 		return nil, catalogNotFound()
 	}
 	if measure, ok := model.Measures[measureID]; ok {
+		dependencies := catalogMeasureFieldRefs(ref.WorkspaceID, modelID, measure)
+		input := map[string]any{}
+		if measure.Input.Field != "" {
+			input["fieldRef"] = catalogRefValue(ref.WorkspaceID, agenttools.CatalogTypeField, modelID+"."+measure.Input.Field)
+		}
+		if measure.Input.Expression != "" {
+			input["expression"] = measure.Input.Expression
+		}
+		filters := make([]map[string]any, 0, len(measure.Filters))
+		for _, filter := range measure.Filters {
+			filters = append(filters, map[string]any{
+				"fieldRef": catalogRefValue(ref.WorkspaceID, agenttools.CatalogTypeField, modelID+"."+filter.Field),
+				"operator": filter.Operator,
+				"values":   append([]any{}, filter.Values...),
+			})
+		}
 		return map[string]any{
-			"type": string(ref.Type), "kind": "measure", "table": measure.Fact, "label": measure.Label,
-			"aggregation": measure.Aggregation, "unit": measure.Unit, "format": measure.Format, "hidden": measure.Hidden,
+			"type": string(ref.Type), "kind": "measure", "table": measure.Fact,
+			"factRef": catalogRefValue(ref.WorkspaceID, agenttools.CatalogTypeSemanticTable, modelID+"."+measure.Fact),
+			"label":   measure.Label, "aggregation": measure.Aggregation, "input": input, "filters": filters,
+			"empty": measure.Empty, "dependencyRefs": dependencies,
+			"unit": measure.Unit, "format": measure.Format, "hidden": measure.Hidden,
 		}, nil
 	}
 	if metric, ok := model.Metrics[measureID]; ok {
+		dependencies := []agenttools.CatalogRef{}
+		if expression, err := semanticmodel.ParseExpression(metric.Expression); err == nil {
+			for _, dependency := range expression.References() {
+				dependencies = append(dependencies, catalogRefValue(ref.WorkspaceID, agenttools.CatalogTypeMeasure, modelID+"."+dependency))
+			}
+		}
+		dependencies = uniqueCatalogRefs(dependencies)
 		return map[string]any{
 			"type": string(ref.Type), "kind": "metric", "label": metric.Label,
+			"expression": metric.Expression, "dependencyRefs": dependencies,
 			"unit": metric.Unit, "format": metric.Format, "hidden": metric.Hidden,
 		}, nil
 	}
 	return nil, catalogNotFound()
+}
+
+func catalogRelationshipDetails(workspaceID, modelID string, relationships []semanticmodel.Relationship) []map[string]any {
+	out := make([]map[string]any, 0, len(relationships))
+	for _, relationship := range relationships {
+		out = append(out, map[string]any{
+			"id":           relationship.ID,
+			"description":  relationship.Description,
+			"fromFieldRef": catalogRefValue(workspaceID, agenttools.CatalogTypeField, modelID+"."+relationship.From),
+			"toFieldRef":   catalogRefValue(workspaceID, agenttools.CatalogTypeField, modelID+"."+relationship.To),
+			"cardinality":  relationship.Cardinality,
+			"active":       true,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i]["id"].(string) < out[j]["id"].(string)
+	})
+	return out
+}
+
+func catalogSemanticTableRoles(model *semanticmodel.Model, tableID string) []string {
+	roles := []string{}
+	for _, measure := range model.Measures {
+		if measure.Fact == tableID {
+			roles = append(roles, "fact")
+			break
+		}
+	}
+	for _, relationship := range model.Relationships {
+		if table, _, ok := strings.Cut(relationship.To, "."); ok && table == tableID {
+			roles = append(roles, "dimension")
+			break
+		}
+	}
+	return roles
+}
+
+func catalogMeasureFieldRefs(workspaceID, modelID string, measure semanticmodel.MetricMeasure) []agenttools.CatalogRef {
+	values := []string{}
+	if measure.Input.Field != "" {
+		values = append(values, measure.Input.Field)
+	}
+	if measure.Input.Expression != "" {
+		if expression, err := semanticmodel.ParseExpression(measure.Input.Expression); err == nil {
+			values = append(values, expression.References()...)
+		}
+	}
+	for _, filter := range measure.Filters {
+		values = append(values, filter.Field)
+	}
+	refs := make([]agenttools.CatalogRef, 0, len(values))
+	for _, value := range values {
+		refs = append(refs, catalogRefValue(workspaceID, agenttools.CatalogTypeField, modelID+"."+value))
+	}
+	return uniqueCatalogRefs(refs)
+}
+
+func uniqueCatalogRefs(values []agenttools.CatalogRef) []agenttools.CatalogRef {
+	seen := map[agenttools.CatalogRef]struct{}{}
+	out := make([]agenttools.CatalogRef, 0, len(values))
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Type != out[j].Type {
+			return out[i].Type < out[j].Type
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
 }
 
 func catalogComponentForRef(page dashboard.Page, id string, filter bool) (dashboard.PageVisual, bool) {

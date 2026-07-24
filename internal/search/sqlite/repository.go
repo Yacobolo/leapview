@@ -443,8 +443,12 @@ func securityObject(value document, ancestors []document) access.ObjectRef {
 	case "field":
 		table := ancestorOfType(ancestors, "semantic_table")
 		model := ancestorOfType(ancestors, "semantic_model")
-		modelID, tableID := publicID(model), lastIDPart(publicID(table))
+		modelID := publicID(model)
 		modelObject := access.ItemObjectWithParent(access.SecurableSemanticModel, value.workspaceID, modelID, workspaceObject)
+		if table.assetType == "" {
+			return access.ItemObjectWithParent(access.SecurableSemanticField, value.workspaceID, modelID+"/"+lastIDPart(publicID(value)), modelObject)
+		}
+		tableID := lastIDPart(publicID(table))
 		tableObject := access.ItemObjectWithParent(access.SecurableDataset, value.workspaceID, modelID+"/"+tableID, modelObject)
 		return access.ItemObjectWithParent(access.SecurableColumn, value.workspaceID, modelID+"/"+tableID+"/"+lastIDPart(publicID(value)), tableObject)
 	case "measure":

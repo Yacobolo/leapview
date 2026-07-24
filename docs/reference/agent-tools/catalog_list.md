@@ -240,9 +240,18 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/catalog_list.json) · [
                   "type": "string",
                   "minLength": 1
                 },
+                "dashboardName": {
+                  "type": "string"
+                },
                 "pageId": {
                   "type": "string",
                   "minLength": 1
+                },
+                "pageName": {
+                  "type": "string"
+                },
+                "href": {
+                  "type": "string"
                 }
               },
               "required": [
