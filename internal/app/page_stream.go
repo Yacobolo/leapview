@@ -60,7 +60,7 @@ func configurePageStream(routes *capabilityRoutes, runtime *runtimeServices, pla
 			}),
 			string(uisignals.RouteCatalog): http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				uitransport.PatchAndWait(runtime.pageStreamTrace, w, r, ui.CatalogBootstrapSignalsForCatalogs(
-					routes.workspaceModule.CatalogsForVisibleWorkspaces(r), routes.agentModule.ChromeOption(r),
+					routes.workspaceModule.CatalogsForVisibleWorkspaces(r), agentChromeOption(routes.agentModule, r),
 				))
 			}),
 			string(uisignals.RouteWorkspace):   http.HandlerFunc(routes.workspaceModule.HTTP().WorkspaceBootstrapUpdates),

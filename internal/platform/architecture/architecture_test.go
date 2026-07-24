@@ -601,9 +601,8 @@ func TestDashboardCatalogHasOnlyExplicitProjectionConsumers(t *testing.T) {
 	}
 }
 
-func TestAgentOwnsChatUIExceptExplicitChromeCompatibility(t *testing.T) {
+func TestAgentOwnsChatUI(t *testing.T) {
 	const sharedUI = modulePath + "/internal/workspace/ui"
-	allowed := "internal/agent/module/chrome.go"
 	for _, file := range productionGoFiles(t) {
 		if file.pkgDir != "internal/agent" && !strings.HasPrefix(file.pkgDir, "internal/agent/") {
 			continue
@@ -612,10 +611,7 @@ func TestAgentOwnsChatUIExceptExplicitChromeCompatibility(t *testing.T) {
 			if imported != sharedUI && !strings.HasPrefix(imported, sharedUI+"/") {
 				continue
 			}
-			path := strings.TrimPrefix(filepath.ToSlash(file.path), filepath.ToSlash(repoRoot(t))+"/")
-			if path != allowed {
-				t.Errorf("%s imports workspace-owned UI outside the explicit chrome compatibility adapter", file.path)
-			}
+			t.Errorf("%s imports workspace-owned UI instead of the agent-owned UI contract", file.path)
 		}
 	}
 }
