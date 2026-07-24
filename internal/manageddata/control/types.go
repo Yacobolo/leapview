@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/manageddata"
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
 )
 
 var (
@@ -26,7 +27,7 @@ type Repository interface {
 	CreateUploadSession(context.Context, manageddata.CreateUploadSessionInput) (manageddata.UploadSession, error)
 	UploadSessionByID(context.Context, string) (manageddata.UploadSession, error)
 	UpdateUploadProgress(context.Context, string, manageddata.UploadProgress) error
-	BeginUploadFinalization(context.Context, string) (manageddata.UploadSession, error)
+	BeginUploadFinalization(context.Context, string, jobs.WorkflowIntent) (manageddata.UploadSession, error)
 	FailUploadFinalization(context.Context, string, string) (manageddata.UploadSession, error)
 	AbortUploadSession(context.Context, string) error
 	ExpireUploadSessions(context.Context, time.Time) (int64, error)
@@ -66,6 +67,7 @@ type UploadRequest struct {
 	Project    string
 	Connection string
 	UploadID   string
+	Workflow   jobs.WorkflowIntent
 }
 
 type CollectionResult struct {

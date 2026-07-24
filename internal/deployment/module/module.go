@@ -56,7 +56,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		if config.States == nil || config.Runtime == nil || config.ManagedData == nil || config.DeploymentMetadata == nil {
 			return nil, errors.New("deployment states, runtime, managed data, and metadata are required")
 		}
-		repository, activation := newPersistence(config.Database, config.ActivationHooks)
+		repository, activation := newPersistence(config.Database, config.ActivationHooks, config.API.Releases, config.API.Workflow)
 		service, err := deployment.New(repository, activation, config.States, config.Runtime, config.ManagedData)
 		if err != nil {
 			return nil, err

@@ -262,7 +262,13 @@ func (h *Handler) FinalizeManagedDataUploadSession(w stdhttp.ResponseWriter, r *
 		return
 	}
 	request := control.UploadRequest{Project: project, Connection: connection, UploadID: uploadSession}
-	result, err := h.options.Uploads.BeginFinalizeUpload(r.Context(), request)
+	var result control.UploadResult
+	var err error
+	if h.options.BeginFinalize != nil {
+		result, err = h.options.BeginFinalize(r.Context(), request)
+	} else {
+		result, err = h.options.Uploads.BeginFinalizeUpload(r.Context(), request)
+	}
 	if err != nil {
 		h.writeError(w, r, err)
 		return
@@ -272,11 +278,14 @@ func (h *Handler) FinalizeManagedDataUploadSession(w stdhttp.ResponseWriter, r *
 		h.writeError(w, r, err)
 		return
 	}
-	if h.options.EnqueueFinalize == nil {
+	if h.options.BeginFinalize == nil && h.options.EnqueueFinalize == nil {
 		h.writeUnavailable(w, r)
 		return
 	}
-	if err := h.options.EnqueueFinalize(r.Context(), request); err != nil {
+	if h.options.BeginFinalize == nil {
+		err = h.options.EnqueueFinalize(r.Context(), request)
+	}
+	if err != nil {
 		h.writeUnavailable(w, r)
 		return
 	}

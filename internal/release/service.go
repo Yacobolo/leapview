@@ -10,6 +10,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	"github.com/Yacobolo/leapview/internal/servingstate"
 	"github.com/Yacobolo/leapview/internal/workspace"
 )
@@ -26,7 +27,7 @@ type Repository interface {
 // SQLite implementation verifies expected artifact digests and commits the
 // ready projection atomically.
 type FinalizationUnitOfWork interface {
-	BeginFinalization(context.Context, string, string) (Release, error)
+	BeginFinalization(context.Context, string, string, jobs.WorkflowIntent) (Release, error)
 	CompleteFinalization(context.Context, string, string, map[string]string) (Release, error)
 	FailFinalization(context.Context, string, string, error) (Release, error)
 }
@@ -155,14 +156,14 @@ func (s *Service) UploadArtifact(ctx context.Context, projectID, releaseID, work
 }
 
 func (s *Service) Finalize(ctx context.Context, projectID, releaseID string) (Release, error) {
-	if _, err := s.BeginFinalization(ctx, projectID, releaseID); err != nil {
+	if _, err := s.BeginFinalization(ctx, projectID, releaseID, jobs.WorkflowIntent{}); err != nil {
 		return Release{}, err
 	}
 	return s.ValidateFinalization(ctx, projectID, releaseID)
 }
 
-func (s *Service) BeginFinalization(ctx context.Context, projectID, releaseID string) (Release, error) {
-	return s.finalization.BeginFinalization(ctx, projectID, releaseID)
+func (s *Service) BeginFinalization(ctx context.Context, projectID, releaseID string, workflow jobs.WorkflowIntent) (Release, error) {
+	return s.finalization.BeginFinalization(ctx, projectID, releaseID, workflow)
 }
 
 func (s *Service) ValidateFinalization(ctx context.Context, projectID, releaseID string) (Release, error) {

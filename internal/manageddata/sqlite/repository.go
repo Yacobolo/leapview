@@ -15,14 +15,19 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/manageddata"
 	platformdb "github.com/Yacobolo/leapview/internal/manageddata/sqlite/manageddb"
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
 )
 
 type Repository struct {
-	db *sql.DB
-	q  *platformdb.Queries
+	db       *sql.DB
+	q        *platformdb.Queries
+	workflow jobs.WorkflowRecorder
 }
 
 func NewRepository(db *sql.DB) *Repository { return &Repository{db: db, q: platformdb.New(db)} }
+func NewRepositoryWithWorkflow(db *sql.DB, workflow jobs.WorkflowRecorder) *Repository {
+	return &Repository{db: db, q: platformdb.New(db), workflow: workflow}
+}
 
 func (r *Repository) CreateCollection(ctx context.Context, input manageddata.CreateCollectionInput) (manageddata.Collection, error) {
 	input.ID = strings.TrimSpace(input.ID)
@@ -180,14 +185,37 @@ func (r *Repository) UpdateUploadProgress(ctx context.Context, id string, progre
 	return expectOne(result, err, "upload session is not open or progress exceeds its manifest")
 }
 
-func (r *Repository) BeginUploadFinalization(ctx context.Context, id string) (manageddata.UploadSession, error) {
+func (r *Repository) BeginUploadFinalization(ctx context.Context, id string, workflow jobs.WorkflowIntent) (manageddata.UploadSession, error) {
 	id = strings.TrimSpace(id)
-	result, err := r.q.BeginManagedDataUploadFinalization(ctx, id)
-	if err := expectOne(result, err, "upload session changed while beginning finalization"); err != nil {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
 		return manageddata.UploadSession{}, err
 	}
-	row, err := r.q.GetManagedDataUploadSession(ctx, id)
-	return mapUploadSession(row), mapError(err)
+	defer tx.Rollback()
+	q := r.q.WithTx(tx)
+	result, err := q.BeginManagedDataUploadFinalization(ctx, id)
+	if err := expectOne(result, err, "upload session changed while beginning finalization"); err != nil {
+		row, getErr := q.GetManagedDataUploadSession(ctx, id)
+		if getErr != nil || mapUploadSession(row).Status != manageddata.UploadStatusCommitting {
+			return manageddata.UploadSession{}, err
+		}
+	}
+	if workflow.Job.ID != "" {
+		if r.workflow == nil {
+			return manageddata.UploadSession{}, fmt.Errorf("managed-data workflow recorder is required")
+		}
+		if err := r.workflow.RecordWorkflow(ctx, tx, workflow); err != nil {
+			return manageddata.UploadSession{}, err
+		}
+	}
+	row, err := q.GetManagedDataUploadSession(ctx, id)
+	if err != nil {
+		return manageddata.UploadSession{}, mapError(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return manageddata.UploadSession{}, mapError(err)
+	}
+	return mapUploadSession(row), nil
 }
 
 func (r *Repository) FailUploadFinalization(ctx context.Context, id, message string) (manageddata.UploadSession, error) {

@@ -80,6 +80,18 @@ WHERE c.id = sqlc.arg(conversation_id)
   AND c.principal_id = sqlc.arg(principal_id)
 RETURNING *;
 
+-- name: ActivateAgentRun :execrows
+UPDATE agent_runs
+SET status = 'running'
+WHERE agent_runs.id = sqlc.arg(run_id)
+  AND conversation_id IN (
+    SELECT agent_conversations.id
+    FROM agent_conversations
+    WHERE agent_conversations.id = sqlc.arg(conversation_id)
+      AND principal_id = sqlc.arg(principal_id)
+  )
+  AND status = 'preparing';
+
 -- name: ListAgentRuns :many
 SELECT r.*
 FROM agent_runs r

@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"errors"
+
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
 )
 
 var ErrNotFound = errors.New("agent record not found")
@@ -13,6 +15,7 @@ const (
 	ConversationStatusArchived = "archived"
 
 	RunStatusRunning   = "running"
+	RunStatusPreparing = "preparing"
 	RunStatusCompleted = "completed"
 	RunStatusFailed    = "failed"
 	RunStatusCanceled  = "canceled"
@@ -110,6 +113,11 @@ type RunInput struct {
 	RunID          string
 	Model          string
 	MetadataJSON   string
+	Status         string
+}
+
+type RunWorkflowUnitOfWork interface {
+	ActivateRunWorkflow(context.Context, string, string, string, jobs.WorkflowIntent) (Run, error)
 }
 
 type RunFinish struct {

@@ -76,6 +76,15 @@ FROM api_async_events existing
 WHERE existing.resource_kind = sqlc.arg(resource_kind) AND existing.resource_id = sqlc.arg(resource_id)
 RETURNING event_id, resource_kind, resource_id, event_type, data_json, created_at;
 
+-- name: AppendAPIAsyncWorkflowEvent :one
+INSERT INTO api_async_events (resource_kind, resource_id, event_id, event_type, data_json, event_key)
+SELECT sqlc.arg(resource_kind), sqlc.arg(resource_id), COALESCE(MAX(event_id), 0) + 1,
+  sqlc.arg(event_type), sqlc.arg(data_json), sqlc.arg(event_key)
+FROM api_async_events existing
+WHERE existing.resource_kind = sqlc.arg(resource_kind) AND existing.resource_id = sqlc.arg(resource_id)
+ON CONFLICT(resource_kind, resource_id, event_key) WHERE event_key <> '' DO UPDATE SET event_key = excluded.event_key
+RETURNING event_id, resource_kind, resource_id, event_type, data_json, created_at;
+
 -- name: ListAPIAsyncEvents :many
 SELECT event_id, resource_kind, resource_id, event_type, data_json, created_at FROM api_async_events
 WHERE resource_kind = ? AND resource_id = ? AND event_id > ? ORDER BY event_id LIMIT ?;

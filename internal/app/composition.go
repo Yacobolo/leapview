@@ -151,7 +151,7 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 			principal, ok := auth.Principal(r)
 			return manageddatamodule.Principal{ID: principal.ID}, ok
 		},
-		Jobs: jobModule,
+		Jobs: jobModule, Workflow: jobModule,
 		Worker: manageddatamodule.MaintenanceWorkerConfig{
 			Interval: cfg.ManagedDataGCInterval,
 			Acquire: func(ctx context.Context) (manageddatamodule.MaintenanceLease, error) {
@@ -178,7 +178,7 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 				principal, ok := auth.Principal(r)
 				return releasemodule.Principal{ID: principal.ID}, ok
 			},
-			Jobs: jobModule,
+			Jobs: jobModule, Workflow: jobModule,
 		},
 	})
 	if err != nil {

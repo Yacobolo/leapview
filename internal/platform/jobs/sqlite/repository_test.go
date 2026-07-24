@@ -161,3 +161,57 @@ func TestRepositoryAppendsConcurrentEventsWithContiguousResourceSequence(t *test
 		}
 	}
 }
+
+func TestRepositoryRecordsWorkflowAtomicallyAndIdempotently(t *testing.T) {
+	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "workflow.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	repo := NewRepository(store.SQLDB())
+	intent := jobs.WorkflowIntent{
+		Event: jobs.EventInput{
+			Key: "release.validating", ResourceKind: "release", ResourceID: "release-1",
+			EventType: "release.validating", Data: []byte(`{"status":"validating"}`),
+		},
+		Job: jobs.EnqueueInput{
+			ID: "release:release-1:finalize", Kind: "release.finalize", WorkloadClass: "control",
+			WorkspaceID: "_node", ResourceKind: "release", ResourceID: "release-1", Payload: []byte(`{"release":"release-1"}`),
+		},
+	}
+	record := func(commit bool) error {
+		tx, beginErr := store.SQLDB().BeginTx(t.Context(), nil)
+		if beginErr != nil {
+			return beginErr
+		}
+		defer tx.Rollback()
+		if recordErr := repo.RecordWorkflow(t.Context(), tx, intent); recordErr != nil {
+			return recordErr
+		}
+		if !commit {
+			return nil
+		}
+		return tx.Commit()
+	}
+	if err := record(false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.Get(t.Context(), intent.Job.ID); !errors.Is(err, jobs.ErrNotFound) {
+		t.Fatalf("rolled-back job error = %v, want ErrNotFound", err)
+	}
+	if events, err := repo.ListEvents(t.Context(), "release", "release-1", 0, 10); err != nil || len(events) != 0 {
+		t.Fatalf("rolled-back events = %#v, %v", events, err)
+	}
+	if err := record(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := record(true); err != nil {
+		t.Fatal(err)
+	}
+	if events, err := repo.ListEvents(t.Context(), "release", "release-1", 0, 10); err != nil || len(events) != 1 {
+		t.Fatalf("replayed events = %#v, %v, want one logical event", events, err)
+	}
+	if row, err := repo.Get(t.Context(), intent.Job.ID); err != nil || row.Status != jobs.StatusQueued {
+		t.Fatalf("replayed job = %#v, %v", row, err)
+	}
+}

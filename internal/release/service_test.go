@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	"github.com/Yacobolo/leapview/internal/servingstate"
 )
 
@@ -57,7 +58,7 @@ func (r *serviceTestReleaseRepository) AssignArtifactTarget(context.Context, str
 	return nil
 }
 func (r *serviceTestReleaseRepository) RecordArtifact(context.Context, Artifact) error { return nil }
-func (r *serviceTestReleaseRepository) BeginFinalization(context.Context, string, string) (Release, error) {
+func (r *serviceTestReleaseRepository) BeginFinalization(context.Context, string, string, jobs.WorkflowIntent) (Release, error) {
 	return r.current, nil
 }
 func (r *serviceTestReleaseRepository) CompleteFinalization(context.Context, string, string, map[string]string) (Release, error) {

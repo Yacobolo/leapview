@@ -13,6 +13,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/deployment"
 	"github.com/Yacobolo/leapview/internal/manageddata"
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
 )
 
 var ErrInvalid = errors.New("invalid deployment request")
@@ -46,6 +47,9 @@ type CreateRequest struct {
 	Targets        []TargetRequest
 	Actor          string
 	IdempotencyKey string
+	ReleaseID      string
+	RollbackOf     string
+	Workflow       func(string) jobs.WorkflowIntent
 }
 
 type Scope struct {
@@ -165,7 +169,12 @@ func (a *Adapter) Create(ctx context.Context, request CreateRequest) (Deployment
 		Environment:   request.Environment,
 		RequestDigest: digest,
 		CreatedBy:     request.Actor,
+		ReleaseID:     request.ReleaseID,
+		RollbackOf:    request.RollbackOf,
 		Targets:       make([]deployment.TargetInput, 0, len(targets)),
+	}
+	if request.Workflow != nil {
+		input.Workflow = request.Workflow(input.ID)
 	}
 	for _, target := range targets {
 		input.Targets = append(input.Targets, deployment.TargetInput{WorkspaceID: target.Workspace, ServingStateID: target.CandidateID})

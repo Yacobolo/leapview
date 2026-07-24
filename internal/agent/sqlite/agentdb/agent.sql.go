@@ -10,6 +10,33 @@ import (
 	"database/sql"
 )
 
+const activateAgentRun = `-- name: ActivateAgentRun :execrows
+UPDATE agent_runs
+SET status = 'running'
+WHERE agent_runs.id = ?1
+  AND conversation_id IN (
+    SELECT agent_conversations.id
+    FROM agent_conversations
+    WHERE agent_conversations.id = ?2
+      AND principal_id = ?3
+  )
+  AND status = 'preparing'
+`
+
+type ActivateAgentRunParams struct {
+	RunID          string `json:"run_id"`
+	ConversationID string `json:"conversation_id"`
+	PrincipalID    string `json:"principal_id"`
+}
+
+func (q *Queries) ActivateAgentRun(ctx context.Context, arg ActivateAgentRunParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, activateAgentRun, arg.RunID, arg.ConversationID, arg.PrincipalID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const agentRunExistsForPrincipal = `-- name: AgentRunExistsForPrincipal :one
 SELECT EXISTS (
   SELECT 1 FROM agent_runs r

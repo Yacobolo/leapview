@@ -10,16 +10,22 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
+	"github.com/Yacobolo/leapview/internal/platform/transaction"
 	"github.com/Yacobolo/leapview/internal/release"
 	platformdb "github.com/Yacobolo/leapview/internal/release/sqlite/releasedb"
 )
 
 type Repository struct {
-	db *sql.DB
-	q  *platformdb.Queries
+	db       *sql.DB
+	q        *platformdb.Queries
+	workflow jobs.WorkflowRecorder
 }
 
 func NewRepository(db *sql.DB) *Repository { return &Repository{db: db, q: platformdb.New(db)} }
+func NewRepositoryWithWorkflow(db *sql.DB, workflow jobs.WorkflowRecorder) *Repository {
+	return &Repository{db: db, q: platformdb.New(db), workflow: workflow}
+}
 
 func (r *Repository) Create(ctx context.Context, input release.CreateInput) (release.Release, error) {
 	if err := normalizeCreate(&input); err != nil {
@@ -122,7 +128,7 @@ func (r *Repository) AssignArtifactTarget(ctx context.Context, projectID, releas
 	return nil
 }
 
-func (r *Repository) BeginFinalization(ctx context.Context, projectID, releaseID string) (release.Release, error) {
+func (r *Repository) BeginFinalization(ctx context.Context, projectID, releaseID string, workflow jobs.WorkflowIntent) (release.Release, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return release.Release{}, err
@@ -133,19 +139,26 @@ func (r *Repository) BeginFinalization(ctx context.Context, projectID, releaseID
 	if err != nil {
 		return release.Release{}, err
 	}
-	if current.Status == release.StatusValidating {
-		return current, nil
-	}
-	if current.Status != release.StatusDraft {
+	if current.Status != release.StatusDraft && current.Status != release.StatusValidating {
 		return release.Release{}, release.ErrImmutable
 	}
-	for _, artifact := range current.Artifacts {
-		if artifact.ServingStateID == "" || artifact.UploadedAt == "" {
-			return release.Release{}, release.ErrIncomplete
+	if current.Status == release.StatusDraft {
+		for _, artifact := range current.Artifacts {
+			if artifact.ServingStateID == "" || artifact.UploadedAt == "" {
+				return release.Release{}, release.ErrIncomplete
+			}
+		}
+		if _, err := qtx.MarkAPIReleaseValidating(ctx, platformdb.MarkAPIReleaseValidatingParams{ID: releaseID, ProjectID: projectID}); err != nil {
+			return release.Release{}, err
 		}
 	}
-	if _, err := qtx.MarkAPIReleaseValidating(ctx, platformdb.MarkAPIReleaseValidatingParams{ID: releaseID, ProjectID: projectID}); err != nil {
-		return release.Release{}, err
+	if workflow.Job.ID != "" {
+		if r.workflow == nil {
+			return release.Release{}, fmt.Errorf("release workflow recorder is required")
+		}
+		if err := r.workflow.RecordWorkflow(ctx, tx, workflow); err != nil {
+			return release.Release{}, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return release.Release{}, err
@@ -203,6 +216,17 @@ func (r *Repository) FailFinalization(ctx context.Context, projectID, releaseID 
 func (r *Repository) LinkDeployment(ctx context.Context, projectID, deploymentID, releaseID, rollbackOf string) error {
 	rollbackValue := strings.TrimSpace(rollbackOf)
 	return r.q.LinkAPIReleaseDeployment(ctx, platformdb.LinkAPIReleaseDeploymentParams{DeploymentID: strings.TrimSpace(deploymentID), ProjectID: strings.TrimSpace(projectID), ReleaseID: strings.TrimSpace(releaseID), RollbackOf: sql.NullString{String: rollbackValue, Valid: rollbackValue != ""}})
+}
+
+func (r *Repository) LinkDeploymentTx(ctx context.Context, tx transaction.Transaction, projectID, deploymentID, releaseID, rollbackOf string) error {
+	if tx == nil {
+		return fmt.Errorf("release linkage transaction is required")
+	}
+	rollbackValue := strings.TrimSpace(rollbackOf)
+	return platformdb.New(tx).LinkAPIReleaseDeployment(ctx, platformdb.LinkAPIReleaseDeploymentParams{
+		DeploymentID: strings.TrimSpace(deploymentID), ProjectID: strings.TrimSpace(projectID),
+		ReleaseID: strings.TrimSpace(releaseID), RollbackOf: sql.NullString{String: rollbackValue, Valid: rollbackValue != ""},
+	})
 }
 
 func (r *Repository) DeploymentRelease(ctx context.Context, projectID, deploymentID string) (string, string, error) {

@@ -547,7 +547,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			Events: platform.asyncJobs,
 			Logger: platform.logger,
 		}
-		config.API = deploymentmodule.APIConfig{Releases: routes.releaseModule.DeploymentLinkage(), Jobs: platform.asyncJobs}
+		config.API = deploymentmodule.APIConfig{Releases: routes.releaseModule.DeploymentLinkage(), Jobs: platform.asyncJobs, Workflow: platform.jobModule}
 		config.PublicationAuthorization = deploymentmodule.PublicationAuthorizationConfig{
 			States: persistence.servingStateRepo, AuthorizeObject: routes.accessModule.AuthorizeObject,
 			Bypass: func(actor string) bool {

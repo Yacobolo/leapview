@@ -19,9 +19,10 @@ import (
 )
 
 type Repository struct {
-	db     *sql.DB
-	q      *platformdb.Queries
-	events jobs.Repository
+	db       *sql.DB
+	q        *platformdb.Queries
+	events   jobs.Repository
+	workflow jobs.WorkflowRecorder
 }
 
 func NewRepository(sqlDB *sql.DB) *Repository {
@@ -30,6 +31,10 @@ func NewRepository(sqlDB *sql.DB) *Repository {
 
 func NewRepositoryWithEvents(sqlDB *sql.DB, events jobs.Repository) *Repository {
 	return &Repository{db: sqlDB, q: platformdb.New(sqlDB), events: events}
+}
+
+func NewRepositoryWithWorkflow(sqlDB *sql.DB, events jobs.Repository, workflow jobs.WorkflowRecorder) *Repository {
+	return &Repository{db: sqlDB, q: platformdb.New(sqlDB), events: events, workflow: workflow}
 }
 
 func (r *Repository) CreateConversation(ctx context.Context, input agent.ConversationInput) (agent.Conversation, error) {
@@ -257,15 +262,57 @@ func (r *Repository) CreateRun(ctx context.Context, input agent.RunInput) (agent
 	if runID == "" {
 		runID = newID("agentrun")
 	}
+	status := strings.TrimSpace(input.Status)
+	if status == "" {
+		status = agent.RunStatusRunning
+	}
+	if status != agent.RunStatusRunning && status != agent.RunStatusPreparing {
+		return agent.Run{}, fmt.Errorf("invalid initial agent run status %q", status)
+	}
 	row, err := r.q.CreateAgentRun(ctx, platformdb.CreateAgentRunParams{
 		ID:             runID,
-		Status:         agent.RunStatusRunning,
+		Status:         status,
 		Model:          input.Model,
 		MetadataJson:   metadata,
 		ConversationID: input.ConversationID,
 		PrincipalID:    principalID,
 	})
 	if err != nil {
+		return agent.Run{}, err
+	}
+	return mapRun(row), nil
+}
+
+func (r *Repository) ActivateRunWorkflow(ctx context.Context, principalID, conversationID, runID string, workflow jobs.WorkflowIntent) (agent.Run, error) {
+	if r.workflow == nil {
+		return agent.Run{}, fmt.Errorf("agent workflow recorder is required")
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return agent.Run{}, err
+	}
+	defer tx.Rollback()
+	q := r.q.WithTx(tx)
+	changed, err := q.ActivateAgentRun(ctx, platformdb.ActivateAgentRunParams{
+		RunID: runID, ConversationID: conversationID, PrincipalID: principalID,
+	})
+	if err != nil {
+		return agent.Run{}, err
+	}
+	if changed != 1 {
+		row, getErr := q.GetAgentRunInConversation(ctx, platformdb.GetAgentRunInConversationParams{RunID: runID, ConversationID: conversationID, PrincipalID: principalID})
+		if getErr != nil || row.Status != agent.RunStatusRunning {
+			return agent.Run{}, fmt.Errorf("agent run changed while queueing")
+		}
+	}
+	if err := r.workflow.RecordWorkflow(ctx, tx, workflow); err != nil {
+		return agent.Run{}, err
+	}
+	row, err := q.GetAgentRunInConversation(ctx, platformdb.GetAgentRunInConversationParams{RunID: runID, ConversationID: conversationID, PrincipalID: principalID})
+	if err != nil {
+		return agent.Run{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return agent.Run{}, err
 	}
 	return mapRun(row), nil

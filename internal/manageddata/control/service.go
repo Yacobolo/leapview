@@ -264,6 +264,11 @@ func (s *Service) BeginFinalizeUpload(ctx context.Context, request UploadRequest
 		return upload, nil
 	}
 	if session.Status == manageddata.UploadStatusCommitting {
+		if request.Workflow.Job.ID != "" {
+			if _, queueErr := s.repo.BeginUploadFinalization(ctx, session.ID, request.Workflow); queueErr != nil {
+				return UploadResult{}, repositoryError(queueErr)
+			}
+		}
 		upload, _, inspectErr := s.inspect(ctx, collection, session, true)
 		if inspectErr != nil {
 			return upload, inspectErr
@@ -286,7 +291,7 @@ func (s *Service) BeginFinalizeUpload(ctx context.Context, request UploadRequest
 	if len(upload.MissingBlobs) > 0 {
 		return upload, ErrIncomplete
 	}
-	session, err = s.repo.BeginUploadFinalization(ctx, session.ID)
+	session, err = s.repo.BeginUploadFinalization(ctx, session.ID, request.Workflow)
 	if err != nil {
 		if errors.Is(err, manageddata.ErrConflict) {
 			concurrent, loadErr := s.repo.UploadSessionByID(ctx, session.ID)

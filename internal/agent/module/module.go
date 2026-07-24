@@ -12,6 +12,7 @@ import (
 	agenthttp "github.com/Yacobolo/leapview/internal/agent/http"
 	agentopenai "github.com/Yacobolo/leapview/internal/agent/openai"
 	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	"github.com/Yacobolo/leapview/internal/queryruntime"
 	productsearch "github.com/Yacobolo/leapview/internal/search"
 	"github.com/Yacobolo/leapview/internal/ui"
@@ -120,10 +121,15 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		config.GlobalWorkspaceID = "_global"
 	}
 	service := config.Service
+	ownedService := false
+	durableWorkflow := false
 	if service == nil && config.Database != nil {
-		service = agent.NewService(newRepository(config.Database), agent.Config{
+		workflow, _ := config.Jobs.(jobs.WorkflowRecorder)
+		service = agent.NewService(newRepository(config.Database, workflow), agent.Config{
 			APIKey: config.Model.APIKey, BaseURL: config.Model.BaseURL, Model: config.Model.Model,
 		})
+		ownedService = true
+		durableWorkflow = workflow != nil
 	}
 	if service != nil {
 		service.ConfigureDefaultModel(func(modelConfig agent.Config) agentcore.Model {
@@ -153,6 +159,9 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		enableSystemPrompt: config.EnableSystemPrompt, broker: config.HTTP.Broker, logger: config.Logger,
 		pendingChatTitles: map[string]struct{}{},
 		mcpScope:          mcpScope, mcpProtect: config.MCPProtect,
+	}
+	if ownedService && durableWorkflow {
+		service.SetPromptWorkflow(m.runWorkflow)
 	}
 	searchReferences := config.HTTP.SearchReferences
 	if searchReferences == nil {

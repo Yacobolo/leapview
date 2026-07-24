@@ -97,6 +97,7 @@ type Config struct {
 	Environment      string
 	CurrentPrincipal func(*http.Request) (Principal, bool)
 	Jobs             JobStore
+	Workflow         jobs.WorkflowRecorder
 	ServingStates    ServingStateReader
 }
 
@@ -123,7 +124,7 @@ func Build(ctx context.Context, cfg Config) (*Module, error) {
 	if cfg.Database == nil {
 		return nil, errors.New("managed-data database is required")
 	}
-	repository := manageddatasqlite.NewRepository(cfg.Database)
+	repository := manageddatasqlite.NewRepositoryWithWorkflow(cfg.Database, cfg.Workflow)
 	services, err := newManagedDataStorage(ctx, cfg.Product)
 	if err != nil {
 		return nil, err
@@ -181,7 +182,7 @@ func Build(ctx context.Context, cfg Config) (*Module, error) {
 	module.handler = manageddatahttp.NewHandler(manageddatahttp.Options{
 		Repository: apiRepository, Uploads: uploads, Multipart: multipart,
 		CurrentPrincipal: currentPrincipal, Environment: cfg.Environment,
-		EnqueueFinalize: module.enqueueFinalize, RecordUploadCreated: module.recordUploadCreated,
+		BeginFinalize: module.beginFinalize, RecordUploadCreated: module.recordUploadCreated,
 	})
 	module.maintenanceWorker = newMaintenanceWorker(module.maintenance, cfg.Worker)
 	return module, nil
