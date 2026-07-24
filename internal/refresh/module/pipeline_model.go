@@ -3,7 +3,6 @@ package module
 import (
 	"context"
 
-	projectbundle "github.com/Yacobolo/leapview/internal/project/bundle"
 	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
 	"github.com/Yacobolo/leapview/internal/servingstate"
 )
@@ -13,9 +12,6 @@ type ActiveArtifactReader interface {
 }
 
 func PipelineModelResolver(states ActiveArtifactReader, artifacts refreshrun.ArtifactLoader, environment servingstate.Environment) func(context.Context, string, string) (string, bool, error) {
-	if artifacts == nil {
-		artifacts = projectbundle.RefreshArtifactLoader{}
-	}
 	return func(ctx context.Context, workspaceID, pipelineID string) (string, bool, error) {
 		if states == nil || artifacts == nil {
 			return "", false, nil

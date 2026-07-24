@@ -1,4 +1,4 @@
-package module
+package runtimefactory
 
 import (
 	dashboardruntime "github.com/Yacobolo/leapview/internal/dashboard/runtime"

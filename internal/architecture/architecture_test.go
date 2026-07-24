@@ -383,9 +383,6 @@ func TestCompositionOwnershipIsAnExplicitClosedSet(t *testing.T) {
 		"internal/app",
 		"internal/cli",
 		"internal/tools",
-		// Transitional packages removed before PR #124 is marked ready.
-		"internal/dashboard/analyticsduckdb",
-		"internal/refresh/analyticsduckdb",
 	}
 	for _, file := range productionGoFiles(t) {
 		rule, ok := ClassifyPackage(file.pkgDir)
@@ -447,29 +444,47 @@ func TestProductionImportsFollowCapabilityGraph(t *testing.T) {
 				continue
 			}
 			_, sourceIsProductCapability := targetCapabilities[source.Capability]
-			if !sourceIsProductCapability || source.Layer == LayerComposition || source.Layer == LayerModule || target.Capability == "platform" || target.Capability == "api" || target.Capability == "ui" {
+			if !sourceIsProductCapability || source.Layer == LayerComposition {
 				continue
 			}
-			if target.Capability == "workload" && AllowsWorkloadImport(file.pkgDir) {
-				// The narrower workload allowlist test below validates exactly which
-				// execution and worker adapters may use admission.
-				continue
-			}
-			if IsDeferredPackageEdge(file.pkgDir, target.Capability) {
-				continue
-			}
-			if !CapabilityDependencies[source.Capability][target.Capability] {
-				t.Errorf("%s imports %s: undeclared capability edge %s -> %s", file.path, packagePath, source.Capability, target.Capability)
-				continue
-			}
-			if target.Layer == LayerAdapter {
-				t.Errorf("%s imports adapter package %s owned by capability %s", file.path, packagePath, target.Capability)
-				continue
-			}
-			if source.Layer != LayerModule && !IsPublicContractImport(target.Capability, packagePath) {
-				t.Errorf("%s imports non-contract package %s from capability %s", file.path, packagePath, target.Capability)
+			if violation := CapabilityImportViolation(file.pkgDir, source, packagePath, target); violation != "" {
+				t.Errorf("%s imports %s: %s", file.path, packagePath, violation)
 			}
 		}
+	}
+}
+
+func TestCapabilityModulesRequireDeclaredPublicContractEdges(t *testing.T) {
+	runtimehostModule, ok := ClassifyPackage("internal/runtimehost/module")
+	if !ok || runtimehostModule.Layer != LayerModule {
+		t.Fatal("runtimehost module classification is unavailable")
+	}
+	projectBundle, ok := ClassifyPackage("internal/project/bundle")
+	if !ok {
+		t.Fatal("project bundle classification is unavailable")
+	}
+	if violation := CapabilityImportViolation("internal/runtimehost/module", runtimehostModule, "internal/project/bundle", projectBundle); !strings.Contains(violation, "undeclared capability edge") {
+		t.Fatalf("runtimehost module -> project bundle violation = %q", violation)
+	}
+
+	agentModule, ok := ClassifyPackage("internal/agent/module")
+	if !ok || agentModule.Layer != LayerModule {
+		t.Fatal("agent module classification is unavailable")
+	}
+	dashboardRuntime, ok := ClassifyPackage("internal/dashboard/runtime")
+	if !ok {
+		t.Fatal("dashboard runtime classification is unavailable")
+	}
+	if violation := CapabilityImportViolation("internal/agent/module", agentModule, "internal/dashboard/runtime", dashboardRuntime); !strings.Contains(violation, "non-contract package") {
+		t.Fatalf("agent module -> dashboard runtime violation = %q", violation)
+	}
+
+	dashboardReport, ok := ClassifyPackage("internal/dashboard/report")
+	if !ok {
+		t.Fatal("dashboard report classification is unavailable")
+	}
+	if violation := CapabilityImportViolation("internal/agent/module", agentModule, "internal/dashboard/report", dashboardReport); violation != "" {
+		t.Fatalf("agent module -> dashboard report should be allowed, got %q", violation)
 	}
 }
 
@@ -1562,10 +1577,10 @@ func TestAnalyticsModuleConstructsTheProcessDuckDBExactlyOnce(t *testing.T) {
 	}
 	root := repoRoot(t)
 	for _, path := range []string{
-		"internal/runtimehost/module/factory.go",
+		"internal/app/runtimefactory/factory.go",
 		"internal/analytics/duckdb/materialize.go",
-		"internal/refresh/analyticsduckdb/materializer.go",
-		"internal/dashboard/analyticsduckdb/factory.go",
+		"internal/refresh/analyticsruntime/materializer.go",
+		"internal/dashboard/analyticsruntime/factory.go",
 		"internal/runtimehost/manager.go",
 	} {
 		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
@@ -1582,7 +1597,7 @@ func TestGovernedAnalyticalSessionBoundaryHasNoLegacyServingEscape(t *testing.T)
 	root := repoRoot(t)
 	for _, path := range []string{
 		"internal/analytics/ducklake/environment.go",
-		"internal/dashboard/analyticsduckdb/factory.go",
+		"internal/dashboard/analyticsruntime/factory.go",
 		"internal/dashboard/runtime/service.go",
 		"internal/dataquery/query.go",
 	} {

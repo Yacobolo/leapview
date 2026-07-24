@@ -15,8 +15,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/access"
 	analyticsmaterialization "github.com/Yacobolo/leapview/internal/analytics/materialization"
 	"github.com/Yacobolo/leapview/internal/platform/transaction"
-	projectbundle "github.com/Yacobolo/leapview/internal/project/bundle"
-	refreshanalyticsduckdb "github.com/Yacobolo/leapview/internal/refresh/analyticsduckdb"
+	refreshanalytics "github.com/Yacobolo/leapview/internal/refresh/analyticsruntime"
 	materializehttp "github.com/Yacobolo/leapview/internal/refresh/http"
 	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
 	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
@@ -41,6 +40,7 @@ type Config struct {
 	Authorization       AuthorizationConfig
 	Service             refreshrun.Service
 	Analytics           analyticsmaterialization.WorkspaceExecutor
+	Artifacts           refreshrun.ArtifactLoader
 	ManagedData         runtimehost.ManagedDataResolver
 	Admission           workload.Admitter
 	LeaseTimeout        time.Duration
@@ -147,10 +147,10 @@ func Build(ctx context.Context, config Config) (*Module, error) {
 	m.schedules = refreshsqlite.NewRepository(config.Database)
 	m.service = config.Service
 	if m.service.Artifacts == nil {
-		m.service.Artifacts = projectbundle.RefreshArtifactLoader{}
+		m.service.Artifacts = config.Artifacts
 	}
 	if m.service.Materializer == nil {
-		m.service.Materializer = refreshanalyticsduckdb.WorkspaceRefreshMaterializer{
+		m.service.Materializer = refreshanalytics.WorkspaceRefreshMaterializer{
 			Executor: config.Analytics, ManagedData: config.ManagedData,
 		}
 	}

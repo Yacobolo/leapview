@@ -12,7 +12,6 @@ import (
 	"github.com/Yacobolo/leapview/internal/dataquery"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
 	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
-	"github.com/Yacobolo/leapview/internal/workspace"
 )
 
 type multiWorkspaceMetrics struct {
@@ -183,18 +182,6 @@ func (m multiWorkspaceMetrics) Pages(dashboardID string) []dashboard.Page {
 	return nil
 }
 
-func (m multiWorkspaceMetrics) WorkspaceAssets(workspaceID, servingStateID string) ([]workspace.Asset, []workspace.AssetEdge, bool) {
-	metrics, ok := m.MetricsForWorkspace(workspaceID)
-	if !ok {
-		return nil, nil, false
-	}
-	provider, ok := metrics.(workspaceAssetRuntime)
-	if !ok {
-		return nil, nil, false
-	}
-	return provider.WorkspaceAssets(workspaceID, servingStateID)
-}
-
 func (m *dynamicRuntimeMetrics) Catalog() dashboard.Catalog {
 	if metrics := m.defaultMetrics(); metrics != nil {
 		return metrics.Catalog()
@@ -342,16 +329,4 @@ func (m *dynamicRuntimeMetrics) Pages(dashboardID string) []dashboard.Page {
 		return metrics.Pages(dashboardID)
 	}
 	return nil
-}
-
-func (m *dynamicRuntimeMetrics) WorkspaceAssets(workspaceID, servingStateID string) ([]workspace.Asset, []workspace.AssetEdge, bool) {
-	metrics, ok := m.MetricsForWorkspace(workspaceID)
-	if !ok {
-		return nil, nil, false
-	}
-	provider, ok := metrics.(workspaceAssetRuntime)
-	if !ok {
-		return nil, nil, false
-	}
-	return provider.WorkspaceAssets(workspaceID, servingStateID)
 }

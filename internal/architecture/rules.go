@@ -1,6 +1,9 @@
 package architecture
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // Layer describes the architectural role of a Go package. The classification
 // is intentionally data, rather than test code, so every architecture check
@@ -30,14 +33,14 @@ type PackageRule struct {
 // made public merely because their capability has an allowed edge.
 var PublicContractPrefixes = map[string][]string{
 	"access":       {"internal/access"},
-	"analytics":    {"internal/analytics/model", "internal/analytics/query", "internal/analytics/materialize", "internal/analytics/connectors", "internal/analytics/arrowquery", "internal/analytics/resource", "internal/analytics/runtime", "internal/analytics/queryaudit", "internal/dataquery", "internal/queryruntime"},
-	"dashboard":    {"internal/dashboard", "internal/dashboard/report", "internal/visualization/definition", "internal/visualization/format", "internal/visualization/geometry", "internal/visualization/ir", "internal/visualization/mapasset", "internal/visualization/runtime"},
-	"manageddata":  {"internal/manageddata", "internal/manageddata/binding"},
+	"analytics":    {"internal/analytics/model", "internal/analytics/query", "internal/analytics/materialize", "internal/analytics/materialization", "internal/analytics/connectors", "internal/analytics/arrowquery", "internal/analytics/resource", "internal/analytics/runtime", "internal/analytics/queryaudit", "internal/dataquery"},
+	"dashboard":    {"internal/dashboard", "internal/dashboard/definition", "internal/dashboard/publication", "internal/dashboard/report", "internal/dashboard/reportmodel", "internal/queryruntime", "internal/visualization/definition", "internal/visualization/format", "internal/visualization/geometry", "internal/visualization/ir", "internal/visualization/mapasset", "internal/visualization/runtime"},
+	"manageddata":  {"internal/manageddata", "internal/manageddata/binding", "internal/manageddata/runtimebinding"},
 	"workspace":    {"internal/workspace", "internal/search"},
 	"project":      {"internal/configschema", "internal/configspec", "internal/project/artifact", "internal/project/bundle", "internal/project/compiler"},
 	"release":      {"internal/release"},
 	"deployment":   {"internal/deployment"},
-	"servingstate": {"internal/servingstate"},
+	"servingstate": {"internal/servingstate", "internal/servingstate/validate"},
 	"refresh":      {"internal/refresh/artifact", "internal/refresh/plan", "internal/refresh/run", "internal/refresh/schedule"},
 	"runtimehost":  {"internal/runtimehost"},
 	"workload":     {"internal/workload"},
@@ -104,11 +107,44 @@ var CapabilityDependencies = map[string]map[string]bool{
 
 func IsPublicContractImport(capability, packagePath string) bool {
 	for _, prefix := range PublicContractPrefixes[capability] {
-		if packagePath == prefix || strings.HasPrefix(packagePath, prefix+"/") {
+		if packagePath == prefix {
+			return true
+		}
+		// A capability root names only its root contract package. Explicit
+		// nested contract prefixes may include their own child packages.
+		if strings.Count(prefix, "/") > 1 && strings.HasPrefix(packagePath, prefix+"/") {
 			return true
 		}
 	}
 	return false
+}
+
+// CapabilityImportViolation validates one cross-capability production import.
+// Module packages deliberately use the same rules as every other capability
+// package; only process composition is exempt.
+func CapabilityImportViolation(sourcePath string, source PackageRule, packagePath string, target PackageRule) string {
+	if source.Capability == target.Capability || source.Layer == LayerComposition {
+		return ""
+	}
+	if target.Capability == "platform" || target.Capability == "api" || target.Capability == "ui" {
+		return ""
+	}
+	if target.Capability == "workload" && AllowsWorkloadImport(sourcePath) {
+		return ""
+	}
+	if IsDeferredPackageEdge(sourcePath, target.Capability) {
+		return ""
+	}
+	if !CapabilityDependencies[source.Capability][target.Capability] {
+		return fmt.Sprintf("undeclared capability edge %s -> %s", source.Capability, target.Capability)
+	}
+	if target.Layer == LayerAdapter {
+		return fmt.Sprintf("adapter package %s owned by capability %s", packagePath, target.Capability)
+	}
+	if !IsPublicContractImport(target.Capability, packagePath) {
+		return fmt.Sprintf("non-contract package %s from capability %s", packagePath, target.Capability)
+	}
+	return ""
 }
 
 var PackageRules = []PackageRule{
@@ -120,6 +156,8 @@ var PackageRules = []PackageRule{
 	{Prefix: "internal/project/compiler", Capability: "project", Layer: LayerUseCase},
 	{Prefix: "internal/project/artifact", Capability: "project", Layer: LayerContract},
 	{Prefix: "internal/analytics/runtime", Capability: "analytics", Layer: LayerContract},
+	{Prefix: "internal/dashboard/analyticsruntime", Capability: "dashboard", Layer: LayerAdapter},
+	{Prefix: "internal/refresh/analyticsruntime", Capability: "refresh", Layer: LayerAdapter},
 	{Prefix: "internal/refresh/plan", Capability: "refresh", Layer: LayerUseCase},
 	{Prefix: "internal/refresh/run", Capability: "refresh", Layer: LayerUseCase},
 	{Prefix: "internal/refresh/schedule", Capability: "refresh", Layer: LayerUseCase},
@@ -158,11 +196,7 @@ var PackageRules = []PackageRule{
 	{Prefix: "internal/visualization/mapasset/http", Capability: "dashboard", Layer: LayerAdapter},
 	{Prefix: "internal/visualization/runtime", Capability: "dashboard", Layer: LayerUseCase},
 	{Prefix: "internal/visualdocs", Capability: "ui", Layer: LayerAdapter},
-	// Cross-capability infrastructure bridges are process composition, not
-	// dashboard or refresh domain dependencies.
-	{Prefix: "internal/dashboard/analyticsduckdb", Capability: "composition", Layer: LayerComposition},
 	{Prefix: "internal/dashboard/semanticapi", Capability: "dashboard", Layer: LayerAdapter},
-	{Prefix: "internal/refresh/analyticsduckdb", Capability: "composition", Layer: LayerComposition},
 	{Prefix: "internal/app", Capability: "composition", Layer: LayerComposition},
 	{Prefix: "internal/admin", Capability: "admin", Layer: LayerAdapter},
 	{Prefix: "internal/api", Capability: "api", Layer: LayerContract},

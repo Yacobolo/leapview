@@ -5,10 +5,13 @@ package runtime
 
 import (
 	"context"
+	"time"
 
+	"github.com/Yacobolo/leapview/internal/analytics/arrowquery"
 	analyticsmaterialize "github.com/Yacobolo/leapview/internal/analytics/materialize"
+	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	"github.com/Yacobolo/leapview/internal/analytics/resource"
-	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
+	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/platform/transaction"
 )
 
@@ -19,24 +22,39 @@ type WorkspaceDatabase interface {
 	CommitTransaction(context.Context, string, map[string]string, func(transaction.Transaction) error) (int64, error)
 }
 
-type Resources interface {
-	WorkspaceDatabase() WorkspaceDatabase
-	ResultCache() resultcache.ScopeProvider
+// WorkspaceRequest describes a governed analytical workspace without exposing
+// DuckDB construction or cache implementation details to consumer capabilities.
+type WorkspaceRequest struct {
+	Models           map[string]*semanticmodel.Model
+	SnapshotID       int64
+	ServingStateID   string
+	WorkspaceID      string
+	Environment      string
+	SemanticDigest   string
+	ArtifactDigest   string
+	SourceDataDigest string
+	ResultLimits     dataquery.ResultLimits
 }
 
-type resources struct {
-	database WorkspaceDatabase
-	cache    resultcache.ScopeProvider
+// Workspace is the narrow analytical runtime consumed by dashboard adapters.
+type Workspace interface {
+	ExecuteDataQuery(context.Context, dataquery.Query) (dataquery.Result, error)
+	ExecuteDataQueryArrow(context.Context, dataquery.Query, arrowquery.Sink) (dataquery.Result, error)
+	ExecuteDataQueryBundle(context.Context, []dataquery.BundleRequest) (dataquery.BundleResult, error)
+	Refresh(context.Context) error
+	RefreshModelTables(context.Context, string, []string) error
+	Close() error
+	LastRefresh() time.Time
+	DuckLakeSnapshotID() int64
+	ReadConcurrency() int
 }
 
-func NewResources(database WorkspaceDatabase, cache resultcache.ScopeProvider) Resources {
-	return resources{database: database, cache: cache}
+type WorkspaceFactory interface {
+	OpenWorkspace(context.Context, WorkspaceRequest) (Workspace, error)
 }
 
-func (r resources) WorkspaceDatabase() WorkspaceDatabase {
-	return r.database
-}
+type WorkspaceFactoryFunc func(context.Context, WorkspaceRequest) (Workspace, error)
 
-func (r resources) ResultCache() resultcache.ScopeProvider {
-	return r.cache
+func (f WorkspaceFactoryFunc) OpenWorkspace(ctx context.Context, request WorkspaceRequest) (Workspace, error) {
+	return f(ctx, request)
 }
