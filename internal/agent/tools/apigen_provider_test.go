@@ -101,6 +101,50 @@ func TestAPIGenDefinitionsExposeClosedVisualizationEnvelopeOutputSchemas(t *test
 	t.Fatal("query_dashboard_visual definition not found")
 }
 
+func TestAPIGenDefinitionsExposeSemanticQueryMetadataSchema(t *testing.T) {
+	for _, definition := range (APIGenProvider{}).Definitions(Scope{PrincipalID: "principal-1"}) {
+		if definition.Name != "query_semantic_model" {
+			continue
+		}
+		var schema map[string]any
+		if err := json.Unmarshal(definition.OutputSchema, &schema); err != nil {
+			t.Fatalf("decode output schema: %v", err)
+		}
+		if schema["additionalProperties"] != false {
+			t.Fatalf("semantic output schema is not closed: %s", definition.OutputSchema)
+		}
+		properties, _ := schema["properties"].(map[string]any)
+		for _, name := range []string{"queryId", "servingSnapshot", "freshness", "completeness", "columns", "rows", "hasMore"} {
+			if _, ok := properties[name]; !ok {
+				t.Fatalf("semantic output schema missing %q: %s", name, definition.OutputSchema)
+			}
+		}
+		completeness, _ := properties["completeness"].(map[string]any)
+		if completeness["additionalProperties"] != false {
+			t.Fatalf("completeness schema is not closed: %#v", completeness)
+		}
+		completenessProperties, _ := completeness["properties"].(map[string]any)
+		for _, name := range []string{"returnedRows", "hasMore"} {
+			if _, ok := completenessProperties[name]; !ok {
+				t.Fatalf("completeness schema missing %q: %#v", name, completeness)
+			}
+		}
+		columns, _ := properties["columns"].(map[string]any)
+		columnItems, _ := columns["items"].(map[string]any)
+		if columnItems["additionalProperties"] != false {
+			t.Fatalf("column schema is not closed: %#v", columnItems)
+		}
+		columnProperties, _ := columnItems["properties"].(map[string]any)
+		for _, name := range []string{"name", "nullable", "fieldRef", "label", "kind", "dataType", "unit", "format"} {
+			if _, ok := columnProperties[name]; !ok {
+				t.Fatalf("column schema missing %q: %#v", name, columnItems)
+			}
+		}
+		return
+	}
+	t.Fatal("query_semantic_model definition not found")
+}
+
 func TestCuratedQueryArgumentsAcceptCatalogReferenceIDs(t *testing.T) {
 	semantic := normalizeCuratedQueryArguments("query_semantic_model", json.RawMessage(`{
 		"model":"sales",

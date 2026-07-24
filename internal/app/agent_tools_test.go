@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Yacobolo/leapview/internal/access"
 	agentcap "github.com/Yacobolo/leapview/internal/agent"
@@ -17,6 +18,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/productdocs"
 	"github.com/Yacobolo/leapview/internal/queryaudit"
+	"github.com/Yacobolo/leapview/internal/refreshpipeline"
 	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
@@ -675,19 +677,40 @@ func TestAPIGenAgentSemanticQueryToolInjectsBodyDefaultLimit(t *testing.T) {
 	}
 	var decoded struct {
 		Columns []struct {
-			Name string `json:"name"`
-			Type string `json:"type"`
+			Name     string `json:"name"`
+			Label    string `json:"label"`
+			Kind     string `json:"kind"`
+			DataType string `json:"dataType"`
+			FieldRef struct {
+				WorkspaceID string `json:"workspaceId"`
+				Type        string `json:"type"`
+				ID          string `json:"id"`
+			} `json:"fieldRef"`
 		} `json:"columns"`
-		Rows       [][]string `json:"rows"`
-		Count      int        `json:"count"`
-		HasMore    bool       `json:"hasMore"`
-		NextCursor string     `json:"nextCursor"`
+		QueryID         string  `json:"queryId"`
+		ServingSnapshot string  `json:"servingSnapshot"`
+		Rows            [][]any `json:"rows"`
+		Completeness    struct {
+			ReturnedRows int  `json:"returnedRows"`
+			HasMore      bool `json:"hasMore"`
+		} `json:"completeness"`
+		HasMore    bool   `json:"hasMore"`
+		NextCursor string `json:"nextCursor"`
 	}
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		t.Fatalf("decode semantic result: %v body=%s", err, body)
 	}
-	if len(decoded.Columns) == 0 || len(decoded.Rows) != 25 || decoded.Count != 25 || !decoded.HasMore || decoded.NextCursor == "" {
+	if len(decoded.Columns) == 0 || len(decoded.Rows) != 25 ||
+		decoded.Completeness.ReturnedRows != 25 || !decoded.Completeness.HasMore ||
+		decoded.QueryID != "call_1" || decoded.ServingSnapshot == "" ||
+		!decoded.HasMore || decoded.NextCursor == "" {
 		t.Fatalf("semantic default-limited result = %#v", decoded)
+	}
+	if decoded.Columns[0].Kind != "dimension" || decoded.Columns[0].DataType != "string" ||
+		decoded.Columns[0].FieldRef.Type != "field" || decoded.Columns[0].FieldRef.ID != "test.orders.status" ||
+		decoded.Columns[1].Kind != "measure" || decoded.Columns[1].FieldRef.Type != "measure" ||
+		decoded.Columns[1].FieldRef.ID != "test.order_count" {
+		t.Fatalf("semantic columns = %#v", decoded.Columns)
 	}
 	var decodedMap map[string]any
 	if err := json.Unmarshal(body, &decodedMap); err != nil {
@@ -695,6 +718,102 @@ func TestAPIGenAgentSemanticQueryToolInjectsBodyDefaultLimit(t *testing.T) {
 	}
 	if _, ok := decodedMap["page"]; ok {
 		t.Fatalf("semantic result kept raw page metadata: %#v", decodedMap)
+	}
+}
+
+func TestAPIGenAgentSemanticQueryReturnsLastSuccessfulFreshness(t *testing.T) {
+	store := testStore(t)
+	server := NewWithOptions(manySemanticRowsMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
+	if _, err := store.SQLDB().ExecContext(context.Background(), `
+		INSERT INTO serving_states (id, workspace_id, status, digest, manifest_json, environment)
+		VALUES ('unversioned', 'test', 'active', 'test', '{}', 'dev');
+	`); err != nil {
+		t.Fatalf("seed freshness serving state: %v", err)
+	}
+	refreshedAt := time.Date(2026, time.July, 24, 9, 42, 0, 0, time.UTC)
+	if err := server.refreshPipelineRepo.SaveDataVersion(context.Background(), refreshpipeline.DataVersion{
+		WorkspaceID: "test", Environment: server.defaultEnvironment, SemanticModel: "test",
+		SnapshotID: 184, ServingStateID: "unversioned", RefreshedAt: refreshedAt,
+		Source: refreshpipeline.DataVersionSourceRefresh,
+	}); err != nil {
+		t.Fatalf("save data version: %v", err)
+	}
+	var querySemantic agentcore.ToolDefinition
+	for _, tool := range agentAPIGenToolsForTest(server, agentcap.Scope{
+		WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true,
+	}) {
+		if tool.Name == "query_semantic_model" {
+			querySemantic = tool
+			break
+		}
+	}
+	result, err := querySemantic.Handler.Run(context.Background(), agentcore.ToolCall{
+		ID: "freshness_query", Name: "query_semantic_model",
+		Arguments: json.RawMessage(`{
+			"workspace":"test",
+			"model":"test",
+			"measures":[{"field":"order_count"}],
+			"limit":1
+		}`),
+	})
+	if err != nil || result.IsError {
+		t.Fatalf("query result=%#v err=%v", result, err)
+	}
+	body, _ := json.Marshal(result.Content)
+	var decoded struct {
+		Freshness struct {
+			LastSuccessfulRefreshAt string `json:"lastSuccessfulRefreshAt"`
+			SnapshotID              string `json:"snapshotId"`
+			ServingStateID          string `json:"servingStateId"`
+			Source                  string `json:"source"`
+			Status                  string `json:"status"`
+		} `json:"freshness"`
+	}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("decode result: %v body=%s", err, body)
+	}
+	if decoded.Freshness.LastSuccessfulRefreshAt != "2026-07-24T09:42:00Z" ||
+		decoded.Freshness.SnapshotID != "184" ||
+		decoded.Freshness.ServingStateID != "unversioned" ||
+		decoded.Freshness.Source != "refresh" ||
+		decoded.Freshness.Status != "current" {
+		t.Fatalf("freshness = %#v", decoded.Freshness)
+	}
+}
+
+func TestAPIGenAgentSemanticQueryPreservesNullCells(t *testing.T) {
+	server := NewWithOptions(nullSemanticRowsMetrics{}, Options{DefaultWorkspaceID: "test"})
+	var querySemantic agentcore.ToolDefinition
+	for _, tool := range agentAPIGenToolsForTest(server, agentcap.Scope{
+		WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true,
+	}) {
+		if tool.Name == "query_semantic_model" {
+			querySemantic = tool
+			break
+		}
+	}
+	result, err := querySemantic.Handler.Run(context.Background(), agentcore.ToolCall{
+		ID: "null_query", Name: "query_semantic_model",
+		Arguments: json.RawMessage(`{
+			"workspace":"test",
+			"model":"test",
+			"dimensions":[{"field":"orders.status"}],
+			"measures":[{"field":"order_count"}],
+			"limit":2
+		}`),
+	})
+	if err != nil || result.IsError {
+		t.Fatalf("query result=%#v err=%v", result, err)
+	}
+	body, _ := json.Marshal(result.Content)
+	var decoded struct {
+		Rows [][]any `json:"rows"`
+	}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("decode result: %v body=%s", err, body)
+	}
+	if len(decoded.Rows) != 2 || decoded.Rows[0][0] != nil || decoded.Rows[1][0] != "" {
+		t.Fatalf("null and empty string collapsed: %#v", decoded.Rows)
 	}
 }
 
@@ -867,6 +986,23 @@ type manyEdgesMetrics struct {
 
 type manySemanticRowsMetrics struct {
 	fakeMetrics
+}
+
+type nullSemanticRowsMetrics struct {
+	fakeMetrics
+}
+
+func (m nullSemanticRowsMetrics) ExecuteDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
+	if request.Kind != dataquery.KindSemanticAggregate {
+		return m.fakeMetrics.ExecuteDataQuery(ctx, request)
+	}
+	return dataquery.Result{
+		Columns: dataquery.ColumnsFromNames([]string{"status"}),
+		Rows: []dataquery.Row{
+			{"status": nil},
+			{"status": ""},
+		},
+	}, nil
 }
 
 func (manySemanticRowsMetrics) QuerySemantic(_ context.Context, _ string, request reportdef.AggregateQuery) (reportdef.QueryRows, error) {

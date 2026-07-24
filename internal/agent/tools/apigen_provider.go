@@ -118,6 +118,9 @@ func (p APIGenProvider) Run(ctx context.Context, scope Scope, operation APIGenOp
 		ObjectID:    operation.Tool.Name,
 	})
 	request = request.WithContext(ctx)
+	if strings.TrimSpace(call.ID) != "" {
+		request.Header.Set("X-Request-ID", call.ID)
+	}
 	request = withAPIGenRouteContext(request, operation.Tool.Path)
 	if p.Dispatch == nil {
 		return apigenAgentToolError("operation_not_found", "APIGen operation dispatcher is not configured")

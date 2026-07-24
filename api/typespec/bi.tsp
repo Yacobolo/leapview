@@ -231,30 +231,68 @@ model SemanticSourceListResponse {
 }
 
 model SemanticFieldRef {
+  @doc("Semantic field or measure ID. Use the ID returned by catalog_list or catalog_get.")
   field: string;
+  @doc("Optional output column name.")
   `alias`?: string;
+}
+
+enum SemanticTimeGrain {
+  day;
+  week;
+  month;
+  quarter;
+  year;
 }
 
 model SemanticTimeRef {
+  @doc("Date or timestamp field ID.")
   field: string;
-  grain?: string;
+  @doc("Calendar grain used to group the time field.")
+  grain?: SemanticTimeGrain;
+  @doc("Optional output column name.")
   `alias`?: string;
 }
 
+enum SemanticSortDirection {
+  asc;
+  desc;
+}
+
 model SemanticSort {
+  @doc("Selected output field or alias to sort.")
   field: string;
-  direction?: string;
+  @doc("Sort direction. Defaults to ascending when omitted.")
+  direction?: SemanticSortDirection;
 }
 
 model SemanticFilterGroup {
+  @doc("Filters combined within this nested group.")
   filters: SemanticFilter[];
 }
 
+enum SemanticFilterOperator {
+  equals;
+  in;
+  contains;
+  not_contains;
+  starts_with;
+  greater_than_or_equal;
+  less_than;
+  is_null;
+  is_not_null;
+}
+
 model SemanticFilter {
+  @doc("Semantic field ID. Omit only when groups supplies nested filters.")
   field?: string;
+  @doc("Fact table used to resolve a conformed dimension when it is otherwise ambiguous.")
   fact?: string;
-  operator?: string;
+  @doc("Governed comparison operator. equals is used when omitted.")
+  operator?: SemanticFilterOperator;
+  @doc("Comparison values. is_null and is_not_null accept no values.")
   values?: string[];
+  @doc("Nested filter groups.")
   groups?: SemanticFilterGroup[];
 }
 
@@ -297,19 +335,67 @@ enum QueryColumnType {
 }
 
 model QueryColumn {
+  @doc("Output column name used to match positional row cells.")
   name: string;
+  @doc("Precision-safe wire data type. Agent tools expose this property as dataType.")
   type: QueryColumnType;
+  @doc("Whether the governed semantic definition can produce SQL NULL.")
   nullable: boolean;
+  @doc("Governed catalog ref for the selected field, measure, or metric.")
+  fieldRef?: QueryFieldRef;
+  @doc("Business-facing semantic label.")
+  label?: string;
+  @doc("Semantic role of the selected member.")
+  kind?: "dimension" | "measure" | "metric";
+  @doc("Business unit declared by the semantic measure or metric.")
+  unit?: string;
+  @doc("Formatting contract declared by the semantic measure or metric.")
+  format?: string;
+}
+
+model QueryFieldRef {
+  @doc("Workspace containing the semantic member.")
+  workspaceId: string;
+  @doc("Catalog type of the semantic member.")
+  type: "field" | "measure";
+  @doc("Workspace-local catalog ID.")
+  id: string;
 }
 
 // Cells are encoded as strings so int64 and decimal values never lose precision.
 // The typed column descriptor determines how clients interpret each position;
-// an empty string represents SQL NULL and is disambiguated by nullable metadata.
-alias SemanticQueryRow = string[];
+// SQL NULL is encoded as JSON null and remains distinct from a genuine empty string.
+alias SemanticQueryRow = unknown[];
+
+model QueryFreshness {
+  @doc("Completion time of the last successful publish or refresh. This is not an upstream event-time watermark.")
+  lastSuccessfulRefreshAt: utcDateTime;
+  @doc("DuckLake snapshot ID recorded for the successful data version.")
+  snapshotId: string;
+  @doc("Serving state that produced the successful data version.")
+  servingStateId: string;
+  @doc("Whether the data version came from publish or refresh.")
+  source: "publish" | "refresh";
+  @doc("current when the successful data version belongs to the queried serving snapshot; stale otherwise.")
+  status: "current" | "stale";
+}
+
+model QueryCompleteness {
+  @doc("Number of rows present in this response page.")
+  returnedRows: int32;
+  @doc("Whether another governed page is available.")
+  hasMore: boolean;
+}
 
 model SemanticQueryResponse {
+  @doc("Stable identifier for this query execution.")
   queryId: string;
+  @doc("Immutable serving state used by the query and its continuation cursor.")
   servingSnapshot: string;
+  @doc("Last successful data-version metadata when the model has a recorded publish or refresh.")
+  freshness?: QueryFreshness;
+  @doc("Completeness of the exact row page returned.")
+  completeness: QueryCompleteness;
   columns: QueryColumn[];
   rows: SemanticQueryRow[];
   page: PageInfo;
@@ -496,7 +582,7 @@ op listSemanticSources(@path workspace: string, @path("model") modelName: string
 op listSemanticModelFields(@path workspace: string, @path("model") modelName: string, @query limit?: ListLimit, @query pageToken?: PageToken): OkJson<SemanticFieldListResponse> | CommonErrors;
 
 @tag("BI")
-@summary("Query semantic model")
+@summary("Query governed semantic data with typed columns, filters, pagination, and provenance")
 @route("/workspaces/{workspace}/semantic-models/{model}/query")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "QUERY_DATA" })
@@ -506,7 +592,40 @@ op listSemanticModelFields(@path workspace: string, @path("model") modelName: st
 @apigen.tool(#{
   name: "query_semantic_model", effect: "read", tags: #["semantic-model", "query"],
   input: #{ fields: #[#{ source: "path", name: "workspace", mode: "model", description: "Workspace ID to query." }, #{ source: "body", name: "limit", default: 25 }] },
-  output: #{ mode: "project", select: #[#{ source: "/columns" }, #{ source: "/rows", countAs: "count" }], cursor: #{ source: "/page/nextCursor" } },
+  output: #{
+    mode: "project",
+    select: #[
+      #{ source: "/queryId" },
+      #{ source: "/servingSnapshot" },
+      #{ source: "/freshness", select: #[
+        #{ source: "/lastSuccessfulRefreshAt" },
+        #{ source: "/snapshotId" },
+        #{ source: "/servingStateId" },
+        #{ source: "/source" },
+        #{ source: "/status" }
+      ] },
+      #{ source: "/completeness", select: #[
+        #{ source: "/returnedRows" },
+        #{ source: "/hasMore" }
+      ] },
+      #{ source: "/columns", select: #[
+        #{ source: "/name" },
+        #{ source: "/type", target: "dataType" },
+        #{ source: "/nullable" },
+        #{ source: "/fieldRef", select: #[
+          #{ source: "/workspaceId" },
+          #{ source: "/type" },
+          #{ source: "/id" }
+        ] },
+        #{ source: "/label" },
+        #{ source: "/kind" },
+        #{ source: "/unit" },
+        #{ source: "/format" }
+      ] },
+      #{ source: "/rows" }
+    ],
+    cursor: #{ source: "/page/nextCursor" }
+  },
 })
 op querySemanticModel(@path workspace: WorkspaceId, @path("model") modelName: string, @header accept?: string, @body body?: SemanticQueryRequest): RowsetResponse<SemanticQueryResponse> | CommonErrors;
 

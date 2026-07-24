@@ -34,7 +34,7 @@
     {
       "slug": "query_semantic_model",
       "title": "query_semantic_model",
-      "summary": "Query semantic model"
+      "summary": "Query governed semantic data with typed columns, filters, pagination, and provenance"
     },
     {
       "slug": "query_visual",

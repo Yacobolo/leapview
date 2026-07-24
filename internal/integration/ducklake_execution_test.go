@@ -985,9 +985,13 @@ func (h *duckLakeHarness) queryRevenue(t *testing.T) float64 {
 	if len(decoded.Rows) != 1 || len(decoded.Columns) != 1 || len(decoded.Rows[0]) != 1 {
 		t.Fatalf("semantic query rowset = %#v, want one cell", decoded)
 	}
-	value, err := strconv.ParseFloat(decoded.Rows[0][0], 64)
+	cell, ok := decoded.Rows[0][0].(string)
+	if !ok {
+		t.Fatalf("semantic revenue cell = %T %#v, want string", decoded.Rows[0][0], decoded.Rows[0][0])
+	}
+	value, err := strconv.ParseFloat(cell, 64)
 	if err != nil {
-		t.Fatalf("parse semantic revenue %q: %v", decoded.Rows[0][0], err)
+		t.Fatalf("parse semantic revenue %q: %v", cell, err)
 	}
 	return value
 }

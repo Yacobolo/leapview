@@ -141,6 +141,10 @@ Use the capabilities returned with a catalog item to choose the next tool.
 - Use `query_dashboard_visual` with the workspace, dashboard, page, and visual location of an existing visual. It preserves the dashboard definition, filters, authorization, and data-policy boundary. Paginated table, matrix, and pivot calls accept at most 50 rows per agent page.
 - Use `query_visual` when no saved visual fits. Provide a workspace, semantic model, dataset, visual type, and semantic fields. It returns a renderer-independent visualization artifact and does not save or mutate the dashboard.
 
+Semantic query rows are positional. Read each cell using the column at the same index. Precision-sensitive numbers remain strings, while SQL `NULL` is JSON `null` and is distinct from a genuine empty string. Column descriptors identify the governed field or measure ref, label, semantic kind, data type, nullability, unit, and format when defined; these descriptors come from the semantic model and table schema rather than values sampled from the current page.
+
+Each semantic result includes `queryId`, `servingSnapshot`, and `completeness.returnedRows`/`hasMore`. When a successful data version is recorded, `freshness` also includes `lastSuccessfulRefreshAt`, DuckLake snapshot ID, serving-state ID, publish-or-refresh source, and whether that version matches the queried serving snapshot. Refresh time is deliberately not called “data as of”: it does not prove the upstream event-time watermark.
+
 The exact contracts are versioned with the running LeapView release. Use the generated [Agent tool reference](/docs/agent-tools) for readable input and output schemas, or download the [machine-readable manifest](/docs/agent-tools/manifest.json). You can also inspect the matching local release with:
 
 ```sh

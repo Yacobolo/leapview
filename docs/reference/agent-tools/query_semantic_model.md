@@ -2,7 +2,7 @@
 
 # query_semantic_model
 
-Query semantic model
+Query governed semantic data with typed columns, filters, pagination, and provenance
 
 Machine-readable: [focused JSON](/docs/agent-tools/tools/query_semantic_model.json) · [complete manifest](/docs/agent-tools/manifest.json)
 
@@ -28,9 +28,11 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_semantic_model.js
         "additionalProperties": false,
         "properties": {
           "alias": {
+            "description": "Optional output column name.",
             "type": "string"
           },
           "field": {
+            "description": "Semantic field or measure ID. Use the ID returned by catalog_list or catalog_get.",
             "type": "string"
           }
         },
@@ -46,16 +48,20 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_semantic_model.js
         "additionalProperties": false,
         "properties": {
           "fact": {
+            "description": "Fact table used to resolve a conformed dimension when it is otherwise ambiguous.",
             "type": "string"
           },
           "field": {
+            "description": "Semantic field ID. Omit only when groups supplies nested filters.",
             "type": "string"
           },
           "groups": {
+            "description": "Nested filter groups.",
             "items": {
               "additionalProperties": false,
               "properties": {
                 "filters": {
+                  "description": "Filters combined within this nested group.",
                   "items": {
                     "type": "object"
                   },
@@ -70,9 +76,22 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_semantic_model.js
             "type": "array"
           },
           "operator": {
+            "description": "Governed comparison operator. equals is used when omitted.",
+            "enum": [
+              "equals",
+              "in",
+              "contains",
+              "not_contains",
+              "starts_with",
+              "greater_than_or_equal",
+              "less_than",
+              "is_null",
+              "is_not_null"
+            ],
             "type": "string"
           },
           "values": {
+            "description": "Comparison values. is_null and is_not_null accept no values.",
             "items": {
               "type": "string"
             },
@@ -93,9 +112,11 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_semantic_model.js
         "additionalProperties": false,
         "properties": {
           "alias": {
+            "description": "Optional output column name.",
             "type": "string"
           },
           "field": {
+            "description": "Semantic field or measure ID. Use the ID returned by catalog_list or catalog_get.",
             "type": "string"
           }
         },
@@ -119,9 +140,15 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_semantic_model.js
         "additionalProperties": false,
         "properties": {
           "direction": {
+            "description": "Sort direction. Defaults to ascending when omitted.",
+            "enum": [
+              "asc",
+              "desc"
+            ],
             "type": "string"
           },
           "field": {
+            "description": "Selected output field or alias to sort.",
             "type": "string"
           }
         },
@@ -136,12 +163,22 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_semantic_model.js
       "additionalProperties": false,
       "properties": {
         "alias": {
+          "description": "Optional output column name.",
           "type": "string"
         },
         "field": {
+          "description": "Date or timestamp field ID.",
           "type": "string"
         },
         "grain": {
+          "description": "Calendar grain used to group the time field.",
+          "enum": [
+            "day",
+            "week",
+            "month",
+            "quarter",
+            "year"
+          ],
           "type": "string"
         }
       },
@@ -172,12 +209,112 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_semantic_model.js
   "properties": {
     "columns": {
       "items": {
+        "additionalProperties": false,
+        "properties": {
+          "dataType": {
+            "enum": [
+              "boolean",
+              "int64",
+              "decimal",
+              "float64",
+              "string",
+              "date",
+              "timestamp",
+              "json"
+            ],
+            "type": "string"
+          },
+          "fieldRef": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "workspaceId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "workspaceId"
+            ],
+            "type": "object"
+          },
+          "format": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "nullable": {
+            "type": "boolean"
+          },
+          "unit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataType",
+          "name",
+          "nullable"
+        ],
         "type": "object"
       },
       "type": "array"
     },
-    "count": {
-      "type": "integer"
+    "completeness": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "returnedRows": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "hasMore",
+        "returnedRows"
+      ],
+      "type": "object"
+    },
+    "freshness": {
+      "additionalProperties": false,
+      "properties": {
+        "lastSuccessfulRefreshAt": {
+          "type": "string"
+        },
+        "servingStateId": {
+          "type": "string"
+        },
+        "snapshotId": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "lastSuccessfulRefreshAt",
+        "servingStateId",
+        "snapshotId",
+        "source",
+        "status"
+      ],
+      "type": "object"
     },
     "hasMore": {
       "type": "boolean"
@@ -185,21 +322,27 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_semantic_model.js
     "nextCursor": {
       "type": "string"
     },
+    "queryId": {
+      "type": "string"
+    },
     "rows": {
       "items": {
-        "items": {
-          "type": "string"
-        },
+        "items": {},
         "type": "array"
       },
       "type": "array"
+    },
+    "servingSnapshot": {
+      "type": "string"
     }
   },
   "required": [
     "columns",
-    "count",
+    "completeness",
     "hasMore",
-    "rows"
+    "queryId",
+    "rows",
+    "servingSnapshot"
   ],
   "type": "object"
 }

@@ -7,12 +7,14 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/analytics/arrowquery"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	analyticsresource "github.com/Yacobolo/leapview/internal/analytics/resource"
+	"github.com/Yacobolo/leapview/internal/api"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/workload"
@@ -90,6 +92,66 @@ func TestSemanticQueryResponseUsesTypedColumnsAndPrecisionSafePositionalRows(t *
 	}
 	if string(encoded) == "" || response.QueryID != "query-1" || response.ServingSnapshot != "state-1" {
 		t.Fatalf("response = %s %#v", encoded, response)
+	}
+}
+
+func TestSemanticQueryResponsePreservesNullAndEmptyStringAsDistinctCells(t *testing.T) {
+	response := semanticQueryResponse([]string{"nullable_value", "empty_value"}, reportdef.QueryRows{{
+		"nullable_value": nil,
+		"empty_value":    "",
+	}}, 100, 0, "query-1", "state-1")
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("marshal response: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"rows":[[null,""]]`) {
+		t.Fatalf("null and empty string collapsed in response: %s", encoded)
+	}
+}
+
+func TestSemanticQueryColumnsUseModelMetadataInsteadOfPageValues(t *testing.T) {
+	nullable := false
+	model := &semanticmodel.Model{
+		Tables: map[string]semanticmodel.Table{
+			"orders": {
+				Schema: semanticmodel.TableSchema{Columns: []semanticmodel.ColumnSchema{{Name: "created_at", Nullable: &nullable}}},
+				Dimensions: map[string]semanticmodel.MetricDimension{
+					"created_at": {Label: "Created at", Type: "timestamp"},
+				},
+			},
+		},
+		Measures: map[string]semanticmodel.MetricMeasure{
+			"order_count": {
+				Label: "Orders", Fact: "orders", Aggregation: "count", Empty: "zero",
+				Unit: "orders", Format: "integer",
+			},
+		},
+		Metrics: map[string]semanticmodel.Metric{
+			"return_rate": {Label: "Return rate", Unit: "percent", Format: "percent_1"},
+		},
+	}
+	columns := semanticQueryColumns(
+		"sales", "commerce", model,
+		[]api.QueryColumn{
+			{Name: "created", Type: "string", Nullable: true},
+			{Name: "order_count", Type: "string", Nullable: true},
+			{Name: "return_rate", Type: "string", Nullable: true},
+		},
+		[]reportdef.QueryField{{Field: "orders.created_at", Alias: "created"}},
+		[]reportdef.QueryField{{Field: "order_count"}, {Field: "return_rate"}},
+		nil,
+	)
+	if columns[0].Type != "timestamp" || columns[0].Nullable ||
+		columns[0].FieldRef == nil || columns[0].FieldRef.ID != "commerce.orders.created_at" {
+		t.Fatalf("dimension column = %#v", columns[0])
+	}
+	if columns[1].Type != "int64" || columns[1].Nullable || columns[1].Kind != "measure" ||
+		columns[1].Unit != "orders" || columns[1].Format != "integer" {
+		t.Fatalf("measure column = %#v", columns[1])
+	}
+	if columns[2].Type != "decimal" || !columns[2].Nullable || columns[2].Kind != "metric" ||
+		columns[2].Unit != "percent" || columns[2].Format != "percent_1" {
+		t.Fatalf("metric column = %#v", columns[2])
 	}
 }
 
