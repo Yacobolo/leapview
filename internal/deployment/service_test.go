@@ -107,7 +107,11 @@ func TestActivateIsIdempotentAfterSuccess(t *testing.T) {
 
 func mustService(t *testing.T, repo Repository, states ServingStateRepository, runtime Runtime, resolver ManagedDataResolver) *Service {
 	t.Helper()
-	service, err := New(repo, states, runtime, resolver)
+	activation, ok := repo.(ActivationUnitOfWork)
+	if !ok {
+		t.Fatal("test repository does not implement deployment activation")
+	}
+	service, err := New(repo, activation, states, runtime, resolver)
 	if err != nil {
 		t.Fatal(err)
 	}

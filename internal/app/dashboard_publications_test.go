@@ -93,14 +93,14 @@ func TestPublicationDeploymentRequiresManagementPrivilege(t *testing.T) {
 	targets := []apiadapter.TargetRequest{{Workspace: "test", CandidateID: string(created.ID)}}
 
 	viewer := testPrincipal(t, ctx, store, "viewer-publication@example.com", "Viewer", "viewer")
-	if err := server.deploymentModule.AuthorizePublicationDeployment(ctx, viewer.ID, "prod", targets); !errors.Is(err, errPublicationDeploymentForbidden) {
+	if err := server.routes.deploymentModule.AuthorizePublicationDeployment(ctx, viewer.ID, "prod", targets); !errors.Is(err, errPublicationDeploymentForbidden) {
 		t.Fatalf("viewer authorization error = %v", err)
 	}
 	owner := testPrincipal(t, ctx, store, "owner-publication@example.com", "Owner", "owner")
-	if err := server.deploymentModule.AuthorizePublicationDeployment(ctx, owner.ID, "prod", targets); err != nil {
+	if err := server.routes.deploymentModule.AuthorizePublicationDeployment(ctx, owner.ID, "prod", targets); err != nil {
 		t.Fatalf("owner authorization: %v", err)
 	}
-	if err := server.deploymentModule.AuthorizePublicationDeployment(ctx, viewer.ID, "dev", targets); err != nil {
+	if err := server.routes.deploymentModule.AuthorizePublicationDeployment(ctx, viewer.ID, "dev", targets); err != nil {
 		t.Fatalf("development deployment authorization = %v, want publication check skipped", err)
 	}
 }
@@ -232,7 +232,7 @@ func TestPublicCommandsRequireMatchingLiveStreamAndSuspensionCancelsIt(t *testin
 	store := testStore(t)
 	seedActivePublication(t, store, "opaque-public-id-12345678901234")
 	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{DefaultWorkspaceID: "test-workspace"}))
-	resolved, err := server.dashboardModule.ResolvePublicDashboard(context.Background(), "opaque-public-id-12345678901234")
+	resolved, err := server.routes.dashboardModule.ResolvePublicDashboard(context.Background(), "opaque-public-id-12345678901234")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,18 +245,18 @@ func TestPublicCommandsRequireMatchingLiveStreamAndSuspensionCancelsIt(t *testin
 		t.Fatal(err)
 	}
 	defer unregister()
-	guard := server.dashboardModule.PublicDashboardHTTP(resolved).CommandGuard
+	guard := server.routes.dashboardModule.PublicDashboardHTTP(resolved).CommandGuard
 	request := command.Request{DashboardID: resolved.Publication.Dashboard, ModelID: resolved.ModelID, PageID: pageID}
 	signals := dashboard.Signals{Runtime: dashboard.Runtime{ClientID: clientID, StreamInstanceID: instanceID}}
 	if err := guard(httptest.NewRequest(http.MethodPost, "/", nil), resolved.Metrics, request, signals); err != nil {
 		t.Fatalf("matching stream rejected: %v", err)
 	}
 	secondServer := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{DefaultWorkspaceID: "test-workspace"}))
-	secondResolved, err := secondServer.dashboardModule.ResolvePublicDashboard(context.Background(), "opaque-public-id-12345678901234")
+	secondResolved, err := secondServer.routes.dashboardModule.ResolvePublicDashboard(context.Background(), "opaque-public-id-12345678901234")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := secondServer.dashboardModule.PublicDashboardHTTP(secondResolved).CommandGuard(httptest.NewRequest(http.MethodPost, "/", nil), secondResolved.Metrics, request, signals); err != nil {
+	if err := secondServer.routes.dashboardModule.PublicDashboardHTTP(secondResolved).CommandGuard(httptest.NewRequest(http.MethodPost, "/", nil), secondResolved.Metrics, request, signals); err != nil {
 		t.Fatalf("matching stream was rejected by a second replica: %v", err)
 	}
 	signals.Runtime.StreamInstanceID = "other-stream"

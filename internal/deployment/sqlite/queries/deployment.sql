@@ -19,6 +19,36 @@ VALUES (?, ?, ?, ?, ?);
 -- name: GetProjectDeployment :one
 SELECT * FROM project_deployments WHERE id = ?;
 
+-- These serving-state statements belong to the deployment activation unit of
+-- work. They deliberately live with the consuming workflow so deployment does
+-- not import serving-state generated queries while retaining one atomic SQLite
+-- transaction.
+
+-- name: GetServingState :one
+SELECT * FROM serving_states WHERE id = ?;
+
+-- name: MarkOtherServingStatesDraining :exec
+UPDATE serving_states
+SET status = 'draining',
+    superseded_at = CURRENT_TIMESTAMP,
+    error = ''
+WHERE workspace_id = ?
+  AND environment = ?
+  AND id <> ?
+  AND status = 'active';
+
+-- name: MarkServingStateActive :exec
+UPDATE serving_states
+SET status = 'active', activated_at = CURRENT_TIMESTAMP, error = ''
+WHERE id = ?;
+
+-- name: SetActiveServingState :exec
+INSERT INTO workspace_active_serving_states (workspace_id, environment, serving_state_id, updated_at)
+VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+ON CONFLICT(workspace_id, environment) DO UPDATE SET
+  serving_state_id = excluded.serving_state_id,
+  updated_at = CURRENT_TIMESTAMP;
+
 -- name: PersistPublishSemanticModelDataVersions :exec
 INSERT INTO semantic_model_data_versions (
   workspace_id, environment, semantic_model_id, snapshot_id, serving_state_id, refreshed_at, source, pipeline_id, run_id

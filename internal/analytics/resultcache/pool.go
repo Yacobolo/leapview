@@ -55,6 +55,11 @@ func (l Limits) Validate() error {
 type ScopeID struct{ WorkspaceID, RuntimeID string }
 type Token uint64
 
+// ScopeProvider is the cache capability required by runtime consumers.
+type ScopeProvider interface {
+	OpenScope(ScopeID) (*Scope, error)
+}
+
 type Pool struct {
 	mu           sync.Mutex
 	limits       Limits

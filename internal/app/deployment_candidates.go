@@ -20,8 +20,8 @@ type servingStateRepository interface {
 }
 
 func (s *applicationAssembly) servingStateRepository(inputs moduleAssemblyInputs) (servingStateRepository, error) {
-	if inputs.servingStateRepo != nil {
-		return inputs.servingStateRepo, nil
+	if inputs.persistence.servingStateRepo != nil {
+		return inputs.persistence.servingStateRepo, nil
 	}
 	return nil, fmt.Errorf("serving state repository is not configured")
 }
@@ -31,7 +31,7 @@ func (s *applicationAssembly) workspaceID(value string) string {
 }
 
 func (s *applicationAssembly) defaultServingEnvironment() servingstatemodule.Environment {
-	return servingstatemodule.NormalizeEnvironment(servingstatemodule.Environment(s.defaultEnvironment))
+	return servingstatemodule.NormalizeEnvironment(servingstatemodule.Environment(s.policy.defaultEnvironment))
 }
 
 func (s *applicationAssembly) requestServingEnvironment(r *http.Request) servingstatemodule.Environment {

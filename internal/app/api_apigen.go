@@ -17,7 +17,7 @@ import (
 )
 
 func (s *applicationAssembly) registerAPIGenRoutes(r chi.Router) {
-	apigenapi.RegisterAPIGenRoutes(r, apiGenRouteHandler{handler: s.apiGenHandler})
+	apigenapi.RegisterAPIGenRoutes(r, apiGenRouteHandler{handler: s.platform.apiGenHandler})
 }
 
 type apiGenOperationHandler interface {

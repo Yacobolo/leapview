@@ -1307,7 +1307,7 @@ func TestTableWindowCommandAcceptsDatastarSignals(t *testing.T) {
 
 func TestTableWindowCommandDoesNotPublishCanceledQueries(t *testing.T) {
 	server := newApplicationAssembly(canceledTableMetrics{})
-	updates, unsubscribe := server.broker.Subscribe("test-client:executive-sales:overview")
+	updates, unsubscribe := server.runtime.broker.Subscribe("test-client:executive-sales:overview")
 	defer unsubscribe()
 
 	body := strings.NewReader(`{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"overview"},"visualWindowCommand":{"visual":"order_rows","block":"all","start":400,"count":50,"requestSeq":42}}`)

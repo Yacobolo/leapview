@@ -18,7 +18,7 @@ func TestDevelopmentPageStreamTraceEndpointReturnsSanitizedEvents(t *testing.T) 
 	server := assembleRuntime(fakeMetrics{}, assemblyConfig{
 		Logger: slog.New(slog.NewJSONHandler(&logs, nil)),
 	})
-	server.broker.PublishEnvelope("trace:test", pagestream.Envelope{
+	server.runtime.broker.PublishEnvelope("trace:test", pagestream.Envelope{
 		Signals: pagestream.SignalPatch{"status": "ready", "token": "private"},
 		Trace:   pagestream.TraceMetadata{Origin: "test.publisher"},
 	})
@@ -58,12 +58,12 @@ func TestProductionOmitsPageStreamTraceEndpoint(t *testing.T) {
 func TestDevelopmentPageStreamSignalsEndpointReturnsStateAndSelectedHistory(t *testing.T) {
 	t.Setenv("LEAPVIEW_PRODUCTION", "")
 	server := newApplicationAssembly(fakeMetrics{})
-	server.pageStreamTrace.Record(pagestream.TraceRecord{
+	server.runtime.pageStreamTrace.Record(pagestream.TraceRecord{
 		StreamID: "trace:test", Stage: pagestream.TraceStageDelivered,
 		Signals:    pagestream.SignalPatch{"status": map[string]any{"progressPercent": 0}},
 		Generation: 7, Origin: "dashboard.refresh", CorrelationID: "refresh-7",
 	})
-	server.pageStreamTrace.Record(pagestream.TraceRecord{
+	server.runtime.pageStreamTrace.Record(pagestream.TraceRecord{
 		StreamID: "trace:test", Stage: pagestream.TraceStageDelivered,
 		Signals:    pagestream.SignalPatch{"status": map[string]any{"progressPercent": 50}},
 		Generation: 7, Origin: "dashboard.refresh", CorrelationID: "refresh-7",

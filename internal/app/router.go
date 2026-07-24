@@ -20,91 +20,91 @@ import (
 
 func (s *applicationAssembly) Routes() http.Handler {
 	mux := chi.NewRouter()
-	if s.requestLogging {
-		mux.Use(apihttpmiddleware.RequestLogger(s.logger))
+	if s.policy.requestLogging {
+		mux.Use(apihttpmiddleware.RequestLogger(s.platform.logger))
 	}
-	mux.Use(s.telemetry.Middleware)
-	mux.Use(apihttpmiddleware.PanicRecovery(s.logger))
-	mux.Use(apihttpmiddleware.SecurityHeadersMiddleware(s.securityHeaders))
-	mux.Use(apihttpmiddleware.AllowedHosts(s.allowedHosts))
-	mux.Use(apihttpmiddleware.RequestBodyLimit(s.requestBodyLimit))
+	mux.Use(s.platform.telemetry.Middleware)
+	mux.Use(apihttpmiddleware.PanicRecovery(s.platform.logger))
+	mux.Use(apihttpmiddleware.SecurityHeadersMiddleware(s.policy.securityHeaders))
+	mux.Use(apihttpmiddleware.AllowedHosts(s.policy.allowedHosts))
+	mux.Use(apihttpmiddleware.RequestBodyLimit(s.policy.requestBodyLimit))
 	mux.Get("/favicon.ico", favicon)
-	mux.Get("/healthz", s.health.Healthz)
-	mux.Get("/readyz", s.health.Readyz)
+	mux.Get("/healthz", s.platform.health.Healthz)
+	mux.Get("/readyz", s.platform.health.Readyz)
 	mux.Get("/api/openapi.json", s.openAPIDescription)
 	mux.Get("/api/docs", s.publicDocs)
 	mux.Group(func(r chi.Router) {
-		r.Use(s.rateLimits.PublicPage(func() { s.telemetry.PublicRateLimitObserved("page") }))
-		s.dashboardModule.MountPublicDocuments(r)
+		r.Use(s.policy.rateLimits.PublicPage(func() { s.platform.telemetry.PublicRateLimitObserved("page") }))
+		s.routes.dashboardModule.MountPublicDocuments(r)
 	})
 	mux.Group(func(r chi.Router) {
-		r.Use(s.rateLimits.PublicCommand(func() { s.telemetry.PublicRateLimitObserved("command") }))
-		s.dashboardModule.MountPublicCommands(r)
+		r.Use(s.policy.rateLimits.PublicCommand(func() { s.platform.telemetry.PublicRateLimitObserved("command") }))
+		s.routes.dashboardModule.MountPublicCommands(r)
 	})
-	s.dashboardModule.MountPublicStream(mux.With(s.rateLimits.PublicStream(func() { s.telemetry.PublicRateLimitObserved("stream") })))
-	if s.pageStreamTrace != nil {
-		traceHandler := uitransport.TraceHandler{Store: s.pageStreamTrace}
+	s.routes.dashboardModule.MountPublicStream(mux.With(s.policy.rateLimits.PublicStream(func() { s.platform.telemetry.PublicRateLimitObserved("stream") })))
+	if s.runtime.pageStreamTrace != nil {
+		traceHandler := uitransport.TraceHandler{Store: s.runtime.pageStreamTrace}
 		mux.Get("/__dev/pagestream/traces", traceHandler.Traces)
 		mux.Get("/__dev/pagestream/signals", traceHandler.Signals)
 	}
-	mux.With(s.rateLimits.Auth()).Handle("/metrics", s.telemetry.MetricsHandler(s.metricsBearerToken, accessmodule.BearerToken))
-	mux.With(s.csrf).Group(s.accessModule.MountLoginPage)
+	mux.With(s.policy.rateLimits.Auth()).Handle("/metrics", s.platform.telemetry.MetricsHandler(s.policy.metricsBearerToken, accessmodule.BearerToken))
+	mux.With(s.csrf).Group(s.routes.accessModule.MountLoginPage)
 	mux.Group(func(r chi.Router) {
 		r.Use(s.csrf)
-		r.With(s.rateLimits.Updates()).Get("/updates", s.pageStreams.ServeHTTP)
-		r.Get("/", s.accessModule.ProtectViewItem(s.workspaceModule.Home))
-		s.workspaceModule.MountAuthenticated(r, workspacemodule.RouteGuard{
-			Protect: s.accessModule.Protect, ProtectWithObjects: s.accessModule.ProtectWithObjects, AssetObjectRefs: s.workspaceModule.AssetObjectRefs,
+		r.With(s.policy.rateLimits.Updates()).Get("/updates", s.runtime.pageStreams.ServeHTTP)
+		r.Get("/", s.routes.accessModule.ProtectViewItem(s.routes.workspaceModule.Home))
+		s.routes.workspaceModule.MountAuthenticated(r, workspacemodule.RouteGuard{
+			Protect: s.routes.accessModule.Protect, ProtectWithObjects: s.routes.accessModule.ProtectWithObjects, AssetObjectRefs: s.routes.workspaceModule.AssetObjectRefs,
 		})
-		s.agentModule.MountAuthenticated(r, agentmodule.RouteGuard{
-			Protect: s.accessModule.Protect, ProtectGlobal: s.accessModule.ProtectGlobal,
+		s.routes.agentModule.MountAuthenticated(r, agentmodule.RouteGuard{
+			Protect: s.routes.accessModule.Protect, ProtectGlobal: s.routes.accessModule.ProtectGlobal,
 		})
 		r.Get("/chat", redirectLegacyChat)
 		r.Get("/chat/updates", http.NotFound)
 		r.Get("/chat/*", redirectLegacyChat)
 		r.Post("/chat/turns", redirectLegacyChat)
-		s.adminModule.MountAuthenticated(r, adminmodule.RouteGuard{
-			Protect: s.accessModule.Protect, ProtectGlobal: s.accessModule.ProtectGlobal,
-			ProtectAnyWorkspace: s.accessModule.ProtectAnyWorkspace,
+		s.routes.adminModule.MountAuthenticated(r, adminmodule.RouteGuard{
+			Protect: s.routes.accessModule.Protect, ProtectGlobal: s.routes.accessModule.ProtectGlobal,
+			ProtectAnyWorkspace: s.routes.accessModule.ProtectAnyWorkspace,
 		})
-		s.dashboardModule.MountAuthenticated(r, dashboardmodule.RouteGuard{
-			Protect: s.accessModule.Protect, ProtectWithObjects: s.accessModule.ProtectWithObjects,
+		s.routes.dashboardModule.MountAuthenticated(r, dashboardmodule.RouteGuard{
+			Protect: s.routes.accessModule.Protect, ProtectWithObjects: s.routes.accessModule.ProtectWithObjects,
 		})
-		s.accessModule.MountAuthenticatedBrowser(r)
+		s.routes.accessModule.MountAuthenticatedBrowser(r)
 	})
 	mux.Group(func(r chi.Router) {
-		r.Use(s.rateLimits.Auth())
+		r.Use(s.policy.rateLimits.Auth())
 		r.Use(s.csrf)
-		s.accessModule.MountLocalLogin(r)
+		s.routes.accessModule.MountLocalLogin(r)
 	})
 	mux.Group(func(r chi.Router) {
-		r.Use(s.rateLimits.Auth())
-		s.accessModule.MountOAuthEndpoints(r)
+		r.Use(s.policy.rateLimits.Auth())
+		s.routes.accessModule.MountOAuthEndpoints(r)
 	})
-	s.accessModule.MountOAuthMetadata(mux)
-	if s.persistenceConfigured {
-		if s.auth != nil {
-			mux.With(s.rateLimits.API()).Handle("/mcp", s.agentModule.MCPHandler())
+	s.routes.accessModule.MountOAuthMetadata(mux)
+	if s.runtime.persistenceConfigured {
+		if s.platform.auth != nil {
+			mux.With(s.policy.rateLimits.API()).Handle("/mcp", s.routes.agentModule.MCPHandler())
 		}
-		if strings.TrimSpace(s.scimBearerToken) != "" {
-			if handler, err := s.accessModule.SCIMHandler(s.scimBearerToken); err == nil {
-				scimHandler := s.rateLimits.API()(http.StripPrefix("/scim", handler))
+		if strings.TrimSpace(s.policy.scimBearerToken) != "" {
+			if handler, err := s.routes.accessModule.SCIMHandler(s.policy.scimBearerToken); err == nil {
+				scimHandler := s.policy.rateLimits.API()(http.StripPrefix("/scim", handler))
 				mux.Handle("/scim/*", scimHandler)
 			}
 		}
 		mux.Group(func(r chi.Router) {
-			r.Use(s.rateLimits.API())
+			r.Use(s.policy.rateLimits.API())
 			r.Use(s.publicProtocolMiddleware)
-			if s.managedDataTus != nil {
-				tus := s.accessModule.ProtectIngestData(s.managedDataTus)
+			if s.policy.managedDataTus != nil {
+				tus := s.routes.accessModule.ProtectIngestData(s.policy.managedDataTus)
 				r.Handle("/upload-protocols/tus", tus)
 				r.Handle("/upload-protocols/tus/*", tus)
 			}
 			s.registerAPIGenRoutes(r)
 		})
 	}
-	if s.dashboardAssets != nil {
-		mux.Handle("/map-assets/*", s.dashboardAssets.Handler())
+	if s.routes.dashboardAssets != nil {
+		mux.Handle("/map-assets/*", s.routes.dashboardAssets.Handler())
 	}
 	mux.Handle("/static/*", staticAssetCache(http.StripPrefix("/static/", http.FileServer(http.Dir("static")))))
 	mux.NotFound(func(w http.ResponseWriter, r *http.Request) {
@@ -119,7 +119,7 @@ func (s *applicationAssembly) Routes() http.Handler {
 	mux.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
 		setAllowedMethods(w.Header(), mux, registeredMethods, r.URL.Path)
 		if isPublicAPIPath(r.URL.Path) {
-			if s.apiProtocol.Authenticate(w, r) {
+			if s.platform.apiProtocol.Authenticate(w, r) {
 				apitransport.WriteProblem(w, r, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "The requested method is not supported for this API route", nil)
 			}
 			return
@@ -167,27 +167,27 @@ func redirectLegacyChat(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *applicationAssembly) protectGlobalAgent(privilege accessmodule.Privilege, next http.Handler) http.Handler {
-	return s.accessModule.ProtectGlobal(privilege, next.ServeHTTP)
+	return s.routes.accessModule.ProtectGlobal(privilege, next.ServeHTTP)
 }
 
 func (s *applicationAssembly) protectAnyWorkspace(privilege accessmodule.Privilege, next http.Handler) http.Handler {
-	return s.accessModule.ProtectAnyWorkspace(privilege, next.ServeHTTP)
+	return s.routes.accessModule.ProtectAnyWorkspace(privilege, next.ServeHTTP)
 }
 
 func (s *applicationAssembly) protect(privilege accessmodule.Privilege, next http.Handler) http.Handler {
-	return s.accessModule.ProtectHandler(privilege, next)
+	return s.routes.accessModule.ProtectHandler(privilege, next)
 }
 
 func (s *applicationAssembly) protectGlobal(privilege accessmodule.Privilege, next http.Handler) http.Handler {
-	return s.accessModule.ProtectGlobal(privilege, next.ServeHTTP)
+	return s.routes.accessModule.ProtectGlobal(privilege, next.ServeHTTP)
 }
 
 func (s *applicationAssembly) protectWithObjects(privilege accessmodule.Privilege, objectResolver accessmodule.ObjectResolver, next http.Handler) http.Handler {
-	return s.accessModule.ProtectHandlerWithObjects(privilege, objectResolver, next)
+	return s.routes.accessModule.ProtectHandlerWithObjects(privilege, objectResolver, next)
 }
 
 func (s *applicationAssembly) csrf(next http.Handler) http.Handler {
-	return s.accessModule.CSRFMiddleware(next)
+	return s.routes.accessModule.CSRFMiddleware(next)
 }
 
 func staticAssetCache(next http.Handler) http.Handler {

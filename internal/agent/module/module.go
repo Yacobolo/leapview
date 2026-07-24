@@ -46,7 +46,6 @@ type Service = agent.Service
 
 type Config struct {
 	Database                 *sql.DB
-	Metrics                  any
 	Model                    ModelConfig
 	Service                  *agent.Service
 	Jobs                     JobStore
@@ -122,7 +121,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	}
 	service := config.Service
 	if service == nil && config.Database != nil {
-		service = agent.NewService(config.Metrics, newRepository(config.Database), agent.Config{
+		service = agent.NewService(newRepository(config.Database), agent.Config{
 			APIKey: config.Model.APIKey, BaseURL: config.Model.BaseURL, Model: config.Model.Model,
 		})
 	}

@@ -17,7 +17,7 @@ import (
 // contract; UI and operational routes are deliberately enumerated here.
 func TestRouteInventory(t *testing.T) {
 	server := assembleRuntime(fakeMetrics{}, assemblyConfig{})
-	server.persistenceConfigured = true
+	server.runtime.persistenceConfigured = true
 	routes, ok := server.Routes().(chi.Routes)
 	if !ok {
 		t.Fatal("application handler does not expose chi routes")

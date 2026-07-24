@@ -14,47 +14,47 @@ import (
 func (s *applicationAssembly) workspaceRefreshSupport() refreshmodule.WorkspaceSupport {
 	support := refreshmodule.WorkspaceSupport{
 		Runs: func() (refreshmodule.RunReader, error) {
-			if s.refreshModule == nil {
+			if s.routes.refreshModule == nil {
 				return nil, fmt.Errorf("refresh module is required")
 			}
-			return s.refreshModule, nil
+			return s.routes.refreshModule, nil
 		},
 		QueuePipeline: func(ctx context.Context, input refreshmodule.QueuePipelineInput) (refreshmodule.QueueAssetResult, error) {
-			if s.refreshModule == nil {
+			if s.routes.refreshModule == nil {
 				return refreshmodule.QueueAssetResult{}, fmt.Errorf("refresh module is required")
 			}
-			return s.refreshModule.QueuePipelineRefresh(ctx, input)
+			return s.routes.refreshModule.QueuePipelineRefresh(ctx, input)
 		},
 		Environment: func(r *http.Request) servingstatemodule.Environment {
 			return s.requestServingEnvironment(r)
 		},
 		PrincipalID: func(r *http.Request) string {
-			principal, _ := s.accessModule.CurrentPrincipal(r)
+			principal, _ := s.routes.accessModule.CurrentPrincipal(r)
 			return principal.ID
 		},
 		DispatchQueued: func() {
-			if s.refreshModule != nil {
-				s.refreshModule.Dispatch(context.Background())
+			if s.routes.refreshModule != nil {
+				s.routes.refreshModule.Dispatch(context.Background())
 			}
 		},
-		Broker: s.broker,
+		Broker: s.runtime.broker,
 		AssetCatalog: func(ctx context.Context, workspaceID string) ([]workspacemodule.AssetView, []workspacemodule.AssetEdgeView, bool) {
-			assets, edges, err := s.workspaceModule.WorkspaceAssetsAndEdgesForData(ctx, workspaceID, string(s.defaultServingEnvironment()))
+			assets, edges, err := s.routes.workspaceModule.WorkspaceAssetsAndEdgesForData(ctx, workspaceID, string(s.defaultServingEnvironment()))
 			if err != nil || (len(assets) == 0 && len(edges) == 0) {
 				return nil, nil, false
 			}
 			return assets, edges, true
 		},
 		WorkspaceView: func(r *http.Request, workspaceID string) workspacemodule.WorkspaceView {
-			return s.workspaceModule.WorkspaceResponse(r, workspaceID)
+			return s.routes.workspaceModule.WorkspaceResponse(r, workspaceID)
 		},
 		WorkspaceViewContext: func(ctx context.Context, workspaceID string) workspacemodule.WorkspaceView {
-			return s.workspaceModule.WorkspaceViewContext(ctx, workspaceID)
+			return s.routes.workspaceModule.WorkspaceViewContext(ctx, workspaceID)
 		},
 		Presentation: workspacemodule.RefreshPresentation{},
 	}
-	if s.persistenceConfigured {
-		support.DataVersions = s.refreshModule
+	if s.runtime.persistenceConfigured {
+		support.DataVersions = s.routes.refreshModule
 	}
 	return support
 }
@@ -68,23 +68,23 @@ func (s *applicationAssembly) workspaceRefreshService(inputs moduleAssemblyInput
 		return refreshmodule.Service{}, fmt.Errorf("serving state repository is required")
 	}
 	hooks := []refreshmodule.CandidateValidationHook{}
-	if inputs.managedDataValidation != nil {
-		hooks = append(hooks, inputs.managedDataValidation)
+	if inputs.workflow.managedDataValidation != nil {
+		hooks = append(hooks, inputs.workflow.managedDataValidation)
 	}
 	return refreshmodule.Service{
 		ServingStates: repo,
-		Runtime:       inputs.reloader,
+		Runtime:       inputs.workflow.reloader,
 		Publisher: refreshmodule.Publisher{
 			Workspace: s.workspaceRefreshSupport,
 			SemanticModelVersion: func(ctx context.Context, workspaceID, environment, modelID string) {
 				refreshedAt := ""
-				if s.refreshModule != nil {
-					if version, ok, err := s.refreshModule.DataVersion(ctx, workspaceID, environment, modelID); err == nil && ok {
+				if s.routes.refreshModule != nil {
+					if version, ok, err := s.routes.refreshModule.DataVersion(ctx, workspaceID, environment, modelID); err == nil && ok {
 						refreshedAt = version.RefreshedAt.Format(time.RFC3339)
 					}
 				}
-				if s.dashboardModule != nil {
-					s.dashboardModule.PublishSemanticModelRefresh(workspaceID, environment, modelID, refreshedAt)
+				if s.routes.dashboardModule != nil {
+					s.routes.dashboardModule.PublishSemanticModelRefresh(workspaceID, environment, modelID, refreshedAt)
 				}
 			},
 		},

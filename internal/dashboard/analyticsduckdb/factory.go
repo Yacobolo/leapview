@@ -10,17 +10,17 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/analytics/arrowquery"
 	analyticsduckdb "github.com/Yacobolo/leapview/internal/analytics/duckdb"
-	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
 	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
+	analyticsruntime "github.com/Yacobolo/leapview/internal/analytics/runtime"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	dashboardruntime "github.com/Yacobolo/leapview/internal/dashboard/runtime"
 	"github.com/Yacobolo/leapview/internal/dataquery"
 )
 
 type Options struct {
-	Database            *analyticsducklake.Environment
+	Database            analyticsruntime.WorkspaceDatabase
 	CredentialResolver  analyticsduckdb.CredentialResolver
-	CachePool           *resultcache.Pool
+	CachePool           resultcache.ScopeProvider
 	ResultLimits        dataquery.ResultLimits
 	SnapshotID          int64
 	ServingStateID      string

@@ -88,7 +88,7 @@ func TestAgentToolAuthorizationRecordsAuditEvent(t *testing.T) {
 	}
 	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{DefaultWorkspaceID: "test"}))
 	ctx = dataquery.WithMetadata(ctx, dataquery.Metadata{RequestID: "tool_call_1", CorrelationID: "agent_corr"})
-	_, ok := server.agentModule.VisualToolProvider().Authorize(
+	_, ok := server.routes.agentModule.VisualToolProvider().Authorize(
 		ctx,
 		agentmodule.ToolsScope(agentcap.Scope{WorkspaceID: "test", PrincipalID: principal.ID}),
 		agenttools.VisualAuthorizationRequest{Model: "sales", Dataset: "orders", ToolName: "create_visual"},

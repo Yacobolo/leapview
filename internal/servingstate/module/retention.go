@@ -3,12 +3,16 @@ package module
 import (
 	"context"
 	"fmt"
+	"time"
 
 	storagemaintenance "github.com/Yacobolo/leapview/internal/storage/maintenance"
 	"github.com/Yacobolo/leapview/internal/workload"
 )
 
-type RetentionRepository = storagemaintenance.ServingStateRepository
+type RetentionRepository interface {
+	ReconcileRetention(context.Context, string, time.Time) error
+	ReferencedDuckLakeSnapshots(context.Context, string) ([]int64, error)
+}
 
 type RetentionConfig struct {
 	States             RetentionRepository

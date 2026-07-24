@@ -41,7 +41,7 @@ type WorkspaceProvisioner interface {
 }
 
 func Build(_ context.Context, config Config) (*Module, error) {
-	releases, catalog, deployments, err := releaseStores(config.Database)
+	releases, finalization, catalog, deployments, err := releaseStores(config.Database)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +52,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	}
 	validator := validate.NewService(config.States, store, releasefilesystem.Validator{}, hooks...)
 	service, err := release.NewService(release.ServiceOptions{
-		Releases: releases, States: config.States, Workspaces: config.Workspaces,
+		Releases: releases, Finalization: finalization, States: config.States, Workspaces: config.Workspaces,
 		Artifacts: store, Validator: validator, Pins: config.ManagedDataPins, Environment: config.Environment,
 	})
 	if err != nil {
@@ -64,12 +64,12 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	}, nil
 }
 
-func releaseStores(database *sql.DB) (release.Repository, release.CatalogRepository, release.DeploymentLinkage, error) {
+func releaseStores(database *sql.DB) (release.Repository, release.FinalizationUnitOfWork, release.CatalogRepository, release.DeploymentLinkage, error) {
 	if database == nil {
-		return nil, nil, nil, errors.New("release database is required")
+		return nil, nil, nil, nil, errors.New("release database is required")
 	}
 	owned := releasesqlite.NewRepository(database)
-	return owned, owned, owned, nil
+	return owned, owned, owned, owned, nil
 }
 
 func (m *Module) DeploymentLinkage() release.DeploymentLinkage {

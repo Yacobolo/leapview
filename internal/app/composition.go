@@ -45,7 +45,7 @@ func assemble(ctx context.Context, cfg config.Config) (http.Handler, Lifecycle, 
 		return nil, nil, nil, err
 	}
 	handler := runtime.Routes()
-	lifecycle := newRuntimeLifecycle(runtime.workers, runtime.analyticsModule, runtime.workloads)
+	lifecycle := newRuntimeLifecycle(runtime.platform.workers, runtime.runtime.analyticsModule, runtime.runtime.workloads)
 	return handler, lifecycle, cleanup, nil
 }
 
@@ -264,17 +264,17 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	rateLimits.Enabled = production && cfg.RateLimitingEnabled()
 	rateLimits.UseRealIP = cfg.RateLimitingUsesRealIP()
 	server, err := buildApplicationAssembly(ctx, runtimeMetrics, assemblyInputs{
-		dataAssemblyInputs: dataAssemblyInputs{
+		data: dataAssemblyInputs{
 			Database: store.SQLDB(), PlatformHealth: store, AdminDatabase: store.SQLDB(),
 			ServingStateRepo: servingStateRepo, StorageRetention: retention,
 			WorkspaceDirectory: workspaceDirectory,
 		},
-		capabilityAssemblyInputs: capabilityAssemblyInputs{
+		capabilities: capabilityAssemblyInputs{
 			AnalyticsModule: analyticsModule, DashboardAssets: dashboardAssets,
 			ReleaseModule: releaseModule, JobModule: jobModule,
 			AccessModule: accessModule, ManagedDataModule: managedDataModule,
 		},
-		workflowAssemblyInputs: workflowAssemblyInputs{
+		workflow: workflowAssemblyInputs{
 			AgentSettings: store,
 			AgentConfig:   agentmodule.ModelConfig{APIKey: cfg.AgentAPIKey, BaseURL: cfg.AgentBaseURL, Model: cfg.AgentModel},
 			Auth:          auth, Reloader: runtimeHostModule, Workload: workloadController,
@@ -282,12 +282,12 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 			ManagedDataResolver:   managedDataResolver,
 			DeploymentConfig:      deploymentConfig,
 		},
-		runtimeAssemblyInputs: runtimeAssemblyInputs{
+		runtime: runtimeAssemblyInputs{
 			DuckLakeCatalogPath: duckLakeCatalogPath, DuckLakeDataPath: cfg.DuckLakeDataDir(),
 			DefaultEnvironment: string(environment), SCIMBearerToken: cfg.SCIMBearerToken,
 			MetricsBearerToken: cfg.MetricsBearerToken, AllowedHosts: allowedHosts,
 		},
-		httpAssemblyInputs: httpAssemblyInputs{
+		http: httpAssemblyInputs{
 			PublicURL:       firstConfigured(cfg.PublicURL, configuredListenURL(cfg.ListenAddr())),
 			RateLimits:      rateLimits,
 			SecurityHeaders: apihttpmiddleware.SecurityHeaders(production && cfg.HSTSEnabled(cookieSecure)),

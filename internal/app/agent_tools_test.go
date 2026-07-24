@@ -23,7 +23,7 @@ import (
 )
 
 func agentAPIGenToolsForTest(server *applicationAssembly, scope agentcap.Scope) []agentcore.ToolDefinition {
-	return server.agentModule.APIGenToolProvider().Definitions(agentmodule.ToolsScope(scope))
+	return server.routes.agentModule.APIGenToolProvider().Definitions(agentmodule.ToolsScope(scope))
 }
 
 func agentVisualToolsForTest(server *applicationAssembly, scope agentcap.Scope) []agentcore.ToolDefinition {
@@ -35,7 +35,7 @@ func runAgentVisualToolForTest(server *applicationAssembly, ctx context.Context,
 }
 
 func agentVisualToolProviderForTest(server *applicationAssembly) agenttools.VisualProvider {
-	return server.agentModule.VisualToolProvider()
+	return server.routes.agentModule.VisualToolProvider()
 }
 
 func TestAPIGenAgentToolsExposeTaggedReadOperationsOnly(t *testing.T) {

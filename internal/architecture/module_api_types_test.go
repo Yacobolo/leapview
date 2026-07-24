@@ -93,6 +93,9 @@ func checkModuleMethodResults(t *testing.T, pkg *packages.Package) {
 func forbiddenModuleConfigType(modulePackage string, typ types.Type) string {
 	for typ != nil {
 		switch value := typ.(type) {
+		case *types.Alias:
+			typ = types.Unalias(value)
+			continue
 		case *types.Pointer:
 			typ = value.Elem()
 			continue
@@ -111,6 +114,9 @@ func forbiddenModuleConfigType(modulePackage string, typ types.Type) string {
 			}
 			return ""
 		case *types.Interface:
+			if value.NumMethods() == 0 && value.NumEmbeddeds() == 0 {
+				return "opaque any values are not capability contracts"
+			}
 			for index := 0; index < value.NumEmbeddeds(); index++ {
 				if reason := forbiddenModuleConfigType(modulePackage, value.EmbeddedType(index)); reason != "" {
 					return reason

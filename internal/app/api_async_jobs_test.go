@@ -12,7 +12,7 @@ import (
 func TestBackgroundLifecycleReclaimsPersistedAPIJobs(t *testing.T) {
 	store := testStore(t)
 	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{JobLeaseTimeout: time.Second}))
-	repo := server.asyncJobs
+	repo := server.platform.asyncJobs
 	if repo == nil {
 		t.Fatal("async job repository is required")
 	}

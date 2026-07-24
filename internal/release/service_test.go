@@ -18,7 +18,8 @@ func TestValidateFinalizationRequiresEveryArtifactToMatchReleaseConnectionPins(t
 	}}
 	pins := &serviceTestPinValidator{err: pinErr}
 	service := &Service{
-		releases: repo,
+		releases:     repo,
+		finalization: repo,
 		validator: serviceTestArtifactValidator{state: servingstate.State{
 			ID: "state-1", ProjectID: "project-a", ProjectDigest: "sha256:project", Digest: "sha256:artifact",
 		}},
@@ -93,4 +94,5 @@ func (v *serviceTestPinValidator) ValidateServingStatePins(_ context.Context, st
 
 // Compile-time guards keep the service fakes aligned with the real interfaces.
 var _ Repository = (*serviceTestReleaseRepository)(nil)
+var _ FinalizationUnitOfWork = (*serviceTestReleaseRepository)(nil)
 var _ ArtifactValidator = serviceTestArtifactValidator{}

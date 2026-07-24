@@ -44,10 +44,10 @@ type QueryMetrics = dashboardmodule.Metrics
 type workspaceMetrics = dashboardmodule.WorkspaceMetrics
 
 type applicationAssembly struct {
-	capabilityRoutes
-	runtimeServices
-	platformServices
-	httpPolicy
+	routes   capabilityRoutes
+	runtime  runtimeServices
+	platform platformServices
+	policy   httpPolicy
 }
 
 type capabilityRoutes struct {
@@ -103,9 +103,9 @@ type httpPolicy struct {
 }
 
 type moduleAssemblyInputs struct {
-	persistenceInputs
-	workflowInputs
-	storageInputs
+	persistence persistenceInputs
+	workflow    workflowInputs
+	storage     storageInputs
 }
 
 type persistenceInputs struct {
@@ -146,22 +146,22 @@ func newHTTPAssembly(metrics QueryMetrics) *applicationAssembly {
 		})
 	}
 	server := &applicationAssembly{
-		runtimeServices: runtimeServices{
+		runtime: runtimeServices{
 			metrics: metrics, broker: pagestream.NewBroker(pagestream.WithTraceStore(trace)),
 			pageStreamTrace: trace,
 		},
-		platformServices: platformServices{telemetry: observability.New(), logger: logger},
-		httpPolicy:       httpPolicy{requestBodyLimit: apihttpmiddleware.DefaultRequestBodyLimitConfig()},
+		platform: platformServices{telemetry: observability.New(), logger: logger},
+		policy:   httpPolicy{requestBodyLimit: apihttpmiddleware.DefaultRequestBodyLimitConfig()},
 	}
 	return server
 }
 
 type assemblyInputs struct {
-	dataAssemblyInputs
-	capabilityAssemblyInputs
-	workflowAssemblyInputs
-	runtimeAssemblyInputs
-	httpAssemblyInputs
+	data         dataAssemblyInputs
+	capabilities capabilityAssemblyInputs
+	workflow     workflowAssemblyInputs
+	runtime      runtimeAssemblyInputs
+	http         httpAssemblyInputs
 }
 
 type dataAssemblyInputs struct {
@@ -239,22 +239,22 @@ type workloadControl interface {
 }
 
 func (s *applicationAssembly) AnalyticalFatal() <-chan struct{} {
-	if s == nil || s.analyticsModule == nil {
+	if s == nil || s.runtime.analyticsModule == nil {
 		return nil
 	}
-	return s.analyticsModule.Fatal()
+	return s.runtime.analyticsModule.Fatal()
 }
 
 func (s *applicationAssembly) AnalyticalHealth() error {
-	if s == nil || s.analyticsModule == nil {
+	if s == nil || s.runtime.analyticsModule == nil {
 		return nil
 	}
-	return s.analyticsModule.Healthy()
+	return s.runtime.analyticsModule.Healthy()
 }
 
 func (s *applicationAssembly) StopWorkloadAdmission() {
-	if s != nil && s.workloads != nil {
-		s.workloads.Close()
+	if s != nil && s.runtime.workloads != nil {
+		s.runtime.workloads.Close()
 	}
 }
 
@@ -263,10 +263,10 @@ func buildApplicationAssembly(ctx context.Context, metrics QueryMetrics, options
 		ctx = context.Background()
 	}
 	telemetry := observability.New()
-	if options.AnalyticsModule != nil {
-		telemetry.Register(options.AnalyticsModule.Collector())
+	if options.capabilities.AnalyticsModule != nil {
+		telemetry.Register(options.capabilities.AnalyticsModule.Collector())
 	}
-	controller := options.Workload
+	controller := options.workflow.Workload
 	ownsController := false
 	workloadTelemetry := workloadmodule.NewTelemetryObserver(telemetry)
 	if controller == nil {
@@ -288,21 +288,21 @@ func buildApplicationAssembly(ctx context.Context, metrics QueryMetrics, options
 		return nil, err
 	}
 	if metrics != nil {
-		metrics = dashboardmodule.WithAdmission(metrics, controller, options.DefaultWorkspaceID)
+		metrics = dashboardmodule.WithAdmission(metrics, controller, options.runtime.DefaultWorkspaceID)
 	}
-	dataAccessRepo := options.AccessRepo
-	workspaceReadModel := options.WorkspaceReadModel
+	dataAccessRepo := options.data.AccessRepo
+	workspaceReadModel := options.data.WorkspaceReadModel
 	var dataAuthorization accessmodule.DataAuthorizationService = dataAccessRepo
-	if options.AccessModule != nil {
-		dataAuthorization = options.AccessModule.DataAuthorizationService()
+	if options.capabilities.AccessModule != nil {
+		dataAuthorization = options.capabilities.AccessModule.DataAuthorizationService()
 	}
-	if metrics != nil && dataAuthorization != nil && (options.AccessRepo != nil || options.Auth != nil || options.AccessModule != nil) {
+	if metrics != nil && dataAuthorization != nil && (options.data.AccessRepo != nil || options.workflow.Auth != nil || options.capabilities.AccessModule != nil) {
 		metrics = dashboardmodule.WithQueryAuthorization(metrics, dashboardmodule.QueryAuthorizationConfig{
 			Repository:         dataAuthorization,
-			DefaultWorkspaceID: options.DefaultWorkspaceID,
+			DefaultWorkspaceID: options.runtime.DefaultWorkspaceID,
 			PrincipalFromContext: func(ctx context.Context) (dashboardmodule.QueryPrincipal, bool) {
 				principal, ok := accessmodule.PrincipalFromContext(ctx)
-				return dashboardmodule.QueryPrincipal{ID: principal.ID, DevBypass: principal.DevBypass || options.Auth == nil}, ok
+				return dashboardmodule.QueryPrincipal{ID: principal.ID, DevBypass: principal.DevBypass || options.workflow.Auth == nil}, ok
 			},
 			CredentialFromContext: accessmodule.APICredentialFromContext,
 			TokenAllows:           accessmodule.TokenAllows,
@@ -311,147 +311,147 @@ func buildApplicationAssembly(ctx context.Context, metrics QueryMetrics, options
 	var queryAuditProvider adminmodule.QueryAuditReaderProvider
 	var queryAuditRecorder dashboardmodule.QueryAuditRecorder
 	var queryAuditEvents http.HandlerFunc
-	if options.QueryAudit != nil {
-		queryAuditProvider = adminmodule.QueryAuditReaderProvider(options.QueryAudit.Provider())
-		queryAuditRecorder = options.QueryAudit.Recorder()
-		queryAuditEvents = options.QueryAudit.Events(func(value string) string { return value })
+	if options.workflow.QueryAudit != nil {
+		queryAuditProvider = adminmodule.QueryAuditReaderProvider(options.workflow.QueryAudit.Provider())
+		queryAuditRecorder = options.workflow.QueryAudit.Recorder()
+		queryAuditEvents = options.workflow.QueryAudit.Events(func(value string) string { return value })
 	}
-	if options.AnalyticsModule != nil {
-		if options.AnalyticsModule.QueryAuditReader() != nil {
-			queryAuditProvider = adminmodule.QueryAuditReaderProvider(options.AnalyticsModule.QueryAuditProvider())
+	if options.capabilities.AnalyticsModule != nil {
+		if options.capabilities.AnalyticsModule.QueryAuditReader() != nil {
+			queryAuditProvider = adminmodule.QueryAuditReaderProvider(options.capabilities.AnalyticsModule.QueryAuditProvider())
 		}
-		if options.AnalyticsModule.QueryAuditRecorder() != nil {
-			queryAuditRecorder = options.AnalyticsModule.QueryAuditRecorder()
+		if options.capabilities.AnalyticsModule.QueryAuditRecorder() != nil {
+			queryAuditRecorder = options.capabilities.AnalyticsModule.QueryAuditRecorder()
 		}
 	}
 	if metrics != nil && queryAuditRecorder != nil {
-		metrics = dashboardmodule.WithQueryAudit(metrics, queryAuditRecorder, options.DefaultWorkspaceID, func(ctx context.Context) (string, bool) {
+		metrics = dashboardmodule.WithQueryAudit(metrics, queryAuditRecorder, options.runtime.DefaultWorkspaceID, func(ctx context.Context) (string, bool) {
 			principal, ok := accessmodule.PrincipalFromContext(ctx)
 			return principal.ID, ok
 		})
 	}
-	servingStateRepo := options.ServingStateRepo
+	servingStateRepo := options.data.ServingStateRepo
 	server := newHTTPAssembly(metrics)
 	inputs := moduleAssemblyInputs{}
-	server.queryAuditEvents = queryAuditEvents
-	if server.queryAuditEvents == nil {
-		server.queryAuditEvents = analyticsmodule.NewQueryAuditEvents(nil, server.workspaceID)
+	server.runtime.queryAuditEvents = queryAuditEvents
+	if server.runtime.queryAuditEvents == nil {
+		server.runtime.queryAuditEvents = analyticsmodule.NewQueryAuditEvents(nil, server.workspaceID)
 	}
-	if options.AnalyticsModule != nil && options.AnalyticsModule.QueryAuditReader() != nil {
-		server.queryAuditEvents = options.AnalyticsModule.QueryAuditEvents(server.workspaceID)
+	if options.capabilities.AnalyticsModule != nil && options.capabilities.AnalyticsModule.QueryAuditReader() != nil {
+		server.runtime.queryAuditEvents = options.capabilities.AnalyticsModule.QueryAuditEvents(server.workspaceID)
 	}
-	server.telemetry = telemetry
-	inputs.refreshPipelineClock = options.RefreshPipelineClock
-	server.queryAuditProvider = queryAuditProvider
-	if inputs.refreshPipelineClock == nil {
-		inputs.refreshPipelineClock = refreshmodule.NewRealClock()
+	server.platform.telemetry = telemetry
+	inputs.workflow.refreshPipelineClock = options.workflow.RefreshPipelineClock
+	server.runtime.queryAuditProvider = queryAuditProvider
+	if inputs.workflow.refreshPipelineClock == nil {
+		inputs.workflow.refreshPipelineClock = refreshmodule.NewRealClock()
 	}
-	server.workloads = controller
-	server.persistenceConfigured = options.Database != nil
-	server.platformHealth = options.PlatformHealth
-	inputs.agentSettings = options.AgentSettings
-	inputs.adminDatabase = options.AdminDatabase
-	if options.Database != nil {
-		server.jobModule = options.JobModule
-		if server.jobModule == nil {
+	server.runtime.workloads = controller
+	server.runtime.persistenceConfigured = options.data.Database != nil
+	server.runtime.platformHealth = options.data.PlatformHealth
+	inputs.persistence.agentSettings = options.workflow.AgentSettings
+	inputs.persistence.adminDatabase = options.data.AdminDatabase
+	if options.data.Database != nil {
+		server.platform.jobModule = options.capabilities.JobModule
+		if server.platform.jobModule == nil {
 			var err error
-			server.jobModule, err = jobsmodule.Build(ctx, jobsmodule.Config{
-				Database: options.Database, Admission: server.workloads,
-				LeaseTimeout: options.JobLeaseTimeout, Logger: options.Logger,
+			server.platform.jobModule, err = jobsmodule.Build(ctx, jobsmodule.Config{
+				Database: options.data.Database, Admission: server.runtime.workloads,
+				LeaseTimeout: options.http.JobLeaseTimeout, Logger: options.http.Logger,
 			})
 			if err != nil {
 				return fail(fmt.Errorf("build platform jobs module: %w", err))
 			}
 		}
-		server.asyncJobs = server.jobModule
-		if err := server.configureAPIProtocol(ctx, options.Database); err != nil {
+		server.platform.asyncJobs = server.platform.jobModule
+		if err := server.configureAPIProtocol(ctx, options.data.Database); err != nil {
 			return fail(fmt.Errorf("build API protocol: %w", err))
 		}
 	}
-	if server.apiProtocol == nil {
+	if server.platform.apiProtocol == nil {
 		if err := server.configureAPIProtocol(ctx, nil); err != nil {
 			return fail(fmt.Errorf("build API protocol: %w", err))
 		}
 	}
-	inputs.servingStateRepo = servingStateRepo
+	inputs.persistence.servingStateRepo = servingStateRepo
 	retentionStates, _ := servingStateRepo.(servingstatemodule.RetentionRepository)
-	server.storageRetention = options.StorageRetention
-	if server.storageRetention == nil {
-		server.storageRetention = servingstatemodule.NewRetention(servingstatemodule.RetentionConfig{
-			States: retentionStates, Snapshots: options.AnalyticsModule.RetentionSnapshots(),
-			Admission: controller, Environment: options.DefaultEnvironment,
-			CatalogPath: options.DuckLakeCatalogPath, DataPath: options.DuckLakeDataPath,
+	server.runtime.storageRetention = options.data.StorageRetention
+	if server.runtime.storageRetention == nil {
+		server.runtime.storageRetention = servingstatemodule.NewRetention(servingstatemodule.RetentionConfig{
+			States: retentionStates, Snapshots: options.capabilities.AnalyticsModule.RetentionSnapshots(),
+			Admission: controller, Environment: options.runtime.DefaultEnvironment,
+			CatalogPath: options.runtime.DuckLakeCatalogPath, DataPath: options.runtime.DuckLakeDataPath,
 			ProtectedSnapshots: func() []int64 {
-				if provider, ok := options.Reloader.(interface{ LeasedSnapshots() []int64 }); ok {
+				if provider, ok := options.workflow.Reloader.(interface{ LeasedSnapshots() []int64 }); ok {
 					return provider.LeasedSnapshots()
 				}
 				return nil
 			},
 		})
 	}
-	inputs.managedDataValidation = options.ManagedDataValidation
-	inputs.managedDataResolver = options.ManagedDataResolver
-	server.analyticsModule = options.AnalyticsModule
-	server.dashboardAssets = options.DashboardAssets
-	inputs.workspaceReadModel = workspaceReadModel
-	inputs.workspaceDirectory = options.WorkspaceDirectory
-	inputs.workspaceAssetCatalog = options.AssetCatalog
-	server.releaseModule = options.ReleaseModule
-	inputs.accessRepo = options.AccessRepo
-	inputs.agent = options.Agent
-	inputs.agentConfig = options.AgentConfig
-	server.auth = options.Auth
-	server.accessModule = options.AccessModule
-	inputs.reloader = options.Reloader
-	inputs.duckLakeCatalogPath = options.DuckLakeCatalogPath
-	inputs.duckLakeDataPath = options.DuckLakeDataPath
-	server.defaultWorkspaceID = options.DefaultWorkspaceID
-	server.defaultEnvironment = string(servingstatemodule.NormalizeEnvironment(servingstatemodule.Environment(options.DefaultEnvironment)))
-	inputs.publicURL = strings.TrimSuffix(strings.TrimSpace(options.PublicURL), "/")
-	server.scimBearerToken = options.SCIMBearerToken
-	server.metricsBearerToken = options.MetricsBearerToken
-	server.allowedHosts = append([]string(nil), options.AllowedHosts...)
-	server.rateLimits = options.RateLimits
-	server.securityHeaders = options.SecurityHeaders
-	server.requestBodyLimit = options.RequestBodyLimit
-	if !server.requestBodyLimit.Enabled && server.requestBodyLimit.MaxBytes == 0 {
-		server.requestBodyLimit = apihttpmiddleware.DefaultRequestBodyLimitConfig()
+	inputs.workflow.managedDataValidation = options.workflow.ManagedDataValidation
+	inputs.workflow.managedDataResolver = options.workflow.ManagedDataResolver
+	server.runtime.analyticsModule = options.capabilities.AnalyticsModule
+	server.routes.dashboardAssets = options.capabilities.DashboardAssets
+	inputs.persistence.workspaceReadModel = workspaceReadModel
+	inputs.persistence.workspaceDirectory = options.data.WorkspaceDirectory
+	inputs.persistence.workspaceAssetCatalog = options.data.AssetCatalog
+	server.routes.releaseModule = options.capabilities.ReleaseModule
+	inputs.persistence.accessRepo = options.data.AccessRepo
+	inputs.workflow.agent = options.capabilities.Agent
+	inputs.workflow.agentConfig = options.workflow.AgentConfig
+	server.platform.auth = options.workflow.Auth
+	server.routes.accessModule = options.capabilities.AccessModule
+	inputs.workflow.reloader = options.workflow.Reloader
+	inputs.storage.duckLakeCatalogPath = options.runtime.DuckLakeCatalogPath
+	inputs.storage.duckLakeDataPath = options.runtime.DuckLakeDataPath
+	server.policy.defaultWorkspaceID = options.runtime.DefaultWorkspaceID
+	server.policy.defaultEnvironment = string(servingstatemodule.NormalizeEnvironment(servingstatemodule.Environment(options.runtime.DefaultEnvironment)))
+	inputs.storage.publicURL = strings.TrimSuffix(strings.TrimSpace(options.http.PublicURL), "/")
+	server.policy.scimBearerToken = options.runtime.SCIMBearerToken
+	server.policy.metricsBearerToken = options.runtime.MetricsBearerToken
+	server.policy.allowedHosts = append([]string(nil), options.runtime.AllowedHosts...)
+	server.policy.rateLimits = options.http.RateLimits
+	server.policy.securityHeaders = options.http.SecurityHeaders
+	server.policy.requestBodyLimit = options.http.RequestBodyLimit
+	if !server.policy.requestBodyLimit.Enabled && server.policy.requestBodyLimit.MaxBytes == 0 {
+		server.policy.requestBodyLimit = apihttpmiddleware.DefaultRequestBodyLimitConfig()
 	}
-	server.requestLogging = options.RequestLogging
-	server.managedDataModule = options.ManagedDataModule
-	inputs.deploymentConfig = options.DeploymentConfig
-	server.managedDataTus = options.ManagedDataTus
-	inputs.jobLeaseTimeout = options.JobLeaseTimeout
-	if inputs.jobLeaseTimeout <= 0 {
-		inputs.jobLeaseTimeout = 2 * time.Minute
+	server.policy.requestLogging = options.http.RequestLogging
+	server.routes.managedDataModule = options.capabilities.ManagedDataModule
+	inputs.workflow.deploymentConfig = options.workflow.DeploymentConfig
+	server.policy.managedDataTus = options.http.ManagedDataTus
+	inputs.storage.jobLeaseTimeout = options.http.JobLeaseTimeout
+	if inputs.storage.jobLeaseTimeout <= 0 {
+		inputs.storage.jobLeaseTimeout = 2 * time.Minute
 	}
-	if options.Logger != nil {
-		server.logger = options.Logger
-		if server.pageStreamTrace != nil {
-			server.pageStreamTrace.SetLogger(options.Logger)
+	if options.http.Logger != nil {
+		server.platform.logger = options.http.Logger
+		if server.runtime.pageStreamTrace != nil {
+			server.runtime.pageStreamTrace.SetLogger(options.http.Logger)
 		}
 	}
-	if err := server.configureRefreshModule(ctx, options.Database, inputs); err != nil {
+	if err := server.configureRefreshModule(ctx, options.data.Database, inputs); err != nil {
 		return fail(err)
 	}
-	if err := server.configureModules(ctx, options.Database, inputs); err != nil {
+	if err := server.configureModules(ctx, options.data.Database, inputs); err != nil {
 		return fail(err)
 	}
-	if server.asyncJobs != nil {
+	if server.platform.asyncJobs != nil {
 		handlers := make([]jobs.Handler, 0, 4)
-		if server.releaseModule != nil {
-			handlers = append(handlers, server.releaseModule.JobHandlers(server.asyncJobs)...)
+		if server.routes.releaseModule != nil {
+			handlers = append(handlers, server.routes.releaseModule.JobHandlers(server.platform.asyncJobs)...)
 		}
-		if server.deploymentModule != nil {
-			handlers = append(handlers, server.deploymentModule.JobHandlers()...)
+		if server.routes.deploymentModule != nil {
+			handlers = append(handlers, server.routes.deploymentModule.JobHandlers()...)
 		}
-		if server.managedDataModule != nil && server.managedDataModule.HasFinalizeJobs() {
-			handlers = append(handlers, server.managedDataModule.JobHandlers(server.asyncJobs)...)
+		if server.routes.managedDataModule != nil && server.routes.managedDataModule.HasFinalizeJobs() {
+			handlers = append(handlers, server.routes.managedDataModule.JobHandlers(server.platform.asyncJobs)...)
 		}
-		if server.agentModule != nil {
-			handlers = append(handlers, server.agentModule.JobHandlers(server.asyncJobs)...)
+		if server.routes.agentModule != nil {
+			handlers = append(handlers, server.routes.agentModule.JobHandlers(server.platform.asyncJobs)...)
 		}
-		if err := server.jobModule.RegisterHandlers(handlers); err != nil {
+		if err := server.platform.jobModule.RegisterHandlers(handlers); err != nil {
 			return fail(fmt.Errorf("register async job handlers: %w", err))
 		}
 	}
@@ -466,13 +466,13 @@ func (s *applicationAssembly) configureModules(ctx context.Context, database *sq
 		ctx = context.Background()
 	}
 	var apiDispatcher *apiGenDispatcher
-	if s.accessModule == nil {
+	if s.routes.accessModule == nil {
 		var err error
-		s.accessModule, err = accessmodule.Build(ctx, accessmodule.Config{
-			Database: database, ExistingAuth: s.auth, WorkspaceID: s.defaultWorkspaceID,
+		s.routes.accessModule, err = accessmodule.Build(ctx, accessmodule.Config{
+			Database: database, ExistingAuth: s.platform.auth, WorkspaceID: s.policy.defaultWorkspaceID,
 			WorkspaceIDs: func(ctx context.Context) ([]string, error) {
-				if inputs.workspaceDirectory != nil {
-					return inputs.workspaceDirectory.WorkspaceIDs(ctx)
+				if inputs.persistence.workspaceDirectory != nil {
+					return inputs.persistence.workspaceDirectory.WorkspaceIDs(ctx)
 				}
 				repository, err := s.workspaceReadModel(inputs)
 				if err != nil || repository == nil {
@@ -493,89 +493,89 @@ func (s *applicationAssembly) configureModules(ctx context.Context, database *sq
 			return fmt.Errorf("build access module: %w", err)
 		}
 	}
-	if s.workspaceModule == nil {
+	if s.routes.workspaceModule == nil {
 		refreshSupport := s.workspaceRefreshSupport()
 		var err error
-		s.workspaceModule, err = workspacemodule.Build(ctx, workspacemodule.Config{
+		s.routes.workspaceModule, err = workspacemodule.Build(ctx, workspacemodule.Config{
 			Database:            database,
-			Directory:           inputs.workspaceDirectory,
-			ReadModel:           inputs.workspaceReadModel,
-			AccessService:       s.accessModule.WorkspaceAccessService(),
-			AssetCatalog:        inputs.workspaceAssetCatalog,
+			Directory:           inputs.persistence.workspaceDirectory,
+			ReadModel:           inputs.persistence.workspaceReadModel,
+			AccessService:       s.routes.accessModule.WorkspaceAccessService(),
+			AssetCatalog:        inputs.persistence.workspaceAssetCatalog,
 			WorkspaceID:         s.workspaceID,
 			Environment:         func(r *http.Request) string { return string(s.requestServingEnvironment(r)) },
 			MetricsForWorkspace: s.metricsForWorkspace,
-			RootMetrics:         s.metrics,
+			RootMetrics:         s.runtime.metrics,
 			CurrentPrincipal: func(r *http.Request) (workspacemodule.Principal, bool) {
-				principal, ok := s.accessModule.CurrentPrincipal(r)
+				principal, ok := s.routes.accessModule.CurrentPrincipal(r)
 				return workspacemodule.Principal{
 					ID: principal.ID, Email: principal.Email,
 					DisplayName: principal.DisplayName, DevBypass: principal.DevBypass,
 				}, ok
 			},
-			AuthConfigured:     s.auth != nil,
-			RuntimeEnvironment: s.defaultEnvironment,
-			DefaultWorkspaceID: s.defaultWorkspaceID,
+			AuthConfigured:     s.platform.auth != nil,
+			RuntimeEnvironment: s.policy.defaultEnvironment,
+			DefaultWorkspaceID: s.policy.defaultWorkspaceID,
 			RefreshState:       refreshSupport,
 			RefreshRunner: workspacemodule.AssetRefreshFunc(func(ctx context.Context, input workspacemodule.AssetRefreshInput) error {
 				return refreshSupport.RefreshAsset(ctx, input.Request, input.WorkspaceID, input.Asset, input.Assets, input.Edges)
 			}),
-			Broker:           s.broker,
-			CSRFToken:        s.accessModule.CSRFToken,
-			CurrentRoleLabel: s.accessModule.CurrentRoleLabel,
+			Broker:           s.runtime.broker,
+			CSRFToken:        s.routes.accessModule.CSRFToken,
+			CurrentRoleLabel: s.routes.accessModule.CurrentRoleLabel,
 			ChromeOptions: func(r *http.Request) []ui.ChromeOption {
-				return []ui.ChromeOption{s.agentModule.ChromeOption(r)}
+				return []ui.ChromeOption{s.routes.agentModule.ChromeOption(r)}
 			},
 			CurrentCredential: func(r *http.Request) (accessmodule.APICredential, bool) {
 				return accessmodule.APICredentialFromContext(r.Context())
 			},
-			AuthorizeObject: s.accessModule.AuthorizeObject,
+			AuthorizeObject: s.routes.accessModule.AuthorizeObject,
 		})
 		if err != nil {
 			return fmt.Errorf("build workspace module: %w", err)
 		}
-		inputs.workspaceAssetCatalog = nil
+		inputs.persistence.workspaceAssetCatalog = nil
 	}
-	if s.deploymentModule == nil {
-		config := inputs.deploymentConfig
-		config.Logger = s.logger
-		config.InstanceEnvironment = s.defaultEnvironment
+	if s.routes.deploymentModule == nil {
+		config := inputs.workflow.deploymentConfig
+		config.Logger = s.platform.logger
+		config.InstanceEnvironment = s.policy.defaultEnvironment
 		config.CurrentPrincipal = func(r *http.Request) (deploymentmodule.Principal, bool) {
-			principal, ok := s.accessModule.CurrentPrincipal(r)
+			principal, ok := s.routes.accessModule.CurrentPrincipal(r)
 			return deploymentmodule.Principal{ID: principal.ID}, ok
 		}
 		config.Jobs = deploymentmodule.JobConfig{
 			Reconcile: func(ctx context.Context) error {
-				if s.refreshModule == nil {
+				if s.routes.refreshModule == nil {
 					return nil
 				}
-				return s.refreshModule.Reconcile(ctx)
+				return s.routes.refreshModule.Reconcile(ctx)
 			},
-			Events: s.asyncJobs,
-			Logger: s.logger,
+			Events: s.platform.asyncJobs,
+			Logger: s.platform.logger,
 		}
-		config.API = deploymentmodule.APIConfig{Releases: s.releaseModule.DeploymentLinkage(), Jobs: s.asyncJobs}
+		config.API = deploymentmodule.APIConfig{Releases: s.routes.releaseModule.DeploymentLinkage(), Jobs: s.platform.asyncJobs}
 		config.PublicationAuthorization = deploymentmodule.PublicationAuthorizationConfig{
-			States: inputs.servingStateRepo, AuthorizeObject: s.accessModule.AuthorizeObject,
+			States: inputs.persistence.servingStateRepo, AuthorizeObject: s.routes.accessModule.AuthorizeObject,
 			Bypass: func(actor string) bool {
-				return (s.auth == nil || s.auth.DevBypass()) && actor == accessmodule.LocalDeveloperPrincipal().ID
+				return (s.platform.auth == nil || s.platform.auth.DevBypass()) && actor == accessmodule.LocalDeveloperPrincipal().ID
 			},
 		}
 		var err error
-		s.deploymentModule, err = deploymentmodule.Build(ctx, config)
+		s.routes.deploymentModule, err = deploymentmodule.Build(ctx, config)
 		if err != nil {
 			return fmt.Errorf("build deployment module: %w", err)
 		}
 	}
-	if s.dashboardModule == nil {
+	if s.routes.dashboardModule == nil {
 		var err error
-		s.dashboardModule, err = dashboardmodule.Build(ctx, dashboardmodule.Config{
+		s.routes.dashboardModule, err = dashboardmodule.Build(ctx, dashboardmodule.Config{
 			Database: database,
 			HTTP: dashboardmodule.HTTPConfig{
-				Metrics:             s.metrics,
+				Metrics:             s.runtime.metrics,
 				MetricsForWorkspace: s.metricsForWorkspace,
-				Admission:           s.workloadController(), Broker: s.broker, Logger: s.logger,
-				Telemetry: s.telemetry,
+				Admission:           s.workloadController(), Broker: s.runtime.broker, Logger: s.platform.logger,
+				Telemetry: s.platform.telemetry,
 				CurrentPrincipalID: func(r *http.Request) string {
 					principal, ok := accessmodule.PrincipalFromContext(r.Context())
 					if !ok {
@@ -584,25 +584,25 @@ func (s *applicationAssembly) configureModules(ctx context.Context, database *sq
 					return principal.ID
 				},
 				AuthorizeListObject: s.authorizeListObject,
-				CSRFToken:           s.accessModule.CSRFToken,
-				ChatChromeSignal:    s.agentModule.ChromeSignal,
+				CSRFToken:           s.routes.accessModule.CSRFToken,
+				ChatChromeSignal:    s.routes.agentModule.ChromeSignal,
 				Environment:         func(r *http.Request) string { return string(s.requestServingEnvironment(r)) },
 				DataRefreshedAt: func(ctx context.Context, workspaceID, environment, modelID string) string {
-					if s.refreshModule == nil {
+					if s.routes.refreshModule == nil {
 						return ""
 					}
-					version, ok, err := s.refreshModule.DataVersion(ctx, workspaceID, environment, modelID)
+					version, ok, err := s.routes.refreshModule.DataVersion(ctx, workspaceID, environment, modelID)
 					if err != nil || !ok {
 						return ""
 					}
 					return version.RefreshedAt.Format(time.RFC3339)
 				},
 				AgentBootstrap: func(r *http.Request, workspaceID string) ui.ChatViewState {
-					return s.agentModule.HTTP().DashboardBootstrap(r, workspaceID)
+					return s.routes.agentModule.HTTP().DashboardBootstrap(r, workspaceID)
 				},
 			},
 			Semantic: dashboardmodule.SemanticConfig{
-				Metrics:             s.metrics,
+				Metrics:             s.runtime.metrics,
 				MetricsForWorkspace: s.metricsForWorkspace,
 				CurrentPrincipalID: func(r *http.Request) string {
 					principal, ok := accessmodule.PrincipalFromContext(r.Context())
@@ -616,13 +616,13 @@ func (s *applicationAssembly) configureModules(ctx context.Context, database *sq
 				},
 			},
 			PublicTelemetry: dashboardmodule.PublicTelemetry{
-				DocumentObserved: s.telemetry.PublicDocumentObserved,
-				StreamStarted:    s.telemetry.PublicStreamStarted,
-				CommandObserved:  s.telemetry.PublicCommandObserved,
+				DocumentObserved: s.platform.telemetry.PublicDocumentObserved,
+				StreamStarted:    s.platform.telemetry.PublicStreamStarted,
+				CommandObserved:  s.platform.telemetry.PublicCommandObserved,
 			},
-			Logger:    s.logger,
-			Trace:     s.pageStreamTrace,
-			PublicURL: inputs.publicURL,
+			Logger:    s.platform.logger,
+			Trace:     s.runtime.pageStreamTrace,
+			PublicURL: inputs.storage.publicURL,
 			CurrentActor: func(r *http.Request) string {
 				principal, ok := accessmodule.PrincipalFromContext(r.Context())
 				if !ok {
@@ -630,37 +630,37 @@ func (s *applicationAssembly) configureModules(ctx context.Context, database *sq
 				}
 				return principal.ID
 			},
-			RuntimeMetrics: s.metrics, DefaultWorkspaceID: s.defaultWorkspaceID,
+			RuntimeMetrics: s.runtime.metrics, DefaultWorkspaceID: s.policy.defaultWorkspaceID,
 			ServingSnapshot: func(ctx context.Context, workspaceID string) (string, error) {
-				if s.workspaceModule == nil {
+				if s.routes.workspaceModule == nil {
 					return "", nil
 				}
-				return s.workspaceModule.ActiveServingStateID(ctx, s.workspaceID(workspaceID))
+				return s.routes.workspaceModule.ActiveServingStateID(ctx, s.workspaceID(workspaceID))
 			},
 		})
 		if err != nil {
 			return fmt.Errorf("build dashboard module: %w", err)
 		}
 	}
-	if s.agentModule == nil {
+	if s.routes.agentModule == nil {
 		var err error
-		s.agentModule, err = agentmodule.Build(ctx, agentmodule.Config{
-			Database: database, Metrics: s.metrics, Model: inputs.agentConfig,
-			Service: inputs.agent, Jobs: s.asyncJobs, DefaultWorkspaceID: s.defaultWorkspaceID,
+		s.routes.agentModule, err = agentmodule.Build(ctx, agentmodule.Config{
+			Database: database, Model: inputs.workflow.agentConfig,
+			Service: inputs.workflow.agent, Jobs: s.platform.asyncJobs, DefaultWorkspaceID: s.policy.defaultWorkspaceID,
 			RunWorkloadClass: string(workloadmodule.BackgroundClass), GlobalWorkspaceID: workloadmodule.GlobalWorkspace,
-			Search: s.workspaceModule,
+			Search: s.routes.workspaceModule,
 			Environment: func(r *http.Request) string {
 				return string(s.requestServingEnvironment(r))
 			},
 			DashboardMetrics:         s.metricsForWorkspace,
-			AuthorizeAnyObject:       s.accessModule.AuthorizeAnyObject,
-			SkipContextAuthorization: s.auth == nil,
-			RecordAudit:              s.accessModule.RecordAudit,
-			EnableSystemPrompt:       s.persistenceConfigured,
-			Logger:                   s.logger,
-			MCPProtect:               s.accessModule.ProtectMCP,
+			AuthorizeAnyObject:       s.routes.accessModule.AuthorizeAnyObject,
+			SkipContextAuthorization: s.platform.auth == nil,
+			RecordAudit:              s.routes.accessModule.RecordAudit,
+			EnableSystemPrompt:       s.runtime.persistenceConfigured,
+			Logger:                   s.platform.logger,
+			MCPProtect:               s.routes.accessModule.ProtectMCP,
 			MCPScope: func(r *http.Request) (agentmodule.Scope, bool) {
-				identity, ok := s.accessModule.MCPIdentity(r)
+				identity, ok := s.routes.accessModule.MCPIdentity(r)
 				if !ok {
 					return agentmodule.Scope{}, false
 				}
@@ -678,7 +678,7 @@ func (s *applicationAssembly) configureModules(ctx context.Context, database *sq
 			},
 			DispatchAPIGen: func(scope agentmodule.Scope, operationID string, request *http.Request) (*http.Response, bool) {
 				principal := accessmodule.Principal{ID: scope.PrincipalID, DevBypass: scope.DevAuthBypass}
-				if s.auth == nil {
+				if s.platform.auth == nil {
 					principal = accessmodule.LocalDeveloperPrincipal()
 				}
 				ctx := accessmodule.WithPrincipal(request.Context(), principal)
@@ -692,27 +692,27 @@ func (s *applicationAssembly) configureModules(ctx context.Context, database *sq
 				if apiDispatcher == nil {
 					return nil, false
 				}
-				if ok := apigenapi.DispatchAPIGenOperation(operationID, apiDispatcher, apiprotocol.TransportErrorResponder{Logger: s.logger}, recorder, request); !ok {
+				if ok := apigenapi.DispatchAPIGenOperation(operationID, apiDispatcher, apiprotocol.TransportErrorResponder{Logger: s.platform.logger}, recorder, request); !ok {
 					return nil, false
 				}
 				return recorder.Result(), true
 			},
 			HTTP: agentmodule.HTTPConfig{
-				Settings: inputs.agentSettings, Broker: s.broker,
-				CSRFToken:        s.accessModule.CSRFToken,
-				CurrentRoleLabel: s.accessModule.CurrentRoleLabel,
+				Settings: inputs.persistence.agentSettings, Broker: s.runtime.broker,
+				CSRFToken:        s.routes.accessModule.CSRFToken,
+				CurrentRoleLabel: s.routes.accessModule.CurrentRoleLabel,
 				CurrentPrincipal: func(r *http.Request) (agentmodule.Principal, bool) {
-					if s.auth == nil {
+					if s.platform.auth == nil {
 						return agentmodule.Principal{}, false
 					}
-					principal, ok := s.auth.Principal(r)
+					principal, ok := s.platform.auth.Principal(r)
 					return agentmodule.Principal{ID: principal.ID, DevAuthBypass: principal.DevBypass}, ok
 				},
 				CurrentCredential: func(r *http.Request) (accessmodule.APICredential, bool) {
-					if s.auth == nil {
+					if s.platform.auth == nil {
 						return accessmodule.APICredential{}, false
 					}
-					return s.auth.APICredential(r)
+					return s.platform.auth.APICredential(r)
 				},
 			},
 		})
@@ -720,74 +720,74 @@ func (s *applicationAssembly) configureModules(ctx context.Context, database *sq
 			return fmt.Errorf("build agent module: %w", err)
 		}
 	}
-	if s.refreshModule == nil {
+	if s.routes.refreshModule == nil {
 		if err := s.configureRefreshModule(ctx, nil, inputs); err != nil {
 			return err
 		}
 	}
-	if s.adminModule == nil {
+	if s.routes.adminModule == nil {
 		var accessReader adminmodule.AccessReader
-		if reader := s.accessModule.AdminReader(); reader != nil {
+		if reader := s.routes.accessModule.AdminReader(); reader != nil {
 			accessReader = reader
 		}
 		currentAdminPrincipal := func(r *http.Request) (adminmodule.Principal, bool) {
-			principal, ok := s.accessModule.CurrentPrincipal(r)
+			principal, ok := s.routes.accessModule.CurrentPrincipal(r)
 			return adminmodule.Principal{
 				ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName, DevBypass: principal.DevBypass,
 			}, ok
 		}
 		var err error
-		s.adminModule, err = adminmodule.Build(ctx, adminmodule.Config{
+		s.routes.adminModule, err = adminmodule.Build(ctx, adminmodule.Config{
 			Catalog: func() catalog.Catalog {
-				return s.metrics.Catalog()
+				return s.runtime.metrics.Catalog()
 			},
 			Access: accessReader,
 			AgentDetails: func(ctx context.Context) (api.AdminAgentResponse, error) {
-				return s.agentModule.HTTP().AdminDetails(ctx)
+				return s.routes.agentModule.HTTP().AdminDetails(ctx)
 			},
-			QueryAuditReader: s.queryAuditProvider,
-			CSRFToken:        s.accessModule.CSRFToken,
+			QueryAuditReader: s.runtime.queryAuditProvider,
+			CSRFToken:        s.routes.accessModule.CSRFToken,
 			CurrentPrincipal: currentAdminPrincipal,
 			CurrentCredential: func(r *http.Request) (accessmodule.APICredential, bool) {
-				if s.auth == nil {
+				if s.platform.auth == nil {
 					return accessmodule.APICredential{}, false
 				}
-				return s.auth.APICredential(r)
+				return s.platform.auth.APICredential(r)
 			},
-			AuthorizeAnyWorkspace: s.accessModule.AuthorizeAnyWorkspace,
-			Publications:          s.dashboardModule,
-			DefaultWorkspaceID:    s.defaultWorkspaceID,
-			AuthConfigured:        s.auth != nil,
+			AuthorizeAnyWorkspace: s.routes.accessModule.AuthorizeAnyWorkspace,
+			Publications:          s.routes.dashboardModule,
+			DefaultWorkspaceID:    s.policy.defaultWorkspaceID,
+			AuthConfigured:        s.platform.auth != nil,
 			AccessConfigured:      accessReader != nil,
 			Storage: adminmodule.StorageConfig{
-				CatalogPath: inputs.duckLakeCatalogPath, DataPath: inputs.duckLakeDataPath,
-				Environment: s.defaultEnvironment, ControlPlane: inputs.adminDatabase,
-				Analytics: s.analyticsModule.AdminResources(), Admitter: s.workloadController(),
+				CatalogPath: inputs.storage.duckLakeCatalogPath, DataPath: inputs.storage.duckLakeDataPath,
+				Environment: s.policy.defaultEnvironment, ControlPlane: inputs.persistence.adminDatabase,
+				Analytics: s.runtime.analyticsModule.AdminResources(), Admitter: s.workloadController(),
 			},
 			CurrentRoleLabel: func(r *http.Request) string {
 				principal, ok := currentAdminPrincipal(r)
-				return adminmodule.RoleLabel(s.auth != nil, principal, ok)
+				return adminmodule.RoleLabel(s.platform.auth != nil, principal, ok)
 			},
-			ChromeOption: s.agentModule.ChromeOption,
+			ChromeOption: s.routes.agentModule.ChromeOption,
 			EnsureClientID: func(w http.ResponseWriter, r *http.Request) {
 				_ = pagestream.EnsureClientID(w, r)
 			},
-			Broker: s.broker,
+			Broker: s.runtime.broker,
 		})
 		if err != nil {
 			return fmt.Errorf("build admin module: %w", err)
 		}
 	}
-	if s.managedDataModule == nil {
+	if s.routes.managedDataModule == nil {
 		var err error
-		s.managedDataModule, err = manageddatamodule.Build(ctx, manageddatamodule.Config{
+		s.routes.managedDataModule, err = manageddatamodule.Build(ctx, manageddatamodule.Config{
 			Disabled:    true,
-			Environment: s.defaultEnvironment, Jobs: s.asyncJobs,
+			Environment: s.policy.defaultEnvironment, Jobs: s.platform.asyncJobs,
 			CurrentPrincipal: func(r *http.Request) (manageddatamodule.Principal, bool) {
-				if s.auth == nil {
+				if s.platform.auth == nil {
 					return manageddatamodule.Principal{}, false
 				}
-				principal, ok := s.auth.Principal(r)
+				principal, ok := s.platform.auth.Principal(r)
 				return manageddatamodule.Principal{ID: principal.ID}, ok
 			},
 		})
@@ -795,22 +795,22 @@ func (s *applicationAssembly) configureModules(ctx context.Context, database *sq
 			return fmt.Errorf("build managed data module: %w", err)
 		}
 	}
-	objects, err := s.workspaceModule.SecurableObjects(ctx, s.defaultWorkspaceID)
+	objects, err := s.routes.workspaceModule.SecurableObjects(ctx, s.policy.defaultWorkspaceID)
 	if err != nil {
 		return fmt.Errorf("resolve workspace securables: %w", err)
 	}
-	if err := s.accessModule.RegisterSecurables(ctx, objects); err != nil {
+	if err := s.routes.accessModule.RegisterSecurables(ctx, objects); err != nil {
 		return fmt.Errorf("register workspace securables: %w", err)
 	}
 	apiDispatcher = &apiGenDispatcher{
-		accessModule: s.accessModule, agentModule: s.agentModule,
-		dashboardModule: s.dashboardModule, deploymentModule: s.deploymentModule,
-		managedDataModule: s.managedDataModule, refreshModule: s.refreshModule,
-		releaseModule: s.releaseModule, workspaceModule: s.workspaceModule,
-		defaultEnvironment: s.defaultEnvironment, managedDataTus: s.managedDataTus,
-		queryAuditEvents: s.queryAuditEvents,
+		accessModule: s.routes.accessModule, agentModule: s.routes.agentModule,
+		dashboardModule: s.routes.dashboardModule, deploymentModule: s.routes.deploymentModule,
+		managedDataModule: s.routes.managedDataModule, refreshModule: s.routes.refreshModule,
+		releaseModule: s.routes.releaseModule, workspaceModule: s.routes.workspaceModule,
+		defaultEnvironment: s.policy.defaultEnvironment, managedDataTus: s.policy.managedDataTus,
+		queryAuditEvents: s.runtime.queryAuditEvents,
 	}
-	apiGenAuthorizer, err := s.accessModule.APIGenAuthorizer(accessmodule.APIGenObjectResolvers{
+	apiGenAuthorizer, err := s.routes.accessModule.APIGenAuthorizer(accessmodule.APIGenObjectResolvers{
 		Dashboard:      dashboardmodule.DashboardObjectRefs,
 		SemanticModel:  dashboardmodule.SemanticDatasetObjectRefs,
 		WorkspaceAsset: workspacemodule.AssetObjectRefs,
@@ -818,95 +818,95 @@ func (s *applicationAssembly) configureModules(ctx context.Context, database *sq
 	if err != nil {
 		return fmt.Errorf("build APIGen authorizer: %w", err)
 	}
-	s.apiGenHandler, err = apiapigenruntime.Build(
+	s.platform.apiGenHandler, err = apiapigenruntime.Build(
 		apiGenAuthorizer,
 		apiDispatcher,
-		apiprotocol.TransportErrorResponder{Logger: s.logger},
+		apiprotocol.TransportErrorResponder{Logger: s.platform.logger},
 	)
 	if err != nil {
 		return fmt.Errorf("build APIGen transport: %w", err)
 	}
 	s.configurePageStream()
-	s.health = observability.NewHealth(observability.HealthConfig{
+	s.platform.health = observability.NewHealth(observability.HealthConfig{
 		Platform: func(ctx context.Context) error {
-			if s.platformHealth == nil {
+			if s.runtime.platformHealth == nil {
 				return errors.New("platform store is missing")
 			}
-			return s.platformHealth.Ping(ctx)
+			return s.runtime.platformHealth.Ping(ctx)
 		},
 		Analytics: func() error {
-			if s.analyticsModule == nil {
+			if s.runtime.analyticsModule == nil {
 				return nil
 			}
-			return s.analyticsModule.Healthy()
+			return s.runtime.analyticsModule.Healthy()
 		},
 		Checks: map[string]func(context.Context) error{
 			"mapAssets": func(ctx context.Context) error {
-				if s.dashboardAssets == nil {
+				if s.routes.dashboardAssets == nil {
 					return nil
 				}
-				return s.dashboardAssets.Verify(ctx)
+				return s.routes.dashboardAssets.Verify(ctx)
 			},
 		},
-		ActiveWorkspaces: s.workspaceModule.ActiveRuntimeWorkspaces,
-		RuntimeReady:     s.dashboardModule.RuntimeReady,
+		ActiveWorkspaces: s.routes.workspaceModule.ActiveRuntimeWorkspaces,
+		RuntimeReady:     s.routes.dashboardModule.RuntimeReady,
 	})
-	s.workers = platformlifecycle.New(
-		platformlifecycle.Component{Start: s.refreshModule.Start, Stop: s.refreshModule.Stop},
+	s.platform.workers = platformlifecycle.New(
+		platformlifecycle.Component{Start: s.routes.refreshModule.Start, Stop: s.routes.refreshModule.Stop},
 		platformlifecycle.Component{
-			Start: func(ctx context.Context) error { s.managedDataModule.Start(ctx); return nil },
-			Stop:  s.managedDataModule.Stop,
+			Start: func(ctx context.Context) error { s.routes.managedDataModule.Start(ctx); return nil },
+			Stop:  s.routes.managedDataModule.Stop,
 		},
-		platformlifecycle.Component{Start: s.dashboardModule.Start, Stop: s.dashboardModule.Stop},
-		platformlifecycle.Component{Start: s.jobModule.Start, Stop: s.jobModule.Stop},
+		platformlifecycle.Component{Start: s.routes.dashboardModule.Start, Stop: s.routes.dashboardModule.Stop},
+		platformlifecycle.Component{Start: s.platform.jobModule.Start, Stop: s.platform.jobModule.Stop},
 	)
 	return nil
 }
 
 func (s *applicationAssembly) StartBackgroundJobs(ctx context.Context) error {
-	if s == nil || s.workers == nil {
+	if s == nil || s.platform.workers == nil {
 		return nil
 	}
-	return s.workers.Start(ctx)
+	return s.platform.workers.Start(ctx)
 }
 
 func (s *applicationAssembly) StopBackgroundJobs(ctx context.Context) error {
-	if s == nil || s.workers == nil {
+	if s == nil || s.platform.workers == nil {
 		return nil
 	}
-	return s.workers.Stop(ctx)
+	return s.platform.workers.Stop(ctx)
 }
 
 func (s *applicationAssembly) workspaceReadModel(inputs moduleAssemblyInputs) (workspacemodule.ReadModel, error) {
-	return inputs.workspaceReadModel, nil
+	return inputs.persistence.workspaceReadModel, nil
 }
 
 func (s *applicationAssembly) authorizeListObject(ctx context.Context, principalID string, object accessmodule.ObjectRef) (bool, error) {
-	if s.auth == nil {
+	if s.platform.auth == nil {
 		return true, nil
 	}
 	if strings.TrimSpace(principalID) == "" {
 		return false, nil
 	}
-	return s.accessModule.AuthorizeObject(ctx, principalID, accessmodule.PrivilegeViewItem, object)
+	return s.routes.accessModule.AuthorizeObject(ctx, principalID, accessmodule.PrivilegeViewItem, object)
 }
 
 func (s *applicationAssembly) metricsForWorkspace(workspaceID string) (QueryMetrics, bool) {
 	if workspaceID == "" {
 		return nil, false
 	}
-	if provider, ok := s.metrics.(workspaceMetrics); ok {
+	if provider, ok := s.runtime.metrics.(workspaceMetrics); ok {
 		return provider.MetricsForWorkspace(workspaceID)
 	}
-	if s.metrics == nil {
+	if s.runtime.metrics == nil {
 		return nil, false
 	}
-	if s.defaultWorkspaceID != "" && workspaceID == s.defaultWorkspaceID {
-		return s.metrics, true
+	if s.policy.defaultWorkspaceID != "" && workspaceID == s.policy.defaultWorkspaceID {
+		return s.runtime.metrics, true
 	}
-	catalog := s.metrics.Catalog()
+	catalog := s.runtime.metrics.Catalog()
 	if catalog.Workspace.ID == "" || catalog.Workspace.ID == workspaceID {
-		return s.metrics, true
+		return s.runtime.metrics, true
 	}
 	return nil, false
 }

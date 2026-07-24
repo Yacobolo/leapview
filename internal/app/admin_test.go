@@ -106,7 +106,7 @@ func TestAdminPagesRenderReadOnlyAccessData(t *testing.T) {
 	}
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"}))
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, Agent: agent.NewService(testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"}))
 
 	cases := []struct {
 		path string
@@ -171,7 +171,7 @@ func TestAdminQueryHistoryCommandPublishesLoadMorePatch(t *testing.T) {
 	if err != nil || len(expectedNext) != 1 {
 		t.Fatalf("next page = %d, err=%v", len(expectedNext), err)
 	}
-	updates, unsubscribe := server.broker.Subscribe("admin-queries:test-client")
+	updates, unsubscribe := server.runtime.broker.Subscribe("admin-queries:test-client")
 	defer unsubscribe()
 
 	body := strings.NewReader(`{"adminQueryHistory":{"table":{"rows":[{"id":"existing","query":{"label":"select 1","expandedContent":"select 1"}}]}},"adminQueryHistoryCommand":{"action":"load_more","pageToken":"` + nextCursor + `","limit":2}}`)
@@ -226,7 +226,7 @@ func TestAdminQueryHistoryCommandPublishesFilteredResetPatch(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	updates, unsubscribe := server.broker.Subscribe("admin-queries:test-client")
+	updates, unsubscribe := server.runtime.broker.Subscribe("admin-queries:test-client")
 	defer unsubscribe()
 
 	body := strings.NewReader(`{"adminQueryHistoryCommand":{"action":"reset","limit":50,"filters":{"workspaces":["sales"],"surfaces":["api"],"statuses":["success"],"search":"orders"}}}`)
@@ -285,7 +285,7 @@ func TestAdminQueryHistoryCommandSearchesFilterMenuOptions(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	updates, unsubscribe := server.broker.Subscribe("admin-queries:test-client")
+	updates, unsubscribe := server.runtime.broker.Subscribe("admin-queries:test-client")
 	defer unsubscribe()
 
 	body := strings.NewReader(`{"adminQueryHistory":{"filterMenus":[{"id":"workspace","label":"Workspace"}]},"adminQueryHistoryCommand":{"action":"filter_search","limit":50,"filterMenu":{"menuId":"workspace","action":"search","search":"oper"}}}`)
@@ -335,7 +335,7 @@ func TestAdminQueryHistoryCommandTogglesFilterAndResetsTable(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	updates, unsubscribe := server.broker.Subscribe("admin-queries:test-client")
+	updates, unsubscribe := server.runtime.broker.Subscribe("admin-queries:test-client")
 	defer unsubscribe()
 
 	body := strings.NewReader(`{"adminQueryHistory":{"table":{"rows":[{"id":"old"}]}},"adminQueryHistoryCommand":{"action":"filter_toggle","limit":50,"filterMenu":{"menuId":"surface","action":"toggle","value":"agent","selected":[]}}}`)
@@ -405,7 +405,7 @@ func TestAdminQueryHistoryCommandPublishesDetailPatch(t *testing.T) {
 	if err != nil || len(events) != 1 {
 		t.Fatalf("query events = %d, err=%v", len(events), err)
 	}
-	updates, unsubscribe := server.broker.Subscribe("admin-queries:test-client")
+	updates, unsubscribe := server.runtime.broker.Subscribe("admin-queries:test-client")
 	defer unsubscribe()
 
 	body := strings.NewReader(`{"adminQueryHistoryCommand":{"action":"select_detail","eventId":"` + events[0].ID + `","limit":50}}`)
@@ -484,7 +484,7 @@ func TestAdminQueryHistoryUpdatesForwardsPatches(t *testing.T) {
 	}()
 
 	deadline := time.After(10 * time.Second)
-	for server.broker.SubscriberCount("admin-queries:test-client") == 0 {
+	for server.runtime.broker.SubscriberCount("admin-queries:test-client") == 0 {
 		select {
 		case <-deadline:
 			t.Fatal("timed out waiting for query history updates subscriber")
@@ -492,7 +492,7 @@ func TestAdminQueryHistoryUpdatesForwardsPatches(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
-	server.broker.Publish("admin-queries:test-client", pagestream.SignalPatch{"adminQueryHistory": map[string]any{"loadedCountLabel": "sentinel"}})
+	server.runtime.broker.Publish("admin-queries:test-client", pagestream.SignalPatch{"adminQueryHistory": map[string]any{"loadedCountLabel": "sentinel"}})
 	deadline = time.After(10 * time.Second)
 	for !strings.Contains(rec.BodyString(), "sentinel") {
 		select {
@@ -548,7 +548,7 @@ func TestAdminStorageUpdatesSubscribesWithoutInitialRescan(t *testing.T) {
 	}()
 
 	deadline := time.After(10 * time.Second)
-	for server.broker.SubscriberCount("admin-storage:test-client") == 0 {
+	for server.runtime.broker.SubscriberCount("admin-storage:test-client") == 0 {
 		select {
 		case <-deadline:
 			t.Fatal("timed out waiting for storage updates subscriber")
@@ -556,7 +556,7 @@ func TestAdminStorageUpdatesSubscribesWithoutInitialRescan(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
-	server.broker.Publish("admin-storage:test-client", pagestream.SignalPatch{"adminStorage": map[string]any{"selectedKey": "sentinel"}})
+	server.runtime.broker.Publish("admin-storage:test-client", pagestream.SignalPatch{"adminStorage": map[string]any{"selectedKey": "sentinel"}})
 	deadline = time.After(10 * time.Second)
 	for !strings.Contains(rec.BodyString(), "sentinel") {
 		select {
@@ -585,7 +585,7 @@ func TestAdminStorageSelectTablePublishesSelectedTablePatch(t *testing.T) {
 	seedAdminStorageDuckLakeAt(t, catalogPath, dataPath)
 	environment := adminStorageEnvironment(t, catalogPath, dataPath)
 	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test", DuckLakeCatalogPath: catalogPath, DuckLakeDataPath: dataPath, AnalyticsModule: analyticsmodule.NewSurface(environment, nil)}))
-	updates, unsubscribe := server.broker.Subscribe("admin-storage:test-client")
+	updates, unsubscribe := server.runtime.broker.Subscribe("admin-storage:test-client")
 	defer unsubscribe()
 
 	body := strings.NewReader(`{"adminStorageCommand":{"databaseId":"ducklake-catalog","schema":"model","table":"orders"}}`)
@@ -635,7 +635,7 @@ func TestAdminStorageReadsDuckLakeMetadata(t *testing.T) {
 	}
 	server := assembleRuntime(fakeMetrics{}, assemblyConfig{DefaultWorkspaceID: "test", DuckLakeCatalogPath: catalogPath, DuckLakeDataPath: dataPath, AnalyticsModule: analyticsmodule.NewSurface(environment, nil)})
 
-	data := server.adminModule.HTTP().ReadModel.StorageService.Data(httptest.NewRequest(http.MethodGet, "/admin/storage", nil).Context())
+	data := server.routes.adminModule.HTTP().ReadModel.StorageService.Data(httptest.NewRequest(http.MethodGet, "/admin/storage", nil).Context())
 	if data.Status != "" {
 		t.Fatalf("status = %q", data.Status)
 	}
@@ -712,7 +712,7 @@ VALUES ('test', 'prod', 'dep_prod')`, snapshotID, snapshotID); err != nil {
 		AnalyticsModule:     analyticsmodule.NewSurface(environment, nil),
 	}))
 
-	data := server.adminModule.HTTP().ReadModel.StorageService.Data(httptest.NewRequest(http.MethodGet, "/admin/storage", nil).Context())
+	data := server.routes.adminModule.HTTP().ReadModel.StorageService.Data(httptest.NewRequest(http.MethodGet, "/admin/storage", nil).Context())
 	if len(data.ServingStates) != 1 {
 		t.Fatalf("serving_states = %#v, want active serving state context", data.ServingStates)
 	}
@@ -736,7 +736,7 @@ func TestAdminStorageSelectTableRejectsInvalidCommand(t *testing.T) {
 	dataPath := filepath.Join(dir, "data")
 	seedAdminStorageDuckLakeAt(t, catalogPath, dataPath)
 	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test", DuckLakeCatalogPath: catalogPath, DuckLakeDataPath: dataPath}))
-	updates, unsubscribe := server.broker.Subscribe("admin-storage:test-client")
+	updates, unsubscribe := server.runtime.broker.Subscribe("admin-storage:test-client")
 	defer unsubscribe()
 
 	body := strings.NewReader(`{"adminStorageCommand":{"databaseId":"leapview-test.duckdb","schema":"model","table":"missing"}}`)

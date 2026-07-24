@@ -145,9 +145,7 @@ sql:
         omit_unused_structs: true
 
   - engine: "sqlite"
-    queries:
-      - "internal/deployment/sqlite/queries"
-      - "internal/servingstate/sqlite/queries/serving_state.sql"
+    queries: "internal/deployment/sqlite/queries"
     schema: "internal/platform/migrations"
     gen:
       go:
@@ -158,12 +156,7 @@ sql:
         omit_unused_structs: true
 
   - engine: "sqlite"
-    # Access-policy installation is still part of the serving-generation
-    # activation transaction. The access source remains an explicit input
-    # until that transaction moves to a module-level coordinator.
-    queries:
-      - "internal/servingstate/sqlite/queries"
-      - "internal/access/sqlite/queries/access.sql"
+    queries: "internal/servingstate/sqlite/queries"
     schema: "internal/platform/migrations"
     gen:
       go:

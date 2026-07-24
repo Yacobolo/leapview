@@ -27,7 +27,7 @@ func TestAuditedQueryMetricsRecordsSuccessWithoutRows(t *testing.T) {
 	request.ObjectID = "test:model_table:test.orders"
 	ctx = withPrincipal(ctx, Principal{ID: "principal_admin@example.test"})
 
-	if _, err := server.metrics.ExecuteDataQuery(ctx, request); err != nil {
+	if _, err := server.runtime.metrics.ExecuteDataQuery(ctx, request); err != nil {
 		t.Fatal(err)
 	}
 
@@ -76,7 +76,7 @@ func TestAuditedQueryMetricsRecordsExecutionError(t *testing.T) {
 		Limit:       1,
 	}
 
-	if _, err := server.metrics.ExecuteDataQuery(ctx, request); err == nil {
+	if _, err := server.runtime.metrics.ExecuteDataQuery(ctx, request); err == nil {
 		t.Fatal("expected query execution error")
 	}
 

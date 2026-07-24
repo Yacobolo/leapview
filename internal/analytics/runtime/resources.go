@@ -1,27 +1,42 @@
-// Package runtime defines the opaque analytical runtime resources shared with
-// consumer-owned adapters. Capability modules never expose DuckDB or cache
-// implementations through their public surface.
+// Package runtime defines typed analytical contracts shared with
+// consumer-owned adapters. Capability modules expose capabilities rather than
+// DuckDB or cache implementations.
 package runtime
 
+import (
+	"context"
+
+	analyticsmaterialize "github.com/Yacobolo/leapview/internal/analytics/materialize"
+	"github.com/Yacobolo/leapview/internal/analytics/resource"
+	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
+	"github.com/Yacobolo/leapview/internal/platform/transaction"
+)
+
+type WorkspaceDatabase interface {
+	analyticsmaterialize.Database
+	resource.SessionProvider
+	ValidateSnapshot(context.Context, int64) error
+	CommitTransaction(context.Context, string, map[string]string, func(transaction.Transaction) error) (int64, error)
+}
+
 type Resources interface {
-	analyticsRuntimeResources()
+	WorkspaceDatabase() WorkspaceDatabase
+	ResultCache() resultcache.ScopeProvider
 }
 
 type resources struct {
-	database any
-	cache    any
+	database WorkspaceDatabase
+	cache    resultcache.ScopeProvider
 }
 
-func (resources) analyticsRuntimeResources() {}
-
-func NewResources(database, cache any) Resources {
+func NewResources(database WorkspaceDatabase, cache resultcache.ScopeProvider) Resources {
 	return resources{database: database, cache: cache}
 }
 
-func Unwrap(input Resources) (database, cache any) {
-	value, ok := input.(resources)
-	if !ok {
-		return nil, nil
-	}
-	return value.database, value.cache
+func (r resources) WorkspaceDatabase() WorkspaceDatabase {
+	return r.database
+}
+
+func (r resources) ResultCache() resultcache.ScopeProvider {
+	return r.cache
 }

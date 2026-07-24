@@ -302,6 +302,41 @@ func (q *Queries) GetProjectDeployment(ctx context.Context, id string) (ProjectD
 	return i, err
 }
 
+const getServingState = `-- name: GetServingState :one
+
+SELECT id, workspace_id, status, digest, manifest_json, created_by, created_at, activated_at, error, environment, ducklake_snapshot_id, source, superseded_at, project_id, project_digest, project_workspaces_json, access_policy_json, dashboard_publications_json FROM serving_states WHERE id = ?
+`
+
+// These serving-state statements belong to the deployment activation unit of
+// work. They deliberately live with the consuming workflow so deployment does
+// not import serving-state generated queries while retaining one atomic SQLite
+// transaction.
+func (q *Queries) GetServingState(ctx context.Context, id string) (ServingState, error) {
+	row := q.db.QueryRowContext(ctx, getServingState, id)
+	var i ServingState
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Status,
+		&i.Digest,
+		&i.ManifestJson,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.ActivatedAt,
+		&i.Error,
+		&i.Environment,
+		&i.DucklakeSnapshotID,
+		&i.Source,
+		&i.SupersededAt,
+		&i.ProjectID,
+		&i.ProjectDigest,
+		&i.ProjectWorkspacesJson,
+		&i.AccessPolicyJson,
+		&i.DashboardPublicationsJson,
+	)
+	return i, err
+}
+
 const getWorkspaceActiveServingStateID = `-- name: GetWorkspaceActiveServingStateID :one
 SELECT serving_state_id
 FROM workspace_active_serving_states
@@ -428,6 +463,39 @@ func (q *Queries) ListProjectDeploymentTargets(ctx context.Context, deploymentID
 	return items, nil
 }
 
+const markOtherServingStatesDraining = `-- name: MarkOtherServingStatesDraining :exec
+UPDATE serving_states
+SET status = 'draining',
+    superseded_at = CURRENT_TIMESTAMP,
+    error = ''
+WHERE workspace_id = ?
+  AND environment = ?
+  AND id <> ?
+  AND status = 'active'
+`
+
+type MarkOtherServingStatesDrainingParams struct {
+	WorkspaceID string `json:"workspace_id"`
+	Environment string `json:"environment"`
+	ID          string `json:"id"`
+}
+
+func (q *Queries) MarkOtherServingStatesDraining(ctx context.Context, arg MarkOtherServingStatesDrainingParams) error {
+	_, err := q.db.ExecContext(ctx, markOtherServingStatesDraining, arg.WorkspaceID, arg.Environment, arg.ID)
+	return err
+}
+
+const markServingStateActive = `-- name: MarkServingStateActive :exec
+UPDATE serving_states
+SET status = 'active', activated_at = CURRENT_TIMESTAMP, error = ''
+WHERE id = ?
+`
+
+func (q *Queries) MarkServingStateActive(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, markServingStateActive, id)
+	return err
+}
+
 const persistPublishSemanticModelDataVersions = `-- name: PersistPublishSemanticModelDataVersions :exec
 INSERT INTO semantic_model_data_versions (
   workspace_id, environment, semantic_model_id, snapshot_id, serving_state_id, refreshed_at, source, pipeline_id, run_id
@@ -452,6 +520,25 @@ type PersistPublishSemanticModelDataVersionsParams struct {
 
 func (q *Queries) PersistPublishSemanticModelDataVersions(ctx context.Context, arg PersistPublishSemanticModelDataVersionsParams) error {
 	_, err := q.db.ExecContext(ctx, persistPublishSemanticModelDataVersions, arg.Environment, arg.SnapshotID, arg.TargetServingStateID)
+	return err
+}
+
+const setActiveServingState = `-- name: SetActiveServingState :exec
+INSERT INTO workspace_active_serving_states (workspace_id, environment, serving_state_id, updated_at)
+VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+ON CONFLICT(workspace_id, environment) DO UPDATE SET
+  serving_state_id = excluded.serving_state_id,
+  updated_at = CURRENT_TIMESTAMP
+`
+
+type SetActiveServingStateParams struct {
+	WorkspaceID    string `json:"workspace_id"`
+	Environment    string `json:"environment"`
+	ServingStateID string `json:"serving_state_id"`
+}
+
+func (q *Queries) SetActiveServingState(ctx context.Context, arg SetActiveServingStateParams) error {
+	_, err := q.db.ExecContext(ctx, setActiveServingState, arg.WorkspaceID, arg.Environment, arg.ServingStateID)
 	return err
 }
 

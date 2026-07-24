@@ -14,17 +14,17 @@ func TestReleaseStoresAreConstructedInsideModule(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	releases, catalog, deployments, err := releaseStores(store.SQLDB())
+	releases, finalization, catalog, deployments, err := releaseStores(store.SQLDB())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if releases == nil || catalog == nil || deployments == nil {
-		t.Fatalf("release stores = %#v, %#v, %#v", releases, catalog, deployments)
+	if releases == nil || finalization == nil || catalog == nil || deployments == nil {
+		t.Fatalf("release stores = %#v, %#v, %#v, %#v", releases, finalization, catalog, deployments)
 	}
 }
 
 func TestReleaseStoresRequireDatabase(t *testing.T) {
-	if _, _, _, err := releaseStores(nil); err == nil {
+	if _, _, _, _, err := releaseStores(nil); err == nil {
 		t.Fatal("release module accepted missing persistence")
 	}
 }

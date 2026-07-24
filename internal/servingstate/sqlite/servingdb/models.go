@@ -8,20 +8,6 @@ import (
 	"database/sql"
 )
 
-type ApiToken struct {
-	ID               string         `json:"id"`
-	PrincipalID      string         `json:"principal_id"`
-	Name             string         `json:"name"`
-	TokenFingerprint string         `json:"token_fingerprint"`
-	TokenVerifier    string         `json:"token_verifier"`
-	ExpiresAt        sql.NullString `json:"expires_at"`
-	CreatedAt        string         `json:"created_at"`
-	LastUsedAt       sql.NullString `json:"last_used_at"`
-	WorkspaceID      sql.NullString `json:"workspace_id"`
-	PrivilegesJson   string         `json:"privileges_json"`
-	RevokedAt        sql.NullString `json:"revoked_at"`
-}
-
 type Asset struct {
 	SnapshotID           string `json:"snapshot_id"`
 	LogicalAssetID       string `json:"logical_asset_id"`
@@ -47,79 +33,6 @@ type AssetEdge struct {
 	ToLogicalAssetID   string `json:"to_logical_asset_id"`
 	EdgeType           string `json:"edge_type"`
 	CreatedAt          string `json:"created_at"`
-}
-
-type AuditEvent struct {
-	ID            string         `json:"id"`
-	WorkspaceID   sql.NullString `json:"workspace_id"`
-	PrincipalID   sql.NullString `json:"principal_id"`
-	Action        string         `json:"action"`
-	TargetType    string         `json:"target_type"`
-	TargetID      string         `json:"target_id"`
-	MetadataJson  string         `json:"metadata_json"`
-	CreatedAt     string         `json:"created_at"`
-	Privilege     string         `json:"privilege"`
-	Status        string         `json:"status"`
-	RequestID     string         `json:"request_id"`
-	CorrelationID string         `json:"correlation_id"`
-}
-
-type ExternalIdentity struct {
-	ID          string `json:"id"`
-	PrincipalID string `json:"principal_id"`
-	Provider    string `json:"provider"`
-	TenantID    string `json:"tenant_id"`
-	Subject     string `json:"subject"`
-	Email       string `json:"email"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
-}
-
-type Group struct {
-	ID          string `json:"id"`
-	WorkspaceID string `json:"workspace_id"`
-	Provider    string `json:"provider"`
-	ExternalID  string `json:"external_id"`
-	Name        string `json:"name"`
-	CreatedAt   string `json:"created_at"`
-}
-
-type Principal struct {
-	ID          string         `json:"id"`
-	Email       string         `json:"email"`
-	DisplayName string         `json:"display_name"`
-	CreatedAt   string         `json:"created_at"`
-	UpdatedAt   string         `json:"updated_at"`
-	Kind        string         `json:"kind"`
-	DisabledAt  sql.NullString `json:"disabled_at"`
-}
-
-type Role struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	PrivilegesJson string `json:"privileges_json"`
-}
-
-type SecurableObject struct {
-	ID               string `json:"id"`
-	ObjectType       string `json:"object_type"`
-	WorkspaceID      string `json:"workspace_id"`
-	ParentID         string `json:"parent_id"`
-	OwnerPrincipalID string `json:"owner_principal_id"`
-	DisplayName      string `json:"display_name"`
-	CreatedAt        string `json:"created_at"`
-	UpdatedAt        string `json:"updated_at"`
-}
-
-type ServicePrincipalSecret struct {
-	ID                 string         `json:"id"`
-	ServicePrincipalID string         `json:"service_principal_id"`
-	Name               string         `json:"name"`
-	SecretFingerprint  string         `json:"secret_fingerprint"`
-	SecretVerifier     string         `json:"secret_verifier"`
-	ExpiresAt          sql.NullString `json:"expires_at"`
-	CreatedAt          string         `json:"created_at"`
-	RevokedAt          sql.NullString `json:"revoked_at"`
 }
 
 type ServingState struct {
@@ -154,15 +67,4 @@ type ServingStateArtifact struct {
 	SizeBytes      int64  `json:"size_bytes"`
 	CreatedAt      string `json:"created_at"`
 	Environment    string `json:"environment"`
-}
-
-type Session struct {
-	ID               string         `json:"id"`
-	PrincipalID      string         `json:"principal_id"`
-	TokenFingerprint string         `json:"token_fingerprint"`
-	TokenVerifier    string         `json:"token_verifier"`
-	ExpiresAt        string         `json:"expires_at"`
-	CreatedAt        string         `json:"created_at"`
-	LastSeenAt       string         `json:"last_seen_at"`
-	RevokedAt        sql.NullString `json:"revoked_at"`
 }

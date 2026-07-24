@@ -18,13 +18,13 @@ func (s *applicationAssembly) configureAPIProtocol(ctx context.Context, database
 		Database:    database,
 		BearerToken: accessmodule.BearerToken,
 		AcceptsBearer: func(r *http.Request) bool {
-			return s.auth == nil || s.auth.AcceptsPublicBearer(r)
+			return s.platform.auth == nil || s.platform.auth.AcceptsPublicBearer(r)
 		},
 		PrincipalID: func(r *http.Request) (string, bool) {
-			if s.auth == nil {
+			if s.platform.auth == nil {
 				return "", false
 			}
-			principal, _, ok := s.auth.Authenticate(r)
+			principal, _, ok := s.platform.auth.Authenticate(r)
 			return principal.ID, ok
 		},
 		CursorSnapshot: s.cursorSnapshot,
@@ -32,20 +32,20 @@ func (s *applicationAssembly) configureAPIProtocol(ctx context.Context, database
 	if err != nil {
 		return err
 	}
-	s.apiProtocol = protocol
+	s.platform.apiProtocol = protocol
 	return nil
 }
 
 func (s *applicationAssembly) publicProtocolMiddleware(next http.Handler) http.Handler {
-	return s.apiProtocol.Middleware(next)
+	return s.platform.apiProtocol.Middleware(next)
 }
 
 func (s *applicationAssembly) openAPIDescription(w http.ResponseWriter, r *http.Request) {
-	s.apiProtocol.OpenAPIDescription(w, r)
+	s.platform.apiProtocol.OpenAPIDescription(w, r)
 }
 
 func (s *applicationAssembly) publicDocs(w http.ResponseWriter, r *http.Request) {
-	s.apiProtocol.PublicDocs(w, r)
+	s.platform.apiProtocol.PublicDocs(w, r)
 }
 
 func (s *applicationAssembly) cursorSnapshot(r *http.Request) string {
@@ -56,14 +56,14 @@ func (s *applicationAssembly) cursorSnapshot(r *http.Request) string {
 		}
 		switch segment {
 		case "workspaces":
-			if s.workspaceModule != nil {
-				snapshot, err := s.workspaceModule.ActiveServingStateID(r.Context(), s.workspaceID(segments[index+1]))
+			if s.routes.workspaceModule != nil {
+				snapshot, err := s.routes.workspaceModule.ActiveServingStateID(r.Context(), s.workspaceID(segments[index+1]))
 				if err == nil && snapshot != "" {
 					return snapshot
 				}
 			}
 		case "projects":
-			if snapshot := s.releaseModule.ProjectCursorSnapshot(r, segments[index+1]); snapshot != "" {
+			if snapshot := s.routes.releaseModule.ProjectCursorSnapshot(r, segments[index+1]); snapshot != "" {
 				return snapshot
 			}
 		}

@@ -11,7 +11,7 @@ import (
 )
 
 func (s *applicationAssembly) configureRefreshModule(ctx context.Context, database *sql.DB, inputs moduleAssemblyInputs) error {
-	if s == nil || s.refreshModule != nil {
+	if s == nil || s.routes.refreshModule != nil {
 		return nil
 	}
 	if ctx == nil {
@@ -23,11 +23,11 @@ func (s *applicationAssembly) configureRefreshModule(ctx context.Context, databa
 	}
 	config := refreshmodule.Config{
 		Database: database, Service: service,
-		Analytics: s.analyticsModule.WorkspaceMaterializer(), ManagedData: inputs.managedDataResolver,
+		Analytics: s.runtime.analyticsModule.WorkspaceMaterializer(), ManagedData: inputs.workflow.managedDataResolver,
 		HTTP: refreshmodule.HTTPConfig{
-			RunnerConfigured: func() bool { return s.metrics != nil },
+			RunnerConfigured: func() bool { return s.runtime.metrics != nil },
 			CurrentPrincipal: func(r *http.Request) (refreshmodule.HTTPPrincipal, bool) {
-				principal, ok := s.accessModule.CurrentPrincipal(r)
+				principal, ok := s.routes.accessModule.CurrentPrincipal(r)
 				return refreshmodule.HTTPPrincipal{ID: principal.ID}, ok
 			},
 			WorkspaceID: s.workspaceID,
@@ -35,31 +35,31 @@ func (s *applicationAssembly) configureRefreshModule(ctx context.Context, databa
 		},
 		Authorization: refreshmodule.AuthorizationConfig{
 			CurrentPrincipal: func(r *http.Request) (refreshmodule.AuthorizationPrincipal, bool) {
-				principal, ok := s.accessModule.CurrentPrincipal(r)
+				principal, ok := s.routes.accessModule.CurrentPrincipal(r)
 				return refreshmodule.AuthorizationPrincipal{ID: principal.ID, DevBypass: principal.DevBypass}, ok
 			},
 			CurrentCredential: func(r *http.Request) (accessmodule.APICredential, bool) {
 				return accessmodule.APICredentialFromContext(r.Context())
 			},
 			ResolvePipelineModel: refreshmodule.PipelineModelResolver(
-				inputs.servingStateRepo,
+				inputs.persistence.servingStateRepo,
 				nil,
 				s.defaultServingEnvironment(),
 			),
-			AuthorizeObject: s.accessModule.AuthorizeObject,
+			AuthorizeObject: s.routes.accessModule.AuthorizeObject,
 		},
 		ApplyAccessSnapshot: accessmodule.ApplySnapshot,
-		Admission:           s.workloadController(), LeaseTimeout: inputs.jobLeaseTimeout,
-		Environment: string(s.defaultServingEnvironment()), Clock: inputs.refreshPipelineClock,
-		EnableDispatcher: database != nil && s.metrics != nil,
-		EnableScheduler:  database != nil && inputs.servingStateRepo != nil,
-		Logger:           s.logger, Events: s.asyncJobs,
+		Admission:           s.workloadController(), LeaseTimeout: inputs.storage.jobLeaseTimeout,
+		Environment: string(s.defaultServingEnvironment()), Clock: inputs.workflow.refreshPipelineClock,
+		EnableDispatcher: database != nil && s.runtime.metrics != nil,
+		EnableScheduler:  database != nil && inputs.persistence.servingStateRepo != nil,
+		Logger:           s.platform.logger, Events: s.platform.asyncJobs,
 		WorkloadStats: func() refreshmodule.WorkloadStats {
 			return s.workloadController().Stats()
 		},
 		RunFinished: func(ctx context.Context, run refreshmodule.RunRecord) {
-			if run.Status == refreshmodule.RunStatusSucceeded && s.storageRetention != nil {
-				_ = s.storageRetention.Run(ctx, false)
+			if run.Status == refreshmodule.RunStatusSucceeded && s.runtime.storageRetention != nil {
+				_ = s.runtime.storageRetention.Run(ctx, false)
 			}
 		},
 	}
@@ -67,6 +67,6 @@ func (s *applicationAssembly) configureRefreshModule(ctx context.Context, databa
 	if err != nil {
 		return fmt.Errorf("build refresh module: %w", err)
 	}
-	s.refreshModule = module
+	s.routes.refreshModule = module
 	return nil
 }

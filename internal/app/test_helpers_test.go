@@ -86,12 +86,12 @@ func newApplicationAssembly(metrics QueryMetrics) *applicationAssembly {
 
 func apiGenDispatcherForTest(server *applicationAssembly) apiGenDispatcher {
 	return apiGenDispatcher{
-		accessModule: server.accessModule, agentModule: server.agentModule,
-		dashboardModule: server.dashboardModule, deploymentModule: server.deploymentModule,
-		managedDataModule: server.managedDataModule, refreshModule: server.refreshModule,
-		releaseModule: server.releaseModule, workspaceModule: server.workspaceModule,
-		defaultEnvironment: server.defaultEnvironment, managedDataTus: server.managedDataTus,
-		queryAuditEvents: server.queryAuditEvents,
+		accessModule: server.routes.accessModule, agentModule: server.routes.agentModule,
+		dashboardModule: server.routes.dashboardModule, deploymentModule: server.routes.deploymentModule,
+		managedDataModule: server.routes.managedDataModule, refreshModule: server.routes.refreshModule,
+		releaseModule: server.routes.releaseModule, workspaceModule: server.routes.workspaceModule,
+		defaultEnvironment: server.policy.defaultEnvironment, managedDataTus: server.policy.managedDataTus,
+		queryAuditEvents: server.runtime.queryAuditEvents,
 	}
 }
 
@@ -107,33 +107,33 @@ func assembleRuntimeChecked(ctx context.Context, metrics QueryMetrics, options a
 		}
 	}
 	return buildApplicationAssembly(ctx, metrics, assemblyInputs{
-		dataAssemblyInputs: dataAssemblyInputs{
+		data: dataAssemblyInputs{
 			Database: options.Database, PlatformHealth: options.PlatformHealth,
 			AdminDatabase: options.AdminDatabase, ServingStateRepo: options.ServingStateRepo,
 			StorageRetention: options.StorageRetention, WorkspaceReadModel: options.WorkspaceRepo,
 			WorkspaceDirectory: options.WorkspaceDirectory, AssetCatalog: options.AssetCatalog,
 			AccessRepo: options.AccessRepo,
 		},
-		capabilityAssemblyInputs: capabilityAssemblyInputs{
+		capabilities: capabilityAssemblyInputs{
 			ReleaseModule: options.ReleaseModule, JobModule: options.JobModule,
 			AccessModule: options.AccessModule, Agent: options.Agent,
 			ManagedDataModule: options.ManagedDataModule, AnalyticsModule: options.AnalyticsModule,
 			DashboardAssets: options.DashboardAssets,
 		},
-		workflowAssemblyInputs: workflowAssemblyInputs{
+		workflow: workflowAssemblyInputs{
 			AgentSettings: options.AgentSettings, ManagedDataValidation: options.ManagedDataValidation,
 			ManagedDataResolver: options.ManagedDataResolver, AgentConfig: options.AgentConfig,
 			Auth: options.Auth, Reloader: options.Reloader, Workload: options.Workload,
 			DeploymentConfig: options.DeploymentConfig, RefreshPipelineClock: options.RefreshPipelineClock,
 			QueryAudit: options.QueryAudit,
 		},
-		runtimeAssemblyInputs: runtimeAssemblyInputs{
+		runtime: runtimeAssemblyInputs{
 			DuckDBDir: options.DuckDBDir, DuckLakeCatalogPath: options.DuckLakeCatalogPath,
 			DuckLakeDataPath: options.DuckLakeDataPath, DefaultWorkspaceID: options.DefaultWorkspaceID,
 			DefaultEnvironment: options.DefaultEnvironment, SCIMBearerToken: options.SCIMBearerToken,
 			MetricsBearerToken: options.MetricsBearerToken, AllowedHosts: options.AllowedHosts,
 		},
-		httpAssemblyInputs: httpAssemblyInputs{
+		http: httpAssemblyInputs{
 			RateLimits: options.RateLimits, SecurityHeaders: options.SecurityHeaders,
 			RequestBodyLimit: options.RequestBodyLimit, RequestLogging: options.RequestLogging,
 			Logger: options.Logger, JobLeaseTimeout: options.JobLeaseTimeout,

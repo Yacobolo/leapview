@@ -45,10 +45,9 @@ type ToolProvider func(scope Scope) []agentcore.ToolDefinition
 type SystemPromptProvider func(ctx context.Context) (string, error)
 
 type Service struct {
-	metrics any
-	repo    Repository
-	config  Config
-	model   agentcore.Model
+	repo   Repository
+	config Config
+	model  agentcore.Model
 
 	toolProviders        []ToolProvider
 	systemPromptProvider SystemPromptProvider
@@ -70,9 +69,8 @@ func WithModel(model agentcore.Model) ServiceOption {
 	}
 }
 
-func NewService(metrics any, repo Repository, config Config, options ...ServiceOption) *Service {
+func NewService(repo Repository, config Config, options ...ServiceOption) *Service {
 	s := &Service{
-		metrics: metrics,
 		repo:    repo,
 		config:  config,
 		running: map[string]runningPrompt{},

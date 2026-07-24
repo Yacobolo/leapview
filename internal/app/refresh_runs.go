@@ -7,8 +7,8 @@ import (
 )
 
 func (s *applicationAssembly) workloadController() workloadControl {
-	if s.workloads == nil {
-		s.workloads, _ = workloadmodule.Build(context.Background(), workloadmodule.Config{Policy: workloadmodule.DefaultConfig()})
+	if s.runtime.workloads == nil {
+		s.runtime.workloads, _ = workloadmodule.Build(context.Background(), workloadmodule.Config{Policy: workloadmodule.DefaultConfig()})
 	}
-	return s.workloads
+	return s.runtime.workloads
 }

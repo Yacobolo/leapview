@@ -456,7 +456,7 @@ func TestDataExplorerCommandPublishesPatch(t *testing.T) {
 	metrics := dataExplorerFixtureMetrics{dataDir: seedDataExplorerCSV(t)}
 	seedActiveDeploymentFromWorkspaceAssets(t, store, "test", metrics)
 	server := assembleRuntime(metrics, testStoreOptions(store, assemblyConfig{DefaultWorkspaceID: "test", DuckDBDir: seedDataExplorerDuckDB(t)}))
-	updates, unsubscribe := server.broker.Subscribe("data-explorer:test-client")
+	updates, unsubscribe := server.runtime.broker.Subscribe("data-explorer:test-client")
 	defer unsubscribe()
 
 	body := strings.NewReader(`{"dataExplorerCommand":{"workspaceId":"test","objectKey":"semantic_view:olist.orders","block":"b","start":100,"count":100,"requestSeq":7,"resetVersion":2,"sort":{"column":"status","direction":"asc"}}}`)
@@ -544,7 +544,7 @@ func TestDataExplorerCommandReusesPostedPreviewTotalsForScroll(t *testing.T) {
 	metrics := dataExplorerFixtureMetrics{dataDir: seedDataExplorerCSV(t)}
 	seedActiveDeploymentFromWorkspaceAssets(t, store, "test", metrics)
 	server := assembleRuntime(metrics, testStoreOptions(store, assemblyConfig{DefaultWorkspaceID: "test", DuckDBDir: seedDataExplorerDuckDB(t)}))
-	updates, unsubscribe := server.broker.Subscribe("data-explorer:test-client")
+	updates, unsubscribe := server.runtime.broker.Subscribe("data-explorer:test-client")
 	defer unsubscribe()
 
 	object := uisignals.DataExplorerObjectSignal{
@@ -634,7 +634,7 @@ func TestDataExplorerCommandDoesNotPublishCanceledPreview(t *testing.T) {
 	metrics := dataExplorerFixtureMetrics{dataDir: seedDataExplorerCSV(t), semanticPreviewError: context.Canceled}
 	seedActiveDeploymentFromWorkspaceAssets(t, store, "test", metrics)
 	server := assembleRuntime(metrics, testStoreOptions(store, assemblyConfig{DefaultWorkspaceID: "test", DuckDBDir: seedDataExplorerDuckDB(t)}))
-	updates, unsubscribe := server.broker.Subscribe("data-explorer:test-client")
+	updates, unsubscribe := server.runtime.broker.Subscribe("data-explorer:test-client")
 	defer unsubscribe()
 
 	body := strings.NewReader(`{"dataExplorerCommand":{"workspaceId":"test","objectKey":"semantic_view:olist.orders","block":"b","start":100,"count":100,"requestSeq":7,"resetVersion":2}}`)
@@ -659,7 +659,7 @@ func TestDataExplorerCommandColumnWidthsReuseCurrentPreview(t *testing.T) {
 	metrics := dataExplorerFixtureMetrics{dataDir: seedDataExplorerCSV(t), semanticPreviewError: errors.New("preview should not run for column widths")}
 	seedActiveDeploymentFromWorkspaceAssets(t, store, "test", metrics)
 	server := assembleRuntime(metrics, testStoreOptions(store, assemblyConfig{DefaultWorkspaceID: "test", DuckDBDir: seedDataExplorerDuckDB(t)}))
-	updates, unsubscribe := server.broker.Subscribe("data-explorer:test-client")
+	updates, unsubscribe := server.runtime.broker.Subscribe("data-explorer:test-client")
 	defer unsubscribe()
 
 	object := uisignals.DataExplorerObjectSignal{
@@ -737,7 +737,7 @@ func TestDataExplorerBrowserCommandRequiresAndAcceptsCSRF(t *testing.T) {
 	metrics := dataExplorerFixtureMetrics{dataDir: seedDataExplorerCSV(t)}
 	seedActiveDeploymentFromWorkspaceAssets(t, store, "test", metrics)
 	server := assembleRuntime(metrics, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test", DuckDBDir: seedDataExplorerDuckDB(t)}))
-	updates, unsubscribe := server.broker.Subscribe("data-explorer:test-client")
+	updates, unsubscribe := server.runtime.broker.Subscribe("data-explorer:test-client")
 	defer unsubscribe()
 
 	commandBody := `{"dataExplorerCommand":{"workspaceId":"test","objectKey":"semantic_view:olist.orders","block":"b","start":100,"count":100,"requestSeq":7,"resetVersion":2,"sort":{"column":"status","direction":"asc"}}}`

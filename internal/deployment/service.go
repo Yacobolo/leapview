@@ -13,9 +13,15 @@ import (
 type Repository interface {
 	CreateDeployment(context.Context, CreateInput) (Deployment, error)
 	DeploymentByID(context.Context, string) (Deployment, error)
-	ActivateDeployment(context.Context, string) (Deployment, error)
 	CancelDeployment(context.Context, string) (Deployment, error)
 	FailDeployment(context.Context, string, error) error
+}
+
+// ActivationUnitOfWork atomically validates the prepared deployment, advances
+// managed-data and serving-state pointers, installs access/publication
+// projections, and marks the deployment active.
+type ActivationUnitOfWork interface {
+	ActivateDeployment(context.Context, string) (Deployment, error)
 }
 
 func (s *Service) Cancel(ctx context.Context, scope Scope) (Deployment, error) {
@@ -83,16 +89,17 @@ func (p registryPrepared) Close() error                              { return p.
 
 type Service struct {
 	repository Repository
+	activation ActivationUnitOfWork
 	states     ServingStateRepository
 	runtime    Runtime
 	resolver   ManagedDataResolver
 }
 
-func New(repository Repository, states ServingStateRepository, runtime Runtime, resolver ManagedDataResolver) (*Service, error) {
-	if repository == nil || states == nil || runtime == nil || resolver == nil {
-		return nil, fmt.Errorf("deployment repository, serving-state repository, runtime, and managed-data resolver are required")
+func New(repository Repository, activation ActivationUnitOfWork, states ServingStateRepository, runtime Runtime, resolver ManagedDataResolver) (*Service, error) {
+	if repository == nil || activation == nil || states == nil || runtime == nil || resolver == nil {
+		return nil, fmt.Errorf("deployment repository, activation unit of work, serving-state repository, runtime, and managed-data resolver are required")
 	}
-	return &Service{repository: repository, states: states, runtime: runtime, resolver: resolver}, nil
+	return &Service{repository: repository, activation: activation, states: states, runtime: runtime, resolver: resolver}, nil
 }
 
 func (s *Service) Create(ctx context.Context, input CreateInput) (Deployment, error) {
@@ -168,7 +175,7 @@ func (s *Service) Activate(ctx context.Context, scope Scope) (Deployment, error)
 	var activated Deployment
 	err = s.runtime.Activate(prepared, func() error {
 		var activateErr error
-		activated, activateErr = s.repository.ActivateDeployment(ctx, row.ID)
+		activated, activateErr = s.activation.ActivateDeployment(ctx, row.ID)
 		return activateErr
 	})
 	if err != nil {

@@ -323,7 +323,7 @@ func TestServiceActivationKeepsDurableAndRuntimeStateConsistentWhenRetiredRuntim
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := deployment.New(repository, states, coordinator, emptyManagedDataResolver{})
+	service, err := deployment.New(repository, repository, states, coordinator, emptyManagedDataResolver{})
 	if err != nil {
 		t.Fatal(err)
 	}

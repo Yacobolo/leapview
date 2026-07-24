@@ -20,7 +20,7 @@ type PublicationActivationInput struct {
 	Publications                                    map[string]json.RawMessage
 }
 
-func newRepository(database *sql.DB, hooks ActivationHooks) deployment.Repository {
+func newPersistence(database *sql.DB, hooks ActivationHooks) (deployment.Repository, deployment.ActivationUnitOfWork) {
 	sqliteHooks := deploymentsqlite.ActivationHooks{
 		ApplyAccessSnapshot: hooks.ApplyAccessSnapshot,
 	}
@@ -32,5 +32,6 @@ func newRepository(database *sql.DB, hooks ActivationHooks) deployment.Repositor
 			})
 		}
 	}
-	return deploymentsqlite.NewRepositoryWithHooks(database, sqliteHooks)
+	owned := deploymentsqlite.NewRepositoryWithHooks(database, sqliteHooks)
+	return owned, owned
 }

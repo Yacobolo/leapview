@@ -161,6 +161,7 @@ func TestApplicationHasNoServerShapedDependencyContainer(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse %s: %v", file.path, err)
 		}
+		localStructs := map[string]*ast.StructType{}
 		for _, declaration := range parsed.Decls {
 			generic, ok := declaration.(*ast.GenDecl)
 			if !ok || generic.Tok != token.TYPE {
@@ -171,25 +172,120 @@ func TestApplicationHasNoServerShapedDependencyContainer(t *testing.T) {
 				if !ok {
 					continue
 				}
-				switch typeSpec.Name.Name {
-				case "runtimeRouter", "assemblyConfig", "capabilityConstruction":
-					t.Errorf("%s retains transitional dependency container %s", file.path, typeSpec.Name.Name)
+				if structure, ok := typeSpec.Type.(*ast.StructType); ok {
+					localStructs[typeSpec.Name.Name] = structure
 				}
-				structure, ok := typeSpec.Type.(*ast.StructType)
-				if !ok {
-					continue
-				}
-				fields := 0
-				for _, field := range structure.Fields.List {
-					if len(field.Names) == 0 {
-						fields++
-					} else {
-						fields += len(field.Names)
-					}
-				}
-				if fields > 12 {
-					t.Errorf("%s struct %s has %d fields; split composition state into narrow route, lifecycle, health, and cleanup surfaces", file.path, typeSpec.Name.Name, fields)
-				}
+			}
+		}
+		for name, structure := range localStructs {
+			switch name {
+			case "runtimeRouter", "assemblyConfig", "capabilityConstruction":
+				t.Errorf("%s retains transitional dependency container %s", file.path, name)
+			}
+			if expected, ok := allowedCompositionSurfaces[name]; ok {
+				assertCompositionSurfaceFields(t, file.path, name, structure, expected)
+				continue
+			}
+			fields := expandedStructFieldCount(structure, localStructs, map[string]bool{name: true})
+			if fields > 12 {
+				t.Errorf("%s struct %s has %d transitive fields; split composition state into narrow route, lifecycle, health, and cleanup surfaces", file.path, name, fields)
+			}
+		}
+	}
+}
+
+var allowedCompositionSurfaces = map[string]map[string]string{
+	"applicationAssembly": {
+		"routes": "capabilityRoutes", "runtime": "runtimeServices",
+		"platform": "platformServices", "policy": "httpPolicy",
+	},
+	"assemblyInputs": {
+		"data": "dataAssemblyInputs", "capabilities": "capabilityAssemblyInputs",
+		"workflow": "workflowAssemblyInputs", "runtime": "runtimeAssemblyInputs",
+		"http": "httpAssemblyInputs",
+	},
+	"moduleAssemblyInputs": {
+		"persistence": "persistenceInputs", "workflow": "workflowInputs", "storage": "storageInputs",
+	},
+}
+
+func assertCompositionSurfaceFields(t *testing.T, path, name string, structure *ast.StructType, expected map[string]string) {
+	t.Helper()
+	actual := map[string]string{}
+	for _, field := range structure.Fields.List {
+		if len(field.Names) != 1 {
+			t.Errorf("%s struct %s must use named composition surfaces", path, name)
+			continue
+		}
+		identifier, ok := field.Type.(*ast.Ident)
+		if !ok {
+			t.Errorf("%s struct %s field %s must name a declared surface", path, name, field.Names[0].Name)
+			continue
+		}
+		actual[field.Names[0].Name] = identifier.Name
+	}
+	if len(actual) != len(expected) {
+		t.Errorf("%s struct %s has %d surfaces, want %d", path, name, len(actual), len(expected))
+	}
+	for field, typ := range expected {
+		if actual[field] != typ {
+			t.Errorf("%s struct %s surface %s = %q, want %q", path, name, field, actual[field], typ)
+		}
+	}
+}
+
+func expandedStructFieldCount(structure *ast.StructType, localStructs map[string]*ast.StructType, visiting map[string]bool) int {
+	fields := 0
+	for _, field := range structure.Fields.List {
+		fieldCount := len(field.Names)
+		if fieldCount == 0 {
+			fieldCount = 1
+		}
+		identifier, ok := localStructIdentifier(field.Type)
+		if !ok {
+			fields += fieldCount
+			continue
+		}
+		embedded, ok := localStructs[identifier.Name]
+		if !ok || visiting[identifier.Name] {
+			fields += fieldCount
+			continue
+		}
+		visiting[identifier.Name] = true
+		fields += fieldCount * expandedStructFieldCount(embedded, localStructs, visiting)
+		delete(visiting, identifier.Name)
+	}
+	return fields
+}
+
+func localStructIdentifier(expression ast.Expr) (*ast.Ident, bool) {
+	switch value := expression.(type) {
+	case *ast.Ident:
+		return value, true
+	case *ast.StarExpr:
+		identifier, ok := value.X.(*ast.Ident)
+		return identifier, ok
+	default:
+		return nil, false
+	}
+}
+
+func TestGeneratedQueryPackagesDoNotCombineCapabilitySQL(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join(repoRoot(t), "sqlc.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks := strings.Split(string(body), "\n  - engine:")
+	for _, forbidden := range []struct {
+		generatedPackage string
+		queryPath        string
+	}{
+		{generatedPackage: `package: "deploymentdb"`, queryPath: `"internal/servingstate/sqlite/queries`},
+		{generatedPackage: `package: "servingdb"`, queryPath: `"internal/access/sqlite/queries`},
+	} {
+		for _, block := range blocks {
+			if strings.Contains(block, forbidden.generatedPackage) && strings.Contains(block, forbidden.queryPath) {
+				t.Errorf("sqlc package %s includes cross-capability query input %s", forbidden.generatedPackage, forbidden.queryPath)
 			}
 		}
 	}

@@ -72,7 +72,7 @@ func TestMCPRequiresBearerAndSupportsInitializeAndTools(t *testing.T) {
 		output      map[string]any
 		effect      string
 	}{}
-	for _, definition := range server.agentModule.ToolDefinitions(agentcap.Scope{PrincipalID: "dev", DevAuthBypass: true}) {
+	for _, definition := range server.routes.agentModule.ToolDefinitions(agentcap.Scope{PrincipalID: "dev", DevAuthBypass: true}) {
 		var input, output map[string]any
 		if err := json.Unmarshal(definition.InputSchema, &input); err != nil {
 			t.Fatalf("decode built-in input schema %s: %v", definition.Name, err)
@@ -411,7 +411,7 @@ func issueMCPUserToken(t *testing.T, server *applicationAssembly, principalID st
 	registrationRequest := httptest.NewRequest(http.MethodPost, "/oauth/register", strings.NewReader(registrationBody))
 	registrationRequest.Header.Set("Content-Type", "application/json")
 	registrationResponse := httptest.NewRecorder()
-	server.accessModule.OAuthService().Register(registrationResponse, registrationRequest)
+	server.routes.accessModule.OAuthService().Register(registrationResponse, registrationRequest)
 	if registrationResponse.Code != http.StatusCreated {
 		t.Fatalf("register OAuth client = %d body=%s", registrationResponse.Code, registrationResponse.Body.String())
 	}
@@ -429,7 +429,7 @@ func issueMCPUserToken(t *testing.T, server *applicationAssembly, principalID st
 	}
 	authorizeRequest := httptest.NewRequest(http.MethodPost, "/oauth/authorize?"+values.Encode(), nil)
 	authorizeResponse := httptest.NewRecorder()
-	server.accessModule.OAuthService().Authorize(authorizeResponse, authorizeRequest, principalID, true)
+	server.routes.accessModule.OAuthService().Authorize(authorizeResponse, authorizeRequest, principalID, true)
 	callback, err := url.Parse(authorizeResponse.Header().Get("Location"))
 	if err != nil || callback.Query().Get("code") == "" {
 		t.Fatalf("OAuth callback = %q err=%v body=%s", authorizeResponse.Header().Get("Location"), err, authorizeResponse.Body.String())
@@ -442,7 +442,7 @@ func issueMCPUserToken(t *testing.T, server *applicationAssembly, principalID st
 	tokenRequest := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(tokenValues.Encode()))
 	tokenRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	tokenResponse := httptest.NewRecorder()
-	server.accessModule.OAuthService().Token(tokenResponse, tokenRequest)
+	server.routes.accessModule.OAuthService().Token(tokenResponse, tokenRequest)
 	if tokenResponse.Code != http.StatusOK {
 		t.Fatalf("exchange OAuth code = %d body=%s", tokenResponse.Code, tokenResponse.Body.String())
 	}

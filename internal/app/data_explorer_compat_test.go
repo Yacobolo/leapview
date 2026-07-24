@@ -21,5 +21,5 @@ func emptyDataPreviewBlocks(count int, sort uisignals.DataPreviewSortSignal, res
 }
 
 func (s *applicationAssembly) globalDataExplorerState(r *http.Request, command uisignals.DataExplorerCommand) (uisignals.DataExplorerPageSignal, uisignals.DataExplorerSignal, error) {
-	return s.workspaceModule.HTTP().DataExplorerState(r, command)
+	return s.routes.workspaceModule.HTTP().DataExplorerState(r, command)
 }

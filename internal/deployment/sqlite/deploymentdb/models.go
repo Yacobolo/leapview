@@ -8,33 +8,6 @@ import (
 	"database/sql"
 )
 
-type Asset struct {
-	SnapshotID           string `json:"snapshot_id"`
-	LogicalAssetID       string `json:"logical_asset_id"`
-	WorkspaceID          string `json:"workspace_id"`
-	ServingStateID       string `json:"serving_state_id"`
-	AssetType            string `json:"asset_type"`
-	AssetKey             string `json:"asset_key"`
-	ParentLogicalAssetID string `json:"parent_logical_asset_id"`
-	Title                string `json:"title"`
-	Description          string `json:"description"`
-	PayloadSchema        string `json:"payload_schema"`
-	PayloadJson          string `json:"payload_json"`
-	ContentHash          string `json:"content_hash"`
-	CreatedAt            string `json:"created_at"`
-	SourceFile           string `json:"source_file"`
-}
-
-type AssetEdge struct {
-	ID                 string `json:"id"`
-	WorkspaceID        string `json:"workspace_id"`
-	ServingStateID     string `json:"serving_state_id"`
-	FromLogicalAssetID string `json:"from_logical_asset_id"`
-	ToLogicalAssetID   string `json:"to_logical_asset_id"`
-	EdgeType           string `json:"edge_type"`
-	CreatedAt          string `json:"created_at"`
-}
-
 type ManagedDataCollection struct {
 	ID             string         `json:"id"`
 	ProjectID      string         `json:"project_id"`
@@ -131,17 +104,4 @@ type ServingState struct {
 	ProjectWorkspacesJson     string         `json:"project_workspaces_json"`
 	AccessPolicyJson          string         `json:"access_policy_json"`
 	DashboardPublicationsJson string         `json:"dashboard_publications_json"`
-}
-
-type ServingStateArtifact struct {
-	ID             string `json:"id"`
-	ServingStateID string `json:"serving_state_id"`
-	WorkspaceID    string `json:"workspace_id"`
-	Digest         string `json:"digest"`
-	Format         string `json:"format"`
-	Path           string `json:"path"`
-	ManifestJson   string `json:"manifest_json"`
-	SizeBytes      int64  `json:"size_bytes"`
-	CreatedAt      string `json:"created_at"`
-	Environment    string `json:"environment"`
 }
