@@ -630,6 +630,20 @@ func TestRefreshDoesNotImportWorkspaceUI(t *testing.T) {
 	}
 }
 
+func TestDashboardDatastarOwnsItsSignalProjection(t *testing.T) {
+	const sharedSignals = modulePath + "/internal/workspace/ui/signals"
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/dashboard/datastar" {
+			continue
+		}
+		for _, imported := range file.imports {
+			if imported == sharedSignals {
+				t.Errorf("%s imports workspace-owned signals instead of a dashboard-owned projection", file.path)
+			}
+		}
+	}
+}
+
 func TestApplicationDoesNotReclaimAccessOrAnalyticsConstruction(t *testing.T) {
 	for _, file := range productionGoFiles(t) {
 		if file.pkgDir != "internal/app" {

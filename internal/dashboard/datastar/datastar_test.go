@@ -13,7 +13,6 @@ import (
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	visualizationruntime "github.com/Yacobolo/leapview/internal/dashboard/visualization/runtime"
 	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
-	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 )
 
 func testVisualDefinition(t *testing.T, id string) visualizationdefinition.Definition {
@@ -190,7 +189,7 @@ func TestVisualMetadataUpdatesDataWithoutChangingComponentStatus(t *testing.T) {
 	patch := RefreshEventPatch(dashboardstream.RefreshEvent{
 		Type: dashboardstream.RefreshEventVisualMetadata, Target: "orders", Value: testTableEnvelope(t, "orders", table, 1, 1),
 	})
-	visuals, ok := patch["visuals"].(map[string]uisignals.DashboardVisualizationSignal)
+	visuals, ok := patch["visuals"].(map[string]VisualizationSignal)
 	var dataState visualizationir.VisualizationDataState
 	if ok {
 		if err := json.Unmarshal([]byte(visuals["orders"].DataState.Payload), &dataState); err != nil {
@@ -211,7 +210,7 @@ func TestVisualizationEnvelopeUsesStreamOwnedRevisionAndStatus(t *testing.T) {
 		Type: dashboardstream.RefreshEventVisual, Target: "orders", Generation: 7, DataRevision: 11,
 		Value: testVisualEnvelope(t, "orders", 11, 7),
 	})
-	visuals, ok := patch["visuals"].(map[string]uisignals.DashboardVisualizationSignal)
+	visuals, ok := patch["visuals"].(map[string]VisualizationSignal)
 	if !ok {
 		t.Fatalf("visual patch = %#v", patch)
 	}
