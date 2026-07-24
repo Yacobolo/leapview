@@ -644,6 +644,20 @@ func TestDashboardDatastarOwnsItsSignalProjection(t *testing.T) {
 	}
 }
 
+func TestAdminStorageDoesNotImportWorkspaceUI(t *testing.T) {
+	const sharedUI = modulePath + "/internal/workspace/ui"
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/admin/storage" {
+			continue
+		}
+		for _, imported := range file.imports {
+			if imported == sharedUI || strings.HasPrefix(imported, sharedUI+"/") {
+				t.Errorf("%s imports workspace-owned UI instead of admin storage models", file.path)
+			}
+		}
+	}
+}
+
 func TestApplicationDoesNotReclaimAccessOrAnalyticsConstruction(t *testing.T) {
 	for _, file := range productionGoFiles(t) {
 		if file.pkgDir != "internal/app" {

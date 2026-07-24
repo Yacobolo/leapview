@@ -176,11 +176,13 @@ func (h Handler) StorageTableSelect(w nethttp.ResponseWriter, r *nethttp.Request
 		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
 		return
 	}
-	selectedTable, err := h.readModel().StorageService.SelectTable(r.Context(), signals.AdminStorageCommand)
+	command := signals.AdminStorageCommand
+	table, err := h.readModel().StorageService.SelectTable(r.Context(), command.DatabaseID, command.Schema, command.Table)
 	if err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
 		return
 	}
+	selectedTable := ui.AdminStorageTableSignalFromTable(*table)
 	if h.Broker == nil {
 		nethttp.Error(w, "admin storage broker is not configured", nethttp.StatusInternalServerError)
 		return
@@ -188,7 +190,7 @@ func (h Handler) StorageTableSelect(w nethttp.ResponseWriter, r *nethttp.Request
 	h.Broker.Publish(adminStorageStreamID(clientID), map[string]any{
 		"adminStorage": map[string]any{
 			"selectedKey":   selectedTable.Key,
-			"selectedTable": selectedTable,
+			"selectedTable": &selectedTable,
 		},
 	})
 	w.WriteHeader(nethttp.StatusNoContent)

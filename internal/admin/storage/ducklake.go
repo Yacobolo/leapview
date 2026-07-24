@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"strings"
 
+	ui "github.com/Yacobolo/leapview/internal/admin/view"
 	analyticsresource "github.com/Yacobolo/leapview/internal/analytics/resource"
 	"github.com/Yacobolo/leapview/internal/workload"
-	"github.com/Yacobolo/leapview/internal/workspace/ui"
 )
 
 type Service struct {
@@ -103,12 +103,12 @@ func (s Service) Data(ctx context.Context) ui.AdminStorageData {
 	return data
 }
 
-func (s Service) SelectTable(ctx context.Context, command ui.AdminStorageCommand) (*ui.AdminStorageTableSignal, error) {
-	if strings.TrimSpace(command.DatabaseID) == "" || strings.TrimSpace(command.Schema) == "" || strings.TrimSpace(command.Table) == "" {
+func (s Service) SelectTable(ctx context.Context, databaseID, schema, tableName string) (*ui.AdminStorageTable, error) {
+	if strings.TrimSpace(databaseID) == "" || strings.TrimSpace(schema) == "" || strings.TrimSpace(tableName) == "" {
 		return nil, fmt.Errorf("storage table selection is incomplete")
 	}
-	if command.DatabaseID != DuckLakeCatalogID {
-		return nil, fmt.Errorf("DuckLake catalog %q was not found", command.DatabaseID)
+	if databaseID != DuckLakeCatalogID {
+		return nil, fmt.Errorf("DuckLake catalog %q was not found", databaseID)
 	}
 	if strings.TrimSpace(s.CatalogPath) == "" || strings.TrimSpace(s.DataPath) == "" {
 		return nil, fmt.Errorf("DuckLake catalog is not configured")
@@ -123,12 +123,11 @@ func (s Service) SelectTable(ctx context.Context, command ui.AdminStorageCommand
 		return nil, err
 	}
 	for _, table := range metadata.Tables {
-		if table.Schema == command.Schema && table.Name == command.Table {
-			selected := ui.AdminStorageTableSignalFromTable(table)
-			return &selected, nil
+		if table.Schema == schema && table.Name == tableName {
+			return &table, nil
 		}
 	}
-	return nil, fmt.Errorf("DuckLake table %q.%q was not found", command.Schema, command.Table)
+	return nil, fmt.Errorf("DuckLake table %q.%q was not found", schema, tableName)
 }
 
 type duckLakeStorageMetadata struct {
