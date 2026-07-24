@@ -353,8 +353,10 @@ func DashboardInitialEnvelope(clientID, streamInstanceID string, catalog dashboa
 			},
 			Kind: "mutate", BindingKey: "", Operation: "clear",
 		}},
-		FilterOptionRequest:        DashboardFilterOptionRequest{},
-		FilterValidation:           DashboardFilterValidationResult{Accepted: true, CurrentRevision: int64(filterState.Revision)},
+		FilterOptionRequest: DashboardFilterOptionRequest{},
+		FilterValidation: DashboardFilterValidationResult{
+			Accepted: true, CurrentRevision: int64(filterState.Revision), ClientMutationID: "",
+		},
 		InteractionSelections:      dashboardInteractionSelections(initialFilters.Selections),
 		SpatialSelections:          dashboardSpatialSelections(initialFilters.SpatialSelections),
 		NavigationCommand:          DashboardNavigationCommand{},

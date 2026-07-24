@@ -280,6 +280,8 @@ FilterMutation
 
 It does not emit the whole dashboard filter-state object. The controller projects the mutation onto one optimistic typed state root while preserving unrelated bindings, then sends the typed command. Interaction and spatial selections remain independent roots. Only the server advances canonical state and revisions. Rejected or superseded optimistic state reconciles to the returned canonical patch.
 
+Every validation result echoes the command's `clientMutationID`. This lets the controller reconcile a rejected optimistic edit even when the canonical filter revision and state are unchanged.
+
 The TypeSpec signal contract generates the filter definition, binding, presentation, state, option page, mutation, validation, and status models used by Go and TypeScript. Handwritten structural duplicates are forbidden by tests.
 
 ## Compilation and validation

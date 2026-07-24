@@ -671,7 +671,7 @@ model DashboardEnvelope {
   `visualWindowCommand`: LeapViewVisualization.VisualizationWindowRequest;
   @apigen.`metadata`(#{ `x-leapview-patch-mode`: "replace", `x-leapview-signal-key`: "visualSpatialWindowCommand" })
   `visualSpatialWindowCommand`: LeapViewVisualization.VisualizationSpatialWindowRequest;
-  @apigen.`metadata`(#{ `x-leapview-patch-mode`: "merge", `x-leapview-signal-key`: "urlParams" })
+  @apigen.`metadata`(#{ `x-leapview-patch-mode`: "replace", `x-leapview-signal-key`: "urlParams" })
   `urlParams`: Record<unknown>;
   @apigen.`metadata`(#{ `x-leapview-patch-mode`: "merge", `x-leapview-signal-key`: "visuals" })
   `visuals`: Record<DashboardVisualizationSignal>;
@@ -858,6 +858,7 @@ model DashboardFilterValidationResult {
   `accepted`: boolean;
   `message`: string;
   `currentRevision`: int64;
+  `clientMutationID`: string;
 }
 
 @apigen.contract(#{ kind: "ui-command", tags: #["dashboard", "filter", "command"] })
