@@ -73,77 +73,6 @@ func csrfMeta(token string) g.Node {
 	return h.Meta(h.Name("csrf-token"), h.Content(token))
 }
 
-type LoginPageOptions struct {
-	LocalAuth          bool
-	SSOAuth            bool
-	MustChangePassword bool
-	ProviderLabel      string
-	CSRFToken          string
-}
-
-func LoginPage(options ...LoginPageOptions) g.Node {
-	opts := LoginPageOptions{SSOAuth: true, ProviderLabel: "Sign in with Azure Active Directory"}
-	if len(options) > 0 {
-		opts = options[0]
-		if strings.TrimSpace(opts.ProviderLabel) == "" {
-			opts.ProviderLabel = "Sign in with Azure Active Directory"
-		}
-	}
-	loginUpdatesURL := updatesURL(uisignals.RouteLogin)
-	return pagestream.RenderPage(pagestream.PageSpec{
-		Title:             defaultProductName + " Login",
-		DatastarScriptURL: datastarScriptURL(),
-		HTMLAttrs: []g.Node{
-			g.Attr("data-color-mode", "auto"),
-			g.Attr("data-light-theme", "light"),
-			g.Attr("data-dark-theme", "dark"),
-		},
-		Head: []g.Node{
-			csrfMeta(opts.CSRFToken),
-			h.Link(h.Rel("icon"), h.Href(staticAsset(defaultFaviconPath)), h.Type("image/svg+xml")),
-			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
-			h.Script(h.Src(staticAsset("/static/theme.js"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/login-page.js"))),
-			loginBackgroundLoaderScript(),
-			inspectorScript(),
-		},
-		MainAttrs:  []g.Node{h.Class(appRootClass)},
-		UpdatesURL: loginUpdatesURL,
-		Body: []g.Node{
-			g.El("lv-login-page", g.Attr("background-module-src", staticAsset("/static/topology-background.js"))),
-			inspectorElement(),
-		},
-	})
-}
-
-func LoginBootstrapSignals() map[string]any {
-	return map[string]any{
-		"page": uisignals.LoginPageSignal{
-			Kind:                uisignals.RouteLogin,
-			Title:               defaultProductName,
-			ProviderLabel:       "Sign in with Azure Active Directory",
-			LocalAuth:           false,
-			SSOAuth:             true,
-			MustChangePassword:  false,
-			BackgroundModuleSrc: staticAsset("/static/topology-background.js"),
-		},
-		"status": dashboard.Status{},
-	}
-}
-
-func LoginBootstrapSignalsForOptions(opts LoginPageOptions) map[string]any {
-	signals := LoginBootstrapSignals()
-	page := signals["page"].(uisignals.LoginPageSignal)
-	page.LocalAuth = opts.LocalAuth
-	page.SSOAuth = opts.SSOAuth
-	page.MustChangePassword = opts.MustChangePassword
-	if strings.TrimSpace(opts.ProviderLabel) != "" {
-		page.ProviderLabel = opts.ProviderLabel
-	}
-	signals["page"] = page
-	return signals
-}
-
 func CatalogPage(catalog catalog.Catalog, chromeOptions ...ChromeOption) g.Node {
 	return catalogPageDocument(catalog, catalogPageSignal(catalog), chromeOptions...)
 }
@@ -284,10 +213,6 @@ func recordTableBadgeValue(value, tone string) any {
 		return ""
 	}
 	return recordTableBadge{Label: value, Tone: uisignals.Optional(tone)}
-}
-
-func loginBackgroundLoaderScript() g.Node {
-	return h.Script(h.Type("module"), h.Src(staticAsset("/static/login-background-loader.js")))
 }
 
 func displayLabel(label, fallback string) string {

@@ -3,7 +3,7 @@ package module
 import (
 	"net/http"
 
-	"github.com/Yacobolo/leapview/internal/workspace/ui"
+	accessui "github.com/Yacobolo/leapview/internal/access/ui"
 	"github.com/gorilla/csrf"
 )
 
@@ -11,13 +11,13 @@ import (
 func (m *Module) Login(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	if err := ui.LoginPage(m.LoginPageOptions(r)).Render(w); err != nil {
+	if err := accessui.LoginPage(m.LoginPageOptions(r)).Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
-func (m *Module) LoginPageOptions(r *http.Request) ui.LoginPageOptions {
-	options := ui.LoginPageOptions{
+func (m *Module) LoginPageOptions(r *http.Request) accessui.LoginPageOptions {
+	options := accessui.LoginPageOptions{
 		LocalAuth:     m != nil && m.auth != nil && m.auth.LocalAuthEnabled(),
 		SSOAuth:       m == nil || m.auth == nil || m.auth.SSOConfigured(),
 		ProviderLabel: "Sign in with Azure Active Directory",
@@ -30,6 +30,10 @@ func (m *Module) LoginPageOptions(r *http.Request) ui.LoginPageOptions {
 		options.MustChangePassword = m.auth.MustChangeLocalPassword(r, principal.ID)
 	}
 	return options
+}
+
+func (m *Module) LoginBootstrapSignals(r *http.Request) map[string]any {
+	return accessui.LoginBootstrapSignalsForOptions(m.LoginPageOptions(r))
 }
 
 func (m *Module) Begin(w http.ResponseWriter, r *http.Request) {

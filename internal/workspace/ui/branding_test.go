@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/access/http/mcpoauth"
 	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
 	g "maragu.dev/gomponents"
 )
@@ -17,9 +16,7 @@ func TestProductDocumentsUseLeapViewBrandAndFavicon(t *testing.T) {
 		document  g.Node
 		wantTitle string
 	}{
-		{name: "login", document: LoginPage(), wantTitle: "LeapView Login"},
 		{name: "catalog", document: CatalogPage(catalog.Catalog{}), wantTitle: "LeapView Dashboards"},
-		{name: "OAuth consent", document: OAuthConsentPage(mcpoauth.Consent{ClientName: "Agent", Resource: "https://example.test"}, nil, "csrf"), wantTitle: "Authorize MCP access · LeapView"},
 	}
 
 	for _, test := range tests {
@@ -36,14 +33,6 @@ func TestProductDocumentsUseLeapViewBrandAndFavicon(t *testing.T) {
 				t.Errorf("document does not contain the LeapView favicon")
 			}
 		})
-	}
-}
-
-func TestLoginBootstrapUsesLeapViewName(t *testing.T) {
-	page := LoginBootstrapSignals()["page"]
-	rendered := html.UnescapeString(jsonString(page))
-	if !strings.Contains(rendered, `"title":"LeapView"`) {
-		t.Fatalf("login bootstrap does not use LeapView: %s", rendered)
 	}
 }
 
