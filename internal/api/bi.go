@@ -278,17 +278,43 @@ type SemanticPreviewRequest struct {
 }
 
 type QueryColumn struct {
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Nullable bool   `json:"nullable"`
+	Name     string         `json:"name"`
+	Type     string         `json:"type"`
+	Nullable bool           `json:"nullable"`
+	FieldRef *QueryFieldRef `json:"fieldRef,omitempty"`
+	Label    string         `json:"label,omitempty"`
+	Kind     string         `json:"kind,omitempty"`
+	Unit     string         `json:"unit,omitempty"`
+	Format   string         `json:"format,omitempty"`
+}
+
+type QueryFieldRef struct {
+	WorkspaceID string `json:"workspaceId"`
+	Type        string `json:"type"`
+	ID          string `json:"id"`
+}
+
+type QueryFreshness struct {
+	LastSuccessfulRefreshAt string `json:"lastSuccessfulRefreshAt"`
+	SnapshotID              string `json:"snapshotId"`
+	ServingStateID          string `json:"servingStateId"`
+	Source                  string `json:"source"`
+	Status                  string `json:"status"`
+}
+
+type QueryCompleteness struct {
+	ReturnedRows int  `json:"returnedRows"`
+	HasMore      bool `json:"hasMore"`
 }
 
 type SemanticQueryResponse struct {
-	QueryID         string        `json:"queryId"`
-	ServingSnapshot string        `json:"servingSnapshot"`
-	Columns         []QueryColumn `json:"columns"`
-	Rows            [][]string    `json:"rows"`
-	Page            PageInfo      `json:"page"`
+	QueryID         string            `json:"queryId"`
+	ServingSnapshot string            `json:"servingSnapshot"`
+	Freshness       *QueryFreshness   `json:"freshness,omitempty"`
+	Completeness    QueryCompleteness `json:"completeness"`
+	Columns         []QueryColumn     `json:"columns"`
+	Rows            [][]any           `json:"rows"`
+	Page            PageInfo          `json:"page"`
 }
 
 type SemanticExplainResponse struct {

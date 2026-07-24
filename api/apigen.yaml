@@ -37,3 +37,11 @@ targets:
     go_models_package: ir
     ts_out: ../web/generated/visualization/index.ts
     json_schema_out: gen/visualization.schema.json
+  - name: agent-tool-contracts
+    kind: contracts
+    typespec_dir: .
+    typespec_entrypoint: agenttools/main.tsp
+    ir_out: gen/agent-tools-ir.json
+    go_models_out: ../internal/agent/contracts/models.gen.go
+    go_models_package: contracts
+    json_schema_out: gen/agent-tools.schema.json

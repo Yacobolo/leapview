@@ -503,15 +503,17 @@ func (m auditedDashboardMetrics) ExecuteDataQuery(ctx context.Context, request d
 }
 
 func (manyRowsMetrics) queryWindow(_ context.Context, _ string, _ string, _ dashboard.Filters, request dashboard.TableRequest) (dashboard.Table, error) {
-	rows := make([]map[string]any, 0, request.Count)
-	for i := 0; i < request.Count; i++ {
+	const totalRows = 500
+	count := min(request.Count, max(0, totalRows-request.Start))
+	rows := make([]map[string]any, 0, count)
+	for i := request.Start; i < request.Start+count; i++ {
 		rows = append(rows, map[string]any{"order_id": fmt.Sprintf("order-%d", i)})
 	}
 	return dashboard.Table{
 		Title:         "Orders",
 		Columns:       []dashboard.TableColumn{{Key: "order_id", Label: "Order"}},
-		Cardinality:   dashboard.ExactCardinality(len(rows)),
-		AvailableRows: len(rows),
+		Cardinality:   dashboard.ExactCardinality(totalRows),
+		AvailableRows: totalRows,
 		RowCap:        dashboard.TableInteractiveRowCap,
 		ChunkSize:     dashboard.TableChunkSize,
 		Sort:          dashboard.TableSort{Key: "order_id", Direction: "desc"},

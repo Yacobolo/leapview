@@ -9,6 +9,23 @@ import (
 	"github.com/gorilla/csrf"
 )
 
+type activeWorkspaceRepository interface {
+	ListWithActiveMetadata(context.Context, string) ([]workspace.Summary, error)
+	ByIDWithActiveMetadata(context.Context, workspace.WorkspaceID, string) (workspace.Summary, error)
+}
+
+func (s *Server) workspaceWithActiveMetadata(ctx context.Context, workspaceID string) (workspace.Summary, error) {
+	repository, err := s.workspaceRepository()
+	if err != nil || repository == nil {
+		return workspace.Summary{}, err
+	}
+	id := workspace.WorkspaceID(s.workspaceID(workspaceID))
+	if active, ok := repository.(activeWorkspaceRepository); ok {
+		return active.ByIDWithActiveMetadata(ctx, id, s.defaultEnvironment)
+	}
+	return repository.ByID(ctx, id)
+}
+
 func (s *Server) assetVersionsStateForSection(ctx context.Context, workspaceID, environment string, asset workspace.AssetView, section string) (ui.AssetVersionsState, error) {
 	state := ui.AssetVersionsState{CurrentContentHash: asset.ContentHash}
 	if section != "versions" {

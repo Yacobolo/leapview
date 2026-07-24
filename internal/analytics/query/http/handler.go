@@ -43,6 +43,7 @@ type Handler struct {
 	MetricsForWorkspace func(workspaceID string) (Metrics, bool)
 	CurrentPrincipalID  func(r *nethttp.Request) string
 	AuthorizeListObject func(ctx context.Context, principalID string, object access.ObjectRef) (bool, error)
+	QueryFreshness      func(ctx context.Context, workspaceID, modelID, servingSnapshot string) (api.QueryFreshness, bool)
 }
 
 func filterAuthorized[T any](h Handler, r *nethttp.Request, objectFor func(T) access.ObjectRef, rows []T) ([]T, error) {
@@ -116,7 +117,7 @@ func (h Handler) GetSemanticModel(w nethttp.ResponseWriter, r *nethttp.Request) 
 		return
 	}
 	modelID := chi.URLParam(r, "model")
-	model, ok := modelDescription(metrics, modelID)
+	model, ok := SemanticModelProjection(metrics, modelID)
 	if !ok {
 		writeJSONError(w, fmt.Errorf("model %q not found", modelID), nethttp.StatusNotFound)
 		return
@@ -129,7 +130,7 @@ func (h Handler) ListSemanticModelFields(w nethttp.ResponseWriter, r *nethttp.Re
 	if !ok {
 		return
 	}
-	fields := semanticModelFields(model)
+	fields := SemanticModelFieldsProjection(model)
 	items, nextCursor, ok := pageSliceForRequest(w, r, fields)
 	if !ok {
 		return
@@ -220,7 +221,9 @@ func (h Handler) QuerySemanticModel(w nethttp.ResponseWriter, r *nethttp.Request
 		writeJSONError(w, err, statusForDataExecutionError(err))
 		return
 	}
-	writeSemanticQueryResponse(w, r, semanticQueryResponse(plan.Columns, rows, limit, request.Offset, queryIDForRequest(r), snapshot, scope))
+	response := semanticQueryResponse(plan.Columns, rows, limit, request.Offset, queryIDForRequest(r), snapshot, scope)
+	h.enrichSemanticQueryResponse(r, metrics, modelID, request.Dimensions, request.Measures, &request.Time, &response)
+	writeSemanticQueryResponse(w, r, response)
 }
 
 func (h Handler) ExplainSemanticModelQuery(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -289,7 +292,7 @@ func (h Handler) GetSemanticDataset(w nethttp.ResponseWriter, r *nethttp.Request
 	if !ok {
 		return
 	}
-	writeJSON(w, nethttp.StatusOK, semanticDatasetDTO(model, datasetID, table))
+	writeJSON(w, nethttp.StatusOK, SemanticTableProjection(model, datasetID, table))
 }
 
 func (h Handler) ListSemanticFields(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -297,7 +300,7 @@ func (h Handler) ListSemanticFields(w nethttp.ResponseWriter, r *nethttp.Request
 	if !ok {
 		return
 	}
-	fields := semanticDatasetFields(model, datasetID, table)
+	fields := SemanticTableFieldsProjection(model, datasetID, table)
 	items, nextCursor, ok := pageSliceForRequest(w, r, fields)
 	if !ok {
 		return
@@ -340,7 +343,9 @@ func (h Handler) QuerySemanticDataset(w nethttp.ResponseWriter, r *nethttp.Reque
 		writeJSONError(w, err, statusForDataExecutionError(err))
 		return
 	}
-	writeSemanticQueryResponse(w, r, semanticQueryResponse(plan.Columns, rows, limit, request.Offset, queryIDForRequest(r), snapshot, scope))
+	response := semanticQueryResponse(plan.Columns, rows, limit, request.Offset, queryIDForRequest(r), snapshot, scope)
+	h.enrichSemanticQueryResponse(r, metrics, modelID, request.Dimensions, request.Measures, &request.Time, &response)
+	writeSemanticQueryResponse(w, r, response)
 }
 
 func (h Handler) PreviewSemanticDataset(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -378,7 +383,9 @@ func (h Handler) PreviewSemanticDataset(w nethttp.ResponseWriter, r *nethttp.Req
 		writeJSONError(w, err, statusForDataExecutionError(err))
 		return
 	}
-	writeSemanticQueryResponse(w, r, semanticQueryResponse(plan.Columns, rows, limit, request.Offset, queryIDForRequest(r), snapshot, scope))
+	response := semanticQueryResponse(plan.Columns, rows, limit, request.Offset, queryIDForRequest(r), snapshot, scope)
+	h.enrichSemanticQueryResponse(r, metrics, modelID, request.Dimensions, request.Measures, nil, &response)
+	writeSemanticQueryResponse(w, r, response)
 }
 
 func (h Handler) ExplainSemanticQuery(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -487,7 +494,7 @@ func semanticModelSummaryDTO(row dashboard.CatalogModel) api.SemanticModelSummar
 	return api.SemanticModelSummary{ID: row.ID, Title: row.Title, Description: row.Description}
 }
 
-func semanticDatasetDTO(model *semanticmodel.Model, datasetID string, table semanticmodel.Table) api.SemanticDatasetResponse {
+func SemanticTableProjection(model *semanticmodel.Model, datasetID string, table semanticmodel.Table) api.SemanticDatasetResponse {
 	sources := append([]string{}, table.Sources...)
 	if table.Source != "" && len(sources) == 0 {
 		sources = []string{table.Source}
@@ -537,7 +544,7 @@ func semanticTableRoles(model *semanticmodel.Model, tableID string) []string {
 	return roles
 }
 
-func semanticDatasetFields(model *semanticmodel.Model, datasetID string, table semanticmodel.Table) []api.SemanticFieldResponse {
+func SemanticTableFieldsProjection(model *semanticmodel.Model, datasetID string, table semanticmodel.Table) []api.SemanticFieldResponse {
 	out := make([]api.SemanticFieldResponse, 0, len(table.Dimensions)+semanticDatasetMeasureCount(model, datasetID))
 	for _, fieldID := range sortedMapKeys(table.Dimensions) {
 		dimension := table.Dimensions[fieldID]
@@ -561,7 +568,7 @@ func semanticDatasetFields(model *semanticmodel.Model, datasetID string, table s
 	return out
 }
 
-func semanticModelFields(model *semanticmodel.Model) []api.SemanticFieldResponse {
+func SemanticModelFieldsProjection(model *semanticmodel.Model) []api.SemanticFieldResponse {
 	out := make([]api.SemanticFieldResponse, 0, len(model.Dimensions)+len(model.Measures)+len(model.Metrics))
 	for _, name := range sortedMapKeys(model.Dimensions) {
 		dimension := model.Dimensions[name]
@@ -614,7 +621,7 @@ func semanticRelationshipEndpoint(value string) (string, string, error) {
 	return parts[0], parts[1], nil
 }
 
-func modelDescription(metrics Metrics, id string) (api.SemanticModelDescriptionResponse, bool) {
+func SemanticModelProjection(metrics Metrics, id string) (api.SemanticModelDescriptionResponse, bool) {
 	catalog := metrics.Catalog()
 	var catalogModel dashboard.CatalogModel
 	for _, model := range catalog.Models {
@@ -806,7 +813,7 @@ func semanticSorts(sorts []api.SemanticSort) []reportdef.QuerySort {
 }
 
 func semanticQueryResponse(columns []string, rows reportdef.QueryRows, limit, offset int, queryID, snapshot string, cursorScope ...string) api.SemanticQueryResponse {
-	encodedRows := make([][]string, 0, min(len(rows), limit))
+	encodedRows := make([][]any, 0, min(len(rows), limit))
 	descriptors := make([]api.QueryColumn, len(columns))
 	for index, name := range columns {
 		descriptors[index] = api.QueryColumn{Name: name, Type: queryColumnType(rows, name), Nullable: queryColumnNullable(rows, name)}
@@ -815,9 +822,9 @@ func semanticQueryResponse(columns []string, rows reportdef.QueryRows, limit, of
 		if i >= limit {
 			break
 		}
-		values := make([]string, len(columns))
+		values := make([]any, len(columns))
 		for index, column := range columns {
-			values[index] = queryCellString(row[column])
+			values[index] = queryCellValue(row[column])
 		}
 		encodedRows = append(encodedRows, values)
 	}
@@ -826,7 +833,11 @@ func semanticQueryResponse(columns []string, rows reportdef.QueryRows, limit, of
 		scopes := append(append([]string{}, cursorScope...), snapshot)
 		nextCursor = encodeIndexCursor(offset+limit, scopes...)
 	}
-	return api.SemanticQueryResponse{QueryID: queryID, ServingSnapshot: snapshot, Columns: descriptors, Rows: encodedRows, Page: api.PageInfo{NextCursor: nextCursor}}
+	return api.SemanticQueryResponse{
+		QueryID: queryID, ServingSnapshot: snapshot, Columns: descriptors, Rows: encodedRows,
+		Completeness: api.QueryCompleteness{ReturnedRows: len(encodedRows), HasMore: nextCursor != ""},
+		Page:         api.PageInfo{NextCursor: nextCursor},
+	}
 }
 
 func queryColumnType(rows reportdef.QueryRows, column string) string {
@@ -862,10 +873,10 @@ func queryColumnNullable(rows reportdef.QueryRows, column string) bool {
 	return len(rows) == 0
 }
 
-func queryCellString(value any) string {
+func queryCellValue(value any) any {
 	switch typed := value.(type) {
 	case nil:
-		return ""
+		return nil
 	case string:
 		return typed
 	case []byte:
@@ -905,6 +916,182 @@ func queryCellString(value any) string {
 		}
 		return fmt.Sprint(value)
 	}
+}
+
+func (h Handler) enrichSemanticQueryResponse(
+	r *nethttp.Request,
+	metrics Metrics,
+	modelID string,
+	dimensions, measures []reportdef.QueryField,
+	timeRef *reportdef.QueryTime,
+	response *api.SemanticQueryResponse,
+) {
+	if response == nil {
+		return
+	}
+	workspaceID := strings.TrimSpace(chi.URLParam(r, "workspace"))
+	if workspaceID == "" {
+		workspaceID = metrics.Catalog().Workspace.ID
+	}
+	if model := semanticModelForID(metrics, modelID); model != nil {
+		response.Columns = semanticQueryColumns(workspaceID, modelID, model, response.Columns, dimensions, measures, timeRef)
+	}
+	if h.QueryFreshness != nil {
+		if freshness, ok := h.QueryFreshness(r.Context(), workspaceID, modelID, response.ServingSnapshot); ok {
+			response.Freshness = &freshness
+		}
+	}
+}
+
+func semanticQueryColumns(
+	workspaceID, modelID string,
+	model *semanticmodel.Model,
+	columns []api.QueryColumn,
+	dimensions, measures []reportdef.QueryField,
+	timeRef *reportdef.QueryTime,
+) []api.QueryColumn {
+	semantic := make(map[string]api.QueryColumn, len(dimensions)+len(measures)+1)
+	for _, field := range dimensions {
+		semantic[semanticOutputName(field.Field, field.Alias)] = semanticDimensionColumn(workspaceID, modelID, model, field)
+	}
+	if timeRef != nil && timeRef.Field != "" {
+		field := reportdef.QueryField{Field: timeRef.Field, Alias: timeRef.Alias}
+		semantic[semanticOutputName(field.Field, field.Alias)] = semanticDimensionColumn(workspaceID, modelID, model, field)
+	}
+	for _, field := range measures {
+		semantic[semanticOutputName(field.Field, field.Alias)] = semanticMeasureColumn(workspaceID, modelID, model, field)
+	}
+	out := make([]api.QueryColumn, len(columns))
+	for index, column := range columns {
+		if descriptor, ok := semantic[column.Name]; ok {
+			descriptor.Name = column.Name
+			out[index] = descriptor
+			continue
+		}
+		out[index] = column
+	}
+	return out
+}
+
+func semanticDimensionColumn(workspaceID, modelID string, model *semanticmodel.Model, field reportdef.QueryField) api.QueryColumn {
+	if dimension, ok := model.Dimensions[field.Field]; ok {
+		dataType := semanticColumnType(dimension.Type)
+		return api.QueryColumn{
+			Name: semanticOutputName(field.Field, field.Alias), Type: dataType,
+			Nullable: semanticDimensionNullable(model, dimension),
+			FieldRef: &api.QueryFieldRef{WorkspaceID: workspaceID, Type: "field", ID: modelID + "." + field.Field},
+			Label:    semanticLabel(dimension.Label, field.Field), Kind: "dimension",
+		}
+	}
+	if dimension, err := model.ResolveDimension(field.Field); err == nil {
+		dataType := semanticColumnType(dimension.Type)
+		return api.QueryColumn{
+			Name: semanticOutputName(field.Field, field.Alias), Type: dataType,
+			Nullable: physicalDimensionNullable(model.Tables[dimension.Table], dimension.Name),
+			FieldRef: &api.QueryFieldRef{WorkspaceID: workspaceID, Type: "field", ID: modelID + "." + field.Field},
+			Label:    semanticLabel(dimension.Label, dimension.Name), Kind: "dimension",
+		}
+	}
+	return api.QueryColumn{Name: semanticOutputName(field.Field, field.Alias), Type: "string", Nullable: true}
+}
+
+func semanticMeasureColumn(workspaceID, modelID string, model *semanticmodel.Model, field reportdef.QueryField) api.QueryColumn {
+	if measure, ok := model.Measures[field.Field]; ok {
+		dataType := semanticMeasureType(model, measure)
+		return api.QueryColumn{
+			Name: semanticOutputName(field.Field, field.Alias), Type: dataType,
+			Nullable: measure.Empty != "zero",
+			FieldRef: &api.QueryFieldRef{WorkspaceID: workspaceID, Type: "measure", ID: modelID + "." + field.Field},
+			Label:    semanticLabel(measure.Label, field.Field), Kind: "measure", Unit: measure.Unit, Format: measure.Format,
+		}
+	}
+	if metric, ok := model.Metrics[field.Field]; ok {
+		return api.QueryColumn{
+			Name: semanticOutputName(field.Field, field.Alias), Type: "decimal", Nullable: true,
+			FieldRef: &api.QueryFieldRef{WorkspaceID: workspaceID, Type: "measure", ID: modelID + "." + field.Field},
+			Label:    semanticLabel(metric.Label, field.Field), Kind: "metric", Unit: metric.Unit, Format: metric.Format,
+		}
+	}
+	return api.QueryColumn{Name: semanticOutputName(field.Field, field.Alias), Type: "string", Nullable: true}
+}
+
+func semanticMeasureType(model *semanticmodel.Model, measure semanticmodel.MetricMeasure) string {
+	if measure.Aggregation == "count" || measure.Aggregation == "count_distinct" {
+		return "int64"
+	}
+	if measure.Aggregation == "avg" {
+		return "decimal"
+	}
+	if measure.Input.Field != "" {
+		if dimension, err := model.ResolveDimension(measure.Input.Field); err == nil {
+			return semanticColumnType(dimension.Type)
+		}
+	}
+	return "decimal"
+}
+
+func semanticColumnType(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	switch {
+	case value == "boolean" || strings.Contains(value, "bool"):
+		return "boolean"
+	case value == "date":
+		return "date"
+	case strings.Contains(value, "timestamp") || strings.Contains(value, "datetime"):
+		return "timestamp"
+	case strings.Contains(value, "int"):
+		return "int64"
+	case value == "number" || strings.Contains(value, "decimal") || strings.Contains(value, "numeric") ||
+		strings.Contains(value, "double") || strings.Contains(value, "float") || strings.Contains(value, "real"):
+		return "decimal"
+	case value == "json":
+		return "json"
+	default:
+		return "string"
+	}
+}
+
+func semanticDimensionNullable(model *semanticmodel.Model, dimension semanticmodel.SemanticDimension) bool {
+	for _, binding := range dimension.Bindings {
+		physical, err := model.ResolveDimension(binding.Field)
+		if err != nil || physicalDimensionNullable(model.Tables[physical.Table], physical.Name) {
+			return true
+		}
+	}
+	return len(dimension.Bindings) == 0
+}
+
+func physicalDimensionNullable(table semanticmodel.Table, field string) bool {
+	for _, column := range table.Schema.Columns {
+		if column.Name == field && column.Nullable != nil {
+			return *column.Nullable
+		}
+	}
+	return true
+}
+
+func semanticOutputName(field, alias string) string {
+	if alias != "" {
+		return alias
+	}
+	if index := strings.LastIndex(field, "."); index >= 0 {
+		return field[index+1:]
+	}
+	return field
+}
+
+func semanticLabel(label, field string) string {
+	if strings.TrimSpace(label) != "" {
+		return label
+	}
+	name := semanticOutputName(field, "")
+	words := strings.Fields(strings.ReplaceAll(name, "_", " "))
+	for index := range words {
+		if words[index] != "" {
+			words[index] = strings.ToUpper(words[index][:1]) + words[index][1:]
+		}
+	}
+	return strings.Join(words, " ")
 }
 
 func queryIDForRequest(r *nethttp.Request) string {

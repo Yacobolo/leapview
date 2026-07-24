@@ -16528,35 +16528,6 @@ paths:
                 type: example
       tags:
         - Search
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - default: !!float 10
-              name: limit
-              source: query
-        name: search
-        output:
-          cursor:
-            source: /page/nextCursor
-          mode: project
-          select:
-            - count_as: count
-              select:
-                - source: /reference/workspaceId
-                  target: workspaceId
-                - source: /reference/type
-                  target: type
-                - source: /reference/id
-                  target: id
-                - source: /name
-                - source: /description
-                - source: /href
-              source: /items
-        tags:
-          - search
-          - discovery
       x-authz:
         mode: privilege
         privilege: VIEW_ITEM
@@ -19293,28 +19264,6 @@ paths:
                 type: example
       tags:
         - Workspaces
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - default: !!float 25
-              name: limit
-              source: query
-        name: list_workspaces
-        output:
-          cursor:
-            source: /page/nextCursor
-          mode: project
-          select:
-            - count_as: count
-              select:
-                - source: /id
-                - source: /title
-                - source: /description
-              source: /items
-        tags:
-          - workspace
       x-authz:
         mode: privilege
         privilege: USE_WORKSPACE
@@ -20145,33 +20094,6 @@ paths:
                 type: example
       tags:
         - Workspaces
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-            - default: !!float 25
-              name: limit
-              source: query
-        name: list_workspace_asset_edges
-        output:
-          cursor:
-            source: /page/nextCursor
-          mode: project
-          select:
-            - count_as: count
-              select:
-                - source: /fromAssetId
-                - source: /toAssetId
-                - source: /type
-              source: /items
-        tags:
-          - workspace
-          - lineage
       x-authz:
         mode: privilege
         privilege: USE_WORKSPACE
@@ -20479,35 +20401,6 @@ paths:
                 type: example
       tags:
         - Workspaces
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-            - default: !!float 25
-              name: limit
-              source: query
-        name: list_assets
-        output:
-          cursor:
-            source: /page/nextCursor
-          mode: project
-          select:
-            - count_as: count
-              select:
-                - source: /id
-                - source: /type
-                - source: /title
-                - source: /description
-              source: /items
-        tags:
-          - workspace
-          - asset
-          - lineage
       x-authz:
         mode: privilege
         privilege: USE_WORKSPACE
@@ -20786,28 +20679,6 @@ paths:
                 type: example
       tags:
         - Workspaces
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-        name: describe_asset
-        output:
-          mode: project
-          select:
-            - source: /id
-            - source: /type
-            - source: /title
-            - source: /description
-            - source: /payloadSchema
-            - source: /href
-        tags:
-          - workspace
-          - asset
       x-authz:
         mode: privilege
         privilege: VIEW_ITEM
@@ -21078,26 +20949,6 @@ paths:
                 type: example
       tags:
         - Workspaces
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-        name: asset_lineage
-        output:
-          mode: project
-          select:
-            - source: /assetId
-            - source: /upstream
-            - source: /downstream
-        tags:
-          - workspace
-          - asset
-          - lineage
       x-authz:
         mode: privilege
         privilege: VIEW_ITEM
@@ -23444,34 +23295,6 @@ paths:
                 type: example
       tags:
         - BI
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-            - default: !!float 25
-              name: limit
-              source: query
-        name: list_dashboards
-        output:
-          cursor:
-            source: /page/nextCursor
-          mode: project
-          select:
-            - count_as: count
-              select:
-                - source: /id
-                - source: /title
-                - source: /description
-                - source: /pageCount
-              source: /items
-        tags:
-          - dashboard
-          - catalog
       x-authz:
         mode: privilege
         privilege: VIEW_ITEM
@@ -23758,30 +23581,6 @@ paths:
                 type: example
       tags:
         - BI
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-        name: describe_dashboard
-        output:
-          mode: project
-          select:
-            - source: /id
-            - source: /title
-            - source: /description
-            - source: /semantic_model
-            - source: /model
-            - source: /counts
-            - source: /pages
-            - source: /detail_tools
-        tags:
-          - dashboard
-          - catalog
       x-authz:
         mode: privilege
         privilege: VIEW_ITEM
@@ -24057,21 +23856,6 @@ paths:
                 type: example
       tags:
         - BI
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-        name: describe_dashboard_page
-        output:
-          mode: raw
-        tags:
-          - dashboard
-          - page
       x-authz:
         mode: privilege
         privilege: VIEW_ITEM
@@ -24692,32 +24476,6 @@ paths:
                     interactionID: example
                     order: 1
                     visualID: example
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-            - default: !!float 25
-              name: limit
-              source: query
-        name: list_dashboard_filter_values
-        output:
-          cursor:
-            source: /page/nextCursor
-          mode: project
-          select:
-            - count_as: count
-              select:
-                - source: /value
-                - source: /label
-              source: /items
-        tags:
-          - dashboard
-          - filter
       x-authz:
         mode: privilege
         privilege: QUERY_DATA
@@ -25053,21 +24811,6 @@ paths:
                     interactionID: example
                     order: 1
                     visualID: example
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-        name: query_dashboard_page
-        output:
-          mode: raw
-        tags:
-          - dashboard
-          - query
       x-authz:
         mode: privilege
         privilege: QUERY_DATA
@@ -25358,21 +25101,6 @@ paths:
                 type: example
       tags:
         - BI
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-        name: describe_dashboard_visual
-        output:
-          mode: raw
-        tags:
-          - dashboard
-          - visual
       x-authz:
         mode: privilege
         privilege: VIEW_ITEM
@@ -25380,13 +25108,14 @@ paths:
   /api/v1/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/visuals/{visual}/query:
     post:
       operationId: queryDashboardVisualData
-      summary: Query dashboard visual
+      summary: Query an existing dashboard visual with governed filters and compact analytical output
       parameters:
         - name: workspace
           in: path
           required: true
           schema:
             type: string
+            minLength: 1
           example: example
         - name: dashboard
           in: path
@@ -25724,10 +25453,13 @@ paths:
         effect: read
         input:
           fields:
-            - context_key: workspace
-              mode: context
+            - description: Workspace ID to query.
+              mode: model
               name: workspace
               source: path
+            - default: !!float 50
+              name: limit
+              source: body
         name: query_dashboard_visual
         output:
           mode: raw
@@ -32048,34 +31780,6 @@ paths:
                 type: example
       tags:
         - Refresh Runs
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-            - default: !!float 25
-              name: limit
-              source: query
-        name: list_refresh_runs
-        output:
-          cursor:
-            source: /page/nextCursor
-          mode: project
-          select:
-            - count_as: count
-              select:
-                - source: /id
-                - source: /pipelineId
-                - source: /semanticModel
-                - source: /status
-                - source: /createdAt
-              source: /items
-        tags:
-          - refresh
       x-authz:
         mode: privilege
         privilege: USE_WORKSPACE
@@ -32645,30 +32349,6 @@ paths:
                 type: example
       tags:
         - Refresh Runs
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-        name: get_refresh_run
-        output:
-          mode: project
-          select:
-            - source: /id
-            - source: /pipelineId
-            - source: /semanticModel
-            - source: /trigger
-            - source: /status
-            - source: /error
-            - source: /createdAt
-            - source: /startedAt
-            - source: /finishedAt
-        tags:
-          - refresh
       x-authz:
         mode: privilege
         privilege: USE_WORKSPACE
@@ -35256,33 +34936,6 @@ paths:
                 type: example
       tags:
         - BI
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-            - default: !!float 25
-              name: limit
-              source: query
-        name: list_semantic_models
-        output:
-          cursor:
-            source: /page/nextCursor
-          mode: project
-          select:
-            - count_as: count
-              select:
-                - source: /id
-                - source: /title
-                - source: /description
-              source: /items
-        tags:
-          - semantic-model
-          - catalog
       x-authz:
         mode: privilege
         privilege: VIEW_ITEM
@@ -35571,28 +35224,6 @@ paths:
                 type: example
       tags:
         - BI
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-        name: describe_model
-        output:
-          mode: project
-          select:
-            - source: /id
-            - source: /title
-            - source: /description
-            - source: /dashboards
-            - source: /counts
-            - source: /tables
-        tags:
-          - semantic-model
-          - catalog
       x-authz:
         mode: privilege
         privilege: VIEW_ITEM
@@ -35886,33 +35517,6 @@ paths:
                 type: example
       tags:
         - BI
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-            - default: !!float 25
-              name: limit
-              source: query
-        name: list_semantic_datasets
-        output:
-          cursor:
-            source: /page/nextCursor
-          mode: project
-          select:
-            - count_as: count
-              select:
-                - source: /id
-                - source: /kind
-                - source: /description
-              source: /items
-        tags:
-          - semantic-model
-          - dataset
       x-authz:
         mode: privilege
         privilege: VIEW_ITEM
@@ -36194,31 +35798,6 @@ paths:
                 type: example
       tags:
         - BI
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-        name: describe_semantic_dataset
-        output:
-          mode: project
-          select:
-            - source: /id
-            - source: /kind
-            - source: /source
-            - source: /sources
-            - source: /description
-            - source: /primaryKey
-            - source: /grain
-            - source: /fieldCount
-            - source: /measureCount
-        tags:
-          - semantic-model
-          - dataset
       x-authz:
         mode: privilege
         privilege: VIEW_ITEM
@@ -36525,35 +36104,6 @@ paths:
                 type: example
       tags:
         - BI
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-            - default: !!float 25
-              name: limit
-              source: query
-        name: list_semantic_fields
-        output:
-          cursor:
-            source: /page/nextCursor
-          mode: project
-          select:
-            - count_as: count
-              select:
-                - source: /kind
-                - source: /id
-                - source: /label
-                - source: /description
-              source: /items
-        tags:
-          - semantic-model
-          - dataset
-          - field
       x-authz:
         mode: privilege
         privilege: VIEW_ITEM
@@ -36596,9 +36146,26 @@ paths:
                 $ref: '#/components/schemas/SemanticQueryResponse'
               example:
                 columns:
-                  - name: example
+                  - fieldRef:
+                      id: example
+                      type: example
+                      workspaceId: example
+                    format: example
+                    kind: example
+                    label: example
+                    name: example
                     nullable: true
                     type: boolean
+                    unit: example
+                completeness:
+                  hasMore: true
+                  returnedRows: 1
+                freshness:
+                  lastSuccessfulRefreshAt: "2026-01-02T15:04:05Z"
+                  servingStateId: example
+                  snapshotId: example
+                  source: example
+                  status: example
                 page:
                   nextCursor: example
                 queryId: example
@@ -36861,7 +36428,7 @@ paths:
                   field: example
                   groups:
                     - filters: []
-                  operator: example
+                  operator: equals
                   values:
                     - example
               limit: 1
@@ -36870,33 +36437,8 @@ paths:
                   field: example
               pageToken: example
               sort:
-                - direction: example
+                - direction: asc
                   field: example
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-            - default: !!float 25
-              name: limit
-              source: body
-        name: preview_semantic_dataset
-        output:
-          cursor:
-            source: /page/nextCursor
-          mode: project
-          select:
-            - source: /columns
-            - count_as: count
-              source: /rows
-        tags:
-          - semantic-model
-          - dataset
-          - query
       x-authz:
         mode: privilege
         privilege: PREVIEW_DATA
@@ -37201,7 +36743,7 @@ paths:
                   field: example
                   groups:
                     - filters: []
-                  operator: example
+                  operator: equals
                   values:
                     - example
               limit: 1
@@ -37210,30 +36752,8 @@ paths:
                   field: example
               pageToken: example
               sort:
-                - direction: example
+                - direction: asc
                   field: example
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-        name: explain_semantic_preview
-        output:
-          mode: project
-          select:
-            - source: /mode
-            - source: /sql
-            - source: /args
-            - source: /columns
-            - source: /warnings
-        tags:
-          - semantic-model
-          - dataset
-          - query
       x-authz:
         mode: privilege
         privilege: PREVIEW_DATA
@@ -37534,34 +37054,6 @@ paths:
                 type: example
       tags:
         - BI
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-            - default: !!float 25
-              name: limit
-              source: query
-        name: list_semantic_model_fields
-        output:
-          cursor:
-            source: /page/nextCursor
-          mode: project
-          select:
-            - count_as: count
-              select:
-                - source: /kind
-                - source: /id
-                - source: /label
-                - source: /description
-              source: /items
-        tags:
-          - semantic-model
-          - field
       x-authz:
         mode: privilege
         privilege: VIEW_ITEM
@@ -37569,13 +37061,14 @@ paths:
   /api/v1/workspaces/{workspace}/semantic-models/{model}/query:
     post:
       operationId: querySemanticModel
-      summary: Query semantic model
+      summary: Query governed semantic data with typed columns, filters, pagination, and provenance
       parameters:
         - name: workspace
           in: path
           required: true
           schema:
             type: string
+            minLength: 1
           example: example
         - name: model
           in: path
@@ -37598,9 +37091,26 @@ paths:
                 $ref: '#/components/schemas/SemanticQueryResponse'
               example:
                 columns:
-                  - name: example
+                  - fieldRef:
+                      id: example
+                      type: example
+                      workspaceId: example
+                    format: example
+                    kind: example
+                    label: example
+                    name: example
                     nullable: true
                     type: boolean
+                    unit: example
+                completeness:
+                  hasMore: true
+                  returnedRows: 1
+                freshness:
+                  lastSuccessfulRefreshAt: "2026-01-02T15:04:05Z"
+                  servingStateId: example
+                  snapshotId: example
+                  source: example
+                  status: example
                 page:
                   nextCursor: example
                 queryId: example
@@ -37863,7 +37373,7 @@ paths:
                   field: example
                   groups:
                     - filters: []
-                  operator: example
+                  operator: equals
                   values:
                     - example
               limit: 1
@@ -37872,19 +37382,19 @@ paths:
                   field: example
               pageToken: example
               sort:
-                - direction: example
+                - direction: asc
                   field: example
               time:
                 alias: example
                 field: example
-                grain: example
+                grain: day
       x-apigen-tool:
         confirmation: never
         effect: read
         input:
           fields:
-            - context_key: workspace
-              mode: context
+            - description: Workspace ID to query.
+              mode: model
               name: workspace
               source: path
             - default: !!float 25
@@ -37896,9 +37406,35 @@ paths:
             source: /page/nextCursor
           mode: project
           select:
-            - source: /columns
-            - count_as: count
-              source: /rows
+            - source: /queryId
+            - source: /servingSnapshot
+            - select:
+                - source: /lastSuccessfulRefreshAt
+                - source: /snapshotId
+                - source: /servingStateId
+                - source: /source
+                - source: /status
+              source: /freshness
+            - select:
+                - source: /returnedRows
+                - source: /hasMore
+              source: /completeness
+            - select:
+                - source: /name
+                - source: /type
+                  target: dataType
+                - source: /nullable
+                - select:
+                    - source: /workspaceId
+                    - source: /type
+                    - source: /id
+                  source: /fieldRef
+                - source: /label
+                - source: /kind
+                - source: /unit
+                - source: /format
+              source: /columns
+            - source: /rows
         tags:
           - semantic-model
           - query
@@ -38200,7 +37736,7 @@ paths:
                   field: example
                   groups:
                     - filters: []
-                  operator: example
+                  operator: equals
                   values:
                     - example
               limit: 1
@@ -38209,37 +37745,12 @@ paths:
                   field: example
               pageToken: example
               sort:
-                - direction: example
+                - direction: asc
                   field: example
               time:
                 alias: example
                 field: example
-                grain: example
-      x-apigen-tool:
-        confirmation: never
-        effect: read
-        input:
-          fields:
-            - context_key: workspace
-              mode: context
-              name: workspace
-              source: path
-        name: explain_semantic_model_query
-        output:
-          mode: project
-          select:
-            - source: /mode
-            - source: /facts
-            - source: /stitchDimensions
-            - source: /physicalDependencies
-            - source: /relationshipPaths
-            - source: /sql
-            - source: /args
-            - source: /columns
-            - source: /warnings
-        tags:
-          - semantic-model
-          - query
+                grain: day
       x-authz:
         mode: privilege
         privilege: QUERY_DATA
@@ -43859,16 +43370,50 @@ components:
       properties:
         name:
           type: string
+          description: Output column name used to match positional row cells.
           example: example
         type:
           $ref: '#/components/schemas/QueryColumnType'
+          description: Precision-safe wire data type. Agent tools expose this property as dataType.
         nullable:
           type: boolean
+          description: Whether the governed semantic definition can produce SQL NULL.
           example: true
+        fieldRef:
+          $ref: '#/components/schemas/QueryFieldRef'
+          description: Governed catalog ref for the selected field, measure, or metric.
+        label:
+          type: string
+          description: Business-facing semantic label.
+          example: example
+        kind:
+          type: string
+          enum:
+            - dimension
+            - measure
+            - metric
+          description: Semantic role of the selected member.
+          example: example
+        unit:
+          type: string
+          description: Business unit declared by the semantic measure or metric.
+          example: example
+        format:
+          type: string
+          description: Formatting contract declared by the semantic measure or metric.
+          example: example
       example:
+        fieldRef:
+          id: example
+          type: example
+          workspaceId: example
+        format: example
+        kind: example
+        label: example
         name: example
         nullable: true
         type: boolean
+        unit: example
     QueryColumnType:
       type: string
       enum:
@@ -43881,6 +43426,24 @@ components:
         - timestamp
         - json
       example: boolean
+    QueryCompleteness:
+      type: object
+      required:
+        - returnedRows
+        - hasMore
+      properties:
+        returnedRows:
+          type: integer
+          format: int32
+          description: Number of rows present in this response page.
+          example: 1
+        hasMore:
+          type: boolean
+          description: Whether another governed page is available.
+          example: true
+      example:
+        hasMore: true
+        returnedRows: 1
     QueryEventListResponse:
       type: object
       required:
@@ -44055,12 +43618,80 @@ components:
         surface: example
         target: example
         workspaceId: example
+    QueryFieldRef:
+      type: object
+      required:
+        - workspaceId
+        - type
+        - id
+      properties:
+        workspaceId:
+          type: string
+          description: Workspace containing the semantic member.
+          example: example
+        type:
+          type: string
+          enum:
+            - field
+            - measure
+          description: Catalog type of the semantic member.
+          example: example
+        id:
+          type: string
+          description: Workspace-local catalog ID.
+          example: example
+      example:
+        id: example
+        type: example
+        workspaceId: example
     QueryFormat:
       type: string
       enum:
         - application/json
         - application/vnd.apache.arrow.stream
       example: application/json
+    QueryFreshness:
+      type: object
+      required:
+        - lastSuccessfulRefreshAt
+        - snapshotId
+        - servingStateId
+        - source
+        - status
+      properties:
+        lastSuccessfulRefreshAt:
+          type: string
+          format: date-time
+          description: Completion time of the last successful publish or refresh. This is not an upstream event-time watermark.
+          example: "2026-01-02T15:04:05Z"
+        snapshotId:
+          type: string
+          description: DuckLake snapshot ID recorded for the successful data version.
+          example: example
+        servingStateId:
+          type: string
+          description: Serving state that produced the successful data version.
+          example: example
+        source:
+          type: string
+          enum:
+            - publish
+            - refresh
+          description: Whether the data version came from publish or refresh.
+          example: example
+        status:
+          type: string
+          enum:
+            - current
+            - stale
+          description: current when the successful data version belongs to the queried serving snapshot; stale otherwise.
+          example: example
+      example:
+        lastSuccessfulRefreshAt: "2026-01-02T15:04:05Z"
+        servingStateId: example
+        snapshotId: example
+        source: example
+        status: example
     RefreshRunCreateRequest:
       type: object
       required:
@@ -45044,9 +44675,11 @@ components:
       properties:
         field:
           type: string
+          description: Semantic field or measure ID. Use the ID returned by catalog_list or catalog_get.
           example: example
         alias:
           type: string
+          description: Optional output column name.
           example: example
       example:
         alias: example
@@ -45117,23 +44750,27 @@ components:
       properties:
         field:
           type: string
+          description: Semantic field ID. Omit only when groups supplies nested filters.
           example: example
         fact:
           type: string
+          description: Fact table used to resolve a conformed dimension when it is otherwise ambiguous.
           example: example
         operator:
-          type: string
-          example: example
+          $ref: '#/components/schemas/SemanticFilterOperator'
+          description: Governed comparison operator. equals is used when omitted.
         values:
           type: array
           items:
             type: string
+          description: Comparison values. is_null and is_not_null accept no values.
           example:
             - example
         groups:
           type: array
           items:
             $ref: '#/components/schemas/SemanticFilterGroup'
+          description: Nested filter groups.
           example:
             - filters: []
       example:
@@ -45141,7 +44778,7 @@ components:
         field: example
         groups:
           - filters: []
-        operator: example
+        operator: equals
         values:
           - example
     SemanticFilterGroup:
@@ -45153,16 +44790,30 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SemanticFilter'
+          description: Filters combined within this nested group.
           example:
             - fact: example
               field: example
               groups:
                 - filters: []
-              operator: example
+              operator: equals
               values:
                 - example
       example:
         filters: []
+    SemanticFilterOperator:
+      type: string
+      enum:
+        - equals
+        - in
+        - contains
+        - not_contains
+        - starts_with
+        - greater_than_or_equal
+        - less_than
+        - is_null
+        - is_not_null
+      example: equals
     SemanticModelCounts:
       type: object
       required:
@@ -45384,7 +45035,7 @@ components:
               field: example
               groups:
                 - filters: []
-              operator: example
+              operator: equals
               values:
                 - example
         sort:
@@ -45392,7 +45043,7 @@ components:
           items:
             $ref: '#/components/schemas/SemanticSort'
           example:
-            - direction: example
+            - direction: asc
               field: example
         limit:
           type: integer
@@ -45414,7 +45065,7 @@ components:
             field: example
             groups:
               - filters: []
-            operator: example
+            operator: equals
             values:
               - example
         limit: 1
@@ -45423,7 +45074,7 @@ components:
             field: example
         pageToken: example
         sort:
-          - direction: example
+          - direction: asc
             field: example
     SemanticQueryRequest:
       type: object
@@ -45453,7 +45104,7 @@ components:
               field: example
               groups:
                 - filters: []
-              operator: example
+              operator: equals
               values:
                 - example
         sort:
@@ -45461,7 +45112,7 @@ components:
           items:
             $ref: '#/components/schemas/SemanticSort'
           example:
-            - direction: example
+            - direction: asc
               field: example
         limit:
           type: integer
@@ -45483,7 +45134,7 @@ components:
             field: example
             groups:
               - filters: []
-            operator: example
+            operator: equals
             values:
               - example
         limit: 1
@@ -45492,50 +45143,83 @@ components:
             field: example
         pageToken: example
         sort:
-          - direction: example
+          - direction: asc
             field: example
         time:
           alias: example
           field: example
-          grain: example
+          grain: day
     SemanticQueryResponse:
       type: object
       required:
         - queryId
         - servingSnapshot
+        - completeness
         - columns
         - rows
         - page
       properties:
         queryId:
           type: string
+          description: Stable identifier for this query execution.
           example: example
         servingSnapshot:
           type: string
+          description: Immutable serving state used by the query and its continuation cursor.
           example: example
+        freshness:
+          $ref: '#/components/schemas/QueryFreshness'
+          description: Last successful data-version metadata when the model has a recorded publish or refresh.
+        completeness:
+          $ref: '#/components/schemas/QueryCompleteness'
+          description: Completeness of the exact row page returned.
         columns:
           type: array
           items:
             $ref: '#/components/schemas/QueryColumn'
           example:
-            - name: example
+            - fieldRef:
+                id: example
+                type: example
+                workspaceId: example
+              format: example
+              kind: example
+              label: example
+              name: example
               nullable: true
               type: boolean
+              unit: example
         rows:
           type: array
           items:
             type: array
-            items:
-              type: string
+            items: {}
           example:
             - - example
         page:
           $ref: '#/components/schemas/PageInfo'
       example:
         columns:
-          - name: example
+          - fieldRef:
+              id: example
+              type: example
+              workspaceId: example
+            format: example
+            kind: example
+            label: example
+            name: example
             nullable: true
             type: boolean
+            unit: example
+        completeness:
+          hasMore: true
+          returnedRows: 1
+        freshness:
+          lastSuccessfulRefreshAt: "2026-01-02T15:04:05Z"
+          servingStateId: example
+          snapshotId: example
+          source: example
+          status: example
         page:
           nextCursor: example
         queryId: example
@@ -45620,13 +45304,20 @@ components:
       properties:
         field:
           type: string
+          description: Selected output field or alias to sort.
           example: example
         direction:
-          type: string
-          example: example
+          $ref: '#/components/schemas/SemanticSortDirection'
+          description: Sort direction. Defaults to ascending when omitted.
       example:
-        direction: example
+        direction: asc
         field: example
+    SemanticSortDirection:
+      type: string
+      enum:
+        - asc
+        - desc
+      example: asc
     SemanticSourceListResponse:
       type: object
       required:
@@ -45687,6 +45378,15 @@ components:
         kind: example
         path: example
         table: example
+    SemanticTimeGrain:
+      type: string
+      enum:
+        - day
+        - week
+        - month
+        - quarter
+        - year
+      example: day
     SemanticTimeRef:
       type: object
       required:
@@ -45694,17 +45394,19 @@ components:
       properties:
         field:
           type: string
+          description: Date or timestamp field ID.
           example: example
         grain:
-          type: string
-          example: example
+          $ref: '#/components/schemas/SemanticTimeGrain'
+          description: Calendar grain used to group the time field.
         alias:
           type: string
+          description: Optional output column name.
           example: example
       example:
         alias: example
         field: example
-        grain: example
+        grain: day
     ServicePrincipalCreateRequest:
       type: object
       required:

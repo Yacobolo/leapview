@@ -143,7 +143,7 @@ func TestToolOutputValidationAndHandlerFailures(t *testing.T) {
 				return ToolResult{Content: map[string]any{"value": strings.Repeat("x", 100)}}, nil
 			}),
 			limit:    12,
-			wantCode: "tool_output_too_large",
+			wantCode: "tool_output_contract_violation",
 		},
 		{
 			name: "display too large",
@@ -191,6 +191,13 @@ func TestToolOutputValidationAndHandlerFailures(t *testing.T) {
 			tool := onlyToolMessage(t, a.Transcript())
 			if !tool.IsError || !strings.Contains(tool.Content, tc.wantCode) {
 				t.Fatalf("tool content = %s, IsError=%v, want %s", tool.Content, tool.IsError, tc.wantCode)
+			}
+			if tc.name == "too large" {
+				for _, want := range []string{"actual_bytes=", "max_bytes=12", "tool=work"} {
+					if !strings.Contains(tool.Content, want) {
+						t.Fatalf("tool contract error missing %q: %s", want, tool.Content)
+					}
+				}
 			}
 			if strings.Contains(tool.Content, "row-data") || tool.DisplayContent != nil {
 				t.Fatalf("tool error leaked display payload: %#v", tool)
@@ -328,7 +335,7 @@ func TestToolResultContentCanUseJSON(t *testing.T) {
 	}
 }
 
-func TestToolResultTruncatesArraysAndStrings(t *testing.T) {
+func TestToolResultDoesNotMutateArraysOrStrings(t *testing.T) {
 	rows := make([]map[string]any, 0, 5)
 	for i := range 5 {
 		rows = append(rows, map[string]any{"id": i + 1, "name": fmt.Sprintf("row-%d", i+1)})
@@ -341,7 +348,6 @@ func TestToolResultTruncatesArraysAndStrings(t *testing.T) {
 		Name:         "test",
 		SystemPrompt: "x",
 		Model:        model,
-		ToolOutput:   ToolOutputConfig{MaxArrayItems: 2, MaxStringChars: 5},
 		Tools: []ToolDefinition{{
 			Name:        "lookup",
 			Description: "lookup",
@@ -356,24 +362,13 @@ func TestToolResultTruncatesArraysAndStrings(t *testing.T) {
 		t.Fatalf("Prompt returned error: %v", err)
 	}
 	tool := onlyToolMessage(t, a.Transcript())
-	for _, want := range []string{
-		"body: abcde",
-		"items[2]{id,name}:",
-		"1,row-1",
-		"_meta:",
-		"truncated: true",
-		"$.body",
-		"$.items",
-		"total: 5",
-		"shown_chars: 5",
-		"total_chars: 10",
-	} {
+	for _, want := range []string{"body: abcdefghij", "items[5]{id,name}:", "1,row-1", "5,row-5"} {
 		if !strings.Contains(tool.Content, want) {
 			t.Fatalf("tool result missing %q:\n%s", want, tool.Content)
 		}
 	}
-	if strings.Contains(tool.Content, "row-3") || strings.Contains(tool.Content, "fghij") {
-		t.Fatalf("tool result was not truncated:\n%s", tool.Content)
+	if strings.Contains(tool.Content, "_meta") || strings.Contains(tool.Content, "truncated") {
+		t.Fatalf("harness added semantic truncation metadata:\n%s", tool.Content)
 	}
 }
 
@@ -444,7 +439,7 @@ func TestToolResultTopLevelEmptyArrayIsExplicit(t *testing.T) {
 	}
 }
 
-func TestToolResultOrderingAndDepthTruncationAreDeterministic(t *testing.T) {
+func TestToolResultOrderingAndDepthAreDeterministicAndLossless(t *testing.T) {
 	content := map[string]any{
 		"z": "last",
 		"a": map[string]any{"b": map[string]any{"c": map[string]any{"d": "too deep"}}},
@@ -458,7 +453,6 @@ func TestToolResultOrderingAndDepthTruncationAreDeterministic(t *testing.T) {
 		Name:         "test",
 		SystemPrompt: "x",
 		Model:        model,
-		ToolOutput:   ToolOutputConfig{MaxObjectDepth: 2},
 		Tools: []ToolDefinition{{
 			Name:        "lookup",
 			Description: "lookup",
@@ -479,8 +473,8 @@ func TestToolResultOrderingAndDepthTruncationAreDeterministic(t *testing.T) {
 	if aIndex < 0 || mIndex < 0 || zIndex < 0 || !(aIndex < mIndex && mIndex < zIndex) {
 		t.Fatalf("object keys should be sorted deterministically:\n%s", tool.Content)
 	}
-	if !strings.Contains(tool.Content, "max_depth") || strings.Contains(tool.Content, "too deep") {
-		t.Fatalf("deep object should be truncated with metadata:\n%s", tool.Content)
+	if strings.Contains(tool.Content, "max_depth") || !strings.Contains(tool.Content, "d: too deep") {
+		t.Fatalf("deep object should be preserved without truncation metadata:\n%s", tool.Content)
 	}
 }
 

@@ -12,7 +12,6 @@ import (
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/access/httpauth"
 	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
-	"github.com/Yacobolo/leapview/internal/workspace"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -519,11 +518,7 @@ func (a apiGenAdapter) QueryDashboardVisualData(w http.ResponseWriter, r *http.R
 
 func (a apiGenAdapter) setServingSnapshot(r *http.Request, workspaceID string) {
 	r.Header.Del("X-Serving-Snapshot")
-	repo, err := a.server.workspaceRepository()
-	if err != nil || repo == nil {
-		return
-	}
-	row, err := repo.ByID(r.Context(), workspace.WorkspaceID(a.server.workspaceID(workspaceID)))
+	row, err := a.server.workspaceWithActiveMetadata(r.Context(), workspaceID)
 	if err == nil && row.ActiveServingStateID != "" {
 		r.Header.Set("X-Serving-Snapshot", string(row.ActiveServingStateID))
 	}

@@ -3,22 +3,29 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Yacobolo/leapview/internal/access"
 	agentcap "github.com/Yacobolo/leapview/internal/agent"
+	agentcontracts "github.com/Yacobolo/leapview/internal/agent/contracts"
 	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
+	"github.com/Yacobolo/leapview/internal/dashboard"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	"github.com/Yacobolo/leapview/internal/dataquery"
+	"github.com/Yacobolo/leapview/internal/productdocs"
 	"github.com/Yacobolo/leapview/internal/queryaudit"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
+	"github.com/Yacobolo/leapview/internal/refreshpipeline"
 	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
+	toon "github.com/toon-format/toon-go"
 )
 
 func agentAPIGenToolsForTest(server *Server, scope agentcap.Scope) []agentcore.ToolDefinition {
@@ -29,6 +36,58 @@ func agentVisualToolsForTest(server *Server, scope agentcap.Scope) []agentcore.T
 	return agentVisualToolProviderForTest(server).Definitions(agentToolsScope(scope))
 }
 
+func TestAgentDocsToolsSearchAndReadEmbeddedDocumentation(t *testing.T) {
+	definitions := (&Server{}).agentDocsToolProvider().Definitions()
+	search, err := definitions[0].Handler.Run(context.Background(), agentcore.ToolCall{
+		ID: "docs-search", Name: agenttools.DocsSearchToolName,
+		Arguments: json.RawMessage(`{"query":"semantic relationships","path":"concepts","limit":1}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if search.IsError {
+		t.Fatalf("docs_search result = %#v", search.Content)
+	}
+	searchResult, ok := search.Content.(productdocs.SearchResult)
+	if !ok || len(searchResult.Matches) != 1 || searchResult.Count != 1 || !searchResult.HasMore || searchResult.NextCursor == "" {
+		t.Fatalf("docs_search content = %#v", search.Content)
+	}
+	nextArguments, err := json.Marshal(productdocs.SearchRequest{
+		Query: "semantic relationships", Path: "concepts", Cursor: searchResult.NextCursor, Limit: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := definitions[0].Handler.Run(context.Background(), agentcore.ToolCall{
+		ID: "docs-search-next", Name: agenttools.DocsSearchToolName, Arguments: nextArguments,
+	})
+	if err != nil || next.IsError {
+		t.Fatalf("continued docs_search = %#v, error=%v", next.Content, err)
+	}
+	nextResult, ok := next.Content.(productdocs.SearchResult)
+	if !ok || nextResult.Count != 1 || nextResult.Matches[0].ID == searchResult.Matches[0].ID {
+		t.Fatalf("continued docs_search content = %#v", next.Content)
+	}
+
+	readArguments, err := json.Marshal(productdocs.ReadRequest{ID: searchResult.Matches[0].ID, Limit: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	read, err := definitions[1].Handler.Run(context.Background(), agentcore.ToolCall{
+		ID: "docs-read", Name: agenttools.DocsReadToolName, Arguments: readArguments,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read.IsError {
+		t.Fatalf("docs_read result = %#v", read.Content)
+	}
+	readResult, ok := read.Content.(productdocs.ReadResult)
+	if !ok || readResult.LineStart != 1 || readResult.LineEnd > 3 || !strings.Contains(readResult.Content, "Semantic models") {
+		t.Fatalf("docs_read content = %#v", read.Content)
+	}
+}
+
 func runAgentVisualToolForTest(server *Server, ctx context.Context, scope agentcap.Scope, call agentcore.ToolCall) agentcore.ToolResult {
 	return agentVisualToolProviderForTest(server).Run(ctx, agentToolsScope(scope), call)
 }
@@ -37,7 +96,7 @@ func agentVisualToolProviderForTest(server *Server) agenttools.VisualProvider {
 	return server.agentVisualToolProvider()
 }
 
-func TestAPIGenAgentToolsExposeTaggedReadOperationsOnly(t *testing.T) {
+func TestAPIGenAgentToolsExposeOnlyGovernedQueryOperations(t *testing.T) {
 	server := NewWithOptions(manyRowsMetrics{}, Options{DefaultWorkspaceID: "test"})
 	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
 	names := map[string]agentcore.ToolDefinition{}
@@ -45,71 +104,28 @@ func TestAPIGenAgentToolsExposeTaggedReadOperationsOnly(t *testing.T) {
 		names[tool.Name] = tool
 	}
 
-	for _, want := range []string{
-		"describe_dashboard",
-		"describe_dashboard_visual",
-		"describe_model",
-		"get_refresh_run",
-		"asset_lineage",
-		"describe_asset",
-		"describe_dashboard_page",
-		"list_dashboard_filter_values",
-		"list_assets",
-		"list_dashboards",
-		"list_refresh_runs",
-		"list_semantic_datasets",
-		"list_semantic_fields",
-		"list_semantic_models",
-		"list_workspace_asset_edges",
-		"list_workspaces",
-		"preview_semantic_dataset",
-		"query_dashboard_page",
-		"query_dashboard_visual",
-		"query_semantic_model",
-		"search",
-		"explain_semantic_model_query",
-		"explain_semantic_preview",
-	} {
+	for _, want := range []string{"query_dashboard_visual", "query_semantic_model"} {
 		if _, ok := names[want]; !ok {
 			t.Fatalf("missing APIGen agent tool %q in %#v", want, toolNames(tools))
 		}
 	}
-	for _, forbidden := range []string{
-		"activate_publish",
-		"create_agent_turn",
-		"create_publish",
-		"create_deployment_candidate",
-		"create_role_binding",
-		"revoke_current_api_token",
-		"upload_publish_artifact",
-		"upload_deployment_candidate_artifact",
-	} {
-		if _, ok := names[forbidden]; ok {
-			t.Fatalf("risky operation exposed as agent tool %q", forbidden)
-		}
+	if len(names) != 2 {
+		t.Fatalf("APIGen tools = %#v, want exact query pair", toolNames(tools))
 	}
 
 	var schema struct {
 		Properties map[string]any `json:"properties"`
 		Required   []string       `json:"required"`
 	}
-	if err := json.Unmarshal(names["list_assets"].InputSchema, &schema); err != nil {
-		t.Fatalf("decode list_assets schema: %v", err)
+	if err := json.Unmarshal(names["query_semantic_model"].InputSchema, &schema); err != nil {
+		t.Fatalf("decode query_semantic_model schema: %v", err)
 	}
-	if _, ok := schema.Properties["workspace"]; ok {
-		t.Fatalf("workspace must be hidden from model input: %s", names["list_assets"].InputSchema)
+	if _, ok := schema.Properties["workspace"]; !ok || !slices.Contains(schema.Required, "workspace") {
+		t.Fatalf("workspace must remain explicit in every model input: %s", names["query_semantic_model"].InputSchema)
 	}
-	for _, want := range []string{"type", "q", "limit", "pageToken"} {
+	for _, want := range []string{"model", "dimensions", "measures", "limit", "pageToken"} {
 		if _, ok := schema.Properties[want]; !ok {
-			t.Fatalf("schema missing query parameter %q: %s", want, names["list_assets"].InputSchema)
-		}
-	}
-	if err := json.Unmarshal(names["search"].InputSchema, &schema); err != nil {
-		t.Fatalf("decode search schema: %v", err)
-	}
-	for _, want := range []string{"q", "workspace", "type", "limit", "pageToken"} {
-		if _, ok := schema.Properties[want]; !ok {
-			t.Fatalf("search schema missing query parameter %q: %s", want, names["search"].InputSchema)
+			t.Fatalf("schema missing query parameter %q: %s", want, names["query_semantic_model"].InputSchema)
 		}
 	}
 }
@@ -126,10 +142,51 @@ func TestAgentVisualToolIsCustomAgentOnlyTool(t *testing.T) {
 			t.Fatalf("query_visual schema contains non-portable keyword %s: %s", forbidden, schemaText)
 		}
 	}
+	if !strings.Contains(schemaText, `"filters"`) {
+		t.Fatalf("query_visual input schema does not expose governed filters: %s", schemaText)
+	}
+	var outputSchema struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if err := json.Unmarshal(tools[0].OutputSchema, &outputSchema); err != nil {
+		t.Fatalf("decode query_visual output schema: %v", err)
+	}
+	for _, property := range []string{"queryId", "servingSnapshot", "freshness", "fields", "filters", "completeness", "status", "diagnostics", "signal"} {
+		if _, ok := outputSchema.Properties[property]; !ok {
+			t.Fatalf("query_visual output schema missing %q: %s", property, tools[0].OutputSchema)
+		}
+	}
+	if _, ok := outputSchema.Properties["patch"]; ok {
+		t.Fatalf("query_visual canonical output schema exposes renderer patch: %s", tools[0].OutputSchema)
+	}
 	for _, tool := range agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"}) {
 		if tool.Name == agenttools.QueryVisualToolName {
 			t.Fatalf("query_visual should not be exposed through APIGen tools")
 		}
+	}
+}
+
+func TestAgentVisualToolAcceptsCatalogReferenceIDs(t *testing.T) {
+	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
+	result := runAgentVisualToolForTest(
+		server,
+		context.Background(),
+		agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true},
+		agentcore.ToolCall{
+			ID:   "catalog-ref-visual",
+			Name: agenttools.QueryVisualToolName,
+			Arguments: json.RawMessage(`{
+				"workspace":"test",
+				"type":"bar",
+				"model":"test",
+				"dataset":"test.orders",
+				"dimensions":[{"field":"test.orders.status"}],
+				"measures":[{"field":"test.order_count"}]
+			}`),
+		},
+	)
+	if result.IsError {
+		t.Fatalf("query_visual rejected catalog refs: %#v", result.Content)
 	}
 }
 
@@ -150,6 +207,7 @@ func TestAgentAPIGenQueryAuditSurface(t *testing.T) {
 		ID:   "call_agent_query",
 		Name: "query_semantic_model",
 		Arguments: json.RawMessage(`{
+			"workspace":"test",
 			"model":"test",
 			"dimensions":[{"field":"orders.status","alias":"status"}],
 			"measures":[{"field":"order_count"}],
@@ -179,12 +237,14 @@ func TestAgentVisualToolReturnsChartPatchFromSemanticData(t *testing.T) {
 		ID:   "call_1",
 		Name: "query_visual",
 		Arguments: json.RawMessage(`{
+			"workspace":"test",
 			"model":"test",
 			"dataset":"orders",
 			"title":"Orders by status",
 			"type":"bar",
 			"dimensions":[{"field":"orders.status"}],
 			"measures":[{"field":"order_count"}],
+			"filters":[{"field":"orders.status","operator":"not_contains","values":["cancelled"]}],
 			"limit":10
 		}`),
 	})
@@ -194,25 +254,43 @@ func TestAgentVisualToolReturnsChartPatchFromSemanticData(t *testing.T) {
 	if result.IsError {
 		t.Fatalf("query_visual returned error: %#v", result.Content)
 	}
-	compact, err := json.Marshal(result.ModelContent)
+	normalizedJSON, err := json.Marshal(result.Content)
+	if err != nil {
+		t.Fatalf("normalize query_visual model result: %v", err)
+	}
+	var normalized any
+	if err := json.Unmarshal(normalizedJSON, &normalized); err != nil {
+		t.Fatalf("decode normalized query_visual model result: %v", err)
+	}
+	toonBody, err := toon.Marshal(normalized)
+	if err != nil {
+		t.Fatalf("encode query_visual model result as TOON: %v", err)
+	}
+	if _, err := toon.Decode(toonBody); err != nil {
+		t.Fatalf("query_visual model result does not round-trip through TOON: %v\n%s", err, toonBody)
+	}
+	compact, err := json.Marshal(result.Content)
 	if err != nil {
 		t.Fatalf("marshal result: %v", err)
 	}
 	if strings.Contains(string(compact), "delivered") || strings.Contains(string(compact), `"patch"`) || strings.Contains(string(compact), `"data"`) {
 		t.Fatalf("model-visible chart result should be compact: %s", compact)
 	}
-	var compactResult struct {
-		OK      bool   `json:"ok"`
-		Type    string `json:"type"`
-		ID      string `json:"id"`
-		Summary string `json:"summary"`
-		Signal  string `json:"signal"`
-	}
+	var compactResult agentcontracts.QueryVisualResult
 	if err := json.Unmarshal(compact, &compactResult); err != nil {
 		t.Fatalf("decode compact result: %v body=%s", err, compact)
 	}
 	if compactResult.ID != "agent_visual_call_1" {
 		t.Fatalf("chart artifact id = %q, want call-scoped id", compactResult.ID)
+	}
+	if compactResult.QueryID != "call_1" || compactResult.ServingSnapshot == "" ||
+		compactResult.ModelRef.ID != "test" || compactResult.DatasetRef.ID != "test.orders" ||
+		compactResult.Completeness.ReturnedRows != 2 || compactResult.Completeness.Status != "complete" ||
+		len(compactResult.Fields) != 2 || compactResult.Fields[0].Role != "dimension" ||
+		compactResult.Fields[1].Role != "measure" || compactResult.Fields[1].Label != "Orders" ||
+		len(compactResult.Filters) != 1 || compactResult.Filters[0].Ref.ID != "test.orders.status" ||
+		compactResult.Filters[0].Operator != "not_contains" || compactResult.Status.Kind != "ready" {
+		t.Fatalf("compact chart metadata = %#v", compactResult)
 	}
 	body, err := json.Marshal(result.DisplayContent)
 	if err != nil {
@@ -228,7 +306,7 @@ func TestAgentVisualToolReturnsChartPatchFromSemanticData(t *testing.T) {
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		t.Fatalf("decode result: %v body=%s", err, body)
 	}
-	if !compactResult.OK || compactResult.Type != "bar" || compactResult.ID != decoded.ID || compactResult.Signal != "visuals."+decoded.ID {
+	if !compactResult.Ok || compactResult.Type != "bar" || compactResult.ID != decoded.ID || compactResult.Signal != "visuals."+decoded.ID {
 		t.Fatalf("compact result = %#v decoded=%#v", compactResult, decoded)
 	}
 	visual := decoded.Patch.Visuals[decoded.ID]
@@ -268,6 +346,7 @@ func TestAgentVisualToolAuthorizesAgainstRequestedDataset(t *testing.T) {
 		ID:   "call_dataset_auth",
 		Name: "query_visual",
 		Arguments: json.RawMessage(`{
+			"workspace":"test",
 			"type":"bar",
 			"model":"test",
 			"dataset":"orders",
@@ -293,6 +372,7 @@ func TestAgentVisualToolReturnsTablePatchFromSemanticData(t *testing.T) {
 		ID:   "call_1",
 		Name: "query_visual",
 		Arguments: json.RawMessage(`{
+			"workspace":"test",
 			"type":"table",
 			"model":"test",
 			"dataset":"orders",
@@ -307,24 +387,24 @@ func TestAgentVisualToolReturnsTablePatchFromSemanticData(t *testing.T) {
 	if result.IsError {
 		t.Fatalf("query_visual returned error: %#v", result.Content)
 	}
-	compact, err := json.Marshal(result.ModelContent)
+	compact, err := json.Marshal(result.Content)
 	if err != nil {
 		t.Fatalf("marshal result: %v", err)
 	}
 	if strings.Contains(string(compact), "delivered") || strings.Contains(string(compact), `"patch"`) || strings.Contains(string(compact), `"rows"`) {
 		t.Fatalf("model-visible table result should be compact: %s", compact)
 	}
-	var compactResult struct {
-		OK     bool   `json:"ok"`
-		Type   string `json:"type"`
-		ID     string `json:"id"`
-		Signal string `json:"signal"`
-	}
+	var compactResult agentcontracts.QueryVisualResult
 	if err := json.Unmarshal(compact, &compactResult); err != nil {
 		t.Fatalf("decode compact result: %v body=%s", err, compact)
 	}
 	if compactResult.ID != "agent_visual_call_1" {
 		t.Fatalf("table artifact id = %q, want call-scoped id", compactResult.ID)
+	}
+	if compactResult.QueryID != "call_1" || compactResult.Completeness.ReturnedRows != 2 ||
+		len(compactResult.Fields) != 2 || compactResult.Fields[0].Role != "table_field" ||
+		compactResult.Fields[0].DataType == nil || compactResult.Status.Kind != "ready" {
+		t.Fatalf("compact table metadata = %#v", compactResult)
 	}
 	body, err := json.Marshal(result.DisplayContent)
 	if err != nil {
@@ -340,7 +420,7 @@ func TestAgentVisualToolReturnsTablePatchFromSemanticData(t *testing.T) {
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		t.Fatalf("decode result: %v body=%s", err, body)
 	}
-	if !compactResult.OK || compactResult.Type != "table" || compactResult.ID != decoded.ID || compactResult.Signal != "visuals."+decoded.ID {
+	if !compactResult.Ok || compactResult.Type != "table" || compactResult.ID != decoded.ID || compactResult.Signal != "visuals."+decoded.ID {
 		t.Fatalf("compact result = %#v decoded=%#v", compactResult, decoded)
 	}
 	tabular := decoded.Patch.Visuals[decoded.ID]
@@ -361,6 +441,7 @@ func TestAgentVisualToolReturnsAggregateTableFromRowsAndMeasures(t *testing.T) {
 		ID:   "call_1",
 		Name: "query_visual",
 		Arguments: json.RawMessage(`{
+			"workspace":"test",
 			"type":"table",
 			"model":"test",
 			"dataset":"orders",
@@ -404,6 +485,7 @@ func TestAgentVisualToolUsesToolCallScopedArtifactIDs(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
 	tool := agentVisualToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true})[0]
 	args := json.RawMessage(`{
+		"workspace":"test",
 		"model":"test",
 		"dataset":"orders",
 		"title":"Orders by status",
@@ -420,8 +502,8 @@ func TestAgentVisualToolUsesToolCallScopedArtifactIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run second query_visual: %v", err)
 	}
-	firstBody, _ := json.Marshal(first.ModelContent)
-	secondBody, _ := json.Marshal(second.ModelContent)
+	firstBody, _ := json.Marshal(first.Content)
+	secondBody, _ := json.Marshal(second.Content)
 	var firstCompact, secondCompact struct {
 		ID     string `json:"id"`
 		Signal string `json:"signal"`
@@ -440,135 +522,16 @@ func TestAgentVisualToolUsesToolCallScopedArtifactIDs(t *testing.T) {
 	}
 }
 
-func TestAgentVisualToolRejectsInlineDataAndFilters(t *testing.T) {
+func TestAgentVisualToolRejectsInlineDataAndInteractions(t *testing.T) {
 	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
 	for _, args := range []string{
 		`{"type":"bar","model":"test","dataset":"orders","data":[{"label":"x","value":1}],"measures":[{"field":"order_count"}]}`,
-		`{"type":"bar","model":"test","dataset":"orders","filters":{"controls":{}},"measures":[{"field":"order_count"}]}`,
+		`{"type":"bar","model":"test","dataset":"orders","filter":{"field":"orders.status","values":["open"]},"measures":[{"field":"order_count"}]}`,
 		`{"type":"table","model":"test","dataset":"orders","interaction":{"row_selection":{}},"fields":[{"field":"orders.order_id"}]}`,
 	} {
 		result := runAgentVisualToolForTest(server, context.Background(), agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true}, agentcore.ToolCall{ID: "call_1", Name: "query_visual", Arguments: json.RawMessage(args)})
 		if !result.IsError {
 			t.Fatalf("query_visual accepted forbidden input %s: %#v", args, result.Content)
-		}
-	}
-}
-
-func TestAPIGenAgentSearchToolInjectsDefaultLimit(t *testing.T) {
-	store := testStore(t)
-	seedEnvironmentAssetDeployment(t, store, "test", servingstate.DefaultEnvironment, "Orders dashboard", "Warehouse")
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
-	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true})
-	var search agentcore.ToolDefinition
-	for _, tool := range tools {
-		if tool.Name == "search" {
-			search = tool
-			break
-		}
-	}
-	if search.Handler == nil {
-		t.Fatal("search tool missing")
-	}
-	result, err := search.Handler.Run(context.Background(), agentcore.ToolCall{
-		ID:        "call_1",
-		Name:      "search",
-		Arguments: json.RawMessage(`{"q":"orders"}`),
-	})
-	if err != nil {
-		t.Fatalf("run tool: %v", err)
-	}
-	if result.IsError {
-		t.Fatalf("tool returned error: %#v", result.Content)
-	}
-	body, err := json.Marshal(result.Content)
-	if err != nil {
-		t.Fatalf("marshal result content: %v", err)
-	}
-	var decoded struct {
-		Count      int              `json:"count"`
-		Items      []map[string]any `json:"items"`
-		HasMore    bool             `json:"hasMore"`
-		NextCursor string           `json:"nextCursor"`
-	}
-	if err := json.Unmarshal(body, &decoded); err != nil {
-		t.Fatalf("decode result: %v body=%s", err, body)
-	}
-	if decoded.Count != len(decoded.Items) || len(decoded.Items) == 0 || len(decoded.Items) > 10 {
-		t.Fatalf("search result count = %d, want 1..10: %#v", len(decoded.Items), decoded.Items)
-	}
-	if decoded.HasMore || decoded.NextCursor != "" {
-		t.Fatalf("search should not expose empty cursor metadata: %#v", decoded)
-	}
-	for _, item := range decoded.Items {
-		for _, forbidden := range []string{"dashboardId", "pageId", "visualId", "tableId", "filterId", "modelId", "datasetId", "fieldId", "assetId"} {
-			if _, ok := item[forbidden]; ok {
-				t.Fatalf("search item kept metadata field %q: %#v", forbidden, item)
-			}
-		}
-		if _, ok := item["name"]; !ok {
-			t.Fatalf("search item missing concise name: %#v", item)
-		}
-		if _, ok := item["type"]; !ok {
-			t.Fatalf("search item missing concise type: %#v", item)
-		}
-	}
-}
-
-func TestAPIGenAgentListWorkspacesUsesDeclarativeOutputShape(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
-	tools := agentAPIGenToolsForTest(server, agentcap.Scope{PrincipalID: "principal", DevAuthBypass: true})
-	var listWorkspaces agentcore.ToolDefinition
-	for _, tool := range tools {
-		if tool.Name == "list_workspaces" {
-			listWorkspaces = tool
-			break
-		}
-	}
-	if listWorkspaces.Handler == nil {
-		t.Fatal("list_workspaces tool missing")
-	}
-	result, err := listWorkspaces.Handler.Run(context.Background(), agentcore.ToolCall{
-		ID:        "call_1",
-		Name:      "list_workspaces",
-		Arguments: json.RawMessage(`{}`),
-	})
-	if err != nil {
-		t.Fatalf("run list_workspaces: %v", err)
-	}
-	if result.IsError {
-		t.Fatalf("tool returned error: %#v", result.Content)
-	}
-	body, err := json.Marshal(result.Content)
-	if err != nil {
-		t.Fatalf("marshal result content: %v", err)
-	}
-	var decoded struct {
-		Count      int              `json:"count"`
-		Items      []map[string]any `json:"items"`
-		HasMore    bool             `json:"hasMore"`
-		NextCursor string           `json:"nextCursor"`
-		Page       any              `json:"page"`
-	}
-	if err := json.Unmarshal(body, &decoded); err != nil {
-		t.Fatalf("decode result: %v body=%s", err, body)
-	}
-	if decoded.Count != len(decoded.Items) || decoded.Count == 0 || decoded.HasMore || decoded.NextCursor != "" || decoded.Page != nil {
-		t.Fatalf("workspace shaped result metadata = %#v body=%s", decoded, body)
-	}
-	for _, item := range decoded.Items {
-		if _, ok := item["id"]; !ok {
-			t.Fatalf("workspace item missing id: %#v", item)
-		}
-		if _, ok := item["title"]; !ok {
-			t.Fatalf("workspace item missing title: %#v", item)
-		}
-		if _, ok := item["description"]; !ok {
-			t.Fatalf("workspace item missing description: %#v", item)
-		}
-		for _, forbidden := range []string{"activeServingStateId", "createdAt", "updatedAt"} {
-			if _, ok := item[forbidden]; ok {
-				t.Fatalf("workspace item kept noisy metadata field %q: %#v", forbidden, item)
-			}
 		}
 	}
 }
@@ -587,16 +550,8 @@ func TestAPIGenAgentToolsExposeTypeSpecArgumentNamesAndBodyFields(t *testing.T) 
 		}
 	}
 	for toolName, wantProps := range map[string][]string{
-		"describe_dashboard":           {"dashboard"},
-		"describe_dashboard_visual":    {"dashboard", "page", "visual"},
-		"describe_asset":               {"assetId"},
-		"asset_lineage":                {"assetId"},
-		"describe_model":               {"model"},
-		"describe_dashboard_page":      {"dashboard", "page"},
-		"list_dashboard_filter_values": {"dashboard", "page", "filter", "filters", "limit", "pageToken"},
-		"query_dashboard_page":         {"dashboard", "page", "filters"},
-		"query_dashboard_visual":       {"dashboard", "page", "visual", "filters", "limit", "pageToken"},
-		"query_semantic_model":         {"model", "dimensions", "measures", "filters", "sort", "limit", "pageToken"},
+		"query_dashboard_visual": {"workspace", "dashboard", "page", "visual", "filters", "limit", "pageToken"},
+		"query_semantic_model":   {"workspace", "model", "dimensions", "measures", "filters", "sort", "limit", "pageToken"},
 	} {
 		var schema struct {
 			Properties map[string]any `json:"properties"`
@@ -628,320 +583,17 @@ func TestAPIGenAgentOperationsDeclareOutputMetadata(t *testing.T) {
 	}
 }
 
-func TestAPIGenVisualToolUsesGeneratedUnionProjection(t *testing.T) {
+func TestAPIGenVisualToolKeepsRESTEnvelopeAndUsesProviderProjection(t *testing.T) {
 	for _, operation := range agenttools.APIGenOperations() {
 		if operation.Tool.Name != "query_dashboard_visual" {
 			continue
 		}
 		if operation.Tool.Output.Mode != "raw" || len(operation.Tool.Output.Select) != 0 {
-			t.Fatalf("visual tool output = %#v, want raw discriminated union", operation.Tool.Output)
+			t.Fatalf("visual REST operation output = %#v, want raw discriminated union", operation.Tool.Output)
 		}
 		return
 	}
 	t.Fatal("query_dashboard_visual tool missing")
-}
-
-func TestAPIGenAgentToolDispatchesThroughGeneratedOperation(t *testing.T) {
-	catalog := testAgentAssetCatalogFromProvider(t, manyEdgesMetrics{})
-	server := NewWithOptions(manyEdgesMetrics{}, Options{
-		AssetCatalog:       fakeAssetCatalogReader{catalog: catalog},
-		DefaultWorkspaceID: "test",
-	})
-	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
-	var listAssets agentcore.ToolDefinition
-	for _, tool := range tools {
-		if tool.Name == "list_assets" {
-			listAssets = tool
-			break
-		}
-	}
-	if listAssets.Handler == nil {
-		t.Fatal("list_assets tool missing")
-	}
-
-	result, err := listAssets.Handler.Run(context.Background(), agentcore.ToolCall{
-		ID:        "call_1",
-		Name:      "list_assets",
-		Arguments: json.RawMessage(`{"type":"dashboard","limit":1}`),
-	})
-	if err != nil {
-		t.Fatalf("run tool: %v", err)
-	}
-	if result.IsError {
-		t.Fatalf("tool returned error: %#v", result.Content)
-	}
-	body, err := json.Marshal(result.Content)
-	if err != nil {
-		t.Fatalf("marshal result content: %v", err)
-	}
-	var decoded struct {
-		Count int `json:"count"`
-		Items []struct {
-			ID          string `json:"id"`
-			Type        string `json:"type"`
-			Title       string `json:"title"`
-			Description string `json:"description"`
-		} `json:"items"`
-	}
-	if err := json.Unmarshal(body, &decoded); err != nil {
-		t.Fatalf("decode result: %v\n%s", err, body)
-	}
-	if decoded.Count != 1 || len(decoded.Items) != 1 || decoded.Items[0].ID != "dashboard:dashboard-0" || decoded.Items[0].Type != "dashboard" || decoded.Items[0].Title == "" {
-		t.Fatalf("tool result = %#v", decoded)
-	}
-}
-
-func TestAPIGenAgentDescribeDashboardVisualUsesDeclarativeOutputShape(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
-	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
-	var describeVisual agentcore.ToolDefinition
-	for _, tool := range tools {
-		if tool.Name == "describe_dashboard_visual" {
-			describeVisual = tool
-			break
-		}
-	}
-	if describeVisual.Handler == nil {
-		t.Fatal("describe_dashboard_visual tool missing")
-	}
-	result, err := describeVisual.Handler.Run(context.Background(), agentcore.ToolCall{
-		ID:        "call_1",
-		Name:      "describe_dashboard_visual",
-		Arguments: json.RawMessage(`{"dashboard":"executive-sales","page":"overview","visual":"orders"}`),
-	})
-	if err != nil {
-		t.Fatalf("run describe_dashboard_visual: %v", err)
-	}
-	if result.IsError {
-		t.Fatalf("tool returned error: %#v", result.Content)
-	}
-	body, err := json.Marshal(result.Content)
-	if err != nil {
-		t.Fatalf("marshal result content: %v", err)
-	}
-	var visual map[string]any
-	if err := json.Unmarshal(body, &visual); err != nil {
-		t.Fatalf("decode visual result: %v body=%s", err, body)
-	}
-	for _, want := range []string{"id", "rendererID", "specRevision", "spec"} {
-		if _, ok := visual[want]; !ok {
-			t.Fatalf("visual result missing %q: %#v", want, visual)
-		}
-	}
-	if _, hasPlacement := visual["placement"]; !hasPlacement {
-		for _, coordinate := range []string{"y", "width", "height"} {
-			if _, ok := visual[coordinate]; !ok {
-				t.Fatalf("visual result has neither grid placement nor legacy coordinate %q: %#v", coordinate, visual)
-			}
-		}
-	}
-	for _, forbidden := range []string{"renderer", "rendererOptions", "options", "interaction", "query", "type", "shape"} {
-		if _, ok := visual[forbidden]; ok {
-			t.Fatalf("visual result kept noisy field %q: %#v", forbidden, visual)
-		}
-	}
-}
-
-func TestAPIGenAgentAssetDescribeAndLineageToolsUseTypeSpecContracts(t *testing.T) {
-	catalog := testAgentAssetCatalog(t)
-	server := NewWithOptions(fakeMetrics{}, Options{
-		AssetCatalog:       fakeAssetCatalogReader{catalog: catalog},
-		DefaultWorkspaceID: "test",
-	})
-	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
-	names := map[string]agentcore.ToolDefinition{}
-	for _, tool := range tools {
-		names[tool.Name] = tool
-	}
-	for _, want := range []string{"describe_asset", "asset_lineage"} {
-		if names[want].Handler == nil {
-			t.Fatalf("missing asset tool %q in %#v", want, toolNames(tools))
-		}
-	}
-
-	result, err := names["describe_asset"].Handler.Run(context.Background(), agentcore.ToolCall{
-		ID:        "call_2",
-		Name:      "describe_asset",
-		Arguments: json.RawMessage(`{"assetId":"visual:executive-sales.revenue"}`),
-	})
-	if err != nil {
-		t.Fatalf("run describe_asset: %v", err)
-	}
-	body, err := json.Marshal(result.Content)
-	if err != nil {
-		t.Fatalf("marshal describe_asset: %v", err)
-	}
-	var described struct {
-		ID            string `json:"id"`
-		Type          string `json:"type"`
-		Title         string `json:"title"`
-		Description   string `json:"description"`
-		PayloadSchema string `json:"payloadSchema"`
-	}
-	if err := json.Unmarshal(body, &described); err != nil {
-		t.Fatalf("decode describe_asset: %v body=%s", err, body)
-	}
-	if described.ID != "visual:executive-sales.revenue" || described.Type != "visual" || described.Title != "Revenue" || described.PayloadSchema != "visual.v1" {
-		t.Fatalf("describe_asset result = %#v", described)
-	}
-	var describedMap map[string]any
-	if err := json.Unmarshal(body, &describedMap); err != nil {
-		t.Fatalf("decode describe_asset map: %v", err)
-	}
-	for _, forbidden := range []string{"snapshotId", "workspaceId", "servingStateId", "payload", "key", "sourceFile"} {
-		if _, ok := describedMap[forbidden]; ok {
-			t.Fatalf("describe_asset kept noisy field %q: %#v", forbidden, describedMap)
-		}
-	}
-
-	result, err = names["asset_lineage"].Handler.Run(context.Background(), agentcore.ToolCall{
-		ID:        "call_3",
-		Name:      "asset_lineage",
-		Arguments: json.RawMessage(`{"assetId":"visual:executive-sales.revenue"}`),
-	})
-	if err != nil {
-		t.Fatalf("run asset_lineage: %v", err)
-	}
-	body, err = json.Marshal(result.Content)
-	if err != nil {
-		t.Fatalf("marshal asset_lineage: %v", err)
-	}
-	var lineage struct {
-		AssetID    string   `json:"assetId"`
-		Upstream   []string `json:"upstream"`
-		Downstream []string `json:"downstream"`
-	}
-	if err := json.Unmarshal(body, &lineage); err != nil {
-		t.Fatalf("decode asset_lineage: %v body=%s", err, body)
-	}
-	if lineage.AssetID != "visual:executive-sales.revenue" || !stringSliceHas(lineage.Upstream, "dashboard:executive-sales") || !stringSliceHas(lineage.Downstream, "measure:olist.revenue") {
-		t.Fatalf("asset_lineage result = %#v", lineage)
-	}
-}
-
-func TestAPIGenAgentQueryDashboardPageUsesDeclarativeOutputShape(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
-	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
-	var queryPage agentcore.ToolDefinition
-	for _, tool := range tools {
-		if tool.Name == "query_dashboard_page" {
-			queryPage = tool
-			break
-		}
-	}
-	if queryPage.Handler == nil {
-		t.Fatal("query_dashboard_page tool missing")
-	}
-	result, err := queryPage.Handler.Run(context.Background(), agentcore.ToolCall{
-		ID:        "call_1",
-		Name:      "query_dashboard_page",
-		Arguments: json.RawMessage(`{"dashboard":"executive-sales","page":"overview"}`),
-	})
-	if err != nil {
-		t.Fatalf("run query_dashboard_page: %v", err)
-	}
-	if result.IsError {
-		t.Fatalf("tool returned error: %#v", result.Content)
-	}
-	body, err := json.Marshal(result.Content)
-	if err != nil {
-		t.Fatalf("marshal result content: %v", err)
-	}
-	var page map[string]any
-	if err := json.Unmarshal(body, &page); err != nil {
-		t.Fatalf("decode page result: %v body=%s", err, body)
-	}
-	visuals, ok := page["visuals"].(map[string]any)
-	if !ok || len(visuals) == 0 {
-		t.Fatalf("page result missing compact visuals map: %#v", page)
-	}
-	orders := visuals["orders"].(map[string]any)
-	spec, _ := orders["spec"].(map[string]any)
-	dataState, _ := orders["dataState"].(map[string]any)
-	datasets, _ := dataState["datasets"].([]any)
-	if orders["schemaVersion"] != float64(3) || orders["rendererID"] != "echarts" || spec["title"] != "Orders" || len(datasets) != 1 {
-		t.Fatalf("visualization envelope = %#v", orders)
-	}
-	if _, ok := visuals["order_rows"]; !ok {
-		t.Fatalf("page result omitted its windowed visualization envelope: %#v", visuals)
-	}
-	for _, forbidden := range []string{"rendererOptions", "options", "interaction", "version", "type", "shape", "data"} {
-		if _, ok := orders[forbidden]; ok {
-			t.Fatalf("compact visual kept noisy field %q: %#v", forbidden, orders)
-		}
-	}
-}
-
-func TestAPIGenAgentListToolInjectsDefaultLimit(t *testing.T) {
-	catalog := testAgentAssetCatalogFromProvider(t, manyEdgesMetrics{})
-	server := NewWithOptions(manyEdgesMetrics{}, Options{
-		AssetCatalog:       fakeAssetCatalogReader{catalog: catalog},
-		DefaultWorkspaceID: "test",
-	})
-	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
-	var listEdges agentcore.ToolDefinition
-	for _, tool := range tools {
-		if tool.Name == "list_workspace_asset_edges" {
-			listEdges = tool
-			break
-		}
-	}
-	if listEdges.Handler == nil {
-		t.Fatal("list_workspace_asset_edges tool missing")
-	}
-	result, err := listEdges.Handler.Run(context.Background(), agentcore.ToolCall{
-		ID:        "call_1",
-		Name:      "list_workspace_asset_edges",
-		Arguments: json.RawMessage(`{}`),
-	})
-	if err != nil {
-		t.Fatalf("run tool: %v", err)
-	}
-	if result.IsError {
-		t.Fatalf("tool returned error: %#v", result.Content)
-	}
-	body, err := json.Marshal(result.Content)
-	if err != nil {
-		t.Fatalf("marshal result content: %v", err)
-	}
-	var decoded struct {
-		Count      int              `json:"count"`
-		Items      []map[string]any `json:"items"`
-		HasMore    bool             `json:"hasMore"`
-		NextCursor string           `json:"nextCursor"`
-	}
-	if err := json.Unmarshal(body, &decoded); err != nil {
-		t.Fatalf("decode result: %v body=%s", err, body)
-	}
-	if decoded.Count != 25 || len(decoded.Items) != 25 || !decoded.HasMore || decoded.NextCursor == "" {
-		t.Fatalf("default-limited edge result = %#v", decoded)
-	}
-	for _, item := range decoded.Items {
-		for _, want := range []string{"fromAssetId", "toAssetId", "type"} {
-			if _, ok := item[want]; !ok {
-				t.Fatalf("edge item missing %q: %#v", want, item)
-			}
-		}
-		if _, ok := item["servingStateId"]; ok {
-			t.Fatalf("edge item kept noisy metadata: %#v", item)
-		}
-	}
-
-	result, err = listEdges.Handler.Run(context.Background(), agentcore.ToolCall{
-		ID:        "call_2",
-		Name:      "list_workspace_asset_edges",
-		Arguments: json.RawMessage(`{"limit":3}`),
-	})
-	if err != nil {
-		t.Fatalf("run explicit limit tool: %v", err)
-	}
-	body, _ = json.Marshal(result.Content)
-	if err := json.Unmarshal(body, &decoded); err != nil {
-		t.Fatalf("decode explicit result: %v body=%s", err, body)
-	}
-	if decoded.Count != 3 || len(decoded.Items) != 3 {
-		t.Fatalf("explicit-limited edge result = %#v", decoded)
-	}
 }
 
 func TestAPIGenAgentToolDispatchesTabularVisualQuery(t *testing.T) {
@@ -960,7 +612,7 @@ func TestAPIGenAgentToolDispatchesTabularVisualQuery(t *testing.T) {
 	result, err := queryVisual.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:        "call_1",
 		Name:      "query_dashboard_visual",
-		Arguments: json.RawMessage(`{"dashboard":"executive-sales","page":"overview","visual":"order_rows","limit":500}`),
+		Arguments: json.RawMessage(`{"workspace":"test","dashboard":"executive-sales","page":"overview","visual":"order_rows","limit":50}`),
 	})
 	if err != nil {
 		t.Fatalf("run tool: %v", err)
@@ -972,20 +624,67 @@ func TestAPIGenAgentToolDispatchesTabularVisualQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal result content: %v", err)
 	}
-	var table visualizationir.VisualizationEnvelope
+	var table struct {
+		QueryID         string `json:"queryId"`
+		ServingSnapshot string `json:"servingSnapshot"`
+		VisualID        string `json:"visualId"`
+		Title           string `json:"title"`
+		Type            string `json:"type"`
+		Columns         []struct {
+			ID       string `json:"id"`
+			Label    string `json:"label"`
+			Role     string `json:"role"`
+			DataType string `json:"dataType"`
+		} `json:"columns"`
+		Rows         [][]any `json:"rows"`
+		Completeness struct {
+			ReturnedRows  int    `json:"returnedRows"`
+			AvailableRows int    `json:"availableRows"`
+			Cardinality   string `json:"cardinality"`
+		} `json:"completeness"`
+		HasMore    bool   `json:"hasMore"`
+		NextCursor string `json:"nextCursor"`
+	}
 	if err := json.Unmarshal(body, &table); err != nil {
 		t.Fatalf("decode table result: %v\n%s", err, body)
 	}
-	tableSpec, specOK := table.Spec.Value.(*visualizationir.TableVisualizationSpec)
-	tableState, stateOK := table.DataState.Value.(*visualizationir.WindowedVisualizationDataState)
-	if !specOK || len(tableSpec.Columns) == 0 || !stateOK || tableState.AvailableRows != 500 || len(tableState.Blocks["a"].Rows) != 500 {
-		t.Fatalf("table envelope did not honor the bounded query limit: %#v", table)
+	if table.QueryID != "call_1" || table.ServingSnapshot == "" || table.VisualID != "order_rows" ||
+		table.Title == "" || table.Type != "table" || len(table.Columns) == 0 || len(table.Rows) != 50 ||
+		table.Completeness.ReturnedRows != 50 || table.Completeness.AvailableRows != 500 ||
+		!table.HasMore || table.NextCursor == "" {
+		t.Fatalf("compact table result = %#v", table)
+	}
+	next, err := queryVisual.Handler.Run(context.Background(), agentcore.ToolCall{
+		ID:   "call_2",
+		Name: "query_dashboard_visual",
+		Arguments: json.RawMessage(fmt.Sprintf(
+			`{"workspace":"test","dashboard":"executive-sales","page":"overview","visual":"order_rows","limit":50,"pageToken":%q}`,
+			table.NextCursor,
+		)),
+	})
+	if err != nil || next.IsError {
+		t.Fatalf("continue tool result=%#v err=%v", next, err)
+	}
+	nextBody, _ := json.Marshal(next.Content)
+	var nextPage struct {
+		Rows         [][]any `json:"rows"`
+		Completeness struct {
+			ReturnedRows int `json:"returnedRows"`
+		} `json:"completeness"`
+		HasMore bool `json:"hasMore"`
+	}
+	if err := json.Unmarshal(nextBody, &nextPage); err != nil {
+		t.Fatalf("decode continued table result: %v body=%s", err, nextBody)
+	}
+	if len(nextPage.Rows) != 50 || nextPage.Rows[0][0] != "order-50" ||
+		nextPage.Completeness.ReturnedRows != 50 || !nextPage.HasMore {
+		t.Fatalf("continued compact table result = %#v", nextPage)
 	}
 	var tableMap map[string]any
 	if err := json.Unmarshal(body, &tableMap); err != nil {
 		t.Fatalf("decode table map: %v", err)
 	}
-	for _, forbidden := range []string{"style", "interaction", "loadingBlock", "type", "shape", "rendererOptions", "options"} {
+	for _, forbidden := range []string{"spec", "dataState", "rendererID", "selection", "style", "rendererOptions"} {
 		if _, ok := tableMap[forbidden]; ok {
 			t.Fatalf("table result kept noisy field %q: %#v", forbidden, tableMap)
 		}
@@ -1005,10 +704,20 @@ func TestAPIGenAgentToolFetchesSingleDashboardVisualData(t *testing.T) {
 	if queryVisual.Handler == nil {
 		t.Fatal("query_dashboard_visual tool missing")
 	}
-	result, err := queryVisual.Handler.Run(context.Background(), agentcore.ToolCall{
-		ID:        "call_1",
-		Name:      "query_dashboard_visual",
-		Arguments: json.RawMessage(`{"dashboard":"executive-sales","page":"overview","visual":"orders"}`),
+	catalog, err := agentcore.NewToolCatalog(tools)
+	if err != nil {
+		t.Fatalf("compile agent tool catalog: %v", err)
+	}
+	result, err := catalog.Execute(context.Background(), agentcore.ToolCall{
+		ID:   "call_1",
+		Name: "query_dashboard_visual",
+		Arguments: json.RawMessage(`{
+			"workspace":"test",
+			"dashboard":"executive-sales",
+			"page":"overview",
+			"visual":"orders",
+			"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}}
+		}`),
 	})
 	if err != nil {
 		t.Fatalf("run tool: %v", err)
@@ -1020,13 +729,35 @@ func TestAPIGenAgentToolFetchesSingleDashboardVisualData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal result content: %v", err)
 	}
-	var visual visualizationir.VisualizationEnvelope
+	var visual struct {
+		QueryID  string `json:"queryId"`
+		VisualID string `json:"visualId"`
+		Title    string `json:"title"`
+		Type     string `json:"type"`
+		Mark     string `json:"mark"`
+		Columns  []struct {
+			ID       string `json:"id"`
+			Label    string `json:"label"`
+			Role     string `json:"role"`
+			DataType string `json:"dataType"`
+		} `json:"columns"`
+		Rows         [][]any `json:"rows"`
+		Completeness struct {
+			ReturnedRows int    `json:"returnedRows"`
+			Cardinality  string `json:"cardinality"`
+		} `json:"completeness"`
+		Status struct {
+			Kind string `json:"kind"`
+		} `json:"status"`
+		AppliedFilters dashboard.Filters `json:"appliedFilters"`
+	}
 	if err := json.Unmarshal(body, &visual); err != nil {
 		t.Fatalf("decode visual result: %v body=%s", err, body)
 	}
-	visualSpec, specOK := visual.Spec.Value.(*visualizationir.ProportionalVisualizationSpec)
-	visualState, stateOK := visual.DataState.Value.(*visualizationir.InlineVisualizationDataState)
-	if !specOK || visualSpec.Title != "Orders" || visualSpec.Mark != visualizationir.VisualizationProportionalMarkDonut || !stateOK || len(visualState.Datasets) != 1 || len(visualState.Datasets[0].Rows) != 1 {
+	if visual.QueryID != "call_1" || visual.VisualID != "orders" || visual.Title != "Orders" ||
+		visual.Type != "proportional" || visual.Mark != "donut" || len(visual.Columns) == 0 ||
+		len(visual.Rows) != 1 || visual.Completeness.ReturnedRows != 1 ||
+		visual.Status.Kind != "ready" || visual.AppliedFilters.Controls["state"].Values[0] != "SP" {
 		t.Fatalf("visual result = %#v", visual)
 	}
 }
@@ -1047,7 +778,7 @@ func TestAPIGenAgentSemanticQueryToolInjectsBodyDefaultLimit(t *testing.T) {
 	result, err := querySemantic.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:        "call_1",
 		Name:      "query_semantic_model",
-		Arguments: json.RawMessage(`{"model":"test","dimensions":[{"field":"orders.status","alias":"status"}],"measures":[{"field":"order_count"}],"sort":[{"field":"status","direction":"asc"}]}`),
+		Arguments: json.RawMessage(`{"workspace":"test","model":"test","dimensions":[{"field":"orders.status","alias":"status"}],"measures":[{"field":"order_count"}],"sort":[{"field":"status","direction":"asc"}]}`),
 	})
 	if err != nil {
 		t.Fatalf("run tool: %v", err)
@@ -1061,19 +792,40 @@ func TestAPIGenAgentSemanticQueryToolInjectsBodyDefaultLimit(t *testing.T) {
 	}
 	var decoded struct {
 		Columns []struct {
-			Name string `json:"name"`
-			Type string `json:"type"`
+			Name     string `json:"name"`
+			Label    string `json:"label"`
+			Kind     string `json:"kind"`
+			DataType string `json:"dataType"`
+			FieldRef struct {
+				WorkspaceID string `json:"workspaceId"`
+				Type        string `json:"type"`
+				ID          string `json:"id"`
+			} `json:"fieldRef"`
 		} `json:"columns"`
-		Rows       [][]string `json:"rows"`
-		Count      int        `json:"count"`
-		HasMore    bool       `json:"hasMore"`
-		NextCursor string     `json:"nextCursor"`
+		QueryID         string  `json:"queryId"`
+		ServingSnapshot string  `json:"servingSnapshot"`
+		Rows            [][]any `json:"rows"`
+		Completeness    struct {
+			ReturnedRows int  `json:"returnedRows"`
+			HasMore      bool `json:"hasMore"`
+		} `json:"completeness"`
+		HasMore    bool   `json:"hasMore"`
+		NextCursor string `json:"nextCursor"`
 	}
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		t.Fatalf("decode semantic result: %v body=%s", err, body)
 	}
-	if len(decoded.Columns) == 0 || len(decoded.Rows) != 25 || decoded.Count != 25 || !decoded.HasMore || decoded.NextCursor == "" {
+	if len(decoded.Columns) == 0 || len(decoded.Rows) != 25 ||
+		decoded.Completeness.ReturnedRows != 25 || !decoded.Completeness.HasMore ||
+		decoded.QueryID != "call_1" || decoded.ServingSnapshot == "" ||
+		!decoded.HasMore || decoded.NextCursor == "" {
 		t.Fatalf("semantic default-limited result = %#v", decoded)
+	}
+	if decoded.Columns[0].Kind != "dimension" || decoded.Columns[0].DataType != "string" ||
+		decoded.Columns[0].FieldRef.Type != "field" || decoded.Columns[0].FieldRef.ID != "test.orders.status" ||
+		decoded.Columns[1].Kind != "measure" || decoded.Columns[1].FieldRef.Type != "measure" ||
+		decoded.Columns[1].FieldRef.ID != "test.order_count" {
+		t.Fatalf("semantic columns = %#v", decoded.Columns)
 	}
 	var decodedMap map[string]any
 	if err := json.Unmarshal(body, &decodedMap); err != nil {
@@ -1084,13 +836,185 @@ func TestAPIGenAgentSemanticQueryToolInjectsBodyDefaultLimit(t *testing.T) {
 	}
 }
 
+func TestAPIGenAgentSemanticQueryReturnsLastSuccessfulFreshness(t *testing.T) {
+	store := testStore(t)
+	server := NewWithOptions(manySemanticRowsMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
+	if _, err := store.SQLDB().ExecContext(context.Background(), `
+		INSERT INTO serving_states (id, workspace_id, status, digest, manifest_json, environment)
+		VALUES ('unversioned', 'test', 'active', 'test', '{}', 'dev');
+	`); err != nil {
+		t.Fatalf("seed freshness serving state: %v", err)
+	}
+	refreshedAt := time.Date(2026, time.July, 24, 9, 42, 0, 0, time.UTC)
+	if err := server.refreshPipelineRepo.SaveDataVersion(context.Background(), refreshpipeline.DataVersion{
+		WorkspaceID: "test", Environment: server.defaultEnvironment, SemanticModel: "test",
+		SnapshotID: 184, ServingStateID: "unversioned", RefreshedAt: refreshedAt,
+		Source: refreshpipeline.DataVersionSourceRefresh,
+	}); err != nil {
+		t.Fatalf("save data version: %v", err)
+	}
+	var querySemantic agentcore.ToolDefinition
+	for _, tool := range agentAPIGenToolsForTest(server, agentcap.Scope{
+		WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true,
+	}) {
+		if tool.Name == "query_semantic_model" {
+			querySemantic = tool
+			break
+		}
+	}
+	result, err := querySemantic.Handler.Run(context.Background(), agentcore.ToolCall{
+		ID: "freshness_query", Name: "query_semantic_model",
+		Arguments: json.RawMessage(`{
+			"workspace":"test",
+			"model":"test",
+			"measures":[{"field":"order_count"}],
+			"limit":1
+		}`),
+	})
+	if err != nil || result.IsError {
+		t.Fatalf("query result=%#v err=%v", result, err)
+	}
+	body, _ := json.Marshal(result.Content)
+	var decoded struct {
+		Freshness struct {
+			LastSuccessfulRefreshAt string `json:"lastSuccessfulRefreshAt"`
+			SnapshotID              string `json:"snapshotId"`
+			ServingStateID          string `json:"servingStateId"`
+			Source                  string `json:"source"`
+			Status                  string `json:"status"`
+		} `json:"freshness"`
+	}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("decode result: %v body=%s", err, body)
+	}
+	if decoded.Freshness.LastSuccessfulRefreshAt != "2026-07-24T09:42:00Z" ||
+		decoded.Freshness.SnapshotID != "184" ||
+		decoded.Freshness.ServingStateID != "unversioned" ||
+		decoded.Freshness.Source != "refresh" ||
+		decoded.Freshness.Status != "current" {
+		t.Fatalf("freshness = %#v", decoded.Freshness)
+	}
+
+	var queryDashboardVisual agentcore.ToolDefinition
+	for _, tool := range agentAPIGenToolsForTest(server, agentcap.Scope{
+		WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true,
+	}) {
+		if tool.Name == "query_dashboard_visual" {
+			queryDashboardVisual = tool
+			break
+		}
+	}
+	visualResult, err := queryDashboardVisual.Handler.Run(context.Background(), agentcore.ToolCall{
+		ID:   "freshness_visual",
+		Name: "query_dashboard_visual",
+		Arguments: json.RawMessage(`{
+			"workspace":"test",
+			"dashboard":"executive-sales",
+			"page":"overview",
+			"visual":"orders"
+		}`),
+	})
+	if err != nil || visualResult.IsError {
+		t.Fatalf("visual result=%#v err=%v", visualResult, err)
+	}
+	visualBody, _ := json.Marshal(visualResult.Content)
+	var visualDecoded struct {
+		Freshness struct {
+			LastSuccessfulRefreshAt string `json:"lastSuccessfulRefreshAt"`
+			SnapshotID              string `json:"snapshotId"`
+			ServingStateID          string `json:"servingStateId"`
+			Source                  string `json:"source"`
+			Status                  string `json:"status"`
+		} `json:"freshness"`
+	}
+	if err := json.Unmarshal(visualBody, &visualDecoded); err != nil {
+		t.Fatalf("decode visual result: %v body=%s", err, visualBody)
+	}
+	if !reflect.DeepEqual(visualDecoded.Freshness, decoded.Freshness) {
+		t.Fatalf("visual freshness = %#v, semantic freshness = %#v", visualDecoded.Freshness, decoded.Freshness)
+	}
+
+	generatedResult := runAgentVisualToolForTest(
+		server,
+		context.Background(),
+		agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true},
+		agentcore.ToolCall{
+			ID: "freshness_generated_visual", Name: "query_visual",
+			Arguments: json.RawMessage(`{
+				"workspace":"test",
+				"model":"test",
+				"dataset":"orders",
+				"type":"bar",
+				"dimensions":[{"field":"orders.status"}],
+				"measures":[{"field":"order_count"}]
+			}`),
+		},
+	)
+	if generatedResult.IsError {
+		t.Fatalf("generated visual result=%#v", generatedResult.Content)
+	}
+	generatedBody, _ := json.Marshal(generatedResult.Content)
+	var generatedDecoded struct {
+		ServingSnapshot string `json:"servingSnapshot"`
+		Freshness       struct {
+			LastSuccessfulRefreshAt string `json:"lastSuccessfulRefreshAt"`
+			SnapshotID              string `json:"snapshotId"`
+			ServingStateID          string `json:"servingStateId"`
+			Source                  string `json:"source"`
+			Status                  string `json:"status"`
+		} `json:"freshness"`
+	}
+	if err := json.Unmarshal(generatedBody, &generatedDecoded); err != nil {
+		t.Fatalf("decode generated visual result: %v body=%s", err, generatedBody)
+	}
+	if generatedDecoded.ServingSnapshot != "unversioned" || !reflect.DeepEqual(generatedDecoded.Freshness, decoded.Freshness) {
+		t.Fatalf("generated visual freshness = %#v, semantic freshness = %#v", generatedDecoded, decoded.Freshness)
+	}
+}
+
+func TestAPIGenAgentSemanticQueryPreservesNullCells(t *testing.T) {
+	server := NewWithOptions(nullSemanticRowsMetrics{}, Options{DefaultWorkspaceID: "test"})
+	var querySemantic agentcore.ToolDefinition
+	for _, tool := range agentAPIGenToolsForTest(server, agentcap.Scope{
+		WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true,
+	}) {
+		if tool.Name == "query_semantic_model" {
+			querySemantic = tool
+			break
+		}
+	}
+	result, err := querySemantic.Handler.Run(context.Background(), agentcore.ToolCall{
+		ID: "null_query", Name: "query_semantic_model",
+		Arguments: json.RawMessage(`{
+			"workspace":"test",
+			"model":"test",
+			"dimensions":[{"field":"orders.status"}],
+			"measures":[{"field":"order_count"}],
+			"limit":2
+		}`),
+	})
+	if err != nil || result.IsError {
+		t.Fatalf("query result=%#v err=%v", result, err)
+	}
+	body, _ := json.Marshal(result.Content)
+	var decoded struct {
+		Rows [][]any `json:"rows"`
+	}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("decode result: %v body=%s", err, body)
+	}
+	if len(decoded.Rows) != 2 || decoded.Rows[0][0] != nil || decoded.Rows[1][0] != "" {
+		t.Fatalf("null and empty string collapsed: %#v", decoded.Rows)
+	}
+}
+
 func TestAPIGenAgentToolEnforcesCredentialPrivilegeAllowlistAndWorkspace(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t)
 	principal := testPrincipal(t, ctx, store, "agent-token@example.com", "Agent Token", access.RoleOwner)
 	agentOnlyToken := access.APIToken{WorkspaceID: "test", Privileges: []access.Privilege{access.PrivilegeUseAgent}}
-	assetToken := access.APIToken{WorkspaceID: "test", Privileges: []access.Privilege{access.PrivilegeUseAgent, access.PrivilegeViewItem}}
-	foreignToken := access.APIToken{WorkspaceID: "other", Privileges: []access.Privilege{access.PrivilegeViewItem}}
+	queryToken := access.APIToken{WorkspaceID: "test", Privileges: []access.Privilege{access.PrivilegeUseAgent, access.PrivilegeQueryData}}
+	foreignToken := access.APIToken{WorkspaceID: "other", Privileges: []access.Privilege{access.PrivilegeQueryData}}
 	server := NewWithOptions(fakeMetrics{}, Options{Store: store, AccessRepo: testAccessRepository(store), DefaultWorkspaceID: "test"})
 
 	run := func(token access.APIToken) agentcore.ToolResult {
@@ -1105,37 +1029,54 @@ func TestAPIGenAgentToolEnforcesCredentialPrivilegeAllowlistAndWorkspace(t *test
 		}
 		tools := agentAPIGenToolsForTest(server, scope)
 		for _, tool := range tools {
-			if tool.Name == "list_dashboards" {
-				result, err := tool.Handler.Run(ctx, agentcore.ToolCall{ID: "call_1", Name: "list_dashboards", Arguments: json.RawMessage(`{}`)})
+			if tool.Name == "query_semantic_model" {
+				result, err := tool.Handler.Run(ctx, agentcore.ToolCall{ID: "call_1", Name: "query_semantic_model", Arguments: json.RawMessage(`{"workspace":"test","model":"test","measures":[{"field":"order_count"}]}`)})
 				if err != nil {
-					t.Fatalf("run list_dashboards: %v", err)
+					t.Fatalf("run query_semantic_model: %v", err)
 				}
 				return result
 			}
 		}
-		t.Fatal("list_dashboards tool missing")
+		t.Fatal("query_semantic_model tool missing")
 		return agentcore.ToolResult{}
 	}
 
 	if result := run(agentOnlyToken); !result.IsError {
-		t.Fatalf("agent-only token unexpectedly called asset tool: %#v", result.Content)
+		t.Fatalf("agent-only token unexpectedly called query tool: %#v", result.Content)
 	}
 	if result := run(foreignToken); !result.IsError {
-		t.Fatalf("foreign workspace token unexpectedly called asset tool: %#v", result.Content)
+		t.Fatalf("foreign workspace token unexpectedly called query tool: %#v", result.Content)
 	}
-	if result := run(assetToken); result.IsError {
-		t.Fatalf("asset token was rejected: %#v", result.Content)
+	if result := run(queryToken); result.IsError {
+		t.Fatalf("query token was rejected: %#v", result.Content)
 	}
 }
 
 func TestRuntimeAgentToolsMatchPolicyRegistry(t *testing.T) {
 	server := NewWithOptions(manyRowsMetrics{}, Options{DefaultWorkspaceID: "test"})
 	scope := agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"}
-	var runtimeTools []agentcore.ToolDefinition
-	runtimeTools = append(runtimeTools, agentVisualToolsForTest(server, scope)...)
-	runtimeTools = append(runtimeTools, agentAPIGenToolsForTest(server, scope)...)
+	runtimeTools := server.agentToolDefinitions(scope)
 	if got, want := sortedToolNames(runtimeTools), agenttools.ToolNames(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("runtime tools = %#v, policy registry = %#v", got, want)
+	}
+}
+
+func TestAdminAgentInspectionExposesExactCuratedCatalog(t *testing.T) {
+	store := testStore(t)
+	metrics := manyRowsMetrics{}
+	service := agentcap.NewService(metrics, testAgentRepository(store), agentcap.Config{APIKey: "key", Model: "test-model"})
+	server := NewWithOptions(metrics, Options{Store: store, Agent: service, DefaultWorkspaceID: "test"})
+	details, err := server.adminAgentDetails(context.Background())
+	if err != nil {
+		t.Fatalf("admin agent details: %v", err)
+	}
+	names := make([]string, 0, len(details.Tools))
+	for _, tool := range details.Tools {
+		names = append(names, tool.Name)
+	}
+	sort.Strings(names)
+	if want := agenttools.ToolNames(); !reflect.DeepEqual(names, want) {
+		t.Fatalf("admin tools = %#v, want %#v", names, want)
 	}
 }
 
@@ -1236,6 +1177,23 @@ type manyEdgesMetrics struct {
 
 type manySemanticRowsMetrics struct {
 	fakeMetrics
+}
+
+type nullSemanticRowsMetrics struct {
+	fakeMetrics
+}
+
+func (m nullSemanticRowsMetrics) ExecuteDataQuery(ctx context.Context, request dataquery.Query) (dataquery.Result, error) {
+	if request.Kind != dataquery.KindSemanticAggregate {
+		return m.fakeMetrics.ExecuteDataQuery(ctx, request)
+	}
+	return dataquery.Result{
+		Columns: dataquery.ColumnsFromNames([]string{"status"}),
+		Rows: []dataquery.Row{
+			{"status": nil},
+			{"status": ""},
+		},
+	}, nil
 }
 
 func (manySemanticRowsMetrics) QuerySemantic(_ context.Context, _ string, request reportdef.AggregateQuery) (reportdef.QueryRows, error) {

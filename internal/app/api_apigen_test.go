@@ -38,9 +38,17 @@ func (r apiSnapshotWorkspaceRepository) Ensure(context.Context, workspace.Ensure
 	return nil
 }
 func (r apiSnapshotWorkspaceRepository) ByID(context.Context, workspace.WorkspaceID) (workspace.Summary, error) {
-	return r.summary, nil
+	summary := r.summary
+	summary.ActiveServingStateID = ""
+	return summary, nil
 }
 func (r apiSnapshotWorkspaceRepository) List(context.Context) ([]workspace.Summary, error) {
+	return []workspace.Summary{r.summary}, nil
+}
+func (r apiSnapshotWorkspaceRepository) ByIDWithActiveMetadata(context.Context, workspace.WorkspaceID, string) (workspace.Summary, error) {
+	return r.summary, nil
+}
+func (r apiSnapshotWorkspaceRepository) ListWithActiveMetadata(context.Context, string) ([]workspace.Summary, error) {
 	return []workspace.Summary{r.summary}, nil
 }
 func (r apiSnapshotWorkspaceRepository) ActiveServingStateGraph(context.Context, workspace.WorkspaceID, string) (workspace.AssetGraph, bool, error) {
@@ -57,7 +65,12 @@ func TestAPIGenUsesTypeSpecV065(t *testing.T) {
 		t.Fatalf("read manifest: %v", err)
 	}
 	manifestText := string(manifest)
-	for _, source := range []string{"typespec_entrypoint: typespec/main.tsp", "typespec_entrypoint: signals/main.tsp", "typespec_entrypoint: visualization/main.tsp"} {
+	for _, source := range []string{
+		"typespec_entrypoint: typespec/main.tsp",
+		"typespec_entrypoint: signals/main.tsp",
+		"typespec_entrypoint: visualization/main.tsp",
+		"typespec_entrypoint: agenttools/main.tsp",
+	} {
 		if !strings.Contains(manifestText, source) {
 			t.Fatalf("manifest should select shared-root TypeSpec source %q, got:\n%s", source, manifestText)
 		}
@@ -72,7 +85,7 @@ func TestAPIGenUsesTypeSpecV065(t *testing.T) {
 	}
 	taskText := string(taskfile)
 	for _, want := range []string{
-		"- task: api:generate\n      - task: ui-signals:generate\n      - task: schema:generate",
+		"- task: api:generate\n      - task: agent-contracts:generate\n      - task: ui-signals:generate\n      - task: schema:generate",
 		"schema:generate:\n    desc: Generate JSON Schema artifacts for LeapView YAML contracts\n    deps:\n      - db:generate\n      - config:generate\n      - api:generate\n      - ui-signals:generate",
 	} {
 		if !strings.Contains(taskText, want) {
@@ -477,31 +490,8 @@ func TestAPIGenOperationExtensions(t *testing.T) {
 		toolsByOperation[tool.OperationID] = name
 	}
 	agentTools := map[string]string{
-		"getDashboard":              "describe_dashboard",
-		"getDashboardVisual":        "describe_dashboard_visual",
-		"getWorkspaceAsset":         "describe_asset",
-		"getWorkspaceAssetLineage":  "asset_lineage",
-		"getSemanticModel":          "describe_model",
-		"listSemanticModelFields":   "list_semantic_model_fields",
-		"querySemanticModel":        "query_semantic_model",
-		"explainSemanticModelQuery": "explain_semantic_model_query",
-		"getSemanticDataset":        "describe_semantic_dataset",
-		"getRefreshRun":             "get_refresh_run",
-		"getDashboardPage":          "describe_dashboard_page",
-		"listDashboards":            "list_dashboards",
-		"listDashboardFilterValues": "list_dashboard_filter_values",
-		"listRefreshRuns":           "list_refresh_runs",
-		"listSemanticDatasets":      "list_semantic_datasets",
-		"listSemanticFields":        "list_semantic_fields",
-		"listSemanticModels":        "list_semantic_models",
-		"listWorkspaceAssetEdges":   "list_workspace_asset_edges",
-		"listWorkspaceAssets":       "list_assets",
-		"listWorkspaces":            "list_workspaces",
-		"search":                    "search",
-		"queryDashboardVisualData":  "query_dashboard_visual",
-		"queryDashboardPage":        "query_dashboard_page",
-		"previewSemanticDataset":    "preview_semantic_dataset",
-		"explainSemanticPreview":    "explain_semantic_preview",
+		"querySemanticModel":       "query_semantic_model",
+		"queryDashboardVisualData": "query_dashboard_visual",
 	}
 	for operationID, contract := range contracts {
 		authz, ok := contract.Extensions["x-authz"].(map[string]any)

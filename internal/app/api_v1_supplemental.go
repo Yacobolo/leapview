@@ -9,7 +9,6 @@ import (
 	materializehttp "github.com/Yacobolo/leapview/internal/analytics/materialize/http"
 	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
 	"github.com/Yacobolo/leapview/internal/manageddata/control"
-	"github.com/Yacobolo/leapview/internal/workspace"
 )
 
 func (a apiGenAdapter) ListProjects(w http.ResponseWriter, r *http.Request, params apigenapi.GenListProjectsParams) {
@@ -163,12 +162,7 @@ func (a apiGenAdapter) ListManagedDataUploadSessionEvents(w http.ResponseWriter,
 }
 
 func (a apiGenAdapter) GetWorkspace(w http.ResponseWriter, r *http.Request, workspaceID string) {
-	repo, err := a.server.workspaceRepository()
-	if err != nil || repo == nil {
-		writeAPIProblem(w, r, http.StatusServiceUnavailable, "WORKSPACE_SERVICE_UNAVAILABLE", "Workspace service is unavailable", nil)
-		return
-	}
-	row, err := repo.ByID(r.Context(), workspace.WorkspaceID(workspaceID))
+	row, err := a.server.workspaceWithActiveMetadata(r.Context(), workspaceID)
 	if err != nil {
 		writeAPIProblem(w, r, http.StatusNotFound, "WORKSPACE_NOT_FOUND", "Workspace not found", nil)
 		return
