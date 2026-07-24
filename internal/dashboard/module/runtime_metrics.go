@@ -17,7 +17,6 @@ import (
 	"github.com/Yacobolo/leapview/internal/runtimehost"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
 	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
-	"github.com/Yacobolo/leapview/internal/workspace"
 )
 
 type runtimeMetrics struct {
@@ -44,10 +43,6 @@ type catalogRuntime interface {
 	DefaultDashboardID() string
 	ModelIDForDashboard(dashboardID string) string
 	Pages(dashboardID string) []dashboard.Page
-}
-
-type workspaceAssetRuntime interface {
-	WorkspaceAssets(workspaceID, servingStateID string) ([]workspace.Asset, []workspace.AssetEdge, bool)
 }
 
 type reportRuntime interface {
@@ -402,19 +397,6 @@ func (m runtimeMetrics) Pages(dashboardID string) []dashboard.Page {
 		return nil
 	}
 	return port.Pages(dashboardID)
-}
-
-func (m runtimeMetrics) WorkspaceAssets(workspaceID, servingStateID string) ([]workspace.Asset, []workspace.AssetEdge, bool) {
-	runtime, release, err := m.active(context.Background())
-	if err != nil {
-		return nil, nil, false
-	}
-	defer release()
-	port, ok := runtime.(workspaceAssetRuntime)
-	if !ok {
-		return nil, nil, false
-	}
-	return port.WorkspaceAssets(workspaceID, servingStateID)
 }
 
 func (m runtimeMetrics) RuntimeReady(ctx context.Context, workspaceID string) error {

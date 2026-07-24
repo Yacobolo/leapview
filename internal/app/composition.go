@@ -12,6 +12,7 @@ import (
 	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
 	analyticsmodule "github.com/Yacobolo/leapview/internal/analytics/module"
 	apihttpmiddleware "github.com/Yacobolo/leapview/internal/api/httpmiddleware"
+	appruntimefactory "github.com/Yacobolo/leapview/internal/app/runtimefactory"
 	"github.com/Yacobolo/leapview/internal/config"
 	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
 	deploymentmodule "github.com/Yacobolo/leapview/internal/deployment/module"
@@ -95,7 +96,7 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 		return fail(err)
 	}
 	cleanup.Push("analytics", func(context.Context) error { return analyticsModule.Close() })
-	analyticsRuntimeResources := analyticsModule.RuntimeResources()
+	analyticsWorkspaceFactory := analyticsModule.WorkspaceRuntimeFactory()
 	var workspaceDirectory workspacemodule.Directory
 	accessModule, err := accessmodule.Build(ctx, accessmodule.Config{
 		Database: store.SQLDB(), Auth: accessAuthConfig(cfg, production, cookieSecure),
@@ -188,7 +189,7 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	if managedDataResolution == nil {
 		return fail(errors.New("managed-data runtime resolver is required"))
 	}
-	managedDataResolver := runtimehostmodule.NewManagedDataResolver(managedDataResolution)
+	managedDataResolver := appruntimefactory.NewManagedDataResolver(managedDataResolution)
 	if err := refreshmodule.Recover(ctx, store.SQLDB(), string(environment)); err != nil {
 		return fail(err)
 	}
@@ -220,11 +221,11 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 				}
 			}()
 		},
-		Factory: runtimehostmodule.NewFactory(runtimehostmodule.FactoryConfig{
+		Factory: appruntimefactory.NewFactory(appruntimefactory.FactoryConfig{
 			DuckDBDir: cfg.DuckDBDirPath(), RuntimeDir: cfg.RuntimeDir(),
 			DashboardRuntime: dashboardmodule.NewRuntimeFactory(dashboardmodule.RuntimeFactoryConfig{
-				Resources: analyticsRuntimeResources,
-				MaxRows:   cfg.QueryResultMaxRows, MaxBytes: cfg.QueryResultMaxBytes,
+				Workspaces: analyticsWorkspaceFactory,
+				MaxRows:    cfg.QueryResultMaxRows, MaxBytes: cfg.QueryResultMaxBytes,
 			}),
 		}),
 	})

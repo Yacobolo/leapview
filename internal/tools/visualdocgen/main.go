@@ -16,10 +16,12 @@ import (
 	"sort"
 	"strings"
 
+	analyticsduckdb "github.com/Yacobolo/leapview/internal/analytics/duckdb"
 	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
+	analyticsruntime "github.com/Yacobolo/leapview/internal/analytics/runtime"
 	"github.com/Yacobolo/leapview/internal/configschema"
 	"github.com/Yacobolo/leapview/internal/dashboard"
-	dashboardadapter "github.com/Yacobolo/leapview/internal/dashboard/analyticsduckdb"
+	dashboardadapter "github.com/Yacobolo/leapview/internal/dashboard/analyticsruntime"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	dashboardruntime "github.com/Yacobolo/leapview/internal/dashboard/runtime"
@@ -180,7 +182,17 @@ func generateVisualExamples(docsDir, projectPath, dataRoot string) (visualExampl
 	if err != nil {
 		return visualExamplesArtifact{}, err
 	}
-	service, err := dashboardruntime.NewFromDefinition(refreshLease.Context(), runtimeDir, dashboardadapter.NewFactory(dashboardadapter.Options{Database: database}), definition)
+	workspaces := analyticsruntime.WorkspaceFactoryFunc(func(ctx context.Context, request analyticsruntime.WorkspaceRequest) (analyticsruntime.Workspace, error) {
+		return analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
+			Models: request.Models, Database: database,
+			CredentialResolver: analyticsduckdb.EnvironmentCredentialResolver{},
+			SnapshotID:         request.SnapshotID, ServingStateID: request.ServingStateID,
+			WorkspaceID: request.WorkspaceID, Environment: request.Environment,
+			SemanticDigest: request.SemanticDigest, ArtifactDigest: request.ArtifactDigest,
+			SourceDataDigest: request.SourceDataDigest, ResultLimits: request.ResultLimits,
+		})
+	})
+	service, err := dashboardruntime.NewFromDefinition(refreshLease.Context(), runtimeDir, dashboardadapter.NewFactory(dashboardadapter.Options{Workspaces: workspaces}), definition)
 	refreshLease.Release()
 	if err != nil {
 		return visualExamplesArtifact{}, fmt.Errorf("open fixture runtime: %w", err)

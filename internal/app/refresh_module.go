@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	accessmodule "github.com/Yacobolo/leapview/internal/access/module"
+	appruntimefactory "github.com/Yacobolo/leapview/internal/app/runtimefactory"
 	refreshmodule "github.com/Yacobolo/leapview/internal/refresh/module"
 )
 
@@ -24,6 +25,7 @@ func configureRefreshModule(routes *capabilityRoutes, runtime *runtimeServices, 
 	config := refreshmodule.Config{
 		Database: database, Service: service,
 		Analytics: runtime.analyticsModule.WorkspaceMaterializer(), ManagedData: workflow.managedDataResolver,
+		Artifacts: appruntimefactory.NewRefreshArtifactLoader(),
 		HTTP: refreshmodule.HTTPConfig{
 			RunnerConfigured: func() bool { return runtime.metrics != nil },
 			CurrentPrincipal: func(r *http.Request) (refreshmodule.HTTPPrincipal, bool) {
@@ -47,7 +49,7 @@ func configureRefreshModule(routes *capabilityRoutes, runtime *runtimeServices, 
 			},
 			ResolvePipelineModel: refreshmodule.PipelineModelResolver(
 				persistence.servingStateRepo,
-				nil,
+				appruntimefactory.NewRefreshArtifactLoader(),
 				defaultServingEnvironment(routes, runtime, platform, policy),
 			),
 			AuthorizeObject: routes.accessModule.AuthorizeObject,

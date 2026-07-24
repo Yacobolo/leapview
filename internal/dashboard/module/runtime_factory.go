@@ -1,12 +1,12 @@
 package module
 
 import (
-	dashboardadapter "github.com/Yacobolo/leapview/internal/dashboard/analyticsduckdb"
+	dashboardanalytics "github.com/Yacobolo/leapview/internal/dashboard/analyticsruntime"
 	dashboardruntimefactory "github.com/Yacobolo/leapview/internal/dashboard/runtimefactory"
 )
 
-type RuntimeFactoryConfig = dashboardadapter.RuntimeFactoryConfig
+type RuntimeFactoryConfig = dashboardanalytics.RuntimeFactoryConfig
 
 func NewRuntimeFactory(config RuntimeFactoryConfig) dashboardruntimefactory.Builder {
-	return dashboardadapter.NewRuntimeBuilder(config)
+	return dashboardanalytics.NewRuntimeBuilder(config)
 }

@@ -1,6 +1,6 @@
-// Package dashboardadapter adapts the analytics DuckDB materialization runtime to
-// the dashboard runtime's data interfaces.
-package dashboardadapter
+// Package analyticsruntime adapts the analytics capability's governed
+// workspace runtime to dashboard-owned data interfaces.
+package analyticsruntime
 
 import (
 	"context"
@@ -9,18 +9,14 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/analytics/arrowquery"
-	analyticsduckdb "github.com/Yacobolo/leapview/internal/analytics/duckdb"
-	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
-	analyticsruntime "github.com/Yacobolo/leapview/internal/analytics/runtime"
+	analyticscontract "github.com/Yacobolo/leapview/internal/analytics/runtime"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	dashboardruntime "github.com/Yacobolo/leapview/internal/dashboard/runtime"
 	"github.com/Yacobolo/leapview/internal/dataquery"
 )
 
 type Options struct {
-	Database            analyticsruntime.WorkspaceDatabase
-	CredentialResolver  analyticsduckdb.CredentialResolver
-	CachePool           resultcache.ScopeProvider
+	Workspaces          analyticscontract.WorkspaceFactory
 	ResultLimits        dataquery.ResultLimits
 	SnapshotID          int64
 	ServingStateID      string
@@ -40,24 +36,16 @@ func (f Factory) OpenDashboardWorkspaceDataRuntimes(ctx context.Context, config 
 		return nil, fmt.Errorf("workspace definition is required")
 	}
 	options := f.options
-	var cacheScope *resultcache.Scope
-	if options.CachePool != nil {
-		var err error
-		cacheScope, err = options.CachePool.OpenScope(resultcache.ScopeID{WorkspaceID: options.WorkspaceID, RuntimeID: options.ServingStateID})
-		if err != nil {
-			return nil, err
-		}
+	if options.Workspaces == nil {
+		return nil, fmt.Errorf("analytical workspace factory is unavailable")
 	}
-	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
-		Models: config.Definition.Models, Database: options.Database, CredentialResolver: options.CredentialResolver, SnapshotID: options.SnapshotID,
-		QueryCache: cacheScope, ResultLimits: options.ResultLimits,
+	runtime, err := options.Workspaces.OpenWorkspace(ctx, analyticscontract.WorkspaceRequest{
+		Models: config.Definition.Models, SnapshotID: options.SnapshotID,
+		ResultLimits:   options.ResultLimits,
 		ServingStateID: options.ServingStateID, WorkspaceID: options.WorkspaceID, Environment: options.Environment,
 		SemanticDigest: options.SemanticModelDigest, ArtifactDigest: options.ArtifactDigest, SourceDataDigest: options.SourceDataDigest,
 	})
 	if err != nil {
-		if cacheScope != nil {
-			_ = cacheScope.Close()
-		}
 		return nil, err
 	}
 	sharedClose := &sharedCloser{runtime: runtime}
@@ -70,7 +58,7 @@ func (f Factory) OpenDashboardWorkspaceDataRuntimes(ctx context.Context, config 
 
 type sharedCloser struct {
 	once    sync.Once
-	runtime *analyticsduckdb.WorkspaceRuntime
+	runtime analyticscontract.Workspace
 	err     error
 }
 
@@ -81,7 +69,7 @@ func (c *sharedCloser) Close() error {
 
 type workspaceRuntime struct {
 	modelID string
-	runtime *analyticsduckdb.WorkspaceRuntime
+	runtime analyticscontract.Workspace
 	close   *sharedCloser
 	data    reportdef.DataService
 }

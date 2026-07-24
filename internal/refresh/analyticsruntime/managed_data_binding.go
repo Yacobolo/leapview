@@ -1,4 +1,4 @@
-package analyticsduckdb
+package analyticsruntime
 
 import (
 	"fmt"
