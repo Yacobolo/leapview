@@ -32,10 +32,10 @@ type PackageRule struct {
 // import as a synchronous contract. Adapter and module packages are never
 // made public merely because their capability has an allowed edge.
 var PublicContractPrefixes = map[string][]string{
-	"access":       {"internal/access", "internal/access/api", "internal/access/snapshot"},
-	"agent":        {"internal/agent/api"},
+	"access":       {"internal/access", "internal/access/api", "internal/access/snapshot", "internal/access/ui/signals"},
+	"agent":        {"internal/agent/api", "internal/agent/ui/signals"},
 	"analytics":    {"internal/analytics/model", "internal/analytics/query", "internal/analytics/materialize", "internal/analytics/materialization", "internal/analytics/connectors", "internal/analytics/arrowquery", "internal/analytics/resource", "internal/analytics/runtime", "internal/analytics/queryaudit", "internal/analytics/dataquery"},
-	"dashboard":    {"internal/dashboard", "internal/dashboard/api", "internal/dashboard/catalog", "internal/dashboard/definition", "internal/dashboard/publication", "internal/dashboard/report", "internal/dashboard/reportmodel", "internal/dashboard/queryruntime", "internal/dashboard/visualization/definition", "internal/dashboard/visualization/format", "internal/dashboard/visualization/geometry", "internal/dashboard/visualization/ir", "internal/dashboard/visualization/mapasset", "internal/dashboard/visualization/runtime"},
+	"dashboard":    {"internal/dashboard", "internal/dashboard/api", "internal/dashboard/catalog", "internal/dashboard/definition", "internal/dashboard/publication", "internal/dashboard/report", "internal/dashboard/reportmodel", "internal/dashboard/queryruntime", "internal/dashboard/ui/signals", "internal/dashboard/visualization/definition", "internal/dashboard/visualization/format", "internal/dashboard/visualization/geometry", "internal/dashboard/visualization/ir", "internal/dashboard/visualization/mapasset", "internal/dashboard/visualization/runtime"},
 	"manageddata":  {"internal/manageddata", "internal/manageddata/binding", "internal/manageddata/runtimebinding"},
 	"workspace":    {"internal/workspace", "internal/workspace/api", "internal/workspace/navigation", "internal/workspace/search"},
 	"project":      {"internal/project/schema", "internal/project/artifact", "internal/project/bundle", "internal/project/compiler"},
@@ -194,6 +194,10 @@ var PackageRules = []PackageRule{
 	{Prefix: "internal/dashboard/visualization/runtime", Capability: "dashboard", Layer: LayerUseCase},
 	{Prefix: "internal/app/site/visualdocs", Capability: "ui", Layer: LayerAdapter},
 	{Prefix: "internal/dashboard/semanticapi", Capability: "dashboard", Layer: LayerAdapter},
+	{Prefix: "internal/access/ui/signals", Capability: "access", Layer: LayerContract},
+	{Prefix: "internal/admin/ui/signals", Capability: "admin", Layer: LayerContract},
+	{Prefix: "internal/agent/ui/signals", Capability: "agent", Layer: LayerContract},
+	{Prefix: "internal/dashboard/ui/signals", Capability: "dashboard", Layer: LayerContract},
 	{Prefix: "internal/app", Capability: "composition", Layer: LayerComposition},
 	{Prefix: "internal/admin", Capability: "admin", Layer: LayerAdapter},
 	{Prefix: "internal/workspace/ui/signals", Capability: "ui", Layer: LayerContract},

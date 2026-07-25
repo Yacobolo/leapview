@@ -95,6 +95,10 @@ jobs:
             internal/platform/db/db.go
             internal/platform/db/models.go
             internal/platform/db/*.sql.go
+            internal/access/ui/signals/models.gen.go
+            internal/admin/ui/signals/models.gen.go
+            internal/agent/ui/signals/models.gen.go
+            internal/dashboard/ui/signals/models.gen.go
             internal/workspace/ui/signals/models.gen.go
             schemas
             web/generated
@@ -123,6 +127,10 @@ jobs:
             internal/platform/db/db.go \
             internal/platform/db/models.go \
             internal/platform/db/*.sql.go \
+            internal/access/ui/signals/models.gen.go \
+            internal/admin/ui/signals/models.gen.go \
+            internal/agent/ui/signals/models.gen.go \
+            internal/dashboard/ui/signals/models.gen.go \
             internal/workspace/ui/signals/models.gen.go
           task generate
           find "${generated_paths[@]}" -type f -print0 | sort -z | xargs -0 sha256sum > /tmp/generated-after.sha256
@@ -149,6 +157,10 @@ jobs:
             internal/platform/db/db.go
             internal/platform/db/models.go
             internal/platform/db/*.sql.go
+            internal/access/ui/signals/models.gen.go
+            internal/admin/ui/signals/models.gen.go
+            internal/agent/ui/signals/models.gen.go
+            internal/dashboard/ui/signals/models.gen.go
             internal/workspace/ui/signals/models.gen.go
             docs/catalog.json
             docs/search-index.sqlite3

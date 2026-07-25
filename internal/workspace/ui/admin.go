@@ -5,11 +5,13 @@ import (
 	"net/url"
 	"strings"
 
+	uisignals "github.com/Yacobolo/leapview/internal/admin/ui/signals"
+	adminview "github.com/Yacobolo/leapview/internal/admin/view"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	uiactions "github.com/Yacobolo/leapview/internal/platform/web/actions"
 	workspaceview "github.com/Yacobolo/leapview/internal/workspace"
 	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
-	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
+	workspacesignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
@@ -131,14 +133,14 @@ type AdminPrincipalRef struct {
 	DisplayName string
 }
 
-type AdminStorageData = uisignals.AdminStorageData
-type AdminStorageDatabase = uisignals.AdminStorageDatabase
-type AdminStorageTable = uisignals.AdminStorageTable
-type AdminStorageColumn = uisignals.AdminStorageColumn
-type AdminStorageFile = uisignals.AdminStorageFile
-type AdminStorageTableHistory = uisignals.AdminStorageTableHistory
-type AdminStorageSnapshot = uisignals.AdminStorageSnapshot
-type AdminStorageServingState = uisignals.AdminStorageServingState
+type AdminStorageData = adminview.AdminStorageData
+type AdminStorageDatabase = adminview.AdminStorageDatabase
+type AdminStorageTable = adminview.AdminStorageTable
+type AdminStorageColumn = adminview.AdminStorageColumn
+type AdminStorageFile = adminview.AdminStorageFile
+type AdminStorageTableHistory = adminview.AdminStorageTableHistory
+type AdminStorageSnapshot = adminview.AdminStorageSnapshot
+type AdminStorageServingState = adminview.AdminStorageServingState
 type AdminStorageSignal = uisignals.AdminStorageSignal
 type AdminStorageSummary = uisignals.AdminStorageSummary
 type AdminStorageTableSignal = uisignals.AdminStorageTableSignal
@@ -148,19 +150,21 @@ type AdminStorageTableHistorySignal = uisignals.AdminStorageTableHistorySignal
 type AdminStorageSnapshotSignal = uisignals.AdminStorageSnapshotSignal
 type AdminStorageServingStateSignal = uisignals.AdminStorageServingStateSignal
 type AdminStorageCommand = uisignals.AdminStorageCommand
+type adminRecordTable = uisignals.RecordTableSignal
+type adminRecordTableColumn = uisignals.RecordTableColumnSignal
 
 func AdminPage(catalog catalog.Catalog, active, roleLabel string, data AdminData, chromeOptions ...ChromeOption) g.Node {
 	title := adminPageTitle(active)
 	page := adminPageSignal(active, data)
-	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfigForWorkspace(catalog, "admin", roleLabel)}
+	chrome := workspacesignals.ChromeSignal{Sidebar: workspacesignals.SidebarConfigForWorkspace(catalog, "admin", roleLabel)}
 	applyChromeOptions(&chrome, chromeOptions)
 	storageSignal := page.Storage
-	adminUpdatesURL := updatesURL(uisignals.RouteAdmin, "section", active)
+	adminUpdatesURL := updatesURL(workspacesignals.RouteAdmin, "section", active)
 	if active == "principal-detail" && data.SelectedPrincipal != nil {
-		adminUpdatesURL = updatesURL(uisignals.RouteAdmin, "section", active, "principal", data.SelectedPrincipal.ID)
+		adminUpdatesURL = updatesURL(workspacesignals.RouteAdmin, "section", active, "principal", data.SelectedPrincipal.ID)
 	}
 	if active == "group-detail" && data.SelectedGroup != nil {
-		adminUpdatesURL = updatesURL(uisignals.RouteAdmin, "section", active, "group", data.SelectedGroup.ID)
+		adminUpdatesURL = updatesURL(workspacesignals.RouteAdmin, "section", active, "group", data.SelectedGroup.ID)
 	}
 	_ = chrome
 	_ = storageSignal
@@ -216,7 +220,7 @@ func AdminPage(catalog catalog.Catalog, active, roleLabel string, data AdminData
 
 func AdminBootstrapSignals(catalog catalog.Catalog, active, roleLabel string, data AdminData, chromeOptions ...ChromeOption) map[string]any {
 	page := adminPageSignal(active, data)
-	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfigForWorkspace(catalog, "admin", roleLabel)}
+	chrome := workspacesignals.ChromeSignal{Sidebar: workspacesignals.SidebarConfigForWorkspace(catalog, "admin", roleLabel)}
 	applyChromeOptions(&chrome, chromeOptions)
 	signals := map[string]any{
 		"chrome":  chrome,
@@ -519,7 +523,7 @@ func adminAgentSignal(data AdminAgentData) uisignals.AdminAgentSignal {
 	}
 }
 
-func adminPrincipalsGrid(principals []AdminPrincipal) recordTable {
+func adminPrincipalsGrid(principals []AdminPrincipal) adminRecordTable {
 	rows := make([]map[string]any, 0, len(principals))
 	for _, principal := range principals {
 		rows = append(rows, map[string]any{
@@ -532,8 +536,8 @@ func adminPrincipalsGrid(principals []AdminPrincipal) recordTable {
 			"updated_at":  principal.UpdatedAt,
 		})
 	}
-	return recordTable{
-		Columns: []recordTableColumn{
+	return adminRecordTable{
+		Columns: []adminRecordTableColumn{
 			{ID: "name", Header: "Name", Kind: uisignals.Pointer("link"), HrefKey: uisignals.Pointer("name_href"), Width: uisignals.Pointer("150px")},
 			{ID: "email", Header: "Email", Width: uisignals.Pointer("190px")},
 			{ID: "roles", Header: "Direct roles", Kind: uisignals.Pointer("tags"), Width: uisignals.Pointer("135px")},
@@ -547,7 +551,7 @@ func adminPrincipalsGrid(principals []AdminPrincipal) recordTable {
 	}
 }
 
-func adminPrincipalGroupsGrid(principal AdminPrincipal, groups []AdminGroup) recordTable {
+func adminPrincipalGroupsGrid(principal AdminPrincipal, groups []AdminGroup) adminRecordTable {
 	groupsByID := make(map[string]AdminGroup, len(groups))
 	for _, group := range groups {
 		groupsByID[group.ID] = group
@@ -564,8 +568,8 @@ func adminPrincipalGroupsGrid(principal AdminPrincipal, groups []AdminGroup) rec
 			"member_count": len(group.Members),
 		})
 	}
-	return recordTable{
-		Columns: []recordTableColumn{
+	return adminRecordTable{
+		Columns: []adminRecordTableColumn{
 			{ID: "name", Header: "Name", Kind: uisignals.Pointer("link"), HrefKey: uisignals.Pointer("name_href"), Width: uisignals.Pointer("180px")},
 			{ID: "provider", Header: "Provider", Width: uisignals.Pointer("120px")},
 			{ID: "external_id", Header: "External ID", Kind: uisignals.Pointer("code"), Width: uisignals.Pointer("180px")},
@@ -578,7 +582,7 @@ func adminPrincipalGroupsGrid(principal AdminPrincipal, groups []AdminGroup) rec
 	}
 }
 
-func adminGroupsGrid(groups []AdminGroup) recordTable {
+func adminGroupsGrid(groups []AdminGroup) adminRecordTable {
 	rows := make([]map[string]any, 0, len(groups))
 	for _, group := range groups {
 		rows = append(rows, map[string]any{
@@ -591,8 +595,8 @@ func adminGroupsGrid(groups []AdminGroup) recordTable {
 			"member_count": len(group.Members),
 		})
 	}
-	return recordTable{
-		Columns: []recordTableColumn{
+	return adminRecordTable{
+		Columns: []adminRecordTableColumn{
 			{ID: "name", Header: "Name", Kind: uisignals.Pointer("link"), HrefKey: uisignals.Pointer("name_href"), Width: uisignals.Pointer("180px")},
 			{ID: "provider", Header: "Provider", Width: uisignals.Pointer("120px")},
 			{ID: "external_id", Header: "External ID", Kind: uisignals.Pointer("code"), Width: uisignals.Pointer("180px")},
@@ -606,7 +610,7 @@ func adminGroupsGrid(groups []AdminGroup) recordTable {
 	}
 }
 
-func adminGroupMembersGrid(group AdminGroup, principals []AdminPrincipal) recordTable {
+func adminGroupMembersGrid(group AdminGroup, principals []AdminPrincipal) adminRecordTable {
 	principalsByID := make(map[string]AdminPrincipal, len(principals))
 	for _, principal := range principals {
 		principalsByID[principal.ID] = principal
@@ -622,8 +626,8 @@ func adminGroupMembersGrid(group AdminGroup, principals []AdminPrincipal) record
 			"updated_at":   principal.UpdatedAt,
 		})
 	}
-	return recordTable{
-		Columns: []recordTableColumn{
+	return adminRecordTable{
+		Columns: []adminRecordTableColumn{
 			{ID: "name", Header: "Name", Width: uisignals.Pointer("150px")},
 			{ID: "email", Header: "Email", Width: uisignals.Pointer("190px")},
 			{ID: "id", Header: "Principal ID", Kind: uisignals.Pointer("code"), Width: uisignals.Pointer("180px")},
@@ -636,7 +640,7 @@ func adminGroupMembersGrid(group AdminGroup, principals []AdminPrincipal) record
 	}
 }
 
-func adminQueryEventsGrid(events []AdminQueryEvent) recordTable {
+func adminQueryEventsGrid(events []AdminQueryEvent) adminRecordTable {
 	rows := make([]map[string]any, 0, len(events))
 	for _, event := range events {
 		rows = append(rows, map[string]any{
@@ -665,8 +669,8 @@ func adminQueryEventsGrid(events []AdminQueryEvent) recordTable {
 		})
 	}
 	falseValue := false
-	return recordTable{
-		Columns: []recordTableColumn{
+	return adminRecordTable{
+		Columns: []adminRecordTableColumn{
 			{ID: "query", Header: "Query", Kind: uisignals.Pointer("query"), Width: uisignals.Pointer("560px"), Toggleable: &falseValue},
 			{ID: "started_at", Header: "Started", Width: uisignals.Pointer("150px")},
 			{ID: "duration_ms", Header: "Duration", Kind: uisignals.Pointer("number"), Align: uisignals.Pointer("right"), Width: uisignals.Pointer("105px")},

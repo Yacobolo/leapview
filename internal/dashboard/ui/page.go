@@ -10,10 +10,10 @@ import (
 
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
+	uisignals "github.com/Yacobolo/leapview/internal/dashboard/ui/signals"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
 	uiactions "github.com/Yacobolo/leapview/internal/platform/web/actions"
 	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
-	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 
 	"github.com/Yacobolo/leapview/internal/dashboard"

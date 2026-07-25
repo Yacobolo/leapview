@@ -11,6 +11,7 @@ go run "$APIGEN" all -manifest api/apigen.yaml -target leapview-v1
 
 go run "$APIGEN" typespec-compile -manifest api/apigen.yaml -target ui-signals
 go run "$APIGEN" all -manifest api/apigen.yaml -target ui-signals
+go run ./internal/app/tools/signalcontracts
 
 go run "$APIGEN" typespec-compile -manifest api/apigen.yaml -target visualization-ir
 go run "$APIGEN" all -manifest api/apigen.yaml -target visualization-ir

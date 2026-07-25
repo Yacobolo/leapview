@@ -14,13 +14,13 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/access"
+	uisignals "github.com/Yacobolo/leapview/internal/admin/ui/signals"
 	"github.com/Yacobolo/leapview/internal/agent"
 	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
 	analyticsmodule "github.com/Yacobolo/leapview/internal/analytics/module"
 	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
 	"github.com/Yacobolo/leapview/internal/platform"
 	"github.com/Yacobolo/leapview/internal/workspace/ui"
-	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	_ "github.com/duckdb/duckdb-go/v2"
 )

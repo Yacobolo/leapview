@@ -14,6 +14,10 @@ api/.apigen/
 internal/app/api/gen/
 internal/app/config/config_gen.go
 internal/app/config/spec/names_gen.go
+internal/access/ui/signals/models.gen.go
+internal/admin/ui/signals/models.gen.go
+internal/agent/ui/signals/models.gen.go
+internal/dashboard/ui/signals/models.gen.go
 internal/workspace/ui/signals/models.gen.go
 internal/app/cli/gen/
 internal/platform/db/db.go

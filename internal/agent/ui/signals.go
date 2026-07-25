@@ -5,207 +5,40 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/agent"
+	signalcontracts "github.com/Yacobolo/leapview/internal/agent/ui/signals"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	"github.com/Yacobolo/leapview/internal/workspace/navigation"
 )
 
-type RouteKind string
+type RouteKind = signalcontracts.RouteKind
+type RouteRuntimeSignal = signalcontracts.RouteRuntimeSignal
+type AgentReferenceKeySignal = signalcontracts.AgentReferenceKeySignal
+type AgentReferenceLocationSignal = signalcontracts.AgentReferenceLocationSignal
+type AgentReferenceSearchSignal = signalcontracts.AgentReferenceSearchSignal
+type AgentReferenceSignal = signalcontracts.AgentReferenceSignal
+type AgentReferenceWorkspaceSignal = signalcontracts.AgentReferenceWorkspaceSignal
+type ChatArtifactSignal = signalcontracts.ChatArtifactSignal
+type ChatConversationSummary = signalcontracts.ChatConversationSummary
+type ChatSignal = signalcontracts.ChatSignal
+type ChatStatus = signalcontracts.ChatStatus
+type ChatTranscriptItemSignal = signalcontracts.ChatTranscriptItemSignal
+type ComposerSignal = signalcontracts.ComposerSignal
+type AgentContextSignal = signalcontracts.AgentContextSignal
+type DashboardFilters = signalcontracts.DashboardFilters
+type ChatPageSignal = signalcontracts.ChatPageSignal
+type ChromeSignal = signalcontracts.ChromeSignal
+type SidebarActionSignal = signalcontracts.SidebarActionSignal
+type SidebarGroupSignal = signalcontracts.SidebarGroupSignal
+type SidebarHistoryItemSignal = signalcontracts.SidebarHistoryItemSignal
+type SidebarHistorySignal = signalcontracts.SidebarHistorySignal
+type SidebarItemSignal = signalcontracts.SidebarItemSignal
+type SidebarSignal = signalcontracts.SidebarSignal
 
 const RouteChat RouteKind = "chat"
-
-type RouteRuntimeSignal struct {
-	ClientID         *string   `json:"clientId,omitempty"`
-	DashboardID      *string   `json:"dashboardId,omitempty"`
-	Kind             RouteKind `json:"kind"`
-	ModelID          *string   `json:"modelId,omitempty"`
-	PageID           *string   `json:"pageId,omitempty"`
-	StreamInstanceID *string   `json:"streamInstanceId,omitempty"`
-	WorkspaceID      *string   `json:"workspaceId,omitempty"`
-}
-
-type AgentReferenceKeySignal struct {
-	WorkspaceID string `json:"workspaceId"`
-	Type        string `json:"type"`
-	ID          string `json:"id"`
-}
-
-type AgentReferenceLocationSignal struct {
-	DashboardID   *string `json:"dashboardId,omitempty"`
-	DashboardName *string `json:"dashboardName,omitempty"`
-	PageID        *string `json:"pageId,omitempty"`
-	PageName      *string `json:"pageName,omitempty"`
-	Href          string  `json:"href"`
-}
-
-type AgentReferenceSearchSignal struct {
-	Query     string                 `json:"query"`
-	RequestID int64                  `json:"requestId"`
-	Results   []AgentReferenceSignal `json:"results"`
-}
-
-type AgentReferenceSignal struct {
-	Reference   AgentReferenceKeySignal        `json:"reference"`
-	Name        string                         `json:"name"`
-	Description *string                        `json:"description,omitempty"`
-	VisualType  *string                        `json:"visualType,omitempty"`
-	Workspace   AgentReferenceWorkspaceSignal  `json:"workspace"`
-	Hierarchy   []string                       `json:"hierarchy"`
-	Href        string                         `json:"href"`
-	Locations   []AgentReferenceLocationSignal `json:"locations"`
-	Context     []string                       `json:"context"`
-}
-
-type AgentReferenceWorkspaceSignal struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
-type ChatArtifactSignal struct {
-	ID      string  `json:"id"`
-	Type    string  `json:"type"`
-	Summary *string `json:"summary,omitempty"`
-}
-
-type ChatConversationSummary struct {
-	ArchivedAt      *string `json:"archivedAt,omitempty"`
-	CreatedAt       string  `json:"createdAt"`
-	ID              string  `json:"id"`
-	LastMessageText *string `json:"lastMessageText,omitempty"`
-	MessageCount    int64   `json:"messageCount"`
-	PrincipalID     string  `json:"principalId"`
-	Status          string  `json:"status"`
-	Title           string  `json:"title"`
-	TitlePending    *bool   `json:"titlePending,omitempty"`
-	UpdatedAt       string  `json:"updatedAt"`
-}
-
-type ChatSignal struct {
-	ActiveConversationID string                     `json:"activeConversationId"`
-	Composer             ComposerSignal             `json:"composer"`
-	Conversations        []ChatConversationSummary  `json:"conversations"`
-	Status               ChatStatus                 `json:"status"`
-	Transcript           []ChatTranscriptItemSignal `json:"transcript"`
-}
-
-type ChatStatus struct {
-	Enabled bool    `json:"enabled"`
-	Error   *string `json:"error,omitempty"`
-	Running bool    `json:"running"`
-}
-
-type ChatTranscriptItemSignal struct {
-	ArgumentsJSON  *string                 `json:"argumentsJson,omitempty"`
-	Artifact       *ChatArtifactSignal     `json:"artifact,omitempty"`
-	ConversationID *string                 `json:"conversationId,omitempty"`
-	CreatedAt      *string                 `json:"createdAt,omitempty"`
-	Error          *string                 `json:"error,omitempty"`
-	ID             string                  `json:"id"`
-	InputFormat    *string                 `json:"inputFormat,omitempty"`
-	InputJSON      *string                 `json:"inputJson,omitempty"`
-	Kind           string                  `json:"kind"`
-	Markdown       *string                 `json:"markdown,omitempty"`
-	Name           *string                 `json:"name,omitempty"`
-	References     *[]AgentReferenceSignal `json:"references,omitempty"`
-	ResultFormat   *string                 `json:"resultFormat,omitempty"`
-	ResultJSON     *string                 `json:"resultJson,omitempty"`
-	ResultSummary  *string                 `json:"resultSummary,omitempty"`
-	RunID          *string                 `json:"runId,omitempty"`
-	Status         *string                 `json:"status,omitempty"`
-	Summary        *string                 `json:"summary,omitempty"`
-	Text           *string                 `json:"text,omitempty"`
-	Title          *string                 `json:"title,omitempty"`
-	ToolCallID     *string                 `json:"toolCallId,omitempty"`
-}
-
-type ComposerSignal struct {
-	Disabled    bool   `json:"disabled"`
-	Placeholder string `json:"placeholder"`
-	Value       string `json:"value"`
-}
 
 type ChatViewState struct {
 	Agent   ChatSignal
 	Visuals map[string]visualizationir.VisualizationEnvelope
-}
-
-type AgentContextSignal struct {
-	Surface        string                 `json:"surface"`
-	WorkspaceID    string                 `json:"workspaceId"`
-	DashboardID    string                 `json:"dashboardId"`
-	DashboardTitle string                 `json:"dashboardTitle"`
-	PageID         string                 `json:"pageId"`
-	PageTitle      string                 `json:"pageTitle"`
-	ModelID        string                 `json:"modelId"`
-	Generation     int64                  `json:"generation"`
-	Filters        DashboardFilters       `json:"filters"`
-	ReferenceLimit int32                  `json:"referenceLimit"`
-	References     []AgentReferenceSignal `json:"references"`
-}
-
-type DashboardFilters struct {
-	Controls          map[string]any `json:"controls"`
-	Selections        []any          `json:"selections"`
-	SpatialSelections []any          `json:"spatialSelections"`
-}
-
-type ChatPageSignal struct {
-	Description string    `json:"description"`
-	Kind        RouteKind `json:"kind"`
-	Title       string    `json:"title"`
-	View        string    `json:"view"`
-}
-
-type ChromeSignal struct {
-	Sidebar SidebarSignal `json:"sidebar"`
-}
-
-type SidebarActionSignal struct {
-	Href  string `json:"href"`
-	Icon  string `json:"icon"`
-	Label string `json:"label"`
-}
-
-type SidebarGroupSignal struct {
-	Items []SidebarItemSignal `json:"items"`
-	Label string              `json:"label"`
-}
-
-type SidebarHistoryItemSignal struct {
-	Active  bool   `json:"active"`
-	Href    string `json:"href"`
-	ID      string `json:"id"`
-	Pending *bool  `json:"pending,omitempty"`
-	Title   string `json:"title"`
-}
-
-type SidebarHistorySignal struct {
-	EmptyText *string                    `json:"emptyText,omitempty"`
-	Items     []SidebarHistoryItemSignal `json:"items"`
-	Label     string                     `json:"label"`
-}
-
-type SidebarItemSignal struct {
-	Active *bool   `json:"active,omitempty"`
-	Href   string  `json:"href"`
-	Icon   string  `json:"icon"`
-	ID     string  `json:"id"`
-	Label  string  `json:"label"`
-	Meta   *string `json:"meta,omitempty"`
-}
-
-type SidebarSignal struct {
-	Active         string                `json:"active"`
-	Compact        bool                  `json:"compact"`
-	DashboardID    *string               `json:"dashboardId,omitempty"`
-	DashboardTitle string                `json:"dashboardTitle"`
-	Groups         []SidebarGroupSignal  `json:"groups"`
-	History        *SidebarHistorySignal `json:"history,omitempty"`
-	ModelID        *string               `json:"modelId,omitempty"`
-	ModelTitle     *string               `json:"modelTitle,omitempty"`
-	PageTitle      string                `json:"pageTitle"`
-	PrimaryAction  *SidebarActionSignal  `json:"primaryAction,omitempty"`
-	UserRole       *string               `json:"userRole,omitempty"`
-	WorkspaceTitle string                `json:"workspaceTitle"`
 }
 
 func Optional[T comparable](value T) *T {
@@ -297,7 +130,11 @@ func chatInitialSignals(catalog navigation.Catalog, workspaceID, roleLabel, view
 		"agent":   state.Agent,
 		"agentContext": AgentContextSignal{
 			Surface: "chat", WorkspaceID: workspaceID,
-			Filters:        DashboardFilters{Controls: map[string]any{}, Selections: []any{}, SpatialSelections: []any{}},
+			Filters: DashboardFilters{
+				Controls:          map[string]signalcontracts.DashboardFilterControl{},
+				Selections:        []signalcontracts.DashboardInteractionSelection{},
+				SpatialSelections: []visualizationir.VisualizationSpatialSelectionState{},
+			},
 			ReferenceLimit: agent.MaxTurnReferences, References: []AgentReferenceSignal{},
 		},
 		"agentReferenceSearch": AgentReferenceSearchSignal{Results: []AgentReferenceSignal{}},

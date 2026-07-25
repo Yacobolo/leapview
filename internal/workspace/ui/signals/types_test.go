@@ -10,6 +10,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
+	dashboardsignals "github.com/Yacobolo/leapview/internal/dashboard/ui/signals"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
@@ -20,7 +21,7 @@ func TestVisualizationSignalKeepsDataStateOpaque(t *testing.T) {
 	report := testDashboardReport()
 	model := testSemanticModel()
 	compiled, definitions := compiledTestDashboard(t, &report, model)
-	envelope := DashboardInitialEnvelope("client", "stream-instance", dashboard.Catalog{}, compiled, model, definitions, report.Pages, report.Pages[0], dashboard.Filters{})
+	envelope := dashboardsignals.DashboardInitialEnvelope("client", "stream-instance", dashboard.Catalog{}, compiled, model, definitions, report.Pages, report.Pages[0], dashboard.Filters{})
 
 	encoded, err := json.Marshal(envelope.Visuals["active_chart"])
 	if err != nil {
@@ -89,9 +90,9 @@ func TestDashboardInitialEnvelopeValidatesPageScopedPayloads(t *testing.T) {
 	report := testDashboardReport()
 	model := testSemanticModel()
 	compiled, definitions := compiledTestDashboard(t, &report, model)
-	envelope := DashboardInitialEnvelope("client", "stream-instance", dashboard.Catalog{}, compiled, model, definitions, report.Pages, report.Pages[0], dashboard.Filters{})
+	envelope := dashboardsignals.DashboardInitialEnvelope("client", "stream-instance", dashboard.Catalog{}, compiled, model, definitions, report.Pages, report.Pages[0], dashboard.Filters{})
 
-	if err := ValidateDashboardEnvelope(envelope); err != nil {
+	if err := dashboardsignals.ValidateDashboardEnvelope(envelope); err != nil {
 		t.Fatalf("validate dashboard envelope: %v", err)
 	}
 	if _, ok := envelope.Visuals["active_chart"]; !ok {
@@ -124,10 +125,10 @@ func TestDashboardEnvelopeRejectsMissingReferencedPayload(t *testing.T) {
 	report := testDashboardReport()
 	model := testSemanticModel()
 	compiled, definitions := compiledTestDashboard(t, &report, model)
-	envelope := DashboardInitialEnvelope("client", "stream-instance", dashboard.Catalog{}, compiled, model, definitions, report.Pages, report.Pages[0], dashboard.Filters{})
+	envelope := dashboardsignals.DashboardInitialEnvelope("client", "stream-instance", dashboard.Catalog{}, compiled, model, definitions, report.Pages, report.Pages[0], dashboard.Filters{})
 	delete(envelope.Visuals, "active_chart")
 
-	err := ValidateDashboardEnvelope(envelope)
+	err := dashboardsignals.ValidateDashboardEnvelope(envelope)
 	if err == nil || !strings.Contains(err.Error(), `missing visual "active_chart"`) {
 		t.Fatalf("validate error = %v", err)
 	}
@@ -137,10 +138,10 @@ func TestDashboardEnvelopeRejectsUnusedPayload(t *testing.T) {
 	report := testDashboardReport()
 	model := testSemanticModel()
 	compiled, definitions := compiledTestDashboard(t, &report, model)
-	envelope := DashboardInitialEnvelope("client", "stream-instance", dashboard.Catalog{}, compiled, model, definitions, report.Pages, report.Pages[0], dashboard.Filters{})
+	envelope := dashboardsignals.DashboardInitialEnvelope("client", "stream-instance", dashboard.Catalog{}, compiled, model, definitions, report.Pages, report.Pages[0], dashboard.Filters{})
 	envelope.Visuals["off_page_chart"] = envelope.Visuals["active_chart"]
 
-	err := ValidateDashboardEnvelope(envelope)
+	err := dashboardsignals.ValidateDashboardEnvelope(envelope)
 	if err == nil || !strings.Contains(err.Error(), `unused visual payload "off_page_chart"`) {
 		t.Fatalf("validate error = %v", err)
 	}

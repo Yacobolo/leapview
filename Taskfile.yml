@@ -381,13 +381,19 @@ tasks:
       - api/apigen.yaml
       - api/signals/**/*.tsp
       - api/visualization/**/*.tsp
+      - internal/app/tools/signalcontracts/**/*.go
     generates:
       - api/gen/ui-signals-ir.json
+      - internal/access/ui/signals/models.gen.go
+      - internal/admin/ui/signals/models.gen.go
+      - internal/agent/ui/signals/models.gen.go
+      - internal/dashboard/ui/signals/models.gen.go
       - internal/workspace/ui/signals/models.gen.go
       - web/generated/signals/index.ts
     cmds:
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.6.5 typespec-compile -manifest api/apigen.yaml -target ui-signals
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.6.5 all -manifest api/apigen.yaml -target ui-signals
+      - go run ./internal/app/tools/signalcontracts
 
   visualization-ir:generate:
     desc: Generate renderer-independent visualization IR contracts from TypeSpec

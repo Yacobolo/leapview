@@ -644,6 +644,21 @@ func TestDashboardDatastarOwnsItsSignalProjection(t *testing.T) {
 	}
 }
 
+func TestCapabilitiesDoNotImportWorkspaceSignalContracts(t *testing.T) {
+	const sharedSignals = modulePath + "/internal/workspace/ui/signals"
+	for _, file := range productionGoFiles(t) {
+		owner, ok := ClassifyPackage(file.pkgDir)
+		if !ok || owner.Capability == "workspace" || owner.Capability == "composition" || owner.Capability == "ui" {
+			continue
+		}
+		for _, imported := range file.imports {
+			if imported == sharedSignals || strings.HasPrefix(imported, sharedSignals+"/") {
+				t.Errorf("%s imports workspace-owned signal contracts", file.path)
+			}
+		}
+	}
+}
+
 func TestAdminStorageDoesNotImportWorkspaceUI(t *testing.T) {
 	const sharedUI = modulePath + "/internal/workspace/ui"
 	for _, file := range productionGoFiles(t) {
@@ -1115,6 +1130,10 @@ func TestProductionContainerContractExists(t *testing.T) {
 		"bun run build",
 		"FROM golang:1.25-bookworm@sha256:",
 		"COPY --from=sourcegen /src/internal/app/api/gen ./internal/app/api/gen",
+		"COPY --from=sourcegen /src/internal/access/ui/signals/models.gen.go ./internal/access/ui/signals/models.gen.go",
+		"COPY --from=sourcegen /src/internal/admin/ui/signals/models.gen.go ./internal/admin/ui/signals/models.gen.go",
+		"COPY --from=sourcegen /src/internal/agent/ui/signals/models.gen.go ./internal/agent/ui/signals/models.gen.go",
+		"COPY --from=sourcegen /src/internal/dashboard/ui/signals/models.gen.go ./internal/dashboard/ui/signals/models.gen.go",
 		"COPY --from=sourcegen /src/internal/workspace/ui/signals/models.gen.go ./internal/workspace/ui/signals/models.gen.go",
 		"CGO_ENABLED=1 go build",
 		"FROM debian:bookworm-slim@sha256:",

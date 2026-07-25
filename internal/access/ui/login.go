@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"strings"
 
+	signalcontracts "github.com/Yacobolo/leapview/internal/access/ui/signals"
 	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	g "maragu.dev/gomponents"
@@ -18,25 +19,8 @@ type LoginPageOptions struct {
 	CSRFToken          string
 }
 
-type LoginPageSignal struct {
-	BackgroundModuleSrc string `json:"backgroundModuleSrc"`
-	Kind                string `json:"kind"`
-	LocalAuth           bool   `json:"localAuth"`
-	MustChangePassword  bool   `json:"mustChangePassword"`
-	ProviderLabel       string `json:"providerLabel"`
-	SSOAuth             bool   `json:"ssoAuth"`
-	Title               string `json:"title"`
-}
-
-type StatusSignal struct {
-	Error           string  `json:"error"`
-	Generation      int64   `json:"generation"`
-	LastUpdated     string  `json:"lastUpdated"`
-	Loading         bool    `json:"loading"`
-	ProgressPercent float64 `json:"progressPercent"`
-	RefreshID       string  `json:"refreshId"`
-	SetupRequired   bool    `json:"setupRequired"`
-}
+type LoginPageSignal = signalcontracts.LoginPageSignal
+type StatusSignal = signalcontracts.DashboardStatus
 
 func LoginPage(options ...LoginPageOptions) g.Node {
 	opts := normalizedLoginOptions(options)

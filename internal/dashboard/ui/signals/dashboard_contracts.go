@@ -1,3 +1,4 @@
+// Package signals owns dashboard browser contract projections.
 package signals
 
 import (
