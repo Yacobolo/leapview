@@ -14,13 +14,13 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/access"
+	adminui "github.com/Yacobolo/leapview/internal/admin/ui"
 	uisignals "github.com/Yacobolo/leapview/internal/admin/ui/signals"
 	"github.com/Yacobolo/leapview/internal/agent"
 	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
 	analyticsmodule "github.com/Yacobolo/leapview/internal/analytics/module"
 	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
 	"github.com/Yacobolo/leapview/internal/platform"
-	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	_ "github.com/duckdb/duckdb-go/v2"
 )
@@ -608,9 +608,9 @@ func TestAdminStorageSelectTablePublishesSelectedTablePatch(t *testing.T) {
 		if storage["selectedKey"] != "ducklake-catalog\x00model\x00orders" {
 			t.Fatalf("selectedKey = %#v", storage["selectedKey"])
 		}
-		table, ok := storage["selectedTable"].(*ui.AdminStorageTableSignal)
+		table, ok := storage["selectedTable"].(*adminui.AdminStorageTableSignal)
 		if !ok {
-			t.Fatalf("selectedTable = %#v, want *ui.AdminStorageTableSignal", storage["selectedTable"])
+			t.Fatalf("selectedTable = %#v, want *adminui.AdminStorageTableSignal", storage["selectedTable"])
 		}
 		if table.Name != "orders" || table.Schema != "model" || len(uisignals.ValueOrZero(table.Columns)) != 3 || len(uisignals.ValueOrZero(table.Files)) == 0 {
 			t.Fatalf("selectedTable = %#v", table)

@@ -3,6 +3,7 @@ package app
 import (
 	"net/http"
 
+	adminmodule "github.com/Yacobolo/leapview/internal/admin/module"
 	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
 	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
 	"github.com/Yacobolo/leapview/internal/workspace/ui"
@@ -11,6 +12,20 @@ import (
 
 func agentChromeOption(module *agentmodule.Module, r *http.Request) ui.ChromeOption {
 	return ui.WithChatSidebar(workspaceChatSignal(module.ChromeSignal(r)))
+}
+
+func adminAgentChromeOption(module *agentmodule.Module, r *http.Request) adminmodule.ChromeOption {
+	state := module.ChromeSignal(r)
+	conversations := make([]adminmodule.AgentConversation, 0, len(state.Conversations))
+	for _, conversation := range state.Conversations {
+		conversations = append(conversations, adminmodule.AgentConversation{
+			ID: conversation.ID, Title: conversation.Title, TitlePending: conversation.TitlePending,
+		})
+	}
+	return adminmodule.WithAgentChrome(adminmodule.AgentChrome{
+		ActiveConversationID: state.ActiveConversationID,
+		Conversations:        conversations,
+	})
 }
 
 func workspaceChatViewState(state agentmodule.ChatViewState) ui.ChatViewState {

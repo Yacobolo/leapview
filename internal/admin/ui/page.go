@@ -11,7 +11,6 @@ import (
 	uiactions "github.com/Yacobolo/leapview/internal/platform/web/actions"
 	workspaceview "github.com/Yacobolo/leapview/internal/workspace"
 	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
-	workspacesignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
@@ -156,15 +155,15 @@ type adminRecordTableColumn = uisignals.RecordTableColumnSignal
 func AdminPage(catalog catalog.Catalog, active, roleLabel string, data AdminData, chromeOptions ...ChromeOption) g.Node {
 	title := adminPageTitle(active)
 	page := adminPageSignal(active, data)
-	chrome := workspacesignals.ChromeSignal{Sidebar: workspacesignals.SidebarConfigForWorkspace(catalog, "admin", roleLabel)}
+	chrome := uisignals.ChromeSignal{Sidebar: adminChromeSidebar(catalog, roleLabel)}
 	applyChromeOptions(&chrome, chromeOptions)
 	storageSignal := page.Storage
-	adminUpdatesURL := updatesURL(workspacesignals.RouteAdmin, "section", active)
+	adminUpdatesURL := updatesURL(uisignals.RouteAdmin, "section", active)
 	if active == "principal-detail" && data.SelectedPrincipal != nil {
-		adminUpdatesURL = updatesURL(workspacesignals.RouteAdmin, "section", active, "principal", data.SelectedPrincipal.ID)
+		adminUpdatesURL = updatesURL(uisignals.RouteAdmin, "section", active, "principal", data.SelectedPrincipal.ID)
 	}
 	if active == "group-detail" && data.SelectedGroup != nil {
-		adminUpdatesURL = updatesURL(workspacesignals.RouteAdmin, "section", active, "group", data.SelectedGroup.ID)
+		adminUpdatesURL = updatesURL(uisignals.RouteAdmin, "section", active, "group", data.SelectedGroup.ID)
 	}
 	_ = chrome
 	_ = storageSignal
@@ -220,7 +219,7 @@ func AdminPage(catalog catalog.Catalog, active, roleLabel string, data AdminData
 
 func AdminBootstrapSignals(catalog catalog.Catalog, active, roleLabel string, data AdminData, chromeOptions ...ChromeOption) map[string]any {
 	page := adminPageSignal(active, data)
-	chrome := workspacesignals.ChromeSignal{Sidebar: workspacesignals.SidebarConfigForWorkspace(catalog, "admin", roleLabel)}
+	chrome := uisignals.ChromeSignal{Sidebar: adminChromeSidebar(catalog, roleLabel)}
 	applyChromeOptions(&chrome, chromeOptions)
 	signals := map[string]any{
 		"chrome":  chrome,

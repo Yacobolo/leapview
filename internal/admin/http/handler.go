@@ -5,10 +5,10 @@ import (
 	nethttp "net/http"
 	"strings"
 
+	"github.com/Yacobolo/leapview/internal/admin/ui"
 	uisignals "github.com/Yacobolo/leapview/internal/admin/ui/signals"
 	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
 	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
-	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )

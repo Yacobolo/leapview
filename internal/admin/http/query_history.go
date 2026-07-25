@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Yacobolo/leapview/internal/admin/ui"
 	uisignals "github.com/Yacobolo/leapview/internal/admin/ui/signals"
 	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
-	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 

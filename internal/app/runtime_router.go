@@ -771,8 +771,8 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				principal, ok := currentAdminPrincipal(r)
 				return adminmodule.RoleLabel(platform.auth != nil, principal, ok)
 			},
-			ChromeOption: func(r *http.Request) ui.ChromeOption {
-				return agentChromeOption(routes.agentModule, r)
+			ChromeOption: func(r *http.Request) adminmodule.ChromeOption {
+				return adminAgentChromeOption(routes.agentModule, r)
 			},
 			EnsureClientID: func(w http.ResponseWriter, r *http.Request) {
 				_ = pagestream.EnsureClientID(w, r)
