@@ -72,6 +72,7 @@ type platformServices struct {
 	asyncJobs     jobs.Repository
 	jobModule     *jobsmodule.Module
 	auth          *accessmodule.Auth
+	assets        staticasset.Resolver
 	telemetry     *observability.Telemetry
 	health        *observability.Health
 	logger        *slog.Logger
@@ -120,10 +121,10 @@ type storageInputs struct {
 	publicURL           string
 }
 
-func newCompositionSurfaces(metrics QueryMetrics) (*capabilityRoutes, *runtimeServices, *platformServices, *httpPolicy) {
+func newCompositionSurfaces(metrics QueryMetrics, assets staticasset.Resolver) (*capabilityRoutes, *runtimeServices, *platformServices, *httpPolicy) {
 	logger := slog.Default()
 	var trace *pagestream.TraceStore
-	if !staticasset.Production() {
+	if !assets.Production() {
 		trace = pagestream.NewTraceStore(pagestream.TraceOptions{
 			CapacityPerStream: 512,
 			MaxStreams:        32,
@@ -135,7 +136,7 @@ func newCompositionSurfaces(metrics QueryMetrics) (*capabilityRoutes, *runtimeSe
 		metrics: metrics, broker: pagestream.NewBroker(pagestream.WithTraceStore(trace)),
 		pageStreamTrace: trace,
 	}
-	platform := &platformServices{telemetry: observability.New(), logger: logger}
+	platform := &platformServices{telemetry: observability.New(), logger: logger, assets: assets}
 	policy := &httpPolicy{requestBodyLimit: apihttpmiddleware.DefaultRequestBodyLimitConfig()}
 	return routes, runtime, platform, policy
 }
@@ -184,6 +185,7 @@ type runtimeAssemblyInputs struct {
 	SCIMBearerToken     string
 	MetricsBearerToken  string
 	AllowedHosts        []string
+	Assets              staticasset.Resolver
 }
 
 type httpAssemblyInputs struct {
@@ -315,7 +317,7 @@ func buildApplicationSurfaces(
 		})
 	}
 	servingStateRepo := data.ServingStateRepo
-	routes, runtime, platform, policy := newCompositionSurfaces(metrics)
+	routes, runtime, platform, policy := newCompositionSurfaces(metrics, runtimeConfig.Assets)
 	persistence := persistenceInputs{}
 	moduleWorkflow := workflowInputs{}
 	storage := storageInputs{}
@@ -457,6 +459,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		routes.accessModule, err = accessmodule.Build(ctx, accessmodule.Config{
 			Database: database, ExistingAuth: platform.auth, WorkspaceID: policy.defaultWorkspaceID,
 			Presentation: webpage.Presentation{ProductName: brand.Name, FaviconPath: brand.FaviconPath},
+			Assets:       platform.assets,
 			WorkspaceIDs: func(ctx context.Context) ([]string, error) {
 				if persistence.workspaceDirectory != nil {
 					return persistence.workspaceDirectory.WorkspaceIDs(ctx)
@@ -516,7 +519,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			Broker:           runtime.broker,
 			CSRFToken:        routes.accessModule.CSRFToken,
 			CurrentRoleLabel: routes.accessModule.CurrentRoleLabel,
-			Layout:           func(r *http.Request) webpage.Provider { return applicationLayout(routes, r) },
+			Layout:           func(r *http.Request) webpage.Provider { return applicationLayout(routes, platform.assets, r) },
 			CurrentCredential: func(r *http.Request) (accessmodule.APICredential, bool) {
 				return accessmodule.APICredentialFromContext(r.Context())
 			},
@@ -580,7 +583,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 					return authorizeListObject(routes, runtime, platform, policy, ctx, principalID, object)
 				},
 				CSRFToken: routes.accessModule.CSRFToken,
-				Layout:    func(r *http.Request) webpage.Provider { return applicationLayout(routes, r) },
+				Layout:    func(r *http.Request) webpage.Provider { return applicationLayout(routes, platform.assets, r) },
 				Environment: func(r *http.Request) string {
 					return string(requestServingEnvironment(routes, runtime, platform, policy, r))
 				},
@@ -598,6 +601,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 					return dashboardAgentBootstrap(routes.agentModule.DashboardBootstrap(r, workspaceID))
 				},
 				Presentation: dashboardmodule.Presentation{ProductName: brand.Name, FaviconPath: brand.FaviconPath},
+				Assets:       platform.assets,
 			},
 			Semantic: dashboardmodule.SemanticConfig{
 				Metrics: runtime.metrics,
@@ -648,6 +652,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			Database: database, Model: moduleWorkflow.agentConfig,
 			Service: moduleWorkflow.agent, Jobs: platform.asyncJobs, DefaultWorkspaceID: policy.defaultWorkspaceID,
 			ProductName:      brand.Name,
+			BuildVersion:     platform.assets.Version(),
 			APIGenOperations: agentAPIGenOperations(),
 			RunWorkloadClass: string(workloadmodule.BackgroundClass), GlobalWorkspaceID: workloadmodule.GlobalWorkspace,
 			Search: routes.workspaceModule,
@@ -701,7 +706,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				Settings: persistence.agentSettings, Broker: runtime.broker,
 				CSRFToken:        routes.accessModule.CSRFToken,
 				CurrentRoleLabel: routes.accessModule.CurrentRoleLabel,
-				Layout:           func(r *http.Request) webpage.Provider { return applicationLayout(routes, r) },
+				Layout:           func(r *http.Request) webpage.Provider { return applicationLayout(routes, platform.assets, r) },
 				CurrentPrincipal: func(r *http.Request) (agentmodule.Principal, bool) {
 					if platform.auth == nil {
 						return agentmodule.Principal{}, false
@@ -762,7 +767,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				Environment: policy.defaultEnvironment, ControlPlane: persistence.adminDatabase,
 				Analytics: runtime.analyticsModule.AdminResources(), Admitter: workloadController(routes, runtime, platform, policy),
 			},
-			Layout: func(r *http.Request) webpage.Provider { return applicationLayout(routes, r) },
+			Layout: func(r *http.Request) webpage.Provider { return applicationLayout(routes, platform.assets, r) },
 			EnsureClientID: func(w http.ResponseWriter, r *http.Request) {
 				_ = pagestream.EnsureClientID(w, r)
 			},
@@ -802,6 +807,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		managedDataModule: routes.managedDataModule, refreshModule: routes.refreshModule,
 		releaseModule: routes.releaseModule, workspaceModule: routes.workspaceModule,
 		defaultEnvironment: policy.defaultEnvironment, managedDataTus: policy.managedDataTus,
+		buildVersion:     platform.assets.Version(),
 		queryAuditEvents: runtime.queryAuditEvents,
 	}
 	apiGenAuthorizer, err := routes.accessModule.APIGenAuthorizer(accessAPIGenOperationContracts(), accessmodule.APIGenObjectResolvers{

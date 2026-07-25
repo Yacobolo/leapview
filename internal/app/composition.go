@@ -45,6 +45,7 @@ func assemble(ctx context.Context, cfg config.Config) (http.Handler, Lifecycle, 
 }
 
 func buildRuntime(ctx context.Context, cfg config.Config, production bool, environment servingstatemodule.Environment) (http.Handler, Lifecycle, cleanupFunc, error) {
+	assets := applicationAssets(cfg, production)
 	dashboardAssets, err := dashboardmodule.BuildAssets(ctx, cfg.MapAssetDir)
 	if err != nil {
 		return nil, nil, nil, err
@@ -101,6 +102,7 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	accessModule, err := accessmodule.Build(ctx, accessmodule.Config{
 		Database: store.SQLDB(), Auth: accessAuthConfig(cfg, production, cookieSecure),
 		WorkspaceID: platform.DefaultWorkspaceID,
+		Assets:      assets,
 		PublicURL:   firstConfigured(cfg.PublicURL, configuredListenURL(cfg.ListenAddr())), MCPIssuerURL: cfg.MCPOAuthIssuerURL,
 		WorkspaceIDs: func(ctx context.Context) ([]string, error) {
 			if workspaceDirectory == nil {
@@ -280,7 +282,7 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 		runtimeAssemblyInputs{
 			DuckLakeCatalogPath: duckLakeCatalogPath, DuckLakeDataPath: cfg.DuckLakeDataDir(),
 			DefaultEnvironment: string(environment), SCIMBearerToken: cfg.SCIMBearerToken,
-			MetricsBearerToken: cfg.MetricsBearerToken, AllowedHosts: allowedHosts,
+			MetricsBearerToken: cfg.MetricsBearerToken, AllowedHosts: allowedHosts, Assets: assets,
 		},
 		httpAssemblyInputs{
 			PublicURL:       firstConfigured(cfg.PublicURL, configuredListenURL(cfg.ListenAddr())),

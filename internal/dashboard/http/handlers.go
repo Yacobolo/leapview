@@ -21,6 +21,7 @@ import (
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
+	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
@@ -84,6 +85,7 @@ type Handler struct {
 	CSRFToken            func(r *nethttp.Request) string
 	Layout               func(r *nethttp.Request) webpage.Provider
 	Presentation         reportui.Presentation
+	Assets               staticasset.Resolver
 	Environment          func(*nethttp.Request) string
 	DataRefreshedAt      func(context.Context, string, string, string) string
 	CommandGuard         func(*nethttp.Request, Metrics, command.Request, dashboard.Signals) error

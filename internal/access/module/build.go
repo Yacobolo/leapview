@@ -10,6 +10,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/access/http/mcpoauth"
 	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
 	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
+	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
 )
 
 type Config struct {
@@ -21,6 +22,7 @@ type Config struct {
 	PublicURL    string
 	MCPIssuerURL string
 	Presentation webpage.Presentation
+	Assets       staticasset.Resolver
 }
 
 func newRepository(database *sql.DB) access.Repository { return accesssqlite.NewRepository(database) }
@@ -29,7 +31,7 @@ func Build(ctx context.Context, config Config) (*Module, error) {
 	if config.Database == nil {
 		auth := config.ExistingAuth
 		surface := surfaceConfig{
-			Auth: auth, WorkspaceIDs: config.WorkspaceIDs, DefaultWorkspaceID: config.WorkspaceID, Presentation: config.Presentation,
+			Auth: auth, WorkspaceIDs: config.WorkspaceIDs, DefaultWorkspaceID: config.WorkspaceID, Presentation: config.Presentation, Assets: config.Assets,
 			WorkspaceID: func(value string) string {
 				if value != "" {
 					return value
@@ -55,6 +57,7 @@ func Build(ctx context.Context, config Config) (*Module, error) {
 		Repository: func() (access.Repository, error) { return repository, nil },
 		Auth:       auth, WorkspaceIDs: config.WorkspaceIDs,
 		Presentation:       config.Presentation,
+		Assets:             config.Assets,
 		DefaultWorkspaceID: config.WorkspaceID,
 		WorkspaceID: func(value string) string {
 			if value != "" {

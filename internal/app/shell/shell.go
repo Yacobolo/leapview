@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
+	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
 	g "maragu.dev/gomponents"
 )
 
@@ -16,6 +17,7 @@ type Conversation struct {
 
 type Config struct {
 	Presentation         webpage.Presentation
+	Assets               staticasset.Resolver
 	RoleLabel            string
 	ActiveConversationID string
 	Conversations        []Conversation
@@ -91,6 +93,7 @@ func Provider(config Config) webpage.Provider {
 		}
 		return webpage.Layout{
 			Presentation: config.Presentation,
+			Assets:       config.Assets,
 			Signal:       Chrome{Sidebar: sidebar},
 			Scripts:      []string{"/static/app-shell.js"},
 			Mount: func(content g.Node, attrs ...g.Node) g.Node {

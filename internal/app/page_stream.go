@@ -71,7 +71,7 @@ func configurePageStream(routes *capabilityRoutes, runtime *runtimeServices, pla
 			}),
 			routeCatalog: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				uitransport.PatchAndWait(runtime.pageStreamTrace, w, r,
-					routes.workspaceModule.CatalogBootstrapSignals(r, applicationLayout(routes, r)))
+					routes.workspaceModule.CatalogBootstrapSignals(r, applicationLayout(routes, platform.assets, r)))
 			}),
 			routeWorkspace:   http.HandlerFunc(routes.workspaceModule.HTTP().WorkspaceBootstrapUpdates),
 			routeConnections: http.HandlerFunc(routes.workspaceModule.HTTP().ConnectionsBootstrapUpdates),

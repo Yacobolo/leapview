@@ -50,7 +50,7 @@ func New() *Telemetry {
 		registry: registry,
 		requests: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "leapview_http_requests_total",
-			Help: "Total HTTP requests served by LeapView.",
+			Help: "Total HTTP requests served by the application.",
 		}, []string{"method", "route", "status"}),
 		duration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "leapview_http_request_duration_seconds",
@@ -64,7 +64,7 @@ func New() *Telemetry {
 		}, []string{"method", "route", "status"}),
 		inFlight: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "leapview_http_requests_in_flight",
-			Help: "HTTP requests currently being served by LeapView.",
+			Help: "HTTP requests currently being served by the application.",
 		}),
 		dashboardRefreshDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "leapview_dashboard_refresh_duration_seconds",

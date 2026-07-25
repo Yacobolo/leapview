@@ -19,6 +19,7 @@ import (
 	dashboardsignals "github.com/Yacobolo/leapview/internal/dashboard/ui/signals"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
+	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
 	"github.com/Yacobolo/leapview/internal/workload"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
@@ -72,6 +73,7 @@ type HTTPConfig struct {
 	DataRefreshedAt     func(context.Context, string, string, string) string
 	AgentBootstrap      func(*http.Request, string) dashboardui.AgentBootstrap
 	Presentation        dashboardui.Presentation
+	Assets              staticasset.Resolver
 }
 
 type SemanticConfig struct {
@@ -155,6 +157,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		CurrentPrincipalID: config.HTTP.CurrentPrincipalID, AuthorizeListObject: config.HTTP.AuthorizeListObject,
 		CSRFToken: config.HTTP.CSRFToken, Layout: config.HTTP.Layout,
 		Presentation: config.HTTP.Presentation,
+		Assets:       config.HTTP.Assets,
 		Environment:  config.HTTP.Environment, DataRefreshedAt: config.HTTP.DataRefreshedAt,
 		AgentBootstrap: config.HTTP.AgentBootstrap,
 	}

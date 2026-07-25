@@ -24,26 +24,6 @@ const (
 	databaseFileMode   = securefs.PrivateFileMode
 )
 
-type Paths struct {
-	HomeDir     string
-	DBPath      string
-	ArtifactDir string
-	DuckDBDir   string
-}
-
-func DefaultPaths() Paths {
-	home := os.Getenv("LEAPVIEW_HOME")
-	if home == "" {
-		home = ".leapview"
-	}
-	return Paths{
-		HomeDir:     home,
-		DBPath:      filepath.Join(home, "leapview.db"),
-		ArtifactDir: filepath.Join(home, "artifacts"),
-		DuckDBDir:   filepath.Join(home, "duckdb"),
-	}
-}
-
 type Store struct {
 	db *sql.DB
 	q  *db.Queries
@@ -274,7 +254,7 @@ WHERE type = 'table'
 	}
 	for _, name := range []string{"platform_settings", "workspaces", "serving_states", "roles"} {
 		if !seen[name] {
-			return fmt.Errorf("backup is not a LeapView platform database: missing table %s", name)
+			return fmt.Errorf("backup is not a valid platform database: missing table %s", name)
 		}
 	}
 	return nil

@@ -45,6 +45,7 @@ type Module struct {
 	mcpScope                 func(*http.Request) (agent.Scope, bool)
 	mcpProtect               func(http.Handler) http.Handler
 	productName              string
+	buildVersion             string
 	apiOperations            []agenttools.APIGenOperation
 }
 
@@ -77,6 +78,7 @@ type Config struct {
 	MCPScope                 func(*http.Request) (Scope, bool)
 	MCPProtect               func(http.Handler) http.Handler
 	ProductName              string
+	BuildVersion             string
 	APIGenOperations         []agenttools.APIGenOperation
 	HTTP                     HTTPConfig
 }
@@ -174,7 +176,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		enableSystemPrompt: config.EnableSystemPrompt, broker: config.HTTP.Broker, logger: config.Logger,
 		pendingChatTitles: map[string]struct{}{},
 		mcpScope:          mcpScope, mcpProtect: config.MCPProtect,
-		productName:   config.ProductName,
+		productName: config.ProductName, buildVersion: config.BuildVersion,
 		apiOperations: append([]agenttools.APIGenOperation(nil), config.APIGenOperations...),
 	}
 	if ownedService && durableWorkflow {

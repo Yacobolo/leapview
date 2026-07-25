@@ -7,16 +7,13 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access/http/mcpoauth"
 	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
+	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
 	g "maragu.dev/gomponents"
 	c "maragu.dev/gomponents/components"
 	h "maragu.dev/gomponents/html"
 )
 
-func OAuthConsentPage(consent mcpoauth.Consent, values url.Values, csrfToken string, presentations ...webpage.Presentation) g.Node {
-	presentation := webpage.Presentation{ProductName: "Application", FaviconPath: "/static/favicon.svg"}
-	if len(presentations) > 0 {
-		presentation = presentations[0]
-	}
+func OAuthConsentPage(consent mcpoauth.Consent, values url.Values, csrfToken string, presentation webpage.Presentation, assets staticasset.Resolver) g.Node {
 	if strings.TrimSpace(presentation.ProductName) == "" {
 		presentation.ProductName = "Application"
 	}
@@ -38,8 +35,8 @@ func OAuthConsentPage(consent mcpoauth.Consent, values url.Values, csrfToken str
 	return c.HTML5(c.HTML5Props{
 		Title: "Authorize MCP access · " + presentation.ProductName, Language: "en",
 		Head: g.Group{
-			h.Link(h.Rel("icon"), h.Href(webpage.AssetURL(presentation.FaviconPath)), h.Type("image/svg+xml")),
-			h.Link(h.Rel("stylesheet"), h.Href(webpage.AssetURL("/static/app.css"))),
+			h.Link(h.Rel("icon"), h.Href(assets.URL(presentation.FaviconPath)), h.Type("image/svg+xml")),
+			h.Link(h.Rel("stylesheet"), h.Href(assets.URL("/static/app.css"))),
 		},
 		Body: g.Group{
 			h.Main(h.Class("min-h-svh bg-app text-fg-default flex items-center justify-center p-6"),

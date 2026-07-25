@@ -18,11 +18,12 @@ import (
 	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/project/testing/dashboardfixture"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	visualizationruntime "github.com/Yacobolo/leapview/internal/dashboard/visualization/runtime"
 	"github.com/Yacobolo/leapview/internal/platform/testing/ssetest"
+	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
+	"github.com/Yacobolo/leapview/internal/project/testing/dashboardfixture"
 	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
 	materializesqlite "github.com/Yacobolo/leapview/internal/refresh/sqlite"
 	"github.com/Yacobolo/leapview/internal/workspace"
@@ -563,7 +564,6 @@ func TestPageRouteSeedsOperationsPageFiltersFromURL(t *testing.T) {
 }
 
 func TestHTMLRoutesIncludeSelfHostedDatastarRuntimeAndDevInspector(t *testing.T) {
-	t.Setenv("LEAPVIEW_PRODUCTION", "")
 	for _, path := range []string{
 		"/login",
 		"/",
@@ -584,7 +584,7 @@ func TestHTMLRoutesIncludeSelfHostedDatastarRuntimeAndDevInspector(t *testing.T)
 }
 
 func TestHTMLRoutesOmitDatastarInspectorInProduction(t *testing.T) {
-	t.Setenv("LEAPVIEW_PRODUCTION", "1")
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{Assets: staticasset.New(staticasset.Config{Production: true})})
 	for _, path := range []string{
 		"/login",
 		"/",
@@ -594,7 +594,7 @@ func TestHTMLRoutesOmitDatastarInspectorInProduction(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, path, nil)
 			rec := httptest.NewRecorder()
 
-			newAppTestHarness(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+			server.Routes().ServeHTTP(rec, req)
 
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -619,11 +619,12 @@ func TestHTMLRoutesOmitDatastarInspectorInProduction(t *testing.T) {
 }
 
 func TestHTMLRoutesHonorConfiguredStaticAssetVersion(t *testing.T) {
-	t.Setenv("LEAPVIEW_ASSET_VERSION", "prod-build-123")
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
-	newAppTestHarness(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+	assembleRuntime(fakeMetrics{}, assemblyConfig{
+		Assets: staticasset.New(staticasset.Config{Version: "prod-build-123"}),
+	}).Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -639,9 +640,9 @@ func TestHTMLRoutesHonorConfiguredStaticAssetVersion(t *testing.T) {
 
 func TestStaticAssetsCacheOnlyCurrentVersionedURLs(t *testing.T) {
 	t.Chdir(projectRoot(t))
-	t.Setenv("LEAPVIEW_PRODUCTION", "")
-	t.Setenv("LEAPVIEW_ASSET_VERSION", "prod-build-123")
-	handler := newAppTestHarness(fakeMetrics{}).Routes()
+	handler := assembleRuntime(fakeMetrics{}, assemblyConfig{
+		Assets: staticasset.New(staticasset.Config{Version: "prod-build-123"}),
+	}).Routes()
 
 	for _, tc := range []struct {
 		name string
@@ -677,10 +678,9 @@ func TestStaticAssetsCacheOnlyCurrentVersionedURLs(t *testing.T) {
 		})
 	}
 
-	t.Setenv("LEAPVIEW_ASSET_VERSION", "")
 	req := httptest.NewRequest(http.MethodGet, "/static/login-background-loader.js?v=dev", nil)
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	newAppTestHarness(fakeMetrics{}).Routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("dev version status = %d, want %d body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -690,9 +690,7 @@ func TestStaticAssetsCacheOnlyCurrentVersionedURLs(t *testing.T) {
 }
 
 func TestStaticAssetCacheHeaderClasses(t *testing.T) {
-	t.Setenv("LEAPVIEW_PRODUCTION", "")
-	t.Setenv("LEAPVIEW_ASSET_VERSION", "prod-build-123")
-	handler := staticAssetCache(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := staticAssetCache(staticasset.New(staticasset.Config{Version: "prod-build-123"}), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 

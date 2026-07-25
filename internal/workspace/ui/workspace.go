@@ -599,14 +599,14 @@ func workspaceAssetRouteDocument(asset workspaceview.AssetView, catalog catalog.
 	extraHead := []g.Node{}
 	if activeSection == "lineage" {
 		extraHead = append(extraHead,
-			h.Link(h.Rel("stylesheet"), h.Href(webpage.AssetURL("/static/asset-lineage-graph.css"))),
-			h.Script(h.Type("module"), h.Src(webpage.AssetURL("/static/asset-lineage-graph.js"))),
+			h.Link(h.Rel("stylesheet"), h.Href(workspaceStaticAssetURL(chromeOptions, "/static/asset-lineage-graph.css"))),
+			h.Script(h.Type("module"), h.Src(workspaceStaticAssetURL(chromeOptions, "/static/asset-lineage-graph.js"))),
 		)
 	}
 	if activeSection == "details" && asset.Type == "semantic_model" {
 		extraHead = append(extraHead,
-			h.Link(h.Rel("stylesheet"), h.Href(webpage.AssetURL("/static/semantic-model-graph.css"))),
-			h.Script(h.Type("module"), h.Src(webpage.AssetURL("/static/semantic-model-graph.js"))),
+			h.Link(h.Rel("stylesheet"), h.Href(workspaceStaticAssetURL(chromeOptions, "/static/semantic-model-graph.css"))),
+			h.Script(h.Type("module"), h.Src(workspaceStaticAssetURL(chromeOptions, "/static/semantic-model-graph.js"))),
 		)
 	}
 	return workspaceRouteDocumentWithBodyExtras(asset.Title, catalog, active, roleLabel, page, routeKind, routeRoot, extras, bodyExtras, chromeOptions, extraHead...)
@@ -619,8 +619,8 @@ func ConnectionAssetPage(catalog catalog.Catalog, workspace workspaceview.Worksp
 	extraHead := []g.Node{}
 	if activeSection == "lineage" {
 		extraHead = append(extraHead,
-			h.Link(h.Rel("stylesheet"), h.Href(webpage.AssetURL("/static/asset-lineage-graph.css"))),
-			h.Script(h.Type("module"), h.Src(webpage.AssetURL("/static/asset-lineage-graph.js"))),
+			h.Link(h.Rel("stylesheet"), h.Href(workspaceStaticAssetURL(nil, "/static/asset-lineage-graph.css"))),
+			h.Script(h.Type("module"), h.Src(workspaceStaticAssetURL(nil, "/static/asset-lineage-graph.js"))),
 		)
 	}
 	return workspaceRouteDocument(asset.Title, catalog, "connections", roleLabel, page, uisignals.RouteConnectionAsset,
@@ -640,8 +640,8 @@ func ConnectionSourceAssetPage(catalog catalog.Catalog, workspace workspaceview.
 	extraHead := []g.Node{}
 	if activeSection == "lineage" {
 		extraHead = append(extraHead,
-			h.Link(h.Rel("stylesheet"), h.Href(webpage.AssetURL("/static/asset-lineage-graph.css"))),
-			h.Script(h.Type("module"), h.Src(webpage.AssetURL("/static/asset-lineage-graph.js"))),
+			h.Link(h.Rel("stylesheet"), h.Href(workspaceStaticAssetURL(nil, "/static/asset-lineage-graph.css"))),
+			h.Script(h.Type("module"), h.Src(workspaceStaticAssetURL(nil, "/static/asset-lineage-graph.js"))),
 		)
 	}
 	return workspaceRouteDocument(source.Title, catalog, "connections", roleLabel, page, uisignals.RouteConnectionAsset,
@@ -652,6 +652,11 @@ func ConnectionSourceAssetPage(catalog catalog.Catalog, workspace workspaceview.
 		nil,
 		extraHead...,
 	)
+}
+
+func workspaceStaticAssetURL(providers []webpage.Provider, path string) string {
+	layout := webpage.Resolve(firstProvider(providers), webpage.Context{})
+	return layout.Assets.URL(path)
 }
 
 func WorkspacePermissionsPage(catalog catalog.Catalog, workspace workspaceview.WorkspaceView, bindings []workspaceview.RoleBindingView, roles []workspaceview.RoleView, csrfToken, roleLabel string) g.Node {

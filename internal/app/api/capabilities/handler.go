@@ -2,20 +2,25 @@ package capabilities
 
 import (
 	"net/http"
+	"strings"
 
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
-	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
 )
 
 type Config struct {
-	Environment string
-	TUS         bool
-	S3Multipart bool
+	Environment  string
+	BuildVersion string
+	TUS          bool
+	S3Multipart  bool
 }
 
 func Write(w http.ResponseWriter, config Config) {
+	buildVersion := strings.TrimSpace(config.BuildVersion)
+	if buildVersion == "" {
+		buildVersion = "dev"
+	}
 	uploadProtocols := []apigenapi.UploadProtocol{}
 	if config.TUS {
 		uploadProtocols = append(uploadProtocols, apigenapi.UploadProtocolTus)
@@ -24,7 +29,7 @@ func Write(w http.ResponseWriter, config Config) {
 		uploadProtocols = append(uploadProtocols, apigenapi.UploadProtocolS3Multipart)
 	}
 	apitransport.WriteJSON(w, http.StatusOK, apigenapi.CapabilitiesResponse{
-		ApiVersion: "v1", BuildVersion: staticasset.Version(),
+		ApiVersion: "v1", BuildVersion: buildVersion,
 		Authentication: []apigenapi.AuthenticationMode{apigenapi.AuthenticationModeBearer},
 		Environment:    config.Environment,
 		QueryFormats: []apigenapi.QueryFormat{

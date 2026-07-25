@@ -8,11 +8,13 @@ import (
 	appshell "github.com/Yacobolo/leapview/internal/app/shell"
 	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
 	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
+	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
 )
 
-func applicationLayout(routes *capabilityRoutes, r *http.Request) webpage.Provider {
+func applicationLayout(routes *capabilityRoutes, assets staticasset.Resolver, r *http.Request) webpage.Provider {
 	config := appshell.Config{
 		Presentation: webpage.Presentation{ProductName: brand.Name, FaviconPath: brand.FaviconPath},
+		Assets:       assets,
 	}
 	if routes != nil && routes.accessModule != nil {
 		config.RoleLabel = routes.accessModule.CurrentRoleLabel(r)

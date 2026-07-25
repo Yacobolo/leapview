@@ -409,7 +409,7 @@ func TestDestructiveAdminMaintenanceRequiresExclusiveInstanceLock(t *testing.T) 
 			defer held.Release()
 			var out bytes.Buffer
 			err = test.run(context.Background(), &rootOptions{apply: true}, &out)
-			if err == nil || !strings.Contains(err.Error(), "already using LEAPVIEW_HOME") {
+			if err == nil || !strings.Contains(err.Error(), "already using instance home") {
 				t.Fatalf("destructive maintenance error = %v", err)
 			}
 		})
@@ -439,7 +439,7 @@ func TestOfflineInstanceOperationsRequireExclusiveInstanceLock(t *testing.T) {
 	} {
 		t.Run(operation.name, func(t *testing.T) {
 			err := operation.run()
-			if err == nil || !strings.Contains(err.Error(), "already using LEAPVIEW_HOME") {
+			if err == nil || !strings.Contains(err.Error(), "already using instance home") {
 				t.Fatalf("offline operation error = %v", err)
 			}
 		})

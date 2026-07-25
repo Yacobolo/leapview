@@ -57,6 +57,36 @@ func TestApplicationOwnsProductConfigurationContract(t *testing.T) {
 	}
 }
 
+func TestPlatformProductionCodeDoesNotOwnApplicationEnvironment(t *testing.T) {
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/platform" && !strings.HasPrefix(file.pkgDir, "internal/platform/") {
+			continue
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), file.path, file.body, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", file.path, err)
+		}
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			switch value := node.(type) {
+			case *ast.CallExpr:
+				selector, ok := value.Fun.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				packageName, ok := selector.X.(*ast.Ident)
+				if ok && packageName.Name == "os" && (selector.Sel.Name == "Getenv" || selector.Sel.Name == "LookupEnv") {
+					t.Errorf("%s reads the process environment directly; application composition must inject configuration", file.path)
+				}
+			case *ast.BasicLit:
+				if strings.Contains(value.Value, "LEAPVIEW_") {
+					t.Errorf("%s contains application-specific configuration %s", file.path, value.Value)
+				}
+			}
+			return true
+		})
+	}
+}
+
 func TestPlatformProductionCodeDoesNotImportProductCapabilities(t *testing.T) {
 	for _, file := range productionGoFiles(t) {
 		if file.pkgDir != "internal/platform" && !strings.HasPrefix(file.pkgDir, "internal/platform/") {
@@ -2001,8 +2031,14 @@ func productionGoFiles(t *testing.T) []goFile {
 		}
 		if entry.IsDir() {
 			switch entry.Name() {
-			case ".git", "node_modules", "static", "web", "dashboards":
+			case ".git", "node_modules":
 				return filepath.SkipDir
+			}
+			if filepath.Dir(path) == root {
+				switch entry.Name() {
+				case "static", "web", "dashboards":
+					return filepath.SkipDir
+				}
 			}
 			return nil
 		}

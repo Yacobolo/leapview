@@ -15,6 +15,7 @@ import (
 	manageddatamodule "github.com/Yacobolo/leapview/internal/manageddata/module"
 	apihttpmiddleware "github.com/Yacobolo/leapview/internal/platform/http/middleware"
 	jobsmodule "github.com/Yacobolo/leapview/internal/platform/jobs/module"
+	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
 	refreshmodule "github.com/Yacobolo/leapview/internal/refresh/module"
 	releasemodule "github.com/Yacobolo/leapview/internal/release/module"
 	"github.com/Yacobolo/leapview/internal/runtimehost"
@@ -54,6 +55,7 @@ type assemblyConfig struct {
 	SCIMBearerToken       string
 	MetricsBearerToken    string
 	AllowedHosts          []string
+	Assets                staticasset.Resolver
 	RateLimits            apihttpmiddleware.RateLimitConfig
 	SecurityHeaders       apihttpmiddleware.SecurityHeadersConfig
 	RequestBodyLimit      apihttpmiddleware.RequestBodyLimitConfig
@@ -132,6 +134,7 @@ func apiGenDispatcherForTest(server *appTestHarness) apiGenDispatcher {
 		managedDataModule: server.routes.managedDataModule, refreshModule: server.routes.refreshModule,
 		releaseModule: server.routes.releaseModule, workspaceModule: server.routes.workspaceModule,
 		defaultEnvironment: server.policy.defaultEnvironment, managedDataTus: server.policy.managedDataTus,
+		buildVersion:     server.platform.assets.Version(),
 		queryAuditEvents: server.runtime.queryAuditEvents,
 	}
 }
@@ -142,6 +145,7 @@ func assembleRuntimeChecked(ctx context.Context, metrics QueryMetrics, options a
 		options.AccessModule, err = accessmodule.Build(ctx, accessmodule.Config{
 			Database: options.Database, WorkspaceID: options.DefaultWorkspaceID,
 			ExistingAuth: options.Auth, Auth: accessmodule.AuthConfig{Disabled: options.Auth == nil},
+			Assets: options.Assets,
 		})
 		if err != nil {
 			return nil, err
@@ -172,7 +176,7 @@ func assembleRuntimeChecked(ctx context.Context, metrics QueryMetrics, options a
 			DuckDBDir: options.DuckDBDir, DuckLakeCatalogPath: options.DuckLakeCatalogPath,
 			DuckLakeDataPath: options.DuckLakeDataPath, DefaultWorkspaceID: options.DefaultWorkspaceID,
 			DefaultEnvironment: options.DefaultEnvironment, SCIMBearerToken: options.SCIMBearerToken,
-			MetricsBearerToken: options.MetricsBearerToken, AllowedHosts: options.AllowedHosts,
+			MetricsBearerToken: options.MetricsBearerToken, AllowedHosts: options.AllowedHosts, Assets: options.Assets,
 		},
 		httpAssemblyInputs{
 			RateLimits: options.RateLimits, SecurityHeaders: options.SecurityHeaders,

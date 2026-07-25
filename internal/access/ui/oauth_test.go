@@ -7,12 +7,13 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access/http/mcpoauth"
 	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
+	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
 )
 
 func TestOAuthConsentPageUsesProductBranding(t *testing.T) {
 	var output strings.Builder
 	if err := OAuthConsentPage(mcpoauth.Consent{ClientName: "Agent", Resource: "https://example.test"}, nil, "csrf",
-		webpage.Presentation{ProductName: "LeapView", FaviconPath: "/static/favicon.svg"}).Render(&output); err != nil {
+		webpage.Presentation{ProductName: "LeapView", FaviconPath: "/static/favicon.svg"}, staticasset.Resolver{}).Render(&output); err != nil {
 		t.Fatal(err)
 	}
 	rendered := html.UnescapeString(output.String())

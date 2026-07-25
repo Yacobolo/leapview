@@ -5,12 +5,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
 	g "maragu.dev/gomponents"
 )
 
 func TestRenderAppliesInjectedLayoutWithoutOwningItsSignal(t *testing.T) {
 	layout := Layout{
 		Presentation: Presentation{ProductName: "Product", FaviconPath: "/brand.svg"},
+		Assets:       staticasset.New(staticasset.Config{Version: "release-123"}),
 		Signal: struct {
 			Name string `json:"name"`
 		}{Name: "chrome"},
@@ -27,7 +29,7 @@ func TestRenderAppliesInjectedLayoutWithoutOwningItsSignal(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := output.String()
-	for _, want := range []string{"<title>Product</title>", `href="/brand.svg?v=dev"`, `src="/shell.js?v=dev"`, `src="/route.js?v=dev"`, `<product-shell slot="page"><route-page>`} {
+	for _, want := range []string{"<title>Product</title>", `href="/brand.svg?v=release-123"`, `src="/shell.js?v=release-123"`, `src="/route.js?v=release-123"`, `<product-shell slot="page"><route-page>`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("rendered document missing %q", want)
 		}

@@ -14,6 +14,7 @@ import (
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
 	uiactions "github.com/Yacobolo/leapview/internal/platform/web/actions"
 	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
+	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
 
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	g "maragu.dev/gomponents"
@@ -62,6 +63,7 @@ type PublicPageOptions struct {
 	PublicID     string
 	ClientID     string
 	Presentation string
+	Assets       staticasset.Resolver
 }
 
 type Presentation = webpage.Presentation
@@ -154,7 +156,7 @@ func PublicPage(options PublicPageOptions, catalog dashboard.Catalog, report das
 	visualReset := visualResetExpression()
 	reloadAction := uiactions.Post(commandBase+"reload", "runtime", "filters.controls")
 	filtersUpdate := "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); " + visualReset
-	return webpage.Render(webpage.Layout{}, webpage.Spec{
+	return webpage.Render(webpage.Layout{Assets: options.Assets}, webpage.Spec{
 		Title: report.Title, Scripts: []string{"/static/dashboard-page.js", "/static/url-sync.js"},
 		MainAttrs: []g.Node{
 			h.ID("dashboard"), h.Class(webpage.RootClass),

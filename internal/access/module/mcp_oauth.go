@@ -115,7 +115,7 @@ func (s *Module) MCPOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	if err := accessui.OAuthConsentPage(consent, r.URL.Query(), csrf.Token(r), s.presentation).Render(w); err != nil {
+	if err := accessui.OAuthConsentPage(consent, r.URL.Query(), csrf.Token(r), s.presentation, s.assets).Render(w); err != nil {
 		s.logger.ErrorContext(r.Context(), "render MCP OAuth consent failed", "error", err)
 	}
 }

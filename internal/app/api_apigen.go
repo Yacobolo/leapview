@@ -67,6 +67,7 @@ type apiGenDispatcher struct {
 	releaseModule      *releasemodule.Module
 	workspaceModule    *workspacemodule.Module
 	defaultEnvironment string
+	buildVersion       string
 	managedDataTus     http.Handler
 	queryAuditEvents   http.HandlerFunc
 }

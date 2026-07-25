@@ -17,6 +17,7 @@ type LoginPageOptions struct {
 	ProviderLabel      string
 	CSRFToken          string
 	Presentation       webpage.Presentation
+	Assets             staticasset.Resolver
 }
 
 type LoginPageSignal = signalcontracts.LoginPageSignal
@@ -24,11 +25,11 @@ type StatusSignal = signalcontracts.DashboardStatus
 
 func LoginPage(options ...LoginPageOptions) g.Node {
 	opts := normalizedLoginOptions(options)
-	return webpage.Render(webpage.Layout{Presentation: opts.Presentation}, webpage.Spec{
+	return webpage.Render(webpage.Layout{Presentation: opts.Presentation, Assets: opts.Assets}, webpage.Spec{
 		Title: opts.Presentation.ProductName + " Login", CSRFToken: opts.CSRFToken,
 		Scripts:    []string{"/static/login-page.js", "/static/login-background-loader.js"},
 		UpdatesURL: loginUpdatesURL(),
-		Content:    g.El("lv-login-page", g.Attr("background-module-src", staticasset.URL("/static/topology-background.js"))),
+		Content:    g.El("lv-login-page", g.Attr("background-module-src", opts.Assets.URL("/static/topology-background.js"))),
 	})
 }
 
@@ -36,7 +37,7 @@ func LoginBootstrapSignalsForOptions(options LoginPageOptions) map[string]any {
 	opts := normalizedLoginOptions([]LoginPageOptions{options})
 	return map[string]any{
 		"page": LoginPageSignal{
-			BackgroundModuleSrc: staticasset.URL("/static/topology-background.js"),
+			BackgroundModuleSrc: opts.Assets.URL("/static/topology-background.js"),
 			Kind:                "login", LocalAuth: opts.LocalAuth, MustChangePassword: opts.MustChangePassword,
 			ProviderLabel: opts.ProviderLabel, SSOAuth: opts.SSOAuth, Title: opts.Presentation.ProductName,
 		},

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -51,7 +50,7 @@ func (m *Module) mcpServer(r *http.Request) (*mcp.Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	version := staticasset.Version()
+	version := strings.TrimSpace(m.buildVersion)
 	if version == "" {
 		version = "dev"
 	}

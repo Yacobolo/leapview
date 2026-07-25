@@ -37,16 +37,13 @@ type Presentation struct {
 // opaque: platform web owns the mechanism, while app owns the product chrome.
 type Layout struct {
 	Presentation Presentation
+	Assets       staticasset.Resolver
 	Signal       any
 	Scripts      []string
 	Mount        func(g.Node, ...g.Node) g.Node
 }
 
 type Provider func(Context) Layout
-
-func AssetURL(path string) string {
-	return staticasset.URL(path)
-}
 
 type Spec struct {
 	Title        string
@@ -84,22 +81,22 @@ func Render(layout Layout, spec Spec) g.Node {
 	}
 	head := make([]g.Node, 0, 8+len(layout.Scripts)+len(spec.Stylesheets)+len(spec.Scripts)+len(spec.Head))
 	if favicon := strings.TrimSpace(layout.Presentation.FaviconPath); favicon != "" {
-		head = append(head, h.Link(h.Rel("icon"), h.Href(staticasset.URL(favicon)), h.Type("image/svg+xml")))
+		head = append(head, h.Link(h.Rel("icon"), h.Href(layout.Assets.URL(favicon)), h.Type("image/svg+xml")))
 	}
 	head = append(head,
-		h.Link(h.Rel("stylesheet"), h.Href(staticasset.URL("/static/app.css"))),
-		h.Script(h.Src(staticasset.URL("/static/theme.js"))),
-		h.Script(h.Type("module"), h.Src(staticasset.URL("/static/command.js"))),
+		h.Link(h.Rel("stylesheet"), h.Href(layout.Assets.URL("/static/app.css"))),
+		h.Script(h.Src(layout.Assets.URL("/static/theme.js"))),
+		h.Script(h.Type("module"), h.Src(layout.Assets.URL("/static/command.js"))),
 	)
 	head = append(head, csrfMeta(spec.CSRFToken))
 	for _, path := range spec.Stylesheets {
-		head = append(head, h.Link(h.Rel("stylesheet"), h.Href(staticasset.URL(path))))
+		head = append(head, h.Link(h.Rel("stylesheet"), h.Href(layout.Assets.URL(path))))
 	}
 	for _, path := range append(append([]string(nil), layout.Scripts...), spec.Scripts...) {
-		head = append(head, h.Script(h.Type("module"), h.Src(staticasset.URL(path))))
+		head = append(head, h.Script(h.Type("module"), h.Src(layout.Assets.URL(path))))
 	}
 	head = append(head, spec.Head...)
-	head = append(head, inspectorScript())
+	head = append(head, inspectorScript(layout.Assets))
 
 	content := spec.Content
 	if layout.Mount != nil {
@@ -110,7 +107,7 @@ func Render(layout Layout, spec Spec) g.Node {
 	body := append([]g.Node(nil), spec.BodyBefore...)
 	body = append(body, content)
 	body = append(body, spec.BodyAfter...)
-	body = append(body, inspectorElement())
+	body = append(body, inspectorElement(layout.Assets))
 	htmlAttrs := spec.HTMLAttrs
 	if len(htmlAttrs) == 0 {
 		htmlAttrs = []g.Node{
@@ -124,7 +121,7 @@ func Render(layout Layout, spec Spec) g.Node {
 		mainAttrs = []g.Node{h.Class(RootClass)}
 	}
 	return pagestream.RenderPage(pagestream.PageSpec{
-		Title: title, DatastarScriptURL: staticasset.URL(staticasset.DatastarScriptPath),
+		Title: title, DatastarScriptURL: layout.Assets.URL(staticasset.DatastarScriptPath),
 		HTMLAttrs: htmlAttrs, Head: head, MainAttrs: mainAttrs,
 		UpdatesURL: spec.UpdatesURL, Body: body,
 	})
@@ -137,15 +134,15 @@ func csrfMeta(token string) g.Node {
 	return h.Meta(h.Name("csrf-token"), h.Content(token))
 }
 
-func inspectorScript() g.Node {
-	if staticasset.Production() {
+func inspectorScript(assets staticasset.Resolver) g.Node {
+	if assets.Production() {
 		return nil
 	}
-	return h.Script(h.Type("module"), h.Src(staticasset.URL("/static/datastar-inspector.js")))
+	return h.Script(h.Type("module"), h.Src(assets.URL("/static/datastar-inspector.js")))
 }
 
-func inspectorElement() g.Node {
-	if staticasset.Production() {
+func inspectorElement(assets staticasset.Resolver) g.Node {
+	if assets.Production() {
 		return nil
 	}
 	return g.El("datastar-inspector", g.Attr("signals-url", "/__dev/pagestream/signals"))

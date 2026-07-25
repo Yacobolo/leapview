@@ -107,7 +107,7 @@ func (m *Module) PublicDashboardDocument(presentation string) http.HandlerFunc {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		initialFilters := resolved.Report.FiltersFromURLForPage(activePage.ID, r.URL.Query())
 		if err := reportui.PublicPage(reportui.PublicPageOptions{
-			PublicID: resolved.Publication.PublicID, Presentation: presentation,
+			PublicID: resolved.Publication.PublicID, Presentation: presentation, Assets: m.handler.Assets,
 		}, resolved.Metrics.Catalog(), resolved.Report, model, pages, activePage, initialFilters).Render(w); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}

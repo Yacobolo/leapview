@@ -114,7 +114,7 @@ func Routes(routes *capabilityRoutes, runtime *runtimeServices, platform *platfo
 	if routes.dashboardAssets != nil {
 		mux.Handle("/map-assets/*", routes.dashboardAssets.Handler())
 	}
-	mux.Handle("/static/*", staticAssetCache(http.StripPrefix("/static/", http.FileServer(http.Dir("static")))))
+	mux.Handle("/static/*", staticAssetCache(platform.assets, http.StripPrefix("/static/", http.FileServer(http.Dir("static")))))
 	mux.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		if isPublicAPIPath(r.URL.Path) {
 			apiprotocol.PrepareRequest(w, r)
@@ -198,9 +198,9 @@ func csrfMiddleware(routes *capabilityRoutes, runtime *runtimeServices, platform
 	return routes.accessModule.CSRFMiddleware(next)
 }
 
-func staticAssetCache(next http.Handler) http.Handler {
+func staticAssetCache(assets staticasset.Resolver, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		version := staticasset.Version()
+		version := assets.Version()
 		switch {
 		case version != "dev" && r.URL.Query().Get("v") == version:
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")

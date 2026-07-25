@@ -7,48 +7,53 @@ import (
 )
 
 func TestVersionDefaultsToDevOutsideProduction(t *testing.T) {
-	t.Setenv("LEAPVIEW_PRODUCTION", "")
-	t.Setenv("LEAPVIEW_ASSET_VERSION", "")
-
-	if got := Version(); got != "dev" {
+	assets := New(Config{})
+	if got := assets.Version(); got != "dev" {
 		t.Fatalf("Version = %q, want dev", got)
 	}
 }
 
-func TestVersionUsesConfiguredEnvOverride(t *testing.T) {
-	t.Setenv("LEAPVIEW_PRODUCTION", "1")
-	t.Setenv("LEAPVIEW_ASSET_VERSION", "release-123")
-
-	if got := URL("/static/app-shell.js"); got != "/static/app-shell.js?v=release-123" {
+func TestVersionUsesConfiguredOverride(t *testing.T) {
+	assets := New(Config{Production: true, Version: " release-123 "})
+	if got := assets.URL("/static/app-shell.js"); got != "/static/app-shell.js?v=release-123" {
 		t.Fatalf("URL = %q, want configured version", got)
 	}
 }
 
 func TestVersionUsesGeneratedFileInProduction(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "static"), 0o755); err != nil {
+	versionPath := filepath.Join(dir, "static", "asset-version.txt")
+	if err := os.MkdirAll(filepath.Dir(versionPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, generatedVersionPath), []byte("abc123\n"), 0o644); err != nil {
+	if err := os.WriteFile(versionPath, []byte("abc123\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Chdir(dir)
-	t.Setenv("LEAPVIEW_PRODUCTION", "1")
-	t.Setenv("LEAPVIEW_ASSET_VERSION", "")
-
-	if got := URL("/static/app-shell.js"); got != "/static/app-shell.js?v=abc123" {
+	assets := New(Config{Production: true, GeneratedVersionPath: versionPath})
+	if got := assets.URL("/static/app-shell.js"); got != "/static/app-shell.js?v=abc123" {
 		t.Fatalf("URL = %q, want generated version", got)
 	}
 }
 
-func TestProductionParsesBooleanEnv(t *testing.T) {
-	t.Setenv("LEAPVIEW_PRODUCTION", "true")
-	if !Production() {
+func TestProductionUsesInjectedValue(t *testing.T) {
+	if !New(Config{Production: true}).Production() {
 		t.Fatal("Production() = false, want true")
 	}
-
-	t.Setenv("LEAPVIEW_PRODUCTION", "not-bool")
-	if Production() {
+	if New(Config{}).Production() {
 		t.Fatal("Production() = true for invalid boolean, want false")
+	}
+}
+
+func TestResolverIsImmutableAfterConstruction(t *testing.T) {
+	versionPath := filepath.Join(t.TempDir(), "asset-version.txt")
+	if err := os.WriteFile(versionPath, []byte("first\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	assets := New(Config{Production: true, GeneratedVersionPath: versionPath})
+	if err := os.WriteFile(versionPath, []byte("second\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := assets.Version(); got != "first" {
+		t.Fatalf("Version = %q, want immutable first", got)
 	}
 }
