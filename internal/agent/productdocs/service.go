@@ -1,5 +1,5 @@
-// Package productdocs provides bounded search and read access to LeapView's
-// generated, embedded documentation catalog.
+// Package productdocs provides the agent capability with bounded search and
+// read access to LeapView's generated, embedded documentation catalog.
 package productdocs
 
 import (

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/Yacobolo/leapview/internal/productdocs"
+	"github.com/Yacobolo/leapview/internal/agent/productdocs"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 )
 

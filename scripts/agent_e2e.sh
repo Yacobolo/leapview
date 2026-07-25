@@ -31,7 +31,7 @@ trap cleanup EXIT
 BIN="$TMP_DIR/leapview"
 go build -tags=duckdb_arrow -o "$BIN" ./cmd/leapview
 TOONJSON="$TMP_DIR/toonjson"
-go build -o "$TOONJSON" ./internal/tools/toonjson
+go build -o "$TOONJSON" ./internal/app/tools/toonjson
 
 PORT="$(python3 - <<'PY'
 import socket
@@ -49,6 +49,7 @@ export LEAPVIEW_PRODUCTION=false
 export LEAPVIEW_ENVIRONMENT=dev
 export LEAPVIEW_API_TOKEN_ONLY_AUTH=false
 export LEAPVIEW_LOCAL_AUTH=false
+export LEAPVIEW_MANAGED_DATA_MIN_FREE_BYTES=536870912
 export LEAPVIEW_DEV_API_TOKEN="agent-e2e-dev-token"
 export LEAPVIEW_CSRF_KEY="agent-e2e-csrf-key-agent-e2e-csrf-key"
 export LEAPVIEW_METRICS_BEARER_TOKEN="agent-e2e-metrics-token-agent-e2e"

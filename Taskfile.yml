@@ -240,7 +240,7 @@ tasks:
       - node:deps
     cmds:
       - bun run docs:validate-diagrams
-      - go run ./internal/tools/agenttooldocgen --check
+      - go run ./internal/agent/tools/docgen --check
       - go run ./internal/tools/visualdocgen --check
       - go run ./internal/tools/docsitegen --check
       - go test ./internal/site/http -run '^TestEveryRenderedDocumentationLinkResolves$' -count=1
@@ -294,18 +294,18 @@ tasks:
     method: checksum
     sources:
       - Taskfile.yml
-      - api/agenttools/**/*.tsp
+      - internal/agent/contracts/typespec/**/*.tsp
       - api/typespec/**/*.tsp
       - internal/agent/contracts/**/*.go
       - internal/api/gen/**/*.go
       - internal/agent/tools/**/*.go
-      - internal/tools/agenttooldocgen/**/*.go
+      - internal/agent/tools/docgen/**/*.go
     generates:
       - docs/reference/agent-tools/*.md
       - docs/reference/agent-tools/catalog.json
       - docs/reference/agent-tools/manifest.json
     cmds:
-      - go run ./internal/tools/agenttooldocgen
+      - go run ./internal/agent/tools/docgen
 
   db:generate:
     desc: Generate SQLite adapter code from the checked-in schema and queries
@@ -359,17 +359,17 @@ tasks:
     sources:
       - Taskfile.yml
       - api/apigen.yaml
-      - api/agenttools/**/*.tsp
-      - internal/tools/agentcontractgen/**/*.go
+      - internal/agent/contracts/typespec/**/*.tsp
+      - internal/agent/contracts/generate/**/*.go
     generates:
-      - api/gen/agent-tools-ir.json
-      - api/gen/agent-tools.schema.json
+      - internal/agent/contracts/gen/agent-tools-ir.json
+      - internal/agent/contracts/gen/agent-tools.schema.json
       - internal/agent/contracts/models.gen.go
       - internal/agent/contracts/schemas.gen.go
     cmds:
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.6.5 typespec-compile -manifest api/apigen.yaml -target agent-tool-contracts
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.6.5 all -manifest api/apigen.yaml -target agent-tool-contracts
-      - go run ./internal/tools/agentcontractgen
+      - go run ./internal/agent/contracts/generate
 
   api:generate:
     desc: Generate headless API contract artifacts and APIGen Go surfaces

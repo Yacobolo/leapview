@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	productdocs "github.com/Yacobolo/leapview/internal/productdocs"
+	productdocs "github.com/Yacobolo/leapview/internal/agent/productdocs"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 )
 

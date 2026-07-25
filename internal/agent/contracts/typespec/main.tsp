@@ -1,5 +1,6 @@
 import "@yacobolo/apigen";
 
+@doc("Capability-owned model-facing contracts for LeapView's curated read-only agent tools.")
 @apigen.`package`(#{
   title: "LeapView Agent Tool Contracts",
   version: "1.0.0",

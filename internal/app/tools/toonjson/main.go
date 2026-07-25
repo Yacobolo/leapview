@@ -1,4 +1,5 @@
-// Command toonjson converts one TOON document on stdin to JSON on stdout.
+// Command toonjson converts one TOON document on stdin to JSON on stdout for
+// application-level agent contract checks.
 // It is used by live agent contract tests to inspect the exact compact payload
 // sent to models without changing the production TOON output format.
 package main

@@ -69,10 +69,10 @@ func TestAPIGenUsesTypeSpecV065(t *testing.T) {
 		"typespec_entrypoint: typespec/main.tsp",
 		"typespec_entrypoint: signals/main.tsp",
 		"typespec_entrypoint: visualization/main.tsp",
-		"typespec_entrypoint: agenttools/main.tsp",
+		"typespec_dir: ../internal/agent/contracts",
 	} {
 		if !strings.Contains(manifestText, source) {
-			t.Fatalf("manifest should select shared-root TypeSpec source %q, got:\n%s", source, manifestText)
+			t.Fatalf("manifest should select TypeSpec source %q, got:\n%s", source, manifestText)
 		}
 	}
 	if strings.Contains(manifestText, "cue_dir:") {

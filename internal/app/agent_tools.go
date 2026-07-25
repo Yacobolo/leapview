@@ -12,12 +12,12 @@ import (
 	documentcontent "github.com/Yacobolo/leapview/docs"
 	"github.com/Yacobolo/leapview/internal/access"
 	agentcap "github.com/Yacobolo/leapview/internal/agent"
+	"github.com/Yacobolo/leapview/internal/agent/productdocs"
 	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	"github.com/Yacobolo/leapview/internal/dataquery"
-	"github.com/Yacobolo/leapview/internal/productdocs"
 	docsearch "github.com/Yacobolo/leapview/internal/site/search/sqlite"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 )
