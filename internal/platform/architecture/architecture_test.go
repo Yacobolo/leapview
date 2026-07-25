@@ -644,6 +644,20 @@ func TestDashboardDatastarOwnsItsSignalProjection(t *testing.T) {
 	}
 }
 
+func TestDashboardDoesNotImportWorkspaceUI(t *testing.T) {
+	const workspaceUI = modulePath + "/internal/workspace/ui"
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/dashboard" && !strings.HasPrefix(file.pkgDir, "internal/dashboard/") {
+			continue
+		}
+		for _, imported := range file.imports {
+			if imported == workspaceUI || strings.HasPrefix(imported, workspaceUI+"/") {
+				t.Errorf("%s imports workspace-owned UI", file.path)
+			}
+		}
+	}
+}
+
 func TestCapabilitiesDoNotImportWorkspaceSignalContracts(t *testing.T) {
 	const sharedSignals = modulePath + "/internal/workspace/ui/signals"
 	for _, file := range productionGoFiles(t) {

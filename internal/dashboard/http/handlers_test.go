@@ -16,11 +16,11 @@ import (
 	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
+	reportui "github.com/Yacobolo/leapview/internal/dashboard/ui"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	"github.com/Yacobolo/leapview/internal/platform/testing/ssetest"
 	"github.com/Yacobolo/leapview/internal/project/testing/dashboardfixture"
-	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -134,9 +134,9 @@ func TestUpdatesPreservesDrawerAgentStateOnReconnect(t *testing.T) {
 	bootstrapCalls := 0
 	handler := Handler{
 		Metrics: fakeMetrics{},
-		AgentBootstrap: func(*nethttp.Request, string) ui.ChatViewState {
+		AgentBootstrap: func(*nethttp.Request, string) reportui.AgentBootstrap {
 			bootstrapCalls++
-			return ui.ChatViewState{}
+			return reportui.AgentBootstrap{}
 		},
 	}
 

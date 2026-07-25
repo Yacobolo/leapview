@@ -581,8 +581,8 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 					return authorizeListObject(routes, runtime, platform, policy, ctx, principalID, object)
 				},
 				CSRFToken: routes.accessModule.CSRFToken,
-				ChatChromeSignal: func(r *http.Request) ui.ChatSignal {
-					return workspaceChatSignal(routes.agentModule.ChromeSignal(r))
+				AgentChrome: func(r *http.Request) dashboardmodule.AgentChrome {
+					return dashboardAgentChrome(routes.agentModule.ChromeSignal(r))
 				},
 				Environment: func(r *http.Request) string {
 					return string(requestServingEnvironment(routes, runtime, platform, policy, r))
@@ -597,8 +597,8 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 					}
 					return version.RefreshedAt.Format(time.RFC3339)
 				},
-				AgentBootstrap: func(r *http.Request, workspaceID string) ui.ChatViewState {
-					return workspaceChatViewState(routes.agentModule.DashboardBootstrap(r, workspaceID))
+				AgentBootstrap: func(r *http.Request, workspaceID string) dashboardmodule.AgentBootstrap {
+					return dashboardAgentBootstrap(routes.agentModule.DashboardBootstrap(r, workspaceID))
 				},
 				Presentation: dashboardmodule.Presentation{ProductName: brand.Name, FaviconPath: brand.FaviconPath},
 			},

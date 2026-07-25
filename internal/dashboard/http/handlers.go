@@ -20,7 +20,6 @@ import (
 	reportui "github.com/Yacobolo/leapview/internal/dashboard/ui"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
-	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
@@ -88,7 +87,7 @@ type Handler struct {
 	DataRefreshedAt      func(context.Context, string, string, string) string
 	CommandGuard         func(*nethttp.Request, Metrics, command.Request, dashboard.Signals) error
 	SharedCommandPrepare SharedCommandPrepare
-	AgentBootstrap       func(*nethttp.Request, string) ui.ChatViewState
+	AgentBootstrap       func(*nethttp.Request, string) reportui.AgentBootstrap
 }
 
 func (h Handler) analyticalContext(ctx context.Context) context.Context {

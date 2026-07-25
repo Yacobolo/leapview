@@ -16,9 +16,9 @@ import (
 	semanticapi "github.com/Yacobolo/leapview/internal/dashboard/semanticapi"
 	dashboardstream "github.com/Yacobolo/leapview/internal/dashboard/stream"
 	dashboardui "github.com/Yacobolo/leapview/internal/dashboard/ui"
+	dashboardsignals "github.com/Yacobolo/leapview/internal/dashboard/ui/signals"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	"github.com/Yacobolo/leapview/internal/workload"
-	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 
@@ -66,10 +66,10 @@ type HTTPConfig struct {
 	CurrentPrincipalID  func(*http.Request) string
 	AuthorizeListObject func(context.Context, string, access.ObjectRef) (bool, error)
 	CSRFToken           func(*http.Request) string
-	ChatChromeSignal    func(*http.Request) ui.ChatSignal
+	AgentChrome         func(*http.Request) dashboardui.AgentChrome
 	Environment         func(*http.Request) string
 	DataRefreshedAt     func(context.Context, string, string, string) string
-	AgentBootstrap      func(*http.Request, string) ui.ChatViewState
+	AgentBootstrap      func(*http.Request, string) dashboardui.AgentBootstrap
 	Presentation        dashboardui.Presentation
 }
 
@@ -87,6 +87,19 @@ type SignalBroker interface {
 }
 
 type Presentation = dashboardui.Presentation
+type AgentConversation = dashboardui.AgentConversation
+type AgentChrome = dashboardui.AgentChrome
+type AgentBootstrap = dashboardui.AgentBootstrap
+type ChatSignal = dashboardsignals.ChatSignal
+type ChatConversationSummary = dashboardsignals.ChatConversationSummary
+type ChatTranscriptItemSignal = dashboardsignals.ChatTranscriptItemSignal
+type ChatArtifactSignal = dashboardsignals.ChatArtifactSignal
+type AgentReferenceSignal = dashboardsignals.AgentReferenceSignal
+type AgentReferenceLocationSignal = dashboardsignals.AgentReferenceLocationSignal
+type AgentReferenceKeySignal = dashboardsignals.AgentReferenceKeySignal
+type AgentReferenceWorkspaceSignal = dashboardsignals.AgentReferenceWorkspaceSignal
+type ChatStatus = dashboardsignals.ChatStatus
+type ComposerSignal = dashboardsignals.ComposerSignal
 
 type DashboardTelemetry interface {
 	DashboardRefreshStarted(string)
@@ -113,10 +126,10 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		return metrics, ok
 	}
 	chromeDecorators := func(r *http.Request) []dashboardui.ChromeDecorator {
-		if config.HTTP.ChatChromeSignal == nil {
+		if config.HTTP.AgentChrome == nil {
 			return nil
 		}
-		return ChatChromeDecorators(config.HTTP.ChatChromeSignal(r))
+		return []dashboardui.ChromeDecorator{dashboardui.AgentChromeDecorator(config.HTTP.AgentChrome(r))}
 	}
 	telemetry := config.HTTP.Telemetry
 	handler := dashboardhttp.Handler{
