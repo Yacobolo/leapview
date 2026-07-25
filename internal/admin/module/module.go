@@ -8,14 +8,13 @@ import (
 	"github.com/Yacobolo/leapview/internal/access"
 	adminhttp "github.com/Yacobolo/leapview/internal/admin/http"
 	adminstorage "github.com/Yacobolo/leapview/internal/admin/storage"
-	adminui "github.com/Yacobolo/leapview/internal/admin/ui"
 	"github.com/Yacobolo/leapview/internal/agent/api"
 	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
 	"github.com/Yacobolo/leapview/internal/analytics/resource"
 	dashboardapi "github.com/Yacobolo/leapview/internal/dashboard/api"
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	"github.com/Yacobolo/leapview/internal/workload"
-	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 
@@ -26,8 +25,6 @@ type PublicationService interface {
 	PublicationDTO(publication.Publication) dashboardapi.PublicationResponse
 	MutatePublication(context.Context, string, string, string, publication.Action) (publication.Publication, error)
 }
-
-type Catalog = catalog.Catalog
 
 // Principal is the authenticated identity information needed by platform
 // administration. Transport-specific principal representations stay private to
@@ -65,7 +62,6 @@ type StorageConfig struct {
 }
 
 type Config struct {
-	Catalog               func() catalog.Catalog
 	Access                AccessReader
 	AgentDetails          func(context.Context) (api.AdminAgentResponse, error)
 	QueryAuditReader      QueryAuditReaderProvider
@@ -78,8 +74,7 @@ type Config struct {
 	AuthConfigured        bool
 	AccessConfigured      bool
 	Storage               StorageConfig
-	CurrentRoleLabel      func(*http.Request) string
-	ChromeOption          func(*http.Request) ChromeOption
+	Layout                func(*http.Request) webpage.Provider
 	EnsureClientID        func(http.ResponseWriter, *http.Request)
 	Broker                *pagestream.Broker
 }
@@ -91,14 +86,6 @@ type Module struct {
 	currentCredential     func(*http.Request) (access.APICredential, bool)
 	authorizeAnyWorkspace func(context.Context, string, *access.APICredential, access.Privilege) (bool, error)
 	publications          PublicationService
-}
-
-type ChromeOption = adminui.ChromeOption
-type AgentChrome = adminui.AgentChrome
-type AgentConversation = adminui.AgentConversation
-
-func WithAgentChrome(state AgentChrome) ChromeOption {
-	return adminui.WithAgentChrome(state)
 }
 
 func Build(_ context.Context, config Config) (*Module, error) {
@@ -129,8 +116,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		AccessConfigured: config.AccessConfigured,
 	}
 	m.handler = adminhttp.Handler{
-		Catalog: config.Catalog, ReadModel: readModel,
-		CurrentRoleLabel: config.CurrentRoleLabel, ChromeOption: config.ChromeOption,
+		ReadModel: readModel, Layout: config.Layout,
 		EnsureClientID: config.EnsureClientID, Broker: config.Broker,
 		PublicationMutation: m.mutatePublication,
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/access"
 	dashboardcatalog "github.com/Yacobolo/leapview/internal/dashboard/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	workspacehttp "github.com/Yacobolo/leapview/internal/workspace/http"
 	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
@@ -24,7 +25,7 @@ type Module struct {
 	rootMetrics        queryruntime.Metrics
 	runtimeEnvironment string
 	defaultWorkspaceID string
-	chromeOptions      func(*http.Request) []ui.ChromeOption
+	layout             func(*http.Request) webpage.Provider
 }
 
 type Principal struct {
@@ -76,7 +77,7 @@ type Config struct {
 	Broker              *pagestream.Broker
 	CSRFToken           func(*http.Request) string
 	CurrentRoleLabel    func(*http.Request) string
-	ChromeOptions       func(*http.Request) []ui.ChromeOption
+	Layout              func(*http.Request) webpage.Provider
 	CurrentCredential   func(*http.Request) (access.APICredential, bool)
 	AuthorizeObject     func(context.Context, string, access.Privilege, access.ObjectRef) (bool, error)
 }
@@ -101,7 +102,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	m := &Module{
 		readModel: readModel, currentCredential: config.CurrentCredential,
 		rootMetrics: config.RootMetrics, runtimeEnvironment: config.RuntimeEnvironment,
-		defaultWorkspaceID: config.DefaultWorkspaceID, chromeOptions: config.ChromeOptions,
+		defaultWorkspaceID: config.DefaultWorkspaceID, layout: config.Layout,
 	}
 	m.assetCatalog = config.AssetCatalog
 	if m.assetCatalog == nil && readModel != nil {
@@ -160,7 +161,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		WorkspaceID: config.WorkspaceID, Environment: config.Environment, ReadModel: httpReadModel,
 		RefreshState:  moduleRefreshState{module: m, upstream: config.RefreshState},
 		RefreshRunner: refreshRunner, Broker: config.Broker,
-		CSRFToken: config.CSRFToken, CurrentRoleLabel: config.CurrentRoleLabel, ChromeOptions: config.ChromeOptions,
+		CSRFToken: config.CSRFToken, CurrentRoleLabel: config.CurrentRoleLabel, Layout: config.Layout,
 	}
 	m.search = buildSearch(config.Database, config.AuthorizeObject)
 	return m, nil
@@ -216,13 +217,17 @@ func (m *Module) Home(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	var options []ui.ChromeOption
-	if m.chromeOptions != nil {
-		options = m.chromeOptions(r)
+	var providers []webpage.Provider
+	if m.layout != nil {
+		providers = []webpage.Provider{m.layout(r)}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	if err := ui.CatalogPageForCatalogs(m.CatalogsForVisibleWorkspaces(r), options...).Render(w); err != nil {
+	if err := ui.CatalogPageForCatalogs(m.CatalogsForVisibleWorkspaces(r), providers...).Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func (m *Module) CatalogBootstrapSignals(r *http.Request, provider webpage.Provider) map[string]any {
+	return ui.CatalogBootstrapSignalsForCatalogs(m.CatalogsForVisibleWorkspaces(r), provider)
 }

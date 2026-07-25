@@ -16,7 +16,7 @@ func TestProductDocumentsUseLeapViewBrandAndFavicon(t *testing.T) {
 		document  g.Node
 		wantTitle string
 	}{
-		{name: "catalog", document: CatalogPage(catalog.Catalog{}), wantTitle: "LeapView Dashboards"},
+		{name: "catalog", document: CatalogPage(catalog.Catalog{}, testLayoutProvider()), wantTitle: "LeapView Dashboards"},
 	}
 
 	for _, test := range tests {

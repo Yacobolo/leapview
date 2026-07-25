@@ -672,6 +672,69 @@ func TestAdminDoesNotImportWorkspaceUI(t *testing.T) {
 	}
 }
 
+func TestApplicationOwnsGlobalShellComposition(t *testing.T) {
+	root := repoRoot(t)
+	if !packageDirExists(root, "internal/app/shell") {
+		t.Fatal("application shell composition package is missing")
+	}
+	for _, file := range productionGoFiles(t) {
+		if !strings.HasSuffix(file.pkgDir, "/ui") {
+			continue
+		}
+		for _, productNavigation := range []string{
+			`ID: "dashboards", Label: "Dashboards"`,
+			`ID: "chat", Label: "Chats"`,
+			`ID: "workspaces", Label: "Workspaces"`,
+			`ID: "admin", Label: "Admin"`,
+		} {
+			if strings.Contains(file.body, productNavigation) {
+				t.Errorf("%s assembles global application navigation %q", file.path, productNavigation)
+			}
+		}
+	}
+}
+
+func TestCapabilityRenderersUsePlatformPageMechanism(t *testing.T) {
+	const platformPage = modulePath + "/internal/platform/web/page"
+	for _, capability := range []string{"access", "admin", "agent", "dashboard", "workspace"} {
+		found := false
+		for _, file := range productionGoFiles(t) {
+			if file.pkgDir != "internal/"+capability+"/ui" {
+				continue
+			}
+			for _, imported := range file.imports {
+				if imported == platformPage {
+					found = true
+				}
+			}
+			for _, duplicatedHelper := range []string{"func inspectorScript(", "func inspectorElement(", "func pageHead("} {
+				if strings.Contains(file.body, duplicatedHelper) {
+					t.Errorf("%s retains duplicated document helper %q", file.path, duplicatedHelper)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("internal/%s/ui does not consume the platform page mechanism", capability)
+		}
+	}
+}
+
+func TestWorkspaceUIContainsNoCapabilityCompatibilitySurface(t *testing.T) {
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/workspace/ui" && !strings.HasPrefix(file.pkgDir, "internal/workspace/ui/") {
+			continue
+		}
+		for _, imported := range file.imports {
+			if imported == modulePath+"/internal/admin" ||
+				strings.HasPrefix(imported, modulePath+"/internal/admin/") ||
+				imported == modulePath+"/internal/agent" ||
+				strings.HasPrefix(imported, modulePath+"/internal/agent/") {
+				t.Errorf("%s retains another capability's UI compatibility surface through %s", file.path, imported)
+			}
+		}
+	}
+}
+
 func TestCapabilitiesDoNotImportWorkspaceSignalContracts(t *testing.T) {
 	const sharedSignals = modulePath + "/internal/workspace/ui/signals"
 	for _, file := range productionGoFiles(t) {

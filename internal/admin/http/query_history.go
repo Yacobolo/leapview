@@ -37,7 +37,7 @@ func (h Handler) queryHistoryUpdates(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := updates.Patch(ui.AdminBootstrapSignals(h.catalog(), "queries", h.roleLabel(r), data, h.chromeOption(r))); err != nil {
+	if err := updates.Patch(ui.AdminBootstrapSignals("queries", data, h.layout(r))); err != nil {
 		return
 	}
 	_ = updates.Forward(r.Context(), h.Broker, streamID)

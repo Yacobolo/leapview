@@ -7,7 +7,6 @@ import (
 	"github.com/Yacobolo/leapview/internal/agent"
 	signalcontracts "github.com/Yacobolo/leapview/internal/agent/ui/signals"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
-	"github.com/Yacobolo/leapview/internal/workspace/navigation"
 )
 
 type RouteKind = signalcontracts.RouteKind
@@ -117,11 +116,8 @@ func referenceSignalFromTurn(reference agent.TurnReference) AgentReferenceSignal
 	}
 }
 
-func chatInitialSignals(catalog navigation.Catalog, workspaceID, roleLabel, view string, state ChatViewState) map[string]any {
-	sidebar := sidebarConfigForChat(catalog, workspaceID, roleLabel, view)
-	attachChatSidebar(&sidebar, state.Agent)
+func chatInitialSignals(workspaceID, view string, state ChatViewState) map[string]any {
 	return map[string]any{
-		"chrome": ChromeSignal{Sidebar: sidebar},
 		"page": ChatPageSignal{
 			Kind: RouteChat, View: normalizedView(view), Title: "Chats",
 			Description: "Ask read-only questions about dashboards, semantic models, measures, and fields.",
@@ -140,42 +136,6 @@ func chatInitialSignals(catalog navigation.Catalog, workspaceID, roleLabel, view
 		"agentReferenceSearch": AgentReferenceSearchSignal{Results: []AgentReferenceSignal{}},
 		"visuals":              state.Visuals,
 	}
-}
-
-func sidebarConfigForChat(catalog navigation.Catalog, workspaceID, roleLabel, view string) SidebarSignal {
-	if strings.TrimSpace(workspaceID) != "" {
-		catalog.Workspace.ID = workspaceID
-	}
-	workspaceTitle := strings.TrimSpace(catalog.Workspace.Title)
-	if workspaceTitle == "" {
-		workspaceTitle = strings.TrimSpace(catalog.Workspace.ID)
-	}
-	if workspaceTitle == "" {
-		workspaceTitle = "LeapView"
-	}
-	active := ""
-	if strings.TrimSpace(view) == "list" {
-		active = "chat"
-	}
-	return SidebarSignal{
-		WorkspaceTitle: workspaceTitle, Active: active, DashboardTitle: "Workspace", PageTitle: "Published assets",
-		UserRole: Optional(roleLabel), Groups: []SidebarGroupSignal{{
-			Label: "Navigation",
-			Items: []SidebarItemSignal{
-				{ID: "dashboards", Label: "Dashboards", Href: "/", Icon: "dashboard", Meta: Optional("Reports")},
-				{ID: "chat", Label: "Chats", Href: "/chats", Icon: "chat", Meta: Optional("Agent interface")},
-				{ID: "workspaces", Label: "Workspaces", Href: "/workspaces", Icon: "catalog", Meta: Optional("Published assets")},
-				{ID: "data", Label: "Data", Href: "/data", Icon: "cache", Meta: Optional("Inspect rows")},
-				{ID: "connections", Label: "Connections", Href: "/connections", Icon: "data", Meta: Optional("Data access")},
-				{ID: "admin", Label: "Admin", Href: "/admin", Icon: "settings", Meta: Optional("Read-only administration")},
-			},
-		}},
-	}
-}
-
-func attachChatSidebar(sidebar *SidebarSignal, state ChatSignal) {
-	sidebar.PrimaryAction = &SidebarActionSignal{Label: "New chat", Href: "/chats/new", Icon: "plus"}
-	sidebar.History = &SidebarHistorySignal{Label: "Chats", EmptyText: Optional("No chats yet."), Items: chatHistoryItems(state)}
 }
 
 func chatHistoryItems(state ChatSignal) []SidebarHistoryItemSignal {

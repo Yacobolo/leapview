@@ -3,15 +3,23 @@ package ui
 import (
 	"net/url"
 	"sort"
+	"strings"
 
 	"github.com/Yacobolo/leapview/internal/access/http/mcpoauth"
-	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	g "maragu.dev/gomponents"
 	c "maragu.dev/gomponents/components"
 	h "maragu.dev/gomponents/html"
 )
 
-func OAuthConsentPage(consent mcpoauth.Consent, values url.Values, csrfToken string) g.Node {
+func OAuthConsentPage(consent mcpoauth.Consent, values url.Values, csrfToken string, presentations ...webpage.Presentation) g.Node {
+	presentation := webpage.Presentation{ProductName: "Application", FaviconPath: "/static/favicon.svg"}
+	if len(presentations) > 0 {
+		presentation = presentations[0]
+	}
+	if strings.TrimSpace(presentation.ProductName) == "" {
+		presentation.ProductName = "Application"
+	}
 	keys := make([]string, 0, len(values))
 	for key := range values {
 		keys = append(keys, key)
@@ -28,17 +36,17 @@ func OAuthConsentPage(consent mcpoauth.Consent, values url.Values, csrfToken str
 	}
 	hidden = append(hidden, h.Input(h.Type("hidden"), h.Name("gorilla.csrf.Token"), h.Value(csrfToken)))
 	return c.HTML5(c.HTML5Props{
-		Title: "Authorize MCP access · LeapView", Language: "en",
+		Title: "Authorize MCP access · " + presentation.ProductName, Language: "en",
 		Head: g.Group{
-			h.Link(h.Rel("icon"), h.Href(staticasset.URL("/static/favicon.svg")), h.Type("image/svg+xml")),
-			h.Link(h.Rel("stylesheet"), h.Href(staticasset.URL("/static/app.css"))),
+			h.Link(h.Rel("icon"), h.Href(webpage.AssetURL(presentation.FaviconPath)), h.Type("image/svg+xml")),
+			h.Link(h.Rel("stylesheet"), h.Href(webpage.AssetURL("/static/app.css"))),
 		},
 		Body: g.Group{
 			h.Main(h.Class("min-h-svh bg-app text-fg-default flex items-center justify-center p-6"),
 				h.Section(h.Class("w-full max-w-lg rounded-xl border border-border-default bg-canvas-default p-6 shadow-lg"),
 					h.H1(h.Class("text-xl font-semibold"), g.Text("Authorize MCP access")),
 					h.P(h.Class("mt-3 text-sm text-fg-muted"),
-						g.Text(consent.ClientName+" is requesting permission to use LeapView tools as your signed-in account.")),
+						g.Text(consent.ClientName+" is requesting permission to use "+presentation.ProductName+" tools as your signed-in account.")),
 					h.Div(h.Class("mt-5 rounded-md border border-border-muted bg-canvas-subtle p-4"),
 						h.P(h.Class("text-sm font-medium"), g.Text("Permission")),
 						h.P(h.Class("mt-1 text-sm text-fg-muted"), g.Text("Use governed read-only BI tools. Workspace and asset permissions continue to be checked for every call.")),

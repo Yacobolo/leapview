@@ -71,5 +71,6 @@ func TestGeneratedOutputsContainOnlyNeededCapabilityModels(t *testing.T) {
 	assertContains("internal/dashboard/ui/signals/models.gen.go", "DashboardPageSignal")
 	assertOmits("internal/dashboard/ui/signals/models.gen.go", "AdminPageSignal")
 	assertContains("internal/workspace/ui/signals/models.gen.go", "WorkspacePageSignal")
-	assertContains("internal/workspace/ui/signals/models.gen.go", "AdminPageSignal")
+	assertOmits("internal/workspace/ui/signals/models.gen.go", "AdminPageSignal")
+	assertOmits("internal/workspace/ui/signals/models.gen.go", "ChatPageSignal")
 }

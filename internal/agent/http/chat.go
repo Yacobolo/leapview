@@ -11,7 +11,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/agent"
 	"github.com/Yacobolo/leapview/internal/agent/ui"
-	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
@@ -186,14 +186,13 @@ func (h *Handler) ChatUpdates(w nethttp.ResponseWriter, r *nethttp.Request) {
 	scope := h.chatScope(r)
 	signal, view := h.chatBootstrapSignal(r, scope)
 	workspaceID := ""
-	catalog := catalog.Catalog{}
 	streamID := chatStreamID(scope, chatClientID(r))
 	var trace *pagestream.TraceStore
 	if h.options.Broker != nil {
 		trace = h.options.Broker.TraceStore()
 	}
 	updates := pagestream.NewSignalStream(w, r, pagestream.WithStreamTrace(trace, streamID, "chat.bootstrap"))
-	if err := updates.Patch(ui.ChatBootstrapSignals(catalog, workspaceID, h.currentRoleLabel(r), view, signal)); err != nil {
+	if err := updates.Patch(ui.ChatBootstrapSignals(workspaceID, view, signal, h.layout(r))); err != nil {
 		return
 	}
 	if h.options.Service == nil || !h.options.Service.Enabled() || scope.PrincipalID == "" || h.options.Broker == nil {
@@ -208,10 +207,16 @@ func (h *Handler) renderChat(w nethttp.ResponseWriter, r *nethttp.Request, view 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(nethttp.StatusOK)
 	workspaceID := ""
-	catalog := catalog.Catalog{}
-	if err := ui.ChatPage(catalog, workspaceID, h.csrfToken(r), h.currentRoleLabel(r), view, signal).Render(w); err != nil {
+	if err := ui.ChatPage(workspaceID, h.csrfToken(r), view, signal, h.layout(r)).Render(w); err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
 	}
+}
+
+func (h *Handler) layout(r *nethttp.Request) webpage.Provider {
+	if h.options.Layout == nil {
+		return nil
+	}
+	return h.options.Layout(r)
 }
 
 func (h *Handler) startDraftChatTurn(w nethttp.ResponseWriter, r *nethttp.Request, service *agent.Service, scope agent.Scope, clientID, input string, turnContext *agent.TurnContext, embedded bool) {

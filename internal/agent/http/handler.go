@@ -19,6 +19,7 @@ import (
 	agentconfig "github.com/Yacobolo/leapview/internal/agent/config"
 	"github.com/Yacobolo/leapview/internal/agent/ui"
 	httpmodel "github.com/Yacobolo/leapview/internal/platform/http/model"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	"github.com/Yacobolo/toolbelt/apigen/runtime/agenttool"
@@ -43,6 +44,7 @@ type Options struct {
 	Broker                 *pagestream.Broker
 	CSRFToken              func(*stdhttp.Request) string
 	CurrentRoleLabel       func(*stdhttp.Request) string
+	Layout                 func(*stdhttp.Request) webpage.Provider
 	ChatSignal             func(context.Context, agent.Scope, string, string, bool) ui.ChatViewState
 	ChatSignalWith         func(context.Context, agent.Scope, string, []agent.ChatTranscriptItem, agent.ChatArtifactSignals, string, bool) ui.ChatViewState
 	SearchReferences       func(*stdhttp.Request, agent.TurnContext, string, int) ([]ui.AgentReferenceSignal, error)

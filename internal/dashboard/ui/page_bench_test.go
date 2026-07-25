@@ -10,8 +10,8 @@ import (
 	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	uiactions "github.com/Yacobolo/leapview/internal/platform/web/actions"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
 	g "maragu.dev/gomponents"
 	dsattr "maragu.dev/gomponents-datastar"
 	h "maragu.dev/gomponents/html"
@@ -70,7 +70,7 @@ func benchmarkDashboardDocument(catalog catalog.Catalog, report reportdef.Dashbo
 	}
 	mainAttrs := []g.Node{
 		h.ID("dashboard"),
-		h.Class(appRootClass),
+		h.Class(webpage.RootClass),
 		g.Attr("data-on:datastar-url-params-sync__window", "$urlParams = evt.detail.params; $filters = window.LeapViewFilterURL.fromParams($filterConfig, $filters, $urlParams); "+visualReset+reloadAction),
 	}
 	if legacy {
@@ -79,26 +79,14 @@ func benchmarkDashboardDocument(catalog catalog.Catalog, report reportdef.Dashbo
 			g.Attr("data-url-param-shape", jsonString(signals["urlParamShape"])),
 		)
 	}
-	return pagestream.RenderPage(pagestream.PageSpec{
-		Title:             "LeapView",
-		DatastarScriptURL: datastarScriptURL(),
-		HTMLAttrs: []g.Node{
-			g.Attr("data-color-mode", "auto"),
-			g.Attr("data-light-theme", "light"),
-			g.Attr("data-dark-theme", "dark"),
-		},
-		Head: pageHead(Presentation{FaviconPath: "/static/favicon.svg"},
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/app-shell.js"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/dashboard-page.js"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/url-sync.js"))),
-			inspectorScript(),
-		),
+	return webpage.Render(webpage.Layout{
+		Presentation: webpage.Presentation{ProductName: "LeapView", FaviconPath: "/static/favicon.svg"},
+		Scripts:      []string{"/static/app-shell.js"},
+	}, webpage.Spec{
+		Title: "LeapView", Scripts: []string{"/static/dashboard-page.js", "/static/url-sync.js"},
 		MainAttrs:  mainAttrs,
 		UpdatesURL: dashboardUpdatesURL,
-		Body: []g.Node{
-			body,
-			inspectorElement(),
-		},
+		Content:    body,
 	})
 }
 

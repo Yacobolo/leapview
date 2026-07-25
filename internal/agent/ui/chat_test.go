@@ -4,7 +4,8 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/agent"
-	"github.com/Yacobolo/leapview/internal/workspace/navigation"
+	appshell "github.com/Yacobolo/leapview/internal/app/shell"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 )
 
 func TestChatTranscriptItemsPreserveAgentOwnedWireState(t *testing.T) {
@@ -42,13 +43,17 @@ func TestChatBootstrapSignalsAreOwnedByAgent(t *testing.T) {
 		Status:        ChatStatus{Enabled: true},
 	}}
 
-	signals := ChatBootstrapSignals(navigation.Catalog{}, "", "viewer", "list", state)
+	provider := appshell.Provider(appshell.Config{
+		Presentation: webpage.Presentation{ProductName: "LeapView"}, RoleLabel: "viewer",
+		Conversations: []appshell.Conversation{{ID: "conversation-1", Title: "Revenue"}},
+	})
+	signals := ChatBootstrapSignals("", "list", state, provider)
 
 	runtime, ok := signals["runtime"].(RouteRuntimeSignal)
 	if !ok || runtime.Kind != RouteChat {
 		t.Fatalf("runtime = %#v", signals["runtime"])
 	}
-	chrome, ok := signals["chrome"].(ChromeSignal)
+	chrome, ok := signals["chrome"].(appshell.Chrome)
 	if !ok || chrome.Sidebar.History == nil || len(chrome.Sidebar.History.Items) != 1 {
 		t.Fatalf("chrome = %#v", signals["chrome"])
 	}

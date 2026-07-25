@@ -5,52 +5,32 @@ import (
 	"strings"
 
 	uiactions "github.com/Yacobolo/leapview/internal/platform/web/actions"
-	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
-	"github.com/Yacobolo/leapview/internal/workspace/navigation"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	g "maragu.dev/gomponents"
-	h "maragu.dev/gomponents/html"
 )
 
-func ChatPage(catalog navigation.Catalog, workspaceID, csrfToken, roleLabel, view string, state ChatViewState) g.Node {
-	return pagestream.RenderPage(pagestream.PageSpec{
-		Title:             "LeapView Chat",
-		DatastarScriptURL: staticasset.URL(staticasset.DatastarScriptPath),
-		HTMLAttrs: []g.Node{
-			g.Attr("data-color-mode", "auto"),
-			g.Attr("data-light-theme", "light"),
-			g.Attr("data-dark-theme", "dark"),
-		},
-		Head: []g.Node{
-			csrfMeta(csrfToken),
-			h.Link(h.Rel("icon"), h.Href(staticasset.URL("/static/favicon.svg")), h.Type("image/svg+xml")),
-			h.Link(h.Rel("stylesheet"), h.Href(staticasset.URL("/static/app.css"))),
-			h.Script(h.Src(staticasset.URL("/static/theme.js"))),
-			h.Script(h.Type("module"), h.Src(staticasset.URL("/static/command.js"))),
-			h.Script(h.Type("module"), h.Src(staticasset.URL("/static/app-shell.js"))),
-			h.Script(h.Type("module"), h.Src(staticasset.URL("/static/chat-page.js"))),
-			inspectorScript(),
-		},
-		MainAttrs:  []g.Node{h.Class("min-h-svh bg-app text-fg-default")},
+func ChatPage(workspaceID, csrfToken, view string, state ChatViewState, providers ...webpage.Provider) g.Node {
+	layout := webpage.Resolve(firstProvider(providers), chatLayoutContext(workspaceID, view, state.Agent.ActiveConversationID))
+	return webpage.Render(layout, webpage.Spec{
+		Title: "Chat", CSRFToken: csrfToken, Scripts: []string{"/static/chat-page.js"},
 		UpdatesURL: chatUpdatesURL(workspaceID, view, state.Agent.ActiveConversationID),
-		Body: []g.Node{
-			g.El("lv-app-shell",
-				g.Attr("data-on:lv-chat-reference-search__debounce.200ms", "$agentReferenceSearch.query = evt.detail.query; $agentReferenceSearch.requestId = evt.detail.requestId; "+uiactions.Get("/chats/references/search", "agentReferenceSearch", "agentContext")),
-				g.El("lv-chat-page",
-					g.Attr("slot", "page"),
-					g.Attr("workspace-id", workspaceID),
-					g.Attr("view", view),
-					g.Attr("data-indicator", "agentTurnPending"),
-					g.Attr("data-on:lv-chat-submit", "$agent.composer.value = evt.detail.input; $agentContext.references = evt.detail.references; "+uiactions.Post("/chats/turns", "agent", "agentContext")),
-				),
-			),
-			inspectorElement(),
+		ContentAttrs: []g.Node{
+			g.Attr("data-on:lv-chat-reference-search__debounce.200ms", "$agentReferenceSearch.query = evt.detail.query; $agentReferenceSearch.requestId = evt.detail.requestId; "+uiactions.Get("/chats/references/search", "agentReferenceSearch", "agentContext")),
 		},
+		Content: g.El("lv-chat-page",
+			g.Attr("slot", "page"),
+			g.Attr("workspace-id", workspaceID),
+			g.Attr("view", view),
+			g.Attr("data-indicator", "agentTurnPending"),
+			g.Attr("data-on:lv-chat-submit", "$agent.composer.value = evt.detail.input; $agentContext.references = evt.detail.references; "+uiactions.Post("/chats/turns", "agent", "agentContext")),
+		),
 	})
 }
 
-func ChatBootstrapSignals(catalog navigation.Catalog, workspaceID, roleLabel, view string, state ChatViewState) map[string]any {
-	return chatInitialSignals(catalog, workspaceID, roleLabel, view, state)
+func ChatBootstrapSignals(workspaceID, view string, state ChatViewState, providers ...webpage.Provider) map[string]any {
+	layout := webpage.Resolve(firstProvider(providers), chatLayoutContext(workspaceID, view, state.Agent.ActiveConversationID))
+	return webpage.WithSignal(layout, chatInitialSignals(workspaceID, view, state))
 }
 
 func ChatSignalPatch(state ChatViewState) pagestream.SignalPatch {
@@ -82,23 +62,20 @@ func chatUpdatesURL(workspaceID, view, conversationID string) string {
 	return "/updates?" + values.Encode()
 }
 
-func csrfMeta(token string) g.Node {
-	if strings.TrimSpace(token) == "" {
-		return nil
+func chatLayoutContext(workspaceID, view, activeConversationID string) webpage.Context {
+	active := ""
+	if strings.TrimSpace(view) == "list" {
+		active = "chat"
 	}
-	return h.Meta(h.Name("csrf-token"), h.Content(token))
+	return webpage.Context{
+		Active: active, ScopeID: workspaceID, HistoryID: activeConversationID,
+		SectionTitle: "Workspace", PageTitle: "Published assets",
+	}
 }
 
-func inspectorScript() g.Node {
-	if staticasset.Production() {
+func firstProvider(providers []webpage.Provider) webpage.Provider {
+	if len(providers) == 0 {
 		return nil
 	}
-	return h.Script(h.Type("module"), h.Src(staticasset.URL("/static/datastar-inspector.js")))
-}
-
-func inspectorElement() g.Node {
-	if staticasset.Production() {
-		return nil
-	}
-	return g.El("datastar-inspector", g.Attr("signals-url", "/__dev/pagestream/signals"))
+	return providers[0]
 }

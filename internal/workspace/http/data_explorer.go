@@ -37,7 +37,7 @@ func (h Handler) DataExplorer(w nethttp.ResponseWriter, r *nethttp.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(nethttp.StatusOK)
-	if err := ui.DataExplorerPage(h.catalogForWorkspacesPage(r, nil), page, explorer, h.currentRoleLabel(r), h.csrfToken(r), h.chromeOptions(r)...).Render(w); err != nil {
+	if err := ui.DataExplorerPage(h.catalogForWorkspacesPage(r, nil), page, explorer, h.csrfToken(r), h.chromeOptions(r)...).Render(w); err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
 	}
 }
@@ -71,7 +71,7 @@ func (h Handler) DataExplorerUpdates(w nethttp.ResponseWriter, r *nethttp.Reques
 		nethttp.Error(w, err.Error(), statusForNotFound(err))
 		return
 	}
-	if err := updates.Patch(ui.DataExplorerBootstrapSignals(h.catalogForWorkspacesPage(r, nil), page, explorer, h.currentRoleLabel(r), h.chromeOptions(r)...)); err != nil {
+	if err := updates.Patch(ui.DataExplorerBootstrapSignals(h.catalogForWorkspacesPage(r, nil), page, explorer, h.chromeOptions(r)...)); err != nil {
 		return
 	}
 	if broker != nil {

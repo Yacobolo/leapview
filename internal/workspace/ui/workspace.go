@@ -11,25 +11,25 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	uiactions "github.com/Yacobolo/leapview/internal/platform/web/actions"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	refreshpresentation "github.com/Yacobolo/leapview/internal/refresh/presentation"
 	workspaceview "github.com/Yacobolo/leapview/internal/workspace"
 	"github.com/Yacobolo/leapview/internal/workspace/assetnav"
 	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
 	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
 )
 
-func WorkspacesPage(catalog catalog.Catalog, workspaces []workspaceview.WorkspaceView, roleLabel string, chromeOptions ...ChromeOption) g.Node {
+func WorkspacesPage(catalog catalog.Catalog, workspaces []workspaceview.WorkspaceView, roleLabel string, chromeOptions ...webpage.Provider) g.Node {
 	return WorkspacesPageForEnvironment(catalog, workspaces, "", roleLabel, chromeOptions...)
 }
 
-func WorkspacesPageForEnvironment(catalog catalog.Catalog, workspaces []workspaceview.WorkspaceView, environment, roleLabel string, chromeOptions ...ChromeOption) g.Node {
+func WorkspacesPageForEnvironment(catalog catalog.Catalog, workspaces []workspaceview.WorkspaceView, environment, roleLabel string, chromeOptions ...webpage.Provider) g.Node {
 	page := workspaceCatalogPageSignal(workspaces)
 	page.Environment = uisignals.Optional(environment)
 	catalog = catalogWithoutWorkspaceContext(catalog)
-	return workspaceRouteDocument(defaultProductName+" Workspaces", catalog, "workspaces", roleLabel, page, uisignals.RouteWorkspace,
+	return workspaceRouteDocument("Workspaces", catalog, "workspaces", roleLabel, page, uisignals.RouteWorkspace,
 		g.El("lv-workspace-page",
 			g.Attr("slot", "page"),
 		),
@@ -38,22 +38,22 @@ func WorkspacesPageForEnvironment(catalog catalog.Catalog, workspaces []workspac
 	)
 }
 
-func WorkspacesBootstrapSignals(catalog catalog.Catalog, workspaces []workspaceview.WorkspaceView, roleLabel string, chromeOptions ...ChromeOption) map[string]any {
+func WorkspacesBootstrapSignals(catalog catalog.Catalog, workspaces []workspaceview.WorkspaceView, roleLabel string, chromeOptions ...webpage.Provider) map[string]any {
 	return WorkspacesBootstrapSignalsForEnvironment(catalog, workspaces, "", roleLabel, chromeOptions...)
 }
 
-func WorkspacesBootstrapSignalsForEnvironment(catalog catalog.Catalog, workspaces []workspaceview.WorkspaceView, environment, roleLabel string, chromeOptions ...ChromeOption) map[string]any {
+func WorkspacesBootstrapSignalsForEnvironment(catalog catalog.Catalog, workspaces []workspaceview.WorkspaceView, environment, roleLabel string, chromeOptions ...webpage.Provider) map[string]any {
 	page := workspaceCatalogPageSignal(workspaces)
 	page.Environment = uisignals.Optional(environment)
 	catalog = catalogWithoutWorkspaceContext(catalog)
 	return workspaceRouteBootstrapSignals(catalog, "workspaces", roleLabel, page, uisignals.RouteWorkspace, nil, chromeOptions)
 }
 
-func WorkspacePage(catalog catalog.Catalog, workspace workspaceview.WorkspaceView, assets []workspaceview.AssetView, activeType, query, roleLabel string, access WorkspaceAccessResponse, csrfToken string, chromeOptions ...ChromeOption) g.Node {
+func WorkspacePage(catalog catalog.Catalog, workspace workspaceview.WorkspaceView, assets []workspaceview.AssetView, activeType, query, roleLabel string, access WorkspaceAccessResponse, csrfToken string, chromeOptions ...webpage.Provider) g.Node {
 	return WorkspacePageForEnvironment(catalog, workspace, assets, activeType, query, "", roleLabel, access, csrfToken, chromeOptions...)
 }
 
-func WorkspacePageForEnvironment(catalog catalog.Catalog, workspace workspaceview.WorkspaceView, assets []workspaceview.AssetView, activeType, query, environment, roleLabel string, access WorkspaceAccessResponse, csrfToken string, chromeOptions ...ChromeOption) g.Node {
+func WorkspacePageForEnvironment(catalog catalog.Catalog, workspace workspaceview.WorkspaceView, assets []workspaceview.AssetView, activeType, query, environment, roleLabel string, access WorkspaceAccessResponse, csrfToken string, chromeOptions ...webpage.Provider) g.Node {
 	page := workspacePageSignal(workspace, assets, nil, activeType, query, environment)
 	attrs := []g.Node{
 		g.Attr("slot", "page"),
@@ -67,11 +67,11 @@ func WorkspacePageForEnvironment(catalog catalog.Catalog, workspace workspacevie
 	)
 }
 
-func WorkspaceBootstrapSignals(catalog catalog.Catalog, workspace workspaceview.WorkspaceView, assets []workspaceview.AssetView, activeType, query, roleLabel string, access WorkspaceAccessResponse, chromeOptions ...ChromeOption) map[string]any {
+func WorkspaceBootstrapSignals(catalog catalog.Catalog, workspace workspaceview.WorkspaceView, assets []workspaceview.AssetView, activeType, query, roleLabel string, access WorkspaceAccessResponse, chromeOptions ...webpage.Provider) map[string]any {
 	return WorkspaceBootstrapSignalsForEnvironment(catalog, workspace, assets, activeType, query, "", roleLabel, access, chromeOptions...)
 }
 
-func WorkspaceBootstrapSignalsForEnvironment(catalog catalog.Catalog, workspace workspaceview.WorkspaceView, assets []workspaceview.AssetView, activeType, query, environment, roleLabel string, access WorkspaceAccessResponse, chromeOptions ...ChromeOption) map[string]any {
+func WorkspaceBootstrapSignalsForEnvironment(catalog catalog.Catalog, workspace workspaceview.WorkspaceView, assets []workspaceview.AssetView, activeType, query, environment, roleLabel string, access WorkspaceAccessResponse, chromeOptions ...webpage.Provider) map[string]any {
 	page := workspacePageSignal(workspace, assets, nil, activeType, query, environment)
 	var extra map[string]any
 	if access.CanManage {
@@ -80,11 +80,11 @@ func WorkspaceBootstrapSignalsForEnvironment(catalog catalog.Catalog, workspace 
 	return workspaceRouteBootstrapSignals(catalog, "workspaces", roleLabel, page, uisignals.RouteWorkspace, extra, chromeOptions)
 }
 
-func ConnectionsPage(catalog catalog.Catalog, workspaceID string, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeType, query, roleLabel string, chromeOptions ...ChromeOption) g.Node {
+func ConnectionsPage(catalog catalog.Catalog, workspaceID string, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeType, query, roleLabel string, chromeOptions ...webpage.Provider) g.Node {
 	return ConnectionsPageForEnvironment(catalog, workspaceID, assets, edges, activeType, query, "", roleLabel, chromeOptions...)
 }
 
-func ConnectionsPageForEnvironment(catalog catalog.Catalog, workspaceID string, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeType, query, environment, roleLabel string, chromeOptions ...ChromeOption) g.Node {
+func ConnectionsPageForEnvironment(catalog catalog.Catalog, workspaceID string, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeType, query, environment, roleLabel string, chromeOptions ...webpage.Provider) g.Node {
 	page := connectionsPageSignal(workspaceID, assets, edges, activeType, query, environment)
 	if strings.TrimSpace(workspaceID) == "" {
 		catalog = catalogWithoutWorkspaceContext(catalog)
@@ -98,11 +98,11 @@ func ConnectionsPageForEnvironment(catalog catalog.Catalog, workspaceID string, 
 	)
 }
 
-func ConnectionsBootstrapSignals(catalog catalog.Catalog, workspaceID string, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeType, query, roleLabel string, chromeOptions ...ChromeOption) map[string]any {
+func ConnectionsBootstrapSignals(catalog catalog.Catalog, workspaceID string, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeType, query, roleLabel string, chromeOptions ...webpage.Provider) map[string]any {
 	return ConnectionsBootstrapSignalsForEnvironment(catalog, workspaceID, assets, edges, activeType, query, "", roleLabel, chromeOptions...)
 }
 
-func ConnectionsBootstrapSignalsForEnvironment(catalog catalog.Catalog, workspaceID string, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeType, query, environment, roleLabel string, chromeOptions ...ChromeOption) map[string]any {
+func ConnectionsBootstrapSignalsForEnvironment(catalog catalog.Catalog, workspaceID string, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeType, query, environment, roleLabel string, chromeOptions ...webpage.Provider) map[string]any {
 	page := connectionsPageSignal(workspaceID, assets, edges, activeType, query, environment)
 	if strings.TrimSpace(workspaceID) == "" {
 		catalog = catalogWithoutWorkspaceContext(catalog)
@@ -493,19 +493,19 @@ func definitionFactSignals(facts []definitionFact) []uisignals.DefinitionFactSig
 	return out
 }
 
-func WorkspaceAssetPage(catalog catalog.Catalog, workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeSection, roleLabel string, chromeOptions ...ChromeOption) g.Node {
+func WorkspaceAssetPage(catalog catalog.Catalog, workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeSection, roleLabel string, chromeOptions ...webpage.Provider) g.Node {
 	return WorkspaceAssetPageWithRefresh(catalog, workspace, asset, assets, edges, activeSection, roleLabel, AssetRefreshState{}, chromeOptions...)
 }
 
-func WorkspaceAssetPageWithRefresh(catalog catalog.Catalog, workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeSection, roleLabel string, refresh AssetRefreshState, chromeOptions ...ChromeOption) g.Node {
+func WorkspaceAssetPageWithRefresh(catalog catalog.Catalog, workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeSection, roleLabel string, refresh AssetRefreshState, chromeOptions ...webpage.Provider) g.Node {
 	return WorkspaceAssetPageWithRefreshAndVersions(catalog, workspace, asset, assets, edges, activeSection, roleLabel, refresh, AssetVersionsState{}, chromeOptions...)
 }
 
-func WorkspaceAssetPageWithRefreshAndVersions(catalog catalog.Catalog, workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeSection, roleLabel string, refresh AssetRefreshState, versions AssetVersionsState, chromeOptions ...ChromeOption) g.Node {
+func WorkspaceAssetPageWithRefreshAndVersions(catalog catalog.Catalog, workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeSection, roleLabel string, refresh AssetRefreshState, versions AssetVersionsState, chromeOptions ...webpage.Provider) g.Node {
 	return WorkspaceAssetPageWithRefreshAndVersionsForEnvironment(catalog, workspace, asset, assets, edges, activeSection, "", roleLabel, refresh, versions, chromeOptions...)
 }
 
-func WorkspaceAssetPageWithRefreshAndVersionsForEnvironment(catalog catalog.Catalog, workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeSection, environment, roleLabel string, refresh AssetRefreshState, versions AssetVersionsState, chromeOptions ...ChromeOption) g.Node {
+func WorkspaceAssetPageWithRefreshAndVersionsForEnvironment(catalog catalog.Catalog, workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeSection, environment, roleLabel string, refresh AssetRefreshState, versions AssetVersionsState, chromeOptions ...webpage.Provider) g.Node {
 	activeSection = normalizeWorkspaceAssetSection(activeSection)
 	lineage := assetLineage(workspace.ID, asset, assets, edges)
 	page := workspaceAssetPageSignalWithRefreshAndVersions(workspace, asset, assets, edges, activeSection, lineage, refresh, versions)
@@ -528,11 +528,11 @@ func WorkspaceAssetPageWithRefreshAndVersionsForEnvironment(catalog catalog.Cata
 	return workspaceAssetRouteDocument(asset, catalog, "workspaces", roleLabel, page, uisignals.RouteWorkspaceAsset, g.El("lv-workspace-asset-page", attrs...), workspaceDocumentExtras{}, activeSection, chromeOptions)
 }
 
-func WorkspaceAssetBootstrapSignals(catalog catalog.Catalog, workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeSection, roleLabel string, refresh AssetRefreshState, versions AssetVersionsState, chromeOptions ...ChromeOption) map[string]any {
+func WorkspaceAssetBootstrapSignals(catalog catalog.Catalog, workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeSection, roleLabel string, refresh AssetRefreshState, versions AssetVersionsState, chromeOptions ...webpage.Provider) map[string]any {
 	return WorkspaceAssetBootstrapSignalsForEnvironment(catalog, workspace, asset, assets, edges, activeSection, "", roleLabel, refresh, versions, chromeOptions...)
 }
 
-func WorkspaceAssetBootstrapSignalsForEnvironment(catalog catalog.Catalog, workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeSection, environment, roleLabel string, refresh AssetRefreshState, versions AssetVersionsState, chromeOptions ...ChromeOption) map[string]any {
+func WorkspaceAssetBootstrapSignalsForEnvironment(catalog catalog.Catalog, workspace workspaceview.WorkspaceView, asset workspaceview.AssetView, assets []workspaceview.AssetView, edges []workspaceview.AssetEdgeView, activeSection, environment, roleLabel string, refresh AssetRefreshState, versions AssetVersionsState, chromeOptions ...webpage.Provider) map[string]any {
 	activeSection = normalizeWorkspaceAssetSection(activeSection)
 	lineage := assetLineage(workspace.ID, asset, assets, edges)
 	page := workspaceAssetPageSignalWithRefreshAndVersions(workspace, asset, assets, edges, activeSection, lineage, refresh, versions)
@@ -592,21 +592,21 @@ func ConnectionSourceAssetPageWithVersionsForEnvironment(catalog catalog.Catalog
 	), workspaceDocumentExtras{}, activeSection, nil)
 }
 
-func workspaceAssetRouteDocument(asset workspaceview.AssetView, catalog catalog.Catalog, active, roleLabel string, page any, routeKind uisignals.RouteKind, routeRoot g.Node, extras workspaceDocumentExtras, activeSection string, chromeOptions []ChromeOption, bodyExtras ...g.Node) g.Node {
+func workspaceAssetRouteDocument(asset workspaceview.AssetView, catalog catalog.Catalog, active, roleLabel string, page any, routeKind uisignals.RouteKind, routeRoot g.Node, extras workspaceDocumentExtras, activeSection string, chromeOptions []webpage.Provider, bodyExtras ...g.Node) g.Node {
 	if routeKind == uisignals.RouteConnectionAsset && strings.TrimSpace(extras.AssetWorkspaceID) == "" {
 		extras.AssetWorkspaceID = asset.WorkspaceID
 	}
 	extraHead := []g.Node{}
 	if activeSection == "lineage" {
 		extraHead = append(extraHead,
-			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/asset-lineage-graph.css"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/asset-lineage-graph.js"))),
+			h.Link(h.Rel("stylesheet"), h.Href(webpage.AssetURL("/static/asset-lineage-graph.css"))),
+			h.Script(h.Type("module"), h.Src(webpage.AssetURL("/static/asset-lineage-graph.js"))),
 		)
 	}
 	if activeSection == "details" && asset.Type == "semantic_model" {
 		extraHead = append(extraHead,
-			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/semantic-model-graph.css"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/semantic-model-graph.js"))),
+			h.Link(h.Rel("stylesheet"), h.Href(webpage.AssetURL("/static/semantic-model-graph.css"))),
+			h.Script(h.Type("module"), h.Src(webpage.AssetURL("/static/semantic-model-graph.js"))),
 		)
 	}
 	return workspaceRouteDocumentWithBodyExtras(asset.Title, catalog, active, roleLabel, page, routeKind, routeRoot, extras, bodyExtras, chromeOptions, extraHead...)
@@ -619,8 +619,8 @@ func ConnectionAssetPage(catalog catalog.Catalog, workspace workspaceview.Worksp
 	extraHead := []g.Node{}
 	if activeSection == "lineage" {
 		extraHead = append(extraHead,
-			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/asset-lineage-graph.css"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/asset-lineage-graph.js"))),
+			h.Link(h.Rel("stylesheet"), h.Href(webpage.AssetURL("/static/asset-lineage-graph.css"))),
+			h.Script(h.Type("module"), h.Src(webpage.AssetURL("/static/asset-lineage-graph.js"))),
 		)
 	}
 	return workspaceRouteDocument(asset.Title, catalog, "connections", roleLabel, page, uisignals.RouteConnectionAsset,
@@ -640,8 +640,8 @@ func ConnectionSourceAssetPage(catalog catalog.Catalog, workspace workspaceview.
 	extraHead := []g.Node{}
 	if activeSection == "lineage" {
 		extraHead = append(extraHead,
-			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/asset-lineage-graph.css"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/asset-lineage-graph.js"))),
+			h.Link(h.Rel("stylesheet"), h.Href(webpage.AssetURL("/static/asset-lineage-graph.css"))),
+			h.Script(h.Type("module"), h.Src(webpage.AssetURL("/static/asset-lineage-graph.js"))),
 		)
 	}
 	return workspaceRouteDocument(source.Title, catalog, "connections", roleLabel, page, uisignals.RouteConnectionAsset,
@@ -679,47 +679,24 @@ func WorkspacePermissionsPage(catalog catalog.Catalog, workspace workspaceview.W
 	)
 }
 
-func workspaceRouteDocument(title string, catalog catalog.Catalog, active, roleLabel string, page any, routeKind uisignals.RouteKind, routeRoot g.Node, extras workspaceDocumentExtras, chromeOptions []ChromeOption, extraHead ...g.Node) g.Node {
+func workspaceRouteDocument(title string, catalog catalog.Catalog, active, roleLabel string, page any, routeKind uisignals.RouteKind, routeRoot g.Node, extras workspaceDocumentExtras, chromeOptions []webpage.Provider, extraHead ...g.Node) g.Node {
 	return workspaceRouteDocumentWithBodyExtras(title, catalog, active, roleLabel, page, routeKind, routeRoot, extras, nil, chromeOptions, extraHead...)
 }
 
-func workspaceRouteDocumentWithBodyExtras(title string, catalog catalog.Catalog, active, roleLabel string, page any, routeKind uisignals.RouteKind, routeRoot g.Node, extras workspaceDocumentExtras, bodyExtras []g.Node, chromeOptions []ChromeOption, extraHead ...g.Node) g.Node {
-	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfigForWorkspace(catalog, active, roleLabel)}
-	applyChromeOptions(&chrome, chromeOptions)
-	head := []g.Node{
-		csrfMeta(extras.CSRFToken),
-		h.Script(h.Type("module"), h.Src(staticAsset("/static/app-shell.js"))),
-		h.Script(h.Type("module"), h.Src(staticAsset("/static/workspace-page.js"))),
-		inspectorScript(),
-	}
-	head = append(head, extraHead...)
-	body := append([]g.Node{}, bodyExtras...)
-	body = append(body,
-		g.El("lv-app-shell",
-			routeRoot,
-		),
-		inspectorElement(),
-	)
-	return pagestream.RenderPage(pagestream.PageSpec{
-		Title:             title,
-		DatastarScriptURL: datastarScriptURL(),
-		HTMLAttrs: []g.Node{
-			g.Attr("data-color-mode", "auto"),
-			g.Attr("data-light-theme", "light"),
-			g.Attr("data-dark-theme", "dark"),
-		},
-		Head:       pageHead(head...),
-		MainAttrs:  []g.Node{h.Class(appRootClass)},
+func workspaceRouteDocumentWithBodyExtras(title string, catalog catalog.Catalog, active, roleLabel string, page any, routeKind uisignals.RouteKind, routeRoot g.Node, extras workspaceDocumentExtras, bodyExtras []g.Node, chromeOptions []webpage.Provider, extraHead ...g.Node) g.Node {
+	layout := webpage.Resolve(firstProvider(chromeOptions), workspaceLayoutContext(catalog, active))
+	return webpage.Render(layout, webpage.Spec{
+		Title: title, CSRFToken: extras.CSRFToken, Scripts: []string{"/static/workspace-page.js"},
+		Head:       extraHead,
 		UpdatesURL: workspaceRouteUpdatesURL(routeKind, catalog, page, extras),
-		Body:       body,
+		Content:    routeRoot,
+		BodyBefore: bodyExtras,
 	})
 }
 
-func workspaceRouteBootstrapSignals(catalog catalog.Catalog, active, roleLabel string, page any, routeKind uisignals.RouteKind, bootstrapSignals map[string]any, chromeOptions []ChromeOption) map[string]any {
-	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfigForWorkspace(catalog, active, roleLabel)}
-	applyChromeOptions(&chrome, chromeOptions)
+func workspaceRouteBootstrapSignals(catalog catalog.Catalog, active, roleLabel string, page any, routeKind uisignals.RouteKind, bootstrapSignals map[string]any, chromeOptions []webpage.Provider) map[string]any {
+	layout := webpage.Resolve(firstProvider(chromeOptions), workspaceLayoutContext(catalog, active))
 	signals := map[string]any{
-		"chrome":  chrome,
 		"page":    page,
 		"runtime": runtimeForPage(routeKind, catalog, page),
 		"status":  dashboard.Status{},
@@ -727,7 +704,7 @@ func workspaceRouteBootstrapSignals(catalog catalog.Catalog, active, roleLabel s
 	for key, value := range bootstrapSignals {
 		signals[key] = value
 	}
-	return signals
+	return webpage.WithSignal(layout, signals)
 }
 
 func runtimeForPage(routeKind uisignals.RouteKind, catalog catalog.Catalog, page any) uisignals.RouteRuntimeSignal {

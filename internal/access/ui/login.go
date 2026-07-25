@@ -5,10 +5,9 @@ import (
 	"strings"
 
 	signalcontracts "github.com/Yacobolo/leapview/internal/access/ui/signals"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
 	g "maragu.dev/gomponents"
-	h "maragu.dev/gomponents/html"
 )
 
 type LoginPageOptions struct {
@@ -17,6 +16,7 @@ type LoginPageOptions struct {
 	MustChangePassword bool
 	ProviderLabel      string
 	CSRFToken          string
+	Presentation       webpage.Presentation
 }
 
 type LoginPageSignal = signalcontracts.LoginPageSignal
@@ -24,29 +24,11 @@ type StatusSignal = signalcontracts.DashboardStatus
 
 func LoginPage(options ...LoginPageOptions) g.Node {
 	opts := normalizedLoginOptions(options)
-	return pagestream.RenderPage(pagestream.PageSpec{
-		Title:             "LeapView Login",
-		DatastarScriptURL: staticasset.URL(staticasset.DatastarScriptPath),
-		HTMLAttrs: []g.Node{
-			g.Attr("data-color-mode", "auto"),
-			g.Attr("data-light-theme", "light"),
-			g.Attr("data-dark-theme", "dark"),
-		},
-		Head: []g.Node{
-			csrfMeta(opts.CSRFToken),
-			h.Link(h.Rel("icon"), h.Href(staticasset.URL("/static/favicon.svg")), h.Type("image/svg+xml")),
-			h.Link(h.Rel("stylesheet"), h.Href(staticasset.URL("/static/app.css"))),
-			h.Script(h.Src(staticasset.URL("/static/theme.js"))),
-			h.Script(h.Type("module"), h.Src(staticasset.URL("/static/login-page.js"))),
-			h.Script(h.Type("module"), h.Src(staticasset.URL("/static/login-background-loader.js"))),
-			inspectorScript(),
-		},
-		MainAttrs:  []g.Node{h.Class("min-h-svh bg-app text-fg-default")},
+	return webpage.Render(webpage.Layout{Presentation: opts.Presentation}, webpage.Spec{
+		Title: opts.Presentation.ProductName + " Login", CSRFToken: opts.CSRFToken,
+		Scripts:    []string{"/static/login-page.js", "/static/login-background-loader.js"},
 		UpdatesURL: loginUpdatesURL(),
-		Body: []g.Node{
-			g.El("lv-login-page", g.Attr("background-module-src", staticasset.URL("/static/topology-background.js"))),
-			inspectorElement(),
-		},
+		Content:    g.El("lv-login-page", g.Attr("background-module-src", staticasset.URL("/static/topology-background.js"))),
 	})
 }
 
@@ -56,18 +38,27 @@ func LoginBootstrapSignalsForOptions(options LoginPageOptions) map[string]any {
 		"page": LoginPageSignal{
 			BackgroundModuleSrc: staticasset.URL("/static/topology-background.js"),
 			Kind:                "login", LocalAuth: opts.LocalAuth, MustChangePassword: opts.MustChangePassword,
-			ProviderLabel: opts.ProviderLabel, SSOAuth: opts.SSOAuth, Title: "LeapView",
+			ProviderLabel: opts.ProviderLabel, SSOAuth: opts.SSOAuth, Title: opts.Presentation.ProductName,
 		},
 		"status": StatusSignal{},
 	}
 }
 
 func normalizedLoginOptions(options []LoginPageOptions) LoginPageOptions {
-	opts := LoginPageOptions{SSOAuth: true, ProviderLabel: "Sign in with Azure Active Directory"}
+	opts := LoginPageOptions{
+		SSOAuth: true, ProviderLabel: "Sign in with Azure Active Directory",
+		Presentation: webpage.Presentation{ProductName: "LeapView", FaviconPath: "/static/favicon.svg"},
+	}
 	if len(options) > 0 {
 		opts = options[0]
 		if strings.TrimSpace(opts.ProviderLabel) == "" {
 			opts.ProviderLabel = "Sign in with Azure Active Directory"
+		}
+		if strings.TrimSpace(opts.Presentation.ProductName) == "" {
+			opts.Presentation.ProductName = "LeapView"
+		}
+		if strings.TrimSpace(opts.Presentation.FaviconPath) == "" {
+			opts.Presentation.FaviconPath = "/static/favicon.svg"
 		}
 	}
 	return opts
@@ -77,25 +68,4 @@ func loginUpdatesURL() string {
 	values := url.Values{}
 	values.Set("route", "login")
 	return "/updates?" + values.Encode()
-}
-
-func csrfMeta(token string) g.Node {
-	if strings.TrimSpace(token) == "" {
-		return nil
-	}
-	return h.Meta(h.Name("csrf-token"), h.Content(token))
-}
-
-func inspectorScript() g.Node {
-	if staticasset.Production() {
-		return nil
-	}
-	return h.Script(h.Type("module"), h.Src(staticasset.URL("/static/datastar-inspector.js")))
-}
-
-func inspectorElement() g.Node {
-	if staticasset.Production() {
-		return nil
-	}
-	return g.El("datastar-inspector", g.Attr("signals-url", "/__dev/pagestream/signals"))
 }

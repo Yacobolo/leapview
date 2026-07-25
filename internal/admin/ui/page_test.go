@@ -5,30 +5,29 @@ import (
 	"testing"
 
 	uisignals "github.com/Yacobolo/leapview/internal/admin/ui/signals"
+	appshell "github.com/Yacobolo/leapview/internal/app/shell"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	workspaceview "github.com/Yacobolo/leapview/internal/workspace"
-	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
 )
 
 func TestAdminBootstrapSignalsUseAdminOwnedContracts(t *testing.T) {
-	signals := AdminBootstrapSignals(
-		catalog.Catalog{Workspace: catalog.Workspace{ID: "workspace", Title: "Workspace"}},
-		"general",
-		"Platform admin",
+	provider := appshell.Provider(appshell.Config{
+		Presentation: webpage.Presentation{ProductName: "LeapView"}, RoleLabel: "Platform admin",
+		ActiveConversationID: "conversation-1",
+		Conversations: []appshell.Conversation{{
+			ID: "conversation-1", Title: "Analysis", TitlePending: uisignals.Pointer(true),
+		}},
+	})
+	signals := AdminBootstrapSignals("general",
 		AdminData{
 			Workspace:         workspaceview.WorkspaceView{ID: "platform", Title: "Platform"},
 			AuthConfigured:    true,
 			AccessConfigured:  true,
 			AccessStatusLabel: "Configured",
-		},
-		WithAgentChrome(AgentChrome{
-			ActiveConversationID: "conversation-1",
-			Conversations: []AgentConversation{{
-				ID: "conversation-1", Title: "Analysis", TitlePending: uisignals.Pointer(true),
-			}},
-		}),
+		}, provider,
 	)
 
-	chrome, ok := signals["chrome"].(uisignals.ChromeSignal)
+	chrome, ok := signals["chrome"].(appshell.Chrome)
 	if !ok {
 		t.Fatalf("chrome = %T, want admin signal contract", signals["chrome"])
 	}
@@ -47,12 +46,8 @@ func TestAdminBootstrapSignalsUseAdminOwnedContracts(t *testing.T) {
 
 func TestAdminPageRendersAdminRouteShell(t *testing.T) {
 	var output strings.Builder
-	err := AdminPage(
-		catalog.Catalog{Workspace: catalog.Workspace{ID: "workspace", Title: "Workspace"}},
-		"general",
-		"Platform admin",
-		AdminData{Workspace: workspaceview.WorkspaceView{ID: "platform", Title: "Platform"}},
-	).Render(&output)
+	provider := appshell.Provider(appshell.Config{Presentation: webpage.Presentation{ProductName: "LeapView"}})
+	err := AdminPage("general", AdminData{Workspace: workspaceview.WorkspaceView{ID: "platform", Title: "Platform"}}, provider).Render(&output)
 	if err != nil {
 		t.Fatal(err)
 	}

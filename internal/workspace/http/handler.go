@@ -15,6 +15,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access"
 	accessapi "github.com/Yacobolo/leapview/internal/access/api"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	"github.com/Yacobolo/leapview/internal/workspace/api"
 	"github.com/Yacobolo/leapview/internal/workspace/assetnav"
@@ -35,7 +36,7 @@ type Handler struct {
 	Broker           *pagestream.Broker
 	CSRFToken        func(*nethttp.Request) string
 	CurrentRoleLabel func(*nethttp.Request) string
-	ChromeOptions    func(*nethttp.Request) []ui.ChromeOption
+	Layout           func(*nethttp.Request) webpage.Provider
 }
 
 type workspaceAccessSignalPayload struct {
@@ -1102,11 +1103,11 @@ func (h Handler) currentRoleLabel(r *nethttp.Request) string {
 	return h.CurrentRoleLabel(r)
 }
 
-func (h Handler) chromeOptions(r *nethttp.Request) []ui.ChromeOption {
-	if h.ChromeOptions == nil {
+func (h Handler) chromeOptions(r *nethttp.Request) []webpage.Provider {
+	if h.Layout == nil {
 		return nil
 	}
-	return h.ChromeOptions(r)
+	return []webpage.Provider{h.Layout(r)}
 }
 
 func (h Handler) broker() *pagestream.Broker {

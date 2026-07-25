@@ -20,7 +20,6 @@ type generationTarget struct {
 	outputPath string
 	tags       []string
 	names      []string
-	all        bool
 }
 
 var generationTargets = []generationTarget{
@@ -48,11 +47,7 @@ var generationTargets = []generationTarget{
 	{
 		name:       "workspace",
 		outputPath: "internal/workspace/ui/signals/models.gen.go",
-		// Workspace still hosts the application-shell adapters. Keep the full
-		// compatibility surface here until those adapters move to app and
-		// their capability owners; production capabilities must use their
-		// private outputs above.
-		all: true,
+		tags:       []string{"workspace", "catalog", "connections", "data"},
 	},
 }
 
@@ -116,9 +111,6 @@ func generatedOutputs(root string, doc ir.Document) (map[string][]byte, error) {
 }
 
 func contractsForTarget(doc ir.Document, target generationTarget) []ir.Contract {
-	if target.all {
-		return append([]ir.Contract(nil), doc.Contracts...)
-	}
 	contracts := make([]ir.Contract, 0, len(doc.Contracts))
 	for _, contract := range doc.Contracts {
 		if slices.Contains(target.names, contract.Name) || containsAny(contract.Tags, target.tags) {

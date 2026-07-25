@@ -11,7 +11,7 @@ func TestGoUIRenderersDoNotMountProductInternals(t *testing.T) {
 	files := []string{
 		"page.go",
 		"workspace.go",
-		"chat.go",
+		filepath.Join("..", "..", "agent", "ui", "chat.go"),
 		filepath.Join("..", "..", "admin", "ui", "page.go"),
 		filepath.Join("..", "..", "dashboard", "ui", "page.go"),
 	}

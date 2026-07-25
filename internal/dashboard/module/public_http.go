@@ -208,7 +208,7 @@ func (m *Module) PublicDashboardHTTP(resolved ResolvedPublicDashboard) dashboard
 		return resolved.Metrics, workspaceID == resolved.Publication.WorkspaceID
 	}
 	handler.CSRFToken = nil
-	handler.ChromeDecorators = nil
+	handler.Layout = nil
 	handler.CommandGuard = func(r *http.Request, _ dashboardhttp.Metrics, request command.Request, signals dashboard.Signals) error {
 		current, err := m.PublicationByPublicID(r.Context(), resolved.Publication.PublicID)
 		if err != nil || current.Status() != publication.StatusActive || current.ID != resolved.Publication.ID || current.ServingStateID != resolved.Publication.ServingStateID {

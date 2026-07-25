@@ -21,6 +21,7 @@ func (m *Module) LoginPageOptions(r *http.Request) accessui.LoginPageOptions {
 		LocalAuth:     m != nil && m.auth != nil && m.auth.LocalAuthEnabled(),
 		SSOAuth:       m == nil || m.auth == nil || m.auth.SSOConfigured(),
 		ProviderLabel: "Sign in with Azure Active Directory",
+		Presentation:  m.presentation,
 	}
 	if m == nil || m.auth == nil {
 		return options

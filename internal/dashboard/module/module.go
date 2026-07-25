@@ -18,6 +18,7 @@ import (
 	dashboardui "github.com/Yacobolo/leapview/internal/dashboard/ui"
 	dashboardsignals "github.com/Yacobolo/leapview/internal/dashboard/ui/signals"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	"github.com/Yacobolo/leapview/internal/workload"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
@@ -66,7 +67,7 @@ type HTTPConfig struct {
 	CurrentPrincipalID  func(*http.Request) string
 	AuthorizeListObject func(context.Context, string, access.ObjectRef) (bool, error)
 	CSRFToken           func(*http.Request) string
-	AgentChrome         func(*http.Request) dashboardui.AgentChrome
+	Layout              func(*http.Request) webpage.Provider
 	Environment         func(*http.Request) string
 	DataRefreshedAt     func(context.Context, string, string, string) string
 	AgentBootstrap      func(*http.Request, string) dashboardui.AgentBootstrap
@@ -87,8 +88,6 @@ type SignalBroker interface {
 }
 
 type Presentation = dashboardui.Presentation
-type AgentConversation = dashboardui.AgentConversation
-type AgentChrome = dashboardui.AgentChrome
 type AgentBootstrap = dashboardui.AgentBootstrap
 type ChatSignal = dashboardsignals.ChatSignal
 type ChatConversationSummary = dashboardsignals.ChatConversationSummary
@@ -125,12 +124,6 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		metrics, ok := config.Semantic.MetricsForWorkspace(workspaceID)
 		return metrics, ok
 	}
-	chromeDecorators := func(r *http.Request) []dashboardui.ChromeDecorator {
-		if config.HTTP.AgentChrome == nil {
-			return nil
-		}
-		return []dashboardui.ChromeDecorator{dashboardui.AgentChromeDecorator(config.HTTP.AgentChrome(r))}
-	}
 	telemetry := config.HTTP.Telemetry
 	handler := dashboardhttp.Handler{
 		Metrics: config.HTTP.Metrics, MetricsForWorkspace: metricsForHTTP,
@@ -160,7 +153,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 			}
 		},
 		CurrentPrincipalID: config.HTTP.CurrentPrincipalID, AuthorizeListObject: config.HTTP.AuthorizeListObject,
-		CSRFToken: config.HTTP.CSRFToken, ChromeDecorators: chromeDecorators,
+		CSRFToken: config.HTTP.CSRFToken, Layout: config.HTTP.Layout,
 		Presentation: config.HTTP.Presentation,
 		Environment:  config.HTTP.Environment, DataRefreshedAt: config.HTTP.DataRefreshedAt,
 		AgentBootstrap: config.HTTP.AgentBootstrap,

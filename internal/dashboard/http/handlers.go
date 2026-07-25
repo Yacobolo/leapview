@@ -20,6 +20,7 @@ import (
 	reportui "github.com/Yacobolo/leapview/internal/dashboard/ui"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
@@ -81,7 +82,7 @@ type Handler struct {
 	CurrentPrincipalID   func(r *nethttp.Request) string
 	AuthorizeListObject  func(ctx context.Context, principalID string, object access.ObjectRef) (bool, error)
 	CSRFToken            func(r *nethttp.Request) string
-	ChromeDecorators     func(r *nethttp.Request) []reportui.ChromeDecorator
+	Layout               func(r *nethttp.Request) webpage.Provider
 	Presentation         reportui.Presentation
 	Environment          func(*nethttp.Request) string
 	DataRefreshedAt      func(context.Context, string, string, string) string
@@ -174,11 +175,11 @@ func (h Handler) RenderPage(w nethttp.ResponseWriter, r *nethttp.Request, dashbo
 	if h.CSRFToken != nil {
 		csrfToken = h.CSRFToken(r)
 	}
-	var chromeDecorators []reportui.ChromeDecorator
-	if h.ChromeDecorators != nil {
-		chromeDecorators = h.ChromeDecorators(r)
+	var providers []webpage.Provider
+	if h.Layout != nil {
+		providers = []webpage.Provider{h.Layout(r)}
 	}
-	if err := reportui.PageWithPresentation(h.Presentation, clientID, csrfToken, metrics.Catalog(), reportDefinition, model, pages, activePage, initialFilters, chromeDecorators...).Render(w); err != nil {
+	if err := reportui.PageWithPresentation(h.Presentation, clientID, csrfToken, metrics.Catalog(), reportDefinition, model, pages, activePage, initialFilters, providers...).Render(w); err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
 	}
 }

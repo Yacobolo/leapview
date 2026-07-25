@@ -3,56 +3,33 @@ package ui
 import (
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	uiactions "github.com/Yacobolo/leapview/internal/platform/web/actions"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
 	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
 	g "maragu.dev/gomponents"
-	h "maragu.dev/gomponents/html"
 )
 
-func DataExplorerPage(catalog catalog.Catalog, page uisignals.DataExplorerPageSignal, explorer uisignals.DataExplorerSignal, roleLabel, csrfToken string, chromeOptions ...ChromeOption) g.Node {
+func DataExplorerPage(catalog catalog.Catalog, page uisignals.DataExplorerPageSignal, explorer uisignals.DataExplorerSignal, csrfToken string, providers ...webpage.Provider) g.Node {
 	catalog = catalogWithoutWorkspaceContext(catalog)
-	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfigForWorkspace(catalog, "data", roleLabel)}
-	applyChromeOptions(&chrome, chromeOptions)
+	layout := webpage.Resolve(firstProvider(providers), workspaceLayoutContext(catalog, "data"))
 	explorerUpdatesURL := updatesURL(uisignals.RouteData, "workspace", uisignals.ValueOrZero(explorer.Command.WorkspaceID), "object", uisignals.ValueOrZero(explorer.Command.ObjectKey))
-	_ = chrome
-	return pagestream.RenderPage(pagestream.PageSpec{
-		Title:             page.Title,
-		DatastarScriptURL: datastarScriptURL(),
-		HTMLAttrs: []g.Node{
-			g.Attr("data-color-mode", "auto"),
-			g.Attr("data-light-theme", "light"),
-			g.Attr("data-dark-theme", "dark"),
-		},
-		Head: pageHead(
-			csrfMeta(csrfToken),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/app-shell.js"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/data-explorer.js"))),
-			inspectorScript(),
-		),
-		MainAttrs:  []g.Node{h.Class(appRootClass)},
+	return webpage.Render(layout, webpage.Spec{
+		Title: page.Title, CSRFToken: csrfToken, Scripts: []string{"/static/data-explorer.js"},
 		UpdatesURL: explorerUpdatesURL,
-		Body: []g.Node{
-			g.El("lv-app-shell",
-				g.El("lv-data-explorer",
-					g.Attr("slot", "page"),
-					g.Attr("data-on:lv-data-explorer-command", "$dataExplorerCommand = evt.detail; "+uiactions.Post("/data/command")),
-				),
-			),
-			inspectorElement(),
-		},
+		Content: g.El("lv-data-explorer",
+			g.Attr("slot", "page"),
+			g.Attr("data-on:lv-data-explorer-command", "$dataExplorerCommand = evt.detail; "+uiactions.Post("/data/command")),
+		),
 	})
 }
 
-func DataExplorerBootstrapSignals(catalog catalog.Catalog, page uisignals.DataExplorerPageSignal, explorer uisignals.DataExplorerSignal, roleLabel string, chromeOptions ...ChromeOption) map[string]any {
+func DataExplorerBootstrapSignals(catalog catalog.Catalog, page uisignals.DataExplorerPageSignal, explorer uisignals.DataExplorerSignal, providers ...webpage.Provider) map[string]any {
 	catalog = catalogWithoutWorkspaceContext(catalog)
-	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfigForWorkspace(catalog, "data", roleLabel)}
-	applyChromeOptions(&chrome, chromeOptions)
-	return map[string]any{
-		"chrome":              chrome,
+	layout := webpage.Resolve(firstProvider(providers), workspaceLayoutContext(catalog, "data"))
+	return webpage.WithSignal(layout, map[string]any{
 		"page":                page,
 		"dataExplorer":        explorer,
 		"dataExplorerCommand": explorer.Command,
 		"status":              dashboard.Status{},
-	}
+	})
 }

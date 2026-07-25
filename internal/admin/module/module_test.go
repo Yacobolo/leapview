@@ -3,17 +3,23 @@ package module
 import (
 	"net/http"
 	"testing"
+
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 )
 
 func TestBuildConstructsOwnedHTTPHandler(t *testing.T) {
 	module, err := Build(t.Context(), Config{
-		CurrentRoleLabel: func(*http.Request) string { return "Platform access" },
+		Layout: func(*http.Request) webpage.Provider {
+			return func(webpage.Context) webpage.Layout {
+				return webpage.Layout{Presentation: webpage.Presentation{ProductName: "Application"}}
+			}
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := module.HTTP().CurrentRoleLabel(nil); got != "Platform access" {
-		t.Fatalf("role label = %q", got)
+	if got := module.HTTP().Layout(nil)(webpage.Context{}).Presentation.ProductName; got != "Application" {
+		t.Fatalf("product name = %q", got)
 	}
 }
 

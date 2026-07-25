@@ -13,8 +13,7 @@ import (
 	uisignals "github.com/Yacobolo/leapview/internal/dashboard/ui/signals"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
 	uiactions "github.com/Yacobolo/leapview/internal/platform/web/actions"
-	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	g "maragu.dev/gomponents"
@@ -53,16 +52,7 @@ func updatesURLWithParams(workspaceID, dashboardID, pageID string, params map[st
 	return "/updates?" + values.Encode()
 }
 
-func staticAsset(path string) string {
-	return staticasset.URL(path)
-}
-
-func datastarScriptURL() string {
-	return staticAsset(staticasset.DatastarScriptPath)
-}
-
 const (
-	appRootClass       = "min-h-svh bg-app text-fg-default"
 	PresentationApp    = "app"
 	PresentationPublic = "public"
 	PresentationEmbed  = "embed"
@@ -74,51 +64,13 @@ type PublicPageOptions struct {
 	Presentation string
 }
 
-type Presentation struct {
-	ProductName string
-	FaviconPath string
+type Presentation = webpage.Presentation
+
+func Page(clientID, csrfToken string, catalog dashboard.Catalog, report dashboarddefinition.Definition, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, providers ...webpage.Provider) g.Node {
+	return PageWithPresentation(Presentation{ProductName: "Application", FaviconPath: "/static/favicon.svg"}, clientID, csrfToken, catalog, report, model, pages, activePage, initialFilters, providers...)
 }
 
-type ChromeDecorator func(*uisignals.ChromeSignal)
-
-func inspectorScript() g.Node {
-	if staticasset.Production() {
-		return nil
-	}
-	return h.Script(h.Type("module"), h.Src(staticAsset("/static/datastar-inspector.js")))
-}
-
-func inspectorElement() g.Node {
-	if staticasset.Production() {
-		return nil
-	}
-	return g.El("datastar-inspector", g.Attr("signals-url", "/__dev/pagestream/signals"))
-}
-
-func pageHead(presentation Presentation, extra ...g.Node) []g.Node {
-	nodes := []g.Node{
-		h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/app.css"))),
-		h.Script(h.Src(staticAsset("/static/theme.js"))),
-		h.Script(h.Type("module"), h.Src(staticAsset("/static/command.js"))),
-	}
-	if strings.TrimSpace(presentation.FaviconPath) != "" {
-		nodes = append([]g.Node{h.Link(h.Rel("icon"), h.Href(staticAsset(presentation.FaviconPath)), h.Type("image/svg+xml"))}, nodes...)
-	}
-	return append(nodes, extra...)
-}
-
-func csrfMeta(token string) g.Node {
-	if strings.TrimSpace(token) == "" {
-		return nil
-	}
-	return h.Meta(h.Name("csrf-token"), h.Content(token))
-}
-
-func Page(clientID, csrfToken string, catalog dashboard.Catalog, report dashboarddefinition.Definition, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, chromeDecorators ...ChromeDecorator) g.Node {
-	return PageWithPresentation(Presentation{ProductName: "Application", FaviconPath: "/static/favicon.svg"}, clientID, csrfToken, catalog, report, model, pages, activePage, initialFilters, chromeDecorators...)
-}
-
-func PageWithPresentation(presentation Presentation, clientID, csrfToken string, catalog dashboard.Catalog, report dashboarddefinition.Definition, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, chromeDecorators ...ChromeDecorator) g.Node {
+func PageWithPresentation(presentation Presentation, clientID, csrfToken string, catalog dashboard.Catalog, report dashboarddefinition.Definition, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, providers ...webpage.Provider) g.Node {
 	if activePage.ID == "" {
 		activePage = defaultPage()
 	}
@@ -131,55 +83,41 @@ func PageWithPresentation(presentation Presentation, clientID, csrfToken string,
 	filtersUpdate := "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); " + visualReset
 	agentTurn := "$agent.composer.value = evt.detail.input; $agentContext.references = evt.detail.references; $agentContext.filters = $filters; $agentContext.generation = $status.generation; " + uiactions.Post("/chats/turns", "agent", "agentContext")
 	agentRestore := "$agent.activeConversationId = evt.detail.conversationId; " + uiactions.Get("/chats/restore", "agent")
-	productName := strings.TrimSpace(presentation.ProductName)
-	if productName == "" {
-		productName = "Application"
+	provider := firstProvider(providers)
+	layout := webpage.Resolve(provider, dashboardLayoutContext(catalog, report, model, activePage))
+	if provider == nil {
+		layout.Presentation = presentation
 	}
-	return pagestream.RenderPage(pagestream.PageSpec{
-		Title:             productName,
-		DatastarScriptURL: datastarScriptURL(),
-		HTMLAttrs: []g.Node{
-			g.Attr("data-color-mode", "auto"),
-			g.Attr("data-light-theme", "light"),
-			g.Attr("data-dark-theme", "dark"),
-		},
-		Head: pageHead(presentation,
-			csrfMeta(csrfToken),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/app-shell.js"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/dashboard-page.js"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/url-sync.js"))),
-			inspectorScript(),
-		),
+	return webpage.Render(layout, webpage.Spec{
+		Title: layout.Presentation.ProductName, CSRFToken: csrfToken,
+		Scripts: []string{"/static/dashboard-page.js", "/static/url-sync.js"},
 		MainAttrs: []g.Node{
 			h.ID("dashboard"),
-			h.Class(appRootClass),
+			h.Class(webpage.RootClass),
 			g.Attr("data-on:datastar-url-params-sync__window", "$urlParams = evt.detail.params; $filters = window.LeapViewFilterURL.fromParams($filterConfig, $filters, $urlParams); "+visualReset+reloadAction),
 		},
 		UpdatesURL: dashboardUpdatesURL,
-		Body: []g.Node{
-			g.El("lv-app-shell",
-				g.Attr("data-on:lv-chat-reference-search__debounce.200ms", "$agentReferenceSearch.query = evt.detail.query; $agentReferenceSearch.requestId = evt.detail.requestId; "+uiactions.Get("/chats/references/search", "agentReferenceSearch", "agentContext")),
-				g.El("lv-dashboard-page",
-					g.Attr("slot", "page"),
-					g.Attr("workspace-id", catalog.Workspace.ID),
-					g.Attr("dashboard-id", report.ID),
-					g.Attr("page-id", activePage.ID),
-					g.Attr("data-indicator", "agentTurnPending"),
-					g.Attr("data-on:lv-chat-submit", agentTurn),
-					g.Attr("data-on:lv-chat-restore", agentRestore),
-					g.Attr("data-on:lv-chat-new", "$agent.activeConversationId = ''; $agent.transcript = []; $agent.composer.value = ''; $agentVisuals = {}"),
-					g.Attr("data-on:lv-filters-change", filtersUpdate+reloadAction),
-					g.Attr("data-on:lv-filters-reset", filtersUpdate+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/reset-filters", "runtime")),
-					g.Attr("data-on:lv-filters-refresh", reloadAction),
-					g.Attr("data-on:lv-selection-clear", "$filters.selections = []; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/clear-selection", "runtime")),
-					g.Attr("data-on:lv-interaction-select", "$interactionCommand = evt.detail; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/select", "runtime", "interactionCommand")),
-					g.Attr("data-on:lv-interaction-spatial-select", "$spatialInteractionCommand = evt.detail; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/spatial-select", "runtime", "spatialInteractionCommand")),
-					g.Attr("data-on:lv-visualization-window-request", "$visualWindowCommand = evt.detail; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/visual-window", "runtime", "visualWindowCommand")),
-					g.Attr("data-on:lv-visual-spatial-window-change", "$visualSpatialWindowCommand = evt.detail; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/visual-spatial-window", "runtime", "visualSpatialWindowCommand")),
-				),
-			),
-			inspectorElement(),
+		ContentAttrs: []g.Node{
+			g.Attr("data-on:lv-chat-reference-search__debounce.200ms", "$agentReferenceSearch.query = evt.detail.query; $agentReferenceSearch.requestId = evt.detail.requestId; "+uiactions.Get("/chats/references/search", "agentReferenceSearch", "agentContext")),
 		},
+		Content: g.El("lv-dashboard-page",
+			g.Attr("slot", "page"),
+			g.Attr("workspace-id", catalog.Workspace.ID),
+			g.Attr("dashboard-id", report.ID),
+			g.Attr("page-id", activePage.ID),
+			g.Attr("data-indicator", "agentTurnPending"),
+			g.Attr("data-on:lv-chat-submit", agentTurn),
+			g.Attr("data-on:lv-chat-restore", agentRestore),
+			g.Attr("data-on:lv-chat-new", "$agent.activeConversationId = ''; $agent.transcript = []; $agent.composer.value = ''; $agentVisuals = {}"),
+			g.Attr("data-on:lv-filters-change", filtersUpdate+reloadAction),
+			g.Attr("data-on:lv-filters-reset", filtersUpdate+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/reset-filters", "runtime")),
+			g.Attr("data-on:lv-filters-refresh", reloadAction),
+			g.Attr("data-on:lv-selection-clear", "$filters.selections = []; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/clear-selection", "runtime")),
+			g.Attr("data-on:lv-interaction-select", "$interactionCommand = evt.detail; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/select", "runtime", "interactionCommand")),
+			g.Attr("data-on:lv-interaction-spatial-select", "$spatialInteractionCommand = evt.detail; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/spatial-select", "runtime", "spatialInteractionCommand")),
+			g.Attr("data-on:lv-visualization-window-request", "$visualWindowCommand = evt.detail; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/visual-window", "runtime", "visualWindowCommand")),
+			g.Attr("data-on:lv-visual-spatial-window-change", "$visualSpatialWindowCommand = evt.detail; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/visual-spatial-window", "runtime", "visualSpatialWindowCommand")),
+		),
 	})
 }
 
@@ -216,34 +154,24 @@ func PublicPage(options PublicPageOptions, catalog dashboard.Catalog, report das
 	visualReset := visualResetExpression()
 	reloadAction := uiactions.Post(commandBase+"reload", "runtime", "filters.controls")
 	filtersUpdate := "$filters = evt.detail.filters; $urlParams = evt.detail.urlParams; window.DatastarURLSync && window.DatastarURLSync.replace($urlParams); " + visualReset
-	return pagestream.RenderPage(pagestream.PageSpec{
-		Title:             report.Title,
-		DatastarScriptURL: datastarScriptURL(),
-		HTMLAttrs: []g.Node{
-			g.Attr("data-color-mode", "auto"), g.Attr("data-light-theme", "light"), g.Attr("data-dark-theme", "dark"),
-		},
-		Head: pageHead(Presentation{},
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/dashboard-page.js"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/url-sync.js"))),
-		),
+	return webpage.Render(webpage.Layout{}, webpage.Spec{
+		Title: report.Title, Scripts: []string{"/static/dashboard-page.js", "/static/url-sync.js"},
 		MainAttrs: []g.Node{
-			h.ID("dashboard"), h.Class(appRootClass),
+			h.ID("dashboard"), h.Class(webpage.RootClass),
 			g.Attr("data-on:datastar-url-params-sync__window", "$urlParams = evt.detail.params; $filters = window.LeapViewFilterURL.fromParams($filterConfig, $filters, $urlParams); "+visualReset+reloadAction),
 		},
 		UpdatesURL: base + "/updates?" + values.Encode(),
-		Body: []g.Node{
-			g.El("lv-dashboard-page",
-				g.Attr("workspace-id", catalog.Workspace.ID), g.Attr("dashboard-id", report.ID), g.Attr("page-id", activePage.ID), g.Attr("presentation", presentation),
-				g.Attr("data-on:lv-filters-change", filtersUpdate+reloadAction),
-				g.Attr("data-on:lv-filters-reset", filtersUpdate+uiactions.Post(commandBase+"reset-filters", "runtime")),
-				g.Attr("data-on:lv-filters-refresh", reloadAction),
-				g.Attr("data-on:lv-selection-clear", "$filters.selections = []; "+uiactions.Post(commandBase+"clear-selection", "runtime")),
-				g.Attr("data-on:lv-interaction-select", "$interactionCommand = evt.detail; "+uiactions.Post(commandBase+"select", "runtime", "interactionCommand")),
-				g.Attr("data-on:lv-interaction-spatial-select", "$spatialInteractionCommand = evt.detail; "+uiactions.Post(commandBase+"spatial-select", "runtime", "spatialInteractionCommand")),
-				g.Attr("data-on:lv-visualization-window-request", "$visualWindowCommand = evt.detail; "+uiactions.Post(commandBase+"visual-window", "runtime", "visualWindowCommand")),
-				g.Attr("data-on:lv-visual-spatial-window-change", "$visualSpatialWindowCommand = evt.detail; "+uiactions.Post(commandBase+"visual-spatial-window", "runtime", "visualSpatialWindowCommand")),
-			),
-		},
+		Content: g.El("lv-dashboard-page",
+			g.Attr("workspace-id", catalog.Workspace.ID), g.Attr("dashboard-id", report.ID), g.Attr("page-id", activePage.ID), g.Attr("presentation", presentation),
+			g.Attr("data-on:lv-filters-change", filtersUpdate+reloadAction),
+			g.Attr("data-on:lv-filters-reset", filtersUpdate+uiactions.Post(commandBase+"reset-filters", "runtime")),
+			g.Attr("data-on:lv-filters-refresh", reloadAction),
+			g.Attr("data-on:lv-selection-clear", "$filters.selections = []; "+uiactions.Post(commandBase+"clear-selection", "runtime")),
+			g.Attr("data-on:lv-interaction-select", "$interactionCommand = evt.detail; "+uiactions.Post(commandBase+"select", "runtime", "interactionCommand")),
+			g.Attr("data-on:lv-interaction-spatial-select", "$spatialInteractionCommand = evt.detail; "+uiactions.Post(commandBase+"spatial-select", "runtime", "spatialInteractionCommand")),
+			g.Attr("data-on:lv-visualization-window-request", "$visualWindowCommand = evt.detail; "+uiactions.Post(commandBase+"visual-window", "runtime", "visualWindowCommand")),
+			g.Attr("data-on:lv-visual-spatial-window-change", "$visualSpatialWindowCommand = evt.detail; "+uiactions.Post(commandBase+"visual-spatial-window", "runtime", "visualSpatialWindowCommand")),
+		),
 	})
 }
 
@@ -256,20 +184,14 @@ func defaultPage() dashboard.Page {
 	}
 }
 
-func BootstrapSignals(clientID, streamInstanceID string, catalog dashboard.Catalog, report dashboarddefinition.Definition, model *semanticmodel.Model, definitions map[string]visualizationdefinition.Definition, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, chromeDecorators ...ChromeDecorator) map[string]any {
+func BootstrapSignals(clientID, streamInstanceID string, catalog dashboard.Catalog, report dashboarddefinition.Definition, model *semanticmodel.Model, definitions map[string]visualizationdefinition.Definition, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, providers ...webpage.Provider) map[string]any {
 	envelope := uisignals.DashboardInitialEnvelope(clientID, streamInstanceID, catalog, report, model, definitions, pages, activePage, initialFilters)
 	envelope.Runtime.WorkspaceID = uisignals.Optional(catalog.Workspace.ID)
-	for _, decorate := range chromeDecorators {
-		if decorate != nil {
-			decorate(&envelope.Chrome)
-		}
-	}
-	return map[string]any{
+	signals := map[string]any{
 		"agent":                      envelope.Agent,
 		"agentContext":               envelope.AgentContext,
 		"agentReferenceSearch":       envelope.AgentReferenceSearch,
 		"agentVisuals":               envelope.AgentVisuals,
-		"chrome":                     envelope.Chrome,
 		"page":                       envelope.Page,
 		"runtime":                    envelope.Runtime,
 		"filterConfig":               envelope.FilterConfig,
@@ -284,6 +206,8 @@ func BootstrapSignals(clientID, streamInstanceID string, catalog dashboard.Catal
 		"visuals":                    envelope.Visuals,
 		"status":                     envelope.Status,
 	}
+	layout := webpage.Resolve(firstProvider(providers), dashboardLayoutContext(catalog, report, model, activePage))
+	return webpage.WithSignal(layout, signals)
 }
 
 func PublicBootstrapSignals(clientID, streamInstanceID, publicID, presentation string, catalog dashboard.Catalog, report dashboarddefinition.Definition, model *semanticmodel.Model, definitions map[string]visualizationdefinition.Definition, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters) map[string]any {
@@ -297,7 +221,6 @@ func PublicBootstrapSignals(clientID, streamInstanceID, publicID, presentation s
 	}
 	envelope.Page.Presentation = presentation
 	return map[string]any{
-		"chrome":                     envelope.Chrome,
 		"page":                       envelope.Page,
 		"runtime":                    envelope.Runtime,
 		"filterConfig":               envelope.FilterConfig,
@@ -312,6 +235,26 @@ func PublicBootstrapSignals(clientID, streamInstanceID, publicID, presentation s
 		"visuals":                    envelope.Visuals,
 		"status":                     envelope.Status,
 	}
+}
+
+func dashboardLayoutContext(catalog dashboard.Catalog, report dashboarddefinition.Definition, model *semanticmodel.Model, activePage dashboard.Page) webpage.Context {
+	context := webpage.Context{
+		Active: "workspaces", ScopeID: catalog.Workspace.ID, ScopeTitle: catalog.Workspace.Title,
+		SectionID: report.ID, SectionTitle: report.Title,
+		PageID: activePage.ID, PageTitle: activePage.Title, Compact: true,
+	}
+	if model != nil {
+		context.RelatedID = model.Name
+		context.RelatedTitle = model.Title
+	}
+	return context
+}
+
+func firstProvider(providers []webpage.Provider) webpage.Provider {
+	if len(providers) == 0 {
+		return nil
+	}
+	return providers[0]
 }
 
 func newStreamInstanceID() string {

@@ -9,11 +9,9 @@ import (
 	adminview "github.com/Yacobolo/leapview/internal/admin/view"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	uiactions "github.com/Yacobolo/leapview/internal/platform/web/actions"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	workspaceview "github.com/Yacobolo/leapview/internal/workspace"
-	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
 	g "maragu.dev/gomponents"
-	h "maragu.dev/gomponents/html"
 )
 
 type AdminData struct {
@@ -152,12 +150,9 @@ type AdminStorageCommand = uisignals.AdminStorageCommand
 type adminRecordTable = uisignals.RecordTableSignal
 type adminRecordTableColumn = uisignals.RecordTableColumnSignal
 
-func AdminPage(catalog catalog.Catalog, active, roleLabel string, data AdminData, chromeOptions ...ChromeOption) g.Node {
+func AdminPage(active string, data AdminData, providers ...webpage.Provider) g.Node {
 	title := adminPageTitle(active)
-	page := adminPageSignal(active, data)
-	chrome := uisignals.ChromeSignal{Sidebar: adminChromeSidebar(catalog, roleLabel)}
-	applyChromeOptions(&chrome, chromeOptions)
-	storageSignal := page.Storage
+	layout := webpage.Resolve(firstProvider(providers), adminLayoutContext(active))
 	adminUpdatesURL := updatesURL(uisignals.RouteAdmin, "section", active)
 	if active == "principal-detail" && data.SelectedPrincipal != nil {
 		adminUpdatesURL = updatesURL(uisignals.RouteAdmin, "section", active, "principal", data.SelectedPrincipal.ID)
@@ -165,8 +160,6 @@ func AdminPage(catalog catalog.Catalog, active, roleLabel string, data AdminData
 	if active == "group-detail" && data.SelectedGroup != nil {
 		adminUpdatesURL = updatesURL(uisignals.RouteAdmin, "section", active, "group", data.SelectedGroup.ID)
 	}
-	_ = chrome
-	_ = storageSignal
 	adminAttrs := []g.Node{
 		g.Attr("slot", "page"),
 		g.Attr("section", active),
@@ -191,38 +184,17 @@ func AdminPage(catalog catalog.Catalog, active, roleLabel string, data AdminData
 			g.Attr("data-on:lv-publication-command", "$adminPublicationCommand = evt.detail; "+uiactions.Post("/admin/publications/command", "adminPublicationCommand")),
 		)
 	}
-	return pagestream.RenderPage(pagestream.PageSpec{
-		Title:             "Admin - " + title,
-		DatastarScriptURL: datastarScriptURL(),
-		HTMLAttrs: []g.Node{
-			g.Attr("data-color-mode", "auto"),
-			g.Attr("data-light-theme", "light"),
-			g.Attr("data-dark-theme", "dark"),
-		},
-		Head: pageHead(
-			csrfMeta(data.CSRFToken),
-			h.Link(h.Rel("stylesheet"), h.Href(staticAsset("/static/admin-page.css"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/app-shell.js"))),
-			h.Script(h.Type("module"), h.Src(staticAsset("/static/admin-page.js"))),
-			inspectorScript(),
-		),
-		MainAttrs:  []g.Node{h.Class(appRootClass)},
+	return webpage.Render(layout, webpage.Spec{
+		Title: "Admin - " + title, CSRFToken: data.CSRFToken,
+		Stylesheets: []string{"/static/admin-page.css"}, Scripts: []string{"/static/admin-page.js"},
 		UpdatesURL: adminUpdatesURL,
-		Body: []g.Node{
-			g.El("lv-app-shell",
-				g.El("lv-admin-page", adminAttrs...),
-			),
-			inspectorElement(),
-		},
+		Content:    g.El("lv-admin-page", adminAttrs...),
 	})
 }
 
-func AdminBootstrapSignals(catalog catalog.Catalog, active, roleLabel string, data AdminData, chromeOptions ...ChromeOption) map[string]any {
+func AdminBootstrapSignals(active string, data AdminData, providers ...webpage.Provider) map[string]any {
 	page := adminPageSignal(active, data)
-	chrome := uisignals.ChromeSignal{Sidebar: adminChromeSidebar(catalog, roleLabel)}
-	applyChromeOptions(&chrome, chromeOptions)
 	signals := map[string]any{
-		"chrome":  chrome,
 		"page":    page,
 		"runtime": uisignals.RouteRuntimeSignal{Kind: uisignals.RouteAdmin},
 		"status":  dashboard.Status{},
@@ -243,7 +215,33 @@ func AdminBootstrapSignals(catalog catalog.Catalog, active, roleLabel string, da
 	if active == "publications" {
 		signals["adminPublicationCommand"] = uisignals.AdminPublicationCommand{}
 	}
-	return signals
+	layout := webpage.Resolve(firstProvider(providers), adminLayoutContext(active))
+	return webpage.WithSignal(layout, signals)
+}
+
+func adminLayoutContext(active string) webpage.Context {
+	return webpage.Context{
+		Active: "admin", SectionTitle: "Workspace", PageTitle: "Published assets",
+		PageID: active,
+	}
+}
+
+func firstProvider(providers []webpage.Provider) webpage.Provider {
+	if len(providers) == 0 {
+		return nil
+	}
+	return providers[0]
+}
+
+func updatesURL(route uisignals.RouteKind, pairs ...string) string {
+	values := url.Values{}
+	values.Set("route", string(route))
+	for index := 0; index+1 < len(pairs); index += 2 {
+		if strings.TrimSpace(pairs[index+1]) != "" {
+			values.Set(pairs[index], pairs[index+1])
+		}
+	}
+	return "/updates?" + values.Encode()
 }
 
 func adminPageSignal(active string, data AdminData) uisignals.AdminPageSignal {

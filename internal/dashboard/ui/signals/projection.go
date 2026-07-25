@@ -2,7 +2,6 @@ package signals
 
 import (
 	"fmt"
-	"net/url"
 	"sort"
 	"strings"
 
@@ -54,19 +53,6 @@ func DashboardInitialEnvelope(clientID, streamInstanceID string, catalog dashboa
 		},
 		AgentReferenceSearch: AgentReferenceSearchSignal{Results: []AgentReferenceSignal{}},
 		AgentVisuals:         map[string]visualizationir.VisualizationEnvelope{},
-		Chrome: ChromeSignal{Sidebar: sidebarConfig(
-			catalog,
-			"workspaces",
-			report.ID,
-			workspaceDisplayTitle(catalog),
-			report.Title,
-			activePage.Title,
-			modelID,
-			modelTitle,
-			true,
-			"",
-			strings.TrimSpace(catalog.Workspace.ID) != "",
-		)},
 		Page: DashboardPageSignal{
 			Kind:           RouteDashboard,
 			Presentation:   "app",
@@ -216,49 +202,6 @@ func dashboardComponents(page dashboard.Page) []DashboardComponentSignal {
 		})
 	}
 	return components
-}
-
-func sidebarConfig(catalog dashboard.Catalog, active, dashboardID, workspaceTitle, dashboardTitle, pageTitle, modelID, modelTitle string, compact bool, roleLabel string, includeWorkspaceScoped bool) SidebarSignal {
-	return SidebarSignal{
-		Active: active, DashboardID: optionalValue(dashboardID), WorkspaceTitle: workspaceTitle,
-		DashboardTitle: dashboardTitle, PageTitle: pageTitle, ModelID: optionalValue(modelID),
-		ModelTitle: optionalValue(modelTitle), Compact: compact, UserRole: optionalValue(roleLabel),
-		Groups: sidebarGroups(catalog, includeWorkspaceScoped),
-	}
-}
-
-func sidebarGroups(_ dashboard.Catalog, _ bool) []SidebarGroupSignal {
-	return []SidebarGroupSignal{{
-		Label: "Navigation",
-		Items: []SidebarItemSignal{
-			{ID: "dashboards", Label: "Dashboards", Href: "/", Icon: "dashboard", Meta: optionalValue("Reports")},
-			{ID: "chat", Label: "Chats", Href: chatPath(), Icon: "chat", Meta: optionalValue("Agent interface")},
-			{ID: "workspaces", Label: "Workspaces", Href: "/workspaces", Icon: "catalog", Meta: optionalValue("Published assets")},
-			{ID: "data", Label: "Data", Href: "/data", Icon: "cache", Meta: optionalValue("Inspect rows")},
-			{ID: "connections", Label: "Connections", Href: "/connections", Icon: "data", Meta: optionalValue("Data access")},
-			{ID: "admin", Label: "Admin", Href: "/admin", Icon: "settings", Meta: optionalValue("Read-only administration")},
-		},
-	}}
-}
-
-func chatPath(parts ...string) string {
-	path := "/chats"
-	for _, part := range parts {
-		if part = strings.Trim(part, "/"); part != "" {
-			path += "/" + url.PathEscape(part)
-		}
-	}
-	return path
-}
-
-func workspaceDisplayTitle(catalog dashboard.Catalog) string {
-	if strings.TrimSpace(catalog.Workspace.Title) != "" {
-		return catalog.Workspace.Title
-	}
-	if strings.TrimSpace(catalog.Workspace.ID) != "" {
-		return catalog.Workspace.ID
-	}
-	return "LeapView"
 }
 
 func pageVisualIDs(page dashboard.Page) []string {

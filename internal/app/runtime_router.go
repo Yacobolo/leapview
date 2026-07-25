@@ -26,6 +26,7 @@ import (
 	jobsmodule "github.com/Yacobolo/leapview/internal/platform/jobs/module"
 	platformlifecycle "github.com/Yacobolo/leapview/internal/platform/lifecycle"
 	"github.com/Yacobolo/leapview/internal/platform/observability"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
 	uitransport "github.com/Yacobolo/leapview/internal/platform/web/transport"
 	refreshmodule "github.com/Yacobolo/leapview/internal/refresh/module"
@@ -34,7 +35,6 @@ import (
 	servingstatemodule "github.com/Yacobolo/leapview/internal/servingstate/module"
 	workloadmodule "github.com/Yacobolo/leapview/internal/workload/module"
 	workspacemodule "github.com/Yacobolo/leapview/internal/workspace/module"
-	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 
@@ -456,6 +456,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		var err error
 		routes.accessModule, err = accessmodule.Build(ctx, accessmodule.Config{
 			Database: database, ExistingAuth: platform.auth, WorkspaceID: policy.defaultWorkspaceID,
+			Presentation: webpage.Presentation{ProductName: brand.Name, FaviconPath: brand.FaviconPath},
 			WorkspaceIDs: func(ctx context.Context) ([]string, error) {
 				if persistence.workspaceDirectory != nil {
 					return persistence.workspaceDirectory.WorkspaceIDs(ctx)
@@ -515,9 +516,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			Broker:           runtime.broker,
 			CSRFToken:        routes.accessModule.CSRFToken,
 			CurrentRoleLabel: routes.accessModule.CurrentRoleLabel,
-			ChromeOptions: func(r *http.Request) []ui.ChromeOption {
-				return []ui.ChromeOption{agentChromeOption(routes.agentModule, r)}
-			},
+			Layout:           func(r *http.Request) webpage.Provider { return applicationLayout(routes, r) },
 			CurrentCredential: func(r *http.Request) (accessmodule.APICredential, bool) {
 				return accessmodule.APICredentialFromContext(r.Context())
 			},
@@ -581,9 +580,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 					return authorizeListObject(routes, runtime, platform, policy, ctx, principalID, object)
 				},
 				CSRFToken: routes.accessModule.CSRFToken,
-				AgentChrome: func(r *http.Request) dashboardmodule.AgentChrome {
-					return dashboardAgentChrome(routes.agentModule.ChromeSignal(r))
-				},
+				Layout:    func(r *http.Request) webpage.Provider { return applicationLayout(routes, r) },
 				Environment: func(r *http.Request) string {
 					return string(requestServingEnvironment(routes, runtime, platform, policy, r))
 				},
@@ -704,6 +701,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				Settings: persistence.agentSettings, Broker: runtime.broker,
 				CSRFToken:        routes.accessModule.CSRFToken,
 				CurrentRoleLabel: routes.accessModule.CurrentRoleLabel,
+				Layout:           func(r *http.Request) webpage.Provider { return applicationLayout(routes, r) },
 				CurrentPrincipal: func(r *http.Request) (agentmodule.Principal, bool) {
 					if platform.auth == nil {
 						return agentmodule.Principal{}, false
@@ -741,9 +739,6 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		}
 		var err error
 		routes.adminModule, err = adminmodule.Build(ctx, adminmodule.Config{
-			Catalog: func() adminmodule.Catalog {
-				return routes.workspaceModule.NavigationCatalog()
-			},
 			Access: accessReader,
 			AgentDetails: func(ctx context.Context) (agentmodule.AdminAgentResponse, error) {
 				return routes.agentModule.HTTP().AdminDetails(ctx)
@@ -767,13 +762,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				Environment: policy.defaultEnvironment, ControlPlane: persistence.adminDatabase,
 				Analytics: runtime.analyticsModule.AdminResources(), Admitter: workloadController(routes, runtime, platform, policy),
 			},
-			CurrentRoleLabel: func(r *http.Request) string {
-				principal, ok := currentAdminPrincipal(r)
-				return adminmodule.RoleLabel(platform.auth != nil, principal, ok)
-			},
-			ChromeOption: func(r *http.Request) adminmodule.ChromeOption {
-				return adminAgentChromeOption(routes.agentModule, r)
-			},
+			Layout: func(r *http.Request) webpage.Provider { return applicationLayout(routes, r) },
 			EnsureClientID: func(w http.ResponseWriter, r *http.Request) {
 				_ = pagestream.EnsureClientID(w, r)
 			},

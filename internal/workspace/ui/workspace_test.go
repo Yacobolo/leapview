@@ -40,7 +40,7 @@ func TestWorkspaceAssetDetailsRenderSharedShapeForSemanticModel(t *testing.T) {
 	asset := testAssetByID(t, assets, "model")
 
 	var out strings.Builder
-	err := WorkspaceAssetPage(catalog, workspace, asset, assets, edges, "details", "Owner").Render(&out)
+	err := WorkspaceAssetPage(catalog, workspace, asset, assets, edges, "details", "Owner", testLayoutProvider()).Render(&out)
 	if err != nil {
 		t.Fatal(err)
 	}

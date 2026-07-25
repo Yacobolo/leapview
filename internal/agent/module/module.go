@@ -16,6 +16,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/agent/ui"
 	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	productsearch "github.com/Yacobolo/leapview/internal/workspace/search"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
@@ -122,6 +123,7 @@ type HTTPConfig struct {
 	Broker             *pagestream.Broker
 	CSRFToken          func(*http.Request) string
 	CurrentRoleLabel   func(*http.Request) string
+	Layout             func(*http.Request) webpage.Provider
 	SearchReferences   func(*http.Request, agent.TurnContext, string, int) ([]ui.AgentReferenceSignal, error)
 	ResolveTurnContext func(*http.Request, agent.Scope, agent.TurnContext) (agent.TurnContext, error)
 }
@@ -197,7 +199,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		Service: service, Settings: config.HTTP.Settings,
 		CurrentPrincipal: currentPrincipal, CurrentCredential: config.HTTP.CurrentCredential,
 		Broker: config.HTTP.Broker, CSRFToken: config.HTTP.CSRFToken,
-		CurrentRoleLabel: config.HTTP.CurrentRoleLabel, ChatSignal: m.chatSignal,
+		CurrentRoleLabel: config.HTTP.CurrentRoleLabel, Layout: config.HTTP.Layout, ChatSignal: m.chatSignal,
 		ChatSignalWith: m.ChatSignalWith, SearchReferences: searchReferences,
 		ResolveTurnContext: resolveTurnContext, QueueMissingTitle: m.queueMissingChatTitle,
 		ExecuteStartedChatTurn: m.executeStartedChatTurn,
