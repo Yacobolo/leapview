@@ -20,8 +20,7 @@ import (
 var migrationsFS embed.FS
 
 const (
-	DefaultWorkspaceID = "leapview"
-	databaseFileMode   = securefs.PrivateFileMode
+	databaseFileMode = securefs.PrivateFileMode
 )
 
 type Store struct {

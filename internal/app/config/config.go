@@ -18,7 +18,10 @@ import (
 
 type Profile string
 
-const ProfileServe Profile = "serve"
+const (
+	ProfileServe       Profile = "serve"
+	DefaultWorkspaceID         = "leapview"
+)
 
 func Load() (Config, error) {
 	var cfg Config

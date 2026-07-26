@@ -66,6 +66,7 @@ var WorkloadImportPrefixes = []string{
 	"internal/dashboard/module",
 	"internal/refresh/module",
 	"internal/servingstate/module",
+	"internal/workload/observability",
 	"internal/workload/module",
 	"internal/analytics/materialize", "internal/analytics/ducklake", "internal/dashboard/semanticapi",
 }
@@ -127,7 +128,7 @@ func CapabilityImportViolation(sourcePath string, source PackageRule, packagePat
 	if source.Capability == target.Capability || source.Layer == LayerComposition {
 		return ""
 	}
-	if target.Capability == "platform" || target.Capability == "api" || target.Capability == "ui" {
+	if target.Capability == "platform" {
 		return ""
 	}
 	if target.Capability == "workload" && AllowsWorkloadImport(sourcePath) {
@@ -150,10 +151,10 @@ func CapabilityImportViolation(sourcePath string, source PackageRule, packagePat
 
 var PackageRules = []PackageRule{
 	{Prefix: "cmd", Capability: "composition", Layer: LayerComposition},
-	{Prefix: "docs", Capability: "ui", Layer: LayerAdapter},
-	{Prefix: "site", Capability: "ui", Layer: LayerAdapter},
+	{Prefix: "docs", Capability: "composition", Layer: LayerAdapter},
+	{Prefix: "site", Capability: "composition", Layer: LayerAdapter},
 	{Prefix: "pkg/agent", Capability: "agent", Layer: LayerContract},
-	{Prefix: "pkg/pagestream", Capability: "ui", Layer: LayerAdapter},
+	{Prefix: "pkg/pagestream", Capability: "platform", Layer: LayerAdapter},
 	{Prefix: "internal/project/compiler", Capability: "project", Layer: LayerUseCase},
 	{Prefix: "internal/project/artifact", Capability: "project", Layer: LayerContract},
 	{Prefix: "internal/analytics/runtime", Capability: "analytics", Layer: LayerContract},
@@ -163,11 +164,11 @@ var PackageRules = []PackageRule{
 	{Prefix: "internal/refresh/run", Capability: "refresh", Layer: LayerUseCase},
 	{Prefix: "internal/refresh/schedule", Capability: "refresh", Layer: LayerUseCase},
 	{Prefix: "internal/platform/http/idempotency", Capability: "platform", Layer: LayerAdapter},
-	{Prefix: "internal/app/api/gen", Capability: "api", Layer: LayerAdapter},
+	{Prefix: "internal/app/api/gen", Capability: "composition", Layer: LayerAdapter},
 	{Prefix: "internal/platform/architecture", Capability: "platform", Layer: LayerPlatform},
 	{Prefix: "internal/workspace/assetnav", Capability: "workspace", Layer: LayerUseCase},
 	{Prefix: "internal/workspace/navigation", Capability: "workspace", Layer: LayerContract},
-	{Prefix: "internal/app/brand", Capability: "ui", Layer: LayerAdapter},
+	{Prefix: "internal/app/brand", Capability: "composition", Layer: LayerAdapter},
 	{Prefix: "internal/dashboard/catalog", Capability: "dashboard", Layer: LayerContract},
 	{Prefix: "internal/app/cli", Capability: "composition", Layer: LayerComposition},
 	{Prefix: "internal/app/cli/composectl", Capability: "project", Layer: LayerAdapter},
@@ -178,11 +179,13 @@ var PackageRules = []PackageRule{
 	{Prefix: "internal/project/docvalidation", Capability: "project", Layer: LayerUseCase},
 	{Prefix: "internal/platform/locking", Capability: "platform", Layer: LayerAdapter},
 	{Prefix: "internal/platform/observability", Capability: "platform", Layer: LayerAdapter},
+	{Prefix: "internal/dashboard/observability", Capability: "dashboard", Layer: LayerAdapter},
+	{Prefix: "internal/workload/observability", Capability: "workload", Layer: LayerAdapter},
 	{Prefix: "internal/dashboard/queryruntime", Capability: "dashboard", Layer: LayerContract},
 	{Prefix: "internal/workspace/search", Capability: "workspace", Layer: LayerUseCase},
 	{Prefix: "internal/platform/security/secret", Capability: "platform", Layer: LayerPlatform},
 	{Prefix: "internal/platform/filesystem", Capability: "platform", Layer: LayerPlatform},
-	{Prefix: "internal/app/site", Capability: "ui", Layer: LayerAdapter},
+	{Prefix: "internal/app/site", Capability: "composition", Layer: LayerAdapter},
 	{Prefix: "internal/platform/web/staticasset", Capability: "platform", Layer: LayerPlatform},
 	{Prefix: "internal/app/tools", Capability: "composition", Layer: LayerComposition},
 	{Prefix: "internal/dashboard/visualization/definition", Capability: "dashboard", Layer: LayerContract},
@@ -192,7 +195,7 @@ var PackageRules = []PackageRule{
 	{Prefix: "internal/dashboard/visualization/mapasset", Capability: "dashboard", Layer: LayerContract},
 	{Prefix: "internal/dashboard/visualization/mapasset/http", Capability: "dashboard", Layer: LayerAdapter},
 	{Prefix: "internal/dashboard/visualization/runtime", Capability: "dashboard", Layer: LayerUseCase},
-	{Prefix: "internal/app/site/visualdocs", Capability: "ui", Layer: LayerAdapter},
+	{Prefix: "internal/app/site/visualdocs", Capability: "composition", Layer: LayerAdapter},
 	{Prefix: "internal/dashboard/semanticapi", Capability: "dashboard", Layer: LayerAdapter},
 	{Prefix: "internal/access/ui/signals", Capability: "access", Layer: LayerContract},
 	{Prefix: "internal/admin/ui/signals", Capability: "admin", Layer: LayerContract},
@@ -200,8 +203,8 @@ var PackageRules = []PackageRule{
 	{Prefix: "internal/dashboard/ui/signals", Capability: "dashboard", Layer: LayerContract},
 	{Prefix: "internal/app", Capability: "composition", Layer: LayerComposition},
 	{Prefix: "internal/admin", Capability: "admin", Layer: LayerAdapter},
-	{Prefix: "internal/workspace/ui/signals", Capability: "ui", Layer: LayerContract},
-	{Prefix: "internal/workspace/ui", Capability: "ui", Layer: LayerAdapter},
+	{Prefix: "internal/workspace/ui/signals", Capability: "workspace", Layer: LayerContract},
+	{Prefix: "internal/workspace/ui", Capability: "workspace", Layer: LayerAdapter},
 }
 
 var adapterSegments = []string{

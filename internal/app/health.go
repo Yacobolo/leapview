@@ -1,4 +1,4 @@
-package observability
+package app
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
 )
 
-type HealthConfig struct {
+type healthConfig struct {
 	Platform         func(context.Context) error
 	Analytics        func() error
 	ActiveWorkspaces func(context.Context) ([]string, error)
@@ -16,8 +16,8 @@ type HealthConfig struct {
 	Checks           map[string]func(context.Context) error
 }
 
-type Health struct {
-	config HealthConfig
+type health struct {
+	config healthConfig
 }
 
 type healthResponse struct {
@@ -25,15 +25,15 @@ type healthResponse struct {
 	Checks map[string]string `json:"checks,omitempty"`
 }
 
-func NewHealth(config HealthConfig) *Health {
-	return &Health{config: config}
+func newHealth(config healthConfig) *health {
+	return &health{config: config}
 }
 
-func (h *Health) Healthz(w http.ResponseWriter, _ *http.Request) {
+func (h *health) Healthz(w http.ResponseWriter, _ *http.Request) {
 	apitransport.WriteJSON(w, http.StatusOK, healthResponse{Status: "ok"})
 }
 
-func (h *Health) Readyz(w http.ResponseWriter, r *http.Request) {
+func (h *health) Readyz(w http.ResponseWriter, r *http.Request) {
 	checks := map[string]string{}
 	if h == nil || h.config.Platform == nil {
 		checks["platformStore"] = "missing"
@@ -74,7 +74,7 @@ func (h *Health) Readyz(w http.ResponseWriter, r *http.Request) {
 	apitransport.WriteJSON(w, http.StatusOK, healthResponse{Status: "ready", Checks: checks})
 }
 
-func (h *Health) runtimeReady(ctx context.Context, checks map[string]string) bool {
+func (h *health) runtimeReady(ctx context.Context, checks map[string]string) bool {
 	if h.config.ActiveWorkspaces == nil || h.config.RuntimeReady == nil {
 		checks["runtime"] = "missing"
 		return false

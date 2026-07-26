@@ -42,16 +42,17 @@ type QueryMetrics = dashboardmodule.Metrics
 type workspaceMetrics = dashboardmodule.WorkspaceMetrics
 
 type capabilityRoutes struct {
-	accessModule      *accessmodule.Module
-	workspaceModule   *workspacemodule.Module
-	managedDataModule *manageddatamodule.Module
-	deploymentModule  *deploymentmodule.Module
-	dashboardModule   *dashboardmodule.Module
-	dashboardAssets   dashboardmodule.Assets
-	agentModule       *agentmodule.Module
-	releaseModule     *releasemodule.Module
-	refreshModule     *refreshmodule.Module
-	adminModule       *adminmodule.Module
+	accessModule       *accessmodule.Module
+	workspaceModule    *workspacemodule.Module
+	managedDataModule  *manageddatamodule.Module
+	deploymentModule   *deploymentmodule.Module
+	dashboardModule    *dashboardmodule.Module
+	dashboardAssets    dashboardmodule.Assets
+	agentModule        *agentmodule.Module
+	releaseModule      *releasemodule.Module
+	refreshModule      *refreshmodule.Module
+	adminModule        *adminmodule.Module
+	dashboardTelemetry dashboardmodule.Telemetry
 }
 
 type runtimeServices struct {
@@ -74,7 +75,7 @@ type platformServices struct {
 	auth          *accessmodule.Auth
 	assets        staticasset.Resolver
 	telemetry     *observability.Telemetry
-	health        *observability.Health
+	health        *health
 	logger        *slog.Logger
 	workers       *platformlifecycle.Group
 	apiProtocol   *apiprotocol.Protocol
@@ -121,7 +122,12 @@ type storageInputs struct {
 	publicURL           string
 }
 
-func newCompositionSurfaces(metrics QueryMetrics, assets staticasset.Resolver) (*capabilityRoutes, *runtimeServices, *platformServices, *httpPolicy) {
+func newCompositionSurfaces(
+	metrics QueryMetrics,
+	assets staticasset.Resolver,
+	telemetry *observability.Telemetry,
+	dashboardTelemetry dashboardmodule.Telemetry,
+) (*capabilityRoutes, *runtimeServices, *platformServices, *httpPolicy) {
 	logger := slog.Default()
 	var trace *pagestream.TraceStore
 	if !assets.Production() {
@@ -131,12 +137,12 @@ func newCompositionSurfaces(metrics QueryMetrics, assets staticasset.Resolver) (
 			IncludePayloads:   true,
 		})
 	}
-	routes := &capabilityRoutes{}
+	routes := &capabilityRoutes{dashboardTelemetry: dashboardTelemetry}
 	runtime := &runtimeServices{
 		metrics: metrics, broker: pagestream.NewBroker(pagestream.WithTraceStore(trace)),
 		pageStreamTrace: trace,
 	}
-	platform := &platformServices{telemetry: observability.New(), logger: logger, assets: assets}
+	platform := &platformServices{telemetry: telemetry, logger: logger, assets: assets}
 	policy := &httpPolicy{requestBodyLimit: apihttpmiddleware.DefaultRequestBodyLimitConfig()}
 	return routes, runtime, platform, policy
 }
@@ -249,12 +255,13 @@ func buildApplicationSurfaces(
 		ctx = context.Background()
 	}
 	telemetry := observability.New()
+	dashboardTelemetry := dashboardmodule.NewTelemetry(telemetry.Registry())
 	if capabilities.AnalyticsModule != nil {
 		telemetry.Register(capabilities.AnalyticsModule.Collector())
 	}
 	controller := workflow.Workload
 	ownsController := false
-	workloadTelemetry := workloadmodule.NewTelemetryObserver(telemetry)
+	workloadTelemetry := workloadmodule.NewTelemetryObserver(telemetry.Registry())
 	if controller == nil {
 		var err error
 		controller, err = workloadmodule.Build(ctx, workloadmodule.Config{
@@ -317,7 +324,7 @@ func buildApplicationSurfaces(
 		})
 	}
 	servingStateRepo := data.ServingStateRepo
-	routes, runtime, platform, policy := newCompositionSurfaces(metrics, runtimeConfig.Assets)
+	routes, runtime, platform, policy := newCompositionSurfaces(metrics, runtimeConfig.Assets, telemetry, dashboardTelemetry)
 	persistence := persistenceInputs{}
 	moduleWorkflow := workflowInputs{}
 	storage := storageInputs{}
@@ -328,7 +335,6 @@ func buildApplicationSurfaces(
 	if capabilities.AnalyticsModule != nil && capabilities.AnalyticsModule.QueryAuditReader() != nil {
 		runtime.queryAuditEvents = capabilities.AnalyticsModule.QueryAuditEvents(func(value string) string { return workspaceID(routes, runtime, platform, policy, value) })
 	}
-	platform.telemetry = telemetry
 	moduleWorkflow.refreshPipelineClock = workflow.RefreshPipelineClock
 	runtime.queryAuditProvider = queryAuditProvider
 	if moduleWorkflow.refreshPipelineClock == nil {
@@ -512,7 +518,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			AuthConfigured:     platform.auth != nil,
 			RuntimeEnvironment: policy.defaultEnvironment,
 			DefaultWorkspaceID: policy.defaultWorkspaceID,
-			RefreshState:       refreshSupport,
+			RefreshState:       workspaceRefreshStateBridge{support: refreshSupport},
 			RefreshRunner: workspacemodule.AssetRefreshFunc(func(ctx context.Context, input workspacemodule.AssetRefreshInput) error {
 				return refreshSupport.RefreshAsset(ctx, input.Request, input.WorkspaceID, input.Asset, input.Assets, input.Edges)
 			}),
@@ -571,7 +577,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 					return metricsForWorkspace(routes, runtime, platform, policy, workspaceID)
 				},
 				Admission: workloadController(routes, runtime, platform, policy), Broker: runtime.broker, Logger: platform.logger,
-				Telemetry: platform.telemetry,
+				Telemetry: routes.dashboardTelemetry,
 				CurrentPrincipalID: func(r *http.Request) string {
 					principal, ok := accessmodule.PrincipalFromContext(r.Context())
 					if !ok {
@@ -620,9 +626,9 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				},
 			},
 			PublicTelemetry: dashboardmodule.PublicTelemetry{
-				DocumentObserved: platform.telemetry.PublicDocumentObserved,
-				StreamStarted:    platform.telemetry.PublicStreamStarted,
-				CommandObserved:  platform.telemetry.PublicCommandObserved,
+				DocumentObserved: routes.dashboardTelemetry.PublicDocumentObserved,
+				StreamStarted:    routes.dashboardTelemetry.PublicStreamStarted,
+				CommandObserved:  routes.dashboardTelemetry.PublicCommandObserved,
 			},
 			Logger:    platform.logger,
 			Trace:     runtime.pageStreamTrace,
@@ -827,7 +833,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		return fmt.Errorf("build APIGen transport: %w", err)
 	}
 	configurePageStream(routes, runtime, platform, policy)
-	platform.health = observability.NewHealth(observability.HealthConfig{
+	platform.health = newHealth(healthConfig{
 		Platform: func(ctx context.Context) error {
 			if runtime.platformHealth == nil {
 				return errors.New("platform store is missing")

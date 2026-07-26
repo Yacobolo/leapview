@@ -42,14 +42,14 @@ func Routes(routes *capabilityRoutes, runtime *runtimeServices, platform *platfo
 	}))
 	mux.Get("/api/docs", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { publicDocs(routes, runtime, platform, policy, w, r) }))
 	mux.Group(func(r chi.Router) {
-		r.Use(policy.rateLimits.PublicPage(func() { platform.telemetry.PublicRateLimitObserved("page") }))
+		r.Use(policy.rateLimits.PublicPage(func() { routes.dashboardTelemetry.PublicRateLimitObserved("page") }))
 		routes.dashboardModule.MountPublicDocuments(r)
 	})
 	mux.Group(func(r chi.Router) {
-		r.Use(policy.rateLimits.PublicCommand(func() { platform.telemetry.PublicRateLimitObserved("command") }))
+		r.Use(policy.rateLimits.PublicCommand(func() { routes.dashboardTelemetry.PublicRateLimitObserved("command") }))
 		routes.dashboardModule.MountPublicCommands(r)
 	})
-	routes.dashboardModule.MountPublicStream(mux.With(policy.rateLimits.PublicStream(func() { platform.telemetry.PublicRateLimitObserved("stream") })))
+	routes.dashboardModule.MountPublicStream(mux.With(policy.rateLimits.PublicStream(func() { routes.dashboardTelemetry.PublicRateLimitObserved("stream") })))
 	if runtime.pageStreamTrace != nil {
 		traceHandler := uitransport.TraceHandler{Store: runtime.pageStreamTrace}
 		mux.Get("/__dev/pagestream/traces", traceHandler.Traces)

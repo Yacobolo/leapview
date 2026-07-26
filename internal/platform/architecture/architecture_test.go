@@ -47,6 +47,14 @@ func TestInternalRootTaxonomyIsClosed(t *testing.T) {
 	}
 }
 
+func TestArchitectureOwnershipUsesRootTaxonomy(t *testing.T) {
+	for _, rule := range PackageRules {
+		if rule.Capability == "api" || rule.Capability == "ui" {
+			t.Errorf("%s retains synthetic %q ownership instead of its physical app, platform, or capability owner", rule.Prefix, rule.Capability)
+		}
+	}
+}
+
 func TestApplicationOwnsProductConfigurationContract(t *testing.T) {
 	root := repoRoot(t)
 	if !packageDirExists(root, "internal/app/config/spec") {
@@ -54,6 +62,12 @@ func TestApplicationOwnsProductConfigurationContract(t *testing.T) {
 	}
 	if packageDirExists(root, "internal/platform/config/spec") {
 		t.Fatal("platform retains the product configuration contract")
+	}
+	for _, file := range productionGoFiles(t) {
+		if (file.pkgDir == "internal/platform" || strings.HasPrefix(file.pkgDir, "internal/platform/")) &&
+			strings.Contains(file.body, "DefaultWorkspaceID") {
+			t.Errorf("%s retains the application default workspace setting", file.path)
+		}
 	}
 }
 
@@ -100,6 +114,26 @@ func TestPlatformProductionCodeDoesNotImportProductCapabilities(t *testing.T) {
 			targetRoot := strings.Split(strings.TrimPrefix(targetPath, "internal/"), "/")[0]
 			if targetRoot != "platform" {
 				t.Errorf("%s imports product/app package %s", file.path, targetPath)
+			}
+		}
+	}
+}
+
+func TestPlatformObservabilityContainsOnlyGenericMechanisms(t *testing.T) {
+	root := repoRoot(t)
+	if !packageDirExists(root, "internal/dashboard/observability") {
+		t.Error("dashboard telemetry adapter is not owned by dashboard")
+	}
+	if !packageDirExists(root, "internal/workload/observability") {
+		t.Error("workload telemetry adapter is not owned by workload")
+	}
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/platform/observability" {
+			continue
+		}
+		for _, productTerm := range []string{"Dashboard", "Workspace", "Workload", "Analytics", "ServingState"} {
+			if strings.Contains(file.body, productTerm) {
+				t.Errorf("%s contains product-owned observability term %q", file.path, productTerm)
 			}
 		}
 	}
@@ -600,7 +634,7 @@ func TestApplicationImportsProductCapabilitiesOnlyThroughModules(t *testing.T) {
 			}
 			packagePath := strings.TrimPrefix(imported, modulePath+"/")
 			target, ok := ClassifyPackage(packagePath)
-			if !ok || target.Capability == "platform" || target.Capability == "composition" || target.Capability == "api" || target.Capability == "ui" {
+			if !ok || target.Capability == "platform" || target.Capability == "composition" {
 				continue
 			}
 			if target.Layer != LayerModule {

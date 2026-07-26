@@ -12,7 +12,6 @@ import (
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	uiactions "github.com/Yacobolo/leapview/internal/platform/web/actions"
 	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
-	refreshpresentation "github.com/Yacobolo/leapview/internal/refresh/presentation"
 	workspaceview "github.com/Yacobolo/leapview/internal/workspace"
 	"github.com/Yacobolo/leapview/internal/workspace/assetnav"
 	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
@@ -783,9 +782,31 @@ func ValidWorkspaceAssetSection(section string) bool {
 	}
 }
 
-type AssetRefreshState = refreshpresentation.AssetRefreshState
-type AssetDataVersion = refreshpresentation.AssetDataVersion
-type AssetRefreshRun = refreshpresentation.AssetRefreshRun
+type AssetRefreshState struct {
+	CSRFToken        string
+	Runs             []AssetRefreshRun
+	Latest           AssetRefreshRun
+	LatestSuccessful AssetRefreshRun
+	DataVersion      AssetDataVersion
+	NextRun          time.Time
+}
+
+type AssetDataVersion struct {
+	SnapshotID     int64
+	ServingStateID string
+	RefreshedAt    time.Time
+	Source         string
+}
+
+type AssetRefreshRun struct {
+	ID                   string
+	PrincipalDisplayName string
+	TriggerType          string
+	Status               string
+	StartedAt            string
+	FinishedAt           string
+	Error                string
+}
 
 type AssetVersionsState struct {
 	CurrentContentHash string

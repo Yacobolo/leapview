@@ -101,7 +101,7 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	var workspaceDirectory workspacemodule.Directory
 	accessModule, err := accessmodule.Build(ctx, accessmodule.Config{
 		Database: store.SQLDB(), Auth: accessAuthConfig(cfg, production, cookieSecure),
-		WorkspaceID: platform.DefaultWorkspaceID,
+		WorkspaceID: config.DefaultWorkspaceID,
 		Assets:      assets,
 		PublicURL:   firstConfigured(cfg.PublicURL, configuredListenURL(cfg.ListenAddr())), MCPIssuerURL: cfg.MCPOAuthIssuerURL,
 		WorkspaceIDs: func(ctx context.Context) ([]string, error) {

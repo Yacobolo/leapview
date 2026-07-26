@@ -30,6 +30,7 @@ import (
 	analyticsduckdb "github.com/Yacobolo/leapview/internal/analytics/duckdb"
 	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
+	"github.com/Yacobolo/leapview/internal/app/config"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
@@ -168,7 +169,7 @@ func newStoreBackedHarness(t *testing.T, opts ...harnessOption) *harness {
 
 	workspaceID := metrics.Catalog().Workspace.ID
 	if workspaceID == "" {
-		workspaceID = platform.DefaultWorkspaceID
+		workspaceID = config.DefaultWorkspaceID
 	}
 	workspaceRepo := workspacesqlite.NewRepository(store.SQLDB())
 	if err := workspaceRepo.Ensure(ctx, workspace.EnsureInput{ID: workspace.WorkspaceID(workspaceID), Title: metrics.Catalog().Workspace.Title, Description: metrics.Catalog().Workspace.Description}); err != nil {
@@ -667,7 +668,7 @@ func (h *harness) workspaceIDOrDefault() string {
 	if h.workspaceID != "" {
 		return h.workspaceID
 	}
-	return platform.DefaultWorkspaceID
+	return config.DefaultWorkspaceID
 }
 
 type streamClient struct {

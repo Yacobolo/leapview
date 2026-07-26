@@ -161,6 +161,8 @@ internal/
 
 There are no generic `internal/api`, `internal/ui`, or `internal/modules` roots. Capability HTTP and UI adapters live with their owners. `app/api` owns global API dispatch and generated server integration; `app` composes the application shell and global navigation; `platform/http` and `platform/web` contain only product-agnostic protocol mechanics. Browser signal contracts and projections live with the capability whose product language they express.
 
+The same ownership rule applies to observability. `platform/observability` owns only generic registry, HTTP instrumentation, and metrics-export mechanics. Dashboard, workload, and other capability metrics are declared and adapted by their capability owner, while app composes cross-capability health and readiness.
+
 A package belongs to a capability when it mentions product language, to `platform` when it implements a generic technical mechanism, and to `app` when it assembles or exposes the application.
 
 ## Capability Context Map

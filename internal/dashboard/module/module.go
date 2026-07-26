@@ -110,6 +110,14 @@ type DashboardTelemetry interface {
 	DashboardCacheObserved(string)
 }
 
+type Telemetry interface {
+	DashboardTelemetry
+	PublicDocumentObserved(presentation, outcome string)
+	PublicStreamStarted(presentation string) func()
+	PublicCommandObserved(command, outcome string)
+	PublicRateLimitObserved(family string)
+}
+
 func Build(_ context.Context, config Config) (*Module, error) {
 	coordinators := dashboardstream.NewRegistry()
 	metricsForHTTP := func(workspaceID string) (dashboardhttp.Metrics, bool) {
