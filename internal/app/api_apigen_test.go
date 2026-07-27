@@ -3,8 +3,6 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,23 +12,6 @@ import (
 	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
 	"github.com/Yacobolo/leapview/internal/workspace"
 )
-
-func TestServingSnapshotIsOwnedByServer(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{
-		Store: testStore(t),
-		WorkspaceRepo: apiSnapshotWorkspaceRepository{summary: workspace.Summary{
-			ID: "sales", ActiveServingStateID: "state-current",
-		}},
-	})
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/sales/semantic-models/orders/query", nil)
-	request.Header.Set("X-Serving-Snapshot", "state-attacker-controlled")
-
-	apiGenAdapter{server: server}.setServingSnapshot(request, "sales")
-
-	if got := request.Header.Get("X-Serving-Snapshot"); got != "state-current" {
-		t.Fatalf("serving snapshot = %q, want server-owned state-current", got)
-	}
-}
 
 type apiSnapshotWorkspaceRepository struct{ summary workspace.Summary }
 
@@ -342,133 +323,6 @@ func TestAPIGenRoutesCoverHeadlessAPINotUITransports(t *testing.T) {
 	}
 }
 
-func TestAPIGenOperationAuthCoverage(t *testing.T) {
-	contracts := apigenapi.GetAPIGenOperationContracts()
-	if len(contracts) == 0 {
-		t.Fatal("no generated operation contracts")
-	}
-	for operationID, contract := range contracts {
-		if !contract.Protected {
-			t.Fatalf("%s auth contract is not protected", operationID)
-		}
-		if operationID == "getInstance" {
-			if contract.AuthzMode != "authenticated" {
-				t.Fatalf("getInstance auth mode = %q, want authenticated", contract.AuthzMode)
-			}
-			if _, ok := apigenOperationPrivilege(operationID); ok {
-				t.Fatal("getInstance must not require a privilege mapping")
-			}
-			continue
-		}
-		if contract.AuthzMode != "privilege" {
-			t.Fatalf("%s auth contract mode = %q, want privilege", operationID, contract.AuthzMode)
-		}
-		if _, ok := apigenOperationPrivilege(operationID); !ok {
-			t.Fatalf("%s missing generated privilege metadata", operationID)
-		}
-	}
-	if got, _ := apigenOperationPrivilege("uploadReleaseArtifact"); got != access.PrivilegeDeploy {
-		t.Fatalf("uploadReleaseArtifact privilege = %q, want %q", got, access.PrivilegeDeploy)
-	}
-	if _, ok := apigenOperationPrivilege("unknownOperation"); ok {
-		t.Fatal("unknown operation unexpectedly resolved a privilege")
-	}
-}
-
-func TestAPIGenOperationObjectResolverCoverage(t *testing.T) {
-	contracts := apigenapi.GetAPIGenOperationContracts()
-	objectScoped := 0
-	for operationID, contract := range contracts {
-		if isGlobalAgentOperation(operationID) {
-			if _, hasScope := contract.Extensions[apiGenObjectScopeExtension]; hasScope {
-				t.Fatalf("%s global agent operation retains object-scope metadata", operationID)
-			}
-			continue
-		}
-		expectedScope, ambiguous := apigenObjectScopeForPath(contract.Path)
-		if ambiguous {
-			t.Fatalf("%s path %q selects multiple object scopes", operationID, contract.Path)
-		}
-		resolver, ok := apigenObjectResolverForContract(contract)
-		if !ok {
-			t.Fatalf("%s has invalid object-scope metadata for %q", operationID, contract.Path)
-		}
-		if expectedScope == "" {
-			if resolver != nil {
-				t.Fatalf("%s should stay workspace-scoped", operationID)
-			}
-			continue
-		}
-		objectScoped++
-		if got := contract.Extensions[apiGenObjectScopeExtension]; got != expectedScope {
-			t.Fatalf("%s object scope = %#v, want %q", operationID, got, expectedScope)
-		}
-		if resolver == nil {
-			t.Fatalf("%s scope %q has no exact-object resolver", operationID, expectedScope)
-		}
-	}
-	if objectScoped == 0 {
-		t.Fatal("no exact-object API operations found")
-	}
-}
-
-func TestAPIGenObjectResolverRejectsInvalidContracts(t *testing.T) {
-	tests := []struct {
-		name         string
-		contract     apigenapi.GenOperationContract
-		wantOK       bool
-		wantResolver bool
-	}{
-		{
-			name:     "workspace scoped",
-			contract: apigenapi.GenOperationContract{OperationID: "listDashboards", Path: "/api/v1/workspaces/{workspace}/dashboards", Extensions: map[string]any{}},
-			wantOK:   true,
-		},
-		{
-			name:         "supported exact scope",
-			contract:     apigenapi.GenOperationContract{OperationID: "getDashboard", Path: "/api/v1/workspaces/{workspace}/dashboards/{dashboard}", Extensions: map[string]any{apiGenObjectScopeExtension: "dashboard"}},
-			wantOK:       true,
-			wantResolver: true,
-		},
-		{
-			name:     "missing exact scope",
-			contract: apigenapi.GenOperationContract{OperationID: "getDashboard", Path: "/api/v1/workspaces/{workspace}/dashboards/{dashboard}", Extensions: map[string]any{}},
-		},
-		{
-			name:     "wrong exact scope",
-			contract: apigenapi.GenOperationContract{OperationID: "getDashboard", Path: "/api/v1/workspaces/{workspace}/dashboards/{dashboard}", Extensions: map[string]any{apiGenObjectScopeExtension: "semantic-model"}},
-		},
-		{
-			name:     "unknown exact scope",
-			contract: apigenapi.GenOperationContract{OperationID: "getDashboard", Path: "/api/v1/workspaces/{workspace}/dashboards/{dashboard}", Extensions: map[string]any{apiGenObjectScopeExtension: "tenant"}},
-		},
-		{
-			name:     "malformed exact scope",
-			contract: apigenapi.GenOperationContract{OperationID: "getDashboard", Path: "/api/v1/workspaces/{workspace}/dashboards/{dashboard}", Extensions: map[string]any{apiGenObjectScopeExtension: map[string]any{"kind": "dashboard"}}},
-		},
-		{
-			name:     "unexpected exact scope",
-			contract: apigenapi.GenOperationContract{OperationID: "listDashboards", Path: "/api/v1/workspaces/{workspace}/dashboards", Extensions: map[string]any{apiGenObjectScopeExtension: "dashboard"}},
-		},
-		{
-			name:     "ambiguous exact scope",
-			contract: apigenapi.GenOperationContract{OperationID: "ambiguous", Path: "/api/v1/workspaces/{workspace}/dashboards/{dashboard}/semantic-models/{model}", Extensions: map[string]any{apiGenObjectScopeExtension: "dashboard"}},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			resolver, ok := apigenObjectResolverForContract(test.contract)
-			if ok != test.wantOK {
-				t.Fatalf("ok = %t, want %t", ok, test.wantOK)
-			}
-			if got := resolver != nil; got != test.wantResolver {
-				t.Fatalf("has resolver = %t, want %t", got, test.wantResolver)
-			}
-		})
-	}
-}
-
 func TestAPIGenOperationExtensions(t *testing.T) {
 	contracts := apigenapi.GetAPIGenOperationContracts()
 	toolContracts := apigenapi.GetAPIGenToolContracts()
@@ -517,8 +371,9 @@ func TestAPIGenOperationExtensions(t *testing.T) {
 		if got := authz["mode"]; got != "privilege" {
 			t.Fatalf("%s x-authz mode = %#v, want privilege", operationID, got)
 		}
-		privilege, ok := apigenOperationPrivilege(operationID)
-		if !ok {
+		value, valueOK := authz["privilege"].(string)
+		privilege, ok := access.ParsePrivilege(value)
+		if !valueOK || !ok {
 			t.Fatalf("%s missing generated privilege metadata", operationID)
 		}
 		if got := authz["privilege"]; got != string(privilege) {

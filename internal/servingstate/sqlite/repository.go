@@ -9,17 +9,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/manageddata"
-	platformdb "github.com/Yacobolo/leapview/internal/platform/db"
-	"github.com/Yacobolo/leapview/internal/refreshpipeline"
+	"github.com/Yacobolo/leapview/internal/platform/digest"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	platformdb "github.com/Yacobolo/leapview/internal/servingstate/sqlite/servingdb"
+	"github.com/Yacobolo/leapview/internal/snapshot"
 )
 
 type Repository struct {
@@ -166,14 +163,14 @@ func (r *Repository) MarkDeleteScheduledServingStatesDeleted(ctx context.Context
 	return r.q.MarkDeleteScheduledServingStatesDeleted(ctx, environment)
 }
 
-func (r *Repository) ReconcileRetention(ctx context.Context, environment servingstate.Environment, now time.Time) error {
+func (r *Repository) ReconcileRetention(ctx context.Context, environment string, now time.Time) error {
 	if now.IsZero() {
 		now = time.Now()
 	}
-	if err := r.q.MarkDrainingServingStatesDeleteScheduled(ctx, string(environment)); err != nil {
+	if err := r.q.MarkDrainingServingStatesDeleteScheduled(ctx, environment); err != nil {
 		return err
 	}
-	return r.q.MarkDeleteScheduledServingStatesDeleted(ctx, string(environment))
+	return r.q.MarkDeleteScheduledServingStatesDeleted(ctx, environment)
 }
 
 func (r *Repository) SaveValidated(ctx context.Context, servingStateID servingstate.ID, validation servingstate.Validation, artifact servingstate.Artifact) (servingstate.State, error) {
@@ -181,7 +178,7 @@ func (r *Repository) SaveValidated(ctx context.Context, servingStateID servingst
 	if validation.ProjectID == "" {
 		return servingstate.State{}, fmt.Errorf("validated serving state requires project id")
 	}
-	if err := manageddata.ValidateRevisionID(validation.ProjectDigest); err != nil {
+	if err := digest.ValidateSHA256Identity(validation.ProjectDigest); err != nil {
 		return servingstate.State{}, fmt.Errorf("validated serving state requires project digest: %w", err)
 	}
 	if len(validation.ProjectWorkspaces) == 0 || !sort.StringsAreSorted(validation.ProjectWorkspaces) {
@@ -195,7 +192,15 @@ func (r *Repository) SaveValidated(ctx context.Context, servingStateID servingst
 	if err != nil {
 		return servingstate.State{}, err
 	}
-	publicationsJSON, err := json.Marshal(validation.DashboardPublications)
+	publicationsJSON := strings.TrimSpace(validation.DashboardPublicationsJSON)
+	if publicationsJSON == "" {
+		publicationsJSON = "null"
+	}
+	var publications map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(publicationsJSON), &publications); err != nil {
+		return servingstate.State{}, fmt.Errorf("validated serving state dashboard publications: %w", err)
+	}
+	canonicalPublicationsJSON, err := json.Marshal(publications)
 	if err != nil {
 		return servingstate.State{}, err
 	}
@@ -226,14 +231,14 @@ func (r *Repository) SaveValidated(ctx context.Context, servingStateID servingst
 	case servingstate.StatusPending:
 	case servingstate.StatusValidated:
 		existingArtifact, existingErr := q.GetArtifactByServingState(ctx, current.ID)
-		if existingErr == nil && current.ProjectID == validation.ProjectID && current.ProjectDigest == validation.ProjectDigest && current.ProjectWorkspacesJson == string(projectWorkspacesJSON) && current.AccessPolicyJson == string(accessPolicyJSON) && current.DashboardPublicationsJson == string(publicationsJSON) && current.Digest == validation.Digest && current.ManifestJson == validation.ManifestJSON && sameArtifact(existingArtifact, artifact) {
+		if existingErr == nil && current.ProjectID == validation.ProjectID && current.ProjectDigest == validation.ProjectDigest && current.ProjectWorkspacesJson == string(projectWorkspacesJSON) && current.AccessPolicyJson == string(accessPolicyJSON) && current.DashboardPublicationsJson == string(canonicalPublicationsJSON) && current.Digest == validation.Digest && current.ManifestJson == validation.ManifestJSON && sameArtifact(existingArtifact, artifact) {
 			return mapServingState(current), nil
 		}
 		return servingstate.State{}, fmt.Errorf("validated serving state %s is immutable", servingStateID)
 	default:
 		return servingstate.State{}, fmt.Errorf("serving state %s has status %q, want pending", servingStateID, current.Status)
 	}
-	if err := workspace.ValidateAssetGraphForServingState(validation.Graph, workspace.WorkspaceID(current.WorkspaceID), workspace.ServingStateID(servingStateID)); err != nil {
+	if err := snapshot.ValidateAssetGraph(validation.Graph, current.WorkspaceID, string(servingStateID)); err != nil {
 		return servingstate.State{}, err
 	}
 	if err := q.InsertServingStateArtifact(ctx, mapArtifactParams(artifact)); err != nil {
@@ -282,7 +287,7 @@ func (r *Repository) SaveValidated(ctx context.Context, servingStateID servingst
 		ProjectDigest:             validation.ProjectDigest,
 		ProjectWorkspacesJson:     string(projectWorkspacesJSON),
 		AccessPolicyJson:          string(accessPolicyJSON),
-		DashboardPublicationsJson: string(publicationsJSON),
+		DashboardPublicationsJson: string(canonicalPublicationsJSON),
 		Digest:                    validation.Digest,
 		ManifestJson:              validation.ManifestJSON,
 		ID:                        string(servingStateID),
@@ -305,39 +310,10 @@ func sameArtifact(existing platformdb.ServingStateArtifact, candidate servingsta
 }
 
 func (r *Repository) Activate(ctx context.Context, workspaceID servingstate.WorkspaceID, environment servingstate.Environment, servingStateID servingstate.ID) (servingstate.State, error) {
-	return r.activate(ctx, workspaceID, environment, servingStateID, nil)
+	return r.activate(ctx, workspaceID, environment, servingStateID)
 }
 
-func (r *Repository) ActivateRefresh(ctx context.Context, workspaceID servingstate.WorkspaceID, environment servingstate.Environment, servingStateID servingstate.ID, version refreshpipeline.DataVersion) (servingstate.State, error) {
-	return r.activate(ctx, workspaceID, environment, servingStateID, &version)
-}
-
-// ApplyAccessSnapshotTx installs the securable graph and access policy captured
-// by a validated serving state in the caller's deployment transaction.
-func ApplyAccessSnapshotTx(ctx context.Context, tx *sql.Tx, q *platformdb.Queries, candidate platformdb.ServingState) error {
-	assets, err := q.ListAssetsByServingState(ctx, candidate.ID)
-	if err != nil {
-		return err
-	}
-	if err := registerServingStateSecurablesTx(ctx, tx, candidate.WorkspaceID, candidate.CreatedBy, assets); err != nil {
-		return err
-	}
-	var policy workspace.AccessPolicy
-	decoder := json.NewDecoder(strings.NewReader(candidate.AccessPolicyJson))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&policy); err != nil {
-		return fmt.Errorf("decode access policy: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return fmt.Errorf("decode access policy: trailing JSON value")
-		}
-		return fmt.Errorf("decode access policy: %w", err)
-	}
-	return reconcileWorkspacePolicyTx(ctx, tx, q, candidate.WorkspaceID, policy)
-}
-
-func (r *Repository) activate(ctx context.Context, workspaceID servingstate.WorkspaceID, environment servingstate.Environment, servingStateID servingstate.ID, version *refreshpipeline.DataVersion) (servingstate.State, error) {
+func (r *Repository) activate(ctx context.Context, workspaceID servingstate.WorkspaceID, environment servingstate.Environment, servingStateID servingstate.ID) (servingstate.State, error) {
 	environment = servingstate.NormalizeEnvironment(environment)
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -359,13 +335,6 @@ func (r *Repository) activate(ctx context.Context, workspaceID servingstate.Work
 	if !current.CanActivate() {
 		return servingstate.State{}, fmt.Errorf("serving state %s has status %q, want validated", servingStateID, current.Status)
 	}
-	assets, err := q.ListAssetsByServingState(ctx, string(servingStateID))
-	if err != nil {
-		return servingstate.State{}, err
-	}
-	if err := registerServingStateSecurablesTx(ctx, tx, string(workspaceID), current.CreatedBy, assets); err != nil {
-		return servingstate.State{}, err
-	}
 	if err := q.MarkOtherServingStatesDraining(ctx, platformdb.MarkOtherServingStatesDrainingParams{
 		WorkspaceID: string(workspaceID),
 		Environment: string(environment),
@@ -383,433 +352,10 @@ func (r *Repository) activate(ctx context.Context, workspaceID servingstate.Work
 	}); err != nil {
 		return servingstate.State{}, err
 	}
-	if version != nil {
-		if err := persistRefreshDataVersions(ctx, q, current, *version); err != nil {
-			return servingstate.State{}, err
-		}
-	}
 	if err := tx.Commit(); err != nil {
 		return servingstate.State{}, err
 	}
 	return r.ByID(ctx, servingStateID)
-}
-
-func persistRefreshDataVersions(ctx context.Context, q *platformdb.Queries, candidate servingstate.State, version refreshpipeline.DataVersion) error {
-	if candidate.DuckLakeSnapshotID <= 0 || version.SemanticModel == "" || version.RefreshedAt.IsZero() ||
-		version.WorkspaceID != string(candidate.WorkspaceID) || version.Environment != string(candidate.Environment) ||
-		version.SnapshotID != candidate.DuckLakeSnapshotID || version.ServingStateID != string(candidate.ID) ||
-		version.Source != refreshpipeline.DataVersionSourceRefresh {
-		return fmt.Errorf("refresh activation requires a matching semantic-model data version")
-	}
-	if err := q.AdvanceSemanticModelDataVersions(ctx, platformdb.AdvanceSemanticModelDataVersionsParams{
-		SnapshotID: version.SnapshotID, ServingStateID: version.ServingStateID, WorkspaceID: version.WorkspaceID,
-		Environment: version.Environment, SemanticModelID: version.SemanticModel,
-	}); err != nil {
-		return err
-	}
-	return q.UpsertRefreshSemanticModelDataVersion(ctx, platformdb.UpsertRefreshSemanticModelDataVersionParams{
-		WorkspaceID: version.WorkspaceID, Environment: version.Environment, SemanticModelID: version.SemanticModel,
-		SnapshotID: version.SnapshotID, ServingStateID: version.ServingStateID,
-		RefreshedAt: version.RefreshedAt.UTC().Format(time.RFC3339Nano), PipelineID: version.PipelineID, RunID: version.RunID,
-	})
-}
-
-func reconcileWorkspacePolicyTx(ctx context.Context, tx *sql.Tx, q *platformdb.Queries, workspaceID string, policy workspace.AccessPolicy) error {
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		return fmt.Errorf("workspace id is required")
-	}
-	bindings, err := q.ListRoleBindingsByWorkspace(ctx, workspaceID)
-	if err != nil {
-		return err
-	}
-	for _, binding := range bindings {
-		if err := q.DeleteRoleBindingByID(ctx, platformdb.DeleteRoleBindingByIDParams{WorkspaceID: workspaceID, ID: binding.ID}); err != nil {
-			return err
-		}
-	}
-	groups, err := q.ListGroupsByWorkspace(ctx, workspaceID)
-	if err != nil {
-		return err
-	}
-	for _, group := range groups {
-		if err := q.DeleteGroup(ctx, platformdb.DeleteGroupParams{WorkspaceID: workspaceID, ID: group.ID}); err != nil {
-			return err
-		}
-	}
-	if err := q.DeleteWorkspaceGrants(ctx, platformdb.DeleteWorkspaceGrantsParams{
-		WorkspaceID: workspaceID, WorkspaceObjectID: access.WorkspaceObject(workspaceID).CanonicalID(),
-	}); err != nil {
-		return err
-	}
-	if err := q.DeleteWorkspaceDataPolicies(ctx, workspaceID); err != nil {
-		return err
-	}
-
-	groupIDs := map[string]string{}
-	for _, name := range sortedWorkspaceGroupNames(policy.Groups) {
-		group := policy.Groups[name]
-		id := stableAccessID("group", workspaceID, name)
-		if err := q.UpsertGroup(ctx, platformdb.UpsertGroupParams{
-			ID:          id,
-			WorkspaceID: workspaceID,
-			Provider:    "local",
-			ExternalID:  name,
-			Name:        firstNonEmpty(group.Name, name),
-		}); err != nil {
-			return err
-		}
-		groupIDs[name] = id
-		for _, member := range group.Members {
-			principalID, err := upsertPolicyPrincipalTx(ctx, q, member.PrincipalID, member.Email, member.DisplayName)
-			if err != nil {
-				return err
-			}
-			if err := q.InsertGroupMember(ctx, platformdb.InsertGroupMemberParams{WorkspaceID: workspaceID, GroupID: id, PrincipalID: principalID}); err != nil {
-				return err
-			}
-		}
-	}
-
-	for _, name := range sortedWorkspaceRoleBindingNames(policy.RoleBindings) {
-		binding := policy.RoleBindings[name]
-		role, err := q.GetRoleByName(ctx, binding.Role)
-		if err != nil {
-			return err
-		}
-		params := platformdb.InsertRoleBindingParams{
-			ID:          stableAccessID("rolebinding", workspaceID, name),
-			WorkspaceID: workspaceID,
-			RoleID:      role.ID,
-		}
-		switch binding.Subject.Kind {
-		case string(access.SubjectGroup):
-			groupID := groupIDs[binding.Subject.Group]
-			if groupID == "" {
-				return fmt.Errorf("workspace role binding %q references unknown group %q", name, binding.Subject.Group)
-			}
-			params.GroupID = sql.NullString{String: groupID, Valid: true}
-		case string(access.SubjectPrincipal):
-			principalID, err := upsertPolicyPrincipalTx(ctx, q, binding.Subject.PrincipalID, binding.Subject.Email, binding.Subject.DisplayName)
-			if err != nil {
-				return err
-			}
-			params.PrincipalID = sql.NullString{String: principalID, Valid: true}
-		default:
-			return fmt.Errorf("workspace role binding %q has unsupported subject kind %q", name, binding.Subject.Kind)
-		}
-		if err := q.InsertRoleBinding(ctx, params); err != nil {
-			return err
-		}
-		privileges, err := rolePrivilegesTx(ctx, tx, binding.Role)
-		if err != nil {
-			return err
-		}
-		subjectType, subjectID, err := roleBindingSubject(params)
-		if err != nil {
-			return err
-		}
-		for _, privilege := range privileges {
-			if err := upsertGrantTx(ctx, tx, "grant_"+params.ID+"_"+strings.ToLower(privilege), access.WorkspaceObject(workspaceID), subjectType, subjectID, privilege); err != nil {
-				return err
-			}
-		}
-	}
-	for _, name := range sortedWorkspaceGrantNames(policy.Grants) {
-		grant := policy.Grants[name]
-		subjectType, subjectID, err := policySubjectTx(ctx, q, workspaceID, grant.Subject, groupIDs)
-		if err != nil {
-			return fmt.Errorf("workspace grant %q: %w", name, err)
-		}
-		if err := upsertGrantTx(ctx, tx, stableAccessID("grant", workspaceID, name), policyObjectRef(workspaceID, grant.Object), subjectType, subjectID, grant.Privilege); err != nil {
-			return err
-		}
-	}
-	for _, name := range sortedWorkspaceDataPolicyNames(policy.DataPolicies) {
-		dataPolicy := policy.DataPolicies[name]
-		objectID, err := ensureSecurableObjectTx(ctx, tx, policyObjectRef(workspaceID, dataPolicy.Object), "")
-		if err != nil {
-			return err
-		}
-		var subjectType access.SubjectType
-		var subjectID string
-		if strings.TrimSpace(dataPolicy.Subject.Kind) != "" {
-			subjectType, subjectID, err = policySubjectTx(ctx, q, workspaceID, dataPolicy.Subject, groupIDs)
-			if err != nil {
-				return fmt.Errorf("workspace data policy %q: %w", name, err)
-			}
-		}
-		if err := q.UpsertDataPolicy(ctx, platformdb.UpsertDataPolicyParams{
-			ID: stableAccessID("datapolicy", workspaceID, name), WorkspaceID: workspaceID, ObjectID: objectID,
-			SubjectType: string(subjectType), SubjectID: subjectID, PolicyType: dataPolicy.PolicyType, ExpressionJson: dataPolicy.ExpressionJSON,
-		}); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func roleBindingSubject(params platformdb.InsertRoleBindingParams) (access.SubjectType, string, error) {
-	if params.GroupID.Valid {
-		return access.SubjectGroup, params.GroupID.String, nil
-	}
-	if params.PrincipalID.Valid {
-		return access.SubjectPrincipal, params.PrincipalID.String, nil
-	}
-	return "", "", fmt.Errorf("role binding subject is required")
-}
-
-func rolePrivilegesTx(ctx context.Context, tx *sql.Tx, roleName string) ([]string, error) {
-	privileges, err := platformdb.New(tx).ListRolePrivileges(ctx, roleName)
-	if err != nil {
-		return nil, err
-	}
-	if len(privileges) == 0 {
-		return nil, fmt.Errorf("role %q has no grant template", roleName)
-	}
-	return privileges, nil
-}
-
-func policySubjectTx(ctx context.Context, q *platformdb.Queries, workspaceID string, subject workspace.WorkspaceRoleBindingSubject, groupIDs map[string]string) (access.SubjectType, string, error) {
-	switch subject.Kind {
-	case string(access.SubjectGroup):
-		groupID := groupIDs[subject.Group]
-		if groupID == "" {
-			return "", "", fmt.Errorf("unknown group %q", subject.Group)
-		}
-		return access.SubjectGroup, groupID, nil
-	case string(access.SubjectPrincipal):
-		principalID, err := upsertPolicyPrincipalTx(ctx, q, subject.PrincipalID, subject.Email, subject.DisplayName)
-		if err != nil {
-			return "", "", err
-		}
-		return access.SubjectPrincipal, principalID, nil
-	case string(access.SubjectServicePrincipal):
-		id := strings.TrimSpace(subject.PrincipalID)
-		if id == "" {
-			return "", "", fmt.Errorf("service principal subject requires principalId")
-		}
-		if err := q.UpsertPrincipal(ctx, platformdb.UpsertPrincipalParams{
-			ID:          id,
-			Kind:        string(access.PrincipalKindServicePrincipal),
-			DisplayName: firstNonEmpty(strings.TrimSpace(subject.DisplayName), id),
-		}); err != nil {
-			return "", "", err
-		}
-		return access.SubjectServicePrincipal, id, nil
-	case string(access.SubjectDashboardPublication):
-		if strings.TrimSpace(subject.Publication) == "" {
-			return "", "", fmt.Errorf("dashboard publication subject requires publication")
-		}
-		return access.SubjectDashboardPublication, access.DashboardPublicationSubjectID(workspaceID, subject.Publication), nil
-	default:
-		return "", "", fmt.Errorf("unsupported subject kind %q in workspace %q", subject.Kind, workspaceID)
-	}
-}
-
-func policyObjectRef(workspaceID string, object workspace.WorkspaceSecurableObjectRef) access.ObjectRef {
-	typ := access.SecurableType(strings.TrimSpace(object.Type))
-	objectID := strings.TrimSpace(object.ID)
-	switch typ {
-	case access.SecurableWorkspace:
-		return access.WorkspaceObject(workspaceID)
-	case access.SecurableDataset, access.SecurableTable:
-		if modelID, _, ok := strings.Cut(objectID, "/"); ok && strings.TrimSpace(modelID) != "" {
-			return access.ItemObjectWithParent(typ, workspaceID, objectID, access.ItemObject(access.SecurableSemanticModel, workspaceID, modelID))
-		}
-	case access.SecurableColumn:
-		parts := strings.Split(objectID, "/")
-		if len(parts) >= 3 && strings.TrimSpace(parts[0]) != "" && strings.TrimSpace(parts[1]) != "" {
-			parent := access.ItemObjectWithParent(access.SecurableDataset, workspaceID, parts[0]+"/"+parts[1], access.ItemObject(access.SecurableSemanticModel, workspaceID, parts[0]))
-			return access.ItemObjectWithParent(typ, workspaceID, objectID, parent)
-		}
-	case access.SecurableSemanticField:
-		if modelID, _, ok := strings.Cut(objectID, "/"); ok && strings.TrimSpace(modelID) != "" {
-			return access.ItemObjectWithParent(typ, workspaceID, objectID, access.ItemObject(access.SecurableSemanticModel, workspaceID, modelID))
-		}
-	}
-	return access.ItemObject(typ, workspaceID, objectID)
-}
-
-func registerServingStateSecurablesTx(ctx context.Context, tx *sql.Tx, workspaceID, ownerPrincipalID string, assets []platformdb.Asset) error {
-	workspaceObject := access.WorkspaceObject(workspaceID)
-	if _, err := ensureSecurableObjectTx(ctx, tx, workspaceObject, ownerPrincipalID); err != nil {
-		return err
-	}
-	for _, asset := range assets {
-		parents, object, ok := securableRefsForAsset(workspaceID, asset)
-		if !ok {
-			continue
-		}
-		for _, parent := range parents {
-			if _, err := ensureSecurableObjectTx(ctx, tx, parent, ownerPrincipalID); err != nil {
-				return err
-			}
-		}
-		if _, err := ensureSecurableObjectTx(ctx, tx, object, ownerPrincipalID); err != nil {
-			return err
-		}
-		if workspace.AssetType(asset.AssetType) == workspace.AssetTypeSemanticModel {
-			if err := registerSemanticFieldSecurablesTx(ctx, tx, workspaceID, ownerPrincipalID, asset); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func securableRefsForAsset(workspaceID string, asset platformdb.Asset) ([]access.ObjectRef, access.ObjectRef, bool) {
-	key := runtimeAssetKey(workspaceID, asset.AssetKey)
-	workspaceObject := access.WorkspaceObject(workspaceID)
-	switch workspace.AssetType(asset.AssetType) {
-	case workspace.AssetTypeDashboard:
-		return []access.ObjectRef{workspaceObject}, access.ItemObjectWithParent(access.SecurableDashboard, workspaceID, key, workspaceObject), key != ""
-	case workspace.AssetTypeSemanticModel:
-		return []access.ObjectRef{workspaceObject}, access.ItemObjectWithParent(access.SecurableSemanticModel, workspaceID, key, workspaceObject), key != ""
-	case workspace.AssetTypeSource:
-		return []access.ObjectRef{workspaceObject}, access.ItemObjectWithParent(access.SecurableSource, workspaceID, key, workspaceObject), key != ""
-	case workspace.AssetTypeModelTable:
-		return []access.ObjectRef{workspaceObject}, access.ItemObjectWithParent(access.SecurableModelTable, workspaceID, key, workspaceObject), key != ""
-	case workspace.AssetTypeSemanticTable:
-		modelID, tableID, ok := splitModelTableKey(key)
-		if !ok {
-			return nil, access.ObjectRef{}, false
-		}
-		model := access.ItemObjectWithParent(access.SecurableSemanticModel, workspaceID, modelID, workspaceObject)
-		table := access.ItemObjectWithParent(access.SecurableDataset, workspaceID, modelID+"/"+tableID, model)
-		return []access.ObjectRef{workspaceObject, model}, table, true
-	case workspace.AssetTypeField:
-		modelID, tableID, columnID, ok := splitModelTableColumnKey(key)
-		if !ok {
-			return nil, access.ObjectRef{}, false
-		}
-		model := access.ItemObjectWithParent(access.SecurableSemanticModel, workspaceID, modelID, workspaceObject)
-		table := access.ItemObjectWithParent(access.SecurableDataset, workspaceID, modelID+"/"+tableID, model)
-		column := access.ItemObjectWithParent(access.SecurableColumn, workspaceID, modelID+"/"+tableID+"/"+columnID, table)
-		return []access.ObjectRef{workspaceObject, model, table}, column, true
-	case workspace.AssetTypeMeasure:
-		modelID, memberID, ok := strings.Cut(key, ".")
-		if !ok || modelID == "" || memberID == "" {
-			return nil, access.ObjectRef{}, false
-		}
-		model := access.ItemObjectWithParent(access.SecurableSemanticModel, workspaceID, modelID, workspaceObject)
-		field := access.ItemObjectWithParent(access.SecurableSemanticField, workspaceID, modelID+"/"+memberID, model)
-		return []access.ObjectRef{workspaceObject, model}, field, true
-	default:
-		return nil, access.ObjectRef{}, false
-	}
-}
-
-func registerSemanticFieldSecurablesTx(ctx context.Context, tx *sql.Tx, workspaceID, ownerPrincipalID string, asset platformdb.Asset) error {
-	modelID := runtimeAssetKey(workspaceID, asset.AssetKey)
-	if modelID == "" {
-		return nil
-	}
-	var payload struct {
-		Dimensions map[string]json.RawMessage `json:"Dimensions"`
-		Measures   map[string]json.RawMessage `json:"Measures"`
-		Metrics    map[string]json.RawMessage `json:"Metrics"`
-	}
-	if err := json.Unmarshal([]byte(asset.PayloadJson), &payload); err != nil {
-		return fmt.Errorf("decode semantic model %q payload for securable registration: %w", modelID, err)
-	}
-	workspaceObject := access.WorkspaceObject(workspaceID)
-	modelObject := access.ItemObjectWithParent(access.SecurableSemanticModel, workspaceID, modelID, workspaceObject)
-	for _, members := range []map[string]json.RawMessage{payload.Dimensions, payload.Measures, payload.Metrics} {
-		for name := range members {
-			object := access.ItemObjectWithParent(access.SecurableSemanticField, workspaceID, modelID+"/"+name, modelObject)
-			if _, err := ensureSecurableObjectTx(ctx, tx, object, ownerPrincipalID); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func runtimeAssetKey(workspaceID, key string) string {
-	key = strings.TrimSpace(key)
-	return strings.TrimPrefix(key, strings.TrimSpace(workspaceID)+".")
-}
-
-func splitModelTableKey(key string) (string, string, bool) {
-	modelID, tableID, ok := strings.Cut(strings.TrimSpace(key), ".")
-	return modelID, tableID, ok && modelID != "" && tableID != ""
-}
-
-func splitModelTableColumnKey(key string) (string, string, string, bool) {
-	modelID, rest, ok := strings.Cut(strings.TrimSpace(key), ".")
-	if !ok || modelID == "" {
-		return "", "", "", false
-	}
-	tableID, columnID, ok := strings.Cut(rest, ".")
-	return modelID, tableID, columnID, ok && tableID != "" && columnID != ""
-}
-
-func upsertGrantTx(ctx context.Context, tx *sql.Tx, id string, object access.ObjectRef, subjectType access.SubjectType, subjectID, privilege string) error {
-	if strings.TrimSpace(subjectID) == "" {
-		return fmt.Errorf("grant subject id is required")
-	}
-	if subjectType == "" {
-		return fmt.Errorf("grant subject type is required")
-	}
-	if strings.TrimSpace(privilege) == "" {
-		return fmt.Errorf("grant privilege is required")
-	}
-	objectID, err := ensureSecurableObjectTx(ctx, tx, object, "")
-	if err != nil {
-		return err
-	}
-	return platformdb.New(tx).UpsertGrant(ctx, platformdb.UpsertGrantParams{
-		ID: id, ObjectID: objectID, SubjectType: string(subjectType), SubjectID: strings.TrimSpace(subjectID), Privilege: privilege,
-	})
-}
-
-func ensureSecurableObjectTx(ctx context.Context, tx *sql.Tx, object access.ObjectRef, ownerPrincipalID string) (string, error) {
-	objectID := object.CanonicalID()
-	parentID := ""
-	if strings.TrimSpace(object.ParentID) != "" {
-		parentID = strings.TrimSpace(object.ParentID)
-	} else if parent, ok := object.Parent(); ok {
-		parentID = parent.CanonicalID()
-		if _, err := ensureSecurableObjectTx(ctx, tx, parent, ownerPrincipalID); err != nil {
-			return "", err
-		}
-	}
-	err := platformdb.New(tx).UpsertOwnedSecurableObject(ctx, platformdb.UpsertOwnedSecurableObjectParams{
-		ID: objectID, ObjectType: string(object.Type), WorkspaceID: object.WorkspaceID, ParentID: parentID,
-		OwnerPrincipalID: strings.TrimSpace(ownerPrincipalID), DisplayName: securableDisplayName(object),
-	})
-	return objectID, err
-}
-
-func securableDisplayName(object access.ObjectRef) string {
-	if object.ObjectID != "" {
-		return object.ObjectID
-	}
-	if object.WorkspaceID != "" {
-		return object.WorkspaceID
-	}
-	return string(object.Type)
-}
-
-func upsertPolicyPrincipalTx(ctx context.Context, q *platformdb.Queries, id, email, displayName string) (string, error) {
-	email = access.NormalizeEmail(email)
-	id = strings.TrimSpace(id)
-	if id == "" && email != "" {
-		id = access.PrincipalIDForEmail(email)
-	}
-	if id == "" {
-		return "", fmt.Errorf("policy principal requires principalId or email")
-	}
-	if err := q.UpsertPrincipal(ctx, platformdb.UpsertPrincipalParams{
-		ID:          id,
-		Kind:        string(access.PrincipalKindUser),
-		Email:       email,
-		DisplayName: firstNonEmpty(strings.TrimSpace(displayName), email, id),
-	}); err != nil {
-		return "", err
-	}
-	return id, nil
 }
 
 func (r *Repository) ActiveArtifact(ctx context.Context, workspaceID servingstate.WorkspaceID, environment servingstate.Environment) (servingstate.State, servingstate.Artifact, error) {
@@ -919,57 +465,8 @@ func mapNotFound(err error) error {
 	return err
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
-}
-
 func sqliteTimestamp(value time.Time) string {
 	return value.UTC().Format("2006-01-02 15:04:05")
-}
-
-func stableAccessID(prefix, workspaceID, name string) string {
-	return "cac_" + prefix + "_" + stableID(workspaceID+"|"+name)
-}
-
-func sortedWorkspaceGroupNames(values map[string]workspace.WorkspaceGroup) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedWorkspaceRoleBindingNames(values map[string]workspace.WorkspaceRoleBinding) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedWorkspaceGrantNames(values map[string]workspace.WorkspaceGrant) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedWorkspaceDataPolicyNames(values map[string]workspace.WorkspaceDataPolicy) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func newID(prefix string) string {

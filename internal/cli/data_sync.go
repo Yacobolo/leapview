@@ -19,7 +19,7 @@ import (
 	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
 	"github.com/Yacobolo/leapview/internal/manageddata"
 	"github.com/Yacobolo/leapview/internal/manageddata/localplan"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/workspace/compiler"
+	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 	"github.com/spf13/cobra"
 )
 

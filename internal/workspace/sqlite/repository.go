@@ -8,9 +8,8 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	platformdb "github.com/Yacobolo/leapview/internal/platform/db"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 	"github.com/Yacobolo/leapview/internal/workspace"
+	platformdb "github.com/Yacobolo/leapview/internal/workspace/sqlite/workspacedb"
 )
 
 type SecurableRegistrar interface {
@@ -102,7 +101,7 @@ func (r *Repository) ByIDWithActiveMetadata(ctx context.Context, id workspace.Wo
 func (r *Repository) ActiveServingStateGraph(ctx context.Context, id workspace.WorkspaceID, environment string) (workspace.AssetGraph, bool, error) {
 	activeServingState, err := r.q.GetActiveServingState(ctx, platformdb.GetActiveServingStateParams{
 		WorkspaceID: string(id),
-		Environment: string(servingstate.NormalizeEnvironment(servingstate.Environment(environment))),
+		Environment: normalizedEnvironment(environment),
 	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -134,7 +133,7 @@ func (r *Repository) ActiveServingStateGraph(ctx context.Context, id workspace.W
 func (r *Repository) AssetVersions(ctx context.Context, workspaceID workspace.WorkspaceID, environment string, assetID workspace.AssetID) ([]workspace.AssetVersion, error) {
 	rows, err := r.q.ListAssetVersions(ctx, platformdb.ListAssetVersionsParams{
 		WorkspaceID:    string(workspaceID),
-		Environment:    string(servingstate.NormalizeEnvironment(servingstate.Environment(environment))),
+		Environment:    normalizedEnvironment(environment),
 		LogicalAssetID: string(assetID),
 	})
 	if err != nil {
@@ -164,7 +163,10 @@ func (r *Repository) AssetVersions(ctx context.Context, workspaceID workspace.Wo
 }
 
 func normalizedEnvironment(environment string) string {
-	return string(servingstate.NormalizeEnvironment(servingstate.Environment(environment)))
+	if environment == "" {
+		return "dev"
+	}
+	return environment
 }
 
 func mapWorkspace(row platformdb.Workspace) workspace.Summary {

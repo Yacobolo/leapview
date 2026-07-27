@@ -2,7 +2,6 @@ package duckdb
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"reflect"
@@ -20,7 +19,9 @@ import (
 	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
 	analyticsresource "github.com/Yacobolo/leapview/internal/analytics/resource"
 	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
+	analyticsruntime "github.com/Yacobolo/leapview/internal/analytics/runtime"
 	"github.com/Yacobolo/leapview/internal/dataquery"
+	"github.com/Yacobolo/leapview/internal/platform/transaction"
 )
 
 type SourceRuntime struct {
@@ -349,7 +350,7 @@ func safeSourceError(source string, _ error) error {
 
 type WorkspaceRuntimeConfig struct {
 	Models             map[string]*semanticmodel.Model
-	Database           *analyticsducklake.Environment
+	Database           analyticsruntime.WorkspaceDatabase
 	CredentialResolver CredentialResolver
 	SnapshotID         int64
 	ServingStateID     string
@@ -381,7 +382,7 @@ type WorkspaceRuntime struct {
 }
 
 type duckLakeCommitter interface {
-	Commit(ctx context.Context, servingStateID string, extra map[string]string, fn func(*sql.Tx) error) (int64, error)
+	CommitTransaction(ctx context.Context, servingStateID string, extra map[string]string, fn func(transaction.Transaction) error) (int64, error)
 }
 
 func OpenWorkspaceMaterializeRuntime(ctx context.Context, config WorkspaceRuntimeConfig) (*WorkspaceRuntime, error) {
@@ -696,7 +697,7 @@ func (r *WorkspaceRuntime) refreshModel(ctx context.Context, model *semanticmode
 		metadata[key] = value
 	}
 	servingStateID := firstNonEmpty(r.commitMetadata["servingStateId"], "workspace-refresh")
-	snapshotID, err := r.committer.Commit(ctx, servingStateID, metadata, func(tx *sql.Tx) error {
+	snapshotID, err := r.committer.CommitTransaction(ctx, servingStateID, metadata, func(tx transaction.Transaction) error {
 		executor := txExecutor{tx: tx}
 		sources := txPreparedSources{PreparedSources: prepared.(*PreparedSources), tx: tx}
 		if len(tableNames) > 0 {
@@ -815,7 +816,7 @@ func (r *WorkspaceRuntime) ReadConcurrency() int {
 }
 
 type txExecutor struct {
-	tx *sql.Tx
+	tx transaction.Transaction
 }
 
 func (e txExecutor) Exec(ctx context.Context, statement string) error {
@@ -825,7 +826,7 @@ func (e txExecutor) Exec(ctx context.Context, statement string) error {
 
 type txPreparedSources struct {
 	*PreparedSources
-	tx *sql.Tx
+	tx transaction.Transaction
 }
 
 func (r txPreparedSources) PlanModelTable(ctx context.Context, _ *semanticmodel.Model, tableName string, table semanticmodel.Table) (analyticsmaterialize.ModelTablePlan, error) {

@@ -8,6 +8,7 @@ import (
 
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	"github.com/Yacobolo/leapview/internal/api"
+	"github.com/Yacobolo/leapview/internal/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	"github.com/Yacobolo/leapview/internal/dataquery"
@@ -426,7 +427,7 @@ func dashboardFiltersProvided(filters dashboard.Filters) bool {
 	return filters.Controls != nil || filters.Selections != nil || filters.SpatialSelections != nil
 }
 
-func dashboardSummaryDTO(row dashboard.CatalogDashboard) api.DashboardSummary {
+func dashboardSummaryDTO(row catalog.Dashboard) api.DashboardSummary {
 	return api.DashboardSummary{
 		ID:            row.ID,
 		Title:         row.Title,

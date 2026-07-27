@@ -9,6 +9,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/platform"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
+	"github.com/Yacobolo/leapview/internal/snapshot"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
 )
@@ -62,12 +63,12 @@ func TestRepositoryActiveServingStateGraphUsesLogicalAssetIDs(t *testing.T) {
 		ProjectID:         "project",
 		ProjectDigest:     "sha256:" + strings.Repeat("a", 64),
 		ProjectWorkspaces: []string{"test"},
-		Graph: workspace.AssetGraph{
+		Graph: snapshotGraph(t, workspace.AssetGraph{
 			Assets: []workspace.Asset{model, dashboard},
 			Edges: []workspace.AssetEdge{
 				workspace.NewAssetEdge("test", workspace.ServingStateID(created.ID), dashboard.ID, model.ID, workspace.AssetEdgeUsesSemanticModel),
 			},
-		},
+		}),
 	}
 	if _, err := deploymentRepo.SaveValidated(ctx, created.ID, validation, servingstate.Artifact{ID: "artifact", ServingStateID: created.ID, WorkspaceID: "test", Environment: servingstate.DefaultEnvironment, Digest: "digest", Format: "tar.gz", Path: "artifact.tar.gz", ManifestJSON: "{}"}); err != nil {
 		t.Fatalf("save validated: %v", err)
@@ -196,7 +197,7 @@ func seedVersionDeployment(t *testing.T, ctx context.Context, repo *servingstate
 		ProjectID:         "project",
 		ProjectDigest:     "sha256:" + strings.Repeat("a", 64),
 		ProjectWorkspaces: []string{string(seed.WorkspaceID)},
-		Graph:             workspace.AssetGraph{Assets: []workspace.Asset{asset}},
+		Graph:             snapshotGraph(t, workspace.AssetGraph{Assets: []workspace.Asset{asset}}),
 	}
 	artifact := servingstate.Artifact{ID: "artifact_" + string(created.ID), ServingStateID: created.ID, WorkspaceID: seed.WorkspaceID, Environment: seed.Environment, Digest: validation.Digest, Format: "tar.gz", Path: "artifact.tar.gz", ManifestJSON: "{}"}
 	if _, err := repo.SaveValidated(ctx, created.ID, validation, artifact); err != nil {
@@ -259,4 +260,13 @@ func assetByID(graph workspace.AssetGraph, id workspace.AssetID) workspace.Asset
 		}
 	}
 	return workspace.Asset{}
+}
+
+func snapshotGraph(t *testing.T, value any) snapshot.AssetGraph {
+	t.Helper()
+	graph, err := snapshot.ConvertAssetGraph(value)
+	if err != nil {
+		t.Fatalf("convert asset graph snapshot: %v", err)
+	}
+	return graph
 }

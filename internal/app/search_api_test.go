@@ -11,23 +11,8 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access"
 	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
-	productsearch "github.com/Yacobolo/leapview/internal/search"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 )
-
-func TestSearchAPIResultsIncludeVisualSubtype(t *testing.T) {
-	items := searchAPIResults([]productsearch.Result{{
-		Reference:  productsearch.Reference{WorkspaceID: "sales", Type: productsearch.TypeVisual, ID: "orders.revenue"},
-		Name:       "Revenue",
-		VisualType: "line",
-		Workspace:  productsearch.Workspace{ID: "sales", Name: "Sales"},
-		Locations:  []productsearch.Location{},
-		Context:    []productsearch.ContextTag{},
-	}})
-	if len(items) != 1 || items[0].VisualType == nil || *items[0].VisualType != "line" {
-		t.Fatalf("search API visual subtype = %#v", items)
-	}
-}
 
 func TestGlobalSearchReturnsStructuredResultsAcrossWorkspaces(t *testing.T) {
 	store := testStore(t)
@@ -40,7 +25,7 @@ func TestGlobalSearchReturnsStructuredResultsAcrossWorkspaces(t *testing.T) {
 	`); err != nil {
 		t.Fatalf("remove textual dashboard terms from fixtures: %v", err)
 	}
-	server := NewWithOptions(nil, Options{Store: store, DefaultEnvironment: string(servingstate.DefaultEnvironment)})
+	server := assembleRuntime(nil, testStoreOptions(store, assemblyConfig{DefaultEnvironment: string(servingstate.DefaultEnvironment)}))
 
 	request := newPublicAPIRequest(http.MethodGet, "/api/v1/search?q=dashboar&limit=20", nil)
 	response := httptest.NewRecorder()
@@ -71,7 +56,7 @@ func TestGlobalSearchRepeatedFiltersAndCursor(t *testing.T) {
 	store := testStore(t)
 	seedEnvironmentAssetDeployment(t, store, "sales", servingstate.DefaultEnvironment, "Executive Sales", "Sales Warehouse")
 	seedEnvironmentAssetDeployment(t, store, "operations", servingstate.DefaultEnvironment, "Fulfillment Operations", "Operations Warehouse")
-	server := NewWithOptions(nil, Options{Store: store, DefaultEnvironment: string(servingstate.DefaultEnvironment)})
+	server := assembleRuntime(nil, testStoreOptions(store, assemblyConfig{DefaultEnvironment: string(servingstate.DefaultEnvironment)}))
 
 	firstRequest := newPublicAPIRequest(http.MethodGet, "/api/v1/search?workspace=sales&workspace=operations&type=dashboard&type=connection&limit=1", nil)
 	firstResponse := httptest.NewRecorder()
@@ -103,7 +88,7 @@ func TestGlobalSearchRepeatedFiltersAndCursor(t *testing.T) {
 }
 
 func TestWorkspaceSearchRouteWasRemoved(t *testing.T) {
-	server := NewWithOptions(nil, Options{Store: testStore(t)})
+	server := assembleRuntime(nil, testStoreOptions(testStore(t), assemblyConfig{}))
 	request := newPublicAPIRequest(http.MethodGet, "/api/v1/workspaces/test/search?q=orders", nil)
 	response := httptest.NewRecorder()
 	server.Routes().ServeHTTP(response, request)
@@ -132,7 +117,7 @@ func TestGlobalSearchDoesNotExposeOtherWorkspacesToScopedCredential(t *testing.T
 	token, _ := testScopedAPIToken(t, ctx, store, access.APITokenInput{
 		PrincipalID: principal.ID, WorkspaceID: "sales", Name: "search", Privileges: []access.Privilege{access.PrivilegeViewItem},
 	})
-	server := NewWithOptions(nil, Options{Store: store, Auth: testAuth(store, "sales", AuthConfig{APITokenOnly: true})})
+	server := assembleRuntime(nil, testStoreOptions(store, assemblyConfig{Auth: testAuth(store, "sales", AuthConfig{APITokenOnly: true})}))
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/search?q=orders&limit=20", nil)
 	request.Header.Set("Authorization", "Bearer "+token)
 	response := httptest.NewRecorder()

@@ -1,0 +1,29 @@
+package module
+
+import (
+	"testing"
+)
+
+type testDashboardTelemetry struct{}
+
+func (testDashboardTelemetry) DashboardRefreshStarted(string)                                   {}
+func (testDashboardTelemetry) DashboardRefreshFinished(string, string, int, map[string]float64) {}
+func (testDashboardTelemetry) DashboardRefreshEventObserved(string, string)                     {}
+func (testDashboardTelemetry) VisualizationFrameObserved(string, int, int, int)                 {}
+func (testDashboardTelemetry) DashboardCacheObserved(string)                                    {}
+
+func TestBuildWiresProgressiveObservers(t *testing.T) {
+	module, err := Build(t.Context(), Config{HTTP: HTTPConfig{
+		Telemetry: testDashboardTelemetry{},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := module.HTTP()
+	if handler.RefreshEventObserved == nil {
+		t.Fatal("dashboard refresh event observer is not configured")
+	}
+	if handler.CacheObserved == nil {
+		t.Fatal("dashboard cache observer is not configured")
+	}
+}

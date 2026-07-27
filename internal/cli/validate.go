@@ -12,8 +12,8 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/api"
 	"github.com/Yacobolo/leapview/internal/configschema"
+	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 	"github.com/Yacobolo/leapview/internal/workspace"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/workspace/compiler"
 	"github.com/spf13/cobra"
 )
 

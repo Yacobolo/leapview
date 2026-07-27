@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	"github.com/Yacobolo/leapview/internal/servingstate"
 )
 
@@ -18,7 +19,8 @@ func TestValidateFinalizationRequiresEveryArtifactToMatchReleaseConnectionPins(t
 	}}
 	pins := &serviceTestPinValidator{err: pinErr}
 	service := &Service{
-		releases: repo,
+		releases:     repo,
+		finalization: repo,
 		validator: serviceTestArtifactValidator{state: servingstate.State{
 			ID: "state-1", ProjectID: "project-a", ProjectDigest: "sha256:project", Digest: "sha256:artifact",
 		}},
@@ -56,7 +58,7 @@ func (r *serviceTestReleaseRepository) AssignArtifactTarget(context.Context, str
 	return nil
 }
 func (r *serviceTestReleaseRepository) RecordArtifact(context.Context, Artifact) error { return nil }
-func (r *serviceTestReleaseRepository) BeginFinalization(context.Context, string, string) (Release, error) {
+func (r *serviceTestReleaseRepository) BeginFinalization(context.Context, string, string, jobs.WorkflowIntent) (Release, error) {
 	return r.current, nil
 }
 func (r *serviceTestReleaseRepository) CompleteFinalization(context.Context, string, string, map[string]string) (Release, error) {
@@ -93,4 +95,5 @@ func (v *serviceTestPinValidator) ValidateServingStatePins(_ context.Context, st
 
 // Compile-time guards keep the service fakes aligned with the real interfaces.
 var _ Repository = (*serviceTestReleaseRepository)(nil)
+var _ FinalizationUnitOfWork = (*serviceTestReleaseRepository)(nil)
 var _ ArtifactValidator = serviceTestArtifactValidator{}

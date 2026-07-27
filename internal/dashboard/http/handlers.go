@@ -9,6 +9,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/access"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	"github.com/Yacobolo/leapview/internal/api"
+	"github.com/Yacobolo/leapview/internal/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	"github.com/Yacobolo/leapview/internal/dashboard/command"
 	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
@@ -42,7 +43,7 @@ func publicPresentationFromContext(ctx context.Context) (PublicPresentation, boo
 
 type Metrics interface {
 	consumer.Executor
-	Catalog() dashboard.Catalog
+	Catalog() catalog.Catalog
 	DefaultDashboardID() string
 	DefaultFilters(dashboardID string) dashboard.Filters
 	ModelIDForDashboard(dashboardID string) string

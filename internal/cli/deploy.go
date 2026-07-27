@@ -17,10 +17,9 @@ import (
 	"time"
 
 	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
-	servingstatefs "github.com/Yacobolo/leapview/internal/servingstate/filesystem"
+	projectbundle "github.com/Yacobolo/leapview/internal/project/bundle"
+	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 	"github.com/Yacobolo/leapview/internal/workspace"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/workspace/compiler"
 	"github.com/spf13/cobra"
 )
 
@@ -136,8 +135,8 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 		workspaceProject := project.Workspaces[item.workspaceID]
 		pins := selectManagedDataPins(request.Revisions, managedConnectionsForWorkspace(project, workspaceProject))
 		var content bytes.Buffer
-		manifest, digest, packErr := servingstatefs.PackProject(request.ProjectPath, servingstatefs.PackProjectOptions{
-			WorkspaceID: item.workspaceID, Environment: servingstate.Environment(request.Environment), ServingStateID: "release-artifact",
+		manifest, digest, packErr := projectbundle.PackProject(request.ProjectPath, projectbundle.PackProjectOptions{
+			WorkspaceID: item.workspaceID, Environment: request.Environment, ServingStateID: "release-artifact",
 			ActiveGraph: item.activeGraph, ManagedDataRevisions: pins,
 		}, &content)
 		if packErr != nil {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/manageddata"
 	"github.com/Yacobolo/leapview/internal/manageddata/localplan"
+	projectcompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 	"github.com/spf13/cobra"
 )
 
@@ -19,7 +20,25 @@ type dataPlanner interface {
 }
 
 func dataCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
-	return dataCommandWithOptions(ctx, localplan.NewService(), opts)
+	return dataCommandWithOptions(ctx, localplan.NewService(loadLocalPlanProject), opts)
+}
+
+func loadLocalPlanProject(path string) (localplan.Project, error) {
+	project, err := projectcompiler.LoadProject(path)
+	if err != nil {
+		return localplan.Project{}, err
+	}
+	projection := localplan.Project{
+		Connections: make(map[string]localplan.Connection, len(project.Connections)),
+		Sources:     make(map[string]localplan.Source, len(project.Sources)),
+	}
+	for name, connection := range project.Connections {
+		projection.Connections[name] = localplan.Connection{Kind: connection.Kind, Root: connection.Root, Scope: connection.Scope}
+	}
+	for name, source := range project.Sources {
+		projection.Sources[name] = localplan.Source{Connection: source.Connection, Path: source.Path, Format: source.Format}
+	}
+	return projection, nil
 }
 
 func dataCommandWithPlanner(ctx context.Context, planner dataPlanner) *cobra.Command {

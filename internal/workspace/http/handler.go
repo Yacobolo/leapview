@@ -16,7 +16,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/api"
 	"github.com/Yacobolo/leapview/internal/assetnav"
-	"github.com/Yacobolo/leapview/internal/dashboard"
+	"github.com/Yacobolo/leapview/internal/catalog"
 	"github.com/Yacobolo/leapview/internal/ui"
 	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
 	"github.com/Yacobolo/leapview/internal/workspace"
@@ -660,7 +660,7 @@ func (h Handler) AccessUpsert(w nethttp.ResponseWriter, r *nethttp.Request) {
 	h.patchWorkspaceAccess(w, r, workspaceID, status)
 }
 
-func (h Handler) resolveAccessSubject(r *nethttp.Request, repo access.Repository, command ui.WorkspaceAccessCommand) (access.SubjectType, string, error) {
+func (h Handler) resolveAccessSubject(r *nethttp.Request, repo access.WorkspaceAccessService, command ui.WorkspaceAccessCommand) (access.SubjectType, string, error) {
 	subjectType := access.SubjectType(strings.TrimSpace(command.SubjectType))
 	if subjectType == "" {
 		subjectType = access.SubjectPrincipal
@@ -784,7 +784,7 @@ func (h Handler) objectAccess(r *nethttp.Request, workspaceView workspace.Worksp
 	return response
 }
 
-func (h Handler) groupDisplayName(r *nethttp.Request, repo access.Repository, groupID string) string {
+func (h Handler) groupDisplayName(r *nethttp.Request, repo access.WorkspaceAccessService, groupID string) string {
 	groups, err := repo.ListAllGroups(r.Context())
 	if err != nil {
 		return groupID
@@ -1014,11 +1014,11 @@ func (h Handler) environment(r *nethttp.Request) string {
 	return h.Environment(r)
 }
 
-func (h Handler) workspaceRepository() (workspace.Repository, error) {
+func (h Handler) workspaceRepository() (workspace.ReadModel, error) {
 	return h.ReadModel.workspaceRepository()
 }
 
-func (h Handler) accessRepository() (access.Repository, error) {
+func (h Handler) accessRepository() (access.WorkspaceAccessService, error) {
 	return h.ReadModel.accessRepository()
 }
 
@@ -1053,11 +1053,11 @@ func (h Handler) roleBindingsAndRoles(r *nethttp.Request, workspaceID string) ([
 	return h.ReadModel.RoleBindingsAndRoles(r, workspaceID)
 }
 
-func (h Handler) catalogForWorkspacesPage(r *nethttp.Request, workspaces []workspace.WorkspaceView) dashboard.Catalog {
+func (h Handler) catalogForWorkspacesPage(r *nethttp.Request, workspaces []workspace.WorkspaceView) catalog.Catalog {
 	return h.ReadModel.CatalogForWorkspacesPage(r, workspaces)
 }
 
-func (h Handler) catalogForWorkspace(workspaceID string) dashboard.Catalog {
+func (h Handler) catalogForWorkspace(workspaceID string) catalog.Catalog {
 	return h.ReadModel.catalogForWorkspace(workspaceID)
 }
 

@@ -11,23 +11,34 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/dashboard/publication"
-	publicationsqlite "github.com/Yacobolo/leapview/internal/dashboard/publication/sqlite"
 	"github.com/Yacobolo/leapview/internal/deployment"
-	"github.com/Yacobolo/leapview/internal/manageddata"
-	platformdb "github.com/Yacobolo/leapview/internal/platform/db"
+	platformdb "github.com/Yacobolo/leapview/internal/deployment/sqlite/deploymentdb"
+	"github.com/Yacobolo/leapview/internal/platform/digest"
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
+	"github.com/Yacobolo/leapview/internal/platform/transaction"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
-	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
-	"github.com/Yacobolo/leapview/internal/workspace"
 )
 
 type Repository struct {
-	db *sql.DB
-	q  *platformdb.Queries
+	db    *sql.DB
+	q     *platformdb.Queries
+	hooks ActivationHooks
 }
 
-func NewRepository(db *sql.DB) *Repository {
-	return &Repository{db: db, q: platformdb.New(db)}
+type ActivationHooks struct {
+	ApplyAccessSnapshot   func(context.Context, transaction.Transaction, string) error
+	ReconcilePublications func(context.Context, transaction.Transaction, PublicationReconcileInput) error
+	LinkRelease           func(context.Context, transaction.Transaction, deployment.CreateInput) error
+	RecordWorkflow        jobs.WorkflowRecorder
+}
+
+type PublicationReconcileInput struct {
+	ProjectID, WorkspaceID, ServingStateID, ActorID string
+	Publications                                    map[string]json.RawMessage
+}
+
+func NewRepositoryWithHooks(db *sql.DB, hooks ActivationHooks) *Repository {
+	return &Repository{db: db, q: platformdb.New(db), hooks: hooks}
 }
 
 func (r *Repository) CreateDeployment(ctx context.Context, input deployment.CreateInput) (deployment.Deployment, error) {
@@ -37,6 +48,9 @@ func (r *Repository) CreateDeployment(ctx context.Context, input deployment.Crea
 	}
 	if existing, err := r.DeploymentByID(ctx, input.ID); err == nil {
 		if sameCreateRequest(existing, input) {
+			if err := r.recordCreationConsequences(ctx, input); err != nil {
+				return deployment.Deployment{}, err
+			}
 			return existing, nil
 		}
 		return deployment.Deployment{}, fmt.Errorf("%w: deployment id is already used", deployment.ErrConflict)
@@ -136,10 +150,48 @@ func (r *Repository) CreateDeployment(ctx context.Context, input deployment.Crea
 			return deployment.Deployment{}, mapError(err)
 		}
 	}
+	if err := r.applyCreationConsequences(ctx, tx, input); err != nil {
+		return deployment.Deployment{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return deployment.Deployment{}, mapError(err)
 	}
 	return r.DeploymentByID(ctx, input.ID)
+}
+
+func (r *Repository) recordCreationConsequences(ctx context.Context, input deployment.CreateInput) error {
+	if input.ReleaseID == "" && input.Workflow.Job.ID == "" {
+		return nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := r.applyCreationConsequences(ctx, tx, input); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *Repository) applyCreationConsequences(ctx context.Context, tx transaction.Transaction, input deployment.CreateInput) error {
+	if input.ReleaseID != "" {
+		if r.hooks.LinkRelease == nil {
+			return fmt.Errorf("deployment release linkage is required")
+		}
+		if err := r.hooks.LinkRelease(ctx, tx, input); err != nil {
+			return err
+		}
+	}
+	if input.Workflow.Job.ID != "" {
+		if r.hooks.RecordWorkflow == nil {
+			return fmt.Errorf("deployment workflow recorder is required")
+		}
+		if err := r.hooks.RecordWorkflow.RecordWorkflow(ctx, tx, input.Workflow); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *Repository) DeploymentByID(ctx context.Context, id string) (deployment.Deployment, error) {
@@ -267,18 +319,24 @@ func (r *Repository) ActivateDeployment(ctx context.Context, id string) (deploym
 		if err != nil {
 			return deployment.Deployment{}, mapError(err)
 		}
-		if err := servingstatesqlite.ApplyAccessSnapshotTx(ctx, tx, q, candidate); err != nil {
+		if r.hooks.ApplyAccessSnapshot == nil {
+			return deployment.Deployment{}, fmt.Errorf("%w: access snapshot activation is not configured", deployment.ErrConflict)
+		}
+		if err := r.hooks.ApplyAccessSnapshot(ctx, tx, candidate.ID); err != nil {
 			return deployment.Deployment{}, fmt.Errorf("%w: apply access snapshot for workspace %q: %v", deployment.ErrConflict, target.WorkspaceID, err)
 		}
 		if row.Environment == "prod" {
-			var publications map[string]workspace.DashboardPublication
+			var publications map[string]json.RawMessage
 			if err := json.Unmarshal([]byte(candidate.DashboardPublicationsJson), &publications); err != nil {
 				return deployment.Deployment{}, fmt.Errorf("%w: decode publication snapshot for workspace %q: %v", deployment.ErrConflict, target.WorkspaceID, err)
 			}
 			if publications == nil {
-				publications = map[string]workspace.DashboardPublication{}
+				publications = map[string]json.RawMessage{}
 			}
-			if err := publicationsqlite.ReconcileTx(ctx, tx, publication.ReconcileInput{
+			if r.hooks.ReconcilePublications == nil {
+				return deployment.Deployment{}, fmt.Errorf("%w: publication activation is not configured", deployment.ErrConflict)
+			}
+			if err := r.hooks.ReconcilePublications(ctx, tx, PublicationReconcileInput{
 				ProjectID: candidate.ProjectID, WorkspaceID: candidate.WorkspaceID, ServingStateID: candidate.ID,
 				ActorID: row.CreatedBy, Publications: publications,
 			}); err != nil {
@@ -334,7 +392,7 @@ type projectContract struct {
 }
 
 func parseProjectContract(candidate platformdb.ServingState) (projectContract, error) {
-	if err := manageddata.ValidateRevisionID(candidate.ProjectDigest); err != nil {
+	if err := digest.ValidateSHA256Identity(candidate.ProjectDigest); err != nil {
 		return projectContract{}, err
 	}
 	var workspaces []string
@@ -395,6 +453,8 @@ func normalizeCreateInput(input deployment.CreateInput) deployment.CreateInput {
 	input.Environment = strings.TrimSpace(input.Environment)
 	input.RequestDigest = strings.TrimSpace(input.RequestDigest)
 	input.CreatedBy = strings.TrimSpace(input.CreatedBy)
+	input.ReleaseID = strings.TrimSpace(input.ReleaseID)
+	input.RollbackOf = strings.TrimSpace(input.RollbackOf)
 	input.Targets = append([]deployment.TargetInput(nil), input.Targets...)
 	for index := range input.Targets {
 		input.Targets[index].WorkspaceID = strings.TrimSpace(input.Targets[index].WorkspaceID)

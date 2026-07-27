@@ -9,6 +9,8 @@ import (
 	"path"
 	"sort"
 	"strings"
+
+	"github.com/Yacobolo/leapview/internal/platform/digest"
 )
 
 type File struct {
@@ -91,11 +93,7 @@ func (m Manifest) RevisionID() string {
 }
 
 func ValidateRevisionID(value string) error {
-	const prefix = "sha256:"
-	if !strings.HasPrefix(value, prefix) {
-		return fmt.Errorf("revision ID must use the sha256 scheme")
-	}
-	if err := validateDigest(strings.TrimPrefix(value, prefix)); err != nil {
+	if err := digest.ValidateSHA256Identity(value); err != nil {
 		return fmt.Errorf("revision ID must contain a canonical SHA-256 digest: %w", err)
 	}
 	return nil

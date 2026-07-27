@@ -1,8 +1,10 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -28,7 +30,7 @@ type CredentialScope struct {
 
 type APIGenAuthorizeFunc func(ctx context.Context, scope Scope, operationID string) (agentcore.ToolResult, bool)
 
-type APIGenDispatchFunc func(scope Scope, operationID string, request *http.Request) (*http.Response, bool)
+type APIGenDispatchFunc func(scope Scope, operationID string, writer http.ResponseWriter, request *http.Request) bool
 
 type APIGenProvider struct {
 	Authorize APIGenAuthorizeFunc
@@ -101,15 +103,56 @@ func (p APIGenProvider) Run(ctx context.Context, scope Scope, operation APIGenOp
 	if p.Dispatch == nil {
 		return apigenAgentToolError("operation_not_found", "APIGen operation dispatcher is not configured")
 	}
-	response, ok := p.Dispatch(runScope, operation.Contract.OperationID, request)
-	if !ok {
+	capture := newResponseCapture(request)
+	if ok := p.Dispatch(runScope, operation.Contract.OperationID, capture, request); !ok {
 		return apigenAgentToolError("operation_not_found", "APIGen operation is not dispatchable")
 	}
-	result, err := agenttool.ProjectResponse(operation.Tool, response)
+	result, err := agenttool.ProjectResponse(operation.Tool, capture.Response())
 	if err != nil {
 		return agentToolRuntimeError(err)
 	}
 	return agentcore.ToolResult{Content: result.Content, IsError: result.IsError}
+}
+
+type responseCapture struct {
+	request *http.Request
+	header  http.Header
+	body    bytes.Buffer
+	status  int
+}
+
+func newResponseCapture(request *http.Request) *responseCapture {
+	return &responseCapture{request: request, header: make(http.Header)}
+}
+
+func (r *responseCapture) Header() http.Header { return r.header }
+
+func (r *responseCapture) WriteHeader(status int) {
+	if r.status == 0 {
+		r.status = status
+	}
+}
+
+func (r *responseCapture) Write(body []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	return r.body.Write(body)
+}
+
+func (r *responseCapture) Response() *http.Response {
+	status := r.status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	return &http.Response{
+		Status:        http.StatusText(status),
+		StatusCode:    status,
+		Header:        r.header.Clone(),
+		Body:          io.NopCloser(bytes.NewReader(r.body.Bytes())),
+		ContentLength: int64(r.body.Len()),
+		Request:       r.request,
+	}
 }
 
 func operationForScope(operation APIGenOperation, scope Scope) APIGenOperation {

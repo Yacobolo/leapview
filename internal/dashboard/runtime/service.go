@@ -9,9 +9,9 @@ import (
 
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
+	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	"github.com/Yacobolo/leapview/internal/dataquery"
-	"github.com/Yacobolo/leapview/internal/workspace"
 )
 
 type DataRuntimeFactory interface {
@@ -19,7 +19,7 @@ type DataRuntimeFactory interface {
 }
 
 type WorkspaceDataRuntimeConfig struct {
-	Definition *workspace.Definition
+	Definition *dashboarddefinition.Workspace
 	DBDir      string
 }
 
@@ -62,7 +62,7 @@ type modelRuntime struct {
 	missing   error
 }
 
-func NewFromDefinition(ctx context.Context, duckDBDir string, factory DataRuntimeFactory, definition *workspace.Definition) (*Service, error) {
+func NewFromDefinition(ctx context.Context, duckDBDir string, factory DataRuntimeFactory, definition *dashboarddefinition.Workspace) (*Service, error) {
 	if factory == nil {
 		return nil, fmt.Errorf("dashboard data runtime factory is required")
 	}
@@ -72,7 +72,7 @@ func NewFromDefinition(ctx context.Context, duckDBDir string, factory DataRuntim
 	return newFromDefinition(ctx, duckDBDir, factory, definition)
 }
 
-func newFromDefinition(ctx context.Context, duckDBDir string, factory DataRuntimeFactory, definition *workspace.Definition) (*Service, error) {
+func newFromDefinition(ctx context.Context, duckDBDir string, factory DataRuntimeFactory, definition *dashboarddefinition.Workspace) (*Service, error) {
 	service := &Service{
 		runtimes: map[string]*modelRuntime{},
 	}

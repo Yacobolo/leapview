@@ -11,7 +11,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/workspace/compiler"
+	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 )
 
 func fieldRefs(fields ...string) []reportdef.FieldRef {

@@ -10,6 +10,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	"github.com/Yacobolo/leapview/internal/servingstate"
 	"github.com/Yacobolo/leapview/internal/workspace"
 )
@@ -20,7 +21,13 @@ type Repository interface {
 	List(context.Context, string) ([]Release, error)
 	AssignArtifactTarget(context.Context, string, string, string, string) error
 	RecordArtifact(context.Context, Artifact) error
-	BeginFinalization(context.Context, string, string) (Release, error)
+}
+
+// FinalizationUnitOfWork owns release finalization state transitions. The
+// SQLite implementation verifies expected artifact digests and commits the
+// ready projection atomically.
+type FinalizationUnitOfWork interface {
+	BeginFinalization(context.Context, string, string, jobs.WorkflowIntent) (Release, error)
 	CompleteFinalization(context.Context, string, string, map[string]string) (Release, error)
 	FailFinalization(context.Context, string, string, error) (Release, error)
 }
@@ -46,30 +53,32 @@ type PinValidator interface {
 }
 
 type Service struct {
-	releases    Repository
-	states      ServingStateRepository
-	workspaces  WorkspaceRepository
-	artifacts   ArtifactStore
-	validator   ArtifactValidator
-	pins        PinValidator
-	environment servingstate.Environment
+	releases     Repository
+	finalization FinalizationUnitOfWork
+	states       ServingStateRepository
+	workspaces   WorkspaceRepository
+	artifacts    ArtifactStore
+	validator    ArtifactValidator
+	pins         PinValidator
+	environment  servingstate.Environment
 }
 
 type ServiceOptions struct {
-	Releases    Repository
-	States      ServingStateRepository
-	Workspaces  WorkspaceRepository
-	Artifacts   ArtifactStore
-	Validator   ArtifactValidator
-	Pins        PinValidator
-	Environment servingstate.Environment
+	Releases     Repository
+	Finalization FinalizationUnitOfWork
+	States       ServingStateRepository
+	Workspaces   WorkspaceRepository
+	Artifacts    ArtifactStore
+	Validator    ArtifactValidator
+	Pins         PinValidator
+	Environment  servingstate.Environment
 }
 
 func NewService(options ServiceOptions) (*Service, error) {
-	if options.Releases == nil || options.States == nil || options.Workspaces == nil || options.Artifacts == nil || options.Validator == nil {
-		return nil, fmt.Errorf("release repositories, artifact store, and validator are required")
+	if options.Releases == nil || options.Finalization == nil || options.States == nil || options.Workspaces == nil || options.Artifacts == nil || options.Validator == nil {
+		return nil, fmt.Errorf("release repository, finalization unit of work, artifact store, and validator are required")
 	}
-	return &Service{releases: options.Releases, states: options.States, workspaces: options.Workspaces, artifacts: options.Artifacts, validator: options.Validator, pins: options.Pins, environment: servingstate.NormalizeEnvironment(options.Environment)}, nil
+	return &Service{releases: options.Releases, finalization: options.Finalization, states: options.States, workspaces: options.Workspaces, artifacts: options.Artifacts, validator: options.Validator, pins: options.Pins, environment: servingstate.NormalizeEnvironment(options.Environment)}, nil
 }
 
 func (s *Service) Create(ctx context.Context, input CreateInput) (Release, error) {
@@ -147,14 +156,14 @@ func (s *Service) UploadArtifact(ctx context.Context, projectID, releaseID, work
 }
 
 func (s *Service) Finalize(ctx context.Context, projectID, releaseID string) (Release, error) {
-	if _, err := s.BeginFinalization(ctx, projectID, releaseID); err != nil {
+	if _, err := s.BeginFinalization(ctx, projectID, releaseID, jobs.WorkflowIntent{}); err != nil {
 		return Release{}, err
 	}
 	return s.ValidateFinalization(ctx, projectID, releaseID)
 }
 
-func (s *Service) BeginFinalization(ctx context.Context, projectID, releaseID string) (Release, error) {
-	return s.releases.BeginFinalization(ctx, projectID, releaseID)
+func (s *Service) BeginFinalization(ctx context.Context, projectID, releaseID string, workflow jobs.WorkflowIntent) (Release, error) {
+	return s.finalization.BeginFinalization(ctx, projectID, releaseID, workflow)
 }
 
 func (s *Service) ValidateFinalization(ctx context.Context, projectID, releaseID string) (Release, error) {
@@ -195,11 +204,11 @@ func (s *Service) ValidateFinalization(ctx context.Context, projectID, releaseID
 		}
 		digests[artifact.WorkspaceID] = state.Digest
 	}
-	return s.releases.CompleteFinalization(ctx, projectID, releaseID, digests)
+	return s.finalization.CompleteFinalization(ctx, projectID, releaseID, digests)
 }
 
 func (s *Service) failFinalization(ctx context.Context, current Release, cause error) (Release, error) {
-	failed, failErr := s.releases.FailFinalization(ctx, current.ProjectID, current.ID, cause)
+	failed, failErr := s.finalization.FailFinalization(ctx, current.ProjectID, current.ID, cause)
 	if failErr != nil {
 		return Release{}, errorsJoin(cause, failErr)
 	}

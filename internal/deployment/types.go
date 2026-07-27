@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
 )
 
 var (
@@ -75,6 +77,9 @@ type CreateInput struct {
 	RequestDigest string
 	Targets       []TargetInput
 	CreatedBy     string
+	ReleaseID     string
+	RollbackOf    string
+	Workflow      jobs.WorkflowIntent
 }
 
 type Scope struct {
