@@ -112,6 +112,39 @@ Use `task dev:status`, `task dev:logs`, and `task dev:stop` for the worktree-loc
 
 For the local image path, run `docker inspect --format '{{.State.Health.Status}}' leapview` and expect `healthy`. For Compose, run `docker compose config --quiet` and `./leapviewctl status`. A production application container must report healthy, and its resolved image must include a `sha256` digest.
 
+For a released Compose archive, verify that every shipped surface has the same
+identity before trusting the deployment:
+
+```sh
+sha256sum --check leapview-compose-*.tar.gz.sha256
+cat release-identity.json
+./leapviewctl version --json
+LEAPVIEW_IMAGE="$(cat image-reference.txt)"
+docker image inspect "$LEAPVIEW_IMAGE" \
+  --format '{{index .Config.Labels "org.opencontainers.image.version"}} {{index .Config.Labels "org.opencontainers.image.revision"}}'
+docker run --rm "$LEAPVIEW_IMAGE" version --json
+```
+
+The semantic version and full Git revision must agree across
+`release-identity.json`, `leapviewctl`, the server binary, and the OCI labels.
+A release reports `"dirty": false` and `"development": false`; an ordinary
+local or candidate build reports version `development` and can never claim the
+release version. LeapView uses the release commit timestamp as `buildTime` so
+the identity remains reproducible.
+
+After startup, compare the same identity through the authenticated
+capabilities endpoint using a token authorized to use a workspace:
+
+```sh
+curl --fail --silent --show-error \
+  --header "Authorization: Bearer $LEAPVIEW_API_TOKEN" \
+  "$LEAPVIEW_PUBLIC_URL/api/v1/capabilities"
+```
+
+The `/api/v1/capabilities` response fields `buildVersion`, `buildRevision`,
+`buildTime`, `buildDirty`, and `buildDevelopment` must match the packaged
+identity.
+
 ## Verify
 
 Open the configured HTTPS URL, sign in with the temporary administrator credentials, and change the password when prompted. Then create a backup with `./leapviewctl backup` and confirm that both the archive and its checksum exist in `backups/`.

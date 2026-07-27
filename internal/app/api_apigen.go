@@ -10,6 +10,7 @@ import (
 	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
 	deploymentmodule "github.com/Yacobolo/leapview/internal/deployment/module"
 	manageddatamodule "github.com/Yacobolo/leapview/internal/manageddata/module"
+	"github.com/Yacobolo/leapview/internal/platform/buildinfo"
 	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
 	refreshmodule "github.com/Yacobolo/leapview/internal/refresh/module"
 	releasemodule "github.com/Yacobolo/leapview/internal/release/module"
@@ -55,7 +56,7 @@ type apiGenDispatcher struct {
 	releaseModule      *releasemodule.Module
 	workspaceModule    *workspacemodule.Module
 	defaultEnvironment string
-	buildVersion       string
+	buildIdentity      buildinfo.Identity
 	managedDataTus     http.Handler
 	queryAuditEvents   http.HandlerFunc
 }

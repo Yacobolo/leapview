@@ -52,6 +52,9 @@ func TestRootHelpExposesOnlyProjectDeploy(t *testing.T) {
 	if !strings.Contains(output, "\n  deploy ") {
 		t.Fatalf("root help missing deploy command:\n%s", output)
 	}
+	if !strings.Contains(output, "\n  version ") {
+		t.Fatalf("root help missing version command:\n%s", output)
+	}
 	for _, removed := range []string{"publish", "publishes"} {
 		if strings.Contains(output, "\n  "+removed+" ") {
 			t.Fatalf("root help still exposes removed %s command:\n%s", removed, output)
@@ -67,6 +70,25 @@ func TestRootHelpExposesOnlyProjectDeploy(t *testing.T) {
 	}
 	if strings.Contains(deployHelp, "--connection") {
 		t.Fatalf("project deploy help exposes split data-deploy targeting:\n%s", deployHelp)
+	}
+}
+
+func TestVersionReportsDevelopmentIdentityAsJSON(t *testing.T) {
+	command := NewCommand(context.Background())
+	var output strings.Builder
+	command.SetOut(&output)
+	command.SetArgs([]string{"version", "--json"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"product": "leapview"`,
+		`"version": "development"`,
+		`"development": true`,
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("version output missing %s:\n%s", want, output.String())
+		}
 	}
 }
 

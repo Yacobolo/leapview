@@ -25,3 +25,42 @@ controller; see the installation guide for the localhost evaluation path. For
 production, `leapviewctl` provides the supported initialization, backup,
 restore, upgrade, and rollback workflow. Run `./leapviewctl help` for its
 commands.
+
+## Verify the release identity
+
+The archive, controller, container labels, running server, and release page
+must describe the same build. Before initialization, verify the archive
+checksum and compare the packaged identity with the controller:
+
+```sh
+sha256sum --check ../leapview-compose-*.tar.gz.sha256
+cat release-identity.json
+./leapviewctl version --json
+```
+
+After pulling the immutable image reference in `image-reference.txt`, inspect
+its OCI labels and execute the server's version command:
+
+```sh
+LEAPVIEW_IMAGE="$(cat image-reference.txt)"
+docker pull "$LEAPVIEW_IMAGE"
+docker image inspect "$LEAPVIEW_IMAGE" \
+  --format '{{index .Config.Labels "org.opencontainers.image.version"}} {{index .Config.Labels "org.opencontainers.image.revision"}}'
+docker run --rm "$LEAPVIEW_IMAGE" version --json
+```
+
+The `version` and `revision` values must agree with
+`release-identity.json`; the release must also report `"dirty": false` and
+`"development": false`. Once the server is running, an API token authorized
+to use a workspace can verify the authenticated runtime endpoint:
+
+```sh
+curl --fail --silent --show-error \
+  --header "Authorization: Bearer $LEAPVIEW_API_TOKEN" \
+  "$LEAPVIEW_PUBLIC_URL/api/v1/capabilities"
+```
+
+Its `buildVersion`, `buildRevision`, `buildTime`, `buildDirty`, and
+`buildDevelopment` fields must match the packaged identity. `BuildTime` is the
+release commit timestamp, rather than wall-clock packaging time, so rebuilding
+the same revision remains reproducible.

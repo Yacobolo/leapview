@@ -39,6 +39,37 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name || github.sha }}
 
+      - name: Resolve authoritative build identity
+        id: identity
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          canonical_version="$(tr -d '[:space:]' < VERSION)"
+          package_version="$(python3 -c 'import json; print(json.load(open("package.json"))["version"])')"
+          test "$package_version" = "$canonical_version" || {
+            printf 'package.json version %s disagrees with VERSION %s\n' "$package_version" "$canonical_version" >&2
+            exit 1
+          }
+          revision="$(git rev-parse HEAD)"
+          build_time="$(git show -s --format=%cI HEAD)"
+          version=development
+          is_release=false
+          if [ "$EVENT_NAME" = release ]; then
+            test "$RELEASE_TAG" = "v$canonical_version" || {
+              printf 'release tag %s disagrees with VERSION %s\n' "$RELEASE_TAG" "$canonical_version" >&2
+              exit 1
+            }
+            version="$canonical_version"
+            is_release=true
+          fi
+          {
+            echo "version=$version"
+            echo "revision=$revision"
+            echo "build_time=$build_time"
+            echo "release=$is_release"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
@@ -80,10 +111,19 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.metadata.outputs.tags }}
-          labels: ${{ steps.metadata.outputs.labels }}
+          labels: |
+            ${{ steps.metadata.outputs.labels }}
+            org.opencontainers.image.version=${{ steps.identity.outputs.version }}
+            org.opencontainers.image.revision=${{ steps.identity.outputs.revision }}
+            org.opencontainers.image.created=${{ steps.identity.outputs.build_time }}
+            dev.leapview.build.dirty=false
+            dev.leapview.build.release=${{ steps.identity.outputs.release }}
           build-args: |
-            BUILD_VERSION=${{ steps.metadata.outputs.version }}
-            BUILD_REVISION=${{ github.sha }}
+            BUILD_VERSION=${{ steps.identity.outputs.version }}
+            BUILD_REVISION=${{ steps.identity.outputs.revision }}
+            BUILD_TIME=${{ steps.identity.outputs.build_time }}
+            BUILD_DIRTY=false
+            BUILD_RELEASE=${{ steps.identity.outputs.release }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           sbom: true
@@ -103,6 +143,39 @@ jobs:
           docker logout ghcr.io
           docker buildx imagetools inspect "$IMAGE_REFERENCE"
 
+      - name: Verify published runtime identity
+        env:
+          EXPECTED_VERSION: ${{ steps.identity.outputs.version }}
+          EXPECTED_REVISION: ${{ steps.identity.outputs.revision }}
+          EXPECTED_BUILD_TIME: ${{ steps.identity.outputs.build_time }}
+          EXPECTED_RELEASE: ${{ steps.identity.outputs.release }}
+          IMAGE_REFERENCE: ${{ env.IMAGE_NAME }}@${{ steps.publish.outputs.digest }}
+        run: |
+          docker pull "$IMAGE_REFERENCE"
+          docker run --rm "$IMAGE_REFERENCE" version --json > runtime-identity.json
+          label_version="$(docker image inspect "$IMAGE_REFERENCE" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')"
+          label_revision="$(docker image inspect "$IMAGE_REFERENCE" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+          test "$label_version" = "$EXPECTED_VERSION"
+          test "$label_revision" = "$EXPECTED_REVISION"
+          python3 - <<'PY'
+          import json
+          import os
+
+          with open("runtime-identity.json", encoding="utf-8") as source:
+              actual = json.load(source)
+          expected_development = os.environ["EXPECTED_RELEASE"] != "true"
+          expected = {
+              "version": os.environ["EXPECTED_VERSION"],
+              "revision": os.environ["EXPECTED_REVISION"],
+              "buildTime": os.environ["EXPECTED_BUILD_TIME"],
+              "dirty": False,
+              "development": expected_development,
+          }
+          for field, value in expected.items():
+              if actual[field] != value:
+                  raise SystemExit(f"published runtime {field}={actual[field]!r}, expected {value!r}")
+          PY
+
       - name: Record immutable reference
         run: echo '${{ env.IMAGE_NAME }}@${{ steps.publish.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"
 
@@ -110,8 +183,35 @@ jobs:
         if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILD_VERSION: ${{ steps.identity.outputs.version }}
+          BUILD_REVISION: ${{ steps.identity.outputs.revision }}
+          BUILD_TIME: ${{ steps.identity.outputs.build_time }}
+          BUILD_DIRTY: "false"
+          BUILD_RELEASE: "true"
+          IMAGE_REFERENCE: ${{ env.IMAGE_NAME }}@${{ steps.publish.outputs.digest }}
         run: |
-          printf '%s\n' '${{ env.IMAGE_NAME }}@${{ steps.publish.outputs.digest }}' > image-reference.txt
+          printf '%s\n' "$IMAGE_REFERENCE" > image-reference.txt
+          python3 - <<'PY'
+          import json
+          import os
+
+          with open("release-identity.json", "w", encoding="utf-8") as target:
+              json.dump({
+                  "version": os.environ["BUILD_VERSION"],
+                  "revision": os.environ["BUILD_REVISION"],
+                  "buildTime": os.environ["BUILD_TIME"],
+                  "dirty": False,
+                  "development": False,
+                  "image": os.environ["IMAGE_REFERENCE"],
+              }, target, indent=2)
+              target.write("\n")
+          PY
+          build_ldflags="-s -w \
+            -X github.com/Yacobolo/leapview/internal/platform/buildinfo.version=$BUILD_VERSION \
+            -X github.com/Yacobolo/leapview/internal/platform/buildinfo.revision=$BUILD_REVISION \
+            -X github.com/Yacobolo/leapview/internal/platform/buildinfo.buildTime=$BUILD_TIME \
+            -X github.com/Yacobolo/leapview/internal/platform/buildinfo.dirty=$BUILD_DIRTY \
+            -X github.com/Yacobolo/leapview/internal/platform/buildinfo.release=$BUILD_RELEASE"
           targets=(
             "linux amd64"
             "linux arm64"
@@ -122,13 +222,31 @@ jobs:
             read -r os arch <<<"$target"
             package="leapview-compose-${{ github.event.release.tag_name }}-${os}-${arch}"
             mkdir -p "dist/$package"
-            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags='-s -w' -o "dist/$package/leapviewctl" ./cmd/leapviewctl
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags="$build_ldflags" -o "dist/$package/leapviewctl" ./cmd/leapviewctl
             cp deploy/compose/compose.yaml deploy/compose/compose.https.yaml deploy/compose/Caddyfile deploy/compose/README.md "dist/$package/"
             cp deploy/compose/leapview.env.example "dist/$package/leapview.env.example"
             sed "s|ghcr.io/yacobolo/leapview@sha256:<release-digest>|${{ env.IMAGE_NAME }}@${{ steps.publish.outputs.digest }}|" deploy/compose/deployment.env.example > "dist/$package/deployment.env.example"
-            cp image-reference.txt "dist/$package/"
-            (cd "dist/$package" && sha256sum Caddyfile README.md compose.https.yaml compose.yaml deployment.env.example image-reference.txt leapview.env.example leapviewctl > SHA256SUMS)
+            cp image-reference.txt release-identity.json "dist/$package/"
+            if [ "$os" = linux ] && [ "$arch" = amd64 ]; then
+              (
+                cd "dist/$package"
+                ./leapviewctl version --json > runtime-identity.json
+                python3 - <<'PY'
+          import json
+
+          with open("release-identity.json", encoding="utf-8") as source:
+              expected = json.load(source)
+          with open("runtime-identity.json", encoding="utf-8") as source:
+              actual = json.load(source)
+          for field in ("version", "revision", "buildTime", "dirty", "development"):
+              if actual[field] != expected[field]:
+                  raise SystemExit(f"runtime {field} disagrees with release identity")
+          PY
+                rm runtime-identity.json
+              )
+            fi
+            (cd "dist/$package" && sha256sum Caddyfile README.md compose.https.yaml compose.yaml deployment.env.example image-reference.txt leapview.env.example leapviewctl release-identity.json > SHA256SUMS)
             tar -C dist -czf "dist/$package.tar.gz" "$package"
             sha256sum "dist/$package.tar.gz" > "dist/$package.tar.gz.sha256"
           done
-          gh release upload '${{ github.event.release.tag_name }}' image-reference.txt dist/*.tar.gz dist/*.tar.gz.sha256 --clobber
+          gh release upload '${{ github.event.release.tag_name }}' image-reference.txt release-identity.json dist/*.tar.gz dist/*.tar.gz.sha256 --clobber

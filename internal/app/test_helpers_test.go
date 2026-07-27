@@ -134,7 +134,7 @@ func apiGenDispatcherForTest(server *appTestHarness) apiGenDispatcher {
 		managedDataModule: server.routes.managedDataModule, refreshModule: server.routes.refreshModule,
 		releaseModule: server.routes.releaseModule, workspaceModule: server.routes.workspaceModule,
 		defaultEnvironment: server.policy.defaultEnvironment, managedDataTus: server.policy.managedDataTus,
-		buildVersion:     server.platform.assets.Version(),
+		buildIdentity:    server.platform.buildIdentity,
 		queryAuditEvents: server.runtime.queryAuditEvents,
 	}
 }

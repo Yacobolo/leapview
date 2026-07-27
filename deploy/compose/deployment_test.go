@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"golang.org/x/mod/semver"
 )
 
 var (
@@ -116,9 +118,73 @@ func TestControllerBuildAndLifecycleCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("leapviewctl help: %v\n%s", err, output)
 	}
-	for _, command := range []string{"init", "start", "status", "logs", "first-login", "backup", "restore", "upgrade", "rollback"} {
+	for _, command := range []string{"version", "init", "start", "status", "logs", "first-login", "backup", "restore", "upgrade", "rollback"} {
 		if !strings.Contains(string(output), command) {
 			t.Fatalf("controller help missing %s:\n%s", command, output)
+		}
+	}
+}
+
+func TestReleaseIdentityContract(t *testing.T) {
+	root := filepath.Join("..", "..")
+	version := strings.TrimSpace(read(t, filepath.Join(root, "VERSION")))
+	if strings.HasPrefix(version, "v") || !semver.IsValid("v"+version) {
+		t.Fatalf("VERSION = %q, want unprefixed semantic version", version)
+	}
+	packageManifest := read(t, filepath.Join(root, "package.json"))
+	if !strings.Contains(packageManifest, `"version": "`+version+`"`) {
+		t.Fatalf("package.json does not match VERSION %q", version)
+	}
+
+	dockerfile := read(t, filepath.Join(root, "Dockerfile"))
+	for _, required := range []string{
+		"BUILD_VERSION=development",
+		"BUILD_REVISION=unknown",
+		"BUILD_TIME=unknown",
+		"BUILD_DIRTY=true",
+		"BUILD_RELEASE=false",
+		"internal/platform/buildinfo.version",
+		"internal/platform/buildinfo.revision",
+		"internal/platform/buildinfo.buildTime",
+		"internal/platform/buildinfo.dirty",
+		"internal/platform/buildinfo.release",
+	} {
+		if !strings.Contains(dockerfile, required) {
+			t.Errorf("Dockerfile missing build identity contract %q", required)
+		}
+	}
+
+	release := read(t, filepath.Join(root, ".github", "workflows", "release.yml"))
+	for _, required := range []string{
+		"Resolve authoritative build identity",
+		"VERSION",
+		"BUILD_TIME=",
+		"BUILD_DIRTY=false",
+		"BUILD_RELEASE=",
+		"release-identity.json",
+		"./leapviewctl version --json",
+		"Verify published runtime identity",
+		`docker run --rm "$IMAGE_REFERENCE" version --json`,
+	} {
+		if !strings.Contains(release, required) {
+			t.Errorf("release workflow missing build identity contract %q", required)
+		}
+	}
+
+	for _, name := range []string{
+		filepath.Join(root, "deploy", "compose", "README.md"),
+		filepath.Join(root, "docs", "articles", "start", "installation.md"),
+	} {
+		document := read(t, name)
+		for _, required := range []string{
+			"release-identity.json",
+			"leapviewctl version --json",
+			"org.opencontainers.image.version",
+			"/api/v1/capabilities",
+		} {
+			if !strings.Contains(document, required) {
+				t.Errorf("%s missing identity verification step %q", name, required)
+			}
 		}
 	}
 }
