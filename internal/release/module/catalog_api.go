@@ -4,12 +4,13 @@ import (
 	"net/http"
 
 	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
+	projectapi "github.com/Yacobolo/leapview/internal/project/api"
 	releaseapi "github.com/Yacobolo/leapview/internal/release/api"
 )
 
-func (m *Module) ListProjects(w http.ResponseWriter, r *http.Request, params releaseapi.PageParams) {
+func (m *Module) ListProjects(w http.ResponseWriter, r *http.Request, limit *int32, pageToken *string) {
 	if m == nil || m.catalog == nil {
-		apitransport.WriteJSON(w, http.StatusOK, releaseapi.ProjectListResponse{Items: []releaseapi.ProjectResponse{}, Page: releaseapi.PageInfo{}})
+		apitransport.WriteJSON(w, http.StatusOK, projectapi.ProjectListResponse{Items: []projectapi.ProjectResponse{}, Page: projectapi.PageInfo{}})
 		return
 	}
 	rows, err := m.catalog.ListProjects(r.Context())
@@ -17,9 +18,9 @@ func (m *Module) ListProjects(w http.ResponseWriter, r *http.Request, params rel
 		apitransport.WriteProblem(w, r, http.StatusInternalServerError, "PROJECT_LIST_FAILED", "Projects could not be loaded", nil)
 		return
 	}
-	items := make([]releaseapi.ProjectResponse, 0, len(rows))
+	items := make([]projectapi.ProjectResponse, 0, len(rows))
 	for _, row := range rows {
-		item := releaseapi.ProjectResponse{ID: row.ID, Title: row.ID, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
+		item := projectapi.ProjectResponse{ID: row.ID, Title: row.ID, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
 		if row.LatestReleaseID != "" {
 			item.LatestReleaseID = &row.LatestReleaseID
 		}
@@ -28,12 +29,12 @@ func (m *Module) ListProjects(w http.ResponseWriter, r *http.Request, params rel
 		}
 		items = append(items, item)
 	}
-	page, next, err := apitransport.KeysetPage(items, params.Limit, params.PageToken, func(item releaseapi.ProjectResponse) string { return item.ID })
+	page, next, err := apitransport.KeysetPage(items, limit, pageToken, func(item projectapi.ProjectResponse) string { return item.ID })
 	if err != nil {
 		apitransport.WriteProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", err.Error(), nil)
 		return
 	}
-	apitransport.WriteJSON(w, http.StatusOK, releaseapi.ProjectListResponse{Items: page, Page: releaseapi.PageInfo{NextCursor: next}})
+	apitransport.WriteJSON(w, http.StatusOK, projectapi.ProjectListResponse{Items: page, Page: projectapi.PageInfo{NextCursor: next}})
 }
 
 func (m *Module) GetProject(w http.ResponseWriter, r *http.Request, projectID string) {
@@ -46,7 +47,7 @@ func (m *Module) GetProject(w http.ResponseWriter, r *http.Request, projectID st
 		apitransport.WriteProblem(w, r, http.StatusNotFound, "PROJECT_NOT_FOUND", "Project not found", nil)
 		return
 	}
-	item := releaseapi.ProjectResponse{ID: projectID, Title: projectID, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
+	item := projectapi.ProjectResponse{ID: projectID, Title: projectID, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
 	if row.LatestReleaseID != "" {
 		item.LatestReleaseID = &row.LatestReleaseID
 	}
@@ -56,7 +57,7 @@ func (m *Module) GetProject(w http.ResponseWriter, r *http.Request, projectID st
 	apitransport.WriteJSON(w, http.StatusOK, item)
 }
 
-func (m *Module) ListProjectWorkspaces(w http.ResponseWriter, r *http.Request, projectID string, params releaseapi.PageParams) {
+func (m *Module) ListProjectWorkspaces(w http.ResponseWriter, r *http.Request, projectID string, limit *int32, pageToken *string) {
 	if m == nil || m.catalog == nil {
 		apitransport.WriteProblem(w, r, http.StatusNotFound, "PROJECT_NOT_FOUND", "Project not found", nil)
 		return
@@ -66,9 +67,9 @@ func (m *Module) ListProjectWorkspaces(w http.ResponseWriter, r *http.Request, p
 		apitransport.WriteProblem(w, r, http.StatusInternalServerError, "PROJECT_WORKSPACES_FAILED", "Project workspaces could not be loaded", nil)
 		return
 	}
-	items := make([]releaseapi.ProjectWorkspaceResponse, 0, len(rows))
+	items := make([]projectapi.ProjectWorkspaceResponse, 0, len(rows))
 	for _, row := range rows {
-		item := releaseapi.ProjectWorkspaceResponse{ID: row.ID, Title: row.Title}
+		item := projectapi.ProjectWorkspaceResponse{ID: row.ID, Title: row.Title}
 		if row.Description != "" {
 			item.Description = &row.Description
 		}
@@ -77,12 +78,12 @@ func (m *Module) ListProjectWorkspaces(w http.ResponseWriter, r *http.Request, p
 		}
 		items = append(items, item)
 	}
-	page, next, err := apitransport.KeysetPage(items, params.Limit, params.PageToken, func(item releaseapi.ProjectWorkspaceResponse) string { return item.ID })
+	page, next, err := apitransport.KeysetPage(items, limit, pageToken, func(item projectapi.ProjectWorkspaceResponse) string { return item.ID })
 	if err != nil {
 		apitransport.WriteProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", err.Error(), nil)
 		return
 	}
-	apitransport.WriteJSON(w, http.StatusOK, releaseapi.ProjectWorkspaceListResponse{Items: page, Page: releaseapi.PageInfo{NextCursor: next}})
+	apitransport.WriteJSON(w, http.StatusOK, projectapi.ProjectWorkspaceListResponse{Items: page, Page: projectapi.PageInfo{NextCursor: next}})
 }
 
 func (m *Module) ListManagedConnections(w http.ResponseWriter, r *http.Request, projectID string, params releaseapi.PageParams) {

@@ -29,7 +29,10 @@ targets:
         LeapViewAPI.Dashboard: *leapview_api_go_package
         LeapViewAPI.Deployment: *leapview_api_go_package
         LeapViewAPI.ManagedData: *leapview_api_go_package
-        LeapViewAPI.Project: *leapview_api_go_package
+        LeapViewAPI.Project:
+          dir: ../internal/project/api/gen
+          package: gen
+          import_path: github.com/Yacobolo/leapview/internal/project/api/gen
         LeapViewAPI.Protocol:
           dir: ../internal/platform/http/api/gen
           package: gen

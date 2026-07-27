@@ -376,6 +376,8 @@ tasks:
       - internal/app/api/gen/server.apigen.gen.go
       - internal/app/cli/gen/apigen_registry.gen.go
       - internal/platform/http/api/gen/request_models.gen.go
+      - internal/project/api/gen/request_models.gen.go
+      - internal/project/api/gen/server.apigen.gen.go
       - docs/api/catalog.json
       - docs/api/openapi.yaml
       - docs/api/operations.json

@@ -8,18 +8,6 @@ import (
 	releasemodule "github.com/Yacobolo/leapview/internal/release/module"
 )
 
-func (a apiGenDispatcher) ListProjects(w http.ResponseWriter, r *http.Request, params apigenapi.GenListProjectsParams) {
-	a.releaseModule.ListProjects(w, r, releasemodule.PageParams{Limit: params.Limit, PageToken: params.PageToken})
-}
-
-func (a apiGenDispatcher) GetProject(w http.ResponseWriter, r *http.Request, projectID string) {
-	a.releaseModule.GetProject(w, r, projectID)
-}
-
-func (a apiGenDispatcher) ListProjectWorkspaces(w http.ResponseWriter, r *http.Request, projectID string, params apigenapi.GenListProjectWorkspacesParams) {
-	a.releaseModule.ListProjectWorkspaces(w, r, projectID, releasemodule.PageParams{Limit: params.Limit, PageToken: params.PageToken})
-}
-
 func (a apiGenDispatcher) ListManagedConnections(w http.ResponseWriter, r *http.Request, projectID string, params apigenapi.GenListManagedConnectionsParams) {
 	a.releaseModule.ListManagedConnections(w, r, projectID, releasemodule.PageParams{Limit: params.Limit, PageToken: params.PageToken})
 }

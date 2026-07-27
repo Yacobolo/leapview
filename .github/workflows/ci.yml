@@ -97,6 +97,7 @@ jobs:
             internal/app/config/config_gen.go
             internal/app/config/spec/names_gen.go
             internal/platform/http/api/gen
+            internal/project/api/gen
             internal/platform/db/db.go
             internal/platform/db/models.go
             internal/platform/db/*.sql.go
@@ -121,6 +122,7 @@ jobs:
             internal/app/api/gen \
             internal/app/cli/gen \
             internal/platform/http/api/gen \
+            internal/project/api/gen \
             schemas/config \
             schemas/json \
             web/generated
@@ -169,6 +171,7 @@ jobs:
             internal/app/config/config_gen.go
             internal/app/config/spec/names_gen.go
             internal/platform/http/api/gen/
+            internal/project/api/gen/
             internal/platform/db/db.go
             internal/platform/db/models.go
             internal/platform/db/*.sql.go
