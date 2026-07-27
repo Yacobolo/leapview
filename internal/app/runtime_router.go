@@ -15,7 +15,6 @@ import (
 	adminmodule "github.com/Yacobolo/leapview/internal/admin/module"
 	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
 	analyticsmodule "github.com/Yacobolo/leapview/internal/analytics/module"
-	queryaudithttp "github.com/Yacobolo/leapview/internal/analytics/queryaudit/http"
 	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	apiapigenruntime "github.com/Yacobolo/leapview/internal/app/api/apigenruntime"
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
@@ -458,8 +457,8 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	queryAuditAPI := queryaudithttp.Handler{
-		Reader: queryaudithttp.ReaderProvider(runtime.queryAuditProvider),
+	queryAuditAPI := analyticsmodule.QueryAuditAPIGenConfig{
+		Reader: runtime.queryAuditProvider,
 		WorkspaceID: func(value string) string {
 			return workspaceID(routes, runtime, platform, policy, value)
 		},
@@ -800,7 +799,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				if routes.agentModule != nil && routes.agentModule.DispatchAPIGenOperation(operationID, writer, request, platform.logger) {
 					return true
 				}
-				if queryaudithttp.DispatchAPIGenOperation(operationID, queryAuditAPI, platform.logger, writer, request) {
+				if analyticsmodule.DispatchQueryAuditAPIGenOperation(queryAuditAPI, operationID, platform.logger, writer, request) {
 					return true
 				}
 				return apigenapi.DispatchAPIGenOperation(operationID, apiDispatcher, apiprotocol.TransportErrorResponder{Logger: platform.logger}, writer, request)
@@ -952,7 +951,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		return fmt.Errorf("build Agent APIGen transport: %w", err)
 	}
 	analyticsAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
-		return queryaudithttp.DispatchAPIGenOperation(operationID, queryAuditAPI, platform.logger, w, r)
+		return analyticsmodule.DispatchQueryAuditAPIGenOperation(queryAuditAPI, operationID, platform.logger, w, r)
 	})
 	if err != nil {
 		return fmt.Errorf("build Analytics APIGen transport: %w", err)
