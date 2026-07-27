@@ -158,7 +158,6 @@ jq -e --slurpfile expected "$identity_file" '
 
 run_suffix="${GITHUB_RUN_ID:-local}-$(uname -m)-$$"
 legacy_policy="$qualification_root/v0.1.0-policy.json"
-legacy_image="$(jq -er '.image' "$legacy_policy")"
 jq -e '
   .release == "v0.1.0" and
   .sourceRevision == "5bf4aded574df459e80d81b77d1989ecd4fa7de0" and
