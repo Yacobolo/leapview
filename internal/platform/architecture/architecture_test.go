@@ -147,6 +147,16 @@ func TestReleaseGeneratedAPIIsCapabilityOwned(t *testing.T) {
 	}
 }
 
+func TestWorkspaceGeneratedAPIIsCapabilityOwned(t *testing.T) {
+	rule, ok := ClassifyPackage("internal/workspace/api/gen")
+	if !ok {
+		t.Fatal("Workspace generated API package is not classified")
+	}
+	if rule.Capability != "workspace" || rule.Layer != LayerAdapter {
+		t.Fatalf("Workspace generated API classification = %#v, want workspace adapter", rule)
+	}
+}
+
 func TestApplicationOwnsProductConfigurationContract(t *testing.T) {
 	root := repoRoot(t)
 	if !packageDirExists(root, "internal/app/config/spec") {
@@ -1372,6 +1382,7 @@ func TestProductionContainerContractExists(t *testing.T) {
 		"COPY --from=sourcegen /src/internal/project/api/gen ./internal/project/api/gen",
 		"COPY --from=sourcegen /src/internal/refresh/api/gen ./internal/refresh/api/gen",
 		"COPY --from=sourcegen /src/internal/release/api/gen ./internal/release/api/gen",
+		"COPY --from=sourcegen /src/internal/workspace/api/gen ./internal/workspace/api/gen",
 		"COPY --from=sourcegen /src/internal/access/ui/signals/models.gen.go ./internal/access/ui/signals/models.gen.go",
 		"COPY --from=sourcegen /src/internal/admin/ui/signals/models.gen.go ./internal/admin/ui/signals/models.gen.go",
 		"COPY --from=sourcegen /src/internal/agent/ui/signals/models.gen.go ./internal/agent/ui/signals/models.gen.go",
@@ -1402,7 +1413,7 @@ func TestProductionContainerContractExists(t *testing.T) {
 	ignoreText := string(ignored)
 	for _, want := range []string{
 		".data", ".leapview", "node_modules", "api/gen", "internal/access/api/gen", "internal/agent/api/gen", "internal/analytics/api/gen", "internal/deployment/api/gen",
-		"internal/app/api/aggregate", "internal/app/api/gen", "internal/platform/http/api/gen", "internal/project/api/gen", "internal/refresh/api/gen", "internal/release/api/gen", "static/chunks",
+		"internal/app/api/aggregate", "internal/app/api/gen", "internal/platform/http/api/gen", "internal/project/api/gen", "internal/refresh/api/gen", "internal/release/api/gen", "internal/workspace/api/gen", "static/chunks",
 	} {
 		if !strings.Contains(ignoreText, want) {
 			t.Fatalf(".dockerignore missing generated or runtime path %q", want)

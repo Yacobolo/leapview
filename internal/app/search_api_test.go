@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
+	workspacegen "github.com/Yacobolo/leapview/internal/workspace/api/gen"
 )
 
 func TestGlobalSearchReturnsStructuredResultsAcrossWorkspaces(t *testing.T) {
@@ -33,7 +33,7 @@ func TestGlobalSearchReturnsStructuredResultsAcrossWorkspaces(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
-	var body apigenapi.SearchResponse
+	var body workspacegen.SearchResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode search response: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestGlobalSearchReturnsStructuredResultsAcrossWorkspaces(t *testing.T) {
 	seen := map[string]bool{}
 	for _, item := range body.Items {
 		seen[item.Reference.WorkspaceId] = true
-		if item.Reference.Type != apigenapi.SearchResultTypeDashboard || item.Reference.Id == "" || item.Href == "" || len(item.Locations) == 0 {
+		if item.Reference.Type != workspacegen.SearchResultTypeDashboard || item.Reference.Id == "" || item.Href == "" || len(item.Locations) == 0 {
 			t.Fatalf("incomplete structured search result: %#v", item)
 		}
 	}
@@ -64,7 +64,7 @@ func TestGlobalSearchRepeatedFiltersAndCursor(t *testing.T) {
 	if firstResponse.Code != http.StatusOK {
 		t.Fatalf("first status=%d body=%s", firstResponse.Code, firstResponse.Body.String())
 	}
-	var first apigenapi.SearchResponse
+	var first workspacegen.SearchResponse
 	if err := json.Unmarshal(firstResponse.Body.Bytes(), &first); err != nil {
 		t.Fatalf("decode first response: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestGlobalSearchRepeatedFiltersAndCursor(t *testing.T) {
 	if nextResponse.Code != http.StatusOK {
 		t.Fatalf("next status=%d body=%s", nextResponse.Code, nextResponse.Body.String())
 	}
-	var next apigenapi.SearchResponse
+	var next workspacegen.SearchResponse
 	if err := json.Unmarshal(nextResponse.Body.Bytes(), &next); err != nil {
 		t.Fatalf("decode next response: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestGlobalSearchDoesNotExposeOtherWorkspacesToScopedCredential(t *testing.T
 	if response.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
-	var body apigenapi.SearchResponse
+	var body workspacegen.SearchResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}

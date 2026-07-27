@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
-	apigen "github.com/Yacobolo/leapview/internal/app/api/gen"
 	cligen "github.com/Yacobolo/leapview/internal/app/cli/gen"
 )
 
@@ -177,7 +176,7 @@ func TestManagedDataAPIModelsAreBoundedAndBackendNeutral(t *testing.T) {
 
 func TestManagedDataAPIDoesNotGenerateHighLevelCLICommands(t *testing.T) {
 	managedOperationIDs := map[string]bool{}
-	for operationID := range apigen.GetAPIGenOperationContracts() {
+	for operationID := range apiaggregate.GetAPIGenOperationContracts() {
 		if strings.Contains(operationID, "ManagedData") {
 			managedOperationIDs[operationID] = true
 		}

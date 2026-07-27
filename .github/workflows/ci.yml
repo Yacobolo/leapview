@@ -101,6 +101,7 @@ jobs:
             internal/project/api/gen
             internal/refresh/api/gen
             internal/release/api/gen
+            internal/workspace/api/gen
             internal/platform/db/db.go
             internal/platform/db/models.go
             internal/platform/db/*.sql.go
@@ -129,6 +130,7 @@ jobs:
             internal/project/api/gen \
             internal/refresh/api/gen \
             internal/release/api/gen \
+            internal/workspace/api/gen \
             schemas/config \
             schemas/json \
             web/generated
@@ -181,6 +183,7 @@ jobs:
             internal/project/api/gen/
             internal/refresh/api/gen/
             internal/release/api/gen/
+            internal/workspace/api/gen/
             internal/platform/db/db.go
             internal/platform/db/models.go
             internal/platform/db/*.sql.go

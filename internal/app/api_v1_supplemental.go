@@ -23,7 +23,3 @@ func (a apiGenDispatcher) ListManagedDataUploadSessionEvents(w http.ResponseWrit
 		manageddatamodule.EventHeaders{Accept: headers.Accept, LastEventID: headers.LastEventID},
 	)
 }
-
-func (a apiGenDispatcher) GetWorkspace(w http.ResponseWriter, r *http.Request, workspaceID string) {
-	a.workspaceModule.GetWorkspace(w, r, workspaceID)
-}
