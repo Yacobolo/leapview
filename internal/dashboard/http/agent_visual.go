@@ -7,6 +7,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	dashboardapi "github.com/Yacobolo/leapview/internal/dashboard/api"
+	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	"github.com/go-chi/chi/v5"
 )
@@ -269,14 +270,65 @@ func dashboardVisualColumns(fields []visualizationir.VisualizationField) []dashb
 
 func projectDashboardAppliedFilters(filters dashboard.Filters) dashboardAppliedFilters {
 	filters = filters.WithDefaults()
-	var result dashboardAppliedFilters
-	if encoded, err := json.Marshal(filters); err == nil && json.Unmarshal(encoded, &result) == nil {
+	result := dashboardAppliedFilters{
+		Controls: map[string]dashboardFilterControl{},
+	}
+	if encoded, err := json.Marshal(filters.Selections); err == nil {
+		_ = json.Unmarshal(encoded, &result.Selections)
+	}
+	if encoded, err := json.Marshal(filters.SpatialSelections); err == nil {
+		_ = json.Unmarshal(encoded, &result.SpatialSelections)
+	}
+	if result.Selections == nil {
+		result.Selections = []map[string]any{}
+	}
+	if result.SpatialSelections == nil {
+		result.SpatialSelections = []map[string]any{}
+	}
+	if filters.CompiledState == nil {
 		return result
 	}
-	return dashboardAppliedFilters{
-		Controls:   map[string]dashboardFilterControl{},
-		Selections: []map[string]any{}, SpatialSelections: []map[string]any{},
+	for key, applied := range filters.CompiledState.AppliedControls {
+		if applied.Expression.Kind == dashboardfilter.ExpressionUnfiltered {
+			continue
+		}
+		result.Controls[key] = dashboardFilterControlFromExpression(applied.Expression)
 	}
+	return result
+}
+
+func dashboardFilterControlFromExpression(expression dashboardfilter.Expression) dashboardFilterControl {
+	control := dashboardFilterControl{Type: string(expression.Kind)}
+	if expression.Operator != "" {
+		operator := string(expression.Operator)
+		control.Operator = &operator
+	}
+	switch expression.Kind {
+	case dashboardfilter.ExpressionSet:
+		values := make([]string, 0, len(expression.Values))
+		for _, value := range expression.Values {
+			values = append(values, fmt.Sprint(value.Value))
+		}
+		control.Values = &values
+	case dashboardfilter.ExpressionComparison:
+		if expression.Value != nil {
+			value := fmt.Sprint(expression.Value.Value)
+			control.Value = &value
+		}
+	case dashboardfilter.ExpressionRange:
+		if expression.Lower != nil {
+			from := fmt.Sprint(expression.Lower.Value.Value)
+			control.From = &from
+		}
+		if expression.Upper != nil {
+			to := fmt.Sprint(expression.Upper.Value.Value)
+			control.To = &to
+		}
+	case dashboardfilter.ExpressionRelativePeriod:
+		preset := fmt.Sprintf("%s:%d:%s", expression.Direction, expression.Count, expression.Unit)
+		control.Preset = &preset
+	}
+	return control
 }
 
 func dashboardVisualDiagnostics(input []visualizationir.VisualizationDiagnostic) []dashboardVisualDiagnostic {

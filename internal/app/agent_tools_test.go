@@ -20,7 +20,6 @@ import (
 	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
 	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
-	"github.com/Yacobolo/leapview/internal/dashboard"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
@@ -553,7 +552,7 @@ func TestAPIGenAgentToolsExposeTypeSpecArgumentNamesAndBodyFields(t *testing.T) 
 		}
 	}
 	for toolName, wantProps := range map[string][]string{
-		"query_dashboard_visual": {"workspace", "dashboard", "page", "visual", "filters", "limit", "pageToken"},
+		"query_dashboard_visual": {"workspace", "dashboard", "page", "visual", "limit", "pageToken"},
 		"query_semantic_model":   {"workspace", "model", "dimensions", "measures", "filters", "sort", "limit", "pageToken"},
 	} {
 		var schema struct {
@@ -718,8 +717,7 @@ func TestAPIGenAgentToolFetchesSingleDashboardVisualData(t *testing.T) {
 			"workspace":"test",
 			"dashboard":"executive-sales",
 			"page":"overview",
-			"visual":"orders",
-			"filters":{"controls":{"state":{"type":"multi_select","operator":"in","values":["SP"]}}}
+			"visual":"orders"
 		}`),
 	})
 	if err != nil {
@@ -752,7 +750,9 @@ func TestAPIGenAgentToolFetchesSingleDashboardVisualData(t *testing.T) {
 		Status struct {
 			Kind string `json:"kind"`
 		} `json:"status"`
-		AppliedFilters dashboard.Filters `json:"appliedFilters"`
+		AppliedFilters struct {
+			Controls map[string]any `json:"controls"`
+		} `json:"appliedFilters"`
 	}
 	if err := json.Unmarshal(body, &visual); err != nil {
 		t.Fatalf("decode visual result: %v body=%s", err, body)
@@ -760,7 +760,7 @@ func TestAPIGenAgentToolFetchesSingleDashboardVisualData(t *testing.T) {
 	if visual.QueryID != "call_1" || visual.VisualID != "orders" || visual.Title != "Orders" ||
 		visual.Type != "proportional" || visual.Mark != "donut" || len(visual.Columns) == 0 ||
 		len(visual.Rows) != 1 || visual.Completeness.ReturnedRows != 1 ||
-		visual.Status.Kind != "ready" || visual.AppliedFilters.Controls["state"].Values[0] != "SP" {
+		visual.Status.Kind != "ready" || visual.AppliedFilters.Controls == nil {
 		t.Fatalf("visual result = %#v", visual)
 	}
 }

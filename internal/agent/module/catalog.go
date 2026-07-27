@@ -17,6 +17,7 @@ import (
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
+	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
 	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
 	"github.com/Yacobolo/leapview/internal/workspace"
@@ -442,8 +443,8 @@ func (c CatalogService) childReferences(parent agenttools.CatalogRef, requested 
 					}
 				}
 			}
-			if allows(agenttools.CatalogTypeFilter) && component.Filter != "" {
-				reference := productsearch.Reference{WorkspaceID: parent.WorkspaceID, Type: productsearch.TypeFilter, ID: report.ID + "." + component.Filter}
+			if binding, ok := catalogComponentFilterBinding(report, page, component); allows(agenttools.CatalogTypeFilter) && ok {
+				reference := productsearch.Reference{WorkspaceID: parent.WorkspaceID, Type: productsearch.TypeFilter, ID: report.ID + "." + binding.Filter}
 				if _, duplicate := seen[reference]; !duplicate {
 					seen[reference] = struct{}{}
 					references = append(references, reference)
@@ -510,7 +511,7 @@ func (c CatalogService) details(ctx context.Context, scope agenttools.Scope, ref
 			"semanticModelRef": catalogRefValue(ref.WorkspaceID, agenttools.CatalogTypeSemanticModel, report.SemanticModel),
 			"pageCount":        len(metrics.Pages(ref.ID)),
 			"visualCount":      len(report.Visualizations),
-			"filterCount":      len(report.Filters),
+			"filterCount":      len(report.FilterDefinitions),
 		}, nil
 	case agenttools.CatalogTypePage:
 		dashboardID, pageID, ok := catalogPageIDs(ref.ID)
@@ -527,7 +528,7 @@ func (c CatalogService) details(ctx context.Context, scope agenttools.Scope, ref
 		}
 		components := make([]map[string]any, 0, len(page.Visuals))
 		for _, component := range page.Visuals {
-			components = append(components, catalogComponent(component, report))
+			components = append(components, catalogComponent(component, report, page))
 		}
 		return map[string]any{"type": string(ref.Type), "components": components}, nil
 	case agenttools.CatalogTypeVisual:
@@ -785,26 +786,35 @@ func catalogPage(pages []dashboard.Page, id string) (dashboard.Page, bool) {
 	return dashboard.Page{}, false
 }
 
-func catalogComponent(component dashboard.PageVisual, report dashboarddefinition.Definition) map[string]any {
+func catalogComponent(component dashboard.PageVisual, report dashboarddefinition.Definition, page dashboard.Page) map[string]any {
 	kind, ref := component.Kind, ""
 	switch {
 	case component.Visual != "":
 		kind, ref = "visual", component.Visual
-	case component.Filter != "":
-		kind, ref = "filter", component.Filter
+	case component.Binding.ID != "":
+		if binding, ok := catalogComponentFilterBinding(report, page, component); ok {
+			kind, ref = "filter", binding.Filter
+		}
 	}
 	title := component.Title
 	if title == "" {
 		if value, ok := report.Visualizations[ref]; ok {
 			title = dashboarddefinition.SpecTitle(value.Spec)
-		} else if value, ok := report.Filters[ref]; ok {
+		} else if value, ok := report.FilterDefinitions[ref]; ok {
 			title = value.Label
 		}
 	}
-	return map[string]any{
+	out := map[string]any{
 		"id": component.ID, "kind": kind, "ref": ref, "title": title,
 		"description": component.Description, "placement": catalogPlacement(component.Placement),
 	}
+	if kind == "visual" {
+		out["visualId"] = ref
+	}
+	if kind == "filter" {
+		out["filterId"] = ref
+	}
+	return out
 }
 
 func catalogVisualDetails(metrics queryruntime.Metrics, ref agenttools.CatalogRef, location agenttools.CatalogLocation) (map[string]any, error) {
@@ -820,7 +830,7 @@ func catalogVisualDetails(metrics queryruntime.Metrics, ref agenttools.CatalogRe
 	if !ok {
 		return nil, catalogNotFound()
 	}
-	component, ok := catalogComponentForRef(page, visualID, false)
+	component, ok := catalogComponentForRef(page, visualID)
 	if !ok {
 		return nil, catalogNotFound()
 	}
@@ -859,7 +869,7 @@ func catalogFilterDetails(metrics queryruntime.Metrics, ref agenttools.CatalogRe
 	if !ok {
 		return nil, catalogNotFound()
 	}
-	filter, exists := report.Filters[filterID]
+	filter, exists := report.FilterDefinitions[filterID]
 	if !exists {
 		return nil, catalogNotFound()
 	}
@@ -867,13 +877,18 @@ func catalogFilterDetails(metrics queryruntime.Metrics, ref agenttools.CatalogRe
 	if !ok {
 		return nil, catalogNotFound()
 	}
-	component, ok := catalogComponentForRef(page, filterID, true)
+	component, binding, ok := catalogFilterComponent(report, page, filterID)
 	if !ok {
 		return nil, catalogNotFound()
 	}
 	return map[string]any{
-		"type": string(ref.Type), "field": filter.Dimension,
-		"configuration": catalogJSONMap(filter), "placement": catalogComponentPlacement(component),
+		"type": string(ref.Type), "field": filter.Field,
+		"configuration": map[string]any{
+			"definition":   catalogJSONMap(filter),
+			"binding":      catalogJSONMap(binding),
+			"presentation": catalogJSONMap(component.Presentation),
+		},
+		"placement": catalogComponentPlacement(component),
 	}, nil
 }
 
@@ -1145,16 +1160,36 @@ func uniqueCatalogRefs(values []agenttools.CatalogRef) []agenttools.CatalogRef {
 	return out
 }
 
-func catalogComponentForRef(page dashboard.Page, id string, filter bool) (dashboard.PageVisual, bool) {
+func catalogComponentForRef(page dashboard.Page, id string) (dashboard.PageVisual, bool) {
 	for _, component := range page.Visuals {
-		if filter && component.Filter == id {
-			return component, true
-		}
-		if !filter && component.Visual == id {
+		if component.Visual == id {
 			return component, true
 		}
 	}
 	return dashboard.PageVisual{}, false
+}
+
+func catalogFilterComponent(report dashboarddefinition.Definition, page dashboard.Page, filterID string) (dashboard.PageVisual, dashboardfilter.Binding, bool) {
+	for _, component := range page.Visuals {
+		binding, ok := catalogComponentFilterBinding(report, page, component)
+		if ok && binding.Filter == filterID {
+			return component, binding, true
+		}
+	}
+	return dashboard.PageVisual{}, dashboardfilter.Binding{}, false
+}
+
+func catalogComponentFilterBinding(report dashboarddefinition.Definition, page dashboard.Page, component dashboard.PageVisual) (dashboardfilter.Binding, bool) {
+	switch component.Binding.Scope {
+	case dashboardfilter.ScopeReport:
+		binding, ok := report.FilterBindings[component.Binding.ID]
+		return binding, ok
+	case dashboardfilter.ScopePage:
+		binding, ok := page.FilterBindings[component.Binding.ID]
+		return binding, ok
+	default:
+		return dashboardfilter.Binding{}, false
+	}
 }
 
 func catalogPlacement(value dashboard.PagePlacement) map[string]any {

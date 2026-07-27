@@ -15,7 +15,9 @@ import (
 	"github.com/Yacobolo/leapview/internal/dashboard/command"
 	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
+	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
 	"github.com/Yacobolo/leapview/internal/dashboard/report"
+	dashboardsession "github.com/Yacobolo/leapview/internal/dashboard/session"
 	dashboardstream "github.com/Yacobolo/leapview/internal/dashboard/stream"
 	reportui "github.com/Yacobolo/leapview/internal/dashboard/ui"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
@@ -69,6 +71,13 @@ type SharedCommandPrepare func(
 	prepare func(dashboard.Filters) (command.PreparedRefresh, error),
 ) (command.PreparedRefresh, uint64, error)
 
+type SessionKeyFactory func(
+	r *nethttp.Request,
+	report dashboarddefinition.Definition,
+	clientID string,
+	streamInstanceID string,
+) dashboardsession.Key
+
 type Handler struct {
 	Metrics              Metrics
 	MetricsForWorkspace  func(workspaceID string) (Metrics, bool)
@@ -91,7 +100,43 @@ type Handler struct {
 	QueryFreshness       func(context.Context, string, string, string) (api.QueryFreshness, bool)
 	CommandGuard         func(*nethttp.Request, Metrics, command.Request, dashboard.Signals) error
 	SharedCommandPrepare SharedCommandPrepare
+	SessionStore         dashboardsession.Store
+	SessionKey           SessionKeyFactory
+	OptionCursorSecret   []byte
+	OptionCache          *dashboardfilter.OptionCache
 	AgentBootstrap       func(*nethttp.Request, string) reportui.AgentBootstrap
+}
+
+func (h Handler) dashboardSessionKey(r *nethttp.Request, definition dashboarddefinition.Definition, clientID, streamInstanceID string) dashboardsession.Key {
+	if h.SessionKey != nil {
+		return h.SessionKey(r, definition, clientID, streamInstanceID)
+	}
+	principalOrClient := clientID
+	if h.CurrentPrincipalID != nil {
+		if principalID := h.CurrentPrincipalID(r); principalID != "" {
+			principalOrClient = principalID + ":" + clientID
+		}
+	}
+	return dashboardsession.Key{
+		WorkspaceOrPublication: requestWorkspaceID(h, r),
+		PrincipalOrClient:      principalOrClient,
+		DashboardID:            definition.ID,
+		ServingStateID:         definition.DefaultFilterState().DefaultsRevision,
+		StreamInstanceID:       streamInstanceID,
+	}
+}
+
+func requestWorkspaceID(h Handler, r *nethttp.Request) string {
+	if workspaceID := chi.URLParam(r, "workspace"); workspaceID != "" {
+		return workspaceID
+	}
+	if workspaceID := r.URL.Query().Get("workspace"); workspaceID != "" {
+		return workspaceID
+	}
+	if metrics, ok := h.metricsForRequest(r); ok {
+		return metrics.Catalog().Workspace.ID
+	}
+	return ""
 }
 
 func (h Handler) analyticalContext(ctx context.Context) context.Context {
@@ -172,8 +217,14 @@ func (h Handler) RenderPage(w nethttp.ResponseWriter, r *nethttp.Request, dashbo
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(nethttp.StatusOK)
 	initialFilters := reportDefinition.FiltersFromURLForPage(activePage.ID, r.URL.Query())
+	filterState, err := reportDefinition.FilterStateFromURL(activePage.ID, r.URL.Query())
+	if err != nil {
+		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
+		return
+	}
+	initialFilters.CompiledState = &filterState
+	w.WriteHeader(nethttp.StatusOK)
 	csrfToken := ""
 	if h.CSRFToken != nil {
 		csrfToken = h.CSRFToken(r)

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/dashboard"
+	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 )
 
@@ -44,5 +45,23 @@ func TestDashboardVisualAgentProjectionUsesCanonicalSpecKind(t *testing.T) {
 	}
 	if result.Type != "kpi" {
 		t.Fatalf("type = %q, want kpi", result.Type)
+	}
+}
+
+func TestProjectDashboardAppliedFiltersIncludesTypedFilterState(t *testing.T) {
+	state := dashboardfilter.State{AppliedControls: map[string]dashboardfilter.AppliedState{
+		"fb_state": {
+			Expression: dashboardfilter.Expression{
+				Kind: dashboardfilter.ExpressionSet, Operator: dashboardfilter.OperatorIn,
+				Values: []dashboardfilter.Value{{Kind: dashboardfilter.ValueString, Value: "WA"}},
+			},
+		},
+	}}
+
+	projected := projectDashboardAppliedFilters(dashboard.Filters{CompiledState: &state})
+	control, ok := projected.Controls["fb_state"]
+	if !ok || control.Type != "set" || control.Operator == nil || *control.Operator != "in" ||
+		control.Values == nil || len(*control.Values) != 1 || (*control.Values)[0] != "WA" {
+		t.Fatalf("projected controls = %#v", projected.Controls)
 	}
 }
