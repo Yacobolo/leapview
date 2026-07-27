@@ -1,14 +1,81 @@
 package release
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
+	"fmt"
+	"io"
 	"reflect"
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	"github.com/Yacobolo/leapview/internal/servingstate"
 )
+
+func TestUploadArtifactReplaysAlreadyRecordedContent(t *testing.T) {
+	content := []byte("compiled workspace artifact")
+	sum := sha256.Sum256(content)
+	digest := fmt.Sprintf("%x", sum[:])
+	repo := &serviceTestReleaseRepository{current: Release{
+		ID: "release-1", ProjectID: "project-a", Status: StatusDraft,
+		Artifacts: []Artifact{{
+			ReleaseID: "release-1", WorkspaceID: "sales", ServingStateID: "state-1",
+			ExpectedDigest: digest, SizeBytes: int64(len(content)), UploadedAt: "2026-07-27T19:00:00Z",
+		}},
+	}}
+	artifacts := &serviceTestArtifactStore{}
+	service := &Service{releases: repo, artifacts: artifacts}
+
+	got, err := service.UploadArtifact(
+		t.Context(),
+		"project-a",
+		"release-1",
+		"sales",
+		"sha-256=:"+base64Digest(content)+":",
+		bytes.NewReader(content),
+	)
+	if err != nil {
+		t.Fatalf("UploadArtifact() error = %v", err)
+	}
+	if got.SizeBytes != int64(len(content)) {
+		t.Fatalf("UploadArtifact() = %#v, saved %q", got, artifacts.saved)
+	}
+	if artifacts.saveCalls != 0 {
+		t.Fatalf("idempotent replay rewrote the retained upload %d times", artifacts.saveCalls)
+	}
+	if repo.recorded {
+		t.Fatal("idempotent replay attempted to record the artifact twice")
+	}
+}
+
+func TestUploadArtifactRejectsDifferentContentAfterArtifactWasRecorded(t *testing.T) {
+	original := []byte("original artifact")
+	replacement := []byte("different artifact")
+	sum := sha256.Sum256(original)
+	repo := &serviceTestReleaseRepository{current: Release{
+		ID: "release-1", ProjectID: "project-a", Status: StatusDraft,
+		Artifacts: []Artifact{{
+			ReleaseID: "release-1", WorkspaceID: "sales", ServingStateID: "state-1",
+			ExpectedDigest: fmt.Sprintf("%x", sum[:]), SizeBytes: int64(len(original)), UploadedAt: "2026-07-27T19:00:00Z",
+		}},
+	}}
+	service := &Service{releases: repo, artifacts: &serviceTestArtifactStore{}}
+
+	_, err := service.UploadArtifact(
+		t.Context(),
+		"project-a",
+		"release-1",
+		"sales",
+		"sha-256=:"+base64Digest(replacement)+":",
+		bytes.NewReader(replacement),
+	)
+	if !errors.Is(err, ErrDigest) {
+		t.Fatalf("UploadArtifact() error = %v, want ErrDigest", err)
+	}
+}
 
 func TestValidateFinalizationRequiresEveryArtifactToMatchReleaseConnectionPins(t *testing.T) {
 	pinErr := errors.New("artifact pins disagree with release manifest")
@@ -43,6 +110,7 @@ func TestValidateFinalizationRequiresEveryArtifactToMatchReleaseConnectionPins(t
 type serviceTestReleaseRepository struct {
 	current   Release
 	completed bool
+	recorded  bool
 }
 
 func (r *serviceTestReleaseRepository) Create(context.Context, CreateInput) (Release, error) {
@@ -57,7 +125,10 @@ func (r *serviceTestReleaseRepository) List(context.Context, string) ([]Release,
 func (r *serviceTestReleaseRepository) AssignArtifactTarget(context.Context, string, string, string, string) error {
 	return nil
 }
-func (r *serviceTestReleaseRepository) RecordArtifact(context.Context, Artifact) error { return nil }
+func (r *serviceTestReleaseRepository) RecordArtifact(context.Context, Artifact) error {
+	r.recorded = true
+	return nil
+}
 func (r *serviceTestReleaseRepository) BeginFinalization(context.Context, string, string, jobs.WorkflowIntent) (Release, error) {
 	return r.current, nil
 }
@@ -93,7 +164,25 @@ func (v *serviceTestPinValidator) ValidateServingStatePins(_ context.Context, st
 	return v.err
 }
 
+type serviceTestArtifactStore struct {
+	saved     string
+	saveCalls int
+}
+
+func (s *serviceTestArtifactStore) SaveUpload(_ context.Context, _ servingstate.ID, source io.Reader) (int64, error) {
+	s.saveCalls++
+	content, err := io.ReadAll(source)
+	s.saved = string(content)
+	return int64(len(content)), err
+}
+
+func base64Digest(content []byte) string {
+	sum := sha256.Sum256(content)
+	return base64.StdEncoding.EncodeToString(sum[:])
+}
+
 // Compile-time guards keep the service fakes aligned with the real interfaces.
 var _ Repository = (*serviceTestReleaseRepository)(nil)
 var _ FinalizationUnitOfWork = (*serviceTestReleaseRepository)(nil)
 var _ ArtifactValidator = serviceTestArtifactValidator{}
+var _ ArtifactStore = (*serviceTestArtifactStore)(nil)

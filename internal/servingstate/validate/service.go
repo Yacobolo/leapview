@@ -15,6 +15,7 @@ type Repository interface {
 type ArtifactStore interface {
 	UploadPath(servingStateID servingstate.ID) string
 	PromoteUploaded(ctx context.Context, servingStateID servingstate.ID, digest, manifestJSON string) (servingstate.Artifact, error)
+	DiscardUploaded(ctx context.Context, servingStateID servingstate.ID) error
 }
 
 type Validator interface {
@@ -42,6 +43,15 @@ func (s Service) Validate(ctx context.Context, servingStateID servingstate.ID) (
 	if err != nil {
 		return servingstate.State{}, err
 	}
+	// Validation promotion and serving-state persistence complete before the
+	// enclosing release is marked ready. A process may stop between those
+	// durable boundaries, so a reclaimed finalization job must reuse the
+	// immutable validated candidate instead of trying to consume the promoted
+	// upload path a second time.
+	if current.Status == servingstate.StatusValidated {
+		_ = s.artifacts.DiscardUploaded(ctx, current.ID)
+		return current, nil
+	}
 	validation, err := s.validator.ValidateArtifact(s.artifacts.UploadPath(current.ID), current.WorkspaceID, current.Environment, current.ID)
 	if err != nil {
 		_ = s.repo.MarkFailed(ctx, current.ID, err)
@@ -64,5 +74,10 @@ func (s Service) Validate(ctx context.Context, servingStateID servingstate.ID) (
 	}
 	artifact.WorkspaceID = current.WorkspaceID
 	artifact.Environment = current.Environment
-	return s.repo.SaveValidated(ctx, current.ID, validation, artifact)
+	validated, err := s.repo.SaveValidated(ctx, current.ID, validation, artifact)
+	if err != nil {
+		return servingstate.State{}, err
+	}
+	_ = s.artifacts.DiscardUploaded(ctx, current.ID)
+	return validated, nil
 }

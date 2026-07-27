@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/manageddata/storage"
@@ -45,10 +46,36 @@ func New(root string, blobs storage.BlobStore) (*Engine, error) {
 	if err := os.Chmod(root, 0o700); err != nil {
 		return nil, fmt.Errorf("set tus upload root permissions: %w", err)
 	}
+	if err := removeInterruptedLockArtifacts(root); err != nil {
+		return nil, err
+	}
 	store := filestore.New(root)
 	store.DirModePerm = 0o700
 	store.FileModePerm = 0o600
 	return &Engine{store: store, locker: filelocker.New(root), blobs: blobs}, nil
+}
+
+func removeInterruptedLockArtifacts(root string) error {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return fmt.Errorf("inspect tus upload locks: %w", err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".lock") &&
+			!strings.HasSuffix(name, ".stop") &&
+			!strings.Contains(name, ".lock.") {
+			continue
+		}
+		path := filepath.Join(root, name)
+		if entry.IsDir() {
+			return fmt.Errorf("interrupted tus lock artifact %q is a directory", path)
+		}
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove interrupted tus lock artifact %q: %w", path, err)
+		}
+	}
+	return nil
 }
 
 func (e *Engine) Create(ctx context.Context, request storage.CreateUpload) (storage.Upload, error) {

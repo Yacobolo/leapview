@@ -35,6 +35,33 @@ func TestServiceValidatesPromotesAndSaves(t *testing.T) {
 	}
 }
 
+func TestServiceResumesAlreadyValidatedCandidateWithoutReprocessingArtifact(t *testing.T) {
+	repo := &fakeRepo{
+		deployment: servingstate.State{
+			ID:            "dep_1",
+			WorkspaceID:   "test",
+			ProjectID:     "project",
+			ProjectDigest: "sha256:project",
+			Status:        servingstate.StatusValidated,
+			Digest:        "sha256:artifact",
+		},
+	}
+	artifacts := &fakeArtifacts{}
+	validator := &fakeValidator{err: errors.New("validated artifact must not be reprocessed")}
+	service := NewService(repo, artifacts, validator)
+
+	resumed, err := service.Validate(t.Context(), "dep_1")
+	if err != nil {
+		t.Fatalf("Validate() resumed candidate error = %v", err)
+	}
+	if !reflect.DeepEqual(resumed, repo.deployment) {
+		t.Fatalf("Validate() = %#v, want persisted candidate %#v", resumed, repo.deployment)
+	}
+	if artifacts.promoteCalls != 0 || validator.cleaned || repo.saved {
+		t.Fatalf("resume reprocessed artifact: promote=%d cleaned=%v saved=%v", artifacts.promoteCalls, validator.cleaned, repo.saved)
+	}
+}
+
 func TestServiceMarksFailedWhenValidationFails(t *testing.T) {
 	ctx := context.Background()
 	repo := &fakeRepo{
@@ -71,7 +98,7 @@ func TestServiceRunsHookAfterArtifactValidationBeforePromotion(t *testing.T) {
 	if _, err := service.Validate(t.Context(), "dep_1"); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"validated", "hook", "promoted", "saved", "cleaned"}
+	want := []string{"validated", "hook", "promoted", "saved", "discarded", "cleaned"}
 	if !reflect.DeepEqual(events, want) {
 		t.Fatalf("events = %#v, want %#v", events, want)
 	}
@@ -132,6 +159,7 @@ func (r *fakeRepo) SaveValidated(_ context.Context, _ servingstate.ID, validatio
 type fakeArtifacts struct {
 	promotedDigest string
 	promoteCalls   int
+	discardCalls   int
 	events         *[]string
 }
 
@@ -144,6 +172,12 @@ func (a *fakeArtifacts) PromoteUploaded(_ context.Context, servingStateID servin
 	appendEvent(a.events, "promoted")
 	a.promotedDigest = digest
 	return servingstate.Artifact{ID: "artifact_" + string(servingStateID), ServingStateID: servingStateID, Digest: digest, ManifestJSON: manifestJSON}, nil
+}
+
+func (a *fakeArtifacts) DiscardUploaded(context.Context, servingstate.ID) error {
+	a.discardCalls++
+	appendEvent(a.events, "discarded")
+	return nil
 }
 
 type fakeValidator struct {

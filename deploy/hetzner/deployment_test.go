@@ -121,7 +121,7 @@ func assertDockerfileImagesPinned(t *testing.T, name, dockerfile string) {
 			continue
 		}
 		image := fields[1]
-		if _, internal := stages[image]; !internal {
+		if _, internal := stages[image]; !internal && image != "scratch" {
 			_, digest, pinned := strings.Cut(image, "@sha256:")
 			if !pinned || !hexDigest.MatchString(digest) {
 				t.Errorf("%s base image is not pinned by a valid SHA-256 digest: %s", name, line)

@@ -520,6 +520,7 @@ jobs:
           deploy/hetzner/files/leapview-backup-hook
           deploy/hetzner/files/provision.sh.tftpl
           deploy/compose/qualification/qualify.sh
+          deploy/compose/qualification/recover.sh
 
       - name: Initialize Terraform providers
         working-directory: deploy/hetzner

@@ -109,6 +109,80 @@ func TestDeployPreparesCompleteProjectBeforeOneAtomicActivation(t *testing.T) {
 	}
 }
 
+func TestDeployRecoversWhenReleaseAdvancesDuringArtifactReplay(t *testing.T) {
+	projectPath := filepath.Join("..", "..", "..", "dashboards", "leapview.yaml")
+	revision := "sha256:" + strings.Repeat("a", 64)
+	projectDigest := ""
+	artifactConflicts := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/instance":
+			writeCLIJSON(t, w, apigenapi.InstanceResponse{Environment: "prod"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/capabilities":
+			writeCLIJSON(t, w, apigenapi.CapabilitiesResponse{
+				ApiVersion: "v1", BuildVersion: "test", Environment: "prod",
+				Authentication:  []apigenapi.AuthenticationMode{apigenapi.AuthenticationModeBearer},
+				QueryFormats:    []apigenapi.QueryFormat{apigenapi.QueryFormatApplicationJson},
+				UploadProtocols: []apigenapi.UploadProtocol{apigenapi.UploadProtocolTus},
+			})
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/active-asset-graph"):
+			writeCLIJSON(t, w, activeGraphResponse(nil, nil))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/projects/leapview-showcase/releases":
+			var request releasegen.ReleaseCreateRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Fatal(err)
+			}
+			projectDigest = request.ProjectDigest
+			writeCLIJSON(t, w, releasegen.ReleaseResponse{
+				Id: "release-1", ProjectId: "leapview-showcase", ProjectDigest: projectDigest,
+				Status: releasegen.ReleaseStatusDraft, CreatedBy: "test", CreatedAt: "2026-01-01T00:00:00Z",
+				Workspaces: request.Workspaces, Connections: request.Connections,
+			})
+		case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/artifact"):
+			artifactConflicts++
+			http.Error(w, "release advanced", http.StatusConflict)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/projects/leapview-showcase/releases/release-1":
+			writeCLIJSON(t, w, releasegen.ReleaseResponse{
+				Id: "release-1", ProjectId: "leapview-showcase", ProjectDigest: projectDigest,
+				Status: releasegen.ReleaseStatusReady, CreatedBy: "test", CreatedAt: "2026-01-01T00:00:00Z",
+				Workspaces: []releasegen.ReleaseWorkspaceManifest{}, Connections: []releasegen.ReleaseConnectionPin{},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/projects/leapview-showcase/deployments":
+			writeCLIJSON(t, w, map[string]any{
+				"id": "deployment-1", "projectId": "leapview-showcase", "releaseId": "release-1",
+				"environment": "prod", "status": "queued", "createdBy": "test",
+				"createdAt": "2026-01-01T00:00:00Z", "targets": []any{}, "connections": []any{},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/projects/leapview-showcase/deployments/deployment-1":
+			writeCLIJSON(t, w, map[string]any{
+				"id": "deployment-1", "projectId": "leapview-showcase", "releaseId": "release-1",
+				"environment": "prod", "status": "active", "createdBy": "test",
+				"createdAt": "2026-01-01T00:00:00Z", "targets": []any{}, "connections": []any{},
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	err := runDeploy(context.Background(), deployRequest{
+		ProjectPath: projectPath,
+		Revisions:   map[string]string{"olist": revision},
+		Target:      server.URL,
+		Token:       "secret-token",
+		AutoApprove: true,
+		Out:         &bytes.Buffer{},
+		HTTPClient:  server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("runDeploy() error = %v", err)
+	}
+	if artifactConflicts != 1 {
+		t.Fatalf("artifact conflict attempts = %d, want 1", artifactConflicts)
+	}
+}
+
 func TestDeployRejectsIncompleteManagedRevisionSetBeforeNetworkAccess(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Fatal("invalid deployment reached server")

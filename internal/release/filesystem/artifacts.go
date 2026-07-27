@@ -2,6 +2,7 @@ package filesystem
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -75,11 +76,8 @@ func (s *ArtifactStore) PromoteUploaded(_ context.Context, servingStateID servin
 	}
 	uploadPath := s.UploadPath(servingStateID)
 	finalPath := filepath.Join(s.dir, digest+".tar.gz")
-	if err := os.Rename(uploadPath, finalPath); err != nil {
-		if copyErr := copyFile(uploadPath, finalPath); copyErr != nil {
-			return servingstate.Artifact{}, copyErr
-		}
-		_ = os.Remove(uploadPath)
+	if err := copyFile(uploadPath, finalPath); err != nil {
+		return servingstate.Artifact{}, err
 	}
 	return servingstate.Artifact{
 		ID:             "artifact_" + string(servingStateID),
@@ -90,6 +88,16 @@ func (s *ArtifactStore) PromoteUploaded(_ context.Context, servingStateID servin
 		ManifestJSON:   manifestJSON,
 		SizeBytes:      fileSize(finalPath),
 	}, nil
+}
+
+func (s *ArtifactStore) DiscardUploaded(_ context.Context, servingStateID servingstate.ID) error {
+	if err := validateArtifactPathComponent(string(servingStateID), "serving state id"); err != nil {
+		return err
+	}
+	if err := os.Remove(s.UploadPath(servingStateID)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 func validateArtifactPathComponent(value, label string) error {
@@ -109,24 +117,72 @@ func fileSize(path string) int64 {
 }
 
 func copyFile(source, target string) error {
+	if same, err := sameFileContent(source, target); err == nil && same {
+		return nil
+	} else if err != nil && !os.IsNotExist(err) {
+		return err
+	} else if err == nil {
+		return fmt.Errorf("artifact target %s already exists with different content", target)
+	}
 	in, err := os.Open(source)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, securefs.PrivateFileMode)
+	out, err := os.CreateTemp(filepath.Dir(target), ".artifact-promote-*.tmp")
 	if err != nil {
 		return err
 	}
+	tmpPath := out.Name()
+	cleanup := true
+	defer func() {
+		_ = out.Close()
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if err := out.Chmod(securefs.PrivateFileMode); err != nil {
+		return err
+	}
 	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
+		return err
+	}
+	if err := out.Sync(); err != nil {
 		return err
 	}
 	if err := out.Close(); err != nil {
 		return fmt.Errorf("closing %s: %w", target, err)
 	}
-	if err := os.Chmod(target, securefs.PrivateFileMode); err != nil {
+	if err := os.Rename(tmpPath, target); err != nil {
 		return err
 	}
+	cleanup = false
 	return nil
+}
+
+func sameFileContent(left, right string) (bool, error) {
+	leftDigest, err := fileDigest(left)
+	if err != nil {
+		return false, err
+	}
+	rightDigest, err := fileDigest(right)
+	if err != nil {
+		return false, err
+	}
+	return leftDigest == rightDigest, nil
+}
+
+func fileDigest(path string) ([sha256.Size]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return [sha256.Size]byte{}, err
+	}
+	defer file.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return [sha256.Size]byte{}, err
+	}
+	var result [sha256.Size]byte
+	copy(result[:], hash.Sum(nil))
+	return result, nil
 }

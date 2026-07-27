@@ -139,6 +139,17 @@ func (s *Service) UploadArtifact(ctx context.Context, projectID, releaseID, work
 	if !found || target.ServingStateID == "" {
 		return Artifact{}, ErrNotFound
 	}
+	expectedDigestBytes, err := hex.DecodeString(target.ExpectedDigest)
+	if err != nil || len(expectedDigestBytes) != sha256.Size {
+		return Artifact{}, ErrInvalid
+	}
+	expectedContentDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(expectedDigestBytes) + ":"
+	if strings.TrimSpace(contentDigest) != expectedContentDigest {
+		return Artifact{}, ErrDigest
+	}
+	if target.UploadedAt != "" {
+		return target, nil
+	}
 	hash := sha256.New()
 	size, err := s.artifacts.SaveUpload(ctx, servingstate.ID(target.ServingStateID), io.TeeReader(source, hash))
 	if err != nil {

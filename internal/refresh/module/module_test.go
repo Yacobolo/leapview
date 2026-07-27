@@ -287,6 +287,32 @@ func TestStartOwnsSchedulerLifecycle(t *testing.T) {
 	}
 }
 
+func TestStartRedispatchesAfterLeaseWindow(t *testing.T) {
+	dispatched := make(chan struct{}, 2)
+	module, err := Build(t.Context(), Config{
+		Dispatcher: dispatcherFunc(func(context.Context) {
+			dispatched <- struct{}{}
+		}),
+		LeaseTimeout: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("build module: %v", err)
+	}
+	if err := module.Start(t.Context()); err != nil {
+		t.Fatalf("start module: %v", err)
+	}
+	for attempt := 1; attempt <= 2; attempt++ {
+		select {
+		case <-dispatched:
+		case <-time.After(time.Second):
+			t.Fatalf("dispatcher call %d did not run", attempt)
+		}
+	}
+	if err := module.Stop(t.Context()); err != nil {
+		t.Fatalf("stop module: %v", err)
+	}
+}
+
 func TestStopHonorsCancellationWhileWorkerDrains(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})

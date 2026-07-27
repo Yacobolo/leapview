@@ -50,6 +50,30 @@ func TestArtifactStoreCreatesPrivateArtifactState(t *testing.T) {
 	assertArtifactMode(t, artifact.Path, 0o600)
 }
 
+func TestArtifactPromotionKeepsRecoverableUploadUntilValidationIsDurable(t *testing.T) {
+	store := NewArtifactStore(t.TempDir())
+	if _, err := store.SaveUpload(t.Context(), "state_1", &errAfterReader{data: []byte("bundle")}); err != nil {
+		t.Fatal(err)
+	}
+
+	artifact, err := store.PromoteUploaded(t.Context(), "state_1", "abc123", "{}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes, err := os.ReadFile(store.UploadPath("state_1")); err != nil || string(bytes) != "bundle" {
+		t.Fatalf("recoverable upload after promotion = %q, %v", bytes, err)
+	}
+	if bytes, err := os.ReadFile(artifact.Path); err != nil || string(bytes) != "bundle" {
+		t.Fatalf("promoted artifact = %q, %v", bytes, err)
+	}
+	if err := store.DiscardUploaded(t.Context(), "state_1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(store.UploadPath("state_1")); !os.IsNotExist(err) {
+		t.Fatalf("upload after durable validation stat error = %v, want not exist", err)
+	}
+}
+
 func TestArtifactStoreSaveUploadCleansFailedUpload(t *testing.T) {
 	dir := t.TempDir()
 	store := NewArtifactStore(dir)

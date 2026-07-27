@@ -172,6 +172,7 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 	release := read(t, filepath.Join(root, ".github", "workflows", "release.yml"))
 	qualification := read(t, filepath.Join(root, ".github", "workflows", "installed-candidate.yml"))
 	script := read(t, filepath.Join(root, "deploy", "compose", "qualification", "qualify.sh"))
+	recovery := read(t, filepath.Join(root, "deploy", "compose", "qualification", "recover.sh"))
 	browser := read(t, filepath.Join(root, "deploy", "compose", "qualification", "browser.mjs"))
 	runbook := read(t, filepath.Join(root, "deploy", "compose", "QUALIFICATION.md"))
 
@@ -230,9 +231,70 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		"auditedDenial",
 		"runtime-identity.json",
 		"qualification-report.json",
+		"./qualification/recover.sh",
+		"recovery-report.json",
 	} {
 		if !strings.Contains(script, required) {
 			t.Errorf("qualification script missing tester assertion %q", required)
+		}
+	}
+	for _, required := range []string{
+		"managedUpload",
+		"releaseFinalization",
+		"deploymentActivation",
+		"refreshRecovery",
+		"queryStreamReconnect",
+		"backupInterruption",
+		"restorePreflight",
+		"boundedDisk",
+		"docker kill --signal KILL",
+		"LEAPVIEW_REFRESH_JOB_LEASE_TIMEOUT",
+		"listManagedDataUploadSessionEvents",
+		"listDeploymentEvents",
+		"listRefreshRunEvents",
+		"exec ./leapviewctl backup interrupted.tar.gz",
+		"exec ./leapviewctl restore backups/recovered.tar.gz",
+	} {
+		if !strings.Contains(recovery, required) {
+			t.Errorf("recovery qualification missing fault assertion %q", required)
+		}
+	}
+	waitForJSONStart := strings.Index(recovery, "wait_for_json() {")
+	if waitForJSONStart < 0 {
+		t.Fatal("recovery qualification is missing its JSON status waiter")
+	}
+	waitForJSONEnd := strings.Index(recovery[waitForJSONStart:], "\n}\n")
+	if waitForJSONEnd < 0 {
+		t.Fatal("recovery qualification JSON status waiter is unterminated")
+	}
+	waitForJSON := recovery[waitForJSONStart : waitForJSONStart+waitForJSONEnd]
+	if !strings.Contains(waitForJSON, "sleep 1") {
+		t.Error("recovery qualification must poll durable job status slowly enough to stay below the shipped API rate limit")
+	}
+	backupStart := strings.Index(recovery, `stage="backup interruption"`)
+	if backupStart < 0 {
+		t.Fatal("recovery qualification is missing the backup interruption stage")
+	}
+	backupStage := recovery[backupStart:]
+	restoreStage := strings.Index(backupStage, `stage="restore preflight interruption"`)
+	if restoreStage < 0 {
+		t.Fatal("recovery qualification is missing the restore preflight stage")
+	}
+	backupStage = backupStage[:restoreStage]
+	unthrottle := strings.Index(backupStage, `docker update --cpus 0 "$container_id"`)
+	restart := strings.Index(backupStage, `./leapviewctl start`)
+	if unthrottle < 0 || restart < 0 || unthrottle > restart {
+		t.Error("backup recovery must remove its fault-injection CPU limit before restarting the service")
+	}
+	for _, workflow := range []struct {
+		name     string
+		contents string
+	}{
+		{name: "release", contents: release},
+		{name: "installed candidate", contents: qualification},
+	} {
+		if !strings.Contains(workflow.contents, "recovery-report.json") {
+			t.Errorf("%s workflow does not retain the bounded recovery report", workflow.name)
 		}
 	}
 	if strings.Contains(script, "${run_suffix,,}") {
@@ -273,6 +335,13 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		"Five-minute Sales Evaluation",
 		"Anonymous distribution",
 		"Incident ownership",
+		"Interruption recovery",
+		"managed upload",
+		"deployment activation",
+		"refresh",
+		"query/SSE",
+		"backup",
+		"restore preflight",
 	} {
 		if !strings.Contains(runbook, required) {
 			t.Errorf("qualification runbook missing %q", required)
