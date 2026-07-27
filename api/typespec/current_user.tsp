@@ -1,5 +1,6 @@
 using Http;
 using TypeSpec.OpenAPI;
+using LeapViewAPI.Protocol;
 
 namespace LeapViewAPI.Access;
 
@@ -88,7 +89,7 @@ op createCurrentAPIToken(@header("Idempotency-Key") idempotencyKey: IdempotencyK
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
 @extension("x-leapview-object-scope", "principal")
 @operationId("revokeCurrentAPIToken")
-op revokeCurrentAPIToken(@path token: string): NoContentResponse | CommonErrors;
+op revokeCurrentAPIToken(@path token: string): EmptyResponse | CommonErrors;
 
 alias ListCurrentEffectivePrivilegesOK = OkJson<EffectivePrivilegesResponse>;
 
@@ -119,4 +120,4 @@ op listCurrentSessions(@query limit?: ListLimit, @query pageToken?: PageToken): 
 @apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
 @extension("x-leapview-object-scope", "principal")
 @operationId("revokeCurrentSession")
-op revokeCurrentSession(@path session: string): NoContentResponse | CommonErrors;
+op revokeCurrentSession(@path session: string): EmptyResponse | CommonErrors;

@@ -15,6 +15,7 @@ import (
 	adminmodule "github.com/Yacobolo/leapview/internal/admin/module"
 	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
 	analyticsmodule "github.com/Yacobolo/leapview/internal/analytics/module"
+	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	apiapigenruntime "github.com/Yacobolo/leapview/internal/app/api/apigenruntime"
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	apiprotocol "github.com/Yacobolo/leapview/internal/app/api/protocol"
@@ -81,7 +82,7 @@ type platformServices struct {
 	logger        *slog.Logger
 	workers       *platformlifecycle.Group
 	apiProtocol   *apiprotocol.Protocol
-	apiGenHandler *apiapigenruntime.Handler
+	apiGenServers apiaggregate.Servers
 }
 
 type httpPolicy struct {
@@ -791,6 +792,9 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				if apiDispatcher == nil {
 					return false
 				}
+				if routes.agentModule != nil && routes.agentModule.DispatchAPIGenOperation(operationID, writer, request, platform.logger) {
+					return true
+				}
 				return apigenapi.DispatchAPIGenOperation(operationID, apiDispatcher, apiprotocol.TransportErrorResponder{Logger: platform.logger}, writer, request)
 			},
 			QueryContext: func(ctx context.Context, scope agentmodule.Scope) context.Context {
@@ -906,7 +910,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		return fmt.Errorf("register workspace securables: %w", err)
 	}
 	apiDispatcher = &apiGenDispatcher{
-		accessModule: routes.accessModule, agentModule: routes.agentModule,
+		accessModule:    routes.accessModule,
 		dashboardModule: routes.dashboardModule, deploymentModule: routes.deploymentModule,
 		managedDataModule: routes.managedDataModule, refreshModule: routes.refreshModule,
 		releaseModule: routes.releaseModule, workspaceModule: routes.workspaceModule,
@@ -922,14 +926,20 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	if err != nil {
 		return fmt.Errorf("build APIGen authorizer: %w", err)
 	}
-	platform.apiGenHandler, err = apiapigenruntime.Build(
-		apiGenAuthorizer,
-		apiDispatcher,
-		apiprotocol.TransportErrorResponder{Logger: platform.logger},
-	)
+	appResponder := apiprotocol.TransportErrorResponder{Logger: platform.logger}
+	appAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
+		return apigenapi.DispatchAPIGenOperation(operationID, apiDispatcher, appResponder, w, r)
+	})
 	if err != nil {
-		return fmt.Errorf("build APIGen transport: %w", err)
+		return fmt.Errorf("build application APIGen transport: %w", err)
 	}
+	agentAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
+		return routes.agentModule.DispatchAPIGenOperation(operationID, w, r, platform.logger)
+	})
+	if err != nil {
+		return fmt.Errorf("build Agent APIGen transport: %w", err)
+	}
+	platform.apiGenServers = apiaggregate.Servers{Agent: agentAPIHandler, Gen: appAPIHandler}
 	configurePageStream(routes, runtime, platform, policy)
 	platform.health = newHealth(healthConfig{
 		Platform: func(ctx context.Context) error {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	apigen "github.com/Yacobolo/leapview/internal/app/api/gen"
 	cligen "github.com/Yacobolo/leapview/internal/app/cli/gen"
 )
@@ -193,7 +194,7 @@ func TestManagedDataAPIDoesNotGenerateHighLevelCLICommands(t *testing.T) {
 
 func managedDataOpenAPISpec(t *testing.T) map[string]any {
 	t.Helper()
-	spec, err := apigen.GetEmbeddedOpenAPISpec()
+	spec, err := apiaggregate.GetEmbeddedOpenAPISpec()
 	if err != nil {
 		t.Fatalf("embedded openapi: %v", err)
 	}

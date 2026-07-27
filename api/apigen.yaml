@@ -6,17 +6,27 @@ targets:
     openapi_out: gen/openapi.yaml
     go_out:
       unmatched: error
+      aggregate:
+        dir: ../internal/app/api/aggregate
+        package: aggregate
       packages:
         LeapViewAPI: &leapview_api_go_package
           dir: ../internal/app/api/gen
           package: gen
           import_path: github.com/Yacobolo/leapview/internal/app/api/gen
         LeapViewAPI.Access: *leapview_api_go_package
-        LeapViewAPI.Agent: *leapview_api_go_package
+        LeapViewAPI.Agent:
+          dir: ../internal/agent/api/gen
+          package: gen
+          import_path: github.com/Yacobolo/leapview/internal/agent/api/gen
         LeapViewAPI.Dashboard: *leapview_api_go_package
         LeapViewAPI.Deployment: *leapview_api_go_package
         LeapViewAPI.ManagedData: *leapview_api_go_package
         LeapViewAPI.Project: *leapview_api_go_package
+        LeapViewAPI.Protocol:
+          dir: ../internal/platform/http/api/gen
+          package: gen
+          import_path: github.com/Yacobolo/leapview/internal/platform/http/api/gen
         LeapViewAPI.Refresh: *leapview_api_go_package
         LeapViewAPI.Release: *leapview_api_go_package
         LeapViewAPI.Workspace: *leapview_api_go_package

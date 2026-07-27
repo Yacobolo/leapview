@@ -88,10 +88,13 @@ jobs:
             docs/reference/config
             docs/search-index.sqlite3
             docs/visuals/examples.gen.json
+            internal/agent/api/gen
+            internal/app/api/aggregate
             internal/app/api/gen
             internal/app/cli/gen
             internal/app/config/config_gen.go
             internal/app/config/spec/names_gen.go
+            internal/platform/http/api/gen
             internal/platform/db/db.go
             internal/platform/db/models.go
             internal/platform/db/*.sql.go
@@ -109,8 +112,11 @@ jobs:
             api/gen \
             docs/reference/cli \
             docs/reference/config \
+            internal/agent/api/gen \
+            internal/app/api/aggregate \
             internal/app/api/gen \
             internal/app/cli/gen \
+            internal/platform/http/api/gen \
             schemas/config \
             schemas/json \
             web/generated
@@ -150,10 +156,13 @@ jobs:
           if-no-files-found: error
           path: |
             api/gen/
+            internal/agent/api/gen/
+            internal/app/api/aggregate/
             internal/app/api/gen/
             internal/app/cli/gen/
             internal/app/config/config_gen.go
             internal/app/config/spec/names_gen.go
+            internal/platform/http/api/gen/
             internal/platform/db/db.go
             internal/platform/db/models.go
             internal/platform/db/*.sql.go

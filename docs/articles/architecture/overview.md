@@ -58,7 +58,7 @@ Components bind to typed signal paths. They can keep ephemeral presentation stat
 
 - TypeSpec under `api/typespec` defines the versioned headless API.
 - TypeSpec under `api/signals` defines UI signal models.
-- APIGen produces Go surfaces, OpenAPI, CLI operation registry, and generated models.
+- APIGen produces capability-owned Go surfaces and models, a thin application route/metadata aggregate, platform-owned generic HTTP models, canonical OpenAPI, and the CLI operation registry.
 - CUE/config-schema code exports JSON Schemas for YAML resources.
 - The Cobra command tree generates CLI reference pages.
 - Runtime configuration specifications generate Go accessors, environment reference, schema, and example environment.

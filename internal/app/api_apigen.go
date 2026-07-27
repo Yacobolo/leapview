@@ -5,6 +5,7 @@ import (
 
 	accessmodule "github.com/Yacobolo/leapview/internal/access/module"
 	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
+	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
 	deploymentmodule "github.com/Yacobolo/leapview/internal/deployment/module"
@@ -17,7 +18,7 @@ import (
 )
 
 func agentAPIGenOperations() []agentmodule.APIGenOperation {
-	generated := apigenapi.GetAPIGenOperationContracts()
+	generated := apiaggregate.GetAPIGenOperationContracts()
 	contracts := make(map[string]agentmodule.APIGenOperationContract, len(generated))
 	for operationID, contract := range generated {
 		contracts[operationID] = agentmodule.APIGenOperationContract{
@@ -26,11 +27,11 @@ func agentAPIGenOperations() []agentmodule.APIGenOperation {
 			Extensions: contract.Extensions,
 		}
 	}
-	return agentmodule.BuildAPIGenOperations(contracts, apigenapi.GetAPIGenToolContracts())
+	return agentmodule.BuildAPIGenOperations(contracts, apiaggregate.GetAPIGenToolContracts())
 }
 
 func accessAPIGenOperationContracts() map[string]accessmodule.APIGenOperationContract {
-	generated := apigenapi.GetAPIGenOperationContracts()
+	generated := apiaggregate.GetAPIGenOperationContracts()
 	contracts := make(map[string]accessmodule.APIGenOperationContract, len(generated))
 	for operationID, contract := range generated {
 		contracts[operationID] = accessmodule.APIGenOperationContract{
@@ -42,24 +43,11 @@ func accessAPIGenOperationContracts() map[string]accessmodule.APIGenOperationCon
 }
 
 func registerAPIGenRoutes(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, r chi.Router) {
-	apigenapi.RegisterAPIGenRoutes(r, apiGenRouteHandler{handler: platform.apiGenHandler})
-}
-
-type apiGenOperationHandler interface {
-	HandleAPIGen(string, http.ResponseWriter, *http.Request)
-}
-
-type apiGenRouteHandler struct {
-	handler apiGenOperationHandler
-}
-
-func (a apiGenRouteHandler) HandleAPIGen(operationID string, w http.ResponseWriter, r *http.Request) {
-	a.handler.HandleAPIGen(operationID, w, r)
+	apiaggregate.RegisterAPIGenRoutes(r, platform.apiGenServers)
 }
 
 type apiGenDispatcher struct {
 	accessModule       *accessmodule.Module
-	agentModule        *agentmodule.Module
 	dashboardModule    *dashboardmodule.Module
 	deploymentModule   *deploymentmodule.Module
 	managedDataModule  *manageddatamodule.Module
@@ -274,50 +262,6 @@ func (a apiGenDispatcher) ListRefreshRuns(w http.ResponseWriter, r *http.Request
 
 func (a apiGenDispatcher) GetRefreshRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
 	a.refreshModule.GetRefreshRun(w, r, workspaceID, runID)
-}
-
-func (a apiGenDispatcher) ListAgentConversations(w http.ResponseWriter, r *http.Request, _ apigenapi.GenListAgentConversationsParams) {
-	a.agentModule.HTTP().ListConversations(w, r)
-}
-
-func (a apiGenDispatcher) CreateAgentConversation(w http.ResponseWriter, r *http.Request, _ apigenapi.GenCreateAgentConversationHeaders) {
-	a.agentModule.HTTP().CreateConversation(w, r)
-}
-
-func (a apiGenDispatcher) GetAgentConversation(w http.ResponseWriter, r *http.Request, _ string) {
-	a.agentModule.HTTP().GetConversation(w, r)
-}
-
-func (a apiGenDispatcher) UpdateAgentConversation(w http.ResponseWriter, r *http.Request, _ string, headers apigenapi.GenUpdateAgentConversationHeaders) {
-	a.agentModule.UpdateConversation(w, r, headers.IfMatch)
-}
-
-func (a apiGenDispatcher) ArchiveAgentConversation(w http.ResponseWriter, r *http.Request, _ string) {
-	a.agentModule.HTTP().ArchiveConversation(w, r)
-}
-
-func (a apiGenDispatcher) ListAgentMessages(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListAgentMessagesParams) {
-	a.agentModule.HTTP().ListMessages(w, r)
-}
-
-func (a apiGenDispatcher) CreateAgentRun(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenCreateAgentRunHeaders) {
-	a.agentModule.HTTP().CreateRun(w, r)
-}
-
-func (a apiGenDispatcher) ListAgentRuns(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListAgentRunsParams) {
-	a.agentModule.HTTP().ListRuns(w, r)
-}
-
-func (a apiGenDispatcher) GetAgentRun(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.agentModule.HTTP().GetRun(w, r)
-}
-
-func (a apiGenDispatcher) ListAgentEvents(w http.ResponseWriter, r *http.Request, _, _ string, _ apigenapi.GenListAgentEventsParams, _ apigenapi.GenListAgentEventsHeaders) {
-	a.agentModule.HTTP().ListEvents(w, r)
-}
-
-func (a apiGenDispatcher) CancelAgentRun(w http.ResponseWriter, r *http.Request, _, _ string, _ apigenapi.GenCancelAgentRunHeaders) {
-	a.agentModule.HTTP().CancelRun(w, r)
 }
 
 func (a apiGenDispatcher) ListPrincipals(w http.ResponseWriter, r *http.Request, _ apigenapi.GenListPrincipalsParams) {

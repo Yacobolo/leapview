@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	protocolgen "github.com/Yacobolo/leapview/internal/platform/http/api/gen"
 )
 
 func TestDataRevisionsListAndCurrent(t *testing.T) {
@@ -19,7 +20,7 @@ func TestDataRevisionsListAndCurrent(t *testing.T) {
 		}
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/revisions"):
-			writeJSONTest(t, w, http.StatusOK, apigenapi.ManagedDataRevisionListResponse{Items: []apigenapi.ManagedDataRevisionSummaryResponse{{Id: digest, Status: apigenapi.ManagedDataRevisionStatusAvailable, FileCount: 2, Size: 12, CreatedAt: "2026-01-01T00:00:00Z", UploadSessionId: "upload-1"}}, Page: apigenapi.PageInfo{}})
+			writeJSONTest(t, w, http.StatusOK, apigenapi.ManagedDataRevisionListResponse{Items: []apigenapi.ManagedDataRevisionSummaryResponse{{Id: digest, Status: apigenapi.ManagedDataRevisionStatusAvailable, FileCount: 2, Size: 12, CreatedAt: "2026-01-01T00:00:00Z", UploadSessionId: "upload-1"}}, Page: protocolgen.PageInfo{}})
 		case strings.HasSuffix(r.URL.Path, "/active-revision"):
 			writeJSONTest(t, w, http.StatusOK, apigenapi.ManagedDataActiveRevisionResponse{Revision: &apigenapi.ManagedDataRevisionSummaryResponse{Id: digest, Status: apigenapi.ManagedDataRevisionStatusAvailable, FileCount: 2, Size: 12, CreatedAt: "2026-01-01T00:00:00Z", UploadSessionId: "upload-1"}})
 		default:

@@ -1,5 +1,6 @@
 using Http;
 using TypeSpec.OpenAPI;
+using LeapViewAPI.Protocol;
 
 namespace LeapViewAPI.Deployment;
 
