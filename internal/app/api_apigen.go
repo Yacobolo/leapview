@@ -48,7 +48,6 @@ func registerAPIGenRoutes(routes *capabilityRoutes, runtime *runtimeServices, pl
 }
 
 type apiGenDispatcher struct {
-	accessModule       *accessmodule.Module
 	dashboardModule    *dashboardmodule.Module
 	deploymentModule   *deploymentmodule.Module
 	managedDataModule  *manageddatamodule.Module
@@ -63,30 +62,6 @@ type apiGenDispatcher struct {
 
 func (a apiGenDispatcher) GetInstance(w http.ResponseWriter, _ *http.Request) {
 	apitransport.WriteJSON(w, http.StatusOK, apigenapi.InstanceResponse{Environment: a.defaultEnvironment})
-}
-
-func (a apiGenDispatcher) GetCurrentPrincipal(w http.ResponseWriter, r *http.Request) {
-	a.accessModule.HTTP().GetCurrentPrincipal(w, r)
-}
-
-func (a apiGenDispatcher) ListCurrentEffectivePrivileges(w http.ResponseWriter, r *http.Request, _ apigenapi.GenListCurrentEffectivePrivilegesParams) {
-	a.accessModule.HTTP().ListCurrentEffectivePrivileges(w, r)
-}
-
-func (a apiGenDispatcher) ListCurrentAPITokens(w http.ResponseWriter, r *http.Request, _ apigenapi.GenListCurrentAPITokensParams) {
-	a.accessModule.HTTP().ListCurrentAPITokens(w, r)
-}
-
-func (a apiGenDispatcher) CreateCurrentAPIToken(w http.ResponseWriter, r *http.Request, _ apigenapi.GenCreateCurrentAPITokenHeaders) {
-	a.accessModule.HTTP().CreateCurrentAPIToken(w, r)
-}
-
-func (a apiGenDispatcher) RevokeCurrentAPIToken(w http.ResponseWriter, r *http.Request, _ string) {
-	a.accessModule.HTTP().RevokeCurrentAPIToken(w, r)
-}
-
-func (a apiGenDispatcher) ListCurrentSessions(w http.ResponseWriter, r *http.Request, _ apigenapi.GenListCurrentSessionsParams) {
-	a.accessModule.HTTP().ListCurrentSessions(w, r)
 }
 
 func (a apiGenDispatcher) GetActiveManagedDataRevision(w http.ResponseWriter, r *http.Request, project, connection string) {
@@ -135,10 +110,6 @@ func (a apiGenDispatcher) CompleteManagedDataS3MultipartUpload(w http.ResponseWr
 
 func (a apiGenDispatcher) SignManagedDataS3MultipartPart(w http.ResponseWriter, r *http.Request, project, connection, uploadSession, multipartUpload string, partNumber int32, _ apigenapi.GenSignManagedDataS3MultipartPartHeaders) {
 	a.managedDataModule.HTTP().SignManagedDataS3MultipartPart(w, r, project, connection, uploadSession, multipartUpload, partNumber)
-}
-
-func (a apiGenDispatcher) RevokeCurrentSession(w http.ResponseWriter, r *http.Request, _ string) {
-	a.accessModule.HTTP().RevokeCurrentSession(w, r)
 }
 
 func (a apiGenDispatcher) ListWorkspaces(w http.ResponseWriter, r *http.Request, _ apigenapi.GenListWorkspacesParams) {
@@ -265,184 +236,12 @@ func (a apiGenDispatcher) GetRefreshRun(w http.ResponseWriter, r *http.Request, 
 	a.refreshModule.GetRefreshRun(w, r, workspaceID, runID)
 }
 
-func (a apiGenDispatcher) ListPrincipals(w http.ResponseWriter, r *http.Request, _ apigenapi.GenListPrincipalsParams) {
-	a.accessModule.HTTP().ListPrincipals(w, r)
-}
-
-func (a apiGenDispatcher) CreatePrincipal(w http.ResponseWriter, r *http.Request, _ apigenapi.GenCreatePrincipalHeaders) {
-	a.accessModule.HTTP().CreatePrincipal(w, r)
-}
-
-func (a apiGenDispatcher) GetPrincipal(w http.ResponseWriter, r *http.Request, _ string) {
-	a.accessModule.HTTP().GetPrincipal(w, r)
-}
-
-func (a apiGenDispatcher) UpdatePrincipal(w http.ResponseWriter, r *http.Request, _ string, headers apigenapi.GenUpdatePrincipalHeaders) {
-	a.accessModule.UpdatePrincipal(w, r, headers.IfMatch)
-}
-
-func (a apiGenDispatcher) DeletePrincipal(w http.ResponseWriter, r *http.Request, _ string) {
-	a.accessModule.HTTP().DeletePrincipal(w, r)
-}
-
-func (a apiGenDispatcher) ResetPrincipalPassword(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenResetPrincipalPasswordHeaders) {
-	a.accessModule.HTTP().ResetPrincipalPassword(w, r)
-}
-
-func (a apiGenDispatcher) ListServicePrincipals(w http.ResponseWriter, r *http.Request, _ apigenapi.GenListServicePrincipalsParams) {
-	a.accessModule.HTTP().ListServicePrincipals(w, r)
-}
-
-func (a apiGenDispatcher) CreateServicePrincipal(w http.ResponseWriter, r *http.Request, _ apigenapi.GenCreateServicePrincipalHeaders) {
-	a.accessModule.HTTP().CreateServicePrincipal(w, r)
-}
-
-func (a apiGenDispatcher) GetServicePrincipal(w http.ResponseWriter, r *http.Request, _ string) {
-	a.accessModule.HTTP().GetServicePrincipal(w, r)
-}
-
-func (a apiGenDispatcher) UpdateServicePrincipal(w http.ResponseWriter, r *http.Request, _ string, headers apigenapi.GenUpdateServicePrincipalHeaders) {
-	a.accessModule.UpdateServicePrincipal(w, r, headers.IfMatch)
-}
-
-func (a apiGenDispatcher) DeleteServicePrincipal(w http.ResponseWriter, r *http.Request, _ string) {
-	a.accessModule.HTTP().DeleteServicePrincipal(w, r)
-}
-
-func (a apiGenDispatcher) CreateServicePrincipalSecret(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenCreateServicePrincipalSecretHeaders) {
-	a.accessModule.HTTP().CreateServicePrincipalSecret(w, r)
-}
-
-func (a apiGenDispatcher) ListServicePrincipalSecrets(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListServicePrincipalSecretsParams) {
-	a.accessModule.HTTP().ListServicePrincipalSecrets(w, r)
-}
-
-func (a apiGenDispatcher) GetServicePrincipalSecret(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.accessModule.HTTP().GetServicePrincipalSecret(w, r)
-}
-
-func (a apiGenDispatcher) RevokeServicePrincipalSecret(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.accessModule.HTTP().RevokeServicePrincipalSecret(w, r)
-}
-
-func (a apiGenDispatcher) ListWorkspaceRoles(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListWorkspaceRolesParams) {
-	a.accessModule.HTTP().ListWorkspaceRoles(w, r)
-}
-
-func (a apiGenDispatcher) ListEffectivePrivileges(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListEffectivePrivilegesParams) {
-	a.accessModule.HTTP().ListEffectivePrivileges(w, r)
-}
-
-func (a apiGenDispatcher) ListGrants(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListGrantsParams) {
-	a.accessModule.HTTP().ListGrants(w, r)
-}
-
-func (a apiGenDispatcher) CreateGrant(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenCreateGrantHeaders) {
-	a.accessModule.HTTP().CreateGrant(w, r)
-}
-
-func (a apiGenDispatcher) GetGrant(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.accessModule.HTTP().GetGrant(w, r)
-}
-
-func (a apiGenDispatcher) UpdateGrant(w http.ResponseWriter, r *http.Request, _, _ string, headers apigenapi.GenUpdateGrantHeaders) {
-	a.accessModule.UpdateGrant(w, r, headers.IfMatch)
-}
-
-func (a apiGenDispatcher) DeleteGrant(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.accessModule.HTTP().DeleteGrant(w, r)
-}
-
-func (a apiGenDispatcher) ListDataPolicies(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListDataPoliciesParams) {
-	a.accessModule.HTTP().ListDataPolicies(w, r)
-}
-
-func (a apiGenDispatcher) CreateDataPolicy(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenCreateDataPolicyHeaders) {
-	a.accessModule.HTTP().CreateDataPolicy(w, r)
-}
-
-func (a apiGenDispatcher) GetDataPolicy(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.accessModule.HTTP().GetDataPolicy(w, r)
-}
-
-func (a apiGenDispatcher) UpdateDataPolicy(w http.ResponseWriter, r *http.Request, _, _ string, headers apigenapi.GenUpdateDataPolicyHeaders) {
-	a.accessModule.UpdateDataPolicy(w, r, headers.IfMatch)
-}
-
-func (a apiGenDispatcher) CheckAuthorizationBatch(w http.ResponseWriter, r *http.Request, _ string) {
-	a.accessModule.HTTP().CheckAuthorizationBatch(w, r)
-}
-
-func (a apiGenDispatcher) DeleteDataPolicy(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.accessModule.HTTP().DeleteDataPolicy(w, r)
-}
-
-func (a apiGenDispatcher) TransferOwnership(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenTransferOwnershipHeaders) {
-	a.accessModule.HTTP().TransferOwnership(w, r)
-}
-
 func (a apiGenDispatcher) ListSemanticModels(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListSemanticModelsParams) {
 	a.dashboardModule.SemanticAPI().ListSemanticModels(w, r)
 }
 
 func (a apiGenDispatcher) GetSemanticModel(w http.ResponseWriter, r *http.Request, _, _ string) {
 	a.dashboardModule.SemanticAPI().GetSemanticModel(w, r)
-}
-
-func (a apiGenDispatcher) ListGroups(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListGroupsParams) {
-	a.accessModule.HTTP().ListGroups(w, r)
-}
-
-func (a apiGenDispatcher) CreateGroup(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenCreateGroupHeaders) {
-	a.accessModule.HTTP().CreateGroup(w, r)
-}
-
-func (a apiGenDispatcher) GetGroup(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.accessModule.HTTP().GetGroup(w, r)
-}
-
-func (a apiGenDispatcher) UpdateGroup(w http.ResponseWriter, r *http.Request, _, _ string, headers apigenapi.GenUpdateGroupHeaders) {
-	a.accessModule.UpdateGroup(w, r, headers.IfMatch)
-}
-
-func (a apiGenDispatcher) DeleteGroup(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.accessModule.HTTP().DeleteGroup(w, r)
-}
-
-func (a apiGenDispatcher) ListGroupMembers(w http.ResponseWriter, r *http.Request, _, _ string, _ apigenapi.GenListGroupMembersParams) {
-	a.accessModule.HTTP().ListGroupMembers(w, r)
-}
-
-func (a apiGenDispatcher) AddGroupMember(w http.ResponseWriter, r *http.Request, _, _, _ string) {
-	a.accessModule.HTTP().AddGroupMember(w, r)
-}
-
-func (a apiGenDispatcher) RemoveGroupMember(w http.ResponseWriter, r *http.Request, _, _, _ string) {
-	a.accessModule.HTTP().RemoveGroupMember(w, r)
-}
-
-func (a apiGenDispatcher) ListRoleBindings(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListRoleBindingsParams) {
-	a.accessModule.HTTP().ListRoleBindings(w, r)
-}
-
-func (a apiGenDispatcher) CreateRoleBinding(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenCreateRoleBindingHeaders) {
-	a.accessModule.HTTP().CreateRoleBinding(w, r)
-}
-
-func (a apiGenDispatcher) GetRoleBinding(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.accessModule.HTTP().GetRoleBinding(w, r)
-}
-
-func (a apiGenDispatcher) UpdateRoleBinding(w http.ResponseWriter, r *http.Request, _, _ string, headers apigenapi.GenUpdateRoleBindingHeaders) {
-	a.accessModule.UpdateRoleBinding(w, r, headers.IfMatch)
-}
-
-func (a apiGenDispatcher) DeleteRoleBinding(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.accessModule.HTTP().DeleteRoleBinding(w, r)
-}
-
-func (a apiGenDispatcher) ListAuditEvents(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListAuditEventsParams) {
-	a.accessModule.HTTP().ListAuditEvents(w, r)
 }
 
 func (a apiGenDispatcher) ListQueryEvents(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListQueryEventsParams) {

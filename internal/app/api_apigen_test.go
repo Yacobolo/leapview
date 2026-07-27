@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/access"
+	accessgen "github.com/Yacobolo/leapview/internal/access/api/gen"
 	agentgen "github.com/Yacobolo/leapview/internal/agent/api/gen"
 	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
@@ -66,6 +67,7 @@ func TestAPIGenUsesTypeSpecV072(t *testing.T) {
 		"LeapViewAPI:",
 		"LeapViewAPI.Access:",
 		"LeapViewAPI.Agent:",
+		"LeapViewAPI.Analytics:",
 		"LeapViewAPI.Dashboard:",
 		"LeapViewAPI.Deployment:",
 		"LeapViewAPI.ManagedData:",
@@ -197,6 +199,65 @@ func TestAPIGenAgentCapabilityOwnsItsOperationSurface(t *testing.T) {
 	}
 }
 
+func TestAPIGenAccessCapabilityOwnsItsGeneratedPackage(t *testing.T) {
+	root := projectRoot(t)
+	manifest, err := os.ReadFile(filepath.Join(root, "api", "apigen.yaml"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	manifestText := string(manifest)
+	for _, want := range []string{
+		"LeapViewAPI.Access:\n          dir: ../internal/access/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/access/api/gen",
+		"LeapViewAPI.Analytics: *leapview_api_go_package",
+	} {
+		if !strings.Contains(manifestText, want) {
+			t.Fatalf("manifest missing Access capability package plan %q", want)
+		}
+	}
+	if strings.Contains(manifestText, "LeapViewAPI.Access: *leapview_api_go_package") {
+		t.Fatal("Access namespace is still coalesced into the application generated package")
+	}
+
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	for _, want := range []string{
+		"internal/access/api/gen/request_models.gen.go",
+		"internal/access/api/gen/server.apigen.gen.go",
+	} {
+		if !strings.Contains(string(taskfile), want) {
+			t.Fatalf("Taskfile.yml does not track generated Access artifact %q", want)
+		}
+	}
+}
+
+func TestAPIGenAccessCapabilityOwnsItsOperationSurface(t *testing.T) {
+	accessContracts := accessgen.GetAPIGenOperationContracts()
+	if got, want := len(accessContracts), 50; got != want {
+		t.Fatalf("Access generated operations = %d, want %d", got, want)
+	}
+	allowedTags := map[string]bool{"Access": true, "Audit": true, "Current User": true}
+	appContracts := apigenapi.GetAPIGenOperationContracts()
+	for operationID, contract := range accessContracts {
+		if len(contract.Tags) != 1 || !allowedTags[contract.Tags[0]] {
+			t.Errorf("Access operation %q tags = %v", operationID, contract.Tags)
+		}
+		if _, exists := appContracts[operationID]; exists {
+			t.Errorf("Access operation %q is still emitted by the application package", operationID)
+		}
+	}
+	if _, exists := accessContracts["listQueryEvents"]; exists {
+		t.Fatal("Analytics-owned listQueryEvents is emitted by the Access package")
+	}
+	if _, exists := appContracts["listQueryEvents"]; !exists {
+		t.Fatal("Analytics-owned listQueryEvents is missing from the coalesced application package")
+	}
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
+		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
+	}
+}
+
 func TestAPIGenIRAssignsCapabilityNamespaces(t *testing.T) {
 	root := projectRoot(t)
 	content, err := os.ReadFile(filepath.Join(root, "api", "gen", "json-ir.json"))
@@ -248,6 +309,9 @@ func TestAPIGenIRAssignsCapabilityNamespaces(t *testing.T) {
 			t.Errorf("endpoint %q has unmapped ownership tag %q", endpoint.OperationID, endpoint.Tags[0])
 			continue
 		}
+		if endpoint.OperationID == "listQueryEvents" {
+			want = "LeapViewAPI.Analytics"
+		}
 		if endpoint.Namespace != want {
 			t.Errorf("endpoint %q namespace = %q, want %q for tag %q", endpoint.OperationID, endpoint.Namespace, want, endpoint.Tags[0])
 		}
@@ -257,6 +321,7 @@ func TestAPIGenIRAssignsCapabilityNamespaces(t *testing.T) {
 		"LeapViewAPI":             {},
 		"LeapViewAPI.Access":      {},
 		"LeapViewAPI.Agent":       {},
+		"LeapViewAPI.Analytics":   {},
 		"LeapViewAPI.Dashboard":   {},
 		"LeapViewAPI.Deployment":  {},
 		"LeapViewAPI.ManagedData": {},

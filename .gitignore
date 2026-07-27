@@ -11,6 +11,7 @@ bin/
 coverage.out
 api/gen/
 api/.apigen/
+internal/access/api/gen/
 internal/agent/contracts/gen/
 internal/agent/api/gen/
 internal/app/api/aggregate/

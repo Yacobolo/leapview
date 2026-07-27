@@ -165,6 +165,7 @@ var PackageRules = []PackageRule{
 	{Prefix: "internal/refresh/schedule", Capability: "refresh", Layer: LayerUseCase},
 	{Prefix: "internal/platform/http/idempotency", Capability: "platform", Layer: LayerAdapter},
 	{Prefix: "internal/platform/http/api/gen", Capability: "platform", Layer: LayerAdapter},
+	{Prefix: "internal/access/api/gen", Capability: "access", Layer: LayerAdapter},
 	{Prefix: "internal/agent/api/gen", Capability: "agent", Layer: LayerAdapter},
 	{Prefix: "internal/app/api/aggregate", Capability: "composition", Layer: LayerAdapter},
 	{Prefix: "internal/app/api/gen", Capability: "composition", Layer: LayerAdapter},

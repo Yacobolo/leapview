@@ -14,6 +14,7 @@ import "./refresh_runs.tsp";
 import "./agent.tsp";
 import "./access.tsp";
 import "./audit.tsp";
+import "./query_audit.tsp";
 import "./dashboard_publications.tsp";
 import "./managed_data.tsp";
 import "./upload_tus.tsp";

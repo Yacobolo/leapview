@@ -88,6 +88,7 @@ jobs:
             docs/reference/config
             docs/search-index.sqlite3
             docs/visuals/examples.gen.json
+            internal/access/api/gen
             internal/agent/api/gen
             internal/app/api/aggregate
             internal/app/api/gen
@@ -112,6 +113,7 @@ jobs:
             api/gen \
             docs/reference/cli \
             docs/reference/config \
+            internal/access/api/gen \
             internal/agent/api/gen \
             internal/app/api/aggregate \
             internal/app/api/gen \
@@ -156,6 +158,7 @@ jobs:
           if-no-files-found: error
           path: |
             api/gen/
+            internal/access/api/gen/
             internal/agent/api/gen/
             internal/app/api/aggregate/
             internal/app/api/gen/
