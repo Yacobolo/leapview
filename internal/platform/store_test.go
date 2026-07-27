@@ -169,6 +169,30 @@ func TestStoreOpenMakesDatabasePrivate(t *testing.T) {
 	assertExistingSQLiteSidecarsPrivate(t, dbPath)
 }
 
+func TestStoreUsesPerOperationConnectionsAndDrainsOnClose(t *testing.T) {
+	store, err := Open(t.Context(), filepath.Join(t.TempDir(), "leapview.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	if err := store.Ping(t.Context()); err != nil {
+		t.Fatalf("ping store: %v", err)
+	}
+	stats := store.SQLDB().Stats()
+	if stats.OpenConnections != 0 || stats.Idle != 0 {
+		t.Fatalf("connections after operation = %d idle = %d, want per-operation connections", stats.OpenConnections, stats.Idle)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close store twice: %v", err)
+	}
+	stats = store.SQLDB().Stats()
+	if stats.OpenConnections != 0 {
+		t.Fatalf("connections after close = %d, want 0", stats.OpenConnections)
+	}
+}
+
 func TestStoreBackupCreatesReadableSQLiteCopy(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()

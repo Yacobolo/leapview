@@ -122,8 +122,16 @@ func (r *Runner) runPump(ctx context.Context, owner, class string) {
 	poll := time.NewTicker(r.pollInterval)
 	defer poll.Stop()
 	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
 		candidates, err := r.repository.Candidates(ctx, string(class), 16)
 		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			r.logger.WarnContext(ctx, "list async job candidates failed", "class", class, "error", err)
 		} else {
 			var batch sync.WaitGroup
