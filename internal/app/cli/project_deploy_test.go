@@ -17,6 +17,7 @@ import (
 
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	projectbundle "github.com/Yacobolo/leapview/internal/project/bundle"
+	releasegen "github.com/Yacobolo/leapview/internal/release/api/gen"
 	"github.com/Yacobolo/leapview/internal/workspace/api"
 )
 
@@ -41,22 +42,22 @@ func TestDeployPreparesCompleteProjectBeforeOneAtomicActivation(t *testing.T) {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/active-asset-graph"):
 			writeCLIJSON(t, w, activeGraphResponse(nil, nil))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/projects/leapview-showcase/releases":
-			var request apigenapi.ReleaseCreateRequest
+			var request releasegen.ReleaseCreateRequest
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				t.Fatal(err)
 			}
-			writeCLIJSON(t, w, apigenapi.ReleaseResponse{Id: "release-1", ProjectId: "leapview-showcase", ProjectDigest: request.ProjectDigest, Status: apigenapi.ReleaseStatusDraft, CreatedBy: "test", CreatedAt: "2026-01-01T00:00:00Z", Workspaces: request.Workspaces, Connections: request.Connections})
+			writeCLIJSON(t, w, releasegen.ReleaseResponse{Id: "release-1", ProjectId: "leapview-showcase", ProjectDigest: request.ProjectDigest, Status: releasegen.ReleaseStatusDraft, CreatedBy: "test", CreatedAt: "2026-01-01T00:00:00Z", Workspaces: request.Workspaces, Connections: request.Connections})
 		case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/artifact"):
 			pins, digest := readManagedDataPinsFromUpload(t, r.Body)
 			if len(pins) != 1 || pins["olist"] != revision {
 				t.Fatalf("%s managed pins = %#v", workspaceID, pins)
 			}
 			artifactDigests[workspaceID] = digest
-			writeCLIJSON(t, w, apigenapi.ReleaseArtifactResponse{ReleaseId: "release-1", WorkspaceId: workspaceID, Digest: digest, SizeBytes: 1})
+			writeCLIJSON(t, w, releasegen.ReleaseArtifactResponse{ReleaseId: "release-1", WorkspaceId: workspaceID, Digest: digest, SizeBytes: 1})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/releases/release-1/finalize"):
-			writeCLIJSON(t, w, apigenapi.ReleaseResponse{Id: "release-1", ProjectId: "leapview-showcase", ProjectDigest: "ready", Status: apigenapi.ReleaseStatusValidating, CreatedBy: "test", CreatedAt: "2026-01-01T00:00:00Z", Workspaces: []apigenapi.ReleaseWorkspaceManifest{}, Connections: []apigenapi.ReleaseConnectionPin{}})
+			writeCLIJSON(t, w, releasegen.ReleaseResponse{Id: "release-1", ProjectId: "leapview-showcase", ProjectDigest: "ready", Status: releasegen.ReleaseStatusValidating, CreatedBy: "test", CreatedAt: "2026-01-01T00:00:00Z", Workspaces: []releasegen.ReleaseWorkspaceManifest{}, Connections: []releasegen.ReleaseConnectionPin{}})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/projects/leapview-showcase/releases/release-1":
-			writeCLIJSON(t, w, apigenapi.ReleaseResponse{Id: "release-1", ProjectId: "leapview-showcase", ProjectDigest: "ready", Status: apigenapi.ReleaseStatusReady, CreatedBy: "test", CreatedAt: "2026-01-01T00:00:00Z", Workspaces: []apigenapi.ReleaseWorkspaceManifest{}, Connections: []apigenapi.ReleaseConnectionPin{}})
+			writeCLIJSON(t, w, releasegen.ReleaseResponse{Id: "release-1", ProjectId: "leapview-showcase", ProjectDigest: "ready", Status: releasegen.ReleaseStatusReady, CreatedBy: "test", CreatedAt: "2026-01-01T00:00:00Z", Workspaces: []releasegen.ReleaseWorkspaceManifest{}, Connections: []releasegen.ReleaseConnectionPin{}})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/projects/leapview-showcase/deployments":
 			writeCLIJSON(t, w, map[string]any{
 				"id": "deployment-1", "projectId": "leapview-showcase", "releaseId": "release-1", "environment": "prod", "status": "queued", "createdBy": "test", "createdAt": "2026-01-01T00:00:00Z",

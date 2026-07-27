@@ -171,6 +171,7 @@ var PackageRules = []PackageRule{
 	{Prefix: "internal/deployment/api/gen", Capability: "deployment", Layer: LayerAdapter},
 	{Prefix: "internal/project/api/gen", Capability: "project", Layer: LayerAdapter},
 	{Prefix: "internal/refresh/api/gen", Capability: "refresh", Layer: LayerAdapter},
+	{Prefix: "internal/release/api/gen", Capability: "release", Layer: LayerAdapter},
 	{Prefix: "internal/app/api/aggregate", Capability: "composition", Layer: LayerAdapter},
 	{Prefix: "internal/app/api/gen", Capability: "composition", Layer: LayerAdapter},
 	{Prefix: "internal/platform/architecture", Capability: "platform", Layer: LayerPlatform},

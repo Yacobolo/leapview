@@ -17,6 +17,7 @@ import (
 	deploymentgen "github.com/Yacobolo/leapview/internal/deployment/api/gen"
 	projectgen "github.com/Yacobolo/leapview/internal/project/api/gen"
 	refreshgen "github.com/Yacobolo/leapview/internal/refresh/api/gen"
+	releasegen "github.com/Yacobolo/leapview/internal/release/api/gen"
 	"github.com/Yacobolo/leapview/internal/workspace"
 )
 
@@ -419,6 +420,53 @@ func TestAPIGenDeploymentCapabilityOwnsItsOperationSurface(t *testing.T) {
 		}
 		if _, exists := appContracts[operationID]; exists {
 			t.Errorf("Deployment operation %q is still emitted by the application package", operationID)
+		}
+	}
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
+		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
+	}
+}
+
+func TestAPIGenReleaseCapabilityOwnsItsGeneratedPackage(t *testing.T) {
+	root := projectRoot(t)
+	manifest, err := os.ReadFile(filepath.Join(root, "api", "apigen.yaml"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	manifestText := string(manifest)
+	want := "LeapViewAPI.Release:\n          dir: ../internal/release/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/release/api/gen"
+	if !strings.Contains(manifestText, want) {
+		t.Fatalf("manifest missing Release capability package plan %q", want)
+	}
+	if strings.Contains(manifestText, "LeapViewAPI.Release: *leapview_api_go_package") {
+		t.Fatal("Release namespace is still coalesced into the application generated package")
+	}
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	for _, path := range []string{
+		"internal/release/api/gen/request_models.gen.go",
+		"internal/release/api/gen/server.apigen.gen.go",
+	} {
+		if !strings.Contains(string(taskfile), path) {
+			t.Fatalf("Taskfile.yml does not track generated Release artifact %q", path)
+		}
+	}
+}
+
+func TestAPIGenReleaseCapabilityOwnsItsOperationSurface(t *testing.T) {
+	contracts := releasegen.GetAPIGenOperationContracts()
+	if got, want := len(contracts), 6; got != want {
+		t.Fatalf("Release generated operations = %d, want %d", got, want)
+	}
+	appContracts := apigenapi.GetAPIGenOperationContracts()
+	for operationID, contract := range contracts {
+		if len(contract.Tags) != 1 || contract.Tags[0] != "Releases" {
+			t.Errorf("Release operation %q tags = %v, want [Releases]", operationID, contract.Tags)
+		}
+		if _, exists := appContracts[operationID]; exists {
+			t.Errorf("Release operation %q is still emitted by the application package", operationID)
 		}
 	}
 	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
@@ -863,7 +911,7 @@ func TestAPIGenUploadArtifactUsesNativeOctetStreamBody(t *testing.T) {
 		if content.ContentType != "application/octet-stream" || content.BodyKind != "binary" {
 			t.Fatalf("upload IR content = %#v, want application/octet-stream binary", content)
 		}
-		var generatedBody apigenapi.GenUploadReleaseArtifactBody
+		var generatedBody releasegen.GenUploadReleaseArtifactBody
 		_ = []byte(generatedBody)
 		return
 	}

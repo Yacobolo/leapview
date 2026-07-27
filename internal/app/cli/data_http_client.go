@@ -13,6 +13,7 @@ import (
 
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	deploymentgen "github.com/Yacobolo/leapview/internal/deployment/api/gen"
+	releasegen "github.com/Yacobolo/leapview/internal/release/api/gen"
 )
 
 type managedDataCLIClient struct {
@@ -100,20 +101,20 @@ func (c *managedDataCLIClient) capabilities(ctx context.Context) (apigenapi.Capa
 	return response, err
 }
 
-func (c *managedDataCLIClient) createRelease(ctx context.Context, project, key string, body apigenapi.ReleaseCreateRequest) (apigenapi.ReleaseResponse, error) {
-	var response apigenapi.ReleaseResponse
+func (c *managedDataCLIClient) createRelease(ctx context.Context, project, key string, body releasegen.ReleaseCreateRequest) (releasegen.ReleaseResponse, error) {
+	var response releasegen.ReleaseResponse
 	err := c.json(ctx, http.MethodPost, "createRelease", map[string]string{"project": project}, nil, key, body, &response)
 	return response, err
 }
 
-func (c *managedDataCLIClient) uploadReleaseArtifact(ctx context.Context, project, releaseID, workspaceID, contentDigest string, body io.Reader) (apigenapi.ReleaseArtifactResponse, error) {
+func (c *managedDataCLIClient) uploadReleaseArtifact(ctx context.Context, project, releaseID, workspaceID, contentDigest string, body io.Reader) (releasegen.ReleaseArtifactResponse, error) {
 	endpoint, err := apiOperationURL(c.target, "uploadReleaseArtifact", map[string]string{"project": project, "release": releaseID, "workspace": workspaceID}, nil)
 	if err != nil {
-		return apigenapi.ReleaseArtifactResponse{}, err
+		return releasegen.ReleaseArtifactResponse{}, err
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, body)
 	if err != nil {
-		return apigenapi.ReleaseArtifactResponse{}, err
+		return releasegen.ReleaseArtifactResponse{}, err
 	}
 	request.Header.Set("Authorization", "Bearer "+c.token)
 	request.Header.Set("Accept", "application/json")
@@ -121,28 +122,28 @@ func (c *managedDataCLIClient) uploadReleaseArtifact(ctx context.Context, projec
 	request.Header.Set("Content-Digest", contentDigest)
 	response, err := c.http.Do(request)
 	if err != nil {
-		return apigenapi.ReleaseArtifactResponse{}, fmt.Errorf("upload release artifact could not reach the server")
+		return releasegen.ReleaseArtifactResponse{}, fmt.Errorf("upload release artifact could not reach the server")
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		_, _ = io.Copy(io.Discard, response.Body)
-		return apigenapi.ReleaseArtifactResponse{}, fmt.Errorf("upload release artifact failed with HTTP %d", response.StatusCode)
+		return releasegen.ReleaseArtifactResponse{}, fmt.Errorf("upload release artifact failed with HTTP %d", response.StatusCode)
 	}
-	var result apigenapi.ReleaseArtifactResponse
+	var result releasegen.ReleaseArtifactResponse
 	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
-		return apigenapi.ReleaseArtifactResponse{}, err
+		return releasegen.ReleaseArtifactResponse{}, err
 	}
 	return result, nil
 }
 
-func (c *managedDataCLIClient) finalizeRelease(ctx context.Context, project, releaseID, key string) (apigenapi.ReleaseResponse, error) {
-	var response apigenapi.ReleaseResponse
+func (c *managedDataCLIClient) finalizeRelease(ctx context.Context, project, releaseID, key string) (releasegen.ReleaseResponse, error) {
+	var response releasegen.ReleaseResponse
 	err := c.json(ctx, http.MethodPost, "finalizeRelease", map[string]string{"project": project, "release": releaseID}, nil, key, nil, &response)
 	return response, err
 }
 
-func (c *managedDataCLIClient) getRelease(ctx context.Context, project, releaseID string) (apigenapi.ReleaseResponse, error) {
-	var response apigenapi.ReleaseResponse
+func (c *managedDataCLIClient) getRelease(ctx context.Context, project, releaseID string) (releasegen.ReleaseResponse, error) {
+	var response releasegen.ReleaseResponse
 	err := c.json(ctx, http.MethodGet, "getRelease", map[string]string{"project": project, "release": releaseID}, nil, "", nil, &response)
 	return response, err
 }
