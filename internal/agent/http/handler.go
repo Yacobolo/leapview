@@ -52,6 +52,7 @@ type Options struct {
 	QueueMissingTitle      func(context.Context, agent.Scope, string, string)
 	ExecuteStartedChatTurn func(context.Context, *agent.Service, agent.Scope, *agent.StartedPrompt, ChatTurnExecution) (agent.PromptResult, error)
 	EnqueueRun             func(context.Context, agent.Scope, *agent.StartedPrompt) error
+	EnqueueChatRun         func(context.Context, agent.Scope, *agent.StartedPrompt, string) error
 	CancelQueuedRun        func(context.Context, agent.Scope, string, string) (bool, error)
 	APIGenToolContracts    map[string]agenttool.Contract
 }
@@ -300,9 +301,9 @@ func (h *Handler) CreateRun(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		writeJSONError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
-	started, err := service.StartPrompt(r.Context(), agent.PromptInput{
+	started, err := service.StartDurablePrompt(r.Context(), agent.PromptInput{
 		Scope: scope, ConversationID: chi.URLParam(r, "conversation"), Input: input.Input, CorrelationID: input.CorrelationID,
-	})
+	}, agent.PromptDispatch{})
 	if err != nil {
 		status := stdhttp.StatusInternalServerError
 		switch {

@@ -7,7 +7,6 @@ import (
 	nethttp "net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/Yacobolo/leapview/internal/agent"
 	"github.com/Yacobolo/leapview/internal/agent/ui"
@@ -220,23 +219,37 @@ func (h *Handler) layout(r *nethttp.Request) webpage.Provider {
 }
 
 func (h *Handler) startDraftChatTurn(w nethttp.ResponseWriter, r *nethttp.Request, service *agent.Service, scope agent.Scope, clientID, input string, turnContext *agent.TurnContext, embedded bool) {
+	if !embedded && h.options.EnqueueChatRun == nil {
+		nethttp.Error(w, "durable chat turn queue is not configured", nethttp.StatusServiceUnavailable)
+		return
+	}
 	conversation, err := service.CreateConversation(r.Context(), scope, "New conversation")
 	if err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
 		return
 	}
-	started, err := service.StartPrompt(r.Context(), agent.PromptInput{
+	prompt := agent.PromptInput{
 		Scope:          scope,
 		ConversationID: conversation.ID,
 		Input:          input,
 		Context:        turnContext,
-	})
+	}
+	var started *agent.StartedPrompt
+	if embedded {
+		started, err = service.StartPrompt(r.Context(), prompt)
+	} else {
+		started, err = service.StartDurablePrompt(r.Context(), prompt, agent.PromptDispatch{ChatClientID: clientID})
+	}
 	if err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
 		return
 	}
 	if !embedded {
-		go h.completeDraftChatTurn(service, scope, clientID, started)
+		if err := h.options.EnqueueChatRun(r.Context(), scope, started, clientID); err != nil {
+			_ = started.Abort(context.WithoutCancel(r.Context()), err)
+			nethttp.Error(w, "durable chat turn queue is unavailable", nethttp.StatusServiceUnavailable)
+			return
+		}
 		_ = pagestream.Redirect(w, r, chatRoutePath(conversation.ID))
 		return
 	}
@@ -252,25 +265,6 @@ func (h *Handler) startDraftChatTurn(w nethttp.ResponseWriter, r *nethttp.Reques
 		LiveConversations:  h.chatConversations(r.Context(), scope),
 		Emit: func(signal ui.ChatViewState) error {
 			return updates.Patch(chatSignalPatch(signal, true))
-		},
-	})
-}
-
-func (h *Handler) completeDraftChatTurn(service *agent.Service, scope agent.Scope, clientID string, started *agent.StartedPrompt) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-	if h.options.ExecuteStartedChatTurn == nil {
-		return
-	}
-	_, _ = h.options.ExecuteStartedChatTurn(ctx, service, scope, started, ChatTurnExecution{
-		EmitInitialRunning: true,
-		GenerateTitle:      true,
-		ClientID:           clientID,
-		Emit: func(signal ui.ChatViewState) error {
-			if h.options.Broker != nil {
-				h.options.Broker.Publish(chatStreamID(scope, clientID), chatSignalPatch(signal, false))
-			}
-			return nil
 		},
 	})
 }

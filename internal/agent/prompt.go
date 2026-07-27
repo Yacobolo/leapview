@@ -20,6 +20,11 @@ type PromptInput struct {
 	OnEvent        func(EventEnvelope)
 }
 
+// PromptDispatch describes delivery metadata persisted with a durable prompt.
+type PromptDispatch struct {
+	ChatClientID string
+}
+
 type PromptResult struct {
 	ConversationID string               `json:"conversationId"`
 	RunID          string               `json:"runId"`
@@ -55,6 +60,17 @@ func (s *Service) Prompt(ctx context.Context, input PromptInput) (PromptResult, 
 }
 
 func (s *Service) StartPrompt(ctx context.Context, input PromptInput) (*StartedPrompt, error) {
+	return s.startPrompt(ctx, input, nil)
+}
+
+// StartDurablePrompt persists the prompt and its required workflow as one
+// transition when a workflow recorder is configured. Callers with an external
+// service can inspect DurablyQueued and enqueue the returned prompt themselves.
+func (s *Service) StartDurablePrompt(ctx context.Context, input PromptInput, dispatch PromptDispatch) (*StartedPrompt, error) {
+	return s.startPrompt(ctx, input, &dispatch)
+}
+
+func (s *Service) startPrompt(ctx context.Context, input PromptInput, dispatch *PromptDispatch) (*StartedPrompt, error) {
 	if !s.Enabled() {
 		return nil, ErrDisabled
 	}
@@ -87,8 +103,9 @@ func (s *Service) StartPrompt(ctx context.Context, input PromptInput) (*StartedP
 		return nil, err
 	}
 	runID := newID("run")
+	durable := dispatch != nil && s.promptWorkflow != nil
 	runStatus := RunStatusRunning
-	if s.promptWorkflow != nil {
+	if durable {
 		runStatus = RunStatusPreparing
 	}
 	run, err := s.repo.CreateRun(ctx, RunInput{
@@ -141,14 +158,14 @@ func (s *Service) StartPrompt(ctx context.Context, input PromptInput) (*StartedP
 		return nil, err
 	}
 	durablyQueued := false
-	if s.promptWorkflow != nil {
+	if durable {
 		unit, ok := s.repo.(RunWorkflowUnitOfWork)
 		if !ok {
 			err := fmt.Errorf("agent run workflow unit of work is unavailable")
 			_ = s.finishRun(ctx, input, run.ID, RunStatusFailed, "", agentcore.Usage{}, err)
 			return nil, err
 		}
-		run, err = unit.ActivateRunWorkflow(ctx, input.Scope.PrincipalID, input.ConversationID, run.ID, s.promptWorkflow(input, run.ID))
+		run, err = unit.ActivateRunWorkflow(ctx, input.Scope.PrincipalID, input.ConversationID, run.ID, s.promptWorkflow(input, run.ID, *dispatch))
 		if err != nil {
 			_ = s.finishRun(ctx, input, run.ID, RunStatusFailed, "", agentcore.Usage{}, err)
 			return nil, err
