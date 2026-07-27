@@ -1,7 +1,7 @@
 using Http;
 using TypeSpec.OpenAPI;
 
-namespace LeapViewAPI;
+namespace LeapViewAPI.Protocol;
 
 @minLength(1)
 @maxLength(200)
@@ -26,7 +26,7 @@ scalar PageToken extends string;
 @maxLength(200)
 scalar IdempotencyKey extends string;
 
-model NoContentResponse {
+model EmptyResponse {
   @statusCode statusCode: 204;
 }
 

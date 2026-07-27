@@ -11,6 +11,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/agent"
 	agentapi "github.com/Yacobolo/leapview/internal/agent/api"
+	agentgen "github.com/Yacobolo/leapview/internal/agent/api/gen"
 	agentcontracts "github.com/Yacobolo/leapview/internal/agent/contracts"
 	agenthttp "github.com/Yacobolo/leapview/internal/agent/http"
 	agentopenai "github.com/Yacobolo/leapview/internal/agent/openai"
@@ -270,7 +271,12 @@ func scopeToAgent(scope Scope) agent.Scope {
 
 func (m *Module) HTTP() *agenthttp.Handler { return m.handler }
 
-func (m *Module) UpdateConversation(w http.ResponseWriter, r *http.Request, ifMatch string) {
-	r.Header.Set("If-Match", ifMatch)
-	m.handler.UpdateConversation(w, r)
+func (m *Module) DispatchAPIGenOperation(operationID string, w http.ResponseWriter, r *http.Request, logger *slog.Logger) bool {
+	return agentgen.DispatchAPIGenOperation(
+		operationID,
+		agenthttp.NewAPIGenDispatcher(m.handler),
+		agenthttp.APIGenTransportErrorResponder{Logger: logger},
+		w,
+		r,
+	)
 }

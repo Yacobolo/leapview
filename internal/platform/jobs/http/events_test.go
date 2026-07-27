@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	"github.com/Yacobolo/leapview/internal/platform"
+	apigenapi "github.com/Yacobolo/leapview/internal/platform/http/api/gen"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	jobsqlite "github.com/Yacobolo/leapview/internal/platform/jobs/sqlite"
 )

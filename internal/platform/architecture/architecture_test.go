@@ -55,6 +55,20 @@ func TestArchitectureOwnershipUsesRootTaxonomy(t *testing.T) {
 	}
 }
 
+func TestAgentGeneratedAPIIsCapabilityOwned(t *testing.T) {
+	rule, ok := ClassifyPackage("internal/agent/api/gen")
+	if !ok {
+		t.Fatal("Agent generated API package is not classified")
+	}
+	if rule.Capability != "agent" || rule.Layer != LayerAdapter {
+		t.Fatalf("Agent generated API classification = %#v, want agent adapter", rule)
+	}
+	aggregate, ok := ClassifyPackage("internal/app/api/aggregate")
+	if !ok || aggregate.Capability != "composition" || aggregate.Layer != LayerAdapter {
+		t.Fatalf("application API aggregate classification = %#v, want composition adapter", aggregate)
+	}
+}
+
 func TestApplicationOwnsProductConfigurationContract(t *testing.T) {
 	root := repoRoot(t)
 	if !packageDirExists(root, "internal/app/config/spec") {
@@ -236,8 +250,8 @@ func TestCapabilityModulesDoNotExposeRepositories(t *testing.T) {
 	}
 }
 
-func TestApplicationAPIGenHandlerIsDirectDelegation(t *testing.T) {
-	found := false
+func TestApplicationAPIGenRoutesUseGeneratedAggregate(t *testing.T) {
+	foundAggregateRegistration := false
 	for _, file := range productionGoFiles(t) {
 		if file.pkgDir != "internal/app" {
 			continue
@@ -252,38 +266,15 @@ func TestApplicationAPIGenHandlerIsDirectDelegation(t *testing.T) {
 				t.Errorf("%s retains APIGen authorization behavior %q; access owns authorization", file.path, forbidden)
 			}
 		}
-		parsed, err := parser.ParseFile(token.NewFileSet(), file.path, file.body, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v", file.path, err)
+		if strings.Contains(file.body, "apiaggregate.RegisterAPIGenRoutes(r, platform.apiGenServers)") {
+			foundAggregateRegistration = true
 		}
-		for _, declaration := range parsed.Decls {
-			function, ok := declaration.(*ast.FuncDecl)
-			if !ok || function.Name.Name != "HandleAPIGen" {
-				continue
-			}
-			found = true
-			if function.Body == nil || len(function.Body.List) != 1 {
-				t.Errorf("%s HandleAPIGen must contain one direct delegation", file.path)
-				continue
-			}
-			statement, ok := function.Body.List[0].(*ast.ExprStmt)
-			if !ok {
-				t.Errorf("%s HandleAPIGen contains non-delegation logic", file.path)
-				continue
-			}
-			call, ok := statement.X.(*ast.CallExpr)
-			if !ok {
-				t.Errorf("%s HandleAPIGen is not a direct call", file.path)
-				continue
-			}
-			selector, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || selector.Sel.Name != "HandleAPIGen" {
-				t.Errorf("%s HandleAPIGen does not delegate to an owned handler", file.path)
-			}
+		if strings.Contains(file.body, "type apiGenRouteHandler") {
+			t.Errorf("%s retains the handwritten global APIGen route wrapper", file.path)
 		}
 	}
-	if !found {
-		t.Fatal("internal/app APIGen delegation method is missing")
+	if !foundAggregateRegistration {
+		t.Fatal("internal/app does not register the generated APIGen aggregate")
 	}
 }
 
@@ -1288,7 +1279,10 @@ func TestProductionContainerContractExists(t *testing.T) {
 		"bun scripts/generate_vega_lite_validator.ts",
 		"bun run build",
 		"FROM golang:1.25-bookworm@sha256:",
+		"COPY --from=sourcegen /src/internal/agent/api/gen ./internal/agent/api/gen",
+		"COPY --from=sourcegen /src/internal/app/api/aggregate ./internal/app/api/aggregate",
 		"COPY --from=sourcegen /src/internal/app/api/gen ./internal/app/api/gen",
+		"COPY --from=sourcegen /src/internal/platform/http/api/gen ./internal/platform/http/api/gen",
 		"COPY --from=sourcegen /src/internal/access/ui/signals/models.gen.go ./internal/access/ui/signals/models.gen.go",
 		"COPY --from=sourcegen /src/internal/admin/ui/signals/models.gen.go ./internal/admin/ui/signals/models.gen.go",
 		"COPY --from=sourcegen /src/internal/agent/ui/signals/models.gen.go ./internal/agent/ui/signals/models.gen.go",
@@ -1317,7 +1311,10 @@ func TestProductionContainerContractExists(t *testing.T) {
 		t.Fatalf("read .dockerignore: %v", err)
 	}
 	ignoreText := string(ignored)
-	for _, want := range []string{".data", ".leapview", "node_modules", "api/gen", "internal/app/api/gen", "static/chunks"} {
+	for _, want := range []string{
+		".data", ".leapview", "node_modules", "api/gen", "internal/agent/api/gen",
+		"internal/app/api/aggregate", "internal/app/api/gen", "internal/platform/http/api/gen", "static/chunks",
+	} {
 		if !strings.Contains(ignoreText, want) {
 			t.Fatalf(".dockerignore missing generated or runtime path %q", want)
 		}

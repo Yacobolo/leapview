@@ -13,7 +13,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	"github.com/spf13/cobra"
 )
 
@@ -73,7 +73,7 @@ func runAPIList() error {
 }
 
 func runAPIDescribe(operationID string) error {
-	contract, ok := apigenapi.GetAPIGenOperationContract(operationID)
+	contract, ok := apiaggregate.GetAPIGenOperationContract(operationID)
 	if !ok {
 		return fmt.Errorf("unknown API operation %q", operationID)
 	}
@@ -83,7 +83,7 @@ func runAPIDescribe(operationID string) error {
 }
 
 func runAPICall(ctx context.Context, opts *rootOptions, operationID string, callOpts *apiCallOptions) error {
-	contract, ok := apigenapi.GetAPIGenOperationContract(operationID)
+	contract, ok := apiaggregate.GetAPIGenOperationContract(operationID)
 	if !ok {
 		return fmt.Errorf("unknown API operation %q", operationID)
 	}
@@ -116,9 +116,9 @@ func runAPICall(ctx context.Context, opts *rootOptions, operationID string, call
 	return doRawAPI(ctx, contract.Method, endpoint, token, contentType, body, os.Stdout)
 }
 
-func sortedAPIOperationContracts() []apigenapi.GenOperationContract {
-	registry := apigenapi.GetAPIGenOperationContracts()
-	contracts := make([]apigenapi.GenOperationContract, 0, len(registry))
+func sortedAPIOperationContracts() []apiaggregate.GenOperationContract {
+	registry := apiaggregate.GetAPIGenOperationContracts()
+	contracts := make([]apiaggregate.GenOperationContract, 0, len(registry))
 	for _, contract := range registry {
 		contracts = append(contracts, contract)
 	}
@@ -210,7 +210,7 @@ func apiRequestBody(operationID string, callOpts *apiCallOptions, required bool)
 }
 
 func apiOperationRequestContentType(operationID string, fallback string) string {
-	spec, err := apigenapi.GetEmbeddedOpenAPISpec()
+	spec, err := apiaggregate.GetEmbeddedOpenAPISpec()
 	if err != nil {
 		return fallback
 	}

@@ -21,6 +21,7 @@ import "./upload_s3_multipart.tsp";
 
 using Http;
 using TypeSpec.OpenAPI;
+using LeapViewAPI.Protocol;
 
 @service(#{ title: "LeapView Headless API" })
 @doc("Headless API for LeapView workspaces, deployments, managed data, access control, refreshes, and agent operations.")

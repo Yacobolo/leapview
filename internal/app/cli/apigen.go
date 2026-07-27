@@ -5,14 +5,14 @@ import (
 	"net/url"
 	"strings"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	apigencli "github.com/Yacobolo/leapview/internal/app/cli/gen"
 )
 
 func apiOperationURL(target, operationID string, pathParams map[string]string, query url.Values) (string, error) {
 	path, ok := generatedCLIPath(operationID)
 	if !ok {
-		contract, contractOK := apigenapi.GetAPIGenOperationContract(operationID)
+		contract, contractOK := apiaggregate.GetAPIGenOperationContract(operationID)
 		if !contractOK {
 			return "", fmt.Errorf("unknown API operation %q", operationID)
 		}

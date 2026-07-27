@@ -18,8 +18,11 @@ node_modules
 infisical-export.*
 
 api/gen
+internal/agent/api/gen
+internal/app/api/aggregate
 internal/app/api/gen
 internal/app/cli/gen
+internal/platform/http/api/gen
 internal/app/config/config_gen.go
 internal/app/config/spec/names_gen.go
 internal/platform/db/db.go

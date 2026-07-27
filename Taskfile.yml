@@ -365,15 +365,19 @@ tasks:
     generates:
       - api/gen/json-ir.json
       - api/gen/openapi.yaml
+      - internal/agent/api/gen/request_models.gen.go
+      - internal/agent/api/gen/server.apigen.gen.go
+      - internal/app/api/aggregate/server.apigen.gen.go
       - internal/app/api/gen/request_models.gen.go
       - internal/app/api/gen/server.apigen.gen.go
       - internal/app/cli/gen/apigen_registry.gen.go
+      - internal/platform/http/api/gen/request_models.gen.go
       - docs/api/catalog.json
       - docs/api/openapi.yaml
       - docs/api/operations.json
     cmds:
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.1 typespec-compile -manifest api/apigen.yaml -target leapview-v1
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.1 all -manifest api/apigen.yaml -target leapview-v1
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.2 typespec-compile -manifest api/apigen.yaml -target leapview-v1
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.2 all -manifest api/apigen.yaml -target leapview-v1
       - go run ./internal/app/tools/openapidocgen
 
   agent-contracts:generate:
@@ -390,8 +394,8 @@ tasks:
       - internal/agent/contracts/models.gen.go
       - internal/agent/contracts/schemas.gen.go
     cmds:
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.1 typespec-compile -manifest api/apigen.yaml -target agent-tool-contracts
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.1 all -manifest api/apigen.yaml -target agent-tool-contracts
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.2 typespec-compile -manifest api/apigen.yaml -target agent-tool-contracts
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.2 all -manifest api/apigen.yaml -target agent-tool-contracts
       - go run ./internal/agent/contracts/generate
 
   schema:generate:
@@ -438,8 +442,8 @@ tasks:
       - internal/workspace/ui/signals/models.gen.go
       - web/generated/signals/index.ts
     cmds:
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.1 typespec-compile -manifest api/apigen.yaml -target ui-signals
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.1 all -manifest api/apigen.yaml -target ui-signals
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.2 typespec-compile -manifest api/apigen.yaml -target ui-signals
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.2 all -manifest api/apigen.yaml -target ui-signals
       - go run ./internal/app/tools/signalcontracts
 
   visualization-ir:generate:
@@ -463,8 +467,8 @@ tasks:
       - web/generated/vega-lite/validate.ts
       - api/gen/visualization.schema.json
     cmds:
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.1 typespec-compile -manifest api/apigen.yaml -target visualization-ir
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.1 all -manifest api/apigen.yaml -target visualization-ir
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.2 typespec-compile -manifest api/apigen.yaml -target visualization-ir
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.2 all -manifest api/apigen.yaml -target visualization-ir
       - bun scripts/generate_visualization_validator.ts
       - bun scripts/generate_vega_lite_validator.ts
 

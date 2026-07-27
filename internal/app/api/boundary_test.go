@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	apigen "github.com/Yacobolo/leapview/internal/app/api/gen"
 )
 
@@ -63,7 +64,7 @@ func TestGeneratedAssetListUsesSummaryWithoutPayload(t *testing.T) {
 }
 
 func TestGeneratedAssetPayloadOpenAPIAllowsArbitraryJSON(t *testing.T) {
-	spec, err := apigen.GetEmbeddedOpenAPISpec()
+	spec, err := apiaggregate.GetEmbeddedOpenAPISpec()
 	if err != nil {
 		t.Fatalf("embedded openapi: %v", err)
 	}

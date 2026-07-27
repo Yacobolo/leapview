@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	protocolgen "github.com/Yacobolo/leapview/internal/platform/http/api/gen"
 	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
 )
 
@@ -19,58 +20,10 @@ type TransportErrorResponder struct {
 }
 
 func (responder TransportErrorResponder) RespondTransportError(ctx context.Context, w http.ResponseWriter, r *http.Request, failure apigenapi.GenTransportError) {
-	if responder.Logger != nil && failure.Cause != nil {
-		log := responder.Logger.DebugContext
-		if failure.StatusCode >= http.StatusInternalServerError {
-			log = responder.Logger.ErrorContext
-		}
-		log(ctx, "APIGen transport error", "operation", failure.OperationID, "kind", failure.Kind, "status", failure.StatusCode, "error", failure.Cause)
-	}
-	requestID := ""
-	instance := ""
-	if r != nil {
-		requestID = r.Header.Get("X-Request-ID")
-		instance = r.URL.Path
-	}
-	problem := apigenapi.ProblemDetails{
-		Type:  "https://leapview.dev/problems/" + strings.ToLower(strings.ReplaceAll(failure.Code, "_", "-")),
-		Title: http.StatusText(failure.StatusCode), Status: int32(failure.StatusCode),
-		Detail: failure.PublicDetail, Instance: instance, Code: failure.Code,
-		RequestId: requestID, Errors: []apigenapi.ProblemFieldError{},
-	}
-	if field := transportErrorField(failure); field != "" {
-		problem.Detail = strings.TrimSuffix(failure.PublicDetail, ".") + " \"" + field + "\"."
-		problem.Errors = append(problem.Errors, apigenapi.ProblemFieldError{
-			Code: failure.Code, Detail: failure.PublicDetail, Field: field,
-		})
-	}
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(failure.StatusCode)
-	_ = json.NewEncoder(w).Encode(problem)
-}
-
-func transportErrorField(failure apigenapi.GenTransportError) string {
-	if failure.Cause == nil {
-		return ""
-	}
-	switch failure.Kind {
-	case "path_parameter", "query_parameter", "header_parameter":
-	default:
-		return ""
-	}
-	message := failure.Cause.Error()
-	const marker = "parameter \""
-	start := strings.Index(message, marker)
-	if start < 0 {
-		return ""
-	}
-	start += len(marker)
-	end := strings.IndexByte(message[start:], '"')
-	if end < 0 {
-		return ""
-	}
-	return message[start : start+end]
+	apitransport.WriteAPIGenFailure(ctx, w, r, responder.Logger, apitransport.APIGenFailure{
+		OperationID: failure.OperationID, Kind: failure.Kind, StatusCode: failure.StatusCode,
+		Code: failure.Code, PublicDetail: failure.PublicDetail, Cause: failure.Cause,
+	})
 }
 
 type ResponseBuffer struct {
@@ -193,7 +146,7 @@ func (w *ResponseBuffer) normalizedBody(status int) []byte {
 			value["requestId"] = w.request.Header.Get("X-Request-ID")
 		}
 		if errorsValue, present := value["errors"]; !present || errorsValue == nil {
-			value["errors"] = []apigenapi.ProblemFieldError{}
+			value["errors"] = []protocolgen.ProblemFieldError{}
 		}
 		out, err := json.Marshal(value)
 		if err != nil {
@@ -213,16 +166,16 @@ func (w *ResponseBuffer) normalizedBody(status int) []byte {
 	if raw, ok := value["code"].(string); ok && raw != "" {
 		code = raw
 	}
-	errors := []apigenapi.ProblemFieldError{}
+	errors := []protocolgen.ProblemFieldError{}
 	if details, ok := value["details"].(map[string]any); ok {
 		if problemCode, ok := details["problemCode"].(string); ok && problemCode != "" {
 			code = problemCode
 		}
 		if field, ok := details["field"].(string); ok && field != "" {
-			errors = append(errors, apigenapi.ProblemFieldError{Field: field, Code: code, Detail: message})
+			errors = append(errors, protocolgen.ProblemFieldError{Field: field, Code: code, Detail: message})
 		}
 	}
-	problem := apigenapi.ProblemDetails{
+	problem := protocolgen.ProblemDetails{
 		Type:  "https://leapview.dev/problems/" + strings.ToLower(code),
 		Title: http.StatusText(status), Status: int32(status), Detail: message,
 		Instance: w.request.URL.Path, Code: code, RequestId: requestID, Errors: errors,

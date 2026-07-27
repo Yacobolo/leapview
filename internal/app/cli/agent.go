@@ -13,7 +13,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/agent/api"
 	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	"github.com/spf13/cobra"
 )
 
@@ -144,7 +144,7 @@ func runAgentTools() error {
 }
 
 func cliAgentAPIGenOperations() []agenttools.APIGenOperation {
-	generated := apigenapi.GetAPIGenOperationContracts()
+	generated := apiaggregate.GetAPIGenOperationContracts()
 	contracts := make(map[string]agenttools.OperationContract, len(generated))
 	for operationID, contract := range generated {
 		contracts[operationID] = agenttools.OperationContract{
@@ -153,7 +153,7 @@ func cliAgentAPIGenOperations() []agenttools.APIGenOperation {
 			Extensions: contract.Extensions,
 		}
 	}
-	return agenttools.BuildAPIGenOperations(contracts, apigenapi.GetAPIGenToolContracts())
+	return agenttools.BuildAPIGenOperations(contracts, apiaggregate.GetAPIGenToolContracts())
 }
 
 func cliCompactJSON(value json.RawMessage) string {

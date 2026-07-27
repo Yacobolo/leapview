@@ -12,6 +12,8 @@ coverage.out
 api/gen/
 api/.apigen/
 internal/agent/contracts/gen/
+internal/agent/api/gen/
+internal/app/api/aggregate/
 internal/app/api/gen/
 internal/app/config/config_gen.go
 internal/app/config/spec/names_gen.go
@@ -21,6 +23,7 @@ internal/agent/ui/signals/models.gen.go
 internal/dashboard/ui/signals/models.gen.go
 internal/workspace/ui/signals/models.gen.go
 internal/app/cli/gen/
+internal/platform/http/api/gen/
 internal/platform/db/db.go
 internal/platform/db/models.go
 internal/platform/db/*.sql.go
