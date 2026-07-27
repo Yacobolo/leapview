@@ -437,7 +437,7 @@ func (a *Auth) MiddlewareWithObjectResolver(privilege access.Privilege, objectRe
 			http.Redirect(w, r, a.defaultLoginRedirect(), http.StatusFound)
 			return
 		}
-		if a.mustChangeLocalPassword(r, principal.ID) {
+		if a.mustChangeLocalPassword(r, principal.ID, credential) {
 			writeAuthError(w, r, errForbidden, http.StatusForbidden)
 			return
 		}
@@ -521,16 +521,19 @@ func (a *Auth) defaultLoginRedirect() string {
 	return "/auth/azureadv2"
 }
 
-func (a *Auth) mustChangeLocalPassword(r *http.Request, principalID string) bool {
+func (a *Auth) mustChangeLocalPassword(r *http.Request, principalID string, credential *access.APICredential) bool {
 	if !a.localAuth || r.URL.Path == "/auth/local/password" || r.URL.Path == "/auth/logout" {
+		return false
+	}
+	if credential != nil && credential.Token.Name == access.APITokenNameInitialPublisher {
 		return false
 	}
 	local, ok := a.repo.(localCredentialManager)
 	if !ok {
 		return false
 	}
-	credential, err := local.LocalCredential(r.Context(), principalID)
-	return err == nil && credential.MustChangePassword
+	localCredential, err := local.LocalCredential(r.Context(), principalID)
+	return err == nil && localCredential.MustChangePassword
 }
 
 func writeBearerChallenge(w http.ResponseWriter, r *http.Request) {
@@ -1028,7 +1031,7 @@ func (a *Auth) Authenticate(r *http.Request) (Principal, *access.APICredential, 
 }
 
 func (a *Auth) MustChangeLocalPassword(r *http.Request, principalID string) bool {
-	return a.mustChangeLocalPassword(r, principalID)
+	return a.mustChangeLocalPassword(r, principalID, nil)
 }
 
 func (a *Auth) SessionCookie(token string, expires time.Time) *http.Cookie {

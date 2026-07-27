@@ -1,0 +1,13 @@
+apiVersion: leapview.dev/v1
+kind: Connection
+metadata:
+  name: sample
+  title: Synthetic evaluation data
+spec:
+  kind: managed
+  description: Disposable data shipped only for the local five-minute evaluation.
+  credentials:
+    provider: none
+  defaults:
+    options:
+      header: true

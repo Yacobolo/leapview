@@ -8,7 +8,7 @@ Use this learning path to go from a new LeapView installation to a validated das
 - Continue with [Build your first dashboard](/docs/first-dashboard) for the guided learning experience. You will run the sample Sales workspace, trace its resources, change a semantic metric and dashboard note, validate the project, deploy it locally, and verify the result.
 - Read [Project structure](/docs/project-structure) when you are ready to understand how project-global and workspace-scoped resources fit together.
 
-The first-dashboard tutorial uses a source checkout because the lesson includes editing the bundled project. If you only want to evaluate the running product, use the public-image path in the installation guide and explore the included workspace without making source changes.
+The first-dashboard tutorial uses a source checkout because the lesson includes editing the repository project. If you only want to evaluate the running product, use the public-image path in the installation guide. Its explicitly disposable synthetic workspace is deployed by evaluation mode; the source-authoring showcase is not pre-deployed in the normal server image.
 
 ## What you will learn
 

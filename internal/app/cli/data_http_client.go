@@ -195,7 +195,17 @@ func (c *managedDataCLIClient) jsonEndpoint(ctx context.Context, method, endpoin
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
+		contents, _ := io.ReadAll(io.LimitReader(response.Body, 64<<10))
+		var problem struct {
+			Code   string `json:"code"`
+			Detail string `json:"detail"`
+		}
+		if json.Unmarshal(contents, &problem) == nil && strings.TrimSpace(problem.Detail) != "" {
+			if strings.TrimSpace(problem.Code) != "" {
+				return fmt.Errorf("operation %s failed with HTTP %d (%s): %s", operation, response.StatusCode, problem.Code, problem.Detail)
+			}
+			return fmt.Errorf("operation %s failed with HTTP %d: %s", operation, response.StatusCode, problem.Detail)
+		}
 		return fmt.Errorf("operation %s failed with HTTP %d", operation, response.StatusCode)
 	}
 	if out == nil {

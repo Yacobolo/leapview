@@ -111,6 +111,35 @@ func TestPublicImageIsPrimaryOnboardingContract(t *testing.T) {
 	}
 }
 
+func TestFiveMinuteEvaluationContract(t *testing.T) {
+	root := filepath.Join("..", "..")
+	dockerfile := read(t, filepath.Join(root, "Dockerfile"))
+	if !strings.Contains(dockerfile, "COPY evaluation ./evaluation") {
+		t.Fatal("runtime image does not include the self-contained evaluation project and data")
+	}
+	for _, name := range []string{
+		filepath.Join(root, "README.md"),
+		filepath.Join(root, "docs", "articles", "start", "installation.md"),
+	} {
+		document := read(t, name)
+		for _, required := range []string{
+			"--name leapview-evaluate",
+			"--publish 127.0.0.1:8080:8080",
+			"--volume leapview-evaluate:/var/lib/leapview",
+			"ghcr.io/yacobolo/leapview:latest evaluate",
+			"docker exec leapview-evaluate leapview evaluate first-login",
+			"docker rm --force leapview-evaluate",
+			"docker volume rm leapview-evaluate",
+			"Five-minute Sales Evaluation",
+			"no source checkout",
+		} {
+			if !strings.Contains(document, required) {
+				t.Errorf("%s missing five-minute evaluation contract %q", name, required)
+			}
+		}
+	}
+}
+
 func TestControllerBuildAndLifecycleCommands(t *testing.T) {
 	root := t.TempDir()
 	controller := buildController(t, root)

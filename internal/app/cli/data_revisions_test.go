@@ -63,3 +63,30 @@ func TestDataRevisionCurrentPrintsNone(t *testing.T) {
 		t.Fatalf("output = %q", got)
 	}
 }
+
+func TestDataRevisionCurrentIncludesProblemDetailsInHTTPError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSONTest(t, w, http.StatusForbidden, map[string]string{
+			"code":   "AUTHORIZATION_DENIED",
+			"detail": "publisher token cannot inspect this revision",
+		})
+	}))
+	defer server.Close()
+
+	client := newManagedDataCLIClient(server.Client(), server.URL, "token")
+	err := runDataRevisionCurrent(
+		context.Background(),
+		&rootOptions{},
+		dataRevisionOptions{project: "demo", connection: "orders"},
+		client,
+		&bytes.Buffer{},
+	)
+	if err == nil {
+		t.Fatal("runDataRevisionCurrent() error = nil")
+	}
+	for _, expected := range []string{"HTTP 403", "AUTHORIZATION_DENIED", "publisher token cannot inspect this revision"} {
+		if !strings.Contains(err.Error(), expected) {
+			t.Fatalf("runDataRevisionCurrent() error = %q, want %q", err, expected)
+		}
+	}
+}

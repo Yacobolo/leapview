@@ -118,6 +118,7 @@ COPY --from=web /src/static ./static
 COPY --from=build /src/schemas ./schemas
 COPY --from=sourcegen /src/.data/map-assets ./.data/map-assets
 COPY dashboards ./dashboards
+COPY evaluation ./evaluation
 
 RUN mkdir -p /var/lib/leapview && \
     chown -R leapview:leapview /var/lib/leapview /app
