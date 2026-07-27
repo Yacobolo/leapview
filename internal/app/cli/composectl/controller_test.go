@@ -29,6 +29,28 @@ func TestControllerLockRejectsConcurrentOperationAndRecoversAfterRelease(t *test
 	defer second.Release()
 }
 
+func TestRemoveInterruptedBackupArchivesPreservesCompletedBackups(t *testing.T) {
+	directory := t.TempDir()
+	stale := filepath.Join(directory, ".leapview-backup-interrupted.tmp")
+	completed := filepath.Join(directory, "completed.tar.gz")
+	if err := os.WriteFile(stale, []byte("partial"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(completed, []byte("complete"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := removeInterruptedBackupArchives(directory); err != nil {
+		t.Fatalf("removeInterruptedBackupArchives() error = %v", err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("interrupted backup survived: %v", err)
+	}
+	if contents, err := os.ReadFile(completed); err != nil || string(contents) != "complete" {
+		t.Fatalf("completed backup = %q, %v", contents, err)
+	}
+}
+
 func TestFirstLoginRetainsCredentialsUntilOutputSucceeds(t *testing.T) {
 	root := t.TempDir()
 	credentialsPath := filepath.Join(root, credentialsName)

@@ -555,6 +555,9 @@ func (c *Controller) backupArchive(ctx context.Context, path string) error {
 	if err := os.Chmod(directory, 0o700); err != nil {
 		return err
 	}
+	if err := removeInterruptedBackupArchives(directory); err != nil {
+		return err
+	}
 	tmp, err := os.CreateTemp(directory, ".leapview-backup-*.tmp")
 	if err != nil {
 		return err
@@ -591,6 +594,23 @@ func (c *Controller) backupArchive(ctx context.Context, path string) error {
 	}
 	cleanup = false
 	return syncDirectory(directory)
+}
+
+func removeInterruptedBackupArchives(directory string) error {
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasPrefix(name, ".leapview-backup-") || !strings.HasSuffix(name, ".tmp") {
+			continue
+		}
+		if err := os.Remove(filepath.Join(directory, name)); err != nil {
+			return fmt.Errorf("remove interrupted backup archive %q: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func (c *Controller) restoreArchive(ctx context.Context, archive string) error {

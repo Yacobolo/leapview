@@ -456,6 +456,49 @@ func TestBackupInstanceArchivesDatabaseAndPersistentFiles(t *testing.T) {
 	}
 }
 
+func TestRecoverInterruptedInstanceOperationsRemovesDisposableWork(t *testing.T) {
+	parent := t.TempDir()
+	target := filepath.Join(parent, "home")
+	writeTestFile(t, filepath.Join(target, "current"), "current")
+	writeTestFile(t, filepath.Join(parent, ".leapview-instance-backup-stale", "copy"), "backup")
+	writeTestFile(t, filepath.Join(parent, ".leapview-restore-stale", "copy"), "restore")
+	writeTestFile(t, filepath.Join(parent, ".leapview-restore-old-stale", "copy"), "old")
+
+	if err := recoverInterruptedInstanceOperations(target); err != nil {
+		t.Fatalf("recoverInterruptedInstanceOperations() error = %v", err)
+	}
+	for _, stale := range []string{
+		".leapview-instance-backup-stale",
+		".leapview-restore-stale",
+		".leapview-restore-old-stale",
+	} {
+		if _, err := os.Stat(filepath.Join(parent, stale)); !os.IsNotExist(err) {
+			t.Fatalf("stale operation path %q survived: %v", stale, err)
+		}
+	}
+	if got := readTestFile(t, filepath.Join(target, "current")); got != "current" {
+		t.Fatalf("current state = %q, want current", got)
+	}
+}
+
+func TestRecoverInterruptedInstanceOperationsRollsBackMissingTarget(t *testing.T) {
+	parent := t.TempDir()
+	target := filepath.Join(parent, "home")
+	old := filepath.Join(parent, ".leapview-restore-old-20260727200000")
+	writeTestFile(t, filepath.Join(old, "current"), "recover me")
+	writeTestFile(t, filepath.Join(parent, ".leapview-restore-stale", "candidate"), "discard me")
+
+	if err := recoverInterruptedInstanceOperations(target); err != nil {
+		t.Fatalf("recoverInterruptedInstanceOperations() error = %v", err)
+	}
+	if got := readTestFile(t, filepath.Join(target, "current")); got != "recover me" {
+		t.Fatalf("recovered state = %q, want recover me", got)
+	}
+	if _, err := os.Stat(filepath.Join(parent, ".leapview-restore-stale")); !os.IsNotExist(err) {
+		t.Fatalf("stale restore candidate survived: %v", err)
+	}
+}
+
 func TestBackupInstanceCreatesPrivateArchive(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()

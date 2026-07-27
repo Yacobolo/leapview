@@ -14,6 +14,9 @@ spec:
   semanticModels:
     include:
       - semantic-models/*.yaml
+  refreshPipelines:
+    include:
+      - refresh-pipelines/*.yaml
   dashboards:
     include:
       - dashboards/*.yaml

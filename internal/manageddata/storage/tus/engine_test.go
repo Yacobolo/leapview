@@ -2,6 +2,7 @@ package tus_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/Yacobolo/leapview/internal/manageddata/storage"
 	"github.com/Yacobolo/leapview/internal/manageddata/storage/filesystem"
@@ -109,6 +111,37 @@ func TestEngineRejectsInvalidRequestsAndAbortIsIdempotent(t *testing.T) {
 	}
 	if _, err := engine.Resume(t.Context(), created.ID); !errors.Is(err, storage.ErrNotFound) {
 		t.Fatalf("Resume() after Abort() error = %v", err)
+	}
+}
+
+func TestEngineStartupRecoversLocksLeftByContainerPIDReuse(t *testing.T) {
+	engine, blobs, uploadRoot := newEngine(t)
+	if _, err := engine.Create(t.Context(), storage.CreateUpload{ID: "upload-1", Size: 1}); err != nil {
+		t.Fatal(err)
+	}
+	for name, contents := range map[string]string{
+		"upload-1.lock":        strconv.Itoa(os.Getpid()) + "\n",
+		"upload-1.stop":        "",
+		"upload-1.lock.orphan": strconv.Itoa(os.Getpid()) + "\n",
+	} {
+		if err := os.WriteFile(filepath.Join(uploadRoot, name), []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	restarted, err := managedtus.New(uploadRoot, blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	if _, err := restarted.Resume(ctx, "upload-1"); err != nil {
+		t.Fatalf("Resume() after container PID reuse = %v", err)
+	}
+	for _, name := range []string{"upload-1.lock", "upload-1.stop", "upload-1.lock.orphan"} {
+		if _, err := os.Stat(filepath.Join(uploadRoot, name)); !os.IsNotExist(err) {
+			t.Fatalf("interrupted lock artifact %q survived restart: %v", name, err)
+		}
 	}
 }
 

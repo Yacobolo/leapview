@@ -92,6 +92,7 @@ type Module struct {
 	scheduler          Scheduler
 	reconcileSchedules func(context.Context) error
 	scheduleInterval   time.Duration
+	leaseTimeout       time.Duration
 	logger             *slog.Logger
 	events             EventStore
 
@@ -110,6 +111,10 @@ func Build(ctx context.Context, config Config) (*Module, error) {
 	if interval <= 0 {
 		interval = time.Minute
 	}
+	leaseTimeout := config.LeaseTimeout
+	if leaseTimeout <= 0 {
+		leaseTimeout = 2 * time.Minute
+	}
 	logger := config.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -121,7 +126,8 @@ func Build(ctx context.Context, config Config) (*Module, error) {
 		},
 		dispatcher: config.Dispatcher, scheduler: config.Scheduler,
 		environment: config.Environment, refreshClock: config.Clock,
-		reconcileSchedules: config.ReconcileSchedules, scheduleInterval: interval, logger: logger,
+		reconcileSchedules: config.ReconcileSchedules, scheduleInterval: interval,
+		leaseTimeout: leaseTimeout, logger: logger,
 		events: config.Events,
 	}
 	m.handler.CurrentPrincipal = func(r *http.Request) (materializehttp.Principal, bool) {
@@ -403,6 +409,10 @@ func (m *Module) Start(ctx context.Context) error {
 		m.wg.Add(1)
 		go m.runScheduler(background)
 	}
+	if m.dispatcher != nil {
+		m.wg.Add(1)
+		go m.runDispatcherRecovery(background)
+	}
 	m.mu.Unlock()
 	m.Dispatch(background)
 	return nil
@@ -458,6 +468,20 @@ func (m *Module) runScheduler(ctx context.Context) {
 			return
 		case <-ticker.C:
 			dispatch()
+		}
+	}
+}
+
+func (m *Module) runDispatcherRecovery(ctx context.Context) {
+	defer m.wg.Done()
+	ticker := time.NewTicker(m.leaseTimeout)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			m.Dispatch(ctx)
 		}
 	}
 }

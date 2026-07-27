@@ -181,12 +181,22 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 			digestBytes, _ := hex.DecodeString(item.digest)
 			contentDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(digestBytes) + ":"
 			if _, err := client.uploadReleaseArtifact(ctx, project.Name, created.Id, item.workspaceID, contentDigest, bytes.NewReader(item.content)); err != nil {
-				return fmt.Errorf("upload workspace %q artifact failed", item.workspaceID)
+				advanced, getErr := client.getRelease(ctx, project.Name, created.Id)
+				if getErr != nil ||
+					advanced.Id != created.Id ||
+					advanced.ProjectId != project.Name ||
+					(advanced.Status != releasegen.ReleaseStatusValidating && advanced.Status != releasegen.ReleaseStatusReady) {
+					return fmt.Errorf("upload workspace %q artifact failed", item.workspaceID)
+				}
+				finalized = advanced
+				break
 			}
 		}
-		finalized, err = client.finalizeRelease(ctx, project.Name, created.Id, deploymentIdempotencyKey("finalize", project.Name, created.Id))
-		if err != nil {
-			return fmt.Errorf("finalize project release failed")
+		if finalized.Status != releasegen.ReleaseStatusReady {
+			finalized, err = client.finalizeRelease(ctx, project.Name, created.Id, deploymentIdempotencyKey("finalize", project.Name, created.Id))
+			if err != nil {
+				return fmt.Errorf("finalize project release failed")
+			}
 		}
 	case releasegen.ReleaseStatusValidating:
 		// Reissuing finalize is idempotent and restarts validation if a prior

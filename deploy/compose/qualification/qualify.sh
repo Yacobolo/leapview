@@ -23,6 +23,8 @@ rm -f \
   "$evidence_dir/browser-failure.png" \
   "$evidence_dir/compose.log" \
   "$evidence_dir/qualification-report.json" \
+  "$evidence_dir/recovery-events.json" \
+  "$evidence_dir/recovery-report.json" \
   "$evidence_dir/restore-compose.log" \
   "$evidence_dir/runtime-identity.json"
 
@@ -53,6 +55,18 @@ set_min_free_bytes() {
     rm -f "$root/leapview.env.bak"
   else
     printf 'LEAPVIEW_MANAGED_DATA_MIN_FREE_BYTES=%s\n' "$local_min_free_bytes" >> "$root/leapview.env"
+  fi
+}
+
+set_qualification_job_lease() {
+  local root="$1"
+  if grep -q '^LEAPVIEW_REFRESH_JOB_LEASE_TIMEOUT=' "$root/leapview.env"; then
+    sed -i.bak \
+      's/^LEAPVIEW_REFRESH_JOB_LEASE_TIMEOUT=.*/LEAPVIEW_REFRESH_JOB_LEASE_TIMEOUT=15s/' \
+      "$root/leapview.env"
+    rm -f "$root/leapview.env.bak"
+  else
+    printf 'LEAPVIEW_REFRESH_JOB_LEASE_TIMEOUT=15s\n' >> "$root/leapview.env"
   fi
 }
 
@@ -158,6 +172,7 @@ cd "$bundle_root"
   --environment qualification \
   --image "$image_reference"
 set_min_free_bytes "$bundle_root"
+set_qualification_job_lease "$bundle_root"
 ./leapviewctl start
 
 credentials_file="$(mktemp "$bundle_root/.qualification-credentials.XXXXXX")"
@@ -247,6 +262,16 @@ grep -q '^# HELP leapview_http_request_duration_seconds ' "$metrics_file"
 rm -f "$metrics_file"
 metrics_file=""
 
+QUALIFICATION_BUNDLE_ROOT="$bundle_root" \
+QUALIFICATION_CONTAINER_ID="$container_id" \
+QUALIFICATION_PUBLISHER_TOKEN="$publisher_token" \
+QUALIFICATION_METRICS_TOKEN="$metrics_token" \
+QUALIFICATION_COMPOSE_PROJECT="$primary_project" \
+QUALIFICATION_PROJECT_ID=leapview-evaluation \
+LEAPVIEW_QUALIFICATION_EVIDENCE_DIR="$evidence_dir" \
+  ./qualification/recover.sh
+container_id="$(compose_in "$bundle_root" ps --quiet leapview)"
+
 docker restart "$container_id" >/dev/null
 for _ in $(seq 1 120); do
   [[ "$(docker inspect --format '{{.State.Health.Status}}' "$container_id")" == healthy ]] && break
@@ -318,6 +343,7 @@ jq -n \
   --argjson browserJourney true \
   --argjson governedQuery true \
   --argjson auditedDenial true \
+  --argjson interruptionRecovery true \
   --argjson restartPersistence true \
   --argjson backupRestore true \
   '{
@@ -332,6 +358,7 @@ jq -n \
       browserJourney:$browserJourney,
       governedQuery:$governedQuery,
       auditedDenial:$auditedDenial,
+      interruptionRecovery:$interruptionRecovery,
       restartPersistence:$restartPersistence,
       backupRestore:$backupRestore
     }
