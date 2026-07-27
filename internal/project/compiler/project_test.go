@@ -313,7 +313,7 @@ func TestCompileProjectRejectsInvalidAccessResources(t *testing.T) {
 			_, err := CompileProject(projectPath, Options{ServingStateID: "dep_test"})
 			assertCompileErrorContains(t, err, tc.want)
 			if tc.field != "" {
-				diagnostics := schema.Diagnostics(err)
+				diagnostics := configschema.Diagnostics(err)
 				if len(diagnostics) == 0 || diagnostics[0].FieldPath != tc.field {
 					t.Fatalf("diagnostics = %#v, want field %q", diagnostics, tc.field)
 				}
@@ -348,7 +348,7 @@ spec:
 	if !strings.Contains(err.Error(), "outside uses.sources") {
 		t.Fatalf("CompileProject() error = %v, want outside uses.sources", err)
 	}
-	diagnostic := schema.Diagnostics(err)[0]
+	diagnostic := configschema.Diagnostics(err)[0]
 	if diagnostic.ResourceID != "model_table:sales.orders" || diagnostic.FieldPath != "spec.sources" || diagnostic.File == "" {
 		t.Fatalf("diagnostic = %#v, want resource, field, and file context", diagnostic)
 	}
@@ -1624,7 +1624,7 @@ func assertCompileErrorContains(t *testing.T, err error, want string) {
 
 func assertDiagnostic(t *testing.T, err error, resourceID, fieldPath string) {
 	t.Helper()
-	diagnostics := schema.Diagnostics(err)
+	diagnostics := configschema.Diagnostics(err)
 	if len(diagnostics) == 0 {
 		t.Fatalf("diagnostics empty, want resource=%q field=%q", resourceID, fieldPath)
 	}
