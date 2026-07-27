@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/Yacobolo/leapview/internal/deployment"
@@ -219,6 +220,20 @@ func (m *Module) ListDeploymentEvents(w http.ResponseWriter, r *http.Request, pr
 		return
 	}
 	jobhttp.WriteEventPage(w, r, m.api.Jobs, "deployment", deploymentID, params.Limit, params.PageToken, "deployment:"+project+":"+deploymentID)
+}
+
+func (m *Module) DispatchAPIGenOperation(operationID string, logger *slog.Logger, w http.ResponseWriter, r *http.Request) bool {
+	return deploymenthttp.DispatchAPIGenOperation(operationID, deploymentAPIGenHandler{Module: m}, logger, w, r)
+}
+
+type deploymentAPIGenHandler struct{ *Module }
+
+func (h deploymentAPIGenHandler) ListDeployments(w http.ResponseWriter, r *http.Request, project string, limit *int32, pageToken *string) {
+	h.Module.ListDeployments(w, r, project, deploymentapi.PageParams{Limit: limit, PageToken: pageToken})
+}
+
+func (h deploymentAPIGenHandler) ListDeploymentEvents(w http.ResponseWriter, r *http.Request, project, deploymentID string, limit *int32, pageToken *string) {
+	h.Module.ListDeploymentEvents(w, r, project, deploymentID, deploymentapi.PageParams{Limit: limit, PageToken: pageToken})
 }
 
 func (m *Module) principal(r *http.Request) (deploymenthttp.Principal, bool) {

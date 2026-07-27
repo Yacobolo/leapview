@@ -8,7 +8,6 @@ import (
 	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
-	deploymentmodule "github.com/Yacobolo/leapview/internal/deployment/module"
 	manageddatamodule "github.com/Yacobolo/leapview/internal/manageddata/module"
 	"github.com/Yacobolo/leapview/internal/platform/buildinfo"
 	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
@@ -48,7 +47,6 @@ func registerAPIGenRoutes(routes *capabilityRoutes, runtime *runtimeServices, pl
 
 type apiGenDispatcher struct {
 	dashboardModule    *dashboardmodule.Module
-	deploymentModule   *deploymentmodule.Module
 	managedDataModule  *manageddatamodule.Module
 	releaseModule      *releasemodule.Module
 	workspaceModule    *workspacemodule.Module

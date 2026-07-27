@@ -17,6 +17,7 @@ import (
 	"time"
 
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	deploymentgen "github.com/Yacobolo/leapview/internal/deployment/api/gen"
 	projectbundle "github.com/Yacobolo/leapview/internal/project/bundle"
 	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 	"github.com/Yacobolo/leapview/internal/workspace"
@@ -204,7 +205,7 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 	if err != nil {
 		return err
 	}
-	deployed, err := client.createDeployment(ctx, project.Name, deploymentIdempotencyKey("deploy", project.Name, created.Id), apigenapi.DeploymentCreateRequest{ReleaseId: created.Id})
+	deployed, err := client.createDeployment(ctx, project.Name, deploymentIdempotencyKey("deploy", project.Name, created.Id), deploymentgen.DeploymentCreateRequest{ReleaseId: created.Id})
 	if err != nil {
 		return fmt.Errorf("deploy project release failed")
 	}
@@ -252,34 +253,34 @@ func waitForProjectRelease(ctx context.Context, client *managedDataCLIClient, pr
 	}
 }
 
-func waitForProjectDeployment(ctx context.Context, client *managedDataCLIClient, projectID, releaseID string, deployment apigenapi.DeploymentResponse) (apigenapi.DeploymentResponse, error) {
+func waitForProjectDeployment(ctx context.Context, client *managedDataCLIClient, projectID, releaseID string, deployment deploymentgen.DeploymentResponse) (deploymentgen.DeploymentResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
 	for {
 		switch deployment.Status {
-		case apigenapi.DeploymentStatusActive:
+		case deploymentgen.DeploymentStatusActive:
 			return deployment, nil
-		case apigenapi.DeploymentStatusQueued, apigenapi.DeploymentStatusRunning:
-		case apigenapi.DeploymentStatusFailed, apigenapi.DeploymentStatusCancelled:
+		case deploymentgen.DeploymentStatusQueued, deploymentgen.DeploymentStatusRunning:
+		case deploymentgen.DeploymentStatusFailed, deploymentgen.DeploymentStatusCancelled:
 			detail := ""
 			if deployment.Error != nil {
 				detail = ": " + *deployment.Error
 			}
-			return apigenapi.DeploymentResponse{}, fmt.Errorf("project deployment %s%s", deployment.Status, detail)
+			return deploymentgen.DeploymentResponse{}, fmt.Errorf("project deployment %s%s", deployment.Status, detail)
 		default:
-			return apigenapi.DeploymentResponse{}, fmt.Errorf("project deployment returned unexpected status %q", deployment.Status)
+			return deploymentgen.DeploymentResponse{}, fmt.Errorf("project deployment returned unexpected status %q", deployment.Status)
 		}
 		select {
 		case <-ctx.Done():
-			return apigenapi.DeploymentResponse{}, fmt.Errorf("wait for project deployment: %w", ctx.Err())
+			return deploymentgen.DeploymentResponse{}, fmt.Errorf("wait for project deployment: %w", ctx.Err())
 		case <-time.After(100 * time.Millisecond):
 		}
 		next, err := client.getDeployment(ctx, projectID, deployment.Id)
 		if err != nil {
-			return apigenapi.DeploymentResponse{}, fmt.Errorf("get project deployment failed")
+			return deploymentgen.DeploymentResponse{}, fmt.Errorf("get project deployment failed")
 		}
 		if next.Id != deployment.Id || next.ProjectId != projectID || next.ReleaseId != releaseID {
-			return apigenapi.DeploymentResponse{}, fmt.Errorf("project deployment returned inconsistent scope")
+			return deploymentgen.DeploymentResponse{}, fmt.Errorf("project deployment returned inconsistent scope")
 		}
 		deployment = next
 	}
