@@ -185,6 +185,8 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		"cp -R deploy/compose/qualification",
 		"./qualification/qualify.sh",
 		"candidate-${{ github.run_id }}-${{ github.run_attempt }}",
+		`release_tag="candidate-${RUN_ID}-${RUN_ATTEMPT}"`,
+		"BUILD_RELEASE: ${{ steps.identity.outputs.release }}",
 		"docker buildx imagetools create",
 		"gh release create",
 		"needs: [image, qualify]",
@@ -195,6 +197,9 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 	}
 	if strings.Contains(release, "types:\n      - published") {
 		t.Fatal("release workflow cannot gate publication when it starts after a release is already public")
+	}
+	if count := strings.Count(release, "if: github.event_name == 'push'"); count != 1 {
+		t.Fatalf("only release publication may be push-only; found %d push-only gates", count)
 	}
 	if strings.Index(release, "./qualification/qualify.sh") > strings.Index(release, "gh release create") {
 		t.Fatal("release workflow publishes Compose archives before installed-candidate qualification")

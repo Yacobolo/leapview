@@ -48,6 +48,8 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           RELEASE_TAG: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           canonical_version="$(tr -d '[:space:]' < VERSION)"
           package_version="$(python3 -c 'import json; print(json.load(open("package.json"))["version"])')"
@@ -67,6 +69,10 @@ jobs:
             }
             version="$canonical_version"
             release_tag="$RELEASE_TAG"
+            is_release=true
+          else
+            version="$canonical_version"
+            release_tag="candidate-${RUN_ID}-${RUN_ATTEMPT}"
             is_release=true
           fi
           {
@@ -181,13 +187,12 @@ jobs:
           PY
 
       - name: Build candidate Compose archives
-        if: github.event_name == 'push'
         env:
           BUILD_VERSION: ${{ steps.identity.outputs.version }}
           BUILD_REVISION: ${{ steps.identity.outputs.revision }}
           BUILD_TIME: ${{ steps.identity.outputs.build_time }}
           BUILD_DIRTY: "false"
-          BUILD_RELEASE: "true"
+          BUILD_RELEASE: ${{ steps.identity.outputs.release }}
           IMAGE_REFERENCE: ${{ env.IMAGE_NAME }}@${{ steps.publish.outputs.digest }}
           RELEASE_TAG: ${{ steps.identity.outputs.release_tag }}
         run: |
@@ -259,7 +264,6 @@ jobs:
           done
 
       - name: Upload unpublished candidate
-        if: github.event_name == 'push'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-candidate-${{ steps.identity.outputs.release_tag }}
@@ -276,7 +280,6 @@ jobs:
 
   qualify:
     name: Pre-publication qualification (${{ matrix.arch }})
-    if: github.event_name == 'push'
     needs: image
     strategy:
       fail-fast: false
