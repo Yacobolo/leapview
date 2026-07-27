@@ -61,6 +61,7 @@ COPY --from=sourcegen /src/internal/app/api/aggregate ./internal/app/api/aggrega
 COPY --from=sourcegen /src/internal/app/api/gen ./internal/app/api/gen
 COPY --from=sourcegen /src/internal/platform/http/api/gen ./internal/platform/http/api/gen
 COPY --from=sourcegen /src/internal/project/api/gen ./internal/project/api/gen
+COPY --from=sourcegen /src/internal/refresh/api/gen ./internal/refresh/api/gen
 COPY --from=sourcegen /src/internal/app/cli/gen ./internal/app/cli/gen
 COPY --from=sourcegen /src/internal/app/config/config_gen.go ./internal/app/config/config_gen.go
 COPY --from=sourcegen /src/internal/app/config/spec/names_gen.go ./internal/app/config/spec/names_gen.go

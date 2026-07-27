@@ -378,6 +378,8 @@ tasks:
       - internal/platform/http/api/gen/request_models.gen.go
       - internal/project/api/gen/request_models.gen.go
       - internal/project/api/gen/server.apigen.gen.go
+      - internal/refresh/api/gen/request_models.gen.go
+      - internal/refresh/api/gen/server.apigen.gen.go
       - docs/api/catalog.json
       - docs/api/openapi.yaml
       - docs/api/operations.json

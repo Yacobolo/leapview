@@ -12,7 +12,6 @@ import (
 	manageddatamodule "github.com/Yacobolo/leapview/internal/manageddata/module"
 	"github.com/Yacobolo/leapview/internal/platform/buildinfo"
 	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
-	refreshmodule "github.com/Yacobolo/leapview/internal/refresh/module"
 	releasemodule "github.com/Yacobolo/leapview/internal/release/module"
 	workspacemodule "github.com/Yacobolo/leapview/internal/workspace/module"
 	"github.com/go-chi/chi/v5"
@@ -51,7 +50,6 @@ type apiGenDispatcher struct {
 	dashboardModule    *dashboardmodule.Module
 	deploymentModule   *deploymentmodule.Module
 	managedDataModule  *manageddatamodule.Module
-	refreshModule      *refreshmodule.Module
 	releaseModule      *releasemodule.Module
 	workspaceModule    *workspacemodule.Module
 	defaultEnvironment string
@@ -221,18 +219,6 @@ func (a apiGenDispatcher) QueryDashboardVisualData(w http.ResponseWriter, r *htt
 
 func (a apiGenDispatcher) ListDashboardFilterValues(w http.ResponseWriter, r *http.Request, workspaceID, _, _, _ string, params apigenapi.GenListDashboardFilterValuesParams) {
 	a.dashboardModule.ListDashboardFilterValues(w, r, workspaceID)
-}
-
-func (a apiGenDispatcher) CreateRefreshRun(w http.ResponseWriter, r *http.Request, workspaceID string, headers apigenapi.GenCreateRefreshRunHeaders) {
-	a.refreshModule.CreateRefreshRun(w, r, workspaceID)
-}
-
-func (a apiGenDispatcher) ListRefreshRuns(w http.ResponseWriter, r *http.Request, workspaceID string, params apigenapi.GenListRefreshRunsParams) {
-	a.refreshModule.ListRefreshRuns(w, r, workspaceID)
-}
-
-func (a apiGenDispatcher) GetRefreshRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
-	a.refreshModule.GetRefreshRun(w, r, workspaceID, runID)
 }
 
 func (a apiGenDispatcher) ListSemanticModels(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListSemanticModelsParams) {

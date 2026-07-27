@@ -15,6 +15,7 @@ import (
 	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	projectgen "github.com/Yacobolo/leapview/internal/project/api/gen"
+	refreshgen "github.com/Yacobolo/leapview/internal/refresh/api/gen"
 	"github.com/Yacobolo/leapview/internal/workspace"
 )
 
@@ -323,6 +324,53 @@ func TestAPIGenProjectCapabilityOwnsItsOperationSurface(t *testing.T) {
 		}
 		if _, exists := appContracts[operationID]; exists {
 			t.Errorf("Project operation %q is still emitted by the application package", operationID)
+		}
+	}
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
+		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
+	}
+}
+
+func TestAPIGenRefreshCapabilityOwnsItsGeneratedPackage(t *testing.T) {
+	root := projectRoot(t)
+	manifest, err := os.ReadFile(filepath.Join(root, "api", "apigen.yaml"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	manifestText := string(manifest)
+	want := "LeapViewAPI.Refresh:\n          dir: ../internal/refresh/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/refresh/api/gen"
+	if !strings.Contains(manifestText, want) {
+		t.Fatalf("manifest missing Refresh capability package plan %q", want)
+	}
+	if strings.Contains(manifestText, "LeapViewAPI.Refresh: *leapview_api_go_package") {
+		t.Fatal("Refresh namespace is still coalesced into the application generated package")
+	}
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	for _, path := range []string{
+		"internal/refresh/api/gen/request_models.gen.go",
+		"internal/refresh/api/gen/server.apigen.gen.go",
+	} {
+		if !strings.Contains(string(taskfile), path) {
+			t.Fatalf("Taskfile.yml does not track generated Refresh artifact %q", path)
+		}
+	}
+}
+
+func TestAPIGenRefreshCapabilityOwnsItsOperationSurface(t *testing.T) {
+	refreshContracts := refreshgen.GetAPIGenOperationContracts()
+	if got, want := len(refreshContracts), 5; got != want {
+		t.Fatalf("Refresh generated operations = %d, want %d", got, want)
+	}
+	appContracts := apigenapi.GetAPIGenOperationContracts()
+	for operationID, contract := range refreshContracts {
+		if len(contract.Tags) != 1 || contract.Tags[0] != "Refresh Runs" {
+			t.Errorf("Refresh operation %q tags = %v, want [Refresh Runs]", operationID, contract.Tags)
+		}
+		if _, exists := appContracts[operationID]; exists {
+			t.Errorf("Refresh operation %q is still emitted by the application package", operationID)
 		}
 	}
 	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
