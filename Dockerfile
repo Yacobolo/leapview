@@ -43,6 +43,12 @@ RUN bun scripts/generate_visualization_validator.ts && \
 FROM golang:1.25-bookworm@sha256:a9c020ee3d1508c7be5435c262434e3d3fc1d0e76a11afeb9ddae7d60bc86aa4 AS build
 WORKDIR /src
 
+ARG BUILD_VERSION=development
+ARG BUILD_REVISION=unknown
+ARG BUILD_TIME=unknown
+ARG BUILD_DIRTY=true
+ARG BUILD_RELEASE=false
+
 COPY go.mod go.sum ./
 RUN go mod download
 
@@ -70,20 +76,32 @@ COPY --from=web /src/static ./static
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
-    CGO_ENABLED=1 go build -tags=duckdb_arrow -trimpath -ldflags="-s -w" -o /out/leapview ./cmd/leapview && \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/leapviewctl ./cmd/leapviewctl
+    BUILD_LDFLAGS="-s -w \
+      -X github.com/Yacobolo/leapview/internal/platform/buildinfo.version=${BUILD_VERSION} \
+      -X github.com/Yacobolo/leapview/internal/platform/buildinfo.revision=${BUILD_REVISION} \
+      -X github.com/Yacobolo/leapview/internal/platform/buildinfo.buildTime=${BUILD_TIME} \
+      -X github.com/Yacobolo/leapview/internal/platform/buildinfo.dirty=${BUILD_DIRTY} \
+      -X github.com/Yacobolo/leapview/internal/platform/buildinfo.release=${BUILD_RELEASE}" && \
+    CGO_ENABLED=1 go build -tags=duckdb_arrow -trimpath -ldflags="$BUILD_LDFLAGS" -o /out/leapview ./cmd/leapview && \
+    CGO_ENABLED=0 go build -trimpath -ldflags="$BUILD_LDFLAGS" -o /out/leapviewctl ./cmd/leapviewctl
 
 FROM debian:bookworm-slim@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df AS runtime
 
-ARG BUILD_VERSION=dev
+ARG BUILD_VERSION=development
 ARG BUILD_REVISION=unknown
+ARG BUILD_TIME=unknown
+ARG BUILD_DIRTY=true
+ARG BUILD_RELEASE=false
 
 LABEL org.opencontainers.image.title="LeapView" \
       org.opencontainers.image.description="LeapView business intelligence server" \
       org.opencontainers.image.source="https://github.com/Yacobolo/leapview" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.version="$BUILD_VERSION" \
-      org.opencontainers.image.revision="$BUILD_REVISION"
+      org.opencontainers.image.revision="$BUILD_REVISION" \
+      org.opencontainers.image.created="$BUILD_TIME" \
+      dev.leapview.build.dirty="$BUILD_DIRTY" \
+      dev.leapview.build.release="$BUILD_RELEASE"
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates libstdc++6 tzdata && \

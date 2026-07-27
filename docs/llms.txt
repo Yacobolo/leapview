@@ -143,6 +143,7 @@ Focused slices are available at `/docs/agent-tools/tools/{name}.json|md`, `/docs
 - [leapview semantic-models](/docs/cli/semantic-models): Inspect semantic models
 - [leapview serve](/docs/cli/serve): Run the LeapView HTTP server
 - [leapview validate](/docs/cli/validate): Validate a configuration-as-code project
+- [leapview version](/docs/cli/version): Report the LeapView build identity
 - [leapview workspaces](/docs/cli/workspaces): Inspect workspaces
 
 #### API reference

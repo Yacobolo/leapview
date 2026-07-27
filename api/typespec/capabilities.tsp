@@ -55,6 +55,10 @@ model VisualizationCapabilities {
 model CapabilitiesResponse {
   apiVersion: string;
   buildVersion: string;
+  buildRevision: string;
+  buildTime: string;
+  buildDirty: boolean;
+  buildDevelopment: boolean;
   environment: string;
   authentication: AuthenticationMode[];
   queryFormats: QueryFormat[];

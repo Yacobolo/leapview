@@ -23,6 +23,7 @@ import (
 	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
 	deploymentmodule "github.com/Yacobolo/leapview/internal/deployment/module"
 	manageddatamodule "github.com/Yacobolo/leapview/internal/manageddata/module"
+	"github.com/Yacobolo/leapview/internal/platform/buildinfo"
 	"github.com/Yacobolo/leapview/internal/platform/http/cursorsigning"
 	apihttpmiddleware "github.com/Yacobolo/leapview/internal/platform/http/middleware"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
@@ -77,6 +78,7 @@ type platformServices struct {
 	jobModule     *jobsmodule.Module
 	auth          *accessmodule.Auth
 	assets        staticasset.Resolver
+	buildIdentity buildinfo.Identity
 	telemetry     *observability.Telemetry
 	health        *health
 	logger        *slog.Logger
@@ -145,7 +147,10 @@ func newCompositionSurfaces(
 		metrics: metrics, broker: pagestream.NewBroker(pagestream.WithTraceStore(trace)),
 		pageStreamTrace: trace,
 	}
-	platform := &platformServices{telemetry: telemetry, logger: logger, assets: assets}
+	platform := &platformServices{
+		telemetry: telemetry, logger: logger, assets: assets,
+		buildIdentity: buildinfo.Current(),
+	}
 	policy := &httpPolicy{requestBodyLimit: apihttpmiddleware.DefaultRequestBodyLimitConfig()}
 	return routes, runtime, platform, policy
 }
@@ -704,7 +709,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			Database: database, Model: moduleWorkflow.agentConfig,
 			Service: moduleWorkflow.agent, Jobs: platform.asyncJobs, DefaultWorkspaceID: policy.defaultWorkspaceID,
 			ProductName:      brand.Name,
-			BuildVersion:     platform.assets.Version(),
+			BuildVersion:     platform.buildIdentity.Version,
 			APIGenOperations: agentAPIGenOperations(),
 			RunWorkloadClass: string(workloadmodule.BackgroundClass), GlobalWorkspaceID: workloadmodule.GlobalWorkspace,
 			Search: routes.workspaceModule,
@@ -915,7 +920,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		managedDataModule: routes.managedDataModule, refreshModule: routes.refreshModule,
 		releaseModule: routes.releaseModule, workspaceModule: routes.workspaceModule,
 		defaultEnvironment: policy.defaultEnvironment, managedDataTus: policy.managedDataTus,
-		buildVersion:     platform.assets.Version(),
+		buildIdentity:    platform.buildIdentity,
 		queryAuditEvents: runtime.queryAuditEvents,
 	}
 	apiGenAuthorizer, err := routes.accessModule.APIGenAuthorizer(accessAPIGenOperationContracts(), accessmodule.APIGenObjectResolvers{

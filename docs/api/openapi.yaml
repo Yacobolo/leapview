@@ -3166,6 +3166,10 @@ paths:
                 apiVersion: example
                 authentication:
                   - bearer
+                buildDevelopment: true
+                buildDirty: true
+                buildRevision: example
+                buildTime: example
                 buildVersion: example
                 environment: example
                 queryFormats:
@@ -39582,6 +39586,10 @@ components:
       required:
         - apiVersion
         - buildVersion
+        - buildRevision
+        - buildTime
+        - buildDirty
+        - buildDevelopment
         - environment
         - authentication
         - queryFormats
@@ -39594,6 +39602,18 @@ components:
         buildVersion:
           type: string
           example: example
+        buildRevision:
+          type: string
+          example: example
+        buildTime:
+          type: string
+          example: example
+        buildDirty:
+          type: boolean
+          example: true
+        buildDevelopment:
+          type: boolean
+          example: true
         environment:
           type: string
           example: example
@@ -39621,6 +39641,10 @@ components:
         apiVersion: example
         authentication:
           - bearer
+        buildDevelopment: true
+        buildDirty: true
+        buildRevision: example
+        buildTime: example
         buildVersion: example
         environment: example
         queryFormats:

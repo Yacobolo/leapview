@@ -72,5 +72,6 @@ var documentedCommandSafety = map[string]commandSafety{
 	"leapview semantic-models query":           {effect: "read", confirmation: "never"},
 	"leapview serve":                           {effect: "local-write", confirmation: "never"},
 	"leapview validate":                        {effect: "read", confirmation: "never"},
+	"leapview version":                         {effect: "read", confirmation: "never"},
 	"leapview workspaces list":                 {effect: "read", confirmation: "never"},
 }

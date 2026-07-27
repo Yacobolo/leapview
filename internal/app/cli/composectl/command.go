@@ -3,6 +3,7 @@ package composectl
 import (
 	"context"
 
+	"github.com/Yacobolo/leapview/internal/platform/buildinfo"
 	"github.com/spf13/cobra"
 )
 
@@ -19,6 +20,17 @@ func Command(ctx context.Context, controller *Controller) *cobra.Command {
 	root.SetIn(controller.stdin)
 	root.SetOut(controller.stdout)
 	root.SetErr(controller.stderr)
+
+	versionJSON := false
+	version := &cobra.Command{
+		Use:   "version",
+		Short: "Report the leapviewctl build identity",
+		Args:  cobra.NoArgs,
+		RunE: func(command *cobra.Command, _ []string) error {
+			return buildinfo.Write(command.OutOrStdout(), "leapviewctl", buildinfo.Current(), versionJSON)
+		},
+	}
+	version.Flags().BoolVar(&versionJSON, "json", false, "emit machine-readable JSON")
 
 	initOptions := InitOptions{Environment: defaultEnvironment}
 	initialize := &cobra.Command{
@@ -106,6 +118,6 @@ func Command(ctx context.Context, controller *Controller) *cobra.Command {
 	}
 	rollback.Flags().BoolVar(&rollbackConfirmed, "confirm", false, "confirm that post-upgrade state will be discarded")
 
-	root.AddCommand(initialize, start, status, logs, firstLogin, backup, restore, upgrade, rollback)
+	root.AddCommand(version, initialize, start, status, logs, firstLogin, backup, restore, upgrade, rollback)
 	return root
 }
