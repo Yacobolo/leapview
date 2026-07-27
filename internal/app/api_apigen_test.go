@@ -19,6 +19,7 @@ import (
 	refreshgen "github.com/Yacobolo/leapview/internal/refresh/api/gen"
 	releasegen "github.com/Yacobolo/leapview/internal/release/api/gen"
 	"github.com/Yacobolo/leapview/internal/workspace"
+	workspacegen "github.com/Yacobolo/leapview/internal/workspace/api/gen"
 )
 
 type apiSnapshotWorkspaceRepository struct{ summary workspace.Summary }
@@ -467,6 +468,54 @@ func TestAPIGenReleaseCapabilityOwnsItsOperationSurface(t *testing.T) {
 		}
 		if _, exists := appContracts[operationID]; exists {
 			t.Errorf("Release operation %q is still emitted by the application package", operationID)
+		}
+	}
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
+		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
+	}
+}
+
+func TestAPIGenWorkspaceCapabilityOwnsItsGeneratedPackage(t *testing.T) {
+	root := projectRoot(t)
+	manifest, err := os.ReadFile(filepath.Join(root, "api", "apigen.yaml"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	manifestText := string(manifest)
+	want := "LeapViewAPI.Workspace:\n          dir: ../internal/workspace/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/workspace/api/gen"
+	if !strings.Contains(manifestText, want) {
+		t.Fatalf("manifest missing Workspace capability package plan %q", want)
+	}
+	if strings.Contains(manifestText, "LeapViewAPI.Workspace: *leapview_api_go_package") {
+		t.Fatal("Workspace namespace is still coalesced into the application generated package")
+	}
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	for _, path := range []string{
+		"internal/workspace/api/gen/request_models.gen.go",
+		"internal/workspace/api/gen/server.apigen.gen.go",
+	} {
+		if !strings.Contains(string(taskfile), path) {
+			t.Fatalf("Taskfile.yml does not track generated Workspace artifact %q", path)
+		}
+	}
+}
+
+func TestAPIGenWorkspaceCapabilityOwnsItsOperationSurface(t *testing.T) {
+	contracts := workspacegen.GetAPIGenOperationContracts()
+	if got, want := len(contracts), 8; got != want {
+		t.Fatalf("Workspace generated operations = %d, want %d", got, want)
+	}
+	allowedTags := map[string]bool{"Search": true, "Workspaces": true}
+	appContracts := apigenapi.GetAPIGenOperationContracts()
+	for operationID, contract := range contracts {
+		if len(contract.Tags) != 1 || !allowedTags[contract.Tags[0]] {
+			t.Errorf("Workspace operation %q tags = %v", operationID, contract.Tags)
+		}
+		if _, exists := appContracts[operationID]; exists {
+			t.Errorf("Workspace operation %q is still emitted by the application package", operationID)
 		}
 	}
 	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {

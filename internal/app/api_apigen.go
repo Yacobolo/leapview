@@ -12,7 +12,6 @@ import (
 	"github.com/Yacobolo/leapview/internal/platform/buildinfo"
 	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
 	releasemodule "github.com/Yacobolo/leapview/internal/release/module"
-	workspacemodule "github.com/Yacobolo/leapview/internal/workspace/module"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -49,7 +48,6 @@ type apiGenDispatcher struct {
 	dashboardModule    *dashboardmodule.Module
 	managedDataModule  *manageddatamodule.Module
 	releaseModule      *releasemodule.Module
-	workspaceModule    *workspacemodule.Module
 	defaultEnvironment string
 	buildIdentity      buildinfo.Identity
 	managedDataTus     http.Handler
@@ -105,46 +103,6 @@ func (a apiGenDispatcher) CompleteManagedDataS3MultipartUpload(w http.ResponseWr
 
 func (a apiGenDispatcher) SignManagedDataS3MultipartPart(w http.ResponseWriter, r *http.Request, project, connection, uploadSession, multipartUpload string, partNumber int32, _ apigenapi.GenSignManagedDataS3MultipartPartHeaders) {
 	a.managedDataModule.HTTP().SignManagedDataS3MultipartPart(w, r, project, connection, uploadSession, multipartUpload, partNumber)
-}
-
-func (a apiGenDispatcher) ListWorkspaces(w http.ResponseWriter, r *http.Request, _ apigenapi.GenListWorkspacesParams) {
-	a.workspaceModule.HTTP().Workspaces(w, r)
-}
-
-func (a apiGenDispatcher) Search(w http.ResponseWriter, r *http.Request, params apigenapi.GenSearchParams) {
-	var types *[]string
-	if params.Type != nil {
-		values := make([]string, len(*params.Type))
-		for i, value := range *params.Type {
-			values[i] = string(value)
-		}
-		types = &values
-	}
-	a.workspaceModule.SearchAPI(w, r, workspacemodule.SearchParams{
-		Query: params.Q, Workspaces: params.Workspace, Types: types,
-		ContextWorkspace: params.ContextWorkspace, ContextDashboard: params.ContextDashboard,
-		ContextPage: params.ContextPage, Limit: params.Limit, PageToken: params.PageToken,
-	})
-}
-
-func (a apiGenDispatcher) ListWorkspaceAssets(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListWorkspaceAssetsParams) {
-	a.workspaceModule.HTTP().Assets(w, r)
-}
-
-func (a apiGenDispatcher) GetWorkspaceActiveAssetGraph(w http.ResponseWriter, r *http.Request, _ string) {
-	a.workspaceModule.HTTP().ActiveDeploymentGraph(w, r)
-}
-
-func (a apiGenDispatcher) GetWorkspaceAsset(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.workspaceModule.HTTP().Asset(w, r)
-}
-
-func (a apiGenDispatcher) GetWorkspaceAssetLineage(w http.ResponseWriter, r *http.Request, _, _ string) {
-	a.workspaceModule.HTTP().AssetLineage(w, r)
-}
-
-func (a apiGenDispatcher) ListWorkspaceAssetEdges(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListWorkspaceAssetEdgesParams) {
-	a.workspaceModule.HTTP().AssetEdges(w, r)
 }
 
 func (a apiGenDispatcher) ListDashboards(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListDashboardsParams) {
