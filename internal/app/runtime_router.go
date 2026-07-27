@@ -33,6 +33,7 @@ import (
 	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
 	uitransport "github.com/Yacobolo/leapview/internal/platform/web/transport"
+	projecthttp "github.com/Yacobolo/leapview/internal/project/http"
 	refreshmodule "github.com/Yacobolo/leapview/internal/refresh/module"
 	releasemodule "github.com/Yacobolo/leapview/internal/release/module"
 	runtimehostmodule "github.com/Yacobolo/leapview/internal/runtimehost/module"
@@ -802,6 +803,9 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				if analyticsmodule.DispatchQueryAuditAPIGenOperation(queryAuditAPI, operationID, platform.logger, writer, request) {
 					return true
 				}
+				if routes.releaseModule != nil && projecthttp.DispatchAPIGenOperation(operationID, routes.releaseModule, platform.logger, writer, request) {
+					return true
+				}
 				return apigenapi.DispatchAPIGenOperation(operationID, apiDispatcher, apiprotocol.TransportErrorResponder{Logger: platform.logger}, writer, request)
 			},
 			QueryContext: func(ctx context.Context, scope agentmodule.Scope) context.Context {
@@ -956,8 +960,15 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	if err != nil {
 		return fmt.Errorf("build Analytics APIGen transport: %w", err)
 	}
+	projectAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
+		return projecthttp.DispatchAPIGenOperation(operationID, routes.releaseModule, platform.logger, w, r)
+	})
+	if err != nil {
+		return fmt.Errorf("build Project APIGen transport: %w", err)
+	}
 	platform.apiGenServers = apiaggregate.Servers{
-		Access: accessAPIHandler, Agent: agentAPIHandler, Analytics: analyticsAPIHandler, Gen: appAPIHandler,
+		Access: accessAPIHandler, Agent: agentAPIHandler, Analytics: analyticsAPIHandler,
+		Gen: appAPIHandler, Project: projectAPIHandler,
 	}
 	configurePageStream(routes, runtime, platform, policy)
 	platform.health = newHealth(healthConfig{

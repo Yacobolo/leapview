@@ -89,6 +89,34 @@ func TestAnalyticsGeneratedAPIIsCapabilityOwned(t *testing.T) {
 	}
 }
 
+func TestProjectGeneratedAPIIsCapabilityOwned(t *testing.T) {
+	rule, ok := ClassifyPackage("internal/project/api/gen")
+	if !ok {
+		t.Fatal("Project generated API package is not classified")
+	}
+	if rule.Capability != "project" || rule.Layer != LayerAdapter {
+		t.Fatalf("Project generated API classification = %#v, want project adapter", rule)
+	}
+}
+
+func TestProjectTransportContractsAreCapabilityOwned(t *testing.T) {
+	root := repoRoot(t)
+	projectContracts, err := os.ReadFile(filepath.Join(root, "internal", "project", "api", "contracts.go"))
+	if err != nil {
+		t.Fatalf("read Project API contracts: %v", err)
+	}
+	if !strings.Contains(string(projectContracts), "type ProjectResponse struct") {
+		t.Fatal("Project capability does not own its handwritten response contract")
+	}
+	releaseContracts, err := os.ReadFile(filepath.Join(root, "internal", "release", "api", "contracts.go"))
+	if err != nil {
+		t.Fatalf("read Release API contracts: %v", err)
+	}
+	if strings.Contains(string(releaseContracts), "type ProjectResponse struct") {
+		t.Fatal("Release capability still owns the Project response contract")
+	}
+}
+
 func TestApplicationOwnsProductConfigurationContract(t *testing.T) {
 	root := repoRoot(t)
 	if !packageDirExists(root, "internal/app/config/spec") {
@@ -635,6 +663,11 @@ func TestCapabilityModulesRequireDeclaredPublicContractEdges(t *testing.T) {
 }
 
 func TestApplicationImportsProductCapabilitiesOnlyThroughModules(t *testing.T) {
+	// Project is intentionally compile-time-first and has no synthetic runtime
+	// module. Its generated HTTP adapter is therefore a valid composition edge.
+	compositionAdapters := map[string]bool{
+		"internal/project/http": true,
+	}
 	for _, file := range productionGoFiles(t) {
 		if file.pkgDir != "internal/app" {
 			continue
@@ -648,7 +681,7 @@ func TestApplicationImportsProductCapabilitiesOnlyThroughModules(t *testing.T) {
 			if !ok || target.Capability == "platform" || target.Capability == "composition" {
 				continue
 			}
-			if target.Layer != LayerModule {
+			if target.Layer != LayerModule && !compositionAdapters[packagePath] {
 				t.Errorf("%s imports product package %s instead of its module surface", file.path, packagePath)
 			}
 		}
@@ -1305,6 +1338,7 @@ func TestProductionContainerContractExists(t *testing.T) {
 		"COPY --from=sourcegen /src/internal/app/api/aggregate ./internal/app/api/aggregate",
 		"COPY --from=sourcegen /src/internal/app/api/gen ./internal/app/api/gen",
 		"COPY --from=sourcegen /src/internal/platform/http/api/gen ./internal/platform/http/api/gen",
+		"COPY --from=sourcegen /src/internal/project/api/gen ./internal/project/api/gen",
 		"COPY --from=sourcegen /src/internal/access/ui/signals/models.gen.go ./internal/access/ui/signals/models.gen.go",
 		"COPY --from=sourcegen /src/internal/admin/ui/signals/models.gen.go ./internal/admin/ui/signals/models.gen.go",
 		"COPY --from=sourcegen /src/internal/agent/ui/signals/models.gen.go ./internal/agent/ui/signals/models.gen.go",
@@ -1335,7 +1369,7 @@ func TestProductionContainerContractExists(t *testing.T) {
 	ignoreText := string(ignored)
 	for _, want := range []string{
 		".data", ".leapview", "node_modules", "api/gen", "internal/access/api/gen", "internal/agent/api/gen", "internal/analytics/api/gen",
-		"internal/app/api/aggregate", "internal/app/api/gen", "internal/platform/http/api/gen", "static/chunks",
+		"internal/app/api/aggregate", "internal/app/api/gen", "internal/platform/http/api/gen", "internal/project/api/gen", "static/chunks",
 	} {
 		if !strings.Contains(ignoreText, want) {
 			t.Fatalf(".dockerignore missing generated or runtime path %q", want)
