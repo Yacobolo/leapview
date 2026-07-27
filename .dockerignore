@@ -18,6 +18,7 @@ node_modules
 infisical-export.*
 
 api/gen
+internal/access/api/gen
 internal/agent/api/gen
 internal/app/api/aggregate
 internal/app/api/gen

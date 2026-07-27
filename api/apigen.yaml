@@ -14,11 +14,15 @@ targets:
           dir: ../internal/app/api/gen
           package: gen
           import_path: github.com/Yacobolo/leapview/internal/app/api/gen
-        LeapViewAPI.Access: *leapview_api_go_package
+        LeapViewAPI.Access:
+          dir: ../internal/access/api/gen
+          package: gen
+          import_path: github.com/Yacobolo/leapview/internal/access/api/gen
         LeapViewAPI.Agent:
           dir: ../internal/agent/api/gen
           package: gen
           import_path: github.com/Yacobolo/leapview/internal/agent/api/gen
+        LeapViewAPI.Analytics: *leapview_api_go_package
         LeapViewAPI.Dashboard: *leapview_api_go_package
         LeapViewAPI.Deployment: *leapview_api_go_package
         LeapViewAPI.ManagedData: *leapview_api_go_package

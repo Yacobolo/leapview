@@ -792,6 +792,9 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				if apiDispatcher == nil {
 					return false
 				}
+				if routes.accessModule != nil && routes.accessModule.DispatchAPIGenOperation(operationID, writer, request) {
+					return true
+				}
 				if routes.agentModule != nil && routes.agentModule.DispatchAPIGenOperation(operationID, writer, request, platform.logger) {
 					return true
 				}
@@ -910,7 +913,6 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		return fmt.Errorf("register workspace securables: %w", err)
 	}
 	apiDispatcher = &apiGenDispatcher{
-		accessModule:    routes.accessModule,
 		dashboardModule: routes.dashboardModule, deploymentModule: routes.deploymentModule,
 		managedDataModule: routes.managedDataModule, refreshModule: routes.refreshModule,
 		releaseModule: routes.releaseModule, workspaceModule: routes.workspaceModule,
@@ -933,13 +935,19 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	if err != nil {
 		return fmt.Errorf("build application APIGen transport: %w", err)
 	}
+	accessAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
+		return routes.accessModule.DispatchAPIGenOperation(operationID, w, r)
+	})
+	if err != nil {
+		return fmt.Errorf("build Access APIGen transport: %w", err)
+	}
 	agentAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
 		return routes.agentModule.DispatchAPIGenOperation(operationID, w, r, platform.logger)
 	})
 	if err != nil {
 		return fmt.Errorf("build Agent APIGen transport: %w", err)
 	}
-	platform.apiGenServers = apiaggregate.Servers{Agent: agentAPIHandler, Gen: appAPIHandler}
+	platform.apiGenServers = apiaggregate.Servers{Access: accessAPIHandler, Agent: agentAPIHandler, Gen: appAPIHandler}
 	configurePageStream(routes, runtime, platform, policy)
 	platform.health = newHealth(healthConfig{
 		Platform: func(ctx context.Context) error {
