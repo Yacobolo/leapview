@@ -818,6 +818,9 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				if routes.workspaceModule != nil && routes.workspaceModule.DispatchAPIGenOperation(operationID, platform.logger, writer, request) {
 					return true
 				}
+				if routes.managedDataModule != nil && routes.managedDataModule.DispatchAPIGenOperation(operationID, routes.releaseModule, platform.logger, writer, request) {
+					return true
+				}
 				return apigenapi.DispatchAPIGenOperation(operationID, apiDispatcher, apiprotocol.TransportErrorResponder{Logger: platform.logger}, writer, request)
 			},
 			QueryContext: func(ctx context.Context, scope agentmodule.Scope) context.Context {
@@ -934,7 +937,6 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	}
 	apiDispatcher = &apiGenDispatcher{
 		dashboardModule: routes.dashboardModule, managedDataModule: routes.managedDataModule,
-		releaseModule:      routes.releaseModule,
 		defaultEnvironment: policy.defaultEnvironment, managedDataTus: policy.managedDataTus,
 		buildIdentity: platform.buildIdentity,
 	}
@@ -1001,9 +1003,15 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	if err != nil {
 		return fmt.Errorf("build Workspace APIGen transport: %w", err)
 	}
+	managedDataAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
+		return routes.managedDataModule.DispatchAPIGenOperation(operationID, routes.releaseModule, platform.logger, w, r)
+	})
+	if err != nil {
+		return fmt.Errorf("build ManagedData APIGen transport: %w", err)
+	}
 	platform.apiGenServers = apiaggregate.Servers{
 		Access: accessAPIHandler, Agent: agentAPIHandler, Analytics: analyticsAPIHandler,
-		Deployment: deploymentAPIHandler, Gen: appAPIHandler, Project: projectAPIHandler,
+		Deployment: deploymentAPIHandler, Gen: appAPIHandler, ManagedData: managedDataAPIHandler, Project: projectAPIHandler,
 		Refresh: refreshAPIHandler, Release: releaseAPIHandler, Workspace: workspaceAPIHandler,
 	}
 	configurePageStream(routes, runtime, platform, policy)

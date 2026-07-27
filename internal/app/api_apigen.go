@@ -11,7 +11,6 @@ import (
 	manageddatamodule "github.com/Yacobolo/leapview/internal/manageddata/module"
 	"github.com/Yacobolo/leapview/internal/platform/buildinfo"
 	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
-	releasemodule "github.com/Yacobolo/leapview/internal/release/module"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -47,7 +46,6 @@ func registerAPIGenRoutes(routes *capabilityRoutes, runtime *runtimeServices, pl
 type apiGenDispatcher struct {
 	dashboardModule    *dashboardmodule.Module
 	managedDataModule  *manageddatamodule.Module
-	releaseModule      *releasemodule.Module
 	defaultEnvironment string
 	buildIdentity      buildinfo.Identity
 	managedDataTus     http.Handler
@@ -55,54 +53,6 @@ type apiGenDispatcher struct {
 
 func (a apiGenDispatcher) GetInstance(w http.ResponseWriter, _ *http.Request) {
 	apitransport.WriteJSON(w, http.StatusOK, apigenapi.InstanceResponse{Environment: a.defaultEnvironment})
-}
-
-func (a apiGenDispatcher) GetActiveManagedDataRevision(w http.ResponseWriter, r *http.Request, project, connection string) {
-	a.managedDataModule.HTTP().GetActiveManagedDataRevision(w, r, project, connection)
-}
-
-func (a apiGenDispatcher) ListManagedDataRevisions(w http.ResponseWriter, r *http.Request, project, connection string, params apigenapi.GenListManagedDataRevisionsParams) {
-	a.managedDataModule.HTTP().ListManagedDataRevisions(w, r, project, connection, manageddatamodule.PageParams{Limit: params.Limit, PageToken: params.PageToken})
-}
-
-func (a apiGenDispatcher) GetManagedDataRevision(w http.ResponseWriter, r *http.Request, project, connection, revision string) {
-	a.managedDataModule.HTTP().GetManagedDataRevision(w, r, project, connection, revision)
-}
-
-func (a apiGenDispatcher) CreateManagedDataUploadSession(w http.ResponseWriter, r *http.Request, project, connection string, headers apigenapi.GenCreateManagedDataUploadSessionHeaders) {
-	a.managedDataModule.HTTP().CreateManagedDataUploadSession(w, r, project, connection, manageddatamodule.IdempotencyHeaders{IdempotencyKey: headers.IdempotencyKey})
-}
-
-func (a apiGenDispatcher) GetManagedDataUploadSession(w http.ResponseWriter, r *http.Request, project, connection, uploadSession string) {
-	a.managedDataModule.HTTP().GetManagedDataUploadSession(w, r, project, connection, uploadSession)
-}
-
-func (a apiGenDispatcher) ListManagedDataUploadSessions(w http.ResponseWriter, r *http.Request, project, connection string, params apigenapi.GenListManagedDataUploadSessionsParams) {
-	a.managedDataModule.HTTP().ListManagedDataUploadSessions(w, r, project, connection, manageddatamodule.PageParams{Limit: params.Limit, PageToken: params.PageToken})
-}
-
-func (a apiGenDispatcher) CancelManagedDataUploadSession(w http.ResponseWriter, r *http.Request, project, connection, uploadSession string, headers apigenapi.GenCancelManagedDataUploadSessionHeaders) {
-	a.managedDataModule.HTTP().CancelManagedDataUploadSession(w, r, project, connection, uploadSession, manageddatamodule.IdempotencyHeaders{IdempotencyKey: headers.IdempotencyKey})
-}
-
-func (a apiGenDispatcher) FinalizeManagedDataUploadSession(w http.ResponseWriter, r *http.Request, project, connection, uploadSession string, headers apigenapi.GenFinalizeManagedDataUploadSessionHeaders) {
-	a.managedDataModule.HTTP().FinalizeManagedDataUploadSession(w, r, project, connection, uploadSession, manageddatamodule.IdempotencyHeaders{IdempotencyKey: headers.IdempotencyKey})
-}
-
-func (a apiGenDispatcher) CreateManagedDataS3MultipartUpload(w http.ResponseWriter, r *http.Request, project, connection, uploadSession string, headers apigenapi.GenCreateManagedDataS3MultipartUploadHeaders) {
-	a.managedDataModule.HTTP().CreateManagedDataS3MultipartUpload(w, r, project, connection, uploadSession, manageddatamodule.IdempotencyHeaders{IdempotencyKey: headers.IdempotencyKey})
-}
-
-func (a apiGenDispatcher) AbortManagedDataS3MultipartUpload(w http.ResponseWriter, r *http.Request, project, connection, uploadSession, multipartUpload string, headers apigenapi.GenAbortManagedDataS3MultipartUploadHeaders) {
-	a.managedDataModule.HTTP().AbortManagedDataS3MultipartUpload(w, r, project, connection, uploadSession, multipartUpload, manageddatamodule.IdempotencyHeaders{IdempotencyKey: headers.IdempotencyKey})
-}
-
-func (a apiGenDispatcher) CompleteManagedDataS3MultipartUpload(w http.ResponseWriter, r *http.Request, project, connection, uploadSession, multipartUpload string, headers apigenapi.GenCompleteManagedDataS3MultipartUploadHeaders) {
-	a.managedDataModule.HTTP().CompleteManagedDataS3MultipartUpload(w, r, project, connection, uploadSession, multipartUpload, manageddatamodule.IdempotencyHeaders{IdempotencyKey: headers.IdempotencyKey})
-}
-
-func (a apiGenDispatcher) SignManagedDataS3MultipartPart(w http.ResponseWriter, r *http.Request, project, connection, uploadSession, multipartUpload string, partNumber int32, _ apigenapi.GenSignManagedDataS3MultipartPartHeaders) {
-	a.managedDataModule.HTTP().SignManagedDataS3MultipartPart(w, r, project, connection, uploadSession, multipartUpload, partNumber)
 }
 
 func (a apiGenDispatcher) ListDashboards(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListDashboardsParams) {

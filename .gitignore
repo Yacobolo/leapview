@@ -16,6 +16,7 @@ internal/agent/contracts/gen/
 internal/agent/api/gen/
 internal/analytics/api/gen/
 internal/deployment/api/gen/
+internal/manageddata/api/gen/
 internal/app/api/aggregate/
 internal/app/api/gen/
 internal/app/config/config_gen.go

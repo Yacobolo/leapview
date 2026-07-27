@@ -15,6 +15,7 @@ import (
 	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	deploymentgen "github.com/Yacobolo/leapview/internal/deployment/api/gen"
+	manageddatagen "github.com/Yacobolo/leapview/internal/manageddata/api/gen"
 	projectgen "github.com/Yacobolo/leapview/internal/project/api/gen"
 	refreshgen "github.com/Yacobolo/leapview/internal/refresh/api/gen"
 	releasegen "github.com/Yacobolo/leapview/internal/release/api/gen"
@@ -516,6 +517,53 @@ func TestAPIGenWorkspaceCapabilityOwnsItsOperationSurface(t *testing.T) {
 		}
 		if _, exists := appContracts[operationID]; exists {
 			t.Errorf("Workspace operation %q is still emitted by the application package", operationID)
+		}
+	}
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
+		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
+	}
+}
+
+func TestAPIGenManagedDataCapabilityOwnsItsGeneratedPackage(t *testing.T) {
+	root := projectRoot(t)
+	manifest, err := os.ReadFile(filepath.Join(root, "api", "apigen.yaml"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	manifestText := string(manifest)
+	want := "LeapViewAPI.ManagedData:\n          dir: ../internal/manageddata/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/manageddata/api/gen"
+	if !strings.Contains(manifestText, want) {
+		t.Fatalf("manifest missing ManagedData capability package plan %q", want)
+	}
+	if strings.Contains(manifestText, "LeapViewAPI.ManagedData: *leapview_api_go_package") {
+		t.Fatal("ManagedData namespace is still coalesced into the application generated package")
+	}
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	for _, path := range []string{
+		"internal/manageddata/api/gen/request_models.gen.go",
+		"internal/manageddata/api/gen/server.apigen.gen.go",
+	} {
+		if !strings.Contains(string(taskfile), path) {
+			t.Fatalf("Taskfile.yml does not track generated ManagedData artifact %q", path)
+		}
+	}
+}
+
+func TestAPIGenManagedDataCapabilityOwnsItsOperationSurface(t *testing.T) {
+	contracts := manageddatagen.GetAPIGenOperationContracts()
+	if got, want := len(contracts), 15; got != want {
+		t.Fatalf("ManagedData generated operations = %d, want %d", got, want)
+	}
+	appContracts := apigenapi.GetAPIGenOperationContracts()
+	for operationID, contract := range contracts {
+		if len(contract.Tags) != 1 || contract.Tags[0] != "Managed Data" {
+			t.Errorf("ManagedData operation %q tags = %v, want [Managed Data]", operationID, contract.Tags)
+		}
+		if _, exists := appContracts[operationID]; exists {
+			t.Errorf("ManagedData operation %q is still emitted by the application package", operationID)
 		}
 	}
 	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
