@@ -1,0 +1,25 @@
+order_id,purchased_at,state,category,status,revenue
+EV-1001,2026-01-05 09:15:00,SP,Office,delivered,184.50
+EV-1002,2026-01-12 14:30:00,RJ,Electronics,delivered,429.00
+EV-1003,2026-01-19 11:05:00,MG,Home,delivered,96.75
+EV-1004,2026-01-26 16:45:00,PR,Outdoors,shipped,215.20
+EV-1005,2026-02-02 08:40:00,SP,Electronics,delivered,799.99
+EV-1006,2026-02-09 13:20:00,RJ,Office,delivered,142.30
+EV-1007,2026-02-16 10:10:00,MG,Outdoors,processing,318.40
+EV-1008,2026-02-23 17:00:00,PR,Home,delivered,126.00
+EV-1009,2026-03-02 09:25:00,SP,Home,delivered,244.80
+EV-1010,2026-03-09 15:35:00,RJ,Outdoors,shipped,387.15
+EV-1011,2026-03-16 12:50:00,MG,Electronics,delivered,649.00
+EV-1012,2026-03-23 08:15:00,PR,Office,delivered,78.60
+EV-1013,2026-04-06 14:05:00,SP,Outdoors,delivered,352.25
+EV-1014,2026-04-13 10:45:00,RJ,Home,processing,189.90
+EV-1015,2026-04-20 16:20:00,MG,Office,delivered,231.40
+EV-1016,2026-04-27 11:30:00,PR,Electronics,delivered,915.00
+EV-1017,2026-05-04 09:50:00,SP,Office,shipped,164.75
+EV-1018,2026-05-11 13:40:00,RJ,Electronics,delivered,536.20
+EV-1019,2026-05-18 15:10:00,MG,Home,delivered,118.35
+EV-1020,2026-05-25 08:55:00,PR,Outdoors,delivered,472.60
+EV-1021,2026-06-01 12:15:00,SP,Home,delivered,205.10
+EV-1022,2026-06-08 17:25:00,RJ,Office,processing,92.45
+EV-1023,2026-06-15 10:35:00,MG,Outdoors,delivered,681.30
+EV-1024,2026-06-22 14:55:00,PR,Electronics,shipped,743.80

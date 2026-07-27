@@ -172,7 +172,7 @@ func runAdminInitialize(ctx context.Context, format string, out io.Writer) error
 		expires := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Second)
 		token, _, err := txRepo.CreateAPITokenWithMetadata(ctx, access.APITokenInput{
 			PrincipalID: principal.ID,
-			Name:        "initial-publisher",
+			Name:        access.APITokenNameInitialPublisher,
 			Privileges: []access.Privilege{
 				access.PrivilegeUseWorkspace, access.PrivilegeViewItem, access.PrivilegeQueryData,
 				access.PrivilegeRefreshData, access.PrivilegeDeploy, access.PrivilegeActivateDeployment,

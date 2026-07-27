@@ -1,0 +1,10 @@
+apiVersion: leapview.dev/v1
+kind: WorkspaceRoleBinding
+metadata:
+  workspace: evaluation
+  name: evaluators-viewer
+spec:
+  role: viewer
+  subject:
+    kind: group
+    group: evaluators

@@ -1,0 +1,22 @@
+apiVersion: leapview.dev/v1
+kind: Workspace
+metadata:
+  name: evaluation
+  title: Evaluation Workspace
+  description: A disposable governed sales workspace for the five-minute product evaluation.
+spec:
+  uses:
+    sources:
+      - sample.orders
+  models:
+    include:
+      - models/*.yaml
+  semanticModels:
+    include:
+      - semantic-models/*.yaml
+  dashboards:
+    include:
+      - dashboards/*.yaml
+  access:
+    include:
+      - access/*.yaml

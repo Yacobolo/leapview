@@ -15,10 +15,17 @@ type Lock struct {
 }
 
 func Acquire(home string) (*Lock, error) {
+	return AcquireNamed(home, FileName)
+}
+
+func AcquireNamed(home, name string) (*Lock, error) {
+	if name == "" || filepath.Base(name) != name || name == "." || name == ".." {
+		return nil, fmt.Errorf("instance lock name must be a local file name")
+	}
 	if err := securefs.EnsurePrivateDir(home); err != nil {
 		return nil, err
 	}
-	path := filepath.Join(home, FileName)
+	path := filepath.Join(home, name)
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, securefs.PrivateFileMode)
 	if err != nil {
 		return nil, err
