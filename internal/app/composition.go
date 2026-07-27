@@ -11,19 +11,19 @@ import (
 	accessmodule "github.com/Yacobolo/leapview/internal/access/module"
 	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
 	analyticsmodule "github.com/Yacobolo/leapview/internal/analytics/module"
-	apihttpmiddleware "github.com/Yacobolo/leapview/internal/api/httpmiddleware"
+	"github.com/Yacobolo/leapview/internal/app/config"
 	appruntimefactory "github.com/Yacobolo/leapview/internal/app/runtimefactory"
-	"github.com/Yacobolo/leapview/internal/config"
 	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
 	deploymentmodule "github.com/Yacobolo/leapview/internal/deployment/module"
 	manageddatamodule "github.com/Yacobolo/leapview/internal/manageddata/module"
 	"github.com/Yacobolo/leapview/internal/platform"
+	"github.com/Yacobolo/leapview/internal/platform/filesystem"
+	apihttpmiddleware "github.com/Yacobolo/leapview/internal/platform/http/middleware"
 	jobsmodule "github.com/Yacobolo/leapview/internal/platform/jobs/module"
 	"github.com/Yacobolo/leapview/internal/platform/transaction"
 	refreshmodule "github.com/Yacobolo/leapview/internal/refresh/module"
 	releasemodule "github.com/Yacobolo/leapview/internal/release/module"
 	runtimehostmodule "github.com/Yacobolo/leapview/internal/runtimehost/module"
-	"github.com/Yacobolo/leapview/internal/securefs"
 	servingstatemodule "github.com/Yacobolo/leapview/internal/servingstate/module"
 	workloadmodule "github.com/Yacobolo/leapview/internal/workload/module"
 	workspacemodule "github.com/Yacobolo/leapview/internal/workspace/module"
@@ -45,6 +45,7 @@ func assemble(ctx context.Context, cfg config.Config) (http.Handler, Lifecycle, 
 }
 
 func buildRuntime(ctx context.Context, cfg config.Config, production bool, environment servingstatemodule.Environment) (http.Handler, Lifecycle, cleanupFunc, error) {
+	assets := applicationAssets(cfg, production)
 	dashboardAssets, err := dashboardmodule.BuildAssets(ctx, cfg.MapAssetDir)
 	if err != nil {
 		return nil, nil, nil, err
@@ -100,7 +101,8 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	var workspaceDirectory workspacemodule.Directory
 	accessModule, err := accessmodule.Build(ctx, accessmodule.Config{
 		Database: store.SQLDB(), Auth: accessAuthConfig(cfg, production, cookieSecure),
-		WorkspaceID: platform.DefaultWorkspaceID,
+		WorkspaceID: config.DefaultWorkspaceID,
+		Assets:      assets,
 		PublicURL:   firstConfigured(cfg.PublicURL, configuredListenURL(cfg.ListenAddr())), MCPIssuerURL: cfg.MCPOAuthIssuerURL,
 		WorkspaceIDs: func(ctx context.Context) ([]string, error) {
 			if workspaceDirectory == nil {
@@ -135,14 +137,14 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 		return nil
 	})
 	jobModule, err := jobsmodule.Build(ctx, jobsmodule.Config{
-		Database: store.SQLDB(), Admission: workloadController,
+		Database: store.SQLDB(), Admission: workloadmodule.JobAdmitter(workloadController),
 		LeaseTimeout: cfg.RefreshJobLeaseTimeout, Logger: slog.Default(),
 	})
 	if err != nil {
 		return fail(err)
 	}
 	managedDataModule, err := manageddatamodule.Build(ctx, manageddatamodule.Config{
-		Database: store.SQLDB(), Product: cfg, ServingStates: servingStateRepo,
+		Database: store.SQLDB(), Product: managedDataProductConfig(cfg), ServingStates: servingStateRepo,
 		Environment: string(environment),
 		CurrentPrincipal: func(r *http.Request) (manageddatamodule.Principal, bool) {
 			auth := accessModule.Auth()
@@ -280,7 +282,7 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 		runtimeAssemblyInputs{
 			DuckLakeCatalogPath: duckLakeCatalogPath, DuckLakeDataPath: cfg.DuckLakeDataDir(),
 			DefaultEnvironment: string(environment), SCIMBearerToken: cfg.SCIMBearerToken,
-			MetricsBearerToken: cfg.MetricsBearerToken, AllowedHosts: allowedHosts,
+			MetricsBearerToken: cfg.MetricsBearerToken, AllowedHosts: allowedHosts, Assets: assets,
 		},
 		httpAssemblyInputs{
 			PublicURL:       firstConfigured(cfg.PublicURL, configuredListenURL(cfg.ListenAddr())),

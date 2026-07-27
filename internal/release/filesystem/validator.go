@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"os"
 
+	accesssnapshot "github.com/Yacobolo/leapview/internal/access/snapshot"
 	projectbundle "github.com/Yacobolo/leapview/internal/project/bundle"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
-	"github.com/Yacobolo/leapview/internal/snapshot"
+	servingstatevalidation "github.com/Yacobolo/leapview/internal/servingstate/validation"
 )
 
 type Validator struct{}
@@ -30,7 +31,7 @@ func ValidateArtifactWithOptions(path string, workspaceID servingstate.Workspace
 	if err != nil {
 		return servingstate.Validation{}, err
 	}
-	accessPolicy, err := snapshot.DecodeAccessPolicy(accessJSON)
+	accessPolicy, err := accesssnapshot.Decode(accessJSON)
 	if err != nil {
 		return servingstate.Validation{}, err
 	}
@@ -38,7 +39,7 @@ func ValidateArtifactWithOptions(path string, workspaceID servingstate.Workspace
 	if err != nil {
 		return servingstate.Validation{}, err
 	}
-	graph, err := snapshot.DecodeAssetGraph(graphJSON)
+	graph, err := servingstatevalidation.DecodeAssetGraph(graphJSON)
 	if err != nil {
 		return servingstate.Validation{}, err
 	}

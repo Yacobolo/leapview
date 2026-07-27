@@ -10,7 +10,7 @@ Prefer extending an existing resource when the new fields share ownership and li
 
 ## Define the contract
 
-Add the closed resource shape to `internal/configschema/contracts/contracts.cue` using the standard `apiVersion`, `kind`, `metadata`, and `spec` envelope. Define enums, required fields, nested closed objects, and reference types explicitly.
+Add the closed resource shape to `internal/project/schema/contracts/contracts.cue` using the standard `apiVersion`, `kind`, `metadata`, and `spec` envelope. Define enums, required fields, nested closed objects, and reference types explicitly.
 
 Field descriptions should explain semantics and failure boundaries, not repeat the field name. Apply defaults in one authoritative layer and reflect them in generated outputs where supported. Do not accept arbitrary maps unless the extension point is intentionally open, such as connector-specific options.
 
@@ -40,7 +40,7 @@ Add a representative example to the schema generator inputs and register the exp
 
 ```sh
 task schema:generate
-go test ./internal/tools/schemadocgen
+go test ./internal/app/tools/schemadocgen
 task docs:generate
 task docs:check
 ```

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	"github.com/Yacobolo/leapview/internal/workload"
 )
 
@@ -18,6 +19,17 @@ type Admitter = workload.Admitter
 type Stats = workload.Stats
 type Observer = workload.Observer
 type Request = workload.Request
+
+func JobAdmitter(admitter Admitter) jobs.Admitter {
+	if admitter == nil {
+		return nil
+	}
+	return jobs.AdmitterFunc(func(ctx context.Context, request jobs.AdmissionRequest) (jobs.AdmissionLease, error) {
+		return admitter.Acquire(ctx, workload.Request{
+			Class: workload.Class(request.Class), WorkspaceID: request.WorkspaceID, Operation: request.Operation,
+		})
+	})
+}
 
 const (
 	BackgroundClass  = workload.Background

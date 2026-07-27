@@ -6,7 +6,7 @@ import (
 
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 )
 
 // ResolveCompiledSelectionInteraction resolves the semantic types of the

@@ -10,13 +10,13 @@ import (
 	"strings"
 
 	agentcontracts "github.com/Yacobolo/leapview/internal/agent/contracts"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/dataquery"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	visualizationruntime "github.com/Yacobolo/leapview/internal/dashboard/visualization/runtime"
 	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
-	visualizationruntime "github.com/Yacobolo/leapview/internal/visualization/runtime"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 )
 

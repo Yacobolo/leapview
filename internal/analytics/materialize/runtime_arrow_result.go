@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/analytics/arrowresult"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
 	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
-	"github.com/Yacobolo/leapview/internal/dataquery"
 )
 
 type plannedArrowQuery struct {

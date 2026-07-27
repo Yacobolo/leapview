@@ -63,12 +63,12 @@ type ToolReference struct {
 // ReferenceCatalog derives public metadata and schemas from the same provider
 // definitions used at runtime. It fails closed if registry and provider
 // composition drift.
-func ReferenceCatalog() ([]ToolReference, error) {
-	definitions := (ProviderSet{}).Definitions(Scope{})
-	if len(definitions) != len(ToolNames()) {
-		return nil, fmt.Errorf("canonical definitions count %d does not match registry count %d", len(definitions), len(ToolNames()))
+func ReferenceCatalog(operations []APIGenOperation) ([]ToolReference, error) {
+	definitions := (ProviderSet{APIGen: APIGenProvider{Operations: operations}}).Definitions(Scope{})
+	if len(definitions) != len(ToolNames(operations)) {
+		return nil, fmt.Errorf("canonical definitions count %d does not match registry count %d", len(definitions), len(ToolNames(operations)))
 	}
-	metadata := referenceMetadata()
+	metadata := referenceMetadata(operations)
 	references := make([]ToolReference, 0, len(definitions))
 	for _, definition := range definitions {
 		if definition.Effect != "read" {
@@ -99,7 +99,7 @@ type toolReferenceMetadata struct {
 	defaults    map[string]any
 }
 
-func referenceMetadata() map[string]toolReferenceMetadata {
+func referenceMetadata(operations []APIGenOperation) map[string]toolReferenceMetadata {
 	metadata := map[string]toolReferenceMetadata{
 		CatalogSearchToolName: {privilege: "VIEW_ITEM", operationID: "manual", defaults: map[string]any{"limit": DefaultCatalogSearchLimit}},
 		CatalogListToolName:   {privilege: "VIEW_ITEM", operationID: "manual", defaults: map[string]any{"limit": DefaultCatalogListLimit}},
@@ -108,7 +108,7 @@ func referenceMetadata() map[string]toolReferenceMetadata {
 		DocsSearchToolName:    {privilege: "USE_AGENT", operationID: "manual", defaults: map[string]any{"limit": productdocs.DefaultSearchLimit}},
 		DocsReadToolName:      {privilege: "USE_AGENT", operationID: "manual", defaults: map[string]any{"limit": productdocs.DefaultReadLimit, "offset": 1}},
 	}
-	for _, operation := range APIGenOperations() {
+	for _, operation := range operations {
 		defaults := map[string]any{}
 		for _, binding := range operation.Tool.Bindings {
 			if binding.Argument != "" && binding.Default != nil {

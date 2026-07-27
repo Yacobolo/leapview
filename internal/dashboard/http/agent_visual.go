@@ -5,14 +5,80 @@ import (
 	"fmt"
 	nethttp "net/http"
 
-	agentcontracts "github.com/Yacobolo/leapview/internal/agent/contracts"
 	"github.com/Yacobolo/leapview/internal/dashboard"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
+	dashboardapi "github.com/Yacobolo/leapview/internal/dashboard/api"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	"github.com/go-chi/chi/v5"
 )
 
 func requestsCompactDashboardVisual(r *nethttp.Request) bool {
-	return agentcontracts.RequestsDashboardVisualProjection(r.Context())
+	return dashboardapi.RequestsAgentVisualProjection(r.Context())
+}
+
+type dashboardAppliedFilters struct {
+	Controls          map[string]dashboardFilterControl `json:"controls"`
+	Selections        []map[string]any                  `json:"selections"`
+	SpatialSelections []map[string]any                  `json:"spatialSelections"`
+}
+
+type dashboardFilterControl struct {
+	Type     string    `json:"type"`
+	Operator *string   `json:"operator,omitempty"`
+	Preset   *string   `json:"preset,omitempty"`
+	From     *string   `json:"from,omitempty"`
+	To       *string   `json:"to,omitempty"`
+	Value    *string   `json:"value,omitempty"`
+	Values   *[]string `json:"values,omitempty"`
+}
+
+type dashboardVisualColumn struct {
+	ID        string          `json:"id"`
+	SourceRef *string         `json:"sourceRef,omitempty"`
+	Label     string          `json:"label"`
+	Role      string          `json:"role"`
+	DataType  string          `json:"dataType"`
+	Nullable  bool            `json:"nullable"`
+	Format    *map[string]any `json:"format,omitempty"`
+	Grain     *string         `json:"grain,omitempty"`
+}
+
+type dashboardVisualCompleteness struct {
+	ReturnedRows     int32  `json:"returnedRows"`
+	AvailableRows    *int64 `json:"availableRows,omitempty"`
+	Cardinality      string `json:"cardinality"`
+	CardinalityCount *int64 `json:"cardinalityCount,omitempty"`
+	State            string `json:"state"`
+}
+
+type dashboardVisualDiagnostic struct {
+	Code     string  `json:"code"`
+	Severity string  `json:"severity"`
+	Message  string  `json:"message"`
+	FieldID  *string `json:"fieldId,omitempty"`
+}
+
+type dashboardVisualStatus struct {
+	Kind    string  `json:"kind"`
+	Message *string `json:"message,omitempty"`
+}
+
+type dashboardVisualQueryResult struct {
+	QueryID         string                       `json:"queryId"`
+	ServingSnapshot string                       `json:"servingSnapshot"`
+	Freshness       *dashboardapi.QueryFreshness `json:"freshness,omitempty"`
+	VisualID        string                       `json:"visualId"`
+	Title           string                       `json:"title"`
+	Type            string                       `json:"type"`
+	Mark            *string                      `json:"mark,omitempty"`
+	DatasetID       string                       `json:"datasetId"`
+	Columns         []dashboardVisualColumn      `json:"columns"`
+	Rows            [][]any                      `json:"rows"`
+	AppliedFilters  dashboardAppliedFilters      `json:"appliedFilters"`
+	Status          dashboardVisualStatus        `json:"status"`
+	Diagnostics     []dashboardVisualDiagnostic  `json:"diagnostics"`
+	Completeness    dashboardVisualCompleteness  `json:"completeness"`
+	HasMore         bool                         `json:"hasMore"`
+	NextCursor      *string                      `json:"nextCursor,omitempty"`
 }
 
 func (h Handler) dashboardVisualAgentProjection(
@@ -22,21 +88,21 @@ func (h Handler) dashboardVisualAgentProjection(
 	filters dashboard.Filters,
 	start, limit int,
 	cursorScope, snapshot string,
-) (agentcontracts.DashboardVisualQueryResult, error) {
+) (dashboardVisualQueryResult, error) {
 	base, err := visualizationir.SpecificationBase(envelope.Spec)
 	if err != nil {
-		return agentcontracts.DashboardVisualQueryResult{}, err
+		return dashboardVisualQueryResult{}, err
 	}
 	kind, err := envelope.Spec.Kind()
 	if err != nil {
-		return agentcontracts.DashboardVisualQueryResult{}, err
+		return dashboardVisualQueryResult{}, err
 	}
 	if limit <= 0 || limit > maxAgentDashboardVisualRows {
 		limit = maxAgentDashboardVisualRows
 	}
 	datasetID, fields, rows, completeness, err := dashboardVisualRows(envelope, base, start, limit)
 	if err != nil {
-		return agentcontracts.DashboardVisualQueryResult{}, err
+		return dashboardVisualQueryResult{}, err
 	}
 	hasMore := completeness.AvailableRows != nil && int64(start+len(rows)) < *completeness.AvailableRows
 	var nextCursor *string
@@ -49,7 +115,7 @@ func (h Handler) dashboardVisualAgentProjection(
 		digest := sha256String(cursorScope)
 		queryID = "query_" + digest[:24]
 	}
-	result := agentcontracts.DashboardVisualQueryResult{
+	result := dashboardVisualQueryResult{
 		QueryID:         queryID,
 		ServingSnapshot: snapshot,
 		VisualID:        envelope.VisualID,
@@ -59,8 +125,8 @@ func (h Handler) dashboardVisualAgentProjection(
 		DatasetID:       datasetID,
 		Columns:         dashboardVisualColumns(fields),
 		Rows:            rows,
-		AppliedFilters:  dashboardAppliedFilters(filters),
-		Status: agentcontracts.DashboardVisualStatus{
+		AppliedFilters:  projectDashboardAppliedFilters(filters),
+		Status: dashboardVisualStatus{
 			Kind: string(envelope.Status.Kind), Message: envelope.Status.Message,
 		},
 		Diagnostics:  dashboardVisualDiagnostics(envelope.Diagnostics),
@@ -87,25 +153,25 @@ func dashboardVisualRows(
 	envelope visualizationir.VisualizationEnvelope,
 	base visualizationir.VisualizationSpecBase,
 	start, limit int,
-) (string, []visualizationir.VisualizationField, [][]any, agentcontracts.DashboardVisualCompleteness, error) {
+) (string, []visualizationir.VisualizationField, [][]any, dashboardVisualCompleteness, error) {
 	switch state := envelope.DataState.Value.(type) {
 	case *visualizationir.InlineVisualizationDataState:
 		if len(state.Datasets) == 0 {
-			return "", nil, nil, agentcontracts.DashboardVisualCompleteness{}, fmt.Errorf("visualization %q has no inline dataset", envelope.VisualID)
+			return "", nil, nil, dashboardVisualCompleteness{}, fmt.Errorf("visualization %q has no inline dataset", envelope.VisualID)
 		}
 		dataset := state.Datasets[0]
 		schema := dashboardVisualSchema(base.Datasets, dataset.ID)
 		rows := dashboardVisualPage(dataset.Rows, start, limit)
 		available := int64(len(dataset.Rows))
 		count := available
-		return dataset.ID, dashboardVisualFieldsForColumns(schema.Fields, dataset.Columns), rows, agentcontracts.DashboardVisualCompleteness{
+		return dataset.ID, dashboardVisualFieldsForColumns(schema.Fields, dataset.Columns), rows, dashboardVisualCompleteness{
 			ReturnedRows: int32(len(rows)), AvailableRows: &available,
 			Cardinality: "exact", CardinalityCount: &count, State: string(dataset.Completeness),
 		}, nil
 	case *visualizationir.WindowedVisualizationDataState:
 		block, ok := state.Blocks["a"]
 		if !ok {
-			return "", nil, nil, agentcontracts.DashboardVisualCompleteness{}, fmt.Errorf("visualization %q omitted window block a", envelope.VisualID)
+			return "", nil, nil, dashboardVisualCompleteness{}, fmt.Errorf("visualization %q omitted window block a", envelope.VisualID)
 		}
 		rows := block.Rows
 		if len(rows) > limit {
@@ -125,11 +191,11 @@ func dashboardVisualRows(
 		completeness := dashboardWindowCompleteness(len(rows), available, start, state.Cardinality)
 		return state.Schema.ID, state.Schema.Fields, rows, completeness, nil
 	default:
-		return "", nil, nil, agentcontracts.DashboardVisualCompleteness{}, fmt.Errorf("visualization %q has unsupported data state %T", envelope.VisualID, envelope.DataState.Value)
+		return "", nil, nil, dashboardVisualCompleteness{}, fmt.Errorf("visualization %q has unsupported data state %T", envelope.VisualID, envelope.DataState.Value)
 	}
 }
 
-func dashboardWindowCompleteness(returned int, available int64, start int, cardinality visualizationir.VisualizationCardinality) agentcontracts.DashboardVisualCompleteness {
+func dashboardWindowCompleteness(returned int, available int64, start int, cardinality visualizationir.VisualizationCardinality) dashboardVisualCompleteness {
 	state := "partial"
 	switch {
 	case available == 0:
@@ -137,7 +203,7 @@ func dashboardWindowCompleteness(returned int, available int64, start int, cardi
 	case int64(start+returned) >= available && cardinality.Kind == visualizationir.VisualizationCardinalityKindExact:
 		state = "complete"
 	}
-	return agentcontracts.DashboardVisualCompleteness{
+	return dashboardVisualCompleteness{
 		ReturnedRows: int32(returned), AvailableRows: &available,
 		Cardinality: string(cardinality.Kind), CardinalityCount: cardinality.Count, State: state,
 	}
@@ -179,10 +245,10 @@ func dashboardVisualFieldsForColumns(fields []visualizationir.VisualizationField
 	return out
 }
 
-func dashboardVisualColumns(fields []visualizationir.VisualizationField) []agentcontracts.DashboardVisualColumn {
-	out := make([]agentcontracts.DashboardVisualColumn, 0, len(fields))
+func dashboardVisualColumns(fields []visualizationir.VisualizationField) []dashboardVisualColumn {
+	out := make([]dashboardVisualColumn, 0, len(fields))
 	for _, field := range fields {
-		column := agentcontracts.DashboardVisualColumn{
+		column := dashboardVisualColumn{
 			ID: field.ID, SourceRef: field.SourceRef, Label: field.Label, Role: string(field.Role),
 			DataType: string(field.DataType), Nullable: field.Nullable,
 		}
@@ -201,22 +267,22 @@ func dashboardVisualColumns(fields []visualizationir.VisualizationField) []agent
 	return out
 }
 
-func dashboardAppliedFilters(filters dashboard.Filters) agentcontracts.DashboardAppliedFilters {
+func projectDashboardAppliedFilters(filters dashboard.Filters) dashboardAppliedFilters {
 	filters = filters.WithDefaults()
-	var result agentcontracts.DashboardAppliedFilters
+	var result dashboardAppliedFilters
 	if encoded, err := json.Marshal(filters); err == nil && json.Unmarshal(encoded, &result) == nil {
 		return result
 	}
-	return agentcontracts.DashboardAppliedFilters{
-		Controls:   map[string]agentcontracts.DashboardFilterControl{},
+	return dashboardAppliedFilters{
+		Controls:   map[string]dashboardFilterControl{},
 		Selections: []map[string]any{}, SpatialSelections: []map[string]any{},
 	}
 }
 
-func dashboardVisualDiagnostics(input []visualizationir.VisualizationDiagnostic) []agentcontracts.DashboardVisualDiagnostic {
-	out := make([]agentcontracts.DashboardVisualDiagnostic, 0, len(input))
+func dashboardVisualDiagnostics(input []visualizationir.VisualizationDiagnostic) []dashboardVisualDiagnostic {
+	out := make([]dashboardVisualDiagnostic, 0, len(input))
 	for _, diagnostic := range input {
-		out = append(out, agentcontracts.DashboardVisualDiagnostic{
+		out = append(out, dashboardVisualDiagnostic{
 			Code: diagnostic.Code, Severity: string(diagnostic.Severity),
 			Message: diagnostic.Message, FieldID: diagnostic.FieldID,
 		})

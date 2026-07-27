@@ -10,7 +10,8 @@ import (
 	"strings"
 
 	agentcontracts "github.com/Yacobolo/leapview/internal/agent/contracts"
-	"github.com/Yacobolo/leapview/internal/dataquery"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
+	dashboardapi "github.com/Yacobolo/leapview/internal/dashboard/api"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 	"github.com/Yacobolo/toolbelt/apigen/runtime/agenttool"
 	"github.com/go-chi/chi/v5"
@@ -34,16 +35,16 @@ type APIGenAuthorizeFunc func(ctx context.Context, scope Scope, operationID stri
 type APIGenDispatchFunc func(scope Scope, operationID string, writer http.ResponseWriter, request *http.Request) bool
 
 type APIGenProvider struct {
-	Authorize APIGenAuthorizeFunc
-	Dispatch  APIGenDispatchFunc
+	Authorize  APIGenAuthorizeFunc
+	Dispatch   APIGenDispatchFunc
+	Operations []APIGenOperation
 }
 
 const maxAgentQueryRows = 50
 
 func (p APIGenProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
-	operations := APIGenOperations()
-	definitions := make([]agentcore.ToolDefinition, 0, len(operations))
-	for _, operation := range operations {
+	definitions := make([]agentcore.ToolDefinition, 0, len(p.Operations))
+	for _, operation := range p.Operations {
 		operation := operationForScope(operation, scope)
 		outputSchema := requireToolObjectSchema(operation.Tool.OutputSchema)
 		if operation.Tool.Name == "query_dashboard_visual" {
@@ -126,7 +127,7 @@ func (p APIGenProvider) Run(ctx context.Context, scope Scope, operation APIGenOp
 		ObjectID:    operation.Tool.Name,
 	})
 	if operation.Tool.Name == "query_dashboard_visual" {
-		ctx = agentcontracts.WithDashboardVisualProjection(ctx)
+		ctx = dashboardapi.WithAgentVisualProjection(ctx)
 	}
 	request = request.WithContext(ctx)
 	if strings.TrimSpace(call.ID) != "" {
@@ -252,8 +253,19 @@ func operationForScope(operation APIGenOperation, scope Scope) APIGenOperation {
 	if strings.TrimSpace(scope.WorkspaceID) != "" {
 		return operation
 	}
+	hasWorkspaceContext := false
+	for index := range operation.Tool.Bindings {
+		binding := &operation.Tool.Bindings[index]
+		if binding.Mode != "context" || binding.ContextKey != "workspace" {
+			continue
+		}
+		hasWorkspaceContext = true
+		break
+	}
+	if !hasWorkspaceContext {
+		return operation
+	}
 	tool := agenttool.CloneContract(operation.Tool)
-	promoted := false
 	for index := range tool.Bindings {
 		binding := &tool.Bindings[index]
 		if binding.Mode != "context" || binding.ContextKey != "workspace" {
@@ -263,11 +275,8 @@ func operationForScope(operation APIGenOperation, scope Scope) APIGenOperation {
 		binding.Mode = "model"
 		binding.ContextKey = ""
 		binding.Required = true
-		promoted = true
 	}
-	if promoted {
-		tool.InputSchema = requireToolStringProperty(tool.InputSchema, "workspace")
-	}
+	tool.InputSchema = requireToolStringProperty(tool.InputSchema, "workspace")
 	operation.Tool = tool
 	return operation
 }

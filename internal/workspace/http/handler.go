@@ -14,13 +14,15 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/api"
-	"github.com/Yacobolo/leapview/internal/assetnav"
-	"github.com/Yacobolo/leapview/internal/catalog"
-	"github.com/Yacobolo/leapview/internal/ui"
-	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
+	accessapi "github.com/Yacobolo/leapview/internal/access/api"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/Yacobolo/leapview/internal/workspace/api"
+	"github.com/Yacobolo/leapview/internal/workspace/assetnav"
 	workspacedatastar "github.com/Yacobolo/leapview/internal/workspace/datastar"
+	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
+	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
@@ -34,7 +36,7 @@ type Handler struct {
 	Broker           *pagestream.Broker
 	CSRFToken        func(*nethttp.Request) string
 	CurrentRoleLabel func(*nethttp.Request) string
-	ChromeOptions    func(*nethttp.Request) []ui.ChromeOption
+	Layout           func(*nethttp.Request) webpage.Provider
 }
 
 type workspaceAccessSignalPayload struct {
@@ -1101,11 +1103,11 @@ func (h Handler) currentRoleLabel(r *nethttp.Request) string {
 	return h.CurrentRoleLabel(r)
 }
 
-func (h Handler) chromeOptions(r *nethttp.Request) []ui.ChromeOption {
-	if h.ChromeOptions == nil {
+func (h Handler) chromeOptions(r *nethttp.Request) []webpage.Provider {
+	if h.Layout == nil {
 		return nil
 	}
-	return h.ChromeOptions(r)
+	return []webpage.Provider{h.Layout(r)}
 }
 
 func (h Handler) broker() *pagestream.Broker {
@@ -1301,10 +1303,10 @@ func assetLineageEndpointIDs(edges []workspace.AssetEdgeView, assetID string, up
 	return out
 }
 
-func apiRoleDTOs(rows []workspace.RoleView) []api.RoleResponse {
-	out := make([]api.RoleResponse, 0, len(rows))
+func apiRoleDTOs(rows []workspace.RoleView) []accessapi.RoleResponse {
+	out := make([]accessapi.RoleResponse, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, api.RoleResponse{Name: row.Name, Privileges: row.Privileges})
+		out = append(out, accessapi.RoleResponse{Name: row.Name, Privileges: row.Privileges})
 	}
 	return out
 }

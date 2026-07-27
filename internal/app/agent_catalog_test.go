@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/access"
+	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
 	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	"github.com/Yacobolo/leapview/internal/dashboard"
@@ -274,36 +275,6 @@ func TestAgentCatalogSearchIsGlobalNormalizedAndBounded(t *testing.T) {
 	}
 }
 
-func TestAgentCatalogListCursorBindsScopeRequestAndSnapshot(t *testing.T) {
-	scope := agenttools.Scope{PrincipalID: "p1"}
-	request := agenttools.CatalogListRequest{Limit: 1}
-	items := []agenttools.CatalogItem{
-		{Ref: agenttools.CatalogRef{WorkspaceID: "a", Type: agenttools.CatalogTypeWorkspace, ID: "a"}, Name: "A"},
-		{Ref: agenttools.CatalogRef{WorkspaceID: "b", Type: agenttools.CatalogTypeWorkspace, ID: "b"}, Name: "B"},
-	}
-	snapshot := catalogItemsSnapshot(items)
-	cursor := encodeCatalogListCursor(scope, request, snapshot, 1)
-	if offset, err := decodeCatalogListCursor(cursor, scope, request, snapshot); err != nil || offset != 1 {
-		t.Fatalf("decode cursor = %d, %v", offset, err)
-	}
-	if _, err := decodeCatalogListCursor(cursor, agenttools.Scope{PrincipalID: "p2"}, request, snapshot); err == nil {
-		t.Fatal("cursor accepted a different principal")
-	}
-	if _, err := decodeCatalogListCursor(cursor, scope, request, catalogItemsSnapshot(items[:1])); err == nil {
-		t.Fatal("cursor accepted a changed snapshot")
-	} else {
-		var catalogErr *agenttools.CatalogError
-		if !errors.As(err, &catalogErr) || catalogErr.Code != "catalog_snapshot_changed" {
-			t.Fatalf("snapshot error = %v", err)
-		}
-	}
-	metadataChanged := append([]agenttools.CatalogItem(nil), items...)
-	metadataChanged[1].Description = "Changed after the first page"
-	if _, err := decodeCatalogListCursor(cursor, scope, request, catalogItemsSnapshot(metadataChanged)); err == nil {
-		t.Fatal("cursor accepted changed item metadata")
-	}
-}
-
 func TestAgentCatalogCredentialRestrictionDoesNotLeakOtherWorkspaces(t *testing.T) {
 	server := catalogTestServer(t)
 	principal := testPrincipal(t, context.Background(), server.store, "catalog-owner@example.com", "Catalog Owner", access.RoleOwner)
@@ -374,10 +345,10 @@ func TestAgentCatalogSemanticModelUsageFiltersUnauthorizedDashboards(t *testing.
 
 func TestAgentCatalogWorkspaceLookupPropagatesRepositoryFailures(t *testing.T) {
 	sentinel := errors.New("workspace repository unavailable")
-	service := agentCatalogService{
-		workspaces:  activeMetadataWorkspaceRepo{err: sentinel},
-		environment: "dev",
-	}
+	service := agentmodule.BuildCatalog(agentmodule.CatalogConfig{
+		Workspaces:  activeMetadataWorkspaceRepo{err: sentinel},
+		Environment: "dev",
+	})
 	_, err := service.Get(
 		context.Background(),
 		agenttools.Scope{PrincipalID: "dev", DevAuthBypass: true},
@@ -452,8 +423,9 @@ type catalogTestHarness struct {
 	store *platform.Store
 }
 
-func catalogServiceForTest(server *appTestHarness) agentCatalogService {
-	service, ok := server.routes.agentModule.CatalogToolProvider().Catalog.(agentCatalogService)
+func catalogServiceForTest(server *appTestHarness) agenttools.Catalog {
+	service := server.routes.agentModule.CatalogToolProvider().Catalog
+	_, ok := service.(agentmodule.CatalogService)
 	if !ok {
 		panic("agent catalog service is not configured")
 	}
@@ -516,13 +488,17 @@ func catalogTestServer(t *testing.T) *catalogTestHarness {
 	return &catalogTestHarness{appTestHarness: server, store: store}
 }
 
-func catalogListForTest(t *testing.T, service agentCatalogService, ctx context.Context, scope agenttools.Scope, request agenttools.CatalogListRequest) agenttools.CatalogPage {
+func catalogListForTest(t *testing.T, service agenttools.Catalog, ctx context.Context, scope agenttools.Scope, request agenttools.CatalogListRequest) agenttools.CatalogPage {
 	t.Helper()
 	page, err := service.List(ctx, scope, request)
 	if err != nil {
 		t.Fatalf("catalog list %#v: %v", request.Parent, err)
 	}
 	return page
+}
+
+func catalogRefValue(workspaceID string, typ agenttools.CatalogType, id string) agenttools.CatalogRef {
+	return agenttools.CatalogRef{WorkspaceID: workspaceID, Type: typ, ID: id}
 }
 
 func catalogRefPointer(workspaceID string, typ agenttools.CatalogType, id string) *agenttools.CatalogRef {

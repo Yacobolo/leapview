@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
+	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 )
 
 func TestManagedDataGeneratedByteCountsAreInt64(t *testing.T) {

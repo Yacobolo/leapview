@@ -5,10 +5,10 @@ import (
 	nethttp "net/http"
 	"strings"
 
+	"github.com/Yacobolo/leapview/internal/admin/ui"
+	uisignals "github.com/Yacobolo/leapview/internal/admin/ui/signals"
 	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
-	"github.com/Yacobolo/leapview/internal/catalog"
-	"github.com/Yacobolo/leapview/internal/ui"
-	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
@@ -16,10 +16,8 @@ import (
 type QueryAuditReaderProvider func() (queryaudit.Reader, error)
 
 type Handler struct {
-	Catalog             func() catalog.Catalog
 	ReadModel           ReadModel
-	CurrentRoleLabel    func(*nethttp.Request) string
-	ChromeOption        func(*nethttp.Request) ui.ChromeOption
+	Layout              func(*nethttp.Request) webpage.Provider
 	EnsureClientID      func(nethttp.ResponseWriter, *nethttp.Request)
 	Broker              *pagestream.Broker
 	PublicationMutation func(*nethttp.Request, uisignals.AdminPublicationCommand) error
@@ -139,7 +137,7 @@ func (h Handler) BootstrapUpdates(w nethttp.ResponseWriter, r *nethttp.Request) 
 		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
 		return
 	}
-	h.patchAndWait(w, r, ui.AdminBootstrapSignals(h.catalog(), active, h.roleLabel(r), data, h.chromeOption(r)))
+	h.patchAndWait(w, r, ui.AdminBootstrapSignals(active, data, h.layout(r)))
 }
 
 func (h Handler) QueryUpdates(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -163,7 +161,7 @@ func (h Handler) StorageSignalUpdates(w nethttp.ResponseWriter, r *nethttp.Reque
 		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
 		return
 	}
-	if err := updates.Patch(ui.AdminBootstrapSignals(h.catalog(), "storage", h.roleLabel(r), data, h.chromeOption(r))); err != nil {
+	if err := updates.Patch(ui.AdminBootstrapSignals("storage", data, h.layout(r))); err != nil {
 		return
 	}
 	_ = updates.Forward(r.Context(), h.Broker, streamID)
@@ -176,11 +174,13 @@ func (h Handler) StorageTableSelect(w nethttp.ResponseWriter, r *nethttp.Request
 		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
 		return
 	}
-	selectedTable, err := h.readModel().StorageService.SelectTable(r.Context(), signals.AdminStorageCommand)
+	command := signals.AdminStorageCommand
+	table, err := h.readModel().StorageService.SelectTable(r.Context(), command.DatabaseID, command.Schema, command.Table)
 	if err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusBadRequest)
 		return
 	}
+	selectedTable := ui.AdminStorageTableSignalFromTable(*table)
 	if h.Broker == nil {
 		nethttp.Error(w, "admin storage broker is not configured", nethttp.StatusInternalServerError)
 		return
@@ -188,7 +188,7 @@ func (h Handler) StorageTableSelect(w nethttp.ResponseWriter, r *nethttp.Request
 	h.Broker.Publish(adminStorageStreamID(clientID), map[string]any{
 		"adminStorage": map[string]any{
 			"selectedKey":   selectedTable.Key,
-			"selectedTable": selectedTable,
+			"selectedTable": &selectedTable,
 		},
 	})
 	w.WriteHeader(nethttp.StatusNoContent)
@@ -206,7 +206,7 @@ func (h Handler) renderPage(w nethttp.ResponseWriter, r *nethttp.Request, active
 func (h Handler) writePage(w nethttp.ResponseWriter, r *nethttp.Request, active string, data ui.AdminData) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(nethttp.StatusOK)
-	if err := ui.AdminPage(h.catalog(), active, h.roleLabel(r), data, h.chromeOption(r)).Render(w); err != nil {
+	if err := ui.AdminPage(active, data, h.layout(r)).Render(w); err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
 	}
 }
@@ -257,25 +257,11 @@ func (h Handler) patchAndWait(w nethttp.ResponseWriter, r *nethttp.Request, patc
 	updates.Wait(r.Context())
 }
 
-func (h Handler) catalog() catalog.Catalog {
-	if h.Catalog == nil {
-		return catalog.Catalog{}
-	}
-	return h.Catalog()
-}
-
-func (h Handler) roleLabel(r *nethttp.Request) string {
-	if h.CurrentRoleLabel == nil {
-		return ""
-	}
-	return h.CurrentRoleLabel(r)
-}
-
-func (h Handler) chromeOption(r *nethttp.Request) ui.ChromeOption {
-	if h.ChromeOption == nil {
+func (h Handler) layout(r *nethttp.Request) webpage.Provider {
+	if h.Layout == nil {
 		return nil
 	}
-	return h.ChromeOption(r)
+	return h.Layout(r)
 }
 
 func (h Handler) ensureClientID(w nethttp.ResponseWriter, r *nethttp.Request) {

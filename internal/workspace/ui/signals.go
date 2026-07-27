@@ -1,0 +1,9 @@
+package ui
+
+import uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
+
+type WorkspaceAccessResponse = uisignals.WorkspaceAccessResponse
+type WorkspaceAccessStatus = uisignals.WorkspaceAccessStatus
+type WorkspaceAccessCommand = uisignals.WorkspaceAccessCommand
+type WorkspaceAccessCandidate = uisignals.WorkspaceAccessCandidate
+type WorkspaceAccessSearchStatus = uisignals.WorkspaceAccessSearchStatus

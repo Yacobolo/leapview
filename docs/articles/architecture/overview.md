@@ -1,18 +1,36 @@
 # Architecture overview
 
-LeapView is a Go monolith with explicit generated contracts and focused browser components. The monolith keeps routing, authorization, project compilation, query execution, and lifecycle state in one deployable application while package boundaries separate domains and infrastructure.
+LeapView is a feature-oriented Go modular monolith with explicit generated contracts and focused browser components. The monolith keeps routing, authorization, project compilation, query execution, and lifecycle state in one deployable application while package boundaries preserve capability ownership.
 
-## Server domains
+## Modular monolith
 
-`cmd/leapview` starts the application and CLI. Packages under `internal/` own access, administration, agents, analytics, configuration, dashboards, deployments, execution, managed data, query audit, serving state, storage, workspaces, and UI composition.
+The server has three kinds of top-level package:
 
-Transport packages parse HTTP or Datastar commands and call domain services. Domain services validate authorization and lifecycle invariants. Repository and storage adapters implement SQLite, DuckLake, object storage, filesystem, and external connector behavior.
+```text
+app
+  │ composes
+  ▼
+capability modules (peers)
+  │ use
+  ▼
+platform
+```
 
-Avoid introducing a second path around these services. Browser, CLI-backed API, and agent tools should converge on the same authorization and semantic boundaries.
+- `app` owns process composition, global routing, CLI and process entrypoints, the public site, tooling, and global cleanup.
+- Capability modules own product language and behavior: `access`, `admin`, `agent`, `analytics`, `dashboard`, `deployment`, `manageddata`, `project`, `refresh`, `release`, `runtimehost`, `servingstate`, `workload`, and `workspace`.
+- `platform` owns capability-agnostic mechanisms such as HTTP, database and transaction primitives, filesystems, jobs, locking, observability, security, testing, and generic web transport.
+
+All capability modules are peers. Some—especially `access`, `analytics`, `project`, `workload`, `runtimehost`, and `servingstate`—support several product experiences or workflows. That makes them horizontal product capabilities, not platform code or unrestricted shared dependencies. Modules collaborate only through explicit contracts and declared dependency edges.
+
+`admin` is an interface module over capability-owned reads and mutations rather than a separate domain owner. Product HTTP, API, UI, worker, and persistence adapters live with the capability whose language they express. Generic protocol mechanics live in `platform`; global dispatch and application assembly live in `app`.
+
+`cmd/leapview` starts the application and CLI. Transport adapters parse HTTP or Datastar commands and invoke capability use cases. Capability code enforces authorization and lifecycle invariants through explicit ports. Capability-owned adapters implement SQLite, DuckLake, object-storage, filesystem, and external-connector behavior.
+
+Avoid introducing a second path around capability use cases. Browser, CLI-backed API, and agent tools should converge on the same authorization and semantic boundaries.
 
 ## Configuration and deployment
 
-Project and workspace YAML is loaded and validated as a graph. A project discovers global connections/sources and workspace manifests. Each workspace discovers its model, semantic, dashboard, access, and agent resources.
+Project and workspace YAML is loaded and validated as a graph. A project discovers global connections and sources plus workspace manifests. Each workspace discovers its model, semantic-model, dashboard, access, and agent resources.
 
 Project deployment compiles validated candidates into immutable artifacts and serving metadata, then changes the instance's serving pointers to accepted state. Runtime requests read the active deployment rather than mutable repository files. Managed-data revision pins move with the project candidate.
 

@@ -6,11 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
-	"github.com/Yacobolo/leapview/internal/brand"
-	"github.com/Yacobolo/leapview/internal/staticasset"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -52,13 +51,17 @@ func (m *Module) mcpServer(r *http.Request) (*mcp.Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	version := staticasset.Version()
+	version := strings.TrimSpace(m.buildVersion)
 	if version == "" {
 		version = "dev"
 	}
+	title := strings.TrimSpace(m.productName)
+	if title == "" {
+		title = "Application"
+	}
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "leapview",
-		Title:   brand.Name,
+		Title:   title,
 		Version: version,
 	}, &mcp.ServerOptions{Capabilities: &mcp.ServerCapabilities{}})
 	for _, definition := range catalog.Definitions() {

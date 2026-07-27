@@ -14,6 +14,7 @@ func TestAPIGenDefinitionsRequireAndUseExplicitWorkspace(t *testing.T) {
 	var authorizedScope Scope
 	var dispatchedPath string
 	provider := APIGenProvider{
+		Operations: curatedTestAPIGenOperations(),
 		Authorize: func(_ context.Context, scope Scope, _ string) (agentcore.ToolResult, bool) {
 			authorizedScope = scope
 			return agentcore.ToolResult{}, true
@@ -67,7 +68,7 @@ func TestAPIGenDefinitionsRequireAndUseExplicitWorkspace(t *testing.T) {
 }
 
 func TestAPIGenDefinitionsExposeCompactDashboardVisualOutputSchema(t *testing.T) {
-	for _, definition := range (APIGenProvider{}).Definitions(Scope{PrincipalID: "principal-1"}) {
+	for _, definition := range (APIGenProvider{Operations: curatedTestAPIGenOperations()}).Definitions(Scope{PrincipalID: "principal-1"}) {
 		if definition.Name != "query_dashboard_visual" {
 			continue
 		}
@@ -115,7 +116,7 @@ func TestAPIGenDefinitionsExposeCompactDashboardVisualOutputSchema(t *testing.T)
 }
 
 func TestAPIGenDefinitionsExposeSemanticQueryMetadataSchema(t *testing.T) {
-	for _, definition := range (APIGenProvider{}).Definitions(Scope{PrincipalID: "principal-1"}) {
+	for _, definition := range (APIGenProvider{Operations: curatedTestAPIGenOperations()}).Definitions(Scope{PrincipalID: "principal-1"}) {
 		if definition.Name != "query_semantic_model" {
 			continue
 		}

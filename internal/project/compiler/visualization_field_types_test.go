@@ -6,7 +6,7 @@ import (
 
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 )
 
 func TestCompiledKPIFieldRetainsSemanticPresentation(t *testing.T) {

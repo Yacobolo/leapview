@@ -5,8 +5,10 @@ LeapView is a monorepo containing the product application, browser components, r
 ## Important locations
 
 - `cmd/leapview/` — application and CLI entry point.
-- `internal/` — domain, transport, query, runtime, storage, access, agent, and generator packages.
-- `internal/agent/contracts/typespec/` — capability-owned curated agent input/output DTOs and portable tool-schema source contracts.
+- `internal/app/` — process composition, global routing, entrypoints, public-site composition, and tooling.
+- `internal/<capability>/` — product behavior and its contracts, use cases, adapters, workers, and optional runtime construction.
+- `internal/agent/contracts/typespec/` — capability-owned curated agent DTOs and portable tool-schema source contracts.
+- `internal/platform/` — capability-agnostic technical mechanisms.
 - `api/typespec/` — headless API source contract.
 - `api/signals/` — UI signal source contract.
 - `dashboards/` — complete example configuration-as-code projects.
@@ -14,10 +16,22 @@ LeapView is a monorepo containing the product application, browser components, r
 - `static/` — built product browser assets.
 - `docs/articles/` — authored task and concept documentation.
 - `docs/reference/`, `docs/api/`, and `docs/visuals/` — generated or catalogued reference inputs.
-- `site/` and `internal/site/` — public site assets and Go HTTP server.
+- `site/` and `internal/app/site/` — public site assets and Go HTTP server.
 - `deploy/hetzner/` — supported single-node deployment contract.
 
 Read the nearest `AGENTS.md` before editing. Preserve unrelated user changes in a dirty worktree.
+
+## Choosing a package
+
+LeapView uses a modular-monolith ownership rule:
+
+- If a package mentions a product noun, place it in the capability that owns that language.
+- If it implements a capability-agnostic technical mechanism, place it in `internal/platform`.
+- If it assembles or exposes the application, place it in `internal/app`.
+
+Capability modules are peers. `access`, `analytics`, `project`, `workload`, `runtimehost`, and `servingstate` are horizontal because several experiences and workflows use them, but they remain product capabilities rather than a shared technical layer. Depending on one requires an explicit contract and a declared dependency edge.
+
+Keep capability HTTP, API, UI, persistence, and worker adapters beside their owner. Do not introduce generic `internal/api`, `internal/ui`, or `internal/modules` roots. Read the [Architecture overview](/docs/architecture) before creating a new top-level package or cross-capability dependency.
 
 ## Development loop
 
@@ -55,7 +69,7 @@ task generate
 
 It produces database code, configuration surfaces, API and UI-signal contracts, JSON Schemas, CLI docs, and the unified documentation catalog/search index. Individual generator tasks exist for focused work.
 
-Do not manually edit a file marked generated. Change TypeSpec, CUE/config contracts, Cobra commands, configuration specs, or the owning generator. Agent provider schemas are generated from `internal/agent/contracts/typespec/main.tsp`; their readable and machine-readable presentation under `docs/reference/agent-tools/` is generated from the canonical runtime catalog. Generated implementation code, reference prose, catalogs, and search indexes are build inputs and stay out of Git unless they are intentional public contract snapshots.
+Do not manually edit a file marked generated. Change TypeSpec, CUE/config contracts, Cobra commands, configuration specs, or the owning generator. Agent provider schemas are generated from `internal/agent/contracts/typespec/main.tsp`; their readable and machine-readable presentation under `docs/reference/agent-tools/` is generated from the canonical runtime catalog. Generated implementation code, catalogs, and search indexes are build inputs and stay out of Git unless they are intentional public contract snapshots.
 
 Use `task docs:check` and `task config:check` to validate generated output. `task generated:check` detects drift in the public snapshots. CI generates build-only inputs once, verifies deterministic output, and shares them with downstream jobs.
 

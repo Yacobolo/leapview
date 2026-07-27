@@ -12,9 +12,9 @@ import (
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/agent"
 	"github.com/Yacobolo/leapview/internal/dashboard"
-	productsearch "github.com/Yacobolo/leapview/internal/search"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
+	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	productsearch "github.com/Yacobolo/leapview/internal/workspace/search"
 )
 
 func (m *Module) ResolveTurnContext(r *http.Request, scope agent.Scope, candidate agent.TurnContext) (agent.TurnContext, error) {

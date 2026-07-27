@@ -9,17 +9,18 @@ import (
 	"sync"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	agentcontracts "github.com/Yacobolo/leapview/internal/agent/contracts"
-	"github.com/Yacobolo/leapview/internal/api"
+	"github.com/Yacobolo/leapview/internal/dashboard/api"
 	dashboardhttp "github.com/Yacobolo/leapview/internal/dashboard/http"
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
 	publicationsqlite "github.com/Yacobolo/leapview/internal/dashboard/publication/sqlite"
+	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
 	semanticapi "github.com/Yacobolo/leapview/internal/dashboard/semanticapi"
 	dashboardstream "github.com/Yacobolo/leapview/internal/dashboard/stream"
 	dashboardui "github.com/Yacobolo/leapview/internal/dashboard/ui"
-	"github.com/Yacobolo/leapview/internal/queryruntime"
-	"github.com/Yacobolo/leapview/internal/ui"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
+	dashboardsignals "github.com/Yacobolo/leapview/internal/dashboard/ui/signals"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
+	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
 	"github.com/Yacobolo/leapview/internal/workload"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
@@ -68,11 +69,13 @@ type HTTPConfig struct {
 	CurrentPrincipalID  func(*http.Request) string
 	AuthorizeListObject func(context.Context, string, access.ObjectRef) (bool, error)
 	CSRFToken           func(*http.Request) string
-	ChatChromeSignal    func(*http.Request) ui.ChatSignal
+	Layout              func(*http.Request) webpage.Provider
 	Environment         func(*http.Request) string
 	DataRefreshedAt     func(context.Context, string, string, string) string
-	QueryFreshness      func(context.Context, string, string, string) (agentcontracts.QueryFreshness, bool)
-	AgentBootstrap      func(*http.Request, string) ui.ChatViewState
+	QueryFreshness      func(context.Context, string, string, string) (api.QueryFreshness, bool)
+	AgentBootstrap      func(*http.Request, string) dashboardui.AgentBootstrap
+	Presentation        dashboardui.Presentation
+	Assets              staticasset.Resolver
 }
 
 type SemanticConfig struct {
@@ -89,12 +92,34 @@ type SignalBroker interface {
 	TraceStore() *pagestream.TraceStore
 }
 
+type Presentation = dashboardui.Presentation
+type QueryFreshness = api.QueryFreshness
+type AgentBootstrap = dashboardui.AgentBootstrap
+type ChatSignal = dashboardsignals.ChatSignal
+type ChatConversationSummary = dashboardsignals.ChatConversationSummary
+type ChatTranscriptItemSignal = dashboardsignals.ChatTranscriptItemSignal
+type ChatArtifactSignal = dashboardsignals.ChatArtifactSignal
+type AgentReferenceSignal = dashboardsignals.AgentReferenceSignal
+type AgentReferenceLocationSignal = dashboardsignals.AgentReferenceLocationSignal
+type AgentReferenceKeySignal = dashboardsignals.AgentReferenceKeySignal
+type AgentReferenceWorkspaceSignal = dashboardsignals.AgentReferenceWorkspaceSignal
+type ChatStatus = dashboardsignals.ChatStatus
+type ComposerSignal = dashboardsignals.ComposerSignal
+
 type DashboardTelemetry interface {
 	DashboardRefreshStarted(string)
 	DashboardRefreshFinished(string, string, int, map[string]float64)
 	DashboardRefreshEventObserved(string, string)
 	VisualizationFrameObserved(kind string, rows, cardinality, encodedBytes int)
 	DashboardCacheObserved(string)
+}
+
+type Telemetry interface {
+	DashboardTelemetry
+	PublicDocumentObserved(presentation, outcome string)
+	PublicStreamStarted(presentation string) func()
+	PublicCommandObserved(command, outcome string)
+	PublicRateLimitObserved(family string)
 }
 
 func Build(_ context.Context, config Config) (*Module, error) {
@@ -112,12 +137,6 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		}
 		metrics, ok := config.Semantic.MetricsForWorkspace(workspaceID)
 		return metrics, ok
-	}
-	chromeDecorators := func(r *http.Request) []dashboardui.ChromeDecorator {
-		if config.HTTP.ChatChromeSignal == nil {
-			return nil
-		}
-		return ChatChromeDecorators(config.HTTP.ChatChromeSignal(r))
 	}
 	telemetry := config.HTTP.Telemetry
 	handler := dashboardhttp.Handler{
@@ -148,8 +167,10 @@ func Build(_ context.Context, config Config) (*Module, error) {
 			}
 		},
 		CurrentPrincipalID: config.HTTP.CurrentPrincipalID, AuthorizeListObject: config.HTTP.AuthorizeListObject,
-		CSRFToken: config.HTTP.CSRFToken, ChromeDecorators: chromeDecorators,
-		Environment: config.HTTP.Environment, DataRefreshedAt: config.HTTP.DataRefreshedAt,
+		CSRFToken: config.HTTP.CSRFToken, Layout: config.HTTP.Layout,
+		Presentation: config.HTTP.Presentation,
+		Assets:       config.HTTP.Assets,
+		Environment:  config.HTTP.Environment, DataRefreshedAt: config.HTTP.DataRefreshedAt,
 		QueryFreshness: config.HTTP.QueryFreshness,
 		AgentBootstrap: config.HTTP.AgentBootstrap,
 	}

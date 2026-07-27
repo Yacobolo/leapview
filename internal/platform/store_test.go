@@ -18,7 +18,7 @@ import (
 	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
 	agentconfig "github.com/Yacobolo/leapview/internal/agent/config"
 	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
-	"github.com/Yacobolo/leapview/internal/instancelock"
+	"github.com/Yacobolo/leapview/internal/platform/locking"
 )
 
 func TestAccessInitializationReconcilesRolesAfterStoreMigration(t *testing.T) {

@@ -2,7 +2,9 @@ package productdocs
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -205,7 +207,17 @@ func testServiceWithTitle(t *testing.T, semanticTitle string) *Service {
 			{Slug: documents[1].Slug, Excerpt: documents[1].Markdown},
 		},
 	}
-	service, err := New(files, index)
+	sign := func(prefix string, payload []byte) string {
+		return prefix + "." + base64.RawURLEncoding.EncodeToString(payload)
+	}
+	verify := func(prefix, token string) ([]byte, error) {
+		value, ok := strings.CutPrefix(token, prefix+".")
+		if !ok {
+			return nil, fmt.Errorf("invalid cursor")
+		}
+		return base64.RawURLEncoding.DecodeString(value)
+	}
+	service, err := New(files, index, sign, verify)
 	if err != nil {
 		t.Fatal(err)
 	}

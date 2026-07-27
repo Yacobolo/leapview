@@ -8,7 +8,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access"
 	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
-	"github.com/Yacobolo/leapview/internal/dataquery"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	"github.com/Yacobolo/leapview/internal/platform"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"

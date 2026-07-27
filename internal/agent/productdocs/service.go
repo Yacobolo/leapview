@@ -13,8 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/Yacobolo/leapview/internal/cursorsigning"
 )
 
 const (
@@ -101,15 +99,25 @@ type Service struct {
 	bySlug    map[string]Document
 	search    SearchIndex
 	snapshot  string
+	sign      func(string, []byte) string
+	verify    func(string, string) ([]byte, error)
 }
 
-func New(files fs.FS, index SearchIndex) (*Service, error) {
+func New(
+	files fs.FS,
+	index SearchIndex,
+	sign func(prefix string, payload []byte) string,
+	verify func(prefix, token string) ([]byte, error),
+) (*Service, error) {
 	documents, bySlug, err := loadDocuments(files)
 	if err != nil {
 		return nil, err
 	}
 	if index == nil {
 		return nil, fmt.Errorf("documentation search index is not configured")
+	}
+	if sign == nil || verify == nil {
+		return nil, fmt.Errorf("documentation cursor codec is not configured")
 	}
 	slugs, err := index.Slugs(context.Background())
 	if err != nil {
@@ -126,7 +134,10 @@ func New(files fs.FS, index SearchIndex) (*Service, error) {
 			return nil, fmt.Errorf("documentation search index contains unknown path %q", slug)
 		}
 	}
-	return &Service{documents: documents, bySlug: bySlug, search: index, snapshot: documentationSnapshot(documents)}, nil
+	return &Service{
+		documents: documents, bySlug: bySlug, search: index, snapshot: documentationSnapshot(documents),
+		sign: sign, verify: verify,
+	}, nil
 }
 
 func (s *Service) Close() error {
@@ -155,7 +166,7 @@ func (s *Service) Search(ctx context.Context, request SearchRequest) (SearchResu
 	}
 	offset := 0
 	if strings.TrimSpace(request.Cursor) != "" {
-		offset, err = decodeSearchCursor(request.Cursor, query, path, s.snapshot)
+		offset, err = s.decodeSearchCursor(request.Cursor, query, path, s.snapshot)
 		if err != nil {
 			return SearchResult{}, err
 		}
@@ -179,7 +190,7 @@ func (s *Service) Search(ctx context.Context, request SearchRequest) (SearchResu
 	page := append([]Reference(nil), references[offset:end]...)
 	result := SearchResult{Query: query, Path: path, Matches: page, Count: len(page), HasMore: end < len(references)}
 	if result.HasMore {
-		result.NextCursor = encodeSearchCursor(end, query, path, s.snapshot)
+		result.NextCursor = s.encodeSearchCursor(end, query, path, s.snapshot)
 	}
 	return result, nil
 }
@@ -190,13 +201,13 @@ type searchCursor struct {
 	Snapshot string `json:"snapshot"`
 }
 
-func encodeSearchCursor(offset int, query, path, snapshot string) string {
+func (s *Service) encodeSearchCursor(offset int, query, path, snapshot string) string {
 	payload, _ := json.Marshal(searchCursor{Offset: offset, Scope: documentationSearchScope(query, path), Snapshot: snapshot})
-	return cursorsigning.Sign(searchCursorPrefix, payload)
+	return s.sign(searchCursorPrefix, payload)
 }
 
-func decodeSearchCursor(token, query, path, snapshot string) (int, error) {
-	payload, err := cursorsigning.Verify(searchCursorPrefix, token)
+func (s *Service) decodeSearchCursor(token, query, path, snapshot string) (int, error) {
+	payload, err := s.verify(searchCursorPrefix, token)
 	if err != nil {
 		return 0, ErrInvalid
 	}

@@ -6,44 +6,16 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 
-	documentcontent "github.com/Yacobolo/leapview/docs"
 	"github.com/Yacobolo/leapview/internal/access"
 	agentcap "github.com/Yacobolo/leapview/internal/agent"
-	"github.com/Yacobolo/leapview/internal/agent/productdocs"
 	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/dataquery"
-	docsearch "github.com/Yacobolo/leapview/internal/site/search/sqlite"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
+	"github.com/Yacobolo/toolbelt/apigen/runtime/agenttool"
 )
-
-var embeddedProductDocumentation struct {
-	once    sync.Once
-	service *productdocs.Service
-	err     error
-}
-
-func mustLoadProductDocumentation() *productdocs.Service {
-	embeddedProductDocumentation.once.Do(func() {
-		index, err := docsearch.Open(documentcontent.Files, docsearch.Filename)
-		if err != nil {
-			embeddedProductDocumentation.err = err
-			return
-		}
-		embeddedProductDocumentation.service, embeddedProductDocumentation.err = productdocs.New(documentcontent.Files, index)
-		if embeddedProductDocumentation.err != nil {
-			_ = index.Close()
-		}
-	})
-	if embeddedProductDocumentation.err != nil {
-		panic(fmt.Sprintf("load embedded product documentation: %v", embeddedProductDocumentation.err))
-	}
-	return embeddedProductDocumentation.service
-}
 
 func (m *Module) configureTools() {
 	if m.service != nil && m.enableSystemPrompt {
@@ -74,7 +46,7 @@ func (m *Module) ToolDefinitions(scope agentcap.Scope) []agentcore.ToolDefinitio
 }
 
 func (m *Module) DocsToolProvider() agenttools.DocsProvider {
-	return agenttools.DocsProvider{Documentation: mustLoadProductDocumentation()}
+	return agenttools.DocsProvider{Documentation: m.documentation}
 }
 
 func (m *Module) CatalogToolProvider() agenttools.CatalogProvider {
@@ -145,6 +117,7 @@ func (m *Module) VisualToolProvider() agenttools.VisualProvider {
 
 func (m *Module) APIGenToolProvider() agenttools.APIGenProvider {
 	return agenttools.APIGenProvider{
+		Operations: m.apiOperations,
 		Authorize: func(ctx context.Context, scope agenttools.Scope, operationID string) (agentcore.ToolResult, bool) {
 			return m.authorizeAPIGenOperation(ctx, scopeFromTools(scope), operationID)
 		},
@@ -184,7 +157,7 @@ func scopeFromTools(scope agenttools.Scope) agentcap.Scope {
 }
 
 func (m *Module) authorizeAPIGenOperation(ctx context.Context, scope agentcap.Scope, operationID string) (agentcore.ToolResult, bool) {
-	privilege, ok := apigenOperationPrivilege(operationID)
+	privilege, ok := m.apigenOperationPrivilege(operationID)
 	if !ok {
 		return agenttools.ToolError("forbidden", "operation has no generated LeapView privilege metadata"), false
 	}
@@ -267,9 +240,16 @@ func agentCredentialAllowsPrivilege(scope agentcap.Scope, privilege access.Privi
 	return false
 }
 
-func apigenOperationPrivilege(operationID string) (access.Privilege, bool) {
-	contract, ok := apigenapi.GetAPIGenOperationContract(operationID)
-	if !ok || !contract.Protected || contract.AuthzMode != "privilege" {
+func (m *Module) apigenOperationPrivilege(operationID string) (access.Privilege, bool) {
+	var contract agenttools.OperationContract
+	found := false
+	for _, operation := range m.apiOperations {
+		if operation.Contract.OperationID == operationID {
+			contract, found = operation.Contract, true
+			break
+		}
+	}
+	if !found || !contract.Protected || contract.AuthzMode != "privilege" {
 		return "", false
 	}
 	authz, ok := contract.Extensions["x-authz"].(map[string]any)
@@ -281,4 +261,12 @@ func apigenOperationPrivilege(operationID string) (access.Privilege, bool) {
 		return "", false
 	}
 	return access.ParsePrivilege(value)
+}
+
+func apiGenToolContracts(operations []agenttools.APIGenOperation) map[string]agenttool.Contract {
+	contracts := make(map[string]agenttool.Contract, len(operations))
+	for _, operation := range operations {
+		contracts[operation.Tool.Name] = operation.Tool
+	}
+	return contracts
 }

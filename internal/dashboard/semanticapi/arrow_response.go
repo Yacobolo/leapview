@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/analytics/arrowquery"
-	"github.com/Yacobolo/leapview/internal/api"
-	"github.com/Yacobolo/leapview/internal/dataquery"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
+	"github.com/Yacobolo/leapview/internal/dashboard/api"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 )

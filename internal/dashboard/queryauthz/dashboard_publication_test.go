@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/dataquery"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 )
 
 func TestDashboardPublicationCapabilityAllowsOnlyCompiledDashboardDependencies(t *testing.T) {

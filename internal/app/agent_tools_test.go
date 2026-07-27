@@ -18,13 +18,13 @@ import (
 	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
 	"github.com/Yacobolo/leapview/internal/agent/productdocs"
 	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/dataquery"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
 	refreshsqlite "github.com/Yacobolo/leapview/internal/refresh/sqlite"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 	toon "github.com/toon-format/toon-go"
@@ -576,7 +576,7 @@ func TestAPIGenAgentToolsExposeTypeSpecArgumentNamesAndBodyFields(t *testing.T) 
 }
 
 func TestAPIGenAgentOperationsDeclareOutputMetadata(t *testing.T) {
-	for _, operation := range agenttools.APIGenOperations() {
+	for _, operation := range agentAPIGenOperations() {
 		if operation.Tool.Output.Mode == "" || len(operation.Tool.OutputSchema) == 0 {
 			t.Fatalf("agent operation %s (%s) has no typed output contract", operation.Contract.OperationID, operation.Tool.Name)
 		}
@@ -587,7 +587,7 @@ func TestAPIGenAgentOperationsDeclareOutputMetadata(t *testing.T) {
 }
 
 func TestAPIGenVisualToolKeepsRESTEnvelopeAndUsesProviderProjection(t *testing.T) {
-	for _, operation := range agenttools.APIGenOperations() {
+	for _, operation := range agentAPIGenOperations() {
 		if operation.Tool.Name != "query_dashboard_visual" {
 			continue
 		}
@@ -1059,7 +1059,7 @@ func TestRuntimeAgentToolsMatchPolicyRegistry(t *testing.T) {
 	server := assembleRuntime(manyRowsMetrics{}, assemblyConfig{DefaultWorkspaceID: "test"})
 	scope := agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"}
 	runtimeTools := server.routes.agentModule.ToolDefinitions(scope)
-	if got, want := sortedToolNames(runtimeTools), agenttools.ToolNames(); !reflect.DeepEqual(got, want) {
+	if got, want := sortedToolNames(runtimeTools), agenttools.ToolNames(agentAPIGenOperations()); !reflect.DeepEqual(got, want) {
 		t.Fatalf("runtime tools = %#v, policy registry = %#v", got, want)
 	}
 }
@@ -1078,7 +1078,7 @@ func TestAdminAgentInspectionExposesExactCuratedCatalog(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	if want := agenttools.ToolNames(); !reflect.DeepEqual(names, want) {
+	if want := agenttools.ToolNames(agentAPIGenOperations()); !reflect.DeepEqual(names, want) {
 		t.Fatalf("admin tools = %#v, want %#v", names, want)
 	}
 }

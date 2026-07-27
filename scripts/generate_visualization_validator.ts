@@ -8,7 +8,7 @@ const schemaPath = 'api/gen/visualization.schema.json'
 const contractPath = 'api/visualization/main.tsp'
 const outputPath = 'web/generated/visualization/validate.ts'
 const versionOutputPath = 'web/generated/visualization/schema-version.ts'
-const goVersionOutputPath = 'internal/visualization/ir/schema_version.gen.go'
+const goVersionOutputPath = 'internal/dashboard/visualization/ir/schema_version.gen.go'
 await Promise.all([
   mkdir(dirname(outputPath), { recursive: true }),
   mkdir(dirname(goVersionOutputPath), { recursive: true }),
