@@ -1525,7 +1525,7 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"go-tests:",
 		"name: Go tests",
 		"needs: prepare",
-		"go test ./...",
+		"go test -p 2 ./...",
 		"frontend-tests:",
 		"name: Frontend tests",
 		"bun run test:semantic-model-graph",

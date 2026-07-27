@@ -218,7 +218,7 @@ jobs:
       - name: Run Go tests
         env:
           LEAPVIEW_TEST_MINIO_ENDPOINT: http://127.0.0.1:9000
-        run: go test ./...
+        run: go test -p 2 ./...
 
   site-image:
     name: Public site image
