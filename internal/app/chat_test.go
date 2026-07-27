@@ -1150,12 +1150,16 @@ func TestChatUpdatesStreamsConversationPatches(t *testing.T) {
 }
 
 type synchronizedRecorder struct {
-	rec *httptest.ResponseRecorder
-	mu  sync.Mutex
+	rec     *httptest.ResponseRecorder
+	mu      sync.Mutex
+	flushed chan struct{}
 }
 
 func newSynchronizedRecorder() *synchronizedRecorder {
-	return &synchronizedRecorder{rec: httptest.NewRecorder()}
+	return &synchronizedRecorder{
+		rec:     httptest.NewRecorder(),
+		flushed: make(chan struct{}, 1),
+	}
 }
 
 func (r *synchronizedRecorder) Header() http.Header {
@@ -1176,8 +1180,12 @@ func (r *synchronizedRecorder) Write(p []byte) (int, error) {
 
 func (r *synchronizedRecorder) Flush() {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	r.rec.Flush()
+	r.mu.Unlock()
+	select {
+	case r.flushed <- struct{}{}:
+	default:
+	}
 }
 
 func (r *synchronizedRecorder) BodyString() string {
@@ -1188,17 +1196,21 @@ func (r *synchronizedRecorder) BodyString() string {
 
 func waitForRecorderBodyContains(t *testing.T, rec *synchronizedRecorder, want string) string {
 	t.Helper()
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+	for {
 		body := rec.BodyString()
 		if strings.Contains(body, want) {
 			return body
 		}
-		time.Sleep(time.Millisecond)
+		select {
+		case <-rec.flushed:
+		case <-timer.C:
+			body := rec.BodyString()
+			t.Fatalf("updates stream missing %q:\n%s", want, body)
+			return ""
+		}
 	}
-	body := rec.BodyString()
-	t.Fatalf("updates stream missing %q:\n%s", want, body)
-	return ""
 }
 
 func readUpdatesUntil(t *testing.T, server *appTestHarness, path, token string, wants ...string) string {
