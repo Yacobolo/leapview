@@ -229,20 +229,26 @@ The harness validates tool calls before handlers run:
 - malformed JSON arguments
 - JSON Schema failures
 - non-serializable outputs
-- outputs that remain overlarge after truncation
+- model-visible outputs that violate the configured byte ceiling
 
-Successful tool results are normalized, truncated, and serialized as TOON by
-default before they are sent back to the model. Set
+Successful tool results are normalized and serialized as TOON by default before
+they are sent back to the model. The harness never slices strings, arrays, or
+nested objects: providers own semantic bounds, pagination, and completeness
+metadata. If a formatted result exceeds `MaxToolResultBytes`, the harness returns
+an explicit `tool_output_contract_violation` instead of exposing a partial
+success. Set
 `Definition.ToolOutput.Format` to `ToolOutputJSON` only when an embedding
 application needs JSON model-visible tool results. Validation and ordinary
 handler failures use the same formatter and become model-visible tool-result
 messages, allowing the model to repair the next call. Fatal tool outcomes stop
 the run after appending the tool result:
 
-`ToolResult.Content` is the canonical result validated against the tool's
-output schema and returned by transport adapters. A handler may set
-`ModelContent` to a smaller model-only projection and `DisplayContent` to a
-richer UI projection without changing that canonical contract.
+`ToolResult.Content` is the canonical result validated against the tool's output
+schema and returned by transport adapters. A handler may set `ModelContent` to a
+complete, bounded model-only projection and `DisplayContent` to a richer UI
+projection without changing that canonical contract. A model projection must
+carry its own accurate cursor, count, and completeness state; the harness will
+not derive them.
 
 ```go
 return agent.ToolResult{
@@ -337,7 +343,7 @@ Default limits are intentionally conservative:
 - `MaxToolCalls`: 64 per run
 - `MaxConcurrentTools`: 4 per assistant turn
 - `ToolTimeout`: 30 seconds
-- `MaxToolResultBytes`: 64 KiB after tool-output formatting and truncation
+- `MaxToolResultBytes`: 64 KiB after tool-output formatting
 - `ContextWindowTokens`: 128000
 - `ReserveOutputTokens`: 4096
 
@@ -346,9 +352,9 @@ Set limits in `agent.Definition` when constructing the harness.
 Default tool-output policy:
 
 - `Format`: `ToolOutputTOON`
-- `MaxStringChars`: 2000
-- `MaxArrayItems`: 50
-- `MaxObjectDepth`: 8
+
+Tool providers must keep successful model content within
+`MaxToolResultBytes`. The ceiling is a contract check, not a truncation policy.
 
 ## Boundaries
 

@@ -3,6 +3,7 @@ package module
 import (
 	"context"
 	"database/sql"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -10,8 +11,10 @@ import (
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/agent"
 	agentapi "github.com/Yacobolo/leapview/internal/agent/api"
+	agentcontracts "github.com/Yacobolo/leapview/internal/agent/contracts"
 	agenthttp "github.com/Yacobolo/leapview/internal/agent/http"
 	agentopenai "github.com/Yacobolo/leapview/internal/agent/openai"
+	"github.com/Yacobolo/leapview/internal/agent/productdocs"
 	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
 	"github.com/Yacobolo/leapview/internal/agent/ui"
 	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
@@ -37,6 +40,10 @@ type Module struct {
 	skipContextAuthorization bool
 	recordAudit              func(context.Context, access.AuditEventInput) error
 	dispatchAPIGen           func(agent.Scope, string, http.ResponseWriter, *http.Request) bool
+	catalog                  agenttools.Catalog
+	documentation            agenttools.Documentation
+	queryMetadata            func(context.Context, string, string) agenttools.VisualQueryMetadata
+	queryContext             func(context.Context, agent.Scope) context.Context
 	enableSystemPrompt       bool
 	broker                   *pagestream.Broker
 	logger                   *slog.Logger
@@ -53,6 +60,19 @@ type Service = agent.Service
 type AdminAgentResponse = agentapi.AdminAgentResponse
 type APIGenOperation = agenttools.APIGenOperation
 type APIGenOperationContract = agenttools.OperationContract
+type Documentation = agenttools.Documentation
+type DocumentationSearchIndex = productdocs.SearchIndex
+type QueryFreshness = agentcontracts.QueryFreshness
+type VisualQueryMetadata = agenttools.VisualQueryMetadata
+
+func BuildDocumentation(
+	files fs.FS,
+	index DocumentationSearchIndex,
+	sign func(string, []byte) string,
+	verify func(string, string) ([]byte, error),
+) (Documentation, error) {
+	return productdocs.New(files, index, sign, verify)
+}
 
 func BuildAPIGenOperations(operationContracts map[string]APIGenOperationContract, toolContracts map[string]agenttool.Contract) []APIGenOperation {
 	return agenttools.BuildAPIGenOperations(operationContracts, toolContracts)
@@ -73,6 +93,10 @@ type Config struct {
 	SkipContextAuthorization bool
 	RecordAudit              func(context.Context, access.AuditEventInput) error
 	DispatchAPIGen           func(Scope, string, http.ResponseWriter, *http.Request) bool
+	Catalog                  agenttools.Catalog
+	Documentation            agenttools.Documentation
+	QueryMetadata            func(context.Context, string, string) agenttools.VisualQueryMetadata
+	QueryContext             func(context.Context, Scope) context.Context
 	EnableSystemPrompt       bool
 	Logger                   *slog.Logger
 	MCPScope                 func(*http.Request) (Scope, bool)
@@ -159,6 +183,12 @@ func Build(_ context.Context, config Config) (*Module, error) {
 			return config.DispatchAPIGen(scopeFromAgent(scope), operationID, writer, request)
 		}
 	}
+	var queryContext func(context.Context, agent.Scope) context.Context
+	if config.QueryContext != nil {
+		queryContext = func(ctx context.Context, scope agent.Scope) context.Context {
+			return config.QueryContext(ctx, scopeFromAgent(scope))
+		}
+	}
 	var mcpScope func(*http.Request) (agent.Scope, bool)
 	if config.MCPScope != nil {
 		mcpScope = func(r *http.Request) (agent.Scope, bool) {
@@ -173,6 +203,8 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		dashboardMetrics: config.DashboardMetrics, authorizeAnyObject: config.AuthorizeAnyObject,
 		skipContextAuthorization: config.SkipContextAuthorization,
 		recordAudit:              config.RecordAudit, dispatchAPIGen: dispatchAPIGen,
+		catalog: config.Catalog, documentation: config.Documentation,
+		queryMetadata: config.QueryMetadata, queryContext: queryContext,
 		enableSystemPrompt: config.EnableSystemPrompt, broker: config.HTTP.Broker, logger: config.Logger,
 		pendingChatTitles: map[string]struct{}{},
 		mcpScope:          mcpScope, mcpProtect: config.MCPProtect,

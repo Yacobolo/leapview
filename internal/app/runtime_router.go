@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
 	deploymentmodule "github.com/Yacobolo/leapview/internal/deployment/module"
 	manageddatamodule "github.com/Yacobolo/leapview/internal/manageddata/module"
+	"github.com/Yacobolo/leapview/internal/platform/http/cursorsigning"
 	apihttpmiddleware "github.com/Yacobolo/leapview/internal/platform/http/middleware"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	jobsmodule "github.com/Yacobolo/leapview/internal/platform/jobs/module"
@@ -603,6 +605,26 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 					}
 					return version.RefreshedAt.Format(time.RFC3339)
 				},
+				QueryFreshness: func(ctx context.Context, workspaceID, modelID, servingSnapshot string) (dashboardmodule.QueryFreshness, bool) {
+					if routes.refreshModule == nil {
+						return dashboardmodule.QueryFreshness{}, false
+					}
+					version, ok, err := routes.refreshModule.DataVersion(ctx, workspaceID, policy.defaultEnvironment, modelID)
+					if err != nil || !ok {
+						return dashboardmodule.QueryFreshness{}, false
+					}
+					status := "stale"
+					if version.ServingStateID == servingSnapshot {
+						status = "current"
+					}
+					return dashboardmodule.QueryFreshness{
+						LastSuccessfulRefreshAt: version.RefreshedAt.UTC().Format(time.RFC3339),
+						SnapshotID:              strconv.FormatInt(version.SnapshotID, 10),
+						ServingStateID:          version.ServingStateID,
+						Source:                  version.Source,
+						Status:                  status,
+					}, true
+				},
 				AgentBootstrap: func(r *http.Request, workspaceID string) dashboardmodule.AgentBootstrap {
 					return dashboardAgentBootstrap(routes.agentModule.DashboardBootstrap(r, workspaceID))
 				},
@@ -623,6 +645,26 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				},
 				AuthorizeListObject: func(ctx context.Context, principalID string, object accessmodule.ObjectRef) (bool, error) {
 					return authorizeListObject(routes, runtime, platform, policy, ctx, principalID, object)
+				},
+				QueryFreshness: func(ctx context.Context, workspaceID, modelID, servingSnapshot string) (dashboardmodule.QueryFreshness, bool) {
+					if routes.refreshModule == nil {
+						return dashboardmodule.QueryFreshness{}, false
+					}
+					version, ok, err := routes.refreshModule.DataVersion(ctx, workspaceID, policy.defaultEnvironment, modelID)
+					if err != nil || !ok {
+						return dashboardmodule.QueryFreshness{}, false
+					}
+					status := "stale"
+					if version.ServingStateID == servingSnapshot {
+						status = "current"
+					}
+					return dashboardmodule.QueryFreshness{
+						LastSuccessfulRefreshAt: version.RefreshedAt.UTC().Format(time.RFC3339),
+						SnapshotID:              strconv.FormatInt(version.SnapshotID, 10),
+						ServingStateID:          version.ServingStateID,
+						Source:                  version.Source,
+						Status:                  status,
+					}, true
 				},
 			},
 			PublicTelemetry: dashboardmodule.PublicTelemetry{
@@ -653,7 +695,10 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		}
 	}
 	if routes.agentModule == nil {
-		var err error
+		documentation, err := buildAgentDocumentation()
+		if err != nil {
+			return err
+		}
 		routes.agentModule, err = agentmodule.Build(ctx, agentmodule.Config{
 			Database: database, Model: moduleWorkflow.agentConfig,
 			Service: moduleWorkflow.agent, Jobs: platform.asyncJobs, DefaultWorkspaceID: policy.defaultWorkspaceID,
@@ -671,9 +716,49 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			AuthorizeAnyObject:       routes.accessModule.AuthorizeAnyObject,
 			SkipContextAuthorization: platform.auth == nil,
 			RecordAudit:              routes.accessModule.RecordAudit,
-			EnableSystemPrompt:       runtime.persistenceConfigured,
-			Logger:                   platform.logger,
-			MCPProtect:               routes.accessModule.ProtectMCP,
+			Documentation:            documentation,
+			Catalog: agentmodule.BuildCatalog(agentmodule.CatalogConfig{
+				Search: routes.workspaceModule, Environment: policy.defaultEnvironment,
+				Workspaces: persistence.workspaceReadModel, RootMetrics: runtime.metrics,
+				MetricsForWorkspace: func(workspaceID string) (QueryMetrics, bool) {
+					return metricsForWorkspace(routes, runtime, platform, policy, workspaceID)
+				},
+				AuthorizeAnyObject: routes.accessModule.AuthorizeAnyObject,
+				RecordAudit:        routes.accessModule.RecordAudit,
+				SkipAuthorization:  platform.auth == nil,
+				SignCursor:         cursorsigning.Sign,
+				VerifyCursor:       cursorsigning.Verify,
+			}),
+			QueryMetadata: func(ctx context.Context, workspaceID, modelID string) agentmodule.VisualQueryMetadata {
+				metadata := agentmodule.VisualQueryMetadata{ServingSnapshot: "unversioned"}
+				if routes.workspaceModule != nil {
+					if snapshot, err := routes.workspaceModule.ActiveServingStateID(ctx, workspaceID); err == nil && snapshot != "" {
+						metadata.ServingSnapshot = snapshot
+					}
+				}
+				if routes.refreshModule == nil {
+					return metadata
+				}
+				version, ok, err := routes.refreshModule.DataVersion(ctx, workspaceID, policy.defaultEnvironment, modelID)
+				if err != nil || !ok {
+					return metadata
+				}
+				status := "stale"
+				if version.ServingStateID == metadata.ServingSnapshot {
+					status = "current"
+				}
+				metadata.Freshness = &agentmodule.QueryFreshness{
+					LastSuccessfulRefreshAt: version.RefreshedAt.UTC().Format(time.RFC3339),
+					SnapshotID:              strconv.FormatInt(version.SnapshotID, 10),
+					ServingStateID:          version.ServingStateID,
+					Source:                  version.Source,
+					Status:                  status,
+				}
+				return metadata
+			},
+			EnableSystemPrompt: runtime.persistenceConfigured,
+			Logger:             platform.logger,
+			MCPProtect:         routes.accessModule.ProtectMCP,
 			MCPScope: func(r *http.Request) (agentmodule.Scope, bool) {
 				identity, ok := routes.accessModule.MCPIdentity(r)
 				if !ok {
@@ -707,6 +792,19 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 					return false
 				}
 				return apigenapi.DispatchAPIGenOperation(operationID, apiDispatcher, apiprotocol.TransportErrorResponder{Logger: platform.logger}, writer, request)
+			},
+			QueryContext: func(ctx context.Context, scope agentmodule.Scope) context.Context {
+				principal := accessmodule.Principal{ID: scope.PrincipalID, DevBypass: scope.DevAuthBypass}
+				if platform.auth == nil {
+					principal = accessmodule.LocalDeveloperPrincipal()
+				}
+				ctx = accessmodule.WithPrincipal(ctx, principal)
+				if scope.Credential.Restricted || scope.Credential.WorkspaceID != "" || len(scope.Credential.Privileges) > 0 {
+					ctx = accessmodule.WithAPICredential(ctx, accessmodule.AgentAPICredential(
+						scope.PrincipalID, scope.Credential.WorkspaceID, scope.Credential.Privileges,
+					))
+				}
+				return ctx
 			},
 			HTTP: agentmodule.HTTPConfig{
 				Settings: persistence.agentSettings, Broker: runtime.broker,

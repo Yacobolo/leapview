@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/Yacobolo/leapview/internal/access"
+	"github.com/Yacobolo/leapview/internal/dashboard/api"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
 	dashboardhttp "github.com/Yacobolo/leapview/internal/dashboard/http"
@@ -78,6 +79,7 @@ type HTTPConfig struct {
 	Layout              func(*http.Request) webpage.Provider
 	Environment         func(*http.Request) string
 	DataRefreshedAt     func(context.Context, string, string, string) string
+	QueryFreshness      func(context.Context, string, string, string) (api.QueryFreshness, bool)
 	AgentBootstrap      func(*http.Request, string) dashboardui.AgentBootstrap
 	Presentation        dashboardui.Presentation
 	Assets              staticasset.Resolver
@@ -88,6 +90,7 @@ type SemanticConfig struct {
 	MetricsForWorkspace func(string) (queryruntime.Metrics, bool)
 	CurrentPrincipalID  func(*http.Request) string
 	AuthorizeListObject func(context.Context, string, access.ObjectRef) (bool, error)
+	QueryFreshness      func(context.Context, string, string, string) (api.QueryFreshness, bool)
 }
 
 type SignalBroker interface {
@@ -97,6 +100,7 @@ type SignalBroker interface {
 }
 
 type Presentation = dashboardui.Presentation
+type QueryFreshness = api.QueryFreshness
 type AgentBootstrap = dashboardui.AgentBootstrap
 type ChatSignal = dashboardsignals.ChatSignal
 type ChatConversationSummary = dashboardsignals.ChatConversationSummary
@@ -185,6 +189,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		Presentation: config.HTTP.Presentation,
 		Assets:       config.HTTP.Assets,
 		Environment:  config.HTTP.Environment, DataRefreshedAt: config.HTTP.DataRefreshedAt,
+		QueryFreshness: config.HTTP.QueryFreshness,
 		AgentBootstrap: config.HTTP.AgentBootstrap,
 	}
 	handler.SessionKey = func(r *http.Request, definition dashboarddefinition.Definition, clientID, streamInstanceID string) dashboardsession.Key {
@@ -218,6 +223,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 			Metrics: config.Semantic.Metrics, MetricsForWorkspace: metricsForSemantic,
 			CurrentPrincipalID:  config.Semantic.CurrentPrincipalID,
 			AuthorizeListObject: config.Semantic.AuthorizeListObject,
+			QueryFreshness:      config.Semantic.QueryFreshness,
 		},
 		snapshot:  config.ServingSnapshot,
 		publicURL: config.PublicURL, currentActor: config.CurrentActor,

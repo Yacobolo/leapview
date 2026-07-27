@@ -278,7 +278,17 @@ func (a *Agent) runOneTool(ctx context.Context, call ToolCall) (result toolExecu
 		}
 	}
 	if len(body) > a.def.Limits.MaxToolResultBytes {
-		result.message = a.toolErrorMessage(call, "tool_output_too_large", "Tool output exceeded the configured size limit.", nil, false)
+		result.message = a.toolErrorMessage(
+			call,
+			"tool_output_contract_violation",
+			"Tool returned a model result larger than its output contract permits; no partial result was exposed.",
+			[]string{
+				fmt.Sprintf("tool=%s", call.Name),
+				fmt.Sprintf("actual_bytes=%d", len(body)),
+				fmt.Sprintf("max_bytes=%d", a.def.Limits.MaxToolResultBytes),
+			},
+			false,
+		)
 		return result
 	}
 	result.message = Message{

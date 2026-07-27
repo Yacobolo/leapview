@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -65,18 +66,17 @@ func (m *Module) mcpServer(r *http.Request) (*mcp.Server, error) {
 	}, &mcp.ServerOptions{Capabilities: &mcp.ServerCapabilities{}})
 	for _, definition := range catalog.Definitions() {
 		definition := definition
-		readOnly := definition.Effect == "" || definition.Effect == "read"
-		closedWorld := false
-		destructive := false
+		annotations := agenttools.AnnotationsForEffect(definition.Effect)
 		server.AddTool(&mcp.Tool{
 			Name:         definition.Name,
 			Description:  definition.Description,
 			InputSchema:  definition.InputSchema,
 			OutputSchema: definition.OutputSchema,
 			Annotations: &mcp.ToolAnnotations{
-				ReadOnlyHint:    readOnly,
-				DestructiveHint: &destructive,
-				OpenWorldHint:   &closedWorld,
+				ReadOnlyHint:    annotations.ReadOnlyHint,
+				DestructiveHint: &annotations.DestructiveHint,
+				IdempotentHint:  annotations.IdempotentHint,
+				OpenWorldHint:   &annotations.OpenWorldHint,
 			},
 		}, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			arguments := request.Params.Arguments

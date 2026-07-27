@@ -27,7 +27,8 @@ The package is designed for LeapView first, but it must be generic enough to lif
 - OpenAI-compatible provider contract: model requests and responses follow the OpenAI-compatible chat/tool API used by providers such as OpenAI and DeepSeek.
 - Provider flexibility through compatibility: OpenAI, DeepSeek, OpenAI-compatible gateways, local compatible endpoints, and test fakes can sit behind the same client interface. Non-compatible providers must adapt to the OpenAI-compatible API outside the core.
 - Tool schema convention: tool inputs use JSON Schema-compatible objects because that is the OpenAI tool contract.
-- Tool validation is part of the harness: unknown tools, malformed JSON arguments, schema validation failures, handler failures, and outputs that remain overlarge after truncation are converted into clear model-visible tool results.
+- Tool validation is part of the harness: unknown tools, malformed JSON arguments, schema validation failures, handler failures, and outputs that violate the result byte contract are converted into clear model-visible tool results.
+- Tool providers own semantic output bounds: pagination, windows, counts, and completeness are calculated before the result reaches the harness. The harness never silently slices successful structured output.
 - Compaction is part of the harness: keep the last configured turns verbatim and summarize older turns into a model-visible summary message.
 - Context-first cancellation: all model calls and tool calls receive `context.Context`.
 - Deterministic state boundaries: one run uses the harness configuration supplied at construction time.
@@ -153,7 +154,7 @@ Default limits:
 - `MaxToolCalls`: 64 per run
 - `MaxConcurrentTools`: 4 per assistant turn
 - `ToolTimeout`: 30 seconds
-- `MaxToolResultBytes`: 64 KiB after tool-output formatting and truncation
+- `MaxToolResultBytes`: 64 KiB after tool-output formatting
 - `ReserveOutputTokens`: 4096
 - `HardInputLimitTokens`: `ContextWindowTokens - ReserveOutputTokens`
 
@@ -244,7 +245,7 @@ Required fields:
 - Human/model-visible description.
 - Input schema as JSON Schema-compatible data.
 - Handler function.
-- Optional result size/truncation hints.
+- A bounded output schema with explicit pagination or completeness metadata where the result can be partial.
 
 Illustrative shape:
 
@@ -301,8 +302,9 @@ Validation rules:
 - Tool arguments must be valid JSON.
 - Tool arguments must satisfy the tool input schema.
 - Tool output must be JSON-serializable.
-- Tool output is normalized, truncated, and serialized as TOON by default.
-- Tool output must fit the configured result-size limit after formatting and truncation.
+- Tool output is normalized and serialized as TOON by default.
+- The harness does not slice strings, arrays, or nested objects. Providers must calculate semantic pages and continuation state from exactly the content they return.
+- Tool output must fit the configured result-size limit after formatting. An overlarge result becomes a `tool_output_contract_violation`; no partial success is exposed.
 
 If validation fails, the harness does not call the handler. It appends a tool-result message with `is_error=true` and a concise, model-readable payload.
 
@@ -328,7 +330,7 @@ Recommended tool error codes:
 - `tool_execution_failed`
 - `tool_panic`
 - `tool_timeout`
-- `tool_output_too_large`
+- `tool_output_contract_violation`
 - `tool_result_invalid`
 
 The goal is to help the model repair its next call rather than strand the run on a formatting mistake.
@@ -443,7 +445,7 @@ Policy controls:
 - Max concurrent tools per turn.
 - Max total tool calls per run.
 - Per-tool timeout.
-- Result truncation policy.
+- Absolute model-result and display-result byte ceilings.
 
 Approval is not part of V1.
 

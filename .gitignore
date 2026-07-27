@@ -11,6 +11,7 @@ bin/
 coverage.out
 api/gen/
 api/.apigen/
+internal/agent/contracts/gen/
 internal/app/api/gen/
 internal/app/config/config_gen.go
 internal/app/config/spec/names_gen.go

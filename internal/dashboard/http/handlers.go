@@ -97,6 +97,7 @@ type Handler struct {
 	Assets               staticasset.Resolver
 	Environment          func(*nethttp.Request) string
 	DataRefreshedAt      func(context.Context, string, string, string) string
+	QueryFreshness       func(context.Context, string, string, string) (api.QueryFreshness, bool)
 	CommandGuard         func(*nethttp.Request, Metrics, command.Request, dashboard.Signals) error
 	SharedCommandPrepare SharedCommandPrepare
 	SessionStore         dashboardsession.Store

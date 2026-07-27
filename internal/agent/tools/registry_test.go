@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"slices"
 	"testing"
 
@@ -8,55 +9,199 @@ import (
 )
 
 func TestAPIGenOperationsUseGeneratedReadOnlyToolContracts(t *testing.T) {
-	operations := testAPIGenOperations()
-	if len(operations) != 1 {
-		t.Fatalf("BuildAPIGenOperations() count = %d, want 1", len(operations))
+	operations := curatedTestAPIGenOperations()
+	if len(operations) != 2 {
+		t.Fatalf("BuildAPIGenOperations() count = %d, want 2", len(operations))
 	}
-	if operation := operations[0]; operation.Tool.OperationID != operation.Contract.OperationID {
-		t.Fatalf("tool operation = %q, registry operation = %q", operation.Tool.OperationID, operation.Contract.OperationID)
+	operationsByName := make(map[string]APIGenOperation, len(operations))
+	for _, operation := range operations {
+		operationsByName[operation.Tool.Name] = operation
+		if operation.Tool.Effect != agenttool.EffectRead {
+			t.Fatalf("tool %q effect = %q, want read", operation.Tool.Name, operation.Tool.Effect)
+		}
+		if operation.Tool.OperationID != operation.Contract.OperationID {
+			t.Fatalf("tool %q operation = %q, registry operation = %q", operation.Tool.Name, operation.Tool.OperationID, operation.Contract.OperationID)
+		}
 	}
-	if !slices.Contains(APIGenToolNames(operations), "list_dashboards") {
-		t.Fatalf("APIGenToolNames() = %#v, want list_dashboards", APIGenToolNames(operations))
+	for name, operationID := range map[string]string{
+		"query_semantic_model":   "querySemanticModel",
+		"query_dashboard_visual": "queryDashboardVisualData",
+	} {
+		operation, ok := operationsByName[name]
+		if !ok {
+			t.Fatalf("BuildAPIGenOperations() missing generated tool %q", name)
+		}
+		if operation.Tool.OperationID != operationID {
+			t.Fatalf("tool %q operation = %q, want %q", name, operation.Tool.OperationID, operationID)
+		}
+		if operation.Tool.Effect != agenttool.EffectRead {
+			t.Fatalf("tool %q effect = %q, want read", name, operation.Tool.Effect)
+		}
+	}
+	if slices.Contains(APIGenToolNames(operations), "query_dashboard_page") {
+		t.Fatalf("APIGenToolNames() = %#v, must not contain query_dashboard_page", APIGenToolNames(operations))
 	}
 }
 
-func TestWorkspaceBindingIsTrustedContext(t *testing.T) {
-	for _, operation := range testAPIGenOperations() {
-		if operation.Tool.Name != "list_dashboards" {
-			continue
-		}
+func TestAPIGenQueryWorkspaceBindingsAreExplicitModelArguments(t *testing.T) {
+	for _, operation := range curatedTestAPIGenOperations() {
+		found := false
 		for _, binding := range operation.Tool.Bindings {
-			if binding.WireName == "workspace" {
-				if binding.Mode != "context" || binding.ContextKey != "workspace" {
-					t.Fatalf("workspace binding = %#v", binding)
-				}
-				return
+			if binding.Source != "path" || binding.WireName != "workspace" {
+				continue
+			}
+			found = true
+			if binding.Mode != "model" || binding.Argument != "workspace" || binding.ContextKey != "" || !binding.Required {
+				t.Fatalf("tool %q workspace binding = %#v, want required model argument", operation.Tool.Name, binding)
 			}
 		}
-		t.Fatal("list_dashboards has no workspace binding")
+		if !found {
+			t.Fatalf("tool %q has no workspace path binding", operation.Tool.Name)
+		}
+		var schema struct {
+			Properties map[string]struct {
+				MinLength int `json:"minLength"`
+			} `json:"properties"`
+			Required []string `json:"required"`
+		}
+		if err := json.Unmarshal(operation.Tool.InputSchema, &schema); err != nil {
+			t.Fatalf("decode tool %q input schema: %v", operation.Tool.Name, err)
+		}
+		if schema.Properties["workspace"].MinLength != 1 || !slices.Contains(schema.Required, "workspace") {
+			t.Fatalf("tool %q input schema = %s, want required non-empty workspace", operation.Tool.Name, operation.Tool.InputSchema)
+		}
 	}
-	t.Fatal("list_dashboards tool not found")
 }
 
-func testAPIGenOperations() []APIGenOperation {
+func TestToolNamesAreTheCuratedSurface(t *testing.T) {
+	operations := curatedTestAPIGenOperations()
+	want := []string{
+		"catalog_get",
+		"catalog_list",
+		"catalog_search",
+		"docs_read",
+		"docs_search",
+		"query_dashboard_visual",
+		"query_semantic_model",
+		"query_visual",
+	}
+	if got := ToolNames(operations); !slices.Equal(got, want) {
+		t.Fatalf("ToolNames() = %#v, want %#v", got, want)
+	}
+}
+
+func TestReferenceCatalogComesFromCanonicalProviderDefinitions(t *testing.T) {
+	operations := curatedTestAPIGenOperations()
+	reference, err := ReferenceCatalog(operations)
+	if err != nil {
+		t.Fatalf("ReferenceCatalog(): %v", err)
+	}
+	if len(reference) != len(ToolNames(operations)) {
+		t.Fatalf("ReferenceCatalog() count = %d, want %d", len(reference), len(ToolNames(operations)))
+	}
+	definitions := (ProviderSet{APIGen: APIGenProvider{Operations: operations}}).Definitions(Scope{})
+	if len(definitions) != len(reference) {
+		t.Fatalf("ProviderSet definitions = %d, reference = %d", len(definitions), len(reference))
+	}
+	wantDefaults := map[string]map[string]any{
+		"catalog_get": {}, "catalog_list": {"limit": 25}, "catalog_search": {"limit": 10},
+		"docs_read": {"limit": 200, "offset": 1}, "docs_search": {"limit": 8},
+		"query_dashboard_visual": {"limit": 50}, "query_semantic_model": {"limit": 25}, "query_visual": {"limit": 50},
+	}
+	for index, tool := range reference {
+		definition := definitions[index]
+		if tool.Name != definition.Name {
+			t.Fatalf("reference[%d].Name = %q, definition = %q", index, tool.Name, definition.Name)
+		}
+		if !json.Valid(tool.InputSchema) || !json.Valid(tool.OutputSchema) {
+			t.Fatalf("tool %q has invalid generated schemas", tool.Name)
+		}
+		if string(tool.InputSchema) != string(definition.InputSchema) || string(tool.OutputSchema) != string(definition.OutputSchema) {
+			t.Fatalf("tool %q reference schemas drifted from provider definitions", tool.Name)
+		}
+		if tool.Effect != "read" || !tool.Annotations.ReadOnlyHint || !tool.Annotations.IdempotentHint || tool.Annotations.DestructiveHint || tool.Annotations.OpenWorldHint {
+			t.Fatalf("tool %q annotations = %#v", tool.Name, tool.Annotations)
+		}
+		if tool.Privilege == "" || tool.OperationID == "" {
+			t.Fatalf("tool %q metadata = %#v", tool.Name, tool)
+		}
+		gotDefaults, _ := json.Marshal(tool.Defaults)
+		expectedDefaults, _ := json.Marshal(wantDefaults[tool.Name])
+		if string(gotDefaults) != string(expectedDefaults) {
+			t.Fatalf("tool %q defaults = %#v, want %#v", tool.Name, tool.Defaults, wantDefaults[tool.Name])
+		}
+	}
+}
+
+func TestCanonicalProviderSchemasDoNotVaryByWorkspaceContext(t *testing.T) {
+	operations := curatedTestAPIGenOperations()
+	providers := ProviderSet{APIGen: APIGenProvider{Operations: operations}}
+	global := providers.Definitions(Scope{})
+	workspace := providers.Definitions(Scope{WorkspaceID: "sales"})
+	if len(global) != len(workspace) {
+		t.Fatalf("global definitions = %d, workspace definitions = %d", len(global), len(workspace))
+	}
+	for index := range global {
+		if global[index].Name != workspace[index].Name {
+			t.Fatalf("definition[%d] names = %q and %q", index, global[index].Name, workspace[index].Name)
+		}
+		if string(global[index].InputSchema) != string(workspace[index].InputSchema) {
+			t.Fatalf("tool %q input schema varies by workspace context", global[index].Name)
+		}
+		if string(global[index].OutputSchema) != string(workspace[index].OutputSchema) {
+			t.Fatalf("tool %q output schema varies by workspace context:\nglobal=%s\nworkspace=%s", global[index].Name, global[index].OutputSchema, workspace[index].OutputSchema)
+		}
+	}
+}
+
+func curatedTestAPIGenOperations() []APIGenOperation {
 	contracts := map[string]OperationContract{
-		"listDashboards": {
-			OperationID: "listDashboards", Method: "GET", Path: "/api/v1/workspaces/{workspace}/dashboards",
+		"querySemanticModel": {
+			OperationID: "querySemanticModel", Method: "POST", Path: "/api/v1/workspaces/{workspace}/semantic-models/{model}/query",
 			Protected: true, AuthzMode: "privilege",
-			Extensions: map[string]any{"x-authz": map[string]any{"privilege": "VIEW_ITEM"}},
+			Extensions: map[string]any{"x-authz": map[string]any{"mode": "privilege", "privilege": "QUERY_DATA"}},
 		},
-		"mutateDashboard": {
-			OperationID: "mutateDashboard", Method: "DELETE", Path: "/api/v1/workspaces/{workspace}/dashboards/{dashboard}",
+		"queryDashboardVisualData": {
+			OperationID: "queryDashboardVisualData", Method: "POST", Path: "/api/v1/workspaces/{workspace}/dashboards/query-visual",
 			Protected: true, AuthzMode: "privilege",
-			Extensions: map[string]any{"x-authz": map[string]any{"privilege": "VIEW_ITEM"}},
+			Extensions: map[string]any{"x-authz": map[string]any{"mode": "privilege", "privilege": "QUERY_DATA"}},
 		},
 	}
+	input := json.RawMessage(`{"type":"object","properties":{"workspace":{"type":"string","minLength":1},"model":{"type":"string","minLength":1},"limit":{"type":"integer"}},"required":["workspace","model"],"additionalProperties":false}`)
+	semanticOutput := json.RawMessage(`{
+		"type":"object",
+		"additionalProperties":false,
+		"properties":{
+			"queryId":{"type":"string"},
+			"servingSnapshot":{"type":"string"},
+			"freshness":{"type":"object","additionalProperties":false,"properties":{}},
+			"completeness":{"type":"object","additionalProperties":false,"properties":{"returnedRows":{"type":"integer"},"hasMore":{"type":"boolean"}}},
+			"columns":{"type":"array","items":{"type":"object","additionalProperties":false,"properties":{"name":{"type":"string"},"nullable":{"type":"boolean"},"fieldRef":{"type":"string"},"label":{"type":"string"},"kind":{"type":"string"},"dataType":{"type":"string"},"unit":{"type":"string"},"format":{"type":"string"}}}},
+			"rows":{"type":"array"},
+			"hasMore":{"type":"boolean"}
+		}
+	}`)
+	output := json.RawMessage(`{"type":"object","additionalProperties":true}`)
 	tools := map[string]agenttool.Contract{
-		"list_dashboards": {
-			Name: "list_dashboards", OperationID: "listDashboards", Effect: agenttool.EffectRead,
-			Bindings: []agenttool.Binding{{WireName: "workspace", Mode: "context", ContextKey: "workspace"}},
+		"query_semantic_model": {
+			Name: "query_semantic_model", OperationID: "querySemanticModel", Method: "POST",
+			Path: "/api/v1/workspaces/{workspace}/semantic-models/{model}/query", Effect: agenttool.EffectRead,
+			InputSchema: input, OutputSchema: semanticOutput,
+			Bindings: []agenttool.Binding{
+				{Argument: "workspace", Source: "path", WireName: "workspace", Mode: "model", Required: true, Schema: agenttool.ValueSchema{Type: "string"}},
+				{Argument: "model", Source: "path", WireName: "model", Mode: "model", Required: true, Schema: agenttool.ValueSchema{Type: "string"}},
+				{Argument: "limit", Source: "body", WireName: "limit", Mode: "model", Default: 25, Schema: agenttool.ValueSchema{Type: "integer"}},
+			},
 		},
-		"mutate_dashboard": {Name: "mutate_dashboard", OperationID: "mutateDashboard", Effect: agenttool.EffectRead},
+		"query_dashboard_visual": {
+			Name: "query_dashboard_visual", OperationID: "queryDashboardVisualData", Method: "POST",
+			Path: "/api/v1/workspaces/{workspace}/dashboards/query-visual", Effect: agenttool.EffectRead,
+			InputSchema: input, OutputSchema: output,
+			Bindings: []agenttool.Binding{
+				{Argument: "workspace", Source: "path", WireName: "workspace", Mode: "model", Required: true, Schema: agenttool.ValueSchema{Type: "string"}},
+				{Argument: "limit", Source: "body", WireName: "limit", Mode: "model", Default: 50, Schema: agenttool.ValueSchema{Type: "integer"}},
+			},
+		},
 	}
 	return BuildAPIGenOperations(contracts, tools)
 }

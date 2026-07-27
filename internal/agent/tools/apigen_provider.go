@@ -9,7 +9,9 @@ import (
 	"net/url"
 	"strings"
 
+	agentcontracts "github.com/Yacobolo/leapview/internal/agent/contracts"
 	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
+	dashboardapi "github.com/Yacobolo/leapview/internal/dashboard/api"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 	"github.com/Yacobolo/toolbelt/apigen/runtime/agenttool"
 	"github.com/go-chi/chi/v5"
@@ -38,15 +40,21 @@ type APIGenProvider struct {
 	Operations []APIGenOperation
 }
 
+const maxAgentQueryRows = 50
+
 func (p APIGenProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
 	definitions := make([]agentcore.ToolDefinition, 0, len(p.Operations))
 	for _, operation := range p.Operations {
 		operation := operationForScope(operation, scope)
+		outputSchema := requireToolObjectSchema(operation.Tool.OutputSchema)
+		if operation.Tool.Name == "query_dashboard_visual" {
+			outputSchema = json.RawMessage(agentcontracts.DashboardVisualQueryResultSchemaJSON)
+		}
 		definitions = append(definitions, agentcore.ToolDefinition{
 			Name:         operation.Tool.Name,
 			Description:  operation.Tool.Description,
-			InputSchema:  append(json.RawMessage(nil), operation.Tool.InputSchema...),
-			OutputSchema: requireToolObjectSchema(operation.Tool.OutputSchema),
+			InputSchema:  boundCuratedQueryInputSchema(operation.Tool.Name, operation.Tool.InputSchema),
+			OutputSchema: outputSchema,
 			Effect:       string(operation.Tool.Effect),
 			Tags:         append([]string(nil), operation.Tool.Tags...),
 			Handler: agentcore.ToolHandlerFunc(func(ctx context.Context, call agentcore.ToolCall) (agentcore.ToolResult, error) {
@@ -55,6 +63,27 @@ func (p APIGenProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
 		})
 	}
 	return definitions
+}
+
+func boundCuratedQueryInputSchema(toolName string, input json.RawMessage) json.RawMessage {
+	if toolName != "query_semantic_model" && toolName != "query_dashboard_visual" {
+		return append(json.RawMessage(nil), input...)
+	}
+	var schema map[string]any
+	if err := json.Unmarshal(input, &schema); err != nil {
+		return append(json.RawMessage(nil), input...)
+	}
+	properties, _ := schema["properties"].(map[string]any)
+	limit, _ := properties["limit"].(map[string]any)
+	if limit == nil {
+		return append(json.RawMessage(nil), input...)
+	}
+	limit["maximum"] = maxAgentQueryRows
+	encoded, err := json.Marshal(schema)
+	if err != nil {
+		return append(json.RawMessage(nil), input...)
+	}
+	return encoded
 }
 
 func requireToolObjectSchema(input json.RawMessage) json.RawMessage {
@@ -77,15 +106,14 @@ func (p APIGenProvider) Run(ctx context.Context, scope Scope, operation APIGenOp
 	if p.Authorize == nil {
 		return apigenAgentToolError("authorization_failed", "agent tool authorizer is not configured")
 	}
-	request, err := agenttool.BuildRequest(operation.Tool, call.Arguments, agenttool.Context{"workspace": scope.WorkspaceID})
+	arguments := normalizeCuratedQueryArguments(operation.Tool.Name, call.Arguments)
+	request, err := agenttool.BuildRequest(operation.Tool, arguments, agenttool.Context{"workspace": scope.WorkspaceID})
 	if err != nil {
 		return agentToolRuntimeError(err)
 	}
 	request = withAPIGenRouteContext(request, operation.Tool.Path)
 	runScope := scope
-	if runScope.WorkspaceID == "" {
-		runScope.WorkspaceID = strings.TrimSpace(chi.URLParam(request, "workspace"))
-	}
+	runScope.WorkspaceID = strings.TrimSpace(chi.URLParam(request, "workspace"))
 	if errResult, ok := p.Authorize(ctx, runScope, operation.Contract.OperationID); !ok {
 		return errResult
 	}
@@ -98,7 +126,13 @@ func (p APIGenProvider) Run(ctx context.Context, scope Scope, operation APIGenOp
 		ObjectType:  "agent_tool",
 		ObjectID:    operation.Tool.Name,
 	})
+	if operation.Tool.Name == "query_dashboard_visual" {
+		ctx = dashboardapi.WithAgentVisualProjection(ctx)
+	}
 	request = request.WithContext(ctx)
+	if strings.TrimSpace(call.ID) != "" {
+		request.Header.Set("X-Request-ID", call.ID)
+	}
 	request = withAPIGenRouteContext(request, operation.Tool.Path)
 	if p.Dispatch == nil {
 		return apigenAgentToolError("operation_not_found", "APIGen operation dispatcher is not configured")
@@ -107,11 +141,71 @@ func (p APIGenProvider) Run(ctx context.Context, scope Scope, operation APIGenOp
 	if ok := p.Dispatch(runScope, operation.Contract.OperationID, capture, request); !ok {
 		return apigenAgentToolError("operation_not_found", "APIGen operation is not dispatchable")
 	}
-	result, err := agenttool.ProjectResponse(operation.Tool, capture.Response())
+	responseContract := operation.Tool
+	if operation.Tool.Name == "query_dashboard_visual" {
+		responseContract.OutputSchema = json.RawMessage(agentcontracts.DashboardVisualQueryResultSchemaJSON)
+	}
+	result, err := agenttool.ProjectResponse(responseContract, capture.Response())
 	if err != nil {
 		return agentToolRuntimeError(err)
 	}
 	return agentcore.ToolResult{Content: result.Content, IsError: result.IsError}
+}
+
+func normalizeCuratedQueryArguments(toolName string, arguments json.RawMessage) json.RawMessage {
+	var input map[string]any
+	if err := json.Unmarshal(arguments, &input); err != nil {
+		return arguments
+	}
+	switch toolName {
+	case "query_dashboard_visual":
+		dashboardID, _ := input["dashboard"].(string)
+		input["page"] = stripCatalogRefPrefix(input["page"], dashboardID)
+		input["visual"] = stripCatalogRefPrefix(input["visual"], dashboardID)
+	case "query_semantic_model":
+		modelID, _ := input["model"].(string)
+		for _, key := range []string{"dimensions", "measures", "time", "sort", "filters"} {
+			normalizeCatalogFieldValues(input[key], modelID)
+		}
+	}
+	normalized, err := json.Marshal(input)
+	if err != nil {
+		return arguments
+	}
+	return normalized
+}
+
+func normalizeCatalogFieldValues(value any, modelID string) {
+	switch current := value.(type) {
+	case []any:
+		for _, item := range current {
+			normalizeCatalogFieldValues(item, modelID)
+		}
+	case map[string]any:
+		for key, item := range current {
+			if key == "field" || key == "fact" {
+				current[key] = stripCatalogRefPrefix(item, modelID)
+				continue
+			}
+			normalizeCatalogFieldValues(item, modelID)
+		}
+	}
+}
+
+func stripCatalogRefPrefix(value any, parentID string) any {
+	text, ok := value.(string)
+	if !ok || strings.TrimSpace(parentID) == "" {
+		return value
+	}
+	if local, ok := strings.CutPrefix(text, strings.TrimSpace(parentID)+"."); ok && strings.TrimSpace(local) != "" {
+		return local
+	}
+	return value
+}
+
+func stripCatalogRefString(value, parentID string) string {
+	normalized, _ := stripCatalogRefPrefix(value, parentID).(string)
+	return normalized
 }
 
 type responseCapture struct {
@@ -159,8 +253,19 @@ func operationForScope(operation APIGenOperation, scope Scope) APIGenOperation {
 	if strings.TrimSpace(scope.WorkspaceID) != "" {
 		return operation
 	}
+	hasWorkspaceContext := false
+	for index := range operation.Tool.Bindings {
+		binding := &operation.Tool.Bindings[index]
+		if binding.Mode != "context" || binding.ContextKey != "workspace" {
+			continue
+		}
+		hasWorkspaceContext = true
+		break
+	}
+	if !hasWorkspaceContext {
+		return operation
+	}
 	tool := agenttool.CloneContract(operation.Tool)
-	promoted := false
 	for index := range tool.Bindings {
 		binding := &tool.Bindings[index]
 		if binding.Mode != "context" || binding.ContextKey != "workspace" {
@@ -170,11 +275,8 @@ func operationForScope(operation APIGenOperation, scope Scope) APIGenOperation {
 		binding.Mode = "model"
 		binding.ContextKey = ""
 		binding.Required = true
-		promoted = true
 	}
-	if promoted {
-		tool.InputSchema = requireToolStringProperty(tool.InputSchema, "workspace")
-	}
+	tool.InputSchema = requireToolStringProperty(tool.InputSchema, "workspace")
 	operation.Tool = tool
 	return operation
 }

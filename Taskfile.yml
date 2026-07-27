@@ -181,11 +181,13 @@ tasks:
       - task: db:generate
       - task: config:generate
       - task: api:generate
+      - task: agent-contracts:generate
       - task: ui-signals:generate
       - task: schema:generate
       - task: visualization-ir:generate
       - task: map-style:generate
       - task: cli-docs:generate
+      - task: agent-tool-docs:generate
       - task: node:deps
       - task: docs:render
 
@@ -194,6 +196,7 @@ tasks:
     cmds:
       - task: schema:generate
       - task: cli-docs:generate
+      - task: agent-tool-docs:generate
       - task: node:deps
       - task: docs:render
 
@@ -202,6 +205,7 @@ tasks:
     method: checksum
     deps:
       - visual-docs:generate
+      - agent-tool-docs:generate
     sources:
       - Taskfile.yml
       - docs/navigation.yaml
@@ -214,6 +218,9 @@ tasks:
       - docs/reference/cli/*.md
       - docs/reference/cli/catalog.json
       - docs/reference/cli/manifest.json
+      - docs/reference/agent-tools/*.md
+      - docs/reference/agent-tools/catalog.json
+      - docs/reference/agent-tools/manifest.json
       - docs/reference/config/*.md
       - docs/reference/config/catalog.json
       - docs/visuals/*.md
@@ -233,6 +240,7 @@ tasks:
       - node:deps
     cmds:
       - bun run docs:validate-diagrams
+      - go run ./internal/app/tools/agenttooldocgen --check
       - go run ./internal/app/tools/visualdocgen --check
       - go run ./internal/app/tools/docsitegen --check
       - go test ./internal/app/site/http -run '^TestEveryRenderedDocumentationLinkResolves$' -count=1
@@ -278,6 +286,27 @@ tasks:
     cmds:
       - go run ./internal/app/tools/clidocgen
 
+  agent-tool-docs:generate:
+    desc: Generate the public agent tool reference from the canonical runtime catalog
+    deps:
+      - api:generate
+      - agent-contracts:generate
+    method: checksum
+    sources:
+      - Taskfile.yml
+      - internal/agent/contracts/typespec/**/*.tsp
+      - api/typespec/**/*.tsp
+      - internal/agent/contracts/**/*.go
+      - internal/app/api/gen/**/*.go
+      - internal/agent/tools/**/*.go
+      - internal/app/tools/agenttooldocgen/**/*.go
+    generates:
+      - docs/reference/agent-tools/*.md
+      - docs/reference/agent-tools/catalog.json
+      - docs/reference/agent-tools/manifest.json
+    cmds:
+      - go run ./internal/app/tools/agenttooldocgen
+
   db:generate:
     desc: Generate SQLite adapter code from the checked-in schema and queries
     method: checksum
@@ -321,7 +350,7 @@ tasks:
     cmds:
       - task: config:check
       - |
-        changed="$(git status --porcelain -- .env.example docs/api/openapi.yaml docs/llms.txt schemas/config schemas/json)"
+        changed="$(git status --porcelain -- .env.example docs/api/openapi.yaml docs/llms.txt docs/reference/agent-tools internal/agent/contracts schemas/config schemas/json)"
         test -z "$changed" || { printf 'public contract snapshots are stale:\n%s\n' "$changed" >&2; exit 1; }
 
   api:generate:
@@ -346,6 +375,24 @@ tasks:
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.6.5 typespec-compile -manifest api/apigen.yaml -target leapview-v1
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.6.5 all -manifest api/apigen.yaml -target leapview-v1
       - go run ./internal/app/tools/openapidocgen
+
+  agent-contracts:generate:
+    desc: Generate compact agent-tool DTOs and JSON Schemas
+    method: checksum
+    sources:
+      - Taskfile.yml
+      - api/apigen.yaml
+      - internal/agent/contracts/typespec/**/*.tsp
+      - internal/agent/contracts/generate/**/*.go
+    generates:
+      - internal/agent/contracts/gen/agent-tools-ir.json
+      - internal/agent/contracts/gen/agent-tools.schema.json
+      - internal/agent/contracts/models.gen.go
+      - internal/agent/contracts/schemas.gen.go
+    cmds:
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.6.5 typespec-compile -manifest api/apigen.yaml -target agent-tool-contracts
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.6.5 all -manifest api/apigen.yaml -target agent-tool-contracts
+      - go run ./internal/agent/contracts/generate
 
   schema:generate:
     desc: Generate JSON Schema artifacts for LeapView YAML contracts

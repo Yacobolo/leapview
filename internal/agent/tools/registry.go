@@ -47,7 +47,14 @@ func APIGenToolNames(operations []APIGenOperation) []string {
 }
 
 func ManualToolNames() []string {
-	return []string{QueryVisualToolName}
+	return []string{
+		CatalogGetToolName,
+		CatalogListToolName,
+		CatalogSearchToolName,
+		DocsReadToolName,
+		DocsSearchToolName,
+		QueryVisualToolName,
+	}
 }
 
 func ToolNames(operations []APIGenOperation) []string {
@@ -68,6 +75,9 @@ func IsKnownTool(operations []APIGenOperation, name string) bool {
 
 func operationAllowed(contract OperationContract, tool agenttool.Contract) bool {
 	if tool.Effect != agenttool.EffectRead || contract.Manual {
+		return false
+	}
+	if tool.Name != "query_semantic_model" && tool.Name != "query_dashboard_visual" {
 		return false
 	}
 	if contract.Method != "GET" && contract.Method != "POST" {

@@ -37,13 +37,30 @@ func (m *Module) configureTools() {
 // built-in agent and protocol adapters such as MCP.
 func (m *Module) ToolDefinitions(scope agentcap.Scope) []agentcore.ToolDefinition {
 	toolScope := ToolsScope(scope)
-	definitions := m.VisualToolProvider().Definitions(toolScope)
-	definitions = append(definitions, m.APIGenToolProvider().Definitions(toolScope)...)
-	return definitions
+	return (agenttools.ProviderSet{
+		Docs:    m.DocsToolProvider(),
+		Catalog: m.CatalogToolProvider(),
+		Visual:  m.VisualToolProvider(),
+		APIGen:  m.APIGenToolProvider(),
+	}).Definitions(toolScope)
+}
+
+func (m *Module) DocsToolProvider() agenttools.DocsProvider {
+	return agenttools.DocsProvider{Documentation: m.documentation}
+}
+
+func (m *Module) CatalogToolProvider() agenttools.CatalogProvider {
+	return agenttools.CatalogProvider{Catalog: m.catalog}
 }
 
 func (m *Module) VisualToolProvider() agenttools.VisualProvider {
 	return agenttools.VisualProvider{
+		QueryContext: func(ctx context.Context, scope agenttools.Scope) context.Context {
+			if m.queryContext == nil {
+				return ctx
+			}
+			return m.queryContext(ctx, scopeFromTools(scope))
+		},
 		Authorize: func(ctx context.Context, scope agenttools.Scope, request agenttools.VisualAuthorizationRequest) (agentcore.ToolResult, bool) {
 			agentScope := scopeFromTools(scope)
 			model := access.ItemObjectWithParent(access.SecurableSemanticModel, agentScope.WorkspaceID, request.Model, access.WorkspaceObject(agentScope.WorkspaceID))
@@ -88,6 +105,12 @@ func (m *Module) VisualToolProvider() agenttools.VisualProvider {
 				return nil, fmt.Errorf("unknown workspace %q", workspaceID)
 			}
 			return executeDistribution(ctx, metrics, modelID, request, sort, limit)
+		},
+		QueryMetadata: func(ctx context.Context, workspaceID, modelID string) agenttools.VisualQueryMetadata {
+			if m.queryMetadata != nil {
+				return m.queryMetadata(ctx, workspaceID, modelID)
+			}
+			return agenttools.VisualQueryMetadata{ServingSnapshot: "unversioned"}
 		},
 	}
 }
