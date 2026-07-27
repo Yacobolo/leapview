@@ -14,8 +14,11 @@ cp deployment.env.example deployment.env
 ```
 
 Set the released `LEAPVIEW_IMAGE` digest before initialization. HTTPS is
-enabled by default through the Caddy overlay. Use `--no-https` only when a
-trusted external HTTPS proxy fronts the localhost-bound application port.
+enabled by default through the Caddy overlay. Initialization derives
+`LEAPVIEW_PUBLIC_URL=https://<domain>`, the allowed host, and the Caddy domain
+from the validated `--domain` hostname. Use `--no-https` only when a trusted
+external HTTPS proxy fronts the localhost-bound application port; it disables
+the Caddy overlay but preserves the HTTPS public URL and secure cookies.
 
 Pulling and running the public image does not require this package or the
 controller; see the installation guide for the localhost evaluation path. For

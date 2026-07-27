@@ -1,12 +1,40 @@
 package compose
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
+
+var (
+	generateConfigOnce   sync.Once
+	generateConfigOutput []byte
+	generateConfigError  error
+)
+
+const configValidatorTestProgram = `package configvalidator
+
+import (
+	"testing"
+
+	"github.com/Yacobolo/leapview/internal/app/config"
+)
+
+func TestProductionConfigValidator(t *testing.T) {
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Production = true
+	if err := cfg.Validate(config.ProfileServe); err != nil {
+		t.Fatal(err)
+	}
+}
+`
 
 func TestComposeSingleInstanceContract(t *testing.T) {
 	compose := read(t, "compose.yaml")
@@ -27,8 +55,16 @@ func TestComposeSingleInstanceContract(t *testing.T) {
 	if strings.Contains(compose, "./backups:/backups") {
 		t.Fatal("backup archives must cross the container boundary as streams, not through a host bind with incompatible ownership")
 	}
-	if !strings.Contains(read(t, "leapview.env.example"), "LEAPVIEW_HOME=/var/lib/leapview/home") {
-		t.Fatal("leapview.env.example must place LEAPVIEW_HOME beneath the mounted volume so restore can replace it")
+	appEnvironment := read(t, "leapview.env.example")
+	for _, required := range []string{
+		"LEAPVIEW_HOME=/var/lib/leapview/home",
+		"LEAPVIEW_PUBLIC_URL=https://dash.example.com",
+		"LEAPVIEW_ALLOWED_HOSTS=dash.example.com",
+		"LEAPVIEW_TRUST_PROXY_HEADERS=true",
+	} {
+		if !strings.Contains(appEnvironment, required) {
+			t.Fatalf("leapview.env.example missing %q", required)
+		}
 	}
 	https := read(t, "compose.https.yaml")
 	if !strings.Contains(https, "CADDY_IMAGE") || !strings.Contains(https, "443:443/udp") {
@@ -87,6 +123,68 @@ func TestControllerBuildAndLifecycleCommands(t *testing.T) {
 	}
 }
 
+func TestControllerInitializationGeneratesValidPublicOrigin(t *testing.T) {
+	binaryDir := t.TempDir()
+	validator := buildConfigValidator(t, binaryDir)
+	image := "example.com/leapview@sha256:" + strings.Repeat("a", 64)
+
+	for _, test := range []struct {
+		name       string
+		args       []string
+		composeTLS string
+	}{
+		{name: "built-in Caddy", composeTLS: "1"},
+		{name: "trusted external HTTPS proxy", args: []string{"--no-https"}, composeTLS: "0"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			buildController(t, root)
+			copyDeploymentFile(t, root, "deployment.env.example", 0o600)
+			fakeDocker := filepath.Join(root, "fake-docker")
+			script := fmt.Sprintf(`#!/usr/bin/env bash
+set -euo pipefail
+root="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+if [[ " $* " == *" config validate --production "* ]]; then
+  set -a
+  source "$root/leapview.env"
+  set +a
+  exec %q config validate --production
+fi
+if [[ " $* " == *" admin initialize --format json "* ]]; then
+  printf '{"email":"admin@example.com","temporaryPassword":"temporary","publisherToken":"publisher","publisherTokenExpiresAt":"2026-07-19T00:00:00Z"}\n'
+fi
+`, validator)
+			if err := os.WriteFile(fakeDocker, []byte(script), 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			args := []string{"init", "--admin-email", "admin@example.com", "--domain", "dash.example.com", "--image", image}
+			args = append(args, test.args...)
+			runController(t, root, fakeDocker, "", args...)
+
+			appEnvironment := readFile(t, filepath.Join(root, "leapview.env"))
+			for _, required := range []string{
+				"LEAPVIEW_PUBLIC_URL=https://dash.example.com\n",
+				"LEAPVIEW_ALLOWED_HOSTS=dash.example.com\n",
+				"LEAPVIEW_TRUST_PROXY_HEADERS=true\n",
+			} {
+				if !strings.Contains(appEnvironment, required) {
+					t.Errorf("leapview.env missing %q:\n%s", required, appEnvironment)
+				}
+			}
+			deploymentEnvironment := readFile(t, filepath.Join(root, "deployment.env"))
+			for _, required := range []string{
+				"CADDY_DOMAIN=dash.example.com\n",
+				"COMPOSE_HTTPS=" + test.composeTLS + "\n",
+			} {
+				if !strings.Contains(deploymentEnvironment, required) {
+					t.Errorf("deployment.env missing %q:\n%s", required, deploymentEnvironment)
+				}
+			}
+		})
+	}
+}
+
 func TestControllerReleasePackagingContract(t *testing.T) {
 	release := read(t, filepath.Join("..", "..", ".github", "workflows", "release.yml"))
 	for _, required := range []string{
@@ -110,6 +208,7 @@ func TestControllerReleasePackagingContract(t *testing.T) {
 func TestControllerLifecycleWithStateAwareUpgradeRollback(t *testing.T) {
 	root := t.TempDir()
 	buildController(t, root)
+	buildConfigValidator(t, root)
 	copyDeploymentFile(t, root, "deployment.env.example", 0o600)
 	fakeDocker := filepath.Join(root, "fake-docker")
 	if err := os.WriteFile(fakeDocker, []byte(`#!/usr/bin/env bash
@@ -139,7 +238,12 @@ done
 case "${command:-}" in
   ps) [[ " $* " == *' -q '* ]] && printf 'fake-container\n' ;;
   run)
-    if [[ " $* " == *' admin initialize --format json '* ]]; then
+    if [[ " $* " == *' config validate --production '* ]]; then
+      set -a
+      source "$root/leapview.env"
+      set +a
+      exec "$root/config-validator"
+    elif [[ " $* " == *' admin initialize --format json '* ]]; then
       printf '{"email":"admin@example.com","temporaryPassword":"temporary","publisherToken":"publisher","publisherTokenExpiresAt":"2026-07-19T00:00:00Z"}\n'
     elif [[ " $* " == *' admin backup '* ]]; then
       output=""
@@ -222,13 +326,19 @@ func TestControllerInitializationIsRetryableAndRequiresPinnedProxy(t *testing.T)
 		t.Helper()
 		root := t.TempDir()
 		buildController(t, root)
+		buildConfigValidator(t, root)
 		copyDeploymentFile(t, root, "deployment.env.example", 0o600)
 		fakeDocker := filepath.Join(root, "fake-docker")
 		if err := os.WriteFile(fakeDocker, []byte(`#!/usr/bin/env bash
 set -euo pipefail
 root="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 if [[ -f "$root/fail-validation" && " $* " == *" config validate "* ]]; then exit 42; fi
-if [[ " $* " == *" admin initialize --format json "* ]]; then
+if [[ " $* " == *" config validate --production "* ]]; then
+  set -a
+  source "$root/leapview.env"
+  set +a
+  exec "$root/config-validator"
+elif [[ " $* " == *" admin initialize --format json "* ]]; then
   printf '{"email":"admin@example.com","temporaryPassword":"temporary","publisherToken":"publisher","publisherTokenExpiresAt":"2026-07-19T00:00:00Z"}\n'
 fi
 `), 0o700); err != nil {
@@ -300,6 +410,47 @@ func buildController(t *testing.T, targetDir string) string {
 	return target
 }
 
+func buildConfigValidator(t *testing.T, targetDir string) string {
+	t.Helper()
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	generateConfigOnce.Do(func() {
+		command := exec.Command("go", "run", "./internal/app/tools/configgen")
+		command.Dir = repositoryRoot
+		generateConfigOutput, generateConfigError = command.CombinedOutput()
+	})
+	if generateConfigError != nil {
+		t.Fatalf("generate configuration contract: %v\n%s", generateConfigError, generateConfigOutput)
+	}
+
+	temporaryRoot := filepath.Join(repositoryRoot, ".tmp")
+	if err := os.MkdirAll(temporaryRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	sourceDir, err := os.MkdirTemp(temporaryRoot, "compose-config-validator-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(sourceDir) })
+	if err := os.WriteFile(filepath.Join(sourceDir, "validator_test.go"), []byte(configValidatorTestProgram), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	relativeSourceDir, err := filepath.Rel(repositoryRoot, sourceDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	target := filepath.Join(targetDir, "config-validator")
+	command := exec.Command("go", "test", "-c", "-o", target, "./"+filepath.ToSlash(relativeSourceDir))
+	command.Dir = repositoryRoot
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("build production config validator: %v\n%s", err, output)
+	}
+	return target
+}
+
 func runController(t *testing.T, root, docker, failImage string, args ...string) string {
 	t.Helper()
 	output, err := runControllerResult(root, docker, failImage, args...)
@@ -326,6 +477,11 @@ func requireDeploymentImage(t *testing.T, root, image string) {
 }
 
 func read(t *testing.T, name string) string {
+	t.Helper()
+	return readFile(t, name)
+}
+
+func readFile(t *testing.T, name string) string {
 	t.Helper()
 	value, err := os.ReadFile(name)
 	if err != nil {
