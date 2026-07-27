@@ -9,7 +9,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/Yacobolo/leapview/internal/composectl"
+	"github.com/Yacobolo/leapview/internal/app/cli/composectl"
 )
 
 func main() {

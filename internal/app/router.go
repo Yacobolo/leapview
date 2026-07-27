@@ -8,12 +8,12 @@ import (
 	accessmodule "github.com/Yacobolo/leapview/internal/access/module"
 	adminmodule "github.com/Yacobolo/leapview/internal/admin/module"
 	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
-	apihttpmiddleware "github.com/Yacobolo/leapview/internal/api/httpmiddleware"
-	apiprotocol "github.com/Yacobolo/leapview/internal/api/protocol"
-	apitransport "github.com/Yacobolo/leapview/internal/api/transport"
+	apiprotocol "github.com/Yacobolo/leapview/internal/app/api/protocol"
 	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
-	"github.com/Yacobolo/leapview/internal/staticasset"
-	uitransport "github.com/Yacobolo/leapview/internal/ui/transport"
+	apihttpmiddleware "github.com/Yacobolo/leapview/internal/platform/http/middleware"
+	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
+	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
+	uitransport "github.com/Yacobolo/leapview/internal/platform/web/transport"
 	workspacemodule "github.com/Yacobolo/leapview/internal/workspace/module"
 	"github.com/go-chi/chi/v5"
 )
@@ -42,14 +42,14 @@ func Routes(routes *capabilityRoutes, runtime *runtimeServices, platform *platfo
 	}))
 	mux.Get("/api/docs", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { publicDocs(routes, runtime, platform, policy, w, r) }))
 	mux.Group(func(r chi.Router) {
-		r.Use(policy.rateLimits.PublicPage(func() { platform.telemetry.PublicRateLimitObserved("page") }))
+		r.Use(policy.rateLimits.PublicPage(func() { routes.dashboardTelemetry.PublicRateLimitObserved("page") }))
 		routes.dashboardModule.MountPublicDocuments(r)
 	})
 	mux.Group(func(r chi.Router) {
-		r.Use(policy.rateLimits.PublicCommand(func() { platform.telemetry.PublicRateLimitObserved("command") }))
+		r.Use(policy.rateLimits.PublicCommand(func() { routes.dashboardTelemetry.PublicRateLimitObserved("command") }))
 		routes.dashboardModule.MountPublicCommands(r)
 	})
-	routes.dashboardModule.MountPublicStream(mux.With(policy.rateLimits.PublicStream(func() { platform.telemetry.PublicRateLimitObserved("stream") })))
+	routes.dashboardModule.MountPublicStream(mux.With(policy.rateLimits.PublicStream(func() { routes.dashboardTelemetry.PublicRateLimitObserved("stream") })))
 	if runtime.pageStreamTrace != nil {
 		traceHandler := uitransport.TraceHandler{Store: runtime.pageStreamTrace}
 		mux.Get("/__dev/pagestream/traces", traceHandler.Traces)
@@ -114,7 +114,7 @@ func Routes(routes *capabilityRoutes, runtime *runtimeServices, platform *platfo
 	if routes.dashboardAssets != nil {
 		mux.Handle("/map-assets/*", routes.dashboardAssets.Handler())
 	}
-	mux.Handle("/static/*", staticAssetCache(http.StripPrefix("/static/", http.FileServer(http.Dir("static")))))
+	mux.Handle("/static/*", staticAssetCache(platform.assets, http.StripPrefix("/static/", http.FileServer(http.Dir("static")))))
 	mux.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		if isPublicAPIPath(r.URL.Path) {
 			apiprotocol.PrepareRequest(w, r)
@@ -198,9 +198,9 @@ func csrfMiddleware(routes *capabilityRoutes, runtime *runtimeServices, platform
 	return routes.accessModule.CSRFMiddleware(next)
 }
 
-func staticAssetCache(next http.Handler) http.Handler {
+func staticAssetCache(assets staticasset.Resolver, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		version := staticasset.Version()
+		version := assets.Version()
 		switch {
 		case version != "dev" && r.URL.Query().Get("v") == version:
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")

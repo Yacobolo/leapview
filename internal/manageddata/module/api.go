@@ -6,12 +6,16 @@ import (
 	"errors"
 	"net/http"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
-	apitransport "github.com/Yacobolo/leapview/internal/api/transport"
+	apigenapi "github.com/Yacobolo/leapview/internal/manageddata/api"
 	"github.com/Yacobolo/leapview/internal/manageddata/control"
+	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	jobhttp "github.com/Yacobolo/leapview/internal/platform/jobs/http"
 )
+
+type PageParams = apigenapi.PageParams
+type IdempotencyHeaders = apigenapi.IdempotencyHeaders
+type EventHeaders = apigenapi.GenListManagedDataUploadSessionEventsHeaders
 
 func (m *Module) beginFinalize(ctx context.Context, request control.UploadRequest) (control.UploadResult, error) {
 	payload, err := json.Marshal(FinalizeUploadJob{Project: request.Project, Connection: request.Connection, UploadSession: request.UploadID})

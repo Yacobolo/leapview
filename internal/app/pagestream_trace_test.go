@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 
 func TestDevelopmentPageStreamTraceEndpointReturnsSanitizedEvents(t *testing.T) {
-	t.Setenv("LEAPVIEW_PRODUCTION", "")
 	var logs bytes.Buffer
 	server := assembleRuntime(fakeMetrics{}, assemblyConfig{
 		Logger: slog.New(slog.NewJSONHandler(&logs, nil)),
@@ -45,8 +45,7 @@ func TestDevelopmentPageStreamTraceEndpointReturnsSanitizedEvents(t *testing.T) 
 }
 
 func TestProductionOmitsPageStreamTraceEndpoint(t *testing.T) {
-	t.Setenv("LEAPVIEW_PRODUCTION", "1")
-	server := newAppTestHarness(fakeMetrics{})
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{Assets: staticasset.New(staticasset.Config{Production: true})})
 	req := httptest.NewRequest(http.MethodGet, "/__dev/pagestream/traces", nil)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
@@ -56,7 +55,6 @@ func TestProductionOmitsPageStreamTraceEndpoint(t *testing.T) {
 }
 
 func TestDevelopmentPageStreamSignalsEndpointReturnsStateAndSelectedHistory(t *testing.T) {
-	t.Setenv("LEAPVIEW_PRODUCTION", "")
 	server := newAppTestHarness(fakeMetrics{})
 	server.runtime.pageStreamTrace.Record(pagestream.TraceRecord{
 		StreamID: "trace:test", Stage: pagestream.TraceStageDelivered,
@@ -98,8 +96,7 @@ func TestDevelopmentPageStreamSignalsEndpointReturnsStateAndSelectedHistory(t *t
 }
 
 func TestProductionOmitsPageStreamSignalsEndpoint(t *testing.T) {
-	t.Setenv("LEAPVIEW_PRODUCTION", "1")
-	server := newAppTestHarness(fakeMetrics{})
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{Assets: staticasset.New(staticasset.Config{Production: true})})
 	req := httptest.NewRequest(http.MethodGet, "/__dev/pagestream/signals", nil)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)

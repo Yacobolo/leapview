@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/ui"
 	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
 )
 
 func WorkspaceAccessSignals(access ui.WorkspaceAccessResponse, _ string) map[string]any {

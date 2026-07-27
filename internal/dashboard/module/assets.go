@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	visualizationmapasset "github.com/Yacobolo/leapview/internal/visualization/mapasset"
-	mapassethttp "github.com/Yacobolo/leapview/internal/visualization/mapasset/http"
+	visualizationmapasset "github.com/Yacobolo/leapview/internal/dashboard/visualization/mapasset"
+	mapassethttp "github.com/Yacobolo/leapview/internal/dashboard/visualization/mapasset/http"
 )
 
 // Assets is the dashboard-owned delivery and readiness surface for immutable

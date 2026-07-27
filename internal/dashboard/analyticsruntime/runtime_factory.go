@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	analyticscontract "github.com/Yacobolo/leapview/internal/analytics/runtime"
 	dashboardruntime "github.com/Yacobolo/leapview/internal/dashboard/runtime"
 	dashboardruntimefactory "github.com/Yacobolo/leapview/internal/dashboard/runtimefactory"
-	"github.com/Yacobolo/leapview/internal/dataquery"
 )
 
 type RuntimeFactoryConfig struct {

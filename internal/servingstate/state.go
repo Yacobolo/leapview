@@ -4,7 +4,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/snapshot"
+	accesssnapshot "github.com/Yacobolo/leapview/internal/access/snapshot"
+	servingstatevalidation "github.com/Yacobolo/leapview/internal/servingstate/validation"
 )
 
 var ErrSnapshotLeaseLost = errors.New("snapshot lease is no longer active")
@@ -107,10 +108,10 @@ type Validation struct {
 	ProjectID                 string
 	ProjectDigest             string
 	ProjectWorkspaces         []string
-	AccessPolicy              snapshot.AccessPolicy
+	AccessPolicy              accesssnapshot.AccessPolicy
 	DashboardPublicationsJSON string
 	ManagedDataRevisions      map[string]string
-	Graph                     snapshot.AssetGraph
+	Graph                     servingstatevalidation.AssetGraph
 }
 
 type PreparedRuntime interface {

@@ -8,9 +8,9 @@ import (
 	stdhttp "net/http"
 	"strings"
 
-	api "github.com/Yacobolo/leapview/internal/api"
 	"github.com/Yacobolo/leapview/internal/deployment"
 	"github.com/Yacobolo/leapview/internal/deployment/apiadapter"
+	api "github.com/Yacobolo/leapview/internal/platform/http/model"
 )
 
 type CreateHeaders struct{ IdempotencyKey string }

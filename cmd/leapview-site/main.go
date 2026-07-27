@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	sitehttp "github.com/Yacobolo/leapview/internal/site/http"
+	sitehttp "github.com/Yacobolo/leapview/internal/app/site/http"
 )
 
 func main() {

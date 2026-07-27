@@ -14,26 +14,25 @@ import (
 	adminmodule "github.com/Yacobolo/leapview/internal/admin/module"
 	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
 	analyticsmodule "github.com/Yacobolo/leapview/internal/analytics/module"
-	"github.com/Yacobolo/leapview/internal/api"
-	apiapigenruntime "github.com/Yacobolo/leapview/internal/api/apigenruntime"
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
-	apihttpmiddleware "github.com/Yacobolo/leapview/internal/api/httpmiddleware"
-	apiprotocol "github.com/Yacobolo/leapview/internal/api/protocol"
-	"github.com/Yacobolo/leapview/internal/catalog"
+	apiapigenruntime "github.com/Yacobolo/leapview/internal/app/api/apigenruntime"
+	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	apiprotocol "github.com/Yacobolo/leapview/internal/app/api/protocol"
+	"github.com/Yacobolo/leapview/internal/app/brand"
 	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
 	deploymentmodule "github.com/Yacobolo/leapview/internal/deployment/module"
 	manageddatamodule "github.com/Yacobolo/leapview/internal/manageddata/module"
-	"github.com/Yacobolo/leapview/internal/observability"
+	apihttpmiddleware "github.com/Yacobolo/leapview/internal/platform/http/middleware"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	jobsmodule "github.com/Yacobolo/leapview/internal/platform/jobs/module"
 	platformlifecycle "github.com/Yacobolo/leapview/internal/platform/lifecycle"
+	"github.com/Yacobolo/leapview/internal/platform/observability"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
+	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
+	uitransport "github.com/Yacobolo/leapview/internal/platform/web/transport"
 	refreshmodule "github.com/Yacobolo/leapview/internal/refresh/module"
 	releasemodule "github.com/Yacobolo/leapview/internal/release/module"
 	runtimehostmodule "github.com/Yacobolo/leapview/internal/runtimehost/module"
 	servingstatemodule "github.com/Yacobolo/leapview/internal/servingstate/module"
-	"github.com/Yacobolo/leapview/internal/staticasset"
-	"github.com/Yacobolo/leapview/internal/ui"
-	uitransport "github.com/Yacobolo/leapview/internal/ui/transport"
 	workloadmodule "github.com/Yacobolo/leapview/internal/workload/module"
 	workspacemodule "github.com/Yacobolo/leapview/internal/workspace/module"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
@@ -43,16 +42,17 @@ type QueryMetrics = dashboardmodule.Metrics
 type workspaceMetrics = dashboardmodule.WorkspaceMetrics
 
 type capabilityRoutes struct {
-	accessModule      *accessmodule.Module
-	workspaceModule   *workspacemodule.Module
-	managedDataModule *manageddatamodule.Module
-	deploymentModule  *deploymentmodule.Module
-	dashboardModule   *dashboardmodule.Module
-	dashboardAssets   dashboardmodule.Assets
-	agentModule       *agentmodule.Module
-	releaseModule     *releasemodule.Module
-	refreshModule     *refreshmodule.Module
-	adminModule       *adminmodule.Module
+	accessModule       *accessmodule.Module
+	workspaceModule    *workspacemodule.Module
+	managedDataModule  *manageddatamodule.Module
+	deploymentModule   *deploymentmodule.Module
+	dashboardModule    *dashboardmodule.Module
+	dashboardAssets    dashboardmodule.Assets
+	agentModule        *agentmodule.Module
+	releaseModule      *releasemodule.Module
+	refreshModule      *refreshmodule.Module
+	adminModule        *adminmodule.Module
+	dashboardTelemetry dashboardmodule.Telemetry
 }
 
 type runtimeServices struct {
@@ -73,8 +73,9 @@ type platformServices struct {
 	asyncJobs     jobs.Repository
 	jobModule     *jobsmodule.Module
 	auth          *accessmodule.Auth
+	assets        staticasset.Resolver
 	telemetry     *observability.Telemetry
-	health        *observability.Health
+	health        *health
 	logger        *slog.Logger
 	workers       *platformlifecycle.Group
 	apiProtocol   *apiprotocol.Protocol
@@ -121,22 +122,27 @@ type storageInputs struct {
 	publicURL           string
 }
 
-func newCompositionSurfaces(metrics QueryMetrics) (*capabilityRoutes, *runtimeServices, *platformServices, *httpPolicy) {
+func newCompositionSurfaces(
+	metrics QueryMetrics,
+	assets staticasset.Resolver,
+	telemetry *observability.Telemetry,
+	dashboardTelemetry dashboardmodule.Telemetry,
+) (*capabilityRoutes, *runtimeServices, *platformServices, *httpPolicy) {
 	logger := slog.Default()
 	var trace *pagestream.TraceStore
-	if !staticasset.Production() {
+	if !assets.Production() {
 		trace = pagestream.NewTraceStore(pagestream.TraceOptions{
 			CapacityPerStream: 512,
 			MaxStreams:        32,
 			IncludePayloads:   true,
 		})
 	}
-	routes := &capabilityRoutes{}
+	routes := &capabilityRoutes{dashboardTelemetry: dashboardTelemetry}
 	runtime := &runtimeServices{
 		metrics: metrics, broker: pagestream.NewBroker(pagestream.WithTraceStore(trace)),
 		pageStreamTrace: trace,
 	}
-	platform := &platformServices{telemetry: observability.New(), logger: logger}
+	platform := &platformServices{telemetry: telemetry, logger: logger, assets: assets}
 	policy := &httpPolicy{requestBodyLimit: apihttpmiddleware.DefaultRequestBodyLimitConfig()}
 	return routes, runtime, platform, policy
 }
@@ -185,6 +191,7 @@ type runtimeAssemblyInputs struct {
 	SCIMBearerToken     string
 	MetricsBearerToken  string
 	AllowedHosts        []string
+	Assets              staticasset.Resolver
 }
 
 type httpAssemblyInputs struct {
@@ -248,12 +255,13 @@ func buildApplicationSurfaces(
 		ctx = context.Background()
 	}
 	telemetry := observability.New()
+	dashboardTelemetry := dashboardmodule.NewTelemetry(telemetry.Registry())
 	if capabilities.AnalyticsModule != nil {
 		telemetry.Register(capabilities.AnalyticsModule.Collector())
 	}
 	controller := workflow.Workload
 	ownsController := false
-	workloadTelemetry := workloadmodule.NewTelemetryObserver(telemetry)
+	workloadTelemetry := workloadmodule.NewTelemetryObserver(telemetry.Registry())
 	if controller == nil {
 		var err error
 		controller, err = workloadmodule.Build(ctx, workloadmodule.Config{
@@ -316,7 +324,7 @@ func buildApplicationSurfaces(
 		})
 	}
 	servingStateRepo := data.ServingStateRepo
-	routes, runtime, platform, policy := newCompositionSurfaces(metrics)
+	routes, runtime, platform, policy := newCompositionSurfaces(metrics, runtimeConfig.Assets, telemetry, dashboardTelemetry)
 	persistence := persistenceInputs{}
 	moduleWorkflow := workflowInputs{}
 	storage := storageInputs{}
@@ -327,7 +335,6 @@ func buildApplicationSurfaces(
 	if capabilities.AnalyticsModule != nil && capabilities.AnalyticsModule.QueryAuditReader() != nil {
 		runtime.queryAuditEvents = capabilities.AnalyticsModule.QueryAuditEvents(func(value string) string { return workspaceID(routes, runtime, platform, policy, value) })
 	}
-	platform.telemetry = telemetry
 	moduleWorkflow.refreshPipelineClock = workflow.RefreshPipelineClock
 	runtime.queryAuditProvider = queryAuditProvider
 	if moduleWorkflow.refreshPipelineClock == nil {
@@ -343,7 +350,7 @@ func buildApplicationSurfaces(
 		if platform.jobModule == nil {
 			var err error
 			platform.jobModule, err = jobsmodule.Build(ctx, jobsmodule.Config{
-				Database: data.Database, Admission: runtime.workloads,
+				Database: data.Database, Admission: workloadmodule.JobAdmitter(runtime.workloads),
 				LeaseTimeout: httpConfig.JobLeaseTimeout, Logger: httpConfig.Logger,
 			})
 			if err != nil {
@@ -457,6 +464,8 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		var err error
 		routes.accessModule, err = accessmodule.Build(ctx, accessmodule.Config{
 			Database: database, ExistingAuth: platform.auth, WorkspaceID: policy.defaultWorkspaceID,
+			Presentation: webpage.Presentation{ProductName: brand.Name, FaviconPath: brand.FaviconPath},
+			Assets:       platform.assets,
 			WorkspaceIDs: func(ctx context.Context) ([]string, error) {
 				if persistence.workspaceDirectory != nil {
 					return persistence.workspaceDirectory.WorkspaceIDs(ctx)
@@ -509,16 +518,14 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			AuthConfigured:     platform.auth != nil,
 			RuntimeEnvironment: policy.defaultEnvironment,
 			DefaultWorkspaceID: policy.defaultWorkspaceID,
-			RefreshState:       refreshSupport,
+			RefreshState:       workspaceRefreshStateBridge{support: refreshSupport},
 			RefreshRunner: workspacemodule.AssetRefreshFunc(func(ctx context.Context, input workspacemodule.AssetRefreshInput) error {
 				return refreshSupport.RefreshAsset(ctx, input.Request, input.WorkspaceID, input.Asset, input.Assets, input.Edges)
 			}),
 			Broker:           runtime.broker,
 			CSRFToken:        routes.accessModule.CSRFToken,
 			CurrentRoleLabel: routes.accessModule.CurrentRoleLabel,
-			ChromeOptions: func(r *http.Request) []ui.ChromeOption {
-				return []ui.ChromeOption{routes.agentModule.ChromeOption(r)}
-			},
+			Layout:           func(r *http.Request) webpage.Provider { return applicationLayout(routes, platform.assets, r) },
 			CurrentCredential: func(r *http.Request) (accessmodule.APICredential, bool) {
 				return accessmodule.APICredentialFromContext(r.Context())
 			},
@@ -570,7 +577,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 					return metricsForWorkspace(routes, runtime, platform, policy, workspaceID)
 				},
 				Admission: workloadController(routes, runtime, platform, policy), Broker: runtime.broker, Logger: platform.logger,
-				Telemetry: platform.telemetry,
+				Telemetry: routes.dashboardTelemetry,
 				CurrentPrincipalID: func(r *http.Request) string {
 					principal, ok := accessmodule.PrincipalFromContext(r.Context())
 					if !ok {
@@ -581,8 +588,8 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				AuthorizeListObject: func(ctx context.Context, principalID string, object accessmodule.ObjectRef) (bool, error) {
 					return authorizeListObject(routes, runtime, platform, policy, ctx, principalID, object)
 				},
-				CSRFToken:        routes.accessModule.CSRFToken,
-				ChatChromeSignal: routes.agentModule.ChromeSignal,
+				CSRFToken: routes.accessModule.CSRFToken,
+				Layout:    func(r *http.Request) webpage.Provider { return applicationLayout(routes, platform.assets, r) },
 				Environment: func(r *http.Request) string {
 					return string(requestServingEnvironment(routes, runtime, platform, policy, r))
 				},
@@ -596,9 +603,11 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 					}
 					return version.RefreshedAt.Format(time.RFC3339)
 				},
-				AgentBootstrap: func(r *http.Request, workspaceID string) ui.ChatViewState {
-					return routes.agentModule.HTTP().DashboardBootstrap(r, workspaceID)
+				AgentBootstrap: func(r *http.Request, workspaceID string) dashboardmodule.AgentBootstrap {
+					return dashboardAgentBootstrap(routes.agentModule.DashboardBootstrap(r, workspaceID))
 				},
+				Presentation: dashboardmodule.Presentation{ProductName: brand.Name, FaviconPath: brand.FaviconPath},
+				Assets:       platform.assets,
 			},
 			Semantic: dashboardmodule.SemanticConfig{
 				Metrics: runtime.metrics,
@@ -617,9 +626,9 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				},
 			},
 			PublicTelemetry: dashboardmodule.PublicTelemetry{
-				DocumentObserved: platform.telemetry.PublicDocumentObserved,
-				StreamStarted:    platform.telemetry.PublicStreamStarted,
-				CommandObserved:  platform.telemetry.PublicCommandObserved,
+				DocumentObserved: routes.dashboardTelemetry.PublicDocumentObserved,
+				StreamStarted:    routes.dashboardTelemetry.PublicStreamStarted,
+				CommandObserved:  routes.dashboardTelemetry.PublicCommandObserved,
 			},
 			Logger:    platform.logger,
 			Trace:     runtime.pageStreamTrace,
@@ -648,6 +657,9 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		routes.agentModule, err = agentmodule.Build(ctx, agentmodule.Config{
 			Database: database, Model: moduleWorkflow.agentConfig,
 			Service: moduleWorkflow.agent, Jobs: platform.asyncJobs, DefaultWorkspaceID: policy.defaultWorkspaceID,
+			ProductName:      brand.Name,
+			BuildVersion:     platform.assets.Version(),
+			APIGenOperations: agentAPIGenOperations(),
 			RunWorkloadClass: string(workloadmodule.BackgroundClass), GlobalWorkspaceID: workloadmodule.GlobalWorkspace,
 			Search: routes.workspaceModule,
 			Environment: func(r *http.Request) string {
@@ -700,6 +712,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				Settings: persistence.agentSettings, Broker: runtime.broker,
 				CSRFToken:        routes.accessModule.CSRFToken,
 				CurrentRoleLabel: routes.accessModule.CurrentRoleLabel,
+				Layout:           func(r *http.Request) webpage.Provider { return applicationLayout(routes, platform.assets, r) },
 				CurrentPrincipal: func(r *http.Request) (agentmodule.Principal, bool) {
 					if platform.auth == nil {
 						return agentmodule.Principal{}, false
@@ -737,11 +750,8 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		}
 		var err error
 		routes.adminModule, err = adminmodule.Build(ctx, adminmodule.Config{
-			Catalog: func() catalog.Catalog {
-				return runtime.metrics.Catalog()
-			},
 			Access: accessReader,
-			AgentDetails: func(ctx context.Context) (api.AdminAgentResponse, error) {
+			AgentDetails: func(ctx context.Context) (agentmodule.AdminAgentResponse, error) {
 				return routes.agentModule.HTTP().AdminDetails(ctx)
 			},
 			QueryAuditReader: runtime.queryAuditProvider,
@@ -763,11 +773,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				Environment: policy.defaultEnvironment, ControlPlane: persistence.adminDatabase,
 				Analytics: runtime.analyticsModule.AdminResources(), Admitter: workloadController(routes, runtime, platform, policy),
 			},
-			CurrentRoleLabel: func(r *http.Request) string {
-				principal, ok := currentAdminPrincipal(r)
-				return adminmodule.RoleLabel(platform.auth != nil, principal, ok)
-			},
-			ChromeOption: routes.agentModule.ChromeOption,
+			Layout: func(r *http.Request) webpage.Provider { return applicationLayout(routes, platform.assets, r) },
 			EnsureClientID: func(w http.ResponseWriter, r *http.Request) {
 				_ = pagestream.EnsureClientID(w, r)
 			},
@@ -807,9 +813,10 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		managedDataModule: routes.managedDataModule, refreshModule: routes.refreshModule,
 		releaseModule: routes.releaseModule, workspaceModule: routes.workspaceModule,
 		defaultEnvironment: policy.defaultEnvironment, managedDataTus: policy.managedDataTus,
+		buildVersion:     platform.assets.Version(),
 		queryAuditEvents: runtime.queryAuditEvents,
 	}
-	apiGenAuthorizer, err := routes.accessModule.APIGenAuthorizer(accessmodule.APIGenObjectResolvers{
+	apiGenAuthorizer, err := routes.accessModule.APIGenAuthorizer(accessAPIGenOperationContracts(), accessmodule.APIGenObjectResolvers{
 		Dashboard:      dashboardmodule.DashboardObjectRefs,
 		SemanticModel:  dashboardmodule.SemanticDatasetObjectRefs,
 		WorkspaceAsset: workspacemodule.AssetObjectRefs,
@@ -826,7 +833,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		return fmt.Errorf("build APIGen transport: %w", err)
 	}
 	configurePageStream(routes, runtime, platform, policy)
-	platform.health = observability.NewHealth(observability.HealthConfig{
+	platform.health = newHealth(healthConfig{
 		Platform: func(ctx context.Context) error {
 			if runtime.platformHealth == nil {
 				return errors.New("platform store is missing")

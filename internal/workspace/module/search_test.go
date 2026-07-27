@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	productsearch "github.com/Yacobolo/leapview/internal/search"
+	productsearch "github.com/Yacobolo/leapview/internal/workspace/search"
 )
 
 func TestSearchAPIResultsIncludeVisualSubtype(t *testing.T) {

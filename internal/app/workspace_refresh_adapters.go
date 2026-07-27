@@ -9,7 +9,82 @@ import (
 	refreshmodule "github.com/Yacobolo/leapview/internal/refresh/module"
 	servingstatemodule "github.com/Yacobolo/leapview/internal/servingstate/module"
 	workspacemodule "github.com/Yacobolo/leapview/internal/workspace/module"
+	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
+
+type workspaceRefreshPresentationBridge struct{}
+
+func (workspaceRefreshPresentationBridge) Sections() []string {
+	return (workspacemodule.RefreshPresentation{}).Sections()
+}
+
+func (workspaceRefreshPresentationBridge) StreamID(workspaceID, assetID, section string) string {
+	return (workspacemodule.RefreshPresentation{}).StreamID(workspaceID, assetID, section)
+}
+
+func (workspaceRefreshPresentationBridge) Signals(
+	view workspacemodule.WorkspaceView,
+	asset workspacemodule.AssetView,
+	assets []workspacemodule.AssetView,
+	edges []workspacemodule.AssetEdgeView,
+	refresh refreshmodule.AssetRefreshState,
+	section string,
+) pagestream.SignalPatch {
+	return (workspacemodule.RefreshPresentation{}).Signals(
+		view,
+		asset,
+		assets,
+		edges,
+		workspaceAssetRefreshState(refresh),
+		section,
+	)
+}
+
+func workspaceAssetRefreshState(state refreshmodule.AssetRefreshState) workspacemodule.AssetRefreshState {
+	return workspacemodule.AssetRefreshState{
+		CSRFToken:        state.CSRFToken,
+		Runs:             workspaceAssetRefreshRuns(state.Runs),
+		Latest:           workspaceAssetRefreshRun(state.Latest),
+		LatestSuccessful: workspaceAssetRefreshRun(state.LatestSuccessful),
+		DataVersion: workspacemodule.AssetDataVersion{
+			SnapshotID: state.DataVersion.SnapshotID, ServingStateID: state.DataVersion.ServingStateID,
+			RefreshedAt: state.DataVersion.RefreshedAt, Source: state.DataVersion.Source,
+		},
+		NextRun: state.NextRun,
+	}
+}
+
+func workspaceAssetRefreshRuns(runs []refreshmodule.AssetRefreshRun) []workspacemodule.AssetRefreshRun {
+	out := make([]workspacemodule.AssetRefreshRun, 0, len(runs))
+	for _, run := range runs {
+		out = append(out, workspaceAssetRefreshRun(run))
+	}
+	return out
+}
+
+func workspaceAssetRefreshRun(run refreshmodule.AssetRefreshRun) workspacemodule.AssetRefreshRun {
+	return workspacemodule.AssetRefreshRun{
+		ID: run.ID, PrincipalDisplayName: run.PrincipalDisplayName, TriggerType: run.TriggerType,
+		Status: run.Status, StartedAt: run.StartedAt, FinishedAt: run.FinishedAt, Error: run.Error,
+	}
+}
+
+type workspaceRefreshStateBridge struct {
+	support refreshmodule.WorkspaceSupport
+}
+
+func (b workspaceRefreshStateBridge) AssetRefreshState(
+	ctx context.Context,
+	workspaceID string,
+	environment string,
+	asset workspacemodule.AssetView,
+) (workspacemodule.AssetRefreshState, error) {
+	state, err := b.support.AssetRefreshState(ctx, workspaceID, environment, asset)
+	if err != nil {
+		return workspacemodule.AssetRefreshState{}, err
+	}
+	return workspaceAssetRefreshState(state), nil
+}
 
 func workspaceRefreshSupport(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy) refreshmodule.WorkspaceSupport {
 	support := refreshmodule.WorkspaceSupport{
@@ -51,7 +126,7 @@ func workspaceRefreshSupport(routes *capabilityRoutes, runtime *runtimeServices,
 		WorkspaceViewContext: func(ctx context.Context, workspaceID string) workspacemodule.WorkspaceView {
 			return routes.workspaceModule.WorkspaceViewContext(ctx, workspaceID)
 		},
-		Presentation: workspacemodule.RefreshPresentation{},
+		Presentation: workspaceRefreshPresentationBridge{},
 	}
 	if runtime.persistenceConfigured {
 		support.DataVersions = routes.refreshModule

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
 	"github.com/Yacobolo/leapview/internal/manageddata"
+	apigenapi "github.com/Yacobolo/leapview/internal/manageddata/api"
 	"github.com/Yacobolo/leapview/internal/manageddata/control"
 	managedhttp "github.com/Yacobolo/leapview/internal/manageddata/http"
 	"github.com/Yacobolo/leapview/internal/manageddata/s3multipart"

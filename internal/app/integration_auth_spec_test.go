@@ -15,6 +15,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access"
 	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
+	"github.com/Yacobolo/leapview/internal/app/config"
 	"github.com/Yacobolo/leapview/internal/platform"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
@@ -610,7 +611,7 @@ func newAuthSpecHarness(t *testing.T) (*harness, *accesssqlite.Repository) {
 	t.Cleanup(func() { _ = store.Close() })
 	workspaceID := metrics.Catalog().Workspace.ID
 	if workspaceID == "" {
-		workspaceID = platform.DefaultWorkspaceID
+		workspaceID = config.DefaultWorkspaceID
 	}
 	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: workspace.WorkspaceID(workspaceID), Title: metrics.Catalog().Workspace.Title, Description: metrics.Catalog().Workspace.Description}); err != nil {
 		t.Fatalf("ensure workspace: %v", err)

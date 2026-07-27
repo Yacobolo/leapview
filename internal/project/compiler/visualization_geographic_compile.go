@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	visualizationgeometry "github.com/Yacobolo/leapview/internal/visualization/geometry"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
-	visualizationmapasset "github.com/Yacobolo/leapview/internal/visualization/mapasset"
+	visualizationgeometry "github.com/Yacobolo/leapview/internal/dashboard/visualization/geometry"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	visualizationmapasset "github.com/Yacobolo/leapview/internal/dashboard/visualization/mapasset"
 )
 
 func compileGeographicVisualizationSpec(authored reportdef.Visual) (visualizationir.VisualizationSpec, error) {

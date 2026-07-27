@@ -13,11 +13,11 @@ import (
 	agentcap "github.com/Yacobolo/leapview/internal/agent"
 	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
 	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/dataquery"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 )
@@ -619,7 +619,7 @@ func TestAPIGenAgentToolsExposeTypeSpecArgumentNamesAndBodyFields(t *testing.T) 
 }
 
 func TestAPIGenAgentOperationsDeclareOutputMetadata(t *testing.T) {
-	for _, operation := range agenttools.APIGenOperations() {
+	for _, operation := range agentAPIGenOperations() {
 		if operation.Tool.Output.Mode == "" || len(operation.Tool.OutputSchema) == 0 {
 			t.Fatalf("agent operation %s (%s) has no typed output contract", operation.Contract.OperationID, operation.Tool.Name)
 		}
@@ -630,7 +630,7 @@ func TestAPIGenAgentOperationsDeclareOutputMetadata(t *testing.T) {
 }
 
 func TestAPIGenVisualToolUsesGeneratedUnionProjection(t *testing.T) {
-	for _, operation := range agenttools.APIGenOperations() {
+	for _, operation := range agentAPIGenOperations() {
 		if operation.Tool.Name != "query_dashboard_visual" {
 			continue
 		}
@@ -1135,7 +1135,7 @@ func TestRuntimeAgentToolsMatchPolicyRegistry(t *testing.T) {
 	var runtimeTools []agentcore.ToolDefinition
 	runtimeTools = append(runtimeTools, agentVisualToolsForTest(server, scope)...)
 	runtimeTools = append(runtimeTools, agentAPIGenToolsForTest(server, scope)...)
-	if got, want := sortedToolNames(runtimeTools), agenttools.ToolNames(); !reflect.DeepEqual(got, want) {
+	if got, want := sortedToolNames(runtimeTools), agenttools.ToolNames(agentAPIGenOperations()); !reflect.DeepEqual(got, want) {
 		t.Fatalf("runtime tools = %#v, policy registry = %#v", got, want)
 	}
 }

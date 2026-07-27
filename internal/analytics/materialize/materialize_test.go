@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	analyticsduckdb "github.com/Yacobolo/leapview/internal/analytics/duckdb"
 	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
 	analyticsmaterialize "github.com/Yacobolo/leapview/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/platform"
 	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
 	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"

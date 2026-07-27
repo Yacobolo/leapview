@@ -8,13 +8,12 @@ import (
 	"github.com/Yacobolo/leapview/internal/access"
 	adminhttp "github.com/Yacobolo/leapview/internal/admin/http"
 	adminstorage "github.com/Yacobolo/leapview/internal/admin/storage"
+	"github.com/Yacobolo/leapview/internal/agent/api"
 	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
 	"github.com/Yacobolo/leapview/internal/analytics/resource"
-	"github.com/Yacobolo/leapview/internal/api"
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
-	"github.com/Yacobolo/leapview/internal/catalog"
+	dashboardapi "github.com/Yacobolo/leapview/internal/dashboard/api"
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
-	"github.com/Yacobolo/leapview/internal/ui"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	"github.com/Yacobolo/leapview/internal/workload"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
@@ -23,7 +22,7 @@ type PublicationService interface {
 	PublicationsConfigured() bool
 	AllPublications(context.Context) ([]publication.Publication, error)
 	PublicationEvents(context.Context, string) ([]publication.Event, error)
-	PublicationDTO(publication.Publication) apigenapi.DashboardPublicationResponse
+	PublicationDTO(publication.Publication) dashboardapi.PublicationResponse
 	MutatePublication(context.Context, string, string, string, publication.Action) (publication.Publication, error)
 }
 
@@ -63,7 +62,6 @@ type StorageConfig struct {
 }
 
 type Config struct {
-	Catalog               func() catalog.Catalog
 	Access                AccessReader
 	AgentDetails          func(context.Context) (api.AdminAgentResponse, error)
 	QueryAuditReader      QueryAuditReaderProvider
@@ -76,8 +74,7 @@ type Config struct {
 	AuthConfigured        bool
 	AccessConfigured      bool
 	Storage               StorageConfig
-	CurrentRoleLabel      func(*http.Request) string
-	ChromeOption          func(*http.Request) ui.ChromeOption
+	Layout                func(*http.Request) webpage.Provider
 	EnsureClientID        func(http.ResponseWriter, *http.Request)
 	Broker                *pagestream.Broker
 }
@@ -119,8 +116,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		AccessConfigured: config.AccessConfigured,
 	}
 	m.handler = adminhttp.Handler{
-		Catalog: config.Catalog, ReadModel: readModel,
-		CurrentRoleLabel: config.CurrentRoleLabel, ChromeOption: config.ChromeOption,
+		ReadModel: readModel, Layout: config.Layout,
 		EnsureClientID: config.EnsureClientID, Broker: config.Broker,
 		PublicationMutation: m.mutatePublication,
 	}

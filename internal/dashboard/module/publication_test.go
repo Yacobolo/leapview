@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/access"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
-	"github.com/Yacobolo/leapview/internal/dataquery"
 )
 
 func TestPublicationExecutionContextUsesPublicationPrincipal(t *testing.T) {

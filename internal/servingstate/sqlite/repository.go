@@ -16,7 +16,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/platform/digest"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 	platformdb "github.com/Yacobolo/leapview/internal/servingstate/sqlite/servingdb"
-	"github.com/Yacobolo/leapview/internal/snapshot"
+	servingstatevalidation "github.com/Yacobolo/leapview/internal/servingstate/validation"
 )
 
 type Repository struct {
@@ -238,7 +238,7 @@ func (r *Repository) SaveValidated(ctx context.Context, servingStateID servingst
 	default:
 		return servingstate.State{}, fmt.Errorf("serving state %s has status %q, want pending", servingStateID, current.Status)
 	}
-	if err := snapshot.ValidateAssetGraph(validation.Graph, current.WorkspaceID, string(servingStateID)); err != nil {
+	if err := servingstatevalidation.ValidateAssetGraph(validation.Graph, current.WorkspaceID, string(servingStateID)); err != nil {
 		return servingstate.State{}, err
 	}
 	if err := q.InsertServingStateArtifact(ctx, mapArtifactParams(artifact)); err != nil {
