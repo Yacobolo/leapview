@@ -1,0 +1,88 @@
+import { chromium } from 'playwright'
+import { readFile } from 'node:fs/promises'
+import process from 'node:process'
+
+const baseURL = process.env.QUALIFICATION_URL || 'https://localhost'
+const credentialsPath = process.env.QUALIFICATION_CREDENTIALS || '/run/secrets/credentials.json'
+const screenshotPath = process.env.QUALIFICATION_SCREENSHOT || '/evidence/browser-failure.png'
+const credentials = JSON.parse(await readFile(credentialsPath, 'utf8'))
+
+if (!credentials.email || !credentials.temporaryPassword || !credentials.qualificationPassword || !credentials.publisherToken) {
+  throw new Error('qualification credentials are incomplete')
+}
+
+const browser = await chromium.launch({ headless: true })
+const context = await browser.newContext({ ignoreHTTPSErrors: true })
+const page = await context.newPage()
+
+try {
+  await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+  await page.getByLabel('Email').fill(credentials.email)
+  await page.getByLabel('Password').fill(credentials.temporaryPassword)
+  await page.getByLabel('Password').press('Enter')
+
+  await page.getByLabel('Temporary password').waitFor({ state: 'visible', timeout: 30_000 })
+  await page.getByLabel('Temporary password').fill(credentials.temporaryPassword)
+  await page.getByLabel('New password').fill(credentials.qualificationPassword)
+  await page.getByLabel('New password').press('Enter')
+
+  const dashboard = page.getByRole('link', { name: /Five-minute Sales Evaluation/i })
+  await dashboard.waitFor({ state: 'visible', timeout: 60_000 })
+  const dashboardHref = await dashboard.getAttribute('href')
+  if (!dashboardHref) {
+    throw new Error('evaluation dashboard has no navigation target')
+  }
+  await page.goto(new URL(dashboardHref, baseURL).href, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+
+  await page.getByText('Governed order rows', { exact: true }).waitFor({ state: 'visible', timeout: 60_000 })
+  await page.getByText('24', { exact: true }).first().waitFor({ state: 'visible', timeout: 30_000 })
+
+  const state = page.getByRole('combobox', { name: 'State' })
+  await state.click({ force: true })
+  await state.locator('option', { hasText: 'SP' }).waitFor({ state: 'attached', timeout: 30_000 })
+  await state.selectOption({ label: 'SP' })
+  await page.getByText('6', { exact: true }).first().waitFor({ state: 'visible', timeout: 30_000 })
+
+  const rows = page.locator('lv-report-table [role="rowgroup"] [role="row"]')
+  if (await rows.count() === 0) {
+    throw new Error('governed order table rendered no rows')
+  }
+  const stateCells = page.getByRole('cell', { name: 'SP', exact: true })
+  if (await stateCells.count() === 0) {
+    throw new Error('State filter did not project SP rows into the governed table')
+  }
+
+  const denialRequestID = `qualification-denial-${Date.now()}`
+  const denial = await context.request.get(new URL('/api/v1/workspaces/evaluation/groups', baseURL).href, {
+    headers: {
+      Authorization: `Bearer ${credentials.publisherToken}`,
+      'X-Request-ID': denialRequestID,
+    },
+  })
+  if (denial.status() !== 403) {
+    throw new Error(`restricted publisher request returned ${denial.status()}, expected 403`)
+  }
+  const auditResponse = await context.request.get(
+    new URL('/api/v1/workspaces/evaluation/audit-events?action=authorization.denied&limit=200', baseURL).href,
+    { headers: { Authorization: `Bearer ${credentials.publisherToken}` } },
+  )
+  if (!auditResponse.ok()) {
+    throw new Error(`audit event lookup returned ${auditResponse.status()}`)
+  }
+  const audit = await auditResponse.json()
+  const recorded = audit.items?.some((event) =>
+    event.requestId === denialRequestID &&
+    event.action === 'authorization.denied' &&
+    event.status === 'denied' &&
+    event.privilege === 'MANAGE_GRANTS'
+  )
+  if (!recorded) {
+    throw new Error('restricted publisher denial was not recorded in the workspace audit stream')
+  }
+} catch (error) {
+  await page.screenshot({ path: screenshotPath }).catch(() => {})
+  throw error
+} finally {
+  await context.close()
+  await browser.close()
+}

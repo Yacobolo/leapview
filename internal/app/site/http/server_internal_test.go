@@ -934,7 +934,7 @@ func TestSiteCLIReferenceGroupsSubcommandsAndRedirectsLeafPages(t *testing.T) {
 		`<h2 id="subcommands">Subcommands</h2>`,
 		`<h3 id="query">query</h3>`,
 		`<h4 id="usage-1">Usage</h4>`,
-		`leapview semantic-models query &lt;model&gt; &lt;dataset&gt;`,
+		`leapview semantic-models query &lt;model&gt;`,
 		`href="/docs/cli/commands/semantic-models-query.json"`,
 	} {
 		if !strings.Contains(body, want) {

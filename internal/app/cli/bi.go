@@ -189,13 +189,31 @@ func semanticModelsCommand(ctx context.Context, opts *rootOptions) *cobra.Comman
 	addTargetTokenFlags(fields, opts)
 	addPaginationFlags(fields, opts)
 
-	query := semanticBodyCommand(ctx, opts, "query <model> <dataset>", "Query a semantic model dataset", "querySemanticDataset")
+	query := semanticModelBodyCommand(ctx, opts, "query <model>", "Query governed semantic data", "querySemanticModel")
 	preview := semanticBodyCommand(ctx, opts, "preview <model> <dataset>", "Preview semantic model dataset rows", "previewSemanticDataset")
-	explainQuery := semanticBodyCommand(ctx, opts, "explain-query <model> <dataset>", "Explain a semantic model dataset query", "explainSemanticQuery")
+	explainQuery := semanticModelBodyCommand(ctx, opts, "explain-query <model>", "Explain a governed semantic query", "explainSemanticModelQuery")
 	explainPreview := semanticBodyCommand(ctx, opts, "explain-preview <model> <dataset>", "Explain a semantic model dataset row preview", "explainSemanticPreview")
 
 	parent.AddCommand(list, describe, datasets, dataset, fields, query, preview, explainQuery, explainPreview)
 	return parent
+}
+
+func semanticModelBodyCommand(ctx context.Context, opts *rootOptions, use, short, operationID string) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   use,
+		Short: short,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := bodyJSONMap(opts.bodyJSON)
+			if err != nil {
+				return err
+			}
+			return runRawAPI(ctx, opts, operationID, map[string]string{"workspace": opts.workspaceID, "model": args[0]}, nil, postBody(body))
+		},
+	}
+	addTargetTokenFlags(cmd, opts)
+	cmd.Flags().StringVar(&opts.bodyJSON, "body-json", "", "request JSON body")
+	return cmd
 }
 
 func semanticBodyCommand(ctx context.Context, opts *rootOptions, use, short, operationID string) *cobra.Command {

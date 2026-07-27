@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -27,9 +28,10 @@ const (
 )
 
 type InstanceBackupOptions struct {
-	HomeDir string
-	DBPath  string
-	OutPath string
+	HomeDir              string
+	DBPath               string
+	OutPath              string
+	ExcludeRelativePaths []string
 }
 
 type InstanceRestoreOptions struct {
@@ -38,6 +40,7 @@ type InstanceRestoreOptions struct {
 	CurrentBackupOut     string
 	ExpectedEnvironment  string
 	PreserveRelativeFile string
+	ResetRelativePaths   []string
 }
 
 type instanceBackupManifest struct {
@@ -82,7 +85,7 @@ func BackupInstance(ctx context.Context, options InstanceBackupOptions) error {
 			_ = os.Remove(tmpArchivePath)
 		}
 	}()
-	if err := writeInstanceBackup(ctx, options.HomeDir, options.DBPath, tmpArchive); err != nil {
+	if err := writeInstanceBackup(ctx, options, tmpArchive); err != nil {
 		_ = tmpArchive.Close()
 		return err
 	}
@@ -102,17 +105,21 @@ func BackupInstance(ctx context.Context, options InstanceBackupOptions) error {
 
 // BackupInstanceToWriter writes a validated full-instance archive directly to
 // out. Callers own atomic destination handling and must stop the serving process.
-func BackupInstanceToWriter(ctx context.Context, homeDir, dbPath string, out io.Writer) error {
+func BackupInstanceToWriter(ctx context.Context, options InstanceBackupOptions, out io.Writer) error {
 	if out == nil {
 		return fmt.Errorf("instance backup output is required")
 	}
-	return writeInstanceBackup(ctx, homeDir, dbPath, out)
+	return writeInstanceBackup(ctx, options, out)
 }
 
-func writeInstanceBackup(ctx context.Context, homeDir, dbPath string, out io.Writer) error {
-	homeAbs, dbAbs, err := validateInstanceBackupSource(homeDir, dbPath)
+func writeInstanceBackup(ctx context.Context, options InstanceBackupOptions, out io.Writer) error {
+	homeAbs, dbAbs, err := validateInstanceBackupSource(options.HomeDir, options.DBPath)
 	if err != nil {
 		return err
+	}
+	excluded, err := normalizeInstanceRelativePaths(options.ExcludeRelativePaths)
+	if err != nil {
+		return fmt.Errorf("instance backup exclusions: %w", err)
 	}
 	parent := filepath.Dir(homeAbs)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
@@ -180,6 +187,12 @@ func writeInstanceBackup(ctx context.Context, homeDir, dbPath string, out io.Wri
 		if rel == instanceBackupManifestName {
 			return nil
 		}
+		if instanceRelativePathMatches(rel, excluded) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		info, err := entry.Info()
 		if err != nil {
 			return err
@@ -245,6 +258,37 @@ func validateInstanceBackupSource(homeDir, dbPath string) (string, string, error
 	return homeAbs, dbAbs, nil
 }
 
+func normalizeInstanceRelativePaths(values []string) ([]string, error) {
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		clean := path.Clean(filepath.ToSlash(strings.TrimSpace(value)))
+		if clean == "." || path.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, "../") {
+			return nil, fmt.Errorf("path %q must be relative to the instance home", value)
+		}
+		if clean == instanceBackupDBName || clean == instanceBackupManifestName {
+			return nil, fmt.Errorf("path %q is required instance state", value)
+		}
+		if _, duplicate := seen[clean]; duplicate {
+			continue
+		}
+		seen[clean] = struct{}{}
+		normalized = append(normalized, clean)
+	}
+	sort.Strings(normalized)
+	return normalized, nil
+}
+
+func instanceRelativePathMatches(value string, paths []string) bool {
+	value = filepath.ToSlash(filepath.Clean(value))
+	for _, candidate := range paths {
+		if value == candidate || strings.HasPrefix(value, candidate+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 func RestoreInstance(ctx context.Context, options InstanceRestoreOptions) error {
 	backupPath := strings.TrimSpace(options.BackupPath)
 	if backupPath == "" {
@@ -288,6 +332,10 @@ func restoreInstanceFromReader(ctx context.Context, options InstanceRestoreOptio
 	preserveRelativeFile, err := validatePreservedRelativeFile(options.PreserveRelativeFile)
 	if err != nil {
 		return err
+	}
+	resetRelativePaths, err := normalizeInstanceRelativePaths(options.ResetRelativePaths)
+	if err != nil {
+		return fmt.Errorf("instance restore resets: %w", err)
 	}
 	if targetHome == "" {
 		return fmt.Errorf("instance restore target home dir is required")
@@ -341,14 +389,24 @@ func restoreInstanceFromReader(ctx context.Context, options InstanceRestoreOptio
 			return closeErr
 		}
 	}
+	for _, relativePath := range resetRelativePaths {
+		resetPath, err := securejoin.SecureJoin(tmpRestore, filepath.FromSlash(relativePath))
+		if err != nil {
+			return fmt.Errorf("resolve instance restore reset path %q: %w", relativePath, err)
+		}
+		if err := os.RemoveAll(resetPath); err != nil {
+			return fmt.Errorf("reset derived instance path %q: %w", relativePath, err)
+		}
+	}
 	if exists && nonEmpty {
 		if currentBackupOut == "" {
 			return fmt.Errorf("current instance backup path is required when restoring over an existing home dir")
 		}
 		if err := BackupInstance(ctx, InstanceBackupOptions{
-			HomeDir: targetAbs,
-			DBPath:  filepath.Join(targetAbs, instanceBackupDBName),
-			OutPath: currentBackupOut,
+			HomeDir:              targetAbs,
+			DBPath:               filepath.Join(targetAbs, instanceBackupDBName),
+			OutPath:              currentBackupOut,
+			ExcludeRelativePaths: resetRelativePaths,
 		}); err != nil {
 			return fmt.Errorf("backup current instance: %w", err)
 		}

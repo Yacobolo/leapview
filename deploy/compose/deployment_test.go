@@ -46,6 +46,10 @@ func TestComposeSingleInstanceContract(t *testing.T) {
 		"read_only: true",
 		"cap_drop: [ALL]",
 		"stop_grace_period: 2m",
+		"type: tmpfs",
+		"target: /tmp",
+		"size: 536870912",
+		"mode: 01777",
 	} {
 		if !strings.Contains(compose, required) {
 			t.Fatalf("compose.yaml missing %q", required)
@@ -56,6 +60,9 @@ func TestComposeSingleInstanceContract(t *testing.T) {
 	}
 	if strings.Contains(compose, "./backups:/backups") {
 		t.Fatal("backup archives must cross the container boundary as streams, not through a host bind with incompatible ownership")
+	}
+	if strings.Contains(compose, "/tmp:rw,noexec") {
+		t.Fatal("tmpfs short syntax is rejected by Docker Desktop when its options are interpreted as mount paths")
 	}
 	appEnvironment := read(t, "leapview.env.example")
 	for _, required := range []string{
@@ -72,6 +79,14 @@ func TestComposeSingleInstanceContract(t *testing.T) {
 	if !strings.Contains(https, "CADDY_IMAGE") || !strings.Contains(https, "443:443/udp") {
 		t.Fatal("HTTPS overlay is incomplete")
 	}
+	for _, required := range []string{"type: tmpfs", "target: /tmp", "size: 67108864", "mode: 01777"} {
+		if !strings.Contains(https, required) {
+			t.Errorf("compose.https.yaml missing %q", required)
+		}
+	}
+	if strings.Contains(https, "/tmp:rw,noexec") {
+		t.Fatal("Caddy tmpfs short syntax is rejected by Docker Desktop when its options are interpreted as mount paths")
+	}
 }
 
 func TestPublicImageIsPrimaryOnboardingContract(t *testing.T) {
@@ -79,7 +94,7 @@ func TestPublicImageIsPrimaryOnboardingContract(t *testing.T) {
 	for _, required := range []string{
 		"IMAGE_NAME: ghcr.io/yacobolo/leapview",
 		"docker/setup-qemu-action@",
-		"type=raw,value=latest",
+		`--tag "${IMAGE_NAME}:latest"`,
 		"platforms: linux/amd64,linux/arm64",
 		"Verify anonymous image pull",
 		"docker logout ghcr.io",
@@ -117,6 +132,18 @@ func TestFiveMinuteEvaluationContract(t *testing.T) {
 	if !strings.Contains(dockerfile, "COPY evaluation ./evaluation") {
 		t.Fatal("runtime image does not include the self-contained evaluation project and data")
 	}
+	dashboard := read(t, filepath.Join(root, "evaluation", "project", "workspaces", "evaluation", "dashboards", "sales-overview.yaml"))
+	for _, required := range []string{
+		"kind: static",
+		"value: {kind: string, value: SP}",
+		"value: {kind: string, value: RJ}",
+		"value: {kind: string, value: MG}",
+		"value: {kind: string, value: PR}",
+	} {
+		if !strings.Contains(dashboard, required) {
+			t.Errorf("five-minute evaluation dashboard missing deterministic state option %q", required)
+		}
+	}
 	for _, name := range []string{
 		filepath.Join(root, "README.md"),
 		filepath.Join(root, "docs", "articles", "start", "installation.md"),
@@ -136,6 +163,119 @@ func TestFiveMinuteEvaluationContract(t *testing.T) {
 			if !strings.Contains(document, required) {
 				t.Errorf("%s missing five-minute evaluation contract %q", name, required)
 			}
+		}
+	}
+}
+
+func TestInstalledCandidateQualificationContract(t *testing.T) {
+	root := filepath.Join("..", "..")
+	release := read(t, filepath.Join(root, ".github", "workflows", "release.yml"))
+	qualification := read(t, filepath.Join(root, ".github", "workflows", "installed-candidate.yml"))
+	script := read(t, filepath.Join(root, "deploy", "compose", "qualification", "qualify.sh"))
+	browser := read(t, filepath.Join(root, "deploy", "compose", "qualification", "browser.mjs"))
+	runbook := read(t, filepath.Join(root, "deploy", "compose", "QUALIFICATION.md"))
+
+	for _, required := range []string{
+		"cp -R deploy/compose/qualification",
+		"./qualification/qualify.sh",
+		"candidate-${{ github.run_id }}-${{ github.run_attempt }}",
+		"docker buildx imagetools create",
+		"gh release create",
+		"needs: [image, qualify]",
+	} {
+		if !strings.Contains(release, required) {
+			t.Errorf("release workflow missing installed-candidate gate %q", required)
+		}
+	}
+	if strings.Contains(release, "types:\n      - published") {
+		t.Fatal("release workflow cannot gate publication when it starts after a release is already public")
+	}
+	if strings.Index(release, "./qualification/qualify.sh") > strings.Index(release, "gh release create") {
+		t.Fatal("release workflow publishes Compose archives before installed-candidate qualification")
+	}
+	if strings.Contains(release, "type=semver") {
+		t.Fatal("release workflow must not publish versioned image tags before installed-candidate qualification")
+	}
+	if strings.Index(release, "./qualification/qualify.sh") > strings.Index(release, "docker buildx imagetools create") {
+		t.Fatal("release workflow publishes versioned image tags before installed-candidate qualification")
+	}
+
+	for _, required := range []string{
+		"workflow_dispatch:",
+		"schedule:",
+		"ubuntu-24.04-arm",
+		"docker logout ghcr.io",
+		"releases/download/",
+		"sha256sum --check",
+		"retention-days: 14",
+		"Create qualification incident",
+	} {
+		if !strings.Contains(qualification, required) {
+			t.Errorf("installed-candidate workflow missing %q", required)
+		}
+	}
+
+	for _, required := range []string{
+		"./leapviewctl init",
+		"./leapviewctl start",
+		"./leapviewctl first-login",
+		`if [[ "$local_image" == true ]]; then`,
+		`docker image inspect "$image_reference"`,
+		"QUALIFICATION_MIN_FREE_BYTES",
+		"evaluation/project/leapview.yaml",
+		"./leapviewctl backup",
+		"./leapviewctl restore",
+		"docker restart",
+		"/metrics",
+		"auditedDenial",
+		"runtime-identity.json",
+		"qualification-report.json",
+	} {
+		if !strings.Contains(script, required) {
+			t.Errorf("qualification script missing tester assertion %q", required)
+		}
+	}
+	if strings.Contains(script, "${run_suffix,,}") {
+		t.Error("qualification script uses Bash 4 lowercase expansion and cannot run from the Darwin release bundle")
+	}
+	if !strings.Contains(script, `if [[ "$success" != true ]]; then`) {
+		t.Error("qualification failure evidence must replace stale reports from a prior local run")
+	}
+	if !strings.Contains(script, `--output "$metrics_file"`) {
+		t.Error("qualification must materialize metrics before searching them so pipefail cannot turn grep's early exit into a curl failure")
+	}
+	if !strings.Contains(script, `set_min_free_bytes "$restore_root"`) {
+		t.Error("the local disk-reserve override must also apply to the isolated restore instance")
+	}
+	if !strings.Contains(script, `cp "$bundle_root/leapview.env" "$restore_root/leapview.env"`) {
+		t.Error("isolated restore qualification must supply the original separately managed signing and encryption secrets")
+	}
+	if !strings.Contains(browser, `getByLabel('New password').press('Enter')`) {
+		t.Error("browser qualification must submit the password form without relying on an animated button's stability")
+	}
+	for _, required := range []string{
+		"page.goto(new URL(dashboardHref, baseURL)",
+		"click({ force: true })",
+		"locator('option', { hasText: 'SP' })",
+		"selectOption({ label: 'SP' })",
+		"/api/v1/workspaces/evaluation/groups",
+		"authorization.denied",
+		"MANAGE_GRANTS",
+	} {
+		if !strings.Contains(browser, required) {
+			t.Errorf("browser qualification missing motion-independent interaction %q", required)
+		}
+	}
+
+	for _, required := range []string{
+		"Automated step",
+		"Human check",
+		"Five-minute Sales Evaluation",
+		"Anonymous distribution",
+		"Incident ownership",
+	} {
+		if !strings.Contains(runbook, required) {
+			t.Errorf("qualification runbook missing %q", required)
 		}
 	}
 }

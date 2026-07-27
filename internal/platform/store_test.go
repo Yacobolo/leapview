@@ -407,10 +407,15 @@ func TestBackupInstanceArchivesDatabaseAndPersistentFiles(t *testing.T) {
 	writeTestFile(t, filepath.Join(home, "artifacts", "dep_1.tar.gz"), "artifact")
 	writeTestFile(t, filepath.Join(home, "data", "ducklake-file.parquet"), "ducklake-data")
 	writeTestFile(t, filepath.Join(home, "runtime", "runtime-state"), "runtime")
+	writeTestFile(t, filepath.Join(home, "managed-data", "objects", "blobs", "sha256", "ab", "blob"), "managed blob")
+	writeTestFile(t, filepath.Join(home, "managed-data", "objects", "revisions", "revision", "data", "orders.csv"), "derived revision")
 	writeTestFile(t, dbPath+"-wal", "stale wal sidecar")
 
 	backupPath := filepath.Join(dir, "backups", "leapview-instance.tar.gz")
-	if err := BackupInstance(ctx, InstanceBackupOptions{HomeDir: home, DBPath: dbPath, OutPath: backupPath}); err != nil {
+	if err := BackupInstance(ctx, InstanceBackupOptions{
+		HomeDir: home, DBPath: dbPath, OutPath: backupPath,
+		ExcludeRelativePaths: []string{"managed-data/objects/revisions"},
+	}); err != nil {
 		t.Fatalf("backup instance: %v", err)
 	}
 
@@ -421,6 +426,7 @@ func TestBackupInstanceArchivesDatabaseAndPersistentFiles(t *testing.T) {
 		"artifacts/dep_1.tar.gz",
 		"data/ducklake-file.parquet",
 		"runtime/runtime-state",
+		"managed-data/objects/blobs/sha256/ab/blob",
 	} {
 		if _, ok := entries[want]; !ok {
 			t.Fatalf("instance backup missing %q; entries=%v", want, sortedKeys(entries))
@@ -428,6 +434,9 @@ func TestBackupInstanceArchivesDatabaseAndPersistentFiles(t *testing.T) {
 	}
 	if _, ok := entries["leapview.db-wal"]; ok {
 		t.Fatalf("instance backup included sqlite WAL sidecar; entries=%v", sortedKeys(entries))
+	}
+	if _, ok := entries["managed-data/objects/revisions/revision/data/orders.csv"]; ok {
+		t.Fatalf("instance backup included an excluded derived revision; entries=%v", sortedKeys(entries))
 	}
 	backupDBPath := filepath.Join(dir, "backup.db")
 	if err := os.WriteFile(backupDBPath, entries["leapview.db"], 0o644); err != nil {
@@ -580,13 +589,17 @@ func TestRestoreInstanceReplacesHomeAndBacksUpCurrent(t *testing.T) {
 	}
 	writeTestFile(t, filepath.Join(sourceHome, "artifacts", "new.tar.gz"), "new artifact")
 	writeTestFile(t, filepath.Join(sourceHome, "data", "ducklake-file.parquet"), "ducklake-data")
+	writeTestFile(t, filepath.Join(sourceHome, "managed-data", "objects", "revisions", "stale", "data", "orders.csv"), "stale derived revision")
 	backupPath := filepath.Join(dir, "backups", "restore.tar.gz")
 	if err := BackupInstance(ctx, InstanceBackupOptions{HomeDir: sourceHome, DBPath: sourceDBPath, OutPath: backupPath}); err != nil {
 		t.Fatalf("backup source instance: %v", err)
 	}
 
 	beforePath := filepath.Join(dir, "backups", "before-restore.tar.gz")
-	if err := RestoreInstance(ctx, InstanceRestoreOptions{TargetHomeDir: currentHome, BackupPath: backupPath, CurrentBackupOut: beforePath}); err != nil {
+	if err := RestoreInstance(ctx, InstanceRestoreOptions{
+		TargetHomeDir: currentHome, BackupPath: backupPath, CurrentBackupOut: beforePath,
+		ResetRelativePaths: []string{"managed-data/objects/revisions"},
+	}); err != nil {
 		t.Fatalf("restore instance: %v", err)
 	}
 
@@ -609,6 +622,9 @@ func TestRestoreInstanceReplacesHomeAndBacksUpCurrent(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(currentHome, "artifacts", "old.tar.gz")); !os.IsNotExist(err) {
 		t.Fatalf("old artifact survived restore: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(currentHome, "managed-data", "objects", "revisions")); !os.IsNotExist(err) {
+		t.Fatalf("derived revision cache survived restore: %v", err)
 	}
 	beforeEntries := readTarGzEntries(t, beforePath)
 	if got := string(beforeEntries["artifacts/old.tar.gz"]); got != "old artifact" {

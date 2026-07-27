@@ -2,6 +2,7 @@ package module
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -62,5 +63,38 @@ func TestAuthorizationObjectsIncludeConfiguredWorkspaceBeforeItIsPersisted(t *te
 	objects := authorizationObjects(nil, "test", credential, access.PrivilegeViewAudit)
 	if len(objects) != 1 || objects[0] != access.WorkspaceObject("test") {
 		t.Fatalf("authorization objects = %#v, want configured test workspace", objects)
+	}
+}
+
+func TestAuthorizationDenialAuditInputIdentifiesTheDeniedObject(t *testing.T) {
+	request := httptest.NewRequest("POST", "/api/v1/workspaces/acme/semantic-models/sales/query", nil)
+	request.Header.Set("X-Request-ID", "request-1")
+	request.Header.Set("X-Correlation-ID", "correlation-1")
+	input := authorizationDenialAuditInput(
+		request,
+		"principal-1",
+		"acme",
+		access.PrivilegeQueryData,
+		[]access.ObjectRef{access.ItemObject(access.SecurableSemanticModel, "acme", "sales")},
+		access.ReasonMissingPrivilege,
+	)
+	if input.Action != "authorization.denied" || input.Status != "denied" {
+		t.Fatalf("denial audit action/status = %q/%q", input.Action, input.Status)
+	}
+	if input.WorkspaceID != "acme" || input.PrincipalID != "principal-1" {
+		t.Fatalf("denial audit identity = %#v", input)
+	}
+	if input.TargetType != "semantic_model" || input.TargetID != "semantic_model:acme:sales" {
+		t.Fatalf("denial audit target = %q/%q", input.TargetType, input.TargetID)
+	}
+	if input.Privilege != access.PrivilegeQueryData || input.RequestID != "request-1" || input.CorrelationID != "correlation-1" {
+		t.Fatalf("denial audit request contract = %#v", input)
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal([]byte(input.MetadataJSON), &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if metadata["reason"] != string(access.ReasonMissingPrivilege) {
+		t.Fatalf("denial audit metadata = %#v", metadata)
 	}
 }

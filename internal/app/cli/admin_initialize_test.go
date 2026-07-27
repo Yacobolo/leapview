@@ -54,10 +54,17 @@ func TestAdminInitializeCreatesOneTimeCredentialBundle(t *testing.T) {
 	if err != nil || len(apiCredential.Token.Privileges) == 0 {
 		t.Fatalf("publisher credential = %#v err=%v", apiCredential, err)
 	}
+	canVerifyAudit := false
 	for _, privilege := range apiCredential.Token.Privileges {
 		if privilege == access.PrivilegeManagePlatform || privilege == access.PrivilegeManageGrants {
 			t.Fatalf("publisher token contains administrative privilege %q", privilege)
 		}
+		if privilege == access.PrivilegeViewAudit {
+			canVerifyAudit = true
+		}
+	}
+	if !canVerifyAudit {
+		t.Fatal("publisher token cannot verify the audit trail for its release operations")
 	}
 	if err := store.Close(); err != nil {
 		t.Fatal(err)

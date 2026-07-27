@@ -16,8 +16,16 @@ spec:
         - kind: set
           operators: [in, not_in]
       options:
-        kind: distinct
-        limit: 20
+        kind: static
+        values:
+          - value: {kind: string, value: SP}
+            label: SP
+          - value: {kind: string, value: RJ}
+            label: RJ
+          - value: {kind: string, value: MG}
+            label: MG
+          - value: {kind: string, value: PR}
+            label: PR
     category:
       label: Category
       field: category
