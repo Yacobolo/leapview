@@ -2,6 +2,7 @@ package composectl
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -94,6 +95,67 @@ func TestEnvironmentLineValuesRejectConfigurationInjection(t *testing.T) {
 	}
 	if err := validateEnvLineValue("domain", "dash.example.com"); err != nil {
 		t.Fatalf("ordinary value rejected: %v", err)
+	}
+}
+
+func TestInitializeRejectsInvalidPublicDomainBeforeStateMutation(t *testing.T) {
+	root := t.TempDir()
+	example := "LEAPVIEW_IMAGE=example.com/leapview@sha256:" + strings.Repeat("a", 64) +
+		"\nCADDY_IMAGE=example.com/caddy@sha256:" + strings.Repeat("b", 64) +
+		"\nCADDY_DOMAIN=dash.example.com\nCOMPOSE_HTTPS=1\n"
+	if err := os.WriteFile(filepath.Join(root, "deployment.env.example"), []byte(example), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	controller, err := New(Options{Root: root, DockerBin: "/bin/false"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = controller.Initialize(context.Background(), InitOptions{
+		AdminEmail: "admin@example.com",
+		Domain:     "https://dash.example.com",
+	})
+	if err == nil || !strings.Contains(err.Error(), "--domain must be a hostname") {
+		t.Fatalf("invalid public domain error = %v", err)
+	}
+	for _, name := range []string{deploymentEnvName, appEnvName, credentialsName, controllerLockName} {
+		if _, err := os.Stat(filepath.Join(root, name)); !os.IsNotExist(err) {
+			t.Errorf("invalid public domain mutated %s: %v", name, err)
+		}
+	}
+}
+
+func TestCanonicalPublicDomain(t *testing.T) {
+	for _, test := range []struct {
+		input string
+		want  string
+	}{
+		{input: "dash.example.com", want: "dash.example.com"},
+		{input: " Dash.Example.COM. ", want: "dash.example.com"},
+		{input: "localhost", want: "localhost"},
+	} {
+		t.Run(test.input, func(t *testing.T) {
+			got, err := canonicalPublicDomain(test.input)
+			if err != nil || got != test.want {
+				t.Fatalf("canonicalPublicDomain(%q) = %q, %v; want %q", test.input, got, err, test.want)
+			}
+		})
+	}
+	for _, input := range []string{
+		"https://dash.example.com",
+		"dash.example.com/path",
+		"dash.example.com:8443",
+		"user@dash.example.com",
+		"*.example.com",
+		"-dash.example.com",
+		"dash..example.com",
+		"dash_example.com",
+	} {
+		t.Run("reject "+input, func(t *testing.T) {
+			if got, err := canonicalPublicDomain(input); err == nil {
+				t.Fatalf("canonicalPublicDomain(%q) = %q, nil", input, got)
+			}
+		})
 	}
 }
 

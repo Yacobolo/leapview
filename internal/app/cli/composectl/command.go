@@ -30,10 +30,10 @@ func Command(ctx context.Context, controller *Controller) *cobra.Command {
 		},
 	}
 	initialize.Flags().StringVar(&initOptions.AdminEmail, "admin-email", "", "initial platform administrator email")
-	initialize.Flags().StringVar(&initOptions.Domain, "domain", "", "public application host")
+	initialize.Flags().StringVar(&initOptions.Domain, "domain", "", "canonical public application hostname")
 	initialize.Flags().StringVar(&initOptions.Environment, "environment", defaultEnvironment, "instance environment")
 	initialize.Flags().StringVar(&initOptions.Image, "image", "", "immutable LeapView image reference")
-	initialize.Flags().BoolVar(&initOptions.NoHTTPS, "no-https", false, "disable the Caddy HTTPS overlay")
+	initialize.Flags().BoolVar(&initOptions.NoHTTPS, "no-https", false, "use a trusted external HTTPS proxy instead of the Caddy overlay")
 
 	start := &cobra.Command{
 		Use:   "start",

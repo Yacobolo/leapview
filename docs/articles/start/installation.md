@@ -71,11 +71,11 @@ cp deployment.env.example deployment.env
 ./leapviewctl first-login
 ```
 
-Initialization generates production secrets, creates the persistent volume, validates configuration, and atomically creates a forced-change local administrator plus a restricted publisher token. `first-login` prints and deletes that one-time credential file.
+Initialization treats `--domain` as the canonical public hostname and derives `LEAPVIEW_PUBLIC_URL=https://<domain>`, the allowed host, and the Caddy domain from it. It also generates production secrets, creates the persistent volume, validates the resulting production configuration, and atomically creates a forced-change local administrator plus a restricted publisher token. `first-login` prints and deletes that one-time credential file.
 
 `leapviewctl` is an optional production operations controller, not a prerequisite for pulling or running LeapView. It invokes the installed Docker Compose CLI and does not require Bash or direct access to the Docker socket API. You may manage the image with your existing container platform if it preserves the same single-process, persistent-home, initialization, backup, and environment contracts.
 
-The Caddy overlay is enabled by default. Pass `--no-https` only when an existing trusted HTTPS proxy fronts the localhost-bound application port. Keep secure cookies and the public allowed host configured for that proxy.
+The Caddy overlay is enabled by default. Pass `--no-https` only when an existing trusted HTTPS proxy fronts the localhost-bound application port. This changes where TLS terminates, not the external scheme: the generated public URL remains HTTPS, secure cookies remain enabled, and forwarded host and scheme headers must come only from that trusted proxy.
 
 ## Understand the instance boundary
 
