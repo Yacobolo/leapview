@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
@@ -132,6 +133,10 @@ func (m *Module) ListRefreshRunEvents(w http.ResponseWriter, r *http.Request, wo
 		return
 	}
 	jobhttp.WriteEventPage(w, r, m.events, "refresh", runID, limit, pageToken, "refresh:"+workspaceID+":"+runID)
+}
+
+func (m *Module) DispatchAPIGenOperation(operationID string, logger *slog.Logger, w http.ResponseWriter, r *http.Request) bool {
+	return materializehttp.DispatchAPIGenOperation(operationID, m, logger, w, r)
 }
 
 func (m *Module) workspaceID(workspaceID string) string {

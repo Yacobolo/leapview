@@ -27,11 +27,3 @@ func (a apiGenDispatcher) ListManagedDataUploadSessionEvents(w http.ResponseWrit
 func (a apiGenDispatcher) GetWorkspace(w http.ResponseWriter, r *http.Request, workspaceID string) {
 	a.workspaceModule.GetWorkspace(w, r, workspaceID)
 }
-
-func (a apiGenDispatcher) CancelRefreshRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string, headers apigenapi.GenCancelRefreshRunHeaders) {
-	a.refreshModule.CancelRefreshRun(w, r, workspaceID, runID)
-}
-
-func (a apiGenDispatcher) ListRefreshRunEvents(w http.ResponseWriter, r *http.Request, workspaceID, runID string, params apigenapi.GenListRefreshRunEventsParams, headers apigenapi.GenListRefreshRunEventsHeaders) {
-	a.refreshModule.ListRefreshRunEvents(w, r, workspaceID, runID, params.Limit, params.PageToken)
-}

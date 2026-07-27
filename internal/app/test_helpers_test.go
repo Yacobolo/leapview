@@ -130,8 +130,8 @@ func newAppTestHarness(metrics QueryMetrics) *appTestHarness {
 func apiGenDispatcherForTest(server *appTestHarness) apiGenDispatcher {
 	return apiGenDispatcher{
 		dashboardModule: server.routes.dashboardModule, deploymentModule: server.routes.deploymentModule,
-		managedDataModule: server.routes.managedDataModule, refreshModule: server.routes.refreshModule,
-		releaseModule: server.routes.releaseModule, workspaceModule: server.routes.workspaceModule,
+		managedDataModule: server.routes.managedDataModule,
+		releaseModule:     server.routes.releaseModule, workspaceModule: server.routes.workspaceModule,
 		defaultEnvironment: server.policy.defaultEnvironment, managedDataTus: server.policy.managedDataTus,
 		buildIdentity: server.platform.buildIdentity,
 	}

@@ -806,6 +806,9 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				if routes.releaseModule != nil && projecthttp.DispatchAPIGenOperation(operationID, routes.releaseModule, platform.logger, writer, request) {
 					return true
 				}
+				if routes.refreshModule != nil && routes.refreshModule.DispatchAPIGenOperation(operationID, platform.logger, writer, request) {
+					return true
+				}
 				return apigenapi.DispatchAPIGenOperation(operationID, apiDispatcher, apiprotocol.TransportErrorResponder{Logger: platform.logger}, writer, request)
 			},
 			QueryContext: func(ctx context.Context, scope agentmodule.Scope) context.Context {
@@ -922,8 +925,8 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	}
 	apiDispatcher = &apiGenDispatcher{
 		dashboardModule: routes.dashboardModule, deploymentModule: routes.deploymentModule,
-		managedDataModule: routes.managedDataModule, refreshModule: routes.refreshModule,
-		releaseModule: routes.releaseModule, workspaceModule: routes.workspaceModule,
+		managedDataModule: routes.managedDataModule,
+		releaseModule:     routes.releaseModule, workspaceModule: routes.workspaceModule,
 		defaultEnvironment: policy.defaultEnvironment, managedDataTus: policy.managedDataTus,
 		buildIdentity: platform.buildIdentity,
 	}
@@ -966,9 +969,15 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	if err != nil {
 		return fmt.Errorf("build Project APIGen transport: %w", err)
 	}
+	refreshAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
+		return routes.refreshModule.DispatchAPIGenOperation(operationID, platform.logger, w, r)
+	})
+	if err != nil {
+		return fmt.Errorf("build Refresh APIGen transport: %w", err)
+	}
 	platform.apiGenServers = apiaggregate.Servers{
 		Access: accessAPIHandler, Agent: agentAPIHandler, Analytics: analyticsAPIHandler,
-		Gen: appAPIHandler, Project: projectAPIHandler,
+		Gen: appAPIHandler, Project: projectAPIHandler, Refresh: refreshAPIHandler,
 	}
 	configurePageStream(routes, runtime, platform, policy)
 	platform.health = newHealth(healthConfig{
