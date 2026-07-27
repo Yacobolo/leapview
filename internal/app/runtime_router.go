@@ -812,6 +812,9 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				if routes.deploymentModule != nil && routes.deploymentModule.DispatchAPIGenOperation(operationID, platform.logger, writer, request) {
 					return true
 				}
+				if routes.releaseModule != nil && routes.releaseModule.DispatchAPIGenOperation(operationID, platform.logger, writer, request) {
+					return true
+				}
 				return apigenapi.DispatchAPIGenOperation(operationID, apiDispatcher, apiprotocol.TransportErrorResponder{Logger: platform.logger}, writer, request)
 			},
 			QueryContext: func(ctx context.Context, scope agentmodule.Scope) context.Context {
@@ -983,9 +986,16 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	if err != nil {
 		return fmt.Errorf("build Deployment APIGen transport: %w", err)
 	}
+	releaseAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
+		return routes.releaseModule.DispatchAPIGenOperation(operationID, platform.logger, w, r)
+	})
+	if err != nil {
+		return fmt.Errorf("build Release APIGen transport: %w", err)
+	}
 	platform.apiGenServers = apiaggregate.Servers{
 		Access: accessAPIHandler, Agent: agentAPIHandler, Analytics: analyticsAPIHandler,
-		Deployment: deploymentAPIHandler, Gen: appAPIHandler, Project: projectAPIHandler, Refresh: refreshAPIHandler,
+		Deployment: deploymentAPIHandler, Gen: appAPIHandler, Project: projectAPIHandler,
+		Refresh: refreshAPIHandler, Release: releaseAPIHandler,
 	}
 	configurePageStream(routes, runtime, platform, policy)
 	platform.health = newHealth(healthConfig{

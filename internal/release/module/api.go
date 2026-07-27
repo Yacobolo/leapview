@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 
 	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
@@ -12,6 +13,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/release"
 	releaseapi "github.com/Yacobolo/leapview/internal/release/api"
 	releasefilesystem "github.com/Yacobolo/leapview/internal/release/filesystem"
+	releasehttp "github.com/Yacobolo/leapview/internal/release/http"
 )
 
 type Principal struct {
@@ -63,7 +65,7 @@ func (m *Module) CreateRelease(w http.ResponseWriter, r *http.Request, project, 
 	apitransport.WriteJSON(w, http.StatusCreated, response(created))
 }
 
-func (m *Module) ListReleases(w http.ResponseWriter, r *http.Request, project string, params releaseapi.PageParams) {
+func (m *Module) ListReleases(w http.ResponseWriter, r *http.Request, project string, limit *int32, pageToken *string) {
 	rows, err := m.service.List(r.Context(), project)
 	if err != nil {
 		writeError(w, r, err)
@@ -73,7 +75,7 @@ func (m *Module) ListReleases(w http.ResponseWriter, r *http.Request, project st
 	for _, row := range rows {
 		items = append(items, response(row))
 	}
-	page, next, err := apitransport.KeysetPage(items, params.Limit, params.PageToken, func(item releaseapi.Response) string { return item.CreatedAt + "\x00" + item.ID })
+	page, next, err := apitransport.KeysetPage(items, limit, pageToken, func(item releaseapi.Response) string { return item.CreatedAt + "\x00" + item.ID })
 	if err != nil {
 		apitransport.WriteProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", err.Error(), nil)
 		return
@@ -105,7 +107,7 @@ func (m *Module) UploadReleaseArtifact(w http.ResponseWriter, r *http.Request, p
 	apitransport.WriteJSON(w, http.StatusCreated, releaseapi.ArtifactResponse{ReleaseID: releaseID, WorkspaceID: workspaceID, Digest: artifact.ExpectedDigest, SizeBytes: artifact.SizeBytes})
 }
 
-func (m *Module) FinalizeRelease(w http.ResponseWriter, r *http.Request, project, releaseID string) {
+func (m *Module) FinalizeRelease(w http.ResponseWriter, r *http.Request, project, releaseID, _ string) {
 	payload, err := json.Marshal(FinalizeJob{Project: project, Release: releaseID})
 	if err != nil {
 		apitransport.WriteProblem(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Release finalization could not be queued", nil)
@@ -139,7 +141,7 @@ func (m *Module) FinalizeRelease(w http.ResponseWriter, r *http.Request, project
 	apitransport.WriteJSON(w, http.StatusAccepted, response(row))
 }
 
-func (m *Module) ListReleaseEvents(w http.ResponseWriter, r *http.Request, project, releaseID string, params releaseapi.PageParams) {
+func (m *Module) ListReleaseEvents(w http.ResponseWriter, r *http.Request, project, releaseID string, limit *int32, pageToken *string) {
 	if _, err := m.service.Get(r.Context(), project, releaseID); err != nil {
 		writeError(w, r, err)
 		return
@@ -148,7 +150,11 @@ func (m *Module) ListReleaseEvents(w http.ResponseWriter, r *http.Request, proje
 		apitransport.WriteProblem(w, r, http.StatusServiceUnavailable, "ASYNC_EVENT_STORE_UNAVAILABLE", "Release events are unavailable", nil)
 		return
 	}
-	jobhttp.WriteEventPage(w, r, m.api.Jobs, "release", releaseID, params.Limit, params.PageToken, "release:"+project+":"+releaseID)
+	jobhttp.WriteEventPage(w, r, m.api.Jobs, "release", releaseID, limit, pageToken, "release:"+project+":"+releaseID)
+}
+
+func (m *Module) DispatchAPIGenOperation(operationID string, logger *slog.Logger, w http.ResponseWriter, r *http.Request) bool {
+	return releasehttp.DispatchAPIGenOperation(operationID, m, logger, w, r)
 }
 
 func (m *Module) currentPrincipal(r *http.Request) (Principal, bool) {

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	releasegen "github.com/Yacobolo/leapview/internal/release/api/gen"
 )
 
 func TestManagedDataGeneratedByteCountsAreInt64(t *testing.T) {
@@ -28,7 +29,7 @@ func TestManagedDataGeneratedByteCountsAreInt64(t *testing.T) {
 }
 
 func TestReleaseArtifactGeneratedSizeIsInt64(t *testing.T) {
-	typeOf := reflect.TypeOf(apigenapi.ReleaseArtifactResponse{})
+	typeOf := reflect.TypeOf(releasegen.ReleaseArtifactResponse{})
 	field, ok := typeOf.FieldByName("SizeBytes")
 	if !ok || field.Type.Kind() != reflect.Int64 {
 		t.Fatalf("%s.SizeBytes type = %v, want int64", typeOf.Name(), field.Type)

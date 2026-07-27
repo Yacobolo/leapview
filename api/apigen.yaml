@@ -44,7 +44,10 @@ targets:
           dir: ../internal/refresh/api/gen
           package: gen
           import_path: github.com/Yacobolo/leapview/internal/refresh/api/gen
-        LeapViewAPI.Release: *leapview_api_go_package
+        LeapViewAPI.Release:
+          dir: ../internal/release/api/gen
+          package: gen
+          import_path: github.com/Yacobolo/leapview/internal/release/api/gen
         LeapViewAPI.Workspace: *leapview_api_go_package
     cli_out:
       dir: ../internal/app/cli/gen
