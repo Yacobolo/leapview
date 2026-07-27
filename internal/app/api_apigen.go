@@ -57,7 +57,6 @@ type apiGenDispatcher struct {
 	defaultEnvironment string
 	buildIdentity      buildinfo.Identity
 	managedDataTus     http.Handler
-	queryAuditEvents   http.HandlerFunc
 }
 
 func (a apiGenDispatcher) GetInstance(w http.ResponseWriter, _ *http.Request) {
@@ -242,8 +241,4 @@ func (a apiGenDispatcher) ListSemanticModels(w http.ResponseWriter, r *http.Requ
 
 func (a apiGenDispatcher) GetSemanticModel(w http.ResponseWriter, r *http.Request, _, _ string) {
 	a.dashboardModule.SemanticAPI().GetSemanticModel(w, r)
-}
-
-func (a apiGenDispatcher) ListQueryEvents(w http.ResponseWriter, r *http.Request, _ string, _ apigenapi.GenListQueryEventsParams) {
-	a.queryAuditEvents(w, r)
 }

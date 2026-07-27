@@ -4,12 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"net/http"
 
 	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
 	analyticsmaterialization "github.com/Yacobolo/leapview/internal/analytics/materialization"
 	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
-	queryaudithttp "github.com/Yacobolo/leapview/internal/analytics/queryaudit/http"
 	queryauditsqlite "github.com/Yacobolo/leapview/internal/analytics/queryaudit/sqlite"
 	"github.com/Yacobolo/leapview/internal/analytics/resource"
 	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
@@ -79,13 +77,6 @@ func (s *QueryAuditSurface) Recorder() queryaudit.Recorder {
 		return nil
 	}
 	return s.repository
-}
-
-func (s *QueryAuditSurface) Events(workspaceID queryaudithttp.WorkspaceIDNormalizer) http.HandlerFunc {
-	if s == nil {
-		return NewQueryAuditEvents(nil, workspaceID)
-	}
-	return NewQueryAuditEvents(s.repository, workspaceID)
 }
 
 type Module struct {
@@ -172,20 +163,6 @@ func (m *Module) QueryAuditRecorder() queryaudit.Recorder {
 		return nil
 	}
 	return m.queryAudit
-}
-
-func (m *Module) QueryAuditEvents(workspaceID queryaudithttp.WorkspaceIDNormalizer) http.HandlerFunc {
-	return NewQueryAuditEvents(m.QueryAuditReader(), workspaceID)
-}
-
-func NewQueryAuditEvents(reader queryaudit.Reader, workspaceID queryaudithttp.WorkspaceIDNormalizer) http.HandlerFunc {
-	handler := queryaudithttp.Handler{
-		Reader: func() (queryaudit.Reader, error) {
-			return reader, nil
-		},
-		WorkspaceID: workspaceID,
-	}
-	return handler.ListQueryEvents
 }
 
 func (m *Module) Healthy() error {

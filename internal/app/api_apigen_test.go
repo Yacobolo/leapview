@@ -11,6 +11,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/access"
 	accessgen "github.com/Yacobolo/leapview/internal/access/api/gen"
 	agentgen "github.com/Yacobolo/leapview/internal/agent/api/gen"
+	analyticsgen "github.com/Yacobolo/leapview/internal/analytics/api/gen"
 	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	"github.com/Yacobolo/leapview/internal/workspace"
@@ -208,7 +209,7 @@ func TestAPIGenAccessCapabilityOwnsItsGeneratedPackage(t *testing.T) {
 	manifestText := string(manifest)
 	for _, want := range []string{
 		"LeapViewAPI.Access:\n          dir: ../internal/access/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/access/api/gen",
-		"LeapViewAPI.Analytics: *leapview_api_go_package",
+		"LeapViewAPI.Analytics:\n          dir: ../internal/analytics/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/analytics/api/gen",
 	} {
 		if !strings.Contains(manifestText, want) {
 			t.Fatalf("manifest missing Access capability package plan %q", want)
@@ -225,6 +226,8 @@ func TestAPIGenAccessCapabilityOwnsItsGeneratedPackage(t *testing.T) {
 	for _, want := range []string{
 		"internal/access/api/gen/request_models.gen.go",
 		"internal/access/api/gen/server.apigen.gen.go",
+		"internal/analytics/api/gen/request_models.gen.go",
+		"internal/analytics/api/gen/server.apigen.gen.go",
 	} {
 		if !strings.Contains(string(taskfile), want) {
 			t.Fatalf("Taskfile.yml does not track generated Access artifact %q", want)
@@ -250,8 +253,28 @@ func TestAPIGenAccessCapabilityOwnsItsOperationSurface(t *testing.T) {
 	if _, exists := accessContracts["listQueryEvents"]; exists {
 		t.Fatal("Analytics-owned listQueryEvents is emitted by the Access package")
 	}
-	if _, exists := appContracts["listQueryEvents"]; !exists {
-		t.Fatal("Analytics-owned listQueryEvents is missing from the coalesced application package")
+	if _, exists := appContracts["listQueryEvents"]; exists {
+		t.Fatal("Analytics-owned listQueryEvents is still emitted by the application package")
+	}
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
+		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
+	}
+}
+
+func TestAPIGenAnalyticsCapabilityOwnsItsOperationSurface(t *testing.T) {
+	analyticsContracts := analyticsgen.GetAPIGenOperationContracts()
+	if got, want := len(analyticsContracts), 1; got != want {
+		t.Fatalf("Analytics generated operations = %d, want %d", got, want)
+	}
+	contract, exists := analyticsContracts["listQueryEvents"]
+	if !exists {
+		t.Fatal("Analytics generated package is missing listQueryEvents")
+	}
+	if len(contract.Tags) != 1 || contract.Tags[0] != "Audit" {
+		t.Fatalf("listQueryEvents tags = %v, want [Audit]", contract.Tags)
+	}
+	if _, exists := apigenapi.GetAPIGenOperationContracts()["listQueryEvents"]; exists {
+		t.Fatal("Analytics-owned listQueryEvents is still emitted by the application package")
 	}
 	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
