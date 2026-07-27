@@ -18,7 +18,11 @@ COPY . .
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     ./scripts/generate_build_sources.sh && \
-    go run ./internal/app/tools/mapassets --out .data/map-assets
+    go run ./internal/app/tools/mapassets --out .data/map-assets && \
+    go run ./internal/app/tools/clidocgen && \
+    go run ./internal/app/tools/schemadocgen && \
+    go run ./internal/app/tools/openapidocgen && \
+    go run ./internal/app/tools/docsitegen
 
 FROM oven/bun:1.3.7@sha256:6cd5f00020e48b77a253bc8249f6b6dd3d92b3c04c2607f1f5a6d7dbf0a6fca3 AS web
 WORKDIR /src
@@ -56,6 +60,7 @@ COPY --from=sourcegen /src/internal/admin/ui/signals/models.gen.go ./internal/ad
 COPY --from=sourcegen /src/internal/agent/ui/signals/models.gen.go ./internal/agent/ui/signals/models.gen.go
 COPY --from=sourcegen /src/internal/dashboard/ui/signals/models.gen.go ./internal/dashboard/ui/signals/models.gen.go
 COPY --from=sourcegen /src/internal/workspace/ui/signals/models.gen.go ./internal/workspace/ui/signals/models.gen.go
+COPY --from=sourcegen /src/docs ./docs
 COPY --from=sourcegen /src/schemas ./schemas
 COPY --from=sourcegen /src/web/generated ./web/generated
 COPY --from=web /src/static ./static
