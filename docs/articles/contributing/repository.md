@@ -5,7 +5,9 @@ LeapView is a monorepo containing the product application, browser components, r
 ## Important locations
 
 - `cmd/leapview/` — application and CLI entry point.
-- `internal/` — domain, transport, query, runtime, storage, access, agent, and generator packages.
+- `internal/app/` — process composition, global routing, entrypoints, public-site composition, and tooling.
+- `internal/<capability>/` — product behavior and its contracts, use cases, adapters, workers, and optional runtime construction.
+- `internal/platform/` — capability-agnostic technical mechanisms.
 - `api/typespec/` — headless API source contract.
 - `api/signals/` — UI signal source contract.
 - `dashboards/` — complete example configuration-as-code projects.
@@ -17,6 +19,18 @@ LeapView is a monorepo containing the product application, browser components, r
 - `deploy/hetzner/` — supported single-node deployment contract.
 
 Read the nearest `AGENTS.md` before editing. Preserve unrelated user changes in a dirty worktree.
+
+## Choosing a package
+
+LeapView uses a modular-monolith ownership rule:
+
+- If a package mentions a product noun, place it in the capability that owns that language.
+- If it implements a capability-agnostic technical mechanism, place it in `internal/platform`.
+- If it assembles or exposes the application, place it in `internal/app`.
+
+Capability modules are peers. `access`, `analytics`, `project`, `workload`, `runtimehost`, and `servingstate` are horizontal because several experiences and workflows use them, but they remain product capabilities rather than a shared technical layer. Depending on one requires an explicit contract and a declared dependency edge.
+
+Keep capability HTTP, API, UI, persistence, and worker adapters beside their owner. Do not introduce generic `internal/api`, `internal/ui`, or `internal/modules` roots. Read the [Architecture overview](/docs/architecture) before creating a new top-level package or cross-capability dependency.
 
 ## Development loop
 

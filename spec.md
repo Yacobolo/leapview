@@ -117,6 +117,47 @@ Fleet scale is achieved by adding independent LeapView deployments. Placement by
 
 ## Capability Map
 
+### Modular monolith at a glance
+
+```text
+┌──────────────────────────────────── app ─────────────────────────────────────┐
+│ process composition · global routing · CLI · public site · tooling · cleanup │
+└─────────────────────────────────────┬─────────────────────────────────────────┘
+                                      │ composes
+                                      ▼
+┌────────────────────────── capability modules (peers) ─────────────────────────┐
+│                                                                               │
+│ Interface          Product experiences          Product workflows             │
+│ admin              workspace                    manageddata                   │
+│                    dashboard                    refresh                       │
+│                    agent                        release                       │
+│                                                 deployment                    │
+│                                                                               │
+│ Horizontal product capabilities (still peer modules)                         │
+│ access · analytics · project · workload · runtimehost · servingstate          │
+│                                                                               │
+│ Collaboration uses explicit contracts and declared dependency edges.          │
+└─────────────────────────────────────┬─────────────────────────────────────────┘
+                                      │ uses
+                                      ▼
+┌───────────────────────────────── platform ────────────────────────────────────┐
+│ architecture · config · db · digest · filesystem · http · jobs · lifecycle   │
+│ locking · observability · security · testing · transaction · web              │
+└───────────────────────────────────────────────────────────────────────────────┘
+```
+
+This is an ownership map and dependency shape, not a stack of business layers.
+All capability modules are peers. The horizontal capabilities apply product
+policy or runtime behavior across several experiences and workflows, but they
+are not platform mechanisms and do not have unrestricted access to other
+modules. Cross-capability collaboration still follows the declared context map
+and uses contracts owned at the consumer boundary.
+
+`app` may import capabilities and platform packages to compose the process.
+Capabilities may use capability-agnostic platform mechanisms and the declared
+public contracts of peer capabilities. `platform` imports neither capabilities
+nor `app`.
+
 Top-level capability ownership:
 
 ```text
