@@ -57,6 +57,7 @@ COPY --from=sourcegen /src/api/gen ./api/gen
 COPY --from=sourcegen /src/internal/access/api/gen ./internal/access/api/gen
 COPY --from=sourcegen /src/internal/agent/api/gen ./internal/agent/api/gen
 COPY --from=sourcegen /src/internal/analytics/api/gen ./internal/analytics/api/gen
+COPY --from=sourcegen /src/internal/deployment/api/gen ./internal/deployment/api/gen
 COPY --from=sourcegen /src/internal/app/api/aggregate ./internal/app/api/aggregate
 COPY --from=sourcegen /src/internal/app/api/gen ./internal/app/api/gen
 COPY --from=sourcegen /src/internal/platform/http/api/gen ./internal/platform/http/api/gen

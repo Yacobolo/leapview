@@ -14,6 +14,7 @@ import (
 	analyticsgen "github.com/Yacobolo/leapview/internal/analytics/api/gen"
 	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	deploymentgen "github.com/Yacobolo/leapview/internal/deployment/api/gen"
 	projectgen "github.com/Yacobolo/leapview/internal/project/api/gen"
 	refreshgen "github.com/Yacobolo/leapview/internal/refresh/api/gen"
 	"github.com/Yacobolo/leapview/internal/workspace"
@@ -371,6 +372,53 @@ func TestAPIGenRefreshCapabilityOwnsItsOperationSurface(t *testing.T) {
 		}
 		if _, exists := appContracts[operationID]; exists {
 			t.Errorf("Refresh operation %q is still emitted by the application package", operationID)
+		}
+	}
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
+		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
+	}
+}
+
+func TestAPIGenDeploymentCapabilityOwnsItsGeneratedPackage(t *testing.T) {
+	root := projectRoot(t)
+	manifest, err := os.ReadFile(filepath.Join(root, "api", "apigen.yaml"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	manifestText := string(manifest)
+	want := "LeapViewAPI.Deployment:\n          dir: ../internal/deployment/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/deployment/api/gen"
+	if !strings.Contains(manifestText, want) {
+		t.Fatalf("manifest missing Deployment capability package plan %q", want)
+	}
+	if strings.Contains(manifestText, "LeapViewAPI.Deployment: *leapview_api_go_package") {
+		t.Fatal("Deployment namespace is still coalesced into the application generated package")
+	}
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	for _, path := range []string{
+		"internal/deployment/api/gen/request_models.gen.go",
+		"internal/deployment/api/gen/server.apigen.gen.go",
+	} {
+		if !strings.Contains(string(taskfile), path) {
+			t.Fatalf("Taskfile.yml does not track generated Deployment artifact %q", path)
+		}
+	}
+}
+
+func TestAPIGenDeploymentCapabilityOwnsItsOperationSurface(t *testing.T) {
+	contracts := deploymentgen.GetAPIGenOperationContracts()
+	if got, want := len(contracts), 6; got != want {
+		t.Fatalf("Deployment generated operations = %d, want %d", got, want)
+	}
+	appContracts := apigenapi.GetAPIGenOperationContracts()
+	for operationID, contract := range contracts {
+		if len(contract.Tags) != 1 || contract.Tags[0] != "Deployments" {
+			t.Errorf("Deployment operation %q tags = %v, want [Deployments]", operationID, contract.Tags)
+		}
+		if _, exists := appContracts[operationID]; exists {
+			t.Errorf("Deployment operation %q is still emitted by the application package", operationID)
 		}
 	}
 	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {

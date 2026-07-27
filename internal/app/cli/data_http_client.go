@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	deploymentgen "github.com/Yacobolo/leapview/internal/deployment/api/gen"
 )
 
 type managedDataCLIClient struct {
@@ -146,14 +147,14 @@ func (c *managedDataCLIClient) getRelease(ctx context.Context, project, releaseI
 	return response, err
 }
 
-func (c *managedDataCLIClient) createDeployment(ctx context.Context, project, key string, body apigenapi.DeploymentCreateRequest) (apigenapi.DeploymentResponse, error) {
-	var response apigenapi.DeploymentResponse
+func (c *managedDataCLIClient) createDeployment(ctx context.Context, project, key string, body deploymentgen.DeploymentCreateRequest) (deploymentgen.DeploymentResponse, error) {
+	var response deploymentgen.DeploymentResponse
 	err := c.json(ctx, http.MethodPost, "createDeployment", map[string]string{"project": project}, nil, key, body, &response)
 	return response, err
 }
 
-func (c *managedDataCLIClient) getDeployment(ctx context.Context, project, deploymentID string) (apigenapi.DeploymentResponse, error) {
-	var response apigenapi.DeploymentResponse
+func (c *managedDataCLIClient) getDeployment(ctx context.Context, project, deploymentID string) (deploymentgen.DeploymentResponse, error) {
+	var response deploymentgen.DeploymentResponse
 	err := c.json(ctx, http.MethodGet, "getDeployment", map[string]string{"project": project, "deployment": deploymentID}, nil, "", nil, &response)
 	return response, err
 }

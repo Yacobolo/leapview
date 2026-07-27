@@ -809,6 +809,9 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				if routes.refreshModule != nil && routes.refreshModule.DispatchAPIGenOperation(operationID, platform.logger, writer, request) {
 					return true
 				}
+				if routes.deploymentModule != nil && routes.deploymentModule.DispatchAPIGenOperation(operationID, platform.logger, writer, request) {
+					return true
+				}
 				return apigenapi.DispatchAPIGenOperation(operationID, apiDispatcher, apiprotocol.TransportErrorResponder{Logger: platform.logger}, writer, request)
 			},
 			QueryContext: func(ctx context.Context, scope agentmodule.Scope) context.Context {
@@ -924,9 +927,8 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		return fmt.Errorf("register workspace securables: %w", err)
 	}
 	apiDispatcher = &apiGenDispatcher{
-		dashboardModule: routes.dashboardModule, deploymentModule: routes.deploymentModule,
-		managedDataModule: routes.managedDataModule,
-		releaseModule:     routes.releaseModule, workspaceModule: routes.workspaceModule,
+		dashboardModule: routes.dashboardModule, managedDataModule: routes.managedDataModule,
+		releaseModule: routes.releaseModule, workspaceModule: routes.workspaceModule,
 		defaultEnvironment: policy.defaultEnvironment, managedDataTus: policy.managedDataTus,
 		buildIdentity: platform.buildIdentity,
 	}
@@ -975,9 +977,15 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	if err != nil {
 		return fmt.Errorf("build Refresh APIGen transport: %w", err)
 	}
+	deploymentAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
+		return routes.deploymentModule.DispatchAPIGenOperation(operationID, platform.logger, w, r)
+	})
+	if err != nil {
+		return fmt.Errorf("build Deployment APIGen transport: %w", err)
+	}
 	platform.apiGenServers = apiaggregate.Servers{
 		Access: accessAPIHandler, Agent: agentAPIHandler, Analytics: analyticsAPIHandler,
-		Gen: appAPIHandler, Project: projectAPIHandler, Refresh: refreshAPIHandler,
+		Deployment: deploymentAPIHandler, Gen: appAPIHandler, Project: projectAPIHandler, Refresh: refreshAPIHandler,
 	}
 	configurePageStream(routes, runtime, platform, policy)
 	platform.health = newHealth(healthConfig{
