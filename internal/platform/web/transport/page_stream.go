@@ -53,13 +53,18 @@ func Route(r *http.Request) string {
 	return strings.TrimSpace(r.URL.Query().Get("route"))
 }
 
-func PatchAndWait(trace *pagestream.TraceStore, w http.ResponseWriter, r *http.Request, patch pagestream.SignalPatch) {
+// PatchOnce writes and flushes one traced bootstrap patch, then returns.
+func PatchOnce(trace *pagestream.TraceStore, w http.ResponseWriter, r *http.Request, patch pagestream.SignalPatch) error {
 	clientID := pagestream.EnsureClientID(w, r)
 	route := Route(r)
 	streamID := route + ":" + clientID
 	updates := pagestream.NewSignalStream(w, r, pagestream.WithStreamTrace(trace, streamID, route+".bootstrap"))
-	if err := updates.Patch(patch); err != nil {
+	return updates.Patch(patch)
+}
+
+func PatchAndWait(trace *pagestream.TraceStore, w http.ResponseWriter, r *http.Request, patch pagestream.SignalPatch) {
+	if err := PatchOnce(trace, w, r, patch); err != nil {
 		return
 	}
-	updates.Wait(r.Context())
+	<-r.Context().Done()
 }
