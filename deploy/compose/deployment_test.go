@@ -1,10 +1,12 @@
 package compose
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -174,7 +176,10 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 	script := read(t, filepath.Join(root, "deploy", "compose", "qualification", "qualify.sh"))
 	recovery := read(t, filepath.Join(root, "deploy", "compose", "qualification", "recover.sh"))
 	browser := read(t, filepath.Join(root, "deploy", "compose", "qualification", "browser.mjs"))
+	compatibilityPolicy := read(t, filepath.Join(root, "deploy", "compose", "qualification", "v0.1.0-policy.json"))
 	runbook := read(t, filepath.Join(root, "deploy", "compose", "QUALIFICATION.md"))
+	readme := read(t, filepath.Join(root, "deploy", "compose", "README.md"))
+	upgradeGuide := read(t, filepath.Join(root, "docs", "articles", "operate", "upgrades.md"))
 
 	for _, required := range []string{
 		"cp -R deploy/compose/qualification",
@@ -233,6 +238,10 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		"qualification-report.json",
 		"./qualification/recover.sh",
 		"recovery-report.json",
+		"v010FreshInstallPolicy",
+		"v0.1.0-policy.json",
+		"libredash.db",
+		"test ! -e /var/lib/leapview/leapview.db",
 	} {
 		if !strings.Contains(script, required) {
 			t.Errorf("qualification script missing tester assertion %q", required)
@@ -342,10 +351,51 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		"query/SSE",
 		"backup",
 		"restore preflight",
+		"fresh-install-only",
+		"v0.1.0",
 	} {
 		if !strings.Contains(runbook, required) {
 			t.Errorf("qualification runbook missing %q", required)
 		}
+	}
+	for name, document := range map[string]string{
+		"Compose README": readme,
+		"upgrade guide":  upgradeGuide,
+	} {
+		for _, required := range []string{
+			"v0.1.0",
+			"fresh-install-only",
+			"libredash.db",
+			"ghcr.io/yacobolo/libredash@sha256:677caaf256cb3a0d61efd47b289debbd91984976a5a5c4b372196a5d79ce7153",
+			"admin backup",
+			"provision a fresh",
+		} {
+			if !strings.Contains(document, required) {
+				t.Errorf("%s missing v0.1.0 migration policy %q", name, required)
+			}
+		}
+	}
+
+	var policy struct {
+		Release        string   `json:"release"`
+		SourceRevision string   `json:"sourceRevision"`
+		Image          string   `json:"image"`
+		StatePolicy    string   `json:"statePolicy"`
+		Distribution   string   `json:"distribution"`
+		Platforms      []string `json:"platforms"`
+		LegacyMarkers  []string `json:"legacyMarkers"`
+	}
+	if err := json.Unmarshal([]byte(compatibilityPolicy), &policy); err != nil {
+		t.Fatalf("parse v0.1.0 compatibility policy: %v", err)
+	}
+	if policy.Release != "v0.1.0" ||
+		policy.SourceRevision != "5bf4aded574df459e80d81b77d1989ecd4fa7de0" ||
+		policy.Image != "ghcr.io/yacobolo/libredash@sha256:677caaf256cb3a0d61efd47b289debbd91984976a5a5c4b372196a5d79ce7153" ||
+		policy.StatePolicy != "fresh-install-only" ||
+		policy.Distribution != "authentication-required" ||
+		!slices.Equal(policy.Platforms, []string{"linux/amd64"}) ||
+		!slices.Contains(policy.LegacyMarkers, "libredash.db") {
+		t.Fatalf("unexpected v0.1.0 compatibility policy: %#v", policy)
 	}
 }
 

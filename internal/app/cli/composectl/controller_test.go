@@ -51,6 +51,33 @@ func TestRemoveInterruptedBackupArchivesPreservesCompletedBackups(t *testing.T) 
 	}
 }
 
+func TestUpgradeRejectsReleasedV010BeforeDockerOrStateMutation(t *testing.T) {
+	root := t.TempDir()
+	const releasedV010 = "ghcr.io/yacobolo/libredash@sha256:677caaf256cb3a0d61efd47b289debbd91984976a5a5c4b372196a5d79ce7153"
+	next := "ghcr.io/yacobolo/leapview@sha256:" + strings.Repeat("a", 64)
+	deployment := "LEAPVIEW_IMAGE=" + releasedV010 + "\nCOMPOSE_HTTPS=0\n"
+	if err := os.WriteFile(filepath.Join(root, deploymentEnvName), []byte(deployment), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	controller, err := New(Options{Root: root, DockerBin: "/bin/false"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = controller.Upgrade(t.Context(), next)
+	if err == nil || !strings.Contains(err.Error(), "v0.1.0") || !strings.Contains(err.Error(), "fresh-install-only") {
+		t.Fatalf("Upgrade() error = %v, want explicit v0.1.0 incompatibility", err)
+	}
+	if contents, err := os.ReadFile(filepath.Join(root, deploymentEnvName)); err != nil || string(contents) != deployment {
+		t.Fatalf("deployment state changed before rejection: %q, %v", contents, err)
+	}
+	for _, path := range []string{rollbackEnvName, "backups"} {
+		if _, err := os.Stat(filepath.Join(root, path)); !os.IsNotExist(err) {
+			t.Fatalf("upgrade rejection created %s: %v", path, err)
+		}
+	}
+}
+
 func TestFirstLoginRetainsCredentialsUntilOutputSucceeds(t *testing.T) {
 	root := t.TempDir()
 	credentialsPath := filepath.Join(root, credentialsName)
