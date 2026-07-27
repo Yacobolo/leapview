@@ -95,9 +95,11 @@ func TestPublicImageIsPrimaryOnboardingContract(t *testing.T) {
 	release := read(t, filepath.Join("..", "..", ".github", "workflows", "release.yml"))
 	for _, required := range []string{
 		"IMAGE_NAME: ghcr.io/yacobolo/leapview",
-		"docker/setup-qemu-action@",
+		"runner: ubuntu-24.04",
+		"runner: ubuntu-24.04-arm",
+		"platforms: linux/${{ matrix.arch }}",
 		`--tag "${IMAGE_NAME}:latest"`,
-		"platforms: linux/amd64,linux/arm64",
+		"docker buildx imagetools create",
 		"Verify anonymous image pull",
 		"docker logout ghcr.io",
 		"docker buildx imagetools inspect",
@@ -106,8 +108,8 @@ func TestPublicImageIsPrimaryOnboardingContract(t *testing.T) {
 			t.Fatalf("release workflow missing public image contract %q", required)
 		}
 	}
-	if strings.Index(release, "docker/setup-qemu-action@") > strings.Index(release, "docker/setup-buildx-action@") {
-		t.Fatal("release workflow must install emulation before creating the multi-platform builder")
+	if strings.Contains(release, "docker/setup-qemu-action@") {
+		t.Fatal("release workflow must build each public architecture on its native runner")
 	}
 
 	for _, name := range []string{
@@ -186,7 +188,9 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		"./qualification/qualify.sh",
 		"candidate-${{ github.run_id }}-${{ github.run_attempt }}",
 		`release_tag="candidate-${RUN_ID}-${RUN_ATTEMPT}"`,
-		"BUILD_RELEASE: ${{ steps.identity.outputs.release }}",
+		"BUILD_RELEASE: ${{ needs.identity.outputs.release }}",
+		"needs: [identity, image-platform]",
+		"release-platform-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}",
 		"docker buildx imagetools create",
 		"gh release create",
 		"needs: [image, qualify]",
@@ -207,7 +211,7 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 	if strings.Contains(release, "type=semver") {
 		t.Fatal("release workflow must not publish versioned image tags before installed-candidate qualification")
 	}
-	if strings.Index(release, "./qualification/qualify.sh") > strings.Index(release, "docker buildx imagetools create") {
+	if strings.Index(release, "./qualification/qualify.sh") > strings.Index(release, "Publish qualified image tags") {
 		t.Fatal("release workflow publishes versioned image tags before installed-candidate qualification")
 	}
 
