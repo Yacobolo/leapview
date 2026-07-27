@@ -15,6 +15,7 @@ import (
 	adminmodule "github.com/Yacobolo/leapview/internal/admin/module"
 	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
 	analyticsmodule "github.com/Yacobolo/leapview/internal/analytics/module"
+	queryaudithttp "github.com/Yacobolo/leapview/internal/analytics/queryaudit/http"
 	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	apiapigenruntime "github.com/Yacobolo/leapview/internal/app/api/apigenruntime"
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
@@ -70,7 +71,6 @@ type runtimeServices struct {
 	platformHealth        platformHealth
 	storageRetention      *servingstatemodule.Retention
 	queryAuditProvider    adminmodule.QueryAuditReaderProvider
-	queryAuditEvents      http.HandlerFunc
 }
 
 type platformServices struct {
@@ -311,11 +311,9 @@ func buildApplicationSurfaces(
 	}
 	var queryAuditProvider adminmodule.QueryAuditReaderProvider
 	var queryAuditRecorder dashboardmodule.QueryAuditRecorder
-	var queryAuditEvents http.HandlerFunc
 	if workflow.QueryAudit != nil {
 		queryAuditProvider = adminmodule.QueryAuditReaderProvider(workflow.QueryAudit.Provider())
 		queryAuditRecorder = workflow.QueryAudit.Recorder()
-		queryAuditEvents = workflow.QueryAudit.Events(func(value string) string { return value })
 	}
 	if capabilities.AnalyticsModule != nil {
 		if capabilities.AnalyticsModule.QueryAuditReader() != nil {
@@ -336,13 +334,6 @@ func buildApplicationSurfaces(
 	persistence := persistenceInputs{}
 	moduleWorkflow := workflowInputs{}
 	storage := storageInputs{}
-	runtime.queryAuditEvents = queryAuditEvents
-	if runtime.queryAuditEvents == nil {
-		runtime.queryAuditEvents = analyticsmodule.NewQueryAuditEvents(nil, func(value string) string { return workspaceID(routes, runtime, platform, policy, value) })
-	}
-	if capabilities.AnalyticsModule != nil && capabilities.AnalyticsModule.QueryAuditReader() != nil {
-		runtime.queryAuditEvents = capabilities.AnalyticsModule.QueryAuditEvents(func(value string) string { return workspaceID(routes, runtime, platform, policy, value) })
-	}
 	moduleWorkflow.refreshPipelineClock = workflow.RefreshPipelineClock
 	runtime.queryAuditProvider = queryAuditProvider
 	if moduleWorkflow.refreshPipelineClock == nil {
@@ -466,6 +457,12 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	}
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	queryAuditAPI := queryaudithttp.Handler{
+		Reader: queryaudithttp.ReaderProvider(runtime.queryAuditProvider),
+		WorkspaceID: func(value string) string {
+			return workspaceID(routes, runtime, platform, policy, value)
+		},
 	}
 	var apiDispatcher *apiGenDispatcher
 	if routes.accessModule == nil {
@@ -803,6 +800,9 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				if routes.agentModule != nil && routes.agentModule.DispatchAPIGenOperation(operationID, writer, request, platform.logger) {
 					return true
 				}
+				if queryaudithttp.DispatchAPIGenOperation(operationID, queryAuditAPI, platform.logger, writer, request) {
+					return true
+				}
 				return apigenapi.DispatchAPIGenOperation(operationID, apiDispatcher, apiprotocol.TransportErrorResponder{Logger: platform.logger}, writer, request)
 			},
 			QueryContext: func(ctx context.Context, scope agentmodule.Scope) context.Context {
@@ -922,8 +922,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		managedDataModule: routes.managedDataModule, refreshModule: routes.refreshModule,
 		releaseModule: routes.releaseModule, workspaceModule: routes.workspaceModule,
 		defaultEnvironment: policy.defaultEnvironment, managedDataTus: policy.managedDataTus,
-		buildIdentity:    platform.buildIdentity,
-		queryAuditEvents: runtime.queryAuditEvents,
+		buildIdentity: platform.buildIdentity,
 	}
 	apiGenAuthorizer, err := routes.accessModule.APIGenAuthorizer(accessAPIGenOperationContracts(), accessmodule.APIGenObjectResolvers{
 		Dashboard:      dashboardmodule.DashboardObjectRefs,
@@ -952,7 +951,15 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	if err != nil {
 		return fmt.Errorf("build Agent APIGen transport: %w", err)
 	}
-	platform.apiGenServers = apiaggregate.Servers{Access: accessAPIHandler, Agent: agentAPIHandler, Gen: appAPIHandler}
+	analyticsAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
+		return queryaudithttp.DispatchAPIGenOperation(operationID, queryAuditAPI, platform.logger, w, r)
+	})
+	if err != nil {
+		return fmt.Errorf("build Analytics APIGen transport: %w", err)
+	}
+	platform.apiGenServers = apiaggregate.Servers{
+		Access: accessAPIHandler, Agent: agentAPIHandler, Analytics: analyticsAPIHandler, Gen: appAPIHandler,
+	}
 	configurePageStream(routes, runtime, platform, policy)
 	platform.health = newHealth(healthConfig{
 		Platform: func(ctx context.Context) error {

@@ -14,6 +14,7 @@ api/.apigen/
 internal/access/api/gen/
 internal/agent/contracts/gen/
 internal/agent/api/gen/
+internal/analytics/api/gen/
 internal/app/api/aggregate/
 internal/app/api/gen/
 internal/app/config/config_gen.go

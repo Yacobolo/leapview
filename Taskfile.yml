@@ -369,6 +369,8 @@ tasks:
       - internal/access/api/gen/server.apigen.gen.go
       - internal/agent/api/gen/request_models.gen.go
       - internal/agent/api/gen/server.apigen.gen.go
+      - internal/analytics/api/gen/request_models.gen.go
+      - internal/analytics/api/gen/server.apigen.gen.go
       - internal/app/api/aggregate/server.apigen.gen.go
       - internal/app/api/gen/request_models.gen.go
       - internal/app/api/gen/server.apigen.gen.go

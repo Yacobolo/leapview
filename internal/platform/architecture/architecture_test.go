@@ -79,6 +79,16 @@ func TestAccessGeneratedAPIIsCapabilityOwned(t *testing.T) {
 	}
 }
 
+func TestAnalyticsGeneratedAPIIsCapabilityOwned(t *testing.T) {
+	rule, ok := ClassifyPackage("internal/analytics/api/gen")
+	if !ok {
+		t.Fatal("Analytics generated API package is not classified")
+	}
+	if rule.Capability != "analytics" || rule.Layer != LayerAdapter {
+		t.Fatalf("Analytics generated API classification = %#v, want analytics adapter", rule)
+	}
+}
+
 func TestApplicationOwnsProductConfigurationContract(t *testing.T) {
 	root := repoRoot(t)
 	if !packageDirExists(root, "internal/app/config/spec") {
@@ -1291,6 +1301,7 @@ func TestProductionContainerContractExists(t *testing.T) {
 		"FROM golang:1.25-bookworm@sha256:",
 		"COPY --from=sourcegen /src/internal/access/api/gen ./internal/access/api/gen",
 		"COPY --from=sourcegen /src/internal/agent/api/gen ./internal/agent/api/gen",
+		"COPY --from=sourcegen /src/internal/analytics/api/gen ./internal/analytics/api/gen",
 		"COPY --from=sourcegen /src/internal/app/api/aggregate ./internal/app/api/aggregate",
 		"COPY --from=sourcegen /src/internal/app/api/gen ./internal/app/api/gen",
 		"COPY --from=sourcegen /src/internal/platform/http/api/gen ./internal/platform/http/api/gen",
@@ -1323,7 +1334,7 @@ func TestProductionContainerContractExists(t *testing.T) {
 	}
 	ignoreText := string(ignored)
 	for _, want := range []string{
-		".data", ".leapview", "node_modules", "api/gen", "internal/access/api/gen", "internal/agent/api/gen",
+		".data", ".leapview", "node_modules", "api/gen", "internal/access/api/gen", "internal/agent/api/gen", "internal/analytics/api/gen",
 		"internal/app/api/aggregate", "internal/app/api/gen", "internal/platform/http/api/gen", "static/chunks",
 	} {
 		if !strings.Contains(ignoreText, want) {
