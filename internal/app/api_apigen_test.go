@@ -14,6 +14,7 @@ import (
 	analyticsgen "github.com/Yacobolo/leapview/internal/analytics/api/gen"
 	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	dashboardgen "github.com/Yacobolo/leapview/internal/dashboard/api/gen"
 	deploymentgen "github.com/Yacobolo/leapview/internal/deployment/api/gen"
 	manageddatagen "github.com/Yacobolo/leapview/internal/manageddata/api/gen"
 	projectgen "github.com/Yacobolo/leapview/internal/project/api/gen"
@@ -564,6 +565,54 @@ func TestAPIGenManagedDataCapabilityOwnsItsOperationSurface(t *testing.T) {
 		}
 		if _, exists := appContracts[operationID]; exists {
 			t.Errorf("ManagedData operation %q is still emitted by the application package", operationID)
+		}
+	}
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
+		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
+	}
+}
+
+func TestAPIGenDashboardCapabilityOwnsItsGeneratedPackage(t *testing.T) {
+	root := projectRoot(t)
+	manifest, err := os.ReadFile(filepath.Join(root, "api", "apigen.yaml"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	manifestText := string(manifest)
+	want := "LeapViewAPI.Dashboard:\n          dir: ../internal/dashboard/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/dashboard/api/gen"
+	if !strings.Contains(manifestText, want) {
+		t.Fatalf("manifest missing Dashboard capability package plan %q", want)
+	}
+	if strings.Contains(manifestText, "LeapViewAPI.Dashboard: *leapview_api_go_package") {
+		t.Fatal("Dashboard namespace is still coalesced into the application generated package")
+	}
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	for _, path := range []string{
+		"internal/dashboard/api/gen/request_models.gen.go",
+		"internal/dashboard/api/gen/server.apigen.gen.go",
+	} {
+		if !strings.Contains(string(taskfile), path) {
+			t.Fatalf("Taskfile.yml does not track generated Dashboard artifact %q", path)
+		}
+	}
+}
+
+func TestAPIGenDashboardCapabilityOwnsItsOperationSurface(t *testing.T) {
+	contracts := dashboardgen.GetAPIGenOperationContracts()
+	if got, want := len(contracts), 25; got != want {
+		t.Fatalf("Dashboard generated operations = %d, want %d", got, want)
+	}
+	allowedTags := map[string]bool{"BI": true, "Publications": true}
+	appContracts := apigenapi.GetAPIGenOperationContracts()
+	for operationID, contract := range contracts {
+		if len(contract.Tags) != 1 || !allowedTags[contract.Tags[0]] {
+			t.Errorf("Dashboard operation %q tags = %v", operationID, contract.Tags)
+		}
+		if _, exists := appContracts[operationID]; exists {
+			t.Errorf("Dashboard operation %q is still emitted by the application package", operationID)
 		}
 	}
 	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
