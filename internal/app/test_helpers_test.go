@@ -129,7 +129,7 @@ func newAppTestHarness(metrics QueryMetrics) *appTestHarness {
 
 func apiGenDispatcherForTest(server *appTestHarness) apiGenDispatcher {
 	return apiGenDispatcher{
-		dashboardModule: server.routes.dashboardModule, managedDataModule: server.routes.managedDataModule,
+		managedDataModule:  server.routes.managedDataModule,
 		defaultEnvironment: server.policy.defaultEnvironment, managedDataTus: server.policy.managedDataTus,
 		buildIdentity: server.platform.buildIdentity,
 	}
