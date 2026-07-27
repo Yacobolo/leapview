@@ -265,7 +265,7 @@ export class DashboardFilterLeaf extends LitElement {
       this.commit(unfiltered)
       return
     }
-    const option = this.options?.items.find((candidate) => valueKey(candidate.value) === key)
+    const option = this.optionItems().find((candidate) => valueKey(candidate.value) === key)
     if (option) this.commit(setExpression([option.value]))
   }
 

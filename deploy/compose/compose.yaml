@@ -16,8 +16,11 @@ services:
       - "${COMPOSE_APP_BIND:-127.0.0.1:8080}:8080"
     volumes:
       - leapview-state:/var/lib/leapview
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,nodev,size=512m
+      - type: tmpfs
+        target: /tmp
+        tmpfs:
+          size: 536870912
+          mode: 01777
     healthcheck:
       test: [CMD, leapview, healthcheck]
       interval: 30s

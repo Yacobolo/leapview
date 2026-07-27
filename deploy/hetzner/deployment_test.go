@@ -82,7 +82,8 @@ func TestProviderScriptsAreSmallValidLayers(t *testing.T) {
 func TestReleaseWorkflowPublishesComposeArchiveAndAttestedImage(t *testing.T) {
 	workflow := readFile(t, filepath.Join("..", "..", ".github", "workflows", "release.yml"))
 	for _, fragment := range []string{
-		"release:", "packages: write", "attestations: write", "id-token: write",
+		"tags:", "needs: [image, qualify]", "gh release create",
+		"packages: write", "attestations: write", "id-token: write",
 		"docker/build-push-action@", "actions/attest@", "push-to-registry: true",
 		"leapview-compose-", "deployment.env.example", ".tar.gz.sha256", "./cmd/leapviewctl",
 	} {

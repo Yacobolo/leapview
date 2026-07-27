@@ -26,6 +26,22 @@ production, `leapviewctl` provides the supported initialization, backup,
 restore, upgrade, and rollback workflow. Run `./leapviewctl help` for its
 commands.
 
+## Qualify the exact installed candidate
+
+Before publishing or adopting a release, follow the bundled
+[installed-candidate qualification plan](QUALIFICATION.md). Its executable
+journey validates the archive checksums, anonymous immutable image pull,
+initialization, five-minute sample, governed access and denial auditing,
+restart persistence, backup, and isolated restore:
+
+```sh
+./qualification/qualify.sh
+```
+
+The script writes only bounded redacted evidence and removes its isolated
+containers, volumes, temporary credentials, and restored instance when it
+finishes.
+
 ## Verify the release identity
 
 The archive, controller, container labels, running server, and release page

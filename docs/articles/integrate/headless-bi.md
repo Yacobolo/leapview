@@ -57,7 +57,7 @@ leapview semantic-models preview sales orders \
   --workspace sales \
   --body-json '{"limit":10}'
 
-leapview semantic-models query sales orders \
+leapview semantic-models query sales \
   --workspace sales \
   --body-file ./query.json
 ```

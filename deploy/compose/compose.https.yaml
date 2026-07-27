@@ -19,7 +19,11 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
-    tmpfs: [/tmp:rw,noexec,nosuid,nodev,size=64m]
+      - type: tmpfs
+        target: /tmp
+        tmpfs:
+          size: 67108864
+          mode: 01777
     logging:
       driver: local
       options: {max-size: 20m, max-file: "5"}

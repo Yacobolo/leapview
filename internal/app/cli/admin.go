@@ -176,7 +176,7 @@ func runAdminInitialize(ctx context.Context, format string, out io.Writer) error
 			Privileges: []access.Privilege{
 				access.PrivilegeUseWorkspace, access.PrivilegeViewItem, access.PrivilegeQueryData,
 				access.PrivilegeRefreshData, access.PrivilegeDeploy, access.PrivilegeActivateDeployment,
-				access.PrivilegeViewData, access.PrivilegeIngestData,
+				access.PrivilegeViewData, access.PrivilegeIngestData, access.PrivilegeViewAudit,
 			},
 			ExpiresAt: expires,
 		})
@@ -361,14 +361,20 @@ func runAdminBackup(ctx context.Context, opts *rootOptions, out io.Writer) error
 	if err := validateFullInstanceArchiveLayout(cfg); err != nil {
 		return err
 	}
-	if stream {
-		return platform.BackupInstanceToWriter(ctx, cfg.HomeDir, cfg.DBPath(), out)
+	derivedPaths, err := fullInstanceDerivedPaths(cfg)
+	if err != nil {
+		return err
 	}
-	if err := platform.BackupInstance(ctx, platform.InstanceBackupOptions{
-		HomeDir: cfg.HomeDir,
-		DBPath:  cfg.DBPath(),
-		OutPath: backupPath,
-	}); err != nil {
+	backupOptions := platform.InstanceBackupOptions{
+		HomeDir:              cfg.HomeDir,
+		DBPath:               cfg.DBPath(),
+		OutPath:              backupPath,
+		ExcludeRelativePaths: derivedPaths,
+	}
+	if stream {
+		return platform.BackupInstanceToWriter(ctx, backupOptions, out)
+	}
+	if err := platform.BackupInstance(ctx, backupOptions); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "instance backup written: %s\n", backupPath)
@@ -437,12 +443,17 @@ func runAdminRestore(ctx context.Context, opts *rootOptions, in io.Reader, out i
 	if err := validateFullInstanceArchiveLayout(cfg); err != nil {
 		return err
 	}
+	derivedPaths, err := fullInstanceDerivedPaths(cfg)
+	if err != nil {
+		return err
+	}
 	restoreOptions := platform.InstanceRestoreOptions{
 		TargetHomeDir:        cfg.HomeDir,
 		BackupPath:           restorePath,
 		CurrentBackupOut:     restoreBefore,
 		ExpectedEnvironment:  string(expectedEnvironment),
 		PreserveRelativeFile: instancelock.FileName,
+		ResetRelativePaths:   derivedPaths,
 	}
 	if stream {
 		restoreOptions.BackupPath = ""
@@ -564,6 +575,38 @@ func validateFullInstanceArchiveLayout(cfg config.Config) error {
 		}
 	}
 	return nil
+}
+
+func fullInstanceDerivedPaths(cfg config.Config) ([]string, error) {
+	homeAbs, err := filepath.Abs(cfg.HomeDir)
+	if err != nil {
+		return nil, err
+	}
+	managedDataAbs, err := filepath.Abs(cfg.ManagedDataDir)
+	if err != nil {
+		return nil, err
+	}
+	backend := strings.TrimSpace(cfg.ManagedDataBackend)
+	var derivedPath string
+	switch backend {
+	case "", "local":
+		derivedPath = filepath.Join(managedDataAbs, "objects", "revisions")
+	case "s3":
+		derivedPath = filepath.Join(managedDataAbs, "runtime")
+	default:
+		return nil, fmt.Errorf("unsupported managed-data backend %q", backend)
+	}
+	relative, err := filepath.Rel(homeAbs, derivedPath)
+	if err != nil {
+		return nil, err
+	}
+	if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		if backend == "s3" {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("local managed-data derived path %s is outside %s", derivedPath, cfg.HomeDir)
+	}
+	return []string{filepath.ToSlash(relative)}, nil
 }
 
 func runAdminStorageCleanup(ctx context.Context, opts *rootOptions, out io.Writer) error {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
+	"github.com/Yacobolo/leapview/internal/app/config"
 	"github.com/Yacobolo/leapview/internal/platform"
 	"github.com/Yacobolo/leapview/internal/platform/locking"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
@@ -26,6 +27,35 @@ func TestAdminDoesNotExposeUnrestrictedBootstrap(t *testing.T) {
 		if child.Name() == "bootstrap" {
 			t.Fatal("admin bootstrap command remains exposed")
 		}
+	}
+}
+
+func TestFullInstanceDerivedPaths(t *testing.T) {
+	home := t.TempDir()
+	tests := []struct {
+		name    string
+		backend string
+		root    string
+		want    []string
+	}{
+		{name: "local revisions", backend: "local", root: filepath.Join(home, "managed-data"), want: []string{"managed-data/objects/revisions"}},
+		{name: "s3 runtime cache", backend: "s3", root: filepath.Join(home, "managed-data"), want: []string{"managed-data/runtime"}},
+		{name: "external s3 runtime cache", backend: "s3", root: filepath.Join(t.TempDir(), "managed-data")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := fullInstanceDerivedPaths(config.Config{
+				HomeDir:            home,
+				ManagedDataBackend: test.backend,
+				ManagedDataDir:     test.root,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Join(got, ",") != strings.Join(test.want, ",") {
+				t.Fatalf("fullInstanceDerivedPaths() = %v, want %v", got, test.want)
+			}
+		})
 	}
 }
 

@@ -1240,6 +1240,72 @@ test('static filter controls render compiled options without requesting an optio
   }
 })
 
+test('static dropdown selections emit a typed filter mutation', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('lv-filter-leaf'))
+    const state = await page.evaluate(async () => {
+      const leaf = document.createElement('lv-filter-leaf') as any
+      leaf.definition = {
+        id: 'state',
+        label: 'State',
+        field: 'orders.state',
+        valueKind: 'string',
+        predicates: [{ kind: 'set', operators: ['in'] }],
+        options: {
+          kind: 'static',
+          limit: 2,
+          values: [
+            { value: { kind: 'string', value: 'SP' }, label: 'SP' },
+            { value: { kind: 'string', value: 'RJ' }, label: 'RJ' },
+          ],
+        },
+        format: {},
+      }
+      leaf.binding = {
+        key: 'fb_state',
+        id: 'state',
+        filter: 'state',
+        scope: 'page',
+        pageID: 'overview',
+        default: { kind: 'unfiltered' },
+        selectionMode: 'single',
+        selectionLimit: 1,
+        readerEditable: true,
+        paneVisible: true,
+        paneOrder: 0,
+        paneLabel: 'State',
+        targets: [],
+        incomingDependencies: [],
+      }
+      leaf.presentation = {
+        style: 'dropdown', search: false, selectAll: false,
+        showCounts: false, showSummary: true, compact: false,
+      }
+      const mutations: unknown[] = []
+      leaf.addEventListener('lv-filter-mutate', (event: CustomEvent) => mutations.push(event.detail))
+      document.body.append(leaf)
+      await leaf.updateComplete
+      const select = leaf.shadowRoot.querySelector('select') as HTMLSelectElement
+      const option = Array.from(select.options).find((candidate) => candidate.textContent?.trim() === 'SP')
+      select.value = option?.value ?? ''
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+      return mutations
+    })
+    expect(state).toEqual([{
+      bindingKey: 'fb_state',
+      expression: {
+        kind: 'set',
+        operator: 'in',
+        values: [{ kind: 'string', value: 'SP' }],
+      },
+    }])
+  } finally {
+    await page.close()
+  }
+})
+
 test('opened dynamic dropdowns refresh their option page after stale data becomes current', async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
   try {

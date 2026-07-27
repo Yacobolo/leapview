@@ -108,6 +108,12 @@ cp deployment.env.example deployment.env
 ./leapviewctl first-login
 ```
 
+Before adoption, run the archive's bundled `./qualification/qualify.sh`.
+`QUALIFICATION.md` maps every automated assertion to the corresponding human
+check, including anonymous distribution, the five-minute sample, audited
+authorization denial, restart persistence, and an isolated restore using the
+separately managed secret configuration.
+
 Initialization treats `--domain` as the canonical public hostname and derives `LEAPVIEW_PUBLIC_URL=https://<domain>`, the allowed host, and the Caddy domain from it. It also generates production secrets, creates the persistent volume, validates the resulting production configuration, and atomically creates a forced-change local administrator plus a restricted publisher token. `first-login` prints and deletes that one-time credential file.
 
 `leapviewctl` is an optional production operations controller, not a prerequisite for pulling or running LeapView. It invokes the installed Docker Compose CLI and does not require Bash or direct access to the Docker socket API. You may manage the image with your existing container platform if it preserves the same single-process, persistent-home, initialization, backup, and environment contracts.

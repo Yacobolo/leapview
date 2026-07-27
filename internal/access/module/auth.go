@@ -456,6 +456,7 @@ func (a *Auth) MiddlewareWithObjectResolver(privilege access.Privilege, objectRe
 				if concealDenied && strings.HasPrefix(r.URL.Path, "/api/v1/") {
 					status = http.StatusNotFound
 				}
+				recordAuthorizationDenial(r, a.repo, principal.ID, workspaceID, privilege, objects, access.ReasonMissingPrivilege)
 				writeAuthError(w, r, errForbidden, status)
 				return
 			}
@@ -502,6 +503,7 @@ func (a *Auth) MiddlewareWithObjectResolver(privilege access.Privilege, objectRe
 				if concealDenied && strings.HasPrefix(r.URL.Path, "/api/v1/") {
 					status = http.StatusNotFound
 				}
+				recordAuthorizationDenial(r, a.repo, principal.ID, workspaceID, privilege, objects, decision.Reason)
 				writeAuthError(w, r, errForbidden, status)
 				return
 			}
@@ -574,6 +576,34 @@ func recordAccessAudit(r *http.Request, repo access.Repository, action, principa
 		return
 	}
 	_ = access.PersistAuditEvent(r.Context(), repo, authAuditInput(r, action, principalID, workspaceID, targetType, targetID, privilege, status, metadata))
+}
+
+func recordAuthorizationDenial(r *http.Request, repo access.Repository, principalID, workspaceID string, privilege access.Privilege, objects []access.ObjectRef, reason access.AuthorizationReason) {
+	if repo == nil {
+		return
+	}
+	_ = access.PersistAuditEvent(r.Context(), repo, authorizationDenialAuditInput(r, principalID, workspaceID, privilege, objects, reason))
+}
+
+func authorizationDenialAuditInput(r *http.Request, principalID, workspaceID string, privilege access.Privilege, objects []access.ObjectRef, reason access.AuthorizationReason) access.AuditEventInput {
+	object := access.WorkspaceObject(workspaceID)
+	if len(objects) > 0 {
+		object = objects[0]
+	}
+	if reason == "" {
+		reason = access.ReasonNoGrant
+	}
+	return authAuditInput(
+		r,
+		"authorization.denied",
+		principalID,
+		workspaceID,
+		string(object.Type),
+		object.CanonicalID(),
+		privilege,
+		"denied",
+		map[string]any{"reason": string(reason)},
+	)
 }
 
 func authAuditInput(r *http.Request, action, principalID, workspaceID, targetType, targetID string, privilege access.Privilege, status string, metadata map[string]any) access.AuditEventInput {

@@ -31,7 +31,8 @@ For real data or a durable public instance, use the released [Compose
 operations package](deploy/compose/README.md), then follow the [connection
 guide](docs/articles/guides/build/connect-data.md). See the full [installation
 guide](docs/articles/start/installation.md) for diagnostics, cleanup, and the
-production boundary.
+production boundary. Release evaluators can run the exact archive through the
+[installed-candidate qualification](deploy/compose/QUALIFICATION.md).
 
 ## Contributor development
 
