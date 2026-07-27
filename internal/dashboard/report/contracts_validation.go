@@ -390,8 +390,17 @@ func validateVisualPresentation(name string, visual Visual) error {
 	if (presentation.Minimum != nil || presentation.Maximum != nil || presentation.ProgressWidth > 0 || len(presentation.Thresholds) > 0) && visual.Type != "gauge" && visual.Type != "kpi" {
 		return fmt.Errorf("visual %q threshold presentation is only valid for gauge or kpi", name)
 	}
+	if presentation.Target != nil && visual.Type != "gauge" {
+		return fmt.Errorf("visual %q presentation.target is only valid for gauge", name)
+	}
+	if visual.Type == "gauge" && (presentation.Minimum == nil || presentation.Maximum == nil) {
+		return fmt.Errorf("visual %q type gauge requires presentation.minimum and presentation.maximum", name)
+	}
 	if presentation.Minimum != nil && presentation.Maximum != nil && *presentation.Minimum >= *presentation.Maximum {
 		return fmt.Errorf("visual %q presentation.minimum must be less than maximum", name)
+	}
+	if visual.Type == "gauge" && presentation.Target != nil && (*presentation.Target < *presentation.Minimum || *presentation.Target > *presentation.Maximum) {
+		return fmt.Errorf("visual %q presentation target %v must be within [%v, %v]", name, *presentation.Target, *presentation.Minimum, *presentation.Maximum)
 	}
 	previous := -1.0e308
 	for _, threshold := range presentation.Thresholds {
@@ -400,6 +409,9 @@ func validateVisualPresentation(name string, visual Visual) error {
 		}
 		if !oneOf(threshold.Tone, "neutral", "ink", "success", "warning", "danger") {
 			return fmt.Errorf("visual %q has unsupported threshold tone %q", name, threshold.Tone)
+		}
+		if visual.Type == "gauge" && (threshold.Value < *presentation.Minimum || threshold.Value > *presentation.Maximum) {
+			return fmt.Errorf("visual %q presentation threshold %v must be within [%v, %v]", name, threshold.Value, *presentation.Minimum, *presentation.Maximum)
 		}
 		previous = threshold.Value
 	}

@@ -111,7 +111,7 @@ func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model
 		base.Kind = "polar"
 		return visualizationir.VisualizationSpec{Value: &visualizationir.PolarVisualizationSpec{
 			VisualizationSpecBase: base, Kind: "polar", Mark: visualizationir.VisualizationPolarMark(authored.Type), Category: optionalRef("label"), Value: ref("value"), Series: optionalRef("series"),
-			Presentation: visualizationir.PolarVisualizationPresentation{VisualizationPresentation: common, Minimum: presentation.Minimum, Maximum: presentation.Maximum, ShowPointer: true, Area: presentation.Area, ProgressWidth: optionalPositiveFloat(presentation.ProgressWidth), Thresholds: compiledThresholds(presentation.Thresholds)},
+			Presentation: visualizationir.PolarVisualizationPresentation{VisualizationPresentation: common, Minimum: presentation.Minimum, Maximum: presentation.Maximum, Target: presentation.Target, ShowPointer: true, Area: presentation.Area, ProgressWidth: optionalPositiveFloat(presentation.ProgressWidth), Thresholds: compiledThresholds(presentation.Thresholds)},
 		}}, nil
 	default:
 		mark := visualizationir.VisualizationCartesianMark(authored.Type)

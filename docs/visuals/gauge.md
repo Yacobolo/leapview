@@ -6,7 +6,7 @@ Every preview on this page is generated from the YAML shown below it using a fix
 
 ## Basic
 
-Use the `single_value` shape with one measure when the value is meaningful against an implied range.
+Use the `single_value` shape with one measure and an explicit meaningful range.
 
 {{< visual id="total_orders_gauge" >}}
 
@@ -15,6 +15,10 @@ visuals:
   total_orders_gauge:
     title: Total orders gauge
     type: gauge
+    presentation:
+      minimum: 0
+      maximum: 120000
+      target: 100000
     query:
       measures:
         order_count: null
@@ -31,6 +35,10 @@ visuals:
   review_gauge:
     title: Average review gauge
     type: gauge
+    presentation:
+      minimum: 0
+      maximum: 5
+      target: 4.5
     query:
       measures:
         review_score: null
@@ -50,6 +58,7 @@ visuals:
     presentation:
       minimum: 0
       maximum: 5
+      target: 4.5
       progress_width: 16
       thresholds:
         - value: 3

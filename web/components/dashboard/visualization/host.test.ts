@@ -288,3 +288,42 @@ test('repeated mount and dispose cycles release every renderer exactly once', as
   expect(mounts).toBe(100)
   expect(disposals).toBe(100)
 })
+
+test('controller owns and cancels a renderer while first-frame readiness is pending', async () => {
+  let releaseReady = () => {}
+  let disposals = 0
+  const resizes: Array<readonly [number, number, number]> = []
+  const handle = {
+    whenReady: () => new Promise<void>((resolve) => { releaseReady = resolve }),
+    update: () => {},
+    resize: (width: number, height: number, ratio: number) => { resizes.push([width, height, ratio]) },
+    snapshot: async () => new Blob(),
+    dispose: () => {
+      disposals++
+      releaseReady()
+    },
+  }
+  const registry = new RendererRegistry()
+  registry.register({
+    id: 'test', version: '1.0.0', schemaVersion: currentVisualizationSchemaVersion, kinds: ['kpi'],
+    capabilities: { snapshot: true, windowed: false, interactive: false },
+    load: async () => ({ mount: () => handle }),
+  })
+  const controller = new VisualizationController(registry, {} as HTMLElement)
+  controller.resize(640, 360, 2)
+  let settled = false
+  const applying = controller.apply(envelope(1)).then((applied) => {
+    settled = true
+    return applied
+  })
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+
+  expect(resizes).toEqual([[640, 360, 2]])
+  expect(settled).toBe(false)
+
+  controller.dispose()
+  expect(await applying).toBe(false)
+  expect(disposals).toBe(1)
+})
