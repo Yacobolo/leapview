@@ -168,6 +168,7 @@ type PolarVisualizationPresentation struct {
 	VisualizationPresentation
 	Minimum       *float64                  `json:"minimum,omitempty"`
 	Maximum       *float64                  `json:"maximum,omitempty"`
+	Target        *float64                  `json:"target,omitempty"`
 	ShowPointer   bool                      `json:"showPointer"`
 	Area          *bool                     `json:"area,omitempty"`
 	ProgressWidth *float64                  `json:"progressWidth,omitempty"`

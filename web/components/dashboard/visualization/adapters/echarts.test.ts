@@ -328,17 +328,42 @@ test('ECharts incremental plans commit data synchronously, preserve interaction 
   expect(context.option.dataZoom).toBeUndefined()
 })
 
-test('ECharts first-frame readiness resolves on finished and removes its listener', async () => {
+test('ECharts first-frame readiness resolves on the first valid rendered frame and removes its listener', async () => {
   let listener: (() => void) | undefined
   let removed = false
   const chart = {
-    on(event: string, callback: () => void) { expect(event).toBe('finished'); listener = callback },
-    off(event: string, callback: () => void) { expect(event).toBe('finished'); removed = callback === listener },
+    on(event: string, callback: () => void) { expect(event).toBe('rendered'); listener = callback },
+    off(event: string, callback: () => void) { expect(event).toBe('rendered'); removed = callback === listener },
+    getWidth: () => 640,
+    getHeight: () => 360,
   }
   const ready = waitForEChartsFrame(chart as any, 100)
   listener?.()
   await ready
   expect(removed).toBe(true)
+})
+
+test('ECharts first-frame readiness ignores zero-sized renders until layout is valid', async () => {
+  let listener: (() => void) | undefined
+  let width = 0
+  let height = 0
+  const chart = {
+    on(_event: string, callback: () => void) { listener = callback },
+    off() {},
+    getWidth: () => width,
+    getHeight: () => height,
+  }
+  let settled = false
+  const ready = waitForEChartsFrame(chart as any, 100).then(() => { settled = true })
+  listener?.()
+  await Promise.resolve()
+  expect(settled).toBe(false)
+
+  width = 640
+  height = 360
+  listener?.()
+  await ready
+  expect(settled).toBe(true)
 })
 
 test('ECharts first-frame readiness fails closed on timeout and removes its listener', async () => {
@@ -347,8 +372,26 @@ test('ECharts first-frame readiness fails closed on timeout and removes its list
   const chart = {
     on(_event: string, callback: () => void) { listener = callback },
     off(_event: string, callback: () => void) { removed = callback === listener },
+    getWidth: () => 640,
+    getHeight: () => 360,
   }
   await expect(waitForEChartsFrame(chart as any, 1)).rejects.toThrow(/did not complete/)
+  expect(removed).toBe(true)
+})
+
+test('ECharts first-frame readiness exits cleanly when its mount is disposed', async () => {
+  let listener: (() => void) | undefined
+  let removed = false
+  const abort = new AbortController()
+  const chart = {
+    on(_event: string, callback: () => void) { listener = callback },
+    off(_event: string, callback: () => void) { removed = callback === listener },
+    getWidth: () => 640,
+    getHeight: () => 360,
+  }
+  const ready = waitForEChartsFrame(chart as any, 100, abort.signal)
+  abort.abort()
+  await ready
   expect(removed).toBe(true)
 })
 
@@ -423,6 +466,39 @@ test('ECharts owns the complete gauge color scale when thresholds are omitted', 
   envelope.spec.presentation.thresholds = undefined
   const option = echartsOption(envelope, defaultRendererContext) as any
   expect(option.series[0].axisLine.lineStyle.color).toEqual([[1, defaultRendererContext.colors.accent]])
+})
+
+test('ECharts rejects gauge envelopes without an explicit truthful domain', () => {
+  const envelope = gaugeFixture() as any
+  envelope.spec.presentation.minimum = undefined
+  envelope.spec.presentation.maximum = undefined
+  expect(() => echartsOption(envelope, defaultRendererContext)).toThrow(/explicit minimum and maximum/)
+})
+
+test('ECharts renders an explicit labeled target independently from the measured value', () => {
+  const envelope = gaugeFixture() as any
+  envelope.spec.presentation.target = 0.8
+  const option = echartsOption(envelope, defaultRendererContext) as any
+  expect(option.series).toHaveLength(2)
+  expect(option.series[1]).toMatchObject({
+    id: 'series:polar:gauge:target',
+    type: 'gauge',
+    min: 0,
+    max: 1,
+    axisLine: { show: false },
+    progress: { show: false },
+    detail: { show: false },
+  })
+  expect(option.series[1].data[0]).toMatchObject({ value: 0.8, name: 'Target 80.0%' })
+  expect(option.series[1].data[0].pointer.width).toBeGreaterThan(0)
+})
+
+test('ECharts renders a visible diagnostic instead of clipping an out-of-domain gauge value', () => {
+  const envelope = gaugeFixture() as any
+  envelope.dataState.datasets[0].rows = [[1.2]]
+  const option = echartsOption(envelope, defaultRendererContext) as any
+  expect(option.series).toEqual([])
+  expect(option.graphic[0].style.text).toContain('outside configured gauge domain 0.0%–100.0%')
 })
 
 function cartesianFixture(mark: string, columns = ['label', 'value']): VisualizationEnvelope {

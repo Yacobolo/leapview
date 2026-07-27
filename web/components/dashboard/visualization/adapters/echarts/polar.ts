@@ -6,20 +6,71 @@ export function polarOption(envelope: VisualizationEnvelope, context: RendererCo
   const spec = envelope.spec
   if (spec.kind !== 'polar') return {}
   if (spec.mark === 'gauge') {
+    if (spec.presentation.minimum === undefined || spec.presentation.maximum === undefined) {
+      throw new Error('Gauge rendering requires an explicit minimum and maximum')
+    }
     const dataset = inlineDataset(envelope, spec.value.dataset)
     const valueIndex = dataset?.columns.indexOf(spec.value.field) ?? -1
     const value = valueIndex >= 0 ? dataset?.rows[0]?.[valueIndex] : undefined
-    const minimum = spec.presentation.minimum ?? 0, maximum = spec.presentation.maximum ?? 100
+    const minimum = spec.presentation.minimum, maximum = spec.presentation.maximum
+    if (typeof value === 'number' && Number.isFinite(value) && (value < minimum || value > maximum)) {
+      const formattedValue = formatField(envelope, spec.value, value, context)
+      const formattedMinimum = formatField(envelope, spec.value, minimum, context)
+      const formattedMaximum = formatField(envelope, spec.value, maximum, context)
+      return {
+        series: [],
+        graphic: [{
+          type: 'text',
+          left: 'center',
+          top: 'middle',
+          silent: true,
+          style: {
+            text: `Value ${formattedValue} is outside configured gauge domain ${formattedMinimum}–${formattedMaximum}`,
+            fill: context.colors.danger,
+            fontFamily: context.fontFamily,
+            textAlign: 'center',
+          },
+        }],
+      }
+    }
     const span = maximum - minimum
     const authoredColors = (spec.presentation.thresholds ?? []).map((threshold) => [Math.max(0, Math.min(1, span > 0 ? (threshold.value - minimum) / span : 1)), toneColor(threshold.tone, context)])
     const colors = authoredColors.length ? authoredColors : [[1, context.colors.accent]]
+    const series: Record<string, any>[] = [{
+      id: 'series:polar:gauge', type: 'gauge', min: minimum, max: maximum,
+      data: [{ value, __lv_dataset: dataset?.id ?? 'primary', __lv_row_index: 0 }], pointer: { show: spec.presentation.showPointer },
+      progress: { show: true, width: spec.presentation.progressWidth }, axisLine: { lineStyle: { color: colors } },
+      detail: { formatter: (raw: unknown) => formatField(envelope, spec.value, raw, context), color: context.colors.foreground },
+    }]
+    if (spec.presentation.target !== undefined) {
+      const targetLabel = `Target ${formatField(envelope, spec.value, spec.presentation.target, context)}`
+      series.push({
+        id: 'series:polar:gauge:target',
+        name: 'Target',
+        type: 'gauge',
+        min: minimum,
+        max: maximum,
+        silent: true,
+        axisLine: { show: false },
+        axisTick: { show: false },
+        splitLine: { show: false },
+        axisLabel: { show: false },
+        progress: { show: false },
+        pointer: { show: true, length: '72%', width: 4, itemStyle: { color: context.colors.foreground } },
+        anchor: { show: false },
+        title: { show: true, offsetCenter: [0, '64%'], color: context.colors.muted, fontFamily: context.fontFamily },
+        detail: { show: false },
+        data: [{
+          value: spec.presentation.target,
+          name: targetLabel,
+          pointer: { show: true, length: '72%', width: 4, itemStyle: { color: context.colors.foreground } },
+          title: { show: true },
+          detail: { show: false },
+        }],
+      })
+    }
     return {
-      series: [{
-        id: 'series:polar:gauge', type: 'gauge', min: minimum, max: maximum,
-        data: [{ value, __lv_dataset: dataset?.id ?? 'primary', __lv_row_index: 0 }], pointer: { show: spec.presentation.showPointer },
-        progress: { show: true, width: spec.presentation.progressWidth }, axisLine: { lineStyle: { color: colors } },
-        detail: { formatter: (raw: unknown) => formatField(envelope, spec.value, raw, context), color: context.colors.foreground },
-      }],
+      series,
     }
   }
   const dataset = inlineDataset(envelope, spec.value.dataset)

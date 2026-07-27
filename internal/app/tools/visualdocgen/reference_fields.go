@@ -53,8 +53,8 @@ var presentationFieldReferences = map[string]visualdocs.FieldReference{
 	"label_position": field("string", "renderer default", []string{"top", "bottom", "left", "right", "inside", "outside"}, "Positions value labels relative to their marks."),
 	"layout":         field("string", "force", []string{"force", "circular"}, "Selects the graph node layout algorithm."),
 	"legend":         field("boolean | string", "false", []string{"true", "false", "top", "bottom", "left", "right"}, "Shows the legend and optionally selects its position."),
-	"maximum":        field("number", "automatic", nil, "Sets the upper bound of a gauge scale."),
-	"minimum":        field("number", "0", nil, "Sets the lower bound of a gauge scale."),
+	"maximum":        field("number", "required for gauges", nil, "Sets the explicit upper bound of a gauge scale."),
+	"minimum":        field("number", "required for gauges", nil, "Sets the explicit lower bound of a gauge scale."),
 	"node_gap":       field("number", "8", []string{"0 or greater"}, "Sets the vertical gap between Sankey nodes."),
 	"note":           field("string", "none", nil, "Adds supporting context below a KPI value."),
 	"orientation":    field("string", "renderer default", []string{"horizontal", "vertical"}, "Controls the direction of tree or Sankey layout."),
@@ -71,6 +71,7 @@ var presentationFieldReferences = map[string]visualdocs.FieldReference{
 	"stacked":        booleanOption("false", "Stacks compatible bar, column, line, or area series."),
 	"step":           booleanOption("false", "Draws line segments as discrete steps."),
 	"symbol_size":    field("number", "renderer default", []string{"positive number"}, "Sets point symbol size for line, area, and scatter series."),
+	"target":         field("number", "none", nil, "Adds a labeled gauge target that must fall within the configured domain."),
 	"thresholds":     field("threshold list", "none", nil, "Maps gauge thresholds to scale positions and colors."),
 	"tone":           field("string", "neutral", []string{"neutral", "ink", "success", "warning", "danger"}, "Sets the semantic accent tone of a KPI card."),
 }

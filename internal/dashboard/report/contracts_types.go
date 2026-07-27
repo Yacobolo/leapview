@@ -161,6 +161,7 @@ type VisualPresentation struct {
 	Focus         string            `yaml:"focus" json:"focus,omitempty"`
 	Minimum       *float64          `yaml:"minimum" json:"minimum,omitempty"`
 	Maximum       *float64          `yaml:"maximum" json:"maximum,omitempty"`
+	Target        *float64          `yaml:"target" json:"target,omitempty"`
 	ProgressWidth float64           `yaml:"progress_width" json:"progressWidth,omitempty"`
 	Thresholds    []VisualThreshold `yaml:"thresholds" json:"thresholds,omitempty"`
 	Note          string            `yaml:"note" json:"note,omitempty"`

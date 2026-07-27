@@ -57,6 +57,7 @@ export type RendererCapabilities = Readonly<{
 }>
 
 export interface RendererHandle {
+  whenReady?(): Promise<void>
   update(envelope: VisualizationEnvelope, change: Change, context: RendererContext): void | Promise<void>
   resize(width: number, height: number, devicePixelRatio: number): void
   snapshot(): Promise<Blob>
@@ -188,12 +189,31 @@ export class VisualizationController {
         this.#record('adapter_error', now() - mountStarted, next)
         throw error
       }
-      this.#record('mount', now() - mountStarted, next)
       if (this.#disposed || generation !== this.#loadGeneration) {
-		handle.dispose()
+        handle.dispose()
         return false
       }
       this.#handle = handle
+      this.#flushResize()
+      try {
+        await handle.whenReady?.()
+      } catch (error) {
+        if (this.#handle === handle) {
+          handle.dispose()
+          this.#handle = undefined
+        }
+        if (this.#disposed || generation !== this.#loadGeneration) return false
+        this.#record('adapter_error', now() - mountStarted, next)
+        throw error
+      }
+      this.#record('mount', now() - mountStarted, next)
+      if (this.#disposed || generation !== this.#loadGeneration || this.#handle !== handle) {
+        if (this.#handle === handle) {
+          handle.dispose()
+          this.#handle = undefined
+        }
+        return false
+      }
       if (this.#pendingViewState) {
         const pending = this.#pendingViewState
         await handle.restoreViewState?.(pending.value)
@@ -201,7 +221,6 @@ export class VisualizationController {
       }
       this.#envelope = next
       this.#context = context
-      this.#flushResize()
       return true
     }
 

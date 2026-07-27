@@ -766,12 +766,20 @@ spec:
     total_orders_gauge:
       title: Total orders gauge
       type: gauge
+      presentation:
+        minimum: 0
+        maximum: 120000
+        target: 100000
       query:
         measures:
           order_count: null
     review_gauge:
       title: Average review gauge
       type: gauge
+      presentation:
+        minimum: 0
+        maximum: 5
+        target: 4.5
       query:
         measures:
           review_score: null
@@ -781,6 +789,7 @@ spec:
       presentation:
         minimum: 0
         maximum: 5
+        target: 4.5
         progress_width: 16
         thresholds:
           - value: 3

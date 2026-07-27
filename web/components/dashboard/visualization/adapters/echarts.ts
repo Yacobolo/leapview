@@ -32,7 +32,7 @@ export const adapter: RendererAdapter = {
     const chart = echarts.init(frame, undefined, { renderer: 'canvas', devicePixelRatio: context.devicePixelRatio })
     const handle = new EChartsHandle(container, frame, chart)
     try {
-      await handle.mount(envelope, context)
+      handle.mount(envelope, context)
       return handle
     } catch (error) {
       handle.dispose()
@@ -55,17 +55,22 @@ export function removeEChartsRendererFrame(container: ParentNode, frame: HTMLEle
 class EChartsHandle implements RendererHandle {
   private envelope?: VisualizationEnvelope
   private disposed = false
+  private readiness: Promise<void> = Promise.resolve()
+  private readinessAbort?: AbortController
 
   constructor(private readonly container: HTMLElement, private readonly frame: HTMLElement, private readonly chart: ECharts) {
     this.chart.on('click', this.handleClick)
   }
 
-  async mount(envelope: VisualizationEnvelope, context: RendererContext): Promise<void> {
+  mount(envelope: VisualizationEnvelope, context: RendererContext): void {
     this.envelope = envelope
-    const ready = waitForEChartsFrame(this.chart)
+    this.readinessAbort?.abort()
+    this.readinessAbort = new AbortController()
+    this.readiness = waitForEChartsFrame(this.chart, 5_000, this.readinessAbort.signal)
     this.chart.setOption(echartsOption(envelope, context), { notMerge: true, lazyUpdate: false })
-    await ready
   }
+
+  whenReady(): Promise<void> { return this.readiness }
 
   update(envelope: VisualizationEnvelope, change: Change, context: RendererContext): void {
     if (this.disposed) return
@@ -85,6 +90,8 @@ class EChartsHandle implements RendererHandle {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    this.readinessAbort?.abort()
+    this.readinessAbort = undefined
     this.chart.off('click', this.handleClick)
     this.chart.dispose()
     removeEChartsRendererFrame(this.container, this.frame)
@@ -160,18 +167,49 @@ function echartsContextPatch(option: Record<string, any>): Record<string, any> {
   return patch
 }
 
-export function waitForEChartsFrame(chart: Pick<ECharts, 'on' | 'off'>, timeoutMs = 5_000): Promise<void> {
+type EChartsFrameChart = Pick<ECharts, 'on' | 'off' | 'getWidth' | 'getHeight'>
+
+export class EChartsReadinessError extends Error {
+  constructor(readonly reason: 'timeout' | 'invalid_layout', readonly width: number, readonly height: number) {
+    super(reason === 'invalid_layout'
+      ? `ECharts cannot render its first frame with invalid layout ${width}x${height}`
+      : 'ECharts did not complete its first frame')
+    this.name = 'EChartsReadinessError'
+  }
+}
+
+export function waitForEChartsFrame(chart: EChartsFrameChart, timeoutMs = 5_000, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     let timer: ReturnType<typeof setTimeout> | undefined
-    const finish = () => {
+    let settled = false
+    const cleanup = () => {
       if (timer !== undefined) clearTimeout(timer)
-      chart.off('finished', finish)
-      resolve()
+      chart.off('rendered', rendered)
+      signal?.removeEventListener('abort', aborted)
     }
-    chart.on('finished', finish)
+    const complete = (action: () => void) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      action()
+    }
+    const rendered = () => {
+      const width = chart.getWidth()
+      const height = chart.getHeight()
+      if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return
+      complete(resolve)
+    }
+    const aborted = () => { complete(resolve) }
+    chart.on('rendered', rendered)
+    if (signal?.aborted) {
+      aborted()
+      return
+    }
+    signal?.addEventListener('abort', aborted, { once: true })
     timer = setTimeout(() => {
-      chart.off('finished', finish)
-      reject(new Error('ECharts did not complete its first frame'))
+      const width = chart.getWidth()
+      const height = chart.getHeight()
+      complete(() => reject(new EChartsReadinessError(width > 0 && height > 0 ? 'timeout' : 'invalid_layout', width, height)))
     }, timeoutMs)
   })
 }

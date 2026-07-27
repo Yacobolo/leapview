@@ -43725,6 +43725,10 @@ components:
           type: number
           format: double
           example: !!float 1
+        target:
+          type: number
+          format: double
+          example: !!float 1
         showPointer:
           type: boolean
           example: true
@@ -43748,6 +43752,7 @@ components:
         minimum: !!float 1
         progressWidth: !!float 1
         showPointer: true
+        target: !!float 1
         thresholds:
           - tone: neutral
             value: !!float 1
@@ -43788,6 +43793,7 @@ components:
           minimum: !!float 1
           progressWidth: !!float 1
           showPointer: true
+          target: !!float 1
           thresholds:
             - tone: neutral
               value: !!float 1

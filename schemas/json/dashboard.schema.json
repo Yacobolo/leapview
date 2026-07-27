@@ -1741,6 +1741,9 @@
           "exclusiveMinimum": 0,
           "type": "number"
         },
+        "target": {
+          "type": "number"
+        },
         "thresholds": {
           "items": {
             "$ref": "#/$defs/%23Threshold"

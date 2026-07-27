@@ -525,6 +525,7 @@ package contracts
 	#PresentationCommon
 	minimum?:       number
 	maximum?:       number
+	target?:        number
 	area?:          bool
 	progress_width?: number & >0
 	thresholds?: [...#Threshold]

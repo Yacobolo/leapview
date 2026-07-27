@@ -58,6 +58,39 @@ func TestCompiledCategoricalFieldRetainsStringType(t *testing.T) {
 	}
 }
 
+func TestCompiledGaugeRetainsTruthfulDomainAndTarget(t *testing.T) {
+	minimum, maximum, target := 0.0, 5.0, 4.5
+	authored := reportdef.Visual{
+		Type: "gauge",
+		Presentation: reportdef.VisualPresentation{
+			Minimum: &minimum,
+			Maximum: &maximum,
+			Target:  &target,
+		},
+		Query: reportdef.VisualQuery{
+			Measures: []reportdef.FieldRef{{Field: "review_score"}},
+		},
+	}
+
+	spec, err := compileBuiltInVisualizationSpec("review", authored, nil)
+	if err != nil {
+		t.Fatalf("compileBuiltInVisualizationSpec() error = %v", err)
+	}
+	gauge, ok := spec.Value.(*visualizationir.PolarVisualizationSpec)
+	if !ok {
+		t.Fatalf("spec = %T, want PolarVisualizationSpec", spec.Value)
+	}
+	if gauge.Presentation.Minimum == nil || *gauge.Presentation.Minimum != minimum {
+		t.Fatalf("minimum = %v, want %v", gauge.Presentation.Minimum, minimum)
+	}
+	if gauge.Presentation.Maximum == nil || *gauge.Presentation.Maximum != maximum {
+		t.Fatalf("maximum = %v, want %v", gauge.Presentation.Maximum, maximum)
+	}
+	if gauge.Presentation.Target == nil || *gauge.Presentation.Target != target {
+		t.Fatalf("target = %v, want %v", gauge.Presentation.Target, target)
+	}
+}
+
 func TestCompiledMultiMeasureValueDoesNotClaimOneMeasureFormat(t *testing.T) {
 	model := &semanticmodel.Model{
 		Tables: map[string]semanticmodel.Table{"orders": {Dimensions: map[string]semanticmodel.MetricDimension{"month": {Type: "string"}}}},

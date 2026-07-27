@@ -399,6 +399,7 @@ model HierarchyVisualizationPresentation extends VisualizationPresentation {
 model PolarVisualizationPresentation extends VisualizationPresentation {
   `minimum`?: float64;
   `maximum`?: float64;
+  `target`?: float64;
   `showPointer`: boolean;
   `area`?: boolean;
   `progressWidth`?: float64;
