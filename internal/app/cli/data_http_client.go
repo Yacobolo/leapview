@@ -13,6 +13,7 @@ import (
 
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	deploymentgen "github.com/Yacobolo/leapview/internal/deployment/api/gen"
+	manageddataapi "github.com/Yacobolo/leapview/internal/manageddata/api"
 	releasegen "github.com/Yacobolo/leapview/internal/release/api/gen"
 )
 
@@ -35,62 +36,62 @@ func (c *managedDataCLIClient) instance(ctx context.Context) (apigenapi.Instance
 	return response, err
 }
 
-func (c *managedDataCLIClient) createUploadSession(ctx context.Context, project, connection, key string, body apigenapi.ManagedDataUploadSessionCreateRequest) (apigenapi.ManagedDataUploadSessionResponse, error) {
-	var response apigenapi.ManagedDataUploadSessionResponse
+func (c *managedDataCLIClient) createUploadSession(ctx context.Context, project, connection, key string, body manageddataapi.ManagedDataUploadSessionCreateRequest) (manageddataapi.ManagedDataUploadSessionResponse, error) {
+	var response manageddataapi.ManagedDataUploadSessionResponse
 	err := c.json(ctx, http.MethodPost, "createManagedDataUploadSession", map[string]string{"project": project, "connection": connection}, nil, key, body, &response)
 	return response, err
 }
 
-func (c *managedDataCLIClient) finalizeUploadSession(ctx context.Context, project, connection, uploadID, key string) (apigenapi.ManagedDataUploadSessionResponse, error) {
-	var response apigenapi.ManagedDataUploadSessionResponse
+func (c *managedDataCLIClient) finalizeUploadSession(ctx context.Context, project, connection, uploadID, key string) (manageddataapi.ManagedDataUploadSessionResponse, error) {
+	var response manageddataapi.ManagedDataUploadSessionResponse
 	err := c.json(ctx, http.MethodPost, "finalizeManagedDataUploadSession", managedDataUploadPath(project, connection, uploadID), nil, key, nil, &response)
 	return response, err
 }
 
-func (c *managedDataCLIClient) getUploadSession(ctx context.Context, project, connection, uploadID string) (apigenapi.ManagedDataUploadSessionResponse, error) {
-	var response apigenapi.ManagedDataUploadSessionResponse
+func (c *managedDataCLIClient) getUploadSession(ctx context.Context, project, connection, uploadID string) (manageddataapi.ManagedDataUploadSessionResponse, error) {
+	var response manageddataapi.ManagedDataUploadSessionResponse
 	err := c.json(ctx, http.MethodGet, "getManagedDataUploadSession", managedDataUploadPath(project, connection, uploadID), nil, "", nil, &response)
 	return response, err
 }
 
 func (c *managedDataCLIClient) abortUploadSession(ctx context.Context, project, connection, uploadID, key string) {
-	var response apigenapi.ManagedDataUploadSessionResponse
+	var response manageddataapi.ManagedDataUploadSessionResponse
 	_ = c.json(ctx, http.MethodPost, "cancelManagedDataUploadSession", managedDataUploadPath(project, connection, uploadID), nil, key, nil, &response)
 }
 
-func (c *managedDataCLIClient) createMultipart(ctx context.Context, project, connection, uploadID, key, logicalPath string) (apigenapi.ManagedDataS3MultipartUploadResponse, error) {
-	var response apigenapi.ManagedDataS3MultipartUploadResponse
-	err := c.json(ctx, http.MethodPost, "createManagedDataS3MultipartUpload", managedDataUploadPath(project, connection, uploadID), nil, key, apigenapi.ManagedDataS3MultipartCreateRequest{Path: logicalPath}, &response)
+func (c *managedDataCLIClient) createMultipart(ctx context.Context, project, connection, uploadID, key, logicalPath string) (manageddataapi.ManagedDataS3MultipartUploadResponse, error) {
+	var response manageddataapi.ManagedDataS3MultipartUploadResponse
+	err := c.json(ctx, http.MethodPost, "createManagedDataS3MultipartUpload", managedDataUploadPath(project, connection, uploadID), nil, key, manageddataapi.ManagedDataS3MultipartCreateRequest{Path: logicalPath}, &response)
 	return response, err
 }
 
-func (c *managedDataCLIClient) signMultipartPart(ctx context.Context, project, connection, uploadID, multipartID string, partNumber int32, body apigenapi.ManagedDataS3MultipartSignPartRequest) (apigenapi.ManagedDataS3MultipartSignedPartResponse, error) {
+func (c *managedDataCLIClient) signMultipartPart(ctx context.Context, project, connection, uploadID, multipartID string, partNumber int32, body manageddataapi.ManagedDataS3MultipartSignPartRequest) (manageddataapi.ManagedDataS3MultipartSignedPartResponse, error) {
 	params := managedDataMultipartPath(project, connection, uploadID, multipartID)
 	params["partNumber"] = strconv.FormatInt(int64(partNumber), 10)
-	var response apigenapi.ManagedDataS3MultipartSignedPartResponse
+	var response manageddataapi.ManagedDataS3MultipartSignedPartResponse
 	err := c.json(ctx, http.MethodPost, "signManagedDataS3MultipartPart", params, nil, "", body, &response)
 	return response, err
 }
 
-func (c *managedDataCLIClient) completeMultipart(ctx context.Context, project, connection, uploadID, multipartID, key string, body apigenapi.ManagedDataS3MultipartCompleteRequest) (apigenapi.ManagedDataS3MultipartUploadResponse, error) {
-	var response apigenapi.ManagedDataS3MultipartUploadResponse
+func (c *managedDataCLIClient) completeMultipart(ctx context.Context, project, connection, uploadID, multipartID, key string, body manageddataapi.ManagedDataS3MultipartCompleteRequest) (manageddataapi.ManagedDataS3MultipartUploadResponse, error) {
+	var response manageddataapi.ManagedDataS3MultipartUploadResponse
 	err := c.json(ctx, http.MethodPost, "completeManagedDataS3MultipartUpload", managedDataMultipartPath(project, connection, uploadID, multipartID), nil, key, body, &response)
 	return response, err
 }
 
 func (c *managedDataCLIClient) abortMultipart(ctx context.Context, project, connection, uploadID, multipartID, key string) {
-	var response apigenapi.ManagedDataS3MultipartUploadResponse
+	var response manageddataapi.ManagedDataS3MultipartUploadResponse
 	_ = c.json(ctx, http.MethodPost, "abortManagedDataS3MultipartUpload", managedDataMultipartPath(project, connection, uploadID, multipartID), nil, key, nil, &response)
 }
 
-func (c *managedDataCLIClient) listRevisions(ctx context.Context, project, connection string, query url.Values) (apigenapi.ManagedDataRevisionListResponse, error) {
-	var response apigenapi.ManagedDataRevisionListResponse
+func (c *managedDataCLIClient) listRevisions(ctx context.Context, project, connection string, query url.Values) (manageddataapi.ManagedDataRevisionListResponse, error) {
+	var response manageddataapi.ManagedDataRevisionListResponse
 	err := c.json(ctx, http.MethodGet, "listManagedDataRevisions", map[string]string{"project": project, "connection": connection}, query, "", nil, &response)
 	return response, err
 }
 
-func (c *managedDataCLIClient) currentRevision(ctx context.Context, project, connection, _ string) (apigenapi.ManagedDataActiveRevisionResponse, error) {
-	var response apigenapi.ManagedDataActiveRevisionResponse
+func (c *managedDataCLIClient) currentRevision(ctx context.Context, project, connection, _ string) (manageddataapi.ManagedDataActiveRevisionResponse, error) {
+	var response manageddataapi.ManagedDataActiveRevisionResponse
 	err := c.json(ctx, http.MethodGet, "getActiveManagedDataRevision", map[string]string{"project": project, "connection": connection}, nil, "", nil, &response)
 	return response, err
 }

@@ -157,6 +157,16 @@ func TestWorkspaceGeneratedAPIIsCapabilityOwned(t *testing.T) {
 	}
 }
 
+func TestManagedDataGeneratedAPIIsCapabilityOwned(t *testing.T) {
+	rule, ok := ClassifyPackage("internal/manageddata/api/gen")
+	if !ok {
+		t.Fatal("ManagedData generated API package is not classified")
+	}
+	if rule.Capability != "manageddata" || rule.Layer != LayerAdapter {
+		t.Fatalf("ManagedData generated API classification = %#v, want manageddata adapter", rule)
+	}
+}
+
 func TestApplicationOwnsProductConfigurationContract(t *testing.T) {
 	root := repoRoot(t)
 	if !packageDirExists(root, "internal/app/config/spec") {
@@ -1378,6 +1388,7 @@ func TestProductionContainerContractExists(t *testing.T) {
 		"COPY --from=sourcegen /src/internal/app/api/aggregate ./internal/app/api/aggregate",
 		"COPY --from=sourcegen /src/internal/app/api/gen ./internal/app/api/gen",
 		"COPY --from=sourcegen /src/internal/deployment/api/gen ./internal/deployment/api/gen",
+		"COPY --from=sourcegen /src/internal/manageddata/api/gen ./internal/manageddata/api/gen",
 		"COPY --from=sourcegen /src/internal/platform/http/api/gen ./internal/platform/http/api/gen",
 		"COPY --from=sourcegen /src/internal/project/api/gen ./internal/project/api/gen",
 		"COPY --from=sourcegen /src/internal/refresh/api/gen ./internal/refresh/api/gen",
@@ -1412,7 +1423,7 @@ func TestProductionContainerContractExists(t *testing.T) {
 	}
 	ignoreText := string(ignored)
 	for _, want := range []string{
-		".data", ".leapview", "node_modules", "api/gen", "internal/access/api/gen", "internal/agent/api/gen", "internal/analytics/api/gen", "internal/deployment/api/gen",
+		".data", ".leapview", "node_modules", "api/gen", "internal/access/api/gen", "internal/agent/api/gen", "internal/analytics/api/gen", "internal/deployment/api/gen", "internal/manageddata/api/gen",
 		"internal/app/api/aggregate", "internal/app/api/gen", "internal/platform/http/api/gen", "internal/project/api/gen", "internal/refresh/api/gen", "internal/release/api/gen", "internal/workspace/api/gen", "static/chunks",
 	} {
 		if !strings.Contains(ignoreText, want) {

@@ -8,8 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
-	protocolgen "github.com/Yacobolo/leapview/internal/platform/http/api/gen"
+	manageddataapi "github.com/Yacobolo/leapview/internal/manageddata/api"
 )
 
 func TestDataRevisionsListAndCurrent(t *testing.T) {
@@ -20,9 +19,9 @@ func TestDataRevisionsListAndCurrent(t *testing.T) {
 		}
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/revisions"):
-			writeJSONTest(t, w, http.StatusOK, apigenapi.ManagedDataRevisionListResponse{Items: []apigenapi.ManagedDataRevisionSummaryResponse{{Id: digest, Status: apigenapi.ManagedDataRevisionStatusAvailable, FileCount: 2, Size: 12, CreatedAt: "2026-01-01T00:00:00Z", UploadSessionId: "upload-1"}}, Page: protocolgen.PageInfo{}})
+			writeJSONTest(t, w, http.StatusOK, manageddataapi.ManagedDataRevisionListResponse{Items: []manageddataapi.ManagedDataRevisionSummaryResponse{{Id: digest, Status: manageddataapi.ManagedDataRevisionStatusAvailable, FileCount: 2, Size: 12, CreatedAt: "2026-01-01T00:00:00Z", UploadSessionId: "upload-1"}}, Page: manageddataapi.PageInfo{}})
 		case strings.HasSuffix(r.URL.Path, "/active-revision"):
-			writeJSONTest(t, w, http.StatusOK, apigenapi.ManagedDataActiveRevisionResponse{Revision: &apigenapi.ManagedDataRevisionSummaryResponse{Id: digest, Status: apigenapi.ManagedDataRevisionStatusAvailable, FileCount: 2, Size: 12, CreatedAt: "2026-01-01T00:00:00Z", UploadSessionId: "upload-1"}})
+			writeJSONTest(t, w, http.StatusOK, manageddataapi.ManagedDataActiveRevisionResponse{Revision: &manageddataapi.ManagedDataRevisionSummaryResponse{Id: digest, Status: manageddataapi.ManagedDataRevisionStatusAvailable, FileCount: 2, Size: 12, CreatedAt: "2026-01-01T00:00:00Z", UploadSessionId: "upload-1"}})
 		default:
 			t.Fatalf("request path = %s", r.URL.Path)
 		}
@@ -51,7 +50,7 @@ func TestDataRevisionsListAndCurrent(t *testing.T) {
 
 func TestDataRevisionCurrentPrintsNone(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeJSONTest(t, w, http.StatusOK, apigenapi.ManagedDataActiveRevisionResponse{})
+		writeJSONTest(t, w, http.StatusOK, manageddataapi.ManagedDataActiveRevisionResponse{})
 	}))
 	defer server.Close()
 	var out bytes.Buffer

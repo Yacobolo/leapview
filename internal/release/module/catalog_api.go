@@ -86,7 +86,7 @@ func (m *Module) ListProjectWorkspaces(w http.ResponseWriter, r *http.Request, p
 	apitransport.WriteJSON(w, http.StatusOK, projectapi.ProjectWorkspaceListResponse{Items: page, Page: projectapi.PageInfo{NextCursor: next}})
 }
 
-func (m *Module) ListManagedConnections(w http.ResponseWriter, r *http.Request, projectID string, params releaseapi.PageParams) {
+func (m *Module) ListManagedConnections(w http.ResponseWriter, r *http.Request, projectID string, limit *int32, pageToken *string) {
 	if m == nil || m.catalog == nil {
 		apitransport.WriteJSON(w, http.StatusOK, releaseapi.ManagedConnectionListResponse{Items: []releaseapi.ManagedConnectionResponse{}, Page: releaseapi.PageInfo{}})
 		return
@@ -107,7 +107,7 @@ func (m *Module) ListManagedConnections(w http.ResponseWriter, r *http.Request, 
 		}
 		items = append(items, item)
 	}
-	page, next, err := apitransport.KeysetPage(items, params.Limit, params.PageToken, func(item releaseapi.ManagedConnectionResponse) string { return item.ID })
+	page, next, err := apitransport.KeysetPage(items, limit, pageToken, func(item releaseapi.ManagedConnectionResponse) string { return item.ID })
 	if err != nil {
 		apitransport.WriteProblem(w, r, http.StatusBadRequest, "INVALID_CURSOR", err.Error(), nil)
 		return

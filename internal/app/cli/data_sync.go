@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	"github.com/Yacobolo/leapview/internal/manageddata"
+	manageddataapi "github.com/Yacobolo/leapview/internal/manageddata/api"
 	"github.com/Yacobolo/leapview/internal/manageddata/localplan"
 	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 	"github.com/spf13/cobra"
@@ -107,14 +107,14 @@ func runDataSync(ctx context.Context, request dataSyncRequest) error {
 	client := newManagedDataCLIClient(request.HTTPClient, request.Target, request.Token)
 	revisionID := request.Plan.Manifest.RevisionID()
 	createKey := dataSyncIdempotencyKey("create", request.ProjectID, request.Connection, revisionID)
-	session, err := client.createUploadSession(ctx, request.ProjectID, request.Connection, createKey, apigenapi.ManagedDataUploadSessionCreateRequest{Manifest: wireManifest})
+	session, err := client.createUploadSession(ctx, request.ProjectID, request.Connection, createKey, manageddataapi.ManagedDataUploadSessionCreateRequest{Manifest: wireManifest})
 	if err != nil {
 		return err
 	}
 	if err := validateSyncSession(session, request.ProjectID, request.Connection, request.Plan.Manifest); err != nil {
 		return err
 	}
-	if session.Status != apigenapi.ManagedDataUploadSessionStatusCompleted {
+	if session.Status != manageddataapi.ManagedDataUploadSessionStatusCompleted {
 		session, err = client.getUploadSession(ctx, request.ProjectID, request.Connection, session.Id)
 		if err != nil {
 			return err
@@ -129,7 +129,7 @@ func runDataSync(ctx context.Context, request dataSyncRequest) error {
 			return recoveryErr
 		}
 		recoveryKey := dataSyncIdempotencyKey("recover", request.ProjectID, request.Connection, revisionID, recoveryID)
-		session, err = client.createUploadSession(ctx, request.ProjectID, request.Connection, recoveryKey, apigenapi.ManagedDataUploadSessionCreateRequest{Manifest: wireManifest})
+		session, err = client.createUploadSession(ctx, request.ProjectID, request.Connection, recoveryKey, manageddataapi.ManagedDataUploadSessionCreateRequest{Manifest: wireManifest})
 		if err != nil {
 			return err
 		}
@@ -137,16 +137,16 @@ func runDataSync(ctx context.Context, request dataSyncRequest) error {
 			return err
 		}
 	}
-	if session.Status == apigenapi.ManagedDataUploadSessionStatusFinalizing {
+	if session.Status == manageddataapi.ManagedDataUploadSessionStatusFinalizing {
 		session, err = waitForUploadFinalization(ctx, client, request.ProjectID, request.Connection, session.Id, request.Plan.Manifest, session)
 		if err != nil {
 			return err
 		}
 	}
-	if session.Status != apigenapi.ManagedDataUploadSessionStatusOpen && session.Status != apigenapi.ManagedDataUploadSessionStatusCompleted {
+	if session.Status != manageddataapi.ManagedDataUploadSessionStatusOpen && session.Status != manageddataapi.ManagedDataUploadSessionStatusCompleted {
 		return fmt.Errorf("upload session is not usable: status %q", session.Status)
 	}
-	if session.Status != apigenapi.ManagedDataUploadSessionStatusCompleted {
+	if session.Status != manageddataapi.ManagedDataUploadSessionStatusCompleted {
 		for _, file := range request.Plan.Manifest.Files {
 			upload := uploadForPath(session.Files, file.Path)
 			if upload == nil {
@@ -165,7 +165,7 @@ func runDataSync(ctx context.Context, request dataSyncRequest) error {
 		if err := validateSyncSession(finalized, request.ProjectID, request.Connection, request.Plan.Manifest); err != nil {
 			return err
 		}
-		if finalized.Status != apigenapi.ManagedDataUploadSessionStatusCompleted {
+		if finalized.Status != manageddataapi.ManagedDataUploadSessionStatusCompleted {
 			finalized, err = waitForUploadFinalization(ctx, client, request.ProjectID, request.Connection, session.Id, request.Plan.Manifest, finalized)
 			if err != nil {
 				return err
@@ -180,9 +180,9 @@ func runDataSync(ctx context.Context, request dataSyncRequest) error {
 	return err
 }
 
-func terminalUploadSessionStatus(status apigenapi.ManagedDataUploadSessionStatus) bool {
+func terminalUploadSessionStatus(status manageddataapi.ManagedDataUploadSessionStatus) bool {
 	switch status {
-	case apigenapi.ManagedDataUploadSessionStatusCancelled, apigenapi.ManagedDataUploadSessionStatusFailed, apigenapi.ManagedDataUploadSessionStatusExpired:
+	case manageddataapi.ManagedDataUploadSessionStatusCancelled, manageddataapi.ManagedDataUploadSessionStatusFailed, manageddataapi.ManagedDataUploadSessionStatusExpired:
 		return true
 	default:
 		return false
@@ -197,7 +197,7 @@ func newDataSyncRecoveryID() (string, error) {
 	return hex.EncodeToString(value[:]), nil
 }
 
-func waitForUploadFinalization(ctx context.Context, client *managedDataCLIClient, project, connection, uploadID string, manifest manageddata.Manifest, current apigenapi.ManagedDataUploadSessionResponse) (apigenapi.ManagedDataUploadSessionResponse, error) {
+func waitForUploadFinalization(ctx context.Context, client *managedDataCLIClient, project, connection, uploadID string, manifest manageddata.Manifest, current manageddataapi.ManagedDataUploadSessionResponse) (manageddataapi.ManagedDataUploadSessionResponse, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -209,10 +209,10 @@ func waitForUploadFinalization(ctx context.Context, client *managedDataCLIClient
 	delay := 100 * time.Millisecond
 	for {
 		switch current.Status {
-		case apigenapi.ManagedDataUploadSessionStatusCompleted:
+		case manageddataapi.ManagedDataUploadSessionStatusCompleted:
 			return current, nil
-		case apigenapi.ManagedDataUploadSessionStatusFinalizing:
-		case apigenapi.ManagedDataUploadSessionStatusFailed, apigenapi.ManagedDataUploadSessionStatusCancelled, apigenapi.ManagedDataUploadSessionStatusExpired:
+		case manageddataapi.ManagedDataUploadSessionStatusFinalizing:
+		case manageddataapi.ManagedDataUploadSessionStatusFailed, manageddataapi.ManagedDataUploadSessionStatusCancelled, manageddataapi.ManagedDataUploadSessionStatusExpired:
 			return current, fmt.Errorf("managed data upload finalization ended with status %q", current.Status)
 		default:
 			return current, fmt.Errorf("managed data upload finalization returned unexpected status %q", current.Status)
@@ -241,7 +241,7 @@ func waitForUploadFinalization(ctx context.Context, client *managedDataCLIClient
 	}
 }
 
-func transferManagedDataFile(ctx context.Context, client *managedDataCLIClient, request dataSyncRequest, uploadID string, file manageddata.File, upload apigenapi.ManagedDataFileUploadResponse) error {
+func transferManagedDataFile(ctx context.Context, client *managedDataCLIClient, request dataSyncRequest, uploadID string, file manageddata.File, upload manageddataapi.ManagedDataFileUploadResponse) error {
 	if upload.File.Path != file.Path || int64(upload.File.Size) != file.Size || upload.File.Sha256 != file.SHA256 {
 		return fmt.Errorf("upload session file metadata does not match %q", file.Path)
 	}
@@ -249,14 +249,14 @@ func transferManagedDataFile(ctx context.Context, client *managedDataCLIClient, 
 		return fmt.Errorf("upload instructions are unavailable for %q", file.Path)
 	}
 	switch upload.Negotiation.Protocol {
-	case apigenapi.ManagedDataUploadProtocolAlreadyPresent:
+	case manageddataapi.ManagedDataUploadProtocolAlreadyPresent:
 		return nil
-	case apigenapi.ManagedDataUploadProtocolTus:
+	case manageddataapi.ManagedDataUploadProtocolTus:
 		if upload.Negotiation.Tus == nil || upload.Negotiation.S3Multipart != nil {
 			return fmt.Errorf("invalid tus negotiation for %q", file.Path)
 		}
 		return uploadManagedDataTus(ctx, client, request.Root, file, *upload.Negotiation.Tus)
-	case apigenapi.ManagedDataUploadProtocolS3Multipart:
+	case manageddataapi.ManagedDataUploadProtocolS3Multipart:
 		if upload.Negotiation.S3Multipart == nil || upload.Negotiation.Tus != nil {
 			return fmt.Errorf("invalid S3 multipart negotiation for %q", file.Path)
 		}
@@ -266,7 +266,7 @@ func transferManagedDataFile(ctx context.Context, client *managedDataCLIClient, 
 	}
 }
 
-func uploadManagedDataTus(ctx context.Context, client *managedDataCLIClient, root string, expected manageddata.File, negotiation apigenapi.ManagedDataTusUploadNegotiation) error {
+func uploadManagedDataTus(ctx context.Context, client *managedDataCLIClient, root string, expected manageddata.File, negotiation manageddataapi.ManagedDataTusUploadNegotiation) error {
 	endpoint, err := sameOriginUploadURL(client.target, negotiation.Endpoint, negotiation.UploadId)
 	if err != nil {
 		return fmt.Errorf("invalid tus negotiation for %q", expected.Path)
@@ -384,7 +384,7 @@ func patchTusFile(ctx context.Context, client *managedDataCLIClient, endpoint, r
 	return newOffset, false, nil
 }
 
-func uploadManagedDataS3(ctx context.Context, client *managedDataCLIClient, request dataSyncRequest, uploadID string, expected manageddata.File, negotiation apigenapi.ManagedDataS3MultipartNegotiation) error {
+func uploadManagedDataS3(ctx context.Context, client *managedDataCLIClient, request dataSyncRequest, uploadID string, expected manageddata.File, negotiation manageddataapi.ManagedDataS3MultipartNegotiation) error {
 	if err := verifySourceFile(ctx, request.Root, expected); err != nil {
 		return err
 	}
@@ -400,7 +400,7 @@ func uploadManagedDataS3(ctx context.Context, client *managedDataCLIClient, requ
 	if multipart.UploadSessionId != uploadID || multipart.File.Path != expected.Path || multipart.File.Sha256 != expected.SHA256 || int64(multipart.File.Size) != expected.Size {
 		return fmt.Errorf("multipart upload metadata does not match %q", expected.Path)
 	}
-	if multipart.Existing && multipart.Status == apigenapi.ManagedDataS3MultipartStatusCompleted {
+	if multipart.Existing && multipart.Status == manageddataapi.ManagedDataS3MultipartStatusCompleted {
 		return nil
 	}
 	completed := false
@@ -409,14 +409,14 @@ func uploadManagedDataS3(ctx context.Context, client *managedDataCLIClient, requ
 			abortMultipart(ctx, client, request.ProjectID, request.Connection, uploadID, multipart.Id)
 		}
 	}()
-	parts := make([]apigenapi.ManagedDataS3CompletedPart, 0, (expected.Size+partSize-1)/partSize)
+	parts := make([]manageddataapi.ManagedDataS3CompletedPart, 0, (expected.Size+partSize-1)/partSize)
 	for offset, partNumber := int64(0), int32(1); offset < expected.Size; offset, partNumber = offset+partSize, partNumber+1 {
 		size := min(partSize, expected.Size-offset)
 		partDigest, err := hashSourceRange(ctx, request.Root, expected, offset, size)
 		if err != nil {
 			return err
 		}
-		signed, err := client.signMultipartPart(ctx, request.ProjectID, request.Connection, uploadID, multipart.Id, partNumber, apigenapi.ManagedDataS3MultipartSignPartRequest{Size: size, Sha256: &partDigest})
+		signed, err := client.signMultipartPart(ctx, request.ProjectID, request.Connection, uploadID, multipart.Id, partNumber, manageddataapi.ManagedDataS3MultipartSignPartRequest{Size: size, Sha256: &partDigest})
 		if err != nil {
 			return err
 		}
@@ -427,23 +427,23 @@ func uploadManagedDataS3(ctx context.Context, client *managedDataCLIClient, requ
 		if err != nil {
 			return err
 		}
-		parts = append(parts, apigenapi.ManagedDataS3CompletedPart{PartNumber: partNumber, Etag: etag, Sha256: &partDigest})
+		parts = append(parts, manageddataapi.ManagedDataS3CompletedPart{PartNumber: partNumber, Etag: etag, Sha256: &partDigest})
 	}
 	if err := verifySourceFile(ctx, request.Root, expected); err != nil {
 		return err
 	}
-	result, err := client.completeMultipart(ctx, request.ProjectID, request.Connection, uploadID, multipart.Id, dataSyncIdempotencyKey("multipart-complete", multipart.Id, expected.SHA256), apigenapi.ManagedDataS3MultipartCompleteRequest{Parts: parts})
+	result, err := client.completeMultipart(ctx, request.ProjectID, request.Connection, uploadID, multipart.Id, dataSyncIdempotencyKey("multipart-complete", multipart.Id, expected.SHA256), manageddataapi.ManagedDataS3MultipartCompleteRequest{Parts: parts})
 	if err != nil {
 		return err
 	}
-	if result.Id != multipart.Id || result.Status != apigenapi.ManagedDataS3MultipartStatusCompleted {
+	if result.Id != multipart.Id || result.Status != manageddataapi.ManagedDataS3MultipartStatusCompleted {
 		return fmt.Errorf("S3 multipart upload did not complete for %q", expected.Path)
 	}
 	completed = true
 	return nil
 }
 
-func deterministicPartSize(size int64, negotiation apigenapi.ManagedDataS3MultipartNegotiation) (int64, error) {
+func deterministicPartSize(size int64, negotiation manageddataapi.ManagedDataS3MultipartNegotiation) (int64, error) {
 	minimum, maximum, maximumParts := int64(negotiation.MinimumPartSize), int64(negotiation.MaximumPartSize), int64(negotiation.MaximumParts)
 	if size <= 0 || minimum <= 0 || maximum < minimum || maximumParts <= 0 || maximumParts > 10_000 {
 		return 0, fmt.Errorf("invalid multipart limits")
@@ -456,7 +456,7 @@ func deterministicPartSize(size int64, negotiation apigenapi.ManagedDataS3Multip
 	return partSize, nil
 }
 
-func putSignedPart(ctx context.Context, client *http.Client, signed apigenapi.ManagedDataS3MultipartSignedPartResponse, root string, expected manageddata.File, offset, size int64, expectedPartDigest string) (string, error) {
+func putSignedPart(ctx context.Context, client *http.Client, signed manageddataapi.ManagedDataS3MultipartSignedPartResponse, root string, expected manageddata.File, offset, size int64, expectedPartDigest string) (string, error) {
 	if _, err := validateSignedURL(signed.Url); err != nil {
 		return "", fmt.Errorf("invalid signed S3 part response for %q", expected.Path)
 	}
@@ -637,15 +637,15 @@ func (r contextReader) Read(buffer []byte) (int, error) {
 	return r.reader.Read(buffer)
 }
 
-func manifestToWire(manifest manageddata.Manifest) (apigenapi.ManagedDataManifest, error) {
-	files := make([]apigenapi.ManagedDataFileMetadata, len(manifest.Files))
+func manifestToWire(manifest manageddata.Manifest) (manageddataapi.ManagedDataManifest, error) {
+	files := make([]manageddataapi.ManagedDataFileMetadata, len(manifest.Files))
 	for index, file := range manifest.Files {
-		files[index] = apigenapi.ManagedDataFileMetadata{Path: file.Path, Size: file.Size, Sha256: file.SHA256}
+		files[index] = manageddataapi.ManagedDataFileMetadata{Path: file.Path, Size: file.Size, Sha256: file.SHA256}
 	}
-	return apigenapi.ManagedDataManifest{Files: files}, nil
+	return manageddataapi.ManagedDataManifest{Files: files}, nil
 }
 
-func validateSyncSession(session apigenapi.ManagedDataUploadSessionResponse, project, connection string, manifest manageddata.Manifest) error {
+func validateSyncSession(session manageddataapi.ManagedDataUploadSessionResponse, project, connection string, manifest manageddata.Manifest) error {
 	if session.Id == "" || session.Project != project || session.Connection != connection || session.RevisionId != manifest.RevisionID() {
 		return fmt.Errorf("upload session identity does not match the planned revision")
 	}
@@ -687,7 +687,7 @@ func uploadForManagedPath(files []manageddata.File, logicalPath string) *managed
 	return nil
 }
 
-func uploadForPath(files []apigenapi.ManagedDataFileUploadResponse, logicalPath string) *apigenapi.ManagedDataFileUploadResponse {
+func uploadForPath(files []manageddataapi.ManagedDataFileUploadResponse, logicalPath string) *manageddataapi.ManagedDataFileUploadResponse {
 	for index := range files {
 		if files[index].File.Path == logicalPath {
 			return &files[index]
@@ -735,7 +735,7 @@ func validateSignedURL(value string) (*url.URL, error) {
 	return parsed, nil
 }
 
-func applySignedHeaders(request *http.Request, headers []apigenapi.ManagedDataHTTPHeader, size int64) error {
+func applySignedHeaders(request *http.Request, headers []manageddataapi.ManagedDataHTTPHeader, size int64) error {
 	seen := make(map[string]struct{}, len(headers))
 	for _, header := range headers {
 		name := http.CanonicalHeaderKey(strings.TrimSpace(header.Name))

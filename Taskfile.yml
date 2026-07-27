@@ -373,6 +373,8 @@ tasks:
       - internal/analytics/api/gen/server.apigen.gen.go
       - internal/deployment/api/gen/request_models.gen.go
       - internal/deployment/api/gen/server.apigen.gen.go
+      - internal/manageddata/api/gen/request_models.gen.go
+      - internal/manageddata/api/gen/server.apigen.gen.go
       - internal/app/api/aggregate/server.apigen.gen.go
       - internal/app/api/gen/request_models.gen.go
       - internal/app/api/gen/server.apigen.gen.go
