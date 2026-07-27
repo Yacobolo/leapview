@@ -66,4 +66,5 @@ model CapabilitiesResponse {
 @route("/capabilities")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
+@operationId("getCapabilities")
 op getCapabilities(): OkJson<CapabilitiesResponse> | CommonErrors;

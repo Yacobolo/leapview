@@ -39,7 +39,7 @@ func (r apiSnapshotWorkspaceRepository) AssetVersions(context.Context, workspace
 	return nil, nil
 }
 
-func TestAPIGenUsesTypeSpecV065(t *testing.T) {
+func TestAPIGenUsesTypeSpecV071(t *testing.T) {
 	root := projectRoot(t)
 	manifest, err := os.ReadFile(filepath.Join(root, "api", "apigen.yaml"))
 	if err != nil {
@@ -59,6 +59,24 @@ func TestAPIGenUsesTypeSpecV065(t *testing.T) {
 	if strings.Contains(manifestText, "cue_dir:") {
 		t.Fatalf("manifest should not use cue_dir after APIGen v0.3.0 migration")
 	}
+	for _, want := range []string{
+		"unmatched: error",
+		"LeapViewAPI:",
+		"LeapViewAPI.Access:",
+		"LeapViewAPI.Agent:",
+		"LeapViewAPI.Dashboard:",
+		"LeapViewAPI.Deployment:",
+		"LeapViewAPI.ManagedData:",
+		"LeapViewAPI.Project:",
+		"LeapViewAPI.Refresh:",
+		"LeapViewAPI.Release:",
+		"LeapViewAPI.Workspace:",
+		"import_path: github.com/Yacobolo/leapview/internal/app/api/gen",
+	} {
+		if !strings.Contains(manifestText, want) {
+			t.Fatalf("manifest should define the coalesced capability package plan setting %q", want)
+		}
+	}
 
 	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
 	if err != nil {
@@ -74,17 +92,24 @@ func TestAPIGenUsesTypeSpecV065(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.6.5 typespec-compile",
-		"github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.6.5 all",
+		"github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.1 typespec-compile",
+		"github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.1 all",
 	} {
 		if !strings.Contains(taskText, want) {
 			t.Fatalf("Taskfile.yml missing generation command %q", want)
 		}
 	}
-	for _, forbidden := range []string{"cue-compile", "apigen@v0.2.0", "apigen@v0.3.0", "apigen@v0.3.2", "apigen@v0.3.3", "apigen@v0.4.0", "apigen@v0.5.0", "apigen@v0.5.1", "apigen@v0.5.2", "apigen@v0.5.3", "apigen@v0.6.0", "apigen@v0.6.1", "apigen@v0.6.2", "apigen@v0.6.3", "apigen@v0.6.4", "apigenpostprocess"} {
+	for _, forbidden := range []string{"cue-compile", "apigen@v0.2.0", "apigen@v0.3.0", "apigen@v0.3.2", "apigen@v0.3.3", "apigen@v0.4.0", "apigen@v0.5.0", "apigen@v0.5.1", "apigen@v0.5.2", "apigen@v0.5.3", "apigen@v0.6.0", "apigen@v0.6.1", "apigen@v0.6.2", "apigen@v0.6.3", "apigen@v0.6.4", "apigen@v0.6.5", "apigen@v0.7.0", "apigenpostprocess"} {
 		if strings.Contains(taskText, forbidden) {
-			t.Fatalf("Taskfile.yml should not contain %q after APIGen v0.6.5 migration", forbidden)
+			t.Fatalf("Taskfile.yml should not contain %q after APIGen v0.7.1 migration", forbidden)
 		}
+	}
+	buildSources, err := os.ReadFile(filepath.Join(root, "scripts", "generate_build_sources.sh"))
+	if err != nil {
+		t.Fatalf("read container source-generation script: %v", err)
+	}
+	if want := "APIGEN=github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.1"; !strings.Contains(string(buildSources), want) {
+		t.Fatalf("container source-generation script missing APIGen pin %q", want)
 	}
 
 	ir, err := os.ReadFile(filepath.Join(root, "api", "gen", "json-ir.json"))
@@ -100,7 +125,7 @@ func TestAPIGenUsesTypeSpecV065(t *testing.T) {
 	}
 
 	if _, err := os.Stat(filepath.Join(root, "internal", "tools", "apigenpostprocess")); !os.IsNotExist(err) {
-		t.Fatalf("APIGen v0.6.5 should not require a postprocessor, stat error = %v", err)
+		t.Fatalf("APIGen v0.7.1 should not require a postprocessor, stat error = %v", err)
 	}
 	for path, forbidden := range map[string]string{
 		filepath.Join(root, "api", "typespec", "bi.tsp"):                        "toolbelt#34",
@@ -111,7 +136,83 @@ func TestAPIGenUsesTypeSpecV065(t *testing.T) {
 			t.Fatalf("read %s: %v", path, err)
 		}
 		if strings.Contains(string(content), forbidden) {
-			t.Fatalf("APIGen v0.6.5 superseded workaround %q in %s", forbidden, path)
+			t.Fatalf("APIGen v0.7.1 superseded workaround %q in %s", forbidden, path)
+		}
+	}
+}
+
+func TestAPIGenIRAssignsCapabilityNamespaces(t *testing.T) {
+	root := projectRoot(t)
+	content, err := os.ReadFile(filepath.Join(root, "api", "gen", "json-ir.json"))
+	if err != nil {
+		t.Fatalf("read APIGen IR: %v", err)
+	}
+
+	var document struct {
+		Endpoints []struct {
+			OperationID string   `json:"operation_id"`
+			Namespace   string   `json:"namespace"`
+			Tags        []string `json:"tags"`
+		} `json:"endpoints"`
+		Schemas map[string]struct {
+			Namespace string `json:"namespace"`
+		} `json:"schemas"`
+	}
+	if err := json.Unmarshal(content, &document); err != nil {
+		t.Fatalf("decode APIGen IR: %v", err)
+	}
+	if got, want := len(document.Endpoints), 132; got != want {
+		t.Fatalf("APIGen IR endpoints = %d, want %d", got, want)
+	}
+
+	namespaceByTag := map[string]string{
+		"System":       "LeapViewAPI",
+		"Instance":     "LeapViewAPI",
+		"Current User": "LeapViewAPI.Access",
+		"Access":       "LeapViewAPI.Access",
+		"Audit":        "LeapViewAPI.Access",
+		"Agent":        "LeapViewAPI.Agent",
+		"BI":           "LeapViewAPI.Dashboard",
+		"Publications": "LeapViewAPI.Dashboard",
+		"Deployments":  "LeapViewAPI.Deployment",
+		"Managed Data": "LeapViewAPI.ManagedData",
+		"Projects":     "LeapViewAPI.Project",
+		"Refresh Runs": "LeapViewAPI.Refresh",
+		"Releases":     "LeapViewAPI.Release",
+		"Search":       "LeapViewAPI.Workspace",
+		"Workspaces":   "LeapViewAPI.Workspace",
+	}
+	for _, endpoint := range document.Endpoints {
+		if len(endpoint.Tags) != 1 {
+			t.Errorf("endpoint %q tags = %v, want exactly one ownership tag", endpoint.OperationID, endpoint.Tags)
+			continue
+		}
+		want, ok := namespaceByTag[endpoint.Tags[0]]
+		if !ok {
+			t.Errorf("endpoint %q has unmapped ownership tag %q", endpoint.OperationID, endpoint.Tags[0])
+			continue
+		}
+		if endpoint.Namespace != want {
+			t.Errorf("endpoint %q namespace = %q, want %q for tag %q", endpoint.OperationID, endpoint.Namespace, want, endpoint.Tags[0])
+		}
+	}
+
+	allowedSchemaNamespaces := map[string]struct{}{
+		"LeapViewAPI":             {},
+		"LeapViewAPI.Access":      {},
+		"LeapViewAPI.Agent":       {},
+		"LeapViewAPI.Dashboard":   {},
+		"LeapViewAPI.Deployment":  {},
+		"LeapViewAPI.ManagedData": {},
+		"LeapViewAPI.Project":     {},
+		"LeapViewAPI.Refresh":     {},
+		"LeapViewAPI.Release":     {},
+		"LeapViewAPI.Workspace":   {},
+		"LeapViewVisualization":   {},
+	}
+	for name, schema := range document.Schemas {
+		if _, ok := allowedSchemaNamespaces[schema.Namespace]; !ok {
+			t.Errorf("schema %q namespace = %q, want an explicit capability, root, or external namespace", name, schema.Namespace)
 		}
 	}
 }

@@ -1,8 +1,7 @@
 using Http;
 using TypeSpec.OpenAPI;
 
-@route("/api/v1")
-namespace LeapViewAPI;
+namespace LeapViewAPI.Workspace;
 
 enum SearchResultType {
   workspace,
@@ -69,6 +68,7 @@ alias SearchOK = OkJson<SearchResponse>;
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
 @apigen.cli(#{ command: #["search"], args: #[#{ source: "query", name: "q", displayName: "query" }], output: #{ mode: "raw" } })
+@operationId("search")
 op search(
   @query q?: string,
   @query workspace?: string[],

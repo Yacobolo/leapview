@@ -1,8 +1,7 @@
 using Http;
 using TypeSpec.OpenAPI;
 
-@route("/api/v1")
-namespace LeapViewAPI;
+namespace LeapViewAPI.Project;
 
 model ProjectResponse {
   id: string;
@@ -36,6 +35,7 @@ model ProjectWorkspaceListResponse {
 @route("/projects")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
+@operationId("listProjects")
 op listProjects(@query limit?: ListLimit, @query pageToken?: PageToken): OkJson<ProjectListResponse> | CommonErrors;
 
 @tag("Projects")
@@ -43,6 +43,7 @@ op listProjects(@query limit?: ListLimit, @query pageToken?: PageToken): OkJson<
 @route("/projects/{project}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
+@operationId("getProject")
 op getProject(@path project: string): OkJson<ProjectResponse> | CommonErrors;
 
 @tag("Projects")
@@ -50,4 +51,5 @@ op getProject(@path project: string): OkJson<ProjectResponse> | CommonErrors;
 @route("/projects/{project}/workspaces")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
+@operationId("listProjectWorkspaces")
 op listProjectWorkspaces(@path project: string, @query limit?: ListLimit, @query pageToken?: PageToken): OkJson<ProjectWorkspaceListResponse> | CommonErrors;

@@ -1,8 +1,7 @@
 using Http;
 using TypeSpec.OpenAPI;
 
-@route("/api/v1")
-namespace LeapViewAPI;
+namespace LeapViewAPI.Release;
 
 enum ReleaseStatus {
   draft;
@@ -58,6 +57,7 @@ model ReleaseArtifactResponse {
 @route("/projects/{project}/releases")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@operationId("listReleases")
 op listReleases(@path project: string, @query limit?: ListLimit, @query pageToken?: PageToken): OkJson<ReleaseListResponse> | CommonErrors;
 
 @tag("Releases")
@@ -65,6 +65,7 @@ op listReleases(@path project: string, @query limit?: ListLimit, @query pageToke
 @route("/projects/{project}/releases")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@operationId("createRelease")
 op createRelease(@path project: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: ReleaseCreateRequest): CreatedJson<ReleaseResponse> | CommonErrors;
 
 @tag("Releases")
@@ -72,6 +73,7 @@ op createRelease(@path project: string, @header("Idempotency-Key") idempotencyKe
 @route("/projects/{project}/releases/{release}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@operationId("getRelease")
 op getRelease(@path project: string, @path release: string): OkJson<ReleaseResponse> | CommonErrors;
 
 @tag("Releases")
@@ -80,6 +82,7 @@ op getRelease(@path project: string, @path release: string): OkJson<ReleaseRespo
 @put
 @apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
 @apigen.manual
+@operationId("uploadReleaseArtifact")
 op uploadReleaseArtifact(@path project: string, @path release: string, @path workspace: string, @header contentType: "application/octet-stream", @header("Content-Digest") contentDigest: string, @body body: bytes): CreatedJson<ReleaseArtifactResponse> | CommonErrors;
 
 @tag("Releases")
@@ -87,6 +90,7 @@ op uploadReleaseArtifact(@path project: string, @path release: string, @path wor
 @route("/projects/{project}/releases/{release}/finalize")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@operationId("finalizeRelease")
 op finalizeRelease(@path project: string, @path release: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<ReleaseResponse> | CommonErrors;
 
 @tag("Releases")
@@ -94,4 +98,5 @@ op finalizeRelease(@path project: string, @path release: string, @header("Idempo
 @route("/projects/{project}/releases/{release}/events")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@operationId("listReleaseEvents")
 op listReleaseEvents(@path project: string, @path release: string, @header accept?: string, @header("Last-Event-ID") lastEventId?: string, @query limit?: ListLimit, @query pageToken?: PageToken): EventHistoryResponse<AsyncEventListResponse> | CommonErrors;

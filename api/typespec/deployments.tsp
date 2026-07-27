@@ -1,8 +1,7 @@
 using Http;
 using TypeSpec.OpenAPI;
 
-@route("/api/v1")
-namespace LeapViewAPI;
+namespace LeapViewAPI.Deployment;
 
 enum DeploymentStatus {
   queued;
@@ -63,6 +62,7 @@ model DeploymentListResponse {
 @route("/projects/{project}/deployments")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
+@operationId("listDeployments")
 op listDeployments(@path project: string, @query limit?: ListLimit, @query pageToken?: PageToken): OkJson<DeploymentListResponse> | CommonErrors;
 
 @tag("Deployments")
@@ -70,6 +70,7 @@ op listDeployments(@path project: string, @query limit?: ListLimit, @query pageT
 @route("/projects/{project}/deployments")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "ACTIVATE_DEPLOYMENT" })
+@operationId("createDeployment")
 op createDeployment(@path project: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: DeploymentCreateRequest): AcceptedJson<DeploymentResponse> | CommonErrors;
 
 @tag("Deployments")
@@ -77,6 +78,7 @@ op createDeployment(@path project: string, @header("Idempotency-Key") idempotenc
 @route("/projects/{project}/deployments/{deployment}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
+@operationId("getDeployment")
 op getDeployment(@path project: string, @path deployment: string): OkJson<DeploymentResponse> | CommonErrors;
 
 @tag("Deployments")
@@ -84,6 +86,7 @@ op getDeployment(@path project: string, @path deployment: string): OkJson<Deploy
 @route("/projects/{project}/deployments/{deployment}/events")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
+@operationId("listDeploymentEvents")
 op listDeploymentEvents(@path project: string, @path deployment: string, @header accept?: string, @header("Last-Event-ID") lastEventId?: string, @query limit?: ListLimit, @query pageToken?: PageToken): EventHistoryResponse<AsyncEventListResponse> | CommonErrors;
 
 @tag("Deployments")
@@ -91,6 +94,7 @@ op listDeploymentEvents(@path project: string, @path deployment: string, @header
 @route("/projects/{project}/deployments/{deployment}/cancel")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "ACTIVATE_DEPLOYMENT" })
+@operationId("cancelDeployment")
 op cancelDeployment(@path project: string, @path deployment: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<DeploymentResponse> | CommonErrors;
 
 @tag("Deployments")
@@ -98,4 +102,5 @@ op cancelDeployment(@path project: string, @path deployment: string, @header("Id
 @route("/projects/{project}/deployments/{deployment}/rollback")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "ACTIVATE_DEPLOYMENT" })
+@operationId("rollbackDeployment")
 op rollbackDeployment(@path project: string, @path deployment: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<DeploymentResponse> | CommonErrors;

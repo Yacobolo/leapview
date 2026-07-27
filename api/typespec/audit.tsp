@@ -1,8 +1,7 @@
 using Http;
 using TypeSpec.OpenAPI;
 
-@route("/api/v1")
-namespace LeapViewAPI;
+namespace LeapViewAPI.Access;
 
 model AuditEventResponse {
   id: string;
@@ -61,6 +60,7 @@ alias ListQueryEventsOK = OkJson<QueryEventListResponse>;
 @route("/workspaces/{workspace}/audit-events")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_AUDIT" })
+@operationId("listAuditEvents")
 op listAuditEvents(@path workspace: string, @query actor?: string, @query action?: string, @query targetType?: string, @query targetId?: string, @query from?: utcDateTime, @query to?: utcDateTime, @query limit?: ListLimit, @query pageToken?: PageToken): ListAuditEventsOK | CommonErrors;
 
 @tag("Audit")
@@ -68,4 +68,5 @@ op listAuditEvents(@path workspace: string, @query actor?: string, @query action
 @route("/workspaces/{workspace}/query-events")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_AUDIT" })
+@operationId("listQueryEvents")
 op listQueryEvents(@path workspace: string, @query principal?: string, @query surface?: string, @query operation?: string, @query kind?: string, @query modelId?: string, @query target?: string, @query status?: string, @query search?: string, @query from?: utcDateTime, @query to?: utcDateTime, @query limit?: ListLimit, @query pageToken?: PageToken): ListQueryEventsOK | CommonErrors;
