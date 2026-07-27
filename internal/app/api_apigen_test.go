@@ -104,6 +104,13 @@ func TestAPIGenUsesTypeSpecV071(t *testing.T) {
 			t.Fatalf("Taskfile.yml should not contain %q after APIGen v0.7.1 migration", forbidden)
 		}
 	}
+	buildSources, err := os.ReadFile(filepath.Join(root, "scripts", "generate_build_sources.sh"))
+	if err != nil {
+		t.Fatalf("read container source-generation script: %v", err)
+	}
+	if want := "APIGEN=github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.1"; !strings.Contains(string(buildSources), want) {
+		t.Fatalf("container source-generation script missing APIGen pin %q", want)
+	}
 
 	ir, err := os.ReadFile(filepath.Join(root, "api", "gen", "json-ir.json"))
 	if err != nil {
