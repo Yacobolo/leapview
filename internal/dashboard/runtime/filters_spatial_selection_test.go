@@ -5,7 +5,7 @@ import (
 
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	"github.com/Yacobolo/leapview/internal/dashboard/reportmodel"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 )
 
 func TestSpatialFilterFromSelectionPreservesExactGovernedGeometry(t *testing.T) {

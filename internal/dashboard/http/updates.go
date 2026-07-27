@@ -13,7 +13,8 @@ import (
 	lddatastar "github.com/Yacobolo/leapview/internal/dashboard/datastar"
 	dashboardstream "github.com/Yacobolo/leapview/internal/dashboard/stream"
 	reportui "github.com/Yacobolo/leapview/internal/dashboard/ui"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
+	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 
@@ -75,7 +76,11 @@ func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
 	updates := pagestream.NewSignalStream(w, r, pagestream.WithStreamTrace(
 		broker.TraceStore(), streamID, "dashboard.bootstrap",
 	))
-	bootstrap := reportui.BootstrapSignals(clientID, streamInstanceID, metrics.Catalog(), reportDefinition, model, definitions, pages, activePage, initialFilters)
+	var providers []webpage.Provider
+	if h.Layout != nil {
+		providers = []webpage.Provider{h.Layout(r)}
+	}
+	bootstrap := reportui.BootstrapSignals(clientID, streamInstanceID, metrics.Catalog(), reportDefinition, model, definitions, pages, activePage, initialFilters, providers...)
 	if presentation, ok := publicPresentationFromContext(r.Context()); ok {
 		bootstrap = reportui.PublicBootstrapSignals(clientID, streamInstanceID, presentation.PublicID, presentation.Presentation, metrics.Catalog(), reportDefinition, model, definitions, pages, activePage, initialFilters)
 	} else if hasClientAgentState(r) {

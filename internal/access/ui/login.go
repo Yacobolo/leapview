@@ -1,0 +1,72 @@
+package ui
+
+import (
+	"net/url"
+	"strings"
+
+	signalcontracts "github.com/Yacobolo/leapview/internal/access/ui/signals"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
+	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
+	g "maragu.dev/gomponents"
+)
+
+type LoginPageOptions struct {
+	LocalAuth          bool
+	SSOAuth            bool
+	MustChangePassword bool
+	ProviderLabel      string
+	CSRFToken          string
+	Presentation       webpage.Presentation
+	Assets             staticasset.Resolver
+}
+
+type LoginPageSignal = signalcontracts.LoginPageSignal
+type StatusSignal = signalcontracts.DashboardStatus
+
+func LoginPage(options ...LoginPageOptions) g.Node {
+	opts := normalizedLoginOptions(options)
+	return webpage.Render(webpage.Layout{Presentation: opts.Presentation, Assets: opts.Assets}, webpage.Spec{
+		Title: opts.Presentation.ProductName + " Login", CSRFToken: opts.CSRFToken,
+		Scripts:    []string{"/static/login-page.js", "/static/login-background-loader.js"},
+		UpdatesURL: loginUpdatesURL(),
+		Content:    g.El("lv-login-page", g.Attr("background-module-src", opts.Assets.URL("/static/topology-background.js"))),
+	})
+}
+
+func LoginBootstrapSignalsForOptions(options LoginPageOptions) map[string]any {
+	opts := normalizedLoginOptions([]LoginPageOptions{options})
+	return map[string]any{
+		"page": LoginPageSignal{
+			BackgroundModuleSrc: opts.Assets.URL("/static/topology-background.js"),
+			Kind:                "login", LocalAuth: opts.LocalAuth, MustChangePassword: opts.MustChangePassword,
+			ProviderLabel: opts.ProviderLabel, SSOAuth: opts.SSOAuth, Title: opts.Presentation.ProductName,
+		},
+		"status": StatusSignal{},
+	}
+}
+
+func normalizedLoginOptions(options []LoginPageOptions) LoginPageOptions {
+	opts := LoginPageOptions{
+		SSOAuth: true, ProviderLabel: "Sign in with Azure Active Directory",
+		Presentation: webpage.Presentation{ProductName: "LeapView", FaviconPath: "/static/favicon.svg"},
+	}
+	if len(options) > 0 {
+		opts = options[0]
+		if strings.TrimSpace(opts.ProviderLabel) == "" {
+			opts.ProviderLabel = "Sign in with Azure Active Directory"
+		}
+		if strings.TrimSpace(opts.Presentation.ProductName) == "" {
+			opts.Presentation.ProductName = "LeapView"
+		}
+		if strings.TrimSpace(opts.Presentation.FaviconPath) == "" {
+			opts.Presentation.FaviconPath = "/static/favicon.svg"
+		}
+	}
+	return opts
+}
+
+func loginUpdatesURL() string {
+	values := url.Values{}
+	values.Set("route", "login")
+	return "/updates?" + values.Encode()
+}

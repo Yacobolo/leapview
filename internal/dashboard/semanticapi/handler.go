@@ -16,16 +16,17 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/access"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
 	analyticsresource "github.com/Yacobolo/leapview/internal/analytics/resource"
-	"github.com/Yacobolo/leapview/internal/api"
-	"github.com/Yacobolo/leapview/internal/cursorsigning"
 	"github.com/Yacobolo/leapview/internal/dashboard"
+	"github.com/Yacobolo/leapview/internal/dashboard/api"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	queryauthz "github.com/Yacobolo/leapview/internal/dashboard/queryauthz"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/dataquery"
+	"github.com/Yacobolo/leapview/internal/platform/http/cursorsigning"
+	httpmodel "github.com/Yacobolo/leapview/internal/platform/http/model"
 	"github.com/Yacobolo/leapview/internal/workload"
 	"github.com/go-chi/chi/v5"
 )
@@ -1360,7 +1361,7 @@ func writeJSONError(w nethttp.ResponseWriter, err error, status int) {
 		status = nethttp.StatusGatewayTimeout
 		details["problemCode"] = "WORKLOAD_EXECUTION_TIMEOUT"
 	}
-	writeJSON(w, status, api.ErrorResponse{
+	writeJSON(w, status, httpmodel.ErrorResponse{
 		Code:      status,
 		Message:   err.Error(),
 		Details:   details,

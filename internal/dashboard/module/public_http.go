@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	apihttpmiddleware "github.com/Yacobolo/leapview/internal/api/httpmiddleware"
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	"github.com/Yacobolo/leapview/internal/dashboard/command"
 	lddatastar "github.com/Yacobolo/leapview/internal/dashboard/datastar"
@@ -18,7 +18,7 @@ import (
 	queryauthz "github.com/Yacobolo/leapview/internal/dashboard/queryauthz"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	reportui "github.com/Yacobolo/leapview/internal/dashboard/ui"
-	"github.com/Yacobolo/leapview/internal/dataquery"
+	apihttpmiddleware "github.com/Yacobolo/leapview/internal/platform/http/middleware"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -107,7 +107,7 @@ func (m *Module) PublicDashboardDocument(presentation string) http.HandlerFunc {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		initialFilters := resolved.Report.FiltersFromURLForPage(activePage.ID, r.URL.Query())
 		if err := reportui.PublicPage(reportui.PublicPageOptions{
-			PublicID: resolved.Publication.PublicID, Presentation: presentation,
+			PublicID: resolved.Publication.PublicID, Presentation: presentation, Assets: m.handler.Assets,
 		}, resolved.Metrics.Catalog(), resolved.Report, model, pages, activePage, initialFilters).Render(w); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
@@ -208,7 +208,7 @@ func (m *Module) PublicDashboardHTTP(resolved ResolvedPublicDashboard) dashboard
 		return resolved.Metrics, workspaceID == resolved.Publication.WorkspaceID
 	}
 	handler.CSRFToken = nil
-	handler.ChromeDecorators = nil
+	handler.Layout = nil
 	handler.CommandGuard = func(r *http.Request, _ dashboardhttp.Metrics, request command.Request, signals dashboard.Signals) error {
 		current, err := m.PublicationByPublicID(r.Context(), resolved.Publication.PublicID)
 		if err != nil || current.Status() != publication.StatusActive || current.ID != resolved.Publication.ID || current.ServingStateID != resolved.Publication.ServingStateID {

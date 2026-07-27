@@ -10,7 +10,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
+	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
 	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 )
 

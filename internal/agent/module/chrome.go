@@ -4,20 +4,26 @@ import (
 	"net/http"
 
 	"github.com/Yacobolo/leapview/internal/agent"
-	"github.com/Yacobolo/leapview/internal/ui"
+	agentui "github.com/Yacobolo/leapview/internal/agent/ui"
 )
 
-func (m *Module) ChromeOption(r *http.Request) ui.ChromeOption {
-	return ui.WithChatSidebar(m.ChromeSignal(r))
-}
+type ChatSignal = agentui.ChatSignal
+type ChatViewState = agentui.ChatViewState
 
-func (m *Module) ChromeSignal(r *http.Request) ui.ChatSignal {
+func (m *Module) ChromeSignal(r *http.Request) ChatSignal {
 	if m == nil {
-		return ui.ChatSignal{}
+		return ChatSignal{}
 	}
 	scope := agent.Scope{}
 	if m.handler != nil {
 		scope = m.handler.Scope(r)
 	}
 	return m.ChatSignalWith(r.Context(), scope, "", nil, agent.ChatArtifactSignals{}, "", false).Agent
+}
+
+func (m *Module) DashboardBootstrap(r *http.Request, workspaceID string) ChatViewState {
+	if m == nil || m.handler == nil {
+		return ChatViewState{}
+	}
+	return m.handler.DashboardBootstrap(r, workspaceID)
 }

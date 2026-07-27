@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/workload"
 )
 

@@ -3,7 +3,7 @@ package runtime
 import (
 	"sync"
 
-	"github.com/Yacobolo/leapview/internal/catalog"
+	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 )
 

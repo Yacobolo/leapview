@@ -6,11 +6,13 @@ import (
 	"net/http"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/catalog"
-	"github.com/Yacobolo/leapview/internal/queryruntime"
-	"github.com/Yacobolo/leapview/internal/ui"
+	dashboardcatalog "github.com/Yacobolo/leapview/internal/dashboard/catalog"
+	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
+	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	workspacehttp "github.com/Yacobolo/leapview/internal/workspace/http"
+	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
+	"github.com/Yacobolo/leapview/internal/workspace/ui"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 
@@ -23,7 +25,7 @@ type Module struct {
 	rootMetrics        queryruntime.Metrics
 	runtimeEnvironment string
 	defaultWorkspaceID string
-	chromeOptions      func(*http.Request) []ui.ChromeOption
+	layout             func(*http.Request) webpage.Provider
 }
 
 type Principal struct {
@@ -75,7 +77,7 @@ type Config struct {
 	Broker              *pagestream.Broker
 	CSRFToken           func(*http.Request) string
 	CurrentRoleLabel    func(*http.Request) string
-	ChromeOptions       func(*http.Request) []ui.ChromeOption
+	Layout              func(*http.Request) webpage.Provider
 	CurrentCredential   func(*http.Request) (access.APICredential, bool)
 	AuthorizeObject     func(context.Context, string, access.Privilege, access.ObjectRef) (bool, error)
 }
@@ -100,7 +102,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	m := &Module{
 		readModel: readModel, currentCredential: config.CurrentCredential,
 		rootMetrics: config.RootMetrics, runtimeEnvironment: config.RuntimeEnvironment,
-		defaultWorkspaceID: config.DefaultWorkspaceID, chromeOptions: config.ChromeOptions,
+		defaultWorkspaceID: config.DefaultWorkspaceID, layout: config.Layout,
 	}
 	m.assetCatalog = config.AssetCatalog
 	if m.assetCatalog == nil && readModel != nil {
@@ -133,19 +135,19 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		CatalogForWorkspace: func(workspaceID string) catalog.Catalog {
 			if config.MetricsForWorkspace != nil {
 				if metrics, ok := config.MetricsForWorkspace(workspaceID); ok && metrics != nil {
-					return metrics.Catalog()
+					return navigationCatalog(metrics.Catalog())
 				}
 			}
 			if config.RootMetrics == nil {
 				return catalog.Catalog{Workspace: catalog.Workspace{ID: workspaceID}}
 			}
-			return config.RootMetrics.Catalog()
+			return navigationCatalog(config.RootMetrics.Catalog())
 		},
 		RootCatalog: func() catalog.Catalog {
 			if config.RootMetrics == nil {
 				return catalog.Catalog{}
 			}
-			return config.RootMetrics.Catalog()
+			return navigationCatalog(config.RootMetrics.Catalog())
 		},
 		Environment:      config.Environment,
 		CurrentPrincipal: currentPrincipal,
@@ -159,16 +161,43 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		WorkspaceID: config.WorkspaceID, Environment: config.Environment, ReadModel: httpReadModel,
 		RefreshState:  moduleRefreshState{module: m, upstream: config.RefreshState},
 		RefreshRunner: refreshRunner, Broker: config.Broker,
-		CSRFToken: config.CSRFToken, CurrentRoleLabel: config.CurrentRoleLabel, ChromeOptions: config.ChromeOptions,
+		CSRFToken: config.CSRFToken, CurrentRoleLabel: config.CurrentRoleLabel, Layout: config.Layout,
 	}
 	m.search = buildSearch(config.Database, config.AuthorizeObject)
 	return m, nil
+}
+
+func navigationCatalog(source dashboardcatalog.Catalog) catalog.Catalog {
+	result := catalog.Catalog{
+		Workspace: catalog.Workspace{
+			ID: source.Workspace.ID, Title: source.Workspace.Title, Description: source.Workspace.Description,
+		},
+		Models:     make([]catalog.Model, 0, len(source.Models)),
+		Dashboards: make([]catalog.Dashboard, 0, len(source.Dashboards)),
+	}
+	for _, model := range source.Models {
+		result.Models = append(result.Models, catalog.Model{ID: model.ID, Title: model.Title, Description: model.Description})
+	}
+	for _, dashboard := range source.Dashboards {
+		result.Dashboards = append(result.Dashboards, catalog.Dashboard{
+			ID: dashboard.ID, Title: dashboard.Title, Description: dashboard.Description,
+			SemanticModel: dashboard.SemanticModel, Tags: append([]string(nil), dashboard.Tags...), PageCount: dashboard.PageCount,
+		})
+	}
+	return result
 }
 
 func (m *Module) HTTP() workspacehttp.Handler { return m.handler }
 
 func (m *Module) CatalogsForVisibleWorkspaces(r *http.Request) []catalog.Catalog {
 	return m.handler.ReadModel.CatalogsForVisibleWorkspaces(r)
+}
+
+func (m *Module) NavigationCatalog() catalog.Catalog {
+	if m == nil || m.rootMetrics == nil {
+		return catalog.Catalog{}
+	}
+	return navigationCatalog(m.rootMetrics.Catalog())
 }
 
 func (m *Module) WorkspaceAssetsAndEdgesForData(ctx context.Context, workspaceID, environment string) ([]workspace.AssetView, []workspace.AssetEdgeView, error) {
@@ -188,13 +217,17 @@ func (m *Module) Home(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	var options []ui.ChromeOption
-	if m.chromeOptions != nil {
-		options = m.chromeOptions(r)
+	var providers []webpage.Provider
+	if m.layout != nil {
+		providers = []webpage.Provider{m.layout(r)}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	if err := ui.CatalogPageForCatalogs(m.CatalogsForVisibleWorkspaces(r), options...).Render(w); err != nil {
+	if err := ui.CatalogPageForCatalogs(m.CatalogsForVisibleWorkspaces(r), providers...).Render(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func (m *Module) CatalogBootstrapSignals(r *http.Request, provider webpage.Provider) map[string]any {
+	return ui.CatalogBootstrapSignalsForCatalogs(m.CatalogsForVisibleWorkspaces(r), provider)
 }

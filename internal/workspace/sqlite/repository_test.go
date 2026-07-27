@@ -9,7 +9,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/platform"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
-	"github.com/Yacobolo/leapview/internal/snapshot"
+	servingstatevalidation "github.com/Yacobolo/leapview/internal/servingstate/validation"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
 )
@@ -262,9 +262,9 @@ func assetByID(graph workspace.AssetGraph, id workspace.AssetID) workspace.Asset
 	return workspace.Asset{}
 }
 
-func snapshotGraph(t *testing.T, value any) snapshot.AssetGraph {
+func snapshotGraph(t *testing.T, value any) servingstatevalidation.AssetGraph {
 	t.Helper()
-	graph, err := snapshot.ConvertAssetGraph(value)
+	graph, err := servingstatevalidation.ConvertAssetGraph(value)
 	if err != nil {
 		t.Fatalf("convert asset graph snapshot: %v", err)
 	}

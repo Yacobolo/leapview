@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
+	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	"github.com/Yacobolo/leapview/internal/platform"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	jobsqlite "github.com/Yacobolo/leapview/internal/platform/jobs/sqlite"

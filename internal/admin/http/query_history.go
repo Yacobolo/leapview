@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Yacobolo/leapview/internal/admin/ui"
+	uisignals "github.com/Yacobolo/leapview/internal/admin/ui/signals"
 	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
-	"github.com/Yacobolo/leapview/internal/ui"
-	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 
@@ -37,7 +37,7 @@ func (h Handler) queryHistoryUpdates(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := updates.Patch(ui.AdminBootstrapSignals(h.catalog(), "queries", h.roleLabel(r), data, h.chromeOption(r))); err != nil {
+	if err := updates.Patch(ui.AdminBootstrapSignals("queries", data, h.layout(r))); err != nil {
 		return
 	}
 	_ = updates.Forward(r.Context(), h.Broker, streamID)

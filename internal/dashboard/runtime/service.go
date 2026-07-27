@@ -7,11 +7,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/dataquery"
 )
 
 type DataRuntimeFactory interface {

@@ -12,8 +12,8 @@ LeapView is a dashboards-as-code BI monolith. Go owns configuration compilation,
 - `internal/access/` owns principals, authentication credentials, RBAC, grants, data policies, groups, SCIM, sessions, service principals, and access auditing.
 - `internal/app/` is the composition root and top-level HTTP router. Feature handlers live beside their domains under packages such as `internal/dashboard/http`, `internal/workspace/http`, and `internal/agent/http`.
 - `pkg/pagestream/` owns the shared page/SSE transport, signal history, broker, tracing, and escaped Datastar action construction.
-- `api/signals/main.tsp` is the source of truth for browser signal contracts. Generation produces Go models in `internal/ui/signals/models.gen.go` and TypeScript types in `web/generated/signals/index.ts`.
-- `internal/ui/` and `internal/dashboard/ui/` render gomponents document shells. `web/components/` contains Lit route and visual components.
+- `api/signals/main.tsp` is the source of truth for browser signal contracts. Generation produces Go models in `internal/workspace/ui/signals/models.gen.go` and TypeScript types in `web/generated/signals/index.ts`.
+- `internal/workspace/ui/` and `internal/dashboard/ui/` render gomponents document shells. `web/components/` contains Lit route and visual components.
 - ECharts is the built-in chart renderer. TanStack powers table state and virtualization behind LeapView-owned signal/query contracts.
 
 ## Runtime Flow
@@ -27,15 +27,15 @@ LeapView is a dashboards-as-code BI monolith. Go owns configuration compilation,
 
 ## Important Files
 
-- `cmd/leapview/main.go` and `internal/cli/serve.go`: process startup and lifecycle.
-- `cmd/leapview-site/main.go` and `internal/site/http/`: independently deployable public site startup and HTTP adapter.
+- `cmd/leapview/main.go` and `internal/app/cli/serve.go`: process startup and lifecycle.
+- `cmd/leapview-site/main.go` and `internal/app/site/http/`: independently deployable public site startup and HTTP adapter.
 - `internal/app/router.go`: canonical page, command, auth, admin, and API routes.
 - `internal/workspace/compiler/compiler.go`: project compilation entrypoint.
 - `internal/runtimehost/manager.go`: serving-generation and snapshot-lease lifecycle.
 - `internal/analytics/materialize/runtime.go`: query execution, coalescing, and cache integration.
 - `internal/analytics/query/planner.go`: semantic query planning.
 - `internal/dashboard/runtime/`: dashboard query orchestration and signal payload construction.
-- `internal/ui/page.go` and `internal/dashboard/ui/page.go`: gomponents page shells.
+- `internal/workspace/ui/page.go` and `internal/dashboard/ui/page.go`: gomponents page shells.
 - `web/components/dashboard/dashboard-page.ts`: interactive report surface.
 - `web/components/dashboard/table/report-table.ts`: BI table component.
 - `docs/`: authored and generated public documentation; `site/`: site-specific browser source and static assets.

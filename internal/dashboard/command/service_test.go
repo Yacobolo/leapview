@@ -9,8 +9,8 @@ import (
 	. "github.com/Yacobolo/leapview/internal/dashboard/command"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/testutil/dashboardfixture"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
+	"github.com/Yacobolo/leapview/internal/project/testing/dashboardfixture"
+	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 )
 
 type fakeMetrics struct {

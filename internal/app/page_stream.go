@@ -4,29 +4,52 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/ui"
-	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
-	uitransport "github.com/Yacobolo/leapview/internal/ui/transport"
+	uitransport "github.com/Yacobolo/leapview/internal/platform/web/transport"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
+)
+
+const (
+	routeLogin           = "login"
+	routeCatalog         = "catalog"
+	routeDashboard       = "dashboard"
+	routeWorkspace       = "workspace"
+	routeWorkspaceAsset  = "workspace_asset"
+	routeConnections     = "connections"
+	routeConnectionAsset = "connection_asset"
+	routeData            = "data"
+	routeChat            = "chat"
+	routeAdmin           = "admin"
 )
 
 func configurePageStream(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy) {
 	runtime.pageStreams = uitransport.NewPageStream(uitransport.PageStreamConfig{
 		Trace: runtime.pageStreamTrace,
-		Protect: func(privilege string, next http.Handler) http.Handler {
-			return routes.accessModule.ProtectNamed(privilege, next)
+		Authorize: func(route, section string, next http.Handler) (http.Handler, bool) {
+			switch route {
+			case routeLogin:
+				return next, true
+			case routeCatalog, routeDashboard, routeWorkspace, routeWorkspaceAsset, routeConnections, routeConnectionAsset, routeData:
+				return routes.accessModule.ProtectNamed("VIEW_ITEM", next), true
+			case routeChat:
+				return routes.accessModule.ProtectNamed("VIEW_AGENT", next), true
+			case routeAdmin:
+				switch strings.TrimSpace(section) {
+				case "queries":
+					return routes.accessModule.ProtectGlobalNamed("VIEW_AUDIT", next), true
+				case "publications":
+					return routes.accessModule.ProtectAnyWorkspaceNamed("MANAGE_PUBLICATIONS", next), true
+				default:
+					return routes.accessModule.ProtectGlobalNamed("MANAGE_GRANTS", next), true
+				}
+			default:
+				return nil, false
+			}
 		},
-		ProtectGlobal: func(privilege string, next http.Handler) http.Handler {
-			return routes.accessModule.ProtectGlobalNamed(privilege, next)
-		},
-		ProtectAnyWorkspace: func(privilege string, next http.Handler) http.Handler {
-			return routes.accessModule.ProtectAnyWorkspaceNamed(privilege, next)
-		},
-		Handlers: map[uisignals.RouteKind]http.Handler{
-			uisignals.RouteDashboard: http.HandlerFunc(routes.dashboardModule.HTTP().Updates),
-			uisignals.RouteChat:      http.HandlerFunc(routes.agentModule.HTTP().ChatUpdates),
-			uisignals.RouteData:      http.HandlerFunc(routes.workspaceModule.HTTP().DataExplorerUpdates),
-			uisignals.RouteAdmin: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		Handlers: map[string]http.Handler{
+			routeDashboard: http.HandlerFunc(routes.dashboardModule.HTTP().Updates),
+			routeChat:      http.HandlerFunc(routes.agentModule.HTTP().ChatUpdates),
+			routeData:      http.HandlerFunc(routes.workspaceModule.HTTP().DataExplorerUpdates),
+			routeAdmin: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				adminHTTP := routes.adminModule.HTTP()
 				switch strings.TrimSpace(r.URL.Query().Get("section")) {
 				case "queries":
@@ -37,22 +60,21 @@ func configurePageStream(routes *capabilityRoutes, runtime *runtimeServices, pla
 					adminHTTP.BootstrapUpdates(w, r)
 				}
 			}),
-			uisignals.RouteWorkspaceAsset: http.HandlerFunc(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			routeWorkspaceAsset: http.HandlerFunc(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				workspaceAssetUpdates(routes, runtime, platform, policy, w, r)
 			})),
-			uisignals.RouteConnectionAsset: http.HandlerFunc(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			routeConnectionAsset: http.HandlerFunc(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				workspaceAssetUpdates(routes, runtime, platform, policy, w, r)
 			})),
-			uisignals.RouteLogin: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				uitransport.PatchAndWait(runtime.pageStreamTrace, w, r, ui.LoginBootstrapSignalsForOptions(routes.accessModule.LoginPageOptions(r)))
+			routeLogin: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				uitransport.PatchAndWait(runtime.pageStreamTrace, w, r, routes.accessModule.LoginBootstrapSignals(r))
 			}),
-			uisignals.RouteCatalog: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				uitransport.PatchAndWait(runtime.pageStreamTrace, w, r, ui.CatalogBootstrapSignalsForCatalogs(
-					routes.workspaceModule.CatalogsForVisibleWorkspaces(r), routes.agentModule.ChromeOption(r),
-				))
+			routeCatalog: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				uitransport.PatchAndWait(runtime.pageStreamTrace, w, r,
+					routes.workspaceModule.CatalogBootstrapSignals(r, applicationLayout(routes, platform.assets, r)))
 			}),
-			uisignals.RouteWorkspace:   http.HandlerFunc(routes.workspaceModule.HTTP().WorkspaceBootstrapUpdates),
-			uisignals.RouteConnections: http.HandlerFunc(routes.workspaceModule.HTTP().ConnectionsBootstrapUpdates),
+			routeWorkspace:   http.HandlerFunc(routes.workspaceModule.HTTP().WorkspaceBootstrapUpdates),
+			routeConnections: http.HandlerFunc(routes.workspaceModule.HTTP().ConnectionsBootstrapUpdates),
 		},
 	})
 }
