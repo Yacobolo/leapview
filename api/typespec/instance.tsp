@@ -13,4 +13,5 @@ model InstanceResponse {
 @route("/instance")
 @get
 @apigen.authz(#{ mode: "authenticated" })
+@operationId("getInstance")
 op getInstance(): OkJson<InstanceResponse> | CommonErrors;

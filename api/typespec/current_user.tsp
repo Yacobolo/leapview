@@ -1,8 +1,7 @@
 using Http;
 using TypeSpec.OpenAPI;
 
-@route("/api/v1")
-namespace LeapViewAPI;
+namespace LeapViewAPI.Access;
 
 model EffectivePrivilegesResponse {
   workspaceId: string;
@@ -57,6 +56,7 @@ alias GetCurrentPrincipalOK = OkJson<PrincipalResponse>;
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
 @extension("x-leapview-object-scope", "principal")
+@operationId("getCurrentPrincipal")
 op getCurrentPrincipal(): GetCurrentPrincipalOK | CommonErrors;
 
 alias ListCurrentAPITokensOK = OkJson<APITokenListResponse>;
@@ -67,6 +67,7 @@ alias ListCurrentAPITokensOK = OkJson<APITokenListResponse>;
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
 @extension("x-leapview-object-scope", "principal")
+@operationId("listCurrentAPITokens")
 op listCurrentAPITokens(@query limit?: ListLimit, @query pageToken?: PageToken): ListCurrentAPITokensOK | CommonErrors;
 
 alias CreateCurrentAPITokenCreated = CreatedJson<APITokenCreateResponse>;
@@ -77,6 +78,7 @@ alias CreateCurrentAPITokenCreated = CreatedJson<APITokenCreateResponse>;
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
 @extension("x-leapview-object-scope", "principal")
+@operationId("createCurrentAPIToken")
 op createCurrentAPIToken(@header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: APITokenCreateRequest): CreateCurrentAPITokenCreated | CommonErrors;
 
 @tag("Current User")
@@ -85,6 +87,7 @@ op createCurrentAPIToken(@header("Idempotency-Key") idempotencyKey: IdempotencyK
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
 @extension("x-leapview-object-scope", "principal")
+@operationId("revokeCurrentAPIToken")
 op revokeCurrentAPIToken(@path token: string): NoContentResponse | CommonErrors;
 
 alias ListCurrentEffectivePrivilegesOK = OkJson<EffectivePrivilegesResponse>;
@@ -95,6 +98,7 @@ alias ListCurrentEffectivePrivilegesOK = OkJson<EffectivePrivilegesResponse>;
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
 @extension("x-leapview-object-scope", "principal")
+@operationId("listCurrentEffectivePrivileges")
 op listCurrentEffectivePrivileges(@query workspace?: string): ListCurrentEffectivePrivilegesOK | CommonErrors;
 
 alias ListCurrentSessionsOK = OkJson<SessionListResponse>;
@@ -105,6 +109,7 @@ alias ListCurrentSessionsOK = OkJson<SessionListResponse>;
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
 @extension("x-leapview-object-scope", "principal")
+@operationId("listCurrentSessions")
 op listCurrentSessions(@query limit?: ListLimit, @query pageToken?: PageToken): ListCurrentSessionsOK | CommonErrors;
 
 @tag("Current User")
@@ -113,4 +118,5 @@ op listCurrentSessions(@query limit?: ListLimit, @query pageToken?: PageToken): 
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
 @extension("x-leapview-object-scope", "principal")
+@operationId("revokeCurrentSession")
 op revokeCurrentSession(@path session: string): NoContentResponse | CommonErrors;

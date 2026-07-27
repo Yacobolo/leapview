@@ -1,8 +1,7 @@
 using Http;
 using TypeSpec.OpenAPI;
 
-@route("/api/v1")
-namespace LeapViewAPI;
+namespace LeapViewAPI.Refresh;
 
 model RefreshRunCreateRequest {
   pipelineId: string;
@@ -37,6 +36,7 @@ alias ListRefreshRunsOK = OkJson<RefreshRunListResponse>;
 @route("/workspaces/{workspace}/refresh-runs")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
+@operationId("listRefreshRuns")
 op listRefreshRuns(@path workspace: string, @query limit?: ListLimit, @query pageToken?: PageToken): ListRefreshRunsOK | CommonErrors;
 
 alias CreateRefreshRunAccepted = AcceptedJson<RefreshRunResponse>;
@@ -46,6 +46,7 @@ alias CreateRefreshRunAccepted = AcceptedJson<RefreshRunResponse>;
 @route("/workspaces/{workspace}/refresh-runs")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
+@operationId("createRefreshRun")
 op createRefreshRun(@path workspace: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: RefreshRunCreateRequest): CreateRefreshRunAccepted | CommonErrors;
 
 alias GetRefreshRunOK = OkJson<RefreshRunResponse>;
@@ -55,6 +56,7 @@ alias GetRefreshRunOK = OkJson<RefreshRunResponse>;
 @route("/workspaces/{workspace}/refresh-runs/{run}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
+@operationId("getRefreshRun")
 op getRefreshRun(@path workspace: string, @path run: string): GetRefreshRunOK | CommonErrors;
 
 @tag("Refresh Runs")
@@ -62,6 +64,7 @@ op getRefreshRun(@path workspace: string, @path run: string): GetRefreshRunOK | 
 @route("/workspaces/{workspace}/refresh-runs/{run}/events")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
+@operationId("listRefreshRunEvents")
 op listRefreshRunEvents(@path workspace: string, @path run: string, @header accept?: string, @header("Last-Event-ID") lastEventId?: string, @query limit?: ListLimit, @query pageToken?: PageToken): EventHistoryResponse<AsyncEventListResponse> | CommonErrors;
 
 @tag("Refresh Runs")
@@ -69,4 +72,5 @@ op listRefreshRunEvents(@path workspace: string, @path run: string, @header acce
 @route("/workspaces/{workspace}/refresh-runs/{run}/cancel")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
+@operationId("cancelRefreshRun")
 op cancelRefreshRun(@path workspace: string, @path run: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<RefreshRunResponse> | CommonErrors;

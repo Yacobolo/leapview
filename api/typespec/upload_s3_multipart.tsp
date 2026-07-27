@@ -70,7 +70,7 @@ model ManagedDataS3MultipartCompleteRequest {
 
 @tag("Managed Data")
 @summary("Create an S3 multipart upload for a session file")
-@route("/upload-sessions/{uploadSession}/s3-multipart-uploads")
+@route("/projects/{project}/connections/{connection}/upload-sessions/{uploadSession}/s3-multipart-uploads")
 @post
 @operationId("createManagedDataS3MultipartUpload")
 @apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
@@ -84,7 +84,7 @@ op createManagedDataS3MultipartUpload(
 
 @tag("Managed Data")
 @summary("Sign one S3 multipart upload part")
-@route("/upload-sessions/{uploadSession}/s3-multipart-uploads/{multipartUpload}/parts/{partNumber}/sign")
+@route("/projects/{project}/connections/{connection}/upload-sessions/{uploadSession}/s3-multipart-uploads/{multipartUpload}/parts/{partNumber}/sign")
 @post
 @operationId("signManagedDataS3MultipartPart")
 @apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
@@ -100,7 +100,7 @@ op signManagedDataS3MultipartPart(
 
 @tag("Managed Data")
 @summary("Complete an S3 multipart upload")
-@route("/upload-sessions/{uploadSession}/s3-multipart-uploads/{multipartUpload}/complete")
+@route("/projects/{project}/connections/{connection}/upload-sessions/{uploadSession}/s3-multipart-uploads/{multipartUpload}/complete")
 @post
 @operationId("completeManagedDataS3MultipartUpload")
 @apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
@@ -115,7 +115,7 @@ op completeManagedDataS3MultipartUpload(
 
 @tag("Managed Data")
 @summary("Abort an S3 multipart upload")
-@route("/upload-sessions/{uploadSession}/s3-multipart-uploads/{multipartUpload}/abort")
+@route("/projects/{project}/connections/{connection}/upload-sessions/{uploadSession}/s3-multipart-uploads/{multipartUpload}/abort")
 @post
 @operationId("abortManagedDataS3MultipartUpload")
 @apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })

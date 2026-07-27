@@ -1,8 +1,7 @@
 using Http;
 using TypeSpec.OpenAPI;
 
-@route("/api/v1")
-namespace LeapViewAPI;
+namespace LeapViewAPI.Dashboard;
 
 enum DashboardPublicationStatus {
   active;
@@ -41,6 +40,7 @@ model DashboardPublicationListResponse {
 @route("/workspaces/{workspace}/dashboard-publications")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PUBLICATIONS" })
+@operationId("listDashboardPublications")
 op listDashboardPublications(@path workspace: string): OkJson<DashboardPublicationListResponse> | CommonErrors;
 
 @tag("Publications")
@@ -48,6 +48,7 @@ op listDashboardPublications(@path workspace: string): OkJson<DashboardPublicati
 @route("/workspaces/{workspace}/dashboard-publications/{publication}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PUBLICATIONS" })
+@operationId("getDashboardPublication")
 op getDashboardPublication(@path workspace: string, @path publication: string): OkJson<DashboardPublicationResponse> | CommonErrors;
 
 @tag("Publications")
@@ -55,6 +56,7 @@ op getDashboardPublication(@path workspace: string, @path publication: string): 
 @route("/workspaces/{workspace}/dashboard-publications/{publication}/suspend")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PUBLICATIONS" })
+@operationId("suspendDashboardPublication")
 op suspendDashboardPublication(@path workspace: string, @path publication: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): OkJson<DashboardPublicationResponse> | CommonErrors;
 
 @tag("Publications")
@@ -62,6 +64,7 @@ op suspendDashboardPublication(@path workspace: string, @path publication: strin
 @route("/workspaces/{workspace}/dashboard-publications/{publication}/resume")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PUBLICATIONS" })
+@operationId("resumeDashboardPublication")
 op resumeDashboardPublication(@path workspace: string, @path publication: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): OkJson<DashboardPublicationResponse> | CommonErrors;
 
 @tag("Publications")
@@ -69,4 +72,5 @@ op resumeDashboardPublication(@path workspace: string, @path publication: string
 @route("/workspaces/{workspace}/dashboard-publications/{publication}/rotate")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PUBLICATIONS" })
+@operationId("rotateDashboardPublication")
 op rotateDashboardPublication(@path workspace: string, @path publication: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): OkJson<DashboardPublicationResponse> | CommonErrors;

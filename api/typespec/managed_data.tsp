@@ -1,8 +1,7 @@
 using Http;
 using TypeSpec.OpenAPI;
 
-@route("/api/v1")
-namespace LeapViewAPI;
+namespace LeapViewAPI.ManagedData;
 
 model ManagedConnectionResponse {
   id: string;
@@ -22,6 +21,7 @@ model ManagedConnectionListResponse {
 @route("/projects/{project}/connections")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_DATA" })
+@operationId("listManagedConnections")
 op listManagedConnections(@path project: string, @query limit?: ListLimit, @query pageToken?: PageToken): OkJson<ManagedConnectionListResponse> | CommonErrors;
 
 @tag("Managed Data")
@@ -29,10 +29,8 @@ op listManagedConnections(@path project: string, @query limit?: ListLimit, @quer
 @route("/projects/{project}/connections/{connection}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_DATA" })
+@operationId("getManagedConnection")
 op getManagedConnection(@path project: string, @path connection: string): OkJson<ManagedConnectionResponse> | CommonErrors;
-
-@route("/projects/{project}/connections/{connection}")
-namespace ManagedData {
 
 @minLength(1)
 @maxLength(128)
@@ -252,7 +250,7 @@ model ManagedDataUploadSessionListResponse {
 
 @tag("Managed Data")
 @summary("Get the active managed-data revision")
-@route("/active-revision")
+@route("/projects/{project}/connections/{connection}/active-revision")
 @get
 @operationId("getActiveManagedDataRevision")
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_DATA" })
@@ -263,7 +261,7 @@ op getActiveManagedDataRevision(
 
 @tag("Managed Data")
 @summary("List immutable managed-data revisions")
-@route("/revisions")
+@route("/projects/{project}/connections/{connection}/revisions")
 @get
 @operationId("listManagedDataRevisions")
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_DATA" })
@@ -276,7 +274,7 @@ op listManagedDataRevisions(
 
 @tag("Managed Data")
 @summary("Get an immutable managed-data revision")
-@route("/revisions/{revision}")
+@route("/projects/{project}/connections/{connection}/revisions/{revision}")
 @get
 @operationId("getManagedDataRevision")
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_DATA" })
@@ -288,7 +286,7 @@ op getManagedDataRevision(
 
 @tag("Managed Data")
 @summary("Create a managed-data upload session from a canonical manifest")
-@route("/upload-sessions")
+@route("/projects/{project}/connections/{connection}/upload-sessions")
 @post
 @operationId("createManagedDataUploadSession")
 @apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
@@ -301,7 +299,7 @@ op createManagedDataUploadSession(
 
 @tag("Managed Data")
 @summary("List managed-data upload sessions")
-@route("/upload-sessions")
+@route("/projects/{project}/connections/{connection}/upload-sessions")
 @get
 @operationId("listManagedDataUploadSessions")
 @apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
@@ -314,7 +312,7 @@ op listManagedDataUploadSessions(
 
 @tag("Managed Data")
 @summary("Get a managed-data upload session")
-@route("/upload-sessions/{uploadSession}")
+@route("/projects/{project}/connections/{connection}/upload-sessions/{uploadSession}")
 @get
 @operationId("getManagedDataUploadSession")
 @apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
@@ -326,7 +324,7 @@ op getManagedDataUploadSession(
 
 @tag("Managed Data")
 @summary("Cancel a managed-data upload session")
-@route("/upload-sessions/{uploadSession}/cancel")
+@route("/projects/{project}/connections/{connection}/upload-sessions/{uploadSession}/cancel")
 @post
 @operationId("cancelManagedDataUploadSession")
 @apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
@@ -339,7 +337,7 @@ op cancelManagedDataUploadSession(
 
 @tag("Managed Data")
 @summary("Finalize a managed-data upload session")
-@route("/upload-sessions/{uploadSession}/finalize")
+@route("/projects/{project}/connections/{connection}/upload-sessions/{uploadSession}/finalize")
 @post
 @operationId("finalizeManagedDataUploadSession")
 @apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
@@ -352,7 +350,7 @@ op finalizeManagedDataUploadSession(
 
 @tag("Managed Data")
 @summary("List or stream upload-session events")
-@route("/upload-sessions/{uploadSession}/events")
+@route("/projects/{project}/connections/{connection}/upload-sessions/{uploadSession}/events")
 @get
 @operationId("listManagedDataUploadSessionEvents")
 @apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
@@ -365,5 +363,3 @@ op listManagedDataUploadSessionEvents(
   @query limit?: ManagedDataPageLimit,
   @query pageToken?: ManagedDataPageToken,
 ): EventHistoryResponse<AsyncEventListResponse> | CommonErrors;
-
-}

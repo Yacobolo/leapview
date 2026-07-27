@@ -1,8 +1,7 @@
 using Http;
 using TypeSpec.OpenAPI;
 
-@route("/api/v1")
-namespace LeapViewAPI;
+namespace LeapViewAPI.Access;
 
 model PrincipalResponse {
   id: string;
@@ -247,6 +246,7 @@ alias ListPrincipalsOK = OkJson<PrincipalListResponse>;
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
 @extension("x-leapview-object-scope", "grant-management")
+@operationId("listPrincipals")
 op listPrincipals(@query email?: string, @query q?: string, @query limit?: ListLimit, @query pageToken?: PageToken): ListPrincipalsOK | CommonErrors;
 
 alias CreatePrincipalCreated = CreatedJson<LocalPasswordResetResponse>;
@@ -257,6 +257,7 @@ alias CreatePrincipalCreated = CreatedJson<LocalPasswordResetResponse>;
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
 @extension("x-leapview-object-scope", "grant-management")
+@operationId("createPrincipal")
 op createPrincipal(@header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: PrincipalCreateRequest): CreatePrincipalCreated | CommonErrors;
 
 alias GetPrincipalOK = OkJson<PrincipalResponse>;
@@ -267,6 +268,7 @@ alias GetPrincipalOK = OkJson<PrincipalResponse>;
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
 @extension("x-leapview-object-scope", "grant-management")
+@operationId("getPrincipal")
 op getPrincipal(@path principal: string): GetPrincipalOK | CommonErrors;
 
 alias UpdatePrincipalOK = OkJson<PrincipalResponse>;
@@ -277,6 +279,7 @@ alias UpdatePrincipalOK = OkJson<PrincipalResponse>;
 @patch
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
 @extension("x-leapview-object-scope", "grant-management")
+@operationId("updatePrincipal")
 op updatePrincipal(@path principal: string, @header("If-Match") ifMatch: string, @body body: PrincipalPatchRequest): UpdatePrincipalOK | CommonErrors;
 
 @tag("Access")
@@ -285,6 +288,7 @@ op updatePrincipal(@path principal: string, @header("If-Match") ifMatch: string,
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
 @extension("x-leapview-object-scope", "grant-management")
+@operationId("deletePrincipal")
 op deletePrincipal(@path principal: string): NoContentResponse | CommonErrors;
 
 alias ResetPrincipalPasswordOK = OkJson<LocalPasswordResetResponse>;
@@ -295,6 +299,7 @@ alias ResetPrincipalPasswordOK = OkJson<LocalPasswordResetResponse>;
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
 @extension("x-leapview-object-scope", "grant-management")
+@operationId("resetPrincipalPassword")
 op resetPrincipalPassword(@path principal: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): ResetPrincipalPasswordOK | CommonErrors;
 
 alias ListServicePrincipalsOK = OkJson<ServicePrincipalListResponse>;
@@ -304,6 +309,7 @@ alias ListServicePrincipalsOK = OkJson<ServicePrincipalListResponse>;
 @route("/service-principals")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@operationId("listServicePrincipals")
 op listServicePrincipals(@query limit?: ListLimit, @query pageToken?: PageToken): ListServicePrincipalsOK | CommonErrors;
 
 alias CreateServicePrincipalCreated = CreatedJson<PrincipalResponse>;
@@ -313,6 +319,7 @@ alias CreateServicePrincipalCreated = CreatedJson<PrincipalResponse>;
 @route("/service-principals")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@operationId("createServicePrincipal")
 op createServicePrincipal(@header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: ServicePrincipalCreateRequest): CreateServicePrincipalCreated | CommonErrors;
 
 @tag("Access")
@@ -320,6 +327,7 @@ op createServicePrincipal(@header("Idempotency-Key") idempotencyKey: Idempotency
 @route("/service-principals/{servicePrincipal}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@operationId("getServicePrincipal")
 op getServicePrincipal(@path servicePrincipal: string): OkJson<PrincipalResponse> | CommonErrors;
 
 alias UpdateServicePrincipalOK = OkJson<PrincipalResponse>;
@@ -329,6 +337,7 @@ alias UpdateServicePrincipalOK = OkJson<PrincipalResponse>;
 @route("/service-principals/{servicePrincipal}")
 @patch
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@operationId("updateServicePrincipal")
 op updateServicePrincipal(@path servicePrincipal: string, @header("If-Match") ifMatch: string, @body body: ServicePrincipalPatchRequest): UpdateServicePrincipalOK | CommonErrors;
 
 @tag("Access")
@@ -336,6 +345,7 @@ op updateServicePrincipal(@path servicePrincipal: string, @header("If-Match") if
 @route("/service-principals/{servicePrincipal}")
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@operationId("deleteServicePrincipal")
 op deleteServicePrincipal(@path servicePrincipal: string): NoContentResponse | CommonErrors;
 
 alias CreateServicePrincipalSecretCreated = CreatedJson<ServicePrincipalSecretCreatedResponse>;
@@ -345,6 +355,7 @@ alias CreateServicePrincipalSecretCreated = CreatedJson<ServicePrincipalSecretCr
 @route("/service-principals/{servicePrincipal}/secrets")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@operationId("createServicePrincipalSecret")
 op createServicePrincipalSecret(@path servicePrincipal: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: ServicePrincipalSecretCreateRequest): CreateServicePrincipalSecretCreated | CommonErrors;
 
 @tag("Access")
@@ -352,6 +363,7 @@ op createServicePrincipalSecret(@path servicePrincipal: string, @header("Idempot
 @route("/service-principals/{servicePrincipal}/secrets")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@operationId("listServicePrincipalSecrets")
 op listServicePrincipalSecrets(@path servicePrincipal: string, @query limit?: ListLimit, @query pageToken?: PageToken): OkJson<ServicePrincipalSecretListResponse> | CommonErrors;
 
 @tag("Access")
@@ -359,6 +371,7 @@ op listServicePrincipalSecrets(@path servicePrincipal: string, @query limit?: Li
 @route("/service-principals/{servicePrincipal}/secrets/{secret}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@operationId("getServicePrincipalSecret")
 op getServicePrincipalSecret(@path servicePrincipal: string, @path secret: string): OkJson<ServicePrincipalSecretResponse> | CommonErrors;
 
 @tag("Access")
@@ -366,6 +379,7 @@ op getServicePrincipalSecret(@path servicePrincipal: string, @path secret: strin
 @route("/service-principals/{servicePrincipal}/secrets/{secret}")
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
+@operationId("revokeServicePrincipalSecret")
 op revokeServicePrincipalSecret(@path servicePrincipal: string, @path secret: string): NoContentResponse | CommonErrors;
 
 alias ListGroupsOK = OkJson<GroupListResponse>;
@@ -375,6 +389,7 @@ alias ListGroupsOK = OkJson<GroupListResponse>;
 @route("/workspaces/{workspace}/groups")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("listGroups")
 op listGroups(@path workspace: string, @query limit?: ListLimit, @query pageToken?: PageToken): ListGroupsOK | CommonErrors;
 
 alias CreateGroupCreated = CreatedJson<GroupResponse>;
@@ -384,6 +399,7 @@ alias CreateGroupCreated = CreatedJson<GroupResponse>;
 @route("/workspaces/{workspace}/groups")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("createGroup")
 op createGroup(@path workspace: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: GroupCreateRequest): CreateGroupCreated | CommonErrors;
 
 @tag("Access")
@@ -391,6 +407,7 @@ op createGroup(@path workspace: string, @header("Idempotency-Key") idempotencyKe
 @route("/workspaces/{workspace}/groups/{group}")
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("deleteGroup")
 op deleteGroup(@path workspace: string, @path group: string): NoContentResponse | CommonErrors;
 
 alias GetGroupOK = OkJson<GroupResponse>;
@@ -400,6 +417,7 @@ alias GetGroupOK = OkJson<GroupResponse>;
 @route("/workspaces/{workspace}/groups/{group}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("getGroup")
 op getGroup(@path workspace: string, @path group: string): GetGroupOK | CommonErrors;
 
 alias UpdateGroupOK = OkJson<GroupResponse>;
@@ -409,6 +427,7 @@ alias UpdateGroupOK = OkJson<GroupResponse>;
 @route("/workspaces/{workspace}/groups/{group}")
 @patch
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("updateGroup")
 op updateGroup(@path workspace: string, @path group: string, @header("If-Match") ifMatch: string, @body body: GroupPatchRequest): UpdateGroupOK | CommonErrors;
 
 alias ListGroupMembersOK = OkJson<GroupMemberListResponse>;
@@ -418,6 +437,7 @@ alias ListGroupMembersOK = OkJson<GroupMemberListResponse>;
 @route("/workspaces/{workspace}/groups/{group}/members")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("listGroupMembers")
 op listGroupMembers(@path workspace: string, @path group: string, @query limit?: ListLimit, @query pageToken?: PageToken): ListGroupMembersOK | CommonErrors;
 
 @tag("Access")
@@ -425,6 +445,7 @@ op listGroupMembers(@path workspace: string, @path group: string, @query limit?:
 @route("/workspaces/{workspace}/groups/{group}/members/{principal}")
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("removeGroupMember")
 op removeGroupMember(@path workspace: string, @path group: string, @path principal: string): NoContentResponse | CommonErrors;
 
 alias AddGroupMemberOK = OkJson<StatusResponse>;
@@ -434,6 +455,7 @@ alias AddGroupMemberOK = OkJson<StatusResponse>;
 @route("/workspaces/{workspace}/groups/{group}/members/{principal}")
 @put
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("addGroupMember")
 op addGroupMember(@path workspace: string, @path group: string, @path principal: string): AddGroupMemberOK | CommonErrors;
 
 alias ListRoleBindingsOK = OkJson<RoleBindingListResponse>;
@@ -443,6 +465,7 @@ alias ListRoleBindingsOK = OkJson<RoleBindingListResponse>;
 @route("/workspaces/{workspace}/role-bindings")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("listRoleBindings")
 op listRoleBindings(@path workspace: string, @query subjectType?: string, @query subjectId?: string, @query role?: string, @query limit?: ListLimit, @query pageToken?: PageToken): ListRoleBindingsOK | CommonErrors;
 
 alias CreateRoleBindingCreated = CreatedJson<RoleBindingResponse>;
@@ -452,6 +475,7 @@ alias CreateRoleBindingCreated = CreatedJson<RoleBindingResponse>;
 @route("/workspaces/{workspace}/role-bindings")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("createRoleBinding")
 op createRoleBinding(@path workspace: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: RoleBindingRequest): CreateRoleBindingCreated | CommonErrors;
 
 @tag("Access")
@@ -459,6 +483,7 @@ op createRoleBinding(@path workspace: string, @header("Idempotency-Key") idempot
 @route("/workspaces/{workspace}/role-bindings/{binding}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("getRoleBinding")
 op getRoleBinding(@path workspace: string, @path binding: string): OkJson<RoleBindingResponse> | CommonErrors;
 
 @tag("Access")
@@ -466,6 +491,7 @@ op getRoleBinding(@path workspace: string, @path binding: string): OkJson<RoleBi
 @route("/workspaces/{workspace}/role-bindings/{binding}")
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("deleteRoleBinding")
 op deleteRoleBinding(@path workspace: string, @path binding: string): NoContentResponse | CommonErrors;
 
 alias UpdateRoleBindingOK = OkJson<RoleBindingResponse>;
@@ -475,6 +501,7 @@ alias UpdateRoleBindingOK = OkJson<RoleBindingResponse>;
 @route("/workspaces/{workspace}/role-bindings/{binding}")
 @patch
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("updateRoleBinding")
 op updateRoleBinding(@path workspace: string, @path binding: string, @header("If-Match") ifMatch: string, @body body: RoleBindingRequest): UpdateRoleBindingOK | CommonErrors;
 
 alias ListWorkspaceRolesOK = OkJson<RoleListResponse>;
@@ -484,6 +511,7 @@ alias ListWorkspaceRolesOK = OkJson<RoleListResponse>;
 @route("/workspaces/{workspace}/roles")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("listWorkspaceRoles")
 op listWorkspaceRoles(@path workspace: string, @query limit?: ListLimit, @query pageToken?: PageToken): ListWorkspaceRolesOK | CommonErrors;
 
 alias ListEffectivePrivilegesOK = OkJson<EffectivePrivilegeListResponse>;
@@ -493,6 +521,7 @@ alias ListEffectivePrivilegesOK = OkJson<EffectivePrivilegeListResponse>;
 @route("/workspaces/{workspace}/effective-privileges")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
+@operationId("listEffectivePrivileges")
 op listEffectivePrivileges(@path workspace: string, @query objectType?: string, @query objectId?: string): ListEffectivePrivilegesOK | CommonErrors;
 
 alias ListGrantsOK = OkJson<GrantListResponse>;
@@ -502,6 +531,7 @@ alias ListGrantsOK = OkJson<GrantListResponse>;
 @route("/workspaces/{workspace}/grants")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("listGrants")
 op listGrants(@path workspace: string, @query objectType?: string, @query objectId?: string, @query includeInherited?: boolean, @query limit?: ListLimit, @query pageToken?: PageToken): ListGrantsOK | CommonErrors;
 
 alias CreateGrantCreated = CreatedJson<GrantResponse>;
@@ -511,6 +541,7 @@ alias CreateGrantCreated = CreatedJson<GrantResponse>;
 @route("/workspaces/{workspace}/grants")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("createGrant")
 op createGrant(@path workspace: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: GrantRequest): CreateGrantCreated | CommonErrors;
 
 @tag("Access")
@@ -518,6 +549,7 @@ op createGrant(@path workspace: string, @header("Idempotency-Key") idempotencyKe
 @route("/workspaces/{workspace}/grants/{grant}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("getGrant")
 op getGrant(@path workspace: string, @path grant: string): OkJson<GrantResponse> | CommonErrors;
 
 @tag("Access")
@@ -525,6 +557,7 @@ op getGrant(@path workspace: string, @path grant: string): OkJson<GrantResponse>
 @route("/workspaces/{workspace}/grants/{grant}")
 @patch
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("updateGrant")
 op updateGrant(@path workspace: string, @path grant: string, @header("If-Match") ifMatch: string, @body body: GrantRequest): OkJson<GrantResponse> | CommonErrors;
 
 @tag("Access")
@@ -532,6 +565,7 @@ op updateGrant(@path workspace: string, @path grant: string, @header("If-Match")
 @route("/workspaces/{workspace}/grants/{grant}")
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("deleteGrant")
 op deleteGrant(@path workspace: string, @path grant: string): NoContentResponse | CommonErrors;
 
 alias TransferOwnershipOK = OkJson<SecurableObjectResponse>;
@@ -541,6 +575,7 @@ alias TransferOwnershipOK = OkJson<SecurableObjectResponse>;
 @route("/workspaces/{workspace}/ownership")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_ITEM" })
+@operationId("transferOwnership")
 op transferOwnership(@path workspace: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: OwnershipTransferRequest): TransferOwnershipOK | CommonErrors;
 
 alias ListDataPoliciesOK = OkJson<DataPolicyListResponse>;
@@ -550,6 +585,7 @@ alias ListDataPoliciesOK = OkJson<DataPolicyListResponse>;
 @route("/workspaces/{workspace}/data-policies")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("listDataPolicies")
 op listDataPolicies(@path workspace: string, @query objectType?: string, @query objectId?: string, @query includeInherited?: boolean, @query limit?: ListLimit, @query pageToken?: PageToken): ListDataPoliciesOK | CommonErrors;
 
 alias CreateDataPolicyCreated = CreatedJson<DataPolicyResponse>;
@@ -559,6 +595,7 @@ alias CreateDataPolicyCreated = CreatedJson<DataPolicyResponse>;
 @route("/workspaces/{workspace}/data-policies")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("createDataPolicy")
 op createDataPolicy(@path workspace: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: DataPolicyRequest): CreateDataPolicyCreated | CommonErrors;
 
 @tag("Access")
@@ -566,6 +603,7 @@ op createDataPolicy(@path workspace: string, @header("Idempotency-Key") idempote
 @route("/workspaces/{workspace}/data-policies/{policy}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("getDataPolicy")
 op getDataPolicy(@path workspace: string, @path policy: string): OkJson<DataPolicyResponse> | CommonErrors;
 
 @tag("Access")
@@ -573,6 +611,7 @@ op getDataPolicy(@path workspace: string, @path policy: string): OkJson<DataPoli
 @route("/workspaces/{workspace}/data-policies/{policy}")
 @patch
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("updateDataPolicy")
 op updateDataPolicy(@path workspace: string, @path policy: string, @header("If-Match") ifMatch: string, @body body: DataPolicyRequest): OkJson<DataPolicyResponse> | CommonErrors;
 
 @tag("Access")
@@ -580,6 +619,7 @@ op updateDataPolicy(@path workspace: string, @path policy: string, @header("If-M
 @route("/workspaces/{workspace}/data-policies/{policy}")
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@operationId("deleteDataPolicy")
 op deleteDataPolicy(@path workspace: string, @path policy: string): NoContentResponse | CommonErrors;
 
 @tag("Access")
@@ -587,4 +627,5 @@ op deleteDataPolicy(@path workspace: string, @path policy: string): NoContentRes
 @route("/workspaces/{workspace}/authorization-checks")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
+@operationId("checkAuthorizationBatch")
 op checkAuthorizationBatch(@path workspace: string, @body body: AuthorizationBatchCheckRequest): OkJson<AuthorizationBatchCheckResponse> | CommonErrors;

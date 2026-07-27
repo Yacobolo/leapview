@@ -5,8 +5,21 @@ targets:
     ir_out: gen/json-ir.json
     openapi_out: gen/openapi.yaml
     go_out:
-      dir: ../internal/app/api/gen
-      package: gen
+      unmatched: error
+      packages:
+        LeapViewAPI: &leapview_api_go_package
+          dir: ../internal/app/api/gen
+          package: gen
+          import_path: github.com/Yacobolo/leapview/internal/app/api/gen
+        LeapViewAPI.Access: *leapview_api_go_package
+        LeapViewAPI.Agent: *leapview_api_go_package
+        LeapViewAPI.Dashboard: *leapview_api_go_package
+        LeapViewAPI.Deployment: *leapview_api_go_package
+        LeapViewAPI.ManagedData: *leapview_api_go_package
+        LeapViewAPI.Project: *leapview_api_go_package
+        LeapViewAPI.Refresh: *leapview_api_go_package
+        LeapViewAPI.Release: *leapview_api_go_package
+        LeapViewAPI.Workspace: *leapview_api_go_package
     cli_out:
       dir: ../internal/app/cli/gen
       package: gen
