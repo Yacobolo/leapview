@@ -1,9 +1,12 @@
 package jobs
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -110,6 +113,77 @@ func TestRunnerLeavesClaimRecoverableWhenWorkerContextStops(t *testing.T) {
 	}
 }
 
+func TestRunnerShutdownDoesNotStartOrWarnAboutCandidatePolling(t *testing.T) {
+	controller, err := workload.New(workload.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer controller.Close()
+	repository := &countingRunnerRepository{}
+	var logs bytes.Buffer
+	runner, err := NewRunner(RunnerConfig{
+		Repository: repository,
+		Admission:  testAdmitter(controller),
+		Logger:     slog.New(slog.NewTextHandler(&logs, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	runner.Run(ctx)
+
+	if calls := repository.candidateCalls.Load(); calls != 0 {
+		t.Fatalf("candidate polls after shutdown = %d, want 0", calls)
+	}
+	if output := logs.String(); output != "" {
+		t.Fatalf("shutdown logs = %q, want none", output)
+	}
+}
+
+func TestRunnerShutdownDoesNotWarnWhenCandidatePollingIsCanceled(t *testing.T) {
+	controller, err := workload.New(workload.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer controller.Close()
+	repository := &blockingRunnerRepository{started: make(chan struct{}, 2)}
+	var logs bytes.Buffer
+	runner, err := NewRunner(RunnerConfig{
+		Repository: repository,
+		Admission:  testAdmitter(controller),
+		Logger:     slog.New(slog.NewTextHandler(&logs, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		runner.Run(ctx)
+	}()
+	for range 2 {
+		select {
+		case <-repository.started:
+		case <-time.After(time.Second):
+			t.Fatal("candidate poll did not start")
+		}
+	}
+
+	cancel()
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("runner did not stop after cancellation")
+	}
+
+	if output := logs.String(); output != "" {
+		t.Fatalf("shutdown logs = %q, want none", output)
+	}
+}
+
 type runnerTestRepository struct{}
 
 func (*runnerTestRepository) Enqueue(context.Context, EnqueueInput) (Job, error) { return Job{}, nil }
@@ -130,6 +204,27 @@ func (*runnerTestRepository) AppendEvent(context.Context, string, string, string
 }
 func (*runnerTestRepository) ListEvents(context.Context, string, string, int64, int) ([]Event, error) {
 	return nil, nil
+}
+
+type countingRunnerRepository struct {
+	runnerTestRepository
+	candidateCalls atomic.Int64
+}
+
+func (r *countingRunnerRepository) Candidates(context.Context, string, int) ([]Job, error) {
+	r.candidateCalls.Add(1)
+	return nil, nil
+}
+
+type blockingRunnerRepository struct {
+	runnerTestRepository
+	started chan struct{}
+}
+
+func (r *blockingRunnerRepository) Candidates(ctx context.Context, _ string, _ int) ([]Job, error) {
+	r.started <- struct{}{}
+	<-ctx.Done()
+	return nil, ctx.Err()
 }
 
 type recordingRunnerRepository struct {

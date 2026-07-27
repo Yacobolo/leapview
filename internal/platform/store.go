@@ -4,11 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/Yacobolo/leapview/internal/platform/db"
 	"github.com/Yacobolo/leapview/internal/platform/filesystem"
@@ -24,8 +26,10 @@ const (
 )
 
 type Store struct {
-	db *sql.DB
-	q  *db.Queries
+	db        *sql.DB
+	q         *db.Queries
+	closeOnce sync.Once
+	closeErr  error
 }
 
 func Open(ctx context.Context, path string) (*Store, error) {
@@ -40,11 +44,11 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	conn.SetMaxIdleConns(0)
 	store := &Store{db: conn, q: db.New(conn)}
 	if err := store.migrate(ctx); err != nil {
-		conn.Close()
+		_ = store.Close()
 		return nil, err
 	}
 	if err := chmodDatabaseFile(path); err != nil {
-		conn.Close()
+		_ = store.Close()
 		return nil, err
 	}
 	return store, nil
@@ -63,7 +67,18 @@ func sqliteString(value string) string {
 }
 
 func (s *Store) Close() error {
-	return s.db.Close()
+	s.closeOnce.Do(func() {
+		// Normal operation intentionally keeps no idle SQLite connections. At
+		// shutdown, retain the barrier connection so Ping cannot return while a
+		// database/sql opener is still completing in the background. DB.Close
+		// then closes that sole idle connection before this method returns.
+		s.db.SetMaxIdleConns(1)
+		if err := s.db.PingContext(context.Background()); err != nil {
+			s.closeErr = fmt.Errorf("drain platform db connections: %w", err)
+		}
+		s.closeErr = errors.Join(s.closeErr, s.db.Close())
+	})
+	return s.closeErr
 }
 
 func (s *Store) SQLDB() *sql.DB {
