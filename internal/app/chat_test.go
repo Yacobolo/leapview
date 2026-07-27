@@ -24,6 +24,7 @@ import (
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	visualizationruntime "github.com/Yacobolo/leapview/internal/dashboard/visualization/runtime"
 	"github.com/Yacobolo/leapview/internal/platform"
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 	"github.com/Yacobolo/leapview/internal/workspace"
@@ -916,6 +917,10 @@ func TestChatDraftTurnRedirectsAndStreamsThroughUpdates(t *testing.T) {
 	principal, token := chatPrincipalAndToken(t, ctx, store)
 	started := make(chan struct{}, 1)
 	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseModel := func() {
+		releaseOnce.Do(func() { close(release) })
+	}
 	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case started <- struct{}{}:
@@ -924,7 +929,8 @@ func TestChatDraftTurnRedirectsAndStreamsThroughUpdates(t *testing.T) {
 		<-release
 		writeRawJSON(t, w, `{"choices":[{"message":{"role":"assistant","content":"Background complete."},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}`)
 	}))
-	defer modelServer.Close()
+	t.Cleanup(modelServer.Close)
+	t.Cleanup(releaseModel)
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
 	service := agent.NewService(testAgentRepository(store), agent.Config{APIKey: "key", BaseURL: modelServer.URL, Model: "fake-model"})
 	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, Agent: service, DefaultWorkspaceID: "test"}))
@@ -956,9 +962,40 @@ func TestChatDraftTurnRedirectsAndStreamsThroughUpdates(t *testing.T) {
 		t.Fatalf("redirect did not target created conversation %q:\n%s", conversationID, body)
 	}
 
+	runs, err := testAgentRepository(store).ListRuns(ctx, principal.ID, conversationID)
+	if err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("runs = %#v", runs)
+	}
+	job, err := server.platform.asyncJobs.Get(ctx, "agent:"+runs[0].ID+":run")
+	if err != nil {
+		t.Fatalf("accepted draft turn was not durably dispatched: %v", err)
+	}
+	if job.Status != jobs.StatusQueued {
+		t.Fatalf("accepted draft job status = %q, want %q", job.Status, jobs.StatusQueued)
+	}
 	select {
 	case <-started:
-	case <-time.After(time.Second):
+		t.Fatal("draft model started outside the durable worker")
+	default:
+	}
+
+	backgroundCtx, cancelBackground := context.WithCancel(context.Background())
+	if err := server.StartBackgroundJobs(backgroundCtx); err != nil {
+		t.Fatalf("start background jobs: %v", err)
+	}
+	t.Cleanup(func() {
+		cancelBackground()
+		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = server.StopBackgroundJobs(stopCtx)
+	})
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
 		t.Fatal("background turn did not start")
 	}
 
@@ -983,7 +1020,7 @@ func TestChatDraftTurnRedirectsAndStreamsThroughUpdates(t *testing.T) {
 		server.Routes().ServeHTTP(updatesRec, updatesReq)
 	}()
 	waitForBrokerSubscription(t, server, agentmodule.ChatStreamID(agent.Scope{PrincipalID: principal.ID}, "client-draft"))
-	close(release)
+	releaseModel()
 	waitForConversationMessage(t, service, principal.ID, conversationID, "Background complete.")
 	waitForRecorderBodyContains(t, updatesRec, `"running":false`)
 	waitForAgentConversationTitle(t, store, "test", principal.ID, conversationID, "Background complete")

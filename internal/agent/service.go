@@ -55,10 +55,10 @@ type Service struct {
 
 	mu             sync.Mutex
 	running        map[string]runningPrompt
-	promptWorkflow func(PromptInput, string) jobs.WorkflowIntent
+	promptWorkflow func(PromptInput, string, PromptDispatch) jobs.WorkflowIntent
 }
 
-func (s *Service) SetPromptWorkflow(factory func(PromptInput, string) jobs.WorkflowIntent) {
+func (s *Service) SetPromptWorkflow(factory func(PromptInput, string, PromptDispatch) jobs.WorkflowIntent) {
 	if s != nil {
 		s.promptWorkflow = factory
 	}

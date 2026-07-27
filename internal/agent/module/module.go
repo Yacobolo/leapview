@@ -238,7 +238,8 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		ChatSignalWith: m.ChatSignalWith, SearchReferences: searchReferences,
 		ResolveTurnContext: resolveTurnContext, QueueMissingTitle: m.queueMissingChatTitle,
 		ExecuteStartedChatTurn: m.executeStartedChatTurn,
-		EnqueueRun:             m.EnqueueRun, CancelQueuedRun: m.CancelQueuedRun,
+		EnqueueRun:             m.EnqueueRun, EnqueueChatRun: m.EnqueueChatRun,
+		CancelQueuedRun:     m.CancelQueuedRun,
 		APIGenToolContracts: apiGenToolContracts(m.apiOperations),
 	})
 	m.configureTools()

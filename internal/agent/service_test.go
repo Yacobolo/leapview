@@ -16,9 +16,10 @@ import (
 	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/project/testing/dashboardfixture"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	visualizationruntime "github.com/Yacobolo/leapview/internal/dashboard/visualization/runtime"
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
+	"github.com/Yacobolo/leapview/internal/project/testing/dashboardfixture"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 )
 
@@ -285,6 +286,55 @@ func TestServiceStartPromptPersistsUserBeforeRunCompletes(t *testing.T) {
 	if len(messages) != 2 || messages[0].Role != MessageRoleUser || messages[1].Role != MessageRoleAssistant {
 		t.Fatalf("messages after completion = %#v, want user and assistant only", messages)
 	}
+}
+
+func TestServiceDispatchesOnlyExplicitDurablePrompts(t *testing.T) {
+	ctx := context.Background()
+	store := &workflowAgentStore{testAgentStore: newTestAgentStore()}
+	principal := createAgentAppPrincipal(t, ctx, store.testAgentStore, "dispatch@example.com")
+	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
+	service := NewService(store, Config{APIKey: "key", Model: "fake-model"}, WithModel(newRecordingAgentModel()))
+	service.SetPromptWorkflow(func(_ PromptInput, runID string, dispatch PromptDispatch) jobs.WorkflowIntent {
+		payload, _ := json.Marshal(dispatch)
+		return jobs.WorkflowIntent{Job: jobs.EnqueueInput{ID: runID, Payload: payload}}
+	})
+
+	inlineConversation, err := service.CreateConversation(ctx, scope, "Inline")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inline, err := service.StartPrompt(ctx, PromptInput{
+		Scope: scope, ConversationID: inlineConversation.ID, Input: "Run inline",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inline.DurablyQueued() || len(store.workflows) != 0 {
+		t.Fatalf("inline prompt unexpectedly dispatched: %#v", store.workflows)
+	}
+	_ = inline.Abort(ctx, errors.New("test cleanup"))
+
+	durableConversation, err := service.CreateConversation(ctx, scope, "Durable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	durable, err := service.StartDurablePrompt(ctx, PromptInput{
+		Scope: scope, ConversationID: durableConversation.ID, Input: "Run later",
+	}, PromptDispatch{ChatClientID: "browser-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !durable.DurablyQueued() || len(store.workflows) != 1 {
+		t.Fatalf("durable prompt workflows = %#v", store.workflows)
+	}
+	var dispatch PromptDispatch
+	if err := json.Unmarshal(store.workflows[0].Job.Payload, &dispatch); err != nil {
+		t.Fatal(err)
+	}
+	if dispatch.ChatClientID != "browser-1" {
+		t.Fatalf("persisted dispatch = %#v", dispatch)
+	}
+	_ = durable.Abort(ctx, errors.New("test cleanup"))
 }
 
 func TestServiceResumesPersistedPromptAfterProcessRestart(t *testing.T) {
@@ -1158,6 +1208,39 @@ type testAgentStore struct {
 	runs            map[string]Run
 	runConversation map[string]string
 	events          map[string][]Event
+}
+
+type workflowAgentStore struct {
+	*testAgentStore
+	workflows []jobs.WorkflowIntent
+}
+
+func (s *workflowAgentStore) CreateRun(ctx context.Context, input RunInput) (Run, error) {
+	run, err := s.testAgentStore.CreateRun(ctx, input)
+	if err != nil {
+		return Run{}, err
+	}
+	s.mu.Lock()
+	run.Status = input.Status
+	s.runs[run.ID] = run
+	s.mu.Unlock()
+	return run, nil
+}
+
+func (s *workflowAgentStore) ActivateRunWorkflow(_ context.Context, principalID, conversationID, runID string, workflow jobs.WorkflowIntent) (Run, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.conversationLocked(principalID, conversationID); err != nil {
+		return Run{}, err
+	}
+	run, ok := s.runs[runID]
+	if !ok || s.runConversation[runID] != conversationID {
+		return Run{}, sql.ErrNoRows
+	}
+	run.Status = RunStatusRunning
+	s.runs[run.ID] = run
+	s.workflows = append(s.workflows, workflow)
+	return run, nil
 }
 
 func newTestAgentStore() *testAgentStore {
