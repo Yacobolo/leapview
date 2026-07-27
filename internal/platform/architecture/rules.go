@@ -38,7 +38,7 @@ var PublicContractPrefixes = map[string][]string{
 	"dashboard":    {"internal/dashboard", "internal/dashboard/api", "internal/dashboard/catalog", "internal/dashboard/definition", "internal/dashboard/filter", "internal/dashboard/publication", "internal/dashboard/report", "internal/dashboard/reportmodel", "internal/dashboard/queryruntime", "internal/dashboard/ui/signals", "internal/dashboard/visualization/definition", "internal/dashboard/visualization/format", "internal/dashboard/visualization/geometry", "internal/dashboard/visualization/ir", "internal/dashboard/visualization/mapasset", "internal/dashboard/visualization/runtime"},
 	"manageddata":  {"internal/manageddata", "internal/manageddata/binding", "internal/manageddata/runtimebinding"},
 	"workspace":    {"internal/workspace", "internal/workspace/api", "internal/workspace/navigation", "internal/workspace/search"},
-	"project":      {"internal/project/schema", "internal/project/artifact", "internal/project/bundle", "internal/project/compiler"},
+	"project":      {"internal/project/api", "internal/project/schema", "internal/project/artifact", "internal/project/bundle", "internal/project/compiler"},
 	"release":      {"internal/release"},
 	"deployment":   {"internal/deployment"},
 	"servingstate": {"internal/servingstate", "internal/servingstate/validate", "internal/servingstate/validation", "internal/servingstate/retention"},
