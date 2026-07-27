@@ -17,6 +17,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
 	queryauthz "github.com/Yacobolo/leapview/internal/dashboard/queryauthz"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
+	dashboardsession "github.com/Yacobolo/leapview/internal/dashboard/session"
 	reportui "github.com/Yacobolo/leapview/internal/dashboard/ui"
 	apihttpmiddleware "github.com/Yacobolo/leapview/internal/platform/http/middleware"
 	"github.com/go-chi/chi/v5"
@@ -106,6 +107,12 @@ func (m *Module) PublicDashboardDocument(presentation string) http.HandlerFunc {
 		m.observePublicDocument(presentation, "success")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		initialFilters := resolved.Report.FiltersFromURLForPage(activePage.ID, r.URL.Query())
+		filterState, err := resolved.Report.FilterStateFromURL(activePage.ID, r.URL.Query())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		initialFilters.CompiledState = &filterState
 		if err := reportui.PublicPage(reportui.PublicPageOptions{
 			PublicID: resolved.Publication.PublicID, Presentation: presentation, Assets: m.handler.Assets,
 		}, resolved.Metrics.Catalog(), resolved.Report, model, pages, activePage, initialFilters).Render(w); err != nil {
@@ -137,6 +144,12 @@ func (m *Module) PublicDashboardUpdates(w http.ResponseWriter, r *http.Request) 
 	streamID := lddatastar.StreamID(clientID, resolved.Publication.Dashboard, pageID, streamInstanceID)
 	version := publication.StreamVersion{PublicID: resolved.Publication.PublicID, ServingStateID: resolved.Publication.ServingStateID}
 	initialFilters := resolved.Report.NormalizeFiltersForPage(pageID, resolved.Report.FiltersFromURLForPage(pageID, r.URL.Query()))
+	filterState, err := resolved.Report.FilterStateFromURL(pageID, r.URL.Query())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	initialFilters.CompiledState = &filterState
 	ctx, unregister, err := m.streams.Register(r.Context(), resolved.Publication.ID, streamID, version, initialFilters)
 	if err != nil {
 		http.Error(w, "public dashboard stream is unavailable", http.StatusServiceUnavailable)
@@ -175,10 +188,12 @@ func (m *Module) PublicDashboardCommand(commandName string) http.HandlerFunc {
 		recorder := &apihttpmiddleware.Recorder{ResponseWriter: w, StatusCode: http.StatusOK}
 		handler := m.PublicDashboardHTTP(resolved)
 		switch commandName {
-		case "reload":
-			handler.Reload(recorder, r.WithContext(ctx))
-		case "reset_filters":
-			handler.ResetFilters(recorder, r.WithContext(ctx))
+		case "filter":
+			handler.FilterCommand(recorder, r.WithContext(ctx))
+		case "filter_options":
+			handler.FilterOptions(recorder, r.WithContext(ctx))
+		case "navigate":
+			handler.Navigate(recorder, r.WithContext(ctx))
 		case "select":
 			handler.Select(recorder, r.WithContext(ctx))
 		case "spatial_select":
@@ -209,6 +224,15 @@ func (m *Module) PublicDashboardHTTP(resolved ResolvedPublicDashboard) dashboard
 	}
 	handler.CSRFToken = nil
 	handler.Layout = nil
+	handler.SessionKey = func(_ *http.Request, definition dashboarddefinition.Definition, clientID, streamInstanceID string) dashboardsession.Key {
+		return dashboardsession.Key{
+			WorkspaceOrPublication: resolved.Publication.ID,
+			PrincipalOrClient:      clientID,
+			DashboardID:            definition.ID,
+			ServingStateID:         resolved.Publication.ServingStateID,
+			StreamInstanceID:       streamInstanceID,
+		}
+	}
 	handler.CommandGuard = func(r *http.Request, _ dashboardhttp.Metrics, request command.Request, signals dashboard.Signals) error {
 		current, err := m.PublicationByPublicID(r.Context(), resolved.Publication.PublicID)
 		if err != nil || current.Status() != publication.StatusActive || current.ID != resolved.Publication.ID || current.ServingStateID != resolved.Publication.ServingStateID {

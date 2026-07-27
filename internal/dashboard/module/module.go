@@ -2,18 +2,24 @@ package module
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sync"
 
 	"github.com/Yacobolo/leapview/internal/access"
+	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
+	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
 	dashboardhttp "github.com/Yacobolo/leapview/internal/dashboard/http"
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
 	publicationsqlite "github.com/Yacobolo/leapview/internal/dashboard/publication/sqlite"
 	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
 	semanticapi "github.com/Yacobolo/leapview/internal/dashboard/semanticapi"
+	dashboardsession "github.com/Yacobolo/leapview/internal/dashboard/session"
+	dashboardsessionsqlite "github.com/Yacobolo/leapview/internal/dashboard/session/sqlite"
 	dashboardstream "github.com/Yacobolo/leapview/internal/dashboard/stream"
 	dashboardui "github.com/Yacobolo/leapview/internal/dashboard/ui"
 	dashboardsignals "github.com/Yacobolo/leapview/internal/dashboard/ui/signals"
@@ -22,6 +28,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
 	"github.com/Yacobolo/leapview/internal/workload"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
+	"github.com/go-chi/chi/v5"
 )
 
 type Module struct {
@@ -120,6 +127,14 @@ type Telemetry interface {
 
 func Build(_ context.Context, config Config) (*Module, error) {
 	coordinators := dashboardstream.NewRegistry()
+	optionCursorSecret := make([]byte, 32)
+	if _, err := rand.Read(optionCursorSecret); err != nil {
+		return nil, fmt.Errorf("generate dashboard option cursor secret: %w", err)
+	}
+	var sessionStore dashboardsession.Store = dashboardsession.NewMemoryStore()
+	if config.Database != nil {
+		sessionStore = dashboardsessionsqlite.NewStore(config.Database)
+	}
 	metricsForHTTP := func(workspaceID string) (dashboardhttp.Metrics, bool) {
 		if config.HTTP.MetricsForWorkspace == nil {
 			return nil, false
@@ -162,12 +177,40 @@ func Build(_ context.Context, config Config) (*Module, error) {
 				telemetry.DashboardCacheObserved(outcome)
 			}
 		},
+		SessionStore:       sessionStore,
+		OptionCursorSecret: optionCursorSecret,
+		OptionCache:        dashboardfilter.NewOptionCache(4096),
 		CurrentPrincipalID: config.HTTP.CurrentPrincipalID, AuthorizeListObject: config.HTTP.AuthorizeListObject,
 		CSRFToken: config.HTTP.CSRFToken, Layout: config.HTTP.Layout,
 		Presentation: config.HTTP.Presentation,
 		Assets:       config.HTTP.Assets,
 		Environment:  config.HTTP.Environment, DataRefreshedAt: config.HTTP.DataRefreshedAt,
 		AgentBootstrap: config.HTTP.AgentBootstrap,
+	}
+	handler.SessionKey = func(r *http.Request, definition dashboarddefinition.Definition, clientID, streamInstanceID string) dashboardsession.Key {
+		workspaceID := chi.URLParam(r, "workspace")
+		if workspaceID == "" {
+			workspaceID = r.URL.Query().Get("workspace")
+		}
+		servingStateID := definition.DefaultFilterState().DefaultsRevision
+		if config.ServingSnapshot != nil {
+			if active, err := config.ServingSnapshot(r.Context(), workspaceID); err == nil && active != "" {
+				servingStateID = active
+			}
+		}
+		principalOrClient := clientID
+		if config.HTTP.CurrentPrincipalID != nil {
+			if principalID := config.HTTP.CurrentPrincipalID(r); principalID != "" {
+				principalOrClient = principalID + ":" + clientID
+			}
+		}
+		return dashboardsession.Key{
+			WorkspaceOrPublication: workspaceID,
+			PrincipalOrClient:      principalOrClient,
+			DashboardID:            definition.ID,
+			ServingStateID:         servingStateID,
+			StreamInstanceID:       streamInstanceID,
+		}
 	}
 	module := &Module{
 		handler: handler,

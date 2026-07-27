@@ -16,4 +16,8 @@ type VisualizationSignal struct {
 	SpatialSelection *visualizationir.VisualizationSpatialSelectionState `json:"spatialSelection,omitempty"`
 	Status           visualizationir.VisualizationStatus                 `json:"status"`
 	Diagnostics      []visualizationir.VisualizationDiagnostic           `json:"diagnostics"`
+	ServingStateID   string                                              `json:"servingStateID"`
+	StreamGeneration int64                                               `json:"streamGeneration"`
+	FilterRevision   int64                                               `json:"filterRevision"`
+	ConsumerIdentity string                                              `json:"consumerIdentity"`
 }

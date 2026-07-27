@@ -15,7 +15,6 @@ func TestTelemetryObservesAcceptedProgressiveTargetsAndFrames(t *testing.T) {
 	}{
 		{eventType: "visual", target: "revenue"},
 		{eventType: "table", target: "orders"},
-		{eventType: "filter_options", target: "state"},
 		{eventType: "target_error", target: "visual:broken"},
 		{eventType: "target_error", target: "refresh"},
 		{eventType: "complete"},
@@ -26,10 +25,9 @@ func TestTelemetryObservesAcceptedProgressiveTargetsAndFrames(t *testing.T) {
 	telemetry.VisualizationFrameObserved("windowed", 1, 1, 20)
 
 	want := map[string]float64{
-		"filter_options:success": 1,
-		"refresh:error":          1,
-		"visual:error":           1,
-		"visual:success":         2,
+		"refresh:error":  1,
+		"visual:error":   1,
+		"visual:success": 2,
 	}
 	got := targetMetricValues(t, registry)
 	if len(got) != len(want) {
