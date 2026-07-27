@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	agentconfig "github.com/Yacobolo/leapview/internal/agent/config"
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 )
 
@@ -45,16 +46,22 @@ type ToolProvider func(scope Scope) []agentcore.ToolDefinition
 type SystemPromptProvider func(ctx context.Context) (string, error)
 
 type Service struct {
-	metrics any
-	repo    Repository
-	config  Config
-	model   agentcore.Model
+	repo   Repository
+	config Config
+	model  agentcore.Model
 
 	toolProviders        []ToolProvider
 	systemPromptProvider SystemPromptProvider
 
-	mu      sync.Mutex
-	running map[string]runningPrompt
+	mu             sync.Mutex
+	running        map[string]runningPrompt
+	promptWorkflow func(PromptInput, string) jobs.WorkflowIntent
+}
+
+func (s *Service) SetPromptWorkflow(factory func(PromptInput, string) jobs.WorkflowIntent) {
+	if s != nil {
+		s.promptWorkflow = factory
+	}
 }
 
 type runningPrompt struct {
@@ -70,9 +77,8 @@ func WithModel(model agentcore.Model) ServiceOption {
 	}
 }
 
-func NewService(metrics any, repo Repository, config Config, options ...ServiceOption) *Service {
+func NewService(repo Repository, config Config, options ...ServiceOption) *Service {
 	s := &Service{
-		metrics: metrics,
 		repo:    repo,
 		config:  config,
 		running: map[string]runningPrompt{},

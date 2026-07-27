@@ -14,9 +14,9 @@ import (
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	"github.com/Yacobolo/leapview/internal/dataquery"
+	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
 	visualizationruntime "github.com/Yacobolo/leapview/internal/visualization/runtime"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/workspace/compiler"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 )
 
@@ -26,6 +26,8 @@ const (
 )
 
 type VisualAuthorizeFunc func(ctx context.Context, scope Scope, request VisualAuthorizationRequest) (agentcore.ToolResult, bool)
+
+type VisualQueryContextFunc func(ctx context.Context, scope Scope) context.Context
 
 type VisualModelFunc func(workspaceID, modelID string) (*semanticmodel.Model, bool)
 
@@ -46,6 +48,7 @@ type VisualQueryMetadataFunc func(ctx context.Context, workspaceID, modelID stri
 
 type VisualProvider struct {
 	Authorize     VisualAuthorizeFunc
+	QueryContext  VisualQueryContextFunc
 	SemanticModel VisualModelFunc
 	AggregateRows VisualAggregateRowsFunc
 	PreviewRows   VisualPreviewRowsFunc
@@ -148,6 +151,9 @@ func (p VisualProvider) Run(ctx context.Context, scope Scope, call agentcore.Too
 		RequestID:   call.ID,
 	}
 	ctx = dataquery.WithMetadata(ctx, metadata)
+	if p.QueryContext != nil {
+		ctx = p.QueryContext(ctx, runScope)
+	}
 	if errResult, ok := p.Authorize(ctx, runScope, VisualAuthorizationRequest{
 		ToolName: agentVisualToolName,
 		CallID:   call.ID,

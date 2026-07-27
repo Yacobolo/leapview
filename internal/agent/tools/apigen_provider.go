@@ -1,8 +1,10 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -29,7 +31,7 @@ type CredentialScope struct {
 
 type APIGenAuthorizeFunc func(ctx context.Context, scope Scope, operationID string) (agentcore.ToolResult, bool)
 
-type APIGenDispatchFunc func(scope Scope, operationID string, request *http.Request) (*http.Response, bool)
+type APIGenDispatchFunc func(scope Scope, operationID string, writer http.ResponseWriter, request *http.Request) bool
 
 type APIGenProvider struct {
 	Authorize APIGenAuthorizeFunc
@@ -42,6 +44,7 @@ func (p APIGenProvider) Definitions(scope Scope) []agentcore.ToolDefinition {
 	operations := APIGenOperations()
 	definitions := make([]agentcore.ToolDefinition, 0, len(operations))
 	for _, operation := range operations {
+		operation := operationForScope(operation, scope)
 		outputSchema := requireToolObjectSchema(operation.Tool.OutputSchema)
 		if operation.Tool.Name == "query_dashboard_visual" {
 			outputSchema = json.RawMessage(agentcontracts.DashboardVisualQueryResultSchemaJSON)
@@ -133,15 +136,15 @@ func (p APIGenProvider) Run(ctx context.Context, scope Scope, operation APIGenOp
 	if p.Dispatch == nil {
 		return apigenAgentToolError("operation_not_found", "APIGen operation dispatcher is not configured")
 	}
-	response, ok := p.Dispatch(runScope, operation.Contract.OperationID, request)
-	if !ok {
+	capture := newResponseCapture(request)
+	if ok := p.Dispatch(runScope, operation.Contract.OperationID, capture, request); !ok {
 		return apigenAgentToolError("operation_not_found", "APIGen operation is not dispatchable")
 	}
 	responseContract := operation.Tool
 	if operation.Tool.Name == "query_dashboard_visual" {
 		responseContract.OutputSchema = json.RawMessage(agentcontracts.DashboardVisualQueryResultSchemaJSON)
 	}
-	result, err := agenttool.ProjectResponse(responseContract, response)
+	result, err := agenttool.ProjectResponse(responseContract, capture.Response())
 	if err != nil {
 		return agentToolRuntimeError(err)
 	}
@@ -202,6 +205,104 @@ func stripCatalogRefPrefix(value any, parentID string) any {
 func stripCatalogRefString(value, parentID string) string {
 	normalized, _ := stripCatalogRefPrefix(value, parentID).(string)
 	return normalized
+}
+
+type responseCapture struct {
+	request *http.Request
+	header  http.Header
+	body    bytes.Buffer
+	status  int
+}
+
+func newResponseCapture(request *http.Request) *responseCapture {
+	return &responseCapture{request: request, header: make(http.Header)}
+}
+
+func (r *responseCapture) Header() http.Header { return r.header }
+
+func (r *responseCapture) WriteHeader(status int) {
+	if r.status == 0 {
+		r.status = status
+	}
+}
+
+func (r *responseCapture) Write(body []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	return r.body.Write(body)
+}
+
+func (r *responseCapture) Response() *http.Response {
+	status := r.status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	return &http.Response{
+		Status:        http.StatusText(status),
+		StatusCode:    status,
+		Header:        r.header.Clone(),
+		Body:          io.NopCloser(bytes.NewReader(r.body.Bytes())),
+		ContentLength: int64(r.body.Len()),
+		Request:       r.request,
+	}
+}
+
+func operationForScope(operation APIGenOperation, scope Scope) APIGenOperation {
+	if strings.TrimSpace(scope.WorkspaceID) != "" {
+		return operation
+	}
+	tool := agenttool.CloneContract(operation.Tool)
+	promoted := false
+	for index := range tool.Bindings {
+		binding := &tool.Bindings[index]
+		if binding.Mode != "context" || binding.ContextKey != "workspace" {
+			continue
+		}
+		binding.Argument = "workspace"
+		binding.Mode = "model"
+		binding.ContextKey = ""
+		binding.Required = true
+		promoted = true
+	}
+	if promoted {
+		tool.InputSchema = requireToolStringProperty(tool.InputSchema, "workspace")
+	}
+	operation.Tool = tool
+	return operation
+}
+
+func requireToolStringProperty(input json.RawMessage, name string) json.RawMessage {
+	var schema map[string]any
+	if err := json.Unmarshal(input, &schema); err != nil {
+		return input
+	}
+	properties, _ := schema["properties"].(map[string]any)
+	if properties == nil {
+		properties = map[string]any{}
+		schema["properties"] = properties
+	}
+	properties[name] = map[string]any{
+		"type":        "string",
+		"minLength":   1,
+		"description": "Workspace ID to query.",
+	}
+	required, _ := schema["required"].([]any)
+	for _, item := range required {
+		if item == name {
+			encoded, err := json.Marshal(schema)
+			if err == nil {
+				return encoded
+			}
+			return input
+		}
+	}
+	schema["required"] = append(required, name)
+	encoded, err := json.Marshal(schema)
+	if err != nil {
+		return input
+	}
+	return encoded
 }
 
 func withAPIGenRouteContext(request *http.Request, pathTemplate string) *http.Request {

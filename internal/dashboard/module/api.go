@@ -1,0 +1,42 @@
+package module
+
+import (
+	"net/http"
+
+	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
+)
+
+func (m *Module) QuerySemanticModel(w http.ResponseWriter, r *http.Request, workspaceID string, _ apigenapi.GenQuerySemanticModelHeaders) {
+	m.setServingSnapshot(r, workspaceID)
+	m.semantic.QuerySemanticModel(w, r)
+}
+
+func (m *Module) PreviewSemanticDataset(w http.ResponseWriter, r *http.Request, workspaceID string, _ apigenapi.GenPreviewSemanticDatasetHeaders) {
+	m.setServingSnapshot(r, workspaceID)
+	m.semantic.PreviewSemanticDataset(w, r)
+}
+
+func (m *Module) QueryDashboardPage(w http.ResponseWriter, r *http.Request, workspaceID string) {
+	m.setServingSnapshot(r, workspaceID)
+	m.handler.QueryDashboardPage(w, r)
+}
+
+func (m *Module) QueryDashboardVisualData(w http.ResponseWriter, r *http.Request, workspaceID string, _ apigenapi.GenQueryDashboardVisualDataHeaders) {
+	m.setServingSnapshot(r, workspaceID)
+	m.handler.QueryDashboardVisualData(w, r)
+}
+
+func (m *Module) ListDashboardFilterValues(w http.ResponseWriter, r *http.Request, workspaceID string, _ apigenapi.GenListDashboardFilterValuesParams) {
+	m.setServingSnapshot(r, workspaceID)
+	m.handler.ListDashboardFilterOptions(w, r)
+}
+
+func (m *Module) setServingSnapshot(r *http.Request, workspaceID string) {
+	r.Header.Del("X-Serving-Snapshot")
+	if m == nil || m.snapshot == nil {
+		return
+	}
+	if snapshot, err := m.snapshot(r.Context(), workspaceID); err == nil && snapshot != "" {
+		r.Header.Set("X-Serving-Snapshot", snapshot)
+	}
+}

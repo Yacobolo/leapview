@@ -15,29 +15,32 @@ import (
 	"github.com/Yacobolo/leapview/internal/access"
 	agentcap "github.com/Yacobolo/leapview/internal/agent"
 	agentcontracts "github.com/Yacobolo/leapview/internal/agent/contracts"
+	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
 	"github.com/Yacobolo/leapview/internal/agent/productdocs"
 	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
+	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	"github.com/Yacobolo/leapview/internal/dataquery"
-	"github.com/Yacobolo/leapview/internal/queryaudit"
-	"github.com/Yacobolo/leapview/internal/refreshpipeline"
+	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
+	refreshsqlite "github.com/Yacobolo/leapview/internal/refresh/sqlite"
 	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 	toon "github.com/toon-format/toon-go"
 )
 
-func agentAPIGenToolsForTest(server *Server, scope agentcap.Scope) []agentcore.ToolDefinition {
-	return server.agentAPIGenToolProvider().Definitions(agentToolsScope(scope))
+func agentAPIGenToolsForTest(server *appTestHarness, scope agentcap.Scope) []agentcore.ToolDefinition {
+	return server.routes.agentModule.APIGenToolProvider().Definitions(agentmodule.ToolsScope(scope))
 }
 
-func agentVisualToolsForTest(server *Server, scope agentcap.Scope) []agentcore.ToolDefinition {
-	return agentVisualToolProviderForTest(server).Definitions(agentToolsScope(scope))
+func agentVisualToolsForTest(server *appTestHarness, scope agentcap.Scope) []agentcore.ToolDefinition {
+	return agentVisualToolProviderForTest(server).Definitions(agentmodule.ToolsScope(scope))
 }
 
 func TestAgentDocsToolsSearchAndReadEmbeddedDocumentation(t *testing.T) {
-	definitions := (&Server{}).agentDocsToolProvider().Definitions()
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{})
+	definitions := server.routes.agentModule.DocsToolProvider().Definitions()
 	search, err := definitions[0].Handler.Run(context.Background(), agentcore.ToolCall{
 		ID: "docs-search", Name: agenttools.DocsSearchToolName,
 		Arguments: json.RawMessage(`{"query":"semantic relationships","path":"concepts","limit":1}`),
@@ -88,16 +91,16 @@ func TestAgentDocsToolsSearchAndReadEmbeddedDocumentation(t *testing.T) {
 	}
 }
 
-func runAgentVisualToolForTest(server *Server, ctx context.Context, scope agentcap.Scope, call agentcore.ToolCall) agentcore.ToolResult {
-	return agentVisualToolProviderForTest(server).Run(ctx, agentToolsScope(scope), call)
+func runAgentVisualToolForTest(server *appTestHarness, ctx context.Context, scope agentcap.Scope, call agentcore.ToolCall) agentcore.ToolResult {
+	return agentVisualToolProviderForTest(server).Run(ctx, agentmodule.ToolsScope(scope), call)
 }
 
-func agentVisualToolProviderForTest(server *Server) agenttools.VisualProvider {
-	return server.agentVisualToolProvider()
+func agentVisualToolProviderForTest(server *appTestHarness) agenttools.VisualProvider {
+	return server.routes.agentModule.VisualToolProvider()
 }
 
 func TestAPIGenAgentToolsExposeOnlyGovernedQueryOperations(t *testing.T) {
-	server := NewWithOptions(manyRowsMetrics{}, Options{DefaultWorkspaceID: "test"})
+	server := assembleRuntime(manyRowsMetrics{}, assemblyConfig{DefaultWorkspaceID: "test"})
 	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
 	names := map[string]agentcore.ToolDefinition{}
 	for _, tool := range tools {
@@ -131,7 +134,7 @@ func TestAPIGenAgentToolsExposeOnlyGovernedQueryOperations(t *testing.T) {
 }
 
 func TestAgentVisualToolIsCustomAgentOnlyTool(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{DefaultWorkspaceID: "test"})
 	tools := agentVisualToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true})
 	if len(tools) != 1 || tools[0].Name != agenttools.QueryVisualToolName || tools[0].Handler == nil {
 		t.Fatalf("visual tools = %#v", tools)
@@ -167,7 +170,7 @@ func TestAgentVisualToolIsCustomAgentOnlyTool(t *testing.T) {
 }
 
 func TestAgentVisualToolAcceptsCatalogReferenceIDs(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{DefaultWorkspaceID: "test"})
 	result := runAgentVisualToolForTest(
 		server,
 		context.Background(),
@@ -191,7 +194,7 @@ func TestAgentVisualToolAcceptsCatalogReferenceIDs(t *testing.T) {
 }
 
 func TestAgentAPIGenQueryAuditSurface(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t), DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(testStore(t), assemblyConfig{DefaultWorkspaceID: "test"}))
 	var queryTool agentcore.ToolDefinition
 	for _, tool := range agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true}) {
 		if tool.Name == "query_semantic_model" {
@@ -231,7 +234,7 @@ func TestAgentAPIGenQueryAuditSurface(t *testing.T) {
 }
 
 func TestAgentVisualToolReturnsChartPatchFromSemanticData(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{DefaultWorkspaceID: "test"})
 	tool := agentVisualToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true})[0]
 	result, err := tool.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:   "call_1",
@@ -339,7 +342,7 @@ func TestAgentVisualToolAuthorizesAgainstRequestedDataset(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("grant semantic model query: %v", err)
 	}
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{DefaultWorkspaceID: "test"}))
 	tool := agentVisualToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: principal.ID})[0]
 
 	result, err := tool.Handler.Run(context.Background(), agentcore.ToolCall{
@@ -366,7 +369,7 @@ func TestAgentVisualToolAuthorizesAgainstRequestedDataset(t *testing.T) {
 }
 
 func TestAgentVisualToolReturnsTablePatchFromSemanticData(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{DefaultWorkspaceID: "test"})
 	tool := agentVisualToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true})[0]
 	result, err := tool.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:   "call_1",
@@ -435,7 +438,7 @@ func TestAgentVisualToolReturnsTablePatchFromSemanticData(t *testing.T) {
 }
 
 func TestAgentVisualToolReturnsAggregateTableFromRowsAndMeasures(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{DefaultWorkspaceID: "test"})
 	tool := agentVisualToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true})[0]
 	result, err := tool.Handler.Run(context.Background(), agentcore.ToolCall{
 		ID:   "call_1",
@@ -482,7 +485,7 @@ func TestAgentVisualToolReturnsAggregateTableFromRowsAndMeasures(t *testing.T) {
 }
 
 func TestAgentVisualToolUsesToolCallScopedArtifactIDs(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{DefaultWorkspaceID: "test"})
 	tool := agentVisualToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true})[0]
 	args := json.RawMessage(`{
 		"workspace":"test",
@@ -523,7 +526,7 @@ func TestAgentVisualToolUsesToolCallScopedArtifactIDs(t *testing.T) {
 }
 
 func TestAgentVisualToolRejectsInlineDataAndInteractions(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{DefaultWorkspaceID: "test"})
 	for _, args := range []string{
 		`{"type":"bar","model":"test","dataset":"orders","data":[{"label":"x","value":1}],"measures":[{"field":"order_count"}]}`,
 		`{"type":"bar","model":"test","dataset":"orders","filter":{"field":"orders.status","values":["open"]},"measures":[{"field":"order_count"}]}`,
@@ -537,7 +540,7 @@ func TestAgentVisualToolRejectsInlineDataAndInteractions(t *testing.T) {
 }
 
 func TestAPIGenAgentToolsExposeTypeSpecArgumentNamesAndBodyFields(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{DefaultWorkspaceID: "test"})
 	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
 	names := map[string]agentcore.ToolDefinition{}
 	for _, tool := range tools {
@@ -597,7 +600,7 @@ func TestAPIGenVisualToolKeepsRESTEnvelopeAndUsesProviderProjection(t *testing.T
 }
 
 func TestAPIGenAgentToolDispatchesTabularVisualQuery(t *testing.T) {
-	server := NewWithOptions(manyRowsMetrics{}, Options{DefaultWorkspaceID: "test"})
+	server := assembleRuntime(manyRowsMetrics{}, assemblyConfig{DefaultWorkspaceID: "test"})
 	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
 	var queryVisual agentcore.ToolDefinition
 	for _, tool := range tools {
@@ -692,7 +695,7 @@ func TestAPIGenAgentToolDispatchesTabularVisualQuery(t *testing.T) {
 }
 
 func TestAPIGenAgentToolFetchesSingleDashboardVisualData(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{DefaultWorkspaceID: "test"})
 	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
 	var queryVisual agentcore.ToolDefinition
 	for _, tool := range tools {
@@ -763,7 +766,7 @@ func TestAPIGenAgentToolFetchesSingleDashboardVisualData(t *testing.T) {
 }
 
 func TestAPIGenAgentSemanticQueryToolInjectsBodyDefaultLimit(t *testing.T) {
-	server := NewWithOptions(manySemanticRowsMetrics{}, Options{DefaultWorkspaceID: "test"})
+	server := assembleRuntime(manySemanticRowsMetrics{}, assemblyConfig{DefaultWorkspaceID: "test"})
 	tools := agentAPIGenToolsForTest(server, agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"})
 	var querySemantic agentcore.ToolDefinition
 	for _, tool := range tools {
@@ -838,7 +841,7 @@ func TestAPIGenAgentSemanticQueryToolInjectsBodyDefaultLimit(t *testing.T) {
 
 func TestAPIGenAgentSemanticQueryReturnsLastSuccessfulFreshness(t *testing.T) {
 	store := testStore(t)
-	server := NewWithOptions(manySemanticRowsMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
+	server := assembleRuntime(manySemanticRowsMetrics{}, testStoreOptions(store, assemblyConfig{DefaultWorkspaceID: "test"}))
 	if _, err := store.SQLDB().ExecContext(context.Background(), `
 		INSERT INTO serving_states (id, workspace_id, status, digest, manifest_json, environment)
 		VALUES ('unversioned', 'test', 'active', 'test', '{}', 'dev');
@@ -846,10 +849,10 @@ func TestAPIGenAgentSemanticQueryReturnsLastSuccessfulFreshness(t *testing.T) {
 		t.Fatalf("seed freshness serving state: %v", err)
 	}
 	refreshedAt := time.Date(2026, time.July, 24, 9, 42, 0, 0, time.UTC)
-	if err := server.refreshPipelineRepo.SaveDataVersion(context.Background(), refreshpipeline.DataVersion{
-		WorkspaceID: "test", Environment: server.defaultEnvironment, SemanticModel: "test",
+	if err := refreshsqlite.NewRepository(store.SQLDB()).SaveDataVersion(context.Background(), refreshschedule.DataVersion{
+		WorkspaceID: "test", Environment: "dev", SemanticModel: "test",
 		SnapshotID: 184, ServingStateID: "unversioned", RefreshedAt: refreshedAt,
-		Source: refreshpipeline.DataVersionSourceRefresh,
+		Source: refreshschedule.DataVersionSourceRefresh,
 	}); err != nil {
 		t.Fatalf("save data version: %v", err)
 	}
@@ -973,7 +976,7 @@ func TestAPIGenAgentSemanticQueryReturnsLastSuccessfulFreshness(t *testing.T) {
 }
 
 func TestAPIGenAgentSemanticQueryPreservesNullCells(t *testing.T) {
-	server := NewWithOptions(nullSemanticRowsMetrics{}, Options{DefaultWorkspaceID: "test"})
+	server := assembleRuntime(nullSemanticRowsMetrics{}, assemblyConfig{DefaultWorkspaceID: "test"})
 	var querySemantic agentcore.ToolDefinition
 	for _, tool := range agentAPIGenToolsForTest(server, agentcap.Scope{
 		WorkspaceID: "test", PrincipalID: "principal", DevAuthBypass: true,
@@ -1015,7 +1018,7 @@ func TestAPIGenAgentToolEnforcesCredentialPrivilegeAllowlistAndWorkspace(t *test
 	agentOnlyToken := access.APIToken{WorkspaceID: "test", Privileges: []access.Privilege{access.PrivilegeUseAgent}}
 	queryToken := access.APIToken{WorkspaceID: "test", Privileges: []access.Privilege{access.PrivilegeUseAgent, access.PrivilegeQueryData}}
 	foreignToken := access.APIToken{WorkspaceID: "other", Privileges: []access.Privilege{access.PrivilegeQueryData}}
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, AccessRepo: testAccessRepository(store), DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{AccessRepo: testAccessRepository(store), DefaultWorkspaceID: "test"}))
 
 	run := func(token access.APIToken) agentcore.ToolResult {
 		scope := agentcap.Scope{
@@ -1053,9 +1056,9 @@ func TestAPIGenAgentToolEnforcesCredentialPrivilegeAllowlistAndWorkspace(t *test
 }
 
 func TestRuntimeAgentToolsMatchPolicyRegistry(t *testing.T) {
-	server := NewWithOptions(manyRowsMetrics{}, Options{DefaultWorkspaceID: "test"})
+	server := assembleRuntime(manyRowsMetrics{}, assemblyConfig{DefaultWorkspaceID: "test"})
 	scope := agentcap.Scope{WorkspaceID: "test", PrincipalID: "principal"}
-	runtimeTools := server.agentToolDefinitions(scope)
+	runtimeTools := server.routes.agentModule.ToolDefinitions(scope)
 	if got, want := sortedToolNames(runtimeTools), agenttools.ToolNames(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("runtime tools = %#v, policy registry = %#v", got, want)
 	}
@@ -1064,9 +1067,9 @@ func TestRuntimeAgentToolsMatchPolicyRegistry(t *testing.T) {
 func TestAdminAgentInspectionExposesExactCuratedCatalog(t *testing.T) {
 	store := testStore(t)
 	metrics := manyRowsMetrics{}
-	service := agentcap.NewService(metrics, testAgentRepository(store), agentcap.Config{APIKey: "key", Model: "test-model"})
-	server := NewWithOptions(metrics, Options{Store: store, Agent: service, DefaultWorkspaceID: "test"})
-	details, err := server.adminAgentDetails(context.Background())
+	service := agentcap.NewService(testAgentRepository(store), agentcap.Config{APIKey: "key", Model: "test-model"})
+	server := assembleRuntime(metrics, testStoreOptions(store, assemblyConfig{Agent: service, DefaultWorkspaceID: "test"}))
+	details, err := server.routes.agentModule.HTTP().AdminDetails(context.Background())
 	if err != nil {
 		t.Fatalf("admin agent details: %v", err)
 	}

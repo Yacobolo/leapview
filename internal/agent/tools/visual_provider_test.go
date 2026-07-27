@@ -2,12 +2,14 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
 
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
+	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 )
 
 func TestAgentVisualShapeUsesVisualTypeDefaults(t *testing.T) {
@@ -122,6 +124,29 @@ func TestAgentVisualQueriesApplyGovernedFilters(t *testing.T) {
 	want := []reportdef.QueryFilter{{Field: "orders.country", Operator: "equals", Values: []any{"DK"}}}
 	if !reflect.DeepEqual(captured.Filters, want) {
 		t.Fatalf("query filters = %#v, want %#v", captured.Filters, want)
+	}
+}
+
+func TestVisualProviderDecoratesQueryContextWithScope(t *testing.T) {
+	type contextKey struct{}
+	var authorizedValue string
+	provider := VisualProvider{
+		QueryContext: func(ctx context.Context, scope Scope) context.Context {
+			return context.WithValue(ctx, contextKey{}, scope.PrincipalID)
+		},
+		Authorize: func(ctx context.Context, _ Scope, _ VisualAuthorizationRequest) (agentcore.ToolResult, bool) {
+			authorizedValue, _ = ctx.Value(contextKey{}).(string)
+			return apigenAgentToolError("authorization_failed", "stop after context capture"), false
+		},
+	}
+
+	provider.Run(context.Background(), Scope{PrincipalID: "principal-1"}, agentcore.ToolCall{
+		ID:        "call-visual",
+		Arguments: json.RawMessage(`{"workspace":"sales","type":"bar","model":"orders","dataset":"orders"}`),
+	})
+
+	if authorizedValue != "principal-1" {
+		t.Fatalf("decorated query context principal = %q, want principal-1", authorizedValue)
 	}
 }
 

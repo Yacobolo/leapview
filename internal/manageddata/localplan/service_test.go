@@ -4,15 +4,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	"github.com/Yacobolo/leapview/internal/manageddata"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/workspace/compiler"
 )
 
 func TestServicePlanDiscoversExactAndRecursiveSourcesDeterministically(t *testing.T) {
@@ -23,7 +22,7 @@ func TestServicePlanDiscoversExactAndRecursiveSourcesDeterministically(t *testin
 	writeFile(t, filepath.Join(from, "north", "deep", "b.csv"), "deep")
 	writeFile(t, filepath.Join(from, "north", "ignore.txt"), "ignore")
 
-	project := testProject(filepath.Join(root, "authored-project"), semanticmodel.Connection{Kind: "managed"}, map[string]semanticmodel.Source{
+	project := testProject(filepath.Join(root, "authored-project"), Connection{Kind: "managed"}, map[string]Source{
 		"warehouse.recursive": {Connection: "warehouse", Path: "**/*.csv", Format: "csv"},
 		"warehouse.exact":     {Connection: "warehouse", Path: "exact.csv", Format: "csv"},
 		"warehouse.overlap":   {Connection: "warehouse", Path: "north/**/*.csv", Format: "csv"},
@@ -87,7 +86,7 @@ func TestServicePlanRejectsPathsOutsideConnectionRoot(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "data"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	project := testProject(root, semanticmodel.Connection{Kind: "managed"}, map[string]semanticmodel.Source{
+	project := testProject(root, Connection{Kind: "managed"}, map[string]Source{
 		"warehouse.escape": {Connection: "warehouse", Path: "../outside.csv", Format: "csv"},
 	})
 
@@ -100,7 +99,7 @@ func TestServicePlanRejectsAbsoluteManagedSourcePath(t *testing.T) {
 	from := filepath.Join(root, "data")
 	file := filepath.Join(from, "file.csv")
 	writeFile(t, file, "data")
-	project := testProject(root, semanticmodel.Connection{Kind: "managed"}, map[string]semanticmodel.Source{
+	project := testProject(root, Connection{Kind: "managed"}, map[string]Source{
 		"warehouse.absolute": {Connection: "warehouse", Path: file, Format: "csv"},
 	})
 
@@ -117,7 +116,7 @@ func TestServicePlanDoesNotFollowSymlinks(t *testing.T) {
 	if err := os.Symlink(filepath.Join(root, "outside.csv"), filepath.Join(root, "data", "linked.csv")); err != nil {
 		t.Fatal(err)
 	}
-	project := testProject(root, semanticmodel.Connection{Kind: "managed"}, map[string]semanticmodel.Source{
+	project := testProject(root, Connection{Kind: "managed"}, map[string]Source{
 		"warehouse.link": {Connection: "warehouse", Path: "linked.csv", Format: "csv"},
 	})
 
@@ -132,7 +131,7 @@ func TestServicePlanRecursiveGlobDoesNotTraverseDirectorySymlinks(t *testing.T) 
 	if err := os.Symlink(filepath.Join(root, "outside"), filepath.Join(root, "data", "linked")); err != nil {
 		t.Fatal(err)
 	}
-	project := testProject(root, semanticmodel.Connection{Kind: "managed"}, map[string]semanticmodel.Source{
+	project := testProject(root, Connection{Kind: "managed"}, map[string]Source{
 		"warehouse.files": {Connection: "warehouse", Path: "**/*.csv", Format: "csv"},
 	})
 
@@ -151,7 +150,7 @@ func TestServicePlanRejectsNonRegularAndUnmatchedSources(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(root, "data", "folder.csv"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		project := testProject(root, semanticmodel.Connection{Kind: "managed"}, map[string]semanticmodel.Source{
+		project := testProject(root, Connection{Kind: "managed"}, map[string]Source{
 			"warehouse.directory": {Connection: "warehouse", Path: "folder.csv", Format: "csv"},
 		})
 
@@ -164,7 +163,7 @@ func TestServicePlanRejectsNonRegularAndUnmatchedSources(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(root, "data"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		project := testProject(root, semanticmodel.Connection{Kind: "managed"}, map[string]semanticmodel.Source{
+		project := testProject(root, Connection{Kind: "managed"}, map[string]Source{
 			"warehouse.empty": {Connection: "warehouse", Path: "**/*.csv", Format: "csv"},
 		})
 
@@ -175,7 +174,7 @@ func TestServicePlanRejectsNonRegularAndUnmatchedSources(t *testing.T) {
 
 func TestServicePlanValidatesConnectionAndRequest(t *testing.T) {
 	root := t.TempDir()
-	service := testService(testProject(root, semanticmodel.Connection{Kind: "s3"}, nil))
+	service := testService(testProject(root, Connection{Kind: "s3"}, nil))
 
 	_, err := service.Plan(context.Background(), Request{ProjectPath: "project.yaml", Connection: "warehouse"})
 	assertErrorContains(t, err, "cannot plan managed data")
@@ -186,11 +185,11 @@ func TestServicePlanValidatesConnectionAndRequest(t *testing.T) {
 	_, err = service.Plan(context.Background(), Request{Connection: "warehouse"})
 	assertErrorContains(t, err, "project path is required")
 
-	managed := testService(testProject(root, semanticmodel.Connection{Kind: "managed"}, nil))
+	managed := testService(testProject(root, Connection{Kind: "managed"}, nil))
 	_, err = managed.Plan(context.Background(), Request{ProjectPath: "project.yaml", Connection: "warehouse"})
 	assertErrorContains(t, err, "from is required")
 
-	for name, connection := range map[string]semanticmodel.Connection{
+	for name, connection := range map[string]Connection{
 		"root":  {Kind: "managed", Root: "authored"},
 		"scope": {Kind: "managed", Scope: "authored"},
 	} {
@@ -205,7 +204,7 @@ func TestServicePlanValidatesConnectionAndRequest(t *testing.T) {
 func TestServicePlanRejectsRemovedLocalConnection(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "legacy", "file.csv"), "legacy")
-	project := testProject(root, semanticmodel.Connection{Kind: "local", Root: "legacy"}, map[string]semanticmodel.Source{
+	project := testProject(root, Connection{Kind: "local", Root: "legacy"}, map[string]Source{
 		"warehouse.file": {Connection: "warehouse", Path: "file.csv", Format: "csv"},
 	})
 
@@ -216,7 +215,7 @@ func TestServicePlanRejectsRemovedLocalConnection(t *testing.T) {
 func TestServicePlanHonorsManifestLimits(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "data", "large.csv"), "large")
-	project := testProject(root, semanticmodel.Connection{Kind: "managed"}, map[string]semanticmodel.Source{
+	project := testProject(root, Connection{Kind: "managed"}, map[string]Source{
 		"warehouse.large": {Connection: "warehouse", Path: "large.csv", Format: "csv"},
 	})
 
@@ -233,7 +232,7 @@ func TestServicePlanRejectsFileMutationWhileHashing(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "data", "changing.csv")
 	writeFile(t, file, "before")
-	project := testProject(root, semanticmodel.Connection{Kind: "managed"}, map[string]semanticmodel.Source{
+	project := testProject(root, Connection{Kind: "managed"}, map[string]Source{
 		"warehouse.changing": {Connection: "warehouse", Path: "changing.csv", Format: "csv"},
 	})
 	service := testService(project)
@@ -243,20 +242,22 @@ func TestServicePlanRejectsFileMutationWhileHashing(t *testing.T) {
 	assertErrorContains(t, err, "changed while hashing")
 }
 
-func TestServicePlanPropagatesCompilerLoadErrors(t *testing.T) {
-	_, err := NewService().Plan(context.Background(), Request{
+func TestServicePlanPropagatesProjectLoadErrors(t *testing.T) {
+	service := NewService(func(string) (Project, error) {
+		return Project{}, errors.New("load failed")
+	})
+	_, err := service.Plan(context.Background(), Request{
 		ProjectPath: filepath.Join(t.TempDir(), "missing.yaml"),
 		Connection:  "warehouse",
 	})
 	if err == nil {
-		t.Fatal("Plan() error = nil, want compiler load error")
+		t.Fatal("Plan() error = nil, want project load error")
 	}
 }
 
-func testProject(root string, connection semanticmodel.Connection, sources map[string]semanticmodel.Source) workspacecompiler.Project {
-	return workspacecompiler.Project{
-		BaseDir: root,
-		Connections: map[string]semanticmodel.Connection{
+func testProject(_ string, connection Connection, sources map[string]Source) Project {
+	return Project{
+		Connections: map[string]Connection{
 			"warehouse": connection,
 			"other":     {Kind: "managed"},
 		},
@@ -264,10 +265,8 @@ func testProject(root string, connection semanticmodel.Connection, sources map[s
 	}
 }
 
-func testService(project workspacecompiler.Project) *Service {
-	service := NewService()
-	service.loadProject = func(string) (workspacecompiler.Project, error) { return project, nil }
-	return service
+func testService(project Project) *Service {
+	return NewService(func(string) (Project, error) { return project, nil })
 }
 
 func writeFile(t *testing.T, path, contents string) {

@@ -3,8 +3,6 @@ package publication
 
 import (
 	"errors"
-
-	"github.com/Yacobolo/leapview/internal/workspace"
 )
 
 var (
@@ -43,6 +41,18 @@ type Publication struct {
 	UpdatedAt           string
 }
 
+// Definition is the immutable, compiled authorization boundary for one
+// anonymously published dashboard. DependencyAssetIDs is the complete
+// transitive graph reachable from the dashboard in its serving state.
+type Definition struct {
+	Name                string   `json:"name"`
+	Dashboard           string   `json:"dashboard"`
+	DefaultPage         string   `json:"defaultPage"`
+	AllowedOrigins      []string `json:"allowedOrigins,omitempty"`
+	DependencyAssetIDs  []string `json:"dependencyAssetIds"`
+	ConfigurationDigest string   `json:"configurationDigest"`
+}
+
 func (p Publication) Status() Status {
 	if !p.Configured || p.ServingStateID == "" {
 		return StatusUnconfigured
@@ -58,7 +68,7 @@ type ReconcileInput struct {
 	WorkspaceID    string
 	ServingStateID string
 	ActorID        string
-	Publications   map[string]workspace.DashboardPublication
+	Publications   map[string]Definition
 }
 
 type Event struct {

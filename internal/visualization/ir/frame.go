@@ -217,7 +217,35 @@ func specificationBase(spec VisualizationSpec) (VisualizationSpecBase, error) {
 	if err != nil {
 		return VisualizationSpecBase{}, err
 	}
-	return *base, nil
+	result := *base
+	// Closed variants repeat the JSON discriminator beside the embedded base.
+	// After a JSON round trip the discriminator is decoded into the variant
+	// field, so restore it on the common projection returned to callers.
+	if result.Kind == "" {
+		switch variant := spec.Value.(type) {
+		case *CartesianVisualizationSpec:
+			result.Kind = variant.Kind
+		case *CustomVisualizationSpec:
+			result.Kind = variant.Kind
+		case *GeographicVisualizationSpec:
+			result.Kind = variant.Kind
+		case *HierarchyVisualizationSpec:
+			result.Kind = variant.Kind
+		case *KPIVisualizationSpec:
+			result.Kind = variant.Kind
+		case *MatrixVisualizationSpec:
+			result.Kind = variant.Kind
+		case *PivotVisualizationSpec:
+			result.Kind = variant.Kind
+		case *PolarVisualizationSpec:
+			result.Kind = variant.Kind
+		case *ProportionalVisualizationSpec:
+			result.Kind = variant.Kind
+		case *TableVisualizationSpec:
+			result.Kind = variant.Kind
+		}
+	}
+	return result, nil
 }
 
 // SpecificationBase returns the common, renderer-independent contract shared

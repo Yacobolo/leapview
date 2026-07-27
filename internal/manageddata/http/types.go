@@ -42,6 +42,7 @@ type Options struct {
 	MaxJSONBodyBytes    int64
 	Environment         string
 	EnqueueFinalize     func(context.Context, control.UploadRequest) error
+	BeginFinalize       func(context.Context, control.UploadRequest) (control.UploadResult, error)
 	RecordUploadCreated func(context.Context, control.UploadResult) error
 }
 

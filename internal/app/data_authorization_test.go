@@ -8,7 +8,9 @@ import (
 	"github.com/Yacobolo/leapview/internal/access"
 	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
 	agentcap "github.com/Yacobolo/leapview/internal/agent"
-	queryauthz "github.com/Yacobolo/leapview/internal/analytics/query/authz"
+	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
+	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
+	queryauthz "github.com/Yacobolo/leapview/internal/dashboard/queryauthz"
 	"github.com/Yacobolo/leapview/internal/dataquery"
 )
 
@@ -84,9 +86,13 @@ func TestAgentToolAuthorizationRecordsAuditEvent(t *testing.T) {
 	if _, err := repo.CreateGrant(ctx, access.GrantInput{Object: access.WorkspaceObject("test"), SubjectType: access.SubjectPrincipal, SubjectID: principal.ID, Privilege: access.PrivilegeQueryData}); err != nil {
 		t.Fatalf("grant query: %v", err)
 	}
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{DefaultWorkspaceID: "test"}))
 	ctx = dataquery.WithMetadata(ctx, dataquery.Metadata{RequestID: "tool_call_1", CorrelationID: "agent_corr"})
-	_, ok := server.authorizeAgentPrivilege(ctx, agentcap.Scope{WorkspaceID: "test", PrincipalID: principal.ID}, access.PrivilegeQueryData, []access.ObjectRef{access.WorkspaceObject("test")}, "agent_tool", "create_visual")
+	_, ok := server.routes.agentModule.VisualToolProvider().Authorize(
+		ctx,
+		agentmodule.ToolsScope(agentcap.Scope{WorkspaceID: "test", PrincipalID: principal.ID}),
+		agenttools.VisualAuthorizationRequest{Model: "sales", Dataset: "orders", ToolName: "create_visual"},
+	)
 	if !ok {
 		t.Fatal("authorizeAgentPrivilege ok = false, want true")
 	}

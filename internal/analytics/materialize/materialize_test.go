@@ -15,11 +15,12 @@ import (
 	analyticsduckdb "github.com/Yacobolo/leapview/internal/analytics/duckdb"
 	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
 	analyticsmaterialize "github.com/Yacobolo/leapview/internal/analytics/materialize"
-	analyticsmaterializesqlite "github.com/Yacobolo/leapview/internal/analytics/materialize/sqlite"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	"github.com/Yacobolo/leapview/internal/dataquery"
 	"github.com/Yacobolo/leapview/internal/platform"
-	"github.com/Yacobolo/leapview/internal/refreshpipeline"
+	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
+	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
+	analyticsmaterializesqlite "github.com/Yacobolo/leapview/internal/refresh/sqlite"
 	"github.com/Yacobolo/leapview/internal/workload"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
@@ -912,19 +913,19 @@ func TestRunRepositoryPersistsPrincipalAttribution(t *testing.T) {
 	if stored.PrincipalID != "principal_alice" || stored.PrincipalDisplayName != "Alice" {
 		t.Fatalf("stored attribution = %#v, want Alice principal", stored)
 	}
-	listed, err := repo.ListTargetRuns(ctx, "test", analyticsmaterialize.TargetRefreshPipeline, "test.orders", analyticsmaterialize.RunPage{Limit: 10})
+	listed, err := repo.ListTargetRuns(ctx, "test", refreshrun.TargetRefreshPipeline, "test.orders", refreshrun.RunPage{Limit: 10})
 	if err != nil {
 		t.Fatalf("list model runs: %v", err)
 	}
 	if len(listed) != 1 || listed[0].PrincipalID != "principal_alice" || listed[0].PrincipalDisplayName != "Alice" {
 		t.Fatalf("listed attribution = %#v, want Alice principal", listed)
 	}
-	latest, ok, err := repo.LatestSuccessfulTargetRun(ctx, "test", "dev", analyticsmaterialize.TargetRefreshPipeline, "test.orders")
+	latest, ok, err := repo.LatestSuccessfulTargetRun(ctx, "test", "dev", refreshrun.TargetRefreshPipeline, "test.orders")
 	if err != nil || !ok || latest.PrincipalDisplayName != "Alice" {
 		t.Fatalf("latest attribution = %#v ok=%v err=%v, want Alice", latest, ok, err)
 	}
 
-	if _, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "model.legacy"}); err == nil {
+	if _, err := repo.CreateRun(ctx, refreshrun.RunInput{WorkspaceID: "test", ModelID: "model.legacy"}); err == nil {
 		t.Fatal("legacy-shaped run was accepted")
 	}
 }
@@ -935,7 +936,7 @@ func TestRunRepositoryAtomicallyAttachesScheduledOccurrence(t *testing.T) {
 	defer store.Close()
 	repo := analyticsmaterializesqlite.NewSQLRunRepository(store.SQLDB())
 	scheduledAt := time.Date(2026, 7, 19, 6, 0, 0, 0, time.UTC)
-	occurrence := refreshpipeline.Occurrence{
+	occurrence := refreshschedule.Occurrence{
 		WorkspaceID: "test", Environment: "prod", PipelineID: "orders", ArtifactDigest: "sha256:test", ScheduledAt: scheduledAt,
 	}
 	if _, err := store.SQLDB().ExecContext(ctx, `
@@ -944,7 +945,7 @@ VALUES (?, ?, ?, ?, ?)`, occurrence.WorkspaceID, occurrence.Environment, occurre
 		t.Fatal(err)
 	}
 	input := pipelineRunInput("model.orders", "orders")
-	input.TriggerType = analyticsmaterialize.TriggerSchedule
+	input.TriggerType = refreshrun.TriggerSchedule
 	run, err := repo.CreateScheduledRun(ctx, input, occurrence)
 	if err != nil {
 		t.Fatal(err)
@@ -968,7 +969,7 @@ WHERE workspace_id = ? AND environment = ? AND pipeline_id = ? AND scheduled_at 
 	if _, err := repo.CreateScheduledRun(ctx, input, missing); err == nil {
 		t.Fatal("CreateScheduledRun() without claimed occurrence succeeded")
 	}
-	runs, err := repo.ListRuns(ctx, "test", analyticsmaterialize.RunPage{Limit: 10})
+	runs, err := repo.ListRuns(ctx, "test", refreshrun.RunPage{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -996,16 +997,59 @@ func TestRunRepositoryIsolatesActivePipelinesAndHistoryByEnvironment(t *testing.
 	if dev.Environment != "dev" || prod.Environment != "prod" {
 		t.Fatalf("run environments = %q/%q", dev.Environment, prod.Environment)
 	}
-	devRuns, err := repo.ListRuns(ctx, "test", analyticsmaterialize.RunPage{Limit: 10, Environment: "dev"})
+	devRuns, err := repo.ListRuns(ctx, "test", refreshrun.RunPage{Limit: 10, Environment: "dev"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	prodRuns, err := repo.ListRuns(ctx, "test", analyticsmaterialize.RunPage{Limit: 10, Environment: "prod"})
+	prodRuns, err := repo.ListRuns(ctx, "test", refreshrun.RunPage{Limit: 10, Environment: "prod"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(devRuns) != 1 || devRuns[0].ID != dev.ID || len(prodRuns) != 1 || prodRuns[0].ID != prod.ID {
 		t.Fatalf("environment histories = dev %#v, prod %#v", devRuns, prodRuns)
+	}
+}
+
+func TestRunRepositorySupersedesOlderTargetGenerationAtomically(t *testing.T) {
+	ctx := context.Background()
+	store := openMaterializationStore(t, ctx)
+	defer store.Close()
+	repo := analyticsmaterializesqlite.NewSQLRunRepository(store.SQLDB())
+
+	first, err := repo.CreateRun(ctx, pipelineRunInput("model.orders", "orders"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := repo.CreateRun(ctx, refreshrun.RunInput{
+		WorkspaceID: "test", Environment: "dev", ModelID: "model.orders", ServingStateID: first.ServingStateID,
+		TargetType: refreshrun.TargetModelTable, TargetID: "test.orders", TargetGeneration: first.TargetGeneration,
+		TriggerType: refreshrun.TriggerDependency, ParentRunID: first.ID, JobKind: refreshrun.JobKindChildRun,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, ok, err := repo.ClaimNextExecutableJob(ctx, "dev", "worker-reused", time.Minute)
+	if err != nil || !ok || claimed.RunID != first.ID {
+		t.Fatalf("claim = %#v ok=%v err=%v", claimed, ok, err)
+	}
+	second, err := repo.CreateRun(ctx, pipelineRunInput("model.orders", "orders"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.TargetGeneration != 1 || second.TargetGeneration != 2 {
+		t.Fatalf("generations = %d/%d, want 1/2", first.TargetGeneration, second.TargetGeneration)
+	}
+	for _, id := range []string{first.ID, child.ID} {
+		stored, err := repo.GetRun(ctx, "test", id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stored.Status != refreshrun.RunStatusSuperseded || stored.FinishedAt == "" {
+			t.Fatalf("superseded run %q = %#v", id, stored)
+		}
+	}
+	if err := repo.RenewJobLease(ctx, claimed, time.Minute); !errors.Is(err, refreshrun.ErrLeaseLost) {
+		t.Fatalf("stale generation renewal error = %v, want ErrLeaseLost", err)
 	}
 }
 
@@ -1057,26 +1101,26 @@ func TestRunRepositoryCancelsOnlyQueuedRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	child, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{
+	child, err := repo.CreateRun(ctx, refreshrun.RunInput{
 		WorkspaceID: "test", Environment: "dev", ModelID: "model.orders", ServingStateID: "dep_candidate",
-		TargetType: analyticsmaterialize.TargetModelTable, TargetID: "test.orders", TriggerType: analyticsmaterialize.TriggerDependency,
-		ParentRunID: queued.ID, JobKind: analyticsmaterialize.JobKindChildRun,
+		TargetType: refreshrun.TargetModelTable, TargetID: "test.orders", TriggerType: refreshrun.TriggerDependency,
+		ParentRunID: queued.ID, JobKind: refreshrun.JobKindChildRun,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	cancelled, err := repo.CancelRun(ctx, "test", queued.ID)
-	if err != nil || cancelled.Status != analyticsmaterialize.RunStatusCancelled || cancelled.FinishedAt == "" {
+	if err != nil || cancelled.Status != refreshrun.RunStatusCancelled || cancelled.FinishedAt == "" {
 		t.Fatalf("cancelled = %#v, error = %v", cancelled, err)
 	}
-	if _, err := repo.CancelRun(ctx, "test", queued.ID); !errors.Is(err, analyticsmaterialize.ErrRunNotCancellable) {
+	if _, err := repo.CancelRun(ctx, "test", queued.ID); !errors.Is(err, refreshrun.ErrRunNotCancellable) {
 		t.Fatalf("second cancellation error = %v", err)
 	}
 	storedChild, err := repo.GetRun(ctx, "test", child.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if storedChild.Status != analyticsmaterialize.RunStatusCancelled || storedChild.FinishedAt == "" {
+	if storedChild.Status != refreshrun.RunStatusCancelled || storedChild.FinishedAt == "" {
 		t.Fatalf("child after cancellation = %#v", storedChild)
 	}
 	var candidateStatus string
@@ -1102,7 +1146,7 @@ func TestRunRepositoryPersistsRetryLineageSeparatelyFromChildRuns(t *testing.T) 
 		t.Fatal(err)
 	}
 	retryInput := pipelineRunInput("model.orders", "orders")
-	retryInput.TriggerType = analyticsmaterialize.TriggerRetry
+	retryInput.TriggerType = refreshrun.TriggerRetry
 	retryInput.RetryOf = prior.ID
 	retry, err := repo.CreateRun(ctx, retryInput)
 	if err != nil {
@@ -1145,7 +1189,7 @@ func TestRunRepositoryListsAndFindsLatestByModel(t *testing.T) {
 		t.Fatalf("mark failed: %v", err)
 	}
 
-	runs, err := repo.ListTargetRuns(ctx, "test", analyticsmaterialize.TargetRefreshPipeline, "test.orders", analyticsmaterialize.RunPage{Limit: 10})
+	runs, err := repo.ListTargetRuns(ctx, "test", refreshrun.TargetRefreshPipeline, "test.orders", refreshrun.RunPage{Limit: 10})
 	if err != nil {
 		t.Fatalf("list model runs: %v", err)
 	}
@@ -1158,11 +1202,11 @@ func TestRunRepositoryListsAndFindsLatestByModel(t *testing.T) {
 		}
 	}
 
-	latest, ok, err := repo.LatestTargetRun(ctx, "test", "dev", analyticsmaterialize.TargetRefreshPipeline, "test.orders")
+	latest, ok, err := repo.LatestTargetRun(ctx, "test", "dev", refreshrun.TargetRefreshPipeline, "test.orders")
 	if err != nil || !ok || latest.ID != ordersFailed.ID {
 		t.Fatalf("latest = %#v ok=%v err=%v, want failed latest", latest, ok, err)
 	}
-	latestSucceeded, ok, err := repo.LatestSuccessfulTargetRun(ctx, "test", "dev", analyticsmaterialize.TargetRefreshPipeline, "test.orders")
+	latestSucceeded, ok, err := repo.LatestSuccessfulTargetRun(ctx, "test", "dev", refreshrun.TargetRefreshPipeline, "test.orders")
 	if err != nil || !ok || latestSucceeded.ID != ordersSucceeded.ID {
 		t.Fatalf("latest succeeded = %#v ok=%v err=%v, want older succeeded", latestSucceeded, ok, err)
 	}
@@ -1187,21 +1231,21 @@ func TestRunRepositoryPagesRunsInSQLOrder(t *testing.T) {
 		t.Fatalf("create third run: %v", err)
 	}
 
-	pageOne, err := repo.ListRuns(ctx, "test", analyticsmaterialize.RunPage{Limit: 2})
+	pageOne, err := repo.ListRuns(ctx, "test", refreshrun.RunPage{Limit: 2})
 	if err != nil {
 		t.Fatalf("list first page: %v", err)
 	}
 	if got, want := runIDs(pageOne), []string{third.ID, second.ID}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("first page ids = %#v, want %#v", got, want)
 	}
-	pageTwo, err := repo.ListRuns(ctx, "test", analyticsmaterialize.RunPage{Limit: 2, After: second.ID})
+	pageTwo, err := repo.ListRuns(ctx, "test", refreshrun.RunPage{Limit: 2, After: second.ID})
 	if err != nil {
 		t.Fatalf("list second page: %v", err)
 	}
 	if got, want := runIDs(pageTwo), []string{first.ID}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("second page ids = %#v, want %#v", got, want)
 	}
-	unknown, err := repo.ListRuns(ctx, "test", analyticsmaterialize.RunPage{Limit: 2, After: "matrun_missing"})
+	unknown, err := repo.ListRuns(ctx, "test", refreshrun.RunPage{Limit: 2, After: "matrun_missing"})
 	if err != nil {
 		t.Fatalf("list unknown cursor: %v", err)
 	}
@@ -1238,21 +1282,21 @@ func TestRunRepositoryPagesTargetRunsInSQLOrder(t *testing.T) {
 		t.Fatalf("create third target run: %v", err)
 	}
 
-	pageOne, err := repo.ListTargetRuns(ctx, "test", analyticsmaterialize.TargetRefreshPipeline, "test.orders", analyticsmaterialize.RunPage{Limit: 2})
+	pageOne, err := repo.ListTargetRuns(ctx, "test", refreshrun.TargetRefreshPipeline, "test.orders", refreshrun.RunPage{Limit: 2})
 	if err != nil {
 		t.Fatalf("list first target page: %v", err)
 	}
 	if got, want := runIDs(pageOne), []string{third.ID, second.ID}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("first target page ids = %#v, want %#v", got, want)
 	}
-	pageTwo, err := repo.ListTargetRuns(ctx, "test", analyticsmaterialize.TargetRefreshPipeline, "test.orders", analyticsmaterialize.RunPage{Limit: 2, After: second.ID})
+	pageTwo, err := repo.ListTargetRuns(ctx, "test", refreshrun.TargetRefreshPipeline, "test.orders", refreshrun.RunPage{Limit: 2, After: second.ID})
 	if err != nil {
 		t.Fatalf("list second target page: %v", err)
 	}
 	if got, want := runIDs(pageTwo), []string{first.ID}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("second target page ids = %#v, want %#v", got, want)
 	}
-	unknown, err := repo.ListTargetRuns(ctx, "test", analyticsmaterialize.TargetRefreshPipeline, "test.orders", analyticsmaterialize.RunPage{Limit: 2, After: "matrun_missing"})
+	unknown, err := repo.ListTargetRuns(ctx, "test", refreshrun.TargetRefreshPipeline, "test.orders", refreshrun.RunPage{Limit: 2, After: "matrun_missing"})
 	if err != nil {
 		t.Fatalf("list unknown target cursor: %v", err)
 	}
@@ -1267,27 +1311,27 @@ func TestRunRepositoryPersistsTargetTriggerAndParentRun(t *testing.T) {
 	defer store.Close()
 	repo := analyticsmaterializesqlite.NewSQLRunRepository(store.SQLDB())
 
-	parent, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{
+	parent, err := repo.CreateRun(ctx, refreshrun.RunInput{
 		WorkspaceID:    "test",
 		ModelID:        "olist",
-		TargetType:     analyticsmaterialize.TargetRefreshPipeline,
+		TargetType:     refreshrun.TargetRefreshPipeline,
 		TargetID:       "test.olist",
-		TriggerType:    analyticsmaterialize.TriggerManual,
-		JobKind:        analyticsmaterialize.JobKindRefreshPipeline,
+		TriggerType:    refreshrun.TriggerManual,
+		JobKind:        refreshrun.JobKindRefreshPipeline,
 		ServingStateID: "dep_1",
 	})
 	if err != nil {
 		t.Fatalf("create parent run: %v", err)
 	}
-	child, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{
+	child, err := repo.CreateRun(ctx, refreshrun.RunInput{
 		WorkspaceID:    "test",
 		ModelID:        "olist",
-		TargetType:     analyticsmaterialize.TargetModelTable,
+		TargetType:     refreshrun.TargetModelTable,
 		TargetID:       "olist.orders",
-		TriggerType:    analyticsmaterialize.TriggerDependency,
+		TriggerType:    refreshrun.TriggerDependency,
 		ParentRunID:    parent.ID,
 		ServingStateID: "dep_1",
-		JobKind:        analyticsmaterialize.JobKindChildRun,
+		JobKind:        refreshrun.JobKindChildRun,
 	})
 	if err != nil {
 		t.Fatalf("create child run: %v", err)
@@ -1300,29 +1344,29 @@ func TestRunRepositoryPersistsTargetTriggerAndParentRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get child run: %v", err)
 	}
-	if stored.TargetType != analyticsmaterialize.TargetModelTable || stored.TargetID != "olist.orders" || stored.TriggerType != analyticsmaterialize.TriggerDependency || stored.ParentRunID != parent.ID {
+	if stored.TargetType != refreshrun.TargetModelTable || stored.TargetID != "olist.orders" || stored.TriggerType != refreshrun.TriggerDependency || stored.ParentRunID != parent.ID {
 		t.Fatalf("child run metadata = %#v", stored)
 	}
-	tableRuns, err := repo.ListTargetRuns(ctx, "test", analyticsmaterialize.TargetModelTable, "olist.orders", analyticsmaterialize.RunPage{Limit: 10})
+	tableRuns, err := repo.ListTargetRuns(ctx, "test", refreshrun.TargetModelTable, "olist.orders", refreshrun.RunPage{Limit: 10})
 	if err != nil {
 		t.Fatalf("list table runs: %v", err)
 	}
 	if len(tableRuns) != 1 || tableRuns[0].ID != child.ID {
 		t.Fatalf("table runs = %#v, want child only", tableRuns)
 	}
-	modelRuns, err := repo.ListRuns(ctx, "test", analyticsmaterialize.RunPage{Limit: 10})
+	modelRuns, err := repo.ListRuns(ctx, "test", refreshrun.RunPage{Limit: 10})
 	if err != nil {
 		t.Fatalf("list model runs: %v", err)
 	}
 	if len(modelRuns) != 1 || modelRuns[0].ID != parent.ID {
 		t.Fatalf("semantic model runs = %#v, want parent only", modelRuns)
 	}
-	latest, ok, err := repo.LatestSuccessfulTargetRun(ctx, "test", "dev", analyticsmaterialize.TargetModelTable, "olist.orders")
+	latest, ok, err := repo.LatestSuccessfulTargetRun(ctx, "test", "dev", refreshrun.TargetModelTable, "olist.orders")
 	if err != nil || !ok || latest.ID != child.ID {
 		t.Fatalf("latest successful table run = %#v ok=%v err=%v, want child", latest, ok, err)
 	}
 
-	if _, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{WorkspaceID: "test", ModelID: "legacy"}); err == nil {
+	if _, err := repo.CreateRun(ctx, refreshrun.RunInput{WorkspaceID: "test", ModelID: "legacy"}); err == nil {
 		t.Fatal("legacy-shaped run was accepted")
 	}
 }
@@ -1340,14 +1384,14 @@ func TestRunRepositoryFailsRunsForTerminalDeployments(t *testing.T) {
 		t.Fatalf("seed failed deployment: %v", err)
 	}
 
-	failedDeploymentRun, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{
+	failedDeploymentRun, err := repo.CreateRun(ctx, refreshrun.RunInput{
 		WorkspaceID:    "test",
 		ModelID:        "olist",
 		ServingStateID: "dep_failed",
-		TargetType:     analyticsmaterialize.TargetRefreshPipeline,
+		TargetType:     refreshrun.TargetRefreshPipeline,
 		TargetID:       "test.orders",
-		TriggerType:    analyticsmaterialize.TriggerManual,
-		JobKind:        analyticsmaterialize.JobKindRefreshPipeline,
+		TriggerType:    refreshrun.TriggerManual,
+		JobKind:        refreshrun.JobKindRefreshPipeline,
 	})
 	if err != nil {
 		t.Fatalf("create terminal deployment run: %v", err)
@@ -1355,14 +1399,14 @@ func TestRunRepositoryFailsRunsForTerminalDeployments(t *testing.T) {
 	if _, err := repo.MarkRunRunning(ctx, "test", failedDeploymentRun.ID); err != nil {
 		t.Fatalf("mark terminal deployment run running: %v", err)
 	}
-	otherEnvironmentRun, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{
+	otherEnvironmentRun, err := repo.CreateRun(ctx, refreshrun.RunInput{
 		WorkspaceID:    "test",
 		ModelID:        "olist",
 		ServingStateID: "dep_prod_failed",
-		TargetType:     analyticsmaterialize.TargetRefreshPipeline,
+		TargetType:     refreshrun.TargetRefreshPipeline,
 		TargetID:       "test.prod-orders",
-		TriggerType:    analyticsmaterialize.TriggerManual,
-		JobKind:        analyticsmaterialize.JobKindRefreshPipeline,
+		TriggerType:    refreshrun.TriggerManual,
+		JobKind:        refreshrun.JobKindRefreshPipeline,
 	})
 	if err != nil {
 		t.Fatalf("create other environment run: %v", err)
@@ -1370,14 +1414,14 @@ func TestRunRepositoryFailsRunsForTerminalDeployments(t *testing.T) {
 	if _, err := repo.MarkRunRunning(ctx, "test", otherEnvironmentRun.ID); err != nil {
 		t.Fatalf("mark other environment run running: %v", err)
 	}
-	activeDeploymentRun, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{
+	activeDeploymentRun, err := repo.CreateRun(ctx, refreshrun.RunInput{
 		WorkspaceID:    "test",
 		ModelID:        "olist",
 		ServingStateID: "dep_1",
-		TargetType:     analyticsmaterialize.TargetRefreshPipeline,
+		TargetType:     refreshrun.TargetRefreshPipeline,
 		TargetID:       "test.customers",
-		TriggerType:    analyticsmaterialize.TriggerManual,
-		JobKind:        analyticsmaterialize.JobKindRefreshPipeline,
+		TriggerType:    refreshrun.TriggerManual,
+		JobKind:        refreshrun.JobKindRefreshPipeline,
 	})
 	if err != nil {
 		t.Fatalf("create active deployment run: %v", err)
@@ -1394,21 +1438,21 @@ func TestRunRepositoryFailsRunsForTerminalDeployments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get failed deployment run: %v", err)
 	}
-	if storedFailed.Status != analyticsmaterialize.RunStatusFailed || storedFailed.Error != "refresh did not complete" || storedFailed.FinishedAt == "" {
+	if storedFailed.Status != refreshrun.RunStatusFailed || storedFailed.Error != "refresh did not complete" || storedFailed.FinishedAt == "" {
 		t.Fatalf("failed deployment run = %#v, want failed with message and finish time", storedFailed)
 	}
 	storedActive, err := repo.GetRun(ctx, "test", activeDeploymentRun.ID)
 	if err != nil {
 		t.Fatalf("get active deployment run: %v", err)
 	}
-	if storedActive.Status != analyticsmaterialize.RunStatusRunning || storedActive.Error != "" || storedActive.FinishedAt != "" {
+	if storedActive.Status != refreshrun.RunStatusRunning || storedActive.Error != "" || storedActive.FinishedAt != "" {
 		t.Fatalf("active deployment run = %#v, want still running", storedActive)
 	}
 	storedOther, err := repo.GetRun(ctx, "test", otherEnvironmentRun.ID)
 	if err != nil {
 		t.Fatalf("get other environment run: %v", err)
 	}
-	if storedOther.Status != analyticsmaterialize.RunStatusRunning {
+	if storedOther.Status != refreshrun.RunStatusRunning {
 		t.Fatalf("other environment run status = %q, want running", storedOther.Status)
 	}
 }
@@ -1419,28 +1463,28 @@ func TestRunRepositoryClaimsExecutableRootJobs(t *testing.T) {
 	defer store.Close()
 	repo := analyticsmaterializesqlite.NewSQLRunRepository(store.SQLDB())
 
-	parent, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{
+	parent, err := repo.CreateRun(ctx, refreshrun.RunInput{
 		WorkspaceID:    "test",
 		ModelID:        "olist",
 		ServingStateID: "dep_1",
-		TargetType:     analyticsmaterialize.TargetRefreshPipeline,
+		TargetType:     refreshrun.TargetRefreshPipeline,
 		TargetID:       "test.olist",
-		TriggerType:    analyticsmaterialize.TriggerManual,
-		JobKind:        analyticsmaterialize.JobKindRefreshPipeline,
+		TriggerType:    refreshrun.TriggerManual,
+		JobKind:        refreshrun.JobKindRefreshPipeline,
 		PayloadJSON:    `{"pipelineId":"olist"}`,
 	})
 	if err != nil {
 		t.Fatalf("create parent run: %v", err)
 	}
-	if _, err := repo.CreateRun(ctx, analyticsmaterialize.RunInput{
+	if _, err := repo.CreateRun(ctx, refreshrun.RunInput{
 		WorkspaceID:    "test",
 		ModelID:        "olist",
-		TargetType:     analyticsmaterialize.TargetModelTable,
+		TargetType:     refreshrun.TargetModelTable,
 		TargetID:       "olist.orders",
-		TriggerType:    analyticsmaterialize.TriggerDependency,
+		TriggerType:    refreshrun.TriggerDependency,
 		ParentRunID:    parent.ID,
 		ServingStateID: "dep_1",
-		JobKind:        analyticsmaterialize.JobKindChildRun,
+		JobKind:        refreshrun.JobKindChildRun,
 	}); err != nil {
 		t.Fatalf("create child run: %v", err)
 	}
@@ -1452,14 +1496,14 @@ func TestRunRepositoryClaimsExecutableRootJobs(t *testing.T) {
 	if !ok {
 		t.Fatal("expected queued root job")
 	}
-	if job.RunID != parent.ID || job.Kind != analyticsmaterialize.JobKindRefreshPipeline || job.AttemptCount != 1 {
+	if job.RunID != parent.ID || job.Kind != refreshrun.JobKindRefreshPipeline || job.AttemptCount != 1 {
 		t.Fatalf("claimed job = %#v, want parent workspace refresh attempt 1", job)
 	}
 	stored, err := repo.GetRun(ctx, "test", parent.ID)
 	if err != nil {
 		t.Fatalf("get parent run: %v", err)
 	}
-	if stored.Status != analyticsmaterialize.RunStatusRunning || stored.StartedAt == "" {
+	if stored.Status != refreshrun.RunStatusRunning || stored.StartedAt == "" {
 		t.Fatalf("parent run = %#v, want running with start time", stored)
 	}
 	if _, ok, err := repo.ClaimNextExecutableJob(ctx, "dev", "worker-1", time.Minute); err != nil || ok {
@@ -1496,7 +1540,7 @@ func TestRunRepositoryReclaimsExpiredJobLease(t *testing.T) {
 	if !ok || reclaimed.ID != job.ID || reclaimed.RunID != run.ID || reclaimed.AttemptCount != 2 {
 		t.Fatalf("reclaimed job = %#v ok=%v, want same job attempt 2", reclaimed, ok)
 	}
-	if err := repo.RenewJobLease(ctx, reclaimed.ID, "worker-2", time.Minute); err != nil {
+	if err := repo.RenewJobLease(ctx, reclaimed, time.Minute); err != nil {
 		t.Fatalf("renew lease: %v", err)
 	}
 	var owner string
@@ -1554,7 +1598,7 @@ func TestRunRepositoryReportsDurableQueueStats(t *testing.T) {
 	}
 }
 
-func runIDs(runs []analyticsmaterialize.RunRecord) []string {
+func runIDs(runs []refreshrun.RunRecord) []string {
 	ids := make([]string, 0, len(runs))
 	for _, run := range runs {
 		ids = append(ids, run.ID)
@@ -1562,15 +1606,15 @@ func runIDs(runs []analyticsmaterialize.RunRecord) []string {
 	return ids
 }
 
-func pipelineRunInput(modelID, pipelineID string) analyticsmaterialize.RunInput {
-	return analyticsmaterialize.RunInput{
+func pipelineRunInput(modelID, pipelineID string) refreshrun.RunInput {
+	return refreshrun.RunInput{
 		WorkspaceID:    "test",
 		ModelID:        modelID,
 		ServingStateID: "dep_1",
-		TargetType:     analyticsmaterialize.TargetRefreshPipeline,
+		TargetType:     refreshrun.TargetRefreshPipeline,
 		TargetID:       "test." + pipelineID,
-		TriggerType:    analyticsmaterialize.TriggerManual,
-		JobKind:        analyticsmaterialize.JobKindRefreshPipeline,
+		TriggerType:    refreshrun.TriggerManual,
+		JobKind:        refreshrun.JobKindRefreshPipeline,
 	}
 }
 

@@ -7,8 +7,8 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/admin/storage"
+	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
 	"github.com/Yacobolo/leapview/internal/api"
-	"github.com/Yacobolo/leapview/internal/queryaudit"
 	"github.com/Yacobolo/leapview/internal/ui"
 	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
 	"github.com/Yacobolo/leapview/internal/workspace"
@@ -26,17 +26,26 @@ type CSRFTokenProvider func(*http.Request) string
 type CurrentPrincipalProvider func(*http.Request) (Principal, bool)
 type PublicationProvider func(*http.Request) ([]ui.AdminPublication, bool, error)
 
+type AccessReader interface {
+	ListPrincipals(context.Context, access.PrincipalFilter) ([]access.Principal, error)
+	ListAllGroups(context.Context) ([]access.Group, error)
+	ListGroupMembersByGroup(context.Context, string) ([]access.GroupMember, error)
+	ListRoles(context.Context) ([]access.Role, error)
+	ListAllRoleBindings(context.Context) ([]access.RoleBinding, error)
+	Authorize(context.Context, string, access.Privilege, access.ObjectRef) (access.AuthorizationDecision, error)
+}
+
 type ReadModel struct {
-	AccessRepository     func() (access.Repository, error)
-	AgentDetails         AgentDetailsProvider
-	StorageService       storage.Service
-	QueryAuditRepository QueryAuditRepositoryProvider
-	CSRFToken            CSRFTokenProvider
-	CurrentPrincipal     CurrentPrincipalProvider
-	Publications         PublicationProvider
-	DefaultWorkspaceID   string
-	AuthConfigured       bool
-	AccessConfigured     bool
+	Access             AccessReader
+	AgentDetails       AgentDetailsProvider
+	StorageService     storage.Service
+	QueryAuditReader   QueryAuditReaderProvider
+	CSRFToken          CSRFTokenProvider
+	CurrentPrincipal   CurrentPrincipalProvider
+	Publications       PublicationProvider
+	DefaultWorkspaceID string
+	AuthConfigured     bool
+	AccessConfigured   bool
 }
 
 func (m ReadModel) Data(r *http.Request) (ui.AdminData, error) {
@@ -58,10 +67,7 @@ func (m ReadModel) Data(r *http.Request) (ui.AdminData, error) {
 			return data, err
 		}
 	}
-	repo, err := m.accessRepository()
-	if err != nil {
-		return data, err
-	}
+	repo := m.Access
 	if repo == nil {
 		data.AccessConfigured = false
 		data.AccessStatusLabel = "Access store is not configured"
@@ -146,9 +152,9 @@ func (m ReadModel) agentData(r *http.Request) (ui.AdminAgentData, error) {
 	if !ok || principal.DevBypass {
 		return data, nil
 	}
-	repo, err := m.accessRepository()
-	if err != nil || repo == nil {
-		return data, err
+	repo := m.Access
+	if repo == nil {
+		return data, nil
 	}
 	decision, err := repo.Authorize(r.Context(), principal.ID, access.PrivilegeManageGrants, access.WorkspaceObject(m.DefaultWorkspaceID))
 	if err != nil {
@@ -158,7 +164,7 @@ func (m ReadModel) agentData(r *http.Request) (ui.AdminAgentData, error) {
 	return data, nil
 }
 
-func (m ReadModel) principalsData(r *http.Request, repo access.Repository) ([]ui.AdminPrincipal, error) {
+func (m ReadModel) principalsData(r *http.Request, repo AccessReader) ([]ui.AdminPrincipal, error) {
 	rows, err := repo.ListPrincipals(r.Context(), access.PrincipalFilter{
 		Email: r.URL.Query().Get("email"),
 		Query: r.URL.Query().Get("q"),
@@ -182,7 +188,7 @@ func (m ReadModel) principalsData(r *http.Request, repo access.Repository) ([]ui
 	return principals, nil
 }
 
-func groupMembersData(r *http.Request, repo access.Repository, groupID string) []ui.AdminPrincipalRef {
+func groupMembersData(r *http.Request, repo AccessReader, groupID string) []ui.AdminPrincipalRef {
 	rows, err := repo.ListGroupMembersByGroup(r.Context(), groupID)
 	if err != nil {
 		return nil
@@ -198,7 +204,7 @@ func groupMembersData(r *http.Request, repo access.Repository, groupID string) [
 	return members
 }
 
-func (m ReadModel) roleBindingsAndRoles(r *http.Request, repo access.Repository) ([]workspace.RoleBindingView, []workspace.RoleView, error) {
+func (m ReadModel) roleBindingsAndRoles(r *http.Request, repo AccessReader) ([]workspace.RoleBindingView, []workspace.RoleView, error) {
 	if repo == nil {
 		return nil, defaultRoleViews(), nil
 	}
@@ -218,7 +224,7 @@ func (m ReadModel) roleBindingsAndRoles(r *http.Request, repo access.Repository)
 }
 
 func (m ReadModel) QueryHistoryData(r *http.Request, filters uisignals.AdminQueryHistoryFilters, pageToken string, limit int) ui.AdminQueryHistoryData {
-	repo, err := m.queryAuditRepository()
+	repo, err := m.queryAuditReader()
 	if err != nil || repo == nil {
 		return ui.AdminQueryHistoryData{Filters: filters, Limit: normalizeQueryHistoryLimit(limit), Error: queryHistoryErrorText(err)}
 	}
@@ -254,18 +260,11 @@ func (m ReadModel) PrincipalLabels(r *http.Request, values []string) map[string]
 	return labels
 }
 
-func (m ReadModel) accessRepository() (access.Repository, error) {
-	if m.AccessRepository == nil {
+func (m ReadModel) queryAuditReader() (queryaudit.Reader, error) {
+	if m.QueryAuditReader == nil {
 		return nil, nil
 	}
-	return m.AccessRepository()
-}
-
-func (m ReadModel) queryAuditRepository() (queryaudit.Repository, error) {
-	if m.QueryAuditRepository == nil {
-		return nil, nil
-	}
-	return m.QueryAuditRepository()
+	return m.QueryAuditReader()
 }
 
 func (m ReadModel) agentDetails(ctx context.Context) (api.AdminAgentResponse, error) {

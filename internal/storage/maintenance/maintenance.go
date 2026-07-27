@@ -8,14 +8,21 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 )
 
 type ServingStateRepository interface {
-	ReconcileRetention(ctx context.Context, environment servingstate.Environment, now time.Time) error
+	ReconcileRetention(ctx context.Context, environment string, now time.Time) error
 	ReferencedDuckLakeSnapshots(ctx context.Context, environment string) ([]int64, error)
+}
+
+// SnapshotMaintenance is the analytical storage capability consumed by
+// retention. The concrete DuckLake environment remains owned by analytics.
+type SnapshotMaintenance interface {
+	SnapshotIDs(ctx context.Context) ([]int64, error)
+	RetentionCandidates(ctx context.Context, protected map[int64]struct{}) ([]int64, error)
+	ExpireSnapshots(ctx context.Context, versions []int64, dryRun bool) error
+	CleanupOldFiles(ctx context.Context, dryRun bool) error
+	DeleteOrphanedFiles(ctx context.Context, dryRun bool) error
 }
 
 type snapshotProtectionRepository interface {
@@ -32,12 +39,11 @@ type foreignSnapshotProtectionRepository interface {
 }
 
 type Options struct {
-	DuckDBEnvironment            *analyticsducklake.Environment
-	RootDir                      string
+	Snapshots                    SnapshotMaintenance
 	CatalogPath                  string
 	DataPath                     string
 	AdditionalProtectedSnapshots []int64
-	Environment                  servingstate.Environment
+	Environment                  string
 	DryRun                       bool
 	Out                          io.Writer
 }
@@ -54,13 +60,13 @@ func Run(ctx context.Context, repo ServingStateRepository, options Options) (Rep
 	if repo == nil {
 		return Report{}, fmt.Errorf("serving state repository is required")
 	}
-	environment := servingstate.Environment(strings.TrimSpace(string(options.Environment)))
+	environment := strings.TrimSpace(options.Environment)
 	if environment == "" {
 		return Report{}, fmt.Errorf("instance environment is required")
 	}
 	if !options.DryRun {
 		if leases, ok := repo.(expiredLeaseReconciler); ok {
-			if err := leases.ReleaseExpiredQuerySnapshotLeases(ctx, string(environment)); err != nil {
+			if err := leases.ReleaseExpiredQuerySnapshotLeases(ctx, environment); err != nil {
 				return Report{}, err
 			}
 		}
@@ -68,26 +74,21 @@ func Run(ctx context.Context, repo ServingStateRepository, options Options) (Rep
 			return Report{}, err
 		}
 	}
-	active, leased, foreign, err := protectedSnapshots(ctx, repo, string(environment))
+	active, leased, foreign, err := protectedSnapshots(ctx, repo, environment)
 	if err != nil {
 		return Report{}, err
 	}
-	env := options.DuckDBEnvironment
-	if env == nil {
-		var err error
-		env, err = analyticsducklake.Open(ctx, analyticsducklake.Config{RootDir: options.RootDir, CatalogPath: options.CatalogPath, DataPath: options.DataPath})
-		if err != nil {
-			return Report{}, err
-		}
-		defer env.Close()
+	snapshots := options.Snapshots
+	if snapshots == nil {
+		return Report{}, fmt.Errorf("snapshot maintenance is required")
 	}
-	snapshots, err := env.Snapshots(ctx)
+	snapshotIDs, err := snapshots.SnapshotIDs(ctx)
 	if err != nil {
 		return Report{}, err
 	}
 	snapshotSet := map[int64]struct{}{}
-	for _, snapshot := range snapshots {
-		snapshotSet[snapshot.ID] = struct{}{}
+	for _, snapshotID := range snapshotIDs {
+		snapshotSet[snapshotID] = struct{}{}
 	}
 	protected := map[int64]struct{}{}
 	for _, snapshotID := range active {
@@ -114,7 +115,7 @@ func Run(ctx context.Context, repo ServingStateRepository, options Options) (Rep
 	if len(missing) > 0 {
 		return Report{}, fmt.Errorf("serving states reference missing DuckLake snapshots: %s", FormatSnapshotIDs(missing))
 	}
-	candidates, err := env.RetentionCandidates(ctx, protected)
+	candidates, err := snapshots.RetentionCandidates(ctx, protected)
 	if err != nil {
 		return Report{}, err
 	}
@@ -137,13 +138,13 @@ func Run(ctx context.Context, repo ServingStateRepository, options Options) (Rep
 			Candidates:                candidates,
 		}, nil
 	}
-	if err := env.ExpireSnapshots(ctx, candidates, options.DryRun); err != nil {
+	if err := snapshots.ExpireSnapshots(ctx, candidates, options.DryRun); err != nil {
 		return Report{}, fmt.Errorf("expire snapshots: %w", err)
 	}
-	if err := env.CleanupOldFiles(ctx, options.DryRun); err != nil {
+	if err := snapshots.CleanupOldFiles(ctx, options.DryRun); err != nil {
 		return Report{}, fmt.Errorf("cleanup old files: %w", err)
 	}
-	if err := env.DeleteOrphanedFiles(ctx, options.DryRun); err != nil {
+	if err := snapshots.DeleteOrphanedFiles(ctx, options.DryRun); err != nil {
 		return Report{}, fmt.Errorf("delete orphaned files: %w", err)
 	}
 	return Report{

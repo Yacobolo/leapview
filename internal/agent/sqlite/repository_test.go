@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -10,6 +11,9 @@ import (
 	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
 	"github.com/Yacobolo/leapview/internal/agent"
 	"github.com/Yacobolo/leapview/internal/platform"
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
+	jobsqlite "github.com/Yacobolo/leapview/internal/platform/jobs/sqlite"
+	"github.com/Yacobolo/leapview/internal/platform/transaction"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
 )
@@ -228,6 +232,44 @@ func TestRepositoryScopesConversationsToPrincipal(t *testing.T) {
 	}
 }
 
+func TestActivateRunWorkflowRollsBackRunningTransitionOnFailure(t *testing.T) {
+	ctx := context.Background()
+	store, base := openAgentRepo(t, ctx)
+	owner := createAgentPrincipal(t, ctx, store, "atomic-owner@example.com")
+	conversation, err := base.CreateConversation(ctx, agent.ConversationInput{PrincipalID: owner.ID, Title: "Atomic run"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	injected := errors.New("injected workflow failure")
+	repo := NewRepositoryWithWorkflow(
+		store.SQLDB(),
+		jobsqlite.NewRepository(store.SQLDB()),
+		jobs.WorkflowRecorderFunc(func(context.Context, transaction.Transaction, jobs.WorkflowIntent) error {
+			return injected
+		}),
+	)
+	run, err := repo.CreateRun(ctx, agent.RunInput{
+		PrincipalID: owner.ID, ConversationID: conversation.ID, RunID: "run_atomic",
+		Model: "gpt-test", MetadataJSON: `{}`, Status: agent.RunStatusPreparing,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = repo.ActivateRunWorkflow(ctx, owner.ID, conversation.ID, run.ID, jobs.WorkflowIntent{
+		Job: jobs.EnqueueInput{ID: "agent:" + run.ID + ":run"},
+	})
+	if !errors.Is(err, injected) {
+		t.Fatalf("ActivateRunWorkflow() error = %v, want injected failure", err)
+	}
+	current, err := repo.GetRun(ctx, owner.ID, conversation.ID, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Status != agent.RunStatusPreparing {
+		t.Fatalf("status after workflow failure = %q, want preparing", current.Status)
+	}
+}
+
 func TestRepositoryRejectsInvalidJSON(t *testing.T) {
 	ctx := context.Background()
 	store, repo := openAgentRepo(t, ctx)
@@ -270,7 +312,7 @@ func openAgentRepo(t *testing.T, ctx context.Context) (*platform.Store, *Reposit
 	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
 		t.Fatalf("ensure workspace: %v", err)
 	}
-	return store, NewRepository(store.SQLDB())
+	return store, NewRepositoryWithEvents(store.SQLDB(), jobsqlite.NewRepository(store.SQLDB()))
 }
 
 func createAgentPrincipal(t *testing.T, ctx context.Context, store *platform.Store, email string) access.Principal {

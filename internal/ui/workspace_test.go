@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
+	"github.com/Yacobolo/leapview/internal/catalog"
 	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
 	workspaceview "github.com/Yacobolo/leapview/internal/workspace"
 )
@@ -1312,9 +1312,9 @@ func tableHasRelation(grid recordTable, relation string) bool {
 	return false
 }
 
-func testWorkspaceAssetFixtures() (workspaceview.WorkspaceView, dashboard.Catalog, []workspaceview.AssetView, []workspaceview.AssetEdgeView) {
+func testWorkspaceAssetFixtures() (workspaceview.WorkspaceView, catalog.Catalog, []workspaceview.AssetView, []workspaceview.AssetEdgeView) {
 	workspace := workspaceview.WorkspaceView{ID: "leapview", Title: "LeapView Workspace", Description: "Local BI workspace."}
-	catalog := dashboard.Catalog{Workspace: dashboard.CatalogWorkspace{ID: workspace.ID, Title: workspace.Title, Description: workspace.Description}}
+	catalog := catalog.Catalog{Workspace: catalog.Workspace{ID: workspace.ID, Title: workspace.Title, Description: workspace.Description}}
 	assets := []workspaceview.AssetView{
 		{ID: "catalog:leapview", WorkspaceID: workspace.ID, Type: "catalog", Key: workspace.ID, Title: workspace.Title, Description: workspace.Description},
 		{

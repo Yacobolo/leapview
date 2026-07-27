@@ -16,7 +16,7 @@ func TestGetInstanceReturnsConfiguredEnvironment(t *testing.T) {
 	principal := testPrincipal(t, context.Background(), store, "publisher@example.com", "Publisher", access.RoleOwner)
 	token, _ := testScopedAPIToken(t, context.Background(), store, access.APITokenInput{PrincipalID: principal.ID, Name: "publisher", Privileges: []access.Privilege{access.PrivilegeIngestData}})
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(nil, Options{Store: store, Auth: auth, DefaultEnvironment: "prod"})
+	server := assembleRuntime(nil, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultEnvironment: "prod"}))
 	unauthenticated := httptest.NewRecorder()
 	server.Routes().ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, "/api/v1/instance", nil))
 	if unauthenticated.Code != http.StatusUnauthorized {

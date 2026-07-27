@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/Yacobolo/leapview/internal/access"
-	platformdb "github.com/Yacobolo/leapview/internal/platform/db"
+	platformdb "github.com/Yacobolo/leapview/internal/access/sqlite/accessdb"
 	"strings"
 	"time"
 )

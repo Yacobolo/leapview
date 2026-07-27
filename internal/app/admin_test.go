@@ -16,8 +16,9 @@ import (
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/agent"
 	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
+	analyticsmodule "github.com/Yacobolo/leapview/internal/analytics/module"
+	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
 	"github.com/Yacobolo/leapview/internal/platform"
-	"github.com/Yacobolo/leapview/internal/queryaudit"
 	"github.com/Yacobolo/leapview/internal/ui"
 	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
@@ -63,7 +64,7 @@ func TestAdminRouteRejectsViewer(t *testing.T) {
 	viewer := testPrincipal(t, ctx, store, "viewer@example.com", "Viewer", access.RoleViewer)
 	token := testAPIToken(t, ctx, store, viewer.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test"}))
 
 	for _, tc := range []struct {
 		method string
@@ -105,7 +106,7 @@ func TestAdminPagesRenderReadOnlyAccessData(t *testing.T) {
 	}
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, Agent: agent.NewService(fakeMetrics{}, testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, Agent: agent.NewService(testAgentRepository(store), agent.Config{APIKey: "key", Model: "fake-model"}), DefaultWorkspaceID: "test"}))
 
 	cases := []struct {
 		path string
@@ -149,11 +150,8 @@ func TestAdminQueryHistoryCommandPublishesLoadMorePatch(t *testing.T) {
 	owner := testPlatformPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleAdmin)
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
-	repo, err := server.queryAuditRepository()
-	if err != nil || repo == nil {
-		t.Fatalf("query audit repository: %v", err)
-	}
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test"}))
+	repo := queryAuditRepositoryForTest(t, server)
 	for _, event := range []queryaudit.EventInput{
 		{WorkspaceID: "sales", PrincipalID: owner.ID, Surface: "api", Operation: "api_query", QueryKind: "semantic_rows", ModelID: "sales", Target: "orders", Status: "success", SQL: "select 1"},
 		{WorkspaceID: "sales", PrincipalID: owner.ID, Surface: "dashboard", Operation: "dashboard_visual", QueryKind: "semantic_rows", ModelID: "sales", Target: "customers", Status: "success", SQL: "select 2"},
@@ -173,7 +171,7 @@ func TestAdminQueryHistoryCommandPublishesLoadMorePatch(t *testing.T) {
 	if err != nil || len(expectedNext) != 1 {
 		t.Fatalf("next page = %d, err=%v", len(expectedNext), err)
 	}
-	updates, unsubscribe := server.broker.Subscribe("admin-queries:test-client")
+	updates, unsubscribe := server.runtime.broker.Subscribe("admin-queries:test-client")
 	defer unsubscribe()
 
 	body := strings.NewReader(`{"adminQueryHistory":{"table":{"rows":[{"id":"existing","query":{"label":"select 1","expandedContent":"select 1"}}]}},"adminQueryHistoryCommand":{"action":"load_more","pageToken":"` + nextCursor + `","limit":2}}`)
@@ -217,11 +215,8 @@ func TestAdminQueryHistoryCommandPublishesFilteredResetPatch(t *testing.T) {
 	owner := testPlatformPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleAdmin)
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
-	repo, err := server.queryAuditRepository()
-	if err != nil || repo == nil {
-		t.Fatalf("query audit repository: %v", err)
-	}
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test"}))
+	repo := queryAuditRepositoryForTest(t, server)
 	for _, event := range []queryaudit.EventInput{
 		{WorkspaceID: "sales", PrincipalID: owner.ID, Surface: "api", Operation: "api_query", QueryKind: "semantic_rows", ModelID: "sales", Target: "orders", Status: "success", SQL: "select orders"},
 		{WorkspaceID: "operations", PrincipalID: owner.ID, Surface: "agent", Operation: "agent_query", QueryKind: "semantic_rows", ModelID: "operations", Target: "reviews", Status: "error", SQL: "select reviews"},
@@ -231,7 +226,7 @@ func TestAdminQueryHistoryCommandPublishesFilteredResetPatch(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	updates, unsubscribe := server.broker.Subscribe("admin-queries:test-client")
+	updates, unsubscribe := server.runtime.broker.Subscribe("admin-queries:test-client")
 	defer unsubscribe()
 
 	body := strings.NewReader(`{"adminQueryHistoryCommand":{"action":"reset","limit":50,"filters":{"workspaces":["sales"],"surfaces":["api"],"statuses":["success"],"search":"orders"}}}`)
@@ -279,11 +274,8 @@ func TestAdminQueryHistoryCommandSearchesFilterMenuOptions(t *testing.T) {
 	owner := testPlatformPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleAdmin)
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
-	repo, err := server.queryAuditRepository()
-	if err != nil || repo == nil {
-		t.Fatalf("query audit repository: %v", err)
-	}
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test"}))
+	repo := queryAuditRepositoryForTest(t, server)
 	for _, event := range []queryaudit.EventInput{
 		{WorkspaceID: "sales", PrincipalID: owner.ID, Surface: "api", Operation: "api_query", QueryKind: "semantic_rows", ModelID: "sales", Target: "orders", Status: "success", SQL: "select orders"},
 		{WorkspaceID: "operations", PrincipalID: owner.ID, Surface: "agent", Operation: "agent_query", QueryKind: "semantic_rows", ModelID: "operations", Target: "reviews", Status: "error", SQL: "select reviews"},
@@ -293,7 +285,7 @@ func TestAdminQueryHistoryCommandSearchesFilterMenuOptions(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	updates, unsubscribe := server.broker.Subscribe("admin-queries:test-client")
+	updates, unsubscribe := server.runtime.broker.Subscribe("admin-queries:test-client")
 	defer unsubscribe()
 
 	body := strings.NewReader(`{"adminQueryHistory":{"filterMenus":[{"id":"workspace","label":"Workspace"}]},"adminQueryHistoryCommand":{"action":"filter_search","limit":50,"filterMenu":{"menuId":"workspace","action":"search","search":"oper"}}}`)
@@ -332,11 +324,8 @@ func TestAdminQueryHistoryCommandTogglesFilterAndResetsTable(t *testing.T) {
 	owner := testPlatformPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleAdmin)
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
-	repo, err := server.queryAuditRepository()
-	if err != nil || repo == nil {
-		t.Fatalf("query audit repository: %v", err)
-	}
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test"}))
+	repo := queryAuditRepositoryForTest(t, server)
 	for _, event := range []queryaudit.EventInput{
 		{WorkspaceID: "sales", PrincipalID: owner.ID, Surface: "api", Operation: "api_query", QueryKind: "semantic_rows", ModelID: "sales", Target: "orders", Status: "success", SQL: "select orders"},
 		{WorkspaceID: "operations", PrincipalID: owner.ID, Surface: "agent", Operation: "agent_query", QueryKind: "semantic_rows", ModelID: "operations", Target: "reviews", Status: "error", SQL: "select reviews"},
@@ -346,7 +335,7 @@ func TestAdminQueryHistoryCommandTogglesFilterAndResetsTable(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	updates, unsubscribe := server.broker.Subscribe("admin-queries:test-client")
+	updates, unsubscribe := server.runtime.broker.Subscribe("admin-queries:test-client")
 	defer unsubscribe()
 
 	body := strings.NewReader(`{"adminQueryHistory":{"table":{"rows":[{"id":"old"}]}},"adminQueryHistoryCommand":{"action":"filter_toggle","limit":50,"filterMenu":{"menuId":"surface","action":"toggle","value":"agent","selected":[]}}}`)
@@ -389,11 +378,8 @@ func TestAdminQueryHistoryCommandPublishesDetailPatch(t *testing.T) {
 	owner := testPlatformPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleAdmin)
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
-	repo, err := server.queryAuditRepository()
-	if err != nil || repo == nil {
-		t.Fatalf("query audit repository: %v", err)
-	}
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test"}))
+	repo := queryAuditRepositoryForTest(t, server)
 	if err := repo.RecordQueryEvent(ctx, queryaudit.EventInput{
 		WorkspaceID:   "sales",
 		PrincipalID:   owner.ID,
@@ -419,7 +405,7 @@ func TestAdminQueryHistoryCommandPublishesDetailPatch(t *testing.T) {
 	if err != nil || len(events) != 1 {
 		t.Fatalf("query events = %d, err=%v", len(events), err)
 	}
-	updates, unsubscribe := server.broker.Subscribe("admin-queries:test-client")
+	updates, unsubscribe := server.runtime.broker.Subscribe("admin-queries:test-client")
 	defer unsubscribe()
 
 	body := strings.NewReader(`{"adminQueryHistoryCommand":{"action":"select_detail","eventId":"` + events[0].ID + `","limit":50}}`)
@@ -462,7 +448,7 @@ func queryHistoryMenuForTest(menus []uisignals.FilterMenuSignal, id string) uisi
 func TestAdminQueryHistoryCommandRequiresCSRF(t *testing.T) {
 	store := testStore(t)
 	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test"}))
 
 	req := httptest.NewRequest(http.MethodPost, "http://localhost:8150/admin/queries/command", strings.NewReader(`{"adminQueryHistoryCommand":{"action":"reset","limit":50}}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -483,7 +469,7 @@ func TestAdminQueryHistoryUpdatesForwardsPatches(t *testing.T) {
 	owner := testPlatformPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleAdmin)
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test"}))
 
 	reqCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -498,7 +484,7 @@ func TestAdminQueryHistoryUpdatesForwardsPatches(t *testing.T) {
 	}()
 
 	deadline := time.After(10 * time.Second)
-	for server.broker.SubscriberCount("admin-queries:test-client") == 0 {
+	for server.runtime.broker.SubscriberCount("admin-queries:test-client") == 0 {
 		select {
 		case <-deadline:
 			t.Fatal("timed out waiting for query history updates subscriber")
@@ -506,7 +492,7 @@ func TestAdminQueryHistoryUpdatesForwardsPatches(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
-	server.broker.Publish("admin-queries:test-client", pagestream.SignalPatch{"adminQueryHistory": map[string]any{"loadedCountLabel": "sentinel"}})
+	server.runtime.broker.Publish("admin-queries:test-client", pagestream.SignalPatch{"adminQueryHistory": map[string]any{"loadedCountLabel": "sentinel"}})
 	deadline = time.After(10 * time.Second)
 	for !strings.Contains(rec.BodyString(), "sentinel") {
 		select {
@@ -529,7 +515,7 @@ func TestAdminStorageDetailRouteIsDropped(t *testing.T) {
 	owner := testPlatformPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleAdmin)
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test"}))
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/storage/leapview-test.duckdb/model/orders", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -547,7 +533,7 @@ func TestAdminStorageUpdatesSubscribesWithoutInitialRescan(t *testing.T) {
 	owner := testPlatformPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleAdmin)
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test"}))
 
 	reqCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -562,7 +548,7 @@ func TestAdminStorageUpdatesSubscribesWithoutInitialRescan(t *testing.T) {
 	}()
 
 	deadline := time.After(10 * time.Second)
-	for server.broker.SubscriberCount("admin-storage:test-client") == 0 {
+	for server.runtime.broker.SubscriberCount("admin-storage:test-client") == 0 {
 		select {
 		case <-deadline:
 			t.Fatal("timed out waiting for storage updates subscriber")
@@ -570,7 +556,7 @@ func TestAdminStorageUpdatesSubscribesWithoutInitialRescan(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
-	server.broker.Publish("admin-storage:test-client", pagestream.SignalPatch{"adminStorage": map[string]any{"selectedKey": "sentinel"}})
+	server.runtime.broker.Publish("admin-storage:test-client", pagestream.SignalPatch{"adminStorage": map[string]any{"selectedKey": "sentinel"}})
 	deadline = time.After(10 * time.Second)
 	for !strings.Contains(rec.BodyString(), "sentinel") {
 		select {
@@ -598,8 +584,8 @@ func TestAdminStorageSelectTablePublishesSelectedTablePatch(t *testing.T) {
 	dataPath := filepath.Join(dir, "data")
 	seedAdminStorageDuckLakeAt(t, catalogPath, dataPath)
 	environment := adminStorageEnvironment(t, catalogPath, dataPath)
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test", DuckLakeCatalogPath: catalogPath, DuckLakeDataPath: dataPath, DuckDBEnvironment: environment})
-	updates, unsubscribe := server.broker.Subscribe("admin-storage:test-client")
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test", DuckLakeCatalogPath: catalogPath, DuckLakeDataPath: dataPath, AnalyticsModule: analyticsmodule.NewSurface(environment, nil)}))
+	updates, unsubscribe := server.runtime.broker.Subscribe("admin-storage:test-client")
 	defer unsubscribe()
 
 	body := strings.NewReader(`{"adminStorageCommand":{"databaseId":"ducklake-catalog","schema":"model","table":"orders"}}`)
@@ -647,9 +633,9 @@ func TestAdminStorageReadsDuckLakeMetadata(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(legacyDir, "leapview-stale.duckdb"), []byte("stale"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test", DuckDBDir: legacyDir, DuckLakeCatalogPath: catalogPath, DuckLakeDataPath: dataPath, DuckDBEnvironment: environment})
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{DefaultWorkspaceID: "test", DuckLakeCatalogPath: catalogPath, DuckLakeDataPath: dataPath, AnalyticsModule: analyticsmodule.NewSurface(environment, nil)})
 
-	data := server.storageReadModel().Data(httptest.NewRequest(http.MethodGet, "/admin/storage", nil).Context())
+	data := server.routes.adminModule.HTTP().ReadModel.StorageService.Data(httptest.NewRequest(http.MethodGet, "/admin/storage", nil).Context())
 	if data.Status != "" {
 		t.Fatalf("status = %q", data.Status)
 	}
@@ -718,15 +704,15 @@ VALUES ('test', 'prod', 'dep_prod')`, snapshotID, snapshotID); err != nil {
 		t.Fatal(err)
 	}
 
-	server := NewWithOptions(fakeMetrics{}, Options{
-		Store:               store,
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{
+
 		DefaultWorkspaceID:  "test",
 		DuckLakeCatalogPath: catalogPath,
 		DuckLakeDataPath:    dataPath,
-		DuckDBEnvironment:   environment,
-	})
+		AnalyticsModule:     analyticsmodule.NewSurface(environment, nil),
+	}))
 
-	data := server.storageReadModel().Data(httptest.NewRequest(http.MethodGet, "/admin/storage", nil).Context())
+	data := server.routes.adminModule.HTTP().ReadModel.StorageService.Data(httptest.NewRequest(http.MethodGet, "/admin/storage", nil).Context())
 	if len(data.ServingStates) != 1 {
 		t.Fatalf("serving_states = %#v, want active serving state context", data.ServingStates)
 	}
@@ -749,8 +735,8 @@ func TestAdminStorageSelectTableRejectsInvalidCommand(t *testing.T) {
 	catalogPath := filepath.Join(dir, "catalog.duckdb")
 	dataPath := filepath.Join(dir, "data")
 	seedAdminStorageDuckLakeAt(t, catalogPath, dataPath)
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test", DuckLakeCatalogPath: catalogPath, DuckLakeDataPath: dataPath})
-	updates, unsubscribe := server.broker.Subscribe("admin-storage:test-client")
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test", DuckLakeCatalogPath: catalogPath, DuckLakeDataPath: dataPath}))
+	updates, unsubscribe := server.runtime.broker.Subscribe("admin-storage:test-client")
 	defer unsubscribe()
 
 	body := strings.NewReader(`{"adminStorageCommand":{"databaseId":"leapview-test.duckdb","schema":"model","table":"missing"}}`)
@@ -777,7 +763,7 @@ func TestAdminAccessRouteIsDropped(t *testing.T) {
 	owner := testPlatformPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleAdmin)
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test"}))
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/access", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -795,7 +781,7 @@ func TestAdminPrincipalDetailReturnsNotFoundForMissingPrincipal(t *testing.T) {
 	owner := testPlatformPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleAdmin)
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test"}))
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/principals/missing", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -813,7 +799,7 @@ func TestAdminGroupDetailReturnsNotFoundForMissingGroup(t *testing.T) {
 	owner := testPlatformPrincipal(t, ctx, store, "owner@example.com", "Owner", access.RoleAdmin)
 	token := testAPIToken(t, ctx, store, owner.ID, "test")
 	auth := testAuth(store, "test", AuthConfig{APITokenOnly: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test"}))
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/groups/missing", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -826,7 +812,7 @@ func TestAdminGroupDetailReturnsNotFoundForMissingGroup(t *testing.T) {
 }
 
 func TestAdminGeneralRendersWithoutStore(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{DefaultWorkspaceID: "test"})
 	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
@@ -846,7 +832,7 @@ func TestAdminGeneralRendersWithoutStore(t *testing.T) {
 }
 
 func TestAdminStorageRendersEmptyStateWithoutDuckDBFiles(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{DefaultWorkspaceID: "test", DuckDBDir: t.TempDir()})
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{DefaultWorkspaceID: "test", DuckDBDir: t.TempDir()})
 	req := httptest.NewRequest(http.MethodGet, "/admin/storage", nil)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)

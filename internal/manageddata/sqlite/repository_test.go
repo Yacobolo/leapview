@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/manageddata"
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
+	"github.com/Yacobolo/leapview/internal/platform/transaction"
 	"github.com/pressly/goose/v3"
 	_ "modernc.org/sqlite"
 )
@@ -90,6 +92,35 @@ func TestCompleteUploadCreatesImmutableRevisionAtomically(t *testing.T) {
 	}
 	if _, err := store.ExecContext(ctx, `UPDATE managed_data_revisions SET digest = ? WHERE id = ?`, "sha256:"+strings.Repeat("f", 64), revision.ID); err == nil {
 		t.Fatal("ready revision metadata was mutable")
+	}
+}
+
+func TestBeginUploadFinalizationRollsBackWhenWorkflowCannotBeRecorded(t *testing.T) {
+	ctx, db, base := testRepository(t)
+	collection := createCollection(t, ctx, base, "atomic", "project-a", "atomic")
+	session, err := base.CreateUploadSession(ctx, manageddata.CreateUploadSessionInput{
+		ID: "upload-atomic", CollectionID: collection.ID, Manifest: manageddata.Manifest{},
+		StorageBackend: "local", StagingPrefix: "staging/upload-atomic", ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	injected := errors.New("injected workflow failure")
+	repo := NewRepositoryWithWorkflow(db, jobs.WorkflowRecorderFunc(func(context.Context, transaction.Transaction, jobs.WorkflowIntent) error {
+		return injected
+	}))
+	_, err = repo.BeginUploadFinalization(ctx, session.ID, jobs.WorkflowIntent{
+		Job: jobs.EnqueueInput{ID: "upload:" + session.ID + ":finalize"},
+	})
+	if !errors.Is(err, injected) {
+		t.Fatalf("BeginUploadFinalization() error = %v, want injected failure", err)
+	}
+	current, err := repo.UploadSessionByID(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Status != manageddata.UploadStatusOpen {
+		t.Fatalf("status after workflow failure = %q, want open", current.Status)
 	}
 }
 

@@ -12,7 +12,7 @@ import (
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
 	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/workspace/compiler"
+	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 )
 
 func TestVisualizationSignalKeepsDataStateOpaque(t *testing.T) {

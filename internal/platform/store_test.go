@@ -15,17 +15,21 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/access"
+	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
 	agentconfig "github.com/Yacobolo/leapview/internal/agent/config"
 	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
 	"github.com/Yacobolo/leapview/internal/instancelock"
 )
 
-func TestStoreMigratesAndSeedsRoles(t *testing.T) {
+func TestAccessInitializationReconcilesRolesAfterStoreMigration(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "leapview.db")
 	store, err := Open(ctx, dbPath)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
+	}
+	if err := accesssqlite.Initialize(ctx, store.SQLDB()); err != nil {
+		t.Fatalf("initialize access: %v", err)
 	}
 	if err := store.Close(); err != nil {
 		t.Fatalf("close store: %v", err)
@@ -35,6 +39,9 @@ func TestStoreMigratesAndSeedsRoles(t *testing.T) {
 		t.Fatalf("reopen migrated store: %v", err)
 	}
 	defer store.Close()
+	if err := accesssqlite.Initialize(ctx, store.SQLDB()); err != nil {
+		t.Fatalf("reinitialize access: %v", err)
+	}
 
 	rows, err := store.SQLDB().QueryContext(ctx, `SELECT name FROM roles ORDER BY name`)
 	if err != nil {
@@ -68,12 +75,15 @@ func TestStoreMigratesAndSeedsRoles(t *testing.T) {
 	}
 }
 
-func TestStoreReconcilesDefaultSeedDataWithoutOverwritingSettings(t *testing.T) {
+func TestAccessInitializationReconcilesDefaultsWithoutOverwritingSettings(t *testing.T) {
 	ctx := t.Context()
 	dbPath := filepath.Join(t.TempDir(), "leapview.db")
 	store, err := Open(ctx, dbPath)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
+	}
+	if err := accesssqlite.Initialize(ctx, store.SQLDB()); err != nil {
+		t.Fatalf("initialize access: %v", err)
 	}
 	const customPrompt = "Keep this customized prompt."
 	if err := store.UpsertSetting(ctx, agentconfig.SystemPromptSettingKey, customPrompt); err != nil {
@@ -98,6 +108,9 @@ func TestStoreReconcilesDefaultSeedDataWithoutOverwritingSettings(t *testing.T) 
 		t.Fatalf("reopen store: %v", err)
 	}
 	defer store.Close()
+	if err := accesssqlite.Initialize(ctx, store.SQLDB()); err != nil {
+		t.Fatalf("reinitialize access: %v", err)
+	}
 
 	prompt, err := store.GetSetting(ctx, agentconfig.SystemPromptSettingKey)
 	if err != nil {

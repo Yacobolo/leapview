@@ -6,7 +6,7 @@ import (
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/workspace/compiler"
+	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 )
 
 // Compile crosses the same authoring-to-serving boundary as production. Test

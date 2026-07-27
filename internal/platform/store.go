@@ -4,15 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"embed"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	agentconfig "github.com/Yacobolo/leapview/internal/agent/config"
 	"github.com/Yacobolo/leapview/internal/configspec"
 	"github.com/Yacobolo/leapview/internal/platform/db"
 	"github.com/Yacobolo/leapview/internal/securefs"
@@ -65,10 +62,6 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	conn.SetMaxIdleConns(0)
 	store := &Store{db: conn, q: db.New(conn)}
 	if err := store.migrate(ctx); err != nil {
-		conn.Close()
-		return nil, err
-	}
-	if err := store.seedDefaults(ctx); err != nil {
 		conn.Close()
 		return nil, err
 	}
@@ -330,48 +323,6 @@ func (s *Store) migrate(ctx context.Context) error {
 	}
 	if err := goose.UpContext(ctx, s.db, "migrations"); err != nil {
 		return fmt.Errorf("migrating platform db: %w", err)
-	}
-	return nil
-}
-
-func (s *Store) seedDefaults(ctx context.Context) error {
-	if err := s.q.InsertPlatformSettingIfMissing(ctx, db.InsertPlatformSettingIfMissingParams{
-		Key:   agentconfig.SystemPromptSettingKey,
-		Value: agentconfig.DefaultSystemPrompt,
-	}); err != nil {
-		return err
-	}
-	for _, role := range access.DefaultRoles() {
-		bytes, err := json.Marshal(role.Privileges)
-		if err != nil {
-			return err
-		}
-		roleID := "role_" + role.Name
-		if err := s.q.UpsertRole(ctx, db.UpsertRoleParams{
-			ID:             roleID,
-			Name:           role.Name,
-			PrivilegesJson: string(bytes),
-		}); err != nil {
-			return err
-		}
-		if err := s.q.DeleteRoleGrantTemplates(ctx, role.Name); err != nil {
-			return err
-		}
-		for _, privilege := range role.Privileges {
-			if err := s.q.InsertRoleGrantTemplate(ctx, db.InsertRoleGrantTemplateParams{
-				RoleName:  role.Name,
-				Privilege: string(privilege),
-			}); err != nil {
-				return err
-			}
-		}
-	}
-	if err := s.q.UpsertSecurableObject(ctx, db.UpsertSecurableObjectParams{
-		ID:          "platform",
-		ObjectType:  "platform",
-		DisplayName: "Platform",
-	}); err != nil {
-		return err
 	}
 	return nil
 }

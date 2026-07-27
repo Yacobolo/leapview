@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/Yacobolo/leapview/internal/snapshot"
 )
 
 var ErrSnapshotLeaseLost = errors.New("snapshot lease is no longer active")
@@ -101,16 +101,16 @@ type SnapshotLeaseInput struct {
 }
 
 type Validation struct {
-	Digest                string
-	ManifestJSON          string
-	RootDir               string
-	ProjectID             string
-	ProjectDigest         string
-	ProjectWorkspaces     []string
-	AccessPolicy          workspace.AccessPolicy
-	DashboardPublications map[string]workspace.DashboardPublication
-	ManagedDataRevisions  map[string]string
-	Graph                 workspace.AssetGraph
+	Digest                    string
+	ManifestJSON              string
+	RootDir                   string
+	ProjectID                 string
+	ProjectDigest             string
+	ProjectWorkspaces         []string
+	AccessPolicy              snapshot.AccessPolicy
+	DashboardPublicationsJSON string
+	ManagedDataRevisions      map[string]string
+	Graph                     snapshot.AssetGraph
 }
 
 type PreparedRuntime interface {

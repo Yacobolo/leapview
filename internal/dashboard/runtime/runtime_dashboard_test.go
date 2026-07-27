@@ -13,15 +13,15 @@ import (
 
 	materializeruntime "github.com/Yacobolo/leapview/internal/analytics/materialize"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
+	"github.com/Yacobolo/leapview/internal/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
 	"github.com/Yacobolo/leapview/internal/dataquery"
+	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
 	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
-	"github.com/Yacobolo/leapview/internal/workspace"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/workspace/compiler"
 )
 
 type runtimeAuditRecorder struct {
@@ -76,15 +76,16 @@ func newManagedFixtureRuntime(t *testing.T, dataDir, workspaceID string) (*Servi
 	if err != nil {
 		return nil, err
 	}
-	compiledWorkspace, ok := compiled.Workspaces[workspaceID]
+	compiledWorkspace, ok := compiled.Workspace(workspaceID)
 	if !ok {
 		return nil, fmt.Errorf("showcase project has no %s workspace", workspaceID)
 	}
-	bindManagedFixtureRoots(compiledWorkspace.Definition, dataDir)
-	return NewFromDefinition(t.Context(), filepath.Join(dataDir, workspaceID), testDataRuntimeFactory{}, compiledWorkspace.Definition)
+	definition := compiledWorkspace.DashboardDefinition()
+	bindManagedFixtureRoots(definition, dataDir)
+	return NewFromDefinition(t.Context(), filepath.Join(dataDir, workspaceID), testDataRuntimeFactory{}, definition)
 }
 
-func bindManagedFixtureRoots(definition *workspace.Definition, root string) {
+func bindManagedFixtureRoots(definition *dashboarddefinition.Workspace, root string) {
 	for _, model := range definition.Models {
 		for name, connection := range model.Connections {
 			if connection.Kind != "managed" {
@@ -155,7 +156,7 @@ o2,20
 	}
 }
 
-func sharedOrdersWorkspaceDefinition(t *testing.T) *workspace.Definition {
+func sharedOrdersWorkspaceDefinition(t *testing.T) *dashboarddefinition.Workspace {
 	t.Helper()
 	modelA := sharedOrdersModel("model_a")
 	modelA.Measures = map[string]semanticmodel.MetricMeasure{
@@ -171,14 +172,14 @@ func sharedOrdersWorkspaceDefinition(t *testing.T) *workspace.Definition {
 	if err := modelB.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	return &workspace.Definition{
-		Catalog: workspace.Catalog{
-			Workspace: workspace.CatalogWorkspace{ID: "shared", Title: "Shared"},
-			SemanticModels: []workspace.CatalogModel{
+	return &dashboarddefinition.Workspace{
+		Catalog: catalog.Catalog{
+			Workspace: catalog.Workspace{ID: "shared", Title: "Shared"},
+			Models: []catalog.Model{
 				{ID: "model_a", Title: "Model A"},
 				{ID: "model_b", Title: "Model B"},
 			},
-			Dashboards: []workspace.CatalogDashboard{{ID: "dashboard", Title: "Dashboard"}},
+			Dashboards: []catalog.Dashboard{{ID: "dashboard", Title: "Dashboard"}},
 		},
 		Models: map[string]*semanticmodel.Model{
 			"model_a": modelA,

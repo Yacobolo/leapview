@@ -1,38 +1,37 @@
-// Package runtimebinding applies trusted managed-data runtime roots to a
-// compiled workspace definition.
+// Package runtimebinding validates and applies trusted managed-data runtime
+// roots through a consumer-owned binding target.
 package runtimebinding
 
 import (
 	"fmt"
 	"path/filepath"
-
-	"github.com/Yacobolo/leapview/internal/runtimehost"
-	"github.com/Yacobolo/leapview/internal/workspace"
 )
 
-func BindRoots(definition *workspace.Definition, resolution runtimehost.ManagedDataResolution) error {
-	if definition == nil {
-		return fmt.Errorf("workspace definition is required")
+type Connection struct {
+	ModelID string
+	Name    string
+}
+
+type Target interface {
+	ManagedConnections() []Connection
+	BindManagedRoot(connection Connection, root string) error
+}
+
+func BindRoots(target Target, roots map[string]string) error {
+	if target == nil {
+		return fmt.Errorf("managed-data binding target is required")
 	}
-	for modelID, model := range definition.Models {
-		if model == nil {
-			continue
+	for _, connection := range target.ManagedConnections() {
+		resolvedRoot := roots[connection.Name]
+		if resolvedRoot == "" {
+			return fmt.Errorf("semantic model %q managed connection %q has no bound revision", connection.ModelID, connection.Name)
 		}
-		for connectionName, connection := range model.Connections {
-			if connection.Kind != "managed" {
-				continue
-			}
-			resolvedRoot := resolution.Roots[connectionName]
-			if resolvedRoot == "" {
-				return fmt.Errorf("semantic model %q managed connection %q has no bound revision", modelID, connectionName)
-			}
-			root := filepath.Clean(resolvedRoot)
-			if !filepath.IsAbs(root) {
-				return fmt.Errorf("semantic model %q managed connection %q revision root must be absolute", modelID, connectionName)
-			}
-			connection.Root = root
-			connection.Scope = ""
-			model.Connections[connectionName] = connection
+		root := filepath.Clean(resolvedRoot)
+		if !filepath.IsAbs(root) {
+			return fmt.Errorf("semantic model %q managed connection %q revision root must be absolute", connection.ModelID, connection.Name)
+		}
+		if err := target.BindManagedRoot(connection, root); err != nil {
+			return err
 		}
 	}
 	return nil

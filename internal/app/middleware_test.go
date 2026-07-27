@@ -23,7 +23,7 @@ import (
 )
 
 func TestAuthRouteRateLimit(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{
 		RateLimits: RateLimitConfig{Enabled: true, AuthLimit: 1, AuthWindow: time.Minute},
 	})
 	handler := server.Routes()
@@ -66,7 +66,7 @@ func TestProductionRateLimitConfigDoesNotTrustProxyHeadersByDefault(t *testing.T
 }
 
 func TestAllowedHostsRejectsUnexpectedHost(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{
 		AllowedHosts: []string{"app.example.com", "*.trusted.example.com"},
 	})
 	handler := server.Routes()
@@ -103,7 +103,7 @@ func TestAllowedHostsRejectsUnexpectedHost(t *testing.T) {
 func TestAllowedHostRejectionsKeepProductionMiddlewareCoverage(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	server := NewWithOptions(fakeMetrics{}, Options{
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{
 		AllowedHosts:    []string{"app.example.com"},
 		RequestLogging:  true,
 		Logger:          logger,
@@ -201,10 +201,10 @@ func TestRequestBodyLimitStopsStreamedOversizedBody(t *testing.T) {
 
 func TestHealthRoutesAreUnauthenticated(t *testing.T) {
 	store := testStore(t)
-	server := NewWithOptions(fakeMetrics{}, Options{
-		Store: store,
-		Auth:  testAuth(store, "test", AuthConfig{APITokenOnly: true}),
-	})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{
+
+		Auth: testAuth(store, "test", AuthConfig{APITokenOnly: true}),
+	}))
 	handler := server.Routes()
 
 	for _, path := range []string{"/healthz", "/readyz"} {
@@ -274,11 +274,11 @@ func TestLogoutSurfacesRevocationAuditFailure(t *testing.T) {
 
 func TestAPITokenOnlyAuthChallengesInsteadOfOIDCRedirect(t *testing.T) {
 	store := testStore(t)
-	server := NewWithOptions(fakeMetrics{}, Options{
-		Store:              store,
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{
+
 		Auth:               testAuth(store, "test", AuthConfig{APITokenOnly: true}),
 		DefaultWorkspaceID: "test",
-	})
+	}))
 	req := httptest.NewRequest(http.MethodGet, "/chats", nil)
 	rec := httptest.NewRecorder()
 
@@ -296,7 +296,7 @@ func TestAPITokenOnlyAuthChallengesInsteadOfOIDCRedirect(t *testing.T) {
 }
 
 func TestMetricsRouteExportsHTTPMetrics(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{Store: testStore(t)})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(testStore(t), assemblyConfig{}))
 	handler := server.Routes()
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -326,10 +326,10 @@ func TestMetricsRouteExportsHTTPMetrics(t *testing.T) {
 }
 
 func TestMetricsRouteRequiresConfiguredBearerToken(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{
-		Store:              testStore(t),
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(testStore(t), assemblyConfig{
+
 		MetricsBearerToken: "0123456789abcdef0123456789abcdef",
-	})
+	}))
 	handler := server.Routes()
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
@@ -377,11 +377,11 @@ func TestMetricsRouteRequiresConfiguredBearerToken(t *testing.T) {
 }
 
 func TestMetricsRouteUsesAuthRateLimit(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{
-		Store:              testStore(t),
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(testStore(t), assemblyConfig{
+
 		MetricsBearerToken: "0123456789abcdef0123456789abcdef",
 		RateLimits:         RateLimitConfig{Enabled: true, AuthLimit: 1, AuthWindow: time.Minute},
-	})
+	}))
 	handler := server.Routes()
 
 	for i := 0; i < 2; i++ {
@@ -400,7 +400,7 @@ func TestMetricsRouteUsesAuthRateLimit(t *testing.T) {
 }
 
 func TestReadinessFailsWithoutPlatformStore(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{})
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{})
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
@@ -410,13 +410,13 @@ func TestReadinessFailsWithoutPlatformStore(t *testing.T) {
 }
 
 func TestReadinessChecksActiveWorkspaceRuntime(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{
-		Store: testStore(t),
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(testStore(t), assemblyConfig{
+
 		WorkspaceRepo: activeMetadataWorkspaceRepo{summaries: []workspace.Summary{{
 			ID:                   "test-workspace",
 			ActiveServingStateID: "deploy_1",
 		}}},
-	})
+	}))
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
@@ -431,10 +431,7 @@ func TestReadinessChecksActiveWorkspaceRuntime(t *testing.T) {
 
 func TestReadinessIncludesMapAssetIntegrity(t *testing.T) {
 	assets := &fakeMapAssetReadiness{}
-	server := NewWithOptions(fakeMetrics{}, Options{
-		Store:             testStore(t),
-		MapAssetReadiness: assets,
-	})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(testStore(t), assemblyConfig{DashboardAssets: assets}))
 	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	response := httptest.NewRecorder()
 	server.Routes().ServeHTTP(response, request)
@@ -460,14 +457,18 @@ func (f *fakeMapAssetReadiness) Verify(context.Context) error {
 	return f.err
 }
 
+func (*fakeMapAssetReadiness) Handler() http.Handler {
+	return http.NotFoundHandler()
+}
+
 func TestReadinessFailsWhenActiveWorkspaceRuntimeIsMissing(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{
-		Store: testStore(t),
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(testStore(t), assemblyConfig{
+
 		WorkspaceRepo: activeMetadataWorkspaceRepo{summaries: []workspace.Summary{{
 			ID:                   "missing",
 			ActiveServingStateID: "deploy_1",
 		}}},
-	})
+	}))
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
@@ -517,13 +518,13 @@ func (r activeMetadataWorkspaceRepo) AssetVersions(context.Context, workspace.Wo
 func TestDeploymentAPIRateLimitPreservesAuth(t *testing.T) {
 	store := testStore(t)
 	auth := testAuth(store, "test", AuthConfig{DevBypass: true})
-	server := NewWithOptions(fakeMetrics{}, Options{
-		Store:              store,
-		Auth:               auth,
-		ArtifactDir:        t.TempDir(),
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{
+
+		Auth: auth,
+
 		DefaultWorkspaceID: "test",
 		RateLimits:         RateLimitConfig{Enabled: true, APILimit: 1, APIWindow: time.Minute},
-	})
+	}))
 	handler := server.Routes()
 
 	for i := 0; i < 2; i++ {
@@ -556,7 +557,7 @@ func TestDevBypassStillUsesGrantPrivileges(t *testing.T) {
 	store := testStore(t)
 	repo := accesssqlite.NewRepository(store.SQLDB())
 	auth := NewAuth(repo, "test", AuthConfig{DevBypass: true})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test"}))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/assets", nil)
 	req.Header.Set("Authorization", "Bearer dev")
@@ -582,7 +583,7 @@ func TestDevBypassStillUsesGrantPrivileges(t *testing.T) {
 
 func TestUpdatesRateLimitAllowsOrdinaryReconnects(t *testing.T) {
 	auth := testAuth(testStore(t), "test", AuthConfig{DevBypass: true})
-	server := NewWithOptions(fakeMetrics{}, Options{
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{
 		Auth:       auth,
 		RateLimits: RateLimitConfig{Enabled: true, UpdatesLimit: 2, UpdatesWindow: time.Minute},
 	})
@@ -603,7 +604,7 @@ func TestUpdatesRateLimitAllowsOrdinaryReconnects(t *testing.T) {
 }
 
 func TestSecurityHeaders(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{
 		SecurityHeaders: SecurityHeaders(true),
 	})
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -642,7 +643,7 @@ func TestSecurityHeaders(t *testing.T) {
 }
 
 func TestSecurityHeadersOmitHSTSWhenDisabled(t *testing.T) {
-	server := NewWithOptions(fakeMetrics{}, Options{
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{
 		SecurityHeaders: SecurityHeaders(false),
 	})
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -657,7 +658,7 @@ func TestSecurityHeadersOmitHSTSWhenDisabled(t *testing.T) {
 func TestRequestLoggerDoesNotLogSensitiveHeaders(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	server := NewWithOptions(fakeMetrics{}, Options{
+	server := assembleRuntime(fakeMetrics{}, assemblyConfig{
 		RequestLogging: true,
 		Logger:         logger,
 	})
@@ -688,8 +689,7 @@ func TestAuthBeginCreatesOIDCStateCookieAndRedirect(t *testing.T) {
 		CSRFKey:      "0123456789abcdef0123456789abcdef",
 		CookieSecure: true,
 	})
-	auth.configured = true
-	auth.oidcOverride = map[string]oidcClient{"azureadv2": fakeOIDCClient{authURL: "https://issuer.example/authorize"}}
+	auth.ConfigureOIDCTestClients(map[string]oidcClient{"azureadv2": fakeOIDCClient{authURL: "https://issuer.example/authorize"}})
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/azureadv2", nil)
 	rec := httptest.NewRecorder()
@@ -718,7 +718,7 @@ func TestAuthBeginCreatesOIDCStateCookieAndRedirect(t *testing.T) {
 	if cookie.HttpOnly != true || cookie.Secure != true || cookie.SameSite != http.SameSiteLaxMode || cookie.MaxAge != 10*60 {
 		t.Fatalf("state cookie options = %#v", cookie)
 	}
-	cookieState, cookieNonce, err := auth.decodeOIDCState(cookie.Value)
+	cookieState, cookieNonce, err := auth.DecodeOIDCState(cookie.Value)
 	if err != nil {
 		t.Fatalf("decode state cookie: %v", err)
 	}
@@ -735,8 +735,7 @@ func TestAuthBeginFailsClosedWhenRandomnessUnavailable(t *testing.T) {
 		CSRFKey:      "0123456789abcdef0123456789abcdef",
 		CookieSecure: true,
 	})
-	auth.configured = true
-	auth.oidcOverride = map[string]oidcClient{"azureadv2": fakeOIDCClient{authURL: "https://issuer.example/authorize"}}
+	auth.ConfigureOIDCTestClients(map[string]oidcClient{"azureadv2": fakeOIDCClient{authURL: "https://issuer.example/authorize"}})
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/azureadv2", nil)
 	rec := httptest.NewRecorder()
@@ -765,10 +764,9 @@ func TestAuthCallbackRejectsInvalidOIDCState(t *testing.T) {
 		DevBypass: true,
 		CSRFKey:   "0123456789abcdef0123456789abcdef",
 	})
-	auth.configured = true
-	auth.oidcOverride = map[string]oidcClient{"azureadv2": fakeOIDCClient{}}
+	auth.ConfigureOIDCTestClients(map[string]oidcClient{"azureadv2": fakeOIDCClient{}})
 	req := httptest.NewRequest(http.MethodGet, "/auth/azureadv2/callback?state=wrong&code=code", nil)
-	req.AddCookie(auth.oidcStateCookie("right", "nonce"))
+	req.AddCookie(auth.OIDCStateCookie("right", "nonce"))
 	rec := httptest.NewRecorder()
 
 	auth.Callback(rec, req)
@@ -785,9 +783,8 @@ func TestAuthCallbackRejectsExpiredOIDCStateCookie(t *testing.T) {
 		DevBypass: true,
 		CSRFKey:   "0123456789abcdef0123456789abcdef",
 	})
-	auth.configured = true
-	auth.oidcOverride = map[string]oidcClient{"azureadv2": fakeOIDCClient{}}
-	cookie := auth.oidcStateCookie("state", "nonce")
+	auth.ConfigureOIDCTestClients(map[string]oidcClient{"azureadv2": fakeOIDCClient{}})
+	cookie := auth.OIDCStateCookie("state", "nonce")
 	restore()
 	restore = setAuthNowForTest(issuedAt.Add(11 * time.Minute))
 	defer restore()
@@ -812,12 +809,11 @@ func TestAuthCallbackCreatesSessionAndAuditEvents(t *testing.T) {
 		DevBypass: true,
 		CSRFKey:   "0123456789abcdef0123456789abcdef",
 	})
-	auth.configured = true
-	auth.oidcOverride = map[string]oidcClient{"azureadv2": fakeOIDCClient{claims: oidcauth.Claims{Issuer: "https://issuer.example", Subject: "subject-1", Email: "user@example.com", Name: "User Example"}}}
+	auth.ConfigureOIDCTestClients(map[string]oidcClient{"azureadv2": fakeOIDCClient{claims: oidcauth.Claims{Issuer: "https://issuer.example", Subject: "subject-1", Email: "user@example.com", Name: "User Example"}}})
 	target := "/oauth/authorize?client_id=claude&resource=https%3A%2F%2Fleapview.example%2Fmcp&response_type=code"
 	req := httptest.NewRequest(http.MethodGet, "/auth/azureadv2/callback?state=state&code=code", nil)
-	req.AddCookie(auth.oidcStateCookie("state", "nonce"))
-	req.AddCookie(auth.authReturnCookie(target))
+	req.AddCookie(auth.OIDCStateCookie("state", "nonce"))
+	req.AddCookie(auth.AuthReturnCookie(target))
 	rec := httptest.NewRecorder()
 
 	auth.Callback(rec, req)
@@ -856,16 +852,16 @@ func TestAuthCallbackCreatesSessionAndAuditEvents(t *testing.T) {
 func TestAuthenticationReturnCookieRejectsExternalAndTamperedTargets(t *testing.T) {
 	auth := testAuth(testStore(t), "test", AuthConfig{CSRFKey: "0123456789abcdef0123456789abcdef"})
 	for name, cookie := range map[string]*http.Cookie{
-		"external": auth.authReturnCookie("https://attacker.example/oauth/authorize"),
+		"external": auth.AuthReturnCookie("https://attacker.example/oauth/authorize"),
 		"tampered": {
-			Name: authReturnCookieName, Value: auth.authReturnCookie("/oauth/authorize?client_id=safe").Value + "tampered",
+			Name: authReturnCookieName, Value: auth.AuthReturnCookie("/oauth/authorize?client_id=safe").Value + "tampered",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, "/auth/oidc/callback", nil)
 			request.AddCookie(cookie)
 			response := httptest.NewRecorder()
-			if target := auth.authenticationRedirectTarget(response, request, "/"); target != "/" {
+			if target := auth.AuthenticationRedirectTarget(response, request, "/"); target != "/" {
 				t.Fatalf("authentication redirect = %q, want fallback", target)
 			}
 		})
@@ -1001,14 +997,14 @@ func TestLocalPasswordMustChangeBlocksProtectedRoutesUntilChanged(t *testing.T) 
 		LocalAuth: true,
 		CSRFKey:   "0123456789abcdef0123456789abcdef",
 	})
-	server := NewWithOptions(fakeMetrics{}, Options{Store: store, Auth: auth, ArtifactDir: t.TempDir(), DefaultWorkspaceID: "test"})
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultWorkspaceID: "test"}))
 	sessionSecret, err := repo.CreateSession(ctx, created.Principal.ID, time.Hour)
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.AddCookie(auth.sessionCookie(sessionSecret, time.Now().Add(time.Hour)))
+	req.AddCookie(auth.SessionCookie(sessionSecret, time.Now().Add(time.Hour)))
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
@@ -1020,7 +1016,7 @@ func TestLocalPasswordMustChangeBlocksProtectedRoutesUntilChanged(t *testing.T) 
 		"newPassword":     {"changed-password"},
 	}.Encode()))
 	passwordReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	passwordReq.AddCookie(auth.sessionCookie(sessionSecret, time.Now().Add(time.Hour)))
+	passwordReq.AddCookie(auth.SessionCookie(sessionSecret, time.Now().Add(time.Hour)))
 	passwordRec := httptest.NewRecorder()
 	auth.LocalPassword(passwordRec, passwordReq)
 	if passwordRec.Code != http.StatusFound {
@@ -1028,7 +1024,7 @@ func TestLocalPasswordMustChangeBlocksProtectedRoutesUntilChanged(t *testing.T) 
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/", nil)
-	req.AddCookie(auth.sessionCookie(sessionSecret, time.Now().Add(time.Hour)))
+	req.AddCookie(auth.SessionCookie(sessionSecret, time.Now().Add(time.Hour)))
 	rec = httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -1042,12 +1038,11 @@ func TestAuthCallbackUsesOIDCIssuerAndSubjectAsStableIdentity(t *testing.T) {
 		DevBypass: true,
 		CSRFKey:   "0123456789abcdef0123456789abcdef",
 	})
-	auth.configured = true
 	repo := accesssqlite.NewRepository(store.SQLDB())
 
-	auth.oidcOverride = map[string]oidcClient{"azureadv2": fakeOIDCClient{claims: oidcauth.Claims{Issuer: "https://issuer.example", Subject: "subject-1", Email: "first@example.com", Name: "First"}}}
+	auth.ConfigureOIDCTestClients(map[string]oidcClient{"azureadv2": fakeOIDCClient{claims: oidcauth.Claims{Issuer: "https://issuer.example", Subject: "subject-1", Email: "first@example.com", Name: "First"}}})
 	req := httptest.NewRequest(http.MethodGet, "/auth/azureadv2/callback?state=state&code=code", nil)
-	req.AddCookie(auth.oidcStateCookie("state", "nonce"))
+	req.AddCookie(auth.OIDCStateCookie("state", "nonce"))
 	rec := httptest.NewRecorder()
 	auth.Callback(rec, req)
 	if rec.Code != http.StatusFound {
@@ -1055,9 +1050,9 @@ func TestAuthCallbackUsesOIDCIssuerAndSubjectAsStableIdentity(t *testing.T) {
 	}
 	first := principalFromSessionCookie(t, repo, rec.Result().Cookies())
 
-	auth.oidcOverride = map[string]oidcClient{"azureadv2": fakeOIDCClient{claims: oidcauth.Claims{Issuer: "https://issuer.example", Subject: "subject-1", Email: "second@example.com", Name: "Second"}}}
+	auth.ConfigureOIDCTestClients(map[string]oidcClient{"azureadv2": fakeOIDCClient{claims: oidcauth.Claims{Issuer: "https://issuer.example", Subject: "subject-1", Email: "second@example.com", Name: "Second"}}})
 	req = httptest.NewRequest(http.MethodGet, "/auth/azureadv2/callback?state=state&code=code", nil)
-	req.AddCookie(auth.oidcStateCookie("state", "nonce"))
+	req.AddCookie(auth.OIDCStateCookie("state", "nonce"))
 	rec = httptest.NewRecorder()
 	auth.Callback(rec, req)
 	if rec.Code != http.StatusFound {
@@ -1103,13 +1098,13 @@ func TestAuthAuditsDisabledPrincipalCredentialFailures(t *testing.T) {
 	apiReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test", nil)
 	apiReq.Header.Set("Authorization", "Bearer "+apiSecret)
 	apiReq.Header.Set("X-Request-ID", "disabled_api_req")
-	if _, _, ok := auth.authenticate(apiReq); ok {
+	if _, _, ok := auth.Authenticate(apiReq); ok {
 		t.Fatal("disabled API token authenticated")
 	}
 	sessionReq := httptest.NewRequest(http.MethodGet, "/workspaces/test", nil)
 	sessionReq.AddCookie(&http.Cookie{Name: "lv_session", Value: sessionSecret})
 	sessionReq.Header.Set("X-Request-ID", "disabled_session_req")
-	if _, _, ok := auth.authenticate(sessionReq); ok {
+	if _, _, ok := auth.Authenticate(sessionReq); ok {
 		t.Fatal("disabled session authenticated")
 	}
 	if _, err := repo.CredentialForAPIToken(ctx, apiSecret); !errors.Is(err, sql.ErrNoRows) {
@@ -1159,7 +1154,7 @@ func TestInvalidBearerDoesNotFallBackToSession(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test", nil)
 	req.Header.Set("Authorization", "Bearer invalid-token")
 	req.AddCookie(&http.Cookie{Name: "lv_session", Value: sessionSecret})
-	if _, _, ok := auth.authenticate(req); ok {
+	if _, _, ok := auth.Authenticate(req); ok {
 		t.Fatal("invalid bearer authenticated by falling back to the session cookie")
 	}
 }

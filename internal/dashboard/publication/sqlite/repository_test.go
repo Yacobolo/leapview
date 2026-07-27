@@ -10,7 +10,6 @@ import (
 	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
 	"github.com/Yacobolo/leapview/internal/platform"
-	"github.com/Yacobolo/leapview/internal/workspace"
 )
 
 func TestReconcilePreservesPublicIDAcrossCutoverRemovalAndReAdd(t *testing.T) {
@@ -26,7 +25,7 @@ func TestReconcilePreservesPublicIDAcrossCutoverRemovalAndReAdd(t *testing.T) {
 
 	reconcilePublications(t, ctx, db, publication.ReconcileInput{
 		ProjectID: "site", WorkspaceID: "visuals", ServingStateID: "state_1", ActorID: "owner",
-		Publications: map[string]workspace.DashboardPublication{"website": testCompiledPublication("digest-1")},
+		Publications: map[string]publication.Definition{"website": testCompiledPublication("digest-1")},
 	})
 	var principalKind, principalName string
 	if err := db.QueryRowContext(ctx, `SELECT kind, display_name FROM principals WHERE id = ?`, access.DashboardPublicationSubjectID("visuals", "website")).Scan(&principalKind, &principalName); err != nil {
@@ -48,14 +47,14 @@ func TestReconcilePreservesPublicIDAcrossCutoverRemovalAndReAdd(t *testing.T) {
 
 	reconcilePublications(t, ctx, db, publication.ReconcileInput{
 		ProjectID: "site", WorkspaceID: "visuals", ServingStateID: "state_2", ActorID: "owner",
-		Publications: map[string]workspace.DashboardPublication{"website": testCompiledPublication("digest-2")},
+		Publications: map[string]publication.Definition{"website": testCompiledPublication("digest-2")},
 	})
 	second := mustGetPublication(t, repo, ctx, "visuals", "website")
 	if second.PublicID != first.PublicID || second.ServingStateID != "state_2" || second.ConfigurationDigest != "digest-2" {
 		t.Fatalf("second = %#v", second)
 	}
 
-	reconcilePublications(t, ctx, db, publication.ReconcileInput{ProjectID: "site", WorkspaceID: "visuals", ServingStateID: "state_3", ActorID: "owner", Publications: map[string]workspace.DashboardPublication{}})
+	reconcilePublications(t, ctx, db, publication.ReconcileInput{ProjectID: "site", WorkspaceID: "visuals", ServingStateID: "state_3", ActorID: "owner", Publications: map[string]publication.Definition{}})
 	disabled := mustGetPublication(t, repo, ctx, "visuals", "website")
 	if disabled.Status() != publication.StatusUnconfigured || disabled.PublicID != first.PublicID || disabled.DisabledAt == "" {
 		t.Fatalf("disabled = %#v, status=%s", disabled, disabled.Status())
@@ -63,7 +62,7 @@ func TestReconcilePreservesPublicIDAcrossCutoverRemovalAndReAdd(t *testing.T) {
 
 	reconcilePublications(t, ctx, db, publication.ReconcileInput{
 		ProjectID: "site", WorkspaceID: "visuals", ServingStateID: "state_4", ActorID: "owner",
-		Publications: map[string]workspace.DashboardPublication{"website": testCompiledPublication("digest-4")},
+		Publications: map[string]publication.Definition{"website": testCompiledPublication("digest-4")},
 	})
 	readded := mustGetPublication(t, repo, ctx, "visuals", "website")
 	if readded.PublicID != first.PublicID || readded.Status() != publication.StatusActive {
@@ -81,7 +80,7 @@ func TestSuspensionAlwaysWinsUntilExplicitResumeAndRotationInvalidatesOldID(t *t
 	db := store.SQLDB()
 	seedPublicationWorkspace(t, db)
 	repo := NewRepository(db)
-	input := publication.ReconcileInput{ProjectID: "site", WorkspaceID: "visuals", ServingStateID: "state_1", ActorID: "owner", Publications: map[string]workspace.DashboardPublication{"website": testCompiledPublication("digest-1")}}
+	input := publication.ReconcileInput{ProjectID: "site", WorkspaceID: "visuals", ServingStateID: "state_1", ActorID: "owner", Publications: map[string]publication.Definition{"website": testCompiledPublication("digest-1")}}
 	reconcilePublications(t, ctx, db, input)
 	active := mustGetPublication(t, repo, ctx, "visuals", "website")
 
@@ -126,9 +125,9 @@ func TestResumeFailsWhilePublicationIsAbsentFromConfiguration(t *testing.T) {
 	db := store.SQLDB()
 	seedPublicationWorkspace(t, db)
 	repo := NewRepository(db)
-	reconcilePublications(t, ctx, db, publication.ReconcileInput{ProjectID: "site", WorkspaceID: "visuals", ServingStateID: "state_1", Publications: map[string]workspace.DashboardPublication{"website": testCompiledPublication("digest")}})
+	reconcilePublications(t, ctx, db, publication.ReconcileInput{ProjectID: "site", WorkspaceID: "visuals", ServingStateID: "state_1", Publications: map[string]publication.Definition{"website": testCompiledPublication("digest")}})
 	_, _ = repo.Suspend(ctx, "visuals", "website", "admin")
-	reconcilePublications(t, ctx, db, publication.ReconcileInput{ProjectID: "site", WorkspaceID: "visuals", ServingStateID: "state_2", Publications: map[string]workspace.DashboardPublication{}})
+	reconcilePublications(t, ctx, db, publication.ReconcileInput{ProjectID: "site", WorkspaceID: "visuals", ServingStateID: "state_2", Publications: map[string]publication.Definition{}})
 	if _, err := repo.Resume(ctx, "visuals", "website", "admin"); err != publication.ErrConflict {
 		t.Fatalf("Resume() error = %v", err)
 	}
@@ -149,13 +148,13 @@ func TestReconcileDisablesPublicationsFromThePreviouslyActiveProject(t *testing.
 	repo := NewRepository(db)
 	reconcilePublications(t, ctx, db, publication.ReconcileInput{
 		ProjectID: "site", WorkspaceID: "visuals", ServingStateID: "state_1",
-		Publications: map[string]workspace.DashboardPublication{"website": testCompiledPublication("site-digest")},
+		Publications: map[string]publication.Definition{"website": testCompiledPublication("site-digest")},
 	})
 	prior := mustGetPublication(t, repo, ctx, "visuals", "website")
 
 	reconcilePublications(t, ctx, db, publication.ReconcileInput{
 		ProjectID: "other-site", WorkspaceID: "visuals", ServingStateID: "state_other",
-		Publications: map[string]workspace.DashboardPublication{"website": testCompiledPublication("other-digest")},
+		Publications: map[string]publication.Definition{"website": testCompiledPublication("other-digest")},
 	})
 	current := mustGetPublication(t, repo, ctx, "visuals", "website")
 	if current.ProjectID != "other-site" || current.Status() != publication.StatusActive {
@@ -203,8 +202,8 @@ func reconcilePublications(t *testing.T, ctx context.Context, db *sql.DB, input 
 	}
 }
 
-func testCompiledPublication(digest string) workspace.DashboardPublication {
-	return workspace.DashboardPublication{Name: "website", Dashboard: "visual-showcase", DefaultPage: "overview", AllowedOrigins: []string{"https://leapview.dev"}, DependencyAssetIDs: []string{"dashboard:visuals.visual-showcase"}, ConfigurationDigest: digest}
+func testCompiledPublication(digest string) publication.Definition {
+	return publication.Definition{Name: "website", Dashboard: "visual-showcase", DefaultPage: "overview", AllowedOrigins: []string{"https://leapview.dev"}, DependencyAssetIDs: []string{"dashboard:visuals.visual-showcase"}, ConfigurationDigest: digest}
 }
 
 func mustPublication(t *testing.T, row publication.Publication, err error) publication.Publication {

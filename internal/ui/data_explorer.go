@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/Yacobolo/leapview/internal/catalog"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	uiactions "github.com/Yacobolo/leapview/internal/ui/actions"
 	uisignals "github.com/Yacobolo/leapview/internal/ui/signals"
@@ -9,7 +10,7 @@ import (
 	h "maragu.dev/gomponents/html"
 )
 
-func DataExplorerPage(catalog dashboard.Catalog, page uisignals.DataExplorerPageSignal, explorer uisignals.DataExplorerSignal, roleLabel, csrfToken string, chromeOptions ...ChromeOption) g.Node {
+func DataExplorerPage(catalog catalog.Catalog, page uisignals.DataExplorerPageSignal, explorer uisignals.DataExplorerSignal, roleLabel, csrfToken string, chromeOptions ...ChromeOption) g.Node {
 	catalog = catalogWithoutWorkspaceContext(catalog)
 	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfigForWorkspace(catalog, "data", roleLabel)}
 	applyChromeOptions(&chrome, chromeOptions)
@@ -43,7 +44,7 @@ func DataExplorerPage(catalog dashboard.Catalog, page uisignals.DataExplorerPage
 	})
 }
 
-func DataExplorerBootstrapSignals(catalog dashboard.Catalog, page uisignals.DataExplorerPageSignal, explorer uisignals.DataExplorerSignal, roleLabel string, chromeOptions ...ChromeOption) map[string]any {
+func DataExplorerBootstrapSignals(catalog catalog.Catalog, page uisignals.DataExplorerPageSignal, explorer uisignals.DataExplorerSignal, roleLabel string, chromeOptions ...ChromeOption) map[string]any {
 	catalog = catalogWithoutWorkspaceContext(catalog)
 	chrome := uisignals.ChromeSignal{Sidebar: uisignals.SidebarConfigForWorkspace(catalog, "data", roleLabel)}
 	applyChromeOptions(&chrome, chromeOptions)

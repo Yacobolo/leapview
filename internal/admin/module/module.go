@@ -1,0 +1,140 @@
+package module
+
+import (
+	"context"
+	"database/sql"
+	"net/http"
+
+	"github.com/Yacobolo/leapview/internal/access"
+	adminhttp "github.com/Yacobolo/leapview/internal/admin/http"
+	adminstorage "github.com/Yacobolo/leapview/internal/admin/storage"
+	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
+	"github.com/Yacobolo/leapview/internal/analytics/resource"
+	"github.com/Yacobolo/leapview/internal/api"
+	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
+	"github.com/Yacobolo/leapview/internal/catalog"
+	"github.com/Yacobolo/leapview/internal/dashboard/publication"
+	"github.com/Yacobolo/leapview/internal/ui"
+	"github.com/Yacobolo/leapview/internal/workload"
+	"github.com/Yacobolo/leapview/pkg/pagestream"
+)
+
+type PublicationService interface {
+	PublicationsConfigured() bool
+	AllPublications(context.Context) ([]publication.Publication, error)
+	PublicationEvents(context.Context, string) ([]publication.Event, error)
+	PublicationDTO(publication.Publication) apigenapi.DashboardPublicationResponse
+	MutatePublication(context.Context, string, string, string, publication.Action) (publication.Publication, error)
+}
+
+// Principal is the authenticated identity information needed by platform
+// administration. Transport-specific principal representations stay private to
+// their adapters.
+type Principal struct {
+	ID          string
+	Email       string
+	DisplayName string
+	DevBypass   bool
+}
+
+// AccessReader is the read-only access contract consumed by administration.
+// Mutations remain owned by access.
+type AccessReader interface {
+	ListPrincipals(context.Context, access.PrincipalFilter) ([]access.Principal, error)
+	ListAllGroups(context.Context) ([]access.Group, error)
+	ListGroupMembersByGroup(context.Context, string) ([]access.GroupMember, error)
+	ListRoles(context.Context) ([]access.Role, error)
+	ListAllRoleBindings(context.Context) ([]access.RoleBinding, error)
+	Authorize(context.Context, string, access.Privilege, access.ObjectRef) (access.AuthorizationDecision, error)
+}
+
+type QueryAuditReaderProvider func() (queryaudit.Reader, error)
+
+type StorageConfig struct {
+	CatalogPath  string
+	DataPath     string
+	Environment  string
+	ControlPlane *sql.DB
+	Analytics    interface {
+		resource.Provider
+		resource.SessionProvider
+	}
+	Admitter workload.Admitter
+}
+
+type Config struct {
+	Catalog               func() catalog.Catalog
+	Access                AccessReader
+	AgentDetails          func(context.Context) (api.AdminAgentResponse, error)
+	QueryAuditReader      QueryAuditReaderProvider
+	CSRFToken             func(*http.Request) string
+	CurrentPrincipal      func(*http.Request) (Principal, bool)
+	CurrentCredential     func(*http.Request) (access.APICredential, bool)
+	AuthorizeAnyWorkspace func(context.Context, string, *access.APICredential, access.Privilege) (bool, error)
+	Publications          PublicationService
+	DefaultWorkspaceID    string
+	AuthConfigured        bool
+	AccessConfigured      bool
+	Storage               StorageConfig
+	CurrentRoleLabel      func(*http.Request) string
+	ChromeOption          func(*http.Request) ui.ChromeOption
+	EnsureClientID        func(http.ResponseWriter, *http.Request)
+	Broker                *pagestream.Broker
+}
+
+type Module struct {
+	handler               adminhttp.Handler
+	access                AccessReader
+	currentPrincipal      func(*http.Request) (Principal, bool)
+	currentCredential     func(*http.Request) (access.APICredential, bool)
+	authorizeAnyWorkspace func(context.Context, string, *access.APICredential, access.Privilege) (bool, error)
+	publications          PublicationService
+}
+
+func Build(_ context.Context, config Config) (*Module, error) {
+	m := &Module{
+		access: config.Access, currentPrincipal: config.CurrentPrincipal,
+		currentCredential: config.CurrentCredential, authorizeAnyWorkspace: config.AuthorizeAnyWorkspace,
+		publications: config.Publications,
+	}
+	readModel := adminhttp.ReadModel{
+		Access: config.Access, AgentDetails: config.AgentDetails,
+		StorageService: adminstorage.Service{
+			CatalogPath: config.Storage.CatalogPath, DataPath: config.Storage.DataPath,
+			Environment: config.Storage.Environment, ControlPlane: config.Storage.ControlPlane,
+			Analytics: config.Storage.Analytics, Admitter: config.Storage.Admitter,
+		},
+		QueryAuditReader: adminhttp.QueryAuditReaderProvider(config.QueryAuditReader), CSRFToken: config.CSRFToken,
+		CurrentPrincipal: func(r *http.Request) (adminhttp.Principal, bool) {
+			if config.CurrentPrincipal == nil {
+				return adminhttp.Principal{}, false
+			}
+			principal, ok := config.CurrentPrincipal(r)
+			return adminhttp.Principal{
+				ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName, DevBypass: principal.DevBypass,
+			}, ok
+		},
+		Publications:       m.adminPublications,
+		DefaultWorkspaceID: config.DefaultWorkspaceID, AuthConfigured: config.AuthConfigured,
+		AccessConfigured: config.AccessConfigured,
+	}
+	m.handler = adminhttp.Handler{
+		Catalog: config.Catalog, ReadModel: readModel,
+		CurrentRoleLabel: config.CurrentRoleLabel, ChromeOption: config.ChromeOption,
+		EnsureClientID: config.EnsureClientID, Broker: config.Broker,
+		PublicationMutation: m.mutatePublication,
+	}
+	return m, nil
+}
+
+func (m *Module) HTTP() adminhttp.Handler { return m.handler }
+
+func RoleLabel(authConfigured bool, principal Principal, ok bool) string {
+	if !authConfigured {
+		return "Local platform"
+	}
+	if ok && principal.DevBypass {
+		return "Platform admin"
+	}
+	return "Platform access"
+}

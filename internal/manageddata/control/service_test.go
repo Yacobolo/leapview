@@ -13,6 +13,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/manageddata"
 	"github.com/Yacobolo/leapview/internal/manageddata/control"
 	"github.com/Yacobolo/leapview/internal/manageddata/storage"
+	"github.com/Yacobolo/leapview/internal/platform/jobs"
 )
 
 const (
@@ -403,7 +404,7 @@ func (r *fakeRepository) UpdateUploadProgress(_ context.Context, id string, prog
 	return nil
 }
 
-func (r *fakeRepository) BeginUploadFinalization(_ context.Context, id string) (manageddata.UploadSession, error) {
+func (r *fakeRepository) BeginUploadFinalization(_ context.Context, id string, _ jobs.WorkflowIntent) (manageddata.UploadSession, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	session, ok := r.sessions[id]

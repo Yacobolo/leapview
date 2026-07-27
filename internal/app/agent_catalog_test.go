@@ -12,10 +12,12 @@ import (
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
+	"github.com/Yacobolo/leapview/internal/platform"
+	projectcompiler "github.com/Yacobolo/leapview/internal/project/compiler"
+	projectmanifest "github.com/Yacobolo/leapview/internal/project/manifest"
 	"github.com/Yacobolo/leapview/internal/servingstate"
 	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
 	"github.com/Yacobolo/leapview/internal/workspace"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/workspace/compiler"
 	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
 	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 )
@@ -76,7 +78,7 @@ func (m sharedCatalogMetrics) SemanticModel(modelID string) (*semanticmodel.Mode
 
 func TestAgentCatalogBrowsesEverySupportedRelationship(t *testing.T) {
 	server := catalogTestServer(t)
-	service := agentCatalogService{server: server}
+	service := catalogServiceForTest(server.appTestHarness)
 	scope := agenttools.Scope{PrincipalID: "dev", DevAuthBypass: true}
 	ctx := context.Background()
 
@@ -125,7 +127,7 @@ func TestAgentCatalogBrowsesEverySupportedRelationship(t *testing.T) {
 
 func TestAgentCatalogGetRequiresSharedLocationAndReturnsTypedDetails(t *testing.T) {
 	server := catalogTestServer(t)
-	service := agentCatalogService{server: server}
+	service := catalogServiceForTest(server.appTestHarness)
 	scope := agenttools.Scope{PrincipalID: "dev", DevAuthBypass: true}
 	ctx := context.Background()
 	visualRef := agenttools.CatalogRef{WorkspaceID: "test-workspace", Type: agenttools.CatalogTypeVisual, ID: "executive-sales.orders"}
@@ -177,7 +179,7 @@ func TestAgentCatalogGetRequiresSharedLocationAndReturnsTypedDetails(t *testing.
 }
 
 func TestAgentCatalogGetReturnsSemanticDefinitions(t *testing.T) {
-	service := agentCatalogService{server: catalogTestServer(t)}
+	service := catalogServiceForTest(catalogTestServer(t).appTestHarness)
 	scope := agenttools.Scope{PrincipalID: "dev", DevAuthBypass: true}
 	ctx := context.Background()
 
@@ -255,7 +257,7 @@ func TestAgentCatalogGetReturnsSemanticDefinitions(t *testing.T) {
 
 func TestAgentCatalogSearchIsGlobalNormalizedAndBounded(t *testing.T) {
 	server := catalogTestServer(t)
-	service := agentCatalogService{server: server}
+	service := catalogServiceForTest(server.appTestHarness)
 	page, err := service.Search(context.Background(), agenttools.Scope{PrincipalID: "dev", DevAuthBypass: true}, agenttools.CatalogSearchRequest{
 		Query: "orders", Limit: 10,
 	})
@@ -313,7 +315,7 @@ func TestAgentCatalogCredentialRestrictionDoesNotLeakOtherWorkspaces(t *testing.
 			Privileges:  []string{string(access.PrivilegeViewItem)},
 		},
 	}
-	service := agentCatalogService{server: server}
+	service := catalogServiceForTest(server.appTestHarness)
 	root, err := service.List(context.Background(), scope, agenttools.CatalogListRequest{Limit: 50})
 	if err != nil {
 		t.Fatalf("restricted root list: %v", err)
@@ -356,7 +358,7 @@ func TestAgentCatalogSemanticModelUsageFiltersUnauthorizedDashboards(t *testing.
 		t.Fatalf("grant semantic model view: %v", err)
 	}
 
-	result, err := (agentCatalogService{server: server}).Get(ctx, agenttools.Scope{PrincipalID: principal.ID}, agenttools.CatalogGetRequest{
+	result, err := catalogServiceForTest(server.appTestHarness).Get(ctx, agenttools.Scope{PrincipalID: principal.ID}, agenttools.CatalogGetRequest{
 		Ref: agenttools.CatalogRef{WorkspaceID: "test-workspace", Type: agenttools.CatalogTypeSemanticModel, ID: "test"},
 	})
 	if err != nil {
@@ -372,11 +374,11 @@ func TestAgentCatalogSemanticModelUsageFiltersUnauthorizedDashboards(t *testing.
 
 func TestAgentCatalogWorkspaceLookupPropagatesRepositoryFailures(t *testing.T) {
 	sentinel := errors.New("workspace repository unavailable")
-	server := NewWithOptions(fakeMetrics{}, Options{
-		WorkspaceRepo:      activeMetadataWorkspaceRepo{err: sentinel},
-		DefaultWorkspaceID: "test",
-	})
-	_, err := (agentCatalogService{server: server}).Get(
+	service := agentCatalogService{
+		workspaces:  activeMetadataWorkspaceRepo{err: sentinel},
+		environment: "dev",
+	}
+	_, err := service.Get(
 		context.Background(),
 		agenttools.Scope{PrincipalID: "dev", DevAuthBypass: true},
 		agenttools.CatalogGetRequest{
@@ -390,7 +392,7 @@ func TestAgentCatalogWorkspaceLookupPropagatesRepositoryFailures(t *testing.T) {
 
 func TestAgentCatalogProviderOutputMatchesClosedSchema(t *testing.T) {
 	server := catalogTestServer(t)
-	definitions := server.agentCatalogToolProvider().Definitions(agenttools.Scope{PrincipalID: "dev", DevAuthBypass: true})
+	definitions := server.routes.agentModule.CatalogToolProvider().Definitions(agenttools.Scope{PrincipalID: "dev", DevAuthBypass: true})
 	catalog, err := agentcore.NewToolCatalog(definitions)
 	if err != nil {
 		t.Fatalf("compile catalog tools: %v", err)
@@ -445,7 +447,20 @@ func TestAgentCatalogProviderOutputMatchesClosedSchema(t *testing.T) {
 	}
 }
 
-func catalogTestServer(t *testing.T) *Server {
+type catalogTestHarness struct {
+	*appTestHarness
+	store *platform.Store
+}
+
+func catalogServiceForTest(server *appTestHarness) agentCatalogService {
+	service, ok := server.routes.agentModule.CatalogToolProvider().Catalog.(agentCatalogService)
+	if !ok {
+		panic("agent catalog service is not configured")
+	}
+	return service
+}
+
+func catalogTestServer(t *testing.T) *catalogTestHarness {
 	t.Helper()
 	ctx := context.Background()
 	store := testStore(t)
@@ -468,16 +483,16 @@ func catalogTestServer(t *testing.T) *Server {
 	if !ok {
 		t.Fatal("fixture report missing")
 	}
-	definition := &workspace.Definition{
-		Catalog: workspace.Catalog{
-			Workspace:      workspace.CatalogWorkspace{ID: string(workspaceID), Title: "Test Workspace", Description: "Fixture workspace"},
-			SemanticModels: []workspace.CatalogModel{{ID: "test", Title: "Test Model", Description: "Fixture model"}},
-			Dashboards:     []workspace.CatalogDashboard{{ID: "executive-sales", Title: report.Title, Description: "Fixture report"}},
+	definition := &projectmanifest.Workspace{
+		Catalog: projectmanifest.Catalog{
+			Workspace:      projectmanifest.CatalogWorkspace{ID: string(workspaceID), Title: "Test Workspace", Description: "Fixture workspace"},
+			SemanticModels: []projectmanifest.CatalogModel{{ID: "test", Title: "Test Model", Description: "Fixture model"}},
+			Dashboards:     []projectmanifest.CatalogDashboard{{ID: "executive-sales", Title: report.Title, Description: "Fixture report"}},
 		},
-		Models:     map[string]*semanticmodel.Model{"test": model},
-		Dashboards: map[string]dashboarddefinition.Definition{"executive-sales": report},
+		Models:               map[string]*semanticmodel.Model{"test": model},
+		DashboardDefinitions: map[string]dashboarddefinition.Definition{"executive-sales": report},
 	}
-	graph, err := workspacecompiler.ExtractLineage(workspaceID, workspace.ServingStateID(created.ID), definition)
+	graph, err := projectcompiler.ExtractLineage(workspaceID, workspace.ServingStateID(created.ID), definition)
 	if err != nil {
 		t.Fatalf("extract catalog lineage: %v", err)
 	}
@@ -487,7 +502,7 @@ func catalogTestServer(t *testing.T) *Server {
 	artifact := zeroArtifact(created.ID, string(workspaceID))
 	artifact.Environment = servingstate.DefaultEnvironment
 	validation := completeTestValidation(string(workspaceID), servingstate.Validation{
-		Digest: "catalog-test", ManifestJSON: "{}", ProjectID: "catalog-test", Graph: graph,
+		Digest: "catalog-test", ManifestJSON: "{}", ProjectID: "catalog-test", Graph: testSnapshotGraph(t, graph),
 	})
 	if _, err := servingRepository.SaveValidated(ctx, created.ID, validation, artifact); err != nil {
 		t.Fatalf("save catalog serving state: %v", err)
@@ -495,9 +510,10 @@ func catalogTestServer(t *testing.T) *Server {
 	if _, err := servingRepository.Activate(ctx, servingstate.WorkspaceID(workspaceID), servingstate.DefaultEnvironment, created.ID); err != nil {
 		t.Fatalf("activate catalog serving state: %v", err)
 	}
-	return NewWithOptions(metrics, Options{
-		Store: store, WorkspaceRepo: repository, DefaultWorkspaceID: string(workspaceID), DefaultEnvironment: string(servingstate.DefaultEnvironment),
-	})
+	server := assembleRuntime(metrics, testStoreOptions(store, assemblyConfig{
+		WorkspaceRepo: repository, DefaultWorkspaceID: string(workspaceID), DefaultEnvironment: string(servingstate.DefaultEnvironment),
+	}))
+	return &catalogTestHarness{appTestHarness: server, store: store}
 }
 
 func catalogListForTest(t *testing.T, service agentCatalogService, ctx context.Context, scope agenttools.Scope, request agenttools.CatalogListRequest) agenttools.CatalogPage {

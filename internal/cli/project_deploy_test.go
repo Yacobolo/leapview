@@ -17,8 +17,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/api"
 	apigenapi "github.com/Yacobolo/leapview/internal/api/gen"
-	servingstatefs "github.com/Yacobolo/leapview/internal/servingstate/filesystem"
-	visualizationir "github.com/Yacobolo/leapview/internal/visualization/ir"
+	projectbundle "github.com/Yacobolo/leapview/internal/project/bundle"
 )
 
 func TestDeployPreparesCompleteProjectBeforeOneAtomicActivation(t *testing.T) {
@@ -38,7 +37,7 @@ func TestDeployPreparesCompleteProjectBeforeOneAtomicActivation(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/instance":
 			writeCLIJSON(t, w, apigenapi.InstanceResponse{Environment: "prod"})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/capabilities":
-			writeCLIJSON(t, w, apigenapi.CapabilitiesResponse{ApiVersion: "v1", BuildVersion: "test", Environment: "prod", Authentication: []apigenapi.AuthenticationMode{apigenapi.AuthenticationModeBearer}, QueryFormats: []apigenapi.QueryFormat{apigenapi.QueryFormatApplicationJson}, UploadProtocols: []apigenapi.UploadProtocol{apigenapi.UploadProtocolTus}, Visualization: apigenapi.VisualizationCapabilities{SchemaVersion: visualizationir.CurrentSchemaVersion, Renderers: []apigenapi.VisualizationRendererCapability{}}})
+			writeCLIJSON(t, w, apigenapi.CapabilitiesResponse{ApiVersion: "v1", BuildVersion: "test", Environment: "prod", Authentication: []apigenapi.AuthenticationMode{apigenapi.AuthenticationModeBearer}, QueryFormats: []apigenapi.QueryFormat{apigenapi.QueryFormatApplicationJson}, UploadProtocols: []apigenapi.UploadProtocol{apigenapi.UploadProtocolTus}})
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/active-asset-graph"):
 			writeCLIJSON(t, w, activeGraphResponse(nil, nil))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/projects/leapview-showcase/releases":
@@ -171,10 +170,10 @@ func readManagedDataPinsFromUpload(t *testing.T, body io.Reader) (map[string]str
 		t.Fatal(err)
 	}
 	root := t.TempDir()
-	if err := servingstatefs.ExtractArtifact(path, root); err != nil {
+	if err := projectbundle.ExtractArtifact(path, root); err != nil {
 		t.Fatal(err)
 	}
-	compiled, _, err := servingstatefs.LoadCompiledWorkspaceArtifact(root)
+	compiled, _, err := projectbundle.LoadCompiledWorkspaceArtifact(root)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -34,14 +34,17 @@ type StartedPrompt struct {
 	Input          string
 	CorrelationID  string
 
-	service      *Service
-	systemPrompt string
-	initial      []agentcore.Message
-	runContext   context.Context
-	cancel       context.CancelFunc
-	mu           sync.Mutex
-	closed       bool
+	service       *Service
+	systemPrompt  string
+	initial       []agentcore.Message
+	runContext    context.Context
+	cancel        context.CancelFunc
+	mu            sync.Mutex
+	closed        bool
+	durablyQueued bool
 }
+
+func (p *StartedPrompt) DurablyQueued() bool { return p != nil && p.durablyQueued }
 
 func (s *Service) Prompt(ctx context.Context, input PromptInput) (PromptResult, error) {
 	started, err := s.StartPrompt(ctx, input)
@@ -84,12 +87,17 @@ func (s *Service) StartPrompt(ctx context.Context, input PromptInput) (*StartedP
 		return nil, err
 	}
 	runID := newID("run")
+	runStatus := RunStatusRunning
+	if s.promptWorkflow != nil {
+		runStatus = RunStatusPreparing
+	}
 	run, err := s.repo.CreateRun(ctx, RunInput{
 		PrincipalID:    input.Scope.PrincipalID,
 		ConversationID: input.ConversationID,
 		RunID:          runID,
 		Model:          s.config.Model,
 		MetadataJSON:   metadataJSON(map[string]any{"base_url": s.config.NormalizedBaseURL(), "model": s.config.Model}),
+		Status:         runStatus,
 	})
 	if err != nil {
 		return nil, err
@@ -132,6 +140,21 @@ func (s *Service) StartPrompt(ctx context.Context, input PromptInput) (*StartedP
 		_ = s.finishRun(ctx, input, run.ID, RunStatusFailed, "", agentcore.Usage{}, err)
 		return nil, err
 	}
+	durablyQueued := false
+	if s.promptWorkflow != nil {
+		unit, ok := s.repo.(RunWorkflowUnitOfWork)
+		if !ok {
+			err := fmt.Errorf("agent run workflow unit of work is unavailable")
+			_ = s.finishRun(ctx, input, run.ID, RunStatusFailed, "", agentcore.Usage{}, err)
+			return nil, err
+		}
+		run, err = unit.ActivateRunWorkflow(ctx, input.Scope.PrincipalID, input.ConversationID, run.ID, s.promptWorkflow(input, run.ID))
+		if err != nil {
+			_ = s.finishRun(ctx, input, run.ID, RunStatusFailed, "", agentcore.Usage{}, err)
+			return nil, err
+		}
+		durablyQueued = true
+	}
 	runContext, cancel := context.WithCancel(context.Background())
 	s.attachRun(input.ConversationID, run.ID, cancel)
 	release = false
@@ -146,6 +169,7 @@ func (s *Service) StartPrompt(ctx context.Context, input PromptInput) (*StartedP
 		initial:        initial,
 		runContext:     runContext,
 		cancel:         cancel,
+		durablyQueued:  durablyQueued,
 	}, nil
 }
 

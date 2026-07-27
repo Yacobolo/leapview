@@ -14,12 +14,13 @@ import (
 	"github.com/Yacobolo/leapview/internal/access"
 	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
 	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	analyticsqueryhttp "github.com/Yacobolo/leapview/internal/analytics/query/http"
 	"github.com/Yacobolo/leapview/internal/api"
 	"github.com/Yacobolo/leapview/internal/cursorsigning"
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
 	dashboardhttp "github.com/Yacobolo/leapview/internal/dashboard/http"
+	dashboardsemanticapi "github.com/Yacobolo/leapview/internal/dashboard/semanticapi"
+	"github.com/Yacobolo/leapview/internal/dataquery"
 	productsearch "github.com/Yacobolo/leapview/internal/search"
 	visualizationdefinition "github.com/Yacobolo/leapview/internal/visualization/definition"
 	"github.com/Yacobolo/leapview/internal/workspace"
@@ -40,11 +41,74 @@ var catalogSearchTypes = []productsearch.Type{
 }
 
 type agentCatalogService struct {
-	server *Server
+	search              catalogSearchService
+	environment         string
+	workspaces          workspace.ReadModel
+	rootMetrics         QueryMetrics
+	metricsForWorkspace func(string) (QueryMetrics, bool)
+	authorizeAnyObject  func(context.Context, string, access.Privilege, []access.ObjectRef) (bool, error)
+	recordAudit         func(context.Context, access.AuditEventInput) error
+	skipAuthorization   bool
+}
+
+type catalogSearchService interface {
+	Search(context.Context, productsearch.Subject, productsearch.Query) (productsearch.Page, error)
+	ResolveSearchReferences(context.Context, productsearch.Subject, string, []productsearch.Reference) ([]productsearch.Result, error)
+}
+
+type activeWorkspaceRepository interface {
+	ListWithActiveMetadata(context.Context, string) ([]workspace.Summary, error)
+	ByIDWithActiveMetadata(context.Context, workspace.WorkspaceID, string) (workspace.Summary, error)
+}
+
+func (c agentCatalogService) workspaceMetrics(workspaceID string) (QueryMetrics, bool) {
+	if c.metricsForWorkspace != nil {
+		return c.metricsForWorkspace(workspaceID)
+	}
+	if c.rootMetrics == nil || c.rootMetrics.Catalog().Workspace.ID != workspaceID {
+		return nil, false
+	}
+	return c.rootMetrics, true
+}
+
+func (c agentCatalogService) recordCatalogAudit(ctx context.Context, scope agenttools.Scope, workspaceID, status string, cause error) {
+	if c.recordAudit == nil {
+		return
+	}
+	metadata := dataquery.MetadataFromContext(ctx)
+	payload := map[string]any{}
+	if cause != nil {
+		payload["error"] = cause.Error()
+	}
+	encoded, _ := json.Marshal(payload)
+	_ = c.recordAudit(ctx, access.AuditEventInput{
+		WorkspaceID: workspaceID, PrincipalID: scope.PrincipalID,
+		Action: "agent_tool.called", TargetType: "agent_tool", TargetID: agenttools.CatalogGetToolName,
+		Privilege: access.PrivilegeViewItem, Status: status,
+		RequestID: metadata.RequestID, CorrelationID: metadata.CorrelationID, MetadataJSON: string(encoded),
+	})
+}
+
+func containsSearchPrivilege(privileges []string, wanted access.Privilege) bool {
+	for _, privilege := range privileges {
+		if strings.EqualFold(strings.TrimSpace(privilege), string(wanted)) {
+			return true
+		}
+	}
+	return false
+}
+
+func catalogFirstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (c agentCatalogService) Search(ctx context.Context, scope agenttools.Scope, request agenttools.CatalogSearchRequest) (agenttools.CatalogPage, error) {
-	if c.server == nil || c.server.search == nil {
+	if c.search == nil {
 		return agenttools.CatalogPage{}, errors.New("catalog search is not configured")
 	}
 	types := make([]productsearch.Type, 0, len(request.Types))
@@ -53,7 +117,7 @@ func (c agentCatalogService) Search(ctx context.Context, scope agenttools.Scope,
 	}
 	query := productsearch.Query{
 		Text:         request.Query,
-		Environment:  c.server.defaultEnvironment,
+		Environment:  c.environment,
 		Workspaces:   append([]string(nil), request.WorkspaceIDs...),
 		Types:        types,
 		AllowedTypes: append([]productsearch.Type(nil), catalogSearchTypes...),
@@ -69,7 +133,7 @@ func (c agentCatalogService) Search(ctx context.Context, scope agenttools.Scope,
 	} else if scope.WorkspaceID != "" {
 		query.Context.WorkspaceID = scope.WorkspaceID
 	}
-	page, err := c.server.search.Search(ctx, catalogSearchSubject(scope), query)
+	page, err := c.search.Search(ctx, catalogSearchSubject(scope), query)
 	if err != nil {
 		return agenttools.CatalogPage{}, catalogSearchError(err)
 	}
@@ -120,12 +184,8 @@ func (c agentCatalogService) Get(ctx context.Context, scope agenttools.Scope, re
 			status = "denied"
 		}
 	}
-	if c.server != nil && !scope.DevAuthBypass {
-		if repository, repositoryErr := c.server.accessRepository(); repositoryErr == nil && repository != nil {
-			auditScope := agentScopeFromTools(scope)
-			auditScope.WorkspaceID = request.Ref.WorkspaceID
-			recordAgentToolAudit(ctx, repository, auditScope, access.PrivilegeViewItem, "agent_tool", agenttools.CatalogGetToolName, status, err)
-		}
+	if !scope.DevAuthBypass {
+		c.recordCatalogAudit(ctx, scope, request.Ref.WorkspaceID, status, err)
 	}
 	return result, err
 }
@@ -189,10 +249,10 @@ func (c agentCatalogService) listItems(ctx context.Context, scope agenttools.Sco
 	if len(references) == 0 {
 		return []agenttools.CatalogItem{}, nil
 	}
-	if c.server.search == nil {
+	if c.search == nil {
 		return nil, errors.New("catalog search is not configured")
 	}
-	results, err := c.server.search.Resolve(ctx, catalogSearchSubject(scope), c.server.defaultEnvironment, references)
+	results, err := c.search.ResolveSearchReferences(ctx, catalogSearchSubject(scope), c.environment, references)
 	if err != nil {
 		return nil, err
 	}
@@ -200,22 +260,19 @@ func (c agentCatalogService) listItems(ctx context.Context, scope agenttools.Sco
 }
 
 func (c agentCatalogService) listWorkspaceItems(ctx context.Context, scope agenttools.Scope) ([]agenttools.CatalogItem, error) {
-	repository, err := c.server.workspaceRepository()
-	if err != nil {
-		return nil, err
-	}
 	var summaries []workspace.Summary
-	if repository != nil {
-		if active, ok := repository.(activeWorkspaceRepository); ok {
-			summaries, err = active.ListWithActiveMetadata(ctx, c.server.defaultEnvironment)
+	var err error
+	if c.workspaces != nil {
+		if active, ok := c.workspaces.(activeWorkspaceRepository); ok {
+			summaries, err = active.ListWithActiveMetadata(ctx, c.environment)
 		} else {
-			summaries, err = repository.List(ctx)
+			summaries, err = c.workspaces.List(ctx)
 		}
 		if err != nil {
 			return nil, err
 		}
-	} else if c.server.metrics != nil {
-		catalog := c.server.metrics.Catalog()
+	} else if c.rootMetrics != nil {
+		catalog := c.rootMetrics.Catalog()
 		summaries = []workspace.Summary{{
 			ID: workspace.WorkspaceID(catalog.Workspace.ID), Title: catalog.Workspace.Title, Description: catalog.Workspace.Description,
 		}}
@@ -240,16 +297,13 @@ func (c agentCatalogService) workspaceItem(ctx context.Context, scope agenttools
 	if err != nil || !allowed {
 		return agenttools.CatalogItem{}, workspace.Summary{}, false, err
 	}
-	repository, err := c.server.workspaceRepository()
-	if err != nil {
-		return agenttools.CatalogItem{}, workspace.Summary{}, false, err
-	}
-	if repository != nil {
+	if c.workspaces != nil {
 		var summary workspace.Summary
-		if active, ok := repository.(activeWorkspaceRepository); ok {
-			summary, err = active.ByIDWithActiveMetadata(ctx, workspace.WorkspaceID(workspaceID), c.server.defaultEnvironment)
+		var err error
+		if active, ok := c.workspaces.(activeWorkspaceRepository); ok {
+			summary, err = active.ByIDWithActiveMetadata(ctx, workspace.WorkspaceID(workspaceID), c.environment)
 		} else {
-			summary, err = repository.ByID(ctx, workspace.WorkspaceID(workspaceID))
+			summary, err = c.workspaces.ByID(ctx, workspace.WorkspaceID(workspaceID))
 		}
 		if err != nil {
 			if errors.Is(err, workspace.ErrNotFound) {
@@ -259,7 +313,7 @@ func (c agentCatalogService) workspaceItem(ctx context.Context, scope agenttools
 		}
 		return catalogWorkspaceItem(summary), summary, true, nil
 	}
-	metrics, ok := c.server.metricsForWorkspace(workspaceID)
+	metrics, ok := c.workspaceMetrics(workspaceID)
 	if !ok || metrics == nil {
 		return agenttools.CatalogItem{}, workspace.Summary{}, false, nil
 	}
@@ -278,22 +332,20 @@ func (c agentCatalogService) canViewWorkspace(ctx context.Context, scope agentto
 	if scope.Credential.Restricted && !containsSearchPrivilege(scope.Credential.Privileges, access.PrivilegeViewItem) {
 		return false, nil
 	}
-	if scope.DevAuthBypass || c.server.auth == nil {
+	if scope.DevAuthBypass || c.skipAuthorization {
 		return true, nil
 	}
-	repository, err := c.server.accessRepository()
-	if err != nil || repository == nil {
-		return false, err
+	if c.authorizeAnyObject == nil {
+		return false, nil
 	}
-	decision, err := repository.Authorize(ctx, scope.PrincipalID, access.PrivilegeViewItem, access.WorkspaceObject(workspaceID))
-	return err == nil && decision.Allowed, err
+	return c.authorizeAnyObject(ctx, scope.PrincipalID, access.PrivilegeViewItem, []access.ObjectRef{access.WorkspaceObject(workspaceID)})
 }
 
 func (c agentCatalogService) resolveOne(ctx context.Context, scope agenttools.Scope, ref agenttools.CatalogRef) (productsearch.Result, bool, error) {
-	if c.server.search == nil {
+	if c.search == nil {
 		return productsearch.Result{}, false, errors.New("catalog search is not configured")
 	}
-	results, err := c.server.search.Resolve(ctx, catalogSearchSubject(scope), c.server.defaultEnvironment, []productsearch.Reference{catalogSearchReference(ref)})
+	results, err := c.search.ResolveSearchReferences(ctx, catalogSearchSubject(scope), c.environment, []productsearch.Reference{catalogSearchReference(ref)})
 	if err != nil {
 		return productsearch.Result{}, false, err
 	}
@@ -304,7 +356,7 @@ func (c agentCatalogService) resolveOne(ctx context.Context, scope agenttools.Sc
 }
 
 func (c agentCatalogService) childReferences(parent agenttools.CatalogRef, requested []agenttools.CatalogType) ([]productsearch.Reference, error) {
-	metrics, ok := c.server.metricsForWorkspace(parent.WorkspaceID)
+	metrics, ok := c.workspaceMetrics(parent.WorkspaceID)
 	if !ok || metrics == nil {
 		return []productsearch.Reference{}, nil
 	}
@@ -415,7 +467,7 @@ func (c agentCatalogService) childReferences(parent agenttools.CatalogRef, reque
 }
 
 func (c agentCatalogService) details(ctx context.Context, scope agenttools.Scope, ref agenttools.CatalogRef, location agenttools.CatalogLocation) (map[string]any, error) {
-	metrics, ok := c.server.metricsForWorkspace(ref.WorkspaceID)
+	metrics, ok := c.workspaceMetrics(ref.WorkspaceID)
 	if !ok || metrics == nil {
 		return nil, catalogNotFound()
 	}
@@ -522,7 +574,7 @@ func catalogItem(result productsearch.Result) agenttools.CatalogItem {
 
 func catalogWorkspaceItem(summary workspace.Summary) agenttools.CatalogItem {
 	id := string(summary.ID)
-	name := firstNonEmpty(summary.Title, id)
+	name := catalogFirstNonEmpty(summary.Title, id)
 	ref := agenttools.CatalogRef{WorkspaceID: id, Type: agenttools.CatalogTypeWorkspace, ID: id}
 	return agenttools.CatalogItem{
 		Ref: ref, Name: name, Description: summary.Description,
@@ -799,7 +851,7 @@ func (c agentCatalogService) semanticModelDetails(ctx context.Context, scope age
 	if !ok || model == nil {
 		return nil, catalogNotFound()
 	}
-	projection, ok := analyticsqueryhttp.SemanticModelProjection(metrics, ref.ID)
+	projection, ok := dashboardsemanticapi.SemanticModelProjection(metrics, ref.ID)
 	if !ok {
 		return nil, catalogNotFound()
 	}
@@ -811,7 +863,7 @@ func (c agentCatalogService) semanticModelDetails(ctx context.Context, scope age
 			ID:          dashboardUsage.ID,
 		})
 	}
-	authorized, err := c.server.search.Resolve(ctx, catalogSearchSubject(scope), c.server.defaultEnvironment, references)
+	authorized, err := c.search.ResolveSearchReferences(ctx, catalogSearchSubject(scope), c.environment, references)
 	if err != nil {
 		return nil, err
 	}
@@ -851,7 +903,7 @@ func catalogSemanticTableDetails(metrics QueryMetrics, ref agenttools.CatalogRef
 	if !ok {
 		return nil, catalogNotFound()
 	}
-	projection := analyticsqueryhttp.SemanticTableProjection(model, tableID, table)
+	projection := dashboardsemanticapi.SemanticTableProjection(model, tableID, table)
 	keys := []string{}
 	if projection.PrimaryKey != "" {
 		keys = append(keys, projection.PrimaryKey)
@@ -902,7 +954,7 @@ func catalogFieldDetails(metrics QueryMetrics, ref agenttools.CatalogRef) (map[s
 	details := map[string]any{
 		"type": string(ref.Type), "kind": "dimension", "table": parts[len(parts)-2],
 		"label": field.Label, "dataType": field.Type, "grain": table.Grain,
-		"expression": firstNonEmpty(field.Expression, field.Expr),
+		"expression": catalogFirstNonEmpty(field.Expression, field.Expr),
 		"primaryKey": parts[len(parts)-1] == table.PrimaryKey,
 	}
 	if column, ok := table.Columns[parts[len(parts)-1]]; ok && column.SourceField != "" {
