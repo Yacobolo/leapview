@@ -138,6 +138,19 @@ func TestPublicSiteImagePublicationContract(t *testing.T) {
 	}
 }
 
+func TestPublicSiteImageGeneratesEmbeddedRuntimeAssets(t *testing.T) {
+	dockerfile := readFile(t, filepath.Join("..", "..", "Dockerfile.site"))
+	generateVisualDocs := strings.Index(dockerfile, "go run -tags=duckdb_arrow ./internal/app/tools/visualdocgen")
+	buildSite := strings.Index(dockerfile, "go build -trimpath")
+	if generateVisualDocs < 0 {
+		t.Fatal("public site image must generate visual documentation with the analytical runtime enabled")
+	}
+	if buildSite < 0 || generateVisualDocs > buildSite {
+		t.Fatal("public site image must generate visual documentation before compiling the server")
+	}
+	requireContains(t, dockerfile, "test -f docs/visuals/examples.gen.json")
+}
+
 func TestSupplyChainInputsArePinned(t *testing.T) {
 	for _, name := range []string{"Dockerfile", "Dockerfile.site"} {
 		dockerfile := readFile(t, filepath.Join("..", "..", name))
