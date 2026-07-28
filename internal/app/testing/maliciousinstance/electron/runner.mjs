@@ -1,0 +1,440 @@
+import assert from "node:assert/strict";
+import { writeFile } from "node:fs/promises";
+
+import { app, BrowserWindow, session } from "electron";
+
+import {
+  createObservationRecorder,
+  fetchBoundedJSON,
+  validateManifest,
+} from "./manifest-proof.mjs";
+import {
+  configureRemoteSession,
+  installRemoteContentsPolicy,
+  parseConfiguredOrigin,
+  remoteWebPreferences,
+} from "./policy.mjs";
+
+app.enableSandbox();
+
+const proofOrigin = parseConfiguredOrigin(process.env.LEAPVIEW_PROOF_ORIGIN, {
+  allowLoopbackHTTP: true,
+});
+const resultPath = process.env.LEAPVIEW_PROOF_RESULT;
+if (!resultPath) {
+  throw new Error("LEAPVIEW_PROOF_RESULT is required");
+}
+
+const result = {
+  passed: false,
+  framework: `Electron ${process.versions.electron}`,
+  chromium: process.versions.chrome,
+  phase: "bootstrap",
+  manifestVersion: null,
+  observations: [],
+  checks: [],
+  decisions: [],
+};
+
+await writeResult();
+app.whenReady().then(async () => {
+  try {
+    result.phase = "running";
+    await withTimeout(runProof(), 40_000, "candidate proof");
+    result.passed = true;
+    result.phase = "complete";
+    await writeResult();
+    app.quit();
+  } catch (error) {
+    await fail(error);
+  }
+}).catch(fail);
+
+async function fail(error) {
+  result.error = error instanceof Error ? error.message : String(error);
+  result.phase = "failed";
+  await writeResult();
+  app.exit(1);
+}
+
+async function runProof() {
+  result.currentCheck = "manifest";
+  const manifest = validateManifest(
+    await fetchBoundedJSON(`${proofOrigin}/__harness/manifest.json`),
+  );
+  result.manifestVersion = manifest.version;
+  const observations = createObservationRecorder(manifest);
+
+  const first = createRemoteWindow("leapview-profile-proof-a");
+  const second = createRemoteWindow("leapview-profile-proof-b");
+
+  try {
+    await assertRendererBoundary(first.window);
+    await observeNativeAttacks(first.window, observations);
+    await observeNavigationAttacks(first.window, observations);
+    await observePopupAttack(first.window, observations);
+    await observeCrossOriginFrame(first.window, observations);
+    await observePermissionAttacks(first.window, observations);
+    await observeDownloadAttack(first.window, observations);
+    await observeStorageIsolation(first, second, observations);
+    await observeDiscoveryAttacks(observations);
+    await observeRendererAvailability(first.window, observations);
+
+    result.observations = observations.finalize();
+    result.checks.push("manifest-complete");
+  } finally {
+    if (!first.window.isDestroyed()) {
+      first.window.destroy();
+    }
+    if (!second.window.isDestroyed()) {
+      second.window.destroy();
+    }
+  }
+}
+
+async function assertRendererBoundary(window) {
+  result.currentCheck = "renderer-preferences";
+  await load(window, `${proofOrigin}/`);
+  const preferences = window.webContents.getLastWebPreferences();
+  result.preferences = {
+    nodeIntegration: preferences.nodeIntegration,
+    nodeIntegrationInWorker: preferences.nodeIntegrationInWorker,
+    nodeIntegrationInSubFrames: preferences.nodeIntegrationInSubFrames,
+    contextIsolation: preferences.contextIsolation,
+    sandbox: preferences.sandbox,
+    webSecurity: preferences.webSecurity,
+    webviewTag: preferences.webviewTag,
+    hasPreload: Boolean(preferences.preload),
+  };
+  assert.equal(preferences.nodeIntegration, false, "nodeIntegration");
+  assert.equal(preferences.nodeIntegrationInWorker ?? false, false, "nodeIntegrationInWorker");
+  assert.equal(preferences.nodeIntegrationInSubFrames ?? false, false, "nodeIntegrationInSubFrames");
+  assert.equal(preferences.contextIsolation, true, "contextIsolation");
+  assert.equal(preferences.sandbox, true, "sandbox");
+  assert.equal(preferences.webSecurity, true, "webSecurity");
+  assert.equal(preferences.webviewTag ?? false, false, "webviewTag");
+  assert.ok(!preferences.preload, "remote content must not receive a preload");
+  result.checks.push("sandboxed-renderer-without-preload");
+}
+
+async function observeNativeAttacks(window, observations) {
+  result.currentCheck = "native-globals";
+  await load(window, `${proofOrigin}/attack/native.electron-global`);
+  const globals = await inspectNativeGlobals(window.webContents);
+  assert.deepEqual(globals, {
+    nodeProcess: false,
+    nodeRequire: false,
+    nodeModule: false,
+    electron: false,
+    wails: false,
+    tauri: false,
+  });
+  observations.record("native.wails-global", "blocked");
+  observations.record("native.electron-global", "blocked");
+  observations.record("native.tauri-global", "blocked");
+
+  result.currentCheck = "native.wails-http-transport";
+  await load(window, `${proofOrigin}/attack/native.wails-http-transport`);
+  const transportReached = await execute(window, `(async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 750);
+    try {
+      await fetch("http://wails.localhost/wails/runtime", {
+        method: "POST",
+        mode: "no-cors",
+        signal: controller.signal,
+        body: "{}",
+      });
+      return true;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timeout);
+    }
+  })()`);
+  assert.equal(transportReached, false);
+  observations.record("native.wails-http-transport", "blocked");
+}
+
+async function observeNavigationAttacks(window, observations) {
+  result.currentCheck = "navigation.cross-origin";
+  await load(window, `${proofOrigin}/`);
+  await load(window, `${proofOrigin}/attack/navigation.cross-origin`, {
+    allowBlocked: true,
+  });
+  await delay(150);
+  assert.equal(new URL(window.webContents.getURL()).origin, proofOrigin);
+  assertDecision("main-frame-navigation");
+  observations.record("navigation.cross-origin", "blocked");
+
+  for (const attackID of [
+    "navigation.javascript",
+    "navigation.data",
+    "navigation.blob",
+    "navigation.file",
+    "scheme.custom",
+    "scheme.deep-link-injection",
+  ]) {
+    result.currentCheck = attackID;
+    await load(window, `${proofOrigin}/attack/${attackID}`);
+    const before = window.webContents.getURL();
+    await execute(window, `document.getElementById("trigger").click()`, true);
+    await delay(150);
+    assert.equal(window.webContents.getURL(), before, attackID);
+    assert.equal(
+      await execute(
+        window,
+        `sessionStorage.getItem("leapview.desktop.harness.triggered")`,
+      ),
+      attackID,
+      `${attackID} trigger did not execute`,
+    );
+    if (attackID === "navigation.javascript") {
+      assertNoNativeGlobals(await inspectNativeGlobals(window.webContents));
+    }
+    observations.record(attackID, "blocked");
+  }
+}
+
+async function observePopupAttack(window, observations) {
+  result.currentCheck = "popup.cross-origin";
+  await load(window, `${proofOrigin}/attack/popup.cross-origin`);
+  const decisionsBefore = result.decisions.length;
+  await execute(window, `document.getElementById("trigger").click()`, true);
+  assert.ok(
+    result.decisions.slice(decisionsBefore).some((decision) => decision.kind === "popup"),
+    "popup did not reach the popup boundary",
+  );
+  observations.record("popup.cross-origin", "blocked");
+}
+
+async function observeCrossOriginFrame(window, observations) {
+  result.currentCheck = "frame.cross-origin";
+  await load(window, `${proofOrigin}/attack/frame.cross-origin`);
+  const frame = await waitFor(
+    () => window.webContents.mainFrame.frames.find(
+      (candidate) =>
+        candidate.url !== "" &&
+        new URL(candidate.url).origin !== proofOrigin,
+    ),
+    5_000,
+    "cross-origin child frame",
+  );
+  const globals = await withTimeout(
+    inspectNativeGlobals(frame),
+    5_000,
+    "cross-origin frame inspection",
+  );
+  assertNoNativeGlobals(globals);
+  observations.record("frame.cross-origin", "blocked");
+}
+
+async function observePermissionAttacks(window, observations) {
+  const permissionScripts = new Map([
+    ["permission.camera", `navigator.mediaDevices?.getUserMedia
+      ? navigator.mediaDevices.getUserMedia({video:true}).then(() => "granted", () => "denied")
+      : Promise.resolve("unavailable")`],
+    ["permission.microphone", `navigator.mediaDevices?.getUserMedia
+      ? navigator.mediaDevices.getUserMedia({audio:true}).then(() => "granted", () => "denied")
+      : Promise.resolve("unavailable")`],
+    ["permission.geolocation", `navigator.geolocation
+      ? Promise.race([
+          new Promise((resolve) => navigator.geolocation.getCurrentPosition(
+            () => resolve("granted"),
+            () => resolve("denied"),
+          )),
+          new Promise((resolve) => setTimeout(() => resolve("timeout"), 1500)),
+        ])
+      : Promise.resolve("unavailable")`],
+    ["permission.notifications", `typeof Notification !== "undefined"
+      ? Notification.requestPermission()
+      : Promise.resolve("unavailable")`],
+    ["permission.clipboard-read", `navigator.clipboard?.readText
+      ? navigator.clipboard.readText().then(() => "granted", () => "denied")
+      : Promise.resolve("unavailable")`],
+  ]);
+
+  for (const [attackID, script] of permissionScripts) {
+    result.currentCheck = attackID;
+    await load(window, `${proofOrigin}/attack/${attackID}`);
+    const outcome = await execute(window, script, true);
+    assert.notEqual(outcome, "granted", `${attackID} was granted`);
+    observations.record(attackID, "blocked");
+  }
+  assert.ok(
+    result.decisions.some(
+      (decision) =>
+        decision.kind === "permission-request" ||
+        decision.kind === "permission-check",
+    ),
+    "no permission request reached the deny-by-default session boundary",
+  );
+}
+
+async function observeDownloadAttack(window, observations) {
+  result.currentCheck = "download.hostile-filename";
+  const decisionsBefore = result.decisions.length;
+  await load(window, `${proofOrigin}/attack/download.hostile-filename`, {
+    allowBlocked: true,
+  });
+  await delay(150);
+  assert.ok(
+    result.decisions.slice(decisionsBefore).some((decision) => decision.kind === "download"),
+    "download did not reach the session boundary",
+  );
+  observations.record("download.hostile-filename", "blocked");
+}
+
+async function observeStorageIsolation(first, second, observations) {
+  result.currentCheck = "storage.cross-profile";
+  const key = "leapview.desktop.harness.cross-profile";
+  await load(first.window, `${proofOrigin}/attack/storage.cross-profile`);
+  assert.equal(await execute(first.window, `localStorage.getItem(${JSON.stringify(key)})`), "present");
+
+  await load(second.window, `${proofOrigin}/`);
+  assert.equal(await execute(second.window, `localStorage.getItem(${JSON.stringify(key)})`), null);
+
+  await first.remoteSession.clearStorageData();
+  await load(first.window, `${proofOrigin}/`);
+  assert.equal(await execute(first.window, `localStorage.getItem(${JSON.stringify(key)})`), null);
+  observations.record("storage.cross-profile", "blocked");
+}
+
+async function observeDiscoveryAttacks(observations) {
+  result.currentCheck = "discovery.malformed";
+  await assert.rejects(
+    fetchBoundedJSON(`${proofOrigin}/attack/discovery.malformed`),
+  );
+  observations.record("discovery.malformed", "blocked");
+
+  result.currentCheck = "discovery.oversized";
+  await assert.rejects(
+    fetchBoundedJSON(`${proofOrigin}/attack/discovery.oversized`),
+    /exceeds 65536 bytes/,
+  );
+  observations.record("discovery.oversized", "blocked");
+}
+
+async function observeRendererAvailability(window, observations) {
+  result.currentCheck = "renderer.resource-exhaustion";
+  await load(window, `${proofOrigin}/attack/renderer.resource-exhaustion`);
+  const rendererWork = execute(
+    window,
+    `document.getElementById("trigger").click()`,
+    true,
+  );
+  const firstCompletion = await Promise.race([
+    rendererWork.then(() => "renderer"),
+    delay(75).then(() => "main"),
+  ]);
+  assert.equal(firstCompletion, "main", "renderer work blocked the Electron main process");
+  await rendererWork;
+  observations.record("renderer.resource-exhaustion", "blocked");
+}
+
+function createRemoteWindow(partition) {
+  const remoteSession = session.fromPartition(partition, { cache: false });
+  configureRemoteSession(remoteSession, recordDecision);
+  const window = new BrowserWindow({
+    show: false,
+    width: 1000,
+    height: 700,
+    webPreferences: remoteWebPreferences(partition),
+  });
+  installRemoteContentsPolicy(window.webContents, proofOrigin, recordDecision);
+  return { window, remoteSession };
+}
+
+function inspectNativeGlobals(frame) {
+  return frame.executeJavaScript(`({
+    nodeProcess: typeof window.process !== "undefined",
+    nodeRequire: typeof window.require !== "undefined",
+    nodeModule: typeof window.module !== "undefined",
+    electron: Boolean(window.electron || window.electronAPI),
+    wails: Boolean(
+      window._wails ||
+      window.wails ||
+      (window.chrome && window.chrome.webview) ||
+      (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.external)
+    ),
+    tauri: Boolean(window.__TAURI__ || window.__TAURI_INTERNALS__ || window.isTauri),
+  })`);
+}
+
+function assertNoNativeGlobals(globals) {
+  assert.deepEqual(globals, {
+    nodeProcess: false,
+    nodeRequire: false,
+    nodeModule: false,
+    electron: false,
+    wails: false,
+    tauri: false,
+  });
+}
+
+function assertDecision(kind) {
+  assert.ok(
+    result.decisions.some((decision) => decision.kind === kind),
+    `no ${kind} decision was recorded`,
+  );
+}
+
+function recordDecision(decision) {
+  result.decisions.push(decision);
+}
+
+async function writeResult() {
+  await writeFile(resultPath, `${JSON.stringify(result, null, 2)}\n`, {
+    mode: 0o600,
+  });
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function waitFor(operation, milliseconds, label) {
+  const deadline = Date.now() + milliseconds;
+  while (Date.now() < deadline) {
+    const value = operation();
+    if (value) {
+      return value;
+    }
+    await delay(25);
+  }
+  throw new Error(`${label} exceeded ${milliseconds}ms`);
+}
+
+async function load(window, url, options = {}) {
+  const operation = window.loadURL(url);
+  if (options.allowBlocked === true) {
+    await Promise.race([operation.catch(() => {}), delay(1_500)]);
+    return;
+  }
+  await withTimeout(operation, 5_000, `load ${new URL(url).pathname}`);
+}
+
+async function execute(window, script, userGesture = false) {
+  return withTimeout(
+    window.webContents.executeJavaScript(script, userGesture),
+    5_000,
+    "renderer script",
+  );
+}
+
+async function withTimeout(operation, milliseconds, label) {
+  let timeout;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error(`${label} exceeded ${milliseconds}ms`)),
+          milliseconds,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
