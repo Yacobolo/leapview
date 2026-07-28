@@ -189,6 +189,76 @@ func TestFiveMinuteEvaluationContract(t *testing.T) {
 	}
 }
 
+func TestQualificationRunbookMatchesExecutablePerformancePolicy(t *testing.T) {
+	root := filepath.Join("..", "..")
+	policyJSON := read(t, filepath.Join(root, "deploy", "compose", "qualification", "performance-policy.json"))
+	runbook := read(t, filepath.Join(root, "deploy", "compose", "QUALIFICATION.md"))
+
+	var policy struct {
+		Budgets map[string]float64 `json:"budgets"`
+	}
+	if err := json.Unmarshal([]byte(policyJSON), &policy); err != nil {
+		t.Fatalf("parse performance policy: %v", err)
+	}
+
+	type documentedBudget struct {
+		key         string
+		measurement string
+		format      func(float64) string
+	}
+	seconds := func(milliseconds float64) string {
+		return fmt.Sprintf("%g s", milliseconds/1000)
+	}
+	number := func(value float64) string {
+		return fmt.Sprintf("%g", value)
+	}
+	bytes := func(unit float64, suffix string) func(float64) string {
+		return func(value float64) string {
+			return fmt.Sprintf("%g %s", value/unit, suffix)
+		}
+	}
+
+	documented := []documentedBudget{
+		{key: "coldDashboardReadyP95Ms", measurement: "Restart-cold dashboard readiness p95", format: seconds},
+		{key: "warmDashboardReadyP95Ms", measurement: "Warm dashboard readiness p95", format: seconds},
+		{key: "filterToSettleP95Ms", measurement: "Filter-to-settle p95", format: seconds},
+		{key: "tableInteractionP95Ms", measurement: "Governed table-sort interaction p95", format: seconds},
+		{key: "governedQueryP95Ms", measurement: "Governed query p95", format: seconds},
+		{key: "refreshP95Ms", measurement: "Refresh/materialization p95", format: seconds},
+		{key: "concurrentQueryP95Ms", measurement: "Eight-reader governed-query p95", format: seconds},
+		{key: "errorRateMax", measurement: "Controlled-request error rate", format: number},
+		{key: "peakResidentMemoryBytes", measurement: "Peak resident memory", format: bytes(1<<30, "GiB")},
+		{key: "cpuSecondsMax", measurement: "Measured workload CPU", format: func(value float64) string {
+			return fmt.Sprintf("%g CPU-seconds", value)
+		}},
+		{key: "temporaryDiskGrowthBytesMax", measurement: "Temporary state growth", format: bytes(1<<20, "MiB")},
+		{key: "goroutineGrowthMax", measurement: "Steady-state goroutine growth", format: number},
+		{key: "openConnectionsMax", measurement: "Peak open DuckDB connections", format: number},
+	}
+
+	if len(policy.Budgets) != len(documented) {
+		t.Errorf("performance policy has %d budgets, but the runbook contract documents %d", len(policy.Budgets), len(documented))
+	}
+	documentedKeys := make(map[string]struct{}, len(documented))
+	for _, budget := range documented {
+		documentedKeys[budget.key] = struct{}{}
+		value, ok := policy.Budgets[budget.key]
+		if !ok {
+			t.Errorf("performance policy missing budget %q", budget.key)
+			continue
+		}
+		row := fmt.Sprintf("| %s | %s |", budget.measurement, budget.format(value))
+		if count := strings.Count(runbook, row); count != 1 {
+			t.Errorf("QUALIFICATION.md must contain exactly one policy-derived row %q; found %d", row, count)
+		}
+	}
+	for key := range policy.Budgets {
+		if _, ok := documentedKeys[key]; !ok {
+			t.Errorf("performance policy budget %q has no runbook formatter", key)
+		}
+	}
+}
+
 func TestInstalledCandidateQualificationContract(t *testing.T) {
 	root := filepath.Join("..", "..")
 	release := read(t, filepath.Join(root, ".github", "workflows", "release.yml"))
