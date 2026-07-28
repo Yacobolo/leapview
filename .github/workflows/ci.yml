@@ -829,7 +829,7 @@ jobs:
           bun-version: 1.3.7
 
       - name: Test deployment lifecycle
-        run: go test ./deploy/compose ./deploy/hetzner
+        run: go test ./deploy/compose ./deploy/hetzner ./deploy/hetzner-site
 
       - name: Test deployment performance policy
         run: bun run test:qualification-performance-policy
@@ -844,6 +844,7 @@ jobs:
           deploy/hetzner/files/leapviewctl-wrapper
           deploy/hetzner/files/leapview-backup-hook
           deploy/hetzner/files/provision.sh.tftpl
+          deploy/hetzner-site/files/provision.sh
           deploy/compose/qualification/qualify.sh
           deploy/compose/qualification/recover.sh
 
@@ -853,6 +854,17 @@ jobs:
 
       - name: Validate Terraform contracts
         working-directory: deploy/hetzner
+        run: |
+          terraform fmt -check -recursive
+          terraform validate
+          terraform test
+
+      - name: Initialize public-site Terraform providers
+        working-directory: deploy/hetzner-site
+        run: terraform init -backend=false -input=false
+
+      - name: Validate public-site Terraform contracts
+        working-directory: deploy/hetzner-site
         run: |
           terraform fmt -check -recursive
           terraform validate

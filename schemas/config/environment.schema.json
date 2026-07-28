@@ -2337,6 +2337,12 @@
       "x-lifecycle": "supported",
       "x-scope": "public site"
     },
+    "LEAPVIEW_SITE_IMAGE": {
+      "description": "Immutable LeapView public-site OCI image reference consumed by deployment tooling.",
+      "type": "string",
+      "x-lifecycle": "tooling",
+      "x-scope": "public-site provisioner"
+    },
     "LEAPVIEW_SITE_SHOWCASE_EMBED_URL": {
       "description": "Optional public dashboard embed URL that enables the live /showcase route and its exact frame-src policy.",
       "type": "string",

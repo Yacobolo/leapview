@@ -602,14 +602,19 @@ tasks:
       - task: deploy:check
 
   deploy:check:
-    desc: Validate the supported single-node deployment and lifecycle contracts
+    desc: Validate product and public-site deployment contracts
     cmds:
       - go test ./cmd/leapviewctl ./internal/app/cli/composectl ./deploy/compose
       - go test ./deploy/hetzner
+      - go test ./deploy/hetzner-site
       - terraform fmt -check -recursive deploy/hetzner
       - terraform -chdir=deploy/hetzner init -backend=false -input=false
       - terraform -chdir=deploy/hetzner validate
       - terraform -chdir=deploy/hetzner test
+      - terraform fmt -check -recursive deploy/hetzner-site
+      - terraform -chdir=deploy/hetzner-site init -backend=false -input=false
+      - terraform -chdir=deploy/hetzner-site validate
+      - terraform -chdir=deploy/hetzner-site test
 
   node:audit:
     desc: Scan JavaScript dependencies for known vulnerabilities
