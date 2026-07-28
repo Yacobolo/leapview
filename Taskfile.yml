@@ -463,6 +463,7 @@ tasks:
   api:generate:
     desc: Generate headless API contract artifacts and APIGen Go surfaces
     method: checksum
+    run: once
     sources:
       - Taskfile.yml
       - api/apigen.yaml
