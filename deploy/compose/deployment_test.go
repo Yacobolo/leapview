@@ -92,6 +92,7 @@ func TestComposeSingleInstanceContract(t *testing.T) {
 }
 
 func TestPublicImageIsPrimaryOnboardingContract(t *testing.T) {
+	publicReleaseImage := readPublicReleaseImage(t)
 	release := read(t, filepath.Join("..", "..", ".github", "workflows", "release.yml"))
 	for _, required := range []string{
 		"IMAGE_NAME: ghcr.io/yacobolo/leapview",
@@ -114,19 +115,22 @@ func TestPublicImageIsPrimaryOnboardingContract(t *testing.T) {
 
 	documents := []struct {
 		name     string
+		image    string
 		required []string
 	}{
 		{
-			name: filepath.Join("..", "..", "README.md"),
+			name:  filepath.Join("..", "..", "README.md"),
+			image: "ghcr.io/yacobolo/leapview:latest",
 			required: []string{
 				"ghcr.io/yacobolo/leapview:latest",
 				"docker pull",
 			},
 		},
 		{
-			name: filepath.Join("..", "..", "docs", "articles", "start", "installation.md"),
+			name:  filepath.Join("..", "..", "docs", "articles", "start", "installation.md"),
+			image: publicReleaseImage,
 			required: []string{
-				"ghcr.io/yacobolo/leapview:latest",
+				publicReleaseImage,
 				"docker pull",
 				"admin initialize --format json",
 			},
@@ -140,7 +144,7 @@ func TestPublicImageIsPrimaryOnboardingContract(t *testing.T) {
 				t.Errorf("%s does not document public image onboarding contract %q", name, required)
 			}
 		}
-		image := strings.Index(document, "ghcr.io/yacobolo/leapview:latest")
+		image := strings.Index(document, contract.image)
 		controller := strings.Index(document, "./leapviewctl init")
 		if controller >= 0 && image > controller {
 			t.Errorf("%s presents the operations controller before the public image", name)
@@ -150,6 +154,7 @@ func TestPublicImageIsPrimaryOnboardingContract(t *testing.T) {
 
 func TestFiveMinuteEvaluationContract(t *testing.T) {
 	root := filepath.Join("..", "..")
+	publicReleaseImage := readPublicReleaseImage(t)
 	dockerfile := read(t, filepath.Join(root, "Dockerfile"))
 	if !strings.Contains(dockerfile, "COPY evaluation ./evaluation") {
 		t.Fatal("runtime image does not include the self-contained evaluation project and data")
@@ -166,27 +171,58 @@ func TestFiveMinuteEvaluationContract(t *testing.T) {
 			t.Errorf("five-minute evaluation dashboard missing deterministic state option %q", required)
 		}
 	}
-	for _, name := range []string{
-		filepath.Join(root, "README.md"),
-		filepath.Join(root, "docs", "articles", "start", "installation.md"),
+	for _, contract := range []struct {
+		name       string
+		imageRun   string
+		imageSetup string
+	}{
+		{
+			name:     filepath.Join(root, "README.md"),
+			imageRun: "ghcr.io/yacobolo/leapview:latest evaluate",
+		},
+		{
+			name:       filepath.Join(root, "docs", "articles", "start", "installation.md"),
+			imageSetup: "IMAGE='" + publicReleaseImage + "'",
+			imageRun:   `"$IMAGE" evaluate`,
+		},
 	} {
-		document := read(t, name)
+		document := read(t, contract.name)
 		for _, required := range []string{
+			contract.imageSetup,
 			"--name leapview-evaluate",
 			"--publish 127.0.0.1:8080:8080",
 			"--volume leapview-evaluate:/var/lib/leapview",
-			"ghcr.io/yacobolo/leapview:latest evaluate",
+			contract.imageRun,
 			"docker exec leapview-evaluate leapview evaluate first-login",
 			"docker rm --force leapview-evaluate",
 			"docker volume rm leapview-evaluate",
 			"Five-minute Sales Evaluation",
 			"no source checkout",
 		} {
+			if required == "" {
+				continue
+			}
 			if !strings.Contains(document, required) {
-				t.Errorf("%s missing five-minute evaluation contract %q", name, required)
+				t.Errorf("%s missing five-minute evaluation contract %q", contract.name, required)
 			}
 		}
 	}
+}
+
+func readPublicReleaseImage(t *testing.T) string {
+	t.Helper()
+
+	manifest := read(t, filepath.Join("..", "..", "docs", "public-release.json"))
+	var release struct {
+		Image string `json:"image"`
+	}
+	if err := json.Unmarshal([]byte(manifest), &release); err != nil {
+		t.Fatalf("parse public release manifest: %v", err)
+	}
+	if release.Image == "" {
+		t.Fatal("public release manifest has no image")
+	}
+	return release.Image
 }
 
 func TestQualificationRunbookMatchesExecutablePerformancePolicy(t *testing.T) {
