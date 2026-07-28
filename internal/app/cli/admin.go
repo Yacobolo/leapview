@@ -412,7 +412,7 @@ func runAdminRestore(ctx context.Context, opts *rootOptions, in io.Reader, out i
 	restoreBefore := opts.restoreBefore
 	if restoreBefore == "-" {
 		var err error
-		restoreBefore, err = unusedTemporaryPathIn(filepath.Dir(cfg.HomeDir), "leapview-current-backup-*.tar.gz")
+		restoreBefore, err = unusedTemporaryPathIn(filepath.Dir(cfg.HomeDir), platform.InstanceRestoreCheckpointPattern)
 		if err != nil {
 			return err
 		}

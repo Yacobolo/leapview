@@ -27,6 +27,10 @@ queryStreamReconnect=false
 backupInterruption=false
 restorePreflight=false
 boundedDisk=false
+disk_before=0
+disk_after=0
+disk_growth=0
+stale_recovery_count=0
 
 grep -q '^LEAPVIEW_REFRESH_JOB_LEASE_TIMEOUT=15s$' "$bundle_root/leapview.env" || {
   printf 'recovery qualification requires LEAPVIEW_REFRESH_JOB_LEASE_TIMEOUT=15s\n' >&2
@@ -47,6 +51,10 @@ write_report() {
     --argjson backupInterruption "$backupInterruption" \
     --argjson restorePreflight "$restorePreflight" \
     --argjson boundedDisk "$boundedDisk" \
+    --argjson diskBeforeKiB "$disk_before" \
+    --argjson diskAfterKiB "$disk_after" \
+    --argjson diskGrowthKiB "$disk_growth" \
+    --argjson staleRecoveryEntries "$stale_recovery_count" \
     '{
       result:$result,
       stage:$stage,
@@ -60,6 +68,13 @@ write_report() {
         backupInterruption:$backupInterruption,
         restorePreflight:$restorePreflight,
         boundedDisk:$boundedDisk
+      },
+      boundedState:{
+        diskBeforeKiB:$diskBeforeKiB,
+        diskAfterKiB:$diskAfterKiB,
+        diskGrowthKiB:$diskGrowthKiB,
+        diskGrowthLimitKiB:51200,
+        staleRecoveryEntries:$staleRecoveryEntries
       }
     }' > "$report"
 }
@@ -504,12 +519,13 @@ restorePreflight=true
 stage="bounded recovery state"
 docker update --cpus 0 "$container_id" >/dev/null
 disk_after="$(docker exec "$container_id" du -sk /var/lib/leapview | awk '{print $1}')"
-(( disk_after <= disk_before + 51200 ))
-stale_restore_count="$(
+disk_growth=$((disk_after - disk_before))
+stale_recovery_count="$(
   docker exec "$container_id" sh -c \
-    'find /var/lib/leapview -maxdepth 1 \( -name ".leapview-restore-*" -o -name ".leapview-instance-backup-*" \) -print | wc -l'
+    'find /var/lib/leapview -maxdepth 1 \( -name ".leapview-restore-*" -o -name ".leapview-instance-backup-*" -o -name ".leapview-current-backup-*.tar.gz" -o -name "leapview-current-backup-*.tar.gz" \) -print | wc -l'
 )"
-[[ "$stale_restore_count" -eq 0 ]]
+(( disk_after <= disk_before + 51200 ))
+[[ "$stale_recovery_count" -eq 0 ]]
 boundedDisk=true
 
 # Preserve a bounded, credential-free domain-event audit trail. These are the

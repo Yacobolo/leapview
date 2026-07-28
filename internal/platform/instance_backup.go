@@ -25,7 +25,16 @@ const (
 	instanceRestoreDirMode     = securefs.PrivateDirMode
 	instanceRestoreFileMode    = securefs.PrivateFileMode
 	instanceRestoreDBMode      = securefs.PrivateFileMode
+
+	// InstanceRestoreCheckpointPattern reserves a private filename namespace
+	// for the disposable current-state checkpoint created during restore.
+	InstanceRestoreCheckpointPattern = ".leapview-current-backup-*.tar.gz"
 )
+
+var interruptedRestoreCheckpointPrefixes = []string{
+	".leapview-current-backup-",
+	"leapview-current-backup-", // compatibility with pre-rc.1 interrupted restores
+}
 
 type InstanceBackupOptions struct {
 	HomeDir              string
@@ -502,6 +511,19 @@ func recoverInterruptedInstanceOperations(target string) error {
 			if err := os.RemoveAll(filepath.Join(parent, entry.Name())); err != nil {
 				return fmt.Errorf("remove interrupted instance operation %q: %w", entry.Name(), err)
 			}
+			continue
+		}
+		for _, prefix := range interruptedRestoreCheckpointPrefixes {
+			if !strings.HasPrefix(entry.Name(), prefix) {
+				continue
+			}
+			if entry.IsDir() {
+				return fmt.Errorf("interrupted restore checkpoint %q is a directory", entry.Name())
+			}
+			if err := os.Remove(filepath.Join(parent, entry.Name())); err != nil {
+				return fmt.Errorf("remove interrupted restore checkpoint %q: %w", entry.Name(), err)
+			}
+			break
 		}
 	}
 	return nil

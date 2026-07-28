@@ -489,6 +489,8 @@ func TestRecoverInterruptedInstanceOperationsRemovesDisposableWork(t *testing.T)
 	writeTestFile(t, filepath.Join(parent, ".leapview-instance-backup-stale", "copy"), "backup")
 	writeTestFile(t, filepath.Join(parent, ".leapview-restore-stale", "copy"), "restore")
 	writeTestFile(t, filepath.Join(parent, ".leapview-restore-old-stale", "copy"), "old")
+	writeTestFile(t, filepath.Join(parent, ".leapview-current-backup-stale.tar.gz"), "checkpoint")
+	writeTestFile(t, filepath.Join(parent, "leapview-current-backup-stale.tar.gz"), "legacy checkpoint")
 
 	if err := recoverInterruptedInstanceOperations(target); err != nil {
 		t.Fatalf("recoverInterruptedInstanceOperations() error = %v", err)
@@ -497,6 +499,8 @@ func TestRecoverInterruptedInstanceOperationsRemovesDisposableWork(t *testing.T)
 		".leapview-instance-backup-stale",
 		".leapview-restore-stale",
 		".leapview-restore-old-stale",
+		".leapview-current-backup-stale.tar.gz",
+		"leapview-current-backup-stale.tar.gz",
 	} {
 		if _, err := os.Stat(filepath.Join(parent, stale)); !os.IsNotExist(err) {
 			t.Fatalf("stale operation path %q survived: %v", stale, err)
