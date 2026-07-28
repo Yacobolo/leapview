@@ -91,6 +91,53 @@ func TestReleaseWorkflowPublishesComposeArchiveAndAttestedImage(t *testing.T) {
 	}
 }
 
+func TestPublicSiteImagePublicationContract(t *testing.T) {
+	workflow := readFile(t, filepath.Join("..", "..", ".github", "workflows", "site-image.yml"))
+	for _, fragment := range []string{
+		"name: Publish public site image",
+		"workflow_dispatch:",
+		"workflow_call:",
+		"IMAGE_NAME: ghcr.io/yacobolo/leapview-site",
+		"packages: write",
+		"attestations: write",
+		"id-token: write",
+		"runner: ubuntu-24.04",
+		"runner: ubuntu-24.04-arm",
+		"platforms: linux/${{ matrix.arch }}",
+		"file: Dockerfile.site",
+		"push: true",
+		"sbom: true",
+		"provenance: mode=max",
+		"org.opencontainers.image.version=",
+		"org.opencontainers.image.revision=",
+		"actions/attest@",
+		"docker buildx imagetools create",
+		"site-image-reference.txt",
+		"GITHUB_STEP_SUMMARY",
+		"docker logout ghcr.io",
+		`docker buildx imagetools inspect "$IMAGE_REFERENCE"`,
+		`docker image inspect "$IMAGE_REFERENCE"`,
+		"docker run --detach",
+		"/healthz",
+		"/readyz",
+		"/release.json",
+		"/docs/installation",
+		"refs/heads/main",
+	} {
+		requireContains(t, workflow, fragment)
+	}
+	for _, forbidden := range []string{
+		"pull_request:",
+		"docker/setup-qemu-action@",
+		"ghcr.io/yacobolo/leapview-site:latest",
+		"git clone",
+	} {
+		if strings.Contains(workflow, forbidden) {
+			t.Errorf("public site image publication contains forbidden fragment %q", forbidden)
+		}
+	}
+}
+
 func TestSupplyChainInputsArePinned(t *testing.T) {
 	for _, name := range []string{"Dockerfile", "Dockerfile.site"} {
 		dockerfile := readFile(t, filepath.Join("..", "..", name))
