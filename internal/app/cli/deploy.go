@@ -11,13 +11,14 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	deploymentgen "github.com/Yacobolo/leapview/internal/deployment/api/gen"
+	"github.com/Yacobolo/leapview/internal/platform/cliapi"
 	projectbundle "github.com/Yacobolo/leapview/internal/project/bundle"
+	projectcli "github.com/Yacobolo/leapview/internal/project/cli"
 	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 	releasegen "github.com/Yacobolo/leapview/internal/release/api/gen"
 	"github.com/Yacobolo/leapview/internal/workspace"
@@ -36,37 +37,22 @@ type deployRequest struct {
 }
 
 func deployCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
-	var revisions []string
-	command := &cobra.Command{
-		Use:   "deploy",
-		Short: "Atomically deploy a configuration-as-code project",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if strings.TrimSpace(opts.workspaceID) != "" {
-				return fmt.Errorf("deploy is project-wide and does not accept --workspace")
-			}
-			target, token, err := clientTargetAndToken(opts)
-			if err != nil {
-				return err
-			}
-			pins, err := parseManagedRevisionPins(revisions)
-			if err != nil {
-				return err
-			}
-			return runDeploy(ctx, deployRequest{
-				ProjectPath: opts.catalog, Revisions: pins,
-				Target: target, Token: token, Environment: opts.environment, AutoApprove: opts.autoApprove,
-				Out: cmd.OutOrStdout(), HTTPClient: http.DefaultClient,
-			})
-		},
-	}
-	command.Flags().StringVar(&opts.target, "target", "", "LeapView server URL")
-	command.Flags().StringVar(&opts.token, "token", "", "API token")
-	command.Flags().StringVar(&opts.catalog, "project", filepath.Join("dashboards", "leapview.yaml"), "project path")
-	command.Flags().StringVar(&opts.environment, "environment", "", "assert the target instance environment")
-	command.Flags().StringArrayVar(&revisions, "revision", nil, "managed revision pin as connection=sha256:<digest> (repeatable)")
-	command.Flags().BoolVar(&opts.autoApprove, "auto-approve", false, "approve and activate the deployment without prompting")
-	return command
+	return projectcli.DeployCommand(ctx, capabilityAPIClient{}, projectDeployOperations{}, opts.workspaceID)
+}
+
+type projectDeployOperations struct{}
+
+func (projectDeployOperations) Deploy(ctx context.Context, values projectcli.DeployOptions, out io.Writer) error {
+	return runDeploy(ctx, deployRequest{
+		ProjectPath: values.ProjectPath,
+		Revisions:   values.Revisions,
+		Target:      values.Credentials.Target,
+		Token:       values.Credentials.Token,
+		Environment: values.Environment,
+		AutoApprove: values.AutoApprove,
+		Out:         out,
+		HTTPClient:  http.DefaultClient,
+	})
 }
 
 func runDeploy(ctx context.Context, request deployRequest) error {
@@ -95,7 +81,7 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 		return err
 	}
 
-	client := newManagedDataCLIClient(request.HTTPClient, request.Target, request.Token)
+	client := newDeploymentCLIClient(request.HTTPClient, request.Target, request.Token)
 	capabilities, err := client.capabilities(ctx)
 	if err != nil || strings.TrimSpace(capabilities.Environment) == "" {
 		return fmt.Errorf("read server capabilities failed")
@@ -103,14 +89,20 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 	if capabilities.Environment != request.Environment {
 		return fmt.Errorf("target instance environment %q does not match server capabilities environment %q", request.Environment, capabilities.Environment)
 	}
-	cliOpts := &rootOptions{target: request.Target, token: request.Token, catalog: request.ProjectPath, environment: request.Environment, autoApprove: request.AutoApprove}
+	cliOpts := &rootOptions{target: request.Target, token: request.Token, environment: request.Environment, autoApprove: request.AutoApprove}
 	type plannedWorkspace struct {
 		workspaceID string
 		activeGraph workspace.AssetGraph
 	}
 	planned := make([]plannedWorkspace, 0, len(workspaceIDs))
 	for _, workspaceID := range workspaceIDs {
-		graph, graphErr := fetchActiveWorkspaceGraphFor(ctx, cliOpts, workspaceID)
+		graph, graphErr := projectcli.FetchActiveWorkspaceGraph(
+			ctx,
+			capabilityAPIClient{},
+			cliapi.Credentials{Target: cliOpts.target, Token: cliOpts.token},
+			cliOpts.environment,
+			workspaceID,
+		)
 		if graphErr != nil {
 			return fmt.Errorf("read active graph for workspace %q", workspaceID)
 		}
@@ -230,7 +222,7 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 	return err
 }
 
-func waitForProjectRelease(ctx context.Context, client *managedDataCLIClient, projectID, releaseID string, release releasegen.ReleaseResponse) (releasegen.ReleaseResponse, error) {
+func waitForProjectRelease(ctx context.Context, client *deploymentCLIClient, projectID, releaseID string, release releasegen.ReleaseResponse) (releasegen.ReleaseResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
 	for {
@@ -263,7 +255,7 @@ func waitForProjectRelease(ctx context.Context, client *managedDataCLIClient, pr
 	}
 }
 
-func waitForProjectDeployment(ctx context.Context, client *managedDataCLIClient, projectID, releaseID string, deployment deploymentgen.DeploymentResponse) (deploymentgen.DeploymentResponse, error) {
+func waitForProjectDeployment(ctx context.Context, client *deploymentCLIClient, projectID, releaseID string, deployment deploymentgen.DeploymentResponse) (deploymentgen.DeploymentResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
 	for {
@@ -294,23 +286,6 @@ func waitForProjectDeployment(ctx context.Context, client *managedDataCLIClient,
 		}
 		deployment = next
 	}
-}
-
-func parseManagedRevisionPins(values []string) (map[string]string, error) {
-	pins := make(map[string]string, len(values))
-	for _, value := range values {
-		name, revision, ok := strings.Cut(value, "=")
-		name = strings.TrimSpace(name)
-		revision = strings.TrimSpace(revision)
-		if !ok || name == "" || !canonicalManagedRevisionID(revision) {
-			return nil, fmt.Errorf("revision must use connection=sha256:<64 lowercase hex>")
-		}
-		if _, duplicate := pins[name]; duplicate {
-			return nil, fmt.Errorf("duplicate revision for managed connection %q", name)
-		}
-		pins[name] = revision
-	}
-	return pins, nil
 }
 
 func validateManagedRevisionPins(project workspacecompiler.Project, pins map[string]string) error {
@@ -352,11 +327,15 @@ func canonicalArtifactDigest(value string) bool {
 
 func deploymentIdempotencyKey(kind string, values ...string) string {
 	digest := sha256.New()
-	writeHashValue(digest, kind)
+	writeDeploymentHashValue(digest, kind)
 	for _, value := range values {
-		writeHashValue(digest, value)
+		writeDeploymentHashValue(digest, value)
 	}
 	return "deployment-" + kind + "-" + hex.EncodeToString(digest.Sum(nil))
+}
+
+func writeDeploymentHashValue(digest io.Writer, value string) {
+	fmt.Fprintf(digest, "%d:%s", len(value), value)
 }
 
 func outputOrDiscard(out io.Writer) io.Writer {

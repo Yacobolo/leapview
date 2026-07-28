@@ -69,6 +69,66 @@ func TestAgentGeneratedAPIIsCapabilityOwned(t *testing.T) {
 	}
 }
 
+func TestCapabilityCLIIsAnAdapterOwnedByItsCapability(t *testing.T) {
+	for _, capability := range []string{"admin", "agent", "analytics", "dashboard", "manageddata", "project", "workspace"} {
+		rule, ok := ClassifyPackage("internal/" + capability + "/cli")
+		if !ok {
+			t.Fatalf("%s CLI package is not classified", capability)
+		}
+		if rule.Capability != capability || rule.Layer != LayerAdapter {
+			t.Fatalf("%s CLI classification = %#v, want %s adapter", capability, rule, capability)
+		}
+	}
+}
+
+func TestApplicationCLIAdminOnlyComposesAdminOperations(t *testing.T) {
+	forbiddenImports := map[string]bool{
+		modulePath + "/internal/access/sqlite":       true,
+		modulePath + "/internal/admin/sqlite":        true,
+		modulePath + "/internal/analytics/ducklake":  true,
+		modulePath + "/internal/servingstate/sqlite": true,
+	}
+	var adminFile *goFile
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/app/cli" {
+			continue
+		}
+		for _, imported := range file.imports {
+			if forbiddenImports[imported] {
+				t.Errorf("%s imports offline capability adapter %s", file.path, imported)
+			}
+		}
+		if file.path == "internal/app/cli/admin.go" {
+			current := file
+			adminFile = &current
+		}
+	}
+	if adminFile == nil {
+		t.Fatal("internal/app/cli/admin.go was not found")
+	}
+	for _, required := range []string{
+		modulePath + "/internal/admin/cli",
+		modulePath + "/internal/app/adminoffline",
+	} {
+		if !importListContains(adminFile.imports, required) {
+			t.Errorf("application CLI Admin composition is missing import %s", required)
+		}
+	}
+	parsed, err := parser.ParseFile(token.NewFileSet(), adminFile.path, adminFile.body, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, declaration := range parsed.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		if function.Name.Name != "adminCommand" {
+			t.Errorf("application CLI Admin composition retains compatibility function %s", function.Name.Name)
+		}
+	}
+}
+
 func TestAccessGeneratedAPIIsCapabilityOwned(t *testing.T) {
 	rule, ok := ClassifyPackage("internal/access/api/gen")
 	if !ok {
@@ -1310,13 +1370,20 @@ func TestRequiredCapabilityAdaptersExist(t *testing.T) {
 	root := repoRoot(t)
 	for _, dir := range []string{
 		"internal/access/http",
+		"internal/admin/cli",
 		"internal/admin/http",
+		"internal/agent/cli",
 		"internal/agent/http",
+		"internal/analytics/cli",
 		"internal/analytics/connectors",
 		"internal/refresh/http",
+		"internal/dashboard/cli",
 		"internal/dashboard/semanticapi",
 		"internal/dashboard/http",
+		"internal/manageddata/cli",
+		"internal/project/cli",
 		"internal/workspace/datastar",
+		"internal/workspace/cli",
 		"internal/workspace/http",
 	} {
 		if !packageDirExists(root, dir) {
