@@ -23,9 +23,10 @@ same trusted analytics through interactive dashboards and AI agents.
 ## Try LeapView
 
 The evaluation image is the quickest way to explore LeapView. It requires only
-Docker and includes a disposable sample workspace.
+Docker—no source checkout—and includes a disposable sample workspace.
 
 ```sh
+docker pull ghcr.io/yacobolo/leapview:latest
 docker run --detach --name leapview-evaluate --init \
   --publish 127.0.0.1:8080:8080 \
   --volume leapview-evaluate:/var/lib/leapview \
@@ -40,6 +41,9 @@ across container restarts.
 Evaluation mode is not a production configuration. Follow the
 [installation guide](https://leapview.dev/docs/installation) to clean up the
 evaluation, work from source, or prepare a durable instance.
+
+To remove the evaluation, run `docker rm --force leapview-evaluate`. Also run
+`docker volume rm leapview-evaluate` when you want to delete its persisted data.
 
 ## Documentation
 
