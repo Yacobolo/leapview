@@ -103,6 +103,7 @@ jobs:
           if-no-files-found: warn
           path: |
             ${{ runner.temp }}/qualification-evidence-${{ matrix.arch }}/qualification-report.json
+            ${{ runner.temp }}/qualification-evidence-${{ matrix.arch }}/performance-report.json
             ${{ runner.temp }}/qualification-evidence-${{ matrix.arch }}/recovery-report.json
             ${{ runner.temp }}/qualification-evidence-${{ matrix.arch }}/recovery-events.json
             ${{ runner.temp }}/qualification-evidence-${{ matrix.arch }}/runtime-identity.json

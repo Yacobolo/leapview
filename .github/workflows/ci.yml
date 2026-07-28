@@ -288,6 +288,7 @@ jobs:
               bun run typecheck:contracts
               bun run test:production-assets
               bun run test:movielens-performance-harness
+              bun run test:qualification-performance-policy
           - name: reports
             tests: |
               bun run test:interaction-selection

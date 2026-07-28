@@ -16,6 +16,7 @@ restore_root=""
 primary_project=""
 restore_project=""
 legacy_volume=""
+browser_container=""
 success=false
 
 mkdir -p "$evidence_dir"
@@ -24,6 +25,8 @@ rm -f \
   "$evidence_dir/browser-failure.png" \
   "$evidence_dir/compose.log" \
   "$evidence_dir/qualification-report.json" \
+  "$evidence_dir/performance-report.json" \
+  "$evidence_dir"/performance-cold-*.json \
   "$evidence_dir/recovery-events.json" \
   "$evidence_dir/recovery-report.json" \
   "$evidence_dir/restore-compose.log" \
@@ -74,6 +77,7 @@ set_qualification_job_lease() {
 cleanup() {
   local result=$?
   set +e
+  [[ -n "$browser_container" ]] && docker rm --force "$browser_container" >/dev/null 2>&1
   if [[ -n "$primary_project" ]]; then
     compose_in "$bundle_root" logs --no-color --tail 500 2>&1 | redact > "$evidence_dir/compose.log"
     compose_in "$bundle_root" down --volumes --remove-orphans >/dev/null 2>&1
@@ -258,9 +262,11 @@ docker exec \
     --environment qualification \
     --auto-approve >/dev/null
 
+metrics_token="$(sed -n 's/^LEAPVIEW_METRICS_BEARER_TOKEN=//p' "$bundle_root/leapview.env")"
 browser_image="mcr.microsoft.com/playwright:v1.61.1-noble"
 docker pull "$browser_image" >/dev/null
-docker run --rm --network host \
+browser_container="$(printf '%s-browser' "$primary_project")"
+docker run --detach --name "$browser_container" --network host \
   --volume "$qualification_root:/qualification:ro" \
   --volume "$credentials_file:/run/secrets/credentials.json:ro" \
   --volume "$evidence_dir:/evidence" \
@@ -268,7 +274,77 @@ docker run --rm --network host \
   --env QUALIFICATION_CREDENTIALS=/run/secrets/credentials.json \
   --env QUALIFICATION_SCREENSHOT=/evidence/browser-failure.png \
   "$browser_image" \
-  bash -euc 'cd /tmp; cp /qualification/package.json /qualification/browser.mjs .; npm install --no-audit --no-fund --silent; node browser.mjs'
+  sleep infinity >/dev/null
+docker exec "$browser_container" \
+  bash -euc '
+    mkdir -p /work
+    cd /work
+    cp /qualification/package.json \
+      /qualification/browser.mjs \
+      /qualification/performance.mjs \
+      /qualification/performance-policy.mjs \
+      /qualification/performance-policy.json \
+      .
+    npm install --no-audit --no-fund --silent
+  '
+docker exec "$browser_container" bash -euc 'cd /work; node browser.mjs'
+
+performance_disk_before="$(
+  docker exec "$container_id" du -sb /var/lib/leapview | awk '{print $1}'
+)"
+[[ "$performance_disk_before" =~ ^[0-9]+$ ]]
+performance_cold_count="$(jq -er '.assumptions.samples.coldDashboardLoads' "$qualification_root/performance-policy.json")"
+[[ "$performance_cold_count" =~ ^[1-9][0-9]*$ ]]
+performance_cold_paths=()
+for index in $(seq 1 "$performance_cold_count"); do
+  docker restart "$container_id" >/dev/null
+  for _ in $(seq 1 120); do
+    [[ "$(docker inspect --format '{{.State.Health.Status}}' "$container_id")" == healthy ]] && break
+    sleep 1
+  done
+  [[ "$(docker inspect --format '{{.State.Health.Status}}' "$container_id")" == healthy ]]
+  cold_path="/evidence/performance-cold-$index.json"
+  performance_cold_paths+=("$cold_path")
+  docker exec \
+    -e QUALIFICATION_METRICS_TOKEN="$metrics_token" \
+    "$browser_container" \
+    bash -euc "cd /work; node performance.mjs cold $cold_path"
+done
+performance_cold_json="$(
+  printf '%s\n' "${performance_cold_paths[@]}" |
+    jq --raw-input --slurp 'split("\n") | map(select(length > 0))'
+)"
+docker exec \
+  -e QUALIFICATION_METRICS_TOKEN="$metrics_token" \
+  -e QUALIFICATION_COLD_RESULTS="$performance_cold_json" \
+  "$browser_container" \
+  bash -euc 'cd /work; node performance.mjs workload /evidence/performance-report.json'
+performance_disk_after="$(
+  docker exec "$container_id" du -sb /var/lib/leapview | awk '{print $1}'
+)"
+[[ "$performance_disk_after" =~ ^[0-9]+$ ]]
+performance_environment="$(
+  jq -cn \
+    --arg runtime "Docker Engine $(docker version --format '{{.Server.Version}}')" \
+    --argjson logicalCPUs "$(docker info --format '{{.NCPU}}')" \
+    --argjson memoryBytes "$(docker info --format '{{.MemTotal}}')" \
+    --argjson orderRows "$(
+      docker exec "$container_id" sh -euc \
+        'rows=$(wc -l < /app/evaluation/data/orders.csv); printf "%s" "$((rows - 1))"'
+    )" \
+    '{runtime:$runtime,logicalCPUs:$logicalCPUs,memoryBytes:$memoryBytes,dataset:{orders:$orderRows}}'
+)"
+docker exec \
+  -e QUALIFICATION_DISK_BEFORE_BYTES="$performance_disk_before" \
+  -e QUALIFICATION_DISK_AFTER_BYTES="$performance_disk_after" \
+  -e QUALIFICATION_PERFORMANCE_ENVIRONMENT="$performance_environment" \
+  -e QUALIFICATION_IMAGE="$image_reference" \
+  -e QUALIFICATION_ARCHITECTURE="$(uname -m)" \
+  "$browser_container" \
+  bash -euc 'cd /work; node performance.mjs finalize /evidence/performance-report.json'
+rm -f "$evidence_dir"/performance-cold-*.json
+docker rm --force "$browser_container" >/dev/null
+browser_container=""
 
 query_body='{"dimensions":[{"field":"state"}],"measures":[{"field":"order_count"},{"field":"revenue"}],"limit":10}'
 query_output="$(
@@ -289,7 +365,6 @@ unauthorized_status="$(
 )"
 [[ "$unauthorized_status" == 401 ]]
 
-metrics_token="$(sed -n 's/^LEAPVIEW_METRICS_BEARER_TOKEN=//p' "$bundle_root/leapview.env")"
 unauthenticated_metrics="$(
   curl --silent --output /dev/null --write-out '%{http_code}' \
     --header 'Host: localhost' \
@@ -386,6 +461,7 @@ jq -n \
   --argjson elapsedSeconds "$elapsed_seconds" \
   --argjson oneTimeCredentials true \
   --argjson browserJourney true \
+  --argjson performanceBudgets true \
   --argjson governedQuery true \
   --argjson auditedDenial true \
   --argjson interruptionRecovery true \
@@ -402,6 +478,7 @@ jq -n \
     assertions:{
       oneTimeCredentials:$oneTimeCredentials,
       browserJourney:$browserJourney,
+      performanceBudgets:$performanceBudgets,
       governedQuery:$governedQuery,
       auditedDenial:$auditedDenial,
       interruptionRecovery:$interruptionRecovery,

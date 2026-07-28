@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "workload": "olist-evaluation",
+  "assumptions": {
+    "runtime": "Docker Engine with Compose v2 on a dedicated Linux runner",
+    "minimumLogicalCPUs": 2,
+    "minimumMemoryBytes": 4294967296,
+    "dataset": {
+      "name": "bundled synthetic Olist evaluator",
+      "orders": 24
+    },
+    "samples": {
+      "coldDashboardLoads": 3,
+      "warmDashboardLoads": 5,
+      "filterInteractions": 8,
+      "tableInteractions": 6,
+      "governedQueries": 10,
+      "refreshRuns": 3,
+      "concurrentReaders": 8
+    }
+  },
+  "budgets": {
+    "coldDashboardReadyP95Ms": 15000,
+    "warmDashboardReadyP95Ms": 5000,
+    "filterToSettleP95Ms": 3000,
+    "tableInteractionP95Ms": 1000,
+    "governedQueryP95Ms": 1000,
+    "refreshP95Ms": 15000,
+    "concurrentQueryP95Ms": 5000,
+    "errorRateMax": 0,
+    "peakResidentMemoryBytes": 1610612736,
+    "cpuSecondsMax": 120,
+    "temporaryDiskGrowthBytesMax": 67108864,
+    "goroutineGrowthMax": 25,
+    "openConnectionsMax": 16
+  },
+  "comparison": {
+    "maxRegressionRatio": 1.25,
+    "minimumMeaningfulLatencyDeltaMs": 50,
+    "policy": "A future candidate must satisfy every absolute budget. It also fails when a p95 latency is at least 50 ms slower and exceeds the accepted baseline by more than 25%."
+  }
+}

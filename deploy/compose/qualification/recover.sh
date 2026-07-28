@@ -260,7 +260,7 @@ for _ in $(seq 1 1200); do
   if ! kill -0 "$sync_pid" 2>/dev/null; then
     break
   fi
-  sleep 0.025
+  sleep 0.5
 done
 [[ -n "$interrupted_session" && "$interrupted_offset" -gt 0 ]]
 kill_candidate
@@ -318,9 +318,13 @@ for _ in $(seq 1 1200); do
   if ! kill -0 "$deploy_a_pid" 2>/dev/null; then
     break
   fi
-  sleep 0.025
+  sleep 0.5
 done
-[[ -n "$release_id" ]]
+if [[ -z "$release_id" ]]; then
+  printf 'release did not remain validating long enough to observe the interruption boundary\n' >&2
+  exit 1
+fi
+interrupted_release_id="$release_id"
 kill_candidate
 wait_for_process_exit "$deploy_a_pid"
 
@@ -333,8 +337,8 @@ run_in_candidate \
   --auto-approve \
   >> "$deploy_a_log" 2>&1
 release_after="$work_dir/release-after.json"
-wait_for_json "/api/v1/projects/$project_id/releases/$release_id" '.status == "ready"' "$release_after"
-wait_for_json "/api/v1/projects/$project_id/releases/$release_id/events?limit=100" '
+wait_for_json "/api/v1/projects/$project_id/releases/$interrupted_release_id" '.status == "ready"' "$release_after"
+wait_for_json "/api/v1/projects/$project_id/releases/$interrupted_release_id/events?limit=100" '
   ([.items[].event] | index("release.created")) != null and
   ([.items[].event] | index("release.validating")) != null and
   ([.items[].event] | index("release.ready")) != null
@@ -365,20 +369,24 @@ for _ in $(seq 1 1200); do
   if ! kill -0 "$deploy_b_pid" 2>/dev/null; then
     break
   fi
-  sleep 0.025
+  sleep 0.5
 done
-[[ -n "$deployment_id" ]]
+if [[ -z "$deployment_id" ]]; then
+  printf 'deployment did not remain queued or running long enough to observe the interruption boundary\n' >&2
+  exit 1
+fi
+interrupted_deployment_id="$deployment_id"
 kill_candidate
 wait_for_process_exit "$deploy_b_pid"
 
 docker update --cpus 0 "$container_id" >/dev/null
 deployment_after="$work_dir/deployment-after.json"
 wait_for_json \
-  "/api/v1/projects/$project_id/deployments/$deployment_id" \
+  "/api/v1/projects/$project_id/deployments/$interrupted_deployment_id" \
   '.status == "active"' \
   "$deployment_after"
 wait_for_json \
-  "/api/v1/projects/$project_id/deployments/$deployment_id/events?limit=100" \
+  "/api/v1/projects/$project_id/deployments/$interrupted_deployment_id/events?limit=100" \
   '
   ([.items[].event] | index("deployment.queued")) != null and
   ([.items[].event] | index("deployment.active")) != null

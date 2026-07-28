@@ -178,6 +178,8 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 	script := read(t, filepath.Join(root, "deploy", "compose", "qualification", "qualify.sh"))
 	recovery := read(t, filepath.Join(root, "deploy", "compose", "qualification", "recover.sh"))
 	browser := read(t, filepath.Join(root, "deploy", "compose", "qualification", "browser.mjs"))
+	performance := read(t, filepath.Join(root, "deploy", "compose", "qualification", "performance.mjs"))
+	performancePolicy := read(t, filepath.Join(root, "deploy", "compose", "qualification", "performance-policy.json"))
 	compatibilityPolicy := read(t, filepath.Join(root, "deploy", "compose", "qualification", "v0.1.0-policy.json"))
 	runbook := read(t, filepath.Join(root, "deploy", "compose", "QUALIFICATION.md"))
 	readme := read(t, filepath.Join(root, "deploy", "compose", "README.md"))
@@ -245,6 +247,8 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		"auditedDenial",
 		"runtime-identity.json",
 		"qualification-report.json",
+		"performance-report.json",
+		"performanceBudgets",
 		"./qualification/recover.sh",
 		"recovery-report.json",
 		"v010FreshInstallPolicy",
@@ -255,6 +259,10 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		if !strings.Contains(script, required) {
 			t.Errorf("qualification script missing tester assertion %q", required)
 		}
+	}
+	if strings.Contains(performance, "setInterval(") ||
+		strings.Count(performance, "metricSamples.push(await metricSnapshot())") < 7 {
+		t.Error("performance qualification must use bounded phase snapshots instead of exceeding the shipped metrics rate limit")
 	}
 	for _, required := range []string{
 		"managedUpload",
@@ -304,6 +312,9 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 	waitForJSON := recovery[waitForJSONStart : waitForJSONStart+waitForJSONEnd]
 	if !strings.Contains(waitForJSON, "sleep 1") {
 		t.Error("recovery qualification must poll durable job status slowly enough to stay below the shipped API rate limit")
+	}
+	if strings.Contains(recovery, "sleep 0.025") || strings.Count(recovery, "sleep 0.5") < 3 {
+		t.Error("recovery qualification must observe upload, release, and deployment boundaries within the shipped 120-request API limit")
 	}
 	for _, boundary := range []struct {
 		name     string
@@ -364,6 +375,9 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		if !strings.Contains(workflow.contents, "recovery-report.json") {
 			t.Errorf("%s workflow does not retain the bounded recovery report", workflow.name)
 		}
+		if !strings.Contains(workflow.contents, "performance-report.json") {
+			t.Errorf("%s workflow does not retain the candidate performance baseline", workflow.name)
+		}
 	}
 	if strings.Contains(script, "${run_suffix,,}") {
 		t.Error("qualification script uses Bash 4 lowercase expansion and cannot run from the Darwin release bundle")
@@ -394,6 +408,39 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 	} {
 		if !strings.Contains(browser, required) {
 			t.Errorf("browser qualification missing motion-independent interaction %q", required)
+		}
+	}
+	for _, required := range []string{
+		"coldDashboardReadyMs",
+		"warmDashboardReadyMs",
+		"filterToSettleMs",
+		"tableInteractionMs",
+		"governedQueryMs",
+		"refreshMs",
+		"concurrentQueryMs",
+		"process_resident_memory_bytes",
+		"process_cpu_seconds_total",
+		"go_goroutines",
+		"leapview_duckdb_connections_open",
+		"comparePerformance",
+		"evaluatePerformance",
+	} {
+		if !strings.Contains(performance, required) {
+			t.Errorf("performance qualification missing release budget evidence %q", required)
+		}
+	}
+	for _, required := range []string{
+		`"minimumLogicalCPUs"`,
+		`"minimumMemoryBytes"`,
+		`"coldDashboardReadyP95Ms"`,
+		`"tableInteractionP95Ms"`,
+		`"peakResidentMemoryBytes"`,
+		`"temporaryDiskGrowthBytesMax"`,
+		`"maxRegressionRatio"`,
+		`"minimumMeaningfulLatencyDeltaMs"`,
+	} {
+		if !strings.Contains(performancePolicy, required) {
+			t.Errorf("performance policy missing explicit contract %q", required)
 		}
 	}
 
