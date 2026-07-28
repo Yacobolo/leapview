@@ -298,7 +298,9 @@ managedUpload=true
 
 stage="release finalization interruption"
 deploy_a_log="$evidence_dir/recovery-release-finalization.log"
-docker update --cpus 0.25 "$container_id" >/dev/null
+release_ids_before_file="$work_dir/release-ids-before.json"
+api GET "/api/v1/projects/$project_id/releases?limit=100" "$release_ids_before_file"
+release_ids_before="$(jq -c '[.items[].id]' "$release_ids_before_file")"
 run_in_candidate \
   leapview deploy \
   --project /var/lib/leapview/qualification-recovery/project-a/leapview.yaml \
@@ -312,7 +314,15 @@ releases="$work_dir/releases.json"
 release_id=""
 for _ in $(seq 1 1200); do
   if api GET "/api/v1/projects/$project_id/releases?limit=100" "$releases" 2>/dev/null; then
-    release_id="$(jq -r '[.items[] | select(.status == "validating")][0].id // empty' "$releases")"
+    release_id="$(
+      jq -r --argjson existing "$release_ids_before" '
+        [
+          .items[] |
+          select(.status == "draft" or .status == "validating") |
+          select(.id as $id | $existing | index($id) | not)
+        ][0].id // empty
+      ' "$releases"
+    )"
     [[ -n "$release_id" ]] && break
   fi
   if ! kill -0 "$deploy_a_pid" 2>/dev/null; then
@@ -321,14 +331,13 @@ for _ in $(seq 1 1200); do
   sleep 0.5
 done
 if [[ -z "$release_id" ]]; then
-  printf 'release did not remain validating long enough to observe the interruption boundary\n' >&2
+  printf 'new release did not remain draft or validating long enough to observe the interruption boundary\n' >&2
   exit 1
 fi
 interrupted_release_id="$release_id"
 kill_candidate
 wait_for_process_exit "$deploy_a_pid"
 
-docker update --cpus 0 "$container_id" >/dev/null
 run_in_candidate \
   leapview deploy \
   --project /var/lib/leapview/qualification-recovery/project-a/leapview.yaml \

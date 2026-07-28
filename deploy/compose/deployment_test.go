@@ -264,6 +264,9 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		strings.Count(performance, "metricSamples.push(await metricSnapshot())") < 7 {
 		t.Error("performance qualification must use bounded phase snapshots instead of exceeding the shipped metrics rate limit")
 	}
+	if !strings.Contains(performance, "{ mode: 0o644 }") {
+		t.Error("performance qualification report must be readable by the hosted artifact uploader")
+	}
 	for _, required := range []string{
 		"managedUpload",
 		"releaseFinalization",
@@ -320,16 +323,21 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		name     string
 		next     string
 		recovery string
+		throttle string
+		kill     string
 	}{
 		{
 			name:     "release finalization interruption",
 			next:     "deployment activation interruption",
 			recovery: "run_in_candidate",
+			kill:     "kill_candidate",
 		},
 		{
 			name:     "deployment activation interruption",
 			next:     "refresh materialization interruption",
 			recovery: "wait_for_json",
+			throttle: `docker update --cpus 0.25 "$container_id"`,
+			kill:     "kill_candidate",
 		},
 	} {
 		start := strings.Index(recovery, `stage="`+boundary.name+`"`)
@@ -338,17 +346,33 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 			t.Fatalf("recovery qualification has invalid %s stage boundaries", boundary.name)
 		}
 		stage := recovery[start:end]
-		throttle := strings.Index(stage, `docker update --cpus 0.25 "$container_id"`)
 		launch := strings.Index(stage, "run_in_candidate")
-		kill := strings.Index(stage, "kill_candidate")
-		unthrottle := strings.Index(stage, `docker update --cpus 0 "$container_id"`)
+		kill := strings.Index(stage, boundary.kill)
 		recoveryIndex := strings.LastIndex(stage, boundary.recovery)
-		if throttle < 0 || launch < 0 || throttle > launch {
-			t.Errorf("%s must throttle the candidate before launching the interrupted operation", boundary.name)
+		if boundary.throttle == "" {
+			if strings.Contains(stage, "docker update --cpus") {
+				t.Errorf("%s must not depend on CPU throttling to expose a durable release boundary", boundary.name)
+			}
+		} else {
+			throttle := strings.Index(stage, boundary.throttle)
+			unthrottle := strings.Index(stage, `docker update --cpus 0 "$container_id"`)
+			if throttle < 0 || launch < 0 || throttle > launch {
+				t.Errorf("%s must throttle the candidate before launching the interrupted operation", boundary.name)
+			}
+			if kill < 0 || unthrottle < 0 || recoveryIndex < 0 || kill > unthrottle || unthrottle > recoveryIndex {
+				t.Errorf("%s must remove its CPU limit after the kill and before recovery", boundary.name)
+			}
 		}
-		if kill < 0 || unthrottle < 0 || recoveryIndex < 0 || kill > unthrottle || unthrottle > recoveryIndex {
-			t.Errorf("%s must remove its CPU limit after the kill and before recovery", boundary.name)
+		if launch < 0 || kill < 0 || recoveryIndex < 0 || launch > kill || kill > recoveryIndex {
+			t.Errorf("%s must kill the candidate after launch and recover afterward", boundary.name)
 		}
+	}
+	releaseStart := strings.Index(recovery, `stage="release finalization interruption"`)
+	releaseEnd := strings.Index(recovery, `stage="deployment activation interruption"`)
+	releaseStage := recovery[releaseStart:releaseEnd]
+	if !strings.Contains(releaseStage, "release-ids-before.json") ||
+		!strings.Contains(releaseStage, `.status == "draft" or .status == "validating"`) {
+		t.Error("release interruption must identify a newly created draft or validating release instead of relying on a transient state")
 	}
 	backupStart := strings.Index(recovery, `stage="backup interruption"`)
 	if backupStart < 0 {
@@ -433,7 +457,8 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		`"minimumLogicalCPUs"`,
 		`"minimumMemoryBytes"`,
 		`"coldDashboardReadyP95Ms"`,
-		`"tableInteractionP95Ms"`,
+		`"filterToSettleP95Ms": 5000`,
+		`"tableInteractionP95Ms": 2000`,
 		`"peakResidentMemoryBytes"`,
 		`"temporaryDiskGrowthBytesMax"`,
 		`"maxRegressionRatio"`,

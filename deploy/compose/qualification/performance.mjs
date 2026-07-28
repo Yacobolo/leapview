@@ -488,7 +488,7 @@ async function readCredentials() {
 }
 
 async function writeJSON(path, value) {
-  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 })
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o644 })
 }
 
 function positiveEnvironment(name) {

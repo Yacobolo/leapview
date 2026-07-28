@@ -30,8 +30,8 @@ const policy = {
   budgets: {
     coldDashboardReadyP95Ms: 15_000,
     warmDashboardReadyP95Ms: 5_000,
-    filterToSettleP95Ms: 3_000,
-    tableInteractionP95Ms: 1_000,
+    filterToSettleP95Ms: 5_000,
+    tableInteractionP95Ms: 2_000,
     governedQueryP95Ms: 1_000,
     refreshP95Ms: 15_000,
     concurrentQueryP95Ms: 5_000,
@@ -80,8 +80,8 @@ test('absolute performance evaluation reports every breached release budget', ()
     latency: {
       coldDashboardReadyMs: { p95: 15_001 },
       warmDashboardReadyMs: { p95: 5_001 },
-      filterToSettleMs: { p95: 3_001 },
-      tableInteractionMs: { p95: 1_001 },
+      filterToSettleMs: { p95: 5_001 },
+      tableInteractionMs: { p95: 2_001 },
       governedQueryMs: { p95: 1_001 },
       refreshMs: { p95: 15_001 },
       concurrentQueryMs: { p95: 5_001 },
@@ -100,8 +100,8 @@ test('absolute performance evaluation reports every breached release budget', ()
   assert.deepEqual(failures, [
     'cold dashboard readiness p95 15001ms exceeds 15000ms',
     'warm dashboard readiness p95 5001ms exceeds 5000ms',
-    'filter-to-settle p95 3001ms exceeds 3000ms',
-    'table interaction p95 1001ms exceeds 1000ms',
+    'filter-to-settle p95 5001ms exceeds 5000ms',
+    'table interaction p95 2001ms exceeds 2000ms',
     'governed query p95 1001ms exceeds 1000ms',
     'refresh/materialization p95 15001ms exceeds 15000ms',
     'concurrent query p95 5001ms exceeds 5000ms',

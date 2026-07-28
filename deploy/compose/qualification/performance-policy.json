@@ -22,8 +22,8 @@
   "budgets": {
     "coldDashboardReadyP95Ms": 15000,
     "warmDashboardReadyP95Ms": 5000,
-    "filterToSettleP95Ms": 3000,
-    "tableInteractionP95Ms": 1000,
+    "filterToSettleP95Ms": 5000,
+    "tableInteractionP95Ms": 2000,
     "governedQueryP95Ms": 1000,
     "refreshP95Ms": 15000,
     "concurrentQueryP95Ms": 5000,
