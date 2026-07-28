@@ -70,6 +70,7 @@ func NewHandlerWithOptions(options Options) http.Handler {
 	mux.HandleFunc("GET /getting-started", gettingStarted)
 	mux.HandleFunc("GET /healthz", health)
 	mux.HandleFunc("GET /readyz", health)
+	mux.HandleFunc("GET /release.json", docsPublicRelease)
 	mux.HandleFunc("GET /robots.txt", server.robots)
 	mux.HandleFunc("GET /llms.txt", docsLLMs)
 	mux.HandleFunc("GET /sitemap.xml", server.sitemap)

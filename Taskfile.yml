@@ -506,6 +506,7 @@ tasks:
       - bun run test:interaction-selection
       - bun run test:movielens-performance-harness
       - bun run test:qualification-performance-policy
+      - bun run test:public-site-smoke
       - bun run test:record-table
       - bun run test:visual-modal
       - bun run test:catalog-page

@@ -26,6 +26,7 @@
     "test:interaction-selection": "bun test web/components/dashboard/interaction-selection.test.ts web/components/dashboard/visualization/interaction-command.test.ts web/components/dashboard/visualization/adapters/echarts.test.ts web/components/dashboard/visualization/adapters/maplibre.test.ts web/components/dashboard/table/selection.test.ts web/components/dashboard/filters/filter-controller.test.ts",
     "test:movielens-performance-harness": "bun test scripts/movielens_performance.test.ts",
     "test:qualification-performance-policy": "node --test deploy/compose/qualification/performance-policy.test.mjs",
+    "test:public-site-smoke": "bun test scripts/public_site_smoke.test.ts",
     "test:visual-modal": "playwright install chromium && bun scripts/build_test_assets.ts visual-modal && bun test web/components/dashboard/visual-modal-focus.test.ts web/components/dashboard/visual-modal.dom.test.ts",
     "test:catalog-page": "playwright install chromium && bun scripts/build_test_assets.ts catalog-page && bun test web/components/app/catalog-page.dom.test.ts",
     "test:dashboard-page": "playwright install chromium && bun scripts/build_test_assets.ts dashboard-page && bun test web/components/dashboard/dashboard-page.dom.test.ts",
