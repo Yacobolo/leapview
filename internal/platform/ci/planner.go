@@ -260,7 +260,7 @@ func classifyPath(changedPath string, jobs *Jobs, reasons map[string]struct{}) s
 	if isGoPath(changedPath) {
 		if strings.HasSuffix(changedPath, "_test.go") {
 			jobs.Prepare = true
-			if strings.HasPrefix(changedPath, "internal/app/") {
+			if path.Dir(changedPath) == "internal/app" {
 				jobs.GoMatrix = unionGoShards(jobs.GoMatrix, appGoShards())
 			} else {
 				jobs.GoMatrix = unionGoShards(jobs.GoMatrix, []GoShard{{Name: "packages"}})
@@ -290,6 +290,8 @@ func isCrossCutting(changedPath string) bool {
 	}
 	return strings.HasPrefix(changedPath, ".github/workflows/") ||
 		strings.HasPrefix(changedPath, "api/") ||
+		strings.HasPrefix(changedPath, "internal/agent/contracts/generate/") ||
+		strings.HasPrefix(changedPath, "internal/app/tools/") ||
 		strings.HasPrefix(changedPath, "internal/platform/ci/")
 }
 

@@ -139,6 +139,63 @@ tasks:
       - task: site:build
       - bun run test:docs-diagrams
       - bun run test:site
+      - go test ./cmd/leapview-site ./docs ./site ./internal/app/site/...
+
+  ci:test:frontend:core:
+    desc: Run global browser contracts, typechecks, and core application tests
+    cmds:
+      - bun run test:primer-primitives
+      - bun run test:primer-alignment
+      - bun run test:theme
+      - bun run test:datastar-lit
+      - bun run test:app-shell
+      - bun run typecheck:app
+      - bun run typecheck:contracts
+      - bun run test:production-assets
+      - bun run test:movielens-performance-harness
+      - bun run test:qualification-performance-policy
+      - bun run test:public-site-smoke
+
+  ci:test:frontend:reports:
+    desc: Run dashboard, visualization, and report browser tests
+    cmds:
+      - bun run test:visualization-ir
+      - bun run test:table-selection
+      - bun run test:interaction-selection
+      - bun run test:record-table
+      - bun run test:visual-modal
+      - bun run test:catalog-page
+      - bun run test:dashboard-page
+      - bun run test:windowed-table
+      - bun run test:filter-menu
+
+  ci:test:frontend:chat:
+    desc: Run chat and shared content browser tests
+    cmds:
+      - bun run test:chat-composer
+      - bun run test:chat-page
+      - bun run test:chat-thread
+      - bun run test:code-block
+      - bun run test:markdown-view
+
+  ci:test:frontend:workspace:
+    desc: Run workspace, administration, and data browser tests
+    cmds:
+      - bun run test:workspace-page
+      - bun run test:data-explorer
+      - bun run test:admin-page
+      - bun run test:code-editor
+      - bun run test:login-page
+      - bun run test:asset-lineage
+      - bun run test:semantic-model-graph
+      - bun run test:datastar-inspector
+      - bun run test:topology-background
+
+  ci:test:frontend:site:
+    desc: Run public documentation and site browser tests
+    cmds:
+      - bun run test:docs-diagrams
+      - bun run test:site
 
   site:binary:
     desc: Build the independently deployable public site from generated documentation
@@ -524,41 +581,11 @@ tasks:
     cmds:
       - task: generate
       - task: build
-      - bun run test:primer-primitives
-      - bun run test:docs-diagrams
-      - bun run test:primer-alignment
-      - bun run test:theme
-      - bun run test:site
-      - bun run test:datastar-lit
-      - bun run test:visualization-ir
-      - bun run test:app-shell
-      - bun run test:interaction-selection
-      - bun run test:movielens-performance-harness
-      - bun run test:qualification-performance-policy
-      - bun run test:public-site-smoke
-      - bun run test:record-table
-      - bun run test:visual-modal
-      - bun run test:catalog-page
-      - bun run test:dashboard-page
-      - bun run test:chat-composer
-      - bun run test:chat-page
-      - bun run test:chat-thread
-      - bun run test:code-block
-      - bun run test:workspace-page
-      - bun run test:data-explorer
-      - bun run test:windowed-table
-      - bun run test:filter-menu
-      - bun run test:datastar-inspector
-      - bun run test:admin-page
-      - bun run test:code-editor
-      - bun run test:markdown-view
-      - bun run test:login-page
-      - bun run test:topology-background
-      - bun run test:production-assets
-      - bun run test:asset-lineage
-      - bun run test:semantic-model-graph
-      - bun run typecheck:app
-      - bun run typecheck:contracts
+      - task: ci:test:frontend:core
+      - task: ci:test:frontend:reports
+      - task: ci:test:frontend:chat
+      - task: ci:test:frontend:workspace
+      - task: ci:test:frontend:site
       # CUE-heavy compiler/application packages can each saturate a core and
       # starve timing-sensitive integration tests when every package runs at
       # once. Bound package parallelism while retaining Go's in-package
@@ -612,14 +639,19 @@ tasks:
       - task: deploy:check
 
   deploy:check:
-    desc: Validate the supported single-node deployment and lifecycle contracts
+    desc: Validate product and public-site deployment contracts
     cmds:
       - go test ./cmd/leapviewctl ./internal/app/cli/composectl ./deploy/compose
       - go test ./deploy/hetzner
+      - go test ./deploy/hetzner-site
       - terraform fmt -check -recursive deploy/hetzner
       - terraform -chdir=deploy/hetzner init -backend=false -input=false
       - terraform -chdir=deploy/hetzner validate
       - terraform -chdir=deploy/hetzner test
+      - terraform fmt -check -recursive deploy/hetzner-site
+      - terraform -chdir=deploy/hetzner-site init -backend=false -input=false
+      - terraform -chdir=deploy/hetzner-site validate
+      - terraform -chdir=deploy/hetzner-site test
 
   node:audit:
     desc: Scan JavaScript dependencies for known vulnerabilities

@@ -457,7 +457,11 @@ jobs:
           context: .
           file: Dockerfile.site
           platforms: linux/amd64
+          load: true
           tags: leapview-site:ci
+
+      - name: Smoke test production site image
+        run: ./scripts/smoke_site_image.sh leapview-site:ci
 
   site-image-fork:
     name: Public site image (external pull request)
@@ -487,7 +491,11 @@ jobs:
           context: .
           file: Dockerfile.site
           platforms: linux/amd64
+          load: true
           tags: leapview-site:ci
+
+      - name: Smoke test production site image
+        run: ./scripts/smoke_site_image.sh leapview-site:ci
 
   frontend-tests:
     name: Frontend tests (${{ matrix.name }})
@@ -513,8 +521,7 @@ jobs:
         with:
           bun-version: 1.3.7
 
-      - name: Set up Go for public site tests
-        if: matrix.name == 'site'
+      - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
@@ -522,6 +529,11 @@ jobs:
 
       - name: Install JavaScript dependencies
         run: bun install --frozen-lockfile
+
+      - name: Install Task
+        run: |
+          go install github.com/go-task/task/v3/cmd/task@v3.50.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Restore pinned documentation basemap
         if: matrix.name == 'site'
@@ -554,56 +566,7 @@ jobs:
       - name: Run frontend tests
         env:
           FRONTEND_SHARD: ${{ matrix.name }}
-        run: |
-          case "$FRONTEND_SHARD" in
-            core)
-              bun run test:primer-primitives
-              bun run test:primer-alignment
-              bun run test:theme
-              bun run test:datastar-lit
-              bun run test:app-shell
-              bun run typecheck:app
-              bun run typecheck:contracts
-              bun run test:production-assets
-              bun run test:movielens-performance-harness
-              bun run test:qualification-performance-policy
-              ;;
-            reports)
-              bun run test:interaction-selection
-              bun run test:record-table
-              bun run test:visual-modal
-              bun run test:catalog-page
-              bun run test:dashboard-page
-              bun run test:windowed-table
-              bun run test:filter-menu
-              ;;
-            chat)
-              bun run test:chat-composer
-              bun run test:chat-page
-              bun run test:chat-thread
-              bun run test:code-block
-              bun run test:markdown-view
-              ;;
-            workspace)
-              bun run test:workspace-page
-              bun run test:data-explorer
-              bun run test:admin-page
-              bun run test:code-editor
-              bun run test:login-page
-              bun run test:asset-lineage
-              bun run test:semantic-model-graph
-              bun run test:datastar-inspector
-              bun run test:topology-background
-              ;;
-            site)
-              bun run test:docs-diagrams
-              bun run test:site
-              ;;
-            *)
-              printf 'unknown frontend shard %s\n' "$FRONTEND_SHARD" >&2
-              exit 1
-              ;;
-          esac
+        run: task "ci:test:frontend:${FRONTEND_SHARD}"
 
   go-analysis:
     name: Go static and race analysis
@@ -829,7 +792,7 @@ jobs:
           bun-version: 1.3.7
 
       - name: Test deployment lifecycle
-        run: go test ./deploy/compose ./deploy/hetzner
+        run: go test ./deploy/compose ./deploy/hetzner ./deploy/hetzner-site
 
       - name: Test deployment performance policy
         run: bun run test:qualification-performance-policy
@@ -844,6 +807,7 @@ jobs:
           deploy/hetzner/files/leapviewctl-wrapper
           deploy/hetzner/files/leapview-backup-hook
           deploy/hetzner/files/provision.sh.tftpl
+          deploy/hetzner-site/files/provision.sh
           deploy/compose/qualification/qualify.sh
           deploy/compose/qualification/recover.sh
 
@@ -853,6 +817,17 @@ jobs:
 
       - name: Validate Terraform contracts
         working-directory: deploy/hetzner
+        run: |
+          terraform fmt -check -recursive
+          terraform validate
+          terraform test
+
+      - name: Initialize public-site Terraform providers
+        working-directory: deploy/hetzner-site
+        run: terraform init -backend=false -input=false
+
+      - name: Validate public-site Terraform contracts
+        working-directory: deploy/hetzner-site
         run: |
           terraform fmt -check -recursive
           terraform validate

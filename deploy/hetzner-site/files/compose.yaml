@@ -1,0 +1,48 @@
+name: leapview-site
+
+services:
+  leapview-site:
+    image: ${LEAPVIEW_SITE_IMAGE:?must be an immutable digest}
+    restart: unless-stopped
+    environment:
+      LEAPVIEW_SITE_BASE_URL: https://leapview.dev
+    expose:
+      - "8081"
+    networks:
+      - site
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  caddy:
+    image: ${CADDY_IMAGE:?must be an immutable digest}
+    restart: unless-stopped
+    depends_on:
+      - leapview-site
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /var/lib/leapview-site/caddy-data:/data
+      - /var/lib/leapview-site/caddy-config:/config
+    networks:
+      - site
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  site:
+    driver: bridge
