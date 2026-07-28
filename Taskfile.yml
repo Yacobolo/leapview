@@ -114,6 +114,37 @@ tasks:
     cmds:
       - bun run build
 
+  desktop:deps:
+    desc: Install the pinned LeapView Desktop dependencies
+    dir: desktop
+    cmds:
+      - bun install --frozen-lockfile
+
+  desktop:test:
+    desc: Run LeapView Desktop discovery, profile, UI, and shared security contracts
+    deps:
+      - desktop:deps
+    dir: desktop
+    cmds:
+      - bun run test
+      - bun run build
+
+  desktop:start:
+    desc: Start the unpackaged LeapView Desktop client
+    deps:
+      - desktop:deps
+    dir: desktop
+    cmds:
+      - bun run start
+
+  desktop:package:
+    desc: Build an unpackaged LeapView Desktop application for the current platform
+    deps:
+      - desktop:deps
+    dir: desktop
+    cmds:
+      - bun run package
+
   site:build:
     desc: Build the LeapView public site assets from generated contracts
     cmds:
@@ -506,6 +537,7 @@ tasks:
       - bun run test:semantic-model-graph
       - bun run typecheck:app
       - bun run typecheck:contracts
+      - task: desktop:test
       # CUE-heavy compiler/application packages can each saturate a core and
       # starve timing-sensitive integration tests when every package runs at
       # once. Bound package parallelism while retaining Go's in-package

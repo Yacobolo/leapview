@@ -33,6 +33,7 @@ RUN apt-get update \
 WORKDIR /src
 COPY go.mod go.sum ./
 COPY internal/app/testing/maliciousinstance ./internal/app/testing/maliciousinstance
+COPY desktop/src/security ./desktop/src/security
 COPY --from=electron /proof/node_modules ./internal/app/testing/maliciousinstance/electron/node_modules
 
 RUN cp internal/app/testing/maliciousinstance/electron/run-linux-proof.sh /usr/local/bin/run-linux-proof \

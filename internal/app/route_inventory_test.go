@@ -84,7 +84,7 @@ func TestRouteInventory(t *testing.T) {
 		rows = append(rows, fmt.Sprintf("%s|%s|%s|%s", key, contract.owner, contract.access, contract.privilege))
 	}
 	sort.Strings(rows)
-	const expectedRouteContractDigest = "dfb261be78d8d59919ba93cbc30cadf62b6fe8f3e0f265a7c4b6580fdd0cfc91"
+	const expectedRouteContractDigest = "77eca3022fb47731691634596d7b0f196040b4ef845496ffee3b72ec66724b84"
 	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(rows, "\n"))))
 	if digest != expectedRouteContractDigest {
 		t.Fatalf("route ownership/auth contract changed: got digest %s\n%s", digest, strings.Join(rows, "\n"))
@@ -102,6 +102,9 @@ func nonAPIRouteMetadata(method, path string) (routeMetadata, bool) {
 	switch {
 	case path == "/favicon.ico" || path == "/static/*":
 		public.owner = "ui"
+		return public, true
+	case path == "/.well-known/leapview":
+		public.owner = "platform"
 		return public, true
 	case path == "/healthz" || path == "/readyz" || path == "/metrics" || strings.HasPrefix(path, "/__dev/"):
 		public.owner = "platform"
@@ -211,6 +214,7 @@ CONNECT /static/*
 DELETE /metrics
 DELETE /static/*
 GET /
+GET /.well-known/leapview
 GET /.well-known/oauth-authorization-server
 GET /.well-known/oauth-protected-resource
 GET /.well-known/oauth-protected-resource/mcp

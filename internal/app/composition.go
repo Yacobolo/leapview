@@ -12,6 +12,7 @@ import (
 	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
 	analyticsmodule "github.com/Yacobolo/leapview/internal/analytics/module"
 	"github.com/Yacobolo/leapview/internal/app/config"
+	"github.com/Yacobolo/leapview/internal/app/desktopdiscovery"
 	appruntimefactory "github.com/Yacobolo/leapview/internal/app/runtimefactory"
 	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
 	deploymentmodule "github.com/Yacobolo/leapview/internal/deployment/module"
@@ -80,6 +81,10 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 		return nil, nil, nil, errors.Join(err, cleanupErr)
 	}
 	if err := store.BindInstanceEnvironment(ctx, string(environment)); err != nil {
+		return fail(err)
+	}
+	instanceID, err := store.EnsureInstanceID(ctx)
+	if err != nil {
 		return fail(err)
 	}
 	workloadConfig := cfg.WorkloadConfig()
@@ -285,7 +290,14 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 			MetricsBearerToken: cfg.MetricsBearerToken, AllowedHosts: allowedHosts, Assets: assets,
 		},
 		httpAssemblyInputs{
-			PublicURL:       firstConfigured(cfg.PublicURL, configuredListenURL(cfg.ListenAddr())),
+			PublicURL: firstConfigured(cfg.PublicURL, configuredListenURL(cfg.ListenAddr())),
+			DesktopDiscovery: desktopdiscovery.Config{
+				CanonicalOrigin:   firstConfigured(cfg.PublicURL, configuredListenURL(cfg.ListenAddr())),
+				InstanceID:        instanceID,
+				DisplayName:       "LeapView",
+				ServerVersion:     assets.Version(),
+				AllowLoopbackHTTP: !production,
+			},
 			RateLimits:      rateLimits,
 			SecurityHeaders: apihttpmiddleware.SecurityHeaders(production && cfg.HSTSEnabled(cookieSecure)),
 			RequestLogging:  production && cfg.RequestLoggingEnabled(), Logger: slog.Default(),
