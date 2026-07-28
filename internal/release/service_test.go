@@ -107,6 +107,21 @@ func TestValidateFinalizationRequiresEveryArtifactToMatchReleaseConnectionPins(t
 	}
 }
 
+func TestValidateFinalizationReplaysReadyRelease(t *testing.T) {
+	repo := &serviceTestReleaseRepository{current: Release{
+		ID: "release-1", ProjectID: "project-a", Status: StatusReady,
+	}}
+	service := &Service{releases: repo, finalization: repo}
+
+	got, err := service.ValidateFinalization(t.Context(), "project-a", "release-1")
+	if err != nil || got.Status != StatusReady {
+		t.Fatalf("ValidateFinalization() replay = status %q, error %v", got.Status, err)
+	}
+	if repo.completed {
+		t.Fatal("ready release replay attempted finalization again")
+	}
+}
+
 type serviceTestReleaseRepository struct {
 	current   Release
 	completed bool
