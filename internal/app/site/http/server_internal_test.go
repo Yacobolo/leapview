@@ -3,16 +3,19 @@ package http
 import (
 	"bufio"
 	"compress/gzip"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	content "github.com/Yacobolo/leapview/docs"
 	"github.com/Yacobolo/leapview/internal/analytics/connectors"
 )
 
@@ -259,6 +262,38 @@ func TestSiteProductionHeadersAndHealthEndpoints(t *testing.T) {
 	}
 	if got := response.Header.Get("Access-Control-Allow-Origin"); got != "*" {
 		t.Fatalf("Vega-Lite sandbox Access-Control-Allow-Origin = %q, want *", got)
+	}
+}
+
+func TestPublicReleaseManifestIsMachineReadable(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/release.json")
+	if err != nil {
+		t.Fatalf("get public release manifest: %v", err)
+	}
+	body := readBody(t, response)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("release manifest status = %d, want %d: %s", response.StatusCode, http.StatusOK, body)
+	}
+	if got := response.Header.Get("Content-Type"); got != "application/json" {
+		t.Errorf("release manifest content type = %q, want application/json", got)
+	}
+	expectedContents, err := content.Files.ReadFile("public-release.json")
+	if err != nil {
+		t.Fatalf("read embedded public release manifest: %v", err)
+	}
+	var actual, expected any
+	if err := json.Unmarshal([]byte(body), &actual); err != nil {
+		t.Fatalf("decode public release manifest: %v", err)
+	}
+	if err := json.Unmarshal(expectedContents, &expected); err != nil {
+		t.Fatalf("decode embedded public release manifest: %v", err)
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("served release manifest does not match embedded source:\nserved: %#v\nsource: %#v", actual, expected)
 	}
 }
 
