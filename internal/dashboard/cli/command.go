@@ -5,10 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 
+	dashboardgen "github.com/Yacobolo/leapview/internal/dashboard/api/gen"
 	"github.com/Yacobolo/leapview/internal/platform/cliapi"
 	"github.com/spf13/cobra"
 )
@@ -27,71 +25,80 @@ func Command(ctx context.Context, client cliapi.Client, defaultWorkspaceID strin
 	parent := &cobra.Command{Use: "dashboards", Short: "Inspect dashboards"}
 	parent.PersistentFlags().StringVar(&values.workspaceID, "workspace", values.workspaceID, "workspace id")
 
-	list := requestCommand(ctx, client, values, commandSpec{
-		use: "list", short: "List dashboards", operationID: "listDashboards",
-		pathParams: func(_ []string) map[string]string {
-			return map[string]string{"workspace": values.workspaceID}
-		},
-		query: values.pagination.Query,
+	list := requestCommand(ctx, client, values, "list", "List dashboards", 0, func(ctx context.Context, api *dashboardgen.GenClient, _ []string) (dashboardgen.GenSchemaDashboardListResponse, error) {
+		response, err := api.ListDashboards(ctx, dashboardgen.GenListDashboardsClientRequest{
+			Workspace: values.workspaceID,
+			Params: dashboardgen.GenListDashboardsClientParams{
+				Limit:     optionalPositiveInt32(values.pagination.Limit),
+				PageToken: optionalString(values.pagination.PageToken),
+			},
+		})
+		return response.Body, err
 	})
 	values.pagination.AddFlags(list)
 
-	describe := requestCommand(ctx, client, values, commandSpec{
-		use: "describe <dashboard>", short: "Describe a dashboard", operationID: "getDashboard", exactArgs: 1,
-		pathParams: func(args []string) map[string]string {
-			return map[string]string{"workspace": values.workspaceID, "dashboard": args[0]}
-		},
+	describe := requestCommand(ctx, client, values, "describe <dashboard>", "Describe a dashboard", 1, func(ctx context.Context, api *dashboardgen.GenClient, args []string) (dashboardgen.GenSchemaDashboardManifestResponse, error) {
+		response, err := api.GetDashboard(ctx, dashboardgen.GenGetDashboardClientRequest{
+			Workspace: values.workspaceID, Dashboard: args[0],
+		})
+		return response.Body, err
 	})
-	page := requestCommand(ctx, client, values, commandSpec{
-		use: "page <dashboard> <page>", short: "Describe a dashboard page", operationID: "getDashboardPage", exactArgs: 2,
-		pathParams: func(args []string) map[string]string {
-			return map[string]string{"workspace": values.workspaceID, "dashboard": args[0], "page": args[1]}
-		},
+	page := requestCommand(ctx, client, values, "page <dashboard> <page>", "Describe a dashboard page", 2, func(ctx context.Context, api *dashboardgen.GenClient, args []string) (dashboardgen.GenSchemaDashboardPageResponse, error) {
+		response, err := api.GetDashboardPage(ctx, dashboardgen.GenGetDashboardPageClientRequest{
+			Workspace: values.workspaceID, Dashboard: args[0], Page: args[1],
+		})
+		return response.Body, err
 	})
-	visual := requestCommand(ctx, client, values, commandSpec{
-		use: "visual <dashboard> <page> <visual>", short: "Describe a dashboard visual", operationID: "getDashboardVisual", exactArgs: 3,
-		pathParams: func(args []string) map[string]string {
-			return dashboardPath(values.workspaceID, args)
-		},
+	visual := requestCommand(ctx, client, values, "visual <dashboard> <page> <visual>", "Describe a dashboard visual", 3, func(ctx context.Context, api *dashboardgen.GenClient, args []string) (dashboardgen.GenSchemaDashboardVisualDescribeResponse, error) {
+		response, err := api.GetDashboardVisual(ctx, dashboardgen.GenGetDashboardVisualClientRequest{
+			Workspace: values.workspaceID, Dashboard: args[0], Page: args[1], Visual: args[2],
+		})
+		return response.Body, err
 	})
-	filter := requestCommand(ctx, client, values, commandSpec{
-		use: "filter <dashboard> <page> <filter>", short: "Describe a compiled dashboard filter binding", operationID: "getDashboardFilter", exactArgs: 3,
-		pathParams: func(args []string) map[string]string {
-			return map[string]string{"workspace": values.workspaceID, "dashboard": args[0], "page": args[1], "filter": args[2]}
-		},
+	filter := requestCommand(ctx, client, values, "filter <dashboard> <page> <filter>", "Describe a compiled dashboard filter binding", 3, func(ctx context.Context, api *dashboardgen.GenClient, args []string) (dashboardgen.GenSchemaDashboardFilterDescribeResponse, error) {
+		response, err := api.GetDashboardFilter(ctx, dashboardgen.GenGetDashboardFilterClientRequest{
+			Workspace: values.workspaceID, Dashboard: args[0], Page: args[1], Filter: args[2],
+		})
+		return response.Body, err
 	})
-	visualData := requestCommand(ctx, client, values, commandSpec{
-		use: "visual-data <dashboard> <page> <visual>", short: "Query dashboard visual data", operationID: "queryDashboardVisualData", exactArgs: 3,
-		pathParams: func(args []string) map[string]string {
-			return dashboardPath(values.workspaceID, args)
-		},
-		body: func() (any, error) {
-			return visualQueryBody(values.count, values.filterStateJSON)
-		},
+	visualData := requestCommand(ctx, client, values, "visual-data <dashboard> <page> <visual>", "Query dashboard visual data", 3, func(ctx context.Context, api *dashboardgen.GenClient, args []string) (dashboardgen.GenSchemaVisualizationEnvelope, error) {
+		body, err := visualQueryBody(values.count, values.filterStateJSON)
+		if err != nil {
+			return dashboardgen.GenSchemaVisualizationEnvelope{}, err
+		}
+		response, err := api.QueryDashboardVisualData(ctx, dashboardgen.GenQueryDashboardVisualDataClientRequest{
+			Workspace: values.workspaceID, Dashboard: args[0], Page: args[1], Visual: args[2], Body: body,
+		})
+		return response.Body, err
 	})
 	visualData.Flags().StringVar(&values.filterStateJSON, "filter-state-json", "", "versioned dashboard filter state JSON")
 	visualData.Flags().IntVar(&values.count, "count", 0, "row count for table, matrix, or pivot visuals")
 
-	queryPage := requestCommand(ctx, client, values, commandSpec{
-		use: "query-page <dashboard> <page>", short: "Query a dashboard page", operationID: "queryDashboardPage", exactArgs: 2,
-		pathParams: func(args []string) map[string]string {
-			return map[string]string{"workspace": values.workspaceID, "dashboard": args[0], "page": args[1]}
-		},
-		body: func() (any, error) {
-			return filterStateBody(values.filterStateJSON)
-		},
+	queryPage := requestCommand(ctx, client, values, "query-page <dashboard> <page>", "Query a dashboard page", 2, func(ctx context.Context, api *dashboardgen.GenClient, args []string) (dashboardgen.GenSchemaDashboardPageQueryResponse, error) {
+		body, err := filterStateBody(values.filterStateJSON)
+		if err != nil {
+			return dashboardgen.GenSchemaDashboardPageQueryResponse{}, err
+		}
+		response, err := api.QueryDashboardPage(ctx, dashboardgen.GenQueryDashboardPageClientRequest{
+			Workspace: values.workspaceID, Dashboard: args[0], Page: args[1], Body: body,
+		})
+		return response.Body, err
 	})
 	queryPage.Flags().StringVar(&values.filterStateJSON, "filter-state-json", "", "versioned dashboard filter state JSON")
 
-	filterOptions := requestCommand(ctx, client, values, commandSpec{
-		use: "filter-options <dashboard> <page> <filter>", short: "List dashboard filter options", operationID: "listDashboardFilterValues", exactArgs: 3,
-		pathParams: func(args []string) map[string]string {
-			return map[string]string{"workspace": values.workspaceID, "dashboard": args[0], "page": args[1], "filter": args[2]}
-		},
-		query: values.pagination.Query,
-		body: func() (any, error) {
-			return filterStateBody(values.filterStateJSON)
-		},
+	filterOptions := requestCommand(ctx, client, values, "filter-options <dashboard> <page> <filter>", "List dashboard filter options", 3, func(ctx context.Context, api *dashboardgen.GenClient, args []string) (dashboardgen.GenSchemaDashboardFilterOptionListResponse, error) {
+		body, err := filterStateBody(values.filterStateJSON)
+		if err != nil {
+			return dashboardgen.GenSchemaDashboardFilterOptionListResponse{}, err
+		}
+		response, err := api.ListDashboardFilterValues(ctx, dashboardgen.GenListDashboardFilterValuesClientRequest{
+			Workspace: values.workspaceID, Dashboard: args[0], Page: args[1], Filter: args[2], Body: body,
+			Params: dashboardgen.GenListDashboardFilterValuesClientParams{
+				Limit:     optionalPositiveInt32(values.pagination.Limit),
+				PageToken: optionalString(values.pagination.PageToken),
+			},
+		})
+		return response.Body, err
 	})
 	values.pagination.AddFlags(filterOptions)
 	filterOptions.Flags().StringVar(&values.filterStateJSON, "filter-state-json", "", "versioned dashboard filter state JSON")
@@ -100,100 +107,100 @@ func Command(ctx context.Context, client cliapi.Client, defaultWorkspaceID strin
 	return parent
 }
 
-type commandSpec struct {
-	use         string
-	short       string
-	operationID string
-	exactArgs   int
-	pathParams  func([]string) map[string]string
-	query       func() url.Values
-	body        func() (any, error)
-}
-
-func requestCommand(ctx context.Context, client cliapi.Client, values *options, spec commandSpec) *cobra.Command {
+func requestCommand[T any](
+	ctx context.Context,
+	client cliapi.Client,
+	values *options,
+	use string,
+	short string,
+	exactArgs int,
+	execute func(context.Context, *dashboardgen.GenClient, []string) (T, error),
+) *cobra.Command {
 	command := &cobra.Command{
-		Use:   spec.use,
-		Short: spec.short,
+		Use:   use,
+		Short: short,
 		RunE: func(command *cobra.Command, args []string) error {
-			request := cliapi.Request{Method: http.MethodGet, OperationID: spec.operationID}
-			if spec.pathParams != nil {
-				request.PathParams = spec.pathParams(args)
+			api, err := dashboardClient(ctx, client, values.remote.Credentials())
+			if err != nil {
+				return err
 			}
-			if spec.query != nil {
-				request.Query = spec.query()
+			response, err := execute(ctx, api, args)
+			if err != nil {
+				return err
 			}
-			if spec.body != nil {
-				body, err := spec.body()
-				if err != nil {
-					return err
-				}
-				if body == nil {
-					body = map[string]any{}
-				}
-				request.Method = http.MethodPost
-				request.Body = body
-			}
-			return runRequest(ctx, client, values.remote.Credentials(), request, command.OutOrStdout())
+			return json.NewEncoder(command.OutOrStdout()).Encode(response)
 		},
 	}
-	if spec.exactArgs > 0 {
-		command.Args = cobra.ExactArgs(spec.exactArgs)
+	if exactArgs > 0 {
+		command.Args = cobra.ExactArgs(exactArgs)
 	}
 	values.remote.AddFlags(command)
 	return command
 }
 
-func runRequest(ctx context.Context, client cliapi.Client, credentials cliapi.Credentials, request cliapi.Request, out io.Writer) error {
+func dashboardClient(ctx context.Context, client cliapi.Client, credentials cliapi.Credentials) (*dashboardgen.GenClient, error) {
 	if client == nil {
-		return fmt.Errorf("dashboard CLI API client is required")
+		return nil, fmt.Errorf("dashboard CLI API client is required")
 	}
-	var response any
-	if err := client.DoJSON(ctx, credentials, request, &response); err != nil {
-		return err
+	transport, err := client.Transport(ctx, credentials)
+	if err != nil {
+		return nil, err
 	}
-	return json.NewEncoder(out).Encode(response)
+	return dashboardgen.NewGenClient(transport), nil
 }
 
-func dashboardPath(workspaceID string, args []string) map[string]string {
-	return map[string]string{"workspace": workspaceID, "dashboard": args[0], "page": args[1], "visual": args[2]}
-}
-
-func filterStateBody(raw string) (map[string]any, error) {
+func filterStateBody(raw string) (*dashboardgen.GenSchemaDashboardPageQueryRequest, error) {
 	if raw == "" {
 		return nil, nil
 	}
-	filterState, err := decodeObjectJSON(raw)
+	filterState, err := decodeFilterState(raw)
 	if err != nil {
 		return nil, fmt.Errorf("filter-state-json: %w", err)
 	}
-	return map[string]any{"filterState": filterState}, nil
+	return &dashboardgen.GenSchemaDashboardPageQueryRequest{FilterState: &filterState}, nil
 }
 
-func visualQueryBody(count int, rawFilterState string) (map[string]any, error) {
-	body := map[string]any{}
+func visualQueryBody(count int, rawFilterState string) (*dashboardgen.GenSchemaDashboardVisualQueryRequest, error) {
+	body := dashboardgen.GenSchemaDashboardVisualQueryRequest{}
 	if count > 0 {
-		body["limit"] = count
+		limit := int32(count)
+		body.Limit = &limit
 	}
 	if rawFilterState != "" {
-		filterState, err := decodeObjectJSON(rawFilterState)
+		filterState, err := decodeFilterState(rawFilterState)
 		if err != nil {
 			return nil, fmt.Errorf("filter-state-json: %w", err)
 		}
-		body["filterState"] = filterState
+		body.FilterState = &filterState
 	}
-	if len(body) == 0 {
+	if body.Limit == nil && body.FilterState == nil {
 		return nil, nil
 	}
-	return body, nil
+	return &body, nil
 }
 
-func decodeObjectJSON(raw string) (map[string]any, error) {
-	var out map[string]any
+func decodeFilterState(raw string) (dashboardgen.GenSchemaDashboardAppliedFilterInput, error) {
+	var out dashboardgen.GenSchemaDashboardAppliedFilterInput
 	if err := json.Unmarshal([]byte(raw), &out); err != nil {
-		return nil, err
+		return dashboardgen.GenSchemaDashboardAppliedFilterInput{}, err
 	}
-	if out == nil {
-		return nil, fmt.Errorf("must be a JSON object")
+	if out.Version == "" {
+		return dashboardgen.GenSchemaDashboardAppliedFilterInput{}, fmt.Errorf("must include a filter state version")
 	}
 	return out, nil
+}
+
+func optionalPositiveInt32(value int) *int32 {
+	if value <= 0 {
+		return nil
+	}
+	converted := int32(value)
+	return &converted
+}
+
+func optionalString(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }

@@ -71,13 +71,78 @@ func TestAgentGeneratedAPIIsCapabilityOwned(t *testing.T) {
 }
 
 func TestCapabilityCLIIsAnAdapterOwnedByItsCapability(t *testing.T) {
-	for _, capability := range []string{"admin", "agent", "analytics", "dashboard", "manageddata", "project", "workspace"} {
+	for _, capability := range []string{"admin", "agent", "dashboard", "manageddata", "project", "workspace"} {
 		rule, ok := ClassifyPackage("internal/" + capability + "/cli")
 		if !ok {
 			t.Fatalf("%s CLI package is not classified", capability)
 		}
 		if rule.Capability != capability || rule.Layer != LayerAdapter {
 			t.Fatalf("%s CLI classification = %#v, want %s adapter", capability, rule, capability)
+		}
+	}
+}
+
+func TestCapabilityCLIsUseGeneratedTypedClients(t *testing.T) {
+	clientImports := map[string]string{
+		"internal/agent/cli":     modulePath + "/internal/agent/api/gen",
+		"internal/dashboard/cli": modulePath + "/internal/dashboard/api/gen",
+		"internal/workspace/cli": modulePath + "/internal/workspace/api/gen",
+	}
+	seen := map[string]bool{}
+	for _, file := range productionGoFiles(t) {
+		requiredImport, capabilityCLI := clientImports[file.pkgDir]
+		if !capabilityCLI {
+			continue
+		}
+		seen[file.pkgDir] = seen[file.pkgDir] || importListContains(file.imports, requiredImport)
+		for _, forbidden := range []string{"cliapi.Request", ".DoJSON(", `OperationID: "`} {
+			if strings.Contains(file.body, forbidden) {
+				t.Errorf("%s retains untyped CLI API surface %q", file.path, forbidden)
+			}
+		}
+	}
+	for pkgDir := range clientImports {
+		if !seen[pkgDir] {
+			t.Errorf("%s does not import its generated typed client package", pkgDir)
+		}
+	}
+
+	cliAPI, err := os.ReadFile(filepath.Join(repoRoot(t), "internal", "platform", "cliapi", "client.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"type Request struct", "DoJSON("} {
+		if strings.Contains(string(cliAPI), forbidden) {
+			t.Errorf("platform CLI port retains transitional surface %q", forbidden)
+		}
+	}
+}
+
+func TestCapabilityAPIPackagesOptIntoTypedClientGeneration(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join(repoRoot(t), "api", "apigen.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := string(content)
+	namespaces := []string{
+		"LeapViewAPI.Access", "LeapViewAPI.Agent", "LeapViewAPI.Analytics",
+		"LeapViewAPI.Dashboard", "LeapViewAPI.Deployment", "LeapViewAPI.ManagedData",
+		"LeapViewAPI.Project", "LeapViewAPI.Refresh", "LeapViewAPI.Release",
+		"LeapViewAPI.Workspace",
+	}
+	for _, namespace := range namespaces {
+		start := strings.Index(manifest, "        "+namespace+":")
+		if start < 0 {
+			t.Errorf("APIGen manifest is missing %s", namespace)
+			continue
+		}
+		rest := manifest[start+1:]
+		end := strings.Index(rest, "\n        LeapViewAPI.")
+		if end >= 0 {
+			rest = rest[:end]
+		}
+		if !strings.Contains(rest, "client_file: client.apigen.gen.go") {
+			t.Errorf("%s does not own a generated typed client", namespace)
 		}
 	}
 }
@@ -1375,7 +1440,6 @@ func TestRequiredCapabilityAdaptersExist(t *testing.T) {
 		"internal/admin/http",
 		"internal/agent/cli",
 		"internal/agent/http",
-		"internal/analytics/cli",
 		"internal/analytics/connectors",
 		"internal/refresh/http",
 		"internal/dashboard/cli",

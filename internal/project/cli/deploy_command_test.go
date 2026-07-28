@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/platform/cliapi"
+	apigenclient "github.com/Yacobolo/toolbelt/apigen/runtime/client"
 )
 
 type deployClient struct{}
@@ -17,8 +18,8 @@ func (deployClient) Resolve(_ context.Context, credentials cliapi.Credentials) (
 func (deployClient) Environment(_ context.Context, _ cliapi.Credentials, asserted string) (string, error) {
 	return asserted, nil
 }
-func (deployClient) DoJSON(context.Context, cliapi.Credentials, cliapi.Request, any) error {
-	return nil
+func (deployClient) Transport(context.Context, cliapi.Credentials) (apigenclient.Transport, error) {
+	return nil, nil
 }
 
 type deployOperations struct {

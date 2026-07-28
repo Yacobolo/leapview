@@ -7,12 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
-	"net/url"
 	"text/tabwriter"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/agent/api"
+	agentgen "github.com/Yacobolo/leapview/internal/agent/api/gen"
 	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
 	"github.com/Yacobolo/leapview/internal/platform/cliapi"
 	"github.com/spf13/cobra"
@@ -82,60 +80,69 @@ func runAsk(ctx context.Context, client cliapi.Client, values *options, question
 		return fmt.Errorf("agent CLI API client is required")
 	}
 	credentials := cliapi.Credentials{Target: values.target, Token: values.token}
-	conversationID := values.conversation
-	if conversationID == "" {
-		var conversation api.AgentConversationResponse
-		if err := client.DoJSON(ctx, credentials, cliapi.Request{
-			Method: http.MethodPost, OperationID: "createAgentConversation",
-			Headers: map[string]string{"Idempotency-Key": fmt.Sprintf("cli-conversation-%d", time.Now().UnixNano())},
-			Body:    api.AgentConversationCreateRequest{Title: "CLI conversation"},
-		}, &conversation); err != nil {
-			return err
-		}
-		conversationID = conversation.ID
-	}
-	var run api.AgentRunResponse
-	if err := client.DoJSON(ctx, credentials, cliapi.Request{
-		Method: http.MethodPost, OperationID: "createAgentRun",
-		PathParams: map[string]string{"conversation": conversationID},
-		Headers:    map[string]string{"Idempotency-Key": fmt.Sprintf("cli-run-%d", time.Now().UnixNano())},
-		Body:       api.AgentTurnRequest{Input: question},
-	}, &run); err != nil {
+	api, err := agentClient(ctx, client, credentials)
+	if err != nil {
 		return err
 	}
+	conversationID := values.conversation
+	if conversationID == "" {
+		title := "CLI conversation"
+		conversation, err := api.CreateAgentConversation(ctx, agentgen.GenCreateAgentConversationClientRequest{
+			Headers: agentgen.GenCreateAgentConversationClientHeaders{
+				IdempotencyKey: fmt.Sprintf("cli-conversation-%d", time.Now().UnixNano()),
+			},
+			Body: agentgen.GenSchemaAgentConversationCreateRequest{Title: &title},
+		})
+		if err != nil {
+			return err
+		}
+		conversationID = conversation.Body.Id
+	}
+	runResponse, err := api.CreateAgentRun(ctx, agentgen.GenCreateAgentRunClientRequest{
+		Conversation: conversationID,
+		Headers: agentgen.GenCreateAgentRunClientHeaders{
+			IdempotencyKey: fmt.Sprintf("cli-run-%d", time.Now().UnixNano()),
+		},
+		Body: agentgen.GenSchemaAgentRunCreateRequest{Input: question},
+	})
+	if err != nil {
+		return err
+	}
+	run := runResponse.Body
 	for run.Status == "queued" || run.Status == "running" {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(250 * time.Millisecond):
 		}
-		if err := client.DoJSON(ctx, credentials, cliapi.Request{
-			Method: http.MethodGet, OperationID: "getAgentRun",
-			PathParams: map[string]string{"conversation": conversationID, "run": run.ID},
-		}, &run); err != nil {
+		currentRun, err := api.GetAgentRun(ctx, agentgen.GenGetAgentRunClientRequest{
+			Conversation: conversationID,
+			Run:          run.Id,
+		})
+		if err != nil {
 			return err
 		}
+		run = currentRun.Body
 	}
-	var messages listResponse[api.AgentMessageResponse]
-	if err := client.DoJSON(ctx, credentials, cliapi.Request{
-		Method: http.MethodGet, OperationID: "listAgentMessages",
-		PathParams: map[string]string{"conversation": conversationID},
-	}, &messages); err != nil {
+	messages, err := api.ListAgentMessages(ctx, agentgen.GenListAgentMessagesClientRequest{
+		Conversation: conversationID,
+	})
+	if err != nil {
 		return err
 	}
 	content := ""
-	for _, message := range messages.Items {
-		if message.RunID == run.ID && message.Role == "assistant" && message.ContentText != "" {
-			content = message.ContentText
+	for _, message := range messages.Body.Items {
+		if stringValue(message.RunId) == run.Id && message.Role == "assistant" && stringValue(message.ContentText) != "" {
+			content = stringValue(message.ContentText)
 		}
 	}
 	if values.jsonOutput {
 		return json.NewEncoder(out).Encode(map[string]any{"conversationId": conversationID, "run": run, "content": content})
 	}
 	fmt.Fprintln(out, content)
-	fmt.Fprintf(out, "\nconversation=%s run=%s stop=%s\n", conversationID, run.ID, run.StopReason)
+	fmt.Fprintf(out, "\nconversation=%s run=%s stop=%s\n", conversationID, run.Id, stringValue(run.StopReason))
 	if run.Status != "completed" {
-		return fmt.Errorf("agent run ended with status %s: %s", run.Status, run.Error)
+		return fmt.Errorf("agent run ended with status %s: %s", run.Status, stringValue(run.Error))
 	}
 	return nil
 }
@@ -144,28 +151,61 @@ func runConversations(ctx context.Context, client cliapi.Client, values *options
 	if client == nil {
 		return fmt.Errorf("agent CLI API client is required")
 	}
-	query := url.Values{}
-	if values.limit > 0 {
-		query.Set("limit", fmt.Sprintf("%d", values.limit))
+	api, err := agentClient(ctx, client, cliapi.Credentials{Target: values.target, Token: values.token})
+	if err != nil {
+		return err
 	}
-	if values.pageToken != "" {
-		query.Set("pageToken", values.pageToken)
-	}
-	var response listResponse[api.AgentConversationResponse]
-	if err := client.DoJSON(ctx, cliapi.Credentials{Target: values.target, Token: values.token}, cliapi.Request{
-		Method: http.MethodGet, OperationID: "listAgentConversations", Query: query,
-	}, &response); err != nil {
+	response, err := api.ListAgentConversations(ctx, agentgen.GenListAgentConversationsClientRequest{
+		Params: agentgen.GenListAgentConversationsClientParams{
+			Limit:     optionalPositiveInt32(values.limit),
+			PageToken: optionalString(values.pageToken),
+		},
+	})
+	if err != nil {
 		return err
 	}
 	if values.jsonOutput {
-		return json.NewEncoder(out).Encode(response.Items)
+		return json.NewEncoder(out).Encode(response.Body.Items)
 	}
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tSTATUS\tTITLE\tUPDATED")
-	for _, row := range response.Items {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", row.ID, row.Status, row.Title, row.UpdatedAt)
+	for _, row := range response.Body.Items {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", row.Id, row.Status, row.Title, row.UpdatedAt)
 	}
 	return tw.Flush()
+}
+
+func agentClient(ctx context.Context, client cliapi.Client, credentials cliapi.Credentials) (*agentgen.GenClient, error) {
+	if client == nil {
+		return nil, fmt.Errorf("agent CLI API client is required")
+	}
+	transport, err := client.Transport(ctx, credentials)
+	if err != nil {
+		return nil, err
+	}
+	return agentgen.NewGenClient(transport), nil
+}
+
+func optionalPositiveInt32(value int) *int32 {
+	if value <= 0 {
+		return nil
+	}
+	converted := int32(value)
+	return &converted
+}
+
+func optionalString(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func runTools(out io.Writer, operations func() []agenttools.APIGenOperation) error {
@@ -192,11 +232,4 @@ func compactJSON(value json.RawMessage) string {
 		return string(value)
 	}
 	return output.String()
-}
-
-type listResponse[T any] struct {
-	Items []T `json:"items"`
-	Page  struct {
-		NextCursor string `json:"nextCursor"`
-	} `json:"page"`
 }

@@ -18,6 +18,10 @@ func apiOperationURL(target, operationID string, pathParams map[string]string, q
 		}
 		path = contract.Path
 	}
+	return apiRequestURL(target, path, pathParams, query)
+}
+
+func apiRequestURL(target, path string, pathParams map[string]string, query url.Values) (string, error) {
 	for name, value := range pathParams {
 		path = strings.ReplaceAll(path, "{"+name+"}", url.PathEscape(value))
 	}
