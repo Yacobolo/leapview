@@ -17,7 +17,9 @@ import (
 	"time"
 
 	deploymentgen "github.com/Yacobolo/leapview/internal/deployment/api/gen"
+	"github.com/Yacobolo/leapview/internal/platform/cliapi"
 	projectbundle "github.com/Yacobolo/leapview/internal/project/bundle"
+	projectcli "github.com/Yacobolo/leapview/internal/project/cli"
 	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 	releasegen "github.com/Yacobolo/leapview/internal/release/api/gen"
 	"github.com/Yacobolo/leapview/internal/workspace"
@@ -110,7 +112,13 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 	}
 	planned := make([]plannedWorkspace, 0, len(workspaceIDs))
 	for _, workspaceID := range workspaceIDs {
-		graph, graphErr := fetchActiveWorkspaceGraphFor(ctx, cliOpts, workspaceID)
+		graph, graphErr := projectcli.FetchActiveWorkspaceGraph(
+			ctx,
+			capabilityAPIClient{},
+			cliapi.Credentials{Target: cliOpts.target, Token: cliOpts.token},
+			cliOpts.environment,
+			workspaceID,
+		)
 		if graphErr != nil {
 			return fmt.Errorf("read active graph for workspace %q", workspaceID)
 		}

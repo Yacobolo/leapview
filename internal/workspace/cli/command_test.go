@@ -19,6 +19,10 @@ func (client *fakeClient) Resolve(_ context.Context, credentials cliapi.Credenti
 	return credentials, nil
 }
 
+func (client *fakeClient) Environment(_ context.Context, _ cliapi.Credentials, asserted string) (string, error) {
+	return asserted, nil
+}
+
 func (client *fakeClient) DoJSON(_ context.Context, _ cliapi.Credentials, request cliapi.Request, out any) error {
 	client.requests = append(client.requests, request)
 	if client.do != nil {

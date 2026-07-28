@@ -29,5 +29,6 @@ type Request struct {
 // adapters. Implementations own credential and transport configuration.
 type Client interface {
 	Resolve(context.Context, Credentials) (Credentials, error)
+	Environment(context.Context, Credentials, string) (string, error)
 	DoJSON(context.Context, Credentials, Request, any) error
 }

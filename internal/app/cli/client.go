@@ -26,6 +26,14 @@ func (capabilityAPIClient) Resolve(_ context.Context, credentials cliapi.Credent
 	return cliapi.Credentials{Target: target, Token: token}, nil
 }
 
+func (client capabilityAPIClient) Environment(ctx context.Context, credentials cliapi.Credentials, asserted string) (string, error) {
+	resolved, err := client.Resolve(ctx, credentials)
+	if err != nil {
+		return "", err
+	}
+	return targetEnvironment(ctx, http.DefaultClient, resolved.Target, resolved.Token, asserted)
+}
+
 func (client capabilityAPIClient) DoJSON(ctx context.Context, credentials cliapi.Credentials, request cliapi.Request, out any) error {
 	resolved, err := client.Resolve(ctx, credentials)
 	if err != nil {
