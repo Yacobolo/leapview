@@ -1722,10 +1722,21 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"task build",
 		"actions/upload-artifact@",
 		"name: generated-assets",
+		"classify:",
+		"name: Classify changes",
+		"go run ./internal/app/tools/ciplan",
+		"fetch-depth: 0",
+		"name: ci-plan",
+		"retention-days: 30",
+		"frontend-prepare:",
+		"name: Prepare frontend assets",
+		"task ci:prepare:frontend",
+		"docs:",
+		"name: Documentation and public site",
+		"task ci:test:docs-site",
 		"go-tests:",
 		"name: Go tests (${{ matrix.name }})",
-		"needs: prepare",
-		"app_shard:",
+		"matrix: ${{ fromJSON(needs.classify.outputs.go_matrix) }}",
 		"go test -p 2 \"${packages[@]}\"",
 		"go run ./internal/app/tools/testshard",
 		"frontend-tests:",
@@ -1748,9 +1759,37 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"platforms: linux/amd64",
 		"id-token: write",
 		"./scripts/smoke_production_image.sh leapview:ci",
+		"site-image-fork:",
+		"production-image-fork:",
+		"ci-gate:",
+		"name: CI gate",
+		"go run ./internal/app/tools/ciplan gate",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CI workflow missing production gate fragment %q", want)
+		}
+	}
+	if strings.Contains(text, "paths-ignore:") || strings.Contains(text, "\n    paths:") {
+		t.Fatal("required CI workflow must classify paths in a job instead of suppressing the workflow trigger")
+	}
+	for _, job := range []string{
+		"prepare",
+		"frontend-prepare",
+		"docs",
+		"go-tests",
+		"frontend-tests",
+		"go-analysis",
+		"ui-route-qa",
+		"node-audit",
+		"go-vuln",
+		"site-image",
+		"production-image",
+		"deployment-contracts",
+	} {
+		block := workflowJobBlock(t, text, job)
+		if !strings.Contains(block, "needs: classify") &&
+			!strings.Contains(block, "needs: [classify,") {
+			t.Fatalf("%s must depend on the authoritative change plan", job)
 		}
 	}
 	for _, job := range []string{"node-audit", "production-image"} {
@@ -1780,6 +1819,15 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 			t.Fatalf("%s must use Depot's persistent cache instead of transferring a GitHub Actions cache", block.name)
 		}
 	}
+	for _, job := range []string{"site-image-fork", "production-image-fork"} {
+		block := workflowJobBlock(t, text, job)
+		if strings.Contains(block, "id-token: write") || strings.Contains(block, "depot/") {
+			t.Fatalf("%s must execute fork-controlled build inputs without Depot or OIDC permission", job)
+		}
+		if !strings.Contains(block, "docker/build-push-action@") {
+			t.Fatalf("%s must retain a GitHub-hosted Buildx fallback", job)
+		}
+	}
 	deploymentContracts := workflowJobBlock(t, text, "deployment-contracts")
 	if !strings.Contains(deploymentContracts, "cache: false") {
 		t.Fatal("deployment-contracts must not race prepare to populate the shared Go cache")
@@ -1794,6 +1842,8 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"bun audit",
 		"vuln:",
 		"golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...",
+		"ci:prepare:frontend:",
+		"ci:test:docs-site:",
 		"test:go:",
 		"task --parallel test:go:packages test:go:app:0 test:go:app:1 test:go:app:2 test:go:app:3",
 		"go list ./... | grep -v '/internal/app$' | xargs go test -p 2",
@@ -1831,6 +1881,34 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 	} {
 		if !strings.Contains(scriptText, want) {
 			t.Fatalf("production image smoke script missing fragment %q", want)
+		}
+	}
+}
+
+func TestContinuousIntegrationHealthWorkflowReportsAndAlerts(t *testing.T) {
+	root := repoRoot(t)
+	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci-health.yml"))
+	if err != nil {
+		t.Fatalf("read CI health workflow: %v", err)
+	}
+	text := string(workflow)
+	for _, want := range []string{
+		"name: CI health",
+		"schedule:",
+		"workflow_dispatch:",
+		"actions: read",
+		"id-token: write",
+		"issues: write",
+		"depot/setup-action@",
+		"depot list builds --output json --project 9x73gxjcf5",
+		"go run ./internal/app/tools/cireport",
+		"--days 7",
+		"name: ci-health",
+		"retention-days: 30",
+		"CI health thresholds exceeded",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("CI health workflow missing fragment %q", want)
 		}
 	}
 }
