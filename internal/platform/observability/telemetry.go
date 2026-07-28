@@ -46,7 +46,14 @@ func New() *Telemetry {
 		}),
 		handlerOpts: promhttp.HandlerOpts{EnableOpenMetrics: true},
 	}
-	registry.MustRegister(telemetry.requests, telemetry.duration, telemetry.response, telemetry.inFlight)
+	registry.MustRegister(
+		telemetry.requests,
+		telemetry.duration,
+		telemetry.response,
+		telemetry.inFlight,
+		prometheus.NewGoCollector(),
+		prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}),
+	)
 	return telemetry
 }
 

@@ -15,6 +15,7 @@ metrics_file=""
 restore_root=""
 primary_project=""
 restore_project=""
+legacy_volume=""
 success=false
 
 mkdir -p "$evidence_dir"
@@ -81,6 +82,7 @@ cleanup() {
     compose_in "$restore_root" logs --no-color --tail 500 2>&1 | redact > "$evidence_dir/restore-compose.log"
     compose_in "$restore_root" down --volumes --remove-orphans >/dev/null 2>&1
   fi
+  [[ -n "$legacy_volume" ]] && docker volume rm --force "$legacy_volume" >/dev/null 2>&1
   rm -f \
     "$bundle_root/deployment.env" \
     "$bundle_root/leapview.env" \
@@ -155,6 +157,49 @@ jq -e --slurpfile expected "$identity_file" '
 ' "$runtime_identity" >/dev/null
 
 run_suffix="${GITHUB_RUN_ID:-local}-$(uname -m)-$$"
+legacy_policy="$qualification_root/v0.1.0-policy.json"
+jq -e '
+  .release == "v0.1.0" and
+  .sourceRevision == "5bf4aded574df459e80d81b77d1989ecd4fa7de0" and
+  .image == "ghcr.io/yacobolo/libredash@sha256:677caaf256cb3a0d61efd47b289debbd91984976a5a5c4b372196a5d79ce7153" and
+  .distribution == "authentication-required" and
+  .platforms == ["linux/amd64"] and
+  .statePolicy == "fresh-install-only" and
+  (.legacyMarkers | index("libredash.db")) != null
+' "$legacy_policy" >/dev/null
+legacy_volume="$(printf 'leapview-v010-policy-%s' "$run_suffix" | tr '[:upper:]_' '[:lower:]-')"
+docker volume create "$legacy_volume" >/dev/null
+docker run --rm \
+  --entrypoint sh \
+  --volume "$legacy_volume:/var/lib/leapview" \
+  "$image_reference" \
+  -euc 'printf "released v0.1.0 state marker\n" > /var/lib/leapview/libredash.db'
+set +e
+legacy_rejection="$(
+  docker run --rm \
+    --env LEAPVIEW_HOME=/var/lib/leapview \
+    --env LEAPVIEW_PRODUCTION=1 \
+    --env LEAPVIEW_ENVIRONMENT=qualification \
+    --env LEAPVIEW_BOOTSTRAP_ADMIN_EMAIL=admin@localhost \
+    --volume "$legacy_volume:/var/lib/leapview" \
+    "$image_reference" \
+    admin initialize --format json 2>&1
+)"
+legacy_status=$?
+set -e
+if [[ "$legacy_status" -eq 0 ]] ||
+  ! grep -q 'v0.1.0 state is fresh-install-only' <<<"$legacy_rejection"; then
+  printf 'candidate did not reject released v0.1.0 state before initialization\n' >&2
+  exit 1
+fi
+docker run --rm \
+  --entrypoint sh \
+  --volume "$legacy_volume:/var/lib/leapview" \
+  "$image_reference" \
+  -euc 'test -f /var/lib/leapview/libredash.db && test ! -e /var/lib/leapview/leapview.db'
+docker volume rm "$legacy_volume" >/dev/null
+legacy_volume=""
+
 primary_project="$(printf 'leapview-qualification-%s' "$run_suffix" | tr '[:upper:]_' '[:lower:]-')"
 cp "$bundle_root/deployment.env.example" "$bundle_root/deployment.env"
 sed -i.bak \
@@ -344,6 +389,7 @@ jq -n \
   --argjson governedQuery true \
   --argjson auditedDenial true \
   --argjson interruptionRecovery true \
+  --argjson v010FreshInstallPolicy true \
   --argjson restartPersistence true \
   --argjson backupRestore true \
   '{
@@ -359,6 +405,7 @@ jq -n \
       governedQuery:$governedQuery,
       auditedDenial:$auditedDenial,
       interruptionRecovery:$interruptionRecovery,
+      v010FreshInstallPolicy:$v010FreshInstallPolicy,
       restartPersistence:$restartPersistence,
       backupRestore:$backupRestore
     }

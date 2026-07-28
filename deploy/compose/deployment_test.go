@@ -1,10 +1,12 @@
 package compose
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -93,9 +95,11 @@ func TestPublicImageIsPrimaryOnboardingContract(t *testing.T) {
 	release := read(t, filepath.Join("..", "..", ".github", "workflows", "release.yml"))
 	for _, required := range []string{
 		"IMAGE_NAME: ghcr.io/yacobolo/leapview",
-		"docker/setup-qemu-action@",
+		"runner: ubuntu-24.04",
+		"runner: ubuntu-24.04-arm",
+		"platforms: linux/${{ matrix.arch }}",
 		`--tag "${IMAGE_NAME}:latest"`,
-		"platforms: linux/amd64,linux/arm64",
+		"docker buildx imagetools create",
 		"Verify anonymous image pull",
 		"docker logout ghcr.io",
 		"docker buildx imagetools inspect",
@@ -104,8 +108,8 @@ func TestPublicImageIsPrimaryOnboardingContract(t *testing.T) {
 			t.Fatalf("release workflow missing public image contract %q", required)
 		}
 	}
-	if strings.Index(release, "docker/setup-qemu-action@") > strings.Index(release, "docker/setup-buildx-action@") {
-		t.Fatal("release workflow must install emulation before creating the multi-platform builder")
+	if strings.Contains(release, "docker/setup-qemu-action@") {
+		t.Fatal("release workflow must build each public architecture on its native runner")
 	}
 
 	for _, name := range []string{
@@ -174,12 +178,19 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 	script := read(t, filepath.Join(root, "deploy", "compose", "qualification", "qualify.sh"))
 	recovery := read(t, filepath.Join(root, "deploy", "compose", "qualification", "recover.sh"))
 	browser := read(t, filepath.Join(root, "deploy", "compose", "qualification", "browser.mjs"))
+	compatibilityPolicy := read(t, filepath.Join(root, "deploy", "compose", "qualification", "v0.1.0-policy.json"))
 	runbook := read(t, filepath.Join(root, "deploy", "compose", "QUALIFICATION.md"))
+	readme := read(t, filepath.Join(root, "deploy", "compose", "README.md"))
+	upgradeGuide := read(t, filepath.Join(root, "docs", "articles", "operate", "upgrades.md"))
 
 	for _, required := range []string{
 		"cp -R deploy/compose/qualification",
 		"./qualification/qualify.sh",
 		"candidate-${{ github.run_id }}-${{ github.run_attempt }}",
+		`release_tag="candidate-${RUN_ID}-${RUN_ATTEMPT}"`,
+		"BUILD_RELEASE: ${{ needs.identity.outputs.release }}",
+		"needs: [identity, image-platform]",
+		"release-platform-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}",
 		"docker buildx imagetools create",
 		"gh release create",
 		"needs: [image, qualify]",
@@ -191,13 +202,16 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 	if strings.Contains(release, "types:\n      - published") {
 		t.Fatal("release workflow cannot gate publication when it starts after a release is already public")
 	}
+	if count := strings.Count(release, "if: github.event_name == 'push'"); count != 1 {
+		t.Fatalf("only release publication may be push-only; found %d push-only gates", count)
+	}
 	if strings.Index(release, "./qualification/qualify.sh") > strings.Index(release, "gh release create") {
 		t.Fatal("release workflow publishes Compose archives before installed-candidate qualification")
 	}
 	if strings.Contains(release, "type=semver") {
 		t.Fatal("release workflow must not publish versioned image tags before installed-candidate qualification")
 	}
-	if strings.Index(release, "./qualification/qualify.sh") > strings.Index(release, "docker buildx imagetools create") {
+	if strings.Index(release, "./qualification/qualify.sh") > strings.Index(release, "Publish qualified image tags") {
 		t.Fatal("release workflow publishes versioned image tags before installed-candidate qualification")
 	}
 
@@ -233,6 +247,10 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		"qualification-report.json",
 		"./qualification/recover.sh",
 		"recovery-report.json",
+		"v010FreshInstallPolicy",
+		"v0.1.0-policy.json",
+		"libredash.db",
+		"test ! -e /var/lib/leapview/leapview.db",
 	} {
 		if !strings.Contains(script, required) {
 			t.Errorf("qualification script missing tester assertion %q", required)
@@ -247,6 +265,12 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		"backupInterruption",
 		"restorePreflight",
 		"boundedDisk",
+		"boundedState",
+		"staleRecoveryEntries",
+		"staleRestoreEntries",
+		"staleBackupEntries",
+		"staleCheckpointEntries",
+		".leapview-current-backup-*.tar.gz",
 		"docker kill --signal KILL",
 		"LEAPVIEW_REFRESH_JOB_LEASE_TIMEOUT",
 		"listManagedDataUploadSessionEvents",
@@ -259,6 +283,16 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 			t.Errorf("recovery qualification missing fault assertion %q", required)
 		}
 	}
+	managedUploadStart := strings.Index(recovery, `stage="managed upload interruption"`)
+	managedUploadEnd := strings.Index(recovery, `stage="release finalization interruption"`)
+	if managedUploadStart < 0 || managedUploadEnd < 0 || managedUploadStart >= managedUploadEnd {
+		t.Fatal("recovery qualification has invalid managed upload stage boundaries")
+	}
+	managedUploadStage := recovery[managedUploadStart:managedUploadEnd]
+	if !strings.Contains(managedUploadStage, `wait_for_json \`) ||
+		!strings.Contains(managedUploadStage, `/events?limit=100`) {
+		t.Error("managed upload recovery must await its durable completion events")
+	}
 	waitForJSONStart := strings.Index(recovery, "wait_for_json() {")
 	if waitForJSONStart < 0 {
 		t.Fatal("recovery qualification is missing its JSON status waiter")
@@ -270,6 +304,40 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 	waitForJSON := recovery[waitForJSONStart : waitForJSONStart+waitForJSONEnd]
 	if !strings.Contains(waitForJSON, "sleep 1") {
 		t.Error("recovery qualification must poll durable job status slowly enough to stay below the shipped API rate limit")
+	}
+	for _, boundary := range []struct {
+		name     string
+		next     string
+		recovery string
+	}{
+		{
+			name:     "release finalization interruption",
+			next:     "deployment activation interruption",
+			recovery: "run_in_candidate",
+		},
+		{
+			name:     "deployment activation interruption",
+			next:     "refresh materialization interruption",
+			recovery: "wait_for_json",
+		},
+	} {
+		start := strings.Index(recovery, `stage="`+boundary.name+`"`)
+		end := strings.Index(recovery, `stage="`+boundary.next+`"`)
+		if start < 0 || end < 0 || start >= end {
+			t.Fatalf("recovery qualification has invalid %s stage boundaries", boundary.name)
+		}
+		stage := recovery[start:end]
+		throttle := strings.Index(stage, `docker update --cpus 0.25 "$container_id"`)
+		launch := strings.Index(stage, "run_in_candidate")
+		kill := strings.Index(stage, "kill_candidate")
+		unthrottle := strings.Index(stage, `docker update --cpus 0 "$container_id"`)
+		recoveryIndex := strings.LastIndex(stage, boundary.recovery)
+		if throttle < 0 || launch < 0 || throttle > launch {
+			t.Errorf("%s must throttle the candidate before launching the interrupted operation", boundary.name)
+		}
+		if kill < 0 || unthrottle < 0 || recoveryIndex < 0 || kill > unthrottle || unthrottle > recoveryIndex {
+			t.Errorf("%s must remove its CPU limit after the kill and before recovery", boundary.name)
+		}
 	}
 	backupStart := strings.Index(recovery, `stage="backup interruption"`)
 	if backupStart < 0 {
@@ -342,10 +410,51 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		"query/SSE",
 		"backup",
 		"restore preflight",
+		"fresh-install-only",
+		"v0.1.0",
 	} {
 		if !strings.Contains(runbook, required) {
 			t.Errorf("qualification runbook missing %q", required)
 		}
+	}
+	for name, document := range map[string]string{
+		"Compose README": readme,
+		"upgrade guide":  upgradeGuide,
+	} {
+		for _, required := range []string{
+			"v0.1.0",
+			"fresh-install-only",
+			"libredash.db",
+			"ghcr.io/yacobolo/libredash@sha256:677caaf256cb3a0d61efd47b289debbd91984976a5a5c4b372196a5d79ce7153",
+			"admin backup",
+			"provision a fresh",
+		} {
+			if !strings.Contains(document, required) {
+				t.Errorf("%s missing v0.1.0 migration policy %q", name, required)
+			}
+		}
+	}
+
+	var policy struct {
+		Release        string   `json:"release"`
+		SourceRevision string   `json:"sourceRevision"`
+		Image          string   `json:"image"`
+		StatePolicy    string   `json:"statePolicy"`
+		Distribution   string   `json:"distribution"`
+		Platforms      []string `json:"platforms"`
+		LegacyMarkers  []string `json:"legacyMarkers"`
+	}
+	if err := json.Unmarshal([]byte(compatibilityPolicy), &policy); err != nil {
+		t.Fatalf("parse v0.1.0 compatibility policy: %v", err)
+	}
+	if policy.Release != "v0.1.0" ||
+		policy.SourceRevision != "5bf4aded574df459e80d81b77d1989ecd4fa7de0" ||
+		policy.Image != "ghcr.io/yacobolo/libredash@sha256:677caaf256cb3a0d61efd47b289debbd91984976a5a5c4b372196a5d79ce7153" ||
+		policy.StatePolicy != "fresh-install-only" ||
+		policy.Distribution != "authentication-required" ||
+		!slices.Equal(policy.Platforms, []string{"linux/amd64"}) ||
+		!slices.Contains(policy.LegacyMarkers, "libredash.db") {
+		t.Fatalf("unexpected v0.1.0 compatibility policy: %#v", policy)
 	}
 }
 

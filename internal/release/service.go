@@ -182,6 +182,12 @@ func (s *Service) ValidateFinalization(ctx context.Context, projectID, releaseID
 	if err != nil {
 		return Release{}, err
 	}
+	if current.Status == StatusReady {
+		return current, nil
+	}
+	if current.Status == StatusFailed {
+		return current, fmt.Errorf("%w: %s", ErrConflict, current.Error)
+	}
 	if current.Status != StatusValidating {
 		return Release{}, ErrConflict
 	}

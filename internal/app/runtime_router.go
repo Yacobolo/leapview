@@ -433,7 +433,7 @@ func buildApplicationSurfaces(
 	if platform.asyncJobs != nil {
 		handlers := make([]jobs.Handler, 0, 4)
 		if routes.releaseModule != nil {
-			handlers = append(handlers, routes.releaseModule.JobHandlers(platform.asyncJobs)...)
+			handlers = append(handlers, routes.releaseModule.JobHandlers()...)
 		}
 		if routes.deploymentModule != nil {
 			handlers = append(handlers, routes.deploymentModule.JobHandlers()...)

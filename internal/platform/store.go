@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Yacobolo/leapview/internal/platform/compatibility"
 	"github.com/Yacobolo/leapview/internal/platform/db"
 	"github.com/Yacobolo/leapview/internal/platform/filesystem"
 	"github.com/pressly/goose/v3"
@@ -33,6 +34,9 @@ type Store struct {
 }
 
 func Open(ctx context.Context, path string) (*Store, error) {
+	if err := compatibility.RejectLegacyState(path); err != nil {
+		return nil, err
+	}
 	if err := securefs.EnsurePrivateDir(filepath.Dir(path)); err != nil {
 		return nil, err
 	}

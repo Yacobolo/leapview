@@ -15,6 +15,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/Yacobolo/leapview/internal/platform/compatibility"
 )
 
 const (
@@ -368,6 +370,9 @@ func (c *Controller) Upgrade(ctx context.Context, next string) error {
 			return err
 		}
 		if err := requireDigest(current); err != nil {
+			return err
+		}
+		if err := compatibility.ValidateUpgradeImages(current, next); err != nil {
 			return err
 		}
 		if next == current {
