@@ -451,6 +451,7 @@ func runAdminRestore(ctx context.Context, opts *rootOptions, in io.Reader, out i
 		TargetHomeDir:        cfg.HomeDir,
 		BackupPath:           restorePath,
 		CurrentBackupOut:     restoreBefore,
+		DiscardCurrentBackup: opts.restoreBefore == "-",
 		ExpectedEnvironment:  string(expectedEnvironment),
 		PreserveRelativeFile: instancelock.FileName,
 		ResetRelativePaths:   derivedPaths,

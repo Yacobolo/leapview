@@ -47,6 +47,7 @@ type InstanceRestoreOptions struct {
 	TargetHomeDir        string
 	BackupPath           string
 	CurrentBackupOut     string
+	DiscardCurrentBackup bool
 	ExpectedEnvironment  string
 	PreserveRelativeFile string
 	ResetRelativePaths   []string
@@ -370,14 +371,17 @@ func restoreInstanceFromReader(ctx context.Context, options InstanceRestoreOptio
 	if err != nil {
 		return err
 	}
+	currentBackupAbs := ""
 	if currentBackupOut != "" {
-		currentBackupAbs, err := filepath.Abs(currentBackupOut)
+		currentBackupAbs, err = filepath.Abs(currentBackupOut)
 		if err != nil {
 			return err
 		}
 		if pathWithin(targetAbs, currentBackupAbs) {
 			return fmt.Errorf("current instance backup path must not be inside target home dir")
 		}
+	} else if options.DiscardCurrentBackup {
+		return fmt.Errorf("discarding the current instance backup requires a current backup path")
 	}
 
 	parent := filepath.Dir(targetAbs)
@@ -461,7 +465,14 @@ func restoreInstanceFromReader(ctx context.Context, options InstanceRestoreOptio
 	}
 	cleanupTmp = false
 	if oldTarget != "" {
-		_ = os.RemoveAll(oldTarget)
+		if err := os.RemoveAll(oldTarget); err != nil {
+			return fmt.Errorf("remove replaced instance state: %w", err)
+		}
+	}
+	if options.DiscardCurrentBackup {
+		if err := os.Remove(currentBackupAbs); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove disposable current instance backup: %w", err)
+		}
 	}
 	return nil
 }

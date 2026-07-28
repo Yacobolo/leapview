@@ -705,6 +705,19 @@ func TestRestoreInstanceReplacesHomeAndBacksUpCurrent(t *testing.T) {
 	if got := string(beforeEntries["artifacts/old.tar.gz"]); got != "old artifact" {
 		t.Fatalf("before-restore artifact = %q, want old artifact", got)
 	}
+
+	discardedBeforePath := filepath.Join(dir, ".leapview-current-backup-discarded.tar.gz")
+	if err := RestoreInstance(ctx, InstanceRestoreOptions{
+		TargetHomeDir:        currentHome,
+		BackupPath:           backupPath,
+		CurrentBackupOut:     discardedBeforePath,
+		DiscardCurrentBackup: true,
+	}); err != nil {
+		t.Fatalf("restore instance with disposable current backup: %v", err)
+	}
+	if _, err := os.Stat(discardedBeforePath); !os.IsNotExist(err) {
+		t.Fatalf("disposable current backup survived successful restore: %v", err)
+	}
 }
 
 func TestRestoreInstanceRejectsBackupFromAnotherEnvironmentBeforeReplacement(t *testing.T) {

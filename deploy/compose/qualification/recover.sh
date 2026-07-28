@@ -31,6 +31,9 @@ disk_before=0
 disk_after=0
 disk_growth=0
 stale_recovery_count=0
+stale_restore_count=0
+stale_backup_count=0
+stale_checkpoint_count=0
 
 grep -q '^LEAPVIEW_REFRESH_JOB_LEASE_TIMEOUT=15s$' "$bundle_root/leapview.env" || {
   printf 'recovery qualification requires LEAPVIEW_REFRESH_JOB_LEASE_TIMEOUT=15s\n' >&2
@@ -55,6 +58,9 @@ write_report() {
     --argjson diskAfterKiB "$disk_after" \
     --argjson diskGrowthKiB "$disk_growth" \
     --argjson staleRecoveryEntries "$stale_recovery_count" \
+    --argjson staleRestoreEntries "$stale_restore_count" \
+    --argjson staleBackupEntries "$stale_backup_count" \
+    --argjson staleCheckpointEntries "$stale_checkpoint_count" \
     '{
       result:$result,
       stage:$stage,
@@ -74,7 +80,10 @@ write_report() {
         diskAfterKiB:$diskAfterKiB,
         diskGrowthKiB:$diskGrowthKiB,
         diskGrowthLimitKiB:51200,
-        staleRecoveryEntries:$staleRecoveryEntries
+        staleRecoveryEntries:$staleRecoveryEntries,
+        staleRestoreEntries:$staleRestoreEntries,
+        staleBackupEntries:$staleBackupEntries,
+        staleCheckpointEntries:$staleCheckpointEntries
       }
     }' > "$report"
 }
@@ -277,14 +286,14 @@ fault_revision="$(awk '$1 == "staged" { print $2 }' <<<"$sync_output")"
 active_after_upload="$work_dir/active-after-upload.json"
 api GET "/api/v1/projects/$project_id/connections/sample/active-revision" "$active_after_upload"
 jq -e --arg baseline "$baseline_revision" '.revision.id == $baseline' "$active_after_upload" >/dev/null
-api GET \
+wait_for_json \
   "/api/v1/projects/$project_id/connections/sample/upload-sessions/$interrupted_session/events?limit=100" \
-  "$work_dir/managed-upload-events.json"
-jq -e '
+  '
   ([.items[].event] | index("upload_session.created")) != null and
   ([.items[].event] | index("upload_session.finalizing")) != null and
   ([.items[].event] | index("upload_session.completed")) != null
-' "$work_dir/managed-upload-events.json" >/dev/null
+' \
+  "$work_dir/managed-upload-events.json"
 managedUpload=true
 
 stage="release finalization interruption"
@@ -520,10 +529,19 @@ stage="bounded recovery state"
 docker update --cpus 0 "$container_id" >/dev/null
 disk_after="$(docker exec "$container_id" du -sk /var/lib/leapview | awk '{print $1}')"
 disk_growth=$((disk_after - disk_before))
-stale_recovery_count="$(
+stale_restore_count="$(
   docker exec "$container_id" sh -c \
-    'find /var/lib/leapview -maxdepth 1 \( -name ".leapview-restore-*" -o -name ".leapview-instance-backup-*" -o -name ".leapview-current-backup-*.tar.gz" -o -name "leapview-current-backup-*.tar.gz" \) -print | wc -l'
+    'find /var/lib/leapview -maxdepth 1 -name ".leapview-restore-*" -print | wc -l'
 )"
+stale_backup_count="$(
+  docker exec "$container_id" sh -c \
+    'find /var/lib/leapview -maxdepth 1 -name ".leapview-instance-backup-*" -print | wc -l'
+)"
+stale_checkpoint_count="$(
+  docker exec "$container_id" sh -c \
+    'find /var/lib/leapview -maxdepth 1 \( -name ".leapview-current-backup-*.tar.gz" -o -name "leapview-current-backup-*.tar.gz" \) -print | wc -l'
+)"
+stale_recovery_count=$((stale_restore_count + stale_backup_count + stale_checkpoint_count))
 (( disk_after <= disk_before + 51200 ))
 [[ "$stale_recovery_count" -eq 0 ]]
 boundedDisk=true

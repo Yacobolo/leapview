@@ -267,6 +267,9 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		"boundedDisk",
 		"boundedState",
 		"staleRecoveryEntries",
+		"staleRestoreEntries",
+		"staleBackupEntries",
+		"staleCheckpointEntries",
 		".leapview-current-backup-*.tar.gz",
 		"docker kill --signal KILL",
 		"LEAPVIEW_REFRESH_JOB_LEASE_TIMEOUT",
@@ -279,6 +282,16 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		if !strings.Contains(recovery, required) {
 			t.Errorf("recovery qualification missing fault assertion %q", required)
 		}
+	}
+	managedUploadStart := strings.Index(recovery, `stage="managed upload interruption"`)
+	managedUploadEnd := strings.Index(recovery, `stage="release finalization interruption"`)
+	if managedUploadStart < 0 || managedUploadEnd < 0 || managedUploadStart >= managedUploadEnd {
+		t.Fatal("recovery qualification has invalid managed upload stage boundaries")
+	}
+	managedUploadStage := recovery[managedUploadStart:managedUploadEnd]
+	if !strings.Contains(managedUploadStage, `wait_for_json \`) ||
+		!strings.Contains(managedUploadStage, `/events?limit=100`) {
+		t.Error("managed upload recovery must await its durable completion events")
 	}
 	waitForJSONStart := strings.Index(recovery, "wait_for_json() {")
 	if waitForJSONStart < 0 {
