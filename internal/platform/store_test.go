@@ -487,6 +487,7 @@ func TestRecoverInterruptedInstanceOperationsRemovesDisposableWork(t *testing.T)
 	target := filepath.Join(parent, "home")
 	writeTestFile(t, filepath.Join(target, "current"), "current")
 	writeTestFile(t, filepath.Join(parent, ".leapview-instance-backup-stale", "copy"), "backup")
+	writeTestFile(t, filepath.Join(parent, ".leapview-instance-backup-stale.tar.gz"), "backup archive")
 	writeTestFile(t, filepath.Join(parent, ".leapview-restore-stale", "copy"), "restore")
 	writeTestFile(t, filepath.Join(parent, ".leapview-restore-old-stale", "copy"), "old")
 	writeTestFile(t, filepath.Join(parent, ".leapview-current-backup-stale.tar.gz"), "checkpoint")
@@ -497,6 +498,7 @@ func TestRecoverInterruptedInstanceOperationsRemovesDisposableWork(t *testing.T)
 	}
 	for _, stale := range []string{
 		".leapview-instance-backup-stale",
+		".leapview-instance-backup-stale.tar.gz",
 		".leapview-restore-stale",
 		".leapview-restore-old-stale",
 		".leapview-current-backup-stale.tar.gz",

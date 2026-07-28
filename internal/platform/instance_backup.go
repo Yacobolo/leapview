@@ -80,10 +80,20 @@ func BackupInstance(ctx context.Context, options InstanceBackupOptions) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(outAbs), 0o755); err != nil {
+	outParent := filepath.Dir(outAbs)
+	if err := os.MkdirAll(outParent, 0o755); err != nil {
 		return err
 	}
-	tmpArchive, err := os.CreateTemp(filepath.Dir(outAbs), ".leapview-instance-backup-*.tar.gz")
+	homeParent := filepath.Dir(homeAbs)
+	if err := removeInterruptedInstanceBackupWork(homeParent); err != nil {
+		return err
+	}
+	if outParent != homeParent {
+		if err := removeInterruptedInstanceBackupWork(outParent); err != nil {
+			return err
+		}
+	}
+	tmpArchive, err := os.CreateTemp(outParent, ".leapview-instance-backup-*.tar.gz")
 	if err != nil {
 		return err
 	}
@@ -118,6 +128,13 @@ func BackupInstanceToWriter(ctx context.Context, options InstanceBackupOptions, 
 	if out == nil {
 		return fmt.Errorf("instance backup output is required")
 	}
+	homeAbs, _, err := validateInstanceBackupSource(options.HomeDir, options.DBPath)
+	if err != nil {
+		return err
+	}
+	if err := removeInterruptedInstanceBackupWork(filepath.Dir(homeAbs)); err != nil {
+		return err
+	}
 	return writeInstanceBackup(ctx, options, out)
 }
 
@@ -132,9 +149,6 @@ func writeInstanceBackup(ctx context.Context, options InstanceBackupOptions, out
 	}
 	parent := filepath.Dir(homeAbs)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
-		return err
-	}
-	if err := removeInterruptedInstanceBackupWork(parent); err != nil {
 		return err
 	}
 	tmpDir, err := os.MkdirTemp(parent, ".leapview-instance-backup-*")
@@ -458,10 +472,16 @@ func removeInterruptedInstanceBackupWork(parent string) error {
 		return err
 	}
 	for _, entry := range entries {
-		if entry.IsDir() && strings.HasPrefix(entry.Name(), ".leapview-instance-backup-") {
-			if err := os.RemoveAll(filepath.Join(parent, entry.Name())); err != nil {
-				return fmt.Errorf("remove interrupted instance backup %q: %w", entry.Name(), err)
-			}
+		if !strings.HasPrefix(entry.Name(), ".leapview-instance-backup-") {
+			continue
+		}
+		path := filepath.Join(parent, entry.Name())
+		remove := os.Remove
+		if entry.IsDir() {
+			remove = os.RemoveAll
+		}
+		if err := remove(path); err != nil {
+			return fmt.Errorf("remove interrupted instance backup %q: %w", entry.Name(), err)
 		}
 	}
 	return nil
@@ -501,13 +521,15 @@ func recoverInterruptedInstanceOperations(target string) error {
 			return fmt.Errorf("remove interrupted restore rollback %q: %w", stale, err)
 		}
 	}
+	if err := removeInterruptedInstanceBackupWork(parent); err != nil {
+		return err
+	}
 	entries, err = os.ReadDir(parent)
 	if err != nil {
 		return err
 	}
 	for _, entry := range entries {
-		if entry.IsDir() && (strings.HasPrefix(entry.Name(), ".leapview-restore-") ||
-			strings.HasPrefix(entry.Name(), ".leapview-instance-backup-")) {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), ".leapview-restore-") {
 			if err := os.RemoveAll(filepath.Join(parent, entry.Name())); err != nil {
 				return fmt.Errorf("remove interrupted instance operation %q: %w", entry.Name(), err)
 			}
