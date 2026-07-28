@@ -71,6 +71,22 @@ The external scheme is deliberately different from the privileged
 `leapview://app` connection shell. No operating-system input is loaded as
 trusted application content.
 
+## Native desktop behavior
+
+- LeapView restores the connection shell and each saved instance window to
+  their last normal bounds and maximized state. Saved bounds are validated and
+  clamped to the current monitor work area, including after a display is
+  removed or its work area changes.
+- `window-state.json` contains only integer window geometry, a maximized flag,
+  and opaque local profile IDs. It is written atomically with private
+  permissions. URLs, page paths, titles, fullscreen state, and renderer
+  content are never persisted there.
+- **File → Manage Instances…** (`CmdOrCtrl+Shift+L`) always returns to the
+  trusted connection shell.
+- Native edit, reload, zoom, fullscreen, minimize, close, and quit roles follow
+  platform conventions. The application menu intentionally exposes neither
+  DevTools nor force reload.
+
 ## Security boundary
 
 - The trusted connection screen is served from `leapview://app` with no

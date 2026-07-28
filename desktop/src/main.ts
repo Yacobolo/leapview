@@ -4,7 +4,9 @@ import {
   app,
   BrowserWindow,
   dialog,
+  Menu,
   protocol,
+  screen,
   session,
   shell,
   type Session,
@@ -23,6 +25,7 @@ import {
   type DesktopDeepLink,
 } from "./deep-link.js";
 import { discoverInstance } from "./discovery.js";
+import { buildNativeMenuTemplate } from "./native-menu.js";
 import { ProfileStore, type Profile } from "./profiles.js";
 import {
   installRemoteLifecyclePolicy,
@@ -36,10 +39,28 @@ import {
 } from "./security/remote-policy.mjs";
 import { loadTrustedUIAssets } from "./trusted-assets.js";
 import { TrustedUI } from "./trusted-ui.js";
+import {
+  fitWindowStateToWorkArea,
+  WindowStateStore,
+  type PersistedWindowState,
+} from "./window-state.js";
 
 const TRUSTED_SCHEME = "leapview";
 const TRUSTED_PARTITION = "leapview-shell";
 const DISCOVERY_PARTITION = "leapview-discovery";
+const WINDOW_STATE_FLUSH_DELAY_MS = 300;
+const SHELL_WINDOW_SIZE = {
+  width: 780,
+  height: 760,
+  minimumWidth: 620,
+  minimumHeight: 620,
+};
+const REMOTE_WINDOW_SIZE = {
+  width: 1440,
+  height: 920,
+  minimumWidth: 800,
+  minimumHeight: 600,
+};
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -74,6 +95,10 @@ let pendingDeepLinkNotice: {
   message: string;
 } | undefined;
 let profiles: ProfileStore;
+let windowStates: WindowStateStore | null = null;
+let windowStateFlushTimer: NodeJS.Timeout | null = null;
+let windowStateQuitPending = false;
+let windowStateQuitReady = false;
 
 const primaryInstance = app.requestSingleInstanceLock();
 if (!primaryInstance) {
@@ -109,6 +134,21 @@ if (!primaryInstance) {
       app.quit();
     }
   });
+  app.on("before-quit", (event) => {
+    if (windowStateQuitReady || windowStates === null) {
+      return;
+    }
+    event.preventDefault();
+    if (windowStateQuitPending) {
+      return;
+    }
+    windowStateQuitPending = true;
+    captureAllWindowStates();
+    void flushWindowStates().finally(() => {
+      windowStateQuitReady = true;
+      app.quit();
+    });
+  });
   void app.whenReady().then(start).catch((error: unknown) => {
     console.error("LeapView Desktop failed to start", error);
     app.exit(1);
@@ -117,6 +157,18 @@ if (!primaryInstance) {
 
 async function start(): Promise<void> {
   profiles = new ProfileStore(join(app.getPath("userData"), "profiles.json"));
+  windowStates = await WindowStateStore.open(
+    join(app.getPath("userData"), "window-state.json"),
+  );
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate(
+      buildNativeMenuTemplate(process.platform, app.name, {
+        showInstances: focusTrustedShell,
+      }),
+    ),
+  );
+  screen.on("display-removed", keepAllWindowsVisible);
+  screen.on("display-metrics-changed", keepAllWindowsVisible);
   const trustedAssets = await loadTrustedUIAssets();
   trustedUI = new TrustedUI(
     {
@@ -212,6 +264,8 @@ async function disconnectProfile(profileID: string): Promise<void> {
 async function removeProfile(profileID: string): Promise<void> {
   await disconnectProfile(profileID);
   await profiles.remove(profileID);
+  windowStates?.remove(profileID);
+  scheduleWindowStateFlush();
 }
 
 async function savedProfile(profileID: string): Promise<Profile> {
@@ -258,17 +312,32 @@ async function openRemoteWindow(
   const profileSession = session.fromPartition(partition);
   configureSessionOnce(profileSession, profile);
   await ensureAuthenticated(profile, profileSession);
+  const restoredState = restoreWindowState(
+    profile.id,
+    REMOTE_WINDOW_SIZE.minimumWidth,
+    REMOTE_WINDOW_SIZE.minimumHeight,
+  );
   const remote = new BrowserWindow({
-    width: 1440,
-    height: 920,
-    minWidth: 800,
-    minHeight: 600,
+    width: REMOTE_WINDOW_SIZE.width,
+    height: REMOTE_WINDOW_SIZE.height,
+    minWidth: REMOTE_WINDOW_SIZE.minimumWidth,
+    minHeight: REMOTE_WINDOW_SIZE.minimumHeight,
+    ...(restoredState?.bounds ?? {}),
     show: false,
     title: `${profile.displayName} — ${profile.canonicalOrigin}`,
     backgroundColor: "#111713",
     webPreferences: remoteWebPreferences(partition),
   });
   remoteWindows.set(profile.id, remote);
+  trackWindowState(
+    remote,
+    profile.id,
+    REMOTE_WINDOW_SIZE.minimumWidth,
+    REMOTE_WINDOW_SIZE.minimumHeight,
+  );
+  if (restoredState?.maximized === true) {
+    remote.maximize();
+  }
   installRemoteContentsPolicy(
     remote.webContents,
     profile.canonicalOrigin,
@@ -450,11 +519,18 @@ function createShellWindow(): void {
     shellWindow.focus();
     return;
   }
-  shellWindow = new BrowserWindow({
-    width: 780,
-    height: 760,
-    minWidth: 620,
-    minHeight: 620,
+  const restoredState = restoreWindowState(
+    "shell",
+    SHELL_WINDOW_SIZE.minimumWidth,
+    SHELL_WINDOW_SIZE.minimumHeight,
+  );
+  const window = new BrowserWindow({
+    width: SHELL_WINDOW_SIZE.width,
+    height: SHELL_WINDOW_SIZE.height,
+    minWidth: SHELL_WINDOW_SIZE.minimumWidth,
+    minHeight: SHELL_WINDOW_SIZE.minimumHeight,
+    ...(restoredState?.bounds ?? {}),
+    show: false,
     title: "LeapView",
     backgroundColor: "#f4f7f5",
     webPreferences: {
@@ -476,11 +552,161 @@ function createShellWindow(): void {
       plugins: false,
     },
   });
-  installTrustedContentsPolicy(shellWindow.webContents);
-  shellWindow.once("closed", () => {
-    shellWindow = null;
+  shellWindow = window;
+  trackWindowState(
+    window,
+    "shell",
+    SHELL_WINDOW_SIZE.minimumWidth,
+    SHELL_WINDOW_SIZE.minimumHeight,
+  );
+  if (restoredState?.maximized === true) {
+    window.maximize();
+  }
+  installTrustedContentsPolicy(window.webContents);
+  window.once("ready-to-show", () => {
+    if (!window.isDestroyed()) {
+      window.show();
+    }
   });
-  void shellWindow.loadURL("leapview://app/");
+  window.once("closed", () => {
+    if (shellWindow === window) {
+      shellWindow = null;
+    }
+  });
+  void window.loadURL("leapview://app/");
+}
+
+function restoreWindowState(
+  key: string,
+  minimumWidth: number,
+  minimumHeight: number,
+): PersistedWindowState | undefined {
+  const saved = windowStates?.get(key);
+  if (saved === undefined) {
+    return undefined;
+  }
+  const display = screen.getDisplayMatching(saved.bounds);
+  return fitWindowStateToWorkArea(saved, display.workArea, {
+    width: minimumWidth,
+    height: minimumHeight,
+  });
+}
+
+function trackWindowState(
+  window: BrowserWindow,
+  key: string,
+  minimumWidth: number,
+  minimumHeight: number,
+): void {
+  const capture = () => {
+    captureWindowState(window, key);
+    scheduleWindowStateFlush();
+  };
+  window.on("move", capture);
+  window.on("resize", capture);
+  window.on("maximize", capture);
+  window.on("unmaximize", capture);
+  window.on("closed", () => {
+    scheduleWindowStateFlush();
+  });
+  keepWindowVisible(window, key, minimumWidth, minimumHeight);
+  capture();
+}
+
+function captureWindowState(window: BrowserWindow, key: string): void {
+  if (window.isDestroyed() || windowStates === null) {
+    return;
+  }
+  windowStates.record(key, {
+    bounds: window.getNormalBounds(),
+    maximized: window.isMaximized(),
+  });
+}
+
+function scheduleWindowStateFlush(): void {
+  if (windowStateFlushTimer !== null) {
+    clearTimeout(windowStateFlushTimer);
+  }
+  windowStateFlushTimer = setTimeout(() => {
+    windowStateFlushTimer = null;
+    void flushWindowStates();
+  }, WINDOW_STATE_FLUSH_DELAY_MS);
+}
+
+async function flushWindowStates(): Promise<void> {
+  if (windowStateFlushTimer !== null) {
+    clearTimeout(windowStateFlushTimer);
+    windowStateFlushTimer = null;
+  }
+  if (windowStates === null) {
+    return;
+  }
+  try {
+    await windowStates.flush();
+  } catch (error) {
+    console.warn("LeapView Desktop could not save window placement.", error);
+  }
+}
+
+function captureAllWindowStates(): void {
+  if (shellWindow !== null && !shellWindow.isDestroyed()) {
+    captureWindowState(shellWindow, "shell");
+  }
+  for (const [profileID, remote] of remoteWindows) {
+    captureWindowState(remote, profileID);
+  }
+}
+
+function keepAllWindowsVisible(): void {
+  if (shellWindow !== null && !shellWindow.isDestroyed()) {
+    keepWindowVisible(
+      shellWindow,
+      "shell",
+      SHELL_WINDOW_SIZE.minimumWidth,
+      SHELL_WINDOW_SIZE.minimumHeight,
+    );
+  }
+  for (const [profileID, remote] of remoteWindows) {
+    keepWindowVisible(
+      remote,
+      profileID,
+      REMOTE_WINDOW_SIZE.minimumWidth,
+      REMOTE_WINDOW_SIZE.minimumHeight,
+    );
+  }
+}
+
+function keepWindowVisible(
+  window: BrowserWindow,
+  key: string,
+  minimumWidth: number,
+  minimumHeight: number,
+): void {
+  if (
+    windowStates === null ||
+    window.isDestroyed() ||
+    window.isMaximized() ||
+    window.isMinimized() ||
+    window.isFullScreen()
+  ) {
+    return;
+  }
+  const current = window.getNormalBounds();
+  const display = screen.getDisplayMatching(current);
+  const fitted = fitWindowStateToWorkArea(
+    { bounds: current, maximized: false },
+    display.workArea,
+    { width: minimumWidth, height: minimumHeight },
+  );
+  if (
+    current.x !== fitted.bounds.x ||
+    current.y !== fitted.bounds.y ||
+    current.width !== fitted.bounds.width ||
+    current.height !== fitted.bounds.height
+  ) {
+    window.setBounds(fitted.bounds);
+  }
+  windowStates.record(key, fitted);
 }
 
 function configureSessionOnce(target: Session, profile?: Profile): void {

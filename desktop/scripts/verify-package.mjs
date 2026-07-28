@@ -128,8 +128,10 @@ for (const required of [
   "/dist/src/main.js",
   "/dist/src/auth.js",
   "/dist/src/deep-link.js",
+  "/dist/src/native-menu.js",
   "/dist/src/remote-lifecycle.js",
   "/dist/src/security/remote-policy.mjs",
+  "/dist/src/window-state.js",
 ]) {
   if (!archiveFiles.includes(required)) {
     throw new Error(`packaged ASAR is missing ${required}`);
