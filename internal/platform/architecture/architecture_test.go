@@ -1,6 +1,7 @@
 package architecture
 
 import (
+	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -1560,6 +1561,7 @@ func TestPublicSiteProductionContainerContractExists(t *testing.T) {
 		"FROM node:24-bookworm@sha256:",
 		"FROM golang:1.25-bookworm@sha256:",
 		"./scripts/generate_build_sources.sh",
+		"go run -tags=duckdb_arrow ./internal/app/tools/visualdocgen",
 		"FROM oven/bun:1.3.7@sha256:",
 		"COPY --from=sourcegen /src/api/gen ./api/gen",
 		"COPY --from=sourcegen /src/api/visualization ./api/visualization",
@@ -1741,7 +1743,6 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"go run ./internal/app/tools/testshard",
 		"frontend-tests:",
 		"name: Frontend tests",
-		"bun run test:semantic-model-graph",
 		"ui-route-qa:",
 		"name: UI route QA",
 		"task qa:ui-framework",
@@ -1764,6 +1765,8 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"ci-gate:",
 		"name: CI gate",
 		"go run ./internal/app/tools/ciplan gate",
+		"task \"ci:test:frontend:${FRONTEND_SHARD}\"",
+		"./scripts/smoke_site_image.sh leapview-site:ci",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CI workflow missing production gate fragment %q", want)
@@ -1805,8 +1808,10 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		}
 	}
 	siteImage := workflowJobBlock(t, text, "site-image")
-	if strings.Contains(siteImage, "load: true") {
-		t.Fatal("site-image must not transfer an unused image back to the GitHub runner")
+	for _, want := range []string{"load: true", "./scripts/smoke_site_image.sh leapview-site:ci"} {
+		if !strings.Contains(siteImage, want) {
+			t.Fatalf("site-image must preserve runtime validation fragment %q", want)
+		}
 	}
 	for _, block := range []struct {
 		name string
@@ -1844,6 +1849,12 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...",
 		"ci:prepare:frontend:",
 		"ci:test:docs-site:",
+		"go test ./cmd/leapview-site ./docs ./site ./internal/app/site/...",
+		"ci:test:frontend:core:",
+		"ci:test:frontend:reports:",
+		"ci:test:frontend:chat:",
+		"ci:test:frontend:workspace:",
+		"ci:test:frontend:site:",
 		"test:go:",
 		"task --parallel test:go:packages test:go:app:0 test:go:app:1 test:go:app:2 test:go:app:3",
 		"go list ./... | grep -v '/internal/app$' | xargs go test -p 2",
@@ -1851,6 +1862,21 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 	} {
 		if !strings.Contains(taskText, want) {
 			t.Fatalf("Taskfile missing vulnerability gate fragment %q", want)
+		}
+	}
+	var packageManifest struct {
+		Scripts map[string]string `json:"scripts"`
+	}
+	packageJSON, err := os.ReadFile(filepath.Join(root, "package.json"))
+	if err != nil {
+		t.Fatalf("read package.json: %v", err)
+	}
+	if err := json.Unmarshal(packageJSON, &packageManifest); err != nil {
+		t.Fatalf("decode package.json: %v", err)
+	}
+	for script := range packageManifest.Scripts {
+		if strings.HasPrefix(script, "test:") && !strings.Contains(taskText, "bun run "+script) {
+			t.Errorf("frontend test script %q is not assigned to a Taskfile CI shard", script)
 		}
 	}
 
@@ -1881,6 +1907,23 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 	} {
 		if !strings.Contains(scriptText, want) {
 			t.Fatalf("production image smoke script missing fragment %q", want)
+		}
+	}
+
+	siteScript, err := os.ReadFile(filepath.Join(root, "scripts", "smoke_site_image.sh"))
+	if err != nil {
+		t.Fatalf("read public site image smoke script: %v", err)
+	}
+	siteScriptText := string(siteScript)
+	for _, want := range []string{
+		"--read-only",
+		"/healthz",
+		"/readyz",
+		"/docs",
+		"leapview-site:ci",
+	} {
+		if !strings.Contains(siteScriptText, want) {
+			t.Fatalf("public site image smoke script missing fragment %q", want)
 		}
 	}
 }
@@ -2029,6 +2072,7 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 			"go run ./internal/app/tools/clidocgen",
 			"go run ./internal/app/tools/schemadocgen",
 			"go run ./internal/app/tools/openapidocgen",
+			"go run -tags=duckdb_arrow ./internal/app/tools/visualdocgen",
 			"go run ./internal/app/tools/docsitegen",
 			"FROM sourcegen AS build",
 			"COPY --from=sourcegen /src/web/generated ./web/generated",
@@ -2065,8 +2109,8 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 		t.Fatalf("Dockerfile.site downloads Go modules %d times, want one shared dependency stage", count)
 	}
 	const seededModuleCache = "type=cache,id=leapview-go-mod,target=/go/pkg/mod,from=go-deps,source=/go/pkg/mod,sharing=locked"
-	if count := strings.Count(string(siteDockerfile), seededModuleCache); count != 2 {
-		t.Fatalf("Dockerfile.site uses the seeded persistent Go module cache %d times, want source generation and compilation", count)
+	if count := strings.Count(string(siteDockerfile), seededModuleCache); count != 3 {
+		t.Fatalf("Dockerfile.site uses the seeded persistent Go module cache %d times, want source generation, visual documentation, and compilation", count)
 	}
 
 	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))

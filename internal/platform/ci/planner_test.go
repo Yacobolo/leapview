@@ -111,6 +111,55 @@ func TestPlanChanges(t *testing.T) {
 			reason: "Go tests",
 		},
 		{
+			name:  "app subpackage go test uses packages shard",
+			input: Input{Event: "pull_request", PullRequestNumber: 1},
+			changes: []Change{{
+				Status: "M",
+				Paths:  []string{"internal/app/cli/serve_test.go"},
+			}},
+			want: Jobs{
+				Prepare:  true,
+				GoMatrix: []GoShard{{Name: "packages"}},
+			},
+			reason: "Go tests",
+		},
+		{
+			name:  "site app subpackage test includes packages and site lanes",
+			input: Input{Event: "pull_request", PullRequestNumber: 1},
+			changes: []Change{{
+				Status: "M",
+				Paths:  []string{"internal/app/site/http/server_test.go"},
+			}},
+			want: Jobs{
+				Prepare:   true,
+				Docs:      true,
+				GoMatrix:  []GoShard{{Name: "packages"}},
+				SiteImage: true,
+			},
+			reason: "Go tests",
+		},
+		{
+			name:    "generator implementation forces full",
+			input:   Input{Event: "pull_request", PullRequestNumber: 1},
+			changes: []Change{{Status: "M", Paths: []string{"internal/app/tools/configgen/main.go"}}},
+			want:    FullJobs(),
+			reason:  "cross-cutting build or contract input",
+		},
+		{
+			name:    "CI planner CLI forces full",
+			input:   Input{Event: "pull_request", PullRequestNumber: 1},
+			changes: []Change{{Status: "M", Paths: []string{"internal/app/tools/ciplan/main.go"}}},
+			want:    FullJobs(),
+			reason:  "cross-cutting build or contract input",
+		},
+		{
+			name:    "agent contract generator forces full",
+			input:   Input{Event: "pull_request", PullRequestNumber: 1},
+			changes: []Change{{Status: "M", Paths: []string{"internal/agent/contracts/generate/main.go"}}},
+			want:    FullJobs(),
+			reason:  "cross-cutting build or contract input",
+		},
+		{
 			name:  "deployment",
 			input: Input{Event: "pull_request", PullRequestNumber: 1},
 			changes: []Change{{
