@@ -531,8 +531,43 @@ tasks:
       # CUE-heavy compiler/application packages can each saturate a core and
       # starve timing-sensitive integration tests when every package runs at
       # once. Bound package parallelism while retaining Go's in-package
-      # parallelism so local and hosted CI exercise the same reliable suite.
-      - go test -p 2 ./...
+      # parallelism, and isolate the application package into the same stable
+      # shards used by hosted CI.
+      - task: test:go
+
+  test:go:
+    desc: Run Go tests with bounded package parallelism and stable application shards
+    cmds:
+      - task: generate
+      - task --parallel test:go:packages test:go:app:0 test:go:app:1 test:go:app:2 test:go:app:3
+
+  test:go:packages:
+    cmds:
+      - go list ./... | grep -v '/internal/app$' | xargs go test -p 2
+
+  test:go:app:0:
+    cmds:
+      - |
+        pattern="$(go run ./internal/app/tools/testshard --package ./internal/app --shard-index 0 --shard-count 4)"
+        go test ./internal/app -run "$pattern"
+
+  test:go:app:1:
+    cmds:
+      - |
+        pattern="$(go run ./internal/app/tools/testshard --package ./internal/app --shard-index 1 --shard-count 4)"
+        go test ./internal/app -run "$pattern"
+
+  test:go:app:2:
+    cmds:
+      - |
+        pattern="$(go run ./internal/app/tools/testshard --package ./internal/app --shard-index 2 --shard-count 4)"
+        go test ./internal/app -run "$pattern"
+
+  test:go:app:3:
+    cmds:
+      - |
+        pattern="$(go run ./internal/app/tools/testshard --package ./internal/app --shard-index 3 --shard-count 4)"
+        go test ./internal/app -run "$pattern"
 
   ci:
     desc: Run the full CI test suite

@@ -6,21 +6,23 @@ FROM node:24-bookworm@sha256:392e1e23f34da768d8d1f4e502b64f200d3be3465934d4b7930
 # basemap.pmtiles. The generator verifies the pinned digest before accepting it.
 FROM scratch AS mapassetseed
 
-FROM golang:1.25-bookworm@sha256:a9c020ee3d1508c7be5435c262434e3d3fc1d0e76a11afeb9ddae7d60bc86aa4 AS sourcegen
+FROM golang:1.25-bookworm@sha256:a9c020ee3d1508c7be5435c262434e3d3fc1d0e76a11afeb9ddae7d60bc86aa4 AS go-deps
 WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+FROM go-deps AS sourcegen
 
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
     ln -sf ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
-COPY go.mod go.sum ./
-RUN go mod download
-
 COPY . .
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,id=leapview-go-mod,target=/go/pkg/mod,from=go-deps,source=/go/pkg/mod,sharing=locked \
     ./scripts/generate_build_sources.sh && \
     go run ./internal/app/tools/clidocgen && \
     go run ./internal/app/tools/schemadocgen && \
@@ -30,7 +32,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # Keep the large, network-backed map extraction separate so a transient remote
 # failure can be retried without repeating deterministic source generation.
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,id=leapview-go-mod,target=/go/pkg/mod,from=go-deps,source=/go/pkg/mod,sharing=locked \
     --mount=type=bind,from=mapassetseed,source=/,target=/mapasset-seed,ro \
     if [ -f /mapasset-seed/basemap.pmtiles ]; then \
       go run ./internal/app/tools/mapassets --out .data/map-assets --seed-archive /mapasset-seed/basemap.pmtiles; \
@@ -54,17 +56,13 @@ RUN bun scripts/generate_visualization_validator.ts && \
     bun scripts/generate_vega_lite_validator.ts && \
     bun run build
 
-FROM golang:1.25-bookworm@sha256:a9c020ee3d1508c7be5435c262434e3d3fc1d0e76a11afeb9ddae7d60bc86aa4 AS build
-WORKDIR /src
+FROM go-deps AS build
 
 ARG BUILD_VERSION=development
 ARG BUILD_REVISION=unknown
 ARG BUILD_TIME=unknown
 ARG BUILD_DIRTY=true
 ARG BUILD_RELEASE=false
-
-COPY go.mod go.sum ./
-RUN go mod download
 
 COPY . .
 COPY --from=sourcegen /src/api/gen ./api/gen
@@ -98,7 +96,7 @@ COPY --from=sourcegen /src/web/generated ./web/generated
 COPY --from=web /src/static ./static
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,id=leapview-go-mod,target=/go/pkg/mod,from=go-deps,source=/go/pkg/mod,sharing=locked \
     BUILD_LDFLAGS="-s -w \
       -X github.com/Yacobolo/leapview/internal/platform/buildinfo.version=${BUILD_VERSION} \
       -X github.com/Yacobolo/leapview/internal/platform/buildinfo.revision=${BUILD_REVISION} \
