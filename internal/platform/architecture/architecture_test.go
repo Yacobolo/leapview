@@ -1374,6 +1374,8 @@ func TestProductionContainerContractExists(t *testing.T) {
 	for _, want := range []string{
 		"FROM node:24-bookworm@sha256:",
 		"FROM golang:1.25-bookworm@sha256:",
+		"AS go-deps",
+		"FROM go-deps AS sourcegen",
 		"COPY --from=node /usr/local/bin/node /usr/local/bin/node",
 		"COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules",
 		"ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm",
@@ -1391,7 +1393,7 @@ func TestProductionContainerContractExists(t *testing.T) {
 		"bun scripts/generate_visualization_validator.ts",
 		"bun scripts/generate_vega_lite_validator.ts",
 		"bun run build",
-		"FROM golang:1.25-bookworm@sha256:",
+		"FROM go-deps AS build",
 		"COPY --from=sourcegen /src/internal/access/api/gen ./internal/access/api/gen",
 		"COPY --from=sourcegen /src/internal/agent/api/gen ./internal/agent/api/gen",
 		"COPY --from=sourcegen /src/internal/analytics/api/gen ./internal/analytics/api/gen",
@@ -1426,6 +1428,13 @@ func TestProductionContainerContractExists(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("Dockerfile missing production container contract fragment %q", want)
 		}
+	}
+	if count := strings.Count(text, "RUN go mod download"); count != 1 {
+		t.Fatalf("Dockerfile downloads Go modules %d times, want one shared dependency stage", count)
+	}
+	const seededModuleCache = "type=cache,id=leapview-go-mod,target=/go/pkg/mod,from=go-deps,source=/go/pkg/mod,sharing=locked"
+	if count := strings.Count(text, seededModuleCache); count != 3 {
+		t.Fatalf("Dockerfile uses the seeded persistent Go module cache %d times, want source generation, map extraction, and compilation", count)
 	}
 
 	ignored, err := os.ReadFile(filepath.Join(root, ".dockerignore"))
@@ -1647,9 +1656,11 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"actions/upload-artifact@",
 		"name: generated-assets",
 		"go-tests:",
-		"name: Go tests",
+		"name: Go tests (${{ matrix.name }})",
 		"needs: prepare",
-		"go test -p 2 ./...",
+		"app_shard:",
+		"go test -p 2 \"${packages[@]}\"",
+		"go run ./internal/app/tools/testshard",
 		"frontend-tests:",
 		"name: Frontend tests",
 		"bun run test:semantic-model-graph",
@@ -1664,12 +1675,27 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...",
 		"production-image:",
 		"name: Production image",
-		"docker build --pull --tag leapview:ci .",
+		"docker/setup-buildx-action@",
+		"docker/build-push-action@",
+		"cache-from: type=gha,scope=production-image",
+		"cache-to: type=gha,mode=max,scope=production-image",
 		"./scripts/smoke_production_image.sh leapview:ci",
+		"cache-from: type=gha,scope=site-image",
+		"cache-to: type=gha,mode=max,scope=site-image",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CI workflow missing production gate fragment %q", want)
 		}
+	}
+	for _, job := range []string{"node-audit", "production-image"} {
+		block := workflowJobBlock(t, text, job)
+		if strings.Contains(block, "needs: prepare") {
+			t.Fatalf("%s must not wait for unrelated generated assets", job)
+		}
+	}
+	deploymentContracts := workflowJobBlock(t, text, "deployment-contracts")
+	if !strings.Contains(deploymentContracts, "cache: false") {
+		t.Fatal("deployment-contracts must not race prepare to populate the shared Go cache")
 	}
 	taskText := string(taskfile)
 	for _, want := range []string{
@@ -1681,6 +1707,10 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"bun audit",
 		"vuln:",
 		"golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...",
+		"test:go:",
+		"task --parallel test:go:packages test:go:app:0 test:go:app:1 test:go:app:2 test:go:app:3",
+		"go list ./... | grep -v '/internal/app$' | xargs go test -p 2",
+		"--shard-count 4",
 	} {
 		if !strings.Contains(taskText, want) {
 			t.Fatalf("Taskfile missing vulnerability gate fragment %q", want)
@@ -1716,6 +1746,31 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 			t.Fatalf("production image smoke script missing fragment %q", want)
 		}
 	}
+}
+
+func workflowJobBlock(t *testing.T, workflow, job string) string {
+	t.Helper()
+	startMarker := "  " + job + ":"
+	lines := strings.Split(workflow, "\n")
+	start := -1
+	for index, line := range lines {
+		if line == startMarker {
+			start = index
+			break
+		}
+	}
+	if start < 0 {
+		t.Fatalf("workflow job %q not found", job)
+	}
+	end := len(lines)
+	for index := start + 1; index < len(lines); index++ {
+		line := lines[index]
+		if strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "    ") && strings.HasSuffix(line, ":") {
+			end = index
+			break
+		}
+	}
+	return strings.Join(lines[start:end], "\n")
 }
 
 func TestSQLCOutputsAreGeneratedBuildInputs(t *testing.T) {
@@ -1803,7 +1858,8 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 			"Check generation is deterministic",
 		},
 		"Dockerfile.site": {
-			"AS sourcegen",
+			"AS go-deps",
+			"FROM go-deps AS sourcegen",
 			"./scripts/generate_build_sources.sh",
 			"go run ./internal/app/tools/clidocgen",
 			"go run ./internal/app/tools/schemadocgen",
@@ -1835,6 +1891,17 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 				t.Errorf("%s missing generated-input contract fragment %q", name, fragment)
 			}
 		}
+	}
+	siteDockerfile, err := os.ReadFile(filepath.Join(root, "Dockerfile.site"))
+	if err != nil {
+		t.Fatalf("read Dockerfile.site: %v", err)
+	}
+	if count := strings.Count(string(siteDockerfile), "RUN go mod download"); count != 1 {
+		t.Fatalf("Dockerfile.site downloads Go modules %d times, want one shared dependency stage", count)
+	}
+	const seededModuleCache = "type=cache,id=leapview-go-mod,target=/go/pkg/mod,from=go-deps,source=/go/pkg/mod,sharing=locked"
+	if count := strings.Count(string(siteDockerfile), seededModuleCache); count != 2 {
+		t.Fatalf("Dockerfile.site uses the seeded persistent Go module cache %d times, want source generation and compilation", count)
 	}
 
 	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))
