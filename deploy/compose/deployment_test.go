@@ -112,18 +112,36 @@ func TestPublicImageIsPrimaryOnboardingContract(t *testing.T) {
 		t.Fatal("release workflow must build each public architecture on its native runner")
 	}
 
-	for _, name := range []string{
-		filepath.Join("..", "..", "README.md"),
-		filepath.Join("..", "..", "docs", "articles", "start", "installation.md"),
-	} {
+	documents := []struct {
+		name     string
+		required []string
+	}{
+		{
+			name: filepath.Join("..", "..", "README.md"),
+			required: []string{
+				"ghcr.io/yacobolo/leapview:latest",
+				"docker pull",
+			},
+		},
+		{
+			name: filepath.Join("..", "..", "docs", "articles", "start", "installation.md"),
+			required: []string{
+				"ghcr.io/yacobolo/leapview:latest",
+				"docker pull",
+				"admin initialize --format json",
+			},
+		},
+	}
+	for _, contract := range documents {
+		name := contract.name
 		document := read(t, name)
-		image := strings.Index(document, "ghcr.io/yacobolo/leapview:latest")
-		pull := strings.Index(document, "docker pull")
-		initialize := strings.Index(document, "admin initialize --format json")
-		controller := strings.Index(document, "./leapviewctl init")
-		if image < 0 || pull < 0 || initialize < 0 {
-			t.Errorf("%s does not document pull-first public image onboarding", name)
+		for _, required := range contract.required {
+			if !strings.Contains(document, required) {
+				t.Errorf("%s does not document public image onboarding contract %q", name, required)
+			}
 		}
+		image := strings.Index(document, "ghcr.io/yacobolo/leapview:latest")
+		controller := strings.Index(document, "./leapviewctl init")
 		if controller >= 0 && image > controller {
 			t.Errorf("%s presents the operations controller before the public image", name)
 		}
