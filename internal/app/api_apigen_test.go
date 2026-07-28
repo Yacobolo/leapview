@@ -51,7 +51,7 @@ func (r apiSnapshotWorkspaceRepository) AssetVersions(context.Context, workspace
 }
 
 func TestAPIGenUsesTypedClientGenerator(t *testing.T) {
-	const apigenVersion = "v0.7.3-0.20260728131708-81dc1bec85fe"
+	const apigenVersion = "v0.7.3"
 
 	root := projectRoot(t)
 	manifest, err := os.ReadFile(filepath.Join(root, "api", "apigen.yaml"))
