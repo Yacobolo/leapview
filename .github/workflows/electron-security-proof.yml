@@ -67,7 +67,12 @@ jobs:
       - name: Build, harden, inspect, and launch the package under Xvfb
         if: runner.os == 'Linux'
         working-directory: desktop
-        run: xvfb-run --auto-servernum bun run make
+        run: |
+          bun run build
+          bun scripts/run-electron.mjs make
+          sudo chown root:root out/LeapView-linux-*/chrome-sandbox
+          sudo chmod 4755 out/LeapView-linux-*/chrome-sandbox
+          xvfb-run --auto-servernum node scripts/verify-package.mjs
 
       - name: Upload unsigned candidate
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

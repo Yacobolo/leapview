@@ -1,12 +1,12 @@
 import {
   access,
   mkdtemp,
-  readFile,
   readdir,
   rm,
 } from "node:fs/promises";
 import { constants } from "node:fs";
 import { spawn } from "node:child_process";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -86,7 +86,9 @@ for (const [fuse, expected] of expectedFuses) {
   }
 }
 
-const archiveFiles = listPackage(asarPath);
+const archiveFiles = listPackage(asarPath).map((file) =>
+  file.replaceAll("\\", "/"),
+);
 const unexpected = archiveFiles.filter(
   (file) =>
     file !== "/package.json" &&
@@ -141,38 +143,42 @@ async function expectMissing(path) {
 
 async function verifyPackagedStartup(executable) {
   const userData = await mkdtemp(join(tmpdir(), "leapview-package-smoke-"));
+  const devtoolsPort = await reserveLoopbackPort();
   const child = spawn(
     executable,
     [
       "--headless",
       "--disable-gpu",
-      "--remote-debugging-port=0",
+      `--remote-debugging-port=${devtoolsPort}`,
       `--user-data-dir=${userData}`,
     ],
     {
-      stdio: "ignore",
+      stdio: ["ignore", "pipe", "pipe"],
     },
   );
+  let diagnostic = "";
+  const appendDiagnostic = (chunk) => {
+    diagnostic = `${diagnostic}${String(chunk)}`.slice(-16_384);
+  };
+  child.stdout.on("data", appendDiagnostic);
+  child.stderr.on("data", appendDiagnostic);
   try {
     const deadline = Date.now() + 15_000;
-    const devtoolsPortFile = join(userData, "DevToolsActivePort");
     while (Date.now() < deadline) {
       if (child.exitCode !== null || child.signalCode !== null) {
-        throw new Error(
-          `packaged application exited during startup with code ${child.exitCode ?? "signal"}`,
+        throw startupFailure(
+          "packaged application exited during startup",
+          child,
+          diagnostic,
         );
       }
       try {
-        const [rawPort] = (await readFile(devtoolsPortFile, "utf8")).split(
-          /\r?\n/u,
-        );
-        const port = Number.parseInt(rawPort, 10);
-        if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
-          throw new Error("packaged application exposed an invalid debug port");
-        }
-        const response = await fetch(`http://127.0.0.1:${port}/json/list`, {
+        const response = await fetch(
+          `http://127.0.0.1:${devtoolsPort}/json/list`,
+          {
           signal: AbortSignal.timeout(1_000),
-        });
+          },
+        );
         if (!response.ok) {
           throw new Error("packaged application debug target was unavailable");
         }
@@ -187,17 +193,14 @@ async function verifyPackagedStartup(executable) {
         ) {
           return "trusted-shell-ready";
         }
-      } catch (error) {
-        if (
-          error instanceof Error &&
-          error.message.includes("invalid debug port")
-        ) {
-          throw error;
-        }
-      }
+      } catch {}
       await new Promise((resolveDelay) => setTimeout(resolveDelay, 50));
     }
-    throw new Error("packaged application did not open its trusted shell");
+    throw startupFailure(
+      "packaged application did not open its trusted shell",
+      child,
+      diagnostic,
+    );
   } finally {
     if (child.exitCode === null && child.signalCode === null) {
       child.kill();
@@ -216,4 +219,39 @@ async function verifyPackagedStartup(executable) {
       retryDelay: 100,
     });
   }
+}
+
+async function reserveLoopbackPort() {
+  const server = createServer();
+  await new Promise((resolveListen, rejectListen) => {
+    server.once("error", rejectListen);
+    server.listen(0, "127.0.0.1", resolveListen);
+  });
+  const address = server.address();
+  await new Promise((resolveClose, rejectClose) => {
+    server.close((error) => {
+      if (error) {
+        rejectClose(error);
+        return;
+      }
+      resolveClose();
+    });
+  });
+  if (address === null || typeof address === "string") {
+    throw new Error("failed to reserve a loopback debug port");
+  }
+  return address.port;
+}
+
+function startupFailure(message, child, diagnostic) {
+  return new Error(
+    [
+      message,
+      `exit=${child.exitCode ?? "none"}`,
+      `signal=${child.signalCode ?? "none"}`,
+      diagnostic.trim(),
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  );
 }
