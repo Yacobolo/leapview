@@ -437,7 +437,7 @@ func (a *Auth) MiddlewareWithObjectResolver(privilege access.Privilege, objectRe
 			http.Redirect(w, r, a.defaultLoginRedirect(), http.StatusFound)
 			return
 		}
-		if a.mustChangeLocalPassword(r, principal.ID) {
+		if a.mustChangeLocalPassword(r, principal.ID, credential) {
 			writeAuthError(w, r, errForbidden, http.StatusForbidden)
 			return
 		}
@@ -456,6 +456,7 @@ func (a *Auth) MiddlewareWithObjectResolver(privilege access.Privilege, objectRe
 				if concealDenied && strings.HasPrefix(r.URL.Path, "/api/v1/") {
 					status = http.StatusNotFound
 				}
+				recordAuthorizationDenial(r, a.repo, principal.ID, workspaceID, privilege, objects, access.ReasonMissingPrivilege)
 				writeAuthError(w, r, errForbidden, status)
 				return
 			}
@@ -502,6 +503,7 @@ func (a *Auth) MiddlewareWithObjectResolver(privilege access.Privilege, objectRe
 				if concealDenied && strings.HasPrefix(r.URL.Path, "/api/v1/") {
 					status = http.StatusNotFound
 				}
+				recordAuthorizationDenial(r, a.repo, principal.ID, workspaceID, privilege, objects, decision.Reason)
 				writeAuthError(w, r, errForbidden, status)
 				return
 			}
@@ -521,16 +523,19 @@ func (a *Auth) defaultLoginRedirect() string {
 	return "/auth/azureadv2"
 }
 
-func (a *Auth) mustChangeLocalPassword(r *http.Request, principalID string) bool {
+func (a *Auth) mustChangeLocalPassword(r *http.Request, principalID string, credential *access.APICredential) bool {
 	if !a.localAuth || r.URL.Path == "/auth/local/password" || r.URL.Path == "/auth/logout" {
+		return false
+	}
+	if credential != nil && credential.Token.Name == access.APITokenNameInitialPublisher {
 		return false
 	}
 	local, ok := a.repo.(localCredentialManager)
 	if !ok {
 		return false
 	}
-	credential, err := local.LocalCredential(r.Context(), principalID)
-	return err == nil && credential.MustChangePassword
+	localCredential, err := local.LocalCredential(r.Context(), principalID)
+	return err == nil && localCredential.MustChangePassword
 }
 
 func writeBearerChallenge(w http.ResponseWriter, r *http.Request) {
@@ -571,6 +576,34 @@ func recordAccessAudit(r *http.Request, repo access.Repository, action, principa
 		return
 	}
 	_ = access.PersistAuditEvent(r.Context(), repo, authAuditInput(r, action, principalID, workspaceID, targetType, targetID, privilege, status, metadata))
+}
+
+func recordAuthorizationDenial(r *http.Request, repo access.Repository, principalID, workspaceID string, privilege access.Privilege, objects []access.ObjectRef, reason access.AuthorizationReason) {
+	if repo == nil {
+		return
+	}
+	_ = access.PersistAuditEvent(r.Context(), repo, authorizationDenialAuditInput(r, principalID, workspaceID, privilege, objects, reason))
+}
+
+func authorizationDenialAuditInput(r *http.Request, principalID, workspaceID string, privilege access.Privilege, objects []access.ObjectRef, reason access.AuthorizationReason) access.AuditEventInput {
+	object := access.WorkspaceObject(workspaceID)
+	if len(objects) > 0 {
+		object = objects[0]
+	}
+	if reason == "" {
+		reason = access.ReasonNoGrant
+	}
+	return authAuditInput(
+		r,
+		"authorization.denied",
+		principalID,
+		workspaceID,
+		string(object.Type),
+		object.CanonicalID(),
+		privilege,
+		"denied",
+		map[string]any{"reason": string(reason)},
+	)
 }
 
 func authAuditInput(r *http.Request, action, principalID, workspaceID, targetType, targetID string, privilege access.Privilege, status string, metadata map[string]any) access.AuditEventInput {
@@ -1032,7 +1065,7 @@ func (a *Auth) Authenticate(r *http.Request) (Principal, *access.APICredential, 
 }
 
 func (a *Auth) MustChangeLocalPassword(r *http.Request, principalID string) bool {
-	return a.mustChangeLocalPassword(r, principalID)
+	return a.mustChangeLocalPassword(r, principalID, nil)
 }
 
 func (a *Auth) SessionCookie(token string, expires time.Time) *http.Cookie {

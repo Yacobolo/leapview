@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/release"
-	releaseapi "github.com/Yacobolo/leapview/internal/release/api"
 )
 
 type catalogRepository struct {
@@ -31,13 +30,13 @@ func (catalogRepository) GetConnection(context.Context, string, string, string) 
 	return release.ConnectionRecord{}, nil
 }
 
-func TestReleaseModuleOwnsProjectCatalogMapping(t *testing.T) {
+func TestProjectCatalogProjectionMapping(t *testing.T) {
 	module := &Module{catalog: catalogRepository{projects: []release.ProjectRecord{{
 		ID: "project-1", CreatedAt: "2026-07-23T12:00:00Z", UpdatedAt: "2026-07-23T13:00:00Z",
 		LatestReleaseID: "release-1", ActiveDeploymentID: "deployment-1",
 	}}}}
 	recorder := httptest.NewRecorder()
-	module.ListProjects(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil), releaseapi.PageParams{})
+	module.ListProjects(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil), nil, nil)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}

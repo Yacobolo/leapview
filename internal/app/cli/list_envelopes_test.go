@@ -307,6 +307,22 @@ func TestSemanticModelDatasetCommandsUseGeneratedURLsAndBodies(t *testing.T) {
 			response: map[string]any{"items": []map[string]any{}, "page": map[string]any{"nextCursor": ""}},
 		},
 		{
+			name:     "query",
+			args:     []string{"query", "test", "--body-json", `{"dimensions":[{"field":"state"}],"measures":[{"field":"order_count"}]}`},
+			method:   http.MethodPost,
+			path:     "/api/v1/workspaces/test/semantic-models/test/query",
+			wantBody: []string{`"state"`, `"order_count"`},
+			response: map[string]any{"queryId": "query-1", "columns": []map[string]any{}, "data": map[string]any{"rows": []map[string]any{}}},
+		},
+		{
+			name:     "explain query",
+			args:     []string{"explain-query", "test", "--body-json", `{"dimensions":[{"field":"state"}],"measures":[{"field":"order_count"}]}`},
+			method:   http.MethodPost,
+			path:     "/api/v1/workspaces/test/semantic-models/test/query/explain",
+			wantBody: []string{`"state"`, `"order_count"`},
+			response: map[string]any{"mode": "semantic", "sql": "SELECT 1", "args": []map[string]any{}, "columns": []string{"state", "order_count"}, "warnings": []string{}},
+		},
+		{
 			name:     "preview",
 			args:     []string{"preview", "test", "orders", "--body-json", `{"dimensions":[{"field":"orders.order_id"}]}`},
 			method:   http.MethodPost,

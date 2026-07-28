@@ -1045,19 +1045,27 @@ func (canceledTableMetrics) ExecuteConsumersPage(_ context.Context, request cons
 }
 
 func TestUpdatesStreamsDatastarPatchSignals(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	server := newAppTestHarness(fakeMetrics{})
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=dashboard&workspace=test-workspace&dashboard=executive-sales&page=overview&state="+typedSetURLValue(t, "SP")+"&category=ignored", nil)
-	rec := httptest.NewRecorder()
+	rec := newSynchronizedRecorder()
+	returned := make(chan struct{})
 
-	newAppTestHarness(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+	go func() {
+		defer close(returned)
+		server.Routes().ServeHTTP(rec, req)
+	}()
+	waitForRecorderBodyContains(t, rec, `"loading":false`)
+	cancel()
+	<-returned
 
 	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/event-stream") {
 		t.Fatalf("content type = %q, want text/event-stream", got)
 	}
 
-	body := rec.Body.String()
+	body := rec.BodyString()
 	patches := ssetest.PatchSignals(t, body)
 	if len(patches) == 0 {
 		t.Fatalf("body does not contain Datastar patch signal event:\n%s", body)
@@ -1098,15 +1106,23 @@ func TestUpdatesStreamsDatastarPatchSignals(t *testing.T) {
 }
 
 func TestUpdatesStreamsPageScopedChartSignals(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	server := newAppTestHarness(fakeMetrics{})
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=dashboard&workspace=test-workspace&dashboard=executive-sales&page=operations&datastar=%7B%22runtime%22%3A%7B%22clientId%22%3A%22test-client%22%2C%22dashboardId%22%3A%22executive-sales%22%2C%22pageId%22%3A%22operations%22%7D%7D", nil)
-	rec := httptest.NewRecorder()
+	rec := newSynchronizedRecorder()
+	returned := make(chan struct{})
 
-	newAppTestHarness(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+	go func() {
+		defer close(returned)
+		server.Routes().ServeHTTP(rec, req)
+	}()
+	waitForRecorderBodyContains(t, rec, `"visuals":{"ops_pipeline"`)
+	cancel()
+	<-returned
 
-	body := rec.Body.String()
+	body := rec.BodyString()
 	if !strings.Contains(body, `"visuals":{"ops_pipeline"`) {
 		t.Fatalf("updates did not stream active page chart:\n%s", body)
 	}

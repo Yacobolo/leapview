@@ -15,6 +15,7 @@ import (
 	adminmodule "github.com/Yacobolo/leapview/internal/admin/module"
 	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
 	analyticsmodule "github.com/Yacobolo/leapview/internal/analytics/module"
+	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	apiapigenruntime "github.com/Yacobolo/leapview/internal/app/api/apigenruntime"
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	apiprotocol "github.com/Yacobolo/leapview/internal/app/api/protocol"
@@ -23,6 +24,7 @@ import (
 	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
 	deploymentmodule "github.com/Yacobolo/leapview/internal/deployment/module"
 	manageddatamodule "github.com/Yacobolo/leapview/internal/manageddata/module"
+	"github.com/Yacobolo/leapview/internal/platform/buildinfo"
 	"github.com/Yacobolo/leapview/internal/platform/http/cursorsigning"
 	apihttpmiddleware "github.com/Yacobolo/leapview/internal/platform/http/middleware"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
@@ -32,6 +34,7 @@ import (
 	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
 	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
 	uitransport "github.com/Yacobolo/leapview/internal/platform/web/transport"
+	projecthttp "github.com/Yacobolo/leapview/internal/project/http"
 	refreshmodule "github.com/Yacobolo/leapview/internal/refresh/module"
 	releasemodule "github.com/Yacobolo/leapview/internal/release/module"
 	runtimehostmodule "github.com/Yacobolo/leapview/internal/runtimehost/module"
@@ -69,7 +72,6 @@ type runtimeServices struct {
 	platformHealth        platformHealth
 	storageRetention      *servingstatemodule.Retention
 	queryAuditProvider    adminmodule.QueryAuditReaderProvider
-	queryAuditEvents      http.HandlerFunc
 }
 
 type platformServices struct {
@@ -77,12 +79,13 @@ type platformServices struct {
 	jobModule     *jobsmodule.Module
 	auth          *accessmodule.Auth
 	assets        staticasset.Resolver
+	buildIdentity buildinfo.Identity
 	telemetry     *observability.Telemetry
 	health        *health
 	logger        *slog.Logger
 	workers       *platformlifecycle.Group
 	apiProtocol   *apiprotocol.Protocol
-	apiGenHandler *apiapigenruntime.Handler
+	apiGenServers apiaggregate.Servers
 }
 
 type httpPolicy struct {
@@ -146,7 +149,10 @@ func newCompositionSurfaces(
 		metrics: metrics, broker: pagestream.NewBroker(pagestream.WithTraceStore(trace)),
 		pageStreamTrace: trace,
 	}
-	platform := &platformServices{telemetry: telemetry, logger: logger, assets: assets}
+	platform := &platformServices{
+		telemetry: telemetry, logger: logger, assets: assets,
+		buildIdentity: buildinfo.Current(),
+	}
 	policy := &httpPolicy{
 		requestBodyLimit: apihttpmiddleware.DefaultRequestBodyLimitConfig(),
 		desktopDiscovery: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -314,11 +320,9 @@ func buildApplicationSurfaces(
 	}
 	var queryAuditProvider adminmodule.QueryAuditReaderProvider
 	var queryAuditRecorder dashboardmodule.QueryAuditRecorder
-	var queryAuditEvents http.HandlerFunc
 	if workflow.QueryAudit != nil {
 		queryAuditProvider = adminmodule.QueryAuditReaderProvider(workflow.QueryAudit.Provider())
 		queryAuditRecorder = workflow.QueryAudit.Recorder()
-		queryAuditEvents = workflow.QueryAudit.Events(func(value string) string { return value })
 	}
 	if capabilities.AnalyticsModule != nil {
 		if capabilities.AnalyticsModule.QueryAuditReader() != nil {
@@ -339,13 +343,6 @@ func buildApplicationSurfaces(
 	persistence := persistenceInputs{}
 	moduleWorkflow := workflowInputs{}
 	storage := storageInputs{}
-	runtime.queryAuditEvents = queryAuditEvents
-	if runtime.queryAuditEvents == nil {
-		runtime.queryAuditEvents = analyticsmodule.NewQueryAuditEvents(nil, func(value string) string { return workspaceID(routes, runtime, platform, policy, value) })
-	}
-	if capabilities.AnalyticsModule != nil && capabilities.AnalyticsModule.QueryAuditReader() != nil {
-		runtime.queryAuditEvents = capabilities.AnalyticsModule.QueryAuditEvents(func(value string) string { return workspaceID(routes, runtime, platform, policy, value) })
-	}
 	moduleWorkflow.refreshPipelineClock = workflow.RefreshPipelineClock
 	runtime.queryAuditProvider = queryAuditProvider
 	if moduleWorkflow.refreshPipelineClock == nil {
@@ -476,6 +473,12 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	}
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	queryAuditAPI := analyticsmodule.QueryAuditAPIGenConfig{
+		Reader: runtime.queryAuditProvider,
+		WorkspaceID: func(value string) string {
+			return workspaceID(routes, runtime, platform, policy, value)
+		},
 	}
 	var apiDispatcher *apiGenDispatcher
 	if routes.accessModule == nil {
@@ -719,7 +722,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			Database: database, Model: moduleWorkflow.agentConfig,
 			Service: moduleWorkflow.agent, Jobs: platform.asyncJobs, DefaultWorkspaceID: policy.defaultWorkspaceID,
 			ProductName:      brand.Name,
-			BuildVersion:     platform.assets.Version(),
+			BuildVersion:     platform.buildIdentity.Version,
 			APIGenOperations: agentAPIGenOperations(),
 			RunWorkloadClass: string(workloadmodule.BackgroundClass), GlobalWorkspaceID: workloadmodule.GlobalWorkspace,
 			Search: routes.workspaceModule,
@@ -806,6 +809,36 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				request = request.WithContext(ctx)
 				if apiDispatcher == nil {
 					return false
+				}
+				if routes.accessModule != nil && routes.accessModule.DispatchAPIGenOperation(operationID, writer, request) {
+					return true
+				}
+				if routes.agentModule != nil && routes.agentModule.DispatchAPIGenOperation(operationID, writer, request, platform.logger) {
+					return true
+				}
+				if analyticsmodule.DispatchQueryAuditAPIGenOperation(queryAuditAPI, operationID, platform.logger, writer, request) {
+					return true
+				}
+				if routes.releaseModule != nil && projecthttp.DispatchAPIGenOperation(operationID, routes.releaseModule, platform.logger, writer, request) {
+					return true
+				}
+				if routes.refreshModule != nil && routes.refreshModule.DispatchAPIGenOperation(operationID, platform.logger, writer, request) {
+					return true
+				}
+				if routes.deploymentModule != nil && routes.deploymentModule.DispatchAPIGenOperation(operationID, platform.logger, writer, request) {
+					return true
+				}
+				if routes.releaseModule != nil && routes.releaseModule.DispatchAPIGenOperation(operationID, platform.logger, writer, request) {
+					return true
+				}
+				if routes.workspaceModule != nil && routes.workspaceModule.DispatchAPIGenOperation(operationID, platform.logger, writer, request) {
+					return true
+				}
+				if routes.managedDataModule != nil && routes.managedDataModule.DispatchAPIGenOperation(operationID, routes.releaseModule, platform.logger, writer, request) {
+					return true
+				}
+				if routes.dashboardModule != nil && routes.dashboardModule.DispatchAPIGenOperation(operationID, platform.logger, writer, request) {
+					return true
 				}
 				return apigenapi.DispatchAPIGenOperation(operationID, apiDispatcher, apiprotocol.TransportErrorResponder{Logger: platform.logger}, writer, request)
 			},
@@ -922,13 +955,9 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		return fmt.Errorf("register workspace securables: %w", err)
 	}
 	apiDispatcher = &apiGenDispatcher{
-		accessModule: routes.accessModule, agentModule: routes.agentModule,
-		dashboardModule: routes.dashboardModule, deploymentModule: routes.deploymentModule,
-		managedDataModule: routes.managedDataModule, refreshModule: routes.refreshModule,
-		releaseModule: routes.releaseModule, workspaceModule: routes.workspaceModule,
+		managedDataModule:  routes.managedDataModule,
 		defaultEnvironment: policy.defaultEnvironment, managedDataTus: policy.managedDataTus,
-		buildVersion:     platform.assets.Version(),
-		queryAuditEvents: runtime.queryAuditEvents,
+		buildIdentity: platform.buildIdentity,
 	}
 	apiGenAuthorizer, err := routes.accessModule.APIGenAuthorizer(accessAPIGenOperationContracts(), accessmodule.APIGenObjectResolvers{
 		Dashboard:      dashboardmodule.DashboardObjectRefs,
@@ -938,13 +967,78 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	if err != nil {
 		return fmt.Errorf("build APIGen authorizer: %w", err)
 	}
-	platform.apiGenHandler, err = apiapigenruntime.Build(
-		apiGenAuthorizer,
-		apiDispatcher,
-		apiprotocol.TransportErrorResponder{Logger: platform.logger},
-	)
+	appResponder := apiprotocol.TransportErrorResponder{Logger: platform.logger}
+	appAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
+		return apigenapi.DispatchAPIGenOperation(operationID, apiDispatcher, appResponder, w, r)
+	})
 	if err != nil {
-		return fmt.Errorf("build APIGen transport: %w", err)
+		return fmt.Errorf("build application APIGen transport: %w", err)
+	}
+	accessAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
+		return routes.accessModule.DispatchAPIGenOperation(operationID, w, r)
+	})
+	if err != nil {
+		return fmt.Errorf("build Access APIGen transport: %w", err)
+	}
+	agentAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
+		return routes.agentModule.DispatchAPIGenOperation(operationID, w, r, platform.logger)
+	})
+	if err != nil {
+		return fmt.Errorf("build Agent APIGen transport: %w", err)
+	}
+	analyticsAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
+		return analyticsmodule.DispatchQueryAuditAPIGenOperation(queryAuditAPI, operationID, platform.logger, w, r)
+	})
+	if err != nil {
+		return fmt.Errorf("build Analytics APIGen transport: %w", err)
+	}
+	projectAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
+		return projecthttp.DispatchAPIGenOperation(operationID, routes.releaseModule, platform.logger, w, r)
+	})
+	if err != nil {
+		return fmt.Errorf("build Project APIGen transport: %w", err)
+	}
+	refreshAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
+		return routes.refreshModule.DispatchAPIGenOperation(operationID, platform.logger, w, r)
+	})
+	if err != nil {
+		return fmt.Errorf("build Refresh APIGen transport: %w", err)
+	}
+	deploymentAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
+		return routes.deploymentModule.DispatchAPIGenOperation(operationID, platform.logger, w, r)
+	})
+	if err != nil {
+		return fmt.Errorf("build Deployment APIGen transport: %w", err)
+	}
+	releaseAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
+		return routes.releaseModule.DispatchAPIGenOperation(operationID, platform.logger, w, r)
+	})
+	if err != nil {
+		return fmt.Errorf("build Release APIGen transport: %w", err)
+	}
+	workspaceAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
+		return routes.workspaceModule.DispatchAPIGenOperation(operationID, platform.logger, w, r)
+	})
+	if err != nil {
+		return fmt.Errorf("build Workspace APIGen transport: %w", err)
+	}
+	managedDataAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
+		return routes.managedDataModule.DispatchAPIGenOperation(operationID, routes.releaseModule, platform.logger, w, r)
+	})
+	if err != nil {
+		return fmt.Errorf("build ManagedData APIGen transport: %w", err)
+	}
+	dashboardAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
+		return routes.dashboardModule.DispatchAPIGenOperation(operationID, platform.logger, w, r)
+	})
+	if err != nil {
+		return fmt.Errorf("build Dashboard APIGen transport: %w", err)
+	}
+	platform.apiGenServers = apiaggregate.Servers{
+		Access: accessAPIHandler, Agent: agentAPIHandler, Analytics: analyticsAPIHandler,
+		Dashboard: dashboardAPIHandler, Deployment: deploymentAPIHandler, LeapViewAPI: appAPIHandler,
+		ManagedData: managedDataAPIHandler, Project: projectAPIHandler,
+		Refresh: refreshAPIHandler, Release: releaseAPIHandler, Workspace: workspaceAPIHandler,
 	}
 	configurePageStream(routes, runtime, platform, policy)
 	platform.health = newHealth(healthConfig{

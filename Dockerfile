@@ -2,6 +2,10 @@
 
 FROM node:24-bookworm@sha256:392e1e23f34da768d8d1f4e502b64f200d3be3465934d4b7930f57d7e2fc1989 AS node
 
+# A caller may override this empty stage with a named build context containing
+# basemap.pmtiles. The generator verifies the pinned digest before accepting it.
+FROM scratch AS mapassetseed
+
 FROM golang:1.25-bookworm@sha256:a9c020ee3d1508c7be5435c262434e3d3fc1d0e76a11afeb9ddae7d60bc86aa4 AS sourcegen
 WORKDIR /src
 
@@ -18,11 +22,21 @@ COPY . .
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     ./scripts/generate_build_sources.sh && \
-    go run ./internal/app/tools/mapassets --out .data/map-assets && \
     go run ./internal/app/tools/clidocgen && \
     go run ./internal/app/tools/schemadocgen && \
     go run ./internal/app/tools/openapidocgen && \
     go run ./internal/app/tools/docsitegen
+
+# Keep the large, network-backed map extraction separate so a transient remote
+# failure can be retried without repeating deterministic source generation.
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=bind,from=mapassetseed,source=/,target=/mapasset-seed,ro \
+    if [ -f /mapasset-seed/basemap.pmtiles ]; then \
+      go run ./internal/app/tools/mapassets --out .data/map-assets --seed-archive /mapasset-seed/basemap.pmtiles; \
+    else \
+      go run ./internal/app/tools/mapassets --out .data/map-assets; \
+    fi
 
 FROM oven/bun:1.3.7@sha256:6cd5f00020e48b77a253bc8249f6b6dd3d92b3c04c2607f1f5a6d7dbf0a6fca3 AS web
 WORKDIR /src
@@ -43,12 +57,30 @@ RUN bun scripts/generate_visualization_validator.ts && \
 FROM golang:1.25-bookworm@sha256:a9c020ee3d1508c7be5435c262434e3d3fc1d0e76a11afeb9ddae7d60bc86aa4 AS build
 WORKDIR /src
 
+ARG BUILD_VERSION=development
+ARG BUILD_REVISION=unknown
+ARG BUILD_TIME=unknown
+ARG BUILD_DIRTY=true
+ARG BUILD_RELEASE=false
+
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
 COPY --from=sourcegen /src/api/gen ./api/gen
+COPY --from=sourcegen /src/internal/access/api/gen ./internal/access/api/gen
+COPY --from=sourcegen /src/internal/agent/api/gen ./internal/agent/api/gen
+COPY --from=sourcegen /src/internal/analytics/api/gen ./internal/analytics/api/gen
+COPY --from=sourcegen /src/internal/dashboard/api/gen ./internal/dashboard/api/gen
+COPY --from=sourcegen /src/internal/deployment/api/gen ./internal/deployment/api/gen
+COPY --from=sourcegen /src/internal/manageddata/api/gen ./internal/manageddata/api/gen
+COPY --from=sourcegen /src/internal/app/api/aggregate ./internal/app/api/aggregate
 COPY --from=sourcegen /src/internal/app/api/gen ./internal/app/api/gen
+COPY --from=sourcegen /src/internal/platform/http/api/gen ./internal/platform/http/api/gen
+COPY --from=sourcegen /src/internal/project/api/gen ./internal/project/api/gen
+COPY --from=sourcegen /src/internal/refresh/api/gen ./internal/refresh/api/gen
+COPY --from=sourcegen /src/internal/release/api/gen ./internal/release/api/gen
+COPY --from=sourcegen /src/internal/workspace/api/gen ./internal/workspace/api/gen
 COPY --from=sourcegen /src/internal/app/cli/gen ./internal/app/cli/gen
 COPY --from=sourcegen /src/internal/app/config/config_gen.go ./internal/app/config/config_gen.go
 COPY --from=sourcegen /src/internal/app/config/spec/names_gen.go ./internal/app/config/spec/names_gen.go
@@ -67,20 +99,32 @@ COPY --from=web /src/static ./static
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
-    CGO_ENABLED=1 go build -tags=duckdb_arrow -trimpath -ldflags="-s -w" -o /out/leapview ./cmd/leapview && \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/leapviewctl ./cmd/leapviewctl
+    BUILD_LDFLAGS="-s -w \
+      -X github.com/Yacobolo/leapview/internal/platform/buildinfo.version=${BUILD_VERSION} \
+      -X github.com/Yacobolo/leapview/internal/platform/buildinfo.revision=${BUILD_REVISION} \
+      -X github.com/Yacobolo/leapview/internal/platform/buildinfo.buildTime=${BUILD_TIME} \
+      -X github.com/Yacobolo/leapview/internal/platform/buildinfo.dirty=${BUILD_DIRTY} \
+      -X github.com/Yacobolo/leapview/internal/platform/buildinfo.release=${BUILD_RELEASE}" && \
+    CGO_ENABLED=1 go build -tags=duckdb_arrow -trimpath -ldflags="$BUILD_LDFLAGS" -o /out/leapview ./cmd/leapview && \
+    CGO_ENABLED=0 go build -trimpath -ldflags="$BUILD_LDFLAGS" -o /out/leapviewctl ./cmd/leapviewctl
 
 FROM debian:bookworm-slim@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df AS runtime
 
-ARG BUILD_VERSION=dev
+ARG BUILD_VERSION=development
 ARG BUILD_REVISION=unknown
+ARG BUILD_TIME=unknown
+ARG BUILD_DIRTY=true
+ARG BUILD_RELEASE=false
 
 LABEL org.opencontainers.image.title="LeapView" \
       org.opencontainers.image.description="LeapView business intelligence server" \
       org.opencontainers.image.source="https://github.com/Yacobolo/leapview" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.version="$BUILD_VERSION" \
-      org.opencontainers.image.revision="$BUILD_REVISION"
+      org.opencontainers.image.revision="$BUILD_REVISION" \
+      org.opencontainers.image.created="$BUILD_TIME" \
+      dev.leapview.build.dirty="$BUILD_DIRTY" \
+      dev.leapview.build.release="$BUILD_RELEASE"
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates libstdc++6 tzdata && \
@@ -97,6 +141,7 @@ COPY --from=web /src/static ./static
 COPY --from=build /src/schemas ./schemas
 COPY --from=sourcegen /src/.data/map-assets ./.data/map-assets
 COPY dashboards ./dashboards
+COPY evaluation ./evaluation
 
 RUN mkdir -p /var/lib/leapview && \
     chown -R leapview:leapview /var/lib/leapview /app

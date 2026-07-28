@@ -3,6 +3,7 @@ package composectl
 import (
 	"context"
 
+	"github.com/Yacobolo/leapview/internal/platform/buildinfo"
 	"github.com/spf13/cobra"
 )
 
@@ -20,6 +21,17 @@ func Command(ctx context.Context, controller *Controller) *cobra.Command {
 	root.SetOut(controller.stdout)
 	root.SetErr(controller.stderr)
 
+	versionJSON := false
+	version := &cobra.Command{
+		Use:   "version",
+		Short: "Report the leapviewctl build identity",
+		Args:  cobra.NoArgs,
+		RunE: func(command *cobra.Command, _ []string) error {
+			return buildinfo.Write(command.OutOrStdout(), "leapviewctl", buildinfo.Current(), versionJSON)
+		},
+	}
+	version.Flags().BoolVar(&versionJSON, "json", false, "emit machine-readable JSON")
+
 	initOptions := InitOptions{Environment: defaultEnvironment}
 	initialize := &cobra.Command{
 		Use:   "init",
@@ -30,10 +42,10 @@ func Command(ctx context.Context, controller *Controller) *cobra.Command {
 		},
 	}
 	initialize.Flags().StringVar(&initOptions.AdminEmail, "admin-email", "", "initial platform administrator email")
-	initialize.Flags().StringVar(&initOptions.Domain, "domain", "", "public application host")
+	initialize.Flags().StringVar(&initOptions.Domain, "domain", "", "canonical public application hostname")
 	initialize.Flags().StringVar(&initOptions.Environment, "environment", defaultEnvironment, "instance environment")
 	initialize.Flags().StringVar(&initOptions.Image, "image", "", "immutable LeapView image reference")
-	initialize.Flags().BoolVar(&initOptions.NoHTTPS, "no-https", false, "disable the Caddy HTTPS overlay")
+	initialize.Flags().BoolVar(&initOptions.NoHTTPS, "no-https", false, "use a trusted external HTTPS proxy instead of the Caddy overlay")
 
 	start := &cobra.Command{
 		Use:   "start",
@@ -106,6 +118,6 @@ func Command(ctx context.Context, controller *Controller) *cobra.Command {
 	}
 	rollback.Flags().BoolVar(&rollbackConfirmed, "confirm", false, "confirm that post-upgrade state will be discarded")
 
-	root.AddCommand(initialize, start, status, logs, firstLogin, backup, restore, upgrade, rollback)
+	root.AddCommand(version, initialize, start, status, logs, firstLogin, backup, restore, upgrade, rollback)
 	return root
 }

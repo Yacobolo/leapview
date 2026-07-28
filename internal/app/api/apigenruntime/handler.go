@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	apiprotocol "github.com/Yacobolo/leapview/internal/app/api/protocol"
 )
 
@@ -14,24 +13,25 @@ type Authorizer interface {
 
 type Handler struct {
 	authorizer Authorizer
-	dispatcher apigenapi.GenOperationDispatcher
-	responder  apigenapi.GenTransportErrorResponder
+	dispatch   Dispatch
 }
 
-func Build(authorizer Authorizer, dispatcher apigenapi.GenOperationDispatcher, responder apigenapi.GenTransportErrorResponder) (*Handler, error) {
+type Dispatch func(operationID string, w http.ResponseWriter, r *http.Request) bool
+
+func Build(authorizer Authorizer, dispatch Dispatch) (*Handler, error) {
 	if authorizer == nil {
 		return nil, fmt.Errorf("APIGen authorizer is required")
 	}
-	if dispatcher == nil {
-		return nil, fmt.Errorf("APIGen dispatcher is required")
+	if dispatch == nil {
+		return nil, fmt.Errorf("APIGen dispatch function is required")
 	}
-	return &Handler{authorizer: authorizer, dispatcher: dispatcher, responder: responder}, nil
+	return &Handler{authorizer: authorizer, dispatch: dispatch}, nil
 }
 
 func (h *Handler) HandleAPIGen(operationID string, w http.ResponseWriter, r *http.Request) {
 	protected, ok := h.authorizer.Protect(operationID, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		buffered := apiprotocol.NewResponseBuffer(w, r)
-		if ok := apigenapi.DispatchAPIGenOperation(operationID, h.dispatcher, h.responder, buffered, r); !ok {
+		if ok := h.dispatch(operationID, buffered, r); !ok {
 			http.NotFound(w, r)
 			return
 		}

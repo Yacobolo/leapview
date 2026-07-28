@@ -67,7 +67,7 @@ func configurePageStream(routes *capabilityRoutes, runtime *runtimeServices, pla
 				workspaceAssetUpdates(routes, runtime, platform, policy, w, r)
 			})),
 			routeLogin: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				uitransport.PatchAndWait(runtime.pageStreamTrace, w, r, routes.accessModule.LoginBootstrapSignals(r))
+				_ = uitransport.PatchOnce(runtime.pageStreamTrace, w, r, routes.accessModule.LoginBootstrapSignals(r))
 			}),
 			routeCatalog: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				uitransport.PatchAndWait(runtime.pageStreamTrace, w, r,

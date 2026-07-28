@@ -31,7 +31,7 @@ cp deployment.env.example deployment.env
 ./leapviewctl first-login
 ```
 
-For an existing reverse proxy, pass `--no-https`, keep the application bound to localhost, and forward the original scheme and host. Do not expose the unencrypted application port publicly.
+Initialization derives `LEAPVIEW_PUBLIC_URL=https://<domain>`, the allowed host, and the Caddy domain from the validated `--domain` hostname. For an existing reverse proxy, pass `--no-https`, keep the application bound to localhost, and forward the original HTTPS scheme and host from that trusted proxy. `--no-https` disables only the bundled Caddy overlay; it does not make the public origin HTTP. Do not expose the unencrypted application port publicly.
 
 The controller is optional if an existing container platform already provides equivalent secret management, health checks, graceful shutdown, backup validation, and image-and-state rollback. Those contracts remain required even when Compose is not used.
 

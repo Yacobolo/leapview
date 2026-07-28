@@ -9,8 +9,19 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/access"
+	accessgen "github.com/Yacobolo/leapview/internal/access/api/gen"
+	agentgen "github.com/Yacobolo/leapview/internal/agent/api/gen"
+	analyticsgen "github.com/Yacobolo/leapview/internal/analytics/api/gen"
+	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	dashboardgen "github.com/Yacobolo/leapview/internal/dashboard/api/gen"
+	deploymentgen "github.com/Yacobolo/leapview/internal/deployment/api/gen"
+	manageddatagen "github.com/Yacobolo/leapview/internal/manageddata/api/gen"
+	projectgen "github.com/Yacobolo/leapview/internal/project/api/gen"
+	refreshgen "github.com/Yacobolo/leapview/internal/refresh/api/gen"
+	releasegen "github.com/Yacobolo/leapview/internal/release/api/gen"
 	"github.com/Yacobolo/leapview/internal/workspace"
+	workspacegen "github.com/Yacobolo/leapview/internal/workspace/api/gen"
 )
 
 type apiSnapshotWorkspaceRepository struct{ summary workspace.Summary }
@@ -39,7 +50,7 @@ func (r apiSnapshotWorkspaceRepository) AssetVersions(context.Context, workspace
 	return nil, nil
 }
 
-func TestAPIGenUsesTypeSpecV071(t *testing.T) {
+func TestAPIGenUsesTypeSpecV072(t *testing.T) {
 	root := projectRoot(t)
 	manifest, err := os.ReadFile(filepath.Join(root, "api", "apigen.yaml"))
 	if err != nil {
@@ -64,10 +75,12 @@ func TestAPIGenUsesTypeSpecV071(t *testing.T) {
 		"LeapViewAPI:",
 		"LeapViewAPI.Access:",
 		"LeapViewAPI.Agent:",
+		"LeapViewAPI.Analytics:",
 		"LeapViewAPI.Dashboard:",
 		"LeapViewAPI.Deployment:",
 		"LeapViewAPI.ManagedData:",
 		"LeapViewAPI.Project:",
+		"LeapViewAPI.Protocol:",
 		"LeapViewAPI.Refresh:",
 		"LeapViewAPI.Release:",
 		"LeapViewAPI.Workspace:",
@@ -92,23 +105,23 @@ func TestAPIGenUsesTypeSpecV071(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.1 typespec-compile",
-		"github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.1 all",
+		"github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.2 typespec-compile",
+		"github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.2 all",
 	} {
 		if !strings.Contains(taskText, want) {
 			t.Fatalf("Taskfile.yml missing generation command %q", want)
 		}
 	}
-	for _, forbidden := range []string{"cue-compile", "apigen@v0.2.0", "apigen@v0.3.0", "apigen@v0.3.2", "apigen@v0.3.3", "apigen@v0.4.0", "apigen@v0.5.0", "apigen@v0.5.1", "apigen@v0.5.2", "apigen@v0.5.3", "apigen@v0.6.0", "apigen@v0.6.1", "apigen@v0.6.2", "apigen@v0.6.3", "apigen@v0.6.4", "apigen@v0.6.5", "apigen@v0.7.0", "apigenpostprocess"} {
+	for _, forbidden := range []string{"cue-compile", "apigen@v0.2.0", "apigen@v0.3.0", "apigen@v0.3.2", "apigen@v0.3.3", "apigen@v0.4.0", "apigen@v0.5.0", "apigen@v0.5.1", "apigen@v0.5.2", "apigen@v0.5.3", "apigen@v0.6.0", "apigen@v0.6.1", "apigen@v0.6.2", "apigen@v0.6.3", "apigen@v0.6.4", "apigen@v0.6.5", "apigen@v0.7.0", "apigen@v0.7.1", "apigenpostprocess"} {
 		if strings.Contains(taskText, forbidden) {
-			t.Fatalf("Taskfile.yml should not contain %q after APIGen v0.7.1 migration", forbidden)
+			t.Fatalf("Taskfile.yml should not contain %q after APIGen v0.7.2 migration", forbidden)
 		}
 	}
 	buildSources, err := os.ReadFile(filepath.Join(root, "scripts", "generate_build_sources.sh"))
 	if err != nil {
 		t.Fatalf("read container source-generation script: %v", err)
 	}
-	if want := "APIGEN=github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.1"; !strings.Contains(string(buildSources), want) {
+	if want := "APIGEN=github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.2"; !strings.Contains(string(buildSources), want) {
 		t.Fatalf("container source-generation script missing APIGen pin %q", want)
 	}
 
@@ -125,7 +138,7 @@ func TestAPIGenUsesTypeSpecV071(t *testing.T) {
 	}
 
 	if _, err := os.Stat(filepath.Join(root, "internal", "tools", "apigenpostprocess")); !os.IsNotExist(err) {
-		t.Fatalf("APIGen v0.7.1 should not require a postprocessor, stat error = %v", err)
+		t.Fatalf("APIGen v0.7.2 should not require a postprocessor, stat error = %v", err)
 	}
 	for path, forbidden := range map[string]string{
 		filepath.Join(root, "api", "typespec", "bi.tsp"):                        "toolbelt#34",
@@ -136,8 +149,474 @@ func TestAPIGenUsesTypeSpecV071(t *testing.T) {
 			t.Fatalf("read %s: %v", path, err)
 		}
 		if strings.Contains(string(content), forbidden) {
-			t.Fatalf("APIGen v0.7.1 superseded workaround %q in %s", forbidden, path)
+			t.Fatalf("APIGen v0.7.2 superseded workaround %q in %s", forbidden, path)
 		}
+	}
+}
+
+func TestAPIGenAgentCapabilityOwnsItsGeneratedPackage(t *testing.T) {
+	root := projectRoot(t)
+	manifest, err := os.ReadFile(filepath.Join(root, "api", "apigen.yaml"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	manifestText := string(manifest)
+	for _, want := range []string{
+		"aggregate:\n        dir: ../internal/app/api/aggregate\n        package: aggregate",
+		"LeapViewAPI.Agent:\n          dir: ../internal/agent/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/agent/api/gen",
+	} {
+		if !strings.Contains(manifestText, want) {
+			t.Fatalf("manifest missing Agent capability package plan %q", want)
+		}
+	}
+	if strings.Contains(manifestText, "LeapViewAPI.Agent: *leapview_api_go_package") {
+		t.Fatal("Agent namespace is still coalesced into the application generated package")
+	}
+
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	for _, want := range []string{
+		"internal/agent/api/gen/request_models.gen.go",
+		"internal/agent/api/gen/server.apigen.gen.go",
+		"internal/app/api/aggregate/server.apigen.gen.go",
+		"internal/platform/http/api/gen/request_models.gen.go",
+	} {
+		if !strings.Contains(string(taskfile), want) {
+			t.Fatalf("Taskfile.yml does not track generated Agent composition artifact %q", want)
+		}
+	}
+}
+
+func TestAPIGenAgentCapabilityOwnsItsOperationSurface(t *testing.T) {
+	agentContracts := agentgen.GetAPIGenOperationContracts()
+	if got, want := len(agentContracts), 11; got != want {
+		t.Fatalf("Agent generated operations = %d, want %d", got, want)
+	}
+	for operationID, contract := range agentContracts {
+		if len(contract.Tags) != 1 || contract.Tags[0] != "Agent" {
+			t.Errorf("Agent operation %q tags = %v", operationID, contract.Tags)
+		}
+		if _, exists := apigenapi.GetAPIGenOperationContracts()[operationID]; exists {
+			t.Errorf("Agent operation %q is still emitted by the application package", operationID)
+		}
+	}
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
+		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
+	}
+}
+
+func TestAPIGenAccessCapabilityOwnsItsGeneratedPackage(t *testing.T) {
+	root := projectRoot(t)
+	manifest, err := os.ReadFile(filepath.Join(root, "api", "apigen.yaml"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	manifestText := string(manifest)
+	for _, want := range []string{
+		"LeapViewAPI.Access:\n          dir: ../internal/access/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/access/api/gen",
+		"LeapViewAPI.Analytics:\n          dir: ../internal/analytics/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/analytics/api/gen",
+	} {
+		if !strings.Contains(manifestText, want) {
+			t.Fatalf("manifest missing Access capability package plan %q", want)
+		}
+	}
+	if strings.Contains(manifestText, "LeapViewAPI.Access: *leapview_api_go_package") {
+		t.Fatal("Access namespace is still coalesced into the application generated package")
+	}
+
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	for _, want := range []string{
+		"internal/access/api/gen/request_models.gen.go",
+		"internal/access/api/gen/server.apigen.gen.go",
+		"internal/analytics/api/gen/request_models.gen.go",
+		"internal/analytics/api/gen/server.apigen.gen.go",
+	} {
+		if !strings.Contains(string(taskfile), want) {
+			t.Fatalf("Taskfile.yml does not track generated Access artifact %q", want)
+		}
+	}
+}
+
+func TestAPIGenAccessCapabilityOwnsItsOperationSurface(t *testing.T) {
+	accessContracts := accessgen.GetAPIGenOperationContracts()
+	if got, want := len(accessContracts), 50; got != want {
+		t.Fatalf("Access generated operations = %d, want %d", got, want)
+	}
+	allowedTags := map[string]bool{"Access": true, "Audit": true, "Current User": true}
+	appContracts := apigenapi.GetAPIGenOperationContracts()
+	for operationID, contract := range accessContracts {
+		if len(contract.Tags) != 1 || !allowedTags[contract.Tags[0]] {
+			t.Errorf("Access operation %q tags = %v", operationID, contract.Tags)
+		}
+		if _, exists := appContracts[operationID]; exists {
+			t.Errorf("Access operation %q is still emitted by the application package", operationID)
+		}
+	}
+	if _, exists := accessContracts["listQueryEvents"]; exists {
+		t.Fatal("Analytics-owned listQueryEvents is emitted by the Access package")
+	}
+	if _, exists := appContracts["listQueryEvents"]; exists {
+		t.Fatal("Analytics-owned listQueryEvents is still emitted by the application package")
+	}
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
+		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
+	}
+}
+
+func TestAPIGenAnalyticsCapabilityOwnsItsOperationSurface(t *testing.T) {
+	analyticsContracts := analyticsgen.GetAPIGenOperationContracts()
+	if got, want := len(analyticsContracts), 1; got != want {
+		t.Fatalf("Analytics generated operations = %d, want %d", got, want)
+	}
+	contract, exists := analyticsContracts["listQueryEvents"]
+	if !exists {
+		t.Fatal("Analytics generated package is missing listQueryEvents")
+	}
+	if len(contract.Tags) != 1 || contract.Tags[0] != "Audit" {
+		t.Fatalf("listQueryEvents tags = %v, want [Audit]", contract.Tags)
+	}
+	if _, exists := apigenapi.GetAPIGenOperationContracts()["listQueryEvents"]; exists {
+		t.Fatal("Analytics-owned listQueryEvents is still emitted by the application package")
+	}
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
+		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
+	}
+}
+
+func TestAPIGenProjectCapabilityOwnsItsGeneratedPackage(t *testing.T) {
+	root := projectRoot(t)
+	manifest, err := os.ReadFile(filepath.Join(root, "api", "apigen.yaml"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	manifestText := string(manifest)
+	want := "LeapViewAPI.Project:\n          dir: ../internal/project/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/project/api/gen"
+	if !strings.Contains(manifestText, want) {
+		t.Fatalf("manifest missing Project capability package plan %q", want)
+	}
+	if strings.Contains(manifestText, "LeapViewAPI.Project: *leapview_api_go_package") {
+		t.Fatal("Project namespace is still coalesced into the application generated package")
+	}
+
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	for _, path := range []string{
+		"internal/project/api/gen/request_models.gen.go",
+		"internal/project/api/gen/server.apigen.gen.go",
+	} {
+		if !strings.Contains(string(taskfile), path) {
+			t.Fatalf("Taskfile.yml does not track generated Project artifact %q", path)
+		}
+	}
+}
+
+func TestAPIGenProjectCapabilityOwnsItsOperationSurface(t *testing.T) {
+	projectContracts := projectgen.GetAPIGenOperationContracts()
+	if got, want := len(projectContracts), 3; got != want {
+		t.Fatalf("Project generated operations = %d, want %d", got, want)
+	}
+	appContracts := apigenapi.GetAPIGenOperationContracts()
+	for operationID, contract := range projectContracts {
+		if len(contract.Tags) != 1 || contract.Tags[0] != "Projects" {
+			t.Errorf("Project operation %q tags = %v, want [Projects]", operationID, contract.Tags)
+		}
+		if _, exists := appContracts[operationID]; exists {
+			t.Errorf("Project operation %q is still emitted by the application package", operationID)
+		}
+	}
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
+		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
+	}
+}
+
+func TestAPIGenRefreshCapabilityOwnsItsGeneratedPackage(t *testing.T) {
+	root := projectRoot(t)
+	manifest, err := os.ReadFile(filepath.Join(root, "api", "apigen.yaml"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	manifestText := string(manifest)
+	want := "LeapViewAPI.Refresh:\n          dir: ../internal/refresh/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/refresh/api/gen"
+	if !strings.Contains(manifestText, want) {
+		t.Fatalf("manifest missing Refresh capability package plan %q", want)
+	}
+	if strings.Contains(manifestText, "LeapViewAPI.Refresh: *leapview_api_go_package") {
+		t.Fatal("Refresh namespace is still coalesced into the application generated package")
+	}
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	for _, path := range []string{
+		"internal/refresh/api/gen/request_models.gen.go",
+		"internal/refresh/api/gen/server.apigen.gen.go",
+	} {
+		if !strings.Contains(string(taskfile), path) {
+			t.Fatalf("Taskfile.yml does not track generated Refresh artifact %q", path)
+		}
+	}
+}
+
+func TestAPIGenRefreshCapabilityOwnsItsOperationSurface(t *testing.T) {
+	refreshContracts := refreshgen.GetAPIGenOperationContracts()
+	if got, want := len(refreshContracts), 5; got != want {
+		t.Fatalf("Refresh generated operations = %d, want %d", got, want)
+	}
+	appContracts := apigenapi.GetAPIGenOperationContracts()
+	for operationID, contract := range refreshContracts {
+		if len(contract.Tags) != 1 || contract.Tags[0] != "Refresh Runs" {
+			t.Errorf("Refresh operation %q tags = %v, want [Refresh Runs]", operationID, contract.Tags)
+		}
+		if _, exists := appContracts[operationID]; exists {
+			t.Errorf("Refresh operation %q is still emitted by the application package", operationID)
+		}
+	}
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
+		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
+	}
+}
+
+func TestAPIGenDeploymentCapabilityOwnsItsGeneratedPackage(t *testing.T) {
+	root := projectRoot(t)
+	manifest, err := os.ReadFile(filepath.Join(root, "api", "apigen.yaml"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	manifestText := string(manifest)
+	want := "LeapViewAPI.Deployment:\n          dir: ../internal/deployment/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/deployment/api/gen"
+	if !strings.Contains(manifestText, want) {
+		t.Fatalf("manifest missing Deployment capability package plan %q", want)
+	}
+	if strings.Contains(manifestText, "LeapViewAPI.Deployment: *leapview_api_go_package") {
+		t.Fatal("Deployment namespace is still coalesced into the application generated package")
+	}
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	for _, path := range []string{
+		"internal/deployment/api/gen/request_models.gen.go",
+		"internal/deployment/api/gen/server.apigen.gen.go",
+	} {
+		if !strings.Contains(string(taskfile), path) {
+			t.Fatalf("Taskfile.yml does not track generated Deployment artifact %q", path)
+		}
+	}
+}
+
+func TestAPIGenDeploymentCapabilityOwnsItsOperationSurface(t *testing.T) {
+	contracts := deploymentgen.GetAPIGenOperationContracts()
+	if got, want := len(contracts), 6; got != want {
+		t.Fatalf("Deployment generated operations = %d, want %d", got, want)
+	}
+	appContracts := apigenapi.GetAPIGenOperationContracts()
+	for operationID, contract := range contracts {
+		if len(contract.Tags) != 1 || contract.Tags[0] != "Deployments" {
+			t.Errorf("Deployment operation %q tags = %v, want [Deployments]", operationID, contract.Tags)
+		}
+		if _, exists := appContracts[operationID]; exists {
+			t.Errorf("Deployment operation %q is still emitted by the application package", operationID)
+		}
+	}
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
+		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
+	}
+}
+
+func TestAPIGenReleaseCapabilityOwnsItsGeneratedPackage(t *testing.T) {
+	root := projectRoot(t)
+	manifest, err := os.ReadFile(filepath.Join(root, "api", "apigen.yaml"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	manifestText := string(manifest)
+	want := "LeapViewAPI.Release:\n          dir: ../internal/release/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/release/api/gen"
+	if !strings.Contains(manifestText, want) {
+		t.Fatalf("manifest missing Release capability package plan %q", want)
+	}
+	if strings.Contains(manifestText, "LeapViewAPI.Release: *leapview_api_go_package") {
+		t.Fatal("Release namespace is still coalesced into the application generated package")
+	}
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	for _, path := range []string{
+		"internal/release/api/gen/request_models.gen.go",
+		"internal/release/api/gen/server.apigen.gen.go",
+	} {
+		if !strings.Contains(string(taskfile), path) {
+			t.Fatalf("Taskfile.yml does not track generated Release artifact %q", path)
+		}
+	}
+}
+
+func TestAPIGenReleaseCapabilityOwnsItsOperationSurface(t *testing.T) {
+	contracts := releasegen.GetAPIGenOperationContracts()
+	if got, want := len(contracts), 6; got != want {
+		t.Fatalf("Release generated operations = %d, want %d", got, want)
+	}
+	appContracts := apigenapi.GetAPIGenOperationContracts()
+	for operationID, contract := range contracts {
+		if len(contract.Tags) != 1 || contract.Tags[0] != "Releases" {
+			t.Errorf("Release operation %q tags = %v, want [Releases]", operationID, contract.Tags)
+		}
+		if _, exists := appContracts[operationID]; exists {
+			t.Errorf("Release operation %q is still emitted by the application package", operationID)
+		}
+	}
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
+		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
+	}
+}
+
+func TestAPIGenWorkspaceCapabilityOwnsItsGeneratedPackage(t *testing.T) {
+	root := projectRoot(t)
+	manifest, err := os.ReadFile(filepath.Join(root, "api", "apigen.yaml"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	manifestText := string(manifest)
+	want := "LeapViewAPI.Workspace:\n          dir: ../internal/workspace/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/workspace/api/gen"
+	if !strings.Contains(manifestText, want) {
+		t.Fatalf("manifest missing Workspace capability package plan %q", want)
+	}
+	if strings.Contains(manifestText, "LeapViewAPI.Workspace: *leapview_api_go_package") {
+		t.Fatal("Workspace namespace is still coalesced into the application generated package")
+	}
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	for _, path := range []string{
+		"internal/workspace/api/gen/request_models.gen.go",
+		"internal/workspace/api/gen/server.apigen.gen.go",
+	} {
+		if !strings.Contains(string(taskfile), path) {
+			t.Fatalf("Taskfile.yml does not track generated Workspace artifact %q", path)
+		}
+	}
+}
+
+func TestAPIGenWorkspaceCapabilityOwnsItsOperationSurface(t *testing.T) {
+	contracts := workspacegen.GetAPIGenOperationContracts()
+	if got, want := len(contracts), 8; got != want {
+		t.Fatalf("Workspace generated operations = %d, want %d", got, want)
+	}
+	allowedTags := map[string]bool{"Search": true, "Workspaces": true}
+	appContracts := apigenapi.GetAPIGenOperationContracts()
+	for operationID, contract := range contracts {
+		if len(contract.Tags) != 1 || !allowedTags[contract.Tags[0]] {
+			t.Errorf("Workspace operation %q tags = %v", operationID, contract.Tags)
+		}
+		if _, exists := appContracts[operationID]; exists {
+			t.Errorf("Workspace operation %q is still emitted by the application package", operationID)
+		}
+	}
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
+		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
+	}
+}
+
+func TestAPIGenManagedDataCapabilityOwnsItsGeneratedPackage(t *testing.T) {
+	root := projectRoot(t)
+	manifest, err := os.ReadFile(filepath.Join(root, "api", "apigen.yaml"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	manifestText := string(manifest)
+	want := "LeapViewAPI.ManagedData:\n          dir: ../internal/manageddata/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/manageddata/api/gen"
+	if !strings.Contains(manifestText, want) {
+		t.Fatalf("manifest missing ManagedData capability package plan %q", want)
+	}
+	if strings.Contains(manifestText, "LeapViewAPI.ManagedData: *leapview_api_go_package") {
+		t.Fatal("ManagedData namespace is still coalesced into the application generated package")
+	}
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	for _, path := range []string{
+		"internal/manageddata/api/gen/request_models.gen.go",
+		"internal/manageddata/api/gen/server.apigen.gen.go",
+	} {
+		if !strings.Contains(string(taskfile), path) {
+			t.Fatalf("Taskfile.yml does not track generated ManagedData artifact %q", path)
+		}
+	}
+}
+
+func TestAPIGenManagedDataCapabilityOwnsItsOperationSurface(t *testing.T) {
+	contracts := manageddatagen.GetAPIGenOperationContracts()
+	if got, want := len(contracts), 15; got != want {
+		t.Fatalf("ManagedData generated operations = %d, want %d", got, want)
+	}
+	appContracts := apigenapi.GetAPIGenOperationContracts()
+	for operationID, contract := range contracts {
+		if len(contract.Tags) != 1 || contract.Tags[0] != "Managed Data" {
+			t.Errorf("ManagedData operation %q tags = %v, want [Managed Data]", operationID, contract.Tags)
+		}
+		if _, exists := appContracts[operationID]; exists {
+			t.Errorf("ManagedData operation %q is still emitted by the application package", operationID)
+		}
+	}
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
+		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
+	}
+}
+
+func TestAPIGenDashboardCapabilityOwnsItsGeneratedPackage(t *testing.T) {
+	root := projectRoot(t)
+	manifest, err := os.ReadFile(filepath.Join(root, "api", "apigen.yaml"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	manifestText := string(manifest)
+	want := "LeapViewAPI.Dashboard:\n          dir: ../internal/dashboard/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/dashboard/api/gen"
+	if !strings.Contains(manifestText, want) {
+		t.Fatalf("manifest missing Dashboard capability package plan %q", want)
+	}
+	if strings.Contains(manifestText, "LeapViewAPI.Dashboard: *leapview_api_go_package") {
+		t.Fatal("Dashboard namespace is still coalesced into the application generated package")
+	}
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	for _, path := range []string{
+		"internal/dashboard/api/gen/request_models.gen.go",
+		"internal/dashboard/api/gen/server.apigen.gen.go",
+	} {
+		if !strings.Contains(string(taskfile), path) {
+			t.Fatalf("Taskfile.yml does not track generated Dashboard artifact %q", path)
+		}
+	}
+}
+
+func TestAPIGenDashboardCapabilityOwnsItsOperationSurface(t *testing.T) {
+	contracts := dashboardgen.GetAPIGenOperationContracts()
+	if got, want := len(contracts), 25; got != want {
+		t.Fatalf("Dashboard generated operations = %d, want %d", got, want)
+	}
+	allowedTags := map[string]bool{"BI": true, "Publications": true}
+	appContracts := apigenapi.GetAPIGenOperationContracts()
+	for operationID, contract := range contracts {
+		if len(contract.Tags) != 1 || !allowedTags[contract.Tags[0]] {
+			t.Errorf("Dashboard operation %q tags = %v", operationID, contract.Tags)
+		}
+		if _, exists := appContracts[operationID]; exists {
+			t.Errorf("Dashboard operation %q is still emitted by the application package", operationID)
+		}
+	}
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 132; got != want {
+		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
 
@@ -192,6 +671,9 @@ func TestAPIGenIRAssignsCapabilityNamespaces(t *testing.T) {
 			t.Errorf("endpoint %q has unmapped ownership tag %q", endpoint.OperationID, endpoint.Tags[0])
 			continue
 		}
+		if endpoint.OperationID == "listQueryEvents" {
+			want = "LeapViewAPI.Analytics"
+		}
 		if endpoint.Namespace != want {
 			t.Errorf("endpoint %q namespace = %q, want %q for tag %q", endpoint.OperationID, endpoint.Namespace, want, endpoint.Tags[0])
 		}
@@ -201,10 +683,12 @@ func TestAPIGenIRAssignsCapabilityNamespaces(t *testing.T) {
 		"LeapViewAPI":             {},
 		"LeapViewAPI.Access":      {},
 		"LeapViewAPI.Agent":       {},
+		"LeapViewAPI.Analytics":   {},
 		"LeapViewAPI.Dashboard":   {},
 		"LeapViewAPI.Deployment":  {},
 		"LeapViewAPI.ManagedData": {},
 		"LeapViewAPI.Project":     {},
+		"LeapViewAPI.Protocol":    {},
 		"LeapViewAPI.Refresh":     {},
 		"LeapViewAPI.Release":     {},
 		"LeapViewAPI.Workspace":   {},
@@ -384,7 +868,7 @@ func TestAPIGenOwnsUISignalContracts(t *testing.T) {
 }
 
 func TestAPIGenRoutesCoverHeadlessAPINotUITransports(t *testing.T) {
-	spec, err := apigenapi.GetEmbeddedOpenAPISpec()
+	spec, err := apiaggregate.GetEmbeddedOpenAPISpec()
 	if err != nil {
 		t.Fatalf("embedded openapi: %v", err)
 	}
@@ -465,8 +949,8 @@ func TestAPIGenRoutesCoverHeadlessAPINotUITransports(t *testing.T) {
 }
 
 func TestAPIGenOperationExtensions(t *testing.T) {
-	contracts := apigenapi.GetAPIGenOperationContracts()
-	toolContracts := apigenapi.GetAPIGenToolContracts()
+	contracts := apiaggregate.GetAPIGenOperationContracts()
+	toolContracts := apiaggregate.GetAPIGenToolContracts()
 	toolsByOperation := make(map[string]string, len(toolContracts))
 	for name, tool := range toolContracts {
 		toolsByOperation[tool.OperationID] = name
@@ -514,7 +998,7 @@ func TestAPIGenOperationExtensions(t *testing.T) {
 }
 
 func TestAPIGenUploadArtifactUsesNativeOctetStreamBody(t *testing.T) {
-	spec, err := apigenapi.GetEmbeddedOpenAPISpec()
+	spec, err := apiaggregate.GetEmbeddedOpenAPISpec()
 	if err != nil {
 		t.Fatalf("embedded openapi: %v", err)
 	}
@@ -573,7 +1057,7 @@ func TestAPIGenUploadArtifactUsesNativeOctetStreamBody(t *testing.T) {
 		if content.ContentType != "application/octet-stream" || content.BodyKind != "binary" {
 			t.Fatalf("upload IR content = %#v, want application/octet-stream binary", content)
 		}
-		var generatedBody apigenapi.GenUploadReleaseArtifactBody
+		var generatedBody releasegen.GenUploadReleaseArtifactBody
 		_ = []byte(generatedBody)
 		return
 	}
@@ -581,7 +1065,7 @@ func TestAPIGenUploadArtifactUsesNativeOctetStreamBody(t *testing.T) {
 }
 
 func TestAPIGenListOperationsUseStandardEnvelope(t *testing.T) {
-	spec, err := apigenapi.GetEmbeddedOpenAPISpec()
+	spec, err := apiaggregate.GetEmbeddedOpenAPISpec()
 	if err != nil {
 		t.Fatalf("embedded openapi: %v", err)
 	}

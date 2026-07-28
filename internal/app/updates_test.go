@@ -9,14 +9,26 @@ import (
 	"time"
 )
 
-func TestUpdatesLoginNoopStreamDoesNotRequireAuth(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+func TestUpdatesLoginBootstrapStreamsOnceWithoutAuthAndReturns(t *testing.T) {
+	server := newAppTestHarness(fakeMetrics{})
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=login", nil)
 	rec := httptest.NewRecorder()
+	returned := make(chan struct{})
 
-	newAppTestHarness(fakeMetrics{}).Routes().ServeHTTP(rec, req)
+	go func() {
+		defer close(returned)
+		server.Routes().ServeHTTP(rec, req)
+	}()
 
+	select {
+	case <-returned:
+	case <-time.After(time.Second):
+		cancel()
+		<-returned
+		t.Fatal("login bootstrap stream did not return after its initial patch")
+	}
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}

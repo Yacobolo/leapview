@@ -1,5 +1,6 @@
 using Http;
 using TypeSpec.OpenAPI;
+using LeapViewAPI.Protocol;
 
 namespace LeapViewAPI.Access;
 
@@ -289,7 +290,7 @@ op updatePrincipal(@path principal: string, @header("If-Match") ifMatch: string,
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
 @extension("x-leapview-object-scope", "grant-management")
 @operationId("deletePrincipal")
-op deletePrincipal(@path principal: string): NoContentResponse | CommonErrors;
+op deletePrincipal(@path principal: string): EmptyResponse | CommonErrors;
 
 alias ResetPrincipalPasswordOK = OkJson<LocalPasswordResetResponse>;
 
@@ -346,7 +347,7 @@ op updateServicePrincipal(@path servicePrincipal: string, @header("If-Match") if
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
 @operationId("deleteServicePrincipal")
-op deleteServicePrincipal(@path servicePrincipal: string): NoContentResponse | CommonErrors;
+op deleteServicePrincipal(@path servicePrincipal: string): EmptyResponse | CommonErrors;
 
 alias CreateServicePrincipalSecretCreated = CreatedJson<ServicePrincipalSecretCreatedResponse>;
 
@@ -380,7 +381,7 @@ op getServicePrincipalSecret(@path servicePrincipal: string, @path secret: strin
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_PLATFORM" })
 @operationId("revokeServicePrincipalSecret")
-op revokeServicePrincipalSecret(@path servicePrincipal: string, @path secret: string): NoContentResponse | CommonErrors;
+op revokeServicePrincipalSecret(@path servicePrincipal: string, @path secret: string): EmptyResponse | CommonErrors;
 
 alias ListGroupsOK = OkJson<GroupListResponse>;
 
@@ -408,7 +409,7 @@ op createGroup(@path workspace: string, @header("Idempotency-Key") idempotencyKe
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
 @operationId("deleteGroup")
-op deleteGroup(@path workspace: string, @path group: string): NoContentResponse | CommonErrors;
+op deleteGroup(@path workspace: string, @path group: string): EmptyResponse | CommonErrors;
 
 alias GetGroupOK = OkJson<GroupResponse>;
 
@@ -446,7 +447,7 @@ op listGroupMembers(@path workspace: string, @path group: string, @query limit?:
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
 @operationId("removeGroupMember")
-op removeGroupMember(@path workspace: string, @path group: string, @path principal: string): NoContentResponse | CommonErrors;
+op removeGroupMember(@path workspace: string, @path group: string, @path principal: string): EmptyResponse | CommonErrors;
 
 alias AddGroupMemberOK = OkJson<StatusResponse>;
 
@@ -492,7 +493,7 @@ op getRoleBinding(@path workspace: string, @path binding: string): OkJson<RoleBi
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
 @operationId("deleteRoleBinding")
-op deleteRoleBinding(@path workspace: string, @path binding: string): NoContentResponse | CommonErrors;
+op deleteRoleBinding(@path workspace: string, @path binding: string): EmptyResponse | CommonErrors;
 
 alias UpdateRoleBindingOK = OkJson<RoleBindingResponse>;
 
@@ -566,7 +567,7 @@ op updateGrant(@path workspace: string, @path grant: string, @header("If-Match")
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
 @operationId("deleteGrant")
-op deleteGrant(@path workspace: string, @path grant: string): NoContentResponse | CommonErrors;
+op deleteGrant(@path workspace: string, @path grant: string): EmptyResponse | CommonErrors;
 
 alias TransferOwnershipOK = OkJson<SecurableObjectResponse>;
 
@@ -620,7 +621,7 @@ op updateDataPolicy(@path workspace: string, @path policy: string, @header("If-M
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
 @operationId("deleteDataPolicy")
-op deleteDataPolicy(@path workspace: string, @path policy: string): NoContentResponse | CommonErrors;
+op deleteDataPolicy(@path workspace: string, @path policy: string): EmptyResponse | CommonErrors;
 
 @tag("Access")
 @summary("Check multiple authorization decisions")

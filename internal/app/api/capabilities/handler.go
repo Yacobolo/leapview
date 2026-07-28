@@ -2,24 +2,24 @@ package capabilities
 
 import (
 	"net/http"
-	"strings"
 
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	"github.com/Yacobolo/leapview/internal/platform/buildinfo"
 	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
 )
 
 type Config struct {
-	Environment  string
-	BuildVersion string
-	TUS          bool
-	S3Multipart  bool
+	Environment   string
+	BuildIdentity buildinfo.Identity
+	TUS           bool
+	S3Multipart   bool
 }
 
 func Write(w http.ResponseWriter, config Config) {
-	buildVersion := strings.TrimSpace(config.BuildVersion)
-	if buildVersion == "" {
-		buildVersion = "dev"
+	identity := config.BuildIdentity
+	if identity.Version == "" {
+		identity = buildinfo.Current()
 	}
 	uploadProtocols := []apigenapi.UploadProtocol{}
 	if config.TUS {
@@ -29,7 +29,9 @@ func Write(w http.ResponseWriter, config Config) {
 		uploadProtocols = append(uploadProtocols, apigenapi.UploadProtocolS3Multipart)
 	}
 	apitransport.WriteJSON(w, http.StatusOK, apigenapi.CapabilitiesResponse{
-		ApiVersion: "v1", BuildVersion: buildVersion,
+		ApiVersion: "v1", BuildVersion: identity.Version,
+		BuildRevision: identity.Revision, BuildTime: identity.BuildTime,
+		BuildDirty: identity.Dirty, BuildDevelopment: identity.Development,
 		Authentication: []apigenapi.AuthenticationMode{apigenapi.AuthenticationModeBearer},
 		Environment:    config.Environment,
 		QueryFormats: []apigenapi.QueryFormat{

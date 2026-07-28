@@ -7,8 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	apigen "github.com/Yacobolo/leapview/internal/app/api/gen"
+	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	cligen "github.com/Yacobolo/leapview/internal/app/cli/gen"
+	manageddatagen "github.com/Yacobolo/leapview/internal/manageddata/api/gen"
 )
 
 func TestManagedDataAPIContractIsProjectGlobalAndComplete(t *testing.T) {
@@ -176,7 +177,7 @@ func TestManagedDataAPIModelsAreBoundedAndBackendNeutral(t *testing.T) {
 
 func TestManagedDataAPIDoesNotGenerateHighLevelCLICommands(t *testing.T) {
 	managedOperationIDs := map[string]bool{}
-	for operationID := range apigen.GetAPIGenOperationContracts() {
+	for operationID := range manageddatagen.GetAPIGenOperationContracts() {
 		if strings.Contains(operationID, "ManagedData") {
 			managedOperationIDs[operationID] = true
 		}
@@ -193,7 +194,7 @@ func TestManagedDataAPIDoesNotGenerateHighLevelCLICommands(t *testing.T) {
 
 func managedDataOpenAPISpec(t *testing.T) map[string]any {
 	t.Helper()
-	spec, err := apigen.GetEmbeddedOpenAPISpec()
+	spec, err := apiaggregate.GetEmbeddedOpenAPISpec()
 	if err != nil {
 		t.Fatalf("embedded openapi: %v", err)
 	}

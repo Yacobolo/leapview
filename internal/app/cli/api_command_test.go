@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 )
 
 func TestAPICommandListsEveryGeneratedOperation(t *testing.T) {
@@ -22,7 +22,7 @@ func TestAPICommandListsEveryGeneratedOperation(t *testing.T) {
 		}
 	})
 
-	for operationID := range apigenapi.GetAPIGenOperationContracts() {
+	for operationID := range apiaggregate.GetAPIGenOperationContracts() {
 		if !strings.Contains(output, operationID) {
 			t.Fatalf("api list missing %s:\n%s", operationID, output)
 		}

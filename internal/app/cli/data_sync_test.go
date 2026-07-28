@@ -17,8 +17,8 @@ import (
 	"sync"
 	"testing"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	"github.com/Yacobolo/leapview/internal/manageddata"
+	manageddataapi "github.com/Yacobolo/leapview/internal/manageddata/api"
 	"github.com/Yacobolo/leapview/internal/manageddata/localplan"
 )
 
@@ -32,9 +32,9 @@ func TestDataSyncDeduplicatesAndUsesStableIdempotencyKey(t *testing.T) {
 			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
 		}
 		keys = append(keys, r.Header.Get("Idempotency-Key"))
-		writeUploadSession(t, w, plan, "upload-1", apigenapi.ManagedDataUploadSessionStatusCompleted, []apigenapi.ManagedDataFileUploadResponse{{
-			File: wireFile(t, file), Status: apigenapi.ManagedDataFileUploadStatusSkipped,
-			Negotiation: uploadNegotiation(apigenapi.ManagedDataUploadNegotiation{Protocol: apigenapi.ManagedDataUploadProtocolAlreadyPresent}),
+		writeUploadSession(t, w, plan, "upload-1", manageddataapi.ManagedDataUploadSessionStatusCompleted, []manageddataapi.ManagedDataFileUploadResponse{{
+			File: wireFile(t, file), Status: manageddataapi.ManagedDataFileUploadStatusSkipped,
+			Negotiation: uploadNegotiation(manageddataapi.ManagedDataUploadNegotiation{Protocol: manageddataapi.ManagedDataUploadProtocolAlreadyPresent}),
 		}})
 	}))
 	defer server.Close()
@@ -69,9 +69,9 @@ func TestDataSyncResumesTusFromHEADOffset(t *testing.T) {
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/upload-sessions"),
 			r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/upload-sessions/upload-1"):
-			writeUploadSession(t, w, plan, "upload-1", apigenapi.ManagedDataUploadSessionStatusOpen, []apigenapi.ManagedDataFileUploadResponse{{
-				File: wireFile(t, file), Status: apigenapi.ManagedDataFileUploadStatusUploading,
-				Negotiation: uploadNegotiation(apigenapi.ManagedDataUploadNegotiation{Protocol: apigenapi.ManagedDataUploadProtocolTus, Tus: &apigenapi.ManagedDataTusUploadNegotiation{Endpoint: "/tus", UploadId: "blob-1", Offset: 0, ExpiresAt: "2030-01-01T00:00:00Z"}}),
+			writeUploadSession(t, w, plan, "upload-1", manageddataapi.ManagedDataUploadSessionStatusOpen, []manageddataapi.ManagedDataFileUploadResponse{{
+				File: wireFile(t, file), Status: manageddataapi.ManagedDataFileUploadStatusUploading,
+				Negotiation: uploadNegotiation(manageddataapi.ManagedDataUploadNegotiation{Protocol: manageddataapi.ManagedDataUploadProtocolTus, Tus: &manageddataapi.ManagedDataTusUploadNegotiation{Endpoint: "/tus", UploadId: "blob-1", Offset: 0, ExpiresAt: "2030-01-01T00:00:00Z"}}),
 			}})
 		case r.URL.Path == "/tus/blob-1" && r.Method == http.MethodHead:
 			mu.Lock()
@@ -101,9 +101,9 @@ func TestDataSyncResumesTusFromHEADOffset(t *testing.T) {
 			w.Header().Set("Upload-Offset", strconv.FormatInt(current, 10))
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/finalize"):
-			writeUploadSession(t, w, plan, "upload-1", apigenapi.ManagedDataUploadSessionStatusCompleted, []apigenapi.ManagedDataFileUploadResponse{{
-				File: wireFile(t, file), Status: apigenapi.ManagedDataFileUploadStatusVerified,
-				Negotiation: uploadNegotiation(apigenapi.ManagedDataUploadNegotiation{Protocol: apigenapi.ManagedDataUploadProtocolAlreadyPresent}),
+			writeUploadSession(t, w, plan, "upload-1", manageddataapi.ManagedDataUploadSessionStatusCompleted, []manageddataapi.ManagedDataFileUploadResponse{{
+				File: wireFile(t, file), Status: manageddataapi.ManagedDataFileUploadStatusVerified,
+				Negotiation: uploadNegotiation(manageddataapi.ManagedDataUploadNegotiation{Protocol: manageddataapi.ManagedDataUploadProtocolAlreadyPresent}),
 			}})
 		default:
 			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
@@ -126,20 +126,20 @@ func TestDataSyncWaitsForAsynchronousFinalization(t *testing.T) {
 	plan := syncPlan(root, file)
 	getCalls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		files := []apigenapi.ManagedDataFileUploadResponse{{
-			File: wireFile(t, file), Status: apigenapi.ManagedDataFileUploadStatusSkipped,
-			Negotiation: uploadNegotiation(apigenapi.ManagedDataUploadNegotiation{Protocol: apigenapi.ManagedDataUploadProtocolAlreadyPresent}),
+		files := []manageddataapi.ManagedDataFileUploadResponse{{
+			File: wireFile(t, file), Status: manageddataapi.ManagedDataFileUploadStatusSkipped,
+			Negotiation: uploadNegotiation(manageddataapi.ManagedDataUploadNegotiation{Protocol: manageddataapi.ManagedDataUploadProtocolAlreadyPresent}),
 		}}
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/upload-sessions"):
-			writeUploadSession(t, w, plan, "upload-async", apigenapi.ManagedDataUploadSessionStatusOpen, files)
+			writeUploadSession(t, w, plan, "upload-async", manageddataapi.ManagedDataUploadSessionStatusOpen, files)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/finalize"):
-			writeUploadSession(t, w, plan, "upload-async", apigenapi.ManagedDataUploadSessionStatusFinalizing, files)
+			writeUploadSession(t, w, plan, "upload-async", manageddataapi.ManagedDataUploadSessionStatusFinalizing, files)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/upload-sessions/upload-async"):
 			getCalls++
-			status := apigenapi.ManagedDataUploadSessionStatusFinalizing
+			status := manageddataapi.ManagedDataUploadSessionStatusFinalizing
 			if getCalls == 2 {
-				status = apigenapi.ManagedDataUploadSessionStatusCompleted
+				status = manageddataapi.ManagedDataUploadSessionStatusCompleted
 			}
 			writeUploadSession(t, w, plan, "upload-async", status, files)
 		default:
@@ -167,18 +167,18 @@ func TestDataSyncReplacesAReplayedTerminalUploadSession(t *testing.T) {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/upload-sessions"):
 			createKeys = append(createKeys, r.Header.Get("Idempotency-Key"))
 			if len(createKeys) == 1 {
-				writeUploadSession(t, w, plan, "upload-stale", apigenapi.ManagedDataUploadSessionStatusOpen, []apigenapi.ManagedDataFileUploadResponse{{
-					File: wireFile(t, file), Status: apigenapi.ManagedDataFileUploadStatusUploading,
-					Negotiation: uploadNegotiation(apigenapi.ManagedDataUploadNegotiation{Protocol: apigenapi.ManagedDataUploadProtocolTus, Tus: &apigenapi.ManagedDataTusUploadNegotiation{Endpoint: "/tus", UploadId: "missing", ExpiresAt: "2030-01-01T00:00:00Z"}}),
+				writeUploadSession(t, w, plan, "upload-stale", manageddataapi.ManagedDataUploadSessionStatusOpen, []manageddataapi.ManagedDataFileUploadResponse{{
+					File: wireFile(t, file), Status: manageddataapi.ManagedDataFileUploadStatusUploading,
+					Negotiation: uploadNegotiation(manageddataapi.ManagedDataUploadNegotiation{Protocol: manageddataapi.ManagedDataUploadProtocolTus, Tus: &manageddataapi.ManagedDataTusUploadNegotiation{Endpoint: "/tus", UploadId: "missing", ExpiresAt: "2030-01-01T00:00:00Z"}}),
 				}})
 				return
 			}
-			writeUploadSession(t, w, plan, "upload-replacement", apigenapi.ManagedDataUploadSessionStatusCompleted, []apigenapi.ManagedDataFileUploadResponse{{
-				File: wireFile(t, file), Status: apigenapi.ManagedDataFileUploadStatusSkipped,
+			writeUploadSession(t, w, plan, "upload-replacement", manageddataapi.ManagedDataUploadSessionStatusCompleted, []manageddataapi.ManagedDataFileUploadResponse{{
+				File: wireFile(t, file), Status: manageddataapi.ManagedDataFileUploadStatusSkipped,
 			}})
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/upload-sessions/upload-stale"):
-			writeUploadSession(t, w, plan, "upload-stale", apigenapi.ManagedDataUploadSessionStatusCancelled, []apigenapi.ManagedDataFileUploadResponse{{
-				File: wireFile(t, file), Status: apigenapi.ManagedDataFileUploadStatusSkipped,
+			writeUploadSession(t, w, plan, "upload-stale", manageddataapi.ManagedDataUploadSessionStatusCancelled, []manageddataapi.ManagedDataFileUploadResponse{{
+				File: wireFile(t, file), Status: manageddataapi.ManagedDataFileUploadStatusSkipped,
 			}})
 		default:
 			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
@@ -217,7 +217,7 @@ func TestDataSyncRetriesTusCapacityFailureAndReportsHTTPStatus(t *testing.T) {
 	defer server.Close()
 
 	client := newManagedDataCLIClient(server.Client(), server.URL, "secret-token")
-	err := uploadManagedDataTus(context.Background(), client, root, file, apigenapi.ManagedDataTusUploadNegotiation{
+	err := uploadManagedDataTus(context.Background(), client, root, file, manageddataapi.ManagedDataTusUploadNegotiation{
 		Endpoint: "/tus", UploadId: "blob-1", ExpiresAt: "2030-01-01T00:00:00Z",
 	})
 	if err == nil || !strings.Contains(err.Error(), `tus upload failed for "orders.csv" with HTTP 507`) {
@@ -233,8 +233,8 @@ func TestDataSyncRetriesTusCapacityFailureAndReportsHTTPStatus(t *testing.T) {
 
 func TestDataSyncRejectsMissingUploadInstructionsWithoutPanicking(t *testing.T) {
 	file := manageddata.File{Path: "orders.csv", Size: 3, SHA256: strings.Repeat("a", 64)}
-	err := transferManagedDataFile(context.Background(), nil, dataSyncRequest{}, "upload-1", file, apigenapi.ManagedDataFileUploadResponse{
-		File: wireFile(t, file), Status: apigenapi.ManagedDataFileUploadStatusPending,
+	err := transferManagedDataFile(context.Background(), nil, dataSyncRequest{}, "upload-1", file, manageddataapi.ManagedDataFileUploadResponse{
+		File: wireFile(t, file), Status: manageddataapi.ManagedDataFileUploadStatusPending,
 	})
 	if err == nil || !strings.Contains(err.Error(), "upload instructions are unavailable") {
 		t.Fatalf("missing negotiation error = %v", err)
@@ -248,7 +248,7 @@ func TestDataSyncUploadsDeterministicS3PartsWithoutBearerToken(t *testing.T) {
 	plan := syncPlan(root, file)
 	var uploaded [][]byte
 	var signedSizes []int64
-	var completed apigenapi.ManagedDataS3MultipartCompleteRequest
+	var completed manageddataapi.ManagedDataS3MultipartCompleteRequest
 	var mutationKeys []string
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -258,19 +258,19 @@ func TestDataSyncUploadsDeterministicS3PartsWithoutBearerToken(t *testing.T) {
 			if r.Method == http.MethodPost {
 				mutationKeys = append(mutationKeys, r.Header.Get("Idempotency-Key"))
 			}
-			writeUploadSession(t, w, plan, "upload-1", apigenapi.ManagedDataUploadSessionStatusOpen, []apigenapi.ManagedDataFileUploadResponse{{
-				File: wireFile(t, file), Status: apigenapi.ManagedDataFileUploadStatusPending,
-				Negotiation: uploadNegotiation(apigenapi.ManagedDataUploadNegotiation{Protocol: apigenapi.ManagedDataUploadProtocolS3Multipart, S3Multipart: &apigenapi.ManagedDataS3MultipartNegotiation{CreateEndpoint: "/unused", MinimumPartSize: 4, MaximumPartSize: 6, MaximumParts: 3}}),
+			writeUploadSession(t, w, plan, "upload-1", manageddataapi.ManagedDataUploadSessionStatusOpen, []manageddataapi.ManagedDataFileUploadResponse{{
+				File: wireFile(t, file), Status: manageddataapi.ManagedDataFileUploadStatusPending,
+				Negotiation: uploadNegotiation(manageddataapi.ManagedDataUploadNegotiation{Protocol: manageddataapi.ManagedDataUploadProtocolS3Multipart, S3Multipart: &manageddataapi.ManagedDataS3MultipartNegotiation{CreateEndpoint: "/unused", MinimumPartSize: 4, MaximumPartSize: 6, MaximumParts: 3}}),
 			}})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/s3-multipart-uploads"):
 			mutationKeys = append(mutationKeys, r.Header.Get("Idempotency-Key"))
-			writeJSONTest(t, w, http.StatusCreated, apigenapi.ManagedDataS3MultipartUploadResponse{Id: "multipart-1", UploadSessionId: "upload-1", File: wireFile(t, file), Status: apigenapi.ManagedDataS3MultipartStatusOpen, CreatedAt: "2026-01-01T00:00:00Z"})
+			writeJSONTest(t, w, http.StatusCreated, manageddataapi.ManagedDataS3MultipartUploadResponse{Id: "multipart-1", UploadSessionId: "upload-1", File: wireFile(t, file), Status: manageddataapi.ManagedDataS3MultipartStatusOpen, CreatedAt: "2026-01-01T00:00:00Z"})
 		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/parts/") && strings.HasSuffix(r.URL.Path, "/sign"):
-			var request apigenapi.ManagedDataS3MultipartSignPartRequest
+			var request manageddataapi.ManagedDataS3MultipartSignPartRequest
 			decodeJSONTest(t, r, &request)
 			signedSizes = append(signedSizes, request.Size)
 			partNumber, _ := strconv.Atoi(strings.Split(r.URL.Path, "/")[len(strings.Split(r.URL.Path, "/"))-2])
-			writeJSONTest(t, w, http.StatusOK, apigenapi.ManagedDataS3MultipartSignedPartResponse{PartNumber: int32(partNumber), Url: fmt.Sprintf("%s/signed/%d?signature=must-not-leak", server.URL, partNumber), Headers: []apigenapi.ManagedDataHTTPHeader{{Name: "x-test", Value: "signed"}}, ExpiresAt: "2030-01-01T00:00:00Z"})
+			writeJSONTest(t, w, http.StatusOK, manageddataapi.ManagedDataS3MultipartSignedPartResponse{PartNumber: int32(partNumber), Url: fmt.Sprintf("%s/signed/%d?signature=must-not-leak", server.URL, partNumber), Headers: []manageddataapi.ManagedDataHTTPHeader{{Name: "x-test", Value: "signed"}}, ExpiresAt: "2030-01-01T00:00:00Z"})
 		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/signed/"):
 			if got := r.Header.Get("Authorization"); got != "" {
 				t.Fatalf("signed PUT received Authorization = %q", got)
@@ -285,10 +285,10 @@ func TestDataSyncUploadsDeterministicS3PartsWithoutBearerToken(t *testing.T) {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/complete"):
 			mutationKeys = append(mutationKeys, r.Header.Get("Idempotency-Key"))
 			decodeJSONTest(t, r, &completed)
-			writeJSONTest(t, w, http.StatusOK, apigenapi.ManagedDataS3MultipartUploadResponse{Id: "multipart-1", UploadSessionId: "upload-1", File: wireFile(t, file), Status: apigenapi.ManagedDataS3MultipartStatusCompleted, CreatedAt: "2026-01-01T00:00:00Z"})
+			writeJSONTest(t, w, http.StatusOK, manageddataapi.ManagedDataS3MultipartUploadResponse{Id: "multipart-1", UploadSessionId: "upload-1", File: wireFile(t, file), Status: manageddataapi.ManagedDataS3MultipartStatusCompleted, CreatedAt: "2026-01-01T00:00:00Z"})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/finalize"):
 			mutationKeys = append(mutationKeys, r.Header.Get("Idempotency-Key"))
-			writeUploadSession(t, w, plan, "upload-1", apigenapi.ManagedDataUploadSessionStatusCompleted, []apigenapi.ManagedDataFileUploadResponse{{File: wireFile(t, file), Status: apigenapi.ManagedDataFileUploadStatusVerified, Negotiation: uploadNegotiation(apigenapi.ManagedDataUploadNegotiation{Protocol: apigenapi.ManagedDataUploadProtocolAlreadyPresent})}})
+			writeUploadSession(t, w, plan, "upload-1", manageddataapi.ManagedDataUploadSessionStatusCompleted, []manageddataapi.ManagedDataFileUploadResponse{{File: wireFile(t, file), Status: manageddataapi.ManagedDataFileUploadStatusVerified, Negotiation: uploadNegotiation(manageddataapi.ManagedDataUploadNegotiation{Protocol: manageddataapi.ManagedDataUploadProtocolAlreadyPresent})}})
 		default:
 			t.Fatalf("request = %s %s", r.Method, r.URL.String())
 		}
@@ -330,10 +330,10 @@ func TestDataSyncDetectsMutationAndSanitizesSignedURL(t *testing.T) {
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/upload-sessions"),
 			r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/upload-sessions/upload-1"):
-			writeUploadSession(t, w, plan, "upload-1", apigenapi.ManagedDataUploadSessionStatusOpen, []apigenapi.ManagedDataFileUploadResponse{{File: wireFile(t, file), Status: apigenapi.ManagedDataFileUploadStatusPending, Negotiation: uploadNegotiation(apigenapi.ManagedDataUploadNegotiation{Protocol: apigenapi.ManagedDataUploadProtocolS3Multipart, S3Multipart: &apigenapi.ManagedDataS3MultipartNegotiation{MinimumPartSize: 4, MaximumPartSize: 6, MaximumParts: 3}})}})
+			writeUploadSession(t, w, plan, "upload-1", manageddataapi.ManagedDataUploadSessionStatusOpen, []manageddataapi.ManagedDataFileUploadResponse{{File: wireFile(t, file), Status: manageddataapi.ManagedDataFileUploadStatusPending, Negotiation: uploadNegotiation(manageddataapi.ManagedDataUploadNegotiation{Protocol: manageddataapi.ManagedDataUploadProtocolS3Multipart, S3Multipart: &manageddataapi.ManagedDataS3MultipartNegotiation{MinimumPartSize: 4, MaximumPartSize: 6, MaximumParts: 3}})}})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/cancel"):
 			aborted = true
-			writeUploadSession(t, w, plan, "upload-1", apigenapi.ManagedDataUploadSessionStatusCancelled, nil)
+			writeUploadSession(t, w, plan, "upload-1", manageddataapi.ManagedDataUploadSessionStatusCancelled, nil)
 		default:
 			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
 		}
@@ -361,7 +361,7 @@ func TestSignedPartFailureDoesNotExposeSignedURL(t *testing.T) {
 	defer server.Close()
 
 	signedURL := server.URL + "/part?signature=must-not-leak"
-	_, err := putSignedPart(context.Background(), server.Client(), apigenapi.ManagedDataS3MultipartSignedPartResponse{PartNumber: 1, Url: signedURL}, root, file, 0, file.Size, file.SHA256)
+	_, err := putSignedPart(context.Background(), server.Client(), manageddataapi.ManagedDataS3MultipartSignedPartResponse{PartNumber: 1, Url: signedURL}, root, file, 0, file.Size, file.SHA256)
 	if err == nil {
 		t.Fatal("putSignedPart() error = nil")
 	}
@@ -374,7 +374,7 @@ func syncPlan(root string, file manageddata.File) localplan.Result {
 	return localplan.Result{Connection: "orders", Root: root, Manifest: manageddata.Manifest{Files: []manageddata.File{file}}}
 }
 
-func uploadNegotiation(value apigenapi.ManagedDataUploadNegotiation) *apigenapi.ManagedDataUploadNegotiation {
+func uploadNegotiation(value manageddataapi.ManagedDataUploadNegotiation) *manageddataapi.ManagedDataUploadNegotiation {
 	return &value
 }
 
@@ -387,20 +387,20 @@ func writeSyncFile(t *testing.T, root, name string, body []byte) manageddata.Fil
 	return manageddata.File{Path: name, Size: int64(len(body)), SHA256: hex.EncodeToString(sum[:])}
 }
 
-func wireFile(t *testing.T, file manageddata.File) apigenapi.ManagedDataFileMetadata {
+func wireFile(t *testing.T, file manageddata.File) manageddataapi.ManagedDataFileMetadata {
 	t.Helper()
-	return apigenapi.ManagedDataFileMetadata{Path: file.Path, Size: file.Size, Sha256: file.SHA256}
+	return manageddataapi.ManagedDataFileMetadata{Path: file.Path, Size: file.Size, Sha256: file.SHA256}
 }
 
-func writeUploadSession(t *testing.T, w http.ResponseWriter, plan localplan.Result, id string, status apigenapi.ManagedDataUploadSessionStatus, files []apigenapi.ManagedDataFileUploadResponse) {
+func writeUploadSession(t *testing.T, w http.ResponseWriter, plan localplan.Result, id string, status manageddataapi.ManagedDataUploadSessionStatus, files []manageddataapi.ManagedDataFileUploadResponse) {
 	t.Helper()
-	wFiles := make([]apigenapi.ManagedDataFileMetadata, len(plan.Manifest.Files))
+	wFiles := make([]manageddataapi.ManagedDataFileMetadata, len(plan.Manifest.Files))
 	for i, file := range plan.Manifest.Files {
 		wFiles[i] = wireFile(t, file)
 	}
-	writeJSONTest(t, w, map[apigenapi.ManagedDataUploadSessionStatus]int{apigenapi.ManagedDataUploadSessionStatusOpen: http.StatusCreated}[status], apigenapi.ManagedDataUploadSessionResponse{
+	writeJSONTest(t, w, map[manageddataapi.ManagedDataUploadSessionStatus]int{manageddataapi.ManagedDataUploadSessionStatusOpen: http.StatusCreated}[status], manageddataapi.ManagedDataUploadSessionResponse{
 		Id: id, Project: "demo", Connection: "orders", RevisionId: plan.Manifest.RevisionID(), Status: status,
-		Manifest: apigenapi.ManagedDataManifest{Files: wFiles}, Files: files, CreatedAt: "2026-01-01T00:00:00Z", ExpiresAt: "2030-01-01T00:00:00Z",
+		Manifest: manageddataapi.ManagedDataManifest{Files: wFiles}, Files: files, CreatedAt: "2026-01-01T00:00:00Z", ExpiresAt: "2030-01-01T00:00:00Z",
 	})
 }
 

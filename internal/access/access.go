@@ -543,6 +543,8 @@ type APITokenInput struct {
 	ExpiresAt   time.Time
 }
 
+const APITokenNameInitialPublisher = "initial-publisher"
+
 type APIToken struct {
 	ID          string
 	PrincipalID string

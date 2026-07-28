@@ -1011,6 +1011,40 @@ func TestLocalPasswordMustChangeBlocksProtectedRoutesUntilChanged(t *testing.T) 
 		t.Fatalf("must-change status = %d, want 403 body=%s", rec.Code, rec.Body.String())
 	}
 
+	initialPublisherSecret, _, err := repo.CreateAPITokenWithMetadata(ctx, access.APITokenInput{
+		PrincipalID: created.Principal.ID,
+		Name:        access.APITokenNameInitialPublisher,
+		Privileges:  []access.Privilege{access.PrivilegeViewItem},
+		ExpiresAt:   time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("create initial publisher token: %v", err)
+	}
+	publisherReq := httptest.NewRequest(http.MethodGet, "/api/v1/instance", nil)
+	publisherReq.Header.Set("Authorization", "Bearer "+initialPublisherSecret)
+	publisherRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(publisherRec, publisherReq)
+	if publisherRec.Code != http.StatusOK {
+		t.Fatalf("initial publisher with must-change administrator status = %d, want 200 body=%s", publisherRec.Code, publisherRec.Body.String())
+	}
+
+	regularSecret, _, err := repo.CreateAPITokenWithMetadata(ctx, access.APITokenInput{
+		PrincipalID: created.Principal.ID,
+		Name:        "regular-token",
+		Privileges:  []access.Privilege{access.PrivilegeViewItem},
+		ExpiresAt:   time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("create regular token: %v", err)
+	}
+	regularReq := httptest.NewRequest(http.MethodGet, "/api/v1/instance", nil)
+	regularReq.Header.Set("Authorization", "Bearer "+regularSecret)
+	regularRec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(regularRec, regularReq)
+	if regularRec.Code != http.StatusForbidden {
+		t.Fatalf("regular token with must-change administrator status = %d, want 403 body=%s", regularRec.Code, regularRec.Body.String())
+	}
+
 	passwordReq := httptest.NewRequest(http.MethodPost, "/auth/local/password", strings.NewReader(url.Values{
 		"currentPassword": {created.Password},
 		"newPassword":     {"changed-password"},

@@ -22,13 +22,14 @@ import (
 )
 
 const (
-	planetURL           = "https://build.protomaps.com/20260720.pmtiles"
-	archiveDigest       = visualizationmapasset.ArchiveSHA256
-	globalArchiveDigest = "2d97ee8907670936ab722da7ca06eafec0734392f73fa1cd337d4debd85d676f"
-	regionalBounds      = "-82,-56,-30,14"
-	regionalMinimumZoom = "7"
-	regionalMaximumZoom = "10"
-	basemapAssetsSHA    = visualizationmapasset.BasemapAssetsRevision
+	planetURL              = "https://build.protomaps.com/20260720.pmtiles"
+	archiveDigest          = visualizationmapasset.ArchiveSHA256
+	globalArchiveDigest    = "2d97ee8907670936ab722da7ca06eafec0734392f73fa1cd337d4debd85d676f"
+	regionalBounds         = "-82,-56,-30,14"
+	regionalMinimumZoom    = "7"
+	regionalMaximumZoom    = "10"
+	archiveDownloadThreads = "2"
+	basemapAssetsSHA       = visualizationmapasset.BasemapAssetsRevision
 )
 
 var glyphRanges = []string{
@@ -45,6 +46,7 @@ var glyphRanges = []string{
 
 func main() {
 	out := flag.String("out", ".data/map-assets", "map asset root directory")
+	seedArchive := flag.String("seed-archive", "", "verified pinned archive to reuse instead of extracting it")
 	publishBucket := flag.String("publish-s3-bucket", "", "publish verified assets to this S3 bucket")
 	publishPrefix := flag.String("publish-s3-prefix", "map-assets", "S3 key prefix used for published assets")
 	publishRegion := flag.String("publish-s3-region", "", "AWS region override for map asset publication")
@@ -53,6 +55,12 @@ func main() {
 	verifyBaseURL := flag.String("verify-base-url", "", "verify the installed package through this same-origin HTTP(S) endpoint")
 	flag.Parse()
 	ctx := context.Background()
+	if strings.TrimSpace(*seedArchive) != "" {
+		if err := installSeedArchive(*seedArchive, *out); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
 	if err := install(ctx, *out); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -74,6 +82,32 @@ func main() {
 		}
 		fmt.Printf("verified map asset delivery: files=%d full=%d ranges=%d bytes=%d\n", summary.Files, summary.FullResponses, summary.RangeResponses, summary.Bytes)
 	}
+}
+
+func installSeedArchive(source, out string) error {
+	if err := verifyFile(source, archiveDigest); err != nil {
+		return fmt.Errorf("verify seed map archive: %w", err)
+	}
+	asset, err := visualizationmapasset.Resolve("streets")
+	if err != nil {
+		return err
+	}
+	target, err := assetTarget(out, asset.ArchiveURL)
+	if err != nil {
+		return err
+	}
+	temporary := target + ".seed.partial"
+	if err := os.Remove(temporary); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	defer os.Remove(temporary)
+	if err := copyFile(source, temporary); err != nil {
+		return fmt.Errorf("copy seed map archive: %w", err)
+	}
+	if err := os.Rename(temporary, target); err != nil {
+		return err
+	}
+	return nil
 }
 
 func publishS3(ctx context.Context, root, bucket, prefix, region, endpoint string, pathStyle bool) (visualizationmapasset.PublicationSummary, error) {
@@ -177,7 +211,7 @@ func ensureArchive(ctx context.Context, target, legacy string) error {
 	global := filepath.Join(build, "global-z0-z6.pmtiles")
 	installedGlobal := filepath.Join(filepath.Dir(filepath.Dir(target)), globalArchiveDigest, "basemap.pmtiles")
 	if err := reuseVerifiedArchive(installedGlobal, legacy, globalArchiveDigest, global); err != nil {
-		if err := runPMTiles(ctx, "extract", planetURL, global, "--maxzoom=6", "--download-threads=8", "--quiet"); err != nil {
+		if err := runPMTiles(ctx, "extract", planetURL, global, "--maxzoom=6", "--download-threads="+archiveDownloadThreads); err != nil {
 			return fmt.Errorf("extract pinned global PMTiles: %w", err)
 		}
 		if err := verifyFile(global, globalArchiveDigest); err != nil {
@@ -185,7 +219,7 @@ func ensureArchive(ctx context.Context, target, legacy string) error {
 		}
 	}
 	regional := filepath.Join(build, "south-america-z7-z10.pmtiles")
-	if err := runPMTiles(ctx, "extract", planetURL, regional, "--bbox="+regionalBounds, "--minzoom="+regionalMinimumZoom, "--maxzoom="+regionalMaximumZoom, "--download-threads=8", "--quiet"); err != nil {
+	if err := runPMTiles(ctx, "extract", planetURL, regional, "--bbox="+regionalBounds, "--minzoom="+regionalMinimumZoom, "--maxzoom="+regionalMaximumZoom, "--download-threads="+archiveDownloadThreads); err != nil {
 		return fmt.Errorf("extract pinned regional PMTiles: %w", err)
 	}
 	temporary := target + ".partial"

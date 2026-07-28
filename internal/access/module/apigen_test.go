@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 )
 
 func testAPIGenAuthorizer(t *testing.T) *APIGenAuthorizer {
@@ -21,7 +21,7 @@ func testAPIGenAuthorizer(t *testing.T) *APIGenAuthorizer {
 }
 
 func testAPIGenContracts() map[string]APIGenOperationContract {
-	generated := apigenapi.GetAPIGenOperationContracts()
+	generated := apiaggregate.GetAPIGenOperationContracts()
 	contracts := make(map[string]APIGenOperationContract, len(generated))
 	for operationID, contract := range generated {
 		contracts[operationID] = APIGenOperationContract{

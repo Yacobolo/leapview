@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"github.com/Yacobolo/leapview/internal/agent"
+	agenthttp "github.com/Yacobolo/leapview/internal/agent/http"
+	"github.com/Yacobolo/leapview/internal/agent/ui"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 )
 
@@ -14,6 +16,7 @@ const RunJobKind = "agent.run"
 type RunJob struct {
 	Scope                            agent.Scope
 	Conversation, Run, CorrelationID string
+	ChatClientID                     string
 }
 
 func (m *Module) JobHandlers(events jobs.EventAppender) []jobs.Handler {
@@ -29,7 +32,21 @@ func (m *Module) JobHandlers(events jobs.EventAppender) []jobs.Handler {
 		if err != nil {
 			return err
 		}
-		_, err = started.Complete(ctx, nil)
+		if payload.ChatClientID == "" {
+			_, err = started.Complete(ctx, nil)
+		} else {
+			_, err = m.executeStartedChatTurn(ctx, m.service, payload.Scope, started, agenthttp.ChatTurnExecution{
+				EmitInitialRunning: true,
+				GenerateTitle:      true,
+				ClientID:           payload.ChatClientID,
+				Emit: func(signal ui.ChatViewState) error {
+					if m.broker != nil {
+						m.broker.Publish(ChatStreamID(payload.Scope, payload.ChatClientID), chatSignalPatch(signal))
+					}
+					return nil
+				},
+			})
+		}
 		event := "agent_run.completed"
 		if err != nil {
 			event = "agent_run.failed"

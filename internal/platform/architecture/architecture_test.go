@@ -55,6 +55,128 @@ func TestArchitectureOwnershipUsesRootTaxonomy(t *testing.T) {
 	}
 }
 
+func TestAgentGeneratedAPIIsCapabilityOwned(t *testing.T) {
+	rule, ok := ClassifyPackage("internal/agent/api/gen")
+	if !ok {
+		t.Fatal("Agent generated API package is not classified")
+	}
+	if rule.Capability != "agent" || rule.Layer != LayerAdapter {
+		t.Fatalf("Agent generated API classification = %#v, want agent adapter", rule)
+	}
+	aggregate, ok := ClassifyPackage("internal/app/api/aggregate")
+	if !ok || aggregate.Capability != "composition" || aggregate.Layer != LayerAdapter {
+		t.Fatalf("application API aggregate classification = %#v, want composition adapter", aggregate)
+	}
+}
+
+func TestAccessGeneratedAPIIsCapabilityOwned(t *testing.T) {
+	rule, ok := ClassifyPackage("internal/access/api/gen")
+	if !ok {
+		t.Fatal("Access generated API package is not classified")
+	}
+	if rule.Capability != "access" || rule.Layer != LayerAdapter {
+		t.Fatalf("Access generated API classification = %#v, want access adapter", rule)
+	}
+}
+
+func TestAnalyticsGeneratedAPIIsCapabilityOwned(t *testing.T) {
+	rule, ok := ClassifyPackage("internal/analytics/api/gen")
+	if !ok {
+		t.Fatal("Analytics generated API package is not classified")
+	}
+	if rule.Capability != "analytics" || rule.Layer != LayerAdapter {
+		t.Fatalf("Analytics generated API classification = %#v, want analytics adapter", rule)
+	}
+}
+
+func TestProjectGeneratedAPIIsCapabilityOwned(t *testing.T) {
+	rule, ok := ClassifyPackage("internal/project/api/gen")
+	if !ok {
+		t.Fatal("Project generated API package is not classified")
+	}
+	if rule.Capability != "project" || rule.Layer != LayerAdapter {
+		t.Fatalf("Project generated API classification = %#v, want project adapter", rule)
+	}
+}
+
+func TestProjectTransportContractsAreCapabilityOwned(t *testing.T) {
+	root := repoRoot(t)
+	projectContracts, err := os.ReadFile(filepath.Join(root, "internal", "project", "api", "contracts.go"))
+	if err != nil {
+		t.Fatalf("read Project API contracts: %v", err)
+	}
+	if !strings.Contains(string(projectContracts), "type ProjectResponse struct") {
+		t.Fatal("Project capability does not own its handwritten response contract")
+	}
+	releaseContracts, err := os.ReadFile(filepath.Join(root, "internal", "release", "api", "contracts.go"))
+	if err != nil {
+		t.Fatalf("read Release API contracts: %v", err)
+	}
+	if strings.Contains(string(releaseContracts), "type ProjectResponse struct") {
+		t.Fatal("Release capability still owns the Project response contract")
+	}
+}
+
+func TestRefreshGeneratedAPIIsCapabilityOwned(t *testing.T) {
+	rule, ok := ClassifyPackage("internal/refresh/api/gen")
+	if !ok {
+		t.Fatal("Refresh generated API package is not classified")
+	}
+	if rule.Capability != "refresh" || rule.Layer != LayerAdapter {
+		t.Fatalf("Refresh generated API classification = %#v, want refresh adapter", rule)
+	}
+}
+
+func TestDeploymentGeneratedAPIIsCapabilityOwned(t *testing.T) {
+	rule, ok := ClassifyPackage("internal/deployment/api/gen")
+	if !ok {
+		t.Fatal("Deployment generated API package is not classified")
+	}
+	if rule.Capability != "deployment" || rule.Layer != LayerAdapter {
+		t.Fatalf("Deployment generated API classification = %#v, want deployment adapter", rule)
+	}
+}
+
+func TestReleaseGeneratedAPIIsCapabilityOwned(t *testing.T) {
+	rule, ok := ClassifyPackage("internal/release/api/gen")
+	if !ok {
+		t.Fatal("Release generated API package is not classified")
+	}
+	if rule.Capability != "release" || rule.Layer != LayerAdapter {
+		t.Fatalf("Release generated API classification = %#v, want release adapter", rule)
+	}
+}
+
+func TestWorkspaceGeneratedAPIIsCapabilityOwned(t *testing.T) {
+	rule, ok := ClassifyPackage("internal/workspace/api/gen")
+	if !ok {
+		t.Fatal("Workspace generated API package is not classified")
+	}
+	if rule.Capability != "workspace" || rule.Layer != LayerAdapter {
+		t.Fatalf("Workspace generated API classification = %#v, want workspace adapter", rule)
+	}
+}
+
+func TestManagedDataGeneratedAPIIsCapabilityOwned(t *testing.T) {
+	rule, ok := ClassifyPackage("internal/manageddata/api/gen")
+	if !ok {
+		t.Fatal("ManagedData generated API package is not classified")
+	}
+	if rule.Capability != "manageddata" || rule.Layer != LayerAdapter {
+		t.Fatalf("ManagedData generated API classification = %#v, want manageddata adapter", rule)
+	}
+}
+
+func TestDashboardGeneratedAPIIsCapabilityOwned(t *testing.T) {
+	rule, ok := ClassifyPackage("internal/dashboard/api/gen")
+	if !ok {
+		t.Fatal("Dashboard generated API package is not classified")
+	}
+	if rule.Capability != "dashboard" || rule.Layer != LayerAdapter {
+		t.Fatalf("Dashboard generated API classification = %#v, want dashboard adapter", rule)
+	}
+}
+
 func TestApplicationOwnsProductConfigurationContract(t *testing.T) {
 	root := repoRoot(t)
 	if !packageDirExists(root, "internal/app/config/spec") {
@@ -236,8 +358,8 @@ func TestCapabilityModulesDoNotExposeRepositories(t *testing.T) {
 	}
 }
 
-func TestApplicationAPIGenHandlerIsDirectDelegation(t *testing.T) {
-	found := false
+func TestApplicationAPIGenRoutesUseGeneratedAggregate(t *testing.T) {
+	foundAggregateRegistration := false
 	for _, file := range productionGoFiles(t) {
 		if file.pkgDir != "internal/app" {
 			continue
@@ -252,38 +374,15 @@ func TestApplicationAPIGenHandlerIsDirectDelegation(t *testing.T) {
 				t.Errorf("%s retains APIGen authorization behavior %q; access owns authorization", file.path, forbidden)
 			}
 		}
-		parsed, err := parser.ParseFile(token.NewFileSet(), file.path, file.body, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v", file.path, err)
+		if strings.Contains(file.body, "apiaggregate.RegisterAPIGenRoutes(r, platform.apiGenServers)") {
+			foundAggregateRegistration = true
 		}
-		for _, declaration := range parsed.Decls {
-			function, ok := declaration.(*ast.FuncDecl)
-			if !ok || function.Name.Name != "HandleAPIGen" {
-				continue
-			}
-			found = true
-			if function.Body == nil || len(function.Body.List) != 1 {
-				t.Errorf("%s HandleAPIGen must contain one direct delegation", file.path)
-				continue
-			}
-			statement, ok := function.Body.List[0].(*ast.ExprStmt)
-			if !ok {
-				t.Errorf("%s HandleAPIGen contains non-delegation logic", file.path)
-				continue
-			}
-			call, ok := statement.X.(*ast.CallExpr)
-			if !ok {
-				t.Errorf("%s HandleAPIGen is not a direct call", file.path)
-				continue
-			}
-			selector, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || selector.Sel.Name != "HandleAPIGen" {
-				t.Errorf("%s HandleAPIGen does not delegate to an owned handler", file.path)
-			}
+		if strings.Contains(file.body, "type apiGenRouteHandler") {
+			t.Errorf("%s retains the handwritten global APIGen route wrapper", file.path)
 		}
 	}
-	if !found {
-		t.Fatal("internal/app APIGen delegation method is missing")
+	if !foundAggregateRegistration {
+		t.Fatal("internal/app does not register the generated APIGen aggregate")
 	}
 }
 
@@ -624,6 +723,11 @@ func TestCapabilityModulesRequireDeclaredPublicContractEdges(t *testing.T) {
 }
 
 func TestApplicationImportsProductCapabilitiesOnlyThroughModules(t *testing.T) {
+	// Project is intentionally compile-time-first and has no synthetic runtime
+	// module. Its generated HTTP adapter is therefore a valid composition edge.
+	compositionAdapters := map[string]bool{
+		"internal/project/http": true,
+	}
 	for _, file := range productionGoFiles(t) {
 		if file.pkgDir != "internal/app" {
 			continue
@@ -637,7 +741,7 @@ func TestApplicationImportsProductCapabilitiesOnlyThroughModules(t *testing.T) {
 			if !ok || target.Capability == "platform" || target.Capability == "composition" {
 				continue
 			}
-			if target.Layer != LayerModule {
+			if target.Layer != LayerModule && !compositionAdapters[packagePath] {
 				t.Errorf("%s imports product package %s instead of its module surface", file.path, packagePath)
 			}
 		}
@@ -1288,7 +1392,19 @@ func TestProductionContainerContractExists(t *testing.T) {
 		"bun scripts/generate_vega_lite_validator.ts",
 		"bun run build",
 		"FROM golang:1.25-bookworm@sha256:",
+		"COPY --from=sourcegen /src/internal/access/api/gen ./internal/access/api/gen",
+		"COPY --from=sourcegen /src/internal/agent/api/gen ./internal/agent/api/gen",
+		"COPY --from=sourcegen /src/internal/analytics/api/gen ./internal/analytics/api/gen",
+		"COPY --from=sourcegen /src/internal/dashboard/api/gen ./internal/dashboard/api/gen",
+		"COPY --from=sourcegen /src/internal/app/api/aggregate ./internal/app/api/aggregate",
 		"COPY --from=sourcegen /src/internal/app/api/gen ./internal/app/api/gen",
+		"COPY --from=sourcegen /src/internal/deployment/api/gen ./internal/deployment/api/gen",
+		"COPY --from=sourcegen /src/internal/manageddata/api/gen ./internal/manageddata/api/gen",
+		"COPY --from=sourcegen /src/internal/platform/http/api/gen ./internal/platform/http/api/gen",
+		"COPY --from=sourcegen /src/internal/project/api/gen ./internal/project/api/gen",
+		"COPY --from=sourcegen /src/internal/refresh/api/gen ./internal/refresh/api/gen",
+		"COPY --from=sourcegen /src/internal/release/api/gen ./internal/release/api/gen",
+		"COPY --from=sourcegen /src/internal/workspace/api/gen ./internal/workspace/api/gen",
 		"COPY --from=sourcegen /src/internal/access/ui/signals/models.gen.go ./internal/access/ui/signals/models.gen.go",
 		"COPY --from=sourcegen /src/internal/admin/ui/signals/models.gen.go ./internal/admin/ui/signals/models.gen.go",
 		"COPY --from=sourcegen /src/internal/agent/ui/signals/models.gen.go ./internal/agent/ui/signals/models.gen.go",
@@ -1317,7 +1433,10 @@ func TestProductionContainerContractExists(t *testing.T) {
 		t.Fatalf("read .dockerignore: %v", err)
 	}
 	ignoreText := string(ignored)
-	for _, want := range []string{".data", ".leapview", "node_modules", "api/gen", "internal/app/api/gen", "static/chunks"} {
+	for _, want := range []string{
+		".data", ".leapview", "node_modules", "api/gen", "internal/access/api/gen", "internal/agent/api/gen", "internal/analytics/api/gen", "internal/dashboard/api/gen", "internal/deployment/api/gen", "internal/manageddata/api/gen",
+		"internal/app/api/aggregate", "internal/app/api/gen", "internal/platform/http/api/gen", "internal/project/api/gen", "internal/refresh/api/gen", "internal/release/api/gen", "internal/workspace/api/gen", "static/chunks",
+	} {
 		if !strings.Contains(ignoreText, want) {
 			t.Fatalf(".dockerignore missing generated or runtime path %q", want)
 		}

@@ -16,6 +16,14 @@ type JobStore interface {
 }
 
 func (m *Module) EnqueueRun(ctx context.Context, scope agent.Scope, started *agent.StartedPrompt) error {
+	return m.enqueueRun(ctx, scope, started, "")
+}
+
+func (m *Module) EnqueueChatRun(ctx context.Context, scope agent.Scope, started *agent.StartedPrompt, clientID string) error {
+	return m.enqueueRun(ctx, scope, started, clientID)
+}
+
+func (m *Module) enqueueRun(ctx context.Context, scope agent.Scope, started *agent.StartedPrompt, chatClientID string) error {
 	if m == nil || started == nil {
 		return errors.New("agent run queue is unavailable")
 	}
@@ -33,15 +41,16 @@ func (m *Module) EnqueueRun(ctx context.Context, scope agent.Scope, started *age
 		ResourceKind: "agent_run", ResourceID: started.RunID,
 		Payload: RunJob{
 			Scope: scope, Conversation: started.ConversationID,
-			Run: started.RunID, CorrelationID: started.CorrelationID,
+			Run: started.RunID, CorrelationID: started.CorrelationID, ChatClientID: chatClientID,
 		},
 	})
 }
 
-func (m *Module) runWorkflow(input agent.PromptInput, runID string) jobs.WorkflowIntent {
+func (m *Module) runWorkflow(input agent.PromptInput, runID string, dispatch agent.PromptDispatch) jobs.WorkflowIntent {
 	scope := input.Scope
 	payload, _ := json.Marshal(RunJob{
 		Scope: scope, Conversation: input.ConversationID, Run: runID, CorrelationID: input.CorrelationID,
+		ChatClientID: dispatch.ChatClientID,
 	})
 	event, _ := json.Marshal(map[string]any{
 		"runId": runID, "conversationId": input.ConversationID, "status": "running",

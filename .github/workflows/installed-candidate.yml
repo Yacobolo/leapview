@@ -1,0 +1,158 @@
+name: Installed candidate qualification
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Public LeapView release tag to qualify
+        required: true
+        default: v0.2.0-rc.1
+        type: string
+  schedule:
+    - cron: "23 5 * * 2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installed-candidate-${{ github.event.release.tag_name || github.event.inputs.release_tag || 'scheduled' }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve public release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      release_tag: ${{ steps.release.outputs.release_tag }}
+
+    steps:
+      - name: Resolve requested or latest public release
+        id: release
+        env:
+          REQUESTED_TAG: ${{ github.event.release.tag_name || github.event.inputs.release_tag }}
+        run: |
+          release_tag="$REQUESTED_TAG"
+          if [ -z "$release_tag" ]; then
+            release_tag="$(
+              curl --fail --location --silent --show-error \
+                https://api.github.com/repos/Yacobolo/leapview/releases?per_page=20 |
+                jq -er '[.[] | select(.draft == false)][0].tag_name'
+            )"
+          fi
+          case "$release_tag" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) printf 'invalid release tag: %s\n' "$release_tag" >&2; exit 1 ;;
+          esac
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+
+  qualify:
+    name: Public qualification (${{ matrix.arch }})
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+
+    steps:
+      - name: Remove registry credentials
+        run: docker logout ghcr.io >/dev/null 2>&1 || true
+
+      - name: Download public Compose archive anonymously
+        id: download
+        env:
+          RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          package="leapview-compose-${RELEASE_TAG}-linux-${ARCH}"
+          base="https://github.com/Yacobolo/leapview/releases/download/${RELEASE_TAG}"
+          mkdir -p "$RUNNER_TEMP/leapview-public"
+          cd "$RUNNER_TEMP/leapview-public"
+          curl --fail --location --retry 4 --retry-all-errors --silent --show-error \
+            --output "${package}.tar.gz" "${base}/${package}.tar.gz"
+          curl --fail --location --retry 4 --retry-all-errors --silent --show-error \
+            --output "${package}.tar.gz.sha256" "${base}/${package}.tar.gz.sha256"
+          sha256sum --check "${package}.tar.gz.sha256"
+          tar --extract --gzip --file "${package}.tar.gz"
+          echo "package_root=$RUNNER_TEMP/leapview-public/$package" >> "$GITHUB_OUTPUT"
+
+      - name: Run installed-candidate journey
+        env:
+          PACKAGE_ROOT: ${{ steps.download.outputs.package_root }}
+          EVIDENCE_ROOT: ${{ runner.temp }}/qualification-evidence-${{ matrix.arch }}
+        run: |
+          env -u GH_TOKEN -u GITHUB_TOKEN \
+            LEAPVIEW_QUALIFICATION_EVIDENCE_DIR="$EVIDENCE_ROOT" \
+            "$PACKAGE_ROOT/qualification/qualify.sh"
+
+      - name: Upload bounded qualification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: installed-candidate-${{ needs.resolve.outputs.release_tag }}-${{ matrix.arch }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/qualification-evidence-${{ matrix.arch }}/qualification-report.json
+            ${{ runner.temp }}/qualification-evidence-${{ matrix.arch }}/recovery-report.json
+            ${{ runner.temp }}/qualification-evidence-${{ matrix.arch }}/recovery-events.json
+            ${{ runner.temp }}/qualification-evidence-${{ matrix.arch }}/runtime-identity.json
+            ${{ runner.temp }}/qualification-evidence-${{ matrix.arch }}/*.log
+            ${{ runner.temp }}/qualification-evidence-${{ matrix.arch }}/browser-failure.png
+
+  incident:
+    name: Create qualification incident
+    needs: [resolve, qualify]
+    if: always() && needs.qualify.result == 'failure'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Create qualification incident
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+        with:
+          script: |
+            const title = `[Release qualification] ${process.env.RELEASE_TAG}`
+            const owner = context.repo.owner
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              ...context.repo,
+              state: 'open',
+              per_page: 100,
+            })
+            const existing = issues.find(issue => issue.title === title && !issue.pull_request)
+            const body = [
+              `Owner: @${owner}`,
+              '',
+              `Installed-candidate qualification failed for \`${process.env.RELEASE_TAG}\`.`,
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              'Treat this as a release/adoption incident. Attach only bounded redacted evidence and mirror the status into the active Linear release project.',
+            ].join('\n')
+            if (existing) {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: existing.number,
+                body,
+              })
+            } else {
+              await github.rest.issues.create({
+                ...context.repo,
+                title,
+                body,
+                assignees: [owner],
+              })
+            }

@@ -82,7 +82,8 @@ func TestProviderScriptsAreSmallValidLayers(t *testing.T) {
 func TestReleaseWorkflowPublishesComposeArchiveAndAttestedImage(t *testing.T) {
 	workflow := readFile(t, filepath.Join("..", "..", ".github", "workflows", "release.yml"))
 	for _, fragment := range []string{
-		"release:", "packages: write", "attestations: write", "id-token: write",
+		"tags:", "needs: [image, qualify]", "gh release create",
+		"packages: write", "attestations: write", "id-token: write",
 		"docker/build-push-action@", "actions/attest@", "push-to-registry: true",
 		"leapview-compose-", "deployment.env.example", ".tar.gz.sha256", "./cmd/leapviewctl",
 	} {
@@ -120,7 +121,7 @@ func assertDockerfileImagesPinned(t *testing.T, name, dockerfile string) {
 			continue
 		}
 		image := fields[1]
-		if _, internal := stages[image]; !internal {
+		if _, internal := stages[image]; !internal && image != "scratch" {
 			_, digest, pinned := strings.Cut(image, "@sha256:")
 			if !pinned || !hexDigest.MatchString(digest) {
 				t.Errorf("%s base image is not pinned by a valid SHA-256 digest: %s", name, line)

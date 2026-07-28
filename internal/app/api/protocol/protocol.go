@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	"github.com/Yacobolo/leapview/internal/platform/http/cursorsigning"
 	cursorsigningsqlite "github.com/Yacobolo/leapview/internal/platform/http/cursorsigning/sqlite"
 	apiidempotencysqlite "github.com/Yacobolo/leapview/internal/platform/http/idempotency/sqlite"
@@ -465,7 +465,7 @@ func (w *protocolResponseCapture) flush(target http.ResponseWriter) {
 }
 
 func (p *Protocol) OpenAPIDescription(w http.ResponseWriter, r *http.Request) {
-	spec, err := apigenapi.GetEmbeddedOpenAPISpec()
+	spec, err := apiaggregate.GetEmbeddedOpenAPISpec()
 	if err != nil {
 		apitransport.WriteProblem(w, r, http.StatusInternalServerError, "OPENAPI_UNAVAILABLE", "The API description is unavailable", nil)
 		return

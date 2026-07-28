@@ -1,5 +1,6 @@
 using Http;
 using TypeSpec.OpenAPI;
+using LeapViewAPI.Protocol;
 
 @route("/api/v1")
 namespace LeapViewAPI;
@@ -54,6 +55,10 @@ model VisualizationCapabilities {
 model CapabilitiesResponse {
   apiVersion: string;
   buildVersion: string;
+  buildRevision: string;
+  buildTime: string;
+  buildDirty: boolean;
+  buildDevelopment: boolean;
   environment: string;
   authentication: AuthenticationMode[];
   queryFormats: QueryFormat[];

@@ -16,6 +16,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
 	publicationsqlite "github.com/Yacobolo/leapview/internal/dashboard/publication/sqlite"
 	"github.com/Yacobolo/leapview/internal/deployment/apiadapter"
+	deploymentmodule "github.com/Yacobolo/leapview/internal/deployment/module"
 	"github.com/Yacobolo/leapview/internal/platform"
 	"github.com/Yacobolo/leapview/internal/servingstate"
 	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
@@ -93,7 +94,7 @@ func TestPublicationDeploymentRequiresManagementPrivilege(t *testing.T) {
 	targets := []apiadapter.TargetRequest{{Workspace: "test", CandidateID: string(created.ID)}}
 
 	viewer := testPrincipal(t, ctx, store, "viewer-publication@example.com", "Viewer", "viewer")
-	if err := server.routes.deploymentModule.AuthorizePublicationDeployment(ctx, viewer.ID, "prod", targets); !errors.Is(err, errPublicationDeploymentForbidden) {
+	if err := server.routes.deploymentModule.AuthorizePublicationDeployment(ctx, viewer.ID, "prod", targets); !errors.Is(err, deploymentmodule.ErrPublicationForbidden) {
 		t.Fatalf("viewer authorization error = %v", err)
 	}
 	owner := testPrincipal(t, ctx, store, "owner-publication@example.com", "Owner", "owner")

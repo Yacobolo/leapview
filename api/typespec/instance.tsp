@@ -1,5 +1,6 @@
 using Http;
 using TypeSpec.OpenAPI;
+using LeapViewAPI.Protocol;
 
 @route("/api/v1")
 namespace LeapViewAPI;

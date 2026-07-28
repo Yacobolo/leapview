@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -27,9 +28,10 @@ const (
 )
 
 type InstanceBackupOptions struct {
-	HomeDir string
-	DBPath  string
-	OutPath string
+	HomeDir              string
+	DBPath               string
+	OutPath              string
+	ExcludeRelativePaths []string
 }
 
 type InstanceRestoreOptions struct {
@@ -38,6 +40,7 @@ type InstanceRestoreOptions struct {
 	CurrentBackupOut     string
 	ExpectedEnvironment  string
 	PreserveRelativeFile string
+	ResetRelativePaths   []string
 }
 
 type instanceBackupManifest struct {
@@ -82,7 +85,7 @@ func BackupInstance(ctx context.Context, options InstanceBackupOptions) error {
 			_ = os.Remove(tmpArchivePath)
 		}
 	}()
-	if err := writeInstanceBackup(ctx, options.HomeDir, options.DBPath, tmpArchive); err != nil {
+	if err := writeInstanceBackup(ctx, options, tmpArchive); err != nil {
 		_ = tmpArchive.Close()
 		return err
 	}
@@ -102,20 +105,27 @@ func BackupInstance(ctx context.Context, options InstanceBackupOptions) error {
 
 // BackupInstanceToWriter writes a validated full-instance archive directly to
 // out. Callers own atomic destination handling and must stop the serving process.
-func BackupInstanceToWriter(ctx context.Context, homeDir, dbPath string, out io.Writer) error {
+func BackupInstanceToWriter(ctx context.Context, options InstanceBackupOptions, out io.Writer) error {
 	if out == nil {
 		return fmt.Errorf("instance backup output is required")
 	}
-	return writeInstanceBackup(ctx, homeDir, dbPath, out)
+	return writeInstanceBackup(ctx, options, out)
 }
 
-func writeInstanceBackup(ctx context.Context, homeDir, dbPath string, out io.Writer) error {
-	homeAbs, dbAbs, err := validateInstanceBackupSource(homeDir, dbPath)
+func writeInstanceBackup(ctx context.Context, options InstanceBackupOptions, out io.Writer) error {
+	homeAbs, dbAbs, err := validateInstanceBackupSource(options.HomeDir, options.DBPath)
 	if err != nil {
 		return err
 	}
+	excluded, err := normalizeInstanceRelativePaths(options.ExcludeRelativePaths)
+	if err != nil {
+		return fmt.Errorf("instance backup exclusions: %w", err)
+	}
 	parent := filepath.Dir(homeAbs)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return err
+	}
+	if err := removeInterruptedInstanceBackupWork(parent); err != nil {
 		return err
 	}
 	tmpDir, err := os.MkdirTemp(parent, ".leapview-instance-backup-*")
@@ -178,6 +188,12 @@ func writeInstanceBackup(ctx context.Context, homeDir, dbPath string, out io.Wri
 			return nil
 		}
 		if rel == instanceBackupManifestName {
+			return nil
+		}
+		if instanceRelativePathMatches(rel, excluded) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		info, err := entry.Info()
@@ -245,6 +261,37 @@ func validateInstanceBackupSource(homeDir, dbPath string) (string, string, error
 	return homeAbs, dbAbs, nil
 }
 
+func normalizeInstanceRelativePaths(values []string) ([]string, error) {
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		clean := path.Clean(filepath.ToSlash(strings.TrimSpace(value)))
+		if clean == "." || path.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, "../") {
+			return nil, fmt.Errorf("path %q must be relative to the instance home", value)
+		}
+		if clean == instanceBackupDBName || clean == instanceBackupManifestName {
+			return nil, fmt.Errorf("path %q is required instance state", value)
+		}
+		if _, duplicate := seen[clean]; duplicate {
+			continue
+		}
+		seen[clean] = struct{}{}
+		normalized = append(normalized, clean)
+	}
+	sort.Strings(normalized)
+	return normalized, nil
+}
+
+func instanceRelativePathMatches(value string, paths []string) bool {
+	value = filepath.ToSlash(filepath.Clean(value))
+	for _, candidate := range paths {
+		if value == candidate || strings.HasPrefix(value, candidate+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 func RestoreInstance(ctx context.Context, options InstanceRestoreOptions) error {
 	backupPath := strings.TrimSpace(options.BackupPath)
 	if backupPath == "" {
@@ -289,6 +336,10 @@ func restoreInstanceFromReader(ctx context.Context, options InstanceRestoreOptio
 	if err != nil {
 		return err
 	}
+	resetRelativePaths, err := normalizeInstanceRelativePaths(options.ResetRelativePaths)
+	if err != nil {
+		return fmt.Errorf("instance restore resets: %w", err)
+	}
 	if targetHome == "" {
 		return fmt.Errorf("instance restore target home dir is required")
 	}
@@ -306,12 +357,15 @@ func restoreInstanceFromReader(ctx context.Context, options InstanceRestoreOptio
 		}
 	}
 
-	exists, nonEmpty, err := dirExistsNonEmptyExcept(targetAbs, preserveRelativeFile)
-	if err != nil {
-		return err
-	}
 	parent := filepath.Dir(targetAbs)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return err
+	}
+	if err := recoverInterruptedInstanceOperations(targetAbs); err != nil {
+		return err
+	}
+	exists, nonEmpty, err := dirExistsNonEmptyExcept(targetAbs, preserveRelativeFile)
+	if err != nil {
 		return err
 	}
 	tmpRestore, err := os.MkdirTemp(parent, ".leapview-restore-*")
@@ -341,14 +395,24 @@ func restoreInstanceFromReader(ctx context.Context, options InstanceRestoreOptio
 			return closeErr
 		}
 	}
+	for _, relativePath := range resetRelativePaths {
+		resetPath, err := securejoin.SecureJoin(tmpRestore, filepath.FromSlash(relativePath))
+		if err != nil {
+			return fmt.Errorf("resolve instance restore reset path %q: %w", relativePath, err)
+		}
+		if err := os.RemoveAll(resetPath); err != nil {
+			return fmt.Errorf("reset derived instance path %q: %w", relativePath, err)
+		}
+	}
 	if exists && nonEmpty {
 		if currentBackupOut == "" {
 			return fmt.Errorf("current instance backup path is required when restoring over an existing home dir")
 		}
 		if err := BackupInstance(ctx, InstanceBackupOptions{
-			HomeDir: targetAbs,
-			DBPath:  filepath.Join(targetAbs, instanceBackupDBName),
-			OutPath: currentBackupOut,
+			HomeDir:              targetAbs,
+			DBPath:               filepath.Join(targetAbs, instanceBackupDBName),
+			OutPath:              currentBackupOut,
+			ExcludeRelativePaths: resetRelativePaths,
 		}); err != nil {
 			return fmt.Errorf("backup current instance: %w", err)
 		}
@@ -375,6 +439,70 @@ func restoreInstanceFromReader(ctx context.Context, options InstanceRestoreOptio
 	cleanupTmp = false
 	if oldTarget != "" {
 		_ = os.RemoveAll(oldTarget)
+	}
+	return nil
+}
+
+func removeInterruptedInstanceBackupWork(parent string) error {
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), ".leapview-instance-backup-") {
+			if err := os.RemoveAll(filepath.Join(parent, entry.Name())); err != nil {
+				return fmt.Errorf("remove interrupted instance backup %q: %w", entry.Name(), err)
+			}
+		}
+	}
+	return nil
+}
+
+func recoverInterruptedInstanceOperations(target string) error {
+	parent := filepath.Dir(target)
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return err
+	}
+	var oldTargets []string
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".leapview-restore-old-") {
+			oldTargets = append(oldTargets, filepath.Join(parent, entry.Name()))
+		}
+	}
+	sort.Strings(oldTargets)
+	if _, err := os.Lstat(target); os.IsNotExist(err) && len(oldTargets) > 0 {
+		latest := oldTargets[len(oldTargets)-1]
+		info, statErr := os.Lstat(latest)
+		if statErr != nil {
+			return statErr
+		}
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("interrupted restore rollback %q is not a directory", latest)
+		}
+		if err := os.Rename(latest, target); err != nil {
+			return fmt.Errorf("roll back interrupted instance restore: %w", err)
+		}
+		oldTargets = oldTargets[:len(oldTargets)-1]
+	} else if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	for _, stale := range oldTargets {
+		if err := os.RemoveAll(stale); err != nil {
+			return fmt.Errorf("remove interrupted restore rollback %q: %w", stale, err)
+		}
+	}
+	entries, err = os.ReadDir(parent)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() && (strings.HasPrefix(entry.Name(), ".leapview-restore-") ||
+			strings.HasPrefix(entry.Name(), ".leapview-instance-backup-")) {
+			if err := os.RemoveAll(filepath.Join(parent, entry.Name())); err != nil {
+				return fmt.Errorf("remove interrupted instance operation %q: %w", entry.Name(), err)
+			}
+		}
 	}
 	return nil
 }

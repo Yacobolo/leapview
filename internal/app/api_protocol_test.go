@@ -14,6 +14,7 @@ import (
 
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	apiprotocol "github.com/Yacobolo/leapview/internal/app/api/protocol"
+	protocolgen "github.com/Yacobolo/leapview/internal/platform/http/api/gen"
 	"github.com/Yacobolo/leapview/internal/platform/http/cursorsigning"
 	apiidempotencysqlite "github.com/Yacobolo/leapview/internal/platform/http/idempotency/sqlite"
 	"github.com/Yacobolo/leapview/internal/workspace"
@@ -62,7 +63,7 @@ func TestAPIGenResponseBufferPreservesBoundedProblemCode(t *testing.T) {
 	_, _ = buffer.Write([]byte(`{"code":503,"message":"overloaded","details":{"problemCode":"WORKLOAD_OVERLOADED"}}`))
 	buffer.Flush()
 
-	var problem apigenapi.ProblemDetails
+	var problem protocolgen.ProblemDetails
 	if err := json.Unmarshal(recorder.Body.Bytes(), &problem); err != nil {
 		t.Fatalf("decode problem: %v", err)
 	}
@@ -81,7 +82,7 @@ func TestAPIGenResponseBufferCompletesProblemDetailsIdentifiers(t *testing.T) {
 	_, _ = buffer.Write([]byte(`{"type":"https://leapview.dev/problems/invalid","title":"Bad Request","status":400,"detail":"invalid limit","instance":"","code":"INVALID_LIMIT","requestId":"","errors":null}`))
 	buffer.Flush()
 
-	var problem apigenapi.ProblemDetails
+	var problem protocolgen.ProblemDetails
 	if err := json.Unmarshal(recorder.Body.Bytes(), &problem); err != nil {
 		t.Fatalf("decode problem: %v", err)
 	}
@@ -119,7 +120,7 @@ func TestPublicAPIRouterErrorsUseAuthenticatedProblemDetails(t *testing.T) {
 			if got := response.Header().Get("Allow"); got != tc.wantAllow {
 				t.Errorf("Allow = %q, want %q", got, tc.wantAllow)
 			}
-			var problem apigenapi.ProblemDetails
+			var problem protocolgen.ProblemDetails
 			if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil {
 				t.Fatalf("decode problem: %v", err)
 			}
@@ -145,7 +146,7 @@ func TestAPIGenTransportErrorsUseProblemDetailsWithoutLeakingCause(t *testing.T)
 	if strings.Contains(recorder.Body.String(), "secret parser detail") {
 		t.Fatalf("transport cause leaked to client: %s", recorder.Body.String())
 	}
-	var problem apigenapi.ProblemDetails
+	var problem protocolgen.ProblemDetails
 	if err := json.Unmarshal(recorder.Body.Bytes(), &problem); err != nil {
 		t.Fatalf("decode problem: %v", err)
 	}
@@ -165,7 +166,7 @@ func TestAPIGenTransportErrorsIdentifyInvalidParameterWithoutLeakingValue(t *tes
 	if strings.Contains(recorder.Body.String(), "secret-value") {
 		t.Fatalf("transport value leaked to client: %s", recorder.Body.String())
 	}
-	var problem apigenapi.ProblemDetails
+	var problem protocolgen.ProblemDetails
 	if err := json.Unmarshal(recorder.Body.Bytes(), &problem); err != nil {
 		t.Fatalf("decode problem: %v", err)
 	}

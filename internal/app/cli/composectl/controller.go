@@ -18,16 +18,20 @@ import (
 )
 
 const (
-	deploymentEnvName   = "deployment.env"
-	appEnvName          = "leapview.env"
-	credentialsName     = "initial-credentials.json"
-	rollbackEnvName     = "rollback.env"
-	controllerLockName  = ".leapviewctl.lock"
-	defaultEnvironment  = "prod"
-	defaultHealthChecks = 120
+	deploymentEnvName    = "deployment.env"
+	appEnvName           = "leapview.env"
+	credentialsName      = "initial-credentials.json"
+	rollbackEnvName      = "rollback.env"
+	controllerLockName   = ".leapviewctl.lock"
+	defaultEnvironment   = "prod"
+	defaultHealthChecks  = 120
+	publicDomainHelpText = "--domain must be a hostname without a scheme, path, port, wildcard, or credentials"
 )
 
-var digestPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$`)
+var (
+	digestPattern      = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$`)
+	domainLabelPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
+)
 
 type Options struct {
 	Root      string
@@ -116,6 +120,11 @@ func (c *Controller) Initialize(ctx context.Context, options InitOptions) error 
 			return err
 		}
 	}
+	domain, err := canonicalPublicDomain(options.Domain)
+	if err != nil {
+		return err
+	}
+	options.Domain = domain
 	if err := c.ensureDeploymentEnvironment(); err != nil {
 		return err
 	}
@@ -189,7 +198,7 @@ func (c *Controller) Initialize(ctx context.Context, options InitOptions) error 
 	appEnvironment := fmt.Sprintf("LEAPVIEW_PRODUCTION=1\nLEAPVIEW_ENVIRONMENT=%s\nLEAPVIEW_ADDR=:8080\n", options.Environment) +
 		"LEAPVIEW_HOME=/var/lib/leapview/home\nLEAPVIEW_MANAGED_DATA_BACKEND=local\nLEAPVIEW_MANAGED_DATA_DIR=/var/lib/leapview/home/managed-data\n" +
 		"LEAPVIEW_LOCAL_AUTH=1\nLEAPVIEW_COOKIE_SECURE=true\nLEAPVIEW_TRUST_PROXY_HEADERS=true\n" +
-		fmt.Sprintf("LEAPVIEW_ALLOWED_HOSTS=%s\nLEAPVIEW_BOOTSTRAP_ADMIN_EMAIL=%s\n", options.Domain, options.AdminEmail) +
+		fmt.Sprintf("LEAPVIEW_PUBLIC_URL=https://%s\nLEAPVIEW_ALLOWED_HOSTS=%s\nLEAPVIEW_BOOTSTRAP_ADMIN_EMAIL=%s\n", options.Domain, options.Domain, options.AdminEmail) +
 		fmt.Sprintf("LEAPVIEW_CSRF_KEY=%s\nLEAPVIEW_METRICS_BEARER_TOKEN=%s\n", csrfKey, metricsToken)
 	if err := writePrivateAtomic(c.path(appEnvName), []byte(appEnvironment)); err != nil {
 		return err
@@ -546,6 +555,9 @@ func (c *Controller) backupArchive(ctx context.Context, path string) error {
 	if err := os.Chmod(directory, 0o700); err != nil {
 		return err
 	}
+	if err := removeInterruptedBackupArchives(directory); err != nil {
+		return err
+	}
 	tmp, err := os.CreateTemp(directory, ".leapview-backup-*.tmp")
 	if err != nil {
 		return err
@@ -582,6 +594,23 @@ func (c *Controller) backupArchive(ctx context.Context, path string) error {
 	}
 	cleanup = false
 	return syncDirectory(directory)
+}
+
+func removeInterruptedBackupArchives(directory string) error {
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasPrefix(name, ".leapview-backup-") || !strings.HasSuffix(name, ".tmp") {
+			continue
+		}
+		if err := os.Remove(filepath.Join(directory, name)); err != nil {
+			return fmt.Errorf("remove interrupted backup archive %q: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func (c *Controller) restoreArchive(ctx context.Context, archive string) error {
@@ -746,6 +775,19 @@ func validateEnvLineValue(label, value string) error {
 		return fmt.Errorf("%s must be a single environment-file value", label)
 	}
 	return nil
+}
+
+func canonicalPublicDomain(raw string) (string, error) {
+	domain := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(raw), "."))
+	if domain == "" || len(domain) > 253 {
+		return "", fmt.Errorf("%s: %q", publicDomainHelpText, raw)
+	}
+	for _, label := range strings.Split(domain, ".") {
+		if !domainLabelPattern.MatchString(label) {
+			return "", fmt.Errorf("%s: %q", publicDomainHelpText, raw)
+		}
+	}
+	return domain, nil
 }
 
 func randomHex(size int) (string, error) {

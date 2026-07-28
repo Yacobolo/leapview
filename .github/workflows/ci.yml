@@ -88,10 +88,22 @@ jobs:
             docs/reference/config
             docs/search-index.sqlite3
             docs/visuals/examples.gen.json
+            internal/access/api/gen
+            internal/agent/api/gen
+            internal/analytics/api/gen
+            internal/dashboard/api/gen
+            internal/deployment/api/gen
+            internal/manageddata/api/gen
+            internal/app/api/aggregate
             internal/app/api/gen
             internal/app/cli/gen
             internal/app/config/config_gen.go
             internal/app/config/spec/names_gen.go
+            internal/platform/http/api/gen
+            internal/project/api/gen
+            internal/refresh/api/gen
+            internal/release/api/gen
+            internal/workspace/api/gen
             internal/platform/db/db.go
             internal/platform/db/models.go
             internal/platform/db/*.sql.go
@@ -109,8 +121,20 @@ jobs:
             api/gen \
             docs/reference/cli \
             docs/reference/config \
+            internal/access/api/gen \
+            internal/agent/api/gen \
+            internal/analytics/api/gen \
+            internal/dashboard/api/gen \
+            internal/deployment/api/gen \
+            internal/manageddata/api/gen \
+            internal/app/api/aggregate \
             internal/app/api/gen \
             internal/app/cli/gen \
+            internal/platform/http/api/gen \
+            internal/project/api/gen \
+            internal/refresh/api/gen \
+            internal/release/api/gen \
+            internal/workspace/api/gen \
             schemas/config \
             schemas/json \
             web/generated
@@ -150,10 +174,22 @@ jobs:
           if-no-files-found: error
           path: |
             api/gen/
+            internal/access/api/gen/
+            internal/agent/api/gen/
+            internal/analytics/api/gen/
+            internal/dashboard/api/gen/
+            internal/deployment/api/gen/
+            internal/manageddata/api/gen/
+            internal/app/api/aggregate/
             internal/app/api/gen/
             internal/app/cli/gen/
             internal/app/config/config_gen.go
             internal/app/config/spec/names_gen.go
+            internal/platform/http/api/gen/
+            internal/project/api/gen/
+            internal/refresh/api/gen/
+            internal/release/api/gen/
+            internal/workspace/api/gen/
             internal/platform/db/db.go
             internal/platform/db/models.go
             internal/platform/db/*.sql.go
@@ -483,6 +519,8 @@ jobs:
           deploy/hetzner/files/leapviewctl-wrapper
           deploy/hetzner/files/leapview-backup-hook
           deploy/hetzner/files/provision.sh.tftpl
+          deploy/compose/qualification/qualify.sh
+          deploy/compose/qualification/recover.sh
 
       - name: Initialize Terraform providers
         working-directory: deploy/hetzner
@@ -521,6 +559,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve candidate build identity
+        id: candidate_identity
+        run: echo "build_time=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Build and publish candidate
         id: publish
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
@@ -530,8 +572,11 @@ jobs:
           push: true
           tags: ghcr.io/yacobolo/leapview:candidate-${{ github.sha }}
           build-args: |
-            BUILD_VERSION=candidate-${{ github.sha }}
+            BUILD_VERSION=development
             BUILD_REVISION=${{ github.sha }}
+            BUILD_TIME=${{ steps.candidate_identity.outputs.build_time }}
+            BUILD_DIRTY=false
+            BUILD_RELEASE=false
           cache-from: type=gha
           cache-to: type=gha,mode=max
           sbom: true

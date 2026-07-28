@@ -4,42 +4,35 @@ LeapView is a dashboards-as-code BI monolith using Go, Datastar, Lit, DuckDB, an
 
 ## Install
 
-The public container image is the quickest way to try LeapView. This starts a
-single development instance on localhost with persistent state:
+The public container image is the quickest way to try LeapView. This path
+requires only Docker: no source checkout, registry login, Go, Bun, Task, manual
+YAML, or external sample-data download.
 
 ```sh
 docker pull ghcr.io/yacobolo/leapview:latest
-docker volume create leapview-state
-umask 077
-docker run --rm \
-  --volume leapview-state:/var/lib/leapview \
-  --env LEAPVIEW_PRODUCTION=0 \
-  --env LEAPVIEW_ENVIRONMENT=dev \
-  --env LEAPVIEW_BOOTSTRAP_ADMIN_EMAIL=admin@localhost \
-  ghcr.io/yacobolo/leapview:latest \
-  admin initialize --format json > initial-credentials.json
-docker run --rm \
-  --volume leapview-state:/var/lib/leapview \
-  --env LEAPVIEW_PRODUCTION=0 \
-  --env LEAPVIEW_ENVIRONMENT=dev \
-  ghcr.io/yacobolo/leapview:latest \
-  admin initialize --acknowledge-credentials
-docker run --detach --name leapview --init \
+docker run --detach --name leapview-evaluate --init \
   --publish 127.0.0.1:8080:8080 \
-  --volume leapview-state:/var/lib/leapview \
-  --env LEAPVIEW_PRODUCTION=0 \
-  --env LEAPVIEW_ENVIRONMENT=dev \
-  --env LEAPVIEW_LOCAL_AUTH=1 \
-  ghcr.io/yacobolo/leapview:latest serve
+  --volume leapview-evaluate:/var/lib/leapview \
+  ghcr.io/yacobolo/leapview:latest evaluate
+docker exec leapview-evaluate leapview evaluate first-login
 ```
 
-Read `initial-credentials.json`, open <http://localhost:8080>, and sign in with
-the temporary administrator password. This pull-and-run path is for local
-evaluation only. For a durable production instance, use the released
-[Compose operations package](deploy/compose/README.md), which pins an immutable
-image digest and adds generated secrets, HTTPS, backups, and state-aware
-upgrades. See the [installation guide](docs/articles/start/installation.md) and
-[self-hosting guide](docs/articles/operate/self-hosting.md).
+Open <http://localhost:8080>, sign in with the one-time credentials, change the
+temporary password, and choose **Five-minute Sales Evaluation**. Filter State
+to verify that the KPI, chart, and governed order table update together.
+
+The named volume preserves the initialized instance and sample deployment
+across `docker restart leapview-evaluate`. Stop and remove only the container
+with `docker rm --force leapview-evaluate`; reset the disposable instance by
+also running `docker volume rm leapview-evaluate`. The port is deliberately
+bound to loopback, and evaluation mode is not a production configuration.
+
+For real data or a durable public instance, use the released [Compose
+operations package](deploy/compose/README.md), then follow the [connection
+guide](docs/articles/guides/build/connect-data.md). See the full [installation
+guide](docs/articles/start/installation.md) for diagnostics, cleanup, and the
+production boundary. Release evaluators can run the exact archive through the
+[installed-candidate qualification](deploy/compose/QUALIFICATION.md).
 
 ## Contributor development
 

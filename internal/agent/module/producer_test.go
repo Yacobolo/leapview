@@ -2,6 +2,7 @@ package module
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/agent"
@@ -44,6 +45,44 @@ func TestEnqueueRunOwnsWorkloadAndWorkspaceClassification(t *testing.T) {
 	}
 	if store.event.EventType != "agent_run.queued" {
 		t.Fatalf("event = %#v", store.event)
+	}
+}
+
+func TestEnqueueChatRunPersistsBrowserDelivery(t *testing.T) {
+	store := &runJobStore{}
+	module, err := Build(t.Context(), Config{Jobs: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := &agent.StartedPrompt{ConversationID: "conversation-1", RunID: "run-1"}
+	if err := module.EnqueueChatRun(t.Context(), agent.Scope{}, started, "browser-1"); err != nil {
+		t.Fatal(err)
+	}
+	var payload RunJob
+	if err := json.Unmarshal(store.input.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.ChatClientID != "browser-1" {
+		t.Fatalf("chat client = %q, want browser-1", payload.ChatClientID)
+	}
+}
+
+func TestRunWorkflowPersistsBrowserDeliveryAtomically(t *testing.T) {
+	module, err := Build(t.Context(), Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent := module.runWorkflow(
+		agent.PromptInput{ConversationID: "conversation-1"},
+		"run-1",
+		agent.PromptDispatch{ChatClientID: "browser-1"},
+	)
+	var payload RunJob
+	if err := json.Unmarshal(intent.Job.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.ChatClientID != "browser-1" || payload.Conversation != "conversation-1" || payload.Run != "run-1" {
+		t.Fatalf("workflow payload = %#v", payload)
 	}
 }
 

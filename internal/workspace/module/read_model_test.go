@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
 	"github.com/Yacobolo/leapview/internal/workspace"
+	workspacegen "github.com/Yacobolo/leapview/internal/workspace/api/gen"
 )
 
 type activeMetadataReadModel struct {
@@ -64,7 +64,7 @@ func TestWorkspaceListUsesActiveMetadataWithoutLoadingGraphs(t *testing.T) {
 		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
 	}
 	var body struct {
-		Items []apigenapi.WorkspaceResponse `json:"items"`
+		Items []workspacegen.WorkspaceResponse `json:"items"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode workspaces response: %v body=%s", err, recorder.Body.String())

@@ -50,9 +50,31 @@ func TestInstallTargetsContentAddressedPackagePaths(t *testing.T) {
 	}
 }
 
+func TestInstallSeedArchiveRejectsUnverifiedInput(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(t.TempDir(), "basemap.pmtiles")
+	if err := os.WriteFile(source, []byte("not the pinned archive"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := installSeedArchive(source, root); err == nil {
+		t.Fatal("installSeedArchive() accepted an unverified archive")
+	}
+	asset, err := assetTarget(root, "/map-assets/leapview-streets/archives/"+archiveDigest+"/basemap.pmtiles")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(asset); !os.IsNotExist(err) {
+		t.Fatalf("seed target exists after failed verification: %v", err)
+	}
+}
+
 func TestRegionalExtractionProfileExtendsTheGlobalArchive(t *testing.T) {
 	if regionalBounds != "-82,-56,-30,14" || regionalMinimumZoom != "7" || regionalMaximumZoom != "10" {
 		t.Fatalf("regional profile = bounds %q zoom %s..%s", regionalBounds, regionalMinimumZoom, regionalMaximumZoom)
+	}
+	if archiveDownloadThreads != "2" {
+		t.Fatalf("archive download threads = %q, want conservative range concurrency", archiveDownloadThreads)
 	}
 	if archiveDigest == globalArchiveDigest {
 		t.Fatal("regional detail was not merged into a distinct immutable archive")

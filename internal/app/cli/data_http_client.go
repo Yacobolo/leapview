@@ -12,6 +12,9 @@ import (
 	"strings"
 
 	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	deploymentgen "github.com/Yacobolo/leapview/internal/deployment/api/gen"
+	manageddataapi "github.com/Yacobolo/leapview/internal/manageddata/api"
+	releasegen "github.com/Yacobolo/leapview/internal/release/api/gen"
 )
 
 type managedDataCLIClient struct {
@@ -33,62 +36,62 @@ func (c *managedDataCLIClient) instance(ctx context.Context) (apigenapi.Instance
 	return response, err
 }
 
-func (c *managedDataCLIClient) createUploadSession(ctx context.Context, project, connection, key string, body apigenapi.ManagedDataUploadSessionCreateRequest) (apigenapi.ManagedDataUploadSessionResponse, error) {
-	var response apigenapi.ManagedDataUploadSessionResponse
+func (c *managedDataCLIClient) createUploadSession(ctx context.Context, project, connection, key string, body manageddataapi.ManagedDataUploadSessionCreateRequest) (manageddataapi.ManagedDataUploadSessionResponse, error) {
+	var response manageddataapi.ManagedDataUploadSessionResponse
 	err := c.json(ctx, http.MethodPost, "createManagedDataUploadSession", map[string]string{"project": project, "connection": connection}, nil, key, body, &response)
 	return response, err
 }
 
-func (c *managedDataCLIClient) finalizeUploadSession(ctx context.Context, project, connection, uploadID, key string) (apigenapi.ManagedDataUploadSessionResponse, error) {
-	var response apigenapi.ManagedDataUploadSessionResponse
+func (c *managedDataCLIClient) finalizeUploadSession(ctx context.Context, project, connection, uploadID, key string) (manageddataapi.ManagedDataUploadSessionResponse, error) {
+	var response manageddataapi.ManagedDataUploadSessionResponse
 	err := c.json(ctx, http.MethodPost, "finalizeManagedDataUploadSession", managedDataUploadPath(project, connection, uploadID), nil, key, nil, &response)
 	return response, err
 }
 
-func (c *managedDataCLIClient) getUploadSession(ctx context.Context, project, connection, uploadID string) (apigenapi.ManagedDataUploadSessionResponse, error) {
-	var response apigenapi.ManagedDataUploadSessionResponse
+func (c *managedDataCLIClient) getUploadSession(ctx context.Context, project, connection, uploadID string) (manageddataapi.ManagedDataUploadSessionResponse, error) {
+	var response manageddataapi.ManagedDataUploadSessionResponse
 	err := c.json(ctx, http.MethodGet, "getManagedDataUploadSession", managedDataUploadPath(project, connection, uploadID), nil, "", nil, &response)
 	return response, err
 }
 
 func (c *managedDataCLIClient) abortUploadSession(ctx context.Context, project, connection, uploadID, key string) {
-	var response apigenapi.ManagedDataUploadSessionResponse
+	var response manageddataapi.ManagedDataUploadSessionResponse
 	_ = c.json(ctx, http.MethodPost, "cancelManagedDataUploadSession", managedDataUploadPath(project, connection, uploadID), nil, key, nil, &response)
 }
 
-func (c *managedDataCLIClient) createMultipart(ctx context.Context, project, connection, uploadID, key, logicalPath string) (apigenapi.ManagedDataS3MultipartUploadResponse, error) {
-	var response apigenapi.ManagedDataS3MultipartUploadResponse
-	err := c.json(ctx, http.MethodPost, "createManagedDataS3MultipartUpload", managedDataUploadPath(project, connection, uploadID), nil, key, apigenapi.ManagedDataS3MultipartCreateRequest{Path: logicalPath}, &response)
+func (c *managedDataCLIClient) createMultipart(ctx context.Context, project, connection, uploadID, key, logicalPath string) (manageddataapi.ManagedDataS3MultipartUploadResponse, error) {
+	var response manageddataapi.ManagedDataS3MultipartUploadResponse
+	err := c.json(ctx, http.MethodPost, "createManagedDataS3MultipartUpload", managedDataUploadPath(project, connection, uploadID), nil, key, manageddataapi.ManagedDataS3MultipartCreateRequest{Path: logicalPath}, &response)
 	return response, err
 }
 
-func (c *managedDataCLIClient) signMultipartPart(ctx context.Context, project, connection, uploadID, multipartID string, partNumber int32, body apigenapi.ManagedDataS3MultipartSignPartRequest) (apigenapi.ManagedDataS3MultipartSignedPartResponse, error) {
+func (c *managedDataCLIClient) signMultipartPart(ctx context.Context, project, connection, uploadID, multipartID string, partNumber int32, body manageddataapi.ManagedDataS3MultipartSignPartRequest) (manageddataapi.ManagedDataS3MultipartSignedPartResponse, error) {
 	params := managedDataMultipartPath(project, connection, uploadID, multipartID)
 	params["partNumber"] = strconv.FormatInt(int64(partNumber), 10)
-	var response apigenapi.ManagedDataS3MultipartSignedPartResponse
+	var response manageddataapi.ManagedDataS3MultipartSignedPartResponse
 	err := c.json(ctx, http.MethodPost, "signManagedDataS3MultipartPart", params, nil, "", body, &response)
 	return response, err
 }
 
-func (c *managedDataCLIClient) completeMultipart(ctx context.Context, project, connection, uploadID, multipartID, key string, body apigenapi.ManagedDataS3MultipartCompleteRequest) (apigenapi.ManagedDataS3MultipartUploadResponse, error) {
-	var response apigenapi.ManagedDataS3MultipartUploadResponse
+func (c *managedDataCLIClient) completeMultipart(ctx context.Context, project, connection, uploadID, multipartID, key string, body manageddataapi.ManagedDataS3MultipartCompleteRequest) (manageddataapi.ManagedDataS3MultipartUploadResponse, error) {
+	var response manageddataapi.ManagedDataS3MultipartUploadResponse
 	err := c.json(ctx, http.MethodPost, "completeManagedDataS3MultipartUpload", managedDataMultipartPath(project, connection, uploadID, multipartID), nil, key, body, &response)
 	return response, err
 }
 
 func (c *managedDataCLIClient) abortMultipart(ctx context.Context, project, connection, uploadID, multipartID, key string) {
-	var response apigenapi.ManagedDataS3MultipartUploadResponse
+	var response manageddataapi.ManagedDataS3MultipartUploadResponse
 	_ = c.json(ctx, http.MethodPost, "abortManagedDataS3MultipartUpload", managedDataMultipartPath(project, connection, uploadID, multipartID), nil, key, nil, &response)
 }
 
-func (c *managedDataCLIClient) listRevisions(ctx context.Context, project, connection string, query url.Values) (apigenapi.ManagedDataRevisionListResponse, error) {
-	var response apigenapi.ManagedDataRevisionListResponse
+func (c *managedDataCLIClient) listRevisions(ctx context.Context, project, connection string, query url.Values) (manageddataapi.ManagedDataRevisionListResponse, error) {
+	var response manageddataapi.ManagedDataRevisionListResponse
 	err := c.json(ctx, http.MethodGet, "listManagedDataRevisions", map[string]string{"project": project, "connection": connection}, query, "", nil, &response)
 	return response, err
 }
 
-func (c *managedDataCLIClient) currentRevision(ctx context.Context, project, connection, _ string) (apigenapi.ManagedDataActiveRevisionResponse, error) {
-	var response apigenapi.ManagedDataActiveRevisionResponse
+func (c *managedDataCLIClient) currentRevision(ctx context.Context, project, connection, _ string) (manageddataapi.ManagedDataActiveRevisionResponse, error) {
+	var response manageddataapi.ManagedDataActiveRevisionResponse
 	err := c.json(ctx, http.MethodGet, "getActiveManagedDataRevision", map[string]string{"project": project, "connection": connection}, nil, "", nil, &response)
 	return response, err
 }
@@ -99,20 +102,20 @@ func (c *managedDataCLIClient) capabilities(ctx context.Context) (apigenapi.Capa
 	return response, err
 }
 
-func (c *managedDataCLIClient) createRelease(ctx context.Context, project, key string, body apigenapi.ReleaseCreateRequest) (apigenapi.ReleaseResponse, error) {
-	var response apigenapi.ReleaseResponse
+func (c *managedDataCLIClient) createRelease(ctx context.Context, project, key string, body releasegen.ReleaseCreateRequest) (releasegen.ReleaseResponse, error) {
+	var response releasegen.ReleaseResponse
 	err := c.json(ctx, http.MethodPost, "createRelease", map[string]string{"project": project}, nil, key, body, &response)
 	return response, err
 }
 
-func (c *managedDataCLIClient) uploadReleaseArtifact(ctx context.Context, project, releaseID, workspaceID, contentDigest string, body io.Reader) (apigenapi.ReleaseArtifactResponse, error) {
+func (c *managedDataCLIClient) uploadReleaseArtifact(ctx context.Context, project, releaseID, workspaceID, contentDigest string, body io.Reader) (releasegen.ReleaseArtifactResponse, error) {
 	endpoint, err := apiOperationURL(c.target, "uploadReleaseArtifact", map[string]string{"project": project, "release": releaseID, "workspace": workspaceID}, nil)
 	if err != nil {
-		return apigenapi.ReleaseArtifactResponse{}, err
+		return releasegen.ReleaseArtifactResponse{}, err
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, body)
 	if err != nil {
-		return apigenapi.ReleaseArtifactResponse{}, err
+		return releasegen.ReleaseArtifactResponse{}, err
 	}
 	request.Header.Set("Authorization", "Bearer "+c.token)
 	request.Header.Set("Accept", "application/json")
@@ -120,40 +123,40 @@ func (c *managedDataCLIClient) uploadReleaseArtifact(ctx context.Context, projec
 	request.Header.Set("Content-Digest", contentDigest)
 	response, err := c.http.Do(request)
 	if err != nil {
-		return apigenapi.ReleaseArtifactResponse{}, fmt.Errorf("upload release artifact could not reach the server")
+		return releasegen.ReleaseArtifactResponse{}, fmt.Errorf("upload release artifact could not reach the server")
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		_, _ = io.Copy(io.Discard, response.Body)
-		return apigenapi.ReleaseArtifactResponse{}, fmt.Errorf("upload release artifact failed with HTTP %d", response.StatusCode)
+		return releasegen.ReleaseArtifactResponse{}, fmt.Errorf("upload release artifact failed with HTTP %d", response.StatusCode)
 	}
-	var result apigenapi.ReleaseArtifactResponse
+	var result releasegen.ReleaseArtifactResponse
 	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
-		return apigenapi.ReleaseArtifactResponse{}, err
+		return releasegen.ReleaseArtifactResponse{}, err
 	}
 	return result, nil
 }
 
-func (c *managedDataCLIClient) finalizeRelease(ctx context.Context, project, releaseID, key string) (apigenapi.ReleaseResponse, error) {
-	var response apigenapi.ReleaseResponse
+func (c *managedDataCLIClient) finalizeRelease(ctx context.Context, project, releaseID, key string) (releasegen.ReleaseResponse, error) {
+	var response releasegen.ReleaseResponse
 	err := c.json(ctx, http.MethodPost, "finalizeRelease", map[string]string{"project": project, "release": releaseID}, nil, key, nil, &response)
 	return response, err
 }
 
-func (c *managedDataCLIClient) getRelease(ctx context.Context, project, releaseID string) (apigenapi.ReleaseResponse, error) {
-	var response apigenapi.ReleaseResponse
+func (c *managedDataCLIClient) getRelease(ctx context.Context, project, releaseID string) (releasegen.ReleaseResponse, error) {
+	var response releasegen.ReleaseResponse
 	err := c.json(ctx, http.MethodGet, "getRelease", map[string]string{"project": project, "release": releaseID}, nil, "", nil, &response)
 	return response, err
 }
 
-func (c *managedDataCLIClient) createDeployment(ctx context.Context, project, key string, body apigenapi.DeploymentCreateRequest) (apigenapi.DeploymentResponse, error) {
-	var response apigenapi.DeploymentResponse
+func (c *managedDataCLIClient) createDeployment(ctx context.Context, project, key string, body deploymentgen.DeploymentCreateRequest) (deploymentgen.DeploymentResponse, error) {
+	var response deploymentgen.DeploymentResponse
 	err := c.json(ctx, http.MethodPost, "createDeployment", map[string]string{"project": project}, nil, key, body, &response)
 	return response, err
 }
 
-func (c *managedDataCLIClient) getDeployment(ctx context.Context, project, deploymentID string) (apigenapi.DeploymentResponse, error) {
-	var response apigenapi.DeploymentResponse
+func (c *managedDataCLIClient) getDeployment(ctx context.Context, project, deploymentID string) (deploymentgen.DeploymentResponse, error) {
+	var response deploymentgen.DeploymentResponse
 	err := c.json(ctx, http.MethodGet, "getDeployment", map[string]string{"project": project, "deployment": deploymentID}, nil, "", nil, &response)
 	return response, err
 }
@@ -195,7 +198,17 @@ func (c *managedDataCLIClient) jsonEndpoint(ctx context.Context, method, endpoin
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
+		contents, _ := io.ReadAll(io.LimitReader(response.Body, 64<<10))
+		var problem struct {
+			Code   string `json:"code"`
+			Detail string `json:"detail"`
+		}
+		if json.Unmarshal(contents, &problem) == nil && strings.TrimSpace(problem.Detail) != "" {
+			if strings.TrimSpace(problem.Code) != "" {
+				return fmt.Errorf("operation %s failed with HTTP %d (%s): %s", operation, response.StatusCode, problem.Code, problem.Detail)
+			}
+			return fmt.Errorf("operation %s failed with HTTP %d: %s", operation, response.StatusCode, problem.Detail)
+		}
 		return fmt.Errorf("operation %s failed with HTTP %d", operation, response.StatusCode)
 	}
 	if out == nil {

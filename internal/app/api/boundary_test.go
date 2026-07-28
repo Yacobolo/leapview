@@ -10,7 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	apigen "github.com/Yacobolo/leapview/internal/app/api/gen"
+	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
+	workspacegen "github.com/Yacobolo/leapview/internal/workspace/api/gen"
 )
 
 func TestAPIPackageStaysTransportContractOnly(t *testing.T) {
@@ -33,7 +34,7 @@ func TestAgentDoesNotDependOnHeadlessAPIContract(t *testing.T) {
 }
 
 func TestGeneratedAssetResponseRequiresSnapshotAndPayload(t *testing.T) {
-	typ := reflect.TypeOf(apigen.AssetResponse{})
+	typ := reflect.TypeOf(workspacegen.AssetResponse{})
 	for _, name := range []string{"SnapshotId", "Payload"} {
 		field, ok := typ.FieldByName(name)
 		if !ok {
@@ -49,21 +50,21 @@ func TestGeneratedAssetResponseRequiresSnapshotAndPayload(t *testing.T) {
 }
 
 func TestGeneratedAssetListUsesSummaryWithoutPayload(t *testing.T) {
-	listTyp := reflect.TypeOf(apigen.AssetListResponse{})
+	listTyp := reflect.TypeOf(workspacegen.AssetListResponse{})
 	items, ok := listTyp.FieldByName("Items")
 	if !ok {
 		t.Fatal("AssetListResponse.Items missing")
 	}
-	if items.Type.Kind() != reflect.Slice || items.Type.Elem() != reflect.TypeOf(apigen.AssetSummaryResponse{}) {
+	if items.Type.Kind() != reflect.Slice || items.Type.Elem() != reflect.TypeOf(workspacegen.AssetSummaryResponse{}) {
 		t.Fatalf("AssetListResponse.Items type = %s, want []AssetSummaryResponse", items.Type)
 	}
-	if _, ok := reflect.TypeOf(apigen.AssetSummaryResponse{}).FieldByName("Payload"); ok {
+	if _, ok := reflect.TypeOf(workspacegen.AssetSummaryResponse{}).FieldByName("Payload"); ok {
 		t.Fatal("AssetSummaryResponse unexpectedly includes Payload")
 	}
 }
 
 func TestGeneratedAssetPayloadOpenAPIAllowsArbitraryJSON(t *testing.T) {
-	spec, err := apigen.GetEmbeddedOpenAPISpec()
+	spec, err := apiaggregate.GetEmbeddedOpenAPISpec()
 	if err != nil {
 		t.Fatalf("embedded openapi: %v", err)
 	}

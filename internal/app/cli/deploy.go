@@ -16,9 +16,10 @@ import (
 	"strings"
 	"time"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	deploymentgen "github.com/Yacobolo/leapview/internal/deployment/api/gen"
 	projectbundle "github.com/Yacobolo/leapview/internal/project/bundle"
 	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
+	releasegen "github.com/Yacobolo/leapview/internal/release/api/gen"
 	"github.com/Yacobolo/leapview/internal/workspace"
 	"github.com/spf13/cobra"
 )
@@ -150,10 +151,10 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 		artifacts = append(artifacts, artifact{workspaceID: item.workspaceID, digest: digest, content: append([]byte(nil), content.Bytes()...)})
 	}
 
-	createBody := apigenapi.ReleaseCreateRequest{ProjectDigest: projectDigest, Workspaces: make([]apigenapi.ReleaseWorkspaceManifest, 0, len(artifacts)), Connections: []apigenapi.ReleaseConnectionPin{}}
+	createBody := releasegen.ReleaseCreateRequest{ProjectDigest: projectDigest, Workspaces: make([]releasegen.ReleaseWorkspaceManifest, 0, len(artifacts)), Connections: []releasegen.ReleaseConnectionPin{}}
 	keyValues := []string{project.Name, projectDigest}
 	for _, item := range artifacts {
-		createBody.Workspaces = append(createBody.Workspaces, apigenapi.ReleaseWorkspaceManifest{Workspace: item.workspaceID, ArtifactDigest: item.digest})
+		createBody.Workspaces = append(createBody.Workspaces, releasegen.ReleaseWorkspaceManifest{Workspace: item.workspaceID, ArtifactDigest: item.digest})
 		keyValues = append(keyValues, item.workspaceID, item.digest)
 	}
 	connectionIDs := make([]string, 0, len(request.Revisions))
@@ -162,7 +163,7 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 	}
 	sort.Strings(connectionIDs)
 	for _, connection := range connectionIDs {
-		createBody.Connections = append(createBody.Connections, apigenapi.ReleaseConnectionPin{Connection: connection, RevisionId: request.Revisions[connection]})
+		createBody.Connections = append(createBody.Connections, releasegen.ReleaseConnectionPin{Connection: connection, RevisionId: request.Revisions[connection]})
 		keyValues = append(keyValues, connection, request.Revisions[connection])
 	}
 	releaseKey := deploymentIdempotencyKey("release", keyValues...)
@@ -175,27 +176,37 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 	}
 	finalized := created
 	switch created.Status {
-	case apigenapi.ReleaseStatusDraft:
+	case releasegen.ReleaseStatusDraft:
 		for _, item := range artifacts {
 			digestBytes, _ := hex.DecodeString(item.digest)
 			contentDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(digestBytes) + ":"
 			if _, err := client.uploadReleaseArtifact(ctx, project.Name, created.Id, item.workspaceID, contentDigest, bytes.NewReader(item.content)); err != nil {
-				return fmt.Errorf("upload workspace %q artifact failed", item.workspaceID)
+				advanced, getErr := client.getRelease(ctx, project.Name, created.Id)
+				if getErr != nil ||
+					advanced.Id != created.Id ||
+					advanced.ProjectId != project.Name ||
+					(advanced.Status != releasegen.ReleaseStatusValidating && advanced.Status != releasegen.ReleaseStatusReady) {
+					return fmt.Errorf("upload workspace %q artifact failed", item.workspaceID)
+				}
+				finalized = advanced
+				break
 			}
 		}
-		finalized, err = client.finalizeRelease(ctx, project.Name, created.Id, deploymentIdempotencyKey("finalize", project.Name, created.Id))
-		if err != nil {
-			return fmt.Errorf("finalize project release failed")
+		if finalized.Status != releasegen.ReleaseStatusReady {
+			finalized, err = client.finalizeRelease(ctx, project.Name, created.Id, deploymentIdempotencyKey("finalize", project.Name, created.Id))
+			if err != nil {
+				return fmt.Errorf("finalize project release failed")
+			}
 		}
-	case apigenapi.ReleaseStatusValidating:
+	case releasegen.ReleaseStatusValidating:
 		// Reissuing finalize is idempotent and restarts validation if a prior
 		// server process stopped after persisting the validating state.
 		finalized, err = client.finalizeRelease(ctx, project.Name, created.Id, deploymentIdempotencyKey("finalize", project.Name, created.Id))
 		if err != nil {
 			return fmt.Errorf("resume project release validation failed")
 		}
-	case apigenapi.ReleaseStatusReady:
-	case apigenapi.ReleaseStatusFailed:
+	case releasegen.ReleaseStatusReady:
+	case releasegen.ReleaseStatusFailed:
 		return fmt.Errorf("existing project release validation failed; create a new release")
 	default:
 		return fmt.Errorf("project release returned unexpected status %q", created.Status)
@@ -204,7 +215,7 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 	if err != nil {
 		return err
 	}
-	deployed, err := client.createDeployment(ctx, project.Name, deploymentIdempotencyKey("deploy", project.Name, created.Id), apigenapi.DeploymentCreateRequest{ReleaseId: created.Id})
+	deployed, err := client.createDeployment(ctx, project.Name, deploymentIdempotencyKey("deploy", project.Name, created.Id), deploymentgen.DeploymentCreateRequest{ReleaseId: created.Id})
 	if err != nil {
 		return fmt.Errorf("deploy project release failed")
 	}
@@ -219,67 +230,67 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 	return err
 }
 
-func waitForProjectRelease(ctx context.Context, client *managedDataCLIClient, projectID, releaseID string, release apigenapi.ReleaseResponse) (apigenapi.ReleaseResponse, error) {
+func waitForProjectRelease(ctx context.Context, client *managedDataCLIClient, projectID, releaseID string, release releasegen.ReleaseResponse) (releasegen.ReleaseResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
 	for {
 		if release.Id != releaseID || release.ProjectId != projectID {
-			return apigenapi.ReleaseResponse{}, fmt.Errorf("project release returned inconsistent scope")
+			return releasegen.ReleaseResponse{}, fmt.Errorf("project release returned inconsistent scope")
 		}
 		switch release.Status {
-		case apigenapi.ReleaseStatusReady:
+		case releasegen.ReleaseStatusReady:
 			return release, nil
-		case apigenapi.ReleaseStatusValidating:
-		case apigenapi.ReleaseStatusFailed:
+		case releasegen.ReleaseStatusValidating:
+		case releasegen.ReleaseStatusFailed:
 			detail := ""
 			if release.Error != nil {
 				detail = ": " + *release.Error
 			}
-			return apigenapi.ReleaseResponse{}, fmt.Errorf("project release validation failed%s", detail)
+			return releasegen.ReleaseResponse{}, fmt.Errorf("project release validation failed%s", detail)
 		default:
-			return apigenapi.ReleaseResponse{}, fmt.Errorf("project release validation returned unexpected status %q", release.Status)
+			return releasegen.ReleaseResponse{}, fmt.Errorf("project release validation returned unexpected status %q", release.Status)
 		}
 		select {
 		case <-ctx.Done():
-			return apigenapi.ReleaseResponse{}, fmt.Errorf("wait for project release validation: %w", ctx.Err())
+			return releasegen.ReleaseResponse{}, fmt.Errorf("wait for project release validation: %w", ctx.Err())
 		case <-time.After(100 * time.Millisecond):
 		}
 		next, err := client.getRelease(ctx, projectID, releaseID)
 		if err != nil {
-			return apigenapi.ReleaseResponse{}, fmt.Errorf("get project release failed")
+			return releasegen.ReleaseResponse{}, fmt.Errorf("get project release failed")
 		}
 		release = next
 	}
 }
 
-func waitForProjectDeployment(ctx context.Context, client *managedDataCLIClient, projectID, releaseID string, deployment apigenapi.DeploymentResponse) (apigenapi.DeploymentResponse, error) {
+func waitForProjectDeployment(ctx context.Context, client *managedDataCLIClient, projectID, releaseID string, deployment deploymentgen.DeploymentResponse) (deploymentgen.DeploymentResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
 	for {
 		switch deployment.Status {
-		case apigenapi.DeploymentStatusActive:
+		case deploymentgen.DeploymentStatusActive:
 			return deployment, nil
-		case apigenapi.DeploymentStatusQueued, apigenapi.DeploymentStatusRunning:
-		case apigenapi.DeploymentStatusFailed, apigenapi.DeploymentStatusCancelled:
+		case deploymentgen.DeploymentStatusQueued, deploymentgen.DeploymentStatusRunning:
+		case deploymentgen.DeploymentStatusFailed, deploymentgen.DeploymentStatusCancelled:
 			detail := ""
 			if deployment.Error != nil {
 				detail = ": " + *deployment.Error
 			}
-			return apigenapi.DeploymentResponse{}, fmt.Errorf("project deployment %s%s", deployment.Status, detail)
+			return deploymentgen.DeploymentResponse{}, fmt.Errorf("project deployment %s%s", deployment.Status, detail)
 		default:
-			return apigenapi.DeploymentResponse{}, fmt.Errorf("project deployment returned unexpected status %q", deployment.Status)
+			return deploymentgen.DeploymentResponse{}, fmt.Errorf("project deployment returned unexpected status %q", deployment.Status)
 		}
 		select {
 		case <-ctx.Done():
-			return apigenapi.DeploymentResponse{}, fmt.Errorf("wait for project deployment: %w", ctx.Err())
+			return deploymentgen.DeploymentResponse{}, fmt.Errorf("wait for project deployment: %w", ctx.Err())
 		case <-time.After(100 * time.Millisecond):
 		}
 		next, err := client.getDeployment(ctx, projectID, deployment.Id)
 		if err != nil {
-			return apigenapi.DeploymentResponse{}, fmt.Errorf("get project deployment failed")
+			return deploymentgen.DeploymentResponse{}, fmt.Errorf("get project deployment failed")
 		}
 		if next.Id != deployment.Id || next.ProjectId != projectID || next.ReleaseId != releaseID {
-			return apigenapi.DeploymentResponse{}, fmt.Errorf("project deployment returned inconsistent scope")
+			return deploymentgen.DeploymentResponse{}, fmt.Errorf("project deployment returned inconsistent scope")
 		}
 		deployment = next
 	}

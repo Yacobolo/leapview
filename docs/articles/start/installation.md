@@ -4,48 +4,85 @@ LeapView ships as a public multi-architecture container image. Pulling that imag
 
 ## Before you begin
 
-Install Docker Engine. The quick start below is a localhost-only development instance for evaluation. A public production instance additionally needs Docker Compose, a DNS name, HTTPS, durable secret storage, and off-host backups.
+Install Docker Engine. The five-minute path below needs no source checkout,
+registry login, Go, Bun, Task, manual YAML, or external dataset. A public
+production instance additionally needs Docker Compose, a DNS name, HTTPS,
+durable secret storage, and off-host backups.
 
-## Try it from the public image
+## Run the five-minute evaluation
 
-Pull the current stable release, create its persistent state volume, and initialize one local administrator:
+Pull the public image and start its self-contained evaluator:
 
 ```sh
 docker pull ghcr.io/yacobolo/leapview:latest
-docker volume create leapview-state
-umask 077
-docker run --rm \
-  --volume leapview-state:/var/lib/leapview \
-  --env LEAPVIEW_PRODUCTION=0 \
-  --env LEAPVIEW_ENVIRONMENT=dev \
-  --env LEAPVIEW_BOOTSTRAP_ADMIN_EMAIL=admin@localhost \
-  ghcr.io/yacobolo/leapview:latest \
-  admin initialize --format json > initial-credentials.json
-docker run --rm \
-  --volume leapview-state:/var/lib/leapview \
-  --env LEAPVIEW_PRODUCTION=0 \
-  --env LEAPVIEW_ENVIRONMENT=dev \
-  ghcr.io/yacobolo/leapview:latest \
-  admin initialize --acknowledge-credentials
+docker run --detach --name leapview-evaluate --init \
+  --publish 127.0.0.1:8080:8080 \
+  --volume leapview-evaluate:/var/lib/leapview \
+  ghcr.io/yacobolo/leapview:latest evaluate
 ```
 
-Start the same instance on the loopback interface:
+The evaluator generates private runtime secrets, creates a forced-change local
+administrator, stages the small synthetic dataset shipped in the image, and
+atomically deploys one disposable workspace. It prints no secret to the
+container log. Wait for the health check, then consume the credentials once:
 
 ```sh
-docker run --detach --name leapview --init \
-  --publish 127.0.0.1:8080:8080 \
-  --volume leapview-state:/var/lib/leapview \
-  --env LEAPVIEW_PRODUCTION=0 \
-  --env LEAPVIEW_ENVIRONMENT=dev \
-  --env LEAPVIEW_LOCAL_AUTH=1 \
-  ghcr.io/yacobolo/leapview:latest serve
+docker exec leapview-evaluate leapview healthcheck
+docker exec leapview-evaluate leapview evaluate first-login
 ```
 
-Open <http://localhost:8080> and sign in with the temporary password in `initial-credentials.json`. Keep that owner-readable file private: it also contains a restricted publisher token that expires after 24 hours. The acknowledgement command removes LeapView's recovery copy only after the redirected file exists; delete your file when you no longer need either credential.
+Open <http://localhost:8080>, sign in, and change the temporary password. Choose
+**Five-minute Sales Evaluation**, select a State, and confirm that the Orders
+KPI, revenue chart, and governed order table update together. This exercises
+authentication, immutable serving-state deployment, managed data, semantic
+query planning, DuckDB execution, filters, and table rendering.
 
-The state survives removal or replacement of the container because it lives in `leapview-state`. To stop and remove only the container, run `docker rm --force leapview`. Removing the named volume deletes the instance and is not part of normal shutdown.
+The `127.0.0.1` publish address is part of the security boundary. Evaluation
+mode intentionally uses local HTTP and generated local secrets; do not expose
+it on a LAN or the internet and do not treat the synthetic workspace as
+production seeding.
 
-Use `latest` for this disposable evaluation path. Pin a release version or digest anywhere repeatability matters.
+### Persistence, diagnostics, and cleanup
+
+The named volume preserves the initialized instance, changed password, managed
+data, and active deployment:
+
+```sh
+docker restart leapview-evaluate
+docker exec leapview-evaluate leapview healthcheck
+```
+
+If initialization does not become healthy, inspect the deterministic bootstrap
+log and container state:
+
+```sh
+docker logs leapview-evaluate
+docker inspect --format '{{.State.Health.Status}}' leapview-evaluate
+```
+
+`first-login` is deliberately one-time. If its output was lost, reset the
+disposable evaluator. Removing the container does not remove its volume:
+
+```sh
+docker rm --force leapview-evaluate
+```
+
+Delete the persisted evaluation instance only when a full reset is intended:
+
+```sh
+docker volume rm leapview-evaluate
+```
+
+Use `latest` for this disposable evaluation path. Pin a release version or
+digest anywhere repeatability matters.
+
+### Move beyond the sample
+
+The bundled synthetic project exists only to qualify the product journey. To
+connect real data, start with [Connect a data
+source](/docs/guides/build/connect-data). For a durable or externally reachable
+instance, use the versioned Compose release below; it adds immutable image
+pinning, HTTPS, backups, and state-aware upgrades.
 
 ## Run a durable production instance
 
@@ -71,11 +108,22 @@ cp deployment.env.example deployment.env
 ./leapviewctl first-login
 ```
 
-Initialization generates production secrets, creates the persistent volume, validates configuration, and atomically creates a forced-change local administrator plus a restricted publisher token. `first-login` prints and deletes that one-time credential file.
+Before adoption, run the archive's bundled `./qualification/qualify.sh`.
+`QUALIFICATION.md` maps every automated assertion to the corresponding human
+check, including anonymous distribution, the five-minute sample, audited
+authorization denial, restart persistence, and an isolated restore using the
+separately managed secret configuration.
+
+Initialization treats `--domain` as the canonical public hostname and derives `LEAPVIEW_PUBLIC_URL=https://<domain>`, the allowed host, and the Caddy domain from it. It also generates production secrets, creates the persistent volume, validates the resulting production configuration, and atomically creates a forced-change local administrator plus a restricted publisher token. `first-login` prints and deletes that one-time credential file.
 
 `leapviewctl` is an optional production operations controller, not a prerequisite for pulling or running LeapView. It invokes the installed Docker Compose CLI and does not require Bash or direct access to the Docker socket API. You may manage the image with your existing container platform if it preserves the same single-process, persistent-home, initialization, backup, and environment contracts.
 
-The Caddy overlay is enabled by default. Pass `--no-https` only when an existing trusted HTTPS proxy fronts the localhost-bound application port. Keep secure cookies and the public allowed host configured for that proxy.
+Operators integrating the image directly must set the documented production
+environment first, run `leapview admin initialize --format json`, store its
+one-time output securely, acknowledge that output, and then start `leapview
+serve --production`. The Compose controller performs those steps atomically.
+
+The Caddy overlay is enabled by default. Pass `--no-https` only when an existing trusted HTTPS proxy fronts the localhost-bound application port. This changes where TLS terminates, not the external scheme: the generated public URL remains HTTPS, secure cookies remain enabled, and forwarded host and scheme headers must come only from that trusted proxy.
 
 ## Understand the instance boundary
 
@@ -111,6 +159,39 @@ Use `task dev:status`, `task dev:logs`, and `task dev:stop` for the worktree-loc
 ## Validate
 
 For the local image path, run `docker inspect --format '{{.State.Health.Status}}' leapview` and expect `healthy`. For Compose, run `docker compose config --quiet` and `./leapviewctl status`. A production application container must report healthy, and its resolved image must include a `sha256` digest.
+
+For a released Compose archive, verify that every shipped surface has the same
+identity before trusting the deployment:
+
+```sh
+sha256sum --check leapview-compose-*.tar.gz.sha256
+cat release-identity.json
+./leapviewctl version --json
+LEAPVIEW_IMAGE="$(cat image-reference.txt)"
+docker image inspect "$LEAPVIEW_IMAGE" \
+  --format '{{index .Config.Labels "org.opencontainers.image.version"}} {{index .Config.Labels "org.opencontainers.image.revision"}}'
+docker run --rm "$LEAPVIEW_IMAGE" version --json
+```
+
+The semantic version and full Git revision must agree across
+`release-identity.json`, `leapviewctl`, the server binary, and the OCI labels.
+A release reports `"dirty": false` and `"development": false`; an ordinary
+local or candidate build reports version `development` and can never claim the
+release version. LeapView uses the release commit timestamp as `buildTime` so
+the identity remains reproducible.
+
+After startup, compare the same identity through the authenticated
+capabilities endpoint using a token authorized to use a workspace:
+
+```sh
+curl --fail --silent --show-error \
+  --header "Authorization: Bearer $LEAPVIEW_API_TOKEN" \
+  "$LEAPVIEW_PUBLIC_URL/api/v1/capabilities"
+```
+
+The `/api/v1/capabilities` response fields `buildVersion`, `buildRevision`,
+`buildTime`, `buildDirty`, and `buildDevelopment` must match the packaged
+identity.
 
 ## Verify
 

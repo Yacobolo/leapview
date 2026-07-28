@@ -19,7 +19,7 @@ var secretVerifierParams = &argon2id.Params{
 }
 
 func secretFingerprint(secret string) string {
-	mac := hmac.New(sha256.New, tokenFingerprintKey)
+	mac := hmac.New(sha256.New, tokenFingerprintKey())
 	mac.Write([]byte(secret))
 	return hex.EncodeToString(mac.Sum(nil))
 }
@@ -33,7 +33,7 @@ func verifySecret(secret, verifier string) bool {
 	return err == nil && match
 }
 
-var tokenFingerprintKey = func() []byte {
+func tokenFingerprintKey() []byte {
 	source := firstNonEmpty(
 		strings.TrimSpace(os.Getenv("LEAPVIEW_TOKEN_HASH_KEY")),
 		strings.TrimSpace(os.Getenv("LEAPVIEW_CSRF_KEY")),
@@ -41,4 +41,4 @@ var tokenFingerprintKey = func() []byte {
 	)
 	sum := sha256.Sum256([]byte("leapview-token-fingerprint:" + source))
 	return sum[:]
-}()
+}

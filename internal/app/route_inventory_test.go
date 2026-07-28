@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -47,7 +47,7 @@ func TestRouteInventory(t *testing.T) {
 		}
 		metadata[key] = contract
 	}
-	for _, contract := range apigenapi.GetAPIGenOperationContracts() {
+	for _, contract := range apiaggregate.GetAPIGenOperationContracts() {
 		key := contract.Method + " " + contract.Path
 		want[key] = struct{}{}
 		owner, ok := apiOwner(contract.Tags)

@@ -1,5 +1,6 @@
 using Http;
 using TypeSpec.OpenAPI;
+using LeapViewAPI.Protocol;
 
 namespace LeapViewAPI.Agent;
 
@@ -97,7 +98,7 @@ op createAgentConversation(@header("Idempotency-Key") idempotencyKey: Idempotenc
 @delete
 @apigen.authz(#{ mode: "privilege", privilege: "USE_AGENT" })
 @operationId("archiveAgentConversation")
-op archiveAgentConversation(@path conversation: string): NoContentResponse | CommonErrors;
+op archiveAgentConversation(@path conversation: string): EmptyResponse | CommonErrors;
 
 alias GetAgentConversationOK = OkJson<AgentConversationResponse>;
 
