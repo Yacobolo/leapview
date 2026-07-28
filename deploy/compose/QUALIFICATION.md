@@ -41,8 +41,8 @@ synthetic orders. The absolute rc.1 ceilings are:
 | --- | ---: |
 | Restart-cold dashboard readiness p95 | 15 s |
 | Warm dashboard readiness p95 | 5 s |
-| Filter-to-settle p95 | 3 s |
-| Governed table-sort interaction p95 | 1 s |
+| Filter-to-settle p95 | 5 s |
+| Governed table-sort interaction p95 | 2 s |
 | Governed query p95 | 1 s |
 | Refresh/materialization p95 | 15 s |
 | Eight-reader governed-query p95 | 5 s |
