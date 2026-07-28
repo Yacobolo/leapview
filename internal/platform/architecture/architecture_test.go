@@ -1675,13 +1675,12 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...",
 		"production-image:",
 		"name: Production image",
-		"docker/setup-buildx-action@",
-		"docker/build-push-action@",
-		"cache-from: type=gha,scope=production-image",
-		"cache-to: type=gha,mode=max,scope=production-image",
+		"depot/setup-action@",
+		"depot/build-push-action@",
+		"project: 9x73gxjcf5",
+		"platforms: linux/amd64",
+		"id-token: write",
 		"./scripts/smoke_production_image.sh leapview:ci",
-		"cache-from: type=gha,scope=site-image",
-		"cache-to: type=gha,mode=max,scope=site-image",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CI workflow missing production gate fragment %q", want)
@@ -1691,6 +1690,27 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		block := workflowJobBlock(t, text, job)
 		if strings.Contains(block, "needs: prepare") {
 			t.Fatalf("%s must not wait for unrelated generated assets", job)
+		}
+	}
+	productionImage := workflowJobBlock(t, text, "production-image")
+	for _, want := range []string{"load: true", "pull: true"} {
+		if !strings.Contains(productionImage, want) {
+			t.Fatalf("production-image must preserve runtime validation fragment %q", want)
+		}
+	}
+	siteImage := workflowJobBlock(t, text, "site-image")
+	if strings.Contains(siteImage, "load: true") {
+		t.Fatal("site-image must not transfer an unused image back to the GitHub runner")
+	}
+	for _, block := range []struct {
+		name string
+		text string
+	}{
+		{name: "production-image", text: productionImage},
+		{name: "site-image", text: siteImage},
+	} {
+		if strings.Contains(block.text, "type=gha") {
+			t.Fatalf("%s must use Depot's persistent cache instead of transferring a GitHub Actions cache", block.name)
 		}
 	}
 	deploymentContracts := workflowJobBlock(t, text, "deployment-contracts")
