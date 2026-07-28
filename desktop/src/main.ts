@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   app,
   BrowserWindow,
+  dialog,
   protocol,
   session,
   shell,
@@ -16,6 +17,10 @@ import {
 } from "./auth.js";
 import { discoverInstance } from "./discovery.js";
 import { ProfileStore, type Profile } from "./profiles.js";
+import {
+  installRemoteLifecyclePolicy,
+  type RemoteLifecycleFailure,
+} from "./remote-lifecycle.js";
 import {
   configureRemoteSession,
   installRemoteContentsPolicy,
@@ -45,11 +50,22 @@ protocol.registerSchemesAsPrivileged([
 app.enableSandbox();
 
 let shellWindow: BrowserWindow | null = null;
+let trustedUI: TrustedUI;
 const remoteWindows = new Map<string, BrowserWindow>();
 const authenticationTransactions = new Map<string, Promise<void>>();
 const configuredSessions = new WeakSet<Session>();
+const configuredSessionOrigins = new WeakMap<Session, string>();
+const externalApprovals = new Set<string>();
 let allowLoopbackHTTP = false;
 let profiles: ProfileStore;
+
+app.on(
+  "certificate-error",
+  (event, _contents, _url, _error, _certificate, callback) => {
+    event.preventDefault();
+    callback(false);
+  },
+);
 
 void app.whenReady().then(start).catch((error: unknown) => {
   console.error("LeapView Desktop failed to start", error);
@@ -71,7 +87,7 @@ async function start(): Promise<void> {
   allowLoopbackHTTP = !app.isPackaged;
   profiles = new ProfileStore(join(app.getPath("userData"), "profiles.json"));
   const trustedAssets = await loadTrustedUIAssets();
-  const trustedUI = new TrustedUI(
+  trustedUI = new TrustedUI(
     {
       allowLoopbackHTTP,
       listProfiles: () => profiles.list(),
@@ -122,7 +138,7 @@ async function disconnectProfile(profileID: string): Promise<void> {
   }
   const partition = profilePartition(profile);
   const profileSession = session.fromPartition(partition);
-  configureSessionOnce(profileSession);
+  configureSessionOnce(profileSession, profile);
   await disconnectDesktopProfile(
     profile,
     (input, init) => profileSession.fetch(input, init),
@@ -175,7 +191,7 @@ async function openRemoteWindow(profile: Profile): Promise<void> {
   }
   const partition = profilePartition(profile);
   const profileSession = session.fromPartition(partition);
-  configureSessionOnce(profileSession);
+  configureSessionOnce(profileSession, profile);
   await ensureAuthenticated(profile, profileSession);
   const remote = new BrowserWindow({
     width: 1440,
@@ -183,15 +199,31 @@ async function openRemoteWindow(profile: Profile): Promise<void> {
     minWidth: 800,
     minHeight: 600,
     show: false,
-    title: profile.displayName,
+    title: `${profile.displayName} — ${profile.canonicalOrigin}`,
     backgroundColor: "#111713",
     webPreferences: remoteWebPreferences(partition),
   });
   remoteWindows.set(profile.id, remote);
-  installRemoteContentsPolicy(remote.webContents, profile.canonicalOrigin);
+  installRemoteContentsPolicy(
+    remote.webContents,
+    profile.canonicalOrigin,
+    () => undefined,
+    {
+      requestExternalOpen: (request: { url: string }) =>
+        confirmExternalOpen(profile, remote, request.url),
+    },
+  );
+  installRemoteLifecyclePolicy(
+    remote.webContents,
+    {
+      origin: profile.canonicalOrigin,
+      displayName: profile.displayName,
+    },
+    (failure) => handleRemoteFailure(profile, remote, failure),
+  );
   remote.webContents.on("page-title-updated", (event) => {
     event.preventDefault();
-    remote.setTitle(profile.displayName);
+    remote.setTitle(`${profile.displayName} — ${profile.canonicalOrigin}`);
   });
   remote.once("ready-to-show", () => remote.show());
   remote.once("closed", () => remoteWindows.delete(profile.id));
@@ -295,12 +327,128 @@ function createShellWindow(): void {
   void shellWindow.loadURL("leapview://app/");
 }
 
-function configureSessionOnce(target: Session): void {
+function configureSessionOnce(target: Session, profile?: Profile): void {
   if (configuredSessions.has(target)) {
+    if (
+      profile !== undefined &&
+      configuredSessionOrigins.get(target) !== profile.canonicalOrigin
+    ) {
+      throw new Error("Desktop profile session origin binding changed.");
+    }
     return;
   }
   configuredSessions.add(target);
-  configureRemoteSession(target);
+  if (profile !== undefined) {
+    configuredSessionOrigins.set(target, profile.canonicalOrigin);
+  }
+  configureRemoteSession(
+    target,
+    () => undefined,
+    profile === undefined
+      ? undefined
+      : {
+          configuredOrigin: profile.canonicalOrigin,
+          displayName: profile.displayName,
+          downloadsDirectory: app.getPath("downloads"),
+        },
+  );
+}
+
+async function confirmExternalOpen(
+  profile: Profile,
+  remote: BrowserWindow,
+  candidate: string,
+): Promise<void> {
+  if (
+    externalApprovals.has(profile.id) ||
+    remote.isDestroyed() ||
+    remoteWindows.get(profile.id) !== remote
+  ) {
+    return;
+  }
+  const url = canonicalExternalURL(candidate, profile.canonicalOrigin);
+  if (url === null) {
+    return;
+  }
+  externalApprovals.add(profile.id);
+  try {
+    const result = await dialog.showMessageBox(remote, {
+      type: "question",
+      buttons: ["Cancel", "Open in browser"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      title: "Open external link",
+      message: `Open a link from ${profile.displayName}?`,
+      detail: `${profile.canonicalOrigin}\n\n${url}`,
+    });
+    if (
+      result.response === 1 &&
+      !remote.isDestroyed() &&
+      remoteWindows.get(profile.id) === remote
+    ) {
+      await shell.openExternal(url, { activate: true });
+    }
+  } finally {
+    externalApprovals.delete(profile.id);
+  }
+}
+
+function canonicalExternalURL(
+  candidate: string,
+  configuredOrigin: string,
+): string | null {
+  if (new TextEncoder().encode(candidate).byteLength > 2_048) {
+    return null;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    return null;
+  }
+  if (
+    parsed.protocol === "https:" &&
+    parsed.origin !== configuredOrigin &&
+    parsed.username === "" &&
+    parsed.password === ""
+  ) {
+    return parsed.toString();
+  }
+  if (
+    parsed.protocol === "mailto:" &&
+    parsed.search === "" &&
+    parsed.hash === "" &&
+    /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Za-z0-9.-]{1,189}$/u.test(
+      parsed.pathname,
+    )
+  ) {
+    return parsed.toString();
+  }
+  return null;
+}
+
+function handleRemoteFailure(
+  profile: Profile,
+  remote: BrowserWindow,
+  failure: RemoteLifecycleFailure,
+): void {
+  if (
+    remote.isDestroyed() ||
+    remoteWindows.get(profile.id) !== remote
+  ) {
+    return;
+  }
+  remote.destroy();
+  trustedUI.reportNotice({
+    kind: "error",
+    state: failure.state,
+    message: failure.message,
+  });
+  createShellWindow();
+  if (shellWindow !== null && !shellWindow.isDestroyed()) {
+    void shellWindow.loadURL("leapview://app/");
+  }
 }
 
 function installTrustedContentsPolicy(contents: Electron.WebContents): void {

@@ -112,6 +112,7 @@ for (const required of [
   "/dist/files/inter-vietnamese-wght-normal.woff2",
   "/dist/src/main.js",
   "/dist/src/auth.js",
+  "/dist/src/remote-lifecycle.js",
   "/dist/src/security/remote-policy.mjs",
 ]) {
   if (!archiveFiles.includes(required)) {

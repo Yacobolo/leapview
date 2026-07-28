@@ -1,5 +1,13 @@
+import { join } from "node:path";
+
 const profilePartitionPattern = /^(?:persist:)?leapview-profile-[A-Za-z0-9_-]{1,64}$/;
 const loopbackHosts = new Set(["127.0.0.1", "::1", "localhost"]);
+const externalDispositions = new Set([
+  "foreground-tab",
+  "background-tab",
+  "new-window",
+]);
+const maximumDownloadBytes = 50 * 1024 * 1024;
 
 export function parseConfiguredOrigin(raw, options = {}) {
   const value = String(raw ?? "").trim();
@@ -52,7 +60,11 @@ export function remoteWebPreferences(partition) {
   });
 }
 
-export function configureRemoteSession(remoteSession, audit = () => {}) {
+export function configureRemoteSession(
+  remoteSession,
+  audit = () => {},
+  capabilities = {},
+) {
   remoteSession.webRequest.onBeforeRequest(
     {
       urls: [
@@ -83,9 +95,28 @@ export function configureRemoteSession(remoteSession, audit = () => {}) {
   });
 
   remoteSession.on("will-download", (event, item) => {
-    event.preventDefault();
-    item.cancel();
-    audit({ kind: "download", allowed: false });
+    const exportRequest = reviewedCSVExport(item, capabilities);
+    if (exportRequest === null) {
+      event.preventDefault();
+      item.cancel();
+      audit({ kind: "download", allowed: false });
+      return;
+    }
+    item.setSaveDialogOptions({
+      title: `Export CSV from ${capabilities.displayName}`,
+      defaultPath: join(
+        capabilities.downloadsDirectory,
+        exportRequest.suggestedFilename,
+      ),
+      buttonLabel: "Save export",
+      filters: [{ name: "CSV", extensions: ["csv"] }],
+      properties: ["showOverwriteConfirmation", "createDirectory"],
+    });
+    audit({
+      kind: "download",
+      allowed: true,
+      totalBytes: exportRequest.totalBytes,
+    });
   });
   remoteSession.on("select-serial-port", (event, _ports, _contents, callback) => {
     event.preventDefault();
@@ -104,7 +135,12 @@ export function configureRemoteSession(remoteSession, audit = () => {}) {
   });
 }
 
-export function installRemoteContentsPolicy(contents, configuredOrigin, audit = () => {}) {
+export function installRemoteContentsPolicy(
+  contents,
+  configuredOrigin,
+  audit = () => {},
+  capabilities = {},
+) {
   const trustedOrigin = new URL(configuredOrigin);
   const guardMainFrameNavigation = (event, ...args) => {
     const details = navigationDetails(event, args);
@@ -124,8 +160,30 @@ export function installRemoteContentsPolicy(contents, configuredOrigin, audit = 
     event.preventDefault();
     audit({ kind: "webview-attachment", allowed: false });
   });
-  contents.setWindowOpenHandler(() => {
-    audit({ kind: "popup", allowed: false });
+  contents.setWindowOpenHandler((details) => {
+    const reviewed = reviewedWindowOpen(details, trustedOrigin);
+    if (reviewed?.kind === "same-origin") {
+      setImmediate(() => {
+        void Promise.resolve(contents.loadURL(reviewed.url)).catch(() => {
+          audit({ kind: "same-origin-window-open", allowed: false });
+        });
+      });
+      audit({ kind: "same-origin-window-open", allowed: true });
+    } else if (
+      reviewed?.kind === "external" &&
+      typeof capabilities.requestExternalOpen === "function"
+    ) {
+      setImmediate(() => {
+        void Promise.resolve(
+          capabilities.requestExternalOpen({ url: reviewed.url }),
+        ).catch(() => {
+          audit({ kind: "external-open-request", allowed: false });
+        });
+      });
+      audit({ kind: "external-open-request", allowed: true });
+    } else {
+      audit({ kind: "popup", allowed: false });
+    }
     return { action: "deny" };
   });
 }
@@ -151,4 +209,117 @@ function navigationDetails(event, args) {
     url: typeof args[0] === "string" ? args[0] : "",
     isMainFrame: typeof args[2] === "boolean" ? args[2] : true,
   };
+}
+
+function reviewedCSVExport(item, capabilities) {
+  if (
+    typeof capabilities.configuredOrigin !== "string" ||
+    typeof capabilities.displayName !== "string" ||
+    typeof capabilities.downloadsDirectory !== "string" ||
+    capabilities.displayName.length === 0 ||
+    capabilities.displayName.length > 120 ||
+    capabilities.downloadsDirectory.length === 0 ||
+    item.hasUserGesture() !== true
+  ) {
+    return null;
+  }
+  let source;
+  try {
+    source = new URL(item.getURL());
+  } catch {
+    return null;
+  }
+  const totalBytes = item.getTotalBytes();
+  const mimeType = String(item.getMimeType()).toLowerCase().split(";", 1)[0];
+  if (
+    source.protocol !== "blob:" ||
+    source.origin !== capabilities.configuredOrigin ||
+    mimeType !== "text/csv" ||
+    !Number.isSafeInteger(totalBytes) ||
+    totalBytes < 1 ||
+    totalBytes > maximumDownloadBytes
+  ) {
+    return null;
+  }
+  return {
+    suggestedFilename: safeCSVFilename(item.getFilename()),
+    totalBytes,
+  };
+}
+
+function safeCSVFilename(input) {
+  const leaf = String(input)
+    .replaceAll("\\", "/")
+    .split("/")
+    .at(-1)
+    ?.replace(/[\u0000-\u001f\u007f<>:"/\\|?*]/gu, "-")
+    .replace(/^\.+/u, "")
+    .trim()
+    .slice(0, 100) ?? "";
+  const withoutExtension = leaf.replace(/(?:\.csv)?(?:\.[^.]+)*$/iu, "");
+  const stem = withoutExtension.length === 0 ? "leapview-export" : withoutExtension;
+  const reserved = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/iu.test(stem)
+    ? `_${stem}`
+    : stem;
+  return `${reserved}.csv`;
+}
+
+function reviewedWindowOpen(details, trustedOrigin) {
+  if (
+    details === null ||
+    typeof details !== "object" ||
+    typeof details.url !== "string" ||
+    new TextEncoder().encode(details.url).byteLength > 2_048 ||
+    !externalDispositions.has(details.disposition) ||
+    details.postBody != null ||
+    !hasExactOriginReferrer(details.referrer, trustedOrigin)
+  ) {
+    return null;
+  }
+  let parsed;
+  try {
+    parsed = new URL(details.url);
+  } catch {
+    return null;
+  }
+  if (
+    parsed.protocol === trustedOrigin.protocol &&
+    parsed.origin === trustedOrigin.origin
+  ) {
+    return { kind: "same-origin", url: parsed.toString() };
+  }
+  if (
+    parsed.protocol === "https:" &&
+    parsed.origin !== trustedOrigin.origin &&
+    parsed.username === "" &&
+    parsed.password === ""
+  ) {
+    return { kind: "external", url: parsed.toString() };
+  }
+  if (
+    parsed.protocol === "mailto:" &&
+    parsed.search === "" &&
+    parsed.hash === "" &&
+    /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Za-z0-9.-]{1,189}$/u.test(
+      parsed.pathname,
+    )
+  ) {
+    return { kind: "external", url: parsed.toString() };
+  }
+  return null;
+}
+
+function hasExactOriginReferrer(referrer, trustedOrigin) {
+  if (
+    referrer === null ||
+    typeof referrer !== "object" ||
+    typeof referrer.url !== "string"
+  ) {
+    return false;
+  }
+  try {
+    return new URL(referrer.url).origin === trustedOrigin.origin;
+  } catch {
+    return false;
+  }
 }

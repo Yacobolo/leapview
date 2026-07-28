@@ -1,6 +1,26 @@
+import { randomBytes } from "node:crypto";
+
 import type { Profile } from "./profiles.js";
 
 const MAX_FORM_BYTES = 4 * 1024;
+const MAX_OPERATIONS = 16;
+const OPERATION_TTL_MS = 10 * 60 * 1_000;
+
+export type TrustedUIState =
+  | "authentication-required"
+  | "connecting"
+  | "crashed"
+  | "disconnected"
+  | "error"
+  | "incompatible"
+  | "offline"
+  | "success";
+
+export interface TrustedUINotice {
+  kind: "error" | "progress" | "success";
+  state: TrustedUIState;
+  message: string;
+}
 
 export interface TrustedUIActions {
   allowLoopbackHTTP: boolean;
@@ -19,6 +39,8 @@ export interface TrustedUIAssets {
 export class TrustedUI {
   readonly #actions: TrustedUIActions;
   readonly #assets: TrustedUIAssets;
+  readonly #operations = new Map<string, TrustedUIOperation>();
+  #reportedNotice: TrustedUINotice | undefined;
 
   constructor(actions: TrustedUIActions, assets: TrustedUIAssets) {
     this.#actions = actions;
@@ -31,7 +53,7 @@ export class TrustedUI {
       return textResponse(404, "Not found");
     }
     if (request.method === "GET" && url.pathname === "/") {
-      return this.#render();
+      return this.#render(this.#reportedNotice);
     }
     if (request.method === "GET" && url.pathname === "/app.css") {
       return assetResponse(
@@ -40,6 +62,10 @@ export class TrustedUI {
       );
     }
     if (request.method === "GET") {
+      const operationID = operationIDFromPath(url.pathname);
+      if (operationID !== null) {
+        return this.#renderOperation(operationID);
+      }
       const font = this.#assets.fonts.get(url.pathname);
       if (font !== undefined) {
         return assetResponse(font, "font/woff2");
@@ -49,6 +75,16 @@ export class TrustedUI {
       return this.#handleConnect(request);
     }
     return textResponse(405, "Method not allowed", { Allow: "GET, POST" });
+  }
+
+  reportNotice(notice: TrustedUINotice): void {
+    if (
+      new TextEncoder().encode(notice.message).byteLength > 400 ||
+      /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(notice.message)
+    ) {
+      throw new TypeError("Trusted shell notice is invalid.");
+    }
+    this.#reportedNotice = structuredClone(notice);
   }
 
   async #handleConnect(request: Request): Promise<Response> {
@@ -61,45 +97,133 @@ export class TrustedUI {
         const operation = form.get("operation") ?? "open";
         switch (operation) {
           case "open":
-            await this.#actions.connectProfile(profileID);
-            break;
+            return this.#startOperation(
+              "Checking the saved instance and opening LeapView…",
+              () => this.#actions.connectProfile(profileID),
+              {
+                kind: "success",
+                state: "success",
+                message: "LeapView opened in its protected instance window.",
+              },
+            );
           case "disconnect":
-            await this.#actions.disconnectProfile(profileID);
-            break;
+            return this.#startOperation(
+              "Disconnecting the LeapView session…",
+              () => this.#actions.disconnectProfile(profileID),
+              {
+                kind: "success",
+                state: "disconnected",
+                message: "LeapView session disconnected.",
+              },
+            );
           case "remove":
-            await this.#actions.removeProfile(profileID);
-            break;
+            return this.#startOperation(
+              "Removing the LeapView instance from this device…",
+              () => this.#actions.removeProfile(profileID),
+              {
+                kind: "success",
+                state: "disconnected",
+                message: "LeapView instance removed from this device.",
+              },
+            );
           default:
             throw new Error("Saved profile action is invalid.");
         }
-        return this.#render({
-          kind: "success",
-          message:
-            operation === "open"
-              ? "LeapView opened in its protected instance window."
-              : operation === "disconnect"
-                ? "LeapView session disconnected."
-                : "LeapView instance removed from this device.",
-        });
       }
       if (origin !== null && profileID === null) {
-        await this.#actions.connectOrigin(origin);
-        return this.#render({
-          kind: "success",
-          message: "Instance verified and opened.",
-        });
+        return this.#startOperation(
+          "Verifying the instance and opening LeapView…",
+          () => this.#actions.connectOrigin(origin),
+          {
+            kind: "success",
+            state: "success",
+            message: "Instance verified and opened.",
+          },
+        );
       }
       throw new Error("Choose a saved instance or enter one instance URL.");
     } catch (error) {
       return this.#render({
         kind: "error",
+        state: "error",
         message: userFacingError(error),
       });
     }
   }
 
+  #startOperation(
+    pendingMessage: string,
+    action: () => Promise<void>,
+    success: TrustedUINotice,
+  ): Response | Promise<Response> {
+    this.#pruneOperations();
+    for (const [id, operation] of this.#operations) {
+      if (this.#operations.size < MAX_OPERATIONS) {
+        break;
+      }
+      if (operation.notice !== undefined) {
+        this.#operations.delete(id);
+      }
+    }
+    if (this.#operations.size >= MAX_OPERATIONS) {
+      return this.#render({
+        kind: "error",
+        state: "error",
+        message:
+          "Too many desktop actions are active. Wait for one to finish and try again.",
+      });
+    }
+    this.#reportedNotice = undefined;
+    const id = randomBytes(16).toString("hex");
+    const operation: TrustedUIOperation = {
+      createdAt: Date.now(),
+      pendingMessage,
+    };
+    this.#operations.set(id, operation);
+    void Promise.resolve()
+      .then(action)
+      .then(() => {
+        operation.notice = success;
+      })
+      .catch((error: unknown) => {
+        operation.notice = classifyOperationError(error);
+      });
+    const headers = trustedHeaders("text/plain; charset=utf-8");
+    headers.set("Location", `leapview://app/operations/${id}`);
+    return new Response(null, { status: 303, headers });
+  }
+
+  #renderOperation(id: string): Promise<Response> | Response {
+    this.#pruneOperations();
+    const operation = this.#operations.get(id);
+    if (operation === undefined) {
+      return textResponse(404, "Desktop operation was not found.");
+    }
+    if (operation.notice !== undefined) {
+      return this.#render(operation.notice);
+    }
+    return this.#render(
+      {
+        kind: "progress",
+        state: "connecting",
+        message: operation.pendingMessage,
+      },
+      `leapview://app/operations/${id}`,
+    );
+  }
+
+  #pruneOperations(): void {
+    const oldestAllowed = Date.now() - OPERATION_TTL_MS;
+    for (const [id, operation] of this.#operations) {
+      if (operation.createdAt < oldestAllowed) {
+        this.#operations.delete(id);
+      }
+    }
+  }
+
   async #render(
-    notice?: { kind: "success" | "error"; message: string },
+    notice?: TrustedUINotice,
+    refreshURL?: string,
   ): Promise<Response> {
     let profiles: Profile[] = [];
     let storageError = "";
@@ -127,7 +251,7 @@ export class TrustedUI {
     const noticeHTML =
       notice === undefined
         ? ""
-        : `<p class="notice ${notice.kind}" role="status">${escapeHTML(notice.message)}</p>`;
+        : `<p class="notice ${notice.kind}" data-state="${notice.state}" role="${notice.kind === "error" ? "alert" : "status"}"${notice.kind === "progress" ? ' aria-live="polite"' : ""}>${escapeHTML(notice.message)}</p>`;
     const storageErrorHTML =
       storageError === ""
         ? ""
@@ -140,6 +264,7 @@ export class TrustedUI {
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    ${refreshURL === undefined ? "" : `<meta http-equiv="refresh" content="1;url=${escapeHTML(refreshURL)}">`}
     <title>LeapView</title>
     <link rel="stylesheet" href="leapview://app/app.css">
     <style>
@@ -399,6 +524,12 @@ export class TrustedUI {
         color: var(--lv-fg-success);
       }
 
+      .notice.progress {
+        border-color: var(--lv-line-accent-muted);
+        background: var(--lv-bg-accent-muted);
+        color: var(--lv-fg-accent);
+      }
+
       .notice.error {
         border-color: var(--lv-line-danger-muted);
         background: var(--lv-bg-danger-muted);
@@ -475,6 +606,12 @@ export class TrustedUI {
       headers: trustedHeaders("text/html; charset=utf-8"),
     });
   }
+}
+
+interface TrustedUIOperation {
+  createdAt: number;
+  pendingMessage: string;
+  notice?: TrustedUINotice;
 }
 
 function profileAction(
@@ -579,6 +716,60 @@ function textResponse(
 function userFacingError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message.slice(0, 400);
+}
+
+function classifyOperationError(error: unknown): TrustedUINotice {
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  if (
+    message.includes("not compatible") ||
+    message.includes("unsupported discovery schema") ||
+    message.includes("different leapview instance identity") ||
+    message.includes("different canonical origin") ||
+    message.includes("system-browser-pkce") ||
+    message.includes("remote-web")
+  ) {
+    return {
+      kind: "error",
+      state: "incompatible",
+      message:
+        "This LeapView instance is not compatible with this version of the desktop client.",
+    };
+  }
+  if (
+    message.includes("authentication") ||
+    message.includes("authorization") ||
+    message.includes("desktop session")
+  ) {
+    return {
+      kind: "error",
+      state: "authentication-required",
+      message:
+        "Authentication was not completed. Reopen the instance to try signing in again.",
+    };
+  }
+  if (
+    message.includes("discovery") ||
+    message.includes("timed out") ||
+    message.includes("could not load") ||
+    message.includes("could not revoke")
+  ) {
+    return {
+      kind: "error",
+      state: "offline",
+      message:
+        "The LeapView instance could not be reached. Check the network or server and try again.",
+    };
+  }
+  return {
+    kind: "error",
+    state: "error",
+    message: "LeapView could not complete the request. Try again.",
+  };
+}
+
+function operationIDFromPath(pathname: string): string | null {
+  const match = /^\/operations\/([0-9a-f]{32})$/u.exec(pathname);
+  return match?.[1] ?? null;
 }
 
 function escapeHTML(value: string): string {

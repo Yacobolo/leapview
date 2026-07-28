@@ -89,10 +89,118 @@ describe("TrustedUI", () => {
       }),
     );
 
-    expect(response.status).toBe(200);
-    expect(await response.text()).toContain("Instance verified and opened.");
+    expect(response.status).toBe(303);
+    const operationURL = response.headers.get("location") ?? "";
+    expect(operationURL).toMatch(
+      /^leapview:\/\/app\/operations\/[0-9a-f]{32}$/u,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const completed = await ui.handle(new Request(operationURL));
+    expect(await completed.text()).toContain("Instance verified and opened.");
     expect(origins).toEqual(["http://localhost:8080"]);
     expect(profiles).toEqual([]);
+  });
+
+  test("shows a safe no-script connecting state while an operation is pending", async () => {
+    let finish: () => void = () => undefined;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const ui = trustedUI({
+      allowLoopbackHTTP: false,
+      connectOrigin: async () => pending,
+      connectProfile: async () => undefined,
+      disconnectProfile: async () => undefined,
+      removeProfile: async () => undefined,
+      listProfiles: async () => [],
+    });
+    const response = await Promise.race([
+      ui.handle(
+        new Request("leapview://app/connect", {
+          method: "POST",
+          body: "origin=https%3A%2F%2Fanalytics.company.com",
+        }),
+      ),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 50)),
+    ]);
+
+    expect(response).not.toBeNull();
+    expect(response?.status).toBe(303);
+    const operationURL = response?.headers.get("location") ?? "";
+    const status = await ui.handle(new Request(operationURL));
+    const body = await status.text();
+    expect(body).toContain('data-state="connecting"');
+    expect(body).toContain("Verifying the instance");
+    expect(body).toContain('http-equiv="refresh"');
+    expect(body).not.toContain("<script");
+
+    finish();
+    await pending;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const completed = await ui.handle(new Request(operationURL));
+    expect(await completed.text()).toContain("Instance verified and opened.");
+  });
+
+  test("classifies compatibility and offline failures without exposing causes", async () => {
+    for (const [message, state, safeMessage] of [
+      [
+        "the server desktop protocol is not compatible with this client",
+        "incompatible",
+        "not compatible",
+      ],
+      [
+        "instance discovery failed",
+        "offline",
+        "could not be reached",
+      ],
+    ] as const) {
+      const ui = trustedUI({
+        allowLoopbackHTTP: false,
+        connectOrigin: async () => {
+          throw new Error(message, {
+            cause: new Error("secret.internal:5432"),
+          });
+        },
+        connectProfile: async () => undefined,
+        disconnectProfile: async () => undefined,
+        removeProfile: async () => undefined,
+        listProfiles: async () => [],
+      });
+      const response = await ui.handle(
+        new Request("leapview://app/connect", {
+          method: "POST",
+          body: "origin=https%3A%2F%2Fanalytics.company.com",
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const operationURL = response.headers.get("location") ?? "";
+      const body = await (await ui.handle(new Request(operationURL))).text();
+
+      expect(body).toContain(`data-state="${state}"`);
+      expect(body).toContain(safeMessage);
+      expect(body).not.toContain("secret.internal");
+    }
+  });
+
+  test("renders trusted lifecycle notices reported by the main process", async () => {
+    const ui = trustedUI({
+      allowLoopbackHTTP: false,
+      connectOrigin: async () => undefined,
+      connectProfile: async () => undefined,
+      disconnectProfile: async () => undefined,
+      removeProfile: async () => undefined,
+      listProfiles: async () => [],
+    });
+    ui.reportNotice({
+      kind: "error",
+      state: "crashed",
+      message: "Company Analytics stopped unexpectedly. Reopen it to continue.",
+    });
+
+    const body = await (await ui.handle(new Request("leapview://app/"))).text();
+    expect(body).toContain('data-state="crashed"');
+    expect(body).toContain("stopped unexpectedly");
+    expect(body).toContain('role="alert"');
   });
 
   test("escapes saved server-controlled display metadata", async () => {
@@ -142,10 +250,41 @@ describe("TrustedUI", () => {
           body: new URLSearchParams({ profileId: profileID, operation }),
         }),
       );
-      expect(response.status).toBe(200);
+      expect(response.status).toBe(303);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await ui.handle(
+        new Request(response.headers.get("location") ?? ""),
+      );
     }
     expect(disconnected).toEqual([profileID]);
     expect(removed).toEqual([profileID]);
+  });
+
+  test("completed operations do not exhaust the active operation limit", async () => {
+    let connections = 0;
+    const ui = trustedUI({
+      allowLoopbackHTTP: false,
+      connectOrigin: async () => {
+        connections += 1;
+      },
+      connectProfile: async () => undefined,
+      disconnectProfile: async () => undefined,
+      removeProfile: async () => undefined,
+      listProfiles: async () => [],
+    });
+
+    for (let attempt = 0; attempt < 17; attempt += 1) {
+      const response = await ui.handle(
+        new Request("leapview://app/connect", {
+          method: "POST",
+          body: "origin=https%3A%2F%2Fanalytics.company.com",
+        }),
+      );
+      expect(response.status).toBe(303);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    expect(connections).toBe(17);
   });
 
   test("rejects oversized connection forms before invoking actions", async () => {

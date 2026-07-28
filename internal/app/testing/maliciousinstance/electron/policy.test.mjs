@@ -104,6 +104,79 @@ test("remote session denies permissions, devices, and downloads", () => {
   assert.ok(decisions.some((decision) => decision.kind === "native-transport" && decision.allowed === false));
 });
 
+test("reviewed CSV exports require an exact-profile origin, user gesture, and save dialog", () => {
+  const session = new FakeSession();
+  const decisions = [];
+  configureRemoteSession(
+    session,
+    (decision) => decisions.push(decision),
+    {
+      configuredOrigin: "https://analytics.company.com",
+      displayName: "Company Analytics",
+      downloadsDirectory: "/safe",
+    },
+  );
+
+  const event = preventableEvent();
+  const item = fakeDownload({
+    url: "blob:https://analytics.company.com/01234567-89ab-cdef-0123-456789abcdef",
+    mimeType: "text/csv",
+    filename: "../../Quarter 1.csv",
+    totalBytes: 1_024,
+    hasUserGesture: true,
+  });
+  session.emit("will-download", event, item, {});
+
+  assert.equal(event.defaultPrevented, false);
+  assert.equal(item.cancelCalled, false);
+  assert.deepEqual(item.saveDialogOptions, {
+    title: "Export CSV from Company Analytics",
+    defaultPath: "/safe/Quarter 1.csv",
+    buttonLabel: "Save export",
+    filters: [{ name: "CSV", extensions: ["csv"] }],
+    properties: ["showOverwriteConfirmation", "createDirectory"],
+  });
+  assert.ok(decisions.some((decision) =>
+    decision.kind === "download" && decision.allowed === true
+  ));
+
+  for (const candidate of [
+    fakeDownload({
+      url: "blob:https://attacker.example/id",
+      mimeType: "text/csv",
+      filename: "stolen.csv",
+      totalBytes: 100,
+      hasUserGesture: true,
+    }),
+    fakeDownload({
+      url: "https://analytics.company.com/export",
+      mimeType: "application/octet-stream",
+      filename: "report.csv.exe",
+      totalBytes: 100,
+      hasUserGesture: true,
+    }),
+    fakeDownload({
+      url: "blob:https://analytics.company.com/id",
+      mimeType: "text/csv",
+      filename: "oversized.csv",
+      totalBytes: 51 * 1024 * 1024,
+      hasUserGesture: true,
+    }),
+    fakeDownload({
+      url: "blob:https://analytics.company.com/id",
+      mimeType: "text/csv",
+      filename: "scripted.csv",
+      totalBytes: 100,
+      hasUserGesture: false,
+    }),
+  ]) {
+    const denied = preventableEvent();
+    session.emit("will-download", denied, candidate, {});
+    assert.equal(denied.defaultPrevented, true);
+    assert.equal(candidate.cancelCalled, true);
+  }
+});
+
 test("remote contents enforce exact-origin main-frame navigation and deny popups", () => {
   const contents = new FakeContents();
   const decisions = [];
@@ -165,6 +238,86 @@ test("remote contents enforce exact-origin main-frame navigation and deny popups
   assert.ok(decisions.some((decision) => decision.kind === "popup" && decision.allowed === false));
 });
 
+test("new-window requests never create Electron windows and reviewed links require trusted confirmation", async () => {
+  const contents = new FakeContents();
+  const external = [];
+  installRemoteContentsPolicy(
+    contents,
+    "https://analytics.company.com",
+    () => undefined,
+    {
+      requestExternalOpen: async (request) => {
+        external.push(request);
+      },
+    },
+  );
+
+  assert.deepEqual(
+    contents.windowOpenHandler({
+      url: "https://analytics.company.com/workspaces/sales",
+      disposition: "foreground-tab",
+      referrer: { url: "https://analytics.company.com/dashboard", policy: "no-referrer" },
+    }),
+    { action: "deny" },
+  );
+  await flushTasks();
+  assert.deepEqual(contents.loadedURLs, [
+    "https://analytics.company.com/workspaces/sales",
+  ]);
+
+  for (const url of [
+    "https://docs.example.com/leapview",
+    "mailto:support@example.com",
+  ]) {
+    assert.deepEqual(
+      contents.windowOpenHandler({
+        url,
+        disposition: "foreground-tab",
+        referrer: { url: "https://analytics.company.com/dashboard", policy: "no-referrer" },
+      }),
+      { action: "deny" },
+    );
+  }
+  await flushTasks();
+  assert.deepEqual(external, [
+    { url: "https://docs.example.com/leapview" },
+    { url: "mailto:support@example.com" },
+  ]);
+
+  for (const details of [
+    {
+      url: "file:///tmp/hostile",
+      disposition: "foreground-tab",
+      referrer: { url: "https://analytics.company.com/", policy: "no-referrer" },
+    },
+    {
+      url: "https://docs.example.com/scripted",
+      disposition: "default",
+      referrer: { url: "https://analytics.company.com/", policy: "no-referrer" },
+    },
+    {
+      url: "https://docs.example.com/foreign-frame",
+      disposition: "foreground-tab",
+      referrer: { url: "https://attacker.example/", policy: "no-referrer" },
+    },
+    {
+      url: "mailto:support@example.com?body=secret",
+      disposition: "foreground-tab",
+      referrer: { url: "https://analytics.company.com/", policy: "no-referrer" },
+    },
+    {
+      url: "https://docs.example.com/form",
+      disposition: "foreground-tab",
+      referrer: { url: "https://analytics.company.com/", policy: "no-referrer" },
+      postBody: { data: [] },
+    },
+  ]) {
+    contents.windowOpenHandler(details);
+  }
+  await flushTasks();
+  assert.equal(external.length, 2);
+});
+
 class FakeSession extends EventEmitter {
   webRequest = {
     onBeforeRequest: (filter, handler) => {
@@ -187,8 +340,14 @@ class FakeSession extends EventEmitter {
 }
 
 class FakeContents extends EventEmitter {
+  loadedURLs = [];
+
   setWindowOpenHandler(handler) {
     this.windowOpenHandler = handler;
+  }
+
+  async loadURL(url) {
+    this.loadedURLs.push(url);
   }
 }
 
@@ -199,4 +358,32 @@ function preventableEvent() {
       this.defaultPrevented = true;
     },
   };
+}
+
+function fakeDownload({
+  url,
+  mimeType,
+  filename,
+  totalBytes,
+  hasUserGesture = false,
+}) {
+  return {
+    cancelCalled: false,
+    saveDialogOptions: null,
+    getURL: () => url,
+    getMimeType: () => mimeType,
+    getFilename: () => filename,
+    getTotalBytes: () => totalBytes,
+    hasUserGesture: () => hasUserGesture,
+    cancel() {
+      this.cancelCalled = true;
+    },
+    setSaveDialogOptions(options) {
+      this.saveDialogOptions = options;
+    },
+  };
+}
+
+async function flushTasks() {
+  await new Promise((resolve) => setImmediate(resolve));
 }
