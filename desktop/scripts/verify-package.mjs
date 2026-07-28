@@ -69,7 +69,10 @@ const expectedFuses = new Map([
   [FuseV1Options.EnableCookieEncryption, FuseState.ENABLE],
   [FuseV1Options.EnableNodeOptionsEnvironmentVariable, FuseState.DISABLE],
   [FuseV1Options.EnableNodeCliInspectArguments, FuseState.DISABLE],
-  [FuseV1Options.EnableEmbeddedAsarIntegrityValidation, FuseState.ENABLE],
+  [
+    FuseV1Options.EnableEmbeddedAsarIntegrityValidation,
+    process.platform === "linux" ? FuseState.DISABLE : FuseState.ENABLE,
+  ],
   [FuseV1Options.OnlyLoadAppFromAsar, FuseState.ENABLE],
   [FuseV1Options.LoadBrowserProcessSpecificV8Snapshot, FuseState.DISABLE],
   [FuseV1Options.GrantFileProtocolExtraPrivileges, FuseState.DISABLE],

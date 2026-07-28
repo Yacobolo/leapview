@@ -7,19 +7,24 @@ import {
   FuseVersion,
 } from "@electron/fuses";
 
-export const fuseConfig: FuseConfig = {
-  version: FuseVersion.V1,
-  strictlyRequireAllFuses: true,
-  [FuseV1Options.RunAsNode]: false,
-  [FuseV1Options.EnableCookieEncryption]: true,
-  [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
-  [FuseV1Options.EnableNodeCliInspectArguments]: false,
-  [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
-  [FuseV1Options.OnlyLoadAppFromAsar]: true,
-  [FuseV1Options.LoadBrowserProcessSpecificV8Snapshot]: false,
-  [FuseV1Options.GrantFileProtocolExtraPrivileges]: false,
-  [FuseV1Options.WasmTrapHandlers]: true,
-};
+export function createFuseConfig(platform: NodeJS.Platform): FuseConfig {
+  return {
+    version: FuseVersion.V1,
+    strictlyRequireAllFuses: true,
+    [FuseV1Options.RunAsNode]: false,
+    [FuseV1Options.EnableCookieEncryption]: true,
+    [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
+    [FuseV1Options.EnableNodeCliInspectArguments]: false,
+    [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]:
+      platform === "darwin" || platform === "win32",
+    [FuseV1Options.OnlyLoadAppFromAsar]: true,
+    [FuseV1Options.LoadBrowserProcessSpecificV8Snapshot]: false,
+    [FuseV1Options.GrantFileProtocolExtraPrivileges]: false,
+    [FuseV1Options.WasmTrapHandlers]: true,
+  };
+}
+
+export const fuseConfig = createFuseConfig(process.platform);
 
 const config: ForgeConfig = {
   packagerConfig: {

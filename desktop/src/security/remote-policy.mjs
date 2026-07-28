@@ -53,6 +53,18 @@ export function remoteWebPreferences(partition) {
 }
 
 export function configureRemoteSession(remoteSession, audit = () => {}) {
+  remoteSession.webRequest.onBeforeRequest(
+    {
+      urls: [
+        "http://wails.localhost/*",
+        "https://wails.localhost/*",
+      ],
+    },
+    (_details, callback) => {
+      audit({ kind: "native-transport", allowed: false });
+      callback({ cancel: true });
+    },
+  );
   remoteSession.setPermissionCheckHandler((_contents, permission) => {
     audit({ kind: "permission-check", permission, allowed: false });
     return false;

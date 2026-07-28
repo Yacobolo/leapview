@@ -54,8 +54,9 @@ HTTPS and an exact canonical origin.
   top-level navigation are denied.
 - Discovery uses a separate non-persistent session with credentials omitted,
   redirects rejected, an 8-second timeout, and a 64 KiB response limit.
-- Production packages enable cookie encryption and embedded ASAR integrity;
-  disable Electron-as-Node, `NODE_OPTIONS`, Node inspector arguments, loose-app
+- Production packages enable cookie encryption; enable embedded ASAR integrity
+  on Electron's supported macOS and Windows platforms; disable
+  Electron-as-Node, `NODE_OPTIONS`, Node inspector arguments, loose-app
   fallback, and privileged `file:` behavior; and contain compiled application
   files only.
 

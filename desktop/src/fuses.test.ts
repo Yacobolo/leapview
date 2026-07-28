@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { FuseV1Options, FuseVersion } from "@electron/fuses";
 
-import { fuseConfig } from "../forge.config.js";
+import { createFuseConfig, fuseConfig } from "../forge.config.js";
 
 test("packaged Electron binaries use the complete fail-closed fuse policy", () => {
   expect(fuseConfig.version).toBe(FuseVersion.V1);
@@ -23,4 +23,22 @@ test("packaged Electron binaries use the complete fail-closed fuse policy", () =
     false,
   );
   expect(fuseConfig[FuseV1Options.WasmTrapHandlers]).toBe(true);
+});
+
+test("ASAR integrity follows Electron's supported desktop platforms", () => {
+  expect(
+    createFuseConfig("darwin")[
+      FuseV1Options.EnableEmbeddedAsarIntegrityValidation
+    ],
+  ).toBe(true);
+  expect(
+    createFuseConfig("win32")[
+      FuseV1Options.EnableEmbeddedAsarIntegrityValidation
+    ],
+  ).toBe(true);
+  expect(
+    createFuseConfig("linux")[
+      FuseV1Options.EnableEmbeddedAsarIntegrityValidation
+    ],
+  ).toBe(false);
 });

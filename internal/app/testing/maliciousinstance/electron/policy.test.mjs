@@ -86,7 +86,22 @@ test("remote session denies permissions, devices, and downloads", () => {
   session.emit("will-download", event, item, {});
   assert.equal(event.defaultPrevented, true);
   assert.equal(item.cancelCalled, true);
+  assert.deepEqual(session.beforeRequestFilter, {
+    urls: [
+      "http://wails.localhost/*",
+      "https://wails.localhost/*",
+    ],
+  });
+  let transportDecision;
+  session.beforeRequestHandler(
+    { url: "http://wails.localhost/wails/runtime" },
+    (decision) => {
+      transportDecision = decision;
+    },
+  );
+  assert.deepEqual(transportDecision, { cancel: true });
   assert.ok(decisions.some((decision) => decision.kind === "download" && decision.allowed === false));
+  assert.ok(decisions.some((decision) => decision.kind === "native-transport" && decision.allowed === false));
 });
 
 test("remote contents enforce exact-origin main-frame navigation and deny popups", () => {
@@ -151,6 +166,13 @@ test("remote contents enforce exact-origin main-frame navigation and deny popups
 });
 
 class FakeSession extends EventEmitter {
+  webRequest = {
+    onBeforeRequest: (filter, handler) => {
+      this.beforeRequestFilter = filter;
+      this.beforeRequestHandler = handler;
+    },
+  };
+
   setPermissionCheckHandler(handler) {
     this.permissionCheckHandler = handler;
   }
