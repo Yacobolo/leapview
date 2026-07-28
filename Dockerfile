@@ -54,8 +54,7 @@ RUN bun scripts/generate_visualization_validator.ts && \
     bun scripts/generate_vega_lite_validator.ts && \
     bun run build
 
-FROM golang:1.25-bookworm@sha256:a9c020ee3d1508c7be5435c262434e3d3fc1d0e76a11afeb9ddae7d60bc86aa4 AS build
-WORKDIR /src
+FROM sourcegen AS build
 
 ARG BUILD_VERSION=development
 ARG BUILD_REVISION=unknown
@@ -63,38 +62,6 @@ ARG BUILD_TIME=unknown
 ARG BUILD_DIRTY=true
 ARG BUILD_RELEASE=false
 
-COPY go.mod go.sum ./
-RUN go mod download
-
-COPY . .
-COPY --from=sourcegen /src/api/gen ./api/gen
-COPY --from=sourcegen /src/internal/access/api/gen ./internal/access/api/gen
-COPY --from=sourcegen /src/internal/agent/api/gen ./internal/agent/api/gen
-COPY --from=sourcegen /src/internal/analytics/api/gen ./internal/analytics/api/gen
-COPY --from=sourcegen /src/internal/dashboard/api/gen ./internal/dashboard/api/gen
-COPY --from=sourcegen /src/internal/deployment/api/gen ./internal/deployment/api/gen
-COPY --from=sourcegen /src/internal/manageddata/api/gen ./internal/manageddata/api/gen
-COPY --from=sourcegen /src/internal/app/api/aggregate ./internal/app/api/aggregate
-COPY --from=sourcegen /src/internal/app/api/gen ./internal/app/api/gen
-COPY --from=sourcegen /src/internal/platform/http/api/gen ./internal/platform/http/api/gen
-COPY --from=sourcegen /src/internal/project/api/gen ./internal/project/api/gen
-COPY --from=sourcegen /src/internal/refresh/api/gen ./internal/refresh/api/gen
-COPY --from=sourcegen /src/internal/release/api/gen ./internal/release/api/gen
-COPY --from=sourcegen /src/internal/workspace/api/gen ./internal/workspace/api/gen
-COPY --from=sourcegen /src/internal/app/cli/gen ./internal/app/cli/gen
-COPY --from=sourcegen /src/internal/app/config/config_gen.go ./internal/app/config/config_gen.go
-COPY --from=sourcegen /src/internal/app/config/spec/names_gen.go ./internal/app/config/spec/names_gen.go
-COPY --from=sourcegen /src/internal/platform/db/db.go ./internal/platform/db/db.go
-COPY --from=sourcegen /src/internal/platform/db/models.go ./internal/platform/db/models.go
-COPY --from=sourcegen /src/internal/platform/db/*.sql.go ./internal/platform/db/
-COPY --from=sourcegen /src/internal/access/ui/signals/models.gen.go ./internal/access/ui/signals/models.gen.go
-COPY --from=sourcegen /src/internal/admin/ui/signals/models.gen.go ./internal/admin/ui/signals/models.gen.go
-COPY --from=sourcegen /src/internal/agent/ui/signals/models.gen.go ./internal/agent/ui/signals/models.gen.go
-COPY --from=sourcegen /src/internal/dashboard/ui/signals/models.gen.go ./internal/dashboard/ui/signals/models.gen.go
-COPY --from=sourcegen /src/internal/workspace/ui/signals/models.gen.go ./internal/workspace/ui/signals/models.gen.go
-COPY --from=sourcegen /src/docs ./docs
-COPY --from=sourcegen /src/schemas ./schemas
-COPY --from=sourcegen /src/web/generated ./web/generated
 COPY --from=web /src/static ./static
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
