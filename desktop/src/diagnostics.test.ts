@@ -50,12 +50,18 @@ describe("DiagnosticJournal", () => {
         surface: "remote",
         reason: "crashed",
       });
+      journal.record({
+        kind: "policy",
+        mode: "managed",
+        userInstances: "restricted",
+        diagnostics: "enabled",
+      });
       await journal.flush();
 
       const reopened = await DiagnosticJournal.open(path, {
         now: () => now,
       });
-      expect(reopened.events()).toHaveLength(4);
+      expect(reopened.events()).toHaveLength(5);
       expect((await stat(path)).mode & 0o777).toBe(0o600);
       const body = await readFile(path, "utf8");
       expect(body).not.toContain("origin");
@@ -181,6 +187,30 @@ describe("DiagnosticJournal", () => {
     );
   });
 
+  test("accepts only derived managed policy revisions", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "leapview-diagnostics-"));
+    try {
+      const journal = await DiagnosticJournal.open(
+        join(directory, "diagnostics.json"),
+      );
+      expect(
+        journal.report({
+          ...environment,
+          policyRevision:
+            "desktop-policy-v1-managed-0123456789abcdef",
+        }).environment.policyRevision,
+      ).toBe("desktop-policy-v1-managed-0123456789abcdef");
+      expect(() =>
+        journal.report({
+          ...environment,
+          policyRevision: "tenant-controlled-policy-name",
+        }),
+      ).toThrow("environment");
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
   test("produces a reviewable exact-manifest report and writes it privately", async () => {
     const directory = await mkdtemp(join(tmpdir(), "leapview-diagnostics-"));
     try {
@@ -201,6 +231,13 @@ describe("DiagnosticJournal", () => {
           name: "leapview-diagnostic-report.json",
           sections: ["environment", "privacy", "events"],
         },
+      ]);
+      expect(report.manifest.eventFields.policy).toEqual([
+        "at",
+        "kind",
+        "mode",
+        "userInstances",
+        "diagnostics",
       ]);
       expect(report.privacy).toEqual({
         crashCollection: "disabled",

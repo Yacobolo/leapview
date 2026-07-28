@@ -7,8 +7,22 @@ const trustedAssets = {
   fonts: new Map<string, ArrayBuffer>(),
 };
 
-function trustedUI(actions: ConstructorParameters<typeof TrustedUI>[0]) {
-  return new TrustedUI(actions, trustedAssets);
+type TrustedUIActions = ConstructorParameters<typeof TrustedUI>[0];
+type TrustedUITestActions = Omit<TrustedUIActions, "policy"> & {
+  policy?: TrustedUIActions["policy"];
+};
+
+const openPolicy: TrustedUIActions["policy"] = {
+  mode: "open",
+  allowUserAddedInstances: true,
+  diagnosticsEnabled: true,
+  preconfiguredOrigins: [],
+  revision: "desktop-policy-v1",
+};
+
+function trustedUI(actions: TrustedUITestActions) {
+  const { policy = openPolicy, ...testActions } = actions;
+  return new TrustedUI({ ...testActions, policy }, trustedAssets);
 }
 
 describe("TrustedUI", () => {
@@ -313,6 +327,163 @@ describe("TrustedUI", () => {
     );
 
     expect(await response.text()).toContain("too large");
+    expect(invoked).toBeFalse();
+  });
+
+  test("renders only policy-managed profiles and origins when user additions are disabled", async () => {
+    const ui = trustedUI({
+      allowLoopbackHTTP: false,
+      policy: {
+        mode: "managed",
+        allowUserAddedInstances: false,
+        diagnosticsEnabled: true,
+        preconfiguredOrigins: [
+          "https://analytics.company.com",
+          "https://finance.company.com",
+        ],
+        revision: "desktop-policy-v1-managed-0123456789abcdef",
+      },
+      connectOrigin: async () => undefined,
+      connectProfile: async () => undefined,
+      disconnectProfile: async () => undefined,
+      removeProfile: async () => undefined,
+      listProfiles: async () => [
+        {
+          id: "profile_0123456789abcdef0123456789abcdef",
+          canonicalOrigin: "https://analytics.company.com",
+          instanceId: "instance_0123456789abcdef0123456789abcdef",
+          displayName: "Managed Analytics",
+          lastSafePath: "/",
+        },
+        {
+          id: "profile_abcdef0123456789abcdef0123456789",
+          canonicalOrigin: "https://personal.example.com",
+          instanceId: "instance_abcdef0123456789abcdef0123456789",
+          displayName: "Personal Analytics",
+          lastSafePath: "/",
+        },
+      ],
+    });
+
+    const body = await (await ui.handle(new Request("leapview://app/"))).text();
+    expect(body).toContain("Managed by your organization");
+    expect(body).toContain("Managed Analytics");
+    expect(body).toContain("https://finance.company.com");
+    expect(body).not.toContain("Personal Analytics");
+    expect(body).not.toContain('id="origin"');
+    expect(body).not.toContain('value="remove"');
+  });
+
+  test("keeps user-added instances available when managed policy permits them", async () => {
+    const ui = trustedUI({
+      allowLoopbackHTTP: false,
+      policy: {
+        mode: "managed",
+        allowUserAddedInstances: true,
+        diagnosticsEnabled: true,
+        preconfiguredOrigins: ["https://analytics.company.com"],
+        revision: "desktop-policy-v1-managed-0123456789abcdef",
+      },
+      connectOrigin: async () => undefined,
+      connectProfile: async () => undefined,
+      disconnectProfile: async () => undefined,
+      removeProfile: async () => undefined,
+      listProfiles: async () => [
+        {
+          id: "profile_0123456789abcdef0123456789abcdef",
+          canonicalOrigin: "https://personal.example.com",
+          instanceId: "instance_0123456789abcdef0123456789abcdef",
+          displayName: "Personal instance",
+          lastSafePath: "/",
+        },
+      ],
+    });
+
+    const body = await (
+      await ui.handle(new Request("leapview://app/"))
+    ).text();
+
+    expect(body).toContain("Connect an instance");
+    expect(body).toContain("Saved instances");
+    expect(body).toContain("Personal instance");
+    expect(body).toContain("Managed instance");
+    expect(body).toContain("approved instances are preconfigured");
+    expect(body).not.toContain("Only approved instances are available");
+  });
+
+  test("rejects forged user-added origins before invoking managed actions", async () => {
+    let invoked = false;
+    const ui = trustedUI({
+      allowLoopbackHTTP: false,
+      policy: {
+        mode: "managed",
+        allowUserAddedInstances: false,
+        diagnosticsEnabled: true,
+        preconfiguredOrigins: ["https://analytics.company.com"],
+        revision: "desktop-policy-v1-managed-0123456789abcdef",
+      },
+      connectOrigin: async () => {
+        invoked = true;
+      },
+      connectProfile: async () => {
+        invoked = true;
+      },
+      disconnectProfile: async () => undefined,
+      removeProfile: async () => undefined,
+      listProfiles: async () => [],
+    });
+
+    const response = await ui.handle(
+      new Request("leapview://app/connect", {
+        method: "POST",
+        body: "origin=https%3A%2F%2Fpersonal.example.com",
+      }),
+    );
+    const body = await response.text();
+    expect(response.status).toBe(200);
+    expect(body).toContain("managed by your organization");
+    expect(invoked).toBeFalse();
+  });
+
+  test("locks every connection action when managed configuration is invalid", async () => {
+    let invoked = false;
+    const ui = trustedUI({
+      allowLoopbackHTTP: false,
+      policy: {
+        mode: "locked",
+        allowUserAddedInstances: false,
+        diagnosticsEnabled: false,
+        preconfiguredOrigins: [],
+        revision: "desktop-policy-v1-invalid",
+      },
+      connectOrigin: async () => {
+        invoked = true;
+      },
+      connectProfile: async () => {
+        invoked = true;
+      },
+      disconnectProfile: async () => {
+        invoked = true;
+      },
+      removeProfile: async () => {
+        invoked = true;
+      },
+      listProfiles: async () => [],
+    });
+
+    const page = await ui.handle(new Request("leapview://app/"));
+    const body = await page.text();
+    expect(body).toContain("configuration is invalid");
+    expect(body).toContain("contact your administrator");
+    expect(body).not.toContain("<form");
+
+    const action = await ui.handle(
+      new Request("leapview://app/connect", {
+        method: "POST",
+        body: "origin=https%3A%2F%2Fanalytics.company.com",
+      }),
+    );
+    expect(action.status).toBe(403);
     expect(invoked).toBeFalse();
   });
 });

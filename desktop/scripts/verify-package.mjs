@@ -140,6 +140,7 @@ for (const required of [
   "/dist/src/auth.js",
   "/dist/src/deep-link.js",
   "/dist/src/diagnostics.js",
+  "/dist/src/managed-policy.js",
   "/dist/src/native-menu.js",
   "/dist/src/remote-lifecycle.js",
   "/dist/src/security/remote-policy.mjs",
@@ -347,6 +348,20 @@ function verifyPackagedDiagnosticEvent(event) {
     ) {
       throw new Error(
         "packaged diagnostic journal contains invalid startup data",
+      );
+    }
+    return;
+  }
+  if (event.kind === "policy") {
+    if (
+      Object.keys(event).sort().join(",") !==
+        "at,diagnostics,kind,mode,userInstances" ||
+      !["open", "managed", "locked"].includes(event.mode) ||
+      !["allowed", "restricted"].includes(event.userInstances) ||
+      !["enabled", "disabled"].includes(event.diagnostics)
+    ) {
+      throw new Error(
+        "packaged diagnostic journal contains invalid policy data",
       );
     }
     return;

@@ -1,5 +1,11 @@
 import { randomBytes } from "node:crypto";
 
+import {
+  policyAllowsOrigin,
+  policyAllowsProfile,
+  policyManagesOrigin,
+  type DesktopPolicy,
+} from "./managed-policy.js";
 import type { Profile } from "./profiles.js";
 
 const MAX_FORM_BYTES = 4 * 1024;
@@ -24,6 +30,7 @@ export interface TrustedUINotice {
 
 export interface TrustedUIActions {
   allowLoopbackHTTP: boolean;
+  policy: DesktopPolicy;
   connectOrigin(origin: string): Promise<void>;
   connectProfile(profileID: string): Promise<void>;
   disconnectProfile(profileID: string): Promise<void>;
@@ -39,12 +46,14 @@ export interface TrustedUIAssets {
 export class TrustedUI {
   readonly #actions: TrustedUIActions;
   readonly #assets: TrustedUIAssets;
+  readonly #policy: DesktopPolicy;
   readonly #operations = new Map<string, TrustedUIOperation>();
   #reportedNotice: TrustedUINotice | undefined;
 
   constructor(actions: TrustedUIActions, assets: TrustedUIAssets) {
     this.#actions = actions;
     this.#assets = assets;
+    this.#policy = actions.policy;
   }
 
   async handle(request: Request): Promise<Response> {
@@ -72,6 +81,12 @@ export class TrustedUI {
       }
     }
     if (request.method === "POST" && url.pathname === "/connect") {
+      if (this.#policy.mode === "locked") {
+        return textResponse(
+          403,
+          "Managed desktop configuration is invalid.",
+        );
+      }
       return this.#handleConnect(request);
     }
     return textResponse(405, "Method not allowed", { Allow: "GET, POST" });
@@ -131,6 +146,11 @@ export class TrustedUI {
         }
       }
       if (origin !== null && profileID === null) {
+        if (!policyAllowsOrigin(this.#policy, origin)) {
+          throw new Error(
+            "This desktop is managed by your organization. Choose an approved instance.",
+          );
+        }
         return this.#startOperation(
           "Verifying the instance and opening LeapView…",
           () => this.#actions.connectOrigin(origin),
@@ -227,10 +247,14 @@ export class TrustedUI {
   ): Promise<Response> {
     let profiles: Profile[] = [];
     let storageError = "";
-    try {
-      profiles = await this.#actions.listProfiles();
-    } catch (error) {
-      storageError = userFacingError(error);
+    if (this.#policy.mode !== "locked") {
+      try {
+        profiles = (await this.#actions.listProfiles()).filter((profile) =>
+          policyAllowsProfile(this.#policy, profile),
+        );
+      } catch (error) {
+        storageError = userFacingError(error);
+      }
     }
     const profileCards = profiles
       .map(
@@ -243,10 +267,29 @@ export class TrustedUI {
             <span class="actions">
               ${profileAction(profile.id, "open", "Open")}
               ${profileAction(profile.id, "disconnect", "Disconnect", "secondary")}
-              ${profileAction(profile.id, "remove", "Remove", "danger")}
+              ${
+                policyManagesOrigin(
+                  this.#policy,
+                  profile.canonicalOrigin,
+                )
+                  ? ""
+                  : profileAction(
+                      profile.id,
+                      "remove",
+                      "Remove",
+                      "danger",
+                    )
+              }
             </span>
           </div>`,
       )
+      .join("");
+    const savedOrigins = new Set(
+      profiles.map((profile) => profile.canonicalOrigin),
+    );
+    const managedOriginCards = this.#policy.preconfiguredOrigins
+      .filter((origin) => !savedOrigins.has(origin))
+      .map((origin) => managedOriginAction(origin))
       .join("");
     const noticeHTML =
       notice === undefined
@@ -259,6 +302,42 @@ export class TrustedUI {
     const loopbackNote = this.#actions.allowLoopbackHTTP
       ? `<p class="development">Development build: loopback HTTP URLs such as <code>http://localhost:8080</code> are allowed.</p>`
       : "";
+    const policyErrorHTML =
+      this.#policy.mode === "locked"
+        ? `<p class="notice error" role="alert">The managed desktop configuration is invalid; contact your administrator.</p>`
+        : "";
+    const managedNoteHTML =
+      this.#policy.mode === "managed"
+        ? `<p class="managed">Managed by your organization. ${
+            this.#policy.allowUserAddedInstances
+              ? "Your approved instances are preconfigured; you can also add another LeapView instance."
+              : "Only approved instances are available here."
+          }</p>`
+        : "";
+    const userConnectHTML =
+      this.#policy.mode !== "locked" &&
+      this.#policy.allowUserAddedInstances
+        ? `<section>
+        <h2>Connect an instance</h2>
+        <form method="post" action="leapview://app/connect">
+          <label for="origin">LeapView URL</label>
+          <div class="connect">
+            <input id="origin" name="origin" type="url" required autocomplete="url" spellcheck="false" placeholder="https://analytics.company.com">
+            <button type="submit">Verify &amp; open</button>
+          </div>
+        </form>
+        ${loopbackNote}
+      </section>`
+        : "";
+    const instancesHTML =
+      profiles.length === 0 && managedOriginCards === ""
+        ? ""
+        : `<section><h2>${
+            this.#policy.mode === "managed" &&
+            !this.#policy.allowUserAddedInstances
+              ? "Approved instances"
+              : "Saved instances"
+          }</h2>${profileCards}${managedOriginCards}</section>`;
     const html = `<!doctype html>
 <html lang="en" data-color-mode="auto" data-light-theme="light" data-dark-theme="dark">
   <head>
@@ -494,7 +573,8 @@ export class TrustedUI {
       }
 
       .profile small,
-      .development {
+      .development,
+      .managed {
         color: var(--lv-fg-muted);
         font-size: var(--lv-font-size-caption);
       }
@@ -582,22 +662,10 @@ export class TrustedUI {
       </header>
       ${noticeHTML}
       ${storageErrorHTML}
-      <section>
-        <h2>Connect an instance</h2>
-        <form method="post" action="leapview://app/connect">
-          <label for="origin">LeapView URL</label>
-          <div class="connect">
-            <input id="origin" name="origin" type="url" required autocomplete="url" spellcheck="false" placeholder="https://analytics.company.com">
-            <button type="submit">Verify &amp; open</button>
-          </div>
-        </form>
-        ${loopbackNote}
-      </section>
-      ${
-        profiles.length === 0
-          ? ""
-          : `<section><h2>Saved instances</h2>${profileCards}</section>`
-      }
+      ${policyErrorHTML}
+      ${managedNoteHTML}
+      ${userConnectHTML}
+      ${instancesHTML}
     </main>
   </body>
 </html>`;
@@ -612,6 +680,21 @@ interface TrustedUIOperation {
   createdAt: number;
   pendingMessage: string;
   notice?: TrustedUINotice;
+}
+
+function managedOriginAction(origin: string): string {
+  return `<div class="profile">
+    <span>
+      <strong>Managed instance</strong>
+      <small>${escapeHTML(origin)}</small>
+    </span>
+    <span class="actions">
+      <form method="post" action="leapview://app/connect">
+        <input type="hidden" name="origin" value="${escapeHTML(origin)}">
+        <button type="submit">Verify &amp; open</button>
+      </form>
+    </span>
+  </div>`;
 }
 
 function profileAction(

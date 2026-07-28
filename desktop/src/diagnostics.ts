@@ -11,7 +11,6 @@ import { dirname, isAbsolute } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
 const DIAGNOSTIC_SCHEMA_VERSION = 1;
-const DIAGNOSTIC_POLICY_REVISION = "desktop-policy-v1";
 const MAXIMUM_DOCUMENT_BYTES = 128 * 1024;
 const MAXIMUM_EVENTS = 256;
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1_000;
@@ -51,6 +50,12 @@ export type ProcessGoneReason =
 
 export type DiagnosticEvent =
   | { kind: "startup"; packaged: boolean }
+  | {
+      kind: "policy";
+      mode: "open" | "managed" | "locked";
+      userInstances: "allowed" | "restricted";
+      diagnostics: "enabled" | "disabled";
+    }
   | {
       kind: "discovery";
       outcome: "success" | "rejected" | "unavailable";
@@ -132,7 +137,7 @@ export interface DiagnosticEnvironment {
   osRelease: string;
   architecture: string;
   packaged: boolean;
-  policyRevision: typeof DIAGNOSTIC_POLICY_REVISION;
+  policyRevision: string;
 }
 
 export interface DiagnosticReport {
@@ -387,6 +392,24 @@ function validateEvent(input: unknown): DiagnosticEvent {
         packaged: [true, false],
       });
       return { kind: "startup", packaged: event.packaged as boolean };
+    case "policy":
+      requireEvent(
+        event,
+        ["kind", "mode", "userInstances", "diagnostics"],
+        {
+          mode: ["open", "managed", "locked"],
+          userInstances: ["allowed", "restricted"],
+          diagnostics: ["enabled", "disabled"],
+        },
+      );
+      return {
+        kind: "policy",
+        mode: event.mode as EventOf<"policy">["mode"],
+        userInstances:
+          event.userInstances as EventOf<"policy">["userInstances"],
+        diagnostics:
+          event.diagnostics as EventOf<"policy">["diagnostics"],
+      };
     case "discovery":
       requireEvent(event, ["kind", "outcome"], {
         outcome: ["success", "rejected", "unavailable"],
@@ -545,7 +568,10 @@ function validateEnvironment(
     typeof environment.architecture !== "string" ||
     !/^[a-z0-9_]{2,16}$/u.test(environment.architecture) ||
     typeof environment.packaged !== "boolean" ||
-    environment.policyRevision !== DIAGNOSTIC_POLICY_REVISION
+    typeof environment.policyRevision !== "string" ||
+    !/^desktop-policy-v1(?:-managed-[0-9a-f]{16}|-invalid)?$/u.test(
+      environment.policyRevision,
+    )
   ) {
     throw new Error("desktop diagnostic environment value is invalid");
   }
@@ -629,6 +655,13 @@ function diagnosticManifest(): DiagnosticReport["manifest"] {
     ],
     eventFields: {
       startup: ["at", "kind", "packaged"],
+      policy: [
+        "at",
+        "kind",
+        "mode",
+        "userInstances",
+        "diagnostics",
+      ],
       discovery: ["at", "kind", "outcome"],
       authentication: ["at", "kind", "phase"],
       profile: ["at", "kind", "action", "outcome"],

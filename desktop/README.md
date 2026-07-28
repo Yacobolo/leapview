@@ -87,6 +87,46 @@ trusted application content.
   platform conventions. The application menu intentionally exposes neither
   DevTools nor force reload.
 
+## Managed provisioning
+
+Packaged LeapView reads an optional administrator-installed
+`desktop-policy.json` from one fixed system location:
+
+- macOS: `/Library/Application Support/LeapView/desktop-policy.json`
+- Linux: `/etc/leapview/desktop-policy.json`
+- Windows: `C:\ProgramData\LeapView\desktop-policy.json`
+
+On macOS and Linux the file must be owned by root and must not be writable by
+group or other users. On Windows the managed installer must grant write access
+only to Administrators and SYSTEM. A missing file selects open mode. An
+existing but unreadable, oversized, permissive, or invalid file locks every
+connection action instead of reverting to open mode.
+
+The version-one document has an exact schema and contains no credentials:
+
+```json
+{
+  "schemaVersion": 1,
+  "allowUserAddedInstances": false,
+  "diagnosticsEnabled": false,
+  "preconfiguredOrigins": [
+    "https://analytics.company.com"
+  ]
+}
+```
+
+- Origins must be unique canonical HTTPS origins. Each remains untrusted until
+  its normal discovery document and immutable instance identity are verified.
+- When user-added instances are disabled, only managed origins and matching
+  saved profiles are visible and openable. Existing personal profiles remain
+  dormant for policy rollback and cannot be reached through desktop links.
+- Managed profiles can be disconnected but not removed locally.
+- Disabling diagnostics prevents the journal from being read or written. A
+  reviewed local report can still describe the packaged environment and the
+  non-secret derived policy revision without event history.
+- Packaged builds ignore `LEAPVIEW_DESKTOP_POLICY_PATH`. Unpackaged development
+  builds accept it only when it names an absolute local policy file.
+
 ## Privacy-safe diagnostics
 
 - LeapView keeps a private, seven-day journal of at most 256 allowlisted

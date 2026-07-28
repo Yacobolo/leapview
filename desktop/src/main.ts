@@ -44,6 +44,14 @@ import {
   type DiagnosticEvent,
 } from "./diagnostics.js";
 import { buildNativeMenuTemplate } from "./native-menu.js";
+import {
+  loadDesktopPolicy,
+  policyAllowsOrigin,
+  policyAllowsProfile,
+  policyManagesOrigin,
+  resolveDesktopPolicySource,
+  type DesktopPolicy,
+} from "./managed-policy.js";
 import { ProfileStore, type Profile } from "./profiles.js";
 import {
   installRemoteLifecyclePolicy,
@@ -119,6 +127,13 @@ let pendingDeepLinkNotice: {
   message: string;
 } | undefined;
 let profiles: ProfileStore;
+let desktopPolicy: DesktopPolicy = {
+  mode: "locked",
+  allowUserAddedInstances: false,
+  diagnosticsEnabled: false,
+  preconfiguredOrigins: [],
+  revision: "desktop-policy-v1-invalid",
+};
 let windowStates: WindowStateStore | null = null;
 let windowStateFlushTimer: NodeJS.Timeout | null = null;
 let windowStateQuitPending = false;
@@ -197,11 +212,29 @@ if (!primaryInstance) {
 }
 
 async function start(): Promise<void> {
+  desktopPolicy = await loadDesktopPolicy(
+    resolveDesktopPolicySource({
+      platform: process.platform,
+      packaged: app.isPackaged,
+    }),
+    { allowLoopbackHTTP },
+  );
   profiles = new ProfileStore(join(app.getPath("userData"), "profiles.json"));
   diagnostics = await DiagnosticJournal.open(
     join(app.getPath("userData"), "diagnostics.json"),
+    { enabled: desktopPolicy.diagnosticsEnabled },
   );
   recordDiagnostic({ kind: "startup", packaged: app.isPackaged });
+  recordDiagnostic({
+    kind: "policy",
+    mode: desktopPolicy.mode,
+    userInstances: desktopPolicy.allowUserAddedInstances
+      ? "allowed"
+      : "restricted",
+    diagnostics: desktopPolicy.diagnosticsEnabled
+      ? "enabled"
+      : "disabled",
+  });
   windowStates = await WindowStateStore.open(
     join(app.getPath("userData"), "window-state.json"),
   );
@@ -221,7 +254,8 @@ async function start(): Promise<void> {
   trustedUI = new TrustedUI(
     {
       allowLoopbackHTTP,
-      listProfiles: () => profiles.list(),
+      policy: desktopPolicy,
+      listProfiles: listAllowedProfiles,
       connectOrigin,
       connectProfile,
       disconnectProfile,
@@ -243,7 +277,7 @@ async function start(): Promise<void> {
   createShellWindow();
   deepLinks.attach((request, source) =>
     routeDesktopDeepLink(request, source, {
-      listProfiles: () => profiles.list(),
+      listProfiles: listAllowedProfiles,
       openKnown: (profile, path) => connectProfileAtPath(profile.id, path),
       confirmUnknown: confirmUnknownDeepLink,
       connectUnknown: (candidate) =>
@@ -262,6 +296,7 @@ async function connectOriginAtPath(
   path: string,
 ): Promise<void> {
   const origin = parseConfiguredOrigin(rawOrigin, { allowLoopbackHTTP });
+  requirePolicyOrigin(origin);
   const discovery = await discover(origin);
   const profile = await profiles.upsertFromDiscovery(discovery);
   await openRemoteWindow(profile, path);
@@ -325,6 +360,12 @@ async function disconnectProfile(profileID: string): Promise<void> {
 }
 
 async function removeProfile(profileID: string): Promise<void> {
+  const profile = await savedProfile(profileID);
+  if (policyManagesOrigin(desktopPolicy, profile.canonicalOrigin)) {
+    throw new Error(
+      "This LeapView instance is managed by your organization and cannot be removed.",
+    );
+  }
   await disconnectProfile(profileID);
   try {
     await profiles.remove(profileID);
@@ -349,13 +390,27 @@ async function savedProfile(profileID: string): Promise<Profile> {
   if (!/^profile_[0-9a-f]{32}$/u.test(profileID)) {
     throw new Error("Saved profile identifier is invalid.");
   }
-  const profile = (await profiles.list()).find(
+  const profile = (await listAllowedProfiles()).find(
     (candidate) => candidate.id === profileID,
   );
   if (profile === undefined) {
     throw new Error("Saved LeapView instance was not found.");
   }
   return profile;
+}
+
+async function listAllowedProfiles(): Promise<Profile[]> {
+  return (await profiles.list()).filter((profile) =>
+    policyAllowsProfile(desktopPolicy, profile),
+  );
+}
+
+function requirePolicyOrigin(canonicalOrigin: string): void {
+  if (!policyAllowsOrigin(desktopPolicy, canonicalOrigin)) {
+    throw new Error(
+      "This desktop is managed by your organization. Choose an approved instance.",
+    );
+  }
 }
 
 async function discover(origin: string) {
@@ -568,6 +623,12 @@ async function confirmUnknownDeepLink(
   request: DesktopDeepLink,
 ): Promise<boolean> {
   focusTrustedShell();
+  if (!policyAllowsOrigin(desktopPolicy, request.origin)) {
+    reportTrustedShellNotice(
+      "This desktop is managed by your organization. The link targets an unapproved instance.",
+    );
+    return false;
+  }
   const options: Electron.MessageBoxOptions = {
     type: "question",
     buttons: ["Cancel", "Add instance"],
@@ -924,7 +985,7 @@ function diagnosticEnvironment(): DiagnosticEnvironment {
     osRelease: operatingSystemRelease(),
     architecture: process.arch,
     packaged: app.isPackaged,
-    policyRevision: "desktop-policy-v1",
+    policyRevision: desktopPolicy.revision,
   };
 }
 
