@@ -1,0 +1,218 @@
+name: Plan or apply permanent public-site infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Create a reviewed plan, or apply that exact plan
+        required: true
+        default: plan
+        type: choice
+        options:
+          - plan
+          - apply
+
+permissions:
+  contents: read
+
+concurrency:
+  group: leapview-site-infrastructure
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  plan:
+    name: Validate and retain production plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: leapview-site-production
+    outputs:
+      revision: ${{ steps.identity.outputs.revision }}
+    env:
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      AWS_REGION: ${{ vars.TF_STATE_REGION }}
+      AWS_DEFAULT_REGION: ${{ vars.TF_STATE_REGION }}
+      AWS_ENDPOINT_URL_S3: ${{ vars.TF_STATE_ENDPOINT }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_SECRET_KEY }}
+      TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+      TF_VAR_ssh_allowed_cidrs: ${{ vars.SITE_SSH_ALLOWED_CIDRS }}
+      TF_VAR_operator_ssh_public_key: ${{ secrets.SITE_SSH_PUBLIC_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
+        with:
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+
+      - name: Validate protected configuration
+        run: |
+          test -n "$TF_STATE_BUCKET"
+          test -n "$AWS_REGION"
+          test -n "$AWS_ENDPOINT_URL_S3"
+          test -n "$AWS_ACCESS_KEY_ID"
+          test -n "$AWS_SECRET_ACCESS_KEY"
+          test -n "$TF_VAR_hcloud_token"
+          test -n "$TF_VAR_ssh_allowed_cidrs"
+          test -n "$TF_VAR_operator_ssh_public_key"
+          if [[ "${{ inputs.operation }}" == apply ]]; then
+            test "$GITHUB_REF" = refs/heads/main
+          fi
+
+      - name: Verify durable state storage
+        run: |
+          versioning="$(
+            aws s3api get-bucket-versioning \
+              --bucket "$TF_STATE_BUCKET" \
+              --endpoint-url "$AWS_ENDPOINT_URL_S3" \
+              --query Status \
+              --output text
+          )"
+          test "$versioning" = Enabled
+
+      - name: Initialize locked remote state
+        working-directory: deploy/hetzner-site
+        run: terraform init -input=false -backend-config="bucket=$TF_STATE_BUCKET"
+
+      - name: Validate infrastructure contracts
+        working-directory: deploy/hetzner-site
+        run: |
+          terraform fmt -check -recursive
+          terraform validate
+          terraform test
+
+      - name: Create reviewed plan
+        working-directory: deploy/hetzner-site
+        run: |
+          mkdir -p "$RUNNER_TEMP/site-plan"
+          terraform plan \
+            -input=false \
+            -lock-timeout=5m \
+            -out="$RUNNER_TEMP/site-plan/site.tfplan"
+          terraform show -no-color "$RUNNER_TEMP/site-plan/site.tfplan" \
+            > "$RUNNER_TEMP/site-plan/site.tfplan.txt"
+          (
+            cd "$RUNNER_TEMP/site-plan"
+            sha256sum site.tfplan > site.tfplan.sha256
+          )
+
+      - name: Record source identity
+        id: identity
+        run: |
+          revision="$(git rev-parse HEAD)"
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+          {
+            echo "source_revision=$revision"
+            echo "operation=${{ inputs.operation }}"
+            echo "workflow_run=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } > "$RUNNER_TEMP/site-plan/evidence.txt"
+
+      - name: Retain reviewed plan
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: leapview-site-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: error
+          path: ${{ runner.temp }}/site-plan
+
+      - name: Summarize reviewed plan
+        run: |
+          {
+            echo "## Permanent public-site infrastructure plan"
+            echo
+            echo "- Revision: \`$(git rev-parse HEAD)\`"
+            echo "- Operation: \`${{ inputs.operation }}\`"
+            echo "- Remote state key: \`leapview/site/production.tfstate\`"
+            echo "- Plan artifact retained for 90 days"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  apply:
+    name: Apply the retained production plan
+    if: ${{ inputs.operation == 'apply' }}
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment: leapview-site-production
+    env:
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      AWS_REGION: ${{ vars.TF_STATE_REGION }}
+      AWS_DEFAULT_REGION: ${{ vars.TF_STATE_REGION }}
+      AWS_ENDPOINT_URL_S3: ${{ vars.TF_STATE_ENDPOINT }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_SECRET_KEY }}
+      TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+      TF_VAR_ssh_allowed_cidrs: ${{ vars.SITE_SSH_ALLOWED_CIDRS }}
+      TF_VAR_operator_ssh_public_key: ${{ secrets.SITE_SSH_PUBLIC_KEY }}
+
+    steps:
+      - name: Checkout planned source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ needs.plan.outputs.revision }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
+        with:
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+
+      - name: Download reviewed plan
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: leapview-site-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/site-plan
+
+      - name: Verify retained plan
+        run: |
+          cd "$RUNNER_TEMP/site-plan"
+          sha256sum --check site.tfplan.sha256
+          test "$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)" = "${{ needs.plan.outputs.revision }}"
+
+      - name: Initialize locked remote state
+        working-directory: deploy/hetzner-site
+        run: terraform init -input=false -backend-config="bucket=$TF_STATE_BUCKET"
+
+      - name: Apply reviewed plan
+        working-directory: deploy/hetzner-site
+        run: terraform apply -input=false -lock-timeout=5m "$RUNNER_TEMP/site-plan/site.tfplan"
+
+      - name: Prove idempotence
+        working-directory: deploy/hetzner-site
+        run: |
+          set +e
+          terraform plan -detailed-exitcode -input=false -lock-timeout=5m \
+            -out="$RUNNER_TEMP/site-plan/idempotence.tfplan"
+          status=$?
+          set -e
+          test "$status" -eq 0
+
+      - name: Record stable outputs
+        working-directory: deploy/hetzner-site
+        run: |
+          terraform output -json > "$RUNNER_TEMP/site-plan/outputs.json"
+          {
+            echo "## Permanent public-site infrastructure applied"
+            echo
+            echo "- Revision: \`${{ needs.plan.outputs.revision }}\`"
+            echo "- IPv4: \`$(terraform output -raw reserved_ipv4)\`"
+            echo "- Hostname: \`$(terraform output -raw canonical_hostname)\`"
+            echo "- Deployment target: \`$(terraform output -raw deployment_target)\`"
+            echo "- Post-apply plan: no changes"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Retain apply evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: leapview-site-apply-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/site-plan/evidence.txt
+            ${{ runner.temp }}/site-plan/outputs.json

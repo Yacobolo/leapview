@@ -1,0 +1,10 @@
+name        = "leapview-site"
+server_type = "cx23"
+location    = "fsn1"
+
+ssh_allowed_cidrs = ["203.0.113.10/32"]
+operator_ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIReplaceWithTheProductionDeploymentKey leapview-site-production"
+
+# Routine releases must not change this value through Terraform. LEA-143
+# updates /opt/leapview-site/deployment.env over the bounded deployment channel.
+bootstrap_site_image = "ghcr.io/yacobolo/leapview-site@sha256:1f4c7ac7fbaa332f96a907ff7daec10d49c26b3bbe5d3a16a7d48c274c5f168a"
