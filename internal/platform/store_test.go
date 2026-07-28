@@ -649,6 +649,18 @@ func TestRestoreInstanceReplacesHomeAndBacksUpCurrent(t *testing.T) {
 		t.Fatalf("close current store: %v", err)
 	}
 	writeTestFile(t, filepath.Join(currentHome, "artifacts", "old.tar.gz"), "old artifact")
+	readOnlyRevisionData := filepath.Join(currentHome, "managed-data", "objects", "revisions", "immutable", "data")
+	writeTestFile(t, filepath.Join(readOnlyRevisionData, "orders.csv"), "immutable managed data")
+	if err := os.Chmod(readOnlyRevisionData, 0o500); err != nil {
+		t.Fatalf("make managed data revision read-only: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(readOnlyRevisionData, 0o700)
+		oldTargets, _ := filepath.Glob(filepath.Join(dir, ".leapview-restore-old-*"))
+		for _, oldTarget := range oldTargets {
+			_ = os.Chmod(filepath.Join(oldTarget, "managed-data", "objects", "revisions", "immutable", "data"), 0o700)
+		}
+	})
 
 	sourceHome := filepath.Join(dir, "source")
 	sourceDBPath := filepath.Join(sourceHome, "leapview.db")

@@ -156,7 +156,7 @@ func writeInstanceBackup(ctx context.Context, options InstanceBackupOptions, out
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(tmpDir)
+	defer removeInstanceStateTree(tmpDir)
 	dbCopy := filepath.Join(tmpDir, instanceBackupDBName)
 	store, err := Open(ctx, dbAbs)
 	if err != nil {
@@ -402,7 +402,7 @@ func restoreInstanceFromReader(ctx context.Context, options InstanceRestoreOptio
 	cleanupTmp := true
 	defer func() {
 		if cleanupTmp {
-			_ = os.RemoveAll(tmpRestore)
+			_ = removeInstanceStateTree(tmpRestore)
 		}
 	}()
 	if err := extractInstanceBackupReader(ctx, in, tmpRestore); err != nil {
@@ -427,7 +427,7 @@ func restoreInstanceFromReader(ctx context.Context, options InstanceRestoreOptio
 		if err != nil {
 			return fmt.Errorf("resolve instance restore reset path %q: %w", relativePath, err)
 		}
-		if err := os.RemoveAll(resetPath); err != nil {
+		if err := removeInstanceStateTree(resetPath); err != nil {
 			return fmt.Errorf("reset derived instance path %q: %w", relativePath, err)
 		}
 	}
@@ -465,7 +465,7 @@ func restoreInstanceFromReader(ctx context.Context, options InstanceRestoreOptio
 	}
 	cleanupTmp = false
 	if oldTarget != "" {
-		if err := os.RemoveAll(oldTarget); err != nil {
+		if err := removeInstanceStateTree(oldTarget); err != nil {
 			return fmt.Errorf("remove replaced instance state: %w", err)
 		}
 	}
@@ -489,7 +489,7 @@ func removeInterruptedInstanceBackupWork(parent string) error {
 		path := filepath.Join(parent, entry.Name())
 		remove := os.Remove
 		if entry.IsDir() {
-			remove = os.RemoveAll
+			remove = removeInstanceStateTree
 		}
 		if err := remove(path); err != nil {
 			return fmt.Errorf("remove interrupted instance backup %q: %w", entry.Name(), err)
@@ -528,7 +528,7 @@ func recoverInterruptedInstanceOperations(target string) error {
 		return err
 	}
 	for _, stale := range oldTargets {
-		if err := os.RemoveAll(stale); err != nil {
+		if err := removeInstanceStateTree(stale); err != nil {
 			return fmt.Errorf("remove interrupted restore rollback %q: %w", stale, err)
 		}
 	}
@@ -541,7 +541,7 @@ func recoverInterruptedInstanceOperations(target string) error {
 	}
 	for _, entry := range entries {
 		if entry.IsDir() && strings.HasPrefix(entry.Name(), ".leapview-restore-") {
-			if err := os.RemoveAll(filepath.Join(parent, entry.Name())); err != nil {
+			if err := removeInstanceStateTree(filepath.Join(parent, entry.Name())); err != nil {
 				return fmt.Errorf("remove interrupted instance operation %q: %w", entry.Name(), err)
 			}
 			continue
@@ -560,6 +560,34 @@ func recoverInterruptedInstanceOperations(target string) error {
 		}
 	}
 	return nil
+}
+
+func removeInstanceStateTree(root string) error {
+	info, err := os.Lstat(root)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return os.Remove(root)
+	}
+	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !entry.IsDir() {
+			return nil
+		}
+		if err := os.Chmod(path, instanceRestoreDirMode); err != nil {
+			return fmt.Errorf("make instance state directory %q removable: %w", path, err)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return os.RemoveAll(root)
 }
 
 func validatePreservedRelativeFile(value string) (string, error) {
