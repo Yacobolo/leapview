@@ -121,6 +121,25 @@ tasks:
       - task: node:deps
       - bun run build:site
 
+  ci:prepare:frontend:
+    desc: Generate only the contracts and assets required by frontend CI
+    cmds:
+      - task: ui-signals:generate
+      - task: visualization-ir:generate
+      - task: build
+
+  ci:test:docs-site:
+    desc: Validate authored documentation and the independently deployable public site
+    cmds:
+      - task: docs:generate
+      - task: docs:check
+      - |
+        changed="$(git status --porcelain -- .env.example docs/api/openapi.yaml docs/llms.txt docs/reference/agent-tools internal/agent/contracts schemas/config schemas/json)"
+        test -z "$changed" || { printf 'public contract snapshots are stale:\n%s\n' "$changed" >&2; exit 1; }
+      - task: site:build
+      - bun run test:docs-diagrams
+      - bun run test:site
+
   site:binary:
     desc: Build the independently deployable public site from generated documentation
     cmds:
