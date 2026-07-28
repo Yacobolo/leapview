@@ -8,6 +8,8 @@ describe("TrustedUI", () => {
       allowLoopbackHTTP: false,
       connectOrigin: async () => undefined,
       connectProfile: async () => undefined,
+      disconnectProfile: async () => undefined,
+      removeProfile: async () => undefined,
       listProfiles: async () => [],
     });
     const response = await ui.handle(new Request("leapview://app/"));
@@ -33,6 +35,8 @@ describe("TrustedUI", () => {
       connectProfile: async (profileID) => {
         profiles.push(profileID);
       },
+      disconnectProfile: async () => undefined,
+      removeProfile: async () => undefined,
       listProfiles: async () => [],
     });
     const response = await ui.handle(
@@ -54,6 +58,8 @@ describe("TrustedUI", () => {
       allowLoopbackHTTP: false,
       connectOrigin: async () => undefined,
       connectProfile: async () => undefined,
+      disconnectProfile: async () => undefined,
+      removeProfile: async () => undefined,
       listProfiles: async () => [
         {
           id: "profile_0123456789abcdef0123456789abcdef",
@@ -70,6 +76,36 @@ describe("TrustedUI", () => {
     expect(body).toContain("&lt;img");
   });
 
+  test("disconnect and remove are distinct trusted profile actions", async () => {
+    const disconnected: string[] = [];
+    const removed: string[] = [];
+    const ui = new TrustedUI({
+      allowLoopbackHTTP: false,
+      connectOrigin: async () => undefined,
+      connectProfile: async () => undefined,
+      disconnectProfile: async (profileID) => {
+        disconnected.push(profileID);
+      },
+      removeProfile: async (profileID) => {
+        removed.push(profileID);
+      },
+      listProfiles: async () => [],
+    });
+    const profileID = "profile_0123456789abcdef0123456789abcdef";
+    for (const operation of ["disconnect", "remove"]) {
+      const response = await ui.handle(
+        new Request("leapview://app/connect", {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ profileId: profileID, operation }),
+        }),
+      );
+      expect(response.status).toBe(200);
+    }
+    expect(disconnected).toEqual([profileID]);
+    expect(removed).toEqual([profileID]);
+  });
+
   test("rejects oversized connection forms before invoking actions", async () => {
     let invoked = false;
     const ui = new TrustedUI({
@@ -78,6 +114,12 @@ describe("TrustedUI", () => {
         invoked = true;
       },
       connectProfile: async () => {
+        invoked = true;
+      },
+      disconnectProfile: async () => {
+        invoked = true;
+      },
+      removeProfile: async () => {
         invoked = true;
       },
       listProfiles: async () => [],

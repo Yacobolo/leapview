@@ -15,7 +15,7 @@ const validDocument = {
   serverVersion: "v1.4.2",
   desktopProtocolMin: 1,
   desktopProtocolMax: 1,
-  authenticationModes: ["browser-session"],
+  authenticationModes: ["browser-session", "system-browser-pkce"],
   capabilities: ["remote-web"],
 };
 
@@ -40,6 +40,12 @@ describe("validateDiscoveryDocument", () => {
         origin,
       ),
     ).toThrow("not compatible");
+    expect(() =>
+      validateDiscoveryDocument(
+        { ...validDocument, authenticationModes: ["browser-session"] },
+        origin,
+      ),
+    ).toThrow("system-browser-pkce");
   });
 
   test("rejects excessive nesting, strings, and arrays", () => {

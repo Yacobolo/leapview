@@ -6,6 +6,8 @@ export interface TrustedUIActions {
   allowLoopbackHTTP: boolean;
   connectOrigin(origin: string): Promise<void>;
   connectProfile(profileID: string): Promise<void>;
+  disconnectProfile(profileID: string): Promise<void>;
+  removeProfile(profileID: string): Promise<void>;
   listProfiles(): Promise<Profile[]>;
 }
 
@@ -37,10 +39,28 @@ export class TrustedUI {
       const profileID = form.get("profileId");
       const origin = form.get("origin");
       if (profileID !== null && origin === null) {
-        await this.#actions.connectProfile(profileID);
+        const operation = form.get("operation") ?? "open";
+        switch (operation) {
+          case "open":
+            await this.#actions.connectProfile(profileID);
+            break;
+          case "disconnect":
+            await this.#actions.disconnectProfile(profileID);
+            break;
+          case "remove":
+            await this.#actions.removeProfile(profileID);
+            break;
+          default:
+            throw new Error("Saved profile action is invalid.");
+        }
         return this.#render({
           kind: "success",
-          message: "LeapView opened in its protected instance window.",
+          message:
+            operation === "open"
+              ? "LeapView opened in its protected instance window."
+              : operation === "disconnect"
+                ? "LeapView session disconnected."
+                : "LeapView instance removed from this device.",
         });
       }
       if (origin !== null && profileID === null) {
@@ -72,14 +92,17 @@ export class TrustedUI {
     const profileCards = profiles
       .map(
         (profile) => `
-          <form class="profile" method="post" action="leapview://app/connect">
-            <input type="hidden" name="profileId" value="${escapeHTML(profile.id)}">
+          <div class="profile">
             <span>
               <strong>${escapeHTML(profile.displayName)}</strong>
               <small>${escapeHTML(profile.canonicalOrigin)}</small>
             </span>
-            <button type="submit">Open</button>
-          </form>`,
+            <span class="actions">
+              ${profileAction(profile.id, "open", "Open")}
+              ${profileAction(profile.id, "disconnect", "Disconnect", "secondary")}
+              ${profileAction(profile.id, "remove", "Remove", "danger")}
+            </span>
+          </div>`,
       )
       .join("");
     const noticeHTML =
@@ -116,10 +139,17 @@ export class TrustedUI {
       input { min-width: 0; width: 100%; padding: 12px 14px; border: 1px solid #aebdb5; border-radius: 10px; background: white; color: #122019; font: inherit; }
       button { padding: 11px 17px; border: 0; border-radius: 10px; background: #116a43; color: white; font: inherit; font-weight: 700; cursor: pointer; }
       button:hover { background: #0c5435; }
+      button.secondary { background: #dce7e1; color: #213d2e; }
+      button.secondary:hover { background: #cbd9d1; }
+      button.danger { background: #8b2420; }
+      button.danger:hover { background: #701d19; }
       .profile { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 0; border-top: 1px solid #e0e8e3; }
       .profile:first-of-type { border-top: 0; }
       .profile span { min-width: 0; }
       .profile strong, .profile small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .actions { display: flex; flex: none; gap: 7px; }
+      .actions form { margin: 0; }
+      .actions button { padding: 8px 11px; font-size: 13px; }
       .profile small, .development { color: #617068; }
       .notice { padding: 12px 14px; border-radius: 10px; }
       .success { background: #ddf8e8; color: #175b39; }
@@ -170,6 +200,19 @@ export class TrustedUI {
       headers: trustedHeaders("text/html; charset=utf-8"),
     });
   }
+}
+
+function profileAction(
+  profileID: string,
+  operation: "open" | "disconnect" | "remove",
+  label: string,
+  className = "",
+): string {
+  return `<form method="post" action="leapview://app/connect">
+    <input type="hidden" name="profileId" value="${escapeHTML(profileID)}">
+    <input type="hidden" name="operation" value="${operation}">
+    <button type="submit"${className === "" ? "" : ` class="${className}"`}>${label}</button>
+  </form>`;
 }
 
 async function readBoundedForm(

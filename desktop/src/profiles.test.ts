@@ -13,7 +13,7 @@ const discovery = {
   serverVersion: "v1.4.2",
   desktopProtocolMin: 1,
   desktopProtocolMax: 1,
-  authenticationModes: ["browser-session"],
+  authenticationModes: ["browser-session", "system-browser-pkce"],
   capabilities: ["remote-web"],
 };
 
@@ -49,6 +49,25 @@ describe("ProfileStore", () => {
       expect(updated.id).toBe(first.id);
       expect(await store.list()).toHaveLength(1);
       expect(updated.displayName).toBe("Renamed Analytics");
+    } finally {
+      await rm(directoryPath, { force: true, recursive: true });
+    }
+  });
+
+  test("removes only the selected profile and cannot reopen a stale mapping", async () => {
+    const directoryPath = await mkdtemp(join(tmpdir(), "leapview-profiles-"));
+    try {
+      const store = new ProfileStore(join(directoryPath, "profiles.json"));
+      const first = await store.upsertFromDiscovery(discovery);
+      const second = await store.upsertFromDiscovery({
+        ...discovery,
+        canonicalOrigin: "https://finance.company.com",
+        instanceId: "instance_abcdef0123456789abcdef0123456789",
+        displayName: "Finance",
+      });
+      await store.remove(first.id);
+      expect(await store.list()).toEqual([second]);
+      await expect(store.remove(first.id)).rejects.toThrow("not found");
     } finally {
       await rm(directoryPath, { force: true, recursive: true });
     }

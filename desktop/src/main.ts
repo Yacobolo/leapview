@@ -5,9 +5,15 @@ import {
   BrowserWindow,
   protocol,
   session,
+  shell,
   type Session,
 } from "electron";
 
+import {
+  authenticateDesktopProfile,
+  desktopSessionAvailable,
+  disconnectDesktopProfile,
+} from "./auth.js";
 import { discoverInstance } from "./discovery.js";
 import { ProfileStore, type Profile } from "./profiles.js";
 import {
@@ -39,6 +45,7 @@ app.enableSandbox();
 
 let shellWindow: BrowserWindow | null = null;
 const remoteWindows = new Map<string, BrowserWindow>();
+const authenticationTransactions = new Map<string, Promise<void>>();
 const configuredSessions = new WeakSet<Session>();
 let allowLoopbackHTTP = false;
 let profiles: ProfileStore;
@@ -67,6 +74,8 @@ async function start(): Promise<void> {
     listProfiles: () => profiles.list(),
     connectOrigin,
     connectProfile,
+    disconnectProfile,
+    removeProfile,
   });
   const trustedSession = session.fromPartition(TRUSTED_PARTITION, {
     cache: false,
@@ -86,6 +95,45 @@ async function connectOrigin(rawOrigin: string): Promise<void> {
 }
 
 async function connectProfile(profileID: string): Promise<void> {
+  const profile = await savedProfile(profileID);
+  const origin = parseConfiguredOrigin(profile.canonicalOrigin, {
+    allowLoopbackHTTP,
+  });
+  const discovery = await discover(origin);
+  const verifiedProfile = await profiles.upsertFromDiscovery(discovery);
+  await openRemoteWindow(verifiedProfile);
+}
+
+async function disconnectProfile(profileID: string): Promise<void> {
+  const profile = await savedProfile(profileID);
+  if (authenticationTransactions.has(profile.id)) {
+    throw new Error(
+      "Wait for the active authentication request before disconnecting.",
+    );
+  }
+  const remote = remoteWindows.get(profile.id);
+  if (remote !== undefined && !remote.isDestroyed()) {
+    remote.destroy();
+  }
+  const partition = profilePartition(profile);
+  const profileSession = session.fromPartition(partition);
+  configureSessionOnce(profileSession);
+  await disconnectDesktopProfile(
+    profile,
+    (input, init) => profileSession.fetch(input, init),
+  );
+  await profileSession.clearStorageData();
+  await profileSession.clearCache();
+  await profileSession.clearAuthCache();
+  profileSession.flushStorageData();
+}
+
+async function removeProfile(profileID: string): Promise<void> {
+  await disconnectProfile(profileID);
+  await profiles.remove(profileID);
+}
+
+async function savedProfile(profileID: string): Promise<Profile> {
   if (!/^profile_[0-9a-f]{32}$/u.test(profileID)) {
     throw new Error("Saved profile identifier is invalid.");
   }
@@ -95,12 +143,7 @@ async function connectProfile(profileID: string): Promise<void> {
   if (profile === undefined) {
     throw new Error("Saved LeapView instance was not found.");
   }
-  const origin = parseConfiguredOrigin(profile.canonicalOrigin, {
-    allowLoopbackHTTP,
-  });
-  const discovery = await discover(origin);
-  const verifiedProfile = await profiles.upsertFromDiscovery(discovery);
-  await openRemoteWindow(verifiedProfile);
+  return profile;
 }
 
 async function discover(origin: string) {
@@ -125,9 +168,10 @@ async function openRemoteWindow(profile: Profile): Promise<void> {
     existing.focus();
     return;
   }
-  const partition = `persist:leapview-profile-${profile.id.slice("profile_".length)}`;
+  const partition = profilePartition(profile);
   const profileSession = session.fromPartition(partition);
   configureSessionOnce(profileSession);
+  await ensureAuthenticated(profile, profileSession);
   const remote = new BrowserWindow({
     width: 1440,
     height: 920,
@@ -156,6 +200,54 @@ async function openRemoteWindow(profile: Profile): Promise<void> {
     throw new Error("LeapView could not load after successful discovery.", {
       cause: error,
     });
+  }
+}
+
+function profilePartition(profile: Profile): string {
+  return `persist:leapview-profile-${profile.id.slice("profile_".length)}`;
+}
+
+async function ensureAuthenticated(
+  profile: Profile,
+  profileSession: Session,
+): Promise<void> {
+  const fetcher = (input: string, init: RequestInit) =>
+    profileSession.fetch(input, init);
+  if (await desktopSessionAvailable(profile, fetcher)) {
+    return;
+  }
+  const existing = authenticationTransactions.get(profile.id);
+  if (existing !== undefined) {
+    await existing;
+    return;
+  }
+  if (authenticationTransactions.size >= 3) {
+    throw new Error(
+      "Too many LeapView authentication requests are already active.",
+    );
+  }
+  const transaction = authenticateDesktopProfile(
+    profile,
+    fetcher,
+    async (authorizationURL) => {
+      const parsed = new URL(authorizationURL);
+      if (
+        parsed.origin !== profile.canonicalOrigin ||
+        parsed.pathname !== "/auth/desktop/authorize" ||
+        parsed.hash !== ""
+      ) {
+        throw new Error("LeapView produced an unsafe authorization URL.");
+      }
+      await shell.openExternal(parsed.toString(), { activate: true });
+    },
+  );
+  authenticationTransactions.set(profile.id, transaction);
+  try {
+    await transaction;
+  } finally {
+    if (authenticationTransactions.get(profile.id) === transaction) {
+      authenticationTransactions.delete(profile.id);
+    }
   }
 }
 

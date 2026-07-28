@@ -3,10 +3,12 @@ package module
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/access"
+	"github.com/Yacobolo/leapview/internal/access/desktopauth"
 	"github.com/Yacobolo/leapview/internal/access/http/mcpoauth"
 	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
 	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
@@ -20,6 +22,7 @@ type Config struct {
 	ExistingAuth *Auth
 	WorkspaceIDs func(context.Context) ([]string, error)
 	PublicURL    string
+	InstanceID   string
 	MCPIssuerURL string
 	Presentation webpage.Presentation
 	Assets       staticasset.Resolver
@@ -92,6 +95,18 @@ func Build(ctx context.Context, config Config) (*Module, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(config.InstanceID) != "" {
+		desktopStore, ok := repository.(desktopauth.Store)
+		if !ok {
+			return nil, errors.New("desktop authorization store is unavailable")
+		}
+		module.desktopAuth, err = desktopauth.New(desktopStore, desktopauth.Config{
+			InstanceID: config.InstanceID,
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 	return module, nil
 }

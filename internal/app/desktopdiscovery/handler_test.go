@@ -47,7 +47,7 @@ func TestNewHandlerServesVersionedPublicMetadata(t *testing.T) {
 		ServerVersion:       "v1.4.2",
 		DesktopProtocolMin:  DesktopProtocolVersion,
 		DesktopProtocolMax:  DesktopProtocolVersion,
-		AuthenticationModes: []string{"browser-session"},
+		AuthenticationModes: []string{"browser-session", "system-browser-pkce"},
 		Capabilities:        []string{"remote-web"},
 	}
 	if !reflect.DeepEqual(document, want) {

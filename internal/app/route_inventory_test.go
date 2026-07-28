@@ -84,7 +84,7 @@ func TestRouteInventory(t *testing.T) {
 		rows = append(rows, fmt.Sprintf("%s|%s|%s|%s", key, contract.owner, contract.access, contract.privilege))
 	}
 	sort.Strings(rows)
-	const expectedRouteContractDigest = "77eca3022fb47731691634596d7b0f196040b4ef845496ffee3b72ec66724b84"
+	const expectedRouteContractDigest = "7d3d66e3c20fcb48be8db73a2d13d8190b8b047572bfc2483c4fcda4dfcaa1f4"
 	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(rows, "\n"))))
 	if digest != expectedRouteContractDigest {
 		t.Fatalf("route ownership/auth contract changed: got digest %s\n%s", digest, strings.Join(rows, "\n"))
@@ -114,7 +114,9 @@ func nonAPIRouteMetadata(method, path string) (routeMetadata, bool) {
 		return public, true
 	case path == "/login" || strings.HasPrefix(path, "/auth/") || strings.HasPrefix(path, "/oauth/") || strings.HasPrefix(path, "/.well-known/"):
 		public.owner = "access"
-		if path == "/auth/logout" || path == "/auth/local/password" {
+		if path == "/auth/logout" || path == "/auth/local/password" ||
+			path == "/auth/desktop/authorize" || path == "/auth/desktop/session" ||
+			path == "/auth/desktop/disconnect" {
 			public.access = "authenticated"
 		}
 		return public, true
@@ -233,6 +235,8 @@ GET /api/docs
 GET /api/openapi.json
 GET /auth/{provider}
 GET /auth/{provider}/callback
+GET /auth/desktop/authorize
+GET /auth/desktop/session
 GET /chat
 GET /chat/*
 GET /chat/updates
@@ -277,6 +281,8 @@ PATCH /static/*
 POST /admin/publications/command
 POST /admin/queries/command
 POST /admin/storage/select-table
+POST /auth/desktop/disconnect
+POST /auth/desktop/redeem
 POST /auth/local/login
 POST /auth/local/password
 POST /auth/logout

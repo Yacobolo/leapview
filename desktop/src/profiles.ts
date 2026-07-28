@@ -89,6 +89,24 @@ export class ProfileStore {
     });
   }
 
+  async remove(profileID: string): Promise<void> {
+    if (!profileIDPattern.test(profileID)) {
+      throw new Error("desktop profile id is invalid");
+    }
+    await this.#serialize(async () => {
+      const document = await this.#read();
+      const index = document.profiles.findIndex(
+        (profile) => profile.id === profileID,
+      );
+      if (index === -1) {
+        throw new Error("desktop profile was not found");
+      }
+      document.profiles.splice(index, 1);
+      validateProfileDocument(document);
+      await this.#write(document);
+    });
+  }
+
   async #read(): Promise<ProfileDocument> {
     try {
       const information = await stat(this.#path);

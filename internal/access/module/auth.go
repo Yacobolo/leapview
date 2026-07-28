@@ -431,7 +431,7 @@ func (a *Auth) MiddlewareWithObjectResolver(privilege access.Privilege, objectRe
 				writeJSONError(w, errUnauthorized, http.StatusUnauthorized)
 				return
 			}
-			if target := oauthAuthorizationReturnTarget(r); target != "" {
+			if target := authenticationReturnTarget(r); target != "" {
 				http.SetCookie(w, a.authReturnCookie(target))
 			}
 			http.Redirect(w, r, a.defaultLoginRedirect(), http.StatusFound)
@@ -777,8 +777,8 @@ func (a *Auth) oidcStateCookie(state, nonce string) *http.Cookie {
 	}
 }
 
-func oauthAuthorizationReturnTarget(r *http.Request) string {
-	if r == nil || r.Method != http.MethodGet || r.URL == nil || r.URL.Path != "/oauth/authorize" {
+func authenticationReturnTarget(r *http.Request) string {
+	if r == nil || r.Method != http.MethodGet || r.URL == nil || !isAuthenticationReturnPath(r.URL.Path) {
 		return ""
 	}
 	target := r.URL.RequestURI()
@@ -852,10 +852,14 @@ func (a *Auth) decodeAuthReturn(value string, now time.Time) (string, error) {
 	}
 	target := string(raw)
 	parsed, err := url.Parse(target)
-	if err != nil || parsed.IsAbs() || parsed.Host != "" || parsed.Path != "/oauth/authorize" || len(target) > maxAuthReturnTargetBytes {
+	if err != nil || parsed.IsAbs() || parsed.Host != "" || !isAuthenticationReturnPath(parsed.Path) || len(target) > maxAuthReturnTargetBytes {
 		return "", errors.New("invalid authentication return target")
 	}
 	return target, nil
+}
+
+func isAuthenticationReturnPath(path string) bool {
+	return path == "/oauth/authorize" || path == DesktopAuthorizePath
 }
 
 func (a *Auth) consumeOIDCState(w http.ResponseWriter, r *http.Request) (string, string, error) {

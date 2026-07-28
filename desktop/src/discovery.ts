@@ -147,6 +147,11 @@ export function validateDiscoveryDocument(
       "the server does not advertise browser-session authentication",
     );
   }
+  if (!authenticationModes.includes("system-browser-pkce")) {
+    throw new DesktopDiscoveryError(
+      "the server does not advertise system-browser-pkce authentication",
+    );
+  }
   const capabilities = requireStringArray(
     document.capabilities,
     "capabilities",

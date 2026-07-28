@@ -68,7 +68,7 @@ func NewHandler(config Config) (http.Handler, error) {
 		ServerVersion:       serverVersion,
 		DesktopProtocolMin:  DesktopProtocolVersion,
 		DesktopProtocolMax:  DesktopProtocolVersion,
-		AuthenticationModes: []string{"browser-session"},
+		AuthenticationModes: []string{"browser-session", "system-browser-pkce"},
 		Capabilities:        []string{"remote-web"},
 	}
 	body, err := json.Marshal(document)
