@@ -2,6 +2,7 @@ package platform
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"database/sql"
@@ -456,21 +457,52 @@ func TestBackupInstanceArchivesDatabaseAndPersistentFiles(t *testing.T) {
 	}
 }
 
+func TestOpenRejectsV010InstanceStateBeforeCreatingLeapViewDatabase(t *testing.T) {
+	home := t.TempDir()
+	legacyPath := filepath.Join(home, "libredash.db")
+	legacyContents := []byte("released v0.1.0 state marker")
+	if err := os.WriteFile(legacyPath, legacyContents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	currentPath := filepath.Join(home, "leapview.db")
+
+	store, err := Open(t.Context(), currentPath)
+	if store != nil {
+		_ = store.Close()
+		t.Fatal("Open() returned a store for incompatible v0.1.0 state")
+	}
+	if err == nil || !strings.Contains(err.Error(), "v0.1.0") || !strings.Contains(err.Error(), "fresh LeapView instance") {
+		t.Fatalf("Open() error = %v, want explicit fresh-install-only policy", err)
+	}
+	if _, err := os.Stat(currentPath); !os.IsNotExist(err) {
+		t.Fatalf("incompatible state created current database: %v", err)
+	}
+	if got, err := os.ReadFile(legacyPath); err != nil || !bytes.Equal(got, legacyContents) {
+		t.Fatalf("legacy state changed before rejection: %q, %v", got, err)
+	}
+}
+
 func TestRecoverInterruptedInstanceOperationsRemovesDisposableWork(t *testing.T) {
 	parent := t.TempDir()
 	target := filepath.Join(parent, "home")
 	writeTestFile(t, filepath.Join(target, "current"), "current")
 	writeTestFile(t, filepath.Join(parent, ".leapview-instance-backup-stale", "copy"), "backup")
+	writeTestFile(t, filepath.Join(parent, ".leapview-instance-backup-stale.tar.gz"), "backup archive")
 	writeTestFile(t, filepath.Join(parent, ".leapview-restore-stale", "copy"), "restore")
 	writeTestFile(t, filepath.Join(parent, ".leapview-restore-old-stale", "copy"), "old")
+	writeTestFile(t, filepath.Join(parent, ".leapview-current-backup-stale.tar.gz"), "checkpoint")
+	writeTestFile(t, filepath.Join(parent, "leapview-current-backup-stale.tar.gz"), "legacy checkpoint")
 
 	if err := recoverInterruptedInstanceOperations(target); err != nil {
 		t.Fatalf("recoverInterruptedInstanceOperations() error = %v", err)
 	}
 	for _, stale := range []string{
 		".leapview-instance-backup-stale",
+		".leapview-instance-backup-stale.tar.gz",
 		".leapview-restore-stale",
 		".leapview-restore-old-stale",
+		".leapview-current-backup-stale.tar.gz",
+		"leapview-current-backup-stale.tar.gz",
 	} {
 		if _, err := os.Stat(filepath.Join(parent, stale)); !os.IsNotExist(err) {
 			t.Fatalf("stale operation path %q survived: %v", stale, err)
@@ -617,6 +649,18 @@ func TestRestoreInstanceReplacesHomeAndBacksUpCurrent(t *testing.T) {
 		t.Fatalf("close current store: %v", err)
 	}
 	writeTestFile(t, filepath.Join(currentHome, "artifacts", "old.tar.gz"), "old artifact")
+	readOnlyRevisionData := filepath.Join(currentHome, "managed-data", "objects", "revisions", "immutable", "data")
+	writeTestFile(t, filepath.Join(readOnlyRevisionData, "orders.csv"), "immutable managed data")
+	if err := os.Chmod(readOnlyRevisionData, 0o500); err != nil {
+		t.Fatalf("make managed data revision read-only: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(readOnlyRevisionData, 0o700)
+		oldTargets, _ := filepath.Glob(filepath.Join(dir, ".leapview-restore-old-*"))
+		for _, oldTarget := range oldTargets {
+			_ = os.Chmod(filepath.Join(oldTarget, "managed-data", "objects", "revisions", "immutable", "data"), 0o700)
+		}
+	})
 
 	sourceHome := filepath.Join(dir, "source")
 	sourceDBPath := filepath.Join(sourceHome, "leapview.db")
@@ -672,6 +716,19 @@ func TestRestoreInstanceReplacesHomeAndBacksUpCurrent(t *testing.T) {
 	beforeEntries := readTarGzEntries(t, beforePath)
 	if got := string(beforeEntries["artifacts/old.tar.gz"]); got != "old artifact" {
 		t.Fatalf("before-restore artifact = %q, want old artifact", got)
+	}
+
+	discardedBeforePath := filepath.Join(dir, ".leapview-current-backup-discarded.tar.gz")
+	if err := RestoreInstance(ctx, InstanceRestoreOptions{
+		TargetHomeDir:        currentHome,
+		BackupPath:           backupPath,
+		CurrentBackupOut:     discardedBeforePath,
+		DiscardCurrentBackup: true,
+	}); err != nil {
+		t.Fatalf("restore instance with disposable current backup: %v", err)
+	}
+	if _, err := os.Stat(discardedBeforePath); !os.IsNotExist(err) {
+		t.Fatalf("disposable current backup survived successful restore: %v", err)
 	}
 }
 

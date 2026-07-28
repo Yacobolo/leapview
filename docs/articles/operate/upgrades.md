@@ -2,6 +2,55 @@
 
 Treat an upgrade as a coordinated change to application code, browser assets, persistent schemas, runtime configuration, and supported project contracts. An image rollback is useful but does not automatically reverse a persistent-state migration.
 
+## Move from v0.1.0
+
+LeapView v0.2.0-rc.1 is **fresh-install-only** from v0.1.0. Do not start the
+candidate on a v0.1.0 volume and do not use `leapviewctl upgrade` with the
+released v0.1.0 image:
+
+```text
+ghcr.io/yacobolo/libredash@sha256:677caaf256cb3a0d61efd47b289debbd91984976a5a5c4b372196a5d79ce7153
+```
+
+That release uses `LIBREDASH_*`, `/var/lib/libredash`, `libredash.db`,
+`libredash-backup.json`, and the earlier publish/deployment model. The
+candidate detects `libredash.db` before creating or migrating `leapview.db`;
+the Compose controller rejects the released digest before it stops the old
+service or writes a checkpoint.
+
+Preserve and export the old instance with the released binary, not a rebuilt
+approximation. The package currently requires registry authentication and
+contains only a `linux/amd64` runtime. With the v0.1.0 container stopped and
+its state volume still attached to `libredash-v010`, create an isolated
+exporter:
+
+```sh
+V010_IMAGE=ghcr.io/yacobolo/libredash@sha256:677caaf256cb3a0d61efd47b289debbd91984976a5a5c4b372196a5d79ce7153
+docker pull "$V010_IMAGE"
+docker stop libredash-v010
+docker create \
+  --name libredash-v010-export \
+  --volumes-from libredash-v010 \
+  --tmpfs /tmp:rw,noexec,nosuid,size=2g \
+  --env LIBREDASH_HOME=/var/lib/libredash \
+  "$V010_IMAGE" \
+  admin backup --out /tmp/libredash-v0.1.0.tar.gz
+docker start --attach libredash-v010-export
+docker cp \
+  libredash-v010-export:/tmp/libredash-v0.1.0.tar.gz \
+  ./libredash-v0.1.0.tar.gz
+sha256sum ./libredash-v0.1.0.tar.gz > ./libredash-v0.1.0.tar.gz.sha256
+docker rm libredash-v010-export
+```
+
+Do not restore that archive into LeapView; provision a fresh LeapView instance
+and volume, redeploy the authored project from version control, reload each
+source or managed dataset from its authority, and reprovision users, groups,
+service principals, and grants. Validate dashboards, governed queries,
+refreshes, denials, backup, and restore before cutover. Retain the stopped
+v0.1.0 container, its volume, configuration, immutable image, archive, and
+checksum as the rollback boundary until the migration is accepted.
+
 ## Assess the release
 
 Before scheduling an upgrade, review release notes for:

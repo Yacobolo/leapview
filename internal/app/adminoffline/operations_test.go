@@ -1,4 +1,4 @@
-package cli
+package adminoffline
 
 import (
 	"bytes"
@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	admincli "github.com/Yacobolo/leapview/internal/admin/cli"
 	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
 	"github.com/Yacobolo/leapview/internal/app/config"
 	"github.com/Yacobolo/leapview/internal/platform"
@@ -22,7 +23,7 @@ import (
 )
 
 func TestAdminDoesNotExposeUnrestrictedBootstrap(t *testing.T) {
-	cmd := adminCommand(context.Background(), &rootOptions{})
+	cmd := admincli.Command(context.Background(), Operations{})
 	for _, child := range cmd.Commands() {
 		if child.Name() == "bootstrap" {
 			t.Fatal("admin bootstrap command remains exposed")
@@ -77,8 +78,7 @@ func TestAdminBackupWritesInstanceArchive(t *testing.T) {
 		t.Fatalf("write artifact: %v", err)
 	}
 	backupPath := filepath.Join(t.TempDir(), "leapview.backup.tar.gz")
-	opts := &rootOptions{}
-	cmd := adminCommand(ctx, opts)
+	cmd := admincli.Command(ctx, Operations{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"backup", "--out", backupPath})
@@ -108,7 +108,7 @@ func TestAdminBackupStreamsRestorableInstanceArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 	var archive bytes.Buffer
-	if err := runAdminBackup(ctx, &rootOptions{backupOut: "-"}, &archive); err != nil {
+	if err := runAdminBackup(ctx, admincli.Options{BackupOut: "-"}, &archive); err != nil {
 		t.Fatalf("stream backup: %v", err)
 	}
 	if archive.Len() < 2 || archive.Bytes()[0] != 0x1f || archive.Bytes()[1] != 0x8b {
@@ -117,7 +117,7 @@ func TestAdminBackupStreamsRestorableInstanceArchive(t *testing.T) {
 	targetHome := filepath.Join(t.TempDir(), "volume", "home")
 	setAdminStorageEnv(t, targetHome)
 	var restoreOutput bytes.Buffer
-	if err := runAdminRestore(ctx, &rootOptions{restoreFrom: "-", confirmRestore: true}, bytes.NewReader(archive.Bytes()), &restoreOutput); err != nil {
+	if err := runAdminRestore(ctx, admincli.Options{RestoreFrom: "-", ConfirmRestore: true}, bytes.NewReader(archive.Bytes()), &restoreOutput); err != nil {
 		t.Fatalf("restore streamed backup: %v", err)
 	}
 	if !strings.Contains(restoreOutput.String(), "instance restored from: stdin") {
@@ -146,8 +146,7 @@ func TestAdminBackupRejectsExternalDuckLakeCatalog(t *testing.T) {
 		t.Fatalf("close platform store: %v", err)
 	}
 
-	opts := &rootOptions{}
-	cmd := adminCommand(ctx, opts)
+	cmd := admincli.Command(ctx, Operations{})
 	cmd.SetArgs([]string{"backup", "--out", filepath.Join(t.TempDir(), "leapview.backup.tar.gz")})
 	err = cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "DuckLake catalog path inside LEAPVIEW_HOME") {
@@ -170,8 +169,7 @@ func TestAdminRestoreRequiresConfirmation(t *testing.T) {
 	if err := store.Close(); err != nil {
 		t.Fatalf("close platform store: %v", err)
 	}
-	opts := &rootOptions{}
-	cmd := adminCommand(ctx, opts)
+	cmd := admincli.Command(ctx, Operations{})
 	cmd.SetArgs([]string{"restore", "--from", backupPath, "--current-out", filepath.Join(home, "before.db")})
 	err = cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "admin restore requires --confirm") {
@@ -201,8 +199,7 @@ func TestAdminRestoreRejectsExternalDuckLakeCatalog(t *testing.T) {
 	home := t.TempDir()
 	setAdminStorageEnv(t, home)
 	t.Setenv("LEAPVIEW_DUCKLAKE_CATALOG_PATH", filepath.Join(t.TempDir(), "catalog.duckdb"))
-	opts := &rootOptions{}
-	cmd := adminCommand(ctx, opts)
+	cmd := admincli.Command(ctx, Operations{})
 	cmd.SetArgs([]string{"restore", "--from", backupPath, "--current-out", filepath.Join(t.TempDir(), "before.tar.gz"), "--confirm"})
 	err = cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "DuckLake catalog path inside LEAPVIEW_HOME") {
@@ -259,8 +256,7 @@ func TestAdminRestoreReplacesPlatformDatabase(t *testing.T) {
 	}
 
 	beforePath := filepath.Join(t.TempDir(), "before-restore.tar.gz")
-	opts := &rootOptions{}
-	cmd := adminCommand(ctx, opts)
+	cmd := admincli.Command(ctx, Operations{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"restore", "--from", backupPath, "--current-out", beforePath, "--confirm"})
@@ -331,7 +327,12 @@ func TestAdminDatabaseRestoreRejectsAnotherInstanceEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = runAdminRestore(ctx, &rootOptions{restoreFrom: backupPath, restoreBefore: filepath.Join(t.TempDir(), "before.db"), confirmRestore: true, databaseOnly: true}, nil, &bytes.Buffer{})
+	err = runAdminRestore(ctx, admincli.Options{
+		RestoreFrom:    backupPath,
+		RestoreBefore:  filepath.Join(t.TempDir(), "before.db"),
+		ConfirmRestore: true,
+		DatabaseOnly:   true,
+	}, nil, &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), `bound to environment "prod"`) {
 		t.Fatalf("database restore error = %v", err)
 	}
@@ -351,8 +352,7 @@ func TestAdminMaintenanceDryRunReportsOperationalRetentionCandidates(t *testing.
 	setAdminStorageEnv(t, home)
 	seedAdminOperationalHistory(t, ctx, home, time.Now().UTC())
 
-	opts := &rootOptions{}
-	cmd := adminCommand(ctx, opts)
+	cmd := admincli.Command(ctx, Operations{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"maintenance", "--audit-days", "30", "--query-days", "30", "--archived-agent-days", "30"})
@@ -389,8 +389,7 @@ func TestAdminMaintenanceApplyPrunesOperationalHistory(t *testing.T) {
 	setAdminStorageEnv(t, home)
 	seedAdminOperationalHistory(t, ctx, home, time.Now().UTC())
 
-	opts := &rootOptions{}
-	cmd := adminCommand(ctx, opts)
+	cmd := admincli.Command(ctx, Operations{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"maintenance", "--apply", "--audit-days", "30", "--query-days", "30", "--archived-agent-days", "30"})
@@ -420,12 +419,12 @@ func TestAdminMaintenanceApplyPrunesOperationalHistory(t *testing.T) {
 func TestDestructiveAdminMaintenanceRequiresExclusiveInstanceLock(t *testing.T) {
 	for _, test := range []struct {
 		name string
-		run  func(context.Context, *rootOptions, *bytes.Buffer) error
+		run  func(context.Context, admincli.Options, *bytes.Buffer) error
 	}{
-		{name: "operational", run: func(ctx context.Context, opts *rootOptions, out *bytes.Buffer) error {
+		{name: "operational", run: func(ctx context.Context, opts admincli.Options, out *bytes.Buffer) error {
 			return runAdminMaintenance(ctx, opts, out)
 		}},
-		{name: "analytical storage", run: func(ctx context.Context, opts *rootOptions, out *bytes.Buffer) error {
+		{name: "analytical storage", run: func(ctx context.Context, opts admincli.Options, out *bytes.Buffer) error {
 			return runAdminStorageCleanup(ctx, opts, out)
 		}},
 	} {
@@ -438,7 +437,7 @@ func TestDestructiveAdminMaintenanceRequiresExclusiveInstanceLock(t *testing.T) 
 			}
 			defer held.Release()
 			var out bytes.Buffer
-			err = test.run(context.Background(), &rootOptions{apply: true}, &out)
+			err = test.run(context.Background(), admincli.Options{Apply: true}, &out)
 			if err == nil || !strings.Contains(err.Error(), "already using instance home") {
 				t.Fatalf("destructive maintenance error = %v", err)
 			}
@@ -461,10 +460,13 @@ func TestOfflineInstanceOperationsRequireExclusiveInstanceLock(t *testing.T) {
 	}{
 		{name: "initialize", run: func() error { return runAdminInitialize(context.Background(), "json", &bytes.Buffer{}) }},
 		{name: "backup", run: func() error {
-			return runAdminBackup(context.Background(), &rootOptions{backupOut: filepath.Join(t.TempDir(), "backup.tar.gz")}, &bytes.Buffer{})
+			return runAdminBackup(context.Background(), admincli.Options{BackupOut: filepath.Join(t.TempDir(), "backup.tar.gz")}, &bytes.Buffer{})
 		}},
 		{name: "restore", run: func() error {
-			return runAdminRestore(context.Background(), &rootOptions{restoreFrom: filepath.Join(t.TempDir(), "backup.tar.gz"), confirmRestore: true}, nil, &bytes.Buffer{})
+			return runAdminRestore(context.Background(), admincli.Options{
+				RestoreFrom:    filepath.Join(t.TempDir(), "backup.tar.gz"),
+				ConfirmRestore: true,
+			}, nil, &bytes.Buffer{})
 		}},
 	} {
 		t.Run(operation.name, func(t *testing.T) {
@@ -485,8 +487,7 @@ func TestAdminStorageCleanupDryRunReconcilesReferencedSnapshots(t *testing.T) {
 	recordAdminDeploymentSnapshot(t, ctx, home, "dev", second)
 	recordAdminDeploymentSnapshot(t, ctx, home, "prod", second)
 
-	opts := &rootOptions{}
-	cmd := adminCommand(ctx, opts)
+	cmd := admincli.Command(ctx, Operations{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"storage", "cleanup"})
@@ -536,8 +537,7 @@ func TestAdminStorageCleanupDryRunDoesNotMutateDrainingDeployments(t *testing.T)
 	drainingID := recordAdminDeploymentSnapshotWithStatus(t, ctx, home, "dev", first, servingstate.StatusDraining)
 	recordAdminDeploymentSnapshot(t, ctx, home, "dev", second)
 
-	opts := &rootOptions{}
-	cmd := adminCommand(ctx, opts)
+	cmd := admincli.Command(ctx, Operations{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"storage", "cleanup"})
@@ -558,8 +558,7 @@ func TestAdminStorageCleanupRejectsMissingReferencedSnapshot(t *testing.T) {
 	seedAdminDuckLakeSnapshots(t, ctx, home, root)
 	recordAdminDeploymentSnapshot(t, ctx, home, "dev", 999)
 
-	opts := &rootOptions{}
-	cmd := adminCommand(ctx, opts)
+	cmd := admincli.Command(ctx, Operations{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"storage", "cleanup"})
@@ -578,8 +577,7 @@ func TestAdminStorageCleanupApplyExpiresDrainingSnapshots(t *testing.T) {
 	recordAdminDeploymentSnapshotWithStatus(t, ctx, home, "dev", first, servingstate.StatusDraining)
 	recordAdminDeploymentSnapshot(t, ctx, home, "dev", second)
 
-	opts := &rootOptions{}
-	cmd := adminCommand(ctx, opts)
+	cmd := admincli.Command(ctx, Operations{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"storage", "cleanup", "--apply"})
@@ -631,8 +629,7 @@ func TestAdminStorageCleanupApplyProtectsLeasedDrainingSnapshot(t *testing.T) {
 	recordAdminDeploymentSnapshot(t, ctx, home, "dev", second)
 	createAdminSnapshotLease(t, ctx, home, drainingID, first)
 
-	opts := &rootOptions{}
-	cmd := adminCommand(ctx, opts)
+	cmd := admincli.Command(ctx, Operations{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"storage", "cleanup", "--apply"})

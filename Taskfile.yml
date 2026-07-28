@@ -152,6 +152,82 @@ tasks:
       - task: node:deps
       - bun run build:site
 
+  ci:prepare:frontend:
+    desc: Generate only the contracts and assets required by frontend CI
+    cmds:
+      - task: ui-signals:generate
+      - task: visualization-ir:generate
+      - task: build
+
+  ci:test:docs-site:
+    desc: Validate authored documentation and the independently deployable public site
+    cmds:
+      - task: docs:generate
+      - task: docs:check
+      - |
+        changed="$(git status --porcelain -- .env.example docs/api/openapi.yaml docs/llms.txt docs/reference/agent-tools internal/agent/contracts schemas/config schemas/json)"
+        test -z "$changed" || { printf 'public contract snapshots are stale:\n%s\n' "$changed" >&2; exit 1; }
+      - task: site:build
+      - bun run test:docs-diagrams
+      - bun run test:site
+      - go test ./cmd/leapview-site ./docs ./site ./internal/app/site/...
+
+  ci:test:frontend:core:
+    desc: Run global browser contracts, typechecks, and core application tests
+    cmds:
+      - bun run test:primer-primitives
+      - bun run test:primer-alignment
+      - bun run test:theme
+      - bun run test:datastar-lit
+      - bun run test:app-shell
+      - bun run typecheck:app
+      - bun run typecheck:contracts
+      - bun run test:production-assets
+      - bun run test:movielens-performance-harness
+      - bun run test:qualification-performance-policy
+      - bun run test:public-site-smoke
+
+  ci:test:frontend:reports:
+    desc: Run dashboard, visualization, and report browser tests
+    cmds:
+      - bun run test:visualization-ir
+      - bun run test:table-selection
+      - bun run test:interaction-selection
+      - bun run test:record-table
+      - bun run test:visual-modal
+      - bun run test:catalog-page
+      - bun run test:dashboard-page
+      - bun run test:windowed-table
+      - bun run test:filter-menu
+
+  ci:test:frontend:chat:
+    desc: Run chat and shared content browser tests
+    cmds:
+      - bun run test:chat-composer
+      - bun run test:chat-page
+      - bun run test:chat-thread
+      - bun run test:code-block
+      - bun run test:markdown-view
+
+  ci:test:frontend:workspace:
+    desc: Run workspace, administration, and data browser tests
+    cmds:
+      - bun run test:workspace-page
+      - bun run test:data-explorer
+      - bun run test:admin-page
+      - bun run test:code-editor
+      - bun run test:login-page
+      - bun run test:asset-lineage
+      - bun run test:semantic-model-graph
+      - bun run test:datastar-inspector
+      - bun run test:topology-background
+
+  ci:test:frontend:site:
+    desc: Run public documentation and site browser tests
+    cmds:
+      - bun run test:docs-diagrams
+      - bun run test:site
+
   site:binary:
     desc: Build the independently deployable public site from generated documentation
     cmds:
@@ -398,16 +474,22 @@ tasks:
       - api/gen/openapi.yaml
       - internal/access/api/gen/request_models.gen.go
       - internal/access/api/gen/server.apigen.gen.go
+      - internal/access/api/gen/client.apigen.gen.go
       - internal/agent/api/gen/request_models.gen.go
       - internal/agent/api/gen/server.apigen.gen.go
+      - internal/agent/api/gen/client.apigen.gen.go
       - internal/analytics/api/gen/request_models.gen.go
       - internal/analytics/api/gen/server.apigen.gen.go
+      - internal/analytics/api/gen/client.apigen.gen.go
       - internal/dashboard/api/gen/request_models.gen.go
       - internal/dashboard/api/gen/server.apigen.gen.go
+      - internal/dashboard/api/gen/client.apigen.gen.go
       - internal/deployment/api/gen/request_models.gen.go
       - internal/deployment/api/gen/server.apigen.gen.go
+      - internal/deployment/api/gen/client.apigen.gen.go
       - internal/manageddata/api/gen/request_models.gen.go
       - internal/manageddata/api/gen/server.apigen.gen.go
+      - internal/manageddata/api/gen/client.apigen.gen.go
       - internal/app/api/aggregate/server.apigen.gen.go
       - internal/app/api/gen/request_models.gen.go
       - internal/app/api/gen/server.apigen.gen.go
@@ -415,18 +497,22 @@ tasks:
       - internal/platform/http/api/gen/request_models.gen.go
       - internal/project/api/gen/request_models.gen.go
       - internal/project/api/gen/server.apigen.gen.go
+      - internal/project/api/gen/client.apigen.gen.go
       - internal/refresh/api/gen/request_models.gen.go
       - internal/refresh/api/gen/server.apigen.gen.go
+      - internal/refresh/api/gen/client.apigen.gen.go
       - internal/release/api/gen/request_models.gen.go
       - internal/release/api/gen/server.apigen.gen.go
+      - internal/release/api/gen/client.apigen.gen.go
       - internal/workspace/api/gen/request_models.gen.go
       - internal/workspace/api/gen/server.apigen.gen.go
+      - internal/workspace/api/gen/client.apigen.gen.go
       - docs/api/catalog.json
       - docs/api/openapi.yaml
       - docs/api/operations.json
     cmds:
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.2 typespec-compile -manifest api/apigen.yaml -target leapview-v1
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.2 all -manifest api/apigen.yaml -target leapview-v1
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 typespec-compile -manifest api/apigen.yaml -target leapview-v1
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 all -manifest api/apigen.yaml -target leapview-v1
       - go run ./internal/app/tools/openapidocgen
 
   agent-contracts:generate:
@@ -443,8 +529,8 @@ tasks:
       - internal/agent/contracts/models.gen.go
       - internal/agent/contracts/schemas.gen.go
     cmds:
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.2 typespec-compile -manifest api/apigen.yaml -target agent-tool-contracts
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.2 all -manifest api/apigen.yaml -target agent-tool-contracts
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 typespec-compile -manifest api/apigen.yaml -target agent-tool-contracts
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 all -manifest api/apigen.yaml -target agent-tool-contracts
       - go run ./internal/agent/contracts/generate
 
   schema:generate:
@@ -491,8 +577,8 @@ tasks:
       - internal/workspace/ui/signals/models.gen.go
       - web/generated/signals/index.ts
     cmds:
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.2 typespec-compile -manifest api/apigen.yaml -target ui-signals
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.2 all -manifest api/apigen.yaml -target ui-signals
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 typespec-compile -manifest api/apigen.yaml -target ui-signals
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 all -manifest api/apigen.yaml -target ui-signals
       - go run ./internal/app/tools/signalcontracts
 
   visualization-ir:generate:
@@ -516,8 +602,8 @@ tasks:
       - web/generated/vega-lite/validate.ts
       - api/gen/visualization.schema.json
     cmds:
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.2 typespec-compile -manifest api/apigen.yaml -target visualization-ir
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.2 all -manifest api/apigen.yaml -target visualization-ir
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 typespec-compile -manifest api/apigen.yaml -target visualization-ir
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 all -manifest api/apigen.yaml -target visualization-ir
       - bun scripts/generate_visualization_validator.ts
       - bun scripts/generate_vega_lite_validator.ts
 
@@ -526,45 +612,52 @@ tasks:
     cmds:
       - task: generate
       - task: build
-      - bun run test:primer-primitives
-      - bun run test:docs-diagrams
-      - bun run test:primer-alignment
-      - bun run test:theme
-      - bun run test:site
-      - bun run test:datastar-lit
-      - bun run test:visualization-ir
-      - bun run test:app-shell
-      - bun run test:interaction-selection
-      - bun run test:movielens-performance-harness
-      - bun run test:record-table
-      - bun run test:visual-modal
-      - bun run test:catalog-page
-      - bun run test:dashboard-page
-      - bun run test:chat-composer
-      - bun run test:chat-page
-      - bun run test:chat-thread
-      - bun run test:code-block
-      - bun run test:workspace-page
-      - bun run test:data-explorer
-      - bun run test:windowed-table
-      - bun run test:filter-menu
-      - bun run test:datastar-inspector
-      - bun run test:admin-page
-      - bun run test:code-editor
-      - bun run test:markdown-view
-      - bun run test:login-page
-      - bun run test:topology-background
-      - bun run test:production-assets
-      - bun run test:asset-lineage
-      - bun run test:semantic-model-graph
-      - bun run typecheck:app
-      - bun run typecheck:contracts
+      - task: ci:test:frontend:core
+      - task: ci:test:frontend:reports
+      - task: ci:test:frontend:chat
+      - task: ci:test:frontend:workspace
+      - task: ci:test:frontend:site
       - task: desktop:test
       # CUE-heavy compiler/application packages can each saturate a core and
       # starve timing-sensitive integration tests when every package runs at
       # once. Bound package parallelism while retaining Go's in-package
-      # parallelism so local and hosted CI exercise the same reliable suite.
-      - go test -p 2 ./...
+      # parallelism, and isolate the application package into the same stable
+      # shards used by hosted CI.
+      - task: test:go
+
+  test:go:
+    desc: Run Go tests with bounded package parallelism and stable application shards
+    cmds:
+      - task: generate
+      - task --parallel test:go:packages test:go:app:0 test:go:app:1 test:go:app:2 test:go:app:3
+
+  test:go:packages:
+    cmds:
+      - go list ./... | grep -v '/internal/app$' | xargs go test -p 2
+
+  test:go:app:0:
+    cmds:
+      - |
+        pattern="$(go run ./internal/app/tools/testshard --package ./internal/app --shard-index 0 --shard-count 4)"
+        go test ./internal/app -run "$pattern"
+
+  test:go:app:1:
+    cmds:
+      - |
+        pattern="$(go run ./internal/app/tools/testshard --package ./internal/app --shard-index 1 --shard-count 4)"
+        go test ./internal/app -run "$pattern"
+
+  test:go:app:2:
+    cmds:
+      - |
+        pattern="$(go run ./internal/app/tools/testshard --package ./internal/app --shard-index 2 --shard-count 4)"
+        go test ./internal/app -run "$pattern"
+
+  test:go:app:3:
+    cmds:
+      - |
+        pattern="$(go run ./internal/app/tools/testshard --package ./internal/app --shard-index 3 --shard-count 4)"
+        go test ./internal/app -run "$pattern"
 
   ci:
     desc: Run the full CI test suite
@@ -578,14 +671,19 @@ tasks:
       - task: deploy:check
 
   deploy:check:
-    desc: Validate the supported single-node deployment and lifecycle contracts
+    desc: Validate product and public-site deployment contracts
     cmds:
       - go test ./cmd/leapviewctl ./internal/app/cli/composectl ./deploy/compose
       - go test ./deploy/hetzner
+      - go test ./deploy/hetzner-site
       - terraform fmt -check -recursive deploy/hetzner
       - terraform -chdir=deploy/hetzner init -backend=false -input=false
       - terraform -chdir=deploy/hetzner validate
       - terraform -chdir=deploy/hetzner test
+      - terraform fmt -check -recursive deploy/hetzner-site
+      - terraform -chdir=deploy/hetzner-site init -backend=false -input=false
+      - terraform -chdir=deploy/hetzner-site validate
+      - terraform -chdir=deploy/hetzner-site test
 
   node:audit:
     desc: Scan JavaScript dependencies for known vulnerabilities

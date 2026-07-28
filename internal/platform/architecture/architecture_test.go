@@ -1,6 +1,7 @@
 package architecture
 
 import (
+	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -66,6 +67,66 @@ func TestAgentGeneratedAPIIsCapabilityOwned(t *testing.T) {
 	aggregate, ok := ClassifyPackage("internal/app/api/aggregate")
 	if !ok || aggregate.Capability != "composition" || aggregate.Layer != LayerAdapter {
 		t.Fatalf("application API aggregate classification = %#v, want composition adapter", aggregate)
+	}
+}
+
+func TestCapabilityCLIIsAnAdapterOwnedByItsCapability(t *testing.T) {
+	for _, capability := range []string{"admin", "agent", "analytics", "dashboard", "manageddata", "project", "workspace"} {
+		rule, ok := ClassifyPackage("internal/" + capability + "/cli")
+		if !ok {
+			t.Fatalf("%s CLI package is not classified", capability)
+		}
+		if rule.Capability != capability || rule.Layer != LayerAdapter {
+			t.Fatalf("%s CLI classification = %#v, want %s adapter", capability, rule, capability)
+		}
+	}
+}
+
+func TestApplicationCLIAdminOnlyComposesAdminOperations(t *testing.T) {
+	forbiddenImports := map[string]bool{
+		modulePath + "/internal/access/sqlite":       true,
+		modulePath + "/internal/admin/sqlite":        true,
+		modulePath + "/internal/analytics/ducklake":  true,
+		modulePath + "/internal/servingstate/sqlite": true,
+	}
+	var adminFile *goFile
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/app/cli" {
+			continue
+		}
+		for _, imported := range file.imports {
+			if forbiddenImports[imported] {
+				t.Errorf("%s imports offline capability adapter %s", file.path, imported)
+			}
+		}
+		if file.path == "internal/app/cli/admin.go" {
+			current := file
+			adminFile = &current
+		}
+	}
+	if adminFile == nil {
+		t.Fatal("internal/app/cli/admin.go was not found")
+	}
+	for _, required := range []string{
+		modulePath + "/internal/admin/cli",
+		modulePath + "/internal/app/adminoffline",
+	} {
+		if !importListContains(adminFile.imports, required) {
+			t.Errorf("application CLI Admin composition is missing import %s", required)
+		}
+	}
+	parsed, err := parser.ParseFile(token.NewFileSet(), adminFile.path, adminFile.body, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, declaration := range parsed.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		if function.Name.Name != "adminCommand" {
+			t.Errorf("application CLI Admin composition retains compatibility function %s", function.Name.Name)
+		}
 	}
 }
 
@@ -1310,13 +1371,20 @@ func TestRequiredCapabilityAdaptersExist(t *testing.T) {
 	root := repoRoot(t)
 	for _, dir := range []string{
 		"internal/access/http",
+		"internal/admin/cli",
 		"internal/admin/http",
+		"internal/agent/cli",
 		"internal/agent/http",
+		"internal/analytics/cli",
 		"internal/analytics/connectors",
 		"internal/refresh/http",
+		"internal/dashboard/cli",
 		"internal/dashboard/semanticapi",
 		"internal/dashboard/http",
+		"internal/manageddata/cli",
+		"internal/project/cli",
 		"internal/workspace/datastar",
+		"internal/workspace/cli",
 		"internal/workspace/http",
 	} {
 		if !packageDirExists(root, dir) {
@@ -1374,6 +1442,8 @@ func TestProductionContainerContractExists(t *testing.T) {
 	for _, want := range []string{
 		"FROM node:24-bookworm@sha256:",
 		"FROM golang:1.25-bookworm@sha256:",
+		"AS go-deps",
+		"FROM go-deps AS sourcegen",
 		"COPY --from=node /usr/local/bin/node /usr/local/bin/node",
 		"COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules",
 		"ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm",
@@ -1391,7 +1461,7 @@ func TestProductionContainerContractExists(t *testing.T) {
 		"bun scripts/generate_visualization_validator.ts",
 		"bun scripts/generate_vega_lite_validator.ts",
 		"bun run build",
-		"FROM golang:1.25-bookworm@sha256:",
+		"FROM go-deps AS build",
 		"COPY --from=sourcegen /src/internal/access/api/gen ./internal/access/api/gen",
 		"COPY --from=sourcegen /src/internal/agent/api/gen ./internal/agent/api/gen",
 		"COPY --from=sourcegen /src/internal/analytics/api/gen ./internal/analytics/api/gen",
@@ -1426,6 +1496,13 @@ func TestProductionContainerContractExists(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("Dockerfile missing production container contract fragment %q", want)
 		}
+	}
+	if count := strings.Count(text, "RUN go mod download"); count != 1 {
+		t.Fatalf("Dockerfile downloads Go modules %d times, want one shared dependency stage", count)
+	}
+	const seededModuleCache = "type=cache,id=leapview-go-mod,target=/go/pkg/mod,from=go-deps,source=/go/pkg/mod,sharing=locked"
+	if count := strings.Count(text, seededModuleCache); count != 3 {
+		t.Fatalf("Dockerfile uses the seeded persistent Go module cache %d times, want source generation, map extraction, and compilation", count)
 	}
 
 	ignored, err := os.ReadFile(filepath.Join(root, ".dockerignore"))
@@ -1484,6 +1561,7 @@ func TestPublicSiteProductionContainerContractExists(t *testing.T) {
 		"FROM node:24-bookworm@sha256:",
 		"FROM golang:1.25-bookworm@sha256:",
 		"./scripts/generate_build_sources.sh",
+		"go run -tags=duckdb_arrow ./internal/app/tools/visualdocgen",
 		"FROM oven/bun:1.3.7@sha256:",
 		"COPY --from=sourcegen /src/api/gen ./api/gen",
 		"COPY --from=sourcegen /src/api/visualization ./api/visualization",
@@ -1646,13 +1724,25 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"task build",
 		"actions/upload-artifact@",
 		"name: generated-assets",
+		"classify:",
+		"name: Classify changes",
+		"go run ./internal/app/tools/ciplan",
+		"fetch-depth: 0",
+		"name: ci-plan",
+		"retention-days: 30",
+		"frontend-prepare:",
+		"name: Prepare frontend assets",
+		"task ci:prepare:frontend",
+		"docs:",
+		"name: Documentation and public site",
+		"task ci:test:docs-site",
 		"go-tests:",
-		"name: Go tests",
-		"needs: prepare",
-		"go test -p 2 ./...",
+		"name: Go tests (${{ matrix.name }})",
+		"matrix: ${{ fromJSON(needs.classify.outputs.go_matrix) }}",
+		"go test -p 2 \"${packages[@]}\"",
+		"go run ./internal/app/tools/testshard",
 		"frontend-tests:",
 		"name: Frontend tests",
-		"bun run test:semantic-model-graph",
 		"ui-route-qa:",
 		"name: UI route QA",
 		"task qa:ui-framework",
@@ -1664,12 +1754,88 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...",
 		"production-image:",
 		"name: Production image",
-		"docker build --pull --tag leapview:ci .",
+		"depot/setup-action@",
+		"depot/build-push-action@",
+		"project: 9x73gxjcf5",
+		"platforms: linux/amd64",
+		"id-token: write",
 		"./scripts/smoke_production_image.sh leapview:ci",
+		"site-image-fork:",
+		"production-image-fork:",
+		"ci-gate:",
+		"name: CI gate",
+		"go run ./internal/app/tools/ciplan gate",
+		"task \"ci:test:frontend:${FRONTEND_SHARD}\"",
+		"./scripts/smoke_site_image.sh leapview-site:ci",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CI workflow missing production gate fragment %q", want)
 		}
+	}
+	if strings.Contains(text, "paths-ignore:") || strings.Contains(text, "\n    paths:") {
+		t.Fatal("required CI workflow must classify paths in a job instead of suppressing the workflow trigger")
+	}
+	for _, job := range []string{
+		"prepare",
+		"frontend-prepare",
+		"docs",
+		"go-tests",
+		"frontend-tests",
+		"go-analysis",
+		"ui-route-qa",
+		"node-audit",
+		"go-vuln",
+		"site-image",
+		"production-image",
+		"deployment-contracts",
+	} {
+		block := workflowJobBlock(t, text, job)
+		if !strings.Contains(block, "needs: classify") &&
+			!strings.Contains(block, "needs: [classify,") {
+			t.Fatalf("%s must depend on the authoritative change plan", job)
+		}
+	}
+	for _, job := range []string{"node-audit", "production-image"} {
+		block := workflowJobBlock(t, text, job)
+		if strings.Contains(block, "needs: prepare") {
+			t.Fatalf("%s must not wait for unrelated generated assets", job)
+		}
+	}
+	productionImage := workflowJobBlock(t, text, "production-image")
+	for _, want := range []string{"load: true", "pull: true"} {
+		if !strings.Contains(productionImage, want) {
+			t.Fatalf("production-image must preserve runtime validation fragment %q", want)
+		}
+	}
+	siteImage := workflowJobBlock(t, text, "site-image")
+	for _, want := range []string{"load: true", "./scripts/smoke_site_image.sh leapview-site:ci"} {
+		if !strings.Contains(siteImage, want) {
+			t.Fatalf("site-image must preserve runtime validation fragment %q", want)
+		}
+	}
+	for _, block := range []struct {
+		name string
+		text string
+	}{
+		{name: "production-image", text: productionImage},
+		{name: "site-image", text: siteImage},
+	} {
+		if strings.Contains(block.text, "type=gha") {
+			t.Fatalf("%s must use Depot's persistent cache instead of transferring a GitHub Actions cache", block.name)
+		}
+	}
+	for _, job := range []string{"site-image-fork", "production-image-fork"} {
+		block := workflowJobBlock(t, text, job)
+		if strings.Contains(block, "id-token: write") || strings.Contains(block, "depot/") {
+			t.Fatalf("%s must execute fork-controlled build inputs without Depot or OIDC permission", job)
+		}
+		if !strings.Contains(block, "docker/build-push-action@") {
+			t.Fatalf("%s must retain a GitHub-hosted Buildx fallback", job)
+		}
+	}
+	deploymentContracts := workflowJobBlock(t, text, "deployment-contracts")
+	if !strings.Contains(deploymentContracts, "cache: false") {
+		t.Fatal("deployment-contracts must not race prepare to populate the shared Go cache")
 	}
 	taskText := string(taskfile)
 	for _, want := range []string{
@@ -1681,9 +1847,36 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"bun audit",
 		"vuln:",
 		"golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...",
+		"ci:prepare:frontend:",
+		"ci:test:docs-site:",
+		"go test ./cmd/leapview-site ./docs ./site ./internal/app/site/...",
+		"ci:test:frontend:core:",
+		"ci:test:frontend:reports:",
+		"ci:test:frontend:chat:",
+		"ci:test:frontend:workspace:",
+		"ci:test:frontend:site:",
+		"test:go:",
+		"task --parallel test:go:packages test:go:app:0 test:go:app:1 test:go:app:2 test:go:app:3",
+		"go list ./... | grep -v '/internal/app$' | xargs go test -p 2",
+		"--shard-count 4",
 	} {
 		if !strings.Contains(taskText, want) {
 			t.Fatalf("Taskfile missing vulnerability gate fragment %q", want)
+		}
+	}
+	var packageManifest struct {
+		Scripts map[string]string `json:"scripts"`
+	}
+	packageJSON, err := os.ReadFile(filepath.Join(root, "package.json"))
+	if err != nil {
+		t.Fatalf("read package.json: %v", err)
+	}
+	if err := json.Unmarshal(packageJSON, &packageManifest); err != nil {
+		t.Fatalf("decode package.json: %v", err)
+	}
+	for script := range packageManifest.Scripts {
+		if strings.HasPrefix(script, "test:") && !strings.Contains(taskText, "bun run "+script) {
+			t.Errorf("frontend test script %q is not assigned to a Taskfile CI shard", script)
 		}
 	}
 
@@ -1716,6 +1909,76 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 			t.Fatalf("production image smoke script missing fragment %q", want)
 		}
 	}
+
+	siteScript, err := os.ReadFile(filepath.Join(root, "scripts", "smoke_site_image.sh"))
+	if err != nil {
+		t.Fatalf("read public site image smoke script: %v", err)
+	}
+	siteScriptText := string(siteScript)
+	for _, want := range []string{
+		"--read-only",
+		"/healthz",
+		"/readyz",
+		"/docs",
+		"leapview-site:ci",
+	} {
+		if !strings.Contains(siteScriptText, want) {
+			t.Fatalf("public site image smoke script missing fragment %q", want)
+		}
+	}
+}
+
+func TestContinuousIntegrationHealthWorkflowReportsAndAlerts(t *testing.T) {
+	root := repoRoot(t)
+	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci-health.yml"))
+	if err != nil {
+		t.Fatalf("read CI health workflow: %v", err)
+	}
+	text := string(workflow)
+	for _, want := range []string{
+		"name: CI health",
+		"schedule:",
+		"workflow_dispatch:",
+		"actions: read",
+		"id-token: write",
+		"issues: write",
+		"depot/setup-action@",
+		"depot list builds --output json --project 9x73gxjcf5",
+		"go run ./internal/app/tools/cireport",
+		"--days 7",
+		"name: ci-health",
+		"retention-days: 30",
+		"CI health thresholds exceeded",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("CI health workflow missing fragment %q", want)
+		}
+	}
+}
+
+func workflowJobBlock(t *testing.T, workflow, job string) string {
+	t.Helper()
+	startMarker := "  " + job + ":"
+	lines := strings.Split(workflow, "\n")
+	start := -1
+	for index, line := range lines {
+		if line == startMarker {
+			start = index
+			break
+		}
+	}
+	if start < 0 {
+		t.Fatalf("workflow job %q not found", job)
+	}
+	end := len(lines)
+	for index := start + 1; index < len(lines); index++ {
+		line := lines[index]
+		if strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "    ") && strings.HasSuffix(line, ":") {
+			end = index
+			break
+		}
+	}
+	return strings.Join(lines[start:end], "\n")
 }
 
 func TestSQLCOutputsAreGeneratedBuildInputs(t *testing.T) {
@@ -1803,11 +2066,13 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 			"Check generation is deterministic",
 		},
 		"Dockerfile.site": {
-			"AS sourcegen",
+			"AS go-deps",
+			"FROM go-deps AS sourcegen",
 			"./scripts/generate_build_sources.sh",
 			"go run ./internal/app/tools/clidocgen",
 			"go run ./internal/app/tools/schemadocgen",
 			"go run ./internal/app/tools/openapidocgen",
+			"go run -tags=duckdb_arrow ./internal/app/tools/visualdocgen",
 			"go run ./internal/app/tools/docsitegen",
 			"FROM sourcegen AS build",
 			"COPY --from=sourcegen /src/web/generated ./web/generated",
@@ -1835,6 +2100,17 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 				t.Errorf("%s missing generated-input contract fragment %q", name, fragment)
 			}
 		}
+	}
+	siteDockerfile, err := os.ReadFile(filepath.Join(root, "Dockerfile.site"))
+	if err != nil {
+		t.Fatalf("read Dockerfile.site: %v", err)
+	}
+	if count := strings.Count(string(siteDockerfile), "RUN go mod download"); count != 1 {
+		t.Fatalf("Dockerfile.site downloads Go modules %d times, want one shared dependency stage", count)
+	}
+	const seededModuleCache = "type=cache,id=leapview-go-mod,target=/go/pkg/mod,from=go-deps,source=/go/pkg/mod,sharing=locked"
+	if count := strings.Count(string(siteDockerfile), seededModuleCache); count != 3 {
+		t.Fatalf("Dockerfile.site uses the seeded persistent Go module cache %d times, want source generation, visual documentation, and compilation", count)
 	}
 
 	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))

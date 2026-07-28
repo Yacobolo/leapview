@@ -177,6 +177,9 @@ func (r *Repository) CompleteFinalization(ctx context.Context, projectID, releas
 	if err != nil {
 		return release.Release{}, err
 	}
+	if current.Status == release.StatusReady {
+		return current, nil
+	}
 	if current.Status != release.StatusValidating {
 		return release.Release{}, release.ErrImmutable
 	}
@@ -189,13 +192,24 @@ func (r *Repository) CompleteFinalization(ctx context.Context, projectID, releas
 			return release.Release{}, err
 		}
 	}
-	if _, err := qtx.MarkAPIReleaseReady(ctx, platformdb.MarkAPIReleaseReadyParams{ID: releaseID, ProjectID: projectID}); err != nil {
+	changed, err := qtx.MarkAPIReleaseReady(ctx, platformdb.MarkAPIReleaseReadyParams{ID: releaseID, ProjectID: projectID})
+	if err != nil {
+		return release.Release{}, err
+	}
+	if changed != 1 {
+		return release.Release{}, release.ErrImmutable
+	}
+	ready, err := getWith(ctx, qtx, projectID, releaseID, "")
+	if err != nil {
+		return release.Release{}, err
+	}
+	if err := r.recordFinalizationEvent(ctx, tx, ready, "release.ready"); err != nil {
 		return release.Release{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return release.Release{}, err
 	}
-	return r.Get(ctx, projectID, releaseID)
+	return ready, nil
 }
 
 func (r *Repository) FailFinalization(ctx context.Context, projectID, releaseID string, cause error) (release.Release, error) {
@@ -203,14 +217,54 @@ func (r *Repository) FailFinalization(ctx context.Context, projectID, releaseID 
 	if cause != nil && strings.TrimSpace(cause.Error()) != "" {
 		message = cause.Error()
 	}
-	changed, err := r.q.MarkAPIReleaseFailed(ctx, platformdb.MarkAPIReleaseFailedParams{Error: message, ID: releaseID, ProjectID: projectID})
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return release.Release{}, err
+	}
+	defer tx.Rollback()
+	qtx := r.q.WithTx(tx)
+	current, err := getWith(ctx, qtx, projectID, releaseID, "")
+	if err != nil {
+		return release.Release{}, err
+	}
+	if current.Status == release.StatusFailed {
+		return current, nil
+	}
+	if current.Status != release.StatusValidating {
+		return release.Release{}, release.ErrImmutable
+	}
+	changed, err := qtx.MarkAPIReleaseFailed(ctx, platformdb.MarkAPIReleaseFailedParams{Error: message, ID: releaseID, ProjectID: projectID})
 	if err != nil {
 		return release.Release{}, err
 	}
 	if changed != 1 {
 		return release.Release{}, release.ErrImmutable
 	}
-	return r.Get(ctx, projectID, releaseID)
+	failed, err := getWith(ctx, qtx, projectID, releaseID, "")
+	if err != nil {
+		return release.Release{}, err
+	}
+	if err := r.recordFinalizationEvent(ctx, tx, failed, "release.failed"); err != nil {
+		return release.Release{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return release.Release{}, err
+	}
+	return failed, nil
+}
+
+func (r *Repository) recordFinalizationEvent(ctx context.Context, tx *sql.Tx, row release.Release, eventType string) error {
+	if r.workflow == nil {
+		return fmt.Errorf("release finalization workflow recorder is required")
+	}
+	data, err := json.Marshal(release.FinalizationEventData(row))
+	if err != nil {
+		return err
+	}
+	return r.workflow.RecordWorkflow(ctx, tx, jobs.WorkflowIntent{Event: jobs.EventInput{
+		Key: eventType, ResourceKind: "release", ResourceID: row.ID,
+		EventType: eventType, Data: data,
+	}})
 }
 
 func (r *Repository) LinkDeployment(ctx context.Context, projectID, deploymentID, releaseID, rollbackOf string) error {

@@ -15,7 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Yacobolo/leapview/internal/app/adminoffline"
 	"github.com/Yacobolo/leapview/internal/app/config"
+	manageddatacli "github.com/Yacobolo/leapview/internal/manageddata/cli"
 	"github.com/Yacobolo/leapview/internal/manageddata/localplan"
 	instancelock "github.com/Yacobolo/leapview/internal/platform/locking"
 	"github.com/spf13/cobra"
@@ -111,7 +113,7 @@ func runEvaluation(ctx context.Context, _ *rootOptions, out io.Writer) error {
 	}
 	projectPath := filepath.Join(assets, evaluationProjectRelativePath)
 	dataPath := filepath.Join(assets, evaluationDataRelativePath)
-	planner := localplan.NewService(loadLocalPlanProject)
+	planner := localplan.NewService(loadManagedDataPlanProject)
 	plan, err := planner.Plan(ctx, localplan.Request{
 		ProjectPath: projectPath,
 		Connection:  evaluationConnection,
@@ -136,7 +138,7 @@ func runEvaluation(ctx context.Context, _ *rootOptions, out io.Writer) error {
 	if err := waitForEvaluationEndpoint(ctx, serverErr, evaluationServerTarget+"/healthz", 45*time.Second); err != nil {
 		return err
 	}
-	if err := runDataSync(ctx, dataSyncRequest{
+	if err := manageddatacli.RunSync(ctx, manageddatacli.SyncRequest{
 		ProjectPath: projectPath,
 		ProjectID:   evaluationProjectID,
 		Connection:  evaluationConnection,
@@ -261,7 +263,7 @@ func writeEvaluationCompletion(home string, completion evaluationCompletion) err
 	if err != nil {
 		return err
 	}
-	if err := writeInitialCredentialRecovery(evaluationCompletePath(home), append(contents, '\n')); err != nil {
+	if err := adminoffline.WriteInitialCredentialRecovery(evaluationCompletePath(home), append(contents, '\n')); err != nil {
 		return fmt.Errorf("write evaluation completion: %w", err)
 	}
 	return nil
@@ -312,7 +314,7 @@ func configureEvaluationEnvironment(home string) error {
 				return encodeErr
 			}
 			encoded = append(encoded, '\n')
-			err = writeInitialCredentialRecovery(evaluationRuntimeConfigPath(home), encoded)
+			err = adminoffline.WriteInitialCredentialRecovery(evaluationRuntimeConfigPath(home), encoded)
 		}
 	}
 	if err != nil {
@@ -393,8 +395,8 @@ func readEvaluationRuntimeConfig(home string) (evaluationRuntimeConfig, error) {
 func prepareEvaluationCredentials(ctx context.Context, home string) (string, error) {
 	token, err := readEvaluationBootstrapToken(home)
 	if err == nil {
-		if _, statErr := os.Stat(initialCredentialRecoveryPath(home)); statErr == nil {
-			if ackErr := acknowledgeInitialCredentials(ctx); ackErr != nil {
+		if _, statErr := os.Stat(adminoffline.InitialCredentialRecoveryPath(home)); statErr == nil {
+			if ackErr := (adminoffline.Operations{}).AcknowledgeInitialCredentials(ctx); ackErr != nil {
 				return "", ackErr
 			}
 		} else if !os.IsNotExist(statErr) {
@@ -407,24 +409,24 @@ func prepareEvaluationCredentials(ctx context.Context, home string) (string, err
 	}
 
 	var output bytes.Buffer
-	if err := runAdminInitialize(ctx, "json", &output); err != nil {
+	if err := (adminoffline.Operations{}).Initialize(ctx, "json", &output); err != nil {
 		return "", fmt.Errorf("initialize evaluation administrator: %w", err)
 	}
-	var credentials initialInstanceCredentials
+	var credentials adminoffline.InitialInstanceCredentials
 	if err := json.Unmarshal(output.Bytes(), &credentials); err != nil || credentials.PublisherToken == "" {
 		return "", fmt.Errorf("evaluation initialization returned invalid credentials")
 	}
-	if err := writeInitialCredentialRecovery(evaluationFirstLoginPath(home), output.Bytes()); err != nil {
+	if err := adminoffline.WriteInitialCredentialRecovery(evaluationFirstLoginPath(home), output.Bytes()); err != nil {
 		return "", fmt.Errorf("store evaluation first-login credentials: %w", err)
 	}
 	bootstrap, err := json.Marshal(evaluationBootstrapCredentials{PublisherToken: credentials.PublisherToken})
 	if err != nil {
 		return "", err
 	}
-	if err := writeInitialCredentialRecovery(evaluationBootstrapPath(home), append(bootstrap, '\n')); err != nil {
+	if err := adminoffline.WriteInitialCredentialRecovery(evaluationBootstrapPath(home), append(bootstrap, '\n')); err != nil {
 		return "", fmt.Errorf("store evaluation bootstrap credential: %w", err)
 	}
-	if err := acknowledgeInitialCredentials(ctx); err != nil {
+	if err := (adminoffline.Operations{}).AcknowledgeInitialCredentials(ctx); err != nil {
 		return "", fmt.Errorf("acknowledge evaluation initialization credentials: %w", err)
 	}
 	return credentials.PublisherToken, nil
@@ -448,14 +450,14 @@ func consumeEvaluationFirstLogin(home string, out io.Writer) error {
 		return fmt.Errorf("acquire evaluation first-login lock: %w", err)
 	}
 	defer lock.Release()
-	contents, err := readInitialCredentialRecovery(evaluationFirstLoginPath(home))
+	contents, err := adminoffline.ReadInitialCredentialRecovery(evaluationFirstLoginPath(home))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("evaluation first-login credentials have already been consumed or were never created")
 		}
 		return err
 	}
-	if err := writeAll(out, contents); err != nil {
+	if err := adminoffline.WriteAll(out, contents); err != nil {
 		return err
 	}
 	if err := os.Remove(evaluationFirstLoginPath(home)); err != nil {

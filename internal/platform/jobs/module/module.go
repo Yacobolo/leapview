@@ -149,6 +149,9 @@ func (m *Module) AppendEvent(ctx context.Context, kind, id, event string, data [
 	return m.repository.AppendEvent(ctx, kind, id, event, data)
 }
 func (m *Module) RecordWorkflow(ctx context.Context, tx transaction.Transaction, intent jobs.WorkflowIntent) error {
+	if intent.Job.ID == "" {
+		return m.repository.RecordWorkflow(ctx, tx, intent)
+	}
 	m.mu.Lock()
 	_, registered := m.handlers[intent.Job.Kind]
 	configured := m.handlers != nil

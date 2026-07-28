@@ -27,6 +27,13 @@ queryStreamReconnect=false
 backupInterruption=false
 restorePreflight=false
 boundedDisk=false
+disk_before=0
+disk_after=0
+disk_growth=0
+stale_recovery_count=0
+stale_restore_count=0
+stale_backup_count=0
+stale_checkpoint_count=0
 
 grep -q '^LEAPVIEW_REFRESH_JOB_LEASE_TIMEOUT=15s$' "$bundle_root/leapview.env" || {
   printf 'recovery qualification requires LEAPVIEW_REFRESH_JOB_LEASE_TIMEOUT=15s\n' >&2
@@ -47,6 +54,13 @@ write_report() {
     --argjson backupInterruption "$backupInterruption" \
     --argjson restorePreflight "$restorePreflight" \
     --argjson boundedDisk "$boundedDisk" \
+    --argjson diskBeforeKiB "$disk_before" \
+    --argjson diskAfterKiB "$disk_after" \
+    --argjson diskGrowthKiB "$disk_growth" \
+    --argjson staleRecoveryEntries "$stale_recovery_count" \
+    --argjson staleRestoreEntries "$stale_restore_count" \
+    --argjson staleBackupEntries "$stale_backup_count" \
+    --argjson staleCheckpointEntries "$stale_checkpoint_count" \
     '{
       result:$result,
       stage:$stage,
@@ -60,6 +74,16 @@ write_report() {
         backupInterruption:$backupInterruption,
         restorePreflight:$restorePreflight,
         boundedDisk:$boundedDisk
+      },
+      boundedState:{
+        diskBeforeKiB:$diskBeforeKiB,
+        diskAfterKiB:$diskAfterKiB,
+        diskGrowthKiB:$diskGrowthKiB,
+        diskGrowthLimitKiB:51200,
+        staleRecoveryEntries:$staleRecoveryEntries,
+        staleRestoreEntries:$staleRestoreEntries,
+        staleBackupEntries:$staleBackupEntries,
+        staleCheckpointEntries:$staleCheckpointEntries
       }
     }' > "$report"
 }
@@ -236,7 +260,7 @@ for _ in $(seq 1 1200); do
   if ! kill -0 "$sync_pid" 2>/dev/null; then
     break
   fi
-  sleep 0.025
+  sleep 0.5
 done
 [[ -n "$interrupted_session" && "$interrupted_offset" -gt 0 ]]
 kill_candidate
@@ -262,18 +286,21 @@ fault_revision="$(awk '$1 == "staged" { print $2 }' <<<"$sync_output")"
 active_after_upload="$work_dir/active-after-upload.json"
 api GET "/api/v1/projects/$project_id/connections/sample/active-revision" "$active_after_upload"
 jq -e --arg baseline "$baseline_revision" '.revision.id == $baseline' "$active_after_upload" >/dev/null
-api GET \
+wait_for_json \
   "/api/v1/projects/$project_id/connections/sample/upload-sessions/$interrupted_session/events?limit=100" \
-  "$work_dir/managed-upload-events.json"
-jq -e '
+  '
   ([.items[].event] | index("upload_session.created")) != null and
   ([.items[].event] | index("upload_session.finalizing")) != null and
   ([.items[].event] | index("upload_session.completed")) != null
-' "$work_dir/managed-upload-events.json" >/dev/null
+' \
+  "$work_dir/managed-upload-events.json"
 managedUpload=true
 
 stage="release finalization interruption"
 deploy_a_log="$evidence_dir/recovery-release-finalization.log"
+release_ids_before_file="$work_dir/release-ids-before.json"
+api GET "/api/v1/projects/$project_id/releases?limit=100" "$release_ids_before_file"
+release_ids_before="$(jq -c '[.items[].id]' "$release_ids_before_file")"
 run_in_candidate \
   leapview deploy \
   --project /var/lib/leapview/qualification-recovery/project-a/leapview.yaml \
@@ -287,15 +314,27 @@ releases="$work_dir/releases.json"
 release_id=""
 for _ in $(seq 1 1200); do
   if api GET "/api/v1/projects/$project_id/releases?limit=100" "$releases" 2>/dev/null; then
-    release_id="$(jq -r '[.items[] | select(.status == "validating")][0].id // empty' "$releases")"
+    release_id="$(
+      jq -r --argjson existing "$release_ids_before" '
+        [
+          .items[] |
+          select(.status == "draft" or .status == "validating") |
+          select(.id as $id | $existing | index($id) | not)
+        ][0].id // empty
+      ' "$releases"
+    )"
     [[ -n "$release_id" ]] && break
   fi
   if ! kill -0 "$deploy_a_pid" 2>/dev/null; then
     break
   fi
-  sleep 0.025
+  sleep 0.5
 done
-[[ -n "$release_id" ]]
+if [[ -z "$release_id" ]]; then
+  printf 'new release did not remain draft or validating long enough to observe the interruption boundary\n' >&2
+  exit 1
+fi
+interrupted_release_id="$release_id"
 kill_candidate
 wait_for_process_exit "$deploy_a_pid"
 
@@ -307,8 +346,8 @@ run_in_candidate \
   --auto-approve \
   >> "$deploy_a_log" 2>&1
 release_after="$work_dir/release-after.json"
-wait_for_json "/api/v1/projects/$project_id/releases/$release_id" '.status == "ready"' "$release_after"
-wait_for_json "/api/v1/projects/$project_id/releases/$release_id/events?limit=100" '
+wait_for_json "/api/v1/projects/$project_id/releases/$interrupted_release_id" '.status == "ready"' "$release_after"
+wait_for_json "/api/v1/projects/$project_id/releases/$interrupted_release_id/events?limit=100" '
   ([.items[].event] | index("release.created")) != null and
   ([.items[].event] | index("release.validating")) != null and
   ([.items[].event] | index("release.ready")) != null
@@ -317,6 +356,7 @@ releaseFinalization=true
 
 stage="deployment activation interruption"
 deploy_b_log="$evidence_dir/recovery-deployment-activation.log"
+docker update --cpus 0.25 "$container_id" >/dev/null
 run_in_candidate \
   leapview deploy \
   --project /var/lib/leapview/qualification-recovery/project-b/leapview.yaml \
@@ -338,19 +378,24 @@ for _ in $(seq 1 1200); do
   if ! kill -0 "$deploy_b_pid" 2>/dev/null; then
     break
   fi
-  sleep 0.025
+  sleep 0.5
 done
-[[ -n "$deployment_id" ]]
+if [[ -z "$deployment_id" ]]; then
+  printf 'deployment did not remain queued or running long enough to observe the interruption boundary\n' >&2
+  exit 1
+fi
+interrupted_deployment_id="$deployment_id"
 kill_candidate
 wait_for_process_exit "$deploy_b_pid"
 
+docker update --cpus 0 "$container_id" >/dev/null
 deployment_after="$work_dir/deployment-after.json"
 wait_for_json \
-  "/api/v1/projects/$project_id/deployments/$deployment_id" \
+  "/api/v1/projects/$project_id/deployments/$interrupted_deployment_id" \
   '.status == "active"' \
   "$deployment_after"
 wait_for_json \
-  "/api/v1/projects/$project_id/deployments/$deployment_id/events?limit=100" \
+  "/api/v1/projects/$project_id/deployments/$interrupted_deployment_id/events?limit=100" \
   '
   ([.items[].event] | index("deployment.queued")) != null and
   ([.items[].event] | index("deployment.active")) != null
@@ -500,12 +545,22 @@ restorePreflight=true
 stage="bounded recovery state"
 docker update --cpus 0 "$container_id" >/dev/null
 disk_after="$(docker exec "$container_id" du -sk /var/lib/leapview | awk '{print $1}')"
-(( disk_after <= disk_before + 51200 ))
+disk_growth=$((disk_after - disk_before))
 stale_restore_count="$(
   docker exec "$container_id" sh -c \
-    'find /var/lib/leapview -maxdepth 1 \( -name ".leapview-restore-*" -o -name ".leapview-instance-backup-*" \) -print | wc -l'
+    'find /var/lib/leapview -maxdepth 1 -name ".leapview-restore-*" -print | wc -l'
 )"
-[[ "$stale_restore_count" -eq 0 ]]
+stale_backup_count="$(
+  docker exec "$container_id" sh -c \
+    'find /var/lib/leapview -maxdepth 1 -name ".leapview-instance-backup-*" -print | wc -l'
+)"
+stale_checkpoint_count="$(
+  docker exec "$container_id" sh -c \
+    'find /var/lib/leapview -maxdepth 1 \( -name ".leapview-current-backup-*.tar.gz" -o -name "leapview-current-backup-*.tar.gz" \) -print | wc -l'
+)"
+stale_recovery_count=$((stale_restore_count + stale_backup_count + stale_checkpoint_count))
+(( disk_after <= disk_before + 51200 ))
+[[ "$stale_recovery_count" -eq 0 ]]
 boundedDisk=true
 
 # Preserve a bounded, credential-free domain-event audit trail. These are the

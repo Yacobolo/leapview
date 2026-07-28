@@ -2213,6 +2213,27 @@
       "x-lifecycle": "supported",
       "x-scope": "serve,admin"
     },
+    "LEAPVIEW_PUBLIC_RELEASE_MANIFEST": {
+      "default": "docs/public-release.json",
+      "description": "Release manifest compared with the public site's deployed release identity.",
+      "type": "string",
+      "x-lifecycle": "tooling",
+      "x-scope": "public site smoke"
+    },
+    "LEAPVIEW_PUBLIC_SITE_ALIASES": {
+      "default": "http://leapview.dev,https://www.leapview.dev",
+      "description": "Comma-separated public aliases that must redirect to the canonical site origin.",
+      "type": "string",
+      "x-lifecycle": "tooling",
+      "x-scope": "public site smoke"
+    },
+    "LEAPVIEW_PUBLIC_SITE_URL": {
+      "default": "https://leapview.dev",
+      "description": "Canonical public site origin verified by the release adoption smoke test.",
+      "type": "string",
+      "x-lifecycle": "tooling",
+      "x-scope": "public site smoke"
+    },
     "LEAPVIEW_PUBLIC_URL": {
       "description": "Canonical externally visible LeapView origin used for MCP resource identity and OAuth discovery.",
       "type": "string",
@@ -2315,6 +2336,12 @@
       "type": "string",
       "x-lifecycle": "supported",
       "x-scope": "public site"
+    },
+    "LEAPVIEW_SITE_IMAGE": {
+      "description": "Immutable LeapView public-site OCI image reference consumed by deployment tooling.",
+      "type": "string",
+      "x-lifecycle": "tooling",
+      "x-scope": "public-site provisioner"
     },
     "LEAPVIEW_SITE_SHOWCASE_EMBED_URL": {
       "description": "Optional public dashboard embed URL that enables the live /showcase route and its exact frame-src policy.",

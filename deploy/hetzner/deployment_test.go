@@ -91,6 +91,66 @@ func TestReleaseWorkflowPublishesComposeArchiveAndAttestedImage(t *testing.T) {
 	}
 }
 
+func TestPublicSiteImagePublicationContract(t *testing.T) {
+	workflow := readFile(t, filepath.Join("..", "..", ".github", "workflows", "site-image.yml"))
+	for _, fragment := range []string{
+		"name: Publish public site image",
+		"workflow_dispatch:",
+		"workflow_call:",
+		"IMAGE_NAME: ghcr.io/yacobolo/leapview-site",
+		"packages: write",
+		"attestations: write",
+		"id-token: write",
+		"runner: ubuntu-24.04",
+		"runner: ubuntu-24.04-arm",
+		"platforms: linux/${{ matrix.arch }}",
+		"file: Dockerfile.site",
+		"push: true",
+		"sbom: true",
+		"provenance: mode=max",
+		"org.opencontainers.image.version=",
+		"org.opencontainers.image.revision=",
+		"actions/attest@",
+		"docker buildx imagetools create",
+		"site-image-reference.txt",
+		"GITHUB_STEP_SUMMARY",
+		"docker logout ghcr.io",
+		`docker buildx imagetools inspect "$IMAGE_REFERENCE"`,
+		`docker image inspect "$IMAGE_REFERENCE"`,
+		"docker run --detach",
+		"/healthz",
+		"/readyz",
+		"/release.json",
+		"/docs/installation",
+		"refs/heads/main",
+	} {
+		requireContains(t, workflow, fragment)
+	}
+	for _, forbidden := range []string{
+		"pull_request:",
+		"docker/setup-qemu-action@",
+		"ghcr.io/yacobolo/leapview-site:latest",
+		"git clone",
+	} {
+		if strings.Contains(workflow, forbidden) {
+			t.Errorf("public site image publication contains forbidden fragment %q", forbidden)
+		}
+	}
+}
+
+func TestPublicSiteImageGeneratesEmbeddedRuntimeAssets(t *testing.T) {
+	dockerfile := readFile(t, filepath.Join("..", "..", "Dockerfile.site"))
+	generateVisualDocs := strings.Index(dockerfile, "go run -tags=duckdb_arrow ./internal/app/tools/visualdocgen")
+	buildSite := strings.Index(dockerfile, "go build -trimpath")
+	if generateVisualDocs < 0 {
+		t.Fatal("public site image must generate visual documentation with the analytical runtime enabled")
+	}
+	if buildSite < 0 || generateVisualDocs > buildSite {
+		t.Fatal("public site image must generate visual documentation before compiling the server")
+	}
+	requireContains(t, dockerfile, "test -f docs/visuals/examples.gen.json")
+}
+
 func TestSupplyChainInputsArePinned(t *testing.T) {
 	for _, name := range []string{"Dockerfile", "Dockerfile.site"} {
 		dockerfile := readFile(t, filepath.Join("..", "..", name))

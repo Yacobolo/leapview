@@ -291,3 +291,32 @@ func TestRepositoryRecordsWorkflowAtomicallyAndIdempotently(t *testing.T) {
 		t.Fatalf("replayed job = %#v, %v", row, err)
 	}
 }
+
+func TestRepositoryRecordsTerminalEventWithoutFollowupJob(t *testing.T) {
+	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "terminal-event.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	repo := NewRepository(store.SQLDB())
+	intent := jobs.WorkflowIntent{Event: jobs.EventInput{
+		Key: "release.ready", ResourceKind: "release", ResourceID: "release-1",
+		EventType: "release.ready", Data: []byte(`{"status":"ready"}`),
+	}}
+
+	tx, err := store.SQLDB().BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if err := repo.RecordWorkflow(t.Context(), tx, intent); err != nil {
+		t.Fatalf("RecordWorkflow() terminal event error = %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	events, err := repo.ListEvents(t.Context(), "release", "release-1", 0, 10)
+	if err != nil || len(events) != 1 || events[0].EventType != "release.ready" {
+		t.Fatalf("terminal events = %#v, %v", events, err)
+	}
+}

@@ -1,10 +1,12 @@
 package compose
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -90,12 +92,15 @@ func TestComposeSingleInstanceContract(t *testing.T) {
 }
 
 func TestPublicImageIsPrimaryOnboardingContract(t *testing.T) {
+	publicReleaseImage := readPublicReleaseImage(t)
 	release := read(t, filepath.Join("..", "..", ".github", "workflows", "release.yml"))
 	for _, required := range []string{
 		"IMAGE_NAME: ghcr.io/yacobolo/leapview",
-		"docker/setup-qemu-action@",
+		"runner: ubuntu-24.04",
+		"runner: ubuntu-24.04-arm",
+		"platforms: linux/${{ matrix.arch }}",
 		`--tag "${IMAGE_NAME}:latest"`,
-		"platforms: linux/amd64,linux/arm64",
+		"docker buildx imagetools create",
 		"Verify anonymous image pull",
 		"docker logout ghcr.io",
 		"docker buildx imagetools inspect",
@@ -104,22 +109,43 @@ func TestPublicImageIsPrimaryOnboardingContract(t *testing.T) {
 			t.Fatalf("release workflow missing public image contract %q", required)
 		}
 	}
-	if strings.Index(release, "docker/setup-qemu-action@") > strings.Index(release, "docker/setup-buildx-action@") {
-		t.Fatal("release workflow must install emulation before creating the multi-platform builder")
+	if strings.Contains(release, "docker/setup-qemu-action@") {
+		t.Fatal("release workflow must build each public architecture on its native runner")
 	}
 
-	for _, name := range []string{
-		filepath.Join("..", "..", "README.md"),
-		filepath.Join("..", "..", "docs", "articles", "start", "installation.md"),
-	} {
+	documents := []struct {
+		name     string
+		image    string
+		required []string
+	}{
+		{
+			name:  filepath.Join("..", "..", "README.md"),
+			image: "ghcr.io/yacobolo/leapview:latest",
+			required: []string{
+				"ghcr.io/yacobolo/leapview:latest",
+				"docker pull",
+			},
+		},
+		{
+			name:  filepath.Join("..", "..", "docs", "articles", "start", "installation.md"),
+			image: publicReleaseImage,
+			required: []string{
+				publicReleaseImage,
+				"docker pull",
+				"admin initialize --format json",
+			},
+		},
+	}
+	for _, contract := range documents {
+		name := contract.name
 		document := read(t, name)
-		image := strings.Index(document, "ghcr.io/yacobolo/leapview:latest")
-		pull := strings.Index(document, "docker pull")
-		initialize := strings.Index(document, "admin initialize --format json")
-		controller := strings.Index(document, "./leapviewctl init")
-		if image < 0 || pull < 0 || initialize < 0 {
-			t.Errorf("%s does not document pull-first public image onboarding", name)
+		for _, required := range contract.required {
+			if !strings.Contains(document, required) {
+				t.Errorf("%s does not document public image onboarding contract %q", name, required)
+			}
 		}
+		image := strings.Index(document, contract.image)
+		controller := strings.Index(document, "./leapviewctl init")
 		if controller >= 0 && image > controller {
 			t.Errorf("%s presents the operations controller before the public image", name)
 		}
@@ -128,6 +154,7 @@ func TestPublicImageIsPrimaryOnboardingContract(t *testing.T) {
 
 func TestFiveMinuteEvaluationContract(t *testing.T) {
 	root := filepath.Join("..", "..")
+	publicReleaseImage := readPublicReleaseImage(t)
 	dockerfile := read(t, filepath.Join(root, "Dockerfile"))
 	if !strings.Contains(dockerfile, "COPY evaluation ./evaluation") {
 		t.Fatal("runtime image does not include the self-contained evaluation project and data")
@@ -144,25 +171,126 @@ func TestFiveMinuteEvaluationContract(t *testing.T) {
 			t.Errorf("five-minute evaluation dashboard missing deterministic state option %q", required)
 		}
 	}
-	for _, name := range []string{
-		filepath.Join(root, "README.md"),
-		filepath.Join(root, "docs", "articles", "start", "installation.md"),
+	for _, contract := range []struct {
+		name       string
+		imageRun   string
+		imageSetup string
+	}{
+		{
+			name:     filepath.Join(root, "README.md"),
+			imageRun: "ghcr.io/yacobolo/leapview:latest evaluate",
+		},
+		{
+			name:       filepath.Join(root, "docs", "articles", "start", "installation.md"),
+			imageSetup: "IMAGE='" + publicReleaseImage + "'",
+			imageRun:   `"$IMAGE" evaluate`,
+		},
 	} {
-		document := read(t, name)
+		document := read(t, contract.name)
 		for _, required := range []string{
+			contract.imageSetup,
 			"--name leapview-evaluate",
 			"--publish 127.0.0.1:8080:8080",
 			"--volume leapview-evaluate:/var/lib/leapview",
-			"ghcr.io/yacobolo/leapview:latest evaluate",
+			contract.imageRun,
 			"docker exec leapview-evaluate leapview evaluate first-login",
 			"docker rm --force leapview-evaluate",
 			"docker volume rm leapview-evaluate",
 			"Five-minute Sales Evaluation",
 			"no source checkout",
 		} {
-			if !strings.Contains(document, required) {
-				t.Errorf("%s missing five-minute evaluation contract %q", name, required)
+			if required == "" {
+				continue
 			}
+			if !strings.Contains(document, required) {
+				t.Errorf("%s missing five-minute evaluation contract %q", contract.name, required)
+			}
+		}
+	}
+}
+
+func readPublicReleaseImage(t *testing.T) string {
+	t.Helper()
+
+	manifest := read(t, filepath.Join("..", "..", "docs", "public-release.json"))
+	var release struct {
+		Image string `json:"image"`
+	}
+	if err := json.Unmarshal([]byte(manifest), &release); err != nil {
+		t.Fatalf("parse public release manifest: %v", err)
+	}
+	if release.Image == "" {
+		t.Fatal("public release manifest has no image")
+	}
+	return release.Image
+}
+
+func TestQualificationRunbookMatchesExecutablePerformancePolicy(t *testing.T) {
+	root := filepath.Join("..", "..")
+	policyJSON := read(t, filepath.Join(root, "deploy", "compose", "qualification", "performance-policy.json"))
+	runbook := read(t, filepath.Join(root, "deploy", "compose", "QUALIFICATION.md"))
+
+	var policy struct {
+		Budgets map[string]float64 `json:"budgets"`
+	}
+	if err := json.Unmarshal([]byte(policyJSON), &policy); err != nil {
+		t.Fatalf("parse performance policy: %v", err)
+	}
+
+	type documentedBudget struct {
+		key         string
+		measurement string
+		format      func(float64) string
+	}
+	seconds := func(milliseconds float64) string {
+		return fmt.Sprintf("%g s", milliseconds/1000)
+	}
+	number := func(value float64) string {
+		return fmt.Sprintf("%g", value)
+	}
+	bytes := func(unit float64, suffix string) func(float64) string {
+		return func(value float64) string {
+			return fmt.Sprintf("%g %s", value/unit, suffix)
+		}
+	}
+
+	documented := []documentedBudget{
+		{key: "coldDashboardReadyP95Ms", measurement: "Restart-cold dashboard readiness p95", format: seconds},
+		{key: "warmDashboardReadyP95Ms", measurement: "Warm dashboard readiness p95", format: seconds},
+		{key: "filterToSettleP95Ms", measurement: "Filter-to-settle p95", format: seconds},
+		{key: "tableInteractionP95Ms", measurement: "Governed table-sort interaction p95", format: seconds},
+		{key: "governedQueryP95Ms", measurement: "Governed query p95", format: seconds},
+		{key: "refreshP95Ms", measurement: "Refresh/materialization p95", format: seconds},
+		{key: "concurrentQueryP95Ms", measurement: "Eight-reader governed-query p95", format: seconds},
+		{key: "errorRateMax", measurement: "Controlled-request error rate", format: number},
+		{key: "peakResidentMemoryBytes", measurement: "Peak resident memory", format: bytes(1<<30, "GiB")},
+		{key: "cpuSecondsMax", measurement: "Measured workload CPU", format: func(value float64) string {
+			return fmt.Sprintf("%g CPU-seconds", value)
+		}},
+		{key: "temporaryDiskGrowthBytesMax", measurement: "Temporary state growth", format: bytes(1<<20, "MiB")},
+		{key: "goroutineGrowthMax", measurement: "Steady-state goroutine growth", format: number},
+		{key: "openConnectionsMax", measurement: "Peak open DuckDB connections", format: number},
+	}
+
+	if len(policy.Budgets) != len(documented) {
+		t.Errorf("performance policy has %d budgets, but the runbook contract documents %d", len(policy.Budgets), len(documented))
+	}
+	documentedKeys := make(map[string]struct{}, len(documented))
+	for _, budget := range documented {
+		documentedKeys[budget.key] = struct{}{}
+		value, ok := policy.Budgets[budget.key]
+		if !ok {
+			t.Errorf("performance policy missing budget %q", budget.key)
+			continue
+		}
+		row := fmt.Sprintf("| %s | %s |", budget.measurement, budget.format(value))
+		if count := strings.Count(runbook, row); count != 1 {
+			t.Errorf("QUALIFICATION.md must contain exactly one policy-derived row %q; found %d", row, count)
+		}
+	}
+	for key := range policy.Budgets {
+		if _, ok := documentedKeys[key]; !ok {
+			t.Errorf("performance policy budget %q has no runbook formatter", key)
 		}
 	}
 }
@@ -174,12 +302,21 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 	script := read(t, filepath.Join(root, "deploy", "compose", "qualification", "qualify.sh"))
 	recovery := read(t, filepath.Join(root, "deploy", "compose", "qualification", "recover.sh"))
 	browser := read(t, filepath.Join(root, "deploy", "compose", "qualification", "browser.mjs"))
+	performance := read(t, filepath.Join(root, "deploy", "compose", "qualification", "performance.mjs"))
+	performancePolicy := read(t, filepath.Join(root, "deploy", "compose", "qualification", "performance-policy.json"))
+	compatibilityPolicy := read(t, filepath.Join(root, "deploy", "compose", "qualification", "v0.1.0-policy.json"))
 	runbook := read(t, filepath.Join(root, "deploy", "compose", "QUALIFICATION.md"))
+	readme := read(t, filepath.Join(root, "deploy", "compose", "README.md"))
+	upgradeGuide := read(t, filepath.Join(root, "docs", "articles", "operate", "upgrades.md"))
 
 	for _, required := range []string{
 		"cp -R deploy/compose/qualification",
 		"./qualification/qualify.sh",
 		"candidate-${{ github.run_id }}-${{ github.run_attempt }}",
+		`release_tag="candidate-${RUN_ID}-${RUN_ATTEMPT}"`,
+		"BUILD_RELEASE: ${{ needs.identity.outputs.release }}",
+		"needs: [identity, image-platform]",
+		"release-platform-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}",
 		"docker buildx imagetools create",
 		"gh release create",
 		"needs: [image, qualify]",
@@ -191,13 +328,16 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 	if strings.Contains(release, "types:\n      - published") {
 		t.Fatal("release workflow cannot gate publication when it starts after a release is already public")
 	}
+	if count := strings.Count(release, "if: github.event_name == 'push'"); count != 1 {
+		t.Fatalf("only release publication may be push-only; found %d push-only gates", count)
+	}
 	if strings.Index(release, "./qualification/qualify.sh") > strings.Index(release, "gh release create") {
 		t.Fatal("release workflow publishes Compose archives before installed-candidate qualification")
 	}
 	if strings.Contains(release, "type=semver") {
 		t.Fatal("release workflow must not publish versioned image tags before installed-candidate qualification")
 	}
-	if strings.Index(release, "./qualification/qualify.sh") > strings.Index(release, "docker buildx imagetools create") {
+	if strings.Index(release, "./qualification/qualify.sh") > strings.Index(release, "Publish qualified image tags") {
 		t.Fatal("release workflow publishes versioned image tags before installed-candidate qualification")
 	}
 
@@ -231,12 +371,25 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		"auditedDenial",
 		"runtime-identity.json",
 		"qualification-report.json",
+		"performance-report.json",
+		"performanceBudgets",
 		"./qualification/recover.sh",
 		"recovery-report.json",
+		"v010FreshInstallPolicy",
+		"v0.1.0-policy.json",
+		"libredash.db",
+		"test ! -e /var/lib/leapview/leapview.db",
 	} {
 		if !strings.Contains(script, required) {
 			t.Errorf("qualification script missing tester assertion %q", required)
 		}
+	}
+	if strings.Contains(performance, "setInterval(") ||
+		strings.Count(performance, "metricSamples.push(await metricSnapshot())") < 7 {
+		t.Error("performance qualification must use bounded phase snapshots instead of exceeding the shipped metrics rate limit")
+	}
+	if !strings.Contains(performance, "{ mode: 0o644 }") {
+		t.Error("performance qualification report must be readable by the hosted artifact uploader")
 	}
 	for _, required := range []string{
 		"managedUpload",
@@ -247,6 +400,12 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		"backupInterruption",
 		"restorePreflight",
 		"boundedDisk",
+		"boundedState",
+		"staleRecoveryEntries",
+		"staleRestoreEntries",
+		"staleBackupEntries",
+		"staleCheckpointEntries",
+		".leapview-current-backup-*.tar.gz",
 		"docker kill --signal KILL",
 		"LEAPVIEW_REFRESH_JOB_LEASE_TIMEOUT",
 		"listManagedDataUploadSessionEvents",
@@ -259,6 +418,16 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 			t.Errorf("recovery qualification missing fault assertion %q", required)
 		}
 	}
+	managedUploadStart := strings.Index(recovery, `stage="managed upload interruption"`)
+	managedUploadEnd := strings.Index(recovery, `stage="release finalization interruption"`)
+	if managedUploadStart < 0 || managedUploadEnd < 0 || managedUploadStart >= managedUploadEnd {
+		t.Fatal("recovery qualification has invalid managed upload stage boundaries")
+	}
+	managedUploadStage := recovery[managedUploadStart:managedUploadEnd]
+	if !strings.Contains(managedUploadStage, `wait_for_json \`) ||
+		!strings.Contains(managedUploadStage, `/events?limit=100`) {
+		t.Error("managed upload recovery must await its durable completion events")
+	}
 	waitForJSONStart := strings.Index(recovery, "wait_for_json() {")
 	if waitForJSONStart < 0 {
 		t.Fatal("recovery qualification is missing its JSON status waiter")
@@ -270,6 +439,64 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 	waitForJSON := recovery[waitForJSONStart : waitForJSONStart+waitForJSONEnd]
 	if !strings.Contains(waitForJSON, "sleep 1") {
 		t.Error("recovery qualification must poll durable job status slowly enough to stay below the shipped API rate limit")
+	}
+	if strings.Contains(recovery, "sleep 0.025") || strings.Count(recovery, "sleep 0.5") < 3 {
+		t.Error("recovery qualification must observe upload, release, and deployment boundaries within the shipped 120-request API limit")
+	}
+	for _, boundary := range []struct {
+		name     string
+		next     string
+		recovery string
+		throttle string
+		kill     string
+	}{
+		{
+			name:     "release finalization interruption",
+			next:     "deployment activation interruption",
+			recovery: "run_in_candidate",
+			kill:     "kill_candidate",
+		},
+		{
+			name:     "deployment activation interruption",
+			next:     "refresh materialization interruption",
+			recovery: "wait_for_json",
+			throttle: `docker update --cpus 0.25 "$container_id"`,
+			kill:     "kill_candidate",
+		},
+	} {
+		start := strings.Index(recovery, `stage="`+boundary.name+`"`)
+		end := strings.Index(recovery, `stage="`+boundary.next+`"`)
+		if start < 0 || end < 0 || start >= end {
+			t.Fatalf("recovery qualification has invalid %s stage boundaries", boundary.name)
+		}
+		stage := recovery[start:end]
+		launch := strings.Index(stage, "run_in_candidate")
+		kill := strings.Index(stage, boundary.kill)
+		recoveryIndex := strings.LastIndex(stage, boundary.recovery)
+		if boundary.throttle == "" {
+			if strings.Contains(stage, "docker update --cpus") {
+				t.Errorf("%s must not depend on CPU throttling to expose a durable release boundary", boundary.name)
+			}
+		} else {
+			throttle := strings.Index(stage, boundary.throttle)
+			unthrottle := strings.Index(stage, `docker update --cpus 0 "$container_id"`)
+			if throttle < 0 || launch < 0 || throttle > launch {
+				t.Errorf("%s must throttle the candidate before launching the interrupted operation", boundary.name)
+			}
+			if kill < 0 || unthrottle < 0 || recoveryIndex < 0 || kill > unthrottle || unthrottle > recoveryIndex {
+				t.Errorf("%s must remove its CPU limit after the kill and before recovery", boundary.name)
+			}
+		}
+		if launch < 0 || kill < 0 || recoveryIndex < 0 || launch > kill || kill > recoveryIndex {
+			t.Errorf("%s must kill the candidate after launch and recover afterward", boundary.name)
+		}
+	}
+	releaseStart := strings.Index(recovery, `stage="release finalization interruption"`)
+	releaseEnd := strings.Index(recovery, `stage="deployment activation interruption"`)
+	releaseStage := recovery[releaseStart:releaseEnd]
+	if !strings.Contains(releaseStage, "release-ids-before.json") ||
+		!strings.Contains(releaseStage, `.status == "draft" or .status == "validating"`) {
+		t.Error("release interruption must identify a newly created draft or validating release instead of relying on a transient state")
 	}
 	backupStart := strings.Index(recovery, `stage="backup interruption"`)
 	if backupStart < 0 {
@@ -295,6 +522,9 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 	} {
 		if !strings.Contains(workflow.contents, "recovery-report.json") {
 			t.Errorf("%s workflow does not retain the bounded recovery report", workflow.name)
+		}
+		if !strings.Contains(workflow.contents, "performance-report.json") {
+			t.Errorf("%s workflow does not retain the candidate performance baseline", workflow.name)
 		}
 	}
 	if strings.Contains(script, "${run_suffix,,}") {
@@ -328,6 +558,40 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 			t.Errorf("browser qualification missing motion-independent interaction %q", required)
 		}
 	}
+	for _, required := range []string{
+		"coldDashboardReadyMs",
+		"warmDashboardReadyMs",
+		"filterToSettleMs",
+		"tableInteractionMs",
+		"governedQueryMs",
+		"refreshMs",
+		"concurrentQueryMs",
+		"process_resident_memory_bytes",
+		"process_cpu_seconds_total",
+		"go_goroutines",
+		"leapview_duckdb_connections_open",
+		"comparePerformance",
+		"evaluatePerformance",
+	} {
+		if !strings.Contains(performance, required) {
+			t.Errorf("performance qualification missing release budget evidence %q", required)
+		}
+	}
+	for _, required := range []string{
+		`"minimumLogicalCPUs"`,
+		`"minimumMemoryBytes"`,
+		`"coldDashboardReadyP95Ms"`,
+		`"filterToSettleP95Ms": 5000`,
+		`"tableInteractionP95Ms": 2000`,
+		`"peakResidentMemoryBytes"`,
+		`"temporaryDiskGrowthBytesMax"`,
+		`"maxRegressionRatio"`,
+		`"minimumMeaningfulLatencyDeltaMs"`,
+	} {
+		if !strings.Contains(performancePolicy, required) {
+			t.Errorf("performance policy missing explicit contract %q", required)
+		}
+	}
 
 	for _, required := range []string{
 		"Automated step",
@@ -342,10 +606,51 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		"query/SSE",
 		"backup",
 		"restore preflight",
+		"fresh-install-only",
+		"v0.1.0",
 	} {
 		if !strings.Contains(runbook, required) {
 			t.Errorf("qualification runbook missing %q", required)
 		}
+	}
+	for name, document := range map[string]string{
+		"Compose README": readme,
+		"upgrade guide":  upgradeGuide,
+	} {
+		for _, required := range []string{
+			"v0.1.0",
+			"fresh-install-only",
+			"libredash.db",
+			"ghcr.io/yacobolo/libredash@sha256:677caaf256cb3a0d61efd47b289debbd91984976a5a5c4b372196a5d79ce7153",
+			"admin backup",
+			"provision a fresh",
+		} {
+			if !strings.Contains(document, required) {
+				t.Errorf("%s missing v0.1.0 migration policy %q", name, required)
+			}
+		}
+	}
+
+	var policy struct {
+		Release        string   `json:"release"`
+		SourceRevision string   `json:"sourceRevision"`
+		Image          string   `json:"image"`
+		StatePolicy    string   `json:"statePolicy"`
+		Distribution   string   `json:"distribution"`
+		Platforms      []string `json:"platforms"`
+		LegacyMarkers  []string `json:"legacyMarkers"`
+	}
+	if err := json.Unmarshal([]byte(compatibilityPolicy), &policy); err != nil {
+		t.Fatalf("parse v0.1.0 compatibility policy: %v", err)
+	}
+	if policy.Release != "v0.1.0" ||
+		policy.SourceRevision != "5bf4aded574df459e80d81b77d1989ecd4fa7de0" ||
+		policy.Image != "ghcr.io/yacobolo/libredash@sha256:677caaf256cb3a0d61efd47b289debbd91984976a5a5c4b372196a5d79ce7153" ||
+		policy.StatePolicy != "fresh-install-only" ||
+		policy.Distribution != "authentication-required" ||
+		!slices.Equal(policy.Platforms, []string{"linux/amd64"}) ||
+		!slices.Contains(policy.LegacyMarkers, "libredash.db") {
+		t.Fatalf("unexpected v0.1.0 compatibility policy: %#v", policy)
 	}
 }
 

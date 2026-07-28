@@ -1,0 +1,87 @@
+name: CI health
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+  issues: write
+
+jobs:
+  report:
+    name: Weekly CI health report
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Set up Depot
+        uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1
+
+      - name: Read Depot build usage
+        run: depot list builds --output json --project 9x73gxjcf5 > depot-builds.json
+
+      - name: Build trailing health report
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          go run ./internal/app/tools/cireport
+          --repo "$GITHUB_REPOSITORY"
+          --days 7
+          --depot-builds depot-builds.json
+          --output ci-health.json
+          --summary ci-health.md
+
+      - name: Publish workflow summary
+        run: cat ci-health.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload health report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-health
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            ci-health.json
+            ci-health.md
+
+      - name: Open or update CI health alert
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          issue="$(
+            gh issue list \
+              --repo "$GITHUB_REPOSITORY" \
+              --state open \
+              --search '"CI health thresholds exceeded" in:title' \
+              --json number \
+              --jq '.[0].number // empty'
+          )"
+          alerts="$(jq '.alerts | length' ci-health.json)"
+          if [ "$alerts" -gt 0 ]; then
+            if [ -n "$issue" ]; then
+              gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body-file ci-health.md
+            else
+              gh issue create \
+                --repo "$GITHUB_REPOSITORY" \
+                --title "CI health thresholds exceeded" \
+                --body-file ci-health.md
+            fi
+          elif [ -n "$issue" ]; then
+            gh issue comment "$issue" \
+              --repo "$GITHUB_REPOSITORY" \
+              --body "The latest weekly report is healthy; closing this alert."
+            gh issue close "$issue" --repo "$GITHUB_REPOSITORY"
+          fi

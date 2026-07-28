@@ -72,14 +72,15 @@ type EventInput struct {
 }
 
 // WorkflowIntent is the durable consequence of one capability-owned state
-// transition. Event keys and job IDs make replay safe after ambiguous commits.
+// transition. Event keys and optional job IDs make replay safe after ambiguous
+// commits. Terminal transitions record an event without scheduling more work.
 type WorkflowIntent struct {
 	Event EventInput
 	Job   EnqueueInput
 }
 
-// WorkflowRecorder writes an event and its required job using the transaction
-// owned by the capability making the state transition.
+// WorkflowRecorder writes an event and any required follow-up job using the
+// transaction owned by the capability making the state transition.
 type WorkflowRecorder interface {
 	RecordWorkflow(context.Context, transaction.Transaction, WorkflowIntent) error
 }

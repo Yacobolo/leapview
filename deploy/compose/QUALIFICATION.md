@@ -11,9 +11,10 @@ same journey.
 | Initialization | Run real `./leapviewctl init`, `start`, `status`, and `first-login`; reject a second credential read. | Confirm the first-login warning is unavoidable and the output is understandable without repository context. |
 | Five-minute sample | Stage the bundled synthetic data, deploy the bundled evaluation project, sign in, change the password, open **Five-minute Sales Evaluation**, select State `SP`, and verify KPI and governed table results. | Starting from the installation guide, time the same journey from the first pull through the filtered dashboard. Record the total without recording credentials. |
 | Governed access | Execute a governed semantic query, verify an unauthenticated query is denied, then use the deliberately restricted bootstrap publisher token against a workspace administration endpoint and require the denial to appear as `authorization.denied` through its read-only audit scope. | Inspect the access/query audit surfaces for the successful and denied attempts and retain only IDs/timestamps. |
+| Performance and resources | Against the exact installed digest, collect three restart-cold dashboard samples, five warm dashboard samples, eight filter interactions, six governed table-sort interactions, ten governed queries, three refresh runs, and an eight-reader concurrency wave. Enforce p95 latency, zero-error, CPU, RSS, temporary-disk, goroutine, and DuckDB-connection budgets from `qualification/performance-policy.json`. | Compare `performance-report.json` with the last accepted candidate. Investigate any material regression even when it remains under the absolute ceiling. |
 | Interruption recovery | At API-observed boundaries, send `SIGKILL` to the exact candidate during a resumable managed upload, release finalization, deployment activation, refresh/materialization claim, active query/SSE traffic, backup creation, and restore preflight. Require each durable operation to resume or end in an explicit recoverable state; require the prior revision/generation to remain visible until atomic activation; then repeat query/SSE reconnects and verify bounded goroutines, temporary files, and disk growth. | While following the same managed upload, deployment activation, refresh, query/SSE, backup, and restore preflight sequence, confirm the UI and event history name the attempted, interrupted, resumed, failed, and completed states without exposing credentials. |
 | Operations | Verify readiness, authenticated metrics, bounded structured logs, candidate identity, restart persistence, a validated backup, and restore into an isolated instance using the original separately managed secret configuration. | Inspect the restored dashboard and confirm the active serving state and managed data are unchanged. |
-| Upgrade safety | When a compatible previous digest is supplied, exercise upgrade and confirmed rollback with paired state checkpoints. | Confirm the documented recovery decision is clear before discarding post-upgrade state. |
+| Upgrade safety | Require the candidate to reject a released v0.1.0 `libredash.db` marker before creating `leapview.db`. v0.1.0 is explicitly fresh-install-only; only a later release explicitly declared compatible may be supplied through `LEAPVIEW_QUALIFICATION_PREVIOUS_IMAGE` for upgrade and confirmed rollback. | Confirm the v0.1.0 export/reprovision runbook is clear before retiring its preserved state. |
 
 ## Run from an extracted release
 
@@ -30,15 +31,58 @@ temporary file, emits a bounded `qualification-evidence` directory, and removes
 containers, volumes, and credentials on exit. Do not upload any other files
 from the working directory.
 
-Set `LEAPVIEW_QUALIFICATION_PREVIOUS_IMAGE` to a compatible immutable digest to
-include upgrade and rollback. Set `LEAPVIEW_QUALIFICATION_EVIDENCE_DIR` to
+## Performance policy
+
+The installed-candidate gate assumes a dedicated Docker runtime with at least
+2 logical CPUs and 4 GiB memory. Its bundled Olist workload contains 24
+synthetic orders. The absolute rc.1 ceilings are:
+
+| Measurement | Budget |
+| --- | ---: |
+| Restart-cold dashboard readiness p95 | 15 s |
+| Warm dashboard readiness p95 | 5 s |
+| Filter-to-settle p95 | 5 s |
+| Governed table-sort interaction p95 | 2 s |
+| Governed query p95 | 1 s |
+| Refresh/materialization p95 | 15 s |
+| Eight-reader governed-query p95 | 5 s |
+| Controlled-request error rate | 0 |
+| Peak resident memory | 1.5 GiB |
+| Measured workload CPU | 120 CPU-seconds |
+| Temporary state growth | 64 MiB |
+| Steady-state goroutine growth | 25 |
+| Peak open DuckDB connections | 16 |
+
+These are release gates, not claims that every host will produce identical
+timings. Future candidates must still satisfy the absolute ceilings and also
+fail comparison when a p95 is at least 50 ms slower and more than 25% above the
+accepted baseline. The report records the runner CPU, memory, architecture,
+runtime, dataset size, raw samples, p50, p95, maxima, policy, and failures.
+
+The repository-owned MovieLens scale path remains the supplementary high-row
+workload. From a source checkout, run `task dev:movielens`, then
+`LEAPVIEW_PERF_ENFORCE_THRESHOLDS=true task qa:movielens-performance`; retain
+`.tmp/movielens-performance.json` beside the installed Olist report for the
+release decision. It measures warm interaction p50/p95, query counts,
+supersession, table delivery, and browser/network correctness against the same
+dashboard runtime, while the installed Olist gate owns shipped-artifact and
+process-resource budgets.
+
+Set `LEAPVIEW_QUALIFICATION_PREVIOUS_IMAGE` only to a post-v0.1.0 immutable
+digest whose release policy explicitly declares state compatibility. The
+released v0.1.0 image
+`ghcr.io/yacobolo/libredash@sha256:677caaf256cb3a0d61efd47b289debbd91984976a5a5c4b372196a5d79ce7153`
+is fresh-install-only because it uses `libredash.db`, a different container and
+configuration namespace, and an incompatible backup manifest. Preserve it with
+its own `admin backup`, then provision a fresh LeapView instance and redeploy
+authored projects. Set `LEAPVIEW_QUALIFICATION_EVIDENCE_DIR` to
 redirect the bounded report and failure screenshot.
 
 ## Evidence and timing
 
-Retain only `qualification-report.json`, `recovery-report.json`,
-`recovery-events.json`, `runtime-identity.json`, bounded redacted Compose logs,
-and the failure screenshot when present. Never retain
+Retain only `qualification-report.json`, `performance-report.json`,
+`recovery-report.json`, `recovery-events.json`, `runtime-identity.json`,
+bounded redacted Compose logs, and the failure screenshot when present. Never retain
 `initial-credentials.json`, `leapview.env`, browser storage state, cookies, or
 API tokens. The five-minute budget applies to the sample evaluator journey;
 the destructive interruption matrix is recorded separately because it

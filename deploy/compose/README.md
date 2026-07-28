@@ -26,6 +26,25 @@ production, `leapviewctl` provides the supported initialization, backup,
 restore, upgrade, and rollback workflow. Run `./leapviewctl help` for its
 commands.
 
+## v0.1.0 migration policy
+
+State created by v0.1.0 is **fresh-install-only** for LeapView v0.2.0-rc.1.
+The released image
+`ghcr.io/yacobolo/libredash@sha256:677caaf256cb3a0d61efd47b289debbd91984976a5a5c4b372196a5d79ce7153`
+uses the `LIBREDASH_*` configuration namespace, `/var/lib/libredash`,
+`libredash.db`, and a `libredash-backup.json` archive contract. Do not point
+this Compose package at that volume or pass the image to `leapviewctl upgrade`.
+The server and controller reject those paths before changing instance state.
+The historical package requires authentication and contains only a
+`linux/amd64` runtime.
+
+Use the v0.1.0 image's `admin backup` command to preserve the old instance,
+then provision a fresh LeapView volume, redeploy project source, reload source
+data, and reprovision identities and grants. Keep the old image, archive,
+checksum, configuration, and volume until the new instance is accepted. The
+full command sequence is in the installed documentation under
+`/docs/guides/operate/upgrades#move-from-v010`.
+
 ## Qualify the exact installed candidate
 
 Before publishing or adopting a release, follow the bundled

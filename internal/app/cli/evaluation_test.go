@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/Yacobolo/leapview/internal/app/adminoffline"
 	"github.com/Yacobolo/leapview/internal/app/config"
 	"github.com/Yacobolo/leapview/internal/manageddata/localplan"
 	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
@@ -79,7 +81,7 @@ func TestEvaluationCredentialHandoffIsPrivateRecoverableAndOneTime(t *testing.T)
 	if strings.TrimSpace(token) == "" {
 		t.Fatal("evaluation bootstrap token is empty")
 	}
-	if _, err := os.Stat(initialCredentialRecoveryPath(home)); !os.IsNotExist(err) {
+	if _, err := os.Stat(adminoffline.InitialCredentialRecoveryPath(home)); !os.IsNotExist(err) {
 		t.Fatalf("platform recovery bundle still exists: %v", err)
 	}
 	info, err := os.Stat(evaluationFirstLoginPath(home))
@@ -94,7 +96,7 @@ func TestEvaluationCredentialHandoffIsPrivateRecoverableAndOneTime(t *testing.T)
 	if err := consumeEvaluationFirstLogin(home, &out); err != nil {
 		t.Fatal(err)
 	}
-	var credentials initialInstanceCredentials
+	var credentials adminoffline.InitialInstanceCredentials
 	if err := json.Unmarshal(out.Bytes(), &credentials); err != nil {
 		t.Fatal(err)
 	}
@@ -115,15 +117,21 @@ func TestEvaluationCredentialHandoffIsPrivateRecoverableAndOneTime(t *testing.T)
 func TestEvaluationFirstLoginRetainedWhenDeliveryFails(t *testing.T) {
 	home := t.TempDir()
 	contents := []byte(`{"email":"admin@localhost","temporaryPassword":"temporary","publisherToken":"publisher","publisherTokenExpiresAt":"2026-07-28T00:00:00Z"}` + "\n")
-	if err := writeInitialCredentialRecovery(evaluationFirstLoginPath(home), contents); err != nil {
+	if err := adminoffline.WriteInitialCredentialRecovery(evaluationFirstLoginPath(home), contents); err != nil {
 		t.Fatal(err)
 	}
-	if err := consumeEvaluationFirstLogin(home, errorWriter{}); err == nil {
+	if err := consumeEvaluationFirstLogin(home, evaluationErrorWriter{}); err == nil {
 		t.Fatal("first-login output failure = nil")
 	}
 	if _, err := os.Stat(filepath.Join(home, evaluationFirstLoginFileName)); err != nil {
 		t.Fatalf("first-login credentials not retained: %v", err)
 	}
+}
+
+type evaluationErrorWriter struct{}
+
+func (evaluationErrorWriter) Write([]byte) (int, error) {
+	return 0, errors.New("credential destination failed")
 }
 
 func TestBundledEvaluationProjectCompilesAndPlansOneSmallManagedFile(t *testing.T) {
@@ -139,7 +147,7 @@ func TestBundledEvaluationProjectCompilesAndPlansOneSmallManagedFile(t *testing.
 	if got := compiled.WorkspaceIDs(); len(got) != 1 || got[0] != evaluationWorkspaceID {
 		t.Fatalf("compiled evaluation workspaces = %#v", got)
 	}
-	plan, err := localplan.NewService(loadLocalPlanProject).Plan(context.Background(), localplan.Request{
+	plan, err := localplan.NewService(loadManagedDataPlanProject).Plan(context.Background(), localplan.Request{
 		ProjectPath: projectPath,
 		Connection:  evaluationConnection,
 		From:        filepath.Join(root, evaluationDataRelativePath),

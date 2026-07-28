@@ -58,12 +58,13 @@ func TestPublicDocsAndScriptsDoNotAdvertiseRemovedCaCSurfaces(t *testing.T) {
 
 func TestPublicDocsAdvertiseOnlyProjectDeploy(t *testing.T) {
 	root := projectRoot(t)
-	files := []string{
-		"README.md",
+	deployDocs := []string{
 		filepath.Join("docs", "articles", "data", "revisions.md"),
+		filepath.Join("docs", "guides", "cli", "validate-deploy.md"),
 		filepath.Join("deploy", "hetzner", "README.md"),
 	}
-	for _, name := range files {
+	publicDocs := append([]string{"README.md"}, deployDocs...)
+	for _, name := range publicDocs {
 		body := readRepoFile(t, root, name)
 		for _, forbidden := range []string{
 			"leapview publish",
@@ -75,6 +76,10 @@ func TestPublicDocsAdvertiseOnlyProjectDeploy(t *testing.T) {
 				t.Fatalf("%s still advertises removed command %q", name, forbidden)
 			}
 		}
+	}
+
+	for _, name := range deployDocs {
+		body := readRepoFile(t, root, name)
 		if !strings.Contains(body, "leapview deploy") {
 			t.Fatalf("%s does not document the project deploy command", name)
 		}
