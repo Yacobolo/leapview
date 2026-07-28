@@ -82,28 +82,49 @@ func TestCapabilityCLIIsAnAdapterOwnedByItsCapability(t *testing.T) {
 }
 
 func TestApplicationCLIAdminOnlyComposesAdminOperations(t *testing.T) {
-	path := filepath.Join(repoRoot(t), "internal", "app", "cli", "admin.go")
-	contents, err := os.ReadFile(path)
+	forbiddenImports := map[string]bool{
+		modulePath + "/internal/access/sqlite":       true,
+		modulePath + "/internal/admin/sqlite":        true,
+		modulePath + "/internal/analytics/ducklake":  true,
+		modulePath + "/internal/servingstate/sqlite": true,
+	}
+	var adminFile *goFile
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/app/cli" {
+			continue
+		}
+		for _, imported := range file.imports {
+			if forbiddenImports[imported] {
+				t.Errorf("%s imports offline capability adapter %s", file.path, imported)
+			}
+		}
+		if file.path == "internal/app/cli/admin.go" {
+			current := file
+			adminFile = &current
+		}
+	}
+	if adminFile == nil {
+		t.Fatal("internal/app/cli/admin.go was not found")
+	}
+	for _, required := range []string{
+		modulePath + "/internal/admin/cli",
+		modulePath + "/internal/app/adminoffline",
+	} {
+		if !importListContains(adminFile.imports, required) {
+			t.Errorf("application CLI Admin composition is missing import %s", required)
+		}
+	}
+	parsed, err := parser.ParseFile(token.NewFileSet(), adminFile.path, adminFile.body, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := string(contents)
-	for _, forbidden := range []string{
-		"access/sqlite",
-		"admin/sqlite",
-		"analytics/ducklake",
-		"servingstate/sqlite",
-		"platform.Open(",
-		"NewRepository(",
-		"PruneOperationalHistory(",
-	} {
-		if strings.Contains(body, forbidden) {
-			t.Errorf("application CLI Admin composition retains offline adapter construction %q", forbidden)
+	for _, declaration := range parsed.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok {
+			continue
 		}
-	}
-	for _, required := range []string{"internal/admin/cli", "internal/app/adminoffline"} {
-		if !strings.Contains(body, required) {
-			t.Errorf("application CLI Admin composition is missing %q", required)
+		if function.Name.Name != "adminCommand" {
+			t.Errorf("application CLI Admin composition retains compatibility function %s", function.Name.Name)
 		}
 	}
 }
