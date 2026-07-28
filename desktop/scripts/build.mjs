@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { copyFile, mkdir, rm } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 const desktopRoot = resolve(import.meta.dirname, "..");
@@ -18,6 +18,10 @@ const fontFiles = [
 await rm(outputRoot, { force: true, recursive: true });
 await mkdir(outputRoot, { recursive: true });
 
+const themeSource = await readFile(
+  join(repositoryRoot, "static", "app.input.css"),
+  "utf8",
+);
 runNode(
   join(
     desktopRoot,
@@ -29,14 +33,15 @@ runNode(
   ),
   [
     "--input",
-    join(repositoryRoot, "static", "app.input.css"),
+    "-",
     "--output",
     join(outputRoot, "app.css"),
     "--cwd",
     desktopRoot,
     "--silent",
   ],
-  repositoryRoot,
+  desktopRoot,
+  themeSource,
 );
 runNode(
   join(desktopRoot, "node_modules", "typescript", "bin", "tsc"),
@@ -55,10 +60,12 @@ await Promise.all(
   ),
 );
 
-function runNode(entrypoint, arguments_, cwd) {
+function runNode(entrypoint, arguments_, cwd, input) {
   const result = spawnSync(process.execPath, [entrypoint, ...arguments_], {
     cwd,
-    stdio: "inherit",
+    input,
+    stdio:
+      input === undefined ? "inherit" : ["pipe", "inherit", "inherit"],
   });
   if (result.error !== undefined) {
     throw result.error;
