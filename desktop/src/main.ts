@@ -1,4 +1,11 @@
-import { join, resolve } from "node:path";
+import { release as operatingSystemRelease } from "node:os";
+import {
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 
 import {
   app,
@@ -24,7 +31,18 @@ import {
   type DeepLinkRejection,
   type DesktopDeepLink,
 } from "./deep-link.js";
-import { discoverInstance } from "./discovery.js";
+import {
+  DesktopDiscoveryError,
+  discoverInstance,
+} from "./discovery.js";
+import {
+  DiagnosticJournal,
+  normalizeChildProcessType,
+  normalizeProcessGoneReason,
+  writeDiagnosticReport,
+  type DiagnosticEnvironment,
+  type DiagnosticEvent,
+} from "./diagnostics.js";
 import { buildNativeMenuTemplate } from "./native-menu.js";
 import { ProfileStore, type Profile } from "./profiles.js";
 import {
@@ -49,6 +67,7 @@ const TRUSTED_SCHEME = "leapview";
 const TRUSTED_PARTITION = "leapview-shell";
 const DISCOVERY_PARTITION = "leapview-discovery";
 const WINDOW_STATE_FLUSH_DELAY_MS = 300;
+const DIAGNOSTIC_FLUSH_DELAY_MS = 500;
 const SHELL_WINDOW_SIZE = {
   width: 780,
   height: 760,
@@ -61,6 +80,11 @@ const REMOTE_WINDOW_SIZE = {
   minimumWidth: 800,
   minimumHeight: 600,
 };
+
+interface RemotePolicyDecision {
+  kind: string;
+  allowed: boolean;
+}
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -99,6 +123,9 @@ let windowStates: WindowStateStore | null = null;
 let windowStateFlushTimer: NodeJS.Timeout | null = null;
 let windowStateQuitPending = false;
 let windowStateQuitReady = false;
+let diagnostics: DiagnosticJournal | null = null;
+let diagnosticFlushTimer: NodeJS.Timeout | null = null;
+let diagnosticExportActive = false;
 
 const primaryInstance = app.requestSingleInstanceLock();
 if (!primaryInstance) {
@@ -124,6 +151,20 @@ if (!primaryInstance) {
       callback(false);
     },
   );
+  app.on("render-process-gone", (_event, contents, details) => {
+    recordDiagnostic({
+      kind: "render-process-gone",
+      surface: diagnosticSurface(contents),
+      reason: normalizeProcessGoneReason(details.reason),
+    });
+  });
+  app.on("child-process-gone", (_event, details) => {
+    recordDiagnostic({
+      kind: "child-process-gone",
+      processType: normalizeChildProcessType(details.type),
+      reason: normalizeProcessGoneReason(details.reason),
+    });
+  });
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createShellWindow();
@@ -144,19 +185,23 @@ if (!primaryInstance) {
     }
     windowStateQuitPending = true;
     captureAllWindowStates();
-    void flushWindowStates().finally(() => {
+    void Promise.all([flushWindowStates(), flushDiagnostics()]).finally(() => {
       windowStateQuitReady = true;
       app.quit();
     });
   });
-  void app.whenReady().then(start).catch((error: unknown) => {
-    console.error("LeapView Desktop failed to start", error);
+  void app.whenReady().then(start).catch(() => {
+    console.error("LeapView Desktop failed to start safely.");
     app.exit(1);
   });
 }
 
 async function start(): Promise<void> {
   profiles = new ProfileStore(join(app.getPath("userData"), "profiles.json"));
+  diagnostics = await DiagnosticJournal.open(
+    join(app.getPath("userData"), "diagnostics.json"),
+  );
+  recordDiagnostic({ kind: "startup", packaged: app.isPackaged });
   windowStates = await WindowStateStore.open(
     join(app.getPath("userData"), "window-state.json"),
   );
@@ -164,6 +209,9 @@ async function start(): Promise<void> {
     Menu.buildFromTemplate(
       buildNativeMenuTemplate(process.platform, app.name, {
         showInstances: focusTrustedShell,
+        saveDiagnosticReport: () => {
+          void saveDiagnosticReport();
+        },
       }),
     ),
   );
@@ -251,21 +299,50 @@ async function disconnectProfile(profileID: string): Promise<void> {
   const partition = profilePartition(profile);
   const profileSession = session.fromPartition(partition);
   configureSessionOnce(profileSession, profile);
-  await disconnectDesktopProfile(
-    profile,
-    (input, init) => profileSession.fetch(input, init),
-  );
-  await profileSession.clearStorageData();
-  await profileSession.clearCache();
-  await profileSession.clearAuthCache();
-  profileSession.flushStorageData();
+  try {
+    await disconnectDesktopProfile(
+      profile,
+      (input, init) => profileSession.fetch(input, init),
+    );
+    await profileSession.clearStorageData();
+    await profileSession.clearCache();
+    await profileSession.clearAuthCache();
+    profileSession.flushStorageData();
+    recordDiagnostic({ kind: "authentication", phase: "disconnected" });
+    recordDiagnostic({
+      kind: "profile",
+      action: "disconnected",
+      outcome: "success",
+    });
+  } catch (error) {
+    recordDiagnostic({
+      kind: "profile",
+      action: "disconnected",
+      outcome: "failed",
+    });
+    throw error;
+  }
 }
 
 async function removeProfile(profileID: string): Promise<void> {
   await disconnectProfile(profileID);
-  await profiles.remove(profileID);
-  windowStates?.remove(profileID);
-  scheduleWindowStateFlush();
+  try {
+    await profiles.remove(profileID);
+    windowStates?.remove(profileID);
+    scheduleWindowStateFlush();
+    recordDiagnostic({
+      kind: "profile",
+      action: "removed",
+      outcome: "success",
+    });
+  } catch (error) {
+    recordDiagnostic({
+      kind: "profile",
+      action: "removed",
+      outcome: "failed",
+    });
+    throw error;
+  }
 }
 
 async function savedProfile(profileID: string): Promise<Profile> {
@@ -287,9 +364,17 @@ async function discover(origin: string) {
   });
   configureSessionOnce(discoverySession);
   try {
-    return await discoverInstance(origin, (input, init) =>
+    const document = await discoverInstance(origin, (input, init) =>
       discoverySession.fetch(input, init),
     );
+    recordDiagnostic({ kind: "discovery", outcome: "success" });
+    return document;
+  } catch (error) {
+    recordDiagnostic({
+      kind: "discovery",
+      outcome: diagnosticDiscoveryOutcome(error),
+    });
+    throw error;
   } finally {
     await discoverySession.clearStorageData();
     await discoverySession.clearCache();
@@ -303,9 +388,23 @@ async function openRemoteWindow(
   const target = exactProfileURL(profile, path);
   const existing = remoteWindows.get(profile.id);
   if (existing !== undefined && !existing.isDestroyed()) {
-    await existing.loadURL(target);
-    existing.show();
-    existing.focus();
+    try {
+      await existing.loadURL(target);
+      existing.show();
+      existing.focus();
+      recordDiagnostic({
+        kind: "profile",
+        action: "opened",
+        outcome: "success",
+      });
+    } catch (error) {
+      recordDiagnostic({
+        kind: "profile",
+        action: "opened",
+        outcome: "failed",
+      });
+      throw error;
+    }
     return;
   }
   const partition = profilePartition(profile);
@@ -341,7 +440,7 @@ async function openRemoteWindow(
   installRemoteContentsPolicy(
     remote.webContents,
     profile.canonicalOrigin,
-    () => undefined,
+    recordRemotePolicyDecision,
     {
       requestExternalOpen: (request: { url: string }) =>
         confirmExternalOpen(profile, remote, request.url),
@@ -363,7 +462,17 @@ async function openRemoteWindow(
   remote.once("closed", () => remoteWindows.delete(profile.id));
   try {
     await remote.loadURL(target);
+    recordDiagnostic({
+      kind: "profile",
+      action: "opened",
+      outcome: "success",
+    });
   } catch (error) {
+    recordDiagnostic({
+      kind: "profile",
+      action: "opened",
+      outcome: "failed",
+    });
     if (!remote.isDestroyed()) {
       remote.destroy();
     }
@@ -397,8 +506,10 @@ async function ensureAuthenticated(
   const fetcher = (input: string, init: RequestInit) =>
     profileSession.fetch(input, init);
   if (await desktopSessionAvailable(profile, fetcher)) {
+    recordDiagnostic({ kind: "authentication", phase: "session-valid" });
     return;
   }
+  recordDiagnostic({ kind: "authentication", phase: "required" });
   const existing = authenticationTransactions.get(profile.id);
   if (existing !== undefined) {
     await existing;
@@ -424,9 +535,14 @@ async function ensureAuthenticated(
       await shell.openExternal(parsed.toString(), { activate: true });
     },
   );
+  recordDiagnostic({ kind: "authentication", phase: "started" });
   authenticationTransactions.set(profile.id, transaction);
   try {
     await transaction;
+    recordDiagnostic({ kind: "authentication", phase: "completed" });
+  } catch (error) {
+    recordDiagnostic({ kind: "authentication", phase: "failed" });
+    throw error;
   } finally {
     if (authenticationTransactions.get(profile.id) === transaction) {
       authenticationTransactions.delete(profile.id);
@@ -643,8 +759,8 @@ async function flushWindowStates(): Promise<void> {
   }
   try {
     await windowStates.flush();
-  } catch (error) {
-    console.warn("LeapView Desktop could not save window placement.", error);
+  } catch {
+    console.warn("LeapView Desktop could not save window placement.");
   }
 }
 
@@ -709,6 +825,220 @@ function keepWindowVisible(
   windowStates.record(key, fitted);
 }
 
+async function saveDiagnosticReport(): Promise<void> {
+  if (diagnosticExportActive || diagnostics === null) {
+    return;
+  }
+  diagnosticExportActive = true;
+  const parent = BrowserWindow.getFocusedWindow();
+  try {
+    const confirmationOptions: Electron.MessageBoxOptions = {
+      type: "question",
+      buttons: ["Cancel", "Choose location"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      title: "Save diagnostic report",
+      message: "Create a privacy-safe LeapView diagnostic report?",
+      detail:
+        "Includes: app/runtime/OS versions, desktop policy revision, and recent allowlisted lifecycle outcomes.\n\nExcludes: instance URLs and names, dashboard data, credentials, cookies, tokens, authorization values, renderer console output, filenames, and crash dumps.\n\nThe JSON report is saved locally and is never uploaded automatically.",
+    };
+    const confirmation =
+      parent === null
+        ? await dialog.showMessageBox(confirmationOptions)
+        : await dialog.showMessageBox(parent, confirmationOptions);
+    if (confirmation.response !== 1) {
+      return;
+    }
+    const saveOptions: Electron.SaveDialogOptions = {
+      title: "Save LeapView diagnostic report",
+      defaultPath: join(
+        app.getPath("downloads"),
+        "leapview-diagnostic-report.json",
+      ),
+      buttonLabel: "Save report",
+      filters: [{ name: "JSON", extensions: ["json"] }],
+      properties: [
+        "showOverwriteConfirmation",
+        "createDirectory",
+        "dontAddToRecent",
+      ],
+    };
+    const destination =
+      parent === null
+        ? await dialog.showSaveDialog(saveOptions)
+        : await dialog.showSaveDialog(parent, saveOptions);
+    if (destination.canceled || destination.filePath === "") {
+      return;
+    }
+    if (pathIsInside(destination.filePath, app.getPath("userData"))) {
+      throw new Error("diagnostic destination overlaps application state");
+    }
+    await writeDiagnosticReport(
+      destination.filePath,
+      diagnostics.report(diagnosticEnvironment()),
+    );
+    const successOptions: Electron.MessageBoxOptions = {
+      type: "info",
+      buttons: ["OK"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      title: "Diagnostic report saved",
+      message: "The privacy-safe diagnostic report was saved locally.",
+      detail: "Review the JSON file before choosing whether to share it.",
+    };
+    if (parent === null || parent.isDestroyed()) {
+      await dialog.showMessageBox(successOptions);
+    } else {
+      await dialog.showMessageBox(parent, successOptions);
+    }
+  } catch {
+    const failureOptions: Electron.MessageBoxOptions = {
+      type: "error",
+      buttons: ["OK"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      title: "Could not save diagnostic report",
+      message: "LeapView could not save the diagnostic report safely.",
+      detail: "Choose another location and try again.",
+    };
+    if (parent === null || parent.isDestroyed()) {
+      await dialog.showMessageBox(failureOptions);
+    } else {
+      await dialog.showMessageBox(parent, failureOptions);
+    }
+  } finally {
+    diagnosticExportActive = false;
+  }
+}
+
+function diagnosticEnvironment(): DiagnosticEnvironment {
+  return {
+    applicationVersion: app.getVersion(),
+    electronVersion: process.versions.electron ?? "unknown",
+    chromiumVersion: process.versions.chrome ?? "unknown",
+    nodeVersion: process.versions.node,
+    platform: process.platform,
+    osRelease: operatingSystemRelease(),
+    architecture: process.arch,
+    packaged: app.isPackaged,
+    policyRevision: "desktop-policy-v1",
+  };
+}
+
+function recordDiagnostic(event: DiagnosticEvent): void {
+  if (diagnostics === null) {
+    return;
+  }
+  try {
+    diagnostics.record(event);
+  } catch {
+    console.warn("LeapView Desktop rejected an internal diagnostic event.");
+    return;
+  }
+  if (diagnosticFlushTimer === null) {
+    diagnosticFlushTimer = setTimeout(() => {
+      diagnosticFlushTimer = null;
+      void flushDiagnostics();
+    }, DIAGNOSTIC_FLUSH_DELAY_MS);
+  }
+}
+
+async function flushDiagnostics(): Promise<void> {
+  if (diagnosticFlushTimer !== null) {
+    clearTimeout(diagnosticFlushTimer);
+    diagnosticFlushTimer = null;
+  }
+  if (diagnostics === null) {
+    return;
+  }
+  try {
+    await diagnostics.flush();
+  } catch {
+    console.warn("LeapView Desktop could not save diagnostic events.");
+  }
+}
+
+function recordRemotePolicyDecision(decision: RemotePolicyDecision): void {
+  let action: Extract<
+    DiagnosticEvent,
+    { kind: "navigation" }
+  >["action"] | undefined;
+  if (decision.kind === "main-frame-navigation" && !decision.allowed) {
+    action = "blocked-main-frame";
+  } else if (decision.kind === "popup" && !decision.allowed) {
+    action = "blocked-popup";
+  } else if (decision.kind === "webview-attachment" && !decision.allowed) {
+    action = "blocked-webview";
+  } else if (decision.kind === "native-transport" && !decision.allowed) {
+    action = "blocked-native-transport";
+  } else if (
+    decision.kind === "same-origin-window-open" &&
+    decision.allowed
+  ) {
+    action = "allowed-same-origin-window";
+  } else if (
+    decision.kind === "external-open-request" &&
+    decision.allowed
+  ) {
+    action = "requested-external";
+  } else if (decision.kind === "download") {
+    action = decision.allowed
+      ? "allowed-csv-export"
+      : "blocked-download";
+  }
+  if (action !== undefined) {
+    recordDiagnostic({ kind: "navigation", action });
+  }
+}
+
+function diagnosticDiscoveryOutcome(
+  error: unknown,
+): Extract<DiagnosticEvent, { kind: "discovery" }>["outcome"] {
+  if (
+    error instanceof DesktopDiscoveryError &&
+    (
+      error.message === "instance discovery failed" ||
+      error.message === "instance discovery timed out"
+    )
+  ) {
+    return "unavailable";
+  }
+  return "rejected";
+}
+
+function diagnosticSurface(
+  contents: Electron.WebContents,
+): Extract<DiagnosticEvent, { kind: "render-process-gone" }>["surface"] {
+  if (
+    shellWindow !== null &&
+    !shellWindow.isDestroyed() &&
+    shellWindow.webContents === contents
+  ) {
+    return "trusted-shell";
+  }
+  for (const remote of remoteWindows.values()) {
+    if (!remote.isDestroyed() && remote.webContents === contents) {
+      return "remote";
+    }
+  }
+  return "unknown";
+}
+
+function pathIsInside(candidate: string, parent: string): boolean {
+  const relationship = relative(resolve(parent), resolve(candidate));
+  return (
+    relationship === "" ||
+    (
+      relationship !== ".." &&
+      !relationship.startsWith(`..${sep}`) &&
+      !isAbsolute(relationship)
+    )
+  );
+}
+
 function configureSessionOnce(target: Session, profile?: Profile): void {
   if (configuredSessions.has(target)) {
     if (
@@ -725,7 +1055,7 @@ function configureSessionOnce(target: Session, profile?: Profile): void {
   }
   configureRemoteSession(
     target,
-    () => undefined,
+    recordRemotePolicyDecision,
     profile === undefined
       ? undefined
       : {
@@ -821,6 +1151,10 @@ function handleRemoteFailure(
   ) {
     return;
   }
+  recordDiagnostic({
+    kind: "remote-lifecycle",
+    state: failure.state,
+  });
   remote.destroy();
   trustedUI?.reportNotice({
     kind: "error",

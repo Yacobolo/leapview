@@ -87,6 +87,21 @@ trusted application content.
   platform conventions. The application menu intentionally exposes neither
   DevTools nor force reload.
 
+## Privacy-safe diagnostics
+
+- LeapView keeps a private, seven-day journal of at most 256 allowlisted
+  lifecycle outcomes. Repeated outcomes are coalesced and the file is capped at
+  128 KiB.
+- The journal never accepts free-form remote strings. Instance origins and
+  names, routes, dashboard data, credentials, cookies, authorization values,
+  filenames, renderer console output, and crash dumps are not collected.
+- **Help → Save Diagnostic Report…** shows the exact included and excluded
+  categories before opening a native save dialog. The resulting JSON document
+  has a fixed manifest and is written with private permissions for the user to
+  review.
+- Reports are saved locally and are never uploaded automatically. Electron
+  crash collection and upload remain disabled.
+
 ## Security boundary
 
 - The trusted connection screen is served from `leapview://app` with no
@@ -106,4 +121,5 @@ trusted application content.
 Run `task desktop:test` for the desktop contracts and `task
 electron-security-proof` for the malicious-instance runtime proof. `task
 desktop:package` also reads the fuses back from the produced binary, inspects
-the ASAR allowlist, and launches the packaged trusted shell as a smoke test.
+the ASAR allowlist, launches the packaged trusted shell, and verifies its
+privacy-safe startup journal as a smoke test.

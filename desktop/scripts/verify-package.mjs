@@ -4,6 +4,7 @@ import {
   readdir,
   readFile,
   rm,
+  stat,
 } from "node:fs/promises";
 import { constants } from "node:fs";
 import { spawn } from "node:child_process";
@@ -21,6 +22,16 @@ import {
 
 const root = resolve(import.meta.dirname, "..");
 const out = join(root, "out");
+const processGoneReasons = new Set([
+  "clean-exit",
+  "abnormal-exit",
+  "killed",
+  "crashed",
+  "oom",
+  "launch-failed",
+  "integrity-failure",
+  "memory-eviction",
+]);
 const platformName = {
   darwin: "darwin",
   linux: "linux",
@@ -128,6 +139,7 @@ for (const required of [
   "/dist/src/main.js",
   "/dist/src/auth.js",
   "/dist/src/deep-link.js",
+  "/dist/src/diagnostics.js",
   "/dist/src/native-menu.js",
   "/dist/src/remote-lifecycle.js",
   "/dist/src/security/remote-policy.mjs",
@@ -199,28 +211,30 @@ async function verifyPackagedStartup(executable) {
           diagnostic,
         );
       }
+      let shellReady = false;
       try {
         const response = await fetch(
           `http://127.0.0.1:${devtoolsPort}/json/list`,
           {
-          signal: AbortSignal.timeout(1_000),
+            signal: AbortSignal.timeout(1_000),
           },
         );
         if (!response.ok) {
           throw new Error("packaged application debug target was unavailable");
         }
         const targets = await response.json();
-        if (
+        shellReady =
           Array.isArray(targets) &&
           targets.some(
             (target) =>
               target?.type === "page" &&
               target?.url === "leapview://app/",
-          )
-        ) {
-          return "trusted-shell-ready";
-        }
+          );
       } catch {}
+      if (shellReady) {
+        await verifyPackagedDiagnosticJournal(userData, deadline);
+        return "trusted-shell-ready";
+      }
       await new Promise((resolveDelay) => setTimeout(resolveDelay, 50));
     }
     throw startupFailure(
@@ -246,6 +260,134 @@ async function verifyPackagedStartup(executable) {
       retryDelay: 100,
     });
   }
+}
+
+async function verifyPackagedDiagnosticJournal(userData, deadline) {
+  const path = join(userData, "diagnostics.json");
+  while (Date.now() < deadline) {
+    try {
+      const body = await readFile(path, "utf8");
+      if (Buffer.byteLength(body, "utf8") > 128 * 1024) {
+        throw new Error("packaged diagnostic journal exceeds its size limit");
+      }
+      const document = JSON.parse(body);
+      if (
+        Object.keys(document).sort().join(",") !==
+          "events,schemaVersion" ||
+        document.schemaVersion !== 1 ||
+        !Array.isArray(document.events) ||
+        document.events.length === 0 ||
+        document.events.length > 256
+      ) {
+        throw new Error(
+          "packaged diagnostic journal has an unexpected manifest",
+        );
+      }
+      if (
+        !document.events.some(
+          (event) =>
+            event?.kind === "startup" && event.packaged === true,
+        )
+      ) {
+        throw new Error(
+          "packaged diagnostic journal is missing its startup event",
+        );
+      }
+      for (const event of document.events) {
+        verifyPackagedDiagnosticEvent(event);
+      }
+      if (
+        /https?:|origin|cookie|token|authorization|console|filename/iu.test(
+          body,
+        )
+      ) {
+        throw new Error(
+          "packaged diagnostic journal contains forbidden sensitive fields",
+        );
+      }
+      if (
+        process.platform !== "win32" &&
+        ((await stat(path)).mode & 0o077) !== 0
+      ) {
+        throw new Error(
+          "packaged diagnostic journal permissions are not private",
+        );
+      }
+      return;
+    } catch (error) {
+      if (
+        error instanceof SyntaxError ||
+        (error instanceof Error &&
+          !("code" in error && error.code === "ENOENT"))
+      ) {
+        throw error;
+      }
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 50));
+  }
+  throw new Error("packaged application did not persist diagnostics");
+}
+
+function verifyPackagedDiagnosticEvent(event) {
+  if (typeof event !== "object" || event === null || Array.isArray(event)) {
+    throw new Error("packaged diagnostic journal contains an invalid event");
+  }
+  if (
+    typeof event.at !== "string" ||
+    new Date(event.at).toISOString() !== event.at
+  ) {
+    throw new Error(
+      "packaged diagnostic journal contains an invalid timestamp",
+    );
+  }
+  if (event.kind === "startup") {
+    if (
+      Object.keys(event).sort().join(",") !== "at,kind,packaged" ||
+      event.packaged !== true
+    ) {
+      throw new Error(
+        "packaged diagnostic journal contains invalid startup data",
+      );
+    }
+    return;
+  }
+  if (event.kind === "render-process-gone") {
+    if (
+      Object.keys(event).sort().join(",") !==
+        "at,kind,reason,surface" ||
+      !["trusted-shell", "unknown"].includes(event.surface) ||
+      !processGoneReasons.has(event.reason)
+    ) {
+      throw new Error(
+        "packaged diagnostic journal contains invalid renderer data",
+      );
+    }
+    return;
+  }
+  if (event.kind === "child-process-gone") {
+    if (
+      Object.keys(event).sort().join(",") !==
+        "at,kind,processType,reason" ||
+      ![
+        "utility",
+        "zygote",
+        "sandbox-helper",
+        "gpu",
+        "pepper-plugin",
+        "pepper-plugin-broker",
+        "unknown",
+      ].includes(event.processType) ||
+      !processGoneReasons.has(event.reason)
+    ) {
+      throw new Error(
+        "packaged diagnostic journal contains invalid child-process data",
+      );
+    }
+    return;
+  }
+  throw new Error(
+    "packaged diagnostic journal contains an unexpected startup event",
+  );
 }
 
 async function reserveLoopbackPort() {

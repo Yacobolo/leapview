@@ -9,6 +9,15 @@ const externalDispositions = new Set([
 ]);
 const maximumDownloadBytes = 50 * 1024 * 1024;
 
+/**
+ * @typedef {object} PolicyDecision
+ * @property {string} kind
+ * @property {boolean} allowed
+ * @property {string} [permission]
+ * @property {string} [deviceType]
+ * @property {number} [totalBytes]
+ */
+
 export function parseConfiguredOrigin(raw, options = {}) {
   const value = String(raw ?? "").trim();
   let parsed;
@@ -60,6 +69,11 @@ export function remoteWebPreferences(partition) {
   });
 }
 
+/**
+ * @param {import("electron").Session} remoteSession
+ * @param {(decision: PolicyDecision) => void} audit
+ * @param {object} capabilities
+ */
 export function configureRemoteSession(
   remoteSession,
   audit = () => {},
@@ -135,6 +149,12 @@ export function configureRemoteSession(
   });
 }
 
+/**
+ * @param {import("electron").WebContents} contents
+ * @param {string} configuredOrigin
+ * @param {(decision: PolicyDecision) => void} audit
+ * @param {object} capabilities
+ */
 export function installRemoteContentsPolicy(
   contents,
   configuredOrigin,

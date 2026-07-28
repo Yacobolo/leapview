@@ -6,9 +6,20 @@ import type {
 
 export interface PolicyDecision {
   kind: string;
-  allowed: false;
+  allowed: boolean;
   permission?: string;
   deviceType?: string;
+  totalBytes?: number;
+}
+
+export interface RemoteSessionCapabilities {
+  configuredOrigin: string;
+  displayName: string;
+  downloadsDirectory: string;
+}
+
+export interface RemoteContentsCapabilities {
+  requestExternalOpen?: (request: { url: string }) => Promise<void>;
 }
 
 export function parseConfiguredOrigin(
@@ -21,10 +32,12 @@ export function remoteWebPreferences(partition: string): Readonly<WebPreferences
 export function configureRemoteSession(
   remoteSession: Session,
   audit?: (decision: PolicyDecision) => void,
+  capabilities?: RemoteSessionCapabilities,
 ): void;
 
 export function installRemoteContentsPolicy(
   contents: WebContents,
   configuredOrigin: string,
   audit?: (decision: PolicyDecision) => void,
+  capabilities?: RemoteContentsCapabilities,
 ): void;
