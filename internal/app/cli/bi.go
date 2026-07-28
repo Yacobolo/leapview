@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 
-	analyticscli "github.com/Yacobolo/leapview/internal/analytics/cli"
 	dashboardcli "github.com/Yacobolo/leapview/internal/dashboard/cli"
 	workspacecli "github.com/Yacobolo/leapview/internal/workspace/cli"
 	"github.com/spf13/cobra"
@@ -18,7 +17,7 @@ func dashboardsCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 }
 
 func semanticModelsCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
-	return analyticscli.Command(ctx, capabilityAPIClient{}, opts.workspaceID)
+	return dashboardcli.SemanticModelsCommand(ctx, capabilityAPIClient{}, opts.workspaceID)
 }
 
 func addTargetTokenFlags(command *cobra.Command, opts *rootOptions) {

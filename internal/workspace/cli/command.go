@@ -6,11 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/Yacobolo/leapview/internal/platform/cliapi"
+	workspacegen "github.com/Yacobolo/leapview/internal/workspace/api/gen"
 	"github.com/spf13/cobra"
 )
 
@@ -27,11 +27,20 @@ func WorkspacesCommand(ctx context.Context, client cliapi.Client) *cobra.Command
 		Use:   "list",
 		Short: "List workspaces",
 		RunE: func(command *cobra.Command, _ []string) error {
-			return runRaw(ctx, client, options.remote.Credentials(), cliapi.Request{
-				Method:      http.MethodGet,
-				OperationID: "listWorkspaces",
-				Query:       options.pagination.Query(),
-			}, command.OutOrStdout())
+			api, err := workspaceClient(ctx, client, options.remote.Credentials())
+			if err != nil {
+				return err
+			}
+			response, err := api.ListWorkspaces(ctx, workspacegen.GenListWorkspacesClientRequest{
+				Params: workspacegen.GenListWorkspacesClientParams{
+					Limit:     optionalPositiveInt32(options.pagination.Limit),
+					PageToken: optionalString(options.pagination.PageToken),
+				},
+			})
+			if err != nil {
+				return err
+			}
+			return json.NewEncoder(command.OutOrStdout()).Encode(response.Body)
 		},
 	}
 	options.remote.AddFlags(list)
@@ -68,39 +77,43 @@ func SearchCommand(ctx context.Context, client cliapi.Client) *cobra.Command {
 }
 
 func runSearch(ctx context.Context, client cliapi.Client, options *searchOptions, queryText string, out io.Writer) error {
-	query := options.pagination.Query()
-	query.Set("q", queryText)
-	for _, workspaceID := range splitValues(options.workspaces) {
-		query.Add("workspace", workspaceID)
+	api, err := workspaceClient(ctx, client, options.remote.Credentials())
+	if err != nil {
+		return err
 	}
-	for _, typ := range splitValues(options.types) {
-		query.Add("type", typ)
+	workspaceFilters := splitValues(options.workspaces)
+	typeValues := splitValues(options.types)
+	typeFilters := make([]workspacegen.GenSchemaSearchResultType, len(typeValues))
+	for index, value := range typeValues {
+		typeFilters[index] = workspacegen.GenSchemaSearchResultType(value)
 	}
-	var response searchResponse
-	if err := doJSON(ctx, client, options.remote.Credentials(), cliapi.Request{
-		Method: http.MethodGet, OperationID: "search", Query: query,
-	}, &response); err != nil {
+	response, err := api.Search(ctx, workspacegen.GenSearchClientRequest{
+		Params: workspacegen.GenSearchClientParams{
+			Q:         &queryText,
+			Workspace: optionalSlice(workspaceFilters),
+			Type:      optionalSlice(typeFilters),
+			Limit:     optionalPositiveInt32(options.pagination.Limit),
+			PageToken: optionalString(options.pagination.PageToken),
+		},
+	})
+	if err != nil {
 		return err
 	}
 	if options.jsonOutput {
-		return json.NewEncoder(out).Encode(response)
+		return json.NewEncoder(out).Encode(response.Body)
 	}
-	return renderSearchResults(out, response)
+	return renderSearchResults(out, response.Body)
 }
 
-func runRaw(ctx context.Context, client cliapi.Client, credentials cliapi.Credentials, request cliapi.Request, out io.Writer) error {
-	var response any
-	if err := doJSON(ctx, client, credentials, request, &response); err != nil {
-		return err
-	}
-	return json.NewEncoder(out).Encode(response)
-}
-
-func doJSON(ctx context.Context, client cliapi.Client, credentials cliapi.Credentials, request cliapi.Request, out any) error {
+func workspaceClient(ctx context.Context, client cliapi.Client, credentials cliapi.Credentials) (*workspacegen.GenClient, error) {
 	if client == nil {
-		return fmt.Errorf("workspace CLI API client is required")
+		return nil, fmt.Errorf("workspace CLI API client is required")
 	}
-	return client.DoJSON(ctx, credentials, request, out)
+	transport, err := client.Transport(ctx, credentials)
+	if err != nil {
+		return nil, err
+	}
+	return workspacegen.NewGenClient(transport), nil
 }
 
 func splitValues(values []string) []string {
@@ -115,34 +128,40 @@ func splitValues(values []string) []string {
 	return result
 }
 
-func renderSearchResults(out io.Writer, response searchResponse) error {
+func renderSearchResults(out io.Writer, response workspacegen.GenSchemaSearchResponse) error {
 	writer := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(writer, "WORKSPACE\tTYPE\tNAME\tDESCRIPTION\tID")
 	for _, item := range response.Items {
-		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\n", item.Reference.WorkspaceID, item.Reference.Type, item.Name, item.Description, item.Reference.ID)
+		description := ""
+		if item.Description != nil {
+			description = *item.Description
+		}
+		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\n", item.Reference.WorkspaceId, item.Reference.Type, item.Name, description, item.Reference.Id)
 	}
-	if response.Page.NextCursor != "" {
-		fmt.Fprintf(writer, "PAGE\tNEXT\t%s\t\t\n", response.Page.NextCursor)
+	if response.Page.NextCursor != nil && *response.Page.NextCursor != "" {
+		fmt.Fprintf(writer, "PAGE\tNEXT\t%s\t\t\n", *response.Page.NextCursor)
 	}
 	return writer.Flush()
 }
 
-type searchResponse struct {
-	Items []searchResult `json:"items"`
-	Page  struct {
-		NextCursor string `json:"nextCursor"`
-	} `json:"page"`
+func optionalPositiveInt32(value int) *int32 {
+	if value <= 0 {
+		return nil
+	}
+	converted := int32(value)
+	return &converted
 }
 
-type searchResult struct {
-	Reference   searchReference `json:"reference"`
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Href        string          `json:"href"`
+func optionalString(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
-type searchReference struct {
-	WorkspaceID string `json:"workspaceId"`
-	Type        string `json:"type"`
-	ID          string `json:"id"`
+func optionalSlice[T any](values []T) *[]T {
+	if len(values) == 0 {
+		return nil
+	}
+	return &values
 }

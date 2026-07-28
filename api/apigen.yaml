@@ -18,30 +18,37 @@ targets:
           dir: ../internal/access/api/gen
           package: gen
           import_path: github.com/Yacobolo/leapview/internal/access/api/gen
+          client_file: client.apigen.gen.go
         LeapViewAPI.Agent:
           dir: ../internal/agent/api/gen
           package: gen
           import_path: github.com/Yacobolo/leapview/internal/agent/api/gen
+          client_file: client.apigen.gen.go
         LeapViewAPI.Analytics:
           dir: ../internal/analytics/api/gen
           package: gen
           import_path: github.com/Yacobolo/leapview/internal/analytics/api/gen
+          client_file: client.apigen.gen.go
         LeapViewAPI.Dashboard:
           dir: ../internal/dashboard/api/gen
           package: gen
           import_path: github.com/Yacobolo/leapview/internal/dashboard/api/gen
+          client_file: client.apigen.gen.go
         LeapViewAPI.Deployment:
           dir: ../internal/deployment/api/gen
           package: gen
           import_path: github.com/Yacobolo/leapview/internal/deployment/api/gen
+          client_file: client.apigen.gen.go
         LeapViewAPI.ManagedData:
           dir: ../internal/manageddata/api/gen
           package: gen
           import_path: github.com/Yacobolo/leapview/internal/manageddata/api/gen
+          client_file: client.apigen.gen.go
         LeapViewAPI.Project:
           dir: ../internal/project/api/gen
           package: gen
           import_path: github.com/Yacobolo/leapview/internal/project/api/gen
+          client_file: client.apigen.gen.go
         LeapViewAPI.Protocol:
           dir: ../internal/platform/http/api/gen
           package: gen
@@ -50,14 +57,17 @@ targets:
           dir: ../internal/refresh/api/gen
           package: gen
           import_path: github.com/Yacobolo/leapview/internal/refresh/api/gen
+          client_file: client.apigen.gen.go
         LeapViewAPI.Release:
           dir: ../internal/release/api/gen
           package: gen
           import_path: github.com/Yacobolo/leapview/internal/release/api/gen
+          client_file: client.apigen.gen.go
         LeapViewAPI.Workspace:
           dir: ../internal/workspace/api/gen
           package: gen
           import_path: github.com/Yacobolo/leapview/internal/workspace/api/gen
+          client_file: client.apigen.gen.go
     cli_out:
       dir: ../internal/app/cli/gen
       package: gen

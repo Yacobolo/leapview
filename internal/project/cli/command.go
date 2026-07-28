@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +14,6 @@ import (
 	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 	"github.com/Yacobolo/leapview/internal/project/schema"
 	"github.com/Yacobolo/leapview/internal/workspace"
-	"github.com/Yacobolo/leapview/internal/workspace/api"
 	"github.com/spf13/cobra"
 )
 
@@ -27,6 +25,12 @@ type options struct {
 	jsonOutput   bool
 	schemaFormat string
 	schemaOut    string
+}
+
+// ActiveWorkspaceGraphLoader supplies the deployed Workspace state that Project
+// planning compares with locally compiled configuration.
+type ActiveWorkspaceGraphLoader interface {
+	LoadActiveWorkspaceGraph(context.Context, cliapi.Credentials, string, string) (workspace.AssetGraph, error)
 }
 
 // ValidateCommand constructs the local project validation command.
@@ -54,7 +58,7 @@ func ValidateCommand(ctx context.Context) *cobra.Command {
 }
 
 // PlanCommand constructs the local or active-state project plan command.
-func PlanCommand(ctx context.Context, client cliapi.Client, defaultWorkspaceID string) *cobra.Command {
+func PlanCommand(ctx context.Context, loader ActiveWorkspaceGraphLoader, defaultWorkspaceID string) *cobra.Command {
 	opts := &options{workspaceID: defaultWorkspaceID}
 	cmd := &cobra.Command{
 		Use:   "plan [project]",
@@ -69,7 +73,7 @@ func PlanCommand(ctx context.Context, client cliapi.Client, defaultWorkspaceID s
 				}
 				opts.catalog = args[0]
 			}
-			return runPlan(ctx, client, opts, cmd.OutOrStdout())
+			return runPlan(ctx, loader, opts, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().StringVar(&opts.catalog, "project", filepath.Join("dashboards", "leapview.yaml"), "project path")
@@ -131,14 +135,14 @@ func runValidate(ctx context.Context, opts *options, out io.Writer) error {
 	return fmt.Errorf("validation failed")
 }
 
-func runPlan(ctx context.Context, client cliapi.Client, opts *options, out io.Writer) error {
+func runPlan(ctx context.Context, loader ActiveWorkspaceGraphLoader, opts *options, out io.Writer) error {
 	var plan workspacecompiler.ProjectPlan
 	var err error
 	if opts.remote.Target != "" {
 		if opts.workspaceID == "" {
 			return fmt.Errorf("plan --target requires --workspace")
 		}
-		active, err := fetchActiveWorkspaceGraph(ctx, client, opts)
+		active, err := fetchActiveWorkspaceGraph(ctx, loader, opts)
 		if err != nil {
 			return err
 		}
@@ -196,74 +200,15 @@ func renderProjectPlan(out io.Writer, plan workspacecompiler.ProjectPlan) error 
 	return nil
 }
 
-func fetchActiveWorkspaceGraph(ctx context.Context, client cliapi.Client, opts *options) (workspace.AssetGraph, error) {
-	return fetchActiveWorkspaceGraphFor(ctx, client, opts, opts.workspaceID)
+func fetchActiveWorkspaceGraph(ctx context.Context, loader ActiveWorkspaceGraphLoader, opts *options) (workspace.AssetGraph, error) {
+	return fetchActiveWorkspaceGraphFor(ctx, loader, opts, opts.workspaceID)
 }
 
-func fetchActiveWorkspaceGraphFor(ctx context.Context, client cliapi.Client, opts *options, workspaceID string) (workspace.AssetGraph, error) {
-	return FetchActiveWorkspaceGraph(ctx, client, opts.remote.Credentials(), opts.environment, workspaceID)
-}
-
-// FetchActiveWorkspaceGraph loads and maps the active graph used by project
-// planning and deployment.
-func FetchActiveWorkspaceGraph(ctx context.Context, client cliapi.Client, credentials cliapi.Credentials, assertedEnvironment, workspaceID string) (workspace.AssetGraph, error) {
-	if client == nil {
-		return workspace.AssetGraph{}, fmt.Errorf("project CLI API client is required")
+func fetchActiveWorkspaceGraphFor(ctx context.Context, loader ActiveWorkspaceGraphLoader, opts *options, workspaceID string) (workspace.AssetGraph, error) {
+	if loader == nil {
+		return workspace.AssetGraph{}, fmt.Errorf("Project active Workspace graph loader is required")
 	}
-	if _, err := client.Environment(ctx, credentials, assertedEnvironment); err != nil {
-		return workspace.AssetGraph{}, err
-	}
-	var response api.WorkspaceAssetGraphResponse
-	if err := client.DoJSON(ctx, credentials, cliapi.Request{
-		Method:      http.MethodGet,
-		OperationID: "getWorkspaceActiveAssetGraph",
-		PathParams:  map[string]string{"workspace": workspaceID},
-	}, &response); err != nil {
-		return workspace.AssetGraph{}, err
-	}
-	graph := workspace.AssetGraph{
-		Assets: make([]workspace.Asset, 0, len(response.Assets)),
-		Edges:  make([]workspace.AssetEdge, 0, len(response.Edges)),
-	}
-	for _, asset := range response.Assets {
-		graph.Assets = append(graph.Assets, workspace.Asset{
-			ID:             workspace.AssetID(asset.ID),
-			SnapshotID:     workspace.AssetSnapshotID(asset.SnapshotID),
-			WorkspaceID:    workspace.WorkspaceID(asset.WorkspaceID),
-			ServingStateID: workspace.ServingStateID(asset.ServingStateID),
-			Type:           workspace.AssetType(asset.Type),
-			Key:            asset.Key,
-			ParentID:       workspace.AssetID(asset.ParentID),
-			Title:          asset.Title,
-			Description:    asset.Description,
-			PayloadSchema:  asset.PayloadSchema,
-			SourceFile:     asset.SourceFile,
-			PayloadJSON:    assetPayloadJSON(asset.Payload),
-			ContentHash:    asset.ContentHash,
-		})
-	}
-	for _, edge := range response.Edges {
-		graph.Edges = append(graph.Edges, workspace.AssetEdge{
-			ID:             workspace.AssetEdgeID(edge.ID),
-			WorkspaceID:    workspace.WorkspaceID(edge.WorkspaceID),
-			ServingStateID: workspace.ServingStateID(edge.ServingStateID),
-			FromAssetID:    workspace.AssetID(edge.FromAssetID),
-			ToAssetID:      workspace.AssetID(edge.ToAssetID),
-			Type:           workspace.AssetEdgeType(edge.Type),
-		})
-	}
-	return graph, nil
-}
-
-func assetPayloadJSON(payload map[string]any) string {
-	if payload == nil {
-		return ""
-	}
-	bytes, err := json.Marshal(payload)
-	if err != nil {
-		return ""
-	}
-	return string(bytes)
+	return loader.LoadActiveWorkspaceGraph(ctx, opts.remote.Credentials(), opts.environment, workspaceID)
 }
 
 func planChangeAnnotations(change workspacecompiler.ProjectPlanChange) string {

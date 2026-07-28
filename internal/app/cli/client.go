@@ -12,8 +12,10 @@ import (
 	"strings"
 	"time"
 
+	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
 	"github.com/Yacobolo/leapview/internal/app/config"
 	"github.com/Yacobolo/leapview/internal/platform/cliapi"
+	apigenclient "github.com/Yacobolo/toolbelt/apigen/runtime/client"
 )
 
 type capabilityAPIClient struct{}
@@ -34,24 +36,103 @@ func (client capabilityAPIClient) Environment(ctx context.Context, credentials c
 	return targetEnvironment(ctx, http.DefaultClient, resolved.Target, resolved.Token, asserted)
 }
 
-func (client capabilityAPIClient) DoJSON(ctx context.Context, credentials cliapi.Credentials, request cliapi.Request, out any) error {
+func (client capabilityAPIClient) Transport(ctx context.Context, credentials cliapi.Credentials) (apigenclient.Transport, error) {
 	resolved, err := client.Resolve(ctx, credentials)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	endpoint, err := apiOperationURL(resolved.Target, request.OperationID, request.PathParams, request.Query)
+	return capabilityAPITransport{
+		target: resolved.Target,
+		token:  resolved.Token,
+		client: http.DefaultClient,
+	}, nil
+}
+
+type capabilityAPITransport struct {
+	target string
+	token  string
+	client *http.Client
+}
+
+func (transport capabilityAPITransport) DoAPIGen(ctx context.Context, request apigenclient.Request, out any) (apigenclient.Response, error) {
+	endpoint, err := apiRequestURL(transport.target, request.Path, request.PathParams, request.Query)
 	if err != nil {
-		return err
+		return apigenclient.Response{}, err
 	}
 	var body io.Reader
 	if request.Body != nil {
-		encoded, err := json.Marshal(request.Body)
-		if err != nil {
-			return err
+		if strings.Contains(strings.ToLower(request.ContentType), "json") {
+			encoded, err := json.Marshal(request.Body)
+			if err != nil {
+				return apigenclient.Response{}, fmt.Errorf("encode %s request: %w", request.OperationID, err)
+			}
+			body = bytes.NewReader(encoded)
+		} else {
+			switch value := request.Body.(type) {
+			case []byte:
+				body = bytes.NewReader(value)
+			case string:
+				body = strings.NewReader(value)
+			default:
+				return apigenclient.Response{}, fmt.Errorf("encode %s request: unsupported %s body type %T", request.OperationID, request.ContentType, request.Body)
+			}
 		}
-		body = bytes.NewReader(encoded)
 	}
-	return doJSONWithHeaders(ctx, request.Method, endpoint, resolved.Token, request.Headers, body, out)
+	httpRequest, err := http.NewRequestWithContext(ctx, request.Method, endpoint, body)
+	if err != nil {
+		return apigenclient.Response{}, err
+	}
+	httpRequest.Header = request.Headers.Clone()
+	if httpRequest.Header == nil {
+		httpRequest.Header = make(http.Header)
+	}
+	if request.Accept != "" {
+		httpRequest.Header.Set("Accept", request.Accept)
+	}
+	if request.ContentType != "" {
+		httpRequest.Header.Set("Content-Type", request.ContentType)
+	}
+	if transport.token != "" {
+		httpRequest.Header.Set("Authorization", "Bearer "+transport.token)
+	}
+	httpClient := transport.client
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	httpResponse, err := httpClient.Do(httpRequest)
+	if err != nil {
+		return apigenclient.Response{}, err
+	}
+	defer httpResponse.Body.Close()
+	payload, readErr := io.ReadAll(httpResponse.Body)
+	metadata := apigenclient.Response{
+		StatusCode:  httpResponse.StatusCode,
+		Headers:     httpResponse.Header.Clone(),
+		ContentType: httpResponse.Header.Get("Content-Type"),
+	}
+	if readErr != nil {
+		return metadata, readErr
+	}
+	if httpResponse.StatusCode >= http.StatusMultipleChoices {
+		return metadata, fmt.Errorf("%s %s: %s", request.Method, endpoint, strings.TrimSpace(string(payload)))
+	}
+	if !apiaggregate.APIGenOperationAllowsStatus(request.OperationID, httpResponse.StatusCode) {
+		return metadata, fmt.Errorf("%s %s: unexpected success status %d for operation %s", request.Method, endpoint, httpResponse.StatusCode, request.OperationID)
+	}
+	if out == nil || len(payload) == 0 {
+		return metadata, nil
+	}
+	switch destination := out.(type) {
+	case *[]byte:
+		*destination = append((*destination)[:0], payload...)
+	case *string:
+		*destination = string(payload)
+	default:
+		if err := json.Unmarshal(payload, out); err != nil {
+			return metadata, fmt.Errorf("decode %s response: %w", request.OperationID, err)
+		}
+	}
+	return metadata, nil
 }
 
 func doJSON(ctx context.Context, method, endpoint, token string, body io.Reader, out any) error {
