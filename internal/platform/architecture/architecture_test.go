@@ -81,6 +81,33 @@ func TestCapabilityCLIIsAnAdapterOwnedByItsCapability(t *testing.T) {
 	}
 }
 
+func TestApplicationCLIAdminOnlyComposesAdminOperations(t *testing.T) {
+	path := filepath.Join(repoRoot(t), "internal", "app", "cli", "admin.go")
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(contents)
+	for _, forbidden := range []string{
+		"access/sqlite",
+		"admin/sqlite",
+		"analytics/ducklake",
+		"servingstate/sqlite",
+		"platform.Open(",
+		"NewRepository(",
+		"PruneOperationalHistory(",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("application CLI Admin composition retains offline adapter construction %q", forbidden)
+		}
+	}
+	for _, required := range []string{"internal/admin/cli", "internal/app/adminoffline"} {
+		if !strings.Contains(body, required) {
+			t.Errorf("application CLI Admin composition is missing %q", required)
+		}
+	}
+}
+
 func TestAccessGeneratedAPIIsCapabilityOwned(t *testing.T) {
 	rule, ok := ClassifyPackage("internal/access/api/gen")
 	if !ok {
