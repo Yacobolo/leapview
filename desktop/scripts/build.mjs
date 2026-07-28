@@ -16,29 +16,34 @@ const fontFiles = [
 ];
 
 await rm(outputRoot, { force: true, recursive: true });
-const compiler = spawnSync(
-  process.execPath,
-  [
-    join(desktopRoot, "node_modules", "typescript", "bin", "tsc"),
-    "-p",
-    join(desktopRoot, "tsconfig.json"),
-  ],
-  {
-    cwd: desktopRoot,
-    stdio: "inherit",
-  },
-);
-if (compiler.error !== undefined) {
-  throw compiler.error;
-}
-if (compiler.status !== 0) {
-  process.exit(compiler.status ?? 1);
-}
+await mkdir(outputRoot, { recursive: true });
 
-await copyFile(
-  join(repositoryRoot, "static", "app.css"),
-  join(outputRoot, "app.css"),
+runNode(
+  join(
+    desktopRoot,
+    "node_modules",
+    "@tailwindcss",
+    "cli",
+    "dist",
+    "index.mjs",
+  ),
+  [
+    "--input",
+    join(repositoryRoot, "static", "app.input.css"),
+    "--output",
+    join(outputRoot, "app.css"),
+    "--cwd",
+    desktopRoot,
+    "--silent",
+  ],
+  repositoryRoot,
 );
+runNode(
+  join(desktopRoot, "node_modules", "typescript", "bin", "tsc"),
+  ["-p", join(desktopRoot, "tsconfig.json")],
+  desktopRoot,
+);
+
 const fontOutput = join(outputRoot, "files");
 await mkdir(fontOutput, { recursive: true });
 await Promise.all(
@@ -49,3 +54,16 @@ await Promise.all(
     ),
   ),
 );
+
+function runNode(entrypoint, arguments_, cwd) {
+  const result = spawnSync(process.execPath, [entrypoint, ...arguments_], {
+    cwd,
+    stdio: "inherit",
+  });
+  if (result.error !== undefined) {
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    process.exit(result.status ?? 1);
+  }
+}
