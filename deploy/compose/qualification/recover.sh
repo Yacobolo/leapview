@@ -274,6 +274,7 @@ managedUpload=true
 
 stage="release finalization interruption"
 deploy_a_log="$evidence_dir/recovery-release-finalization.log"
+docker update --cpus 0.25 "$container_id" >/dev/null
 run_in_candidate \
   leapview deploy \
   --project /var/lib/leapview/qualification-recovery/project-a/leapview.yaml \
@@ -299,6 +300,7 @@ done
 kill_candidate
 wait_for_process_exit "$deploy_a_pid"
 
+docker update --cpus 0 "$container_id" >/dev/null
 run_in_candidate \
   leapview deploy \
   --project /var/lib/leapview/qualification-recovery/project-a/leapview.yaml \
@@ -317,6 +319,7 @@ releaseFinalization=true
 
 stage="deployment activation interruption"
 deploy_b_log="$evidence_dir/recovery-deployment-activation.log"
+docker update --cpus 0.25 "$container_id" >/dev/null
 run_in_candidate \
   leapview deploy \
   --project /var/lib/leapview/qualification-recovery/project-b/leapview.yaml \
@@ -344,6 +347,7 @@ done
 kill_candidate
 wait_for_process_exit "$deploy_b_pid"
 
+docker update --cpus 0 "$container_id" >/dev/null
 deployment_after="$work_dir/deployment-after.json"
 wait_for_json \
   "/api/v1/projects/$project_id/deployments/$deployment_id" \

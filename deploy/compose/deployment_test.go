@@ -289,6 +289,40 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 	if !strings.Contains(waitForJSON, "sleep 1") {
 		t.Error("recovery qualification must poll durable job status slowly enough to stay below the shipped API rate limit")
 	}
+	for _, boundary := range []struct {
+		name     string
+		next     string
+		recovery string
+	}{
+		{
+			name:     "release finalization interruption",
+			next:     "deployment activation interruption",
+			recovery: "run_in_candidate",
+		},
+		{
+			name:     "deployment activation interruption",
+			next:     "refresh materialization interruption",
+			recovery: "wait_for_json",
+		},
+	} {
+		start := strings.Index(recovery, `stage="`+boundary.name+`"`)
+		end := strings.Index(recovery, `stage="`+boundary.next+`"`)
+		if start < 0 || end < 0 || start >= end {
+			t.Fatalf("recovery qualification has invalid %s stage boundaries", boundary.name)
+		}
+		stage := recovery[start:end]
+		throttle := strings.Index(stage, `docker update --cpus 0.25 "$container_id"`)
+		launch := strings.Index(stage, "run_in_candidate")
+		kill := strings.Index(stage, "kill_candidate")
+		unthrottle := strings.Index(stage, `docker update --cpus 0 "$container_id"`)
+		recoveryIndex := strings.LastIndex(stage, boundary.recovery)
+		if throttle < 0 || launch < 0 || throttle > launch {
+			t.Errorf("%s must throttle the candidate before launching the interrupted operation", boundary.name)
+		}
+		if kill < 0 || unthrottle < 0 || recoveryIndex < 0 || kill > unthrottle || unthrottle > recoveryIndex {
+			t.Errorf("%s must remove its CPU limit after the kill and before recovery", boundary.name)
+		}
+	}
 	backupStart := strings.Index(recovery, `stage="backup interruption"`)
 	if backupStart < 0 {
 		t.Fatal("recovery qualification is missing the backup interruption stage")
