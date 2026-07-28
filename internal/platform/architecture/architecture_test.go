@@ -1498,6 +1498,8 @@ func TestProductionContainerContractExists(t *testing.T) {
 	for _, want := range []string{
 		"FROM node:24-bookworm@sha256:",
 		"FROM golang:1.25-bookworm@sha256:",
+		"AS go-deps",
+		"FROM go-deps AS sourcegen",
 		"COPY --from=node /usr/local/bin/node /usr/local/bin/node",
 		"COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules",
 		"ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm",
@@ -1515,7 +1517,26 @@ func TestProductionContainerContractExists(t *testing.T) {
 		"bun scripts/generate_visualization_validator.ts",
 		"bun scripts/generate_vega_lite_validator.ts",
 		"bun run build",
-		"FROM sourcegen AS build",
+		"FROM go-deps AS build",
+		"COPY --from=sourcegen /src/internal/access/api/gen ./internal/access/api/gen",
+		"COPY --from=sourcegen /src/internal/agent/api/gen ./internal/agent/api/gen",
+		"COPY --from=sourcegen /src/internal/analytics/api/gen ./internal/analytics/api/gen",
+		"COPY --from=sourcegen /src/internal/dashboard/api/gen ./internal/dashboard/api/gen",
+		"COPY --from=sourcegen /src/internal/app/api/aggregate ./internal/app/api/aggregate",
+		"COPY --from=sourcegen /src/internal/app/api/gen ./internal/app/api/gen",
+		"COPY --from=sourcegen /src/internal/deployment/api/gen ./internal/deployment/api/gen",
+		"COPY --from=sourcegen /src/internal/manageddata/api/gen ./internal/manageddata/api/gen",
+		"COPY --from=sourcegen /src/internal/platform/http/api/gen ./internal/platform/http/api/gen",
+		"COPY --from=sourcegen /src/internal/project/api/gen ./internal/project/api/gen",
+		"COPY --from=sourcegen /src/internal/refresh/api/gen ./internal/refresh/api/gen",
+		"COPY --from=sourcegen /src/internal/release/api/gen ./internal/release/api/gen",
+		"COPY --from=sourcegen /src/internal/workspace/api/gen ./internal/workspace/api/gen",
+		"COPY --from=sourcegen /src/internal/access/ui/signals/models.gen.go ./internal/access/ui/signals/models.gen.go",
+		"COPY --from=sourcegen /src/internal/admin/ui/signals/models.gen.go ./internal/admin/ui/signals/models.gen.go",
+		"COPY --from=sourcegen /src/internal/agent/ui/signals/models.gen.go ./internal/agent/ui/signals/models.gen.go",
+		"COPY --from=sourcegen /src/internal/dashboard/ui/signals/models.gen.go ./internal/dashboard/ui/signals/models.gen.go",
+		"COPY --from=sourcegen /src/internal/workspace/ui/signals/models.gen.go ./internal/workspace/ui/signals/models.gen.go",
+		"COPY --from=sourcegen /src/docs ./docs",
 		"CGO_ENABLED=1 go build",
 		"FROM debian:bookworm-slim@sha256:",
 		"USER leapview",
@@ -1531,6 +1552,13 @@ func TestProductionContainerContractExists(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("Dockerfile missing production container contract fragment %q", want)
 		}
+	}
+	if count := strings.Count(text, "RUN go mod download"); count != 1 {
+		t.Fatalf("Dockerfile downloads Go modules %d times, want one shared dependency stage", count)
+	}
+	const seededModuleCache = "type=cache,id=leapview-go-mod,target=/go/pkg/mod,from=go-deps,source=/go/pkg/mod,sharing=locked"
+	if count := strings.Count(text, seededModuleCache); count != 3 {
+		t.Fatalf("Dockerfile uses the seeded persistent Go module cache %d times, want source generation, map extraction, and compilation", count)
 	}
 
 	ignored, err := os.ReadFile(filepath.Join(root, ".dockerignore"))
@@ -1752,9 +1780,11 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"actions/upload-artifact@",
 		"name: generated-assets",
 		"go-tests:",
-		"name: Go tests",
+		"name: Go tests (${{ matrix.name }})",
 		"needs: prepare",
-		"go test -p 2 ./...",
+		"app_shard:",
+		"go test -p 2 \"${packages[@]}\"",
+		"go run ./internal/app/tools/testshard",
 		"frontend-tests:",
 		"name: Frontend tests",
 		"bun run test:semantic-model-graph",
@@ -1769,12 +1799,27 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...",
 		"production-image:",
 		"name: Production image",
-		"docker build --pull --tag leapview:ci .",
+		"docker/setup-buildx-action@",
+		"docker/build-push-action@",
+		"cache-from: type=gha,scope=production-image",
+		"cache-to: type=gha,mode=max,scope=production-image",
 		"./scripts/smoke_production_image.sh leapview:ci",
+		"cache-from: type=gha,scope=site-image",
+		"cache-to: type=gha,mode=max,scope=site-image",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CI workflow missing production gate fragment %q", want)
 		}
+	}
+	for _, job := range []string{"node-audit", "production-image"} {
+		block := workflowJobBlock(t, text, job)
+		if strings.Contains(block, "needs: prepare") {
+			t.Fatalf("%s must not wait for unrelated generated assets", job)
+		}
+	}
+	deploymentContracts := workflowJobBlock(t, text, "deployment-contracts")
+	if !strings.Contains(deploymentContracts, "cache: false") {
+		t.Fatal("deployment-contracts must not race prepare to populate the shared Go cache")
 	}
 	taskText := string(taskfile)
 	for _, want := range []string{
@@ -1786,6 +1831,10 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"bun audit",
 		"vuln:",
 		"golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...",
+		"test:go:",
+		"task --parallel test:go:packages test:go:app:0 test:go:app:1 test:go:app:2 test:go:app:3",
+		"go list ./... | grep -v '/internal/app$' | xargs go test -p 2",
+		"--shard-count 4",
 	} {
 		if !strings.Contains(taskText, want) {
 			t.Fatalf("Taskfile missing vulnerability gate fragment %q", want)
@@ -1821,6 +1870,31 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 			t.Fatalf("production image smoke script missing fragment %q", want)
 		}
 	}
+}
+
+func workflowJobBlock(t *testing.T, workflow, job string) string {
+	t.Helper()
+	startMarker := "  " + job + ":"
+	lines := strings.Split(workflow, "\n")
+	start := -1
+	for index, line := range lines {
+		if line == startMarker {
+			start = index
+			break
+		}
+	}
+	if start < 0 {
+		t.Fatalf("workflow job %q not found", job)
+	}
+	end := len(lines)
+	for index := start + 1; index < len(lines); index++ {
+		line := lines[index]
+		if strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "    ") && strings.HasSuffix(line, ":") {
+			end = index
+			break
+		}
+	}
+	return strings.Join(lines[start:end], "\n")
 }
 
 func TestSQLCOutputsAreGeneratedBuildInputs(t *testing.T) {
@@ -1861,7 +1935,21 @@ func TestSQLCOutputsAreGeneratedBuildInputs(t *testing.T) {
 		},
 		"Dockerfile": {
 			"./scripts/generate_build_sources.sh",
-			"FROM sourcegen AS build",
+			"FROM go-deps AS build",
+			"COPY --from=sourcegen /src/internal/access/internal/db ./internal/access/internal/db",
+			"COPY --from=sourcegen /src/internal/admin/internal/db ./internal/admin/internal/db",
+			"COPY --from=sourcegen /src/internal/agent/internal/db ./internal/agent/internal/db",
+			"COPY --from=sourcegen /src/internal/analytics/internal/db ./internal/analytics/internal/db",
+			"COPY --from=sourcegen /src/internal/dashboard/internal/db ./internal/dashboard/internal/db",
+			"COPY --from=sourcegen /src/internal/deployment/internal/db ./internal/deployment/internal/db",
+			"COPY --from=sourcegen /src/internal/manageddata/internal/db ./internal/manageddata/internal/db",
+			"COPY --from=sourcegen /src/internal/refresh/internal/db ./internal/refresh/internal/db",
+			"COPY --from=sourcegen /src/internal/release/internal/db ./internal/release/internal/db",
+			"COPY --from=sourcegen /src/internal/servingstate/internal/db ./internal/servingstate/internal/db",
+			"COPY --from=sourcegen /src/internal/workspace/internal/db ./internal/workspace/internal/db",
+			"COPY --from=sourcegen /src/internal/platform/http/cursorsigning/sqlite/cursordb ./internal/platform/http/cursorsigning/sqlite/cursordb",
+			"COPY --from=sourcegen /src/internal/platform/http/idempotency/sqlite/idempotencydb ./internal/platform/http/idempotency/sqlite/idempotencydb",
+			"COPY --from=sourcegen /src/internal/platform/jobs/sqlite/jobdb ./internal/platform/jobs/sqlite/jobdb",
 		},
 	}
 	for name, fragments := range files {
@@ -1914,7 +2002,8 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 			"Check generation is deterministic",
 		},
 		"Dockerfile.site": {
-			"AS sourcegen",
+			"AS go-deps",
+			"FROM go-deps AS sourcegen",
 			"./scripts/generate_build_sources.sh",
 			"go run ./internal/app/tools/clidocgen",
 			"go run ./internal/app/tools/schemadocgen",
@@ -1924,7 +2013,10 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 			"COPY --from=sourcegen /src/web/generated ./web/generated",
 		},
 		"Dockerfile": {
-			"FROM sourcegen AS build",
+			"FROM go-deps AS build",
+			"COPY --from=sourcegen /src/internal/app/config/config_gen.go ./internal/app/config/config_gen.go",
+			"COPY --from=sourcegen /src/internal/app/config/spec/names_gen.go ./internal/app/config/spec/names_gen.go",
+			"COPY --from=sourcegen /src/web/generated ./web/generated",
 		},
 		filepath.Join("scripts", "generate_build_sources.sh"): {
 			"go run ./internal/app/tools/configgen",
@@ -1945,6 +2037,17 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 				t.Errorf("%s missing generated-input contract fragment %q", name, fragment)
 			}
 		}
+	}
+	siteDockerfile, err := os.ReadFile(filepath.Join(root, "Dockerfile.site"))
+	if err != nil {
+		t.Fatalf("read Dockerfile.site: %v", err)
+	}
+	if count := strings.Count(string(siteDockerfile), "RUN go mod download"); count != 1 {
+		t.Fatalf("Dockerfile.site downloads Go modules %d times, want one shared dependency stage", count)
+	}
+	const seededModuleCache = "type=cache,id=leapview-go-mod,target=/go/pkg/mod,from=go-deps,source=/go/pkg/mod,sharing=locked"
+	if count := strings.Count(string(siteDockerfile), seededModuleCache); count != 2 {
+		t.Fatalf("Dockerfile.site uses the seeded persistent Go module cache %d times, want source generation and compilation", count)
 	}
 
 	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))

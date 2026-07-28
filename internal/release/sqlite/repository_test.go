@@ -2,12 +2,14 @@ package sqlite
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"testing"
 
 	"github.com/Yacobolo/leapview/internal/platform"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
+	jobsqlite "github.com/Yacobolo/leapview/internal/platform/jobs/sqlite"
 	"github.com/Yacobolo/leapview/internal/platform/transaction"
 	"github.com/Yacobolo/leapview/internal/release"
 )
@@ -24,7 +26,8 @@ func TestReleaseLifecycleIsIdempotentAndImmutable(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	repo := NewRepository(store.SQLDB())
+	eventRepo := jobsqlite.NewRepository(store.SQLDB())
+	repo := NewRepositoryWithWorkflow(store.SQLDB(), eventRepo)
 	if _, err := store.SQLDB().ExecContext(t.Context(), `INSERT INTO workspaces (id, title, description) VALUES ('sales', 'Sales', '')`); err != nil {
 		t.Fatal(err)
 	}
@@ -66,6 +69,17 @@ func TestReleaseLifecycleIsIdempotentAndImmutable(t *testing.T) {
 	ready, err := repo.CompleteFinalization(t.Context(), created.ProjectID, created.ID, map[string]string{"sales": "sha256:artifact"})
 	if err != nil || ready.Status != release.StatusReady || ready.FinalizedAt == "" {
 		t.Fatalf("CompleteFinalization() = %#v, %v", ready, err)
+	}
+	events, err := eventRepo.ListEvents(t.Context(), "release", created.ID, 0, 10)
+	if err != nil || len(events) != 1 || events[0].EventType != "release.ready" {
+		t.Fatalf("ready events = %#v, %v", events, err)
+	}
+	var readyEvent map[string]any
+	if err := json.Unmarshal(events[0].Data, &readyEvent); err != nil {
+		t.Fatal(err)
+	}
+	if readyEvent["status"] != string(release.StatusReady) || readyEvent["finalizedAt"] == "" {
+		t.Fatalf("ready event data = %#v", readyEvent)
 	}
 	if err := repo.RecordArtifact(t.Context(), release.Artifact{ReleaseID: created.ID, WorkspaceID: "sales", ExpectedDigest: "sha256:artifact", ServingStateID: "state_2", SizeBytes: 1}); !errors.Is(err, release.ErrImmutable) {
 		t.Fatalf("post-finalize artifact error = %v", err)
@@ -132,5 +146,93 @@ func TestBeginFinalizationRollsBackWhenWorkflowCannotBeRecorded(t *testing.T) {
 	}
 	if current.Status != release.StatusDraft {
 		t.Fatalf("status after workflow failure = %q, want draft", current.Status)
+	}
+}
+
+func TestCompleteFinalizationRollsBackWhenReadyEventCannotBeRecorded(t *testing.T) {
+	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "leapview.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	injected := errors.New("injected terminal event failure")
+	repo := NewRepositoryWithWorkflow(store.SQLDB(), failingWorkflowRecorder{err: injected})
+	if _, err := store.SQLDB().ExecContext(t.Context(), `INSERT INTO workspaces (id, title, description) VALUES ('sales', 'Sales', '')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SQLDB().ExecContext(t.Context(), `INSERT INTO serving_states (id, workspace_id, project_id, environment, status, created_by) VALUES ('state_1', 'sales', 'commerce', 'dev', 'pending', 'principal')`); err != nil {
+		t.Fatal(err)
+	}
+	created, err := repo.Create(t.Context(), release.CreateInput{
+		ID: "rel_atomic_ready", ProjectID: "commerce", ProjectDigest: "sha256:project", RequestDigest: "sha256:request",
+		IdempotencyKey: "atomic-ready", CreatedBy: "principal",
+		Workspaces: []release.WorkspaceManifest{{WorkspaceID: "sales", ArtifactDigest: "sha256:artifact"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.AssignArtifactTarget(t.Context(), created.ProjectID, created.ID, "sales", "state_1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RecordArtifact(t.Context(), release.Artifact{ReleaseID: created.ID, WorkspaceID: "sales", ExpectedDigest: "sha256:artifact", ServingStateID: "state_1", SizeBytes: 42}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.BeginFinalization(t.Context(), created.ProjectID, created.ID, jobs.WorkflowIntent{}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := repo.CompleteFinalization(t.Context(), created.ProjectID, created.ID, map[string]string{"sales": "sha256:artifact"}); !errors.Is(err, injected) {
+		t.Fatalf("CompleteFinalization() error = %v, want injected failure", err)
+	}
+	current, err := repo.Get(t.Context(), created.ProjectID, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Status != release.StatusValidating {
+		t.Fatalf("status after terminal event failure = %q, want validating", current.Status)
+	}
+}
+
+func TestFailFinalizationRollsBackWhenFailedEventCannotBeRecorded(t *testing.T) {
+	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "leapview.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	injected := errors.New("injected terminal event failure")
+	repo := NewRepositoryWithWorkflow(store.SQLDB(), failingWorkflowRecorder{err: injected})
+	if _, err := store.SQLDB().ExecContext(t.Context(), `INSERT INTO workspaces (id, title, description) VALUES ('sales', 'Sales', '')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SQLDB().ExecContext(t.Context(), `INSERT INTO serving_states (id, workspace_id, project_id, environment, status, created_by) VALUES ('state_1', 'sales', 'commerce', 'dev', 'pending', 'principal')`); err != nil {
+		t.Fatal(err)
+	}
+	created, err := repo.Create(t.Context(), release.CreateInput{
+		ID: "rel_atomic_failed", ProjectID: "commerce", ProjectDigest: "sha256:project", RequestDigest: "sha256:request",
+		IdempotencyKey: "atomic-failed", CreatedBy: "principal",
+		Workspaces: []release.WorkspaceManifest{{WorkspaceID: "sales", ArtifactDigest: "sha256:artifact"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.AssignArtifactTarget(t.Context(), created.ProjectID, created.ID, "sales", "state_1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RecordArtifact(t.Context(), release.Artifact{ReleaseID: created.ID, WorkspaceID: "sales", ExpectedDigest: "sha256:artifact", ServingStateID: "state_1", SizeBytes: 42}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.BeginFinalization(t.Context(), created.ProjectID, created.ID, jobs.WorkflowIntent{}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := repo.FailFinalization(t.Context(), created.ProjectID, created.ID, errors.New("invalid artifact")); !errors.Is(err, injected) {
+		t.Fatalf("FailFinalization() error = %v, want injected failure", err)
+	}
+	current, err := repo.Get(t.Context(), created.ProjectID, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Status != release.StatusValidating {
+		t.Fatalf("status after terminal event failure = %q, want validating", current.Status)
 	}
 }

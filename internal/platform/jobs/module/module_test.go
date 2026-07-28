@@ -181,6 +181,45 @@ func TestModuleLifecycleIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestModuleRecordsTerminalEventWithoutRegisteredFollowupKind(t *testing.T) {
+	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "jobs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	admission, err := workload.New(workload.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admission.Close()
+	module, err := Build(t.Context(), Config{Database: store.SQLDB(), Admission: testAdmission(admission)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := module.RegisterHandlers(nil); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := store.SQLDB().BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	err = module.RecordWorkflow(t.Context(), tx, jobs.WorkflowIntent{Event: jobs.EventInput{
+		Key: "release.ready", ResourceKind: "release", ResourceID: "release-1",
+		EventType: "release.ready", Data: []byte(`{"status":"ready"}`),
+	}})
+	if err != nil {
+		t.Fatalf("RecordWorkflow() terminal event error = %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	events, err := module.ListEvents(t.Context(), "release", "release-1", 0, 10)
+	if err != nil || len(events) != 1 || events[0].EventType != "release.ready" {
+		t.Fatalf("terminal events = %#v, %v", events, err)
+	}
+}
+
 func TestModuleRejectsUnknownEnqueuedKind(t *testing.T) {
 	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "jobs.db"))
 	if err != nil {

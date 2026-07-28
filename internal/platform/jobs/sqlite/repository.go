@@ -152,6 +152,9 @@ func (r *Repository) RecordWorkflow(ctx context.Context, tx transaction.Transact
 	}); err != nil {
 		return err
 	}
+	if strings.TrimSpace(intent.Job.ID) == "" {
+		return nil
+	}
 	_, err := transactional.Enqueue(ctx, intent.Job)
 	return err
 }

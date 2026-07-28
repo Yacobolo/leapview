@@ -6,21 +6,23 @@ FROM node:24-bookworm@sha256:392e1e23f34da768d8d1f4e502b64f200d3be3465934d4b7930
 # basemap.pmtiles. The generator verifies the pinned digest before accepting it.
 FROM scratch AS mapassetseed
 
-FROM golang:1.25-bookworm@sha256:a9c020ee3d1508c7be5435c262434e3d3fc1d0e76a11afeb9ddae7d60bc86aa4 AS sourcegen
+FROM golang:1.25-bookworm@sha256:a9c020ee3d1508c7be5435c262434e3d3fc1d0e76a11afeb9ddae7d60bc86aa4 AS go-deps
 WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+FROM go-deps AS sourcegen
 
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
     ln -sf ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
-COPY go.mod go.sum ./
-RUN go mod download
-
 COPY . .
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,id=leapview-go-mod,target=/go/pkg/mod,from=go-deps,source=/go/pkg/mod,sharing=locked \
     ./scripts/generate_build_sources.sh && \
     go run ./internal/app/tools/clidocgen && \
     go run ./internal/app/tools/schemadocgen && \
@@ -30,7 +32,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # Keep the large, network-backed map extraction separate so a transient remote
 # failure can be retried without repeating deterministic source generation.
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,id=leapview-go-mod,target=/go/pkg/mod,from=go-deps,source=/go/pkg/mod,sharing=locked \
     --mount=type=bind,from=mapassetseed,source=/,target=/mapasset-seed,ro \
     if [ -f /mapasset-seed/basemap.pmtiles ]; then \
       go run ./internal/app/tools/mapassets --out .data/map-assets --seed-archive /mapasset-seed/basemap.pmtiles; \
@@ -54,7 +56,7 @@ RUN bun scripts/generate_visualization_validator.ts && \
     bun scripts/generate_vega_lite_validator.ts && \
     bun run build
 
-FROM sourcegen AS build
+FROM go-deps AS build
 
 ARG BUILD_VERSION=development
 ARG BUILD_REVISION=unknown
@@ -62,10 +64,53 @@ ARG BUILD_TIME=unknown
 ARG BUILD_DIRTY=true
 ARG BUILD_RELEASE=false
 
+COPY . .
+COPY --from=sourcegen /src/api/gen ./api/gen
+COPY --from=sourcegen /src/internal/access/api/gen ./internal/access/api/gen
+COPY --from=sourcegen /src/internal/agent/api/gen ./internal/agent/api/gen
+COPY --from=sourcegen /src/internal/analytics/api/gen ./internal/analytics/api/gen
+COPY --from=sourcegen /src/internal/dashboard/api/gen ./internal/dashboard/api/gen
+COPY --from=sourcegen /src/internal/deployment/api/gen ./internal/deployment/api/gen
+COPY --from=sourcegen /src/internal/manageddata/api/gen ./internal/manageddata/api/gen
+COPY --from=sourcegen /src/internal/app/api/aggregate ./internal/app/api/aggregate
+COPY --from=sourcegen /src/internal/app/api/gen ./internal/app/api/gen
+COPY --from=sourcegen /src/internal/platform/http/api/gen ./internal/platform/http/api/gen
+COPY --from=sourcegen /src/internal/project/api/gen ./internal/project/api/gen
+COPY --from=sourcegen /src/internal/refresh/api/gen ./internal/refresh/api/gen
+COPY --from=sourcegen /src/internal/release/api/gen ./internal/release/api/gen
+COPY --from=sourcegen /src/internal/workspace/api/gen ./internal/workspace/api/gen
+COPY --from=sourcegen /src/internal/app/cli/gen ./internal/app/cli/gen
+COPY --from=sourcegen /src/internal/app/config/config_gen.go ./internal/app/config/config_gen.go
+COPY --from=sourcegen /src/internal/app/config/spec/names_gen.go ./internal/app/config/spec/names_gen.go
+COPY --from=sourcegen /src/internal/access/internal/db ./internal/access/internal/db
+COPY --from=sourcegen /src/internal/admin/internal/db ./internal/admin/internal/db
+COPY --from=sourcegen /src/internal/agent/internal/db ./internal/agent/internal/db
+COPY --from=sourcegen /src/internal/analytics/internal/db ./internal/analytics/internal/db
+COPY --from=sourcegen /src/internal/dashboard/internal/db ./internal/dashboard/internal/db
+COPY --from=sourcegen /src/internal/deployment/internal/db ./internal/deployment/internal/db
+COPY --from=sourcegen /src/internal/manageddata/internal/db ./internal/manageddata/internal/db
+COPY --from=sourcegen /src/internal/refresh/internal/db ./internal/refresh/internal/db
+COPY --from=sourcegen /src/internal/release/internal/db ./internal/release/internal/db
+COPY --from=sourcegen /src/internal/servingstate/internal/db ./internal/servingstate/internal/db
+COPY --from=sourcegen /src/internal/workspace/internal/db ./internal/workspace/internal/db
+COPY --from=sourcegen /src/internal/platform/db/db.go ./internal/platform/db/db.go
+COPY --from=sourcegen /src/internal/platform/db/models.go ./internal/platform/db/models.go
+COPY --from=sourcegen /src/internal/platform/db/*.sql.go ./internal/platform/db/
+COPY --from=sourcegen /src/internal/platform/http/cursorsigning/sqlite/cursordb ./internal/platform/http/cursorsigning/sqlite/cursordb
+COPY --from=sourcegen /src/internal/platform/http/idempotency/sqlite/idempotencydb ./internal/platform/http/idempotency/sqlite/idempotencydb
+COPY --from=sourcegen /src/internal/platform/jobs/sqlite/jobdb ./internal/platform/jobs/sqlite/jobdb
+COPY --from=sourcegen /src/internal/access/ui/signals/models.gen.go ./internal/access/ui/signals/models.gen.go
+COPY --from=sourcegen /src/internal/admin/ui/signals/models.gen.go ./internal/admin/ui/signals/models.gen.go
+COPY --from=sourcegen /src/internal/agent/ui/signals/models.gen.go ./internal/agent/ui/signals/models.gen.go
+COPY --from=sourcegen /src/internal/dashboard/ui/signals/models.gen.go ./internal/dashboard/ui/signals/models.gen.go
+COPY --from=sourcegen /src/internal/workspace/ui/signals/models.gen.go ./internal/workspace/ui/signals/models.gen.go
+COPY --from=sourcegen /src/docs ./docs
+COPY --from=sourcegen /src/schemas ./schemas
+COPY --from=sourcegen /src/web/generated ./web/generated
 COPY --from=web /src/static ./static
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,id=leapview-go-mod,target=/go/pkg/mod,from=go-deps,source=/go/pkg/mod,sharing=locked \
     BUILD_LDFLAGS="-s -w \
       -X github.com/Yacobolo/leapview/internal/platform/buildinfo.version=${BUILD_VERSION} \
       -X github.com/Yacobolo/leapview/internal/platform/buildinfo.revision=${BUILD_REVISION} \

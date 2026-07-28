@@ -23,21 +23,18 @@ env:
   IMAGE_NAME: ghcr.io/yacobolo/leapview
 
 jobs:
-  image:
-    name: Build attested candidate
+  identity:
+    name: Resolve candidate identity
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 10
     permissions:
       contents: read
-      packages: write
-      attestations: write
-      id-token: write
     outputs:
       version: ${{ steps.identity.outputs.version }}
       revision: ${{ steps.identity.outputs.revision }}
       build_time: ${{ steps.identity.outputs.build_time }}
       release_tag: ${{ steps.identity.outputs.release_tag }}
-      image_digest: ${{ steps.publish.outputs.digest }}
+      release: ${{ steps.identity.outputs.release }}
 
     steps:
       - name: Checkout candidate source
@@ -48,6 +45,8 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           RELEASE_TAG: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           canonical_version="$(tr -d '[:space:]' < VERSION)"
           package_version="$(python3 -c 'import json; print(json.load(open("package.json"))["version"])')"
@@ -68,6 +67,10 @@ jobs:
             version="$canonical_version"
             release_tag="$RELEASE_TAG"
             is_release=true
+          else
+            version="$canonical_version"
+            release_tag="candidate-${RUN_ID}-${RUN_ATTEMPT}"
+            is_release=true
           fi
           {
             echo "version=$version"
@@ -77,14 +80,112 @@ jobs:
             echo "release=$is_release"
           } >> "$GITHUB_OUTPUT"
 
+  image-platform:
+    name: Build candidate image (${{ matrix.arch }})
+    needs: identity
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+
+    steps:
+      - name: Checkout candidate source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish native image
+        id: publish
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:candidate-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.version=${{ needs.identity.outputs.version }}
+            org.opencontainers.image.revision=${{ needs.identity.outputs.revision }}
+            org.opencontainers.image.created=${{ needs.identity.outputs.build_time }}
+            dev.leapview.build.dirty=false
+            dev.leapview.build.release=${{ needs.identity.outputs.release }}
+          build-args: |
+            BUILD_VERSION=${{ needs.identity.outputs.version }}
+            BUILD_REVISION=${{ needs.identity.outputs.revision }}
+            BUILD_TIME=${{ needs.identity.outputs.build_time }}
+            BUILD_DIRTY=false
+            BUILD_RELEASE=${{ needs.identity.outputs.release }}
+          cache-from: type=gha,scope=release-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.arch }}
+          sbom: true
+          provenance: mode=max
+
+      - name: Attest native image provenance
+        uses: actions/attest@f6bf1532d7d6793fce74eac584813a8eee607999 # v4
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          push-to-registry: true
+
+      - name: Record native image digest
+        env:
+          IMAGE_DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |
+          mkdir -p platform-digests
+          printf '%s@%s\n' "$IMAGE_NAME" "$IMAGE_DIGEST" > "platform-digests/${{ matrix.arch }}.txt"
+
+      - name: Upload native image digest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-platform-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
+          retention-days: 7
+          if-no-files-found: error
+          path: platform-digests/${{ matrix.arch }}.txt
+
+  image:
+    name: Assemble attested candidate
+    needs: [identity, image-platform]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    outputs:
+      version: ${{ needs.identity.outputs.version }}
+      revision: ${{ needs.identity.outputs.revision }}
+      build_time: ${{ needs.identity.outputs.build_time }}
+      release_tag: ${{ needs.identity.outputs.release_tag }}
+      image_digest: ${{ steps.assemble.outputs.digest }}
+
+    steps:
+      - name: Checkout candidate source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
           cache: true
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
@@ -108,53 +209,51 @@ jobs:
             type=raw,value=${{ inputs.image_tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
             type=sha,prefix=sha-
 
-      - name: Build and publish image
-        id: publish
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+      - name: Download native image digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.metadata.outputs.tags }}
-          labels: |
-            ${{ steps.metadata.outputs.labels }}
-            org.opencontainers.image.version=${{ steps.identity.outputs.version }}
-            org.opencontainers.image.revision=${{ steps.identity.outputs.revision }}
-            org.opencontainers.image.created=${{ steps.identity.outputs.build_time }}
-            dev.leapview.build.dirty=false
-            dev.leapview.build.release=${{ steps.identity.outputs.release }}
-          build-args: |
-            BUILD_VERSION=${{ steps.identity.outputs.version }}
-            BUILD_REVISION=${{ steps.identity.outputs.revision }}
-            BUILD_TIME=${{ steps.identity.outputs.build_time }}
-            BUILD_DIRTY=false
-            BUILD_RELEASE=${{ steps.identity.outputs.release }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          sbom: true
-          provenance: mode=max
+          pattern: release-platform-${{ github.run_id }}-${{ github.run_attempt }}-*
+          path: platform-digests
+          merge-multiple: true
+
+      - name: Assemble multi-platform image
+        id: assemble
+        env:
+          IMAGE_TAGS: ${{ steps.metadata.outputs.tags }}
+        run: |
+          mapfile -t image_references < <(sort -u platform-digests/*.txt)
+          test "${#image_references[@]}" -eq 2
+          tag_args=()
+          while IFS= read -r image_tag; do
+            [ -n "$image_tag" ] && tag_args+=(--tag "$image_tag")
+          done <<< "$IMAGE_TAGS"
+          test "${#tag_args[@]}" -gt 0
+          docker buildx imagetools create "${tag_args[@]}" "${image_references[@]}"
+          primary_tag="$(head -n 1 <<< "$IMAGE_TAGS")"
+          digest="sha256:$(docker buildx imagetools inspect --raw "$primary_tag" | sha256sum | awk '{print $1}')"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Attest image provenance
         uses: actions/attest@f6bf1532d7d6793fce74eac584813a8eee607999 # v4
         with:
           subject-name: ${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.publish.outputs.digest }}
+          subject-digest: ${{ steps.assemble.outputs.digest }}
           push-to-registry: true
 
       - name: Verify anonymous image pull
         env:
-          IMAGE_REFERENCE: ${{ env.IMAGE_NAME }}@${{ steps.publish.outputs.digest }}
+          IMAGE_REFERENCE: ${{ env.IMAGE_NAME }}@${{ steps.assemble.outputs.digest }}
         run: |
           docker logout ghcr.io
           docker buildx imagetools inspect "$IMAGE_REFERENCE"
 
       - name: Verify published runtime identity
         env:
-          EXPECTED_VERSION: ${{ steps.identity.outputs.version }}
-          EXPECTED_REVISION: ${{ steps.identity.outputs.revision }}
-          EXPECTED_BUILD_TIME: ${{ steps.identity.outputs.build_time }}
-          EXPECTED_RELEASE: ${{ steps.identity.outputs.release }}
-          IMAGE_REFERENCE: ${{ env.IMAGE_NAME }}@${{ steps.publish.outputs.digest }}
+          EXPECTED_VERSION: ${{ needs.identity.outputs.version }}
+          EXPECTED_REVISION: ${{ needs.identity.outputs.revision }}
+          EXPECTED_BUILD_TIME: ${{ needs.identity.outputs.build_time }}
+          EXPECTED_RELEASE: ${{ needs.identity.outputs.release }}
+          IMAGE_REFERENCE: ${{ env.IMAGE_NAME }}@${{ steps.assemble.outputs.digest }}
         run: |
           docker pull "$IMAGE_REFERENCE"
           docker run --rm "$IMAGE_REFERENCE" version --json > runtime-identity.json
@@ -181,15 +280,14 @@ jobs:
           PY
 
       - name: Build candidate Compose archives
-        if: github.event_name == 'push'
         env:
-          BUILD_VERSION: ${{ steps.identity.outputs.version }}
-          BUILD_REVISION: ${{ steps.identity.outputs.revision }}
-          BUILD_TIME: ${{ steps.identity.outputs.build_time }}
+          BUILD_VERSION: ${{ needs.identity.outputs.version }}
+          BUILD_REVISION: ${{ needs.identity.outputs.revision }}
+          BUILD_TIME: ${{ needs.identity.outputs.build_time }}
           BUILD_DIRTY: "false"
-          BUILD_RELEASE: "true"
-          IMAGE_REFERENCE: ${{ env.IMAGE_NAME }}@${{ steps.publish.outputs.digest }}
-          RELEASE_TAG: ${{ steps.identity.outputs.release_tag }}
+          BUILD_RELEASE: ${{ needs.identity.outputs.release }}
+          IMAGE_REFERENCE: ${{ env.IMAGE_NAME }}@${{ steps.assemble.outputs.digest }}
+          RELEASE_TAG: ${{ needs.identity.outputs.release_tag }}
         run: |
           printf '%s\n' "$IMAGE_REFERENCE" > image-reference.txt
           python3 - <<'PY'
@@ -259,10 +357,9 @@ jobs:
           done
 
       - name: Upload unpublished candidate
-        if: github.event_name == 'push'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: release-candidate-${{ steps.identity.outputs.release_tag }}
+          name: release-candidate-${{ needs.identity.outputs.release_tag }}
           retention-days: 7
           if-no-files-found: error
           path: |
@@ -272,11 +369,10 @@ jobs:
             dist/*.tar.gz.sha256
 
       - name: Record immutable reference
-        run: echo '${{ env.IMAGE_NAME }}@${{ steps.publish.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"
+        run: echo '${{ env.IMAGE_NAME }}@${{ steps.assemble.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"
 
   qualify:
     name: Pre-publication qualification (${{ matrix.arch }})
-    if: github.event_name == 'push'
     needs: image
     strategy:
       fail-fast: false
