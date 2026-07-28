@@ -342,7 +342,7 @@ func TestAttackRoutesExposeControlledHostileBehaviors(t *testing.T) {
 		payload string
 	}{
 		{id: "navigation.blob", payload: "URL.createObjectURL"},
-		{id: "scheme.deep-link-injection", payload: "leapview://open"},
+		{id: "scheme.deep-link-injection", payload: "leapview-desktop://open"},
 	} {
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/attack/"+attack.id, nil))

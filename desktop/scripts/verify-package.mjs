@@ -2,6 +2,7 @@ import {
   access,
   mkdtemp,
   readdir,
+  readFile,
   rm,
 } from "node:fs/promises";
 import { constants } from "node:fs";
@@ -59,6 +60,20 @@ const asarPath = join(resources, "app.asar");
 await access(appPath, constants.R_OK);
 await access(asarPath, constants.R_OK);
 await expectMissing(join(resources, "app"));
+if (process.platform === "darwin") {
+  const information = await readFile(
+    join(appPath, "Contents", "Info.plist"),
+    "utf8",
+  );
+  if (
+    !information.includes("<string>LeapView Desktop</string>") ||
+    !information.includes("<string>leapview-desktop</string>")
+  ) {
+    throw new Error(
+      "packaged macOS application is missing the desktop URL handler",
+    );
+  }
+}
 
 const wire = await getCurrentFuseWire(appPath);
 if (wire.version !== FuseVersion.V1) {
@@ -112,6 +127,7 @@ for (const required of [
   "/dist/files/inter-vietnamese-wght-normal.woff2",
   "/dist/src/main.js",
   "/dist/src/auth.js",
+  "/dist/src/deep-link.js",
   "/dist/src/remote-lifecycle.js",
   "/dist/src/security/remote-policy.mjs",
 ]) {

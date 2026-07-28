@@ -44,6 +44,33 @@ HTTPS and an exact canonical origin.
 - Opening a disconnected or expired profile starts a fresh system-browser
   authentication. Existing valid sessions open without another prompt.
 
+## Desktop links
+
+Packaged applications register the separate `leapview-desktop` operating-system
+scheme. The initial contract is intentionally narrow:
+
+```text
+leapview-desktop://open?origin=https%3A%2F%2Fanalytics.company.com&path=%2Fworkspaces%2Fsales%2Fdashboards%2Frevenue
+```
+
+- `origin` must be a canonical HTTPS origin. Unpackaged development builds also
+  accept explicit loopback HTTP origins.
+- `path` may target `/`, the workspace catalog, one workspace, one dashboard,
+  or one dashboard page. Query strings, fragments, admin/data/asset routes,
+  encoded separators, and traversal are rejected.
+- A link for an exact saved origin re-verifies the server identity before
+  opening the route in that profile's isolated session.
+- A cold-start or macOS `open-url` link for an unknown origin requires native
+  confirmation before discovery and onboarding. A secondary process can never
+  onboard an unknown origin.
+- LeapView holds the Electron single-instance lock. Valid secondary-launch
+  links are bounded, serialized, and forwarded to the primary process; invalid
+  or ambiguous arguments fail closed in the trusted shell.
+
+The external scheme is deliberately different from the privileged
+`leapview://app` connection shell. No operating-system input is loaded as
+trusted application content.
+
 ## Security boundary
 
 - The trusted connection screen is served from `leapview://app` with no

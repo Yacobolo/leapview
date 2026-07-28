@@ -30,6 +30,12 @@ const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
     executableName: "LeapView",
+    protocols: [
+      {
+        name: "LeapView Desktop",
+        schemes: ["leapview-desktop"],
+      },
+    ],
     ignore: [
       /^\/(?!dist(?:\/|$)|package\.json$).+/u,
     ],

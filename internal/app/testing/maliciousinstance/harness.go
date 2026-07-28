@@ -292,7 +292,9 @@ func (h *Harness) serveAttackPage(w http.ResponseWriter, id string) {
         case "popup.cross-origin": window.open(externalTarget, "_blank"); break;
         case "scheme.custom": window.location.href = "leapview-harness://untrusted?command=run"; break;
         case "scheme.deep-link-injection":
-          window.location.href = "leapview://open?url=" + encodeURIComponent(externalTarget) + "&action=run";
+          window.location.href = "leapview-desktop://open?origin=" +
+            encodeURIComponent(new URL(externalTarget).origin) +
+            "&path=" + encodeURIComponent("/workspaces");
           break;
         case "permission.camera": await navigator.mediaDevices.getUserMedia({video:true}); break;
         case "permission.microphone": await navigator.mediaDevices.getUserMedia({audio:true}); break;

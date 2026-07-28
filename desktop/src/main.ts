@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import {
   app,
@@ -15,6 +15,13 @@ import {
   desktopSessionAvailable,
   disconnectDesktopProfile,
 } from "./auth.js";
+import {
+  DeepLinkDispatcher,
+  DESKTOP_DEEP_LINK_SCHEME,
+  routeDesktopDeepLink,
+  type DeepLinkRejection,
+  type DesktopDeepLink,
+} from "./deep-link.js";
 import { discoverInstance } from "./discovery.js";
 import { ProfileStore, type Profile } from "./profiles.js";
 import {
@@ -50,41 +57,65 @@ protocol.registerSchemesAsPrivileged([
 app.enableSandbox();
 
 let shellWindow: BrowserWindow | null = null;
-let trustedUI: TrustedUI;
+let trustedUI: TrustedUI | null = null;
 const remoteWindows = new Map<string, BrowserWindow>();
 const authenticationTransactions = new Map<string, Promise<void>>();
 const configuredSessions = new WeakSet<Session>();
 const configuredSessionOrigins = new WeakMap<Session, string>();
 const externalApprovals = new Set<string>();
-let allowLoopbackHTTP = false;
+const allowLoopbackHTTP = !app.isPackaged;
+const deepLinks = new DeepLinkDispatcher({
+  allowLoopbackHTTP,
+  onRejected: reportDeepLinkRejection,
+});
+let pendingDeepLinkNotice: {
+  state: "error";
+  kind: "error";
+  message: string;
+} | undefined;
 let profiles: ProfileStore;
 
-app.on(
-  "certificate-error",
-  (event, _contents, _url, _error, _certificate, callback) => {
+const primaryInstance = app.requestSingleInstanceLock();
+if (!primaryInstance) {
+  app.quit();
+} else {
+  registerDeepLinkProtocolClient();
+  deepLinks.acceptArguments(process.argv, "cold-start");
+  app.on("open-url", (event, url) => {
     event.preventDefault();
-    callback(false);
-  },
-);
-
-void app.whenReady().then(start).catch((error: unknown) => {
-  console.error("LeapView Desktop failed to start", error);
-  app.exit(1);
-});
-
-app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createShellWindow();
-  }
-});
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
-});
+    if (!deepLinks.acceptURL(url, "open-url")) {
+      focusTrustedShell();
+    }
+  });
+  app.on("second-instance", (_event, arguments_) => {
+    if (!deepLinks.acceptArguments(arguments_, "second-instance")) {
+      focusTrustedShell();
+    }
+  });
+  app.on(
+    "certificate-error",
+    (event, _contents, _url, _error, _certificate, callback) => {
+      event.preventDefault();
+      callback(false);
+    },
+  );
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createShellWindow();
+    }
+  });
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") {
+      app.quit();
+    }
+  });
+  void app.whenReady().then(start).catch((error: unknown) => {
+    console.error("LeapView Desktop failed to start", error);
+    app.exit(1);
+  });
+}
 
 async function start(): Promise<void> {
-  allowLoopbackHTTP = !app.isPackaged;
   profiles = new ProfileStore(join(app.getPath("userData"), "profiles.json"));
   const trustedAssets = await loadTrustedUIAssets();
   trustedUI = new TrustedUI(
@@ -103,26 +134,55 @@ async function start(): Promise<void> {
   });
   configureSessionOnce(trustedSession);
   await trustedSession.protocol.handle(TRUSTED_SCHEME, (request) =>
-    trustedUI.handle(request),
+    trustedUI?.handle(request) ?? new Response(null, { status: 503 }),
   );
+  if (pendingDeepLinkNotice !== undefined) {
+    trustedUI.reportNotice(pendingDeepLinkNotice);
+    pendingDeepLinkNotice = undefined;
+  }
   createShellWindow();
+  deepLinks.attach((request, source) =>
+    routeDesktopDeepLink(request, source, {
+      listProfiles: () => profiles.list(),
+      openKnown: (profile, path) => connectProfileAtPath(profile.id, path),
+      confirmUnknown: confirmUnknownDeepLink,
+      connectUnknown: (candidate) =>
+        connectOriginAtPath(candidate.origin, candidate.path),
+      rejectUnknown: reportUnknownSecondaryDeepLink,
+    }),
+  );
 }
 
 async function connectOrigin(rawOrigin: string): Promise<void> {
+  await connectOriginAtPath(rawOrigin, "/");
+}
+
+async function connectOriginAtPath(
+  rawOrigin: string,
+  path: string,
+): Promise<void> {
   const origin = parseConfiguredOrigin(rawOrigin, { allowLoopbackHTTP });
   const discovery = await discover(origin);
   const profile = await profiles.upsertFromDiscovery(discovery);
-  await openRemoteWindow(profile);
+  await openRemoteWindow(profile, path);
 }
 
 async function connectProfile(profileID: string): Promise<void> {
+  const profile = await savedProfile(profileID);
+  await connectProfileAtPath(profile.id, profile.lastSafePath);
+}
+
+async function connectProfileAtPath(
+  profileID: string,
+  path: string,
+): Promise<void> {
   const profile = await savedProfile(profileID);
   const origin = parseConfiguredOrigin(profile.canonicalOrigin, {
     allowLoopbackHTTP,
   });
   const discovery = await discover(origin);
   const verifiedProfile = await profiles.upsertFromDiscovery(discovery);
-  await openRemoteWindow(verifiedProfile);
+  await openRemoteWindow(verifiedProfile, path);
 }
 
 async function disconnectProfile(profileID: string): Promise<void> {
@@ -182,9 +242,14 @@ async function discover(origin: string) {
   }
 }
 
-async function openRemoteWindow(profile: Profile): Promise<void> {
+async function openRemoteWindow(
+  profile: Profile,
+  path: string = profile.lastSafePath,
+): Promise<void> {
+  const target = exactProfileURL(profile, path);
   const existing = remoteWindows.get(profile.id);
   if (existing !== undefined && !existing.isDestroyed()) {
+    await existing.loadURL(target);
     existing.show();
     existing.focus();
     return;
@@ -227,7 +292,6 @@ async function openRemoteWindow(profile: Profile): Promise<void> {
   });
   remote.once("ready-to-show", () => remote.show());
   remote.once("closed", () => remoteWindows.delete(profile.id));
-  const target = new URL(profile.lastSafePath, profile.canonicalOrigin).toString();
   try {
     await remote.loadURL(target);
   } catch (error) {
@@ -238,6 +302,19 @@ async function openRemoteWindow(profile: Profile): Promise<void> {
       cause: error,
     });
   }
+}
+
+function exactProfileURL(profile: Profile, path: string): string {
+  const target = new URL(path, profile.canonicalOrigin);
+  if (
+    !path.startsWith("/") ||
+    path.startsWith("//") ||
+    target.origin !== profile.canonicalOrigin ||
+    target.hash !== ""
+  ) {
+    throw new Error("LeapView route is not safe for the saved instance.");
+  }
+  return target.toString();
 }
 
 function profilePartition(profile: Profile): string {
@@ -285,6 +362,85 @@ async function ensureAuthenticated(
     if (authenticationTransactions.get(profile.id) === transaction) {
       authenticationTransactions.delete(profile.id);
     }
+  }
+}
+
+function registerDeepLinkProtocolClient(): void {
+  const registered =
+    process.defaultApp && process.argv[1] !== undefined
+      ? app.setAsDefaultProtocolClient(
+          DESKTOP_DEEP_LINK_SCHEME,
+          process.execPath,
+          [resolve(process.argv[1])],
+        )
+      : app.setAsDefaultProtocolClient(DESKTOP_DEEP_LINK_SCHEME);
+  if (!registered) {
+    console.warn("LeapView Desktop protocol registration was unavailable.");
+  }
+}
+
+async function confirmUnknownDeepLink(
+  request: DesktopDeepLink,
+): Promise<boolean> {
+  focusTrustedShell();
+  const options: Electron.MessageBoxOptions = {
+    type: "question",
+    buttons: ["Cancel", "Add instance"],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+    title: "Add LeapView instance",
+    message: "This link targets an instance not saved on this device.",
+    detail: `${request.origin}\n\nOpen ${request.path} after verifying and adding this instance?`,
+  };
+  const result =
+    shellWindow !== null && !shellWindow.isDestroyed()
+      ? await dialog.showMessageBox(shellWindow, options)
+      : await dialog.showMessageBox(options);
+  return result.response === 1;
+}
+
+function reportUnknownSecondaryDeepLink(): void {
+  reportTrustedShellNotice(
+    "This link targets an instance that is not saved on this device. Add the instance in LeapView before opening the link again.",
+  );
+}
+
+function reportDeepLinkRejection(rejection: DeepLinkRejection): void {
+  const message =
+    rejection === "overloaded"
+      ? "Too many LeapView links are waiting. Finish the current action and try again."
+      : rejection === "handling-failed"
+        ? "LeapView could not open the link safely. Open the saved instance and try the route again."
+        : "LeapView rejected an invalid or ambiguous desktop link.";
+  reportTrustedShellNotice(message);
+}
+
+function reportTrustedShellNotice(message: string): void {
+  const notice = {
+    kind: "error" as const,
+    state: "error" as const,
+    message,
+  };
+  if (trustedUI === null) {
+    pendingDeepLinkNotice = notice;
+    return;
+  }
+  trustedUI.reportNotice(notice);
+  focusTrustedShell(true);
+}
+
+function focusTrustedShell(reload = false): void {
+  if (!app.isReady()) {
+    return;
+  }
+  createShellWindow();
+  if (
+    reload &&
+    shellWindow !== null &&
+    !shellWindow.isDestroyed()
+  ) {
+    void shellWindow.loadURL("leapview://app/");
   }
 }
 
@@ -440,7 +596,7 @@ function handleRemoteFailure(
     return;
   }
   remote.destroy();
-  trustedUI.reportNotice({
+  trustedUI?.reportNotice({
     kind: "error",
     state: failure.state,
     message: failure.message,

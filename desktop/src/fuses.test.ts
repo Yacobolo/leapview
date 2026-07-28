@@ -1,7 +1,10 @@
 import { expect, test } from "bun:test";
 import { FuseV1Options, FuseVersion } from "@electron/fuses";
 
-import { createFuseConfig, fuseConfig } from "../forge.config.js";
+import forgeConfig, {
+  createFuseConfig,
+  fuseConfig,
+} from "../forge.config.js";
 
 test("packaged Electron binaries use the complete fail-closed fuse policy", () => {
   expect(fuseConfig.version).toBe(FuseVersion.V1);
@@ -41,4 +44,13 @@ test("ASAR integrity follows Electron's supported desktop platforms", () => {
       FuseV1Options.EnableEmbeddedAsarIntegrityValidation
     ],
   ).toBe(false);
+});
+
+test("packaged applications declare the isolated desktop deep-link scheme", () => {
+  expect(forgeConfig.packagerConfig?.protocols).toEqual([
+    {
+      name: "LeapView Desktop",
+      schemes: ["leapview-desktop"],
+    },
+  ]);
 });

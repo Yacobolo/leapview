@@ -199,7 +199,7 @@ test("remote contents enforce exact-origin main-frame navigation and deny popups
     "file:///etc/passwd",
     "data:text/html,hostile",
     "blob:https://analytics.company.com/id",
-    "leapview://open?instance=https://attacker.example",
+    "leapview-desktop://open?origin=https%3A%2F%2Fattacker.example&path=%2Fworkspaces",
   ]) {
     const event = preventableEvent();
     contents.emit("will-navigate", event, { url: candidate, isMainFrame: true });
