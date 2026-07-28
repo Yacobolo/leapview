@@ -418,6 +418,7 @@ jobs:
           if-no-files-found: warn
           path: |
             ${{ runner.temp }}/installed-candidate-evidence/qualification-report.json
+            ${{ runner.temp }}/installed-candidate-evidence/performance-report.json
             ${{ runner.temp }}/installed-candidate-evidence/recovery-report.json
             ${{ runner.temp }}/installed-candidate-evidence/recovery-events.json
             ${{ runner.temp }}/installed-candidate-evidence/runtime-identity.json

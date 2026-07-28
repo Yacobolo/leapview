@@ -178,6 +178,8 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 	script := read(t, filepath.Join(root, "deploy", "compose", "qualification", "qualify.sh"))
 	recovery := read(t, filepath.Join(root, "deploy", "compose", "qualification", "recover.sh"))
 	browser := read(t, filepath.Join(root, "deploy", "compose", "qualification", "browser.mjs"))
+	performance := read(t, filepath.Join(root, "deploy", "compose", "qualification", "performance.mjs"))
+	performancePolicy := read(t, filepath.Join(root, "deploy", "compose", "qualification", "performance-policy.json"))
 	compatibilityPolicy := read(t, filepath.Join(root, "deploy", "compose", "qualification", "v0.1.0-policy.json"))
 	runbook := read(t, filepath.Join(root, "deploy", "compose", "QUALIFICATION.md"))
 	readme := read(t, filepath.Join(root, "deploy", "compose", "README.md"))
@@ -245,6 +247,8 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		"auditedDenial",
 		"runtime-identity.json",
 		"qualification-report.json",
+		"performance-report.json",
+		"performanceBudgets",
 		"./qualification/recover.sh",
 		"recovery-report.json",
 		"v010FreshInstallPolicy",
@@ -255,6 +259,13 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		if !strings.Contains(script, required) {
 			t.Errorf("qualification script missing tester assertion %q", required)
 		}
+	}
+	if strings.Contains(performance, "setInterval(") ||
+		strings.Count(performance, "metricSamples.push(await metricSnapshot())") < 7 {
+		t.Error("performance qualification must use bounded phase snapshots instead of exceeding the shipped metrics rate limit")
+	}
+	if !strings.Contains(performance, "{ mode: 0o644 }") {
+		t.Error("performance qualification report must be readable by the hosted artifact uploader")
 	}
 	for _, required := range []string{
 		"managedUpload",
@@ -305,20 +316,28 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 	if !strings.Contains(waitForJSON, "sleep 1") {
 		t.Error("recovery qualification must poll durable job status slowly enough to stay below the shipped API rate limit")
 	}
+	if strings.Contains(recovery, "sleep 0.025") || strings.Count(recovery, "sleep 0.5") < 3 {
+		t.Error("recovery qualification must observe upload, release, and deployment boundaries within the shipped 120-request API limit")
+	}
 	for _, boundary := range []struct {
 		name     string
 		next     string
 		recovery string
+		throttle string
+		kill     string
 	}{
 		{
 			name:     "release finalization interruption",
 			next:     "deployment activation interruption",
 			recovery: "run_in_candidate",
+			kill:     "kill_candidate",
 		},
 		{
 			name:     "deployment activation interruption",
 			next:     "refresh materialization interruption",
 			recovery: "wait_for_json",
+			throttle: `docker update --cpus 0.25 "$container_id"`,
+			kill:     "kill_candidate",
 		},
 	} {
 		start := strings.Index(recovery, `stage="`+boundary.name+`"`)
@@ -327,17 +346,33 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 			t.Fatalf("recovery qualification has invalid %s stage boundaries", boundary.name)
 		}
 		stage := recovery[start:end]
-		throttle := strings.Index(stage, `docker update --cpus 0.25 "$container_id"`)
 		launch := strings.Index(stage, "run_in_candidate")
-		kill := strings.Index(stage, "kill_candidate")
-		unthrottle := strings.Index(stage, `docker update --cpus 0 "$container_id"`)
+		kill := strings.Index(stage, boundary.kill)
 		recoveryIndex := strings.LastIndex(stage, boundary.recovery)
-		if throttle < 0 || launch < 0 || throttle > launch {
-			t.Errorf("%s must throttle the candidate before launching the interrupted operation", boundary.name)
+		if boundary.throttle == "" {
+			if strings.Contains(stage, "docker update --cpus") {
+				t.Errorf("%s must not depend on CPU throttling to expose a durable release boundary", boundary.name)
+			}
+		} else {
+			throttle := strings.Index(stage, boundary.throttle)
+			unthrottle := strings.Index(stage, `docker update --cpus 0 "$container_id"`)
+			if throttle < 0 || launch < 0 || throttle > launch {
+				t.Errorf("%s must throttle the candidate before launching the interrupted operation", boundary.name)
+			}
+			if kill < 0 || unthrottle < 0 || recoveryIndex < 0 || kill > unthrottle || unthrottle > recoveryIndex {
+				t.Errorf("%s must remove its CPU limit after the kill and before recovery", boundary.name)
+			}
 		}
-		if kill < 0 || unthrottle < 0 || recoveryIndex < 0 || kill > unthrottle || unthrottle > recoveryIndex {
-			t.Errorf("%s must remove its CPU limit after the kill and before recovery", boundary.name)
+		if launch < 0 || kill < 0 || recoveryIndex < 0 || launch > kill || kill > recoveryIndex {
+			t.Errorf("%s must kill the candidate after launch and recover afterward", boundary.name)
 		}
+	}
+	releaseStart := strings.Index(recovery, `stage="release finalization interruption"`)
+	releaseEnd := strings.Index(recovery, `stage="deployment activation interruption"`)
+	releaseStage := recovery[releaseStart:releaseEnd]
+	if !strings.Contains(releaseStage, "release-ids-before.json") ||
+		!strings.Contains(releaseStage, `.status == "draft" or .status == "validating"`) {
+		t.Error("release interruption must identify a newly created draft or validating release instead of relying on a transient state")
 	}
 	backupStart := strings.Index(recovery, `stage="backup interruption"`)
 	if backupStart < 0 {
@@ -363,6 +398,9 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 	} {
 		if !strings.Contains(workflow.contents, "recovery-report.json") {
 			t.Errorf("%s workflow does not retain the bounded recovery report", workflow.name)
+		}
+		if !strings.Contains(workflow.contents, "performance-report.json") {
+			t.Errorf("%s workflow does not retain the candidate performance baseline", workflow.name)
 		}
 	}
 	if strings.Contains(script, "${run_suffix,,}") {
@@ -394,6 +432,40 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 	} {
 		if !strings.Contains(browser, required) {
 			t.Errorf("browser qualification missing motion-independent interaction %q", required)
+		}
+	}
+	for _, required := range []string{
+		"coldDashboardReadyMs",
+		"warmDashboardReadyMs",
+		"filterToSettleMs",
+		"tableInteractionMs",
+		"governedQueryMs",
+		"refreshMs",
+		"concurrentQueryMs",
+		"process_resident_memory_bytes",
+		"process_cpu_seconds_total",
+		"go_goroutines",
+		"leapview_duckdb_connections_open",
+		"comparePerformance",
+		"evaluatePerformance",
+	} {
+		if !strings.Contains(performance, required) {
+			t.Errorf("performance qualification missing release budget evidence %q", required)
+		}
+	}
+	for _, required := range []string{
+		`"minimumLogicalCPUs"`,
+		`"minimumMemoryBytes"`,
+		`"coldDashboardReadyP95Ms"`,
+		`"filterToSettleP95Ms": 5000`,
+		`"tableInteractionP95Ms": 2000`,
+		`"peakResidentMemoryBytes"`,
+		`"temporaryDiskGrowthBytesMax"`,
+		`"maxRegressionRatio"`,
+		`"minimumMeaningfulLatencyDeltaMs"`,
+	} {
+		if !strings.Contains(performancePolicy, required) {
+			t.Errorf("performance policy missing explicit contract %q", required)
 		}
 	}
 
