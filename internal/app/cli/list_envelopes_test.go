@@ -15,44 +15,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func TestAgentConversationsDecodesEnvelopePreservingJSONOutput(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/agent/conversations" {
-			t.Fatalf("path = %s", r.URL.Path)
-		}
-		writeCLIJSON(t, w, map[string]any{
-			"items": []map[string]any{{
-				"id":          "conv_1",
-				"principalId": "prn_1",
-				"title":       "Ask",
-				"status":      "active",
-				"createdAt":   "2026-01-02T15:04:05Z",
-				"updatedAt":   "2026-01-02T15:05:05Z",
-			}},
-			"page": map[string]any{"nextCursor": "opaque"},
-		})
-	}))
-	defer server.Close()
-
-	output := captureStdout(t, func() {
-		err := runAgentConversations(context.Background(), &rootOptions{target: server.URL, token: "token", jsonOutput: true})
-		if err != nil {
-			t.Fatalf("run conversations: %v", err)
-		}
-	})
-
-	var rows []map[string]any
-	if err := json.Unmarshal([]byte(output), &rows); err != nil {
-		t.Fatalf("decode output: %v output=%s", err, output)
-	}
-	if len(rows) != 1 || rows[0]["id"] != "conv_1" || rows[0]["title"] != "Ask" {
-		t.Fatalf("rows = %#v", rows)
-	}
-	if strings.Contains(output, "nextCursor") || strings.Contains(output, `"items"`) {
-		t.Fatalf("output leaked envelope:\n%s", output)
-	}
-}
-
 func TestFriendlyListCommandsPassPaginationQuery(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

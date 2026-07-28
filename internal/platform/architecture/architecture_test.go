@@ -69,6 +69,16 @@ func TestAgentGeneratedAPIIsCapabilityOwned(t *testing.T) {
 	}
 }
 
+func TestCapabilityCLIIsAnAdapterOwnedByItsCapability(t *testing.T) {
+	rule, ok := ClassifyPackage("internal/agent/cli")
+	if !ok {
+		t.Fatal("Agent CLI package is not classified")
+	}
+	if rule.Capability != "agent" || rule.Layer != LayerAdapter {
+		t.Fatalf("Agent CLI classification = %#v, want agent adapter", rule)
+	}
+}
+
 func TestAccessGeneratedAPIIsCapabilityOwned(t *testing.T) {
 	rule, ok := ClassifyPackage("internal/access/api/gen")
 	if !ok {

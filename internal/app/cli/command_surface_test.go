@@ -121,10 +121,4 @@ func TestAgentCommandIsGlobal(t *testing.T) {
 	if command.PersistentFlags().Lookup("workspace") != nil {
 		t.Fatal("global agent command still exposes --workspace")
 	}
-	if got := agentConversationEndpoint("https://leapview.example", nil); got != "https://leapview.example/api/v1/agent/conversations" {
-		t.Fatalf("conversation endpoint = %q", got)
-	}
-	if got := agentRunEndpoint("https://leapview.example", "conv_1", "run_1"); got != "https://leapview.example/api/v1/agent/conversations/conv_1/runs/run_1" {
-		t.Fatalf("run endpoint = %q", got)
-	}
 }

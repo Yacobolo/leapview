@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,7 +13,38 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/app/config"
+	"github.com/Yacobolo/leapview/internal/platform/cliapi"
 )
+
+type capabilityAPIClient struct{}
+
+func (capabilityAPIClient) Resolve(_ context.Context, credentials cliapi.Credentials) (cliapi.Credentials, error) {
+	target, token, err := clientTargetAndTokenValues(credentials.Target, credentials.Token)
+	if err != nil {
+		return cliapi.Credentials{}, err
+	}
+	return cliapi.Credentials{Target: target, Token: token}, nil
+}
+
+func (client capabilityAPIClient) DoJSON(ctx context.Context, credentials cliapi.Credentials, request cliapi.Request, out any) error {
+	resolved, err := client.Resolve(ctx, credentials)
+	if err != nil {
+		return err
+	}
+	endpoint, err := apiOperationURL(resolved.Target, request.OperationID, request.PathParams, request.Query)
+	if err != nil {
+		return err
+	}
+	var body io.Reader
+	if request.Body != nil {
+		encoded, err := json.Marshal(request.Body)
+		if err != nil {
+			return err
+		}
+		body = bytes.NewReader(encoded)
+	}
+	return doJSONWithHeaders(ctx, request.Method, endpoint, resolved.Token, request.Headers, body, out)
+}
 
 func doJSON(ctx context.Context, method, endpoint, token string, body io.Reader, out any) error {
 	return doJSONWithHeaders(ctx, method, endpoint, token, nil, body, out)
@@ -72,12 +104,16 @@ func targetEnvironment(ctx context.Context, client *http.Client, target, token, 
 }
 
 func clientTargetAndToken(opts *rootOptions) (string, string, error) {
+	return clientTargetAndTokenValues(opts.target, opts.token)
+}
+
+func clientTargetAndTokenValues(targetValue, tokenValue string) (string, string, error) {
 	cfg := config.MustLoad()
-	target := strings.TrimRight(opts.target, "/")
+	target := strings.TrimRight(targetValue, "/")
 	if target == "" {
 		target = strings.TrimRight(cfg.Target, "/")
 	}
-	token := opts.token
+	token := tokenValue
 	if token == "" {
 		token = cfg.APIToken
 	}

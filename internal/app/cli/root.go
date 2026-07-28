@@ -17,12 +17,8 @@ type rootOptions struct {
 	target             string
 	token              string
 	catalog            string
-	conversation       string
 	jsonOutput         bool
 	pageID             string
-	count              int
-	filterStateJSON    string
-	bodyJSON           string
 	schemaFormat       string
 	schemaOut          string
 	backupOut          string
@@ -34,10 +30,6 @@ type rootOptions struct {
 	queryDays          int
 	archivedAgentDays  int
 	authStateDays      int
-	limit              int
-	pageToken          string
-	searchTypes        []string
-	searchWorkspaces   []string
 	autoApprove        bool
 	apply              bool
 	healthcheckURL     string
