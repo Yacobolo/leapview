@@ -22,6 +22,7 @@ import {
   parseConfiguredOrigin,
   remoteWebPreferences,
 } from "./security/remote-policy.mjs";
+import { loadTrustedUIAssets } from "./trusted-assets.js";
 import { TrustedUI } from "./trusted-ui.js";
 
 const TRUSTED_SCHEME = "leapview";
@@ -69,14 +70,18 @@ app.on("window-all-closed", () => {
 async function start(): Promise<void> {
   allowLoopbackHTTP = !app.isPackaged;
   profiles = new ProfileStore(join(app.getPath("userData"), "profiles.json"));
-  const trustedUI = new TrustedUI({
-    allowLoopbackHTTP,
-    listProfiles: () => profiles.list(),
-    connectOrigin,
-    connectProfile,
-    disconnectProfile,
-    removeProfile,
-  });
+  const trustedAssets = await loadTrustedUIAssets();
+  const trustedUI = new TrustedUI(
+    {
+      allowLoopbackHTTP,
+      listProfiles: () => profiles.list(),
+      connectOrigin,
+      connectProfile,
+      disconnectProfile,
+      removeProfile,
+    },
+    trustedAssets,
+  );
   const trustedSession = session.fromPartition(TRUSTED_PARTITION, {
     cache: false,
   });

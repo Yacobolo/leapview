@@ -6,7 +6,7 @@
   "type": "module",
   "main": "dist/src/main.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node scripts/build.mjs",
     "start": "bun run build && bun scripts/run-electron.mjs start",
     "test": "bun test ./src && node --test ../internal/app/testing/maliciousinstance/electron/policy.test.mjs",
     "package": "bun run build && bun scripts/run-electron.mjs package && node scripts/verify-package.mjs",

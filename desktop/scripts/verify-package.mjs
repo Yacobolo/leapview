@@ -102,6 +102,14 @@ if (unexpected.length > 0) {
 }
 for (const required of [
   "/package.json",
+  "/dist/app.css",
+  "/dist/files/inter-cyrillic-ext-wght-normal.woff2",
+  "/dist/files/inter-cyrillic-wght-normal.woff2",
+  "/dist/files/inter-greek-ext-wght-normal.woff2",
+  "/dist/files/inter-greek-wght-normal.woff2",
+  "/dist/files/inter-latin-ext-wght-normal.woff2",
+  "/dist/files/inter-latin-wght-normal.woff2",
+  "/dist/files/inter-vietnamese-wght-normal.woff2",
   "/dist/src/main.js",
   "/dist/src/auth.js",
   "/dist/src/security/remote-policy.mjs",

@@ -11,11 +11,18 @@ export interface TrustedUIActions {
   listProfiles(): Promise<Profile[]>;
 }
 
+export interface TrustedUIAssets {
+  stylesheet: string;
+  fonts: ReadonlyMap<string, ArrayBuffer>;
+}
+
 export class TrustedUI {
   readonly #actions: TrustedUIActions;
+  readonly #assets: TrustedUIAssets;
 
-  constructor(actions: TrustedUIActions) {
+  constructor(actions: TrustedUIActions, assets: TrustedUIAssets) {
     this.#actions = actions;
+    this.#assets = assets;
   }
 
   async handle(request: Request): Promise<Response> {
@@ -25,6 +32,18 @@ export class TrustedUI {
     }
     if (request.method === "GET" && url.pathname === "/") {
       return this.#render();
+    }
+    if (request.method === "GET" && url.pathname === "/app.css") {
+      return assetResponse(
+        this.#assets.stylesheet,
+        "text/css; charset=utf-8",
+      );
+    }
+    if (request.method === "GET") {
+      const font = this.#assets.fonts.get(url.pathname);
+      if (font !== undefined) {
+        return assetResponse(font, "font/woff2");
+      }
     }
     if (request.method === "POST" && url.pathname === "/connect") {
       return this.#handleConnect(request);
@@ -117,62 +136,318 @@ export class TrustedUI {
       ? `<p class="development">Development build: loopback HTTP URLs such as <code>http://localhost:8080</code> are allowed.</p>`
       : "";
     const html = `<!doctype html>
-<html lang="en">
+<html lang="en" data-color-mode="auto" data-light-theme="light" data-dark-theme="dark">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>LeapView</title>
+    <link rel="stylesheet" href="leapview://app/app.css">
     <style>
-      :root { color-scheme: light dark; font: 15px/1.5 Inter, ui-sans-serif, system-ui, sans-serif; }
-      * { box-sizing: border-box; }
-      body { margin: 0; min-height: 100vh; color: #122019; background: radial-gradient(circle at top left, #e9fff2 0, #f4f7f5 38%, #e8eeeb 100%); }
-      main { width: min(680px, calc(100% - 40px)); margin: 0 auto; padding: 72px 0; }
-      header { margin-bottom: 32px; }
-      .mark { display: inline-grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: #116a43; color: white; font-weight: 800; }
-      h1 { margin: 20px 0 4px; font-size: clamp(30px, 6vw, 46px); letter-spacing: -0.04em; line-height: 1.05; }
-      header p { margin: 8px 0 0; color: #52625a; max-width: 54ch; }
-      section { padding: 24px; border: 1px solid #cbd8d1; border-radius: 18px; background: rgba(255,255,255,.88); box-shadow: 0 18px 50px rgba(25,55,39,.10); }
-      section + section { margin-top: 20px; }
-      h2 { margin: 0 0 16px; font-size: 17px; }
-      label { display: block; margin-bottom: 8px; font-weight: 650; }
-      .connect { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
-      input { min-width: 0; width: 100%; padding: 12px 14px; border: 1px solid #aebdb5; border-radius: 10px; background: white; color: #122019; font: inherit; }
-      button { padding: 11px 17px; border: 0; border-radius: 10px; background: #116a43; color: white; font: inherit; font-weight: 700; cursor: pointer; }
-      button:hover { background: #0c5435; }
-      button.secondary { background: #dce7e1; color: #213d2e; }
-      button.secondary:hover { background: #cbd9d1; }
-      button.danger { background: #8b2420; }
-      button.danger:hover { background: #701d19; }
-      .profile { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 0; border-top: 1px solid #e0e8e3; }
-      .profile:first-of-type { border-top: 0; }
-      .profile span { min-width: 0; }
-      .profile strong, .profile small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .actions { display: flex; flex: none; gap: 7px; }
-      .actions form { margin: 0; }
-      .actions button { padding: 8px 11px; font-size: 13px; }
-      .profile small, .development { color: #617068; }
-      .notice { padding: 12px 14px; border-radius: 10px; }
-      .success { background: #ddf8e8; color: #175b39; }
-      .error { background: #ffe4e2; color: #8b2420; }
-      .development { margin: 14px 0 0; font-size: 13px; }
-      code { font-family: ui-monospace, monospace; }
-      @media (prefers-color-scheme: dark) {
-        body { color: #e8f3ed; background: radial-gradient(circle at top left, #153c2a 0, #111713 42%, #090d0b 100%); }
-        header p, .profile small, .development { color: #a9b8b0; }
-        section { border-color: #33443b; background: rgba(20,29,24,.92); }
-        input { border-color: #46594f; background: #0d130f; color: #e8f3ed; }
-        .profile { border-color: #2c3932; }
-        .success { background: #153c2a; color: #b9f0d0; }
-        .error { background: #491f1d; color: #ffc4c0; }
+      :root {
+        --lv-desktop-content-width: calc(
+          var(--base-size-128) * 5 + var(--base-size-32)
+        );
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-width: 320px;
+        min-height: 100svh;
+        margin: 0;
+        background: var(--lv-bg-app);
+        color: var(--lv-fg-default);
+        font-family: var(--lv-font-family-ui, var(--fontStack-system));
+        font-size: var(--lv-font-size-body-md);
+        line-height: var(--lv-line-height-normal);
+      }
+
+      main {
+        display: grid;
+        width: min(
+          var(--lv-desktop-content-width),
+          calc(100% - var(--base-size-48))
+        );
+        margin: 0 auto;
+        gap: var(--base-size-24);
+        padding-block: var(--base-size-48) var(--base-size-64);
+      }
+
+      header {
+        display: grid;
+        gap: var(--base-size-24);
+      }
+
+      .brand-lockup {
+        display: inline-flex;
+        width: fit-content;
+        align-items: center;
+        gap: var(--base-size-10);
+        color: var(--lv-fg-default);
+        font-size: var(--lv-font-size-title-sm);
+        font-weight: var(--lv-font-weight-strong);
+        line-height: var(--lv-line-height-none);
+      }
+
+      .brand-lockup svg {
+        width: var(--base-size-28);
+        height: var(--base-size-28);
+        flex: none;
+        fill: none;
+        stroke: currentColor;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: 1.8;
+      }
+
+      .intro {
+        display: grid;
+        gap: var(--base-size-8);
+      }
+
+      h1,
+      h2,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        color: var(--lv-fg-default);
+        font-size: var(--lv-font-size-title-lg);
+        font-weight: var(--lv-font-weight-strong);
+        letter-spacing: -0.025em;
+        line-height: var(--lv-line-height-tight);
+      }
+
+      .intro p {
+        max-width: 58ch;
+        color: var(--lv-fg-muted);
+        font-size: var(--lv-font-size-body-md);
+      }
+
+      section {
+        display: grid;
+        gap: var(--base-size-20);
+        border: var(--lv-border-default);
+        border-radius: var(--lv-radius-large);
+        background: var(--lv-bg-panel);
+        padding: var(--base-size-24);
+        box-shadow: var(--lv-shadow-resting-sm);
+      }
+
+      h2 {
+        color: var(--lv-fg-default);
+        font-size: var(--lv-font-size-title-sm);
+        font-weight: var(--lv-font-weight-strong);
+        line-height: var(--lv-line-height-compact);
+      }
+
+      form {
+        margin: 0;
+      }
+
+      label {
+        display: block;
+        margin-bottom: var(--base-size-6);
+        color: var(--lv-fg-muted);
+        font-size: var(--lv-font-size-caption);
+        font-weight: var(--lv-font-weight-medium);
+      }
+
+      .connect {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: var(--base-size-8);
+      }
+
+      input {
+        width: 100%;
+        min-width: 0;
+        min-height: var(--control-xlarge-size);
+        border: var(--lv-border-default);
+        border-radius: var(--lv-radius-default);
+        background: var(--lv-bg-input);
+        color: var(--lv-fg-default);
+        padding-inline: var(--base-size-12);
+        font: inherit;
+        font-size: var(--lv-font-size-body-md);
+      }
+
+      input::placeholder {
+        color: var(--control-fgColor-placeholder);
+      }
+
+      input:hover {
+        border-color: var(--control-borderColor-emphasis);
+      }
+
+      input:focus-visible,
+      button:focus-visible {
+        outline: var(--focus-outline-width) solid var(--lv-line-accent);
+        outline-offset: var(--focus-outline-offset);
+      }
+
+      button {
+        min-height: var(--control-xlarge-size);
+        border: var(--borderWidth-default) solid
+          var(--lv-button-accent-border-rest);
+        border-radius: var(--lv-button-radius);
+        background: var(--lv-button-accent-bg-rest);
+        color: var(--lv-button-accent-fg-rest);
+        padding-inline: var(--lv-button-padding-inline-spacious);
+        font: inherit;
+        font-size: var(--lv-font-size-body-md);
+        font-weight: var(--lv-font-weight-medium);
+        box-shadow: var(--lv-button-shadow-resting);
+        cursor: pointer;
+      }
+
+      button:hover {
+        border-color: var(--lv-button-accent-border-hover);
+        background: var(--lv-button-accent-bg-hover);
+      }
+
+      button:active {
+        border-color: var(--lv-button-accent-border-active);
+        background: var(--lv-button-accent-bg-active);
+      }
+
+      button.secondary {
+        border-color: var(--lv-button-border-rest);
+        background: var(--lv-button-bg-rest);
+        color: var(--lv-button-fg-rest);
+      }
+
+      button.secondary:hover {
+        border-color: var(--lv-button-border-hover);
+        background: var(--lv-button-bg-hover);
+      }
+
+      button.danger {
+        border-color: var(--button-danger-borderColor-rest);
+        background: var(--button-danger-bgColor-rest);
+        color: var(--button-danger-fgColor-rest);
+      }
+
+      button.danger:hover {
+        border-color: var(--button-danger-borderColor-hover);
+        background: var(--button-danger-bgColor-hover);
+        color: var(--button-danger-fgColor-hover);
+      }
+
+      .profile {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--base-size-16);
+        border-top: var(--lv-border-muted);
+        padding-top: var(--base-size-16);
+      }
+
+      .profile:first-of-type {
+        border-top: 0;
+        padding-top: 0;
+      }
+
+      .profile span {
+        min-width: 0;
+      }
+
+      .profile strong,
+      .profile small {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .profile strong {
+        font-size: var(--lv-font-size-body-md);
+        font-weight: var(--lv-font-weight-medium);
+      }
+
+      .profile small,
+      .development {
+        color: var(--lv-fg-muted);
+        font-size: var(--lv-font-size-caption);
+      }
+
+      .actions {
+        display: flex;
+        flex: none;
+        gap: var(--base-size-6);
+      }
+
+      .actions button {
+        min-height: var(--control-medium-size);
+        padding-inline: var(--lv-button-padding-inline);
+        font-size: var(--lv-font-size-body-sm);
+      }
+
+      .notice {
+        border: var(--lv-border-default);
+        border-radius: var(--lv-radius-default);
+        padding: var(--base-size-12);
+        font-size: var(--lv-font-size-body-sm);
+      }
+
+      .notice.success {
+        border-color: var(--lv-line-success-muted);
+        background: var(--lv-bg-success-muted);
+        color: var(--lv-fg-success);
+      }
+
+      .notice.error {
+        border-color: var(--lv-line-danger-muted);
+        background: var(--lv-bg-danger-muted);
+        color: var(--lv-fg-danger);
+      }
+
+      .development {
+        margin-top: var(--base-size-12);
+      }
+
+      code {
+        font-family: var(--lv-font-family-mono, var(--fontStack-monospace));
+      }
+
+      @media (max-width: 560px) {
+        main {
+          width: min(
+            calc(100% - var(--base-size-32)),
+            var(--lv-desktop-content-width)
+          );
+          padding-block: var(--base-size-32);
+        }
+
+        .connect {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        .profile {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .actions {
+          flex-wrap: wrap;
+        }
       }
     </style>
   </head>
   <body>
     <main>
       <header>
-        <span class="mark" aria-hidden="true">L</span>
-        <h1>Your LeapView, in one place.</h1>
-        <p>Connect to a deployed LeapView instance. The server remains the authority for authentication, access, and dashboard data.</p>
+        <div class="brand-lockup" aria-label="LeapView">
+          ${brandMark()}
+          <span>LeapView</span>
+        </div>
+        <div class="intro">
+          <h1>Connect to LeapView</h1>
+          <p>Open a deployed LeapView instance. Authentication, access, and dashboard data remain under that server's control.</p>
+        </div>
       </header>
       ${noticeHTML}
       ${storageErrorHTML}
@@ -215,6 +490,18 @@ function profileAction(
   </form>`;
 }
 
+function brandMark(): string {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="10"></circle>
+    <path d="m14.31 8 5.74 9.94"></path>
+    <path d="M9.69 8h11.48"></path>
+    <path d="m7.38 12 5.74-9.94"></path>
+    <path d="M9.69 16 3.95 6.06"></path>
+    <path d="M14.31 16H2.83"></path>
+    <path d="m16.62 12-5.74 9.94"></path>
+  </svg>`;
+}
+
 async function readBoundedForm(
   request: Request,
   maximumBytes: number,
@@ -254,11 +541,26 @@ function trustedHeaders(contentType: string): Headers {
   return new Headers({
     "Cache-Control": "no-store",
     "Content-Security-Policy":
-      "default-src 'none'; style-src 'unsafe-inline'; form-action leapview://app; base-uri 'none'; frame-ancestors 'none'",
+      "default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; form-action leapview://app; base-uri 'none'; frame-ancestors 'none'",
     "Content-Type": contentType,
     "Cross-Origin-Opener-Policy": "same-origin",
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
+  });
+}
+
+function assetResponse(
+  body: string | ArrayBuffer,
+  contentType: string,
+): Response {
+  return new Response(body, {
+    status: 200,
+    headers: {
+      "Cache-Control": "public, max-age=31536000, immutable",
+      "Content-Type": contentType,
+      "Cross-Origin-Resource-Policy": "same-origin",
+      "X-Content-Type-Options": "nosniff",
+    },
   });
 }
 
