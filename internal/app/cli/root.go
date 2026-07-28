@@ -16,8 +16,6 @@ type rootOptions struct {
 	environment        string
 	target             string
 	token              string
-	catalog            string
-	jsonOutput         bool
 	pageID             string
 	schemaFormat       string
 	schemaOut          string

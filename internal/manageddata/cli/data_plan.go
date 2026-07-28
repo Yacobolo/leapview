@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/manageddata"
 	"github.com/Yacobolo/leapview/internal/manageddata/localplan"
-	projectcompiler "github.com/Yacobolo/leapview/internal/project/compiler"
+	"github.com/Yacobolo/leapview/internal/platform/cliapi"
 	"github.com/spf13/cobra"
 )
 
@@ -19,41 +20,43 @@ type dataPlanner interface {
 	Plan(context.Context, localplan.Request) (localplan.Result, error)
 }
 
-func dataCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
-	return dataCommandWithOptions(ctx, localplan.NewService(loadLocalPlanProject), opts)
+// Dependencies are application facilities required by Managed Data commands.
+type Dependencies struct {
+	Client          cliapi.Client
+	HTTPClient      *http.Client
+	LoadPlanProject func(string) (localplan.Project, error)
+	LoadProjectID   func(string) (string, error)
 }
 
-func loadLocalPlanProject(path string) (localplan.Project, error) {
-	project, err := projectcompiler.LoadProject(path)
-	if err != nil {
-		return localplan.Project{}, err
+type options struct {
+	remote      cliapi.RemoteOptions
+	environment string
+}
+
+// Command constructs the Managed Data command tree.
+func Command(ctx context.Context, dependencies Dependencies) *cobra.Command {
+	loader := dependencies.LoadPlanProject
+	if loader == nil {
+		loader = func(string) (localplan.Project, error) {
+			return localplan.Project{}, fmt.Errorf("Managed Data project plan loader is required")
+		}
 	}
-	projection := localplan.Project{
-		Connections: make(map[string]localplan.Connection, len(project.Connections)),
-		Sources:     make(map[string]localplan.Source, len(project.Sources)),
-	}
-	for name, connection := range project.Connections {
-		projection.Connections[name] = localplan.Connection{Kind: connection.Kind, Root: connection.Root, Scope: connection.Scope}
-	}
-	for name, source := range project.Sources {
-		projection.Sources[name] = localplan.Source{Connection: source.Connection, Path: source.Path, Format: source.Format}
-	}
-	return projection, nil
+	return dataCommandWithOptions(ctx, localplan.NewService(loader), dependencies, &options{})
 }
 
 func dataCommandWithPlanner(ctx context.Context, planner dataPlanner) *cobra.Command {
-	return dataCommandWithOptions(ctx, planner, &rootOptions{})
+	return dataCommandWithOptions(ctx, planner, Dependencies{}, &options{})
 }
 
-func dataCommandWithOptions(ctx context.Context, planner dataPlanner, opts *rootOptions) *cobra.Command {
+func dataCommandWithOptions(ctx context.Context, planner dataPlanner, dependencies Dependencies, opts *options) *cobra.Command {
 	parent := &cobra.Command{
 		Use:          "data",
 		Short:        "Manage project-global data revisions",
 		SilenceUsage: true,
 	}
 	parent.AddCommand(dataPlanCommand(ctx, planner))
-	parent.AddCommand(dataSyncCommand(ctx, planner, opts))
-	parent.AddCommand(dataRevisionsCommand(ctx, opts))
+	parent.AddCommand(dataSyncCommand(ctx, planner, dependencies, opts))
+	parent.AddCommand(dataRevisionsCommand(ctx, dependencies, opts))
 	return parent
 }
 

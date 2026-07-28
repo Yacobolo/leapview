@@ -15,6 +15,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access"
 	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
+	admincli "github.com/Yacobolo/leapview/internal/admin/cli"
 	adminsqlite "github.com/Yacobolo/leapview/internal/admin/sqlite"
 	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
 	"github.com/Yacobolo/leapview/internal/app/config"
@@ -27,67 +28,49 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func adminCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
-	parent := &cobra.Command{Use: "admin", Short: "Administrative utilities"}
-	initializeFormat := "json"
-	acknowledgeCredentials := false
-	initialize := &cobra.Command{
-		Use:   "initialize",
-		Short: "Initialize one instance administrator and publisher credential",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if acknowledgeCredentials {
-				return acknowledgeInitialCredentials(ctx)
-			}
-			return runAdminInitialize(ctx, initializeFormat, cmd.OutOrStdout())
-		},
+func adminCommand(ctx context.Context, _ *rootOptions) *cobra.Command {
+	return admincli.Command(ctx, adminOperations{})
+}
+
+type adminOperations struct{}
+
+func (adminOperations) Initialize(ctx context.Context, format string, out io.Writer) error {
+	return runAdminInitialize(ctx, format, out)
+}
+
+func (adminOperations) AcknowledgeInitialCredentials(ctx context.Context) error {
+	return acknowledgeInitialCredentials(ctx)
+}
+
+func (adminOperations) StorageCleanup(ctx context.Context, values admincli.Options, out io.Writer) error {
+	return runAdminStorageCleanup(ctx, adminRootOptions(values), out)
+}
+
+func (adminOperations) Maintenance(ctx context.Context, values admincli.Options, out io.Writer) error {
+	return runAdminMaintenance(ctx, adminRootOptions(values), out)
+}
+
+func (adminOperations) Backup(ctx context.Context, values admincli.Options, out io.Writer) error {
+	return runAdminBackup(ctx, adminRootOptions(values), out)
+}
+
+func (adminOperations) Restore(ctx context.Context, values admincli.Options, in io.Reader, out io.Writer) error {
+	return runAdminRestore(ctx, adminRootOptions(values), in, out)
+}
+
+func adminRootOptions(values admincli.Options) *rootOptions {
+	return &rootOptions{
+		apply:             values.Apply,
+		auditDays:         values.AuditDays,
+		queryDays:         values.QueryDays,
+		archivedAgentDays: values.ArchivedAgentDays,
+		authStateDays:     values.AuthStateDays,
+		backupOut:         values.BackupOut,
+		restoreFrom:       values.RestoreFrom,
+		restoreBefore:     values.RestoreBefore,
+		confirmRestore:    values.ConfirmRestore,
+		databaseOnly:      values.DatabaseOnly,
 	}
-	initialize.Flags().StringVar(&initializeFormat, "format", "json", "output format (json)")
-	initialize.Flags().BoolVar(&acknowledgeCredentials, "acknowledge-credentials", false, "remove the recoverable initialization credential bundle after it has been stored safely")
-	storage := &cobra.Command{Use: "storage", Short: "Maintain analytical storage"}
-	cleanup := &cobra.Command{
-		Use:   "cleanup",
-		Short: "Reconcile serving-state snapshots and clean DuckLake storage",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAdminStorageCleanup(ctx, opts, cmd.OutOrStdout())
-		},
-	}
-	cleanup.Flags().BoolVar(&opts.apply, "apply", false, "perform destructive cleanup instead of dry-run")
-	storage.AddCommand(cleanup)
-	maintenance := &cobra.Command{
-		Use:   "maintenance",
-		Short: "Prune bounded operational history",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAdminMaintenance(ctx, opts, cmd.OutOrStdout())
-		},
-	}
-	maintenance.Flags().BoolVar(&opts.apply, "apply", false, "delete rows instead of dry-run")
-	maintenance.Flags().IntVar(&opts.auditDays, "audit-days", defaultAuditRetentionDays, "audit event retention in days; 0 disables audit pruning")
-	maintenance.Flags().IntVar(&opts.queryDays, "query-days", defaultQueryRetentionDays, "query event retention in days; 0 disables query pruning")
-	maintenance.Flags().IntVar(&opts.archivedAgentDays, "archived-agent-days", defaultArchivedAgentRetentionDays, "archived agent conversation retention in days; 0 disables archived conversation pruning")
-	maintenance.Flags().IntVar(&opts.authStateDays, "auth-state-days", defaultAuthStateRetentionDays, "expired or revoked auth state retention in days; 0 disables auth-state pruning")
-	backup := &cobra.Command{
-		Use:   "backup",
-		Short: "Create a consistent LeapView instance backup",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAdminBackup(ctx, opts, cmd.OutOrStdout())
-		},
-	}
-	backup.Flags().StringVar(&opts.backupOut, "out", "", "backup archive output path")
-	backup.Flags().BoolVar(&opts.databaseOnly, "database-only", false, "backup only the platform SQLite database")
-	restore := &cobra.Command{
-		Use:   "restore",
-		Short: "Restore LeapView from a validated instance backup",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAdminRestore(ctx, opts, cmd.InOrStdin(), cmd.OutOrStdout())
-		},
-	}
-	restore.Flags().StringVar(&opts.restoreFrom, "from", "", "backup archive path to restore")
-	restore.Flags().StringVar(&opts.restoreBefore, "current-out", "", "path for a backup of the current instance before replacement; - creates and discards a validated temporary checkpoint")
-	restore.Flags().BoolVar(&opts.confirmRestore, "confirm", false, "confirm replacement of the configured LeapView instance")
-	restore.Flags().BoolVar(&opts.databaseOnly, "database-only", false, "restore only the platform SQLite database")
-	parent.AddCommand(initialize, storage, maintenance, backup, restore)
-	return parent
 }
 
 var errInstanceAlreadyInitialized = errors.New("LeapView instance is already initialized")

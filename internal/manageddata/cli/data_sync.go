@@ -19,7 +19,6 @@ import (
 	"github.com/Yacobolo/leapview/internal/manageddata"
 	manageddataapi "github.com/Yacobolo/leapview/internal/manageddata/api"
 	"github.com/Yacobolo/leapview/internal/manageddata/localplan"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 	"github.com/spf13/cobra"
 )
 
@@ -28,7 +27,8 @@ const (
 	dataTusChunkSize     = 16 << 20
 )
 
-type dataSyncRequest struct {
+// SyncRequest describes one Managed Data staging operation.
+type SyncRequest struct {
 	ProjectPath string
 	ProjectID   string
 	Connection  string
@@ -40,7 +40,9 @@ type dataSyncRequest struct {
 	HTTPClient  *http.Client
 }
 
-func dataSyncCommand(ctx context.Context, planner dataPlanner, opts *rootOptions) *cobra.Command {
+type dataSyncRequest = SyncRequest
+
+func dataSyncCommand(ctx context.Context, planner dataPlanner, dependencies Dependencies, opts *options) *cobra.Command {
 	var projectPath string
 	var connection string
 	var from string
@@ -55,27 +57,37 @@ func dataSyncCommand(ctx context.Context, planner dataPlanner, opts *rootOptions
 			if strings.TrimSpace(from) == "" {
 				return fmt.Errorf("from is required")
 			}
-			target, token, err := clientTargetAndToken(opts)
+			if dependencies.Client == nil {
+				return fmt.Errorf("Managed Data CLI API client is required")
+			}
+			credentials, err := dependencies.Client.Resolve(ctx, opts.remote.Credentials())
 			if err != nil {
 				return err
 			}
-			project, err := workspacecompiler.LoadProject(projectPath)
+			if dependencies.LoadProjectID == nil {
+				return fmt.Errorf("Managed Data project identity loader is required")
+			}
+			projectID, err := dependencies.LoadProjectID(projectPath)
 			if err != nil {
 				return fmt.Errorf("load project: %w", err)
 			}
-			if strings.TrimSpace(project.Name) == "" {
+			if strings.TrimSpace(projectID) == "" {
 				return fmt.Errorf("project name is required")
 			}
 			plan, err := planner.Plan(ctx, localplan.Request{ProjectPath: projectPath, Connection: connection, From: from})
 			if err != nil {
 				return err
 			}
-			if _, err := targetEnvironment(ctx, http.DefaultClient, target, token, opts.environment); err != nil {
+			if _, err := dependencies.Client.Environment(ctx, credentials, opts.environment); err != nil {
 				return err
 			}
+			httpClient := dependencies.HTTPClient
+			if httpClient == nil {
+				httpClient = http.DefaultClient
+			}
 			return runDataSync(ctx, dataSyncRequest{
-				ProjectPath: projectPath, ProjectID: project.Name, Connection: connection, Root: plan.Root,
-				Target: target, Token: token, Plan: plan, Out: cmd.OutOrStdout(), HTTPClient: http.DefaultClient,
+				ProjectPath: projectPath, ProjectID: projectID, Connection: connection, Root: plan.Root,
+				Target: credentials.Target, Token: credentials.Token, Plan: plan, Out: cmd.OutOrStdout(), HTTPClient: httpClient,
 			})
 		},
 	}
@@ -83,11 +95,12 @@ func dataSyncCommand(ctx context.Context, planner dataPlanner, opts *rootOptions
 	command.Flags().StringVar(&connection, "connection", "", "project-global managed connection")
 	command.Flags().StringVar(&from, "from", "", "local filesystem root to ingest")
 	command.Flags().StringVar(&opts.environment, "environment", "", "assert the target instance environment")
-	addTargetTokenFlags(command, opts)
+	opts.remote.AddFlags(command)
 	return command
 }
 
-func runDataSync(ctx context.Context, request dataSyncRequest) error {
+// RunSync stages one planned Managed Data revision.
+func RunSync(ctx context.Context, request SyncRequest) error {
 	if ctx == nil || strings.TrimSpace(request.ProjectID) == "" || strings.TrimSpace(request.Connection) == "" || strings.TrimSpace(request.Root) == "" {
 		return fmt.Errorf("managed data sync requires project, connection, and source root")
 	}
@@ -179,6 +192,8 @@ func runDataSync(ctx context.Context, request dataSyncRequest) error {
 	_, err = fmt.Fprintf(out, "staged %s\n", revisionID)
 	return err
 }
+
+var runDataSync = RunSync
 
 func terminalUploadSessionStatus(status manageddataapi.ManagedDataUploadSessionStatus) bool {
 	switch status {

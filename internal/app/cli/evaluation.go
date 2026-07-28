@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/app/config"
+	manageddatacli "github.com/Yacobolo/leapview/internal/manageddata/cli"
 	"github.com/Yacobolo/leapview/internal/manageddata/localplan"
 	instancelock "github.com/Yacobolo/leapview/internal/platform/locking"
 	"github.com/spf13/cobra"
@@ -111,7 +112,7 @@ func runEvaluation(ctx context.Context, _ *rootOptions, out io.Writer) error {
 	}
 	projectPath := filepath.Join(assets, evaluationProjectRelativePath)
 	dataPath := filepath.Join(assets, evaluationDataRelativePath)
-	planner := localplan.NewService(loadLocalPlanProject)
+	planner := localplan.NewService(loadManagedDataPlanProject)
 	plan, err := planner.Plan(ctx, localplan.Request{
 		ProjectPath: projectPath,
 		Connection:  evaluationConnection,
@@ -136,7 +137,7 @@ func runEvaluation(ctx context.Context, _ *rootOptions, out io.Writer) error {
 	if err := waitForEvaluationEndpoint(ctx, serverErr, evaluationServerTarget+"/healthz", 45*time.Second); err != nil {
 		return err
 	}
-	if err := runDataSync(ctx, dataSyncRequest{
+	if err := manageddatacli.RunSync(ctx, manageddatacli.SyncRequest{
 		ProjectPath: projectPath,
 		ProjectID:   evaluationProjectID,
 		Connection:  evaluationConnection,

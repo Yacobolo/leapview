@@ -70,12 +70,14 @@ func TestAgentGeneratedAPIIsCapabilityOwned(t *testing.T) {
 }
 
 func TestCapabilityCLIIsAnAdapterOwnedByItsCapability(t *testing.T) {
-	rule, ok := ClassifyPackage("internal/agent/cli")
-	if !ok {
-		t.Fatal("Agent CLI package is not classified")
-	}
-	if rule.Capability != "agent" || rule.Layer != LayerAdapter {
-		t.Fatalf("Agent CLI classification = %#v, want agent adapter", rule)
+	for _, capability := range []string{"admin", "agent", "analytics", "dashboard", "manageddata", "project", "workspace"} {
+		rule, ok := ClassifyPackage("internal/" + capability + "/cli")
+		if !ok {
+			t.Fatalf("%s CLI package is not classified", capability)
+		}
+		if rule.Capability != capability || rule.Layer != LayerAdapter {
+			t.Fatalf("%s CLI classification = %#v, want %s adapter", capability, rule, capability)
+		}
 	}
 }
 
@@ -1320,13 +1322,20 @@ func TestRequiredCapabilityAdaptersExist(t *testing.T) {
 	root := repoRoot(t)
 	for _, dir := range []string{
 		"internal/access/http",
+		"internal/admin/cli",
 		"internal/admin/http",
+		"internal/agent/cli",
 		"internal/agent/http",
+		"internal/analytics/cli",
 		"internal/analytics/connectors",
 		"internal/refresh/http",
+		"internal/dashboard/cli",
 		"internal/dashboard/semanticapi",
 		"internal/dashboard/http",
+		"internal/manageddata/cli",
+		"internal/project/cli",
 		"internal/workspace/datastar",
+		"internal/workspace/cli",
 		"internal/workspace/http",
 	} {
 		if !packageDirExists(root, dir) {

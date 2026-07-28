@@ -28,11 +28,10 @@ func TestDataRevisionsListAndCurrent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	opts := &rootOptions{target: server.URL, token: "token"}
 	client := newManagedDataCLIClient(server.Client(), server.URL, "token")
 
 	var listOut bytes.Buffer
-	if err := runDataRevisionsList(context.Background(), opts, dataRevisionOptions{project: "demo", connection: "orders"}, client, &listOut); err != nil {
+	if err := runDataRevisionsList(context.Background(), dataRevisionOptions{project: "demo", connection: "orders"}, client, &listOut); err != nil {
 		t.Fatalf("runDataRevisionsList() error = %v", err)
 	}
 	if !strings.Contains(listOut.String(), digest) || !strings.Contains(listOut.String(), "AVAILABLE") {
@@ -40,7 +39,7 @@ func TestDataRevisionsListAndCurrent(t *testing.T) {
 	}
 
 	var currentOut bytes.Buffer
-	if err := runDataRevisionCurrent(context.Background(), opts, dataRevisionOptions{project: "demo", connection: "orders"}, client, &currentOut); err != nil {
+	if err := runDataRevisionCurrent(context.Background(), dataRevisionOptions{project: "demo", connection: "orders"}, client, &currentOut); err != nil {
 		t.Fatalf("runDataRevisionCurrent() error = %v", err)
 	}
 	if got, want := strings.TrimSpace(currentOut.String()), digest; got != want {
@@ -55,7 +54,7 @@ func TestDataRevisionCurrentPrintsNone(t *testing.T) {
 	defer server.Close()
 	var out bytes.Buffer
 	client := newManagedDataCLIClient(server.Client(), server.URL, "token")
-	if err := runDataRevisionCurrent(context.Background(), &rootOptions{}, dataRevisionOptions{project: "demo", connection: "orders"}, client, &out); err != nil {
+	if err := runDataRevisionCurrent(context.Background(), dataRevisionOptions{project: "demo", connection: "orders"}, client, &out); err != nil {
 		t.Fatal(err)
 	}
 	if got := out.String(); got != "none\n" {
@@ -75,7 +74,6 @@ func TestDataRevisionCurrentIncludesProblemDetailsInHTTPError(t *testing.T) {
 	client := newManagedDataCLIClient(server.Client(), server.URL, "token")
 	err := runDataRevisionCurrent(
 		context.Background(),
-		&rootOptions{},
 		dataRevisionOptions{project: "demo", connection: "orders"},
 		client,
 		&bytes.Buffer{},

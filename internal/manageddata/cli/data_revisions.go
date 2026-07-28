@@ -20,7 +20,7 @@ type dataRevisionOptions struct {
 	pageToken   string
 }
 
-func dataRevisionsCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
+func dataRevisionsCommand(ctx context.Context, dependencies Dependencies, opts *options) *cobra.Command {
 	parent := &cobra.Command{Use: "revisions", Short: "Inspect managed data revisions"}
 	listOptions := dataRevisionOptions{}
 	list := &cobra.Command{
@@ -31,14 +31,17 @@ func dataRevisionsCommand(ctx context.Context, opts *rootOptions) *cobra.Command
 			if err := validateDataRevisionOptions(listOptions, false); err != nil {
 				return err
 			}
-			target, token, err := clientTargetAndToken(opts)
+			if dependencies.Client == nil {
+				return fmt.Errorf("Managed Data CLI API client is required")
+			}
+			credentials, err := dependencies.Client.Resolve(ctx, opts.remote.Credentials())
 			if err != nil {
 				return err
 			}
-			if _, err := targetEnvironment(ctx, nil, target, token, listOptions.environment); err != nil {
+			if _, err := dependencies.Client.Environment(ctx, credentials, listOptions.environment); err != nil {
 				return err
 			}
-			return runDataRevisionsList(ctx, opts, listOptions, newManagedDataCLIClient(nil, target, token), cmd.OutOrStdout())
+			return runDataRevisionsList(ctx, listOptions, newManagedDataCLIClient(dependencies.HTTPClient, credentials.Target, credentials.Token), cmd.OutOrStdout())
 		},
 	}
 	addDataRevisionFlags(list, opts, &listOptions, false)
@@ -52,14 +55,17 @@ func dataRevisionsCommand(ctx context.Context, opts *rootOptions) *cobra.Command
 			if err := validateDataRevisionOptions(currentOptions, true); err != nil {
 				return err
 			}
-			target, token, err := clientTargetAndToken(opts)
+			if dependencies.Client == nil {
+				return fmt.Errorf("Managed Data CLI API client is required")
+			}
+			credentials, err := dependencies.Client.Resolve(ctx, opts.remote.Credentials())
 			if err != nil {
 				return err
 			}
-			if _, err := targetEnvironment(ctx, nil, target, token, currentOptions.environment); err != nil {
+			if _, err := dependencies.Client.Environment(ctx, credentials, currentOptions.environment); err != nil {
 				return err
 			}
-			return runDataRevisionCurrent(ctx, opts, currentOptions, newManagedDataCLIClient(nil, target, token), cmd.OutOrStdout())
+			return runDataRevisionCurrent(ctx, currentOptions, newManagedDataCLIClient(dependencies.HTTPClient, credentials.Target, credentials.Token), cmd.OutOrStdout())
 		},
 	}
 	addDataRevisionFlags(current, opts, &currentOptions, true)
@@ -67,7 +73,7 @@ func dataRevisionsCommand(ctx context.Context, opts *rootOptions) *cobra.Command
 	return parent
 }
 
-func addDataRevisionFlags(command *cobra.Command, opts *rootOptions, values *dataRevisionOptions, current bool) {
+func addDataRevisionFlags(command *cobra.Command, opts *options, values *dataRevisionOptions, current bool) {
 	command.Flags().StringVar(&values.project, "project", "", "server project id")
 	command.Flags().StringVar(&values.connection, "connection", "", "project-global managed connection")
 	command.Flags().StringVar(&values.environment, "environment", "", "assert the target instance environment")
@@ -75,7 +81,7 @@ func addDataRevisionFlags(command *cobra.Command, opts *rootOptions, values *dat
 		command.Flags().IntVar(&values.limit, "limit", 0, "maximum revisions to return")
 		command.Flags().StringVar(&values.pageToken, "page-token", "", "opaque page token")
 	}
-	addTargetTokenFlags(command, opts)
+	opts.remote.AddFlags(command)
 }
 
 func validateDataRevisionOptions(values dataRevisionOptions, current bool) error {
@@ -91,7 +97,7 @@ func validateDataRevisionOptions(values dataRevisionOptions, current bool) error
 	return nil
 }
 
-func runDataRevisionsList(ctx context.Context, _ *rootOptions, values dataRevisionOptions, client *managedDataCLIClient, out io.Writer) error {
+func runDataRevisionsList(ctx context.Context, values dataRevisionOptions, client *managedDataCLIClient, out io.Writer) error {
 	query := url.Values{}
 	if values.limit > 0 {
 		query.Set("limit", strconv.Itoa(values.limit))
@@ -115,7 +121,7 @@ func runDataRevisionsList(ctx context.Context, _ *rootOptions, values dataRevisi
 	return tw.Flush()
 }
 
-func runDataRevisionCurrent(ctx context.Context, _ *rootOptions, values dataRevisionOptions, client *managedDataCLIClient, out io.Writer) error {
+func runDataRevisionCurrent(ctx context.Context, values dataRevisionOptions, client *managedDataCLIClient, out io.Writer) error {
 	response, err := client.currentRevision(ctx, values.project, values.connection, "")
 	if err != nil {
 		return err

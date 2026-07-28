@@ -139,7 +139,7 @@ func TestBundledEvaluationProjectCompilesAndPlansOneSmallManagedFile(t *testing.
 	if got := compiled.WorkspaceIDs(); len(got) != 1 || got[0] != evaluationWorkspaceID {
 		t.Fatalf("compiled evaluation workspaces = %#v", got)
 	}
-	plan, err := localplan.NewService(loadLocalPlanProject).Plan(context.Background(), localplan.Request{
+	plan, err := localplan.NewService(loadManagedDataPlanProject).Plan(context.Background(), localplan.Request{
 		ProjectPath: projectPath,
 		Connection:  evaluationConnection,
 		From:        filepath.Join(root, evaluationDataRelativePath),

@@ -97,7 +97,7 @@ type clientTarget struct {
 }
 
 func targetEnvironment(ctx context.Context, client *http.Client, target, token, asserted string) (string, error) {
-	instance, err := newManagedDataCLIClient(client, target, token).instance(ctx)
+	instance, err := newDeploymentCLIClient(client, target, token).instance(ctx)
 	if err != nil {
 		return "", fmt.Errorf("read target instance: %w", err)
 	}
