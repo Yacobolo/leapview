@@ -313,12 +313,13 @@ tasks:
     sources:
       - Taskfile.yml
       - sqlc.yaml
-      - internal/platform/migrations/*.sql
-      - internal/platform/db/queries/*.sql
+      - internal/**/*.sql
     generates:
       - internal/platform/db/db.go
       - internal/platform/db/models.go
       - internal/platform/db/*.sql.go
+      - internal/*/internal/db/*.go
+      - internal/platform/**/sqlite/*db/*.go
     cmds:
       - go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate
 

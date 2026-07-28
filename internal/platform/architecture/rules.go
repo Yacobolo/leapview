@@ -220,7 +220,7 @@ var PackageRules = []PackageRule{
 }
 
 var adapterSegments = []string{
-	"/http", "/sqlite", "/filesystem", "/s3", "/tus", "/duckdb", "/ducklake", "/datastar", "/openai", "/ui",
+	"/http", "/sqlite", "/internal/db", "/filesystem", "/s3", "/tus", "/duckdb", "/ducklake", "/datastar", "/openai", "/ui",
 }
 
 // ClassifyPackage returns the owner and layer for an internal package path.

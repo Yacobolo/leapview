@@ -5,7 +5,7 @@ import (
 	"database/sql"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	platformdb "github.com/Yacobolo/leapview/internal/access/sqlite/accessdb"
+	platformdb "github.com/Yacobolo/leapview/internal/access/internal/db"
 )
 
 func (r *Repository) UpdateGrant(ctx context.Context, workspaceID, id string, input access.GrantInput) (access.Grant, error) {

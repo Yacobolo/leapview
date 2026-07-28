@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
+	db "github.com/Yacobolo/leapview/internal/analytics/internal/db"
 	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
-	db "github.com/Yacobolo/leapview/internal/analytics/queryaudit/sqlite/querydb"
 )
 
 type Repository struct {

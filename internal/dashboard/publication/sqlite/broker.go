@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	publicationdb "github.com/Yacobolo/leapview/internal/dashboard/internal/db"
 	"github.com/Yacobolo/leapview/pkg/pagestream"
 )
 
@@ -18,6 +19,7 @@ const brokerPollInterval = 20 * time.Millisecond
 // different replicas.
 type Broker struct {
 	db     *sql.DB
+	q      *publicationdb.Queries
 	local  *pagestream.Broker
 	logger *slog.Logger
 	mu     sync.Mutex
@@ -34,7 +36,8 @@ func NewBroker(db *sql.DB, trace *pagestream.TraceStore, logger *slog.Logger) *B
 		logger = slog.Default()
 	}
 	return &Broker{
-		db: db, local: pagestream.NewBroker(pagestream.WithTraceStore(trace)), logger: logger,
+		db: db, q: publicationdb.New(db),
+		local: pagestream.NewBroker(pagestream.WithTraceStore(trace)), logger: logger,
 		relays: map[string]*relaySubscription{},
 	}
 }
@@ -85,8 +88,9 @@ func (b *Broker) PublishEnvelope(streamID string, envelope pagestream.Envelope) 
 		b.logger.Error("encode public dashboard stream event", "error", err)
 		return
 	}
-	if _, err := b.db.Exec(`INSERT INTO dashboard_publication_stream_events (stream_id, envelope_json, created_at) VALUES (?, ?, ?)`,
-		streamID, string(payload), time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+	if err := b.q.InsertDashboardPublicationStreamEvent(context.Background(), publicationdb.InsertDashboardPublicationStreamEventParams{
+		StreamID: streamID, EnvelopeJson: string(payload), CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+	}); err != nil {
 		b.logger.Error("publish public dashboard stream event", "error", err)
 	}
 }
@@ -95,8 +99,7 @@ func (b *Broker) latestEventID(streamID string) int64 {
 	if b == nil || b.db == nil {
 		return 0
 	}
-	var id int64
-	_ = b.db.QueryRow(`SELECT COALESCE(MAX(id), 0) FROM dashboard_publication_stream_events WHERE stream_id = ?`, streamID).Scan(&id)
+	id, _ := b.q.GetLatestDashboardPublicationStreamEventID(context.Background(), streamID)
 	return id
 }
 
@@ -108,29 +111,25 @@ func (b *Broker) relay(ctx context.Context, streamID string, cursor int64) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			rows, err := b.db.QueryContext(ctx, `SELECT id, envelope_json FROM dashboard_publication_stream_events WHERE stream_id = ? AND id > ? ORDER BY id`, streamID, cursor)
+			rows, err := b.q.ListDashboardPublicationStreamEventsAfter(ctx, publicationdb.ListDashboardPublicationStreamEventsAfterParams{
+				StreamID: streamID, Cursor: cursor,
+			})
 			if err != nil {
 				if ctx.Err() == nil {
 					b.logger.Warn("read public dashboard stream events", "error", err)
 				}
 				continue
 			}
-			for rows.Next() {
-				var id int64
-				var payload string
-				if err := rows.Scan(&id, &payload); err != nil {
-					continue
-				}
+			for _, row := range rows {
 				var envelope pagestream.Envelope
-				if err := json.Unmarshal([]byte(payload), &envelope); err != nil {
+				if err := json.Unmarshal([]byte(row.EnvelopeJson), &envelope); err != nil {
 					b.logger.Warn("decode public dashboard stream event", "error", err)
-					cursor = id
+					cursor = row.ID
 					continue
 				}
 				b.local.PublishEnvelope(streamID, envelope)
-				cursor = id
+				cursor = row.ID
 			}
-			_ = rows.Close()
 		}
 	}
 }

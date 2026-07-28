@@ -15,7 +15,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/platform/digest"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
-	platformdb "github.com/Yacobolo/leapview/internal/servingstate/sqlite/servingdb"
+	platformdb "github.com/Yacobolo/leapview/internal/servingstate/internal/db"
 	servingstatevalidation "github.com/Yacobolo/leapview/internal/servingstate/validation"
 )
 

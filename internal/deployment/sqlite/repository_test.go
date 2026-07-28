@@ -541,7 +541,7 @@ func testRepository(t *testing.T) (context.Context, *sql.DB, *Repository) {
 			return publicationsqlite.ReconcileTx(ctx, tx, publication.ReconcileInput{
 				ProjectID: input.ProjectID, WorkspaceID: input.WorkspaceID, ServingStateID: input.ServingStateID,
 				ActorID: input.ActorID, Publications: publications,
-			})
+			}, accesssqlite.ActivateDashboardPublicationPrincipalTx)
 		},
 	})
 }

@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/Yacobolo/leapview/internal/access"
-	platformdb "github.com/Yacobolo/leapview/internal/access/sqlite/accessdb"
+	platformdb "github.com/Yacobolo/leapview/internal/access/internal/db"
 	"strings"
 )
 

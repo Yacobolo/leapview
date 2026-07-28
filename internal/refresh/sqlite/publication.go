@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/platform/transaction"
+	materializedb "github.com/Yacobolo/leapview/internal/refresh/internal/db"
 	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
 	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
-	"github.com/Yacobolo/leapview/internal/refresh/sqlite/materializedb"
 	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
 )
 

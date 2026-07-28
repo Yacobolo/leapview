@@ -13,7 +13,7 @@ import (
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	"github.com/Yacobolo/leapview/internal/platform/transaction"
 	"github.com/Yacobolo/leapview/internal/release"
-	platformdb "github.com/Yacobolo/leapview/internal/release/sqlite/releasedb"
+	platformdb "github.com/Yacobolo/leapview/internal/release/internal/db"
 )
 
 type Repository struct {

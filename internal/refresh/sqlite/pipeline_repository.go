@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	platformdb "github.com/Yacobolo/leapview/internal/refresh/internal/db"
 	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
-	platformdb "github.com/Yacobolo/leapview/internal/refresh/sqlite/refreshdb"
 )
 
 type Repository struct {

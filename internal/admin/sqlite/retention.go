@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	retentiondb "github.com/Yacobolo/leapview/internal/admin/sqlite/retentiondb"
+	retentiondb "github.com/Yacobolo/leapview/internal/admin/internal/db"
 )
 
 type RetentionOptions struct {

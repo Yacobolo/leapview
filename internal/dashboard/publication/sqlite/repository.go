@@ -13,115 +13,118 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/access"
+	publicationdb "github.com/Yacobolo/leapview/internal/dashboard/internal/db"
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
 	"github.com/Yacobolo/leapview/internal/platform/transaction"
 )
 
-type Repository struct{ db *sql.DB }
+type Repository struct {
+	db *sql.DB
+	q  *publicationdb.Queries
+}
 
-func NewRepository(db *sql.DB) *Repository { return &Repository{db: db} }
+func NewRepository(db *sql.DB) *Repository {
+	return &Repository{db: db, q: publicationdb.New(db)}
+}
 
-type scanner interface{ Scan(...any) error }
+func mapPublication(row publicationdb.DashboardPublication) (publication.Publication, error) {
+	out := publication.Publication{
+		ID: row.ID, ProjectID: row.ProjectID, WorkspaceID: row.WorkspaceID, Name: row.Name,
+		PublicID: row.PublicID, Dashboard: row.Dashboard, DefaultPage: row.DefaultPage,
+		ConfigurationDigest: row.ConfigurationDigest, Configured: row.Configured == 1,
+		ServingStateID: row.ActiveServingStateID.String, SuspendedAt: row.SuspendedAt.String,
+		SuspendedBy: row.SuspendedBy, ConfiguredAt: row.ConfiguredAt.String,
+		DisabledAt: row.DisabledAt.String, RotatedAt: row.RotatedAt.String,
+		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+	}
+	if err := json.Unmarshal([]byte(row.AllowedOriginsJson), &out.AllowedOrigins); err != nil {
+		return publication.Publication{}, fmt.Errorf("decode publication origins: %w", err)
+	}
+	if err := json.Unmarshal([]byte(row.DependencyAssetIdsJson), &out.DependencyAssetIDs); err != nil {
+		return publication.Publication{}, fmt.Errorf("decode publication dependencies: %w", err)
+	}
+	return out, nil
+}
 
-func scanPublication(row scanner) (publication.Publication, error) {
-	var out publication.Publication
-	var origins, dependencies string
-	var configured int
-	var servingStateID, suspendedAt, configuredAt, disabledAt, rotatedAt sql.NullString
-	err := row.Scan(
-		&out.ID, &out.ProjectID, &out.WorkspaceID, &out.Name, &out.PublicID,
-		&out.Dashboard, &out.DefaultPage, &out.ConfigurationDigest, &origins, &dependencies, &configured,
-		&servingStateID, &suspendedAt, &out.SuspendedBy, &configuredAt, &disabledAt, &rotatedAt,
-		&out.CreatedAt, &out.UpdatedAt,
-	)
+func (r *Repository) Get(ctx context.Context, workspaceID, name string) (publication.Publication, error) {
+	row, err := r.q.GetDashboardPublication(ctx, publicationdb.GetDashboardPublicationParams{
+		WorkspaceID: strings.TrimSpace(workspaceID),
+		Name:        strings.TrimSpace(name),
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return publication.Publication{}, publication.ErrNotFound
 	}
 	if err != nil {
 		return publication.Publication{}, err
 	}
-	if err := json.Unmarshal([]byte(origins), &out.AllowedOrigins); err != nil {
-		return publication.Publication{}, fmt.Errorf("decode publication origins: %w", err)
-	}
-	if err := json.Unmarshal([]byte(dependencies), &out.DependencyAssetIDs); err != nil {
-		return publication.Publication{}, fmt.Errorf("decode publication dependencies: %w", err)
-	}
-	out.Configured = configured == 1
-	out.ServingStateID = servingStateID.String
-	out.SuspendedAt = suspendedAt.String
-	out.ConfiguredAt = configuredAt.String
-	out.DisabledAt = disabledAt.String
-	out.RotatedAt = rotatedAt.String
-	return out, nil
-}
-
-const publicationColumns = `id, project_id, workspace_id, name, public_id, dashboard, default_page,
-configuration_digest, allowed_origins_json, dependency_asset_ids_json, configured, active_serving_state_id, suspended_at,
-suspended_by, configured_at, disabled_at, rotated_at, created_at, updated_at`
-
-func (r *Repository) Get(ctx context.Context, workspaceID, name string) (publication.Publication, error) {
-	return scanPublication(r.db.QueryRowContext(ctx, `SELECT `+publicationColumns+` FROM dashboard_publications
-WHERE workspace_id = ? AND name = ? ORDER BY configured DESC, updated_at DESC LIMIT 1`, strings.TrimSpace(workspaceID), strings.TrimSpace(name)))
+	return mapPublication(row)
 }
 
 func (r *Repository) GetByPublicID(ctx context.Context, publicID string) (publication.Publication, error) {
-	return scanPublication(r.db.QueryRowContext(ctx, `SELECT `+publicationColumns+` FROM dashboard_publications
-WHERE public_id = ? AND configured = 1 AND active_serving_state_id IS NOT NULL`, strings.TrimSpace(publicID)))
+	row, err := r.q.GetDashboardPublicationByPublicID(ctx, strings.TrimSpace(publicID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return publication.Publication{}, publication.ErrNotFound
+	}
+	if err != nil {
+		return publication.Publication{}, err
+	}
+	return mapPublication(row)
 }
 
 func (r *Repository) List(ctx context.Context, workspaceID string) ([]publication.Publication, error) {
-	return r.list(ctx, `SELECT `+publicationColumns+` FROM dashboard_publications WHERE workspace_id = ? ORDER BY name, project_id`, strings.TrimSpace(workspaceID))
+	rows, err := r.q.ListDashboardPublications(ctx, strings.TrimSpace(workspaceID))
+	return mapPublications(rows, err)
 }
 
 func (r *Repository) ListAll(ctx context.Context) ([]publication.Publication, error) {
-	return r.list(ctx, `SELECT `+publicationColumns+` FROM dashboard_publications ORDER BY workspace_id, name, project_id`)
+	rows, err := r.q.ListAllDashboardPublications(ctx)
+	return mapPublications(rows, err)
 }
 
 func (r *Repository) ListEvents(ctx context.Context, publicationID string) ([]publication.Event, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT event_type, actor_id, COALESCE(serving_state_id, ''), created_at FROM dashboard_publication_events WHERE publication_id = ? ORDER BY id DESC`, strings.TrimSpace(publicationID))
+	rows, err := r.q.ListDashboardPublicationEvents(ctx, strings.TrimSpace(publicationID))
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := []publication.Event{}
-	for rows.Next() {
-		var event publication.Event
-		if err := rows.Scan(&event.Type, &event.ActorID, &event.ServingStateID, &event.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, event)
+	out := make([]publication.Event, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, publication.Event{
+			Type: row.EventType, ActorID: row.ActorID,
+			ServingStateID: row.ServingStateID, CreatedAt: row.CreatedAt,
+		})
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
-func (r *Repository) list(ctx context.Context, query string, args ...any) ([]publication.Publication, error) {
-	rows, err := r.db.QueryContext(ctx, query, args...)
+func mapPublications(rows []publicationdb.DashboardPublication, err error) ([]publication.Publication, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := []publication.Publication{}
-	for rows.Next() {
-		row, err := scanPublication(rows)
+	out := make([]publication.Publication, 0, len(rows))
+	for _, row := range rows {
+		mapped, err := mapPublication(row)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, row)
+		out = append(out, mapped)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (r *Repository) Suspend(ctx context.Context, workspaceID, name, actorID string) (publication.Publication, error) {
-	return r.mutate(ctx, workspaceID, name, actorID, "suspended", `
-UPDATE dashboard_publications SET suspended_at = COALESCE(suspended_at, CURRENT_TIMESTAMP), suspended_by = ?, updated_at = CURRENT_TIMESTAMP
-WHERE workspace_id = ? AND name = ? AND configured = 1`, false)
+	return r.mutate(ctx, workspaceID, name, actorID, "suspended", func(q *publicationdb.Queries) (sql.Result, error) {
+		return q.SuspendDashboardPublication(ctx, publicationdb.SuspendDashboardPublicationParams{
+			ActorID: strings.TrimSpace(actorID), WorkspaceID: strings.TrimSpace(workspaceID), Name: strings.TrimSpace(name),
+		})
+	})
 }
 
 func (r *Repository) Resume(ctx context.Context, workspaceID, name, actorID string) (publication.Publication, error) {
-	return r.mutate(ctx, workspaceID, name, actorID, "resumed", `
-UPDATE dashboard_publications SET suspended_at = NULL, suspended_by = '', updated_at = CURRENT_TIMESTAMP
-WHERE workspace_id = ? AND name = ? AND configured = 1`, true)
+	return r.mutate(ctx, workspaceID, name, actorID, "resumed", func(q *publicationdb.Queries) (sql.Result, error) {
+		return q.ResumeDashboardPublication(ctx, publicationdb.ResumeDashboardPublicationParams{
+			WorkspaceID: strings.TrimSpace(workspaceID), Name: strings.TrimSpace(name),
+		})
+	})
 }
 
 func (r *Repository) Rotate(ctx context.Context, workspaceID, name, actorID string) (publication.Publication, error) {
@@ -129,26 +132,25 @@ func (r *Repository) Rotate(ctx context.Context, workspaceID, name, actorID stri
 	if err != nil {
 		return publication.Publication{}, err
 	}
-	return r.mutateWithArgs(ctx, workspaceID, name, actorID, "rotated", `
-UPDATE dashboard_publications SET public_id = ?, rotated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-WHERE workspace_id = ? AND name = ? AND configured = 1`, []any{publicID, workspaceID, name})
+	return r.mutate(ctx, workspaceID, name, actorID, "rotated", func(q *publicationdb.Queries) (sql.Result, error) {
+		return q.RotateDashboardPublication(ctx, publicationdb.RotateDashboardPublicationParams{
+			PublicID: publicID, WorkspaceID: strings.TrimSpace(workspaceID), Name: strings.TrimSpace(name),
+		})
+	})
 }
 
-func (r *Repository) mutate(ctx context.Context, workspaceID, name, actorID, eventType, statement string, resume bool) (publication.Publication, error) {
-	args := []any{strings.TrimSpace(actorID), strings.TrimSpace(workspaceID), strings.TrimSpace(name)}
-	if resume {
-		args = []any{strings.TrimSpace(workspaceID), strings.TrimSpace(name)}
-	}
-	return r.mutateWithArgs(ctx, workspaceID, name, actorID, eventType, statement, args)
-}
-
-func (r *Repository) mutateWithArgs(ctx context.Context, workspaceID, name, actorID, eventType, statement string, args []any) (publication.Publication, error) {
+func (r *Repository) mutate(
+	ctx context.Context,
+	workspaceID, name, actorID, eventType string,
+	mutation func(*publicationdb.Queries) (sql.Result, error),
+) (publication.Publication, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return publication.Publication{}, err
 	}
 	defer tx.Rollback()
-	result, err := tx.ExecContext(ctx, statement, args...)
+	q := r.q.WithTx(tx)
+	result, err := mutation(q)
 	if err != nil {
 		return publication.Publication{}, err
 	}
@@ -157,8 +159,9 @@ func (r *Repository) mutateWithArgs(ctx context.Context, workspaceID, name, acto
 		return publication.Publication{}, err
 	}
 	if changed == 0 {
-		var configured int
-		err := tx.QueryRowContext(ctx, `SELECT configured FROM dashboard_publications WHERE workspace_id = ? AND name = ? ORDER BY configured DESC LIMIT 1`, strings.TrimSpace(workspaceID), strings.TrimSpace(name)).Scan(&configured)
+		_, err := q.GetDashboardPublicationConfiguredState(ctx, publicationdb.GetDashboardPublicationConfiguredStateParams{
+			WorkspaceID: strings.TrimSpace(workspaceID), Name: strings.TrimSpace(name),
+		})
 		if errors.Is(err, sql.ErrNoRows) {
 			return publication.Publication{}, publication.ErrNotFound
 		}
@@ -167,11 +170,17 @@ func (r *Repository) mutateWithArgs(ctx context.Context, workspaceID, name, acto
 		}
 		return publication.Publication{}, publication.ErrConflict
 	}
-	row, err := scanPublication(tx.QueryRowContext(ctx, `SELECT `+publicationColumns+` FROM dashboard_publications WHERE workspace_id = ? AND name = ? AND configured = 1`, workspaceID, name))
+	stored, err := q.GetConfiguredDashboardPublication(ctx, publicationdb.GetConfiguredDashboardPublicationParams{
+		WorkspaceID: strings.TrimSpace(workspaceID), Name: strings.TrimSpace(name),
+	})
 	if err != nil {
 		return publication.Publication{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dashboard_publication_events (publication_id, event_type, actor_id, serving_state_id) VALUES (?, ?, ?, NULLIF(?, ''))`, row.ID, eventType, strings.TrimSpace(actorID), row.ServingStateID); err != nil {
+	row, err := mapPublication(stored)
+	if err != nil {
+		return publication.Publication{}, err
+	}
+	if err := insertEvent(ctx, q, row.ID, eventType, actorID, row.ServingStateID); err != nil {
 		return publication.Publication{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -180,17 +189,28 @@ func (r *Repository) mutateWithArgs(ctx context.Context, workspaceID, name, acto
 	return r.Get(ctx, workspaceID, name)
 }
 
-func ReconcileTx(ctx context.Context, tx transaction.Transaction, input publication.ReconcileInput) error {
+func ReconcileTx(
+	ctx context.Context,
+	tx transaction.Transaction,
+	input publication.ReconcileInput,
+	activatePrincipal func(context.Context, transaction.Transaction, string, string) error,
+) error {
 	input.ProjectID = strings.TrimSpace(input.ProjectID)
 	input.WorkspaceID = strings.TrimSpace(input.WorkspaceID)
 	input.ServingStateID = strings.TrimSpace(input.ServingStateID)
 	if input.ProjectID == "" || input.WorkspaceID == "" || input.ServingStateID == "" {
 		return fmt.Errorf("publication reconciliation requires project, workspace, and serving state")
 	}
-	if err := disableSupersededProjectPublications(ctx, tx, input); err != nil {
+	if len(input.Publications) > 0 && activatePrincipal == nil {
+		return fmt.Errorf("publication reconciliation requires an Access principal activator")
+	}
+	q := publicationdb.New(tx)
+	if err := disableSupersededProjectPublications(ctx, q, input); err != nil {
 		return err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT id, name, configured, configuration_digest FROM dashboard_publications WHERE project_id = ? AND workspace_id = ?`, input.ProjectID, input.WorkspaceID)
+	rows, err := q.ListProjectDashboardPublicationStates(ctx, publicationdb.ListProjectDashboardPublicationStatesParams{
+		ProjectID: input.ProjectID, WorkspaceID: input.WorkspaceID,
+	})
 	if err != nil {
 		return err
 	}
@@ -198,29 +218,21 @@ func ReconcileTx(ctx context.Context, tx transaction.Transaction, input publicat
 		id, name, digest string
 		configured       bool
 	}
-	existing := map[string]existingRow{}
-	for rows.Next() {
-		var row existingRow
-		var configured int
-		if err := rows.Scan(&row.id, &row.name, &configured, &row.digest); err != nil {
-			rows.Close()
-			return err
+	existing := make(map[string]existingRow, len(rows))
+	for _, row := range rows {
+		existing[row.Name] = existingRow{
+			id: row.ID, name: row.Name, digest: row.ConfigurationDigest, configured: row.Configured == 1,
 		}
-		row.configured = configured == 1
-		existing[row.name] = row
-	}
-	if err := rows.Close(); err != nil {
-		return err
 	}
 
 	for name, row := range existing {
 		if _, ok := input.Publications[name]; ok || !row.configured {
 			continue
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE dashboard_publications SET configured = 0, active_serving_state_id = NULL, disabled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, row.id); err != nil {
+		if err := q.DisableDashboardPublication(ctx, row.id); err != nil {
 			return err
 		}
-		if err := insertEvent(ctx, tx, row.id, "disabled", input.ActorID, input.ServingStateID); err != nil {
+		if err := insertEvent(ctx, q, row.id, "disabled", input.ActorID, input.ServingStateID); err != nil {
 			return err
 		}
 	}
@@ -232,9 +244,7 @@ func ReconcileTx(ctx context.Context, tx transaction.Transaction, input publicat
 	sort.Strings(names)
 	for _, name := range names {
 		compiled := input.Publications[name]
-		principalID := access.DashboardPublicationSubjectID(input.WorkspaceID, name)
-		if _, err := tx.ExecContext(ctx, `INSERT INTO principals (id, display_name, kind) VALUES (?, ?, ?)
-ON CONFLICT(id) DO UPDATE SET display_name = excluded.display_name, kind = excluded.kind, updated_at = CURRENT_TIMESTAMP`, principalID, name, access.PrincipalKindDashboardPublication); err != nil {
+		if err := activatePrincipal(ctx, tx, input.WorkspaceID, name); err != nil {
 			return fmt.Errorf("reconcile publication principal %q: %w", name, err)
 		}
 		origins, err := json.Marshal(compiled.AllowedOrigins)
@@ -252,11 +262,17 @@ ON CONFLICT(id) DO UPDATE SET display_name = excluded.display_name, kind = exclu
 			} else if current.digest != compiled.ConfigurationDigest {
 				eventType = "configuration_changed"
 			}
-			if _, err := tx.ExecContext(ctx, `UPDATE dashboard_publications SET dashboard = ?, default_page = ?, configuration_digest = ?, allowed_origins_json = ?, dependency_asset_ids_json = ?, configured = 1, active_serving_state_id = ?, configured_at = CASE WHEN configured = 0 THEN CURRENT_TIMESTAMP ELSE configured_at END, disabled_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, compiled.Dashboard, compiled.DefaultPage, compiled.ConfigurationDigest, string(origins), string(dependencies), input.ServingStateID, current.id); err != nil {
+			if err := q.UpdateDashboardPublicationConfiguration(ctx, publicationdb.UpdateDashboardPublicationConfigurationParams{
+				Dashboard: compiled.Dashboard, DefaultPage: compiled.DefaultPage,
+				ConfigurationDigest: compiled.ConfigurationDigest,
+				AllowedOriginsJson:  string(origins), DependencyAssetIdsJson: string(dependencies),
+				ActiveServingStateID: sql.NullString{String: input.ServingStateID, Valid: true},
+				ID:                   current.id,
+			}); err != nil {
 				return err
 			}
 			if eventType != "" {
-				if err := insertEvent(ctx, tx, current.id, eventType, input.ActorID, input.ServingStateID); err != nil {
+				if err := insertEvent(ctx, q, current.id, eventType, input.ActorID, input.ServingStateID); err != nil {
 					return err
 				}
 			}
@@ -267,47 +283,45 @@ ON CONFLICT(id) DO UPDATE SET display_name = excluded.display_name, kind = exclu
 			return err
 		}
 		id := operationalID(input.ProjectID, input.WorkspaceID, name)
-		if _, err := tx.ExecContext(ctx, `INSERT INTO dashboard_publications (id, project_id, workspace_id, name, public_id, dashboard, default_page, configuration_digest, allowed_origins_json, dependency_asset_ids_json, configured, active_serving_state_id, configured_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, CURRENT_TIMESTAMP)`, id, input.ProjectID, input.WorkspaceID, name, publicID, compiled.Dashboard, compiled.DefaultPage, compiled.ConfigurationDigest, string(origins), string(dependencies), input.ServingStateID); err != nil {
+		if err := q.CreateDashboardPublication(ctx, publicationdb.CreateDashboardPublicationParams{
+			ID: id, ProjectID: input.ProjectID, WorkspaceID: input.WorkspaceID, Name: name, PublicID: publicID,
+			Dashboard: compiled.Dashboard, DefaultPage: compiled.DefaultPage,
+			ConfigurationDigest: compiled.ConfigurationDigest,
+			AllowedOriginsJson:  string(origins), DependencyAssetIdsJson: string(dependencies),
+			ActiveServingStateID: sql.NullString{String: input.ServingStateID, Valid: true},
+		}); err != nil {
 			return err
 		}
-		if err := insertEvent(ctx, tx, id, "configured", input.ActorID, input.ServingStateID); err != nil {
+		if err := insertEvent(ctx, q, id, "configured", input.ActorID, input.ServingStateID); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func disableSupersededProjectPublications(ctx context.Context, tx transaction.Transaction, input publication.ReconcileInput) error {
-	rows, err := tx.QueryContext(ctx, `SELECT id FROM dashboard_publications WHERE workspace_id = ? AND project_id <> ? AND configured = 1`, input.WorkspaceID, input.ProjectID)
+func disableSupersededProjectPublications(ctx context.Context, q *publicationdb.Queries, input publication.ReconcileInput) error {
+	ids, err := q.ListSupersededDashboardPublicationIDs(ctx, publicationdb.ListSupersededDashboardPublicationIDsParams{
+		WorkspaceID: input.WorkspaceID, ProjectID: input.ProjectID,
+	})
 	if err != nil {
 		return err
 	}
-	ids := []string{}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return err
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Close(); err != nil {
-		return err
-	}
 	for _, id := range ids {
-		if _, err := tx.ExecContext(ctx, `UPDATE dashboard_publications SET configured = 0, active_serving_state_id = NULL, disabled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, id); err != nil {
+		if err := q.DisableDashboardPublication(ctx, id); err != nil {
 			return err
 		}
-		if err := insertEvent(ctx, tx, id, "disabled", input.ActorID, input.ServingStateID); err != nil {
+		if err := insertEvent(ctx, q, id, "disabled", input.ActorID, input.ServingStateID); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func insertEvent(ctx context.Context, tx transaction.Transaction, id, eventType, actorID, servingStateID string) error {
-	_, err := tx.ExecContext(ctx, `INSERT INTO dashboard_publication_events (publication_id, event_type, actor_id, serving_state_id) VALUES (?, ?, ?, NULLIF(?, ''))`, id, eventType, strings.TrimSpace(actorID), servingStateID)
-	return err
+func insertEvent(ctx context.Context, q *publicationdb.Queries, id, eventType, actorID, servingStateID string) error {
+	return q.InsertDashboardPublicationEvent(ctx, publicationdb.InsertDashboardPublicationEventParams{
+		PublicationID: id, EventType: eventType,
+		ActorID: strings.TrimSpace(actorID), ServingStateID: servingStateID,
+	})
 }
 
 func newPublicID() (string, error) {
