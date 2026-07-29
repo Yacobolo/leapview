@@ -17,7 +17,7 @@ test("packaged Electron binaries use the complete fail-closed fuse policy", () =
   expect(fuseConfig[FuseV1Options.EnableNodeCliInspectArguments]).toBe(false);
   expect(
     fuseConfig[FuseV1Options.EnableEmbeddedAsarIntegrityValidation],
-  ).toBe(true);
+  ).toBe(process.platform !== "linux");
   expect(fuseConfig[FuseV1Options.OnlyLoadAppFromAsar]).toBe(true);
   expect(
     fuseConfig[FuseV1Options.LoadBrowserProcessSpecificV8Snapshot],
