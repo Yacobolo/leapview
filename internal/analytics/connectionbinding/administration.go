@@ -314,7 +314,7 @@ func bindingHealthWithoutPool(binding TargetBinding) BindingHealthStatus {
 		LogicalConnection: binding.LogicalConnectionID, ConnectorKind: binding.ConnectorKind,
 		Scope: binding.Scope, BindingRevision: binding.Revision,
 		ValidatedVersion: binding.ValidatedVersion, Health: binding.Health,
-		Reason: binding.HealthReason, LastValidatedAt: binding.LastValidatedAt,
+		DiagnosticCode: binding.HealthReason, LastValidatedAt: binding.LastValidatedAt,
 	}
 }
 

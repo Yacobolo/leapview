@@ -11,7 +11,7 @@ type BindingHealthStatus struct {
 	BindingRevision   int64               `json:"bindingRevision"`
 	ValidatedVersion  string              `json:"validatedVersion,omitempty"`
 	Health            BindingHealth       `json:"health"`
-	Reason            string              `json:"reason,omitempty"`
+	DiagnosticCode    string              `json:"reason,omitempty"`
 	LastAttemptAt     time.Time           `json:"lastAttemptAt,omitempty"`
 	LastValidatedAt   time.Time           `json:"lastValidatedAt,omitempty"`
 	StaleAgeSeconds   int64               `json:"staleAgeSeconds,omitempty"`

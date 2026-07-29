@@ -14,24 +14,27 @@ var ErrAuditTransaction = errors.New("audit transaction failed")
 type Privilege string
 
 const (
-	PrivilegeUseWorkspace       Privilege = "USE_WORKSPACE"
-	PrivilegeViewItem           Privilege = "VIEW_ITEM"
-	PrivilegeEditItem           Privilege = "EDIT_ITEM"
-	PrivilegeManageItem         Privilege = "MANAGE_ITEM"
-	PrivilegeQueryData          Privilege = "QUERY_DATA"
-	PrivilegePreviewData        Privilege = "PREVIEW_DATA"
-	PrivilegeRefreshData        Privilege = "REFRESH_DATA"
-	PrivilegeDeploy             Privilege = "DEPLOY"
-	PrivilegeActivateDeployment Privilege = "ACTIVATE_DEPLOYMENT"
-	PrivilegeManagePublications Privilege = "MANAGE_PUBLICATIONS"
-	PrivilegeUseAgent           Privilege = "USE_AGENT"
-	PrivilegeViewAgent          Privilege = "VIEW_AGENT"
-	PrivilegeManageGrants       Privilege = "MANAGE_GRANTS"
-	PrivilegeViewAudit          Privilege = "VIEW_AUDIT"
-	PrivilegeManageWorkspace    Privilege = "MANAGE_WORKSPACE"
-	PrivilegeManagePlatform     Privilege = "MANAGE_PLATFORM"
-	PrivilegeViewData           Privilege = "VIEW_DATA"
-	PrivilegeIngestData         Privilege = "INGEST_DATA"
+	PrivilegeUseWorkspace             Privilege = "USE_WORKSPACE"
+	PrivilegeViewItem                 Privilege = "VIEW_ITEM"
+	PrivilegeEditItem                 Privilege = "EDIT_ITEM"
+	PrivilegeManageItem               Privilege = "MANAGE_ITEM"
+	PrivilegeQueryData                Privilege = "QUERY_DATA"
+	PrivilegePreviewData              Privilege = "PREVIEW_DATA"
+	PrivilegeRefreshData              Privilege = "REFRESH_DATA"
+	PrivilegeDeploy                   Privilege = "DEPLOY"
+	PrivilegeActivateDeployment       Privilege = "ACTIVATE_DEPLOYMENT"
+	PrivilegeManagePublications       Privilege = "MANAGE_PUBLICATIONS"
+	PrivilegeUseAgent                 Privilege = "USE_AGENT"
+	PrivilegeViewAgent                Privilege = "VIEW_AGENT"
+	PrivilegeManageGrants             Privilege = "MANAGE_GRANTS"
+	PrivilegeViewAudit                Privilege = "VIEW_AUDIT"
+	PrivilegeManageWorkspace          Privilege = "MANAGE_WORKSPACE"
+	PrivilegeManagePlatform           Privilege = "MANAGE_PLATFORM"
+	PrivilegeViewData                 Privilege = "VIEW_DATA"
+	PrivilegeIngestData               Privilege = "INGEST_DATA"
+	PrivilegeManageConnectionMetadata Privilege = "MANAGE_CONNECTION_METADATA"
+	PrivilegeTestConnection           Privilege = "TEST_CONNECTION"
+	PrivilegeViewConnectionHealth     Privilege = "VIEW_CONNECTION_HEALTH"
 )
 
 func ParsePrivilege(value string) (Privilege, bool) {
@@ -41,7 +44,8 @@ func ParsePrivilege(value string) (Privilege, bool) {
 		PrivilegeQueryData, PrivilegePreviewData, PrivilegeRefreshData, PrivilegeDeploy,
 		PrivilegeActivateDeployment, PrivilegeManagePublications, PrivilegeUseAgent, PrivilegeViewAgent,
 		PrivilegeManageGrants, PrivilegeViewAudit, PrivilegeManageWorkspace,
-		PrivilegeManagePlatform, PrivilegeViewData, PrivilegeIngestData:
+		PrivilegeManagePlatform, PrivilegeViewData, PrivilegeIngestData,
+		PrivilegeManageConnectionMetadata, PrivilegeTestConnection, PrivilegeViewConnectionHealth:
 		return privilege, true
 	default:
 		return "", false
@@ -49,15 +53,16 @@ func ParsePrivilege(value string) (Privilege, bool) {
 }
 
 const (
-	RoleOwner         = "owner"
-	RoleAdmin         = "admin"
-	RoleDeployer      = "deployer"
-	RoleContributor   = "contributor"
-	RoleEditor        = "editor"
-	RoleMember        = "member"
-	RoleViewer        = "viewer"
-	RoleDataDeployer  = "data_deployer"
-	RolePlatformAdmin = "platform_admin"
+	RoleOwner              = "owner"
+	RoleAdmin              = "admin"
+	RoleDeployer           = "deployer"
+	RoleContributor        = "contributor"
+	RoleEditor             = "editor"
+	RoleMember             = "member"
+	RoleViewer             = "viewer"
+	RoleDataDeployer       = "data_deployer"
+	RoleConnectionOperator = "connection_operator"
+	RolePlatformAdmin      = "platform_admin"
 )
 
 var defaultRoles = []Role{
@@ -169,6 +174,14 @@ var defaultRoles = []Role{
 		},
 	},
 	{
+		Name: RoleConnectionOperator,
+		Privileges: []Privilege{
+			PrivilegeManageConnectionMetadata,
+			PrivilegeTestConnection,
+			PrivilegeViewConnectionHealth,
+		},
+	},
+	{
 		Name: RolePlatformAdmin,
 		Privileges: []Privilege{
 			PrivilegeManagePlatform,
@@ -189,6 +202,9 @@ var defaultRoles = []Role{
 			PrivilegeManageGrants,
 			PrivilegeViewAudit,
 			PrivilegeManageWorkspace,
+			PrivilegeManageConnectionMetadata,
+			PrivilegeTestConnection,
+			PrivilegeViewConnectionHealth,
 		},
 	},
 }
@@ -738,6 +754,9 @@ func KnownPrivileges() []Privilege {
 		PrivilegeManagePlatform,
 		PrivilegeViewData,
 		PrivilegeIngestData,
+		PrivilegeManageConnectionMetadata,
+		PrivilegeTestConnection,
+		PrivilegeViewConnectionHealth,
 	}
 }
 

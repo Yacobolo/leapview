@@ -353,7 +353,7 @@ func TestPoolManagerHealthStatusIsCompleteAndRedacted(t *testing.T) {
 	if status.BindingID != "binding_prod_warehouse" || status.Health != HealthDegraded ||
 		status.ValidatedVersion != "version-1" || !status.LastAttemptAt.Equal(now) ||
 		!status.LastValidatedAt.Equal(now.Add(-2*time.Minute)) ||
-		status.StaleAgeSeconds != 120 || status.Reason != "PROVIDER_UNAVAILABLE" ||
+		status.StaleAgeSeconds != 120 || status.DiagnosticCode != "PROVIDER_UNAVAILABLE" ||
 		!status.HasActivePool {
 		t.Fatalf("health status = %#v", status)
 	}

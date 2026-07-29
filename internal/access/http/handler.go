@@ -1828,6 +1828,9 @@ func knownPrivileges() []string {
 		string(access.PrivilegeViewAudit),
 		string(access.PrivilegeManageWorkspace),
 		string(access.PrivilegeManagePlatform),
+		string(access.PrivilegeManageConnectionMetadata),
+		string(access.PrivilegeTestConnection),
+		string(access.PrivilegeViewConnectionHealth),
 	}
 }
 
@@ -1885,7 +1888,10 @@ func knownPrivilege(value access.Privilege) bool {
 		access.PrivilegeManageGrants,
 		access.PrivilegeViewAudit,
 		access.PrivilegeManageWorkspace,
-		access.PrivilegeManagePlatform:
+		access.PrivilegeManagePlatform,
+		access.PrivilegeManageConnectionMetadata,
+		access.PrivilegeTestConnection,
+		access.PrivilegeViewConnectionHealth:
 		return true
 	default:
 		return false

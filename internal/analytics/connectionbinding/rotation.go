@@ -352,7 +352,7 @@ func (manager *PoolManager) HealthStatus() BindingHealthStatus {
 		BindingID: binding.ID, TargetID: binding.TargetID,
 		LogicalConnection: binding.LogicalConnectionID, ConnectorKind: binding.ConnectorKind,
 		Scope: binding.Scope, BindingRevision: binding.Revision,
-		ValidatedVersion: binding.ValidatedVersion, Health: binding.Health, Reason: binding.HealthReason,
+		ValidatedVersion: binding.ValidatedVersion, Health: binding.Health, DiagnosticCode: binding.HealthReason,
 		LastAttemptAt: manager.lastRun, LastValidatedAt: binding.LastValidatedAt,
 		HasActivePool: manager.active != nil,
 	}
