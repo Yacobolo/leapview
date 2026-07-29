@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/flidai/leapview/internal/analytics/connectionbinding"
@@ -106,6 +107,7 @@ type Module struct {
 	targetEnvironment  string
 	targetClass        connectionbinding.TargetClass
 	connectionFactory  connectionbinding.RuntimePoolFactory
+	connectionPoolsMu  sync.Mutex
 	connectionPools    *connectionbinding.PoolDirectory
 }
 
@@ -197,46 +199,16 @@ func (m *Module) NewConnectionAdministration(
 		return nil, connectionbinding.ErrProviderUnavailable
 	}
 	if config.Pools == nil {
-		refreshTimeout := config.RefreshTimeout
-		if refreshTimeout <= 0 {
-			refreshTimeout = 30 * time.Second
+		pools, err := m.ensureConnectionPools(
+			config.Now,
+			config.Audit,
+			config.RefreshTimeout,
+			config.MaxConcurrent,
+		)
+		if err != nil {
+			return nil, err
 		}
-		maxConcurrent := config.MaxConcurrent
-		if maxConcurrent <= 0 {
-			maxConcurrent = 2
-		}
-		if m.connectionPools == nil {
-			pools, err := connectionbinding.NewPoolDirectory(connectionbinding.PoolDirectoryConfig{
-				Build: func(binding connectionbinding.TargetBinding) (*connectionbinding.PoolManager, error) {
-					if binding.TargetID != m.targetID ||
-						binding.Scope.Environment != m.targetEnvironment ||
-						binding.AuthenticationMode != connectionbinding.AuthenticationExternalBundle {
-						return nil, connectionbinding.ErrUnauthorizedBinding
-					}
-					resolver, err := connectionbinding.SelectResolver(
-						connectionbinding.ResolverSelection{
-							TargetID: binding.TargetID, Environment: binding.Scope.Environment,
-							TargetClass: m.targetClass, Kind: m.connectionResolverKind(),
-						},
-						m.targetResolvers,
-					)
-					if err != nil {
-						return nil, err
-					}
-					return connectionbinding.NewPoolManager(connectionbinding.PoolManagerConfig{
-						Binding: binding, Resolver: resolver, Factory: m.connectionFactory,
-						Store: m.connectionBindings, Audit: config.Audit,
-						Now: config.Now, StaleAfter: 15 * time.Minute,
-					})
-				},
-				RefreshTimeout: refreshTimeout, MaxConcurrent: maxConcurrent,
-			})
-			if err != nil {
-				return nil, err
-			}
-			m.connectionPools = pools
-		}
-		config.Pools = m.connectionPools
+		config.Pools = pools
 	}
 	authorize := config.Authorize
 	return connectionbinding.NewAdministration(connectionbinding.AdministrationConfig{
@@ -255,6 +227,80 @@ func (m *Module) NewConnectionAdministration(
 		Dependencies: config.Dependencies, Pools: config.Pools,
 		Audit: config.AdministrationAudit, Now: config.Now,
 	})
+}
+
+func (m *Module) NewRuntimeBindingLeaser(
+	config RuntimeBindingLeaserConfig,
+) (*connectionbinding.RuntimeBindingLeaser, error) {
+	if m == nil || m.connectionBindings == nil {
+		return nil, connectionbinding.ErrProviderUnavailable
+	}
+	pools, err := m.ensureConnectionPools(
+		config.Now,
+		config.Audit,
+		config.RefreshTimeout,
+		config.MaxConcurrent,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return connectionbinding.NewRuntimeBindingLeaser(
+		connectionbinding.RuntimeBindingLeaserConfig{
+			Bindings: m.connectionBindings, Pools: pools, Authorize: config.Authorize,
+		},
+	)
+}
+
+func (m *Module) ensureConnectionPools(
+	now func() time.Time,
+	audit connectionbinding.RotationAuditRecorder,
+	refreshTimeout time.Duration,
+	maxConcurrent int,
+) (*connectionbinding.PoolDirectory, error) {
+	if m == nil || m.connectionBindings == nil || m.connectionFactory == nil || now == nil {
+		return nil, connectionbinding.ErrProviderUnavailable
+	}
+	if refreshTimeout <= 0 {
+		refreshTimeout = 30 * time.Second
+	}
+	if maxConcurrent <= 0 {
+		maxConcurrent = 2
+	}
+	m.connectionPoolsMu.Lock()
+	defer m.connectionPoolsMu.Unlock()
+	if m.connectionPools != nil {
+		return m.connectionPools, nil
+	}
+	pools, err := connectionbinding.NewPoolDirectory(connectionbinding.PoolDirectoryConfig{
+		Build: func(binding connectionbinding.TargetBinding) (*connectionbinding.PoolManager, error) {
+			if binding.TargetID != m.targetID ||
+				binding.Scope.Environment != m.targetEnvironment ||
+				binding.AuthenticationMode != connectionbinding.AuthenticationExternalBundle {
+				return nil, connectionbinding.ErrUnauthorizedBinding
+			}
+			resolver, err := connectionbinding.SelectResolver(
+				connectionbinding.ResolverSelection{
+					TargetID: binding.TargetID, Environment: binding.Scope.Environment,
+					TargetClass: m.targetClass, Kind: m.connectionResolverKind(),
+				},
+				m.targetResolvers,
+			)
+			if err != nil {
+				return nil, err
+			}
+			return connectionbinding.NewPoolManager(connectionbinding.PoolManagerConfig{
+				Binding: binding, Resolver: resolver, Factory: m.connectionFactory,
+				Store: m.connectionBindings, Audit: audit,
+				Now: now, StaleAfter: 15 * time.Minute,
+			})
+		},
+		RefreshTimeout: refreshTimeout, MaxConcurrent: maxConcurrent,
+	})
+	if err != nil {
+		return nil, err
+	}
+	m.connectionPools = pools
+	return pools, nil
 }
 
 func (m *Module) connectionResolverKind() connectionbinding.ResolverKind {
@@ -370,8 +416,12 @@ func (m *Module) Close() error {
 		return nil
 	}
 	var errs []error
-	if m.connectionPools != nil {
-		errs = append(errs, m.connectionPools.Close())
+	m.connectionPoolsMu.Lock()
+	connectionPools := m.connectionPools
+	m.connectionPools = nil
+	m.connectionPoolsMu.Unlock()
+	if connectionPools != nil {
+		errs = append(errs, connectionPools.Close())
 	}
 	if m.cache != nil {
 		errs = append(errs, m.cache.Close())

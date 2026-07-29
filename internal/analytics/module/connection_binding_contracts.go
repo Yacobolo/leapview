@@ -14,6 +14,10 @@ type ConnectionRotationAuditEvent = connectionbinding.RotationAuditEvent
 type ConnectionRotationAuditRecorder = connectionbinding.RotationAuditRecorder
 type ConnectionAdministrationAuditEvent = connectionbinding.AdministrationAuditEvent
 type ConnectionAdministrationAuditRecorder = connectionbinding.AdministrationAuditRecorder
+type RuntimeBindingRequest = connectionbinding.RuntimeBindingRequest
+type RuntimeBindingLeases = connectionbinding.RuntimeBindingLeases
+type RuntimeBindingLeaser = connectionbinding.RuntimeBindingLeaser
+type RuntimeBindingAuthorizer = connectionbinding.RuntimeBindingAuthorizer
 
 const (
 	PermissionManageConnectionMetadata = connectionbinding.PermissionManageConnectionMetadata
@@ -44,4 +48,12 @@ type ConnectionAdministrationConfig struct {
 	MaxConcurrent       int
 	Audit               ConnectionRotationAuditRecorder
 	AdministrationAudit ConnectionAdministrationAuditRecorder
+}
+
+type RuntimeBindingLeaserConfig struct {
+	Authorize      RuntimeBindingAuthorizer
+	Now            func() time.Time
+	RefreshTimeout time.Duration
+	MaxConcurrent  int
+	Audit          ConnectionRotationAuditRecorder
 }

@@ -54,10 +54,11 @@ type PoolManager struct {
 }
 
 type poolGeneration struct {
-	pool     RuntimePool
-	version  string
-	leases   int
-	draining bool
+	pool            RuntimePool
+	version         string
+	bindingRevision int64
+	leases          int
+	draining        bool
 }
 
 func NewPoolManager(config PoolManagerConfig) (*PoolManager, error) {
@@ -165,6 +166,9 @@ func (manager *PoolManager) refresh(ctx context.Context, request RefreshRequest)
 			manager.mu.Lock()
 			if manager.binding.Revision == binding.Revision {
 				manager.binding = saved
+				if manager.active != nil {
+					manager.active.bindingRevision = saved.Revision
+				}
 			}
 			manager.lastRun = now
 			manager.mu.Unlock()
@@ -211,7 +215,9 @@ func (manager *PoolManager) refresh(ctx context.Context, request RefreshRequest)
 	}
 	previous := manager.active
 	manager.binding = saved
-	manager.active = &poolGeneration{pool: replacement, version: version}
+	manager.active = &poolGeneration{
+		pool: replacement, version: version, bindingRevision: saved.Revision,
+	}
 	manager.lastRun = now
 	closePrevious := markDraining(previous)
 	manager.mu.Unlock()
@@ -306,7 +312,12 @@ func (manager *PoolManager) Lease() (*PoolLease, error) {
 		return nil, ErrProviderUnavailable
 	}
 	manager.active.leases++
-	return &PoolLease{manager: manager, generation: manager.active}, nil
+	evidence := manager.binding.Evidence()
+	evidence.BindingRevision = manager.active.bindingRevision
+	evidence.ValidatedVersion = manager.active.version
+	return &PoolLease{
+		manager: manager, generation: manager.active, evidence: evidence,
+	}, nil
 }
 
 func (manager *PoolManager) Disable(ctx context.Context, now time.Time) error {
@@ -407,6 +418,7 @@ type PoolLease struct {
 	once       sync.Once
 	manager    *PoolManager
 	generation *poolGeneration
+	evidence   BindingEvidence
 }
 
 func (lease *PoolLease) Pool() RuntimePool {
@@ -414,6 +426,13 @@ func (lease *PoolLease) Pool() RuntimePool {
 		return nil
 	}
 	return lease.generation.pool
+}
+
+func (lease *PoolLease) Evidence() BindingEvidence {
+	if lease == nil {
+		return BindingEvidence{}
+	}
+	return lease.evidence
 }
 
 func (lease *PoolLease) Release() {

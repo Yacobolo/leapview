@@ -48,6 +48,38 @@ func TestConnectionAdministrationComposesTargetOwnedValidatedPoolDirectory(t *te
 	if module.connectionPools == nil {
 		t.Fatal("module did not retain the target-owned pool directory")
 	}
+	runtimeBindings, err := module.NewRuntimeBindingLeaser(RuntimeBindingLeaserConfig{
+		Authorize: func(context.Context, string, ConnectionTargetBinding) error {
+			return nil
+		},
+		Now:            func() time.Time { return now },
+		RefreshTimeout: time.Second,
+		MaxConcurrent:  1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leases, err := runtimeBindings.Acquire(t.Context(), RuntimeBindingRequest{
+		Actor: "principal:author-1", Scope: binding.Scope, TargetID: binding.TargetID,
+		Requirements: []connectionbinding.Requirement{{
+			LogicalConnectionID: binding.LogicalConnectionID,
+			ConnectorKind:       binding.ConnectorKind,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence := leases.Evidence()
+	if len(evidence) != 1 || evidence[0].ValidatedVersion != "secret:v2" ||
+		resolver.calls != 1 || factory.calls != 1 {
+		t.Fatalf(
+			"runtime evidence=%#v resolver=%d factory=%d, want reused validated generation",
+			evidence,
+			resolver.calls,
+			factory.calls,
+		)
+	}
+	leases.Release()
 	if err := module.Close(); err != nil {
 		t.Fatal(err)
 	}

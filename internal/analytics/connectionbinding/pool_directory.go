@@ -10,6 +10,16 @@ import (
 
 type PoolManagerBuilder func(TargetBinding) (*PoolManager, error)
 
+type ValidatedPoolLease interface {
+	Pool() RuntimePool
+	Evidence() BindingEvidence
+	Release()
+}
+
+type ValidatedPoolDirectory interface {
+	AcquireValidated(context.Context, TargetBinding, string) (ValidatedPoolLease, error)
+}
+
 type PoolDirectoryConfig struct {
 	Build          PoolManagerBuilder
 	RefreshTimeout time.Duration
@@ -76,6 +86,40 @@ func (directory *PoolDirectory) Pool(binding TargetBinding) (AdministrationPool,
 	}
 	directory.pools[binding.ID] = pool
 	return pool, nil
+}
+
+// AcquireValidated returns a lease only from a health-checked pool generation.
+// A target restart may have durable validation evidence but no in-memory pool;
+// in that case the directory performs one bounded refresh through the same
+// resolver and factory path used by administration before granting the lease.
+func (directory *PoolDirectory) AcquireValidated(
+	ctx context.Context,
+	binding TargetBinding,
+	actor string,
+) (ValidatedPoolLease, error) {
+	request := RefreshRequest{Actor: actor, Operation: RefreshRuntime}
+	if !request.valid() {
+		return nil, fmt.Errorf("%w: runtime acquisition actor is required", ErrInvalidBinding)
+	}
+	administration, err := directory.Pool(binding)
+	if err != nil {
+		return nil, err
+	}
+	pool, ok := administration.(*boundedAdministrationPool)
+	if !ok || pool == nil || pool.manager == nil {
+		return nil, ErrProviderUnavailable
+	}
+	lease, err := pool.manager.Lease()
+	if err == nil {
+		return lease, nil
+	}
+	if !errors.Is(err, ErrCredentialNotFound) {
+		return nil, err
+	}
+	if err := pool.Refresh(ctx, request); err != nil {
+		return nil, err
+	}
+	return pool.manager.Lease()
 }
 
 func (directory *PoolDirectory) Close() error {

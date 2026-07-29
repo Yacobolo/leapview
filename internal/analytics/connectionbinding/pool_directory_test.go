@@ -170,6 +170,101 @@ func TestPoolDirectoryCloseRetiresManagersAndRejectsNewPools(t *testing.T) {
 	}
 }
 
+func TestPoolDirectoryAcquiresOnlyValidatedGenerationsAndReusesThem(t *testing.T) {
+	binding := validTargetBinding(t)
+	now := binding.UpdatedAt.Add(time.Minute)
+	resolver := &sequenceResolver{
+		snapshots: []CredentialSnapshot{testSnapshot(t, "provider-v2", now)},
+	}
+	factory := &recordingPoolFactory{}
+	store := &recordingBindingStore{}
+	directory, err := NewPoolDirectory(PoolDirectoryConfig{
+		Build: func(current TargetBinding) (*PoolManager, error) {
+			return NewPoolManager(PoolManagerConfig{
+				Binding: current, Resolver: resolver, Factory: factory, Store: store,
+				Now: func() time.Time { return now }, StaleAfter: time.Hour,
+			})
+		},
+		RefreshTimeout: time.Second,
+		MaxConcurrent:  1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = directory.Close() })
+
+	first, err := directory.AcquireValidated(
+		t.Context(),
+		binding,
+		"candidate:cand_1",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Pool() == nil {
+		t.Fatal("validated lease has no runtime pool")
+	}
+	evidence := first.Evidence()
+	if evidence.BindingID != binding.ID || evidence.BindingRevision != binding.Revision+1 ||
+		evidence.ValidatedVersion != "provider-v2" || evidence.Health != HealthHealthy {
+		t.Fatalf("validated evidence = %#v", evidence)
+	}
+
+	second, err := directory.AcquireValidated(
+		t.Context(),
+		store.binding,
+		"candidate:cand_1",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolver.calls != 1 || len(factory.pools) != 1 || second.Pool() != first.Pool() {
+		t.Fatalf(
+			"pool reuse resolver=%d pools=%d first=%p second=%p",
+			resolver.calls,
+			len(factory.pools),
+			first.Pool(),
+			second.Pool(),
+		)
+	}
+
+	first.Release()
+	second.Release()
+}
+
+func TestPoolDirectoryValidatedAcquireIsBoundedAndFailsClosed(t *testing.T) {
+	binding := validTargetBinding(t)
+	resolver := &blockingResolver{
+		started: make(chan struct{}), release: make(chan struct{}),
+	}
+	directory, err := NewPoolDirectory(PoolDirectoryConfig{
+		Build: func(current TargetBinding) (*PoolManager, error) {
+			return NewPoolManager(PoolManagerConfig{
+				Binding: current, Resolver: resolver, Factory: &recordingPoolFactory{},
+				Store: &recordingBindingStore{}, Now: time.Now, StaleAfter: time.Hour,
+			})
+		},
+		RefreshTimeout: 40 * time.Millisecond,
+		MaxConcurrent:  1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = directory.Close() })
+
+	started := time.Now()
+	_, err = directory.AcquireValidated(t.Context(), binding, "candidate:cand_1")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("AcquireValidated() error = %v, want bounded deadline", err)
+	}
+	if elapsed := time.Since(started); elapsed > 250*time.Millisecond {
+		t.Fatalf("bounded candidate acquire took %s", elapsed)
+	}
+	if len(directory.pools) != 1 {
+		t.Fatalf("prepared pool managers = %d, want reusable degraded manager", len(directory.pools))
+	}
+}
+
 type blockingResolver struct {
 	once        sync.Once
 	started     chan struct{}
