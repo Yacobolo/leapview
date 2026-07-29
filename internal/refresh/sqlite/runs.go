@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
+	platformdb "github.com/Yacobolo/leapview/internal/refresh/internal/db"
 	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
 	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
-	platformdb "github.com/Yacobolo/leapview/internal/refresh/sqlite/materializedb"
 	"github.com/Yacobolo/leapview/internal/servingstate"
 )
 

@@ -9,7 +9,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/access"
 	"github.com/Yacobolo/leapview/internal/workspace"
-	platformdb "github.com/Yacobolo/leapview/internal/workspace/sqlite/workspacedb"
+	platformdb "github.com/Yacobolo/leapview/internal/workspace/internal/db"
 )
 
 type SecurableRegistrar interface {

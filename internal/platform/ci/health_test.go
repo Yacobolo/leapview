@@ -79,8 +79,8 @@ func TestAnalyzeHealth(t *testing.T) {
 			t.Errorf("alerts %v do not contain %q", got.Alerts, alert)
 		}
 	}
-	if got.Selection["docs"].Selected != 1 {
-		t.Fatalf("docs selected count = %d, want 1", got.Selection["docs"].Selected)
+	if got.Selection["docs"].Selected != 5 {
+		t.Fatalf("docs selected count = %d, want 5", got.Selection["docs"].Selected)
 	}
 }
 

@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/agent"
-	platformdb "github.com/Yacobolo/leapview/internal/agent/sqlite/agentdb"
+	platformdb "github.com/Yacobolo/leapview/internal/agent/internal/db"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 )
 

@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/deployment"
-	platformdb "github.com/Yacobolo/leapview/internal/deployment/sqlite/deploymentdb"
+	platformdb "github.com/Yacobolo/leapview/internal/deployment/internal/db"
 	"github.com/Yacobolo/leapview/internal/platform/digest"
 	"github.com/Yacobolo/leapview/internal/platform/jobs"
 	"github.com/Yacobolo/leapview/internal/platform/transaction"

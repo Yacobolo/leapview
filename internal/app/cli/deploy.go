@@ -95,10 +95,10 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 		activeGraph workspace.AssetGraph
 	}
 	planned := make([]plannedWorkspace, 0, len(workspaceIDs))
+	graphLoader := workspaceActiveGraphLoader{client: capabilityAPIClient{}}
 	for _, workspaceID := range workspaceIDs {
-		graph, graphErr := projectcli.FetchActiveWorkspaceGraph(
+		graph, graphErr := graphLoader.LoadActiveWorkspaceGraph(
 			ctx,
-			capabilityAPIClient{},
 			cliapi.Credentials{Target: cliOpts.target, Token: cliOpts.token},
 			cliOpts.environment,
 			workspaceID,

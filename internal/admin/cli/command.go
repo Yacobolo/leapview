@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	adminoffline "github.com/Yacobolo/leapview/internal/admin/offline"
 	"github.com/spf13/cobra"
 )
 
@@ -34,12 +35,12 @@ type Options struct {
 // Application composition implements this contract because it owns process
 // configuration and construction of cross-capability resources.
 type Operations interface {
-	Initialize(context.Context, string, io.Writer) error
+	Initialize(context.Context, adminoffline.InitializeRequest, io.Writer) error
 	AcknowledgeInitialCredentials(context.Context) error
-	StorageCleanup(context.Context, Options, io.Writer) error
-	Maintenance(context.Context, Options, io.Writer) error
-	Backup(context.Context, Options, io.Writer) error
-	Restore(context.Context, Options, io.Reader, io.Writer) error
+	StorageCleanup(context.Context, adminoffline.StorageCleanupRequest, io.Writer) error
+	Maintenance(context.Context, adminoffline.MaintenanceRequest, io.Writer) error
+	Backup(context.Context, adminoffline.BackupRequest, io.Writer) error
+	Restore(context.Context, adminoffline.RestoreRequest, io.Reader, io.Writer) error
 }
 
 // Command constructs the offline Admin command tree.
@@ -60,7 +61,7 @@ func Command(ctx context.Context, operations Operations) *cobra.Command {
 			if acknowledgeCredentials {
 				return operations.AcknowledgeInitialCredentials(ctx)
 			}
-			return operations.Initialize(ctx, initializeFormat, command.OutOrStdout())
+			return operations.Initialize(ctx, adminoffline.InitializeRequest{Format: initializeFormat}, command.OutOrStdout())
 		},
 	}
 	initialize.Flags().StringVar(&initializeFormat, "format", "json", "output format (json)")
@@ -68,13 +69,16 @@ func Command(ctx context.Context, operations Operations) *cobra.Command {
 
 	storage := &cobra.Command{Use: "storage", Short: "Maintain analytical storage"}
 	cleanup := operationCommand(operations, "cleanup", "Reconcile serving-state snapshots and clean DuckLake storage", func(command *cobra.Command) error {
-		return operations.StorageCleanup(ctx, values, command.OutOrStdout())
+		return operations.StorageCleanup(ctx, adminoffline.StorageCleanupRequest{Apply: values.Apply}, command.OutOrStdout())
 	})
 	cleanup.Flags().BoolVar(&values.Apply, "apply", false, "perform destructive cleanup instead of dry-run")
 	storage.AddCommand(cleanup)
 
 	maintenance := operationCommand(operations, "maintenance", "Prune bounded operational history", func(command *cobra.Command) error {
-		return operations.Maintenance(ctx, values, command.OutOrStdout())
+		return operations.Maintenance(ctx, adminoffline.MaintenanceRequest{
+			Apply: values.Apply, AuditDays: values.AuditDays, QueryDays: values.QueryDays,
+			ArchivedAgentDays: values.ArchivedAgentDays, AuthStateDays: values.AuthStateDays,
+		}, command.OutOrStdout())
 	})
 	maintenance.Flags().BoolVar(&values.Apply, "apply", false, "delete rows instead of dry-run")
 	maintenance.Flags().IntVar(&values.AuditDays, "audit-days", defaultAuditRetentionDays, "audit event retention in days; 0 disables audit pruning")
@@ -83,13 +87,18 @@ func Command(ctx context.Context, operations Operations) *cobra.Command {
 	maintenance.Flags().IntVar(&values.AuthStateDays, "auth-state-days", defaultAuthStateRetentionDays, "expired or revoked auth state retention in days; 0 disables auth-state pruning")
 
 	backup := operationCommand(operations, "backup", "Create a consistent LeapView instance backup", func(command *cobra.Command) error {
-		return operations.Backup(ctx, values, command.OutOrStdout())
+		return operations.Backup(ctx, adminoffline.BackupRequest{
+			Out: values.BackupOut, DatabaseOnly: values.DatabaseOnly,
+		}, command.OutOrStdout())
 	})
 	backup.Flags().StringVar(&values.BackupOut, "out", "", "backup archive output path")
 	backup.Flags().BoolVar(&values.DatabaseOnly, "database-only", false, "backup only the platform SQLite database")
 
 	restore := operationCommand(operations, "restore", "Restore LeapView from a validated instance backup", func(command *cobra.Command) error {
-		return operations.Restore(ctx, values, command.InOrStdin(), command.OutOrStdout())
+		return operations.Restore(ctx, adminoffline.RestoreRequest{
+			From: values.RestoreFrom, CurrentBackup: values.RestoreBefore,
+			Confirm: values.ConfirmRestore, DatabaseOnly: values.DatabaseOnly,
+		}, command.InOrStdin(), command.OutOrStdout())
 	})
 	restore.Flags().StringVar(&values.RestoreFrom, "from", "", "backup archive path to restore")
 	restore.Flags().StringVar(&values.RestoreBefore, "current-out", "", "path for a backup of the current instance before replacement; - creates and discards a validated temporary checkpoint")

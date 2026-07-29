@@ -6,13 +6,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/agent/api"
+	agentgen "github.com/Yacobolo/leapview/internal/agent/api/gen"
 	"github.com/Yacobolo/leapview/internal/platform/cliapi"
+	apigenclient "github.com/Yacobolo/toolbelt/apigen/runtime/client"
 )
 
 type fakeClient struct {
-	requests []cliapi.Request
-	do       func(cliapi.Request, any) error
+	transport fakeTransport
+}
+
+type fakeTransport struct {
+	requests []apigenclient.Request
+	do       func(apigenclient.Request, any) error
 }
 
 func (client *fakeClient) Resolve(_ context.Context, credentials cliapi.Credentials) (cliapi.Credentials, error) {
@@ -23,23 +28,28 @@ func (client *fakeClient) Environment(_ context.Context, _ cliapi.Credentials, a
 	return asserted, nil
 }
 
-func (client *fakeClient) DoJSON(_ context.Context, _ cliapi.Credentials, request cliapi.Request, out any) error {
-	client.requests = append(client.requests, request)
-	return client.do(request, out)
+func (client *fakeClient) Transport(_ context.Context, _ cliapi.Credentials) (apigenclient.Transport, error) {
+	return &client.transport, nil
+}
+
+func (transport *fakeTransport) DoAPIGen(_ context.Context, request apigenclient.Request, out any) (apigenclient.Response, error) {
+	transport.requests = append(transport.requests, request)
+	if err := transport.do(request, out); err != nil {
+		return apigenclient.Response{}, err
+	}
+	return apigenclient.Response{StatusCode: 200}, nil
 }
 
 func TestCommandRunsAgentConversationWithoutApplicationProcess(t *testing.T) {
 	client := &fakeClient{}
-	client.do = func(request cliapi.Request, out any) error {
+	client.transport.do = func(request apigenclient.Request, out any) error {
 		switch request.OperationID {
-		case "createAgentConversation":
-			*out.(*api.AgentConversationResponse) = api.AgentConversationResponse{ID: "conv_1"}
-		case "createAgentRun":
-			*out.(*api.AgentRunResponse) = api.AgentRunResponse{ID: "run_1", Status: "completed", StopReason: "complete"}
-		case "listAgentMessages":
-			*out.(*listResponse[api.AgentMessageResponse]) = listResponse[api.AgentMessageResponse]{
-				Items: []api.AgentMessageResponse{{RunID: "run_1", Role: "assistant", ContentText: "Answer"}},
-			}
+		case agentgen.GenOperationCreateAgentConversation:
+			return json.Unmarshal([]byte(`{"id":"conv_1","createdAt":"","principalId":"principal","status":"active","title":"","updatedAt":""}`), out)
+		case agentgen.GenOperationCreateAgentRun:
+			return json.Unmarshal([]byte(`{"id":"run_1","conversationId":"conv_1","createdAt":"","principalId":"principal","status":"completed","stopReason":"complete"}`), out)
+		case agentgen.GenOperationListAgentMessages:
+			return json.Unmarshal([]byte(`{"items":[{"id":"message_1","contentText":"Answer","createdAt":"","role":"assistant","runId":"run_1","seq":1}],"page":{}}`), out)
 		default:
 			t.Fatalf("unexpected operation %q", request.OperationID)
 		}
@@ -55,24 +65,21 @@ func TestCommandRunsAgentConversationWithoutApplicationProcess(t *testing.T) {
 	if got := output.String(); !strings.Contains(got, "Answer") || !strings.Contains(got, "conversation=conv_1 run=run_1") {
 		t.Fatalf("output = %q", got)
 	}
-	if len(client.requests) != 3 {
-		t.Fatalf("requests = %d, want 3", len(client.requests))
+	if len(client.transport.requests) != 3 {
+		t.Fatalf("requests = %d, want 3", len(client.transport.requests))
 	}
-	if client.requests[0].Headers["Idempotency-Key"] == "" || client.requests[1].Headers["Idempotency-Key"] == "" {
+	if client.transport.requests[0].Headers.Get("Idempotency-Key") == "" || client.transport.requests[1].Headers.Get("Idempotency-Key") == "" {
 		t.Fatal("mutating Agent requests must carry idempotency keys")
 	}
 }
 
 func TestCommandOwnsConversationEnvelopePresentation(t *testing.T) {
 	client := &fakeClient{}
-	client.do = func(request cliapi.Request, out any) error {
-		if request.OperationID != "listAgentConversations" {
+	client.transport.do = func(request apigenclient.Request, out any) error {
+		if request.OperationID != agentgen.GenOperationListAgentConversations {
 			t.Fatalf("operation = %q", request.OperationID)
 		}
-		*out.(*listResponse[api.AgentConversationResponse]) = listResponse[api.AgentConversationResponse]{
-			Items: []api.AgentConversationResponse{{ID: "conv_1", Title: "Ask", Status: "active"}},
-		}
-		return nil
+		return json.Unmarshal([]byte(`{"items":[{"id":"conv_1","createdAt":"","principalId":"principal","status":"active","title":"Ask","updatedAt":""}],"page":{}}`), out)
 	}
 	command := Command(context.Background(), Dependencies{Client: client})
 	var output strings.Builder
@@ -81,14 +88,14 @@ func TestCommandOwnsConversationEnvelopePresentation(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	var rows []api.AgentConversationResponse
+	var rows []agentgen.GenSchemaAgentConversationResponse
 	if err := json.Unmarshal([]byte(output.String()), &rows); err != nil {
 		t.Fatalf("decode output: %v", err)
 	}
-	if len(rows) != 1 || rows[0].ID != "conv_1" {
+	if len(rows) != 1 || rows[0].Id != "conv_1" {
 		t.Fatalf("rows = %#v", rows)
 	}
-	query := client.requests[0].Query
+	query := client.transport.requests[0].Query
 	if query.Get("limit") != "7" || query.Get("pageToken") != "cursor" {
 		t.Fatalf("query = %s", query.Encode())
 	}

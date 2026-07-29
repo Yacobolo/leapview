@@ -12,6 +12,7 @@ import (
 
 	"github.com/Yacobolo/leapview/internal/dashboard"
 	"github.com/Yacobolo/leapview/internal/dashboard/command"
+	publicationdb "github.com/Yacobolo/leapview/internal/dashboard/internal/db"
 	"github.com/Yacobolo/leapview/internal/dashboard/publication"
 )
 
@@ -22,6 +23,7 @@ type StreamRegistry struct {
 	mu      sync.Mutex
 	streams map[string]map[string]*localStream
 	db      *sql.DB
+	q       *publicationdb.Queries
 }
 
 type localStream struct {
@@ -36,7 +38,7 @@ type streamKey struct {
 }
 
 func NewStreamRegistry(db *sql.DB) *StreamRegistry {
-	return &StreamRegistry{streams: map[string]map[string]*localStream{}, db: db}
+	return &StreamRegistry{streams: map[string]map[string]*localStream{}, db: db, q: publicationdb.New(db)}
 }
 
 func (r *StreamRegistry) Register(parent context.Context, publicationID, streamID string, version publication.StreamVersion, initialFilters ...dashboard.Filters) (context.Context, func(), error) {
@@ -55,14 +57,11 @@ func (r *StreamRegistry) Register(parent context.Context, publicationID, streamI
 		cancel()
 		return ctx, func() {}, err
 	}
-	if _, err := r.db.ExecContext(parent, `INSERT INTO dashboard_publication_streams (
-publication_id, stream_id, public_id, serving_state_id, registration_id, filters_json, expires_at
-) VALUES (?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(publication_id, stream_id) DO UPDATE SET
-public_id = excluded.public_id, serving_state_id = excluded.serving_state_id,
-registration_id = excluded.registration_id, filters_json = excluded.filters_json,
-generation = 1, expires_at = excluded.expires_at, updated_at = CURRENT_TIMESTAMP`,
-		publicationID, streamID, version.PublicID, version.ServingStateID, registrationID, string(filtersJSON), streamExpiry()); err != nil {
+	if err := r.q.UpsertDashboardPublicationStream(parent, publicationdb.UpsertDashboardPublicationStreamParams{
+		PublicationID: publicationID, StreamID: streamID,
+		PublicID: version.PublicID, ServingStateID: version.ServingStateID,
+		RegistrationID: registrationID, FiltersJson: string(filtersJSON), ExpiresAt: streamExpiry(),
+	}); err != nil {
 		cancel()
 		return ctx, func() {}, err
 	}
@@ -87,7 +86,12 @@ generation = 1, expires_at = excluded.expires_at, updated_at = CURRENT_TIMESTAMP
 		}
 		r.mu.Unlock()
 		cancel()
-		_, _ = r.db.ExecContext(context.WithoutCancel(parent), `DELETE FROM dashboard_publication_streams WHERE publication_id = ? AND stream_id = ? AND registration_id = ?`, publicationID, streamID, registrationID)
+		_ = r.q.DeleteDashboardPublicationStreamRegistration(
+			context.WithoutCancel(parent),
+			publicationdb.DeleteDashboardPublicationStreamRegistrationParams{
+				PublicationID: publicationID, StreamID: streamID, RegistrationID: registrationID,
+			},
+		)
 	}, nil
 }
 
@@ -96,16 +100,16 @@ func (r *StreamRegistry) PrepareCommand(ctx context.Context, publicationID, stre
 		return command.PreparedRefresh{}, 0, fmt.Errorf("publication command preparation is required")
 	}
 	for attempt := 0; attempt < 8; attempt++ {
-		var filtersJSON string
-		var generation uint64
-		err := r.db.QueryRowContext(ctx, `SELECT filters_json, generation FROM dashboard_publication_streams
-WHERE publication_id = ? AND stream_id = ? AND public_id = ? AND serving_state_id = ? AND expires_at > ?`,
-			publicationID, streamID, version.PublicID, version.ServingStateID, time.Now().UTC().Format(time.RFC3339Nano)).Scan(&filtersJSON, &generation)
+		now := time.Now().UTC().Format(time.RFC3339Nano)
+		row, err := r.q.GetDashboardPublicationCommandState(ctx, publicationdb.GetDashboardPublicationCommandStateParams{
+			PublicationID: publicationID, StreamID: streamID,
+			PublicID: version.PublicID, ServingStateID: version.ServingStateID, Now: now,
+		})
 		if err != nil {
 			return command.PreparedRefresh{}, 0, fmt.Errorf("load publication command state: %w", err)
 		}
 		var filters dashboard.Filters
-		if err := json.Unmarshal([]byte(filtersJSON), &filters); err != nil {
+		if err := json.Unmarshal([]byte(row.FiltersJson), &filters); err != nil {
 			return command.PreparedRefresh{}, 0, fmt.Errorf("decode publication command state: %w", err)
 		}
 		prepared, err := prepare(filters.WithDefaults())
@@ -116,12 +120,13 @@ WHERE publication_id = ? AND stream_id = ? AND public_id = ? AND serving_state_i
 		if err != nil {
 			return command.PreparedRefresh{}, 0, err
 		}
-		nextGeneration := generation + 1
-		result, err := r.db.ExecContext(ctx, `UPDATE dashboard_publication_streams
-SET filters_json = ?, generation = ?, expires_at = ?, updated_at = CURRENT_TIMESTAMP
-WHERE publication_id = ? AND stream_id = ? AND public_id = ? AND serving_state_id = ? AND generation = ? AND expires_at > ?`,
-			string(nextFilters), nextGeneration, streamExpiry(), publicationID, streamID, version.PublicID, version.ServingStateID,
-			generation, time.Now().UTC().Format(time.RFC3339Nano))
+		nextGeneration := row.Generation + 1
+		result, err := r.q.UpdateDashboardPublicationCommandState(ctx, publicationdb.UpdateDashboardPublicationCommandStateParams{
+			FiltersJson: string(nextFilters), NextGeneration: nextGeneration, ExpiresAt: streamExpiry(),
+			PublicationID: publicationID, StreamID: streamID,
+			PublicID: version.PublicID, ServingStateID: version.ServingStateID,
+			CurrentGeneration: row.Generation, Now: now,
+		})
 		if err != nil {
 			return command.PreparedRefresh{}, 0, err
 		}
@@ -130,24 +135,25 @@ WHERE publication_id = ? AND stream_id = ? AND public_id = ? AND serving_state_i
 			return command.PreparedRefresh{}, 0, err
 		}
 		if changed == 1 {
-			return prepared, nextGeneration, nil
+			return prepared, uint64(nextGeneration), nil
 		}
 	}
 	return command.PreparedRefresh{}, 0, fmt.Errorf("publication command state changed concurrently")
 }
 
 func (r *StreamRegistry) Active(publicationID, streamID string, version publication.StreamVersion) bool {
-	var exists int
-	err := r.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM dashboard_publication_streams
-WHERE publication_id = ? AND stream_id = ? AND public_id = ? AND serving_state_id = ? AND expires_at > ?)`,
-		publicationID, streamID, version.PublicID, version.ServingStateID, time.Now().UTC().Format(time.RFC3339Nano)).Scan(&exists)
+	exists, err := r.q.DashboardPublicationStreamIsActive(context.Background(), publicationdb.DashboardPublicationStreamIsActiveParams{
+		PublicationID: publicationID, StreamID: streamID,
+		PublicID: version.PublicID, ServingStateID: version.ServingStateID,
+		Now: time.Now().UTC().Format(time.RFC3339Nano),
+	})
 	return err == nil && exists == 1
 }
 
 func (r *StreamRegistry) Reconcile(ctx context.Context, active map[string]publication.StreamVersion) {
 	now := time.Now().UTC()
-	_, _ = r.db.ExecContext(ctx, `DELETE FROM dashboard_publication_streams WHERE expires_at <= ?`, now.Format(time.RFC3339Nano))
-	_, _ = r.db.ExecContext(ctx, `DELETE FROM dashboard_publication_stream_events WHERE created_at <= ?`, now.Add(-10*time.Minute).Format(time.RFC3339Nano))
+	_ = r.q.DeleteExpiredDashboardPublicationStreams(ctx, now.Format(time.RFC3339Nano))
+	_ = r.q.DeleteExpiredDashboardPublicationStreamEvents(ctx, now.Add(-10*time.Minute).Format(time.RFC3339Nano))
 	durableRegistrations, durableRegistrationsLoaded := r.loadDurableRegistrations(ctx)
 	r.mu.Lock()
 	stale := []context.CancelFunc{}
@@ -175,23 +181,13 @@ func (r *StreamRegistry) Reconcile(ctx context.Context, active map[string]public
 }
 
 func (r *StreamRegistry) loadDurableRegistrations(ctx context.Context) (map[streamKey]string, bool) {
-	rows, err := r.db.QueryContext(ctx, `SELECT publication_id, stream_id, registration_id
-FROM dashboard_publication_streams WHERE expires_at > ?`, time.Now().UTC().Format(time.RFC3339Nano))
+	rows, err := r.q.ListActiveDashboardPublicationStreamRegistrations(ctx, time.Now().UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return nil, false
 	}
-	defer rows.Close()
-	registrations := map[streamKey]string{}
-	for rows.Next() {
-		var key streamKey
-		var registrationID string
-		if err := rows.Scan(&key.publicationID, &key.streamID, &registrationID); err != nil {
-			return nil, false
-		}
-		registrations[key] = registrationID
-	}
-	if err := rows.Err(); err != nil {
-		return nil, false
+	registrations := make(map[streamKey]string, len(rows))
+	for _, row := range rows {
+		registrations[streamKey{publicationID: row.PublicationID, streamID: row.StreamID}] = row.RegistrationID
 	}
 	return registrations, true
 }
@@ -204,7 +200,7 @@ func (r *StreamRegistry) ClosePublication(publicationID string) {
 	for _, stream := range streams {
 		stream.cancel()
 	}
-	_, _ = r.db.Exec(`DELETE FROM dashboard_publication_streams WHERE publication_id = ?`, publicationID)
+	_ = r.q.DeleteDashboardPublicationStreams(context.Background(), publicationID)
 }
 
 func (r *StreamRegistry) heartbeat(ctx context.Context, publicationID, streamID, registrationID string) {
@@ -215,8 +211,10 @@ func (r *StreamRegistry) heartbeat(ctx context.Context, publicationID, streamID,
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			result, err := r.db.ExecContext(ctx, `UPDATE dashboard_publication_streams SET expires_at = ?, updated_at = CURRENT_TIMESTAMP
-WHERE publication_id = ? AND stream_id = ? AND registration_id = ?`, streamExpiry(), publicationID, streamID, registrationID)
+			result, err := r.q.ExtendDashboardPublicationStreamRegistration(ctx, publicationdb.ExtendDashboardPublicationStreamRegistrationParams{
+				ExpiresAt: streamExpiry(), PublicationID: publicationID,
+				StreamID: streamID, RegistrationID: registrationID,
+			})
 			if err != nil {
 				continue
 			}

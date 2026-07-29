@@ -4,7 +4,8 @@ package cliapi
 
 import (
 	"context"
-	"net/url"
+
+	apigenclient "github.com/Yacobolo/toolbelt/apigen/runtime/client"
 )
 
 // Credentials are the optional target and token supplied by a command.
@@ -14,21 +15,10 @@ type Credentials struct {
 	Token  string
 }
 
-// Request describes one generated API operation without coupling a capability
-// adapter to application routing or HTTP client construction.
-type Request struct {
-	Method      string
-	OperationID string
-	PathParams  map[string]string
-	Query       url.Values
-	Headers     map[string]string
-	Body        any
-}
-
 // Client is the narrow application-facing port used by capability CLI
 // adapters. Implementations own credential and transport configuration.
 type Client interface {
 	Resolve(context.Context, Credentials) (Credentials, error)
 	Environment(context.Context, Credentials, string) (string, error)
-	DoJSON(context.Context, Credentials, Request, any) error
+	Transport(context.Context, Credentials) (apigenclient.Transport, error)
 }

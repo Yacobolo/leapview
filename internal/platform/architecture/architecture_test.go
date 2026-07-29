@@ -71,13 +71,78 @@ func TestAgentGeneratedAPIIsCapabilityOwned(t *testing.T) {
 }
 
 func TestCapabilityCLIIsAnAdapterOwnedByItsCapability(t *testing.T) {
-	for _, capability := range []string{"admin", "agent", "analytics", "dashboard", "manageddata", "project", "workspace"} {
+	for _, capability := range []string{"admin", "agent", "dashboard", "manageddata", "project", "workspace"} {
 		rule, ok := ClassifyPackage("internal/" + capability + "/cli")
 		if !ok {
 			t.Fatalf("%s CLI package is not classified", capability)
 		}
 		if rule.Capability != capability || rule.Layer != LayerAdapter {
 			t.Fatalf("%s CLI classification = %#v, want %s adapter", capability, rule, capability)
+		}
+	}
+}
+
+func TestCapabilityCLIsUseGeneratedTypedClients(t *testing.T) {
+	clientImports := map[string]string{
+		"internal/agent/cli":     modulePath + "/internal/agent/api/gen",
+		"internal/dashboard/cli": modulePath + "/internal/dashboard/api/gen",
+		"internal/workspace/cli": modulePath + "/internal/workspace/api/gen",
+	}
+	seen := map[string]bool{}
+	for _, file := range productionGoFiles(t) {
+		requiredImport, capabilityCLI := clientImports[file.pkgDir]
+		if !capabilityCLI {
+			continue
+		}
+		seen[file.pkgDir] = seen[file.pkgDir] || importListContains(file.imports, requiredImport)
+		for _, forbidden := range []string{"cliapi.Request", ".DoJSON(", `OperationID: "`} {
+			if strings.Contains(file.body, forbidden) {
+				t.Errorf("%s retains untyped CLI API surface %q", file.path, forbidden)
+			}
+		}
+	}
+	for pkgDir := range clientImports {
+		if !seen[pkgDir] {
+			t.Errorf("%s does not import its generated typed client package", pkgDir)
+		}
+	}
+
+	cliAPI, err := os.ReadFile(filepath.Join(repoRoot(t), "internal", "platform", "cliapi", "client.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"type Request struct", "DoJSON("} {
+		if strings.Contains(string(cliAPI), forbidden) {
+			t.Errorf("platform CLI port retains transitional surface %q", forbidden)
+		}
+	}
+}
+
+func TestCapabilityAPIPackagesOptIntoTypedClientGeneration(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join(repoRoot(t), "api", "apigen.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := string(content)
+	namespaces := []string{
+		"LeapViewAPI.Access", "LeapViewAPI.Agent", "LeapViewAPI.Analytics",
+		"LeapViewAPI.Dashboard", "LeapViewAPI.Deployment", "LeapViewAPI.ManagedData",
+		"LeapViewAPI.Project", "LeapViewAPI.Refresh", "LeapViewAPI.Release",
+		"LeapViewAPI.Workspace",
+	}
+	for _, namespace := range namespaces {
+		start := strings.Index(manifest, "        "+namespace+":")
+		if start < 0 {
+			t.Errorf("APIGen manifest is missing %s", namespace)
+			continue
+		}
+		rest := manifest[start+1:]
+		end := strings.Index(rest, "\n        LeapViewAPI.")
+		if end >= 0 {
+			rest = rest[:end]
+		}
+		if !strings.Contains(rest, "client_file: client.apigen.gen.go") {
+			t.Errorf("%s does not own a generated typed client", namespace)
 		}
 	}
 }
@@ -127,6 +192,68 @@ func TestApplicationCLIAdminOnlyComposesAdminOperations(t *testing.T) {
 		if function.Name.Name != "adminCommand" {
 			t.Errorf("application CLI Admin composition retains compatibility function %s", function.Name.Name)
 		}
+	}
+}
+
+func TestOfflineAdminUseCasesAreCapabilityOwned(t *testing.T) {
+	rule, ok := ClassifyPackage("internal/admin/offline")
+	if !ok {
+		t.Fatal("Admin offline package is not classified")
+	}
+	if rule.Capability != "admin" || rule.Layer != LayerUseCase {
+		t.Fatalf("Admin offline classification = %#v, want admin use-case", rule)
+	}
+
+	forbiddenImports := map[string]bool{
+		modulePath + "/internal/access/sqlite":          true,
+		modulePath + "/internal/admin/sqlite":           true,
+		modulePath + "/internal/analytics/ducklake":     true,
+		modulePath + "/internal/app/config":             true,
+		modulePath + "/internal/platform":               true,
+		modulePath + "/internal/platform/locking":       true,
+		modulePath + "/internal/servingstate/retention": true,
+		modulePath + "/internal/servingstate/sqlite":    true,
+	}
+	found := false
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/admin/offline" {
+			continue
+		}
+		found = true
+		for _, imported := range file.imports {
+			if forbiddenImports[imported] {
+				t.Errorf("%s imports concrete application/infrastructure dependency %s", file.path, imported)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("internal/admin/offline production package was not found")
+	}
+
+	compositionFound := false
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/app/adminoffline" {
+			continue
+		}
+		compositionFound = true
+		if !importListContains(file.imports, modulePath+"/internal/admin/offline") {
+			t.Errorf("%s does not compose Admin-owned offline use cases", file.path)
+		}
+		for _, forbidden := range []string{
+			"mail.ParseAddress(",
+			"json.Marshal(",
+			"fmt.Fprintf(",
+			"retention days must be zero or greater",
+			"admin restore requires --confirm",
+			"admin backup requires --out",
+		} {
+			if strings.Contains(file.body, forbidden) {
+				t.Errorf("%s retains offline Admin product behavior %q", file.path, forbidden)
+			}
+		}
+	}
+	if !compositionFound {
+		t.Fatal("internal/app/adminoffline composition package was not found")
 	}
 }
 
@@ -531,8 +658,8 @@ func TestGeneratedQueryPackagesDoNotCombineCapabilitySQL(t *testing.T) {
 		generatedPackage string
 		queryPath        string
 	}{
-		{generatedPackage: `package: "deploymentdb"`, queryPath: `"internal/servingstate/sqlite/queries`},
-		{generatedPackage: `package: "servingdb"`, queryPath: `"internal/access/sqlite/queries`},
+		{generatedPackage: `out: "internal/deployment/internal/db"`, queryPath: `"internal/servingstate/sqlite/queries`},
+		{generatedPackage: `out: "internal/servingstate/internal/db"`, queryPath: `"internal/access/sqlite/queries`},
 	} {
 		for _, block := range blocks {
 			if strings.Contains(block, forbidden.generatedPackage) && strings.Contains(block, forbidden.queryPath) {
@@ -540,6 +667,90 @@ func TestGeneratedQueryPackagesDoNotCombineCapabilitySQL(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestCapabilitySQLCOutputsArePrivate(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join(repoRoot(t), "sqlc.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := string(body)
+	for _, output := range []string{
+		"internal/access/internal/db",
+		"internal/admin/internal/db",
+		"internal/agent/internal/db",
+		"internal/analytics/internal/db",
+		"internal/dashboard/internal/db",
+		"internal/deployment/internal/db",
+		"internal/manageddata/internal/db",
+		"internal/refresh/internal/db",
+		"internal/release/internal/db",
+		"internal/servingstate/internal/db",
+		"internal/workspace/internal/db",
+	} {
+		fragment := "package: \"db\"\n        out: \"" + output + "\""
+		if !strings.Contains(config, fragment) {
+			t.Errorf("sqlc output %s is not a capability-private db package", output)
+		}
+	}
+	for _, legacy := range []string{
+		"internal/access/sqlite/accessdb",
+		"internal/admin/sqlite/retentiondb",
+		"internal/agent/sqlite/agentdb",
+		"internal/analytics/queryaudit/sqlite/querydb",
+		"internal/deployment/sqlite/deploymentdb",
+		"internal/manageddata/sqlite/manageddb",
+		"internal/refresh/sqlite/materializedb",
+		"internal/refresh/sqlite/refreshdb",
+		"internal/release/sqlite/releasedb",
+		"internal/servingstate/sqlite/servingdb",
+		"internal/workspace/sqlite/workspacedb",
+	} {
+		if strings.Contains(config, legacy) {
+			t.Errorf("sqlc retains public capability output %s", legacy)
+		}
+	}
+}
+
+func TestCapabilitiesOnlyImportOwnGeneratedQueries(t *testing.T) {
+	for _, file := range productionGoFiles(t) {
+		source, sourceOK := ClassifyPackage(file.pkgDir)
+		for _, imported := range file.imports {
+			targetOwner, generated := capabilityGeneratedDBOwner(imported)
+			if !generated {
+				continue
+			}
+			if !sourceOK || source.Capability != targetOwner || source.Layer != LayerAdapter {
+				t.Errorf("%s imports generated database package owned by %s outside its owning persistence adapters", file.path, targetOwner)
+			}
+		}
+	}
+}
+
+func TestCrossCapabilityGeneratedQueryImportIsRejected(t *testing.T) {
+	if owner, ok := capabilityGeneratedDBOwner(modulePath + "/internal/access/internal/db"); !ok || owner != "access" {
+		t.Fatalf("generated Access database package owner = %q, %v", owner, ok)
+	}
+	source, ok := ClassifyPackage("internal/dashboard/publication/sqlite")
+	if !ok {
+		t.Fatal("Dashboard publication adapter is not classified")
+	}
+	targetOwner, generated := capabilityGeneratedDBOwner(modulePath + "/internal/access/internal/db")
+	if !generated || source.Capability == targetOwner {
+		t.Fatal("representative Dashboard-to-Access generated database import was not rejected")
+	}
+}
+
+func capabilityGeneratedDBOwner(imported string) (string, bool) {
+	relative := strings.TrimPrefix(imported, modulePath+"/")
+	parts := strings.Split(relative, "/")
+	if len(parts) != 4 || parts[0] != "internal" || parts[2] != "internal" || parts[3] != "db" {
+		return "", false
+	}
+	if _, known := CapabilityDependencies[parts[1]]; !known || parts[1] == "platform" {
+		return "", false
+	}
+	return parts[1], true
 }
 
 func TestCompositionDoesNotUseTestTransports(t *testing.T) {
@@ -1236,11 +1447,13 @@ func TestCapabilityUIPackagesAreRenderOnly(t *testing.T) {
 
 func TestStaticSQLiteAdaptersUseGeneratedQueries(t *testing.T) {
 	generatedOnly := map[string]bool{
-		"internal/agent/sqlite":        true,
-		"internal/deployment/sqlite":   true,
-		"internal/manageddata/sqlite":  true,
-		"internal/servingstate/sqlite": true,
-		"internal/workspace/sqlite":    true,
+		"internal/agent/sqlite":                 true,
+		"internal/dashboard/publication/sqlite": true,
+		"internal/dashboard/session/sqlite":     true,
+		"internal/deployment/sqlite":            true,
+		"internal/manageddata/sqlite":           true,
+		"internal/servingstate/sqlite":          true,
+		"internal/workspace/sqlite":             true,
 	}
 	generatedOnlyFiles := map[string]bool{
 		"internal/access/sqlite/api_symmetry.go":             true,
@@ -1277,6 +1490,42 @@ func TestCapabilitySQLiteAdaptersDoNotImportOtherSQLiteAdapters(t *testing.T) {
 			}
 			t.Errorf("%s imports persistence implementation %s; use a consumer-owned port or module bridge", file.path, imported)
 		}
+	}
+}
+
+func TestDashboardPersistenceDoesNotWriteAccessTables(t *testing.T) {
+	root := repoRoot(t)
+	dashboardRoot := filepath.Join(root, "internal", "dashboard")
+	err := filepath.WalkDir(dashboardRoot, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		extension := filepath.Ext(path)
+		if entry.IsDir() || !strings.Contains(filepath.ToSlash(path), "/sqlite/") ||
+			(extension != ".go" && extension != ".sql") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		for _, statement := range []string{
+			"INSERT INTO principals",
+			"UPDATE principals",
+			"DELETE FROM principals",
+		} {
+			if strings.Contains(string(body), statement) {
+				t.Errorf("%s writes the Access-owned principals table via %q; use an Access-owned operation", filepath.ToSlash(relative), statement)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -1330,6 +1579,8 @@ func TestSQLCQueriesAreSplitByDomain(t *testing.T) {
 		"internal/platform/http/idempotency/sqlite/queries/idempotency.sql",
 		"internal/platform/http/cursorsigning/sqlite/queries/cursor_signing.sql",
 		"internal/deployment/sqlite/queries/deployment.sql",
+		"internal/dashboard/publication/sqlite/queries/publication.sql",
+		"internal/dashboard/session/sqlite/queries/session.sql",
 		"internal/manageddata/sqlite/queries/managed_data.sql",
 		"internal/refresh/sqlite/runqueries/materialization.sql",
 		"internal/platform/jobs/sqlite/queries/async_job.sql",
@@ -1375,7 +1626,6 @@ func TestRequiredCapabilityAdaptersExist(t *testing.T) {
 		"internal/admin/http",
 		"internal/agent/cli",
 		"internal/agent/http",
-		"internal/analytics/cli",
 		"internal/analytics/connectors",
 		"internal/refresh/http",
 		"internal/dashboard/cli",
@@ -1956,6 +2206,23 @@ func TestContinuousIntegrationHealthWorkflowReportsAndAlerts(t *testing.T) {
 	}
 }
 
+func TestPublicSiteBuildGeneratesIgnoredBrowserContracts(t *testing.T) {
+	root := repoRoot(t)
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	block := taskfileTaskBlock(t, string(taskfile), "site:build")
+	for _, dependency := range []string{
+		"- task: ui-signals:generate",
+		"- task: visualization-ir:generate",
+	} {
+		if !strings.Contains(block, dependency) {
+			t.Errorf("site:build must generate ignored browser contract %q in a clean checkout", dependency)
+		}
+	}
+}
+
 func workflowJobBlock(t *testing.T, workflow, job string) string {
 	t.Helper()
 	startMarker := "  " + job + ":"
@@ -1981,6 +2248,31 @@ func workflowJobBlock(t *testing.T, workflow, job string) string {
 	return strings.Join(lines[start:end], "\n")
 }
 
+func taskfileTaskBlock(t *testing.T, taskfile, task string) string {
+	t.Helper()
+	startMarker := "  " + task + ":"
+	lines := strings.Split(taskfile, "\n")
+	start := -1
+	for index, line := range lines {
+		if line == startMarker {
+			start = index
+			break
+		}
+	}
+	if start < 0 {
+		t.Fatalf("Taskfile task %q not found", task)
+	}
+	end := len(lines)
+	for index := start + 1; index < len(lines); index++ {
+		line := lines[index]
+		if strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "    ") && strings.HasSuffix(line, ":") {
+			end = index
+			break
+		}
+	}
+	return strings.Join(lines[start:end], "\n")
+}
+
 func TestSQLCOutputsAreGeneratedBuildInputs(t *testing.T) {
 	root := repoRoot(t)
 	files := map[string][]string{
@@ -1993,27 +2285,47 @@ func TestSQLCOutputsAreGeneratedBuildInputs(t *testing.T) {
 			"internal/platform/db/db.go",
 			"internal/platform/db/models.go",
 			"internal/platform/db/*.sql.go",
+			"internal/*/internal/db/",
+			"internal/platform/**/sqlite/*db/",
 		},
 		".dockerignore": {
 			"internal/platform/db/db.go",
 			"internal/platform/db/models.go",
 			"internal/platform/db/*.sql.go",
+			"internal/*/internal/db/",
+			"internal/platform/**/sqlite/*db/",
 		},
 		filepath.Join(".github", "workflows", "ci.yml"): {
 			"Check generated database code is untracked",
-			"git ls-files -- internal/platform/db/db.go internal/platform/db/models.go 'internal/platform/db/*.sql.go'",
+			"task generated:git-check",
 			"internal/platform/db/db.go",
 			"internal/platform/db/models.go",
 			"internal/platform/db/*.sql.go",
+			"internal/*/internal/db/",
+			"internal/platform/http/cursorsigning/sqlite/cursordb/",
+			"internal/platform/http/idempotency/sqlite/idempotencydb/",
+			"internal/platform/jobs/sqlite/jobdb/",
 		},
 		filepath.Join("scripts", "generate_build_sources.sh"): {
 			"go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate",
 		},
 		"Dockerfile": {
 			"./scripts/generate_build_sources.sh",
-			"COPY --from=sourcegen /src/internal/platform/db/db.go ./internal/platform/db/db.go",
-			"COPY --from=sourcegen /src/internal/platform/db/models.go ./internal/platform/db/models.go",
-			"COPY --from=sourcegen /src/internal/platform/db/*.sql.go ./internal/platform/db/",
+			"FROM go-deps AS build",
+			"COPY --from=sourcegen /src/internal/access/internal/db ./internal/access/internal/db",
+			"COPY --from=sourcegen /src/internal/admin/internal/db ./internal/admin/internal/db",
+			"COPY --from=sourcegen /src/internal/agent/internal/db ./internal/agent/internal/db",
+			"COPY --from=sourcegen /src/internal/analytics/internal/db ./internal/analytics/internal/db",
+			"COPY --from=sourcegen /src/internal/dashboard/internal/db ./internal/dashboard/internal/db",
+			"COPY --from=sourcegen /src/internal/deployment/internal/db ./internal/deployment/internal/db",
+			"COPY --from=sourcegen /src/internal/manageddata/internal/db ./internal/manageddata/internal/db",
+			"COPY --from=sourcegen /src/internal/refresh/internal/db ./internal/refresh/internal/db",
+			"COPY --from=sourcegen /src/internal/release/internal/db ./internal/release/internal/db",
+			"COPY --from=sourcegen /src/internal/servingstate/internal/db ./internal/servingstate/internal/db",
+			"COPY --from=sourcegen /src/internal/workspace/internal/db ./internal/workspace/internal/db",
+			"COPY --from=sourcegen /src/internal/platform/http/cursorsigning/sqlite/cursordb ./internal/platform/http/cursorsigning/sqlite/cursordb",
+			"COPY --from=sourcegen /src/internal/platform/http/idempotency/sqlite/idempotencydb ./internal/platform/http/idempotency/sqlite/idempotencydb",
+			"COPY --from=sourcegen /src/internal/platform/jobs/sqlite/jobdb ./internal/platform/jobs/sqlite/jobdb",
 		},
 	}
 	for name, fragments := range files {
@@ -2078,8 +2390,10 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 			"COPY --from=sourcegen /src/web/generated ./web/generated",
 		},
 		"Dockerfile": {
+			"FROM go-deps AS build",
 			"COPY --from=sourcegen /src/internal/app/config/config_gen.go ./internal/app/config/config_gen.go",
 			"COPY --from=sourcegen /src/internal/app/config/spec/names_gen.go ./internal/app/config/spec/names_gen.go",
+			"COPY --from=sourcegen /src/web/generated ./web/generated",
 		},
 		filepath.Join("scripts", "generate_build_sources.sh"): {
 			"go run ./internal/app/tools/configgen",

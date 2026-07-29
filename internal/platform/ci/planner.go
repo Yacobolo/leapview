@@ -93,6 +93,7 @@ func PlanChanges(input Input, changes []Change) Plan {
 func FullJobs() Jobs {
 	return Jobs{
 		Prepare:             true,
+		Docs:                true,
 		GoMatrix:            allGoShards(),
 		Frontend:            []string{"core", "reports", "chat", "workspace", "site"},
 		GoAnalysis:          true,

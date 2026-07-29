@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"time"
 
+	sessiondb "github.com/Yacobolo/leapview/internal/dashboard/internal/db"
 	"github.com/Yacobolo/leapview/internal/dashboard/session"
 )
 
 type Store struct {
 	db    *sql.DB
+	q     *sessiondb.Queries
 	ttl   time.Duration
 	clock func() time.Time
 }
@@ -25,7 +27,7 @@ func NewStoreWithTTL(db *sql.DB, ttl time.Duration) *Store {
 	if ttl <= 0 {
 		ttl = 5 * time.Minute
 	}
-	return &Store{db: db, ttl: ttl, clock: time.Now}
+	return &Store{db: db, q: sessiondb.New(db), ttl: ttl, clock: time.Now}
 }
 
 func (store *Store) Create(ctx context.Context, key session.Key, state session.State) (session.Record, error) {
@@ -40,9 +42,12 @@ func (store *Store) Create(ctx context.Context, key session.Key, state session.S
 		return session.Record{}, err
 	}
 	record := session.Record{Key: key, Version: 1, State: state, ExpiresAt: store.expiry()}
-	_, err = store.db.ExecContext(ctx, `INSERT INTO dashboard_view_sessions
-(id, key_json, version, state_json, expires_at) VALUES (?, ?, 1, ?, ?)`,
-		key.ID(), keyJSON, stateJSON, record.ExpiresAt.Format(time.RFC3339Nano))
+	err = store.q.CreateDashboardViewSession(ctx, sessiondb.CreateDashboardViewSessionParams{
+		ID:        key.ID(),
+		KeyJson:   keyJSON,
+		StateJson: stateJSON,
+		ExpiresAt: record.ExpiresAt.Format(time.RFC3339Nano),
+	})
 	if err != nil {
 		if _, loadErr := store.Load(ctx, key); loadErr == nil {
 			return session.Record{}, session.ErrConflict
@@ -53,11 +58,10 @@ func (store *Store) Create(ctx context.Context, key session.Key, state session.S
 }
 
 func (store *Store) Load(ctx context.Context, key session.Key) (session.Record, error) {
-	var keyJSON, stateJSON, expiry string
-	var version uint64
-	err := store.db.QueryRowContext(ctx, `SELECT key_json, version, state_json, expires_at
-FROM dashboard_view_sessions WHERE id = ? AND expires_at > ?`,
-		key.ID(), store.clock().UTC().Format(time.RFC3339Nano)).Scan(&keyJSON, &version, &stateJSON, &expiry)
+	row, err := store.q.GetActiveDashboardViewSession(ctx, sessiondb.GetActiveDashboardViewSessionParams{
+		ID:  key.ID(),
+		Now: store.clock().UTC().Format(time.RFC3339Nano),
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return session.Record{}, session.ErrNotFound
 	}
@@ -66,20 +70,20 @@ FROM dashboard_view_sessions WHERE id = ? AND expires_at > ?`,
 	}
 	var storedKey session.Key
 	var state session.State
-	if err := json.Unmarshal([]byte(keyJSON), &storedKey); err != nil {
+	if err := json.Unmarshal([]byte(row.KeyJson), &storedKey); err != nil {
 		return session.Record{}, fmt.Errorf("decode dashboard session key: %w", err)
 	}
 	if storedKey != key {
 		return session.Record{}, fmt.Errorf("dashboard session key digest collision")
 	}
-	if err := json.Unmarshal([]byte(stateJSON), &state); err != nil {
+	if err := json.Unmarshal([]byte(row.StateJson), &state); err != nil {
 		return session.Record{}, fmt.Errorf("decode dashboard session state: %w", err)
 	}
-	expiresAt, err := time.Parse(time.RFC3339Nano, expiry)
+	expiresAt, err := time.Parse(time.RFC3339Nano, row.ExpiresAt)
 	if err != nil {
 		return session.Record{}, fmt.Errorf("decode dashboard session expiry: %w", err)
 	}
-	return session.Record{Key: storedKey, Version: version, State: state, ExpiresAt: expiresAt}, nil
+	return session.Record{Key: storedKey, Version: uint64(row.Version), State: state, ExpiresAt: expiresAt}, nil
 }
 
 func (store *Store) CompareAndSwap(ctx context.Context, key session.Key, version uint64, state session.State) (session.Record, error) {
@@ -88,10 +92,13 @@ func (store *Store) CompareAndSwap(ctx context.Context, key session.Key, version
 		return session.Record{}, err
 	}
 	expiresAt := store.expiry()
-	result, err := store.db.ExecContext(ctx, `UPDATE dashboard_view_sessions
-SET version = version + 1, state_json = ?, expires_at = ?, updated_at = CURRENT_TIMESTAMP
-WHERE id = ? AND version = ? AND expires_at > ?`,
-		stateJSON, expiresAt.Format(time.RFC3339Nano), key.ID(), version, store.clock().UTC().Format(time.RFC3339Nano))
+	result, err := store.q.CompareAndSwapDashboardViewSession(ctx, sessiondb.CompareAndSwapDashboardViewSessionParams{
+		StateJson: stateJSON,
+		ExpiresAt: expiresAt.Format(time.RFC3339Nano),
+		ID:        key.ID(),
+		Version:   int64(version),
+		Now:       store.clock().UTC().Format(time.RFC3339Nano),
+	})
 	if err != nil {
 		return session.Record{}, err
 	}
@@ -109,9 +116,11 @@ WHERE id = ? AND version = ? AND expires_at > ?`,
 }
 
 func (store *Store) Touch(ctx context.Context, key session.Key) error {
-	result, err := store.db.ExecContext(ctx, `UPDATE dashboard_view_sessions
-SET expires_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND expires_at > ?`,
-		store.expiry().Format(time.RFC3339Nano), key.ID(), store.clock().UTC().Format(time.RFC3339Nano))
+	result, err := store.q.TouchDashboardViewSession(ctx, sessiondb.TouchDashboardViewSessionParams{
+		ExpiresAt: store.expiry().Format(time.RFC3339Nano),
+		ID:        key.ID(),
+		Now:       store.clock().UTC().Format(time.RFC3339Nano),
+	})
 	if err != nil {
 		return err
 	}
@@ -126,9 +135,7 @@ SET expires_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND expires_at >
 }
 
 func (store *Store) DeleteExpired(ctx context.Context) error {
-	_, err := store.db.ExecContext(ctx, `DELETE FROM dashboard_view_sessions WHERE expires_at <= ?`,
-		store.clock().UTC().Format(time.RFC3339Nano))
-	return err
+	return store.q.DeleteExpiredDashboardViewSessions(ctx, store.clock().UTC().Format(time.RFC3339Nano))
 }
 
 func (store *Store) expiry() time.Time {

@@ -14,7 +14,14 @@ type PublicationActivationInput struct {
 	Publications                                    map[string]json.RawMessage
 }
 
-func ReconcilePublications(ctx context.Context, tx transaction.Transaction, input PublicationActivationInput) error {
+type PublicationPrincipalActivator func(context.Context, transaction.Transaction, string, string) error
+
+func ReconcilePublications(
+	ctx context.Context,
+	tx transaction.Transaction,
+	input PublicationActivationInput,
+	activatePrincipal PublicationPrincipalActivator,
+) error {
 	publications := make(map[string]publication.Definition, len(input.Publications))
 	for name, raw := range input.Publications {
 		var definition publication.Definition
@@ -27,5 +34,5 @@ func ReconcilePublications(ctx context.Context, tx transaction.Transaction, inpu
 		ProjectID: input.ProjectID, WorkspaceID: input.WorkspaceID,
 		ServingStateID: input.ServingStateID, ActorID: input.ActorID,
 		Publications: publications,
-	})
+	}, activatePrincipal)
 }

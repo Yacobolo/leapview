@@ -2,13 +2,21 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	dashboardgen "github.com/Yacobolo/leapview/internal/dashboard/api/gen"
 	"github.com/Yacobolo/leapview/internal/platform/cliapi"
+	apigenclient "github.com/Yacobolo/toolbelt/apigen/runtime/client"
 )
 
 type fakeClient struct {
-	requests []cliapi.Request
+	transport fakeTransport
+}
+
+type fakeTransport struct {
+	requests []apigenclient.Request
+	err      error
 }
 
 func (client *fakeClient) Resolve(_ context.Context, credentials cliapi.Credentials) (cliapi.Credentials, error) {
@@ -19,39 +27,43 @@ func (client *fakeClient) Environment(_ context.Context, _ cliapi.Credentials, a
 	return asserted, nil
 }
 
-func (client *fakeClient) DoJSON(_ context.Context, _ cliapi.Credentials, request cliapi.Request, out any) error {
-	client.requests = append(client.requests, request)
-	return nil
+func (client *fakeClient) Transport(_ context.Context, _ cliapi.Credentials) (apigenclient.Transport, error) {
+	return &client.transport, nil
+}
+
+func (transport *fakeTransport) DoAPIGen(_ context.Context, request apigenclient.Request, _ any) (apigenclient.Response, error) {
+	transport.requests = append(transport.requests, request)
+	return apigenclient.Response{}, transport.err
 }
 
 func TestCommandOwnsDashboardVisualQuery(t *testing.T) {
-	client := &fakeClient{}
+	stop := errors.New("stop after request")
+	client := &fakeClient{transport: fakeTransport{err: stop}}
 	command := Command(context.Background(), client, "sales")
 	command.SetArgs([]string{
 		"visual-data", "executive", "overview", "orders",
 		"--target", "https://example.test", "--token", "secret",
 		"--count", "7", "--filter-state-json", `{"version":"typed_v1"}`,
 	})
-	if err := command.Execute(); err != nil {
-		t.Fatal(err)
+	if err := command.Execute(); !errors.Is(err, stop) {
+		t.Fatalf("execute error = %v", err)
 	}
-	if len(client.requests) != 1 {
-		t.Fatalf("requests = %d, want 1", len(client.requests))
+	if len(client.transport.requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(client.transport.requests))
 	}
-	request := client.requests[0]
-	if request.OperationID != "queryDashboardVisualData" {
+	request := client.transport.requests[0]
+	if request.OperationID != dashboardgen.GenOperationQueryDashboardVisualData {
 		t.Fatalf("operation = %q", request.OperationID)
 	}
 	if request.PathParams["workspace"] != "sales" || request.PathParams["dashboard"] != "executive" ||
 		request.PathParams["page"] != "overview" || request.PathParams["visual"] != "orders" {
 		t.Fatalf("path params = %#v", request.PathParams)
 	}
-	body := request.Body.(map[string]any)
-	if body["limit"] != 7 {
+	body := request.Body.(*dashboardgen.GenSchemaDashboardVisualQueryRequest)
+	if body.Limit == nil || *body.Limit != 7 {
 		t.Fatalf("body = %#v", body)
 	}
-	filterState := body["filterState"].(map[string]any)
-	if filterState["version"] != "typed_v1" {
-		t.Fatalf("filter state = %#v", filterState)
+	if body.FilterState == nil || body.FilterState.Version != "typed_v1" {
+		t.Fatalf("filter state = %#v", body.FilterState)
 	}
 }

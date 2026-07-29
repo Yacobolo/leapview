@@ -136,9 +136,9 @@ func TestRemoteStateAndReviewedApplyWorkflow(t *testing.T) {
 	backend := readFile(t, "backend.tf")
 	workflow := readFile(t, filepath.Join("..", "..", ".github", "workflows", "site-infrastructure.yml"))
 	for _, fragment := range []string{
-		`backend "s3"`,
-		`key          = "leapview/site/production.tfstate"`,
-		"use_lockfile = true",
+		`cloud {`,
+		`organization = "Flid"`,
+		`name = "leapview-site-production"`,
 	} {
 		requireContains(t, backend, fragment)
 	}
@@ -149,20 +149,20 @@ func TestRemoteStateAndReviewedApplyWorkflow(t *testing.T) {
 		"environment: leapview-site-production",
 		"terraform plan",
 		"terraform show -no-color",
-		"aws s3api get-bucket-versioning",
 		"actions/upload-artifact@",
 		"retention-days: 90",
 		"needs: plan",
 		"terraform apply",
 		"terraform plan -detailed-exitcode",
-		"TF_STATE_BUCKET",
-		"AWS_ENDPOINT_URL_S3",
+		"TF_TOKEN_app_terraform_io",
+		"secrets.HCP_API_TOKEN",
 		"TF_VAR_hcloud_token",
 	} {
 		requireContains(t, workflow, fragment)
 	}
 	for _, forbidden := range []string{
 		"terraform destroy", "pull_request:", "-auto-approve",
+		"aws s3api", "TF_STATE_", "AWS_ENDPOINT_URL_S3",
 	} {
 		if strings.Contains(workflow, forbidden) {
 			t.Errorf("permanent infrastructure workflow contains forbidden fragment %q", forbidden)
