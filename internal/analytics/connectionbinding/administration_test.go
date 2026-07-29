@@ -222,7 +222,7 @@ type staticPoolDirectory struct {
 	pool AdministrationPool
 }
 
-func (directory staticPoolDirectory) Pool(string) (AdministrationPool, error) {
+func (directory staticPoolDirectory) Pool(TargetBinding) (AdministrationPool, error) {
 	if directory.pool == nil {
 		return nil, ErrBindingNotFound
 	}

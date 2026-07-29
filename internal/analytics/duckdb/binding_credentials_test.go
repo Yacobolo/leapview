@@ -13,7 +13,7 @@ import (
 func TestApplyTargetBindingBuildsBoundedValidatedRuntimeConnection(t *testing.T) {
 	binding := testDuckDBTargetBinding(t)
 	snapshot, err := connectionbinding.NewCredentialSnapshot(
-		map[string]string{"connection_string": "postgres://runtime:source-secret@warehouse/sales"},
+		map[string]string{"password": "source-secret"},
 		"secret-1:v4", time.Now(), time.Now().Add(time.Minute),
 	)
 	if err != nil {
@@ -32,14 +32,14 @@ func TestApplyTargetBindingBuildsBoundedValidatedRuntimeConnection(t *testing.T)
 		connection.SSLMode != "verify-full" {
 		t.Fatalf("runtime endpoint = %#v", connection)
 	}
-	if connection.Auth["connection_string"] != "postgres://runtime:source-secret@warehouse/sales" {
+	if connection.Auth["password"] != "source-secret" {
 		t.Fatal("runtime auth bundle was not applied")
 	}
 }
 
 func TestApplyTargetBindingFailsClosedWithoutDisclosingInvalidBundle(t *testing.T) {
 	snapshot, err := connectionbinding.NewCredentialSnapshot(
-		map[string]string{"password": "source-secret"},
+		map[string]string{"api_token": "source-secret"},
 		"secret-1:v5", time.Now(), time.Now().Add(time.Minute),
 	)
 	if err != nil {

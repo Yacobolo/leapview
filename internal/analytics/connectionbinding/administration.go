@@ -49,7 +49,7 @@ type AdministrationPool interface {
 }
 
 type AdministrationPoolDirectory interface {
-	Pool(bindingID string) (AdministrationPool, error)
+	Pool(TargetBinding) (AdministrationPool, error)
 }
 
 type BindingCatalog interface {
@@ -282,7 +282,7 @@ func (service *Administration) refresh(
 	if service.pools == nil {
 		return BindingHealthStatus{}, ErrProviderUnavailable
 	}
-	pool, err := service.pools.Pool(binding.ID)
+	pool, err := service.pools.Pool(binding)
 	if err != nil {
 		return BindingHealthStatus{}, err
 	}
@@ -311,7 +311,7 @@ func (service *Administration) Health(
 	if service.pools == nil {
 		return bindingHealthWithoutPool(binding), nil
 	}
-	pool, err := service.pools.Pool(binding.ID)
+	pool, err := service.pools.Pool(binding)
 	if errors.Is(err, ErrBindingNotFound) {
 		return bindingHealthWithoutPool(binding), nil
 	}
@@ -337,7 +337,7 @@ func (service *Administration) Disable(
 	}
 	now := service.now().UTC()
 	if service.pools != nil {
-		pool, poolErr := service.pools.Pool(binding.ID)
+		pool, poolErr := service.pools.Pool(binding)
 		if poolErr == nil {
 			if err := pool.Disable(ctx, now); err != nil {
 				return TargetBinding{}, err

@@ -50,6 +50,7 @@ type PoolManager struct {
 	binding      TargetBinding
 	active       *poolGeneration
 	lastRun      time.Time
+	retired      bool
 }
 
 type poolGeneration struct {
@@ -125,6 +126,10 @@ func (manager *PoolManager) refresh(ctx context.Context, request RefreshRequest)
 	now := manager.now().UTC()
 
 	manager.mu.Lock()
+	if manager.retired {
+		manager.mu.Unlock()
+		return ErrProviderUnavailable
+	}
 	if !manager.binding.Enabled {
 		manager.mu.Unlock()
 		return ErrDisabledBinding
@@ -241,8 +246,9 @@ func (manager *PoolManager) withAudit(
 	binding := manager.binding
 	manager.mu.Unlock()
 	event := RotationAuditEvent{
-		BindingID: binding.ID, TargetID: binding.TargetID, ProviderVersion: version,
-		Actor: strings.TrimSpace(request.Actor), Operation: request.Operation,
+		BindingID: binding.ID, TargetID: binding.TargetID, WorkspaceID: binding.Scope.WorkspaceID,
+		ProviderVersion: version,
+		Actor:           strings.TrimSpace(request.Actor), Operation: request.Operation,
 		Timestamp: timestamp.UTC(), Outcome: outcome, Reason: reason,
 	}
 	if err := manager.audit.RecordCredentialRotation(context.WithoutCancel(ctx), event); err != nil {
@@ -287,6 +293,9 @@ func (manager *PoolManager) Lease() (*PoolLease, error) {
 	}
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
+	if manager.retired {
+		return nil, ErrProviderUnavailable
+	}
 	if !manager.binding.Enabled {
 		return nil, ErrDisabledBinding
 	}
@@ -308,6 +317,10 @@ func (manager *PoolManager) Disable(ctx context.Context, now time.Time) error {
 	defer manager.refreshMu.Unlock()
 	manager.mu.Lock()
 	binding := manager.binding
+	if manager.retired {
+		manager.mu.Unlock()
+		return ErrProviderUnavailable
+	}
 	manager.mu.Unlock()
 	disabled, err := binding.Disable(now)
 	if err != nil {
@@ -322,6 +335,31 @@ func (manager *PoolManager) Disable(ctx context.Context, now time.Time) error {
 	}
 	manager.mu.Lock()
 	manager.binding = saved
+	previous := manager.active
+	manager.active = nil
+	closePrevious := markDraining(previous)
+	manager.mu.Unlock()
+	if closePrevious != nil {
+		return closePrevious.Close()
+	}
+	return nil
+}
+
+// Retire removes this manager from service without changing persisted binding
+// metadata. Existing leases may finish; the retired generation closes as soon
+// as its final lease is released.
+func (manager *PoolManager) Retire() error {
+	if manager == nil {
+		return nil
+	}
+	manager.refreshMu.Lock()
+	defer manager.refreshMu.Unlock()
+	manager.mu.Lock()
+	if manager.retired {
+		manager.mu.Unlock()
+		return nil
+	}
+	manager.retired = true
 	previous := manager.active
 	manager.active = nil
 	closePrevious := markDraining(previous)

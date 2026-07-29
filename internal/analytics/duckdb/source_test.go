@@ -597,6 +597,46 @@ func TestCompileDatabaseAttach(t *testing.T) {
 	}
 }
 
+func TestCompileDatabaseAttachUsesTargetEndpointAndTemporaryNamedSecret(t *testing.T) {
+	connection := semanticmodel.Connection{
+		Kind: "postgres", Host: "warehouse.internal", Port: 5432,
+		Database: "analytics", Username: "leapview_runtime", SSLMode: "verify-full",
+		Auth: semanticmodel.ConnectionAuth{"password": "source-secret"},
+	}
+	secret, ok, err := compileConnectionSecret("warehouse", connection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("structured database credentials did not produce a temporary secret")
+	}
+	for _, required := range []string{
+		"CREATE OR REPLACE TEMPORARY SECRET leapview_warehouse",
+		"TYPE postgres",
+		"HOST 'warehouse.internal'",
+		"PORT 5432",
+		"DATABASE 'analytics'",
+		"USER 'leapview_runtime'",
+		"PASSWORD 'source-secret'",
+		"SSLMODE 'verify-full'",
+	} {
+		if !strings.Contains(secret, required) {
+			t.Fatalf("database secret missing %q: %s", required, secret)
+		}
+	}
+	if strings.Contains(secret, "PERSISTENT") {
+		t.Fatalf("database secret is persistent: %s", secret)
+	}
+
+	attach, err := compileDatabaseAttach("warehouse", connection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attach != "ATTACH '' AS conn_warehouse (TYPE postgres, READ_ONLY, SECRET leapview_warehouse)" {
+		t.Fatalf("database attach = %q", attach)
+	}
+}
+
 func TestCompileDuckLakeAttach(t *testing.T) {
 	stmt, err := compileObjectAttach(&semanticmodel.Model{}, "lakehouse", semanticmodel.Connection{
 		Kind: "ducklake",

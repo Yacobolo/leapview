@@ -184,7 +184,7 @@ type apiPoolDirectory struct {
 	pool connectionbinding.AdministrationPool
 }
 
-func (directory apiPoolDirectory) Pool(string) (connectionbinding.AdministrationPool, error) {
+func (directory apiPoolDirectory) Pool(connectionbinding.TargetBinding) (connectionbinding.AdministrationPool, error) {
 	return directory.pool, nil
 }
 

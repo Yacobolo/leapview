@@ -498,6 +498,9 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				},
 				Dependencies: connectionBindingDependenciesWithoutConsumers{},
 				Now:          time.Now,
+				Audit: connectionRotationAuditRecorder{
+					record: routes.accessModule.RecordAudit,
+				},
 			},
 		)
 		if err != nil && !errors.Is(err, analyticsmodule.ErrConnectionAdministrationUnavailable) {

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/flidai/leapview/internal/analytics/connectionbinding"
 	analyticsduckdb "github.com/flidai/leapview/internal/analytics/duckdb"
@@ -101,6 +102,11 @@ type Module struct {
 	connectionBindings connectionbinding.BindingCatalog
 	credentials        analyticsduckdb.CredentialResolver
 	targetResolvers    connectionbinding.ResolverSet
+	targetID           string
+	targetEnvironment  string
+	targetClass        connectionbinding.TargetClass
+	connectionFactory  connectionbinding.RuntimePoolFactory
+	connectionPools    *connectionbinding.PoolDirectory
 }
 
 func Build(ctx context.Context, config Config) (*Module, error) {
@@ -135,10 +141,42 @@ func Build(ctx context.Context, config Config) (*Module, error) {
 		queryAudit = queryauditsqlite.NewRepository(config.Database)
 		connectionBindings = analyticssqlite.NewConnectionBindingRepository(config.Database)
 	}
+	targetClass := connectionbinding.TargetProduction
+	if config.CredentialMode == CredentialModeDevelopmentEnvironment {
+		targetClass = connectionbinding.TargetDevelopment
+	}
+	memoryMax := config.MemoryMaxBytes
+	if memoryMax <= 0 {
+		memoryMax = 128 << 20
+	}
+	tempMax := config.TempMaxBytes
+	if tempMax <= 0 {
+		tempMax = 64 << 20
+	}
+	maxThreads := config.MaxThreads
+	if maxThreads <= 0 {
+		maxThreads = 1
+	}
+	connectionFactory, err := analyticsduckdb.NewTargetRuntimePoolFactory(
+		analyticsduckdb.TargetRuntimePoolFactoryConfig{
+			Open: analyticsduckdb.NewIsolatedTargetRuntimeOpener(),
+			Limits: analyticsduckdb.TargetRuntimeLimits{
+				MemoryMaxBytes: memoryMax, TempMaxBytes: tempMax, MaxThreads: maxThreads,
+			},
+			RequireTLS: targetClass == connectionbinding.TargetProduction,
+		},
+	)
+	if err != nil {
+		_ = cache.Close()
+		_ = environment.Close()
+		return nil, err
+	}
 	return &Module{
 		environment: environment, cache: cache, queryAudit: queryAudit,
 		connectionBindings: connectionBindings,
 		credentials:        credentials, targetResolvers: targetResolvers,
+		targetID: config.CredentialTargetID, targetEnvironment: config.CredentialEnvironment,
+		targetClass: targetClass, connectionFactory: connectionFactory,
 	}, nil
 }
 
@@ -148,8 +186,62 @@ func (m *Module) NewConnectionAdministration(
 	if m == nil || m.connectionBindings == nil {
 		return nil, connectionbinding.ErrProviderUnavailable
 	}
+	if config.Pools == nil {
+		refreshTimeout := config.RefreshTimeout
+		if refreshTimeout <= 0 {
+			refreshTimeout = 30 * time.Second
+		}
+		maxConcurrent := config.MaxConcurrent
+		if maxConcurrent <= 0 {
+			maxConcurrent = 2
+		}
+		if m.connectionPools == nil {
+			pools, err := connectionbinding.NewPoolDirectory(connectionbinding.PoolDirectoryConfig{
+				Build: func(binding connectionbinding.TargetBinding) (*connectionbinding.PoolManager, error) {
+					if binding.TargetID != m.targetID ||
+						binding.Scope.Environment != m.targetEnvironment ||
+						binding.AuthenticationMode != connectionbinding.AuthenticationExternalBundle {
+						return nil, connectionbinding.ErrUnauthorizedBinding
+					}
+					resolver, err := connectionbinding.SelectResolver(
+						connectionbinding.ResolverSelection{
+							TargetID: binding.TargetID, Environment: binding.Scope.Environment,
+							TargetClass: m.targetClass, Kind: connectionbinding.ResolverInfisical,
+						},
+						m.targetResolvers,
+					)
+					if err != nil {
+						return nil, err
+					}
+					return connectionbinding.NewPoolManager(connectionbinding.PoolManagerConfig{
+						Binding: binding, Resolver: resolver, Factory: m.connectionFactory,
+						Store: m.connectionBindings, Audit: config.Audit,
+						Now: config.Now, StaleAfter: 15 * time.Minute,
+					})
+				},
+				RefreshTimeout: refreshTimeout, MaxConcurrent: maxConcurrent,
+			})
+			if err != nil {
+				return nil, err
+			}
+			m.connectionPools = pools
+		}
+		config.Pools = m.connectionPools
+	}
+	authorize := config.Authorize
 	return connectionbinding.NewAdministration(connectionbinding.AdministrationConfig{
-		Repository: m.connectionBindings, Authorize: connectionbinding.AdministrationAuthorizer(config.Authorize),
+		Repository: m.connectionBindings,
+		Authorize: func(
+			ctx context.Context,
+			actor string,
+			permission connectionbinding.AdministrationPermission,
+			binding connectionbinding.TargetBinding,
+		) error {
+			if binding.TargetID != m.targetID || binding.Scope.Environment != m.targetEnvironment {
+				return connectionbinding.ErrUnauthorizedBinding
+			}
+			return authorize(ctx, actor, permission, binding)
+		},
 		Dependencies: config.Dependencies, Pools: config.Pools, Now: config.Now,
 	})
 }
@@ -256,6 +348,9 @@ func (m *Module) Close() error {
 		return nil
 	}
 	var errs []error
+	if m.connectionPools != nil {
+		errs = append(errs, m.connectionPools.Close())
+	}
 	if m.cache != nil {
 		errs = append(errs, m.cache.Close())
 	}
