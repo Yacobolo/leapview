@@ -2,10 +2,9 @@ package cli
 
 import (
 	"context"
-	"fmt"
-	"net/http"
 	"time"
 
+	accesscli "github.com/flidai/leapview/internal/access/cli"
 	"github.com/spf13/cobra"
 )
 
@@ -64,36 +63,11 @@ func NewCommand(ctx context.Context) *cobra.Command {
 	root.AddCommand(workspacesCommand(ctx, opts))
 	root.AddCommand(dashboardsCommand(ctx, opts))
 	root.AddCommand(semanticModelsCommand(ctx, opts))
-	root.AddCommand(loginCommand(opts))
+	authentication := applicationAuthoringAuthentication{}
+	root.AddCommand(accesscli.LoginCommand(ctx, authentication, applicationTargetDiscovery{}, applicationProjectIdentity{}))
+	root.AddCommand(accesscli.LogoutCommand(ctx, authentication))
 	root.AddCommand(adminCommand(ctx, opts))
 	root.AddCommand(healthcheckCommand(ctx, opts))
 	annotateCommandDocumentation(root)
 	return root
-}
-
-func loginCommand(opts *rootOptions) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "login",
-		Short: "Store a LeapView API token for a target",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if opts.target == "" || opts.token == "" {
-				return fmt.Errorf("login requires --target and --token for v1 CLI authentication")
-			}
-			if _, err := targetEnvironment(cmd.Context(), http.DefaultClient, opts.target, opts.token, ""); err != nil {
-				return err
-			}
-			config, err := loadClientConfig()
-			if err != nil {
-				return err
-			}
-			if config.Targets == nil {
-				config.Targets = map[string]clientTarget{}
-			}
-			config.Targets[opts.target] = clientTarget{Token: opts.token}
-			return saveClientConfig(config)
-		},
-	}
-	cmd.Flags().StringVar(&opts.target, "target", "", "LeapView server URL")
-	cmd.Flags().StringVar(&opts.token, "token", "", "API token")
-	return cmd
 }

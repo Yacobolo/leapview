@@ -45,10 +45,14 @@ func registerAPIGenRoutes(routes *capabilityRoutes, runtime *runtimeServices, pl
 type apiGenDispatcher struct {
 	managedDataModule  *manageddatamodule.Module
 	defaultEnvironment string
+	instanceID         string
+	canonicalOrigin    string
 	buildIdentity      buildinfo.Identity
 	managedDataTus     http.Handler
 }
 
 func (a apiGenDispatcher) GetInstance(w http.ResponseWriter, _ *http.Request) {
-	apitransport.WriteJSON(w, http.StatusOK, apigenapi.InstanceResponse{Environment: a.defaultEnvironment})
+	apitransport.WriteJSON(w, http.StatusOK, apigenapi.InstanceResponse{
+		Id: a.instanceID, CanonicalOrigin: a.canonicalOrigin, Environment: a.defaultEnvironment,
+	})
 }

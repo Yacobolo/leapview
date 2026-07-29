@@ -37,11 +37,25 @@ type PrincipalProvider func(*stdhttp.Request) (Principal, bool)
 type CredentialProvider func(*stdhttp.Request) (access.APICredential, bool)
 type WorkspaceIDNormalizer func(string) string
 
+type AuthoringAuthentication interface {
+	InstanceID() string
+	BeginDeviceAuthorization(context.Context, access.AuthoringScope) (access.DeviceAuthorizationResponse, error)
+	ApproveDeviceAuthorization(context.Context, access.Principal, string) error
+	DenyDeviceAuthorization(context.Context, access.Principal, string) error
+	ExchangeDeviceCode(context.Context, string) (access.AuthoringTokenSet, error)
+	Refresh(context.Context, string) (access.AuthoringTokenSet, error)
+	ExchangeWorkloadIdentity(context.Context, access.WorkloadIdentityInput) (access.AuthoringTokenSet, error)
+	RevokeAccessToken(context.Context, string) error
+	ListSessions(context.Context, string) ([]access.AuthoringSession, error)
+	RevokeSession(context.Context, string, string) error
+}
+
 type Handler struct {
 	Repository        RepositoryProvider
 	CurrentPrincipal  PrincipalProvider
 	CurrentCredential CredentialProvider
 	WorkspaceID       WorkspaceIDNormalizer
+	AuthoringAuth     AuthoringAuthentication
 }
 
 func (h Handler) GetCurrentPrincipal(w stdhttp.ResponseWriter, r *stdhttp.Request) {

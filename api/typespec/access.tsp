@@ -239,6 +239,140 @@ model AuthorizationBatchCheckResponse {
   decisions: AuthorizationDecisionResponse[];
 }
 
+model AuthoringScopeRequest {
+  projectId: string;
+  privileges: string[];
+}
+
+model DeviceAuthorizationStartRequest {
+  scope: AuthoringScopeRequest;
+}
+
+model DeviceAuthorizationResponse {
+  deviceCode: string;
+  userCode: string;
+  verificationUri: string;
+  verificationUriComplete: string;
+  expiresIn: int64;
+  interval: int64;
+}
+
+model DeviceAuthorizationTokenRequest {
+  deviceCode: string;
+}
+
+model DeviceAuthorizationApprovalRequest {
+  userCode: string;
+  approved: boolean;
+}
+
+model AuthoringSessionResponse {
+  id: string;
+  kind: string;
+  clientId: string;
+  targetId: string;
+  projectId: string;
+  privileges: string[];
+  createdAt: utcDateTime;
+  lastUsedAt?: utcDateTime;
+  expiresAt: utcDateTime;
+  revokedAt?: utcDateTime;
+}
+
+model AuthoringSessionListResponse {
+  items: AuthoringSessionResponse[];
+  page: PageInfo;
+}
+
+model AuthoringTokenResponse {
+  accessToken: string;
+  refreshToken?: string;
+  tokenType: string;
+  expiresIn: int64;
+  session: AuthoringSessionResponse;
+}
+
+model AuthoringRefreshRequest {
+  refreshToken: string;
+}
+
+model AuthoringRevokeRequest {
+  accessToken: string;
+}
+
+model WorkloadIdentityTokenRequest {
+  clientId: string;
+  clientSecret: string;
+  scope: AuthoringScopeRequest;
+  lifetimeSeconds: int64;
+}
+
+alias PublicAuthoringAuthErrors = BadRequest | NotFound | Conflict | UnprocessableContent | RateLimited | InternalServerError | ServiceUnavailable;
+
+@tag("Access")
+@summary("Begin CLI device authorization")
+@route("/access/device-authorizations")
+@post
+@apigen.authz(#{ mode: "none" })
+@operationId("beginDeviceAuthorization")
+op beginDeviceAuthorization(@body body: DeviceAuthorizationStartRequest): CreatedJson<DeviceAuthorizationResponse> | PublicAuthoringAuthErrors;
+
+@tag("Access")
+@summary("Exchange an approved CLI device code")
+@route("/access/device-authorizations/token")
+@post
+@apigen.authz(#{ mode: "none" })
+@operationId("exchangeDeviceAuthorization")
+op exchangeDeviceAuthorization(@body body: DeviceAuthorizationTokenRequest): OkJson<AuthoringTokenResponse> | PublicAuthoringAuthErrors;
+
+@tag("Access")
+@summary("Approve or deny CLI device authorization")
+@route("/access/device-authorizations/approval")
+@post
+@apigen.authz(#{ mode: "authenticated" })
+@operationId("decideDeviceAuthorization")
+op decideDeviceAuthorization(@body body: DeviceAuthorizationApprovalRequest): OkJson<StatusResponse> | CommonErrors;
+
+@tag("Access")
+@summary("Rotate a CLI refresh credential")
+@route("/access/authoring-token/refresh")
+@post
+@apigen.authz(#{ mode: "none" })
+@operationId("refreshAuthoringToken")
+op refreshAuthoringToken(@body body: AuthoringRefreshRequest): OkJson<AuthoringTokenResponse> | PublicAuthoringAuthErrors;
+
+@tag("Access")
+@summary("Revoke an authoring credential session")
+@route("/access/authoring-token/revoke")
+@post
+@apigen.authz(#{ mode: "none" })
+@operationId("revokeAuthoringToken")
+op revokeAuthoringToken(@body body: AuthoringRevokeRequest): OkJson<StatusResponse> | PublicAuthoringAuthErrors;
+
+@tag("Access")
+@summary("Exchange service-principal credentials for scoped workload identity")
+@route("/access/workload-token")
+@post
+@apigen.authz(#{ mode: "none" })
+@operationId("exchangeWorkloadIdentity")
+op exchangeWorkloadIdentity(@body body: WorkloadIdentityTokenRequest): OkJson<AuthoringTokenResponse> | PublicAuthoringAuthErrors;
+
+@tag("Current User")
+@summary("List current CLI and workload sessions")
+@route("/me/authoring-sessions")
+@get
+@apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
+@operationId("listCurrentAuthoringSessions")
+op listCurrentAuthoringSessions(@query limit?: ListLimit, @query pageToken?: PageToken): OkJson<AuthoringSessionListResponse> | CommonErrors;
+
+@tag("Current User")
+@summary("Revoke a current CLI or workload session")
+@route("/me/authoring-sessions/{session}")
+@delete
+@apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
+@operationId("revokeCurrentAuthoringSession")
+op revokeCurrentAuthoringSession(@path session: string): OkJson<StatusResponse> | CommonErrors;
+
 alias ListPrincipalsOK = OkJson<PrincipalListResponse>;
 
 @tag("Access")

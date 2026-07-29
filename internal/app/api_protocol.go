@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	accessmodule "github.com/flidai/leapview/internal/access/module"
+	apiaggregate "github.com/flidai/leapview/internal/app/api/aggregate"
 	apiprotocol "github.com/flidai/leapview/internal/app/api/protocol"
 	"github.com/flidai/leapview/internal/app/brand"
 )
@@ -29,6 +30,7 @@ func configureAPIProtocol(routes *capabilityRoutes, runtime *runtimeServices, pl
 			principal, _, ok := platform.auth.Authenticate(r)
 			return principal.ID, ok
 		},
+		PublicRequest: isPublicAPIGenRequest,
 		CursorSnapshot: func(r *http.Request) string {
 			return cursorSnapshot(routes, runtime, platform, policy, r)
 		},
@@ -38,6 +40,18 @@ func configureAPIProtocol(routes *capabilityRoutes, runtime *runtimeServices, pl
 	}
 	platform.apiProtocol = protocol
 	return nil
+}
+
+func isPublicAPIGenRequest(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	for _, contract := range apiaggregate.GetAPIGenOperationContracts() {
+		if contract.AuthzMode == "none" && contract.Method == r.Method && contract.Path == r.URL.Path {
+			return true
+		}
+	}
+	return false
 }
 
 func publicProtocolMiddleware(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, next http.Handler) http.Handler {

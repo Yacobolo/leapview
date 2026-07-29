@@ -7,25 +7,78 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	apigenclient "github.com/Yacobolo/toolbelt/apigen/runtime/client"
+	accesscli "github.com/flidai/leapview/internal/access/cli"
 	apiaggregate "github.com/flidai/leapview/internal/app/api/aggregate"
 	"github.com/flidai/leapview/internal/app/config"
 	"github.com/flidai/leapview/internal/platform/cliapi"
 )
 
-type capabilityAPIClient struct{}
+type authoringCredentialResolver interface {
+	Resolve(context.Context, string) (accesscli.ResolvedCredential, error)
+}
 
-func (capabilityAPIClient) Resolve(_ context.Context, credentials cliapi.Credentials) (cliapi.Credentials, error) {
-	target, token, err := clientTargetAndTokenValues(credentials.Target, credentials.Token)
-	if err != nil {
-		return cliapi.Credentials{}, err
+type capabilityAPIClient struct {
+	httpClient *http.Client
+	authoring  authoringCredentialResolver
+}
+
+func (client capabilityAPIClient) Resolve(ctx context.Context, credentials cliapi.Credentials) (cliapi.Credentials, error) {
+	cfg := config.MustLoad()
+	target := strings.TrimRight(strings.TrimSpace(credentials.Target), "/")
+	if target == "" {
+		target = strings.TrimRight(strings.TrimSpace(cfg.Target), "/")
 	}
-	return cliapi.Credentials{Target: target, Token: token}, nil
+	token := strings.TrimSpace(credentials.Token)
+	if token == "" {
+		token = strings.TrimSpace(cfg.APIToken)
+	}
+	if target == "" {
+		return cliapi.Credentials{}, fmt.Errorf("target is required")
+	}
+	// Explicit tokens remain a compatibility path for ephemeral CI and small
+	// teams, but are never persisted by the CLI.
+	if token != "" {
+		return cliapi.Credentials{Target: target, Token: token}, nil
+	}
+	workloadConfigured := strings.TrimSpace(cfg.WorkloadClientID) != "" ||
+		strings.TrimSpace(cfg.WorkloadClientSecret) != "" ||
+		strings.TrimSpace(cfg.WorkloadProject) != ""
+	if workloadConfigured {
+		if strings.TrimSpace(cfg.WorkloadClientID) == "" || strings.TrimSpace(cfg.WorkloadClientSecret) == "" ||
+			strings.TrimSpace(cfg.WorkloadProject) == "" {
+			return cliapi.Credentials{}, fmt.Errorf("workload identity requires LEAPVIEW_WORKLOAD_CLIENT_ID, LEAPVIEW_WORKLOAD_CLIENT_SECRET, and LEAPVIEW_WORKLOAD_PROJECT")
+		}
+		instance, err := newDeploymentCLIClient(client.http(), target, "").instance(ctx)
+		if err != nil {
+			return cliapi.Credentials{}, fmt.Errorf("discover workload target: %w", err)
+		}
+		workload, err := accesscli.ExchangeWorkloadIdentity(ctx, client, accesscli.WorkloadIdentityRequest{
+			Origin: target, InstanceID: instance.Id, ProjectID: cfg.WorkloadProject,
+			ClientID: cfg.WorkloadClientID, ClientSecret: cfg.WorkloadClientSecret,
+			Privileges: []string{"DEPLOY", "ACTIVATE_DEPLOYMENT"}, Lifetime: 15 * time.Minute,
+		}, nil)
+		if err != nil {
+			return cliapi.Credentials{}, err
+		}
+		return cliapi.Credentials{Target: target, Token: workload.AccessToken}, nil
+	}
+	resolver := client.authoring
+	if resolver == nil {
+		var err error
+		resolver, err = defaultAuthoringAuthenticator(client.http())
+		if err != nil {
+			return cliapi.Credentials{}, err
+		}
+	}
+	resolved, err := resolver.Resolve(ctx, target)
+	if err != nil {
+		return cliapi.Credentials{}, fmt.Errorf("resolve authoring login for %q: %w; run leapview login %s", target, err, target)
+	}
+	return cliapi.Credentials{Target: resolved.Profile.Origin, Token: resolved.AccessToken}, nil
 }
 
 func (client capabilityAPIClient) Environment(ctx context.Context, credentials cliapi.Credentials, asserted string) (string, error) {
@@ -44,8 +97,23 @@ func (client capabilityAPIClient) Transport(ctx context.Context, credentials cli
 	return capabilityAPITransport{
 		target: resolved.Target,
 		token:  resolved.Token,
-		client: http.DefaultClient,
+		client: client.http(),
 	}, nil
+}
+
+func (client capabilityAPIClient) PublicTransport(_ context.Context, target string) (apigenclient.Transport, error) {
+	target = strings.TrimRight(strings.TrimSpace(target), "/")
+	if target == "" {
+		return nil, fmt.Errorf("target is required")
+	}
+	return capabilityAPITransport{target: target, client: client.http()}, nil
+}
+
+func (client capabilityAPIClient) http() *http.Client {
+	if client.httpClient != nil {
+		return client.httpClient
+	}
+	return http.DefaultClient
 }
 
 type capabilityAPITransport struct {
@@ -169,14 +237,6 @@ func doJSONWithHeaders(ctx context.Context, method, endpoint, token string, head
 	return json.Unmarshal(bytes, out)
 }
 
-type clientConfig struct {
-	Targets map[string]clientTarget `json:"targets"`
-}
-
-type clientTarget struct {
-	Token string `json:"token"`
-}
-
 func targetEnvironment(ctx context.Context, client *http.Client, target, token, asserted string) (string, error) {
 	instance, err := newDeploymentCLIClient(client, target, token).instance(ctx)
 	if err != nil {
@@ -190,67 +250,6 @@ func targetEnvironment(ctx context.Context, client *http.Client, target, token, 
 		return "", fmt.Errorf("requested environment %q does not match target instance environment %q", asserted, environment)
 	}
 	return environment, nil
-}
-
-func clientTargetAndToken(opts *rootOptions) (string, string, error) {
-	return clientTargetAndTokenValues(opts.target, opts.token)
-}
-
-func clientTargetAndTokenValues(targetValue, tokenValue string) (string, string, error) {
-	cfg := config.MustLoad()
-	target := strings.TrimRight(targetValue, "/")
-	if target == "" {
-		target = strings.TrimRight(cfg.Target, "/")
-	}
-	token := tokenValue
-	if token == "" {
-		token = cfg.APIToken
-	}
-	config, _ := loadClientConfig()
-	if target != "" && token == "" {
-		token = config.Targets[target].Token
-	}
-	if target == "" {
-		return "", "", fmt.Errorf("target is required")
-	}
-	if token == "" {
-		return "", "", fmt.Errorf("API token is required; use --token, LEAPVIEW_API_TOKEN, or leapview login --target %s --token <token>", target)
-	}
-	return target, token, nil
-}
-
-func loadClientConfig() (clientConfig, error) {
-	path := clientConfigPath()
-	bytes, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return clientConfig{Targets: map[string]clientTarget{}}, nil
-	}
-	if err != nil {
-		return clientConfig{}, err
-	}
-	if err := os.Chmod(path, 0o600); err != nil {
-		return clientConfig{}, err
-	}
-	var config clientConfig
-	if err := json.Unmarshal(bytes, &config); err != nil {
-		return clientConfig{}, err
-	}
-	if config.Targets == nil {
-		config.Targets = map[string]clientTarget{}
-	}
-	return config, nil
-}
-
-func saveClientConfig(config clientConfig) error {
-	path := clientConfigPath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	bytes, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, bytes, 0o600)
 }
 
 func clientConfigPath() string {

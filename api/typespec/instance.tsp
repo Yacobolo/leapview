@@ -6,13 +6,17 @@ using LeapViewAPI.Protocol;
 namespace LeapViewAPI;
 
 model InstanceResponse {
+  id: string;
+  canonicalOrigin: string;
   environment: string;
 }
+
+alias PublicInstanceErrors = BadRequest | RateLimited | InternalServerError | ServiceUnavailable;
 
 @tag("Instance")
 @summary("Get this LeapView instance identity")
 @route("/instance")
 @get
-@apigen.authz(#{ mode: "authenticated" })
+@apigen.authz(#{ mode: "none" })
 @operationId("getInstance")
-op getInstance(): OkJson<InstanceResponse> | CommonErrors;
+op getInstance(): OkJson<InstanceResponse> | PublicInstanceErrors;

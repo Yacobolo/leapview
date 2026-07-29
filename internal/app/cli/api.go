@@ -14,6 +14,7 @@ import (
 	"text/tabwriter"
 
 	apiaggregate "github.com/flidai/leapview/internal/app/api/aggregate"
+	"github.com/flidai/leapview/internal/platform/cliapi"
 	"github.com/spf13/cobra"
 )
 
@@ -87,10 +88,11 @@ func runAPICall(ctx context.Context, opts *rootOptions, operationID string, call
 	if !ok {
 		return fmt.Errorf("unknown API operation %q", operationID)
 	}
-	target, token, err := clientTargetAndToken(opts)
+	credentials, err := (capabilityAPIClient{}).Resolve(ctx, cliapi.Credentials{Target: opts.target, Token: opts.token})
 	if err != nil {
 		return err
 	}
+	target, token := credentials.Target, credentials.Token
 	pathParams, err := parseKeyValuePairs(callOpts.pathParams)
 	if err != nil {
 		return fmt.Errorf("path: %w", err)

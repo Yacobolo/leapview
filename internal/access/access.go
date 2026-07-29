@@ -560,6 +560,7 @@ type APIToken struct {
 type APICredential struct {
 	Principal Principal
 	Token     APIToken
+	Authoring *AuthoringSession
 }
 
 type Session struct {

@@ -1,0 +1,270 @@
+package http
+
+import (
+	"errors"
+	"fmt"
+	stdhttp "net/http"
+	"time"
+
+	"github.com/flidai/leapview/internal/access"
+	"github.com/go-chi/chi/v5"
+)
+
+func (h Handler) BeginDeviceAuthorization(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	service, ok := h.authoringAuthentication(w)
+	if !ok {
+		return
+	}
+	var input struct {
+		Scope struct {
+			ProjectID  string   `json:"projectId"`
+			Privileges []string `json:"privileges"`
+		} `json:"scope"`
+	}
+	if err := decodeStrictJSON(r, &input); err != nil {
+		writeJSONError(w, err, stdhttp.StatusBadRequest)
+		return
+	}
+	scope, err := access.NewAuthoringScope(service.InstanceID(), input.Scope.ProjectID, privilegesFromStrings(input.Scope.Privileges))
+	if err != nil {
+		writeJSONError(w, err, stdhttp.StatusBadRequest)
+		return
+	}
+	response, err := service.BeginDeviceAuthorization(r.Context(), scope)
+	if err != nil {
+		writeAuthoringAuthError(w, err)
+		return
+	}
+	w.Header().Set("Location", response.VerificationURIComplete)
+	writeSecretJSON(w, stdhttp.StatusCreated, map[string]any{
+		"deviceCode": response.DeviceCode, "userCode": response.UserCode,
+		"verificationUri": response.VerificationURI, "verificationUriComplete": response.VerificationURIComplete,
+		"expiresIn": response.ExpiresIn, "interval": response.Interval,
+	})
+}
+
+func (h Handler) ExchangeDeviceAuthorization(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	service, ok := h.authoringAuthentication(w)
+	if !ok {
+		return
+	}
+	var input struct {
+		DeviceCode string `json:"deviceCode"`
+	}
+	if err := decodeStrictJSON(r, &input); err != nil {
+		writeJSONError(w, err, stdhttp.StatusBadRequest)
+		return
+	}
+	tokens, err := service.ExchangeDeviceCode(r.Context(), input.DeviceCode)
+	if err != nil {
+		writeAuthoringAuthError(w, err)
+		return
+	}
+	writeSecretJSON(w, stdhttp.StatusOK, authoringTokenDTO(tokens))
+}
+
+func (h Handler) DecideDeviceAuthorization(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	service, ok := h.authoringAuthentication(w)
+	if !ok {
+		return
+	}
+	principal, authenticated := h.currentPrincipal(r)
+	if !authenticated {
+		writeJSONError(w, fmt.Errorf("authenticated principal is required"), stdhttp.StatusUnauthorized)
+		return
+	}
+	if _, bearerCredential := h.currentCredential(r); bearerCredential {
+		writeJSONError(w, fmt.Errorf("device authorization approval requires a browser session"), stdhttp.StatusForbidden)
+		return
+	}
+	var input struct {
+		UserCode string `json:"userCode"`
+		Approved bool   `json:"approved"`
+	}
+	if err := decodeStrictJSON(r, &input); err != nil {
+		writeJSONError(w, err, stdhttp.StatusBadRequest)
+		return
+	}
+	actor := access.Principal{
+		ID: principal.ID, Kind: access.PrincipalKindUser, Email: principal.Email, DisplayName: principal.DisplayName,
+	}
+	var err error
+	status := "approved"
+	if input.Approved {
+		err = service.ApproveDeviceAuthorization(r.Context(), actor, input.UserCode)
+	} else {
+		status = "denied"
+		err = service.DenyDeviceAuthorization(r.Context(), actor, input.UserCode)
+	}
+	if err != nil {
+		writeAuthoringAuthError(w, err)
+		return
+	}
+	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": status})
+}
+
+func (h Handler) RefreshAuthoringToken(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	service, ok := h.authoringAuthentication(w)
+	if !ok {
+		return
+	}
+	var input struct {
+		RefreshToken string `json:"refreshToken"`
+	}
+	if err := decodeStrictJSON(r, &input); err != nil {
+		writeJSONError(w, err, stdhttp.StatusBadRequest)
+		return
+	}
+	tokens, err := service.Refresh(r.Context(), input.RefreshToken)
+	if err != nil {
+		writeAuthoringAuthError(w, err)
+		return
+	}
+	writeSecretJSON(w, stdhttp.StatusOK, authoringTokenDTO(tokens))
+}
+
+func (h Handler) RevokeAuthoringToken(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	service, ok := h.authoringAuthentication(w)
+	if !ok {
+		return
+	}
+	var input struct {
+		AccessToken string `json:"accessToken"`
+	}
+	if err := decodeStrictJSON(r, &input); err != nil {
+		writeJSONError(w, err, stdhttp.StatusBadRequest)
+		return
+	}
+	if err := service.RevokeAccessToken(r.Context(), input.AccessToken); err != nil {
+		writeAuthoringAuthError(w, err)
+		return
+	}
+	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "revoked"})
+}
+
+func (h Handler) ExchangeWorkloadIdentity(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	service, ok := h.authoringAuthentication(w)
+	if !ok {
+		return
+	}
+	var input struct {
+		ClientID        string `json:"clientId"`
+		ClientSecret    string `json:"clientSecret"`
+		LifetimeSeconds int64  `json:"lifetimeSeconds"`
+		Scope           struct {
+			ProjectID  string   `json:"projectId"`
+			Privileges []string `json:"privileges"`
+		} `json:"scope"`
+	}
+	if err := decodeStrictJSON(r, &input); err != nil {
+		writeJSONError(w, err, stdhttp.StatusBadRequest)
+		return
+	}
+	scope, err := access.NewAuthoringScope(service.InstanceID(), input.Scope.ProjectID, privilegesFromStrings(input.Scope.Privileges))
+	if err != nil {
+		writeJSONError(w, err, stdhttp.StatusBadRequest)
+		return
+	}
+	tokens, err := service.ExchangeWorkloadIdentity(r.Context(), access.WorkloadIdentityInput{
+		ClientID: input.ClientID, ClientSecret: input.ClientSecret, Scope: scope,
+		Lifetime: time.Duration(input.LifetimeSeconds) * time.Second,
+	})
+	if err != nil {
+		writeAuthoringAuthError(w, err)
+		return
+	}
+	writeSecretJSON(w, stdhttp.StatusOK, authoringTokenDTO(tokens))
+}
+
+func (h Handler) ListCurrentAuthoringSessions(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	service, ok := h.authoringAuthentication(w)
+	if !ok {
+		return
+	}
+	principal, authenticated := h.currentPrincipal(r)
+	if !authenticated {
+		writeJSONError(w, fmt.Errorf("authenticated principal is required"), stdhttp.StatusUnauthorized)
+		return
+	}
+	sessions, err := service.ListSessions(r.Context(), principal.ID)
+	if err != nil {
+		writeAuthoringAuthError(w, err)
+		return
+	}
+	out := make([]map[string]any, 0, len(sessions))
+	for _, session := range sessions {
+		out = append(out, authoringSessionDTO(session))
+	}
+	_ = writePagedJSON(w, r, out)
+}
+
+func (h Handler) RevokeCurrentAuthoringSession(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	service, ok := h.authoringAuthentication(w)
+	if !ok {
+		return
+	}
+	principal, authenticated := h.currentPrincipal(r)
+	if !authenticated {
+		writeJSONError(w, fmt.Errorf("authenticated principal is required"), stdhttp.StatusUnauthorized)
+		return
+	}
+	sessionID := chi.URLParam(r, "session")
+	if err := service.RevokeSession(r.Context(), principal.ID, sessionID); err != nil {
+		writeAuthoringAuthError(w, err)
+		return
+	}
+	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "revoked"})
+}
+
+func (h Handler) authoringAuthentication(w stdhttp.ResponseWriter) (AuthoringAuthentication, bool) {
+	if h.AuthoringAuth == nil {
+		writeJSONError(w, fmt.Errorf("authoring authentication is unavailable"), stdhttp.StatusServiceUnavailable)
+		return nil, false
+	}
+	return h.AuthoringAuth, true
+}
+
+func authoringTokenDTO(tokens access.AuthoringTokenSet) map[string]any {
+	response := map[string]any{
+		"accessToken": tokens.AccessToken, "tokenType": tokens.TokenType,
+		"expiresIn": tokens.ExpiresIn, "session": authoringSessionDTO(tokens.Session),
+	}
+	if tokens.RefreshToken != "" {
+		response["refreshToken"] = tokens.RefreshToken
+	}
+	return response
+}
+
+func authoringSessionDTO(session access.AuthoringSession) map[string]any {
+	privileges := make([]string, len(session.Scope.Privileges))
+	for index, privilege := range session.Scope.Privileges {
+		privileges[index] = string(privilege)
+	}
+	response := map[string]any{
+		"id": session.ID, "kind": session.Kind, "clientId": session.ClientID,
+		"targetId": session.Scope.TargetID, "projectId": session.Scope.ProjectID,
+		"privileges": privileges, "createdAt": session.CreatedAt.UTC().Format(time.RFC3339),
+		"expiresAt": session.ExpiresAt.UTC().Format(time.RFC3339),
+	}
+	if !session.LastUsedAt.IsZero() {
+		response["lastUsedAt"] = session.LastUsedAt.UTC().Format(time.RFC3339)
+	}
+	if !session.RevokedAt.IsZero() {
+		response["revokedAt"] = session.RevokedAt.UTC().Format(time.RFC3339)
+	}
+	return response
+}
+
+func writeAuthoringAuthError(w stdhttp.ResponseWriter, err error) {
+	status := stdhttp.StatusBadRequest
+	switch {
+	case errors.Is(err, access.ErrDeviceAuthorizationPending),
+		errors.Is(err, access.ErrAuthoringRefreshReplay):
+		status = stdhttp.StatusConflict
+	case errors.Is(err, access.ErrDeviceAuthorizationSlowDown):
+		status = stdhttp.StatusTooManyRequests
+	case errors.Is(err, access.ErrAuthoringScopeDenied):
+		status = stdhttp.StatusUnprocessableEntity
+	}
+	writeJSONError(w, err, status)
+}

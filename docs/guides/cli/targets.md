@@ -19,15 +19,13 @@ LeapView reads the target's environment before planning or deploying. If `--envi
 
 ## Supply a target
 
-For an occasional command, pass `--target` explicitly. For one shell or CI job, set `LEAPVIEW_TARGET`. For repeated local use, [`leapview login`](/docs/cli/login) stores a token under its exact target URL:
+For an occasional command, pass `--target` explicitly. For one CI job, set `LEAPVIEW_TARGET`. For repeated human use, [`leapview login`](/docs/cli/login) creates a device-authorized profile:
 
 ```sh
-leapview login \
-  --target https://dash.staging.example.com \
-  --token "$LEAPVIEW_API_TOKEN"
+leapview login https://dash.staging.example.com
 ```
 
-Avoid aliases that can be repointed between environments. Use the same normalized URL when logging in and running later commands so the saved credential can be found.
+The profile pins the server-reported canonical origin and immutable instance ID. Only non-secret metadata is stored in the profile file; credentials remain in the OS-native store. Avoid DNS aliases that can be repointed between environments. Use `--name staging` during login if you want a stable local profile name, then use `--target staging` on later commands.
 
 ## Keep local validation separate
 
@@ -41,6 +39,6 @@ Then use an explicit remote target for the plan and deployment. Keep the project
 
 ## Verify before deployment
 
-Check the target URL and asserted environment in reviewable CI configuration, not only in an operator's shell history. Use separate protected environments and secret scopes so a staging job cannot read the production token.
+Check the target URL, workload project, and asserted environment in reviewable CI configuration, not only in an operator's shell history. Use separate service principals and protected secret scopes so a staging job cannot exchange a production workload credential.
 
 Continue with [Validate, plan, and deploy](/docs/cli/validate-deploy) for the full promotion workflow and [`leapview plan`](/docs/cli/plan) for every targeting option.

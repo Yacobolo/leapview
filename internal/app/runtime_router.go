@@ -121,6 +121,7 @@ type workflowInputs struct {
 }
 
 type storageInputs struct {
+	instanceID          string
 	duckLakeCatalogPath string
 	duckLakeDataPath    string
 	jobLeaseTimeout     time.Duration
@@ -191,6 +192,7 @@ type workflowAssemblyInputs struct {
 }
 
 type runtimeAssemblyInputs struct {
+	InstanceID          string
 	DuckDBDir           string
 	DuckLakeCatalogPath string
 	DuckLakeDataPath    string
@@ -398,6 +400,7 @@ func buildApplicationSurfaces(
 	moduleWorkflow.reloader = workflow.Reloader
 	storage.duckLakeCatalogPath = runtimeConfig.DuckLakeCatalogPath
 	storage.duckLakeDataPath = runtimeConfig.DuckLakeDataPath
+	storage.instanceID = runtimeConfig.InstanceID
 	policy.defaultWorkspaceID = runtimeConfig.DefaultWorkspaceID
 	policy.defaultEnvironment = string(servingstatemodule.NormalizeEnvironment(servingstatemodule.Environment(runtimeConfig.DefaultEnvironment)))
 	storage.publicURL = strings.TrimSuffix(strings.TrimSpace(httpConfig.PublicURL), "/")
@@ -469,6 +472,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		var err error
 		routes.accessModule, err = accessmodule.Build(ctx, accessmodule.Config{
 			Database: database, ExistingAuth: platform.auth, WorkspaceID: policy.defaultWorkspaceID,
+			InstanceID: storage.instanceID, PublicURL: storage.publicURL,
 			Presentation: webpage.Presentation{ProductName: brand.Name, FaviconPath: brand.FaviconPath},
 			Assets:       platform.assets,
 			WorkspaceIDs: func(ctx context.Context) ([]string, error) {
@@ -941,7 +945,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	apiDispatcher = &apiGenDispatcher{
 		managedDataModule:  routes.managedDataModule,
 		defaultEnvironment: policy.defaultEnvironment, managedDataTus: policy.managedDataTus,
-		buildIdentity: platform.buildIdentity,
+		instanceID: storage.instanceID, canonicalOrigin: storage.publicURL, buildIdentity: platform.buildIdentity,
 	}
 	apiGenAuthorizer, err := routes.accessModule.APIGenAuthorizer(accessAPIGenOperationContracts(), accessmodule.APIGenObjectResolvers{
 		Dashboard:      dashboardmodule.DashboardObjectRefs,

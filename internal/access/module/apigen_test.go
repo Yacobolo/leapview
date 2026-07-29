@@ -38,19 +38,35 @@ func TestAPIGenAuthorizationContractCoverage(t *testing.T) {
 	if len(contracts) == 0 {
 		t.Fatal("no generated operation contracts")
 	}
+	publicAuthoringAuth := map[string]bool{
+		"beginDeviceAuthorization":    true,
+		"exchangeDeviceAuthorization": true,
+		"refreshAuthoringToken":       true,
+		"revokeAuthoringToken":        true,
+		"exchangeWorkloadIdentity":    true,
+		"getInstance":                 true,
+	}
 	for operationID, contract := range contracts {
+		if publicAuthoringAuth[operationID] {
+			if contract.Protected || contract.AuthzMode != "none" {
+				t.Fatalf("%s authorization = protected:%t mode:%q, want public credential exchange", operationID, contract.Protected, contract.AuthzMode)
+			}
+			continue
+		}
 		if !contract.Protected {
 			t.Fatalf("%s auth contract is not protected", operationID)
 		}
-		privilege, ok := apiGenOperationPrivilege(contract)
+		_, ok := apiGenOperationPrivilege(contract)
 		if !ok {
 			t.Fatalf("%s has invalid authorization metadata", operationID)
 		}
-		if operationID == "getInstance" {
-			if contract.AuthzMode != "authenticated" || privilege != "" {
-				t.Fatalf("getInstance authorization = (%q, %q), want authenticated without privilege", contract.AuthzMode, privilege)
+		if operationID == "decideDeviceAuthorization" {
+			if contract.AuthzMode != "authenticated" {
+				t.Fatalf("%s auth mode = %q, want authenticated", operationID, contract.AuthzMode)
 			}
-		} else if contract.AuthzMode != "privilege" {
+			continue
+		}
+		if contract.AuthzMode != "privilege" {
 			t.Fatalf("%s auth mode = %q, want privilege", operationID, contract.AuthzMode)
 		}
 		if isGlobalAgentOperation(operationID) {
@@ -69,6 +85,15 @@ func TestAPIGenAuthorizationContractCoverage(t *testing.T) {
 	}
 	if got, _ := apiGenOperationPrivilege(contract); got != access.PrivilegeDeploy {
 		t.Fatalf("uploadReleaseArtifact privilege = %q, want %q", got, access.PrivilegeDeploy)
+	}
+}
+
+func TestDeviceAuthorizationApprovalRequiresCSRF(t *testing.T) {
+	for operationID := range testAPIGenContracts() {
+		got := apiGenRequiresCSRF(operationID)
+		if got != (operationID == "decideDeviceAuthorization") {
+			t.Errorf("apiGenRequiresCSRF(%q) = %t", operationID, got)
+		}
 	}
 }
 

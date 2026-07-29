@@ -1014,13 +1014,13 @@ func TestLocalPasswordMustChangeBlocksProtectedRoutesUntilChanged(t *testing.T) 
 	initialPublisherSecret, _, err := repo.CreateAPITokenWithMetadata(ctx, access.APITokenInput{
 		PrincipalID: created.Principal.ID,
 		Name:        access.APITokenNameInitialPublisher,
-		Privileges:  []access.Privilege{access.PrivilegeViewItem},
+		Privileges:  []access.Privilege{access.PrivilegeUseWorkspace},
 		ExpiresAt:   time.Now().Add(time.Hour),
 	})
 	if err != nil {
 		t.Fatalf("create initial publisher token: %v", err)
 	}
-	publisherReq := httptest.NewRequest(http.MethodGet, "/api/v1/instance", nil)
+	publisherReq := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
 	publisherReq.Header.Set("Authorization", "Bearer "+initialPublisherSecret)
 	publisherRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(publisherRec, publisherReq)
@@ -1031,13 +1031,13 @@ func TestLocalPasswordMustChangeBlocksProtectedRoutesUntilChanged(t *testing.T) 
 	regularSecret, _, err := repo.CreateAPITokenWithMetadata(ctx, access.APITokenInput{
 		PrincipalID: created.Principal.ID,
 		Name:        "regular-token",
-		Privileges:  []access.Privilege{access.PrivilegeViewItem},
+		Privileges:  []access.Privilege{access.PrivilegeUseWorkspace},
 		ExpiresAt:   time.Now().Add(time.Hour),
 	})
 	if err != nil {
 		t.Fatalf("create regular token: %v", err)
 	}
-	regularReq := httptest.NewRequest(http.MethodGet, "/api/v1/instance", nil)
+	regularReq := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
 	regularReq.Header.Set("Authorization", "Bearer "+regularSecret)
 	regularRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(regularRec, regularReq)

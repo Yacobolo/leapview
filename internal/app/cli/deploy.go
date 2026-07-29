@@ -43,6 +43,7 @@ func deployCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 type projectDeployOperations struct{}
 
 func (projectDeployOperations) Deploy(ctx context.Context, values projectcli.DeployOptions, out io.Writer) error {
+	client := authoringRefreshingHTTPClient(http.DefaultClient)
 	return runDeploy(ctx, deployRequest{
 		ProjectPath: values.ProjectPath,
 		Revisions:   values.Revisions,
@@ -51,7 +52,7 @@ func (projectDeployOperations) Deploy(ctx context.Context, values projectcli.Dep
 		Environment: values.Environment,
 		AutoApprove: values.AutoApprove,
 		Out:         out,
-		HTTPClient:  http.DefaultClient,
+		HTTPClient:  client,
 	})
 }
 

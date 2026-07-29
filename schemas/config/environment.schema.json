@@ -1674,11 +1674,11 @@
       "x-scope": "serve"
     },
     "LEAPVIEW_API_TOKEN": {
-      "description": "API token used by non-interactive CLI commands.",
+      "description": "Compatibility API token for an ephemeral CLI invocation; prefer device login for people and workload identity for CI.",
       "type": "string",
       "writeOnly": true,
       "x-lifecycle": "supported",
-      "x-scope": "publish,api"
+      "x-scope": "client commands"
     },
     "LEAPVIEW_API_TOKEN_ONLY_AUTH": {
       "description": "Disable browser authentication and accept API tokens only.",
@@ -1762,7 +1762,7 @@
       "x-scope": "browser benchmark"
     },
     "LEAPVIEW_CLI_CONFIG": {
-      "description": "Path to the local CLI target and token configuration file.",
+      "description": "Path to the non-secret CLI target profile document.",
       "type": "string",
       "x-lifecycle": "supported",
       "x-scope": "client commands"
@@ -2446,6 +2446,19 @@
       "x-lifecycle": "supported",
       "x-scope": "serve"
     },
+    "LEAPVIEW_WORKLOAD_CLIENT_ID": {
+      "description": "Service-principal identifier exchanged for an ephemeral, scoped CI credential.",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "client commands"
+    },
+    "LEAPVIEW_WORKLOAD_CLIENT_SECRET": {
+      "description": "Service-principal secret injected by the CI secret manager for workload identity exchange.",
+      "type": "string",
+      "writeOnly": true,
+      "x-lifecycle": "supported",
+      "x-scope": "client commands"
+    },
     "LEAPVIEW_WORKLOAD_CONTROL_EXECUTION_TIMEOUT": {
       "default": "15m",
       "description": "Maximum execution time for control work.",
@@ -2605,6 +2618,12 @@
       "type": "string",
       "x-lifecycle": "supported",
       "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_PROJECT": {
+      "description": "Exact project scope requested by CI workload identity.",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "client commands"
     },
     "LEAPVIEW_WORKLOAD_REFRESH_EXECUTION_TIMEOUT": {
       "default": "0s",

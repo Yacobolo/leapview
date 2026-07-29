@@ -83,6 +83,10 @@ func (m *Module) protectAnyWorkspace(privilege access.Privilege, next http.Handl
 		}
 		var credential *access.APICredential
 		if resolved, ok := m.auth.APICredential(r); ok {
+			if resolved.Authoring != nil {
+				writeAuthError(w, r, errForbidden, http.StatusForbidden)
+				return
+			}
 			credential = &resolved
 		}
 		allowed, err := m.authorizeAnyWorkspace(r.Context(), principal.ID, credential, privilege)

@@ -65,7 +65,13 @@ func (m *Module) APIGenAuthorizer(operations map[string]APIGenOperationContract,
 
 func (a *APIGenAuthorizer) Protect(operationID string, next http.Handler) (http.Handler, bool) {
 	contract, ok := a.operations[operationID]
-	if !ok || !contract.Protected {
+	if !ok {
+		return nil, false
+	}
+	if contract.AuthzMode == "none" && !contract.Protected {
+		return next, true
+	}
+	if !contract.Protected {
 		return nil, false
 	}
 	privilege, ok := apiGenOperationPrivilege(contract)
@@ -79,7 +85,15 @@ func (a *APIGenAuthorizer) Protect(operationID string, next http.Handler) (http.
 	if !ok {
 		return nil, false
 	}
-	return a.module.ProtectHandlerWithObjects(privilege, resolver, next), true
+	protected := a.module.ProtectHandlerWithObjects(privilege, resolver, next)
+	if apiGenRequiresCSRF(operationID) {
+		protected = a.module.CSRFMiddleware(protected)
+	}
+	return protected, true
+}
+
+func apiGenRequiresCSRF(operationID string) bool {
+	return operationID == "decideDeviceAuthorization"
 }
 
 func apiGenOperationPrivilege(contract APIGenOperationContract) (Privilege, bool) {

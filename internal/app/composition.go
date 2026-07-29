@@ -82,6 +82,11 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	if err := store.BindInstanceEnvironment(ctx, string(environment)); err != nil {
 		return fail(err)
 	}
+	instanceID, err := store.InstanceID(ctx)
+	if err != nil {
+		return fail(err)
+	}
+	publicURL := firstConfigured(cfg.PublicURL, configuredListenURL(cfg.ListenAddr()))
 	workloadConfig := cfg.WorkloadConfig()
 	analyticsModule, err := analyticsmodule.Build(ctx, analyticsmodule.Config{
 		Database: store.SQLDB(), RootDir: cfg.DuckDBDirPath(),
@@ -103,7 +108,7 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 		Database: store.SQLDB(), Auth: accessAuthConfig(cfg, production, cookieSecure),
 		WorkspaceID: config.DefaultWorkspaceID,
 		Assets:      assets,
-		PublicURL:   firstConfigured(cfg.PublicURL, configuredListenURL(cfg.ListenAddr())), MCPIssuerURL: cfg.MCPOAuthIssuerURL,
+		PublicURL:   publicURL, InstanceID: instanceID, MCPIssuerURL: cfg.MCPOAuthIssuerURL,
 		WorkspaceIDs: func(ctx context.Context) ([]string, error) {
 			if workspaceDirectory == nil {
 				return nil, nil
@@ -283,9 +288,10 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 			DuckLakeCatalogPath: duckLakeCatalogPath, DuckLakeDataPath: cfg.DuckLakeDataDir(),
 			DefaultEnvironment: string(environment), SCIMBearerToken: cfg.SCIMBearerToken,
 			MetricsBearerToken: cfg.MetricsBearerToken, AllowedHosts: allowedHosts, Assets: assets,
+			InstanceID: instanceID,
 		},
 		httpAssemblyInputs{
-			PublicURL:       firstConfigured(cfg.PublicURL, configuredListenURL(cfg.ListenAddr())),
+			PublicURL:       publicURL,
 			RateLimits:      rateLimits,
 			SecurityHeaders: apihttpmiddleware.SecurityHeaders(production && cfg.HSTSEnabled(cookieSecure)),
 			RequestLogging:  production && cfg.RequestLoggingEnabled(), Logger: slog.Default(),

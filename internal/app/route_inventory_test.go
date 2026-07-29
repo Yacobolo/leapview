@@ -84,7 +84,7 @@ func TestRouteInventory(t *testing.T) {
 		rows = append(rows, fmt.Sprintf("%s|%s|%s|%s", key, contract.owner, contract.access, contract.privilege))
 	}
 	sort.Strings(rows)
-	const expectedRouteContractDigest = "dfb261be78d8d59919ba93cbc30cadf62b6fe8f3e0f265a7c4b6580fdd0cfc91"
+	const expectedRouteContractDigest = "8a44f655e0bd3b9c48fcc42874dc3e2951f6b7fb8e9ecd1dc946da9841989f0c"
 	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(rows, "\n"))))
 	if digest != expectedRouteContractDigest {
 		t.Fatalf("route ownership/auth contract changed: got digest %s\n%s", digest, strings.Join(rows, "\n"))
@@ -109,9 +109,9 @@ func nonAPIRouteMetadata(method, path string) (routeMetadata, bool) {
 	case path == "/api/docs" || path == "/api/openapi.json":
 		public.owner = "api"
 		return public, true
-	case path == "/login" || strings.HasPrefix(path, "/auth/") || strings.HasPrefix(path, "/oauth/") || strings.HasPrefix(path, "/.well-known/"):
+	case path == "/login" || path == "/device" || strings.HasPrefix(path, "/auth/") || strings.HasPrefix(path, "/oauth/") || strings.HasPrefix(path, "/.well-known/"):
 		public.owner = "access"
-		if path == "/auth/logout" || path == "/auth/local/password" {
+		if path == "/device" || path == "/auth/logout" || path == "/auth/local/password" {
 			public.access = "authenticated"
 		}
 		return public, true
@@ -243,6 +243,7 @@ GET /connections/{asset}/{section}
 GET /connections/{connection}/sources/{source}
 GET /connections/{connection}/sources/{source}/{section}
 GET /data
+GET /device
 GET /embed/dashboards/{publicId}
 GET /embed/dashboards/{publicId}/pages/{page}
 GET /favicon.ico
@@ -279,6 +280,7 @@ POST /auth/logout
 POST /chat/turns
 POST /chats/turns
 POST /data/command
+POST /device
 POST /metrics
 POST /oauth/register
 POST /oauth/revoke

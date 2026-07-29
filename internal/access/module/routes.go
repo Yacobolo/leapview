@@ -16,6 +16,12 @@ func (m *Module) MountAuthenticatedBrowser(r chi.Router) {
 	if m == nil {
 		return
 	}
+	deviceAuthorization := http.Handler(http.HandlerFunc(m.DeviceAuthorizationPage))
+	if m.auth != nil {
+		deviceAuthorization = m.auth.Middleware("", deviceAuthorization)
+	}
+	r.Method(http.MethodGet, "/device", deviceAuthorization)
+	r.Method(http.MethodPost, "/device", deviceAuthorization)
 	r.Post("/auth/logout", m.Logout)
 	r.Post("/auth/local/password", m.LocalPassword)
 }

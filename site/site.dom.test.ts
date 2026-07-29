@@ -2001,8 +2001,9 @@ test('generated API outlines keep operations and omit repeated operation details
     await page.waitForFunction(() => Boolean(document.querySelector('lv-site-article-toc')?.shadowRoot?.querySelector('a')))
 
     expect(await article.locator('h2#operations').count()).toBe(1)
-    expect(await article.locator('h3').first().textContent()).toBe('List principals')
-    expect(await article.locator('h3').first().locator('xpath=following-sibling::h4[1]').textContent()).toBe('Parameters')
+    const listPrincipals = article.locator('h3#list-principals')
+    expect(await listPrincipals.textContent()).toBe('List principals')
+    expect(await listPrincipals.locator('xpath=following-sibling::h4[1]').textContent()).toBe('Parameters')
 
     const visibleOutlineLabels = await toc.evaluate((element) =>
       Array.from(element.shadowRoot?.querySelectorAll<HTMLAnchorElement>('a') ?? [])

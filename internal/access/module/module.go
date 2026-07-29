@@ -20,6 +20,7 @@ type Module struct {
 	workspaceID   string
 	oauth         *mcpoauth.Service
 	oauthResource mcpoauth.ResourceServer
+	authoringAuth *access.AuthoringAuthService
 	logger        *slog.Logger
 	presentation  webpage.Presentation
 	assets        staticasset.Resolver
@@ -36,6 +37,7 @@ type surfaceConfig struct {
 	Logger             *slog.Logger
 	OAuth              *mcpoauth.Service
 	OAuthResource      mcpoauth.ResourceServer
+	AuthoringAuth      *access.AuthoringAuthService
 	Presentation       webpage.Presentation
 	Assets             staticasset.Resolver
 }
@@ -53,9 +55,10 @@ func newSurface(config surfaceConfig) *Module {
 		return accesshttp.Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, ok
 	}
 	return &Module{auth: config.Auth, repository: config.Repository, workspaceIDs: config.WorkspaceIDs, workspaceID: config.DefaultWorkspaceID, logger: logger,
-		oauth: config.OAuth, oauthResource: config.OAuthResource, presentation: config.Presentation, assets: config.Assets, handler: accesshttp.Handler{
+		oauth: config.OAuth, oauthResource: config.OAuthResource, authoringAuth: config.AuthoringAuth,
+		presentation: config.Presentation, assets: config.Assets, handler: accesshttp.Handler{
 			Repository: config.Repository, CurrentPrincipal: currentPrincipal,
-			CurrentCredential: config.CurrentCredential, WorkspaceID: config.WorkspaceID,
+			CurrentCredential: config.CurrentCredential, WorkspaceID: config.WorkspaceID, AuthoringAuth: config.AuthoringAuth,
 		}}
 }
 

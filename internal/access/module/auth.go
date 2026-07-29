@@ -78,21 +78,22 @@ type disabledCredentialResolver interface {
 }
 
 type Auth struct {
-	repo         access.Repository
-	sessions     sessionManager
-	workspaceID  string
-	devBypass    bool
-	devAPIToken  string
-	apiTokenOnly bool
-	localAuth    bool
-	enabled      bool
-	configured   bool
-	azureTenant  string
-	cookieSecure bool
-	csrf         func(http.Handler) http.Handler
-	oidcRegistry *oidcauth.Registry
-	oidcOverride map[string]oidcClient
-	stateKey     []byte
+	repo          access.Repository
+	sessions      sessionManager
+	workspaceID   string
+	devBypass     bool
+	devAPIToken   string
+	apiTokenOnly  bool
+	localAuth     bool
+	enabled       bool
+	configured    bool
+	azureTenant   string
+	cookieSecure  bool
+	csrf          func(http.Handler) http.Handler
+	oidcRegistry  *oidcauth.Registry
+	oidcOverride  map[string]oidcClient
+	stateKey      []byte
+	authoringAuth *access.AuthoringAuthService
 }
 
 type AuthConfig struct {
@@ -451,7 +452,18 @@ func (a *Auth) MiddlewareWithObjectResolver(privilege access.Privilege, objectRe
 					concealDenied = resolved[0].Type != access.SecurablePlatform && resolved[0].Type != access.SecurableWorkspace
 				}
 			}
-			if credential != nil && !apiTokenAllows((*credential).Token, workspaceID, privilege) {
+			if credential != nil && credential.Authoring != nil {
+				projectID := strings.TrimSpace(chi.URLParam(r, "project"))
+				if err := credential.Authoring.Scope.Authorize(a.authoringAuth.InstanceID(), projectID, privilege); err != nil {
+					status := http.StatusForbidden
+					if concealDenied && strings.HasPrefix(r.URL.Path, "/api/v1/") {
+						status = http.StatusNotFound
+					}
+					recordAuthorizationDenial(r, a.repo, principal.ID, workspaceID, privilege, objects, access.ReasonMissingPrivilege)
+					writeAuthError(w, r, errForbidden, status)
+					return
+				}
+			} else if credential != nil && !apiTokenAllows((*credential).Token, workspaceID, privilege) {
 				status := http.StatusForbidden
 				if concealDenied && strings.HasPrefix(r.URL.Path, "/api/v1/") {
 					status = http.StatusNotFound
@@ -705,6 +717,23 @@ func (a *Auth) authenticateBearer(r *http.Request) (Principal, *access.APICreden
 	if err == nil {
 		principal := credential.Principal
 		return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, &credential, true
+	}
+	if a.authoringAuth != nil {
+		authoringCredential, authoringErr := a.authoringAuth.Resolve(r.Context(), token)
+		if authoringErr == nil {
+			principal := authoringCredential.Principal
+			credential = access.APICredential{
+				Principal: principal,
+				Token: access.APIToken{
+					ID: authoringCredential.ID, PrincipalID: principal.ID,
+					Name:       "authoring:" + string(authoringCredential.Session.Kind),
+					Privileges: append([]access.Privilege(nil), authoringCredential.Session.Scope.Privileges...),
+					ExpiresAt:  authoringCredential.AccessExpiresAt.UTC().Format(time.RFC3339),
+				},
+				Authoring: &authoringCredential.Session,
+			}
+			return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, &credential, true
+		}
 	}
 	a.auditDisabledCredentialFailure(r, "api_token", token)
 	return Principal{}, nil, false
