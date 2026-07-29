@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	publicationdb "github.com/Yacobolo/leapview/internal/dashboard/internal/db"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
+	publicationdb "github.com/flidai/leapview/internal/dashboard/internal/db"
+	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 const brokerPollInterval = 20 * time.Millisecond

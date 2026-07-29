@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Yacobolo/leapview/internal/access"
 	coreosoidc "github.com/coreos/go-oidc/v3/oidc"
+	"github.com/flidai/leapview/internal/access"
 )
 
 type ExternalConfig struct {

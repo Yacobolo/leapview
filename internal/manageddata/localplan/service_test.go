@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/manageddata"
+	"github.com/flidai/leapview/internal/manageddata"
 )
 
 func TestServicePlanDiscoversExactAndRecursiveSourcesDeterministically(t *testing.T) {

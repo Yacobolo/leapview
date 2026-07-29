@@ -9,16 +9,16 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
-	adminoffline "github.com/Yacobolo/leapview/internal/admin/offline"
-	adminsqlite "github.com/Yacobolo/leapview/internal/admin/sqlite"
-	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
-	"github.com/Yacobolo/leapview/internal/platform"
-	"github.com/Yacobolo/leapview/internal/platform/filesystem"
-	"github.com/Yacobolo/leapview/internal/platform/locking"
-	storagemaintenance "github.com/Yacobolo/leapview/internal/servingstate/retention"
-	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
+	"github.com/flidai/leapview/internal/access"
+	accesssqlite "github.com/flidai/leapview/internal/access/sqlite"
+	adminoffline "github.com/flidai/leapview/internal/admin/offline"
+	adminsqlite "github.com/flidai/leapview/internal/admin/sqlite"
+	analyticsducklake "github.com/flidai/leapview/internal/analytics/ducklake"
+	"github.com/flidai/leapview/internal/platform"
+	"github.com/flidai/leapview/internal/platform/filesystem"
+	"github.com/flidai/leapview/internal/platform/locking"
+	storagemaintenance "github.com/flidai/leapview/internal/servingstate/retention"
+	servingstatesqlite "github.com/flidai/leapview/internal/servingstate/sqlite"
 )
 
 type lockHandle struct {

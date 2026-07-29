@@ -3,8 +3,8 @@ package runtime
 import (
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
 )
 
 func TestReportAggregateDataQueryDefaultsToDashboardCacheOperation(t *testing.T) {

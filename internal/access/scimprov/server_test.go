@@ -9,7 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/access"
+	"github.com/flidai/leapview/internal/access"
 )
 
 func TestGroupPatchDoesNotAuditMemberSuccessWhenPersistFails(t *testing.T) {

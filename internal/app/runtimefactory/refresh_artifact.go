@@ -1,8 +1,8 @@
 package runtimefactory
 
 import (
-	projectbundle "github.com/Yacobolo/leapview/internal/project/bundle"
-	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
+	projectbundle "github.com/flidai/leapview/internal/project/bundle"
+	refreshrun "github.com/flidai/leapview/internal/refresh/run"
 )
 
 func NewRefreshArtifactLoader() refreshrun.ArtifactLoader {

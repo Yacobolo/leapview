@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
-	"github.com/Yacobolo/leapview/internal/platform"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	"github.com/flidai/leapview/internal/analytics/queryaudit"
+	"github.com/flidai/leapview/internal/platform"
 )
 
 func TestAuditedQueryMetricsRecordsSuccessWithoutRows(t *testing.T) {

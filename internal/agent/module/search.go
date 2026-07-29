@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/agent"
-	"github.com/Yacobolo/leapview/internal/agent/ui"
-	productsearch "github.com/Yacobolo/leapview/internal/workspace/search"
+	"github.com/flidai/leapview/internal/agent"
+	"github.com/flidai/leapview/internal/agent/ui"
+	productsearch "github.com/flidai/leapview/internal/workspace/search"
 )
 
 var referenceTypes = []productsearch.Type{

@@ -3,7 +3,7 @@ package module
 import (
 	"net/http"
 
-	accessui "github.com/Yacobolo/leapview/internal/access/ui"
+	accessui "github.com/flidai/leapview/internal/access/ui"
 	"github.com/gorilla/csrf"
 )
 

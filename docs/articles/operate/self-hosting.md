@@ -50,7 +50,7 @@ When managed data uses S3, instance backups contain its metadata and cache rathe
 ./leapviewctl logs
 archive="$(./leapviewctl backup)"
 ./leapviewctl restore "$archive"
-./leapviewctl upgrade ghcr.io/yacobolo/leapview@sha256:<digest>
+./leapviewctl upgrade ghcr.io/flidai/leapview@sha256:<digest>
 ```
 
 Restore validates the archive and preserves the current state before replacement. Upgrade records the prior image and a pre-upgrade state checkpoint. Failed health checks reinstate both automatically. `rollback --confirm` restores the checkpoint after an otherwise successful upgrade and therefore discards later state.

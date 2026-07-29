@@ -3,7 +3,7 @@ package module
 import (
 	"context"
 
-	"github.com/Yacobolo/leapview/internal/access"
+	"github.com/flidai/leapview/internal/access"
 )
 
 type SecurableWriter struct {

@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/analytics/arrowquery"
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	analyticscontract "github.com/Yacobolo/leapview/internal/analytics/runtime"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	dashboardruntime "github.com/Yacobolo/leapview/internal/dashboard/runtime"
+	"github.com/flidai/leapview/internal/analytics/arrowquery"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	analyticscontract "github.com/flidai/leapview/internal/analytics/runtime"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	dashboardruntime "github.com/flidai/leapview/internal/dashboard/runtime"
 )
 
 type Options struct {

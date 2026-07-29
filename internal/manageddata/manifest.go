@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/platform/digest"
+	"github.com/flidai/leapview/internal/platform/digest"
 )
 
 type File struct {

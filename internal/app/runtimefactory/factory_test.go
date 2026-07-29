@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/project/manifest"
-	"github.com/Yacobolo/leapview/internal/runtimehost"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	"github.com/flidai/leapview/internal/project/manifest"
+	"github.com/flidai/leapview/internal/runtimehost"
 )
 
 func TestBindManagedDataRootsUsesTrustedRuntimeResolution(t *testing.T) {

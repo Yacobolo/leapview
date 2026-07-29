@@ -1,8 +1,8 @@
 package app
 
 import (
-	appconfig "github.com/Yacobolo/leapview/internal/app/config"
-	manageddatamodule "github.com/Yacobolo/leapview/internal/manageddata/module"
+	appconfig "github.com/flidai/leapview/internal/app/config"
+	manageddatamodule "github.com/flidai/leapview/internal/manageddata/module"
 )
 
 func managedDataProductConfig(config appconfig.Config) manageddatamodule.ProductConfig {

@@ -3,10 +3,10 @@ package definition
 import (
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
-	"github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	"github.com/flidai/leapview/internal/dashboard"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
+	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
+	"github.com/flidai/leapview/internal/dashboard/visualization/ir"
 )
 
 func TestCompiledDashboardOwnsVisualizationsWithoutAuthoringVisualMaps(t *testing.T) {

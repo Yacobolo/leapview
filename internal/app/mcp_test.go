@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/access/http/mcpoauth"
-	agentcap "github.com/Yacobolo/leapview/internal/agent"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/access/http/mcpoauth"
+	agentcap "github.com/flidai/leapview/internal/agent"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

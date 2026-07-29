@@ -1,8 +1,8 @@
 package ui
 
 import (
-	uisignals "github.com/Yacobolo/leapview/internal/dashboard/ui/signals"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	uisignals "github.com/flidai/leapview/internal/dashboard/ui/signals"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
 )
 
 // AgentBootstrap is agent-owned state projected into dashboard browser

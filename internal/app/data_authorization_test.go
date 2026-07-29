@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
-	agentcap "github.com/Yacobolo/leapview/internal/agent"
-	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
-	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	queryauthz "github.com/Yacobolo/leapview/internal/dashboard/queryauthz"
+	"github.com/flidai/leapview/internal/access"
+	accesssqlite "github.com/flidai/leapview/internal/access/sqlite"
+	agentcap "github.com/flidai/leapview/internal/agent"
+	agentmodule "github.com/flidai/leapview/internal/agent/module"
+	agenttools "github.com/flidai/leapview/internal/agent/tools"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	queryauthz "github.com/flidai/leapview/internal/dashboard/queryauthz"
 )
 
 func TestDataAuthorizationPassesSelectedColumnMaskToExecution(t *testing.T) {

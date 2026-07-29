@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
 )
 
 func TestWriteFilterOptionErrorSuppressesStaleRequests(t *testing.T) {

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	workspaceview "github.com/Yacobolo/leapview/internal/workspace"
-	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
+	workspaceview "github.com/flidai/leapview/internal/workspace"
+	catalog "github.com/flidai/leapview/internal/workspace/navigation"
 )
 
 func TestSemanticModelDesignWorkspaceVocabulary(t *testing.T) {

@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	dashboardgen "github.com/Yacobolo/leapview/internal/dashboard/api/gen"
-	"github.com/Yacobolo/leapview/internal/platform/cliapi"
 	apigenclient "github.com/Yacobolo/toolbelt/apigen/runtime/client"
+	dashboardgen "github.com/flidai/leapview/internal/dashboard/api/gen"
+	"github.com/flidai/leapview/internal/platform/cliapi"
 )
 
 type fakeClient struct {

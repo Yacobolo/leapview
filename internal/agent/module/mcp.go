@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
-	agentcore "github.com/Yacobolo/leapview/pkg/agent"
+	agenttools "github.com/flidai/leapview/internal/agent/tools"
+	agentcore "github.com/flidai/leapview/pkg/agent"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

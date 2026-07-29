@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	manageddataapi "github.com/Yacobolo/leapview/internal/manageddata/api"
-	manageddatagen "github.com/Yacobolo/leapview/internal/manageddata/api/gen"
+	manageddataapi "github.com/flidai/leapview/internal/manageddata/api"
+	manageddatagen "github.com/flidai/leapview/internal/manageddata/api/gen"
 )
 
 var _ manageddatagen.GenOperationDispatcher = (*APIGenDispatcher)(nil)

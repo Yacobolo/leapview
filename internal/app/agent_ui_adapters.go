@@ -3,12 +3,12 @@ package app
 import (
 	"net/http"
 
-	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
-	"github.com/Yacobolo/leapview/internal/app/brand"
-	appshell "github.com/Yacobolo/leapview/internal/app/shell"
-	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
-	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
-	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
+	agentmodule "github.com/flidai/leapview/internal/agent/module"
+	"github.com/flidai/leapview/internal/app/brand"
+	appshell "github.com/flidai/leapview/internal/app/shell"
+	dashboardmodule "github.com/flidai/leapview/internal/dashboard/module"
+	webpage "github.com/flidai/leapview/internal/platform/web/page"
+	"github.com/flidai/leapview/internal/platform/web/staticasset"
 )
 
 func applicationLayout(routes *capabilityRoutes, assets staticasset.Resolver, r *http.Request) webpage.Provider {

@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	analyticsduckdb "github.com/Yacobolo/leapview/internal/analytics/duckdb"
-	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
-	analyticsmaterialization "github.com/Yacobolo/leapview/internal/analytics/materialization"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
+	analyticsduckdb "github.com/flidai/leapview/internal/analytics/duckdb"
+	analyticsducklake "github.com/flidai/leapview/internal/analytics/ducklake"
+	analyticsmaterialization "github.com/flidai/leapview/internal/analytics/materialization"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
 )
 
 type duckDBWorkspaceMaterializer struct {

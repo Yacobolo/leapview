@@ -5,10 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 
-	"github.com/Yacobolo/leapview/internal/deployment"
-	deploymentsqlite "github.com/Yacobolo/leapview/internal/deployment/sqlite"
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
-	"github.com/Yacobolo/leapview/internal/platform/transaction"
+	"github.com/flidai/leapview/internal/deployment"
+	deploymentsqlite "github.com/flidai/leapview/internal/deployment/sqlite"
+	"github.com/flidai/leapview/internal/platform/jobs"
+	"github.com/flidai/leapview/internal/platform/transaction"
 )
 
 type ActivationHooks struct {

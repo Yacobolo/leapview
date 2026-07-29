@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	accessui "github.com/Yacobolo/leapview/internal/access/ui"
+	"github.com/flidai/leapview/internal/access"
+	accessui "github.com/flidai/leapview/internal/access/ui"
 	"github.com/gorilla/csrf"
 )
 

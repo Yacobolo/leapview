@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"os"
 
-	accesssnapshot "github.com/Yacobolo/leapview/internal/access/snapshot"
-	projectbundle "github.com/Yacobolo/leapview/internal/project/bundle"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
-	servingstatevalidation "github.com/Yacobolo/leapview/internal/servingstate/validation"
+	accesssnapshot "github.com/flidai/leapview/internal/access/snapshot"
+	projectbundle "github.com/flidai/leapview/internal/project/bundle"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
+	servingstatevalidation "github.com/flidai/leapview/internal/servingstate/validation"
 )
 
 type Validator struct{}

@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"sort"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 )
 
 // ProjectScalarFromGrouped derives one scalar aggregate from a complete set of

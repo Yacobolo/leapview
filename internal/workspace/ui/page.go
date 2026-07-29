@@ -5,10 +5,10 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
-	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
-	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
+	"github.com/flidai/leapview/internal/dashboard"
+	webpage "github.com/flidai/leapview/internal/platform/web/page"
+	catalog "github.com/flidai/leapview/internal/workspace/navigation"
+	uisignals "github.com/flidai/leapview/internal/workspace/ui/signals"
 	g "maragu.dev/gomponents"
 )
 

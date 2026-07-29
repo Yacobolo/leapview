@@ -3,10 +3,10 @@ package capabilities
 import (
 	"net/http"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
-	"github.com/Yacobolo/leapview/internal/platform/buildinfo"
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
+	apigenapi "github.com/flidai/leapview/internal/app/api/gen"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
+	"github.com/flidai/leapview/internal/platform/buildinfo"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
 )
 
 type Config struct {

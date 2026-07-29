@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"testing"
 
-	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
 )
 
 func TestTypedFilterURLRoundTripOmitsDefaultsAndIgnoresOtherPages(t *testing.T) {

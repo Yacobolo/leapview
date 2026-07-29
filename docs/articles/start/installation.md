@@ -5,9 +5,9 @@ LeapView ships as a public multi-architecture container image. Pulling that imag
 ## Current controlled-testing release
 
 The supported candidate is
-[`v0.2.0-rc.1`](https://github.com/Yacobolo/leapview/releases/tag/v0.2.0-rc.1),
+[`v0.2.0-rc.1`](https://github.com/flidai/leapview/releases/tag/v0.2.0-rc.1),
 built from revision
-[`dfb3086d59284c6597180e99a7d07f41e36a7f7e`](https://github.com/Yacobolo/leapview/commit/dfb3086d59284c6597180e99a7d07f41e36a7f7e).
+[`dfb3086d59284c6597180e99a7d07f41e36a7f7e`](https://github.com/flidai/leapview/commit/dfb3086d59284c6597180e99a7d07f41e36a7f7e).
 It is a release candidate for controlled testing, not GA. Its immutable image
 is:
 
@@ -20,10 +20,10 @@ that will run `leapviewctl`:
 
 | Operating system | Architecture | Archive | Checksum |
 | --- | --- | --- | --- |
-| Linux | amd64 | [leapview-compose-v0.2.0-rc.1-linux-amd64.tar.gz](https://github.com/Yacobolo/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-linux-amd64.tar.gz) | [SHA-256](https://github.com/Yacobolo/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-linux-amd64.tar.gz.sha256) |
-| Linux | arm64 | [leapview-compose-v0.2.0-rc.1-linux-arm64.tar.gz](https://github.com/Yacobolo/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-linux-arm64.tar.gz) | [SHA-256](https://github.com/Yacobolo/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-linux-arm64.tar.gz.sha256) |
-| macOS | amd64 | [leapview-compose-v0.2.0-rc.1-darwin-amd64.tar.gz](https://github.com/Yacobolo/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-darwin-amd64.tar.gz) | [SHA-256](https://github.com/Yacobolo/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-darwin-amd64.tar.gz.sha256) |
-| macOS | arm64 | [leapview-compose-v0.2.0-rc.1-darwin-arm64.tar.gz](https://github.com/Yacobolo/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-darwin-arm64.tar.gz) | [SHA-256](https://github.com/Yacobolo/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-darwin-arm64.tar.gz.sha256) |
+| Linux | amd64 | [leapview-compose-v0.2.0-rc.1-linux-amd64.tar.gz](https://github.com/flidai/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-linux-amd64.tar.gz) | [SHA-256](https://github.com/flidai/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-linux-amd64.tar.gz.sha256) |
+| Linux | arm64 | [leapview-compose-v0.2.0-rc.1-linux-arm64.tar.gz](https://github.com/flidai/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-linux-arm64.tar.gz) | [SHA-256](https://github.com/flidai/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-linux-arm64.tar.gz.sha256) |
+| macOS | amd64 | [leapview-compose-v0.2.0-rc.1-darwin-amd64.tar.gz](https://github.com/flidai/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-darwin-amd64.tar.gz) | [SHA-256](https://github.com/flidai/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-darwin-amd64.tar.gz.sha256) |
+| macOS | arm64 | [leapview-compose-v0.2.0-rc.1-darwin-arm64.tar.gz](https://github.com/flidai/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-darwin-arm64.tar.gz) | [SHA-256](https://github.com/flidai/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-darwin-arm64.tar.gz.sha256) |
 
 ## Before you begin
 
@@ -130,7 +130,7 @@ case "$(uname -m)" in
   *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
 esac
 ARCHIVE="leapview-compose-${VERSION}-${OS}-${ARCH}.tar.gz"
-BASE="https://github.com/Yacobolo/leapview/releases/download/${VERSION}"
+BASE="https://github.com/flidai/leapview/releases/download/${VERSION}"
 curl --fail --location --remote-name "$BASE/$ARCHIVE"
 curl --fail --location --remote-name "$BASE/$ARCHIVE.sha256"
 if command -v sha256sum >/dev/null 2>&1; then
@@ -198,7 +198,7 @@ Common operations are:
 ./leapviewctl logs
 ./leapviewctl backup
 ./leapviewctl restore backups/leapview-<timestamp>.tar.gz
-./leapviewctl upgrade ghcr.io/yacobolo/leapview@sha256:<digest>
+./leapviewctl upgrade ghcr.io/flidai/leapview@sha256:<digest>
 ./leapviewctl rollback --confirm
 ```
 

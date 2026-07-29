@@ -4,8 +4,8 @@ import (
 	"errors"
 	"time"
 
-	accesssnapshot "github.com/Yacobolo/leapview/internal/access/snapshot"
-	servingstatevalidation "github.com/Yacobolo/leapview/internal/servingstate/validation"
+	accesssnapshot "github.com/flidai/leapview/internal/access/snapshot"
+	servingstatevalidation "github.com/flidai/leapview/internal/servingstate/validation"
 )
 
 var ErrSnapshotLeaseLost = errors.New("snapshot lease is no longer active")

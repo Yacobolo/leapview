@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	accessdb "github.com/Yacobolo/leapview/internal/access/internal/db"
-	"github.com/Yacobolo/leapview/internal/platform/transaction"
+	"github.com/flidai/leapview/internal/access"
+	accessdb "github.com/flidai/leapview/internal/access/internal/db"
+	"github.com/flidai/leapview/internal/platform/transaction"
 )
 
 // ActivateDashboardPublicationPrincipalTx installs the Access-owned identity

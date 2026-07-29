@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	projectartifact "github.com/Yacobolo/leapview/internal/project/artifact"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	projectartifact "github.com/flidai/leapview/internal/project/artifact"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 type Options struct {

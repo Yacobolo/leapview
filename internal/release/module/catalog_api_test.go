@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/release"
+	"github.com/flidai/leapview/internal/release"
 )
 
 type catalogRepository struct {

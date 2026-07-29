@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/platform/buildinfo"
+	"github.com/flidai/leapview/internal/platform/buildinfo"
 )
 
 func TestWriteReportsRuntimeBuildIdentity(t *testing.T) {

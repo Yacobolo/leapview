@@ -127,7 +127,7 @@ done
 if [[ -z "$image_reference" ]]; then
   image_reference="$(tr -d '[:space:]' < "$bundle_root/image-reference.txt")"
 fi
-if [[ "$local_image" != true && ! "$image_reference" =~ ^ghcr\.io/yacobolo/leapview@sha256:[0-9a-f]{64}$ ]]; then
+if [[ "$local_image" != true && ! "$image_reference" =~ ^ghcr\.io/flidai/leapview@sha256:[0-9a-f]{64}$ ]]; then
   printf 'qualification requires an immutable LeapView GHCR digest\n' >&2
   exit 1
 fi

@@ -6,8 +6,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Yacobolo/leapview/internal/analytics/arrowquery"
-	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
+	"github.com/flidai/leapview/internal/analytics/arrowquery"
+	semanticquery "github.com/flidai/leapview/internal/analytics/query"
 )
 
 const nativeArrowEnabled = false

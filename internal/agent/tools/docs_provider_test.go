@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"testing"
 
-	productdocs "github.com/Yacobolo/leapview/internal/agent/productdocs"
-	agentcore "github.com/Yacobolo/leapview/pkg/agent"
+	productdocs "github.com/flidai/leapview/internal/agent/productdocs"
+	agentcore "github.com/flidai/leapview/pkg/agent"
 )
 
 func TestDocsProviderExposesBoundedSearchAndReadTools(t *testing.T) {

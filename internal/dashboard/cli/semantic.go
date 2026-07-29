@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	dashboardgen "github.com/Yacobolo/leapview/internal/dashboard/api/gen"
-	"github.com/Yacobolo/leapview/internal/platform/cliapi"
+	dashboardgen "github.com/flidai/leapview/internal/dashboard/api/gen"
+	"github.com/flidai/leapview/internal/platform/cliapi"
 	"github.com/spf13/cobra"
 )
 

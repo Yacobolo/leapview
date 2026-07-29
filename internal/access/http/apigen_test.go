@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	accessgen "github.com/Yacobolo/leapview/internal/access/api/gen"
+	"github.com/flidai/leapview/internal/access"
+	accessgen "github.com/flidai/leapview/internal/access/api/gen"
 )
 
 var _ accessgen.GenOperationDispatcher = (*APIGenDispatcher)(nil)

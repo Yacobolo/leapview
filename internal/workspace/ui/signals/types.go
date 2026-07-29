@@ -1,6 +1,6 @@
 package signals
 
-import workspaceview "github.com/Yacobolo/leapview/internal/workspace"
+import workspaceview "github.com/flidai/leapview/internal/workspace"
 
 const (
 	RouteCatalog         RouteKind = "catalog"

@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	stdhttp "net/http"
 
-	analyticsgen "github.com/Yacobolo/leapview/internal/analytics/api/gen"
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
+	analyticsgen "github.com/flidai/leapview/internal/analytics/api/gen"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
 )
 
 type QueryEventsHandler interface {

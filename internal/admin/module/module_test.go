@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
+	webpage "github.com/flidai/leapview/internal/platform/web/page"
 )
 
 func TestBuildConstructsOwnedHTTPHandler(t *testing.T) {

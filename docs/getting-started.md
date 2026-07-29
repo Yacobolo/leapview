@@ -29,4 +29,4 @@ The tutorial optimizes for a successful first experience. After completing it, u
 - To evaluate available charts and tables, browse [Visual types](/docs/visuals/overview).
 - To automate delivery, start with [Validate, plan, and deploy](/docs/cli/validate-deploy).
 
-The project source and issue tracker are available on [GitHub](https://github.com/Yacobolo/leapview).
+The project source and issue tracker are available on [GitHub](https://github.com/flidai/leapview).

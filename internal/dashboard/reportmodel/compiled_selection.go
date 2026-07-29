@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
 )
 
 // ResolveCompiledSelectionInteraction resolves the semantic types of the

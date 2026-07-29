@@ -9,11 +9,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
-	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
-	"github.com/Yacobolo/leapview/internal/project/manifest"
-	refreshartifact "github.com/Yacobolo/leapview/internal/refresh/artifact"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/flidai/leapview/internal/dashboard/catalog"
+	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
+	"github.com/flidai/leapview/internal/project/manifest"
+	refreshartifact "github.com/flidai/leapview/internal/refresh/artifact"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 const Version = 2

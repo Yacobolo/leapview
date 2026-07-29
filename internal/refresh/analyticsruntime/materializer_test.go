@@ -5,11 +5,11 @@ import (
 	"errors"
 	"testing"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/refresh/artifact"
-	refresh "github.com/Yacobolo/leapview/internal/refresh/run"
-	"github.com/Yacobolo/leapview/internal/runtimehost"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	"github.com/flidai/leapview/internal/refresh/artifact"
+	refresh "github.com/flidai/leapview/internal/refresh/run"
+	"github.com/flidai/leapview/internal/runtimehost"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
 )
 
 func TestWorkspaceRefreshMaterializerResolvesCandidateManagedDataAndReleasesLifetime(t *testing.T) {

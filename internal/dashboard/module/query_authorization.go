@@ -3,9 +3,9 @@ package module
 import (
 	"context"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	queryauthz "github.com/Yacobolo/leapview/internal/dashboard/queryauthz"
-	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
+	"github.com/flidai/leapview/internal/access"
+	queryauthz "github.com/flidai/leapview/internal/dashboard/queryauthz"
+	"github.com/flidai/leapview/internal/dashboard/queryruntime"
 )
 
 type QueryPrincipal struct {

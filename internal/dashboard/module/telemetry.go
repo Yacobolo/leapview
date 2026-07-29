@@ -1,7 +1,7 @@
 package module
 
 import (
-	dashboardobservability "github.com/Yacobolo/leapview/internal/dashboard/observability"
+	dashboardobservability "github.com/flidai/leapview/internal/dashboard/observability"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

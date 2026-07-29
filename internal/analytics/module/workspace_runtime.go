@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	analyticsduckdb "github.com/Yacobolo/leapview/internal/analytics/duckdb"
-	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
-	analyticsruntime "github.com/Yacobolo/leapview/internal/analytics/runtime"
+	analyticsduckdb "github.com/flidai/leapview/internal/analytics/duckdb"
+	"github.com/flidai/leapview/internal/analytics/resultcache"
+	analyticsruntime "github.com/flidai/leapview/internal/analytics/runtime"
 )
 
 type workspaceRuntimeFactory struct {

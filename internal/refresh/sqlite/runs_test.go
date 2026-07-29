@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/platform"
-	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
+	"github.com/flidai/leapview/internal/platform"
+	refreshrun "github.com/flidai/leapview/internal/refresh/run"
 )
 
 func TestSQLRunRepositoryAcceptsActiveLeaseFence(t *testing.T) {

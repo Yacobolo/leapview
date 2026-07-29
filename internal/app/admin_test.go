@@ -13,16 +13,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	adminui "github.com/Yacobolo/leapview/internal/admin/ui"
-	uisignals "github.com/Yacobolo/leapview/internal/admin/ui/signals"
-	"github.com/Yacobolo/leapview/internal/agent"
-	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
-	analyticsmodule "github.com/Yacobolo/leapview/internal/analytics/module"
-	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
-	"github.com/Yacobolo/leapview/internal/platform"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
 	_ "github.com/duckdb/duckdb-go/v2"
+	"github.com/flidai/leapview/internal/access"
+	adminui "github.com/flidai/leapview/internal/admin/ui"
+	uisignals "github.com/flidai/leapview/internal/admin/ui/signals"
+	"github.com/flidai/leapview/internal/agent"
+	analyticsducklake "github.com/flidai/leapview/internal/analytics/ducklake"
+	analyticsmodule "github.com/flidai/leapview/internal/analytics/module"
+	"github.com/flidai/leapview/internal/analytics/queryaudit"
+	"github.com/flidai/leapview/internal/platform"
+	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 type synchronizedResponseRecorder struct {

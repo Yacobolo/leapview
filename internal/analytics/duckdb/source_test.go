@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/workload"
 	_ "github.com/duckdb/duckdb-go/v2"
+	analyticsducklake "github.com/flidai/leapview/internal/analytics/ducklake"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	"github.com/flidai/leapview/internal/workload"
 )
 
 func TestDiscoverSchemasCapturesSourceAndModelColumns(t *testing.T) {

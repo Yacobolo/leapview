@@ -16,10 +16,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/manageddata"
-	platformdb "github.com/Yacobolo/leapview/internal/manageddata/internal/db"
-	"github.com/Yacobolo/leapview/internal/manageddata/maintenance"
-	"github.com/Yacobolo/leapview/internal/manageddata/storage"
+	"github.com/flidai/leapview/internal/manageddata"
+	platformdb "github.com/flidai/leapview/internal/manageddata/internal/db"
+	"github.com/flidai/leapview/internal/manageddata/maintenance"
+	"github.com/flidai/leapview/internal/manageddata/storage"
 )
 
 const transactionCleanupTimeout = 5 * time.Second

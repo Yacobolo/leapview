@@ -3,8 +3,8 @@ package page
 import (
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
+	"github.com/flidai/leapview/internal/platform/web/staticasset"
+	"github.com/flidai/leapview/pkg/pagestream"
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
 )

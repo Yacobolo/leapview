@@ -7,12 +7,12 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/agent"
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
-	productsearch "github.com/Yacobolo/leapview/internal/workspace/search"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/agent"
+	"github.com/flidai/leapview/internal/dashboard"
+	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
+	productsearch "github.com/flidai/leapview/internal/workspace/search"
 )
 
 type contextSearchPort struct {

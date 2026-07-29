@@ -3,8 +3,8 @@ package app
 import (
 	"net/http"
 
-	workspacehttp "github.com/Yacobolo/leapview/internal/workspace/http"
-	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
+	workspacehttp "github.com/flidai/leapview/internal/workspace/http"
+	uisignals "github.com/flidai/leapview/internal/workspace/ui/signals"
 )
 
 const (

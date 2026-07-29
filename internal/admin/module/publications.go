@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/admin/ui"
-	uisignals "github.com/Yacobolo/leapview/internal/admin/ui/signals"
-	"github.com/Yacobolo/leapview/internal/dashboard/publication"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/admin/ui"
+	uisignals "github.com/flidai/leapview/internal/admin/ui/signals"
+	"github.com/flidai/leapview/internal/dashboard/publication"
 )
 
 func (m *Module) mutatePublication(r *http.Request, command uisignals.AdminPublicationCommand) error {

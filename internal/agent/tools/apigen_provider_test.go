@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	agentcore "github.com/Yacobolo/leapview/pkg/agent"
+	agentcore "github.com/flidai/leapview/pkg/agent"
 )
 
 func TestAPIGenDefinitionsRequireAndUseExplicitWorkspace(t *testing.T) {

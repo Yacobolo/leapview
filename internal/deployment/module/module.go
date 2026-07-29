@@ -7,9 +7,9 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/Yacobolo/leapview/internal/deployment"
-	"github.com/Yacobolo/leapview/internal/deployment/apiadapter"
-	deploymenthttp "github.com/Yacobolo/leapview/internal/deployment/http"
+	"github.com/flidai/leapview/internal/deployment"
+	"github.com/flidai/leapview/internal/deployment/apiadapter"
+	deploymenthttp "github.com/flidai/leapview/internal/deployment/http"
 )
 
 type Module struct {

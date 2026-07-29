@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	platformci "github.com/Yacobolo/leapview/internal/platform/ci"
+	platformci "github.com/flidai/leapview/internal/platform/ci"
 )
 
 func TestWriteGitHubOutputsUsesNonEmptySentinelMatrices(t *testing.T) {

@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/analytics/arrowresult"
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
-	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
+	"github.com/flidai/leapview/internal/analytics/arrowresult"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	semanticquery "github.com/flidai/leapview/internal/analytics/query"
+	"github.com/flidai/leapview/internal/analytics/resultcache"
 )
 
 type plannedArrowQuery struct {

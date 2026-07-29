@@ -12,8 +12,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	productsearch "github.com/Yacobolo/leapview/internal/workspace/search"
+	"github.com/flidai/leapview/internal/access"
+	productsearch "github.com/flidai/leapview/internal/workspace/search"
 )
 
 type Repository struct{ database *sql.DB }

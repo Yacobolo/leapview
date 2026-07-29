@@ -39,7 +39,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/Yacobolo/leapview/pkg/agent"
+	"github.com/flidai/leapview/pkg/agent"
 )
 
 type DashboardService interface {

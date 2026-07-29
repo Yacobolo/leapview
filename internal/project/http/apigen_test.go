@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	projectgen "github.com/Yacobolo/leapview/internal/project/api/gen"
+	projectgen "github.com/flidai/leapview/internal/project/api/gen"
 )
 
 var _ projectgen.GenOperationDispatcher = (*APIGenDispatcher)(nil)

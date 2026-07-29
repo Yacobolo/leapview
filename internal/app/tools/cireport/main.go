@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	platformci "github.com/Yacobolo/leapview/internal/platform/ci"
+	platformci "github.com/flidai/leapview/internal/platform/ci"
 )
 
 type githubRun struct {

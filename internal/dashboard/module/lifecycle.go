@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/dashboard/publication"
+	"github.com/flidai/leapview/internal/dashboard/publication"
 )
 
 const publicationMonitorInterval = 500 * time.Millisecond

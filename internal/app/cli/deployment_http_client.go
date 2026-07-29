@@ -10,9 +10,9 @@ import (
 	"net/url"
 	"strings"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
-	deploymentgen "github.com/Yacobolo/leapview/internal/deployment/api/gen"
-	releasegen "github.com/Yacobolo/leapview/internal/release/api/gen"
+	apigenapi "github.com/flidai/leapview/internal/app/api/gen"
+	deploymentgen "github.com/flidai/leapview/internal/deployment/api/gen"
+	releasegen "github.com/flidai/leapview/internal/release/api/gen"
 )
 
 type deploymentCLIClient struct {

@@ -5,12 +5,12 @@ import (
 	"database/sql"
 	"errors"
 
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
-	"github.com/Yacobolo/leapview/internal/release"
-	releasefilesystem "github.com/Yacobolo/leapview/internal/release/filesystem"
-	releasesqlite "github.com/Yacobolo/leapview/internal/release/sqlite"
-	"github.com/Yacobolo/leapview/internal/servingstate"
-	"github.com/Yacobolo/leapview/internal/servingstate/validate"
+	"github.com/flidai/leapview/internal/platform/jobs"
+	"github.com/flidai/leapview/internal/release"
+	releasefilesystem "github.com/flidai/leapview/internal/release/filesystem"
+	releasesqlite "github.com/flidai/leapview/internal/release/sqlite"
+	"github.com/flidai/leapview/internal/servingstate"
+	"github.com/flidai/leapview/internal/servingstate/validate"
 )
 
 type Module struct {

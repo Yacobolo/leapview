@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
-	visualizationruntime "github.com/Yacobolo/leapview/internal/dashboard/visualization/runtime"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
+	"github.com/flidai/leapview/internal/dashboard"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
+	visualizationruntime "github.com/flidai/leapview/internal/dashboard/visualization/runtime"
+	workspacecompiler "github.com/flidai/leapview/internal/project/compiler"
 )
 
 func TestDashboardVisualizationDescriptionContainsOnlyCompiledContract(t *testing.T) {

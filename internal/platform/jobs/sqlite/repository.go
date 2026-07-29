@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
-	platformdb "github.com/Yacobolo/leapview/internal/platform/jobs/sqlite/jobdb"
-	"github.com/Yacobolo/leapview/internal/platform/transaction"
+	"github.com/flidai/leapview/internal/platform/jobs"
+	platformdb "github.com/flidai/leapview/internal/platform/jobs/sqlite/jobdb"
+	"github.com/flidai/leapview/internal/platform/transaction"
 )
 
 type Repository struct{ q *platformdb.Queries }

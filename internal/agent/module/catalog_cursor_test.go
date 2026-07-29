@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
-	"github.com/Yacobolo/leapview/internal/platform/http/cursorsigning"
+	agenttools "github.com/flidai/leapview/internal/agent/tools"
+	"github.com/flidai/leapview/internal/platform/http/cursorsigning"
 )
 
 func TestCatalogListCursorBindsScopeRequestAndSnapshot(t *testing.T) {

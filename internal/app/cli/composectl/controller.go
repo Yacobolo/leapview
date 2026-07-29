@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/platform/compatibility"
+	"github.com/flidai/leapview/internal/platform/compatibility"
 )
 
 const (

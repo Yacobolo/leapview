@@ -4,9 +4,9 @@ import (
 	"reflect"
 	"testing"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
-	manageddatagen "github.com/Yacobolo/leapview/internal/manageddata/api/gen"
-	releasegen "github.com/Yacobolo/leapview/internal/release/api/gen"
+	apigenapi "github.com/flidai/leapview/internal/app/api/gen"
+	manageddatagen "github.com/flidai/leapview/internal/manageddata/api/gen"
+	releasegen "github.com/flidai/leapview/internal/release/api/gen"
 )
 
 func TestManagedDataGeneratedByteCountsAreInt64(t *testing.T) {

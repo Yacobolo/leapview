@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/platform"
-	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
+	"github.com/flidai/leapview/internal/platform"
+	refreshschedule "github.com/flidai/leapview/internal/refresh/schedule"
 )
 
 func TestRepositoryReconcileAndClaimDueCoalescesCatchUp(t *testing.T) {

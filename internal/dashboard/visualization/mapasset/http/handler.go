@@ -5,7 +5,7 @@ package mapassethttp
 import (
 	"net/http"
 
-	visualizationmapasset "github.com/Yacobolo/leapview/internal/dashboard/visualization/mapasset"
+	visualizationmapasset "github.com/flidai/leapview/internal/dashboard/visualization/mapasset"
 )
 
 // CacheHandler is the single HTTP boundary for installed or edge-backed map

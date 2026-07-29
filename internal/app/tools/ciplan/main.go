@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	platformci "github.com/Yacobolo/leapview/internal/platform/ci"
+	platformci "github.com/flidai/leapview/internal/platform/ci"
 )
 
 func main() {

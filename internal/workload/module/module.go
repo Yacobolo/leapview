@@ -6,8 +6,8 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
-	"github.com/Yacobolo/leapview/internal/workload"
+	"github.com/flidai/leapview/internal/platform/jobs"
+	"github.com/flidai/leapview/internal/workload"
 )
 
 type Config struct {

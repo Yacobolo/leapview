@@ -1,8 +1,8 @@
 package module
 
 import (
-	"github.com/Yacobolo/leapview/internal/workspace"
-	"github.com/Yacobolo/leapview/internal/workspace/ui"
+	"github.com/flidai/leapview/internal/workspace"
+	"github.com/flidai/leapview/internal/workspace/ui"
 )
 
 type Repository = workspace.Repository

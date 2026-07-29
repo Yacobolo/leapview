@@ -3,7 +3,7 @@ package definition
 import (
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	"github.com/flidai/leapview/internal/dashboard/visualization/ir"
 )
 
 func TestDefinitionValidateRejectsRendererAndQueryMismatches(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/access"
+	"github.com/flidai/leapview/internal/access"
 )
 
 func TestAuthorizePipelineAllowsDevelopmentBypassWithoutResolution(t *testing.T) {

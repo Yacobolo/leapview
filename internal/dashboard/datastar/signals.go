@@ -1,6 +1,6 @@
 package datastar
 
-import visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+import visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
 
 // VisualizationSignal is the dashboard-owned browser transport projection for
 // a visualization envelope.

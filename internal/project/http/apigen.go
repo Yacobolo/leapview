@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	stdhttp "net/http"
 
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
-	projectgen "github.com/Yacobolo/leapview/internal/project/api/gen"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
+	projectgen "github.com/flidai/leapview/internal/project/api/gen"
 )
 
 // Handler is the runtime port consumed by Project's generated HTTP adapter.

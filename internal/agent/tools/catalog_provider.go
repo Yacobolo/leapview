@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	agentcontracts "github.com/Yacobolo/leapview/internal/agent/contracts"
-	agentcore "github.com/Yacobolo/leapview/pkg/agent"
+	agentcontracts "github.com/flidai/leapview/internal/agent/contracts"
+	agentcore "github.com/flidai/leapview/pkg/agent"
 )
 
 const (

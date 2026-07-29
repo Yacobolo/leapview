@@ -15,13 +15,13 @@ import (
 	"strings"
 	"time"
 
-	deploymentgen "github.com/Yacobolo/leapview/internal/deployment/api/gen"
-	"github.com/Yacobolo/leapview/internal/platform/cliapi"
-	projectbundle "github.com/Yacobolo/leapview/internal/project/bundle"
-	projectcli "github.com/Yacobolo/leapview/internal/project/cli"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
-	releasegen "github.com/Yacobolo/leapview/internal/release/api/gen"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	deploymentgen "github.com/flidai/leapview/internal/deployment/api/gen"
+	"github.com/flidai/leapview/internal/platform/cliapi"
+	projectbundle "github.com/flidai/leapview/internal/project/bundle"
+	projectcli "github.com/flidai/leapview/internal/project/cli"
+	workspacecompiler "github.com/flidai/leapview/internal/project/compiler"
+	releasegen "github.com/flidai/leapview/internal/release/api/gen"
+	"github.com/flidai/leapview/internal/workspace"
 	"github.com/spf13/cobra"
 )
 

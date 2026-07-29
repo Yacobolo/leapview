@@ -25,7 +25,7 @@ const configValidatorTestProgram = `package configvalidator
 import (
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/app/config"
+	"github.com/flidai/leapview/internal/app/config"
 )
 
 func TestProductionConfigValidator(t *testing.T) {
@@ -95,7 +95,7 @@ func TestPublicImageIsPrimaryOnboardingContract(t *testing.T) {
 	publicReleaseImage := readPublicReleaseImage(t)
 	release := read(t, filepath.Join("..", "..", ".github", "workflows", "release.yml"))
 	for _, required := range []string{
-		"IMAGE_NAME: ghcr.io/yacobolo/leapview",
+		"IMAGE_NAME: ghcr.io/flidai/leapview",
 		"runner: ubuntu-24.04",
 		"runner: ubuntu-24.04-arm",
 		"platforms: linux/${{ matrix.arch }}",
@@ -120,9 +120,9 @@ func TestPublicImageIsPrimaryOnboardingContract(t *testing.T) {
 	}{
 		{
 			name:  filepath.Join("..", "..", "README.md"),
-			image: "ghcr.io/yacobolo/leapview:latest",
+			image: "ghcr.io/flidai/leapview:latest",
 			required: []string{
-				"ghcr.io/yacobolo/leapview:latest",
+				"ghcr.io/flidai/leapview:latest",
 				"docker pull",
 			},
 		},
@@ -178,7 +178,7 @@ func TestFiveMinuteEvaluationContract(t *testing.T) {
 	}{
 		{
 			name:     filepath.Join(root, "README.md"),
-			imageRun: "ghcr.io/yacobolo/leapview:latest evaluate",
+			imageRun: "ghcr.io/flidai/leapview:latest evaluate",
 		},
 		{
 			name:       filepath.Join(root, "docs", "articles", "start", "installation.md"),

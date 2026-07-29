@@ -3,7 +3,7 @@ package cli
 import (
 	"context"
 
-	workspacecli "github.com/Yacobolo/leapview/internal/workspace/cli"
+	workspacecli "github.com/flidai/leapview/internal/workspace/cli"
 	"github.com/spf13/cobra"
 )
 

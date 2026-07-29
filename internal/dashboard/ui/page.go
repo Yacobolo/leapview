@@ -7,15 +7,15 @@ import (
 	"strings"
 	"time"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
-	uisignals "github.com/Yacobolo/leapview/internal/dashboard/ui/signals"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
-	uiactions "github.com/Yacobolo/leapview/internal/platform/web/actions"
-	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
-	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
+	uisignals "github.com/flidai/leapview/internal/dashboard/ui/signals"
+	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
+	uiactions "github.com/flidai/leapview/internal/platform/web/actions"
+	webpage "github.com/flidai/leapview/internal/platform/web/page"
+	"github.com/flidai/leapview/internal/platform/web/staticasset"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
+	"github.com/flidai/leapview/internal/dashboard"
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
 )

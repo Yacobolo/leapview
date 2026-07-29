@@ -5,13 +5,13 @@ import (
 	"database/sql"
 	"errors"
 
-	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
-	analyticsmaterialization "github.com/Yacobolo/leapview/internal/analytics/materialization"
-	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
-	queryauditsqlite "github.com/Yacobolo/leapview/internal/analytics/queryaudit/sqlite"
-	"github.com/Yacobolo/leapview/internal/analytics/resource"
-	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
-	storagemaintenance "github.com/Yacobolo/leapview/internal/servingstate/retention"
+	analyticsducklake "github.com/flidai/leapview/internal/analytics/ducklake"
+	analyticsmaterialization "github.com/flidai/leapview/internal/analytics/materialization"
+	"github.com/flidai/leapview/internal/analytics/queryaudit"
+	queryauditsqlite "github.com/flidai/leapview/internal/analytics/queryaudit/sqlite"
+	"github.com/flidai/leapview/internal/analytics/resource"
+	"github.com/flidai/leapview/internal/analytics/resultcache"
+	storagemaintenance "github.com/flidai/leapview/internal/servingstate/retention"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

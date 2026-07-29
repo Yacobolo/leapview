@@ -5,11 +5,11 @@ import (
 	nethttp "net/http"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/admin/ui"
-	uisignals "github.com/Yacobolo/leapview/internal/admin/ui/signals"
-	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
-	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
+	"github.com/flidai/leapview/internal/admin/ui"
+	uisignals "github.com/flidai/leapview/internal/admin/ui/signals"
+	"github.com/flidai/leapview/internal/analytics/queryaudit"
+	webpage "github.com/flidai/leapview/internal/platform/web/page"
+	"github.com/flidai/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
 

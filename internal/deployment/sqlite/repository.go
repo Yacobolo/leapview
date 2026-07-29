@@ -11,12 +11,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/deployment"
-	platformdb "github.com/Yacobolo/leapview/internal/deployment/internal/db"
-	"github.com/Yacobolo/leapview/internal/platform/digest"
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
-	"github.com/Yacobolo/leapview/internal/platform/transaction"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
+	"github.com/flidai/leapview/internal/deployment"
+	platformdb "github.com/flidai/leapview/internal/deployment/internal/db"
+	"github.com/flidai/leapview/internal/platform/digest"
+	"github.com/flidai/leapview/internal/platform/jobs"
+	"github.com/flidai/leapview/internal/platform/transaction"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
 )
 
 type Repository struct {

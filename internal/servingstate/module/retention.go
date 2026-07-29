@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	storagemaintenance "github.com/Yacobolo/leapview/internal/servingstate/retention"
-	"github.com/Yacobolo/leapview/internal/workload"
+	storagemaintenance "github.com/flidai/leapview/internal/servingstate/retention"
+	"github.com/flidai/leapview/internal/workload"
 )
 
 type RetentionRepository interface {

@@ -3,9 +3,9 @@ package ui
 import (
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/agent"
-	appshell "github.com/Yacobolo/leapview/internal/app/shell"
-	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
+	"github.com/flidai/leapview/internal/agent"
+	appshell "github.com/flidai/leapview/internal/app/shell"
+	webpage "github.com/flidai/leapview/internal/platform/web/page"
 )
 
 func TestChatTranscriptItemsPreserveAgentOwnedWireState(t *testing.T) {

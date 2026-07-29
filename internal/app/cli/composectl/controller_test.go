@@ -54,7 +54,7 @@ func TestRemoveInterruptedBackupArchivesPreservesCompletedBackups(t *testing.T) 
 func TestUpgradeRejectsReleasedV010BeforeDockerOrStateMutation(t *testing.T) {
 	root := t.TempDir()
 	const releasedV010 = "ghcr.io/yacobolo/libredash@sha256:677caaf256cb3a0d61efd47b289debbd91984976a5a5c4b372196a5d79ce7153"
-	next := "ghcr.io/yacobolo/leapview@sha256:" + strings.Repeat("a", 64)
+	next := "ghcr.io/flidai/leapview@sha256:" + strings.Repeat("a", 64)
 	deployment := "LEAPVIEW_IMAGE=" + releasedV010 + "\nCOMPOSE_HTTPS=0\n"
 	if err := os.WriteFile(filepath.Join(root, deploymentEnvName), []byte(deployment), 0o600); err != nil {
 		t.Fatal(err)

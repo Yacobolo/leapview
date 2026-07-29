@@ -26,7 +26,7 @@ func TestRejectLegacyStateRecognizesSQLiteOptionsWithoutMutation(t *testing.T) {
 }
 
 func TestValidateUpgradeImagesRejectsReleasedV010InEitherDirection(t *testing.T) {
-	current := "ghcr.io/yacobolo/leapview@sha256:" + strings.Repeat("a", 64)
+	current := "ghcr.io/flidai/leapview@sha256:" + strings.Repeat("a", 64)
 	for _, test := range []struct {
 		name    string
 		current string

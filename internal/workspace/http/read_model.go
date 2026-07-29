@@ -6,10 +6,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/workspace"
-	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
-	"github.com/Yacobolo/leapview/internal/workspace/ui"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/workspace"
+	catalog "github.com/flidai/leapview/internal/workspace/navigation"
+	"github.com/flidai/leapview/internal/workspace/ui"
 )
 
 type Principal struct {

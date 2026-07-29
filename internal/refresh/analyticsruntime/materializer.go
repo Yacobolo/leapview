@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	analyticsmaterialization "github.com/Yacobolo/leapview/internal/analytics/materialization"
-	refresh "github.com/Yacobolo/leapview/internal/refresh/run"
-	"github.com/Yacobolo/leapview/internal/runtimehost"
+	analyticsmaterialization "github.com/flidai/leapview/internal/analytics/materialization"
+	refresh "github.com/flidai/leapview/internal/refresh/run"
+	"github.com/flidai/leapview/internal/runtimehost"
 )
 
 type WorkspaceRefreshMaterializer struct {

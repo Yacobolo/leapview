@@ -1,6 +1,6 @@
 package module
 
-import "github.com/Yacobolo/leapview/pkg/pagestream"
+import "github.com/flidai/leapview/pkg/pagestream"
 
 // PublishSemanticModelRefresh asks every active dashboard bound to the model to
 // refresh and publishes the durable refresh timestamp to its page stream.

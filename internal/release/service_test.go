@@ -11,8 +11,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
-	"github.com/Yacobolo/leapview/internal/servingstate"
+	"github.com/flidai/leapview/internal/platform/jobs"
+	"github.com/flidai/leapview/internal/servingstate"
 )
 
 func TestUploadArtifactReplaysAlreadyRecordedContent(t *testing.T) {

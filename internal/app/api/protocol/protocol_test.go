@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/platform"
+	"github.com/flidai/leapview/internal/platform"
 )
 
 func TestBuildConstructsProtocolPersistence(t *testing.T) {

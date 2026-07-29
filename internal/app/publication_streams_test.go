@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/dashboard/publication"
-	publicationsqlite "github.com/Yacobolo/leapview/internal/dashboard/publication/sqlite"
+	"github.com/flidai/leapview/internal/dashboard/publication"
+	publicationsqlite "github.com/flidai/leapview/internal/dashboard/publication/sqlite"
 )
 
 func TestPublicationStreamRegistryClosesStaleGenerationAndPublicID(t *testing.T) {

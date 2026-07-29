@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
-	apiprotocol "github.com/Yacobolo/leapview/internal/app/api/protocol"
+	apiprotocol "github.com/flidai/leapview/internal/app/api/protocol"
 )
 
 type Authorizer interface {

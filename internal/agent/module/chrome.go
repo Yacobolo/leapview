@@ -3,8 +3,8 @@ package module
 import (
 	"net/http"
 
-	"github.com/Yacobolo/leapview/internal/agent"
-	agentui "github.com/Yacobolo/leapview/internal/agent/ui"
+	"github.com/flidai/leapview/internal/agent"
+	agentui "github.com/flidai/leapview/internal/agent/ui"
 )
 
 type ChatSignal = agentui.ChatSignal

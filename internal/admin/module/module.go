@@ -5,17 +5,17 @@ import (
 	"database/sql"
 	"net/http"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	adminhttp "github.com/Yacobolo/leapview/internal/admin/http"
-	adminstorage "github.com/Yacobolo/leapview/internal/admin/storage"
-	"github.com/Yacobolo/leapview/internal/agent/api"
-	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
-	"github.com/Yacobolo/leapview/internal/analytics/resource"
-	dashboardapi "github.com/Yacobolo/leapview/internal/dashboard/api"
-	"github.com/Yacobolo/leapview/internal/dashboard/publication"
-	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
-	"github.com/Yacobolo/leapview/internal/workload"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
+	"github.com/flidai/leapview/internal/access"
+	adminhttp "github.com/flidai/leapview/internal/admin/http"
+	adminstorage "github.com/flidai/leapview/internal/admin/storage"
+	"github.com/flidai/leapview/internal/agent/api"
+	"github.com/flidai/leapview/internal/analytics/queryaudit"
+	"github.com/flidai/leapview/internal/analytics/resource"
+	dashboardapi "github.com/flidai/leapview/internal/dashboard/api"
+	"github.com/flidai/leapview/internal/dashboard/publication"
+	webpage "github.com/flidai/leapview/internal/platform/web/page"
+	"github.com/flidai/leapview/internal/workload"
+	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 type PublicationService interface {

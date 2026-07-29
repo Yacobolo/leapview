@@ -3,8 +3,8 @@ package cli
 import (
 	"context"
 
-	admincli "github.com/Yacobolo/leapview/internal/admin/cli"
-	"github.com/Yacobolo/leapview/internal/app/adminoffline"
+	admincli "github.com/flidai/leapview/internal/admin/cli"
+	"github.com/flidai/leapview/internal/app/adminoffline"
 	"github.com/spf13/cobra"
 )
 

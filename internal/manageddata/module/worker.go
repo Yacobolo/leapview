@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/manageddata/control"
+	"github.com/flidai/leapview/internal/manageddata/control"
 )
 
 type MaintenanceLease interface {

@@ -3,8 +3,8 @@ package module
 import (
 	"context"
 
-	"github.com/Yacobolo/leapview/internal/deployment"
-	"github.com/Yacobolo/leapview/internal/runtimehost"
+	"github.com/flidai/leapview/internal/deployment"
+	"github.com/flidai/leapview/internal/runtimehost"
 )
 
 type RuntimeRegistry interface {

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"sync"
 
-	agentconfig "github.com/Yacobolo/leapview/internal/agent/config"
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
-	agentcore "github.com/Yacobolo/leapview/pkg/agent"
+	agentconfig "github.com/flidai/leapview/internal/agent/config"
+	"github.com/flidai/leapview/internal/platform/jobs"
+	agentcore "github.com/flidai/leapview/pkg/agent"
 )
 
 var (

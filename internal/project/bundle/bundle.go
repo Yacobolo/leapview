@@ -14,11 +14,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/platform/digest"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
-	"github.com/Yacobolo/leapview/internal/project/manifest"
-	"github.com/Yacobolo/leapview/internal/workspace"
 	securejoin "github.com/cyphar/filepath-securejoin"
+	"github.com/flidai/leapview/internal/platform/digest"
+	workspacecompiler "github.com/flidai/leapview/internal/project/compiler"
+	"github.com/flidai/leapview/internal/project/manifest"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 const (

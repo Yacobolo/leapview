@@ -65,7 +65,7 @@ ARG BUILD_REVISION=unknown
 
 LABEL org.opencontainers.image.title="LeapView documentation site" \
       org.opencontainers.image.description="LeapView public website and documentation portal" \
-      org.opencontainers.image.source="https://github.com/Yacobolo/leapview" \
+      org.opencontainers.image.source="https://github.com/flidai/leapview" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.version="$BUILD_VERSION" \
       org.opencontainers.image.revision="$BUILD_REVISION"

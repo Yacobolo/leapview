@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	agentui "github.com/Yacobolo/leapview/internal/agent/ui"
+	agentui "github.com/flidai/leapview/internal/agent/ui"
 )
 
 func TestDashboardChatAdapterPreservesBrowserContract(t *testing.T) {

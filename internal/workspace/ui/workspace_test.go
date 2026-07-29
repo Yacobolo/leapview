@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	workspaceview "github.com/Yacobolo/leapview/internal/workspace"
-	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
-	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
+	workspaceview "github.com/flidai/leapview/internal/workspace"
+	catalog "github.com/flidai/leapview/internal/workspace/navigation"
+	uisignals "github.com/flidai/leapview/internal/workspace/ui/signals"
 )
 
 func TestWorkspaceCatalogSignalUsesWorkspaceItems(t *testing.T) {

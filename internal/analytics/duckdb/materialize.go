@@ -11,17 +11,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/analytics/arrowquery"
-	"github.com/Yacobolo/leapview/internal/analytics/connectors"
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
-	analyticsmaterialize "github.com/Yacobolo/leapview/internal/analytics/materialize"
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
-	analyticsresource "github.com/Yacobolo/leapview/internal/analytics/resource"
-	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
-	analyticsruntime "github.com/Yacobolo/leapview/internal/analytics/runtime"
-	"github.com/Yacobolo/leapview/internal/platform/transaction"
+	"github.com/flidai/leapview/internal/analytics/arrowquery"
+	"github.com/flidai/leapview/internal/analytics/connectors"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	analyticsducklake "github.com/flidai/leapview/internal/analytics/ducklake"
+	analyticsmaterialize "github.com/flidai/leapview/internal/analytics/materialize"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	semanticquery "github.com/flidai/leapview/internal/analytics/query"
+	analyticsresource "github.com/flidai/leapview/internal/analytics/resource"
+	"github.com/flidai/leapview/internal/analytics/resultcache"
+	analyticsruntime "github.com/flidai/leapview/internal/analytics/runtime"
+	"github.com/flidai/leapview/internal/platform/transaction"
 )
 
 type SourceRuntime struct {

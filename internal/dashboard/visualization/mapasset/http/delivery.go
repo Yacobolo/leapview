@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	visualizationmapasset "github.com/Yacobolo/leapview/internal/dashboard/visualization/mapasset"
+	visualizationmapasset "github.com/flidai/leapview/internal/dashboard/visualization/mapasset"
 )
 
 const (

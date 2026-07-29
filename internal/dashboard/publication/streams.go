@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	"github.com/Yacobolo/leapview/internal/dashboard/command"
+	"github.com/flidai/leapview/internal/dashboard"
+	"github.com/flidai/leapview/internal/dashboard/command"
 )
 
 type StreamVersion struct {

@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	"github.com/flidai/leapview/internal/dashboard/visualization/ir"
 )
 
 type fixture struct {

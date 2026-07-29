@@ -3,9 +3,9 @@ package cli
 import (
 	"context"
 
-	agentcli "github.com/Yacobolo/leapview/internal/agent/cli"
-	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
-	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
+	agentcli "github.com/flidai/leapview/internal/agent/cli"
+	agenttools "github.com/flidai/leapview/internal/agent/tools"
+	apiaggregate "github.com/flidai/leapview/internal/app/api/aggregate"
 	"github.com/spf13/cobra"
 )
 

@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/platform"
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
-	jobsqlite "github.com/Yacobolo/leapview/internal/platform/jobs/sqlite"
-	"github.com/Yacobolo/leapview/internal/platform/transaction"
-	"github.com/Yacobolo/leapview/internal/release"
+	"github.com/flidai/leapview/internal/platform"
+	"github.com/flidai/leapview/internal/platform/jobs"
+	jobsqlite "github.com/flidai/leapview/internal/platform/jobs/sqlite"
+	"github.com/flidai/leapview/internal/platform/transaction"
+	"github.com/flidai/leapview/internal/release"
 )
 
 type failingWorkflowRecorder struct{ err error }

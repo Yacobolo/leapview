@@ -4,8 +4,8 @@ import (
 	"net/url"
 	"strings"
 
-	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
-	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
+	webpage "github.com/flidai/leapview/internal/platform/web/page"
+	"github.com/flidai/leapview/internal/platform/web/staticasset"
 	g "maragu.dev/gomponents"
 )
 

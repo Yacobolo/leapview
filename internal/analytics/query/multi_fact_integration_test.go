@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	_ "github.com/duckdb/duckdb-go/v2"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 )
 
 func TestRolePlayingDimensionPathsExecuteWithIndependentAliases(t *testing.T) {

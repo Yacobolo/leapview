@@ -7,8 +7,8 @@ import (
 	"io"
 	"path/filepath"
 
-	adminoffline "github.com/Yacobolo/leapview/internal/admin/offline"
-	"github.com/Yacobolo/leapview/internal/app/config"
+	adminoffline "github.com/flidai/leapview/internal/admin/offline"
+	"github.com/flidai/leapview/internal/app/config"
 )
 
 type Operations struct{}

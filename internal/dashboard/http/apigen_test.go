@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	dashboardgen "github.com/Yacobolo/leapview/internal/dashboard/api/gen"
+	dashboardgen "github.com/flidai/leapview/internal/dashboard/api/gen"
 )
 
 var _ dashboardgen.GenOperationDispatcher = (*APIGenDispatcher)(nil)

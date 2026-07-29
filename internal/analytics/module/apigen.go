@@ -4,8 +4,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
-	queryaudithttp "github.com/Yacobolo/leapview/internal/analytics/queryaudit/http"
+	"github.com/flidai/leapview/internal/analytics/queryaudit"
+	queryaudithttp "github.com/flidai/leapview/internal/analytics/queryaudit/http"
 )
 
 type QueryAuditAPIGenConfig struct {

@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	visualizationgeometry "github.com/Yacobolo/leapview/internal/dashboard/visualization/geometry"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
-	visualizationmapasset "github.com/Yacobolo/leapview/internal/dashboard/visualization/mapasset"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	visualizationgeometry "github.com/flidai/leapview/internal/dashboard/visualization/geometry"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
+	visualizationmapasset "github.com/flidai/leapview/internal/dashboard/visualization/mapasset"
 )
 
 func compileGeographicVisualizationSpec(authored reportdef.Visual) (visualizationir.VisualizationSpec, error) {

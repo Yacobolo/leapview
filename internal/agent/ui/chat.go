@@ -4,9 +4,9 @@ import (
 	"net/url"
 	"strings"
 
-	uiactions "github.com/Yacobolo/leapview/internal/platform/web/actions"
-	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
+	uiactions "github.com/flidai/leapview/internal/platform/web/actions"
+	webpage "github.com/flidai/leapview/internal/platform/web/page"
+	"github.com/flidai/leapview/pkg/pagestream"
 	g "maragu.dev/gomponents"
 )
 

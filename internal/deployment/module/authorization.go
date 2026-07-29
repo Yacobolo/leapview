@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/deployment/apiadapter"
-	"github.com/Yacobolo/leapview/internal/servingstate"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/deployment/apiadapter"
+	"github.com/flidai/leapview/internal/servingstate"
 )
 
 type PublicationAuthorizationConfig struct {

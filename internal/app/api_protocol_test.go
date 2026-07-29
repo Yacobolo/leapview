@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
-	apiprotocol "github.com/Yacobolo/leapview/internal/app/api/protocol"
-	protocolgen "github.com/Yacobolo/leapview/internal/platform/http/api/gen"
-	"github.com/Yacobolo/leapview/internal/platform/http/cursorsigning"
-	apiidempotencysqlite "github.com/Yacobolo/leapview/internal/platform/http/idempotency/sqlite"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	apigenapi "github.com/flidai/leapview/internal/app/api/gen"
+	apiprotocol "github.com/flidai/leapview/internal/app/api/protocol"
+	protocolgen "github.com/flidai/leapview/internal/platform/http/api/gen"
+	"github.com/flidai/leapview/internal/platform/http/cursorsigning"
+	apiidempotencysqlite "github.com/flidai/leapview/internal/platform/http/idempotency/sqlite"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 func TestAPIGenResponseBufferNormalizesLegacyErrorsAsProblemDetails(t *testing.T) {

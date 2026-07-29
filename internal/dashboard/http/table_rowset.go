@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/dashboard/api"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/flidai/leapview/internal/dashboard/api"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
 )
 
 const dashboardArrowMediaType = "application/vnd.apache.arrow.stream"

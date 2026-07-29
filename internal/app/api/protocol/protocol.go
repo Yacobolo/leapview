@@ -15,11 +15,11 @@ import (
 	"sync"
 	"time"
 
-	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
-	"github.com/Yacobolo/leapview/internal/platform/http/cursorsigning"
-	cursorsigningsqlite "github.com/Yacobolo/leapview/internal/platform/http/cursorsigning/sqlite"
-	apiidempotencysqlite "github.com/Yacobolo/leapview/internal/platform/http/idempotency/sqlite"
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
+	apiaggregate "github.com/flidai/leapview/internal/app/api/aggregate"
+	"github.com/flidai/leapview/internal/platform/http/cursorsigning"
+	cursorsigningsqlite "github.com/flidai/leapview/internal/platform/http/cursorsigning/sqlite"
+	apiidempotencysqlite "github.com/flidai/leapview/internal/platform/http/idempotency/sqlite"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
 )
 
 type Config struct {

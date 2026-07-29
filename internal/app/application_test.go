@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	deploymentmodule "github.com/Yacobolo/leapview/internal/deployment/module"
+	deploymentmodule "github.com/flidai/leapview/internal/deployment/module"
 )
 
 type recordedLifecycle struct {

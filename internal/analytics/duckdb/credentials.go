@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/analytics/connectors"
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
+	"github.com/flidai/leapview/internal/analytics/connectors"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 )
 
 // CredentialResolver is an infrastructure boundary. Authored and compiled

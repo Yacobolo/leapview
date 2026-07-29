@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/app/config"
+	"github.com/flidai/leapview/internal/app/config"
 )
 
 func TestApplicationAssetsResolveConfiguredAndGeneratedVersions(t *testing.T) {

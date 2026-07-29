@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
+	"github.com/flidai/leapview/internal/platform/web/staticasset"
 	g "maragu.dev/gomponents"
 )
 

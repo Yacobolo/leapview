@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Yacobolo/leapview/internal/platform/filesystem"
+	"github.com/flidai/leapview/internal/platform/filesystem"
 )
 
 const FileName = ".instance.lock"

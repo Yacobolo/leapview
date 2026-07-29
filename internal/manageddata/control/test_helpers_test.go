@@ -3,7 +3,7 @@ package control_test
 import (
 	"encoding/json"
 
-	"github.com/Yacobolo/leapview/internal/manageddata"
+	"github.com/flidai/leapview/internal/manageddata"
 )
 
 func mustDecodeManifest(value string) manageddata.Manifest {

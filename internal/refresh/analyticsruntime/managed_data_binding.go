@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sort"
 
-	manageddataruntimebinding "github.com/Yacobolo/leapview/internal/manageddata/runtimebinding"
-	refreshartifact "github.com/Yacobolo/leapview/internal/refresh/artifact"
+	manageddataruntimebinding "github.com/flidai/leapview/internal/manageddata/runtimebinding"
+	refreshartifact "github.com/flidai/leapview/internal/refresh/artifact"
 )
 
 type workspaceBindingTarget struct {

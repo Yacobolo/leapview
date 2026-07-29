@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/platform"
+	"github.com/flidai/leapview/internal/platform"
 )
 
 func TestPruneOperationalHistoryDryRunCountsWithoutDeleting(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	sessiondb "github.com/Yacobolo/leapview/internal/dashboard/internal/db"
-	"github.com/Yacobolo/leapview/internal/dashboard/session"
+	sessiondb "github.com/flidai/leapview/internal/dashboard/internal/db"
+	"github.com/flidai/leapview/internal/dashboard/session"
 )
 
 type Store struct {
