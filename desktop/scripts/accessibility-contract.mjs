@@ -26,6 +26,7 @@ export function verifyTrustedShellAccessibility(input) {
     role: axValue(node.role),
     name: axValue(node.name).trim(),
     focused: axProperty(node, "focused") === true,
+    live: axProperty(node, "live"),
     required: axProperty(node, "required") === true,
   }));
   if (!entries.some((entry) => entry.role === "main")) {
@@ -94,6 +95,7 @@ export function verifyTrustedShellAccessibility(input) {
     }
     return {
       mode: "open",
+      announcement: "none",
       controls: controls.length,
       focusedControl: origin.name,
       regions,
@@ -105,25 +107,39 @@ export function verifyTrustedShellAccessibility(input) {
       entry.role === "alert" &&
       entry.name.includes("managed desktop configuration is invalid"),
   );
-  if (
-    policyAlert === undefined ||
-    policyAlert.focused !== true ||
-    controls.length !== 0 ||
-    entries.filter(
-      (entry) =>
-        entry.focused &&
-        entry.role !== "RootWebArea" &&
-        entry.role !== "WebArea",
-    ).length !== 1
-  ) {
+  const applicationDocumentFocused = entries.some(
+    (entry) =>
+      entry.focused &&
+      (entry.role === "RootWebArea" || entry.role === "WebArea"),
+  );
+  const focusedControl =
+    policyAlert?.focused === true
+      ? "Managed configuration error"
+      : applicationDocumentFocused
+        ? "Application document"
+        : undefined;
+  const missing = [];
+  if (policyAlert === undefined) {
+    missing.push("managed configuration alert");
+  } else if (policyAlert.live !== "assertive") {
+    missing.push("assertive announcement");
+  }
+  if (controls.length !== 0) {
+    missing.push("locked action suppression");
+  }
+  if (focusedControl === undefined) {
+    missing.push("document or alert focus");
+  }
+  if (missing.length > 0) {
     throw new Error(
-      "trusted shell locked-mode accessibility contract is incomplete",
+      `trusted shell locked-mode accessibility contract is incomplete: ${missing.join(", ")}`,
     );
   }
   return {
     mode: "locked",
+    announcement: "assertive",
     controls: 0,
-    focusedControl: "Managed configuration error",
+    focusedControl,
     regions,
   };
 }

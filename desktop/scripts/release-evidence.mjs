@@ -535,6 +535,7 @@ function validAccessibilityVerification(accessibility) {
   }
   if (accessibility.mode === "open") {
     return (
+      accessibility.announcement === "none" &&
       accessibility.controls >= 2 &&
       accessibility.focusedControl === "LeapView URL" &&
       accessibility.regions.includes("Connect an instance")
@@ -542,8 +543,12 @@ function validAccessibilityVerification(accessibility) {
   }
   return (
     accessibility.mode === "locked" &&
+    accessibility.announcement === "assertive" &&
     accessibility.controls === 0 &&
-    accessibility.focusedControl === "Managed configuration error"
+    [
+      "Application document",
+      "Managed configuration error",
+    ].includes(accessibility.focusedControl)
   );
 }
 

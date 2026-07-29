@@ -286,8 +286,9 @@ trusted application content.
   lists, and assertive or polite live regions. Repeated profile actions include
   the local instance name in their accessible name.
 - Initial focus is deterministic without renderer script: the URL field owns
-  focus in open mode, while a trusted error or managed-policy lock receives
-  focus when it must be announced before another action.
+  focus in open mode, while a trusted error receives focus before another
+  action. A managed-policy lock is assertively announced; Chromium keeps focus
+  on either the alert or application document according to platform behavior.
 - All keyboard focus uses the LeapView focus token. Profile metadata wraps
   instead of truncating at high zoom, the layout collapses to one column when
   the effective viewport narrows, and forced-colors and reduced-motion

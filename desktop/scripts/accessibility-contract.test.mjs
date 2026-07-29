@@ -26,6 +26,7 @@ test("accepts the named, focused trusted-shell accessibility contract", () => {
 
   assert.deepEqual(report, {
     mode: "open",
+    announcement: "none",
     controls: 2,
     focusedControl: "LeapView URL",
     regions: ["Connect an instance"],
@@ -42,14 +43,15 @@ test("accepts the focused fail-closed managed-policy state", () => {
     node(
       "alert",
       "The managed desktop configuration is invalid; contact your administrator.",
-      [{ name: "focused", value: { value: true } }],
+      [{ name: "live", value: { value: "assertive" } }],
     ),
   ]);
 
   assert.deepEqual(report, {
     mode: "locked",
+    announcement: "assertive",
     controls: 0,
-    focusedControl: "Managed configuration error",
+    focusedControl: "Application document",
     regions: [],
   });
 });

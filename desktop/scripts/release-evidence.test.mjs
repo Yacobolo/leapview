@@ -112,6 +112,7 @@ const packageVerification = {
   asarFiles: 27,
   accessibility: {
     mode: "open",
+    announcement: "none",
     controls: 2,
     focusedControl: "LeapView URL",
     regions: ["Connect an instance"],
@@ -333,6 +334,7 @@ test("release evidence verification detects artifact, SBOM, and publication tamp
   const inaccessible = structuredClone(manifest);
   inaccessible.packageVerification.accessibility = {
     mode: "open",
+    announcement: "none",
     controls: 0,
     focusedControl: "",
     regions: [],
