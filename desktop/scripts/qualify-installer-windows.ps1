@@ -8,7 +8,7 @@ if ($env:GITHUB_ACTIONS -ne "true" -or $args.Count -ne 1) {
 $artifact = (Resolve-Path $args[0]).Path
 $applicationRoot = Join-Path $env:ProgramFiles "LeapView"
 $application = Join-Path $applicationRoot "LeapView.exe"
-$helper = Join-Path $applicationRoot "resources\leapview-windows-policy.exe"
+$helper = $null
 $protocolKey = "Registry::HKEY_LOCAL_MACHINE\Software\Classes\leapview-desktop"
 
 function Invoke-MSI([string[]] $Arguments) {
@@ -33,11 +33,17 @@ if (-not (Test-Path $application)) {
     ForEach-Object { Write-Warning $_.FullName }
   throw "MSI did not install LeapView.exe in Program Files."
 }
-if (-not (Test-Path $helper)) {
+$helpers = @(
+  Get-ChildItem `
+    -Path (Join-Path $applicationRoot "app-*\resources\leapview-windows-policy.exe") `
+    -File
+)
+if ($helpers.Count -ne 1) {
   Get-ChildItem -Path $applicationRoot -Recurse |
     ForEach-Object { Write-Warning $_.FullName }
-  throw "MSI did not install the native policy helper."
+  throw "MSI did not install exactly one native policy helper."
 }
+$helper = $helpers[0].FullName
 
 $probe = Read-PolicyProbe
 if ($probe.schemaVersion -ne 1 -or $probe.security -ne "missing") {

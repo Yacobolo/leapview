@@ -87,6 +87,7 @@ const config: ForgeConfig = {
     ),
     new MakerPKG(
       {
+        identifier: "dev.leapview.desktop",
         installLocation: "/Applications",
         scripts: resolve(desktopRoot, "installer/macos/scripts"),
         ...(process.env.LEAPVIEW_APPLE_INSTALLER_IDENTITY === undefined

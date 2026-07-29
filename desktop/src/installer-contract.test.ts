@@ -6,6 +6,7 @@ import {
   addWindowsManagedDeployment,
   desktopInstallerContract,
 } from "../installer-contract.js";
+import { macOSComponentPropertyList } from "../makers/maker-pkg.js";
 
 describe("desktop installer contract", () => {
   test("selects machine-managed native package formats", () => {
@@ -58,6 +59,21 @@ describe("desktop installer contract", () => {
   test("fails closed when the pinned maker template changes", () => {
     expect(() => addWindowsManagedDeployment("<Product/>")).toThrow(
       /pinned WiX template/,
+    );
+  });
+
+  test("makes the macOS app non-relocatable and atomically upgradeable", () => {
+    expect(macOSComponentPropertyList).toContain(
+      "<key>BundleIsRelocatable</key>\n    <false/>",
+    );
+    expect(macOSComponentPropertyList).toContain(
+      "<key>BundleHasStrictIdentifier</key>\n    <true/>",
+    );
+    expect(macOSComponentPropertyList).toContain(
+      "<key>BundleOverwriteAction</key>\n    <string>upgrade</string>",
+    );
+    expect(macOSComponentPropertyList).toContain(
+      "<string>Applications/LeapView.app</string>",
     );
   });
 

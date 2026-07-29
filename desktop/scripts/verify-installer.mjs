@@ -98,27 +98,45 @@ async function inspectMacOSInstaller(artifact) {
     const files = await findFiles(expanded, () => true);
     const preinstall = files.find((path) => path.endsWith("/preinstall"));
     const postinstall = files.find((path) => path.endsWith("/postinstall"));
+    const packageInfo = files.find((path) => path.endsWith("/PackageInfo"));
     const plist = files.find((path) =>
       path.endsWith("/LeapView.app/Contents/Info.plist"),
     );
     if (
       preinstall === undefined ||
       postinstall === undefined ||
+      packageInfo === undefined ||
       plist === undefined
     ) {
       throw new Error("macOS installer payload or scripts are incomplete");
     }
-    const [preinstallBody, postinstallBody, plistBody] = await Promise.all([
+    const [
+      preinstallBody,
+      postinstallBody,
+      packageInfoBody,
+      plistBody,
+    ] = await Promise.all([
       readFile(preinstall, "utf8"),
       readFile(postinstall, "utf8"),
+      readFile(packageInfo, "utf8"),
       readFile(plist, "utf8"),
     ]);
     assertPolicyScripts(preinstallBody, postinstallBody, "root:wheel");
     if (
+      !packageInfoBody.includes('install-location="/"') ||
+      !packageInfoBody.includes('relocatable="false"') ||
+      !packageInfoBody.includes(
+        '<bundle path="./Applications/LeapView.app"',
+      ) ||
+      !packageInfoBody.includes("<strict-identifier>") ||
+      !packageInfoBody.includes("<atomic-update-bundle/>") ||
+      !packageInfoBody.includes("<relocate/>") ||
       !plistBody.includes("<string>leapview-desktop</string>") ||
       !plistBody.includes("<string>dev.leapview.desktop</string>")
     ) {
-      throw new Error("macOS installer has no exact desktop protocol");
+      throw new Error(
+        "macOS installer has an unsafe app location or protocol",
+      );
     }
     return {
       scope: "per-machine",
