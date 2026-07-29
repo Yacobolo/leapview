@@ -669,7 +669,12 @@ tasks:
     requires:
       vars: [LEAPVIEW_SITE_IMAGE]
     cmds:
-      - ./scripts/deploy_site.sh
+      - >-
+        infisical run --silent
+        --env prod
+        --path /hetzner-site/operator
+        --projectId c52a0183-fc82-4614-b437-c237a889d79c
+        -- ./scripts/deploy_site.sh
 
   node:audit:
     desc: Scan JavaScript dependencies for known vulnerabilities
