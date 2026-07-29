@@ -13,6 +13,7 @@ import {
   DesktopDiscoveryError,
   type DiscoveryDocument,
 } from "./discovery.js";
+import { isSafeDesktopRoute } from "./safe-route.js";
 
 const PROFILE_SCHEMA_VERSION = 2;
 const LEGACY_PROFILE_SCHEMA_VERSION = 1;
@@ -153,6 +154,31 @@ export class ProfileStore {
       }
       validateProfileDocument(document);
       await this.#write(document);
+      return structuredClone(profile);
+    });
+  }
+
+  async setLastSafePath(
+    profileID: string,
+    lastSafePath: string,
+  ): Promise<Profile> {
+    if (!profileIDPattern.test(profileID)) {
+      throw new Error("desktop profile id is invalid");
+    }
+    const normalizedPath = validateSafePath(lastSafePath);
+    return this.#serialize(async () => {
+      const { document } = await this.#read();
+      const profile = document.profiles.find(
+        (candidate) => candidate.id === profileID,
+      );
+      if (profile === undefined) {
+        throw new Error("desktop profile was not found");
+      }
+      if (profile.lastSafePath !== normalizedPath) {
+        profile.lastSafePath = normalizedPath;
+        validateProfileDocument(document);
+        await this.#write(document);
+      }
       return structuredClone(profile);
     });
   }
@@ -439,14 +465,7 @@ function validateProfile(input: unknown): Profile {
     "profile display name",
     120,
   );
-  const lastSafePath = requireProfileString(
-    profile.lastSafePath,
-    "profile safe path",
-    2_048,
-  );
-  if (!lastSafePath.startsWith("/") || lastSafePath.startsWith("//")) {
-    throw new Error("desktop profile safe path is invalid");
-  }
+  const lastSafePath = validateSafePath(profile.lastSafePath);
   if (profile.partitionVersion !== PROFILE_PARTITION_VERSION) {
     throw new Error("desktop profile partition version is unsupported");
   }
@@ -462,6 +481,14 @@ function validateProfile(input: unknown): Profile {
     partitionVersion: PROFILE_PARTITION_VERSION,
     ...(label === undefined ? {} : { label }),
   };
+}
+
+function validateSafePath(input: unknown): string {
+  const path = requireProfileString(input, "profile safe path", 2_048);
+  if (!isSafeDesktopRoute(path)) {
+    throw new Error("desktop profile safe path is invalid");
+  }
+  return path;
 }
 
 function requireProfileString(

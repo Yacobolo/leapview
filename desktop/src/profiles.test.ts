@@ -113,6 +113,40 @@ describe("ProfileStore", () => {
     }
   });
 
+  test("persists only a validated safe route for lifecycle recovery", async () => {
+    const directoryPath = await mkdtemp(join(tmpdir(), "leapview-profiles-"));
+    try {
+      const path = join(directoryPath, "profiles.json");
+      const store = new ProfileStore(path);
+      const profile = await store.upsertFromDiscovery(discovery);
+
+      const updated = await store.setLastSafePath(
+        profile.id,
+        "/workspaces/sales",
+      );
+
+      expect(updated.lastSafePath).toBe("/workspaces/sales");
+      expect((await new ProfileStore(path).list())[0]?.lastSafePath).toBe(
+        "/workspaces/sales",
+      );
+      for (const candidate of [
+        "https://attacker.example/",
+        "//attacker.example/",
+        "/admin",
+        "/workspaces/%2fadmin",
+        "/workspaces?token=secret",
+        "/workspaces#fragment",
+        "/".repeat(2_049),
+      ]) {
+        await expect(
+          store.setLastSafePath(profile.id, candidate),
+        ).rejects.toThrow("safe path");
+      }
+    } finally {
+      await rm(directoryPath, { force: true, recursive: true });
+    }
+  });
+
   test("confirmed replacement gets a new mapping and partition", async () => {
     const directoryPath = await mkdtemp(join(tmpdir(), "leapview-profiles-"));
     try {

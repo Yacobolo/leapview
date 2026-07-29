@@ -12,6 +12,8 @@ import {
   BrowserWindow,
   dialog,
   Menu,
+  net,
+  powerMonitor,
   protocol,
   screen,
   session,
@@ -68,11 +70,17 @@ import {
   type RemoteLifecycleFailure,
 } from "./remote-lifecycle.js";
 import {
+  BoundedRecoveryCoordinator,
+  RollingRecoveryBudget,
+  type RecoveryAttemptResult,
+} from "./recovery.js";
+import {
   configureRemoteSession,
   installRemoteContentsPolicy,
   parseConfiguredOrigin,
   remoteWebPreferences,
 } from "./security/remote-policy.mjs";
+import { isSafeDesktopRoute } from "./safe-route.js";
 import { loadTrustedUIAssets } from "./trusted-assets.js";
 import { TrustedUI } from "./trusted-ui.js";
 import {
@@ -86,6 +94,9 @@ const TRUSTED_PARTITION = "leapview-shell";
 const DISCOVERY_PARTITION = "leapview-discovery";
 const WINDOW_STATE_FLUSH_DELAY_MS = 300;
 const DIAGNOSTIC_FLUSH_DELAY_MS = 500;
+const NETWORK_STATUS_POLL_MS = 5_000;
+const RENDERER_CRASH_RECOVERY_WINDOW_MS = 60_000;
+const RENDERER_CRASH_RECOVERY_LIMIT = 2;
 const SHELL_WINDOW_SIZE = {
   width: 780,
   height: 760,
@@ -134,6 +145,8 @@ const authenticationTransactions = new Map<
 const configuredSessions = new WeakSet<Session>();
 const configuredSessionOrigins = new WeakMap<Session, string>();
 const externalApprovals = new Set<string>();
+const remoteRecoveries = new Map<string, BoundedRecoveryCoordinator>();
+const rendererCrashBudgets = new Map<string, RollingRecoveryBudget>();
 const allowLoopbackHTTP = !app.isPackaged;
 const deepLinks = new DeepLinkDispatcher({
   allowLoopbackHTTP,
@@ -159,6 +172,9 @@ let windowStateQuitReady = false;
 let diagnostics: DiagnosticJournal | null = null;
 let diagnosticFlushTimer: NodeJS.Timeout | null = null;
 let diagnosticExportActive = false;
+let systemSuspended = false;
+let networkAvailable = true;
+let networkStatusTimer: NodeJS.Timeout | null = null;
 
 const primaryInstance = app.requestSingleInstanceLock();
 if (!primaryInstance) {
@@ -205,12 +221,18 @@ if (!primaryInstance) {
   });
   app.on("window-all-closed", () => {
     cancelAllAuthenticationTransactions();
+    cancelAllRemoteRecoveries();
     if (process.platform !== "darwin") {
       app.quit();
     }
   });
   app.on("before-quit", (event) => {
     cancelAllAuthenticationTransactions();
+    cancelAllRemoteRecoveries();
+    if (networkStatusTimer !== null) {
+      clearInterval(networkStatusTimer);
+      networkStatusTimer = null;
+    }
     if (windowStateQuitReady || windowStates === null) {
       return;
     }
@@ -232,6 +254,20 @@ if (!primaryInstance) {
 }
 
 async function start(): Promise<void> {
+  networkAvailable = net.isOnline();
+  powerMonitor.on("suspend", () => {
+    systemSuspended = true;
+    refreshRecoveryAvailability();
+  });
+  powerMonitor.on("resume", () => {
+    systemSuspended = false;
+    updateNetworkAvailability();
+    refreshRecoveryAvailability();
+  });
+  networkStatusTimer = setInterval(
+    updateNetworkAvailability,
+    NETWORK_STATUS_POLL_MS,
+  );
   desktopPolicy = await loadDesktopPolicy(
     resolveDesktopPolicySource({
       platform: process.platform,
@@ -332,6 +368,7 @@ async function connectProfileAtPath(
   profileID: string,
   path: string,
 ): Promise<void> {
+  cancelRemoteRecovery(profileID);
   const profile = await savedProfile(profileID);
   const origin = configuredOrigin(profile.canonicalOrigin);
   const discovery = await discover(origin);
@@ -391,6 +428,8 @@ async function resolveVerifiedProfile(
   if (confirmation.response !== 1) {
     throw new DesktopProfileReplacementCancelledError();
   }
+  cancelRemoteRecovery(current.id);
+  rendererCrashBudgets.delete(current.id);
   await cancelAuthenticationTransaction(current.id);
   const remote = remoteWindows.get(current.id);
   if (remote !== undefined && !remote.isDestroyed()) {
@@ -419,6 +458,8 @@ async function resolveVerifiedProfile(
 
 async function disconnectProfile(profileID: string): Promise<void> {
   const profile = await savedProfile(profileID);
+  cancelRemoteRecovery(profile.id);
+  rendererCrashBudgets.delete(profile.id);
   await cancelAuthenticationTransaction(profile.id);
   const remote = remoteWindows.get(profile.id);
   if (remote !== undefined && !remote.isDestroyed()) {
@@ -456,6 +497,8 @@ async function removeProfile(profileID: string): Promise<void> {
       "This LeapView instance is managed by your organization and cannot be removed.",
     );
   }
+  cancelRemoteRecovery(profile.id);
+  rendererCrashBudgets.delete(profile.id);
   await cancelAuthenticationTransaction(profile.id);
   const remote = remoteWindows.get(profile.id);
   if (remote !== undefined && !remote.isDestroyed()) {
@@ -568,6 +611,7 @@ async function discover(origin: string) {
 async function openRemoteWindow(
   profile: Profile,
   path: string = profile.lastSafePath,
+  preparedSession?: Session,
 ): Promise<void> {
   const target = exactProfileURL(profile, path);
   const existing = remoteWindows.get(profile.id);
@@ -575,7 +619,9 @@ async function openRemoteWindow(
     try {
       const profileSession = session.fromPartition(profilePartition(profile));
       configureSessionOnce(profileSession, profile);
-      await ensureAuthenticated(profile, profileSession);
+      if (preparedSession === undefined) {
+        await ensureAuthenticated(profile, profileSession);
+      }
       await existing.loadURL(target);
       existing.show();
       existing.focus();
@@ -595,9 +641,12 @@ async function openRemoteWindow(
     return;
   }
   const partition = profilePartition(profile);
-  const profileSession = session.fromPartition(partition);
+  const profileSession =
+    preparedSession ?? session.fromPartition(partition);
   configureSessionOnce(profileSession, profile);
-  await ensureAuthenticated(profile, profileSession);
+  if (preparedSession === undefined) {
+    await ensureAuthenticated(profile, profileSession);
+  }
   const restoredState = restoreWindowState(
     profile.id,
     REMOTE_WINDOW_SIZE.minimumWidth,
@@ -640,6 +689,7 @@ async function openRemoteWindow(
       displayName: profileDisplayName(profile),
     },
     (failure) => handleRemoteFailure(profile, remote, failure),
+    (route) => profiles.setLastSafePath(profile.id, route).then(() => undefined),
   );
   remote.webContents.on("page-title-updated", (event) => {
     event.preventDefault();
@@ -651,6 +701,10 @@ async function openRemoteWindow(
   remote.once("closed", () => remoteWindows.delete(profile.id));
   try {
     await remote.loadURL(target);
+    if (preparedSession === undefined) {
+      rendererCrashBudgets.delete(profile.id);
+    }
+    cancelRemoteRecovery(profile.id);
     recordDiagnostic({
       kind: "profile",
       action: "opened",
@@ -674,8 +728,7 @@ async function openRemoteWindow(
 function exactProfileURL(profile: Profile, path: string): string {
   const target = new URL(path, profile.canonicalOrigin);
   if (
-    !path.startsWith("/") ||
-    path.startsWith("//") ||
+    !isSafeDesktopRoute(path) ||
     target.origin !== profile.canonicalOrigin ||
     target.hash !== ""
   ) {
@@ -848,6 +901,7 @@ function createShellWindow(): void {
   if (shellWindow !== null && !shellWindow.isDestroyed()) {
     shellWindow.show();
     shellWindow.focus();
+    refreshRecoveryAvailability();
     return;
   }
   const restoredState = restoreWindowState(
@@ -897,12 +951,18 @@ function createShellWindow(): void {
   window.once("ready-to-show", () => {
     if (!window.isDestroyed()) {
       window.show();
+      refreshRecoveryAvailability();
     }
   });
+  window.on("show", refreshRecoveryAvailability);
+  window.on("restore", refreshRecoveryAvailability);
+  window.on("minimize", refreshRecoveryAvailability);
+  window.on("hide", refreshRecoveryAvailability);
   window.once("closed", () => {
     if (shellWindow === window) {
       shellWindow = null;
     }
+    refreshRecoveryAvailability();
   });
   void window.loadURL("leapview://app/");
 }
@@ -1380,15 +1440,221 @@ function handleRemoteFailure(
     state: failure.state,
   });
   remote.destroy();
+  if (
+    failure.state === "crashed" &&
+    !consumeRendererCrashRecoveryBudget(profile.id)
+  ) {
+    trustedUI?.reportNotice({
+      kind: "error",
+      state: "crashed",
+      message:
+        `${failure.message} Automatic recovery stopped after repeated renderer failures. Reopen the instance explicitly to try again.`,
+    });
+    createShellWindow();
+    if (shellWindow !== null && !shellWindow.isDestroyed()) {
+      void shellWindow.loadURL("leapview://app/");
+    }
+    return;
+  }
   trustedUI?.reportNotice({
     kind: "error",
     state: failure.state,
-    message: failure.message,
+    message:
+      `${failure.message} LeapView will make a few bounded recovery attempts while this window remains visible.`,
   });
   createShellWindow();
   if (shellWindow !== null && !shellWindow.isDestroyed()) {
     void shellWindow.loadURL("leapview://app/");
   }
+  const recovery = remoteRecovery(profile.id);
+  recovery.setAvailable(recoveryIsAvailable());
+  recovery.request();
+}
+
+function remoteRecovery(profileID: string): BoundedRecoveryCoordinator {
+  const existing = remoteRecoveries.get(profileID);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const recovery = new BoundedRecoveryCoordinator(
+    (signal) => attemptRemoteRecovery(profileID, signal),
+    {
+      onExhausted: () => {
+        reportTrustedShellNotice(
+          "LeapView could not reconnect automatically. Reopen the saved instance when the network or server is ready.",
+        );
+      },
+    },
+  );
+  remoteRecoveries.set(profileID, recovery);
+  return recovery;
+}
+
+async function attemptRemoteRecovery(
+  profileID: string,
+  signal: AbortSignal,
+): Promise<RecoveryAttemptResult> {
+  if (signal.aborted || !recoveryIsAvailable()) {
+    return "retry";
+  }
+  let profile: Profile;
+  try {
+    profile = await savedProfile(profileID);
+  } catch {
+    return "stop";
+  }
+  if (signal.aborted) {
+    return "retry";
+  }
+  const existing = remoteWindows.get(profile.id);
+  if (existing !== undefined && !existing.isDestroyed()) {
+    return "success";
+  }
+  try {
+    const discovery = await discover(configuredOrigin(profile.canonicalOrigin));
+    if (signal.aborted) {
+      return "retry";
+    }
+    if (
+      discovery.canonicalOrigin !== profile.canonicalOrigin ||
+      discovery.instanceId !== profile.instanceId
+    ) {
+      reportTrustedShellNotice(
+        "LeapView stopped automatic recovery because the saved server identity changed. Reopen the instance to review the change.",
+      );
+      return "stop";
+    }
+    const profileSession = session.fromPartition(profilePartition(profile));
+    configureSessionOnce(profileSession, profile);
+    const authenticated = await prepareDesktopSession(
+      profile,
+      (input, init) => profileSession.fetch(input, init),
+      profileSession,
+    );
+    if (signal.aborted) {
+      return "retry";
+    }
+    if (!authenticated) {
+      reportTrustedShellNotice(
+        "The LeapView session is no longer valid. Reopen the saved instance to authenticate in the system browser.",
+      );
+      return "stop";
+    }
+    const refreshedProfile = await savedProfile(profile.id);
+    if (signal.aborted) {
+      return "retry";
+    }
+    await openRemoteWindow(
+      refreshedProfile,
+      refreshedProfile.lastSafePath,
+      profileSession,
+    );
+    trustedUI?.reportNotice({
+      kind: "success",
+      state: "success",
+      message: "LeapView reconnected using the last validated route.",
+    });
+    return "success";
+  } catch (error) {
+    if (signal.aborted) {
+      return "retry";
+    }
+    if (isRetryableRecoveryFailure(error)) {
+      return "retry";
+    }
+    reportTrustedShellNotice(nonRetryableRecoveryMessage(error));
+    return "stop";
+  }
+}
+
+function isRetryableRecoveryFailure(error: unknown): boolean {
+  if (error instanceof DesktopDiscoveryError) {
+    return ["dns", "network", "proxy", "timeout", "http"].includes(
+      error.kind,
+    );
+  }
+  const message = error instanceof Error
+    ? error.message.toLowerCase()
+    : "";
+  return (
+    message.includes("could not load after successful discovery") ||
+    message.includes("failed to fetch") ||
+    message.includes("network") ||
+    message.includes("timed out")
+  );
+}
+
+function nonRetryableRecoveryMessage(error: unknown): string {
+  if (error instanceof DesktopDiscoveryError) {
+    if (error.kind === "tls") {
+      return "LeapView stopped automatic recovery because the server certificate could not be verified. Check the operating-system trust store, then reopen the instance.";
+    }
+    if (
+      [
+        "schema_incompatible",
+        "protocol_incompatible",
+        "authentication_incompatible",
+        "capability_incompatible",
+        "canonical_origin_mismatch",
+        "instance_identity_mismatch",
+      ].includes(error.kind)
+    ) {
+      return "LeapView stopped automatic recovery because the instance identity or desktop compatibility contract changed. Reopen the instance to review it.";
+    }
+  }
+  return "LeapView stopped automatic recovery after a non-network failure. Reopen the saved instance to continue safely.";
+}
+
+function cancelRemoteRecovery(profileID: string): void {
+  remoteRecoveries.get(profileID)?.cancel();
+  remoteRecoveries.delete(profileID);
+}
+
+function consumeRendererCrashRecoveryBudget(profileID: string): boolean {
+  let budget = rendererCrashBudgets.get(profileID);
+  if (budget === undefined) {
+    budget = new RollingRecoveryBudget(
+      RENDERER_CRASH_RECOVERY_LIMIT,
+      RENDERER_CRASH_RECOVERY_WINDOW_MS,
+    );
+    rendererCrashBudgets.set(profileID, budget);
+  }
+  return budget.consume();
+}
+
+function cancelAllRemoteRecoveries(): void {
+  for (const recovery of remoteRecoveries.values()) {
+    recovery.cancel();
+  }
+  remoteRecoveries.clear();
+  rendererCrashBudgets.clear();
+}
+
+function updateNetworkAvailability(): void {
+  const available = net.isOnline();
+  if (networkAvailable === available) {
+    return;
+  }
+  networkAvailable = available;
+  refreshRecoveryAvailability();
+}
+
+function refreshRecoveryAvailability(): void {
+  const available = recoveryIsAvailable();
+  for (const recovery of remoteRecoveries.values()) {
+    recovery.setAvailable(available);
+  }
+}
+
+function recoveryIsAvailable(): boolean {
+  return (
+    !systemSuspended &&
+    networkAvailable &&
+    shellWindow !== null &&
+    !shellWindow.isDestroyed() &&
+    shellWindow.isVisible() &&
+    !shellWindow.isMinimized()
+  );
 }
 
 function installTrustedContentsPolicy(contents: Electron.WebContents): void {

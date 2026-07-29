@@ -37,7 +37,7 @@ describe("installRemoteLifecyclePolicy", () => {
       {
         state: "offline",
         message:
-          "Company Analytics could not be reached. Check the network or server, then reopen it.",
+          "Company Analytics could not be reached. Check the network or server.",
       },
     ]);
   });
@@ -82,8 +82,68 @@ describe("installRemoteLifecyclePolicy", () => {
       {
         state: "crashed",
         message:
-          "Company Analytics stopped unexpectedly. Reopen it to continue.",
+          "Company Analytics stopped unexpectedly.",
       },
+    ]);
+  });
+
+  test("remembers only same-origin fragment-free main-frame routes", () => {
+    const contents = new EventEmitter();
+    const routes: string[] = [];
+    installRemoteLifecyclePolicy(
+      contents,
+      {
+        origin: "https://analytics.company.com",
+        displayName: "Company Analytics",
+      },
+      () => undefined,
+      (route) => routes.push(route),
+    );
+
+    contents.emit(
+      "did-navigate",
+      {},
+      "https://analytics.company.com/workspaces/sales?period=q1#visual",
+      200,
+      "OK",
+    );
+    contents.emit(
+      "did-navigate-in-page",
+      {},
+      "https://analytics.company.com/workspaces/finance?period=q2",
+      true,
+    );
+    contents.emit(
+      "did-navigate-in-page",
+      {},
+      "https://analytics.company.com/workspaces/ignored",
+      false,
+    );
+    contents.emit(
+      "did-navigate",
+      {},
+      "https://attacker.example/workspaces/stolen",
+      200,
+      "OK",
+    );
+    contents.emit(
+      "did-navigate",
+      {},
+      "https://user@analytics.company.com/workspaces/credentialed",
+      200,
+      "OK",
+    );
+    contents.emit(
+      "did-navigate",
+      {},
+      "https://analytics.company.com/admin",
+      200,
+      "OK",
+    );
+
+    expect(routes).toEqual([
+      "/workspaces/sales",
+      "/workspaces/finance",
     ]);
   });
 });

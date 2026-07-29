@@ -41,6 +41,30 @@ identity mismatch fails closed before any remote content is opened.
   Windows, macOS, and Linux. Enterprise proxy and private-CA qualification must
   pass on those same platform runners before a release is promoted.
 
+## Bounded lifecycle recovery
+
+- LeapView persists only the last validated same-origin main-frame GET route
+  for each profile. Query strings, fragments, credentials, foreign origins,
+  oversized values, and ambiguous network-path references are never stored.
+- A failed or crashed remote renderer is destroyed immediately. Recovery
+  always creates a fresh hardened `BrowserWindow`; it never calls reload on
+  stale `webContents`.
+- Automatic recovery uses one coalesced sequence per profile with jittered
+  delays of approximately one, three, and eight seconds. It pauses while the
+  system is suspended, Chromium reports the machine offline, or the trusted
+  shell is hidden or minimized.
+- Every attempt re-runs public discovery, requires the exact saved origin and
+  immutable instance identity, and verifies the existing desktop session
+  before opening the saved route. It never launches system-browser
+  authentication automatically.
+- Recovery performs only discovery and a fresh GET navigation. It does not
+  replay POST requests, Datastar commands, downloads, or interrupted actions.
+  After the attempt budget is exhausted, the trusted shell requires an
+  explicit reopen.
+- Network-online status is only a scheduling hint. A positive result is not
+  treated as proof that the instance, proxy, DNS, VPN, or private network is
+  reachable; the real Chromium discovery request remains authoritative.
+
 ## Try it locally
 
 1. Start LeapView with `task dev`.

@@ -1,3 +1,5 @@
+import { isSafeDesktopRoute } from "./safe-route.js";
+
 export interface RemoteLifecycleIdentity {
   origin: string;
   displayName: string;
@@ -16,9 +18,11 @@ export function installRemoteLifecyclePolicy(
   contents: RemoteContentsEvents,
   identity: RemoteLifecycleIdentity,
   report: (failure: RemoteLifecycleFailure) => void,
+  rememberRoute: (route: string) => void | Promise<void> = () => undefined,
 ): void {
   const trustedOrigin = new URL(identity.origin).origin;
   let reported = false;
+  let lastRememberedRoute: string | undefined;
   const reportOnce = (failure: RemoteLifecycleFailure) => {
     if (reported) {
       return;
@@ -41,7 +45,7 @@ export function installRemoteLifecyclePolicy(
     }
     reportOnce({
       state: "offline",
-      message: `${identity.displayName} could not be reached. Check the network or server, then reopen it.`,
+      message: `${identity.displayName} could not be reached. Check the network or server.`,
     });
   });
 
@@ -57,8 +61,26 @@ export function installRemoteLifecyclePolicy(
     }
     reportOnce({
       state: "crashed",
-      message: `${identity.displayName} stopped unexpectedly. Reopen it to continue.`,
+      message: `${identity.displayName} stopped unexpectedly.`,
     });
+  });
+
+  const rememberMainFrameRoute = (candidate: unknown, mainFrame = true) => {
+    if (mainFrame !== true || typeof candidate !== "string") {
+      return;
+    }
+    const route = safeRouteFromRemoteURL(candidate, trustedOrigin);
+    if (route === null || route === lastRememberedRoute) {
+      return;
+    }
+    lastRememberedRoute = route;
+    void Promise.resolve(rememberRoute(route)).catch(() => undefined);
+  };
+  contents.on("did-navigate", (...arguments_) => {
+    rememberMainFrameRoute(arguments_[1]);
+  });
+  contents.on("did-navigate-in-page", (...arguments_) => {
+    rememberMainFrameRoute(arguments_[1], arguments_[2] === true);
   });
 }
 
@@ -67,5 +89,30 @@ function hasExactOrigin(candidate: string, trustedOrigin: string): boolean {
     return new URL(candidate).origin === trustedOrigin;
   } catch {
     return false;
+  }
+}
+
+export function safeRouteFromRemoteURL(
+  candidate: string,
+  trustedOrigin: string,
+): string | null {
+  try {
+    const parsed = new URL(candidate);
+    if (
+      parsed.origin !== trustedOrigin ||
+      parsed.username !== "" ||
+      parsed.password !== ""
+    ) {
+      return null;
+    }
+    const route = parsed.pathname;
+    if (
+      !isSafeDesktopRoute(route)
+    ) {
+      return null;
+    }
+    return route;
+  } catch {
+    return null;
   }
 }

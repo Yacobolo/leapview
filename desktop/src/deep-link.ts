@@ -1,15 +1,10 @@
 import { parseConfiguredOrigin } from "./security/remote-policy.mjs";
+import { isSafeDesktopRoute } from "./safe-route.js";
 
 export const DESKTOP_DEEP_LINK_SCHEME = "leapview-desktop";
 
 const MAXIMUM_DEEP_LINK_BYTES = 2_048;
-const MAXIMUM_ROUTE_BYTES = 1_024;
 const MAXIMUM_OUTSTANDING_REQUESTS = 4;
-const routeSegment = "[A-Za-z0-9][A-Za-z0-9._:-]{0,127}";
-const safeRoutePattern = new RegExp(
-  `^/(?:workspaces(?:/${routeSegment}(?:/dashboards/${routeSegment}(?:/pages/${routeSegment})?)?)?)?$`,
-  "u",
-);
 
 export interface DesktopDeepLink {
   origin: string;
@@ -246,16 +241,4 @@ export class DeepLinkDispatcher {
       // Rejection reporting must never make external input process-fatal.
     }
   }
-}
-
-function isSafeDesktopRoute(path: string): boolean {
-  return (
-    new TextEncoder().encode(path).byteLength <= MAXIMUM_ROUTE_BYTES &&
-    !path.includes("%") &&
-    !path.includes("\\") &&
-    !path.includes("?") &&
-    !path.includes("#") &&
-    !path.includes("//") &&
-    safeRoutePattern.test(path)
-  );
 }

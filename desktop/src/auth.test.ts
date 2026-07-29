@@ -23,6 +23,23 @@ const profile: DesktopAuthProfile = {
 };
 
 describe("desktop system-browser authentication", () => {
+  test("rejects query-bearing recovery routes before session access", async () => {
+    let fetched = false;
+    await expect(
+      desktopSessionAvailable(
+        {
+          ...profile,
+          lastSafePath: "/workspaces?token=secret",
+        },
+        async () => {
+          fetched = true;
+          return new Response(null, { status: 204 });
+        },
+      ),
+    ).rejects.toThrow("cannot be authenticated safely");
+    expect(fetched).toBe(false);
+  });
+
   test("checks session state without following redirects", async () => {
     let observed: { input: string; init: RequestInit } | undefined;
     const available = await desktopSessionAvailable(

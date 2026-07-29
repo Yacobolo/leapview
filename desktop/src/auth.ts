@@ -6,6 +6,8 @@ import {
   type ServerResponse,
 } from "node:http";
 
+import { isSafeDesktopRoute } from "./safe-route.js";
+
 const DESKTOP_CLIENT_ID = "leapview-desktop";
 const AUTHORIZE_PATH = "/auth/desktop/authorize";
 const REDEEM_PATH = "/auth/desktop/redeem";
@@ -555,23 +557,7 @@ function validateProfile(profile: DesktopAuthProfile): void {
 }
 
 function isSafeReturnPath(value: string): boolean {
-  if (
-    value.length === 0 ||
-    value.length > 2_048 ||
-    !value.startsWith("/") ||
-    value.startsWith("//")
-  ) {
-    return false;
-  }
-  try {
-    const parsed = new URL(value, "https://leapview.invalid");
-    return (
-      parsed.origin === "https://leapview.invalid" &&
-      parsed.hash === ""
-    );
-  } catch {
-    return false;
-  }
+  return isSafeDesktopRoute(value);
 }
 
 function loopbackAddress(server: Server): string {
