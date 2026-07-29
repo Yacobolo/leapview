@@ -36,6 +36,14 @@ func (r *Repository) Create(ctx context.Context, input release.CreateInput) (rel
 	if err != nil {
 		return release.Release{}, err
 	}
+	provenanceJSON := "{}"
+	if input.Provenance != nil {
+		provenanceBytes, marshalErr := json.Marshal(input.Provenance)
+		if marshalErr != nil {
+			return release.Release{}, marshalErr
+		}
+		provenanceJSON = string(provenanceBytes)
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return release.Release{}, err
@@ -43,7 +51,8 @@ func (r *Repository) Create(ctx context.Context, input release.CreateInput) (rel
 	defer tx.Rollback()
 	qtx := r.q.WithTx(tx)
 	err = qtx.CreateAPIRelease(ctx, platformdb.CreateAPIReleaseParams{ID: input.ID, ProjectID: input.ProjectID, ProjectDigest: input.ProjectDigest,
-		RequestDigest: input.RequestDigest, IdempotencyKey: input.IdempotencyKey, ManifestJson: string(encoded), CreatedBy: input.CreatedBy})
+		RequestDigest: input.RequestDigest, IdempotencyKey: input.IdempotencyKey, ManifestJson: string(encoded),
+		ProvenanceJson: provenanceJSON, CreatedBy: input.CreatedBy})
 	if err != nil {
 		existing, getErr := getWith(ctx, qtx, input.ProjectID, "", input.IdempotencyKey)
 		if getErr == nil {
@@ -309,11 +318,11 @@ func getWith(ctx context.Context, q *platformdb.Queries, projectID, releaseID, i
 	if idempotencyKey != "" {
 		row, queryErr := q.GetAPIReleaseByIdempotencyKey(ctx, platformdb.GetAPIReleaseByIdempotencyKeyParams{ProjectID: projectID, IdempotencyKey: idempotencyKey})
 		err = queryErr
-		raw = releaseRow{row.ID, row.ProjectID, row.ProjectDigest, row.RequestDigest, row.IdempotencyKey, row.Status, row.ManifestJson, row.CreatedBy, row.CreatedAt, row.FinalizedAt, row.Error}
+		raw = releaseRow{row.ID, row.ProjectID, row.ProjectDigest, row.RequestDigest, row.IdempotencyKey, row.Status, row.ManifestJson, row.ProvenanceJson, row.CreatedBy, row.CreatedAt, row.FinalizedAt, row.Error}
 	} else {
 		row, queryErr := q.GetAPIReleaseByID(ctx, platformdb.GetAPIReleaseByIDParams{ProjectID: projectID, ID: releaseID})
 		err = queryErr
-		raw = releaseRow{row.ID, row.ProjectID, row.ProjectDigest, row.RequestDigest, row.IdempotencyKey, row.Status, row.ManifestJson, row.CreatedBy, row.CreatedAt, row.FinalizedAt, row.Error}
+		raw = releaseRow{row.ID, row.ProjectID, row.ProjectDigest, row.RequestDigest, row.IdempotencyKey, row.Status, row.ManifestJson, row.ProvenanceJson, row.CreatedBy, row.CreatedAt, row.FinalizedAt, row.Error}
 	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return release.Release{}, release.ErrNotFound
@@ -325,6 +334,16 @@ func getWith(ctx context.Context, q *platformdb.Queries, projectID, releaseID, i
 		IdempotencyKey: raw.idempotencyKey, Status: release.Status(raw.status), CreatedBy: raw.createdBy, CreatedAt: raw.createdAt, FinalizedAt: raw.finalizedAt, Error: raw.errorText}
 	if err := json.Unmarshal([]byte(raw.manifestJSON), &item.Manifest); err != nil {
 		return release.Release{}, err
+	}
+	if raw.provenanceJSON != "" && raw.provenanceJSON != "{}" {
+		var provenance release.Provenance
+		if err := json.Unmarshal([]byte(raw.provenanceJSON), &provenance); err != nil {
+			return release.Release{}, err
+		}
+		if err := provenance.Validate(); err != nil {
+			return release.Release{}, err
+		}
+		item.Provenance = &provenance
 	}
 	rows, err := q.GetAPIReleaseArtifacts(ctx, item.ID)
 	if err != nil {
@@ -348,7 +367,7 @@ func getWith(ctx context.Context, q *platformdb.Queries, projectID, releaseID, i
 
 type releaseRow struct {
 	id, projectID, projectDigest, requestDigest, idempotencyKey, status, manifestJSON string
-	createdBy, createdAt, finalizedAt, errorText                                      string
+	provenanceJSON, createdBy, createdAt, finalizedAt, errorText                      string
 }
 
 func normalizeCreate(input *release.CreateInput) error {
@@ -360,6 +379,11 @@ func normalizeCreate(input *release.CreateInput) error {
 	input.CreatedBy = strings.TrimSpace(input.CreatedBy)
 	if input.ID == "" || input.ProjectID == "" || input.ProjectDigest == "" || input.RequestDigest == "" || input.IdempotencyKey == "" || input.CreatedBy == "" || len(input.Workspaces) == 0 {
 		return release.ErrInvalid
+	}
+	if input.Provenance != nil {
+		if err := input.Provenance.Validate(); err != nil {
+			return release.ErrInvalid
+		}
 	}
 	sort.Slice(input.Workspaces, func(i, j int) bool { return input.Workspaces[i].WorkspaceID < input.Workspaces[j].WorkspaceID })
 	sort.Slice(input.Connections, func(i, j int) bool { return input.Connections[i].ConnectionID < input.Connections[j].ConnectionID })

@@ -31,9 +31,11 @@ type CandidateSourceScope struct {
 }
 
 type CandidateSourceSnapshot struct {
-	ProjectID      string
-	ArtifactDigest string
-	ProjectPath    string
+	ProjectID           string
+	ArtifactDigest      string
+	ProjectPath         string
+	ProjectDigest       string
+	ProjectArtifactPath string
 }
 
 // CandidateSourceSynchronizer owns target-side retention and compiler

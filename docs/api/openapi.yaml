@@ -18081,6 +18081,42 @@ paths:
                     id: example
                     projectDigest: example
                     projectId: example
+                    provenance:
+                      artifact:
+                        compilerVersion: example
+                        projectDigest: example
+                        schemaVersion: 1
+                        sourceDigest: example
+                        workspaces:
+                          - artifactDigest: example
+                            workspaceId: example
+                      artifactDigest: example
+                      candidate:
+                        id: example
+                        ownerId: example
+                        revision: 1
+                      digest: example
+                      plan:
+                        baseGeneration: example
+                        environment: example
+                        policyDigest: example
+                        runtimeVersion: example
+                        targetId: example
+                        workspaces:
+                          - artifactDigest: example
+                            bindings:
+                              - bindingId: example
+                                revision: 1
+                                validatedVersion: example
+                            dataMode: reuse_snapshot
+                            dataRevision: example
+                            managedDataPins:
+                              - connectionId: example
+                                revisionId: example
+                            servingStateId: example
+                            workspaceId: example
+                      planDigest: example
+                      version: 1
                     status: draft
                     workspaces:
                       - artifactDigest: example
@@ -18368,6 +18404,42 @@ paths:
                 id: example
                 projectDigest: example
                 projectId: example
+                provenance:
+                  artifact:
+                    compilerVersion: example
+                    projectDigest: example
+                    schemaVersion: 1
+                    sourceDigest: example
+                    workspaces:
+                      - artifactDigest: example
+                        workspaceId: example
+                  artifactDigest: example
+                  candidate:
+                    id: example
+                    ownerId: example
+                    revision: 1
+                  digest: example
+                  plan:
+                    baseGeneration: example
+                    environment: example
+                    policyDigest: example
+                    runtimeVersion: example
+                    targetId: example
+                    workspaces:
+                      - artifactDigest: example
+                        bindings:
+                          - bindingId: example
+                            revision: 1
+                            validatedVersion: example
+                        dataMode: reuse_snapshot
+                        dataRevision: example
+                        managedDataPins:
+                          - connectionId: example
+                            revisionId: example
+                        servingStateId: example
+                        workspaceId: example
+                  planDigest: example
+                  version: 1
                 status: draft
                 workspaces:
                   - artifactDigest: example
@@ -18620,6 +18692,42 @@ paths:
                 - connection: example
                   revisionId: example
               projectDigest: example
+              provenance:
+                artifact:
+                  compilerVersion: example
+                  projectDigest: example
+                  schemaVersion: 1
+                  sourceDigest: example
+                  workspaces:
+                    - artifactDigest: example
+                      workspaceId: example
+                artifactDigest: example
+                candidate:
+                  id: example
+                  ownerId: example
+                  revision: 1
+                digest: example
+                plan:
+                  baseGeneration: example
+                  environment: example
+                  policyDigest: example
+                  runtimeVersion: example
+                  targetId: example
+                  workspaces:
+                    - artifactDigest: example
+                      bindings:
+                        - bindingId: example
+                          revision: 1
+                          validatedVersion: example
+                      dataMode: reuse_snapshot
+                      dataRevision: example
+                      managedDataPins:
+                        - connectionId: example
+                          revisionId: example
+                      servingStateId: example
+                      workspaceId: example
+                planDigest: example
+                version: 1
               workspaces:
                 - artifactDigest: example
                   servingStateId: example
@@ -18662,6 +18770,42 @@ paths:
                 id: example
                 projectDigest: example
                 projectId: example
+                provenance:
+                  artifact:
+                    compilerVersion: example
+                    projectDigest: example
+                    schemaVersion: 1
+                    sourceDigest: example
+                    workspaces:
+                      - artifactDigest: example
+                        workspaceId: example
+                  artifactDigest: example
+                  candidate:
+                    id: example
+                    ownerId: example
+                    revision: 1
+                  digest: example
+                  plan:
+                    baseGeneration: example
+                    environment: example
+                    policyDigest: example
+                    runtimeVersion: example
+                    targetId: example
+                    workspaces:
+                      - artifactDigest: example
+                        bindings:
+                          - bindingId: example
+                            revision: 1
+                            validatedVersion: example
+                        dataMode: reuse_snapshot
+                        dataRevision: example
+                        managedDataPins:
+                          - connectionId: example
+                            revisionId: example
+                        servingStateId: example
+                        workspaceId: example
+                  planDigest: example
+                  version: 1
                 status: draft
                 workspaces:
                   - artifactDigest: example
@@ -19271,6 +19415,42 @@ paths:
                 id: example
                 projectDigest: example
                 projectId: example
+                provenance:
+                  artifact:
+                    compilerVersion: example
+                    projectDigest: example
+                    schemaVersion: 1
+                    sourceDigest: example
+                    workspaces:
+                      - artifactDigest: example
+                        workspaceId: example
+                  artifactDigest: example
+                  candidate:
+                    id: example
+                    ownerId: example
+                    revision: 1
+                  digest: example
+                  plan:
+                    baseGeneration: example
+                    environment: example
+                    policyDigest: example
+                    runtimeVersion: example
+                    targetId: example
+                    workspaces:
+                      - artifactDigest: example
+                        bindings:
+                          - bindingId: example
+                            revision: 1
+                            validatedVersion: example
+                        dataMode: reuse_snapshot
+                        dataRevision: example
+                        managedDataPins:
+                          - connectionId: example
+                            revisionId: example
+                        servingStateId: example
+                        workspaceId: example
+                  planDigest: example
+                  version: 1
                 status: draft
                 workspaces:
                   - artifactDigest: example
@@ -52174,6 +52354,48 @@ components:
         releaseId: example
         sizeBytes: 1
         workspaceId: example
+    ReleaseBindingEvidence:
+      type: object
+      required:
+        - bindingId
+        - revision
+        - validatedVersion
+      properties:
+        bindingId:
+          type: string
+          example: example
+        revision:
+          type: integer
+          format: int64
+          example: 1
+        validatedVersion:
+          type: string
+          example: example
+      example:
+        bindingId: example
+        revision: 1
+        validatedVersion: example
+    ReleaseCandidateProvenance:
+      type: object
+      required:
+        - id
+        - revision
+        - ownerId
+      properties:
+        id:
+          type: string
+          example: example
+        revision:
+          type: integer
+          format: int64
+          example: 1
+        ownerId:
+          type: string
+          example: example
+      example:
+        id: example
+        ownerId: example
+        revision: 1
     ReleaseConnectionPin:
       type: object
       required:
@@ -52214,11 +52436,49 @@ components:
           example:
             - connection: example
               revisionId: example
+        provenance:
+          $ref: '#/components/schemas/ReleaseProvenance'
       example:
         connections:
           - connection: example
             revisionId: example
         projectDigest: example
+        provenance:
+          artifact:
+            compilerVersion: example
+            projectDigest: example
+            schemaVersion: 1
+            sourceDigest: example
+            workspaces:
+              - artifactDigest: example
+                workspaceId: example
+          artifactDigest: example
+          candidate:
+            id: example
+            ownerId: example
+            revision: 1
+          digest: example
+          plan:
+            baseGeneration: example
+            environment: example
+            policyDigest: example
+            runtimeVersion: example
+            targetId: example
+            workspaces:
+              - artifactDigest: example
+                bindings:
+                  - bindingId: example
+                    revision: 1
+                    validatedVersion: example
+                dataMode: reuse_snapshot
+                dataRevision: example
+                managedDataPins:
+                  - connectionId: example
+                    revisionId: example
+                servingStateId: example
+                workspaceId: example
+          planDigest: example
+          version: 1
         workspaces:
           - artifactDigest: example
             servingStateId: example
@@ -52244,6 +52504,42 @@ components:
               id: example
               projectDigest: example
               projectId: example
+              provenance:
+                artifact:
+                  compilerVersion: example
+                  projectDigest: example
+                  schemaVersion: 1
+                  sourceDigest: example
+                  workspaces:
+                    - artifactDigest: example
+                      workspaceId: example
+                artifactDigest: example
+                candidate:
+                  id: example
+                  ownerId: example
+                  revision: 1
+                digest: example
+                plan:
+                  baseGeneration: example
+                  environment: example
+                  policyDigest: example
+                  runtimeVersion: example
+                  targetId: example
+                  workspaces:
+                    - artifactDigest: example
+                      bindings:
+                        - bindingId: example
+                          revision: 1
+                          validatedVersion: example
+                      dataMode: reuse_snapshot
+                      dataRevision: example
+                      managedDataPins:
+                        - connectionId: example
+                          revisionId: example
+                      servingStateId: example
+                      workspaceId: example
+                planDigest: example
+                version: 1
               status: draft
               workspaces:
                 - artifactDigest: example
@@ -52263,6 +52559,42 @@ components:
             id: example
             projectDigest: example
             projectId: example
+            provenance:
+              artifact:
+                compilerVersion: example
+                projectDigest: example
+                schemaVersion: 1
+                sourceDigest: example
+                workspaces:
+                  - artifactDigest: example
+                    workspaceId: example
+              artifactDigest: example
+              candidate:
+                id: example
+                ownerId: example
+                revision: 1
+              digest: example
+              plan:
+                baseGeneration: example
+                environment: example
+                policyDigest: example
+                runtimeVersion: example
+                targetId: example
+                workspaces:
+                  - artifactDigest: example
+                    bindings:
+                      - bindingId: example
+                        revision: 1
+                        validatedVersion: example
+                    dataMode: reuse_snapshot
+                    dataRevision: example
+                    managedDataPins:
+                      - connectionId: example
+                        revisionId: example
+                    servingStateId: example
+                    workspaceId: example
+              planDigest: example
+              version: 1
             status: draft
             workspaces:
               - artifactDigest: example
@@ -52270,6 +52602,139 @@ components:
                 workspace: example
         page:
           nextCursor: example
+    ReleaseManagedDataPin:
+      type: object
+      required:
+        - connectionId
+        - revisionId
+      properties:
+        connectionId:
+          type: string
+          example: example
+        revisionId:
+          type: string
+          example: example
+      example:
+        connectionId: example
+        revisionId: example
+    ReleaseProjectArtifactProvenance:
+      type: object
+      required:
+        - sourceDigest
+        - projectDigest
+        - compilerVersion
+        - schemaVersion
+        - workspaces
+      properties:
+        sourceDigest:
+          type: string
+          example: example
+        projectDigest:
+          type: string
+          example: example
+        compilerVersion:
+          type: string
+          example: example
+        schemaVersion:
+          type: integer
+          format: int32
+          example: 1
+        workspaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReleaseProjectArtifactWorkspace'
+          example:
+            - artifactDigest: example
+              workspaceId: example
+      example:
+        compilerVersion: example
+        projectDigest: example
+        schemaVersion: 1
+        sourceDigest: example
+        workspaces:
+          - artifactDigest: example
+            workspaceId: example
+    ReleaseProjectArtifactWorkspace:
+      type: object
+      required:
+        - workspaceId
+        - artifactDigest
+      properties:
+        workspaceId:
+          type: string
+          example: example
+        artifactDigest:
+          type: string
+          example: example
+      example:
+        artifactDigest: example
+        workspaceId: example
+    ReleaseProvenance:
+      type: object
+      required:
+        - version
+        - artifact
+        - candidate
+        - plan
+        - artifactDigest
+        - planDigest
+        - digest
+      properties:
+        version:
+          type: integer
+          format: int32
+          example: 1
+        artifact:
+          $ref: '#/components/schemas/ReleaseProjectArtifactProvenance'
+        candidate:
+          $ref: '#/components/schemas/ReleaseCandidateProvenance'
+        plan:
+          $ref: '#/components/schemas/ReleaseTargetPlanProvenance'
+        artifactDigest:
+          type: string
+          example: example
+        planDigest:
+          type: string
+          example: example
+        digest:
+          type: string
+          example: example
+      example:
+        artifact:
+          compilerVersion: example
+          projectDigest: example
+          schemaVersion: 1
+          sourceDigest: example
+          workspaces:
+            - artifactDigest: example
+              workspaceId: example
+        artifactDigest: example
+        candidate:
+          id: example
+          ownerId: example
+          revision: 1
+        digest: example
+        plan:
+          baseGeneration: example
+          environment: example
+          policyDigest: example
+          runtimeVersion: example
+          targetId: example
+          workspaces:
+            - artifactDigest: example
+              bindings:
+                - bindingId: example
+                  revision: 1
+                  validatedVersion: example
+              dataMode: reuse_snapshot
+              dataRevision: example
+              managedDataPins:
+                - connectionId: example
+                  revisionId: example
+              servingStateId: example
+              workspaceId: example
+        planDigest: example
+        version: 1
     ReleaseResponse:
       type: object
       required:
@@ -52308,6 +52773,8 @@ components:
           example:
             - connection: example
               revisionId: example
+        provenance:
+          $ref: '#/components/schemas/ReleaseProvenance'
         createdBy:
           type: string
           example: example
@@ -52333,6 +52800,42 @@ components:
         id: example
         projectDigest: example
         projectId: example
+        provenance:
+          artifact:
+            compilerVersion: example
+            projectDigest: example
+            schemaVersion: 1
+            sourceDigest: example
+            workspaces:
+              - artifactDigest: example
+                workspaceId: example
+          artifactDigest: example
+          candidate:
+            id: example
+            ownerId: example
+            revision: 1
+          digest: example
+          plan:
+            baseGeneration: example
+            environment: example
+            policyDigest: example
+            runtimeVersion: example
+            targetId: example
+            workspaces:
+              - artifactDigest: example
+                bindings:
+                  - bindingId: example
+                    revision: 1
+                    validatedVersion: example
+                dataMode: reuse_snapshot
+                dataRevision: example
+                managedDataPins:
+                  - connectionId: example
+                    revisionId: example
+                servingStateId: example
+                workspaceId: example
+          planDigest: example
+          version: 1
         status: draft
         workspaces:
           - artifactDigest: example
@@ -52346,6 +52849,126 @@ components:
         - ready
         - failed
       example: draft
+    ReleaseTargetDataMode:
+      type: string
+      enum:
+        - reuse_snapshot
+        - refresh_sources
+      example: reuse_snapshot
+    ReleaseTargetPlanProvenance:
+      type: object
+      required:
+        - targetId
+        - environment
+        - baseGeneration
+        - runtimeVersion
+        - policyDigest
+        - workspaces
+      properties:
+        targetId:
+          type: string
+          example: example
+        environment:
+          type: string
+          example: example
+        baseGeneration:
+          type: string
+          example: example
+        runtimeVersion:
+          type: string
+          example: example
+        policyDigest:
+          type: string
+          example: example
+        workspaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReleaseTargetWorkspacePlan'
+          example:
+            - artifactDigest: example
+              bindings:
+                - bindingId: example
+                  revision: 1
+                  validatedVersion: example
+              dataMode: reuse_snapshot
+              dataRevision: example
+              managedDataPins:
+                - connectionId: example
+                  revisionId: example
+              servingStateId: example
+              workspaceId: example
+      example:
+        baseGeneration: example
+        environment: example
+        policyDigest: example
+        runtimeVersion: example
+        targetId: example
+        workspaces:
+          - artifactDigest: example
+            bindings:
+              - bindingId: example
+                revision: 1
+                validatedVersion: example
+            dataMode: reuse_snapshot
+            dataRevision: example
+            managedDataPins:
+              - connectionId: example
+                revisionId: example
+            servingStateId: example
+            workspaceId: example
+    ReleaseTargetWorkspacePlan:
+      type: object
+      required:
+        - workspaceId
+        - servingStateId
+        - artifactDigest
+        - dataRevision
+        - dataMode
+        - managedDataPins
+        - bindings
+      properties:
+        workspaceId:
+          type: string
+          example: example
+        servingStateId:
+          type: string
+          example: example
+        artifactDigest:
+          type: string
+          example: example
+        dataRevision:
+          type: string
+          example: example
+        dataMode:
+          $ref: '#/components/schemas/ReleaseTargetDataMode'
+        managedDataPins:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReleaseManagedDataPin'
+          example:
+            - connectionId: example
+              revisionId: example
+        bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReleaseBindingEvidence'
+          example:
+            - bindingId: example
+              revision: 1
+              validatedVersion: example
+      example:
+        artifactDigest: example
+        bindings:
+          - bindingId: example
+            revision: 1
+            validatedVersion: example
+        dataMode: reuse_snapshot
+        dataRevision: example
+        managedDataPins:
+          - connectionId: example
+            revisionId: example
+        servingStateId: example
+        workspaceId: example
     ReleaseWorkspaceManifest:
       type: object
       required:

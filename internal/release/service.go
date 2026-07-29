@@ -84,7 +84,18 @@ func NewService(options ServiceOptions) (*Service, error) {
 func (s *Service) Create(ctx context.Context, input CreateInput) (Release, error) {
 	input.ID = stableID("rel", input.ProjectID, input.IdempotencyKey)
 	manifest := Manifest{Workspaces: input.Workspaces, Connections: input.Connections}
-	encoded, err := json.Marshal(manifest)
+	if input.Provenance != nil {
+		if err := input.Provenance.Validate(); err != nil {
+			return Release{}, fmt.Errorf("%w: %v", ErrInvalid, err)
+		}
+		if input.Provenance.Artifact.SourceDigest != strings.TrimSpace(input.ProjectDigest) {
+			return Release{}, fmt.Errorf("%w: provenance source digest does not match release project digest", ErrInvalid)
+		}
+	}
+	encoded, err := json.Marshal(struct {
+		Manifest   Manifest    `json:"manifest"`
+		Provenance *Provenance `json:"provenance,omitempty"`
+	}{Manifest: manifest, Provenance: input.Provenance})
 	if err != nil {
 		return Release{}, err
 	}

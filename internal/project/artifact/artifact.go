@@ -158,6 +158,18 @@ func (w Workspace) Manifest() *manifest.Workspace {
 	return &decoded.Manifest
 }
 
+func (w Workspace) Canonical() []byte {
+	return append([]byte(nil), w.canonical...)
+}
+
+func (w Workspace) Digest() string {
+	if len(w.canonical) == 0 {
+		return ""
+	}
+	sum := sha256.Sum256(w.canonical)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
 // DashboardDefinition returns a fresh capability-scoped projection. Mutating
 // it cannot change the retained project artifact or any other projection.
 func (w Workspace) DashboardDefinition() *dashboarddefinition.Workspace {

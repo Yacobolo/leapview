@@ -1,8 +1,8 @@
 -- API v1 releases and project discovery.
 
 -- name: CreateAPIRelease :exec
-INSERT INTO api_releases (id, project_id, project_digest, request_digest, idempotency_key, status, manifest_json, created_by)
-VALUES (?, ?, ?, ?, ?, 'draft', ?, ?);
+INSERT INTO api_releases (id, project_id, project_digest, request_digest, idempotency_key, status, manifest_json, provenance_json, created_by)
+VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?);
 
 -- name: CreateAPIReleaseArtifact :exec
 INSERT INTO api_release_artifacts (release_id, workspace_id, expected_digest) VALUES (?, ?, ?);
@@ -11,12 +11,12 @@ INSERT INTO api_release_artifacts (release_id, workspace_id, expected_digest) VA
 INSERT INTO api_release_connections (release_id, connection_id, revision_id) VALUES (?, ?, ?);
 
 -- name: GetAPIReleaseByID :one
-SELECT id, project_id, project_digest, request_digest, idempotency_key, status, manifest_json, created_by,
+SELECT id, project_id, project_digest, request_digest, idempotency_key, status, manifest_json, provenance_json, created_by,
   created_at, COALESCE(finalized_at, '') AS finalized_at, error
 FROM api_releases WHERE project_id = ? AND id = ?;
 
 -- name: GetAPIReleaseByIdempotencyKey :one
-SELECT id, project_id, project_digest, request_digest, idempotency_key, status, manifest_json, created_by,
+SELECT id, project_id, project_digest, request_digest, idempotency_key, status, manifest_json, provenance_json, created_by,
   created_at, COALESCE(finalized_at, '') AS finalized_at, error
 FROM api_releases WHERE project_id = ? AND idempotency_key = ?;
 

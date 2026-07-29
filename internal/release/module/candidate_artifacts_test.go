@@ -42,10 +42,14 @@ func TestCandidateArtifactsRefreshThenReuseTargetSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	source := releaseCandidateSource(t, snapshot, projectPath)
+	if err := os.RemoveAll(filepath.Dir(projectPath)); err != nil {
+		t.Fatal(err)
+	}
 	first, err := module.PrepareCandidateArtifacts(t.Context(), release.CandidateArtifactRequest{
 		CandidateID: "candidate_1", ProjectID: snapshot.ProjectID,
 		OwnerID: "principal_1", Environment: "dev", ArtifactDigest: snapshot.Digest,
-		Source: releaseCandidateSource(snapshot, projectPath),
+		Source: source,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -69,7 +73,7 @@ func TestCandidateArtifactsRefreshThenReuseTargetSnapshot(t *testing.T) {
 	second, err := module.PrepareCandidateArtifacts(t.Context(), release.CandidateArtifactRequest{
 		CandidateID: "candidate_2", ProjectID: snapshot.ProjectID,
 		OwnerID: "principal_1", Environment: "dev", ArtifactDigest: snapshot.Digest,
-		Source: releaseCandidateSource(snapshot, projectPath),
+		Source: source,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -166,12 +170,22 @@ func targetBoundCandidateProject(t *testing.T) string {
 }
 
 func releaseCandidateSource(
+	t *testing.T,
 	snapshot projectdevloop.Snapshot,
 	projectPath string,
 ) project.CandidateSourceSnapshot {
+	t.Helper()
+	compiled, err := projectcompiler.CompileProjectArtifact(projectPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifactPath := filepath.Join(t.TempDir(), "project.artifact.json")
+	if err := os.WriteFile(artifactPath, compiled.Canonical(), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	return project.CandidateSourceSnapshot{
 		ProjectID: snapshot.ProjectID, ArtifactDigest: snapshot.Digest,
-		ProjectPath: projectPath,
+		ProjectDigest: compiled.Digest(), ProjectArtifactPath: artifactPath,
 	}
 }
 

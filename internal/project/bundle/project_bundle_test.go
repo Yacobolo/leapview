@@ -86,6 +86,74 @@ func TestPackProjectValidatesSelectedWorkspace(t *testing.T) {
 	}
 }
 
+func TestPackCompiledProjectCreatesTargetPlansFromTheSameImmutableArtifact(t *testing.T) {
+	projectPath := filepath.Join("..", "..", "..", "dashboards", ProjectFile)
+	projectArtifact, err := workspacecompiler.CompileProjectArtifact(projectPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceDigest := "sha256:" + strings.Repeat("1", 64)
+	targets := []struct {
+		environment    string
+		servingStateID string
+		revision       string
+	}{
+		{environment: "dev", servingStateID: "state_dev", revision: "sha256:" + strings.Repeat("a", 64)},
+		{environment: "prod", servingStateID: "state_prod", revision: "sha256:" + strings.Repeat("b", 64)},
+	}
+	var bundleDigests []string
+	for _, target := range targets {
+		var output bytes.Buffer
+		manifest, bundleDigest, err := PackCompiledProject(
+			projectArtifact,
+			sourceDigest,
+			PackProjectOptions{
+				WorkspaceID: "operations",
+				Environment: target.environment, ServingStateID: target.servingStateID,
+				ManagedDataRevisions: map[string]string{"olist": target.revision},
+			},
+			&output,
+		)
+		if err != nil {
+			t.Fatalf("PackCompiledProject(%s) error = %v", target.environment, err)
+		}
+		if manifest.CatalogPath != ProjectArtifactFile || manifest.ProjectDigest != sourceDigest {
+			t.Fatalf("manifest = %#v", manifest)
+		}
+		path := filepath.Join(t.TempDir(), "artifact.tar.gz")
+		if err := os.WriteFile(path, output.Bytes(), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		validation, err := ValidateArtifactWithOptions(
+			path,
+			"operations",
+			target.servingStateID,
+			ValidateOptions{Environment: target.environment},
+		)
+		if err != nil {
+			t.Fatalf("ValidateArtifactWithOptions(%s) error = %v", target.environment, err)
+		}
+		if validation.ProjectDigest != sourceDigest {
+			t.Fatalf("validated project digest = %q, want %q", validation.ProjectDigest, sourceDigest)
+		}
+		root := t.TempDir()
+		if err := ExtractArtifact(path, root); err != nil {
+			t.Fatal(err)
+		}
+		retained, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(ProjectArtifactFile)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(retained, projectArtifact.Canonical()) {
+			t.Fatal("target plan mutated the immutable project artifact")
+		}
+		bundleDigests = append(bundleDigests, bundleDigest)
+	}
+	if bundleDigests[0] == bundleDigests[1] {
+		t.Fatalf("target-specific plans share bundle digest %q", bundleDigests[0])
+	}
+}
+
 func TestPackProjectEmbedsCanonicalManagedDataRevisionPins(t *testing.T) {
 	projectPath := writeManagedBundleProject(t)
 	digest := "sha256:" + strings.Repeat("a", 64)

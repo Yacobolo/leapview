@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/flidai/leapview/internal/platform"
@@ -13,6 +15,70 @@ import (
 	"github.com/flidai/leapview/internal/platform/transaction"
 	"github.com/flidai/leapview/internal/release"
 )
+
+func TestReleaseRepositoryRoundTripsAndValidatesImmutableProvenance(t *testing.T) {
+	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "leapview.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	repo := NewRepository(store.SQLDB())
+	provenance, err := release.NewProvenance(release.ProvenanceInput{
+		Artifact: release.ProjectArtifactProvenance{
+			SourceDigest:    "sha256:" + strings.Repeat("1", 64),
+			ProjectDigest:   "sha256:" + strings.Repeat("2", 64),
+			CompilerVersion: "leapview:test", SchemaVersion: 3,
+			Workspaces: []release.WorkspaceArtifactProvenance{{
+				WorkspaceID: "sales", ArtifactDigest: "sha256:" + strings.Repeat("3", 64),
+			}},
+		},
+		Candidate: release.CandidateProvenance{
+			ID: "cand_1", Revision: 2, OwnerID: "principal_1",
+		},
+		Plan: release.TargetPlanProvenance{
+			TargetID: "target_1", Environment: "dev", BaseGeneration: "empty",
+			RuntimeVersion: "runtime:test", PolicyDigest: "sha256:" + strings.Repeat("4", 64),
+			Workspaces: []release.TargetWorkspacePlan{{
+				WorkspaceID: "sales", ServingStateID: "state_1",
+				ArtifactDigest: "sha256:" + strings.Repeat("5", 64),
+				DataRevision:   "sources:sha256:" + strings.Repeat("1", 64),
+				DataMode:       release.TargetDataRefreshSources,
+				Bindings: []release.BindingEvidence{{
+					BindingID: "warehouse", Revision: 2, ValidatedVersion: "version-7",
+				}},
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := repo.Create(t.Context(), release.CreateInput{
+		ID: "rel_provenance", ProjectID: "commerce",
+		ProjectDigest:  provenance.Artifact.SourceDigest,
+		RequestDigest:  "sha256:" + strings.Repeat("6", 64),
+		IdempotencyKey: "provenance", CreatedBy: "principal_1",
+		Workspaces: []release.WorkspaceManifest{{
+			WorkspaceID: "sales", ArtifactDigest: provenance.Plan.Workspaces[0].ArtifactDigest,
+		}},
+		Provenance: &provenance,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Provenance == nil || !reflect.DeepEqual(*created.Provenance, provenance) {
+		t.Fatalf("created provenance = %#v, want %#v", created.Provenance, provenance)
+	}
+	if _, err := store.SQLDB().ExecContext(
+		t.Context(),
+		`UPDATE api_releases SET provenance_json = json_set(provenance_json, '$.plan.runtimeVersion', 'tampered') WHERE id = ?`,
+		created.ID,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.Get(t.Context(), "commerce", created.ID); !errors.Is(err, release.ErrProvenanceInvalid) {
+		t.Fatalf("Get(tampered provenance) error = %v, want ErrProvenanceInvalid", err)
+	}
+}
 
 type failingWorkflowRecorder struct{ err error }
 

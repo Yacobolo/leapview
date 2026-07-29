@@ -22,10 +22,75 @@ model ReleaseConnectionPin {
   revisionId: string;
 }
 
+model ReleaseProjectArtifactWorkspace {
+  workspaceId: string;
+  artifactDigest: string;
+}
+
+model ReleaseProjectArtifactProvenance {
+  sourceDigest: string;
+  projectDigest: string;
+  compilerVersion: string;
+  schemaVersion: int32;
+  workspaces: ReleaseProjectArtifactWorkspace[];
+}
+
+model ReleaseCandidateProvenance {
+  id: string;
+  revision: int64;
+  ownerId: string;
+}
+
+model ReleaseManagedDataPin {
+  connectionId: string;
+  revisionId: string;
+}
+
+model ReleaseBindingEvidence {
+  bindingId: string;
+  revision: int64;
+  validatedVersion: string;
+}
+
+enum ReleaseTargetDataMode {
+  reuse_snapshot;
+  refresh_sources;
+}
+
+model ReleaseTargetWorkspacePlan {
+  workspaceId: string;
+  servingStateId: string;
+  artifactDigest: string;
+  dataRevision: string;
+  dataMode: ReleaseTargetDataMode;
+  managedDataPins: ReleaseManagedDataPin[];
+  bindings: ReleaseBindingEvidence[];
+}
+
+model ReleaseTargetPlanProvenance {
+  targetId: string;
+  environment: string;
+  baseGeneration: string;
+  runtimeVersion: string;
+  policyDigest: string;
+  workspaces: ReleaseTargetWorkspacePlan[];
+}
+
+model ReleaseProvenance {
+  version: int32;
+  artifact: ReleaseProjectArtifactProvenance;
+  candidate: ReleaseCandidateProvenance;
+  plan: ReleaseTargetPlanProvenance;
+  artifactDigest: string;
+  planDigest: string;
+  digest: string;
+}
+
 model ReleaseCreateRequest {
   projectDigest: string;
   workspaces: ReleaseWorkspaceManifest[];
   connections: ReleaseConnectionPin[];
+  provenance?: ReleaseProvenance;
 }
 
 model ReleaseResponse {
@@ -35,6 +100,7 @@ model ReleaseResponse {
   status: ReleaseStatus;
   workspaces: ReleaseWorkspaceManifest[];
   connections: ReleaseConnectionPin[];
+  provenance?: ReleaseProvenance;
   createdBy: string;
   createdAt: utcDateTime;
   finalizedAt?: utcDateTime;

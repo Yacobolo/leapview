@@ -7,6 +7,8 @@ import (
 	"strings"
 	"unicode"
 
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	projectartifact "github.com/flidai/leapview/internal/project/artifact"
 	"github.com/flidai/leapview/internal/workspace"
 )
 
@@ -118,6 +120,93 @@ func PlanProjectAgainstGraph(projectPath, workspaceID string, active workspace.A
 		plan.Workspaces[index].Summary = summary
 	}
 	return plan, nil
+}
+
+// PlanCompiledProjectAgainstGraph creates a target-specific plan from retained
+// environment-neutral compiler output. It does not read or recompile source.
+func PlanCompiledProjectAgainstGraph(
+	compiled projectartifact.Project,
+	workspaceID string,
+	active workspace.AssetGraph,
+) (ProjectPlan, error) {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if compiled.ID() == "" || workspaceID == "" {
+		return ProjectPlan{}, fmt.Errorf("compiled project and workspace are required")
+	}
+	selected, ok := compiled.Workspace(workspaceID)
+	if !ok {
+		return ProjectPlan{}, fmt.Errorf(
+			"compiled project %q has no workspace %q",
+			compiled.ID(),
+			workspaceID,
+		)
+	}
+	definition := selected.Manifest()
+	if definition == nil {
+		return ProjectPlan{}, fmt.Errorf(
+			"compiled project %q workspace %q has no definition",
+			compiled.ID(),
+			workspaceID,
+		)
+	}
+	connectionSet := map[string]struct{}{}
+	sourceSet := map[string]struct{}{}
+	for _, model := range definition.Models {
+		if model == nil {
+			return ProjectPlan{}, fmt.Errorf(
+				"compiled project %q workspace %q has a nil semantic model",
+				compiled.ID(),
+				workspaceID,
+			)
+		}
+		for connection := range model.Connections {
+			connectionSet[connection] = struct{}{}
+		}
+		for source := range model.Sources {
+			if authored, exists := definition.SourceIDs[source]; exists {
+				source = authored
+			}
+			sourceSet[source] = struct{}{}
+		}
+	}
+	workspacePlan := ProjectPlanWorkspace{
+		ID:                    workspaceID,
+		Connections:           sortedSetKeys(connectionSet),
+		Sources:               sortedSetKeys(sourceSet),
+		ModelTables:           compiledModelTableNames(definition.Models),
+		SemanticModels:        sortedMapKeys(definition.Models),
+		Dashboards:            sortedMapKeys(definition.DashboardDefinitions),
+		WorkspaceGroups:       sortedMapKeys(definition.Access.Groups),
+		WorkspaceRoleBindings: sortedMapKeys(definition.Access.RoleBindings),
+		Grants:                sortedMapKeys(definition.Access.Grants),
+		DataPolicies:          sortedMapKeys(definition.Access.DataPolicies),
+	}
+	changes, dependencyChanges, summary := diffAssetGraphs(
+		selected.Metadata().Graph,
+		active,
+	)
+	workspacePlan.Changes = changes
+	workspacePlan.DependencyChanges = dependencyChanges
+	workspacePlan.Summary = summary
+	return ProjectPlan{
+		Project: compiled.ID(),
+		Workspaces: []ProjectPlanWorkspace{
+			workspacePlan,
+		},
+	}, nil
+}
+
+func compiledModelTableNames(models map[string]*semanticmodel.Model) []string {
+	names := map[string]struct{}{}
+	for _, model := range models {
+		if model == nil {
+			continue
+		}
+		for table := range model.Tables {
+			names[table] = struct{}{}
+		}
+	}
+	return sortedSetKeys(names)
 }
 
 func diffAssetGraphs(authored, active workspace.AssetGraph) ([]ProjectPlanChange, []ProjectPlanDependencyChange, ProjectPlanSummary) {

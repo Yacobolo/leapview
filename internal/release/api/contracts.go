@@ -20,9 +20,69 @@ type ConnectionPin struct {
 	RevisionID string `json:"revisionId"`
 }
 
+type ProjectArtifactWorkspace struct {
+	WorkspaceID    string `json:"workspaceId"`
+	ArtifactDigest string `json:"artifactDigest"`
+}
+
+type ProjectArtifactProvenance struct {
+	SourceDigest    string                     `json:"sourceDigest"`
+	ProjectDigest   string                     `json:"projectDigest"`
+	CompilerVersion string                     `json:"compilerVersion"`
+	SchemaVersion   int32                      `json:"schemaVersion"`
+	Workspaces      []ProjectArtifactWorkspace `json:"workspaces"`
+}
+
+type CandidateProvenance struct {
+	ID       string `json:"id"`
+	Revision int64  `json:"revision"`
+	OwnerID  string `json:"ownerId"`
+}
+
+type ManagedDataPin struct {
+	ConnectionID string `json:"connectionId"`
+	RevisionID   string `json:"revisionId"`
+}
+
+type BindingEvidence struct {
+	BindingID        string `json:"bindingId"`
+	Revision         int64  `json:"revision"`
+	ValidatedVersion string `json:"validatedVersion"`
+}
+
+type TargetWorkspacePlan struct {
+	WorkspaceID     string            `json:"workspaceId"`
+	ServingStateID  string            `json:"servingStateId"`
+	ArtifactDigest  string            `json:"artifactDigest"`
+	DataRevision    string            `json:"dataRevision"`
+	DataMode        string            `json:"dataMode"`
+	ManagedDataPins []ManagedDataPin  `json:"managedDataPins"`
+	Bindings        []BindingEvidence `json:"bindings"`
+}
+
+type TargetPlanProvenance struct {
+	TargetID       string                `json:"targetId"`
+	Environment    string                `json:"environment"`
+	BaseGeneration string                `json:"baseGeneration"`
+	RuntimeVersion string                `json:"runtimeVersion"`
+	PolicyDigest   string                `json:"policyDigest"`
+	Workspaces     []TargetWorkspacePlan `json:"workspaces"`
+}
+
+type Provenance struct {
+	Version        int32                     `json:"version"`
+	Artifact       ProjectArtifactProvenance `json:"artifact"`
+	Candidate      CandidateProvenance       `json:"candidate"`
+	Plan           TargetPlanProvenance      `json:"plan"`
+	ArtifactDigest string                    `json:"artifactDigest"`
+	PlanDigest     string                    `json:"planDigest"`
+	Digest         string                    `json:"digest"`
+}
+
 type CreateRequest struct {
 	Connections   []ConnectionPin     `json:"connections"`
 	ProjectDigest string              `json:"projectDigest"`
+	Provenance    *Provenance         `json:"provenance,omitempty"`
 	Workspaces    []WorkspaceManifest `json:"workspaces"`
 }
 
@@ -37,6 +97,7 @@ type Response struct {
 	ID            string              `json:"id"`
 	ProjectDigest string              `json:"projectDigest"`
 	ProjectID     string              `json:"projectId"`
+	Provenance    *Provenance         `json:"provenance,omitempty"`
 	Status        Status              `json:"status"`
 	Workspaces    []WorkspaceManifest `json:"workspaces"`
 }

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+
+	projectartifact "github.com/flidai/leapview/internal/project/artifact"
 )
 
 func TestTargetStorePlansAndRetainsContentAddressedBlobs(t *testing.T) {
@@ -99,14 +101,23 @@ func TestTargetStoreCommitsValidatedSnapshotIdempotently(t *testing.T) {
 		}
 	}
 	var committedPath string
+	var artifactPath string
+	var projectDigest string
 	for result := range results {
 		if result.ProjectID != snapshot.ProjectID || result.Digest != snapshot.Digest {
 			t.Fatalf("stored snapshot = %#v", result)
 		}
+		if result.ProjectArtifactPath == "" || result.ProjectDigest == "" {
+			t.Fatalf("stored snapshot omits immutable project artifact: %#v", result)
+		}
 		if committedPath == "" {
 			committedPath = result.ProjectPath
+			artifactPath = result.ProjectArtifactPath
+			projectDigest = result.ProjectDigest
 		} else if result.ProjectPath != committedPath {
 			t.Fatalf("idempotent commit paths differ: %q / %q", committedPath, result.ProjectPath)
+		} else if result.ProjectArtifactPath != artifactPath || result.ProjectDigest != projectDigest {
+			t.Fatalf("idempotent project artifacts differ: %#v", result)
 		}
 	}
 	if relative, err := filepath.Rel(root, committedPath); err != nil ||
@@ -119,6 +130,48 @@ func TestTargetStoreCommitsValidatedSnapshotIdempotently(t *testing.T) {
 	}
 	if info.Mode().Perm()&0o077 != 0 {
 		t.Fatalf("committed project mode = %o, want no group/world access", info.Mode().Perm())
+	}
+	encoded, err := os.ReadFile(artifactPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled, err := projectartifact.Decode(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if compiled.ID() != snapshot.ProjectID || compiled.Digest() != projectDigest {
+		t.Fatalf("retained project artifact = id %q digest %q, want %q %q", compiled.ID(), compiled.Digest(), snapshot.ProjectID, projectDigest)
+	}
+	if bytes.Contains(encoded, []byte(filepath.Dir(committedPath))) {
+		t.Fatalf("retained project artifact contains target filesystem path %q", filepath.Dir(committedPath))
+	}
+}
+
+func TestTargetStoreRejectsTamperedRetainedProjectArtifact(t *testing.T) {
+	projectPath := filepath.Join("..", "..", "..", "dashboards", "leapview.yaml")
+	snapshot, err := (FilesystemBuilder{ProjectPath: projectPath}).Build(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewTargetStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, artifact := range snapshot.Artifacts {
+		if err := store.Put(t.Context(), artifact.Digest, bytes.NewReader(artifact.Content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	request := planRequestForSnapshot(snapshot)
+	stored, err := store.Commit(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stored.ProjectArtifactPath, []byte(`{"version":2}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Commit(t.Context(), request); err == nil {
+		t.Fatal("TargetStore.Commit() accepted a tampered retained project artifact")
 	}
 }
 

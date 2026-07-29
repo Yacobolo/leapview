@@ -13,6 +13,7 @@ import (
 
 	accesssnapshot "github.com/flidai/leapview/internal/access/snapshot"
 	"github.com/flidai/leapview/internal/platform/digest"
+	projectartifact "github.com/flidai/leapview/internal/project/artifact"
 	projectbundle "github.com/flidai/leapview/internal/project/bundle"
 	projectcompiler "github.com/flidai/leapview/internal/project/compiler"
 	"github.com/flidai/leapview/internal/release"
@@ -48,13 +49,18 @@ func (service *candidateArtifactService) Prepare(
 	request.Source.ProjectID = strings.TrimSpace(request.Source.ProjectID)
 	request.Source.ArtifactDigest = strings.TrimSpace(request.Source.ArtifactDigest)
 	request.Source.ProjectPath = strings.TrimSpace(request.Source.ProjectPath)
+	request.Source.ProjectDigest = strings.TrimSpace(request.Source.ProjectDigest)
+	request.Source.ProjectArtifactPath = strings.TrimSpace(
+		request.Source.ProjectArtifactPath,
+	)
 	if service == nil || service.states == nil || service.workspaces == nil ||
 		service.artifacts == nil || request.CandidateID == "" || request.ProjectID == "" ||
 		request.OwnerID == "" || request.Environment == "" ||
-		request.Source.ProjectPath == "" ||
+		request.Source.ProjectArtifactPath == "" ||
 		request.Source.ProjectID != request.ProjectID ||
 		request.Source.ArtifactDigest != request.ArtifactDigest ||
-		digest.ValidateSHA256Identity(request.ArtifactDigest) != nil {
+		digest.ValidateSHA256Identity(request.ArtifactDigest) != nil ||
+		digest.ValidateSHA256Identity(request.Source.ProjectDigest) != nil {
 		return release.CandidateArtifactSet{}, release.ErrCandidateArtifactInvalid
 	}
 	environment := servingstate.NormalizeEnvironment(servingstate.Environment(request.Environment))
@@ -64,21 +70,21 @@ func (service *candidateArtifactService) Prepare(
 			release.ErrCandidateArtifactInvalid,
 		)
 	}
-	authored, err := projectcompiler.LoadProject(request.Source.ProjectPath)
+	projectBytes, err := os.ReadFile(request.Source.ProjectArtifactPath)
+	if err != nil {
+		return release.CandidateArtifactSet{}, candidateArtifactUnavailable(err)
+	}
+	compiledProject, err := projectartifact.Decode(projectBytes)
 	if err != nil {
 		return release.CandidateArtifactSet{}, candidateArtifactInvalid(err)
 	}
-	if strings.TrimSpace(authored.Name) != request.ProjectID {
+	if compiledProject.ID() != request.ProjectID ||
+		compiledProject.Digest() != request.Source.ProjectDigest {
 		return release.CandidateArtifactSet{}, candidateArtifactInvalid(
-			fmt.Errorf("compiled project id does not match synchronized project"),
+			fmt.Errorf("retained project artifact does not match synchronized project"),
 		)
 	}
-	plan, err := projectcompiler.PlanProject(request.Source.ProjectPath)
-	if err != nil {
-		return release.CandidateArtifactSet{}, candidateArtifactInvalid(err)
-	}
-	workspaces := append([]projectcompiler.ProjectPlanWorkspace(nil), plan.Workspaces...)
-	sort.Slice(workspaces, func(i, j int) bool { return workspaces[i].ID < workspaces[j].ID })
+	workspaces := compiledProject.WorkspaceIDs()
 	if len(workspaces) == 0 {
 		return release.CandidateArtifactSet{}, candidateArtifactInvalid(
 			fmt.Errorf("project has no workspaces"),
@@ -90,22 +96,28 @@ func (service *candidateArtifactService) Prepare(
 	}
 	policyHash := sha256.New()
 	_, _ = fmt.Fprintf(policyHash, "%d:%s", len(request.OwnerID), request.OwnerID)
-	for _, planned := range workspaces {
+	for _, workspaceID := range workspaces {
 		if err := ctx.Err(); err != nil {
 			return release.CandidateArtifactSet{}, err
 		}
+		compiledWorkspace, ok := compiledProject.Workspace(workspaceID)
+		if !ok {
+			return release.CandidateArtifactSet{}, candidateArtifactInvalid(
+				fmt.Errorf("project has no workspace %q", workspaceID),
+			)
+		}
 		if err := service.workspaces.Ensure(ctx, workspace.EnsureInput{
-			ID: workspace.WorkspaceID(planned.ID), Title: planned.ID,
+			ID: workspace.WorkspaceID(workspaceID), Title: workspaceID,
 		}); err != nil {
 			return release.CandidateArtifactSet{}, candidateArtifactUnavailable(err)
 		}
-		base, err := service.workspaceBase(ctx, request.ProjectID, planned.ID, environment)
+		base, err := service.workspaceBase(ctx, request.ProjectID, workspaceID, environment)
 		if err != nil {
 			return release.CandidateArtifactSet{}, err
 		}
-		workspacePlan, err := projectcompiler.PlanProjectAgainstGraph(
-			request.Source.ProjectPath,
-			planned.ID,
+		workspacePlan, err := projectcompiler.PlanCompiledProjectAgainstGraph(
+			compiledProject,
+			workspaceID,
 			base.graph,
 		)
 		if err != nil {
@@ -114,14 +126,17 @@ func (service *candidateArtifactService) Prepare(
 		reuseSnapshot := base.active && base.snapshotID > 0 &&
 			len(workspacePlan.Workspaces) == 1 &&
 			!workspacePlan.Workspaces[0].Summary.MaterializationImpact
-		requirements := candidateConnectionRequirements(authored, planned)
+		requirements, err := candidateConnectionRequirements(compiledWorkspace)
+		if err != nil {
+			return release.CandidateArtifactSet{}, candidateArtifactInvalid(err)
+		}
 		if !reuseSnapshot && len(requirements) == 0 {
 			return release.CandidateArtifactSet{}, candidateArtifactInvalid(
-				fmt.Errorf("workspace %q requires data preparation but has no target connections", planned.ID),
+				fmt.Errorf("workspace %q requires data preparation but has no target connections", workspaceID),
 			)
 		}
 		state, err := service.states.Create(ctx, servingstate.CreateInput{
-			WorkspaceID: servingstate.WorkspaceID(planned.ID),
+			WorkspaceID: servingstate.WorkspaceID(workspaceID),
 			ProjectID:   request.ProjectID, Environment: environment,
 			CreatedBy: request.OwnerID, Source: servingstate.SourceCandidate,
 		})
@@ -129,10 +144,11 @@ func (service *candidateArtifactService) Prepare(
 			return release.CandidateArtifactSet{}, candidateArtifactUnavailable(err)
 		}
 		var content bytes.Buffer
-		_, expectedDigest, err := projectbundle.PackProject(
-			request.Source.ProjectPath,
+		_, expectedDigest, err := projectbundle.PackCompiledProject(
+			compiledProject,
+			request.ArtifactDigest,
 			projectbundle.PackProjectOptions{
-				WorkspaceID: planned.ID, Environment: string(environment),
+				WorkspaceID: workspaceID, Environment: string(environment),
 				ServingStateID: string(state.ID), ActiveGraph: base.graph,
 				ManagedDataRevisions: base.pins,
 			},
@@ -157,7 +173,7 @@ func (service *candidateArtifactService) Prepare(
 		}
 		restrictions, err := candidateRestrictions(
 			validated.AccessPolicyJSON,
-			planned.ID,
+			workspaceID,
 			request.OwnerID,
 		)
 		if err != nil {
@@ -179,7 +195,7 @@ func (service *candidateArtifactService) Prepare(
 			connections = nil
 		}
 		result.Workspaces = append(result.Workspaces, release.CandidateArtifactWorkspace{
-			WorkspaceID: planned.ID, ServingStateID: string(validated.ID),
+			WorkspaceID: workspaceID, ServingStateID: string(validated.ID),
 			ArtifactDigest: validated.Digest, DataRevision: dataRevision,
 			DataMode: mode, Connections: connections,
 			Restrictions: restrictions,
@@ -187,8 +203,8 @@ func (service *candidateArtifactService) Prepare(
 		_, _ = fmt.Fprintf(
 			policyHash,
 			"%d:%s:%d:%s",
-			len(planned.ID),
-			planned.ID,
+			len(workspaceID),
+			workspaceID,
 			len(validated.AccessPolicyJSON),
 			validated.AccessPolicyJSON,
 		)
@@ -313,25 +329,48 @@ func (service *candidateArtifactService) workspaceBase(
 }
 
 func candidateConnectionRequirements(
-	authored projectcompiler.Project,
-	planned projectcompiler.ProjectPlanWorkspace,
-) []release.CandidateConnectionRequirement {
+	compiled projectartifact.Workspace,
+) ([]release.CandidateConnectionRequirement, error) {
+	definition := compiled.Manifest()
+	if definition == nil {
+		return nil, fmt.Errorf("compiled workspace definition is required")
+	}
+	kinds := map[string]string{}
+	for _, model := range definition.Models {
+		if model == nil {
+			return nil, fmt.Errorf("compiled workspace contains a nil semantic model")
+		}
+		for connectionID, connection := range model.Connections {
+			kind := strings.TrimSpace(connection.Kind)
+			if connectionID == "" || kind == "" {
+				return nil, fmt.Errorf("compiled workspace contains invalid connection metadata")
+			}
+			if existing, ok := kinds[connectionID]; ok && existing != kind {
+				return nil, fmt.Errorf(
+					"compiled workspace connection %q has conflicting connector kinds",
+					connectionID,
+				)
+			}
+			kinds[connectionID] = kind
+		}
+	}
+	connectionIDs := make([]string, 0, len(kinds))
+	for connectionID := range kinds {
+		connectionIDs = append(connectionIDs, connectionID)
+	}
+	sort.Strings(connectionIDs)
 	requirements := make(
 		[]release.CandidateConnectionRequirement,
 		0,
-		len(planned.Connections),
+		len(connectionIDs),
 	)
-	for _, connectionID := range planned.Connections {
-		connection, ok := authored.Connections[connectionID]
-		if !ok {
-			continue
-		}
+	for _, connectionID := range connectionIDs {
 		requirements = append(requirements, release.CandidateConnectionRequirement{
 			LogicalConnectionID: connectionID,
-			ConnectorKind:       strings.TrimSpace(connection.Kind),
+			ConnectorKind:       kinds[connectionID],
 		})
 	}
-	return requirements
+	return requirements, nil
 }
 
 func cloneCandidatePins(values map[string]string) map[string]string {

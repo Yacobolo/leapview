@@ -128,7 +128,8 @@ func (synchronizer *candidateSourceSynchronizer) Commit(
 	synchronizer.mu.Unlock()
 	return project.CandidateSourceSnapshot{
 		ProjectID: stored.ProjectID, ArtifactDigest: stored.Digest,
-		ProjectPath: stored.ProjectPath,
+		ProjectPath: stored.ProjectPath, ProjectDigest: stored.ProjectDigest,
+		ProjectArtifactPath: stored.ProjectArtifactPath,
 	}, nil
 }
 

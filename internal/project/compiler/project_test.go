@@ -111,6 +111,52 @@ spec:
 	}
 }
 
+func TestCompileProjectArtifactIsIndependentOfCheckoutAndServingState(t *testing.T) {
+	files := map[string]string{
+		"leapview.yaml":                                    projectYAML(),
+		"connections/olist.yaml":                           connectionYAML("olist"),
+		"sources/olist.orders.yaml":                        sourceYAML("olist.orders", "orders.csv", "order_id"),
+		"sources/olist.customers.yaml":                     sourceYAML("olist.customers", "customers.csv", "customer_id"),
+		"workspaces/sales/workspace.yaml":                  workspaceYAML("sales"),
+		"workspaces/sales/models/orders.yaml":              modelTableYAML("sales", "orders", "olist.orders", "order_id", "SELECT order_id, order_status AS status FROM source.\"olist.orders\""),
+		"workspaces/sales/semantic-models/sales.yaml":      semanticModelYAML("sales", "orders", "order_count"),
+		"workspaces/sales/dashboards/executive-sales.yaml": dashboardYAML("sales", "executive-sales", "sales"),
+	}
+	firstPath := writeProjectFixture(t, files)
+	secondPath := writeProjectFixture(t, files)
+
+	first, err := CompileProjectArtifact(firstPath)
+	if err != nil {
+		t.Fatalf("CompileProjectArtifact(first) error = %v", err)
+	}
+	second, err := CompileProjectArtifact(secondPath)
+	if err != nil {
+		t.Fatalf("CompileProjectArtifact(second) error = %v", err)
+	}
+	if first.Digest() != second.Digest() || !bytes.Equal(first.Canonical(), second.Canonical()) {
+		t.Fatalf("environment-neutral artifacts differ:\n%s\n%s", first.Canonical(), second.Canonical())
+	}
+	for _, project := range []projectartifact.Project{first, second} {
+		compiled := mustCompiledWorkspace(t, project, "sales")
+		if compiled.Workspace.BaseDir != "" || compiled.Definition.BaseDir != "" {
+			t.Fatalf("artifact retained checkout roots: metadata=%q manifest=%q", compiled.Workspace.BaseDir, compiled.Definition.BaseDir)
+		}
+		for _, asset := range compiled.Workspace.Graph.Assets {
+			if asset.ServingStateID != "" || asset.SnapshotID != "" {
+				t.Fatalf("artifact asset %q retained serving identity: %#v", asset.ID, asset)
+			}
+			if filepath.IsAbs(asset.SourceFile) || strings.Contains(filepath.ToSlash(asset.SourceFile), filepath.ToSlash(filepath.Dir(firstPath))) {
+				t.Fatalf("artifact asset %q retained checkout path %q", asset.ID, asset.SourceFile)
+			}
+		}
+		for _, edge := range compiled.Workspace.Graph.Edges {
+			if edge.ServingStateID != "" || edge.ID != "" {
+				t.Fatalf("artifact edge retained serving identity: %#v", edge)
+			}
+		}
+	}
+}
+
 func TestCompileRequiresExplicitWorkspaceID(t *testing.T) {
 	projectPath := writeProjectFixture(t, map[string]string{
 		"leapview.yaml":                                    projectYAML(),

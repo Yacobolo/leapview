@@ -15,13 +15,13 @@ import (
 
 	"github.com/flidai/leapview/internal/platform/digest"
 	projectcompiler "github.com/flidai/leapview/internal/project/compiler"
-	"github.com/flidai/leapview/internal/workspace"
 )
 
 const (
 	maxTargetBlobBytes     = 16 << 20
 	maxTargetSnapshotBytes = 64 << 20
 	maxTargetSnapshotFiles = 10_000
+	targetProjectArtifact  = "project.artifact.json"
 )
 
 // TargetStore retains content-addressed authoring blobs and atomically
@@ -34,9 +34,11 @@ type TargetStore struct {
 }
 
 type StoredSnapshot struct {
-	ProjectID   string
-	Digest      string
-	ProjectPath string
+	ProjectID           string
+	Digest              string
+	ProjectPath         string
+	ProjectDigest       string
+	ProjectArtifactPath string
 }
 
 func NewTargetStore(root string) (*TargetStore, error) {
@@ -206,9 +208,7 @@ func (store *TargetStore) Commit(
 		}
 	}
 	projectPath := filepath.Join(sourceRoot, filepath.FromSlash(request.ProjectFile))
-	compiled, err := projectcompiler.CompileProject(projectPath, projectcompiler.Options{
-		ServingStateID: workspace.ServingStateID("candidate-source-snapshot"),
-	})
+	compiled, err := projectcompiler.CompileProjectArtifact(projectPath)
 	if err != nil {
 		return StoredSnapshot{}, err
 	}
@@ -217,6 +217,13 @@ func (store *TargetStore) Commit(
 			"compiled project id %q does not match synchronized project %q",
 			compiled.ID(), request.ProjectID,
 		)
+	}
+	if err := os.WriteFile(
+		filepath.Join(staging, targetProjectArtifact),
+		compiled.Canonical(),
+		0o600,
+	); err != nil {
+		return StoredSnapshot{}, err
 	}
 	manifest, err := json.Marshal(request)
 	if err != nil {
@@ -231,7 +238,7 @@ func (store *TargetStore) Commit(
 		}
 		return StoredSnapshot{}, err
 	}
-	return storedSnapshot(request, destination), nil
+	return storedSnapshot(request, destination, compiled.Digest()), nil
 }
 
 func (store *TargetStore) verifyStoredSnapshot(
@@ -252,16 +259,21 @@ func (store *TargetStore) verifyStoredSnapshot(
 		}
 	}
 	projectPath := filepath.Join(sourceRoot, filepath.FromSlash(request.ProjectFile))
-	compiled, err := projectcompiler.CompileProject(projectPath, projectcompiler.Options{
-		ServingStateID: workspace.ServingStateID("candidate-source-snapshot"),
-	})
+	compiled, err := projectcompiler.CompileProjectArtifact(projectPath)
 	if err != nil {
 		return StoredSnapshot{}, err
 	}
 	if compiled.ID() != request.ProjectID {
 		return StoredSnapshot{}, fmt.Errorf("stored project identity changed")
 	}
-	return storedSnapshot(request, directory), nil
+	retained, err := os.ReadFile(filepath.Join(directory, targetProjectArtifact))
+	if err != nil {
+		return StoredSnapshot{}, err
+	}
+	if string(retained) != string(compiled.Canonical()) {
+		return StoredSnapshot{}, fmt.Errorf("retained project artifact does not match synchronized sources")
+	}
+	return storedSnapshot(request, directory, compiled.Digest()), nil
 }
 
 func normalizePlanRequest(request SynchronizationPlanRequest) (SynchronizationPlanRequest, error) {
@@ -372,10 +384,15 @@ func copyRetainedBlob(sourcePath, targetPath, identity string) (int64, error) {
 	return size, closeErr
 }
 
-func storedSnapshot(request SynchronizationPlanRequest, directory string) StoredSnapshot {
+func storedSnapshot(
+	request SynchronizationPlanRequest,
+	directory, projectDigest string,
+) StoredSnapshot {
+	artifactPath := filepath.Join(directory, targetProjectArtifact)
 	return StoredSnapshot{
 		ProjectID: request.ProjectID, Digest: request.ArtifactDigest,
-		ProjectPath: filepath.Join(directory, "source", filepath.FromSlash(request.ProjectFile)),
+		ProjectPath:   filepath.Join(directory, "source", filepath.FromSlash(request.ProjectFile)),
+		ProjectDigest: projectDigest, ProjectArtifactPath: artifactPath,
 	}
 }
 
