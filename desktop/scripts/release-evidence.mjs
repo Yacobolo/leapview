@@ -28,7 +28,12 @@ export function validateReleasePolicy(policy, packageDocument) {
   }
   if (
     policy.applicationVersion !== packageDocument.version ||
-    policy.packageFormat !== "zip"
+    policy.installationScope !== "per-machine" ||
+    Object.keys(policy.packageFormats ?? {}).sort().join(",") !==
+      "darwin,linux,win32" ||
+    policy.packageFormats.darwin !== "pkg" ||
+    policy.packageFormats.linux !== "deb" ||
+    policy.packageFormats.win32 !== "msi"
   ) {
     throw new Error("release policy does not match the application package");
   }
@@ -327,7 +332,7 @@ export async function createReleaseManifest({
     toolchain: policy.runtime,
     artifact: {
       fileName: basename(artifactPath),
-      format: policy.packageFormat,
+      format: packageVerification.packageFormat,
       platform: packageVerification.platform,
       architecture: packageVerification.architecture,
       bytes: artifact.bytes,
@@ -395,12 +400,14 @@ async function generate() {
   validateReleasePolicy(policy, packageDocument);
   assertPackageVerification(packageVerification, policy);
 
+  const packageFormat =
+    policy.packageFormats[packageVerification.platform];
   const artifacts = await findFiles(join(out, "make"), (path) =>
-    path.endsWith(".zip"),
+    path.toLowerCase().endsWith(`.${packageFormat}`),
   );
   if (artifacts.length !== 1) {
     throw new Error(
-      `expected exactly one ZIP candidate, found ${artifacts.length}`,
+      `expected exactly one ${packageFormat} installer, found ${artifacts.length}`,
     );
   }
   const packageRoots = (await readdir(out, { withFileTypes: true }))
@@ -482,11 +489,22 @@ async function generate() {
 function assertPackageVerification(verification, policy) {
   if (
     verification?.schemaVersion !== 1 ||
-    verification.packageFormat !== policy.packageFormat ||
+    verification.packageFormat !==
+      policy.packageFormats?.[verification.platform] ||
     verification.asarOnly !== policy.hardening.asarOnly ||
     verification.startup !== "trusted-shell-ready"
   ) {
     throw new Error("package verification report is incomplete");
+  }
+  if (
+    verification.installer?.format !== verification.packageFormat ||
+    verification.installer?.scope !== policy.installationScope ||
+    verification.installer?.policyIntegration !==
+      "administrator-owned-retained" ||
+    verification.installer?.protocolIntegration !==
+      "installer-owned-quoted-single-url"
+  ) {
+    throw new Error("installer verification report is incomplete");
   }
   for (const runtime of ["electron", "chromium", "node"]) {
     if (verification.runtime?.[runtime] !== policy.runtime[runtime]) {

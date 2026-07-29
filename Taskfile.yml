@@ -145,6 +145,15 @@ tasks:
     cmds:
       - bun run package
 
+  desktop:make:
+    desc: Build and verify the native LeapView Desktop installer for the current platform
+    deps:
+      - desktop:deps
+    dir: desktop
+    cmds:
+      - bun run make
+      - bun run evidence
+
   site:build:
     desc: Build the LeapView public site assets from generated contracts
     cmds:

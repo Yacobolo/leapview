@@ -7,8 +7,9 @@ the real LeapView UI in an isolated persistent browser session.
 
 ## Connect to a deployed instance
 
-1. Build the application with `task desktop:package`.
-2. Open the application under `desktop/out/`.
+1. Build the application with `task desktop:make`.
+2. Install the `.pkg` on macOS, `.msi` on Windows, or `.deb` on Ubuntu
+   from `desktop/out/make/`.
 3. Enter the deployed instance's canonical HTTPS URL, for example
    `https://analytics.company.com`.
 4. Complete authentication in the system browser.
@@ -41,10 +42,38 @@ identity mismatch fails closed before any remote content is opened.
   Windows, macOS, and Linux. Enterprise proxy and private-CA qualification must
   pass on those same platform runners before a release is promoted.
 
+## Installation and managed deployment
+
+Production packages install LeapView per machine:
+
+- macOS uses a `.pkg` and installs the app in `/Applications`;
+- Windows uses a WiX `.msi` and installs the app in Program Files;
+- Ubuntu uses a `.deb` and installs the app and its desktop entry through
+  `dpkg`.
+
+The installers register `leapview-desktop` with one quoted URL argument. The
+packaged app only verifies that registration; it does not rewrite user or
+machine protocol state at runtime. ZIPs remain diagnostic, non-installing
+artifacts and are not eligible for publication.
+
+Managed policy is read from `/Library/Application Support/LeapView` on macOS,
+`/etc/leapview` on Linux, and `FOLDERID_ProgramData\LeapView` on Windows.
+Install and repair create or repair the policy directory without creating a
+policy file. Existing policy survives upgrade, repair, application removal,
+and package uninstall. Administrators remove managed policy separately when
+decommissioning a device.
+
+The Windows client uses a bundled native helper to resolve
+`FOLDERID_ProgramData` and verify the owner and DACL of both the directory and
+policy file. The POSIX client verifies root ownership and rejects group- or
+world-writable policy. Missing policy means open mode; malformed policy,
+untrusted ownership, a symlink, a helper failure, or ACL drift locks all
+connection actions.
+
 ## Release candidates and supply-chain evidence
 
-The cross-platform Electron proof produces a ZIP candidate for each qualified
-target together with:
+The cross-platform Electron proof produces a native installer candidate for
+each qualified target together with:
 
 - an SPDX 2.3 JSON SBOM covering the complete Bun lock graph, the embedded
   Electron, Chromium, and Node runtimes, and every file in the packaged
@@ -66,7 +95,7 @@ After downloading one candidate artifact from GitHub Actions, verify the local
 bundle from its root:
 
 ```sh
-artifact="$(find out/make -type f -name '*.zip' -print -quit)"
+artifact="$(find out/make -type f \\( -name '*.pkg' -o -name '*.msi' -o -name '*.deb' \\) -print -quit)"
 manifest="$(find out/evidence -type f -name '*.release.json' -print -quit)"
 sbom="$(find out/evidence -type f -name '*.spdx.json' -print -quit)"
 node out/evidence/verify-release-evidence.mjs \
@@ -82,7 +111,8 @@ gh attestation verify "$manifest" --repo flidai/leapview
 The `gh attestation` checks apply to main-branch candidates; pull-request
 candidates intentionally have no privileged attestation job.
 
-`desktop/release-policy.json` is the reviewed source of truth. The current
+`desktop/release-policy.json` is the reviewed source of truth for package
+format, machine scope, runtime, hardening, and support. The current
 candidate support floor is macOS 13 on Intel and Apple silicon, Windows 10 on
 x64, and Ubuntu 22.04 LTS on x64. Only the Intel macOS, Windows x64, and Linux
 x64 candidates are presently built in CI; Apple-silicon distribution remains

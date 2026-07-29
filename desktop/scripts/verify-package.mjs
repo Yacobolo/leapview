@@ -198,7 +198,7 @@ const verificationReport = {
   schemaVersion: 1,
   platform: platformName,
   architecture: process.arch,
-  packageFormat: releasePolicy.packageFormat,
+  packageFormat: releasePolicy.packageFormats[platformName],
   asarOnly: true,
   runtime: {
     electron: packagedElectronVersion,

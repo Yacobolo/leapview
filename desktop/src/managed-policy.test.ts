@@ -3,6 +3,7 @@ import {
   chmod,
   mkdtemp,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,6 +14,7 @@ import {
   policyAllowsOrigin,
   policyAllowsProfile,
   policyManagesOrigin,
+  probeWindowsDesktopPolicy,
   resolveDesktopPolicySource,
 } from "./managed-policy.js";
 
@@ -39,6 +41,7 @@ describe("resolveDesktopPolicySource", () => {
     ).toEqual({
       path: "/Library/Application Support/LeapView/desktop-policy.json",
       requireAdministratorOwner: true,
+      integrity: "unchecked",
     });
     expect(
       resolveDesktopPolicySource({
@@ -51,6 +54,7 @@ describe("resolveDesktopPolicySource", () => {
     ).toEqual({
       path: "/etc/leapview/desktop-policy.json",
       requireAdministratorOwner: true,
+      integrity: "unchecked",
     });
     expect(
       resolveDesktopPolicySource({
@@ -60,10 +64,15 @@ describe("resolveDesktopPolicySource", () => {
           ProgramData: String.raw`D:\ProgramData`,
           LEAPVIEW_DESKTOP_POLICY_PATH: String.raw`C:\attacker.json`,
         },
+        windowsProbe: {
+          policyPath: String.raw`D:\ProgramData\LeapView\desktop-policy.json`,
+          security: "secure",
+        },
       }),
     ).toEqual({
-      path: String.raw`C:\ProgramData\LeapView\desktop-policy.json`,
+      path: String.raw`D:\ProgramData\LeapView\desktop-policy.json`,
       requireAdministratorOwner: true,
+      integrity: "verified",
     });
   });
 
@@ -79,6 +88,7 @@ describe("resolveDesktopPolicySource", () => {
     ).toEqual({
       path: "/tmp/leapview-policy.json",
       requireAdministratorOwner: false,
+      integrity: "unchecked",
     });
     expect(
       resolveDesktopPolicySource({
@@ -91,7 +101,80 @@ describe("resolveDesktopPolicySource", () => {
     ).toEqual({
       path: null,
       requireAdministratorOwner: false,
+      integrity: "unchecked",
     });
+  });
+
+  test("locks packaged Windows policy when the native probe is missing or insecure", async () => {
+    const missingProbe = resolveDesktopPolicySource({
+      platform: "win32",
+      packaged: true,
+    });
+    expect(missingProbe).toEqual({
+      path: null,
+      requireAdministratorOwner: true,
+      integrity: "invalid",
+    });
+    expect(
+      (
+        await loadDesktopPolicy(missingProbe, {
+          allowLoopbackHTTP: false,
+        })
+      ).mode,
+    ).toBe("locked");
+    expect(
+      resolveDesktopPolicySource({
+        platform: "win32",
+        packaged: true,
+        windowsProbe: {
+          policyPath: String.raw`C:\ProgramData\LeapView\desktop-policy.json`,
+          security: "insecure",
+        },
+      }).integrity,
+    ).toBe("invalid");
+  });
+});
+
+describe("probeWindowsDesktopPolicy", () => {
+  test("accepts only exact bounded native helper output", async () => {
+    const policyPath =
+      String.raw`D:\ProgramData\LeapView\desktop-policy.json`;
+    expect(
+      await probeWindowsDesktopPolicy("C:\\resources", async (executable) => {
+        expect(executable).toBe(
+          "C:\\resources/leapview-windows-policy.exe",
+        );
+        return {
+          stdout: `${JSON.stringify({
+            schemaVersion: 1,
+            policyPath,
+            security: "missing",
+          })}\n`,
+        };
+      }),
+    ).toEqual({ policyPath, security: "missing" });
+    for (const output of [
+      "{}",
+      JSON.stringify({
+        schemaVersion: 1,
+        policyPath: String.raw`C:\attacker.json`,
+        security: "secure",
+      }),
+      JSON.stringify({
+        schemaVersion: 1,
+        policyPath,
+        security: "secure",
+        command: "attacker",
+      }),
+      "x".repeat(5 * 1024),
+    ]) {
+      expect(
+        await probeWindowsDesktopPolicy(
+          "C:\\resources",
+          async () => ({ stdout: output }),
+        ),
+      ).toBeNull();
+    }
   });
 });
 
@@ -204,6 +287,31 @@ describe("loadDesktopPolicy", () => {
         ).toBe("locked");
       }
       await writeFile(path, "x".repeat(65 * 1024), { mode: 0o600 });
+      expect(
+        (
+          await loadDesktopPolicy(
+            { path, requireAdministratorOwner: false },
+            { allowLoopbackHTTP: false },
+          )
+        ).mode,
+      ).toBe("locked");
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  test("locks a policy path that has drifted to a symbolic link", async () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    const directory = await mkdtemp(join(tmpdir(), "leapview-policy-"));
+    try {
+      const target = join(directory, "target.json");
+      const path = join(directory, "desktop-policy.json");
+      await writeFile(target, JSON.stringify(managedDocument), {
+        mode: 0o600,
+      });
+      await symlink(target, path);
       expect(
         (
           await loadDesktopPolicy(

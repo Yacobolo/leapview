@@ -62,6 +62,7 @@ export async function verifyReleaseEvidence({
       "asarFiles",
       "asarOnly",
       "fuses",
+      "installer",
       "packageFormat",
       "platform",
       "runtime",
@@ -118,6 +119,16 @@ export async function verifyReleaseEvidence({
       manifest.packageVerification.runtime,
       ["chromium", "electron", "node"],
       "package runtime",
+    ],
+    [
+      manifest.packageVerification.installer,
+      [
+        "format",
+        "policyIntegration",
+        "protocolIntegration",
+        "scope",
+      ],
+      "installer verification",
     ],
   ]) {
     assertExactKeys(value, expected, label);
@@ -181,7 +192,12 @@ export async function verifyReleaseEvidence({
     manifest.toolchain?.electron !== policy.runtime?.electron ||
     Number.parseInt(manifest.toolchain.electron, 10) !==
       policy.runtime.electronMajor ||
-    manifest.artifact?.format !== policy.packageFormat ||
+    manifest.artifact?.format !==
+      policy.packageFormats?.[manifest.artifact?.platform] ||
+    manifest.packageVerification?.installer?.format !==
+      manifest.artifact?.format ||
+    manifest.packageVerification?.installer?.scope !==
+      policy.installationScope ||
     manifest.packageVerification?.asarOnly !== policy.hardening?.asarOnly
   ) {
     throw new Error(
@@ -249,7 +265,7 @@ async function main() {
   ]) {
     if (argumentsByName[required] === undefined) {
       throw new Error(
-        "usage: verify-release-evidence.mjs --artifact <zip> --checksums <txt> --manifest <json> --policy <json> --sbom <json> [--publication]",
+        "usage: verify-release-evidence.mjs --artifact <installer> --checksums <txt> --manifest <json> --policy <json> --sbom <json> [--publication]",
       );
     }
   }

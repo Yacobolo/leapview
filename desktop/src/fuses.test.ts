@@ -54,3 +54,29 @@ test("packaged applications declare the isolated desktop deep-link scheme", () =
     },
   ]);
 });
+
+test("production makers are machine-managed installers on each supported platform", () => {
+  expect(
+    forgeConfig.makers?.map((maker) => ({
+      name: maker.name,
+      platforms: maker.platforms,
+    })),
+  ).toEqual([
+    {
+      name: "wix",
+      platforms: ["win32"],
+    },
+    {
+      name: "pkg",
+      platforms: ["darwin"],
+    },
+    {
+      name: "deb",
+      platforms: ["linux"],
+    },
+    {
+      name: "zip",
+      platforms: ["darwin", "linux", "win32"],
+    },
+  ]);
+});

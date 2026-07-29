@@ -60,8 +60,29 @@ await Promise.all(
   ),
 );
 
+if (process.platform === "win32") {
+  const nativeOutput = join(outputRoot, "native");
+  await mkdir(nativeOutput, { recursive: true });
+  run(
+    "go",
+    [
+      "build",
+      "-trimpath",
+      "-ldflags=-s -w",
+      "-o",
+      join(nativeOutput, "leapview-windows-policy.exe"),
+      "./desktop/native/windowspolicy",
+    ],
+    repositoryRoot,
+  );
+}
+
 function runNode(entrypoint, arguments_, cwd, input) {
-  const result = spawnSync(process.execPath, [entrypoint, ...arguments_], {
+  run(process.execPath, [entrypoint, ...arguments_], cwd, input);
+}
+
+function run(command, arguments_, cwd, input) {
+  const result = spawnSync(command, arguments_, {
     cwd,
     input,
     stdio:

@@ -26,7 +26,12 @@ const packageDocument = {
 const policy = {
   schemaVersion: 1,
   applicationVersion: "0.1.0",
-  packageFormat: "zip",
+  packageFormats: {
+    darwin: "pkg",
+    linux: "deb",
+    win32: "msi",
+  },
+  installationScope: "per-machine",
   runtime: {
     electron: "43.2.0",
     electronMajor: 43,
@@ -86,7 +91,7 @@ const packageVerification = {
   schemaVersion: 1,
   platform: "darwin",
   architecture: "arm64",
-  packageFormat: "zip",
+  packageFormat: "pkg",
   asarOnly: true,
   runtime: {
     electron: "43.2.0",
@@ -105,6 +110,12 @@ const packageVerification = {
     WasmTrapHandlers: "enabled",
   },
   asarFiles: 27,
+  installer: {
+    format: "pkg",
+    scope: "per-machine",
+    policyIntegration: "administrator-owned-retained",
+    protocolIntegration: "installer-owned-quoted-single-url",
+  },
   startup: "trusted-shell-ready",
 };
 
@@ -213,7 +224,7 @@ test("SPDX document covers every locked dependency and packaged runtime file", (
 
 test("release evidence verification detects artifact, SBOM, and publication tampering", async () => {
   const directory = await mkdtemp(join(tmpdir(), "leapview-evidence-test-"));
-  const artifactPath = join(directory, "LeapView-darwin-arm64-0.1.0.zip");
+  const artifactPath = join(directory, "LeapView-darwin-arm64-0.1.0.pkg");
   const sbomPath = join(directory, "release.spdx.json");
   const manifestPath = join(directory, "release.json");
   const checksumsPath = join(directory, "checksums.txt");

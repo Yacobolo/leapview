@@ -9,12 +9,15 @@
     "build": "node scripts/build.mjs",
     "evidence": "node scripts/release-evidence.mjs",
     "start": "bun run build && bun scripts/run-electron.mjs start",
-    "test": "bun test ./src && node --test scripts/release-evidence.test.mjs ../internal/app/testing/maliciousinstance/electron/policy.test.mjs",
+    "test": "bun test ./src && node --test scripts/release-evidence.test.mjs scripts/verify-installer.test.mjs ../internal/app/testing/maliciousinstance/electron/policy.test.mjs",
     "package": "bun run build && bun scripts/run-electron.mjs package && node scripts/verify-package.mjs",
-    "make": "bun run build && bun scripts/run-electron.mjs make && node scripts/verify-package.mjs"
+    "make": "bun run build && bun scripts/run-electron.mjs make && node scripts/verify-package.mjs && node scripts/verify-installer.mjs"
   },
   "devDependencies": {
     "@electron-forge/cli": "7.11.2",
+    "@electron-forge/maker-base": "7.11.2",
+    "@electron-forge/maker-deb": "7.11.2",
+    "@electron-forge/maker-wix": "7.11.2",
     "@electron-forge/maker-zip": "7.11.2",
     "@electron-forge/plugin-fuses": "7.11.2",
     "@electron-forge/shared-types": "7.11.2",

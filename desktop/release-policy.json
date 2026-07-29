@@ -1,7 +1,12 @@
 {
   "schemaVersion": 1,
   "applicationVersion": "0.1.0",
-  "packageFormat": "zip",
+  "packageFormats": {
+    "darwin": "pkg",
+    "linux": "deb",
+    "win32": "msi"
+  },
+  "installationScope": "per-machine",
   "runtime": {
     "electron": "43.2.0",
     "electronMajor": 43,

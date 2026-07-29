@@ -55,6 +55,7 @@ import {
   policyAllowsOrigin,
   policyAllowsProfile,
   policyManagesOrigin,
+  probeWindowsDesktopPolicy,
   resolveDesktopPolicySource,
   type DesktopPolicy,
 } from "./managed-policy.js";
@@ -268,10 +269,17 @@ async function start(): Promise<void> {
     updateNetworkAvailability,
     NETWORK_STATUS_POLL_MS,
   );
+  const windowsProbe =
+    process.platform === "win32" && app.isPackaged
+      ? await probeWindowsDesktopPolicy(process.resourcesPath)
+      : undefined;
   desktopPolicy = await loadDesktopPolicy(
     resolveDesktopPolicySource({
       platform: process.platform,
       packaged: app.isPackaged,
+      ...(windowsProbe === null || windowsProbe === undefined
+        ? {}
+        : { windowsProbe }),
     }),
     { allowLoopbackHTTP },
   );
@@ -813,6 +821,14 @@ function cancelAllAuthenticationTransactions(): void {
 }
 
 function registerDeepLinkProtocolClient(): void {
+  if (app.isPackaged) {
+    if (!app.isDefaultProtocolClient(DESKTOP_DEEP_LINK_SCHEME)) {
+      console.warn(
+        "LeapView Desktop installer protocol registration is unavailable.",
+      );
+    }
+    return;
+  }
   const registered =
     process.defaultApp && process.argv[1] !== undefined
       ? app.setAsDefaultProtocolClient(
@@ -820,9 +836,11 @@ function registerDeepLinkProtocolClient(): void {
           process.execPath,
           [resolve(process.argv[1])],
         )
-      : app.setAsDefaultProtocolClient(DESKTOP_DEEP_LINK_SCHEME);
+      : false;
   if (!registered) {
-    console.warn("LeapView Desktop protocol registration was unavailable.");
+    console.warn(
+      "LeapView Desktop development protocol registration was unavailable.",
+    );
   }
 }
 
