@@ -14,10 +14,11 @@ import (
 )
 
 type Module struct {
-	handler    *deploymenthttp.Handler
-	candidates *deployment.CandidateService
-	jobs       JobConfig
-	api        APIConfig
+	handler           *deploymenthttp.Handler
+	candidates        *deployment.CandidateService
+	candidateRuntimes *deployment.CandidateRuntimeService
+	jobs              JobConfig
+	api               APIConfig
 }
 
 type Principal struct {
@@ -25,6 +26,18 @@ type Principal struct {
 }
 
 type CandidateEvent = deployment.CandidateEvent
+type CandidateConnectionRequest = deployment.CandidateConnectionRequest
+type CandidateConnectionEvidence = deployment.CandidateConnectionEvidence
+type CandidateConnectionLeases = deployment.CandidateConnectionLeases
+type CandidateRuntimeRequest = deployment.CandidateRuntimeRequest
+type CandidateWorkspaceRuntime = deployment.CandidateWorkspaceRuntime
+type CandidateConnectionRequirement = deployment.CandidateConnectionRequirement
+type CandidateDataMode = deployment.CandidateDataMode
+
+const (
+	CandidateDataReuseSnapshot  = deployment.CandidateDataReuseSnapshot
+	CandidateDataRefreshSources = deployment.CandidateDataRefreshSources
+)
 
 type ServingStatePort interface {
 	deployment.ServingStateRepository
@@ -45,6 +58,9 @@ type Config struct {
 	CandidateLifetime        time.Duration
 	MaxCandidatesPerOwner    int
 	CandidateAudit           func(context.Context, deployment.CandidateEvent) error
+	CandidateConnections     deployment.CandidateConnectionLeaser
+	CandidateRuntime         deployment.CandidateRuntimeHost
+	RuntimeVersion           string
 	CurrentPrincipal         func(*http.Request) (Principal, bool)
 	Jobs                     JobConfig
 	API                      APIConfig
@@ -62,6 +78,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	}
 	var coordinator deploymenthttp.Coordinator
 	var candidates *deployment.CandidateService
+	var candidateRuntimes *deployment.CandidateRuntimeService
 	if config.Database != nil {
 		if config.States == nil || config.Runtime == nil || config.ManagedData == nil || config.DeploymentMetadata == nil {
 			return nil, errors.New("deployment states, runtime, managed data, and metadata are required")
@@ -70,6 +87,18 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		service, err := deployment.New(repository, activation, config.States, config.Runtime, config.ManagedData)
 		if err != nil {
 			return nil, err
+		}
+		if config.CandidateConnections != nil || config.CandidateRuntime != nil {
+			candidateRuntimes, err = deployment.NewCandidateRuntimeService(
+				deployment.CandidateRuntimeServiceConfig{
+					Connections:    config.CandidateConnections,
+					Runtime:        config.CandidateRuntime,
+					RuntimeVersion: config.RuntimeVersion,
+				},
+			)
+			if err != nil {
+				return nil, err
+			}
 		}
 		coordinator, err = apiadapter.New(service, config.DeploymentMetadata)
 		if err != nil {
@@ -91,7 +120,10 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	if jobs.Coordinator == nil {
 		jobs.Coordinator = coordinator
 	}
-	m := &Module{handler: deploymenthttp.NewHandler(options), candidates: candidates, jobs: jobs, api: config.API}
+	m := &Module{
+		handler: deploymenthttp.NewHandler(options), candidates: candidates,
+		candidateRuntimes: candidateRuntimes, jobs: jobs, api: config.API,
+	}
 	if m.jobs.Authorize == nil {
 		m.jobs.Authorize = m.publicationAuthorizer(config.PublicationAuthorization)
 	}
@@ -99,3 +131,13 @@ func Build(_ context.Context, config Config) (*Module, error) {
 }
 
 func (m *Module) HTTP() *deploymenthttp.Handler { return m.handler }
+
+func (m *Module) PrepareCandidateRuntime(
+	ctx context.Context,
+	request deployment.CandidateRuntimeRequest,
+) error {
+	if m == nil || m.candidateRuntimes == nil {
+		return deployment.ErrCandidateUnavailable
+	}
+	return m.candidateRuntimes.Prepare(ctx, request)
+}

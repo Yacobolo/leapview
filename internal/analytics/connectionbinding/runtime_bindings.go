@@ -33,6 +33,7 @@ type RuntimeBindingRequest struct {
 // one candidate runtime. It contains only non-secret validation evidence.
 type RuntimeBindingLeases struct {
 	once     sync.Once
+	mu       sync.RWMutex
 	leases   []ValidatedPoolLease
 	evidence []BindingEvidence
 }
@@ -118,7 +119,37 @@ func (leases *RuntimeBindingLeases) Evidence() []BindingEvidence {
 	if leases == nil {
 		return nil
 	}
+	leases.mu.RLock()
+	defer leases.mu.RUnlock()
 	return append([]BindingEvidence(nil), leases.evidence...)
+}
+
+// UsePool exposes one admitted pool generation to an in-process Analytics
+// consumer without exposing credential snapshots to Deployment or Runtime Host.
+func (leases *RuntimeBindingLeases) UsePool(
+	logical LogicalConnectionID,
+	consumer func(RuntimePool) error,
+) error {
+	if leases == nil || consumer == nil {
+		return ErrBindingNotFound
+	}
+	normalized, err := ParseLogicalConnectionID(strings.TrimSpace(logical.String()))
+	if err != nil {
+		return ErrBindingNotFound
+	}
+	leases.mu.RLock()
+	defer leases.mu.RUnlock()
+	for index, evidence := range leases.evidence {
+		if evidence.LogicalConnection != normalized || index >= len(leases.leases) {
+			continue
+		}
+		pool := leases.leases[index].Pool()
+		if pool == nil {
+			return ErrProviderUnavailable
+		}
+		return consumer(pool)
+	}
+	return ErrBindingNotFound
 }
 
 func (leases *RuntimeBindingLeases) Release() {
@@ -126,10 +157,13 @@ func (leases *RuntimeBindingLeases) Release() {
 		return
 	}
 	leases.once.Do(func() {
+		leases.mu.Lock()
+		defer leases.mu.Unlock()
 		for index := len(leases.leases) - 1; index >= 0; index-- {
 			leases.leases[index].Release()
 		}
 		leases.leases = nil
+		leases.evidence = nil
 	})
 }
 

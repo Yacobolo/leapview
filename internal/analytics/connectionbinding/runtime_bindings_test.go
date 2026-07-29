@@ -150,6 +150,54 @@ func TestRuntimeBindingLeaserFailsClosedBeforePoolAcquisition(t *testing.T) {
 	}
 }
 
+func TestRuntimeBindingLeasesExposeOnlyTheValidatedLogicalPool(t *testing.T) {
+	binding := validTargetBinding(t)
+	pool := &recordingRuntimePool{}
+	directory := &recordingValidatedPoolDirectory{pool: pool}
+	leaser, err := NewRuntimeBindingLeaser(RuntimeBindingLeaserConfig{
+		Bindings: &runtimeBindingCatalog{
+			bindings: map[LogicalConnectionID]TargetBinding{
+				binding.LogicalConnectionID: binding,
+			},
+		},
+		Pools: directory,
+		Authorize: func(context.Context, string, TargetBinding) error {
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leases, err := leaser.Acquire(t.Context(), RuntimeBindingRequest{
+		Actor: "author_1", Scope: binding.Scope, TargetID: binding.TargetID,
+		Requirements: []Requirement{{
+			LogicalConnectionID: binding.LogicalConnectionID,
+			ConnectorKind:       binding.ConnectorKind,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer leases.Release()
+
+	var used RuntimePool
+	if err := leases.UsePool(binding.LogicalConnectionID, func(candidate RuntimePool) error {
+		used = candidate
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if used != pool {
+		t.Fatalf("UsePool() pool = %T %p, want validated pool %p", used, used, pool)
+	}
+	if err := leases.UsePool("reporting", func(RuntimePool) error {
+		t.Fatal("consumer called for an unleased logical connection")
+		return nil
+	}); !errors.Is(err, ErrBindingNotFound) {
+		t.Fatalf("UsePool() error = %v, want binding not found", err)
+	}
+}
+
 type runtimeBindingCatalog struct {
 	bindings map[LogicalConnectionID]TargetBinding
 }
@@ -189,6 +237,7 @@ type recordingValidatedPoolDirectory struct {
 	acquired []LogicalConnectionID
 	leases   []*recordingValidatedPoolLease
 	failOn   LogicalConnectionID
+	pool     RuntimePool
 }
 
 func (directory *recordingValidatedPoolDirectory) AcquireValidated(
@@ -203,7 +252,11 @@ func (directory *recordingValidatedPoolDirectory) AcquireValidated(
 	evidence := binding.Evidence()
 	evidence.ValidatedVersion = "provider-v1"
 	evidence.Health = HealthHealthy
-	lease := &recordingValidatedPoolLease{evidence: evidence}
+	pool := directory.pool
+	if pool == nil {
+		pool = &recordingRuntimePool{}
+	}
+	lease := &recordingValidatedPoolLease{evidence: evidence, pool: pool}
 	directory.leases = append(directory.leases, lease)
 	return lease, nil
 }
@@ -211,9 +264,10 @@ func (directory *recordingValidatedPoolDirectory) AcquireValidated(
 type recordingValidatedPoolLease struct {
 	evidence BindingEvidence
 	releases int
+	pool     RuntimePool
 }
 
-func (*recordingValidatedPoolLease) Pool() RuntimePool { return &recordingRuntimePool{} }
+func (lease *recordingValidatedPoolLease) Pool() RuntimePool { return lease.pool }
 func (lease *recordingValidatedPoolLease) Evidence() BindingEvidence {
 	return lease.evidence
 }

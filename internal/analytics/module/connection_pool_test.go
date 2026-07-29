@@ -3,10 +3,12 @@ package module
 import (
 	"context"
 	"errors"
+	"maps"
 	"testing"
 	"time"
 
 	"github.com/flidai/leapview/internal/analytics/connectionbinding"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 )
 
 func TestConnectionAdministrationComposesTargetOwnedValidatedPoolDirectory(t *testing.T) {
@@ -119,6 +121,144 @@ func TestConnectionAdministrationRejectsBindingsForAnotherTarget(t *testing.T) {
 	})
 	if !errors.Is(err, connectionbinding.ErrUnauthorizedBinding) {
 		t.Fatalf("cross-target Get() error = %v", err)
+	}
+}
+
+func TestCandidateRuntimeBindingRegistrationMakesOnlyItsValidatedGenerationAvailable(t *testing.T) {
+	now := time.Date(2026, 7, 29, 20, 0, 0, 0, time.UTC)
+	binding := modulePoolBinding(t, now)
+	module := &Module{
+		connectionBindings: &moduleBindingCatalog{binding: binding},
+		targetResolvers: connectionbinding.ResolverSet{
+			Infisical: &moduleCredentialResolver{snapshot: modulePoolSnapshot(t, now)},
+		},
+		targetID: binding.TargetID, targetEnvironment: binding.Scope.Environment,
+		targetClass:       connectionbinding.TargetProduction,
+		connectionFactory: &moduleRuntimePoolFactory{},
+	}
+	t.Cleanup(func() { _ = module.Close() })
+	leaser, err := module.NewRuntimeBindingLeaser(RuntimeBindingLeaserConfig{
+		Authorize: func(context.Context, string, ConnectionTargetBinding) error {
+			return nil
+		},
+		Now: func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leases, err := leaser.Acquire(t.Context(), RuntimeBindingRequest{
+		Actor: "author_1", Scope: binding.Scope, TargetID: binding.TargetID,
+		Requirements: []ConnectionRequirement{{
+			LogicalConnectionID: binding.LogicalConnectionID,
+			ConnectorKind:       binding.ConnectorKind,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registration, err := module.BindCandidateRuntime(
+		"cand_1",
+		binding.Scope.WorkspaceID,
+		leases,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver, ok := module.candidateRuntimeConnectionResolver(
+		"cand_1",
+		binding.Scope.WorkspaceID,
+	)
+	if !ok {
+		t.Fatal("candidate resolver was not registered")
+	}
+	resolved, err := resolver.Resolve(
+		t.Context(),
+		binding.LogicalConnectionID.String(),
+		semanticmodel.Connection{Kind: binding.ConnectorKind},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Host != binding.Endpoint.Host ||
+		resolved.Auth["password"] != "source-secret" {
+		t.Fatalf("resolved candidate connection = %#v", resolved)
+	}
+	clear(resolved.Auth)
+	if err := registration.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := module.candidateRuntimeConnectionResolver(
+		"cand_1",
+		binding.Scope.WorkspaceID,
+	); ok {
+		t.Fatal("candidate resolver remained registered after lifetime close")
+	}
+}
+
+func TestCandidateRuntimeBindingReplacementRemovalIsGenerationSafe(t *testing.T) {
+	now := time.Date(2026, 7, 29, 20, 0, 0, 0, time.UTC)
+	binding := modulePoolBinding(t, now)
+	module := &Module{
+		connectionBindings: &moduleBindingCatalog{binding: binding},
+		targetResolvers: connectionbinding.ResolverSet{
+			Infisical: &moduleCredentialResolver{snapshot: modulePoolSnapshot(t, now)},
+		},
+		targetID: binding.TargetID, targetEnvironment: binding.Scope.Environment,
+		targetClass:       connectionbinding.TargetProduction,
+		connectionFactory: &moduleRuntimePoolFactory{},
+	}
+	t.Cleanup(func() { _ = module.Close() })
+	leaser, err := module.NewRuntimeBindingLeaser(RuntimeBindingLeaserConfig{
+		Authorize: func(context.Context, string, ConnectionTargetBinding) error {
+			return nil
+		},
+		Now: func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	acquire := func() *RuntimeBindingLeases {
+		leases, err := leaser.Acquire(t.Context(), RuntimeBindingRequest{
+			Actor: "author_1", Scope: binding.Scope, TargetID: binding.TargetID,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return leases
+	}
+	first, err := module.BindCandidateRuntime(
+		"cand_1",
+		binding.Scope.WorkspaceID,
+		acquire(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := module.BindCandidateRuntime(
+		"cand_1",
+		binding.Scope.WorkspaceID,
+		acquire(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := module.candidateRuntimeConnectionResolver(
+		"cand_1",
+		binding.Scope.WorkspaceID,
+	); !ok {
+		t.Fatal("retiring the replaced registration removed the current generation")
+	}
+	if err := second.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := module.candidateRuntimeConnectionResolver(
+		"cand_1",
+		binding.Scope.WorkspaceID,
+	); ok {
+		t.Fatal("current registration remained after close")
 	}
 }
 
@@ -253,21 +393,47 @@ type moduleRuntimePoolFactory struct {
 }
 
 func (factory *moduleRuntimePoolFactory) Prepare(
-	context.Context,
-	connectionbinding.TargetBinding,
-	connectionbinding.CredentialSnapshot,
+	_ context.Context,
+	binding connectionbinding.TargetBinding,
+	snapshot connectionbinding.CredentialSnapshot,
 ) (connectionbinding.RuntimePool, error) {
 	factory.calls++
-	factory.pool = &moduleRuntimePool{}
+	factory.pool = &moduleRuntimePool{
+		connection: semanticmodel.Connection{
+			Kind: binding.ConnectorKind, Host: binding.Endpoint.Host,
+			Port: binding.Endpoint.Port, Database: binding.Endpoint.Database,
+		},
+	}
+	if err := snapshot.Use(func(values map[string]string) error {
+		factory.pool.connection.Auth = make(semanticmodel.ConnectionAuth, len(values))
+		for key, value := range values {
+			factory.pool.connection.Auth[key] = value
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
 	return factory.pool, nil
 }
 
 type moduleRuntimePool struct {
-	closed bool
+	closed     bool
+	connection semanticmodel.Connection
 }
 
 func (*moduleRuntimePool) HealthCheck(context.Context) error { return nil }
+func (pool *moduleRuntimePool) Resolve(
+	_ context.Context,
+	_ string,
+	logical semanticmodel.Connection,
+) (semanticmodel.Connection, error) {
+	resolved := pool.connection
+	resolved.Path = logical.Path
+	resolved.Auth = maps.Clone(pool.connection.Auth)
+	return resolved, nil
+}
 func (pool *moduleRuntimePool) Close() error {
+	clear(pool.connection.Auth)
 	pool.closed = true
 	return nil
 }

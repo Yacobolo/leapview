@@ -68,6 +68,12 @@ func (m *Module) PrepareAndRegisterCandidate(
 ) error {
 	return m.registry.PrepareAndRegisterCandidate(ctx, input)
 }
+func (m *Module) PrepareAndRegisterCandidateSet(
+	ctx context.Context,
+	inputs []runtimehost.CandidatePreparation,
+) error {
+	return m.registry.PrepareAndRegisterCandidateSet(ctx, inputs)
+}
 func (m *Module) RegisterPreparedCandidate(
 	registration runtimehost.CandidateRegistration,
 	candidate servingstate.PreparedRuntime,

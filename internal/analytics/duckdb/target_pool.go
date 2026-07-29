@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"github.com/flidai/leapview/internal/analytics/connectionbinding"
 	"github.com/flidai/leapview/internal/analytics/connectors"
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	analyticsruntime "github.com/flidai/leapview/internal/analytics/runtime"
 )
 
 type TargetRuntimeSession interface {
@@ -135,7 +137,9 @@ func (factory *TargetRuntimePoolFactory) Prepare(
 		}
 	}
 	closeOnFailure = false
-	return &targetRuntimePool{session: session}, nil
+	return &targetRuntimePool{
+		session: session, connection: cloneTargetConnection(connection),
+	}, nil
 }
 
 func validateDatabaseProbeBinding(binding connectionbinding.TargetBinding, requireTLS bool) error {
@@ -171,9 +175,12 @@ func secureDatabaseTLSMode(kind, mode string) bool {
 }
 
 type targetRuntimePool struct {
-	mu      sync.Mutex
-	session TargetRuntimeSession
+	mu         sync.Mutex
+	session    TargetRuntimeSession
+	connection semanticmodel.Connection
 }
+
+var _ analyticsruntime.ConnectionResolver = (*targetRuntimePool)(nil)
 
 type isolatedTargetRuntimeSession struct {
 	connection *sql.Conn
@@ -225,6 +232,49 @@ func (pool *targetRuntimePool) HealthCheck(ctx context.Context) error {
 	return err
 }
 
+func (pool *targetRuntimePool) Resolve(
+	ctx context.Context,
+	name string,
+	logical semanticmodel.Connection,
+) (semanticmodel.Connection, error) {
+	if err := ctx.Err(); err != nil {
+		return semanticmodel.Connection{}, err
+	}
+	if pool == nil {
+		return semanticmodel.Connection{}, connectionbinding.ErrProviderUnavailable
+	}
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	if pool.session == nil || pool.connection.Kind == "" {
+		return semanticmodel.Connection{}, connectionbinding.ErrProviderUnavailable
+	}
+	if strings.TrimSpace(logical.Kind) != pool.connection.Kind {
+		return semanticmodel.Connection{}, connectionbinding.ErrIncompatibleBinding
+	}
+	resolved := logical
+	resolved.Host = pool.connection.Host
+	resolved.Port = pool.connection.Port
+	resolved.Database = pool.connection.Database
+	resolved.Username = pool.connection.Username
+	resolved.SSLMode = pool.connection.SSLMode
+	resolved.Scope = pool.connection.Scope
+	resolved.Credentials = semanticmodel.ConnectionCredentials{}
+	resolved.Options = maps.Clone(logical.Options)
+	if resolved.Options == nil && len(pool.connection.Options) > 0 {
+		resolved.Options = make(map[string]any, len(pool.connection.Options))
+	}
+	for key, value := range pool.connection.Options {
+		resolved.Options[key] = value
+	}
+	resolved.Auth = maps.Clone(pool.connection.Auth)
+	validated, err := resolved.Validate(strings.TrimSpace(name))
+	if err != nil {
+		clear(resolved.Auth)
+		return semanticmodel.Connection{}, connectionbinding.ErrIncompatibleBinding
+	}
+	return validated, nil
+}
+
 func (pool *targetRuntimePool) Close() error {
 	if pool == nil {
 		return nil
@@ -232,9 +282,18 @@ func (pool *targetRuntimePool) Close() error {
 	pool.mu.Lock()
 	session := pool.session
 	pool.session = nil
+	clear(pool.connection.Auth)
+	pool.connection = semanticmodel.Connection{}
 	pool.mu.Unlock()
 	if session == nil {
 		return nil
 	}
 	return session.Close()
+}
+
+func cloneTargetConnection(connection semanticmodel.Connection) semanticmodel.Connection {
+	connection.Auth = maps.Clone(connection.Auth)
+	connection.Options = maps.Clone(connection.Options)
+	connection.Defaults.Options = maps.Clone(connection.Defaults.Options)
+	return connection
 }

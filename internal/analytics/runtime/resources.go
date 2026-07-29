@@ -22,6 +22,12 @@ type WorkspaceDatabase interface {
 	CommitTransaction(context.Context, string, map[string]string, func(transaction.Transaction) error) (int64, error)
 }
 
+// ConnectionResolver supplies a fully target-bound connection only while an
+// admitted Analytics runtime holds the validated pool generation that owns it.
+type ConnectionResolver interface {
+	Resolve(context.Context, string, semanticmodel.Connection) (semanticmodel.Connection, error)
+}
+
 // WorkspaceRequest describes a governed analytical workspace without exposing
 // DuckDB construction or cache implementation details to consumer capabilities.
 type WorkspaceRequest struct {

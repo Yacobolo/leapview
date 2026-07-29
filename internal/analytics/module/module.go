@@ -97,18 +97,19 @@ func (s *QueryAuditSurface) Recorder() queryaudit.Recorder {
 }
 
 type Module struct {
-	environment        *analyticsducklake.Environment
-	cache              *resultcache.Pool
-	queryAudit         queryaudit.Repository
-	connectionBindings connectionbinding.BindingCatalog
-	credentials        analyticsduckdb.CredentialResolver
-	targetResolvers    connectionbinding.ResolverSet
-	targetID           string
-	targetEnvironment  string
-	targetClass        connectionbinding.TargetClass
-	connectionFactory  connectionbinding.RuntimePoolFactory
-	connectionPoolsMu  sync.Mutex
-	connectionPools    *connectionbinding.PoolDirectory
+	environment              *analyticsducklake.Environment
+	cache                    *resultcache.Pool
+	queryAudit               queryaudit.Repository
+	connectionBindings       connectionbinding.BindingCatalog
+	credentials              analyticsduckdb.CredentialResolver
+	targetResolvers          connectionbinding.ResolverSet
+	targetID                 string
+	targetEnvironment        string
+	targetClass              connectionbinding.TargetClass
+	connectionFactory        connectionbinding.RuntimePoolFactory
+	connectionPoolsMu        sync.Mutex
+	connectionPools          *connectionbinding.PoolDirectory
+	candidateRuntimeBindings candidateRuntimeBindingRegistry
 }
 
 func Build(ctx context.Context, config Config) (*Module, error) {

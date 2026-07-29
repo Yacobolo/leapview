@@ -16,6 +16,7 @@ type AuditEventInput = access.AuditEventInput
 const (
 	PrivilegeViewItem                 = access.PrivilegeViewItem
 	PrivilegeDeploy                   = access.PrivilegeDeploy
+	PrivilegePreviewData              = access.PrivilegePreviewData
 	PrivilegeManageConnectionMetadata = access.PrivilegeManageConnectionMetadata
 	PrivilegeTestConnection           = access.PrivilegeTestConnection
 	PrivilegeViewConnectionHealth     = access.PrivilegeViewConnectionHealth

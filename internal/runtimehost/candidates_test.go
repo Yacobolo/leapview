@@ -248,6 +248,178 @@ func TestCandidateRuntimeRejectsRegistrationUnderDifferentCompatibility(t *testi
 	}
 }
 
+func TestCandidateRuntimeSetReplacesEveryWorkspaceAsOneGeneration(t *testing.T) {
+	now := time.Date(2026, 7, 29, 17, 0, 0, 0, time.UTC)
+	repo := newFakeRegistryRepo()
+	for _, state := range []struct {
+		id        servingstate.ID
+		workspace servingstate.WorkspaceID
+		snapshot  int64
+	}{
+		{id: "sales_1", workspace: "sales", snapshot: 11},
+		{id: "ops_1", workspace: "operations", snapshot: 12},
+		{id: "sales_2", workspace: "sales", snapshot: 21},
+		{id: "ops_2", workspace: "operations", snapshot: 22},
+	} {
+		addCandidateServingState(repo, state.id, state.workspace, string(state.id), state.snapshot)
+	}
+	registry := NewRegistryWithFactory(RegistryOptions{
+		Repo: repo, Environment: "prod", Factory: &recordingRegistryFactory{},
+		Now: func() time.Time { return now },
+	})
+	t.Cleanup(func() { _ = registry.Close() })
+	prepareSet := func(suffix string) []CandidatePreparation {
+		return []CandidatePreparation{
+			{
+				Registration: CandidateRegistration{
+					CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "sales",
+					ExpiresAt: now.Add(time.Hour), Compatibility: candidateCompatibility("sales-" + suffix),
+				},
+				ServingStateID: "sales_" + suffix,
+			},
+			{
+				Registration: CandidateRegistration{
+					CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "operations",
+					ExpiresAt: now.Add(time.Hour), Compatibility: candidateCompatibility("ops-" + suffix),
+				},
+				ServingStateID: "ops_" + suffix,
+			},
+		}
+	}
+	if err := registry.PrepareAndRegisterCandidateSet(t.Context(), prepareSet("1")); err != nil {
+		t.Fatal(err)
+	}
+	old, err := registry.AcquireCandidate(t.Context(), CandidateLeaseRequest{
+		CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "sales",
+		Compatibility: candidateCompatibility("sales-1"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRuntime := old.Runtime().(*recordingRuntime)
+
+	if err := registry.PrepareAndRegisterCandidateSet(t.Context(), prepareSet("2")); err != nil {
+		t.Fatal(err)
+	}
+	for workspace, compatibility := range map[servingstate.WorkspaceID]CandidateCompatibility{
+		"sales":      candidateCompatibility("sales-2"),
+		"operations": candidateCompatibility("ops-2"),
+	} {
+		lease, err := registry.AcquireCandidate(t.Context(), CandidateLeaseRequest{
+			CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: workspace,
+			Compatibility: compatibility,
+		})
+		if err != nil {
+			t.Fatalf("acquire %s: %v", workspace, err)
+		}
+		if lease.DuckLakeSnapshotID() < 20 {
+			t.Fatalf("%s candidate retained old snapshot %d", workspace, lease.DuckLakeSnapshotID())
+		}
+		lease.Release()
+	}
+	if oldRuntime.closed {
+		t.Fatal("old workspace runtime closed before its outstanding lease drained")
+	}
+	old.Release()
+	if !oldRuntime.closed {
+		t.Fatal("old workspace runtime remained open after set replacement drained")
+	}
+}
+
+func TestCandidateRuntimeSetClosesEverySuppliedLifetimeWhenPreparationFails(t *testing.T) {
+	now := time.Date(2026, 7, 29, 17, 0, 0, 0, time.UTC)
+	repo := newFakeRegistryRepo()
+	addCandidateServingState(repo, "sales_1", "sales", "sales", 11)
+	registry := NewRegistryWithFactory(RegistryOptions{
+		Repo: repo, Environment: "prod", Factory: &recordingRegistryFactory{},
+		Now: func() time.Time { return now },
+	})
+	t.Cleanup(func() { _ = registry.Close() })
+	lifetimes := []*candidateTestLifetime{{}, {}, {}}
+	inputs := []CandidatePreparation{
+		{
+			Registration: CandidateRegistration{
+				CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "sales",
+				ExpiresAt: now.Add(time.Hour), Compatibility: candidateCompatibility("sales"),
+			},
+			ServingStateID: "sales_1", Lifetime: lifetimes[0],
+		},
+		{
+			Registration: CandidateRegistration{
+				CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "operations",
+				ExpiresAt: now.Add(time.Hour), Compatibility: candidateCompatibility("operations"),
+			},
+			ServingStateID: "missing", Lifetime: lifetimes[1],
+		},
+		{
+			Registration: CandidateRegistration{
+				CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "finance",
+				ExpiresAt: now.Add(time.Hour), Compatibility: candidateCompatibility("finance"),
+			},
+			ServingStateID: "unreached", Lifetime: lifetimes[2],
+		},
+	}
+
+	if err := registry.PrepareAndRegisterCandidateSet(t.Context(), inputs); err == nil {
+		t.Fatal("PrepareAndRegisterCandidateSet() error = nil, want preparation failure")
+	}
+	for index, lifetime := range lifetimes {
+		if lifetime.closes != 1 {
+			t.Fatalf("lifetime %d closes = %d, want 1", index, lifetime.closes)
+		}
+	}
+}
+
+func TestCandidateRuntimeDataModeFailsClosedAgainstServingSnapshotAndBindings(t *testing.T) {
+	now := time.Date(2026, 7, 29, 17, 0, 0, 0, time.UTC)
+	repo := newFakeRegistryRepo()
+	addCandidateServingState(repo, "with_snapshot", "sales", "snapshot", 11)
+	addCandidateServingState(repo, "without_snapshot", "sales", "refresh", 0)
+	registry := NewRegistryWithFactory(RegistryOptions{
+		Repo: repo, Environment: "prod", Factory: &recordingRegistryFactory{},
+		Now: func() time.Time { return now },
+	})
+	t.Cleanup(func() { _ = registry.Close() })
+	for name, input := range map[string]CandidatePreparation{
+		"reuse_without_snapshot": {
+			Registration: CandidateRegistration{
+				CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "sales",
+				ExpiresAt: now.Add(time.Hour),
+				Compatibility: CandidateCompatibility{
+					ArtifactDigest: "artifact", DataRevision: "data",
+					DataMode:       CandidateDataReuseSnapshot,
+					RuntimeVersion: "runtime", AuthorizationFingerprint: "policy",
+				},
+			},
+			ServingStateID: "without_snapshot",
+		},
+		"refresh_with_snapshot": {
+			Registration: CandidateRegistration{
+				CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "sales",
+				ExpiresAt: now.Add(time.Hour),
+				Compatibility: CandidateCompatibility{
+					ArtifactDigest: "artifact", DataRevision: "data",
+					DataMode:       CandidateDataRefreshSources,
+					RuntimeVersion: "runtime", AuthorizationFingerprint: "policy",
+					Bindings: []CandidateBindingVersion{{
+						BindingID: "warehouse", Revision: 1, ProviderVersion: "provider",
+					}},
+				},
+			},
+			ServingStateID: "with_snapshot",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := registry.PrepareCandidate(t.Context(), input); !errors.Is(
+				err,
+				ErrCandidateRuntimeIncompatible,
+			) {
+				t.Fatalf("PrepareCandidate() error = %v, want incompatible", err)
+			}
+		})
+	}
+}
+
 func candidateTestRegistry(t *testing.T, now func() time.Time) *Registry {
 	t.Helper()
 	repo := newFakeRegistryRepo()
@@ -294,11 +466,9 @@ func candidateCompatibility(suffix string) CandidateCompatibility {
 	return CandidateCompatibility{
 		ArtifactDigest:           "artifact-" + suffix,
 		DataRevision:             "data-" + suffix,
+		DataMode:                 CandidateDataReuseSnapshot,
 		RuntimeVersion:           "runtime-v1",
 		AuthorizationFingerprint: "policy-" + suffix,
-		Bindings: []CandidateBindingVersion{{
-			BindingID: "warehouse", Revision: 1, ProviderVersion: "provider-" + suffix,
-		}},
 	}
 }
 

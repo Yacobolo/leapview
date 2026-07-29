@@ -354,6 +354,37 @@ func TestRefreshCredentialResolutionUsesUniqueEphemeralConnectionNames(t *testin
 	}
 }
 
+func TestRefreshConnectionResolutionUsesTargetOwnedEndpointAndCredentials(t *testing.T) {
+	model := &semanticmodel.Model{
+		DefaultConnection: "crm",
+		Connections: map[string]semanticmodel.Connection{
+			"crm": {Kind: "postgres", Host: "artifact-host"},
+		},
+		Sources: map[string]semanticmodel.Source{
+			"accounts": {Connection: "crm", Object: "accounts"},
+		},
+	}
+	runtime := NewSourceRuntimeWithConnectionResolver(nil, staticConnectionResolver{
+		connection: semanticmodel.Connection{
+			Kind: "postgres", Host: "target-host", Database: "analytics",
+			Auth: semanticmodel.ConnectionAuth{"password": "target-secret"},
+		},
+	})
+	resolved, err := runtime.resolveCredentials(t.Context(), model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection := resolved.Connections[resolved.DefaultConnection]
+	if connection.Host != "target-host" || connection.Database != "analytics" ||
+		connection.Auth["password"] != "target-secret" {
+		t.Fatalf("resolved connection = %#v", connection)
+	}
+	if model.Connections["crm"].Host != "artifact-host" ||
+		len(model.Connections["crm"].Auth) != 0 {
+		t.Fatalf("target connection leaked into compiled model: %#v", model.Connections["crm"])
+	}
+}
+
 func TestSecretScopeLockReportsOnlySameScopeContention(t *testing.T) {
 	model := &semanticmodel.Model{
 		Connections: map[string]semanticmodel.Connection{"source": {Kind: "s3", Scope: "s3://bucket/prefix/"}},
@@ -384,6 +415,18 @@ type staticCredentialResolver struct{ auth semanticmodel.ConnectionAuth }
 
 func (r staticCredentialResolver) Resolve(context.Context, string, semanticmodel.Connection) (semanticmodel.ConnectionAuth, error) {
 	return r.auth, nil
+}
+
+type staticConnectionResolver struct {
+	connection semanticmodel.Connection
+}
+
+func (resolver staticConnectionResolver) Resolve(
+	context.Context,
+	string,
+	semanticmodel.Connection,
+) (semanticmodel.Connection, error) {
+	return resolver.connection, nil
 }
 
 type recordingRefreshTelemetry struct{ contentions atomic.Uint64 }

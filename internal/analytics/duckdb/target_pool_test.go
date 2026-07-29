@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/flidai/leapview/internal/analytics/connectionbinding"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	analyticsruntime "github.com/flidai/leapview/internal/analytics/runtime"
 )
 
 func TestTargetRuntimePoolFactoryPreparesOnlyConnectorOwnedReadOnlyProbe(t *testing.T) {
@@ -120,6 +122,58 @@ func TestTargetRuntimePoolFactoryRejectsUnboundedOrUnsupportedEndpointsBeforeOpe
 	}
 	if opened != 0 {
 		t.Fatalf("opened runtimes for rejected targets = %d", opened)
+	}
+}
+
+func TestTargetRuntimePoolResolvesTargetOwnedConnectionAfterProviderSnapshotIsDestroyed(t *testing.T) {
+	factory, err := NewTargetRuntimePoolFactory(TargetRuntimePoolFactoryConfig{
+		Open: func(context.Context) (TargetRuntimeSession, error) {
+			return &recordingTargetSession{}, nil
+		},
+		Limits:     TargetRuntimeLimits{MemoryMaxBytes: 1, TempMaxBytes: 1, MaxThreads: 1},
+		RequireTLS: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := connectionbinding.NewCredentialSnapshot(
+		map[string]string{"password": "source-secret"},
+		"secret-1:v4", time.Now(), time.Now().Add(time.Minute),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := factory.Prepare(t.Context(), testDuckDBTargetBinding(t), snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot.Destroy()
+	resolver, ok := pool.(analyticsruntime.ConnectionResolver)
+	if !ok {
+		t.Fatal("validated target pool does not expose an Analytics connection resolver")
+	}
+	resolved, err := resolver.Resolve(
+		t.Context(),
+		"warehouse",
+		semanticmodel.Connection{Kind: "postgres"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Host != "warehouse.internal" || resolved.Database != "analytics" ||
+		resolved.Auth["password"] != "source-secret" {
+		t.Fatalf("resolved target connection = %#v", resolved)
+	}
+	clear(resolved.Auth)
+	if err := pool.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolver.Resolve(
+		t.Context(),
+		"warehouse",
+		semanticmodel.Connection{Kind: "postgres"},
+	); !errors.Is(err, connectionbinding.ErrProviderUnavailable) {
+		t.Fatalf("Resolve() after pool close error = %v", err)
 	}
 }
 

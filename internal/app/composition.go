@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	accessmodule "github.com/flidai/leapview/internal/access/module"
 	agentmodule "github.com/flidai/leapview/internal/agent/module"
@@ -17,6 +18,7 @@ import (
 	deploymentmodule "github.com/flidai/leapview/internal/deployment/module"
 	manageddatamodule "github.com/flidai/leapview/internal/manageddata/module"
 	"github.com/flidai/leapview/internal/platform"
+	"github.com/flidai/leapview/internal/platform/buildinfo"
 	"github.com/flidai/leapview/internal/platform/filesystem"
 	apihttpmiddleware "github.com/flidai/leapview/internal/platform/http/middleware"
 	jobsmodule "github.com/flidai/leapview/internal/platform/jobs/module"
@@ -256,9 +258,45 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	if err != nil {
 		return fail(err)
 	}
+	candidateBindings, err := analyticsModule.NewRuntimeBindingLeaser(
+		analyticsmodule.RuntimeBindingLeaserConfig{
+			Authorize: func(
+				ctx context.Context,
+				principalID string,
+				binding analyticsmodule.ConnectionTargetBinding,
+			) error {
+				allowed, err := accessModule.AuthorizeObject(
+					ctx,
+					principalID,
+					accessmodule.PrivilegePreviewData,
+					accessmodule.WorkspaceObject(binding.Scope.WorkspaceID),
+				)
+				if err != nil {
+					return err
+				}
+				if !allowed {
+					return analyticsmodule.ErrConnectionBindingUnauthorized
+				}
+				return nil
+			},
+			Now: time.Now,
+			Audit: connectionRotationAuditRecorder{
+				record: accessModule.RecordAudit,
+			},
+		},
+	)
+	if err != nil {
+		return fail(err)
+	}
+	identity := buildinfo.Current()
 	deploymentConfig := deploymentmodule.Config{
 		Database: store.SQLDB(), States: servingStateRepo, Runtime: deploymentRuntime,
 		ManagedData: managedDataResolver, DeploymentMetadata: managedDataModule.DeploymentMetadata(),
+		CandidateConnections: candidateConnectionLeaser{
+			leaser: candidateBindings, module: analyticsModule,
+		},
+		CandidateRuntime: runtimeHostModule,
+		RuntimeVersion:   identity.Version + ":" + identity.Revision,
 		ActivationHooks: deploymentmodule.ActivationHooks{
 			ApplyAccessSnapshot: accessmodule.ApplySnapshot,
 			ReconcilePublications: func(ctx context.Context, tx transaction.Transaction, input deploymentmodule.PublicationActivationInput) error {

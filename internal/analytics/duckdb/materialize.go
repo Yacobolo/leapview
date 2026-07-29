@@ -25,8 +25,9 @@ import (
 )
 
 type SourceRuntime struct {
-	db       analyticsresource.SessionProvider
-	resolver CredentialResolver
+	db                 analyticsresource.SessionProvider
+	resolver           CredentialResolver
+	connectionResolver analyticsruntime.ConnectionResolver
 }
 
 type extensionProvider interface {
@@ -52,6 +53,15 @@ func NewSourceRuntimeWithCredentials(db analyticsresource.SessionProvider, resol
 		resolver = NonSecretCredentialResolver{}
 	}
 	return &SourceRuntime{db: db, resolver: resolver}
+}
+
+func NewSourceRuntimeWithConnectionResolver(
+	db analyticsresource.SessionProvider,
+	resolver analyticsruntime.ConnectionResolver,
+) *SourceRuntime {
+	return &SourceRuntime{
+		db: db, resolver: NonSecretCredentialResolver{}, connectionResolver: resolver,
+	}
 }
 
 var sourceStageSequence atomic.Uint64
@@ -257,11 +267,19 @@ func (r *SourceRuntime) resolveCredentials(ctx context.Context, model *semanticm
 	resolved.Connections = make(map[string]semanticmodel.Connection, len(model.Connections))
 	connectionNames := make(map[string]string, len(model.Connections))
 	for name, connection := range model.Connections {
-		auth, err := r.resolver.Resolve(ctx, name, connection)
-		if err != nil {
-			return nil, err
+		if r.connectionResolver != nil {
+			var err error
+			connection, err = r.connectionResolver.Resolve(ctx, name, connection)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			auth, err := r.resolver.Resolve(ctx, name, connection)
+			if err != nil {
+				return nil, err
+			}
+			connection.Auth = auth
 		}
-		connection.Auth = auth
 		resolvedName := name + suffix
 		connectionNames[name] = resolvedName
 		resolved.Connections[resolvedName] = connection
@@ -352,6 +370,7 @@ type WorkspaceRuntimeConfig struct {
 	Models                   map[string]*semanticmodel.Model
 	Database                 analyticsruntime.WorkspaceDatabase
 	CredentialResolver       CredentialResolver
+	ConnectionResolver       analyticsruntime.ConnectionResolver
 	SnapshotID               int64
 	ServingStateID           string
 	WorkspaceID              string
@@ -402,6 +421,9 @@ func OpenWorkspaceMaterializeRuntime(ctx context.Context, config WorkspaceRuntim
 		}
 	}
 	sources := NewSourceRuntimeWithCredentials(db, config.CredentialResolver)
+	if config.ConnectionResolver != nil {
+		sources = NewSourceRuntimeWithConnectionResolver(db, config.ConnectionResolver)
+	}
 	materializationModel, err := physicalWorkspaceModel(config.Models)
 	if err != nil {
 		return nil, err
