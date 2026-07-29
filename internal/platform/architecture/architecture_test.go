@@ -2206,6 +2206,23 @@ func TestContinuousIntegrationHealthWorkflowReportsAndAlerts(t *testing.T) {
 	}
 }
 
+func TestPublicSiteBuildGeneratesIgnoredBrowserContracts(t *testing.T) {
+	root := repoRoot(t)
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	block := taskfileTaskBlock(t, string(taskfile), "site:build")
+	for _, dependency := range []string{
+		"- task: ui-signals:generate",
+		"- task: visualization-ir:generate",
+	} {
+		if !strings.Contains(block, dependency) {
+			t.Errorf("site:build must generate ignored browser contract %q in a clean checkout", dependency)
+		}
+	}
+}
+
 func workflowJobBlock(t *testing.T, workflow, job string) string {
 	t.Helper()
 	startMarker := "  " + job + ":"
@@ -2219,6 +2236,31 @@ func workflowJobBlock(t *testing.T, workflow, job string) string {
 	}
 	if start < 0 {
 		t.Fatalf("workflow job %q not found", job)
+	}
+	end := len(lines)
+	for index := start + 1; index < len(lines); index++ {
+		line := lines[index]
+		if strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "    ") && strings.HasSuffix(line, ":") {
+			end = index
+			break
+		}
+	}
+	return strings.Join(lines[start:end], "\n")
+}
+
+func taskfileTaskBlock(t *testing.T, taskfile, task string) string {
+	t.Helper()
+	startMarker := "  " + task + ":"
+	lines := strings.Split(taskfile, "\n")
+	start := -1
+	for index, line := range lines {
+		if line == startMarker {
+			start = index
+			break
+		}
+	}
+	if start < 0 {
+		t.Fatalf("Taskfile task %q not found", task)
 	}
 	end := len(lines)
 	for index := start + 1; index < len(lines); index++ {
