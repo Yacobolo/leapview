@@ -12,6 +12,8 @@ type ConnectionTargetBinding = connectionbinding.TargetBinding
 type ConnectionBindingDependency = connectionbinding.BindingDependency
 type ConnectionRotationAuditEvent = connectionbinding.RotationAuditEvent
 type ConnectionRotationAuditRecorder = connectionbinding.RotationAuditRecorder
+type ConnectionAdministrationAuditEvent = connectionbinding.AdministrationAuditEvent
+type ConnectionAdministrationAuditRecorder = connectionbinding.AdministrationAuditRecorder
 
 const (
 	PermissionManageConnectionMetadata = connectionbinding.PermissionManageConnectionMetadata
@@ -34,11 +36,12 @@ type ConnectionAdministrationAuthorizer func(
 ) error
 
 type ConnectionAdministrationConfig struct {
-	Authorize      ConnectionAdministrationAuthorizer
-	Dependencies   ConnectionDependencyInspector
-	Pools          connectionbinding.AdministrationPoolDirectory
-	Now            func() time.Time
-	RefreshTimeout time.Duration
-	MaxConcurrent  int
-	Audit          ConnectionRotationAuditRecorder
+	Authorize           ConnectionAdministrationAuthorizer
+	Dependencies        ConnectionDependencyInspector
+	Pools               connectionbinding.AdministrationPoolDirectory
+	Now                 func() time.Time
+	RefreshTimeout      time.Duration
+	MaxConcurrent       int
+	Audit               ConnectionRotationAuditRecorder
+	AdministrationAudit ConnectionAdministrationAuditRecorder
 }

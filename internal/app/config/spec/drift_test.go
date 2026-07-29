@@ -72,7 +72,7 @@ func TestOperationalEnvironmentReferencesAreCataloged(t *testing.T) {
 				if strings.HasPrefix(name, "LEAPVIEW_TEST_") {
 					continue
 				}
-				if _, ok := known[name]; !ok {
+				if _, ok := known[name]; !ok && !knownDynamicEnvironmentReference(name) {
 					t.Errorf("%s references uncataloged environment variable %s", path, name)
 				}
 			}
@@ -89,6 +89,15 @@ func TestOperationalEnvironmentReferencesAreCataloged(t *testing.T) {
 			return err
 		})
 	}
+}
+
+func knownDynamicEnvironmentReference(name string) bool {
+	for _, prefix := range DynamicEnvironmentPrefixes() {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func knownSettings() map[string]struct{} {

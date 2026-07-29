@@ -11,21 +11,24 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/flidai/leapview/internal/analytics/connectors"
 )
 
 var (
-	ErrInvalidBinding           = errors.New("invalid connection binding")
-	ErrBindingNotFound          = errors.New("connection binding not found")
-	ErrIncompatibleBinding      = errors.New("incompatible connection binding")
-	ErrDisabledBinding          = errors.New("connection binding disabled")
-	ErrUnauthorizedBinding      = errors.New("connection binding unauthorized")
-	ErrCredentialSerialization  = errors.New("credential snapshot cannot be serialized")
-	ErrCredentialDenied         = errors.New("credential access denied")
-	ErrCredentialNotFound       = errors.New("credential not found")
-	ErrCredentialRateLimited    = errors.New("credential provider rate limited")
-	ErrProviderUnavailable      = errors.New("credential provider unavailable")
-	ErrInvalidCredentialBundle  = errors.New("invalid credential bundle")
-	ErrRotationAuditUnavailable = errors.New("credential rotation audit unavailable")
+	ErrInvalidBinding                 = errors.New("invalid connection binding")
+	ErrBindingNotFound                = errors.New("connection binding not found")
+	ErrIncompatibleBinding            = errors.New("incompatible connection binding")
+	ErrDisabledBinding                = errors.New("connection binding disabled")
+	ErrUnauthorizedBinding            = errors.New("connection binding unauthorized")
+	ErrCredentialSerialization        = errors.New("credential snapshot cannot be serialized")
+	ErrCredentialDenied               = errors.New("credential access denied")
+	ErrCredentialNotFound             = errors.New("credential not found")
+	ErrCredentialRateLimited          = errors.New("credential provider rate limited")
+	ErrProviderUnavailable            = errors.New("credential provider unavailable")
+	ErrInvalidCredentialBundle        = errors.New("invalid credential bundle")
+	ErrRotationAuditUnavailable       = errors.New("credential rotation audit unavailable")
+	ErrAdministrationAuditUnavailable = errors.New("connection administration audit unavailable")
 
 	logicalConnectionPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,127}$`)
 	identifierPattern        = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$`)
@@ -148,6 +151,9 @@ func NewTargetBinding(input TargetBindingInput) (TargetBinding, error) {
 		!identifierPattern.MatchString(input.Scope.Environment) || input.Now.IsZero() {
 		return TargetBinding{}, fmt.Errorf("%w: binding identity, target, connector, scope, environment, and creation time are required", ErrInvalidBinding)
 	}
+	if _, ok := connectors.LookupConnection(input.ConnectorKind); !ok {
+		return TargetBinding{}, fmt.Errorf("%w: unsupported connector kind %q", ErrInvalidBinding, input.ConnectorKind)
+	}
 	if err := validateEndpoint(input.Endpoint); err != nil {
 		return TargetBinding{}, err
 	}
@@ -185,6 +191,9 @@ func (binding TargetBinding) Validate() error {
 		!identifierPattern.MatchString(binding.ConnectorKind) || strings.TrimSpace(binding.Scope.WorkspaceID) == "" ||
 		!identifierPattern.MatchString(binding.Scope.Environment) {
 		return fmt.Errorf("%w: binding identity, target, connector, scope, and environment are required", ErrInvalidBinding)
+	}
+	if _, ok := connectors.LookupConnection(binding.ConnectorKind); !ok {
+		return fmt.Errorf("%w: unsupported connector kind %q", ErrInvalidBinding, binding.ConnectorKind)
 	}
 	if err := validateEndpoint(binding.Endpoint); err != nil {
 		return err

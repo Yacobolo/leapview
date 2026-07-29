@@ -54,3 +54,27 @@ func (recorder connectionRotationAuditRecorder) RecordCredentialRotation(
 		MetadataJSON: string(metadata),
 	})
 }
+
+type connectionAdministrationAuditRecorder struct {
+	record func(context.Context, accessmodule.AuditEventInput) error
+}
+
+func (recorder connectionAdministrationAuditRecorder) RecordConnectionAdministration(
+	ctx context.Context,
+	event analyticsmodule.ConnectionAdministrationAuditEvent,
+) error {
+	metadata, _ := json.Marshal(map[string]any{
+		"targetId":          event.TargetID,
+		"logicalConnection": event.LogicalConnectionID,
+		"revision":          event.Revision,
+	})
+	if recorder.record == nil {
+		return nil
+	}
+	return recorder.record(ctx, accessmodule.AuditEventInput{
+		WorkspaceID: event.WorkspaceID, PrincipalID: event.Actor,
+		Action: string(event.Action), TargetType: "connection_binding", TargetID: event.BindingID,
+		Privilege: accessmodule.PrivilegeManageConnectionMetadata,
+		Status:    string(event.Outcome), MetadataJSON: string(metadata),
+	})
+}

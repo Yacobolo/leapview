@@ -98,3 +98,32 @@ func TestAuthorizationDenialAuditInputIdentifiesTheDeniedObject(t *testing.T) {
 		t.Fatalf("denial audit metadata = %#v", metadata)
 	}
 }
+
+func TestAuthorizationAllowedAuditInputIdentifiesConnectionDecision(t *testing.T) {
+	request := httptest.NewRequest(
+		"POST",
+		"/api/v1/workspaces/acme/targets/prod/environments/prod/connection-bindings/warehouse/test",
+		nil,
+	)
+	request.Header.Set("X-Request-ID", "request-1")
+	input := authorizationAllowedAuditInput(
+		request,
+		"operator-1",
+		"acme",
+		access.PrivilegeTestConnection,
+		[]access.ObjectRef{access.WorkspaceObject("acme")},
+	)
+	if input.Action != "authorization.allowed" || input.Status != "allowed" ||
+		input.WorkspaceID != "acme" || input.PrincipalID != "operator-1" ||
+		input.TargetType != "workspace" || input.TargetID != "workspace:acme" ||
+		input.Privilege != access.PrivilegeTestConnection || input.RequestID != "request-1" {
+		t.Fatalf("allowed audit input = %#v", input)
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal([]byte(input.MetadataJSON), &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if metadata["reason"] != "granted" {
+		t.Fatalf("allowed audit metadata = %#v", metadata)
+	}
+}

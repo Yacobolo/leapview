@@ -90,6 +90,48 @@ func TestConnectionAdministrationRejectsBindingsForAnotherTarget(t *testing.T) {
 	}
 }
 
+func TestConnectionAdministrationUsesExplicitEnvironmentResolverOnlyForDevelopmentTarget(t *testing.T) {
+	now := time.Date(2026, 7, 29, 20, 0, 0, 0, time.UTC)
+	binding := modulePoolBinding(t, now)
+	binding.TargetID = "lvinst_local"
+	binding.Scope.Environment = "dev"
+	binding.CredentialReference = connectionbinding.CredentialReference{
+		ProjectID: "lvinst_local", Environment: "dev",
+		SecretPath: "/", SecretKey: "LEAPVIEW_DEV_CONNECTION_WAREHOUSE",
+	}
+	repository := &moduleBindingCatalog{binding: binding}
+	resolver := &moduleCredentialResolver{snapshot: modulePoolSnapshot(t, now)}
+	module := &Module{
+		connectionBindings: repository,
+		targetResolvers:    connectionbinding.ResolverSet{Environment: resolver},
+		targetID:           binding.TargetID,
+		targetEnvironment:  binding.Scope.Environment,
+		targetClass:        connectionbinding.TargetDevelopment,
+		connectionFactory:  &moduleRuntimePoolFactory{},
+	}
+	administration, err := module.NewConnectionAdministration(ConnectionAdministrationConfig{
+		Authorize: func(context.Context, string, ConnectionAdministrationPermission, ConnectionTargetBinding) error {
+			return nil
+		},
+		Dependencies:   moduleDependencyInspector{},
+		Now:            func() time.Time { return now },
+		RefreshTimeout: time.Second,
+		MaxConcurrent:  1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = administration.Test(context.Background(), "operator-1", connectionbinding.BindingKey{
+		Scope: binding.Scope, TargetID: binding.TargetID, LogicalConnectionID: binding.LogicalConnectionID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolver.calls != 1 {
+		t.Fatalf("development environment resolver calls = %d", resolver.calls)
+	}
+}
+
 func modulePoolBinding(t *testing.T, now time.Time) connectionbinding.TargetBinding {
 	t.Helper()
 	binding, err := connectionbinding.NewTargetBinding(connectionbinding.TargetBindingInput{

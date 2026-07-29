@@ -62,6 +62,7 @@ type AdministrationConfig struct {
 	Authorize    AdministrationAuthorizer
 	Dependencies DependencyInspector
 	Pools        AdministrationPoolDirectory
+	Audit        AdministrationAuditRecorder
 	Now          func() time.Time
 }
 
@@ -70,6 +71,7 @@ type Administration struct {
 	authorize    AdministrationAuthorizer
 	dependencies DependencyInspector
 	pools        AdministrationPoolDirectory
+	audit        AdministrationAuditRecorder
 	now          func() time.Time
 }
 
@@ -79,7 +81,7 @@ func NewAdministration(config AdministrationConfig) (*Administration, error) {
 	}
 	return &Administration{
 		repository: config.Repository, authorize: config.Authorize,
-		dependencies: config.Dependencies, pools: config.Pools, now: config.Now,
+		dependencies: config.Dependencies, pools: config.Pools, audit: config.Audit, now: config.Now,
 	}, nil
 }
 
@@ -111,6 +113,9 @@ func (service *Administration) Create(
 	}
 	if err := service.repository.Create(ctx, binding); err != nil {
 		return TargetBinding{}, err
+	}
+	if err := service.recordMutation(ctx, actorID, AuditBindingCreated, binding); err != nil {
+		return binding, err
 	}
 	return binding, nil
 }
@@ -244,7 +249,14 @@ func (service *Administration) UpdateConfiguration(
 			return TargetBinding{}, ErrConfirmationRequired
 		}
 	}
-	return service.repository.Save(ctx, updated, binding.Revision)
+	saved, err := service.repository.Save(ctx, updated, binding.Revision)
+	if err != nil {
+		return TargetBinding{}, err
+	}
+	if err := service.recordMutation(ctx, request.ActorID, AuditBindingUpdated, saved); err != nil {
+		return saved, err
+	}
+	return saved, nil
 }
 
 func (service *Administration) RefreshNow(
@@ -342,7 +354,14 @@ func (service *Administration) Disable(
 			if err := pool.Disable(ctx, now); err != nil {
 				return TargetBinding{}, err
 			}
-			return service.binding(ctx, key)
+			disabled, err := service.binding(ctx, key)
+			if err != nil {
+				return TargetBinding{}, err
+			}
+			if err := service.recordMutation(ctx, actorID, AuditBindingDisabled, disabled); err != nil {
+				return disabled, err
+			}
+			return disabled, nil
 		}
 		if !errors.Is(poolErr, ErrBindingNotFound) {
 			return TargetBinding{}, poolErr
@@ -352,7 +371,14 @@ func (service *Administration) Disable(
 	if err != nil || disabled.Revision == binding.Revision {
 		return disabled, err
 	}
-	return service.repository.Save(ctx, disabled, binding.Revision)
+	saved, err := service.repository.Save(ctx, disabled, binding.Revision)
+	if err != nil {
+		return TargetBinding{}, err
+	}
+	if err := service.recordMutation(ctx, actorID, AuditBindingDisabled, saved); err != nil {
+		return saved, err
+	}
+	return saved, nil
 }
 
 func (service *Administration) Enable(
@@ -373,7 +399,14 @@ func (service *Administration) Enable(
 	if err != nil || enabled.Revision == binding.Revision {
 		return enabled, err
 	}
-	return service.repository.Save(ctx, enabled, binding.Revision)
+	saved, err := service.repository.Save(ctx, enabled, binding.Revision)
+	if err != nil {
+		return TargetBinding{}, err
+	}
+	if err := service.recordMutation(ctx, actorID, AuditBindingEnabled, saved); err != nil {
+		return saved, err
+	}
+	return saved, nil
 }
 
 func (service *Administration) binding(ctx context.Context, key BindingKey) (TargetBinding, error) {

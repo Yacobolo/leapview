@@ -519,6 +519,14 @@ func (a *Auth) MiddlewareWithObjectResolver(privilege access.Privilege, objectRe
 				writeAuthError(w, r, errForbidden, status)
 				return
 			}
+			if connectionAuthorizationAuditRequired(privilege) {
+				if err := recordAuthorizationAllowed(
+					r, a.repo, principal.ID, workspaceID, privilege, objects,
+				); err != nil {
+					writeAuthError(w, r, err, http.StatusInternalServerError)
+					return
+				}
+			}
 		}
 		ctx := context.WithValue(r.Context(), principalContextKey{}, principal)
 		if credential != nil {
@@ -595,6 +603,54 @@ func recordAuthorizationDenial(r *http.Request, repo access.Repository, principa
 		return
 	}
 	_ = access.PersistAuditEvent(r.Context(), repo, authorizationDenialAuditInput(r, principalID, workspaceID, privilege, objects, reason))
+}
+
+func recordAuthorizationAllowed(
+	r *http.Request,
+	repo access.Repository,
+	principalID string,
+	workspaceID string,
+	privilege access.Privilege,
+	objects []access.ObjectRef,
+) error {
+	if repo == nil {
+		return nil
+	}
+	return access.PersistAuditEvent(
+		r.Context(),
+		repo,
+		authorizationAllowedAuditInput(r, principalID, workspaceID, privilege, objects),
+	)
+}
+
+func authorizationAllowedAuditInput(
+	r *http.Request,
+	principalID string,
+	workspaceID string,
+	privilege access.Privilege,
+	objects []access.ObjectRef,
+) access.AuditEventInput {
+	object := access.WorkspaceObject(workspaceID)
+	if len(objects) > 0 {
+		object = objects[0]
+	}
+	return authAuditInput(
+		r,
+		"authorization.allowed",
+		principalID,
+		workspaceID,
+		string(object.Type),
+		object.CanonicalID(),
+		privilege,
+		"allowed",
+		map[string]any{"reason": "granted"},
+	)
+}
+
+func connectionAuthorizationAuditRequired(privilege access.Privilege) bool {
+	return privilege == access.PrivilegeManageConnectionMetadata ||
+		privilege == access.PrivilegeTestConnection ||
+		privilege == access.PrivilegeViewConnectionHealth
 }
 
 func authorizationDenialAuditInput(r *http.Request, principalID, workspaceID string, privilege access.Privilege, objects []access.ObjectRef, reason access.AuthorizationReason) access.AuditEventInput {

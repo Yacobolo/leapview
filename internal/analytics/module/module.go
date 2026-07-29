@@ -118,6 +118,16 @@ func Build(ctx context.Context, config Config) (*Module, error) {
 	if err != nil {
 		return nil, err
 	}
+	if config.CredentialMode == CredentialModeDevelopmentEnvironment {
+		development, err := buildProcessDevelopmentTargetResolver(
+			config.CredentialTargetID,
+			config.CredentialEnvironment,
+		)
+		if err != nil {
+			return nil, err
+		}
+		targetResolvers.Environment = development
+	}
 	environment, err := analyticsducklake.Open(ctx, analyticsducklake.Config{
 		RootDir: config.RootDir, CatalogPath: config.CatalogPath, DataPath: config.DataPath,
 		MaxConnections: config.MaxConnections, MemoryMaxBytes: config.MemoryMaxBytes,
@@ -206,7 +216,7 @@ func (m *Module) NewConnectionAdministration(
 					resolver, err := connectionbinding.SelectResolver(
 						connectionbinding.ResolverSelection{
 							TargetID: binding.TargetID, Environment: binding.Scope.Environment,
-							TargetClass: m.targetClass, Kind: connectionbinding.ResolverInfisical,
+							TargetClass: m.targetClass, Kind: m.connectionResolverKind(),
 						},
 						m.targetResolvers,
 					)
@@ -242,8 +252,20 @@ func (m *Module) NewConnectionAdministration(
 			}
 			return authorize(ctx, actor, permission, binding)
 		},
-		Dependencies: config.Dependencies, Pools: config.Pools, Now: config.Now,
+		Dependencies: config.Dependencies, Pools: config.Pools,
+		Audit: config.AdministrationAudit, Now: config.Now,
 	})
+}
+
+func (m *Module) connectionResolverKind() connectionbinding.ResolverKind {
+	if m != nil && m.targetResolvers.Infisical != nil {
+		return connectionbinding.ResolverInfisical
+	}
+	if m != nil && m.targetClass == connectionbinding.TargetDevelopment &&
+		m.targetResolvers.Environment != nil {
+		return connectionbinding.ResolverEnvironment
+	}
+	return connectionbinding.ResolverInfisical
 }
 
 func buildCredentialResolver(config Config) (analyticsduckdb.CredentialResolver, error) {

@@ -76,9 +76,12 @@ func TestPoolDirectoryBoundsRefreshConcurrencyAndTimeout(t *testing.T) {
 	second.ID = "binding_reporting"
 	second.LogicalConnectionID = "reporting"
 	resolvers := map[string]*blockingResolver{}
+	concurrency := &resolverConcurrency{}
 	directory, err := NewPoolDirectory(PoolDirectoryConfig{
 		Build: func(current TargetBinding) (*PoolManager, error) {
-			resolver := &blockingResolver{started: make(chan struct{}), release: make(chan struct{})}
+			resolver := &blockingResolver{
+				started: make(chan struct{}), release: make(chan struct{}), concurrency: concurrency,
+			}
 			resolvers[current.ID] = resolver
 			return NewPoolManager(PoolManagerConfig{
 				Binding: current, Resolver: resolver, Factory: &recordingPoolFactory{},
@@ -119,11 +122,11 @@ func TestPoolDirectoryBoundsRefreshConcurrencyAndTimeout(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > 250*time.Millisecond {
 		t.Fatalf("bounded refresh took %s", elapsed)
 	}
-	if resolvers[second.ID].calls != 0 {
-		t.Fatalf("queued binding resolver calls = %d", resolvers[second.ID].calls)
-	}
 	if err := <-firstDone; !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("active refresh error = %v", err)
+	}
+	if concurrency.max != 1 {
+		t.Fatalf("maximum concurrent resolver calls = %d", concurrency.max)
 	}
 }
 
@@ -168,14 +171,19 @@ func TestPoolDirectoryCloseRetiresManagersAndRejectsNewPools(t *testing.T) {
 }
 
 type blockingResolver struct {
-	once    sync.Once
-	started chan struct{}
-	release chan struct{}
-	calls   int
+	once        sync.Once
+	started     chan struct{}
+	release     chan struct{}
+	calls       int
+	concurrency *resolverConcurrency
 }
 
 func (resolver *blockingResolver) Resolve(ctx context.Context, _ CredentialReference) (CredentialSnapshot, error) {
 	resolver.calls++
+	if resolver.concurrency != nil {
+		resolver.concurrency.enter()
+		defer resolver.concurrency.leave()
+	}
 	resolver.once.Do(func() { close(resolver.started) })
 	select {
 	case <-ctx.Done():
@@ -183,4 +191,25 @@ func (resolver *blockingResolver) Resolve(ctx context.Context, _ CredentialRefer
 	case <-resolver.release:
 		return CredentialSnapshot{}, ErrProviderUnavailable
 	}
+}
+
+type resolverConcurrency struct {
+	mu     sync.Mutex
+	active int
+	max    int
+}
+
+func (concurrency *resolverConcurrency) enter() {
+	concurrency.mu.Lock()
+	defer concurrency.mu.Unlock()
+	concurrency.active++
+	if concurrency.active > concurrency.max {
+		concurrency.max = concurrency.active
+	}
+}
+
+func (concurrency *resolverConcurrency) leave() {
+	concurrency.mu.Lock()
+	concurrency.active--
+	concurrency.mu.Unlock()
 }

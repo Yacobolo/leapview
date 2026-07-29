@@ -63,6 +63,14 @@ func TestTargetBindingSeparatesTargetReferenceFromLogicalRequirement(t *testing.
 	}
 }
 
+func TestTargetBindingRejectsUnknownConnectorKindAtAdministrationBoundary(t *testing.T) {
+	input := validTargetBindingInput()
+	input.ConnectorKind = "operator_supplied_plugin"
+	if _, err := NewTargetBinding(input); !errors.Is(err, ErrInvalidBinding) {
+		t.Fatalf("unknown connector error = %v", err)
+	}
+}
+
 func TestSameLogicalRequirementBindsIndependentlyAcrossTargets(t *testing.T) {
 	production := validTargetBinding(t)
 	developmentInput := validTargetBindingInput()

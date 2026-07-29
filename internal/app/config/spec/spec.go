@@ -49,6 +49,13 @@ func Settings() []Setting {
 	return settings
 }
 
+// DynamicEnvironmentPrefixes catalogs deliberately namespaced variable
+// families whose suffix is a target-owned logical identifier rather than a
+// fixed application setting.
+func DynamicEnvironmentPrefixes() []string {
+	return []string{"LEAPVIEW_DEV_CONNECTION_"}
+}
+
 var settings = []Setting{
 	{Name: "LEAPVIEW_ADDR", Field: "Addr", Type: TypeString, Category: "server", Scope: "serve,healthcheck", Description: "HTTP listen address.", Example: ":8080", Runtime: true, Lifecycle: "supported"},
 	{Name: "LEAPVIEW_AGENT_API_KEY", Field: "AgentAPIKey", Type: TypeString, Category: "agent", Scope: "serve", Description: "API key for the configured agent model provider.", Example: SecretPlaceholder, Secret: true, Runtime: true, Lifecycle: "supported", Commented: true},

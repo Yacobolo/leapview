@@ -501,6 +501,9 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				Audit: connectionRotationAuditRecorder{
 					record: routes.accessModule.RecordAudit,
 				},
+				AdministrationAudit: connectionAdministrationAuditRecorder{
+					record: routes.accessModule.RecordAudit,
+				},
 			},
 		)
 		if err != nil && !errors.Is(err, analyticsmodule.ErrConnectionAdministrationUnavailable) {

@@ -1,13 +1,57 @@
 package module
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/flidai/leapview/internal/analytics/connectionbinding"
 )
+
+func TestBuildDevelopmentTargetResolverAllowsOnlyDedicatedConnectionVariables(t *testing.T) {
+	now := time.Date(2026, 7, 29, 20, 0, 0, 0, time.UTC)
+	values := map[string]string{
+		"LEAPVIEW_DEV_CONNECTION_WAREHOUSE": `{"password":"source-secret"}`,
+		"DATABASE_URL":                      "must-not-be-readable",
+	}
+	resolver, err := buildDevelopmentTargetResolver(
+		"lvinst_local",
+		"dev",
+		[]string{
+			"LEAPVIEW_DEV_CONNECTION_WAREHOUSE=redacted",
+			"DATABASE_URL=redacted",
+		},
+		func(name string) (string, bool) {
+			value, ok := values[name]
+			return value, ok
+		},
+		func() time.Time { return now },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := resolver.Resolve(context.Background(), connectionbinding.CredentialReference{
+		ProjectID: "lvinst_local", Environment: "dev",
+		SecretPath: "/", SecretKey: "LEAPVIEW_DEV_CONNECTION_WAREHOUSE",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.ProviderVersion() == "" {
+		t.Fatal("development snapshot has no version")
+	}
+	snapshot.Destroy()
+	_, err = resolver.Resolve(context.Background(), connectionbinding.CredentialReference{
+		ProjectID: "lvinst_local", Environment: "dev",
+		SecretPath: "/", SecretKey: "DATABASE_URL",
+	})
+	if !errors.Is(err, connectionbinding.ErrCredentialDenied) {
+		t.Fatalf("unscoped environment variable error = %v", err)
+	}
+}
 
 func TestBuildTargetResolversComposesOnlyTheConfiguredInfisicalAuthority(t *testing.T) {
 	resolvers, err := buildTargetResolvers(TargetCredentialConfig{

@@ -29,6 +29,8 @@ Production targets resolve an atomic credential bundle from their configured rea
 
 Environment-backed credentials remain available only through an explicitly selected development/evaluation resolver. They are useful for a local `leapview dev` workflow, but production composition rejects that resolver and never falls back to it after an Infisical denial or outage.
 
+For a locally running development target, target-managed connection bundles use dedicated process variables named `LEAPVIEW_DEV_CONNECTION_<NAME>`. The binding credential reference uses the local target instance ID as its project, the target environment, `/` as its path, and the variable name as its key. Values are JSON credential bundles such as `{"password":"..."}`. Only variables with this dedicated prefix are eligible; arbitrary process variables cannot be selected through the binding API. If Infisical is configured on a development target, it remains authoritative and the environment resolver is not used as a fallback.
+
 Object storage is the recommended external-file boundary. LeapView supports these v1 credential modes:
 
 | Connection | Development `env` | Public `none` | Ambient identity |
