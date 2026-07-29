@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /opt/leapview-site
+site_root="/opt/leapview-site"
+cd "$site_root"
 set -a
 # shellcheck disable=SC1091
 source ./deployment.env
@@ -18,7 +19,7 @@ if [[ ! "$CADDY_IMAGE" =~ $immutable_reference ]]; then
 fi
 
 install -d -m 0755 \
-  /opt/leapview-site \
+  "$site_root" \
   /var/lib/leapview-site/caddy-data \
   /var/lib/leapview-site/caddy-config
 systemctl enable --now docker
@@ -43,5 +44,7 @@ if [[ "$healthy" != true ]]; then
   exit 1
 fi
 
-printf '%s\n' "$LEAPVIEW_SITE_IMAGE" > deployed-image
-chmod 0644 deployed-image
+deployed_image_tmp="$(mktemp "$site_root/deployed-image.next.XXXXXX")"
+printf '%s\n' "$LEAPVIEW_SITE_IMAGE" >"$deployed_image_tmp"
+chmod 0644 "$deployed_image_tmp"
+mv "$deployed_image_tmp" "$site_root/deployed-image"

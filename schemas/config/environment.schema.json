@@ -2337,6 +2337,13 @@
       "x-lifecycle": "supported",
       "x-scope": "public site"
     },
+    "LEAPVIEW_SITE_HOST": {
+      "default": "178.105.204.14",
+      "description": "Reserved production IPv4 contacted by the public-site deployment command.",
+      "type": "string",
+      "x-lifecycle": "tooling",
+      "x-scope": "public-site operator"
+    },
     "LEAPVIEW_SITE_IMAGE": {
       "description": "Immutable LeapView public-site OCI image reference consumed by deployment tooling.",
       "type": "string",
@@ -2348,6 +2355,12 @@
       "type": "string",
       "x-lifecycle": "supported",
       "x-scope": "public site"
+    },
+    "LEAPVIEW_SITE_SSH_KEY": {
+      "description": "Optional path to the dedicated production SSH identity used by the public-site deployment command.",
+      "type": "string",
+      "x-lifecycle": "tooling",
+      "x-scope": "public-site operator"
     },
     "LEAPVIEW_SMOKE_PORT": {
       "default": "18080",
