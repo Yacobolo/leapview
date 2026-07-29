@@ -16,15 +16,18 @@ import (
 )
 
 type Options struct {
-	Workspaces          analyticscontract.WorkspaceFactory
-	ResultLimits        dataquery.ResultLimits
-	SnapshotID          int64
-	ServingStateID      string
-	WorkspaceID         string
-	Environment         string
-	SemanticModelDigest string
-	ArtifactDigest      string
-	SourceDataDigest    string
+	Workspaces               analyticscontract.WorkspaceFactory
+	ResultLimits             dataquery.ResultLimits
+	SnapshotID               int64
+	ServingStateID           string
+	WorkspaceID              string
+	Environment              string
+	SemanticModelDigest      string
+	ArtifactDigest           string
+	SourceDataDigest         string
+	CandidateID              string
+	AuthorizationFingerprint string
+	BindingFingerprint       string
 }
 
 type Factory struct{ options Options }
@@ -44,6 +47,8 @@ func (f Factory) OpenDashboardWorkspaceDataRuntimes(ctx context.Context, config 
 		ResultLimits:   options.ResultLimits,
 		ServingStateID: options.ServingStateID, WorkspaceID: options.WorkspaceID, Environment: options.Environment,
 		SemanticDigest: options.SemanticModelDigest, ArtifactDigest: options.ArtifactDigest, SourceDataDigest: options.SourceDataDigest,
+		CandidateID: options.CandidateID, AuthorizationFingerprint: options.AuthorizationFingerprint,
+		BindingFingerprint: options.BindingFingerprint,
 	})
 	if err != nil {
 		return nil, err

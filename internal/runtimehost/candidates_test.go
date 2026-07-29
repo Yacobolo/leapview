@@ -189,6 +189,65 @@ func TestCandidateRuntimeRetirementIsSafeWithConcurrentLeaseRelease(t *testing.T
 	}
 }
 
+func TestCandidateRuntimeOwnsExternalDependenciesUntilGenerationDrains(t *testing.T) {
+	now := time.Date(2026, 7, 29, 17, 0, 0, 0, time.UTC)
+	registry := candidateTestRegistry(t, func() time.Time { return now })
+	lifetime := &candidateTestLifetime{}
+	registration := CandidateRegistration{
+		CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "sales",
+		ExpiresAt: now.Add(time.Hour), Compatibility: candidateCompatibility("one"),
+	}
+	if err := registry.PrepareAndRegisterCandidate(
+		t.Context(),
+		CandidatePreparation{
+			Registration: registration, ServingStateID: "candidate_sales_1",
+			Lifetime: lifetime,
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := registry.AcquireCandidate(t.Context(), CandidateLeaseRequest{
+		CandidateID: registration.CandidateID,
+		OwnerID:     registration.OwnerID, WorkspaceID: registration.WorkspaceID,
+		Compatibility: registration.Compatibility,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry.RetireCandidate(registration.CandidateID)
+	if lifetime.closes != 0 {
+		t.Fatal("candidate dependency closed while a runtime lease was active")
+	}
+	lease.Release()
+	if lifetime.closes != 1 {
+		t.Fatalf("candidate dependency closes = %d, want 1 after drain", lifetime.closes)
+	}
+}
+
+func TestCandidateRuntimeRejectsRegistrationUnderDifferentCompatibility(t *testing.T) {
+	now := time.Date(2026, 7, 29, 17, 0, 0, 0, time.UTC)
+	registry := candidateTestRegistry(t, func() time.Time { return now })
+	prepared, err := registry.PrepareCandidate(t.Context(), CandidatePreparation{
+		Registration: CandidateRegistration{
+			CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "sales",
+			ExpiresAt: now.Add(time.Hour), Compatibility: candidateCompatibility("one"),
+		},
+		ServingStateID: "candidate_sales_1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prepared.Close()
+
+	err = registry.RegisterPreparedCandidate(CandidateRegistration{
+		CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "sales",
+		ExpiresAt: now.Add(time.Hour), Compatibility: candidateCompatibility("two"),
+	}, prepared)
+	if !errors.Is(err, ErrCandidateRuntimeIncompatible) {
+		t.Fatalf("RegisterPreparedCandidate() error = %v, want incompatible", err)
+	}
+}
+
 func candidateTestRegistry(t *testing.T, now func() time.Time) *Registry {
 	t.Helper()
 	repo := newFakeRegistryRepo()
@@ -224,11 +283,9 @@ func registerCandidateRuntime(
 	servingStateID string,
 ) {
 	t.Helper()
-	prepared, err := registry.PrepareCandidateServingState(t.Context(), servingStateID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := registry.RegisterPreparedCandidate(registration, prepared); err != nil {
+	if err := registry.PrepareAndRegisterCandidate(t.Context(), CandidatePreparation{
+		Registration: registration, ServingStateID: servingStateID,
+	}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -243,4 +300,13 @@ func candidateCompatibility(suffix string) CandidateCompatibility {
 			BindingID: "warehouse", Revision: 1, ProviderVersion: "provider-" + suffix,
 		}},
 	}
+}
+
+type candidateTestLifetime struct {
+	closes int
+}
+
+func (lifetime *candidateTestLifetime) Close() error {
+	lifetime.closes++
+	return nil
 }

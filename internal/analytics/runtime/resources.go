@@ -25,15 +25,18 @@ type WorkspaceDatabase interface {
 // WorkspaceRequest describes a governed analytical workspace without exposing
 // DuckDB construction or cache implementation details to consumer capabilities.
 type WorkspaceRequest struct {
-	Models           map[string]*semanticmodel.Model
-	SnapshotID       int64
-	ServingStateID   string
-	WorkspaceID      string
-	Environment      string
-	SemanticDigest   string
-	ArtifactDigest   string
-	SourceDataDigest string
-	ResultLimits     dataquery.ResultLimits
+	Models                   map[string]*semanticmodel.Model
+	SnapshotID               int64
+	ServingStateID           string
+	WorkspaceID              string
+	Environment              string
+	SemanticDigest           string
+	ArtifactDigest           string
+	SourceDataDigest         string
+	CandidateID              string
+	AuthorizationFingerprint string
+	BindingFingerprint       string
+	ResultLimits             dataquery.ResultLimits
 }
 
 // Workspace is the narrow analytical runtime consumed by dashboard adapters.

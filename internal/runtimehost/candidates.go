@@ -3,6 +3,7 @@ package runtimehost
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -58,6 +59,12 @@ type CandidateLeaseRequest struct {
 	OwnerID       string
 	WorkspaceID   servingstate.WorkspaceID
 	Compatibility CandidateCompatibility
+}
+
+type CandidatePreparation struct {
+	Registration   CandidateRegistration
+	ServingStateID string
+	Lifetime       RuntimeLifetime
 }
 
 type candidateRuntimeKey struct {
@@ -121,6 +128,12 @@ func (r *Registry) RegisterPreparedCandidate(
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrCandidateRuntimeInvalid, err)
 	}
+	if sealed.candidateID != normalized.CandidateID ||
+		sealed.candidateOwner != normalized.OwnerID ||
+		!sealed.candidateExpiry.Equal(normalized.ExpiresAt) ||
+		sealed.candidateHash != fingerprint {
+		return errors.Join(ErrCandidateRuntimeIncompatible, sealed.abort())
+	}
 	managed, err := sealed.consumeCandidate()
 	if err != nil {
 		return err
@@ -141,6 +154,100 @@ func (r *Registry) RegisterPreparedCandidate(
 	}
 	r.cleanupCandidateGeneration(retired)
 	return nil
+}
+
+func (r *Registry) PrepareCandidate(
+	ctx context.Context,
+	input CandidatePreparation,
+) (_ servingstate.PreparedRuntime, resultErr error) {
+	if r == nil || r.candidates == nil {
+		return nil, ErrCandidateRuntimeClosed
+	}
+	current, err := r.repo.ByID(ctx, servingstate.ID(strings.TrimSpace(input.ServingStateID)))
+	if err != nil {
+		return nil, errors.Join(err, closeRuntimeLifetime(input.Lifetime))
+	}
+	if servingstate.NormalizeEnvironment(current.Environment) != r.environment {
+		return nil, errors.Join(
+			fmt.Errorf(
+				"serving state %s environment = %q, want %q",
+				input.ServingStateID,
+				current.Environment,
+				r.environment,
+			),
+			closeRuntimeLifetime(input.Lifetime),
+		)
+	}
+	if input.Registration.WorkspaceID != current.WorkspaceID {
+		return nil, errors.Join(
+			fmt.Errorf(
+				"%w: serving state workspace %q does not match registration workspace %q",
+				ErrCandidateRuntimeInvalid,
+				current.WorkspaceID,
+				input.Registration.WorkspaceID,
+			),
+			closeRuntimeLifetime(input.Lifetime),
+		)
+	}
+	normalized, fingerprint, err := normalizeCandidateRegistration(
+		input.Registration,
+		r.candidates.now(),
+	)
+	if err != nil {
+		return nil, errors.Join(err, closeRuntimeLifetime(input.Lifetime))
+	}
+	artifact, err := r.repo.ArtifactByServingState(ctx, current.ID)
+	if err != nil {
+		return nil, errors.Join(err, closeRuntimeLifetime(input.Lifetime))
+	}
+	managedData, err := r.managerForWorkspace(current.WorkspaceID).resolveManagedData(ctx, current.ID)
+	if err != nil {
+		return nil, errors.Join(err, closeRuntimeLifetime(input.Lifetime))
+	}
+	candidate := &candidatePreparationContext{
+		runtime: CandidateRuntimeContext{
+			CandidateID:              normalized.CandidateID,
+			OwnerID:                  normalized.OwnerID,
+			AuthorizationFingerprint: normalized.Compatibility.AuthorizationFingerprint,
+			BindingFingerprint:       fingerprintCandidateBindings(normalized.Compatibility.Bindings),
+			CompatibilityFingerprint: "sha256:" + hex.EncodeToString(fingerprint[:]),
+		},
+		expiresAt: normalized.ExpiresAt, fingerprint: fingerprint, lifetime: input.Lifetime,
+	}
+	manager := r.managerForWorkspace(current.WorkspaceID)
+	r.prepareMu.Lock()
+	prepared, err := manager.prepareResolvedWithCandidate(
+		ctx,
+		current,
+		artifact,
+		managedData,
+		candidate,
+	)
+	r.prepareMu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	return &RegistryPrepared{
+		registry: r, workspaceID: current.WorkspaceID, manager: manager, prepared: prepared,
+	}, nil
+}
+
+func fingerprintCandidateBindings(bindings []CandidateBindingVersion) string {
+	encoded, _ := json.Marshal(bindings)
+	sum := sha256.Sum256(encoded)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func (r *Registry) PrepareAndRegisterCandidate(
+	ctx context.Context,
+	input CandidatePreparation,
+) error {
+	prepared, err := r.PrepareCandidate(ctx, input)
+	if err != nil {
+		return err
+	}
+	defer prepared.Close()
+	return r.RegisterPreparedCandidate(input.Registration, prepared)
 }
 
 func (r *Registry) AcquireCandidate(ctx context.Context, request CandidateLeaseRequest) (Lease, error) {

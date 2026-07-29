@@ -349,21 +349,24 @@ func safeSourceError(source string, _ error) error {
 }
 
 type WorkspaceRuntimeConfig struct {
-	Models             map[string]*semanticmodel.Model
-	Database           analyticsruntime.WorkspaceDatabase
-	CredentialResolver CredentialResolver
-	SnapshotID         int64
-	ServingStateID     string
-	WorkspaceID        string
-	Environment        string
-	TargetType         string
-	TargetID           string
-	SemanticDigest     string
-	ArtifactDigest     string
-	SourceDataDigest   string
-	SkipInitialRefresh bool
-	QueryCache         *resultcache.Scope
-	ResultLimits       dataquery.ResultLimits
+	Models                   map[string]*semanticmodel.Model
+	Database                 analyticsruntime.WorkspaceDatabase
+	CredentialResolver       CredentialResolver
+	SnapshotID               int64
+	ServingStateID           string
+	WorkspaceID              string
+	Environment              string
+	TargetType               string
+	TargetID                 string
+	SemanticDigest           string
+	ArtifactDigest           string
+	SourceDataDigest         string
+	CandidateID              string
+	AuthorizationFingerprint string
+	BindingFingerprint       string
+	SkipInitialRefresh       bool
+	QueryCache               *resultcache.Scope
+	ResultLimits             dataquery.ResultLimits
 }
 
 type WorkspaceRuntime struct {
@@ -454,7 +457,7 @@ func OpenWorkspaceMaterializeRuntime(ctx context.Context, config WorkspaceRuntim
 
 func workspaceQueryCacheNamespace(config WorkspaceRuntimeConfig) string {
 	return fmt.Sprintf(
-		"snapshot=%d;serving=%q;workspace=%q;environment=%q;semantic=%q;artifact=%q;source=%q",
+		"snapshot=%d;serving=%q;workspace=%q;environment=%q;semantic=%q;artifact=%q;source=%q;candidate=%q;authorization=%q;bindings=%q",
 		config.SnapshotID,
 		config.ServingStateID,
 		config.WorkspaceID,
@@ -462,6 +465,9 @@ func workspaceQueryCacheNamespace(config WorkspaceRuntimeConfig) string {
 		config.SemanticDigest,
 		config.ArtifactDigest,
 		config.SourceDataDigest,
+		config.CandidateID,
+		config.AuthorizationFingerprint,
+		config.BindingFingerprint,
 	)
 }
 

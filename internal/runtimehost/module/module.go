@@ -53,11 +53,20 @@ func (m *Module) Reload(ctx context.Context) error { return m.registry.Reload(ct
 func (m *Module) PrepareServingState(ctx context.Context, id string) (servingstate.PreparedRuntime, error) {
 	return m.registry.PrepareServingState(ctx, id)
 }
-func (m *Module) PrepareCandidateServingState(ctx context.Context, id string) (servingstate.PreparedRuntime, error) {
-	return m.registry.PrepareCandidateServingState(ctx, id)
-}
 func (m *Module) PrepareServingStateCandidates(ctx context.Context, inputs []runtimehost.ServingStateCandidate) (*runtimehost.PreparedSet, error) {
 	return m.registry.PrepareServingStateCandidates(ctx, inputs)
+}
+func (m *Module) PrepareCandidate(
+	ctx context.Context,
+	input runtimehost.CandidatePreparation,
+) (servingstate.PreparedRuntime, error) {
+	return m.registry.PrepareCandidate(ctx, input)
+}
+func (m *Module) PrepareAndRegisterCandidate(
+	ctx context.Context,
+	input runtimehost.CandidatePreparation,
+) error {
+	return m.registry.PrepareAndRegisterCandidate(ctx, input)
 }
 func (m *Module) RegisterPreparedCandidate(
 	registration runtimehost.CandidateRegistration,

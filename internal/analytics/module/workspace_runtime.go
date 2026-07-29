@@ -36,6 +36,8 @@ func (f workspaceRuntimeFactory) OpenWorkspace(ctx context.Context, request anal
 		WorkspaceID: request.WorkspaceID, Environment: request.Environment,
 		SemanticDigest: request.SemanticDigest, ArtifactDigest: request.ArtifactDigest,
 		SourceDataDigest: request.SourceDataDigest,
+		CandidateID:      request.CandidateID, AuthorizationFingerprint: request.AuthorizationFingerprint,
+		BindingFingerprint: request.BindingFingerprint,
 	})
 	if err != nil {
 		_ = cacheScope.Close()

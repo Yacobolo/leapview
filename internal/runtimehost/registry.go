@@ -141,40 +141,6 @@ func NewRegistryWithFactory(options RegistryOptions) *Registry {
 	return registry
 }
 
-// PrepareCandidateServingState builds an isolated private generation without
-// closing or replacing any active workspace runtime.
-func (r *Registry) PrepareCandidateServingState(
-	ctx context.Context,
-	servingStateID string,
-) (servingstate.PreparedRuntime, error) {
-	current, err := r.repo.ByID(ctx, servingstate.ID(servingStateID))
-	if err != nil {
-		return nil, err
-	}
-	if servingstate.NormalizeEnvironment(current.Environment) != r.environment {
-		return nil, fmt.Errorf(
-			"serving state %s environment = %q, want %q",
-			servingStateID,
-			current.Environment,
-			r.environment,
-		)
-	}
-	artifact, err := r.repo.ArtifactByServingState(ctx, current.ID)
-	if err != nil {
-		return nil, err
-	}
-	manager := r.managerForWorkspace(current.WorkspaceID)
-	r.prepareMu.Lock()
-	prepared, err := manager.prepare(ctx, current, artifact)
-	r.prepareMu.Unlock()
-	if err != nil {
-		return nil, err
-	}
-	return &RegistryPrepared{
-		registry: r, workspaceID: current.WorkspaceID, manager: manager, prepared: prepared,
-	}, nil
-}
-
 func (r *Registry) Reload(ctx context.Context) error {
 	for _, workspaceID := range r.workspaceIDs() {
 		manager := r.managerForWorkspace(workspaceID)
@@ -306,6 +272,12 @@ func (r *Registry) ActivatePrepared(candidate servingstate.PreparedRuntime, acti
 	if err != nil {
 		return err
 	}
+	if prepared.candidateID != "" {
+		return errors.Join(
+			fmt.Errorf("private candidate runtime cannot be activated"),
+			prepared.abort(),
+		)
+	}
 	r.cutoverMu.Lock()
 	if err := activate(); err != nil {
 		r.cutoverMu.Unlock()
@@ -349,6 +321,13 @@ func (r *Registry) ActivatePreparedSet(set *PreparedSet, activate func() error) 
 		sealed, err := r.sealRegistryPrepared(item)
 		if err != nil {
 			return errors.Join(err, abortSealed(batch))
+		}
+		if sealed.candidateID != "" {
+			return errors.Join(
+				fmt.Errorf("private candidate runtime cannot be activated"),
+				sealed.abort(),
+				abortSealed(batch),
+			)
 		}
 		batch = append(batch, sealed)
 	}

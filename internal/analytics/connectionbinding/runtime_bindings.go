@@ -133,6 +133,11 @@ func (leases *RuntimeBindingLeases) Release() {
 	})
 }
 
+func (leases *RuntimeBindingLeases) Close() error {
+	leases.Release()
+	return nil
+}
+
 func normalizeRuntimeRequirements(requirements []Requirement) ([]Requirement, error) {
 	normalized := append([]Requirement(nil), requirements...)
 	for index := range normalized {

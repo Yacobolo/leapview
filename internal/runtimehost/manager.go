@@ -27,6 +27,10 @@ type RuntimeSnapshot interface {
 	DuckLakeSnapshotID() int64
 }
 
+type RuntimeLifetime interface {
+	Close() error
+}
+
 type Lease interface {
 	Runtime() Runtime
 	ServingStateID() servingstate.ID
@@ -45,6 +49,7 @@ const (
 	CleanupResourceRuntime       CleanupResource = "runtime"
 	CleanupResourceManagedData   CleanupResource = "managed_data"
 	CleanupResourceSnapshotLease CleanupResource = "snapshot_lease"
+	CleanupResourceDependency    CleanupResource = "runtime_dependency"
 )
 
 // CleanupFailure describes a post-publication retirement failure. Such a
@@ -88,6 +93,15 @@ type RuntimeInput struct {
 	ManagedData ManagedDataResolution
 	DuckDBDir   string
 	RuntimeDir  string
+	Candidate   *CandidateRuntimeContext
+}
+
+type CandidateRuntimeContext struct {
+	CandidateID              string
+	OwnerID                  string
+	AuthorizationFingerprint string
+	BindingFingerprint       string
+	CompatibilityFingerprint string
 }
 
 type Manager struct {
@@ -136,6 +150,11 @@ type Prepared struct {
 	runtime         Runtime
 	managedData     ManagedDataLifetime
 	snapshotLease   *persistentSnapshotLease
+	runtimeLifetime RuntimeLifetime
+	candidateID     string
+	candidateOwner  string
+	candidateExpiry time.Time
+	candidateHash   [32]byte
 	noChange        bool
 	snapshotID      int64
 }
@@ -169,7 +188,9 @@ func (p *Prepared) Close() error {
 	p.managedData = nil
 	snapshotLeaseErr := p.snapshotLease.Close()
 	p.snapshotLease = nil
-	return errors.Join(runtimeErr, managedDataErr, snapshotLeaseErr)
+	runtimeLifetimeErr := closeRuntimeLifetime(p.runtimeLifetime)
+	p.runtimeLifetime = nil
+	return errors.Join(runtimeErr, managedDataErr, snapshotLeaseErr, runtimeLifetimeErr)
 }
 
 func (p *Prepared) DuckLakeSnapshotID() int64 {
@@ -315,8 +336,25 @@ func (m *Manager) resolveManagedData(ctx context.Context, servingStateID serving
 }
 
 func (m *Manager) prepareResolved(ctx context.Context, current servingstate.State, artifact servingstate.Artifact, managedData ManagedDataResolution) (*Prepared, error) {
+	return m.prepareResolvedWithCandidate(ctx, current, artifact, managedData, nil)
+}
+
+type candidatePreparationContext struct {
+	runtime     CandidateRuntimeContext
+	expiresAt   time.Time
+	fingerprint [32]byte
+	lifetime    RuntimeLifetime
+}
+
+func (m *Manager) prepareResolvedWithCandidate(
+	ctx context.Context,
+	current servingstate.State,
+	artifact servingstate.Artifact,
+	managedData ManagedDataResolution,
+	candidate *candidatePreparationContext,
+) (*Prepared, error) {
 	m.mu.RLock()
-	if m.current != nil && m.activeServingStateID == current.ID && m.activeDigest == artifact.Digest && m.activeManagedRevision == managedData.RevisionID && m.activeSnapshotID == current.DuckLakeSnapshotID {
+	if candidate == nil && m.current != nil && m.activeServingStateID == current.ID && m.activeDigest == artifact.Digest && m.activeManagedRevision == managedData.RevisionID && m.activeSnapshotID == current.DuckLakeSnapshotID {
 		m.mu.RUnlock()
 		if err := releaseManagedDataLifetime(managedData.Lifetime); err != nil {
 			return nil, err
@@ -326,12 +364,28 @@ func (m *Manager) prepareResolved(ctx context.Context, current servingstate.Stat
 	m.mu.RUnlock()
 	factoryManagedData := managedData
 	factoryManagedData.Lifetime = nil
-	runtime, err := m.factory.Prepare(ctx, RuntimeInput{State: current, Artifact: artifact, ManagedData: factoryManagedData})
+	var candidateInput *CandidateRuntimeContext
+	if candidate != nil {
+		copy := candidate.runtime
+		candidateInput = &copy
+	}
+	runtime, err := m.factory.Prepare(ctx, RuntimeInput{
+		State: current, Artifact: artifact, ManagedData: factoryManagedData,
+		Candidate: candidateInput,
+	})
 	if err != nil {
-		return nil, errors.Join(err, releaseManagedDataLifetime(managedData.Lifetime))
+		return nil, errors.Join(
+			err,
+			releaseManagedDataLifetime(managedData.Lifetime),
+			closeCandidatePreparationLifetime(candidate),
+		)
 	}
 	if runtime == nil {
-		return nil, errors.Join(errors.New("runtime factory returned nil"), releaseManagedDataLifetime(managedData.Lifetime))
+		return nil, errors.Join(
+			errors.New("runtime factory returned nil"),
+			releaseManagedDataLifetime(managedData.Lifetime),
+			closeCandidatePreparationLifetime(candidate),
+		)
 	}
 	var snapshotID int64
 	if snapshot, ok := runtime.(RuntimeSnapshot); ok {
@@ -342,13 +396,27 @@ func (m *Manager) prepareResolved(ctx context.Context, current servingstate.Stat
 	}
 	snapshotLease, err := m.createPersistentLease(ctx, current.ID, snapshotID)
 	if err != nil {
-		return nil, errors.Join(err, runtime.Close(), releaseManagedDataLifetime(managedData.Lifetime))
+		return nil, errors.Join(
+			err,
+			runtime.Close(),
+			releaseManagedDataLifetime(managedData.Lifetime),
+			closeCandidatePreparationLifetime(candidate),
+		)
 	}
-	return &Prepared{
+	prepared := &Prepared{
 		owner:          m,
 		servingStateID: current.ID, digest: artifact.Digest, managedRevision: managedData.RevisionID,
 		runtime: runtime, managedData: managedData.Lifetime, snapshotLease: snapshotLease, snapshotID: snapshotID,
-	}, nil
+	}
+	if candidate != nil {
+		prepared.runtimeLifetime = candidate.lifetime
+		candidate.lifetime = nil
+		prepared.candidateID = candidate.runtime.CandidateID
+		prepared.candidateOwner = candidate.runtime.OwnerID
+		prepared.candidateExpiry = candidate.expiresAt
+		prepared.candidateHash = candidate.fingerprint
+	}
+	return prepared, nil
 }
 
 // PublishPrepared publishes an already-durable serving state. Cleanup of the
@@ -357,6 +425,12 @@ func (m *Manager) PublishPrepared(candidate servingstate.PreparedRuntime) error 
 	sealed, err := m.sealPrepared(candidate)
 	if err != nil {
 		return err
+	}
+	if sealed.candidateID != "" {
+		return errors.Join(
+			fmt.Errorf("private candidate runtime cannot be published as active"),
+			sealed.abort(),
+		)
 	}
 	retired := sealed.publish()
 	m.cleanupRetired(retired)
@@ -372,6 +446,11 @@ type sealedPrepared struct {
 	runtime         Runtime
 	managedData     ManagedDataLifetime
 	snapshotLease   *persistentSnapshotLease
+	runtimeLifetime RuntimeLifetime
+	candidateID     string
+	candidateOwner  string
+	candidateExpiry time.Time
+	candidateHash   [32]byte
 	snapshotID      int64
 	noChange        bool
 }
@@ -396,11 +475,15 @@ func (m *Manager) sealPrepared(candidate servingstate.PreparedRuntime) (*sealedP
 		manager: m, source: prepared,
 		servingStateID: prepared.servingStateID, digest: prepared.digest, managedRevision: prepared.managedRevision,
 		runtime: prepared.runtime, managedData: prepared.managedData, snapshotLease: prepared.snapshotLease,
+		runtimeLifetime: prepared.runtimeLifetime,
+		candidateID:     prepared.candidateID, candidateOwner: prepared.candidateOwner,
+		candidateExpiry: prepared.candidateExpiry, candidateHash: prepared.candidateHash,
 		snapshotID: prepared.snapshotID, noChange: prepared.noChange,
 	}
 	prepared.runtime = nil
 	prepared.managedData = nil
 	prepared.snapshotLease = nil
+	prepared.runtimeLifetime = nil
 	prepared.state = preparedStateSealed
 	return sealed, nil
 }
@@ -414,12 +497,13 @@ func (p *sealedPrepared) publish() *managedRuntime {
 		return nil
 	}
 	managed := &managedRuntime{
-		servingStateID: p.servingStateID,
-		digest:         p.digest,
-		runtime:        p.runtime,
-		managedData:    p.managedData,
-		snapshotLease:  p.snapshotLease,
-		snapshotID:     p.snapshotID,
+		servingStateID:  p.servingStateID,
+		digest:          p.digest,
+		runtime:         p.runtime,
+		managedData:     p.managedData,
+		snapshotLease:   p.snapshotLease,
+		runtimeLifetime: p.runtimeLifetime,
+		snapshotID:      p.snapshotID,
 	}
 	p.manager.mu.Lock()
 	old := p.manager.current
@@ -433,6 +517,7 @@ func (p *sealedPrepared) publish() *managedRuntime {
 	p.runtime = nil
 	p.managedData = nil
 	p.snapshotLease = nil
+	p.runtimeLifetime = nil
 	p.finish(preparedStatePublished)
 	return retired
 }
@@ -441,7 +526,7 @@ func (p *sealedPrepared) consumeCandidate() (*managedRuntime, error) {
 	if p == nil {
 		return nil, fmt.Errorf("%w: prepared runtime is nil", ErrCandidateRuntimeInvalid)
 	}
-	if p.noChange || p.runtime == nil {
+	if p.noChange || p.runtime == nil || p.candidateID == "" {
 		p.finish(preparedStateClosed)
 		return nil, fmt.Errorf(
 			"%w: candidate preparation must own an isolated runtime",
@@ -449,16 +534,18 @@ func (p *sealedPrepared) consumeCandidate() (*managedRuntime, error) {
 		)
 	}
 	managed := &managedRuntime{
-		servingStateID: p.servingStateID,
-		digest:         p.digest,
-		runtime:        p.runtime,
-		managedData:    p.managedData,
-		snapshotLease:  p.snapshotLease,
-		snapshotID:     p.snapshotID,
+		servingStateID:  p.servingStateID,
+		digest:          p.digest,
+		runtime:         p.runtime,
+		managedData:     p.managedData,
+		snapshotLease:   p.snapshotLease,
+		runtimeLifetime: p.runtimeLifetime,
+		snapshotID:      p.snapshotID,
 	}
 	p.runtime = nil
 	p.managedData = nil
 	p.snapshotLease = nil
+	p.runtimeLifetime = nil
 	p.finish(preparedStateRegistered)
 	return managed, nil
 }
@@ -470,10 +557,12 @@ func (p *sealedPrepared) abort() error {
 	managed := &managedRuntime{
 		servingStateID: p.servingStateID, runtime: p.runtime, managedData: p.managedData,
 		snapshotLease: p.snapshotLease, snapshotID: p.snapshotID,
+		runtimeLifetime: p.runtimeLifetime,
 	}
 	p.runtime = nil
 	p.managedData = nil
 	p.snapshotLease = nil
+	p.runtimeLifetime = nil
 	p.finish(preparedStateClosed)
 	return p.manager.closeManaged(managed)
 }
@@ -601,7 +690,7 @@ func (m *Manager) closeManagedResources(runtime *managedRuntime) []cleanupResult
 	if runtime == nil {
 		return nil
 	}
-	results := make([]cleanupResult, 0, 3)
+	results := make([]cleanupResult, 0, 4)
 	if runtime.runtime != nil {
 		if err := runtime.runtime.Close(); err != nil {
 			results = append(results, cleanupResult{resource: CleanupResourceRuntime, err: err})
@@ -616,6 +705,10 @@ func (m *Manager) closeManagedResources(runtime *managedRuntime) []cleanupResult
 		results = append(results, cleanupResult{resource: CleanupResourceSnapshotLease, err: err})
 	}
 	runtime.snapshotLease = nil
+	if err := closeRuntimeLifetime(runtime.runtimeLifetime); err != nil {
+		results = append(results, cleanupResult{resource: CleanupResourceDependency, err: err})
+	}
+	runtime.runtimeLifetime = nil
 	if runtime.closing && m.onDrained != nil {
 		m.onDrained(runtime.servingStateID, runtime.snapshotID)
 	}
@@ -641,14 +734,15 @@ func (m *Manager) cleanupRetired(runtime *managedRuntime) {
 }
 
 type managedRuntime struct {
-	servingStateID servingstate.ID
-	digest         string
-	runtime        Runtime
-	managedData    ManagedDataLifetime
-	snapshotLease  *persistentSnapshotLease
-	snapshotID     int64
-	refs           int
-	closing        bool
+	servingStateID  servingstate.ID
+	digest          string
+	runtime         Runtime
+	managedData     ManagedDataLifetime
+	snapshotLease   *persistentSnapshotLease
+	runtimeLifetime RuntimeLifetime
+	snapshotID      int64
+	refs            int
+	closing         bool
 }
 
 func releaseManagedDataLifetime(lifetime ManagedDataLifetime) error {
@@ -656,6 +750,22 @@ func releaseManagedDataLifetime(lifetime ManagedDataLifetime) error {
 		return nil
 	}
 	return lifetime.Release()
+}
+
+func closeRuntimeLifetime(lifetime RuntimeLifetime) error {
+	if lifetime == nil {
+		return nil
+	}
+	return lifetime.Close()
+}
+
+func closeCandidatePreparationLifetime(candidate *candidatePreparationContext) error {
+	if candidate == nil {
+		return nil
+	}
+	err := closeRuntimeLifetime(candidate.lifetime)
+	candidate.lifetime = nil
+	return err
 }
 
 type runtimeLease struct {

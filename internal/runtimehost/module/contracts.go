@@ -8,6 +8,8 @@ type CandidateRegistration = runtimehost.CandidateRegistration
 type CandidateLeaseRequest = runtimehost.CandidateLeaseRequest
 type CandidateCompatibility = runtimehost.CandidateCompatibility
 type CandidateBindingVersion = runtimehost.CandidateBindingVersion
+type CandidatePreparation = runtimehost.CandidatePreparation
+type RuntimeLifetime = runtimehost.RuntimeLifetime
 
 var (
 	ErrCandidateRuntimeInvalid      = runtimehost.ErrCandidateRuntimeInvalid

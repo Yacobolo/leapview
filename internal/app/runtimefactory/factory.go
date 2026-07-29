@@ -65,6 +65,11 @@ func (f servingStateRuntimeFactory) Prepare(ctx context.Context, input runtimeho
 		ArtifactDigest: input.Artifact.Digest, SourceDataDigest: input.ManagedData.RevisionID,
 		Definition: projectartifact.DashboardProjection(compiled.Manifest),
 	}
+	if input.Candidate != nil {
+		runtimeInput.CandidateID = input.Candidate.CandidateID
+		runtimeInput.AuthorizationFingerprint = input.Candidate.AuthorizationFingerprint
+		runtimeInput.BindingFingerprint = input.Candidate.BindingFingerprint
+	}
 	service, err := f.dashboardRuntime(ctx, runtimeInput)
 	if err != nil {
 		return nil, err
