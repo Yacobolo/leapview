@@ -135,7 +135,7 @@ func TestAgentGeneratedAPIIsCapabilityOwned(t *testing.T) {
 }
 
 func TestCapabilityCLIIsAnAdapterOwnedByItsCapability(t *testing.T) {
-	for _, capability := range []string{"admin", "agent", "dashboard", "manageddata", "project", "workspace"} {
+	for _, capability := range []string{"access", "admin", "agent", "dashboard", "manageddata", "project", "workspace"} {
 		rule, ok := ClassifyPackage("internal/" + capability + "/cli")
 		if !ok {
 			t.Fatalf("%s CLI package is not classified", capability)
@@ -146,8 +146,122 @@ func TestCapabilityCLIIsAnAdapterOwnedByItsCapability(t *testing.T) {
 	}
 }
 
+func TestEnterpriseAuthoringPackagesRemainCapabilityOwned(t *testing.T) {
+	tests := []struct {
+		path       string
+		capability string
+		layer      Layer
+	}{
+		{path: "internal/platform/securestore", capability: "platform", layer: LayerPlatform},
+		{path: "internal/access/cli", capability: "access", layer: LayerAdapter},
+		{path: "internal/project/devloop", capability: "project", layer: LayerUseCase},
+		{path: "internal/analytics/connectionbinding", capability: "analytics", layer: LayerUseCase},
+		{path: "internal/analytics/sqlite", capability: "analytics", layer: LayerAdapter},
+	}
+	for _, test := range tests {
+		t.Run(test.path, func(t *testing.T) {
+			rule, ok := ClassifyPackage(test.path)
+			if !ok {
+				t.Fatalf("%s is not classified", test.path)
+			}
+			if rule.Capability != test.capability || rule.Layer != test.layer {
+				t.Fatalf("%s classification = %#v, want %s %s", test.path, rule, test.capability, test.layer)
+			}
+		})
+	}
+}
+
+func TestEnterpriseAuthoringForbiddenImportsAreRejected(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+		target string
+	}{
+		{
+			name:   "project dev loop cannot import release adapters",
+			source: "internal/project/devloop",
+			target: "internal/release/filesystem",
+		},
+		{
+			name:   "project dev loop cannot import deployment adapters",
+			source: "internal/project/devloop",
+			target: "internal/deployment/http",
+		},
+		{
+			name:   "dashboard cannot import deployment",
+			source: "internal/dashboard/runtime",
+			target: "internal/deployment",
+		},
+		{
+			name:   "workspace cannot import deployment",
+			source: "internal/workspace",
+			target: "internal/deployment",
+		},
+		{
+			name:   "runtime host cannot import access",
+			source: "internal/runtimehost",
+			target: "internal/access",
+		},
+		{
+			name:   "runtime host cannot import deployment",
+			source: "internal/runtimehost",
+			target: "internal/deployment",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			source, sourceOK := ClassifyPackage(test.source)
+			target, targetOK := ClassifyPackage(test.target)
+			if !sourceOK || !targetOK {
+				t.Fatalf("classify source=%s (%v) target=%s (%v)", test.source, sourceOK, test.target, targetOK)
+			}
+			if violation := CapabilityImportViolation(test.source, source, test.target, target); !strings.Contains(violation, "undeclared capability edge") {
+				t.Fatalf("%s -> %s violation = %q, want undeclared capability edge", test.source, test.target, violation)
+			}
+		})
+	}
+}
+
+func TestEnterpriseAuthoringStateRemainsCapabilityOwned(t *testing.T) {
+	tests := []struct {
+		path       string
+		capability string
+		layer      Layer
+	}{
+		{path: "internal/deployment", capability: "deployment", layer: LayerContract},
+		{path: "internal/deployment/sqlite", capability: "deployment", layer: LayerAdapter},
+		{path: "internal/release", capability: "release", layer: LayerContract},
+		{path: "internal/release/filesystem", capability: "release", layer: LayerAdapter},
+		{path: "internal/analytics/connectionbinding", capability: "analytics", layer: LayerUseCase},
+		{path: "internal/analytics/sqlite", capability: "analytics", layer: LayerAdapter},
+	}
+	for _, test := range tests {
+		t.Run(test.path, func(t *testing.T) {
+			rule, ok := ClassifyPackage(test.path)
+			if !ok {
+				t.Fatalf("%s is not classified", test.path)
+			}
+			if rule.Capability != test.capability || rule.Layer != test.layer {
+				t.Fatalf("%s classification = %#v, want %s %s", test.path, rule, test.capability, test.layer)
+			}
+		})
+	}
+
+	root := repoRoot(t)
+	for _, forbidden := range []string{
+		"internal/project/candidate",
+		"internal/release/candidate",
+		"internal/manageddata/connectionbinding",
+	} {
+		if packageDirExists(root, forbidden) {
+			t.Errorf("%s claims enterprise-authoring state owned by another capability", forbidden)
+		}
+	}
+}
+
 func TestCapabilityCLIsUseGeneratedTypedClients(t *testing.T) {
 	clientImports := map[string]string{
+		"internal/access/cli":    modulePath + "/internal/access/api/gen",
 		"internal/agent/cli":     modulePath + "/internal/agent/api/gen",
 		"internal/dashboard/cli": modulePath + "/internal/dashboard/api/gen",
 		"internal/workspace/cli": modulePath + "/internal/workspace/api/gen",
@@ -166,6 +280,9 @@ func TestCapabilityCLIsUseGeneratedTypedClients(t *testing.T) {
 		}
 	}
 	for pkgDir := range clientImports {
+		if pkgDir == "internal/access/cli" && !packageDirExists(repoRoot(t), pkgDir) {
+			continue
+		}
 		if !seen[pkgDir] {
 			t.Errorf("%s does not import its generated typed client package", pkgDir)
 		}

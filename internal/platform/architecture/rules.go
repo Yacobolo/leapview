@@ -195,6 +195,7 @@ var PackageRules = []PackageRule{
 	{Prefix: "internal/workload/observability", Capability: "workload", Layer: LayerAdapter},
 	{Prefix: "internal/dashboard/queryruntime", Capability: "dashboard", Layer: LayerContract},
 	{Prefix: "internal/workspace/search", Capability: "workspace", Layer: LayerUseCase},
+	{Prefix: "internal/platform/securestore", Capability: "platform", Layer: LayerPlatform},
 	{Prefix: "internal/platform/security/secret", Capability: "platform", Layer: LayerPlatform},
 	{Prefix: "internal/platform/filesystem", Capability: "platform", Layer: LayerPlatform},
 	{Prefix: "internal/app/site", Capability: "composition", Layer: LayerAdapter},
