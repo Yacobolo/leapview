@@ -10,9 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/app/adminoffline"
+	adminoffline "github.com/Yacobolo/leapview/internal/admin/offline"
 	"github.com/Yacobolo/leapview/internal/app/config"
 	"github.com/Yacobolo/leapview/internal/manageddata/localplan"
+	"github.com/Yacobolo/leapview/internal/platform/filesystem"
 	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
 )
 
@@ -81,7 +82,7 @@ func TestEvaluationCredentialHandoffIsPrivateRecoverableAndOneTime(t *testing.T)
 	if strings.TrimSpace(token) == "" {
 		t.Fatal("evaluation bootstrap token is empty")
 	}
-	if _, err := os.Stat(adminoffline.InitialCredentialRecoveryPath(home)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(home, adminoffline.CredentialRecoveryFileName)); !os.IsNotExist(err) {
 		t.Fatalf("platform recovery bundle still exists: %v", err)
 	}
 	info, err := os.Stat(evaluationFirstLoginPath(home))
@@ -96,7 +97,7 @@ func TestEvaluationCredentialHandoffIsPrivateRecoverableAndOneTime(t *testing.T)
 	if err := consumeEvaluationFirstLogin(home, &out); err != nil {
 		t.Fatal(err)
 	}
-	var credentials adminoffline.InitialInstanceCredentials
+	var credentials adminoffline.InitialCredentials
 	if err := json.Unmarshal(out.Bytes(), &credentials); err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +118,7 @@ func TestEvaluationCredentialHandoffIsPrivateRecoverableAndOneTime(t *testing.T)
 func TestEvaluationFirstLoginRetainedWhenDeliveryFails(t *testing.T) {
 	home := t.TempDir()
 	contents := []byte(`{"email":"admin@localhost","temporaryPassword":"temporary","publisherToken":"publisher","publisherTokenExpiresAt":"2026-07-28T00:00:00Z"}` + "\n")
-	if err := adminoffline.WriteInitialCredentialRecovery(evaluationFirstLoginPath(home), contents); err != nil {
+	if err := securefs.WritePrivateFileAtomic(evaluationFirstLoginPath(home), contents); err != nil {
 		t.Fatal(err)
 	}
 	if err := consumeEvaluationFirstLogin(home, evaluationErrorWriter{}); err == nil {

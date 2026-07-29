@@ -116,6 +116,41 @@ func TestRepositoryRunAuditedMutationBatchCommitsEveryAuditEvent(t *testing.T) {
 	}
 }
 
+func TestRepositoryInitializeInstanceRollsBackWhenCredentialPreparationFails(t *testing.T) {
+	ctx := context.Background()
+	store, repo := openAccessRepo(t, ctx)
+	prepareErr := errors.New("write recovery credentials")
+
+	_, err := repo.InitializeInstance(ctx, access.InstanceInitializationInput{
+		Email:       "admin@example.com",
+		Environment: "production",
+		Now:         time.Date(2026, time.July, 29, 12, 0, 0, 0, time.UTC),
+	}, func(access.InitialInstanceCredentials) error {
+		return prepareErr
+	})
+	if !errors.Is(err, prepareErr) {
+		t.Fatalf("initialize instance error = %v, want %v", err, prepareErr)
+	}
+
+	if _, err := store.GetSetting(ctx, access.InstanceInitializedSetting); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("instance initialization setting error = %v, want sql.ErrNoRows", err)
+	}
+	principals, err := repo.ListPrincipals(ctx, access.PrincipalFilter{Email: "admin@example.com"})
+	if err != nil {
+		t.Fatalf("list principals: %v", err)
+	}
+	if len(principals) != 0 {
+		t.Fatalf("principals = %#v, want none", principals)
+	}
+	events, err := repo.ListAuditEvents(ctx, access.AuditEventFilter{Action: "instance.initialized"})
+	if err != nil {
+		t.Fatalf("list audit events: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("audit events = %#v, want none", events)
+	}
+}
+
 func TestRepositoryLocalUserPasswordLifecycle(t *testing.T) {
 	ctx := context.Background()
 	_, repo := openAccessRepo(t, ctx)

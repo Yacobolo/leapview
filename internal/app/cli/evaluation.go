@@ -15,10 +15,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/app/adminoffline"
+	adminoffline "github.com/Yacobolo/leapview/internal/admin/offline"
+	appadminoffline "github.com/Yacobolo/leapview/internal/app/adminoffline"
 	"github.com/Yacobolo/leapview/internal/app/config"
 	manageddatacli "github.com/Yacobolo/leapview/internal/manageddata/cli"
 	"github.com/Yacobolo/leapview/internal/manageddata/localplan"
+	"github.com/Yacobolo/leapview/internal/platform/filesystem"
 	instancelock "github.com/Yacobolo/leapview/internal/platform/locking"
 	"github.com/spf13/cobra"
 )
@@ -263,7 +265,7 @@ func writeEvaluationCompletion(home string, completion evaluationCompletion) err
 	if err != nil {
 		return err
 	}
-	if err := adminoffline.WriteInitialCredentialRecovery(evaluationCompletePath(home), append(contents, '\n')); err != nil {
+	if err := securefs.WritePrivateFileAtomic(evaluationCompletePath(home), append(contents, '\n')); err != nil {
 		return fmt.Errorf("write evaluation completion: %w", err)
 	}
 	return nil
@@ -314,7 +316,7 @@ func configureEvaluationEnvironment(home string) error {
 				return encodeErr
 			}
 			encoded = append(encoded, '\n')
-			err = adminoffline.WriteInitialCredentialRecovery(evaluationRuntimeConfigPath(home), encoded)
+			err = securefs.WritePrivateFileAtomic(evaluationRuntimeConfigPath(home), encoded)
 		}
 	}
 	if err != nil {
@@ -395,8 +397,8 @@ func readEvaluationRuntimeConfig(home string) (evaluationRuntimeConfig, error) {
 func prepareEvaluationCredentials(ctx context.Context, home string) (string, error) {
 	token, err := readEvaluationBootstrapToken(home)
 	if err == nil {
-		if _, statErr := os.Stat(adminoffline.InitialCredentialRecoveryPath(home)); statErr == nil {
-			if ackErr := (adminoffline.Operations{}).AcknowledgeInitialCredentials(ctx); ackErr != nil {
+		if _, statErr := os.Stat(filepath.Join(home, adminoffline.CredentialRecoveryFileName)); statErr == nil {
+			if ackErr := (appadminoffline.Operations{}).AcknowledgeInitialCredentials(ctx); ackErr != nil {
 				return "", ackErr
 			}
 		} else if !os.IsNotExist(statErr) {
@@ -409,24 +411,24 @@ func prepareEvaluationCredentials(ctx context.Context, home string) (string, err
 	}
 
 	var output bytes.Buffer
-	if err := (adminoffline.Operations{}).Initialize(ctx, "json", &output); err != nil {
+	if err := (appadminoffline.Operations{}).Initialize(ctx, adminoffline.InitializeRequest{Format: "json"}, &output); err != nil {
 		return "", fmt.Errorf("initialize evaluation administrator: %w", err)
 	}
-	var credentials adminoffline.InitialInstanceCredentials
+	var credentials adminoffline.InitialCredentials
 	if err := json.Unmarshal(output.Bytes(), &credentials); err != nil || credentials.PublisherToken == "" {
 		return "", fmt.Errorf("evaluation initialization returned invalid credentials")
 	}
-	if err := adminoffline.WriteInitialCredentialRecovery(evaluationFirstLoginPath(home), output.Bytes()); err != nil {
+	if err := securefs.WritePrivateFileAtomic(evaluationFirstLoginPath(home), output.Bytes()); err != nil {
 		return "", fmt.Errorf("store evaluation first-login credentials: %w", err)
 	}
 	bootstrap, err := json.Marshal(evaluationBootstrapCredentials{PublisherToken: credentials.PublisherToken})
 	if err != nil {
 		return "", err
 	}
-	if err := adminoffline.WriteInitialCredentialRecovery(evaluationBootstrapPath(home), append(bootstrap, '\n')); err != nil {
+	if err := securefs.WritePrivateFileAtomic(evaluationBootstrapPath(home), append(bootstrap, '\n')); err != nil {
 		return "", fmt.Errorf("store evaluation bootstrap credential: %w", err)
 	}
-	if err := (adminoffline.Operations{}).AcknowledgeInitialCredentials(ctx); err != nil {
+	if err := (appadminoffline.Operations{}).AcknowledgeInitialCredentials(ctx); err != nil {
 		return "", fmt.Errorf("acknowledge evaluation initialization credentials: %w", err)
 	}
 	return credentials.PublisherToken, nil
@@ -450,14 +452,21 @@ func consumeEvaluationFirstLogin(home string, out io.Writer) error {
 		return fmt.Errorf("acquire evaluation first-login lock: %w", err)
 	}
 	defer lock.Release()
-	contents, err := adminoffline.ReadInitialCredentialRecovery(evaluationFirstLoginPath(home))
+	contents, err := securefs.ReadPrivateFile(evaluationFirstLoginPath(home))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("evaluation first-login credentials have already been consumed or were never created")
 		}
 		return err
 	}
-	if err := adminoffline.WriteAll(out, contents); err != nil {
+	if _, err := adminoffline.DecodeInitialCredentials(contents); err != nil {
+		return err
+	}
+	written, err := out.Write(contents)
+	if err == nil && written != len(contents) {
+		err = io.ErrShortWrite
+	}
+	if err != nil {
 		return err
 	}
 	if err := os.Remove(evaluationFirstLoginPath(home)); err != nil {
@@ -467,14 +476,7 @@ func consumeEvaluationFirstLogin(home string, out io.Writer) error {
 }
 
 func readPrivateRegularFile(path string) ([]byte, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
-		return nil, fmt.Errorf("private file %q must be a private regular file", path)
-	}
-	return os.ReadFile(path)
+	return securefs.ReadPrivateFile(path)
 }
 
 func syncEvaluationDirectory(path string) error {

@@ -210,6 +210,7 @@ var PackageRules = []PackageRule{
 	{Prefix: "internal/app/site/visualdocs", Capability: "composition", Layer: LayerAdapter},
 	{Prefix: "internal/dashboard/semanticapi", Capability: "dashboard", Layer: LayerAdapter},
 	{Prefix: "internal/access/ui/signals", Capability: "access", Layer: LayerContract},
+	{Prefix: "internal/admin/offline", Capability: "admin", Layer: LayerUseCase},
 	{Prefix: "internal/admin/ui/signals", Capability: "admin", Layer: LayerContract},
 	{Prefix: "internal/agent/ui/signals", Capability: "agent", Layer: LayerContract},
 	{Prefix: "internal/dashboard/ui/signals", Capability: "dashboard", Layer: LayerContract},
