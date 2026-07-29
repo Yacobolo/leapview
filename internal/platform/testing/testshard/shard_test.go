@@ -10,7 +10,7 @@ func TestParseListReturnsOnlyTopLevelTests(t *testing.T) {
 	output := `TestZulu
 BenchmarkIgnored
 TestAlpha
-ok  	github.com/Yacobolo/leapview/internal/app	0.123s
+ok  	github.com/flidai/leapview/internal/app	0.123s
 `
 
 	if got, want := ParseList(output), []string{"TestZulu", "TestAlpha"}; !reflect.DeepEqual(got, want) {

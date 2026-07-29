@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	agentcore "github.com/Yacobolo/leapview/pkg/agent"
+	agentcore "github.com/flidai/leapview/pkg/agent"
 )
 
 type fakeCatalogService struct {

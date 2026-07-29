@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"github.com/Yacobolo/leapview/internal/platform/buildinfo"
+	"github.com/flidai/leapview/internal/platform/buildinfo"
 	"github.com/spf13/cobra"
 )
 

@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	dashboardhttp "github.com/Yacobolo/leapview/internal/dashboard/http"
+	dashboardhttp "github.com/flidai/leapview/internal/dashboard/http"
 )
 
 type dashboardAPIGenHandler struct{ module *Module }

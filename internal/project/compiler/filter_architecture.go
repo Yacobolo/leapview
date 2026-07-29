@@ -5,11 +5,11 @@ import (
 	"sort"
 	"strings"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
-	"github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/dashboard/reportmodel"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	"github.com/flidai/leapview/internal/dashboard"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
+	"github.com/flidai/leapview/internal/dashboard/report"
+	"github.com/flidai/leapview/internal/dashboard/reportmodel"
 )
 
 func validateFilterArchitecture(d *report.Dashboard, model *semanticmodel.Model) error {

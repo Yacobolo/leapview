@@ -4,9 +4,9 @@ import (
 	"context"
 	"net/http"
 
-	manageddatacli "github.com/Yacobolo/leapview/internal/manageddata/cli"
-	"github.com/Yacobolo/leapview/internal/manageddata/localplan"
-	projectcompiler "github.com/Yacobolo/leapview/internal/project/compiler"
+	manageddatacli "github.com/flidai/leapview/internal/manageddata/cli"
+	"github.com/flidai/leapview/internal/manageddata/localplan"
+	projectcompiler "github.com/flidai/leapview/internal/project/compiler"
 	"github.com/spf13/cobra"
 )
 

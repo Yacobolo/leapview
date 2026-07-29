@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/manageddata"
-	"github.com/Yacobolo/leapview/internal/manageddata/localplan"
+	"github.com/flidai/leapview/internal/manageddata"
+	"github.com/flidai/leapview/internal/manageddata/localplan"
 )
 
 func TestDataPlanCommandPlansWithPreviousManifest(t *testing.T) {

@@ -1,11 +1,11 @@
 package ui
 
 import (
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	uiactions "github.com/Yacobolo/leapview/internal/platform/web/actions"
-	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
-	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
-	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
+	"github.com/flidai/leapview/internal/dashboard"
+	uiactions "github.com/flidai/leapview/internal/platform/web/actions"
+	webpage "github.com/flidai/leapview/internal/platform/web/page"
+	catalog "github.com/flidai/leapview/internal/workspace/navigation"
+	uisignals "github.com/flidai/leapview/internal/workspace/ui/signals"
 	g "maragu.dev/gomponents"
 )
 

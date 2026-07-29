@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/dashboard/filter"
+	"github.com/flidai/leapview/internal/dashboard/filter"
 )
 
 var (

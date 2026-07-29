@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/manageddata"
+	"github.com/flidai/leapview/internal/manageddata"
 )
 
 type Connection struct {

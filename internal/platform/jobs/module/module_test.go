@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/platform"
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
-	"github.com/Yacobolo/leapview/internal/workload"
+	"github.com/flidai/leapview/internal/platform"
+	"github.com/flidai/leapview/internal/platform/jobs"
+	"github.com/flidai/leapview/internal/workload"
 )
 
 func testAdmission(controller workload.Admitter) jobs.Admitter {

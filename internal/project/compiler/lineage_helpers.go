@@ -3,7 +3,7 @@ package compiler
 import (
 	"sort"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
+	"github.com/flidai/leapview/internal/dashboard"
 )
 
 func sortedMapKeys[T any](values map[string]T) []string {

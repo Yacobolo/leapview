@@ -11,7 +11,7 @@ import (
 
 func TestUIPackageDoesNotImportHeadlessAPIContract(t *testing.T) {
 	assertNoForbiddenImports(t, ".", map[string]bool{
-		"github.com/Yacobolo/leapview/internal/app/api/gen": true,
+		"github.com/flidai/leapview/internal/app/api/gen": true,
 	})
 }
 

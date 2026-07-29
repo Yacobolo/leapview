@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	stdhttp "net/http"
 
-	agentgen "github.com/Yacobolo/leapview/internal/agent/api/gen"
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
+	agentgen "github.com/flidai/leapview/internal/agent/api/gen"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
 )
 
 // APIGenDispatcher adapts Agent's HTTP handler to its generated transport

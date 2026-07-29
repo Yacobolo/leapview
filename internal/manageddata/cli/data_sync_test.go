@@ -17,9 +17,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/manageddata"
-	manageddataapi "github.com/Yacobolo/leapview/internal/manageddata/api"
-	"github.com/Yacobolo/leapview/internal/manageddata/localplan"
+	"github.com/flidai/leapview/internal/manageddata"
+	manageddataapi "github.com/flidai/leapview/internal/manageddata/api"
+	"github.com/flidai/leapview/internal/manageddata/localplan"
 )
 
 func TestDataSyncDeduplicatesAndUsesStableIdempotencyKey(t *testing.T) {

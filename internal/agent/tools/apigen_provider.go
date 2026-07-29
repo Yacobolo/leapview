@@ -9,11 +9,11 @@ import (
 	"net/url"
 	"strings"
 
-	agentcontracts "github.com/Yacobolo/leapview/internal/agent/contracts"
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	dashboardapi "github.com/Yacobolo/leapview/internal/dashboard/api"
-	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 	"github.com/Yacobolo/toolbelt/apigen/runtime/agenttool"
+	agentcontracts "github.com/flidai/leapview/internal/agent/contracts"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	dashboardapi "github.com/flidai/leapview/internal/dashboard/api"
+	agentcore "github.com/flidai/leapview/pkg/agent"
 	"github.com/go-chi/chi/v5"
 )
 

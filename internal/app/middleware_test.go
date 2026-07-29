@@ -15,11 +15,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	oidcauth "github.com/Yacobolo/leapview/internal/access/oidc"
-	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
-	"github.com/Yacobolo/leapview/internal/app/config"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/flidai/leapview/internal/access"
+	oidcauth "github.com/flidai/leapview/internal/access/oidc"
+	accesssqlite "github.com/flidai/leapview/internal/access/sqlite"
+	"github.com/flidai/leapview/internal/app/config"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 func TestAuthRouteRateLimit(t *testing.T) {

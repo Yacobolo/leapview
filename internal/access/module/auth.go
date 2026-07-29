@@ -17,10 +17,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/access/httpauth"
-	oidcauth "github.com/Yacobolo/leapview/internal/access/oidc"
-	api "github.com/Yacobolo/leapview/internal/platform/http/model"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/access/httpauth"
+	oidcauth "github.com/flidai/leapview/internal/access/oidc"
+	api "github.com/flidai/leapview/internal/platform/http/model"
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
 )

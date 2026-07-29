@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/access"
+	"github.com/flidai/leapview/internal/access"
 )
 
 func authorizePipeline(r *http.Request, workspaceID, pipelineID string, privilege access.Privilege, config AuthorizationConfig) (bool, error) {

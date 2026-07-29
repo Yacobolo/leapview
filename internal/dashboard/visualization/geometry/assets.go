@@ -5,7 +5,7 @@ package geometry
 import (
 	"fmt"
 
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
 )
 
 var assets = map[string]visualizationir.VisualizationGeometryAsset{

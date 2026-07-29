@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/app/cli"
+	"github.com/flidai/leapview/internal/app/cli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )

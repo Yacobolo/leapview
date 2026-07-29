@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/app/config/spec"
+	"github.com/flidai/leapview/internal/app/config/spec"
 )
 
 const (

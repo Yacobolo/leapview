@@ -4,10 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	uisignals "github.com/Yacobolo/leapview/internal/admin/ui/signals"
-	appshell "github.com/Yacobolo/leapview/internal/app/shell"
-	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
-	workspaceview "github.com/Yacobolo/leapview/internal/workspace"
+	uisignals "github.com/flidai/leapview/internal/admin/ui/signals"
+	appshell "github.com/flidai/leapview/internal/app/shell"
+	webpage "github.com/flidai/leapview/internal/platform/web/page"
+	workspaceview "github.com/flidai/leapview/internal/workspace"
 )
 
 func TestAdminBootstrapSignalsUseAdminOwnedContracts(t *testing.T) {

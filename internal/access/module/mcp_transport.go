@@ -3,7 +3,7 @@ package module
 import (
 	"net/http"
 
-	"github.com/Yacobolo/leapview/internal/access"
+	"github.com/flidai/leapview/internal/access"
 )
 
 type MCPIdentity struct {

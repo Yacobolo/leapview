@@ -3,10 +3,10 @@ package resultcache
 import (
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/analytics/arrowresult"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/flidai/leapview/internal/analytics/arrowresult"
 )
 
 func TestArrowLookupLeaseSurvivesEviction(t *testing.T) {

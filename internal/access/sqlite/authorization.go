@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	platformdb "github.com/Yacobolo/leapview/internal/access/internal/db"
+	"github.com/flidai/leapview/internal/access"
+	platformdb "github.com/flidai/leapview/internal/access/internal/db"
 )
 
 func (r *Repository) Authorize(ctx context.Context, principalID string, privilege access.Privilege, object access.ObjectRef) (access.AuthorizationDecision, error) {

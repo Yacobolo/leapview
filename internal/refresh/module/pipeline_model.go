@@ -3,8 +3,8 @@ package module
 import (
 	"context"
 
-	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
-	"github.com/Yacobolo/leapview/internal/servingstate"
+	refreshrun "github.com/flidai/leapview/internal/refresh/run"
+	"github.com/flidai/leapview/internal/servingstate"
 )
 
 type ActiveArtifactReader interface {

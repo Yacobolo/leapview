@@ -4,9 +4,9 @@ import (
 	"net/url"
 	"strings"
 
-	signalcontracts "github.com/Yacobolo/leapview/internal/access/ui/signals"
-	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
-	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
+	signalcontracts "github.com/flidai/leapview/internal/access/ui/signals"
+	webpage "github.com/flidai/leapview/internal/platform/web/page"
+	"github.com/flidai/leapview/internal/platform/web/staticasset"
 	g "maragu.dev/gomponents"
 )
 

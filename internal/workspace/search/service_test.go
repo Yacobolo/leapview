@@ -6,8 +6,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/platform/http/cursorsigning"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/platform/http/cursorsigning"
 )
 
 type testCursorSigner struct{}

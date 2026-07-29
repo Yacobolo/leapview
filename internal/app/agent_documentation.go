@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"sync"
 
-	documentcontent "github.com/Yacobolo/leapview/docs"
-	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
-	docsearch "github.com/Yacobolo/leapview/internal/app/site/search/sqlite"
-	"github.com/Yacobolo/leapview/internal/platform/http/cursorsigning"
+	documentcontent "github.com/flidai/leapview/docs"
+	agentmodule "github.com/flidai/leapview/internal/agent/module"
+	docsearch "github.com/flidai/leapview/internal/app/site/search/sqlite"
+	"github.com/flidai/leapview/internal/platform/http/cursorsigning"
 )
 
 var embeddedAgentDocumentation struct {

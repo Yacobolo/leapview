@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
+	"github.com/flidai/leapview/internal/access"
+	apiaggregate "github.com/flidai/leapview/internal/app/api/aggregate"
 )
 
 func testAPIGenAuthorizer(t *testing.T) *APIGenAuthorizer {

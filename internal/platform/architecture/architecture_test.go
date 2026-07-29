@@ -9,9 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
-const modulePath = "github.com/Yacobolo/leapview"
+const modulePath = "github.com/flidai/leapview"
 
 type goFile struct {
 	path    string
@@ -31,6 +32,71 @@ var approvedInternalRoots = map[string]struct{}{
 	"access": {}, "admin": {}, "agent": {}, "analytics": {}, "dashboard": {},
 	"deployment": {}, "manageddata": {}, "project": {}, "refresh": {}, "release": {},
 	"runtimehost": {}, "servingstate": {}, "workload": {}, "workspace": {},
+}
+
+func TestRepositoryIdentityUsesOrganizationNamespace(t *testing.T) {
+	const canonicalModule = "github.com/flidai/leapview"
+	if modulePath != canonicalModule {
+		t.Errorf("modulePath = %q, want %q", modulePath, canonicalModule)
+	}
+
+	goModule, err := os.ReadFile(filepath.Join(repoRoot(t), "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(goModule), "module "+canonicalModule+"\n") {
+		t.Errorf("go.mod does not declare %s", canonicalModule)
+	}
+
+	legacyRepository := "github.com/" + "Yacobolo" + "/leapview"
+	legacyImages := "ghcr.io/" + "yacobolo" + "/leapview"
+	legacyImageAllowlist := map[string]struct{}{
+		"deploy/hetzner-site/terraform.tfvars.example": {},
+		"deploy/hetzner-site/variables.tf":             {},
+		"docs/articles/start/installation.md":          {},
+		"docs/public-release.json":                     {},
+		"scripts/public_site_smoke.test.ts":            {},
+	}
+	root := repoRoot(t)
+	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".data", ".git", ".leapview", ".terraform", ".tmp", "node_modules":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if !utf8.Valid(body) {
+			return nil
+		}
+		text := string(body)
+		for _, forbidden := range []string{legacyRepository, legacyImages} {
+			if strings.Contains(text, forbidden) {
+				relative, relErr := filepath.Rel(root, path)
+				if relErr != nil {
+					return relErr
+				}
+				relativePath := filepath.ToSlash(relative)
+				if forbidden == legacyImages {
+					if _, allowed := legacyImageAllowlist[relativePath]; allowed {
+						continue
+					}
+				}
+				t.Errorf("%s retains legacy repository namespace %q", relativePath, forbidden)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestInternalRootTaxonomyIsClosed(t *testing.T) {

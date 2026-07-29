@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
-	"github.com/Yacobolo/leapview/internal/app/config"
-	"github.com/Yacobolo/leapview/internal/platform/cliapi"
 	apigenclient "github.com/Yacobolo/toolbelt/apigen/runtime/client"
+	apiaggregate "github.com/flidai/leapview/internal/app/api/aggregate"
+	"github.com/flidai/leapview/internal/app/config"
+	"github.com/flidai/leapview/internal/platform/cliapi"
 )
 
 type capabilityAPIClient struct{}

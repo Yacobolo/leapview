@@ -3,8 +3,8 @@ package module
 import (
 	"net/http"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	workspacehttp "github.com/Yacobolo/leapview/internal/workspace/http"
+	"github.com/flidai/leapview/internal/access"
+	workspacehttp "github.com/flidai/leapview/internal/workspace/http"
 	"github.com/go-chi/chi/v5"
 )
 

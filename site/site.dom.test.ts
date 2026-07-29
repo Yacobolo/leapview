@@ -69,7 +69,7 @@ test('site explains the product, its workflow, and where it fits in the data sta
     expect(await page.locator('.site-hero').getByText('Build dashboards as code, keep analytics in version control, and explore data with AI agents.').count()).toBe(1)
     const githubLinks = page.getByRole('link', { name: 'View on GitHub' })
     expect(await githubLinks.count()).toBe(2)
-    expect(await githubLinks.first().getAttribute('href')).toBe('https://github.com/Yacobolo/leapview')
+    expect(await githubLinks.first().getAttribute('href')).toBe('https://github.com/flidai/leapview')
     expect(await githubLinks.locator('.site-github-mark').count()).toBe(2)
     expect(
       await githubLinks
@@ -1640,9 +1640,9 @@ test('documentation articles end with responsive pagination cards and an About t
     expect(await next.getAttribute('href')).toBe('/docs/first-dashboard')
     expect(await next.getAttribute('rel')).toBe('next')
     expect(await panel.getByRole('heading', { name: 'About this page', exact: true }).count()).toBe(1)
-    expect(await panel.getByRole('link', { name: 'Report content issue', exact: true }).getAttribute('href')).toContain('github.com/Yacobolo/leapview/issues/new?')
-    expect(await panel.getByRole('link', { name: 'See this page as Markdown', exact: true }).getAttribute('href')).toBe('https://raw.githubusercontent.com/Yacobolo/leapview/main/docs/getting-started.md')
-    expect(await panel.getByRole('link', { name: 'Edit this page on GitHub', exact: true }).getAttribute('href')).toBe('https://github.com/Yacobolo/leapview/edit/main/docs/getting-started.md')
+    expect(await panel.getByRole('link', { name: 'Report content issue', exact: true }).getAttribute('href')).toContain('github.com/flidai/leapview/issues/new?')
+    expect(await panel.getByRole('link', { name: 'See this page as Markdown', exact: true }).getAttribute('href')).toBe('https://raw.githubusercontent.com/flidai/leapview/main/docs/getting-started.md')
+    expect(await panel.getByRole('link', { name: 'Edit this page on GitHub', exact: true }).getAttribute('href')).toBe('https://github.com/flidai/leapview/edit/main/docs/getting-started.md')
 
     const measure = () =>
       pagination.evaluate((element) => {

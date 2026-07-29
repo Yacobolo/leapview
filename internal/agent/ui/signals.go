@@ -4,9 +4,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/agent"
-	signalcontracts "github.com/Yacobolo/leapview/internal/agent/ui/signals"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	"github.com/flidai/leapview/internal/agent"
+	signalcontracts "github.com/flidai/leapview/internal/agent/ui/signals"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
 )
 
 type RouteKind = signalcontracts.RouteKind

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
-	cligen "github.com/Yacobolo/leapview/internal/app/cli/gen"
-	manageddatagen "github.com/Yacobolo/leapview/internal/manageddata/api/gen"
+	apiaggregate "github.com/flidai/leapview/internal/app/api/aggregate"
+	cligen "github.com/flidai/leapview/internal/app/cli/gen"
+	manageddatagen "github.com/flidai/leapview/internal/manageddata/api/gen"
 )
 
 func TestManagedDataAPIContractIsProjectGlobalAndComplete(t *testing.T) {

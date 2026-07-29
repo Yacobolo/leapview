@@ -3,13 +3,13 @@ package app
 import (
 	"net/http"
 
-	accessmodule "github.com/Yacobolo/leapview/internal/access/module"
-	agentmodule "github.com/Yacobolo/leapview/internal/agent/module"
-	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
-	manageddatamodule "github.com/Yacobolo/leapview/internal/manageddata/module"
-	"github.com/Yacobolo/leapview/internal/platform/buildinfo"
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
+	accessmodule "github.com/flidai/leapview/internal/access/module"
+	agentmodule "github.com/flidai/leapview/internal/agent/module"
+	apiaggregate "github.com/flidai/leapview/internal/app/api/aggregate"
+	apigenapi "github.com/flidai/leapview/internal/app/api/gen"
+	manageddatamodule "github.com/flidai/leapview/internal/manageddata/module"
+	"github.com/flidai/leapview/internal/platform/buildinfo"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
 	"github.com/go-chi/chi/v5"
 )
 

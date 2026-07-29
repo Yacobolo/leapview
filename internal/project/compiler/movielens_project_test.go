@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 func TestMovieLensExperimentProjectCompiles(t *testing.T) {

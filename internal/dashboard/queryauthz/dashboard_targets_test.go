@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
-	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
-	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	"github.com/flidai/leapview/internal/dashboard/consumer"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
+	"github.com/flidai/leapview/internal/dashboard/queryruntime"
 )
 
 type targetMetrics struct {

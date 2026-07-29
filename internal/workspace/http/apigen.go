@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	stdhttp "net/http"
 
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
-	workspaceapi "github.com/Yacobolo/leapview/internal/workspace/api"
-	workspacegen "github.com/Yacobolo/leapview/internal/workspace/api/gen"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
+	workspaceapi "github.com/flidai/leapview/internal/workspace/api"
+	workspacegen "github.com/flidai/leapview/internal/workspace/api/gen"
 )
 
 type APIGenSearchParams = workspaceapi.SearchParams

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/platform/cliapi"
 	apigenclient "github.com/Yacobolo/toolbelt/apigen/runtime/client"
+	"github.com/flidai/leapview/internal/platform/cliapi"
 )
 
 type deployClient struct{}

@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	accessapi "github.com/Yacobolo/leapview/internal/access/api"
-	httpmodel "github.com/Yacobolo/leapview/internal/platform/http/model"
+	"github.com/flidai/leapview/internal/access"
+	accessapi "github.com/flidai/leapview/internal/access/api"
+	httpmodel "github.com/flidai/leapview/internal/platform/http/model"
 	"github.com/go-chi/chi/v5"
 )
 

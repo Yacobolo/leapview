@@ -1,6 +1,6 @@
 package model
 
-import "github.com/Yacobolo/leapview/internal/analytics/connectors"
+import "github.com/flidai/leapview/internal/analytics/connectors"
 
 const (
 	KindPath   = connectors.KindPath

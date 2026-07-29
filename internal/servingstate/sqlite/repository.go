@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/platform/digest"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
-	platformdb "github.com/Yacobolo/leapview/internal/servingstate/internal/db"
-	servingstatevalidation "github.com/Yacobolo/leapview/internal/servingstate/validation"
+	"github.com/flidai/leapview/internal/platform/digest"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
+	platformdb "github.com/flidai/leapview/internal/servingstate/internal/db"
+	servingstatevalidation "github.com/flidai/leapview/internal/servingstate/validation"
 )
 
 type Repository struct {

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
-	materializesqlite "github.com/Yacobolo/leapview/internal/refresh/sqlite"
+	refreshrun "github.com/flidai/leapview/internal/refresh/run"
+	materializesqlite "github.com/flidai/leapview/internal/refresh/sqlite"
 )
 
 func TestRefreshVisibilityStreamsAndPersistsSemanticModelRuns(t *testing.T) {

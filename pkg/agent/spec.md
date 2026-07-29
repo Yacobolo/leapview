@@ -2,7 +2,7 @@
 
 Status: draft
 
-Target package: `github.com/Yacobolo/leapview/pkg/agent`
+Target package: `github.com/flidai/leapview/pkg/agent`
 
 ## Recommended Decisions
 

@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/workload"
+	"github.com/flidai/leapview/internal/workload"
 )
 
 type QueueRepository interface {

@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
-	"github.com/Yacobolo/leapview/internal/project/manifest"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	workspacecompiler "github.com/flidai/leapview/internal/project/compiler"
+	"github.com/flidai/leapview/internal/project/manifest"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 const olistManagedDataRevision = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

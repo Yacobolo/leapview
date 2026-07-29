@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"net/http"
 
-	accessmodule "github.com/Yacobolo/leapview/internal/access/module"
-	appruntimefactory "github.com/Yacobolo/leapview/internal/app/runtimefactory"
-	refreshmodule "github.com/Yacobolo/leapview/internal/refresh/module"
+	accessmodule "github.com/flidai/leapview/internal/access/module"
+	appruntimefactory "github.com/flidai/leapview/internal/app/runtimefactory"
+	refreshmodule "github.com/flidai/leapview/internal/refresh/module"
 )
 
 func configureRefreshModule(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, ctx context.Context, database *sql.DB, persistence persistenceInputs, workflow workflowInputs, storage storageInputs) error {

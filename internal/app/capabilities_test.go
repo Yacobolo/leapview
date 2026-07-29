@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
-	"github.com/Yacobolo/leapview/internal/platform/buildinfo"
-	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
+	apigenapi "github.com/flidai/leapview/internal/app/api/gen"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
+	"github.com/flidai/leapview/internal/platform/buildinfo"
+	"github.com/flidai/leapview/internal/platform/web/staticasset"
 )
 
 func TestCapabilitiesReportOnlyEnabledUploadProtocols(t *testing.T) {

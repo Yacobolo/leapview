@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	stdhttp "net/http"
 
-	"github.com/Yacobolo/leapview/internal/deployment/apiadapter"
+	"github.com/flidai/leapview/internal/deployment/apiadapter"
 )
 
 type Principal struct {

@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"time"
 
-	refreshmodule "github.com/Yacobolo/leapview/internal/refresh/module"
-	servingstatemodule "github.com/Yacobolo/leapview/internal/servingstate/module"
-	workspacemodule "github.com/Yacobolo/leapview/internal/workspace/module"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
+	refreshmodule "github.com/flidai/leapview/internal/refresh/module"
+	servingstatemodule "github.com/flidai/leapview/internal/servingstate/module"
+	workspacemodule "github.com/flidai/leapview/internal/workspace/module"
+	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 type workspaceRefreshPresentationBridge struct{}

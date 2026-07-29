@@ -1,7 +1,7 @@
 package api
 
 import (
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
 )
 
 type PageInfo struct {

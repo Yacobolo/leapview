@@ -3,8 +3,8 @@ package runtimefactory
 import (
 	"context"
 
-	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
-	dashboardruntime "github.com/Yacobolo/leapview/internal/dashboard/runtime"
+	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
+	dashboardruntime "github.com/flidai/leapview/internal/dashboard/runtime"
 )
 
 type Input struct {

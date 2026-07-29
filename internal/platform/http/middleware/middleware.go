@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
 	"github.com/go-chi/httprate"
 )
 

@@ -10,8 +10,8 @@ import (
 	"sync"
 	"testing"
 
-	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
-	"github.com/Yacobolo/leapview/internal/workload"
+	semanticquery "github.com/flidai/leapview/internal/analytics/query"
+	"github.com/flidai/leapview/internal/workload"
 )
 
 func TestNodeUsesDuckDBBackedCatalog(t *testing.T) {

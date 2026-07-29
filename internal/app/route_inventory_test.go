@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
+	apiaggregate "github.com/flidai/leapview/internal/app/api/aggregate"
 	"github.com/go-chi/chi/v5"
 )
 

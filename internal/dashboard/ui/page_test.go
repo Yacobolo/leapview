@@ -2,18 +2,18 @@ package ui
 
 import (
 	"encoding/json"
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
 	"html"
 	"net/url"
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
-	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
+	"github.com/flidai/leapview/internal/dashboard"
+	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
+	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
+	workspacecompiler "github.com/flidai/leapview/internal/project/compiler"
 )
 
 func jsonString(value any) string {

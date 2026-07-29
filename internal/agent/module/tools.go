@@ -7,14 +7,14 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	agentcap "github.com/Yacobolo/leapview/internal/agent"
-	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	agentcore "github.com/Yacobolo/leapview/pkg/agent"
 	"github.com/Yacobolo/toolbelt/apigen/runtime/agenttool"
+	"github.com/flidai/leapview/internal/access"
+	agentcap "github.com/flidai/leapview/internal/agent"
+	agenttools "github.com/flidai/leapview/internal/agent/tools"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	agentcore "github.com/flidai/leapview/pkg/agent"
 )
 
 func (m *Module) configureTools() {

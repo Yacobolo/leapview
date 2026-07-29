@@ -9,10 +9,10 @@ import (
 	nethttp "net/http"
 	"strings"
 
-	httpmodel "github.com/Yacobolo/leapview/internal/platform/http/model"
-	httptransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
-	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
-	"github.com/Yacobolo/leapview/internal/servingstate"
+	httpmodel "github.com/flidai/leapview/internal/platform/http/model"
+	httptransport "github.com/flidai/leapview/internal/platform/http/transport"
+	refreshrun "github.com/flidai/leapview/internal/refresh/run"
+	"github.com/flidai/leapview/internal/servingstate"
 	"github.com/go-chi/chi/v5"
 )
 

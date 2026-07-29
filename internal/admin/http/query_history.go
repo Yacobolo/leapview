@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/admin/ui"
-	uisignals "github.com/Yacobolo/leapview/internal/admin/ui/signals"
-	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
+	"github.com/flidai/leapview/internal/admin/ui"
+	uisignals "github.com/flidai/leapview/internal/admin/ui/signals"
+	"github.com/flidai/leapview/internal/analytics/queryaudit"
+	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 const (

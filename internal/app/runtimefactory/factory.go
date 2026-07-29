@@ -6,11 +6,11 @@ import (
 	"os"
 	"path/filepath"
 
-	dashboardruntimefactory "github.com/Yacobolo/leapview/internal/dashboard/runtimefactory"
-	projectartifact "github.com/Yacobolo/leapview/internal/project/artifact"
-	projectbundle "github.com/Yacobolo/leapview/internal/project/bundle"
-	"github.com/Yacobolo/leapview/internal/runtimehost"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
+	dashboardruntimefactory "github.com/flidai/leapview/internal/dashboard/runtimefactory"
+	projectartifact "github.com/flidai/leapview/internal/project/artifact"
+	projectbundle "github.com/flidai/leapview/internal/project/bundle"
+	"github.com/flidai/leapview/internal/runtimehost"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
 )
 
 type FactoryConfig struct {

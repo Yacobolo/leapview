@@ -4,9 +4,9 @@ import (
 	"context"
 	"os"
 
-	projectartifact "github.com/Yacobolo/leapview/internal/project/artifact"
-	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
-	"github.com/Yacobolo/leapview/internal/servingstate"
+	projectartifact "github.com/flidai/leapview/internal/project/artifact"
+	refreshrun "github.com/flidai/leapview/internal/refresh/run"
+	"github.com/flidai/leapview/internal/servingstate"
 )
 
 // RefreshArtifactLoader decodes the refresh projection from a persisted

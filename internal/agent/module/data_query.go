@@ -3,9 +3,9 @@ package module
 import (
 	"context"
 
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	"github.com/flidai/leapview/internal/dashboard/queryruntime"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
 )
 
 func executeAggregateRows(ctx context.Context, metrics queryruntime.Metrics, modelID string, request reportdef.AggregateQuery) (reportdef.QueryRows, error) {

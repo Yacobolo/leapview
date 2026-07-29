@@ -93,7 +93,7 @@ func generatedOutputs(root string, doc ir.Document) (map[string][]byte, error) {
 			PackageName: "signals",
 			ContractImports: map[string]modelgo.ContractImport{
 				"LeapViewVisualization": {
-					GoPackage: "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir",
+					GoPackage: "github.com/flidai/leapview/internal/dashboard/visualization/ir",
 					GoAlias:   "visualizationir",
 				},
 			},

@@ -4,9 +4,9 @@ import (
 	"reflect"
 	"testing"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/refresh/artifact"
-	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	"github.com/flidai/leapview/internal/refresh/artifact"
+	refreshschedule "github.com/flidai/leapview/internal/refresh/schedule"
 )
 
 func TestForPipelineOrdersDependenciesBeforeDependents(t *testing.T) {

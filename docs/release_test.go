@@ -59,10 +59,15 @@ func TestInstallationGuideMatchesCurrentPublicRelease(t *testing.T) {
 	if !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(manifest.Revision) {
 		t.Errorf("public release revision is not a full Git commit: %q", manifest.Revision)
 	}
-	if !regexp.MustCompile(`^ghcr\.io/yacobolo/leapview@sha256:[0-9a-f]{64}$`).MatchString(manifest.Image) {
-		t.Errorf("public release image is not immutable: %q", manifest.Image)
+	legacyRC1Image := "ghcr.io/" + "yacobolo" + "/leapview@sha256:8b32fc291c86005c69c2ca1fa673dcaa4cb84d39cfc951e065a2775b122f81d9"
+	if manifest.Tag == "v0.2.0-rc.1" {
+		if manifest.Image != legacyRC1Image {
+			t.Errorf("rc.1 image = %q, want immutable pre-transfer image %q", manifest.Image, legacyRC1Image)
+		}
+	} else if !regexp.MustCompile(`^ghcr\.io/flidai/leapview@sha256:[0-9a-f]{64}$`).MatchString(manifest.Image) {
+		t.Errorf("post-transfer public release image is not in the organization namespace: %q", manifest.Image)
 	}
-	wantReleaseURL := "https://github.com/Yacobolo/leapview/releases/tag/" + manifest.Tag
+	wantReleaseURL := "https://github.com/flidai/leapview/releases/tag/" + manifest.Tag
 	if manifest.ReleaseURL != wantReleaseURL {
 		t.Errorf("public release URL = %q, want %q", manifest.ReleaseURL, wantReleaseURL)
 	}
@@ -78,7 +83,7 @@ func TestInstallationGuideMatchesCurrentPublicRelease(t *testing.T) {
 		}
 		platforms[platform] = struct{}{}
 		archive := fmt.Sprintf("leapview-compose-%s-%s-%s.tar.gz", manifest.Tag, artifact.OS, artifact.Architecture)
-		wantArchiveURL := "https://github.com/Yacobolo/leapview/releases/download/" + manifest.Tag + "/" + archive
+		wantArchiveURL := "https://github.com/flidai/leapview/releases/download/" + manifest.Tag + "/" + archive
 		if artifact.ArchiveURL != wantArchiveURL {
 			t.Errorf("%s archive URL = %q, want %q", platform, artifact.ArchiveURL, wantArchiveURL)
 		}
@@ -102,7 +107,9 @@ func TestInstallationGuideMatchesCurrentPublicRelease(t *testing.T) {
 			t.Errorf("installation guide does not contain public release value %q", required)
 		}
 	}
-	if strings.Contains(guide, "ghcr.io/yacobolo/leapview:latest") {
-		t.Error("installation guide must not send evaluators to a mutable latest image")
+	for _, owner := range []string{"flidai", "yacobolo"} {
+		if strings.Contains(guide, "ghcr.io/"+owner+"/leapview:latest") {
+			t.Errorf("installation guide must not send evaluators to a mutable %s image", owner)
+		}
 	}
 }

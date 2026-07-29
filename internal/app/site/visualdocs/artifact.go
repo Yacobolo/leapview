@@ -2,7 +2,7 @@
 // documentation generator and the static documentation site.
 package visualdocs
 
-import visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+import visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
 
 const ArtifactVersion = 6
 

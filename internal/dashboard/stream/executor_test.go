@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	"github.com/Yacobolo/leapview/internal/dashboard/command"
-	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	"github.com/flidai/leapview/internal/dashboard/command"
+	"github.com/flidai/leapview/internal/dashboard/consumer"
 )
 
 type consumerExecutorStub struct {

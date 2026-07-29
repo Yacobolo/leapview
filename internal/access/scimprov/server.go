@@ -11,12 +11,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/platform/security/secret"
 	scimpkg "github.com/elimity-com/scim"
 	scimerrors "github.com/elimity-com/scim/errors"
 	"github.com/elimity-com/scim/optional"
 	"github.com/elimity-com/scim/schema"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/platform/security/secret"
 	parserfilter "github.com/scim2/filter-parser/v2"
 )
 

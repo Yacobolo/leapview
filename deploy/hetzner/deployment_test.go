@@ -97,7 +97,7 @@ func TestPublicSiteImagePublicationContract(t *testing.T) {
 		"name: Publish public site image",
 		"workflow_dispatch:",
 		"workflow_call:",
-		"IMAGE_NAME: ghcr.io/yacobolo/leapview-site",
+		"IMAGE_NAME: ghcr.io/flidai/leapview-site",
 		"packages: write",
 		"attestations: write",
 		"id-token: write",
@@ -129,7 +129,7 @@ func TestPublicSiteImagePublicationContract(t *testing.T) {
 	for _, forbidden := range []string{
 		"pull_request:",
 		"docker/setup-qemu-action@",
-		"ghcr.io/yacobolo/leapview-site:latest",
+		"ghcr.io/flidai/leapview-site:latest",
 		"git clone",
 	} {
 		if strings.Contains(workflow, forbidden) {

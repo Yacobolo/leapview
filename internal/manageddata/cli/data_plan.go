@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/manageddata"
-	"github.com/Yacobolo/leapview/internal/manageddata/localplan"
-	"github.com/Yacobolo/leapview/internal/platform/cliapi"
+	"github.com/flidai/leapview/internal/manageddata"
+	"github.com/flidai/leapview/internal/manageddata/localplan"
+	"github.com/flidai/leapview/internal/platform/cliapi"
 	"github.com/spf13/cobra"
 )
 

@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/workspace"
-	workspacegen "github.com/Yacobolo/leapview/internal/workspace/api/gen"
+	"github.com/flidai/leapview/internal/workspace"
+	workspacegen "github.com/flidai/leapview/internal/workspace/api/gen"
 )
 
 type activeMetadataReadModel struct {

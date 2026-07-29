@@ -3,9 +3,9 @@ package module
 import (
 	"net/http"
 
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
-	"github.com/Yacobolo/leapview/internal/workspace"
-	workspaceapi "github.com/Yacobolo/leapview/internal/workspace/api"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
+	"github.com/flidai/leapview/internal/workspace"
+	workspaceapi "github.com/flidai/leapview/internal/workspace/api"
 )
 
 func (m *Module) GetWorkspace(w http.ResponseWriter, r *http.Request, workspaceID string) {

@@ -3,7 +3,7 @@ package duckdb
 import (
 	"testing"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 )
 
 func TestApplyDiscoveredSourceSchemasPreservesAuthoredMetadata(t *testing.T) {

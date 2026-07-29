@@ -51,7 +51,7 @@ func TestComposeIsAStatelessTwoServiceSite(t *testing.T) {
 	}
 	for _, forbidden := range []string{
 		"duckdb", "leapview-state", "admin_email", "bootstrap", "backup",
-		"ghcr.io/yacobolo/leapview@",
+		"ghcr.io/flidai/leapview@",
 	} {
 		if strings.Contains(strings.ToLower(compose), forbidden) {
 			t.Errorf("site Compose contains forbidden product fragment %q", forbidden)

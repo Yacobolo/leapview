@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/manageddata"
-	"github.com/Yacobolo/leapview/internal/manageddata/control"
-	managedsqlite "github.com/Yacobolo/leapview/internal/manageddata/sqlite"
-	"github.com/Yacobolo/leapview/internal/manageddata/storage"
-	"github.com/Yacobolo/leapview/internal/manageddata/storage/filesystem"
+	"github.com/flidai/leapview/internal/manageddata"
+	"github.com/flidai/leapview/internal/manageddata/control"
+	managedsqlite "github.com/flidai/leapview/internal/manageddata/sqlite"
+	"github.com/flidai/leapview/internal/manageddata/storage"
+	"github.com/flidai/leapview/internal/manageddata/storage/filesystem"
 	"github.com/pressly/goose/v3"
 	_ "modernc.org/sqlite"
 )

@@ -1,4 +1,4 @@
-module github.com/Yacobolo/leapview
+module github.com/flidai/leapview
 
 go 1.25.12
 

@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	accessmodule "github.com/Yacobolo/leapview/internal/access/module"
+	"github.com/flidai/leapview/internal/access"
+	accessmodule "github.com/flidai/leapview/internal/access/module"
 )
 
 // Test-local aliases keep the aggregate integration fixtures readable while

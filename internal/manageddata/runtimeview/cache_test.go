@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/manageddata"
-	"github.com/Yacobolo/leapview/internal/manageddata/storage"
+	"github.com/flidai/leapview/internal/manageddata"
+	"github.com/flidai/leapview/internal/manageddata/storage"
 )
 
 func TestMaterializePublishesImmutableVerifiedRevision(t *testing.T) {

@@ -1,6 +1,6 @@
 package compiler
 
-import dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
+import dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
 
 type catalogPayloadV1 struct {
 	Workspace      catalogWorkspacePayloadV1   `json:"Workspace"`

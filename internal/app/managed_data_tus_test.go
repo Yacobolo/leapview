@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	manageddatamodule "github.com/Yacobolo/leapview/internal/manageddata/module"
+	manageddatamodule "github.com/flidai/leapview/internal/manageddata/module"
 )
 
 func TestManagedDataTusRouteRejectsClientCreatedUploads(t *testing.T) {

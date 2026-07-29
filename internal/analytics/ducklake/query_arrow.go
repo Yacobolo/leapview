@@ -8,10 +8,10 @@ import (
 	"database/sql/driver"
 	"fmt"
 
-	"github.com/Yacobolo/leapview/internal/analytics/arrowquery"
-	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
-	analyticsresource "github.com/Yacobolo/leapview/internal/analytics/resource"
 	duckdb "github.com/duckdb/duckdb-go/v2"
+	"github.com/flidai/leapview/internal/analytics/arrowquery"
+	semanticquery "github.com/flidai/leapview/internal/analytics/query"
+	analyticsresource "github.com/flidai/leapview/internal/analytics/resource"
 )
 
 const nativeArrowEnabled = true

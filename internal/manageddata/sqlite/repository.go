@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/manageddata"
-	platformdb "github.com/Yacobolo/leapview/internal/manageddata/internal/db"
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
+	"github.com/flidai/leapview/internal/manageddata"
+	platformdb "github.com/flidai/leapview/internal/manageddata/internal/db"
+	"github.com/flidai/leapview/internal/platform/jobs"
 )
 
 type Repository struct {

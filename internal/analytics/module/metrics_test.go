@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
-	"github.com/Yacobolo/leapview/internal/analytics/resultcache"
+	analyticsducklake "github.com/flidai/leapview/internal/analytics/ducklake"
+	"github.com/flidai/leapview/internal/analytics/resultcache"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

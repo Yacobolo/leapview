@@ -17,9 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/manageddata/storage"
-	"github.com/Yacobolo/leapview/internal/manageddata/storage/filesystem"
-	managedtus "github.com/Yacobolo/leapview/internal/manageddata/storage/tus"
+	"github.com/flidai/leapview/internal/manageddata/storage"
+	"github.com/flidai/leapview/internal/manageddata/storage/filesystem"
+	managedtus "github.com/flidai/leapview/internal/manageddata/storage/tus"
 )
 
 func TestEngineCreateResumeWriteAndFinalize(t *testing.T) {

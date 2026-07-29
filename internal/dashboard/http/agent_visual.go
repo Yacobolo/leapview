@@ -5,10 +5,10 @@ import (
 	"fmt"
 	nethttp "net/http"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	dashboardapi "github.com/Yacobolo/leapview/internal/dashboard/api"
-	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	"github.com/flidai/leapview/internal/dashboard"
+	dashboardapi "github.com/flidai/leapview/internal/dashboard/api"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
 	"github.com/go-chi/chi/v5"
 )
 

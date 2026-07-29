@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/manageddata"
-	manageddatasqlite "github.com/Yacobolo/leapview/internal/manageddata/sqlite"
-	"github.com/Yacobolo/leapview/internal/platform"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
-	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
-	"github.com/Yacobolo/leapview/internal/workspace"
-	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
+	"github.com/flidai/leapview/internal/manageddata"
+	manageddatasqlite "github.com/flidai/leapview/internal/manageddata/sqlite"
+	"github.com/flidai/leapview/internal/platform"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
+	servingstatesqlite "github.com/flidai/leapview/internal/servingstate/sqlite"
+	"github.com/flidai/leapview/internal/workspace"
+	workspacesqlite "github.com/flidai/leapview/internal/workspace/sqlite"
 )
 
 func TestBinderPinsRevisionAfterEnvironmentPointerChanges(t *testing.T) {

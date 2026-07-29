@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/workload"
+	"github.com/flidai/leapview/internal/workload"
 )
 
 func testAdmitter(controller workload.Admitter) Admitter {

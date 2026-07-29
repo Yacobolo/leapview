@@ -6,13 +6,13 @@ import (
 	"encoding/json"
 	"sort"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/dashboard/publication"
-	"github.com/Yacobolo/leapview/internal/dashboard/report"
-	projectartifact "github.com/Yacobolo/leapview/internal/project/artifact"
-	"github.com/Yacobolo/leapview/internal/project/manifest"
-	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	"github.com/flidai/leapview/internal/dashboard/publication"
+	"github.com/flidai/leapview/internal/dashboard/report"
+	projectartifact "github.com/flidai/leapview/internal/project/artifact"
+	"github.com/flidai/leapview/internal/project/manifest"
+	refreshschedule "github.com/flidai/leapview/internal/refresh/schedule"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 const projectAPIVersion = "leapview.dev/v1"

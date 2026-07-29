@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/access"
+	"github.com/flidai/leapview/internal/access"
 )
 
 const (

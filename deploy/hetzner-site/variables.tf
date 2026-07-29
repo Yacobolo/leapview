@@ -68,10 +68,13 @@ variable "bootstrap_site_image" {
   default     = "ghcr.io/yacobolo/leapview-site@sha256:1f4c7ac7fbaa332f96a907ff7daec10d49c26b3bbe5d3a16a7d48c274c5f168a"
 
   validation {
-    condition = can(regex(
-      "^ghcr\\.io/yacobolo/leapview-site@sha256:[0-9a-f]{64}$",
-      var.bootstrap_site_image,
-    ))
+    condition = (
+      can(regex(
+        "^ghcr\\.io/flidai/leapview-site@sha256:[0-9a-f]{64}$",
+        var.bootstrap_site_image,
+      )) ||
+      var.bootstrap_site_image == "ghcr.io/yacobolo/leapview-site@sha256:1f4c7ac7fbaa332f96a907ff7daec10d49c26b3bbe5d3a16a7d48c274c5f168a"
+    )
     error_message = "bootstrap_site_image must be the canonical public-site image pinned by sha256 digest."
   }
 }

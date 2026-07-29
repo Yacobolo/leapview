@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/manageddata"
-	"github.com/Yacobolo/leapview/internal/manageddata/control"
-	"github.com/Yacobolo/leapview/internal/manageddata/storage"
+	"github.com/flidai/leapview/internal/manageddata"
+	"github.com/flidai/leapview/internal/manageddata/control"
+	"github.com/flidai/leapview/internal/manageddata/storage"
 )
 
 const (

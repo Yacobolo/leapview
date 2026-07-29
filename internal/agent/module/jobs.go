@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/Yacobolo/leapview/internal/agent"
-	agenthttp "github.com/Yacobolo/leapview/internal/agent/http"
-	"github.com/Yacobolo/leapview/internal/agent/ui"
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
+	"github.com/flidai/leapview/internal/agent"
+	agenthttp "github.com/flidai/leapview/internal/agent/http"
+	"github.com/flidai/leapview/internal/agent/ui"
+	"github.com/flidai/leapview/internal/platform/jobs"
 )
 
 const RunJobKind = "agent.run"

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/Yacobolo/leapview/internal/platform/cliapi"
-	workspacegen "github.com/Yacobolo/leapview/internal/workspace/api/gen"
+	"github.com/flidai/leapview/internal/platform/cliapi"
+	workspacegen "github.com/flidai/leapview/internal/workspace/api/gen"
 	"github.com/spf13/cobra"
 )
 

@@ -7,10 +7,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/analytics/connectors"
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/analytics/connectors"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 func validateProject(project Project) error {

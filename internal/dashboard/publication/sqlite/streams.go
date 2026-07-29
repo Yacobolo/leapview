@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	"github.com/Yacobolo/leapview/internal/dashboard/command"
-	publicationdb "github.com/Yacobolo/leapview/internal/dashboard/internal/db"
-	"github.com/Yacobolo/leapview/internal/dashboard/publication"
+	"github.com/flidai/leapview/internal/dashboard"
+	"github.com/flidai/leapview/internal/dashboard/command"
+	publicationdb "github.com/flidai/leapview/internal/dashboard/internal/db"
+	"github.com/flidai/leapview/internal/dashboard/publication"
 )
 
 const streamLease = 90 * time.Second

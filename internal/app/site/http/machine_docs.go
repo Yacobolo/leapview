@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	content "github.com/Yacobolo/leapview/docs"
+	content "github.com/flidai/leapview/docs"
 )
 
 type machineDocumentation struct {

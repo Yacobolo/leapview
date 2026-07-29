@@ -1,6 +1,6 @@
 package ui
 
-import uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
+import uisignals "github.com/flidai/leapview/internal/workspace/ui/signals"
 
 type WorkspaceAccessResponse = uisignals.WorkspaceAccessResponse
 type WorkspaceAccessStatus = uisignals.WorkspaceAccessStatus

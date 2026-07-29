@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	uitransport "github.com/Yacobolo/leapview/internal/platform/web/transport"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
+	uitransport "github.com/flidai/leapview/internal/platform/web/transport"
+	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 const (

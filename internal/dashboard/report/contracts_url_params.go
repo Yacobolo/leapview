@@ -1,6 +1,6 @@
 package report
 
-import "github.com/Yacobolo/leapview/internal/dashboard"
+import "github.com/flidai/leapview/internal/dashboard"
 
 func (d *Dashboard) PageOrDefault(pageID string) (dashboard.Page, bool) {
 	if len(d.Pages) == 0 {

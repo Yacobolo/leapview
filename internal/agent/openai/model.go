@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	agentapp "github.com/Yacobolo/leapview/internal/agent"
-	agentcore "github.com/Yacobolo/leapview/pkg/agent"
+	agentapp "github.com/flidai/leapview/internal/agent"
+	agentcore "github.com/flidai/leapview/pkg/agent"
 )
 
 const DefaultHTTPTimeout = 5 * time.Minute

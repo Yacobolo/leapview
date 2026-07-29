@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
-	accesssnapshot "github.com/Yacobolo/leapview/internal/access/snapshot"
-	refreshartifact "github.com/Yacobolo/leapview/internal/refresh/artifact"
-	refreshplan "github.com/Yacobolo/leapview/internal/refresh/plan"
-	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
-	servingstatevalidation "github.com/Yacobolo/leapview/internal/servingstate/validation"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	accesssnapshot "github.com/flidai/leapview/internal/access/snapshot"
+	refreshartifact "github.com/flidai/leapview/internal/refresh/artifact"
+	refreshplan "github.com/flidai/leapview/internal/refresh/plan"
+	refreshschedule "github.com/flidai/leapview/internal/refresh/schedule"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
+	servingstatevalidation "github.com/flidai/leapview/internal/servingstate/validation"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 type ServingStateRepository interface {

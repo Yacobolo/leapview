@@ -5,8 +5,8 @@ package materialization
 import (
 	"context"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
 )
 
 type WorkspaceRequest struct {

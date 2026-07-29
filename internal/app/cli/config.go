@@ -3,7 +3,7 @@ package cli
 import (
 	"fmt"
 
-	"github.com/Yacobolo/leapview/internal/app/config"
+	"github.com/flidai/leapview/internal/app/config"
 	"github.com/spf13/cobra"
 )
 

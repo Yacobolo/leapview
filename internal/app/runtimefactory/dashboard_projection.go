@@ -1,8 +1,8 @@
 package runtimefactory
 
 import (
-	dashboardruntime "github.com/Yacobolo/leapview/internal/dashboard/runtime"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	dashboardruntime "github.com/flidai/leapview/internal/dashboard/runtime"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 type dashboardRuntimeWithGraph struct {

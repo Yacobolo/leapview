@@ -8,8 +8,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/servingstate"
-	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
+	"github.com/flidai/leapview/internal/servingstate"
+	servingstatesqlite "github.com/flidai/leapview/internal/servingstate/sqlite"
 )
 
 type Config struct{ Database *sql.DB }

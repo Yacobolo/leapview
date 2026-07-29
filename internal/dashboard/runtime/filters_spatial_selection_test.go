@@ -3,9 +3,9 @@ package runtime
 import (
 	"testing"
 
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/dashboard/reportmodel"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	"github.com/flidai/leapview/internal/dashboard/reportmodel"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
 )
 
 func TestSpatialFilterFromSelectionPreservesExactGovernedGeometry(t *testing.T) {

@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/access/http/mcpoauth"
-	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
-	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
-	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/access/http/mcpoauth"
+	accesssqlite "github.com/flidai/leapview/internal/access/sqlite"
+	webpage "github.com/flidai/leapview/internal/platform/web/page"
+	"github.com/flidai/leapview/internal/platform/web/staticasset"
 )
 
 type Config struct {

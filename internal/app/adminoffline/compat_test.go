@@ -5,9 +5,9 @@ import (
 	"io"
 	"path/filepath"
 
-	admincli "github.com/Yacobolo/leapview/internal/admin/cli"
-	offline "github.com/Yacobolo/leapview/internal/admin/offline"
-	"github.com/Yacobolo/leapview/internal/app/config"
+	admincli "github.com/flidai/leapview/internal/admin/cli"
+	offline "github.com/flidai/leapview/internal/admin/offline"
+	"github.com/flidai/leapview/internal/app/config"
 )
 
 type initialInstanceCredentials = offline.InitialCredentials

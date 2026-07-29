@@ -3,7 +3,7 @@ package report
 import (
 	"fmt"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
+	"github.com/flidai/leapview/internal/dashboard"
 )
 
 func validateTableStyle(name string, style dashboard.TableStyle) error {

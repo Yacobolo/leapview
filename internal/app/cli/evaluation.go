@@ -15,13 +15,13 @@ import (
 	"strings"
 	"time"
 
-	adminoffline "github.com/Yacobolo/leapview/internal/admin/offline"
-	appadminoffline "github.com/Yacobolo/leapview/internal/app/adminoffline"
-	"github.com/Yacobolo/leapview/internal/app/config"
-	manageddatacli "github.com/Yacobolo/leapview/internal/manageddata/cli"
-	"github.com/Yacobolo/leapview/internal/manageddata/localplan"
-	"github.com/Yacobolo/leapview/internal/platform/filesystem"
-	instancelock "github.com/Yacobolo/leapview/internal/platform/locking"
+	adminoffline "github.com/flidai/leapview/internal/admin/offline"
+	appadminoffline "github.com/flidai/leapview/internal/app/adminoffline"
+	"github.com/flidai/leapview/internal/app/config"
+	manageddatacli "github.com/flidai/leapview/internal/manageddata/cli"
+	"github.com/flidai/leapview/internal/manageddata/localplan"
+	"github.com/flidai/leapview/internal/platform/filesystem"
+	instancelock "github.com/flidai/leapview/internal/platform/locking"
 	"github.com/spf13/cobra"
 )
 

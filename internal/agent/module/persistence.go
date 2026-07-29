@@ -3,10 +3,10 @@ package module
 import (
 	"database/sql"
 
-	"github.com/Yacobolo/leapview/internal/agent"
-	agentsqlite "github.com/Yacobolo/leapview/internal/agent/sqlite"
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
-	jobsqlite "github.com/Yacobolo/leapview/internal/platform/jobs/sqlite"
+	"github.com/flidai/leapview/internal/agent"
+	agentsqlite "github.com/flidai/leapview/internal/agent/sqlite"
+	"github.com/flidai/leapview/internal/platform/jobs"
+	jobsqlite "github.com/flidai/leapview/internal/platform/jobs/sqlite"
 )
 
 func newRepository(database *sql.DB, workflow jobs.WorkflowRecorder) agent.Repository {

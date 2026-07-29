@@ -1,10 +1,10 @@
 package module
 
 import (
-	refreshpresentation "github.com/Yacobolo/leapview/internal/refresh/presentation"
-	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
-	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
-	"github.com/Yacobolo/leapview/internal/workload"
+	refreshpresentation "github.com/flidai/leapview/internal/refresh/presentation"
+	refreshrun "github.com/flidai/leapview/internal/refresh/run"
+	refreshschedule "github.com/flidai/leapview/internal/refresh/schedule"
+	"github.com/flidai/leapview/internal/workload"
 )
 
 type Clock = refreshschedule.Clock

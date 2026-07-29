@@ -10,15 +10,15 @@ import (
 	"testing"
 	"time"
 
-	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
-	"github.com/Yacobolo/leapview/internal/platform"
-	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
-	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
-	refreshsqlite "github.com/Yacobolo/leapview/internal/refresh/sqlite"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
-	servingstatevalidation "github.com/Yacobolo/leapview/internal/servingstate/validation"
-	"github.com/Yacobolo/leapview/internal/workspace"
-	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
+	accesssqlite "github.com/flidai/leapview/internal/access/sqlite"
+	"github.com/flidai/leapview/internal/platform"
+	refreshrun "github.com/flidai/leapview/internal/refresh/run"
+	refreshschedule "github.com/flidai/leapview/internal/refresh/schedule"
+	refreshsqlite "github.com/flidai/leapview/internal/refresh/sqlite"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
+	servingstatevalidation "github.com/flidai/leapview/internal/servingstate/validation"
+	"github.com/flidai/leapview/internal/workspace"
+	workspacesqlite "github.com/flidai/leapview/internal/workspace/sqlite"
 )
 
 func TestRepositorySaveValidatedCommitsDeploymentGraph(t *testing.T) {

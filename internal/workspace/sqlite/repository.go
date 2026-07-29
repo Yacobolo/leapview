@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/workspace"
-	platformdb "github.com/Yacobolo/leapview/internal/workspace/internal/db"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/workspace"
+	platformdb "github.com/flidai/leapview/internal/workspace/internal/db"
 )
 
 type SecurableRegistrar interface {

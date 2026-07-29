@@ -1,8 +1,8 @@
 package runtime
 
 import (
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
 )
 
 func reportAggregateDataQuery(modelID string, request reportdef.AggregateQuery) dataquery.Query {

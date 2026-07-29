@@ -2,8 +2,8 @@ package report
 
 import (
 	"fmt"
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
+	"github.com/flidai/leapview/internal/dashboard"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
 	"strings"
 
 	"gopkg.in/yaml.v3"

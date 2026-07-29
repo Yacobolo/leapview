@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/project/schema"
+	"github.com/flidai/leapview/internal/project/schema"
 	"gopkg.in/yaml.v3"
 )
 

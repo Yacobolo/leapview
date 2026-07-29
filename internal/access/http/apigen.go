@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	stdhttp "net/http"
 
-	accessgen "github.com/Yacobolo/leapview/internal/access/api/gen"
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
+	accessgen "github.com/flidai/leapview/internal/access/api/gen"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
 )
 
 // APIGenDispatcher adapts Access's HTTP handler to its generated transport

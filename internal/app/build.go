@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 
-	"github.com/Yacobolo/leapview/internal/app/config"
+	"github.com/flidai/leapview/internal/app/config"
 )
 
 // Build is the sole process assembly entrypoint. Capability construction is

@@ -3,8 +3,8 @@
 package artifact
 
 import (
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	refreshschedule "github.com/flidai/leapview/internal/refresh/schedule"
 )
 
 type Definition struct {

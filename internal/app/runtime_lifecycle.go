@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	analyticsmodule "github.com/Yacobolo/leapview/internal/analytics/module"
+	analyticsmodule "github.com/flidai/leapview/internal/analytics/module"
 )
 
 // runtimeLifecycle adapts process-owned workers and health signaling to

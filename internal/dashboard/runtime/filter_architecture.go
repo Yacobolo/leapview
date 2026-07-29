@@ -5,9 +5,9 @@ import (
 	"slices"
 	"sort"
 
-	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
-	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
+	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
 )
 
 func semanticBindingFilters(definition *dashboarddefinition.Definition, state dashboardfilter.State, consumerKey string) ([]reportdef.QueryFilter, error) {

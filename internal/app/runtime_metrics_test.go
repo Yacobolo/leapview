@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
-	"github.com/Yacobolo/leapview/internal/runtimehost"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
+	"github.com/flidai/leapview/internal/dashboard"
+	"github.com/flidai/leapview/internal/dashboard/consumer"
+	"github.com/flidai/leapview/internal/runtimehost"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
 )
 
 func TestRuntimeMetricsQueryDashboardUsesRuntimeLease(t *testing.T) {

@@ -3,7 +3,7 @@ package app
 import (
 	"net/http"
 
-	apicapabilities "github.com/Yacobolo/leapview/internal/app/api/capabilities"
+	apicapabilities "github.com/flidai/leapview/internal/app/api/capabilities"
 )
 
 func (a apiGenDispatcher) GetCapabilities(w http.ResponseWriter, _ *http.Request) {

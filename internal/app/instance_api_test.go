@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
+	"github.com/flidai/leapview/internal/access"
+	apigenapi "github.com/flidai/leapview/internal/app/api/gen"
 )
 
 func TestGetInstanceReturnsConfiguredEnvironment(t *testing.T) {

@@ -3,7 +3,7 @@ package module
 import (
 	"context"
 
-	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 type activeWorkspaceLister interface {

@@ -4,13 +4,13 @@ import (
 	"context"
 	"testing"
 
-	accessmodule "github.com/Yacobolo/leapview/internal/access/module"
-	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
-	analyticsmodule "github.com/Yacobolo/leapview/internal/analytics/module"
-	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
-	"github.com/Yacobolo/leapview/internal/platform"
-	servingstatemodule "github.com/Yacobolo/leapview/internal/servingstate/module"
-	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
+	accessmodule "github.com/flidai/leapview/internal/access/module"
+	accesssqlite "github.com/flidai/leapview/internal/access/sqlite"
+	analyticsmodule "github.com/flidai/leapview/internal/analytics/module"
+	"github.com/flidai/leapview/internal/analytics/queryaudit"
+	"github.com/flidai/leapview/internal/platform"
+	servingstatemodule "github.com/flidai/leapview/internal/servingstate/module"
+	workspacesqlite "github.com/flidai/leapview/internal/workspace/sqlite"
 )
 
 func testStoreOptions(store *platform.Store, options assemblyConfig) assemblyConfig {

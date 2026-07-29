@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/platform/cliapi"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
-	"github.com/Yacobolo/leapview/internal/project/schema"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/flidai/leapview/internal/platform/cliapi"
+	workspacecompiler "github.com/flidai/leapview/internal/project/compiler"
+	"github.com/flidai/leapview/internal/project/schema"
+	"github.com/flidai/leapview/internal/workspace"
 	"github.com/spf13/cobra"
 )
 

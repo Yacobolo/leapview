@@ -3,9 +3,9 @@ package module
 import (
 	"net/http"
 
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
-	projectapi "github.com/Yacobolo/leapview/internal/project/api"
-	releaseapi "github.com/Yacobolo/leapview/internal/release/api"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
+	projectapi "github.com/flidai/leapview/internal/project/api"
+	releaseapi "github.com/flidai/leapview/internal/release/api"
 )
 
 func (m *Module) ListProjects(w http.ResponseWriter, r *http.Request, limit *int32, pageToken *string) {

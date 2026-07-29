@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	apihttpmiddleware "github.com/Yacobolo/leapview/internal/platform/http/middleware"
-	"github.com/Yacobolo/leapview/internal/platform/security/secret"
+	apihttpmiddleware "github.com/flidai/leapview/internal/platform/http/middleware"
+	"github.com/flidai/leapview/internal/platform/security/secret"
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"

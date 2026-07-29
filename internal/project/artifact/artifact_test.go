@@ -5,12 +5,12 @@ import (
 	"errors"
 	"testing"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
-	"github.com/Yacobolo/leapview/internal/dashboard/publication"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/project/manifest"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
+	"github.com/flidai/leapview/internal/dashboard/publication"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	"github.com/flidai/leapview/internal/project/manifest"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 func TestProjectDefensivelyCopiesNestedWorkspaceState(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
 )
 
 func (d *Dashboard) validateFilterArchitectureContract() error {

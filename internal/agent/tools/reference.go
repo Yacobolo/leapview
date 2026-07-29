@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/Yacobolo/leapview/internal/agent/productdocs"
-	agentcore "github.com/Yacobolo/leapview/pkg/agent"
+	"github.com/flidai/leapview/internal/agent/productdocs"
+	agentcore "github.com/flidai/leapview/pkg/agent"
 )
 
 // ProviderSet is the canonical composition of the tool providers consumed by

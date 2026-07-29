@@ -3,7 +3,7 @@ package control
 import (
 	"context"
 
-	"github.com/Yacobolo/leapview/internal/manageddata"
+	"github.com/flidai/leapview/internal/manageddata"
 )
 
 // RevisionMetadata carries the upload provenance associated with a public

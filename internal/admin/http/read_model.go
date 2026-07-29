@@ -5,13 +5,13 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/admin/storage"
-	"github.com/Yacobolo/leapview/internal/admin/ui"
-	uisignals "github.com/Yacobolo/leapview/internal/admin/ui/signals"
-	"github.com/Yacobolo/leapview/internal/agent/api"
-	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/admin/storage"
+	"github.com/flidai/leapview/internal/admin/ui"
+	uisignals "github.com/flidai/leapview/internal/admin/ui/signals"
+	"github.com/flidai/leapview/internal/agent/api"
+	"github.com/flidai/leapview/internal/analytics/queryaudit"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 type Principal struct {

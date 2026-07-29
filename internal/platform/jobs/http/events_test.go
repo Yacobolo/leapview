@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/platform"
-	apigenapi "github.com/Yacobolo/leapview/internal/platform/http/api/gen"
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
-	jobsqlite "github.com/Yacobolo/leapview/internal/platform/jobs/sqlite"
+	"github.com/flidai/leapview/internal/platform"
+	apigenapi "github.com/flidai/leapview/internal/platform/http/api/gen"
+	"github.com/flidai/leapview/internal/platform/jobs"
+	jobsqlite "github.com/flidai/leapview/internal/platform/jobs/sqlite"
 )
 
 func eventRepository(t *testing.T) jobs.Repository {

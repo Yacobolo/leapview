@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 func (m *Module) SecurableObjects(ctx context.Context, defaultWorkspaceID string) ([]access.ObjectRef, error) {

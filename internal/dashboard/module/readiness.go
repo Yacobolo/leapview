@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
-	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
+	"github.com/flidai/leapview/internal/dashboard"
+	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
+	"github.com/flidai/leapview/internal/dashboard/queryruntime"
 )
 
 type runtimeReadiness interface {

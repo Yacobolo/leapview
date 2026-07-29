@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
 )
 
 type ServingStateRepository interface {
@@ -344,7 +344,7 @@ func (m *Manager) prepareResolved(ctx context.Context, current servingstate.Stat
 		return nil, errors.Join(err, runtime.Close(), releaseManagedDataLifetime(managedData.Lifetime))
 	}
 	return &Prepared{
-		owner: m,
+		owner:          m,
 		servingStateID: current.ID, digest: artifact.Digest, managedRevision: managedData.RevisionID,
 		runtime: runtime, managedData: managedData.Lifetime, snapshotLease: snapshotLease, snapshotID: snapshotID,
 	}, nil

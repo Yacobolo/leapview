@@ -6,11 +6,11 @@ import (
 	"errors"
 	"net/http"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/manageddata/api"
-	"github.com/Yacobolo/leapview/internal/manageddata/control"
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
-	jobhttp "github.com/Yacobolo/leapview/internal/platform/jobs/http"
+	apigenapi "github.com/flidai/leapview/internal/manageddata/api"
+	"github.com/flidai/leapview/internal/manageddata/control"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
+	"github.com/flidai/leapview/internal/platform/jobs"
+	jobhttp "github.com/flidai/leapview/internal/platform/jobs/http"
 )
 
 type PageParams = apigenapi.PageParams

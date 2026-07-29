@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	analyticsmaterialize "github.com/Yacobolo/leapview/internal/analytics/materialize"
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	_ "github.com/duckdb/duckdb-go/v2"
+	analyticsmaterialize "github.com/flidai/leapview/internal/analytics/materialize"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 )
 
 func TestPlanModelTableCompilesCSVSQLModelToInlineRelations(t *testing.T) {

@@ -5,8 +5,8 @@ import (
 	"net/url"
 	"strings"
 
-	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
-	apigencli "github.com/Yacobolo/leapview/internal/app/cli/gen"
+	apiaggregate "github.com/flidai/leapview/internal/app/api/aggregate"
+	apigencli "github.com/flidai/leapview/internal/app/cli/gen"
 )
 
 func apiOperationURL(target, operationID string, pathParams map[string]string, query url.Values) (string, error) {

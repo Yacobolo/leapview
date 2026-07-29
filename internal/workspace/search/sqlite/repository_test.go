@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/platform"
-	productsearch "github.com/Yacobolo/leapview/internal/workspace/search"
-	searchsqlite "github.com/Yacobolo/leapview/internal/workspace/search/sqlite"
+	"github.com/flidai/leapview/internal/platform"
+	productsearch "github.com/flidai/leapview/internal/workspace/search"
+	searchsqlite "github.com/flidai/leapview/internal/workspace/search/sqlite"
 )
 
 func BenchmarkRepositorySearch100K(b *testing.B) {

@@ -3,10 +3,10 @@ package module
 import (
 	"context"
 
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
-	workspacehttp "github.com/Yacobolo/leapview/internal/workspace/http"
-	"github.com/Yacobolo/leapview/internal/workspace/navigation"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	"github.com/flidai/leapview/internal/dashboard/queryruntime"
+	workspacehttp "github.com/flidai/leapview/internal/workspace/http"
+	"github.com/flidai/leapview/internal/workspace/navigation"
 )
 
 type MetricsAdapter struct{ queryruntime.Metrics }

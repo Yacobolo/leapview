@@ -3,7 +3,7 @@ package sqlite
 import (
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/access"
+	"github.com/flidai/leapview/internal/access"
 )
 
 func TestMatchExpressionCompilesSafePrefixAndPhraseTerms(t *testing.T) {

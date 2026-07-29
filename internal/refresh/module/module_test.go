@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/platform"
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
-	"github.com/Yacobolo/leapview/internal/refresh/artifact"
-	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
-	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
-	"github.com/Yacobolo/leapview/internal/servingstate"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	"github.com/flidai/leapview/internal/platform"
+	"github.com/flidai/leapview/internal/platform/jobs"
+	"github.com/flidai/leapview/internal/refresh/artifact"
+	refreshrun "github.com/flidai/leapview/internal/refresh/run"
+	refreshschedule "github.com/flidai/leapview/internal/refresh/schedule"
+	"github.com/flidai/leapview/internal/servingstate"
 )
 
 type generatedRefreshAPI interface {

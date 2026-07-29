@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	adminoffline "github.com/Yacobolo/leapview/internal/admin/offline"
+	adminoffline "github.com/flidai/leapview/internal/admin/offline"
 	"github.com/spf13/cobra"
 )
 

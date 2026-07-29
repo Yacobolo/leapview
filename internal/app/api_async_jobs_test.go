@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
-	jobsqlite "github.com/Yacobolo/leapview/internal/platform/jobs/sqlite"
+	"github.com/flidai/leapview/internal/platform/jobs"
+	jobsqlite "github.com/flidai/leapview/internal/platform/jobs/sqlite"
 )
 
 func TestBackgroundLifecycleReclaimsPersistedAPIJobs(t *testing.T) {

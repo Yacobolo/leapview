@@ -897,7 +897,7 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
-          tags: ghcr.io/yacobolo/leapview:candidate-${{ github.sha }}
+          tags: ghcr.io/flidai/leapview:candidate-${{ github.sha }}
           build-args: |
             BUILD_VERSION=development
             BUILD_REVISION=${{ github.sha }}
@@ -912,12 +912,12 @@ jobs:
       - name: Attest candidate provenance
         uses: actions/attest@f6bf1532d7d6793fce74eac584813a8eee607999 # v4
         with:
-          subject-name: ghcr.io/yacobolo/leapview
+          subject-name: ghcr.io/flidai/leapview
           subject-digest: ${{ steps.publish.outputs.digest }}
           push-to-registry: true
 
       - name: Record immutable candidate reference
-        run: echo 'ghcr.io/yacobolo/leapview@${{ steps.publish.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"
+        run: echo 'ghcr.io/flidai/leapview@${{ steps.publish.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"
 
   ci-gate:
     name: CI gate

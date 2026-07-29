@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/manageddata"
-	"github.com/Yacobolo/leapview/internal/manageddata/maintenance"
-	managedsqlite "github.com/Yacobolo/leapview/internal/manageddata/sqlite"
-	"github.com/Yacobolo/leapview/internal/manageddata/storage"
-	"github.com/Yacobolo/leapview/internal/platform"
+	"github.com/flidai/leapview/internal/manageddata"
+	"github.com/flidai/leapview/internal/manageddata/maintenance"
+	managedsqlite "github.com/flidai/leapview/internal/manageddata/sqlite"
+	"github.com/flidai/leapview/internal/manageddata/storage"
+	"github.com/flidai/leapview/internal/platform"
 )
 
 func TestSnapshotRetainsReadyRevisionsAndNonterminalUploads(t *testing.T) {

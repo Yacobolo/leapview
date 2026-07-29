@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
-	visualizationmapasset "github.com/Yacobolo/leapview/internal/dashboard/visualization/mapasset"
-	visualizationmapassethttp "github.com/Yacobolo/leapview/internal/dashboard/visualization/mapasset/http"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
+	visualizationmapasset "github.com/flidai/leapview/internal/dashboard/visualization/mapasset"
+	visualizationmapassethttp "github.com/flidai/leapview/internal/dashboard/visualization/mapasset/http"
 )
 
 const (

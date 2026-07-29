@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/Yacobolo/leapview/internal/platform/cliapi"
-	"github.com/Yacobolo/leapview/internal/workspace"
-	workspacegen "github.com/Yacobolo/leapview/internal/workspace/api/gen"
+	"github.com/flidai/leapview/internal/platform/cliapi"
+	"github.com/flidai/leapview/internal/workspace"
+	workspacegen "github.com/flidai/leapview/internal/workspace/api/gen"
 )
 
 // workspaceActiveGraphLoader adapts the Workspace capability's generated

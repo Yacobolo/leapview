@@ -3,15 +3,15 @@ package queryruntime
 import (
 	"context"
 
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
-	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
-	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	"github.com/flidai/leapview/internal/dashboard"
+	"github.com/flidai/leapview/internal/dashboard/catalog"
+	"github.com/flidai/leapview/internal/dashboard/consumer"
+	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
 )
 
 type Metrics interface {
