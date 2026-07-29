@@ -32,12 +32,7 @@ jobs:
     outputs:
       revision: ${{ steps.identity.outputs.revision }}
     env:
-      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
-      AWS_REGION: ${{ vars.TF_STATE_REGION }}
-      AWS_DEFAULT_REGION: ${{ vars.TF_STATE_REGION }}
-      AWS_ENDPOINT_URL_S3: ${{ vars.TF_STATE_ENDPOINT }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_ACCESS_KEY }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_SECRET_KEY }}
+      TF_TOKEN_app_terraform_io: ${{ secrets.HCP_API_TOKEN }}
       TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
       TF_VAR_ssh_allowed_cidrs: ${{ vars.SITE_SSH_ALLOWED_CIDRS }}
       TF_VAR_operator_ssh_public_key: ${{ secrets.SITE_SSH_PUBLIC_KEY }}
@@ -54,11 +49,7 @@ jobs:
 
       - name: Validate protected configuration
         run: |
-          test -n "$TF_STATE_BUCKET"
-          test -n "$AWS_REGION"
-          test -n "$AWS_ENDPOINT_URL_S3"
-          test -n "$AWS_ACCESS_KEY_ID"
-          test -n "$AWS_SECRET_ACCESS_KEY"
+          test -n "$TF_TOKEN_app_terraform_io"
           test -n "$TF_VAR_hcloud_token"
           test -n "$TF_VAR_ssh_allowed_cidrs"
           test -n "$TF_VAR_operator_ssh_public_key"
@@ -66,20 +57,9 @@ jobs:
             test "$GITHUB_REF" = refs/heads/main
           fi
 
-      - name: Verify durable state storage
-        run: |
-          versioning="$(
-            aws s3api get-bucket-versioning \
-              --bucket "$TF_STATE_BUCKET" \
-              --endpoint-url "$AWS_ENDPOINT_URL_S3" \
-              --query Status \
-              --output text
-          )"
-          test "$versioning" = Enabled
-
       - name: Initialize locked remote state
         working-directory: deploy/hetzner-site
-        run: terraform init -input=false -backend-config="bucket=$TF_STATE_BUCKET"
+        run: terraform init -input=false
 
       - name: Validate infrastructure contracts
         working-directory: deploy/hetzner-site
@@ -129,7 +109,7 @@ jobs:
             echo
             echo "- Revision: \`$(git rev-parse HEAD)\`"
             echo "- Operation: \`${{ inputs.operation }}\`"
-            echo "- Remote state key: \`leapview/site/production.tfstate\`"
+            echo "- Remote state: \`Flid/leapview-site-production\`"
             echo "- Plan artifact retained for 90 days"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -141,12 +121,7 @@ jobs:
     timeout-minutes: 25
     environment: leapview-site-production
     env:
-      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
-      AWS_REGION: ${{ vars.TF_STATE_REGION }}
-      AWS_DEFAULT_REGION: ${{ vars.TF_STATE_REGION }}
-      AWS_ENDPOINT_URL_S3: ${{ vars.TF_STATE_ENDPOINT }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_ACCESS_KEY }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_SECRET_KEY }}
+      TF_TOKEN_app_terraform_io: ${{ secrets.HCP_API_TOKEN }}
       TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
       TF_VAR_ssh_allowed_cidrs: ${{ vars.SITE_SSH_ALLOWED_CIDRS }}
       TF_VAR_operator_ssh_public_key: ${{ secrets.SITE_SSH_PUBLIC_KEY }}
@@ -177,7 +152,7 @@ jobs:
 
       - name: Initialize locked remote state
         working-directory: deploy/hetzner-site
-        run: terraform init -input=false -backend-config="bucket=$TF_STATE_BUCKET"
+        run: terraform init -input=false
 
       - name: Apply reviewed plan
         working-directory: deploy/hetzner-site

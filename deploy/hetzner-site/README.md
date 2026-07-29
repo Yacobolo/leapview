@@ -22,29 +22,19 @@ bounded deployment channel and never applies or destroys infrastructure.
 
 ## Remote state
 
-Production state uses the S3 backend in `backend.tf`, including native lock-file
-locking. Provision a versioned Hetzner Object Storage bucket outside this root
-so the state remains available even if the site infrastructure is unavailable.
-Keep the bucket private, enable its deletion protection in Hetzner Console, and
-use a dedicated Hetzner project because S3 credentials can otherwise access
-every bucket in their project. The workflow verifies that versioning is enabled
-before Terraform can read or mutate production state. The credentials require:
-
-- the configured bucket listing;
-- `leapview/site/production.tfstate` for read/write;
-- `leapview/site/production.tfstate.tflock` for read/write/delete.
+Production state uses the HCP Terraform workspace
+`Flid/leapview-site-production`. The workspace is configured for local
+execution: the protected GitHub workflow still creates and applies the reviewed
+plan, while HCP Terraform provides encrypted remote state, locking, and state
+history without a dedicated Object Storage service.
 
 The protected `leapview-site-production` GitHub environment must provide:
 
 | Kind | Name | Purpose |
 | --- | --- | --- |
+| secret | `HCP_API_TOKEN` | HCP Terraform workspace state access |
 | secret | `HCLOUD_TOKEN` | Hetzner Cloud resource management |
-| secret | `TF_STATE_ACCESS_KEY` | Object Storage access key |
-| secret | `TF_STATE_SECRET_KEY` | Object Storage secret |
 | secret | `SITE_SSH_PUBLIC_KEY` | Production deployment public key |
-| variable | `TF_STATE_BUCKET` | Versioned state bucket |
-| variable | `TF_STATE_REGION` | Object Storage region, such as `fsn1` |
-| variable | `TF_STATE_ENDPOINT` | S3 endpoint, such as `https://fsn1.your-objectstorage.com` |
 | variable | `SITE_SSH_ALLOWED_CIDRS` | JSON list of restricted operator CIDRs |
 
 Configure required reviewers and prevent administrators from bypassing the
@@ -92,5 +82,5 @@ Destruction requires a reviewed source change that:
 4. obtains a second review before issuing a targeted destroy;
 5. removes DNS only after the retirement is verified.
 
-Never remove the Object Storage state or its versions as part of an origin
-retirement.
+Never delete the HCP Terraform workspace or its state history as part of an
+origin retirement.
