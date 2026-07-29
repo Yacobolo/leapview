@@ -107,6 +107,28 @@ func TestConcurrentReconcileSerializesOneDigestSynchronization(t *testing.T) {
 	}
 }
 
+func TestReconcileBindsReplacementToCandidateIdentityAndDigest(t *testing.T) {
+	first := testSnapshot("first")
+	second := testSnapshot("second")
+	builder := &scriptedBuilder{steps: []buildStep{{snapshot: first}, {snapshot: second}}}
+	remote := &recordingRemote{}
+	service, err := New(builder, remote)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(remote.requests) != 2 ||
+		remote.requests[1].ExpectedCandidateID != "cand_1" ||
+		remote.requests[1].ExpectedArtifactDigest != first.Digest {
+		t.Fatalf("replacement optimistic identity = %#v", remote.requests)
+	}
+}
+
 type buildStep struct {
 	snapshot Snapshot
 	err      error

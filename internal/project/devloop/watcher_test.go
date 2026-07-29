@@ -2,6 +2,7 @@ package devloop
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -147,6 +148,48 @@ func TestWatcherReceivesRealFilesystemChanges(t *testing.T) {
 	}
 	if update := awaitUpdate(t, updates); update.Result.Status != StatusUnchanged {
 		t.Fatalf("filesystem update = %#v", update)
+	}
+
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWatcherRetriesRemoteFailureWithoutAnotherFileChange(t *testing.T) {
+	root := t.TempDir()
+	projectPath := filepath.Join(root, "leapview.yaml")
+	snapshot := testSnapshot("retry-watch")
+	builder := &countingBuilder{snapshot: snapshot}
+	remote := &recordingRemote{errors: []error{errors.New("target disconnected"), nil}}
+	service, err := New(builder, remote)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := newFakeWatchSource()
+	watcher, err := newWatcher(projectPath, service, watcherOptions{
+		debounce: 10 * time.Millisecond, retryMin: 10 * time.Millisecond, retryMax: 20 * time.Millisecond,
+		newSource: func() (watchSource, error) { return source, nil },
+		resolveSources: func(string) ([]string, error) {
+			return []string{projectPath}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	updates := make(chan Update, 4)
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- watcher.Run(ctx, func(update Update) { updates <- update }) }()
+	if update := awaitUpdate(t, updates); update.Result.Status != StatusRetryable {
+		t.Fatalf("first update = %#v, want retryable", update)
+	}
+	if update := awaitUpdate(t, updates); update.Result.Status != StatusSynchronized {
+		t.Fatalf("retried update = %#v, want synchronized", update)
+	}
+	if len(remote.requests) != 2 {
+		t.Fatalf("remote requests = %d, want automatic retry", len(remote.requests))
 	}
 
 	cancel()

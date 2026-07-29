@@ -18,6 +18,29 @@ type CandidateArtifactRequest struct {
 	ArtifactDigest         string `json:"artifactDigest"`
 }
 
+type CandidateSourceArtifact struct {
+	Path   string `json:"path"`
+	Digest string `json:"digest"`
+}
+
+type CandidateSynchronizationRequest struct {
+	ProjectFile            string                    `json:"projectFile"`
+	ArtifactDigest         string                    `json:"artifactDigest"`
+	ExpectedCandidateID    *string                   `json:"expectedCandidateId,omitempty"`
+	ExpectedArtifactDigest *string                   `json:"expectedArtifactDigest,omitempty"`
+	Artifacts              []CandidateSourceArtifact `json:"artifacts"`
+}
+
+type CandidateSynchronizationPlanResponse struct {
+	ArtifactDigest string   `json:"artifactDigest"`
+	MissingDigests []string `json:"missingDigests"`
+}
+
+type CandidateSourceBlobResponse struct {
+	Digest    string `json:"digest"`
+	SizeBytes int64  `json:"sizeBytes"`
+}
+
 type CandidateResponse struct {
 	ID             string  `json:"id"`
 	ProjectID      string  `json:"projectId"`

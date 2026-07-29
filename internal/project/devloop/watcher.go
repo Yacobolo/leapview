@@ -12,7 +12,11 @@ import (
 	projectcompiler "github.com/flidai/leapview/internal/project/compiler"
 )
 
-const defaultDebounce = 150 * time.Millisecond
+const (
+	defaultDebounce = 150 * time.Millisecond
+	defaultRetryMin = time.Second
+	defaultRetryMax = 30 * time.Second
+)
 
 // Update is one observable development-loop build attempt. Candidate contains
 // the last valid remote candidate even when Err reports a new invalid edit.
@@ -25,6 +29,8 @@ type Watcher struct {
 	projectPath    string
 	service        *Service
 	debounce       time.Duration
+	retryMin       time.Duration
+	retryMax       time.Duration
 	newSource      func() (watchSource, error)
 	resolveSources func(string) ([]string, error)
 }
@@ -32,6 +38,8 @@ type Watcher struct {
 func NewWatcher(projectPath string, service *Service) (*Watcher, error) {
 	return newWatcher(projectPath, service, watcherOptions{
 		debounce:       defaultDebounce,
+		retryMin:       defaultRetryMin,
+		retryMax:       defaultRetryMax,
 		newSource:      newFSNotifySource,
 		resolveSources: projectcompiler.SourceFiles,
 	})
@@ -39,6 +47,8 @@ func NewWatcher(projectPath string, service *Service) (*Watcher, error) {
 
 type watcherOptions struct {
 	debounce       time.Duration
+	retryMin       time.Duration
+	retryMax       time.Duration
 	newSource      func() (watchSource, error)
 	resolveSources func(string) ([]string, error)
 }
@@ -52,10 +62,21 @@ func newWatcher(projectPath string, service *Service, options watcherOptions) (*
 		options.newSource == nil || options.resolveSources == nil {
 		return nil, fmt.Errorf("project watcher requires service, debounce, source, and resolver")
 	}
+	if options.retryMin == 0 {
+		options.retryMin = defaultRetryMin
+	}
+	if options.retryMax == 0 {
+		options.retryMax = defaultRetryMax
+	}
+	if options.retryMin < 0 || options.retryMax < options.retryMin {
+		return nil, fmt.Errorf("project watcher retry bounds are invalid")
+	}
 	return &Watcher{
 		projectPath:    projectPath,
 		service:        service,
 		debounce:       options.debounce,
+		retryMin:       options.retryMin,
+		retryMax:       options.retryMax,
 		newSource:      options.newSource,
 		resolveSources: options.resolveSources,
 	}, nil
@@ -117,24 +138,11 @@ func (watcher *Watcher) Run(ctx context.Context, report func(Update)) error {
 		tracked[watcher.projectPath] = struct{}{}
 	}
 
-	var lastResult Result
-	reconcile := func() {
-		result, reconcileErr := watcher.service.Reconcile(ctx)
-		lastResult = result
-		report(Update{Result: result, Err: reconcileErr})
-		if reconcileErr == nil {
-			if refreshErr := resolveAndInstall(); refreshErr != nil {
-				report(Update{Result: result, Err: refreshErr})
-			}
-		}
-	}
-	reconcile()
-
 	var timer *time.Timer
 	var timerC <-chan time.Time
-	schedule := func() {
+	schedule := func(delay time.Duration) {
 		if timer == nil {
-			timer = time.NewTimer(watcher.debounce)
+			timer = time.NewTimer(delay)
 		} else {
 			if !timer.Stop() {
 				select {
@@ -142,7 +150,7 @@ func (watcher *Watcher) Run(ctx context.Context, report func(Update)) error {
 				default:
 				}
 			}
-			timer.Reset(watcher.debounce)
+			timer.Reset(delay)
 		}
 		timerC = timer.C
 	}
@@ -151,6 +159,25 @@ func (watcher *Watcher) Run(ctx context.Context, report func(Update)) error {
 			timer.Stop()
 		}
 	}()
+	var lastResult Result
+	retryDelay := watcher.retryMin
+	reconcile := func() {
+		result, reconcileErr := watcher.service.Reconcile(ctx)
+		lastResult = result
+		report(Update{Result: result, Err: reconcileErr})
+		if reconcileErr == nil {
+			retryDelay = watcher.retryMin
+			if refreshErr := resolveAndInstall(); refreshErr != nil {
+				report(Update{Result: result, Err: refreshErr})
+			}
+			return
+		}
+		if result.Status == StatusRetryable {
+			schedule(retryDelay)
+			retryDelay = min(retryDelay*2, watcher.retryMax)
+		}
+	}
+	reconcile()
 
 	for {
 		select {
@@ -191,7 +218,8 @@ func (watcher *Watcher) Run(ctx context.Context, report func(Update)) error {
 					continue
 				}
 			}
-			schedule()
+			retryDelay = watcher.retryMin
+			schedule(watcher.debounce)
 		case watchErr, open := <-sourceErrors:
 			if !open {
 				sourceErrors = nil

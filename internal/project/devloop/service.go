@@ -35,6 +35,7 @@ type Candidate struct {
 
 type SyncRequest struct {
 	Snapshot               Snapshot
+	ExpectedCandidateID    string
 	ExpectedArtifactDigest string
 }
 
@@ -104,6 +105,7 @@ func (service *Service) Reconcile(ctx context.Context) (Result, error) {
 	}
 	request := SyncRequest{
 		Snapshot:               cloneSnapshot(snapshot),
+		ExpectedCandidateID:    service.candidate.ID,
 		ExpectedArtifactDigest: service.candidate.ArtifactDigest,
 	}
 	candidate, err := service.remote.Synchronize(ctx, request)

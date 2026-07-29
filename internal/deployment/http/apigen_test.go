@@ -50,6 +50,22 @@ func TestAPIGenDispatcherMapsCandidateOperationsAndIdempotency(t *testing.T) {
 	if handler.operation != "cancel:p1:cand_1" || handler.idempotencyKey != "cancel-1" {
 		t.Fatalf("cancel mapping = operation:%q key:%q", handler.operation, handler.idempotencyKey)
 	}
+	dispatcher.PlanProjectCandidateSynchronization(recorder, request, "p1")
+	if handler.operation != "sync-plan:p1" {
+		t.Fatalf("sync plan mapping = %q", handler.operation)
+	}
+	dispatcher.UploadProjectCandidateSourceBlob(recorder, request, "p1", "sha256:blob", deploymentgen.GenUploadProjectCandidateSourceBlobHeaders{
+		ContentType: "application/octet-stream", ContentDigest: "sha-256=:blob:",
+	})
+	if handler.operation != "sync-upload:p1:sha256:blob" {
+		t.Fatalf("sync upload mapping = %q", handler.operation)
+	}
+	dispatcher.CommitProjectCandidateSynchronization(recorder, request, "p1", deploymentgen.GenCommitProjectCandidateSynchronizationHeaders{
+		IdempotencyKey: "sync-1",
+	})
+	if handler.operation != "sync-commit:p1" || handler.idempotencyKey != "sync-1" {
+		t.Fatalf("sync commit mapping = operation:%q key:%q", handler.operation, handler.idempotencyKey)
+	}
 }
 
 type recordingDeploymentHandler struct {
@@ -71,6 +87,15 @@ func (h *recordingDeploymentHandler) RetryProjectCandidate(_ stdhttp.ResponseWri
 }
 func (h *recordingDeploymentHandler) CancelProjectCandidate(_ stdhttp.ResponseWriter, _ *stdhttp.Request, project, candidate, key string) {
 	h.operation, h.idempotencyKey = "cancel:"+project+":"+candidate, key
+}
+func (h *recordingDeploymentHandler) PlanProjectCandidateSynchronization(_ stdhttp.ResponseWriter, _ *stdhttp.Request, project string) {
+	h.operation = "sync-plan:" + project
+}
+func (h *recordingDeploymentHandler) UploadProjectCandidateSourceBlob(_ stdhttp.ResponseWriter, _ *stdhttp.Request, project, digest, _, _ string) {
+	h.operation = "sync-upload:" + project + ":" + digest
+}
+func (h *recordingDeploymentHandler) CommitProjectCandidateSynchronization(_ stdhttp.ResponseWriter, _ *stdhttp.Request, project, key string) {
+	h.operation, h.idempotencyKey = "sync-commit:"+project, key
 }
 
 func (*recordingDeploymentHandler) ListDeployments(stdhttp.ResponseWriter, *stdhttp.Request, string, *int32, *string) {

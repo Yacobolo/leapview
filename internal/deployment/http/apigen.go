@@ -10,6 +10,9 @@ import (
 )
 
 type APIGenHandler interface {
+	UploadProjectCandidateSourceBlob(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string, string)
+	CommitProjectCandidateSynchronization(stdhttp.ResponseWriter, *stdhttp.Request, string, string)
+	PlanProjectCandidateSynchronization(stdhttp.ResponseWriter, *stdhttp.Request, string)
 	StartProjectCandidate(stdhttp.ResponseWriter, *stdhttp.Request, string, string)
 	GetProjectCandidate(stdhttp.ResponseWriter, *stdhttp.Request, string, string)
 	ReplaceProjectCandidateArtifact(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string)
@@ -21,6 +24,18 @@ type APIGenHandler interface {
 	CancelDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string)
 	ListDeploymentEvents(stdhttp.ResponseWriter, *stdhttp.Request, string, string, *int32, *string)
 	RollbackDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string)
+}
+
+func (d *APIGenDispatcher) UploadProjectCandidateSourceBlob(w stdhttp.ResponseWriter, r *stdhttp.Request, project, digest string, headers deploymentgen.GenUploadProjectCandidateSourceBlobHeaders) {
+	d.handler.UploadProjectCandidateSourceBlob(w, r, project, digest, headers.ContentType, headers.ContentDigest)
+}
+
+func (d *APIGenDispatcher) CommitProjectCandidateSynchronization(w stdhttp.ResponseWriter, r *stdhttp.Request, project string, headers deploymentgen.GenCommitProjectCandidateSynchronizationHeaders) {
+	d.handler.CommitProjectCandidateSynchronization(w, r, project, headers.IdempotencyKey)
+}
+
+func (d *APIGenDispatcher) PlanProjectCandidateSynchronization(w stdhttp.ResponseWriter, r *stdhttp.Request, project string) {
+	d.handler.PlanProjectCandidateSynchronization(w, r, project)
 }
 
 type APIGenDispatcher struct{ handler APIGenHandler }

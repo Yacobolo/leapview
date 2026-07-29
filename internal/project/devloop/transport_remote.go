@@ -18,6 +18,7 @@ type SynchronizationPlanRequest struct {
 	ProjectID              string
 	ProjectFile            string
 	ArtifactDigest         string
+	ExpectedCandidateID    string
 	ExpectedArtifactDigest string
 	Artifacts              []ArtifactReference
 }
@@ -59,6 +60,7 @@ func (remote *TransportRemote) Synchronize(ctx context.Context, request SyncRequ
 		ProjectID:              snapshot.ProjectID,
 		ProjectFile:            snapshot.ProjectFile,
 		ArtifactDigest:         snapshot.Digest,
+		ExpectedCandidateID:    strings.TrimSpace(request.ExpectedCandidateID),
 		ExpectedArtifactDigest: strings.TrimSpace(request.ExpectedArtifactDigest),
 		Artifacts:              make([]ArtifactReference, len(snapshot.Artifacts)),
 	}

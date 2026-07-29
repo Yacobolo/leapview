@@ -12,6 +12,7 @@ import (
 	deploymentui "github.com/flidai/leapview/internal/deployment/ui"
 	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
 	webpage "github.com/flidai/leapview/internal/platform/web/page"
+	"github.com/flidai/leapview/internal/project"
 )
 
 func (m *Module) ServeCandidatePreview(
@@ -189,13 +190,15 @@ func writeCandidateUnavailable(w http.ResponseWriter, r *http.Request) {
 func writeCandidateAPIError(w http.ResponseWriter, r *http.Request, err error) {
 	status, code, detail := http.StatusInternalServerError, "INTERNAL_ERROR", "The candidate request could not be completed"
 	switch {
+	case errors.Is(err, project.ErrCandidateSourceUnavailable):
+		status, code, detail = http.StatusServiceUnavailable, "CANDIDATE_SERVICE_UNAVAILABLE", "Candidate service is unavailable"
 	case errors.Is(err, deployment.ErrCandidateNotFound):
 		status, code, detail = http.StatusNotFound, "CANDIDATE_NOT_FOUND", "Candidate not found"
-	case errors.Is(err, deployment.ErrCandidateConflict):
+	case errors.Is(err, deployment.ErrCandidateConflict), errors.Is(err, project.ErrCandidateSourceConflict):
 		status, code, detail = http.StatusConflict, "CANDIDATE_CONFLICT", err.Error()
 	case errors.Is(err, deployment.ErrCandidateQuota):
 		status, code, detail = http.StatusTooManyRequests, "CANDIDATE_QUOTA_EXCEEDED", "Candidate quota exceeded"
-	case errors.Is(err, deployment.ErrCandidateInvalid):
+	case errors.Is(err, deployment.ErrCandidateInvalid), errors.Is(err, project.ErrCandidateSourceInvalid):
 		status, code, detail = http.StatusUnprocessableEntity, "INVALID_CANDIDATE", err.Error()
 	}
 	apitransport.WriteProblem(w, r, status, code, detail, nil)

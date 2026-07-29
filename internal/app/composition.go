@@ -23,6 +23,7 @@ import (
 	apihttpmiddleware "github.com/flidai/leapview/internal/platform/http/middleware"
 	jobsmodule "github.com/flidai/leapview/internal/platform/jobs/module"
 	"github.com/flidai/leapview/internal/platform/transaction"
+	projectmodule "github.com/flidai/leapview/internal/project/module"
 	refreshmodule "github.com/flidai/leapview/internal/refresh/module"
 	releasemodule "github.com/flidai/leapview/internal/release/module"
 	runtimehostmodule "github.com/flidai/leapview/internal/runtimehost/module"
@@ -82,6 +83,12 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 		return nil, nil, nil, errors.Join(err, cleanupErr)
 	}
 	if err := store.BindInstanceEnvironment(ctx, string(environment)); err != nil {
+		return fail(err)
+	}
+	candidateSources, err := projectmodule.NewCandidateSourceSynchronizer(
+		filepath.Join(cfg.ArtifactDir(), "candidate-sources"),
+	)
+	if err != nil {
 		return fail(err)
 	}
 	instanceID, err := store.InstanceID(ctx)
@@ -296,6 +303,7 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 			leaser: candidateBindings, module: analyticsModule,
 		},
 		CandidateRuntime: runtimeHostModule,
+		CandidateSources: candidateSources,
 		RuntimeVersion:   identity.Version + ":" + identity.Revision,
 		ActivationHooks: deploymentmodule.ActivationHooks{
 			ApplyAccessSnapshot: accessmodule.ApplySnapshot,

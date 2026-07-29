@@ -17,6 +17,7 @@ type Module struct {
 	handler           *deploymenthttp.Handler
 	candidates        *deployment.CandidateService
 	candidateRuntimes *deployment.CandidateRuntimeService
+	candidateSources  deployment.CandidateSourceSynchronizer
 	jobs              JobConfig
 	api               APIConfig
 }
@@ -60,6 +61,7 @@ type Config struct {
 	CandidateAudit           func(context.Context, deployment.CandidateEvent) error
 	CandidateConnections     deployment.CandidateConnectionLeaser
 	CandidateRuntime         deployment.CandidateRuntimeHost
+	CandidateSources         deployment.CandidateSourceSynchronizer
 	RuntimeVersion           string
 	CurrentPrincipal         func(*http.Request) (Principal, bool)
 	Jobs                     JobConfig
@@ -122,7 +124,8 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	}
 	m := &Module{
 		handler: deploymenthttp.NewHandler(options), candidates: candidates,
-		candidateRuntimes: candidateRuntimes, jobs: jobs, api: config.API,
+		candidateRuntimes: candidateRuntimes, candidateSources: config.CandidateSources,
+		jobs: jobs, api: config.API,
 	}
 	if m.jobs.Authorize == nil {
 		m.jobs.Authorize = m.publicationAuthorizer(config.PublicationAuthorization)

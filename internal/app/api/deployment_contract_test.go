@@ -109,3 +109,39 @@ func TestPrivateProjectCandidateAPIContract(t *testing.T) {
 		}
 	}
 }
+
+func TestPrivateProjectCandidateSynchronizationContract(t *testing.T) {
+	spec := managedDataOpenAPISpec(t)
+	paths := openAPIMap(t, spec, "paths")
+	base := "/api/v1/projects/{project}/candidate-sync"
+	for suffix, operation := range map[string][2]string{
+		"/plan":   {"post", "planProjectCandidateSynchronization"},
+		"/commit": {"post", "commitProjectCandidateSynchronization"},
+	} {
+		contract := openAPIOperation(t, paths, base+suffix, operation[0])
+		if contract["operationId"] != operation[1] ||
+			!operationHasParameter(contract, "path", "project") {
+			t.Fatalf("%s operation = %#v", operation[1], contract)
+		}
+	}
+	upload := openAPIOperation(t, paths, base+"/blobs/{digest}", "put")
+	if upload["operationId"] != "uploadProjectCandidateSourceBlob" ||
+		!operationHasParameter(upload, "path", "digest") {
+		t.Fatalf("candidate source upload operation = %#v", upload)
+	}
+	if manual, _ := upload["x-apigen-manual"].(bool); !manual {
+		t.Fatal("candidate source blob upload must retain streaming body control")
+	}
+
+	schemas := openAPIMap(t, openAPIMap(t, spec, "components"), "schemas")
+	request := openAPISchema(t, schemas, "CandidateSynchronizationRequest")
+	for _, field := range []string{"projectFile", "artifactDigest", "artifacts"} {
+		_ = schemaProperty(t, request, field)
+	}
+	reference := openAPISchema(t, schemas, "CandidateSourceArtifact")
+	for _, field := range []string{"path", "digest"} {
+		_ = schemaProperty(t, reference, field)
+	}
+	plan := openAPISchema(t, schemas, "CandidateSynchronizationPlanResponse")
+	_ = schemaProperty(t, plan, "missingDigests")
+}

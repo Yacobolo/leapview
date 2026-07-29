@@ -269,6 +269,7 @@ func normalizePlanRequest(request SynchronizationPlanRequest) (SynchronizationPl
 	request.ProjectID = strings.TrimSpace(request.ProjectID)
 	request.ProjectFile = strings.TrimSpace(request.ProjectFile)
 	request.ArtifactDigest = strings.TrimSpace(request.ArtifactDigest)
+	request.ExpectedCandidateID = strings.TrimSpace(request.ExpectedCandidateID)
 	request.ExpectedArtifactDigest = strings.TrimSpace(request.ExpectedArtifactDigest)
 	if request.ProjectID == "" || !canonicalArtifactPath(request.ProjectFile) ||
 		len(request.Artifacts) == 0 || len(request.Artifacts) > maxTargetSnapshotFiles {
@@ -281,6 +282,9 @@ func normalizePlanRequest(request SynchronizationPlanRequest) (SynchronizationPl
 		if err := digest.ValidateSHA256Identity(request.ExpectedArtifactDigest); err != nil {
 			return SynchronizationPlanRequest{}, fmt.Errorf("expected candidate digest is invalid: %w", err)
 		}
+	}
+	if (request.ExpectedCandidateID == "") != (request.ExpectedArtifactDigest == "") {
+		return SynchronizationPlanRequest{}, fmt.Errorf("expected candidate identity and digest must be supplied together")
 	}
 	seen := make(map[string]struct{}, len(request.Artifacts))
 	artifacts := make([]Artifact, len(request.Artifacts))

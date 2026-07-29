@@ -52,6 +52,9 @@ func TestRootHelpExposesOnlyProjectDeploy(t *testing.T) {
 	if !strings.Contains(output, "\n  deploy ") {
 		t.Fatalf("root help missing deploy command:\n%s", output)
 	}
+	if !strings.Contains(output, "\n  dev ") {
+		t.Fatalf("root help missing dev command:\n%s", output)
+	}
 	if !strings.Contains(output, "\n  version ") {
 		t.Fatalf("root help missing version command:\n%s", output)
 	}

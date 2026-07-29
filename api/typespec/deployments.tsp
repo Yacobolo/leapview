@@ -30,6 +30,29 @@ model CandidateArtifactRequest {
   artifactDigest: string;
 }
 
+model CandidateSourceArtifact {
+  path: string;
+  digest: string;
+}
+
+model CandidateSynchronizationRequest {
+  projectFile: string;
+  artifactDigest: string;
+  expectedCandidateId?: string;
+  expectedArtifactDigest?: string;
+  artifacts: CandidateSourceArtifact[];
+}
+
+model CandidateSynchronizationPlanResponse {
+  artifactDigest: string;
+  missingDigests: string[];
+}
+
+model CandidateSourceBlobResponse {
+  digest: string;
+  sizeBytes: int64;
+}
+
 model CandidateResponse {
   id: string;
   projectId: string;
@@ -180,3 +203,28 @@ op retryProjectCandidate(@path project: string, @path candidate: string, @header
 @apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
 @operationId("cancelProjectCandidate")
 op cancelProjectCandidate(@path project: string, @path candidate: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): OkJson<CandidateResponse> | CommonErrors;
+
+@tag("Deployments")
+@summary("Plan content-addressed synchronization for the current author's private candidate")
+@route("/projects/{project}/candidate-sync/plan")
+@post
+@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@operationId("planProjectCandidateSynchronization")
+op planProjectCandidateSynchronization(@path project: string, @body body: CandidateSynchronizationRequest): OkJson<CandidateSynchronizationPlanResponse> | CommonErrors;
+
+@tag("Deployments")
+@summary("Upload a missing immutable private-candidate source blob")
+@route("/projects/{project}/candidate-sync/blobs/{digest}")
+@put
+@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@apigen.manual
+@operationId("uploadProjectCandidateSourceBlob")
+op uploadProjectCandidateSourceBlob(@path project: string, @path digest: string, @header contentType: "application/octet-stream", @header("Content-Digest") contentDigest: string, @body body: bytes): CreatedJson<CandidateSourceBlobResponse> | CommonErrors;
+
+@tag("Deployments")
+@summary("Atomically commit a complete source snapshot to the current author's private candidate")
+@route("/projects/{project}/candidate-sync/commit")
+@post
+@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@operationId("commitProjectCandidateSynchronization")
+op commitProjectCandidateSynchronization(@path project: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: CandidateSynchronizationRequest): OkJson<CandidateResponse> | CommonErrors;

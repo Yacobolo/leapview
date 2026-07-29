@@ -22,7 +22,8 @@ func TestTransportRemoteUploadsOnlyMissingContentBeforeCommit(t *testing.T) {
 	}
 
 	candidate, err := remote.Synchronize(t.Context(), SyncRequest{
-		Snapshot: snapshot, ExpectedArtifactDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Snapshot: snapshot, ExpectedCandidateID: "cand_existing",
+		ExpectedArtifactDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -32,6 +33,9 @@ func TestTransportRemoteUploadsOnlyMissingContentBeforeCommit(t *testing.T) {
 	}
 	if transport.plan.ExpectedArtifactDigest != "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
 		t.Fatalf("plan expected digest = %q", transport.plan.ExpectedArtifactDigest)
+	}
+	if transport.plan.ExpectedCandidateID != "cand_existing" {
+		t.Fatalf("plan expected candidate = %q", transport.plan.ExpectedCandidateID)
 	}
 	if len(transport.plan.Artifacts) != len(snapshot.Artifacts) {
 		t.Fatalf("plan artifact references = %d, want %d", len(transport.plan.Artifacts), len(snapshot.Artifacts))

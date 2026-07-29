@@ -3,7 +3,10 @@ package module
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -15,7 +18,96 @@ import (
 	deploymenthttp "github.com/flidai/leapview/internal/deployment/http"
 	deploymentsqlite "github.com/flidai/leapview/internal/deployment/sqlite"
 	"github.com/flidai/leapview/internal/platform"
+	"github.com/flidai/leapview/internal/project"
 )
+
+func TestCandidateSynchronizationPlansUploadsAndCommitsOwnedCandidate(t *testing.T) {
+	module := testCandidateModule(t, "principal_1")
+	digest := "sha256:" + strings.Repeat("a", 64)
+	blobDigest := "sha256:" + strings.Repeat("b", 64)
+	sources := &candidateSourceSynchronizerStub{missing: []string{blobDigest}}
+	module.candidateSources = sources
+	body := `{"projectFile":"leapview.yaml","artifactDigest":"` + digest +
+		`","artifacts":[{"path":"leapview.yaml","digest":"` + blobDigest + `"}]}`
+
+	planned := callCandidateAPI(t, http.MethodPost, "/api/v1/projects/finance/candidate-sync/plan", body, func(w http.ResponseWriter, r *http.Request) {
+		module.PlanProjectCandidateSynchronization(w, r, "finance")
+	})
+	if planned.Code != http.StatusOK || !strings.Contains(planned.Body.String(), blobDigest) {
+		t.Fatalf("plan response = %d %s", planned.Code, planned.Body.String())
+	}
+	contentDigest := standardContentDigest(t, blobDigest)
+	uploaded := callCandidateAPI(t, http.MethodPut, "/api/v1/projects/finance/candidate-sync/blobs/"+blobDigest, "blob", func(w http.ResponseWriter, r *http.Request) {
+		module.UploadProjectCandidateSourceBlob(w, r, "finance", blobDigest, "application/octet-stream", contentDigest)
+	})
+	if uploaded.Code != http.StatusCreated || string(sources.uploaded) != "blob" {
+		t.Fatalf("upload response = %d %s bytes=%q", uploaded.Code, uploaded.Body.String(), sources.uploaded)
+	}
+	committed := callCandidateAPI(t, http.MethodPost, "/api/v1/projects/finance/candidate-sync/commit", body, func(w http.ResponseWriter, r *http.Request) {
+		module.CommitProjectCandidateSynchronization(w, r, "finance", "commit-1")
+	})
+	var candidate candidateAPIResponse
+	decodeCandidateResponse(t, committed, &candidate)
+	if committed.Code != http.StatusOK || candidate.ID == "" ||
+		candidate.ArtifactDigest != digest || sources.commits != 1 {
+		t.Fatalf("commit response = %d candidate=%#v commits=%d", committed.Code, candidate, sources.commits)
+	}
+
+	nextDigest := "sha256:" + strings.Repeat("c", 64)
+	replacementBody := `{"projectFile":"leapview.yaml","artifactDigest":"` + nextDigest +
+		`","expectedCandidateId":"` + candidate.ID + `","expectedArtifactDigest":"` + digest +
+		`","artifacts":[{"path":"leapview.yaml","digest":"` + blobDigest + `"}]}`
+	replaced := callCandidateAPI(t, http.MethodPost, "/api/v1/projects/finance/candidate-sync/commit", replacementBody, func(w http.ResponseWriter, r *http.Request) {
+		module.CommitProjectCandidateSynchronization(w, r, "finance", "commit-2")
+	})
+	var replacement candidateAPIResponse
+	decodeCandidateResponse(t, replaced, &replacement)
+	if replaced.Code != http.StatusOK || replacement.ID != candidate.ID ||
+		replacement.ArtifactDigest != nextDigest || replacement.Revision != candidate.Revision+1 {
+		t.Fatalf("replacement response = %d candidate=%#v", replaced.Code, replacement)
+	}
+}
+
+func TestCandidateSynchronizationRejectsBlobHeaderMismatchBeforeStorage(t *testing.T) {
+	module := testCandidateModule(t, "principal_1")
+	sources := &candidateSourceSynchronizerStub{}
+	module.candidateSources = sources
+	digest := "sha256:" + strings.Repeat("a", 64)
+	response := callCandidateAPI(t, http.MethodPut, "/api/v1/projects/finance/candidate-sync/blobs/"+digest, "blob", func(w http.ResponseWriter, r *http.Request) {
+		module.UploadProjectCandidateSourceBlob(w, r, "finance", digest, "application/octet-stream", "sha-256=:wrong:")
+	})
+	if response.Code != http.StatusUnprocessableEntity || len(sources.uploaded) != 0 {
+		t.Fatalf("mismatched upload response = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestCandidateSynchronizationMapsProjectSourceErrors(t *testing.T) {
+	tests := []struct {
+		err    error
+		status int
+		code   string
+	}{
+		{project.ErrCandidateSourceUnavailable, http.StatusServiceUnavailable, "CANDIDATE_SERVICE_UNAVAILABLE"},
+		{project.ErrCandidateSourceConflict, http.StatusConflict, "CANDIDATE_CONFLICT"},
+		{project.ErrCandidateSourceInvalid, http.StatusUnprocessableEntity, "INVALID_CANDIDATE"},
+	}
+	for _, test := range tests {
+		module := testCandidateModule(t, "principal_1")
+		module.candidateSources = &candidateSourceSynchronizerStub{planErr: test.err}
+		response := callCandidateAPI(
+			t,
+			http.MethodPost,
+			"/api/v1/projects/finance/candidate-sync/plan",
+			`{"projectFile":"leapview.yaml","artifactDigest":"sha256:`+strings.Repeat("a", 64)+`","artifacts":[]}`,
+			func(w http.ResponseWriter, r *http.Request) {
+				module.PlanProjectCandidateSynchronization(w, r, "finance")
+			},
+		)
+		if response.Code != test.status || !strings.Contains(response.Body.String(), test.code) {
+			t.Fatalf("error %v response = %d %s", test.err, response.Code, response.Body.String())
+		}
+	}
+}
 
 func TestCandidateAPIStartsResumesUpdatesAndCancelsOwnedSession(t *testing.T) {
 	module := testCandidateModule(t, "principal_1")
@@ -248,4 +340,48 @@ func decodeCandidateResponse(t *testing.T, response *httptest.ResponseRecorder, 
 	if err := json.Unmarshal(response.Body.Bytes(), target); err != nil {
 		t.Fatalf("decode candidate response: %v body=%s", err, response.Body.String())
 	}
+}
+
+type candidateSourceSynchronizerStub struct {
+	missing  []string
+	uploaded []byte
+	commits  int
+	planErr  error
+}
+
+func (stub *candidateSourceSynchronizerStub) Plan(
+	context.Context,
+	deployment.CandidateSourceScope,
+	deployment.CandidateSynchronizationRequest,
+) ([]string, error) {
+	return append([]string(nil), stub.missing...), stub.planErr
+}
+
+func (stub *candidateSourceSynchronizerStub) Upload(
+	_ context.Context,
+	_ deployment.CandidateSourceScope,
+	_ string,
+	source io.Reader,
+) error {
+	bytes, err := io.ReadAll(source)
+	stub.uploaded = bytes
+	return err
+}
+
+func (stub *candidateSourceSynchronizerStub) Commit(
+	context.Context,
+	deployment.CandidateSourceScope,
+	deployment.CandidateSynchronizationRequest,
+) error {
+	stub.commits++
+	return nil
+}
+
+func standardContentDigest(t *testing.T, identity string) string {
+	t.Helper()
+	decoded, err := hex.DecodeString(strings.TrimPrefix(identity, "sha256:"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return "sha-256=:" + base64.StdEncoding.EncodeToString(decoded) + ":"
 }
