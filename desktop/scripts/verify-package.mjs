@@ -175,7 +175,7 @@ if (
 }
 const packagedUpdater = extractFile(
   asarPath,
-  "dist/src/updater.js",
+  join("dist", "src", "updater.js"),
 ).toString("utf8");
 for (const expected of [
   releasePolicy.updates.origin,
