@@ -176,7 +176,14 @@ if (
   throw new Error("packaged ASAR contains source or test-only content");
 }
 
-const startup = await verifyPackagedStartup(executablePath);
+const startup = await verifyPackagedStartup(executablePath, {
+  // Before MSI installation the native helper intentionally locks policy
+  // because the installer-owned ProgramData directory does not exist yet.
+  // Locked policy disables diagnostics, while the shell and runtime remain
+  // independently verifiable. MSI qualification verifies the protected
+  // directory and native helper on the installed application.
+  verifyDiagnosticJournal: process.platform !== "win32",
+});
 if (
   startup.chromiumVersion !== releasePolicy.runtime.chromium ||
   startup.electronVersion !== releasePolicy.runtime.electron
@@ -232,7 +239,10 @@ async function expectMissing(path) {
   throw new Error(`mutable unpackaged application directory exists: ${path}`);
 }
 
-async function verifyPackagedStartup(executable) {
+async function verifyPackagedStartup(
+  executable,
+  { verifyDiagnosticJournal },
+) {
   const userData = await mkdtemp(join(tmpdir(), "leapview-package-smoke-"));
   const devtoolsPort = await reserveLoopbackPort();
   const child = spawn(
@@ -284,7 +294,9 @@ async function verifyPackagedStartup(executable) {
       } catch {}
       if (shellReady) {
         const runtime = await readRuntimeVersions(devtoolsPort);
-        await verifyPackagedDiagnosticJournal(userData, deadline);
+        if (verifyDiagnosticJournal) {
+          await verifyPackagedDiagnosticJournal(userData, deadline);
+        }
         return {
           status: "trusted-shell-ready",
           ...runtime,

@@ -81,8 +81,13 @@ describe("desktop installer contract", () => {
 
   test("POSIX installer scripts preserve policy and repair root-only ownership", async () => {
     const root = resolve(import.meta.dirname, "..");
-    const [macPreinstall, macPostinstall, linuxPreinstall, linuxPostinstall] =
-      await Promise.all([
+    const [
+      macPreinstall,
+      macPostinstall,
+      linuxPreinstall,
+      linuxPostinstall,
+      macQualification,
+    ] = await Promise.all([
         readFile(
           resolve(root, "installer/macos/scripts/preinstall"),
           "utf8",
@@ -97,6 +102,10 @@ describe("desktop installer contract", () => {
         ),
         readFile(
           resolve(root, "installer/linux/postinst"),
+          "utf8",
+        ),
+        readFile(
+          resolve(root, "scripts/qualify-installer-macos.sh"),
           "utf8",
         ),
       ]);
@@ -114,5 +123,9 @@ describe("desktop installer contract", () => {
     expect(macPostinstall).toContain("chmod 0644");
     expect(linuxPostinstall).toContain("chown root:root");
     expect(linuxPostinstall).toContain("chmod 0644");
+    expect(macQualification).toContain(
+      "URLForApplicationToOpenURL(url)",
+    );
+    expect(macQualification).not.toContain("-dump");
   });
 });

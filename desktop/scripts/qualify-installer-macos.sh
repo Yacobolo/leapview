@@ -21,7 +21,16 @@ test "$(plutil -extract CFBundleIdentifier raw "${application}/Contents/Info.pli
 plutil -extract CFBundleURLTypes xml1 -o - \
   "${application}/Contents/Info.plist" | grep -F "leapview-desktop"
 "${launch_services}" -f "${application}"
-"${launch_services}" -dump | grep -F "${bundle_id}"
+registered_application="$(
+  osascript -l JavaScript -e '
+    ObjC.import("AppKit");
+    const url = $.NSURL.URLWithString("leapview-desktop://connect");
+    const application = $.NSWorkspace.sharedWorkspace
+      .URLForApplicationToOpenURL(url);
+    application ? ObjC.unwrap(application.path) : "";
+  '
+)"
+test "${registered_application}" = "${application}"
 
 sudo sh -c "printf '%s\n' '{\"qualification\":\"preserve-on-upgrade\"}' > '${policy_path}'"
 sudo chown root:wheel "${policy_path}"

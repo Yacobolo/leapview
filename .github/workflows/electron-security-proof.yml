@@ -92,6 +92,7 @@ jobs:
           sudo chown root:root out/LeapView-linux-*/chrome-sandbox
           sudo chmod 4755 out/LeapView-linux-*/chrome-sandbox
           xvfb-run --auto-servernum node scripts/verify-package.mjs
+          node scripts/verify-installer.mjs
 
       - name: Generate and verify release evidence
         working-directory: desktop
