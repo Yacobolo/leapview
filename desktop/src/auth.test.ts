@@ -5,9 +5,13 @@ import { describe, expect, test } from "bun:test";
 
 import {
   authenticateDesktopProfile,
+  clearDesktopProfileState,
   disconnectDesktopProfile,
   desktopSessionAvailable,
   DesktopAuthenticationError,
+  DesktopProfileRemovedLocallyError,
+  prepareDesktopSession,
+  removeDesktopProfileState,
   type DesktopAuthProfile,
 } from "./auth.js";
 
@@ -55,6 +59,85 @@ describe("desktop system-browser authentication", () => {
     expect(observed?.init.redirect).toBe("error");
     expect(new URLSearchParams(String(observed?.init.body)).get("profile_id"))
       .toBe(profile.id);
+  });
+
+  test("clears all profile-local session state after server invalidation", async () => {
+    const cleared: string[] = [];
+    await clearDesktopProfileState({
+      clearStorageData: async () => {
+        cleared.push("storage");
+      },
+      clearCache: async () => {
+        cleared.push("cache");
+      },
+      clearAuthCache: async () => {
+        cleared.push("auth");
+      },
+      flushStorageData: () => {
+        cleared.push("flush");
+      },
+    });
+
+    expect(cleared).toEqual(["storage", "cache", "auth", "flush"]);
+  });
+
+  test("clears an invalid profile partition before reauthorization", async () => {
+    const cleared: string[] = [];
+    const ready = await prepareDesktopSession(
+      profile,
+      async () => new Response(null, { status: 401 }),
+      {
+        clearStorageData: async () => {
+          cleared.push("storage");
+        },
+        clearCache: async () => {
+          cleared.push("cache");
+        },
+        clearAuthCache: async () => {
+          cleared.push("auth");
+        },
+        flushStorageData: () => {
+          cleared.push("flush");
+        },
+      },
+    );
+
+    expect(ready).toBe(false);
+    expect(cleared).toEqual(["storage", "cache", "auth", "flush"]);
+  });
+
+  test("offline removal drops the mapping and clears local state despite unconfirmed revocation", async () => {
+    const events: string[] = [];
+    await expect(
+      removeDesktopProfileState(
+        profile,
+        async () => new Response(null, { status: 503 }),
+        {
+          clearStorageData: async () => {
+            events.push("storage");
+          },
+          clearCache: async () => {
+            events.push("cache");
+          },
+          clearAuthCache: async () => {
+            events.push("auth");
+          },
+          flushStorageData: () => {
+            events.push("flush");
+          },
+        },
+        async () => {
+          events.push("mapping");
+        },
+      ),
+    ).rejects.toBeInstanceOf(DesktopProfileRemovedLocallyError);
+    expect(events).toEqual([
+      "mapping",
+      "storage",
+      "cache",
+      "auth",
+      "flush",
+    ]);
   });
 
   test("uses loopback S256 PKCE and redeems only through the profile session", async () => {
@@ -142,6 +225,101 @@ describe("desktop system-browser authentication", () => {
     await expect(
       authenticateDesktopProfile(profile, failIfFetched, openExternal),
     ).rejects.toBeInstanceOf(DesktopAuthenticationError);
+  });
+
+  test("cancels an interrupted authentication, closes its listener, and permits retry", async () => {
+    const controller = new AbortController();
+    let abandonedRedirectURI = "";
+    await expect(
+      authenticateDesktopProfile(
+        profile,
+        failIfFetched,
+        async (rawURL) => {
+          const authorization = new URL(rawURL);
+          abandonedRedirectURI =
+            authorization.searchParams.get("redirect_uri") ?? "";
+          controller.abort();
+        },
+        {
+          callbackTimeoutMs: 2_000,
+          signal: controller.signal,
+        },
+      ),
+    ).rejects.toThrow("cancelled");
+
+    expect(abandonedRedirectURI).toMatch(
+      /^http:\/\/127\.0\.0\.1:\d+\/callback$/u,
+    );
+    await expect(
+      requestLoopback(
+        `${abandonedRedirectURI}?${new URLSearchParams({
+          code: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq",
+          state: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq",
+        })}`,
+      ),
+    ).rejects.toBeDefined();
+
+    await authenticateDesktopProfile(
+      profile,
+      async () => new Response(null, { status: 204 }),
+      callbackWithValidCode,
+    );
+  });
+
+  test("reports an exact provider rejection without reflecting its value", async () => {
+    const providerError = "access_denied";
+    const openExternal = async (rawURL: string): Promise<void> => {
+      const authorization = new URL(rawURL);
+      const redirectURI = authorization.searchParams.get("redirect_uri")!;
+      const response = await requestLoopback(
+        `${redirectURI}?${new URLSearchParams({
+          error: providerError,
+          state: authorization.searchParams.get("state")!,
+        })}`,
+      );
+      expect(response.status).toBe(400);
+      expect(response.body).not.toContain(providerError);
+    };
+
+    await expect(
+      authenticateDesktopProfile(profile, failIfFetched, openExternal),
+    ).rejects.toThrow("rejected by the identity provider");
+  });
+
+  test("accepts at most one of two concurrent duplicate callbacks", async () => {
+    const openExternal = async (rawURL: string): Promise<void> => {
+      const authorization = new URL(rawURL);
+      const callback = `${
+        authorization.searchParams.get("redirect_uri")!
+      }?${new URLSearchParams({
+        code: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq",
+        state: authorization.searchParams.get("state")!,
+      })}`;
+      const responses = await Promise.allSettled([
+        requestLoopback(callback),
+        requestLoopback(callback),
+      ]);
+      const successful = responses.filter(
+        (
+          response,
+        ): response is PromiseFulfilledResult<{
+          status: number;
+          body: string;
+        }> => response.status === "fulfilled" && response.value.status === 200,
+      );
+      expect(successful).toHaveLength(1);
+    };
+
+    let redemptions = 0;
+    await authenticateDesktopProfile(
+      profile,
+      async () => {
+        redemptions++;
+        return new Response(null, { status: 204 });
+      },
+      openExternal,
+    );
+    expect(redemptions).toBe(1);
   });
 
   test("times out and never redeems when the browser does not return", async () => {

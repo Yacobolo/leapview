@@ -16,6 +16,7 @@ const REDEMPTION_TIMEOUT_MS = 8_000;
 const MAX_CALLBACK_URL_BYTES = 2_048;
 const MAX_CALLBACK_HEADERS_BYTES = 4 * 1024;
 const codePattern = /^[A-Za-z0-9_-]{43}$/u;
+const providerErrorPattern = /^[a-z][a-z0-9_]{0,63}$/u;
 const profileIDPattern = /^profile_[0-9a-f]{32}$/u;
 const instanceIDPattern = /^instance_[0-9a-f]{32}$/u;
 
@@ -35,6 +36,14 @@ export type ExternalOpener = (url: string) => Promise<void>;
 
 export interface DesktopAuthenticationOptions {
   callbackTimeoutMs?: number;
+  signal?: AbortSignal;
+}
+
+export interface DesktopProfileState {
+  clearStorageData(): Promise<void>;
+  clearCache(): Promise<void>;
+  clearAuthCache(): Promise<void>;
+  flushStorageData(): void;
 }
 
 export class DesktopAuthenticationError extends Error {
@@ -42,6 +51,25 @@ export class DesktopAuthenticationError extends Error {
     super(message, options);
     this.name = "DesktopAuthenticationError";
   }
+}
+
+export class DesktopProfileRemovedLocallyError extends Error {
+  constructor(options?: ErrorOptions) {
+    super(
+      "LeapView was removed from this device, but server revocation could not be confirmed.",
+      options,
+    );
+    this.name = "DesktopProfileRemovedLocallyError";
+  }
+}
+
+export async function clearDesktopProfileState(
+  profileState: DesktopProfileState,
+): Promise<void> {
+  await profileState.clearStorageData();
+  await profileState.clearCache();
+  await profileState.clearAuthCache();
+  profileState.flushStorageData();
 }
 
 export async function desktopSessionAvailable(
@@ -89,6 +117,18 @@ export async function desktopSessionAvailable(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function prepareDesktopSession(
+  profile: DesktopAuthProfile,
+  profileFetcher: DesktopAuthFetcher,
+  profileState: DesktopProfileState,
+): Promise<boolean> {
+  if (await desktopSessionAvailable(profile, profileFetcher)) {
+    return true;
+  }
+  await clearDesktopProfileState(profileState);
+  return false;
 }
 
 export async function disconnectDesktopProfile(
@@ -141,6 +181,27 @@ export async function disconnectDesktopProfile(
   }
 }
 
+export async function removeDesktopProfileState(
+  profile: DesktopAuthProfile,
+  profileFetcher: DesktopAuthFetcher,
+  profileState: DesktopProfileState,
+  removeMapping: () => Promise<void>,
+): Promise<void> {
+  let revocationError: unknown;
+  try {
+    await disconnectDesktopProfile(profile, profileFetcher);
+  } catch (error) {
+    revocationError = error;
+  }
+  await removeMapping();
+  await clearDesktopProfileState(profileState);
+  if (revocationError !== undefined) {
+    throw new DesktopProfileRemovedLocallyError({
+      cause: revocationError,
+    });
+  }
+}
+
 export async function authenticateDesktopProfile(
   profile: DesktopAuthProfile,
   profileFetcher: DesktopAuthFetcher,
@@ -148,6 +209,7 @@ export async function authenticateDesktopProfile(
   options: DesktopAuthenticationOptions = {},
 ): Promise<void> {
   validateProfile(profile);
+  throwIfAuthenticationCancelled(options.signal);
   const verifier = randomBytes(32).toString("base64url");
   const state = randomBytes(32).toString("base64url");
   const challenge = createHash("sha256")
@@ -156,8 +218,10 @@ export async function authenticateDesktopProfile(
   const callback = await createLoopbackCallback(
     state,
     options.callbackTimeoutMs ?? DEFAULT_CALLBACK_TIMEOUT_MS,
+    options.signal,
   );
   try {
+    throwIfAuthenticationCancelled(options.signal);
     const authorization = new URL(AUTHORIZE_PATH, profile.canonicalOrigin);
     authorization.search = new URLSearchParams({
       client_id: DESKTOP_CLIENT_ID,
@@ -178,6 +242,7 @@ export async function authenticateDesktopProfile(
       code,
       verifier,
       callback.redirectURI,
+      options.signal,
     );
   } catch (error) {
     if (error instanceof DesktopAuthenticationError) {
@@ -201,6 +266,7 @@ interface LoopbackCallback {
 async function createLoopbackCallback(
   expectedState: string,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<LoopbackCallback> {
   if (
     !Number.isSafeInteger(timeoutMs) ||
@@ -223,42 +289,64 @@ async function createLoopbackCallback(
   // transient unhandled rejection while the opener is still pending.
   void code.catch(() => undefined);
   let server: Server;
-  const close = () => {
+  let timeout: NodeJS.Timeout | undefined;
+  const closeServer = () => {
     if (server.listening) {
       server.close();
     }
   };
+  const cancel = () =>
+    finish(
+      new DesktopAuthenticationError(
+        "Desktop authentication was cancelled before completion.",
+      ),
+    );
   const finish = (error?: Error, authorizationCode?: string) => {
     if (settled) {
       return;
     }
     settled = true;
-    clearTimeout(timeout);
-    close();
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
+    signal?.removeEventListener("abort", cancel);
+    closeServer();
     if (error !== undefined) {
       rejectCode(error);
     } else {
       resolveCode(authorizationCode ?? "");
     }
   };
+  let callbackClaimed = false;
+  let expectedHost = "";
   server = createServer(
     {
       maxHeaderSize: MAX_CALLBACK_HEADERS_BYTES,
       requireHostHeader: true,
     },
-    (request, response) =>
+    (request, response) => {
+      if (callbackClaimed) {
+        respondToBrowser(
+          response,
+          httpStatusConflict,
+          "Authentication was rejected.",
+        );
+        return;
+      }
+      callbackClaimed = true;
       handleLoopbackRequest(
         request,
         response,
         expectedState,
         finish,
-        () => loopbackAddress(server),
-      ),
+        expectedHost,
+      );
+    },
   );
   server.on("clientError", (_error, socket) => {
     socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
   });
-  const timeout = setTimeout(
+  timeout = setTimeout(
     () =>
       finish(
         new DesktopAuthenticationError(
@@ -268,10 +356,18 @@ async function createLoopbackCallback(
     timeoutMs,
   );
   timeout.unref();
+  signal?.addEventListener("abort", cancel, { once: true });
+  if (signal?.aborted === true) {
+    cancel();
+  }
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen({ host: "127.0.0.1", port: 0, exclusive: true }, () => {
       server.off("error", reject);
+      expectedHost = loopbackAddress(server);
+      if (settled) {
+        closeServer();
+      }
       resolve();
     });
   }).catch((error: unknown) => {
@@ -284,9 +380,9 @@ async function createLoopbackCallback(
     throw error;
   });
   return {
-    redirectURI: `http://${loopbackAddress(server)}/callback`,
+    redirectURI: `http://${expectedHost}/callback`,
     code,
-    close,
+    close: cancel,
   };
 }
 
@@ -295,7 +391,7 @@ function handleLoopbackRequest(
   response: ServerResponse,
   expectedState: string,
   finish: (error?: Error, code?: string) => void,
-  expectedHost: () => string,
+  expectedHost: string,
 ): void {
   const fail = (message: string) => {
     respondToBrowser(response, httpStatusBadRequest, "Authentication was rejected.");
@@ -305,7 +401,7 @@ function handleLoopbackRequest(
   if (
     request.method !== "GET" ||
     Buffer.byteLength(rawURL, "utf8") > MAX_CALLBACK_URL_BYTES ||
-    request.headers.host !== expectedHost() ||
+    request.headers.host !== expectedHost ||
     request.socket.remoteAddress !== "127.0.0.1"
   ) {
     fail("Desktop authentication returned an invalid loopback request.");
@@ -313,25 +409,51 @@ function handleLoopbackRequest(
   }
   let callback: URL;
   try {
-    callback = new URL(rawURL, `http://${expectedHost()}`);
+    callback = new URL(rawURL, `http://${expectedHost}`);
   } catch {
     fail("Desktop authentication returned an invalid callback URL.");
     return;
   }
   const parameters = callback.searchParams;
-  if (
-    callback.pathname !== "/callback" ||
-    callback.hash !== "" ||
-    [...parameters.keys()].length !== 2 ||
-    parameters.getAll("code").length !== 1 ||
-    parameters.getAll("state").length !== 1
-  ) {
+  const commonShapeIsValid =
+    callback.pathname === "/callback" &&
+    callback.hash === "" &&
+    [...parameters.keys()].length === 2 &&
+    parameters.getAll("state").length === 1;
+  const successShapeIsValid =
+    commonShapeIsValid &&
+    parameters.getAll("code").length === 1;
+  const errorShapeIsValid =
+    commonShapeIsValid && parameters.getAll("error").length === 1;
+  if (!successShapeIsValid && !errorShapeIsValid) {
     fail("Desktop authentication returned an invalid callback shape.");
     return;
   }
   const state = parameters.get("state") ?? "";
+  if (state !== expectedState) {
+    fail("Desktop authentication callback validation failed.");
+    return;
+  }
+  if (errorShapeIsValid) {
+    const providerError = parameters.get("error") ?? "";
+    if (!providerErrorPattern.test(providerError)) {
+      fail("Desktop authentication returned an invalid provider error.");
+      return;
+    }
+    respondToBrowser(
+      response,
+      httpStatusBadRequest,
+      "Authentication was rejected.",
+    );
+    finish(
+      new DesktopAuthenticationError(
+        "Desktop authentication was rejected by the identity provider.",
+      ),
+    );
+    return;
+  }
   const authorizationCode = parameters.get("code") ?? "";
-  if (state !== expectedState || !codePattern.test(authorizationCode)) {
+  if (!codePattern.test(authorizationCode)) {
     fail("Desktop authentication callback validation failed.");
     return;
   }
@@ -349,10 +471,17 @@ async function redeemAuthorizationCode(
   code: string,
   verifier: string,
   redirectURI: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   const controller = new AbortController();
+  let timedOut = false;
+  const cancel = () => controller.abort();
+  signal?.addEventListener("abort", cancel, { once: true });
   const timeout = setTimeout(
-    () => controller.abort(),
+    () => {
+      timedOut = true;
+      controller.abort();
+    },
     REDEMPTION_TIMEOUT_MS,
   );
   timeout.unref();
@@ -389,13 +518,24 @@ async function redeemAuthorizationCode(
       throw error;
     }
     throw new DesktopAuthenticationError(
-      controller.signal.aborted
+      signal?.aborted === true
+        ? "Desktop authentication was cancelled before completion."
+        : timedOut
         ? "LeapView desktop session redemption timed out."
         : "LeapView could not establish the desktop session.",
       { cause: error },
     );
   } finally {
     clearTimeout(timeout);
+    signal?.removeEventListener("abort", cancel);
+  }
+}
+
+function throwIfAuthenticationCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted === true) {
+    throw new DesktopAuthenticationError(
+      "Desktop authentication was cancelled before completion.",
+    );
   }
 }
 
@@ -446,6 +586,7 @@ function loopbackAddress(server: Server): string {
 
 const httpStatusOK = 200;
 const httpStatusBadRequest = 400;
+const httpStatusConflict = 409;
 
 function respondToBrowser(
   response: ServerResponse,

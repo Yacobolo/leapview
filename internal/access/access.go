@@ -563,13 +563,28 @@ type APICredential struct {
 }
 
 type Session struct {
-	ID          string
-	PrincipalID string
-	ExpiresAt   string
-	CreatedAt   string
-	LastSeenAt  string
-	RevokedAt   string
+	ID                string
+	PrincipalID       string
+	Kind              SessionKind
+	InstanceID        string
+	ProfileID         string
+	ClientID          string
+	ExpiresAt         string
+	AbsoluteExpiresAt string
+	CreatedAt         string
+	LastSeenAt        string
+	RevokedAt         string
 }
+
+type SessionKind string
+
+const (
+	SessionKindBrowser SessionKind = "browser"
+	SessionKindDesktop SessionKind = "desktop"
+
+	DesktopSessionIdleTimeout      = 30 * time.Minute
+	DesktopSessionAbsoluteLifetime = 8 * time.Hour
+)
 
 type DesktopSession struct {
 	SessionID         string

@@ -211,10 +211,31 @@ func mapSession(row platformdb.Session) access.Session {
 	return access.Session{
 		ID:          row.ID,
 		PrincipalID: row.PrincipalID,
+		Kind:        access.SessionKindBrowser,
 		ExpiresAt:   row.ExpiresAt,
 		CreatedAt:   row.CreatedAt,
 		LastSeenAt:  row.LastSeenAt,
 		RevokedAt:   nullString(row.RevokedAt),
+	}
+}
+
+func mapListedSession(row platformdb.ListSessionsByPrincipalRow) access.Session {
+	kind := access.SessionKindBrowser
+	if row.DesktopClientID != "" {
+		kind = access.SessionKindDesktop
+	}
+	return access.Session{
+		ID:                row.ID,
+		PrincipalID:       row.PrincipalID,
+		Kind:              kind,
+		InstanceID:        row.DesktopInstanceID,
+		ProfileID:         row.DesktopProfileID,
+		ClientID:          row.DesktopClientID,
+		ExpiresAt:         row.ExpiresAt,
+		AbsoluteExpiresAt: row.DesktopAbsoluteExpiresAt,
+		CreatedAt:         row.CreatedAt,
+		LastSeenAt:        row.LastSeenAt,
+		RevokedAt:         nullString(row.RevokedAt),
 	}
 }
 

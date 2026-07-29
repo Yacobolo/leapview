@@ -3,7 +3,7 @@ import {
   mkdir,
   open,
   readFile,
-  rename,
+  rename as renameFile,
   stat,
   unlink,
 } from "node:fs/promises";
@@ -14,7 +14,9 @@ import {
   type DiscoveryDocument,
 } from "./discovery.js";
 
-const PROFILE_SCHEMA_VERSION = 1;
+const PROFILE_SCHEMA_VERSION = 2;
+const LEGACY_PROFILE_SCHEMA_VERSION = 1;
+const PROFILE_PARTITION_VERSION = 1;
 const profileIDPattern = /^profile_[0-9a-f]{32}$/;
 const instanceIDPattern = /^instance_[0-9a-f]{32}$/;
 
@@ -24,11 +26,39 @@ export interface Profile {
   instanceId: string;
   displayName: string;
   lastSafePath: string;
+  partitionVersion: 1;
+  label?: string;
 }
 
 interface ProfileDocument {
-  schemaVersion: number;
+  schemaVersion: 2;
   profiles: Profile[];
+}
+
+interface ProfileReadResult {
+  document: ProfileDocument;
+  migrated: boolean;
+}
+
+export class DesktopProfileReplacementCancelledError extends Error {
+  constructor() {
+    super("Saved instance replacement was canceled.");
+    this.name = "DesktopProfileReplacementCancelledError";
+  }
+}
+
+export function profilePartitionName(profile: Profile): string {
+  if (
+    !profileIDPattern.test(profile.id) ||
+    profile.partitionVersion !== PROFILE_PARTITION_VERSION
+  ) {
+    throw new Error("desktop profile partition identity is invalid");
+  }
+  return `persist:leapview-profile-${profile.id.slice("profile_".length)}`;
+}
+
+export function profileDisplayName(profile: Profile): string {
+  return profile.label ?? profile.displayName;
 }
 
 export class ProfileStore {
@@ -40,14 +70,20 @@ export class ProfileStore {
   }
 
   async list(): Promise<Profile[]> {
-    return structuredClone((await this.#read()).profiles);
+    return this.#serialize(async () => {
+      const result = await this.#read();
+      if (result.migrated) {
+        await this.#write(result.document);
+      }
+      return structuredClone(result.document.profiles);
+    });
   }
 
   async upsertFromDiscovery(
     discovery: DiscoveryDocument,
   ): Promise<Profile> {
     return this.#serialize(async () => {
-      const document = await this.#read();
+      const { document } = await this.#read();
       const originProfile = document.profiles.find(
         (profile) => profile.canonicalOrigin === discovery.canonicalOrigin,
       );
@@ -78,6 +114,7 @@ export class ProfileStore {
         instanceId: discovery.instanceId,
         displayName: discovery.displayName,
         lastSafePath: "/",
+        partitionVersion: PROFILE_PARTITION_VERSION,
       };
       profile.displayName = discovery.displayName;
       const index = document.profiles.findIndex(
@@ -94,12 +131,81 @@ export class ProfileStore {
     });
   }
 
+  async setLabel(profileID: string, label: string | null): Promise<Profile> {
+    if (!profileIDPattern.test(profileID)) {
+      throw new Error("desktop profile id is invalid");
+    }
+    const normalizedLabel = label === null
+      ? undefined
+      : requireProfileString(label, "profile label", 120);
+    return this.#serialize(async () => {
+      const { document } = await this.#read();
+      const profile = document.profiles.find(
+        (candidate) => candidate.id === profileID,
+      );
+      if (profile === undefined) {
+        throw new Error("desktop profile was not found");
+      }
+      if (normalizedLabel === undefined) {
+        delete profile.label;
+      } else {
+        profile.label = normalizedLabel;
+      }
+      validateProfileDocument(document);
+      await this.#write(document);
+      return structuredClone(profile);
+    });
+  }
+
+  async replaceFromDiscovery(
+    profileID: string,
+    discovery: DiscoveryDocument,
+  ): Promise<Profile> {
+    if (!profileIDPattern.test(profileID)) {
+      throw new Error("desktop profile id is invalid");
+    }
+    return this.#serialize(async () => {
+      const { document } = await this.#read();
+      const index = document.profiles.findIndex(
+        (candidate) => candidate.id === profileID,
+      );
+      if (index === -1) {
+        throw new Error("desktop profile was not found");
+      }
+      const current = document.profiles[index]!;
+      const sameOrigin =
+        current.canonicalOrigin === discovery.canonicalOrigin;
+      const sameInstance = current.instanceId === discovery.instanceId;
+      if (!sameOrigin && !sameInstance) {
+        throw new Error(
+          "replacement discovery is not related to the saved profile",
+        );
+      }
+      if (sameOrigin && sameInstance) {
+        throw new Error("replacement does not change profile identity");
+      }
+      const replacement: Profile = {
+        id: `profile_${randomBytes(16).toString("hex")}`,
+        canonicalOrigin: discovery.canonicalOrigin,
+        instanceId: discovery.instanceId,
+        displayName: discovery.displayName,
+        lastSafePath: "/",
+        partitionVersion: PROFILE_PARTITION_VERSION,
+        ...(current.label === undefined ? {} : { label: current.label }),
+      };
+      document.profiles[index] = replacement;
+      validateProfileDocument(document);
+      await this.#write(document);
+      return structuredClone(replacement);
+    });
+  }
+
   async remove(profileID: string): Promise<void> {
     if (!profileIDPattern.test(profileID)) {
       throw new Error("desktop profile id is invalid");
     }
     await this.#serialize(async () => {
-      const document = await this.#read();
+      const { document } = await this.#read();
       const index = document.profiles.findIndex(
         (profile) => profile.id === profileID,
       );
@@ -112,7 +218,7 @@ export class ProfileStore {
     });
   }
 
-  async #read(): Promise<ProfileDocument> {
+  async #read(): Promise<ProfileReadResult> {
     try {
       const information = await stat(this.#path);
       if (
@@ -122,7 +228,23 @@ export class ProfileStore {
         throw new Error("desktop profile file permissions are not private");
       }
       const body = await readFile(this.#path, "utf8");
-      return validateProfileDocument(JSON.parse(body) as unknown);
+      const parsed = JSON.parse(body) as unknown;
+      if (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        !Array.isArray(parsed) &&
+        (parsed as Record<string, unknown>).schemaVersion ===
+          LEGACY_PROFILE_SCHEMA_VERSION
+      ) {
+        return {
+          document: migrateLegacyProfileDocument(parsed),
+          migrated: true,
+        };
+      }
+      return {
+        document: validateProfileDocument(parsed),
+        migrated: false,
+      };
     } catch (error) {
       if (
         typeof error === "object" &&
@@ -130,7 +252,13 @@ export class ProfileStore {
         "code" in error &&
         error.code === "ENOENT"
       ) {
-        return { schemaVersion: PROFILE_SCHEMA_VERSION, profiles: [] };
+        return {
+          document: {
+            schemaVersion: PROFILE_SCHEMA_VERSION,
+            profiles: [],
+          },
+          migrated: false,
+        };
       }
       if (error instanceof SyntaxError) {
         throw new Error("desktop profile file contains invalid JSON", {
@@ -152,10 +280,18 @@ export class ProfileStore {
       await handle.close();
     }
     try {
-      await rename(temporaryPath, this.#path);
+      await renameFile(temporaryPath, this.#path);
     } catch (error) {
       await unlink(temporaryPath).catch(() => undefined);
       throw error;
+    }
+    if (process.platform !== "win32") {
+      const directory = await open(dirname(this.#path), "r");
+      try {
+        await directory.sync();
+      } finally {
+        await directory.close();
+      }
     }
   }
 
@@ -174,11 +310,62 @@ export class ProfileStore {
   }
 }
 
+function migrateLegacyProfileDocument(input: unknown): ProfileDocument {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    throw new Error("desktop profile document must be an object");
+  }
+  const document = input as Record<string, unknown>;
+  requireExactKeys(
+    document,
+    ["schemaVersion", "profiles"],
+    "desktop profile document",
+  );
+  if (
+    document.schemaVersion !== LEGACY_PROFILE_SCHEMA_VERSION ||
+    !Array.isArray(document.profiles) ||
+    document.profiles.length > 100
+  ) {
+    throw new Error("desktop profile schema version is unsupported");
+  }
+  return validateProfileDocument({
+    schemaVersion: PROFILE_SCHEMA_VERSION,
+    profiles: document.profiles.map((profile) => {
+      if (
+        typeof profile !== "object" ||
+        profile === null ||
+        Array.isArray(profile)
+      ) {
+        throw new Error("desktop profile must be an object");
+      }
+      requireExactKeys(
+        profile as Record<string, unknown>,
+        [
+          "id",
+          "canonicalOrigin",
+          "instanceId",
+          "displayName",
+          "lastSafePath",
+        ],
+        "legacy desktop profile",
+      );
+      return {
+        ...profile,
+        partitionVersion: PROFILE_PARTITION_VERSION,
+      };
+    }),
+  });
+}
+
 function validateProfileDocument(input: unknown): ProfileDocument {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
     throw new Error("desktop profile document must be an object");
   }
   const document = input as Record<string, unknown>;
+  requireExactKeys(
+    document,
+    ["schemaVersion", "profiles"],
+    "desktop profile document",
+  );
   if (document.schemaVersion !== PROFILE_SCHEMA_VERSION) {
     throw new Error("desktop profile schema version is unsupported");
   }
@@ -210,6 +397,19 @@ function validateProfile(input: unknown): Profile {
     throw new Error("desktop profile must be an object");
   }
   const profile = input as Record<string, unknown>;
+  requireExactKeys(
+    profile,
+    [
+      "id",
+      "canonicalOrigin",
+      "instanceId",
+      "displayName",
+      "lastSafePath",
+      "partitionVersion",
+      "label",
+    ],
+    "desktop profile",
+  );
   const id = requireProfileString(profile.id, "profile id", 64);
   if (!profileIDPattern.test(id)) {
     throw new Error("desktop profile id is invalid");
@@ -247,7 +447,21 @@ function validateProfile(input: unknown): Profile {
   if (!lastSafePath.startsWith("/") || lastSafePath.startsWith("//")) {
     throw new Error("desktop profile safe path is invalid");
   }
-  return { id, canonicalOrigin, instanceId, displayName, lastSafePath };
+  if (profile.partitionVersion !== PROFILE_PARTITION_VERSION) {
+    throw new Error("desktop profile partition version is unsupported");
+  }
+  const label = profile.label === undefined
+    ? undefined
+    : requireProfileString(profile.label, "profile label", 120);
+  return {
+    id,
+    canonicalOrigin,
+    instanceId,
+    displayName,
+    lastSafePath,
+    partitionVersion: PROFILE_PARTITION_VERSION,
+    ...(label === undefined ? {} : { label }),
+  };
 }
 
 function requireProfileString(
@@ -265,4 +479,15 @@ function requireProfileString(
     throw new Error(`${name} is invalid`);
   }
   return input;
+}
+
+function requireExactKeys(
+  input: Record<string, unknown>,
+  allowedKeys: readonly string[],
+  name: string,
+): void {
+  const allowed = new Set(allowedKeys);
+  if (Object.keys(input).some((key) => !allowed.has(key))) {
+    throw new Error(`${name} contains unknown fields`);
+  }
 }

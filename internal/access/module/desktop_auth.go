@@ -5,7 +5,6 @@ import (
 	"mime"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/flidai/leapview/internal/access"
 	"github.com/flidai/leapview/internal/access/desktopauth"
@@ -18,7 +17,6 @@ const (
 	DesktopSessionStatusPath = "/auth/desktop/session"
 	DesktopDisconnectPath    = "/auth/desktop/disconnect"
 	DesktopAuthMaxFormBytes  = 8 * 1024
-	desktopSessionTTL        = 8 * time.Hour
 )
 
 var desktopRedeemFields = map[string]struct{}{
@@ -174,7 +172,7 @@ func (m *Module) DesktopRedeem(w http.ResponseWriter, r *http.Request) {
 		}
 		var mutationErr error
 		token, mutationErr = desktopRepository.CreateDesktopSession(
-			r.Context(), principalID, request.InstanceID, request.ProfileID, desktopSessionTTL,
+			r.Context(), principalID, request.InstanceID, request.ProfileID, access.DesktopSessionAbsoluteLifetime,
 		)
 		return authAuditInput(
 			r, "desktop_session.created", principalID, "", "desktop_profile",
@@ -186,7 +184,7 @@ func (m *Module) DesktopRedeem(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
-	http.SetCookie(w, m.auth.sessionCookie(token, authNow().Add(desktopSessionTTL)))
+	http.SetCookie(w, m.auth.sessionCookie(token, authNow().Add(access.DesktopSessionAbsoluteLifetime)))
 	w.WriteHeader(http.StatusNoContent)
 }
 

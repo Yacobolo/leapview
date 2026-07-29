@@ -7,7 +7,12 @@ import {
   type DesktopPolicy,
 } from "./managed-policy.js";
 import { DesktopDiscoveryError } from "./discovery.js";
-import type { Profile } from "./profiles.js";
+import { DesktopProfileRemovedLocallyError } from "./auth.js";
+import {
+  profileDisplayName,
+  DesktopProfileReplacementCancelledError,
+  type Profile,
+} from "./profiles.js";
 
 const MAX_FORM_BYTES = 4 * 1024;
 const MAX_OPERATIONS = 16;
@@ -40,6 +45,7 @@ export interface TrustedUIActions {
   connectProfile(profileID: string): Promise<void>;
   disconnectProfile(profileID: string): Promise<void>;
   removeProfile(profileID: string): Promise<void>;
+  renameProfile(profileID: string, label: string | null): Promise<void>;
   listProfiles(): Promise<Profile[]>;
 }
 
@@ -146,6 +152,24 @@ export class TrustedUI {
                 message: "LeapView instance removed from this device.",
               },
             );
+          case "rename": {
+            const label = form.get("label");
+            if (label === null) {
+              throw new Error("Saved profile label is required.");
+            }
+            return this.#startOperation(
+              "Saving the instance name…",
+              () => this.#actions.renameProfile(
+                profileID,
+                label === "" ? null : label,
+              ),
+              {
+                kind: "success",
+                state: "success",
+                message: "Saved instance name updated.",
+              },
+            );
+          }
           default:
             throw new Error("Saved profile action is invalid.");
         }
@@ -266,10 +290,11 @@ export class TrustedUI {
         (profile) => `
           <div class="profile">
             <span>
-              <strong>${escapeHTML(profile.displayName)}</strong>
+              <strong>${escapeHTML(profileDisplayName(profile))}</strong>
               <small>${escapeHTML(profile.canonicalOrigin)}</small>
             </span>
             <span class="actions">
+              ${profileRenameAction(profile)}
               ${profileAction(profile.id, "open", "Open")}
               ${profileAction(profile.id, "disconnect", "Disconnect", "secondary")}
               ${
@@ -587,7 +612,20 @@ export class TrustedUI {
       .actions {
         display: flex;
         flex: none;
+        align-items: center;
+        flex-wrap: wrap;
         gap: var(--base-size-6);
+      }
+
+      .rename {
+        display: flex;
+        gap: var(--base-size-6);
+      }
+
+      .rename input {
+        width: calc(var(--base-size-128) + var(--base-size-32));
+        min-height: var(--control-medium-size);
+        font-size: var(--lv-font-size-body-sm);
       }
 
       .actions button {
@@ -715,6 +753,15 @@ function profileAction(
   </form>`;
 }
 
+function profileRenameAction(profile: Profile): string {
+  return `<form class="rename" method="post" action="leapview://app/connect">
+    <input type="hidden" name="profileId" value="${escapeHTML(profile.id)}">
+    <input type="hidden" name="operation" value="rename">
+    <input name="label" type="text" maxlength="120" autocomplete="off" aria-label="Saved instance name" placeholder="${escapeHTML(profile.displayName)}" value="${escapeHTML(profile.label ?? "")}">
+    <button type="submit" class="secondary">Save name</button>
+  </form>`;
+}
+
 function brandMark(): string {
   return `<svg viewBox="0 0 24 24" aria-hidden="true">
     <circle cx="12" cy="12" r="10"></circle>
@@ -807,6 +854,21 @@ function userFacingError(error: unknown): string {
 }
 
 function classifyOperationError(error: unknown): TrustedUINotice {
+  if (error instanceof DesktopProfileReplacementCancelledError) {
+    return {
+      kind: "error",
+      state: "disconnected",
+      message: "The saved instance was not changed.",
+    };
+  }
+  if (error instanceof DesktopProfileRemovedLocallyError) {
+    return {
+      kind: "error",
+      state: "disconnected",
+      message:
+        "The instance was removed from this device, but server revocation could not be confirmed. Its server session expires within eight hours or can be revoked from another signed-in session.",
+    };
+  }
   if (error instanceof DesktopDiscoveryError) {
     switch (error.kind) {
       case "schema_incompatible":

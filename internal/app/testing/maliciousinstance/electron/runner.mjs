@@ -288,16 +288,116 @@ async function observeDownloadAttack(window, observations) {
 async function observeStorageIsolation(first, second, observations) {
   result.currentCheck = "storage.cross-profile";
   const key = "leapview.desktop.harness.cross-profile";
+  const databaseName = "leapview-desktop-proof";
+  const cacheName = "leapview-desktop-proof";
+  const cookieName = "leapview-desktop-proof";
   await load(first.window, `${proofOrigin}/attack/storage.cross-profile`);
   assert.equal(await execute(first.window, `localStorage.getItem(${JSON.stringify(key)})`), "present");
+  await seedPartitionState(first, "first", {
+    databaseName,
+    cacheName,
+    cookieName,
+  });
 
   await load(second.window, `${proofOrigin}/`);
   assert.equal(await execute(second.window, `localStorage.getItem(${JSON.stringify(key)})`), null);
+  await assertPartitionStateMissing(second, {
+    databaseName,
+    cacheName,
+    cookieName,
+  });
+  await seedPartitionState(second, "second", {
+    databaseName,
+    cacheName,
+    cookieName,
+  });
 
   await first.remoteSession.clearStorageData();
+  await first.remoteSession.clearCache();
+  await first.remoteSession.clearAuthCache();
+  first.remoteSession.flushStorageData();
   await load(first.window, `${proofOrigin}/`);
   assert.equal(await execute(first.window, `localStorage.getItem(${JSON.stringify(key)})`), null);
+  await assertPartitionStateMissing(first, {
+    databaseName,
+    cacheName,
+    cookieName,
+  });
+  await assertPartitionState(second, "second", {
+    databaseName,
+    cacheName,
+    cookieName,
+  });
   observations.record("storage.cross-profile", "blocked");
+}
+
+async function seedPartitionState(
+  target,
+  value,
+  { databaseName, cacheName, cookieName },
+) {
+  await target.remoteSession.cookies.set({
+    url: proofOrigin,
+    name: cookieName,
+    value,
+    sameSite: "lax",
+  });
+  await execute(target.window, `(async () => {
+    localStorage.setItem(${JSON.stringify("leapview.desktop.partition-value")}, ${JSON.stringify(value)});
+    await new Promise((resolve, reject) => {
+      const request = indexedDB.open(${JSON.stringify(databaseName)}, 1);
+      request.onupgradeneeded = () => request.result.createObjectStore("proof");
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const transaction = request.result.transaction("proof", "readwrite");
+        transaction.objectStore("proof").put(${JSON.stringify(value)}, "value");
+        transaction.oncomplete = () => {
+          request.result.close();
+          resolve();
+        };
+        transaction.onerror = () => reject(transaction.error);
+      };
+    });
+    const cache = await caches.open(${JSON.stringify(cacheName)});
+    await cache.put("/__harness/cache-proof", new Response(${JSON.stringify(value)}));
+    await navigator.serviceWorker.register("/__harness/service-worker.js");
+  })()`, true);
+}
+
+async function assertPartitionState(
+  target,
+  expected,
+  { databaseName, cacheName, cookieName },
+) {
+  const cookies = await target.remoteSession.cookies.get({
+    url: proofOrigin,
+    name: cookieName,
+  });
+  assert.equal(cookies[0]?.value ?? null, expected);
+  const state = await execute(target.window, `(async () => {
+    const local = localStorage.getItem(${JSON.stringify("leapview.desktop.partition-value")});
+    const databases = await indexedDB.databases();
+    const cache = await caches.open(${JSON.stringify(cacheName)});
+    const response = await cache.match("/__harness/cache-proof");
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    return {
+      local,
+      database: databases.some((database) => database.name === ${JSON.stringify(databaseName)}),
+      cache: response === undefined ? null : await response.text(),
+      serviceWorkers: registrations.length,
+    };
+  })()`, true);
+  assert.equal(state.local, expected);
+  assert.equal(state.database, expected !== null);
+  assert.equal(state.cache, expected);
+  assert.equal(state.serviceWorkers, expected === null ? 0 : 1);
+}
+
+async function assertPartitionStateMissing(
+  target,
+  names,
+) {
+  await assertPartitionState(target, null, names);
 }
 
 async function observeDiscoveryAttacks(observations) {

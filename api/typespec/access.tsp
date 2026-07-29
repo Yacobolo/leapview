@@ -303,6 +303,26 @@ alias ResetPrincipalPasswordOK = OkJson<LocalPasswordResetResponse>;
 @operationId("resetPrincipalPassword")
 op resetPrincipalPassword(@path principal: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): ResetPrincipalPasswordOK | CommonErrors;
 
+alias ListPrincipalSessionsOK = OkJson<SessionListResponse>;
+
+@tag("Access")
+@summary("List a principal's sessions")
+@route("/principals/{principal}/sessions")
+@get
+@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@extension("x-leapview-object-scope", "grant-management")
+@operationId("listPrincipalSessions")
+op listPrincipalSessions(@path principal: string, @query limit?: ListLimit, @query pageToken?: PageToken): ListPrincipalSessionsOK | CommonErrors;
+
+@tag("Access")
+@summary("Revoke a principal's session")
+@route("/principals/{principal}/sessions/{session}")
+@delete
+@apigen.authz(#{ mode: "privilege", privilege: "MANAGE_GRANTS" })
+@extension("x-leapview-object-scope", "grant-management")
+@operationId("revokePrincipalSession")
+op revokePrincipalSession(@path principal: string, @path session: string): EmptyResponse | CommonErrors;
+
 alias ListServicePrincipalsOK = OkJson<ServicePrincipalListResponse>;
 
 @tag("Access")

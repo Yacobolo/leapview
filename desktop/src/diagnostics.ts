@@ -72,7 +72,13 @@ export type DiagnosticEvent =
     }
   | {
       kind: "profile";
-      action: "added" | "opened" | "disconnected" | "removed";
+      action:
+        | "added"
+        | "opened"
+        | "disconnected"
+        | "removed"
+        | "renamed"
+        | "replaced";
       outcome: "success" | "failed";
     }
   | {
@@ -435,7 +441,14 @@ function validateEvent(input: unknown): DiagnosticEvent {
       };
     case "profile":
       requireEvent(event, ["kind", "action", "outcome"], {
-        action: ["added", "opened", "disconnected", "removed"],
+        action: [
+          "added",
+          "opened",
+          "disconnected",
+          "removed",
+          "renamed",
+          "replaced",
+        ],
         outcome: ["success", "failed"],
       });
       return {

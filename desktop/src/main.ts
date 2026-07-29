@@ -21,8 +21,11 @@ import {
 
 import {
   authenticateDesktopProfile,
-  desktopSessionAvailable,
+  clearDesktopProfileState,
   disconnectDesktopProfile,
+  DesktopProfileRemovedLocallyError,
+  prepareDesktopSession,
+  removeDesktopProfileState,
 } from "./auth.js";
 import {
   DeepLinkDispatcher,
@@ -34,6 +37,7 @@ import {
 import {
   DesktopDiscoveryError,
   discoverInstance,
+  type DiscoveryDocument,
 } from "./discovery.js";
 import {
   DiagnosticJournal,
@@ -52,7 +56,13 @@ import {
   resolveDesktopPolicySource,
   type DesktopPolicy,
 } from "./managed-policy.js";
-import { ProfileStore, type Profile } from "./profiles.js";
+import {
+  profileDisplayName,
+  profilePartitionName,
+  DesktopProfileReplacementCancelledError,
+  ProfileStore,
+  type Profile,
+} from "./profiles.js";
 import {
   installRemoteLifecyclePolicy,
   type RemoteLifecycleFailure,
@@ -94,6 +104,11 @@ interface RemotePolicyDecision {
   allowed: boolean;
 }
 
+interface AuthenticationTransaction {
+  controller: AbortController;
+  promise: Promise<void>;
+}
+
 protocol.registerSchemesAsPrivileged([
   {
     scheme: TRUSTED_SCHEME,
@@ -112,7 +127,10 @@ app.enableSandbox();
 let shellWindow: BrowserWindow | null = null;
 let trustedUI: TrustedUI | null = null;
 const remoteWindows = new Map<string, BrowserWindow>();
-const authenticationTransactions = new Map<string, Promise<void>>();
+const authenticationTransactions = new Map<
+  string,
+  AuthenticationTransaction
+>();
 const configuredSessions = new WeakSet<Session>();
 const configuredSessionOrigins = new WeakMap<Session, string>();
 const externalApprovals = new Set<string>();
@@ -186,11 +204,13 @@ if (!primaryInstance) {
     }
   });
   app.on("window-all-closed", () => {
+    cancelAllAuthenticationTransactions();
     if (process.platform !== "darwin") {
       app.quit();
     }
   });
   app.on("before-quit", (event) => {
+    cancelAllAuthenticationTransactions();
     if (windowStateQuitReady || windowStates === null) {
       return;
     }
@@ -260,6 +280,7 @@ async function start(): Promise<void> {
       connectProfile,
       disconnectProfile,
       removeProfile,
+      renameProfile,
     },
     trustedAssets,
   );
@@ -298,7 +319,7 @@ async function connectOriginAtPath(
   const origin = configuredOrigin(rawOrigin);
   requirePolicyOrigin(origin);
   const discovery = await discover(origin);
-  const profile = await profiles.upsertFromDiscovery(discovery);
+  const profile = await resolveVerifiedProfile(discovery);
   await openRemoteWindow(profile, path);
 }
 
@@ -314,17 +335,91 @@ async function connectProfileAtPath(
   const profile = await savedProfile(profileID);
   const origin = configuredOrigin(profile.canonicalOrigin);
   const discovery = await discover(origin);
-  const verifiedProfile = await profiles.upsertFromDiscovery(discovery);
-  await openRemoteWindow(verifiedProfile, path);
+  const verifiedProfile = await resolveVerifiedProfile(discovery);
+  await openRemoteWindow(
+    verifiedProfile,
+    verifiedProfile.id === profile.id ? path : "/",
+  );
+}
+
+async function resolveVerifiedProfile(
+  discovery: DiscoveryDocument,
+): Promise<Profile> {
+  try {
+    return await profiles.upsertFromDiscovery(discovery);
+  } catch (error) {
+    if (
+      !(error instanceof DesktopDiscoveryError) ||
+      ![
+        "canonical_origin_mismatch",
+        "instance_identity_mismatch",
+      ].includes(error.kind)
+    ) {
+      throw error;
+    }
+  }
+  const current = (await profiles.list()).find(
+    (profile) =>
+      profile.canonicalOrigin === discovery.canonicalOrigin ||
+      profile.instanceId === discovery.instanceId,
+  );
+  if (current === undefined) {
+    throw new Error("Saved profile replacement candidate was not found.");
+  }
+  const options = {
+    type: "warning" as const,
+    buttons: ["Cancel", "Replace saved instance"],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+    title: "Replace saved LeapView instance?",
+    message:
+      "The verified server identity or canonical address changed.",
+    detail: [
+      `Saved origin: ${current.canonicalOrigin}`,
+      `Saved identity: ${current.instanceId}`,
+      `Reported origin: ${discovery.canonicalOrigin}`,
+      `Reported identity: ${discovery.instanceId}`,
+      "",
+      "Replacing creates a new isolated profile and removes the old profile's local browser state.",
+    ].join("\n"),
+  };
+  const confirmation =
+    shellWindow !== null && !shellWindow.isDestroyed()
+      ? await dialog.showMessageBox(shellWindow, options)
+      : await dialog.showMessageBox(options);
+  if (confirmation.response !== 1) {
+    throw new DesktopProfileReplacementCancelledError();
+  }
+  await cancelAuthenticationTransaction(current.id);
+  const remote = remoteWindows.get(current.id);
+  if (remote !== undefined && !remote.isDestroyed()) {
+    remote.destroy();
+  }
+  const oldSession = session.fromPartition(profilePartition(current));
+  configureSessionOnce(oldSession, current);
+  await disconnectDesktopProfile(
+    current,
+    (input, init) => oldSession.fetch(input, init),
+  ).catch(() => undefined);
+  const replacement = await profiles.replaceFromDiscovery(
+    current.id,
+    discovery,
+  );
+  await clearDesktopProfileState(oldSession);
+  windowStates?.remove(current.id);
+  scheduleWindowStateFlush();
+  recordDiagnostic({
+    kind: "profile",
+    action: "replaced",
+    outcome: "success",
+  });
+  return replacement;
 }
 
 async function disconnectProfile(profileID: string): Promise<void> {
   const profile = await savedProfile(profileID);
-  if (authenticationTransactions.has(profile.id)) {
-    throw new Error(
-      "Wait for the active authentication request before disconnecting.",
-    );
-  }
+  await cancelAuthenticationTransaction(profile.id);
   const remote = remoteWindows.get(profile.id);
   if (remote !== undefined && !remote.isDestroyed()) {
     remote.destroy();
@@ -337,10 +432,7 @@ async function disconnectProfile(profileID: string): Promise<void> {
       profile,
       (input, init) => profileSession.fetch(input, init),
     );
-    await profileSession.clearStorageData();
-    await profileSession.clearCache();
-    await profileSession.clearAuthCache();
-    profileSession.flushStorageData();
+    await clearDesktopProfileState(profileSession);
     recordDiagnostic({ kind: "authentication", phase: "disconnected" });
     recordDiagnostic({
       kind: "profile",
@@ -364,9 +456,28 @@ async function removeProfile(profileID: string): Promise<void> {
       "This LeapView instance is managed by your organization and cannot be removed.",
     );
   }
-  await disconnectProfile(profileID);
+  await cancelAuthenticationTransaction(profile.id);
+  const remote = remoteWindows.get(profile.id);
+  if (remote !== undefined && !remote.isDestroyed()) {
+    remote.destroy();
+  }
+  const profileSession = session.fromPartition(profilePartition(profile));
+  configureSessionOnce(profileSession, profile);
+  let removalError: unknown;
   try {
-    await profiles.remove(profileID);
+    await removeDesktopProfileState(
+      profile,
+      (input, init) => profileSession.fetch(input, init),
+      profileSession,
+      () => profiles.remove(profileID),
+    );
+  } catch (error) {
+    removalError = error;
+  }
+  if (
+    removalError === undefined ||
+    removalError instanceof DesktopProfileRemovedLocallyError
+  ) {
     windowStates?.remove(profileID);
     scheduleWindowStateFlush();
     recordDiagnostic({
@@ -374,14 +485,34 @@ async function removeProfile(profileID: string): Promise<void> {
       action: "removed",
       outcome: "success",
     });
-  } catch (error) {
+  } else {
     recordDiagnostic({
       kind: "profile",
       action: "removed",
       outcome: "failed",
     });
-    throw error;
   }
+  if (removalError !== undefined) {
+    throw removalError;
+  }
+}
+
+async function renameProfile(
+  profileID: string,
+  label: string | null,
+): Promise<void> {
+  const profile = await profiles.setLabel(profileID, label);
+  const remote = remoteWindows.get(profile.id);
+  if (remote !== undefined && !remote.isDestroyed()) {
+    remote.setTitle(
+      `${profileDisplayName(profile)} — ${profile.canonicalOrigin}`,
+    );
+  }
+  recordDiagnostic({
+    kind: "profile",
+    action: "renamed",
+    outcome: "success",
+  });
 }
 
 async function savedProfile(profileID: string): Promise<Profile> {
@@ -442,6 +573,9 @@ async function openRemoteWindow(
   const existing = remoteWindows.get(profile.id);
   if (existing !== undefined && !existing.isDestroyed()) {
     try {
+      const profileSession = session.fromPartition(profilePartition(profile));
+      configureSessionOnce(profileSession, profile);
+      await ensureAuthenticated(profile, profileSession);
       await existing.loadURL(target);
       existing.show();
       existing.focus();
@@ -476,7 +610,7 @@ async function openRemoteWindow(
     minHeight: REMOTE_WINDOW_SIZE.minimumHeight,
     ...(restoredState?.bounds ?? {}),
     show: false,
-    title: `${profile.displayName} — ${profile.canonicalOrigin}`,
+    title: `${profileDisplayName(profile)} — ${profile.canonicalOrigin}`,
     backgroundColor: "#111713",
     webPreferences: remoteWebPreferences(partition),
   });
@@ -503,13 +637,15 @@ async function openRemoteWindow(
     remote.webContents,
     {
       origin: profile.canonicalOrigin,
-      displayName: profile.displayName,
+      displayName: profileDisplayName(profile),
     },
     (failure) => handleRemoteFailure(profile, remote, failure),
   );
   remote.webContents.on("page-title-updated", (event) => {
     event.preventDefault();
-    remote.setTitle(`${profile.displayName} — ${profile.canonicalOrigin}`);
+    remote.setTitle(
+      `${profileDisplayName(profile)} — ${profile.canonicalOrigin}`,
+    );
   });
   remote.once("ready-to-show", () => remote.show());
   remote.once("closed", () => remoteWindows.delete(profile.id));
@@ -549,7 +685,7 @@ function exactProfileURL(profile: Profile, path: string): string {
 }
 
 function profilePartition(profile: Profile): string {
-  return `persist:leapview-profile-${profile.id.slice("profile_".length)}`;
+  return profilePartitionName(profile);
 }
 
 async function ensureAuthenticated(
@@ -558,14 +694,14 @@ async function ensureAuthenticated(
 ): Promise<void> {
   const fetcher = (input: string, init: RequestInit) =>
     profileSession.fetch(input, init);
-  if (await desktopSessionAvailable(profile, fetcher)) {
+  if (await prepareDesktopSession(profile, fetcher, profileSession)) {
     recordDiagnostic({ kind: "authentication", phase: "session-valid" });
     return;
   }
   recordDiagnostic({ kind: "authentication", phase: "required" });
   const existing = authenticationTransactions.get(profile.id);
   if (existing !== undefined) {
-    await existing;
+    await existing.promise;
     return;
   }
   if (authenticationTransactions.size >= 3) {
@@ -573,7 +709,8 @@ async function ensureAuthenticated(
       "Too many LeapView authentication requests are already active.",
     );
   }
-  const transaction = authenticateDesktopProfile(
+  const controller = new AbortController();
+  const promise = authenticateDesktopProfile(
     profile,
     fetcher,
     async (authorizationURL) => {
@@ -587,11 +724,13 @@ async function ensureAuthenticated(
       }
       await shell.openExternal(parsed.toString(), { activate: true });
     },
+    { signal: controller.signal },
   );
   recordDiagnostic({ kind: "authentication", phase: "started" });
+  const transaction = { controller, promise };
   authenticationTransactions.set(profile.id, transaction);
   try {
-    await transaction;
+    await promise;
     recordDiagnostic({ kind: "authentication", phase: "completed" });
   } catch (error) {
     recordDiagnostic({ kind: "authentication", phase: "failed" });
@@ -600,6 +739,23 @@ async function ensureAuthenticated(
     if (authenticationTransactions.get(profile.id) === transaction) {
       authenticationTransactions.delete(profile.id);
     }
+  }
+}
+
+async function cancelAuthenticationTransaction(
+  profileID: string,
+): Promise<void> {
+  const transaction = authenticationTransactions.get(profileID);
+  if (transaction === undefined) {
+    return;
+  }
+  transaction.controller.abort();
+  await transaction.promise.catch(() => undefined);
+}
+
+function cancelAllAuthenticationTransactions(): void {
+  for (const transaction of authenticationTransactions.values()) {
+    transaction.controller.abort();
   }
 }
 
@@ -1128,7 +1284,7 @@ function configureSessionOnce(target: Session, profile?: Profile): void {
       ? undefined
       : {
           configuredOrigin: profile.canonicalOrigin,
-          displayName: profile.displayName,
+          displayName: profileDisplayName(profile),
           downloadsDirectory: app.getPath("downloads"),
         },
   );
@@ -1159,7 +1315,7 @@ async function confirmExternalOpen(
       cancelId: 0,
       noLink: true,
       title: "Open external link",
-      message: `Open a link from ${profile.displayName}?`,
+      message: `Open a link from ${profileDisplayName(profile)}?`,
       detail: `${profile.canonicalOrigin}\n\n${url}`,
     });
     if (

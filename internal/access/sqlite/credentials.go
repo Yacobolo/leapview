@@ -104,7 +104,7 @@ func (r *Repository) ListSessions(ctx context.Context, principalID string) ([]ac
 	}
 	sessions := make([]access.Session, 0, len(rows))
 	for _, row := range rows {
-		sessions = append(sessions, mapSession(row))
+		sessions = append(sessions, mapListedSession(row))
 	}
 	return sessions, nil
 }

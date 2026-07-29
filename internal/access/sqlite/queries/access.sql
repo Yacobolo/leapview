@@ -238,7 +238,18 @@ VALUES (?, ?, ?, ?, ?);
 
 -- name: GetSessionByTokenFingerprint :one
 SELECT * FROM sessions
-WHERE token_fingerprint = ? AND datetime(expires_at) > CURRENT_TIMESTAMP AND revoked_at IS NULL;
+WHERE token_fingerprint = ?
+  AND datetime(expires_at) > CURRENT_TIMESTAMP
+  AND revoked_at IS NULL
+  AND NOT EXISTS (
+    SELECT 1
+    FROM desktop_sessions
+    WHERE desktop_sessions.session_id = sessions.id
+      AND (
+        datetime(desktop_sessions.absolute_expires_at) <= CURRENT_TIMESTAMP
+        OR datetime(sessions.last_seen_at, '+30 minutes') <= CURRENT_TIMESTAMP
+      )
+  );
 
 -- name: GetSessionByTokenFingerprintForAudit :one
 SELECT * FROM sessions
@@ -253,9 +264,23 @@ UPDATE sessions SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?;
 DELETE FROM sessions WHERE token_fingerprint = ?;
 
 -- name: ListSessionsByPrincipal :many
-SELECT * FROM sessions
-WHERE principal_id = ?
-ORDER BY created_at DESC;
+SELECT
+  sessions.id,
+  sessions.principal_id,
+  sessions.token_fingerprint,
+  sessions.token_verifier,
+  sessions.expires_at,
+  sessions.created_at,
+  sessions.last_seen_at,
+  sessions.revoked_at,
+  COALESCE(desktop_sessions.instance_id, '') AS desktop_instance_id,
+  COALESCE(desktop_sessions.profile_id, '') AS desktop_profile_id,
+  COALESCE(desktop_sessions.client_id, '') AS desktop_client_id,
+  COALESCE(desktop_sessions.absolute_expires_at, '') AS desktop_absolute_expires_at
+FROM sessions
+LEFT JOIN desktop_sessions ON desktop_sessions.session_id = sessions.id
+WHERE sessions.principal_id = ?
+ORDER BY sessions.created_at DESC;
 
 -- name: RevokeSession :exec
 UPDATE sessions

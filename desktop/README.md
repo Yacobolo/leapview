@@ -57,16 +57,73 @@ HTTPS and an exact canonical origin.
   ephemeral `127.0.0.1` callback to a short-lived, single-use authorization
   code with S256 PKCE, state, instance ID, profile ID, client ID, and exact
   redirect URI checks.
+- The first release supports only the OAuth loopback callback. The operating
+  system assigns an ephemeral port, binding is exclusive, and a bind failure
+  aborts authentication; no custom-protocol authentication fallback is
+  registered.
+- The callback accepts one bounded request. Provider rejection, malformed or
+  duplicate callbacks, timeout, disconnect, removal, closing every window, and
+  application quit cancel the transaction and close the listener. Retrying
+  creates new state, verifier, callback, and server-side claim material.
 - Electron redeems the code through the saved profile's isolated session. The
   server sets an eight-hour, Secure, HttpOnly, SameSite cookie; no bearer token
   is returned to JavaScript or stored in the profile file.
+- Desktop sessions have a 30-minute idle timeout and an eight-hour absolute
+  lifetime. An authorized request advances only `lastSeenAt`; it does not
+  extend the absolute lifetime or rotate credential material. Version one has
+  no silent refresh or rotation endpoint. Idle, expiry, sign-out, and
+  revocation require a complete new system-browser authorization with new
+  claim, PKCE, and cookie material.
+- **Sign out** in LeapView revokes the current server session and clears its
+  HttpOnly cookie. The non-secret saved profile remains. Before the next
+  authorization, Electron's status preflight observes the invalid session and
+  clears that profile partition's storage, cache, and authentication cache.
 - **Disconnect** revokes that exact server-side desktop session, closes its
   remote window, and clears its Electron storage, cache, and authentication
   cache. The non-secret saved instance remains.
 - **Remove** disconnects first, then deletes the saved instance metadata from
-  this device.
-- Opening a disconnected or expired profile starts a fresh system-browser
-  authentication. Existing valid sessions open without another prompt.
+  this device. If server revocation cannot be confirmed because the instance
+  is offline, removal still atomically drops the local mapping and clears the
+  partition so it cannot be reopened; the trusted shell warns that the
+  unreachable server session may remain until its eight-hour ceiling or
+  administrator revocation.
+- **Administrator revocation** invalidates only the selected server session.
+  It cannot reach into a running endpoint; the next authorized request is
+  rejected, and the next desktop open/status preflight clears the matching
+  profile partition before re-authentication.
+- Opening a disconnected, expired, signed-out, or revoked profile starts fresh
+  system-browser authentication. Existing valid sessions open without another
+  prompt. Browser sessions and other desktop profiles use different server
+  sessions and Electron partitions and are not cleared by these actions.
+
+## Saved profile identity and migration
+
+- `profiles.json` schema version 2 stores only the opaque profile ID, canonical
+  origin, immutable instance ID, server display name, optional user label, safe
+  route, and partition version. Unknown fields fail closed, so credential-like
+  additions are never silently retained.
+- A user rename changes only the optional local label in the trusted packaged
+  shell. Rediscovery can update the separate server-controlled display name
+  without overwriting that label.
+- Version-one documents migrate atomically to version 2 while retaining the
+  exact profile ID and `persist:leapview-profile-<opaque-id>` partition.
+  Writes fsync a private temporary file, atomically replace the document, and
+  fsync its directory on POSIX. An interrupted temporary file is not a profile
+  mapping.
+- Newer document or partition versions and unknown fields fail closed. A
+  downgrade to a client that understands only version 1 is therefore blocked;
+  rollback requires restoring the prior application and compatible profile
+  document together rather than guessing a downgrade.
+- If a verified origin reports a different immutable instance, or a known
+  instance is entered at a new canonical origin, LeapView shows a native
+  confirmation containing both exact origins and identities. Confirmation
+  atomically replaces the mapping with a new opaque profile ID and therefore a
+  new partition, clears the old partition, and resets its route to `/`.
+  Cancellation changes nothing.
+- `clearStorageData()` clears the selected profile partition's cookies, DOM
+  storage, IndexedDB, Cache Storage, and service workers; cache and HTTP
+  authentication state are then cleared explicitly. No operation addresses a
+  different profile partition or Electron's default session.
 
 ## Desktop links
 

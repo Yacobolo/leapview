@@ -76,7 +76,8 @@ WHERE s.token_fingerprint = ?
   AND s.revoked_at IS NULL
   AND datetime(s.expires_at) > CURRENT_TIMESTAMP
   AND datetime(ds.absolute_expires_at) > CURRENT_TIMESTAMP
-`, fingerprint).Scan(
+  AND datetime(s.last_seen_at) > datetime(?)
+`, fingerprint, time.Now().UTC().Add(-access.DesktopSessionIdleTimeout).Format(time.RFC3339Nano)).Scan(
 		&session.SessionID, &session.PrincipalID, &tokenVerifier, &session.ExpiresAt,
 		&session.InstanceID, &session.ProfileID, &session.ClientID,
 		&session.AbsoluteExpiresAt, &session.CreatedAt,

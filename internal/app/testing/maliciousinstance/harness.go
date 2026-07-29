@@ -83,6 +83,7 @@ func (h *Harness) Handler() http.Handler {
 	mux.HandleFunc("GET /.well-known/leapview", h.serveDiscovery)
 	mux.HandleFunc("GET /__harness/manifest.json", h.serveManifest)
 	mux.HandleFunc("GET /__harness/probe.js", h.serveProbe)
+	mux.HandleFunc("GET /__harness/service-worker.js", h.serveServiceWorker)
 	mux.HandleFunc("POST /__harness/report", h.collectReport)
 	mux.HandleFunc("GET /attack/{id}", h.serveAttack)
 	return h.securityHeaders(mux)
@@ -155,6 +156,11 @@ func (h *Harness) serveManifest(w http.ResponseWriter, _ *http.Request) {
 func (h *Harness) serveProbe(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 	_, _ = io.WriteString(w, probeScript)
+}
+
+func (h *Harness) serveServiceWorker(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+	_, _ = io.WriteString(w, `self.addEventListener("fetch", () => undefined);`)
 }
 
 func (h *Harness) collectReport(w http.ResponseWriter, r *http.Request) {

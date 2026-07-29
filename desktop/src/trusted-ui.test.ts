@@ -307,6 +307,54 @@ describe("TrustedUI", () => {
     expect(removed).toEqual([profileID]);
   });
 
+  test("renames only the local profile label through the trusted shell", async () => {
+    const renamed: Array<{ profileID: string; label: string | null }> = [];
+    const profileID = "profile_0123456789abcdef0123456789abcdef";
+    const ui = trustedUI({
+      allowLoopbackHTTP: false,
+      connectOrigin: async () => undefined,
+      connectProfile: async () => undefined,
+      disconnectProfile: async () => undefined,
+      removeProfile: async () => undefined,
+      renameProfile: async (candidateProfileID, label) => {
+        renamed.push({ profileID: candidateProfileID, label });
+      },
+      listProfiles: async () => [{
+        id: profileID,
+        canonicalOrigin: "https://analytics.company.com",
+        instanceId: "instance_0123456789abcdef0123456789abcdef",
+        displayName: "Company Analytics",
+        lastSafePath: "/",
+        partitionVersion: 1,
+        label: "Quarterly reporting",
+      }],
+    });
+
+    const page = await (await ui.handle(
+      new Request("leapview://app/"),
+    )).text();
+    expect(page).toContain('name="label"');
+    expect(page).toContain('value="Quarterly reporting"');
+
+    const response = await ui.handle(
+      new Request("leapview://app/connect", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          profileId: profileID,
+          operation: "rename",
+          label: "Board reporting",
+        }),
+      }),
+    );
+    expect(response.status).toBe(303);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(renamed).toEqual([{
+      profileID,
+      label: "Board reporting",
+    }]);
+  });
+
   test("completed operations do not exhaust the active operation limit", async () => {
     let connections = 0;
     const ui = trustedUI({
