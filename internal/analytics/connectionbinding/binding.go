@@ -19,6 +19,11 @@ var (
 	ErrDisabledBinding         = errors.New("connection binding disabled")
 	ErrUnauthorizedBinding     = errors.New("connection binding unauthorized")
 	ErrCredentialSerialization = errors.New("credential snapshot cannot be serialized")
+	ErrCredentialDenied        = errors.New("credential access denied")
+	ErrCredentialNotFound      = errors.New("credential not found")
+	ErrCredentialRateLimited   = errors.New("credential provider rate limited")
+	ErrProviderUnavailable     = errors.New("credential provider unavailable")
+	ErrInvalidCredentialBundle = errors.New("invalid credential bundle")
 
 	logicalConnectionPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,127}$`)
 	identifierPattern        = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$`)
@@ -265,7 +270,7 @@ func (binding TargetBinding) MarkValidated(providerVersion string, now time.Time
 	if providerVersion == "" || now.IsZero() || now.Before(binding.UpdatedAt) {
 		return TargetBinding{}, fmt.Errorf("%w: provider version and monotonic validation time are required", ErrInvalidBinding)
 	}
-	if binding.Health == HealthHealthy && binding.ValidatedVersion == providerVersion {
+	if binding.Health == HealthHealthy && binding.ValidatedVersion == providerVersion && binding.LastValidatedAt.Equal(now) {
 		return binding, nil
 	}
 	binding.ValidatedVersion = providerVersion
@@ -411,6 +416,17 @@ func (snapshot CredentialSnapshot) Use(consumer func(map[string]string) error) e
 	}
 	defer clear(values)
 	return consumer(values)
+}
+
+func (snapshot *CredentialSnapshot) Destroy() {
+	if snapshot == nil {
+		return
+	}
+	clear(snapshot.values)
+	snapshot.values = nil
+	snapshot.providerVersion = ""
+	snapshot.retrievedAt = time.Time{}
+	snapshot.expiresAt = time.Time{}
 }
 
 func (CredentialSnapshot) MarshalJSON() ([]byte, error) {

@@ -156,6 +156,7 @@ func TestEnterpriseAuthoringPackagesRemainCapabilityOwned(t *testing.T) {
 		{path: "internal/access/cli", capability: "access", layer: LayerAdapter},
 		{path: "internal/project/devloop", capability: "project", layer: LayerUseCase},
 		{path: "internal/analytics/connectionbinding", capability: "analytics", layer: LayerUseCase},
+		{path: "internal/analytics/infisical", capability: "analytics", layer: LayerAdapter},
 		{path: "internal/analytics/sqlite", capability: "analytics", layer: LayerAdapter},
 	}
 	for _, test := range tests {
@@ -233,6 +234,7 @@ func TestEnterpriseAuthoringStateRemainsCapabilityOwned(t *testing.T) {
 		{path: "internal/release", capability: "release", layer: LayerContract},
 		{path: "internal/release/filesystem", capability: "release", layer: LayerAdapter},
 		{path: "internal/analytics/connectionbinding", capability: "analytics", layer: LayerUseCase},
+		{path: "internal/analytics/infisical", capability: "analytics", layer: LayerAdapter},
 		{path: "internal/analytics/sqlite", capability: "analytics", layer: LayerAdapter},
 	}
 	for _, test := range tests {
