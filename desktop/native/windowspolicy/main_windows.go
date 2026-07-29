@@ -85,6 +85,10 @@ func secureAdministratorPath(path string) error {
 	if err != nil {
 		return fmt.Errorf("read security descriptor: %w", err)
 	}
+	return validateSecurityDescriptor(descriptor)
+}
+
+func validateSecurityDescriptor(descriptor *windows.SECURITY_DESCRIPTOR) error {
 	owner, _, err := descriptor.Owner()
 	if err != nil || !trustedAdministrator(owner) {
 		return errors.New("policy owner is not Administrators or SYSTEM")
