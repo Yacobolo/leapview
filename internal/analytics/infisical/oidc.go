@@ -104,3 +104,14 @@ func (authenticator *OIDCAuthenticator) AccessToken(ctx context.Context) (Access
 	authenticator.token = token
 	return token, nil
 }
+
+func (authenticator *OIDCAuthenticator) InvalidateAccessToken(token AccessToken) {
+	if authenticator == nil {
+		return
+	}
+	authenticator.mu.Lock()
+	defer authenticator.mu.Unlock()
+	if authenticator.token.value == token.value {
+		authenticator.token = AccessToken{}
+	}
+}

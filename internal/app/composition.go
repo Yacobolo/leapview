@@ -88,8 +88,20 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	}
 	publicURL := firstConfigured(cfg.PublicURL, configuredListenURL(cfg.ListenAddr()))
 	workloadConfig := cfg.WorkloadConfig()
+	credentialMode := analyticsmodule.CredentialModeNonSecret
+	if !production {
+		credentialMode = analyticsmodule.CredentialModeDevelopmentEnvironment
+	}
 	analyticsModule, err := analyticsmodule.Build(ctx, analyticsmodule.Config{
-		Database: store.SQLDB(), RootDir: cfg.DuckDBDirPath(),
+		Database: store.SQLDB(), CredentialMode: credentialMode,
+		CredentialTargetID: instanceID, CredentialEnvironment: string(environment),
+		TargetCredentials: analyticsmodule.TargetCredentialConfig{
+			InfisicalBaseURL:               cfg.InfisicalBaseURL,
+			InfisicalUniversalClientID:     cfg.InfisicalUniversalClientID,
+			InfisicalUniversalClientSecret: cfg.InfisicalUniversalClientSecret,
+			InfisicalAllowedScopes:         cfg.InfisicalAllowedScopes,
+		},
+		RootDir:     cfg.DuckDBDirPath(),
 		CatalogPath: duckLakeCatalogPath, DataPath: cfg.DuckLakeDataDir(),
 		MaxConnections: workloadConfig.MaxRunning, MemoryMaxBytes: cfg.DuckDBNodeMemoryMaxBytes,
 		TempMaxBytes: cfg.DuckDBNodeTempMaxBytes, MaxThreads: cfg.DuckDBNodeMaxThreads,

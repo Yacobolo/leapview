@@ -30,7 +30,7 @@ func (f workspaceRuntimeFactory) OpenWorkspace(ctx context.Context, request anal
 	}
 	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
 		Models: request.Models, Database: f.module.environment,
-		CredentialResolver: analyticsduckdb.EnvironmentCredentialResolver{},
+		CredentialResolver: f.module.credentials,
 		QueryCache:         cacheScope, ResultLimits: request.ResultLimits,
 		SnapshotID: request.SnapshotID, ServingStateID: request.ServingStateID,
 		WorkspaceID: request.WorkspaceID, Environment: request.Environment,

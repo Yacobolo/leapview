@@ -2,6 +2,7 @@ package connectionbinding
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -187,6 +188,147 @@ func TestPoolManagerRetainsValidatedPoolOnlyWithinStalePolicyDuringProviderOutag
 	}
 }
 
+func TestPoolManagerRunUsesIntervalThenExponentialBackoffAndStopsOnCancellation(t *testing.T) {
+	now := time.Date(2026, 7, 29, 17, 0, 0, 0, time.UTC)
+	resolver := &sequenceResolver{
+		snapshots: []CredentialSnapshot{testSnapshot(t, "version-1", now)},
+		errs:      []error{nil, ErrProviderUnavailable, ErrProviderUnavailable, nil},
+	}
+	waiter := &recordingWaiter{cancelAfter: 4}
+	manager, err := NewPoolManager(PoolManagerConfig{
+		Binding: validTargetBinding(t), Resolver: resolver, Factory: &recordingPoolFactory{},
+		Store: &recordingBindingStore{}, Now: func() time.Time { return now }, StaleAfter: time.Hour,
+		Schedule: RefreshSchedule{
+			Interval: 10 * time.Minute, BackoffInitial: time.Second, BackoffMax: time.Minute,
+			JitterRatio: 0.1, Random: func() float64 { return 1 }, Wait: waiter.Wait,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = manager.Run(context.Background())
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v", err)
+	}
+	want := []time.Duration{11 * time.Minute, 1100 * time.Millisecond, 2200 * time.Millisecond, 11 * time.Minute}
+	if len(waiter.delays) != len(want) {
+		t.Fatalf("delays = %v, want %v", waiter.delays, want)
+	}
+	for index := range want {
+		if waiter.delays[index] != want[index] {
+			t.Fatalf("delay[%d] = %s, want %s", index, waiter.delays[index], want[index])
+		}
+	}
+	if resolver.calls != 4 {
+		t.Fatalf("resolver calls = %d, want 4", resolver.calls)
+	}
+}
+
+func TestPoolManagerAuditsActivationDegradationRecoveryAndExplicitRefreshActor(t *testing.T) {
+	now := time.Date(2026, 7, 29, 17, 0, 0, 0, time.UTC)
+	resolver := &sequenceResolver{
+		snapshots: []CredentialSnapshot{
+			testSnapshot(t, "version-1", now),
+			testSnapshot(t, "version-bad", now.Add(time.Minute)),
+			testSnapshot(t, "version-2", now.Add(2*time.Minute)),
+		},
+	}
+	factory := &recordingPoolFactory{healthFailures: map[string]error{"version-bad": errors.New("source-secret-must-not-leak")}}
+	audit := &recordingRotationAudit{}
+	manager, err := NewPoolManager(PoolManagerConfig{
+		Binding: validTargetBinding(t), Resolver: resolver, Factory: factory, Store: &recordingBindingStore{},
+		Audit: audit, Now: func() time.Time { return now }, StaleAfter: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Refresh(context.Background(), RefreshRequest{Actor: "runtime:target-1", Operation: RefreshScheduled}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Minute)
+	if err := manager.Refresh(context.Background(), RefreshRequest{Actor: "principal:author-1", Operation: RefreshRequested}); !errors.Is(err, ErrInvalidCredentialBundle) {
+		t.Fatalf("bad refresh error = %v", err)
+	}
+	now = now.Add(time.Minute)
+	if err := manager.Refresh(context.Background(), RefreshRequest{Actor: "principal:author-1", Operation: RefreshRequested}); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(audit.events) != 3 {
+		t.Fatalf("audit events = %#v", audit.events)
+	}
+	assertRotationAudit(t, audit.events[0], "runtime:target-1", RefreshScheduled, RotationActivated, "version-1", "")
+	assertRotationAudit(t, audit.events[1], "principal:author-1", RefreshRequested, RotationDegraded, "version-bad", "POOL_HEALTH_CHECK_FAILED")
+	assertRotationAudit(t, audit.events[2], "principal:author-1", RefreshRequested, RotationActivated, "version-2", "")
+	for _, event := range audit.events {
+		encoded, err := json.Marshal(event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(encoded), "source-secret") || strings.Contains(string(encoded), "connection_string") {
+			t.Fatalf("audit disclosed credential material: %s", encoded)
+		}
+	}
+}
+
+func TestPoolManagerCancellationDoesNotDegradeOrPersist(t *testing.T) {
+	now := time.Date(2026, 7, 29, 17, 0, 0, 0, time.UTC)
+	manager, err := NewPoolManager(PoolManagerConfig{
+		Binding: validTargetBinding(t), Resolver: canceledResolver{}, Factory: &recordingPoolFactory{},
+		Store: &recordingBindingStore{}, Now: func() time.Time { return now }, StaleAfter: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.RefreshNow(context.Background()); !errors.Is(err, context.Canceled) {
+		t.Fatalf("RefreshNow() error = %v", err)
+	}
+	if evidence := manager.Evidence(); evidence.Health != HealthPending || evidence.BindingRevision != 1 {
+		t.Fatalf("cancellation changed binding evidence: %#v", evidence)
+	}
+}
+
+func TestPoolManagerRestartRevalidatesPersistedVersionAndRepeatedOutageIsIdempotent(t *testing.T) {
+	now := time.Date(2026, 7, 29, 17, 0, 0, 0, time.UTC)
+	binding, err := validTargetBinding(t).MarkValidated("version-1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Minute)
+	resolver := &sequenceResolver{
+		snapshots: []CredentialSnapshot{testSnapshot(t, "version-1", now)},
+		errs:      []error{nil, ErrProviderUnavailable, ErrProviderUnavailable},
+	}
+	factory := &recordingPoolFactory{}
+	store := &recordingBindingStore{}
+	manager, err := NewPoolManager(PoolManagerConfig{
+		Binding: binding, Resolver: resolver, Factory: factory, Store: store,
+		Now: func() time.Time { return now }, StaleAfter: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.RefreshNow(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(factory.pools) != 1 {
+		t.Fatalf("restart prepared pools = %d, want 1", len(factory.pools))
+	}
+	now = now.Add(time.Minute)
+	if err := manager.RefreshNow(context.Background()); !errors.Is(err, ErrProviderUnavailable) {
+		t.Fatalf("first outage error = %v", err)
+	}
+	degradedRevision := manager.Evidence().BindingRevision
+	now = now.Add(time.Minute)
+	if err := manager.RefreshNow(context.Background()); !errors.Is(err, ErrProviderUnavailable) ||
+		errors.Is(err, ErrIncompatibleBinding) {
+		t.Fatalf("repeated outage error = %v", err)
+	}
+	if got := manager.Evidence().BindingRevision; got != degradedRevision {
+		t.Fatalf("repeated outage revision = %d, want idempotent %d", got, degradedRevision)
+	}
+}
+
 func testSnapshot(t *testing.T, version string, now time.Time) CredentialSnapshot {
 	t.Helper()
 	snapshot, err := NewCredentialSnapshot(map[string]string{"connection_string": "source-secret"}, version, now, now.Add(time.Hour))
@@ -260,6 +402,51 @@ func (store *recordingBindingStore) Save(_ context.Context, binding TargetBindin
 	}
 	store.binding = binding
 	return binding, nil
+}
+
+type recordingWaiter struct {
+	delays      []time.Duration
+	cancelAfter int
+}
+
+func (waiter *recordingWaiter) Wait(_ context.Context, delay time.Duration) error {
+	waiter.delays = append(waiter.delays, delay)
+	if len(waiter.delays) >= waiter.cancelAfter {
+		return context.Canceled
+	}
+	return nil
+}
+
+type recordingRotationAudit struct {
+	events []RotationAuditEvent
+}
+
+func (audit *recordingRotationAudit) RecordCredentialRotation(_ context.Context, event RotationAuditEvent) error {
+	audit.events = append(audit.events, event)
+	return nil
+}
+
+func assertRotationAudit(
+	t *testing.T,
+	event RotationAuditEvent,
+	actor string,
+	operation RefreshOperation,
+	outcome RotationOutcome,
+	version string,
+	reason string,
+) {
+	t.Helper()
+	if event.BindingID != "binding_prod_warehouse" || event.TargetID != "lvinst_prod" ||
+		event.Actor != actor || event.Operation != operation || event.Outcome != outcome ||
+		event.ProviderVersion != version || event.Reason != reason || event.Timestamp.IsZero() {
+		t.Fatalf("audit event = %#v", event)
+	}
+}
+
+type canceledResolver struct{}
+
+func (canceledResolver) Resolve(context.Context, CredentialReference) (CredentialSnapshot, error) {
+	return CredentialSnapshot{}, context.Canceled
 }
 
 func containsSecret(err error) bool {

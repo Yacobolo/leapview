@@ -1365,6 +1365,156 @@
       "x-error-message": "production serve requires LEAPVIEW_AZURE_CALLBACK_URL to be an https URL"
     },
     {
+      "description": "The read-only Infisical target resolver is configured as one complete tuple.",
+      "if": {
+        "anyOf": [
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_BASE_URL": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_BASE_URL"
+            ]
+          },
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID"
+            ]
+          },
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET"
+            ]
+          },
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_ALLOWED_SCOPES": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_ALLOWED_SCOPES"
+            ]
+          }
+        ]
+      },
+      "then": {
+        "allOf": [
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_BASE_URL": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_BASE_URL"
+            ]
+          },
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID"
+            ]
+          },
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET"
+            ]
+          },
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_ALLOWED_SCOPES": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_ALLOWED_SCOPES"
+            ]
+          }
+        ]
+      },
+      "x-error-message": "Infisical resolution requires LEAPVIEW_INFISICAL_BASE_URL, LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID, LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET, and LEAPVIEW_INFISICAL_ALLOWED_SCOPES"
+    },
+    {
+      "description": "The Infisical backend is an HTTPS origin.",
+      "if": {
+        "allOf": [
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_BASE_URL": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_BASE_URL"
+            ]
+          },
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID"
+            ]
+          },
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET"
+            ]
+          },
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_ALLOWED_SCOPES": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_ALLOWED_SCOPES"
+            ]
+          }
+        ]
+      },
+      "then": {
+        "properties": {
+          "LEAPVIEW_INFISICAL_BASE_URL": {
+            "pattern": "^https://[^/@?#]+/?$"
+          }
+        },
+        "required": [
+          "LEAPVIEW_INFISICAL_BASE_URL"
+        ]
+      },
+      "x-error-message": "LEAPVIEW_INFISICAL_BASE_URL must be an https origin"
+    },
+    {
       "description": "A configured production SCIM token must contain at least 32 characters.",
       "if": {
         "allOf": [
@@ -1940,6 +2090,31 @@
       "type": "string",
       "x-lifecycle": "tooling",
       "x-scope": "Hetzner provisioner"
+    },
+    "LEAPVIEW_INFISICAL_ALLOWED_SCOPES": {
+      "description": "JSON array of exact Infisical project/environment/path-prefix scopes the target runtime may read.",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_INFISICAL_BASE_URL": {
+      "description": "HTTPS origin of the target's authoritative read-only Infisical backend.",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID": {
+      "description": "Infisical Universal Auth machine identity client identifier.",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET": {
+      "description": "Infisical Universal Auth bootstrap secret supplied only to the target process.",
+      "type": "string",
+      "writeOnly": true,
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
     },
     "LEAPVIEW_LOCAL_AUTH": {
       "description": "Enable administrator-managed local browser authentication.",

@@ -44,6 +44,28 @@ func TestLoadRejectsMalformedTypedValues(t *testing.T) {
 	}
 }
 
+func TestInfisicalRuntimeConfigurationIsAllOrNoneAndHTTPS(t *testing.T) {
+	partial := map[string]any{
+		"LEAPVIEW_INFISICAL_BASE_URL": "https://infisical.example.com",
+	}
+	if err := configspec.Validate(partial); err == nil {
+		t.Fatal("partial Infisical configuration was accepted")
+	}
+	complete := map[string]any{
+		"LEAPVIEW_INFISICAL_BASE_URL":                "https://infisical.example.com",
+		"LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID":     "machine-client",
+		"LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET": "bootstrap-secret",
+		"LEAPVIEW_INFISICAL_ALLOWED_SCOPES":          `[{"projectId":"project-1","environment":"prod","secretPathPrefix":"/leapview"}]`,
+	}
+	if err := configspec.Validate(complete); err != nil {
+		t.Fatalf("complete Infisical configuration rejected: %v", err)
+	}
+	complete["LEAPVIEW_INFISICAL_BASE_URL"] = "http://infisical.example.com"
+	if err := configspec.Validate(complete); err == nil {
+		t.Fatal("plain HTTP Infisical origin was accepted")
+	}
+}
+
 func TestListenAddressUsesExplicitLeapViewSetting(t *testing.T) {
 	t.Setenv("ADDR", "127.0.0.1:9002")
 	t.Setenv("PORT", "9003")

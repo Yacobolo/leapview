@@ -137,6 +137,10 @@ var settings = []Setting{
 	{Name: "LEAPVIEW_HEALTHCHECK_URL", Field: "HealthcheckURL", Type: TypeString, Category: "operations", Scope: "healthcheck", Description: "Explicit readiness URL used by the healthcheck command.", Example: "http://127.0.0.1:8080/readyz", Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LEAPVIEW_HOME", Field: "HomeDir", Type: TypeString, Default: ".leapview", Category: "storage", Scope: "serve,admin,client", Description: "Instance state directory containing databases, artifacts, and runtime files.", Example: "/var/lib/leapview", Runtime: true, Lifecycle: "supported", EnvExample: "/var/lib/leapview"},
 	{Name: "LEAPVIEW_IMAGE", Type: TypeString, Category: "deployment", Scope: "Hetzner provisioner", Description: "Immutable LeapView OCI image reference consumed by deployment tooling.", Example: "ghcr.io/flidai/leapview@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", Lifecycle: "tooling"},
+	{Name: "LEAPVIEW_INFISICAL_ALLOWED_SCOPES", Field: "InfisicalAllowedScopes", Type: TypeString, Category: "connections", Scope: "serve", Description: "JSON array of exact Infisical project/environment/path-prefix scopes the target runtime may read.", Example: `[{"projectId":"project-id","environment":"prod","secretPathPrefix":"/leapview"}]`, Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LEAPVIEW_INFISICAL_BASE_URL", Field: "InfisicalBaseURL", Type: TypeString, Category: "connections", Scope: "serve", Description: "HTTPS origin of the target's authoritative read-only Infisical backend.", Example: "https://app.infisical.com", Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID", Field: "InfisicalUniversalClientID", Type: TypeString, Category: "connections", Scope: "serve", Description: "Infisical Universal Auth machine identity client identifier.", Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET", Field: "InfisicalUniversalClientSecret", Type: TypeString, Category: "connections", Scope: "serve", Description: "Infisical Universal Auth bootstrap secret supplied only to the target process.", Example: SecretPlaceholder, Secret: true, Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LEAPVIEW_SITE_HOST", Type: TypeString, Default: "178.105.204.14", Category: "deployment", Scope: "public-site operator", Description: "Reserved production IPv4 contacted by the public-site deployment command.", Lifecycle: "tooling"},
 	{Name: "LEAPVIEW_SITE_IMAGE", Type: TypeString, Category: "deployment", Scope: "public-site provisioner", Description: "Immutable LeapView public-site OCI image reference consumed by deployment tooling.", Example: "ghcr.io/flidai/leapview-site@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", Lifecycle: "tooling"},
 	{Name: "LEAPVIEW_SITE_SSH_KEY", Type: TypeString, Category: "deployment", Scope: "public-site operator", Description: "Optional path to the dedicated production SSH identity used by the public-site deployment command.", Example: "~/.ssh/leapview-site-production", Lifecycle: "tooling"},
@@ -261,15 +265,17 @@ type Rule struct {
 func Rules() []Rule { return append([]Rule(nil), rules...) }
 
 var (
-	production    = True("LEAPVIEW_PRODUCTION")
-	evaluation    = True("LEAPVIEW_EVALUATION_MODE")
-	oidcAny       = Any(Present("LEAPVIEW_OIDC_ISSUER_URL"), Present("LEAPVIEW_OIDC_CLIENT_ID"), Present("LEAPVIEW_OIDC_CLIENT_SECRET"), Present("LEAPVIEW_OIDC_CALLBACK_URL"), Present("LEAPVIEW_OIDC_SCOPES"))
-	oidcComplete  = All(Present("LEAPVIEW_OIDC_ISSUER_URL"), Present("LEAPVIEW_OIDC_CLIENT_ID"), Present("LEAPVIEW_OIDC_CLIENT_SECRET"), Present("LEAPVIEW_OIDC_CALLBACK_URL"))
-	azureAny      = Any(Present("LEAPVIEW_AZURE_CLIENT_ID"), Present("LEAPVIEW_AZURE_CLIENT_SECRET"), Present("LEAPVIEW_AZURE_CALLBACK_URL"), Present("LEAPVIEW_AZURE_TENANT"))
-	azureComplete = All(Present("LEAPVIEW_AZURE_CLIENT_ID"), Present("LEAPVIEW_AZURE_CLIENT_SECRET"), Present("LEAPVIEW_AZURE_CALLBACK_URL"))
-	browserAuth   = Any(True("LEAPVIEW_LOCAL_AUTH"), oidcComplete, azureComplete)
-	managedData   = Present("LEAPVIEW_MANAGED_DATA_BACKEND")
-	managedS3     = Equals("LEAPVIEW_MANAGED_DATA_BACKEND", "s3")
+	production        = True("LEAPVIEW_PRODUCTION")
+	evaluation        = True("LEAPVIEW_EVALUATION_MODE")
+	oidcAny           = Any(Present("LEAPVIEW_OIDC_ISSUER_URL"), Present("LEAPVIEW_OIDC_CLIENT_ID"), Present("LEAPVIEW_OIDC_CLIENT_SECRET"), Present("LEAPVIEW_OIDC_CALLBACK_URL"), Present("LEAPVIEW_OIDC_SCOPES"))
+	oidcComplete      = All(Present("LEAPVIEW_OIDC_ISSUER_URL"), Present("LEAPVIEW_OIDC_CLIENT_ID"), Present("LEAPVIEW_OIDC_CLIENT_SECRET"), Present("LEAPVIEW_OIDC_CALLBACK_URL"))
+	azureAny          = Any(Present("LEAPVIEW_AZURE_CLIENT_ID"), Present("LEAPVIEW_AZURE_CLIENT_SECRET"), Present("LEAPVIEW_AZURE_CALLBACK_URL"), Present("LEAPVIEW_AZURE_TENANT"))
+	azureComplete     = All(Present("LEAPVIEW_AZURE_CLIENT_ID"), Present("LEAPVIEW_AZURE_CLIENT_SECRET"), Present("LEAPVIEW_AZURE_CALLBACK_URL"))
+	browserAuth       = Any(True("LEAPVIEW_LOCAL_AUTH"), oidcComplete, azureComplete)
+	managedData       = Present("LEAPVIEW_MANAGED_DATA_BACKEND")
+	managedS3         = Equals("LEAPVIEW_MANAGED_DATA_BACKEND", "s3")
+	infisicalAny      = Any(Present("LEAPVIEW_INFISICAL_BASE_URL"), Present("LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID"), Present("LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET"), Present("LEAPVIEW_INFISICAL_ALLOWED_SCOPES"))
+	infisicalComplete = All(Present("LEAPVIEW_INFISICAL_BASE_URL"), Present("LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID"), Present("LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET"), Present("LEAPVIEW_INFISICAL_ALLOWED_SCOPES"))
 )
 
 var rules = []Rule{
@@ -294,6 +300,8 @@ var rules = []Rule{
 	{ID: "production-oidc-callback-https", Description: "The production OIDC callback must use HTTPS.", When: All(production, oidcComplete), Assert: HTTPSURL("LEAPVIEW_OIDC_CALLBACK_URL"), Message: "production serve requires LEAPVIEW_OIDC_CALLBACK_URL to be an https URL"},
 	{ID: "production-oidc-provider-slug", Description: "The OIDC provider identifier must be route-safe.", When: All(production, oidcComplete), Assert: RouteSlug("LEAPVIEW_OIDC_PROVIDER_ID"), Message: "LEAPVIEW_OIDC_PROVIDER_ID must be a route-safe slug containing only letters, numbers, dots, underscores, or dashes"},
 	{ID: "production-azure-callback-https", Description: "The production Azure callback must use HTTPS.", When: All(production, azureComplete), Assert: HTTPSURL("LEAPVIEW_AZURE_CALLBACK_URL"), Message: "production serve requires LEAPVIEW_AZURE_CALLBACK_URL to be an https URL"},
+	{ID: "infisical-complete", Description: "The read-only Infisical target resolver is configured as one complete tuple.", When: infisicalAny, Assert: infisicalComplete, Message: "Infisical resolution requires LEAPVIEW_INFISICAL_BASE_URL, LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID, LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET, and LEAPVIEW_INFISICAL_ALLOWED_SCOPES"},
+	{ID: "infisical-https", Description: "The Infisical backend is an HTTPS origin.", When: infisicalComplete, Assert: HTTPSOrigin("LEAPVIEW_INFISICAL_BASE_URL"), Message: "LEAPVIEW_INFISICAL_BASE_URL must be an https origin"},
 	{ID: "production-scim-token", Description: "A configured production SCIM token must contain at least 32 characters.", When: All(production, Present("LEAPVIEW_SCIM_BEARER_TOKEN")), Assert: MinLength("LEAPVIEW_SCIM_BEARER_TOKEN", 32), Message: "production SCIM provisioning requires LEAPVIEW_SCIM_BEARER_TOKEN with at least 32 characters"},
 	{ID: "managed-data-backend", Description: "Managed data uses a supported storage backend.", When: managedData, Assert: OneOf("LEAPVIEW_MANAGED_DATA_BACKEND", "local", "s3"), Message: "LEAPVIEW_MANAGED_DATA_BACKEND must be local or s3"},
 	{ID: "managed-data-runtime-dir", Description: "Every managed-data backend requires a private local runtime and staging directory.", When: managedData, Assert: Present("LEAPVIEW_MANAGED_DATA_DIR"), Message: "managed-data storage requires LEAPVIEW_MANAGED_DATA_DIR"},

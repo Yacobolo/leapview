@@ -44,12 +44,12 @@ type refreshTelemetry interface {
 }
 
 func NewSourceRuntime(db analyticsresource.SessionProvider) *SourceRuntime {
-	return &SourceRuntime{db: db, resolver: EnvironmentCredentialResolver{}}
+	return &SourceRuntime{db: db, resolver: NonSecretCredentialResolver{}}
 }
 
 func NewSourceRuntimeWithCredentials(db analyticsresource.SessionProvider, resolver CredentialResolver) *SourceRuntime {
 	if resolver == nil {
-		resolver = EnvironmentCredentialResolver{}
+		resolver = NonSecretCredentialResolver{}
 	}
 	return &SourceRuntime{db: db, resolver: resolver}
 }

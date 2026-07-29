@@ -12,12 +12,13 @@ import (
 
 type duckDBWorkspaceMaterializer struct {
 	environment *analyticsducklake.Environment
+	credentials analyticsduckdb.CredentialResolver
 }
 
 func (e duckDBWorkspaceMaterializer) MaterializeWorkspace(ctx context.Context, request analyticsmaterialization.WorkspaceRequest) (int64, error) {
 	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
 		Models: request.Models, Database: e.environment,
-		CredentialResolver: analyticsduckdb.EnvironmentCredentialResolver{},
+		CredentialResolver: e.credentials,
 		ServingStateID:     request.ServingStateID, WorkspaceID: request.WorkspaceID,
 		Environment: string(servingstate.NormalizeEnvironment(request.Environment)),
 		TargetType:  request.TargetType, TargetID: request.TargetID,

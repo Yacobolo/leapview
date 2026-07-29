@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,16 +29,20 @@ type PoolManagerConfig struct {
 	Resolver   CredentialResolver
 	Factory    RuntimePoolFactory
 	Store      BindingStateStore
+	Audit      RotationAuditRecorder
 	Now        func() time.Time
 	StaleAfter time.Duration
+	Schedule   RefreshSchedule
 }
 
 type PoolManager struct {
 	resolver CredentialResolver
 	factory  RuntimePoolFactory
 	store    BindingStateStore
+	audit    RotationAuditRecorder
 	now      func() time.Time
 	stale    time.Duration
+	schedule RefreshSchedule
 
 	refreshGroup singleflight.Group
 	refreshMu    sync.Mutex
@@ -63,21 +68,58 @@ func NewPoolManager(config PoolManagerConfig) (*PoolManager, error) {
 	}
 	return &PoolManager{
 		resolver: config.Resolver, factory: config.Factory, store: config.Store,
-		now: config.Now, stale: config.StaleAfter, binding: config.Binding,
+		audit: config.Audit, now: config.Now, stale: config.StaleAfter,
+		schedule: config.Schedule, binding: config.Binding,
 	}, nil
 }
 
 func (manager *PoolManager) RefreshNow(ctx context.Context) error {
+	return manager.Refresh(ctx, RefreshRequest{Actor: "runtime:" + manager.targetID(), Operation: RefreshRequested})
+}
+
+func (manager *PoolManager) Refresh(ctx context.Context, request RefreshRequest) error {
 	if manager == nil {
 		return ErrProviderUnavailable
 	}
+	if !request.valid() {
+		return fmt.Errorf("%w: refresh actor and operation are required", ErrInvalidBinding)
+	}
 	_, err, _ := manager.refreshGroup.Do("refresh", func() (any, error) {
-		return nil, manager.refresh(ctx)
+		return nil, manager.refresh(ctx, request)
 	})
 	return err
 }
 
-func (manager *PoolManager) refresh(ctx context.Context) error {
+func (manager *PoolManager) Run(ctx context.Context) error {
+	if manager == nil {
+		return ErrProviderUnavailable
+	}
+	if err := manager.schedule.validate(); err != nil {
+		return err
+	}
+	failures := 0
+	for {
+		err := manager.Refresh(ctx, RefreshRequest{
+			Actor: "runtime:" + manager.targetID(), Operation: RefreshScheduled,
+		})
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		var base time.Duration
+		if err == nil {
+			failures = 0
+			base = manager.schedule.Interval
+		} else {
+			failures++
+			base = manager.schedule.backoff(failures)
+		}
+		if err := manager.schedule.Wait(ctx, manager.schedule.delay(base)); err != nil {
+			return err
+		}
+	}
+}
+
+func (manager *PoolManager) refresh(ctx context.Context, request RefreshRequest) error {
 	manager.refreshMu.Lock()
 	defer manager.refreshMu.Unlock()
 	now := manager.now().UTC()
@@ -96,7 +138,9 @@ func (manager *PoolManager) refresh(ctx context.Context) error {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return err
 		}
-		return manager.degrade(ctx, providerFailureReason(err), now, err)
+		reason := providerFailureReason(err)
+		result := manager.degrade(ctx, reason, now, err)
+		return manager.withAudit(ctx, request, RotationDegraded, binding.ValidatedVersion, reason, now, result)
 	}
 	defer snapshot.Destroy()
 	version := snapshot.ProviderVersion()
@@ -122,23 +166,26 @@ func (manager *PoolManager) refresh(ctx context.Context) error {
 		} else {
 			manager.recordRefresh(now)
 		}
-		return nil
+		return manager.withAudit(ctx, request, RotationUnchanged, version, "", now, nil)
 	}
 	manager.mu.Unlock()
 
 	replacement, err := manager.factory.Prepare(ctx, binding, snapshot)
 	if err != nil {
 		manager.recordRefresh(now)
-		return manager.degrade(ctx, "POOL_PREPARE_FAILED", now, ErrInvalidCredentialBundle)
+		result := manager.degrade(ctx, "POOL_PREPARE_FAILED", now, ErrInvalidCredentialBundle)
+		return manager.withAudit(ctx, request, RotationDegraded, version, "POOL_PREPARE_FAILED", now, result)
 	}
 	if replacement == nil {
 		manager.recordRefresh(now)
-		return manager.degrade(ctx, "POOL_PREPARE_FAILED", now, ErrInvalidCredentialBundle)
+		result := manager.degrade(ctx, "POOL_PREPARE_FAILED", now, ErrInvalidCredentialBundle)
+		return manager.withAudit(ctx, request, RotationDegraded, version, "POOL_PREPARE_FAILED", now, result)
 	}
 	if err := replacement.HealthCheck(ctx); err != nil {
 		_ = replacement.Close()
 		manager.recordRefresh(now)
-		return manager.degrade(ctx, "POOL_HEALTH_CHECK_FAILED", now, ErrInvalidCredentialBundle)
+		result := manager.degrade(ctx, "POOL_HEALTH_CHECK_FAILED", now, ErrInvalidCredentialBundle)
+		return manager.withAudit(ctx, request, RotationDegraded, version, "POOL_HEALTH_CHECK_FAILED", now, result)
 	}
 
 	validated, err := binding.MarkValidated(version, now)
@@ -166,7 +213,42 @@ func (manager *PoolManager) refresh(ctx context.Context) error {
 	if closePrevious != nil {
 		_ = closePrevious.Close()
 	}
-	return nil
+	return manager.withAudit(ctx, request, RotationActivated, version, "", now, nil)
+}
+
+func (manager *PoolManager) targetID() string {
+	if manager == nil {
+		return ""
+	}
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	return manager.binding.TargetID
+}
+
+func (manager *PoolManager) withAudit(
+	ctx context.Context,
+	request RefreshRequest,
+	outcome RotationOutcome,
+	version string,
+	reason string,
+	timestamp time.Time,
+	result error,
+) error {
+	if manager.audit == nil {
+		return result
+	}
+	manager.mu.Lock()
+	binding := manager.binding
+	manager.mu.Unlock()
+	event := RotationAuditEvent{
+		BindingID: binding.ID, TargetID: binding.TargetID, ProviderVersion: version,
+		Actor: strings.TrimSpace(request.Actor), Operation: request.Operation,
+		Timestamp: timestamp.UTC(), Outcome: outcome, Reason: reason,
+	}
+	if err := manager.audit.RecordCredentialRotation(context.WithoutCancel(ctx), event); err != nil {
+		return errors.Join(result, ErrRotationAuditUnavailable)
+	}
+	return result
 }
 
 func (manager *PoolManager) recordRefresh(now time.Time) {
@@ -181,6 +263,10 @@ func (manager *PoolManager) degrade(ctx context.Context, reason string, now time
 	manager.mu.Unlock()
 	degraded, err := binding.MarkDegraded(reason, now)
 	if err != nil {
+		return result
+	}
+	if degraded.Revision == binding.Revision {
+		manager.recordRefresh(now)
 		return result
 	}
 	saved, err := manager.store.Save(ctx, degraded, binding.Revision)

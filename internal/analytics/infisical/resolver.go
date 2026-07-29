@@ -21,6 +21,8 @@ const (
 	defaultSnapshotTTL   = 5 * time.Minute
 )
 
+var errAccessTokenRejected = errors.New("Infisical access token rejected")
+
 type AccessToken struct {
 	value     string
 	expiresAt time.Time
@@ -32,6 +34,10 @@ func (AccessToken) GoString() string { return "infisical.AccessToken{<redacted>}
 
 type Authenticator interface {
 	AccessToken(context.Context) (AccessToken, error)
+}
+
+type accessTokenInvalidator interface {
+	InvalidateAccessToken(AccessToken)
 }
 
 type Config struct {
@@ -110,17 +116,37 @@ func (resolver *Resolver) Resolve(ctx context.Context, reference connectionbindi
 	if !resolver.authorized(reference) {
 		return connectionbinding.CredentialSnapshot{}, connectionbinding.ErrCredentialDenied
 	}
-	token, err := resolver.authenticator.AccessToken(ctx)
-	if err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return connectionbinding.CredentialSnapshot{}, err
+	for attempt := 0; attempt < 2; attempt++ {
+		token, err := resolver.authenticator.AccessToken(ctx)
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return connectionbinding.CredentialSnapshot{}, err
+			}
+			return connectionbinding.CredentialSnapshot{}, providerError(err)
 		}
-		return connectionbinding.CredentialSnapshot{}, providerError(err)
+		now := resolver.now().UTC()
+		if strings.TrimSpace(token.value) == "" || !token.expiresAt.After(now) {
+			return connectionbinding.CredentialSnapshot{}, connectionbinding.ErrProviderUnavailable
+		}
+		snapshot, err := resolver.resolveWithToken(ctx, reference, token, now)
+		if !errors.Is(err, errAccessTokenRejected) {
+			return snapshot, err
+		}
+		invalidator, ok := resolver.authenticator.(accessTokenInvalidator)
+		if !ok || attempt == 1 {
+			return connectionbinding.CredentialSnapshot{}, connectionbinding.ErrCredentialDenied
+		}
+		invalidator.InvalidateAccessToken(token)
 	}
-	now := resolver.now().UTC()
-	if strings.TrimSpace(token.value) == "" || !token.expiresAt.After(now) {
-		return connectionbinding.CredentialSnapshot{}, connectionbinding.ErrProviderUnavailable
-	}
+	return connectionbinding.CredentialSnapshot{}, connectionbinding.ErrCredentialDenied
+}
+
+func (resolver *Resolver) resolveWithToken(
+	ctx context.Context,
+	reference connectionbinding.CredentialReference,
+	token AccessToken,
+	now time.Time,
+) (connectionbinding.CredentialSnapshot, error) {
 	endpoint := *resolver.baseURL
 	endpoint.Path = "/api/v4/secrets/" + reference.SecretKey
 	endpoint.RawPath = "/api/v4/secrets/" + url.PathEscape(reference.SecretKey)
@@ -146,6 +172,9 @@ func (resolver *Resolver) Resolve(ctx context.Context, reference connectionbindi
 		return connectionbinding.CredentialSnapshot{}, connectionbinding.ErrProviderUnavailable
 	}
 	defer response.Body.Close()
+	if response.StatusCode == http.StatusUnauthorized {
+		return connectionbinding.CredentialSnapshot{}, errAccessTokenRejected
+	}
 	if response.StatusCode != http.StatusOK {
 		return connectionbinding.CredentialSnapshot{}, statusError(response.StatusCode)
 	}
@@ -267,6 +296,17 @@ func (authenticator *UniversalAuthenticator) AccessToken(ctx context.Context) (A
 	}
 	authenticator.token = token
 	return authenticator.token, nil
+}
+
+func (authenticator *UniversalAuthenticator) InvalidateAccessToken(token AccessToken) {
+	if authenticator == nil {
+		return
+	}
+	authenticator.mu.Lock()
+	defer authenticator.mu.Unlock()
+	if authenticator.token.value == token.value {
+		authenticator.token = AccessToken{}
+	}
 }
 
 func decodeAccessToken(body []byte, now time.Time) (AccessToken, error) {

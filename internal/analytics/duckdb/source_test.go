@@ -11,6 +11,7 @@ import (
 	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
+	"github.com/flidai/leapview/internal/analytics/connectionbinding"
 	analyticsducklake "github.com/flidai/leapview/internal/analytics/ducklake"
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 	"github.com/flidai/leapview/internal/workload"
@@ -431,7 +432,18 @@ func TestCompileConnectionSecret(t *testing.T) {
 		Kind:        "azure_blob",
 		Credentials: semanticmodel.ConnectionCredentials{Provider: "env", Secret: "LEAPVIEW_TEST_AZURE_CREDENTIALS"},
 	}
-	azureConnection.Auth, err = (EnvironmentCredentialResolver{}).Resolve(context.Background(), "azure_lake", azureConnection)
+	selection, err := connectionbinding.NewResolverSelection(connectionbinding.ResolverSelectionInput{
+		TargetID: "test-target", Environment: "test", TargetClass: connectionbinding.TargetDevelopment,
+		Kind: connectionbinding.ResolverEnvironment,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	developmentResolver, err := NewDevelopmentEnvironmentCredentialResolver(selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	azureConnection.Auth, err = developmentResolver.Resolve(context.Background(), "azure_lake", azureConnection)
 	if err != nil {
 		t.Fatal(err)
 	}

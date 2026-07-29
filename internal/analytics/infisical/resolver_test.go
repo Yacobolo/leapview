@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -161,6 +162,63 @@ func TestUniversalAuthenticatorCachesAndRefreshesShortLivedAccessTokens(t *testi
 	}
 	if rotated.value != "access-2" || logins != 2 {
 		t.Fatalf("rotated=%q logins=%d", rotated.value, logins)
+	}
+}
+
+func TestResolverInvalidatesRejectedAccessTokenAndRetriesOnce(t *testing.T) {
+	now := time.Date(2026, 7, 29, 16, 0, 0, 0, time.UTC)
+	var mu sync.Mutex
+	logins := 0
+	reads := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch request.URL.Path {
+		case "/api/v1/auth/universal-auth/login":
+			logins++
+			_ = json.NewEncoder(writer).Encode(map[string]any{
+				"accessToken": "access-" + strconv.Itoa(logins), "expiresIn": 300, "tokenType": "Bearer",
+			})
+		case "/api/v4/secrets/warehouse":
+			reads++
+			if request.Header.Get("Authorization") == "Bearer access-1" {
+				writer.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			if request.Header.Get("Authorization") != "Bearer access-2" {
+				t.Fatalf("authorization = %q", request.Header.Get("Authorization"))
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]any{"secret": map[string]any{
+				"id": "secret-warehouse", "secretValue": `{"password":"rotated-source-secret"}`, "version": 8,
+			}})
+		default:
+			t.Fatalf("unexpected request path %q", request.URL.Path)
+		}
+	}))
+	defer server.Close()
+	authenticator, err := NewUniversalAuthenticator(UniversalAuthConfig{
+		BaseURL: server.URL, ClientID: "machine-client", ClientSecret: "bootstrap-secret",
+		HTTPClient: server.Client(), Now: func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver, err := NewResolver(Config{
+		BaseURL: server.URL, HTTPClient: server.Client(), Authenticator: authenticator,
+		Now: func() time.Time { return now }, AllowedScopes: testAllowedScopes(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := resolver.Resolve(context.Background(), connectionbinding.CredentialReference{
+		ProjectID: "project-1", Environment: "prod", SecretPath: "/leapview/sales", SecretKey: "warehouse",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer snapshot.Destroy()
+	if snapshot.ProviderVersion() != "secret-warehouse:v8" || logins != 2 || reads != 2 {
+		t.Fatalf("version=%q logins=%d reads=%d", snapshot.ProviderVersion(), logins, reads)
 	}
 }
 
