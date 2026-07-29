@@ -20,6 +20,9 @@ import {
   FuseVersion,
   getCurrentFuseWire,
 } from "@electron/fuses";
+import {
+  readTrustedShellAccessibility,
+} from "./accessibility-contract.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const out = join(root, "out");
@@ -202,7 +205,7 @@ const verifiedFuseReport = Object.fromEntries(
   ]),
 );
 const verificationReport = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   platform: platformName,
   architecture: process.arch,
   packageFormat: releasePolicy.packageFormats[platformName],
@@ -215,6 +218,7 @@ const verificationReport = {
   fuses: verifiedFuseReport,
   asarFiles: archiveFiles.length,
   startup: startup.status,
+  accessibility: startup.accessibility,
 };
 await writeFile(
   join(out, "package-verification.json"),
@@ -273,7 +277,7 @@ async function verifyPackagedStartup(
           diagnostic,
         );
       }
-      let shellReady = false;
+      let shellTarget;
       try {
         const response = await fetch(
           `http://127.0.0.1:${devtoolsPort}/json/list`,
@@ -285,20 +289,31 @@ async function verifyPackagedStartup(
           throw new Error("packaged application debug target was unavailable");
         }
         const targets = await response.json();
-        shellReady =
-          Array.isArray(targets) &&
-          targets.some(
-            (target) =>
-              target?.type === "page" && target?.url === "leapview://app/",
-          );
+        shellTarget =
+          Array.isArray(targets)
+            ? targets.find(
+                (target) =>
+                  target?.type === "page" &&
+                  target?.url === "leapview://app/",
+              )
+            : undefined;
       } catch {}
-      if (shellReady) {
+      if (shellTarget !== undefined) {
+        if (typeof shellTarget.webSocketDebuggerUrl !== "string") {
+          throw new Error(
+            "packaged application shell debugger target was malformed",
+          );
+        }
         const runtime = await readRuntimeVersions(devtoolsPort);
+        const accessibility = await readTrustedShellAccessibility(
+          shellTarget.webSocketDebuggerUrl,
+        );
         if (verifyDiagnosticJournal) {
           await verifyPackagedDiagnosticJournal(userData, deadline);
         }
         return {
           status: "trusted-shell-ready",
+          accessibility,
           ...runtime,
         };
       }

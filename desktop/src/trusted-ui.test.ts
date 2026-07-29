@@ -81,6 +81,108 @@ describe("TrustedUI", () => {
     expect(await stylesheet.text()).toBe(trustedAssets.stylesheet);
   });
 
+  test("provides deterministic focus and live-region semantics without script", async () => {
+    const ui = trustedUI({
+      allowLoopbackHTTP: false,
+      connectOrigin: async () => undefined,
+      connectProfile: async () => undefined,
+      disconnectProfile: async () => undefined,
+      removeProfile: async () => undefined,
+      listProfiles: async () => [],
+    });
+
+    const initial = await (
+      await ui.handle(new Request("leapview://app/"))
+    ).text();
+    expect(initial).toContain('<main id="main-content">');
+    expect(initial).toContain(
+      '<input id="origin" name="origin" type="url" required autofocus',
+    );
+
+    ui.reportNotice({
+      kind: "error",
+      state: "offline",
+      message: "The instance could not be reached.",
+    });
+    const failed = await (
+      await ui.handle(new Request("leapview://app/"))
+    ).text();
+    expect(failed).toContain(
+      'role="alert" aria-live="assertive" tabindex="-1" autofocus',
+    );
+    expect(failed).not.toContain('type="url" required autofocus');
+  });
+
+  test("gives repeated profile controls unambiguous accessible names", async () => {
+    const ui = trustedUI({
+      allowLoopbackHTTP: false,
+      connectOrigin: async () => undefined,
+      connectProfile: async () => undefined,
+      disconnectProfile: async () => undefined,
+      removeProfile: async () => undefined,
+      listProfiles: async () => [{
+        id: "profile_0123456789abcdef0123456789abcdef",
+        canonicalOrigin: "https://analytics.company.com",
+        instanceId: "instance_0123456789abcdef0123456789abcdef",
+        displayName: 'Company "Analytics"',
+        lastSafePath: "/",
+        partitionVersion: 1,
+      }],
+    });
+
+    const body = await (
+      await ui.handle(new Request("leapview://app/"))
+    ).text();
+    expect(body).toContain(
+      '<section aria-labelledby="connect-instance-heading">',
+    );
+    expect(body).toContain(
+      '<section aria-labelledby="saved-instances-heading">',
+    );
+    expect(body).toContain('<ul class="profiles">');
+    expect(body).toContain(
+      'role="group" aria-label="Actions for Company &quot;Analytics&quot;"',
+    );
+    expect(body).toContain(
+      'aria-label="Open Company &quot;Analytics&quot;"',
+    );
+    expect(body).toContain(
+      'aria-label="Disconnect Company &quot;Analytics&quot;"',
+    );
+    expect(body).toContain(
+      'aria-label="Remove Company &quot;Analytics&quot;"',
+    );
+    expect(body).toContain(
+      'aria-label="Saved instance name for Company &quot;Analytics&quot;"',
+    );
+    expect(body).toContain(
+      'aria-label="Save name for Company &quot;Analytics&quot;"',
+    );
+  });
+
+  test("keeps controls readable at high zoom and honors display preferences", async () => {
+    const ui = trustedUI({
+      allowLoopbackHTTP: false,
+      connectOrigin: async () => undefined,
+      connectProfile: async () => undefined,
+      disconnectProfile: async () => undefined,
+      removeProfile: async () => undefined,
+      listProfiles: async () => [],
+    });
+    const body = await (
+      await ui.handle(new Request("leapview://app/"))
+    ).text();
+    const componentCSS = body.match(/<style>([\s\S]*?)<\/style>/u)?.[1] ?? "";
+
+    expect(componentCSS).toContain("overflow-wrap: anywhere");
+    expect(componentCSS).toContain(
+      "@media (prefers-reduced-motion: reduce)",
+    );
+    expect(componentCSS).toContain("@media (forced-colors: active)");
+    expect(componentCSS).toContain("@media (max-width: 560px)");
+    expect(componentCSS).toContain("max-width: 100%");
+  });
+
   test("connect form invokes only the origin action", async () => {
     const origins: string[] = [];
     const profiles: string[] = [];
@@ -453,6 +555,10 @@ describe("TrustedUI", () => {
     expect(body).not.toContain("Personal Analytics");
     expect(body).not.toContain('id="origin"');
     expect(body).not.toContain('value="remove"');
+    expect(body).toContain(
+      'aria-label="Open Managed Analytics" autofocus',
+    );
+    expect(body.match(/\sautofocus(?:\s|>)/gu)?.length).toBe(1);
   });
 
   test("keeps user-added instances available when managed policy permits them", async () => {

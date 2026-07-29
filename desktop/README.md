@@ -280,6 +280,28 @@ trusted application content.
   platform conventions. The application menu intentionally exposes neither
   DevTools nor force reload.
 
+## Accessibility and display behavior
+
+- The trusted shell uses native HTML landmarks, headings, labels, controls,
+  lists, and assertive or polite live regions. Repeated profile actions include
+  the local instance name in their accessible name.
+- Initial focus is deterministic without renderer script: the URL field owns
+  focus in open mode, while a trusted error or managed-policy lock receives
+  focus when it must be announced before another action.
+- All keyboard focus uses the LeapView focus token. Profile metadata wraps
+  instead of truncating at high zoom, the layout collapses to one column when
+  the effective viewport narrows, and forced-colors and reduced-motion
+  preferences have explicit contracts.
+- Native zoom roles remain available, and saved window bounds are clamped
+  after display removal or scaling/work-area changes.
+- Package verification reads Chromium's accessibility tree from the actual
+  hardened candidate and fails unless required landmarks, names, state, and
+  initial focus are exposed. The same proof runs on Linux, macOS, and Windows
+  package jobs.
+- Final release qualification still requires keyboard and screen-reader
+  journeys with VoiceOver, NVDA, and Orca, plus real high-DPI, multi-display,
+  display-removal, native-dialog focus-return, and update/restart coverage.
+
 ## Managed provisioning
 
 Packaged LeapView reads an optional administrator-installed

@@ -59,6 +59,7 @@ export async function verifyReleaseEvidence({
     manifest.packageVerification,
     [
       "architecture",
+      "accessibility",
       "asarFiles",
       "asarOnly",
       "fuses",
@@ -114,6 +115,11 @@ export async function verifyReleaseEvidence({
         "evidenceContainsDiagnostics",
       ],
       "privacy",
+    ],
+    [
+      manifest.packageVerification.accessibility,
+      ["controls", "focusedControl", "mode", "regions"],
+      "accessibility verification",
     ],
     [
       manifest.packageVerification.runtime,
@@ -198,7 +204,11 @@ export async function verifyReleaseEvidence({
       manifest.artifact?.format ||
     manifest.packageVerification?.installer?.scope !==
       policy.installationScope ||
-    manifest.packageVerification?.asarOnly !== policy.hardening?.asarOnly
+    manifest.packageVerification?.schemaVersion !== 2 ||
+    manifest.packageVerification?.asarOnly !== policy.hardening?.asarOnly ||
+    !validAccessibilityVerification(
+      manifest.packageVerification?.accessibility,
+    )
   ) {
     throw new Error(
       "release metadata does not match the immutable release policy",
@@ -252,6 +262,30 @@ export async function verifyReleaseEvidence({
       ? "verified-publishable-release"
       : "verified-unsigned-candidate",
   };
+}
+
+function validAccessibilityVerification(accessibility) {
+  if (
+    accessibility === null ||
+    typeof accessibility !== "object" ||
+    !Array.isArray(accessibility.regions) ||
+    !Number.isSafeInteger(accessibility.controls) ||
+    accessibility.controls < 0
+  ) {
+    return false;
+  }
+  if (accessibility.mode === "open") {
+    return (
+      accessibility.controls >= 2 &&
+      accessibility.focusedControl === "LeapView URL" &&
+      accessibility.regions.includes("Connect an instance")
+    );
+  }
+  return (
+    accessibility.mode === "locked" &&
+    accessibility.controls === 0 &&
+    accessibility.focusedControl === "Managed configuration error"
+  );
 }
 
 async function main() {

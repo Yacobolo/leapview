@@ -488,11 +488,12 @@ async function generate() {
 
 function assertPackageVerification(verification, policy) {
   if (
-    verification?.schemaVersion !== 1 ||
+    verification?.schemaVersion !== 2 ||
     verification.packageFormat !==
       policy.packageFormats?.[verification.platform] ||
     verification.asarOnly !== policy.hardening.asarOnly ||
-    verification.startup !== "trusted-shell-ready"
+    verification.startup !== "trusted-shell-ready" ||
+    !validAccessibilityVerification(verification.accessibility)
   ) {
     throw new Error("package verification report is incomplete");
   }
@@ -520,6 +521,30 @@ function assertPackageVerification(verification, policy) {
       throw new Error(`packaged Electron fuse ${name} does not match policy`);
     }
   }
+}
+
+function validAccessibilityVerification(accessibility) {
+  if (
+    accessibility === null ||
+    typeof accessibility !== "object" ||
+    !Array.isArray(accessibility.regions) ||
+    !Number.isSafeInteger(accessibility.controls) ||
+    accessibility.controls < 0
+  ) {
+    return false;
+  }
+  if (accessibility.mode === "open") {
+    return (
+      accessibility.controls >= 2 &&
+      accessibility.focusedControl === "LeapView URL" &&
+      accessibility.regions.includes("Connect an instance")
+    );
+  }
+  return (
+    accessibility.mode === "locked" &&
+    accessibility.controls === 0 &&
+    accessibility.focusedControl === "Managed configuration error"
+  );
 }
 
 async function inventoryPackage(root) {

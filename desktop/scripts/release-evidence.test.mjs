@@ -88,7 +88,7 @@ const policy = {
 };
 
 const packageVerification = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   platform: "darwin",
   architecture: "arm64",
   packageFormat: "pkg",
@@ -110,6 +110,12 @@ const packageVerification = {
     WasmTrapHandlers: "enabled",
   },
   asarFiles: 27,
+  accessibility: {
+    mode: "open",
+    controls: 2,
+    focusedControl: "LeapView URL",
+    regions: ["Connect an instance"],
+  },
   installer: {
     format: "pkg",
     scope: "per-machine",
@@ -322,6 +328,36 @@ test("release evidence verification detects artifact, SBOM, and publication tamp
         sbomPath,
       }),
     /unexpected fields/,
+  );
+
+  const inaccessible = structuredClone(manifest);
+  inaccessible.packageVerification.accessibility = {
+    mode: "open",
+    controls: 0,
+    focusedControl: "",
+    regions: [],
+  };
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify(inaccessible, null, 2)}\n`,
+  );
+  const inaccessibleManifestSha256 = createHash("sha256")
+    .update(await readFile(manifestPath))
+    .digest("hex");
+  await writeFile(
+    checksumsPath,
+    `${manifest.artifact.sha256} *${manifest.artifact.fileName}\n${manifest.sbom.sha256} *${manifest.sbom.fileName}\n${inaccessibleManifestSha256} *${basename(manifestPath)}\n`,
+  );
+  await assert.rejects(
+    () =>
+      verifyReleaseEvidence({
+        artifactPath,
+        checksumsPath,
+        manifestPath,
+        policy,
+        sbomPath,
+      }),
+    /immutable release policy/,
   );
 
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);

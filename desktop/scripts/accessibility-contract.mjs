@@ -1,0 +1,257 @@
+const interactiveRoles = new Set([
+  "button",
+  "checkbox",
+  "combobox",
+  "link",
+  "listbox",
+  "menuitem",
+  "radio",
+  "slider",
+  "spinbutton",
+  "switch",
+  "textbox",
+]);
+
+export function verifyTrustedShellAccessibility(input) {
+  if (!Array.isArray(input) || input.length === 0) {
+    throw new Error("trusted shell accessibility tree is missing");
+  }
+  const nodes = input.filter(
+    (node) =>
+      node !== null &&
+      typeof node === "object" &&
+      node.ignored !== true,
+  );
+  const entries = nodes.map((node) => ({
+    role: axValue(node.role),
+    name: axValue(node.name).trim(),
+    focused: axProperty(node, "focused") === true,
+    required: axProperty(node, "required") === true,
+  }));
+  if (!entries.some((entry) => entry.role === "main")) {
+    throw new Error("trusted shell accessibility main landmark is missing");
+  }
+  if (
+    !entries.some(
+      (entry) =>
+        entry.role === "heading" && entry.name === "Connect to LeapView",
+    )
+  ) {
+    throw new Error("trusted shell accessibility heading is missing");
+  }
+
+  const controls = entries.filter((entry) =>
+    interactiveRoles.has(entry.role),
+  );
+  for (const control of controls) {
+    if (control.name === "") {
+      throw new Error(
+        "trusted shell interactive control has no accessible name",
+      );
+    }
+  }
+  const regions = entries
+    .filter((entry) => entry.role === "region")
+    .map((entry) => entry.name);
+  if (regions.some((name) => name === "")) {
+    throw new Error("trusted shell accessibility region has no name");
+  }
+
+  const origin = controls.find(
+    (entry) =>
+      entry.role === "textbox" && entry.name === "LeapView URL",
+  );
+  if (origin !== undefined) {
+    const missing = [];
+    if (!regions.includes("Connect an instance")) {
+      missing.push("named connection region");
+    }
+    if (
+      !controls.some(
+        (entry) =>
+          entry.role === "button" && entry.name === "Verify & open",
+      )
+    ) {
+      missing.push("named submit button");
+    }
+    if (origin.required !== true) {
+      missing.push("required input state");
+    }
+    if (origin.focused !== true) {
+      missing.push("initial input focus");
+    }
+    if (missing.length > 0) {
+      throw new Error(
+        `trusted shell open-mode accessibility contract is incomplete: ${missing.join(", ")}`,
+      );
+    }
+    if (
+      controls.filter((entry) => entry.focused).length !== 1
+    ) {
+      throw new Error(
+        "trusted shell accessibility focus is not deterministic",
+      );
+    }
+    return {
+      mode: "open",
+      controls: controls.length,
+      focusedControl: origin.name,
+      regions,
+    };
+  }
+
+  const policyAlert = entries.find(
+    (entry) =>
+      entry.role === "alert" &&
+      entry.name.includes("managed desktop configuration is invalid"),
+  );
+  if (
+    policyAlert === undefined ||
+    policyAlert.focused !== true ||
+    controls.length !== 0 ||
+    entries.filter(
+      (entry) =>
+        entry.focused &&
+        entry.role !== "RootWebArea" &&
+        entry.role !== "WebArea",
+    ).length !== 1
+  ) {
+    throw new Error(
+      "trusted shell locked-mode accessibility contract is incomplete",
+    );
+  }
+  return {
+    mode: "locked",
+    controls: 0,
+    focusedControl: "Managed configuration error",
+    regions,
+  };
+}
+
+export async function readTrustedShellAccessibility(
+  webSocketDebuggerURL,
+) {
+  const url = new URL(webSocketDebuggerURL);
+  if (
+    url.protocol !== "ws:" ||
+    !["127.0.0.1", "[::1]", "localhost"].includes(url.hostname) ||
+    url.username !== "" ||
+    url.password !== ""
+  ) {
+    throw new Error(
+      "trusted shell accessibility debugger URL is not loopback",
+    );
+  }
+  const socket = new WebSocket(url);
+  const pending = new Map();
+  let nextID = 1;
+  let terminalError;
+  socket.addEventListener("message", (event) => {
+    if (typeof event.data !== "string" || event.data.length > 4 * 1024 * 1024) {
+      terminalError = new Error(
+        "trusted shell accessibility response is invalid",
+      );
+      socket.close();
+      return;
+    }
+    let message;
+    try {
+      message = JSON.parse(event.data);
+    } catch {
+      terminalError = new Error(
+        "trusted shell accessibility response is malformed",
+      );
+      socket.close();
+      return;
+    }
+    if (Number.isSafeInteger(message.id)) {
+      pending.get(message.id)?.(message);
+      pending.delete(message.id);
+    }
+  });
+  try {
+    await waitForSocket(socket);
+    const call = async (method) => {
+      if (terminalError !== undefined) {
+        throw terminalError;
+      }
+      const id = nextID;
+      nextID += 1;
+      const response = new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          pending.delete(id);
+          reject(
+            new Error(`trusted shell accessibility ${method} timed out`),
+          );
+        }, 3_000);
+        pending.set(id, (message) => {
+          clearTimeout(timeout);
+          if (message.error !== undefined) {
+            reject(
+              new Error(
+                `trusted shell accessibility ${method} failed`,
+              ),
+            );
+            return;
+          }
+          resolve(message.result);
+        });
+      });
+      socket.send(JSON.stringify({ id, method }));
+      return response;
+    };
+    await call("Accessibility.enable");
+    const deadline = Date.now() + 3_000;
+    let lastError;
+    while (Date.now() < deadline) {
+      const result = await call("Accessibility.getFullAXTree");
+      try {
+        return verifyTrustedShellAccessibility(result?.nodes);
+      } catch (error) {
+        lastError = error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error(
+      `packaged trusted shell accessibility did not stabilize: ${
+        lastError instanceof Error ? lastError.message : String(lastError)
+      }`,
+    );
+  } finally {
+    socket.close();
+  }
+}
+
+function axValue(value) {
+  return typeof value?.value === "string" ? value.value : "";
+}
+
+function axProperty(node, name) {
+  const property = Array.isArray(node.properties)
+    ? node.properties.find((candidate) => candidate?.name === name)
+    : undefined;
+  return property?.value?.value;
+}
+
+async function waitForSocket(socket) {
+  if (socket.readyState === WebSocket.OPEN) {
+    return;
+  }
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(
+        new Error("trusted shell accessibility debugger did not open"),
+      );
+    }, 3_000);
+    socket.addEventListener("open", () => {
+      clearTimeout(timeout);
+      resolve();
+    }, { once: true });
+    socket.addEventListener("error", () => {
+      clearTimeout(timeout);
+      reject(
+        new Error("trusted shell accessibility debugger failed"),
+      );
+    }, { once: true });
+  });
+}

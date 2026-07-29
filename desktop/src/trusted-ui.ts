@@ -285,18 +285,57 @@ export class TrustedUI {
         storageError = userFacingError(error);
       }
     }
+    const savedOrigins = new Set(
+      profiles.map((profile) => profile.canonicalOrigin),
+    );
+    const managedOrigins = this.#policy.preconfiguredOrigins.filter(
+      (origin) => !savedOrigins.has(origin),
+    );
+    const noticeOwnsFocus = notice !== undefined;
+    const storageErrorOwnsFocus =
+      !noticeOwnsFocus && storageError !== "";
+    const policyErrorOwnsFocus =
+      !noticeOwnsFocus &&
+      !storageErrorOwnsFocus &&
+      this.#policy.mode === "locked";
+    const userConnectAvailable =
+      this.#policy.mode !== "locked" &&
+      this.#policy.allowUserAddedInstances;
+    const actionCanOwnFocus =
+      !noticeOwnsFocus &&
+      !storageErrorOwnsFocus &&
+      !policyErrorOwnsFocus;
+    const originOwnsFocus =
+      actionCanOwnFocus && userConnectAvailable;
+    const firstProfileOwnsFocus =
+      actionCanOwnFocus &&
+      !userConnectAvailable &&
+      profiles.length > 0;
+    const firstManagedOriginOwnsFocus =
+      actionCanOwnFocus &&
+      !userConnectAvailable &&
+      profiles.length === 0;
     const profileCards = profiles
       .map(
-        (profile) => `
-          <div class="profile">
+        (profile, index) => {
+          const displayName = profileDisplayName(profile);
+          return `
+          <li class="profile">
             <span>
-              <strong>${escapeHTML(profileDisplayName(profile))}</strong>
+              <strong>${escapeHTML(displayName)}</strong>
               <small>${escapeHTML(profile.canonicalOrigin)}</small>
             </span>
-            <span class="actions">
-              ${profileRenameAction(profile)}
-              ${profileAction(profile.id, "open", "Open")}
-              ${profileAction(profile.id, "disconnect", "Disconnect", "secondary")}
+            <span class="actions" role="group" aria-label="Actions for ${escapeHTML(displayName)}">
+              ${profileRenameAction(profile, displayName)}
+              ${profileAction(
+                profile.id,
+                "open",
+                "Open",
+                displayName,
+                "",
+                firstProfileOwnsFocus && index === 0,
+              )}
+              ${profileAction(profile.id, "disconnect", "Disconnect", displayName, "secondary")}
               ${
                 policyManagesOrigin(
                   this.#policy,
@@ -307,34 +346,37 @@ export class TrustedUI {
                       profile.id,
                       "remove",
                       "Remove",
+                      displayName,
                       "danger",
                     )
               }
             </span>
-          </div>`,
+          </li>`;
+        },
       )
       .join("");
-    const savedOrigins = new Set(
-      profiles.map((profile) => profile.canonicalOrigin),
-    );
-    const managedOriginCards = this.#policy.preconfiguredOrigins
-      .filter((origin) => !savedOrigins.has(origin))
-      .map((origin) => managedOriginAction(origin))
+    const managedOriginCards = managedOrigins
+      .map((origin, index) =>
+        managedOriginAction(
+          origin,
+          firstManagedOriginOwnsFocus && index === 0,
+        ),
+      )
       .join("");
     const noticeHTML =
       notice === undefined
         ? ""
-        : `<p class="notice ${notice.kind}" data-state="${notice.state}" role="${notice.kind === "error" ? "alert" : "status"}"${notice.kind === "progress" ? ' aria-live="polite"' : ""}>${escapeHTML(notice.message)}</p>`;
+        : `<p class="notice ${notice.kind}" data-state="${notice.state}" role="${notice.kind === "error" ? "alert" : "status"}" aria-live="${notice.kind === "error" ? "assertive" : "polite"}"${noticeOwnsFocus ? ' tabindex="-1" autofocus' : ""}>${escapeHTML(notice.message)}</p>`;
     const storageErrorHTML =
       storageError === ""
         ? ""
-        : `<p class="notice error" role="alert">${escapeHTML(storageError)}</p>`;
+        : `<p class="notice error" role="alert" aria-live="assertive"${storageErrorOwnsFocus ? ' tabindex="-1" autofocus' : ""}>${escapeHTML(storageError)}</p>`;
     const loopbackNote = this.#actions.allowLoopbackHTTP
       ? `<p class="development">Development build: loopback HTTP URLs such as <code>http://localhost:8080</code> are allowed.</p>`
       : "";
     const policyErrorHTML =
       this.#policy.mode === "locked"
-        ? `<p class="notice error" role="alert">The managed desktop configuration is invalid; contact your administrator.</p>`
+        ? `<p class="notice error" role="alert" aria-live="assertive"${policyErrorOwnsFocus ? ' tabindex="-1" autofocus' : ""}>The managed desktop configuration is invalid; contact your administrator.</p>`
         : "";
     const managedNoteHTML =
       this.#policy.mode === "managed"
@@ -347,12 +389,12 @@ export class TrustedUI {
     const userConnectHTML =
       this.#policy.mode !== "locked" &&
       this.#policy.allowUserAddedInstances
-        ? `<section>
-        <h2>Connect an instance</h2>
+        ? `<section aria-labelledby="connect-instance-heading">
+        <h2 id="connect-instance-heading">Connect an instance</h2>
         <form method="post" action="leapview://app/connect">
           <label for="origin">LeapView URL</label>
           <div class="connect">
-            <input id="origin" name="origin" type="url" required autocomplete="url" spellcheck="false" placeholder="https://analytics.company.com">
+            <input id="origin" name="origin" type="url" required${originOwnsFocus ? " autofocus" : ""} autocomplete="url" spellcheck="false" placeholder="https://analytics.company.com">
             <button type="submit">Verify &amp; open</button>
           </div>
         </form>
@@ -362,12 +404,12 @@ export class TrustedUI {
     const instancesHTML =
       profiles.length === 0 && managedOriginCards === ""
         ? ""
-        : `<section><h2>${
+        : `<section aria-labelledby="saved-instances-heading"><h2 id="saved-instances-heading">${
             this.#policy.mode === "managed" &&
             !this.#policy.allowUserAddedInstances
               ? "Approved instances"
               : "Saved instances"
-          }</h2>${profileCards}${managedOriginCards}</section>`;
+          }</h2><ul class="profiles">${profileCards}${managedOriginCards}</ul></section>`;
     const html = `<!doctype html>
 <html lang="en" data-color-mode="auto" data-light-theme="light" data-dark-theme="dark">
   <head>
@@ -471,6 +513,14 @@ export class TrustedUI {
         box-shadow: var(--lv-shadow-resting-sm);
       }
 
+      .profiles {
+        display: grid;
+        gap: var(--base-size-16);
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
       h2 {
         color: var(--lv-fg-default);
         font-size: var(--lv-font-size-title-sm);
@@ -518,7 +568,8 @@ export class TrustedUI {
       }
 
       input:focus-visible,
-      button:focus-visible {
+      button:focus-visible,
+      .notice:focus {
         outline: var(--focus-outline-width) solid var(--lv-line-accent);
         outline-offset: var(--focus-outline-offset);
       }
@@ -580,7 +631,7 @@ export class TrustedUI {
         padding-top: var(--base-size-16);
       }
 
-      .profile:first-of-type {
+      .profile:first-child {
         border-top: 0;
         padding-top: 0;
       }
@@ -592,9 +643,7 @@ export class TrustedUI {
       .profile strong,
       .profile small {
         display: block;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        overflow-wrap: anywhere;
       }
 
       .profile strong {
@@ -611,6 +660,7 @@ export class TrustedUI {
 
       .actions {
         display: flex;
+        max-width: 100%;
         flex: none;
         align-items: center;
         flex-wrap: wrap;
@@ -619,11 +669,15 @@ export class TrustedUI {
 
       .rename {
         display: flex;
+        max-width: 100%;
+        flex-wrap: wrap;
         gap: var(--base-size-6);
       }
 
       .rename input {
         width: calc(var(--base-size-128) + var(--base-size-32));
+        max-width: 100%;
+        flex: 1 1 calc(var(--base-size-128) + var(--base-size-32));
         min-height: var(--control-medium-size);
         font-size: var(--lv-font-size-body-sm);
       }
@@ -667,6 +721,32 @@ export class TrustedUI {
         font-family: var(--lv-font-family-mono, var(--fontStack-monospace));
       }
 
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+
+      @media (forced-colors: active) {
+        section,
+        input,
+        button,
+        .notice {
+          border-color: CanvasText;
+        }
+
+        input:focus-visible,
+        button:focus-visible,
+        .notice:focus {
+          outline-color: Highlight;
+        }
+      }
+
       @media (max-width: 560px) {
         main {
           width: min(
@@ -692,7 +772,7 @@ export class TrustedUI {
     </style>
   </head>
   <body>
-    <main>
+    <main id="main-content">
       <header>
         <div class="brand-lockup" aria-label="LeapView">
           ${brandMark()}
@@ -725,40 +805,48 @@ interface TrustedUIOperation {
   notice?: TrustedUINotice;
 }
 
-function managedOriginAction(origin: string): string {
-  return `<div class="profile">
+function managedOriginAction(
+  origin: string,
+  autofocus: boolean,
+): string {
+  return `<li class="profile">
     <span>
       <strong>Managed instance</strong>
       <small>${escapeHTML(origin)}</small>
     </span>
-    <span class="actions">
+    <span class="actions" role="group" aria-label="Actions for ${escapeHTML(origin)}">
       <form method="post" action="leapview://app/connect">
         <input type="hidden" name="origin" value="${escapeHTML(origin)}">
-        <button type="submit">Verify &amp; open</button>
+        <button type="submit" aria-label="Verify and open ${escapeHTML(origin)}"${autofocus ? " autofocus" : ""}>Verify &amp; open</button>
       </form>
     </span>
-  </div>`;
+  </li>`;
 }
 
 function profileAction(
   profileID: string,
   operation: "open" | "disconnect" | "remove",
   label: string,
+  displayName: string,
   className = "",
+  autofocus = false,
 ): string {
   return `<form method="post" action="leapview://app/connect">
     <input type="hidden" name="profileId" value="${escapeHTML(profileID)}">
     <input type="hidden" name="operation" value="${operation}">
-    <button type="submit"${className === "" ? "" : ` class="${className}"`}>${label}</button>
+    <button type="submit" aria-label="${escapeHTML(label)} ${escapeHTML(displayName)}"${autofocus ? " autofocus" : ""}${className === "" ? "" : ` class="${className}"`}>${label}</button>
   </form>`;
 }
 
-function profileRenameAction(profile: Profile): string {
+function profileRenameAction(
+  profile: Profile,
+  displayName: string,
+): string {
   return `<form class="rename" method="post" action="leapview://app/connect">
     <input type="hidden" name="profileId" value="${escapeHTML(profile.id)}">
     <input type="hidden" name="operation" value="rename">
-    <input name="label" type="text" maxlength="120" autocomplete="off" aria-label="Saved instance name" placeholder="${escapeHTML(profile.displayName)}" value="${escapeHTML(profile.label ?? "")}">
-    <button type="submit" class="secondary">Save name</button>
+    <input name="label" type="text" maxlength="120" autocomplete="off" aria-label="Saved instance name for ${escapeHTML(displayName)}" placeholder="${escapeHTML(profile.displayName)}" value="${escapeHTML(profile.label ?? "")}">
+    <button type="submit" class="secondary" aria-label="Save name for ${escapeHTML(displayName)}">Save name</button>
   </form>`;
 }
 
