@@ -146,6 +146,7 @@ const (
 	preparedStateOpen preparedState = iota
 	preparedStateSealed
 	preparedStatePublished
+	preparedStateRegistered
 	preparedStateClosed
 )
 
@@ -434,6 +435,32 @@ func (p *sealedPrepared) publish() *managedRuntime {
 	p.snapshotLease = nil
 	p.finish(preparedStatePublished)
 	return retired
+}
+
+func (p *sealedPrepared) consumeCandidate() (*managedRuntime, error) {
+	if p == nil {
+		return nil, fmt.Errorf("%w: prepared runtime is nil", ErrCandidateRuntimeInvalid)
+	}
+	if p.noChange || p.runtime == nil {
+		p.finish(preparedStateClosed)
+		return nil, fmt.Errorf(
+			"%w: candidate preparation must own an isolated runtime",
+			ErrCandidateRuntimeInvalid,
+		)
+	}
+	managed := &managedRuntime{
+		servingStateID: p.servingStateID,
+		digest:         p.digest,
+		runtime:        p.runtime,
+		managedData:    p.managedData,
+		snapshotLease:  p.snapshotLease,
+		snapshotID:     p.snapshotID,
+	}
+	p.runtime = nil
+	p.managedData = nil
+	p.snapshotLease = nil
+	p.finish(preparedStateRegistered)
+	return managed, nil
 }
 
 func (p *sealedPrepared) abort() error {

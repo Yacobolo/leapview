@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"sort"
 	"sync"
+	"time"
 
 	servingstate "github.com/flidai/leapview/internal/servingstate"
 )
@@ -17,6 +18,7 @@ type RegistryOptions struct {
 	Environment      servingstate.Environment
 	Factory          RuntimeFactory
 	ManagedData      ManagedDataResolver
+	Now              func() time.Time
 	OnDrained        func(servingstate.ID, int64)
 	Logger           *slog.Logger
 	OnCleanupFailure func(CleanupFailure)
@@ -34,6 +36,7 @@ type Registry struct {
 	logger           *slog.Logger
 	onCleanupFailure func(CleanupFailure)
 	managers         map[servingstate.WorkspaceID]*Manager
+	candidates       *candidateRuntimeRegistry
 }
 
 type RegistryPrepared struct {
@@ -130,11 +133,46 @@ func NewRegistryWithFactory(options RegistryOptions) *Registry {
 		logger:           options.Logger,
 		onCleanupFailure: options.OnCleanupFailure,
 		managers:         map[servingstate.WorkspaceID]*Manager{},
+		candidates:       newCandidateRuntimeRegistry(options.Now),
 	}
 	for _, workspaceID := range options.WorkspaceIDs {
 		registry.managerForWorkspace(workspaceID)
 	}
 	return registry
+}
+
+// PrepareCandidateServingState builds an isolated private generation without
+// closing or replacing any active workspace runtime.
+func (r *Registry) PrepareCandidateServingState(
+	ctx context.Context,
+	servingStateID string,
+) (servingstate.PreparedRuntime, error) {
+	current, err := r.repo.ByID(ctx, servingstate.ID(servingStateID))
+	if err != nil {
+		return nil, err
+	}
+	if servingstate.NormalizeEnvironment(current.Environment) != r.environment {
+		return nil, fmt.Errorf(
+			"serving state %s environment = %q, want %q",
+			servingStateID,
+			current.Environment,
+			r.environment,
+		)
+	}
+	artifact, err := r.repo.ArtifactByServingState(ctx, current.ID)
+	if err != nil {
+		return nil, err
+	}
+	manager := r.managerForWorkspace(current.WorkspaceID)
+	r.prepareMu.Lock()
+	prepared, err := manager.prepare(ctx, current, artifact)
+	r.prepareMu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	return &RegistryPrepared{
+		registry: r, workspaceID: current.WorkspaceID, manager: manager, prepared: prepared,
+	}, nil
 }
 
 func (r *Registry) Reload(ctx context.Context) error {
@@ -365,6 +403,9 @@ func abortSealed(items []*sealedPrepared) error {
 }
 
 func (r *Registry) Close() error {
+	for _, generation := range r.candidates.close() {
+		r.cleanupCandidateGeneration(generation)
+	}
 	var first error
 	for _, workspaceID := range r.workspaceIDs() {
 		if err := r.managerForWorkspace(workspaceID).Close(); err != nil && first == nil {
@@ -413,6 +454,9 @@ func (r *Registry) LeasedSnapshots() []int64 {
 		for _, snapshotID := range manager.LeasedSnapshots() {
 			snapshots[snapshotID] = struct{}{}
 		}
+	}
+	for _, snapshotID := range r.candidates.leasedSnapshots() {
+		snapshots[snapshotID] = struct{}{}
 	}
 	return snapshotKeys(snapshots)
 }
