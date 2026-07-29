@@ -7,21 +7,27 @@ if [ "${GITHUB_ACTIONS:-}" != "true" ] || [ "$#" -ne 1 ]; then
 fi
 
 artifact="$1"
-temporary="$(mktemp -d)"
+temporary="$(cd "$(mktemp -d)" && pwd -P)"
 mount="${temporary}/mount"
-application_root="${temporary}/Applications"
+application_root="${HOME}/Applications"
 application="${application_root}/LeapView.app"
 bundle_id="dev.leapview.desktop"
 launch_services="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
+if [ -e "${application}" ]; then
+  echo "qualification refuses to replace an existing LeapView app" >&2
+  exit 1
+fi
 cleanup() {
   "${launch_services}" -u "${application}" >/dev/null 2>&1 || true
+  rm -rf "${application}"
   hdiutil detach "${mount}" >/dev/null 2>&1 || true
   rm -rf "${temporary}"
 }
 trap cleanup EXIT
 
-mkdir "${mount}" "${application_root}"
+mkdir "${mount}"
+mkdir -p "${application_root}"
 hdiutil attach -readonly -nobrowse -mountpoint "${mount}" "${artifact}"
 test -x "${mount}/LeapView.app/Contents/MacOS/LeapView"
 cp -R "${mount}/LeapView.app" "${application}"
@@ -36,16 +42,21 @@ plutil -extract CFBundleURLTypes xml1 -o - \
   "${application}/Contents/Info.plist" | grep -F "leapview-desktop"
 
 "${launch_services}" -f "${application}"
-registered_application="$(
+protocol_registered="$(
   osascript -l JavaScript -e '
-    ObjC.import("AppKit");
-    const url = $.NSURL.URLWithString("leapview-desktop://connect");
-    const application = $.NSWorkspace.sharedWorkspace
-      .URLForApplicationToOpenURL(url);
-    application ? ObjC.unwrap(application.path) : "";
-  '
+    function run(argv) {
+      ObjC.import("AppKit");
+      const url = $.NSURL.URLWithString("leapview-desktop://connect");
+      const applications = $.NSWorkspace.sharedWorkspace
+        .URLsForApplicationsToOpenURL(url);
+      const paths = ObjC.deepUnwrap(applications.valueForKey("path"));
+      return paths.includes(argv[0]) ? "registered" : "missing";
+    }
+  ' \
+    -- \
+    "${application}"
 )"
-test "${registered_application}" = "${application}"
+test "${protocol_registered}" = "registered"
 
 rm -rf "${application}"
 test ! -e "${application}"

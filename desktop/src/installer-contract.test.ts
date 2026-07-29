@@ -195,6 +195,9 @@ describe("desktop installer contract", () => {
       readFile(resolve(root, "scripts/qualify-installer-linux.sh"), "utf8"),
     ]);
     expect(macOS).toContain("hdiutil attach");
+    expect(macOS).toContain("pwd -P");
+    expect(macOS).toContain('${HOME}/Applications');
+    expect(macOS).toContain("URLsForApplicationsToOpenURL(url)");
     expect(macOS).not.toContain("installer -pkg");
     expect(windows).toContain('$env:LocalAppData "leapview"');
     expect(windows).not.toContain("msiexec");
