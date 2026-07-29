@@ -196,14 +196,31 @@ func assertDockerfileImagesPinned(t *testing.T, name, dockerfile string) {
 func TestEphemeralDeploymentExercisesPublicAndBackupContracts(t *testing.T) {
 	workflow := readFile(t, filepath.Join("..", "..", ".github", "workflows", "hetzner-deploy.yml"))
 	for _, fragment := range []string{
-		"workflow_dispatch:", "environment: hetzner-deployment", "terraform apply",
+		"workflow_dispatch:", "environment: leapview-ephemeral-qualification", "terraform apply",
 		"public_ready=false", "--connect-timeout 5", "leapviewctl backup", "leapviewctl restore",
 		`.publisherToken`, "if: always()", "terraform destroy",
+		"id-token: write",
+		"Infisical/secrets-action@77ab1f4ccd183a543cb5b42435fbd181189f4995 # v1.0.16",
+		`method: "oidc"`,
+		`identity-id: "6aac9c3e-4f33-45b5-aa4e-884839b950a7"`,
+		`oidc-audience: "https://github.com/flidai"`,
+		`domain: "https://us.infisical.com"`,
+		`project-slug: "leapview"`,
+		`env-slug: "prod"`,
+		`secret-path: "/hetzner-qualification/infrastructure"`,
 	} {
 		requireContains(t, workflow, fragment)
 	}
 	if strings.Contains(workflow, "pull_request:") {
 		t.Fatal("cloud deployment must require an explicit, environment-protected dispatch")
+	}
+	for _, forbidden := range []string{
+		"environment: hetzner-deployment",
+		"secrets.HCLOUD_TOKEN",
+	} {
+		if strings.Contains(workflow, forbidden) {
+			t.Errorf("ephemeral deployment workflow contains forbidden fragment %q", forbidden)
+		}
 	}
 }
 
