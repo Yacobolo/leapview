@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: ephemeral-hetzner-deployment
@@ -20,10 +21,9 @@ jobs:
     name: Deploy, recover, and destroy
     runs-on: ubuntu-24.04
     timeout-minutes: 35
-    environment: hetzner-deployment
+    environment: leapview-ephemeral-qualification
     env:
       TF_IN_AUTOMATION: "true"
-      TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
       TF_VAR_name: leapview-ci-${{ github.run_id }}
       TF_VAR_admin_email: ci-${{ github.run_id }}@leapview.local
       TF_VAR_leapview_image: ${{ inputs.image_digest }}
@@ -32,6 +32,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Fetch ephemeral infrastructure secrets
+        uses: Infisical/secrets-action@77ab1f4ccd183a543cb5b42435fbd181189f4995 # v1.0.16
+        with:
+          method: "oidc"
+          identity-id: "6aac9c3e-4f33-45b5-aa4e-884839b950a7"
+          oidc-audience: "https://github.com/flidai"
+          domain: "https://us.infisical.com"
+          project-slug: "leapview"
+          env-slug: "prod"
+          secret-path: "/hetzner-qualification/infrastructure"
+
+      - name: Configure Terraform credentials
+        run: |
+          test -n "$HCLOUD_TOKEN"
+          echo "TF_VAR_hcloud_token=$HCLOUD_TOKEN" >> "$GITHUB_ENV"
+          echo "HCLOUD_TOKEN=" >> "$GITHUB_ENV"
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4

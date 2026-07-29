@@ -37,6 +37,19 @@ lifecycle controller and files as the generic self-hosting package.
 When `domain` is empty, the deployment uses an HTTPS `sslip.io` hostname. That
 is useful for evaluation. Set a domain you control for a durable installation.
 
+## Hosted qualification
+
+The manually dispatched `Ephemeral Hetzner deployment` workflow exercises this
+topology from an immutable application image. It creates an isolated server,
+qualifies public health, consumes the one-time first-login credentials, proves
+backup and restore, and destroys the server even when an earlier step fails.
+
+The job is protected by the `leapview-ephemeral-qualification` GitHub
+environment and authenticates to Infisical through GitHub OIDC. The dedicated
+project identity can read `prod:/hetzner-qualification/infrastructure`, which
+contains only `HCLOUD_TOKEN`. No long-lived Hetzner or Infisical credential is
+stored in GitHub.
+
 ## First Login
 
 Provisioning creates a local platform administrator, a forced-change temporary
