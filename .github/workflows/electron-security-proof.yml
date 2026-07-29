@@ -74,13 +74,75 @@ jobs:
           sudo chmod 4755 out/LeapView-linux-*/chrome-sandbox
           xvfb-run --auto-servernum node scripts/verify-package.mjs
 
-      - name: Upload unsigned candidate
+      - name: Generate and verify release evidence
+        working-directory: desktop
+        run: bun run evidence
+
+      - name: Upload verifiable unsigned candidate
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: leapview-desktop-${{ matrix.artifact }}
           retention-days: 7
           if-no-files-found: error
-          path: desktop/out/make/**/*.zip
+          path: |
+            desktop/out/make/**/*.zip
+            desktop/out/evidence/**
+            desktop/release-policy.json
+
+  attest:
+    name: Attest main candidate (${{ matrix.name }})
+    if: ${{ github.event_name == 'push' }}
+    needs: packages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      attestations: write
+      artifact-metadata: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            artifact: linux-x64
+          - name: macOS Intel
+            artifact: macos-x64
+          - name: Windows x64
+            artifact: windows-x64
+
+    steps:
+      - name: Download candidate and evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: leapview-desktop-${{ matrix.artifact }}
+          path: candidate
+
+      - name: Verify downloaded evidence bundle
+        shell: bash
+        run: |
+          artifact="$(find candidate/out/make -type f -name '*.zip' -print -quit)"
+          manifest="$(find candidate/out/evidence -type f -name '*.release.json' -print -quit)"
+          sbom="$(find candidate/out/evidence -type f -name '*.spdx.json' -print -quit)"
+          node candidate/out/evidence/verify-release-evidence.mjs \
+            --artifact "$artifact" \
+            --checksums candidate/out/evidence/checksums.txt \
+            --manifest "$manifest" \
+            --policy candidate/release-policy.json \
+            --sbom "$sbom"
+
+      - name: Attest candidate provenance
+        uses: actions/attest@f6bf1532d7d6793fce74eac584813a8eee607999 # v4
+        with:
+          subject-path: |
+            candidate/out/make/**/*.zip
+            candidate/out/evidence/*.release.json
+
+      - name: Attest candidate SBOM
+        uses: actions/attest@f6bf1532d7d6793fce74eac584813a8eee607999 # v4
+        with:
+          subject-path: candidate/out/make/**/*.zip
+          sbom-path: candidate/out/evidence/*.spdx.json
 
   macos:
     name: Candidate proof (macOS Intel)

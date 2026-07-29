@@ -5,6 +5,7 @@ import {
   readFile,
   rm,
   stat,
+  writeFile,
 } from "node:fs/promises";
 import { constants } from "node:fs";
 import { spawn } from "node:child_process";
@@ -22,6 +23,12 @@ import {
 
 const root = resolve(import.meta.dirname, "..");
 const out = join(root, "out");
+const packageDocument = JSON.parse(
+  await readFile(join(root, "package.json"), "utf8"),
+);
+const releasePolicy = JSON.parse(
+  await readFile(join(root, "release-policy.json"), "utf8"),
+);
 const processGoneReasons = new Set([
   "clean-exit",
   "abnormal-exit",
@@ -43,8 +50,7 @@ if (platformName === undefined) {
 const candidates = (await readdir(out, { withFileTypes: true }))
   .filter(
     (entry) =>
-      entry.isDirectory() &&
-      entry.name.startsWith(`LeapView-${platformName}-`),
+      entry.isDirectory() && entry.name.startsWith(`LeapView-${platformName}-`),
   )
   .map((entry) => join(out, entry.name));
 if (candidates.length !== 1) {
@@ -53,6 +59,17 @@ if (candidates.length !== 1) {
   );
 }
 const packageRoot = candidates[0];
+const packagedElectronVersion = (
+  await readFile(join(packageRoot, "version"), "utf8")
+).trim();
+if (
+  packagedElectronVersion !== packageDocument.devDependencies.electron ||
+  packagedElectronVersion !== releasePolicy.runtime.electron
+) {
+  throw new Error(
+    `packaged Electron ${packagedElectronVersion} does not match the release policy`,
+  );
+}
 const appPath =
   process.platform === "darwin"
     ? join(packageRoot, "LeapView.app")
@@ -117,9 +134,7 @@ const archiveFiles = listPackage(asarPath).map((file) =>
 );
 const unexpected = archiveFiles.filter(
   (file) =>
-    file !== "/package.json" &&
-    file !== "/dist" &&
-    !file.startsWith("/dist/"),
+    file !== "/package.json" && file !== "/dist" && !file.startsWith("/dist/"),
 );
 if (unexpected.length > 0) {
   throw new Error(
@@ -162,12 +177,48 @@ if (
 }
 
 const startup = await verifyPackagedStartup(executablePath);
+if (
+  startup.chromiumVersion !== releasePolicy.runtime.chromium ||
+  startup.electronVersion !== releasePolicy.runtime.electron
+) {
+  throw new Error(
+    `packaged runtime ${startup.electronVersion}/${startup.chromiumVersion} does not match the release policy`,
+  );
+}
+if (packageDocument.devDependencies.node !== releasePolicy.runtime.node) {
+  throw new Error("packaged Node runtime does not match the release policy");
+}
+const verifiedFuseReport = Object.fromEntries(
+  [...expectedFuses].map(([fuse, state]) => [
+    FuseV1Options[fuse],
+    state === FuseState.ENABLE ? "enabled" : "disabled",
+  ]),
+);
+const verificationReport = {
+  schemaVersion: 1,
+  platform: platformName,
+  architecture: process.arch,
+  packageFormat: releasePolicy.packageFormat,
+  asarOnly: true,
+  runtime: {
+    electron: packagedElectronVersion,
+    chromium: startup.chromiumVersion,
+    node: releasePolicy.runtime.node,
+  },
+  fuses: verifiedFuseReport,
+  asarFiles: archiveFiles.length,
+  startup: startup.status,
+};
+await writeFile(
+  join(out, "package-verification.json"),
+  `${JSON.stringify(verificationReport, null, 2)}\n`,
+);
 process.stdout.write(
   `${JSON.stringify({
     application: appPath,
     asarFiles: archiveFiles.length,
     fuseVersion: wire.version,
-    startup,
+    startup: startup.status,
     verifiedFuses: expectedFuses.size,
   })}\n`,
 );
@@ -228,13 +279,16 @@ async function verifyPackagedStartup(executable) {
           Array.isArray(targets) &&
           targets.some(
             (target) =>
-              target?.type === "page" &&
-              target?.url === "leapview://app/",
+              target?.type === "page" && target?.url === "leapview://app/",
           );
       } catch {}
       if (shellReady) {
+        const runtime = await readRuntimeVersions(devtoolsPort);
         await verifyPackagedDiagnosticJournal(userData, deadline);
-        return "trusted-shell-ready";
+        return {
+          status: "trusted-shell-ready",
+          ...runtime,
+        };
       }
       await new Promise((resolveDelay) => setTimeout(resolveDelay, 50));
     }
@@ -263,6 +317,27 @@ async function verifyPackagedStartup(executable) {
   }
 }
 
+async function readRuntimeVersions(devtoolsPort) {
+  const response = await fetch(
+    `http://127.0.0.1:${devtoolsPort}/json/version`,
+    {
+      signal: AbortSignal.timeout(1_000),
+    },
+  );
+  if (!response.ok) {
+    throw new Error("packaged application runtime version was unavailable");
+  }
+  const version = await response.json();
+  const chromiumVersion = /^Chrome\/(.+)$/u.exec(version?.Browser ?? "")?.[1];
+  const electronVersion = /Electron\/([0-9.]+)/u.exec(
+    version?.["User-Agent"] ?? "",
+  )?.[1];
+  if (chromiumVersion === undefined || electronVersion === undefined) {
+    throw new Error("packaged application runtime version was malformed");
+  }
+  return { chromiumVersion, electronVersion };
+}
+
 async function verifyPackagedDiagnosticJournal(userData, deadline) {
   const path = join(userData, "diagnostics.json");
   while (Date.now() < deadline) {
@@ -273,8 +348,7 @@ async function verifyPackagedDiagnosticJournal(userData, deadline) {
       }
       const document = JSON.parse(body);
       if (
-        Object.keys(document).sort().join(",") !==
-          "events,schemaVersion" ||
+        Object.keys(document).sort().join(",") !== "events,schemaVersion" ||
         document.schemaVersion !== 1 ||
         !Array.isArray(document.events) ||
         document.events.length === 0 ||
@@ -286,8 +360,7 @@ async function verifyPackagedDiagnosticJournal(userData, deadline) {
       }
       if (
         !document.events.some(
-          (event) =>
-            event?.kind === "startup" && event.packaged === true,
+          (event) => event?.kind === "startup" && event.packaged === true,
         )
       ) {
         throw new Error(
@@ -368,8 +441,7 @@ function verifyPackagedDiagnosticEvent(event) {
   }
   if (event.kind === "render-process-gone") {
     if (
-      Object.keys(event).sort().join(",") !==
-        "at,kind,reason,surface" ||
+      Object.keys(event).sort().join(",") !== "at,kind,reason,surface" ||
       !["trusted-shell", "unknown"].includes(event.surface) ||
       !processGoneReasons.has(event.reason)
     ) {
@@ -381,8 +453,7 @@ function verifyPackagedDiagnosticEvent(event) {
   }
   if (event.kind === "child-process-gone") {
     if (
-      Object.keys(event).sort().join(",") !==
-        "at,kind,processType,reason" ||
+      Object.keys(event).sort().join(",") !== "at,kind,processType,reason" ||
       ![
         "utility",
         "zygote",

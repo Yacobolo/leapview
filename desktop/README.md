@@ -41,6 +41,64 @@ identity mismatch fails closed before any remote content is opened.
   Windows, macOS, and Linux. Enterprise proxy and private-CA qualification must
   pass on those same platform runners before a release is promoted.
 
+## Release candidates and supply-chain evidence
+
+The cross-platform Electron proof produces a ZIP candidate for each qualified
+target together with:
+
+- an SPDX 2.3 JSON SBOM covering the complete Bun lock graph, the embedded
+  Electron, Chromium, and Node runtimes, and every file in the packaged
+  application;
+- SHA-256 checksums for the candidate and SBOM;
+- release metadata binding the candidate to the source commit, workflow
+  revision and run, lockfile, package document, release policy, runtime
+  versions, support floor, ASAR-only package, and exact Electron fuse state;
+- a standalone Node verifier that recomputes the bundle hashes and rejects
+  unsupported runtime, target, hardening, privacy, or publication state.
+
+Pull-request candidates are retained for seven days and are explicitly marked
+`unsigned-candidate`; they are suitable for testing, not distribution. Main
+branch candidates additionally receive GitHub build-provenance and SBOM
+attestations. Production publication remains fail-closed until the platform
+code-signing identities and installer signing gate are implemented.
+
+After downloading one candidate artifact from GitHub Actions, verify the local
+bundle from its root:
+
+```sh
+artifact="$(find out/make -type f -name '*.zip' -print -quit)"
+manifest="$(find out/evidence -type f -name '*.release.json' -print -quit)"
+sbom="$(find out/evidence -type f -name '*.spdx.json' -print -quit)"
+node out/evidence/verify-release-evidence.mjs \
+  --artifact "$artifact" \
+  --checksums out/evidence/checksums.txt \
+  --manifest "$manifest" \
+  --policy release-policy.json \
+  --sbom "$sbom"
+gh attestation verify "$artifact" --repo flidai/leapview
+gh attestation verify "$manifest" --repo flidai/leapview
+```
+
+The `gh attestation` checks apply to main-branch candidates; pull-request
+candidates intentionally have no privileged attestation job.
+
+`desktop/release-policy.json` is the reviewed source of truth. The current
+candidate support floor is macOS 13 on Intel and Apple silicon, Windows 10 on
+x64, and Ubuntu 22.04 LTS on x64. Only the Intel macOS, Windows x64, and Linux
+x64 candidates are presently built in CI; Apple-silicon distribution remains
+blocked until it has an equivalent native build, signing, installation, and
+launch proof.
+
+Evidence timestamps derive from the source commit time, and every toolchain
+input is exactly pinned, so repeated candidates expose input drift instead of
+silently accepting it. An emergency Electron update must change the exact
+package pin, lockfile, runtime policy, and expected Chromium/Node versions in
+one reviewed change, then pass all package and malicious-instance proofs. It
+cannot bypass the supported-major check. Before production release, signing
+identity rotation must preserve verification metadata for already-published
+artifacts, record the new identity in release evidence, and prove both the
+normal and emergency rotation paths.
+
 ## Bounded lifecycle recovery
 
 - LeapView persists only the last validated same-origin main-frame GET route
@@ -214,9 +272,7 @@ The version-one document has an exact schema and contains no credentials:
   "schemaVersion": 1,
   "allowUserAddedInstances": false,
   "diagnosticsEnabled": false,
-  "preconfiguredOrigins": [
-    "https://analytics.company.com"
-  ]
+  "preconfiguredOrigins": ["https://analytics.company.com"]
 }
 ```
 
