@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -14,44 +15,6 @@ import (
 	cligen "github.com/Yacobolo/leapview/internal/app/cli/gen"
 	"github.com/spf13/cobra"
 )
-
-func TestAgentConversationsDecodesEnvelopePreservingJSONOutput(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/agent/conversations" {
-			t.Fatalf("path = %s", r.URL.Path)
-		}
-		writeCLIJSON(t, w, map[string]any{
-			"items": []map[string]any{{
-				"id":          "conv_1",
-				"principalId": "prn_1",
-				"title":       "Ask",
-				"status":      "active",
-				"createdAt":   "2026-01-02T15:04:05Z",
-				"updatedAt":   "2026-01-02T15:05:05Z",
-			}},
-			"page": map[string]any{"nextCursor": "opaque"},
-		})
-	}))
-	defer server.Close()
-
-	output := captureStdout(t, func() {
-		err := runAgentConversations(context.Background(), &rootOptions{target: server.URL, token: "token", jsonOutput: true})
-		if err != nil {
-			t.Fatalf("run conversations: %v", err)
-		}
-	})
-
-	var rows []map[string]any
-	if err := json.Unmarshal([]byte(output), &rows); err != nil {
-		t.Fatalf("decode output: %v output=%s", err, output)
-	}
-	if len(rows) != 1 || rows[0]["id"] != "conv_1" || rows[0]["title"] != "Ask" {
-		t.Fatalf("rows = %#v", rows)
-	}
-	if strings.Contains(output, "nextCursor") || strings.Contains(output, `"items"`) {
-		t.Fatalf("output leaked envelope:\n%s", output)
-	}
-}
 
 func TestFriendlyListCommandsPassPaginationQuery(t *testing.T) {
 	for _, tc := range []struct {
@@ -187,6 +150,7 @@ func TestSearchGeneratedCLIMetadataUsesQueryAsOnlyPositionalArg(t *testing.T) {
 }
 
 func TestDashboardDataCommandsUseGeneratedURLsAndBodies(t *testing.T) {
+	visualization := tableVisualizationFixture(t)
 	for _, tc := range []struct {
 		name     string
 		args     []string
@@ -203,18 +167,33 @@ func TestDashboardDataCommandsUseGeneratedURLsAndBodies(t *testing.T) {
 			response: map[string]any{"id": "overview", "title": "Overview", "components": []map[string]any{}},
 		},
 		{
-			name:     "visual describe",
-			args:     []string{"visual", "executive-sales", "overview", "orders"},
-			method:   http.MethodGet,
-			path:     "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/visuals/orders",
-			response: map[string]any{"id": "orders", "title": "Orders"},
+			name:   "visual describe",
+			args:   []string{"visual", "executive-sales", "overview", "orders"},
+			method: http.MethodGet,
+			path:   "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/visuals/orders",
+			response: map[string]any{
+				"id": "orders", "rendererID": visualization["rendererID"],
+				"specRevision": visualization["specRevision"], "spec": visualization["spec"],
+			},
 		},
 		{
-			name:     "filter describe",
-			args:     []string{"filter", "executive-sales", "overview", "state"},
-			method:   http.MethodGet,
-			path:     "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/filters/state",
-			response: map[string]any{"definition": map[string]any{"id": "state"}, "binding": map[string]any{"key": "fb_state"}},
+			name:   "filter describe",
+			args:   []string{"filter", "executive-sales", "overview", "state"},
+			method: http.MethodGet,
+			path:   "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/filters/state",
+			response: map[string]any{
+				"definition": map[string]any{
+					"id": "state", "field": "orders.state", "label": "State", "calendar": "",
+					"options":    map[string]any{"kind": "static", "limit": 0, "values": []map[string]any{}},
+					"predicates": []map[string]any{}, "timezone": "", "valueKind": "string", "weekStart": "",
+				},
+				"binding": map[string]any{
+					"id": "fb_state", "key": "fb_state", "filter": "state", "default": map[string]any{"kind": "unfiltered"},
+					"maxSelectedValues": 0, "optionDependencies": []map[string]any{}, "paneOrder": 0,
+					"paneVisible": true, "readerEditable": true, "scope": "page", "selectionMode": "multiple",
+					"targets": []string{},
+				},
+			},
 		},
 		{
 			name:     "visual data",
@@ -222,7 +201,7 @@ func TestDashboardDataCommandsUseGeneratedURLsAndBodies(t *testing.T) {
 			method:   http.MethodPost,
 			path:     "/api/v1/workspaces/test/dashboards/executive-sales/pages/overview/visuals/orders/query",
 			wantBody: []string{`"filterState"`, `"typed_v1"`, `"fb_state"`, `"limit":7`},
-			response: map[string]any{"id": "orders", "data": []map[string]any{}},
+			response: visualization,
 		},
 		{
 			name:     "filter options",
@@ -312,7 +291,11 @@ func TestSemanticModelDatasetCommandsUseGeneratedURLsAndBodies(t *testing.T) {
 			method:   http.MethodPost,
 			path:     "/api/v1/workspaces/test/semantic-models/test/query",
 			wantBody: []string{`"state"`, `"order_count"`},
-			response: map[string]any{"queryId": "query-1", "columns": []map[string]any{}, "data": map[string]any{"rows": []map[string]any{}}},
+			response: map[string]any{
+				"queryId": "query-1", "columns": []map[string]any{}, "rows": []map[string]any{},
+				"page": map[string]any{}, "completeness": map[string]any{"hasMore": false, "returnedRows": 0},
+				"servingSnapshot": "",
+			},
 		},
 		{
 			name:     "explain query",
@@ -328,7 +311,11 @@ func TestSemanticModelDatasetCommandsUseGeneratedURLsAndBodies(t *testing.T) {
 			method:   http.MethodPost,
 			path:     "/api/v1/workspaces/test/semantic-models/test/datasets/orders/preview",
 			wantBody: []string{`"orders.order_id"`},
-			response: map[string]any{"columns": []string{"order_id"}, "items": []map[string]any{}, "page": map[string]any{"nextCursor": ""}},
+			response: map[string]any{
+				"queryId": "query-1", "columns": []map[string]any{}, "rows": []map[string]any{},
+				"page": map[string]any{"nextCursor": ""}, "completeness": map[string]any{"hasMore": false, "returnedRows": 0},
+				"servingSnapshot": "",
+			},
 		},
 		{
 			name:     "explain preview",
@@ -380,6 +367,19 @@ func TestSemanticModelDatasetCommandsUseGeneratedURLsAndBodies(t *testing.T) {
 			})
 		})
 	}
+}
+
+func tableVisualizationFixture(t *testing.T) map[string]any {
+	t.Helper()
+	content, err := os.ReadFile(filepath.Join("..", "..", "..", "api", "visualization", "conformance", "table-windowed.json"))
+	if err != nil {
+		t.Fatalf("read visualization fixture: %v", err)
+	}
+	var fixture map[string]any
+	if err := json.Unmarshal(content, &fixture); err != nil {
+		t.Fatalf("decode visualization fixture: %v", err)
+	}
+	return fixture
 }
 
 func TestAgentToolsCommandListsCanonicalTools(t *testing.T) {

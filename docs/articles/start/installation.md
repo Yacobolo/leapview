@@ -2,6 +2,29 @@
 
 LeapView ships as a public multi-architecture container image. Pulling that image is the primary onboarding path; no source checkout, registry login, or installer is required. One running container with one persistent state volume is one LeapView instance.
 
+## Current controlled-testing release
+
+The supported candidate is
+[`v0.2.0-rc.1`](https://github.com/Yacobolo/leapview/releases/tag/v0.2.0-rc.1),
+built from revision
+[`dfb3086d59284c6597180e99a7d07f41e36a7f7e`](https://github.com/Yacobolo/leapview/commit/dfb3086d59284c6597180e99a7d07f41e36a7f7e).
+It is a release candidate for controlled testing, not GA. Its immutable image
+is:
+
+```text
+ghcr.io/yacobolo/leapview@sha256:8b32fc291c86005c69c2ca1fa673dcaa4cb84d39cfc951e065a2775b122f81d9
+```
+
+Download the version-matched operations bundle and checksum for the machine
+that will run `leapviewctl`:
+
+| Operating system | Architecture | Archive | Checksum |
+| --- | --- | --- | --- |
+| Linux | amd64 | [leapview-compose-v0.2.0-rc.1-linux-amd64.tar.gz](https://github.com/Yacobolo/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-linux-amd64.tar.gz) | [SHA-256](https://github.com/Yacobolo/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-linux-amd64.tar.gz.sha256) |
+| Linux | arm64 | [leapview-compose-v0.2.0-rc.1-linux-arm64.tar.gz](https://github.com/Yacobolo/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-linux-arm64.tar.gz) | [SHA-256](https://github.com/Yacobolo/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-linux-arm64.tar.gz.sha256) |
+| macOS | amd64 | [leapview-compose-v0.2.0-rc.1-darwin-amd64.tar.gz](https://github.com/Yacobolo/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-darwin-amd64.tar.gz) | [SHA-256](https://github.com/Yacobolo/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-darwin-amd64.tar.gz.sha256) |
+| macOS | arm64 | [leapview-compose-v0.2.0-rc.1-darwin-arm64.tar.gz](https://github.com/Yacobolo/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-darwin-arm64.tar.gz) | [SHA-256](https://github.com/Yacobolo/leapview/releases/download/v0.2.0-rc.1/leapview-compose-v0.2.0-rc.1-darwin-arm64.tar.gz.sha256) |
+
 ## Before you begin
 
 Install Docker Engine. The five-minute path below needs no source checkout,
@@ -14,11 +37,12 @@ durable secret storage, and off-host backups.
 Pull the public image and start its self-contained evaluator:
 
 ```sh
-docker pull ghcr.io/yacobolo/leapview:latest
+IMAGE='ghcr.io/yacobolo/leapview@sha256:8b32fc291c86005c69c2ca1fa673dcaa4cb84d39cfc951e065a2775b122f81d9'
+docker pull "$IMAGE"
 docker run --detach --name leapview-evaluate --init \
   --publish 127.0.0.1:8080:8080 \
   --volume leapview-evaluate:/var/lib/leapview \
-  ghcr.io/yacobolo/leapview:latest evaluate
+  "$IMAGE" evaluate
 ```
 
 The evaluator generates private runtime secrets, creates a forced-change local
@@ -73,8 +97,8 @@ Delete the persisted evaluation instance only when a full reset is intended:
 docker volume rm leapview-evaluate
 ```
 
-Use `latest` for this disposable evaluation path. Pin a release version or
-digest anywhere repeatability matters.
+The evaluator is pinned to the supported candidate digest so that the
+instructions, runtime, and retained evidence cannot drift independently.
 
 ### Move beyond the sample
 
@@ -86,12 +110,48 @@ pinning, HTTPS, backups, and state-aware upgrades.
 
 ## Run a durable production instance
 
-The released Compose package is the recommended operations layer around the same public image. It is not a separate LeapView distribution. It supplies hardened container settings, generated production secrets, optional Caddy HTTPS, validated backup and restore, and paired image-and-state rollback.
+The released Compose package is the recommended operations layer around the
+same public image. It is not a separate LeapView distribution. It supplies
+hardened container settings, generated production secrets, optional Caddy
+HTTPS, validated backup and restore, and paired image-and-state rollback.
 
-1. Download the `leapview-compose-<version>-<os>-<arch>.tar.gz` asset and checksum matching the host from a LeapView release.
-2. Verify the checksum and extract the archive into the host directory. The archive contains an immutable application image reference, the base Compose stack, an optional Caddy HTTPS overlay, and the native Go `leapviewctl` operations binary.
+1. Select, download, verify, and extract the current platform archive:
+
+```sh
+VERSION='v0.2.0-rc.1'
+case "$(uname -s)" in
+  Linux) OS=linux ;;
+  Darwin) OS=darwin ;;
+  *) echo "unsupported OS: $(uname -s)" >&2; exit 1 ;;
+esac
+case "$(uname -m)" in
+  x86_64|amd64) ARCH=amd64 ;;
+  arm64|aarch64) ARCH=arm64 ;;
+  *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+ARCHIVE="leapview-compose-${VERSION}-${OS}-${ARCH}.tar.gz"
+BASE="https://github.com/Yacobolo/leapview/releases/download/${VERSION}"
+curl --fail --location --remote-name "$BASE/$ARCHIVE"
+curl --fail --location --remote-name "$BASE/$ARCHIVE.sha256"
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum --check "$ARCHIVE.sha256"
+else
+  shasum -a 256 --check "$ARCHIVE.sha256"
+fi
+tar -xzf "$ARCHIVE"
+cd "${ARCHIVE%.tar.gz}"
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum --check SHA256SUMS
+else
+  shasum -a 256 --check SHA256SUMS
+fi
+```
+
+2. Confirm every checksum reports `OK`. The archive contains an immutable application
+image reference, the base Compose stack, an optional Caddy HTTPS overlay, and
+the native Go `leapviewctl` operations binary.
+
 3. Copy the deployment template and initialize the instance:
-
 
 ```sh
 cp deployment.env.example deployment.env

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -236,6 +237,16 @@ func siteOpenAPISpecification() []byte {
 		panic(fmt.Sprintf("read generated OpenAPI specification: %v", err))
 	}
 	return specification
+}
+
+func docsPublicRelease(w http.ResponseWriter, _ *http.Request) {
+	manifest, err := content.Files.ReadFile("public-release.json")
+	if err != nil {
+		http.Error(w, "read public release manifest", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(manifest)
 }
 
 var docsVisualShortcode = regexp.MustCompile(`\{\{<\s*visual\s+id="([a-z0-9_]+)"\s*>}}`)

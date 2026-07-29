@@ -612,10 +612,11 @@ None owns product behavior. Each translates its transport contract into capabili
 Rules:
 
 - TypeSpec/APIGen owns the canonical headless REST contract and generator metadata.
-- Capability-owned API DTOs, generated operation interfaces, dispatchers, and route fragments live under packages such as `access/api`, `agent/api`, `dashboard/api`, and `workspace/api`.
+- Capability-owned API DTOs, generated server operation interfaces, typed clients, dispatchers, and route fragments live under packages such as `access/api`, `agent/api`, `dashboard/api`, and `workspace/api`.
 - Generic wire models such as pagination, problem details, and asynchronous event envelopes live under `platform/http`; capabilities may depend on them without depending on application composition.
 - `app/api` owns only application-wide protocol assembly and the generated aggregate that composes capability route fragments and canonical metadata. It owns no capability dispatcher or behavior.
-- CLI commands call capability use cases or generated API operations; they do not implement parallel business workflows.
+- CLI commands call capability use cases or capability-owned generated client methods; they do not repeat operation identifiers, accept untyped request bodies, or implement parallel business workflows.
+- `platform/cliapi` owns only generic credential, target, environment, and transport ports. The application transport owns authentication, HTTP execution, error decoding, and retries; its generic encoding boundary is not exposed to capability CLI adapters.
 - The built-in agent and MCP consume one governed tool catalog derived from product-operation metadata, with shared risk, permission, workspace, credential, execution, projection, audit, and error behavior.
 - UI routes call the same capability use cases as API, CLI, and agent interfaces for equivalent behavior.
 - Datastar signal shapes are UI-private adapter contracts and never become headless API DTOs.
