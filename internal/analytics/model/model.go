@@ -8,6 +8,14 @@ import (
 )
 
 func (m *Model) Validate() error {
+	return m.validate(false)
+}
+
+func (m *Model) ValidateAuthored() error {
+	return m.validate(true)
+}
+
+func (m *Model) validate(authored bool) error {
 	if m.Name == "" {
 		return fmt.Errorf("semantic model name is required")
 	}
@@ -15,7 +23,15 @@ func (m *Model) Validate() error {
 		return fmt.Errorf("semantic model %q has no sources", m.Name)
 	}
 	for name, connection := range m.Connections {
-		resolved, err := connection.Validate(name)
+		var (
+			resolved Connection
+			err      error
+		)
+		if authored {
+			resolved, err = connection.ValidateAuthored(name)
+		} else {
+			resolved, err = connection.Validate(name)
+		}
 		if err != nil {
 			return err
 		}
@@ -875,6 +891,22 @@ func firstNonEmpty(values ...string) string {
 }
 
 func (c Connection) Validate(name string) (Connection, error) {
+	return c.validate(name, true)
+}
+
+func (c Connection) ValidateAuthored(name string) (Connection, error) {
+	provider := strings.TrimSpace(c.Credentials.Provider)
+	if provider != "" && provider != "none" {
+		return c, fmt.Errorf("connection %q credential references are target-owned and cannot be authored", name)
+	}
+	if len(c.Auth) != 0 || strings.TrimSpace(c.Host) != "" || c.Port != 0 || strings.TrimSpace(c.Database) != "" ||
+		strings.TrimSpace(c.Username) != "" || strings.TrimSpace(c.SSLMode) != "" {
+		return c, fmt.Errorf("connection %q endpoint, source identity, and resolved auth are target-owned and cannot be authored", name)
+	}
+	return c.validate(name, false)
+}
+
+func (c Connection) validate(name string, requireResolvedAuth bool) (Connection, error) {
 	if err := validateSemanticIdentifier(name); err != nil {
 		return c, fmt.Errorf("connection %q has invalid name: %w", name, err)
 	}
@@ -898,11 +930,13 @@ func (c Connection) Validate(name string) (Connection, error) {
 	} else if c.Path != "" && !connectionSpec.AllowsPath {
 		return c, fmt.Errorf("connection %q path is only supported for path-backed connections", name)
 	}
-	auth, err := validateConnectionAuth(name, c, connectionSpec)
-	if err != nil {
-		return c, err
+	if requireResolvedAuth {
+		auth, err := validateConnectionAuth(name, c, connectionSpec)
+		if err != nil {
+			return c, err
+		}
+		c.Auth = auth
 	}
-	c.Auth = auth
 	for key := range c.Options {
 		if !connectionAllowsOption(connectionSpec, key) {
 			return c, fmt.Errorf("connection %q has unsupported option %q", name, key)

@@ -50,18 +50,12 @@ func catalogDashboardsPayload(dashboards []manifest.CatalogDashboard) []catalogD
 
 func connectionPayload(connection semanticmodel.Connection) connectionPayloadV1 {
 	return connectionPayloadV1{
-		Kind:                  connection.Kind,
-		Path:                  connection.Path,
-		Root:                  connection.Root,
-		Scope:                 connection.Scope,
-		Host:                  connection.Host,
-		Port:                  connection.Port,
-		Database:              connection.Database,
-		Username:              connection.Username,
-		SSLMode:               connection.SSLMode,
-		Options:               connection.Options,
-		Defaults:              connectionDefaultsPayloadV1{Options: connection.Defaults.Options},
-		CredentialsConfigured: semanticmodel.ConnectionCredentialsConfigured(connection),
+		Kind:     connection.Kind,
+		Path:     connection.Path,
+		Root:     connection.Root,
+		Scope:    connection.Scope,
+		Options:  connection.Options,
+		Defaults: connectionDefaultsPayloadV1{Options: connection.Defaults.Options},
 	}
 }
 

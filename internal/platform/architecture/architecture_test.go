@@ -1731,7 +1731,7 @@ func TestPlatformSQLCOmitsUnusedCapabilityModels(t *testing.T) {
 	}
 	config := string(body)
 	start := strings.Index(config, `queries: "internal/platform/db/queries"`)
-	end := strings.Index(config, `queries: "internal/analytics/queryaudit/sqlite/queries"`)
+	end := strings.Index(config, `"internal/analytics/queryaudit/sqlite/queries"`)
 	if start < 0 || end < 0 || end <= start {
 		t.Fatal("platform sqlc generation block is missing")
 	}

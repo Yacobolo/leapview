@@ -452,7 +452,7 @@ func TestPackProjectStoresActiveDeploymentPlanDiff(t *testing.T) {
 	}
 }
 
-func TestPackProjectDoesNotSerializeResolvedConnectionCredentials(t *testing.T) {
+func TestPackProjectRejectsAuthoredConnectionCredentialReferences(t *testing.T) {
 	t.Setenv("LEAPVIEW_TEST_CRM_URL", "postgres://secret-host/sales")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "ambient-secret-must-not-be-serialized")
 	projectPath := writeBundleProjectFixture(t, map[string]string{
@@ -605,25 +605,9 @@ spec:
 	})
 
 	var bundle bytes.Buffer
-	if _, _, err := PackProject(projectPath, PackProjectOptions{WorkspaceID: "sales", ServingStateID: "dep_sales"}, &bundle); err != nil {
-		t.Fatalf("PackProject() error = %v", err)
-	}
-	path := filepath.Join(t.TempDir(), "artifact.tar.gz")
-	if err := os.WriteFile(path, bundle.Bytes(), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	root := t.TempDir()
-	if err := ExtractArtifact(path, root); err != nil {
-		t.Fatalf("ExtractArtifact() error = %v", err)
-	}
-	compiledBytes, err := os.ReadFile(filepath.Join(root, CompiledProjectFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, secret := range []string{"postgres://secret-host/sales", "ambient-secret-must-not-be-serialized"} {
-		if strings.Contains(string(compiledBytes), secret) {
-			t.Fatalf("compiled artifact serialized resolved credential")
-		}
+	_, _, err := PackProject(projectPath, PackProjectOptions{WorkspaceID: "sales", ServingStateID: "dep_sales"}, &bundle)
+	if err == nil || !strings.Contains(err.Error(), "target-owned") {
+		t.Fatalf("PackProject() error = %v, want target-owned credential rejection", err)
 	}
 }
 

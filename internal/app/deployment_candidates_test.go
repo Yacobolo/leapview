@@ -402,8 +402,13 @@ func TestWorkspaceAssetAPIListsActiveDeploymentAssets(t *testing.T) {
 	if detail.ID != connection.ID || detail.SnapshotID != connection.SnapshotID || detail.PayloadSchema != "connection.v1" {
 		t.Fatalf("asset detail = %#v, list connection = %#v", detail, connection)
 	}
-	if detail.Payload["Kind"] != "managed" || detail.Payload["credentials_configured"] != false {
+	if detail.Payload["Kind"] != "managed" {
 		t.Fatalf("asset detail payload = %#v", detail.Payload)
+	}
+	for _, targetOwned := range []string{"Host", "Port", "Database", "Username", "SSLMode", "credentials_configured", "Credentials"} {
+		if _, ok := detail.Payload[targetOwned]; ok {
+			t.Fatalf("asset detail payload contains target-owned field %q: %#v", targetOwned, detail.Payload)
+		}
 	}
 
 	lineageReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/test/assets/connection:olist/lineage", nil)

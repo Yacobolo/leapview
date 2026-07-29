@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -502,6 +503,54 @@ func TestPlanProjectAgainstGraphReportsStableDiff(t *testing.T) {
 	}
 	if !workspacePlan.Summary.Breaking || !workspacePlan.Summary.MaterializationImpact {
 		t.Fatalf("summary impact = %#v, want breaking and materialization impact", workspacePlan.Summary)
+	}
+}
+
+func TestSemanticModelPayloadContainsOnlyLogicalConnectionRequirements(t *testing.T) {
+	projectPath := writeProjectFixture(t, map[string]string{
+		"leapview.yaml":                                    projectYAML(),
+		"connections/olist.yaml":                           logicalPostgresConnectionYAML("olist"),
+		"sources/olist.orders.yaml":                        objectSourceYAML("olist.orders", "public.orders", "order_id"),
+		"sources/olist.customers.yaml":                     objectSourceYAML("olist.customers", "public.customers", "customer_id"),
+		"workspaces/sales/workspace.yaml":                  workspaceYAML("sales"),
+		"workspaces/sales/models/orders.yaml":              modelTableYAML("sales", "orders", "olist.orders", "order_id", `SELECT order_id FROM source."olist.orders"`),
+		"workspaces/sales/semantic-models/sales.yaml":      semanticModelYAML("sales", "orders", "order_count"),
+		"workspaces/sales/dashboards/executive-sales.yaml": dashboardYAML("sales", "executive-sales", "sales"),
+	})
+	compiled, err := CompileProject(projectPath, Options{ServingStateID: "dep_candidate"})
+	if err != nil {
+		t.Fatalf("CompileProject() error = %v", err)
+	}
+	compiledWorkspace := mustCompiledWorkspace(t, compiled, "sales")
+	graph := compiledWorkspace.Workspace.Graph
+	var payload map[string]any
+	unmarshalGraphPayload(t, graph, "semantic_model:sales.sales", &payload)
+	connections, ok := payload["Connections"].(map[string]any)
+	if !ok {
+		t.Fatalf("Connections payload = %#v", payload["Connections"])
+	}
+	connection, ok := connections["olist"].(map[string]any)
+	if !ok {
+		t.Fatalf("olist connection payload = %#v", connections["olist"])
+	}
+	for _, required := range []string{"Kind", "Path", "Root", "Scope", "Options", "Defaults"} {
+		if _, ok := connection[required]; !ok {
+			t.Fatalf("logical connection payload = %#v, missing %q", connection, required)
+		}
+	}
+	for _, forbidden := range []string{"Host", "Port", "Database", "Username", "SSLMode", "credentials_configured", "Credentials"} {
+		if _, ok := connection[forbidden]; ok {
+			t.Fatalf("logical connection payload = %#v, contains target-owned field %q", connection, forbidden)
+		}
+	}
+	manifest, err := json.Marshal(compiledWorkspace.Definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{`"Host"`, `"Port"`, `"Database"`, `"Username"`, `"SSLMode"`, `"Credentials"`, `"credentials"`} {
+		if bytes.Contains(manifest, []byte(forbidden)) {
+			t.Fatalf("compiled workspace manifest contains target-owned field %s: %s", forbidden, manifest)
+		}
 	}
 }
 
@@ -1092,6 +1141,36 @@ spec:
 	assertDiagnostic(t, err, "connection:olist", "spec")
 }
 
+func TestCompileProjectRejectsTargetOwnedCredentialAndSourceIdentityConfiguration(t *testing.T) {
+	for name, targetOwned := range map[string]string{
+		"credential reference": `
+  credentials:
+    provider: env
+    secret: LEAPVIEW_WAREHOUSE_CREDENTIALS
+`,
+		"source identity": `
+  username: privileged_runtime
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			projectPath := writeProjectFixture(t, minimalProjectFiles(map[string]string{
+				"connections/olist.yaml": `
+apiVersion: leapview.dev/v1
+kind: Connection
+metadata:
+  name: olist
+spec:
+  kind: managed
+` + targetOwned,
+			}))
+
+			_, err := CompileProject(projectPath, Options{ServingStateID: "dep_test"})
+			assertCompileErrorContains(t, err, "target-owned")
+			assertDiagnostic(t, err, "connection:olist", "spec")
+		})
+	}
+}
+
 func TestCompileProjectRejectsWorkspaceMismatchWithResourceDiagnostic(t *testing.T) {
 	projectPath := writeProjectFixture(t, map[string]string{
 		"leapview.yaml":                                    projectYAML(),
@@ -1352,6 +1431,32 @@ metadata:
   name: ` + name + `
 spec:
   kind: managed
+`
+}
+
+func logicalPostgresConnectionYAML(name string) string {
+	return `
+apiVersion: leapview.dev/v1
+kind: Connection
+metadata:
+  name: ` + name + `
+spec:
+  kind: postgres
+`
+}
+
+func objectSourceYAML(name, object, key string) string {
+	return `
+apiVersion: leapview.dev/v1
+kind: Source
+metadata:
+  name: ` + name + `
+spec:
+  connection: olist
+  object: ` + object + `
+  fields:
+    ` + key + `:
+      type: string
 `
 }
 

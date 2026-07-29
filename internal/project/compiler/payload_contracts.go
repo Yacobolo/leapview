@@ -30,18 +30,12 @@ type catalogDashboardPayloadV1 struct {
 }
 
 type connectionPayloadV1 struct {
-	Kind                  string                      `json:"Kind"`
-	Path                  string                      `json:"Path"`
-	Root                  string                      `json:"Root"`
-	Scope                 string                      `json:"Scope"`
-	Host                  string                      `json:"Host"`
-	Port                  int                         `json:"Port"`
-	Database              string                      `json:"Database"`
-	Username              string                      `json:"Username"`
-	SSLMode               string                      `json:"SSLMode"`
-	Options               map[string]any              `json:"Options"`
-	Defaults              connectionDefaultsPayloadV1 `json:"Defaults"`
-	CredentialsConfigured bool                        `json:"credentials_configured"`
+	Kind     string                      `json:"Kind"`
+	Path     string                      `json:"Path"`
+	Root     string                      `json:"Root"`
+	Scope    string                      `json:"Scope"`
+	Options  map[string]any              `json:"Options"`
+	Defaults connectionDefaultsPayloadV1 `json:"Defaults"`
 }
 
 type connectionDefaultsPayloadV1 struct {

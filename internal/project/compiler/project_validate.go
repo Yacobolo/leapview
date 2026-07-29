@@ -15,7 +15,7 @@ import (
 
 func validateProject(project Project) error {
 	for connectionName, connection := range project.Connections {
-		if _, err := connection.Validate(connectionName); err != nil {
+		if _, err := connection.ValidateAuthored(connectionName); err != nil {
 			return resourceError(project.ConnectionPaths[connectionName], "connection:"+connectionName, "spec", "Connection %q %s", connectionName, err.Error())
 		}
 	}
