@@ -51,11 +51,9 @@ func TestRepositoryIdentityUsesOrganizationNamespace(t *testing.T) {
 	legacyRepository := "github.com/" + "Yacobolo" + "/leapview"
 	legacyImages := "ghcr.io/" + "yacobolo" + "/leapview"
 	legacyImageAllowlist := map[string]struct{}{
-		"deploy/hetzner-site/terraform.tfvars.example": {},
-		"deploy/hetzner-site/variables.tf":             {},
-		"docs/articles/start/installation.md":          {},
-		"docs/public-release.json":                     {},
-		"scripts/public_site_smoke.test.ts":            {},
+		"docs/articles/start/installation.md": {},
+		"docs/public-release.json":            {},
+		"scripts/public_site_smoke.test.ts":   {},
 	}
 	root := repoRoot(t)
 	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {

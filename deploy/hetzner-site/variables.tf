@@ -65,16 +65,13 @@ variable "operator_ssh_public_key" {
 variable "bootstrap_site_image" {
   description = "Initial public-site image. Routine digest changes are deployed by the release workflow, not Terraform."
   type        = string
-  default     = "ghcr.io/yacobolo/leapview-site@sha256:1f4c7ac7fbaa332f96a907ff7daec10d49c26b3bbe5d3a16a7d48c274c5f168a"
+  default     = "ghcr.io/flidai/leapview-site@sha256:48d6bdc758efd6f86af6fa53e3e58ad3dfff94d707d213fc4e39fd2a25b74e0f"
 
   validation {
-    condition = (
-      can(regex(
-        "^ghcr\\.io/flidai/leapview-site@sha256:[0-9a-f]{64}$",
-        var.bootstrap_site_image,
-      )) ||
-      var.bootstrap_site_image == "ghcr.io/yacobolo/leapview-site@sha256:1f4c7ac7fbaa332f96a907ff7daec10d49c26b3bbe5d3a16a7d48c274c5f168a"
-    )
+    condition = can(regex(
+      "^ghcr\\.io/flidai/leapview-site@sha256:[0-9a-f]{64}$",
+      var.bootstrap_site_image,
+    ))
     error_message = "bootstrap_site_image must be the canonical public-site image pinned by sha256 digest."
   }
 }
