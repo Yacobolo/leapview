@@ -64,6 +64,18 @@ func Routes(routes *capabilityRoutes, runtime *runtimeServices, platform *platfo
 		r.Get("/candidates/{candidate}", routes.accessModule.Protect(accessmodule.PrivilegeDeploy, func(w http.ResponseWriter, request *http.Request) {
 			candidatePreview(routes, runtime, platform, policy, w, request)
 		}))
+		r.Get("/candidates/{candidate}/workspaces/{workspace}/dashboards/{dashboard}", routes.accessModule.Protect(accessmodule.PrivilegeDeploy, func(w http.ResponseWriter, request *http.Request) {
+			candidateDashboardDocument(routes, runtime, w, request)
+		}))
+		r.Get("/candidates/{candidate}/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}", routes.accessModule.Protect(accessmodule.PrivilegeDeploy, func(w http.ResponseWriter, request *http.Request) {
+			candidateDashboardDocument(routes, runtime, w, request)
+		}))
+		r.With(policy.rateLimits.Updates()).Get("/candidates/{candidate}/workspaces/{workspace}/updates", routes.accessModule.Protect(accessmodule.PrivilegeDeploy, func(w http.ResponseWriter, request *http.Request) {
+			candidateDashboardUpdates(routes, runtime, w, request)
+		}))
+		r.Post("/candidates/{candidate}/workspaces/{workspace}/commands/{command}", routes.accessModule.Protect(accessmodule.PrivilegeDeploy, func(w http.ResponseWriter, request *http.Request) {
+			candidateDashboardCommand(routes, runtime, w, request)
+		}))
 		routes.workspaceModule.MountAuthenticated(r, workspacemodule.RouteGuard{
 			Protect: routes.accessModule.Protect, ProtectWithObjects: routes.accessModule.ProtectWithObjects, AssetObjectRefs: routes.workspaceModule.AssetObjectRefs,
 		})

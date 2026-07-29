@@ -30,10 +30,16 @@ type CandidateSourceScope struct {
 	OwnerID   string
 }
 
+type CandidateSourceSnapshot struct {
+	ProjectID      string
+	ArtifactDigest string
+	ProjectPath    string
+}
+
 // CandidateSourceSynchronizer owns target-side retention and compiler
 // validation for environment-neutral project sources.
 type CandidateSourceSynchronizer interface {
 	Plan(context.Context, CandidateSourceScope, CandidateSynchronizationRequest) ([]string, error)
 	Upload(context.Context, CandidateSourceScope, string, io.Reader) error
-	Commit(context.Context, CandidateSourceScope, CandidateSynchronizationRequest) error
+	Commit(context.Context, CandidateSourceScope, CandidateSynchronizationRequest) (CandidateSourceSnapshot, error)
 }

@@ -1,6 +1,7 @@
 package module
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/url"
@@ -14,6 +15,17 @@ import (
 	webpage "github.com/flidai/leapview/internal/platform/web/page"
 	"github.com/flidai/leapview/internal/project"
 )
+
+func (m *Module) ResolveOwnedCandidate(ctx context.Context, candidateID, principalID string) (Candidate, error) {
+	if m == nil || m.candidates == nil {
+		return Candidate{}, deployment.ErrCandidateUnavailable
+	}
+	return m.candidates.GetOwned(
+		ctx,
+		strings.TrimSpace(candidateID),
+		strings.TrimSpace(principalID),
+	)
+}
 
 func (m *Module) ServeCandidatePreview(
 	w http.ResponseWriter,
@@ -190,7 +202,8 @@ func writeCandidateUnavailable(w http.ResponseWriter, r *http.Request) {
 func writeCandidateAPIError(w http.ResponseWriter, r *http.Request, err error) {
 	status, code, detail := http.StatusInternalServerError, "INTERNAL_ERROR", "The candidate request could not be completed"
 	switch {
-	case errors.Is(err, project.ErrCandidateSourceUnavailable):
+	case errors.Is(err, deployment.ErrCandidateUnavailable),
+		errors.Is(err, project.ErrCandidateSourceUnavailable):
 		status, code, detail = http.StatusServiceUnavailable, "CANDIDATE_SERVICE_UNAVAILABLE", "Candidate service is unavailable"
 	case errors.Is(err, deployment.ErrCandidateNotFound):
 		status, code, detail = http.StatusNotFound, "CANDIDATE_NOT_FOUND", "Candidate not found"

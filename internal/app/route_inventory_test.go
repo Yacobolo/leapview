@@ -84,7 +84,7 @@ func TestRouteInventory(t *testing.T) {
 		rows = append(rows, fmt.Sprintf("%s|%s|%s|%s", key, contract.owner, contract.access, contract.privilege))
 	}
 	sort.Strings(rows)
-	const expectedRouteContractDigest = "9b772d4d843dc2b84aca57e288e460d5201d2c8b29cb9af7920acefd237bd274"
+	const expectedRouteContractDigest = "5bb1709a22559c4e35e4e537cdc818ba10be6ea5c68e32a9fb554d046897beeb"
 	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(rows, "\n"))))
 	if digest != expectedRouteContractDigest {
 		t.Fatalf("route ownership/auth contract changed: got digest %s\n%s", digest, strings.Join(rows, "\n"))
@@ -148,6 +148,9 @@ func nonAPIRouteMetadata(method, path string) (routeMetadata, bool) {
 		authenticated.owner = "agent"
 	case path == "/candidates/{candidate}":
 		authenticated.owner = "deployment"
+		authenticated.privilege = "DEPLOY"
+	case strings.HasPrefix(path, "/candidates/{candidate}/"):
+		authenticated.owner = "dashboard"
 		authenticated.privilege = "DEPLOY"
 	case strings.Contains(path, "/dashboards/") || strings.Contains(path, "/commands/"):
 		authenticated.owner = "dashboard"
@@ -242,6 +245,9 @@ GET /chats/references/search
 GET /chats/restore
 GET /chats/{conversation}
 GET /candidates/{candidate}
+GET /candidates/{candidate}/workspaces/{workspace}/dashboards/{dashboard}
+GET /candidates/{candidate}/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}
+GET /candidates/{candidate}/workspaces/{workspace}/updates
 GET /connections
 GET /connections/{asset}
 GET /connections/{asset}/{section}
@@ -284,6 +290,7 @@ POST /auth/local/password
 POST /auth/logout
 POST /chat/turns
 POST /chats/turns
+POST /candidates/{candidate}/workspaces/{workspace}/commands/{command}
 POST /data/command
 POST /device
 POST /metrics

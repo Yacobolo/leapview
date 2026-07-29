@@ -32,6 +32,14 @@ type CandidateBindingVersion struct {
 	ProviderVersion string
 }
 
+type CandidateRestriction struct {
+	ID             string
+	WorkspaceID    string
+	ObjectID       string
+	PolicyType     string
+	ExpressionJSON string
+}
+
 type CandidateDataMode string
 
 const (
@@ -52,6 +60,7 @@ type CandidateCompatibility struct {
 	RuntimeVersion           string
 	AuthorizationFingerprint string
 	Bindings                 []CandidateBindingVersion
+	Restrictions             []CandidateRestriction
 }
 
 type CandidateRegistration struct {
@@ -84,11 +93,53 @@ type candidateGeneration struct {
 	key           candidateRuntimeKey
 	ownerID       string
 	expiresAt     time.Time
-	compatibility [sha256.Size]byte
+	compatibility CandidateCompatibility
+	fingerprint   [sha256.Size]byte
 	manager       *Manager
 	managed       *managedRuntime
 	refs          int
 	closing       bool
+}
+
+// OwnedCandidateView is server-resolved metadata for an authenticated
+// candidate owner. Compatibility details never need to round-trip through the
+// browser before the private runtime can be acquired.
+type OwnedCandidateView struct {
+	CandidateID string
+	Workspaces  []OwnedCandidateWorkspace
+}
+
+type OwnedCandidateWorkspace struct {
+	WorkspaceID              servingstate.WorkspaceID
+	AuthorizationFingerprint string
+	Provider                 Provider
+	Restrictions             []CandidateRestriction
+}
+
+type ownedCandidateProvider struct {
+	registry    *Registry
+	candidateID string
+	ownerID     string
+	workspaceID servingstate.WorkspaceID
+}
+
+func (p ownedCandidateProvider) Acquire(ctx context.Context) (Lease, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if p.registry == nil || p.registry.candidates == nil {
+		return nil, ErrCandidateRuntimeClosed
+	}
+	generation, retired, err := p.registry.candidates.acquireOwned(
+		p.candidateID,
+		p.ownerID,
+		p.workspaceID,
+	)
+	p.registry.cleanupCandidateGeneration(retired)
+	if err != nil {
+		return nil, err
+	}
+	return &candidateRuntimeLease{registry: p.registry, generation: generation}, nil
 }
 
 type candidateRuntimeRegistry struct {
@@ -168,7 +219,8 @@ func (r *Registry) consumePreparedCandidate(
 			candidateID: normalized.CandidateID, workspaceID: normalized.WorkspaceID,
 		},
 		ownerID: normalized.OwnerID, expiresAt: normalized.ExpiresAt,
-		compatibility: fingerprint, manager: sealed.manager, managed: managed,
+		compatibility: normalized.Compatibility, fingerprint: fingerprint,
+		manager: sealed.manager, managed: managed,
 	}, nil
 }
 
@@ -384,6 +436,45 @@ func (r *Registry) AcquireCandidate(ctx context.Context, request CandidateLeaseR
 	return &candidateRuntimeLease{registry: r, generation: generation}, nil
 }
 
+// ResolveOwnedCandidate returns deterministic workspace providers for the
+// current private generation. Foreign candidate identities are concealed.
+func (r *Registry) ResolveOwnedCandidate(candidateID, ownerID string) (OwnedCandidateView, error) {
+	candidateID = strings.TrimSpace(candidateID)
+	ownerID = strings.TrimSpace(ownerID)
+	if candidateID == "" || ownerID == "" {
+		return OwnedCandidateView{}, ErrCandidateRuntimeNotFound
+	}
+	if r == nil || r.candidates == nil {
+		return OwnedCandidateView{}, ErrCandidateRuntimeClosed
+	}
+	generations, retired, err := r.candidates.resolveOwned(candidateID, ownerID)
+	for _, generation := range retired {
+		r.cleanupCandidateGeneration(generation)
+	}
+	if err != nil {
+		return OwnedCandidateView{}, err
+	}
+	view := OwnedCandidateView{
+		CandidateID: candidateID,
+		Workspaces:  make([]OwnedCandidateWorkspace, 0, len(generations)),
+	}
+	for _, generation := range generations {
+		view.Workspaces = append(view.Workspaces, OwnedCandidateWorkspace{
+			WorkspaceID:              generation.key.workspaceID,
+			AuthorizationFingerprint: generation.compatibility.AuthorizationFingerprint,
+			Restrictions: append(
+				[]CandidateRestriction(nil),
+				generation.compatibility.Restrictions...,
+			),
+			Provider: ownedCandidateProvider{
+				registry: r, candidateID: candidateID, ownerID: ownerID,
+				workspaceID: generation.key.workspaceID,
+			},
+		})
+	}
+	return view, nil
+}
+
 // RetireCandidate stops all new acquisitions for a candidate while allowing
 // existing query leases to drain safely.
 func (r *Registry) RetireCandidate(candidateID string) int {
@@ -484,11 +575,66 @@ func (r *candidateRuntimeRegistry) acquire(
 		delete(r.current, key)
 		return nil, r.retireLocked(current), ErrCandidateRuntimeExpired
 	}
-	if current.compatibility != compatibility {
+	if current.fingerprint != compatibility {
 		return nil, nil, ErrCandidateRuntimeIncompatible
 	}
 	current.refs++
 	return current, nil, nil
+}
+
+func (r *candidateRuntimeRegistry) acquireOwned(
+	candidateID string,
+	ownerID string,
+	workspaceID servingstate.WorkspaceID,
+) (generation *candidateGeneration, retired *candidateGeneration, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return nil, nil, ErrCandidateRuntimeClosed
+	}
+	key := candidateRuntimeKey{candidateID: candidateID, workspaceID: workspaceID}
+	current := r.current[key]
+	if current == nil || current.ownerID != ownerID {
+		return nil, nil, ErrCandidateRuntimeNotFound
+	}
+	if !r.now().UTC().Before(current.expiresAt) {
+		delete(r.current, key)
+		return nil, r.retireLocked(current), ErrCandidateRuntimeExpired
+	}
+	current.refs++
+	return current, nil, nil
+}
+
+func (r *candidateRuntimeRegistry) resolveOwned(
+	candidateID string,
+	ownerID string,
+) (generations []*candidateGeneration, drained []*candidateGeneration, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return nil, nil, ErrCandidateRuntimeClosed
+	}
+	now := r.now().UTC()
+	for key, generation := range r.current {
+		if key.candidateID != candidateID || generation.ownerID != ownerID {
+			continue
+		}
+		if !now.Before(generation.expiresAt) {
+			delete(r.current, key)
+			if retired := r.retireLocked(generation); retired != nil {
+				drained = append(drained, retired)
+			}
+			continue
+		}
+		generations = append(generations, generation)
+	}
+	if len(generations) == 0 {
+		return nil, drained, ErrCandidateRuntimeNotFound
+	}
+	sort.Slice(generations, func(i, j int) bool {
+		return generations[i].key.workspaceID < generations[j].key.workspaceID
+	})
+	return generations, drained, nil
 }
 
 func (r *candidateRuntimeRegistry) retireCandidate(
@@ -723,6 +869,42 @@ func normalizeCandidateCompatibility(
 		}
 	}
 	compatibility.Bindings = normalizedBindings
+	normalizedRestrictions := append([]CandidateRestriction(nil), compatibility.Restrictions...)
+	for index := range normalizedRestrictions {
+		restriction := &normalizedRestrictions[index]
+		restriction.ID = strings.TrimSpace(restriction.ID)
+		restriction.WorkspaceID = strings.TrimSpace(restriction.WorkspaceID)
+		restriction.ObjectID = strings.TrimSpace(restriction.ObjectID)
+		restriction.PolicyType = strings.TrimSpace(restriction.PolicyType)
+		restriction.ExpressionJSON = strings.TrimSpace(restriction.ExpressionJSON)
+		if restriction.ID == "" || restriction.WorkspaceID == "" ||
+			restriction.ObjectID == "" || restriction.ExpressionJSON == "" {
+			return CandidateCompatibility{}, [sha256.Size]byte{}, fmt.Errorf(
+				"%w: candidate restriction identity, workspace, object, and expression are required",
+				ErrCandidateRuntimeInvalid,
+			)
+		}
+		if restriction.PolicyType != "row_filter" && restriction.PolicyType != "column_mask" {
+			return CandidateCompatibility{}, [sha256.Size]byte{}, fmt.Errorf(
+				"%w: unsupported candidate restriction type %q",
+				ErrCandidateRuntimeInvalid,
+				restriction.PolicyType,
+			)
+		}
+	}
+	sort.Slice(normalizedRestrictions, func(i, j int) bool {
+		return normalizedRestrictions[i].ID < normalizedRestrictions[j].ID
+	})
+	for index := 1; index < len(normalizedRestrictions); index++ {
+		if normalizedRestrictions[index-1].ID == normalizedRestrictions[index].ID {
+			return CandidateCompatibility{}, [sha256.Size]byte{}, fmt.Errorf(
+				"%w: duplicate candidate restriction %q",
+				ErrCandidateRuntimeInvalid,
+				normalizedRestrictions[index].ID,
+			)
+		}
+	}
+	compatibility.Restrictions = normalizedRestrictions
 	encoded, err := json.Marshal(compatibility)
 	if err != nil {
 		return CandidateCompatibility{}, [sha256.Size]byte{}, fmt.Errorf(

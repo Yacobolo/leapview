@@ -43,7 +43,7 @@ func TestCandidateSourceSynchronizerAuthorizesOnlyPlannedOwnerUploads(t *testing
 			t.Fatal(err)
 		}
 	}
-	if err := synchronizer.Commit(t.Context(), scope, request); err != nil {
+	if _, err := synchronizer.Commit(t.Context(), scope, request); err != nil {
 		t.Fatal(err)
 	}
 }

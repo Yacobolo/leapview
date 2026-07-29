@@ -8,7 +8,10 @@ type CandidateRegistration = runtimehost.CandidateRegistration
 type CandidateLeaseRequest = runtimehost.CandidateLeaseRequest
 type CandidateCompatibility = runtimehost.CandidateCompatibility
 type CandidateBindingVersion = runtimehost.CandidateBindingVersion
+type CandidateRestriction = runtimehost.CandidateRestriction
 type CandidatePreparation = runtimehost.CandidatePreparation
+type OwnedCandidateView = runtimehost.OwnedCandidateView
+type OwnedCandidateWorkspace = runtimehost.OwnedCandidateWorkspace
 type RuntimeLifetime = runtimehost.RuntimeLifetime
 
 var (

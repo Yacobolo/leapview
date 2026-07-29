@@ -15,6 +15,14 @@ type CandidateConnectionRequirement struct {
 	ConnectorKind       string
 }
 
+type CandidateRestriction struct {
+	ID             string
+	WorkspaceID    string
+	ObjectID       string
+	PolicyType     string
+	ExpressionJSON string
+}
+
 type CandidateDataMode string
 
 const (
@@ -72,6 +80,7 @@ type CandidateWorkspaceRuntime struct {
 	DataRevision   string
 	DataMode       CandidateDataMode
 	Connections    []CandidateConnectionRequirement
+	Restrictions   []CandidateRestriction
 }
 
 type CandidateRuntimeRequest struct {
@@ -188,6 +197,7 @@ func (service *CandidateRuntimeService) Prepare(
 					RuntimeVersion:           service.runtimeVersion,
 					AuthorizationFingerprint: request.AuthorizationFingerprint,
 					Bindings:                 bindings,
+					Restrictions:             candidateRestrictions(workspace.Restrictions),
 				},
 			},
 			ServingStateID: workspace.ServingStateID,
@@ -202,6 +212,17 @@ func (service *CandidateRuntimeService) Prepare(
 	}
 	owned = nil
 	return nil
+}
+
+func candidateRestrictions(values []CandidateRestriction) []runtimehost.CandidateRestriction {
+	result := make([]runtimehost.CandidateRestriction, len(values))
+	for index, value := range values {
+		result[index] = runtimehost.CandidateRestriction{
+			ID: value.ID, WorkspaceID: value.WorkspaceID, ObjectID: value.ObjectID,
+			PolicyType: value.PolicyType, ExpressionJSON: value.ExpressionJSON,
+		}
+	}
+	return result
 }
 
 func candidateBindingVersions(

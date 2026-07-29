@@ -302,9 +302,10 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 		CandidateConnections: candidateConnectionLeaser{
 			leaser: candidateBindings, module: analyticsModule,
 		},
-		CandidateRuntime: runtimeHostModule,
-		CandidateSources: candidateSources,
-		RuntimeVersion:   identity.Version + ":" + identity.Revision,
+		CandidateRuntime:   runtimeHostModule,
+		CandidateSources:   candidateSources,
+		CandidateArtifacts: releaseModule,
+		RuntimeVersion:     identity.Version + ":" + identity.Revision,
 		ActivationHooks: deploymentmodule.ActivationHooks{
 			ApplyAccessSnapshot: accessmodule.ApplySnapshot,
 			ReconcilePublications: func(ctx context.Context, tx transaction.Transaction, input deploymentmodule.PublicationActivationInput) error {
@@ -359,6 +360,7 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	if err != nil {
 		return fail(err)
 	}
+	runtime.runtimeHostModule = runtimeHostModule
 	handler := Routes(routes, runtime, platformServices, policy)
 	lifecycle := newRuntimeLifecycle(platformServices.workers, runtime.analyticsModule, runtime.workloads)
 	return handler, lifecycle, cleanup.Close, nil

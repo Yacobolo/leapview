@@ -136,7 +136,13 @@ func (transport *candidateSynchronizationTransport) Plan(
 		ctx,
 		deploymentgen.GenPlanProjectCandidateSynchronizationClientRequest{
 			Project: request.ProjectID,
-			Body:    candidateSynchronizationBody(request),
+			Headers: deploymentgen.GenPlanProjectCandidateSynchronizationClientHeaders{
+				IdempotencyKey: deploymentIdempotencyKey(
+					"candidate-plan", request.ProjectID,
+					request.ExpectedCandidateID, request.ArtifactDigest,
+				),
+			},
+			Body: candidateSynchronizationBody(request),
 		},
 	)
 	if err != nil {

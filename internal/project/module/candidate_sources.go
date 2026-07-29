@@ -112,12 +112,13 @@ func (synchronizer *candidateSourceSynchronizer) Commit(
 	ctx context.Context,
 	scope project.CandidateSourceScope,
 	request project.CandidateSynchronizationRequest,
-) error {
+) (project.CandidateSourceSnapshot, error) {
 	if synchronizer == nil || synchronizer.store == nil {
-		return project.ErrCandidateSourceUnavailable
+		return project.CandidateSourceSnapshot{}, project.ErrCandidateSourceUnavailable
 	}
-	if _, err := synchronizer.store.Commit(ctx, synchronizationPlanRequest(scope, request)); err != nil {
-		return candidateSourceInvalid(err)
+	stored, err := synchronizer.store.Commit(ctx, synchronizationPlanRequest(scope, request))
+	if err != nil {
+		return project.CandidateSourceSnapshot{}, candidateSourceInvalid(err)
 	}
 	synchronizer.mu.Lock()
 	delete(synchronizer.plans, candidateSourcePlanKey{
@@ -125,7 +126,10 @@ func (synchronizer *candidateSourceSynchronizer) Commit(
 		artifactDigest: strings.TrimSpace(request.ArtifactDigest),
 	})
 	synchronizer.mu.Unlock()
-	return nil
+	return project.CandidateSourceSnapshot{
+		ProjectID: stored.ProjectID, ArtifactDigest: stored.Digest,
+		ProjectPath: stored.ProjectPath,
+	}, nil
 }
 
 func (synchronizer *candidateSourceSynchronizer) purgeExpiredLocked() {

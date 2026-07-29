@@ -19,6 +19,7 @@ import (
 	deploymentsqlite "github.com/flidai/leapview/internal/deployment/sqlite"
 	"github.com/flidai/leapview/internal/platform"
 	"github.com/flidai/leapview/internal/project"
+	"github.com/flidai/leapview/internal/release"
 )
 
 func TestCandidateSynchronizationPlansUploadsAndCommitsOwnedCandidate(t *testing.T) {
@@ -27,6 +28,15 @@ func TestCandidateSynchronizationPlansUploadsAndCommitsOwnedCandidate(t *testing
 	blobDigest := "sha256:" + strings.Repeat("b", 64)
 	sources := &candidateSourceSynchronizerStub{missing: []string{blobDigest}}
 	module.candidateSources = sources
+	module.candidateArtifacts = candidateArtifactPreparerStub{result: release.CandidateArtifactSet{
+		AuthorizationFingerprint: "sha256:policy",
+		Workspaces: []release.CandidateArtifactWorkspace{{
+			WorkspaceID: "sales", ServingStateID: "state_sales",
+			ArtifactDigest: digest, DataRevision: "snapshot:1", DataMode: string(deployment.CandidateDataReuseSnapshot),
+		}},
+	}}
+	runtimes := &candidateRuntimePreparerStub{}
+	module.candidateRuntimes = runtimes
 	body := `{"projectFile":"leapview.yaml","artifactDigest":"` + digest +
 		`","artifacts":[{"path":"leapview.yaml","digest":"` + blobDigest + `"}]}`
 
@@ -49,7 +59,8 @@ func TestCandidateSynchronizationPlansUploadsAndCommitsOwnedCandidate(t *testing
 	var candidate candidateAPIResponse
 	decodeCandidateResponse(t, committed, &candidate)
 	if committed.Code != http.StatusOK || candidate.ID == "" ||
-		candidate.ArtifactDigest != digest || sources.commits != 1 {
+		candidate.ArtifactDigest != digest || candidate.Status != string(deployment.CandidateReady) ||
+		sources.commits != 1 || runtimes.calls != 1 {
 		t.Fatalf("commit response = %d candidate=%#v commits=%d", committed.Code, candidate, sources.commits)
 	}
 
@@ -63,8 +74,55 @@ func TestCandidateSynchronizationPlansUploadsAndCommitsOwnedCandidate(t *testing
 	var replacement candidateAPIResponse
 	decodeCandidateResponse(t, replaced, &replacement)
 	if replaced.Code != http.StatusOK || replacement.ID != candidate.ID ||
-		replacement.ArtifactDigest != nextDigest || replacement.Revision != candidate.Revision+1 {
+		replacement.ArtifactDigest != nextDigest || replacement.Revision != candidate.Revision+2 {
 		t.Fatalf("replacement response = %d candidate=%#v", replaced.Code, replacement)
+	}
+}
+
+func TestCandidateSynchronizationPreservesReadyCandidateWhenPreparationFails(t *testing.T) {
+	module := testCandidateModule(t, "principal_1")
+	firstDigest := "sha256:" + strings.Repeat("a", 64)
+	started, err := module.candidates.Start(t.Context(), deployment.StartCandidateRequest{
+		ProjectID: "finance", OwnerID: "principal_1", ArtifactDigest: firstDigest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready, err := module.candidates.MarkReady(t.Context(), deployment.CandidateScope{
+		ProjectID: "finance", CandidateID: started.Candidate.ID, OwnerID: "principal_1",
+	}, firstDigest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	module.candidateSources = &candidateSourceSynchronizerStub{}
+	module.candidateArtifacts = candidateArtifactPreparerStub{
+		err: release.ErrCandidateArtifactUnavailable,
+	}
+	module.candidateRuntimes = &candidateRuntimePreparerStub{}
+	nextDigest := "sha256:" + strings.Repeat("b", 64)
+	body := `{"projectFile":"leapview.yaml","artifactDigest":"` + nextDigest +
+		`","expectedCandidateId":"` + ready.ID + `","expectedArtifactDigest":"` + firstDigest +
+		`","artifacts":[]}`
+	response := callCandidateAPI(
+		t,
+		http.MethodPost,
+		"/api/v1/projects/finance/candidate-sync/commit",
+		body,
+		func(w http.ResponseWriter, r *http.Request) {
+			module.CommitProjectCandidateSynchronization(w, r, "finance", "commit-2")
+		},
+	)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("preparation failure = %d %s", response.Code, response.Body.String())
+	}
+	current, err := module.candidates.Get(t.Context(), deployment.CandidateScope{
+		ProjectID: "finance", CandidateID: ready.ID, OwnerID: "principal_1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Status != deployment.CandidateReady || current.ArtifactDigest != firstDigest {
+		t.Fatalf("last ready candidate changed: %#v", current)
 	}
 }
 
@@ -369,12 +427,40 @@ func (stub *candidateSourceSynchronizerStub) Upload(
 }
 
 func (stub *candidateSourceSynchronizerStub) Commit(
-	context.Context,
-	deployment.CandidateSourceScope,
-	deployment.CandidateSynchronizationRequest,
-) error {
+	_ context.Context,
+	_ deployment.CandidateSourceScope,
+	request deployment.CandidateSynchronizationRequest,
+) (project.CandidateSourceSnapshot, error) {
 	stub.commits++
-	return nil
+	return project.CandidateSourceSnapshot{
+		ProjectID: "finance", ArtifactDigest: request.ArtifactDigest,
+		ProjectPath: "/target/snapshots/project/leapview.yaml",
+	}, nil
+}
+
+type candidateArtifactPreparerStub struct {
+	result release.CandidateArtifactSet
+	err    error
+}
+
+func (stub candidateArtifactPreparerStub) PrepareCandidateArtifacts(
+	context.Context,
+	release.CandidateArtifactRequest,
+) (release.CandidateArtifactSet, error) {
+	return stub.result, stub.err
+}
+
+type candidateRuntimePreparerStub struct {
+	calls int
+	err   error
+}
+
+func (stub *candidateRuntimePreparerStub) Prepare(
+	context.Context,
+	deployment.CandidateRuntimeRequest,
+) error {
+	stub.calls++
+	return stub.err
 }
 
 func standardContentDigest(t *testing.T, identity string) string {

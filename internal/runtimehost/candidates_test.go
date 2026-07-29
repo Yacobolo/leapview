@@ -81,6 +81,56 @@ func TestCandidateRuntimeReplacementIsPrivateAndDrainsLeasedGeneration(t *testin
 	}
 }
 
+func TestOwnedCandidateViewProvidesServerResolvedCompatibilityAndProvider(t *testing.T) {
+	now := time.Date(2026, 7, 29, 17, 0, 0, 0, time.UTC)
+	registry := candidateTestRegistry(t, func() time.Time { return now })
+	registration := CandidateRegistration{
+		CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "sales",
+		ExpiresAt: now.Add(time.Hour), Compatibility: candidateCompatibility("one"),
+	}
+	registerCandidateRuntime(t, registry, registration, "candidate_sales_1")
+
+	view, err := registry.ResolveOwnedCandidate("cand_1", "author_1")
+	if err != nil {
+		t.Fatalf("ResolveOwnedCandidate() error = %v", err)
+	}
+	if len(view.Workspaces) != 1 ||
+		view.Workspaces[0].WorkspaceID != "sales" ||
+		view.Workspaces[0].AuthorizationFingerprint != registration.Compatibility.AuthorizationFingerprint {
+		t.Fatalf("ResolveOwnedCandidate() = %#v", view)
+	}
+
+	lease, err := view.Workspaces[0].Provider.Acquire(t.Context())
+	if err != nil {
+		t.Fatalf("candidate provider Acquire() error = %v", err)
+	}
+	defer lease.Release()
+	if lease.ServingStateID() != "candidate_sales_1" {
+		t.Fatalf("candidate serving state = %q", lease.ServingStateID())
+	}
+}
+
+func TestOwnedCandidateViewConcealsForeignAndMissingCandidates(t *testing.T) {
+	now := time.Date(2026, 7, 29, 17, 0, 0, 0, time.UTC)
+	registry := candidateTestRegistry(t, func() time.Time { return now })
+	registerCandidateRuntime(t, registry, CandidateRegistration{
+		CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "sales",
+		ExpiresAt: now.Add(time.Hour), Compatibility: candidateCompatibility("one"),
+	}, "candidate_sales_1")
+
+	for _, request := range []struct {
+		candidate string
+		owner     string
+	}{
+		{candidate: "cand_1", owner: "author_2"},
+		{candidate: "missing", owner: "author_1"},
+	} {
+		if _, err := registry.ResolveOwnedCandidate(request.candidate, request.owner); !errors.Is(err, ErrCandidateRuntimeNotFound) {
+			t.Fatalf("ResolveOwnedCandidate(%q, %q) error = %v", request.candidate, request.owner, err)
+		}
+	}
+}
+
 func TestCandidateRuntimeLeaseFailsClosedAcrossOwnershipAndCompatibilityBoundaries(t *testing.T) {
 	now := time.Date(2026, 7, 29, 17, 0, 0, 0, time.UTC)
 	registry := candidateTestRegistry(t, func() time.Time { return now })

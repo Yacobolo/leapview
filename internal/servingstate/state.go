@@ -42,8 +42,9 @@ const DefaultEnvironment Environment = "dev"
 type Source string
 
 const (
-	SourcePublish Source = "publish"
-	SourceRefresh Source = "refresh"
+	SourcePublish   Source = "publish"
+	SourceRefresh   Source = "refresh"
+	SourceCandidate Source = "candidate"
 )
 
 type State struct {

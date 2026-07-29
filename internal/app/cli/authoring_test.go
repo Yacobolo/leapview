@@ -44,7 +44,9 @@ func TestGeneratedCandidateSynchronizationTransportMapsTypedProtocol(t *testing.
 		t.Fatalf("candidate = %#v", candidate)
 	}
 	if len(generic.requests) != 3 ||
+		generic.requests[0].Headers.Get("Idempotency-Key") == "" ||
 		generic.requests[1].Headers.Get("Content-Digest") != standardCandidateContentDigest(request.Artifacts[0].Digest) ||
+		generic.requests[2].Headers.Get("Idempotency-Key") == "" ||
 		string(generic.requests[1].Body.([]byte)) != "source" {
 		t.Fatalf("generated requests = %#v", generic.requests)
 	}

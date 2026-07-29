@@ -14,11 +14,12 @@ import (
 )
 
 type Module struct {
-	service     *release.Service
-	catalog     release.CatalogRepository
-	deployments release.DeploymentLinkage
-	environment string
-	api         APIConfig
+	service            *release.Service
+	candidateArtifacts *candidateArtifactService
+	catalog            release.CatalogRepository
+	deployments        release.DeploymentLinkage
+	environment        string
+	api                APIConfig
 }
 
 type Config struct {
@@ -35,6 +36,12 @@ type Config struct {
 type ServingStateRepository interface {
 	release.ServingStateRepository
 	validate.Repository
+	ActiveArtifact(
+		context.Context,
+		servingstate.WorkspaceID,
+		servingstate.Environment,
+	) (servingstate.State, servingstate.Artifact, error)
+	RecordDuckLakeSnapshot(context.Context, servingstate.ID, int64) error
 }
 
 type WorkspaceProvisioner interface {
@@ -60,9 +67,25 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		return nil, err
 	}
 	return &Module{
-		service: service, catalog: catalog, deployments: deployments,
+		service: service,
+		candidateArtifacts: &candidateArtifactService{
+			states: config.States, workspaces: config.Workspaces,
+			artifacts: store, validator: validator,
+			environment: servingstate.NormalizeEnvironment(config.Environment),
+		},
+		catalog: catalog, deployments: deployments,
 		environment: string(config.Environment), api: config.API,
 	}, nil
+}
+
+func (m *Module) PrepareCandidateArtifacts(
+	ctx context.Context,
+	request release.CandidateArtifactRequest,
+) (release.CandidateArtifactSet, error) {
+	if m == nil || m.candidateArtifacts == nil {
+		return release.CandidateArtifactSet{}, release.ErrCandidateArtifactUnavailable
+	}
+	return m.candidateArtifacts.Prepare(ctx, request)
 }
 
 func releaseStores(database *sql.DB, workflow ...jobs.WorkflowRecorder) (release.Repository, release.FinalizationUnitOfWork, release.CatalogRepository, release.DeploymentLinkage, error) {

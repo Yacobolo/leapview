@@ -105,6 +105,16 @@ type Handler struct {
 	OptionCursorSecret   []byte
 	OptionCache          *dashboardfilter.OptionCache
 	AgentBootstrap       func(*nethttp.Request, string) reportui.AgentBootstrap
+	RouteScope           reportui.RouteScope
+	StreamNamespace      string
+}
+
+func (h Handler) scopedStreamID(streamID string) string {
+	namespace := strings.TrimSpace(h.StreamNamespace)
+	if namespace == "" {
+		return streamID
+	}
+	return namespace + ":" + streamID
 }
 
 func (h Handler) dashboardSessionKey(r *nethttp.Request, definition dashboarddefinition.Definition, clientID, streamInstanceID string) dashboardsession.Key {
@@ -191,7 +201,11 @@ func (h Handler) Dashboard(w nethttp.ResponseWriter, r *nethttp.Request) {
 		nethttp.NotFound(w, r)
 		return
 	}
-	nethttp.Redirect(w, r, "/workspaces/"+workspaceID+"/dashboards/"+dashboardID+"/pages/"+pages[0].ID, nethttp.StatusFound)
+	base := "/workspaces/" + workspaceID
+	if h.RouteScope.BasePath != "" {
+		base = strings.TrimSuffix(h.RouteScope.BasePath, "/")
+	}
+	nethttp.Redirect(w, r, base+"/dashboards/"+dashboardID+"/pages/"+pages[0].ID, nethttp.StatusFound)
 }
 
 func (h Handler) Page(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -233,7 +247,7 @@ func (h Handler) RenderPage(w nethttp.ResponseWriter, r *nethttp.Request, dashbo
 	if h.Layout != nil {
 		providers = []webpage.Provider{h.Layout(r)}
 	}
-	if err := reportui.PageWithPresentation(h.Presentation, clientID, csrfToken, metrics.Catalog(), reportDefinition, model, pages, activePage, initialFilters, providers...).Render(w); err != nil {
+	if err := reportui.PageWithRouteScope(h.Presentation, h.RouteScope, clientID, csrfToken, metrics.Catalog(), reportDefinition, model, pages, activePage, initialFilters, providers...).Render(w); err != nil {
 		nethttp.Error(w, err.Error(), nethttp.StatusInternalServerError)
 	}
 }

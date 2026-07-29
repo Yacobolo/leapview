@@ -34,7 +34,7 @@ func (d *APIGenDispatcher) CommitProjectCandidateSynchronization(w stdhttp.Respo
 	d.handler.CommitProjectCandidateSynchronization(w, r, project, headers.IdempotencyKey)
 }
 
-func (d *APIGenDispatcher) PlanProjectCandidateSynchronization(w stdhttp.ResponseWriter, r *stdhttp.Request, project string) {
+func (d *APIGenDispatcher) PlanProjectCandidateSynchronization(w stdhttp.ResponseWriter, r *stdhttp.Request, project string, _ deploymentgen.GenPlanProjectCandidateSynchronizationHeaders) {
 	d.handler.PlanProjectCandidateSynchronization(w, r, project)
 }
 

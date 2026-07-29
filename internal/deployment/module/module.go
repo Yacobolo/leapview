@@ -11,21 +11,25 @@ import (
 	"github.com/flidai/leapview/internal/deployment"
 	"github.com/flidai/leapview/internal/deployment/apiadapter"
 	deploymenthttp "github.com/flidai/leapview/internal/deployment/http"
+	"github.com/flidai/leapview/internal/release"
 )
 
 type Module struct {
-	handler           *deploymenthttp.Handler
-	candidates        *deployment.CandidateService
-	candidateRuntimes *deployment.CandidateRuntimeService
-	candidateSources  deployment.CandidateSourceSynchronizer
-	jobs              JobConfig
-	api               APIConfig
+	handler            *deploymenthttp.Handler
+	candidates         *deployment.CandidateService
+	candidateRuntimes  CandidateRuntimePreparer
+	candidateSources   deployment.CandidateSourceSynchronizer
+	candidateArtifacts release.CandidateArtifactPreparer
+	jobs               JobConfig
+	api                APIConfig
 }
 
 type Principal struct {
 	ID string
 }
 
+type Candidate = deployment.Candidate
+type CandidateStatus = deployment.CandidateStatus
 type CandidateEvent = deployment.CandidateEvent
 type CandidateConnectionRequest = deployment.CandidateConnectionRequest
 type CandidateConnectionEvidence = deployment.CandidateConnectionEvidence
@@ -33,11 +37,26 @@ type CandidateConnectionLeases = deployment.CandidateConnectionLeases
 type CandidateRuntimeRequest = deployment.CandidateRuntimeRequest
 type CandidateWorkspaceRuntime = deployment.CandidateWorkspaceRuntime
 type CandidateConnectionRequirement = deployment.CandidateConnectionRequirement
+type CandidateRestriction = deployment.CandidateRestriction
 type CandidateDataMode = deployment.CandidateDataMode
 
+type CandidateRuntimePreparer interface {
+	Prepare(context.Context, deployment.CandidateRuntimeRequest) error
+}
+
 const (
+	CandidatePreparing          = deployment.CandidatePreparing
+	CandidateReady              = deployment.CandidateReady
+	CandidateFailed             = deployment.CandidateFailed
+	CandidateCancelled          = deployment.CandidateCancelled
+	CandidateExpired            = deployment.CandidateExpired
 	CandidateDataReuseSnapshot  = deployment.CandidateDataReuseSnapshot
 	CandidateDataRefreshSources = deployment.CandidateDataRefreshSources
+)
+
+var (
+	ErrCandidateNotFound    = deployment.ErrCandidateNotFound
+	ErrCandidateUnavailable = deployment.ErrCandidateUnavailable
 )
 
 type ServingStatePort interface {
@@ -62,6 +81,7 @@ type Config struct {
 	CandidateConnections     deployment.CandidateConnectionLeaser
 	CandidateRuntime         deployment.CandidateRuntimeHost
 	CandidateSources         deployment.CandidateSourceSynchronizer
+	CandidateArtifacts       release.CandidateArtifactPreparer
 	RuntimeVersion           string
 	CurrentPrincipal         func(*http.Request) (Principal, bool)
 	Jobs                     JobConfig
@@ -125,7 +145,8 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	m := &Module{
 		handler: deploymenthttp.NewHandler(options), candidates: candidates,
 		candidateRuntimes: candidateRuntimes, candidateSources: config.CandidateSources,
-		jobs: jobs, api: config.API,
+		candidateArtifacts: config.CandidateArtifacts,
+		jobs:               jobs, api: config.API,
 	}
 	if m.jobs.Authorize == nil {
 		m.jobs.Authorize = m.publicationAuthorizer(config.PublicationAuthorization)

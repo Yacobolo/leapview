@@ -210,7 +210,7 @@ op cancelProjectCandidate(@path project: string, @path candidate: string, @heade
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
 @operationId("planProjectCandidateSynchronization")
-op planProjectCandidateSynchronization(@path project: string, @body body: CandidateSynchronizationRequest): OkJson<CandidateSynchronizationPlanResponse> | CommonErrors;
+op planProjectCandidateSynchronization(@path project: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: CandidateSynchronizationRequest): OkJson<CandidateSynchronizationPlanResponse> | CommonErrors;
 
 @tag("Deployments")
 @summary("Upload a missing immutable private-candidate source blob")

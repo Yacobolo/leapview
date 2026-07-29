@@ -71,6 +71,8 @@ type runtimeServices struct {
 	platformHealth        platformHealth
 	storageRetention      *servingstatemodule.Retention
 	queryAuditProvider    adminmodule.QueryAuditReaderProvider
+	candidateMetrics      func(runtimehostmodule.Provider, string) QueryMetrics
+	runtimeHostModule     *runtimehostmodule.Module
 }
 
 type platformServices struct {
@@ -338,6 +340,31 @@ func buildApplicationSurfaces(
 	storage := storageInputs{}
 	moduleWorkflow.refreshPipelineClock = workflow.RefreshPipelineClock
 	runtime.queryAuditProvider = queryAuditProvider
+	runtime.candidateMetrics = func(provider runtimehostmodule.Provider, workspaceID string) QueryMetrics {
+		if provider == nil || strings.TrimSpace(workspaceID) == "" {
+			return nil
+		}
+		var candidate QueryMetrics = dashboardmodule.NewRuntimeMetrics(provider, workspaceID)
+		candidate = dashboardmodule.WithAdmission(candidate, controller, workspaceID)
+		if dataAuthorization != nil && (data.AccessRepo != nil || workflow.Auth != nil || capabilities.AccessModule != nil) {
+			candidate = dashboardmodule.WithQueryAuthorization(candidate, dashboardmodule.QueryAuthorizationConfig{
+				Repository: dataAuthorization, DefaultWorkspaceID: workspaceID,
+				PrincipalFromContext: func(ctx context.Context) (dashboardmodule.QueryPrincipal, bool) {
+					principal, ok := accessmodule.PrincipalFromContext(ctx)
+					return dashboardmodule.QueryPrincipal{ID: principal.ID, DevBypass: principal.DevBypass || workflow.Auth == nil}, ok
+				},
+				CredentialFromContext: accessmodule.APICredentialFromContext,
+				TokenAllows:           accessmodule.TokenAllows,
+			})
+		}
+		if queryAuditRecorder != nil {
+			candidate = dashboardmodule.WithQueryAudit(candidate, queryAuditRecorder, workspaceID, func(ctx context.Context) (string, bool) {
+				principal, ok := accessmodule.PrincipalFromContext(ctx)
+				return principal.ID, ok
+			})
+		}
+		return candidate
+	}
 	if moduleWorkflow.refreshPipelineClock == nil {
 		moduleWorkflow.refreshPipelineClock = refreshmodule.NewRealClock()
 	}

@@ -50,7 +50,9 @@ func TestAPIGenDispatcherMapsCandidateOperationsAndIdempotency(t *testing.T) {
 	if handler.operation != "cancel:p1:cand_1" || handler.idempotencyKey != "cancel-1" {
 		t.Fatalf("cancel mapping = operation:%q key:%q", handler.operation, handler.idempotencyKey)
 	}
-	dispatcher.PlanProjectCandidateSynchronization(recorder, request, "p1")
+	dispatcher.PlanProjectCandidateSynchronization(recorder, request, "p1", deploymentgen.GenPlanProjectCandidateSynchronizationHeaders{
+		IdempotencyKey: "plan-1",
+	})
 	if handler.operation != "sync-plan:p1" {
 		t.Fatalf("sync plan mapping = %q", handler.operation)
 	}

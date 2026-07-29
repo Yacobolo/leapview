@@ -269,6 +269,45 @@ func TestPageCreatesUniqueStreamInstancePerRender(t *testing.T) {
 	}
 }
 
+func TestPrivateRouteScopeKeepsDashboardTrafficInsideCandidate(t *testing.T) {
+	report := dashboarddefinition.Definition{
+		ID: "report", SemanticModel: "model",
+		Pages:          []dashboard.Page{{ID: "overview"}, {ID: "details"}},
+		Visualizations: map[string]visualizationdefinition.Definition{},
+	}
+	model := &semanticmodel.Model{Name: "model"}
+	base := "/candidates/cand_1/workspaces/sales"
+	var out strings.Builder
+	if err := PageWithRouteScope(
+		Presentation{ProductName: "LeapView", FaviconPath: "/static/favicon.svg"},
+		RouteScope{BasePath: base},
+		"client", "", dashboard.Catalog{Workspace: dashboard.CatalogWorkspace{ID: "sales"}},
+		report, model, report.Pages, report.Pages[0], dashboard.Filters{},
+	).Render(&out); err != nil {
+		t.Fatal(err)
+	}
+	rendered := html.UnescapeString(out.String())
+	for _, want := range []string{
+		base + "/updates?",
+		base + "/commands/filter",
+		base + "/commands/navigate",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("candidate page missing %q:\n%s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{
+		`@get('/updates?`,
+		`@post('/workspaces/sales/commands/`,
+		`/chats/turns`,
+		`/chats/restore`,
+	} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("candidate page leaked active route %q:\n%s", forbidden, rendered)
+		}
+	}
+}
+
 func queryParamFromRenderedPage(t *testing.T, body, name string) string {
 	t.Helper()
 	start := strings.Index(body, "/updates?")

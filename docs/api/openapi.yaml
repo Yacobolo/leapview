@@ -9927,6 +9927,14 @@ paths:
           schema:
             type: string
           example: example
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+          example: example
       responses:
         '200':
           description: The request has succeeded.

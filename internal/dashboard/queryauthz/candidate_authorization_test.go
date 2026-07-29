@@ -124,6 +124,36 @@ func TestCandidateQueryCapabilityAddsRestrictionsAndEffectivePolicyFingerprint(t
 	}
 }
 
+func TestCandidateQueryCapabilityAppliesOnlyRelevantObjectRestrictions(t *testing.T) {
+	repository := &candidateAuthorizationRepository{}
+	metrics := New(semanticModelMetrics{model: governanceTestModel()}, Options{
+		Repo: repository,
+		PrincipalFromContext: func(context.Context) (Principal, bool) {
+			return Principal{ID: "author_1"}, true
+		},
+		DefaultWorkspaceID: "sales",
+	})
+	capability := CandidateQueryCapability{
+		CandidateID: "cand_1", OwnerPrincipalID: "author_1", WorkspaceID: "sales",
+		PolicyDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Restrictions: []access.DataPolicy{{
+			ID: "unrelated", WorkspaceID: "sales",
+			ObjectID: "semantic_model:sales:unrelated", PolicyType: "row_filter",
+			ExpressionJSON: `{"field":"unrelated.region","operator":"equals","values":["DK"]}`,
+		}},
+	}
+	governed, _, err := metrics.GovernDataQuery(
+		WithCandidateQueryCapability(t.Context(), capability),
+		candidateGovernanceRequest(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(governed.Filters) != 0 {
+		t.Fatalf("unrelated candidate restriction leaked into query = %#v", governed.Filters)
+	}
+}
+
 func TestCandidateQueryCapabilityCannotDeleteOrShadowActiveRestrictions(t *testing.T) {
 	repository := &candidateAuthorizationRepository{
 		policies: []access.DataPolicy{{

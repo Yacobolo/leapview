@@ -86,6 +86,9 @@ func (m *Module) AcquireCandidate(
 ) (runtimehost.Lease, error) {
 	return m.registry.AcquireCandidate(ctx, request)
 }
+func (m *Module) ResolveOwnedCandidate(candidateID, ownerID string) (runtimehost.OwnedCandidateView, error) {
+	return m.registry.ResolveOwnedCandidate(candidateID, ownerID)
+}
 func (m *Module) RetireCandidate(id string) int {
 	return m.registry.RetireCandidate(id)
 }

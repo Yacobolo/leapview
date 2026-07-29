@@ -822,7 +822,21 @@ func (m Metrics) effectiveDataPolicies(ctx context.Context, request dataquery.Qu
 		// Candidate restrictions are appended without deduplicating against the
 		// active policy IDs. An authored policy can therefore never shadow or
 		// replace a currently effective restriction.
-		out = append(out, candidate.Restrictions...)
+		relevant := map[string]struct{}{
+			"workspace:" + request.WorkspaceID: {},
+		}
+		for _, object := range append(append([]access.ObjectRef(nil), objects...), dataQueryColumnObjects(request)...) {
+			relevant[object.CanonicalID()] = struct{}{}
+		}
+		for _, restriction := range candidate.Restrictions {
+			if restriction.ObjectID == "" {
+				out = append(out, restriction)
+				continue
+			}
+			if _, ok := relevant[restriction.ObjectID]; ok {
+				out = append(out, restriction)
+			}
+		}
 	}
 	return out, nil
 }

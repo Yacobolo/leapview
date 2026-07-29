@@ -118,7 +118,7 @@ func (h Handler) FilterCommand(w nethttp.ResponseWriter, r *nethttp.Request) {
 		return
 	}
 
-	streamID := lddatastar.ClientStreamID(r, signals, dashboardID, pageID)
+	streamID := h.scopedStreamID(lddatastar.ClientStreamID(r, signals, dashboardID, pageID))
 	registry := h.Coordinators
 	if registry == nil {
 		registry = dashboardstream.NewRegistry()
