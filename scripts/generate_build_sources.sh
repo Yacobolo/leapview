@@ -13,6 +13,9 @@ go run "$APIGEN" typespec-compile -manifest api/apigen.yaml -target ui-signals
 go run "$APIGEN" all -manifest api/apigen.yaml -target ui-signals
 go run ./internal/app/tools/signalcontracts
 
+go run "$APIGEN" typespec-compile -manifest api/apigen.yaml -target desktop-discovery-contracts
+go run "$APIGEN" all -manifest api/apigen.yaml -target desktop-discovery-contracts
+
 go run "$APIGEN" typespec-compile -manifest api/apigen.yaml -target visualization-ir
 go run "$APIGEN" all -manifest api/apigen.yaml -target visualization-ir
 

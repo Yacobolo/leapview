@@ -166,7 +166,7 @@ tasks:
       - task: docs:generate
       - task: docs:check
       - |
-        changed="$(git status --porcelain -- .env.example docs/api/openapi.yaml docs/llms.txt docs/reference/agent-tools internal/agent/contracts schemas/config schemas/json)"
+        changed="$(git status --porcelain -- .env.example docs/api/openapi.yaml docs/llms.txt docs/reference/agent-tools internal/agent/contracts schemas/config schemas/desktop schemas/json)"
         test -z "$changed" || { printf 'public contract snapshots are stale:\n%s\n' "$changed" >&2; exit 1; }
       - task: site:build
       - bun run test:docs-diagrams
@@ -292,6 +292,7 @@ tasks:
       - task: agent-contracts:generate
       - task: ui-signals:generate
       - task: schema:generate
+      - task: desktop-discovery:generate
       - task: visualization-ir:generate
       - task: map-style:generate
       - task: cli-docs:generate
@@ -460,7 +461,7 @@ tasks:
       - task: generated:git-check
       - task: config:check
       - |
-        changed="$(git status --porcelain -- .env.example docs/api/openapi.yaml docs/llms.txt docs/reference/agent-tools internal/agent/contracts schemas/config schemas/json)"
+        changed="$(git status --porcelain -- .env.example docs/api/openapi.yaml docs/llms.txt docs/reference/agent-tools internal/agent/contracts schemas/config schemas/desktop schemas/json)"
         test -z "$changed" || { printf 'public contract snapshots are stale:\n%s\n' "$changed" >&2; exit 1; }
 
   generated:git-check:
@@ -543,6 +544,22 @@ tasks:
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 typespec-compile -manifest api/apigen.yaml -target agent-tool-contracts
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 all -manifest api/apigen.yaml -target agent-tool-contracts
       - go run ./internal/agent/contracts/generate
+
+  desktop-discovery:generate:
+    desc: Generate the public desktop discovery and failure contracts
+    method: checksum
+    sources:
+      - Taskfile.yml
+      - api/apigen.yaml
+      - api/desktop-discovery/**/*.tsp
+    generates:
+      - api/gen/desktop-discovery-ir.json
+      - schemas/desktop/discovery.schema.json
+      - internal/app/desktopdiscovery/models.gen.go
+      - desktop/src/generated/desktop-discovery.ts
+    cmds:
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 typespec-compile -manifest api/apigen.yaml -target desktop-discovery-contracts
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 all -manifest api/apigen.yaml -target desktop-discovery-contracts
 
   schema:generate:
     desc: Generate JSON Schema artifacts for LeapView YAML contracts

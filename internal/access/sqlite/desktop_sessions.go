@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	platformdb "github.com/Yacobolo/leapview/internal/access/sqlite/accessdb"
+	accessdb "github.com/Yacobolo/leapview/internal/access/internal/db"
 )
 
 var (
@@ -43,7 +43,7 @@ func (r *Repository) CreateDesktopSession(
 	}
 	now := time.Now().UTC()
 	expiresAt := now.Add(ttl).Format(time.RFC3339)
-	if err := r.q.CreateSession(ctx, platformdb.CreateSessionParams{
+	if err := r.q.CreateSession(ctx, accessdb.CreateSessionParams{
 		ID:               id,
 		PrincipalID:      principalID,
 		TokenFingerprint: fingerprint,

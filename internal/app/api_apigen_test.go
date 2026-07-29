@@ -63,6 +63,7 @@ func TestAPIGenUsesTypedClientGenerator(t *testing.T) {
 		"typespec_entrypoint: typespec/main.tsp",
 		"typespec_entrypoint: signals/main.tsp",
 		"typespec_entrypoint: visualization/main.tsp",
+		"typespec_entrypoint: desktop-discovery/main.tsp",
 		"typespec_dir: ../internal/agent/contracts",
 	} {
 		if !strings.Contains(manifestText, source) {
@@ -100,6 +101,7 @@ func TestAPIGenUsesTypedClientGenerator(t *testing.T) {
 	taskText := string(taskfile)
 	for _, want := range []string{
 		"- task: api:generate\n      - task: agent-contracts:generate\n      - task: ui-signals:generate\n      - task: schema:generate",
+		"- task: desktop-discovery:generate",
 		"schema:generate:\n    desc: Generate JSON Schema artifacts for LeapView YAML contracts\n    deps:\n      - db:generate\n      - config:generate\n      - api:generate\n      - ui-signals:generate",
 	} {
 		if !strings.Contains(taskText, want) {
@@ -125,6 +127,14 @@ func TestAPIGenUsesTypedClientGenerator(t *testing.T) {
 	}
 	if want := "APIGEN=github.com/Yacobolo/toolbelt/apigen/cmd/apigen@" + apigenVersion; !strings.Contains(string(buildSources), want) {
 		t.Fatalf("container source-generation script missing APIGen pin %q", want)
+	}
+	for _, want := range []string{
+		"typespec-compile -manifest api/apigen.yaml -target desktop-discovery-contracts",
+		"all -manifest api/apigen.yaml -target desktop-discovery-contracts",
+	} {
+		if !strings.Contains(string(buildSources), want) {
+			t.Fatalf("container source-generation script missing desktop discovery generation command %q", want)
+		}
 	}
 
 	ir, err := os.ReadFile(filepath.Join(root, "api", "gen", "json-ir.json"))

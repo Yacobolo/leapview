@@ -5,6 +5,7 @@ import {
   discoverInstance,
   validateDiscoveryDocument,
 } from "./discovery.js";
+import type { DesktopDiscoveryFailureKind } from "./generated/desktop-discovery.js";
 
 const origin = "https://analytics.company.com";
 const validDocument = {
@@ -19,33 +20,54 @@ const validDocument = {
   capabilities: ["remote-web"],
 };
 
+function expectDiscoveryFailure(
+  operation: () => unknown,
+  kind: DesktopDiscoveryFailureKind,
+): void {
+  try {
+    operation();
+    throw new Error(`expected desktop discovery failure ${kind}`);
+  } catch (error) {
+    expect(error).toBeInstanceOf(DesktopDiscoveryError);
+    expect((error as DesktopDiscoveryError).kind).toBe(kind);
+  }
+}
+
 describe("validateDiscoveryDocument", () => {
   test("accepts the supported bounded contract", () => {
     expect(validateDiscoveryDocument(validDocument, origin)).toEqual(validDocument);
   });
 
   test("rejects origin substitution, instance spoofing, and incompatible protocols", () => {
-    expect(() =>
+    expectDiscoveryFailure(
+      () =>
       validateDiscoveryDocument(
         { ...validDocument, canonicalOrigin: "https://attacker.example" },
         origin,
       ),
-    ).toThrow("canonical origin");
-    expect(() =>
+      "canonical_origin_mismatch",
+    );
+    expectDiscoveryFailure(
+      () =>
       validateDiscoveryDocument({ ...validDocument, instanceId: origin }, origin),
-    ).toThrow("instance id");
-    expect(() =>
+      "malformed_response",
+    );
+    expectDiscoveryFailure(
+      () =>
       validateDiscoveryDocument(
         { ...validDocument, desktopProtocolMin: 2, desktopProtocolMax: 4 },
         origin,
       ),
-    ).toThrow("not compatible");
-    expect(() =>
+      "protocol_incompatible",
+    );
+    expectDiscoveryFailure(
+      () =>
       validateDiscoveryDocument(
         { ...validDocument, authenticationModes: ["browser-session"] },
         origin,
       ),
-    ).toThrow("system-browser-pkce");
+      "authentication_incompatible",
+    );
   });
 
   test("rejects excessive nesting, strings, and arrays", () => {
@@ -93,17 +115,95 @@ describe("discoverInstance", () => {
   });
 
   test("rejects non-JSON and oversized responses", async () => {
-    await expect(
-      discoverInstance(origin, async () =>
+    for (const fetcher of [
+      async () =>
         new Response("not json", { headers: { "content-type": "text/plain" } }),
-      ),
-    ).rejects.toBeInstanceOf(DesktopDiscoveryError);
-    await expect(
-      discoverInstance(origin, async () =>
+      async () =>
+        new Response("{}", {
+          headers: { "content-type": "application/jsonp" },
+        }),
+      async () =>
         new Response("x".repeat(65_537), {
           headers: { "content-type": "application/json" },
         }),
-      ),
-    ).rejects.toThrow("too large");
+      async () =>
+        new Response("{", {
+          headers: { "content-type": "application/json" },
+        }),
+    ]) {
+      try {
+        await discoverInstance(origin, fetcher);
+        throw new Error("expected malformed discovery response");
+      } catch (error) {
+        expect(error).toBeInstanceOf(DesktopDiscoveryError);
+        expect((error as DesktopDiscoveryError).kind).toBe(
+          "malformed_response",
+        );
+      }
+    }
+  });
+
+  test("classifies bounded timeout, redirect, DNS, TLS, proxy, and network failures", async () => {
+    const cases = [
+      ["redirect", "net::ERR_UNSAFE_REDIRECT"],
+      ["dns", "net::ERR_NAME_NOT_RESOLVED"],
+      ["tls", "net::ERR_CERT_AUTHORITY_INVALID"],
+      ["proxy", "net::ERR_PROXY_CONNECTION_FAILED"],
+      ["proxy", "net::ERR_TUNNEL_CONNECTION_FAILED"],
+      ["network", "net::ERR_CONNECTION_REFUSED"],
+    ] as const;
+    for (const [kind, message] of cases) {
+      try {
+        await discoverInstance(origin, async () => {
+          throw new TypeError(`Failed to fetch: ${message}`);
+        });
+        throw new Error(`expected ${kind} failure`);
+      } catch (error) {
+        expect(error).toBeInstanceOf(DesktopDiscoveryError);
+        expect((error as DesktopDiscoveryError).kind).toBe(kind);
+        expect(error instanceof Error ? error.message : "").not.toContain(
+          message,
+        );
+      }
+    }
+
+    try {
+      await discoverInstance(
+        origin,
+        async (_input, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            init.signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("aborted", "AbortError")),
+              { once: true },
+            );
+          }),
+        { timeoutMs: 5 },
+      );
+      throw new Error("expected timeout");
+    } catch (error) {
+      expect(error).toBeInstanceOf(DesktopDiscoveryError);
+      expect((error as DesktopDiscoveryError).kind).toBe("timeout");
+    }
+  });
+
+  test("serializes only the generated, non-secret failure contract", () => {
+    const error = new DesktopDiscoveryError(
+      "dns",
+      "failed to resolve secret.internal",
+      { cause: new Error("resolver=10.0.0.53") },
+    );
+
+    expect(error.toFailure()).toEqual({
+      schemaVersion: 1,
+      kind: "dns",
+    });
+    expect(JSON.stringify(error.toFailure())).not.toContain("secret.internal");
+    expect(
+      new DesktopDiscoveryError("tls", "certificate rejected").toFailure(),
+    ).toEqual({
+      schemaVersion: 1,
+      kind: "tls",
+    });
   });
 });

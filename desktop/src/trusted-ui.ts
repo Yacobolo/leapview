@@ -6,6 +6,7 @@ import {
   policyManagesOrigin,
   type DesktopPolicy,
 } from "./managed-policy.js";
+import { DesktopDiscoveryError } from "./discovery.js";
 import type { Profile } from "./profiles.js";
 
 const MAX_FORM_BYTES = 4 * 1024;
@@ -18,9 +19,13 @@ export type TrustedUIState =
   | "crashed"
   | "disconnected"
   | "error"
+  | "dns-error"
   | "incompatible"
+  | "invalid-instance"
   | "offline"
-  | "success";
+  | "proxy-error"
+  | "success"
+  | "tls-error";
 
 export interface TrustedUINotice {
   kind: "error" | "progress" | "success";
@@ -802,6 +807,78 @@ function userFacingError(error: unknown): string {
 }
 
 function classifyOperationError(error: unknown): TrustedUINotice {
+  if (error instanceof DesktopDiscoveryError) {
+    switch (error.kind) {
+      case "schema_incompatible":
+      case "protocol_incompatible":
+      case "authentication_incompatible":
+      case "capability_incompatible":
+      case "canonical_origin_mismatch":
+      case "instance_identity_mismatch":
+        return {
+          kind: "error",
+          state: "incompatible",
+          message:
+            "This LeapView instance is not compatible with this version of the desktop client.",
+        };
+      case "tls":
+        return {
+          kind: "error",
+          state: "tls-error",
+          message:
+            "LeapView could not verify the server certificate. Ask your administrator to install the required CA in the operating system trust store.",
+        };
+      case "proxy":
+        return {
+          kind: "error",
+          state: "proxy-error",
+          message:
+            "LeapView could not connect through the configured network proxy. Check the system proxy settings and try again.",
+        };
+      case "dns":
+        return {
+          kind: "error",
+          state: "dns-error",
+          message:
+            "The LeapView instance name could not be resolved. Check the URL or network DNS settings and try again.",
+        };
+      case "network":
+      case "timeout":
+        return {
+          kind: "error",
+          state: "offline",
+          message:
+            "The LeapView instance could not be reached. Check the network or server and try again.",
+        };
+      case "invalid_origin":
+        return {
+          kind: "error",
+          state: "invalid-instance",
+          message: "Enter a LeapView instance URL that uses HTTPS.",
+        };
+      case "redirect":
+        return {
+          kind: "error",
+          state: "invalid-instance",
+          message:
+            "The LeapView discovery URL redirected unexpectedly. Enter the deployed instance's canonical HTTPS URL.",
+        };
+      case "http":
+        return {
+          kind: "error",
+          state: "invalid-instance",
+          message:
+            "The server did not expose a compatible LeapView discovery endpoint.",
+        };
+      case "malformed_response":
+        return {
+          kind: "error",
+          state: "invalid-instance",
+          message:
+            "The server returned an invalid discovery document and could not be opened.",
+        };
+    }
+  }
   const message = error instanceof Error ? error.message.toLowerCase() : "";
   if (
     message.includes("not compatible") ||

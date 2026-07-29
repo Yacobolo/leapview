@@ -295,7 +295,7 @@ async function connectOriginAtPath(
   rawOrigin: string,
   path: string,
 ): Promise<void> {
-  const origin = parseConfiguredOrigin(rawOrigin, { allowLoopbackHTTP });
+  const origin = configuredOrigin(rawOrigin);
   requirePolicyOrigin(origin);
   const discovery = await discover(origin);
   const profile = await profiles.upsertFromDiscovery(discovery);
@@ -312,9 +312,7 @@ async function connectProfileAtPath(
   path: string,
 ): Promise<void> {
   const profile = await savedProfile(profileID);
-  const origin = parseConfiguredOrigin(profile.canonicalOrigin, {
-    allowLoopbackHTTP,
-  });
+  const origin = configuredOrigin(profile.canonicalOrigin);
   const discovery = await discover(origin);
   const verifiedProfile = await profiles.upsertFromDiscovery(discovery);
   await openRemoteWindow(verifiedProfile, path);
@@ -1060,14 +1058,23 @@ function diagnosticDiscoveryOutcome(
 ): Extract<DiagnosticEvent, { kind: "discovery" }>["outcome"] {
   if (
     error instanceof DesktopDiscoveryError &&
-    (
-      error.message === "instance discovery failed" ||
-      error.message === "instance discovery timed out"
-    )
+    ["dns", "network", "proxy", "timeout", "tls"].includes(error.kind)
   ) {
     return "unavailable";
   }
   return "rejected";
+}
+
+function configuredOrigin(rawOrigin: string): string {
+  try {
+    return parseConfiguredOrigin(rawOrigin, { allowLoopbackHTTP });
+  } catch (error) {
+    throw new DesktopDiscoveryError(
+      "invalid_origin",
+      "instance URL must be a canonical HTTPS origin",
+      { cause: error },
+    );
+  }
 }
 
 function diagnosticSurface(

@@ -32,17 +32,7 @@ type Config struct {
 	AllowLoopbackHTTP bool
 }
 
-type Document struct {
-	SchemaVersion       int      `json:"schemaVersion"`
-	CanonicalOrigin     string   `json:"canonicalOrigin"`
-	InstanceID          string   `json:"instanceId"`
-	DisplayName         string   `json:"displayName"`
-	ServerVersion       string   `json:"serverVersion"`
-	DesktopProtocolMin  int      `json:"desktopProtocolMin"`
-	DesktopProtocolMax  int      `json:"desktopProtocolMax"`
-	AuthenticationModes []string `json:"authenticationModes"`
-	Capabilities        []string `json:"capabilities"`
-}
+type Document = DesktopDiscoveryDocument
 
 func NewHandler(config Config) (http.Handler, error) {
 	origin, err := validateCanonicalOrigin(config.CanonicalOrigin, config.AllowLoopbackHTTP)
@@ -61,15 +51,18 @@ func NewHandler(config Config) (http.Handler, error) {
 		return nil, err
 	}
 	document := Document{
-		SchemaVersion:       SchemaVersion,
-		CanonicalOrigin:     origin,
-		InstanceID:          config.InstanceID,
-		DisplayName:         displayName,
-		ServerVersion:       serverVersion,
-		DesktopProtocolMin:  DesktopProtocolVersion,
-		DesktopProtocolMax:  DesktopProtocolVersion,
-		AuthenticationModes: []string{"browser-session", "system-browser-pkce"},
-		Capabilities:        []string{"remote-web"},
+		SchemaVersion:      SchemaVersion,
+		CanonicalOrigin:    origin,
+		InstanceID:         config.InstanceID,
+		DisplayName:        displayName,
+		ServerVersion:      serverVersion,
+		DesktopProtocolMin: DesktopProtocolVersion,
+		DesktopProtocolMax: DesktopProtocolVersion,
+		AuthenticationModes: []DesktopAuthenticationMode{
+			DesktopAuthenticationModeBrowserSession,
+			DesktopAuthenticationModeSystemBrowserPkce,
+		},
+		Capabilities: []DesktopCapability{DesktopCapabilityRemoteWeb},
 	}
 	body, err := json.Marshal(document)
 	if err != nil {

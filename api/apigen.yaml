@@ -104,3 +104,12 @@ targets:
     go_models_out: ../internal/agent/contracts/models.gen.go
     go_models_package: contracts
     json_schema_out: ../internal/agent/contracts/gen/agent-tools.schema.json
+  - name: desktop-discovery-contracts
+    kind: contracts
+    typespec_dir: .
+    typespec_entrypoint: desktop-discovery/main.tsp
+    ir_out: gen/desktop-discovery-ir.json
+    go_models_out: ../internal/app/desktopdiscovery/models.gen.go
+    go_models_package: desktopdiscovery
+    ts_out: ../desktop/src/generated/desktop-discovery.ts
+    json_schema_out: ../schemas/desktop/discovery.schema.json

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { DesktopDiscoveryError } from "./discovery.js";
 import { TrustedUI } from "./trusted-ui.js";
 
 const trustedAssets = {
@@ -156,24 +157,56 @@ describe("TrustedUI", () => {
   });
 
   test("classifies compatibility and offline failures without exposing causes", async () => {
-    for (const [message, state, safeMessage] of [
+    for (const [error, state, safeMessage] of [
       [
-        "the server desktop protocol is not compatible with this client",
+        new DesktopDiscoveryError(
+          "protocol_incompatible",
+          "the server desktop protocol is not compatible with this client",
+        ),
         "incompatible",
         "not compatible",
       ],
       [
-        "instance discovery failed",
+        new DesktopDiscoveryError("network", "instance discovery failed"),
         "offline",
         "could not be reached",
+      ],
+      [
+        new DesktopDiscoveryError("tls", "instance discovery failed"),
+        "tls-error",
+        "certificate",
+      ],
+      [
+        new DesktopDiscoveryError("proxy", "instance discovery failed"),
+        "proxy-error",
+        "proxy",
+      ],
+      [
+        new DesktopDiscoveryError("dns", "instance discovery failed"),
+        "dns-error",
+        "could not be resolved",
+      ],
+      [
+        new DesktopDiscoveryError(
+          "malformed_response",
+          "instance discovery returned invalid JSON",
+        ),
+        "invalid-instance",
+        "invalid discovery",
+      ],
+      [
+        new DesktopDiscoveryError(
+          "invalid_origin",
+          "instance URL must use HTTPS",
+        ),
+        "invalid-instance",
+        "HTTPS",
       ],
     ] as const) {
       const ui = trustedUI({
         allowLoopbackHTTP: false,
         connectOrigin: async () => {
-          throw new Error(message, {
-            cause: new Error("secret.internal:5432"),
-          });
+          throw error;
         },
         connectProfile: async () => undefined,
         disconnectProfile: async () => undefined,

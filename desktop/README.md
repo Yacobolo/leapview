@@ -17,6 +17,30 @@ The application accepts any deployed instance that returns a valid LeapView
 desktop discovery document. It does not accept arbitrary websites, redirects,
 or an instance whose identity changes after it has been saved.
 
+The public response and safe failure taxonomy are authored once in
+`api/desktop-discovery/main.tsp`. Generation produces the Go response model used
+by the server, the TypeScript model used by the desktop client, and a JSON
+Schema at `schemas/desktop/discovery.schema.json`. A schema, protocol,
+authentication mode, capability, canonical origin, or immutable instance
+identity mismatch fails closed before any remote content is opened.
+
+## Enterprise networking
+
+- Discovery and remote windows use Electron's Chromium network stack, so they
+  inherit the platform/session proxy configuration and platform certificate
+  trust behavior.
+- Private certificate authorities must be installed by an administrator in the
+  operating system trust store. LeapView does not bundle organization CAs,
+  disable certificate verification, or offer a click-through bypass.
+- Client-certificate authentication is not part of the version-one desktop
+  capability contract.
+- The trusted shell distinguishes DNS, proxy, TLS, timeout, generic network,
+  redirect, malformed response, and compatibility failures without displaying
+  raw Chromium errors or network details.
+- The cross-platform Electron workflow builds and launches candidates on
+  Windows, macOS, and Linux. Enterprise proxy and private-CA qualification must
+  pass on those same platform runners before a release is promoted.
+
 ## Try it locally
 
 1. Start LeapView with `task dev`.

@@ -4,7 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -40,15 +44,18 @@ func TestNewHandlerServesVersionedPublicMetadata(t *testing.T) {
 		t.Fatalf("decode document: %v", err)
 	}
 	want := Document{
-		SchemaVersion:       SchemaVersion,
-		CanonicalOrigin:     "https://analytics.company.com",
-		InstanceID:          "instance_0123456789abcdef0123456789abcdef",
-		DisplayName:         "Company Analytics",
-		ServerVersion:       "v1.4.2",
-		DesktopProtocolMin:  DesktopProtocolVersion,
-		DesktopProtocolMax:  DesktopProtocolVersion,
-		AuthenticationModes: []string{"browser-session", "system-browser-pkce"},
-		Capabilities:        []string{"remote-web"},
+		SchemaVersion:      SchemaVersion,
+		CanonicalOrigin:    "https://analytics.company.com",
+		InstanceID:         "instance_0123456789abcdef0123456789abcdef",
+		DisplayName:        "Company Analytics",
+		ServerVersion:      "v1.4.2",
+		DesktopProtocolMin: DesktopProtocolVersion,
+		DesktopProtocolMax: DesktopProtocolVersion,
+		AuthenticationModes: []DesktopAuthenticationMode{
+			DesktopAuthenticationModeBrowserSession,
+			DesktopAuthenticationModeSystemBrowserPkce,
+		},
+		Capabilities: []DesktopCapability{DesktopCapabilityRemoteWeb},
 	}
 	if !reflect.DeepEqual(document, want) {
 		t.Fatalf("document = %#v, want %#v", document, want)
@@ -126,4 +133,84 @@ func TestHandlerRejectsUnsupportedMethods(t *testing.T) {
 	if got := recorder.Header().Get("Allow"); got != http.MethodGet {
 		t.Fatalf("Allow = %q, want GET", got)
 	}
+}
+
+func TestGeneratedSchemaMatchesPublicDocumentAndFailureKinds(t *testing.T) {
+	_, sourceFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve test source path")
+	}
+	schemaBody, err := os.ReadFile(filepath.Join(
+		filepath.Dir(sourceFile),
+		"..", "..", "..", "schemas", "desktop", "discovery.schema.json",
+	))
+	if err != nil {
+		t.Fatalf("read generated desktop discovery schema: %v", err)
+	}
+	var schema struct {
+		Definitions map[string]struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+			Enum       []string                   `json:"enum"`
+		} `json:"$defs"`
+	}
+	if err := json.Unmarshal(schemaBody, &schema); err != nil {
+		t.Fatalf("decode generated desktop discovery schema: %v", err)
+	}
+
+	documentSchema, ok := schema.Definitions["DesktopDiscoveryDocument"]
+	if !ok {
+		t.Fatal("generated schema is missing DesktopDiscoveryDocument")
+	}
+	documentBody, err := json.Marshal(Document{
+		SchemaVersion:      SchemaVersion,
+		CanonicalOrigin:    "https://analytics.company.com",
+		InstanceID:         "instance_0123456789abcdef0123456789abcdef",
+		DisplayName:        "Company Analytics",
+		ServerVersion:      "v1.4.2",
+		DesktopProtocolMin: DesktopProtocolVersion,
+		DesktopProtocolMax: DesktopProtocolVersion,
+		AuthenticationModes: []DesktopAuthenticationMode{
+			DesktopAuthenticationModeBrowserSession,
+			DesktopAuthenticationModeSystemBrowserPkce,
+		},
+		Capabilities: []DesktopCapability{DesktopCapabilityRemoteWeb},
+	})
+	if err != nil {
+		t.Fatalf("marshal generated desktop discovery model: %v", err)
+	}
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(documentBody, &document); err != nil {
+		t.Fatalf("decode generated desktop discovery model: %v", err)
+	}
+	if !reflect.DeepEqual(sortedKeys(document), sortedKeys(documentSchema.Properties)) {
+		t.Fatalf(
+			"generated response properties = %v, generated schema properties = %v",
+			sortedKeys(document),
+			sortedKeys(documentSchema.Properties),
+		)
+	}
+
+	failureKinds := schema.Definitions["DesktopDiscoveryFailureKind"].Enum
+	for _, want := range []string{
+		"tls",
+		"proxy",
+		"dns",
+		"network",
+		"malformed_response",
+		"protocol_incompatible",
+		"canonical_origin_mismatch",
+	} {
+		if !slices.Contains(failureKinds, want) {
+			t.Fatalf("generated failure kinds %v do not contain %q", failureKinds, want)
+		}
+	}
+}
+
+func sortedKeys[V any](values map[string]V) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return keys
 }

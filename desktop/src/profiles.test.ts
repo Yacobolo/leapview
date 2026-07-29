@@ -3,6 +3,7 @@ import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
+import { DesktopDiscoveryError } from "./discovery.js";
 import { ProfileStore } from "./profiles.js";
 
 const discovery = {
@@ -78,18 +79,30 @@ describe("ProfileStore", () => {
     try {
       const store = new ProfileStore(join(directoryPath, "profiles.json"));
       await store.upsertFromDiscovery(discovery);
-      await expect(
-        store.upsertFromDiscovery({
+      try {
+        await store.upsertFromDiscovery({
           ...discovery,
           instanceId: "instance_abcdef0123456789abcdef0123456789",
-        }),
-      ).rejects.toThrow("different LeapView instance identity");
-      await expect(
-        store.upsertFromDiscovery({
+        });
+        throw new Error("expected instance identity mismatch");
+      } catch (error) {
+        expect(error).toBeInstanceOf(DesktopDiscoveryError);
+        expect((error as DesktopDiscoveryError).kind).toBe(
+          "instance_identity_mismatch",
+        );
+      }
+      try {
+        await store.upsertFromDiscovery({
           ...discovery,
           canonicalOrigin: "https://new.company.com",
-        }),
-      ).rejects.toThrow("different canonical origin");
+        });
+        throw new Error("expected canonical origin mismatch");
+      } catch (error) {
+        expect(error).toBeInstanceOf(DesktopDiscoveryError);
+        expect((error as DesktopDiscoveryError).kind).toBe(
+          "canonical_origin_mismatch",
+        );
+      }
     } finally {
       await rm(directoryPath, { force: true, recursive: true });
     }

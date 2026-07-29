@@ -9,7 +9,10 @@ import {
 } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import type { DiscoveryDocument } from "./discovery.js";
+import {
+  DesktopDiscoveryError,
+  type DiscoveryDocument,
+} from "./discovery.js";
 
 const PROFILE_SCHEMA_VERSION = 1;
 const profileIDPattern = /^profile_[0-9a-f]{32}$/;
@@ -52,7 +55,8 @@ export class ProfileStore {
         originProfile !== undefined &&
         originProfile.instanceId !== discovery.instanceId
       ) {
-        throw new Error(
+        throw new DesktopDiscoveryError(
+          "instance_identity_mismatch",
           "the saved origin now reports a different LeapView instance identity",
         );
       }
@@ -63,7 +67,8 @@ export class ProfileStore {
         instanceProfile !== undefined &&
         instanceProfile.canonicalOrigin !== discovery.canonicalOrigin
       ) {
-        throw new Error(
+        throw new DesktopDiscoveryError(
+          "canonical_origin_mismatch",
           "the saved LeapView instance now reports a different canonical origin",
         );
       }

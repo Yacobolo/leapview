@@ -1,0 +1,159 @@
+{
+  "$defs": {
+    "DesktopAuthenticationMode": {
+      "description": "Authentication handshakes a compatible desktop client may use.",
+      "enum": [
+        "browser-session",
+        "system-browser-pkce"
+      ],
+      "type": "string"
+    },
+    "DesktopCapability": {
+      "description": "Server capabilities required by the native desktop shell.",
+      "enum": [
+        "remote-web"
+      ],
+      "type": "string"
+    },
+    "DesktopDiscoveryDocument": {
+      "description": "Bounded public document served without credentials from\n`/.well-known/leapview`.",
+      "properties": {
+        "authenticationModes": {
+          "items": {
+            "$ref": "#/$defs/DesktopAuthenticationMode"
+          },
+          "type": "array"
+        },
+        "canonicalOrigin": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "type": "string"
+        },
+        "capabilities": {
+          "items": {
+            "$ref": "#/$defs/DesktopCapability"
+          },
+          "type": "array"
+        },
+        "desktopProtocolMax": {
+          "format": "int32",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "desktopProtocolMin": {
+          "format": "int32",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "displayName": {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string"
+        },
+        "instanceId": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "type": "integer"
+        },
+        "serverVersion": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "authenticationModes",
+        "canonicalOrigin",
+        "capabilities",
+        "desktopProtocolMax",
+        "desktopProtocolMin",
+        "displayName",
+        "instanceId",
+        "schemaVersion",
+        "serverVersion"
+      ],
+      "type": "object",
+      "unevaluatedProperties": false,
+      "x-leapview-contract-role": "desktop-discovery"
+    },
+    "DesktopDiscoveryFailure": {
+      "description": "Serializable representation of a desktop discovery failure. The desktop\nError class carries the same generated kind while keeping its cause local.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/DesktopDiscoveryFailureKind"
+        },
+        "schemaVersion": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "schemaVersion"
+      ],
+      "type": "object",
+      "unevaluatedProperties": false,
+      "x-leapview-contract-role": "desktop-discovery-failure"
+    },
+    "DesktopDiscoveryFailureKind": {
+      "description": "Stable, non-secret failure categories. These values are safe to use for\ntrusted-shell UX and local diagnostics; raw network errors are never part of\nthis contract.",
+      "enum": [
+        "invalid_origin",
+        "tls",
+        "proxy",
+        "dns",
+        "network",
+        "timeout",
+        "redirect",
+        "http",
+        "malformed_response",
+        "canonical_origin_mismatch",
+        "instance_identity_mismatch",
+        "schema_incompatible",
+        "protocol_incompatible",
+        "authentication_incompatible",
+        "capability_incompatible"
+      ],
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/DesktopDiscoveryDocument"
+    },
+    {
+      "$ref": "#/$defs/DesktopDiscoveryFailure"
+    }
+  ],
+  "description": "Public compatibility document and stable client-side failure taxonomy used before a desktop client trusts a LeapView instance.",
+  "title": "LeapView Desktop Discovery Contracts",
+  "x-apigen-contracts": [
+    {
+      "description": "Bounded public document served without credentials from\n`/.well-known/leapview`.",
+      "kind": "desktop-discovery",
+      "name": "DesktopDiscoveryDocument",
+      "schema": {
+        "$ref": "#/$defs/DesktopDiscoveryDocument"
+      },
+      "tags": [
+        "desktop",
+        "public"
+      ],
+      "x-leapview-contract-role": "desktop-discovery"
+    },
+    {
+      "description": "Serializable representation of a desktop discovery failure. The desktop\nError class carries the same generated kind while keeping its cause local.",
+      "kind": "desktop-discovery-failure",
+      "name": "DesktopDiscoveryFailure",
+      "schema": {
+        "$ref": "#/$defs/DesktopDiscoveryFailure"
+      },
+      "tags": [
+        "desktop",
+        "public"
+      ],
+      "x-leapview-contract-role": "desktop-discovery-failure"
+    }
+  ]
+}
