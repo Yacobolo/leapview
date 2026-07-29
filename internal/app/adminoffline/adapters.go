@@ -275,10 +275,19 @@ func (archive instanceArchive) RestoreDatabase(ctx context.Context, options admi
 }
 
 func (archive instanceArchive) RestoreInstance(ctx context.Context, options adminoffline.RestoreOptions) error {
+	current := options.CurrentBackup
+	if options.DiscardCurrentBackup {
+		var err error
+		current, err = securefs.UnusedTemporaryPath(filepath.Dir(archive.home), platform.InstanceRestoreCheckpointPattern)
+		if err != nil {
+			return err
+		}
+		defer os.Remove(current)
+	}
 	platformOptions := platform.InstanceRestoreOptions{
 		TargetHomeDir:        archive.home,
 		BackupPath:           options.Path,
-		CurrentBackupOut:     options.CurrentBackup,
+		CurrentBackupOut:     current,
 		DiscardCurrentBackup: options.DiscardCurrentBackup,
 		ExpectedEnvironment:  options.ExpectedEnvironment,
 		PreserveRelativeFile: instancelock.FileName,

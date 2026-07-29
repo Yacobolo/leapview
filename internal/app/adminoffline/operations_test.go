@@ -116,12 +116,33 @@ func TestAdminBackupStreamsRestorableInstanceArchive(t *testing.T) {
 	}
 	targetHome := filepath.Join(t.TempDir(), "volume", "home")
 	setAdminStorageEnv(t, targetHome)
+	current, err := platform.Open(ctx, filepath.Join(targetHome, "leapview.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := current.UpsertSetting(ctx, "stream-test", "current"); err != nil {
+		t.Fatal(err)
+	}
+	if err := current.Close(); err != nil {
+		t.Fatal(err)
+	}
 	var restoreOutput bytes.Buffer
-	if err := runAdminRestore(ctx, admincli.Options{RestoreFrom: "-", ConfirmRestore: true}, bytes.NewReader(archive.Bytes()), &restoreOutput); err != nil {
+	if err := runAdminRestore(ctx, admincli.Options{
+		RestoreFrom:    "-",
+		RestoreBefore:  "-",
+		ConfirmRestore: true,
+	}, bytes.NewReader(archive.Bytes()), &restoreOutput); err != nil {
 		t.Fatalf("restore streamed backup: %v", err)
 	}
 	if !strings.Contains(restoreOutput.String(), "instance restored from: stdin") {
 		t.Fatalf("restore output = %q", restoreOutput.String())
+	}
+	checkpoints, err := filepath.Glob(filepath.Join(filepath.Dir(targetHome), platform.InstanceRestoreCheckpointPattern))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(checkpoints) != 0 {
+		t.Fatalf("discarded restore checkpoints remain: %v", checkpoints)
 	}
 	restored, err := platform.Open(ctx, filepath.Join(targetHome, "leapview.db"))
 	if err != nil {
