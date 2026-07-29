@@ -53,11 +53,12 @@ jobs:
         run: |
           test -n "$HCP_API_TOKEN"
           test -n "$HCLOUD_TOKEN"
-          echo "TF_TOKEN_app_terraform_io=$HCP_API_TOKEN" >> "$GITHUB_ENV"
-          echo "TF_VAR_hcloud_token=$HCLOUD_TOKEN" >> "$GITHUB_ENV"
-          printf 'TF_VAR_operator_ssh_public_key=%s\n' \
-            "$(tr -d '\r\n' < deploy/hetzner-site/operator-ssh-key.pub)" \
-            >> "$GITHUB_ENV"
+          {
+            echo "TF_TOKEN_app_terraform_io=$HCP_API_TOKEN"
+            echo "TF_VAR_hcloud_token=$HCLOUD_TOKEN"
+            printf 'TF_VAR_operator_ssh_public_key=%s\n' \
+              "$(tr -d '\r\n' < deploy/hetzner-site/operator-ssh-key.pub)"
+          } >> "$GITHUB_ENV"
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
@@ -161,11 +162,12 @@ jobs:
         run: |
           test -n "$HCP_API_TOKEN"
           test -n "$HCLOUD_TOKEN"
-          echo "TF_TOKEN_app_terraform_io=$HCP_API_TOKEN" >> "$GITHUB_ENV"
-          echo "TF_VAR_hcloud_token=$HCLOUD_TOKEN" >> "$GITHUB_ENV"
-          printf 'TF_VAR_operator_ssh_public_key=%s\n' \
-            "$(tr -d '\r\n' < deploy/hetzner-site/operator-ssh-key.pub)" \
-            >> "$GITHUB_ENV"
+          {
+            echo "TF_TOKEN_app_terraform_io=$HCP_API_TOKEN"
+            echo "TF_VAR_hcloud_token=$HCLOUD_TOKEN"
+            printf 'TF_VAR_operator_ssh_public_key=%s\n' \
+              "$(tr -d '\r\n' < deploy/hetzner-site/operator-ssh-key.pub)"
+          } >> "$GITHUB_ENV"
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
