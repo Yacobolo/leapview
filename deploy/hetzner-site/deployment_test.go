@@ -2,7 +2,9 @@ package hetznersite_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -110,7 +112,7 @@ func TestBootstrapConsumesArtifactsWithoutBuildingOrInitializingProduct(t *testi
 	cloudInit := readFile(t, "cloud-init.yaml.tftpl")
 	provision := readFile(t, filepath.Join("files", "provision.sh"))
 	for _, fragment := range []string{
-		"compose_b64", "caddyfile_b64", "deployment_env_b64", "provision_b64",
+		"compose_b64", "caddyfile_b64", "deployment_env_b64", "provision_b64", "deploy_b64",
 	} {
 		requireContains(t, main, fragment)
 		requireContains(t, cloudInit, fragment)
@@ -129,6 +131,131 @@ func TestBootstrapConsumesArtifactsWithoutBuildingOrInitializingProduct(t *testi
 		if strings.Contains(strings.ToLower(cloudInit+"\n"+provision), forbidden) {
 			t.Errorf("stateless bootstrap contains forbidden product operation %q", forbidden)
 		}
+	}
+}
+
+func TestRoutineDeploymentRestoresThePreviousReleaseWhenQualificationFails(t *testing.T) {
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeExecutable(t, filepath.Join(bin, "docker"), "#!/usr/bin/env bash\nexit 0\n")
+	writeExecutable(t, filepath.Join(bin, "flock"), "#!/usr/bin/env bash\nexit 0\n")
+
+	previous := siteImage("1")
+	candidate := siteImage("2")
+	writeFile(t, filepath.Join(root, "deployment.env"), "LEAPVIEW_SITE_IMAGE="+previous+"\nCADDY_IMAGE=caddy:2.10.2-alpine@sha256:"+strings.Repeat("3", 64)+"\n", 0o600)
+	writeExecutable(t, filepath.Join(root, "provision.sh"), `#!/usr/bin/env bash
+set -euo pipefail
+site_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${site_root}/deployment.env"
+if [[ -f "${site_root}/fail-candidate" && "${LEAPVIEW_SITE_IMAGE}" != "`+previous+`" ]]; then
+  exit 23
+fi
+printf '%s\n' "${LEAPVIEW_SITE_IMAGE}" > "${site_root}/deployed-image"
+`)
+	writeFile(t, filepath.Join(root, "fail-candidate"), "", 0o600)
+
+	command := exec.Command("bash", materializeDeployScript(t, root), candidate)
+	command.Env = append(os.Environ(),
+		"PATH="+bin+":"+os.Getenv("PATH"),
+	)
+	output, err := command.CombinedOutput()
+	if err == nil {
+		t.Fatalf("deployment succeeded, want candidate qualification failure\n%s", output)
+	}
+
+	deploymentEnv := readPath(t, filepath.Join(root, "deployment.env"))
+	requireContains(t, deploymentEnv, previous)
+	if strings.Contains(deploymentEnv, candidate) {
+		t.Fatalf("failed candidate remains active:\n%s", deploymentEnv)
+	}
+	if got := strings.TrimSpace(readPath(t, filepath.Join(root, "deployed-image"))); got != previous {
+		t.Fatalf("deployed image after rollback = %q, want %q", got, previous)
+	}
+	rollbacks, err := filepath.Glob(filepath.Join(root, "deployment.env.rollback.*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rollbacks) != 1 {
+		t.Fatalf("rollback snapshots = %v, want one retained snapshot", rollbacks)
+	}
+}
+
+func TestRoutineDeploymentRecordsSuccessfulReleaseEvidence(t *testing.T) {
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeExecutable(t, filepath.Join(bin, "docker"), "#!/usr/bin/env bash\nexit 0\n")
+	writeExecutable(t, filepath.Join(bin, "flock"), "#!/usr/bin/env bash\nexit 0\n")
+
+	previous := siteImage("4")
+	candidate := siteImage("5")
+	writeFile(t, filepath.Join(root, "deployment.env"), "LEAPVIEW_SITE_IMAGE="+previous+"\nCADDY_IMAGE=caddy:2.10.2-alpine@sha256:"+strings.Repeat("6", 64)+"\n", 0o600)
+	writeExecutable(t, filepath.Join(root, "provision.sh"), `#!/usr/bin/env bash
+set -euo pipefail
+site_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${site_root}/deployment.env"
+printf '%s\n' "${LEAPVIEW_SITE_IMAGE}" > "${site_root}/deployed-image"
+`)
+
+	command := exec.Command("bash", materializeDeployScript(t, root), candidate)
+	command.Env = append(os.Environ(),
+		"PATH="+bin+":"+os.Getenv("PATH"),
+	)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("deploy candidate: %v\n%s", err, output)
+	}
+
+	requireContains(t, readPath(t, filepath.Join(root, "deployment.env")), candidate)
+	if got := strings.TrimSpace(readPath(t, filepath.Join(root, "previous-image"))); got != previous {
+		t.Fatalf("previous image = %q, want %q", got, previous)
+	}
+	history := readPath(t, filepath.Join(root, "deployment-history.tsv"))
+	requireContains(t, history, previous)
+	requireContains(t, history, candidate)
+	requireContains(t, history, "activated")
+}
+
+func TestOperatorDeploymentPinsTheServerIdentityAndQualifiesThePublicRoute(t *testing.T) {
+	operator := readFile(t, filepath.Join("..", "..", "scripts", "deploy_site.sh"))
+	for _, fragment := range []string{
+		"ssh-keyscan",
+		"ssh-keygen -lf",
+		`"$scanned_key" == \#*`,
+		`"$scanned_key_file"`,
+		"StrictHostKeyChecking=yes",
+		"UserKnownHostsFile=",
+		"deploy/hetzner-site/ssh-host-key.sha256",
+		"/opt/leapview-site/deploy.sh",
+		"https://leapview.dev/healthz",
+		"https://leapview.dev/readyz",
+		"https://www.leapview.dev/",
+	} {
+		requireContains(t, operator, fragment)
+	}
+	for _, forbidden := range []string{
+		"StrictHostKeyChecking=no",
+		"~/.ssh/known_hosts",
+		"${HOME}/.ssh/known_hosts",
+	} {
+		if strings.Contains(operator, forbidden) {
+			t.Errorf("operator deployment contains forbidden fragment %q", forbidden)
+		}
+	}
+}
+
+func TestTaskExposesTheBoundedSiteDeployment(t *testing.T) {
+	taskfile := readFile(t, filepath.Join("..", "..", "Taskfile.yml"))
+	for _, fragment := range []string{
+		"site:deploy:",
+		"vars: [LEAPVIEW_SITE_IMAGE]",
+		"./scripts/deploy_site.sh",
+	} {
+		requireContains(t, taskfile, fragment)
 	}
 }
 
@@ -184,7 +311,9 @@ func TestRepositoryCIValidatesPermanentSiteInfrastructure(t *testing.T) {
 	}
 	for _, fragment := range []string{
 		"go test ./deploy/compose ./deploy/hetzner ./deploy/hetzner-site",
+		"deploy/hetzner-site/files/deploy.sh",
 		"deploy/hetzner-site/files/provision.sh",
+		"scripts/deploy_site.sh",
 		"working-directory: deploy/hetzner-site",
 	} {
 		requireContains(t, ci, fragment)
@@ -193,11 +322,45 @@ func TestRepositoryCIValidatesPermanentSiteInfrastructure(t *testing.T) {
 
 func readFile(t *testing.T, path string) string {
 	t.Helper()
+	return readPath(t, path)
+}
+
+func readPath(t *testing.T, path string) string {
+	t.Helper()
 	contents, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(contents)
+}
+
+func writeFile(t *testing.T, path, contents string, mode os.FileMode) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(contents), mode); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+func writeExecutable(t *testing.T, path, contents string) {
+	t.Helper()
+	writeFile(t, path, contents, 0o700)
+}
+
+func siteImage(digit string) string {
+	return "ghcr.io/flidai/leapview-site@sha256:" + strings.Repeat(digit, 64)
+}
+
+func materializeDeployScript(t *testing.T, root string) string {
+	t.Helper()
+	contents := readPath(t, filepath.Join("files", "deploy.sh"))
+	const productionRoot = `site_root="/opt/leapview-site"`
+	if strings.Count(contents, productionRoot) != 1 {
+		t.Fatalf("deploy script must declare the production root exactly once")
+	}
+	contents = strings.Replace(contents, productionRoot, "site_root="+strconv.Quote(root), 1)
+	path := filepath.Join(root, "deploy-under-test.sh")
+	writeExecutable(t, path, contents)
+	return path
 }
 
 func requireContains(t *testing.T, contents, fragment string) {

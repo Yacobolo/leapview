@@ -236,6 +236,7 @@ tasks:
     deps:
       - node:deps
     cmds:
+      - bun test scripts/qa_ui_framework_config.test.ts
       - bun scripts/qa_ui_framework.ts
 
   qa:movielens-performance:
@@ -662,6 +663,13 @@ tasks:
       - terraform -chdir=deploy/hetzner-site init -backend=false -input=false
       - terraform -chdir=deploy/hetzner-site validate
       - terraform -chdir=deploy/hetzner-site test
+
+  site:deploy:
+    desc: Atomically deploy and qualify an immutable public-site image
+    requires:
+      vars: [LEAPVIEW_SITE_IMAGE]
+    cmds:
+      - ./scripts/deploy_site.sh
 
   node:audit:
     desc: Scan JavaScript dependencies for known vulnerabilities

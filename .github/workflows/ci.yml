@@ -834,9 +834,11 @@ jobs:
           deploy/hetzner/files/leapviewctl-wrapper
           deploy/hetzner/files/leapview-backup-hook
           deploy/hetzner/files/provision.sh.tftpl
+          deploy/hetzner-site/files/deploy.sh
           deploy/hetzner-site/files/provision.sh
           deploy/compose/qualification/qualify.sh
           deploy/compose/qualification/recover.sh
+          scripts/deploy_site.sh
 
       - name: Initialize Terraform providers
         working-directory: deploy/hetzner

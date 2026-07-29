@@ -30,6 +30,11 @@ write_files:
     permissions: "0700"
     encoding: b64
     content: ${provision_b64}
+  - path: /opt/leapview-site/deploy.sh
+    owner: root:root
+    permissions: "0700"
+    encoding: b64
+    content: ${deploy_b64}
 
 runcmd:
   - [bash, /opt/leapview-site/provision.sh]

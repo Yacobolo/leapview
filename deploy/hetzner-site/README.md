@@ -16,9 +16,11 @@ creation-time bootstrap. The `bootstrap_site_image` value is only the image
 used to create a replacement server. Terraform ignores later cloud-init
 changes, so updating that value cannot replace the server or reserved IP.
 
-Routine image deployment, health qualification, and rollback belong to
-LEA-143. That workflow updates `/opt/leapview-site/deployment.env` over a
-bounded deployment channel and never applies or destroys infrastructure.
+Routine image deployment, health qualification, and rollback use the local
+operator command described below. It updates
+`/opt/leapview-site/deployment.env` over restricted SSH and never applies or
+destroys infrastructure. A hosted deployment workflow is intentionally
+deferred while the server firewall only admits reviewed operator CIDRs.
 
 ## Remote state
 
@@ -66,6 +68,34 @@ cd /opt/leapview-site
 docker compose --env-file deployment.env ps
 docker compose --env-file deployment.env logs --tail=200
 ```
+
+## Routine site deployment
+
+The deployment command requires an image from the canonical public GHCR
+package pinned by digest:
+
+```sh
+LEAPVIEW_SITE_IMAGE='ghcr.io/flidai/leapview-site@sha256:<digest>' task site:deploy
+```
+
+By default it connects to the reserved production IPv4 with
+`~/.ssh/leapview-site-production`. Override that path with
+`LEAPVIEW_SITE_SSH_KEY` when needed. The reviewed, non-secret SSH host-key
+fingerprint is stored in `ssh-host-key.sha256`; change it only after verifying
+a deliberate server replacement against the Hetzner control plane.
+
+The operator command scans the presented host key into a temporary
+`known_hosts` file, requires the exact reviewed fingerprint, installs the
+versioned deployment scripts, and invokes the bounded server-side deploy
+command. The server serializes deployments, pulls the candidate before changing
+the active environment, retains a rollback snapshot, and restores and
+re-qualifies the previous image if the candidate fails. Finally, the operator
+checks the server's recorded digest, public health and readiness routes, and
+the `www` redirect.
+
+Successful and failed deployment decisions are appended to root-readable
+`/opt/leapview-site/deployment-history.tsv`. Rollback environment snapshots are
+retained as `/opt/leapview-site/deployment.env.rollback.*`.
 
 ## Break-glass destruction
 
