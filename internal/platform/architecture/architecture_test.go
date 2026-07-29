@@ -2070,11 +2070,9 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...",
 		"production-image:",
 		"name: Production image",
-		"depot/setup-action@",
-		"depot/build-push-action@",
-		"project: 9x73gxjcf5",
+		"docker/setup-buildx-action@",
+		"docker/build-push-action@",
 		"platforms: linux/amd64",
-		"id-token: write",
 		"./scripts/smoke_production_image.sh leapview:ci",
 		"site-image-fork:",
 		"production-image-fork:",
@@ -2136,8 +2134,13 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		{name: "production-image", text: productionImage},
 		{name: "site-image", text: siteImage},
 	} {
-		if strings.Contains(block.text, "type=gha") {
-			t.Fatalf("%s must use Depot's persistent cache instead of transferring a GitHub Actions cache", block.name)
+		if strings.Contains(block.text, "depot/") || strings.Contains(block.text, "id-token: write") {
+			t.Fatalf("%s must build without repository-scoped external OIDC trust", block.name)
+		}
+		for _, want := range []string{"docker/setup-buildx-action@", "docker/build-push-action@"} {
+			if !strings.Contains(block.text, want) {
+				t.Fatalf("%s must retain portable Buildx fragment %q", block.name, want)
+			}
 		}
 	}
 	for _, job := range []string{"site-image-fork", "production-image-fork"} {
@@ -2256,10 +2259,7 @@ func TestContinuousIntegrationHealthWorkflowReportsAndAlerts(t *testing.T) {
 		"schedule:",
 		"workflow_dispatch:",
 		"actions: read",
-		"id-token: write",
 		"issues: write",
-		"depot/setup-action@",
-		"depot list builds --output json --project 9x73gxjcf5",
 		"go run ./internal/app/tools/cireport",
 		"--days 7",
 		"name: ci-health",
@@ -2268,6 +2268,11 @@ func TestContinuousIntegrationHealthWorkflowReportsAndAlerts(t *testing.T) {
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CI health workflow missing fragment %q", want)
+		}
+	}
+	for _, forbidden := range []string{"id-token: write", "depot/setup-action@", "depot list builds"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("CI health workflow must not depend on transferred repository trust fragment %q", forbidden)
 		}
 	}
 }
