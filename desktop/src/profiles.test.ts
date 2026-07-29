@@ -31,7 +31,9 @@ describe("ProfileStore", () => {
 
       expect(profile.id).toMatch(/^profile_[0-9a-f]{32}$/);
       expect(await new ProfileStore(path).list()).toEqual([profile]);
-      expect((await stat(path)).mode & 0o777).toBe(0o600);
+      if (process.platform !== "win32") {
+        expect((await stat(path)).mode & 0o777).toBe(0o600);
+      }
       const persisted = await readFile(path, "utf8");
       expect(persisted).not.toContain("cookie");
       expect(persisted).not.toContain("token");

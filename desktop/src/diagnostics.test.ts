@@ -62,7 +62,9 @@ describe("DiagnosticJournal", () => {
         now: () => now,
       });
       expect(reopened.events()).toHaveLength(5);
-      expect((await stat(path)).mode & 0o777).toBe(0o600);
+      if (process.platform !== "win32") {
+        expect((await stat(path)).mode & 0o777).toBe(0o600);
+      }
       const body = await readFile(path, "utf8");
       expect(body).not.toContain("origin");
       expect(body).not.toContain("displayName");
@@ -271,7 +273,9 @@ describe("DiagnosticJournal", () => {
       ).rejects.toThrow("diagnostic report");
 
       await writeDiagnosticReport(reportPath, report);
-      expect((await stat(reportPath)).mode & 0o777).toBe(0o600);
+      if (process.platform !== "win32") {
+        expect((await stat(reportPath)).mode & 0o777).toBe(0o600);
+      }
       expect(JSON.parse(await readFile(reportPath, "utf8"))).toEqual(report);
     } finally {
       await rm(directory, { force: true, recursive: true });

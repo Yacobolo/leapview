@@ -165,7 +165,7 @@ describe("probeWindowsDesktopPolicy", () => {
     expect(
       await probeWindowsDesktopPolicy("C:\\resources", async (executable) => {
         expect(executable).toBe(
-          "C:\\resources/leapview-windows-policy.exe",
+          join("C:\\resources", "leapview-windows-policy.exe"),
         );
         return {
           stdout: `${JSON.stringify({

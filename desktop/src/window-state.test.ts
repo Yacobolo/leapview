@@ -37,7 +37,9 @@ describe("WindowStateStore", () => {
           "profile_0123456789abcdef0123456789abcdef",
         ),
       ).toBeUndefined();
-      expect((await stat(path)).mode & 0o777).toBe(0o600);
+      if (process.platform !== "win32") {
+        expect((await stat(path)).mode & 0o777).toBe(0o600);
+      }
       const body = await readFile(path, "utf8");
       expect(body).not.toContain("http");
       expect(body).not.toContain("title");
