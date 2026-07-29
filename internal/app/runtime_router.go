@@ -548,10 +548,19 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	if routes.deploymentModule == nil {
 		config := moduleWorkflow.deploymentConfig
 		config.Logger = platform.logger
+		config.InstanceID = storage.instanceID
+		config.CanonicalOrigin = storage.publicURL
 		config.InstanceEnvironment = policy.defaultEnvironment
 		config.CurrentPrincipal = func(r *http.Request) (deploymentmodule.Principal, bool) {
 			principal, ok := routes.accessModule.CurrentPrincipal(r)
 			return deploymentmodule.Principal{ID: principal.ID}, ok
+		}
+		config.CandidateAudit = func(ctx context.Context, event deploymentmodule.CandidateEvent) error {
+			return routes.accessModule.RecordAudit(ctx, accessmodule.AuditEventInput{
+				WorkspaceID: policy.defaultWorkspaceID, PrincipalID: event.PrincipalID,
+				Action: event.Action, TargetType: "project_candidate", TargetID: event.CandidateID,
+				Privilege: accessmodule.PrivilegeDeploy, Status: string(event.Status), MetadataJSON: event.MetadataJSON,
+			})
 		}
 		config.Jobs = deploymentmodule.JobConfig{
 			Reconcile: func(ctx context.Context) error {

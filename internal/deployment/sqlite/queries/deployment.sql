@@ -151,6 +151,73 @@ ORDER BY collection_id;
 
 -- Deployment-owned validation projections over managed-data records.
 
+-- Durable private project candidate sessions.
+
+-- name: CreateProjectCandidate :exec
+INSERT INTO project_candidates (
+  id, project_id, target_id, environment, owner_principal_id,
+  base_generation, artifact_digest, status, failure_reason,
+  expires_at, created_at, updated_at, ready_at, cancelled_at,
+  expired_at, revision
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- name: GetProjectCandidate :one
+SELECT *
+FROM project_candidates
+WHERE id = ?;
+
+-- name: GetActiveProjectCandidateSession :one
+SELECT *
+FROM project_candidates
+WHERE target_id = ?
+  AND project_id = ?
+  AND owner_principal_id = ?
+  AND status IN ('preparing', 'ready', 'failed')
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
+
+-- name: CountActiveProjectCandidatesForOwner :one
+SELECT count(*)
+FROM project_candidates
+WHERE owner_principal_id = ?
+  AND status IN ('preparing', 'ready', 'failed');
+
+-- name: GetActiveProjectCandidateBaseGeneration :one
+SELECT id
+FROM project_deployments
+WHERE project_id = ?
+  AND environment = ?
+  AND status = 'active'
+ORDER BY activated_at DESC, created_at DESC, id DESC
+LIMIT 1;
+
+-- name: UpdateProjectCandidate :execrows
+UPDATE project_candidates
+SET artifact_digest = ?,
+    status = ?,
+    failure_reason = ?,
+    expires_at = ?,
+    updated_at = ?,
+    ready_at = ?,
+    cancelled_at = ?,
+    expired_at = ?,
+    revision = ?
+WHERE id = ?
+  AND revision = ?;
+
+-- name: ExpireProjectCandidates :execrows
+UPDATE project_candidates
+SET status = 'expired',
+    failure_reason = '',
+    ready_at = NULL,
+    expired_at = ?,
+    updated_at = ?,
+    revision = revision + 1
+WHERE target_id = ?
+  AND status IN ('preparing', 'ready', 'failed')
+  AND expires_at <= ?;
+
 -- name: GetManagedDataCollection :one
 SELECT * FROM managed_data_collections WHERE id = ?;
 

@@ -11,8 +11,12 @@ type APICredential = access.APICredential
 type Privilege = access.Privilege
 type ObjectRef = access.ObjectRef
 type ObjectResolver = httpauth.ObjectResolver
+type AuditEventInput = access.AuditEventInput
 
-const PrivilegeViewItem = access.PrivilegeViewItem
+const (
+	PrivilegeViewItem = access.PrivilegeViewItem
+	PrivilegeDeploy   = access.PrivilegeDeploy
+)
 
 func ParsePrivilege(value string) (Privilege, bool) {
 	return access.ParsePrivilege(value)

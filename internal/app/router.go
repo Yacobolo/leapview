@@ -61,6 +61,9 @@ func Routes(routes *capabilityRoutes, runtime *runtimeServices, platform *platfo
 		r.Use(csrf)
 		r.With(policy.rateLimits.Updates()).Get("/updates", runtime.pageStreams.ServeHTTP)
 		r.Get("/", routes.accessModule.ProtectViewItem(routes.workspaceModule.Home))
+		r.Get("/candidates/{candidate}", routes.accessModule.Protect(accessmodule.PrivilegeDeploy, func(w http.ResponseWriter, request *http.Request) {
+			candidatePreview(routes, runtime, platform, policy, w, request)
+		}))
 		routes.workspaceModule.MountAuthenticated(r, workspacemodule.RouteGuard{
 			Protect: routes.accessModule.Protect, ProtectWithObjects: routes.accessModule.ProtectWithObjects, AssetObjectRefs: routes.workspaceModule.AssetObjectRefs,
 		})

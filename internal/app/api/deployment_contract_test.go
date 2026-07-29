@@ -53,3 +53,59 @@ func TestProjectDeploymentAPIContract(t *testing.T) {
 		}
 	}
 }
+
+func TestPrivateProjectCandidateAPIContract(t *testing.T) {
+	spec := managedDataOpenAPISpec(t)
+	paths := openAPIMap(t, spec, "paths")
+	base := "/api/v1/projects/{project}/candidates"
+
+	start := openAPIOperation(t, paths, base, "post")
+	if start["operationId"] != "startProjectCandidate" ||
+		!operationHasParameter(start, "path", "project") ||
+		!operationHasParameter(start, "header", "Idempotency-Key") {
+		t.Fatalf("start candidate operation = %#v", start)
+	}
+	if _, ok := openAPIMap(t, start, "responses")["201"]; !ok {
+		t.Fatal("start candidate must return 201")
+	}
+	if privilege := openAPIMap(t, start, "x-authz")["privilege"]; privilege != "DEPLOY" {
+		t.Fatalf("candidate privilege = %#v", privilege)
+	}
+
+	item := base + "/{candidate}"
+	for suffix, operationID := range map[string]string{
+		"":          "getProjectCandidate",
+		"/artifact": "replaceProjectCandidateArtifact",
+		"/retry":    "retryProjectCandidate",
+		"/cancel":   "cancelProjectCandidate",
+	} {
+		method := "get"
+		if suffix == "/artifact" {
+			method = "put"
+		} else if suffix != "" {
+			method = "post"
+		}
+		operation := openAPIOperation(t, paths, item+suffix, method)
+		if operation["operationId"] != operationID {
+			t.Fatalf("%s operation = %#v", operationID, operation)
+		}
+		if suffix != "" && !operationHasParameter(operation, "header", "Idempotency-Key") {
+			t.Fatalf("%s is missing Idempotency-Key", operationID)
+		}
+	}
+
+	schemas := openAPIMap(t, openAPIMap(t, spec, "components"), "schemas")
+	response := openAPISchema(t, schemas, "CandidateResponse")
+	for _, field := range []string{
+		"id", "projectId", "targetId", "environment", "ownerId", "baseGeneration",
+		"artifactDigest", "status", "previewUrl", "expiresAt", "createdAt", "updatedAt", "revision",
+	} {
+		_ = schemaProperty(t, response, field)
+	}
+	assertEnum(t, openAPISchema(t, schemas, "CandidateStatus"), "preparing", "ready", "failed", "cancelled", "expired")
+	for _, forbidden := range []string{"credential", "secret", "infisical", "providerReference"} {
+		if _, exists := openAPIMap(t, response, "properties")[forbidden]; exists {
+			t.Fatalf("candidate response exposes forbidden field %q", forbidden)
+		}
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/flidai/leapview/internal/deployment"
 	"github.com/flidai/leapview/internal/deployment/apiadapter"
@@ -13,14 +14,17 @@ import (
 )
 
 type Module struct {
-	handler *deploymenthttp.Handler
-	jobs    JobConfig
-	api     APIConfig
+	handler    *deploymenthttp.Handler
+	candidates *deployment.CandidateService
+	jobs       JobConfig
+	api        APIConfig
 }
 
 type Principal struct {
 	ID string
 }
+
+type CandidateEvent = deployment.CandidateEvent
 
 type ServingStatePort interface {
 	deployment.ServingStateRepository
@@ -35,7 +39,12 @@ type Config struct {
 	ActivationHooks          ActivationHooks
 	MaxJSONBodyBytes         int64
 	Logger                   *slog.Logger
+	InstanceID               string
+	CanonicalOrigin          string
 	InstanceEnvironment      string
+	CandidateLifetime        time.Duration
+	MaxCandidatesPerOwner    int
+	CandidateAudit           func(context.Context, deployment.CandidateEvent) error
 	CurrentPrincipal         func(*http.Request) (Principal, bool)
 	Jobs                     JobConfig
 	API                      APIConfig
@@ -52,16 +61,25 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		return deploymenthttp.Principal{ID: principal.ID}, ok
 	}
 	var coordinator deploymenthttp.Coordinator
+	var candidates *deployment.CandidateService
 	if config.Database != nil {
 		if config.States == nil || config.Runtime == nil || config.ManagedData == nil || config.DeploymentMetadata == nil {
 			return nil, errors.New("deployment states, runtime, managed data, and metadata are required")
 		}
-		repository, activation := newPersistence(config.Database, config.ActivationHooks, config.API.Releases, config.API.Workflow)
+		repository, activation, candidateRepository := newPersistence(config.Database, config.ActivationHooks, config.API.Releases, config.API.Workflow)
 		service, err := deployment.New(repository, activation, config.States, config.Runtime, config.ManagedData)
 		if err != nil {
 			return nil, err
 		}
 		coordinator, err = apiadapter.New(service, config.DeploymentMetadata)
+		if err != nil {
+			return nil, err
+		}
+		candidates, err = deployment.NewCandidateService(candidateRepository, deployment.CandidateServiceConfig{
+			TargetID: config.InstanceID, CanonicalOrigin: config.CanonicalOrigin,
+			Environment: config.InstanceEnvironment, Lifetime: config.CandidateLifetime,
+			MaxActivePerOwner: config.MaxCandidatesPerOwner, Audit: config.CandidateAudit,
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -73,7 +91,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	if jobs.Coordinator == nil {
 		jobs.Coordinator = coordinator
 	}
-	m := &Module{handler: deploymenthttp.NewHandler(options), jobs: jobs, api: config.API}
+	m := &Module{handler: deploymenthttp.NewHandler(options), candidates: candidates, jobs: jobs, api: config.API}
 	if m.jobs.Authorize == nil {
 		m.jobs.Authorize = m.publicationAuthorizer(config.PublicationAuthorization)
 	}

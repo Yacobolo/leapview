@@ -10,6 +10,11 @@ import (
 )
 
 type APIGenHandler interface {
+	StartProjectCandidate(stdhttp.ResponseWriter, *stdhttp.Request, string, string)
+	GetProjectCandidate(stdhttp.ResponseWriter, *stdhttp.Request, string, string)
+	ReplaceProjectCandidateArtifact(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string)
+	RetryProjectCandidate(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string)
+	CancelProjectCandidate(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string)
 	ListDeployments(stdhttp.ResponseWriter, *stdhttp.Request, string, *int32, *string)
 	CreateDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string)
 	GetDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string)
@@ -22,6 +27,26 @@ type APIGenDispatcher struct{ handler APIGenHandler }
 
 func NewAPIGenDispatcher(handler APIGenHandler) *APIGenDispatcher {
 	return &APIGenDispatcher{handler: handler}
+}
+
+func (d *APIGenDispatcher) StartProjectCandidate(w stdhttp.ResponseWriter, r *stdhttp.Request, project string, headers deploymentgen.GenStartProjectCandidateHeaders) {
+	d.handler.StartProjectCandidate(w, r, project, headers.IdempotencyKey)
+}
+
+func (d *APIGenDispatcher) GetProjectCandidate(w stdhttp.ResponseWriter, r *stdhttp.Request, project, candidate string) {
+	d.handler.GetProjectCandidate(w, r, project, candidate)
+}
+
+func (d *APIGenDispatcher) ReplaceProjectCandidateArtifact(w stdhttp.ResponseWriter, r *stdhttp.Request, project, candidate string, headers deploymentgen.GenReplaceProjectCandidateArtifactHeaders) {
+	d.handler.ReplaceProjectCandidateArtifact(w, r, project, candidate, headers.IdempotencyKey)
+}
+
+func (d *APIGenDispatcher) RetryProjectCandidate(w stdhttp.ResponseWriter, r *stdhttp.Request, project, candidate string, headers deploymentgen.GenRetryProjectCandidateHeaders) {
+	d.handler.RetryProjectCandidate(w, r, project, candidate, headers.IdempotencyKey)
+}
+
+func (d *APIGenDispatcher) CancelProjectCandidate(w stdhttp.ResponseWriter, r *stdhttp.Request, project, candidate string, headers deploymentgen.GenCancelProjectCandidateHeaders) {
+	d.handler.CancelProjectCandidate(w, r, project, candidate, headers.IdempotencyKey)
 }
 
 func (d *APIGenDispatcher) ListDeployments(w stdhttp.ResponseWriter, r *stdhttp.Request, project string, params deploymentgen.GenListDeploymentsParams) {

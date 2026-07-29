@@ -21,7 +21,7 @@ type PublicationActivationInput struct {
 	Publications                                    map[string]json.RawMessage
 }
 
-func newPersistence(database *sql.DB, hooks ActivationHooks, releases ReleasePort, workflow jobs.WorkflowRecorder) (deployment.Repository, deployment.ActivationUnitOfWork) {
+func newPersistence(database *sql.DB, hooks ActivationHooks, releases ReleasePort, workflow jobs.WorkflowRecorder) (deployment.Repository, deployment.ActivationUnitOfWork, deployment.CandidateRepository) {
 	sqliteHooks := deploymentsqlite.ActivationHooks{
 		ApplyAccessSnapshot: hooks.ApplyAccessSnapshot,
 	}
@@ -40,5 +40,5 @@ func newPersistence(database *sql.DB, hooks ActivationHooks, releases ReleasePor
 	}
 	sqliteHooks.RecordWorkflow = workflow
 	owned := deploymentsqlite.NewRepositoryWithHooks(database, sqliteHooks)
-	return owned, owned
+	return owned, owned, owned
 }

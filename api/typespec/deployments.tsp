@@ -13,6 +13,41 @@ enum DeploymentStatus {
   superseded;
 }
 
+enum CandidateStatus {
+  preparing;
+  ready;
+  failed;
+  cancelled;
+  expired;
+}
+
+model CandidateStartRequest {
+  artifactDigest: string;
+}
+
+model CandidateArtifactRequest {
+  expectedArtifactDigest: string;
+  artifactDigest: string;
+}
+
+model CandidateResponse {
+  id: string;
+  projectId: string;
+  targetId: string;
+  environment: string;
+  ownerId: string;
+  baseGeneration: string;
+  artifactDigest: string;
+  status: CandidateStatus;
+  failureReason?: string;
+  previewUrl: url;
+  expiresAt: utcDateTime;
+  createdAt: utcDateTime;
+  updatedAt: utcDateTime;
+  revision: int64;
+  resumed?: boolean;
+}
+
 model DeploymentCreateRequest {
   releaseId: string;
 }
@@ -105,3 +140,43 @@ op cancelDeployment(@path project: string, @path deployment: string, @header("Id
 @apigen.authz(#{ mode: "privilege", privilege: "ACTIVATE_DEPLOYMENT" })
 @operationId("rollbackDeployment")
 op rollbackDeployment(@path project: string, @path deployment: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<DeploymentResponse> | CommonErrors;
+
+@tag("Deployments")
+@summary("Create or resume the current author's private project candidate")
+@route("/projects/{project}/candidates")
+@post
+@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@operationId("startProjectCandidate")
+op startProjectCandidate(@path project: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: CandidateStartRequest): CreatedJson<CandidateResponse> | CommonErrors;
+
+@tag("Deployments")
+@summary("Get an owned private project candidate")
+@route("/projects/{project}/candidates/{candidate}")
+@get
+@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@operationId("getProjectCandidate")
+op getProjectCandidate(@path project: string, @path candidate: string): OkJson<CandidateResponse> | CommonErrors;
+
+@tag("Deployments")
+@summary("Replace a private candidate artifact with optimistic concurrency")
+@route("/projects/{project}/candidates/{candidate}/artifact")
+@put
+@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@operationId("replaceProjectCandidateArtifact")
+op replaceProjectCandidateArtifact(@path project: string, @path candidate: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: CandidateArtifactRequest): OkJson<CandidateResponse> | CommonErrors;
+
+@tag("Deployments")
+@summary("Retry preparation of a failed private candidate")
+@route("/projects/{project}/candidates/{candidate}/retry")
+@post
+@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@operationId("retryProjectCandidate")
+op retryProjectCandidate(@path project: string, @path candidate: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): OkJson<CandidateResponse> | CommonErrors;
+
+@tag("Deployments")
+@summary("Cancel an owned private project candidate")
+@route("/projects/{project}/candidates/{candidate}/cancel")
+@post
+@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@operationId("cancelProjectCandidate")
+op cancelProjectCandidate(@path project: string, @path candidate: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): OkJson<CandidateResponse> | CommonErrors;

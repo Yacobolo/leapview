@@ -204,7 +204,7 @@ func TestAPIGenAgentCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("Agent operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 140; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 145; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -265,7 +265,7 @@ func TestAPIGenAccessCapabilityOwnsItsOperationSurface(t *testing.T) {
 	if _, exists := appContracts["listQueryEvents"]; exists {
 		t.Fatal("Analytics-owned listQueryEvents is still emitted by the application package")
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 140; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 145; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -285,7 +285,7 @@ func TestAPIGenAnalyticsCapabilityOwnsItsOperationSurface(t *testing.T) {
 	if _, exists := apigenapi.GetAPIGenOperationContracts()["listQueryEvents"]; exists {
 		t.Fatal("Analytics-owned listQueryEvents is still emitted by the application package")
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 140; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 145; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -333,7 +333,7 @@ func TestAPIGenProjectCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("Project operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 140; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 145; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -380,7 +380,7 @@ func TestAPIGenRefreshCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("Refresh operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 140; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 145; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -415,7 +415,7 @@ func TestAPIGenDeploymentCapabilityOwnsItsGeneratedPackage(t *testing.T) {
 
 func TestAPIGenDeploymentCapabilityOwnsItsOperationSurface(t *testing.T) {
 	contracts := deploymentgen.GetAPIGenOperationContracts()
-	if got, want := len(contracts), 6; got != want {
+	if got, want := len(contracts), 11; got != want {
 		t.Fatalf("Deployment generated operations = %d, want %d", got, want)
 	}
 	appContracts := apigenapi.GetAPIGenOperationContracts()
@@ -427,7 +427,7 @@ func TestAPIGenDeploymentCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("Deployment operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 140; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 145; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -474,7 +474,7 @@ func TestAPIGenReleaseCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("Release operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 140; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 145; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -522,7 +522,7 @@ func TestAPIGenWorkspaceCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("Workspace operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 140; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 145; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -569,7 +569,7 @@ func TestAPIGenManagedDataCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("ManagedData operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 140; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 145; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -617,7 +617,7 @@ func TestAPIGenDashboardCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("Dashboard operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 140; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 145; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -642,7 +642,7 @@ func TestAPIGenIRAssignsCapabilityNamespaces(t *testing.T) {
 	if err := json.Unmarshal(content, &document); err != nil {
 		t.Fatalf("decode APIGen IR: %v", err)
 	}
-	if got, want := len(document.Endpoints), 140; got != want {
+	if got, want := len(document.Endpoints), 145; got != want {
 		t.Fatalf("APIGen IR endpoints = %d, want %d", got, want)
 	}
 

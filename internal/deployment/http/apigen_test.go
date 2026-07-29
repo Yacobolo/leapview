@@ -24,7 +24,54 @@ func TestAPIGenDispatcherMapsDeploymentCreateIdempotency(t *testing.T) {
 	}
 }
 
-type recordingDeploymentHandler struct{ idempotencyKey string }
+func TestAPIGenDispatcherMapsCandidateOperationsAndIdempotency(t *testing.T) {
+	handler := &recordingDeploymentHandler{}
+	dispatcher := NewAPIGenDispatcher(handler)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(stdhttp.MethodPost, "/api/v1/projects/p1/candidates", nil)
+
+	dispatcher.StartProjectCandidate(recorder, request, "p1", deploymentgen.GenStartProjectCandidateHeaders{IdempotencyKey: "start-1"})
+	if handler.operation != "start:p1" || handler.idempotencyKey != "start-1" {
+		t.Fatalf("start mapping = operation:%q key:%q", handler.operation, handler.idempotencyKey)
+	}
+	dispatcher.GetProjectCandidate(recorder, request, "p1", "cand_1")
+	if handler.operation != "get:p1:cand_1" {
+		t.Fatalf("get mapping = %q", handler.operation)
+	}
+	dispatcher.ReplaceProjectCandidateArtifact(recorder, request, "p1", "cand_1", deploymentgen.GenReplaceProjectCandidateArtifactHeaders{IdempotencyKey: "replace-1"})
+	if handler.operation != "replace:p1:cand_1" || handler.idempotencyKey != "replace-1" {
+		t.Fatalf("replace mapping = operation:%q key:%q", handler.operation, handler.idempotencyKey)
+	}
+	dispatcher.RetryProjectCandidate(recorder, request, "p1", "cand_1", deploymentgen.GenRetryProjectCandidateHeaders{IdempotencyKey: "retry-1"})
+	if handler.operation != "retry:p1:cand_1" || handler.idempotencyKey != "retry-1" {
+		t.Fatalf("retry mapping = operation:%q key:%q", handler.operation, handler.idempotencyKey)
+	}
+	dispatcher.CancelProjectCandidate(recorder, request, "p1", "cand_1", deploymentgen.GenCancelProjectCandidateHeaders{IdempotencyKey: "cancel-1"})
+	if handler.operation != "cancel:p1:cand_1" || handler.idempotencyKey != "cancel-1" {
+		t.Fatalf("cancel mapping = operation:%q key:%q", handler.operation, handler.idempotencyKey)
+	}
+}
+
+type recordingDeploymentHandler struct {
+	idempotencyKey string
+	operation      string
+}
+
+func (h *recordingDeploymentHandler) StartProjectCandidate(_ stdhttp.ResponseWriter, _ *stdhttp.Request, project, key string) {
+	h.operation, h.idempotencyKey = "start:"+project, key
+}
+func (h *recordingDeploymentHandler) GetProjectCandidate(_ stdhttp.ResponseWriter, _ *stdhttp.Request, project, candidate string) {
+	h.operation = "get:" + project + ":" + candidate
+}
+func (h *recordingDeploymentHandler) ReplaceProjectCandidateArtifact(_ stdhttp.ResponseWriter, _ *stdhttp.Request, project, candidate, key string) {
+	h.operation, h.idempotencyKey = "replace:"+project+":"+candidate, key
+}
+func (h *recordingDeploymentHandler) RetryProjectCandidate(_ stdhttp.ResponseWriter, _ *stdhttp.Request, project, candidate, key string) {
+	h.operation, h.idempotencyKey = "retry:"+project+":"+candidate, key
+}
+func (h *recordingDeploymentHandler) CancelProjectCandidate(_ stdhttp.ResponseWriter, _ *stdhttp.Request, project, candidate, key string) {
+	h.operation, h.idempotencyKey = "cancel:"+project+":"+candidate, key
+}
 
 func (*recordingDeploymentHandler) ListDeployments(stdhttp.ResponseWriter, *stdhttp.Request, string, *int32, *string) {
 }
