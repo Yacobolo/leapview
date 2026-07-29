@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import {
   mkdtemp,
+  mkdir,
   readFile,
   readdir,
   rm,
@@ -12,10 +13,25 @@ import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 
 const execFileAsync = promisify(execFile);
-const formatByPlatform = {
-  darwin: "pkg",
-  linux: "deb",
-  win32: "msi",
+const distributionByPlatform = {
+  darwin: {
+    format: "dmg",
+    scope: "user-installed",
+    updateArtifacts: ["zip"],
+    updateMechanism: "squirrel-mac",
+  },
+  linux: {
+    format: "deb",
+    scope: "system-package-manager",
+    updateArtifacts: [],
+    updateMechanism: "apt",
+  },
+  win32: {
+    format: "exe",
+    scope: "per-user",
+    updateArtifacts: ["nupkg", "RELEASES"],
+    updateMechanism: "squirrel-windows",
+  },
 };
 
 export function validateInstallerContract({
@@ -24,12 +40,19 @@ export function validateInstallerContract({
   policyIntegration,
   protocolIntegration,
   scope,
+  updateArtifacts,
+  updateMechanism,
 }) {
+  const expected = distributionByPlatform[platform];
   if (
-    format !== formatByPlatform[platform] ||
-    scope !== "per-machine" ||
-    policyIntegration !== "administrator-owned-retained" ||
-    protocolIntegration !== "installer-owned-quoted-single-url"
+    expected === undefined ||
+    format !== expected.format ||
+    scope !== expected.scope ||
+    JSON.stringify(updateArtifacts) !==
+      JSON.stringify(expected.updateArtifacts) ||
+    updateMechanism !== expected.updateMechanism ||
+    policyIntegration !== "deferred-not-supported" ||
+    protocolIntegration !== "consumer-owned-validated-url"
   ) {
     throw new Error("production installer contract is incomplete");
   }
@@ -38,6 +61,8 @@ export function validateInstallerContract({
     scope,
     policyIntegration,
     protocolIntegration,
+    updateArtifacts: [...updateArtifacts],
+    updateMechanism,
   };
 }
 
@@ -48,7 +73,7 @@ async function main() {
   const verification = JSON.parse(
     await readFile(verificationPath, "utf8"),
   );
-  const format = formatByPlatform[process.platform];
+  const format = distributionByPlatform[process.platform]?.format;
   if (
     format === undefined ||
     verification.platform !== process.platform ||
@@ -65,15 +90,23 @@ async function main() {
       `expected exactly one ${format} installer, found ${artifacts.length}`,
     );
   }
+  const updateArtifacts = await inspectUpdateArtifacts(
+    join(out, "make"),
+    process.platform,
+  );
   const inspection =
     process.platform === "darwin"
       ? await inspectMacOSInstaller(artifacts[0])
       : process.platform === "linux"
         ? await inspectDebianInstaller(artifacts[0])
-        : await inspectWindowsInstaller(artifacts[0]);
+        : await inspectWindowsInstaller(
+            artifacts[0],
+            join(out, "make"),
+          );
   verification.installer = validateInstallerContract({
     format,
     platform: process.platform,
+    updateArtifacts,
     ...inspection,
   });
   await writeFile(
@@ -90,60 +123,41 @@ async function main() {
 
 async function inspectMacOSInstaller(artifact) {
   const temporary = await mkdtemp(
-    join(tmpdir(), "leapview-pkg-inspection-"),
+    join(tmpdir(), "leapview-dmg-inspection-"),
   );
-  const expanded = join(temporary, "expanded");
+  const mount = join(temporary, "mount");
   try {
-    await runFile("pkgutil", ["--expand-full", artifact, expanded]);
-    const files = await findFiles(expanded, () => true);
-    const preinstall = files.find((path) => path.endsWith("/preinstall"));
-    const postinstall = files.find((path) => path.endsWith("/postinstall"));
-    const packageInfo = files.find((path) => path.endsWith("/PackageInfo"));
+    await mkdir(mount);
+    await runFile("hdiutil", [
+      "attach",
+      "-readonly",
+      "-nobrowse",
+      "-mountpoint",
+      mount,
+      artifact,
+    ]);
+    const files = await findFiles(mount, () => true);
     const plist = files.find((path) =>
       path.endsWith("/LeapView.app/Contents/Info.plist"),
     );
-    if (
-      preinstall === undefined ||
-      postinstall === undefined ||
-      packageInfo === undefined ||
-      plist === undefined
-    ) {
-      throw new Error("macOS installer payload or scripts are incomplete");
+    if (plist === undefined) {
+      throw new Error("macOS consumer image is missing LeapView.app");
     }
-    const [
-      preinstallBody,
-      postinstallBody,
-      packageInfoBody,
-      plistBody,
-    ] = await Promise.all([
-      readFile(preinstall, "utf8"),
-      readFile(postinstall, "utf8"),
-      readFile(packageInfo, "utf8"),
-      readFile(plist, "utf8"),
-    ]);
-    assertPolicyScripts(preinstallBody, postinstallBody, "root:wheel");
+    const plistBody = await readFile(plist, "utf8");
     if (
-      !packageInfoBody.includes('install-location="/"') ||
-      !packageInfoBody.includes('relocatable="false"') ||
-      !packageInfoBody.includes(
-        '<bundle path="./Applications/LeapView.app"',
-      ) ||
-      !packageInfoBody.includes("<strict-identifier>") ||
-      !packageInfoBody.includes("<atomic-update-bundle/>") ||
-      !packageInfoBody.includes("<relocate/>") ||
       !plistBody.includes("<string>leapview-desktop</string>") ||
       !plistBody.includes("<string>dev.leapview.desktop</string>")
     ) {
-      throw new Error(
-        "macOS installer has an unsafe app location or protocol",
-      );
+      throw new Error("macOS consumer image has an unsafe identity");
     }
     return {
-      scope: "per-machine",
-      policyIntegration: "administrator-owned-retained",
-      protocolIntegration: "installer-owned-quoted-single-url",
+      scope: "user-installed",
+      policyIntegration: "deferred-not-supported",
+      protocolIntegration: "consumer-owned-validated-url",
+      updateMechanism: "squirrel-mac",
     };
   } finally {
+    await runFile("hdiutil", ["detach", mount]).catch(() => undefined);
     await rm(temporary, { force: true, recursive: true });
   }
 }
@@ -157,19 +171,13 @@ async function inspectDebianInstaller(artifact) {
   try {
     await runFile("dpkg-deb", ["--control", artifact, control]);
     await runFile("dpkg-deb", ["--extract", artifact, payload]);
-    const [preinstallBody, postinstallBody, desktopEntry] =
-      await Promise.all([
-        readFile(join(control, "preinst"), "utf8"),
-        readFile(join(control, "postinst"), "utf8"),
-        readFile(
-          join(
-            payload,
-            "usr/share/applications/leapview-desktop.desktop",
-          ),
-          "utf8",
-        ),
-      ]);
-    assertPolicyScripts(preinstallBody, postinstallBody, "root:root");
+    const desktopEntry = await readFile(
+      join(
+        payload,
+        "usr/share/applications/leapview-desktop.desktop",
+      ),
+      "utf8",
+    );
     if (
       !desktopEntry.includes("Exec=leapview-desktop %U\n") ||
       !desktopEntry.includes(
@@ -180,70 +188,85 @@ async function inspectDebianInstaller(artifact) {
       throw new Error("Debian installer has an unsafe desktop protocol");
     }
     return {
-      scope: "per-machine",
-      policyIntegration: "administrator-owned-retained",
-      protocolIntegration: "installer-owned-quoted-single-url",
+      scope: "system-package-manager",
+      policyIntegration: "deferred-not-supported",
+      protocolIntegration: "consumer-owned-validated-url",
+      updateMechanism: "apt",
     };
   } finally {
     await rm(temporary, { force: true, recursive: true });
   }
 }
 
-async function inspectWindowsInstaller(artifact) {
+async function inspectWindowsInstaller(artifact, makeRoot) {
   const temporary = await mkdtemp(
-    join(tmpdir(), "leapview-msi-inspection-"),
+    join(tmpdir(), "leapview-squirrel-inspection-"),
   );
-  const source = join(temporary, "LeapView.wxs");
+  const payload = join(temporary, "payload");
   try {
-    await runFile("dark.exe", [
-      "-nologo",
-      "-x",
-      join(temporary, "payload"),
-      "-o",
-      source,
-      artifact,
-    ]);
-    const wix = await readFile(source, "utf8");
-    for (const expected of [
-      'Id="CommonAppDataFolder"',
-      'Id="LeapViewPolicyDirectory"',
-      'Root="HKLM"',
-      "Software\\Classes\\leapview-desktop",
-      "&quot;[APPLICATIONROOTDIRECTORY]LeapView.exe&quot; &quot;%1&quot;",
-      'ForceDeleteOnUninstall="yes"',
-    ]) {
-      if (!wix.includes(expected)) {
-        throw new Error(
-          `Windows installer is missing ${JSON.stringify(expected)}`,
-        );
-      }
+    const executable = await readFile(artifact);
+    if (executable.subarray(0, 2).toString("ascii") !== "MZ") {
+      throw new Error("Windows consumer installer is not a PE executable");
+    }
+    const packages = await findFiles(
+      makeRoot,
+      (path) => path.toLowerCase().endsWith(".nupkg"),
+    );
+    if (packages.length !== 1) {
+      throw new Error(
+        `expected exactly one Squirrel package, found ${packages.length}`,
+      );
+    }
+    await mkdir(payload);
+    await runFile("tar.exe", ["-xf", packages[0], "-C", payload]);
+    const files = await findFiles(payload, () => true);
+    const specification = files.find((path) =>
+      path.toLowerCase().endsWith(".nuspec"),
+    );
+    const application = files.find((path) =>
+      path
+        .replaceAll("\\", "/")
+        .toLowerCase()
+        .endsWith("/leapview.exe"),
+    );
+    if (specification === undefined || application === undefined) {
+      throw new Error("Squirrel package payload is incomplete");
+    }
+    const specificationBody = await readFile(specification, "utf8");
+    if (!specificationBody.includes("<id>leapview</id>")) {
+      throw new Error("Squirrel package identity is unexpected");
     }
     return {
-      scope: "per-machine",
-      policyIntegration: "administrator-owned-retained",
-      protocolIntegration: "installer-owned-quoted-single-url",
+      scope: "per-user",
+      policyIntegration: "deferred-not-supported",
+      protocolIntegration: "consumer-owned-validated-url",
+      updateMechanism: "squirrel-windows",
     };
   } finally {
     await rm(temporary, { force: true, recursive: true });
   }
 }
 
-function assertPolicyScripts(preinstall, postinstall, owner) {
-  for (const script of [preinstall, postinstall]) {
-    if (
-      !script.includes("desktop-policy.json") ||
-      !script.includes("policy location must not be a symlink") ||
-      script.includes("rm ")
-    ) {
-      throw new Error("installer policy script is unsafe");
+async function inspectUpdateArtifacts(makeRoot, platform) {
+  const expected = distributionByPlatform[platform]?.updateArtifacts;
+  if (expected === undefined) {
+    throw new Error("unsupported consumer platform");
+  }
+  const observed = [];
+  for (const type of expected) {
+    const matches = await findFiles(makeRoot, (path) =>
+      type === "RELEASES"
+        ? basename(path) === "RELEASES"
+        : path.toLowerCase().endsWith(`.${type.toLowerCase()}`),
+    );
+    if (matches.length !== 1) {
+      throw new Error(
+        `expected exactly one ${type} update artifact, found ${matches.length}`,
+      );
     }
+    observed.push(type);
   }
-  if (
-    !postinstall.includes(`chown ${owner}`) ||
-    !postinstall.includes("chmod 0644")
-  ) {
-    throw new Error("installer does not repair managed policy ownership");
-  }
+  return observed;
 }
 
 async function findFiles(root, predicate) {

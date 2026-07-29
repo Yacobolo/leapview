@@ -36,7 +36,12 @@ func main() {
 	policyDirectory := filepath.Join(programData, "LeapView")
 	policyPath := filepath.Join(policyDirectory, policyFile)
 	security := "missing"
-	if err := secureAdministratorPath(policyDirectory); err != nil {
+	if _, err := os.Lstat(policyDirectory); errors.Is(err, os.ErrNotExist) {
+		// Consumer installs do not create an enterprise policy directory.
+		// Absence is open mode; an existing but untrusted path fails closed.
+	} else if err != nil {
+		security = "insecure"
+	} else if err := secureAdministratorPath(policyDirectory); err != nil {
 		security = "insecure"
 	} else {
 		information, statError := os.Lstat(policyPath)

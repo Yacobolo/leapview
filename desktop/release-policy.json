@@ -1,12 +1,27 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "applicationVersion": "0.1.0",
-  "packageFormats": {
-    "darwin": "pkg",
-    "linux": "deb",
-    "win32": "msi"
+  "channel": "consumer-v1",
+  "distribution": {
+    "darwin": {
+      "installer": "dmg",
+      "updateArtifacts": ["zip"],
+      "updateMechanism": "squirrel-mac",
+      "scope": "user-installed"
+    },
+    "linux": {
+      "installer": "deb",
+      "updateArtifacts": [],
+      "updateMechanism": "apt",
+      "scope": "system-package-manager"
+    },
+    "win32": {
+      "installer": "exe",
+      "updateArtifacts": ["nupkg", "RELEASES"],
+      "updateMechanism": "squirrel-windows",
+      "scope": "per-user"
+    }
   },
-  "installationScope": "per-machine",
   "runtime": {
     "electron": "43.2.0",
     "electronMajor": 43,

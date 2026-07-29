@@ -180,12 +180,10 @@ if (
 }
 
 const startup = await verifyPackagedStartup(executablePath, {
-  // Before MSI installation the native helper intentionally locks policy
-  // because the installer-owned ProgramData directory does not exist yet.
-  // Locked policy disables diagnostics, while the shell and runtime remain
-  // independently verifiable. MSI qualification verifies the protected
-  // directory and native helper on the installed application.
-  verifyDiagnosticJournal: process.platform !== "win32",
+  // A missing enterprise policy is normal consumer open mode. The native
+  // Windows helper still fails closed if an existing policy location is
+  // insecure or if the signed helper cannot be executed.
+  verifyDiagnosticJournal: true,
 });
 if (
   startup.chromiumVersion !== releasePolicy.runtime.chromium ||
@@ -208,7 +206,7 @@ const verificationReport = {
   schemaVersion: 2,
   platform: platformName,
   architecture: process.arch,
-  packageFormat: releasePolicy.packageFormats[platformName],
+  packageFormat: releasePolicy.distribution[platformName].installer,
   asarOnly: true,
   runtime: {
     electron: packagedElectronVersion,

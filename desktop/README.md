@@ -8,8 +8,8 @@ the real LeapView UI in an isolated persistent browser session.
 ## Connect to a deployed instance
 
 1. Build the application with `task desktop:make`.
-2. Install the `.pkg` on macOS, `.msi` on Windows, or `.deb` on Ubuntu
-   from `desktop/out/make/`.
+2. Open the `.dmg` on macOS, run the per-user Squirrel `.exe` on Windows,
+   or install the `.deb` on Ubuntu from `desktop/out/make/`.
 3. Enter the deployed instance's canonical HTTPS URL, for example
    `https://analytics.company.com`.
 4. Complete authentication in the system browser.
@@ -25,50 +25,47 @@ Schema at `schemas/desktop/discovery.schema.json`. A schema, protocol,
 authentication mode, capability, canonical origin, or immutable instance
 identity mismatch fails closed before any remote content is opened.
 
-## Enterprise networking
+## Networking
 
 - Discovery and remote windows use Electron's Chromium network stack, so they
   inherit the platform/session proxy configuration and platform certificate
   trust behavior.
-- Private certificate authorities must be installed by an administrator in the
-  operating system trust store. LeapView does not bundle organization CAs,
-  disable certificate verification, or offer a click-through bypass.
+- A certificate authority must be present in the operating-system trust store.
+  LeapView does not bundle additional CAs, disable certificate verification,
+  or offer a click-through bypass.
 - Client-certificate authentication is not part of the version-one desktop
   capability contract.
 - The trusted shell distinguishes DNS, proxy, TLS, timeout, generic network,
   redirect, malformed response, and compatibility failures without displaying
   raw Chromium errors or network details.
 - The cross-platform Electron workflow builds and launches candidates on
-  Windows, macOS, and Linux. Enterprise proxy and private-CA qualification must
-  pass on those same platform runners before a release is promoted.
+  Windows, macOS, and Linux. Ordinary network loss, DNS/VPN transition, system
+  proxy behavior, and recovery are qualified on those platform families.
 
-## Installation and managed deployment
+## Consumer installation and updates
 
-Production packages install LeapView per machine:
+The v1 release channels are:
 
-- macOS uses a `.pkg` and installs the app in `/Applications`;
-- Windows uses a WiX `.msi` and installs the app in Program Files;
-- Ubuntu uses a `.deb` and installs the app and its desktop entry through
-  `dpkg`.
+- macOS uses a signed and notarized `.dmg`; the accompanying `.zip` is the
+  Squirrel.Mac update payload;
+- Windows uses a signed per-user Squirrel Setup `.exe`, with `.nupkg` and
+  `RELEASES` update artifacts;
+- Ubuntu uses a signed `.deb`, with upgrades delivered through the signed
+  LeapView APT repository.
 
-The installers register `leapview-desktop` with one quoted URL argument. The
-packaged app only verifies that registration; it does not rewrite user or
-machine protocol state at runtime. ZIPs remain diagnostic, non-installing
-artifacts and are not eligible for publication.
+Users do not build the application from source. Windows/macOS routine
+installation and updates use user-scoped application state. Linux delegates
+installation and updates to the operating-system package manager.
 
-Managed policy is read from `/Library/Application Support/LeapView` on macOS,
-`/etc/leapview` on Linux, and `FOLDERID_ProgramData\LeapView` on Windows.
-Install and repair create or repair the policy directory without creating a
-policy file. Existing policy survives upgrade, repair, application removal,
-and package uninstall. Administrators remove managed policy separately when
-decommissioning a device.
+The packages register `leapview-desktop` with one validated URL argument.
+Squirrel lifecycle events own the per-user Windows shortcut and protocol
+registration. The macOS bundle and Linux desktop entry own their platform
+registration.
 
-The Windows client uses a bundled native helper to resolve
-`FOLDERID_ProgramData` and verify the owner and DACL of both the directory and
-policy file. The POSIX client verifies root ownership and rejects group- or
-world-writable policy. Missing policy means open mode; malformed policy,
-untrusted ownership, a symlink, a helper failure, or ACL drift locks all
-connection actions.
+Machine-wide MSI/PKG, MSIX, MDM, managed allowlists, private update mirrors,
+and offline enterprise deployment are deferred until a validated customer
+use case exists. Previously completed managed-policy and machine-installer
+work remains preserved but is not a v1 support promise or release gate.
 
 ## Release candidates and supply-chain evidence
 
@@ -95,7 +92,7 @@ After downloading one candidate artifact from GitHub Actions, verify the local
 bundle from its root:
 
 ```sh
-artifact="$(find out/make -type f \\( -name '*.pkg' -o -name '*.msi' -o -name '*.deb' \\) -print -quit)"
+artifact="$(find out/make -type f \\( -name '*.dmg' -o -name '*.exe' -o -name '*.deb' \\) -print -quit)"
 manifest="$(find out/evidence -type f -name '*.release.json' -print -quit)"
 sbom="$(find out/evidence -type f -name '*.spdx.json' -print -quit)"
 node out/evidence/verify-release-evidence.mjs \
@@ -111,8 +108,8 @@ gh attestation verify "$manifest" --repo flidai/leapview
 The `gh attestation` checks apply to main-branch candidates; pull-request
 candidates intentionally have no privileged attestation job.
 
-`desktop/release-policy.json` is the reviewed source of truth for package
-format, machine scope, runtime, hardening, and support. The current
+`desktop/release-policy.json` is the reviewed source of truth for consumer
+formats, update mechanisms, scope, runtime, hardening, and support. The current
 candidate support floor is macOS 13 on Intel and Apple silicon, Windows 10 on
 x64, and Ubuntu 22.04 LTS on x64. Only the Intel macOS, Windows x64, and Linux
 x64 candidates are presently built in CI; Apple-silicon distribution remains

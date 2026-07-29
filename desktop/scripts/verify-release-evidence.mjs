@@ -12,6 +12,7 @@ export async function verifyReleaseEvidence({
   publication = false,
   sbomPath,
 }) {
+  assertConsumerReleasePolicy(policy);
   const [artifact, checksumsText, manifestText, sbomText] = await Promise.all([
     identity(artifactPath),
     readFile(checksumsPath, "utf8"),
@@ -139,6 +140,8 @@ export async function verifyReleaseEvidence({
         "policyIntegration",
         "protocolIntegration",
         "scope",
+        "updateArtifacts",
+        "updateMechanism",
       ],
       "installer verification",
     ],
@@ -205,11 +208,20 @@ export async function verifyReleaseEvidence({
     Number.parseInt(manifest.toolchain.electron, 10) !==
       policy.runtime.electronMajor ||
     manifest.artifact?.format !==
-      policy.packageFormats?.[manifest.artifact?.platform] ||
+      policy.distribution?.[manifest.artifact?.platform]?.installer ||
     manifest.packageVerification?.installer?.format !==
       manifest.artifact?.format ||
     manifest.packageVerification?.installer?.scope !==
-      policy.installationScope ||
+      policy.distribution?.[manifest.artifact?.platform]?.scope ||
+    manifest.packageVerification?.installer?.updateMechanism !==
+      policy.distribution?.[manifest.artifact?.platform]?.updateMechanism ||
+    JSON.stringify(
+      manifest.packageVerification?.installer?.updateArtifacts,
+    ) !==
+      JSON.stringify(
+        policy.distribution?.[manifest.artifact?.platform]
+          ?.updateArtifacts,
+      ) ||
     manifest.packageVerification?.schemaVersion !== 2 ||
     manifest.packageVerification?.asarOnly !== policy.hardening?.asarOnly ||
     !validAccessibilityVerification(
@@ -348,6 +360,37 @@ function parseArguments(args) {
 async function identity(path) {
   const [content, metadata] = await Promise.all([readFile(path), stat(path)]);
   return { bytes: metadata.size, sha256: sha256(content) };
+}
+
+function assertConsumerReleasePolicy(policy) {
+  const expectedDistribution = {
+    darwin: {
+      installer: "dmg",
+      updateArtifacts: ["zip"],
+      updateMechanism: "squirrel-mac",
+      scope: "user-installed",
+    },
+    linux: {
+      installer: "deb",
+      updateArtifacts: [],
+      updateMechanism: "apt",
+      scope: "system-package-manager",
+    },
+    win32: {
+      installer: "exe",
+      updateArtifacts: ["nupkg", "RELEASES"],
+      updateMechanism: "squirrel-windows",
+      scope: "per-user",
+    },
+  };
+  if (
+    policy?.schemaVersion !== 2 ||
+    policy.channel !== "consumer-v1" ||
+    JSON.stringify(policy.distribution) !==
+      JSON.stringify(expectedDistribution)
+  ) {
+    throw new Error("release evidence requires the consumer release policy");
+  }
 }
 
 function parseExactJson(text, label) {

@@ -23,17 +23,13 @@ const exactRuntimeVersionPattern =
 const shaPattern = /^[0-9a-f]{40}$/;
 
 export function validateReleasePolicy(policy, packageDocument) {
-  if (policy?.schemaVersion !== 1) {
-    throw new Error("release policy must use schema version 1");
+  if (policy?.schemaVersion !== 2) {
+    throw new Error("release policy must use schema version 2");
   }
   if (
     policy.applicationVersion !== packageDocument.version ||
-    policy.installationScope !== "per-machine" ||
-    Object.keys(policy.packageFormats ?? {}).sort().join(",") !==
-      "darwin,linux,win32" ||
-    policy.packageFormats.darwin !== "pkg" ||
-    policy.packageFormats.linux !== "deb" ||
-    policy.packageFormats.win32 !== "msi"
+    policy.channel !== "consumer-v1" ||
+    !validDistribution(policy.distribution)
   ) {
     throw new Error("release policy does not match the application package");
   }
@@ -401,7 +397,7 @@ async function generate() {
   assertPackageVerification(packageVerification, policy);
 
   const packageFormat =
-    policy.packageFormats[packageVerification.platform];
+    policy.distribution[packageVerification.platform].installer;
   const artifacts = await findFiles(join(out, "make"), (path) =>
     path.toLowerCase().endsWith(`.${packageFormat}`),
   );
@@ -490,7 +486,7 @@ function assertPackageVerification(verification, policy) {
   if (
     verification?.schemaVersion !== 2 ||
     verification.packageFormat !==
-      policy.packageFormats?.[verification.platform] ||
+      policy.distribution?.[verification.platform]?.installer ||
     verification.asarOnly !== policy.hardening.asarOnly ||
     verification.startup !== "trusted-shell-ready" ||
     !validAccessibilityVerification(verification.accessibility)
@@ -499,11 +495,18 @@ function assertPackageVerification(verification, policy) {
   }
   if (
     verification.installer?.format !== verification.packageFormat ||
-    verification.installer?.scope !== policy.installationScope ||
+    verification.installer?.scope !==
+      policy.distribution?.[verification.platform]?.scope ||
+    verification.installer?.updateMechanism !==
+      policy.distribution?.[verification.platform]?.updateMechanism ||
+    JSON.stringify(verification.installer?.updateArtifacts) !==
+      JSON.stringify(
+        policy.distribution?.[verification.platform]?.updateArtifacts,
+      ) ||
     verification.installer?.policyIntegration !==
-      "administrator-owned-retained" ||
+      "deferred-not-supported" ||
     verification.installer?.protocolIntegration !==
-      "installer-owned-quoted-single-url"
+      "consumer-owned-validated-url"
   ) {
     throw new Error("installer verification report is incomplete");
   }
@@ -521,6 +524,30 @@ function assertPackageVerification(verification, policy) {
       throw new Error(`packaged Electron fuse ${name} does not match policy`);
     }
   }
+}
+
+function validDistribution(distribution) {
+  const expected = {
+    darwin: {
+      installer: "dmg",
+      updateArtifacts: ["zip"],
+      updateMechanism: "squirrel-mac",
+      scope: "user-installed",
+    },
+    linux: {
+      installer: "deb",
+      updateArtifacts: [],
+      updateMechanism: "apt",
+      scope: "system-package-manager",
+    },
+    win32: {
+      installer: "exe",
+      updateArtifacts: ["nupkg", "RELEASES"],
+      updateMechanism: "squirrel-windows",
+      scope: "per-user",
+    },
+  };
+  return JSON.stringify(distribution) === JSON.stringify(expected);
 }
 
 function validAccessibilityVerification(accessibility) {

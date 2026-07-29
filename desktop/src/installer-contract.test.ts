@@ -4,22 +4,35 @@ import { resolve } from "node:path";
 
 import {
   addWindowsManagedDeployment,
-  desktopInstallerContract,
+  consumerDistributionContract,
+  managedInstallerGroundwork,
 } from "../installer-contract.js";
 import { macOSComponentPropertyList } from "../makers/maker-pkg.js";
 
 describe("desktop installer contract", () => {
-  test("selects machine-managed native package formats", () => {
-    expect(desktopInstallerContract).toMatchObject({
-      installationScope: "per-machine",
-      formats: {
-        darwin: "pkg",
-        linux: "deb",
-        win32: "msi",
-      },
-      managedPolicy: {
-        retainOnUninstall: true,
-        win32KnownFolder: "FOLDERID_ProgramData",
+  test("selects consumer installers and platform-native update artifacts", () => {
+    expect(consumerDistributionContract).toEqual({
+      schemaVersion: 2,
+      channel: "consumer-v1",
+      platforms: {
+        darwin: {
+          installer: "dmg",
+          updateArtifacts: ["zip"],
+          updateMechanism: "squirrel-mac",
+          scope: "user-installed",
+        },
+        linux: {
+          installer: "deb",
+          updateArtifacts: [],
+          updateMechanism: "apt",
+          scope: "system-package-manager",
+        },
+        win32: {
+          installer: "exe",
+          updateArtifacts: ["nupkg", "RELEASES"],
+          updateMechanism: "squirrel-windows",
+          scope: "per-user",
+        },
       },
       protocol: {
         scheme: "leapview-desktop",
@@ -28,7 +41,51 @@ describe("desktop installer contract", () => {
     });
   });
 
-  test("adds a transactional machine protocol and protected ProgramData directory", () => {
+  test("pins Forge makers for every consumer artifact", async () => {
+    const root = resolve(import.meta.dirname, "..");
+    const [packageBody, forgeBody] = await Promise.all([
+      readFile(resolve(root, "package.json"), "utf8"),
+      readFile(resolve(root, "forge.config.ts"), "utf8"),
+    ]);
+    const packageDocument = JSON.parse(packageBody) as {
+      devDependencies?: Record<string, string>;
+      trustedDependencies?: string[];
+    };
+    expect(packageDocument.devDependencies).toMatchObject({
+      "@electron-forge/maker-deb": "7.11.2",
+      "@electron-forge/maker-dmg": "7.11.2",
+      "@electron-forge/maker-squirrel": "7.11.2",
+      "@electron-forge/maker-zip": "7.11.2",
+    });
+    expect(forgeBody).toContain("new MakerSquirrel");
+    expect(forgeBody).toContain("new MakerDMG");
+    expect(forgeBody).toContain("new MakerDeb");
+    expect(forgeBody).toContain("new MakerZIP");
+    expect(forgeBody).not.toContain("new MakerWix");
+    expect(forgeBody).not.toContain("new MakerPKG");
+    expect(packageDocument.trustedDependencies).toEqual([
+      "@bitdisaster/exe-icon-extractor",
+      "electron",
+      "electron-winstaller",
+      "fs-xattr",
+      "macos-alias",
+      "node",
+    ]);
+  });
+
+  test("preserves completed managed-installer work outside the v1 contract", () => {
+    expect(managedInstallerGroundwork).toMatchObject({
+      installationScope: "per-machine",
+      formats: {
+        darwin: "pkg",
+        linux: "deb",
+        win32: "msi",
+      },
+      supportedInConsumerV1: false,
+    });
+  });
+
+  test("preserves a transactional machine protocol and protected ProgramData directory", () => {
     const template = [
       "<Product>",
       'InstallerVersion="405"',
@@ -74,24 +131,6 @@ describe("desktop installer contract", () => {
     );
     expect(macOSComponentPropertyList).toContain(
       "<string>Applications/LeapView.app</string>",
-    );
-  });
-
-  test("patches the exact template shipped by the pinned WiX dependency", async () => {
-    const template = await readFile(
-      resolve(
-        import.meta.dirname,
-        "../node_modules/electron-wix-msi/static/wix.xml",
-      ),
-      "utf8",
-    );
-    const configured = addWindowsManagedDeployment(template);
-    expect(configured).toContain('InstallerVersion="500"');
-    expect(configured).toContain(
-      '<ComponentRef Id="LeapViewManagedPolicyDirectory" />',
-    );
-    expect(configured).toContain(
-      '<ComponentRef Id="LeapViewDesktopProtocol" />',
     );
   });
 
@@ -143,5 +182,26 @@ describe("desktop installer contract", () => {
       "URLForApplicationToOpenURL(url)",
     );
     expect(macQualification).not.toContain("-dump");
+  });
+
+  test("consumer qualification uses user-scoped installers without managed policy", async () => {
+    const root = resolve(import.meta.dirname, "..");
+    const [macOS, windows, linux] = await Promise.all([
+      readFile(resolve(root, "scripts/qualify-consumer-macos.sh"), "utf8"),
+      readFile(
+        resolve(root, "scripts/qualify-consumer-windows.ps1"),
+        "utf8",
+      ),
+      readFile(resolve(root, "scripts/qualify-installer-linux.sh"), "utf8"),
+    ]);
+    expect(macOS).toContain("hdiutil attach");
+    expect(macOS).not.toContain("installer -pkg");
+    expect(windows).toContain('$env:LocalAppData "leapview"');
+    expect(windows).not.toContain("msiexec");
+    expect(windows).not.toContain("Join-Path $env:ProgramFiles");
+    expect(linux).toContain("apt-get install");
+    for (const script of [macOS, windows, linux]) {
+      expect(script).not.toContain("desktop-policy.json");
+    }
   });
 });

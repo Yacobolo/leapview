@@ -43,11 +43,11 @@ jobs:
           - name: macOS Intel
             os: macos-15-intel
             artifact: macos-x64
-            format: pkg
+            format: dmg
           - name: Windows x64
             os: windows-2025
             artifact: windows-x64
-            format: msi
+            format: exe
 
     steps:
       - name: Checkout
@@ -65,10 +65,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Install pinned WiX Toolset
+      - name: Test native Windows policy probe
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: choco install wixtoolset --version=3.14.1.20250415 --no-progress --yes
+        run: go test ./desktop/native/windowspolicy
 
       - name: Install Debian package tooling
         if: runner.os == 'Linux'
@@ -105,21 +104,21 @@ jobs:
           installer="$(find out/make -type f -name '*.deb' -print -quit)"
           scripts/qualify-installer-linux.sh "$installer"
 
-      - name: Qualify macOS install, upgrade, protocol, and removal
+      - name: Qualify macOS consumer install, protocol, and removal
         if: runner.os == 'macOS'
         working-directory: desktop
         run: |
-          installer="$(find out/make -type f -name '*.pkg' -print -quit)"
-          scripts/qualify-installer-macos.sh "$installer"
+          installer="$(find out/make -type f -name '*.dmg' -print -quit)"
+          scripts/qualify-consumer-macos.sh "$installer"
 
-      - name: Qualify Windows install, repair, protocol, and uninstall
+      - name: Qualify Windows per-user install, protocol, and uninstall
         if: runner.os == 'Windows'
         shell: pwsh
         working-directory: desktop
         run: |
-          $installer = Get-ChildItem -Path out/make -Recurse -Filter *.msi |
+          $installer = Get-ChildItem -Path out/make -Recurse -Filter *.exe |
             Select-Object -First 1 -ExpandProperty FullName
-          ./scripts/qualify-installer-windows.ps1 $installer
+          ./scripts/qualify-consumer-windows.ps1 $installer
 
       - name: Upload verifiable unsigned candidate
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -130,8 +129,10 @@ jobs:
           path: |
             desktop/out/make/**/*.zip
             desktop/out/make/**/*.deb
-            desktop/out/make/**/*.msi
-            desktop/out/make/**/*.pkg
+            desktop/out/make/**/*.dmg
+            desktop/out/make/**/*.exe
+            desktop/out/make/**/*.nupkg
+            desktop/out/make/**/RELEASES
             desktop/out/evidence/**
             desktop/release-policy.json
 
@@ -155,10 +156,10 @@ jobs:
             format: deb
           - name: macOS Intel
             artifact: macos-x64
-            format: pkg
+            format: dmg
           - name: Windows x64
             artifact: windows-x64
-            format: msi
+            format: exe
 
     steps:
       - name: Download candidate and evidence

@@ -1,5 +1,7 @@
+import { spawn } from "node:child_process";
 import { release as operatingSystemRelease } from "node:os";
 import {
+  dirname,
   isAbsolute,
   join,
   relative,
@@ -82,6 +84,10 @@ import {
   remoteWebPreferences,
 } from "./security/remote-policy.mjs";
 import { isSafeDesktopRoute } from "./safe-route.js";
+import {
+  handleSquirrelLifecycle,
+  SQUIRREL_APP_USER_MODEL_ID,
+} from "./squirrel-lifecycle.js";
 import { loadTrustedUIAssets } from "./trusted-assets.js";
 import { TrustedUI } from "./trusted-ui.js";
 import {
@@ -177,8 +183,40 @@ let systemSuspended = false;
 let networkAvailable = true;
 let networkStatusTimer: NodeJS.Timeout | null = null;
 
-const primaryInstance = app.requestSingleInstanceLock();
-if (!primaryInstance) {
+if (process.platform === "win32") {
+  app.setAppUserModelId(SQUIRREL_APP_USER_MODEL_ID);
+}
+const squirrelLifecycleHandled = handleSquirrelLifecycle({
+  argv: process.argv,
+  packaged: app.isPackaged,
+  platform: process.platform,
+  registerProtocol: () =>
+    app.setAsDefaultProtocolClient(DESKTOP_DEEP_LINK_SCHEME),
+  removeProtocol: () =>
+    app.removeAsDefaultProtocolClient(DESKTOP_DEEP_LINK_SCHEME),
+  runUpdate: (arguments_) => {
+    const updater = resolve(
+      dirname(process.execPath),
+      "..",
+      "Update.exe",
+    );
+    const child = spawn(updater, [...arguments_], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    child.on("error", () => undefined);
+    child.unref();
+  },
+  scheduleQuit: () => {
+    setTimeout(() => app.quit(), 1_000);
+  },
+});
+const primaryInstance =
+  !squirrelLifecycleHandled && app.requestSingleInstanceLock();
+if (squirrelLifecycleHandled) {
+  // Squirrel lifecycle launches must not initialize profiles or remote content.
+} else if (!primaryInstance) {
   app.quit();
 } else {
   registerDeepLinkProtocolClient();

@@ -44,8 +44,38 @@ const windowsManagedComponents = `    <DirectoryRef Id="LeapViewPolicyDirectory"
 
 `;
 
-export const desktopInstallerContract = {
+export const consumerDistributionContract = {
+  schemaVersion: 2,
+  channel: "consumer-v1",
+  platforms: {
+    darwin: {
+      installer: "dmg",
+      updateArtifacts: ["zip"],
+      updateMechanism: "squirrel-mac",
+      scope: "user-installed",
+    },
+    linux: {
+      installer: "deb",
+      updateArtifacts: [],
+      updateMechanism: "apt",
+      scope: "system-package-manager",
+    },
+    win32: {
+      installer: "exe",
+      updateArtifacts: ["nupkg", "RELEASES"],
+      updateMechanism: "squirrel-windows",
+      scope: "per-user",
+    },
+  },
+  protocol: {
+    scheme: "leapview-desktop",
+    argumentToken: "%1",
+  },
+} as const;
+
+export const managedInstallerGroundwork = {
   schemaVersion: 1,
+  supportedInConsumerV1: false,
   installationScope: "per-machine",
   formats: {
     darwin: "pkg",

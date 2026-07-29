@@ -24,14 +24,29 @@ const packageDocument = {
 };
 
 const policy = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   applicationVersion: "0.1.0",
-  packageFormats: {
-    darwin: "pkg",
-    linux: "deb",
-    win32: "msi",
+  channel: "consumer-v1",
+  distribution: {
+    darwin: {
+      installer: "dmg",
+      updateArtifacts: ["zip"],
+      updateMechanism: "squirrel-mac",
+      scope: "user-installed",
+    },
+    linux: {
+      installer: "deb",
+      updateArtifacts: [],
+      updateMechanism: "apt",
+      scope: "system-package-manager",
+    },
+    win32: {
+      installer: "exe",
+      updateArtifacts: ["nupkg", "RELEASES"],
+      updateMechanism: "squirrel-windows",
+      scope: "per-user",
+    },
   },
-  installationScope: "per-machine",
   runtime: {
     electron: "43.2.0",
     electronMajor: 43,
@@ -91,7 +106,7 @@ const packageVerification = {
   schemaVersion: 2,
   platform: "darwin",
   architecture: "arm64",
-  packageFormat: "pkg",
+  packageFormat: "dmg",
   asarOnly: true,
   runtime: {
     electron: "43.2.0",
@@ -118,10 +133,12 @@ const packageVerification = {
     regions: ["Connect an instance"],
   },
   installer: {
-    format: "pkg",
-    scope: "per-machine",
-    policyIntegration: "administrator-owned-retained",
-    protocolIntegration: "installer-owned-quoted-single-url",
+    format: "dmg",
+    scope: "user-installed",
+    policyIntegration: "deferred-not-supported",
+    protocolIntegration: "consumer-owned-validated-url",
+    updateArtifacts: ["zip"],
+    updateMechanism: "squirrel-mac",
   },
   startup: "trusted-shell-ready",
 };
@@ -231,7 +248,7 @@ test("SPDX document covers every locked dependency and packaged runtime file", (
 
 test("release evidence verification detects artifact, SBOM, and publication tampering", async () => {
   const directory = await mkdtemp(join(tmpdir(), "leapview-evidence-test-"));
-  const artifactPath = join(directory, "LeapView-darwin-arm64-0.1.0.pkg");
+  const artifactPath = join(directory, "LeapView-darwin-arm64-0.1.0.dmg");
   const sbomPath = join(directory, "release.spdx.json");
   const manifestPath = join(directory, "release.json");
   const checksumsPath = join(directory, "checksums.txt");
@@ -296,6 +313,17 @@ test("release evidence verification detects artifact, SBOM, and publication tamp
       policy,
       sbomPath,
     }),
+  );
+  await assert.rejects(
+    () =>
+      verifyReleaseEvidence({
+        artifactPath,
+        checksumsPath,
+        manifestPath,
+        policy: { ...policy, channel: "enterprise" },
+        sbomPath,
+      }),
+    /consumer release policy/,
   );
   await assert.rejects(
     () =>

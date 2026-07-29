@@ -55,7 +55,7 @@ test("packaged applications declare the isolated desktop deep-link scheme", () =
   ]);
 });
 
-test("production makers are machine-managed installers on each supported platform", () => {
+test("production makers match the consumer installer and updater matrix", () => {
   expect(
     forgeConfig.makers?.map((maker) => ({
       name: maker.name,
@@ -63,11 +63,11 @@ test("production makers are machine-managed installers on each supported platfor
     })),
   ).toEqual([
     {
-      name: "wix",
+      name: "squirrel",
       platforms: ["win32"],
     },
     {
-      name: "pkg",
+      name: "dmg",
       platforms: ["darwin"],
     },
     {
@@ -76,7 +76,7 @@ test("production makers are machine-managed installers on each supported platfor
     },
     {
       name: "zip",
-      platforms: ["darwin", "linux", "win32"],
+      platforms: ["darwin"],
     },
   ]);
 });

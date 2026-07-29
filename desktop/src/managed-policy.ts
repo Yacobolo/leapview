@@ -142,7 +142,10 @@ export function resolveDesktopPolicySource(
         };
       }
       return {
-        path: options.windowsProbe.policyPath,
+        path:
+          options.windowsProbe.security === "missing"
+            ? null
+            : options.windowsProbe.policyPath,
         requireAdministratorOwner: true,
         integrity:
           options.windowsProbe.security === "insecure"

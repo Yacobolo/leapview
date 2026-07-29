@@ -1,6 +1,7 @@
 import type { ForgeConfig } from "@electron-forge/shared-types";
 import { MakerDeb } from "@electron-forge/maker-deb";
-import { MakerWix } from "@electron-forge/maker-wix";
+import { MakerDMG } from "@electron-forge/maker-dmg";
+import { MakerSquirrel } from "@electron-forge/maker-squirrel";
 import { MakerZIP } from "@electron-forge/maker-zip";
 import { FusesPlugin } from "@electron-forge/plugin-fuses";
 import { resolve } from "node:path";
@@ -11,10 +12,8 @@ import {
 } from "@electron/fuses";
 
 import {
-  addWindowsManagedDeployment,
-  desktopInstallerContract,
+  consumerDistributionContract,
 } from "./installer-contract.js";
-import { MakerPKG } from "./makers/maker-pkg.js";
 
 const desktopRoot = import.meta.dirname;
 
@@ -65,42 +64,16 @@ const config: ForgeConfig = {
   },
   rebuildConfig: {},
   makers: [
-    new MakerWix(
+    new MakerSquirrel(
       {
-        arch: "x64",
-        defaultInstallMode: "perMachine",
+        authors: "LeapView",
         description:
           "End-user desktop client for deployed LeapView instances.",
-        exe: "LeapView.exe",
-        features: false,
-        language: 1033,
-        manufacturer: "LeapView",
-        rebootMode: "ReallySuppress",
-        upgradeCode: "6D09CFB5-BA75-4D55-A1D4-2494137EE78D",
-        beforeCreate: (creator) => {
-          creator.wixTemplate = addWindowsManagedDeployment(
-            creator.wixTemplate,
-          );
-        },
+        name: "leapview",
       },
       ["win32"],
     ),
-    new MakerPKG(
-      {
-        identifier: "dev.leapview.desktop",
-        installLocation: "/Applications",
-        scripts: resolve(desktopRoot, "installer/macos/scripts"),
-        ...(process.env.LEAPVIEW_APPLE_INSTALLER_IDENTITY === undefined
-          ? {}
-          : {
-              identity: process.env.LEAPVIEW_APPLE_INSTALLER_IDENTITY,
-            }),
-        ...(process.env.LEAPVIEW_APPLE_KEYCHAIN === undefined
-          ? {}
-          : { keychain: process.env.LEAPVIEW_APPLE_KEYCHAIN }),
-      },
-      ["darwin"],
-    ),
+    new MakerDMG({}, ["darwin"]),
     new MakerDeb(
       {
         options: {
@@ -111,22 +84,18 @@ const config: ForgeConfig = {
           homepage: "https://leapview.dev",
           maintainer: "LeapView",
           mimeType: [
-            `x-scheme-handler/${desktopInstallerContract.protocol.scheme}`,
+            `x-scheme-handler/${consumerDistributionContract.protocol.scheme}`,
           ],
           name: "leapview-desktop",
           productDescription:
             "Connects to deployed LeapView instances while preserving server-side authentication, access, and dashboard authority.",
           productName: "LeapView",
-          scripts: {
-            preinst: resolve(desktopRoot, "installer/linux/preinst"),
-            postinst: resolve(desktopRoot, "installer/linux/postinst"),
-          },
           section: "utils",
         },
       },
       ["linux"],
     ),
-    new MakerZIP({}, ["darwin", "linux", "win32"]),
+    new MakerZIP({}, ["darwin"]),
   ],
   plugins: [new FusesPlugin(fuseConfig)],
 };

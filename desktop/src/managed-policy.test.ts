@@ -133,6 +133,29 @@ describe("resolveDesktopPolicySource", () => {
       }).integrity,
     ).toBe("invalid");
   });
+
+  test("treats an absent managed policy as open mode for consumer Windows installs", async () => {
+    const source = resolveDesktopPolicySource({
+      platform: "win32",
+      packaged: true,
+      windowsProbe: {
+        policyPath: String.raw`C:\ProgramData\LeapView\desktop-policy.json`,
+        security: "missing",
+      },
+    });
+    expect(source.integrity).toBe("verified");
+    expect(
+      await loadDesktopPolicy(source, {
+        allowLoopbackHTTP: false,
+      }),
+    ).toEqual({
+      mode: "open",
+      allowUserAddedInstances: true,
+      diagnosticsEnabled: true,
+      preconfiguredOrigins: [],
+      revision: "desktop-policy-v1",
+    });
+  });
 });
 
 describe("probeWindowsDesktopPolicy", () => {
