@@ -195,6 +195,68 @@ func TestApplicationCLIAdminOnlyComposesAdminOperations(t *testing.T) {
 	}
 }
 
+func TestOfflineAdminUseCasesAreCapabilityOwned(t *testing.T) {
+	rule, ok := ClassifyPackage("internal/admin/offline")
+	if !ok {
+		t.Fatal("Admin offline package is not classified")
+	}
+	if rule.Capability != "admin" || rule.Layer != LayerUseCase {
+		t.Fatalf("Admin offline classification = %#v, want admin use-case", rule)
+	}
+
+	forbiddenImports := map[string]bool{
+		modulePath + "/internal/access/sqlite":          true,
+		modulePath + "/internal/admin/sqlite":           true,
+		modulePath + "/internal/analytics/ducklake":     true,
+		modulePath + "/internal/app/config":             true,
+		modulePath + "/internal/platform":               true,
+		modulePath + "/internal/platform/locking":       true,
+		modulePath + "/internal/servingstate/retention": true,
+		modulePath + "/internal/servingstate/sqlite":    true,
+	}
+	found := false
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/admin/offline" {
+			continue
+		}
+		found = true
+		for _, imported := range file.imports {
+			if forbiddenImports[imported] {
+				t.Errorf("%s imports concrete application/infrastructure dependency %s", file.path, imported)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("internal/admin/offline production package was not found")
+	}
+
+	compositionFound := false
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/app/adminoffline" {
+			continue
+		}
+		compositionFound = true
+		if !importListContains(file.imports, modulePath+"/internal/admin/offline") {
+			t.Errorf("%s does not compose Admin-owned offline use cases", file.path)
+		}
+		for _, forbidden := range []string{
+			"mail.ParseAddress(",
+			"json.Marshal(",
+			"fmt.Fprintf(",
+			"retention days must be zero or greater",
+			"admin restore requires --confirm",
+			"admin backup requires --out",
+		} {
+			if strings.Contains(file.body, forbidden) {
+				t.Errorf("%s retains offline Admin product behavior %q", file.path, forbidden)
+			}
+		}
+	}
+	if !compositionFound {
+		t.Fatal("internal/app/adminoffline composition package was not found")
+	}
+}
+
 func TestAccessGeneratedAPIIsCapabilityOwned(t *testing.T) {
 	rule, ok := ClassifyPackage("internal/access/api/gen")
 	if !ok {
@@ -2144,6 +2206,23 @@ func TestContinuousIntegrationHealthWorkflowReportsAndAlerts(t *testing.T) {
 	}
 }
 
+func TestPublicSiteBuildGeneratesIgnoredBrowserContracts(t *testing.T) {
+	root := repoRoot(t)
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	block := taskfileTaskBlock(t, string(taskfile), "site:build")
+	for _, dependency := range []string{
+		"- task: ui-signals:generate",
+		"- task: visualization-ir:generate",
+	} {
+		if !strings.Contains(block, dependency) {
+			t.Errorf("site:build must generate ignored browser contract %q in a clean checkout", dependency)
+		}
+	}
+}
+
 func workflowJobBlock(t *testing.T, workflow, job string) string {
 	t.Helper()
 	startMarker := "  " + job + ":"
@@ -2157,6 +2236,31 @@ func workflowJobBlock(t *testing.T, workflow, job string) string {
 	}
 	if start < 0 {
 		t.Fatalf("workflow job %q not found", job)
+	}
+	end := len(lines)
+	for index := start + 1; index < len(lines); index++ {
+		line := lines[index]
+		if strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "    ") && strings.HasSuffix(line, ":") {
+			end = index
+			break
+		}
+	}
+	return strings.Join(lines[start:end], "\n")
+}
+
+func taskfileTaskBlock(t *testing.T, taskfile, task string) string {
+	t.Helper()
+	startMarker := "  " + task + ":"
+	lines := strings.Split(taskfile, "\n")
+	start := -1
+	for index, line := range lines {
+		if line == startMarker {
+			start = index
+			break
+		}
+	}
+	if start < 0 {
+		t.Fatalf("Taskfile task %q not found", task)
 	}
 	end := len(lines)
 	for index := start + 1; index < len(lines); index++ {

@@ -118,6 +118,7 @@ tasks:
     desc: Build the LeapView public site assets from generated contracts
     cmds:
       - task: ui-signals:generate
+      - task: visualization-ir:generate
       - task: node:deps
       - bun run build:site
 

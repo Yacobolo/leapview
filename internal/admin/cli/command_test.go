@@ -5,6 +5,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	adminoffline "github.com/Yacobolo/leapview/internal/admin/offline"
 )
 
 type fakeOperations struct {
@@ -12,7 +14,7 @@ type fakeOperations struct {
 	options Options
 }
 
-func (operations *fakeOperations) Initialize(context.Context, string, io.Writer) error {
+func (operations *fakeOperations) Initialize(context.Context, adminoffline.InitializeRequest, io.Writer) error {
 	operations.called = "initialize"
 	return nil
 }
@@ -20,20 +22,27 @@ func (operations *fakeOperations) AcknowledgeInitialCredentials(context.Context)
 	operations.called = "acknowledge"
 	return nil
 }
-func (operations *fakeOperations) StorageCleanup(_ context.Context, options Options, _ io.Writer) error {
-	operations.called, operations.options = "cleanup", options
+func (operations *fakeOperations) StorageCleanup(_ context.Context, request adminoffline.StorageCleanupRequest, _ io.Writer) error {
+	operations.called, operations.options.Apply = "cleanup", request.Apply
 	return nil
 }
-func (operations *fakeOperations) Maintenance(_ context.Context, options Options, _ io.Writer) error {
-	operations.called, operations.options = "maintenance", options
+func (operations *fakeOperations) Maintenance(_ context.Context, request adminoffline.MaintenanceRequest, _ io.Writer) error {
+	operations.called = "maintenance"
+	operations.options = Options{
+		Apply: request.Apply, AuditDays: request.AuditDays, QueryDays: request.QueryDays,
+		ArchivedAgentDays: request.ArchivedAgentDays, AuthStateDays: request.AuthStateDays,
+	}
 	return nil
 }
-func (operations *fakeOperations) Backup(_ context.Context, options Options, _ io.Writer) error {
-	operations.called, operations.options = "backup", options
+func (operations *fakeOperations) Backup(_ context.Context, request adminoffline.BackupRequest, _ io.Writer) error {
+	operations.called = "backup"
+	operations.options.BackupOut, operations.options.DatabaseOnly = request.Out, request.DatabaseOnly
 	return nil
 }
-func (operations *fakeOperations) Restore(_ context.Context, options Options, _ io.Reader, _ io.Writer) error {
-	operations.called, operations.options = "restore", options
+func (operations *fakeOperations) Restore(_ context.Context, request adminoffline.RestoreRequest, _ io.Reader, _ io.Writer) error {
+	operations.called = "restore"
+	operations.options.RestoreFrom, operations.options.RestoreBefore = request.From, request.CurrentBackup
+	operations.options.ConfirmRestore, operations.options.DatabaseOnly = request.Confirm, request.DatabaseOnly
 	return nil
 }
 

@@ -616,6 +616,7 @@ Rules:
 - Generic wire models such as pagination, problem details, and asynchronous event envelopes live under `platform/http`; capabilities may depend on them without depending on application composition.
 - `app/api` owns only application-wide protocol assembly and the generated aggregate that composes capability route fragments and canonical metadata. It owns no capability dispatcher or behavior.
 - CLI commands call capability use cases or capability-owned generated client methods; they do not repeat operation identifiers, accept untyped request bodies, or implement parallel business workflows.
+- Offline Admin commands call Admin-owned use cases for initialization, retention, analytical cleanup, backup, and restore. Those use cases own validation, sequencing, recovery, and output projection behind explicit capability and platform ports; application composition only injects normalized configuration and concrete adapters.
 - `platform/cliapi` owns only generic credential, target, environment, and transport ports. The application transport owns authentication, HTTP execution, error decoding, and retries; its generic encoding boundary is not exposed to capability CLI adapters.
 - The built-in agent and MCP consume one governed tool catalog derived from product-operation metadata, with shared risk, permission, workspace, credential, execution, projection, audit, and error behavior.
 - UI routes call the same capability use cases as API, CLI, and agent interfaces for equivalent behavior.

@@ -287,6 +287,22 @@ func TestPlanChanges(t *testing.T) {
 	}
 }
 
+func TestFullJobsIncludesIndependentDocumentationGate(t *testing.T) {
+	t.Parallel()
+
+	plan := PlanChanges(Input{Event: "workflow_dispatch"}, nil)
+	if !plan.Effective.Docs {
+		t.Fatal("full CI omits the independent documentation and public-site gate")
+	}
+	if !plan.Effective.Prepare || plan.Effective.FrontendPrepare {
+		t.Fatalf(
+			"full CI generation jobs = prepare %v, frontend-prepare %v; full preparation must subsume the selective frontend preparation job",
+			plan.Effective.Prepare,
+			plan.Effective.FrontendPrepare,
+		)
+	}
+}
+
 func TestParseNameStatusZ(t *testing.T) {
 	t.Parallel()
 
