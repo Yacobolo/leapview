@@ -287,6 +287,7 @@ func validPrivilege(privilege access.Privilege) bool {
 		access.PrivilegeManageItem,
 		access.PrivilegeQueryData,
 		access.PrivilegePreviewData,
+		access.PrivilegeTestDataPolicy,
 		access.PrivilegeRefreshData,
 		access.PrivilegeDeploy,
 		access.PrivilegeActivateDeployment,

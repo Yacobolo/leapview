@@ -853,7 +853,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			},
 			DispatchAPIGen: func(scope agentmodule.Scope, operationID string, writer http.ResponseWriter, request *http.Request) bool {
 				principal := accessmodule.Principal{ID: scope.PrincipalID, DevBypass: scope.DevAuthBypass}
-				if platform.auth == nil {
+				if platform.auth == nil && strings.TrimSpace(principal.ID) == "" {
 					principal = accessmodule.LocalDeveloperPrincipal()
 				}
 				ctx := accessmodule.WithPrincipal(request.Context(), principal)
@@ -900,7 +900,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			},
 			QueryContext: func(ctx context.Context, scope agentmodule.Scope) context.Context {
 				principal := accessmodule.Principal{ID: scope.PrincipalID, DevBypass: scope.DevAuthBypass}
-				if platform.auth == nil {
+				if platform.auth == nil && strings.TrimSpace(principal.ID) == "" {
 					principal = accessmodule.LocalDeveloperPrincipal()
 				}
 				ctx = accessmodule.WithPrincipal(ctx, principal)

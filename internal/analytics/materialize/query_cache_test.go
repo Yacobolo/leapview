@@ -216,9 +216,10 @@ func TestQueryResultCacheUsesGovernedRequestAndReturnsDeepCopies(t *testing.T) {
 	cache := newQueryResultCache(256, "")
 	request := dataquery.Query{
 		ModelID: "sales", Kind: dataquery.KindSemanticAggregate, Target: "orders",
-		Operation:   dataquery.OperationDashboardFilterOptions,
-		Fields:      []dataquery.Field{{Field: "orders.state", Alias: "value"}},
-		ColumnMasks: []dataquery.ColumnMask{{Field: "orders.state", Mask: "redact"}},
+		Operation:                  dataquery.OperationDashboardFilterOptions,
+		EffectivePolicyFingerprint: "sha256:policy-one",
+		Fields:                     []dataquery.Field{{Field: "orders.state", Alias: "value"}},
+		ColumnMasks:                []dataquery.ColumnMask{{Field: "orders.state", Mask: "redact"}},
 	}
 	var calls atomic.Int32
 	execute := func() (dataquery.Result, error) {
@@ -250,12 +251,20 @@ func TestQueryResultCacheUsesGovernedRequestAndReturnsDeepCopies(t *testing.T) {
 		t.Fatalf("cached result was aliased: %#v", second.Rows)
 	}
 
-	request.ColumnMasks[0].Mask = "null"
+	request.EffectivePolicyFingerprint = "sha256:policy-two"
 	if _, err := cache.execute(context.Background(), request, execute); err != nil {
 		t.Fatal(err)
 	}
 	if calls.Load() != 2 {
-		t.Fatalf("different governed request executions = %d, want 2", calls.Load())
+		t.Fatalf("different effective policy executions = %d, want 2", calls.Load())
+	}
+
+	request.ColumnMasks[0].Mask = "null"
+	if _, err := cache.execute(context.Background(), request, execute); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 3 {
+		t.Fatalf("different governed request executions = %d, want 3", calls.Load())
 	}
 }
 
@@ -626,6 +635,67 @@ func TestRuntimeCachesGovernedDashboardQueriesAndToggleBackExecutesZeroSQL(t *te
 	if got := database.queries.Load(); got != 4 {
 		t.Fatalf("physical executions after snapshot generation invalidation = %d, want 4", got)
 	}
+}
+
+func TestRuntimeReauthorizesBeforeCacheLookupAndRejectsRevocation(t *testing.T) {
+	database := &countingCacheRuntimeDatabase{}
+	runtime := &Runtime{
+		modelID: "sales",
+		model: &semanticmodel.Model{Name: "sales", Tables: map[string]semanticmodel.Table{
+			"orders": {
+				Columns:    map[string]semanticmodel.ModelColumn{"id": {Name: "id"}},
+				Dimensions: map[string]semanticmodel.MetricDimension{"id": {Label: "ID"}},
+			},
+		}},
+		db:         database,
+		queryCache: newQueryResultCache(256, ""),
+	}
+	governor := &revocableCacheGovernor{fingerprint: "sha256:policy-one"}
+	request := dataquery.Query{
+		Surface: dataquery.SurfaceDashboard, Operation: dataquery.OperationDashboardAggregate,
+		ModelID: "sales", Kind: dataquery.KindSemanticAggregate, Target: "orders",
+		Fields: []dataquery.Field{{Field: "orders.id", Alias: "id"}}, Limit: 50,
+	}
+	execute := func() error {
+		_, err := runtime.ExecuteDataQuery(dataquery.WithGovernor(t.Context(), governor), request)
+		return err
+	}
+
+	if err := execute(); err != nil {
+		t.Fatal(err)
+	}
+	if err := execute(); err != nil {
+		t.Fatal(err)
+	}
+	if governor.calls.Load() != 2 || database.queries.Load() != 1 {
+		t.Fatalf("governance calls = %d, physical queries = %d; want 2, 1", governor.calls.Load(), database.queries.Load())
+	}
+
+	governor.revoked.Store(true)
+	if err := execute(); err == nil {
+		t.Fatal("revoked query reused an authorized cached result")
+	}
+	if governor.calls.Load() != 3 || database.queries.Load() != 1 {
+		t.Fatalf("post-revocation governance calls = %d, physical queries = %d; want 3, 1", governor.calls.Load(), database.queries.Load())
+	}
+}
+
+type revocableCacheGovernor struct {
+	calls       atomic.Int32
+	revoked     atomic.Bool
+	fingerprint string
+}
+
+func (governor *revocableCacheGovernor) GovernDataQuery(
+	_ context.Context,
+	request dataquery.Query,
+) (dataquery.Query, dataquery.ResultTransformer, error) {
+	governor.calls.Add(1)
+	if governor.revoked.Load() {
+		return request, nil, errors.New("authorization revoked")
+	}
+	request.EffectivePolicyFingerprint = governor.fingerprint
+	return request, nil, nil
 }
 
 func TestRuntimeBundleCacheAllHitExecutesZeroAdditionalSQL(t *testing.T) {

@@ -2,9 +2,12 @@ package authz
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/flidai/leapview/internal/access"
@@ -134,13 +137,20 @@ func (m Metrics) ExecuteDataQueryArrow(ctx context.Context, request dataquery.Qu
 		return rejectedDataQueryResult(err)
 	}
 	_, publicationQuery := dashboardPublicationCapabilityFromContext(ctx)
-	if publicationQuery {
+	_, candidateQuery := candidateQueryCapabilityFromContext(ctx)
+	_, viewAsQuery := viewAsCapabilityFromContext(ctx)
+	durableStreamingAudit := publicationQuery || candidateQuery || viewAsQuery
+	if durableStreamingAudit {
 		// Arrow transports release records as the executor runs, so persist a
 		// durable access identity before the sink can write its schema. The
 		// completion event below enriches the audit trail with the final outcome; a
 		// sustained completion-write failure is logged by PersistAuditEvent, but
 		// cannot retroactively turn an already delivered stream into a rejection.
-		if err := m.recordDataAccessAudit(ctx, governed, access.PrivilegeQueryData, dataQueryObjects(governed), "started", nil); err != nil {
+		privilege := dataQueryPrivilege(governed)
+		if candidateQuery {
+			privilege = access.PrivilegePreviewData
+		}
+		if err := m.recordDataAccessAudit(ctx, governed, privilege, dataQueryObjects(governed), "started", nil); err != nil {
 			return rejectedDataQueryResult(err)
 		}
 	}
@@ -148,7 +158,7 @@ func (m Metrics) ExecuteDataQueryArrow(ctx context.Context, request dataquery.Qu
 	result, err := executor.ExecuteDataQueryArrow(ctx, governed, sink)
 	if transform != nil {
 		if transformErr := transform(&result, err); transformErr != nil {
-			if publicationQuery {
+			if durableStreamingAudit {
 				return result, err
 			}
 			return rejectedDataQueryResult(transformErr)
@@ -162,9 +172,16 @@ func (m Metrics) GovernDataQuery(ctx context.Context, request dataquery.Query) (
 	if request.WorkspaceID == "" {
 		request.WorkspaceID = m.defaultWorkspaceID
 	}
+	candidateCapability, candidateQuery := candidateQueryCapabilityFromContext(ctx)
 	privilege := dataQueryPrivilege(request)
+	if candidateQuery {
+		// Candidate execution is always preview, even when it renders a normal
+		// dashboard interaction whose production equivalent uses QUERY_DATA.
+		privilege = access.PrivilegePreviewData
+	}
 	objects := dataQueryObjects(request)
 	capability, publicationQuery := dashboardPublicationCapabilityFromContext(ctx)
+	viewAs, viewAsQuery := viewAsCapabilityFromContext(ctx)
 	semanticObjects, physicalObjects, err := m.resolvedDependencyObjects(request, publicationQuery)
 	if err != nil {
 		return request, nil, err
@@ -172,6 +189,14 @@ func (m Metrics) GovernDataQuery(ctx context.Context, request dataquery.Query) (
 	objects = append(objects, semanticObjects...)
 	objects = append(objects, physicalObjects...)
 	if publicationQuery {
+		if candidateQuery || viewAsQuery || request.CandidateID != "" {
+			request.PrincipalID = access.DashboardPublicationSubjectID(capability.WorkspaceID, capability.Publication)
+			err := errors.New("public query cannot use candidate or view-as authority")
+			if auditErr := m.recordDataAccessAudit(ctx, request, access.PrivilegeQueryData, objects, "denied", err); auditErr != nil {
+				return request, nil, errors.Join(err, auditErr)
+			}
+			return request, nil, err
+		}
 		objects = append(objects, dataQueryColumnObjects(request)...)
 		request.PrincipalID = access.DashboardPublicationSubjectID(capability.WorkspaceID, capability.Publication)
 		if err := validateDashboardPublicationQuery(capability, request, objects); err != nil {
@@ -180,13 +205,20 @@ func (m Metrics) GovernDataQuery(ctx context.Context, request dataquery.Query) (
 			}
 			return request, nil, err
 		}
-		governed, err := m.applyDataPolicies(ctx, request, objects)
+		governed, policies, err := m.applyDataPolicies(ctx, request, objects)
 		if err != nil {
 			if auditErr := m.recordDataAccessAudit(ctx, request, access.PrivilegeQueryData, objects, "error", err); auditErr != nil {
 				return request, nil, errors.Join(err, auditErr)
 			}
 			return request, nil, err
 		}
+		governed.EffectivePolicyFingerprint = effectivePolicyFingerprint(
+			governed,
+			access.PrivilegeQueryData,
+			objects,
+			policies,
+			effectivePolicyContext{},
+		)
 		return governed, func(result *dataquery.Result, executeErr error) error {
 			status := "success"
 			if executeErr != nil || (result != nil && result.Status == dataquery.StatusError) {
@@ -196,14 +228,67 @@ func (m Metrics) GovernDataQuery(ctx context.Context, request dataquery.Query) (
 		}, nil
 	}
 	principalID := strings.TrimSpace(request.PrincipalID)
-	if principal, ok := m.currentPrincipal(ctx); ok {
-		if principal.DevBypass {
+	principal, authenticated := m.currentPrincipal(ctx)
+	if authenticated {
+		if principalID != "" && principalID != principal.ID {
+			request.PrincipalID = principal.ID
+			err := DeniedError{PrincipalID: principal.ID, Privilege: privilege}
+			_ = m.recordDataAccessAudit(ctx, request, privilege, objects, "denied", err)
+			return request, nil, err
+		}
+		if !candidateQuery && request.CandidateID != "" {
+			request.PrincipalID = principal.ID
+			err := DeniedError{PrincipalID: principal.ID, Privilege: privilege}
+			_ = m.recordDataAccessAudit(ctx, request, privilege, objects, "denied", err)
+			return request, nil, err
+		}
+		if candidateQuery {
+			var err error
+			request, err = validateCandidateQueryCapability(candidateCapability, principal, request)
+			if err != nil {
+				denied := DeniedError{PrincipalID: principal.ID, Privilege: privilege}
+				_ = m.recordDataAccessAudit(ctx, request, privilege, objects, "denied", err)
+				return request, nil, denied
+			}
+			principalID = request.PrincipalID
+		}
+		if viewAsQuery {
+			var err error
+			request, err = m.authorizeViewAs(ctx, principal, request, viewAs)
+			if err != nil {
+				return request, nil, err
+			}
+			principalID = request.PrincipalID
+		}
+		if principal.DevBypass && !candidateQuery && !viewAsQuery {
+			request.PrincipalID = principal.ID
+			request.EffectivePolicyFingerprint = effectivePolicyFingerprint(
+				request,
+				privilege,
+				objects,
+				nil,
+				effectivePolicyContext{
+					Mode:             "dev_bypass",
+					CredentialID:     currentCredentialID(ctx, m),
+					ActorPrincipalID: principal.ID,
+				},
+			)
 			return request, nil, nil
 		}
 		if principalID == "" {
 			principalID = principal.ID
 			request.PrincipalID = principal.ID
 		}
+	}
+	if candidateQuery && !authenticated {
+		err := dataquery.ErrMissingPrincipal
+		_ = m.recordDataAccessAudit(ctx, request, privilege, objects, "denied", err)
+		return request, nil, err
+	}
+	if viewAsQuery && !authenticated {
+		err := dataquery.ErrMissingPrincipal
+		_ = m.recordDataAccessAudit(ctx, request, privilege, objects, "denied", err)
+		return request, nil, err
 	}
 	if principalID == "" {
 		err := dataquery.ErrMissingPrincipal
@@ -223,21 +308,43 @@ func (m Metrics) GovernDataQuery(ctx context.Context, request dataquery.Query) (
 		_ = m.recordDataAccessAudit(ctx, request, privilege, objects, "denied", err)
 		return request, nil, err
 	}
-	governed, err := m.applyDataPolicies(ctx, request, objects)
+	governed, policies, err := m.applyDataPolicies(ctx, request, objects)
 	if err != nil {
 		_ = m.recordDataAccessAudit(ctx, request, privilege, objects, "error", err)
 		return request, nil, err
 	}
+	candidateDigest := ""
+	if candidateQuery {
+		candidateDigest = candidateCapability.PolicyDigest
+	}
+	governed.EffectivePolicyFingerprint = effectivePolicyFingerprint(
+		governed,
+		privilege,
+		objects,
+		policies,
+		effectivePolicyContext{
+			CandidateDigest:  candidateDigest,
+			CredentialID:     currentCredentialID(ctx, m),
+			ActorPrincipalID: principal.ID,
+		},
+	)
+	strictAudit := candidateQuery || viewAsQuery
 	return governed, func(result *dataquery.Result, executeErr error) error {
 		if executeErr != nil {
-			_ = m.recordDataAccessAudit(ctx, governed, privilege, objects, "error", executeErr)
+			auditErr := m.recordDataAccessAudit(ctx, governed, privilege, objects, "error", executeErr)
+			if strictAudit && auditErr != nil {
+				return errors.Join(executeErr, auditErr)
+			}
 			return nil
 		}
 		status := "success"
 		if result != nil && result.Status == dataquery.StatusError {
 			status = "error"
 		}
-		_ = m.recordDataAccessAudit(ctx, governed, privilege, objects, status, nil)
+		auditErr := m.recordDataAccessAudit(ctx, governed, privilege, objects, status, nil)
+		if strictAudit {
+			return auditErr
+		}
 		return nil
 	}, nil
 }
@@ -444,11 +551,13 @@ func (m Metrics) recordDataAccessAudit(ctx context.Context, request dataquery.Qu
 		}
 	}
 	metadata := map[string]any{
-		"kind":      string(request.Kind),
-		"surface":   request.Surface,
-		"operation": request.Operation,
-		"modelId":   request.ModelID,
-		"target":    request.Target,
+		"candidateId":                request.CandidateID,
+		"effectivePolicyFingerprint": request.EffectivePolicyFingerprint,
+		"kind":                       string(request.Kind),
+		"surface":                    request.Surface,
+		"operation":                  request.Operation,
+		"modelId":                    request.ModelID,
+		"target":                     request.Target,
 	}
 	if cause != nil {
 		metadata["error"] = cause.Error()
@@ -590,23 +699,23 @@ func (m Metrics) QueryVisualizationSpatialWindow(ctx context.Context, dashboardI
 	return m.Metrics.QueryVisualizationSpatialWindow(dataquery.WithGovernor(ctx, m), dashboardID, pageID, filters, request)
 }
 
-func (m Metrics) applyDataPolicies(ctx context.Context, request dataquery.Query, objects []access.ObjectRef) (dataquery.Query, error) {
+func (m Metrics) applyDataPolicies(ctx context.Context, request dataquery.Query, objects []access.ObjectRef) (dataquery.Query, []access.DataPolicy, error) {
 	policies, err := m.effectiveDataPolicies(ctx, request, objects)
 	if err != nil {
-		return request, err
+		return request, nil, err
 	}
 	for _, policy := range policies {
 		switch policy.PolicyType {
 		case "row_filter":
 			filters, err := rowFiltersFromPolicy(policy)
 			if err != nil {
-				return request, err
+				return request, nil, err
 			}
 			request.Filters = append(request.Filters, m.resolvePolicyFilterFacts(request, filters)...)
 		case "column_mask":
 			mask, err := columnMaskFromPolicy(policy)
 			if err != nil {
-				return request, err
+				return request, nil, err
 			}
 			maskedFields := selectedMaskedFields(request, mask)
 			if request.Kind == dataquery.KindSemanticAggregate || request.Kind == dataquery.KindSemanticSpatial {
@@ -617,7 +726,7 @@ func (m Metrics) applyDataPolicies(ctx context.Context, request dataquery.Query,
 			}
 		}
 	}
-	return request, nil
+	return request, policies, nil
 }
 
 func (m Metrics) resolvePolicyFilterFacts(request dataquery.Query, filters []dataquery.Filter) []dataquery.Filter {
@@ -709,7 +818,75 @@ func (m Metrics) effectiveDataPolicies(ctx context.Context, request dataquery.Qu
 			return nil, err
 		}
 	}
+	if candidate, ok := candidateQueryCapabilityFromContext(ctx); ok {
+		// Candidate restrictions are appended without deduplicating against the
+		// active policy IDs. An authored policy can therefore never shadow or
+		// replace a currently effective restriction.
+		out = append(out, candidate.Restrictions...)
+	}
 	return out, nil
+}
+
+type effectivePolicyIdentity struct {
+	PrincipalID      string              `json:"principalId"`
+	ActorPrincipalID string              `json:"actorPrincipalId,omitempty"`
+	WorkspaceID      string              `json:"workspaceId"`
+	Privilege        access.Privilege    `json:"privilege"`
+	CandidateID      string              `json:"candidateId,omitempty"`
+	CandidateDigest  string              `json:"candidateDigest,omitempty"`
+	CredentialID     string              `json:"credentialId,omitempty"`
+	Mode             string              `json:"mode,omitempty"`
+	Objects          []string            `json:"objects"`
+	Policies         []access.DataPolicy `json:"policies"`
+}
+
+type effectivePolicyContext struct {
+	ActorPrincipalID string
+	CandidateDigest  string
+	CredentialID     string
+	Mode             string
+}
+
+func effectivePolicyFingerprint(
+	request dataquery.Query,
+	privilege access.Privilege,
+	objects []access.ObjectRef,
+	policies []access.DataPolicy,
+	policyContext effectivePolicyContext,
+) string {
+	objectIDs := make([]string, 0, len(objects))
+	for _, object := range objects {
+		objectIDs = append(objectIDs, object.CanonicalID())
+	}
+	sort.Strings(objectIDs)
+	policyCopy := append([]access.DataPolicy(nil), policies...)
+	sort.Slice(policyCopy, func(i, j int) bool {
+		left, _ := json.Marshal(policyCopy[i])
+		right, _ := json.Marshal(policyCopy[j])
+		return string(left) < string(right)
+	})
+	identity := effectivePolicyIdentity{
+		PrincipalID:      request.PrincipalID,
+		ActorPrincipalID: policyContext.ActorPrincipalID,
+		WorkspaceID:      request.WorkspaceID,
+		Privilege:        privilege,
+		CandidateID:      request.CandidateID,
+		CandidateDigest:  policyContext.CandidateDigest,
+		CredentialID:     policyContext.CredentialID,
+		Mode:             policyContext.Mode,
+		Objects:          objectIDs,
+		Policies:         policyCopy,
+	}
+	bytes, _ := json.Marshal(identity)
+	sum := sha256.Sum256(bytes)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func currentCredentialID(ctx context.Context, metrics Metrics) string {
+	if credential, ok := metrics.currentCredential(ctx); ok {
+		return credential.Token.ID
+	}
+	return ""
 }
 
 func dataQueryPrivilege(request dataquery.Query) access.Privilege {

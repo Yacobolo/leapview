@@ -20,6 +20,7 @@ const (
 	PrivilegeManageItem               Privilege = "MANAGE_ITEM"
 	PrivilegeQueryData                Privilege = "QUERY_DATA"
 	PrivilegePreviewData              Privilege = "PREVIEW_DATA"
+	PrivilegeTestDataPolicy           Privilege = "TEST_DATA_POLICY"
 	PrivilegeRefreshData              Privilege = "REFRESH_DATA"
 	PrivilegeDeploy                   Privilege = "DEPLOY"
 	PrivilegeActivateDeployment       Privilege = "ACTIVATE_DEPLOYMENT"
@@ -41,7 +42,7 @@ func ParsePrivilege(value string) (Privilege, bool) {
 	privilege := Privilege(strings.TrimSpace(value))
 	switch privilege {
 	case PrivilegeUseWorkspace, PrivilegeViewItem, PrivilegeEditItem, PrivilegeManageItem,
-		PrivilegeQueryData, PrivilegePreviewData, PrivilegeRefreshData, PrivilegeDeploy,
+		PrivilegeQueryData, PrivilegePreviewData, PrivilegeTestDataPolicy, PrivilegeRefreshData, PrivilegeDeploy,
 		PrivilegeActivateDeployment, PrivilegeManagePublications, PrivilegeUseAgent, PrivilegeViewAgent,
 		PrivilegeManageGrants, PrivilegeViewAudit, PrivilegeManageWorkspace,
 		PrivilegeManagePlatform, PrivilegeViewData, PrivilegeIngestData,
@@ -75,6 +76,7 @@ var defaultRoles = []Role{
 			PrivilegeManageItem,
 			PrivilegeQueryData,
 			PrivilegePreviewData,
+			PrivilegeTestDataPolicy,
 			PrivilegeRefreshData,
 			PrivilegeDeploy,
 			PrivilegeActivateDeployment,
@@ -95,6 +97,7 @@ var defaultRoles = []Role{
 			PrivilegeManageItem,
 			PrivilegeQueryData,
 			PrivilegePreviewData,
+			PrivilegeTestDataPolicy,
 			PrivilegeRefreshData,
 			PrivilegeDeploy,
 			PrivilegeActivateDeployment,
@@ -193,6 +196,7 @@ var defaultRoles = []Role{
 			PrivilegeManageItem,
 			PrivilegeQueryData,
 			PrivilegePreviewData,
+			PrivilegeTestDataPolicy,
 			PrivilegeRefreshData,
 			PrivilegeDeploy,
 			PrivilegeActivateDeployment,
@@ -742,6 +746,7 @@ func KnownPrivileges() []Privilege {
 		PrivilegeManageItem,
 		PrivilegeQueryData,
 		PrivilegePreviewData,
+		PrivilegeTestDataPolicy,
 		PrivilegeRefreshData,
 		PrivilegeDeploy,
 		PrivilegeActivateDeployment,

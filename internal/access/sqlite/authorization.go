@@ -647,6 +647,7 @@ func knownPrivileges() []access.Privilege {
 		access.PrivilegeManageItem,
 		access.PrivilegeQueryData,
 		access.PrivilegePreviewData,
+		access.PrivilegeTestDataPolicy,
 		access.PrivilegeRefreshData,
 		access.PrivilegeDeploy,
 		access.PrivilegeActivateDeployment,

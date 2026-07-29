@@ -179,6 +179,68 @@ func TestGovernDashboardCountUsesAuthorizationProjectionPolicies(t *testing.T) {
 	}
 }
 
+func TestGovernDataQueryRejectsPrincipalEscalationAgainstAuthenticatedActor(t *testing.T) {
+	ctx := context.Background()
+	store, err := platform.Open(ctx, filepath.Join(t.TempDir(), "leapview.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(
+		ctx,
+		workspace.EnsureInput{ID: "test", Title: "Test"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	repo := accesssqlite.NewRepository(store.SQLDB())
+	actor, err := repo.UpsertPrincipal(
+		ctx,
+		access.PrincipalInput{ID: "author", Email: "author@example.com"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privileged, err := repo.UpsertPrincipal(
+		ctx,
+		access.PrincipalInput{ID: "admin", Email: "admin@example.com"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.CreateGrant(ctx, access.GrantInput{
+		Object: access.WorkspaceObject("test"), SubjectType: access.SubjectPrincipal,
+		SubjectID: privileged.ID, Privilege: access.PrivilegePreviewData,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	metrics := New(semanticModelMetrics{model: governanceTestModel()}, Options{
+		Repo: repo,
+		PrincipalFromContext: func(context.Context) (Principal, bool) {
+			return Principal{ID: actor.ID}, true
+		},
+		DefaultWorkspaceID: "test",
+	})
+
+	_, _, err = metrics.GovernDataQuery(ctx, dataquery.Query{
+		WorkspaceID: "test", PrincipalID: privileged.ID,
+		ModelID: "activity", Kind: dataquery.KindModelTableRows, Target: "ratings",
+		Fields: []dataquery.Field{{Field: "rating"}},
+	})
+	if !IsDenied(err) {
+		t.Fatalf("GovernDataQuery() error = %v, want denied principal escalation", err)
+	}
+	events, auditErr := repo.ListAuditEvents(
+		ctx,
+		access.AuditEventFilter{WorkspaceID: "test", PrincipalID: actor.ID},
+	)
+	if auditErr != nil {
+		t.Fatal(auditErr)
+	}
+	if len(events) != 1 || events[0].Status != "denied" {
+		t.Fatalf("escalation audit events = %#v", events)
+	}
+}
+
 func TestResolvedDependencyObjectsIncludesRowQueryFilterFields(t *testing.T) {
 	model := governanceTestModel()
 	metrics := New(semanticModelMetrics{model: model}, Options{DefaultWorkspaceID: "test"})
@@ -290,6 +352,37 @@ func TestPublicationQueryAppliesGlobalAndPublicationPoliciesAndPersistsAudit(t *
 	events, err := repo.ListAuditEvents(ctx, access.AuditEventFilter{WorkspaceID: "test", PrincipalID: principalID})
 	if err != nil || len(events) != 1 || events[0].Action != "data_query.executed" {
 		t.Fatalf("publication audit events = %#v error=%v", events, err)
+	}
+}
+
+func TestPublicationQueryRejectsCandidateAuthority(t *testing.T) {
+	model := governanceTestModel()
+	repository := &candidateAuthorizationRepository{}
+	metrics := New(semanticModelMetrics{model: model}, Options{
+		Repo: repository, DefaultWorkspaceID: "test",
+	})
+	ctx := WithDashboardPublicationCapability(t.Context(), DashboardPublicationCapability{
+		WorkspaceID: "test", Publication: "website", Dashboard: "dashboard", ModelID: model.Name,
+		DependencyAssetIDs: []string{
+			"dashboard:test.dashboard", "semantic_model:test.activity", "semantic_table:test.activity.ratings",
+			"field:test.activity.ratings.rating",
+		},
+	})
+	ctx = WithCandidateQueryCapability(ctx, CandidateQueryCapability{
+		CandidateID: "cand_1", OwnerPrincipalID: "author_1", WorkspaceID: "test",
+		PolicyDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	})
+
+	_, _, err := metrics.GovernDataQuery(ctx, dataquery.Query{
+		WorkspaceID: "test", Surface: dataquery.SurfacePublicDashboard, Operation: dataquery.OperationDashboardRows,
+		ModelID: model.Name, Kind: dataquery.KindSemanticRows, Target: "ratings",
+		Fields: []dataquery.Field{{Field: "ratings.rating"}},
+	})
+	if err == nil {
+		t.Fatal("public query accepted candidate authority")
+	}
+	if len(repository.audits) != 1 || repository.audits[0].Status != "denied" {
+		t.Fatalf("publication candidate audits = %#v", repository.audits)
 	}
 }
 

@@ -17,6 +17,7 @@ const (
 	PrivilegeViewItem                 = access.PrivilegeViewItem
 	PrivilegeDeploy                   = access.PrivilegeDeploy
 	PrivilegePreviewData              = access.PrivilegePreviewData
+	PrivilegeTestDataPolicy           = access.PrivilegeTestDataPolicy
 	PrivilegeManageConnectionMetadata = access.PrivilegeManageConnectionMetadata
 	PrivilegeTestConnection           = access.PrivilegeTestConnection
 	PrivilegeViewConnectionHealth     = access.PrivilegeViewConnectionHealth
