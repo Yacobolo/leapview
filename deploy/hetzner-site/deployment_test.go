@@ -294,6 +294,7 @@ func TestRemoteStateAndReviewedApplyWorkflow(t *testing.T) {
 		`method: "oidc"`,
 		`identity-id: "7e92da75-ac4f-49f2-8924-4561c3547902"`,
 		`oidc-audience: "https://github.com/flidai"`,
+		`domain: "https://us.infisical.com"`,
 		`project-slug: "leapview"`,
 		`env-slug: "prod"`,
 		`secret-path: "/hetzner-site/infrastructure"`,
@@ -303,6 +304,9 @@ func TestRemoteStateAndReviewedApplyWorkflow(t *testing.T) {
 	}
 	if got := strings.Count(workflow, "Infisical/secrets-action@"); got != 2 {
 		t.Errorf("expected plan and apply to each fetch Infisical secrets, got %d uses", got)
+	}
+	if got := strings.Count(workflow, `domain: "https://us.infisical.com"`); got != 2 {
+		t.Errorf("expected plan and apply to each use the Infisical US endpoint, got %d uses", got)
 	}
 	if !strings.HasPrefix(operatorPublicKey, "ssh-ed25519 ") {
 		t.Errorf("operator public key must be a checked-in Ed25519 public key")
