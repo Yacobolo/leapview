@@ -14,10 +14,25 @@ bundle_id="dev.leapview.desktop"
 launch_services="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
 sudo installer -pkg "${artifact}" -target /
-test -x "${application}/Contents/MacOS/LeapView"
-test "$(stat -f '%Su:%Sg:%Lp' "${policy_directory}")" = "root:wheel:755"
-test "$(plutil -extract CFBundleIdentifier raw "${application}/Contents/Info.plist")" = \
-  "${bundle_id}"
+if [ ! -x "${application}/Contents/MacOS/LeapView" ]; then
+  echo "installer did not place an executable LeapView app in /Applications" >&2
+  pkgutil --files "${bundle_id}" >&2 || true
+  find /Applications -maxdepth 3 -name 'LeapView.app' -print >&2
+  exit 1
+fi
+policy_mode="$(stat -f '%Su:%Sg:%Lp' "${policy_directory}")"
+if [ "${policy_mode}" != "root:wheel:755" ]; then
+  echo "managed policy directory has unexpected ${policy_mode}" >&2
+  exit 1
+fi
+installed_bundle_id="$(
+  plutil -extract CFBundleIdentifier raw \
+    "${application}/Contents/Info.plist"
+)"
+if [ "${installed_bundle_id}" != "${bundle_id}" ]; then
+  echo "installed application has unexpected bundle ID" >&2
+  exit 1
+fi
 plutil -extract CFBundleURLTypes xml1 -o - \
   "${application}/Contents/Info.plist" | grep -F "leapview-desktop"
 "${launch_services}" -f "${application}"

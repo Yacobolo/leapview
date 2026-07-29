@@ -6,12 +6,13 @@ if [ "${GITHUB_ACTIONS:-}" != "true" ] || [ "$#" -ne 1 ]; then
   exit 1
 fi
 
-artifact="$1"
+artifact_directory="$(cd "$(dirname "$1")" && pwd)"
+artifact="${artifact_directory}/$(basename "$1")"
 policy_directory="/etc/leapview"
 policy_path="${policy_directory}/desktop-policy.json"
 desktop_entry="/usr/share/applications/leapview-desktop.desktop"
 
-sudo dpkg --install "${artifact}"
+sudo apt-get install --yes "${artifact}"
 test "$(stat -c '%U:%G:%a' "${policy_directory}")" = "root:root:755"
 test -f "${desktop_entry}"
 grep -Fx "Exec=leapview-desktop %U" "${desktop_entry}"
@@ -25,7 +26,7 @@ if [ -w "${policy_path}" ]; then
   exit 1
 fi
 
-sudo dpkg --install "${artifact}"
+sudo apt-get install --yes --reinstall "${artifact}"
 grep -F '"qualification":"preserve-on-upgrade"' "${policy_path}"
 test "$(stat -c '%U:%G:%a' "${policy_path}")" = "root:root:644"
 

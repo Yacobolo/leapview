@@ -27,8 +27,16 @@ function Read-PolicyProbe {
 }
 
 Invoke-MSI @("/i", "`"$artifact`"", "/qn", "/norestart")
-if (-not (Test-Path $application) -or -not (Test-Path $helper)) {
-  throw "MSI did not install the application and native policy helper."
+if (-not (Test-Path $application)) {
+  Get-ChildItem -Path $env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LocalAppData `
+    -Filter LeapView.exe -Recurse -ErrorAction SilentlyContinue |
+    ForEach-Object { Write-Warning $_.FullName }
+  throw "MSI did not install LeapView.exe in Program Files."
+}
+if (-not (Test-Path $helper)) {
+  Get-ChildItem -Path $applicationRoot -Recurse |
+    ForEach-Object { Write-Warning $_.FullName }
+  throw "MSI did not install the native policy helper."
 }
 
 $probe = Read-PolicyProbe
