@@ -329,6 +329,45 @@ func TestPoolManagerRestartRevalidatesPersistedVersionAndRepeatedOutageIsIdempot
 	}
 }
 
+func TestPoolManagerHealthStatusIsCompleteAndRedacted(t *testing.T) {
+	now := time.Date(2026, 7, 29, 17, 0, 0, 0, time.UTC)
+	resolver := &sequenceResolver{
+		snapshots: []CredentialSnapshot{testSnapshot(t, "version-1", now)},
+		errs:      []error{nil, ErrProviderUnavailable},
+	}
+	manager, err := NewPoolManager(PoolManagerConfig{
+		Binding: validTargetBinding(t), Resolver: resolver, Factory: &recordingPoolFactory{},
+		Store: &recordingBindingStore{}, Now: func() time.Time { return now }, StaleAfter: 10 * time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.RefreshNow(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Minute)
+	if err := manager.RefreshNow(context.Background()); !errors.Is(err, ErrProviderUnavailable) {
+		t.Fatalf("RefreshNow() error = %v", err)
+	}
+	status := manager.HealthStatus()
+	if status.BindingID != "binding_prod_warehouse" || status.Health != HealthDegraded ||
+		status.ValidatedVersion != "version-1" || !status.LastAttemptAt.Equal(now) ||
+		!status.LastValidatedAt.Equal(now.Add(-2*time.Minute)) ||
+		status.StaleAgeSeconds != 120 || status.Reason != "PROVIDER_UNAVAILABLE" ||
+		!status.HasActivePool {
+		t.Fatalf("health status = %#v", status)
+	}
+	encoded, err := json.Marshal(status)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"source-secret", "connection_string", "infisical-project", "/leapview/sales"} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("health status disclosed %q: %s", forbidden, encoded)
+		}
+	}
+}
+
 func testSnapshot(t *testing.T, version string, now time.Time) CredentialSnapshot {
 	t.Helper()
 	snapshot, err := NewCredentialSnapshot(map[string]string{"connection_string": "source-secret"}, version, now, now.Add(time.Hour))

@@ -341,6 +341,30 @@ func (manager *PoolManager) Evidence() BindingEvidence {
 	return manager.binding.Evidence()
 }
 
+func (manager *PoolManager) HealthStatus() BindingHealthStatus {
+	if manager == nil {
+		return BindingHealthStatus{}
+	}
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	binding := manager.binding
+	status := BindingHealthStatus{
+		BindingID: binding.ID, TargetID: binding.TargetID,
+		LogicalConnection: binding.LogicalConnectionID, ConnectorKind: binding.ConnectorKind,
+		Scope: binding.Scope, BindingRevision: binding.Revision,
+		ValidatedVersion: binding.ValidatedVersion, Health: binding.Health, Reason: binding.HealthReason,
+		LastAttemptAt: manager.lastRun, LastValidatedAt: binding.LastValidatedAt,
+		HasActivePool: manager.active != nil,
+	}
+	if !binding.LastValidatedAt.IsZero() {
+		age := manager.now().UTC().Sub(binding.LastValidatedAt)
+		if age > 0 {
+			status.StaleAgeSeconds = int64(age / time.Second)
+		}
+	}
+	return status
+}
+
 type PoolLease struct {
 	once       sync.Once
 	manager    *PoolManager

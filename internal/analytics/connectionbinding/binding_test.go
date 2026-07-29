@@ -212,6 +212,63 @@ func TestTargetBindingValidationEvidenceAdvancesOptimistically(t *testing.T) {
 	}
 }
 
+func TestTargetBindingConfigurationUpdateInvalidatesPriorRuntimeEvidence(t *testing.T) {
+	binding := validTargetBinding(t)
+	validated, err := binding.MarkValidated("secret:v1", binding.UpdatedAt.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := validated.UpdateConfiguration(TargetBindingConfiguration{
+		ConnectorKind:      validated.ConnectorKind,
+		AuthenticationMode: validated.AuthenticationMode,
+		Endpoint: EndpointConfig{
+			Host: "warehouse-next.internal", Port: 5432, Database: "analytics", TLSMode: "verify-full",
+		},
+		CredentialReference: validated.CredentialReference,
+	}, validated.UpdatedAt.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Revision != validated.Revision+1 || updated.Health != HealthPending ||
+		updated.ValidatedVersion != "" || !updated.LastValidatedAt.IsZero() ||
+		updated.Endpoint.Host != "warehouse-next.internal" {
+		t.Fatalf("updated binding = %#v", updated)
+	}
+}
+
+func TestTargetBindingConfigurationUpdateIsIdempotentAndValidated(t *testing.T) {
+	binding := validTargetBinding(t)
+	config := binding.Configuration()
+	unchanged, err := binding.UpdateConfiguration(config, binding.UpdatedAt.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Revision != binding.Revision || !unchanged.UpdatedAt.Equal(binding.UpdatedAt) {
+		t.Fatalf("idempotent update changed binding: %#v", unchanged)
+	}
+
+	config.ConnectorKind = ""
+	if _, err := binding.UpdateConfiguration(config, binding.UpdatedAt.Add(time.Minute)); !errors.Is(err, ErrInvalidBinding) {
+		t.Fatalf("invalid configuration error = %v", err)
+	}
+}
+
+func TestTargetBindingEnableReturnsToPendingWithoutRestoringOldEvidence(t *testing.T) {
+	binding := validTargetBinding(t)
+	disabled, err := binding.Disable(binding.UpdatedAt.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	enabled, err := disabled.Enable(disabled.UpdatedAt.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !enabled.Enabled || enabled.Health != HealthPending || enabled.ValidatedVersion != "" ||
+		!enabled.LastValidatedAt.IsZero() || enabled.Revision != disabled.Revision+1 {
+		t.Fatalf("enabled binding = %#v", enabled)
+	}
+}
+
 func validTargetBinding(t *testing.T) TargetBinding {
 	t.Helper()
 	binding, err := NewTargetBinding(validTargetBindingInput())

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"regexp"
 	"strings"
 	"time"
@@ -122,6 +123,13 @@ type TargetBindingInput struct {
 	CredentialReference CredentialReference
 	Enabled             bool
 	Now                 time.Time
+}
+
+type TargetBindingConfiguration struct {
+	ConnectorKind       string
+	AuthenticationMode  AuthenticationMode
+	Endpoint            EndpointConfig
+	CredentialReference CredentialReference
 }
 
 func NewTargetBinding(input TargetBindingInput) (TargetBinding, error) {
@@ -281,6 +289,42 @@ func (binding TargetBinding) MarkValidated(providerVersion string, now time.Time
 	return binding.advance(now), nil
 }
 
+func (binding TargetBinding) Configuration() TargetBindingConfiguration {
+	return TargetBindingConfiguration{
+		ConnectorKind: binding.ConnectorKind, AuthenticationMode: binding.AuthenticationMode,
+		Endpoint: cloneEndpoint(binding.Endpoint), CredentialReference: binding.CredentialReference,
+	}
+}
+
+func (binding TargetBinding) UpdateConfiguration(configuration TargetBindingConfiguration, now time.Time) (TargetBinding, error) {
+	now = now.UTC()
+	if !binding.Enabled {
+		return TargetBinding{}, ErrDisabledBinding
+	}
+	if now.IsZero() || now.Before(binding.UpdatedAt) {
+		return TargetBinding{}, fmt.Errorf("%w: monotonic update time is required", ErrInvalidBinding)
+	}
+	configuration.ConnectorKind = strings.TrimSpace(configuration.ConnectorKind)
+	configuration.CredentialReference = canonicalReference(configuration.CredentialReference)
+	candidate := binding
+	candidate.ConnectorKind = configuration.ConnectorKind
+	candidate.AuthenticationMode = configuration.AuthenticationMode
+	candidate.Endpoint = cloneEndpoint(configuration.Endpoint)
+	candidate.CredentialReference = configuration.CredentialReference
+	if reflect.DeepEqual(candidate.Configuration(), binding.Configuration()) {
+		return binding, nil
+	}
+	candidate.ValidatedVersion = ""
+	candidate.LastValidatedAt = time.Time{}
+	candidate.Health = HealthPending
+	candidate.HealthReason = ""
+	candidate = candidate.advance(now)
+	if err := candidate.Validate(); err != nil {
+		return TargetBinding{}, err
+	}
+	return candidate, nil
+}
+
 func (binding TargetBinding) MarkDegraded(reason string, now time.Time) (TargetBinding, error) {
 	reason = strings.TrimSpace(reason)
 	now = now.UTC()
@@ -309,6 +353,22 @@ func (binding TargetBinding) Disable(now time.Time) (TargetBinding, error) {
 	binding.Enabled = false
 	binding.Health = HealthDisabled
 	binding.HealthReason = ""
+	return binding.advance(now), nil
+}
+
+func (binding TargetBinding) Enable(now time.Time) (TargetBinding, error) {
+	now = now.UTC()
+	if binding.Enabled {
+		return binding, nil
+	}
+	if now.IsZero() || now.Before(binding.UpdatedAt) {
+		return TargetBinding{}, fmt.Errorf("%w: monotonic enable time is required", ErrInvalidBinding)
+	}
+	binding.Enabled = true
+	binding.Health = HealthPending
+	binding.HealthReason = ""
+	binding.ValidatedVersion = ""
+	binding.LastValidatedAt = time.Time{}
 	return binding.advance(now), nil
 }
 
