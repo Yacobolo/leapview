@@ -3,6 +3,7 @@ import type { MenuItemConstructorOptions } from "electron";
 export interface NativeMenuActions {
   showInstances: () => void;
   saveDiagnosticReport: () => void;
+  checkForUpdates: () => void;
 }
 
 export function buildNativeMenuTemplate(
@@ -18,6 +19,10 @@ export function buildNativeMenuTemplate(
             label: appName,
             submenu: [
               { role: "about" as const },
+              {
+                label: "Check for Updates…",
+                click: actions.checkForUpdates,
+              },
               { type: "separator" as const },
               { role: "services" as const },
               { type: "separator" as const },
@@ -85,6 +90,15 @@ export function buildNativeMenuTemplate(
     {
       label: "Help",
       submenu: [
+        ...(!isMac
+          ? [
+              {
+                label: "Check for Updates…",
+                click: actions.checkForUpdates,
+              },
+              { type: "separator" as const },
+            ]
+          : []),
         {
           label: "Save Diagnostic Report…",
           click: actions.saveDiagnosticReport,

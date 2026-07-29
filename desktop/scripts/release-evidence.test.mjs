@@ -58,6 +58,15 @@ const policy = {
     forge: "7.11.2",
     bun: "1.3.7",
   },
+  updates: {
+    origin: "https://releases.leapview.dev",
+    pathVersion: "v1",
+    channel: "stable",
+    productName: "LeapView",
+    applicationId: "dev.leapview.desktop",
+    electronMajor: 43,
+    windowsPackageId: "leapview",
+  },
   supportMatrix: [
     {
       platform: "darwin",
@@ -134,6 +143,15 @@ const packageVerification = {
     controls: 2,
     focusedControl: "LeapView URL",
     regions: ["Connect an instance"],
+  },
+  updates: {
+    origin: "https://releases.leapview.dev",
+    pathVersion: "v1",
+    channel: "stable",
+    productName: "LeapView",
+    applicationId: "dev.leapview.desktop",
+    electronMajor: 43,
+    delivery: "electron-auto-updater",
   },
   installer: {
     format: "dmg",

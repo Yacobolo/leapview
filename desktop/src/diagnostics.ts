@@ -125,6 +125,8 @@ export type DiagnosticEvent =
         | "available"
         | "not-available"
         | "downloaded"
+        | "deferred"
+        | "restart-requested"
         | "failed";
     };
 
@@ -518,6 +520,8 @@ function validateEvent(input: unknown): DiagnosticEvent {
           "available",
           "not-available",
           "downloaded",
+          "deferred",
+          "restart-requested",
           "failed",
         ],
       });

@@ -84,6 +84,7 @@ export async function verifyReleaseEvidence({
       "runtime",
       "schemaVersion",
       "startup",
+      "updates",
     ],
     "package verification",
   );
@@ -93,6 +94,19 @@ export async function verifyReleaseEvidence({
       manifest.toolchain,
       ["bun", "chromium", "electron", "electronMajor", "forge", "node"],
       "toolchain",
+    ],
+    [
+      manifest.packageVerification.updates,
+      [
+        "applicationId",
+        "channel",
+        "delivery",
+        "electronMajor",
+        "origin",
+        "pathVersion",
+        "productName",
+      ],
+      "updater verification",
     ],
     [
       manifest.artifact,
@@ -281,6 +295,22 @@ export async function verifyReleaseEvidence({
       ) ||
     manifest.packageVerification?.schemaVersion !== 2 ||
     manifest.packageVerification?.asarOnly !== policy.hardening?.asarOnly ||
+    manifest.packageVerification?.updates?.origin !==
+      policy.updates?.origin ||
+    manifest.packageVerification?.updates?.pathVersion !==
+      policy.updates?.pathVersion ||
+    manifest.packageVerification?.updates?.channel !==
+      policy.updates?.channel ||
+    manifest.packageVerification?.updates?.productName !==
+      policy.updates?.productName ||
+    manifest.packageVerification?.updates?.applicationId !==
+      policy.updates?.applicationId ||
+    manifest.packageVerification?.updates?.electronMajor !==
+      policy.updates?.electronMajor ||
+    manifest.packageVerification?.updates?.delivery !==
+      (manifest.artifact?.platform === "linux"
+        ? "system-package-manager"
+        : "electron-auto-updater") ||
     !validAccessibilityVerification(
       manifest.packageVerification?.accessibility,
     )

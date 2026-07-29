@@ -44,6 +44,17 @@ export function validateReleasePolicy(policy, packageDocument) {
   if (electronMajor !== policy.runtime.electronMajor) {
     throw new Error("release policy Electron major is unsupported");
   }
+  if (
+    policy.updates?.origin !== "https://releases.leapview.dev" ||
+    policy.updates?.pathVersion !== "v1" ||
+    policy.updates?.channel !== "stable" ||
+    policy.updates?.productName !== packageDocument.productName ||
+    policy.updates?.applicationId !== "dev.leapview.desktop" ||
+    policy.updates?.electronMajor !== electronMajor ||
+    policy.updates?.windowsPackageId !== "leapview"
+  ) {
+    throw new Error("release policy updater identity is invalid");
+  }
   for (const [dependency, expected] of [
     ["node", policy.runtime.node],
     ["@electron-forge/cli", policy.runtime.forge],
@@ -581,7 +592,18 @@ function assertPackageVerification(verification, policy) {
     verification.installer?.policyIntegration !==
       "deferred-not-supported" ||
     verification.installer?.protocolIntegration !==
-      "consumer-owned-validated-url"
+      "consumer-owned-validated-url" ||
+    verification.updates?.origin !== policy.updates.origin ||
+    verification.updates?.pathVersion !== policy.updates.pathVersion ||
+    verification.updates?.channel !== policy.updates.channel ||
+    verification.updates?.productName !== policy.updates.productName ||
+    verification.updates?.applicationId !== policy.updates.applicationId ||
+    verification.updates?.electronMajor !==
+      policy.updates.electronMajor ||
+    verification.updates?.delivery !==
+      (verification.platform === "linux"
+        ? "system-package-manager"
+        : "electron-auto-updater")
   ) {
     throw new Error("installer verification report is incomplete");
   }

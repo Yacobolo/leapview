@@ -57,6 +57,26 @@ Users do not build the application from source. Windows/macOS routine
 installation and updates use user-scoped application state. Linux delegates
 installation and updates to the operating-system package manager.
 
+Installed Windows and macOS builds use Electron's platform Squirrel updater.
+The trusted main process compiles the stable vendor feed
+`https://releases.leapview.dev/desktop/v1/stable/{platform}/{architecture}/{current-version}`;
+connected instances and remote renderers cannot configure or invoke it.
+LeapView checks shortly after launch and then at a bounded interval. Users can
+also choose **Check for Updates…** from the native application/help menu.
+
+An available update downloads through Squirrel, which applies only the
+platform package identity accepted by the installed application. LeapView
+also rejects malformed, equal, or older target versions before enabling its
+trusted **Restart now** action. **Later** safely leaves the update staged for
+the next application restart. Release notes, HTML, URLs, instance data, and
+native error strings are never rendered in update dialogs or recorded in
+diagnostics. Unsigned test candidates that cannot initialize Squirrel remain
+usable but fail closed with automatic updates disabled.
+
+Linux never downloads or installs an application update itself. Its native
+menu directs users to the signed LeapView APT channel through their ordinary
+system package manager.
+
 The packages register `leapview-desktop` with one validated URL argument.
 Squirrel lifecycle events own the per-user Windows shortcut and protocol
 registration. The macOS bundle and Linux desktop entry own their platform
@@ -78,7 +98,8 @@ each qualified target together with:
 - SHA-256 checksums for the installer, every updater companion, and SBOM;
 - release metadata binding the candidate to the source commit, workflow
   revision and run, lockfile, package document, release policy, runtime
-  versions, support floor, ASAR-only package, and exact Electron fuse state;
+  versions, support floor, fixed updater origin/channel/product identity,
+  ASAR-only package, and exact Electron fuse state;
 - a standalone Node verifier that recomputes the bundle hashes and rejects
   unsupported runtime, target, hardening, privacy, or publication state.
 

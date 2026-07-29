@@ -11,6 +11,7 @@ import {
 
 import {
   app,
+  autoUpdater,
   BrowserWindow,
   dialog,
   Menu,
@@ -90,6 +91,8 @@ import {
 } from "./squirrel-lifecycle.js";
 import { loadTrustedUIAssets } from "./trusted-assets.js";
 import { TrustedUI } from "./trusted-ui.js";
+import { DesktopUpdateCoordinator } from "./update-coordinator.js";
+import type { DesktopAutoUpdater } from "./updater.js";
 import {
   fitWindowStateToWorkArea,
   WindowStateStore,
@@ -182,6 +185,7 @@ let diagnosticExportActive = false;
 let systemSuspended = false;
 let networkAvailable = true;
 let networkStatusTimer: NodeJS.Timeout | null = null;
+let desktopUpdates: DesktopUpdateCoordinator | null = null;
 
 if (process.platform === "win32") {
   app.setAppUserModelId(SQUIRREL_APP_USER_MODEL_ID);
@@ -272,6 +276,7 @@ if (squirrelLifecycleHandled) {
       clearInterval(networkStatusTimer);
       networkStatusTimer = null;
     }
+    desktopUpdates?.stop();
     if (windowStateQuitReady || windowStates === null) {
       return;
     }
@@ -340,12 +345,16 @@ async function start(): Promise<void> {
   windowStates = await WindowStateStore.open(
     join(app.getPath("userData"), "window-state.json"),
   );
+  initializeDesktopUpdater();
   Menu.setApplicationMenu(
     Menu.buildFromTemplate(
       buildNativeMenuTemplate(process.platform, app.name, {
         showInstances: focusTrustedShell,
         saveDiagnosticReport: () => {
           void saveDiagnosticReport();
+        },
+        checkForUpdates: () => {
+          void desktopUpdates?.checkManually();
         },
       }),
     ),
@@ -388,6 +397,7 @@ async function start(): Promise<void> {
       rejectUnknown: reportUnknownSecondaryDeepLink,
     }),
   );
+  desktopUpdates?.startAutomaticChecks();
 }
 
 async function connectOrigin(rawOrigin: string): Promise<void> {
@@ -937,6 +947,37 @@ function reportTrustedShellNotice(message: string): void {
   }
   trustedUI.reportNotice(notice);
   focusTrustedShell(true);
+}
+
+function initializeDesktopUpdater(): void {
+  desktopUpdates = new DesktopUpdateCoordinator({
+    native: autoUpdater as unknown as DesktopAutoUpdater,
+    runtime: {
+      platform: process.platform,
+      architecture: process.arch,
+      applicationVersion: app.getVersion(),
+      electronVersion: process.versions.electron ?? "",
+      packaged: app.isPackaged,
+    },
+    showMessageBox: (options) =>
+      shellWindow !== null && !shellWindow.isDestroyed()
+        ? dialog.showMessageBox(shellWindow, options)
+        : dialog.showMessageBox(options),
+    recordEvent: (event) => {
+      recordDiagnostic({ kind: "update", phase: event.phase });
+    },
+    beforeRestart: prepareForUpdateRestart,
+  });
+  desktopUpdates.initialize();
+}
+
+async function prepareForUpdateRestart(): Promise<void> {
+  desktopUpdates?.stop();
+  cancelAllAuthenticationTransactions();
+  cancelAllRemoteRecoveries();
+  captureAllWindowStates();
+  await Promise.all([flushWindowStates(), flushDiagnostics()]);
+  windowStateQuitReady = true;
 }
 
 function focusTrustedShell(reload = false): void {

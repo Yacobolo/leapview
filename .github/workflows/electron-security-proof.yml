@@ -77,6 +77,10 @@ jobs:
         working-directory: desktop
         run: bun install --frozen-lockfile
 
+      - name: Test the trusted desktop and updater contracts
+        working-directory: desktop
+        run: bun run test
+
       - name: Build, harden, inspect, and launch the package
         if: runner.os != 'Linux'
         working-directory: desktop

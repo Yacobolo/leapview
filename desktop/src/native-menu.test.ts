@@ -8,6 +8,7 @@ describe("buildNativeMenuTemplate", () => {
     const template = buildNativeMenuTemplate("darwin", "LeapView", {
       showInstances: () => undefined,
       saveDiagnosticReport,
+      checkForUpdates: () => undefined,
     });
     const serialized = JSON.stringify(template);
     const help = template.find((item) => item.label === "Help");
@@ -20,6 +21,7 @@ describe("buildNativeMenuTemplate", () => {
     expect(serialized).toContain("Manage Instances");
     expect(serialized).toContain("CmdOrCtrl+Shift+L");
     expect(serialized).toContain("Save Diagnostic Report");
+    expect(serialized).toContain("Check for Updates");
     expect(diagnosticItem?.click).toBe(saveDiagnosticReport);
     expect(serialized).toContain('"role":"about"');
     expect(serialized).toContain('"role":"quit"');
@@ -37,6 +39,7 @@ describe("buildNativeMenuTemplate", () => {
         buildNativeMenuTemplate(platform, "LeapView", {
           showInstances: () => undefined,
           saveDiagnosticReport: () => undefined,
+          checkForUpdates: () => undefined,
         }),
       );
       expect(serialized).not.toContain("toggleDevTools");
@@ -50,12 +53,14 @@ describe("buildNativeMenuTemplate", () => {
       buildNativeMenuTemplate("darwin", "LeapView", {
         showInstances: () => undefined,
         saveDiagnosticReport: () => undefined,
+        checkForUpdates: () => undefined,
       }),
     );
     const linux = JSON.stringify(
       buildNativeMenuTemplate("linux", "LeapView", {
         showInstances: () => undefined,
         saveDiagnosticReport: () => undefined,
+        checkForUpdates: () => undefined,
       }),
     );
 

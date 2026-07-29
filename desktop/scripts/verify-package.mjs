@@ -13,7 +13,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { listPackage } from "@electron/asar";
+import { extractFile, listPackage } from "@electron/asar";
 import {
   FuseState,
   FuseV1Options,
@@ -162,6 +162,8 @@ for (const required of [
   "/dist/src/native-menu.js",
   "/dist/src/remote-lifecycle.js",
   "/dist/src/security/remote-policy.mjs",
+  "/dist/src/update-coordinator.js",
+  "/dist/src/updater.js",
   "/dist/src/window-state.js",
 ]) {
   if (!archiveFiles.includes(required)) {
@@ -177,6 +179,22 @@ if (
   )
 ) {
   throw new Error("packaged ASAR contains source or test-only content");
+}
+const packagedUpdater = extractFile(
+  asarPath,
+  "dist/src/updater.js",
+).toString("utf8");
+for (const expected of [
+  releasePolicy.updates.origin,
+  releasePolicy.updates.channel,
+  releasePolicy.updates.pathVersion,
+  String(releasePolicy.updates.electronMajor),
+]) {
+  if (!packagedUpdater.includes(JSON.stringify(expected).slice(1, -1))) {
+    throw new Error(
+      "packaged updater does not match the immutable release policy",
+    );
+  }
 }
 
 const startup = await verifyPackagedStartup(executablePath, {
@@ -217,6 +235,18 @@ const verificationReport = {
   asarFiles: archiveFiles.length,
   startup: startup.status,
   accessibility: startup.accessibility,
+  updates: {
+    origin: releasePolicy.updates.origin,
+    pathVersion: releasePolicy.updates.pathVersion,
+    channel: releasePolicy.updates.channel,
+    productName: releasePolicy.updates.productName,
+    applicationId: releasePolicy.updates.applicationId,
+    electronMajor: releasePolicy.updates.electronMajor,
+    delivery:
+      platformName === "linux"
+        ? "system-package-manager"
+        : "electron-auto-updater",
+  },
 };
 await writeFile(
   join(out, "package-verification.json"),
