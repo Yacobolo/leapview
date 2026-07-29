@@ -9,6 +9,18 @@ const node = (role, name, properties = []) => ({
   properties,
 });
 
+const treeNode = (
+  id,
+  role,
+  name,
+  properties = [],
+  childIds = [],
+) => ({
+  ...node(role, name, properties),
+  nodeId: id,
+  childIds,
+});
+
 test("accepts the named, focused trusted-shell accessibility contract", () => {
   const report = verifyTrustedShellAccessibility([
     node("RootWebArea", "LeapView", [
@@ -54,6 +66,54 @@ test("accepts the focused fail-closed managed-policy state", () => {
     focusedControl: "Application document",
     regions: [],
   });
+});
+
+test("accepts Windows AX trees that expose alert text as a child", () => {
+  const report = verifyTrustedShellAccessibility([
+    treeNode("root", "RootWebArea", "LeapView", [
+      { name: "focused", value: { value: true } },
+    ], ["main"]),
+    treeNode("main", "main", "", [], ["heading", "alert"]),
+    treeNode("heading", "heading", "Connect to LeapView"),
+    treeNode("alert", "alert", "", [
+      { name: "live", value: { value: "assertive" } },
+    ], ["alert-text"]),
+    treeNode(
+      "alert-text",
+      "StaticText",
+      "The managed desktop configuration is invalid; contact your administrator.",
+    ),
+  ]);
+
+  assert.deepEqual(report, {
+    mode: "locked",
+    announcement: "assertive",
+    controls: 0,
+    focusedControl: "Application document",
+    regions: [],
+  });
+});
+
+test("does not mistake unrelated accessible text for the policy alert", () => {
+  assert.throws(
+    () =>
+      verifyTrustedShellAccessibility([
+        treeNode("root", "RootWebArea", "LeapView", [
+          { name: "focused", value: { value: true } },
+        ], ["main"]),
+        treeNode("main", "main", "", [], ["heading", "alert", "text"]),
+        treeNode("heading", "heading", "Connect to LeapView"),
+        treeNode("alert", "alert", "", [
+          { name: "live", value: { value: "assertive" } },
+        ]),
+        treeNode(
+          "text",
+          "StaticText",
+          "The managed desktop configuration is invalid; contact your administrator.",
+        ),
+      ]),
+    /managed configuration alert/u,
+  );
 });
 
 test("rejects missing landmarks, names, and deterministic initial focus", () => {

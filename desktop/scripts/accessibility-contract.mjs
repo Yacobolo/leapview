@@ -22,7 +22,13 @@ export function verifyTrustedShellAccessibility(input) {
       typeof node === "object" &&
       node.ignored !== true,
   );
+  const nodesByID = new Map(
+    nodes
+      .filter((node) => typeof node.nodeId === "string")
+      .map((node) => [node.nodeId, node]),
+  );
   const entries = nodes.map((node) => ({
+    node,
     role: axValue(node.role),
     name: axValue(node.name).trim(),
     focused: axProperty(node, "focused") === true,
@@ -105,7 +111,9 @@ export function verifyTrustedShellAccessibility(input) {
   const policyAlert = entries.find(
     (entry) =>
       entry.role === "alert" &&
-      entry.name.includes("managed desktop configuration is invalid"),
+      accessibleText(entry.node, nodesByID).includes(
+        "managed desktop configuration is invalid",
+      ),
   );
   const applicationDocumentFocused = entries.some(
     (entry) =>
@@ -247,6 +255,35 @@ function axProperty(node, name) {
     ? node.properties.find((candidate) => candidate?.name === name)
     : undefined;
   return property?.value?.value;
+}
+
+function accessibleText(node, nodesByID, visited = new Set()) {
+  if (
+    typeof node.nodeId === "string" &&
+    visited.has(node.nodeId)
+  ) {
+    return "";
+  }
+  const nextVisited = new Set(visited);
+  if (typeof node.nodeId === "string") {
+    nextVisited.add(node.nodeId);
+  }
+  const ownName = axValue(node.name).trim();
+  const childText = Array.isArray(node.childIds)
+    ? node.childIds
+        .map((id) =>
+          typeof id === "string" ? nodesByID.get(id) : undefined,
+        )
+        .filter((child) => child !== undefined)
+        .map((child) =>
+          accessibleText(child, nodesByID, nextVisited),
+        )
+        .filter((text) => text !== "")
+    : [];
+  return [ownName, ...childText]
+    .filter((text) => text !== "")
+    .join(" ")
+    .toLocaleLowerCase("en-US");
 }
 
 async function waitForSocket(socket) {
