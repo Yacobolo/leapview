@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	projectartifact "github.com/Yacobolo/leapview/internal/project/artifact"
-	"github.com/Yacobolo/leapview/internal/project/manifest"
-	"github.com/Yacobolo/leapview/internal/project/schema"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	projectartifact "github.com/flidai/leapview/internal/project/artifact"
+	"github.com/flidai/leapview/internal/project/manifest"
+	"github.com/flidai/leapview/internal/project/schema"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 type compiledWorkspaceTestView struct {

@@ -23,7 +23,7 @@ func TestPackageHasNoLeapViewSpecificDependencies(t *testing.T) {
 		if strings.Contains(string(body), "window.LeapView") {
 			t.Fatalf("%s references a LeapView-specific browser global", file)
 		}
-		if strings.Contains(string(body), "github.com/Yacobolo/leapview/internal/") {
+		if strings.Contains(string(body), "github.com/flidai/leapview/internal/") {
 			t.Fatalf("%s imports a LeapView-internal package", file)
 		}
 	}

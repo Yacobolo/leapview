@@ -1,6 +1,6 @@
 # LeapView
 
-[![CI](https://github.com/Yacobolo/leapview/actions/workflows/ci.yml/badge.svg)](https://github.com/Yacobolo/leapview/actions/workflows/ci.yml)
+[![CI](https://github.com/flidai/leapview/actions/workflows/ci.yml/badge.svg)](https://github.com/flidai/leapview/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 LeapView is an open-source, agent-native BI platform. Build governed semantic
@@ -26,11 +26,11 @@ The evaluation image is the quickest way to explore LeapView. It requires only
 Docker—no source checkout—and includes a disposable sample workspace.
 
 ```sh
-docker pull ghcr.io/yacobolo/leapview:latest
+docker pull ghcr.io/flidai/leapview:latest
 docker run --detach --name leapview-evaluate --init \
   --publish 127.0.0.1:8080:8080 \
   --volume leapview-evaluate:/var/lib/leapview \
-  ghcr.io/yacobolo/leapview:latest evaluate
+  ghcr.io/flidai/leapview:latest evaluate
 docker exec leapview-evaluate leapview evaluate first-login
 ```
 
@@ -76,8 +76,8 @@ contribution process.
 ## Project status
 
 LeapView is under active development. Follow
-[GitHub releases](https://github.com/Yacobolo/leapview/releases) for published
-versions and use the [issue tracker](https://github.com/Yacobolo/leapview/issues)
+[GitHub releases](https://github.com/flidai/leapview/releases) for published
+versions and use the [issue tracker](https://github.com/flidai/leapview/issues)
 for bugs and feature proposals.
 
 ## License

@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	visualizationmapasset "github.com/Yacobolo/leapview/internal/dashboard/visualization/mapasset"
+	visualizationmapasset "github.com/flidai/leapview/internal/dashboard/visualization/mapasset"
 )
 
 func TestVerifyDeliveryChecksFullAssetsAndBothArchiveRanges(t *testing.T) {

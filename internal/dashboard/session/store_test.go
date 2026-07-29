@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/dashboard/filter"
+	"github.com/flidai/leapview/internal/dashboard/filter"
 )
 
 func TestMemoryStoreCompareAndSwapAllowsOneConcurrentWriter(t *testing.T) {

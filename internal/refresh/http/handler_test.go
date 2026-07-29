@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
+	refreshrun "github.com/flidai/leapview/internal/refresh/run"
 	"github.com/go-chi/chi/v5"
 )
 

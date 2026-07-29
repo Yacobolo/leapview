@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
+	"github.com/flidai/leapview/internal/platform/jobs"
 )
 
 const FinalizeJobKind = "release.finalize"

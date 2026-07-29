@@ -3,7 +3,7 @@ package observability
 import (
 	"sync"
 
-	"github.com/Yacobolo/leapview/internal/workload"
+	"github.com/flidai/leapview/internal/workload"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

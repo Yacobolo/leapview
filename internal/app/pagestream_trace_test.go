@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
+	"github.com/flidai/leapview/internal/platform/web/staticasset"
+	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 func TestDevelopmentPageStreamTraceEndpointReturnsSanitizedEvents(t *testing.T) {

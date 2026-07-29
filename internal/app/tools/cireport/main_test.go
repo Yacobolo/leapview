@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	platformci "github.com/Yacobolo/leapview/internal/platform/ci"
+	platformci "github.com/flidai/leapview/internal/platform/ci"
 )
 
 func TestJobResultsAggregatesMatrixFailures(t *testing.T) {

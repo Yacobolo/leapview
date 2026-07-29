@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	analyticsresource "github.com/Yacobolo/leapview/internal/analytics/resource"
-	"github.com/Yacobolo/leapview/internal/platform/http/cursorsigning"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	analyticsresource "github.com/flidai/leapview/internal/analytics/resource"
+	"github.com/flidai/leapview/internal/platform/http/cursorsigning"
 )
 
 type pageResponse struct {

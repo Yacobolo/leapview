@@ -5,9 +5,9 @@ import (
 	"sort"
 	"strings"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
 )
 
 // compileBuiltInVisualizationSpec is the canonical authoring-to-IR boundary

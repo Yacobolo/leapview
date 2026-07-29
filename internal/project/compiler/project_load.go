@@ -8,12 +8,12 @@ import (
 	"sort"
 	"strings"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/dashboard/publication"
-	"github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/project/schema"
-	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	"github.com/flidai/leapview/internal/dashboard/publication"
+	"github.com/flidai/leapview/internal/dashboard/report"
+	"github.com/flidai/leapview/internal/project/schema"
+	refreshschedule "github.com/flidai/leapview/internal/refresh/schedule"
+	"github.com/flidai/leapview/internal/workspace"
 	"gopkg.in/yaml.v3"
 )
 

@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
-	adminoffline "github.com/Yacobolo/leapview/internal/admin/offline"
-	"github.com/Yacobolo/leapview/internal/app/config"
-	"github.com/Yacobolo/leapview/internal/manageddata/localplan"
-	"github.com/Yacobolo/leapview/internal/platform/filesystem"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
+	adminoffline "github.com/flidai/leapview/internal/admin/offline"
+	"github.com/flidai/leapview/internal/app/config"
+	"github.com/flidai/leapview/internal/manageddata/localplan"
+	"github.com/flidai/leapview/internal/platform/filesystem"
+	workspacecompiler "github.com/flidai/leapview/internal/project/compiler"
 )
 
 func TestEvaluationCommandExposesServerAndOneTimeFirstLogin(t *testing.T) {

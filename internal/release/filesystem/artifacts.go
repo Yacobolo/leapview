@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/platform/filesystem"
-	projectbundle "github.com/Yacobolo/leapview/internal/project/bundle"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
+	"github.com/flidai/leapview/internal/platform/filesystem"
+	projectbundle "github.com/flidai/leapview/internal/project/bundle"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
 )
 
 const MaxUploadBytes = 128 << 20

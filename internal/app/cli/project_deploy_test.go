@@ -15,10 +15,10 @@ import (
 	"sync"
 	"testing"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
-	projectbundle "github.com/Yacobolo/leapview/internal/project/bundle"
-	releasegen "github.com/Yacobolo/leapview/internal/release/api/gen"
-	"github.com/Yacobolo/leapview/internal/workspace/api"
+	apigenapi "github.com/flidai/leapview/internal/app/api/gen"
+	projectbundle "github.com/flidai/leapview/internal/project/bundle"
+	releasegen "github.com/flidai/leapview/internal/release/api/gen"
+	"github.com/flidai/leapview/internal/workspace/api"
 )
 
 func TestDeployPreparesCompleteProjectBeforeOneAtomicActivation(t *testing.T) {

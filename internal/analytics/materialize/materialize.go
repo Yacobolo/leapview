@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/analytics/connectors"
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
+	"github.com/flidai/leapview/internal/analytics/connectors"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 )
 
 type Executor interface {

@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	workspacehttp "github.com/Yacobolo/leapview/internal/workspace/http"
+	workspacehttp "github.com/flidai/leapview/internal/workspace/http"
 )
 
 type workspaceAPIGenHandler struct{ module *Module }

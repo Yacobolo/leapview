@@ -7,15 +7,15 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/Yacobolo/leapview/internal/deployment"
-	deploymentapi "github.com/Yacobolo/leapview/internal/deployment/api"
-	"github.com/Yacobolo/leapview/internal/deployment/apiadapter"
-	deploymenthttp "github.com/Yacobolo/leapview/internal/deployment/http"
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
-	jobhttp "github.com/Yacobolo/leapview/internal/platform/jobs/http"
-	"github.com/Yacobolo/leapview/internal/platform/transaction"
-	"github.com/Yacobolo/leapview/internal/release"
+	"github.com/flidai/leapview/internal/deployment"
+	deploymentapi "github.com/flidai/leapview/internal/deployment/api"
+	"github.com/flidai/leapview/internal/deployment/apiadapter"
+	deploymenthttp "github.com/flidai/leapview/internal/deployment/http"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
+	"github.com/flidai/leapview/internal/platform/jobs"
+	jobhttp "github.com/flidai/leapview/internal/platform/jobs/http"
+	"github.com/flidai/leapview/internal/platform/transaction"
+	"github.com/flidai/leapview/internal/release"
 )
 
 var ErrPublicationForbidden = errors.New("publication deployment forbidden")

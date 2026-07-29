@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	platformdb "github.com/Yacobolo/leapview/internal/refresh/internal/db"
-	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
-	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
-	"github.com/Yacobolo/leapview/internal/servingstate"
+	platformdb "github.com/flidai/leapview/internal/refresh/internal/db"
+	refreshrun "github.com/flidai/leapview/internal/refresh/run"
+	refreshschedule "github.com/flidai/leapview/internal/refresh/schedule"
+	"github.com/flidai/leapview/internal/servingstate"
 )
 
 type SQLRunRepository struct {

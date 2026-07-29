@@ -14,7 +14,7 @@ import (
 	"strings"
 	"unicode"
 
-	docsearch "github.com/Yacobolo/leapview/internal/app/site/search/sqlite"
+	docsearch "github.com/flidai/leapview/internal/app/site/search/sqlite"
 	"gopkg.in/yaml.v3"
 )
 

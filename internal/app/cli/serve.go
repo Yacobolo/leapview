@@ -11,10 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/app"
-	"github.com/Yacobolo/leapview/internal/app/config"
-	"github.com/Yacobolo/leapview/internal/platform/locking"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
+	"github.com/flidai/leapview/internal/app"
+	"github.com/flidai/leapview/internal/app/config"
+	"github.com/flidai/leapview/internal/platform/locking"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
 	"github.com/spf13/cobra"
 )
 

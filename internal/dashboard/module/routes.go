@@ -3,9 +3,9 @@ package module
 import (
 	"net/http"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	dashboardhttp "github.com/Yacobolo/leapview/internal/dashboard/http"
-	dashboardui "github.com/Yacobolo/leapview/internal/dashboard/ui"
+	"github.com/flidai/leapview/internal/access"
+	dashboardhttp "github.com/flidai/leapview/internal/dashboard/http"
+	dashboardui "github.com/flidai/leapview/internal/dashboard/ui"
 	"github.com/go-chi/chi/v5"
 )
 

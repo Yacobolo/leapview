@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/platform/db"
+	"github.com/flidai/leapview/internal/platform/db"
 )
 
 const instanceIDSetting = "instance.id"

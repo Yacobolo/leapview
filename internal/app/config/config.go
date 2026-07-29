@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/app/config/spec"
-	"github.com/Yacobolo/leapview/internal/workload"
 	"github.com/caarlos0/env/v11"
+	"github.com/flidai/leapview/internal/app/config/spec"
+	"github.com/flidai/leapview/internal/workload"
 )
 
 type Profile string

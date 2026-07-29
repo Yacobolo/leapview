@@ -3,7 +3,7 @@ package validate
 import (
 	"context"
 
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
 )
 
 type Repository interface {

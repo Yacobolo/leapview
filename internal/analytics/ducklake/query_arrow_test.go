@@ -7,11 +7,11 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
-	"github.com/Yacobolo/leapview/internal/workload"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	semanticquery "github.com/flidai/leapview/internal/analytics/query"
+	"github.com/flidai/leapview/internal/workload"
 )
 
 func TestQueryArrowPreservesNativeTypesNullsAndUsesAdmittedConnection(t *testing.T) {

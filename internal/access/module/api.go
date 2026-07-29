@@ -3,8 +3,8 @@ package module
 import (
 	"net/http"
 
-	accessgen "github.com/Yacobolo/leapview/internal/access/api/gen"
-	accesshttp "github.com/Yacobolo/leapview/internal/access/http"
+	accessgen "github.com/flidai/leapview/internal/access/api/gen"
+	accesshttp "github.com/flidai/leapview/internal/access/http"
 )
 
 func (m *Module) DispatchAPIGenOperation(operationID string, w http.ResponseWriter, r *http.Request) bool {

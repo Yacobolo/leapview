@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	content "github.com/Yacobolo/leapview/docs"
-	"github.com/Yacobolo/leapview/internal/analytics/connectors"
+	content "github.com/flidai/leapview/docs"
+	"github.com/flidai/leapview/internal/analytics/connectors"
 )
 
 func TestHomepageFeaturedIntegrationsExistInTheConnectorRegistry(t *testing.T) {

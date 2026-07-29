@@ -124,7 +124,7 @@ Use the immutable digest published with the target release:
 
 ```sh
 $(terraform output -raw operations_command) upgrade \
-  ghcr.io/yacobolo/leapview@sha256:<digest>
+  ghcr.io/flidai/leapview@sha256:<digest>
 ```
 
 The command creates a pre-upgrade state checkpoint, pulls and validates the

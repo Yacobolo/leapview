@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
-	refreshmodule "github.com/Yacobolo/leapview/internal/refresh/module"
-	servingstatemodule "github.com/Yacobolo/leapview/internal/servingstate/module"
+	refreshmodule "github.com/flidai/leapview/internal/refresh/module"
+	servingstatemodule "github.com/flidai/leapview/internal/servingstate/module"
 )
 
 type runtimeReloader interface {

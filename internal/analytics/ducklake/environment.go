@@ -18,13 +18,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
-	analyticsresource "github.com/Yacobolo/leapview/internal/analytics/resource"
-	"github.com/Yacobolo/leapview/internal/platform/filesystem"
-	"github.com/Yacobolo/leapview/internal/platform/transaction"
-	"github.com/Yacobolo/leapview/internal/workload"
 	duckdb "github.com/duckdb/duckdb-go/v2"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	semanticquery "github.com/flidai/leapview/internal/analytics/query"
+	analyticsresource "github.com/flidai/leapview/internal/analytics/resource"
+	"github.com/flidai/leapview/internal/platform/filesystem"
+	"github.com/flidai/leapview/internal/platform/transaction"
+	"github.com/flidai/leapview/internal/workload"
 )
 
 const catalogAlias = "lake"

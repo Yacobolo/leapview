@@ -7,10 +7,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/analytics/duckdb/queryjson"
-	analyticsmaterialize "github.com/Yacobolo/leapview/internal/analytics/materialize"
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
 	_ "github.com/duckdb/duckdb-go/v2"
+	"github.com/flidai/leapview/internal/analytics/duckdb/queryjson"
+	analyticsmaterialize "github.com/flidai/leapview/internal/analytics/materialize"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 )
 
 const rowPresenceColumn = "__leapview_row_present"

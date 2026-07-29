@@ -6,9 +6,9 @@ import (
 	"errors"
 	"strings"
 
-	agentcontracts "github.com/Yacobolo/leapview/internal/agent/contracts"
-	productdocs "github.com/Yacobolo/leapview/internal/agent/productdocs"
-	agentcore "github.com/Yacobolo/leapview/pkg/agent"
+	agentcontracts "github.com/flidai/leapview/internal/agent/contracts"
+	productdocs "github.com/flidai/leapview/internal/agent/productdocs"
+	agentcore "github.com/flidai/leapview/pkg/agent"
 )
 
 const (

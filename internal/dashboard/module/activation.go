@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/Yacobolo/leapview/internal/dashboard/publication"
-	publicationsqlite "github.com/Yacobolo/leapview/internal/dashboard/publication/sqlite"
-	"github.com/Yacobolo/leapview/internal/platform/transaction"
+	"github.com/flidai/leapview/internal/dashboard/publication"
+	publicationsqlite "github.com/flidai/leapview/internal/dashboard/publication/sqlite"
+	"github.com/flidai/leapview/internal/platform/transaction"
 )
 
 type PublicationActivationInput struct {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	manageddataapi "github.com/Yacobolo/leapview/internal/manageddata/api"
+	manageddataapi "github.com/flidai/leapview/internal/manageddata/api"
 )
 
 func TestDataRevisionsListAndCurrent(t *testing.T) {

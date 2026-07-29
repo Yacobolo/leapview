@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
 )
 
 func TestServiceValidatesPromotesAndSaves(t *testing.T) {

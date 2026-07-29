@@ -3,7 +3,7 @@ package runtime
 import (
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
+	"github.com/flidai/leapview/internal/dashboard"
 )
 
 func TestConsumerTableCountIsExplicitlyOptIn(t *testing.T) {

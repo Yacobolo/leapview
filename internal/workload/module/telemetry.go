@@ -1,7 +1,7 @@
 package module
 
 import (
-	workloadobservability "github.com/Yacobolo/leapview/internal/workload/observability"
+	workloadobservability "github.com/flidai/leapview/internal/workload/observability"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/dashboard/reportmodel"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	"github.com/flidai/leapview/internal/dashboard"
+	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	"github.com/flidai/leapview/internal/dashboard/reportmodel"
+	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
 )
 
 func TestSemanticFiltersTranslateConformedAndFactLocalSelections(t *testing.T) {

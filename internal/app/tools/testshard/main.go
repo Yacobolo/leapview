@@ -6,7 +6,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/Yacobolo/leapview/internal/platform/testing/testshard"
+	"github.com/flidai/leapview/internal/platform/testing/testshard"
 )
 
 func main() {

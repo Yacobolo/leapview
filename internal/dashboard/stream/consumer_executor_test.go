@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	"github.com/Yacobolo/leapview/internal/dashboard/command"
-	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
+	"github.com/flidai/leapview/internal/dashboard"
+	"github.com/flidai/leapview/internal/dashboard/command"
+	"github.com/flidai/leapview/internal/dashboard/consumer"
 )
 
 type unifiedConsumerMetrics struct {

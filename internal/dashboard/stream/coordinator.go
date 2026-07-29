@@ -9,10 +9,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	"github.com/flidai/leapview/internal/dashboard"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
 )
 
 type RefreshEventType string

@@ -10,26 +10,26 @@ import (
 	"strings"
 	"testing"
 
-	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
-	workspacegen "github.com/Yacobolo/leapview/internal/workspace/api/gen"
+	apiaggregate "github.com/flidai/leapview/internal/app/api/aggregate"
+	workspacegen "github.com/flidai/leapview/internal/workspace/api/gen"
 )
 
 func TestAPIPackageStaysTransportContractOnly(t *testing.T) {
 	forbidden := map[string]bool{
-		"github.com/Yacobolo/leapview/internal/app":          true,
-		"github.com/Yacobolo/leapview/internal/workspace/ui": true,
-		"github.com/go-chi/chi/v5":                           true,
-		"github.com/starfederation/datastar-go/datastar":     true,
-		"maragu.dev/gomponents":                              true,
-		"maragu.dev/gomponents-datastar":                     true,
-		"net/http":                                           true,
+		"github.com/flidai/leapview/internal/app":          true,
+		"github.com/flidai/leapview/internal/workspace/ui": true,
+		"github.com/go-chi/chi/v5":                         true,
+		"github.com/starfederation/datastar-go/datastar":   true,
+		"maragu.dev/gomponents":                            true,
+		"maragu.dev/gomponents-datastar":                   true,
+		"net/http":                                         true,
 	}
 	assertPackageDoesNotImport(t, ".", forbidden)
 }
 
 func TestAgentDoesNotDependOnHeadlessAPIContract(t *testing.T) {
 	assertPackageDoesNotImport(t, filepath.Join("..", "..", "agent"), map[string]bool{
-		"github.com/Yacobolo/leapview/internal/app/api/gen": true,
+		"github.com/flidai/leapview/internal/app/api/gen": true,
 	})
 }
 

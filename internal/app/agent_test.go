@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/agent"
-	agentconfig "github.com/Yacobolo/leapview/internal/agent/config"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/agent"
+	agentconfig "github.com/flidai/leapview/internal/agent/config"
 )
 
 func TestAgentAPIReportsDisabledWhenProviderMissing(t *testing.T) {

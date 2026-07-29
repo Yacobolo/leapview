@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/platform/cliapi"
-	workspacegen "github.com/Yacobolo/leapview/internal/workspace/api/gen"
 	apigenclient "github.com/Yacobolo/toolbelt/apigen/runtime/client"
+	"github.com/flidai/leapview/internal/platform/cliapi"
+	workspacegen "github.com/flidai/leapview/internal/workspace/api/gen"
 )
 
 type fakeClient struct {

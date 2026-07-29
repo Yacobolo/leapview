@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
+	catalog "github.com/flidai/leapview/internal/workspace/navigation"
 	g "maragu.dev/gomponents"
 )
 

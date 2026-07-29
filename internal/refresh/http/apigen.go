@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	stdhttp "net/http"
 
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
-	refreshgen "github.com/Yacobolo/leapview/internal/refresh/api/gen"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
+	refreshgen "github.com/flidai/leapview/internal/refresh/api/gen"
 )
 
 type APIGenHandler interface {

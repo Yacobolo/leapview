@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/runtimehost"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
+	"github.com/flidai/leapview/internal/runtimehost"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
 )
 
 type Repository interface {

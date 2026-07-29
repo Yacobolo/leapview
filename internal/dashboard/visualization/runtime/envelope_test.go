@@ -4,11 +4,11 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
-	"github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
+	"github.com/flidai/leapview/internal/dashboard"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
+	"github.com/flidai/leapview/internal/dashboard/visualization/ir"
+	workspacecompiler "github.com/flidai/leapview/internal/project/compiler"
 )
 
 func testCartesianDefinition(t *testing.T, id string, fields []ir.VisualizationField, interactions []ir.VisualizationInteraction) visualizationdefinition.Definition {

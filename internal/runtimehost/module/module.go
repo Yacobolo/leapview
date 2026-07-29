@@ -5,8 +5,8 @@ import (
 	"errors"
 	"log/slog"
 
-	"github.com/Yacobolo/leapview/internal/runtimehost"
-	"github.com/Yacobolo/leapview/internal/servingstate"
+	"github.com/flidai/leapview/internal/runtimehost"
+	"github.com/flidai/leapview/internal/servingstate"
 )
 
 type ServingStatePort interface {

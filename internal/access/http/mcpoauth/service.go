@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/access"
+	"github.com/flidai/leapview/internal/access"
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/compose"
 )

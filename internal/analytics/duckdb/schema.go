@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	analyticsresource "github.com/Yacobolo/leapview/internal/analytics/resource"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	analyticsresource "github.com/flidai/leapview/internal/analytics/resource"
 )
 
 type queryContext interface {

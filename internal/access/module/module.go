@@ -5,12 +5,12 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/access/desktopauth"
-	accesshttp "github.com/Yacobolo/leapview/internal/access/http"
-	"github.com/Yacobolo/leapview/internal/access/http/mcpoauth"
-	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
-	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/access/desktopauth"
+	accesshttp "github.com/flidai/leapview/internal/access/http"
+	"github.com/flidai/leapview/internal/access/http/mcpoauth"
+	webpage "github.com/flidai/leapview/internal/platform/web/page"
+	"github.com/flidai/leapview/internal/platform/web/staticasset"
 )
 
 type Module struct {

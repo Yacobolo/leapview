@@ -13,67 +13,67 @@ targets:
         LeapViewAPI: &leapview_api_go_package
           dir: ../internal/app/api/gen
           package: gen
-          import_path: github.com/Yacobolo/leapview/internal/app/api/gen
+          import_path: github.com/flidai/leapview/internal/app/api/gen
         LeapViewAPI.Access:
           dir: ../internal/access/api/gen
           package: gen
-          import_path: github.com/Yacobolo/leapview/internal/access/api/gen
+          import_path: github.com/flidai/leapview/internal/access/api/gen
           client_file: client.apigen.gen.go
         LeapViewAPI.Agent:
           dir: ../internal/agent/api/gen
           package: gen
-          import_path: github.com/Yacobolo/leapview/internal/agent/api/gen
+          import_path: github.com/flidai/leapview/internal/agent/api/gen
           client_file: client.apigen.gen.go
         LeapViewAPI.Analytics:
           dir: ../internal/analytics/api/gen
           package: gen
-          import_path: github.com/Yacobolo/leapview/internal/analytics/api/gen
+          import_path: github.com/flidai/leapview/internal/analytics/api/gen
           client_file: client.apigen.gen.go
         LeapViewAPI.Dashboard:
           dir: ../internal/dashboard/api/gen
           package: gen
-          import_path: github.com/Yacobolo/leapview/internal/dashboard/api/gen
+          import_path: github.com/flidai/leapview/internal/dashboard/api/gen
           client_file: client.apigen.gen.go
         LeapViewAPI.Deployment:
           dir: ../internal/deployment/api/gen
           package: gen
-          import_path: github.com/Yacobolo/leapview/internal/deployment/api/gen
+          import_path: github.com/flidai/leapview/internal/deployment/api/gen
           client_file: client.apigen.gen.go
         LeapViewAPI.ManagedData:
           dir: ../internal/manageddata/api/gen
           package: gen
-          import_path: github.com/Yacobolo/leapview/internal/manageddata/api/gen
+          import_path: github.com/flidai/leapview/internal/manageddata/api/gen
           client_file: client.apigen.gen.go
         LeapViewAPI.Project:
           dir: ../internal/project/api/gen
           package: gen
-          import_path: github.com/Yacobolo/leapview/internal/project/api/gen
+          import_path: github.com/flidai/leapview/internal/project/api/gen
           client_file: client.apigen.gen.go
         LeapViewAPI.Protocol:
           dir: ../internal/platform/http/api/gen
           package: gen
-          import_path: github.com/Yacobolo/leapview/internal/platform/http/api/gen
+          import_path: github.com/flidai/leapview/internal/platform/http/api/gen
         LeapViewAPI.Refresh:
           dir: ../internal/refresh/api/gen
           package: gen
-          import_path: github.com/Yacobolo/leapview/internal/refresh/api/gen
+          import_path: github.com/flidai/leapview/internal/refresh/api/gen
           client_file: client.apigen.gen.go
         LeapViewAPI.Release:
           dir: ../internal/release/api/gen
           package: gen
-          import_path: github.com/Yacobolo/leapview/internal/release/api/gen
+          import_path: github.com/flidai/leapview/internal/release/api/gen
           client_file: client.apigen.gen.go
         LeapViewAPI.Workspace:
           dir: ../internal/workspace/api/gen
           package: gen
-          import_path: github.com/Yacobolo/leapview/internal/workspace/api/gen
+          import_path: github.com/flidai/leapview/internal/workspace/api/gen
           client_file: client.apigen.gen.go
     cli_out:
       dir: ../internal/app/cli/gen
       package: gen
     contract_imports:
       LeapViewVisualization:
-        go_package: github.com/Yacobolo/leapview/internal/dashboard/visualization/ir
+        go_package: github.com/flidai/leapview/internal/dashboard/visualization/ir
         go_alias: visualizationir
         typescript_module: ../visualization
   - name: ui-signals
@@ -84,7 +84,7 @@ targets:
     ts_out: ../web/generated/signals/index.ts
     contract_imports:
       LeapViewVisualization:
-        go_package: github.com/Yacobolo/leapview/internal/dashboard/visualization/ir
+        go_package: github.com/flidai/leapview/internal/dashboard/visualization/ir
         go_alias: visualizationir
         typescript_module: ../visualization
   - name: visualization-ir

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/access/desktopauth"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/access/desktopauth"
 	"github.com/go-chi/chi/v5"
 )
 

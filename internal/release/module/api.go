@@ -7,13 +7,13 @@ import (
 	"log/slog"
 	"net/http"
 
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
-	jobhttp "github.com/Yacobolo/leapview/internal/platform/jobs/http"
-	"github.com/Yacobolo/leapview/internal/release"
-	releaseapi "github.com/Yacobolo/leapview/internal/release/api"
-	releasefilesystem "github.com/Yacobolo/leapview/internal/release/filesystem"
-	releasehttp "github.com/Yacobolo/leapview/internal/release/http"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
+	"github.com/flidai/leapview/internal/platform/jobs"
+	jobhttp "github.com/flidai/leapview/internal/platform/jobs/http"
+	"github.com/flidai/leapview/internal/release"
+	releaseapi "github.com/flidai/leapview/internal/release/api"
+	releasefilesystem "github.com/flidai/leapview/internal/release/filesystem"
+	releasehttp "github.com/flidai/leapview/internal/release/http"
 )
 
 type Principal struct {

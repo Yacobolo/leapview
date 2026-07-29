@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/app/desktopdiscovery"
+	"github.com/flidai/leapview/internal/app/desktopdiscovery"
 )
 
 func TestDesktopDiscoveryIsPublicAndMountedAtWellKnownPath(t *testing.T) {

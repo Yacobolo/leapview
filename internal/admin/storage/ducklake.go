@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"strings"
 
-	ui "github.com/Yacobolo/leapview/internal/admin/view"
-	analyticsresource "github.com/Yacobolo/leapview/internal/analytics/resource"
-	"github.com/Yacobolo/leapview/internal/workload"
+	ui "github.com/flidai/leapview/internal/admin/view"
+	analyticsresource "github.com/flidai/leapview/internal/analytics/resource"
+	"github.com/flidai/leapview/internal/workload"
 )
 
 type Service struct {

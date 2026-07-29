@@ -5,13 +5,13 @@ import (
 	"errors"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/analytics/arrowquery"
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
-	"github.com/Yacobolo/leapview/internal/workload"
+	"github.com/flidai/leapview/internal/analytics/arrowquery"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	"github.com/flidai/leapview/internal/dashboard"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
+	"github.com/flidai/leapview/internal/workload"
 )
 
 type admittedMetrics struct {

@@ -1,8 +1,8 @@
 package module
 
 import (
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/access/httpauth"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/access/httpauth"
 )
 
 type Repository = access.Repository

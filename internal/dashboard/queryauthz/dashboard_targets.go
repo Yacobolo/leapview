@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	"github.com/flidai/leapview/internal/dashboard/consumer"
 )
 
 func (m Metrics) ExecuteConsumersPage(ctx context.Context, request consumer.Request, publish consumer.Publisher) error {

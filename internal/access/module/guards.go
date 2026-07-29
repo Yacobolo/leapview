@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/access/httpauth"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/access/httpauth"
 )
 
 func (m *Module) Protect(privilege access.Privilege, handler http.HandlerFunc) http.HandlerFunc {

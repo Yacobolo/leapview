@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/agent"
-	"github.com/Yacobolo/leapview/internal/agent/ui"
+	"github.com/flidai/leapview/internal/agent"
+	"github.com/flidai/leapview/internal/agent/ui"
 )
 
 func (m *Module) generateConversationTitleAsync(scope agent.Scope, conversationID, clientID string) {

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/platform"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/platform"
 )
 
 func TestDesktopSessionMetadataIsTransactionalAndBoundToProfile(t *testing.T) {

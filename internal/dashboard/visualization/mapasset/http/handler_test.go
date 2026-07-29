@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	visualizationmapasset "github.com/Yacobolo/leapview/internal/dashboard/visualization/mapasset"
+	visualizationmapasset "github.com/flidai/leapview/internal/dashboard/visualization/mapasset"
 )
 
 func TestCacheHandlerServesRealImmutableByteRanges(t *testing.T) {

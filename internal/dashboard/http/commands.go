@@ -6,12 +6,12 @@ import (
 	"errors"
 	nethttp "net/http"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	"github.com/Yacobolo/leapview/internal/dashboard/command"
-	lddatastar "github.com/Yacobolo/leapview/internal/dashboard/datastar"
-	dashboardsession "github.com/Yacobolo/leapview/internal/dashboard/session"
-	dashboardstream "github.com/Yacobolo/leapview/internal/dashboard/stream"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
+	"github.com/flidai/leapview/internal/dashboard"
+	"github.com/flidai/leapview/internal/dashboard/command"
+	lddatastar "github.com/flidai/leapview/internal/dashboard/datastar"
+	dashboardsession "github.com/flidai/leapview/internal/dashboard/session"
+	dashboardstream "github.com/flidai/leapview/internal/dashboard/stream"
+	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 type commandPrepare func(command.Service, command.Request, dashboard.Filters) (command.PreparedRefresh, error)

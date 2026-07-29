@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	platformdb "github.com/Yacobolo/leapview/internal/access/internal/db"
+	"github.com/flidai/leapview/internal/access"
+	platformdb "github.com/flidai/leapview/internal/access/internal/db"
 )
 
 func (r *Repository) RecordAuditEvent(ctx context.Context, input access.AuditEventInput) error {

@@ -9,12 +9,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
-	visualizationruntime "github.com/Yacobolo/leapview/internal/dashboard/visualization/runtime"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	"github.com/flidai/leapview/internal/dashboard"
+	"github.com/flidai/leapview/internal/dashboard/consumer"
+	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
+	visualizationruntime "github.com/flidai/leapview/internal/dashboard/visualization/runtime"
 )
 
 func (m *Service) ExecuteConsumersPage(ctx context.Context, request consumer.Request, publish consumer.Publisher) error {

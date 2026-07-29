@@ -14,7 +14,7 @@ import (
 	"strings"
 	"sync"
 
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
 )
 
 const (

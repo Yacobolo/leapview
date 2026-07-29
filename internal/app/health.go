@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
 )
 
 type healthConfig struct {

@@ -5,12 +5,12 @@ import (
 	"net/url"
 	"strings"
 
-	uisignals "github.com/Yacobolo/leapview/internal/admin/ui/signals"
-	adminview "github.com/Yacobolo/leapview/internal/admin/view"
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	uiactions "github.com/Yacobolo/leapview/internal/platform/web/actions"
-	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
-	workspaceview "github.com/Yacobolo/leapview/internal/workspace"
+	uisignals "github.com/flidai/leapview/internal/admin/ui/signals"
+	adminview "github.com/flidai/leapview/internal/admin/view"
+	"github.com/flidai/leapview/internal/dashboard"
+	uiactions "github.com/flidai/leapview/internal/platform/web/actions"
+	webpage "github.com/flidai/leapview/internal/platform/web/page"
+	workspaceview "github.com/flidai/leapview/internal/workspace"
 	g "maragu.dev/gomponents"
 )
 

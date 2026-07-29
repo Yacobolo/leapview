@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
-	workspacegen "github.com/Yacobolo/leapview/internal/workspace/api/gen"
+	"github.com/flidai/leapview/internal/access"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
+	workspacegen "github.com/flidai/leapview/internal/workspace/api/gen"
 )
 
 func TestGlobalSearchReturnsStructuredResultsAcrossWorkspaces(t *testing.T) {

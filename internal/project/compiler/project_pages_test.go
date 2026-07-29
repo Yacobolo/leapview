@@ -3,8 +3,8 @@ package compiler
 import (
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
+	"github.com/flidai/leapview/internal/dashboard"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
 )
 
 func TestProjectDashboardPagesPreserveCanonicalComponentKinds(t *testing.T) {

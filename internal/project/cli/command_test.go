@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/platform/cliapi"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/flidai/leapview/internal/platform/cliapi"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 type fakeActiveWorkspaceGraphLoader struct {

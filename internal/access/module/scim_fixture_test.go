@@ -6,12 +6,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
-	"github.com/Yacobolo/leapview/internal/platform"
-	apihttpmiddleware "github.com/Yacobolo/leapview/internal/platform/http/middleware"
-	"github.com/Yacobolo/leapview/internal/workspace"
-	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
+	"github.com/flidai/leapview/internal/access"
+	accesssqlite "github.com/flidai/leapview/internal/access/sqlite"
+	"github.com/flidai/leapview/internal/platform"
+	apihttpmiddleware "github.com/flidai/leapview/internal/platform/http/middleware"
+	"github.com/flidai/leapview/internal/workspace"
+	workspacesqlite "github.com/flidai/leapview/internal/workspace/sqlite"
 )
 
 type fakeMetrics struct{}

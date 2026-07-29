@@ -3,8 +3,8 @@ package compiler
 import (
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/dashboard/report"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
+	"github.com/flidai/leapview/internal/dashboard/report"
+	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
 )
 
 func TestCompiledVisualizationResultShapes(t *testing.T) {

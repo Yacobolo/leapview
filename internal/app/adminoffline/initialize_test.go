@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
-	"github.com/Yacobolo/leapview/internal/platform"
+	"github.com/flidai/leapview/internal/access"
+	accesssqlite "github.com/flidai/leapview/internal/access/sqlite"
+	"github.com/flidai/leapview/internal/platform"
 )
 
 func TestAdminInitializeCreatesOneTimeCredentialBundle(t *testing.T) {

@@ -59,7 +59,7 @@ run "reject_mutable_site_image" {
   command = plan
 
   variables {
-    bootstrap_site_image = "ghcr.io/yacobolo/leapview-site:latest"
+    bootstrap_site_image = "ghcr.io/flidai/leapview-site:latest"
   }
 
   expect_failures = [var.bootstrap_site_image]
@@ -69,7 +69,7 @@ run "reject_product_image" {
   command = plan
 
   variables {
-    bootstrap_site_image = "ghcr.io/yacobolo/leapview@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    bootstrap_site_image = "ghcr.io/flidai/leapview@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   }
 
   expect_failures = [var.bootstrap_site_image]

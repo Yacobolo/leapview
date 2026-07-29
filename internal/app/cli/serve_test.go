@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
-	"github.com/Yacobolo/leapview/internal/app"
-	"github.com/Yacobolo/leapview/internal/app/config"
-	"github.com/Yacobolo/leapview/internal/platform"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
-	"github.com/Yacobolo/leapview/internal/workspace"
-	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
+	"github.com/flidai/leapview/internal/access"
+	accesssqlite "github.com/flidai/leapview/internal/access/sqlite"
+	"github.com/flidai/leapview/internal/app"
+	"github.com/flidai/leapview/internal/app/config"
+	"github.com/flidai/leapview/internal/platform"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
+	"github.com/flidai/leapview/internal/workspace"
+	workspacesqlite "github.com/flidai/leapview/internal/workspace/sqlite"
 )
 
 func buildServeTestApplication(ctx context.Context, cfg config.Config, production bool, environment servingstate.Environment) (*app.Application, func(), error) {

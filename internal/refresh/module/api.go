@@ -7,11 +7,11 @@ import (
 	"log/slog"
 	"net/http"
 
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
-	jobhttp "github.com/Yacobolo/leapview/internal/platform/jobs/http"
-	materializehttp "github.com/Yacobolo/leapview/internal/refresh/http"
-	refreshrun "github.com/Yacobolo/leapview/internal/refresh/run"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
+	"github.com/flidai/leapview/internal/platform/jobs"
+	jobhttp "github.com/flidai/leapview/internal/platform/jobs/http"
+	materializehttp "github.com/flidai/leapview/internal/refresh/http"
+	refreshrun "github.com/flidai/leapview/internal/refresh/run"
 )
 
 type EventStore interface {

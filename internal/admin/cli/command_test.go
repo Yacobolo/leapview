@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	adminoffline "github.com/Yacobolo/leapview/internal/admin/offline"
+	adminoffline "github.com/flidai/leapview/internal/admin/offline"
 )
 
 type fakeOperations struct {

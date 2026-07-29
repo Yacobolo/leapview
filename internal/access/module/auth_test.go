@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/access"
+	"github.com/flidai/leapview/internal/access"
 	"github.com/go-chi/chi/v5"
 )
 

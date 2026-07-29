@@ -10,9 +10,9 @@ import (
 	"regexp"
 	"strings"
 
-	content "github.com/Yacobolo/leapview/docs"
-	docsearch "github.com/Yacobolo/leapview/internal/app/site/search/sqlite"
-	"github.com/Yacobolo/leapview/internal/app/site/visualdocs"
+	content "github.com/flidai/leapview/docs"
+	docsearch "github.com/flidai/leapview/internal/app/site/search/sqlite"
+	"github.com/flidai/leapview/internal/app/site/visualdocs"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
@@ -466,15 +466,15 @@ func documentationIssueLink(document siteDocument) string {
 	query.Set("title", "Docs: "+document.title)
 	query.Set("labels", "documentation")
 	query.Set("body", "Page: /docs/"+document.slug+"\n\nDescribe the content issue or suggested improvement.")
-	return "https://github.com/Yacobolo/leapview/issues/new?" + query.Encode()
+	return "https://github.com/flidai/leapview/issues/new?" + query.Encode()
 }
 
 func documentationMarkdownLink(document siteDocument) string {
-	return "https://raw.githubusercontent.com/Yacobolo/leapview/main/docs/" + document.source
+	return "https://raw.githubusercontent.com/flidai/leapview/main/docs/" + document.source
 }
 
 func documentationSourceLink(document siteDocument) (string, string) {
-	const repository = "https://github.com/Yacobolo/leapview/"
+	const repository = "https://github.com/flidai/leapview/"
 	if !strings.HasPrefix(document.markdown, "<!-- Code generated") {
 		return "Edit this page on GitHub", repository + "edit/main/docs/" + document.source
 	}

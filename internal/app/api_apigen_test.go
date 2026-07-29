@@ -8,20 +8,20 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	accessgen "github.com/Yacobolo/leapview/internal/access/api/gen"
-	agentgen "github.com/Yacobolo/leapview/internal/agent/api/gen"
-	analyticsgen "github.com/Yacobolo/leapview/internal/analytics/api/gen"
-	apiaggregate "github.com/Yacobolo/leapview/internal/app/api/aggregate"
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
-	dashboardgen "github.com/Yacobolo/leapview/internal/dashboard/api/gen"
-	deploymentgen "github.com/Yacobolo/leapview/internal/deployment/api/gen"
-	manageddatagen "github.com/Yacobolo/leapview/internal/manageddata/api/gen"
-	projectgen "github.com/Yacobolo/leapview/internal/project/api/gen"
-	refreshgen "github.com/Yacobolo/leapview/internal/refresh/api/gen"
-	releasegen "github.com/Yacobolo/leapview/internal/release/api/gen"
-	"github.com/Yacobolo/leapview/internal/workspace"
-	workspacegen "github.com/Yacobolo/leapview/internal/workspace/api/gen"
+	"github.com/flidai/leapview/internal/access"
+	accessgen "github.com/flidai/leapview/internal/access/api/gen"
+	agentgen "github.com/flidai/leapview/internal/agent/api/gen"
+	analyticsgen "github.com/flidai/leapview/internal/analytics/api/gen"
+	apiaggregate "github.com/flidai/leapview/internal/app/api/aggregate"
+	apigenapi "github.com/flidai/leapview/internal/app/api/gen"
+	dashboardgen "github.com/flidai/leapview/internal/dashboard/api/gen"
+	deploymentgen "github.com/flidai/leapview/internal/deployment/api/gen"
+	manageddatagen "github.com/flidai/leapview/internal/manageddata/api/gen"
+	projectgen "github.com/flidai/leapview/internal/project/api/gen"
+	refreshgen "github.com/flidai/leapview/internal/refresh/api/gen"
+	releasegen "github.com/flidai/leapview/internal/release/api/gen"
+	"github.com/flidai/leapview/internal/workspace"
+	workspacegen "github.com/flidai/leapview/internal/workspace/api/gen"
 )
 
 type apiSnapshotWorkspaceRepository struct{ summary workspace.Summary }
@@ -87,7 +87,7 @@ func TestAPIGenUsesTypedClientGenerator(t *testing.T) {
 		"LeapViewAPI.Refresh:",
 		"LeapViewAPI.Release:",
 		"LeapViewAPI.Workspace:",
-		"import_path: github.com/Yacobolo/leapview/internal/app/api/gen",
+		"import_path: github.com/flidai/leapview/internal/app/api/gen",
 	} {
 		if !strings.Contains(manifestText, want) {
 			t.Fatalf("manifest should define the coalesced capability package plan setting %q", want)
@@ -175,7 +175,7 @@ func TestAPIGenAgentCapabilityOwnsItsGeneratedPackage(t *testing.T) {
 	manifestText := string(manifest)
 	for _, want := range []string{
 		"aggregate:\n        dir: ../internal/app/api/aggregate\n        package: aggregate",
-		"LeapViewAPI.Agent:\n          dir: ../internal/agent/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/agent/api/gen",
+		"LeapViewAPI.Agent:\n          dir: ../internal/agent/api/gen\n          package: gen\n          import_path: github.com/flidai/leapview/internal/agent/api/gen",
 	} {
 		if !strings.Contains(manifestText, want) {
 			t.Fatalf("manifest missing Agent capability package plan %q", want)
@@ -227,8 +227,8 @@ func TestAPIGenAccessCapabilityOwnsItsGeneratedPackage(t *testing.T) {
 	}
 	manifestText := string(manifest)
 	for _, want := range []string{
-		"LeapViewAPI.Access:\n          dir: ../internal/access/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/access/api/gen",
-		"LeapViewAPI.Analytics:\n          dir: ../internal/analytics/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/analytics/api/gen",
+		"LeapViewAPI.Access:\n          dir: ../internal/access/api/gen\n          package: gen\n          import_path: github.com/flidai/leapview/internal/access/api/gen",
+		"LeapViewAPI.Analytics:\n          dir: ../internal/analytics/api/gen\n          package: gen\n          import_path: github.com/flidai/leapview/internal/analytics/api/gen",
 	} {
 		if !strings.Contains(manifestText, want) {
 			t.Fatalf("manifest missing Access capability package plan %q", want)
@@ -307,7 +307,7 @@ func TestAPIGenProjectCapabilityOwnsItsGeneratedPackage(t *testing.T) {
 		t.Fatalf("read manifest: %v", err)
 	}
 	manifestText := string(manifest)
-	want := "LeapViewAPI.Project:\n          dir: ../internal/project/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/project/api/gen"
+	want := "LeapViewAPI.Project:\n          dir: ../internal/project/api/gen\n          package: gen\n          import_path: github.com/flidai/leapview/internal/project/api/gen"
 	if !strings.Contains(manifestText, want) {
 		t.Fatalf("manifest missing Project capability package plan %q", want)
 	}
@@ -355,7 +355,7 @@ func TestAPIGenRefreshCapabilityOwnsItsGeneratedPackage(t *testing.T) {
 		t.Fatalf("read manifest: %v", err)
 	}
 	manifestText := string(manifest)
-	want := "LeapViewAPI.Refresh:\n          dir: ../internal/refresh/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/refresh/api/gen"
+	want := "LeapViewAPI.Refresh:\n          dir: ../internal/refresh/api/gen\n          package: gen\n          import_path: github.com/flidai/leapview/internal/refresh/api/gen"
 	if !strings.Contains(manifestText, want) {
 		t.Fatalf("manifest missing Refresh capability package plan %q", want)
 	}
@@ -402,7 +402,7 @@ func TestAPIGenDeploymentCapabilityOwnsItsGeneratedPackage(t *testing.T) {
 		t.Fatalf("read manifest: %v", err)
 	}
 	manifestText := string(manifest)
-	want := "LeapViewAPI.Deployment:\n          dir: ../internal/deployment/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/deployment/api/gen"
+	want := "LeapViewAPI.Deployment:\n          dir: ../internal/deployment/api/gen\n          package: gen\n          import_path: github.com/flidai/leapview/internal/deployment/api/gen"
 	if !strings.Contains(manifestText, want) {
 		t.Fatalf("manifest missing Deployment capability package plan %q", want)
 	}
@@ -449,7 +449,7 @@ func TestAPIGenReleaseCapabilityOwnsItsGeneratedPackage(t *testing.T) {
 		t.Fatalf("read manifest: %v", err)
 	}
 	manifestText := string(manifest)
-	want := "LeapViewAPI.Release:\n          dir: ../internal/release/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/release/api/gen"
+	want := "LeapViewAPI.Release:\n          dir: ../internal/release/api/gen\n          package: gen\n          import_path: github.com/flidai/leapview/internal/release/api/gen"
 	if !strings.Contains(manifestText, want) {
 		t.Fatalf("manifest missing Release capability package plan %q", want)
 	}
@@ -496,7 +496,7 @@ func TestAPIGenWorkspaceCapabilityOwnsItsGeneratedPackage(t *testing.T) {
 		t.Fatalf("read manifest: %v", err)
 	}
 	manifestText := string(manifest)
-	want := "LeapViewAPI.Workspace:\n          dir: ../internal/workspace/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/workspace/api/gen"
+	want := "LeapViewAPI.Workspace:\n          dir: ../internal/workspace/api/gen\n          package: gen\n          import_path: github.com/flidai/leapview/internal/workspace/api/gen"
 	if !strings.Contains(manifestText, want) {
 		t.Fatalf("manifest missing Workspace capability package plan %q", want)
 	}
@@ -544,7 +544,7 @@ func TestAPIGenManagedDataCapabilityOwnsItsGeneratedPackage(t *testing.T) {
 		t.Fatalf("read manifest: %v", err)
 	}
 	manifestText := string(manifest)
-	want := "LeapViewAPI.ManagedData:\n          dir: ../internal/manageddata/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/manageddata/api/gen"
+	want := "LeapViewAPI.ManagedData:\n          dir: ../internal/manageddata/api/gen\n          package: gen\n          import_path: github.com/flidai/leapview/internal/manageddata/api/gen"
 	if !strings.Contains(manifestText, want) {
 		t.Fatalf("manifest missing ManagedData capability package plan %q", want)
 	}
@@ -591,7 +591,7 @@ func TestAPIGenDashboardCapabilityOwnsItsGeneratedPackage(t *testing.T) {
 		t.Fatalf("read manifest: %v", err)
 	}
 	manifestText := string(manifest)
-	want := "LeapViewAPI.Dashboard:\n          dir: ../internal/dashboard/api/gen\n          package: gen\n          import_path: github.com/Yacobolo/leapview/internal/dashboard/api/gen"
+	want := "LeapViewAPI.Dashboard:\n          dir: ../internal/dashboard/api/gen\n          package: gen\n          import_path: github.com/flidai/leapview/internal/dashboard/api/gen"
 	if !strings.Contains(manifestText, want) {
 		t.Fatalf("manifest missing Dashboard capability package plan %q", want)
 	}

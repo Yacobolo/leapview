@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/manageddata/control"
-	"github.com/Yacobolo/leapview/internal/manageddata/maintenance"
-	"github.com/Yacobolo/leapview/internal/manageddata/s3multipart"
+	"github.com/flidai/leapview/internal/manageddata/control"
+	"github.com/flidai/leapview/internal/manageddata/maintenance"
+	"github.com/flidai/leapview/internal/manageddata/s3multipart"
 )
 
 type Maintenance struct {

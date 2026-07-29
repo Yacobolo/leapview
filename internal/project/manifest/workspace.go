@@ -4,12 +4,12 @@
 package manifest
 
 import (
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
-	"github.com/Yacobolo/leapview/internal/dashboard/publication"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
+	"github.com/flidai/leapview/internal/dashboard/publication"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	refreshschedule "github.com/flidai/leapview/internal/refresh/schedule"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 type Catalog struct {

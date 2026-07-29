@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	stdhttp "net/http"
 
-	dashboardgen "github.com/Yacobolo/leapview/internal/dashboard/api/gen"
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
+	dashboardgen "github.com/flidai/leapview/internal/dashboard/api/gen"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
 )
 
 type APIGenHandler interface {

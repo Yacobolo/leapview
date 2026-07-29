@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
 )
 
 func TestConsumeSchemaBudgetUsesRetainedSchemaAccounting(t *testing.T) {

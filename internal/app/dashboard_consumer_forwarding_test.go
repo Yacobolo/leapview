@@ -4,15 +4,15 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	"github.com/Yacobolo/leapview/internal/dashboard/command"
-	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
-	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
-	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
-	queryauthz "github.com/Yacobolo/leapview/internal/dashboard/queryauthz"
-	dashboardstream "github.com/Yacobolo/leapview/internal/dashboard/stream"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
-	"github.com/Yacobolo/leapview/internal/workload"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	"github.com/flidai/leapview/internal/dashboard/command"
+	"github.com/flidai/leapview/internal/dashboard/consumer"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
+	dashboardmodule "github.com/flidai/leapview/internal/dashboard/module"
+	queryauthz "github.com/flidai/leapview/internal/dashboard/queryauthz"
+	dashboardstream "github.com/flidai/leapview/internal/dashboard/stream"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
+	"github.com/flidai/leapview/internal/workload"
 )
 
 type consumerForwardingMetrics struct {

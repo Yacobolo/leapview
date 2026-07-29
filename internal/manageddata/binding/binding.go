@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/manageddata"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
+	"github.com/flidai/leapview/internal/manageddata"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
 )
 
 var (

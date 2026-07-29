@@ -1,8 +1,8 @@
 package ui
 
 import (
-	appshell "github.com/Yacobolo/leapview/internal/app/shell"
-	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
+	appshell "github.com/flidai/leapview/internal/app/shell"
+	webpage "github.com/flidai/leapview/internal/platform/web/page"
 )
 
 func testLayoutProvider() webpage.Provider {

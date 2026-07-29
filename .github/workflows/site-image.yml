@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE_NAME: ghcr.io/yacobolo/leapview-site
+  IMAGE_NAME: ghcr.io/flidai/leapview-site
 
 jobs:
   identity:

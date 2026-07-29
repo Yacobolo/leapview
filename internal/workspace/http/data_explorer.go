@@ -5,9 +5,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/workspace/ui"
-	uisignals "github.com/Yacobolo/leapview/internal/workspace/ui/signals"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
+	"github.com/flidai/leapview/internal/workspace/ui"
+	uisignals "github.com/flidai/leapview/internal/workspace/ui/signals"
+	"github.com/flidai/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
 

@@ -112,11 +112,11 @@ COPY --from=web /src/static ./static
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,id=leapview-go-mod,target=/go/pkg/mod,from=go-deps,source=/go/pkg/mod,sharing=locked \
     BUILD_LDFLAGS="-s -w \
-      -X github.com/Yacobolo/leapview/internal/platform/buildinfo.version=${BUILD_VERSION} \
-      -X github.com/Yacobolo/leapview/internal/platform/buildinfo.revision=${BUILD_REVISION} \
-      -X github.com/Yacobolo/leapview/internal/platform/buildinfo.buildTime=${BUILD_TIME} \
-      -X github.com/Yacobolo/leapview/internal/platform/buildinfo.dirty=${BUILD_DIRTY} \
-      -X github.com/Yacobolo/leapview/internal/platform/buildinfo.release=${BUILD_RELEASE}" && \
+      -X github.com/flidai/leapview/internal/platform/buildinfo.version=${BUILD_VERSION} \
+      -X github.com/flidai/leapview/internal/platform/buildinfo.revision=${BUILD_REVISION} \
+      -X github.com/flidai/leapview/internal/platform/buildinfo.buildTime=${BUILD_TIME} \
+      -X github.com/flidai/leapview/internal/platform/buildinfo.dirty=${BUILD_DIRTY} \
+      -X github.com/flidai/leapview/internal/platform/buildinfo.release=${BUILD_RELEASE}" && \
     CGO_ENABLED=1 go build -tags=duckdb_arrow -trimpath -ldflags="$BUILD_LDFLAGS" -o /out/leapview ./cmd/leapview && \
     CGO_ENABLED=0 go build -trimpath -ldflags="$BUILD_LDFLAGS" -o /out/leapviewctl ./cmd/leapviewctl
 
@@ -130,7 +130,7 @@ ARG BUILD_RELEASE=false
 
 LABEL org.opencontainers.image.title="LeapView" \
       org.opencontainers.image.description="LeapView business intelligence server" \
-      org.opencontainers.image.source="https://github.com/Yacobolo/leapview" \
+      org.opencontainers.image.source="https://github.com/flidai/leapview" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.version="$BUILD_VERSION" \
       org.opencontainers.image.revision="$BUILD_REVISION" \

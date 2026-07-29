@@ -3,8 +3,8 @@ package http
 import (
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	"github.com/Yacobolo/leapview/internal/dashboard/command"
+	"github.com/flidai/leapview/internal/dashboard"
+	"github.com/flidai/leapview/internal/dashboard/command"
 )
 
 func TestVisualWindowRefreshUsesPerVisualRequestOrdering(t *testing.T) {

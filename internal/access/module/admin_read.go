@@ -3,7 +3,7 @@ package module
 import (
 	"context"
 
-	"github.com/Yacobolo/leapview/internal/access"
+	"github.com/flidai/leapview/internal/access"
 )
 
 // AdminReader is the read-only access surface consumed by platform

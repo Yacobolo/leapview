@@ -3,7 +3,7 @@ mock_provider "hcloud" {}
 variables {
   hcloud_token        = "test-token"
   admin_email         = "admin@example.com"
-  leapview_image      = "ghcr.io/yacobolo/leapview@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  leapview_image      = "ghcr.io/flidai/leapview@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   ssh_allowed_cidrs   = ["203.0.113.10/32"]
   ssh_public_key_path = ""
   ssh_key_ids         = ["existing-key"]
@@ -42,7 +42,7 @@ run "reject_mutable_application_image" {
   command = plan
 
   variables {
-    leapview_image = "ghcr.io/yacobolo/leapview:latest"
+    leapview_image = "ghcr.io/flidai/leapview:latest"
   }
 
   expect_failures = [var.leapview_image]

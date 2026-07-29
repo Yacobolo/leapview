@@ -3,8 +3,8 @@ package module
 import (
 	"strings"
 
-	agentcap "github.com/Yacobolo/leapview/internal/agent"
-	agentcore "github.com/Yacobolo/leapview/pkg/agent"
+	agentcap "github.com/flidai/leapview/internal/agent"
+	agentcore "github.com/flidai/leapview/pkg/agent"
 )
 
 func appendServerUserTranscript(transcript []agentcap.ChatTranscriptItem, conversationID, input string) []agentcap.ChatTranscriptItem {

@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	refreshgen "github.com/Yacobolo/leapview/internal/refresh/api/gen"
+	refreshgen "github.com/flidai/leapview/internal/refresh/api/gen"
 )
 
 var _ refreshgen.GenOperationDispatcher = (*APIGenDispatcher)(nil)

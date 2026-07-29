@@ -3,7 +3,7 @@ package cli
 import (
 	"testing"
 
-	cligen "github.com/Yacobolo/leapview/internal/app/cli/gen"
+	cligen "github.com/flidai/leapview/internal/app/cli/gen"
 )
 
 func TestAPIGenOperationURLUsesGeneratedContracts(t *testing.T) {

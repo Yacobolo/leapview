@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 
-	"github.com/Yacobolo/leapview/internal/refresh/artifact"
-	refreshschedule "github.com/Yacobolo/leapview/internal/refresh/schedule"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/flidai/leapview/internal/refresh/artifact"
+	refreshschedule "github.com/flidai/leapview/internal/refresh/schedule"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 func TestServiceExecuteClaimedJobActivatesAfterMaterializeAndPrepare(t *testing.T) {

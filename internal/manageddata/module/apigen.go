@@ -4,9 +4,9 @@ import (
 	"log/slog"
 	"net/http"
 
-	manageddataapi "github.com/Yacobolo/leapview/internal/manageddata/api"
-	manageddatahttp "github.com/Yacobolo/leapview/internal/manageddata/http"
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
+	manageddataapi "github.com/flidai/leapview/internal/manageddata/api"
+	manageddatahttp "github.com/flidai/leapview/internal/manageddata/http"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
 )
 
 type ManagedConnectionCatalog interface {

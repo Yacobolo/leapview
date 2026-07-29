@@ -10,16 +10,16 @@ import (
 	"testing"
 	"time"
 
-	admincli "github.com/Yacobolo/leapview/internal/admin/cli"
-	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
-	"github.com/Yacobolo/leapview/internal/app/config"
-	"github.com/Yacobolo/leapview/internal/platform"
-	"github.com/Yacobolo/leapview/internal/platform/locking"
-	servingstate "github.com/Yacobolo/leapview/internal/servingstate"
-	storagemaintenance "github.com/Yacobolo/leapview/internal/servingstate/retention"
-	servingstatesqlite "github.com/Yacobolo/leapview/internal/servingstate/sqlite"
-	"github.com/Yacobolo/leapview/internal/workspace"
-	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
+	admincli "github.com/flidai/leapview/internal/admin/cli"
+	analyticsducklake "github.com/flidai/leapview/internal/analytics/ducklake"
+	"github.com/flidai/leapview/internal/app/config"
+	"github.com/flidai/leapview/internal/platform"
+	"github.com/flidai/leapview/internal/platform/locking"
+	servingstate "github.com/flidai/leapview/internal/servingstate"
+	storagemaintenance "github.com/flidai/leapview/internal/servingstate/retention"
+	servingstatesqlite "github.com/flidai/leapview/internal/servingstate/sqlite"
+	"github.com/flidai/leapview/internal/workspace"
+	workspacesqlite "github.com/flidai/leapview/internal/workspace/sqlite"
 )
 
 func TestAdminDoesNotExposeUnrestrictedBootstrap(t *testing.T) {

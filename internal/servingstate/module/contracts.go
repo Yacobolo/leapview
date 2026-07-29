@@ -1,6 +1,6 @@
 package module
 
-import "github.com/Yacobolo/leapview/internal/servingstate"
+import "github.com/flidai/leapview/internal/servingstate"
 
 type ID = servingstate.ID
 type WorkspaceID = servingstate.WorkspaceID

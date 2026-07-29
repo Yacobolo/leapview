@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/workspace"
-	workspacehttp "github.com/Yacobolo/leapview/internal/workspace/http"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/workspace"
+	workspacehttp "github.com/flidai/leapview/internal/workspace/http"
 	"github.com/go-chi/chi/v5"
 )
 

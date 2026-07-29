@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
+	"github.com/flidai/leapview/internal/platform/jobs"
 )
 
 var (

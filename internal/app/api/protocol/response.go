@@ -10,9 +10,9 @@ import (
 	"net/url"
 	"strings"
 
-	apigenapi "github.com/Yacobolo/leapview/internal/app/api/gen"
-	protocolgen "github.com/Yacobolo/leapview/internal/platform/http/api/gen"
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
+	apigenapi "github.com/flidai/leapview/internal/app/api/gen"
+	protocolgen "github.com/flidai/leapview/internal/platform/http/api/gen"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
 )
 
 type TransportErrorResponder struct {

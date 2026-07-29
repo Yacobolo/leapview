@@ -13,9 +13,9 @@ import (
 	"sort"
 	"strings"
 
-	publicationdb "github.com/Yacobolo/leapview/internal/dashboard/internal/db"
-	"github.com/Yacobolo/leapview/internal/dashboard/publication"
-	"github.com/Yacobolo/leapview/internal/platform/transaction"
+	publicationdb "github.com/flidai/leapview/internal/dashboard/internal/db"
+	"github.com/flidai/leapview/internal/dashboard/publication"
+	"github.com/flidai/leapview/internal/platform/transaction"
 )
 
 type Repository struct {

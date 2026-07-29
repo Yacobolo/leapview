@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	dashboardapi "github.com/Yacobolo/leapview/internal/dashboard/api"
-	"github.com/Yacobolo/leapview/internal/dashboard/publication"
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
+	dashboardapi "github.com/flidai/leapview/internal/dashboard/api"
+	"github.com/flidai/leapview/internal/dashboard/publication"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
 )
 
 func (m *Module) PublicationsConfigured() bool {

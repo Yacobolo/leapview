@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
-	"github.com/Yacobolo/leapview/internal/platform/testing/ssetest"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
+	"github.com/flidai/leapview/internal/platform/testing/ssetest"
 )
 
 func TestUpdatesStreamsRealRuntimeSignals(t *testing.T) {

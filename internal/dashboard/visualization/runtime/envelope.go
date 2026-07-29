@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
-	"github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	"github.com/flidai/leapview/internal/dashboard"
+	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
+	"github.com/flidai/leapview/internal/dashboard/visualization/ir"
 )
 
 // Frame is the renderer-independent result of a compiled visualization query.

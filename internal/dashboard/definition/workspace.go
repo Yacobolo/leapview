@@ -1,8 +1,8 @@
 package definition
 
 import (
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	"github.com/flidai/leapview/internal/dashboard/catalog"
 )
 
 // Workspace is the immutable dashboard capability projection of a compiled

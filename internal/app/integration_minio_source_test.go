@@ -10,15 +10,15 @@ import (
 	"strings"
 	"testing"
 
-	analyticsduckdb "github.com/Yacobolo/leapview/internal/analytics/duckdb"
-	analyticsducklake "github.com/Yacobolo/leapview/internal/analytics/ducklake"
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/workload"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 	_ "github.com/duckdb/duckdb-go/v2"
+	analyticsduckdb "github.com/flidai/leapview/internal/analytics/duckdb"
+	analyticsducklake "github.com/flidai/leapview/internal/analytics/ducklake"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	"github.com/flidai/leapview/internal/workload"
 )
 
 func TestMinIOParquetSourceRefreshContract(t *testing.T) {

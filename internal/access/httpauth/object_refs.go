@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/access"
+	"github.com/flidai/leapview/internal/access"
 )
 
 type ObjectResolver func(r *http.Request, workspaceID string) []access.ObjectRef

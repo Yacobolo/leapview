@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	workspacegen "github.com/Yacobolo/leapview/internal/workspace/api/gen"
+	workspacegen "github.com/flidai/leapview/internal/workspace/api/gen"
 )
 
 func TestCapabilityAPITransportExecutesGeneratedTypedClient(t *testing.T) {

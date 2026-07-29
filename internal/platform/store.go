@@ -12,9 +12,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Yacobolo/leapview/internal/platform/compatibility"
-	"github.com/Yacobolo/leapview/internal/platform/db"
-	"github.com/Yacobolo/leapview/internal/platform/filesystem"
+	"github.com/flidai/leapview/internal/platform/compatibility"
+	"github.com/flidai/leapview/internal/platform/db"
+	"github.com/flidai/leapview/internal/platform/filesystem"
 	"github.com/pressly/goose/v3"
 	_ "modernc.org/sqlite"
 )

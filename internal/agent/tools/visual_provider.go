@@ -9,15 +9,15 @@ import (
 	"io"
 	"strings"
 
-	agentcontracts "github.com/Yacobolo/leapview/internal/agent/contracts"
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
-	visualizationruntime "github.com/Yacobolo/leapview/internal/dashboard/visualization/runtime"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
-	agentcore "github.com/Yacobolo/leapview/pkg/agent"
+	agentcontracts "github.com/flidai/leapview/internal/agent/contracts"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	"github.com/flidai/leapview/internal/dashboard"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
+	visualizationruntime "github.com/flidai/leapview/internal/dashboard/visualization/runtime"
+	workspacecompiler "github.com/flidai/leapview/internal/project/compiler"
+	agentcore "github.com/flidai/leapview/pkg/agent"
 )
 
 const (

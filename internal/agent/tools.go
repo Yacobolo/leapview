@@ -3,7 +3,7 @@ package agent
 import (
 	"sort"
 
-	agentcore "github.com/Yacobolo/leapview/pkg/agent"
+	agentcore "github.com/flidai/leapview/pkg/agent"
 )
 
 func (s *Service) toolDefinitions(scope Scope) []agentcore.ToolDefinition {

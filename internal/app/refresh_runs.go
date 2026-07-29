@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 
-	workloadmodule "github.com/Yacobolo/leapview/internal/workload/module"
+	workloadmodule "github.com/flidai/leapview/internal/workload/module"
 )
 
 func workloadController(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy) workloadControl {

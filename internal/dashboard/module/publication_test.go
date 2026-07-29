@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	"github.com/Yacobolo/leapview/internal/dashboard/publication"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	"github.com/flidai/leapview/internal/dashboard/publication"
 )
 
 func TestPublicationExecutionContextUsesPublicationPrincipal(t *testing.T) {

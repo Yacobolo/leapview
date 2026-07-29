@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/analytics/arrowresult"
-	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/flidai/leapview/internal/analytics/arrowresult"
+	semanticquery "github.com/flidai/leapview/internal/analytics/query"
 )
 
 func TestSplitArrowBundleOwnsIndependentProjectedResults(t *testing.T) {

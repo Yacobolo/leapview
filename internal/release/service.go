@@ -10,9 +10,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
-	"github.com/Yacobolo/leapview/internal/servingstate"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/flidai/leapview/internal/platform/jobs"
+	"github.com/flidai/leapview/internal/servingstate"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 type Repository interface {

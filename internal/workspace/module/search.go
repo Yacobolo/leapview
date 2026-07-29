@@ -8,12 +8,12 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/platform/http/cursorsigning"
-	api "github.com/Yacobolo/leapview/internal/platform/http/model"
-	workspaceapi "github.com/Yacobolo/leapview/internal/workspace/api"
-	productsearch "github.com/Yacobolo/leapview/internal/workspace/search"
-	searchsqlite "github.com/Yacobolo/leapview/internal/workspace/search/sqlite"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/platform/http/cursorsigning"
+	api "github.com/flidai/leapview/internal/platform/http/model"
+	workspaceapi "github.com/flidai/leapview/internal/workspace/api"
+	productsearch "github.com/flidai/leapview/internal/workspace/search"
+	searchsqlite "github.com/flidai/leapview/internal/workspace/search/sqlite"
 )
 
 type searchService interface {

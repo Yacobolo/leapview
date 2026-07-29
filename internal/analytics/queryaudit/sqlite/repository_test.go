@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
-	"github.com/Yacobolo/leapview/internal/platform"
+	"github.com/flidai/leapview/internal/analytics/queryaudit"
+	"github.com/flidai/leapview/internal/platform"
 )
 
 func TestRepositoryRecordsAndFiltersQueryEvents(t *testing.T) {

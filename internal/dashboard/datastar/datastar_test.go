@@ -6,13 +6,13 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	dashboardstream "github.com/Yacobolo/leapview/internal/dashboard/stream"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
-	visualizationruntime "github.com/Yacobolo/leapview/internal/dashboard/visualization/runtime"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
+	"github.com/flidai/leapview/internal/dashboard"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	dashboardstream "github.com/flidai/leapview/internal/dashboard/stream"
+	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
+	visualizationruntime "github.com/flidai/leapview/internal/dashboard/visualization/runtime"
+	workspacecompiler "github.com/flidai/leapview/internal/project/compiler"
 )
 
 func testVisualDefinition(t *testing.T, id string) visualizationdefinition.Definition {

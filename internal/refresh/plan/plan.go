@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	refreshartifact "github.com/Yacobolo/leapview/internal/refresh/artifact"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	refreshartifact "github.com/flidai/leapview/internal/refresh/artifact"
 )
 
 type Plan struct {

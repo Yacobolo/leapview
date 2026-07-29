@@ -3,10 +3,10 @@ package app
 import (
 	"context"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	accessmodule "github.com/Yacobolo/leapview/internal/access/module"
-	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
-	"github.com/Yacobolo/leapview/internal/platform"
+	"github.com/flidai/leapview/internal/access"
+	accessmodule "github.com/flidai/leapview/internal/access/module"
+	accesssqlite "github.com/flidai/leapview/internal/access/sqlite"
+	"github.com/flidai/leapview/internal/platform"
 )
 
 func testAuth(store *platform.Store, workspaceID string, cfg AuthConfig) *accessmodule.Auth {

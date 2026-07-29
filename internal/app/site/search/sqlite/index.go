@@ -12,7 +12,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/Yacobolo/leapview/internal/agent/productdocs"
+	"github.com/flidai/leapview/internal/agent/productdocs"
 	_ "modernc.org/sqlite"
 	"modernc.org/sqlite/vfs"
 )

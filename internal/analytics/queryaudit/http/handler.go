@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/analytics/queryaudit"
-	api "github.com/Yacobolo/leapview/internal/platform/http/model"
+	"github.com/flidai/leapview/internal/analytics/queryaudit"
+	api "github.com/flidai/leapview/internal/platform/http/model"
 	"github.com/go-chi/chi/v5"
 )
 

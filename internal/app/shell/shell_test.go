@@ -3,7 +3,7 @@ package shell
 import (
 	"testing"
 
-	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
+	webpage "github.com/flidai/leapview/internal/platform/web/page"
 )
 
 func TestProviderOwnsGlobalNavigationAndAgentHistory(t *testing.T) {

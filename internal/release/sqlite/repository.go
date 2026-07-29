@@ -10,10 +10,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
-	"github.com/Yacobolo/leapview/internal/platform/transaction"
-	"github.com/Yacobolo/leapview/internal/release"
-	platformdb "github.com/Yacobolo/leapview/internal/release/internal/db"
+	"github.com/flidai/leapview/internal/platform/jobs"
+	"github.com/flidai/leapview/internal/platform/transaction"
+	"github.com/flidai/leapview/internal/release"
+	platformdb "github.com/flidai/leapview/internal/release/internal/db"
 )
 
 type Repository struct {

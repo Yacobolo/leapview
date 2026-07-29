@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/app/site/visualdocs"
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	"github.com/flidai/leapview/internal/app/site/visualdocs"
+	"github.com/flidai/leapview/internal/dashboard"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
 )
 
 func TestParseVisualExamplesUsesMarkedYAMLAsSource(t *testing.T) {

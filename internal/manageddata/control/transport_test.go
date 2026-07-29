@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/manageddata/control"
-	"github.com/Yacobolo/leapview/internal/manageddata/storage"
+	"github.com/flidai/leapview/internal/manageddata/control"
+	"github.com/flidai/leapview/internal/manageddata/storage"
 )
 
 func TestTusTransportDescribesResumableStateAndAborts(t *testing.T) {

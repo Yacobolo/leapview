@@ -3,9 +3,9 @@ package module
 import (
 	"net/http"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	dashboardhttp "github.com/Yacobolo/leapview/internal/dashboard/http"
-	semanticapi "github.com/Yacobolo/leapview/internal/dashboard/semanticapi"
+	"github.com/flidai/leapview/internal/access"
+	dashboardhttp "github.com/flidai/leapview/internal/dashboard/http"
+	semanticapi "github.com/flidai/leapview/internal/dashboard/semanticapi"
 )
 
 // DashboardObjectRefs resolves the authorization chain for dashboard

@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	apihttpmiddleware "github.com/Yacobolo/leapview/internal/platform/http/middleware"
+	apihttpmiddleware "github.com/flidai/leapview/internal/platform/http/middleware"
 )
 
 type RateLimitConfig = apihttpmiddleware.RateLimitConfig

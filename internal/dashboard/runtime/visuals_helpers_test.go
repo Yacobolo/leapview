@@ -4,9 +4,9 @@ import (
 	"reflect"
 	"testing"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	"github.com/flidai/leapview/internal/dashboard"
+	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
 )
 
 func TestAggregateMemberMetadataResolvesMetricPresentation(t *testing.T) {

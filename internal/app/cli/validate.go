@@ -3,7 +3,7 @@ package cli
 import (
 	"context"
 
-	projectcli "github.com/Yacobolo/leapview/internal/project/cli"
+	projectcli "github.com/flidai/leapview/internal/project/cli"
 	"github.com/spf13/cobra"
 )
 

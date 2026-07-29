@@ -9,16 +9,16 @@ import (
 	nethttp "net/http"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	"github.com/Yacobolo/leapview/internal/dashboard/command"
-	lddatastar "github.com/Yacobolo/leapview/internal/dashboard/datastar"
-	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
-	dashboardsession "github.com/Yacobolo/leapview/internal/dashboard/session"
-	dashboardstream "github.com/Yacobolo/leapview/internal/dashboard/stream"
-	reportui "github.com/Yacobolo/leapview/internal/dashboard/ui"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
-	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
+	"github.com/flidai/leapview/internal/dashboard"
+	"github.com/flidai/leapview/internal/dashboard/command"
+	lddatastar "github.com/flidai/leapview/internal/dashboard/datastar"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
+	dashboardsession "github.com/flidai/leapview/internal/dashboard/session"
+	dashboardstream "github.com/flidai/leapview/internal/dashboard/stream"
+	reportui "github.com/flidai/leapview/internal/dashboard/ui"
+	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
+	webpage "github.com/flidai/leapview/internal/platform/web/page"
+	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {

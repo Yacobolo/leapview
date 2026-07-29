@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/Yacobolo/leapview/internal/release"
-	platformdb "github.com/Yacobolo/leapview/internal/release/internal/db"
+	"github.com/flidai/leapview/internal/release"
+	platformdb "github.com/flidai/leapview/internal/release/internal/db"
 )
 
 func (r *Repository) ListProjects(ctx context.Context) ([]release.ProjectRecord, error) {

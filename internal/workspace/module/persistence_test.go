@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/platform"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	"github.com/flidai/leapview/internal/platform"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 func TestPersistenceOwnsWorkspaceSQLiteAdapter(t *testing.T) {

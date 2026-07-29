@@ -8,15 +8,15 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	"github.com/Yacobolo/leapview/internal/dashboard/command"
-	lddatastar "github.com/Yacobolo/leapview/internal/dashboard/datastar"
-	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
-	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
-	dashboardsession "github.com/Yacobolo/leapview/internal/dashboard/session"
-	dashboardstream "github.com/Yacobolo/leapview/internal/dashboard/stream"
-	uisignals "github.com/Yacobolo/leapview/internal/dashboard/ui/signals"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
+	"github.com/flidai/leapview/internal/dashboard"
+	"github.com/flidai/leapview/internal/dashboard/command"
+	lddatastar "github.com/flidai/leapview/internal/dashboard/datastar"
+	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
+	dashboardsession "github.com/flidai/leapview/internal/dashboard/session"
+	dashboardstream "github.com/flidai/leapview/internal/dashboard/stream"
+	uisignals "github.com/flidai/leapview/internal/dashboard/ui/signals"
+	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 func (h Handler) FilterCommand(w nethttp.ResponseWriter, r *nethttp.Request) {

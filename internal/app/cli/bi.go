@@ -3,8 +3,8 @@ package cli
 import (
 	"context"
 
-	dashboardcli "github.com/Yacobolo/leapview/internal/dashboard/cli"
-	workspacecli "github.com/Yacobolo/leapview/internal/workspace/cli"
+	dashboardcli "github.com/flidai/leapview/internal/dashboard/cli"
+	workspacecli "github.com/flidai/leapview/internal/workspace/cli"
 	"github.com/spf13/cobra"
 )
 

@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE_NAME: ghcr.io/yacobolo/leapview
+  IMAGE_NAME: ghcr.io/flidai/leapview
 
 jobs:
   identity:
@@ -306,11 +306,11 @@ jobs:
               target.write("\n")
           PY
           build_ldflags="-s -w \
-            -X github.com/Yacobolo/leapview/internal/platform/buildinfo.version=$BUILD_VERSION \
-            -X github.com/Yacobolo/leapview/internal/platform/buildinfo.revision=$BUILD_REVISION \
-            -X github.com/Yacobolo/leapview/internal/platform/buildinfo.buildTime=$BUILD_TIME \
-            -X github.com/Yacobolo/leapview/internal/platform/buildinfo.dirty=$BUILD_DIRTY \
-            -X github.com/Yacobolo/leapview/internal/platform/buildinfo.release=$BUILD_RELEASE"
+            -X github.com/flidai/leapview/internal/platform/buildinfo.version=$BUILD_VERSION \
+            -X github.com/flidai/leapview/internal/platform/buildinfo.revision=$BUILD_REVISION \
+            -X github.com/flidai/leapview/internal/platform/buildinfo.buildTime=$BUILD_TIME \
+            -X github.com/flidai/leapview/internal/platform/buildinfo.dirty=$BUILD_DIRTY \
+            -X github.com/flidai/leapview/internal/platform/buildinfo.release=$BUILD_RELEASE"
           targets=(
             "linux amd64"
             "linux arm64"
@@ -325,7 +325,7 @@ jobs:
             cp deploy/compose/compose.yaml deploy/compose/compose.https.yaml deploy/compose/Caddyfile deploy/compose/README.md deploy/compose/QUALIFICATION.md "dist/$package/"
             cp -R deploy/compose/qualification "dist/$package/qualification"
             cp deploy/compose/leapview.env.example "dist/$package/leapview.env.example"
-            sed "s|ghcr.io/yacobolo/leapview@sha256:<release-digest>|$IMAGE_REFERENCE|" deploy/compose/deployment.env.example > "dist/$package/deployment.env.example"
+            sed "s|ghcr.io/flidai/leapview@sha256:<release-digest>|$IMAGE_REFERENCE|" deploy/compose/deployment.env.example > "dist/$package/deployment.env.example"
             cp image-reference.txt release-identity.json "dist/$package/"
             if [ "$os" = linux ] && [ "$arch" = amd64 ]; then
               (

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/dashboard/consumer"
-	dashboardruntime "github.com/Yacobolo/leapview/internal/dashboard/runtime"
+	"github.com/flidai/leapview/internal/dashboard/consumer"
+	dashboardruntime "github.com/flidai/leapview/internal/dashboard/runtime"
 )
 
 func TestCommandsPublishReloadPatchesToOpenStream(t *testing.T) {

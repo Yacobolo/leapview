@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/access/desktopauth"
-	"github.com/Yacobolo/leapview/internal/platform"
+	"github.com/flidai/leapview/internal/access/desktopauth"
+	"github.com/flidai/leapview/internal/platform"
 	"github.com/go-chi/chi/v5"
 )
 

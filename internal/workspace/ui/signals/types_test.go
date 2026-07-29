@@ -5,14 +5,14 @@ import (
 	"strings"
 	"testing"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
-	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	dashboardsignals "github.com/Yacobolo/leapview/internal/dashboard/ui/signals"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
-	workspacecompiler "github.com/Yacobolo/leapview/internal/project/compiler"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	"github.com/flidai/leapview/internal/dashboard"
+	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	dashboardsignals "github.com/flidai/leapview/internal/dashboard/ui/signals"
+	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
+	workspacecompiler "github.com/flidai/leapview/internal/project/compiler"
 )
 
 func TestVisualizationSignalKeepsDataStateOpaque(t *testing.T) {

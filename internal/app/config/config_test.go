@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/app/config/spec"
-	"github.com/Yacobolo/leapview/internal/workload"
+	"github.com/flidai/leapview/internal/app/config/spec"
+	"github.com/flidai/leapview/internal/workload"
 )
 
 func TestLoadRejectsMalformedWorkloadConfiguration(t *testing.T) {

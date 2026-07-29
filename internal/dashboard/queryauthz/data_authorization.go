@@ -7,16 +7,16 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	"github.com/Yacobolo/leapview/internal/analytics/arrowquery"
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	semanticquery "github.com/Yacobolo/leapview/internal/analytics/query"
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
-	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/analytics/arrowquery"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	semanticquery "github.com/flidai/leapview/internal/analytics/query"
+	"github.com/flidai/leapview/internal/dashboard"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
+	"github.com/flidai/leapview/internal/dashboard/queryruntime"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
 )
 
 type Principal struct {

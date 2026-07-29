@@ -6,16 +6,16 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
-	"github.com/Yacobolo/leapview/internal/analytics/arrowquery"
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
-	"github.com/Yacobolo/leapview/internal/platform"
-	"github.com/Yacobolo/leapview/internal/workspace"
-	workspacesqlite "github.com/Yacobolo/leapview/internal/workspace/sqlite"
 	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/flidai/leapview/internal/access"
+	accesssqlite "github.com/flidai/leapview/internal/access/sqlite"
+	"github.com/flidai/leapview/internal/analytics/arrowquery"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	"github.com/flidai/leapview/internal/dashboard/queryruntime"
+	"github.com/flidai/leapview/internal/platform"
+	"github.com/flidai/leapview/internal/workspace"
+	workspacesqlite "github.com/flidai/leapview/internal/workspace/sqlite"
 )
 
 func TestPublicationArrowFailsBeforeStreamingWhenAuditCannotPersist(t *testing.T) {

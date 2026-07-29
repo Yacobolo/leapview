@@ -31,7 +31,7 @@ func TestAssetNavDoesNotImportHeadlessAPIContract(t *testing.T) {
 			t.Fatalf("parse imports in %s: %v", file, err)
 		}
 		for _, imported := range parsed.Imports {
-			if strings.Trim(imported.Path.Value, "\"") == "github.com/Yacobolo/leapview/internal/app/api/gen" {
+			if strings.Trim(imported.Path.Value, "\"") == "github.com/flidai/leapview/internal/app/api/gen" {
 				t.Fatalf("%s imports forbidden package internal/app/api/gen", file)
 			}
 		}

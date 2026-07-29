@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/analytics/dataquery"
-	"github.com/Yacobolo/leapview/internal/dashboard"
-	dashboardmodule "github.com/Yacobolo/leapview/internal/dashboard/module"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	"github.com/Yacobolo/leapview/internal/workload"
+	"github.com/flidai/leapview/internal/analytics/dataquery"
+	"github.com/flidai/leapview/internal/dashboard"
+	dashboardmodule "github.com/flidai/leapview/internal/dashboard/module"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	"github.com/flidai/leapview/internal/workload"
 )
 
 func TestWorkloadMetricsBoundsDataQueries(t *testing.T) {

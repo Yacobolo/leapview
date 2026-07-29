@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	stdhttp "net/http"
 
-	manageddataapi "github.com/Yacobolo/leapview/internal/manageddata/api"
-	manageddatagen "github.com/Yacobolo/leapview/internal/manageddata/api/gen"
-	apitransport "github.com/Yacobolo/leapview/internal/platform/http/transport"
+	manageddataapi "github.com/flidai/leapview/internal/manageddata/api"
+	manageddatagen "github.com/flidai/leapview/internal/manageddata/api/gen"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
 )
 
 type APIGenHandler interface {

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	cligen "github.com/Yacobolo/leapview/internal/app/cli/gen"
+	cligen "github.com/flidai/leapview/internal/app/cli/gen"
 	"github.com/spf13/cobra"
 )
 

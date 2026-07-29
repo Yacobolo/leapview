@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/manageddata/control"
-	"github.com/Yacobolo/leapview/internal/workload"
+	"github.com/flidai/leapview/internal/manageddata/control"
+	"github.com/flidai/leapview/internal/workload"
 )
 
 type testUploadExpirer struct{ called chan struct{} }

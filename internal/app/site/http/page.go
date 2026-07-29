@@ -4,11 +4,11 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/app/brand"
+	"github.com/flidai/leapview/internal/app/brand"
 	"time"
 
-	"github.com/Yacobolo/leapview/pkg/pagestream"
-	siteassets "github.com/Yacobolo/leapview/site"
+	"github.com/flidai/leapview/pkg/pagestream"
+	siteassets "github.com/flidai/leapview/site"
 	g "maragu.dev/gomponents"
 	dsattr "maragu.dev/gomponents-datastar"
 	h "maragu.dev/gomponents/html"
@@ -680,7 +680,7 @@ func siteProofItem(icon, title, body string) g.Node {
 func siteHomepageActions() g.Node {
 	return h.Div(h.Class("site-actions"),
 		h.A(h.Class("site-button site-button-primary"), h.Href("/docs/getting-started"), g.Text("Get started")),
-		h.A(h.Class("site-button"), h.Href("https://github.com/Yacobolo/leapview"),
+		h.A(h.Class("site-button"), h.Href("https://github.com/flidai/leapview"),
 			h.Span(h.Class("site-github-mark"), g.Attr("aria-hidden", "true")),
 			g.Text("View on GitHub"),
 		),
@@ -704,8 +704,8 @@ func siteFooter() g.Node {
 				{label: "Visual gallery", href: "/visuals"},
 			}),
 			siteFooterGroup("Project", []siteFooterLink{
-				{label: "GitHub", href: "https://github.com/Yacobolo/leapview"},
-				{label: "Issues", href: "https://github.com/Yacobolo/leapview/issues"},
+				{label: "GitHub", href: "https://github.com/flidai/leapview"},
+				{label: "Issues", href: "https://github.com/flidai/leapview/issues"},
 			}),
 		),
 		h.Div(h.Class("site-footer-bottom"), h.P(g.Text(siteBrandName+" — open-source analytics as code."))),

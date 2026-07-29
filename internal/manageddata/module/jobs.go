@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/Yacobolo/leapview/internal/manageddata/control"
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
+	"github.com/flidai/leapview/internal/manageddata/control"
+	"github.com/flidai/leapview/internal/platform/jobs"
 )
 
 const FinalizeUploadJobKind = "upload.finalize"

@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/manageddata/control"
-	"github.com/Yacobolo/leapview/internal/manageddata/maintenance"
-	"github.com/Yacobolo/leapview/internal/manageddata/storage"
-	"github.com/Yacobolo/leapview/internal/platform"
-	servingstatemodule "github.com/Yacobolo/leapview/internal/servingstate/module"
+	"github.com/flidai/leapview/internal/manageddata/control"
+	"github.com/flidai/leapview/internal/manageddata/maintenance"
+	"github.com/flidai/leapview/internal/manageddata/storage"
+	"github.com/flidai/leapview/internal/platform"
+	servingstatemodule "github.com/flidai/leapview/internal/servingstate/module"
 )
 
 func TestBuildKeepsPersistencePrivateAndExposesNamedServices(t *testing.T) {

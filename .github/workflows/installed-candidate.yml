@@ -39,7 +39,7 @@ jobs:
           if [ -z "$release_tag" ]; then
             release_tag="$(
               curl --fail --location --silent --show-error \
-                https://api.github.com/repos/Yacobolo/leapview/releases?per_page=20 |
+                https://api.github.com/repos/flidai/leapview/releases?per_page=20 |
                 jq -er '[.[] | select(.draft == false)][0].tag_name'
             )"
           fi
@@ -74,7 +74,7 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: |
           package="leapview-compose-${RELEASE_TAG}-linux-${ARCH}"
-          base="https://github.com/Yacobolo/leapview/releases/download/${RELEASE_TAG}"
+          base="https://github.com/flidai/leapview/releases/download/${RELEASE_TAG}"
           mkdir -p "$RUNNER_TEMP/leapview-public"
           cd "$RUNNER_TEMP/leapview-public"
           curl --fail --location --retry 4 --retry-all-errors --silent --show-error \

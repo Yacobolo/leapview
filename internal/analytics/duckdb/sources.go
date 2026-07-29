@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Yacobolo/leapview/internal/analytics/connectors"
-	analyticsmaterialize "github.com/Yacobolo/leapview/internal/analytics/materialize"
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	analyticsresource "github.com/Yacobolo/leapview/internal/analytics/resource"
+	"github.com/flidai/leapview/internal/analytics/connectors"
+	analyticsmaterialize "github.com/flidai/leapview/internal/analytics/materialize"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	analyticsresource "github.com/flidai/leapview/internal/analytics/resource"
 )
 
 var identifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)

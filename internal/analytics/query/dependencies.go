@@ -3,7 +3,7 @@ package query
 import (
 	"sort"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 )
 
 // Dependencies is the shared, authorization-safe semantic resolution result.

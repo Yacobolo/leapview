@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	reportdef "github.com/Yacobolo/leapview/internal/dashboard/report"
-	agentcore "github.com/Yacobolo/leapview/pkg/agent"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	agentcore "github.com/flidai/leapview/pkg/agent"
 )
 
 func TestAgentVisualShapeUsesVisualTypeDefaults(t *testing.T) {

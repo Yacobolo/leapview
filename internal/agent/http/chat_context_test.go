@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/agent"
-	"github.com/Yacobolo/leapview/internal/agent/ui"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	"github.com/flidai/leapview/internal/agent"
+	"github.com/flidai/leapview/internal/agent/ui"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
 )
 
 func TestChatReferenceSearchUsesGlobalScopeAndEchoesRequestIdentity(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Yacobolo/leapview/pkg/pagestream"
+	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 type TraceHandler struct{ Store *pagestream.TraceStore }

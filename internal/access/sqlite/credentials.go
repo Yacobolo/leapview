@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/Yacobolo/leapview/internal/access"
-	platformdb "github.com/Yacobolo/leapview/internal/access/internal/db"
+	"github.com/flidai/leapview/internal/access"
+	platformdb "github.com/flidai/leapview/internal/access/internal/db"
 	"strings"
 	"time"
 )

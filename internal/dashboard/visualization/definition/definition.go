@@ -6,7 +6,7 @@ package definition
 import (
 	"fmt"
 
-	"github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
+	"github.com/flidai/leapview/internal/dashboard/visualization/ir"
 )
 
 const (

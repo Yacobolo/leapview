@@ -3,8 +3,8 @@ package http
 import (
 	"testing"
 
-	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
-	dashboardfilter "github.com/Yacobolo/leapview/internal/dashboard/filter"
+	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
 )
 
 func TestFilterCommandResponseTombstonesOmittedCanonicalURLParameters(t *testing.T) {

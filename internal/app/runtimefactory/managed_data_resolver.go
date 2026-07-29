@@ -3,9 +3,9 @@ package runtimefactory
 import (
 	"context"
 
-	manageddataresolver "github.com/Yacobolo/leapview/internal/manageddata/resolver"
-	"github.com/Yacobolo/leapview/internal/runtimehost"
-	"github.com/Yacobolo/leapview/internal/servingstate"
+	manageddataresolver "github.com/flidai/leapview/internal/manageddata/resolver"
+	"github.com/flidai/leapview/internal/runtimehost"
+	"github.com/flidai/leapview/internal/servingstate"
 )
 
 type managedDataResolver struct {

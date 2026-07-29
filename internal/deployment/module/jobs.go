@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/Yacobolo/leapview/internal/deployment/apiadapter"
-	"github.com/Yacobolo/leapview/internal/platform/jobs"
+	"github.com/flidai/leapview/internal/deployment/apiadapter"
+	"github.com/flidai/leapview/internal/platform/jobs"
 )
 
 const ActivateJobKind = "deployment.activate"

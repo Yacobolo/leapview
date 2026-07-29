@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"strings"
 
-	semanticmodel "github.com/Yacobolo/leapview/internal/analytics/model"
-	visualizationdefinition "github.com/Yacobolo/leapview/internal/dashboard/visualization/definition"
-	visualizationir "github.com/Yacobolo/leapview/internal/dashboard/visualization/ir"
-	"github.com/Yacobolo/leapview/internal/project/manifest"
-	"github.com/Yacobolo/leapview/internal/workspace"
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
+	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
+	"github.com/flidai/leapview/internal/project/manifest"
+	"github.com/flidai/leapview/internal/workspace"
 )
 
 func ExtractLineage(workspaceID workspace.WorkspaceID, servingStateID workspace.ServingStateID, definition *manifest.Workspace) (workspace.AssetGraph, error) {

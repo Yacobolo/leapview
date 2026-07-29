@@ -1,6 +1,6 @@
 package module
 
-import "github.com/Yacobolo/leapview/internal/access"
+import "github.com/flidai/leapview/internal/access"
 
 func (m *Module) WorkspaceAccessService() access.WorkspaceAccessService {
 	return m.repositoryValue()

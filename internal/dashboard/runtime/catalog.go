@@ -3,8 +3,8 @@ package runtime
 import (
 	"sync"
 
-	"github.com/Yacobolo/leapview/internal/dashboard/catalog"
-	dashboarddefinition "github.com/Yacobolo/leapview/internal/dashboard/definition"
+	"github.com/flidai/leapview/internal/dashboard/catalog"
+	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
 )
 
 type CatalogService struct {

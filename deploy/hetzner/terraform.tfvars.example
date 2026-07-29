@@ -3,7 +3,7 @@
 admin_email = "admin@example.com"
 
 # Release image from the LeapView release notes. Immutable digests are required.
-leapview_image = "ghcr.io/yacobolo/leapview@sha256:<digest-from-release>"
+leapview_image = "ghcr.io/flidai/leapview@sha256:<digest-from-release>"
 
 # Optional. If omitted, the module uses <reserved-ip>.sslip.io.
 # domain = "leapview.example.com"

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/deployment/apiadapter"
+	"github.com/flidai/leapview/internal/deployment/apiadapter"
 )
 
 func TestCreateResponseUsesProjectDeploymentWireContract(t *testing.T) {

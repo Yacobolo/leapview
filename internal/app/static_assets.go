@@ -3,8 +3,8 @@ package app
 import (
 	"path/filepath"
 
-	"github.com/Yacobolo/leapview/internal/app/config"
-	"github.com/Yacobolo/leapview/internal/platform/web/staticasset"
+	"github.com/flidai/leapview/internal/app/config"
+	"github.com/flidai/leapview/internal/platform/web/staticasset"
 )
 
 func applicationAssets(config config.Config, production bool) staticasset.Resolver {

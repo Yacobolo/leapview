@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/platform/testing/ssetest"
+	"github.com/flidai/leapview/internal/platform/testing/ssetest"
 )
 
 func TestSignalStreamPatchSendsOnePatchSignalsEventPerCall(t *testing.T) {

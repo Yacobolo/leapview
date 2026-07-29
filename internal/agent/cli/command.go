@@ -10,9 +10,9 @@ import (
 	"text/tabwriter"
 	"time"
 
-	agentgen "github.com/Yacobolo/leapview/internal/agent/api/gen"
-	agenttools "github.com/Yacobolo/leapview/internal/agent/tools"
-	"github.com/Yacobolo/leapview/internal/platform/cliapi"
+	agentgen "github.com/flidai/leapview/internal/agent/api/gen"
+	agenttools "github.com/flidai/leapview/internal/agent/tools"
+	"github.com/flidai/leapview/internal/platform/cliapi"
 	"github.com/spf13/cobra"
 )
 

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/dashboard"
+	"github.com/flidai/leapview/internal/dashboard"
 )
 
 func TestDashboardRejectsUnknownTableCardinalityPolicy(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	accessdb "github.com/Yacobolo/leapview/internal/access/internal/db"
+	"github.com/flidai/leapview/internal/access"
+	accessdb "github.com/flidai/leapview/internal/access/internal/db"
 )
 
 var (

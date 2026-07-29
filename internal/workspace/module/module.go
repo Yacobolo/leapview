@@ -5,15 +5,15 @@ import (
 	"database/sql"
 	"net/http"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	dashboardcatalog "github.com/Yacobolo/leapview/internal/dashboard/catalog"
-	"github.com/Yacobolo/leapview/internal/dashboard/queryruntime"
-	webpage "github.com/Yacobolo/leapview/internal/platform/web/page"
-	"github.com/Yacobolo/leapview/internal/workspace"
-	workspacehttp "github.com/Yacobolo/leapview/internal/workspace/http"
-	catalog "github.com/Yacobolo/leapview/internal/workspace/navigation"
-	"github.com/Yacobolo/leapview/internal/workspace/ui"
-	"github.com/Yacobolo/leapview/pkg/pagestream"
+	"github.com/flidai/leapview/internal/access"
+	dashboardcatalog "github.com/flidai/leapview/internal/dashboard/catalog"
+	"github.com/flidai/leapview/internal/dashboard/queryruntime"
+	webpage "github.com/flidai/leapview/internal/platform/web/page"
+	"github.com/flidai/leapview/internal/workspace"
+	workspacehttp "github.com/flidai/leapview/internal/workspace/http"
+	catalog "github.com/flidai/leapview/internal/workspace/navigation"
+	"github.com/flidai/leapview/internal/workspace/ui"
+	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 type Module struct {

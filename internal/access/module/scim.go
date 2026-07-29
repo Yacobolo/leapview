@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/Yacobolo/leapview/internal/access/scimprov"
+	"github.com/flidai/leapview/internal/access/scimprov"
 )
 
 func (m *Module) SCIMHandler(bearerToken string) (http.Handler, error) {

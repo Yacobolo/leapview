@@ -6,10 +6,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Yacobolo/leapview/internal/access"
-	accesssqlite "github.com/Yacobolo/leapview/internal/access/sqlite"
-	"github.com/Yacobolo/leapview/internal/dashboard/publication"
-	"github.com/Yacobolo/leapview/internal/platform"
+	"github.com/flidai/leapview/internal/access"
+	accesssqlite "github.com/flidai/leapview/internal/access/sqlite"
+	"github.com/flidai/leapview/internal/dashboard/publication"
+	"github.com/flidai/leapview/internal/platform"
 )
 
 func TestReconcilePreservesPublicIDAcrossCutoverRemovalAndReAdd(t *testing.T) {
