@@ -55,10 +55,10 @@ func (builder FilesystemBuilder) Build(ctx context.Context) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
+	projectFile := filepath.ToSlash(filepath.Base(projectPath))
 	return normalizeSnapshot(Snapshot{
-		ProjectID: compiled.ID(),
-		Digest:    candidateSetDigest(compiled.ID(), artifacts),
-		Artifacts: artifacts,
+		ProjectID: compiled.ID(), ProjectFile: projectFile,
+		Digest: candidateSetDigest(compiled.ID(), projectFile, artifacts), Artifacts: artifacts,
 	})
 }
 
@@ -114,11 +114,11 @@ func contentArtifact(path string, content []byte) Artifact {
 	return Artifact{Path: path, Digest: "sha256:" + hex.EncodeToString(sum[:]), Content: append([]byte(nil), content...)}
 }
 
-func candidateSetDigest(projectID string, artifacts []Artifact) string {
+func candidateSetDigest(projectID, projectFile string, artifacts []Artifact) string {
 	ordered := append([]Artifact(nil), artifacts...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Path < ordered[j].Path })
 	hash := sha256.New()
-	_, _ = fmt.Fprintf(hash, "%d:%s:", len(projectID), projectID)
+	_, _ = fmt.Fprintf(hash, "%d:%s:%d:%s:", len(projectID), projectID, len(projectFile), projectFile)
 	for _, artifact := range ordered {
 		_, _ = fmt.Fprintf(hash, "%d:%s:%d:%s:", len(artifact.Path), artifact.Path, len(artifact.Digest), artifact.Digest)
 	}

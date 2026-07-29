@@ -16,6 +16,7 @@ type ArtifactReference struct {
 
 type SynchronizationPlanRequest struct {
 	ProjectID              string
+	ProjectFile            string
 	ArtifactDigest         string
 	ExpectedArtifactDigest string
 	Artifacts              []ArtifactReference
@@ -56,6 +57,7 @@ func (remote *TransportRemote) Synchronize(ctx context.Context, request SyncRequ
 	}
 	planRequest := SynchronizationPlanRequest{
 		ProjectID:              snapshot.ProjectID,
+		ProjectFile:            snapshot.ProjectFile,
 		ArtifactDigest:         snapshot.Digest,
 		ExpectedArtifactDigest: strings.TrimSpace(request.ExpectedArtifactDigest),
 		Artifacts:              make([]ArtifactReference, len(snapshot.Artifacts)),

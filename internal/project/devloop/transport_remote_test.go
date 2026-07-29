@@ -56,7 +56,7 @@ func TestTransportRemoteRejectsUnknownMissingDigestWithoutUploadingOrCommit(t *t
 }
 
 func TestTransportRemoteBoundsUploadsAndDoesNotCommitPartialFailure(t *testing.T) {
-	artifacts := make([]Artifact, 0, 12)
+	artifacts := []Artifact{contentArtifact("leapview.yaml", []byte("project"))}
 	for index := range 12 {
 		artifacts = append(artifacts, contentArtifact(
 			"models/model-"+string(rune('a'+index))+".yaml",
@@ -140,8 +140,7 @@ func (transport *recordingSyncTransport) Commit(
 
 func testSnapshotWithArtifacts(projectID string, artifacts []Artifact) Snapshot {
 	return Snapshot{
-		ProjectID: projectID,
-		Digest:    candidateSetDigest(projectID, artifacts),
-		Artifacts: artifacts,
+		ProjectID: projectID, ProjectFile: "leapview.yaml",
+		Digest: candidateSetDigest(projectID, "leapview.yaml", artifacts), Artifacts: artifacts,
 	}
 }

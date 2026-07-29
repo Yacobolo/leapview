@@ -20,9 +20,10 @@ type Artifact struct {
 }
 
 type Snapshot struct {
-	ProjectID string
-	Digest    string
-	Artifacts []Artifact
+	ProjectID   string
+	ProjectFile string
+	Digest      string
+	Artifacts   []Artifact
 }
 
 type Candidate struct {
@@ -132,9 +133,10 @@ func (service *Service) result(status Status) Result {
 
 func normalizeSnapshot(snapshot Snapshot) (Snapshot, error) {
 	snapshot.ProjectID = strings.TrimSpace(snapshot.ProjectID)
+	snapshot.ProjectFile = strings.TrimSpace(snapshot.ProjectFile)
 	snapshot.Digest = strings.TrimSpace(snapshot.Digest)
-	if snapshot.ProjectID == "" || len(snapshot.Artifacts) == 0 {
-		return Snapshot{}, fmt.Errorf("project snapshot requires project and workspace artifacts")
+	if snapshot.ProjectID == "" || !canonicalArtifactPath(snapshot.ProjectFile) || len(snapshot.Artifacts) == 0 {
+		return Snapshot{}, fmt.Errorf("project snapshot requires project, canonical entrypoint, and artifacts")
 	}
 	if err := digest.ValidateSHA256Identity(snapshot.Digest); err != nil {
 		return Snapshot{}, fmt.Errorf("project snapshot digest is invalid: %w", err)
@@ -147,11 +149,7 @@ func normalizeSnapshot(snapshot Snapshot) (Snapshot, error) {
 		if artifact.Path == "" || len(artifact.Content) == 0 {
 			return Snapshot{}, fmt.Errorf("project snapshot artifact requires path and content")
 		}
-		if path.IsAbs(artifact.Path) ||
-			path.Clean(artifact.Path) != artifact.Path ||
-			artifact.Path == ".." ||
-			strings.HasPrefix(artifact.Path, "../") ||
-			strings.Contains(artifact.Path, `\`) {
+		if !canonicalArtifactPath(artifact.Path) {
 			return Snapshot{}, fmt.Errorf("project artifact path %q is not a canonical relative path", artifact.Path)
 		}
 		if _, duplicate := seen[artifact.Path]; duplicate {
@@ -168,7 +166,10 @@ func normalizeSnapshot(snapshot Snapshot) (Snapshot, error) {
 	sort.Slice(snapshot.Artifacts, func(i, j int) bool {
 		return snapshot.Artifacts[i].Path < snapshot.Artifacts[j].Path
 	})
-	if actual := candidateSetDigest(snapshot.ProjectID, snapshot.Artifacts); snapshot.Digest != actual {
+	if _, exists := seen[snapshot.ProjectFile]; !exists {
+		return Snapshot{}, fmt.Errorf("project snapshot entrypoint %q is not an artifact", snapshot.ProjectFile)
+	}
+	if actual := candidateSetDigest(snapshot.ProjectID, snapshot.ProjectFile, snapshot.Artifacts); snapshot.Digest != actual {
 		return Snapshot{}, fmt.Errorf("project snapshot content does not match candidate-set digest")
 	}
 	return cloneSnapshot(snapshot), nil
@@ -189,9 +190,8 @@ func normalizeCandidate(candidate Candidate, snapshot Snapshot) (Candidate, erro
 
 func cloneSnapshot(snapshot Snapshot) Snapshot {
 	out := Snapshot{
-		ProjectID: snapshot.ProjectID,
-		Digest:    snapshot.Digest,
-		Artifacts: make([]Artifact, len(snapshot.Artifacts)),
+		ProjectID: snapshot.ProjectID, ProjectFile: snapshot.ProjectFile,
+		Digest: snapshot.Digest, Artifacts: make([]Artifact, len(snapshot.Artifacts)),
 	}
 	for index, artifact := range snapshot.Artifacts {
 		out.Artifacts[index] = Artifact{
@@ -201,4 +201,13 @@ func cloneSnapshot(snapshot Snapshot) Snapshot {
 		}
 	}
 	return out
+}
+
+func canonicalArtifactPath(value string) bool {
+	return value != "" &&
+		!path.IsAbs(value) &&
+		path.Clean(value) == value &&
+		value != ".." &&
+		!strings.HasPrefix(value, "../") &&
+		!strings.Contains(value, `\`)
 }

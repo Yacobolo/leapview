@@ -19,7 +19,9 @@ func TestFilesystemBuilderProducesDeterministicWorkspaceArtifacts(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.ProjectID != "leapview-showcase" || first.Digest != second.Digest {
+	if first.ProjectID != "leapview-showcase" ||
+		first.ProjectFile != "leapview.yaml" ||
+		first.Digest != second.Digest {
 		t.Fatalf(
 			"candidate identities = (%q, %q) and (%q, %q)",
 			first.ProjectID, first.Digest, second.ProjectID, second.Digest,
@@ -37,6 +39,18 @@ func TestFilesystemBuilderProducesDeterministicWorkspaceArtifacts(t *testing.T) 
 			artifact.Digest != second.Artifacts[index].Digest {
 			t.Fatalf("non-deterministic artifact at %d: %#v / %#v", index, artifact, second.Artifacts[index])
 		}
+	}
+}
+
+func TestCandidateSetDigestIncludesProjectEntrypoint(t *testing.T) {
+	artifacts := []Artifact{
+		contentArtifact("leapview.yaml", []byte("one")),
+		contentArtifact("alternate.yaml", []byte("two")),
+	}
+	first := candidateSetDigest("project", "leapview.yaml", artifacts)
+	second := candidateSetDigest("project", "alternate.yaml", artifacts)
+	if first == second {
+		t.Fatalf("candidate set digest ignored project entrypoint: %q", first)
 	}
 }
 
@@ -60,7 +74,7 @@ func TestNormalizeSnapshotRejectsUnsafeArtifactPaths(t *testing.T) {
 	for _, path := range []string{"../secrets.env", "/etc/passwd", `C:\secrets.env`, "models/../leapview.yaml"} {
 		snapshot := testSnapshot("valid")
 		snapshot.Artifacts[0].Path = path
-		snapshot.Digest = candidateSetDigest(snapshot.ProjectID, snapshot.Artifacts)
+		snapshot.Digest = candidateSetDigest(snapshot.ProjectID, snapshot.ProjectFile, snapshot.Artifacts)
 		if _, err := normalizeSnapshot(snapshot); err == nil {
 			t.Errorf("normalize snapshot accepted unsafe artifact path %q", path)
 		}
@@ -72,9 +86,9 @@ func TestCandidateSetDigestIsIndependentOfWorkspaceOrder(t *testing.T) {
 		{Path: "sales.yaml", Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
 		{Path: "operations.yaml", Digest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
 	}
-	first := candidateSetDigest("project", artifacts)
+	first := candidateSetDigest("project", "leapview.yaml", artifacts)
 	artifacts[0], artifacts[1] = artifacts[1], artifacts[0]
-	if second := candidateSetDigest("project", artifacts); second != first {
+	if second := candidateSetDigest("project", "leapview.yaml", artifacts); second != first {
 		t.Fatalf("candidate set digests differ: %q / %q", first, second)
 	}
 }
