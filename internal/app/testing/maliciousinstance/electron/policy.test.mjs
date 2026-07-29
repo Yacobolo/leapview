@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -131,7 +132,7 @@ test("reviewed CSV exports require an exact-profile origin, user gesture, and sa
   assert.equal(item.cancelCalled, false);
   assert.deepEqual(item.saveDialogOptions, {
     title: "Export CSV from Company Analytics",
-    defaultPath: "/safe/Quarter 1.csv",
+    defaultPath: join("/safe", "Quarter 1.csv"),
     buttonLabel: "Save export",
     filters: [{ name: "CSV", extensions: ["csv"] }],
     properties: ["showOverwriteConfirmation", "createDirectory"],
