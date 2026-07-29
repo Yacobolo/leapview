@@ -11,10 +11,23 @@ export async function verifyReleaseEvidence({
   policySha256,
   publication = false,
   sbomPath,
+  updateArtifactPaths = [],
 }) {
   assertConsumerReleasePolicy(policy);
-  const [artifact, checksumsText, manifestText, sbomText] = await Promise.all([
+  const [
+    artifact,
+    updateArtifacts,
+    checksumsText,
+    manifestText,
+    sbomText,
+  ] = await Promise.all([
     identity(artifactPath),
+    Promise.all(
+      updateArtifactPaths.map(async (path) => ({
+        ...(await identity(path)),
+        fileName: basename(path),
+      })),
+    ),
     readFile(checksumsPath, "utf8"),
     readFile(manifestPath, "utf8"),
     readFile(sbomPath, "utf8"),
@@ -40,6 +53,7 @@ export async function verifyReleaseEvidence({
       "source",
       "support",
       "toolchain",
+      "updateArtifacts",
     ],
     "release manifest",
   );
@@ -149,13 +163,49 @@ export async function verifyReleaseEvidence({
     assertExactKeys(value, expected, label);
   }
   if (
-    manifest?.schemaVersion !== 1 ||
+    manifest?.schemaVersion !== 2 ||
     manifest.artifact?.fileName !== basename(artifactPath) ||
     manifest.artifact?.bytes !== artifact.bytes ||
     manifest.artifact?.sha256 !== artifact.sha256
   ) {
     throw new Error(
       "artifact checksum or metadata does not match release manifest",
+    );
+  }
+  const expectedUpdateFormats =
+    policy.distribution?.[manifest.artifact?.platform]?.updateArtifacts;
+  if (
+    !Array.isArray(manifest.updateArtifacts) ||
+    !Array.isArray(expectedUpdateFormats) ||
+    manifest.updateArtifacts.length !== expectedUpdateFormats.length ||
+    updateArtifacts.length !== expectedUpdateFormats.length
+  ) {
+    throw new Error("release update artifact set is incomplete");
+  }
+  for (let index = 0; index < expectedUpdateFormats.length; index += 1) {
+    const declared = manifest.updateArtifacts[index];
+    const actual = updateArtifacts[index];
+    assertExactKeys(
+      declared,
+      ["bytes", "fileName", "format", "sha256"],
+      "release update artifact",
+    );
+    if (
+      declared.format !== expectedUpdateFormats[index] ||
+      declared.fileName !== actual.fileName ||
+      declared.bytes !== actual.bytes ||
+      declared.sha256 !== actual.sha256 ||
+      !matchesUpdateArtifactFormat(declared.fileName, declared.format)
+    ) {
+      throw new Error(
+        "update artifact checksum or metadata does not match release manifest",
+      );
+    }
+  }
+  if (manifest.artifact.platform === "win32") {
+    validateSquirrelReleaseIndex(
+      await readFile(updateArtifactPaths[1], "utf8"),
+      updateArtifacts[0],
     );
   }
   if (
@@ -176,7 +226,14 @@ export async function verifyReleaseEvidence({
       "SBOM checksum or metadata does not match release manifest",
     );
   }
-  const expectedChecksums = `${artifact.sha256} *${basename(artifactPath)}\n${sbomSha256} *${basename(sbomPath)}\n${manifestSha256} *${basename(manifestPath)}\n`;
+  const expectedChecksums = [
+    { ...artifact, fileName: basename(artifactPath) },
+    ...updateArtifacts,
+    { sha256: sbomSha256, fileName: basename(sbomPath) },
+    { sha256: manifestSha256, fileName: basename(manifestPath) },
+  ]
+    .map((entry) => `${entry.sha256} *${entry.fileName}\n`)
+    .join("");
   if (checksumsText !== expectedChecksums) {
     throw new Error("checksum file is incomplete or does not match evidence");
   }
@@ -322,7 +379,7 @@ async function main() {
   ]) {
     if (argumentsByName[required] === undefined) {
       throw new Error(
-        "usage: verify-release-evidence.mjs --artifact <installer> --checksums <txt> --manifest <json> --policy <json> --sbom <json> [--publication]",
+        "usage: verify-release-evidence.mjs --artifact <installer> [--update-artifact <companion>]... --checksums <txt> --manifest <json> --policy <json> --sbom <json> [--publication]",
       );
     }
   }
@@ -336,6 +393,7 @@ async function main() {
     policySha256: sha256(policyText),
     publication: argumentsByName.publication === true,
     sbomPath: argumentsByName.sbom,
+    updateArtifactPaths: argumentsByName.updateArtifact ?? [],
   });
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
@@ -348,6 +406,15 @@ function parseArguments(args) {
       parsed.publication = true;
       continue;
     }
+    if (argument === "--update-artifact") {
+      if (args[index + 1] === undefined) {
+        throw new Error("invalid release evidence update artifact");
+      }
+      parsed.updateArtifact ??= [];
+      parsed.updateArtifact.push(args[index + 1]);
+      index += 1;
+      continue;
+    }
     if (!argument.startsWith("--") || args[index + 1] === undefined) {
       throw new Error(`invalid release evidence argument ${argument}`);
     }
@@ -357,9 +424,34 @@ function parseArguments(args) {
   return parsed;
 }
 
+function matchesUpdateArtifactFormat(fileName, format) {
+  if (format === "RELEASES") {
+    return fileName === "RELEASES";
+  }
+  return fileName.toLowerCase().endsWith(`.${format}`);
+}
+
+export function validateSquirrelReleaseIndex(indexText, nupkg) {
+  const line = indexText.replace(/^\uFEFF/, "").trim();
+  const match =
+    /^([0-9a-f]{40}) ([^/\\\s]+\.nupkg) ([1-9][0-9]*)$/i.exec(line);
+  if (
+    match === null ||
+    match[1].toLowerCase() !== nupkg.sha1 ||
+    match[2] !== nupkg.fileName ||
+    Number.parseInt(match[3], 10) !== nupkg.bytes
+  ) {
+    throw new Error("Squirrel RELEASES does not bind the exact nupkg");
+  }
+}
+
 async function identity(path) {
   const [content, metadata] = await Promise.all([readFile(path), stat(path)]);
-  return { bytes: metadata.size, sha256: sha256(content) };
+  return {
+    bytes: metadata.size,
+    sha1: createHash("sha1").update(content).digest("hex"),
+    sha256: sha256(content),
+  };
 }
 
 function assertConsumerReleasePolicy(policy) {

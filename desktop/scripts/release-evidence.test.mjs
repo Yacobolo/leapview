@@ -10,7 +10,10 @@ import {
   createReleaseManifest,
   validateReleasePolicy,
 } from "./release-evidence.mjs";
-import { verifyReleaseEvidence } from "./verify-release-evidence.mjs";
+import {
+  validateSquirrelReleaseIndex,
+  verifyReleaseEvidence,
+} from "./verify-release-evidence.mjs";
 
 const packageDocument = {
   name: "@leapview/desktop",
@@ -246,13 +249,40 @@ test("SPDX document covers every locked dependency and packaged runtime file", (
   );
 });
 
+test("Squirrel RELEASES binds the exact nupkg identity", () => {
+  const nupkg = {
+    bytes: 140201271,
+    fileName: "leapview-0.1.0-full.nupkg",
+    sha1: "7d0e39642527d2b6c790737cf73b77707f487461",
+  };
+  assert.doesNotThrow(() =>
+    validateSquirrelReleaseIndex(
+      "\uFEFF7D0E39642527D2B6C790737CF73B77707F487461 leapview-0.1.0-full.nupkg 140201271",
+      nupkg,
+    ),
+  );
+  assert.throws(
+    () =>
+      validateSquirrelReleaseIndex(
+        "7D0E39642527D2B6C790737CF73B77707F487461 leapview-0.1.0-full.nupkg 1",
+        nupkg,
+      ),
+    /exact nupkg/,
+  );
+});
+
 test("release evidence verification detects artifact, SBOM, and publication tampering", async () => {
   const directory = await mkdtemp(join(tmpdir(), "leapview-evidence-test-"));
   const artifactPath = join(directory, "LeapView-darwin-arm64-0.1.0.dmg");
+  const updateArtifactPath = join(
+    directory,
+    "LeapView-darwin-arm64-0.1.0.zip",
+  );
   const sbomPath = join(directory, "release.spdx.json");
   const manifestPath = join(directory, "release.json");
   const checksumsPath = join(directory, "checksums.txt");
   await writeFile(artifactPath, "candidate");
+  await writeFile(updateArtifactPath, "update-candidate");
 
   const files = [
     {
@@ -295,14 +325,36 @@ test("release evidence verification detects artifact, SBOM, and publication tamp
       dirty: false,
     },
     channel: "pull-request",
+    updateArtifactPaths: [updateArtifactPath],
   });
+  assert.deepEqual(manifest.updateArtifacts, [
+    {
+      fileName: basename(updateArtifactPath),
+      format: "zip",
+      bytes: 16,
+      sha256:
+        "75fd7b42226a9a5e50257a990d79770186e87e2891b035cc6c93de8a0422b757",
+    },
+  ]);
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   const manifestSha256 = createHash("sha256")
     .update(await readFile(manifestPath))
     .digest("hex");
+  const checksumsFor = (releaseManifestSha256) =>
+    [
+      manifest.artifact,
+      ...manifest.updateArtifacts,
+      manifest.sbom,
+      {
+        fileName: basename(manifestPath),
+        sha256: releaseManifestSha256,
+      },
+    ]
+      .map((identity) => `${identity.sha256} *${identity.fileName}\n`)
+      .join("");
   await writeFile(
     checksumsPath,
-    `${manifest.artifact.sha256} *${manifest.artifact.fileName}\n${manifest.sbom.sha256} *${manifest.sbom.fileName}\n${manifestSha256} *${basename(manifestPath)}\n`,
+    checksumsFor(manifestSha256),
   );
 
   await assert.doesNotReject(() =>
@@ -312,7 +364,19 @@ test("release evidence verification detects artifact, SBOM, and publication tamp
       manifestPath,
       policy,
       sbomPath,
+      updateArtifactPaths: [updateArtifactPath],
     }),
+  );
+  await assert.rejects(
+    () =>
+      verifyReleaseEvidence({
+        artifactPath,
+        checksumsPath,
+        manifestPath,
+        policy,
+        sbomPath,
+      }),
+    /update artifact set is incomplete/,
   );
   await assert.rejects(
     () =>
@@ -322,6 +386,7 @@ test("release evidence verification detects artifact, SBOM, and publication tamp
         manifestPath,
         policy: { ...policy, channel: "enterprise" },
         sbomPath,
+        updateArtifactPaths: [updateArtifactPath],
       }),
     /consumer release policy/,
   );
@@ -334,6 +399,7 @@ test("release evidence verification detects artifact, SBOM, and publication tamp
         policy,
         publication: true,
         sbomPath,
+        updateArtifactPaths: [updateArtifactPath],
       }),
     /signed release/,
   );
@@ -345,7 +411,7 @@ test("release evidence verification detects artifact, SBOM, and publication tamp
     .digest("hex");
   await writeFile(
     checksumsPath,
-    `${manifest.artifact.sha256} *${manifest.artifact.fileName}\n${manifest.sbom.sha256} *${manifest.sbom.fileName}\n${injectedManifestSha256} *${basename(manifestPath)}\n`,
+    checksumsFor(injectedManifestSha256),
   );
   await assert.rejects(
     () =>
@@ -355,6 +421,7 @@ test("release evidence verification detects artifact, SBOM, and publication tamp
         manifestPath,
         policy,
         sbomPath,
+        updateArtifactPaths: [updateArtifactPath],
       }),
     /unexpected fields/,
   );
@@ -376,7 +443,7 @@ test("release evidence verification detects artifact, SBOM, and publication tamp
     .digest("hex");
   await writeFile(
     checksumsPath,
-    `${manifest.artifact.sha256} *${manifest.artifact.fileName}\n${manifest.sbom.sha256} *${manifest.sbom.fileName}\n${inaccessibleManifestSha256} *${basename(manifestPath)}\n`,
+    checksumsFor(inaccessibleManifestSha256),
   );
   await assert.rejects(
     () =>
@@ -386,6 +453,7 @@ test("release evidence verification detects artifact, SBOM, and publication tamp
         manifestPath,
         policy,
         sbomPath,
+        updateArtifactPaths: [updateArtifactPath],
       }),
     /immutable release policy/,
   );
@@ -393,8 +461,22 @@ test("release evidence verification detects artifact, SBOM, and publication tamp
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   await writeFile(
     checksumsPath,
-    `${manifest.artifact.sha256} *${manifest.artifact.fileName}\n${manifest.sbom.sha256} *${manifest.sbom.fileName}\n${manifestSha256} *${basename(manifestPath)}\n`,
+    checksumsFor(manifestSha256),
   );
+  await writeFile(updateArtifactPath, "tampered");
+  await assert.rejects(
+    () =>
+      verifyReleaseEvidence({
+        artifactPath,
+        checksumsPath,
+        manifestPath,
+        policy,
+        sbomPath,
+        updateArtifactPaths: [updateArtifactPath],
+      }),
+    /update artifact checksum/,
+  );
+  await writeFile(updateArtifactPath, "update-candidate");
   await writeFile(artifactPath, "tampered");
   await assert.rejects(
     () =>
@@ -404,6 +486,7 @@ test("release evidence verification detects artifact, SBOM, and publication tamp
         manifestPath,
         policy,
         sbomPath,
+        updateArtifactPaths: [updateArtifactPath],
       }),
     /artifact checksum/,
   );

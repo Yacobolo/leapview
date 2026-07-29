@@ -174,24 +174,39 @@ jobs:
           artifact="$(find candidate/out/make -type f -name '*.${{ matrix.format }}' -print -quit)"
           manifest="$(find candidate/out/evidence -type f -name '*.release.json' -print -quit)"
           sbom="$(find candidate/out/evidence -type f -name '*.spdx.json' -print -quit)"
+          update_arguments=()
+          if [[ "$artifact" == *.dmg ]]; then
+            update_arguments+=(--update-artifact "$(find candidate/out/make -type f -name '*.zip' -print -quit)")
+          elif [[ "$artifact" == *.exe ]]; then
+            update_arguments+=(--update-artifact "$(find candidate/out/make -type f -name '*.nupkg' -print -quit)")
+            update_arguments+=(--update-artifact "$(find candidate/out/make -type f -name 'RELEASES' -print -quit)")
+          fi
           node candidate/out/evidence/verify-release-evidence.mjs \
             --artifact "$artifact" \
             --checksums candidate/out/evidence/checksums.txt \
             --manifest "$manifest" \
             --policy candidate/release-policy.json \
-            --sbom "$sbom"
+            --sbom "$sbom" \
+            "${update_arguments[@]}"
 
       - name: Attest candidate provenance
         uses: actions/attest@f6bf1532d7d6793fce74eac584813a8eee607999 # v4
         with:
           subject-path: |
             candidate/out/make/**/*.${{ matrix.format }}
+            candidate/out/make/**/*.zip
+            candidate/out/make/**/*.nupkg
+            candidate/out/make/**/RELEASES
             candidate/out/evidence/*.release.json
 
       - name: Attest candidate SBOM
         uses: actions/attest@f6bf1532d7d6793fce74eac584813a8eee607999 # v4
         with:
-          subject-path: candidate/out/make/**/*.${{ matrix.format }}
+          subject-path: |
+            candidate/out/make/**/*.${{ matrix.format }}
+            candidate/out/make/**/*.zip
+            candidate/out/make/**/*.nupkg
+            candidate/out/make/**/RELEASES
           sbom-path: candidate/out/evidence/*.spdx.json
 
   macos:

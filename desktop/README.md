@@ -75,7 +75,7 @@ each qualified target together with:
 - an SPDX 2.3 JSON SBOM covering the complete Bun lock graph, the embedded
   Electron, Chromium, and Node runtimes, and every file in the packaged
   application;
-- SHA-256 checksums for the candidate and SBOM;
+- SHA-256 checksums for the installer, every updater companion, and SBOM;
 - release metadata binding the candidate to the source commit, workflow
   revision and run, lockfile, package document, release policy, runtime
   versions, support floor, ASAR-only package, and exact Electron fuse state;
@@ -91,16 +91,24 @@ code-signing identities and installer signing gate are implemented.
 After downloading one candidate artifact from GitHub Actions, verify the local
 bundle from its root:
 
-```sh
+```bash
 artifact="$(find out/make -type f \\( -name '*.dmg' -o -name '*.exe' -o -name '*.deb' \\) -print -quit)"
 manifest="$(find out/evidence -type f -name '*.release.json' -print -quit)"
 sbom="$(find out/evidence -type f -name '*.spdx.json' -print -quit)"
+update_args=()
+if [[ "$artifact" == *.dmg ]]; then
+  update_args+=(--update-artifact "$(find out/make -type f -name '*.zip' -print -quit)")
+elif [[ "$artifact" == *.exe ]]; then
+  update_args+=(--update-artifact "$(find out/make -type f -name '*.nupkg' -print -quit)")
+  update_args+=(--update-artifact "$(find out/make -type f -name 'RELEASES' -print -quit)")
+fi
 node out/evidence/verify-release-evidence.mjs \
   --artifact "$artifact" \
   --checksums out/evidence/checksums.txt \
   --manifest "$manifest" \
   --policy release-policy.json \
-  --sbom "$sbom"
+  --sbom "$sbom" \
+  "${update_args[@]}"
 gh attestation verify "$artifact" --repo flidai/leapview
 gh attestation verify "$manifest" --repo flidai/leapview
 ```

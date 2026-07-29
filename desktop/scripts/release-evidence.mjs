@@ -301,9 +301,42 @@ export async function createReleaseManifest({
   policySha256,
   sbomPath,
   source,
+  updateArtifactPaths,
 }) {
   const artifact = await fileIdentity(artifactPath);
   const sbom = await fileIdentity(sbomPath);
+  const expectedUpdateFormats =
+    policy.distribution?.[packageVerification.platform]?.updateArtifacts;
+  if (
+    !Array.isArray(updateArtifactPaths) ||
+    !Array.isArray(expectedUpdateFormats) ||
+    updateArtifactPaths.length !== expectedUpdateFormats.length
+  ) {
+    throw new Error(
+      "release manifest requires every declared update artifact",
+    );
+  }
+  const updateArtifacts = await Promise.all(
+    updateArtifactPaths.map(async (path, index) => {
+      const identity = await fileIdentity(path);
+      return {
+        fileName: basename(path),
+        format: expectedUpdateFormats[index],
+        bytes: identity.bytes,
+        sha256: identity.sha256,
+      };
+    }),
+  );
+  if (
+    new Set(updateArtifacts.map((artifact) => artifact.fileName)).size !==
+      updateArtifacts.length ||
+    updateArtifacts.some(
+      (artifact) =>
+        !matchesUpdateArtifactFormat(artifact.fileName, artifact.format),
+    )
+  ) {
+    throw new Error("release update artifact identity is invalid");
+  }
   const support = policy.supportMatrix.find(
     (candidate) => candidate.platform === packageVerification.platform,
   );
@@ -316,7 +349,7 @@ export async function createReleaseManifest({
   assertPackageVerification(packageVerification, policy);
   validateSource(source);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     application: {
       name: packageDocument.productName,
       packageName: packageDocument.name,
@@ -334,6 +367,7 @@ export async function createReleaseManifest({
       bytes: artifact.bytes,
       sha256: artifact.sha256,
     },
+    updateArtifacts,
     sbom: {
       fileName: basename(sbomPath),
       format: "SPDX-2.3-json",
@@ -406,6 +440,20 @@ async function generate() {
       `expected exactly one ${packageFormat} installer, found ${artifacts.length}`,
     );
   }
+  const updateArtifactPaths = [];
+  for (const format of policy.distribution[
+    packageVerification.platform
+  ].updateArtifacts) {
+    const matches = await findFiles(join(out, "make"), (path) =>
+      matchesUpdateArtifactFormat(basename(path), format),
+    );
+    if (matches.length !== 1) {
+      throw new Error(
+        `expected exactly one ${format} update artifact, found ${matches.length}`,
+      );
+    }
+    updateArtifactPaths.push(matches[0]);
+  }
   const packageRoots = (await readdir(out, { withFileTypes: true }))
     .filter(
       (entry) =>
@@ -451,12 +499,17 @@ async function generate() {
     policySha256: sha256(policyText),
     sbomPath,
     source,
+    updateArtifactPaths,
   });
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   const manifestIdentity = await fileIdentity(manifestPath);
   await writeFile(
     checksumsPath,
-    `${manifest.artifact.sha256} *${manifest.artifact.fileName}\n${manifest.sbom.sha256} *${manifest.sbom.fileName}\n${manifestIdentity.sha256} *${basename(manifestPath)}\n`,
+    releaseChecksums(
+      manifest,
+      basename(manifestPath),
+      manifestIdentity.sha256,
+    ),
   );
   await copyFile(
     join(import.meta.dirname, "verify-release-evidence.mjs"),
@@ -469,10 +522,14 @@ async function generate() {
     policy,
     policySha256: sha256(policyText),
     sbomPath,
+    updateArtifactPaths,
   });
   process.stdout.write(
     `${JSON.stringify({
       artifact: relative(root, artifacts[0]).replaceAll("\\", "/"),
+      updateArtifacts: updateArtifactPaths.map((path) =>
+        relative(root, path).replaceAll("\\", "/"),
+      ),
       files: files.length,
       manifest: relative(root, manifestPath).replaceAll("\\", "/"),
       packages: sbom.packages.length,
@@ -480,6 +537,24 @@ async function generate() {
       status: "verified-unsigned-candidate",
     })}\n`,
   );
+}
+
+function releaseChecksums(manifest, manifestFileName, manifestSha256) {
+  return [
+    manifest.artifact,
+    ...manifest.updateArtifacts,
+    manifest.sbom,
+    { fileName: manifestFileName, sha256: manifestSha256 },
+  ]
+    .map((identity) => `${identity.sha256} *${identity.fileName}\n`)
+    .join("");
+}
+
+function matchesUpdateArtifactFormat(fileName, format) {
+  if (format === "RELEASES") {
+    return fileName === "RELEASES";
+  }
+  return fileName.toLowerCase().endsWith(`.${format}`);
 }
 
 function assertPackageVerification(verification, policy) {
