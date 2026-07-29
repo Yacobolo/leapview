@@ -68,7 +68,7 @@ jobs:
       - name: Install pinned WiX Toolset
         if: runner.os == 'Windows'
         shell: pwsh
-        run: choco install wixtoolset --version=3.14.0 --no-progress --yes
+        run: choco install wixtoolset --version=3.14.1.20250415 --no-progress --yes
 
       - name: Install Debian package tooling
         if: runner.os == 'Linux'

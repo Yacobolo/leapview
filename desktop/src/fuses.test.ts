@@ -80,3 +80,21 @@ test("production makers are machine-managed installers on each supported platfor
     },
   ]);
 });
+
+test("Debian packaging maps the packaged binary to the stable command name", async () => {
+  const maker = forgeConfig.makers?.find(
+    (candidate) => candidate.name === "deb",
+  );
+  expect(maker).toBeDefined();
+  await maker?.prepareConfig("x64");
+  expect(
+    (
+      maker as typeof maker & {
+        config: { options?: { bin?: string; name?: string } };
+      }
+    ).config.options,
+  ).toMatchObject({
+    bin: "LeapView",
+    name: "leapview-desktop",
+  });
+});

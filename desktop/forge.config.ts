@@ -103,6 +103,7 @@ const config: ForgeConfig = {
     new MakerDeb(
       {
         options: {
+          bin: "LeapView",
           categories: ["Office"],
           description:
             "End-user desktop client for deployed LeapView instances.",
