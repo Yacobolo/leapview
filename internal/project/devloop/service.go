@@ -1,0 +1,204 @@
+// Package devloop owns coherent local project builds and synchronization of the
+// last valid immutable result through an injected remote transport.
+package devloop
+
+import (
+	"context"
+	"fmt"
+	"path"
+	"sort"
+	"strings"
+	"sync"
+
+	"github.com/flidai/leapview/internal/platform/digest"
+)
+
+type Artifact struct {
+	Path    string
+	Digest  string
+	Content []byte
+}
+
+type Snapshot struct {
+	ProjectID string
+	Digest    string
+	Artifacts []Artifact
+}
+
+type Candidate struct {
+	ID             string
+	ProjectID      string
+	ArtifactDigest string
+	PreviewURL     string
+}
+
+type SyncRequest struct {
+	Snapshot               Snapshot
+	ExpectedArtifactDigest string
+}
+
+type Builder interface {
+	Build(context.Context) (Snapshot, error)
+}
+
+// Remote is a Project-owned port. Composition adapters may implement it with
+// Deployment APIs, but this package does not import Deployment or Release.
+type Remote interface {
+	Synchronize(context.Context, SyncRequest) (Candidate, error)
+}
+
+type Status string
+
+const (
+	StatusSynchronized Status = "synchronized"
+	StatusUnchanged    Status = "unchanged"
+	StatusInvalid      Status = "invalid"
+	StatusRetryable    Status = "retryable"
+)
+
+type Result struct {
+	Status    Status
+	Snapshot  Snapshot
+	Candidate Candidate
+}
+
+type Service struct {
+	mu        sync.Mutex
+	builder   Builder
+	remote    Remote
+	snapshot  Snapshot
+	candidate Candidate
+}
+
+func New(builder Builder, remote Remote) (*Service, error) {
+	if builder == nil || remote == nil {
+		return nil, fmt.Errorf("project dev loop requires builder and remote")
+	}
+	return &Service{builder: builder, remote: remote}, nil
+}
+
+// Reconcile builds a coherent snapshot before performing any remote mutation.
+// Invalid or failed builds leave the last synchronized candidate untouched.
+// The mutex also makes concurrent worktree/editor events idempotent inside one
+// process; the remote port owns cross-process optimistic concurrency.
+func (service *Service) Reconcile(ctx context.Context) (Result, error) {
+	if service == nil {
+		return Result{}, fmt.Errorf("project dev loop is not configured")
+	}
+	service.mu.Lock()
+	defer service.mu.Unlock()
+
+	snapshot, err := service.builder.Build(ctx)
+	if err != nil {
+		return service.result(StatusInvalid), err
+	}
+	snapshot, err = normalizeSnapshot(snapshot)
+	if err != nil {
+		return service.result(StatusInvalid), err
+	}
+	if service.candidate.ID != "" && snapshot.Digest == service.snapshot.Digest {
+		result := service.result(StatusUnchanged)
+		result.Snapshot = cloneSnapshot(snapshot)
+		return result, nil
+	}
+	request := SyncRequest{
+		Snapshot:               cloneSnapshot(snapshot),
+		ExpectedArtifactDigest: service.candidate.ArtifactDigest,
+	}
+	candidate, err := service.remote.Synchronize(ctx, request)
+	if err != nil {
+		result := service.result(StatusRetryable)
+		result.Snapshot = cloneSnapshot(snapshot)
+		return result, err
+	}
+	candidate, err = normalizeCandidate(candidate, snapshot)
+	if err != nil {
+		result := service.result(StatusRetryable)
+		result.Snapshot = cloneSnapshot(snapshot)
+		return result, err
+	}
+	service.snapshot = cloneSnapshot(snapshot)
+	service.candidate = candidate
+	return service.result(StatusSynchronized), nil
+}
+
+func (service *Service) result(status Status) Result {
+	return Result{
+		Status:    status,
+		Snapshot:  cloneSnapshot(service.snapshot),
+		Candidate: service.candidate,
+	}
+}
+
+func normalizeSnapshot(snapshot Snapshot) (Snapshot, error) {
+	snapshot.ProjectID = strings.TrimSpace(snapshot.ProjectID)
+	snapshot.Digest = strings.TrimSpace(snapshot.Digest)
+	if snapshot.ProjectID == "" || len(snapshot.Artifacts) == 0 {
+		return Snapshot{}, fmt.Errorf("project snapshot requires project and workspace artifacts")
+	}
+	if err := digest.ValidateSHA256Identity(snapshot.Digest); err != nil {
+		return Snapshot{}, fmt.Errorf("project snapshot digest is invalid: %w", err)
+	}
+	seen := make(map[string]struct{}, len(snapshot.Artifacts))
+	for index := range snapshot.Artifacts {
+		artifact := &snapshot.Artifacts[index]
+		artifact.Path = strings.TrimSpace(artifact.Path)
+		artifact.Digest = strings.TrimSpace(artifact.Digest)
+		if artifact.Path == "" || len(artifact.Content) == 0 {
+			return Snapshot{}, fmt.Errorf("project snapshot artifact requires path and content")
+		}
+		if path.IsAbs(artifact.Path) ||
+			path.Clean(artifact.Path) != artifact.Path ||
+			artifact.Path == ".." ||
+			strings.HasPrefix(artifact.Path, "../") ||
+			strings.Contains(artifact.Path, `\`) {
+			return Snapshot{}, fmt.Errorf("project artifact path %q is not a canonical relative path", artifact.Path)
+		}
+		if _, duplicate := seen[artifact.Path]; duplicate {
+			return Snapshot{}, fmt.Errorf("project snapshot repeats path %q", artifact.Path)
+		}
+		seen[artifact.Path] = struct{}{}
+		if err := digest.ValidateSHA256Identity(artifact.Digest); err != nil {
+			return Snapshot{}, fmt.Errorf("project artifact %q digest is invalid: %w", artifact.Path, err)
+		}
+		if actual := contentArtifact(artifact.Path, artifact.Content).Digest; artifact.Digest != actual {
+			return Snapshot{}, fmt.Errorf("project artifact %q content does not match digest", artifact.Path)
+		}
+	}
+	sort.Slice(snapshot.Artifacts, func(i, j int) bool {
+		return snapshot.Artifacts[i].Path < snapshot.Artifacts[j].Path
+	})
+	if actual := candidateSetDigest(snapshot.ProjectID, snapshot.Artifacts); snapshot.Digest != actual {
+		return Snapshot{}, fmt.Errorf("project snapshot content does not match candidate-set digest")
+	}
+	return cloneSnapshot(snapshot), nil
+}
+
+func normalizeCandidate(candidate Candidate, snapshot Snapshot) (Candidate, error) {
+	candidate.ID = strings.TrimSpace(candidate.ID)
+	candidate.ProjectID = strings.TrimSpace(candidate.ProjectID)
+	candidate.ArtifactDigest = strings.TrimSpace(candidate.ArtifactDigest)
+	candidate.PreviewURL = strings.TrimSpace(candidate.PreviewURL)
+	if candidate.ID == "" || candidate.PreviewURL == "" ||
+		candidate.ProjectID != snapshot.ProjectID ||
+		candidate.ArtifactDigest != snapshot.Digest {
+		return Candidate{}, fmt.Errorf("remote candidate does not match synchronized project snapshot")
+	}
+	return candidate, nil
+}
+
+func cloneSnapshot(snapshot Snapshot) Snapshot {
+	out := Snapshot{
+		ProjectID: snapshot.ProjectID,
+		Digest:    snapshot.Digest,
+		Artifacts: make([]Artifact, len(snapshot.Artifacts)),
+	}
+	for index, artifact := range snapshot.Artifacts {
+		out.Artifacts[index] = Artifact{
+			Path:    artifact.Path,
+			Digest:  artifact.Digest,
+			Content: append([]byte(nil), artifact.Content...),
+		}
+	}
+	return out
+}
