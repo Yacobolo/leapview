@@ -34,10 +34,23 @@ The protected `leapview-site-production` GitHub environment must provide:
 
 | Kind | Name | Purpose |
 | --- | --- | --- |
-| secret | `HCP_API_TOKEN` | HCP Terraform workspace state access |
-| secret | `HCLOUD_TOKEN` | Hetzner Cloud resource management |
-| secret | `SITE_SSH_PUBLIC_KEY` | Production deployment public key |
 | variable | `SITE_SSH_ALLOWED_CIDRS` | JSON list of restricted operator CIDRs |
+
+Production credentials live in the Infisical `leapview` project:
+
+| Environment/path | Secret | Purpose |
+| --- | --- | --- |
+| `prod:/hetzner-site/infrastructure` | `HCP_API_TOKEN` | HCP Terraform workspace state access |
+| `prod:/hetzner-site/infrastructure` | `HCLOUD_TOKEN` | Hetzner Cloud resource management |
+| `prod:/hetzner-site/operator` | `SITE_SSH_PRIVATE_KEY` | Production operator identity for routine site deployments |
+
+GitHub authenticates to Infisical with OIDC; there is no long-lived Infisical
+credential in GitHub. The machine identity is organization-level `no-access`,
+project-level `viewer`, and bound to the `flidai/leapview` repository plus the
+`leapview-site-production` GitHub environment. The current Infisical plan does
+not support a custom folder-scoped role, so the workflow additionally fetches
+only `/hetzner-site/infrastructure`. The non-secret operator public key is
+versioned in `operator-ssh-key.pub`.
 
 Configure required reviewers and prevent administrators from bypassing the
 environment gate. The workflow first creates and retains a readable and binary
@@ -78,11 +91,16 @@ package pinned by digest:
 LEAPVIEW_SITE_IMAGE='ghcr.io/flidai/leapview-site@sha256:<digest>' task site:deploy
 ```
 
-By default it connects to the reserved production IPv4 with
-`~/.ssh/leapview-site-production`. Override that path with
-`LEAPVIEW_SITE_SSH_KEY` when needed. The reviewed, non-secret SSH host-key
-fingerprint is stored in `ssh-host-key.sha256`; change it only after verifying
-a deliberate server replacement against the Hetzner control plane.
+The task uses the authenticated Infisical CLI session to inject
+`prod:/hetzner-site/operator/SITE_SSH_PRIVATE_KEY`. The operator writes it to a
+mode-0600 temporary file for the duration of the command and removes it on
+exit. For break-glass operation, invoke `scripts/deploy_site.sh` directly and
+set `LEAPVIEW_SITE_SSH_KEY` to a readable identity file; without either input,
+the script falls back to `~/.ssh/leapview-site-production`.
+
+The reviewed, non-secret SSH host-key fingerprint is stored in
+`ssh-host-key.sha256`; change it only after verifying a deliberate server
+replacement against the Hetzner control plane.
 
 The operator command scans the presented host key into a temporary
 `known_hosts` file, requires the exact reviewed fingerprint, installs the

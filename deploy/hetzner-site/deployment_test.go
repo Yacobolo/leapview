@@ -230,6 +230,8 @@ func TestOperatorDeploymentPinsTheServerIdentityAndQualifiesThePublicRoute(t *te
 		"StrictHostKeyChecking=yes",
 		"UserKnownHostsFile=",
 		"deploy/hetzner-site/ssh-host-key.sha256",
+		"SITE_SSH_PRIVATE_KEY",
+		"chmod 0600",
 		"/opt/leapview-site/deploy.sh",
 		"https://leapview.dev/healthz",
 		"https://leapview.dev/readyz",
@@ -253,6 +255,9 @@ func TestTaskExposesTheBoundedSiteDeployment(t *testing.T) {
 	for _, fragment := range []string{
 		"site:deploy:",
 		"vars: [LEAPVIEW_SITE_IMAGE]",
+		"infisical run",
+		"--path /hetzner-site/operator",
+		"--projectId c52a0183-fc82-4614-b437-c237a889d79c",
 		"./scripts/deploy_site.sh",
 	} {
 		requireContains(t, taskfile, fragment)
@@ -262,6 +267,7 @@ func TestTaskExposesTheBoundedSiteDeployment(t *testing.T) {
 func TestRemoteStateAndReviewedApplyWorkflow(t *testing.T) {
 	backend := readFile(t, "backend.tf")
 	workflow := readFile(t, filepath.Join("..", "..", ".github", "workflows", "site-infrastructure.yml"))
+	operatorPublicKey := readFile(t, "operator-ssh-key.pub")
 	for _, fragment := range []string{
 		`cloud {`,
 		`organization = "Flid"`,
@@ -282,14 +288,29 @@ func TestRemoteStateAndReviewedApplyWorkflow(t *testing.T) {
 		"terraform apply",
 		"terraform plan -detailed-exitcode",
 		"TF_TOKEN_app_terraform_io",
-		"secrets.HCP_API_TOKEN",
 		"TF_VAR_hcloud_token",
+		"id-token: write",
+		"Infisical/secrets-action@77ab1f4ccd183a543cb5b42435fbd181189f4995 # v1.0.16",
+		`method: "oidc"`,
+		`identity-id: "7e92da75-ac4f-49f2-8924-4561c3547902"`,
+		`oidc-audience: "https://github.com/flidai"`,
+		`project-slug: "leapview"`,
+		`env-slug: "prod"`,
+		`secret-path: "/hetzner-site/infrastructure"`,
+		"deploy/hetzner-site/operator-ssh-key.pub",
 	} {
 		requireContains(t, workflow, fragment)
+	}
+	if got := strings.Count(workflow, "Infisical/secrets-action@"); got != 2 {
+		t.Errorf("expected plan and apply to each fetch Infisical secrets, got %d uses", got)
+	}
+	if !strings.HasPrefix(operatorPublicKey, "ssh-ed25519 ") {
+		t.Errorf("operator public key must be a checked-in Ed25519 public key")
 	}
 	for _, forbidden := range []string{
 		"terraform destroy", "pull_request:", "-auto-approve",
 		"aws s3api", "TF_STATE_", "AWS_ENDPOINT_URL_S3",
+		"secrets.HCP_API_TOKEN", "secrets.HCLOUD_TOKEN", "secrets.SITE_SSH_PUBLIC_KEY",
 	} {
 		if strings.Contains(workflow, forbidden) {
 			t.Errorf("permanent infrastructure workflow contains forbidden fragment %q", forbidden)

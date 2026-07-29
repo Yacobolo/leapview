@@ -4,8 +4,21 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 site_image="${LEAPVIEW_SITE_IMAGE:?Set LEAPVIEW_SITE_IMAGE to an immutable ghcr.io/flidai/leapview-site digest}"
 site_host="${LEAPVIEW_SITE_HOST:-178.105.204.14}"
-identity_file="${LEAPVIEW_SITE_SSH_KEY:-${HOME}/.ssh/leapview-site-production}"
 fingerprint_file="$repo_root/deploy/hetzner-site/ssh-host-key.sha256"
+temporary_directory="$(mktemp -d)"
+cleanup() {
+  rm -rf "$temporary_directory"
+}
+trap cleanup EXIT
+
+identity_file="${LEAPVIEW_SITE_SSH_KEY:-}"
+if [[ -z "$identity_file" && -n "${SITE_SSH_PRIVATE_KEY:-}" ]]; then
+  identity_file="$temporary_directory/operator-identity"
+  printf '%s\n' "$SITE_SSH_PRIVATE_KEY" >"$identity_file"
+  chmod 0600 "$identity_file"
+  unset SITE_SSH_PRIVATE_KEY
+fi
+identity_file="${identity_file:-${HOME}/.ssh/leapview-site-production}"
 
 immutable_site_reference='^ghcr\.io/flidai/leapview-site@sha256:[0-9a-f]{64}$'
 if [[ ! "$site_image" =~ $immutable_site_reference ]]; then
@@ -29,12 +42,6 @@ for command in curl scp ssh ssh-keygen ssh-keyscan; do
 done
 
 expected_fingerprint="$(tr -d '[:space:]' <"$fingerprint_file")"
-temporary_directory="$(mktemp -d)"
-cleanup() {
-  rm -rf "$temporary_directory"
-}
-trap cleanup EXIT
-
 scanned_keys="$temporary_directory/scanned-host-keys"
 pinned_known_hosts="$temporary_directory/known-hosts"
 if ! ssh-keyscan -T 10 "$site_host" >"$scanned_keys" 2>"$temporary_directory/ssh-keyscan.log"; then
