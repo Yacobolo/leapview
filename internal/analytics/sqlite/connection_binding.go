@@ -18,6 +18,7 @@ type ConnectionBindingRepository struct {
 }
 
 var _ connectionbinding.Repository = (*ConnectionBindingRepository)(nil)
+var _ connectionbinding.BindingCatalog = (*ConnectionBindingRepository)(nil)
 
 func NewConnectionBindingRepository(database *sql.DB) *ConnectionBindingRepository {
 	return &ConnectionBindingRepository{q: analyticsdb.New(database)}
@@ -70,6 +71,32 @@ func (repository *ConnectionBindingRepository) Binding(
 		return connectionbinding.TargetBinding{}, err
 	}
 	return bindingFromDB(row)
+}
+
+func (repository *ConnectionBindingRepository) List(
+	ctx context.Context,
+	scope connectionbinding.BindingScope,
+	targetID string,
+) ([]connectionbinding.TargetBinding, error) {
+	if repository == nil || repository.q == nil {
+		return nil, connectionbinding.ErrBindingNotFound
+	}
+	rows, err := repository.q.ListTargetConnectionBindings(ctx, analyticsdb.ListTargetConnectionBindingsParams{
+		TargetID: strings.TrimSpace(targetID), WorkspaceID: strings.TrimSpace(scope.WorkspaceID),
+		Environment: strings.TrimSpace(scope.Environment),
+	})
+	if err != nil {
+		return nil, err
+	}
+	bindings := make([]connectionbinding.TargetBinding, 0, len(rows))
+	for _, row := range rows {
+		binding, err := bindingFromDB(row)
+		if err != nil {
+			return nil, err
+		}
+		bindings = append(bindings, binding)
+	}
+	return bindings, nil
 }
 
 func (repository *ConnectionBindingRepository) Save(

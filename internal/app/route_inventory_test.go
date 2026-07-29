@@ -84,7 +84,7 @@ func TestRouteInventory(t *testing.T) {
 		rows = append(rows, fmt.Sprintf("%s|%s|%s|%s", key, contract.owner, contract.access, contract.privilege))
 	}
 	sort.Strings(rows)
-	const expectedRouteContractDigest = "226c9eb4789afd61077427979c1a4a03a99d5fd931e93d75ec10f682f876d96b"
+	const expectedRouteContractDigest = "55d6a69d05dea1aba5d8a98f03d8f043ef3c092b70c2b1e71102889cd436e1ca"
 	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(rows, "\n"))))
 	if digest != expectedRouteContractDigest {
 		t.Fatalf("route ownership/auth contract changed: got digest %s\n%s", digest, strings.Join(rows, "\n"))
@@ -174,7 +174,8 @@ func nonAPIRouteMetadata(method, path string) (routeMetadata, bool) {
 func apiOwner(tags []string) (string, bool) {
 	owners := map[string]string{
 		"Access": "access", "Current User": "access", "Service Principals": "access",
-		"Agent": "agent", "BI": "dashboard", "Dashboards": "dashboard", "Publications": "dashboard",
+		"Connections": "analytics",
+		"Agent":       "agent", "BI": "dashboard", "Dashboards": "dashboard", "Publications": "dashboard",
 		"Deployments": "deployment", "Managed Data": "manageddata", "Refresh": "refresh",
 		"Releases": "release", "Projects": "release", "Workspaces": "workspace",
 		"Instance": "platform", "System": "platform",

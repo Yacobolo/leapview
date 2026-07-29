@@ -76,7 +76,7 @@ func TestAdministrationSeparatesMetadataAndRefreshAuthorization(t *testing.T) {
 	key := BindingKey{
 		Scope: binding.Scope, TargetID: binding.TargetID, LogicalConnectionID: binding.LogicalConnectionID,
 	}
-	if err := service.RefreshNow(context.Background(), "metadata-operator", key); !errors.Is(err, ErrUnauthorizedBinding) {
+	if _, err := service.RefreshNow(context.Background(), "metadata-operator", key); !errors.Is(err, ErrUnauthorizedBinding) {
 		t.Fatalf("RefreshNow() error = %v", err)
 	}
 	if pool.refreshes != 0 {
@@ -84,9 +84,77 @@ func TestAdministrationSeparatesMetadataAndRefreshAuthorization(t *testing.T) {
 	}
 }
 
+func TestAdministrationTestUsesCandidateRuntimePathAndDistinctAuditOperation(t *testing.T) {
+	binding := validTargetBinding(t)
+	repository := &administrationRepository{binding: binding}
+	pool := &administrationPool{}
+	service, err := NewAdministration(AdministrationConfig{
+		Repository:   repository,
+		Authorize:    allowAdministration,
+		Dependencies: staticDependencyInspector{},
+		Pools:        staticPoolDirectory{pool: pool},
+		Now:          time.Now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := BindingKey{
+		Scope: binding.Scope, TargetID: binding.TargetID, LogicalConnectionID: binding.LogicalConnectionID,
+	}
+
+	if _, err := service.Test(context.Background(), "operator-1", key); err != nil {
+		t.Fatal(err)
+	}
+	if len(pool.requests) != 1 {
+		t.Fatalf("test refresh requests = %#v", pool.requests)
+	}
+	request := pool.requests[0]
+	if request.Actor != "principal:operator-1" || request.Operation != RefreshTest {
+		t.Fatalf("test refresh request = %#v", request)
+	}
+}
+
+func TestAdministrationListsOnlyTheRequestedTargetScope(t *testing.T) {
+	binding := validTargetBinding(t)
+	second := binding
+	second.ID = "binding_reporting"
+	second.LogicalConnectionID = "reporting"
+	repository := &administrationRepository{binding: binding, bindings: []TargetBinding{second, binding}}
+	var authorized TargetBinding
+	service, err := NewAdministration(AdministrationConfig{
+		Repository: repository,
+		Authorize: func(_ context.Context, actor string, permission AdministrationPermission, binding TargetBinding) error {
+			if actor != "operator-1" || permission != PermissionManageConnectionMetadata {
+				return ErrUnauthorizedBinding
+			}
+			authorized = binding
+			return nil
+		},
+		Dependencies: staticDependencyInspector{},
+		Now:          time.Now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bindings, err := service.List(context.Background(), "operator-1", binding.Scope, binding.TargetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if authorized.TargetID != binding.TargetID || authorized.Scope != binding.Scope {
+		t.Fatalf("authorized scope = %#v", authorized)
+	}
+	if len(bindings) != 2 ||
+		bindings[0].LogicalConnectionID != second.LogicalConnectionID ||
+		bindings[1].LogicalConnectionID != binding.LogicalConnectionID {
+		t.Fatalf("listed bindings = %#v", bindings)
+	}
+}
+
 type administrationRepository struct {
-	binding TargetBinding
-	saves   int
+	binding  TargetBinding
+	bindings []TargetBinding
+	saves    int
 }
 
 func (repository *administrationRepository) Create(_ context.Context, binding TargetBinding) error {
@@ -101,6 +169,14 @@ func (repository *administrationRepository) Binding(
 	LogicalConnectionID,
 ) (TargetBinding, error) {
 	return repository.binding, nil
+}
+
+func (repository *administrationRepository) List(
+	context.Context,
+	BindingScope,
+	string,
+) ([]TargetBinding, error) {
+	return append([]TargetBinding(nil), repository.bindings...), nil
 }
 
 func (repository *administrationRepository) Save(
@@ -130,10 +206,12 @@ func (inspector staticDependencyInspector) Dependents(context.Context, TargetBin
 
 type administrationPool struct {
 	refreshes int
+	requests  []RefreshRequest
 }
 
-func (pool *administrationPool) Refresh(context.Context, RefreshRequest) error {
+func (pool *administrationPool) Refresh(_ context.Context, request RefreshRequest) error {
 	pool.refreshes++
+	pool.requests = append(pool.requests, request)
 	return nil
 }
 

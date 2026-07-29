@@ -44,6 +44,11 @@
       "summary": "Dashboard and semantic model read APIs."
     },
     {
+      "slug": "connections",
+      "title": "Connections",
+      "summary": "Target-owned logical connection bindings, tests, refreshes, and redacted health."
+    },
+    {
       "slug": "deployments",
       "title": "Deployments",
       "summary": "Atomic project release deployment."

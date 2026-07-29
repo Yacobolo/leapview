@@ -96,6 +96,46 @@ func TestConnectionBindingRepositoryUsesOptimisticRevisionAndUniqueTargetScope(t
 	}
 }
 
+func TestConnectionBindingRepositoryListsOnlyRequestedTargetScope(t *testing.T) {
+	ctx := context.Background()
+	store, err := platform.Open(ctx, filepath.Join(t.TempDir(), "leapview.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	repository := NewConnectionBindingRepository(store.SQLDB())
+	first := testTargetBinding(t)
+	second := first
+	second.ID = "binding_reporting"
+	second.LogicalConnectionID = "reporting"
+	for _, binding := range []connectionbinding.TargetBinding{first, second} {
+		if err := repository.Create(ctx, binding); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	bindings, err := repository.List(ctx, first.Scope, first.TargetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bindings) != 2 ||
+		bindings[0].LogicalConnectionID != second.LogicalConnectionID ||
+		bindings[1].LogicalConnectionID != first.LogicalConnectionID {
+		t.Fatalf("listed bindings = %#v", bindings)
+	}
+	other, err := repository.List(
+		ctx,
+		connectionbinding.BindingScope{WorkspaceID: "sales", Environment: "dev"},
+		first.TargetID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(other) != 0 {
+		t.Fatalf("other-scope bindings = %#v", other)
+	}
+}
+
 func testTargetBinding(t *testing.T) connectionbinding.TargetBinding {
 	t.Helper()
 	binding, err := connectionbinding.NewTargetBinding(connectionbinding.TargetBindingInput{

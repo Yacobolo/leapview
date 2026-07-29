@@ -16,6 +16,14 @@ WHERE target_id = ?
   AND environment = ?
   AND logical_connection_id = ?;
 
+-- name: ListTargetConnectionBindings :many
+SELECT *
+FROM target_connection_bindings
+WHERE target_id = ?
+  AND workspace_id = ?
+  AND environment = ?
+ORDER BY logical_connection_id ASC;
+
 -- name: UpdateTargetConnectionBinding :execrows
 UPDATE target_connection_bindings
 SET endpoint_json = ?,

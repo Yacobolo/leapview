@@ -52,8 +52,13 @@ type AdministrationPoolDirectory interface {
 	Pool(bindingID string) (AdministrationPool, error)
 }
 
+type BindingCatalog interface {
+	Repository
+	List(context.Context, BindingScope, string) ([]TargetBinding, error)
+}
+
 type AdministrationConfig struct {
-	Repository   Repository
+	Repository   BindingCatalog
 	Authorize    AdministrationAuthorizer
 	Dependencies DependencyInspector
 	Pools        AdministrationPoolDirectory
@@ -61,7 +66,7 @@ type AdministrationConfig struct {
 }
 
 type Administration struct {
-	repository   Repository
+	repository   BindingCatalog
 	authorize    AdministrationAuthorizer
 	dependencies DependencyInspector
 	pools        AdministrationPoolDirectory
@@ -106,6 +111,49 @@ func (service *Administration) Create(
 	}
 	if err := service.repository.Create(ctx, binding); err != nil {
 		return TargetBinding{}, err
+	}
+	return binding, nil
+}
+
+func (service *Administration) List(
+	ctx context.Context,
+	actorID string,
+	scope BindingScope,
+	targetID string,
+) ([]TargetBinding, error) {
+	if service == nil {
+		return nil, ErrProviderUnavailable
+	}
+	targetID = strings.TrimSpace(targetID)
+	authorizationScope := TargetBinding{TargetID: targetID, Scope: scope}
+	if err := service.authorize(
+		ctx, strings.TrimSpace(actorID), PermissionManageConnectionMetadata, authorizationScope,
+	); err != nil {
+		return nil, ErrUnauthorizedBinding
+	}
+	bindings, err := service.repository.List(ctx, scope, targetID)
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(bindings, func(i, j int) bool {
+		return bindings[i].LogicalConnectionID < bindings[j].LogicalConnectionID
+	})
+	return bindings, nil
+}
+
+func (service *Administration) Get(
+	ctx context.Context,
+	actorID string,
+	key BindingKey,
+) (TargetBinding, error) {
+	binding, err := service.binding(ctx, key)
+	if err != nil {
+		return TargetBinding{}, err
+	}
+	if err := service.authorize(
+		ctx, strings.TrimSpace(actorID), PermissionManageConnectionMetadata, binding,
+	); err != nil {
+		return TargetBinding{}, ErrUnauthorizedBinding
 	}
 	return binding, nil
 }
@@ -199,24 +247,51 @@ func (service *Administration) UpdateConfiguration(
 	return service.repository.Save(ctx, updated, binding.Revision)
 }
 
-func (service *Administration) RefreshNow(ctx context.Context, actorID string, key BindingKey) error {
+func (service *Administration) RefreshNow(
+	ctx context.Context,
+	actorID string,
+	key BindingKey,
+) (BindingHealthStatus, error) {
+	return service.refresh(ctx, actorID, key, RefreshRequested)
+}
+
+// Test resolves and validates a fresh credential snapshot through the same
+// candidate pool path as rotation. A successful test can therefore promote
+// the validated replacement without exposing credentials or accepting SQL.
+func (service *Administration) Test(
+	ctx context.Context,
+	actorID string,
+	key BindingKey,
+) (BindingHealthStatus, error) {
+	return service.refresh(ctx, actorID, key, RefreshTest)
+}
+
+func (service *Administration) refresh(
+	ctx context.Context,
+	actorID string,
+	key BindingKey,
+	operation RefreshOperation,
+) (BindingHealthStatus, error) {
 	binding, err := service.binding(ctx, key)
 	if err != nil {
-		return err
+		return BindingHealthStatus{}, err
 	}
 	if err := service.authorize(ctx, strings.TrimSpace(actorID), PermissionTestConnection, binding); err != nil {
-		return ErrUnauthorizedBinding
+		return BindingHealthStatus{}, ErrUnauthorizedBinding
 	}
 	if service.pools == nil {
-		return ErrProviderUnavailable
+		return BindingHealthStatus{}, ErrProviderUnavailable
 	}
 	pool, err := service.pools.Pool(binding.ID)
 	if err != nil {
-		return err
+		return BindingHealthStatus{}, err
 	}
-	return pool.Refresh(ctx, RefreshRequest{
-		Actor: "principal:" + strings.TrimSpace(actorID), Operation: RefreshRequested,
-	})
+	if err := pool.Refresh(ctx, RefreshRequest{
+		Actor: "principal:" + strings.TrimSpace(actorID), Operation: operation,
+	}); err != nil {
+		return pool.HealthStatus(), err
+	}
+	return pool.HealthStatus(), nil
 }
 
 func (service *Administration) Health(

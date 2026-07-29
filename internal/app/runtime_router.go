@@ -461,10 +461,63 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	queryAuditAPI := analyticsmodule.QueryAuditAPIGenConfig{
-		Reader: runtime.queryAuditProvider,
-		WorkspaceID: func(value string) string {
-			return workspaceID(routes, runtime, platform, policy, value)
+	var connectionAdministration analyticsmodule.ConnectionBindingAdministration
+	if runtime.analyticsModule != nil {
+		administration, err := runtime.analyticsModule.NewConnectionAdministration(
+			analyticsmodule.ConnectionAdministrationConfig{
+				Authorize: func(
+					ctx context.Context,
+					principalID string,
+					permission analyticsmodule.ConnectionAdministrationPermission,
+					binding analyticsmodule.ConnectionTargetBinding,
+				) error {
+					var privilege accessmodule.Privilege
+					switch permission {
+					case analyticsmodule.PermissionManageConnectionMetadata:
+						privilege = accessmodule.PrivilegeManageConnectionMetadata
+					case analyticsmodule.PermissionTestConnection:
+						privilege = accessmodule.PrivilegeTestConnection
+					case analyticsmodule.PermissionViewConnectionHealth:
+						privilege = accessmodule.PrivilegeViewConnectionHealth
+					default:
+						return analyticsmodule.ErrConnectionBindingUnauthorized
+					}
+					allowed, err := routes.accessModule.AuthorizeObject(
+						ctx,
+						principalID,
+						privilege,
+						accessmodule.WorkspaceObject(binding.Scope.WorkspaceID),
+					)
+					if err != nil {
+						return err
+					}
+					if !allowed {
+						return analyticsmodule.ErrConnectionBindingUnauthorized
+					}
+					return nil
+				},
+				Dependencies: connectionBindingDependenciesWithoutConsumers{},
+				Now:          time.Now,
+			},
+		)
+		if err != nil && !errors.Is(err, analyticsmodule.ErrConnectionAdministrationUnavailable) {
+			return err
+		}
+		connectionAdministration = administration
+	}
+	analyticsAPI := analyticsmodule.AnalyticsAPIGenConfig{
+		QueryAudit: analyticsmodule.QueryAuditAPIGenConfig{
+			Reader: runtime.queryAuditProvider,
+			WorkspaceID: func(value string) string {
+				return workspaceID(routes, runtime, platform, policy, value)
+			},
+		},
+		Connections: analyticsmodule.ConnectionBindingAPIGenConfig{
+			Administration: connectionAdministration,
+			CurrentPrincipal: func(r *http.Request) (string, bool) {
+				principal, ok := routes.accessModule.CurrentPrincipal(r)
+				return principal.ID, ok
+			},
 		},
 	}
 	var apiDispatcher *apiGenDispatcher
@@ -813,7 +866,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				if routes.agentModule != nil && routes.agentModule.DispatchAPIGenOperation(operationID, writer, request, platform.logger) {
 					return true
 				}
-				if analyticsmodule.DispatchQueryAuditAPIGenOperation(queryAuditAPI, operationID, platform.logger, writer, request) {
+				if analyticsmodule.DispatchAPIGenOperation(analyticsAPI, operationID, platform.logger, writer, request) {
 					return true
 				}
 				if routes.releaseModule != nil && projecthttp.DispatchAPIGenOperation(operationID, routes.releaseModule, platform.logger, writer, request) {
@@ -984,7 +1037,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		return fmt.Errorf("build Agent APIGen transport: %w", err)
 	}
 	analyticsAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
-		return analyticsmodule.DispatchQueryAuditAPIGenOperation(queryAuditAPI, operationID, platform.logger, w, r)
+		return analyticsmodule.DispatchAPIGenOperation(analyticsAPI, operationID, platform.logger, w, r)
 	})
 	if err != nil {
 		return fmt.Errorf("build Analytics APIGen transport: %w", err)

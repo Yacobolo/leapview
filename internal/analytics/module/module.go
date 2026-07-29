@@ -14,6 +14,7 @@ import (
 	queryauditsqlite "github.com/flidai/leapview/internal/analytics/queryaudit/sqlite"
 	"github.com/flidai/leapview/internal/analytics/resource"
 	"github.com/flidai/leapview/internal/analytics/resultcache"
+	analyticssqlite "github.com/flidai/leapview/internal/analytics/sqlite"
 	storagemaintenance "github.com/flidai/leapview/internal/servingstate/retention"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -94,11 +95,12 @@ func (s *QueryAuditSurface) Recorder() queryaudit.Recorder {
 }
 
 type Module struct {
-	environment     *analyticsducklake.Environment
-	cache           *resultcache.Pool
-	queryAudit      queryaudit.Repository
-	credentials     analyticsduckdb.CredentialResolver
-	targetResolvers connectionbinding.ResolverSet
+	environment        *analyticsducklake.Environment
+	cache              *resultcache.Pool
+	queryAudit         queryaudit.Repository
+	connectionBindings connectionbinding.BindingCatalog
+	credentials        analyticsduckdb.CredentialResolver
+	targetResolvers    connectionbinding.ResolverSet
 }
 
 func Build(ctx context.Context, config Config) (*Module, error) {
@@ -128,13 +130,28 @@ func Build(ctx context.Context, config Config) (*Module, error) {
 		return nil, err
 	}
 	var queryAudit queryaudit.Repository
+	var connectionBindings connectionbinding.BindingCatalog
 	if config.Database != nil {
 		queryAudit = queryauditsqlite.NewRepository(config.Database)
+		connectionBindings = analyticssqlite.NewConnectionBindingRepository(config.Database)
 	}
 	return &Module{
 		environment: environment, cache: cache, queryAudit: queryAudit,
-		credentials: credentials, targetResolvers: targetResolvers,
+		connectionBindings: connectionBindings,
+		credentials:        credentials, targetResolvers: targetResolvers,
 	}, nil
+}
+
+func (m *Module) NewConnectionAdministration(
+	config ConnectionAdministrationConfig,
+) (*connectionbinding.Administration, error) {
+	if m == nil || m.connectionBindings == nil {
+		return nil, connectionbinding.ErrProviderUnavailable
+	}
+	return connectionbinding.NewAdministration(connectionbinding.AdministrationConfig{
+		Repository: m.connectionBindings, Authorize: connectionbinding.AdministrationAuthorizer(config.Authorize),
+		Dependencies: config.Dependencies, Pools: config.Pools, Now: config.Now,
+	})
 }
 
 func buildCredentialResolver(config Config) (analyticsduckdb.CredentialResolver, error) {

@@ -11,6 +11,7 @@ type RefreshOperation string
 const (
 	RefreshScheduled RefreshOperation = "credential.refresh.scheduled"
 	RefreshRequested RefreshOperation = "credential.refresh.requested"
+	RefreshTest      RefreshOperation = "credential.test.requested"
 )
 
 type RotationOutcome string
@@ -31,7 +32,9 @@ func (request RefreshRequest) valid() bool {
 	if request.Actor == "" || len(request.Actor) > 256 {
 		return false
 	}
-	return request.Operation == RefreshScheduled || request.Operation == RefreshRequested
+	return request.Operation == RefreshScheduled ||
+		request.Operation == RefreshRequested ||
+		request.Operation == RefreshTest
 }
 
 type RotationAuditEvent struct {

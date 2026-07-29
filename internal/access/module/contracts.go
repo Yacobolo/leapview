@@ -14,8 +14,11 @@ type ObjectResolver = httpauth.ObjectResolver
 type AuditEventInput = access.AuditEventInput
 
 const (
-	PrivilegeViewItem = access.PrivilegeViewItem
-	PrivilegeDeploy   = access.PrivilegeDeploy
+	PrivilegeViewItem                 = access.PrivilegeViewItem
+	PrivilegeDeploy                   = access.PrivilegeDeploy
+	PrivilegeManageConnectionMetadata = access.PrivilegeManageConnectionMetadata
+	PrivilegeTestConnection           = access.PrivilegeTestConnection
+	PrivilegeViewConnectionHealth     = access.PrivilegeViewConnectionHealth
 )
 
 func ParsePrivilege(value string) (Privilege, bool) {
