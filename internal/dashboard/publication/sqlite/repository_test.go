@@ -70,6 +70,56 @@ func TestReconcilePreservesPublicIDAcrossCutoverRemovalAndReAdd(t *testing.T) {
 	}
 }
 
+func TestReconcileRollsBackAccessPrincipalWhenDashboardWriteFails(t *testing.T) {
+	ctx := context.Background()
+	store, err := platform.Open(ctx, t.TempDir()+"/platform.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	db := store.SQLDB()
+	seedPublicationWorkspace(t, db)
+	if _, err := db.ExecContext(ctx, `CREATE TRIGGER reject_dashboard_publication
+BEFORE INSERT ON dashboard_publications
+BEGIN
+	SELECT RAISE(ABORT, 'injected dashboard persistence failure');
+END`); err != nil {
+		t.Fatal(err)
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := publication.ReconcileInput{
+		ProjectID: "site", WorkspaceID: "visuals", ServingStateID: "state_1", ActorID: "owner",
+		Publications: map[string]publication.Definition{"website": testCompiledPublication("digest-1")},
+	}
+	if err := ReconcileTx(ctx, tx, input, accesssqlite.ActivateDashboardPublicationPrincipalTx); err == nil {
+		_ = tx.Rollback()
+		t.Fatal("reconcile succeeded despite injected Dashboard persistence failure")
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+
+	principalID := access.DashboardPublicationSubjectID("visuals", "website")
+	var principals int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM principals WHERE id = ?`, principalID).Scan(&principals); err != nil {
+		t.Fatal(err)
+	}
+	if principals != 0 {
+		t.Fatalf("publication principals after rollback = %d, want 0", principals)
+	}
+	var publications int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM dashboard_publications`).Scan(&publications); err != nil {
+		t.Fatal(err)
+	}
+	if publications != 0 {
+		t.Fatalf("dashboard publications after rollback = %d, want 0", publications)
+	}
+}
+
 func TestSuspensionAlwaysWinsUntilExplicitResumeAndRotationInvalidatesOldID(t *testing.T) {
 	ctx := context.Background()
 	store, err := platform.Open(ctx, t.TempDir()+"/platform.db")
@@ -193,7 +243,7 @@ func reconcilePublications(t *testing.T, ctx context.Context, db *sql.DB, input 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ReconcileTx(ctx, tx, input); err != nil {
+	if err := ReconcileTx(ctx, tx, input, accesssqlite.ActivateDashboardPublicationPrincipalTx); err != nil {
 		_ = tx.Rollback()
 		t.Fatal(err)
 	}

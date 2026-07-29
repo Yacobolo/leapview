@@ -16,8 +16,8 @@ sql:
     schema: "internal/platform/migrations"
     gen:
       go:
-        package: "querydb"
-        out: "internal/analytics/queryaudit/sqlite/querydb"
+        package: "db"
+        out: "internal/analytics/internal/db"
         emit_json_tags: true
         emit_empty_slices: true
         omit_unused_structs: true
@@ -27,8 +27,8 @@ sql:
     schema: "internal/platform/migrations"
     gen:
       go:
-        package: "retentiondb"
-        out: "internal/admin/sqlite/retentiondb"
+        package: "db"
+        out: "internal/admin/internal/db"
         emit_json_tags: true
         emit_empty_slices: true
         omit_unused_structs: true
@@ -38,8 +38,8 @@ sql:
     schema: "internal/platform/migrations"
     gen:
       go:
-        package: "accessdb"
-        out: "internal/access/sqlite/accessdb"
+        package: "db"
+        out: "internal/access/internal/db"
         emit_json_tags: true
         emit_empty_slices: true
         omit_unused_structs: true
@@ -49,8 +49,8 @@ sql:
     schema: "internal/platform/migrations"
     gen:
       go:
-        package: "agentdb"
-        out: "internal/agent/sqlite/agentdb"
+        package: "db"
+        out: "internal/agent/internal/db"
         emit_json_tags: true
         emit_empty_slices: true
         omit_unused_structs: true
@@ -67,23 +67,12 @@ sql:
         omit_unused_structs: true
 
   - engine: "sqlite"
-    queries: "internal/refresh/sqlite/schedulequeries"
-    schema: "internal/platform/migrations"
-    gen:
-      go:
-        package: "refreshdb"
-        out: "internal/refresh/sqlite/refreshdb"
-        emit_json_tags: true
-        emit_empty_slices: true
-        omit_unused_structs: true
-
-  - engine: "sqlite"
     queries: "internal/release/sqlite/queries"
     schema: "internal/platform/migrations"
     gen:
       go:
-        package: "releasedb"
-        out: "internal/release/sqlite/releasedb"
+        package: "db"
+        out: "internal/release/internal/db"
         emit_json_tags: true
         emit_empty_slices: true
         omit_unused_structs: true
@@ -117,8 +106,8 @@ sql:
     schema: "internal/platform/migrations"
     gen:
       go:
-        package: "materializedb"
-        out: "internal/refresh/sqlite/materializedb"
+        package: "db"
+        out: "internal/refresh/internal/db"
         emit_json_tags: true
         emit_empty_slices: true
         omit_unused_structs: true
@@ -128,8 +117,8 @@ sql:
     schema: "internal/platform/migrations"
     gen:
       go:
-        package: "workspacedb"
-        out: "internal/workspace/sqlite/workspacedb"
+        package: "db"
+        out: "internal/workspace/internal/db"
         emit_json_tags: true
         emit_empty_slices: true
         omit_unused_structs: true
@@ -139,8 +128,8 @@ sql:
     schema: "internal/platform/migrations"
     gen:
       go:
-        package: "manageddb"
-        out: "internal/manageddata/sqlite/manageddb"
+        package: "db"
+        out: "internal/manageddata/internal/db"
         emit_json_tags: true
         emit_empty_slices: true
         omit_unused_structs: true
@@ -150,8 +139,8 @@ sql:
     schema: "internal/platform/migrations"
     gen:
       go:
-        package: "deploymentdb"
-        out: "internal/deployment/sqlite/deploymentdb"
+        package: "db"
+        out: "internal/deployment/internal/db"
         emit_json_tags: true
         emit_empty_slices: true
         omit_unused_structs: true
@@ -161,8 +150,21 @@ sql:
     schema: "internal/platform/migrations"
     gen:
       go:
-        package: "servingdb"
-        out: "internal/servingstate/sqlite/servingdb"
+        package: "db"
+        out: "internal/servingstate/internal/db"
+        emit_json_tags: true
+        emit_empty_slices: true
+        omit_unused_structs: true
+
+  - engine: "sqlite"
+    queries:
+      - "internal/dashboard/publication/sqlite/queries"
+      - "internal/dashboard/session/sqlite/queries"
+    schema: "internal/platform/migrations"
+    gen:
+      go:
+        package: "db"
+        out: "internal/dashboard/internal/db"
         emit_json_tags: true
         emit_empty_slices: true
         omit_unused_structs: true

@@ -249,7 +249,7 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 					ProjectID: input.ProjectID, WorkspaceID: input.WorkspaceID,
 					ServingStateID: input.ServingStateID, ActorID: input.ActorID,
 					Publications: input.Publications,
-				})
+				}, accessmodule.ActivateDashboardPublicationPrincipal)
 			},
 		},
 	}

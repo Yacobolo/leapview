@@ -5,7 +5,7 @@ import (
 	"database/sql"
 
 	"github.com/Yacobolo/leapview/internal/release"
-	platformdb "github.com/Yacobolo/leapview/internal/release/sqlite/releasedb"
+	platformdb "github.com/Yacobolo/leapview/internal/release/internal/db"
 )
 
 func (r *Repository) ListProjects(ctx context.Context) ([]release.ProjectRecord, error) {

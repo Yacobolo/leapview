@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/access"
-	platformdb "github.com/Yacobolo/leapview/internal/access/sqlite/accessdb"
+	platformdb "github.com/Yacobolo/leapview/internal/access/internal/db"
 )
 
 func (r *Repository) BootstrapAdmin(ctx context.Context, workspaceID, email string) error {

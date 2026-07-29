@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/Yacobolo/leapview/internal/manageddata"
+	platformdb "github.com/Yacobolo/leapview/internal/manageddata/internal/db"
 	"github.com/Yacobolo/leapview/internal/manageddata/maintenance"
-	platformdb "github.com/Yacobolo/leapview/internal/manageddata/sqlite/manageddb"
 	"github.com/Yacobolo/leapview/internal/manageddata/storage"
 )
 

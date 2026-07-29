@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/Yacobolo/leapview/internal/access"
+	platformdb "github.com/Yacobolo/leapview/internal/access/internal/db"
 	accesssnapshot "github.com/Yacobolo/leapview/internal/access/snapshot"
-	platformdb "github.com/Yacobolo/leapview/internal/access/sqlite/accessdb"
 	"github.com/Yacobolo/leapview/internal/platform/transaction"
 )
 
