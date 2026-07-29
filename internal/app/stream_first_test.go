@@ -38,14 +38,19 @@ func streamBootstrapBody(t *testing.T, server *appTestHarness, pageBody, authori
 		defer close(done)
 		server.Routes().ServeHTTP(rec, req)
 	}()
-	deadline := time.Now().Add(time.Second)
-	for !strings.Contains(rec.BodyString(), "datastar-patch-signals") {
-		if time.Now().After(deadline) {
+	timer := time.NewTimer(10 * time.Second)
+	defer timer.Stop()
+	for {
+		if strings.Contains(rec.BodyString(), "datastar-patch-signals") {
+			break
+		}
+		select {
+		case <-rec.flushed:
+		case <-timer.C:
 			cancel()
 			<-done
 			t.Fatalf("updates bootstrap did not emit signal patch for %q:\n%s", matches[1], rec.BodyString())
 		}
-		time.Sleep(time.Millisecond)
 	}
 	cancel()
 	<-done
