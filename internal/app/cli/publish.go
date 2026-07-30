@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -78,6 +79,9 @@ func (operations projectPublishOperations) Publish(
 				response.Body.Id,
 			)
 		}
+		if options.Format == "json" {
+			return writePublicationResult(out, response.Body, checkpoint)
+		}
 		fmt.Fprintf(out, "publish request %s pending approval\n", response.Body.Id)
 		writePublicationEvidence(out, response.Body)
 		return nil
@@ -90,6 +94,9 @@ func (operations projectPublishOperations) Publish(
 	if err != nil {
 		return err
 	}
+	if options.Format == "json" {
+		return writePublicationResult(out, deployment, checkpoint)
+	}
 	fmt.Fprintf(
 		out,
 		"published %s deployment %s\n",
@@ -98,6 +105,49 @@ func (operations projectPublishOperations) Publish(
 	)
 	writePublicationEvidence(out, deployment)
 	return nil
+}
+
+func writePublicationResult(
+	out io.Writer,
+	deployment deploymentgen.DeploymentResponse,
+	checkpoint projectcli.CandidateCheckpoint,
+) error {
+	sourceRevision := ""
+	if deployment.Evidence.SourceRevision != nil {
+		sourceRevision = deployment.Evidence.SourceRevision.Revision
+	}
+	candidateID := deployment.Evidence.CandidateId
+	if candidateID == "" {
+		candidateID = checkpoint.CandidateID
+	}
+	candidateRevision := deployment.Evidence.CandidateRevision
+	if candidateRevision == 0 {
+		candidateRevision = checkpoint.CandidateRevision
+	}
+	targetID := deployment.Evidence.TargetId
+	if targetID == "" {
+		targetID = checkpoint.TargetID
+	}
+	artifactDigest := deployment.Evidence.ArtifactDigest
+	if artifactDigest == "" {
+		artifactDigest = checkpoint.ArtifactDigest
+	}
+	releaseDigest := deployment.Evidence.ReleaseDigest
+	if releaseDigest == "" {
+		releaseDigest = checkpoint.ProvenanceDigest
+	}
+	return json.NewEncoder(out).Encode(projectcli.PublishResult{
+		SchemaVersion:     1,
+		DeploymentID:      deployment.Id,
+		Status:            string(deployment.Status),
+		CandidateID:       candidateID,
+		CandidateRevision: candidateRevision,
+		TargetID:          targetID,
+		PrincipalID:       deployment.CreatedBy,
+		ArtifactDigest:    artifactDigest,
+		ReleaseDigest:     releaseDigest,
+		SourceRevision:    sourceRevision,
+	})
 }
 
 func writePublicationEvidence(

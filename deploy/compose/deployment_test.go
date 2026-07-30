@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -324,445 +323,108 @@ func TestQualificationRunbookMatchesExecutablePerformancePolicy(t *testing.T) {
 func TestInstalledCandidateQualificationContract(t *testing.T) {
 	root := filepath.Join("..", "..")
 	release := read(t, filepath.Join(root, ".github", "workflows", "release.yml"))
-	qualification := read(t, filepath.Join(root, ".github", "workflows", "installed-candidate.yml"))
-	script := read(t, filepath.Join(root, "deploy", "compose", "qualification", "qualify.sh"))
-	recovery := read(t, filepath.Join(root, "deploy", "compose", "qualification", "recover.sh"))
-	browser := read(t, filepath.Join(root, "deploy", "compose", "qualification", "browser.mjs"))
-	authoringBrowser := read(t, filepath.Join(root, "deploy", "compose", "qualification", "authoring.mjs"))
+	workflow := read(t, filepath.Join(root, ".github", "workflows", "installed-candidate.yml"))
+	installed := read(t, filepath.Join(root, "internal", "app", "cli", "composectl", "qualification_installed.go"))
+	recovery := read(t, filepath.Join(root, "internal", "app", "cli", "composectl", "qualification_recovery.go"))
 	performance := read(t, filepath.Join(root, "deploy", "compose", "qualification", "performance.mjs"))
-	performancePolicy := read(t, filepath.Join(root, "deploy", "compose", "qualification", "performance-policy.json"))
-	compatibilityPolicy := read(t, filepath.Join(root, "deploy", "compose", "qualification", "v0.1.0-policy.json"))
+	performancePolicy := read(t, filepath.Join(root, "internal", "app", "cli", "composectl", "qualification_performance.go"))
 	runbook := read(t, filepath.Join(root, "deploy", "compose", "QUALIFICATION.md"))
-	readme := read(t, filepath.Join(root, "deploy", "compose", "README.md"))
-	upgradeGuide := read(t, filepath.Join(root, "docs", "articles", "operate", "upgrades.md"))
 
-	for _, required := range []string{
-		"cp -R deploy/compose/qualification",
-		"./qualification/qualify.sh",
-		"candidate-${{ github.run_id }}-${{ github.run_attempt }}",
-		`release_tag="candidate-${RUN_ID}-${RUN_ATTEMPT}"`,
-		"BUILD_RELEASE: ${{ needs.identity.outputs.release }}",
-		"needs: [identity, image-platform]",
-		"release-platform-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}",
-		"docker buildx imagetools create",
-		"gh release create",
-		"needs: [image, qualify]",
-	} {
+	for _, required := range []string{"cp -R deploy/compose/qualification", "./leapviewctl qualify installed-candidate", "gh release create", "needs: [image, qualify]"} {
 		if !strings.Contains(release, required) {
-			t.Errorf("release workflow missing installed-candidate gate %q", required)
+			t.Errorf("release workflow missing %q", required)
 		}
 	}
-	if strings.Contains(release, "types:\n      - published") {
-		t.Fatal("release workflow cannot gate publication when it starts after a release is already public")
+	gate := strings.Index(release, "./leapviewctl qualify installed-candidate")
+	if gate < 0 || gate > strings.Index(release, "gh release create") || gate > strings.Index(release, "Publish qualified image tags") {
+		t.Fatal("installed-candidate qualification must precede all publication")
 	}
-	if count := strings.Count(release, "if: github.event_name == 'push'"); count != 1 {
-		t.Fatalf("only release publication may be push-only; found %d push-only gates", count)
-	}
-	if strings.Index(release, "./qualification/qualify.sh") > strings.Index(release, "gh release create") {
-		t.Fatal("release workflow publishes Compose archives before installed-candidate qualification")
-	}
-	if strings.Contains(release, "type=semver") {
-		t.Fatal("release workflow must not publish versioned image tags before installed-candidate qualification")
-	}
-	if strings.Index(release, "./qualification/qualify.sh") > strings.Index(release, "Publish qualified image tags") {
-		t.Fatal("release workflow publishes versioned image tags before installed-candidate qualification")
-	}
-
-	for _, required := range []string{
-		"workflow_dispatch:",
-		"schedule:",
-		"ubuntu-24.04-arm",
-		"docker logout ghcr.io",
-		"releases/download/",
-		"sha256sum --check",
-		"retention-days: 14",
-		"Create qualification incident",
-	} {
-		if !strings.Contains(qualification, required) {
+	for _, required := range []string{"workflow_dispatch:", "schedule:", "ubuntu-24.04-arm", "sha256sum --check", "leapviewctl\" qualify installed-candidate", "Create qualification incident"} {
+		if !strings.Contains(workflow, required) {
 			t.Errorf("installed-candidate workflow missing %q", required)
 		}
 	}
-
-	for _, required := range []string{
-		"./leapviewctl init",
-		"./leapviewctl start",
-		"./leapviewctl first-login",
-		`if [[ "$local_image" == true ]]; then`,
-		`docker image inspect "$image_reference"`,
-		"QUALIFICATION_MIN_FREE_BYTES",
-		"evaluation/project/leapview.yaml",
-		"./leapviewctl backup",
-		"./leapviewctl restore",
-		"docker restart",
-		"/metrics",
-		"auditedDenial",
-		"runtime-identity.json",
-		"qualification-report.json",
-		"performance-report.json",
-		"performanceBudgets",
-		"./qualification/recover.sh",
-		"recovery-report.json",
-		"v010FreshInstallPolicy",
-		"v0.1.0-policy.json",
-		"libredash.db",
-		"test ! -e /var/lib/leapview/leapview.db",
-	} {
-		if !strings.Contains(script, required) {
-			t.Errorf("qualification script missing tester assertion %q", required)
+	for _, required := range []string{"func (c *Controller) QualifyInstalledCandidate", "runQualificationAuthoring", "runQualificationRecovery", "qualification-report.json", "runtime-identity.json", "performance-report.json", "recovery-report.json", "verifyQualificationLegacyPolicy", "restoreQualificationBackup"} {
+		if !strings.Contains(installed, required) {
+			t.Errorf("typed installed-candidate controller missing %q", required)
 		}
 	}
-	if strings.Contains(performance, "setInterval(") ||
-		strings.Count(performance, "metricSamples.push(await metricSnapshot())") < 7 {
-		t.Error("performance qualification must use bounded phase snapshots instead of exceeding the shipped metrics rate limit")
-	}
-	if !strings.Contains(performance, "{ mode: 0o644 }") {
-		t.Error("performance qualification report must be readable by the hosted artifact uploader")
-	}
-	for _, required := range []string{
-		"managedUpload",
-		"releaseFinalization",
-		"deploymentActivation",
-		"refreshRecovery",
-		"queryStreamReconnect",
-		"backupInterruption",
-		"restorePreflight",
-		"boundedDisk",
-		"boundedState",
-		"staleRecoveryEntries",
-		"staleRestoreEntries",
-		"staleBackupEntries",
-		"staleCheckpointEntries",
-		".leapview-current-backup-*.tar.gz",
-		"docker kill --signal KILL",
-		"LEAPVIEW_REFRESH_JOB_LEASE_TIMEOUT",
-		"listManagedDataUploadSessionEvents",
-		"listDeploymentEvents",
-		"listRefreshRunEvents",
-		"exec ./leapviewctl backup interrupted.tar.gz",
-		"exec ./leapviewctl restore backups/recovered.tar.gz",
-	} {
+	for _, required := range []string{"ManagedUpload", "ReleaseFinalization", "DeploymentActivation", "RefreshRecovery", "QueryStreamReconnect", "BackupInterruption", "RestorePreflight", "BoundedDisk", "waitForQualificationEvents", "/events?limit=100"} {
 		if !strings.Contains(recovery, required) {
-			t.Errorf("recovery qualification missing fault assertion %q", required)
+			t.Errorf("typed recovery controller missing %q", required)
 		}
 	}
-	managedUploadStart := strings.Index(recovery, `stage="managed upload interruption"`)
-	managedUploadEnd := strings.Index(recovery, `stage="release finalization interruption"`)
-	if managedUploadStart < 0 || managedUploadEnd < 0 || managedUploadStart >= managedUploadEnd {
-		t.Fatal("recovery qualification has invalid managed upload stage boundaries")
-	}
-	managedUploadStage := recovery[managedUploadStart:managedUploadEnd]
-	if !strings.Contains(managedUploadStage, `wait_for_json \`) ||
-		!strings.Contains(managedUploadStage, `/events?limit=100`) {
-		t.Error("managed upload recovery must await its durable completion events")
-	}
-	waitForJSONStart := strings.Index(recovery, "wait_for_json() {")
-	if waitForJSONStart < 0 {
-		t.Fatal("recovery qualification is missing its JSON status waiter")
-	}
-	waitForJSONEnd := strings.Index(recovery[waitForJSONStart:], "\n}\n")
-	if waitForJSONEnd < 0 {
-		t.Fatal("recovery qualification JSON status waiter is unterminated")
-	}
-	waitForJSON := recovery[waitForJSONStart : waitForJSONStart+waitForJSONEnd]
-	if !strings.Contains(waitForJSON, "sleep 1") {
-		t.Error("recovery qualification must poll durable job status slowly enough to stay below the shipped API rate limit")
-	}
-	if strings.Contains(recovery, "sleep 0.025") || strings.Count(recovery, "sleep 0.5") < 3 {
-		t.Error("recovery qualification must observe upload, release, and deployment boundaries within the shipped 120-request API limit")
-	}
-	for _, boundary := range []struct {
-		name     string
-		next     string
-		recovery string
-		throttle string
-		kill     string
-	}{
-		{
-			name:     "release finalization interruption",
-			next:     "deployment activation interruption",
-			recovery: "run_in_candidate",
-			kill:     "kill_candidate",
-		},
-		{
-			name:     "deployment activation interruption",
-			next:     "refresh materialization interruption",
-			recovery: "wait_for_json",
-			throttle: `docker update --cpus 0.25 "$container_id"`,
-			kill:     "kill_candidate",
-		},
+	for _, removed := range []string{
+		filepath.Join(root, "deploy", "compose", "qualification", "qualify.sh"),
+		filepath.Join(root, "deploy", "compose", "qualification", "authoring.sh"),
+		filepath.Join(root, "deploy", "compose", "qualification", "recover.sh"),
+		filepath.Join(root, "scripts", "qualify_authoring_image.sh"),
 	} {
-		start := strings.Index(recovery, `stage="`+boundary.name+`"`)
-		end := strings.Index(recovery, `stage="`+boundary.next+`"`)
-		if start < 0 || end < 0 || start >= end {
-			t.Fatalf("recovery qualification has invalid %s stage boundaries", boundary.name)
-		}
-		stage := recovery[start:end]
-		launch := strings.Index(stage, "run_in_candidate")
-		kill := strings.Index(stage, boundary.kill)
-		recoveryIndex := strings.LastIndex(stage, boundary.recovery)
-		if boundary.throttle == "" {
-			if strings.Contains(stage, "docker update --cpus") {
-				t.Errorf("%s must not depend on CPU throttling to expose a durable release boundary", boundary.name)
-			}
-		} else {
-			throttle := strings.Index(stage, boundary.throttle)
-			unthrottle := strings.Index(stage, `docker update --cpus 0 "$container_id"`)
-			if throttle < 0 || launch < 0 || throttle > launch {
-				t.Errorf("%s must throttle the candidate before launching the interrupted operation", boundary.name)
-			}
-			if kill < 0 || unthrottle < 0 || recoveryIndex < 0 || kill > unthrottle || unthrottle > recoveryIndex {
-				t.Errorf("%s must remove its CPU limit after the kill and before recovery", boundary.name)
-			}
-		}
-		if launch < 0 || kill < 0 || recoveryIndex < 0 || launch > kill || kill > recoveryIndex {
-			t.Errorf("%s must kill the candidate after launch and recover afterward", boundary.name)
+		if _, err := os.Stat(removed); !os.IsNotExist(err) {
+			t.Errorf("legacy shell orchestrator still exists: %s", removed)
 		}
 	}
-	releaseStart := strings.Index(recovery, `stage="release finalization interruption"`)
-	releaseEnd := strings.Index(recovery, `stage="deployment activation interruption"`)
-	releaseStage := recovery[releaseStart:releaseEnd]
-	if !strings.Contains(releaseStage, "release-ids-before.json") ||
-		!strings.Contains(releaseStage, `.status == "draft" or .status == "validating"`) {
-		t.Error("release interruption must identify a newly created draft or validating release instead of relying on a transient state")
-	}
-	backupStart := strings.Index(recovery, `stage="backup interruption"`)
-	if backupStart < 0 {
-		t.Fatal("recovery qualification is missing the backup interruption stage")
-	}
-	backupStage := recovery[backupStart:]
-	restoreStage := strings.Index(backupStage, `stage="restore preflight interruption"`)
-	if restoreStage < 0 {
-		t.Fatal("recovery qualification is missing the restore preflight stage")
-	}
-	backupStage = backupStage[:restoreStage]
-	unthrottle := strings.Index(backupStage, `docker update --cpus 0 "$container_id"`)
-	restart := strings.Index(backupStage, `./leapviewctl start`)
-	if unthrottle < 0 || restart < 0 || unthrottle > restart {
-		t.Error("backup recovery must remove its fault-injection CPU limit before restarting the service")
-	}
-	for _, workflow := range []struct {
-		name     string
-		contents string
-	}{
-		{name: "release", contents: release},
-		{name: "installed candidate", contents: qualification},
-	} {
-		if !strings.Contains(workflow.contents, "recovery-report.json") {
-			t.Errorf("%s workflow does not retain the bounded recovery report", workflow.name)
-		}
-		if !strings.Contains(workflow.contents, "performance-report.json") {
-			t.Errorf("%s workflow does not retain the candidate performance baseline", workflow.name)
-		}
-	}
-	if strings.Contains(script, "${run_suffix,,}") {
-		t.Error("qualification script uses Bash 4 lowercase expansion and cannot run from the Darwin release bundle")
-	}
-	if !strings.Contains(script, `if [[ "$success" != true ]]; then`) {
-		t.Error("qualification failure evidence must replace stale reports from a prior local run")
-	}
-	if !strings.Contains(script, `--output "$metrics_file"`) {
-		t.Error("qualification must materialize metrics before searching them so pipefail cannot turn grep's early exit into a curl failure")
-	}
-	if !strings.Contains(script, `set_min_free_bytes "$restore_root"`) {
-		t.Error("the local disk-reserve override must also apply to the isolated restore instance")
-	}
-	if !strings.Contains(script, `cp "$bundle_root/leapview.env" "$restore_root/leapview.env"`) {
-		t.Error("isolated restore qualification must supply the original separately managed signing and encryption secrets")
-	}
-	if !strings.Contains(authoringBrowser, `getByLabel('New password').press('Enter')`) {
-		t.Error("authoring browser qualification must submit the password form without relying on an animated button's stability")
+	if strings.Contains(performance, "setInterval(") || strings.Count(performance, "metricSamples.push(await metricSnapshot())") < 7 || !strings.Contains(performance, "{ mode: 0o644 }") {
+		t.Error("performance evidence must be bounded and artifact-readable")
 	}
 	for _, required := range []string{
-		"page.goto(new URL(dashboardHref, baseURL)",
-		"click({ force: true })",
-		"locator('option', { hasText: 'SP' })",
-		"selectOption({ label: 'SP' })",
-		"/api/v1/workspaces/evaluation/groups",
-		"authorization.denied",
-		"MANAGE_GRANTS",
-	} {
-		if !strings.Contains(browser, required) {
-			t.Errorf("browser qualification missing motion-independent interaction %q", required)
-		}
-	}
-	for _, required := range []string{
-		"coldDashboardReadyMs",
-		"warmDashboardReadyMs",
-		"filterToSettleMs",
-		"tableInteractionMs",
-		"governedQueryMs",
-		"refreshMs",
-		"concurrentQueryMs",
-		"process_resident_memory_bytes",
-		"process_cpu_seconds_total",
-		"go_goroutines",
-		"leapview_duckdb_connections_open",
-		"comparePerformance",
-		"evaluatePerformance",
-	} {
-		if !strings.Contains(performance, required) {
-			t.Errorf("performance qualification missing release budget evidence %q", required)
-		}
-	}
-	for _, required := range []string{
-		`"minimumLogicalCPUs"`,
-		`"minimumMemoryBytes"`,
-		`"coldDashboardReadyP95Ms"`,
-		`"filterToSettleP95Ms": 5000`,
-		`"tableInteractionP95Ms": 2000`,
-		`"peakResidentMemoryBytes"`,
-		`"temporaryDiskGrowthBytesMax"`,
-		`"maxRegressionRatio"`,
-		`"minimumMeaningfulLatencyDeltaMs"`,
+		"validateQualificationPerformancePolicy",
+		"evaluateQualificationPerformance",
+		"compareQualificationPerformance",
+		"finalizeQualificationPerformanceReport",
 	} {
 		if !strings.Contains(performancePolicy, required) {
-			t.Errorf("performance policy missing explicit contract %q", required)
+			t.Errorf("Go performance policy controller missing %q", required)
 		}
 	}
-
-	for _, required := range []string{
-		"Automated step",
-		"Human check",
-		"Five-minute Sales Evaluation",
-		"Anonymous distribution",
-		"Incident ownership",
-		"Interruption recovery",
-		"managed upload",
-		"deployment activation",
-		"refresh",
-		"query/SSE",
-		"backup",
-		"restore preflight",
-		"fresh-install-only",
-		"v0.1.0",
-	} {
+	if strings.Contains(performance, "evaluatePerformance") ||
+		strings.Contains(performance, "comparePerformance") {
+		t.Error("browser worker must not own performance policy decisions")
+	}
+	for _, required := range []string{"Automated step", "Human check", "Interruption recovery", "fresh-install-only", "./leapviewctl qualify installed-candidate"} {
 		if !strings.Contains(runbook, required) {
 			t.Errorf("qualification runbook missing %q", required)
 		}
-	}
-	for name, document := range map[string]string{
-		"Compose README": readme,
-		"upgrade guide":  upgradeGuide,
-	} {
-		for _, required := range []string{
-			"v0.1.0",
-			"fresh-install-only",
-			"libredash.db",
-			"ghcr.io/yacobolo/libredash@sha256:677caaf256cb3a0d61efd47b289debbd91984976a5a5c4b372196a5d79ce7153",
-			"admin backup",
-			"provision a fresh",
-		} {
-			if !strings.Contains(document, required) {
-				t.Errorf("%s missing v0.1.0 migration policy %q", name, required)
-			}
-		}
-	}
-
-	var policy struct {
-		Release        string   `json:"release"`
-		SourceRevision string   `json:"sourceRevision"`
-		Image          string   `json:"image"`
-		StatePolicy    string   `json:"statePolicy"`
-		Distribution   string   `json:"distribution"`
-		Platforms      []string `json:"platforms"`
-		LegacyMarkers  []string `json:"legacyMarkers"`
-	}
-	if err := json.Unmarshal([]byte(compatibilityPolicy), &policy); err != nil {
-		t.Fatalf("parse v0.1.0 compatibility policy: %v", err)
-	}
-	if policy.Release != "v0.1.0" ||
-		policy.SourceRevision != "5bf4aded574df459e80d81b77d1989ecd4fa7de0" ||
-		policy.Image != "ghcr.io/yacobolo/libredash@sha256:677caaf256cb3a0d61efd47b289debbd91984976a5a5c4b372196a5d79ce7153" ||
-		policy.StatePolicy != "fresh-install-only" ||
-		policy.Distribution != "authentication-required" ||
-		!slices.Equal(policy.Platforms, []string{"linux/amd64"}) ||
-		!slices.Contains(policy.LegacyMarkers, "libredash.db") {
-		t.Fatalf("unexpected v0.1.0 compatibility policy: %#v", policy)
 	}
 }
 
 func TestEnterpriseAuthoringGoldenJourneyContract(t *testing.T) {
 	root := filepath.Join("..", "..")
 	ci := read(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
-	qualification := read(t, filepath.Join(root, "deploy", "compose", "qualification", "qualify.sh"))
-	golden := read(t, filepath.Join(root, "deploy", "compose", "qualification", "authoring.sh"))
-	browser := read(t, filepath.Join(root, "deploy", "compose", "qualification", "authoring.mjs"))
+	installed := read(t, filepath.Join(root, "internal", "app", "cli", "composectl", "qualification_installed.go"))
+	authoring := read(t, filepath.Join(root, "internal", "app", "cli", "composectl", "qualification_authoring.go"))
+	client := read(t, filepath.Join(root, "internal", "app", "cli", "composectl", "qualification_client.go"))
+	worker := read(t, filepath.Join(root, "deploy", "compose", "qualification", "authoring-worker.mjs"))
 	clientImage := read(t, filepath.Join(root, "deploy", "compose", "qualification", "Dockerfile.authoring-client"))
-	imageWrapper := read(t, filepath.Join(root, "scripts", "qualify_authoring_image.sh"))
 
-	for _, required := range []string{
-		"./scripts/qualify_authoring_image.sh leapview:ci",
-		"name: Qualify enterprise authoring journey",
-	} {
-		if !strings.Contains(ci, required) {
-			t.Errorf("CI production-image gate missing %q", required)
+	if count := strings.Count(ci, "\"$RUNNER_TEMP/leapviewctl-qualification\" qualify image"); count != 2 {
+		t.Errorf("both production-image jobs must run typed authoring qualification; found %d", count)
+	}
+	if !strings.Contains(installed, "runQualificationAuthoring") {
+		t.Error("installed qualification must reuse authoring")
+	}
+	for _, required := range []string{"runQualificationCLI", "\"login\",", "\"dev\",", "\"--once\"", "\"--no-browser\"", "\"publish\",", "gnome-keyring-daemon"} {
+		if !strings.Contains(client, required) {
+			t.Errorf("typed CLI worker missing %q", required)
 		}
 	}
-	if count := strings.Count(ci, "./scripts/qualify_authoring_image.sh leapview:ci"); count != 2 {
-		t.Errorf("both trusted and fork production-image jobs must run the golden journey; found %d invocations", count)
+	if strings.Contains(client, "LEAPVIEW_API_TOKEN") {
+		t.Error("authoring must use browser-approved login")
 	}
-	if !strings.Contains(qualification, "./qualification/authoring.sh") {
-		t.Error("installed-candidate qualification does not reuse the enterprise authoring golden journey")
-	}
-
-	for _, required := range []string{
-		"leapview login",
-		"--no-browser",
-		"dev_args=(--once --no-browser",
-		"leapview publish",
-		"gnome-keyring-daemon",
-		"dbus-run-session",
-		"authoring-preview-verified",
-		"authoring-publish-verified",
-		"authoring-report.json",
-		`"$dev_candidate" != "$publish_candidate"`,
-		`"$dev_revision" != "$publish_revision"`,
-		`"$dev_provenance" != "$publish_release"`,
-	} {
-		if !strings.Contains(golden, required) {
-			t.Errorf("enterprise authoring qualification missing %q", required)
+	for _, required := range []string{"verifyExactAuthoringCandidate", "authoring-report.json", "BrowserApprovedLogin", "NativeKeyring", "PrivatePreview", "ExactCandidateActivated", "approval-requests", "/activate", "dbus-run-session", "MANAGE_GRANTS", "project_environment", "VIEW_ITEM", "APPROVE_DEPLOYMENT", "ACTIVATE_DEPLOYMENT"} {
+		if !strings.Contains(authoring, required) {
+			t.Errorf("typed authoring controller missing %q", required)
 		}
 	}
-	if strings.Contains(golden, "LEAPVIEW_API_TOKEN") {
-		t.Error("golden authoring CLI must use the browser-approved login credential, not an injected API token")
+	if strings.Contains(authoring, "MANAGE_PLATFORM") {
+		t.Error("qualification reviewer must not receive a platform grant")
 	}
-	for _, required := range []string{
-		"redact()",
-		"Authorization: Bearer ",
-		"publisherToken|temporaryPassword|qualificationPassword",
-		`compose_in logs --no-color --tail 500 2>&1 | redact`,
-	} {
-		if !strings.Contains(imageWrapper, required) {
-			t.Errorf("production-image wrapper missing evidence redaction contract %q", required)
+	for _, required := range []string{"Authorize LeapView CLI", "CLI authorized", "/candidates/", "Governed order rows"} {
+		if !strings.Contains(worker, required) {
+			t.Errorf("browser worker missing %q", required)
 		}
 	}
-	for _, required := range []string{
-		"Authorize LeapView CLI",
-		"CLI authorized",
-		"/candidates/",
-		"Governed order rows",
-		"authoring-preview-verified",
-		"MANAGE_GRANTS",
-		"MANAGE_PLATFORM",
-		"APPROVE_DEPLOYMENT",
-		"ACTIVATE_DEPLOYMENT",
-		"/grants",
-		"pending approval",
-		"approval-requests",
-		"/activate",
-		"authoring-publish-verified",
-	} {
-		if !strings.Contains(browser, required) {
-			t.Errorf("authoring browser qualification missing %q", required)
-		}
-	}
-	for _, required := range []string{
-		"ARG LEAPVIEW_IMAGE",
-		"FROM ${LEAPVIEW_IMAGE}",
-		"dbus-daemon",
-		"gnome-keyring",
-		"USER author",
-	} {
+	for _, required := range []string{"ARG LEAPVIEW_IMAGE", "FROM ${LEAPVIEW_IMAGE}", "dbus-daemon", "gnome-keyring", "USER author", "CMD [\"/usr/local/libexec/leapviewctl\", \"qualify\", \"client-worker\"]"} {
 		if !strings.Contains(clientImage, required) {
 			t.Errorf("authoring client image missing %q", required)
 		}

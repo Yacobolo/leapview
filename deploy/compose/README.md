@@ -55,10 +55,10 @@ five-minute sample, governed access and denial auditing, restart persistence,
 backup, and isolated restore:
 
 ```sh
-./qualification/qualify.sh
+./leapviewctl qualify installed-candidate
 ```
 
-The script writes only bounded redacted evidence and removes its isolated
+The controller writes only bounded redacted evidence and removes its isolated
 containers, volumes, temporary credentials, and restored instance when it
 finishes.
 

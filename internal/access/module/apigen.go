@@ -9,9 +9,10 @@ import (
 const apiGenObjectScopeExtension = "x-leapview-object-scope"
 
 type APIGenObjectResolvers struct {
-	Dashboard      ObjectResolver
-	SemanticModel  ObjectResolver
-	WorkspaceAsset ObjectResolver
+	Dashboard          ObjectResolver
+	SemanticModel      ObjectResolver
+	WorkspaceAsset     ObjectResolver
+	ProjectEnvironment ObjectResolver
 }
 
 type apiGenObjectScope struct {
@@ -41,9 +42,10 @@ func (m *Module) APIGenAuthorizer(operations map[string]APIGenOperationContract,
 		module:     m,
 		operations: operations,
 		scopes: map[string]apiGenObjectScope{
-			"dashboard":       {pathParameter: "dashboard", resolver: resolvers.Dashboard},
-			"semantic-model":  {pathParameter: "model", resolver: resolvers.SemanticModel},
-			"workspace-asset": {pathParameter: "assetId", resolver: resolvers.WorkspaceAsset},
+			"dashboard":           {pathParameter: "dashboard", resolver: resolvers.Dashboard},
+			"semantic-model":      {pathParameter: "model", resolver: resolvers.SemanticModel},
+			"workspace-asset":     {pathParameter: "assetId", resolver: resolvers.WorkspaceAsset},
+			"project-environment": {resolver: resolvers.ProjectEnvironment},
 			"grant-management": {resolver: func(_ *http.Request, workspaceID string) []ObjectRef {
 				return []ObjectRef{PlatformObject(), WorkspaceObject(workspaceID)}
 			}},

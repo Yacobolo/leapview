@@ -56,6 +56,35 @@ func TestProjectPublishOperationsUseGeneratedExactCandidateProtocol(t *testing.T
 	}
 }
 
+func TestProjectPublishOperationsEmitVersionedJSON(t *testing.T) {
+	transport := &publishTransportStub{pendingApproval: true}
+	var output strings.Builder
+	operations := projectPublishOperations{
+		client: fixedTransportClient{transport: transport},
+	}
+	checkpoint := projectcli.CandidateCheckpoint{
+		ProjectPath: "/work/leapview.yaml", TargetOrigin: "https://target.example",
+		TargetID: "target_1", ProjectID: "finance", CandidateID: "cand_1",
+		CandidateRevision: 7,
+		ProvenanceDigest:  "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+	}
+	if err := operations.Publish(t.Context(), projectcli.PublishOptions{
+		Credentials: cliapi.Credentials{Target: checkpoint.TargetOrigin, Token: "token"},
+		Checkpoint:  checkpoint,
+		Format:      "json",
+	}, &output); err != nil {
+		t.Fatal(err)
+	}
+	var result projectcli.PublishResult
+	if err := json.Unmarshal([]byte(output.String()), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.SchemaVersion != 1 || result.DeploymentID != "request_1" ||
+		result.CandidateID != "cand_1" || result.CandidateRevision != 7 {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
 func TestProjectPublishOperationsRequireActivationForBootstrap(t *testing.T) {
 	transport := &publishTransportStub{pendingApproval: true}
 	operations := projectPublishOperations{

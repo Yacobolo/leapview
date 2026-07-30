@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -25,6 +26,7 @@ type DevOptions struct {
 	NoBrowser         bool
 	CandidateKey      string
 	SourceRevision    devloop.SourceRevision
+	Format            string
 }
 
 // DevRemoteFactory is the Project-owned port for binding the dev loop to an
@@ -51,6 +53,7 @@ func DevCommand(
 		ProjectPath:       filepath.Join("dashboards", "leapview.yaml"),
 		UploadConcurrency: 4,
 		CandidateKey:      "default",
+		Format:            "text",
 	}
 	command := &cobra.Command{
 		Use:   "dev [project]",
@@ -143,7 +146,25 @@ func DevCommand(
 		"",
 		"change or review identity associated with the revision",
 	)
+	command.Flags().StringVar(
+		&values.Format,
+		"format",
+		values.Format,
+		"output format: text or json",
+	)
 	return command
+}
+
+type DevResult struct {
+	SchemaVersion    int    `json:"schemaVersion"`
+	CandidateID      string `json:"candidateId"`
+	Revision         int64  `json:"revision"`
+	TargetID         string `json:"targetId"`
+	Environment      string `json:"environment"`
+	PrincipalID      string `json:"principalId"`
+	ArtifactDigest   string `json:"artifactDigest"`
+	ProvenanceDigest string `json:"provenanceDigest"`
+	PreviewURL       string `json:"previewUrl"`
 }
 
 // RunDev executes the Project-owned candidate synchronization lifecycle. It is
@@ -167,6 +188,9 @@ func RunDev(
 	}
 	if remotes == nil {
 		return fmt.Errorf("Project candidate remote factory is required")
+	}
+	if options.Format != "text" && options.Format != "json" {
+		return fmt.Errorf("dev format must be text or json")
 	}
 	credentials, err := client.Resolve(ctx, options.Credentials)
 	if err != nil {
@@ -224,20 +248,38 @@ func RunDev(
 		}); err != nil {
 			return fmt.Errorf("persist publish candidate: %w", err)
 		}
-		fmt.Fprintf(out, "synchronized %s\n", candidate.ArtifactDigest)
-		fmt.Fprintf(out, "provenance %s\n", candidate.ProvenanceDigest)
-		fmt.Fprintf(
-			out,
-			"candidate %s revision %d target %s environment %s principal %s\n",
-			candidate.ID,
-			candidate.Revision,
-			candidate.TargetID,
-			candidate.Environment,
-			candidate.OwnerID,
-		)
+		if options.Format == "json" {
+			if err := json.NewEncoder(out).Encode(DevResult{
+				SchemaVersion:    1,
+				CandidateID:      candidate.ID,
+				Revision:         candidate.Revision,
+				TargetID:         candidate.TargetID,
+				Environment:      candidate.Environment,
+				PrincipalID:      candidate.OwnerID,
+				ArtifactDigest:   candidate.ArtifactDigest,
+				ProvenanceDigest: candidate.ProvenanceDigest,
+				PreviewURL:       candidate.PreviewURL,
+			}); err != nil {
+				return fmt.Errorf("write dev result: %w", err)
+			}
+		} else {
+			fmt.Fprintf(out, "synchronized %s\n", candidate.ArtifactDigest)
+			fmt.Fprintf(out, "provenance %s\n", candidate.ProvenanceDigest)
+			fmt.Fprintf(
+				out,
+				"candidate %s revision %d target %s environment %s principal %s\n",
+				candidate.ID,
+				candidate.Revision,
+				candidate.TargetID,
+				candidate.Environment,
+				candidate.OwnerID,
+			)
+		}
 		if candidate.PreviewURL != "" &&
 			candidate.PreviewURL != lastPreviewURL {
-			fmt.Fprintf(out, "preview %s\n", candidate.PreviewURL)
+			if options.Format == "text" {
+				fmt.Fprintf(out, "preview %s\n", candidate.PreviewURL)
+			}
 			if !options.NoBrowser && openBrowser != nil {
 				if err := openBrowser(candidate.PreviewURL); err != nil {
 					fmt.Fprintf(

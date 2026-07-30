@@ -16,6 +16,20 @@ type PublishOptions struct {
 	Credentials  cliapi.Credentials
 	Checkpoint   CandidateCheckpoint
 	CandidateKey string
+	Format       string
+}
+
+type PublishResult struct {
+	SchemaVersion     int    `json:"schemaVersion"`
+	DeploymentID      string `json:"deploymentId"`
+	Status            string `json:"status"`
+	CandidateID       string `json:"candidateId"`
+	CandidateRevision int64  `json:"candidateRevision"`
+	TargetID          string `json:"targetId"`
+	PrincipalID       string `json:"principalId"`
+	ArtifactDigest    string `json:"artifactDigest"`
+	ReleaseDigest     string `json:"releaseDigest"`
+	SourceRevision    string `json:"sourceRevision"`
 }
 
 // PublishOperations is the Project-owned port for requesting policy-governed
@@ -34,6 +48,7 @@ func PublishCommand(
 	values := PublishOptions{
 		ProjectPath:  filepath.Join("dashboards", "leapview.yaml"),
 		CandidateKey: "default",
+		Format:       "text",
 	}
 	command := &cobra.Command{
 		Use:   "publish",
@@ -66,6 +81,10 @@ func PublishCommand(
 		&values.Credentials.Token, "token", "",
 		"ephemeral API token compatibility path",
 	)
+	command.Flags().StringVar(
+		&values.Format, "format", values.Format,
+		"output format: text or json",
+	)
 	return command
 }
 
@@ -88,6 +107,9 @@ func RunPublish(
 	}
 	if operations == nil {
 		return fmt.Errorf("Project publish operations are required")
+	}
+	if options.Format != "text" && options.Format != "json" {
+		return fmt.Errorf("publish format must be text or json")
 	}
 	credentials, err := client.Resolve(ctx, options.Credentials)
 	if err != nil {

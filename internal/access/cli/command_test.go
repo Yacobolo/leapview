@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -73,6 +74,38 @@ func TestLoginCommandSupportsStableProfileAlias(t *testing.T) {
 	}
 	if service.loginRequest.Name != "prod" {
 		t.Fatalf("profile name = %q", service.loginRequest.Name)
+	}
+}
+
+func TestLoginCommandEmitsVersionedJSONEvents(t *testing.T) {
+	service := &fakeAuthService{challenge: DeviceChallenge{
+		UserCode: "ABCD-EFGH", VerificationURI: "https://prod.example.com/device",
+	}}
+	command := LoginCommand(context.Background(), service, fakeDiscovery{}, fakeProjectResolver{})
+	var output strings.Builder
+	command.SetOut(&output)
+	command.SetArgs([]string{"https://prod.example.com", "--no-browser", "--format", "json"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	decoder := json.NewDecoder(strings.NewReader(output.String()))
+	var challenge, authenticated struct {
+		SchemaVersion int    `json:"schemaVersion"`
+		Type          string `json:"type"`
+		UserCode      string `json:"userCode"`
+		SessionID     string `json:"sessionId"`
+	}
+	if err := decoder.Decode(&challenge); err != nil {
+		t.Fatal(err)
+	}
+	if err := decoder.Decode(&authenticated); err != nil {
+		t.Fatal(err)
+	}
+	if challenge.SchemaVersion != 1 || challenge.Type != "deviceChallenge" ||
+		challenge.UserCode != "ABCD-EFGH" ||
+		authenticated.SchemaVersion != 1 || authenticated.Type != "authenticated" ||
+		authenticated.SessionID != "session-1" {
+		t.Fatalf("events = %#v, %#v", challenge, authenticated)
 	}
 }
 

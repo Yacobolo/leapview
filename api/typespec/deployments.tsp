@@ -216,6 +216,7 @@ model DeploymentListResponse {
 @route("/projects/{project}/deployments")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("listDeployments")
 op listDeployments(@path project: string, @query limit?: ListLimit, @query pageToken?: PageToken): OkJson<DeploymentListResponse> | CommonErrors;
 
@@ -232,6 +233,7 @@ op createDeployment(@path project: string, @header("Idempotency-Key") idempotenc
 @route("/projects/{project}/deployments/{deployment}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("getDeployment")
 op getDeployment(@path project: string, @path deployment: string): OkJson<DeploymentResponse> | CommonErrors;
 
@@ -280,6 +282,7 @@ op requestDeploymentApproval(@path project: string, @path deployment: string, @h
 @route("/projects/{project}/deployments/{deployment}/approval-requests/{approval}/approve")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "APPROVE_DEPLOYMENT" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("approveDeployment")
 op approveDeployment(@path project: string, @path deployment: string, @path approval: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: DeploymentApprovalDecisionRequest): OkJson<DeploymentApprovalResponse> | CommonErrors;
 
@@ -288,6 +291,7 @@ op approveDeployment(@path project: string, @path deployment: string, @path appr
 @route("/projects/{project}/deployments/{deployment}/approval-requests/{approval}/deny")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "APPROVE_DEPLOYMENT" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("denyDeploymentApproval")
 op denyDeploymentApproval(@path project: string, @path deployment: string, @path approval: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: DeploymentApprovalDecisionRequest): OkJson<DeploymentApprovalResponse> | CommonErrors;
 
@@ -296,6 +300,7 @@ op denyDeploymentApproval(@path project: string, @path deployment: string, @path
 @route("/projects/{project}/deployments/{deployment}/approval-requests/{approval}/revoke")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "APPROVE_DEPLOYMENT" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("revokeDeploymentApproval")
 op revokeDeploymentApproval(@path project: string, @path deployment: string, @path approval: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: DeploymentApprovalDecisionRequest): OkJson<DeploymentApprovalResponse> | CommonErrors;
 
@@ -304,6 +309,7 @@ op revokeDeploymentApproval(@path project: string, @path deployment: string, @pa
 @route("/projects/{project}/deployments/{deployment}/activate")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "ACTIVATE_DEPLOYMENT" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("activateDeployment")
 op activateDeployment(@path project: string, @path deployment: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<DeploymentResponse> | CommonErrors;
 

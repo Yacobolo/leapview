@@ -755,7 +755,12 @@ jobs:
         run: ./scripts/smoke_production_image.sh leapview:ci
 
       - name: Qualify enterprise authoring journey
-        run: ./scripts/qualify_authoring_image.sh leapview:ci
+        run: |
+          go build -o "$RUNNER_TEMP/leapviewctl-qualification" ./cmd/leapviewctl
+          LEAPVIEWCTL_ROOT="$PWD/deploy/compose" \
+            "$RUNNER_TEMP/leapviewctl-qualification" qualify image \
+              --image leapview:ci \
+              --evidence-dir "$PWD/qualification-evidence/authoring-ci"
 
       - name: Upload enterprise authoring evidence
         if: ${{ always() }}
@@ -801,7 +806,12 @@ jobs:
         run: ./scripts/smoke_production_image.sh leapview:ci
 
       - name: Qualify enterprise authoring journey
-        run: ./scripts/qualify_authoring_image.sh leapview:ci
+        run: |
+          go build -o "$RUNNER_TEMP/leapviewctl-qualification" ./cmd/leapviewctl
+          LEAPVIEWCTL_ROOT="$PWD/deploy/compose" \
+            "$RUNNER_TEMP/leapviewctl-qualification" qualify image \
+              --image leapview:ci \
+              --evidence-dir "$PWD/qualification-evidence/authoring-ci"
 
       - name: Upload enterprise authoring evidence
         if: ${{ always() }}
@@ -845,9 +855,6 @@ jobs:
       - name: Test deployment lifecycle
         run: go test ./deploy/compose ./deploy/hetzner ./deploy/hetzner-site
 
-      - name: Test deployment performance policy
-        run: bun run test:qualification-performance-policy
-
       - name: Lint workflow definitions
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 
@@ -860,10 +867,6 @@ jobs:
           deploy/hetzner/files/provision.sh.tftpl
           deploy/hetzner-site/files/deploy.sh
           deploy/hetzner-site/files/provision.sh
-          deploy/compose/qualification/qualify.sh
-          deploy/compose/qualification/authoring.sh
-          deploy/compose/qualification/recover.sh
-          scripts/qualify_authoring_image.sh
           scripts/deploy_site.sh
 
       - name: Initialize Terraform providers

@@ -2,8 +2,8 @@
 
 This runbook qualifies the exact immutable image and Compose archive offered to
 testers. It is deliberately independent of a source checkout or development
-server. The bundled `qualification/qualify.sh` is the executable form of the
-same journey.
+server. The bundled `leapviewctl qualify installed-candidate` command is the
+executable form of the same journey.
 
 | Gate | Automated step | Human check |
 | --- | --- | --- |
@@ -15,7 +15,7 @@ same journey.
 | Performance and resources | Against the exact installed digest, collect three restart-cold dashboard samples, five warm dashboard samples, eight filter interactions, six governed table-sort interactions, ten governed queries, three refresh runs, and an eight-reader concurrency wave. Enforce p95 latency, zero-error, CPU, RSS, temporary-disk, goroutine, and DuckDB-connection budgets from `qualification/performance-policy.json`. | Compare `performance-report.json` with the last accepted candidate. Investigate any material regression even when it remains under the absolute ceiling. |
 | Interruption recovery | At API-observed boundaries, send `SIGKILL` to the exact candidate during a resumable managed upload, release finalization, deployment activation, refresh/materialization claim, active query/SSE traffic, backup creation, and restore preflight. Require each durable operation to resume or end in an explicit recoverable state; require the prior revision/generation to remain visible until atomic activation; then repeat query/SSE reconnects and verify bounded goroutines, temporary files, and disk growth. | While following the same managed upload, deployment activation, refresh, query/SSE, backup, and restore preflight sequence, confirm the UI and event history name the attempted, interrupted, resumed, failed, and completed states without exposing credentials. |
 | Operations | Verify readiness, authenticated metrics, bounded structured logs, candidate identity, restart persistence, a validated backup, and restore into an isolated instance using the original separately managed secret configuration. | Inspect the restored dashboard and confirm the active serving state and managed data are unchanged. |
-| Upgrade safety | Require the candidate to reject a released v0.1.0 `libredash.db` marker before creating `leapview.db`. v0.1.0 is explicitly fresh-install-only; only a later release explicitly declared compatible may be supplied through `LEAPVIEW_QUALIFICATION_PREVIOUS_IMAGE` for upgrade and confirmed rollback. | Confirm the v0.1.0 export/reprovision runbook is clear before retiring its preserved state. |
+| Upgrade safety | Require the candidate to reject a released v0.1.0 `libredash.db` marker before creating `leapview.db`. v0.1.0 is explicitly fresh-install-only; only a later release explicitly declared compatible may be supplied through `--previous-image` for upgrade and confirmed rollback. | Confirm the v0.1.0 export/reprovision runbook is clear before retiring its preserved state. |
 
 ## Run from an extracted release
 
@@ -23,10 +23,10 @@ Install Docker Engine with the Compose plugin, `curl`, `jq`, `openssl`, and
 `sha256sum`. From the extracted archive:
 
 ```sh
-./qualification/qualify.sh
+./leapviewctl qualify installed-candidate
 ```
 
-The script uses only files in the archive plus public container registries. It
+The controller uses only files in the archive plus public container registries. It
 creates isolated Compose projects, stores credentials only in an owner-readable
 temporary file, emits a bounded `qualification-evidence` directory, and removes
 containers, volumes, and credentials on exit. Do not upload any other files
@@ -36,10 +36,12 @@ From a source checkout, CI and local image qualification run the same authoring
 journey against the already-built production image:
 
 ```sh
-./scripts/qualify_authoring_image.sh leapview:ci
+go build -o .tmp/leapviewctl-qualification ./cmd/leapviewctl
+LEAPVIEWCTL_ROOT="$PWD/deploy/compose" \
+  ./.tmp/leapviewctl-qualification qualify image --image leapview:ci
 ```
 
-The wrapper pushes the local image through an isolated registry, deploys its
+The controller pushes the local image through an isolated registry, deploys its
 immutable digest with the production Compose bundle, and writes
 `qualification-evidence/authoring-ci/authoring-report.json`. Both trusted and
 fork pull-request production-image jobs run this gate.
@@ -81,15 +83,15 @@ supersession, table delivery, and browser/network correctness against the same
 dashboard runtime, while the installed Olist gate owns shipped-artifact and
 process-resource budgets.
 
-Set `LEAPVIEW_QUALIFICATION_PREVIOUS_IMAGE` only to a post-v0.1.0 immutable
-digest whose release policy explicitly declares state compatibility. The
+Pass `--previous-image` only for a post-v0.1.0 immutable digest whose release
+policy explicitly declares state compatibility. The
 released v0.1.0 image
 `ghcr.io/yacobolo/libredash@sha256:677caaf256cb3a0d61efd47b289debbd91984976a5a5c4b372196a5d79ce7153`
 is fresh-install-only because it uses `libredash.db`, a different container and
 configuration namespace, and an incompatible backup manifest. Preserve it with
 its own `admin backup`, then provision a fresh LeapView instance and redeploy
-authored projects. Set `LEAPVIEW_QUALIFICATION_EVIDENCE_DIR` to
-redirect the bounded report and failure screenshot.
+authored projects. Pass `--evidence-dir` to redirect the bounded report and
+failure screenshot.
 
 ## Evidence and timing
 

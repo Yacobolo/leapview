@@ -316,16 +316,17 @@ const (
 type SecurableType string
 
 const (
-	SecurablePlatform      SecurableType = "platform"
-	SecurableWorkspace     SecurableType = "workspace"
-	SecurableDashboard     SecurableType = "dashboard"
-	SecurableSemanticModel SecurableType = "semantic_model"
-	SecurableSemanticField SecurableType = "semantic_field"
-	SecurableSource        SecurableType = "source"
-	SecurableModelTable    SecurableType = "model_table"
-	SecurableDataset       SecurableType = "dataset"
-	SecurableTable         SecurableType = "table"
-	SecurableColumn        SecurableType = "column"
+	SecurablePlatform           SecurableType = "platform"
+	SecurableWorkspace          SecurableType = "workspace"
+	SecurableProjectEnvironment SecurableType = "project_environment"
+	SecurableDashboard          SecurableType = "dashboard"
+	SecurableSemanticModel      SecurableType = "semantic_model"
+	SecurableSemanticField      SecurableType = "semantic_field"
+	SecurableSource             SecurableType = "source"
+	SecurableModelTable         SecurableType = "model_table"
+	SecurableDataset            SecurableType = "dataset"
+	SecurableTable              SecurableType = "table"
+	SecurableColumn             SecurableType = "column"
 )
 
 type ObjectRef struct {
@@ -342,6 +343,19 @@ func PlatformObject() ObjectRef {
 
 func WorkspaceObject(workspaceID string) ObjectRef {
 	return ObjectRef{Type: SecurableWorkspace, WorkspaceID: strings.TrimSpace(workspaceID)}
+}
+
+// ProjectEnvironmentObject is the Access-owned authorization boundary for
+// project publication and deployment operations on one target environment.
+// Project environments are global children of the platform rather than
+// workspace assets because one atomic deployment may target many workspaces.
+func ProjectEnvironmentObject(projectID, environment string) ObjectRef {
+	return ObjectRef{
+		Type:        SecurableProjectEnvironment,
+		WorkspaceID: strings.TrimSpace(projectID),
+		ObjectID:    strings.TrimSpace(environment),
+		ParentID:    PlatformObject().CanonicalID(),
+	}
 }
 
 func ItemObject(typ SecurableType, workspaceID, objectID string) ObjectRef {
@@ -370,6 +384,8 @@ func (r ObjectRef) Parent() (ObjectRef, bool) {
 	case SecurablePlatform:
 		return ObjectRef{}, false
 	case SecurableWorkspace:
+		return PlatformObject(), true
+	case SecurableProjectEnvironment:
 		return PlatformObject(), true
 	default:
 		return WorkspaceObject(r.WorkspaceID), true

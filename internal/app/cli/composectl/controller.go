@@ -36,23 +36,25 @@ var (
 )
 
 type Options struct {
-	Root      string
-	DockerBin string
-	Stdin     io.Reader
-	Stdout    io.Writer
-	Stderr    io.Writer
-	Now       func() time.Time
-	Sleep     func(context.Context, time.Duration) error
+	Root                  string
+	DockerBin             string
+	Stdin                 io.Reader
+	Stdout                io.Writer
+	Stderr                io.Writer
+	Now                   func() time.Time
+	Sleep                 func(context.Context, time.Duration) error
+	qualificationExecutor qualificationCommandExecutor
 }
 
 type Controller struct {
-	root      string
-	dockerBin string
-	stdin     io.Reader
-	stdout    io.Writer
-	stderr    io.Writer
-	now       func() time.Time
-	sleep     func(context.Context, time.Duration) error
+	root                  string
+	dockerBin             string
+	stdin                 io.Reader
+	stdout                io.Writer
+	stderr                io.Writer
+	now                   func() time.Time
+	sleep                 func(context.Context, time.Duration) error
+	qualificationExecutor qualificationCommandExecutor
 }
 
 type InitOptions struct {
@@ -96,7 +98,15 @@ func New(options Options) (*Controller, error) {
 	if sleep == nil {
 		sleep = sleepContext
 	}
-	return &Controller{root: root, dockerBin: dockerBin, stdin: stdin, stdout: stdout, stderr: stderr, now: now, sleep: sleep}, nil
+	executor := options.qualificationExecutor
+	if executor == nil {
+		executor = osQualificationCommandExecutor{}
+	}
+	return &Controller{
+		root: root, dockerBin: dockerBin, stdin: stdin, stdout: stdout,
+		stderr: stderr, now: now, sleep: sleep,
+		qualificationExecutor: executor,
+	}, nil
 }
 
 func (c *Controller) Initialize(ctx context.Context, options InitOptions) error {

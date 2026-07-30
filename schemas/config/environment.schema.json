@@ -2415,18 +2415,6 @@
       "x-lifecycle": "supported",
       "x-scope": "serve"
     },
-    "LEAPVIEW_QUALIFICATION_EVIDENCE_DIR": {
-      "description": "Directory receiving the bounded redacted installed-candidate evidence bundle.",
-      "type": "string",
-      "x-lifecycle": "tooling",
-      "x-scope": "installed-candidate qualification"
-    },
-    "LEAPVIEW_QUALIFICATION_PREVIOUS_IMAGE": {
-      "description": "Optional compatible immutable image digest used to exercise upgrade and rollback.",
-      "type": "string",
-      "x-lifecycle": "tooling",
-      "x-scope": "installed-candidate qualification"
-    },
     "LEAPVIEW_QUERY_CACHE_NODE_MAX_BYTES": {
       "default": "536870912",
       "description": "Maximum conservatively retained Arrow cache bytes for the node.",

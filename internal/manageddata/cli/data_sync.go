@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"hash"
 	"io"
@@ -38,6 +39,7 @@ type SyncRequest struct {
 	Plan        localplan.Result
 	Out         io.Writer
 	HTTPClient  *http.Client
+	Format      string
 }
 
 type dataSyncRequest = SyncRequest
@@ -46,6 +48,7 @@ func dataSyncCommand(ctx context.Context, planner dataPlanner, dependencies Depe
 	var projectPath string
 	var connection string
 	var from string
+	format := "text"
 	command := &cobra.Command{
 		Use:   "sync",
 		Short: "Stage a managed data revision",
@@ -88,12 +91,14 @@ func dataSyncCommand(ctx context.Context, planner dataPlanner, dependencies Depe
 			return runDataSync(ctx, dataSyncRequest{
 				ProjectPath: projectPath, ProjectID: projectID, Connection: connection, Root: plan.Root,
 				Target: credentials.Target, Token: credentials.Token, Plan: plan, Out: cmd.OutOrStdout(), HTTPClient: httpClient,
+				Format: format,
 			})
 		},
 	}
 	command.Flags().StringVar(&projectPath, "project", filepath.Join("dashboards", "leapview.yaml"), "project catalog path")
 	command.Flags().StringVar(&connection, "connection", "", "project-global managed connection")
 	command.Flags().StringVar(&from, "from", "", "local filesystem root to ingest")
+	command.Flags().StringVar(&format, "format", format, "output format: text or json")
 	command.Flags().StringVar(&opts.environment, "environment", "", "assert the target instance environment")
 	opts.remote.AddFlags(command)
 	return command
@@ -106,6 +111,12 @@ func RunSync(ctx context.Context, request SyncRequest) error {
 	}
 	if request.Plan.Connection != "" && request.Plan.Connection != request.Connection {
 		return fmt.Errorf("planned connection does not match sync connection")
+	}
+	if request.Format == "" {
+		request.Format = "text"
+	}
+	if request.Format != "text" && request.Format != "json" {
+		return fmt.Errorf("data sync format must be text or json")
 	}
 	if err := request.Plan.Manifest.Validate(manageddata.Limits{}); err != nil {
 		return fmt.Errorf("planned manifest: %w", err)
@@ -188,6 +199,12 @@ func RunSync(ctx context.Context, request SyncRequest) error {
 	out := request.Out
 	if out == nil {
 		out = io.Discard
+	}
+	if request.Format == "json" {
+		return json.NewEncoder(out).Encode(struct {
+			SchemaVersion int    `json:"schemaVersion"`
+			RevisionID    string `json:"revisionId"`
+		}{SchemaVersion: 1, RevisionID: revisionID})
 	}
 	_, err = fmt.Fprintf(out, "staged %s\n", revisionID)
 	return err

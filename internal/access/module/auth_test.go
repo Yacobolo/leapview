@@ -177,6 +177,13 @@ func TestAuthorizeCredentialEvidenceFailsAfterTokenRevocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := repository.UpsertSecurableObject(
+		t.Context(),
+		access.ProjectEnvironmentObject("finance", "production"),
+		"",
+	); err != nil {
+		t.Fatal(err)
+	}
 	_, token, err := repository.CreateAPITokenWithMetadata(
 		t.Context(),
 		access.APITokenInput{
@@ -200,6 +207,7 @@ func TestAuthorizeCredentialEvidenceFailsAfterTokenRevocation(t *testing.T) {
 		t.Context(),
 		evidence,
 		"finance",
+		"production",
 		access.PrivilegeActivateDeployment,
 	)
 	if err != nil || !allowed {
@@ -212,6 +220,7 @@ func TestAuthorizeCredentialEvidenceFailsAfterTokenRevocation(t *testing.T) {
 		t.Context(),
 		evidence,
 		"finance",
+		"production",
 		access.PrivilegeActivateDeployment,
 	)
 	if err != nil {
@@ -219,5 +228,72 @@ func TestAuthorizeCredentialEvidenceFailsAfterTokenRevocation(t *testing.T) {
 	}
 	if allowed {
 		t.Fatal("revoked activation credential remained authorized")
+	}
+}
+
+func TestAuthorizeCredentialEvidenceUsesProjectEnvironmentGrant(t *testing.T) {
+	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "leapview.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	module, err := Build(t.Context(), Config{Database: store.SQLDB()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := accesssqlite.NewRepository(store.SQLDB())
+	principal, err := repository.UpsertPrincipal(t.Context(), access.PrincipalInput{
+		ID: "scoped-reviewer", Email: "reviewer@example.test",
+		DisplayName: "Scoped Reviewer",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.CreateGrant(t.Context(), access.GrantInput{
+		Object:      access.ProjectEnvironmentObject("finance", "production"),
+		SubjectType: access.SubjectPrincipal, SubjectID: principal.ID,
+		Privilege: access.PrivilegeApproveDeployment,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, token, err := repository.CreateAPITokenWithMetadata(
+		t.Context(),
+		access.APITokenInput{
+			PrincipalID: principal.ID, Name: "approval",
+			Privileges: []access.Privilege{access.PrivilegeApproveDeployment},
+			ExpiresAt:  time.Now().UTC().Add(time.Hour).Truncate(time.Second),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiresAt, err := time.Parse(time.RFC3339Nano, token.ExpiresAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence := access.CredentialEvidence{
+		Class: "api_token", ID: token.ID, PrincipalID: principal.ID,
+		ExpiresAt: expiresAt,
+	}
+	for _, test := range []struct {
+		name, projectID, environment string
+		want                         bool
+	}{
+		{"intended scope", "finance", "production", true},
+		{"other project", "operations", "production", false},
+		{"other environment", "finance", "staging", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			allowed, err := module.AuthorizeCredentialEvidence(
+				t.Context(), evidence, test.projectID, test.environment,
+				access.PrivilegeApproveDeployment,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if allowed != test.want {
+				t.Fatalf("allowed = %t, want %t", allowed, test.want)
+			}
+		})
 	}
 }

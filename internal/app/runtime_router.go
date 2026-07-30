@@ -41,6 +41,7 @@ import (
 	workloadmodule "github.com/flidai/leapview/internal/workload/module"
 	workspacemodule "github.com/flidai/leapview/internal/workspace/module"
 	"github.com/flidai/leapview/pkg/pagestream"
+	"github.com/go-chi/chi/v5"
 )
 
 type QueryMetrics = dashboardmodule.Metrics
@@ -1049,6 +1050,15 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		Dashboard:      dashboardmodule.DashboardObjectRefs,
 		SemanticModel:  dashboardmodule.SemanticDatasetObjectRefs,
 		WorkspaceAsset: workspacemodule.AssetObjectRefs,
+		ProjectEnvironment: func(
+			r *http.Request,
+			_ string,
+		) []accessmodule.ObjectRef {
+			return []accessmodule.ObjectRef{accessmodule.ProjectEnvironmentObject(
+				chi.URLParam(r, "project"),
+				policy.defaultEnvironment,
+			)}
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("build APIGen authorizer: %w", err)

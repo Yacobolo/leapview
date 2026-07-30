@@ -190,6 +190,7 @@ func (m *Module) AuthorizeCredentialEvidence(
 	ctx context.Context,
 	evidence access.CredentialEvidence,
 	projectID string,
+	environment string,
 	privilege access.Privilege,
 ) (bool, error) {
 	repository := m.repositoryValue()
@@ -291,7 +292,7 @@ func (m *Module) AuthorizeCredentialEvidence(
 		ctx,
 		evidence.PrincipalID,
 		privilege,
-		access.PlatformObject(),
+		access.ProjectEnvironmentObject(projectID, environment),
 	)
 	return decision.Allowed, err
 }

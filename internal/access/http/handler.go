@@ -1155,7 +1155,7 @@ func (h Handler) DeleteGrant(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	}
 	err = runAuditedMutation(r, repo, func(txRepo access.Repository) (access.AuditEventInput, error) {
 		mutationErr := txRepo.DeleteGrant(r.Context(), workspaceID, chi.URLParam(r, "grant"))
-		return accessAuditInput(r, "grant.deleted", principal.ID, workspaceID, "grant", chi.URLParam(r, "grant"), grant.Privilege, "success", map[string]any{"objectId": grant.ObjectID, "objectType": string(grant.ObjectType), "subjectType": string(grant.SubjectType), "subjectId": grant.SubjectID}), mutationErr
+		return grantAuditInput(r, "grant.deleted", principal.ID, grant), mutationErr
 	})
 	if err != nil {
 		writeAuditedMutationError(w, err, stdhttp.StatusBadRequest)
@@ -1710,15 +1710,22 @@ func sessionDTO(row access.Session) map[string]any {
 }
 
 func grantAuditInput(r *stdhttp.Request, action, principalID string, grant access.Grant) access.AuditEventInput {
-	metadata, _ := json.Marshal(map[string]string{
+	metadataValues := map[string]string{
 		"objectId":    grant.ObjectID,
 		"objectType":  string(grant.ObjectType),
 		"subjectType": string(grant.SubjectType),
 		"subjectId":   grant.SubjectID,
 		"privilege":   string(grant.Privilege),
-	})
+	}
+	workspaceID := grant.WorkspaceID
+	if grant.ObjectType == access.SecurableProjectEnvironment {
+		workspaceID = ""
+		metadataValues["projectId"] = grant.WorkspaceID
+		metadataValues["environment"] = grant.ObjectID
+	}
+	metadata, _ := json.Marshal(metadataValues)
 	return access.AuditEventInput{
-		WorkspaceID:   grant.WorkspaceID,
+		WorkspaceID:   workspaceID,
 		PrincipalID:   principalID,
 		Action:        action,
 		TargetType:    "grant",
@@ -1922,6 +1929,9 @@ func objectRefFromValues(w stdhttp.ResponseWriter, r *stdhttp.Request, objectTyp
 		writeJSONError(w, fmt.Errorf("objectId is required for %s grants", objectType), stdhttp.StatusBadRequest)
 		return access.ObjectRef{}, false
 	}
+	if typ == access.SecurableProjectEnvironment {
+		return access.ProjectEnvironmentObject(workspaceID, objectID), true
+	}
 	return objectWithInferredParent(typ, workspaceID, objectID), true
 }
 
@@ -1980,6 +1990,7 @@ func objectRefFromGrant(grant access.Grant) access.ObjectRef {
 func validWorkspaceSecurableType(typ access.SecurableType) bool {
 	switch typ {
 	case access.SecurableDashboard,
+		access.SecurableProjectEnvironment,
 		access.SecurableSemanticModel,
 		access.SecurableSemanticField,
 		access.SecurableSource,

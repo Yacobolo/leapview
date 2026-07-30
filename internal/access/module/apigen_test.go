@@ -13,6 +13,7 @@ func testAPIGenAuthorizer(t *testing.T) *APIGenAuthorizer {
 	resolver := func(*http.Request, string) []ObjectRef { return nil }
 	authorizer, err := (&Module{}).APIGenAuthorizer(testAPIGenContracts(), APIGenObjectResolvers{
 		Dashboard: resolver, SemanticModel: resolver, WorkspaceAsset: resolver,
+		ProjectEnvironment: resolver,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -133,7 +134,7 @@ func TestAPIGenObjectResolverRejectsInvalidContracts(t *testing.T) {
 	}
 }
 
-func TestManagedDataAndDeploymentAPIGenPrivilegesArePlatformGlobal(t *testing.T) {
+func TestManagedDataAndDeploymentAPIGenPrivilegesAndScopes(t *testing.T) {
 	authorizer := testAPIGenAuthorizer(t)
 	want := map[string]access.Privilege{
 		"getActiveManagedDataRevision":          access.PrivilegeViewData,
@@ -179,8 +180,18 @@ func TestManagedDataAndDeploymentAPIGenPrivilegesArePlatformGlobal(t *testing.T)
 		if got, ok := apiGenOperationPrivilege(contract); !ok || got != expected {
 			t.Errorf("%s privilege = %q, want %q", operationID, got, expected)
 		}
-		if resolver, ok := authorizer.objectResolverForContract(contract); !ok || resolver != nil {
-			t.Errorf("%s must remain workspace-scoped without an exact-object resolver", operationID)
+		resolver, ok := authorizer.objectResolverForContract(contract)
+		if !ok {
+			t.Errorf("%s has an invalid object scope", operationID)
+			continue
+		}
+		wantScoped := operationID == "getDeployment" ||
+			operationID == "listDeployments" ||
+			operationID == "approveDeployment" ||
+			operationID == "revokeDeploymentApproval" ||
+			operationID == "activateDeployment"
+		if gotScoped := resolver != nil; gotScoped != wantScoped {
+			t.Errorf("%s project-environment scoped = %t, want %t", operationID, gotScoped, wantScoped)
 		}
 	}
 }

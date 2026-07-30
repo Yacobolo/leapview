@@ -22,4 +22,4 @@ ENV HOME=/home/author \
     LEAPVIEW_HOME=/home/author/.local/share/leapview
 
 ENTRYPOINT []
-CMD ["bash"]
+CMD ["/usr/local/libexec/leapviewctl", "qualify", "client-worker"]

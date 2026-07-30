@@ -174,7 +174,7 @@ func TestPlanChanges(t *testing.T) {
 			input: Input{Event: "pull_request", PullRequestNumber: 1},
 			changes: []Change{{
 				Status: "M",
-				Paths:  []string{"deploy/compose/qualification/authoring.sh"},
+				Paths:  []string{"deploy/compose/qualification/authoring-worker.mjs"},
 			}},
 			want: Jobs{
 				ProductionImage:     true,

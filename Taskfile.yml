@@ -155,7 +155,6 @@ tasks:
       - bun run typecheck:contracts
       - bun run test:production-assets
       - bun run test:movielens-performance-harness
-      - bun run test:qualification-performance-policy
       - bun run test:public-site-smoke
 
   ci:test:frontend:reports:

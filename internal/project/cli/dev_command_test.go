@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"path/filepath"
@@ -238,6 +239,36 @@ func TestDevCommandCanRemainHeadlessAndTreatsBrowserFailureAsRecoverable(t *test
 				t.Fatalf("stderr = %q, want %q", errOutput.String(), test.wantWarning)
 			}
 		})
+	}
+}
+
+func TestDevCommandEmitsVersionedJSONResult(t *testing.T) {
+	projectPath := filepath.Join("..", "..", "..", "dashboards", "leapview.yaml")
+	command := DevCommand(
+		t.Context(),
+		&devCommandClient{},
+		NewCandidateCheckpointStore(filepath.Join(t.TempDir(), "authoring.json")),
+		&devRemoteFactory{},
+		nil,
+	)
+	var output strings.Builder
+	command.SetOut(&output)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{
+		"--once", "--no-browser", "--format", "json",
+		"--project", projectPath, "--target", "prod",
+	})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var result DevResult
+	if err := json.Unmarshal([]byte(output.String()), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.SchemaVersion != 1 || result.CandidateID != "cand_1" ||
+		result.Revision != 7 || result.PrincipalID != "principal_ci" ||
+		result.PreviewURL != "https://prod.example.com/candidates/cand_1" {
+		t.Fatalf("result = %#v", result)
 	}
 }
 

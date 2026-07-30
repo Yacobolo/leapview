@@ -17531,6 +17531,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: VIEW_ITEM
+      x-leapview-object-scope: project-environment
     post:
       operationId: createDeployment
       summary: Deploy a ready project release
@@ -18223,6 +18224,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: VIEW_ITEM
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/deployments/{deployment}/activate:
     post:
       operationId: activateDeployment
@@ -18575,6 +18577,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: ACTIVATE_DEPLOYMENT
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/deployments/{deployment}/approval-requests:
     post:
       operationId: requestDeploymentApproval
@@ -19172,6 +19175,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: APPROVE_DEPLOYMENT
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/deployments/{deployment}/approval-requests/{approval}/deny:
     post:
       operationId: denyDeploymentApproval
@@ -19475,6 +19479,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: APPROVE_DEPLOYMENT
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/deployments/{deployment}/approval-requests/{approval}/revoke:
     post:
       operationId: revokeDeploymentApproval
@@ -19778,6 +19783,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: APPROVE_DEPLOYMENT
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/deployments/{deployment}/cancel:
     post:
       operationId: cancelDeployment

@@ -44,6 +44,10 @@ func WorkspaceObject(workspaceID string) ObjectRef {
 	return access.WorkspaceObject(workspaceID)
 }
 
+func ProjectEnvironmentObject(projectID, environment string) ObjectRef {
+	return access.ProjectEnvironmentObject(projectID, environment)
+}
+
 func AgentAPICredential(principalID, workspaceID string, privileges []string) APICredential {
 	values := make([]access.Privilege, 0, len(privileges))
 	for _, privilege := range privileges {

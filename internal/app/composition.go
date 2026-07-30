@@ -319,7 +319,7 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 			ctx context.Context,
 			actor deploymentmodule.ApprovalActor,
 			projectID string,
-			_ string,
+			environment string,
 		) error {
 			allowed, err := accessModule.AuthorizeCredentialEvidence(
 				ctx,
@@ -329,6 +329,7 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 					ExpiresAt:   actor.CredentialExpiresAt,
 				},
 				projectID,
+				environment,
 				accessmodule.PrivilegeApproveDeployment,
 			)
 			if err != nil {
@@ -343,7 +344,7 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 			ctx context.Context,
 			actor deploymentmodule.ApprovalActor,
 			projectID string,
-			_ string,
+			environment string,
 		) error {
 			allowed, err := accessModule.AuthorizeCredentialEvidence(
 				ctx,
@@ -353,6 +354,7 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 					ExpiresAt:   actor.CredentialExpiresAt,
 				},
 				projectID,
+				environment,
 				accessmodule.PrivilegeActivateDeployment,
 			)
 			if err != nil {

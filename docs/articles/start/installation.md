@@ -199,7 +199,8 @@ cp deployment.env.example deployment.env
 ./leapviewctl first-login
 ```
 
-Before adoption, run the archive's bundled `./qualification/qualify.sh`.
+Before adoption, run `./leapviewctl qualify installed-candidate` from the
+extracted archive.
 `QUALIFICATION.md` maps every automated assertion to the corresponding human
 check, including anonymous distribution, the five-minute sample, audited
 authorization denial, restart persistence, and an isolated restore using the
