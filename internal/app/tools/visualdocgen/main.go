@@ -507,8 +507,14 @@ func buildVisualDocumentReference(examples []visualExample) (visualDocumentRefer
 		renderers[capability.Renderer] = struct{}{}
 		shapes[visual.ResultShape()] = struct{}{}
 		collectQueryFields(visual.Query, queryFields)
+		if len(visual.Datasets) > 0 {
+			queryFields["datasets"] = struct{}{}
+		}
 		for key := range visualPresentationValues(visual) {
 			presentation[key] = struct{}{}
+		}
+		for key := range visualKPIValues(visual) {
+			presentation["kpi."+key] = struct{}{}
 		}
 		reference.Examples[examples[index].ID] = visualExampleReference{KeyFields: visualKeyFields(previous, visual)}
 		previous = examples[index].Chart
@@ -593,6 +599,23 @@ func visualKeyFields(previous *reportdef.Visual, visual reportdef.Visual) []stri
 	if len(visual.Geo.Layers) > 0 && (previous == nil || !reflect.DeepEqual(previous.Geo.Layers, visual.Geo.Layers)) {
 		fields = append(fields, "geo.layers")
 	}
+	if len(visual.Datasets) > 0 && (previous == nil || !reflect.DeepEqual(previous.Datasets, visual.Datasets)) {
+		fields = append(fields, "datasets")
+	}
+	kpiValues := visualKPIValues(visual)
+	previousKPIValues := map[string]any{}
+	if previous != nil {
+		previousKPIValues = visualKPIValues(*previous)
+	}
+	kpiKeys := make(map[string]struct{}, len(kpiValues))
+	for key := range kpiValues {
+		kpiKeys[key] = struct{}{}
+	}
+	for _, key := range sortedSet(kpiKeys) {
+		if previous == nil || !reflect.DeepEqual(previousKPIValues[key], kpiValues[key]) {
+			fields = append(fields, "kpi."+key)
+		}
+	}
 	if visual.Custom.Engine != "" && (previous == nil || previous.Custom.Engine != visual.Custom.Engine) {
 		fields = append(fields, "custom.engine")
 	}
@@ -612,6 +635,26 @@ func visualPresentationValues(visual reportdef.Visual) map[string]any {
 			continue
 		}
 		name := typeInfo.Field(index).Tag.Get("yaml")
+		if name != "" && name != "-" {
+			out[name] = field.Interface()
+		}
+	}
+	return out
+}
+
+func visualKPIValues(visual reportdef.Visual) map[string]any {
+	if visual.Type != "kpi" {
+		return nil
+	}
+	value := reflect.ValueOf(visual.KPI)
+	typeInfo := value.Type()
+	out := make(map[string]any)
+	for index := 0; index < value.NumField(); index++ {
+		field := value.Field(index)
+		if field.IsZero() {
+			continue
+		}
+		name := strings.Split(typeInfo.Field(index).Tag.Get("yaml"), ",")[0]
 		if name != "" && name != "-" {
 			out[name] = field.Interface()
 		}
@@ -645,7 +688,7 @@ func sortedSet(values map[string]struct{}) []string {
 
 func visualAccessibilityGuidance(visual reportdef.Visual) string {
 	if visual.KindOrDefault() == "kpi" {
-		return "Keep the note concise and do not use tone as the only indication of status."
+		return "State current, comparison, target, and status in text; use a direction cue and label so color is never the only indication of change."
 	}
 	switch visual.Type {
 	case "map":

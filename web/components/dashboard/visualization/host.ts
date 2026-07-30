@@ -83,6 +83,95 @@ export class VisualizationHost extends LitElement {
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .lv-kpi-comparison {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--base-size-4) var(--base-size-8);
+      color: var(--lv-fg-muted);
+      font-size: var(--lv-font-size-body-sm);
+      line-height: var(--lv-line-height-compact);
+    }
+    .lv-kpi-delta {
+      font-weight: var(--lv-font-weight-strong);
+    }
+    .lv-kpi-delta[data-status='favorable'] { color: var(--lv-fg-success); }
+    .lv-kpi-delta[data-status='unfavorable'] { color: var(--lv-fg-danger); }
+    .lv-kpi-delta[data-status='unavailable'] { color: var(--lv-fg-muted); }
+    .lv-kpi-goal, .lv-kpi-status {
+      color: var(--lv-fg-muted);
+      font-size: var(--lv-font-size-caption);
+      line-height: var(--lv-line-height-compact);
+    }
+    .lv-kpi-status[data-tone='success'] { color: var(--lv-fg-success); }
+    .lv-kpi-status[data-tone='warning'] { color: var(--lv-fg-warning); }
+    .lv-kpi-status[data-tone='danger'] { color: var(--lv-fg-danger); }
+    .lv-kpi-progress {
+      position: relative;
+      isolation: isolate;
+      box-sizing: border-box;
+      width: 100%;
+      height: var(--base-size-8);
+      overflow: hidden;
+      border: var(--lv-border-width) solid var(--lv-line-default);
+      background: var(--lv-bg-panel-muted);
+    }
+    .lv-kpi-progress-progress { border-radius: var(--lv-radius-full); }
+    .lv-kpi-progress-bullet {
+      height: var(--base-size-12);
+    }
+    .lv-kpi-bullet-range {
+      position: absolute;
+      z-index: 0;
+      inset-block: 0;
+      background: var(--lv-bg-panel-muted);
+    }
+    .lv-kpi-bullet-range[data-tone='ink'] { background: var(--lv-data-1-muted); }
+    .lv-kpi-bullet-range[data-tone='success'] {
+      background: color-mix(in srgb, var(--lv-fg-success) 28%, var(--lv-chart-surface));
+    }
+    .lv-kpi-bullet-range[data-tone='warning'] {
+      background: color-mix(in srgb, var(--lv-fg-warning) 28%, var(--lv-chart-surface));
+    }
+    .lv-kpi-bullet-range[data-tone='danger'] {
+      background: color-mix(in srgb, var(--lv-fg-danger) 28%, var(--lv-chart-surface));
+    }
+    .lv-kpi-bullet-target {
+      position: absolute;
+      z-index: 2;
+      inset-block: calc(-1 * var(--lv-border-width));
+      width: var(--lv-border-width-focus);
+      transform: translateX(-50%);
+      background: var(--lv-fg-default);
+    }
+    .lv-kpi-progress-fill {
+      position: relative;
+      z-index: 1;
+      display: block;
+      height: 100%;
+      background: var(--lv-data-1);
+    }
+    .lv-kpi-progress-bullet .lv-kpi-progress-fill {
+      inset-block-start: 25%;
+      height: 50%;
+    }
+    .lv-kpi-sparkline {
+      width: 100%;
+      height: var(--base-size-24);
+      overflow: visible;
+    }
+    .lv-kpi-sparkline path {
+      fill: none;
+      stroke: var(--lv-data-1);
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: var(--lv-border-width-focus);
+      vector-effect: non-scaling-stroke;
+    }
+    .lv-kpi-card[data-mode='bullet'], .lv-kpi-card[data-mode='progress'] {
+      align-content: center;
+      gap: var(--base-size-4);
+    }
     .initial-loading {
       position: absolute;
       inset: 0;

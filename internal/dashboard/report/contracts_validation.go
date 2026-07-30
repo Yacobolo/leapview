@@ -331,6 +331,9 @@ func validateVisualPresentation(name string, visual Visual) error {
 	if err := validateContextDatasetsAndMetadata(name, visual); err != nil {
 		return err
 	}
+	if err := validateKPIConfiguration(name, visual); err != nil {
+		return err
+	}
 	presentation := visual.Presentation
 	if !oneOf(presentation.Legend, "", "hidden", "top", "right", "bottom", "left") {
 		return fmt.Errorf("visual %q has unsupported presentation.legend %q", name, presentation.Legend)
@@ -484,6 +487,139 @@ func validateContextDatasetsAndMetadata(name string, visual Visual) error {
 		}
 	}
 	return nil
+}
+
+func validateKPIConfiguration(name string, visual Visual) error {
+	configured := visual.KPI.Mode != "" || visual.KPI.Comparison != nil || visual.KPI.Goal != nil || visual.KPI.Trend != nil ||
+		visual.KPI.Delta != "" || visual.KPI.FavorableDirection != "" || visual.KPI.MissingComparison != "" || len(visual.KPI.Ranges) > 0
+	if visual.Type != "kpi" {
+		if configured {
+			return fmt.Errorf("visual %q kpi configuration is only valid for type kpi", name)
+		}
+		return nil
+	}
+	if !oneOf(visual.KPI.Mode, "", "compact", "bullet", "progress") {
+		return fmt.Errorf("visual %q has unsupported kpi.mode %q", name, visual.KPI.Mode)
+	}
+	if !oneOf(visual.KPI.Delta, "", "absolute", "relative") {
+		return fmt.Errorf("visual %q has unsupported kpi.delta %q", name, visual.KPI.Delta)
+	}
+	if !oneOf(visual.KPI.FavorableDirection, "", "increase", "decrease", "neutral") {
+		return fmt.Errorf("visual %q has unsupported kpi.favorable_direction %q", name, visual.KPI.FavorableDirection)
+	}
+	if !oneOf(visual.KPI.MissingComparison, "", "show_unavailable", "hide") {
+		return fmt.Errorf("visual %q has unsupported kpi.missing_comparison %q", name, visual.KPI.MissingComparison)
+	}
+	if visual.KPI.Comparison != nil && visual.KPI.FavorableDirection == "" {
+		return fmt.Errorf("visual %q kpi comparison requires favorable_direction", name)
+	}
+	if oneOf(visual.KPI.Mode, "bullet", "progress") && visual.KPI.Goal == nil {
+		return fmt.Errorf("visual %q kpi mode %q requires an explicit goal", name, visual.KPI.Mode)
+	}
+	for bindingName, binding := range map[string]*VisualKPIValueBinding{
+		"comparison": visual.KPI.Comparison,
+		"goal":       visual.KPI.Goal,
+	} {
+		if binding == nil {
+			continue
+		}
+		if err := validateKPIValueBinding(name, bindingName, visual, *binding); err != nil {
+			return err
+		}
+	}
+	if trend := visual.KPI.Trend; trend != nil {
+		query, ok := visual.Datasets[trend.Dataset]
+		if !ok {
+			return fmt.Errorf("visual %q kpi trend references unknown dataset %q", name, trend.Dataset)
+		}
+		if query.Limit <= 1 {
+			return fmt.Errorf("visual %q kpi trend dataset must have limit greater than one", name)
+		}
+		sorted := false
+		for _, sort := range query.Sort {
+			if sort.Field == trend.Category && oneOf(sort.Direction, "asc", "desc") {
+				sorted = true
+				break
+			}
+		}
+		if !sorted {
+			return fmt.Errorf("visual %q kpi trend dataset must sort by category field %q", name, trend.Category)
+		}
+		if visual.DataBudget.MaxRows > 0 && query.Limit > visual.DataBudget.MaxRows {
+			return fmt.Errorf("visual %q kpi trend limit %d exceeds data budget %d", name, query.Limit, visual.DataBudget.MaxRows)
+		}
+		aliases := visualQueryAliases(query)
+		for role, field := range map[string]string{"category": trend.Category, "value": trend.Value} {
+			if strings.TrimSpace(field) == "" {
+				return fmt.Errorf("visual %q kpi trend requires %s field", name, role)
+			}
+			if _, ok := aliases[field]; !ok {
+				return fmt.Errorf("visual %q kpi trend references unknown field %q in dataset %q", name, field, trend.Dataset)
+			}
+		}
+	}
+	var previousMaximum *float64
+	for index, valueRange := range visual.KPI.Ranges {
+		if strings.TrimSpace(valueRange.Label) == "" {
+			return fmt.Errorf("visual %q kpi range %d requires label", name, index)
+		}
+		if !oneOf(valueRange.Tone, "neutral", "ink", "success", "warning", "danger") {
+			return fmt.Errorf("visual %q kpi range %d has unsupported tone %q", name, index, valueRange.Tone)
+		}
+		if valueRange.Minimum != nil && valueRange.Maximum != nil && *valueRange.Minimum >= *valueRange.Maximum {
+			return fmt.Errorf("visual %q kpi range %d minimum must be less than maximum", name, index)
+		}
+		if index > 0 && valueRange.Minimum == nil {
+			return fmt.Errorf("visual %q kpi range %d requires minimum", name, index)
+		}
+		if index < len(visual.KPI.Ranges)-1 && valueRange.Maximum == nil {
+			return fmt.Errorf("visual %q kpi range %d requires maximum", name, index)
+		}
+		if previousMaximum != nil && valueRange.Minimum != nil && *valueRange.Minimum < *previousMaximum {
+			return fmt.Errorf("visual %q kpi ranges overlap at index %d", name, index)
+		}
+		previousMaximum = valueRange.Maximum
+	}
+	return nil
+}
+
+func validateKPIValueBinding(name, bindingName string, visual Visual, binding VisualKPIValueBinding) error {
+	datasetID := binding.Dataset
+	if datasetID == "" {
+		datasetID = "primary"
+	}
+	aliases := map[string]struct{}{"value": {}}
+	if datasetID != "primary" {
+		query, ok := visual.Datasets[datasetID]
+		if !ok {
+			return fmt.Errorf("visual %q kpi %s references unknown dataset %q", name, bindingName, datasetID)
+		}
+		aliases = visualQueryAliases(query)
+	}
+	if _, ok := aliases[binding.Field]; !ok {
+		return fmt.Errorf("visual %q kpi %s references unknown field %q in dataset %q", name, bindingName, binding.Field, datasetID)
+	}
+	if !oneOf(binding.Reducer, "", "first", "last", "minimum", "maximum", "mean", "median") {
+		return fmt.Errorf("visual %q kpi %s has unsupported reducer %q", name, bindingName, binding.Reducer)
+	}
+	return nil
+}
+
+func visualQueryAliases(query VisualQuery) map[string]struct{} {
+	aliases := make(map[string]struct{}, len(query.Dimensions)+len(query.Measures)+2)
+	for _, field := range query.Dimensions {
+		aliases[defaultString(field.Alias, fieldRefAlias(field.Field))] = struct{}{}
+	}
+	if query.Time.Field != "" {
+		aliases[defaultString(query.Time.Alias, fieldRefAlias(query.Time.Field))] = struct{}{}
+	}
+	if !query.Series.IsZero() {
+		aliases[defaultString(query.Series.Alias, fieldRefAlias(query.Series.Field))] = struct{}{}
+	}
+	for _, field := range query.Measures {
+		aliases[defaultString(field.Alias, fieldRefAlias(field.Field))] = struct{}{}
+	}
+	return aliases
 }
 
 func validateConditionalFormatting(name, visualType string, formats []VisualConditionalFormat) error {

@@ -1,8 +1,8 @@
-import type { VisualizationEnvelope, VisualizationFieldRef } from '../../../../generated/visualization'
+import type { VisualizationEnvelope } from '../../../../generated/visualization'
 import { defaultRendererContext, type RendererAdapter, type RendererContext, type RendererHandle } from '../host-controller'
 import { conditionalIconGlyph, conditionalStyleColor, contrastTextColor, resolveConditionalFormat } from '../conditional-format'
-import { formatValue } from '../format'
 import { resolveVisualizationMetadata } from '../metadata'
+import { kpiSparklinePath, resolveKPIState } from './kpi'
 
 export const adapter: RendererAdapter = {
   mount(container, envelope, context) { return new HTMLHandle(container, envelope, context) },
@@ -16,14 +16,20 @@ class HTMLHandle implements RendererHandle {
     article.className = 'lv-kpi-card'
     const conditional = kpiConditionalPresentation(envelope, context)
     const metadata = resolveVisualizationMetadata(envelope)
-    article.setAttribute('aria-label', [
+    const state = resolveKPIState(envelope, context)
+    article.setAttribute('aria-label', accessibleLabel([
       metadata.title,
       metadata.summary ?? metadata.description,
+      state.accessibleSummary,
       conditional.iconLabel ? `Status: ${conditional.iconLabel}.` : '',
-    ].filter(Boolean).join('. '))
+    ]))
     if (conditional.background) article.style.backgroundColor = conditional.background
     if (conditional.foreground) article.style.color = conditional.foreground
-    if (envelope.spec.kind === 'kpi') article.dataset.tone = envelope.spec.presentation.tone
+    if (envelope.spec.kind === 'kpi') {
+      article.dataset.mode = envelope.spec.presentation.mode
+      const tone = state.rangeTone ?? envelope.spec.presentation.tone
+      if (tone) article.dataset.tone = tone
+    }
     const label = document.createElement('div')
     label.className = 'lv-visualization-label'
     label.textContent = metadata.title
@@ -35,10 +41,94 @@ class HTMLHandle implements RendererHandle {
     const value = document.createElement('strong')
     value.className = 'lv-visualization-kpi'
     if (conditional.valueColor) value.style.color = conditional.valueColor
-    value.textContent = [conditional.icon, kpiText(envelope, context)].filter(Boolean).join(' ')
+    value.textContent = [conditional.icon, state.currentText].filter(Boolean).join(' ')
     article.append(label)
     if (subtitle) article.append(subtitle)
     article.append(value)
+    if (state.comparisonText !== undefined || state.deltaText !== undefined) {
+      const comparison = document.createElement('div')
+      comparison.className = 'lv-kpi-comparison'
+      if (state.comparisonText !== undefined) {
+        const comparisonValue = document.createElement('span')
+        comparisonValue.textContent = `${state.comparisonLabel}: ${state.comparisonText}`
+        comparison.append(comparisonValue)
+      }
+      if (state.deltaText !== undefined) {
+        const delta = document.createElement('span')
+        delta.className = 'lv-kpi-delta'
+        if (state.changeStatus) delta.dataset.status = state.changeStatus
+        delta.textContent = [state.deltaCue, state.deltaText, state.changeStatus].filter(Boolean).join(' ')
+        comparison.append(delta)
+      }
+      article.append(comparison)
+    }
+    if (envelope.spec.kind === 'kpi' && (envelope.spec.presentation.mode === 'bullet' || envelope.spec.presentation.mode === 'progress')) {
+      const mode = envelope.spec.presentation.mode
+      const progress = document.createElement('div')
+      progress.className = `lv-kpi-progress lv-kpi-progress-${mode}`
+      progress.setAttribute('role', mode === 'bullet' ? 'meter' : 'progressbar')
+      progress.setAttribute('aria-label', state.goalLabel ?? 'Target')
+      progress.setAttribute('aria-valuetext', `${state.currentText} of ${state.goalText ?? 'unavailable'}`)
+      progress.setAttribute('aria-valuemin', String(mode === 'bullet' ? state.bulletMinimum ?? 0 : 0))
+      const maximum = mode === 'bullet' ? state.bulletMaximum : state.goal
+      if (maximum !== undefined) progress.setAttribute('aria-valuemax', String(maximum))
+      if (state.current !== undefined) progress.setAttribute('aria-valuenow', String(state.current))
+      if (mode === 'bullet') {
+        for (const range of state.bulletRanges) {
+          const band = document.createElement('span')
+          band.className = 'lv-kpi-bullet-range'
+          band.dataset.tone = range.tone
+          band.style.insetInlineStart = `${range.start * 100}%`
+          band.style.width = `${(range.end - range.start) * 100}%`
+          band.setAttribute('aria-hidden', 'true')
+          progress.append(band)
+        }
+      }
+      const fill = document.createElement('span')
+      fill.className = 'lv-kpi-progress-fill'
+      const fillPosition = mode === 'bullet' ? state.bulletValuePosition : state.progress
+      fill.style.width = `${(fillPosition ?? 0) * 100}%`
+      progress.append(fill)
+      if (mode === 'bullet' && state.bulletGoalPosition !== undefined) {
+        const target = document.createElement('span')
+        target.className = 'lv-kpi-bullet-target'
+        target.style.insetInlineStart = `${state.bulletGoalPosition * 100}%`
+        target.setAttribute('aria-hidden', 'true')
+        progress.append(target)
+      }
+      article.append(progress)
+    }
+    if (state.goalText !== undefined) {
+      const goal = document.createElement('small')
+      goal.className = 'lv-kpi-goal'
+      goal.textContent = `${state.goalLabel}: ${state.goalText}`
+      article.append(goal)
+    }
+    if (state.rangeLabel) {
+      const status = document.createElement('small')
+      status.className = 'lv-kpi-status'
+      status.dataset.tone = state.rangeTone
+      status.textContent = `Status: ${state.rangeLabel}`
+      article.append(status)
+    } else if (envelope.spec.kind === 'kpi' && envelope.spec.presentation.ranges.length > 0 && state.current !== undefined) {
+      const status = document.createElement('small')
+      status.className = 'lv-kpi-status'
+      status.dataset.tone = 'warning'
+      status.textContent = 'Status: Out of range'
+      article.append(status)
+    }
+    if (state.trend.length > 0) {
+      const namespace = 'http://www.w3.org/2000/svg'
+      const sparkline = document.createElementNS(namespace, 'svg')
+      sparkline.classList.add('lv-kpi-sparkline')
+      sparkline.setAttribute('viewBox', '0 0 100 28')
+      sparkline.setAttribute('preserveAspectRatio', 'none')
+      sparkline.setAttribute('aria-hidden', 'true')
+      const path = document.createElementNS(namespace, 'path')
+      path.setAttribute('d', kpiSparklinePath(state.trend))
+      sparkline.append(path)
+      article.append(sparkline)
+    }
     if (envelope.spec.kind === 'kpi' && envelope.spec.presentation.note) {
       const note = document.createElement('small'); note.className = 'lv-visualization-note'; note.textContent = envelope.spec.presentation.note; article.append(note)
     }
@@ -85,12 +175,14 @@ export function kpiConditionalPresentation(envelope: VisualizationEnvelope, cont
 }
 
 export function kpiText(envelope: VisualizationEnvelope, context: RendererContext = defaultRendererContext): string {
-  const spec = envelope.spec
-  if (spec.kind !== 'kpi') return '—'
-  const value = scalar(envelope, spec.value)
-  const field = spec.datasets.find((dataset) => dataset.id === spec.value.dataset)?.fields.find((candidate) => candidate.id === spec.value.field)
-  if (field?.format) return formatValue(context.locale, field.format, value)
-  return value === null || value === undefined ? '—' : String(value)
+  return resolveKPIState(envelope, context).currentText
+}
+
+export function accessibleLabel(parts: Array<string | undefined>): string {
+  const sentences = parts
+    .map((part) => part?.trim().replace(/[\s.]+$/u, ''))
+    .filter((part): part is string => Boolean(part))
+  return sentences.length === 0 ? '' : `${sentences.join('. ')}.`
 }
 
 function intentColor(intent: string, context: RendererContext): string {
@@ -115,11 +207,4 @@ function iconAccessibleLabel(icon: string): string {
     case 'warning': return 'warning'
     default: return icon.replaceAll('_', ' ')
   }
-}
-
-function scalar(envelope: VisualizationEnvelope, ref: VisualizationFieldRef): unknown {
-  if (envelope.dataState.kind !== 'inline') return undefined
-  const dataset = envelope.dataState.datasets.find((candidate) => candidate.id === ref.dataset)
-  const index = dataset?.columns.indexOf(ref.field) ?? -1
-  return index >= 0 ? dataset?.rows[0]?.[index] : undefined
 }

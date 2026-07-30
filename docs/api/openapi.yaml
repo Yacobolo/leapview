@@ -53130,10 +53130,29 @@ components:
     KPIVisualizationPresentation:
       type: object
       required:
-        - trend
+        - mode
+        - delta
+        - favorableDirection
+        - missingComparison
+        - ranges
       properties:
-        trend:
-          $ref: '#/components/schemas/VisualizationKPITrend'
+        mode:
+          $ref: '#/components/schemas/VisualizationKPIMode'
+        delta:
+          $ref: '#/components/schemas/VisualizationKPIDeltaMode'
+        favorableDirection:
+          $ref: '#/components/schemas/VisualizationKPIDirection'
+        missingComparison:
+          $ref: '#/components/schemas/VisualizationKPIMissingComparison'
+        ranges:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationKPIQualitativeRange'
+          example:
+            - label: example
+              maximum: !!float 1
+              minimum: !!float 1
+              tone: neutral
         note:
           type: string
           example: example
@@ -53147,12 +53166,20 @@ components:
             - tone: neutral
               value: !!float 1
       example:
+        delta: absolute
+        favorableDirection: increase
+        missingComparison: show_unavailable
+        mode: compact
         note: example
+        ranges:
+          - label: example
+            maximum: !!float 1
+            minimum: !!float 1
+            tone: neutral
         thresholds:
           - tone: neutral
             value: !!float 1
         tone: neutral
-        trend: neutral
     KPIVisualizationSpec:
       type: object
       allOf:
@@ -53170,26 +53197,49 @@ components:
         value:
           $ref: '#/components/schemas/VisualizationFieldRef'
         comparison:
-          $ref: '#/components/schemas/VisualizationFieldRef'
+          $ref: '#/components/schemas/VisualizationKPIValueBinding'
+        goal:
+          $ref: '#/components/schemas/VisualizationKPIValueBinding'
         trend:
-          $ref: '#/components/schemas/VisualizationFieldRef'
+          $ref: '#/components/schemas/VisualizationKPITrendBinding'
         presentation:
           $ref: '#/components/schemas/KPIVisualizationPresentation'
       example:
         comparison:
-          dataset: example
-          field: example
+          field:
+            dataset: example
+            field: example
+          label: example
+          reducer: first
+        goal:
+          field:
+            dataset: example
+            field: example
+          label: example
+          reducer: first
         kind: example
         presentation:
+          delta: absolute
+          favorableDirection: increase
+          missingComparison: show_unavailable
+          mode: compact
           note: example
+          ranges:
+            - label: example
+              maximum: !!float 1
+              minimum: !!float 1
+              tone: neutral
           thresholds:
             - tone: neutral
               value: !!float 1
           tone: neutral
-          trend: neutral
         trend:
-          dataset: example
-          field: example
+          category:
+            dataset: example
+            field: example
+          value:
+            dataset: example
+            field: example
         value:
           dataset: example
           field: example
@@ -59667,13 +59717,93 @@ components:
           field: example
         targetFactID: example
         targetFieldID: example
-    VisualizationKPITrend:
+    VisualizationKPIDeltaMode:
       type: string
       enum:
+        - absolute
+        - relative
+      example: absolute
+    VisualizationKPIDirection:
+      type: string
+      enum:
+        - increase
+        - decrease
         - neutral
-        - positive
-        - negative
-      example: neutral
+      example: increase
+    VisualizationKPIMissingComparison:
+      type: string
+      enum:
+        - show_unavailable
+        - hide
+      example: show_unavailable
+    VisualizationKPIMode:
+      type: string
+      enum:
+        - compact
+        - bullet
+        - progress
+      example: compact
+    VisualizationKPIQualitativeRange:
+      type: object
+      required:
+        - label
+        - tone
+      properties:
+        minimum:
+          type: number
+          format: double
+          example: !!float 1
+        maximum:
+          type: number
+          format: double
+          example: !!float 1
+        label:
+          type: string
+          example: example
+        tone:
+          $ref: '#/components/schemas/VisualizationTone'
+      example:
+        label: example
+        maximum: !!float 1
+        minimum: !!float 1
+        tone: neutral
+    VisualizationKPITrendBinding:
+      type: object
+      required:
+        - category
+        - value
+      properties:
+        category:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        value:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+      example:
+        category:
+          dataset: example
+          field: example
+        value:
+          dataset: example
+          field: example
+    VisualizationKPIValueBinding:
+      type: object
+      required:
+        - field
+        - reducer
+        - label
+      properties:
+        field:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        reducer:
+          $ref: '#/components/schemas/VisualizationReferenceReducer'
+        label:
+          type: string
+          example: example
+      example:
+        field:
+          dataset: example
+          field: example
+        label: example
+        reducer: first
     VisualizationLabelPosition:
       type: string
       enum:

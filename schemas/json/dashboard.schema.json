@@ -1871,10 +1871,155 @@
       },
       "type": "object"
     },
+    "#KPIConfiguration": {
+      "additionalProperties": false,
+      "properties": {
+        "comparison": {
+          "$ref": "#/$defs/%23KPIValueBinding"
+        },
+        "delta": {
+          "enum": [
+            "absolute",
+            "relative"
+          ]
+        },
+        "favorable_direction": {
+          "enum": [
+            "increase",
+            "decrease",
+            "neutral"
+          ]
+        },
+        "goal": {
+          "$ref": "#/$defs/%23KPIValueBinding"
+        },
+        "missing_comparison": {
+          "enum": [
+            "show_unavailable",
+            "hide"
+          ]
+        },
+        "mode": {
+          "enum": [
+            "compact",
+            "bullet",
+            "progress"
+          ]
+        },
+        "ranges": {
+          "items": {
+            "$ref": "#/$defs/%23KPIQualitativeRange"
+          },
+          "type": "array"
+        },
+        "trend": {
+          "$ref": "#/$defs/%23KPITrendBinding"
+        }
+      },
+      "type": "object"
+    },
+    "#KPIQualitativeRange": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "tone": {
+          "enum": [
+            "neutral",
+            "ink",
+            "success",
+            "warning",
+            "danger"
+          ]
+        }
+      },
+      "required": [
+        "label",
+        "tone"
+      ],
+      "type": "object"
+    },
+    "#KPITrendBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "dataset": {
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "value": {
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        }
+      },
+      "required": [
+        "category",
+        "dataset",
+        "value"
+      ],
+      "type": "object"
+    },
+    "#KPIValueBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "dataset": {
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "field": {
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "reducer": {
+          "enum": [
+            "first",
+            "last",
+            "minimum",
+            "maximum",
+            "mean",
+            "median"
+          ]
+        }
+      },
+      "required": [
+        "dataset",
+        "field"
+      ],
+      "type": "object"
+    },
     "#KPIVisual": {
       "$ref": "#/$defs/%23VisualCommon",
       "additionalProperties": false,
       "properties": {
+        "kpi": {
+          "$ref": "#/$defs/%23KPIConfiguration"
+        },
         "presentation": {
           "$ref": "#/$defs/%23KPIVisualPresentation"
         },

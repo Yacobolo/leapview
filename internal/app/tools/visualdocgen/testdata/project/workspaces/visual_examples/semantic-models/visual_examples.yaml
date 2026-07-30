@@ -40,6 +40,18 @@ spec:
       empty: "null"
       unit: USD
       format: currency
+    missing_revenue:
+      label: Missing revenue comparison
+      fact: orders
+      aggregation: sum
+      input: {field: orders.revenue}
+      filters:
+      - field: orders.status
+        operator: equals
+        values: [comparison_fixture_without_rows]
+      empty: "null"
+      unit: USD
+      format: currency
     review_score:
       label: Review score
       fact: orders
@@ -72,6 +84,16 @@ spec:
     aov:
       label: Average order value
       expression: safe_divide(${revenue}, ${order_count})
+      unit: USD
+      format: currency
+    revenue_baseline:
+      label: Revenue baseline
+      expression: ${revenue} * 0.9
+      unit: USD
+      format: currency
+    revenue_target:
+      label: Revenue target
+      expression: ${revenue} * 1.1
       unit: USD
       format: currency
     revenue_q1:
