@@ -75,4 +75,20 @@ func TestEnvelopeFromFramesOrdersAndValidatesContextDatasets(t *testing.T) {
 	if empty.Status.Kind != ir.VisualizationStatusKindNoData {
 		t.Fatalf("status = %q, want no_data from empty primary dataset", empty.Status.Kind)
 	}
+
+	initial, err := EmptyEnvelopeFromDefinition(definition, 1, 1, 0)
+	if err != nil {
+		t.Fatalf("EmptyEnvelopeFromDefinition(): %v", err)
+	}
+	initialState := initial.DataState.Value.(*ir.InlineVisualizationDataState)
+	if len(initialState.Datasets) != 2 || initialState.Datasets[0].ID != "primary" || initialState.Datasets[1].ID != "context" {
+		t.Fatalf("initial datasets = %#v", initialState.Datasets)
+	}
+	if got := initialState.Datasets[1].Columns; len(got) != 1 || got[0] != "region" {
+		t.Fatalf("initial context columns = %#v, want [region]", got)
+	}
+	if initialState.Datasets[0].Completeness != ir.VisualizationCompletenessEmpty ||
+		initialState.Datasets[1].Completeness != ir.VisualizationCompletenessEmpty {
+		t.Fatalf("initial completeness = %#v", initialState.Datasets)
+	}
 }

@@ -321,16 +321,20 @@ func EmptyEnvelopeFromDefinition(definition visualizationdefinition.Definition, 
 		}
 		envelope.DataState = ir.VisualizationDataState{Value: &state}
 	} else {
-		columns := make([]string, len(schema.Fields))
-		for index, field := range schema.Fields {
-			columns[index] = field.ID
+		datasets := make([]ir.VisualizationInlineDataset, 0, len(base.Datasets))
+		for _, datasetSchema := range base.Datasets {
+			columns := make([]string, len(datasetSchema.Fields))
+			for index, field := range datasetSchema.Fields {
+				columns[index] = field.ID
+			}
+			datasets = append(datasets, ir.VisualizationInlineDataset{
+				ID: datasetSchema.ID, SpecRevision: definition.SpecRevision, DataRevision: dataRevision, Generation: generation,
+				Columns: columns, Rows: [][]any{}, Completeness: ir.VisualizationCompletenessEmpty,
+			})
 		}
 		state := ir.InlineVisualizationDataState{
 			VisualizationDataStateBase: ir.VisualizationDataStateBase{Kind: "inline", SpecRevision: definition.SpecRevision, DataRevision: dataRevision, Generation: generation},
-			Kind:                       "inline", Datasets: []ir.VisualizationInlineDataset{{
-				ID: schema.ID, SpecRevision: definition.SpecRevision, DataRevision: dataRevision, Generation: generation,
-				Columns: columns, Rows: [][]any{}, Completeness: ir.VisualizationCompletenessEmpty,
-			}},
+			Kind:                       "inline", Datasets: datasets,
 		}
 		envelope.DataState = ir.VisualizationDataState{Value: &state}
 	}
