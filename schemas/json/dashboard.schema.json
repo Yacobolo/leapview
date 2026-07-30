@@ -194,7 +194,6 @@
             "area",
             "bar",
             "column",
-            "scatter",
             "heatmap",
             "candlestick",
             "boxplot",
@@ -2302,6 +2301,217 @@
       ],
       "type": "object"
     },
+    "#PointVisual": {
+      "$ref": "#/$defs/%23VisualCommon",
+      "additionalProperties": false,
+      "properties": {
+        "point": {
+          "additionalProperties": false,
+          "properties": {
+            "brush": {
+              "items": {
+                "enum": [
+                  "rectangle",
+                  "lasso"
+                ]
+              },
+              "type": "array"
+            },
+            "color": {
+              "not": {
+                "const": ""
+              },
+              "type": "string"
+            },
+            "color_scale": {
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "categorical",
+                    "quantitative"
+                  ]
+                },
+                "maximum": {
+                  "type": "number"
+                },
+                "minimum": {
+                  "type": "number"
+                },
+                "scheme": {
+                  "not": {
+                    "const": ""
+                  },
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "identity": {
+              "items": {
+                "not": {
+                  "const": ""
+                },
+                "type": "string"
+              },
+              "minItems": 1,
+              "prefixItems": [
+                {
+                  "not": {
+                    "const": ""
+                  },
+                  "type": "string"
+                }
+              ],
+              "type": "array"
+            },
+            "label": {
+              "not": {
+                "const": ""
+              },
+              "type": "string"
+            },
+            "overplot": {
+              "additionalProperties": false,
+              "properties": {
+                "large_mode": {
+                  "enum": [
+                    "automatic",
+                    "always",
+                    "never"
+                  ]
+                },
+                "large_threshold": {
+                  "allOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "exclusiveMinimum": 0,
+                      "type": "integer"
+                    }
+                  ]
+                },
+                "opacity": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "strategy": {
+                  "enum": [
+                    "show_all",
+                    "opacity"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "series": {
+              "not": {
+                "const": ""
+              },
+              "type": "string"
+            },
+            "size": {
+              "not": {
+                "const": ""
+              },
+              "type": "string"
+            },
+            "size_scale": {
+              "additionalProperties": false,
+              "properties": {
+                "maximum": {
+                  "type": "number"
+                },
+                "maximum_pixels": {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                "minimum": {
+                  "type": "number"
+                },
+                "minimum_pixels": {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            },
+            "tooltip": {
+              "items": {
+                "not": {
+                  "const": ""
+                },
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "x": {
+              "not": {
+                "const": ""
+              },
+              "type": "string"
+            },
+            "y": {
+              "not": {
+                "const": ""
+              },
+              "type": "string"
+            }
+          },
+          "required": [
+            "identity",
+            "x",
+            "y"
+          ],
+          "type": "object"
+        },
+        "presentation": {
+          "$ref": "#/$defs/%23PresentationCommon",
+          "additionalProperties": false,
+          "properties": {
+            "axes": {
+              "items": {
+                "$ref": "#/$defs/%23CartesianAxis"
+              },
+              "type": "array"
+            },
+            "event_annotations": {
+              "items": {
+                "$ref": "#/$defs/%23EventAnnotation"
+              },
+              "type": "array"
+            },
+            "reference_bands": {
+              "items": {
+                "$ref": "#/$defs/%23ReferenceBand"
+              },
+              "type": "array"
+            },
+            "reference_lines": {
+              "items": {
+                "$ref": "#/$defs/%23ReferenceLine"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "query": {
+          "$ref": "#/$defs/%23VisualQuery"
+        },
+        "type": {
+          "const": "scatter"
+        }
+      },
+      "required": [
+        "point",
+        "query",
+        "type"
+      ],
+      "type": "object"
+    },
     "#PolarPresentation": {
       "$ref": "#/$defs/%23PresentationCommon",
       "additionalProperties": false,
@@ -3057,6 +3267,9 @@
       "anyOf": [
         {
           "$ref": "#/$defs/%23CartesianVisual"
+        },
+        {
+          "$ref": "#/$defs/%23PointVisual"
         },
         {
           "$ref": "#/$defs/%23ProportionalVisual"

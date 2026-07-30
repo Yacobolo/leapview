@@ -11,7 +11,7 @@ test('HTML KPI accessible labels normalize sentence boundaries', () => {
 
 test('HTML KPI values use the field formatting contract', () => {
   const envelope = {
-    schemaVersion: 5, visualID: 'revenue', rendererID: 'html', specRevision: 'sha256:test', dataRevision: 1,
+    schemaVersion: 6, visualID: 'revenue', rendererID: 'html', specRevision: 'sha256:test', dataRevision: 1,
     spec: {
       kind: 'kpi', title: 'Revenue', datasets: [{ id: 'primary', fields: [{ id: 'value', role: 'measure', dataType: 'decimal', nullable: false, label: 'Revenue', format: { kind: 'currency', currency: 'BRL' } }] }],
       dataBudget: { maxRows: 1, requiredCompleteness: 'complete' }, accessibility: { title: 'Revenue', description: 'Revenue' }, interactions: [],
@@ -28,7 +28,7 @@ test('HTML KPI values use the field formatting contract', () => {
 
 test('HTML KPI formatting resolves semantic backgrounds, readable text, and redundant status cues', () => {
   const envelope = {
-    schemaVersion: 5, visualID: 'health', rendererID: 'html', specRevision: 'sha256:health', dataRevision: 1,
+    schemaVersion: 6, visualID: 'health', rendererID: 'html', specRevision: 'sha256:health', dataRevision: 1,
     spec: {
       kind: 'kpi', title: 'Health', datasets: [{ id: 'primary', fields: [{ id: 'value', role: 'measure', dataType: 'decimal', nullable: false, label: 'Health' }] }],
       dataBudget: { maxRows: 1, requiredCompleteness: 'complete' }, accessibility: { title: 'Health', description: 'Health' }, interactions: [],

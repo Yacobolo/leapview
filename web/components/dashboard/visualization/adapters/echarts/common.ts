@@ -72,7 +72,7 @@ export function baseOption(envelope: VisualizationEnvelope, context: RendererCon
 
 function tooltipTrigger(envelope: VisualizationEnvelope): 'axis' | 'item' {
   if (envelope.spec.kind !== 'cartesian') return 'item'
-  return envelope.spec.mark === 'scatter' || envelope.spec.mark === 'heatmap' ? 'item' : 'axis'
+  return envelope.spec.mark === 'heatmap' ? 'item' : 'axis'
 }
 
 function statusGraphic(envelope: VisualizationEnvelope, context: RendererContext): EChartsTranslation[] | undefined {
@@ -136,7 +136,7 @@ function tooltipFormatter(envelope: VisualizationEnvelope, context: RendererCont
       const dataset = inlineDataset(envelope)
       if (!dataset) continue
       const schema = envelope.spec.datasets.find((candidate) => candidate.id === dataset.id)
-      const authored = envelope.spec.kind === 'cartesian' ? envelope.spec.tooltip : undefined
+      const authored = envelope.spec.kind === 'cartesian' || envelope.spec.kind === 'point' ? envelope.spec.tooltip : undefined
       const definitions = authored
         ? authored.flatMap((ref) => {
             if (ref.dataset !== dataset.id) return []

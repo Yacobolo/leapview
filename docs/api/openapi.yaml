@@ -44013,6 +44013,249 @@ components:
         rows:
           - dataset: example
             field: example
+    PointVisualizationColorScale:
+      type: object
+      required:
+        - kind
+      properties:
+        kind:
+          $ref: '#/components/schemas/VisualizationPointColorScaleKind'
+        minimum:
+          type: number
+          format: double
+          example: !!float 1
+        maximum:
+          type: number
+          format: double
+          example: !!float 1
+        scheme:
+          type: string
+          example: example
+      example:
+        kind: categorical
+        maximum: !!float 1
+        minimum: !!float 1
+        scheme: example
+    PointVisualizationPresentation:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/VisualizationPresentation'
+      required:
+        - overplot
+        - opacity
+        - largeMode
+        - largeThreshold
+        - brush
+      properties:
+        overplot:
+          $ref: '#/components/schemas/VisualizationPointOverplotStrategy'
+        opacity:
+          type: number
+          format: double
+          example: !!float 1
+        largeMode:
+          $ref: '#/components/schemas/VisualizationPointLargeMode'
+        largeThreshold:
+          type: integer
+          format: int64
+          example: 1
+        brush:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationPointBrushGesture'
+          example:
+            - rectangle
+      example:
+        brush:
+          - rectangle
+        largeMode: automatic
+        largeThreshold: 1
+        opacity: !!float 1
+        overplot: show_all
+    PointVisualizationSizeScale:
+      type: object
+      required:
+        - minimumPixels
+        - maximumPixels
+      properties:
+        minimum:
+          type: number
+          format: double
+          example: !!float 1
+        maximum:
+          type: number
+          format: double
+          example: !!float 1
+        minimumPixels:
+          type: number
+          format: double
+          example: !!float 1
+        maximumPixels:
+          type: number
+          format: double
+          example: !!float 1
+      example:
+        maximum: !!float 1
+        maximumPixels: !!float 1
+        minimum: !!float 1
+        minimumPixels: !!float 1
+    PointVisualizationSpec:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/VisualizationSpecBase'
+      required:
+        - kind
+        - identity
+        - x
+        - 'y'
+        - presentation
+      properties:
+        kind:
+          type: string
+          enum:
+            - point
+          example: example
+        identity:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationFieldRef'
+          example:
+            - dataset: example
+              field: example
+        x:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        'y':
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        size:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        color:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        series:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        label:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        tooltip:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationFieldRef'
+          example:
+            - dataset: example
+              field: example
+        colorScale:
+          $ref: '#/components/schemas/PointVisualizationColorScale'
+        sizeScale:
+          $ref: '#/components/schemas/PointVisualizationSizeScale'
+        axes:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationAxisConfiguration'
+          example:
+            - id: x
+              maximum: !!float 1
+              minimum: !!float 1
+              scale: automatic
+              tickDensity: automatic
+              title: example
+              unit: example
+              zero: automatic
+        referenceLines:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationReferenceLine'
+          example:
+            - axis: x
+              id: example
+              label: example
+              tone: neutral
+        referenceBands:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationReferenceBand'
+          example:
+            - axis: x
+              id: example
+              label: example
+              tone: neutral
+        eventAnnotations:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationEventAnnotation'
+          example:
+            - axis: x
+              description: example
+              id: example
+              label: example
+              tone: neutral
+        presentation:
+          $ref: '#/components/schemas/PointVisualizationPresentation'
+      example:
+        axes:
+          - id: x
+            maximum: !!float 1
+            minimum: !!float 1
+            scale: automatic
+            tickDensity: automatic
+            title: example
+            unit: example
+            zero: automatic
+        color:
+          dataset: example
+          field: example
+        colorScale:
+          kind: categorical
+          maximum: !!float 1
+          minimum: !!float 1
+          scheme: example
+        eventAnnotations:
+          - axis: x
+            description: example
+            id: example
+            label: example
+            tone: neutral
+        identity:
+          - dataset: example
+            field: example
+        kind: example
+        label:
+          dataset: example
+          field: example
+        presentation:
+          brush:
+            - rectangle
+          largeMode: automatic
+          largeThreshold: 1
+          opacity: !!float 1
+          overplot: show_all
+        referenceBands:
+          - axis: x
+            id: example
+            label: example
+            tone: neutral
+        referenceLines:
+          - axis: x
+            id: example
+            label: example
+            tone: neutral
+        series:
+          dataset: example
+          field: example
+        size:
+          dataset: example
+          field: example
+        sizeScale:
+          maximum: !!float 1
+          maximumPixels: !!float 1
+          minimum: !!float 1
+          minimumPixels: !!float 1
+        tooltip:
+          - dataset: example
+            field: example
+        x:
+          dataset: example
+          field: example
+        'y':
+          dataset: example
+          field: example
     PolarVisualizationPresentation:
       type: object
       allOf:
@@ -47320,7 +47563,6 @@ components:
         - area
         - bar
         - column
-        - scatter
         - histogram
         - combo
         - waterfall
@@ -48963,6 +49205,25 @@ components:
         value:
           dataset: example
           field: example
+    VisualizationPointBrushGesture:
+      type: string
+      enum:
+        - rectangle
+        - lasso
+      example: rectangle
+    VisualizationPointColorScaleKind:
+      type: string
+      enum:
+        - categorical
+        - quantitative
+      example: categorical
+    VisualizationPointLargeMode:
+      type: string
+      enum:
+        - automatic
+        - always
+        - never
+      example: automatic
     VisualizationPointLayer:
       type: object
       allOf:
@@ -49040,6 +49301,12 @@ components:
         value:
           dataset: example
           field: example
+    VisualizationPointOverplotStrategy:
+      type: string
+      enum:
+        - show_all
+        - opacity
+      example: show_all
     VisualizationPolarMark:
       type: string
       enum:
@@ -49603,6 +49870,7 @@ components:
     VisualizationSpec:
       oneOf:
         - $ref: '#/components/schemas/CartesianVisualizationSpec'
+        - $ref: '#/components/schemas/PointVisualizationSpec'
         - $ref: '#/components/schemas/ProportionalVisualizationSpec'
         - $ref: '#/components/schemas/HierarchyVisualizationSpec'
         - $ref: '#/components/schemas/PolarVisualizationSpec'
@@ -49622,6 +49890,7 @@ components:
           kpi: '#/components/schemas/KPIVisualizationSpec'
           matrix: '#/components/schemas/MatrixVisualizationSpec'
           pivot: '#/components/schemas/PivotVisualizationSpec'
+          point: '#/components/schemas/PointVisualizationSpec'
           polar: '#/components/schemas/PolarVisualizationSpec'
           proportional: '#/components/schemas/ProportionalVisualizationSpec'
           table: '#/components/schemas/TableVisualizationSpec'
@@ -49807,6 +50076,7 @@ components:
       type: string
       enum:
         - cartesian
+        - point
         - proportional
         - hierarchy
         - polar

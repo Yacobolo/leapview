@@ -60,7 +60,7 @@ function visualizationSignal(state: Record<string, unknown>): DashboardVisualiza
   const dataRevision = state.dataRevision as number
   const generation = state.generation as number
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     visualID: 'map',
     rendererID: 'maplibre',
     specRevision: 'spec-1',

@@ -56,7 +56,7 @@ func (v *AuthoringVisualization) UnmarshalYAML(value *yaml.Node) error {
 	default:
 		if err := rejectUnknownVisualizationFields(value, map[string]struct{}{
 			"type": {}, "title": {}, "subtitle": {}, "description": {}, "query": {}, "datasets": {}, "metadata": {},
-			"presentation": {}, "accessibility": {}, "data_budget": {}, "interaction": {}, "geo": {}, "kpi": {}, "custom": {},
+			"presentation": {}, "accessibility": {}, "data_budget": {}, "interaction": {}, "geo": {}, "kpi": {}, "point": {}, "custom": {},
 		}); err != nil {
 			return err
 		}
@@ -130,8 +130,48 @@ type Visual struct {
 	DataBudget    VisualDataBudget       `yaml:"data_budget" json:"dataBudget"`
 	Geo           VisualGeo              `yaml:"geo" json:"geo"`
 	KPI           VisualKPI              `yaml:"kpi" json:"kpi"`
+	Point         VisualPoint            `yaml:"point" json:"point"`
 	Custom        VisualCustom           `yaml:"custom" json:"custom"`
 	Interaction   Interaction            `yaml:"interaction"`
+}
+
+// VisualPoint binds a point mark to compiler-owned query aliases. Identity is
+// deliberately separate from display channels so interactions never persist a
+// renderer row index as entity identity.
+type VisualPoint struct {
+	Identity   []string              `yaml:"identity" json:"identity"`
+	X          string                `yaml:"x" json:"x"`
+	Y          string                `yaml:"y" json:"y"`
+	Size       string                `yaml:"size" json:"size,omitempty"`
+	Color      string                `yaml:"color" json:"color,omitempty"`
+	Series     string                `yaml:"series" json:"series,omitempty"`
+	Label      string                `yaml:"label" json:"label,omitempty"`
+	Tooltip    []string              `yaml:"tooltip" json:"tooltip,omitempty"`
+	ColorScale VisualPointColorScale `yaml:"color_scale" json:"colorScale,omitempty"`
+	SizeScale  VisualPointSizeScale  `yaml:"size_scale" json:"sizeScale,omitempty"`
+	Overplot   VisualPointOverplot   `yaml:"overplot" json:"overplot,omitempty"`
+	Brush      []string              `yaml:"brush" json:"brush,omitempty"`
+}
+
+type VisualPointColorScale struct {
+	Kind    string   `yaml:"kind" json:"kind,omitempty"`
+	Minimum *float64 `yaml:"minimum" json:"minimum,omitempty"`
+	Maximum *float64 `yaml:"maximum" json:"maximum,omitempty"`
+	Scheme  string   `yaml:"scheme" json:"scheme,omitempty"`
+}
+
+type VisualPointSizeScale struct {
+	Minimum       *float64 `yaml:"minimum" json:"minimum,omitempty"`
+	Maximum       *float64 `yaml:"maximum" json:"maximum,omitempty"`
+	MinimumPixels float64  `yaml:"minimum_pixels" json:"minimumPixels,omitempty"`
+	MaximumPixels float64  `yaml:"maximum_pixels" json:"maximumPixels,omitempty"`
+}
+
+type VisualPointOverplot struct {
+	Strategy       string  `yaml:"strategy" json:"strategy,omitempty"`
+	Opacity        float64 `yaml:"opacity" json:"opacity,omitempty"`
+	LargeMode      string  `yaml:"large_mode" json:"largeMode,omitempty"`
+	LargeThreshold int     `yaml:"large_threshold" json:"largeThreshold,omitempty"`
 }
 
 // VisualKPI defines comparison semantics independently from renderer layout.

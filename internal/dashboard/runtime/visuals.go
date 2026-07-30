@@ -518,9 +518,73 @@ func (s *VisualizationDataService) visualData(ctx context.Context, runtime *mode
 		return s.ohlcData(ctx, runtime, report, visualID, visual, filters)
 	case visualizationdefinition.ResultDistribution:
 		return s.distributionData(ctx, runtime, report, visualID, visual, filters)
+	case visualizationdefinition.ResultPoints:
+		return s.pointData(ctx, runtime, report, visualID, visual, filters)
 	default:
 		return s.categoryData(ctx, runtime, report, visualID, visual, filters)
 	}
+}
+
+func (s *VisualizationDataService) pointData(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, visualID string, visual visualPlan, filters dashboard.Filters) ([]dashboard.Datum, error) {
+	queryFilters, err := s.filters.semanticFilters(ctx, runtime, report, filters, "visual", visualID)
+	if err != nil {
+		return nil, err
+	}
+	dimensions := make([]reportdef.QueryField, 0, len(visual.Dimensions))
+	for _, dimension := range visual.Dimensions {
+		dimensions = append(dimensions, fieldRef(dimension.FieldID, dimension.Alias))
+	}
+	measures := make([]reportdef.QueryField, 0, len(visual.Measures))
+	for _, measure := range visual.Measures {
+		measures = append(measures, queryFieldRef(measure, measure.Alias))
+	}
+	var queryTime reportdef.QueryTime
+	if visual.Time != nil {
+		queryTime = reportdef.QueryTime{Field: visual.Time.FieldID, Grain: visual.Time.Grain, Alias: visual.Time.Alias}
+	}
+	sorts := make([]reportdef.QuerySort, 0, len(visual.Sort)+1)
+	for _, sort := range visual.Sort {
+		field := sort.FieldID
+		for _, binding := range append(append([]visualizationdefinition.FieldBinding{}, visual.Dimensions...), visual.Measures...) {
+			if field == binding.FieldID || field == binding.Alias {
+				field = binding.Alias
+				break
+			}
+		}
+		if visual.Time != nil && (field == visual.Time.FieldID || field == visual.Time.Alias) {
+			field = visual.Time.Alias
+		}
+		sorts = append(sorts, reportdef.QuerySort{Field: field, Direction: sort.Direction})
+	}
+	if len(sorts) == 0 {
+		point, ok := visual.Definition.Spec.Value.(*visualizationir.PointVisualizationSpec)
+		if ok && len(point.Identity) > 0 {
+			for _, identity := range point.Identity {
+				sorts = append(sorts, reportdef.QuerySort{Field: identity.Field, Direction: "asc"})
+			}
+		}
+	}
+	rows, err := s.querySemanticDatums(ctx, runtime, reportdef.AggregateQuery{
+		Table: visual.Table, Dimensions: dimensions, Measures: measures, Time: queryTime,
+		Filters: queryFilters, Sort: sorts, Limit: visual.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	point, ok := visual.Definition.Spec.Value.(*visualizationir.PointVisualizationSpec)
+	if !ok {
+		return nil, fmt.Errorf("visual %q point result has specification %T", visualID, visual.Definition.Spec.Value)
+	}
+	filtered := rows[:0]
+	for _, row := range rows {
+		// The public point contract defines null coordinates as omitted marks;
+		// stable identity nulls and duplicates remain hard validation errors.
+		if row[point.X.Field] == nil || row[point.Y.Field] == nil {
+			continue
+		}
+		filtered = append(filtered, row)
+	}
+	return filtered, nil
 }
 
 func (s *VisualizationDataService) categoryData(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, visualID string, visual visualPlan, filters dashboard.Filters) ([]dashboard.Datum, error) {

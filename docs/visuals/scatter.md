@@ -1,77 +1,107 @@
 # Scatter chart
 
-Use a scatter chart to compare category positions, expose series, or emphasize individual points.
+Use a scatter chart to evaluate the relationship between two quantitative fields. Every point has stable entity identity; optional size, color, series, labels, and tooltips add governed context without changing that identity.
 
 Every preview on this page is generated from the YAML shown below it using a fixed documentation dataset.
 
-## Basic
+## Bivariate scatter
 
-Use an ordered category and numeric measure to place one point per period, making isolated delivery values and gaps easy to spot.
+Place delivery time on X and order revenue on Y. Status supplies a categorical color channel, while order ID remains the stable point identity.
 
 {{< visual id="delivery_scatter" >}}
 
 ```yaml visual-example=delivery_scatter
 visuals:
   delivery_scatter:
-    title: Delivery days scatter by month
+    title: Delivery time vs order revenue
     type: scatter
     query:
       dimensions:
-        purchase_month: orders.purchase_month
+        order_id: orders.order_id
+        status: orders.status
       measures:
         delivery_days: null
+        revenue: null
       sort:
-        - field: purchase_month
+        - field: order_id
           direction: asc
-      limit: 30
+      limit: 500
+    point:
+      identity: [order_id]
+      x: delivery_days
+      y: revenue
+      color: status
+      tooltip: [order_id, status, delivery_days, revenue]
+      color_scale: {kind: categorical}
+      overplot: {strategy: opacity, opacity: 0.58, large_mode: automatic, large_threshold: 2000}
 ```
 
-## Multiple series
+## Bubble chart
 
-Map status through `query.series` to split points into comparable groups while retaining the same axes.
+Add delivery duration as bubble size and category as color. The explicit pixel range keeps bubble area legible without allowing one outlier to cover the plot.
 
 {{< visual id="delivery_scatter_status" >}}
 
 ```yaml visual-example=delivery_scatter_status
 visuals:
   delivery_scatter_status:
-    title: Delivery days scatter by status
+    title: Review, revenue, and delivery bubble chart
     type: scatter
     query:
       dimensions:
-        purchase_month: orders.purchase_month
-      series:
-        field: orders.status
-        alias: status
+        order_id: orders.order_id
+        category: orders.category
       measures:
         delivery_days: null
+        review_score: null
+        revenue: null
       sort:
-        - field: purchase_month
+        - field: order_id
           direction: asc
-      limit: 60
+      limit: 500
+    point:
+      identity: [order_id]
+      x: review_score
+      y: revenue
+      size: delivery_days
+      color: category
+      tooltip: [order_id, category, review_score, revenue, delivery_days]
+      color_scale: {kind: categorical}
+      size_scale: {minimum_pixels: 7, maximum_pixels: 34}
+      overplot: {strategy: opacity, opacity: 0.52}
 ```
 
-## Labeled points
+## Time versus value
 
-Enable labels and place them above larger symbols when exact point values matter and the dataset is small enough to avoid overlap.
+Time is a first-class X channel rather than a category label. This deliberately small result labels each stable order and sorts the frame by its governed time alias.
 
 {{< visual id="delivery_scatter_labeled" >}}
 
 ```yaml visual-example=delivery_scatter_labeled
 visuals:
   delivery_scatter_labeled:
-    title: Labeled delivery scatter
+    title: Labeled revenue by purchase time
     type: scatter
     presentation:
       show_labels: true
-      label_position: top
-      symbol_size: 12
     query:
       dimensions:
-        delivery_bucket: orders.delivery_bucket
+        order_id: orders.order_id
+      time:
+        field: purchase_date
+        grain: day
+        alias: purchase_day
       measures:
-        delivery_days: null
+        revenue: null
       sort:
-        - field: delivery_bucket
+        - field: purchase_day
           direction: asc
+      limit: 30
+    point:
+      identity: [order_id]
+      x: purchase_day
+      y: revenue
+      label: order_id
+      tooltip: [order_id, purchase_day, revenue]
+      overplot: {strategy: show_all, large_mode: never}
 ```

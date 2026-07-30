@@ -8,7 +8,7 @@ import (
 var supportedVisualShapes = map[string]struct{}{
 	"category_value": {}, "category_series_value": {}, "category_multi_measure": {}, "category_delta": {},
 	"single_value": {}, "matrix": {}, "graph": {}, "geo": {}, "ohlc": {}, "distribution": {},
-	"binned_measure": {}, "hierarchy": {}, "custom": {},
+	"binned_measure": {}, "hierarchy": {}, "point": {}, "custom": {},
 }
 
 type VisualizationCapability struct {
@@ -41,7 +41,7 @@ var visualizationCapabilities = map[string]VisualizationCapability{
 	"pivot":       {Type: "pivot", Kind: "grid", Renderer: "tanstack", ResultShape: "pivot_window"},
 	"radar":       {Type: "radar", Kind: "chart", Renderer: "echarts", ResultShape: "category_value"},
 	"sankey":      {Type: "sankey", Kind: "chart", Renderer: "echarts", ResultShape: "graph"},
-	"scatter":     {Type: "scatter", Kind: "chart", Renderer: "echarts", ResultShape: "category_value", SupportsSeries: true},
+	"scatter":     {Type: "scatter", Kind: "chart", Renderer: "echarts", ResultShape: "point"},
 	"sunburst":    {Type: "sunburst", Kind: "chart", Renderer: "echarts", ResultShape: "hierarchy"},
 	"table":       {Type: "table", Kind: "grid", Renderer: "tanstack", ResultShape: "detail_window"},
 	"tree":        {Type: "tree", Kind: "chart", Renderer: "echarts", ResultShape: "hierarchy"},
@@ -131,7 +131,7 @@ func rendererSupportsShapeType(renderer, shape, chartType string) bool {
 	switch shape {
 	case "category_value":
 		switch chartType {
-		case "line", "area", "bar", "column", "pie", "donut", "scatter", "funnel", "treemap", "radar":
+		case "line", "area", "bar", "column", "pie", "donut", "funnel", "treemap", "radar":
 			return true
 		}
 	case "category_series_value":
@@ -156,6 +156,8 @@ func rendererSupportsShapeType(renderer, shape, chartType string) bool {
 		return chartType == "histogram"
 	case "hierarchy":
 		return chartType == "tree" || chartType == "treemap" || chartType == "sunburst"
+	case "point":
+		return chartType == "scatter"
 	}
 	return false
 }

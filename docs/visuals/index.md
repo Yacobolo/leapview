@@ -10,7 +10,8 @@ All built-in charts below use the typed ECharts adapter. “Selectable” means 
 
 | Visuals | Source-row selection | Notes |
 | --- | --- | --- |
-| Line, area, bar, column, scatter, combo | Yes | Each rendered Cartesian datum resolves to its original frame row. |
+| Line, area, bar, column, combo | Yes | Each rendered Cartesian datum resolves to its original frame row. |
+| Scatter and bubble | Yes | Point identity is explicit and never derived from a durable renderer row index. |
 | Waterfall | Yes | The visible value bar is selectable; the synthetic offset series is silent. |
 | Histogram, heatmap, candlestick, boxplot | Yes | Selection requires a stable compiled identity in the shaped source row. |
 | Pie, donut, funnel | Yes | Each sector or stage resolves to a source row. |

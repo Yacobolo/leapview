@@ -3,7 +3,7 @@ import { currentVisualizationSchemaVersion, RendererRegistry } from './host-cont
 export const visualizationRegistry = new RendererRegistry()
 
 visualizationRegistry.register({
-  id: 'echarts', version: '6.1.0', schemaVersion: currentVisualizationSchemaVersion, kinds: ['cartesian', 'proportional', 'hierarchy', 'polar'],
+  id: 'echarts', version: '6.1.0', schemaVersion: currentVisualizationSchemaVersion, kinds: ['cartesian', 'point', 'proportional', 'hierarchy', 'polar'],
   capabilities: { snapshot: true, windowed: false, interactive: true },
   load: async () => (await import('./adapters/echarts')).adapter,
 })

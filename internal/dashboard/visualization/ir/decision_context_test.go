@@ -137,9 +137,9 @@ func TestValidateSpecEnforcesStackingAndSeriesIntent(t *testing.T) {
 		{
 			name: "unsupported mark",
 			mutate: func(spec *CartesianVisualizationSpec) {
-				spec.Mark = VisualizationCartesianMarkScatter
+				spec.Mark = VisualizationCartesianMarkHeatmap
 			},
-			want: `mark "scatter" does not support stacking`,
+			want: `mark "heatmap" does not support stacking`,
 		},
 		{
 			name: "percent with dual axes",

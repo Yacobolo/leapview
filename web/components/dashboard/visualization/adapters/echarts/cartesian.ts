@@ -114,9 +114,9 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
   }
 }
 
-function applyDecisionContext(envelope: VisualizationEnvelope, context: RendererContext, option: EChartsTranslation): EChartsTranslation {
+export function applyDecisionContext(envelope: VisualizationEnvelope, context: RendererContext, option: EChartsTranslation): EChartsTranslation {
   const spec = envelope.spec
-  if (spec.kind !== 'cartesian') return option
+  if (spec.kind !== 'cartesian' && spec.kind !== 'point') return option
   const accessibilityDetails = [
     ...(spec.referenceLines ?? []).map((line) => line.label ? `Reference line: ${line.label}.` : ''),
     ...(spec.referenceBands ?? []).map((band) => band.label ? `Reference band: ${band.label}.` : ''),
@@ -128,7 +128,7 @@ function applyDecisionContext(envelope: VisualizationEnvelope, context: Renderer
     option.aria = { enabled: true, description: [description, ...accessibilityDetails].join(' ') }
   }
   for (const authored of spec.axes ?? []) {
-    const horizontal = spec.presentation.orientation === 'horizontal' || spec.mark === 'bar'
+    const horizontal = spec.kind === 'cartesian' && (spec.presentation.orientation === 'horizontal' || spec.mark === 'bar')
     const physical = authored.id === 'x'
       ? horizontal ? 'yAxis' : 'xAxis'
       : horizontal ? 'xAxis' : 'yAxis'
@@ -147,7 +147,7 @@ function applyDecisionContext(envelope: VisualizationEnvelope, context: Renderer
   }
 
   const coordinate = (axisID: 'x' | 'primary_y' | 'secondary_y') => {
-    const horizontal = spec.presentation.orientation === 'horizontal' || spec.mark === 'bar'
+    const horizontal = spec.kind === 'cartesian' && (spec.presentation.orientation === 'horizontal' || spec.mark === 'bar')
     if (axisID === 'x') return horizontal ? 'yAxis' : 'xAxis'
     return horizontal ? 'xAxis' : 'yAxis'
   }
@@ -550,7 +550,6 @@ function seriesID(dataset = 'primary', value = 'value'): string { return `series
 function cartesianSeriesType(mark: CartesianSpec['mark']): string {
   switch (mark) {
     case 'bar': case 'column': case 'waterfall': case 'histogram': return 'bar'
-    case 'scatter': return 'scatter'
     case 'candlestick': return 'candlestick'
     case 'boxplot': return 'boxplot'
     default: return 'line'

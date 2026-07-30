@@ -29,6 +29,7 @@ enum VisualizationRendererID {
 
 enum VisualizationSpecKind {
   cartesian,
+  point,
   proportional,
   hierarchy,
   polar,
@@ -43,12 +44,12 @@ enum VisualizationSpecKind {
 model VisualizationRendererCapability {
   id: VisualizationRendererID;
   version: string;
-  schemaVersion: 4;
+  schemaVersion: 6;
   kinds: VisualizationSpecKind[];
 }
 
 model VisualizationCapabilities {
-  schemaVersion: 4;
+  schemaVersion: 6;
   renderers: VisualizationRendererCapability[];
 }
 

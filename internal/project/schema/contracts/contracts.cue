@@ -456,7 +456,7 @@ package contracts
 	inclusive!: bool
 })
 
-#Visual: #CartesianVisual | #ProportionalVisual | #HierarchyVisual | #PolarVisual | #GeographicVisual | #CustomVisual | #KPIVisual | #DataTableVisual | #MatrixVisual | #PivotVisual
+#Visual: #CartesianVisual | #PointVisual | #ProportionalVisual | #HierarchyVisual | #PolarVisual | #GeographicVisual | #CustomVisual | #KPIVisual | #DataTableVisual | #MatrixVisual | #PivotVisual
 
 #VisualCommon: {
 	title?:            string
@@ -694,9 +694,51 @@ package contracts
 
 #CartesianVisual: close({
 	#VisualCommon
-	type!:         "line" | "area" | "bar" | "column" | "scatter" | "heatmap" | "candlestick" | "boxplot" | "combo" | "waterfall" | "histogram"
+	type!:         "line" | "area" | "bar" | "column" | "heatmap" | "candlestick" | "boxplot" | "combo" | "waterfall" | "histogram"
 	query!:        #VisualQuery
 	presentation?: #CartesianPresentation
+})
+
+#PointVisual: close({
+	#VisualCommon
+	type!:  "scatter"
+	query!: #VisualQuery
+	point!: close({
+		identity!: [string & !="", ...string & !=""]
+		x!:         string & !=""
+		y!:         string & !=""
+		size?:      string & !=""
+		color?:     string & !=""
+		series?:    string & !=""
+		label?:     string & !=""
+		tooltip?:   [...string & !=""]
+		color_scale?: close({
+			kind?:    "categorical" | "quantitative"
+			minimum?: number
+			maximum?: number
+			scheme?:  string & !=""
+		})
+		size_scale?: close({
+			minimum?:        number
+			maximum?:        number
+			minimum_pixels?: number & >0
+			maximum_pixels?: number & >0
+		})
+		overplot?: close({
+			strategy?:        "show_all" | "opacity"
+			opacity?:         number & >=0 & <=1
+			large_mode?:      "automatic" | "always" | "never"
+			large_threshold?: int & >0
+		})
+		brush?: [..."rectangle" | "lasso"]
+	})
+	presentation?: close({
+		#PresentationCommon
+		axes?:              [...#CartesianAxis]
+		reference_lines?:   [...#ReferenceLine]
+		reference_bands?:   [...#ReferenceBand]
+		event_annotations?: [...#EventAnnotation]
+	})
 })
 
 #ProportionalVisual: close({
