@@ -170,6 +170,44 @@ spec:
 	}
 }
 
+func TestDashboardVisualContractAcceptsDecisionContext(t *testing.T) {
+	err := ValidateBytes(KindDashboardResource, "dashboard.yaml", []byte(`
+apiVersion: leapview.dev/v1
+kind: Dashboard
+metadata:
+  name: sales
+spec:
+  semanticModel: sales
+  visuals:
+    revenue:
+      type: line
+      title: Revenue
+      query: {dimensions: [orders.purchase_month], measures: [revenue]}
+      presentation:
+        axes:
+          - {id: x, title: Month, tick_density: sparse}
+          - {id: primary_y, title: Revenue, scale: linear, zero: include, minimum: 0, maximum: 100, unit: USD}
+        reference_lines:
+          - {id: target, axis: primary_y, value: {number: 80}, label: Target, tone: success}
+        reference_bands:
+          - id: healthy
+            axis: primary_y
+            from: {field: value, reducer: minimum}
+            to: {field: value, reducer: maximum}
+            label: Healthy range
+        event_annotations:
+          - {id: launch, axis: x, value: {text: "2026-03-01"}, label: Launch}
+        tooltip: [label, value]
+  pages:
+    - id: overview
+      title: Overview
+      components: []
+`))
+	if err != nil {
+		t.Fatalf("ValidateBytes() error = %v", err)
+	}
+}
+
 func TestDashboardVisualContractRejectsLegacyChartTableSplit(t *testing.T) {
 	tests := []struct {
 		name string

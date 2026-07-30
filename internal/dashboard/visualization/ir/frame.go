@@ -276,6 +276,9 @@ func validateSpecification(spec VisualizationSpec, base VisualizationSpecBase) (
 			return nil, err
 		}
 	}
+	if err := validateCartesianDecisionContext(spec); err != nil {
+		return nil, err
+	}
 	if err := validateGeographicSpecification(spec); err != nil {
 		return nil, err
 	}
@@ -328,7 +331,32 @@ func (visitor *specificationReferenceVisitor) VisitCartesianVisualizationSpec(va
 	visitor.refs = append(visitor.refs, value.X)
 	visitor.refs = append(visitor.refs, value.Y...)
 	visitor.add(value.Series)
+	if value.Tooltip != nil {
+		visitor.refs = append(visitor.refs, *value.Tooltip...)
+	}
+	if value.ReferenceLines != nil {
+		for _, line := range *value.ReferenceLines {
+			visitor.addReferenceValue(line.Value)
+		}
+	}
+	if value.ReferenceBands != nil {
+		for _, band := range *value.ReferenceBands {
+			visitor.addReferenceValue(band.From)
+			visitor.addReferenceValue(band.To)
+		}
+	}
+	if value.EventAnnotations != nil {
+		for _, annotation := range *value.EventAnnotations {
+			visitor.addReferenceValue(annotation.Value)
+		}
+	}
 	return nil
+}
+
+func (visitor *specificationReferenceVisitor) addReferenceValue(value VisualizationReferenceValue) {
+	if field, ok := value.Value.(*FieldVisualizationReferenceValue); ok && field != nil {
+		visitor.refs = append(visitor.refs, field.Field)
+	}
 }
 
 func (visitor *specificationReferenceVisitor) VisitProportionalVisualizationSpec(value *ProportionalVisualizationSpec) error {
@@ -418,6 +446,153 @@ func (visitor *specificationReferenceVisitor) VisitGeographicVisualizationSpec(v
 }
 
 func (visitor *specificationReferenceVisitor) VisitCustomVisualizationSpec(*CustomVisualizationSpec) error {
+	return nil
+}
+
+func validateCartesianDecisionContext(spec VisualizationSpec) error {
+	value, ok := spec.Value.(*CartesianVisualizationSpec)
+	if !ok {
+		return nil
+	}
+	axes := map[VisualizationCartesianAxis]struct{}{}
+	if value.Axes != nil {
+		for _, axis := range *value.Axes {
+			if axis.ID != VisualizationCartesianAxisX && axis.ID != VisualizationCartesianAxisPrimaryY && axis.ID != VisualizationCartesianAxisSecondaryY {
+				return fmt.Errorf("unsupported cartesian axis %q", axis.ID)
+			}
+			if _, exists := axes[axis.ID]; exists {
+				return fmt.Errorf("duplicate cartesian axis %q", axis.ID)
+			}
+			axes[axis.ID] = struct{}{}
+			if axis.ID == VisualizationCartesianAxisSecondaryY && value.Mark != VisualizationCartesianMarkCombo {
+				return fmt.Errorf("secondary_y axis requires combo mark")
+			}
+			if axis.Minimum != nil && axis.Maximum != nil && *axis.Minimum >= *axis.Maximum {
+				return fmt.Errorf("axis %q minimum must be less than maximum", axis.ID)
+			}
+			if axis.Scale == VisualizationAxisScaleLog {
+				if axis.Zero == VisualizationAxisZeroPolicyInclude {
+					return fmt.Errorf("axis %q log scale cannot include zero", axis.ID)
+				}
+				if axis.Minimum != nil && *axis.Minimum <= 0 || axis.Maximum != nil && *axis.Maximum <= 0 {
+					return fmt.Errorf("axis %q log scale requires positive bounds", axis.ID)
+				}
+			}
+		}
+	}
+	ids := map[string]struct{}{}
+	addID := func(id string) error {
+		if strings.TrimSpace(id) == "" {
+			return fmt.Errorf("decision context ID is required")
+		}
+		if _, exists := ids[id]; exists {
+			return fmt.Errorf("duplicate decision context ID %q", id)
+		}
+		ids[id] = struct{}{}
+		return nil
+	}
+	validateAxis := func(axis VisualizationCartesianAxis) error {
+		if axis != VisualizationCartesianAxisX && axis != VisualizationCartesianAxisPrimaryY && axis != VisualizationCartesianAxisSecondaryY {
+			return fmt.Errorf("unsupported decision context axis %q", axis)
+		}
+		if axis == VisualizationCartesianAxisSecondaryY && value.Mark != VisualizationCartesianMarkCombo {
+			return fmt.Errorf("secondary_y decision context requires combo mark")
+		}
+		return nil
+	}
+	if value.ReferenceLines != nil {
+		if !cartesianMarkSupportsReferences(value.Mark) {
+			return fmt.Errorf("cartesian mark %q does not support reference lines", value.Mark)
+		}
+		for _, line := range *value.ReferenceLines {
+			if err := addID(line.ID); err != nil {
+				return err
+			}
+			if err := validateAxis(line.Axis); err != nil {
+				return err
+			}
+			if err := validateVisualizationReferenceValue(line.Value); err != nil {
+				return fmt.Errorf("reference line %q: %w", line.ID, err)
+			}
+		}
+	}
+	if value.ReferenceBands != nil {
+		if !cartesianMarkSupportsReferences(value.Mark) {
+			return fmt.Errorf("cartesian mark %q does not support reference bands", value.Mark)
+		}
+		for _, band := range *value.ReferenceBands {
+			if err := addID(band.ID); err != nil {
+				return err
+			}
+			if err := validateAxis(band.Axis); err != nil {
+				return err
+			}
+			if err := validateVisualizationReferenceValue(band.From); err != nil {
+				return fmt.Errorf("reference band %q from: %w", band.ID, err)
+			}
+			if err := validateVisualizationReferenceValue(band.To); err != nil {
+				return fmt.Errorf("reference band %q to: %w", band.ID, err)
+			}
+			from, fromOK := band.From.Value.(*NumberVisualizationReferenceValue)
+			to, toOK := band.To.Value.(*NumberVisualizationReferenceValue)
+			if fromOK && toOK && from.Value >= to.Value {
+				return fmt.Errorf("reference band %q from must be less than to", band.ID)
+			}
+		}
+	}
+	if value.EventAnnotations != nil {
+		for _, annotation := range *value.EventAnnotations {
+			if err := addID(annotation.ID); err != nil {
+				return err
+			}
+			if annotation.Axis != VisualizationCartesianAxisX {
+				return fmt.Errorf("event annotation %q must use x axis", annotation.ID)
+			}
+			if strings.TrimSpace(annotation.Label) == "" {
+				return fmt.Errorf("event annotation %q requires a label", annotation.ID)
+			}
+			if err := validateVisualizationReferenceValue(annotation.Value); err != nil {
+				return fmt.Errorf("event annotation %q: %w", annotation.ID, err)
+			}
+		}
+	}
+	return nil
+}
+
+func cartesianMarkSupportsReferences(mark VisualizationCartesianMark) bool {
+	switch mark {
+	case VisualizationCartesianMarkLine, VisualizationCartesianMarkArea, VisualizationCartesianMarkBar,
+		VisualizationCartesianMarkColumn, VisualizationCartesianMarkCombo, VisualizationCartesianMarkScatter,
+		VisualizationCartesianMarkWaterfall:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateVisualizationReferenceValue(value VisualizationReferenceValue) error {
+	switch typed := value.Value.(type) {
+	case *NumberVisualizationReferenceValue:
+		if typed == nil || math.IsNaN(typed.Value) || math.IsInf(typed.Value, 0) {
+			return fmt.Errorf("number value must be finite")
+		}
+	case *TextVisualizationReferenceValue:
+		if typed == nil || strings.TrimSpace(typed.Value) == "" {
+			return fmt.Errorf("text value is required")
+		}
+	case *FieldVisualizationReferenceValue:
+		if typed == nil {
+			return fmt.Errorf("field value is required")
+		}
+		switch typed.Reducer {
+		case VisualizationReferenceReducerFirst, VisualizationReferenceReducerLast, VisualizationReferenceReducerMinimum,
+			VisualizationReferenceReducerMaximum, VisualizationReferenceReducerMean, VisualizationReferenceReducerMedian:
+		default:
+			return fmt.Errorf("field reference has unsupported reducer %q", typed.Reducer)
+		}
+	default:
+		return fmt.Errorf("reference value variant is required")
+	}
 	return nil
 }
 
