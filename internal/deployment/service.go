@@ -29,6 +29,9 @@ func (s *Service) Cancel(ctx context.Context, scope Scope) (Deployment, error) {
 	if err != nil {
 		return Deployment{}, err
 	}
+	if row.Status == StatusCancelled {
+		return row, nil
+	}
 	if row.Status != StatusPending {
 		return Deployment{}, fmt.Errorf("%w: deployment is %s", ErrConflict, row.Status)
 	}

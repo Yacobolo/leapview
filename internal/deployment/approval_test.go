@@ -206,6 +206,47 @@ func TestApprovalThreatModelFailsClosed(t *testing.T) {
 	}
 }
 
+func TestDenyRecordsBoundDecisionAndCannotActivate(t *testing.T) {
+	now := time.Date(2026, 7, 30, 10, 0, 0, 0, time.UTC)
+	service := mustApprovalService(t, newApprovalMemoryRepository(), &now)
+	approval := requestApproval(t, service, now)
+
+	denied, err := service.Deny(t.Context(), ApprovalTransition{
+		ProjectID: "finance", DeploymentID: "deployment_1",
+		ApprovalID: approval.ID, ExpectedRevision: approval.Revision,
+		Actor: ApprovalActor{
+			PrincipalID: "reviewer", CredentialClass: CredentialClassHuman,
+			CredentialID:        "session_reviewer",
+			CredentialExpiresAt: now.Add(15 * time.Minute),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if denied.Status != ApprovalDenied || denied.ApprovedBy != "reviewer" {
+		t.Fatalf("denied approval = %#v", denied)
+	}
+	if _, err := service.AuthorizeActivation(t.Context(), approvalActivation()); !errors.Is(err, ErrApprovalRequired) {
+		t.Fatalf("activation error = %v, want approval required", err)
+	}
+}
+
+func TestCurrentPersistsExpiryForStatusReporting(t *testing.T) {
+	now := time.Date(2026, 7, 30, 10, 0, 0, 0, time.UTC)
+	repository := newApprovalMemoryRepository()
+	service := mustApprovalService(t, repository, &now)
+	approval := requestApproval(t, service, now)
+	now = approval.ExpiresAt
+
+	current, err := service.Current(t.Context(), approval.DeploymentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Status != ApprovalExpired || repository.approval.Status != ApprovalExpired {
+		t.Fatalf("current approval = %#v, persisted = %#v", current, repository.approval)
+	}
+}
+
 func TestExpiredApprovalIsClosedAndCanBeRequestedAgain(t *testing.T) {
 	now := time.Date(2026, 7, 30, 11, 0, 0, 0, time.UTC)
 	repository := newApprovalMemoryRepository()
@@ -299,6 +340,7 @@ func newApprovalMemoryRepository() *approvalMemoryRepository {
 
 func (repository *approvalMemoryRepository) CreateApproval(_ context.Context, approval Approval) (Approval, error) {
 	if repository.approval.ID != "" &&
+		repository.approval.Status != ApprovalDenied &&
 		repository.approval.Status != ApprovalRevoked &&
 		repository.approval.Status != ApprovalExpired {
 		return Approval{}, ErrApprovalConflict

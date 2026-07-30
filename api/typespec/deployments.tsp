@@ -24,6 +24,7 @@ enum CandidateStatus {
 enum DeploymentApprovalStatus {
   pending;
   approved;
+  denied;
   revoked;
   expired;
 }
@@ -99,10 +100,46 @@ model DeploymentApprovalResponse {
   requestedAt: utcDateTime;
   approvedBy?: string;
   approvedAt?: utcDateTime;
+  deniedBy?: string;
+  deniedAt?: utcDateTime;
   revokedBy?: string;
   revokedAt?: utcDateTime;
   expiresAt: utcDateTime;
   revision: int64;
+}
+
+model DeploymentManagedDataPinEvidence {
+  connectionId: string;
+  revisionId: string;
+}
+
+model DeploymentBindingEvidence {
+  bindingId: string;
+  revision: int64;
+  validatedVersion: string;
+}
+
+model DeploymentWorkspacePublishEvidence {
+  workspaceId: string;
+  servingStateId: string;
+  artifactDigest: string;
+  dataRevision: string;
+  dataMode: string;
+  managedDataPins: DeploymentManagedDataPinEvidence[];
+  bindings: DeploymentBindingEvidence[];
+}
+
+model DeploymentPublishEvidence {
+  releaseDigest: string;
+  artifactDigest: string;
+  planDigest: string;
+  candidateId: string;
+  candidateRevision: int64;
+  targetId: string;
+  baseGeneration: string;
+  runtimeVersion: string;
+  policyDigest: string;
+  workspaces: DeploymentWorkspacePublishEvidence[];
 }
 
 model DeploymentTargetResponse {
@@ -130,6 +167,8 @@ model DeploymentResponse {
   projectId: string;
   releaseId: string;
   environment: string;
+  requestDigest: string;
+  evidence: DeploymentPublishEvidence;
   status: DeploymentStatus;
   progress?: DeploymentProgress;
   targets: DeploymentTargetResponse[];
@@ -188,6 +227,14 @@ op listDeploymentEvents(@path project: string, @path deployment: string, @header
 op cancelDeployment(@path project: string, @path deployment: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<DeploymentResponse> | CommonErrors;
 
 @tag("Deployments")
+@summary("Retry a terminal publication request without changing its immutable release")
+@route("/projects/{project}/deployments/{deployment}/retry")
+@post
+@apigen.authz(#{ mode: "privilege", privilege: "REQUEST_DEPLOYMENT" })
+@operationId("retryDeployment")
+op retryDeployment(@path project: string, @path deployment: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<DeploymentResponse> | CommonErrors;
+
+@tag("Deployments")
 @summary("Roll back by creating a deployment of the prior release")
 @route("/projects/{project}/deployments/{deployment}/rollback")
 @post
@@ -210,6 +257,14 @@ op requestDeploymentApproval(@path project: string, @path deployment: string, @h
 @apigen.authz(#{ mode: "privilege", privilege: "APPROVE_DEPLOYMENT" })
 @operationId("approveDeployment")
 op approveDeployment(@path project: string, @path deployment: string, @path approval: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: DeploymentApprovalDecisionRequest): OkJson<DeploymentApprovalResponse> | CommonErrors;
+
+@tag("Deployments")
+@summary("Deny an immutable deployment plan")
+@route("/projects/{project}/deployments/{deployment}/approval-requests/{approval}/deny")
+@post
+@apigen.authz(#{ mode: "privilege", privilege: "APPROVE_DEPLOYMENT" })
+@operationId("denyDeploymentApproval")
+op denyDeploymentApproval(@path project: string, @path deployment: string, @path approval: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: DeploymentApprovalDecisionRequest): OkJson<DeploymentApprovalResponse> | CommonErrors;
 
 @tag("Deployments")
 @summary("Revoke a pending or approved deployment decision")

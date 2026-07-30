@@ -112,6 +112,8 @@ func (*recordingDeploymentHandler) GetDeployment(stdhttp.ResponseWriter, *stdhtt
 }
 func (*recordingDeploymentHandler) CancelDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string) {
 }
+func (*recordingDeploymentHandler) RetryDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string) {
+}
 func (*recordingDeploymentHandler) ListDeploymentEvents(stdhttp.ResponseWriter, *stdhttp.Request, string, string, *int32, *string) {
 }
 func (*recordingDeploymentHandler) RollbackDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string) {
@@ -119,6 +121,8 @@ func (*recordingDeploymentHandler) RollbackDeployment(stdhttp.ResponseWriter, *s
 func (*recordingDeploymentHandler) RequestDeploymentApproval(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string) {
 }
 func (*recordingDeploymentHandler) ApproveDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string, string) {
+}
+func (*recordingDeploymentHandler) DenyDeploymentApproval(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string, string) {
 }
 func (*recordingDeploymentHandler) RevokeDeploymentApproval(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string, string) {
 }

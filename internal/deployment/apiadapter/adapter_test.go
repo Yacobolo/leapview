@@ -3,6 +3,7 @@ package apiadapter
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/flidai/leapview/internal/deployment"
@@ -37,6 +38,62 @@ func TestCreateProducesStableIdAndRequestDigestForIdempotentReplay(t *testing.T)
 	}
 }
 
+func TestCreateRequestDigestBindsImmutablePublishEvidence(t *testing.T) {
+	firstService := &fakeService{}
+	first, err := New(firstService, &fakeMetadata{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondService := &fakeService{}
+	second, err := New(secondService, &fakeMetadata{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := CreateRequest{
+		Project: "project", Environment: "prod", Actor: "principal",
+		IdempotencyKey: "publish-1", ReleaseID: "release_1",
+		Targets: []TargetRequest{{Workspace: "sales", CandidateID: "state_2"}},
+		Evidence: PublishEvidence{
+			ReleaseDigest:  "sha256:" + strings.Repeat("e", 64),
+			ArtifactDigest: "sha256:" + strings.Repeat("a", 64),
+			PlanDigest:     "sha256:" + strings.Repeat("b", 64),
+			CandidateID:    "candidate_1", CandidateRevision: 7,
+			TargetID: "lvinst_prod", BaseGeneration: "deployment_6",
+			RuntimeVersion: "v1.2.3",
+			PolicyDigest:   "sha256:" + strings.Repeat("c", 64),
+		},
+	}
+	if _, err := first.Create(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	request.Evidence.PlanDigest = "sha256:" + strings.Repeat("d", 64)
+	if _, err := second.Create(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if firstService.created.RequestDigest == secondService.created.RequestDigest {
+		t.Fatalf(
+			"request digest did not bind plan evidence: %q",
+			firstService.created.RequestDigest,
+		)
+	}
+}
+
+func TestCreateRejectsIncompleteImmutablePublishEvidence(t *testing.T) {
+	adapter, err := New(&fakeService{}, &fakeMetadata{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = adapter.Create(context.Background(), CreateRequest{
+		Project: "project", Environment: "prod", Actor: "principal",
+		IdempotencyKey: "publish-1", ReleaseID: "release_1",
+		Targets:  []TargetRequest{{Workspace: "sales", CandidateID: "state_2"}},
+		Evidence: PublishEvidence{TargetID: "lvinst_prod"},
+	})
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("error = %v, want invalid immutable publish evidence", err)
+	}
+}
+
 func TestCreateRejectsDuplicateWorkspaceAsInvalidRequest(t *testing.T) {
 	adapter, err := New(&fakeService{}, &fakeMetadata{})
 	if err != nil {
@@ -54,6 +111,7 @@ func TestCreateRejectsDuplicateWorkspaceAsInvalidRequest(t *testing.T) {
 func TestMapResponseExposesPublicManagedRevisionDigests(t *testing.T) {
 	service := &fakeService{row: deployment.Deployment{
 		ID: "deployment_1", ProjectID: "project", Environment: "prod", RequestDigest: "sha256:request", Status: deployment.StatusActive,
+		CreatedBy:   "publisher",
 		Targets:     []deployment.Target{{DeploymentID: "deployment_1", WorkspaceID: "sales", ServingStateID: "sales_2", Status: deployment.TargetStatusActive}},
 		Connections: []deployment.ConnectionPointer{{DeploymentID: "deployment_1", CollectionID: "orders", RevisionID: "revision_2", PriorRevisionID: "revision_1", PriorGeneration: 1, ActivatedGeneration: 2}},
 	}}
@@ -70,7 +128,9 @@ func TestMapResponseExposesPublicManagedRevisionDigests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Project != "project" || got.Status != StatusActive || len(got.Connections) != 1 || got.Connections[0].RevisionID != metadata.revisions["revision_2"].Digest {
+	if got.Project != "project" || got.CreatedBy != "publisher" ||
+		got.Status != StatusActive || len(got.Connections) != 1 ||
+		got.Connections[0].RevisionID != metadata.revisions["revision_2"].Digest {
 		t.Fatalf("response = %#v", got)
 	}
 }

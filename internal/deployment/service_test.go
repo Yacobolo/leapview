@@ -105,6 +105,25 @@ func TestActivateIsIdempotentAfterSuccess(t *testing.T) {
 	}
 }
 
+func TestCancelIsIdempotentAfterCancellation(t *testing.T) {
+	repo := &fakeRepository{deployment: Deployment{
+		ID: "deployment_1", ProjectID: "project", Environment: "prod",
+		Status: StatusCancelled,
+	}}
+	service := mustService(t, repo, &fakeServingStates{}, &fakeRuntime{}, &fakeResolver{})
+
+	got, err := service.Cancel(
+		context.Background(),
+		Scope{ProjectID: "project", DeploymentID: "deployment_1"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != StatusCancelled || repo.cancelCalls != 0 {
+		t.Fatalf("deployment = %#v, cancel calls = %d", got, repo.cancelCalls)
+	}
+}
+
 func mustService(t *testing.T, repo Repository, states ServingStateRepository, runtime Runtime, resolver ManagedDataResolver) *Service {
 	t.Helper()
 	activation, ok := repo.(ActivationUnitOfWork)
@@ -121,6 +140,7 @@ func mustService(t *testing.T, repo Repository, states ServingStateRepository, r
 type fakeRepository struct {
 	deployment    Deployment
 	activateCalls int
+	cancelCalls   int
 	failedID      string
 }
 
@@ -137,6 +157,7 @@ func (r *fakeRepository) ActivateDeployment(context.Context, string) (Deployment
 }
 
 func (r *fakeRepository) CancelDeployment(context.Context, string) (Deployment, error) {
+	r.cancelCalls++
 	r.deployment.Status = StatusCancelled
 	return r.deployment, nil
 }

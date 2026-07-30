@@ -23,10 +23,12 @@ type APIGenHandler interface {
 	CreateDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string)
 	GetDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string)
 	CancelDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string)
+	RetryDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string)
 	ListDeploymentEvents(stdhttp.ResponseWriter, *stdhttp.Request, string, string, *int32, *string)
 	RollbackDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string)
 	RequestDeploymentApproval(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string)
 	ApproveDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string, string)
+	DenyDeploymentApproval(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string, string)
 	RevokeDeploymentApproval(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string, string)
 	ActivateDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string)
 }
@@ -89,6 +91,10 @@ func (d *APIGenDispatcher) CancelDeployment(w stdhttp.ResponseWriter, r *stdhttp
 	d.handler.CancelDeployment(w, r, project, deployment)
 }
 
+func (d *APIGenDispatcher) RetryDeployment(w stdhttp.ResponseWriter, r *stdhttp.Request, project, deployment string, headers deploymentgen.GenRetryDeploymentHeaders) {
+	d.handler.RetryDeployment(w, r, project, deployment, headers.IdempotencyKey)
+}
+
 func (d *APIGenDispatcher) ListDeploymentEvents(w stdhttp.ResponseWriter, r *stdhttp.Request, project, deployment string, params deploymentgen.GenListDeploymentEventsParams, _ deploymentgen.GenListDeploymentEventsHeaders) {
 	d.handler.ListDeploymentEvents(w, r, project, deployment, params.Limit, params.PageToken)
 }
@@ -103,6 +109,10 @@ func (d *APIGenDispatcher) RequestDeploymentApproval(w stdhttp.ResponseWriter, r
 
 func (d *APIGenDispatcher) ApproveDeployment(w stdhttp.ResponseWriter, r *stdhttp.Request, project, deployment, approval string, headers deploymentgen.GenApproveDeploymentHeaders) {
 	d.handler.ApproveDeployment(w, r, project, deployment, approval, headers.IdempotencyKey)
+}
+
+func (d *APIGenDispatcher) DenyDeploymentApproval(w stdhttp.ResponseWriter, r *stdhttp.Request, project, deployment, approval string, headers deploymentgen.GenDenyDeploymentApprovalHeaders) {
+	d.handler.DenyDeploymentApproval(w, r, project, deployment, approval, headers.IdempotencyKey)
 }
 
 func (d *APIGenDispatcher) RevokeDeploymentApproval(w stdhttp.ResponseWriter, r *stdhttp.Request, project, deployment, approval string, headers deploymentgen.GenRevokeDeploymentApprovalHeaders) {

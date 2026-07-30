@@ -131,6 +131,42 @@ func TestApprovalRepositoryRetainsExpiredHistoryAndAcceptsReplacement(t *testing
 	}
 }
 
+func TestApprovalRepositoryPersistsDeniedDecision(t *testing.T) {
+	ctx, db, repository := testRepository(t)
+	now := time.Date(2026, 7, 30, 10, 0, 0, 0, time.UTC)
+	insertApprovalPrincipalsAndDeployment(t, ctx, db)
+	pending := deployment.Approval{
+		ID: "approval_denied", ProjectID: "finance", DeploymentID: "deployment_1",
+		Environment: "prod", RequestDigest: "sha256:plan", ReleaseID: "release_1",
+		Status: deployment.ApprovalPending, RequestedBy: "publisher",
+		RequestCredentialClass: deployment.CredentialClassWorkload,
+		RequestCredentialID:    "workload_1", RequestedAt: now,
+		ExpiresAt: now.Add(time.Hour), Revision: 1,
+	}
+	if _, err := repository.CreateApproval(ctx, pending); err != nil {
+		t.Fatal(err)
+	}
+	denied := pending
+	denied.Status = deployment.ApprovalDenied
+	denied.ApprovedBy = "reviewer"
+	denied.ApprovalCredentialClass = deployment.CredentialClassHuman
+	denied.ApprovalCredentialID = "session_review"
+	denied.ApprovalCredentialExpiresAt = now.Add(time.Hour)
+	denied.ApprovedAt = now.Add(time.Minute)
+	denied.Revision++
+	if _, err := repository.SaveApproval(ctx, denied, pending.Revision); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := NewRepositoryWithHooks(db, ActivationHooks{}).
+		ApprovalByDeployment(ctx, pending.DeploymentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded != denied {
+		t.Fatalf("loaded denial = %#v, want %#v", loaded, denied)
+	}
+}
+
 func insertApprovalPrincipalsAndDeployment(
 	t *testing.T,
 	ctx context.Context,

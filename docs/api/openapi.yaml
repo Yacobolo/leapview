@@ -16547,6 +16547,8 @@ paths:
                   - approval:
                       approvedAt: "2026-01-02T15:04:05Z"
                       approvedBy: example
+                      deniedAt: "2026-01-02T15:04:05Z"
+                      deniedBy: example
                       deploymentId: example
                       environment: example
                       expiresAt: "2026-01-02T15:04:05Z"
@@ -16568,6 +16570,29 @@ paths:
                     createdBy: example
                     environment: example
                     error: example
+                    evidence:
+                      artifactDigest: example
+                      baseGeneration: example
+                      candidateId: example
+                      candidateRevision: 1
+                      planDigest: example
+                      policyDigest: example
+                      releaseDigest: example
+                      runtimeVersion: example
+                      targetId: example
+                      workspaces:
+                        - artifactDigest: example
+                          bindings:
+                            - bindingId: example
+                              revision: 1
+                              validatedVersion: example
+                          dataMode: example
+                          dataRevision: example
+                          managedDataPins:
+                            - connectionId: example
+                              revisionId: example
+                          servingStateId: example
+                          workspaceId: example
                     finishedAt: "2026-01-02T15:04:05Z"
                     id: example
                     progress:
@@ -16576,6 +16601,7 @@ paths:
                       unit: example
                     projectId: example
                     releaseId: example
+                    requestDigest: example
                     startedAt: "2026-01-02T15:04:05Z"
                     status: queued
                     targets:
@@ -16859,6 +16885,8 @@ paths:
                 approval:
                   approvedAt: "2026-01-02T15:04:05Z"
                   approvedBy: example
+                  deniedAt: "2026-01-02T15:04:05Z"
+                  deniedBy: example
                   deploymentId: example
                   environment: example
                   expiresAt: "2026-01-02T15:04:05Z"
@@ -16880,6 +16908,29 @@ paths:
                 createdBy: example
                 environment: example
                 error: example
+                evidence:
+                  artifactDigest: example
+                  baseGeneration: example
+                  candidateId: example
+                  candidateRevision: 1
+                  planDigest: example
+                  policyDigest: example
+                  releaseDigest: example
+                  runtimeVersion: example
+                  targetId: example
+                  workspaces:
+                    - artifactDigest: example
+                      bindings:
+                        - bindingId: example
+                          revision: 1
+                          validatedVersion: example
+                      dataMode: example
+                      dataRevision: example
+                      managedDataPins:
+                        - connectionId: example
+                          revisionId: example
+                      servingStateId: example
+                      workspaceId: example
                 finishedAt: "2026-01-02T15:04:05Z"
                 id: example
                 progress:
@@ -16888,6 +16939,7 @@ paths:
                   unit: example
                 projectId: example
                 releaseId: example
+                requestDigest: example
                 startedAt: "2026-01-02T15:04:05Z"
                 status: queued
                 targets:
@@ -17171,6 +17223,8 @@ paths:
                 approval:
                   approvedAt: "2026-01-02T15:04:05Z"
                   approvedBy: example
+                  deniedAt: "2026-01-02T15:04:05Z"
+                  deniedBy: example
                   deploymentId: example
                   environment: example
                   expiresAt: "2026-01-02T15:04:05Z"
@@ -17192,6 +17246,29 @@ paths:
                 createdBy: example
                 environment: example
                 error: example
+                evidence:
+                  artifactDigest: example
+                  baseGeneration: example
+                  candidateId: example
+                  candidateRevision: 1
+                  planDigest: example
+                  policyDigest: example
+                  releaseDigest: example
+                  runtimeVersion: example
+                  targetId: example
+                  workspaces:
+                    - artifactDigest: example
+                      bindings:
+                        - bindingId: example
+                          revision: 1
+                          validatedVersion: example
+                      dataMode: example
+                      dataRevision: example
+                      managedDataPins:
+                        - connectionId: example
+                          revisionId: example
+                      servingStateId: example
+                      workspaceId: example
                 finishedAt: "2026-01-02T15:04:05Z"
                 id: example
                 progress:
@@ -17200,6 +17277,7 @@ paths:
                   unit: example
                 projectId: example
                 releaseId: example
+                requestDigest: example
                 startedAt: "2026-01-02T15:04:05Z"
                 status: queued
                 targets:
@@ -17488,6 +17566,8 @@ paths:
                 approval:
                   approvedAt: "2026-01-02T15:04:05Z"
                   approvedBy: example
+                  deniedAt: "2026-01-02T15:04:05Z"
+                  deniedBy: example
                   deploymentId: example
                   environment: example
                   expiresAt: "2026-01-02T15:04:05Z"
@@ -17509,6 +17589,29 @@ paths:
                 createdBy: example
                 environment: example
                 error: example
+                evidence:
+                  artifactDigest: example
+                  baseGeneration: example
+                  candidateId: example
+                  candidateRevision: 1
+                  planDigest: example
+                  policyDigest: example
+                  releaseDigest: example
+                  runtimeVersion: example
+                  targetId: example
+                  workspaces:
+                    - artifactDigest: example
+                      bindings:
+                        - bindingId: example
+                          revision: 1
+                          validatedVersion: example
+                      dataMode: example
+                      dataRevision: example
+                      managedDataPins:
+                        - connectionId: example
+                          revisionId: example
+                      servingStateId: example
+                      workspaceId: example
                 finishedAt: "2026-01-02T15:04:05Z"
                 id: example
                 progress:
@@ -17517,6 +17620,7 @@ paths:
                   unit: example
                 projectId: example
                 releaseId: example
+                requestDigest: example
                 startedAt: "2026-01-02T15:04:05Z"
                 status: queued
                 targets:
@@ -17804,6 +17908,8 @@ paths:
               example:
                 approvedAt: "2026-01-02T15:04:05Z"
                 approvedBy: example
+                deniedAt: "2026-01-02T15:04:05Z"
+                deniedBy: example
                 deploymentId: example
                 environment: example
                 expiresAt: "2026-01-02T15:04:05Z"
@@ -18097,6 +18203,311 @@ paths:
               example:
                 approvedAt: "2026-01-02T15:04:05Z"
                 approvedBy: example
+                deniedAt: "2026-01-02T15:04:05Z"
+                deniedBy: example
+                deploymentId: example
+                environment: example
+                expiresAt: "2026-01-02T15:04:05Z"
+                id: example
+                projectId: example
+                releaseId: example
+                requestDigest: example
+                requestedAt: "2026-01-02T15:04:05Z"
+                requestedBy: example
+                revision: 1
+                revokedAt: "2026-01-02T15:04:05Z"
+                revokedBy: example
+                status: pending
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '412':
+          description: Precondition failed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '413':
+          description: Client error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '415':
+          description: Client error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '422':
+          description: Client error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '429':
+          description: Client error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '500':
+          description: Server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '502':
+          description: Server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '503':
+          description: Service unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+      tags:
+        - Deployments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeploymentApprovalDecisionRequest'
+            example:
+              expectedRevision: 1
+      x-authz:
+        mode: privilege
+        privilege: APPROVE_DEPLOYMENT
+  /api/v1/projects/{project}/deployments/{deployment}/approval-requests/{approval}/deny:
+    post:
+      operationId: denyDeploymentApproval
+      summary: Deny an immutable deployment plan
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+          example: example
+        - name: deployment
+          in: path
+          required: true
+          schema:
+            type: string
+          example: example
+        - name: approval
+          in: path
+          required: true
+          schema:
+            type: string
+          example: example
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+          example: example
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentApprovalResponse'
+              example:
+                approvedAt: "2026-01-02T15:04:05Z"
+                approvedBy: example
+                deniedAt: "2026-01-02T15:04:05Z"
+                deniedBy: example
                 deploymentId: example
                 environment: example
                 expiresAt: "2026-01-02T15:04:05Z"
@@ -18398,6 +18809,8 @@ paths:
               example:
                 approvedAt: "2026-01-02T15:04:05Z"
                 approvedBy: example
+                deniedAt: "2026-01-02T15:04:05Z"
+                deniedBy: example
                 deploymentId: example
                 environment: example
                 expiresAt: "2026-01-02T15:04:05Z"
@@ -18699,6 +19112,8 @@ paths:
                 approval:
                   approvedAt: "2026-01-02T15:04:05Z"
                   approvedBy: example
+                  deniedAt: "2026-01-02T15:04:05Z"
+                  deniedBy: example
                   deploymentId: example
                   environment: example
                   expiresAt: "2026-01-02T15:04:05Z"
@@ -18720,6 +19135,29 @@ paths:
                 createdBy: example
                 environment: example
                 error: example
+                evidence:
+                  artifactDigest: example
+                  baseGeneration: example
+                  candidateId: example
+                  candidateRevision: 1
+                  planDigest: example
+                  policyDigest: example
+                  releaseDigest: example
+                  runtimeVersion: example
+                  targetId: example
+                  workspaces:
+                    - artifactDigest: example
+                      bindings:
+                        - bindingId: example
+                          revision: 1
+                          validatedVersion: example
+                      dataMode: example
+                      dataRevision: example
+                      managedDataPins:
+                        - connectionId: example
+                          revisionId: example
+                      servingStateId: example
+                      workspaceId: example
                 finishedAt: "2026-01-02T15:04:05Z"
                 id: example
                 progress:
@@ -18728,6 +19166,7 @@ paths:
                   unit: example
                 projectId: example
                 releaseId: example
+                requestDigest: example
                 startedAt: "2026-01-02T15:04:05Z"
                 status: queued
                 targets:
@@ -19292,6 +19731,349 @@ paths:
       x-authz:
         mode: privilege
         privilege: VIEW_ITEM
+  /api/v1/projects/{project}/deployments/{deployment}/retry:
+    post:
+      operationId: retryDeployment
+      summary: Retry a terminal publication request without changing its immutable release
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+          example: example
+        - name: deployment
+          in: path
+          required: true
+          schema:
+            type: string
+          example: example
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+          example: example
+      responses:
+        '202':
+          description: The request has been accepted for processing, but processing has not yet completed.
+          headers:
+            location:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentResponse'
+              example:
+                approval:
+                  approvedAt: "2026-01-02T15:04:05Z"
+                  approvedBy: example
+                  deniedAt: "2026-01-02T15:04:05Z"
+                  deniedBy: example
+                  deploymentId: example
+                  environment: example
+                  expiresAt: "2026-01-02T15:04:05Z"
+                  id: example
+                  projectId: example
+                  releaseId: example
+                  requestDigest: example
+                  requestedAt: "2026-01-02T15:04:05Z"
+                  requestedBy: example
+                  revision: 1
+                  revokedAt: "2026-01-02T15:04:05Z"
+                  revokedBy: example
+                  status: pending
+                connections:
+                  - connectionId: example
+                    priorRevisionId: example
+                    revisionId: example
+                createdAt: "2026-01-02T15:04:05Z"
+                createdBy: example
+                environment: example
+                error: example
+                evidence:
+                  artifactDigest: example
+                  baseGeneration: example
+                  candidateId: example
+                  candidateRevision: 1
+                  planDigest: example
+                  policyDigest: example
+                  releaseDigest: example
+                  runtimeVersion: example
+                  targetId: example
+                  workspaces:
+                    - artifactDigest: example
+                      bindings:
+                        - bindingId: example
+                          revision: 1
+                          validatedVersion: example
+                      dataMode: example
+                      dataRevision: example
+                      managedDataPins:
+                        - connectionId: example
+                          revisionId: example
+                      servingStateId: example
+                      workspaceId: example
+                finishedAt: "2026-01-02T15:04:05Z"
+                id: example
+                progress:
+                  current: 1
+                  total: 1
+                  unit: example
+                projectId: example
+                releaseId: example
+                requestDigest: example
+                startedAt: "2026-01-02T15:04:05Z"
+                status: queued
+                targets:
+                  - error: example
+                    priorServingStateId: example
+                    servingStateId: example
+                    status: example
+                    workspaceId: example
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '412':
+          description: Precondition failed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '413':
+          description: Client error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '415':
+          description: Client error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '422':
+          description: Client error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '429':
+          description: Client error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '500':
+          description: Server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '502':
+          description: Server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '503':
+          description: Service unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+      tags:
+        - Deployments
+      x-authz:
+        mode: privilege
+        privilege: REQUEST_DEPLOYMENT
   /api/v1/projects/{project}/deployments/{deployment}/rollback:
     post:
       operationId: rollbackDeployment
@@ -19333,6 +20115,8 @@ paths:
                 approval:
                   approvedAt: "2026-01-02T15:04:05Z"
                   approvedBy: example
+                  deniedAt: "2026-01-02T15:04:05Z"
+                  deniedBy: example
                   deploymentId: example
                   environment: example
                   expiresAt: "2026-01-02T15:04:05Z"
@@ -19354,6 +20138,29 @@ paths:
                 createdBy: example
                 environment: example
                 error: example
+                evidence:
+                  artifactDigest: example
+                  baseGeneration: example
+                  candidateId: example
+                  candidateRevision: 1
+                  planDigest: example
+                  policyDigest: example
+                  releaseDigest: example
+                  runtimeVersion: example
+                  targetId: example
+                  workspaces:
+                    - artifactDigest: example
+                      bindings:
+                        - bindingId: example
+                          revision: 1
+                          validatedVersion: example
+                      dataMode: example
+                      dataRevision: example
+                      managedDataPins:
+                        - connectionId: example
+                          revisionId: example
+                      servingStateId: example
+                      workspaceId: example
                 finishedAt: "2026-01-02T15:04:05Z"
                 id: example
                 progress:
@@ -19362,6 +20169,7 @@ paths:
                   unit: example
                 projectId: example
                 releaseId: example
+                requestDigest: example
                 startedAt: "2026-01-02T15:04:05Z"
                 status: queued
                 targets:
@@ -50938,6 +51746,13 @@ components:
           type: string
           format: date-time
           example: "2026-01-02T15:04:05Z"
+        deniedBy:
+          type: string
+          example: example
+        deniedAt:
+          type: string
+          format: date-time
+          example: "2026-01-02T15:04:05Z"
         revokedBy:
           type: string
           example: example
@@ -50956,6 +51771,8 @@ components:
       example:
         approvedAt: "2026-01-02T15:04:05Z"
         approvedBy: example
+        deniedAt: "2026-01-02T15:04:05Z"
+        deniedBy: example
         deploymentId: example
         environment: example
         expiresAt: "2026-01-02T15:04:05Z"
@@ -50974,9 +51791,31 @@ components:
       enum:
         - pending
         - approved
+        - denied
         - revoked
         - expired
       example: pending
+    DeploymentBindingEvidence:
+      type: object
+      required:
+        - bindingId
+        - revision
+        - validatedVersion
+      properties:
+        bindingId:
+          type: string
+          example: example
+        revision:
+          type: integer
+          format: int64
+          example: 1
+        validatedVersion:
+          type: string
+          example: example
+      example:
+        bindingId: example
+        revision: 1
+        validatedVersion: example
     DeploymentConnectionResponse:
       type: object
       required:
@@ -51020,6 +51859,8 @@ components:
             - approval:
                 approvedAt: "2026-01-02T15:04:05Z"
                 approvedBy: example
+                deniedAt: "2026-01-02T15:04:05Z"
+                deniedBy: example
                 deploymentId: example
                 environment: example
                 expiresAt: "2026-01-02T15:04:05Z"
@@ -51041,6 +51882,29 @@ components:
               createdBy: example
               environment: example
               error: example
+              evidence:
+                artifactDigest: example
+                baseGeneration: example
+                candidateId: example
+                candidateRevision: 1
+                planDigest: example
+                policyDigest: example
+                releaseDigest: example
+                runtimeVersion: example
+                targetId: example
+                workspaces:
+                  - artifactDigest: example
+                    bindings:
+                      - bindingId: example
+                        revision: 1
+                        validatedVersion: example
+                    dataMode: example
+                    dataRevision: example
+                    managedDataPins:
+                      - connectionId: example
+                        revisionId: example
+                    servingStateId: example
+                    workspaceId: example
               finishedAt: "2026-01-02T15:04:05Z"
               id: example
               progress:
@@ -51049,6 +51913,7 @@ components:
                 unit: example
               projectId: example
               releaseId: example
+              requestDigest: example
               startedAt: "2026-01-02T15:04:05Z"
               status: queued
               targets:
@@ -51064,6 +51929,8 @@ components:
           - approval:
               approvedAt: "2026-01-02T15:04:05Z"
               approvedBy: example
+              deniedAt: "2026-01-02T15:04:05Z"
+              deniedBy: example
               deploymentId: example
               environment: example
               expiresAt: "2026-01-02T15:04:05Z"
@@ -51085,6 +51952,29 @@ components:
             createdBy: example
             environment: example
             error: example
+            evidence:
+              artifactDigest: example
+              baseGeneration: example
+              candidateId: example
+              candidateRevision: 1
+              planDigest: example
+              policyDigest: example
+              releaseDigest: example
+              runtimeVersion: example
+              targetId: example
+              workspaces:
+                - artifactDigest: example
+                  bindings:
+                    - bindingId: example
+                      revision: 1
+                      validatedVersion: example
+                  dataMode: example
+                  dataRevision: example
+                  managedDataPins:
+                    - connectionId: example
+                      revisionId: example
+                  servingStateId: example
+                  workspaceId: example
             finishedAt: "2026-01-02T15:04:05Z"
             id: example
             progress:
@@ -51093,6 +51983,7 @@ components:
               unit: example
             projectId: example
             releaseId: example
+            requestDigest: example
             startedAt: "2026-01-02T15:04:05Z"
             status: queued
             targets:
@@ -51103,6 +51994,21 @@ components:
                 workspaceId: example
         page:
           nextCursor: example
+    DeploymentManagedDataPinEvidence:
+      type: object
+      required:
+        - connectionId
+        - revisionId
+      properties:
+        connectionId:
+          type: string
+          example: example
+        revisionId:
+          type: string
+          example: example
+      example:
+        connectionId: example
+        revisionId: example
     DeploymentProgress:
       type: object
       required:
@@ -51125,6 +52031,88 @@ components:
         current: 1
         total: 1
         unit: example
+    DeploymentPublishEvidence:
+      type: object
+      required:
+        - releaseDigest
+        - artifactDigest
+        - planDigest
+        - candidateId
+        - candidateRevision
+        - targetId
+        - baseGeneration
+        - runtimeVersion
+        - policyDigest
+        - workspaces
+      properties:
+        releaseDigest:
+          type: string
+          example: example
+        artifactDigest:
+          type: string
+          example: example
+        planDigest:
+          type: string
+          example: example
+        candidateId:
+          type: string
+          example: example
+        candidateRevision:
+          type: integer
+          format: int64
+          example: 1
+        targetId:
+          type: string
+          example: example
+        baseGeneration:
+          type: string
+          example: example
+        runtimeVersion:
+          type: string
+          example: example
+        policyDigest:
+          type: string
+          example: example
+        workspaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeploymentWorkspacePublishEvidence'
+          example:
+            - artifactDigest: example
+              bindings:
+                - bindingId: example
+                  revision: 1
+                  validatedVersion: example
+              dataMode: example
+              dataRevision: example
+              managedDataPins:
+                - connectionId: example
+                  revisionId: example
+              servingStateId: example
+              workspaceId: example
+      example:
+        artifactDigest: example
+        baseGeneration: example
+        candidateId: example
+        candidateRevision: 1
+        planDigest: example
+        policyDigest: example
+        releaseDigest: example
+        runtimeVersion: example
+        targetId: example
+        workspaces:
+          - artifactDigest: example
+            bindings:
+              - bindingId: example
+                revision: 1
+                validatedVersion: example
+            dataMode: example
+            dataRevision: example
+            managedDataPins:
+              - connectionId: example
+                revisionId: example
+            servingStateId: example
+            workspaceId: example
     DeploymentResponse:
       type: object
       required:
@@ -51132,6 +52120,8 @@ components:
         - projectId
         - releaseId
         - environment
+        - requestDigest
+        - evidence
         - status
         - targets
         - connections
@@ -51150,6 +52140,11 @@ components:
         environment:
           type: string
           example: example
+        requestDigest:
+          type: string
+          example: example
+        evidence:
+          $ref: '#/components/schemas/DeploymentPublishEvidence'
         status:
           $ref: '#/components/schemas/DeploymentStatus'
         progress:
@@ -51196,6 +52191,8 @@ components:
         approval:
           approvedAt: "2026-01-02T15:04:05Z"
           approvedBy: example
+          deniedAt: "2026-01-02T15:04:05Z"
+          deniedBy: example
           deploymentId: example
           environment: example
           expiresAt: "2026-01-02T15:04:05Z"
@@ -51217,6 +52214,29 @@ components:
         createdBy: example
         environment: example
         error: example
+        evidence:
+          artifactDigest: example
+          baseGeneration: example
+          candidateId: example
+          candidateRevision: 1
+          planDigest: example
+          policyDigest: example
+          releaseDigest: example
+          runtimeVersion: example
+          targetId: example
+          workspaces:
+            - artifactDigest: example
+              bindings:
+                - bindingId: example
+                  revision: 1
+                  validatedVersion: example
+              dataMode: example
+              dataRevision: example
+              managedDataPins:
+                - connectionId: example
+                  revisionId: example
+              servingStateId: example
+              workspaceId: example
         finishedAt: "2026-01-02T15:04:05Z"
         id: example
         progress:
@@ -51225,6 +52245,7 @@ components:
           unit: example
         projectId: example
         releaseId: example
+        requestDigest: example
         startedAt: "2026-01-02T15:04:05Z"
         status: queued
         targets:
@@ -51269,6 +52290,60 @@ components:
         priorServingStateId: example
         servingStateId: example
         status: example
+        workspaceId: example
+    DeploymentWorkspacePublishEvidence:
+      type: object
+      required:
+        - workspaceId
+        - servingStateId
+        - artifactDigest
+        - dataRevision
+        - dataMode
+        - managedDataPins
+        - bindings
+      properties:
+        workspaceId:
+          type: string
+          example: example
+        servingStateId:
+          type: string
+          example: example
+        artifactDigest:
+          type: string
+          example: example
+        dataRevision:
+          type: string
+          example: example
+        dataMode:
+          type: string
+          example: example
+        managedDataPins:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeploymentManagedDataPinEvidence'
+          example:
+            - connectionId: example
+              revisionId: example
+        bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeploymentBindingEvidence'
+          example:
+            - bindingId: example
+              revision: 1
+              validatedVersion: example
+      example:
+        artifactDigest: example
+        bindings:
+          - bindingId: example
+            revision: 1
+            validatedVersion: example
+        dataMode: example
+        dataRevision: example
+        managedDataPins:
+          - connectionId: example
+            revisionId: example
+        servingStateId: example
         workspaceId: example
     DeviceAuthorizationApprovalRequest:
       type: object

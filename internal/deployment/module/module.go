@@ -23,6 +23,7 @@ type Module struct {
 	candidateArtifacts   release.CandidateArtifactPreparer
 	jobs                 JobConfig
 	api                  APIConfig
+	instanceID           string
 	protected            bool
 	currentApprovalActor func(*http.Request) (deployment.ApprovalActor, bool)
 	authorizeApproval    func(context.Context, deployment.ApprovalActor, string, string) error
@@ -176,6 +177,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		candidateRuntimes: candidateRuntimes, candidateSources: config.CandidateSources,
 		candidateArtifacts: config.CandidateArtifacts,
 		jobs:               jobs, api: config.API, protected: config.Protected,
+		instanceID:           config.InstanceID,
 		currentApprovalActor: config.CurrentApprovalActor,
 		authorizeApproval:    config.AuthorizeApproval,
 		authorizeActivation:  config.AuthorizeActivation,

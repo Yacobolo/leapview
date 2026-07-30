@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/flidai/leapview/internal/deployment"
@@ -86,6 +87,15 @@ func (m *Module) createDeployment(w http.ResponseWriter, r *http.Request, projec
 		apitransport.WriteProblem(w, r, http.StatusConflict, "RELEASE_NOT_READY", "Only ready releases can be deployed", nil)
 		return
 	}
+	evidence, err := publishEvidence(
+		targetRelease,
+		m.instanceID,
+		m.handlerEnvironment(),
+	)
+	if err != nil {
+		writeAPIError(w, r, err)
+		return
+	}
 	targets := make([]apiadapter.TargetRequest, 0, len(targetRelease.Artifacts))
 	for _, artifact := range targetRelease.Artifacts {
 		if artifact.ServingStateID == "" {
@@ -106,7 +116,7 @@ func (m *Module) createDeployment(w http.ResponseWriter, r *http.Request, projec
 	}
 	createRequest := apiadapter.CreateRequest{
 		Project: project, Environment: m.handlerEnvironment(), Targets: targets, Actor: principal.ID, IdempotencyKey: idempotencyKey,
-		ReleaseID: releaseID, RollbackOf: rollbackOf,
+		ReleaseID: releaseID, Evidence: evidence, RollbackOf: rollbackOf,
 	}
 	if !m.protected {
 		createRequest.Workflow = func(deploymentID string) jobs.WorkflowIntent {
@@ -125,7 +135,7 @@ func (m *Module) createDeployment(w http.ResponseWriter, r *http.Request, projec
 		writeAPIError(w, r, err)
 		return
 	}
-	response := deploymentResponse(created, releaseID, principal.ID)
+	response := deploymentResponse(created, targetRelease)
 	if m.protected {
 		approval, approvalErr := m.requestApproval(
 			r.Context(),
@@ -144,6 +154,66 @@ func (m *Module) createDeployment(w http.ResponseWriter, r *http.Request, projec
 	apitransport.WriteJSON(w, http.StatusAccepted, response)
 }
 
+func publishEvidence(
+	targetRelease release.Release,
+	instanceID,
+	environment string,
+) (apiadapter.PublishEvidence, error) {
+	instanceID = strings.TrimSpace(instanceID)
+	environment = strings.TrimSpace(environment)
+	if targetRelease.Provenance == nil ||
+		targetRelease.ProjectID == "" ||
+		targetRelease.ProjectDigest == "" ||
+		targetRelease.ProjectDigest != targetRelease.Provenance.Artifact.ProjectDigest ||
+		targetRelease.Provenance.Plan.TargetID != instanceID ||
+		targetRelease.Provenance.Plan.Environment != environment {
+		return apiadapter.PublishEvidence{}, fmt.Errorf(
+			"%w: release provenance does not belong to this target",
+			deployment.ErrConflict,
+		)
+	}
+	if err := targetRelease.Provenance.Validate(); err != nil {
+		return apiadapter.PublishEvidence{}, fmt.Errorf(
+			"%w: invalid release provenance: %v",
+			deployment.ErrConflict,
+			err,
+		)
+	}
+	planned := make(map[string]release.TargetWorkspacePlan, len(targetRelease.Provenance.Plan.Workspaces))
+	for _, workspace := range targetRelease.Provenance.Plan.Workspaces {
+		planned[workspace.WorkspaceID] = workspace
+	}
+	if len(planned) != len(targetRelease.Artifacts) {
+		return apiadapter.PublishEvidence{}, fmt.Errorf(
+			"%w: release target plan is incomplete",
+			deployment.ErrConflict,
+		)
+	}
+	for _, artifact := range targetRelease.Artifacts {
+		workspace, ok := planned[artifact.WorkspaceID]
+		if !ok || workspace.ServingStateID != artifact.ServingStateID ||
+			workspace.ArtifactDigest != artifact.ActualDigest ||
+			artifact.ActualDigest != artifact.ExpectedDigest {
+			return apiadapter.PublishEvidence{}, fmt.Errorf(
+				"%w: release target plan drifted for workspace %q",
+				deployment.ErrConflict,
+				artifact.WorkspaceID,
+			)
+		}
+	}
+	return apiadapter.PublishEvidence{
+		ReleaseDigest:     targetRelease.Provenance.Digest,
+		ArtifactDigest:    targetRelease.Provenance.ArtifactDigest,
+		PlanDigest:        targetRelease.Provenance.PlanDigest,
+		CandidateID:       targetRelease.Provenance.Candidate.ID,
+		CandidateRevision: targetRelease.Provenance.Candidate.Revision,
+		TargetID:          targetRelease.Provenance.Plan.TargetID,
+		BaseGeneration:    targetRelease.Provenance.Plan.BaseGeneration,
+		RuntimeVersion:    targetRelease.Provenance.Plan.RuntimeVersion,
+		PolicyDigest:      targetRelease.Provenance.Plan.PolicyDigest,
+	}, nil
+}
+
 func (m *Module) GetDeployment(w http.ResponseWriter, r *http.Request, project, deploymentID string) {
 	if m.jobs.Coordinator == nil || m.api.Releases == nil {
 		apitransport.WriteProblem(w, r, http.StatusServiceUnavailable, "DEPLOYMENT_SERVICE_UNAVAILABLE", "Deployment service is unavailable", nil)
@@ -154,12 +224,17 @@ func (m *Module) GetDeployment(w http.ResponseWriter, r *http.Request, project, 
 		writeAPIError(w, r, err)
 		return
 	}
+	targetRelease, err := m.api.Releases.Get(r.Context(), project, releaseID)
+	if err != nil {
+		writeAPIError(w, r, err)
+		return
+	}
 	row, err := m.jobs.Coordinator.Get(r.Context(), apiadapter.Scope{Project: project, DeploymentID: deploymentID})
 	if err != nil {
 		writeAPIError(w, r, err)
 		return
 	}
-	response := deploymentResponse(row, releaseID, "")
+	response := deploymentResponse(row, targetRelease)
 	m.attachApproval(r.Context(), &response, row.ID)
 	apitransport.WriteJSON(w, http.StatusOK, response)
 }
@@ -180,11 +255,15 @@ func (m *Module) ListDeployments(w http.ResponseWriter, r *http.Request, project
 		if err != nil {
 			continue
 		}
+		targetRelease, err := m.api.Releases.Get(r.Context(), project, releaseID)
+		if err != nil {
+			continue
+		}
 		row, err := m.jobs.Coordinator.Get(r.Context(), apiadapter.Scope{Project: project, DeploymentID: id})
 		if err != nil {
 			continue
 		}
-		response := deploymentResponse(row, releaseID, "")
+		response := deploymentResponse(row, targetRelease)
 		m.attachApproval(r.Context(), &response, row.ID)
 		items = append(items, response)
 	}
@@ -206,6 +285,11 @@ func (m *Module) CancelDeployment(w http.ResponseWriter, r *http.Request, projec
 		writeAPIError(w, r, err)
 		return
 	}
+	targetRelease, err := m.api.Releases.Get(r.Context(), project, releaseID)
+	if err != nil {
+		writeAPIError(w, r, err)
+		return
+	}
 	if err := m.api.Jobs.Cancel(r.Context(), "deployment:"+deploymentID+":activate"); err != nil && !errors.Is(err, jobs.ErrConflict) {
 		apitransport.WriteProblem(w, r, http.StatusServiceUnavailable, "ASYNC_QUEUE_UNAVAILABLE", "Deployment cancellation could not be persisted", nil)
 		return
@@ -217,7 +301,62 @@ func (m *Module) CancelDeployment(w http.ResponseWriter, r *http.Request, projec
 	}
 	_ = m.appendAPIEvent(r.Context(), deploymentID, "deployment.cancelled", map[string]any{"deploymentId": deploymentID, "status": "cancelled"})
 	w.Header().Set("Location", deploymentLocation(project, deploymentID))
-	apitransport.WriteJSON(w, http.StatusAccepted, deploymentResponse(row, releaseID, ""))
+	apitransport.WriteJSON(w, http.StatusAccepted, deploymentResponse(row, targetRelease))
+}
+
+func (m *Module) RetryDeployment(
+	w http.ResponseWriter,
+	r *http.Request,
+	project,
+	deploymentID,
+	idempotencyKey string,
+) {
+	if m.jobs.Coordinator == nil || m.api.Releases == nil {
+		apitransport.WriteProblem(w, r, http.StatusServiceUnavailable, "DEPLOYMENT_SERVICE_UNAVAILABLE", "Deployment service is unavailable", nil)
+		return
+	}
+	releaseID, _, err := m.api.Releases.DeploymentRelease(
+		r.Context(),
+		project,
+		deploymentID,
+	)
+	if err != nil {
+		writeAPIError(w, r, err)
+		return
+	}
+	row, err := m.jobs.Coordinator.Get(
+		r.Context(),
+		apiadapter.Scope{Project: project, DeploymentID: deploymentID},
+	)
+	if err != nil {
+		writeAPIError(w, r, err)
+		return
+	}
+	retryable := row.Status == apiadapter.StatusFailed ||
+		row.Status == apiadapter.StatusCancelled
+	if row.Status == apiadapter.StatusPending && m.approvals != nil {
+		if approval, approvalErr := m.approvals.Current(
+			r.Context(),
+			deploymentID,
+		); approvalErr == nil {
+			retryable = approval.Status == deployment.ApprovalDenied ||
+				approval.Status == deployment.ApprovalRevoked ||
+				approval.Status == deployment.ApprovalExpired
+		}
+	}
+	if !retryable {
+		writeAPIError(
+			w,
+			r,
+			fmt.Errorf(
+				"%w: deployment is %s and cannot be retried",
+				deployment.ErrConflict,
+				row.Status,
+			),
+		)
+		return
+	}
+	m.createDeployment(w, r, project, releaseID, idempotencyKey, "")
 }
 
 func (m *Module) RollbackDeployment(w http.ResponseWriter, r *http.Request, project, deploymentID, idempotencyKey string) {
@@ -271,7 +410,18 @@ func (m *Module) ApproveDeployment(
 	approvalID,
 	_ string,
 ) {
-	m.transitionApproval(w, r, project, deploymentID, approvalID, true)
+	m.transitionApproval(w, r, project, deploymentID, approvalID, approvalDecisionApprove)
+}
+
+func (m *Module) DenyDeploymentApproval(
+	w http.ResponseWriter,
+	r *http.Request,
+	project,
+	deploymentID,
+	approvalID,
+	_ string,
+) {
+	m.transitionApproval(w, r, project, deploymentID, approvalID, approvalDecisionDeny)
 }
 
 func (m *Module) RevokeDeploymentApproval(
@@ -282,7 +432,7 @@ func (m *Module) RevokeDeploymentApproval(
 	approvalID,
 	_ string,
 ) {
-	m.transitionApproval(w, r, project, deploymentID, approvalID, false)
+	m.transitionApproval(w, r, project, deploymentID, approvalID, approvalDecisionRevoke)
 }
 
 func (m *Module) ActivateDeployment(
@@ -333,7 +483,12 @@ func (m *Module) ActivateDeployment(
 		"approvalId":       approval.ID,
 		"approvalRevision": approval.Revision,
 	})
-	response := deploymentResponse(row, releaseID, principal.ID)
+	targetRelease, err := m.api.Releases.Get(r.Context(), project, releaseID)
+	if err != nil {
+		writeAPIError(w, r, err)
+		return
+	}
+	response := deploymentResponse(row, targetRelease)
 	mapped := approvalResponse(approval)
 	response.Approval = &mapped
 	w.Header().Set("Location", deploymentLocation(project, deploymentID))
@@ -464,13 +619,21 @@ func (m *Module) requestApproval(
 	})
 }
 
+type approvalDecision uint8
+
+const (
+	approvalDecisionApprove approvalDecision = iota + 1
+	approvalDecisionDeny
+	approvalDecisionRevoke
+)
+
 func (m *Module) transitionApproval(
 	w http.ResponseWriter,
 	r *http.Request,
 	project,
 	deploymentID,
 	approvalID string,
-	approve bool,
+	decision approvalDecision,
 ) {
 	var body deploymentapi.ApprovalDecisionRequest
 	if err := apitransport.DecodeBody(w, r, &body); err != nil {
@@ -500,18 +663,26 @@ func (m *Module) transitionApproval(
 		approval deployment.Approval
 		err      error
 	)
-	if approve {
+	switch decision {
+	case approvalDecisionApprove:
 		approval, err = m.approvals.Approve(r.Context(), transition)
-	} else {
+	case approvalDecisionDeny:
+		approval, err = m.approvals.Deny(r.Context(), transition)
+	case approvalDecisionRevoke:
 		approval, err = m.approvals.Revoke(r.Context(), transition)
+	default:
+		err = deployment.ErrApprovalInvalid
 	}
 	if err != nil {
 		writeAPIError(w, r, err)
 		return
 	}
 	eventType := "deployment.approval_revoked"
-	if approve {
+	switch decision {
+	case approvalDecisionApprove:
 		eventType = "deployment.approved"
+	case approvalDecisionDeny:
+		eventType = "deployment.denied"
 	}
 	_ = m.appendAPIEvent(r.Context(), deploymentID, eventType, map[string]any{
 		"deploymentId":     deploymentID,
@@ -607,14 +778,19 @@ func (m *Module) appendAPIEvent(ctx context.Context, deploymentID, eventType str
 	return err
 }
 
-func deploymentResponse(row apiadapter.Deployment, releaseID, actor string) deploymentapi.Response {
+func deploymentResponse(
+	row apiadapter.Deployment,
+	targetRelease release.Release,
+) deploymentapi.Response {
 	status := deploymentapi.Status(row.Status)
 	if row.Status == apiadapter.StatusPending {
 		status = deploymentapi.StatusQueued
 	}
 	result := deploymentapi.Response{
-		ID: row.ID, ProjectID: row.Project, ReleaseID: releaseID, Environment: row.Environment, Status: status,
-		CreatedBy: actor, CreatedAt: row.CreatedAt, Targets: make([]deploymentapi.TargetResponse, 0, len(row.Targets)),
+		ID: row.ID, ProjectID: row.Project, ReleaseID: targetRelease.ID,
+		Environment: row.Environment, RequestDigest: row.RequestDigest,
+		Evidence: publishEvidenceResponse(targetRelease), Status: status,
+		CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt, Targets: make([]deploymentapi.TargetResponse, 0, len(row.Targets)),
 		Connections: make([]deploymentapi.ConnectionResponse, 0, len(row.Connections)),
 	}
 	for _, target := range row.Targets {
@@ -645,6 +821,60 @@ func deploymentResponse(row apiadapter.Deployment, releaseID, actor string) depl
 	return result
 }
 
+func publishEvidenceResponse(
+	targetRelease release.Release,
+) deploymentapi.PublishEvidenceResponse {
+	if targetRelease.Provenance == nil {
+		return deploymentapi.PublishEvidenceResponse{
+			Workspaces: []deploymentapi.WorkspacePublishEvidence{},
+		}
+	}
+	response := deploymentapi.PublishEvidenceResponse{
+		ReleaseDigest:     targetRelease.Provenance.Digest,
+		ArtifactDigest:    targetRelease.Provenance.ArtifactDigest,
+		PlanDigest:        targetRelease.Provenance.PlanDigest,
+		CandidateID:       targetRelease.Provenance.Candidate.ID,
+		CandidateRevision: targetRelease.Provenance.Candidate.Revision,
+		TargetID:          targetRelease.Provenance.Plan.TargetID,
+		BaseGeneration:    targetRelease.Provenance.Plan.BaseGeneration,
+		RuntimeVersion:    targetRelease.Provenance.Plan.RuntimeVersion,
+		PolicyDigest:      targetRelease.Provenance.Plan.PolicyDigest,
+		Workspaces: make(
+			[]deploymentapi.WorkspacePublishEvidence,
+			0,
+			len(targetRelease.Provenance.Plan.Workspaces),
+		),
+	}
+	for _, workspace := range targetRelease.Provenance.Plan.Workspaces {
+		mapped := deploymentapi.WorkspacePublishEvidence{
+			WorkspaceID: workspace.WorkspaceID, ServingStateID: workspace.ServingStateID,
+			ArtifactDigest: workspace.ArtifactDigest,
+			DataRevision:   workspace.DataRevision, DataMode: string(workspace.DataMode),
+			ManagedDataPins: make(
+				[]deploymentapi.ManagedDataPinEvidence,
+				len(workspace.ManagedDataPins),
+			),
+			Bindings: make(
+				[]deploymentapi.BindingEvidence,
+				len(workspace.Bindings),
+			),
+		}
+		for index, pin := range workspace.ManagedDataPins {
+			mapped.ManagedDataPins[index] = deploymentapi.ManagedDataPinEvidence{
+				ConnectionID: pin.ConnectionID, RevisionID: pin.RevisionID,
+			}
+		}
+		for index, binding := range workspace.Bindings {
+			mapped.Bindings[index] = deploymentapi.BindingEvidence{
+				BindingID: binding.BindingID, Revision: binding.Revision,
+				ValidatedVersion: binding.ValidatedVersion,
+			}
+		}
+		response.Workspaces = append(response.Workspaces, mapped)
+	}
+	return response
+}
+
 func approvalResponse(approval deployment.Approval) deploymentapi.ApprovalResponse {
 	response := deploymentapi.ApprovalResponse{
 		ID: approval.ID, ProjectID: approval.ProjectID,
@@ -658,10 +888,15 @@ func approvalResponse(approval deployment.Approval) deploymentapi.ApprovalRespon
 		ExpiresAt:     approval.ExpiresAt.UTC().Format(time.RFC3339Nano),
 		Revision:      approval.Revision,
 	}
-	if approval.ApprovedBy != "" {
+	if approval.Status == deployment.ApprovalDenied && approval.ApprovedBy != "" {
+		response.DeniedBy = &approval.ApprovedBy
+	} else if approval.ApprovedBy != "" {
 		response.ApprovedBy = &approval.ApprovedBy
 	}
-	if !approval.ApprovedAt.IsZero() {
+	if approval.Status == deployment.ApprovalDenied && !approval.ApprovedAt.IsZero() {
+		value := approval.ApprovedAt.UTC().Format(time.RFC3339Nano)
+		response.DeniedAt = &value
+	} else if !approval.ApprovedAt.IsZero() {
 		value := approval.ApprovedAt.UTC().Format(time.RFC3339Nano)
 		response.ApprovedAt = &value
 	}

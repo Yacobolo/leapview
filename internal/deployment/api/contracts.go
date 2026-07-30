@@ -80,10 +80,46 @@ type ApprovalResponse struct {
 	RequestedAt   string  `json:"requestedAt"`
 	ApprovedBy    *string `json:"approvedBy,omitempty"`
 	ApprovedAt    *string `json:"approvedAt,omitempty"`
+	DeniedBy      *string `json:"deniedBy,omitempty"`
+	DeniedAt      *string `json:"deniedAt,omitempty"`
 	RevokedBy     *string `json:"revokedBy,omitempty"`
 	RevokedAt     *string `json:"revokedAt,omitempty"`
 	ExpiresAt     string  `json:"expiresAt"`
 	Revision      int64   `json:"revision"`
+}
+
+type PublishEvidenceResponse struct {
+	ReleaseDigest     string                     `json:"releaseDigest"`
+	ArtifactDigest    string                     `json:"artifactDigest"`
+	PlanDigest        string                     `json:"planDigest"`
+	CandidateID       string                     `json:"candidateId"`
+	CandidateRevision int64                      `json:"candidateRevision"`
+	TargetID          string                     `json:"targetId"`
+	BaseGeneration    string                     `json:"baseGeneration"`
+	RuntimeVersion    string                     `json:"runtimeVersion"`
+	PolicyDigest      string                     `json:"policyDigest"`
+	Workspaces        []WorkspacePublishEvidence `json:"workspaces"`
+}
+
+type ManagedDataPinEvidence struct {
+	ConnectionID string `json:"connectionId"`
+	RevisionID   string `json:"revisionId"`
+}
+
+type BindingEvidence struct {
+	BindingID        string `json:"bindingId"`
+	Revision         int64  `json:"revision"`
+	ValidatedVersion string `json:"validatedVersion"`
+}
+
+type WorkspacePublishEvidence struct {
+	WorkspaceID     string                   `json:"workspaceId"`
+	ServingStateID  string                   `json:"servingStateId"`
+	ArtifactDigest  string                   `json:"artifactDigest"`
+	DataRevision    string                   `json:"dataRevision"`
+	DataMode        string                   `json:"dataMode"`
+	ManagedDataPins []ManagedDataPinEvidence `json:"managedDataPins"`
+	Bindings        []BindingEvidence        `json:"bindings"`
 }
 
 type Status string
@@ -105,19 +141,21 @@ type ConnectionResponse struct {
 }
 
 type Response struct {
-	Connections []ConnectionResponse `json:"connections"`
-	CreatedAt   string               `json:"createdAt"`
-	CreatedBy   string               `json:"createdBy"`
-	Environment string               `json:"environment"`
-	Error       *string              `json:"error,omitempty"`
-	Approval    *ApprovalResponse    `json:"approval,omitempty"`
-	FinishedAt  *string              `json:"finishedAt,omitempty"`
-	ID          string               `json:"id"`
-	ProjectID   string               `json:"projectId"`
-	ReleaseID   string               `json:"releaseId"`
-	StartedAt   *string              `json:"startedAt,omitempty"`
-	Status      Status               `json:"status"`
-	Targets     []TargetResponse     `json:"targets"`
+	Connections   []ConnectionResponse    `json:"connections"`
+	CreatedAt     string                  `json:"createdAt"`
+	CreatedBy     string                  `json:"createdBy"`
+	Environment   string                  `json:"environment"`
+	RequestDigest string                  `json:"requestDigest"`
+	Evidence      PublishEvidenceResponse `json:"evidence"`
+	Error         *string                 `json:"error,omitempty"`
+	Approval      *ApprovalResponse       `json:"approval,omitempty"`
+	FinishedAt    *string                 `json:"finishedAt,omitempty"`
+	ID            string                  `json:"id"`
+	ProjectID     string                  `json:"projectId"`
+	ReleaseID     string                  `json:"releaseId"`
+	StartedAt     *string                 `json:"startedAt,omitempty"`
+	Status        Status                  `json:"status"`
+	Targets       []TargetResponse        `json:"targets"`
 }
 
 type ListResponse struct {

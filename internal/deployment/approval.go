@@ -27,6 +27,7 @@ type ApprovalStatus string
 const (
 	ApprovalPending  ApprovalStatus = "pending"
 	ApprovalApproved ApprovalStatus = "approved"
+	ApprovalDenied   ApprovalStatus = "denied"
 	ApprovalRevoked  ApprovalStatus = "revoked"
 	ApprovalExpired  ApprovalStatus = "expired"
 )
@@ -119,7 +120,14 @@ func (approval Approval) Validate() error {
 			return err
 		}
 		if approval.RevokedBy != "" || !approval.RevokedAt.IsZero() {
-			return fmt.Errorf("%w: approved decision contains revocation evidence", ErrApprovalInvalid)
+			return fmt.Errorf("%w: approval decision contains revocation evidence", ErrApprovalInvalid)
+		}
+	case ApprovalDenied:
+		if err := approval.validateDecisionEvidence(true); err != nil {
+			return err
+		}
+		if approval.RevokedBy != "" || !approval.RevokedAt.IsZero() {
+			return fmt.Errorf("%w: denied decision contains revocation evidence", ErrApprovalInvalid)
 		}
 	case ApprovalRevoked:
 		if approval.RevokedBy == "" || approval.RevokedAt.IsZero() {
@@ -152,7 +160,7 @@ func (approval Approval) hasDecisionEvidence() bool {
 func (approval Approval) validateDecisionEvidence(required bool) error {
 	if !approval.hasDecisionEvidence() {
 		if required {
-			return fmt.Errorf("%w: approved decision evidence is missing", ErrApprovalInvalid)
+			return fmt.Errorf("%w: approval decision evidence is missing", ErrApprovalInvalid)
 		}
 		return nil
 	}
@@ -273,8 +281,8 @@ func (service *ApprovalService) Request(
 		ctx,
 		request.DeploymentID,
 	)
-	if err == nil && existing.Status != ApprovalRevoked &&
-		existing.Status != ApprovalExpired {
+	if err == nil && existing.Status != ApprovalDenied &&
+		existing.Status != ApprovalRevoked && existing.Status != ApprovalExpired {
 		if existing.ProjectID != request.ProjectID ||
 			existing.Environment != request.Environment ||
 			existing.RequestDigest != request.RequestDigest ||
@@ -342,15 +350,52 @@ func (service *ApprovalService) Current(
 	if service == nil {
 		return Approval{}, ErrApprovalNotFound
 	}
-	return service.repository.ApprovalByDeployment(
+	current, err := service.repository.ApprovalByDeployment(
 		ctx,
 		strings.TrimSpace(deploymentID),
 	)
+	if err != nil {
+		return Approval{}, err
+	}
+	now := service.now().UTC()
+	if (current.Status == ApprovalPending || current.Status == ApprovalApproved) &&
+		!now.Before(current.ExpiresAt) {
+		expectedRevision := current.Revision
+		current.Status = ApprovalExpired
+		current.Revision++
+		if err := current.Validate(); err != nil {
+			return Approval{}, err
+		}
+		saved, err := service.repository.SaveApproval(ctx, current, expectedRevision)
+		if errors.Is(err, ErrApprovalConflict) {
+			return service.repository.ApprovalByDeployment(
+				ctx,
+				strings.TrimSpace(deploymentID),
+			)
+		}
+		return saved, err
+	}
+	return current, nil
 }
 
 func (service *ApprovalService) Approve(
 	ctx context.Context,
 	transition ApprovalTransition,
+) (Approval, error) {
+	return service.decide(ctx, transition, ApprovalApproved)
+}
+
+func (service *ApprovalService) Deny(
+	ctx context.Context,
+	transition ApprovalTransition,
+) (Approval, error) {
+	return service.decide(ctx, transition, ApprovalDenied)
+}
+
+func (service *ApprovalService) decide(
+	ctx context.Context,
+	transition ApprovalTransition,
+	status ApprovalStatus,
 ) (Approval, error) {
 	now := service.now().UTC()
 	current, err := service.loadTransition(ctx, transition, now)
@@ -363,7 +408,10 @@ func (service *ApprovalService) Approve(
 	if strings.TrimSpace(transition.Actor.PrincipalID) == current.RequestedBy {
 		return Approval{}, ErrApprovalSeparationOfDuty
 	}
-	current.Status = ApprovalApproved
+	if status != ApprovalApproved && status != ApprovalDenied {
+		return Approval{}, fmt.Errorf("%w: approval decision is invalid", ErrApprovalInvalid)
+	}
+	current.Status = status
 	current.ApprovedBy = strings.TrimSpace(transition.Actor.PrincipalID)
 	current.ApprovalCredentialClass = transition.Actor.CredentialClass
 	current.ApprovalCredentialID = strings.TrimSpace(transition.Actor.CredentialID)

@@ -25,10 +25,12 @@ func TestProjectDeploymentAPIContract(t *testing.T) {
 		t.Fatalf("deployment privilege = %#v", privilege)
 	}
 	for suffix, operationID := range map[string]string{
-		"": "getDeployment", "/events": "listDeploymentEvents", "/cancel": "cancelDeployment", "/rollback": "rollbackDeployment",
+		"": "getDeployment", "/events": "listDeploymentEvents",
+		"/cancel": "cancelDeployment", "/retry": "retryDeployment",
+		"/rollback": "rollbackDeployment",
 	} {
 		method := "get"
-		if suffix == "/cancel" || suffix == "/rollback" {
+		if suffix == "/cancel" || suffix == "/retry" || suffix == "/rollback" {
 			method = "post"
 		}
 		operation := openAPIOperation(t, paths, base+"/{deployment}"+suffix, method)
@@ -49,6 +51,7 @@ func TestProjectDeploymentAPIContract(t *testing.T) {
 	approvalItem := base + "/{deployment}/approval-requests/{approval}"
 	for suffix, operationID := range map[string]string{
 		"/approve": "approveDeployment",
+		"/deny":    "denyDeploymentApproval",
 		"/revoke":  "revokeDeploymentApproval",
 	} {
 		operation := openAPIOperation(t, paths, approvalItem+suffix, "post")
@@ -60,11 +63,26 @@ func TestProjectDeploymentAPIContract(t *testing.T) {
 
 	schemas := openAPIMap(t, openAPIMap(t, spec, "components"), "schemas")
 	response := openAPISchema(t, schemas, "DeploymentResponse")
-	for _, field := range []string{"id", "projectId", "releaseId", "environment", "status", "targets", "connections", "createdAt"} {
+	for _, field := range []string{"id", "projectId", "releaseId", "environment", "requestDigest", "evidence", "status", "targets", "connections", "createdAt"} {
 		_ = schemaProperty(t, response, field)
 	}
+	evidence := openAPISchema(t, schemas, "DeploymentPublishEvidence")
+	for _, field := range []string{
+		"releaseDigest", "artifactDigest", "planDigest", "candidateId",
+		"candidateRevision", "targetId", "baseGeneration", "runtimeVersion",
+		"policyDigest", "workspaces",
+	} {
+		_ = schemaProperty(t, evidence, field)
+	}
+	workspaceEvidence := openAPISchema(t, schemas, "DeploymentWorkspacePublishEvidence")
+	for _, field := range []string{
+		"workspaceId", "servingStateId", "artifactDigest", "dataRevision",
+		"dataMode", "managedDataPins", "bindings",
+	} {
+		_ = schemaProperty(t, workspaceEvidence, field)
+	}
 	assertEnum(t, openAPISchema(t, schemas, "DeploymentStatus"), "queued", "running", "active", "failed", "cancelled", "superseded")
-	assertEnum(t, openAPISchema(t, schemas, "DeploymentApprovalStatus"), "pending", "approved", "revoked", "expired")
+	assertEnum(t, openAPISchema(t, schemas, "DeploymentApprovalStatus"), "pending", "approved", "denied", "revoked", "expired")
 
 	for path := range paths {
 		if strings.Contains(path, "/rollouts") || strings.Contains(path, "/deployment-candidates") {

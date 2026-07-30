@@ -13,6 +13,7 @@ import (
 
 	"github.com/flidai/leapview/internal/deployment"
 	"github.com/flidai/leapview/internal/manageddata"
+	platformdigest "github.com/flidai/leapview/internal/platform/digest"
 	"github.com/flidai/leapview/internal/platform/jobs"
 )
 
@@ -48,8 +49,24 @@ type CreateRequest struct {
 	Actor          string
 	IdempotencyKey string
 	ReleaseID      string
+	Evidence       PublishEvidence
 	RollbackOf     string
 	Workflow       func(string) jobs.WorkflowIntent
+}
+
+// PublishEvidence is the redacted immutable identity of the release and target
+// plan submitted for publication. Resolved credentials and provider references
+// are deliberately excluded.
+type PublishEvidence struct {
+	ReleaseDigest     string `json:"releaseDigest"`
+	ArtifactDigest    string `json:"artifactDigest"`
+	PlanDigest        string `json:"planDigest"`
+	CandidateID       string `json:"candidateId"`
+	CandidateRevision int64  `json:"candidateRevision"`
+	TargetID          string `json:"targetId"`
+	BaseGeneration    string `json:"baseGeneration"`
+	RuntimeVersion    string `json:"runtimeVersion"`
+	PolicyDigest      string `json:"policyDigest"`
 }
 
 type Scope struct {
@@ -69,6 +86,7 @@ type Deployment struct {
 	Environment   string
 	RequestDigest string
 	Status        Status
+	CreatedBy     string
 	CreatedAt     string
 	ActivatedAt   string
 	Error         string
@@ -130,8 +148,14 @@ func (a *Adapter) Create(ctx context.Context, request CreateRequest) (Deployment
 	request.Environment = strings.TrimSpace(request.Environment)
 	request.Actor = strings.TrimSpace(request.Actor)
 	request.IdempotencyKey = strings.TrimSpace(request.IdempotencyKey)
+	request.ReleaseID = strings.TrimSpace(request.ReleaseID)
 	if request.Project == "" || request.Environment == "" || request.Actor == "" || request.IdempotencyKey == "" || len(request.Targets) == 0 {
 		return Deployment{}, fmt.Errorf("%w: project, environment, actor, idempotency key, and targets are required", ErrInvalid)
+	}
+	if request.ReleaseID != "" {
+		if err := normalizePublishEvidence(&request.Evidence); err != nil {
+			return Deployment{}, err
+		}
 	}
 
 	targets := make([]TargetRequest, 0, len(request.Targets))
@@ -159,7 +183,13 @@ func (a *Adapter) Create(ctx context.Context, request CreateRequest) (Deployment
 		}
 		return targets[i].Workspace < targets[j].Workspace
 	})
-	digest, err := requestDigest(request.Project, request.Environment, targets)
+	digest, err := requestDigest(
+		request.Project,
+		request.Environment,
+		request.ReleaseID,
+		request.Evidence,
+		targets,
+	)
 	if err != nil {
 		return Deployment{}, err
 	}
@@ -208,7 +238,8 @@ func (a *Adapter) Activate(ctx context.Context, request ActivateRequest) (Deploy
 func (a *Adapter) mapDeployment(ctx context.Context, row deployment.Deployment) (Deployment, error) {
 	result := Deployment{
 		ID: row.ID, Project: row.ProjectID, Environment: row.Environment, RequestDigest: row.RequestDigest,
-		Status: Status(row.Status), CreatedAt: row.CreatedAt, ActivatedAt: row.ActivatedAt, Error: row.Error,
+		Status: Status(row.Status), CreatedBy: row.CreatedBy,
+		CreatedAt: row.CreatedAt, ActivatedAt: row.ActivatedAt, Error: row.Error,
 		Targets: make([]Target, 0, len(row.Targets)), Connections: make([]Connection, 0, len(row.Connections)),
 	}
 	for _, target := range row.Targets {
@@ -246,12 +277,44 @@ func stableID(project, actor, key string) string {
 	return "deployment_" + hex.EncodeToString(sum[:16])
 }
 
-func requestDigest(project, environment string, targets []TargetRequest) (string, error) {
+func normalizePublishEvidence(evidence *PublishEvidence) error {
+	evidence.ReleaseDigest = strings.TrimSpace(evidence.ReleaseDigest)
+	evidence.ArtifactDigest = strings.TrimSpace(evidence.ArtifactDigest)
+	evidence.PlanDigest = strings.TrimSpace(evidence.PlanDigest)
+	evidence.CandidateID = strings.TrimSpace(evidence.CandidateID)
+	evidence.TargetID = strings.TrimSpace(evidence.TargetID)
+	evidence.BaseGeneration = strings.TrimSpace(evidence.BaseGeneration)
+	evidence.RuntimeVersion = strings.TrimSpace(evidence.RuntimeVersion)
+	evidence.PolicyDigest = strings.TrimSpace(evidence.PolicyDigest)
+	if platformdigest.ValidateSHA256Identity(evidence.ReleaseDigest) != nil ||
+		platformdigest.ValidateSHA256Identity(evidence.ArtifactDigest) != nil ||
+		platformdigest.ValidateSHA256Identity(evidence.PlanDigest) != nil ||
+		platformdigest.ValidateSHA256Identity(evidence.PolicyDigest) != nil ||
+		evidence.CandidateID == "" || evidence.CandidateRevision < 1 ||
+		evidence.TargetID == "" || evidence.BaseGeneration == "" ||
+		evidence.RuntimeVersion == "" {
+		return fmt.Errorf("%w: immutable publish evidence is incomplete", ErrInvalid)
+	}
+	return nil
+}
+
+func requestDigest(
+	project,
+	environment,
+	releaseID string,
+	evidence PublishEvidence,
+	targets []TargetRequest,
+) (string, error) {
 	payload := struct {
 		Project     string          `json:"project"`
 		Environment string          `json:"environment"`
+		ReleaseID   string          `json:"releaseId,omitempty"`
+		Evidence    PublishEvidence `json:"evidence,omitempty"`
 		Targets     []TargetRequest `json:"targets"`
-	}{Project: project, Environment: environment, Targets: targets}
+	}{
+		Project: project, Environment: environment, ReleaseID: releaseID,
+		Evidence: evidence, Targets: targets,
+	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return "", fmt.Errorf("encode deployment request: %w", err)
