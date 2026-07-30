@@ -794,20 +794,21 @@ test('chart documentation renders every executable variation from its YAML', asy
     expect(await page.getByRole('heading', { name: 'Stepped line' }).isVisible()).toBe(true)
     await page.waitForFunction(() => {
       const examples = [...document.querySelectorAll('lv-site-visual-example')] as Array<HTMLElement & { shadowRoot: ShadowRoot }>
-      return examples.length === 3 && examples.every((example) => {
+      return examples.length === 4 && examples.every((example) => {
         const host = example.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & { envelope?: { dataState?: { datasets?: Array<{ rows?: unknown[] }> } } }
         return Boolean(host?.envelope?.dataState?.datasets?.some((dataset) => dataset.rows?.length))
       })
     })
-    expect(await page.locator('lv-site-visual-example').count()).toBe(3)
+    expect(await page.locator('lv-site-visual-example').count()).toBe(4)
     expect(await page.locator('lv-site-visual-example').nth(0).getAttribute('example-id')).toBe('revenue_line')
     expect(await page.locator('lv-site-visual-example').nth(2).getAttribute('example-id')).toBe('revenue_line_step')
+    expect(await page.locator('lv-site-visual-example').nth(3).getAttribute('example-id')).toBe('revenue_line_context')
     const configurations = await page.locator('.site-docs-article pre code').allTextContents()
     expect(configurations.some((source) => source.includes('visuals:\n  revenue_line:'))).toBe(true)
     expect(configurations.every((source) => !source.includes('shape:'))).toBe(true)
     expect(configurations.some((source) => source.includes('step: true'))).toBe(true)
     const keyFields = await page.locator('.site-visual-key-fields').allTextContents()
-    expect(keyFields).toHaveLength(3)
+    expect(keyFields).toHaveLength(4)
     expect(keyFields[2]).toContain('presentation.step')
     await page.waitForFunction(() => document.querySelectorAll('lv-code-block[data-visual-example="revenue_line_step"] .code-block-highlighted-line').length === 3)
     const steppedConfiguration = page.locator('lv-code-block[data-visual-example="revenue_line_step"]')
