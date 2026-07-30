@@ -81,7 +81,7 @@ leapview data sync \
   --from /srv/olist \
   --target "$(terraform output -raw url)"
 
-leapview dev --once \
+leapview dev --once --no-browser \
   --project ../../dashboards/leapview.yaml \
   --target "$(terraform output -raw url)"
 

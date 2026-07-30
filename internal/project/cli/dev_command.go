@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -21,6 +22,7 @@ type DevOptions struct {
 	Credentials       cliapi.Credentials
 	UploadConcurrency int
 	Once              bool
+	NoBrowser         bool
 	CandidateKey      string
 	SourceRevision    devloop.SourceRevision
 }
@@ -43,6 +45,7 @@ func DevCommand(
 	client cliapi.Client,
 	checkpoints *CandidateCheckpointStore,
 	remotes DevRemoteFactory,
+	openBrowser func(string) error,
 ) *cobra.Command {
 	values := DevOptions{
 		ProjectPath:       filepath.Join("dashboards", "leapview.yaml"),
@@ -68,6 +71,7 @@ func DevCommand(
 				checkpoints,
 				remotes,
 				values,
+				openBrowser,
 				command.OutOrStdout(),
 				command.ErrOrStderr(),
 			)
@@ -102,6 +106,12 @@ func DevCommand(
 		"once",
 		false,
 		"synchronize one candidate and exit",
+	)
+	command.Flags().BoolVar(
+		&values.NoBrowser,
+		"no-browser",
+		false,
+		"print the private preview URL without opening a system browser",
 	)
 	command.Flags().StringVar(
 		&values.CandidateKey,
@@ -145,6 +155,7 @@ func RunDev(
 	checkpoints *CandidateCheckpointStore,
 	remotes DevRemoteFactory,
 	options DevOptions,
+	openBrowser func(string) error,
 	out,
 	errOut io.Writer,
 ) error {
@@ -195,6 +206,13 @@ func RunDev(
 			return nil
 		}
 		candidate := update.Result.Candidate
+		if err := validateCandidatePreviewURL(
+			credentials.Target,
+			candidate.ID,
+			candidate.PreviewURL,
+		); err != nil {
+			return err
+		}
 		if err := checkpoints.Save(CandidateCheckpoint{
 			ProjectPath: options.ProjectPath, TargetOrigin: credentials.Target,
 			TargetID: candidate.TargetID, Environment: candidate.Environment,
@@ -219,6 +237,16 @@ func RunDev(
 		if candidate.PreviewURL != "" &&
 			candidate.PreviewURL != lastPreviewURL {
 			fmt.Fprintf(out, "preview %s\n", candidate.PreviewURL)
+			if !options.NoBrowser && openBrowser != nil {
+				if err := openBrowser(candidate.PreviewURL); err != nil {
+					fmt.Fprintf(
+						errOut,
+						"could not open preview in the system browser: %v; open %s manually\n",
+						err,
+						candidate.PreviewURL,
+					)
+				}
+			}
 			lastPreviewURL = candidate.PreviewURL
 		}
 		return nil
@@ -249,6 +277,35 @@ func RunDev(
 			fmt.Fprintln(errOut, err)
 		}
 	})
+}
+
+func validateCandidatePreviewURL(
+	target,
+	candidateID,
+	previewURL string,
+) error {
+	targetURL, err := url.Parse(strings.TrimSpace(target))
+	if err != nil ||
+		(targetURL.Scheme != "http" && targetURL.Scheme != "https") ||
+		targetURL.Host == "" ||
+		targetURL.User != nil ||
+		targetURL.RawQuery != "" ||
+		targetURL.Fragment != "" ||
+		(targetURL.EscapedPath() != "" && targetURL.EscapedPath() != "/") {
+		return fmt.Errorf("resolved target has no canonical HTTP origin")
+	}
+	candidateID = strings.TrimSpace(candidateID)
+	if candidateID == "" {
+		return fmt.Errorf("target candidate identity is missing")
+	}
+	expected := targetURL.Scheme + "://" + targetURL.Host +
+		"/candidates/" + url.PathEscape(candidateID)
+	if strings.TrimSpace(previewURL) != expected {
+		return fmt.Errorf(
+			"target returned a non-canonical or state-bearing candidate preview URL",
+		)
+	}
+	return nil
 }
 
 func devSourceRevision(

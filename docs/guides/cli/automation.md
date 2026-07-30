@@ -30,7 +30,7 @@ Stop the pipeline on any non-zero exit status. Do not allow a later deployment j
 Synchronize the project to the exact target that will receive the deployment:
 
 ```sh
-leapview dev --once \
+leapview dev --once --no-browser \
   --project dashboards/leapview.yaml \
   --target "$LEAPVIEW_TARGET" \
   --candidate-key "$CHANGE_KEY" \

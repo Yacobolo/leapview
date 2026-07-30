@@ -263,6 +263,105 @@ func TestEnterpriseAuthoringStateRemainsCapabilityOwned(t *testing.T) {
 	}
 }
 
+func TestEnterpriseAuthoringCapabilityDirectionIsExplicit(t *testing.T) {
+	required := map[string][]string{
+		"project":     {"access", "analytics", "dashboard", "refresh", "servingstate", "workspace"},
+		"release":     {"access", "project", "servingstate", "workspace"},
+		"deployment":  {"access", "manageddata", "project", "release", "runtimehost", "servingstate"},
+		"runtimehost": {"manageddata", "servingstate"},
+	}
+	for source, targets := range required {
+		for _, target := range targets {
+			if !CapabilityDependencies[source][target] {
+				t.Errorf("enterprise authoring capability edge %s -> %s is not declared", source, target)
+			}
+		}
+	}
+	for source, forbidden := range map[string][]string{
+		"access":      {"project", "release", "deployment", "runtimehost"},
+		"project":     {"release", "deployment", "runtimehost"},
+		"release":     {"deployment", "runtimehost"},
+		"runtimehost": {"access", "project", "release", "deployment"},
+	} {
+		for _, target := range forbidden {
+			if CapabilityDependencies[source][target] {
+				t.Errorf("enterprise authoring capability graph permits reverse edge %s -> %s", source, target)
+			}
+		}
+	}
+}
+
+func TestEnterpriseAuthoringGuideDefinesOneTargetHostedLifecycle(t *testing.T) {
+	root := repoRoot(t)
+	path := filepath.Join(root, "docs", "guides", "cli", "validate-deploy.md")
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, required := range []string{
+		"already-running LeapView target",
+		"leapview login",
+		"leapview dev",
+		"leapview publish",
+		"localhost",
+		"hosted",
+		"self-hosted",
+		"air-gapped",
+		"synthetic data",
+		"operator bootstrap",
+		"canonical-origin, token-free HTTPS URL",
+		"system browser by default",
+		"does not require LeapView Desktop",
+		"HttpOnly",
+		"independently revocable",
+		"row-level security",
+		"read-only Infisical",
+		"bounded stale",
+		"already-authenticated source sessions",
+		"built-in vault",
+		"dynamic leases",
+		"Kubernetes integration",
+		"Capability",
+		"Dependency direction",
+	} {
+		if !strings.Contains(text, required) {
+			t.Errorf("canonical enterprise authoring guide missing %q", required)
+		}
+	}
+	login := strings.Index(text, "leapview login")
+	dev := strings.Index(text, "leapview dev")
+	publish := strings.Index(text, "leapview publish")
+	if login < 0 || dev <= login || publish <= dev {
+		t.Errorf("canonical commands are not taught in login -> dev -> publish order")
+	}
+
+	guideDirectory := filepath.Join(root, "docs", "guides", "cli")
+	entries, err := os.ReadDir(guideDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".md" {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(guideDirectory, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, forbidden := range []string{
+			"leapview deploy",
+			"leapview preview",
+			"leapview staging",
+			"--auto-approve",
+		} {
+			if strings.Contains(string(content), forbidden) {
+				t.Errorf("docs/guides/cli/%s presents alternate authoring command %q", entry.Name(), forbidden)
+			}
+		}
+	}
+}
+
 func TestCapabilityCLIsUseGeneratedTypedClients(t *testing.T) {
 	clientImports := map[string]string{
 		"internal/access/cli":    modulePath + "/internal/access/api/gen",

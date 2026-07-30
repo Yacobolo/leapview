@@ -250,7 +250,7 @@ publish_project() {
       return 1
     }
 	fi
-  go run ./cmd/leapview dev --once --project "$project" --target "http://localhost:${port}" --token dev
+  go run ./cmd/leapview dev --once --no-browser --project "$project" --target "http://localhost:${port}" --token dev
   go run ./cmd/leapview publish --project "$project" --target "http://localhost:${port}" --token dev
 }
 

@@ -35,6 +35,7 @@ func devCommand(ctx context.Context) *cobra.Command {
 		client,
 		projectcli.NewCandidateCheckpointStore(candidateCheckpointPath()),
 		projectDevRemoteFactory{client: client},
+		openSystemBrowser,
 	)
 }
 

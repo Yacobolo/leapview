@@ -256,7 +256,7 @@ docker exec \
   -e "LEAPVIEW_API_TOKEN=$publisher_token" \
   -e LEAPVIEW_TARGET=http://localhost:8080 \
   "$container_id" \
-  leapview dev --once \
+  leapview dev --once --no-browser \
     --project /app/evaluation/project/leapview.yaml >/dev/null
 docker exec \
   -e "LEAPVIEW_API_TOKEN=$publisher_token" \

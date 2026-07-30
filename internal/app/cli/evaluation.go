@@ -273,6 +273,7 @@ func publishEvaluationProject(
 			UploadConcurrency: 4,
 			Once:              true,
 		},
+		nil,
 		out,
 		out,
 	); err != nil {

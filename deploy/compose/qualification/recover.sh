@@ -299,7 +299,7 @@ managedUpload=true
 stage="release finalization interruption"
 deploy_a_log="$evidence_dir/recovery-release-finalization.log"
 run_in_candidate \
-  leapview dev --once \
+  leapview dev --once --no-browser \
   --project /var/lib/leapview/qualification-recovery/project-a/leapview.yaml \
   > "$deploy_a_log" 2>&1
 release_ids_before_file="$work_dir/release-ids-before.json"
@@ -356,7 +356,7 @@ stage="deployment activation interruption"
 deploy_b_log="$evidence_dir/recovery-deployment-activation.log"
 docker update --cpus 0.25 "$container_id" >/dev/null
 run_in_candidate \
-  leapview dev --once \
+  leapview dev --once --no-browser \
   --project /var/lib/leapview/qualification-recovery/project-b/leapview.yaml \
   > "$deploy_b_log" 2>&1
 run_in_candidate \
