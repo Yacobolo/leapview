@@ -42138,6 +42138,51 @@ components:
         privileges:
           - example
         workspaceId: example
+    FieldVisualizationConditionalRule:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/VisualizationConditionalRuleBase'
+      required:
+        - kind
+        - source
+        - values
+        - nullStyle
+        - defaultStyle
+      properties:
+        kind:
+          type: string
+          enum:
+            - field
+          example: example
+        source:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        values:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/VisualizationConditionalStyle'
+          example:
+            key:
+              color: accent
+              icon: circle
+        nullStyle:
+          $ref: '#/components/schemas/VisualizationConditionalStyle'
+        defaultStyle:
+          $ref: '#/components/schemas/VisualizationConditionalStyle'
+      example:
+        defaultStyle:
+          color: accent
+          icon: circle
+        kind: example
+        nullStyle:
+          color: accent
+          icon: circle
+        source:
+          dataset: example
+          field: example
+        values:
+          key:
+            color: accent
+            icon: circle
     FieldVisualizationReferenceValue:
       type: object
       allOf:
@@ -42315,6 +42360,50 @@ components:
               targetFieldID: example
             targets:
               - example
+    GradientVisualizationConditionalRule:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/VisualizationConditionalRuleBase'
+      required:
+        - kind
+        - minimum
+        - maximum
+        - low
+        - high
+        - nullStyle
+      properties:
+        kind:
+          type: string
+          enum:
+            - gradient
+          example: example
+        minimum:
+          type: number
+          format: double
+          example: !!float 1
+        maximum:
+          type: number
+          format: double
+          example: !!float 1
+        low:
+          $ref: '#/components/schemas/VisualizationConditionalStyle'
+        high:
+          $ref: '#/components/schemas/VisualizationConditionalStyle'
+        nullStyle:
+          $ref: '#/components/schemas/VisualizationConditionalStyle'
+      example:
+        high:
+          color: accent
+          icon: circle
+        kind: example
+        low:
+          color: accent
+          icon: circle
+        maximum: !!float 1
+        minimum: !!float 1
+        nullStyle:
+          color: accent
+          icon: circle
     GrantListResponse:
       type: object
       required:
@@ -45145,6 +45234,49 @@ components:
         name: example
         privileges:
           - example
+    RulesVisualizationConditionalRule:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/VisualizationConditionalRuleBase'
+      required:
+        - kind
+        - rules
+        - nullStyle
+        - defaultStyle
+      properties:
+        kind:
+          type: string
+          enum:
+            - rules
+          example: example
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationConditionalThreshold'
+          example:
+            - operator: less_than
+              style:
+                color: accent
+                icon: circle
+              value: !!float 1
+        nullStyle:
+          $ref: '#/components/schemas/VisualizationConditionalStyle'
+        defaultStyle:
+          $ref: '#/components/schemas/VisualizationConditionalStyle'
+      example:
+        defaultStyle:
+          color: accent
+          icon: circle
+        kind: example
+        nullStyle:
+          color: accent
+          icon: circle
+        rules:
+          - operator: less_than
+            style:
+              color: accent
+              icon: circle
+            value: !!float 1
     SearchContextTag:
       type: string
       enum:
@@ -47247,6 +47379,16 @@ components:
         axis: primary
         mark: line
         seriesValue: example
+    VisualizationComparisonOperator:
+      type: string
+      enum:
+        - less_than
+        - less_or_equal
+        - greater_than
+        - greater_or_equal
+        - equal
+        - not_equal
+      example: less_than
     VisualizationCompleteness:
       type: string
       enum:
@@ -47255,6 +47397,94 @@ components:
         - partial
         - empty
       example: complete
+    VisualizationConditionalFormat:
+      type: object
+      required:
+        - id
+        - target
+        - field
+        - rule
+      properties:
+        id:
+          type: string
+          example: example
+        target:
+          $ref: '#/components/schemas/VisualizationConditionalTarget'
+        field:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        rule:
+          $ref: '#/components/schemas/VisualizationConditionalRule'
+      example:
+        field:
+          dataset: example
+          field: example
+        id: example
+        target: mark_fill
+    VisualizationConditionalRule:
+      oneOf:
+        - $ref: '#/components/schemas/GradientVisualizationConditionalRule'
+        - $ref: '#/components/schemas/RulesVisualizationConditionalRule'
+        - $ref: '#/components/schemas/FieldVisualizationConditionalRule'
+      discriminator:
+        propertyName: kind
+        mapping:
+          field: '#/components/schemas/FieldVisualizationConditionalRule'
+          gradient: '#/components/schemas/GradientVisualizationConditionalRule'
+          rules: '#/components/schemas/RulesVisualizationConditionalRule'
+    VisualizationConditionalRuleBase:
+      type: object
+      required:
+        - kind
+      properties:
+        kind:
+          type: string
+          example: example
+      example:
+        kind: example
+    VisualizationConditionalStyle:
+      type: object
+      properties:
+        color:
+          $ref: '#/components/schemas/VisualizationColorIntent'
+        icon:
+          $ref: '#/components/schemas/VisualizationIconIntent'
+      example:
+        color: accent
+        icon: circle
+    VisualizationConditionalTarget:
+      type: string
+      enum:
+        - mark_fill
+        - mark_stroke
+        - series_color
+        - label_foreground
+        - visual_background
+        - cell_foreground
+        - cell_background
+        - kpi_value
+        - icon
+      example: mark_fill
+    VisualizationConditionalThreshold:
+      type: object
+      required:
+        - operator
+        - value
+        - style
+      properties:
+        operator:
+          $ref: '#/components/schemas/VisualizationComparisonOperator'
+        value:
+          type: number
+          format: double
+          example: !!float 1
+        style:
+          $ref: '#/components/schemas/VisualizationConditionalStyle'
+      example:
+        operator: less_than
+        style:
+          color: accent
+          icon: circle
+        value: !!float 1
     VisualizationCustomEngine:
       type: string
       enum:
@@ -47946,6 +48176,18 @@ components:
         - sankey
         - graph
       example: treemap
+    VisualizationIconIntent:
+      type: string
+      enum:
+        - circle
+        - square
+        - diamond
+        - triangle_up
+        - triangle_down
+        - arrow_up
+        - arrow_down
+        - warning
+      example: circle
     VisualizationInlineDataset:
       type: object
       required:
@@ -49279,12 +49521,28 @@ components:
               requiresStableIdentity: true
               targets:
                 - example
+        conditionalFormatting:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationConditionalFormat'
+          example:
+            - field:
+                dataset: example
+                field: example
+              id: example
+              target: mark_fill
       example:
         accessibility:
           announceChanges: true
           description: example
           summary: example
           title: example
+        conditionalFormatting:
+          - field:
+              dataset: example
+              field: example
+            id: example
+            target: mark_fill
         dataBudget:
           maxRows: 1
           requiredCompleteness: complete

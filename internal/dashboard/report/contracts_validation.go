@@ -2,6 +2,7 @@ package report
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -142,6 +143,9 @@ func (d *Dashboard) validateTabularContract(name, visualType string, table Table
 				return err
 			}
 		}
+	}
+	if err := validateConditionalFormatting(name, visualType, table.ConditionalFormatting); err != nil {
+		return err
 	}
 	switch visualType {
 	case "table":
@@ -421,6 +425,151 @@ func validateVisualPresentation(name string, visual Visual) error {
 	}
 	if err := validateSeriesPresentation(name, visual); err != nil {
 		return err
+	}
+	if err := validateConditionalFormatting(name, visual.Type, visual.Presentation.ConditionalFormatting); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateConditionalFormatting(name, visualType string, formats []VisualConditionalFormat) error {
+	if len(formats) > 0 && !oneOf(visualType,
+		"line", "area", "bar", "column", "combo", "scatter", "waterfall", "heatmap",
+		"kpi", "table", "matrix", "pivot",
+	) {
+		return fmt.Errorf("visual %q type %q does not support conditional formatting", name, visualType)
+	}
+	ids := make(map[string]struct{}, len(formats))
+	targets := make(map[string]struct{}, len(formats))
+	for _, format := range formats {
+		if strings.TrimSpace(format.ID) == "" {
+			return fmt.Errorf("visual %q conditional formatting requires id", name)
+		}
+		if _, exists := ids[format.ID]; exists {
+			return fmt.Errorf("visual %q has duplicate conditional formatting id %q", name, format.ID)
+		}
+		ids[format.ID] = struct{}{}
+		if strings.TrimSpace(format.Field) == "" {
+			return fmt.Errorf("visual %q conditional formatting %q requires field", name, format.ID)
+		}
+		targetKey := format.Target + "\x00" + format.Field
+		if _, exists := targets[targetKey]; exists {
+			return fmt.Errorf("visual %q has ambiguous conditional formatting target %q for field %q", name, format.Target, format.Field)
+		}
+		targets[targetKey] = struct{}{}
+		if err := validateConditionalTarget(name, visualType, format); err != nil {
+			return err
+		}
+		if err := validateConditionalStyle(name, format.ID, "null", format.Null, false); err != nil {
+			return err
+		}
+		if format.Null == (VisualConditionalStyle{}) {
+			return fmt.Errorf("visual %q conditional formatting %q requires null style", name, format.ID)
+		}
+		switch format.Kind {
+		case "gradient":
+			if format.Minimum == nil || format.Maximum == nil {
+				return fmt.Errorf("visual %q conditional formatting %q gradient requires minimum and maximum", name, format.ID)
+			}
+			if *format.Minimum >= *format.Maximum {
+				return fmt.Errorf("visual %q conditional formatting %q minimum must be less than maximum", name, format.ID)
+			}
+			if format.Low.Color == "" || format.High.Color == "" {
+				return fmt.Errorf("visual %q conditional formatting %q gradient requires low and high color intents", name, format.ID)
+			}
+			if err := validateConditionalStyle(name, format.ID, "low", format.Low, false); err != nil {
+				return err
+			}
+			if err := validateConditionalStyle(name, format.ID, "high", format.High, false); err != nil {
+				return err
+			}
+		case "rules":
+			if len(format.Rules) == 0 {
+				return fmt.Errorf("visual %q conditional formatting %q requires rules", name, format.ID)
+			}
+			if format.Default == (VisualConditionalStyle{}) {
+				return fmt.Errorf("visual %q conditional formatting %q requires default style", name, format.ID)
+			}
+			for index, rule := range format.Rules {
+				if !oneOf(rule.Operator, "less_than", "less_or_equal", "greater_than", "greater_or_equal", "equal", "not_equal") {
+					return fmt.Errorf("visual %q conditional formatting %q rule %d has unsupported operator %q", name, format.ID, index, rule.Operator)
+				}
+				if err := validateConditionalStyle(name, format.ID, fmt.Sprintf("rule %d", index), rule.Style, true); err != nil {
+					return err
+				}
+			}
+			if err := validateConditionalStyle(name, format.ID, "default", format.Default, true); err != nil {
+				return err
+			}
+		case "field":
+			if strings.TrimSpace(format.SourceField) == "" {
+				return fmt.Errorf("visual %q conditional formatting %q requires source_field", name, format.ID)
+			}
+			if len(format.Values) == 0 {
+				return fmt.Errorf("visual %q conditional formatting %q requires values", name, format.ID)
+			}
+			if format.Default == (VisualConditionalStyle{}) {
+				return fmt.Errorf("visual %q conditional formatting %q requires default style", name, format.ID)
+			}
+			keys := make([]string, 0, len(format.Values))
+			for value := range format.Values {
+				keys = append(keys, value)
+			}
+			sort.Strings(keys)
+			for _, value := range keys {
+				if strings.TrimSpace(value) == "" {
+					return fmt.Errorf("visual %q conditional formatting %q has empty field value", name, format.ID)
+				}
+				if err := validateConditionalStyle(name, format.ID, fmt.Sprintf("value %q", value), format.Values[value], true); err != nil {
+					return err
+				}
+			}
+			if err := validateConditionalStyle(name, format.ID, "default", format.Default, true); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("visual %q conditional formatting %q has unsupported kind %q", name, format.ID, format.Kind)
+		}
+	}
+	return nil
+}
+
+func validateConditionalTarget(name, visualType string, format VisualConditionalFormat) error {
+	if !oneOf(format.Target, "mark_fill", "mark_stroke", "series_color", "label_foreground", "visual_background", "cell_foreground", "cell_background", "kpi_value", "icon") {
+		return fmt.Errorf("visual %q conditional formatting %q has unsupported target %q", name, format.ID, format.Target)
+	}
+	isKPI := visualType == "kpi"
+	isTabular := oneOf(visualType, "table", "matrix", "pivot")
+	if strings.HasPrefix(format.Target, "cell_") && !isTabular {
+		return fmt.Errorf("visual %q conditional formatting %q target %q is only valid for tabular visuals", name, format.ID, format.Target)
+	}
+	if format.Target == "kpi_value" && !isKPI {
+		return fmt.Errorf("visual %q conditional formatting %q target %q is only valid for KPI visuals", name, format.ID, format.Target)
+	}
+	if format.Target == "visual_background" && !isKPI {
+		return fmt.Errorf("visual %q conditional formatting %q target %q is only valid for KPI visuals", name, format.ID, format.Target)
+	}
+	if isKPI && oneOf(format.Target, "mark_fill", "mark_stroke", "series_color") {
+		return fmt.Errorf("visual %q conditional formatting %q target %q is incompatible with KPI visuals", name, format.ID, format.Target)
+	}
+	if isTabular && oneOf(format.Target, "mark_fill", "mark_stroke", "series_color", "kpi_value") {
+		return fmt.Errorf("visual %q conditional formatting %q target %q is incompatible with tabular visuals", name, format.ID, format.Target)
+	}
+	return nil
+}
+
+func validateConditionalStyle(name, formatID, position string, style VisualConditionalStyle, redundantCue bool) error {
+	if style == (VisualConditionalStyle{}) {
+		return fmt.Errorf("visual %q conditional formatting %q %s style is empty", name, formatID, position)
+	}
+	if style.Color != "" && !validColorIntent(style.Color) {
+		return fmt.Errorf("visual %q conditional formatting %q has unsupported color intent %q", name, formatID, style.Color)
+	}
+	if style.Icon != "" && !oneOf(style.Icon, "circle", "square", "diamond", "triangle_up", "triangle_down", "arrow_up", "arrow_down", "warning") {
+		return fmt.Errorf("visual %q conditional formatting %q has unsupported icon intent %q", name, formatID, style.Icon)
+	}
+	if redundantCue && style.Color != "" && style.Icon == "" {
+		return fmt.Errorf("visual %q conditional formatting %q %s color requires a redundant icon cue", name, formatID, position)
 	}
 	return nil
 }

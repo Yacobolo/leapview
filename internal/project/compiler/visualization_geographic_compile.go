@@ -52,6 +52,15 @@ func compileGeographicVisualizationSpec(authored reportdef.Visual) (visualizatio
 		Accessibility: visualizationir.VisualizationAccessibility{Title: accessibilityTitle, Description: accessibilityDescription},
 		Interactions:  customVisualizationInteractions(authored.Interaction.PointSelection),
 	}
+	fieldIDs := make([]string, len(fields))
+	for index, field := range fields {
+		fieldIDs[index] = field.ID
+	}
+	conditionalFormatting, err := compileConditionalFormatting(fieldIDs, authored.Presentation.ConditionalFormatting)
+	if err != nil {
+		return visualizationir.VisualizationSpec{}, err
+	}
+	base.ConditionalFormatting = conditionalFormatting
 	legend := visualizationir.VisualizationLegendPosition(authored.Presentation.Legend)
 	if legend == "" {
 		legend = visualizationir.VisualizationLegendPositionHidden

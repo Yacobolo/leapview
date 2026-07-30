@@ -477,10 +477,56 @@ package contracts
 #PresentationCommon: {
 	legend?:      "hidden" | "top" | "right" | "bottom" | "left"
 	show_labels?: bool
+	conditional_formatting?: [...#ConditionalFormat]
 }
 
 #DecisionTone: "neutral" | "ink" | "success" | "warning" | "danger"
 #ColorIntent: #DecisionTone | "accent" | "data_1" | "data_2" | "data_3" | "data_4" | "data_5" | "data_6" | "data_7" | "data_8"
+#IconIntent: "circle" | "square" | "diamond" | "triangle_up" | "triangle_down" | "arrow_up" | "arrow_down" | "warning"
+
+#ConditionalStyle: close({
+	color?: #ColorIntent
+	icon?:  #IconIntent
+})
+
+#ConditionalTarget: "mark_fill" | "mark_stroke" | "series_color" | "label_foreground" | "visual_background" | "cell_foreground" | "cell_background" | "kpi_value" | "icon"
+
+#ConditionalFormatCommon: {
+	id!:     string & !=""
+	target!: #ConditionalTarget
+	field!:  string & !=""
+}
+
+#ConditionalFormat: close({
+	#ConditionalFormatCommon
+	kind!:    "gradient"
+	minimum!: number
+	maximum!: number
+	low!:     #ConditionalStyle
+	high!:    #ConditionalStyle
+	"null"!:  #ConditionalStyle
+}) | close({
+	#ConditionalFormatCommon
+	kind!: "rules"
+	rules!: [close({
+		operator!: "less_than" | "less_or_equal" | "greater_than" | "greater_or_equal" | "equal" | "not_equal"
+		value!:    number
+		style!:    #ConditionalStyle
+	}), ...close({
+		operator!: "less_than" | "less_or_equal" | "greater_than" | "greater_or_equal" | "equal" | "not_equal"
+		value!:    number
+		style!:    #ConditionalStyle
+	})]
+	"null"!:   #ConditionalStyle
+	default!:  #ConditionalStyle
+}) | close({
+	#ConditionalFormatCommon
+	kind!:         "field"
+	source_field!: string & !=""
+	values!:       close({[string & !=""]: #ConditionalStyle})
+	"null"!:       #ConditionalStyle
+	default!:      #ConditionalStyle
+})
 
 #ReferenceValue: close({
 	"number"!: number
@@ -592,6 +638,7 @@ package contracts
 	note?:       string
 	tone?:       "neutral" | "ink" | "success" | "warning" | "danger"
 	thresholds?: [...#Threshold]
+	conditional_formatting?: [...#ConditionalFormat]
 })
 
 #CartesianVisual: close({
@@ -733,6 +780,7 @@ package contracts
 	measure_formatting?: {
 		[string]: [...#TableFormattingRule]
 	}
+	conditional_formatting?: [...#ConditionalFormat]
 }
 
 #DataTableVisual: close({

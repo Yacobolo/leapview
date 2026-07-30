@@ -67,6 +67,15 @@ type DurationVisualizationFormat struct {
 	Unit string `json:"unit"`
 }
 
+type FieldVisualizationConditionalRule struct {
+	VisualizationConditionalRuleBase
+	Kind         string                                   `json:"kind"`
+	Source       VisualizationFieldRef                    `json:"source"`
+	Values       map[string]VisualizationConditionalStyle `json:"values"`
+	NullStyle    VisualizationConditionalStyle            `json:"nullStyle"`
+	DefaultStyle VisualizationConditionalStyle            `json:"defaultStyle"`
+}
+
 type FieldVisualizationReferenceValue struct {
 	VisualizationReferenceValueBase
 	Kind    string                        `json:"kind"`
@@ -90,6 +99,16 @@ type GeographicVisualizationSpec struct {
 	Layers              []VisualizationGeographicLayer             `json:"layers"`
 	SpatialInteractions []VisualizationSpatialSelectionInteraction `json:"spatialInteractions"`
 	Presentation        GeographicVisualizationPresentation        `json:"presentation"`
+}
+
+type GradientVisualizationConditionalRule struct {
+	VisualizationConditionalRuleBase
+	Kind      string                        `json:"kind"`
+	Minimum   float64                       `json:"minimum"`
+	Maximum   float64                       `json:"maximum"`
+	Low       VisualizationConditionalStyle `json:"low"`
+	High      VisualizationConditionalStyle `json:"high"`
+	NullStyle VisualizationConditionalStyle `json:"nullStyle"`
 }
 
 type GridVisualizationPresentation struct {
@@ -225,6 +244,14 @@ type ProportionalVisualizationSpec struct {
 	Value        VisualizationFieldRef                 `json:"value"`
 	Series       *VisualizationFieldRef                `json:"series,omitempty"`
 	Presentation ProportionalVisualizationPresentation `json:"presentation"`
+}
+
+type RulesVisualizationConditionalRule struct {
+	VisualizationConditionalRuleBase
+	Kind         string                              `json:"kind"`
+	Rules        []VisualizationConditionalThreshold `json:"rules"`
+	NullStyle    VisualizationConditionalStyle       `json:"nullStyle"`
+	DefaultStyle VisualizationConditionalStyle       `json:"defaultStyle"`
 }
 
 type SpatialWindowedVisualizationDataState struct {
@@ -654,6 +681,17 @@ type VisualizationComboSeries struct {
 	Axis        VisualizationAxis          `json:"axis"`
 }
 
+type VisualizationComparisonOperator string
+
+const (
+	VisualizationComparisonOperatorLessThan       VisualizationComparisonOperator = "less_than"
+	VisualizationComparisonOperatorLessOrEqual    VisualizationComparisonOperator = "less_or_equal"
+	VisualizationComparisonOperatorGreaterThan    VisualizationComparisonOperator = "greater_than"
+	VisualizationComparisonOperatorGreaterOrEqual VisualizationComparisonOperator = "greater_or_equal"
+	VisualizationComparisonOperatorEqual          VisualizationComparisonOperator = "equal"
+	VisualizationComparisonOperatorNotEqual       VisualizationComparisonOperator = "not_equal"
+)
+
 type VisualizationCompleteness string
 
 const (
@@ -662,6 +700,260 @@ const (
 	VisualizationCompletenessPartial   VisualizationCompleteness = "partial"
 	VisualizationCompletenessEmpty     VisualizationCompleteness = "empty"
 )
+
+type VisualizationConditionalFormat struct {
+	ID     string                         `json:"id"`
+	Target VisualizationConditionalTarget `json:"target"`
+	Field  VisualizationFieldRef          `json:"field"`
+	Rule   VisualizationConditionalRule   `json:"rule"`
+}
+
+type VisualizationConditionalRuleVariant interface {
+	isVisualizationConditionalRuleVariant()
+}
+
+type VisualizationConditionalRule struct {
+	Value VisualizationConditionalRuleVariant
+}
+
+func (*FieldVisualizationConditionalRule) isVisualizationConditionalRuleVariant()    {}
+func (*GradientVisualizationConditionalRule) isVisualizationConditionalRuleVariant() {}
+func (*RulesVisualizationConditionalRule) isVisualizationConditionalRuleVariant()    {}
+
+func (value VisualizationConditionalRule) MarshalJSON() ([]byte, error) {
+	switch variant := value.Value.(type) {
+	case *FieldVisualizationConditionalRule:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationConditionalRule variant is nil")
+		}
+		return json.Marshal(variant)
+	case *GradientVisualizationConditionalRule:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationConditionalRule variant is nil")
+		}
+		return json.Marshal(variant)
+	case *RulesVisualizationConditionalRule:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationConditionalRule variant is nil")
+		}
+		return json.Marshal(variant)
+	case nil:
+		return nil, fmt.Errorf("VisualizationConditionalRule variant is required")
+	default:
+		return nil, fmt.Errorf("unsupported VisualizationConditionalRule variant %T", variant)
+	}
+}
+
+func (value *VisualizationConditionalRule) UnmarshalJSON(data []byte) error {
+	if value == nil {
+		return fmt.Errorf("cannot unmarshal VisualizationConditionalRule into nil receiver")
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return fmt.Errorf("decode VisualizationConditionalRule object: %w", err)
+	}
+	var tag struct {
+		Value string `json:"kind"`
+	}
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return fmt.Errorf("decode VisualizationConditionalRule discriminator: %w", err)
+	}
+	if tag.Value == "" {
+		return fmt.Errorf("VisualizationConditionalRule discriminator kind is required")
+	}
+	decode := func(dest any) error {
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.DisallowUnknownFields()
+		return decoder.Decode(dest)
+	}
+	switch tag.Value {
+	case "field":
+		if _, ok := fields["defaultStyle"]; !ok {
+			return fmt.Errorf("decode VisualizationConditionalRule variant %q: required property defaultStyle is missing", tag.Value)
+		}
+		if _, ok := fields["kind"]; !ok {
+			return fmt.Errorf("decode VisualizationConditionalRule variant %q: required property kind is missing", tag.Value)
+		}
+		if _, ok := fields["nullStyle"]; !ok {
+			return fmt.Errorf("decode VisualizationConditionalRule variant %q: required property nullStyle is missing", tag.Value)
+		}
+		if _, ok := fields["source"]; !ok {
+			return fmt.Errorf("decode VisualizationConditionalRule variant %q: required property source is missing", tag.Value)
+		}
+		if _, ok := fields["values"]; !ok {
+			return fmt.Errorf("decode VisualizationConditionalRule variant %q: required property values is missing", tag.Value)
+		}
+		var variant FieldVisualizationConditionalRule
+		if err := decode(&variant); err != nil {
+			return fmt.Errorf("decode VisualizationConditionalRule variant %q: %w", tag.Value, err)
+		}
+		value.Value = &variant
+	case "gradient":
+		if _, ok := fields["high"]; !ok {
+			return fmt.Errorf("decode VisualizationConditionalRule variant %q: required property high is missing", tag.Value)
+		}
+		if _, ok := fields["kind"]; !ok {
+			return fmt.Errorf("decode VisualizationConditionalRule variant %q: required property kind is missing", tag.Value)
+		}
+		if _, ok := fields["low"]; !ok {
+			return fmt.Errorf("decode VisualizationConditionalRule variant %q: required property low is missing", tag.Value)
+		}
+		if _, ok := fields["maximum"]; !ok {
+			return fmt.Errorf("decode VisualizationConditionalRule variant %q: required property maximum is missing", tag.Value)
+		}
+		if _, ok := fields["minimum"]; !ok {
+			return fmt.Errorf("decode VisualizationConditionalRule variant %q: required property minimum is missing", tag.Value)
+		}
+		if _, ok := fields["nullStyle"]; !ok {
+			return fmt.Errorf("decode VisualizationConditionalRule variant %q: required property nullStyle is missing", tag.Value)
+		}
+		var variant GradientVisualizationConditionalRule
+		if err := decode(&variant); err != nil {
+			return fmt.Errorf("decode VisualizationConditionalRule variant %q: %w", tag.Value, err)
+		}
+		value.Value = &variant
+	case "rules":
+		if _, ok := fields["defaultStyle"]; !ok {
+			return fmt.Errorf("decode VisualizationConditionalRule variant %q: required property defaultStyle is missing", tag.Value)
+		}
+		if _, ok := fields["kind"]; !ok {
+			return fmt.Errorf("decode VisualizationConditionalRule variant %q: required property kind is missing", tag.Value)
+		}
+		if _, ok := fields["nullStyle"]; !ok {
+			return fmt.Errorf("decode VisualizationConditionalRule variant %q: required property nullStyle is missing", tag.Value)
+		}
+		if _, ok := fields["rules"]; !ok {
+			return fmt.Errorf("decode VisualizationConditionalRule variant %q: required property rules is missing", tag.Value)
+		}
+		var variant RulesVisualizationConditionalRule
+		if err := decode(&variant); err != nil {
+			return fmt.Errorf("decode VisualizationConditionalRule variant %q: %w", tag.Value, err)
+		}
+		value.Value = &variant
+	default:
+		return fmt.Errorf("unknown VisualizationConditionalRule discriminator %q", tag.Value)
+	}
+	return nil
+}
+
+type VisualizationConditionalRuleVisitor interface {
+	VisitFieldVisualizationConditionalRule(*FieldVisualizationConditionalRule) error
+	VisitGradientVisualizationConditionalRule(*GradientVisualizationConditionalRule) error
+	VisitRulesVisualizationConditionalRule(*RulesVisualizationConditionalRule) error
+}
+
+func (value *VisualizationConditionalRule) Visit(visitor VisualizationConditionalRuleVisitor) error {
+	if value == nil {
+		return fmt.Errorf("cannot visit nil VisualizationConditionalRule")
+	}
+	if visitor == nil {
+		return fmt.Errorf("VisualizationConditionalRule visitor is required")
+	}
+	switch variant := value.Value.(type) {
+	case *FieldVisualizationConditionalRule:
+		if variant == nil {
+			return fmt.Errorf("VisualizationConditionalRule variant is nil")
+		}
+		return visitor.VisitFieldVisualizationConditionalRule(variant)
+	case *GradientVisualizationConditionalRule:
+		if variant == nil {
+			return fmt.Errorf("VisualizationConditionalRule variant is nil")
+		}
+		return visitor.VisitGradientVisualizationConditionalRule(variant)
+	case *RulesVisualizationConditionalRule:
+		if variant == nil {
+			return fmt.Errorf("VisualizationConditionalRule variant is nil")
+		}
+		return visitor.VisitRulesVisualizationConditionalRule(variant)
+	case nil:
+		return fmt.Errorf("VisualizationConditionalRule variant is required")
+	default:
+		return fmt.Errorf("unsupported VisualizationConditionalRule variant %T", variant)
+	}
+}
+
+func (value *VisualizationConditionalRule) Kind() (string, error) {
+	if value == nil {
+		return "", fmt.Errorf("cannot inspect nil VisualizationConditionalRule")
+	}
+	switch variant := value.Value.(type) {
+	case *FieldVisualizationConditionalRule:
+		if variant == nil {
+			return "", fmt.Errorf("VisualizationConditionalRule variant is nil")
+		}
+		return "field", nil
+	case *GradientVisualizationConditionalRule:
+		if variant == nil {
+			return "", fmt.Errorf("VisualizationConditionalRule variant is nil")
+		}
+		return "gradient", nil
+	case *RulesVisualizationConditionalRule:
+		if variant == nil {
+			return "", fmt.Errorf("VisualizationConditionalRule variant is nil")
+		}
+		return "rules", nil
+	case nil:
+		return "", fmt.Errorf("VisualizationConditionalRule variant is required")
+	default:
+		return "", fmt.Errorf("unsupported VisualizationConditionalRule variant %T", variant)
+	}
+}
+
+func (value *VisualizationConditionalRule) Base() (*VisualizationConditionalRuleBase, error) {
+	if value == nil {
+		return nil, fmt.Errorf("cannot inspect nil VisualizationConditionalRule")
+	}
+	switch variant := value.Value.(type) {
+	case *FieldVisualizationConditionalRule:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationConditionalRule variant is nil")
+		}
+		return &variant.VisualizationConditionalRuleBase, nil
+	case *GradientVisualizationConditionalRule:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationConditionalRule variant is nil")
+		}
+		return &variant.VisualizationConditionalRuleBase, nil
+	case *RulesVisualizationConditionalRule:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationConditionalRule variant is nil")
+		}
+		return &variant.VisualizationConditionalRuleBase, nil
+	case nil:
+		return nil, fmt.Errorf("VisualizationConditionalRule variant is required")
+	default:
+		return nil, fmt.Errorf("unsupported VisualizationConditionalRule variant %T", variant)
+	}
+}
+
+type VisualizationConditionalRuleBase struct {
+	Kind string `json:"kind"`
+}
+
+type VisualizationConditionalStyle struct {
+	Color *VisualizationColorIntent `json:"color,omitempty"`
+	Icon  *VisualizationIconIntent  `json:"icon,omitempty"`
+}
+
+type VisualizationConditionalTarget string
+
+const (
+	VisualizationConditionalTargetMarkFill         VisualizationConditionalTarget = "mark_fill"
+	VisualizationConditionalTargetMarkStroke       VisualizationConditionalTarget = "mark_stroke"
+	VisualizationConditionalTargetSeriesColor      VisualizationConditionalTarget = "series_color"
+	VisualizationConditionalTargetLabelForeground  VisualizationConditionalTarget = "label_foreground"
+	VisualizationConditionalTargetVisualBackground VisualizationConditionalTarget = "visual_background"
+	VisualizationConditionalTargetCellForeground   VisualizationConditionalTarget = "cell_foreground"
+	VisualizationConditionalTargetCellBackground   VisualizationConditionalTarget = "cell_background"
+	VisualizationConditionalTargetKpiValue         VisualizationConditionalTarget = "kpi_value"
+	VisualizationConditionalTargetIcon             VisualizationConditionalTarget = "icon"
+)
+
+type VisualizationConditionalThreshold struct {
+	Operator VisualizationComparisonOperator `json:"operator"`
+	Value    float64                         `json:"value"`
+	Style    VisualizationConditionalStyle   `json:"style"`
+}
 
 type VisualizationCustomEngine string
 
@@ -1860,6 +2152,19 @@ const (
 	VisualizationHierarchyMarkTree     VisualizationHierarchyMark = "tree"
 	VisualizationHierarchyMarkSankey   VisualizationHierarchyMark = "sankey"
 	VisualizationHierarchyMarkGraph    VisualizationHierarchyMark = "graph"
+)
+
+type VisualizationIconIntent string
+
+const (
+	VisualizationIconIntentCircle       VisualizationIconIntent = "circle"
+	VisualizationIconIntentSquare       VisualizationIconIntent = "square"
+	VisualizationIconIntentDiamond      VisualizationIconIntent = "diamond"
+	VisualizationIconIntentTriangleUp   VisualizationIconIntent = "triangle_up"
+	VisualizationIconIntentTriangleDown VisualizationIconIntent = "triangle_down"
+	VisualizationIconIntentArrowUp      VisualizationIconIntent = "arrow_up"
+	VisualizationIconIntentArrowDown    VisualizationIconIntent = "arrow_down"
+	VisualizationIconIntentWarning      VisualizationIconIntent = "warning"
 )
 
 type VisualizationInlineDataset struct {
@@ -3314,12 +3619,13 @@ func (value *VisualizationSpec) Base() (*VisualizationSpecBase, error) {
 }
 
 type VisualizationSpecBase struct {
-	Kind          string                       `json:"kind"`
-	Title         string                       `json:"title"`
-	Datasets      []VisualizationDatasetSchema `json:"datasets"`
-	DataBudget    VisualizationDataBudget      `json:"dataBudget"`
-	Accessibility VisualizationAccessibility   `json:"accessibility"`
-	Interactions  []VisualizationInteraction   `json:"interactions"`
+	Kind                  string                            `json:"kind"`
+	Title                 string                            `json:"title"`
+	Datasets              []VisualizationDatasetSchema      `json:"datasets"`
+	DataBudget            VisualizationDataBudget           `json:"dataBudget"`
+	Accessibility         VisualizationAccessibility        `json:"accessibility"`
+	Interactions          []VisualizationInteraction        `json:"interactions"`
+	ConditionalFormatting *[]VisualizationConditionalFormat `json:"conditionalFormatting,omitempty"`
 }
 
 type VisualizationStackingMode string

@@ -1,4 +1,4 @@
-import type { TableVisualizationFormattingRule, VisualizationEnvelope, VisualizationField } from '../../../../generated/visualization'
+import type { TableVisualizationFormattingRule, VisualizationConditionalFormat, VisualizationEnvelope, VisualizationField } from '../../../../generated/visualization'
 import type { TableBlock, TableColumn, TableFormattingRule, TableSignal, TableSort } from '../../table/types'
 import type { RendererAdapter, RendererHandle } from '../host-controller'
 
@@ -62,7 +62,8 @@ export function tableSignal(envelope: VisualizationEnvelope): TableSignal {
     const measureKey = field?.grid?.measure ?? ref.field
     const measureFormatting = spec.kind === 'matrix' || spec.kind === 'pivot' ? spec.measureFormatting[measureKey] : undefined
     const gridFormatting = field?.grid?.formatting
-    return tableColumn(field, authored?.label, authored?.width, authored?.formatting ?? (gridFormatting?.length ? gridFormatting : measureFormatting), authored ?? field?.grid)
+    const conditionalFormatting = conditionalFormatsForField(spec.conditionalFormatting ?? [], ref.dataset, ref.field, measureKey)
+    return tableColumn(field, authored?.label, authored?.width, authored?.formatting ?? (gridFormatting?.length ? gridFormatting : measureFormatting), authored ?? field?.grid, conditionalFormatting)
   })
   const state = envelope.dataState
   const sort = state.kind === 'windowed' ? tableSort(state.sort[0], columns[0]?.key) : tableSort(spec.kind === 'table' ? spec.defaultSort?.[0] : undefined, columns[0]?.key)
@@ -119,6 +120,7 @@ function tableColumn(
   width?: number,
   formatting: TableVisualizationFormattingRule[] = [],
   metadata?: { group?: string; measure?: string; columnValue?: string },
+  conditionalFormatting: VisualizationConditionalFormat[] = [],
 ): TableColumn {
   const key = field?.id ?? ''
   return {
@@ -126,7 +128,21 @@ function tableColumn(
     align: field?.role === 'measure' ? 'right' : 'left', role: field?.role === 'measure' ? 'measure' : 'row_header',
     group: metadata?.group, measure: metadata?.measure, columnValue: metadata?.columnValue,
     format: tableFormat(field), visualizationFormat: field?.format, formatting: formatting.map(tableFormattingRule),
+    conditionalFormatting,
   }
+}
+
+function conditionalFormatsForField(
+  formats: VisualizationConditionalFormat[],
+  dataset: string,
+  field: string,
+  measure: string,
+): VisualizationConditionalFormat[] {
+  return formats.flatMap((format) => {
+    if (format.field.dataset !== dataset || (format.field.field !== field && format.field.field !== measure)) return []
+    if (format.field.field === field) return [format]
+    return [{ ...format, field: { dataset, field } }]
+  })
 }
 
 function tableFormattingRule(rule: TableVisualizationFormattingRule): TableFormattingRule {

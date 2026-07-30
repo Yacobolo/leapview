@@ -103,6 +103,67 @@ test('ECharts translates semantic axes and decision context from the current fra
   expect(refreshed.series[0].markArea.data[0].map((item: any) => item.yAxis)).toEqual([40, 80])
 })
 
+test('ECharts applies governed row formatting with theme colors and redundant cues', () => {
+  const envelope = cartesianFixture('column') as any
+  envelope.spec.presentation.showLabels = false
+  envelope.spec.conditionalFormatting = [
+    {
+      id: 'value-gradient', target: 'mark_fill', field: { dataset: 'primary', field: 'value' },
+      rule: {
+        kind: 'gradient', minimum: 0, maximum: 100,
+        low: { color: 'danger' }, high: { color: 'success' }, nullStyle: { color: 'neutral' },
+      },
+    },
+    {
+      id: 'value-health', target: 'mark_stroke', field: { dataset: 'primary', field: 'value' },
+      rule: {
+        kind: 'rules',
+        rules: [{ operator: 'less_than', value: 50, style: { color: 'danger', icon: 'arrow_down' } }],
+        nullStyle: { icon: 'warning' }, defaultStyle: { color: 'success', icon: 'arrow_up' },
+      },
+    },
+  ]
+  envelope.dataState.datasets[0].rows = [['A', 25], ['B', 75]]
+
+  const option = echartsOption(envelope, defaultRendererContext) as any
+  expect(option.series[0].itemStyle.color({ value: ['A', 25] })).toBe('rgb(162 57 48)')
+  expect(option.series[0].itemStyle.color({ value: ['B', 75] })).toBe('rgb(71 104 53)')
+  expect(option.series[0].itemStyle.borderColor({ value: ['A', 25] })).toBe(defaultRendererContext.colors.danger)
+  expect(option.series[0].label.show).toBe(true)
+  expect(option.series[0].label.formatter({ value: ['A', 25] })).toBe('↓ 25')
+  expect(option.series[0].label.formatter({ value: ['B', 75] })).toBe('↑ 75')
+})
+
+test('ECharts translates governed heatmap gradients and waterfall rule styles', () => {
+  const heatmap = cartesianFixture('heatmap', ['label', 'row', 'value']) as any
+  heatmap.spec.conditionalFormatting = [{
+    id: 'heat', target: 'mark_fill', field: { dataset: 'primary', field: 'value' },
+    rule: {
+      kind: 'gradient', minimum: 0, maximum: 100,
+      low: { color: 'danger' }, high: { color: 'success' }, nullStyle: { color: 'neutral' },
+    },
+  }]
+  const heatmapOption = echartsOption(heatmap, defaultRendererContext) as any
+  expect(heatmapOption.visualMap).toMatchObject({
+    min: 0,
+    max: 100,
+    inRange: { color: [defaultRendererContext.colors.danger, defaultRendererContext.colors.success] },
+  })
+
+  const waterfall = cartesianFixture('waterfall', ['label', 'start', 'value']) as any
+  waterfall.spec.conditionalFormatting = [{
+    id: 'delta', target: 'mark_fill', field: { dataset: 'primary', field: 'value' },
+    rule: {
+      kind: 'rules', rules: [{ operator: 'less_than', value: 0, style: { color: 'danger', icon: 'arrow_down' } }],
+      nullStyle: { icon: 'warning' }, defaultStyle: { color: 'success', icon: 'arrow_up' },
+    },
+  }]
+  waterfall.dataState.datasets[0].rows = [['Returns', 10, -4]]
+  const waterfallOption = echartsOption(waterfall, defaultRendererContext) as any
+  expect(waterfallOption.series[1].itemStyle.color({ value: ['Returns', 10, -4] })).toBe(defaultRendererContext.colors.danger)
+  expect(waterfallOption.series[1].label.formatter({ value: ['Returns', 10, -4] })).toBe('↓ -4')
+})
+
 test('ECharts interactions translate stable IR field mappings without renderer row keys', () => {
   const envelope = {
     schemaVersion: 4, visualID: 'orders', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 7,

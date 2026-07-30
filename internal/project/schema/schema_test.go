@@ -204,6 +204,16 @@ spec:
         stacking: percent
         series_order: [delivered, processing]
         series_colors: {delivered: success, processing: data_3}
+        conditional_formatting:
+          - id: revenue-health
+            target: mark_fill
+            field: value
+            kind: gradient
+            minimum: 0
+            maximum: 100
+            low: {color: danger}
+            high: {color: success}
+            null: {color: neutral}
   pages:
     - id: overview
       title: Overview

@@ -222,6 +222,38 @@ enum VisualizationColorIntent {
   data8: "data_8",
 }
 
+enum VisualizationConditionalTarget {
+  markFill: "mark_fill",
+  markStroke: "mark_stroke",
+  seriesColor: "series_color",
+  labelForeground: "label_foreground",
+  visualBackground: "visual_background",
+  cellForeground: "cell_foreground",
+  cellBackground: "cell_background",
+  kpiValue: "kpi_value",
+  icon: "icon",
+}
+
+enum VisualizationIconIntent {
+  circle: "circle",
+  square: "square",
+  diamond: "diamond",
+  triangleUp: "triangle_up",
+  triangleDown: "triangle_down",
+  arrowUp: "arrow_up",
+  arrowDown: "arrow_down",
+  warning: "warning",
+}
+
+enum VisualizationComparisonOperator {
+  lessThan: "less_than",
+  lessOrEqual: "less_or_equal",
+  greaterThan: "greater_than",
+  greaterOrEqual: "greater_or_equal",
+  equal: "equal",
+  notEqual: "not_equal",
+}
+
 enum VisualizationOrientation {
   horizontal: "horizontal",
   vertical: "vertical",
@@ -430,6 +462,53 @@ model VisualizationEventAnnotation {
   `tone`: VisualizationTone;
 }
 
+model VisualizationConditionalStyle {
+  `color`?: VisualizationColorIntent;
+  `icon`?: VisualizationIconIntent;
+}
+
+model VisualizationConditionalThreshold {
+  `operator`: VisualizationComparisonOperator;
+  `value`: float64;
+  `style`: VisualizationConditionalStyle;
+}
+
+@discriminator("kind")
+model VisualizationConditionalRule {
+  `kind`: string;
+}
+
+model GradientVisualizationConditionalRule extends VisualizationConditionalRule {
+  `kind`: "gradient";
+  `minimum`: float64;
+  `maximum`: float64;
+  `low`: VisualizationConditionalStyle;
+  `high`: VisualizationConditionalStyle;
+  `nullStyle`: VisualizationConditionalStyle;
+}
+
+model RulesVisualizationConditionalRule extends VisualizationConditionalRule {
+  `kind`: "rules";
+  `rules`: VisualizationConditionalThreshold[];
+  `nullStyle`: VisualizationConditionalStyle;
+  `defaultStyle`: VisualizationConditionalStyle;
+}
+
+model FieldVisualizationConditionalRule extends VisualizationConditionalRule {
+  `kind`: "field";
+  `source`: VisualizationFieldRef;
+  `values`: Record<VisualizationConditionalStyle>;
+  `nullStyle`: VisualizationConditionalStyle;
+  `defaultStyle`: VisualizationConditionalStyle;
+}
+
+model VisualizationConditionalFormat {
+  `id`: string;
+  `target`: VisualizationConditionalTarget;
+  `field`: VisualizationFieldRef;
+  `rule`: VisualizationConditionalRule;
+}
+
 model VisualizationDataBudget {
   `maxRows`: int64;
   `requiredCompleteness`: VisualizationCompleteness;
@@ -561,6 +640,7 @@ model VisualizationSpec {
   `dataBudget`: VisualizationDataBudget;
   `accessibility`: VisualizationAccessibility;
   `interactions`: VisualizationInteraction[];
+  `conditionalFormatting`?: VisualizationConditionalFormat[];
 }
 
 model CartesianVisualizationSpec extends VisualizationSpec {

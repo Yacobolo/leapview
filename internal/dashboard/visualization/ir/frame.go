@@ -3,6 +3,7 @@ package ir
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 )
 
@@ -276,6 +277,9 @@ func validateSpecification(spec VisualizationSpec, base VisualizationSpecBase) (
 			return nil, err
 		}
 	}
+	if err := validateConditionalFormatting(spec, base, schemas); err != nil {
+		return nil, err
+	}
 	if err := validateCartesianDecisionContext(spec); err != nil {
 		return nil, err
 	}
@@ -307,6 +311,216 @@ func validateSpecification(spec VisualizationSpec, base VisualizationSpecBase) (
 		}
 	}
 	return schemas, nil
+}
+
+func validateConditionalFormatting(spec VisualizationSpec, base VisualizationSpecBase, schemas map[string]VisualizationDatasetSchema) error {
+	if base.ConditionalFormatting == nil {
+		return nil
+	}
+	if !specSupportsConditionalFormatting(spec) {
+		return fmt.Errorf("visualization kind %q does not support conditional formatting", base.Kind)
+	}
+	ids := make(map[string]struct{}, len(*base.ConditionalFormatting))
+	targets := make(map[string]struct{}, len(*base.ConditionalFormatting))
+	for _, format := range *base.ConditionalFormatting {
+		if strings.TrimSpace(format.ID) == "" {
+			return fmt.Errorf("conditional formatting ID is required")
+		}
+		if _, exists := ids[format.ID]; exists {
+			return fmt.Errorf("duplicate conditional formatting ID %q", format.ID)
+		}
+		ids[format.ID] = struct{}{}
+		targetKey := string(format.Target) + "\x00" + format.Field.Dataset + "\x00" + format.Field.Field
+		if _, exists := targets[targetKey]; exists {
+			return fmt.Errorf("ambiguous conditional formatting target %q for field %q", format.Target, format.Field.Field)
+		}
+		targets[targetKey] = struct{}{}
+		if err := validateConditionalFormattingTarget(base.Kind, format); err != nil {
+			return fmt.Errorf("conditional formatting %q: %w", format.ID, err)
+		}
+		if err := validateFieldRef(format.Field, schemas); err != nil {
+			return fmt.Errorf("conditional formatting %q field: %w", format.ID, err)
+		}
+		field, _ := visualizationField(format.Field, schemas)
+		switch rule := format.Rule.Value.(type) {
+		case *GradientVisualizationConditionalRule:
+			if rule == nil {
+				return fmt.Errorf("conditional formatting %q gradient rule is nil", format.ID)
+			}
+			if !numericVisualizationField(field) {
+				return fmt.Errorf("conditional formatting %q gradient requires a numeric field", format.ID)
+			}
+			if !finite(rule.Minimum) || !finite(rule.Maximum) || rule.Minimum >= rule.Maximum {
+				return fmt.Errorf("conditional formatting %q minimum must be less than maximum", format.ID)
+			}
+			if rule.Low.Color == nil || rule.High.Color == nil {
+				return fmt.Errorf("conditional formatting %q gradient requires low and high colors", format.ID)
+			}
+			for _, named := range []struct {
+				position string
+				style    VisualizationConditionalStyle
+			}{{"low", rule.Low}, {"high", rule.High}, {"null", rule.NullStyle}} {
+				if err := validateVisualizationConditionalStyle(named.style, false); err != nil {
+					return fmt.Errorf("conditional formatting %q %s style: %w", format.ID, named.position, err)
+				}
+			}
+		case *RulesVisualizationConditionalRule:
+			if rule == nil || len(rule.Rules) == 0 {
+				return fmt.Errorf("conditional formatting %q requires rules", format.ID)
+			}
+			if !numericVisualizationField(field) {
+				return fmt.Errorf("conditional formatting %q rules require a numeric field", format.ID)
+			}
+			for index, threshold := range rule.Rules {
+				if !finite(threshold.Value) || !validVisualizationComparisonOperator(threshold.Operator) {
+					return fmt.Errorf("conditional formatting %q rule %d is invalid", format.ID, index)
+				}
+				if err := validateVisualizationConditionalStyle(threshold.Style, true); err != nil {
+					return fmt.Errorf("conditional formatting %q rule %d style: %w", format.ID, index, err)
+				}
+			}
+			for _, named := range []struct {
+				position     string
+				style        VisualizationConditionalStyle
+				redundantCue bool
+			}{{"null", rule.NullStyle, false}, {"default", rule.DefaultStyle, true}} {
+				if err := validateVisualizationConditionalStyle(named.style, named.redundantCue); err != nil {
+					return fmt.Errorf("conditional formatting %q %s style: %w", format.ID, named.position, err)
+				}
+			}
+		case *FieldVisualizationConditionalRule:
+			if rule == nil {
+				return fmt.Errorf("conditional formatting %q field rule is nil", format.ID)
+			}
+			if err := validateFieldRef(rule.Source, schemas); err != nil {
+				return fmt.Errorf("conditional formatting %q source: %w", format.ID, err)
+			}
+			if len(rule.Values) == 0 {
+				return fmt.Errorf("conditional formatting %q requires values", format.ID)
+			}
+			values := make([]string, 0, len(rule.Values))
+			for value := range rule.Values {
+				values = append(values, value)
+			}
+			sort.Strings(values)
+			for _, value := range values {
+				if strings.TrimSpace(value) == "" {
+					return fmt.Errorf("conditional formatting %q has an empty field value", format.ID)
+				}
+				if err := validateVisualizationConditionalStyle(rule.Values[value], true); err != nil {
+					return fmt.Errorf("conditional formatting %q value %q style: %w", format.ID, value, err)
+				}
+			}
+			for _, named := range []struct {
+				position     string
+				style        VisualizationConditionalStyle
+				redundantCue bool
+			}{{"null", rule.NullStyle, false}, {"default", rule.DefaultStyle, true}} {
+				if err := validateVisualizationConditionalStyle(named.style, named.redundantCue); err != nil {
+					return fmt.Errorf("conditional formatting %q %s style: %w", format.ID, named.position, err)
+				}
+			}
+		case nil:
+			return fmt.Errorf("conditional formatting %q rule is required", format.ID)
+		default:
+			return fmt.Errorf("conditional formatting %q has unsupported rule %T", format.ID, rule)
+		}
+	}
+	return nil
+}
+
+func specSupportsConditionalFormatting(spec VisualizationSpec) bool {
+	switch value := spec.Value.(type) {
+	case *CartesianVisualizationSpec:
+		switch value.Mark {
+		case VisualizationCartesianMarkLine, VisualizationCartesianMarkArea, VisualizationCartesianMarkBar,
+			VisualizationCartesianMarkColumn, VisualizationCartesianMarkCombo, VisualizationCartesianMarkScatter,
+			VisualizationCartesianMarkWaterfall, VisualizationCartesianMarkHeatmap:
+			return true
+		default:
+			return false
+		}
+	case *KPIVisualizationSpec, *TableVisualizationSpec, *MatrixVisualizationSpec, *PivotVisualizationSpec:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateConditionalFormattingTarget(kind string, format VisualizationConditionalFormat) error {
+	switch format.Target {
+	case VisualizationConditionalTargetMarkFill, VisualizationConditionalTargetMarkStroke, VisualizationConditionalTargetSeriesColor:
+		if kind == "kpi" || kind == "table" || kind == "matrix" || kind == "pivot" {
+			return fmt.Errorf("target %q is incompatible with %s visualizations", format.Target, kind)
+		}
+	case VisualizationConditionalTargetCellForeground, VisualizationConditionalTargetCellBackground:
+		if kind != "table" && kind != "matrix" && kind != "pivot" {
+			return fmt.Errorf("target %q is only valid for tabular visualizations", format.Target)
+		}
+	case VisualizationConditionalTargetKpiValue, VisualizationConditionalTargetVisualBackground:
+		if kind != "kpi" {
+			return fmt.Errorf("target %q is only valid for KPI visualizations", format.Target)
+		}
+	case VisualizationConditionalTargetLabelForeground, VisualizationConditionalTargetIcon:
+	default:
+		return fmt.Errorf("unsupported target %q", format.Target)
+	}
+	return nil
+}
+
+func visualizationField(ref VisualizationFieldRef, schemas map[string]VisualizationDatasetSchema) (VisualizationField, bool) {
+	for _, field := range schemas[ref.Dataset].Fields {
+		if field.ID == ref.Field {
+			return field, true
+		}
+	}
+	return VisualizationField{}, false
+}
+
+func numericVisualizationField(field VisualizationField) bool {
+	return field.DataType == VisualizationDataTypeInteger || field.DataType == VisualizationDataTypeDecimal
+}
+
+func validateVisualizationConditionalStyle(style VisualizationConditionalStyle, redundantCue bool) error {
+	if style.Color == nil && style.Icon == nil {
+		return fmt.Errorf("style requires color or icon")
+	}
+	if style.Color != nil && !validVisualizationColorIntent(*style.Color) {
+		return fmt.Errorf("unsupported color intent %q", *style.Color)
+	}
+	if style.Icon != nil && !validVisualizationIconIntent(*style.Icon) {
+		return fmt.Errorf("unsupported icon intent %q", *style.Icon)
+	}
+	if redundantCue && style.Color != nil && style.Icon == nil {
+		return fmt.Errorf("data-driven color requires a redundant icon cue")
+	}
+	return nil
+}
+
+func validVisualizationIconIntent(intent VisualizationIconIntent) bool {
+	switch intent {
+	case VisualizationIconIntentCircle, VisualizationIconIntentSquare, VisualizationIconIntentDiamond,
+		VisualizationIconIntentTriangleUp, VisualizationIconIntentTriangleDown,
+		VisualizationIconIntentArrowUp, VisualizationIconIntentArrowDown, VisualizationIconIntentWarning:
+		return true
+	default:
+		return false
+	}
+}
+
+func validVisualizationComparisonOperator(operator VisualizationComparisonOperator) bool {
+	switch operator {
+	case VisualizationComparisonOperatorLessThan, VisualizationComparisonOperatorLessOrEqual,
+		VisualizationComparisonOperatorGreaterThan, VisualizationComparisonOperatorGreaterOrEqual,
+		VisualizationComparisonOperatorEqual, VisualizationComparisonOperatorNotEqual:
+		return true
+	default:
+		return false
+	}
+}
+
+func finite(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0)
 }
 
 func specificationRefs(spec VisualizationSpec) []VisualizationFieldRef {

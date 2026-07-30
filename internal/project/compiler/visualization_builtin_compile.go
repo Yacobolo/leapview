@@ -73,6 +73,11 @@ func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model
 		DataBudget:    visualizationir.VisualizationDataBudget{MaxRows: compiledVisualFrameLimit(authored, shape), RequiredCompleteness: completeness},
 		Accessibility: accessibility, Interactions: customVisualizationInteractions(authored.Interaction.PointSelection),
 	}
+	conditionalFormatting, err := compileConditionalFormatting(columns, authored.Presentation.ConditionalFormatting)
+	if err != nil {
+		return visualizationir.VisualizationSpec{}, err
+	}
+	base.ConditionalFormatting = conditionalFormatting
 	ref := func(field string) visualizationir.VisualizationFieldRef {
 		return visualizationir.VisualizationFieldRef{Dataset: "primary", Field: field}
 	}
@@ -160,6 +165,82 @@ func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model
 			},
 		}}, nil
 	}
+}
+
+func compileConditionalFormatting(columns []string, authored []reportdef.VisualConditionalFormat) (*[]visualizationir.VisualizationConditionalFormat, error) {
+	if len(authored) == 0 {
+		return nil, nil
+	}
+	fieldRef := func(field string) (visualizationir.VisualizationFieldRef, error) {
+		if !containsCompiledColumn(columns, field) {
+			return visualizationir.VisualizationFieldRef{}, fmt.Errorf("conditional formatting field %q is not in the compiled result", field)
+		}
+		return visualizationir.VisualizationFieldRef{Dataset: "primary", Field: field}, nil
+	}
+	out := make([]visualizationir.VisualizationConditionalFormat, len(authored))
+	for index, format := range authored {
+		target, err := fieldRef(format.Field)
+		if err != nil {
+			return nil, err
+		}
+		compiled := visualizationir.VisualizationConditionalFormat{
+			ID: format.ID, Target: visualizationir.VisualizationConditionalTarget(format.Target), Field: target,
+		}
+		switch format.Kind {
+		case "gradient":
+			if format.Minimum == nil || format.Maximum == nil {
+				return nil, fmt.Errorf("conditional formatting %q gradient requires minimum and maximum", format.ID)
+			}
+			compiled.Rule.Value = &visualizationir.GradientVisualizationConditionalRule{
+				VisualizationConditionalRuleBase: visualizationir.VisualizationConditionalRuleBase{Kind: "gradient"},
+				Kind:                             "gradient", Minimum: *format.Minimum, Maximum: *format.Maximum,
+				Low: compiledConditionalStyle(format.Low), High: compiledConditionalStyle(format.High), NullStyle: compiledConditionalStyle(format.Null),
+			}
+		case "rules":
+			rules := make([]visualizationir.VisualizationConditionalThreshold, len(format.Rules))
+			for ruleIndex, rule := range format.Rules {
+				rules[ruleIndex] = visualizationir.VisualizationConditionalThreshold{
+					Operator: visualizationir.VisualizationComparisonOperator(rule.Operator),
+					Value:    rule.Value,
+					Style:    compiledConditionalStyle(rule.Style),
+				}
+			}
+			compiled.Rule.Value = &visualizationir.RulesVisualizationConditionalRule{
+				VisualizationConditionalRuleBase: visualizationir.VisualizationConditionalRuleBase{Kind: "rules"},
+				Kind:                             "rules", Rules: rules, NullStyle: compiledConditionalStyle(format.Null), DefaultStyle: compiledConditionalStyle(format.Default),
+			}
+		case "field":
+			source, err := fieldRef(format.SourceField)
+			if err != nil {
+				return nil, err
+			}
+			values := make(map[string]visualizationir.VisualizationConditionalStyle, len(format.Values))
+			for value, style := range format.Values {
+				values[value] = compiledConditionalStyle(style)
+			}
+			compiled.Rule.Value = &visualizationir.FieldVisualizationConditionalRule{
+				VisualizationConditionalRuleBase: visualizationir.VisualizationConditionalRuleBase{Kind: "field"},
+				Kind:                             "field", Source: source, Values: values, NullStyle: compiledConditionalStyle(format.Null), DefaultStyle: compiledConditionalStyle(format.Default),
+			}
+		default:
+			return nil, fmt.Errorf("conditional formatting %q has unsupported kind %q", format.ID, format.Kind)
+		}
+		out[index] = compiled
+	}
+	return &out, nil
+}
+
+func compiledConditionalStyle(authored reportdef.VisualConditionalStyle) visualizationir.VisualizationConditionalStyle {
+	style := visualizationir.VisualizationConditionalStyle{}
+	if authored.Color != "" {
+		color := visualizationir.VisualizationColorIntent(authored.Color)
+		style.Color = &color
+	}
+	if authored.Icon != "" {
+		icon := visualizationir.VisualizationIconIntent(authored.Icon)
+		style.Icon = &icon
+	}
+	return style
 }
 
 type compiledCartesianDecisionContextValue struct {
