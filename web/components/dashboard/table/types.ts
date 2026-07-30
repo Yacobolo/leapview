@@ -1,5 +1,5 @@
 import type { InteractionMapping, InteractionSelectionEntry } from '../interaction-selection'
-import type { VisualizationFormat } from '../../../generated/visualization'
+import type { VisualizationConditionalFormat, VisualizationFormat } from '../../../generated/visualization'
 
 export type {
   InteractionMapping,
@@ -32,8 +32,9 @@ export interface TableColumn {
   columnValue?: string
   width?: number
   format?: 'text' | 'integer' | 'decimal' | 'currency' | 'days'
-	visualizationFormat?: VisualizationFormat
+  visualizationFormat?: VisualizationFormat
   formatting?: TableFormattingRule[]
+  conditionalFormatting?: VisualizationConditionalFormat[]
 }
 
 export interface TableFormattingRule {

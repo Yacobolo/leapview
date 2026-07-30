@@ -1,5 +1,6 @@
 import type { VisualizationEnvelope, VisualizationFieldRef } from '../../../../generated/visualization'
 import { defaultRendererContext, type RendererAdapter, type RendererContext, type RendererHandle } from '../host-controller'
+import { conditionalIconGlyph, conditionalStyleColor, contrastTextColor, resolveConditionalFormat } from '../conditional-format'
 import { formatValue } from '../format'
 
 export const adapter: RendererAdapter = {
@@ -12,14 +13,21 @@ class HTMLHandle implements RendererHandle {
     this.container.replaceChildren()
     const article = document.createElement('article')
     article.className = 'lv-kpi-card'
-    article.setAttribute('aria-label', envelope.spec.accessibility.title)
+    const conditional = kpiConditionalPresentation(envelope, context)
+    article.setAttribute('aria-label', [
+      envelope.spec.accessibility.title,
+      conditional.iconLabel ? `Status: ${conditional.iconLabel}.` : '',
+    ].filter(Boolean).join('. '))
+    if (conditional.background) article.style.backgroundColor = conditional.background
+    if (conditional.foreground) article.style.color = conditional.foreground
     if (envelope.spec.kind === 'kpi') article.dataset.tone = envelope.spec.presentation.tone
     const label = document.createElement('div')
     label.className = 'lv-visualization-label'
     label.textContent = envelope.spec.title
     const value = document.createElement('strong')
     value.className = 'lv-visualization-kpi'
-    value.textContent = kpiText(envelope, context)
+    if (conditional.valueColor) value.style.color = conditional.valueColor
+    value.textContent = [conditional.icon, kpiText(envelope, context)].filter(Boolean).join(' ')
     article.append(label, value)
     if (envelope.spec.kind === 'kpi' && envelope.spec.presentation.note) {
       const note = document.createElement('small'); note.className = 'lv-visualization-note'; note.textContent = envelope.spec.presentation.note; article.append(note)
@@ -31,6 +39,41 @@ class HTMLHandle implements RendererHandle {
   dispose(): void { this.container.replaceChildren() }
 }
 
+export function kpiConditionalPresentation(envelope: VisualizationEnvelope, context: RendererContext): {
+  background?: string
+  foreground?: string
+  valueColor?: string
+  icon?: string
+  iconLabel?: string
+} {
+  const spec = envelope.spec
+  if (spec.kind !== 'kpi' || envelope.dataState.kind !== 'inline') return {}
+  const dataset = envelope.dataState.datasets.find((candidate) => candidate.id === spec.value.dataset)
+  const row = dataset?.rows[0]
+  if (!dataset || !row) return {}
+  const resolveTarget = (target: 'visual_background' | 'kpi_value') => {
+    const format = spec.conditionalFormatting?.find((candidate) => candidate.target === target)
+    return format ? resolveConditionalFormat(format, dataset.columns, row) : undefined
+  }
+  const backgroundResult = resolveTarget('visual_background')
+  const valueResult = resolveTarget('kpi_value')
+  const background = backgroundResult ? conditionalStyleColor(backgroundResult.style, (intent) => intentColor(intent, context)) : undefined
+  const authoredValueColor = valueResult ? conditionalStyleColor(valueResult.style, (intent) => intentColor(intent, context)) : undefined
+  const foreground = background
+    ? contrastTextColor(background, [context.colors.foreground, context.colors.surface, '#000000', '#ffffff'])
+    : undefined
+  const valueColor = background && authoredValueColor
+    ? contrastTextColor(background, [authoredValueColor, foreground!, context.colors.surface, '#000000', '#ffffff'])
+    : authoredValueColor
+  const icon = valueResult?.style.icon ?? backgroundResult?.style.icon
+  return {
+    ...(background ? { background } : {}),
+    ...(foreground ? { foreground } : {}),
+    ...(valueColor ? { valueColor } : {}),
+    ...(icon ? { icon: conditionalIconGlyph(icon), iconLabel: iconAccessibleLabel(icon) } : {}),
+  }
+}
+
 export function kpiText(envelope: VisualizationEnvelope, context: RendererContext = defaultRendererContext): string {
   const spec = envelope.spec
   if (spec.kind !== 'kpi') return '—'
@@ -38,6 +81,30 @@ export function kpiText(envelope: VisualizationEnvelope, context: RendererContex
   const field = spec.datasets.find((dataset) => dataset.id === spec.value.dataset)?.fields.find((candidate) => candidate.id === spec.value.field)
   if (field?.format) return formatValue(context.locale, field.format, value)
   return value === null || value === undefined ? '—' : String(value)
+}
+
+function intentColor(intent: string, context: RendererContext): string {
+  switch (intent) {
+    case 'accent': return context.colors.accent
+    case 'neutral': return context.colors.muted
+    case 'ink': return context.colors.foreground
+    case 'success': return context.colors.success
+    case 'warning': return context.colors.attention
+    case 'danger': return context.colors.danger
+  }
+  if (intent.startsWith('data_')) return context.colors.data[Number(intent.slice(5)) - 1] ?? context.colors.accent
+  return context.colors.foreground
+}
+
+function iconAccessibleLabel(icon: string): string {
+  switch (icon) {
+    case 'arrow_up': return 'increasing'
+    case 'arrow_down': return 'decreasing'
+    case 'triangle_up': return 'higher'
+    case 'triangle_down': return 'lower'
+    case 'warning': return 'warning'
+    default: return icon.replaceAll('_', ' ')
+  }
 }
 
 function scalar(envelope: VisualizationEnvelope, ref: VisualizationFieldRef): unknown {

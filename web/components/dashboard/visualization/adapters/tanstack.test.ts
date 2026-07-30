@@ -16,6 +16,13 @@ test('TanStack adapter derives semantic row interactions from the typed IR', () 
       interactions: [{ id: 'row_selection', kind: 'select', mode: 'multiple', requiresStableIdentity: true, targets: ['revenue'], mappings: [
         { source: { dataset: 'primary', field: 'order_id' }, targetFieldID: 'orders.order_id', targetFactID: 'orders', label: { dataset: 'primary', field: 'order_id' } },
       ] }],
+      conditionalFormatting: [{
+        id: 'revenue-health', target: 'cell_background', field: { dataset: 'primary', field: 'revenue' },
+        rule: {
+          kind: 'rules', rules: [{ operator: 'less_than', value: 50, style: { color: 'danger', icon: 'warning' } }],
+          nullStyle: { icon: 'warning' }, defaultStyle: { color: 'success', icon: 'circle' },
+        },
+      }],
       columns: [
         { field: { dataset: 'primary', field: 'order_id' }, label: 'Order', formatting: [] },
         { field: { dataset: 'primary', field: 'revenue' }, label: 'Revenue', formatting: [{ kind: 'data_bar', minimum: 0, maximum: 100, color: 'accent' }] },
@@ -40,6 +47,9 @@ test('TanStack adapter derives semantic row interactions from the typed IR', () 
     mappings: [{ field: 'orders.order_id', fact: 'orders', value: 'order_id', label: 'order_id' }],
   })
   expect(tableSignal(envelope).columns[1]?.formatting).toEqual([{ kind: 'data_bar', min: 0, max: 100, color: 'accent' }])
+  expect(tableSignal(envelope).columns[1]?.conditionalFormatting?.[0]).toMatchObject({
+    id: 'revenue-health', target: 'cell_background',
+  })
 })
 
 test('TanStack adapter leaves row interaction disabled when the IR declares none', () => {

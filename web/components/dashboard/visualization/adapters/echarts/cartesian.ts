@@ -1,5 +1,6 @@
-import type { VisualizationColorIntent, VisualizationEnvelope } from '../../../../../generated/visualization'
+import type { VisualizationColorIntent, VisualizationConditionalFormat, VisualizationEnvelope, VisualizationFieldRef } from '../../../../../generated/visualization'
 import type { RendererContext } from '../../host-controller'
+import { conditionalIconGlyph, conditionalStyleColor, resolveConditionalFormat } from '../../conditional-format'
 import { axis, field, fieldLabel, inlineDataset, labelFormatter, legend, selectedDatasetSource, toneColor, type EChartsTranslation } from './common'
 
 type CartesianSpec = Extract<VisualizationEnvelope['spec'], { kind: 'cartesian' }>
@@ -26,11 +27,20 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
   if (spec.mark === 'waterfall') {
     const start = spec.y.find((item) => item.field === 'start')
     const value = spec.y.find((item) => item.field === 'value') ?? spec.y[0]
+    const fill = value
+      ? conditionalItemColor(envelope, value, 'mark_fill', context) ?? conditionalItemColor(envelope, value, 'series_color', context)
+      : undefined
+    const stroke = value ? conditionalItemColor(envelope, value, 'mark_stroke', context) : undefined
     return {
       ...axes, dataZoom,
       series: [
         { id: 'series:waterfall:offset', type: 'bar', stack: 'waterfall', silent: true, itemStyle: { color: 'transparent' }, encode: { x: spec.x.field, y: start?.field } },
-        { id: seriesID(value?.dataset, value?.field), type: 'bar', stack: 'waterfall', encode: { x: spec.x.field, y: value?.field }, label: chartLabel(envelope, value, spec, context) },
+        {
+          id: seriesID(value?.dataset, value?.field), type: 'bar', stack: 'waterfall',
+          encode: { x: spec.x.field, y: value?.field },
+          itemStyle: { color: fill, borderColor: stroke, borderWidth: stroke ? 2 : undefined },
+          label: chartLabel(envelope, value, spec, context),
+        },
       ],
     }
   }
@@ -41,10 +51,25 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
     }
   }
   if (spec.mark === 'heatmap' && spec.y.length >= 2) {
+    const value = spec.y[1]!
+    const fill = conditionalItemColor(envelope, value, 'mark_fill', context) ?? conditionalItemColor(envelope, value, 'series_color', context)
+    const stroke = conditionalItemColor(envelope, value, 'mark_stroke', context)
+    const gradient = conditionalGradient(envelope, value, 'mark_fill')
     return {
       xAxis: axis(envelope, spec.x, 'category', context), yAxis: axis(envelope, spec.y[0]!, 'category', context),
-      visualMap: { min: 0, calculable: true, orient: 'horizontal', left: 'center', bottom: 0, textStyle: { color: context.colors.muted } },
-      series: [{ id: 'series:primary:heatmap', type: 'heatmap', encode: { x: spec.x.field, y: spec.y[0]?.field, value: spec.y[1]?.field }, label: chartLabel(envelope, spec.y[1], spec, context) }],
+      visualMap: gradient
+        ? {
+            min: gradient.minimum, max: gradient.maximum, calculable: true, orient: 'horizontal', left: 'center', bottom: 0,
+            inRange: { color: [seriesColor('', gradient.low.color, context), seriesColor('', gradient.high.color, context)] },
+            textStyle: { color: context.colors.muted },
+          }
+        : fill ? undefined : { min: 0, calculable: true, orient: 'horizontal', left: 'center', bottom: 0, textStyle: { color: context.colors.muted } },
+      series: [{
+        id: 'series:primary:heatmap', type: 'heatmap',
+        encode: { x: spec.x.field, y: spec.y[0]?.field, value: value.field },
+        itemStyle: { color: gradient ? undefined : fill, borderColor: stroke, borderWidth: stroke ? 2 : undefined },
+        label: chartLabel(envelope, value, spec, context),
+      }],
     }
   }
   const split = splitCartesianSeries(envelope, context)
@@ -62,12 +87,18 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
   const normalized = stack === 'percent' ? normalizedMeasureDataset(envelope, spec, values) : undefined
   const series = values.map((value) => {
     const normalizedField = normalized?.dimensions.get(value.field)
+    const fill = conditionalItemColor(envelope, value, 'mark_fill', context) ?? conditionalItemColor(envelope, value, 'series_color', context)
+    const stroke = conditionalItemColor(envelope, value, 'mark_stroke', context)
     return {
       id: seriesID(value.dataset, value.field), type: cartesianSeriesType(spec.mark), name: fieldLabel(envelope, value),
       encode: horizontal ? { x: normalizedField ?? value.field, y: spec.x.field } : { x: spec.x.field, y: normalizedField ?? value.field },
       smooth: spec.presentation.smooth, symbol: spec.presentation.showSymbols ? undefined : 'none', symbolSize: spec.presentation.symbolSize,
       stack: stack === 'none' ? undefined : stack, areaStyle: spec.presentation.area || spec.mark === 'area' ? {} : undefined,
-      itemStyle: { color: seriesColor(value.field, spec.presentation.seriesIntent?.find((intent) => intent.value === value.field)?.color, context) },
+      itemStyle: {
+        color: fill ?? seriesColor(value.field, spec.presentation.seriesIntent?.find((intent) => intent.value === value.field)?.color, context),
+        borderColor: stroke,
+        borderWidth: stroke ? 2 : undefined,
+      },
       step: spec.presentation.step ? 'middle' : false,
       label: normalizedField
         ? percentLabel(spec.presentation.showLabels, context, normalized?.columnIndices.get(value.field))
@@ -239,7 +270,22 @@ function chartLabel(envelope: VisualizationEnvelope, value: CartesianSpec['y'][n
   const authored = spec.presentation.labelPosition
   const horizontal = spec.presentation.orientation === 'horizontal' || spec.mark === 'bar'
   const position = authored === 'automatic' ? undefined : authored === 'outside' ? horizontal ? 'right' : 'top' : authored
-  return { show: spec.presentation.showLabels, position, formatter: labelFormatter(envelope, value, context) }
+  const baseFormatter = labelFormatter(envelope, value, context)
+  const cue = value ? conditionalCueFormat(envelope, value) : undefined
+  const color = value ? conditionalItemColor(envelope, value, 'label_foreground', context) : undefined
+  return {
+    show: spec.presentation.showLabels || cue !== undefined,
+    position,
+    color,
+    formatter: cue
+      ? (params: { value?: unknown }) => {
+          const row = Array.isArray(params.value) ? params.value : []
+          const result = resolveConditionalForRow(envelope, cue, row)
+          const glyph = result?.style.icon ? conditionalIconGlyph(result.style.icon) : ''
+          return [glyph, baseFormatter(params)].filter(Boolean).join(' ')
+        }
+      : baseFormatter,
+  }
 }
 
 function splitCartesianSeries(envelope: VisualizationEnvelope, context: RendererContext): { datasets: EChartsTranslation[]; series: EChartsTranslation[] } | undefined {
@@ -276,11 +322,18 @@ function splitCartesianSeries(envelope: VisualizationEnvelope, context: Renderer
     const combo = configured.get(String(value))
     const intent = intents.get(String(value))
     const mark = combo?.mark ?? (spec.mark === 'combo' ? 'line' : spec.mark)
+    const valueRef = spec.y[0]!
+    const fill = conditionalItemColor(envelope, valueRef, 'mark_fill', context) ?? conditionalItemColor(envelope, valueRef, 'series_color', context)
+    const stroke = conditionalItemColor(envelope, valueRef, 'mark_stroke', context)
     return {
       id: `series:${spec.series?.dataset}:${spec.series?.field}:${token}`, datasetId: datasetID, name: String(value), type: cartesianSeriesType(mark), yAxisIndex: combo?.axis === 'secondary' ? 1 : 0,
       encode: { x: spec.x.field, y: normalized?.dimension ?? spec.y[0]?.field }, smooth: spec.presentation.smooth, symbol: spec.presentation.showSymbols ? undefined : 'none',
       stack: stack === 'none' ? undefined : stack, areaStyle: spec.presentation.area || mark === 'area' ? {} : undefined,
-      itemStyle: { color: seriesColor(String(value), intent?.color, context) },
+      itemStyle: {
+        color: fill ?? seriesColor(String(value), intent?.color, context),
+        borderColor: stroke,
+        borderWidth: stroke ? 2 : undefined,
+      },
       step: spec.presentation.step ? 'middle' : false,
       label: normalized
         ? percentLabel(spec.presentation.showLabels, context, normalized.columnIndex)
@@ -437,6 +490,54 @@ function seriesColor(value: string, intent: VisualizationColorIntent | undefined
   for (let index = 0; index < value.length; index++) hash = Math.imul(hash ^ value.charCodeAt(index), 16777619)
   return context.colors.data.length > 0 ? context.colors.data[(hash >>> 0) % context.colors.data.length]! : context.colors.accent
 }
+
+function conditionalItemColor(
+  envelope: VisualizationEnvelope,
+  ref: VisualizationFieldRef,
+  target: VisualizationConditionalFormat['target'],
+  context: RendererContext,
+): ((params: { value?: unknown }) => string | undefined) | undefined {
+  const format = envelope.spec.conditionalFormatting?.find((candidate) =>
+    candidate.target === target && candidate.field.dataset === ref.dataset && candidate.field.field === ref.field)
+  if (!format) return undefined
+  return (params) => {
+    if (!Array.isArray(params.value)) return undefined
+    const result = resolveConditionalForRow(envelope, format, params.value)
+    return result ? conditionalStyleColor(result.style, (intent) => seriesColor('', intent, context)) : undefined
+  }
+}
+
+function conditionalGradient(
+  envelope: VisualizationEnvelope,
+  ref: VisualizationFieldRef,
+  target: VisualizationConditionalFormat['target'],
+) {
+  const format = envelope.spec.conditionalFormatting?.find((candidate) =>
+    candidate.target === target && candidate.field.dataset === ref.dataset && candidate.field.field === ref.field)
+  return format?.rule.kind === 'gradient' ? format.rule : undefined
+}
+
+function conditionalCueFormat(envelope: VisualizationEnvelope, ref: VisualizationFieldRef): VisualizationConditionalFormat | undefined {
+  return envelope.spec.conditionalFormatting?.find((format) =>
+    format.field.dataset === ref.dataset
+    && format.field.field === ref.field
+    && conditionalRuleHasIcon(format))
+}
+
+function conditionalRuleHasIcon(format: VisualizationConditionalFormat): boolean {
+  const rule = format.rule
+  if (rule.nullStyle.icon) return true
+  if (rule.kind === 'gradient') return Boolean(rule.low.icon || rule.high.icon)
+  if (rule.defaultStyle.icon) return true
+  if (rule.kind === 'rules') return rule.rules.some((candidate) => Boolean(candidate.style.icon))
+  return Object.values(rule.values).some((style) => Boolean(style.icon))
+}
+
+function resolveConditionalForRow(envelope: VisualizationEnvelope, format: VisualizationConditionalFormat, row: unknown[]) {
+  const dataset = inlineDataset(envelope, format.field.dataset)
+  return dataset ? resolveConditionalFormat(format, dataset.columns, row) : undefined
+}
+
 
 function axisType(envelope: VisualizationEnvelope, ref: CartesianSpec['x'], fallback: 'category' | 'value'): 'category' | 'value' | 'time' {
   const dataType = field(envelope, ref)?.dataType

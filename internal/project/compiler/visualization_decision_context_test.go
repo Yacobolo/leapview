@@ -122,3 +122,50 @@ func TestCompiledCartesianSeriesIntentIsDeterministic(t *testing.T) {
 		t.Fatalf("third series intent = %#v", third)
 	}
 }
+
+func TestCompiledConditionalFormattingUsesClosedFieldBindings(t *testing.T) {
+	t.Parallel()
+
+	minimum, maximum := 0.0, 100.0
+	authored := reportdef.Visual{
+		Type: "column",
+		Query: reportdef.VisualQuery{
+			Dimensions: []reportdef.FieldRef{{Field: "orders.month"}},
+			Series:     reportdef.FieldRef{Field: "orders.status", Alias: "status"},
+			Measures:   []reportdef.FieldRef{{Field: "revenue"}},
+		},
+		Presentation: reportdef.VisualPresentation{ConditionalFormatting: []reportdef.VisualConditionalFormat{
+			{
+				ID: "revenue-gradient", Target: "mark_fill", Field: "value", Kind: "gradient",
+				Minimum: &minimum, Maximum: &maximum,
+				Low: reportdef.VisualConditionalStyle{Color: "danger"}, High: reportdef.VisualConditionalStyle{Color: "success"},
+				Null: reportdef.VisualConditionalStyle{Color: "neutral"},
+			},
+			{
+				ID: "status-values", Target: "icon", Field: "value", Kind: "field", SourceField: "series",
+				Values: map[string]reportdef.VisualConditionalStyle{"late": {Color: "danger", Icon: "warning"}},
+				Null:   reportdef.VisualConditionalStyle{Icon: "warning"}, Default: reportdef.VisualConditionalStyle{Color: "ink", Icon: "circle"},
+			},
+		}},
+	}
+
+	spec, err := compileBuiltInVisualizationSpec("revenue", authored, nil)
+	if err != nil {
+		t.Fatalf("compileBuiltInVisualizationSpec() error = %v", err)
+	}
+	base, err := visualizationir.SpecificationBase(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base.ConditionalFormatting == nil || len(*base.ConditionalFormatting) != 2 {
+		t.Fatalf("conditional formatting = %#v", base.ConditionalFormatting)
+	}
+	gradient, ok := (*base.ConditionalFormatting)[0].Rule.Value.(*visualizationir.GradientVisualizationConditionalRule)
+	if !ok || gradient.Minimum != 0 || gradient.Maximum != 100 || gradient.Low.Color == nil || *gradient.Low.Color != visualizationir.VisualizationColorIntentDanger {
+		t.Fatalf("gradient = %#v", (*base.ConditionalFormatting)[0].Rule)
+	}
+	fieldRule, ok := (*base.ConditionalFormatting)[1].Rule.Value.(*visualizationir.FieldVisualizationConditionalRule)
+	if !ok || fieldRule.Source != (visualizationir.VisualizationFieldRef{Dataset: "primary", Field: "series"}) || fieldRule.Values["late"].Icon == nil || *fieldRule.Values["late"].Icon != visualizationir.VisualizationIconIntentWarning {
+		t.Fatalf("field rule = %#v", (*base.ConditionalFormatting)[1].Rule)
+	}
+}
