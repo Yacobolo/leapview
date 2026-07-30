@@ -40,7 +40,11 @@ func TestGeneratedCandidateSynchronizationTransportMapsTypedProtocol(t *testing.
 		t.Fatal(err)
 	}
 	if candidate.ID != "cand_1" || candidate.ProjectID != "finance" ||
-		candidate.ArtifactDigest != request.ArtifactDigest {
+		candidate.ArtifactDigest != request.ArtifactDigest ||
+		candidate.TargetID != "target_1" ||
+		candidate.Environment != "development" ||
+		candidate.ProvenanceDigest != "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" ||
+		candidate.Revision != 7 {
 		t.Fatalf("candidate = %#v", candidate)
 	}
 	if len(generic.requests) != 3 ||
@@ -57,7 +61,7 @@ func TestDevCommandExposesOneAuthenticatedRemoteWorkflow(t *testing.T) {
 	if command.Name() != "dev" || !strings.Contains(strings.ToLower(command.Short), "private") {
 		t.Fatalf("dev command = %q %q", command.Name(), command.Short)
 	}
-	for _, flag := range []string{"project", "target", "token", "upload-concurrency"} {
+	for _, flag := range []string{"project", "target", "token", "upload-concurrency", "once"} {
 		if command.Flags().Lookup(flag) == nil {
 			t.Errorf("dev command is missing --%s", flag)
 		}
@@ -98,6 +102,8 @@ func (stub *candidateSyncTransportStub) DoAPIGen(
 		response = deploymentgen.CandidateResponse{
 			Id: "cand_1", ProjectId: "finance", ArtifactDigest: body.ArtifactDigest,
 			PreviewUrl: "https://target.example/candidates/cand_1",
+			TargetId:   "target_1", Environment: "development", Revision: 7,
+			ProvenanceDigest: testPointer("sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
 		}
 	}
 	encoded, err := json.Marshal(response)
@@ -110,4 +116,8 @@ func (stub *candidateSyncTransportStub) DoAPIGen(
 	return apigenclient.Response{
 		StatusCode: status, Headers: make(http.Header), ContentType: "application/json",
 	}, nil
+}
+
+func testPointer[T any](value T) *T {
+	return &value
 }

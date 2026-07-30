@@ -28,6 +28,7 @@ type candidateArtifactService struct {
 	artifacts   release.ArtifactStore
 	validator   servingstatevalidate.Service
 	environment servingstate.Environment
+	pins        release.CandidatePinResolver
 }
 
 type candidateWorkspaceBase struct {
@@ -129,9 +130,40 @@ func (service *candidateArtifactService) Prepare(
 		}); err != nil {
 			return release.CandidateArtifactSet{}, candidateArtifactUnavailable(err)
 		}
+		requirements, managedConnections, err := candidateConnectionRequirements(
+			compiledWorkspace,
+		)
+		if err != nil {
+			return release.CandidateArtifactSet{}, candidateArtifactInvalid(err)
+		}
 		base, err := service.workspaceBase(ctx, request.ProjectID, workspaceID, environment)
 		if err != nil {
 			return release.CandidateArtifactSet{}, err
+		}
+		missingManaged := missingCandidateManagedConnections(
+			managedConnections,
+			base.pins,
+		)
+		if len(missingManaged) > 0 {
+			if service.pins == nil {
+				return release.CandidateArtifactSet{}, candidateArtifactUnavailable(
+					fmt.Errorf("managed-data candidate pin resolution is unavailable"),
+				)
+			}
+			resolved, resolveErr := service.pins.ResolveCandidatePins(
+				ctx,
+				request.ProjectID,
+				missingManaged,
+				string(environment),
+			)
+			if resolveErr != nil {
+				return release.CandidateArtifactSet{}, candidateArtifactUnavailable(
+					resolveErr,
+				)
+			}
+			for connection, revision := range resolved {
+				base.pins[connection] = revision
+			}
 		}
 		workspacePlan, err := projectcompiler.PlanCompiledProjectAgainstGraph(
 			compiledProject,
@@ -144,11 +176,7 @@ func (service *candidateArtifactService) Prepare(
 		reuseSnapshot := base.active && base.snapshotID > 0 &&
 			len(workspacePlan.Workspaces) == 1 &&
 			!workspacePlan.Workspaces[0].Summary.MaterializationImpact
-		requirements, err := candidateConnectionRequirements(compiledWorkspace)
-		if err != nil {
-			return release.CandidateArtifactSet{}, candidateArtifactInvalid(err)
-		}
-		if !reuseSnapshot && len(requirements) == 0 {
+		if !reuseSnapshot && len(requirements) == 0 && len(base.pins) == 0 {
 			return release.CandidateArtifactSet{}, candidateArtifactInvalid(
 				fmt.Errorf("workspace %q requires data preparation but has no target connections", workspaceID),
 			)
@@ -350,23 +378,23 @@ func (service *candidateArtifactService) workspaceBase(
 
 func candidateConnectionRequirements(
 	compiled projectartifact.Workspace,
-) ([]release.CandidateConnectionRequirement, error) {
+) ([]release.CandidateConnectionRequirement, []string, error) {
 	definition := compiled.Manifest()
 	if definition == nil {
-		return nil, fmt.Errorf("compiled workspace definition is required")
+		return nil, nil, fmt.Errorf("compiled workspace definition is required")
 	}
 	kinds := map[string]string{}
 	for _, model := range definition.Models {
 		if model == nil {
-			return nil, fmt.Errorf("compiled workspace contains a nil semantic model")
+			return nil, nil, fmt.Errorf("compiled workspace contains a nil semantic model")
 		}
 		for connectionID, connection := range model.Connections {
 			kind := strings.TrimSpace(connection.Kind)
 			if connectionID == "" || kind == "" {
-				return nil, fmt.Errorf("compiled workspace contains invalid connection metadata")
+				return nil, nil, fmt.Errorf("compiled workspace contains invalid connection metadata")
 			}
 			if existing, ok := kinds[connectionID]; ok && existing != kind {
-				return nil, fmt.Errorf(
+				return nil, nil, fmt.Errorf(
 					"compiled workspace connection %q has conflicting connector kinds",
 					connectionID,
 				)
@@ -384,13 +412,18 @@ func candidateConnectionRequirements(
 		0,
 		len(connectionIDs),
 	)
+	managed := make([]string, 0)
 	for _, connectionID := range connectionIDs {
+		if kinds[connectionID] == "managed" {
+			managed = append(managed, connectionID)
+			continue
+		}
 		requirements = append(requirements, release.CandidateConnectionRequirement{
 			LogicalConnectionID: connectionID,
 			ConnectorKind:       kinds[connectionID],
 		})
 	}
-	return requirements, nil
+	return requirements, managed, nil
 }
 
 func cloneCandidatePins(values map[string]string) map[string]string {
@@ -413,6 +446,19 @@ func candidateManagedDataPins(values map[string]string) []release.ManagedDataPin
 			ConnectionID: connection,
 			RevisionID:   values[connection],
 		})
+	}
+	return result
+}
+
+func missingCandidateManagedConnections(
+	connections []string,
+	pins map[string]string,
+) []string {
+	result := make([]string, 0)
+	for _, connection := range connections {
+		if _, exists := pins[connection]; !exists {
+			result = append(result, connection)
+		}
 	}
 	return result
 }

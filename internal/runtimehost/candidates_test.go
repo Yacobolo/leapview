@@ -3,6 +3,7 @@ package runtimehost
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -467,6 +468,69 @@ func TestCandidateRuntimeDataModeFailsClosedAgainstServingSnapshotAndBindings(t 
 				t.Fatalf("PrepareCandidate() error = %v, want incompatible", err)
 			}
 		})
+	}
+}
+
+func TestCandidateRuntimeRefreshAcceptsExactValidatedManagedDataConnections(t *testing.T) {
+	now := time.Date(2026, 7, 29, 17, 0, 0, 0, time.UTC)
+	repo := newFakeRegistryRepo()
+	addCandidateServingState(repo, "managed_refresh", "sales", "refresh", 0)
+	registry := NewRegistryWithFactory(RegistryOptions{
+		Repo: repo, Environment: "prod", Factory: &recordingRegistryFactory{},
+		ManagedData: fakeManagedDataResolver{resolution: ManagedDataResolution{
+			RevisionID: "sha256:" + strings.Repeat("a", 64),
+			Roots:      map[string]string{"olist": "/managed/olist"},
+		}},
+		Now: func() time.Time { return now },
+	})
+	t.Cleanup(func() { _ = registry.Close() })
+
+	compatibility := CandidateCompatibility{
+		ArtifactDigest: "artifact", DataRevision: "data",
+		DataMode:       CandidateDataRefreshSources,
+		RuntimeVersion: "runtime", AuthorizationFingerprint: "policy",
+		ManagedDataConnections: []string{"olist"},
+	}
+	if err := registry.PrepareAndRegisterCandidate(t.Context(), CandidatePreparation{
+		Registration: CandidateRegistration{
+			CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "sales",
+			ExpiresAt: now.Add(time.Hour), Compatibility: compatibility,
+		},
+		ServingStateID: "managed_refresh",
+	}); err != nil {
+		t.Fatalf("PrepareAndRegisterCandidate() error = %v", err)
+	}
+}
+
+func TestCandidateRuntimeRefreshRejectsManagedDataConnectionDrift(t *testing.T) {
+	now := time.Date(2026, 7, 29, 17, 0, 0, 0, time.UTC)
+	repo := newFakeRegistryRepo()
+	addCandidateServingState(repo, "managed_refresh", "sales", "refresh", 0)
+	registry := NewRegistryWithFactory(RegistryOptions{
+		Repo: repo, Environment: "prod", Factory: &recordingRegistryFactory{},
+		ManagedData: fakeManagedDataResolver{resolution: ManagedDataResolution{
+			RevisionID: "sha256:" + strings.Repeat("a", 64),
+			Roots:      map[string]string{"olist": "/managed/olist"},
+		}},
+		Now: func() time.Time { return now },
+	})
+	t.Cleanup(func() { _ = registry.Close() })
+
+	_, err := registry.PrepareCandidate(t.Context(), CandidatePreparation{
+		Registration: CandidateRegistration{
+			CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "sales",
+			ExpiresAt: now.Add(time.Hour),
+			Compatibility: CandidateCompatibility{
+				ArtifactDigest: "artifact", DataRevision: "data",
+				DataMode:       CandidateDataRefreshSources,
+				RuntimeVersion: "runtime", AuthorizationFingerprint: "policy",
+				ManagedDataConnections: []string{"other"},
+			},
+		},
+		ServingStateID: "managed_refresh",
+	})
+	if !errors.Is(err, ErrCandidateRuntimeIncompatible) {
+		t.Fatalf("PrepareCandidate() error = %v, want incompatible", err)
 	}
 }
 

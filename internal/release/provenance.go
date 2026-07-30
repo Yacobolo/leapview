@@ -260,9 +260,10 @@ func normalizeTargetPlanProvenance(
 				)
 			}
 		case TargetDataRefreshSources:
-			if len(workspace.Bindings) == 0 {
+			if len(workspace.Bindings) == 0 &&
+				len(workspace.ManagedDataPins) == 0 {
 				return TargetPlanProvenance{}, provenanceInvalid(
-					fmt.Errorf("source refresh requires binding evidence"),
+					fmt.Errorf("source refresh requires binding or managed-data evidence"),
 				)
 			}
 		default:

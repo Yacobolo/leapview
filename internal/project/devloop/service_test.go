@@ -172,8 +172,12 @@ func (remote *recordingRemote) Synchronize(_ context.Context, request SyncReques
 	}
 	return Candidate{
 		ID: "cand_1", ProjectID: request.Snapshot.ProjectID,
-		ArtifactDigest: request.Snapshot.Digest,
-		PreviewURL:     "https://target.example/candidates/cand_1",
+		ArtifactDigest:   request.Snapshot.Digest,
+		PreviewURL:       "https://target.example/candidates/cand_1",
+		TargetID:         "target_1",
+		Environment:      "development",
+		ProvenanceDigest: "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+		Revision:         1,
 	}, nil
 }
 

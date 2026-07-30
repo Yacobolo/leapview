@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -140,8 +141,31 @@ func (m *Module) CommitProjectCandidateSynchronization(
 		writeCandidateAPIError(w, r, err)
 		return
 	}
-	provenance, err := m.prepareCandidate(r.Context(), tentative, source)
+	preparationContext := r.Context()
+	var preparationLease CandidatePreparationLease
+	if m.candidateAdmission != nil {
+		preparationLease, err = m.candidateAdmission.AcquireCandidatePreparation(
+			preparationContext,
+		)
+		if err != nil {
+			writeCandidateAPIError(
+				w,
+				r,
+				candidatePreparationError(err),
+			)
+			return
+		}
+		defer preparationLease.Release()
+		preparationContext = preparationLease.Context()
+	}
+	provenance, err := m.prepareCandidate(preparationContext, tentative, source)
 	if err != nil {
+		m.candidateLogger().Error(
+			"candidate preparation failed",
+			"candidate_id", candidate.ID,
+			"project_id", candidate.ProjectID,
+			"error", err,
+		)
 		if request.ExpectedCandidateID == "" {
 			_, _ = m.candidates.MarkFailed(
 				r.Context(),
@@ -176,6 +200,13 @@ func (m *Module) CommitProjectCandidateSynchronization(
 		return
 	}
 	apitransport.WriteJSON(w, http.StatusOK, m.candidateResponse(candidate, false))
+}
+
+func (m *Module) candidateLogger() *slog.Logger {
+	if m != nil && m.logger != nil {
+		return m.logger
+	}
+	return slog.Default()
 }
 
 func (m *Module) prepareCandidate(
@@ -213,6 +244,9 @@ func (m *Module) prepareCandidate(
 			WorkspaceID: workspace.WorkspaceID, ServingStateID: workspace.ServingStateID,
 			ArtifactDigest: workspace.ArtifactDigest, DataRevision: workspace.DataRevision,
 			DataMode: deployment.CandidateDataMode(workspace.DataMode), Connections: requirements,
+			ManagedDataConnections: candidateManagedDataConnections(
+				workspace.ManagedDataPins,
+			),
 			Restrictions: candidateRuntimeRestrictions(workspace.Restrictions),
 		}
 	}
@@ -239,6 +273,16 @@ func (m *Module) prepareCandidate(
 		return release.Provenance{}, release.ErrConflict
 	}
 	return retained, nil
+}
+
+func candidateManagedDataConnections(
+	pins []release.ManagedDataPin,
+) []string {
+	result := make([]string, len(pins))
+	for index, pin := range pins {
+		result[index] = pin.ConnectionID
+	}
+	return result
 }
 
 func candidateReleaseProvenance(
@@ -283,10 +327,16 @@ func candidateReleaseProvenance(
 			return release.Provenance{}, release.ErrProvenanceInvalid
 		}
 		delete(bindings, workspaceID)
+		artifactDigest, err := candidateProvenanceArtifactDigest(
+			workspace.ArtifactDigest,
+		)
+		if err != nil {
+			return release.Provenance{}, err
+		}
 		plans[index] = release.TargetWorkspacePlan{
 			WorkspaceID:    workspaceID,
 			ServingStateID: workspace.ServingStateID,
-			ArtifactDigest: workspace.ArtifactDigest,
+			ArtifactDigest: artifactDigest,
 			DataRevision:   workspace.DataRevision,
 			DataMode:       release.TargetDataMode(workspace.DataMode),
 			ManagedDataPins: append(
@@ -315,6 +365,18 @@ func candidateReleaseProvenance(
 			Workspaces:     plans,
 		},
 	})
+}
+
+func candidateProvenanceArtifactDigest(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if digest.ValidateSHA256Identity(value) == nil {
+		return value, nil
+	}
+	decoded, err := hex.DecodeString(value)
+	if err != nil || len(decoded) != 32 || strings.ToLower(value) != value {
+		return "", release.ErrProvenanceInvalid
+	}
+	return "sha256:" + value, nil
 }
 
 func (m *Module) verifyCandidateProvenance(

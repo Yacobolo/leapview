@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/flidai/leapview/internal/platform/jobs"
@@ -122,14 +123,143 @@ func TestValidateFinalizationReplaysReadyRelease(t *testing.T) {
 	}
 }
 
+func TestPublishCandidatePromotesExactRetainedProvenanceWithoutRebuilding(t *testing.T) {
+	provenance, err := NewProvenance(ProvenanceInput{
+		Artifact: ProjectArtifactProvenance{
+			SourceDigest:    "sha256:" + strings.Repeat("1", 64),
+			ProjectDigest:   "sha256:" + strings.Repeat("2", 64),
+			CompilerVersion: "leapview:test", SchemaVersion: 3,
+			Workspaces: []WorkspaceArtifactProvenance{{
+				WorkspaceID:    "sales",
+				ArtifactDigest: "sha256:" + strings.Repeat("3", 64),
+			}},
+		},
+		Candidate: CandidateProvenance{
+			ID: "candidate_1", Revision: 4, OwnerID: "publisher",
+		},
+		Plan: TargetPlanProvenance{
+			TargetID: "lvinst_dev", Environment: "dev",
+			BaseGeneration: "deployment_7", RuntimeVersion: "runtime:test",
+			PolicyDigest: "sha256:" + strings.Repeat("4", 64),
+			Workspaces: []TargetWorkspacePlan{{
+				WorkspaceID: "sales", ServingStateID: "state_candidate",
+				ArtifactDigest: "sha256:" + strings.Repeat("5", 64),
+				DataRevision:   "snapshot:17", DataMode: TargetDataReuseSnapshot,
+				ManagedDataPins: []ManagedDataPin{{
+					ConnectionID: "olist",
+					RevisionID:   "sha256:" + strings.Repeat("6", 64),
+				}},
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &serviceTestReleaseRepository{}
+	service := &Service{
+		releases: repository, finalization: repository,
+		validator: serviceTestArtifactValidator{state: servingstate.State{
+			ID: "state_candidate", ProjectID: "commerce",
+			ProjectDigest: provenance.Artifact.SourceDigest,
+			Digest:        strings.TrimPrefix(provenance.Plan.Workspaces[0].ArtifactDigest, "sha256:"),
+		}},
+		pins: &serviceTestPinValidator{},
+		candidateProvenance: serviceTestCandidateProvenanceRepository{
+			provenance: provenance,
+		},
+	}
+
+	published, err := service.PublishCandidate(t.Context(), PublishCandidateInput{
+		ProjectID: "commerce", CandidateID: "candidate_1",
+		CandidateRevision: 4, ProvenanceDigest: provenance.Digest,
+		TargetID: "lvinst_dev", Environment: "dev",
+		IdempotencyKey: "publish-1", CreatedBy: "publisher",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if published.Status != StatusReady || published.Provenance == nil ||
+		published.Provenance.Digest != provenance.Digest {
+		t.Fatalf("published release = %#v", published)
+	}
+	if repository.created.ProjectDigest != provenance.Artifact.SourceDigest ||
+		repository.created.Workspaces[0].ServingStateID != "state_candidate" ||
+		repository.created.Workspaces[0].ArtifactDigest != strings.Repeat("5", 64) {
+		t.Fatalf("candidate promotion rebuilt or retargeted artifacts: %#v", repository.created)
+	}
+}
+
+func TestPublishCandidateRejectsClientOrTargetDrift(t *testing.T) {
+	provenance := candidateServiceTestProvenance(t)
+	service := &Service{
+		candidateProvenance: serviceTestCandidateProvenanceRepository{
+			provenance: provenance,
+		},
+	}
+	for name, mutate := range map[string]func(*PublishCandidateInput){
+		"candidate revision": func(input *PublishCandidateInput) {
+			input.CandidateRevision++
+		},
+		"provenance digest": func(input *PublishCandidateInput) {
+			input.ProvenanceDigest = "sha256:" + strings.Repeat("f", 64)
+		},
+		"target": func(input *PublishCandidateInput) {
+			input.TargetID = "lvinst_other"
+		},
+		"environment": func(input *PublishCandidateInput) {
+			input.Environment = "prod"
+		},
+		"owner": func(input *PublishCandidateInput) {
+			input.CreatedBy = "other"
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			input := PublishCandidateInput{
+				ProjectID: "commerce", CandidateID: provenance.Candidate.ID,
+				CandidateRevision: provenance.Candidate.Revision,
+				ProvenanceDigest:  provenance.Digest,
+				TargetID:          provenance.Plan.TargetID,
+				Environment:       provenance.Plan.Environment,
+				IdempotencyKey:    "publish-1",
+				CreatedBy:         provenance.Candidate.OwnerID,
+			}
+			mutate(&input)
+			if _, err := service.PublishCandidate(t.Context(), input); !errors.Is(err, ErrConflict) {
+				t.Fatalf("PublishCandidate() error = %v, want ErrConflict", err)
+			}
+		})
+	}
+}
+
 type serviceTestReleaseRepository struct {
 	current   Release
+	created   CreateInput
 	completed bool
 	recorded  bool
 }
 
-func (r *serviceTestReleaseRepository) Create(context.Context, CreateInput) (Release, error) {
-	return Release{}, nil
+func (r *serviceTestReleaseRepository) Create(_ context.Context, input CreateInput) (Release, error) {
+	r.created = input
+	if r.current.ID != "" {
+		return r.current, nil
+	}
+	r.current = Release{
+		ID:        stableID("rel", input.ProjectID, input.IdempotencyKey),
+		ProjectID: input.ProjectID, ProjectDigest: input.ProjectDigest,
+		Status: StatusDraft, CreatedBy: input.CreatedBy,
+		Manifest: Manifest{
+			Workspaces:  append([]WorkspaceManifest(nil), input.Workspaces...),
+			Connections: append([]ConnectionPin(nil), input.Connections...),
+		},
+		Provenance: input.Provenance,
+	}
+	for _, workspace := range input.Workspaces {
+		r.current.Artifacts = append(r.current.Artifacts, Artifact{
+			ReleaseID: r.current.ID, WorkspaceID: workspace.WorkspaceID,
+			ExpectedDigest: workspace.ArtifactDigest,
+		})
+	}
+	return r.current, nil
 }
 func (r *serviceTestReleaseRepository) Get(context.Context, string, string) (Release, error) {
 	return r.current, nil
@@ -137,14 +267,28 @@ func (r *serviceTestReleaseRepository) Get(context.Context, string, string) (Rel
 func (r *serviceTestReleaseRepository) List(context.Context, string) ([]Release, error) {
 	return nil, nil
 }
-func (r *serviceTestReleaseRepository) AssignArtifactTarget(context.Context, string, string, string, string) error {
+func (r *serviceTestReleaseRepository) AssignArtifactTarget(_ context.Context, _, _, workspaceID, servingStateID string) error {
+	for index := range r.current.Artifacts {
+		if r.current.Artifacts[index].WorkspaceID == workspaceID {
+			r.current.Artifacts[index].ServingStateID = servingStateID
+			r.current.Manifest.Workspaces[index].ServingStateID = servingStateID
+		}
+	}
 	return nil
 }
-func (r *serviceTestReleaseRepository) RecordArtifact(context.Context, Artifact) error {
+func (r *serviceTestReleaseRepository) RecordArtifact(_ context.Context, artifact Artifact) error {
 	r.recorded = true
+	for index := range r.current.Artifacts {
+		if r.current.Artifacts[index].WorkspaceID == artifact.WorkspaceID {
+			r.current.Artifacts[index].UploadedAt = "2026-07-30T00:00:00Z"
+		}
+	}
 	return nil
 }
 func (r *serviceTestReleaseRepository) BeginFinalization(context.Context, string, string, jobs.WorkflowIntent) (Release, error) {
+	if r.current.Status == StatusDraft {
+		r.current.Status = StatusValidating
+	}
 	return r.current, nil
 }
 func (r *serviceTestReleaseRepository) CompleteFinalization(context.Context, string, string, map[string]string) (Release, error) {
@@ -179,6 +323,15 @@ func (v *serviceTestPinValidator) ValidateServingStatePins(_ context.Context, st
 	return v.err
 }
 
+func (v *serviceTestPinValidator) ResolveCandidatePins(
+	context.Context,
+	string,
+	[]string,
+	string,
+) (map[string]string, error) {
+	return nil, nil
+}
+
 type serviceTestArtifactStore struct {
 	saved     string
 	saveCalls int
@@ -196,8 +349,66 @@ func base64Digest(content []byte) string {
 	return base64.StdEncoding.EncodeToString(sum[:])
 }
 
+type serviceTestCandidateProvenanceRepository struct {
+	provenance Provenance
+}
+
+func (repository serviceTestCandidateProvenanceRepository) RetainCandidateProvenance(
+	context.Context,
+	string,
+	Provenance,
+) (Provenance, error) {
+	return repository.provenance, nil
+}
+
+func (repository serviceTestCandidateProvenanceRepository) CandidateProvenance(
+	_ context.Context,
+	_ string,
+	candidateID string,
+	candidateRevision int64,
+) (Provenance, error) {
+	if candidateID != repository.provenance.Candidate.ID ||
+		candidateRevision != repository.provenance.Candidate.Revision {
+		return Provenance{}, ErrNotFound
+	}
+	return repository.provenance, nil
+}
+
+func candidateServiceTestProvenance(t *testing.T) Provenance {
+	t.Helper()
+	provenance, err := NewProvenance(ProvenanceInput{
+		Artifact: ProjectArtifactProvenance{
+			SourceDigest:    "sha256:" + strings.Repeat("1", 64),
+			ProjectDigest:   "sha256:" + strings.Repeat("2", 64),
+			CompilerVersion: "leapview:test", SchemaVersion: 3,
+			Workspaces: []WorkspaceArtifactProvenance{{
+				WorkspaceID:    "sales",
+				ArtifactDigest: "sha256:" + strings.Repeat("3", 64),
+			}},
+		},
+		Candidate: CandidateProvenance{
+			ID: "candidate_1", Revision: 4, OwnerID: "publisher",
+		},
+		Plan: TargetPlanProvenance{
+			TargetID: "lvinst_dev", Environment: "dev",
+			BaseGeneration: "deployment_7", RuntimeVersion: "runtime:test",
+			PolicyDigest: "sha256:" + strings.Repeat("4", 64),
+			Workspaces: []TargetWorkspacePlan{{
+				WorkspaceID: "sales", ServingStateID: "state_candidate",
+				ArtifactDigest: "sha256:" + strings.Repeat("5", 64),
+				DataRevision:   "snapshot:17", DataMode: TargetDataReuseSnapshot,
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return provenance
+}
+
 // Compile-time guards keep the service fakes aligned with the real interfaces.
 var _ Repository = (*serviceTestReleaseRepository)(nil)
 var _ FinalizationUnitOfWork = (*serviceTestReleaseRepository)(nil)
+var _ CandidateProvenanceRepository = serviceTestCandidateProvenanceRepository{}
 var _ ArtifactValidator = serviceTestArtifactValidator{}
 var _ ArtifactStore = (*serviceTestArtifactStore)(nil)

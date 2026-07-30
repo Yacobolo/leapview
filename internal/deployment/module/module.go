@@ -21,6 +21,8 @@ type Module struct {
 	candidateRuntimes    CandidateRuntimePreparer
 	candidateSources     deployment.CandidateSourceSynchronizer
 	candidateArtifacts   release.CandidateArtifactPreparer
+	candidateAdmission   CandidatePreparationAdmitter
+	logger               *slog.Logger
 	jobs                 JobConfig
 	api                  APIConfig
 	instanceID           string
@@ -51,6 +53,25 @@ type CandidateRuntimePreparer interface {
 		context.Context,
 		deployment.CandidateRuntimeRequest,
 	) (deployment.CandidateRuntimeReceipt, error)
+}
+
+type CandidatePreparationLease interface {
+	Context() context.Context
+	Release()
+}
+
+type CandidatePreparationAdmitter interface {
+	AcquireCandidatePreparation(context.Context) (CandidatePreparationLease, error)
+}
+
+type CandidatePreparationAdmitterFunc func(
+	context.Context,
+) (CandidatePreparationLease, error)
+
+func (admit CandidatePreparationAdmitterFunc) AcquireCandidatePreparation(
+	ctx context.Context,
+) (CandidatePreparationLease, error) {
+	return admit(ctx)
 }
 
 const (
@@ -92,6 +113,7 @@ type Config struct {
 	CandidateRuntime         deployment.CandidateRuntimeHost
 	CandidateSources         deployment.CandidateSourceSynchronizer
 	CandidateArtifacts       release.CandidateArtifactPreparer
+	CandidateAdmission       CandidatePreparationAdmitter
 	RuntimeVersion           string
 	CurrentPrincipal         func(*http.Request) (Principal, bool)
 	CurrentApprovalActor     func(*http.Request) (deployment.ApprovalActor, bool)
@@ -131,6 +153,11 @@ func Build(_ context.Context, config Config) (*Module, error) {
 			return nil, err
 		}
 		if config.CandidateConnections != nil || config.CandidateRuntime != nil {
+			if config.CandidateAdmission == nil {
+				return nil, errors.New(
+					"candidate runtime preparation workload admission is required",
+				)
+			}
 			candidateRuntimes, err = deployment.NewCandidateRuntimeService(
 				deployment.CandidateRuntimeServiceConfig{
 					Connections:    config.CandidateConnections,
@@ -176,11 +203,16 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		approvals:         approvals,
 		candidateRuntimes: candidateRuntimes, candidateSources: config.CandidateSources,
 		candidateArtifacts: config.CandidateArtifacts,
+		candidateAdmission: config.CandidateAdmission,
+		logger:             config.Logger,
 		jobs:               jobs, api: config.API, protected: config.Protected,
 		instanceID:           config.InstanceID,
 		currentApprovalActor: config.CurrentApprovalActor,
 		authorizeApproval:    config.AuthorizeApproval,
 		authorizeActivation:  config.AuthorizeActivation,
+	}
+	if m.logger == nil {
+		m.logger = slog.Default()
 	}
 	if m.jobs.Authorize == nil {
 		m.jobs.Authorize = m.publicationAuthorizer(config.PublicationAuthorization)

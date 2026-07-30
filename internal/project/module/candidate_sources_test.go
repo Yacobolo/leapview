@@ -48,6 +48,41 @@ func TestCandidateSourceSynchronizerAuthorizesOnlyPlannedOwnerUploads(t *testing
 	}
 }
 
+func TestCandidateSourceSynchronizerRetainsActivePlanAcrossRestart(t *testing.T) {
+	root := t.TempDir()
+	snapshot, err := (projectdevloop.FilesystemBuilder{
+		ProjectPath: filepath.Join("..", "..", "..", "dashboards", "leapview.yaml"),
+	}).Build(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := project.CandidateSourceScope{ProjectID: snapshot.ProjectID, OwnerID: "principal_1"}
+	request := synchronizationRequest(snapshot)
+	first, err := projectmodule.NewCandidateSourceSynchronizer(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing, err := first.Plan(t.Context(), scope, request)
+	if err != nil || len(missing) == 0 {
+		t.Fatalf("Plan() missing=%d error=%v", len(missing), err)
+	}
+
+	restarted, err := projectmodule.NewCandidateSourceSynchronizer(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byDigest := make(map[string]projectdevloop.Artifact, len(snapshot.Artifacts))
+	for _, artifact := range snapshot.Artifacts {
+		byDigest[artifact.Digest] = artifact
+	}
+	artifact := byDigest[missing[0]]
+	if err := restarted.Upload(
+		t.Context(), scope, missing[0], bytes.NewReader(artifact.Content),
+	); err != nil {
+		t.Fatalf("Upload() after restart error = %v", err)
+	}
+}
+
 func synchronizationRequest(snapshot projectdevloop.Snapshot) project.CandidateSynchronizationRequest {
 	request := project.CandidateSynchronizationRequest{
 		ProjectFile: snapshot.ProjectFile, ArtifactDigest: snapshot.Digest,

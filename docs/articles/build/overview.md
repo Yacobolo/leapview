@@ -22,4 +22,4 @@ Use [Dashboard authoring patterns](/docs/guides/build/patterns) for cross-cuttin
 
 ## Validate and deliver
 
-Use [Validate, plan, and deploy](/docs/cli/validate-deploy) for the reviewed delivery loop. When you need accepted fields rather than workflow guidance, open the generated [Configuration reference](/docs/config), [CLI command reference](/docs/cli/reference), or [Visual types](/docs/visuals/overview).
+Use [Develop, review, and publish](/docs/cli/validate-deploy) for the reviewed delivery loop. When you need accepted fields rather than workflow guidance, open the generated [Configuration reference](/docs/config), [CLI command reference](/docs/cli/reference), or [Visual types](/docs/visuals/overview).

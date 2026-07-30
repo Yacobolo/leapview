@@ -74,13 +74,14 @@ type CandidateRuntimeService struct {
 }
 
 type CandidateWorkspaceRuntime struct {
-	WorkspaceID    string
-	ServingStateID string
-	ArtifactDigest string
-	DataRevision   string
-	DataMode       CandidateDataMode
-	Connections    []CandidateConnectionRequirement
-	Restrictions   []CandidateRestriction
+	WorkspaceID            string
+	ServingStateID         string
+	ArtifactDigest         string
+	DataRevision           string
+	DataMode               CandidateDataMode
+	Connections            []CandidateConnectionRequirement
+	ManagedDataConnections []string
+	Restrictions           []CandidateRestriction
 }
 
 type CandidateRuntimeRequest struct {
@@ -138,6 +139,13 @@ func (service *CandidateRuntimeService) Prepare(
 		workspaces[index].ServingStateID = strings.TrimSpace(workspaces[index].ServingStateID)
 		workspaces[index].ArtifactDigest = strings.TrimSpace(workspaces[index].ArtifactDigest)
 		workspaces[index].DataRevision = strings.TrimSpace(workspaces[index].DataRevision)
+		var err error
+		workspaces[index].ManagedDataConnections, err = normalizeCandidateManagedConnections(
+			workspaces[index].ManagedDataConnections,
+		)
+		if err != nil {
+			return CandidateRuntimeReceipt{}, ErrCandidateInvalid
+		}
 		if workspaces[index].WorkspaceID == "" || workspaces[index].ServingStateID == "" ||
 			workspaces[index].ArtifactDigest == "" || workspaces[index].DataRevision == "" {
 			return CandidateRuntimeReceipt{}, ErrCandidateInvalid
@@ -148,7 +156,8 @@ func (service *CandidateRuntimeService) Prepare(
 				return CandidateRuntimeReceipt{}, ErrCandidateInvalid
 			}
 		case CandidateDataRefreshSources:
-			if len(workspaces[index].Connections) == 0 {
+			if len(workspaces[index].Connections) == 0 &&
+				len(workspaces[index].ManagedDataConnections) == 0 {
 				return CandidateRuntimeReceipt{}, ErrCandidateInvalid
 			}
 		default:
@@ -222,7 +231,11 @@ func (service *CandidateRuntimeService) Prepare(
 					RuntimeVersion:           service.runtimeVersion,
 					AuthorizationFingerprint: request.AuthorizationFingerprint,
 					Bindings:                 bindings,
-					Restrictions:             candidateRestrictions(workspace.Restrictions),
+					ManagedDataConnections: append(
+						[]string(nil),
+						workspace.ManagedDataConnections...,
+					),
+					Restrictions: candidateRestrictions(workspace.Restrictions),
 				},
 			},
 			ServingStateID: workspace.ServingStateID,
@@ -234,12 +247,27 @@ func (service *CandidateRuntimeService) Prepare(
 		// including failure paths.
 		owned = nil
 		return CandidateRuntimeReceipt{}, fmt.Errorf(
-			"%w: candidate runtime preparation failed",
+			"%w: candidate runtime preparation failed: %v",
 			ErrCandidateUnavailable,
+			err,
 		)
 	}
 	owned = nil
 	return receipt, nil
+}
+
+func normalizeCandidateManagedConnections(values []string) ([]string, error) {
+	values = append([]string(nil), values...)
+	for index := range values {
+		values[index] = strings.TrimSpace(values[index])
+	}
+	sort.Strings(values)
+	for index, value := range values {
+		if value == "" || index > 0 && values[index-1] == value {
+			return nil, ErrCandidateInvalid
+		}
+	}
+	return values, nil
 }
 
 func candidateConnectionEvidence(

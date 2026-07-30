@@ -973,6 +973,7 @@ test('map documentation renders fitted, attributed canvases without adapter erro
           busy: renderer?.getAttribute('aria-busy'),
           canvas: Boolean(host?.shadowRoot?.querySelector('canvas.maplibregl-canvas')),
           alert: host?.shadowRoot?.querySelector('[role="alert"]')?.textContent?.trim() ?? '',
+          attribution: host?.shadowRoot?.querySelector('[data-map-attribution]')?.textContent?.trim() ?? '',
         }
       }))
       throw new Error(`map examples did not settle: ${JSON.stringify(diagnostics)}`, { cause: error })

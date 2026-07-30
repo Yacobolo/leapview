@@ -35,7 +35,7 @@ func TestRunnableCommandsDeclareDocumentationSafety(t *testing.T) {
 	}
 }
 
-func TestRootHelpExposesOnlyProjectDeploy(t *testing.T) {
+func TestRootHelpExposesDevPublishLifecycle(t *testing.T) {
 	originalArgs := os.Args
 	t.Cleanup(func() { os.Args = originalArgs })
 
@@ -55,15 +55,12 @@ func TestRootHelpExposesOnlyProjectDeploy(t *testing.T) {
 	if !strings.Contains(output, "\n  dev ") {
 		t.Fatalf("root help missing dev command:\n%s", output)
 	}
+	if !strings.Contains(output, "\n  publish ") {
+		t.Fatalf("root help missing publish command:\n%s", output)
+	}
 	if !strings.Contains(output, "\n  version ") {
 		t.Fatalf("root help missing version command:\n%s", output)
 	}
-	for _, removed := range []string{"publish", "publishes"} {
-		if strings.Contains(output, "\n  "+removed+" ") {
-			t.Fatalf("root help still exposes removed %s command:\n%s", removed, output)
-		}
-	}
-
 	deployHelp := help("deploy", "--help")
 	if !strings.Contains(deployHelp, "--revision") {
 		t.Fatalf("deploy help missing managed revision pins:\n%s", deployHelp)

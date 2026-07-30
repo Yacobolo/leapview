@@ -218,10 +218,9 @@ func (store *TargetStore) Commit(
 			compiled.ID(), request.ProjectID,
 		)
 	}
-	if err := os.WriteFile(
+	if err := writeRetainedProjectArtifact(
 		filepath.Join(staging, targetProjectArtifact),
 		compiled.Canonical(),
-		0o600,
 	); err != nil {
 		return StoredSnapshot{}, err
 	}
@@ -267,6 +266,16 @@ func (store *TargetStore) verifyStoredSnapshot(
 		return StoredSnapshot{}, fmt.Errorf("stored project identity changed")
 	}
 	retained, err := os.ReadFile(filepath.Join(directory, targetProjectArtifact))
+	if os.IsNotExist(err) {
+		if err := writeRetainedProjectArtifact(
+			filepath.Join(directory, targetProjectArtifact),
+			compiled.Canonical(),
+		); err != nil {
+			return StoredSnapshot{}, fmt.Errorf("repair retained project artifact: %w", err)
+		}
+		retained = compiled.Canonical()
+		err = nil
+	}
 	if err != nil {
 		return StoredSnapshot{}, err
 	}
@@ -274,6 +283,32 @@ func (store *TargetStore) verifyStoredSnapshot(
 		return StoredSnapshot{}, fmt.Errorf("retained project artifact does not match synchronized sources")
 	}
 	return storedSnapshot(request, directory, compiled.Digest()), nil
+}
+
+func writeRetainedProjectArtifact(path string, content []byte) error {
+	directory := filepath.Dir(path)
+	temporary, err := os.CreateTemp(directory, ".project-artifact-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err := temporary.Chmod(0o600); err != nil {
+		temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(content); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryPath, path)
 }
 
 func normalizePlanRequest(request SynchronizationPlanRequest) (SynchronizationPlanRequest, error) {

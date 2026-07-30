@@ -15,13 +15,16 @@ import (
 
 	deploymentgen "github.com/flidai/leapview/internal/deployment/api/gen"
 	"github.com/flidai/leapview/internal/platform/cliapi"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
+	projectcli "github.com/flidai/leapview/internal/project/cli"
 	projectdevloop "github.com/flidai/leapview/internal/project/devloop"
 	configschema "github.com/flidai/leapview/internal/project/schema"
 	"github.com/spf13/cobra"
 )
 
 type candidateSynchronizationTransport struct {
-	client *deploymentgen.GenClient
+	client    *deploymentgen.GenClient
+	sessionID string
 }
 
 type devOptions struct {
@@ -29,6 +32,7 @@ type devOptions struct {
 	target            string
 	token             string
 	uploadConcurrency int
+	once              bool
 }
 
 func devCommand(ctx context.Context) *cobra.Command {
@@ -63,6 +67,10 @@ func devCommand(ctx context.Context) *cobra.Command {
 		&options.uploadConcurrency, "upload-concurrency", options.uploadConcurrency,
 		"maximum parallel content-addressed source uploads (1-16)",
 	)
+	command.Flags().BoolVar(
+		&options.once, "once", false,
+		"synchronize one candidate and exit",
+	)
 	return command
 }
 
@@ -73,9 +81,13 @@ func runDev(ctx context.Context, options *devOptions, out, errOut io.Writer) err
 	client := capabilityAPIClient{
 		httpClient: authoringRefreshingHTTPClient(http.DefaultClient),
 	}
-	generic, err := client.Transport(ctx, cliapi.Credentials{
+	credentials, err := client.Resolve(ctx, cliapi.Credentials{
 		Target: options.target, Token: options.token,
 	})
+	if err != nil {
+		return err
+	}
+	generic, err := client.Transport(ctx, credentials)
 	if err != nil {
 		return err
 	}
@@ -93,28 +105,53 @@ func runDev(ctx context.Context, options *devOptions, out, errOut io.Writer) err
 	if err != nil {
 		return err
 	}
+	checkpoints := projectcli.NewCandidateCheckpointStore(candidateCheckpointPath())
+	lastPreviewURL := ""
+	report := func(update projectdevloop.Update) error {
+		if update.Err != nil {
+			for _, diagnostic := range configschema.Diagnostics(update.Err) {
+				fmt.Fprintln(errOut, diagnostic.String())
+			}
+			return update.Err
+		}
+		if update.Result.Status != projectdevloop.StatusSynchronized {
+			return nil
+		}
+		candidate := update.Result.Candidate
+		if err := checkpoints.Save(projectcli.CandidateCheckpoint{
+			ProjectPath: options.project, TargetOrigin: credentials.Target,
+			TargetID: candidate.TargetID, Environment: candidate.Environment,
+			ProjectID: candidate.ProjectID, CandidateID: candidate.ID,
+			CandidateRevision: candidate.Revision,
+			ArtifactDigest:    candidate.ArtifactDigest,
+			ProvenanceDigest:  candidate.ProvenanceDigest,
+		}); err != nil {
+			return fmt.Errorf("persist publish candidate: %w", err)
+		}
+		fmt.Fprintf(out, "synchronized %s\n", candidate.ArtifactDigest)
+		if candidate.PreviewURL != "" && candidate.PreviewURL != lastPreviewURL {
+			fmt.Fprintf(out, "preview %s\n", candidate.PreviewURL)
+			lastPreviewURL = candidate.PreviewURL
+		}
+		return nil
+	}
+	if options.once {
+		result, reconcileErr := service.Reconcile(ctx)
+		reportErr := report(projectdevloop.Update{Result: result, Err: reconcileErr})
+		if reconcileErr != nil {
+			return reconcileErr
+		}
+		return reportErr
+	}
 	watcher, err := projectdevloop.NewWatcher(options.project, service)
 	if err != nil {
 		return err
 	}
 	signalContext, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	lastPreviewURL := ""
 	return watcher.Run(signalContext, func(update projectdevloop.Update) {
-		if update.Err != nil {
-			for _, diagnostic := range configschema.Diagnostics(update.Err) {
-				fmt.Fprintln(errOut, diagnostic.String())
-			}
-			return
-		}
-		if update.Result.Status != projectdevloop.StatusSynchronized {
-			return
-		}
-		candidate := update.Result.Candidate
-		fmt.Fprintf(out, "synchronized %s\n", candidate.ArtifactDigest)
-		if candidate.PreviewURL != "" && candidate.PreviewURL != lastPreviewURL {
-			fmt.Fprintf(out, "preview %s\n", candidate.PreviewURL)
-			lastPreviewURL = candidate.PreviewURL
+		if err := report(update); err != nil && update.Err == nil {
+			fmt.Fprintln(errOut, err)
 		}
 	})
 }
@@ -122,7 +159,9 @@ func runDev(ctx context.Context, options *devOptions, out, errOut io.Writer) err
 func newCandidateSynchronizationTransport(
 	client *deploymentgen.GenClient,
 ) *candidateSynchronizationTransport {
-	return &candidateSynchronizationTransport{client: client}
+	return &candidateSynchronizationTransport{
+		client: client, sessionID: apitransport.NewRequestID(),
+	}
 }
 
 func (transport *candidateSynchronizationTransport) Plan(
@@ -139,6 +178,7 @@ func (transport *candidateSynchronizationTransport) Plan(
 			Headers: deploymentgen.GenPlanProjectCandidateSynchronizationClientHeaders{
 				IdempotencyKey: deploymentIdempotencyKey(
 					"candidate-plan", request.ProjectID,
+					transport.sessionID,
 					request.ExpectedCandidateID, request.ArtifactDigest,
 				),
 			},
@@ -199,6 +239,7 @@ func (transport *candidateSynchronizationTransport) Commit(
 			Headers: deploymentgen.GenCommitProjectCandidateSynchronizationClientHeaders{
 				IdempotencyKey: deploymentIdempotencyKey(
 					"candidate-sync", request.ProjectID,
+					transport.sessionID,
 					request.ExpectedCandidateID, request.ArtifactDigest,
 				),
 			},
@@ -208,10 +249,17 @@ func (transport *candidateSynchronizationTransport) Commit(
 	if err != nil {
 		return projectdevloop.Candidate{}, err
 	}
+	if response.Body.ProvenanceDigest == nil {
+		return projectdevloop.Candidate{}, fmt.Errorf("target candidate is missing publication provenance")
+	}
 	return projectdevloop.Candidate{
 		ID: response.Body.Id, ProjectID: response.Body.ProjectId,
-		ArtifactDigest: response.Body.ArtifactDigest,
-		PreviewURL:     response.Body.PreviewUrl,
+		ArtifactDigest:   response.Body.ArtifactDigest,
+		PreviewURL:       response.Body.PreviewUrl,
+		TargetID:         response.Body.TargetId,
+		Environment:      response.Body.Environment,
+		ProvenanceDigest: *response.Body.ProvenanceDigest,
+		Revision:         response.Body.Revision,
 	}, nil
 }
 

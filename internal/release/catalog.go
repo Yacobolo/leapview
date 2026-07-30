@@ -34,3 +34,11 @@ type DeploymentLinkage interface {
 	ListDeploymentIDs(context.Context, string) ([]string, error)
 	PriorDeploymentRelease(context.Context, string, string) (string, error)
 }
+
+// DeploymentPublisher is the narrow Release-owned capability consumed by the
+// Deployment composition root. Candidate promotion stays inside Release while
+// Deployment applies target policy and activation.
+type DeploymentPublisher interface {
+	DeploymentLinkage
+	PublishCandidate(context.Context, PublishCandidateInput) (Release, error)
+}

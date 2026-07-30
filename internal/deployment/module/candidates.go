@@ -14,6 +14,7 @@ import (
 	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
 	webpage "github.com/flidai/leapview/internal/platform/web/page"
 	"github.com/flidai/leapview/internal/project"
+	"github.com/flidai/leapview/internal/release"
 )
 
 func (m *Module) ResolveOwnedCandidate(ctx context.Context, candidateID, principalID string) (Candidate, error) {
@@ -168,6 +169,76 @@ func (m *Module) CancelProjectCandidate(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	apitransport.WriteJSON(w, http.StatusOK, m.candidateResponse(candidate, false))
+}
+
+func (m *Module) PublishProjectCandidate(
+	w http.ResponseWriter,
+	r *http.Request,
+	project,
+	candidateID,
+	idempotencyKey string,
+) {
+	var body deploymentapi.CandidatePublishRequest
+	if err := apitransport.DecodeBody(w, r, &body); err != nil {
+		apitransport.WriteProblem(
+			w,
+			r,
+			http.StatusBadRequest,
+			"INVALID_JSON",
+			err.Error(),
+			nil,
+		)
+		return
+	}
+	candidate, ok := m.ownedCandidate(w, r, project, candidateID)
+	if !ok {
+		return
+	}
+	provenanceDigest := strings.TrimSpace(body.ProvenanceDigest)
+	targetID := strings.TrimSpace(body.TargetID)
+	if candidate.Status != deployment.CandidateReady ||
+		candidate.Revision != body.ExpectedRevision ||
+		candidate.ProvenanceDigest != provenanceDigest ||
+		candidate.TargetID != targetID ||
+		targetID != strings.TrimSpace(m.instanceID) {
+		writeCandidateAPIError(w, r, deployment.ErrCandidateConflict)
+		return
+	}
+	if m.api.Releases == nil {
+		apitransport.WriteProblem(
+			w,
+			r,
+			http.StatusServiceUnavailable,
+			"DEPLOYMENT_SERVICE_UNAVAILABLE",
+			"Candidate publication is unavailable",
+			nil,
+		)
+		return
+	}
+	published, err := m.api.Releases.PublishCandidate(
+		r.Context(),
+		release.PublishCandidateInput{
+			ProjectID: project, CandidateID: candidate.ID,
+			CandidateRevision: candidate.Revision,
+			ProvenanceDigest:  candidate.ProvenanceDigest,
+			TargetID:          candidate.TargetID,
+			Environment:       candidate.Environment,
+			IdempotencyKey:    idempotencyKey,
+			CreatedBy:         candidate.OwnerID,
+		},
+	)
+	if err != nil {
+		writeAPIError(w, r, err)
+		return
+	}
+	m.createDeployment(
+		w,
+		r,
+		project,
+		published.ID,
+		idempotencyKey,
+		"",
+	)
 }
 
 func (m *Module) ownedCandidate(w http.ResponseWriter, r *http.Request, project, candidateID string) (deployment.Candidate, bool) {

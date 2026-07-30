@@ -60,6 +60,7 @@ type CandidateCompatibility struct {
 	RuntimeVersion           string
 	AuthorizationFingerprint string
 	Bindings                 []CandidateBindingVersion
+	ManagedDataConnections   []string
 	Restrictions             []CandidateRestriction
 }
 
@@ -264,9 +265,6 @@ func (r *Registry) PrepareCandidate(
 	if err != nil {
 		return nil, errors.Join(err, closeRuntimeLifetime(input.Lifetime))
 	}
-	if err := validateCandidateDataMode(current, normalized.Compatibility); err != nil {
-		return nil, errors.Join(err, closeRuntimeLifetime(input.Lifetime))
-	}
 	artifact, err := r.repo.ArtifactByServingState(ctx, current.ID)
 	if err != nil {
 		return nil, errors.Join(err, closeRuntimeLifetime(input.Lifetime))
@@ -274,6 +272,17 @@ func (r *Registry) PrepareCandidate(
 	managedData, err := r.managerForWorkspace(current.WorkspaceID).resolveManagedData(ctx, current.ID)
 	if err != nil {
 		return nil, errors.Join(err, closeRuntimeLifetime(input.Lifetime))
+	}
+	if err := validateCandidateDataMode(
+		current,
+		normalized.Compatibility,
+		managedData,
+	); err != nil {
+		return nil, errors.Join(
+			err,
+			releaseManagedDataLifetime(managedData.Lifetime),
+			closeRuntimeLifetime(input.Lifetime),
+		)
 	}
 	candidate := &candidatePreparationContext{
 		runtime: CandidateRuntimeContext{
@@ -869,6 +878,33 @@ func normalizeCandidateCompatibility(
 		}
 	}
 	compatibility.Bindings = normalizedBindings
+	normalizedManagedDataConnections := append(
+		[]string(nil),
+		compatibility.ManagedDataConnections...,
+	)
+	for index := range normalizedManagedDataConnections {
+		normalizedManagedDataConnections[index] = strings.TrimSpace(
+			normalizedManagedDataConnections[index],
+		)
+		if normalizedManagedDataConnections[index] == "" {
+			return CandidateCompatibility{}, [sha256.Size]byte{}, fmt.Errorf(
+				"%w: managed-data connection identity is required",
+				ErrCandidateRuntimeInvalid,
+			)
+		}
+	}
+	sort.Strings(normalizedManagedDataConnections)
+	for index := 1; index < len(normalizedManagedDataConnections); index++ {
+		if normalizedManagedDataConnections[index-1] ==
+			normalizedManagedDataConnections[index] {
+			return CandidateCompatibility{}, [sha256.Size]byte{}, fmt.Errorf(
+				"%w: duplicate managed-data connection %q",
+				ErrCandidateRuntimeInvalid,
+				normalizedManagedDataConnections[index],
+			)
+		}
+	}
+	compatibility.ManagedDataConnections = normalizedManagedDataConnections
 	normalizedRestrictions := append([]CandidateRestriction(nil), compatibility.Restrictions...)
 	for index := range normalizedRestrictions {
 		restriction := &normalizedRestrictions[index]
@@ -919,6 +955,7 @@ func normalizeCandidateCompatibility(
 func validateCandidateDataMode(
 	state servingstate.State,
 	compatibility CandidateCompatibility,
+	managedData ManagedDataResolution,
 ) error {
 	switch compatibility.DataMode {
 	case CandidateDataReuseSnapshot:
@@ -929,7 +966,9 @@ func validateCandidateDataMode(
 			)
 		}
 	case CandidateDataRefreshSources:
-		if state.DuckLakeSnapshotID != 0 || len(compatibility.Bindings) == 0 {
+		if state.DuckLakeSnapshotID != 0 ||
+			len(compatibility.Bindings) == 0 &&
+				len(compatibility.ManagedDataConnections) == 0 {
 			return fmt.Errorf(
 				"%w: source refresh requires an unmaterialized state and validated target bindings",
 				ErrCandidateRuntimeIncompatible,
@@ -937,6 +976,33 @@ func validateCandidateDataMode(
 		}
 	default:
 		return ErrCandidateRuntimeInvalid
+	}
+	resolvedManagedConnections := make([]string, 0, len(managedData.Roots))
+	for connection, root := range managedData.Roots {
+		if strings.TrimSpace(connection) == "" ||
+			connection != strings.TrimSpace(connection) ||
+			strings.TrimSpace(root) == "" {
+			return fmt.Errorf(
+				"%w: resolved managed-data roots are invalid",
+				ErrCandidateRuntimeIncompatible,
+			)
+		}
+		resolvedManagedConnections = append(resolvedManagedConnections, connection)
+	}
+	sort.Strings(resolvedManagedConnections)
+	if len(resolvedManagedConnections) != len(compatibility.ManagedDataConnections) {
+		return fmt.Errorf(
+			"%w: managed-data connection set changed during runtime preparation",
+			ErrCandidateRuntimeIncompatible,
+		)
+	}
+	for index, connection := range compatibility.ManagedDataConnections {
+		if resolvedManagedConnections[index] != connection {
+			return fmt.Errorf(
+				"%w: managed-data connection set changed during runtime preparation",
+				ErrCandidateRuntimeIncompatible,
+			)
+		}
 	}
 	return nil
 }

@@ -175,6 +175,41 @@ func TestTargetStoreRejectsTamperedRetainedProjectArtifact(t *testing.T) {
 	}
 }
 
+func TestTargetStoreRepairsLegacySnapshotMissingRetainedProjectArtifact(t *testing.T) {
+	projectPath := filepath.Join("..", "..", "..", "dashboards", "leapview.yaml")
+	snapshot, err := (FilesystemBuilder{ProjectPath: projectPath}).Build(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewTargetStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, artifact := range snapshot.Artifacts {
+		if err := store.Put(t.Context(), artifact.Digest, bytes.NewReader(artifact.Content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	request := planRequestForSnapshot(snapshot)
+	stored, err := store.Commit(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(stored.ProjectArtifactPath); err != nil {
+		t.Fatal(err)
+	}
+	repaired, err := store.Commit(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repaired.ProjectDigest == "" {
+		t.Fatalf("repaired snapshot = %#v", repaired)
+	}
+	if _, err := os.Stat(repaired.ProjectArtifactPath); err != nil {
+		t.Fatalf("repaired project artifact: %v", err)
+	}
+}
+
 func TestTargetStoreCannotCommitWithMissingBlobs(t *testing.T) {
 	store, err := NewTargetStore(t.TempDir())
 	if err != nil {

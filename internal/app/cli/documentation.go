@@ -63,6 +63,7 @@ var documentedCommandSafety = map[string]commandSafety{
 	"leapview login":                           {effect: "local-write", confirmation: "never"},
 	"leapview logout":                          {effect: "destructive", confirmation: "never"},
 	"leapview plan":                            {effect: "read", confirmation: "never"},
+	"leapview publish":                         {effect: "write", confirmation: "conditional"},
 	"leapview schema export":                   {effect: "local-write", confirmation: "never"},
 	"leapview search":                          {effect: "read", confirmation: "never"},
 	"leapview semantic-models dataset":         {effect: "read", confirmation: "never"},

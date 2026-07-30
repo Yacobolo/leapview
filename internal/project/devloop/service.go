@@ -27,10 +27,14 @@ type Snapshot struct {
 }
 
 type Candidate struct {
-	ID             string
-	ProjectID      string
-	ArtifactDigest string
-	PreviewURL     string
+	ID               string
+	ProjectID        string
+	ArtifactDigest   string
+	PreviewURL       string
+	TargetID         string
+	Environment      string
+	ProvenanceDigest string
+	Revision         int64
 }
 
 type SyncRequest struct {
@@ -182,10 +186,18 @@ func normalizeCandidate(candidate Candidate, snapshot Snapshot) (Candidate, erro
 	candidate.ProjectID = strings.TrimSpace(candidate.ProjectID)
 	candidate.ArtifactDigest = strings.TrimSpace(candidate.ArtifactDigest)
 	candidate.PreviewURL = strings.TrimSpace(candidate.PreviewURL)
+	candidate.TargetID = strings.TrimSpace(candidate.TargetID)
+	candidate.Environment = strings.TrimSpace(candidate.Environment)
+	candidate.ProvenanceDigest = strings.TrimSpace(candidate.ProvenanceDigest)
 	if candidate.ID == "" || candidate.PreviewURL == "" ||
+		candidate.TargetID == "" || candidate.Environment == "" ||
+		candidate.Revision <= 0 ||
 		candidate.ProjectID != snapshot.ProjectID ||
 		candidate.ArtifactDigest != snapshot.Digest {
 		return Candidate{}, fmt.Errorf("remote candidate does not match synchronized project snapshot")
+	}
+	if err := digest.ValidateSHA256Identity(candidate.ProvenanceDigest); err != nil {
+		return Candidate{}, fmt.Errorf("remote candidate provenance digest is invalid: %w", err)
 	}
 	return candidate, nil
 }

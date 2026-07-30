@@ -50,7 +50,7 @@ func (projectDeployOperations) Deploy(ctx context.Context, values projectcli.Dep
 		Target:      values.Credentials.Target,
 		Token:       values.Credentials.Token,
 		Environment: values.Environment,
-		AutoApprove: values.AutoApprove,
+		AutoApprove: false,
 		Out:         out,
 		HTTPClient:  client,
 	})
@@ -210,7 +210,7 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 	}
 	deployed, err := client.createDeployment(ctx, project.Name, deploymentIdempotencyKey("deploy", project.Name, created.Id), deploymentgen.DeploymentCreateRequest{ReleaseId: created.Id})
 	if err != nil {
-		return fmt.Errorf("deploy project release failed")
+		return fmt.Errorf("deploy project release failed: %w", err)
 	}
 	if deployed.ProjectId != project.Name || deployed.ReleaseId != created.Id || deployed.Id == "" {
 		return fmt.Errorf("project deployment returned inconsistent scope or status")

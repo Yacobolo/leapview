@@ -16,7 +16,7 @@ Application releases should use immutable artifacts and should not silently modi
 
 Project delivery changes connections, sources, workspaces, model tables, semantic models, dashboards, access resources, and managed-data revision pins.
 
-- Use [Validate, plan, and deploy](/docs/cli/validate-deploy) for the atomic project delivery workflow.
+- Use [Develop, review, and publish](/docs/cli/validate-deploy) for the exact-candidate delivery workflow.
 - Use [Targets and environments](/docs/cli/targets) to keep local, staging, and production identities explicit.
 - Read [Projects, workspaces, and environments](/docs/concepts/projects-workspaces-environments) for the ownership and activation model behind that workflow.
 

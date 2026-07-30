@@ -26,7 +26,7 @@ type Config struct {
 	Database          *sql.DB
 	States            ServingStateRepository
 	Workspaces        WorkspaceProvisioner
-	ManagedDataPins   release.PinValidator
+	ManagedDataPins   release.ManagedDataPins
 	ManagedDataHook   validate.Hook
 	ArtifactDirectory string
 	Environment       servingstate.Environment
@@ -77,6 +77,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 			states: config.States, workspaces: config.Workspaces,
 			artifacts: store, validator: validator,
 			environment: servingstate.NormalizeEnvironment(config.Environment),
+			pins:        config.ManagedDataPins,
 		},
 		catalog: catalog, deployments: deployments,
 		environment: string(config.Environment), api: config.API,
@@ -121,6 +122,16 @@ func (m *Module) CandidateProvenance(
 	)
 }
 
+func (m *Module) PublishCandidate(
+	ctx context.Context,
+	input release.PublishCandidateInput,
+) (release.Release, error) {
+	if m == nil || m.service == nil {
+		return release.Release{}, release.ErrCandidateArtifactUnavailable
+	}
+	return m.service.PublishCandidate(ctx, input)
+}
+
 func releaseStores(database *sql.DB, workflow ...jobs.WorkflowRecorder) (release.Repository, release.FinalizationUnitOfWork, release.CatalogRepository, release.DeploymentLinkage, error) {
 	if database == nil {
 		return nil, nil, nil, nil, errors.New("release database is required")
@@ -133,9 +144,21 @@ func releaseStores(database *sql.DB, workflow ...jobs.WorkflowRecorder) (release
 	return owned, owned, owned, owned, nil
 }
 
-func (m *Module) DeploymentLinkage() release.DeploymentLinkage {
-	if m == nil {
+type deploymentPublisher struct {
+	release.DeploymentLinkage
+	service *release.Service
+}
+
+func (publisher deploymentPublisher) PublishCandidate(
+	ctx context.Context,
+	input release.PublishCandidateInput,
+) (release.Release, error) {
+	return publisher.service.PublishCandidate(ctx, input)
+}
+
+func (m *Module) DeploymentLinkage() release.DeploymentPublisher {
+	if m == nil || m.deployments == nil || m.service == nil {
 		return nil
 	}
-	return m.deployments
+	return deploymentPublisher{DeploymentLinkage: m.deployments, service: m.service}
 }

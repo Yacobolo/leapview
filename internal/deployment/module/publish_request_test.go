@@ -3,6 +3,7 @@ package module
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -121,6 +122,140 @@ func TestRetryCreatesOneNewRequestForTheSameImmutableRelease(t *testing.T) {
 	}
 }
 
+func TestPublishProjectCandidatePromotesAndRequestsTheExactReadyCandidate(t *testing.T) {
+	module := testCandidateModule(t, "principal_1")
+	module.instanceID = "lvinst_prod"
+	artifactDigest := "sha256:" + strings.Repeat("8", 64)
+	started, err := module.candidates.Start(
+		t.Context(),
+		deployment.StartCandidateRequest{
+			ProjectID: "project", OwnerID: "principal_1",
+			ArtifactDigest: artifactDigest,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetRelease := publishTestRelease(t)
+	provenance, err := release.NewProvenance(release.ProvenanceInput{
+		Artifact: targetRelease.Provenance.Artifact,
+		Candidate: release.CandidateProvenance{
+			ID: started.Candidate.ID, Revision: started.Candidate.Revision + 1,
+			OwnerID: "principal_1",
+		},
+		Plan: targetRelease.Provenance.Plan,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetRelease.Provenance = &provenance
+	ready, err := module.candidates.MarkReady(
+		t.Context(),
+		deployment.CandidateScope{
+			ProjectID: "project", CandidateID: started.Candidate.ID,
+			OwnerID: "principal_1",
+		},
+		artifactDigest,
+		provenance.Digest,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordinator := &publishCoordinatorStub{}
+	releases := &publishReleaseStub{targetRelease: targetRelease}
+	module.jobs = JobConfig{Coordinator: coordinator}
+	module.api = APIConfig{Releases: releases}
+	body := fmt.Sprintf(
+		`{"expectedRevision":%d,"provenanceDigest":%q,"targetId":%q}`,
+		ready.Revision,
+		ready.ProvenanceDigest,
+		ready.TargetID,
+	)
+	response := callCandidateAPI(
+		t,
+		http.MethodPost,
+		"/api/v1/projects/project/candidates/"+ready.ID+"/publish",
+		body,
+		func(w http.ResponseWriter, r *http.Request) {
+			module.PublishProjectCandidate(
+				w,
+				r,
+				"project",
+				ready.ID,
+				"publish-1",
+			)
+		},
+	)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if releases.published.CandidateID != ready.ID ||
+		releases.published.CandidateRevision != ready.Revision ||
+		releases.published.ProvenanceDigest != ready.ProvenanceDigest ||
+		releases.published.TargetID != ready.TargetID ||
+		releases.published.IdempotencyKey != "publish-1" {
+		t.Fatalf("candidate publication = %#v", releases.published)
+	}
+	if coordinator.created.ReleaseID != targetRelease.ID ||
+		coordinator.created.Evidence.CandidateID != ready.ID ||
+		coordinator.created.Evidence.CandidateRevision != ready.Revision {
+		t.Fatalf("deployment request = %#v", coordinator.created)
+	}
+}
+
+func TestPublishProjectCandidateRejectsStaleClientRevision(t *testing.T) {
+	module := testCandidateModule(t, "principal_1")
+	module.instanceID = "lvinst_prod"
+	digest := "sha256:" + strings.Repeat("8", 64)
+	started, err := module.candidates.Start(
+		t.Context(),
+		deployment.StartCandidateRequest{
+			ProjectID: "project", OwnerID: "principal_1",
+			ArtifactDigest: digest,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready, err := module.candidates.MarkReady(
+		t.Context(),
+		deployment.CandidateScope{
+			ProjectID: "project", CandidateID: started.Candidate.ID,
+			OwnerID: "principal_1",
+		},
+		digest,
+		"sha256:"+strings.Repeat("9", 64),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	releases := &publishReleaseStub{targetRelease: publishTestRelease(t)}
+	module.api = APIConfig{Releases: releases}
+	response := callCandidateAPI(
+		t,
+		http.MethodPost,
+		"/api/v1/projects/project/candidates/"+ready.ID+"/publish",
+		fmt.Sprintf(
+			`{"expectedRevision":%d,"provenanceDigest":%q,"targetId":%q}`,
+			ready.Revision-1,
+			ready.ProvenanceDigest,
+			ready.TargetID,
+		),
+		func(w http.ResponseWriter, r *http.Request) {
+			module.PublishProjectCandidate(
+				w,
+				r,
+				"project",
+				ready.ID,
+				"publish-stale",
+			)
+		},
+	)
+	if response.Code != http.StatusConflict || releases.published.CandidateID != "" {
+		t.Fatalf("stale publication = %d %s %#v", response.Code, response.Body.String(), releases.published)
+	}
+}
+
 func publishTestRelease(t *testing.T) release.Release {
 	t.Helper()
 	artifactDigest := "sha256:" + strings.Repeat("a", 64)
@@ -160,8 +295,9 @@ func publishTestRelease(t *testing.T) release.Release {
 		t.Fatal(err)
 	}
 	return release.Release{
-		ID: "release_1", ProjectID: "project", ProjectDigest: projectDigest,
-		Status: release.StatusReady, Provenance: &provenance,
+		ID: "release_1", ProjectID: "project",
+		ProjectDigest: provenance.Artifact.SourceDigest,
+		Status:        release.StatusReady, Provenance: &provenance,
 		Artifacts: []release.Artifact{{
 			ReleaseID: "release_1", WorkspaceID: "sales",
 			ExpectedDigest: artifactDigest, ActualDigest: artifactDigest,
@@ -215,6 +351,7 @@ func (*publishCoordinatorStub) Cancel(
 type publishReleaseStub struct {
 	targetRelease release.Release
 	deployments   map[string]string
+	published     release.PublishCandidateInput
 }
 
 func (stub *publishReleaseStub) Get(
@@ -226,6 +363,14 @@ func (stub *publishReleaseStub) Get(
 		releaseID != stub.targetRelease.ID {
 		return release.Release{}, release.ErrNotFound
 	}
+	return stub.targetRelease, nil
+}
+
+func (stub *publishReleaseStub) PublishCandidate(
+	_ context.Context,
+	input release.PublishCandidateInput,
+) (release.Release, error) {
+	stub.published = input
 	return stub.targetRelease, nil
 }
 

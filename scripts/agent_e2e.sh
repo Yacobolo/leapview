@@ -79,7 +79,8 @@ REVISION="$(awk '$1 == "staged" { print $2 }' <<<"$SYNC_OUTPUT")"
   echo "managed data sync did not return a canonical revision" >&2
   exit 1
 }
-"$BIN" deploy --target "$TARGET" --token "$TOKEN" --project dashboards/leapview.yaml --revision "olist=$REVISION" --auto-approve
+"$BIN" dev --once --target "$TARGET" --token "$TOKEN" --project dashboards/leapview.yaml
+"$BIN" publish --target "$TARGET" --token "$TOKEN" --project dashboards/leapview.yaml
 
 ALLOWED_TOOLS='catalog_search,catalog_list,catalog_get,query_semantic_model,query_dashboard_visual,query_visual,docs_search,docs_read'
 

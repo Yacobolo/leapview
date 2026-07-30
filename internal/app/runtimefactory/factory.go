@@ -2,6 +2,8 @@ package runtimefactory
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,7 +36,10 @@ func NewFactory(config FactoryConfig) runtimehost.RuntimeFactory {
 func (f servingStateRuntimeFactory) Prepare(ctx context.Context, input runtimehost.RuntimeInput) (runtimehost.Runtime, error) {
 	duckDBDir := runtimeFirstNonEmpty(input.DuckDBDir, f.duckDBDir)
 	runtimeDir := runtimeFirstNonEmpty(input.RuntimeDir, f.runtimeDir)
-	targetDir := filepath.Join(runtimeDir, string(input.State.ID)+"-"+shortDigest(input.Artifact.Digest))
+	targetDir := filepath.Join(
+		runtimeDir,
+		runtimeExtractionIdentity(input)+"-"+shortDigest(input.Artifact.Digest),
+	)
 	if err := os.RemoveAll(targetDir); err != nil {
 		return nil, err
 	}
@@ -91,6 +96,17 @@ func (f servingStateRuntimeFactory) Prepare(ctx context.Context, input runtimeho
 		Service: service, workspaceID: string(input.State.WorkspaceID),
 		servingStateID: string(input.State.ID), graph: compiled.Graph,
 	}, nil
+}
+
+func runtimeExtractionIdentity(input runtimehost.RuntimeInput) string {
+	stateID := string(input.State.ID)
+	if input.Candidate == nil {
+		return stateID
+	}
+	sum := sha256.Sum256(
+		[]byte(input.Candidate.CandidateID + "\x00" + stateID),
+	)
+	return "candidate-" + hex.EncodeToString(sum[:8]) + "-" + stateID
 }
 
 func runtimeFirstNonEmpty(values ...string) string {

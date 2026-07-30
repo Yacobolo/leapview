@@ -38,6 +38,12 @@ model CandidateArtifactRequest {
   artifactDigest: string;
 }
 
+model CandidatePublishRequest {
+  expectedRevision: int64;
+  provenanceDigest: string;
+  targetId: string;
+}
+
 model CandidateSourceArtifact {
   path: string;
   digest: string;
@@ -329,6 +335,14 @@ op retryProjectCandidate(@path project: string, @path candidate: string, @header
 @apigen.authz(#{ mode: "privilege", privilege: "AUTHOR_PROJECT" })
 @operationId("cancelProjectCandidate")
 op cancelProjectCandidate(@path project: string, @path candidate: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): OkJson<CandidateResponse> | CommonErrors;
+
+@tag("Deployments")
+@summary("Publish the exact ready candidate through target policy")
+@route("/projects/{project}/candidates/{candidate}/publish")
+@post
+@apigen.authz(#{ mode: "privilege", privilege: "PUBLISH_RELEASE" })
+@operationId("publishProjectCandidate")
+op publishProjectCandidate(@path project: string, @path candidate: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: CandidatePublishRequest): AcceptedJson<DeploymentResponse> | CommonErrors;
 
 @tag("Deployments")
 @summary("Plan content-addressed synchronization for the current author's private candidate")

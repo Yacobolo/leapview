@@ -538,7 +538,7 @@ func TestSiteGettingStartedRendersGuide(t *testing.T) {
 	}
 }
 
-func TestSiteCLIGuideUsesDeployCommand(t *testing.T) {
+func TestSiteCLIGuideUsesExactCandidatePublishWorkflow(t *testing.T) {
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()
 
@@ -551,13 +551,32 @@ func TestSiteCLIGuideUsesDeployCommand(t *testing.T) {
 		t.Fatalf("deploy guide status = %d, want %d", response.StatusCode, http.StatusOK)
 	}
 	body := readBody(t, response)
-	for _, want := range []string{"Validate, plan, and deploy", "leapview deploy --project dashboards/leapview.yaml"} {
-		if !strings.Contains(body, want) {
+	articleStart := strings.Index(body, `<article id="main-content"`)
+	if articleStart < 0 {
+		t.Fatalf("publish guide is missing its documentation article:\n%s", body)
+	}
+	articleEnd := strings.Index(body[articleStart:], `</article>`)
+	if articleEnd < 0 {
+		t.Fatalf("publish guide is missing its documentation article:\n%s", body)
+	}
+	article := body[articleStart : articleStart+articleEnd]
+	for _, want := range []string{
+		"Develop, review, and publish",
+		"leapview dev",
+		"leapview publish",
+		"does not reread or rebuild the project",
+	} {
+		if !strings.Contains(article, want) {
 			t.Errorf("deploy guide missing %q:\n%s", want, body)
 		}
 	}
-	if strings.Contains(body, "leapview publish") {
-		t.Errorf("deploy guide contains nonexistent publish command:\n%s", body)
+	for _, forbidden := range []string{
+		"leapview deploy",
+		"--auto-approve",
+	} {
+		if strings.Contains(article, forbidden) {
+			t.Errorf("publish guide contains retired workflow %q:\n%s", forbidden, body)
+		}
 	}
 }
 

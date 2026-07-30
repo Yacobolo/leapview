@@ -31,6 +31,7 @@ type PageParams = deploymentapi.PageParams
 
 type ReleasePort interface {
 	Get(context.Context, string, string) (release.Release, error)
+	PublishCandidate(context.Context, release.PublishCandidateInput) (release.Release, error)
 	LinkDeployment(context.Context, string, string, string, string) error
 	LinkDeploymentTx(context.Context, transaction.Transaction, string, string, string, string) error
 	DeploymentRelease(context.Context, string, string) (string, string, error)
@@ -164,7 +165,7 @@ func publishEvidence(
 	if targetRelease.Provenance == nil ||
 		targetRelease.ProjectID == "" ||
 		targetRelease.ProjectDigest == "" ||
-		targetRelease.ProjectDigest != targetRelease.Provenance.Artifact.ProjectDigest ||
+		targetRelease.ProjectDigest != targetRelease.Provenance.Artifact.SourceDigest ||
 		targetRelease.Provenance.Plan.TargetID != instanceID ||
 		targetRelease.Provenance.Plan.Environment != environment {
 		return apiadapter.PublishEvidence{}, fmt.Errorf(
@@ -192,7 +193,7 @@ func publishEvidence(
 	for _, artifact := range targetRelease.Artifacts {
 		workspace, ok := planned[artifact.WorkspaceID]
 		if !ok || workspace.ServingStateID != artifact.ServingStateID ||
-			workspace.ArtifactDigest != artifact.ActualDigest ||
+			workspace.ArtifactDigest != publishArtifactDigest(artifact.ActualDigest) ||
 			artifact.ActualDigest != artifact.ExpectedDigest {
 			return apiadapter.PublishEvidence{}, fmt.Errorf(
 				"%w: release target plan drifted for workspace %q",
@@ -212,6 +213,14 @@ func publishEvidence(
 		RuntimeVersion:    targetRelease.Provenance.Plan.RuntimeVersion,
 		PolicyDigest:      targetRelease.Provenance.Plan.PolicyDigest,
 	}, nil
+}
+
+func publishArtifactDigest(value string) string {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "sha256:") {
+		return value
+	}
+	return "sha256:" + value
 }
 
 func (m *Module) GetDeployment(w http.ResponseWriter, r *http.Request, project, deploymentID string) {

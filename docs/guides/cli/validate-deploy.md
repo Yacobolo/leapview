@@ -1,24 +1,24 @@
-# Validate, plan, and deploy
+# Develop, review, and publish
 
-Validation proves that the candidate project is structurally coherent. Planning compares that candidate with a target without activating it. Deployment publishes the reviewed candidate and switches serving state only after validation succeeds.
+Validation proves that the project is structurally coherent. `dev` creates a private candidate on the intended target and keeps it synchronized while you work. `publish` promotes that exact reviewed candidate without rebuilding it.
 
 ## Before you begin
 
-Start from a clean branch with a project that resolves locally. Authenticate to the intended target with the narrowest publisher credential that can deploy the workspace. For managed connections, stage each input revision and retain its immutable digest.
+Authenticate to the intended target with `leapview login` or a bounded workload identity. The developer needs permission to create and preview private candidates; publishing and approval remain separate target-side privileges. For managed connections, upload data to the target before creating the candidate.
 
-Use the same project path, environment, target, and managed-data revisions throughout the sequence:
+Use the same project path and target throughout the sequence:
 
 1. Validate the complete project locally.
-2. Plan the candidate against the exact target and environment.
-3. Review additions, changes, removals, and revision pins.
-4. Deploy the unchanged candidate.
+2. Run `dev` against the exact target.
+3. Review the private candidate preview.
+4. Publish the unchanged candidate.
 5. Verify the active workspace and representative queries.
 
 Store target and credential values outside shell history:
 
 ```sh
 export LEAPVIEW_TARGET=https://dash.example.com
-export LEAPVIEW_API_TOKEN=<publisher-token>
+leapview login "$LEAPVIEW_TARGET"
 ```
 
 ## Validate the project
@@ -33,34 +33,33 @@ Resolve every configuration, discovery, reference, and policy diagnostic. Valida
 
 Use `--json` in CI and fail the job on a non-zero exit status. Keep human-readable output for local review.
 
-## Review the plan
+## Create and review the candidate
 
-Compare the candidate with the intended environment:
+Start the authoring loop against the intended target:
 
 ```sh
-leapview plan \
+leapview dev \
   --project dashboards/leapview.yaml \
-  --environment prod \
-  --target "$LEAPVIEW_TARGET" \
-  --token "$LEAPVIEW_API_TOKEN" \
-  --revision "olist=sha256:<64-lowercase-hex>"
+  --target "$LEAPVIEW_TARGET"
 ```
 
-Review the resource identities, removals, access changes, and managed revision digests. Stop if the plan includes a workspace or source outside the change request. Generate the plan again after any edit; a reviewed plan does not authorize a later candidate.
+LeapView uploads content-addressed source files, compiles them on the target, resolves target-owned connection evidence and managed-data pins, and returns an owner-isolated preview URL. Source edits update that candidate while the command is running. The local handoff contains candidate IDs and digests only; it never contains connection secrets.
 
-## Deploy the reviewed candidate
+For a single CI synchronization, use `leapview dev --once`. Review removals, access changes, and managed-data pins from the candidate evidence and preview. Run `dev` again after any source edit.
 
-Run deployment with the same arguments:
+## Publish the reviewed candidate
+
+Publish with the same project path and target:
 
 ```sh
-leapview deploy --project dashboards/leapview.yaml \
-  --environment prod \
-  --target "$LEAPVIEW_TARGET" \
-  --token "$LEAPVIEW_API_TOKEN" \
-  --revision "olist=sha256:<64-lowercase-hex>"
+leapview publish \
+  --project dashboards/leapview.yaml \
+  --target "$LEAPVIEW_TARGET"
 ```
 
-Do not use a mutable data location in place of a revision digest. Record the source revision, Git revision, target environment, deployment result, and operator or automation identity together.
+`publish` loads the exact candidate handoff produced by `dev`; it does not reread or rebuild the project. Immediate-policy targets wait for activation to finish. Protected targets persist a pending approval request bound to the candidate revision, provenance, plan, policy, connection evidence, managed-data pins, and base generation.
+
+Record the source revision, candidate and provenance digests, target environment, deployment result, and operator or automation identity together.
 
 ## Verify the deployment
 
@@ -70,8 +69,8 @@ A failed candidate must leave the last valid serving state active. Treat that pr
 
 ## Troubleshooting
 
-If validation succeeds but planning fails, verify target authentication, environment identity, and server/client contract compatibility. If the plan shows unexpected removals, inspect workspace discovery patterns and stable resource IDs. If deployment rejects a managed revision, confirm that the digest was staged on the same target and connection named by the project. For authorization failures, inspect the publisher's effective grants rather than broadening the token immediately.
+If validation succeeds but `dev` fails, verify target authentication, environment identity, server/client contract compatibility, target connection bindings, and managed-data availability. If `publish` reports that no candidate exists, run `dev` with the same project path and target. If publication is pending, use a different authorized principal for approval. For authorization failures, inspect effective grants rather than broadening credentials immediately.
 
 ## Next steps
 
-Automate this sequence with protected environments, immutable build artifacts, and retained JSON plan output. Continue with [Deploy and operate](/docs/guides/operate), [Production configuration](/docs/guides/operate/production-configuration), and the generated [`deploy`](/docs/cli/deploy), [`plan`](/docs/cli/plan), and [`validate`](/docs/cli/validate) references.
+Automate this sequence with protected environments and immutable source revisions. Continue with [Deploy and operate](/docs/guides/operate), [Production configuration](/docs/guides/operate/production-configuration), and the generated [`dev`](/docs/cli/dev), [`publish`](/docs/cli/publish), and [`validate`](/docs/cli/validate) references.

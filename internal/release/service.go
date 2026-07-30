@@ -52,6 +52,15 @@ type PinValidator interface {
 	ValidateServingStatePins(context.Context, string, string, map[string]string) error
 }
 
+type CandidatePinResolver interface {
+	ResolveCandidatePins(context.Context, string, []string, string) (map[string]string, error)
+}
+
+type ManagedDataPins interface {
+	PinValidator
+	CandidatePinResolver
+}
+
 type CandidateProvenanceRepository interface {
 	RetainCandidateProvenance(
 		context.Context,
@@ -152,6 +161,24 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Release, error
 		if input.Provenance.Artifact.SourceDigest != strings.TrimSpace(input.ProjectDigest) {
 			return Release{}, fmt.Errorf("%w: provenance source digest does not match release project digest", ErrInvalid)
 		}
+		planned := make(
+			map[string]TargetWorkspacePlan,
+			len(input.Provenance.Plan.Workspaces),
+		)
+		for _, workspace := range input.Provenance.Plan.Workspaces {
+			planned[workspace.WorkspaceID] = workspace
+		}
+		if len(planned) != len(input.Workspaces) {
+			return Release{}, fmt.Errorf("%w: provenance workspace set does not match release", ErrInvalid)
+		}
+		for _, workspace := range input.Workspaces {
+			plan, ok := planned[workspace.WorkspaceID]
+			if !ok ||
+				plan.ArtifactDigest != provenanceWorkspaceArtifactDigest(workspace.ArtifactDigest) ||
+				plan.ServingStateID != workspace.ServingStateID {
+				return Release{}, fmt.Errorf("%w: provenance target plan does not match release", ErrInvalid)
+			}
+		}
 	}
 	encoded, err := json.Marshal(struct {
 		Manifest   Manifest    `json:"manifest"`
@@ -170,6 +197,25 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Release, error
 		if artifact.ServingStateID != "" {
 			continue
 		}
+		var retainedStateID string
+		for _, workspace := range input.Workspaces {
+			if workspace.WorkspaceID == artifact.WorkspaceID {
+				retainedStateID = workspace.ServingStateID
+				break
+			}
+		}
+		if retainedStateID != "" {
+			if err := s.releases.AssignArtifactTarget(
+				ctx,
+				created.ProjectID,
+				created.ID,
+				artifact.WorkspaceID,
+				retainedStateID,
+			); err != nil {
+				return Release{}, err
+			}
+			continue
+		}
 		if err := s.workspaces.Ensure(ctx, workspace.EnsureInput{ID: workspace.WorkspaceID(artifact.WorkspaceID), Title: artifact.WorkspaceID}); err != nil {
 			return Release{}, err
 		}
@@ -182,6 +228,14 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Release, error
 		}
 	}
 	return s.releases.Get(ctx, created.ProjectID, created.ID)
+}
+
+func provenanceWorkspaceArtifactDigest(value string) string {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "sha256:") {
+		return value
+	}
+	return "sha256:" + value
 }
 
 func (s *Service) Get(ctx context.Context, projectID, releaseID string) (Release, error) {

@@ -18,6 +18,12 @@ type CandidateArtifactRequest struct {
 	ArtifactDigest         string `json:"artifactDigest"`
 }
 
+type CandidatePublishRequest struct {
+	ExpectedRevision int64  `json:"expectedRevision"`
+	ProvenanceDigest string `json:"provenanceDigest"`
+	TargetID         string `json:"targetId"`
+}
+
 type CandidateSourceArtifact struct {
 	Path   string `json:"path"`
 	Digest string `json:"digest"`

@@ -35,7 +35,7 @@ func (f workspaceRuntimeFactory) OpenWorkspace(ctx context.Context, request anal
 	}
 	cacheScope, err := f.module.cache.OpenScope(resultcache.ScopeID{
 		WorkspaceID: request.WorkspaceID,
-		RuntimeID:   request.ServingStateID,
+		RuntimeID:   workspaceRuntimeCacheIdentity(request),
 	})
 	if err != nil {
 		return nil, err
@@ -57,4 +57,14 @@ func (f workspaceRuntimeFactory) OpenWorkspace(ctx context.Context, request anal
 		return nil, err
 	}
 	return runtime, nil
+}
+
+func workspaceRuntimeCacheIdentity(
+	request analyticsruntime.WorkspaceRequest,
+) string {
+	if request.CandidateID == "" {
+		return request.ServingStateID
+	}
+	return "candidate\x00" + request.CandidateID + "\x00" +
+		request.ServingStateID
 }

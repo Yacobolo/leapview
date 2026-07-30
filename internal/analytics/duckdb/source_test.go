@@ -385,6 +385,34 @@ func TestRefreshConnectionResolutionUsesTargetOwnedEndpointAndCredentials(t *tes
 	}
 }
 
+func TestRefreshConnectionResolutionKeepsTrustedManagedDataRoot(t *testing.T) {
+	model := &semanticmodel.Model{
+		DefaultConnection: "olist",
+		Connections: map[string]semanticmodel.Connection{
+			"olist": {Kind: "managed", Root: "/managed/olist"},
+		},
+		Sources: map[string]semanticmodel.Source{
+			"orders": {
+				Connection: "olist", Path: "orders.parquet", Format: "parquet",
+			},
+		},
+	}
+	runtime := NewSourceRuntimeWithConnectionResolver(
+		nil,
+		rejectingConnectionResolver{},
+	)
+	resolved, err := runtime.resolveCredentials(t.Context(), model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection := resolved.Connections[resolved.DefaultConnection]
+	if connection.Kind != "managed" ||
+		connection.Root != "/managed/olist" ||
+		len(connection.Auth) != 0 {
+		t.Fatalf("resolved managed connection = %#v", connection)
+	}
+}
+
 func TestSecretScopeLockReportsOnlySameScopeContention(t *testing.T) {
 	model := &semanticmodel.Model{
 		Connections: map[string]semanticmodel.Connection{"source": {Kind: "s3", Scope: "s3://bucket/prefix/"}},
@@ -427,6 +455,16 @@ func (resolver staticConnectionResolver) Resolve(
 	semanticmodel.Connection,
 ) (semanticmodel.Connection, error) {
 	return resolver.connection, nil
+}
+
+type rejectingConnectionResolver struct{}
+
+func (rejectingConnectionResolver) Resolve(
+	context.Context,
+	string,
+	semanticmodel.Connection,
+) (semanticmodel.Connection, error) {
+	return semanticmodel.Connection{}, connectionbinding.ErrBindingNotFound
 }
 
 type recordingRefreshTelemetry struct{ contentions atomic.Uint64 }

@@ -1,6 +1,6 @@
 # Automation and CI
 
-Treat validation, planning, publication, approval, activation, and verification as separate gates. Build one candidate from an immutable Git revision and publish that unchanged candidate only from an approved branch or environment.
+Treat validation, candidate creation, publication, approval, activation, and verification as separate gates. Build one candidate from an immutable Git revision and publish that unchanged candidate only from an approved branch or environment.
 
 ## Provide bounded credentials
 
@@ -23,34 +23,29 @@ leapview validate --project dashboards/leapview.yaml --json
 
 Stop the pipeline on any non-zero exit status. Do not allow a later deployment job to replace or edit the project after validation.
 
-## Generate a reviewable plan
+## Create the immutable target candidate
 
-Plan against the exact target identity and workspace that will receive the deployment:
+Synchronize the project to the exact target that will receive the deployment:
 
 ```sh
-leapview plan \
+leapview dev --once \
   --project dashboards/leapview.yaml \
-  --target "$LEAPVIEW_TARGET" \
-  --environment "$TARGET_ENVIRONMENT" \
-  --workspace "$TARGET_WORKSPACE" \
-  --json > leapview-plan.json
+  --target "$LEAPVIEW_TARGET"
 ```
 
-Publish `leapview-plan.json` as a protected artifact. Review removals, access-policy changes, resource identity changes, and managed-data revision pins. Regenerate the plan after any source change.
+The target compiles the uploaded source snapshot, resolves target-owned connection evidence and managed-data pins, prepares an owner-isolated preview runtime, and retains immutable provenance for that exact candidate. `dev` stores only the non-secret candidate handoff locally; credentials remain in the configured login or workload-identity flow. Run `dev` again after any source change and complete review against the candidate preview before publication.
 
 ## Publish an immutable deployment request
 
-Run publication from a protected job using the same project, target, environment, and revision pins that produced the reviewed plan:
+Run publication from a protected job using the same project path and target used by `dev`:
 
 ```sh
-leapview deploy \
+leapview publish \
   --project dashboards/leapview.yaml \
-  --target "$LEAPVIEW_TARGET" \
-  --environment "$TARGET_ENVIRONMENT" \
-  --auto-approve
+  --target "$LEAPVIEW_TARGET"
 ```
 
-`--auto-approve` accepts the CLI's local confirmation prompt only. It never bypasses target policy. A production target returns the immutable deployment and approval IDs without activating it.
+`publish` does not read, compile, or upload the project again. It submits the exact retained candidate revision and provenance produced by `dev`. An environment configured for immediate publication waits for activation to finish. A protected environment returns the immutable deployment and approval request without activating it.
 
 Approve the exact persisted plan with a different principal holding `APPROVE_DEPLOYMENT`, then request cutover with a principal holding `ACTIVATE_DEPLOYMENT`. Immediately before cutover, LeapView rechecks the release, plan digest, approval revision, expiry, reviewer credential and grant, and activator credential and grant. Revocation or expiry closes the workflow safely.
 
@@ -58,4 +53,4 @@ Approve the exact persisted plan with a different principal holding `APPROVE_DEP
 
 Record the Git revision, target environment, publisher, approval, activator, plan artifact, deployment result, and managed-data digests together. After activation, verify readiness and exercise a representative workspace query or dashboard with a separate verifier identity. A transport retry must reuse the same immutable candidate; never rebuild from a moving branch between attempts.
 
-See [Validate, plan, and deploy](/docs/cli/validate-deploy) for the operational sequence, [Targets and environments](/docs/cli/targets) for environment safeguards, and the generated [`validate`](/docs/cli/validate), [`plan`](/docs/cli/plan), and [`deploy`](/docs/cli/deploy) references for all flags.
+See [Targets and environments](/docs/cli/targets) for environment safeguards and the generated [`validate`](/docs/cli/validate), [`dev`](/docs/cli/dev), and [`publish`](/docs/cli/publish) references for all flags.

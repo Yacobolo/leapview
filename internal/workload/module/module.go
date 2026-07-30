@@ -33,6 +33,7 @@ func JobAdmitter(admitter Admitter) jobs.Admitter {
 
 const (
 	BackgroundClass  = workload.Background
+	ControlClass     = workload.Control
 	MaintenanceClass = workload.Maintenance
 	GlobalWorkspace  = workload.GlobalWorkspace
 )
@@ -43,6 +44,10 @@ func DefaultConfig() workload.Config {
 
 func MaintenanceRequest(operation string) Request {
 	return Request{Class: MaintenanceClass, Operation: operation}
+}
+
+func ControlRequest(operation string) Request {
+	return Request{Class: ControlClass, Operation: operation}
 }
 
 type Module struct {

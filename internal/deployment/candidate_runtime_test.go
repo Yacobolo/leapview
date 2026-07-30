@@ -84,6 +84,39 @@ func TestCandidateRuntimeServicePreparesCredentialFreeAndBoundWorkspacesTogether
 	}
 }
 
+func TestCandidateRuntimeServiceAllowsManagedOnlyRefreshWithoutSecretBinding(t *testing.T) {
+	now := time.Date(2026, 7, 29, 18, 0, 0, 0, time.UTC)
+	connections := &candidateRuntimeConnections{}
+	host := &candidateRuntimeHost{}
+	service, err := NewCandidateRuntimeService(CandidateRuntimeServiceConfig{
+		Connections: connections, Runtime: host, RuntimeVersion: "leapview:test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	receipt, err := service.Prepare(t.Context(), CandidateRuntimeRequest{
+		Candidate:                candidateRuntimeTestCandidate(t, now),
+		AuthorizationFingerprint: "policy:v1",
+		Workspaces: []CandidateWorkspaceRuntime{{
+			WorkspaceID: "sales", ServingStateID: "state_sales",
+			ArtifactDigest: "sha256:" + strings.Repeat("c", 64),
+			DataRevision:   "sources:managed", DataMode: CandidateDataRefreshSources,
+			ManagedDataConnections: []string{"olist"},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(receipt.Workspaces) != 1 || len(receipt.Workspaces[0].Bindings) != 0 {
+		t.Fatalf("receipt = %#v", receipt)
+	}
+	if len(connections.requests) != 1 ||
+		len(connections.requests[0].Requirements) != 0 {
+		t.Fatalf("connection requests = %#v", connections.requests)
+	}
+}
+
 func TestCandidateRuntimeServiceReleasesPartialConnectionsOnFailure(t *testing.T) {
 	now := time.Date(2026, 7, 29, 18, 0, 0, 0, time.UTC)
 	connections := &candidateRuntimeConnections{failWorkspace: "sales"}

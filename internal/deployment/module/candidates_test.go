@@ -25,6 +25,7 @@ import (
 
 func TestCandidateSynchronizationPlansUploadsAndCommitsOwnedCandidate(t *testing.T) {
 	module := testCandidateModule(t, "principal_1")
+	module.candidateAdmission = candidatePreparationAdmitterStub{}
 	digest := "sha256:" + strings.Repeat("a", 64)
 	blobDigest := "sha256:" + strings.Repeat("b", 64)
 	sources := &candidateSourceSynchronizerStub{missing: []string{blobDigest}}
@@ -47,12 +48,15 @@ func TestCandidateSynchronizationPlansUploadsAndCommitsOwnedCandidate(t *testing
 		}},
 	}}
 	module.candidateArtifacts = artifacts
-	runtimes := &candidateRuntimePreparerStub{receipt: deployment.CandidateRuntimeReceipt{
-		RuntimeVersion: "runtime:test",
-		Workspaces: []deployment.CandidateWorkspaceRuntimeReceipt{{
-			WorkspaceID: "sales",
-		}},
-	}}
+	runtimes := &candidateRuntimePreparerStub{
+		requireAdmission: true,
+		receipt: deployment.CandidateRuntimeReceipt{
+			RuntimeVersion: "runtime:test",
+			Workspaces: []deployment.CandidateWorkspaceRuntimeReceipt{{
+				WorkspaceID: "sales",
+			}},
+		},
+	}
 	module.candidateRuntimes = runtimes
 	body := `{"projectFile":"leapview.yaml","artifactDigest":"` + digest +
 		`","artifacts":[{"path":"leapview.yaml","digest":"` + blobDigest + `"}]}`
@@ -622,18 +626,45 @@ func (stub *candidateArtifactPreparerStub) CandidateProvenance(
 }
 
 type candidateRuntimePreparerStub struct {
-	calls   int
-	err     error
-	receipt deployment.CandidateRuntimeReceipt
+	calls            int
+	err              error
+	receipt          deployment.CandidateRuntimeReceipt
+	requireAdmission bool
 }
 
 func (stub *candidateRuntimePreparerStub) Prepare(
-	context.Context,
-	deployment.CandidateRuntimeRequest,
+	ctx context.Context,
+	_ deployment.CandidateRuntimeRequest,
 ) (deployment.CandidateRuntimeReceipt, error) {
 	stub.calls++
+	if stub.requireAdmission {
+		if admitted, _ := ctx.Value(candidatePreparationAdmissionKey{}).(bool); !admitted {
+			return deployment.CandidateRuntimeReceipt{}, errors.New(
+				"candidate runtime preparation was not admitted as control work",
+			)
+		}
+	}
 	return stub.receipt, stub.err
 }
+
+type candidatePreparationAdmissionKey struct{}
+
+type candidatePreparationAdmitterStub struct{}
+
+func (candidatePreparationAdmitterStub) AcquireCandidatePreparation(
+	ctx context.Context,
+) (CandidatePreparationLease, error) {
+	return candidatePreparationLeaseStub{
+		ctx: context.WithValue(ctx, candidatePreparationAdmissionKey{}, true),
+	}, nil
+}
+
+type candidatePreparationLeaseStub struct {
+	ctx context.Context
+}
+
+func (lease candidatePreparationLeaseStub) Context() context.Context { return lease.ctx }
+func (candidatePreparationLeaseStub) Release()                       {}
 
 func standardContentDigest(t *testing.T, identity string) string {
 	t.Helper()

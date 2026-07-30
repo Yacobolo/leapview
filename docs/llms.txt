@@ -56,7 +56,7 @@ Focused slices are available at `/docs/agent-tools/tools/{name}.json|md`, `/docs
 ### Deploy and operate
 
 - [Deploy and operate LeapView](/docs/guides/operate): Understand the production delivery and operations workflow.
-- [Validate, plan, and deploy](/docs/cli/validate-deploy): Use the standard atomic delivery workflow.
+- [Develop, review, and publish](/docs/cli/validate-deploy): Preview a private target candidate and publish that exact revision.
 - [Targets and environments](/docs/cli/targets): Keep local, staging, and production changes explicit.
 - [Production configuration](/docs/guides/operate/production-configuration): Configure secrets, storage, auth, and runtime boundaries.
 - [Self-hosting](/docs/guides/operate/self-hosting): Build and run a supported single-node deployment.
@@ -141,6 +141,7 @@ Focused slices are available at `/docs/agent-tools/tools/{name}.json|md`, `/docs
 - [leapview login](/docs/cli/login): Sign in to a LeapView target for project authoring
 - [leapview logout](/docs/cli/logout): Revoke a LeapView authoring session and remove local credentials
 - [leapview plan](/docs/cli/plan): Emit a deterministic configuration-as-code plan
+- [leapview publish](/docs/cli/publish): Publish the exact candidate last synchronized by dev
 - [leapview schema](/docs/cli/schema): Inspect LeapView YAML schemas
 - [leapview search](/docs/cli/search): Search accessible product objects
 - [leapview semantic-models](/docs/cli/semantic-models): Inspect semantic models

@@ -267,7 +267,11 @@ func (r *SourceRuntime) resolveCredentials(ctx context.Context, model *semanticm
 	resolved.Connections = make(map[string]semanticmodel.Connection, len(model.Connections))
 	connectionNames := make(map[string]string, len(model.Connections))
 	for name, connection := range model.Connections {
-		if r.connectionResolver != nil {
+		if connection.Kind == "managed" {
+			// Managed-data roots are already resolved from immutable
+			// serving-state bindings by Runtime Host. They must never be
+			// replaced by a secret-backed target connection.
+		} else if r.connectionResolver != nil {
 			var err error
 			connection, err = r.connectionResolver.Resolve(ctx, name, connection)
 			if err != nil {

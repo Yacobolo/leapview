@@ -232,7 +232,6 @@ deploy_project() {
     echo "Skipping dev project deploy"
     return 0
   fi
-	local -a revision_args=()
 	if [[ "$project" == "dashboards/leapview.yaml" ]]; then
 		connection="${connection:-olist}"
 		from="${from:-.data/olist}"
@@ -250,9 +249,9 @@ deploy_project() {
       echo "Managed data sync did not return a canonical revision." >&2
       return 1
     }
-		revision_args=(--revision "$connection=$revision")
 	fi
-  go run ./cmd/leapview deploy --project "$project" "${revision_args[@]}" --target "http://localhost:${port}" --token dev --auto-approve
+  go run ./cmd/leapview dev --once --project "$project" --target "http://localhost:${port}" --token dev
+  go run ./cmd/leapview publish --project "$project" --target "http://localhost:${port}" --token dev
 }
 
 attach_server() {

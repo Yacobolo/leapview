@@ -1,9 +1,16 @@
 package module
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -13,12 +20,14 @@ import (
 )
 
 const candidateSourcePlanLifetime = 5 * time.Minute
+const candidateSourcePlanVersion = 1
 
 type candidateSourceSynchronizer struct {
-	store *projectdevloop.TargetStore
-	now   func() time.Time
-	mu    sync.Mutex
-	plans map[candidateSourcePlanKey]candidateSourcePlan
+	store   *projectdevloop.TargetStore
+	planDir string
+	now     func() time.Time
+	mu      sync.Mutex
+	plans   map[candidateSourcePlanKey]candidateSourcePlan
 }
 
 type candidateSourcePlanKey struct {
@@ -32,15 +41,31 @@ type candidateSourcePlan struct {
 	missing   map[string]struct{}
 }
 
+type candidateSourcePlanRecord struct {
+	Version        int      `json:"version"`
+	ProjectID      string   `json:"projectId"`
+	OwnerID        string   `json:"ownerId"`
+	ArtifactDigest string   `json:"artifactDigest"`
+	ExpiresAt      string   `json:"expiresAt"`
+	Missing        []string `json:"missing"`
+}
+
 func NewCandidateSourceSynchronizer(root string) (project.CandidateSourceSynchronizer, error) {
 	store, err := projectdevloop.NewTargetStore(root)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", project.ErrCandidateSourceUnavailable, err)
 	}
-	return &candidateSourceSynchronizer{
-		store: store, now: time.Now,
-		plans: make(map[candidateSourcePlanKey]candidateSourcePlan),
-	}, nil
+	synchronizer := &candidateSourceSynchronizer{
+		store: store, planDir: filepath.Join(root, ".synchronization-plans"),
+		now: time.Now, plans: make(map[candidateSourcePlanKey]candidateSourcePlan),
+	}
+	if err := os.MkdirAll(synchronizer.planDir, 0o700); err != nil {
+		return nil, fmt.Errorf("%w: create source synchronization plan store: %v", project.ErrCandidateSourceUnavailable, err)
+	}
+	if err := synchronizer.loadPlans(); err != nil {
+		return nil, fmt.Errorf("%w: load source synchronization plans: %v", project.ErrCandidateSourceUnavailable, err)
+	}
+	return synchronizer, nil
 }
 
 func (synchronizer *candidateSourceSynchronizer) Plan(
@@ -62,12 +87,17 @@ func (synchronizer *candidateSourceSynchronizer) Plan(
 	for _, identity := range missing {
 		allowed[identity] = struct{}{}
 	}
-	synchronizer.plans[candidateSourcePlanKey{
+	key := candidateSourcePlanKey{
 		projectID: strings.TrimSpace(scope.ProjectID), ownerID: strings.TrimSpace(scope.OwnerID),
 		artifactDigest: strings.TrimSpace(request.ArtifactDigest),
-	}] = candidateSourcePlan{
+	}
+	plan := candidateSourcePlan{
 		expiresAt: synchronizer.now().UTC().Add(candidateSourcePlanLifetime), missing: allowed,
 	}
+	if err := synchronizer.savePlan(key, plan); err != nil {
+		return nil, fmt.Errorf("%w: persist source synchronization plan: %v", project.ErrCandidateSourceUnavailable, err)
+	}
+	synchronizer.plans[key] = plan
 	return missing, nil
 }
 
@@ -121,10 +151,12 @@ func (synchronizer *candidateSourceSynchronizer) Commit(
 		return project.CandidateSourceSnapshot{}, candidateSourceInvalid(err)
 	}
 	synchronizer.mu.Lock()
-	delete(synchronizer.plans, candidateSourcePlanKey{
+	key := candidateSourcePlanKey{
 		projectID: strings.TrimSpace(scope.ProjectID), ownerID: strings.TrimSpace(scope.OwnerID),
 		artifactDigest: strings.TrimSpace(request.ArtifactDigest),
-	})
+	}
+	delete(synchronizer.plans, key)
+	_ = os.Remove(synchronizer.planPath(key))
 	synchronizer.mu.Unlock()
 	return project.CandidateSourceSnapshot{
 		ProjectID: stored.ProjectID, ArtifactDigest: stored.Digest,
@@ -138,8 +170,106 @@ func (synchronizer *candidateSourceSynchronizer) purgeExpiredLocked() {
 	for key, plan := range synchronizer.plans {
 		if !now.Before(plan.expiresAt) {
 			delete(synchronizer.plans, key)
+			_ = os.Remove(synchronizer.planPath(key))
 		}
 	}
+}
+
+func (synchronizer *candidateSourceSynchronizer) loadPlans() error {
+	entries, err := os.ReadDir(synchronizer.planDir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(synchronizer.planDir, entry.Name()))
+		if err != nil {
+			return err
+		}
+		decoder := json.NewDecoder(bytes.NewReader(content))
+		decoder.DisallowUnknownFields()
+		var record candidateSourcePlanRecord
+		if err := decoder.Decode(&record); err != nil {
+			return fmt.Errorf("decode %s: %w", entry.Name(), err)
+		}
+		if record.Version != candidateSourcePlanVersion {
+			return fmt.Errorf("%s has unsupported version %d", entry.Name(), record.Version)
+		}
+		expiresAt, err := time.Parse(time.RFC3339Nano, record.ExpiresAt)
+		if err != nil {
+			return fmt.Errorf("decode %s expiry: %w", entry.Name(), err)
+		}
+		key := candidateSourcePlanKey{
+			projectID:      strings.TrimSpace(record.ProjectID),
+			ownerID:        strings.TrimSpace(record.OwnerID),
+			artifactDigest: strings.TrimSpace(record.ArtifactDigest),
+		}
+		if entry.Name() != filepath.Base(synchronizer.planPath(key)) {
+			return fmt.Errorf("%s identity does not match filename", entry.Name())
+		}
+		missing := make(map[string]struct{}, len(record.Missing))
+		for _, identity := range record.Missing {
+			missing[strings.TrimSpace(identity)] = struct{}{}
+		}
+		synchronizer.plans[key] = candidateSourcePlan{
+			expiresAt: expiresAt.UTC(),
+			missing:   missing,
+		}
+	}
+	synchronizer.purgeExpiredLocked()
+	return nil
+}
+
+func (synchronizer *candidateSourceSynchronizer) savePlan(
+	key candidateSourcePlanKey,
+	plan candidateSourcePlan,
+) error {
+	missing := make([]string, 0, len(plan.missing))
+	for identity := range plan.missing {
+		missing = append(missing, identity)
+	}
+	sort.Strings(missing)
+	content, err := json.Marshal(candidateSourcePlanRecord{
+		Version:   candidateSourcePlanVersion,
+		ProjectID: key.projectID, OwnerID: key.ownerID,
+		ArtifactDigest: key.artifactDigest,
+		ExpiresAt:      plan.expiresAt.UTC().Format(time.RFC3339Nano),
+		Missing:        missing,
+	})
+	if err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(synchronizer.planDir, ".plan-*.json")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err := temporary.Chmod(0o600); err != nil {
+		temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(content); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryPath, synchronizer.planPath(key))
+}
+
+func (synchronizer *candidateSourceSynchronizer) planPath(key candidateSourcePlanKey) string {
+	sum := sha256.Sum256([]byte(
+		key.projectID + "\x00" + key.ownerID + "\x00" + key.artifactDigest,
+	))
+	return filepath.Join(synchronizer.planDir, hex.EncodeToString(sum[:])+".json")
 }
 
 func synchronizationPlanRequest(
