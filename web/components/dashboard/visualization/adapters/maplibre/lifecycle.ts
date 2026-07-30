@@ -49,6 +49,38 @@ export function waitForMapIdle(map: MapLibreMap): Promise<void> {
   return waitForMapEvent(map, ['idle'], 10_000)
 }
 
+// Style readiness is the earliest safe point for installing governed sources
+// and layers. MapLibre's later `load` event can wait on source tiles, which
+// makes several independent maps contend even though their styles are ready.
+export function waitForMapStyle(map: Pick<MapLibreMap, 'isStyleLoaded' | 'once' | 'off'>, timeoutMs = 10_000): Promise<void> {
+  if (map.isStyleLoaded()) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const cleanup = () => {
+      if (timer !== undefined) clearTimeout(timer)
+      map.off('style.load', loaded)
+      map.off('load', loaded)
+      map.off('error', failed)
+    }
+    const loaded = () => {
+      cleanup()
+      resolve()
+    }
+    const failed = (event: unknown) => {
+      cleanup()
+      const error = (event as { error?: unknown } | undefined)?.error
+      reject(error instanceof Error ? error : new Error('MapLibre style failed to load'))
+    }
+    map.once('style.load', loaded)
+    map.once('load', loaded)
+    map.once('error', failed)
+    timer = setTimeout(() => {
+      cleanup()
+      reject(new Error(`MapLibre style did not become ready within ${timeoutMs}ms`))
+    }, timeoutMs)
+  })
+}
+
 // A renderer is ready once MapLibre has painted the configured style and data
 // layers. Waiting for `idle` here is incorrect: that event also requires every
 // requested basemap tile to settle, so a slow or unavailable tile can leave the

@@ -42048,6 +42048,7 @@ components:
         - $ref: '#/components/schemas/VisualizationPresentation'
       required:
         - roam
+        - basemap
         - theme
         - labelDensity
         - camera

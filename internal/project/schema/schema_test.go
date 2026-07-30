@@ -88,9 +88,54 @@ spec:
   pages:
     - id: overview
       title: Overview
-      visuals: []
+      components:
+        - id: locations
+          kind: visual
+          visual: locations
+          placement: {col: 1, row: 1, col_span: 6, row_span: 4}
 `))
 	assertDiagnostic(t, err, "schema.enum", "type")
+}
+
+func TestDashboardMapRejectsRemovedBasemapAuthoringField(t *testing.T) {
+	err := ValidateBytes(KindDashboardResource, "dashboard.yaml", []byte(`
+apiVersion: leapview.dev/v1
+kind: Dashboard
+metadata:
+  name: sales
+spec:
+  semanticModel: sales
+  visuals:
+    locations:
+      type: map
+      query:
+        dimensions: [customers.latitude, customers.longitude]
+      geo:
+        basemap: blank
+        layers:
+          - id: customers
+            kind: point
+            latitude: customers_latitude
+            longitude: customers_longitude
+  pages:
+    - id: overview
+      title: Overview
+      components:
+        - id: locations
+          kind: visual
+          visual: locations
+          placement: {col: 1, row: 1, col_span: 6, row_span: 4}
+`))
+	var schemaErr *Error
+	if !errors.As(err, &schemaErr) {
+		t.Fatalf("ValidateBytes() error = %v, want schema error", err)
+	}
+	for _, diagnostic := range schemaErr.Diagnostics {
+		if diagnostic.Code == "schema.unknown_field" && strings.Contains(diagnostic.Message, "geo.basemap") {
+			return
+		}
+	}
+	t.Fatalf("diagnostics = %#v, want removed geo.basemap field", schemaErr.Diagnostics)
 }
 
 func TestDashboardVisualContractUnifiesChartsAndTables(t *testing.T) {

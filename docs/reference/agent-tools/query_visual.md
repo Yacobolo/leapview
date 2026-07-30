@@ -255,9 +255,6 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_visual.json) · [
         "area": {
           "type": "boolean"
         },
-        "basemap": {
-          "type": "string"
-        },
         "breadcrumb": {
           "type": "boolean"
         },

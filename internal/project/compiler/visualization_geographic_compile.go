@@ -2,7 +2,6 @@ package compiler
 
 import (
 	"fmt"
-	"strings"
 
 	reportdef "github.com/flidai/leapview/internal/dashboard/report"
 	visualizationgeometry "github.com/flidai/leapview/internal/dashboard/visualization/geometry"
@@ -56,17 +55,9 @@ func compileGeographicVisualizationSpec(authored reportdef.Visual) (visualizatio
 	if legend == "" {
 		legend = visualizationir.VisualizationLegendPositionHidden
 	}
-	basemapID := strings.TrimSpace(authored.Geo.Basemap)
-	if basemapID == "" {
-		basemapID = "streets"
-	}
-	var basemap *visualizationir.VisualizationMapStyleAsset
-	if basemapID != "blank" {
-		asset, err := visualizationmapasset.Resolve(basemapID)
-		if err != nil {
-			return visualizationir.VisualizationSpec{}, fmt.Errorf("geographic basemap: %w", err)
-		}
-		basemap = &asset
+	basemap, err := visualizationmapasset.Resolve("streets")
+	if err != nil {
+		return visualizationir.VisualizationSpec{}, fmt.Errorf("resolve built-in geographic basemap: %w", err)
 	}
 	theme := visualizationir.VisualizationMapTheme(authored.Geo.Theme)
 	if theme == "" {

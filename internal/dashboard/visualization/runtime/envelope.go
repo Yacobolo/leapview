@@ -287,7 +287,7 @@ func EmptyEnvelopeFromDefinition(definition visualizationdefinition.Definition, 
 			return ir.VisualizationEnvelope{}, fmt.Errorf("compiled spatial visualization %q is not geographic", definition.ID)
 		}
 		extent := ir.VisualizationSpatialBounds{West: -180, South: -85, East: 180, North: 85}
-		if asset := geographic.Presentation.Basemap; asset != nil && len(asset.Bounds) == 4 {
+		if asset := geographic.Presentation.Basemap; len(asset.Bounds) == 4 {
 			extent = ir.VisualizationSpatialBounds{West: asset.Bounds[0], South: asset.Bounds[1], East: asset.Bounds[2], North: asset.Bounds[3]}
 		}
 		state := ir.SpatialWindowedVisualizationDataState{

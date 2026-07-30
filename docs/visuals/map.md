@@ -4,15 +4,17 @@ Use a map for regional comparisons or observations with geographic coordinates.
 
 Every preview on this page is generated from the YAML shown below it using a fixed documentation dataset.
 
-Maps use LeapView's pinned, OSM-derived vector basemap by default. It retains global context through zoom 6 and adds South America business-region detail through zoom 10, including the roads and place labels needed by the Brazil showcase. The PMTiles archive, style, glyphs, and sprites are content addressed and served from LeapView's own origin, so rendering never sends governed coordinates or browsing activity to a third-party tile service. Set `geo.basemap: blank` when geographic context should be omitted.
+Every map uses LeapView's built-in worldwide vector basemap. The PMTiles archive, style, glyphs, and sprites are embedded in the released Go binary and served through content-addressed same-origin URLs. A deployment needs no map directory, CDN, object store, runtime download, or internet access, and map rendering never sends governed coordinates or browsing activity to a third party.
 
-Production operators can publish the verified inventory to S3-compatible managed object storage with `task map-assets:publish MAP_ASSET_S3_BUCKET=...`. Publication is conditional and idempotent: existing keys must match the compiled digest, size, content type, and immutable cache policy, and conflicting objects are rejected instead of overwritten. Route the published `map-assets/` prefix through the application origin or edge proxy so browser requests remain same-origin.
+`geo.basemap` has been removed from the pre-1.0 authoring contract. Existing declarations, including `basemap: blank`, are rejected so a compiled geographic specification can never silently lose geographic context. Remove the field during migration; there is no replacement setting.
 
-After the edge route is live, run `task map-assets:verify MAP_ASSET_BASE_URL=https://dash.example`. The verifier checks every content-addressed URL, immutable caching, media types, byte-range support, complete digests for styles, glyphs, and sprites, and exact first/last ranges for the PMTiles archive. `map-assets:publish` accepts the same optional `MAP_ASSET_BASE_URL` to make this a single publish-and-verify gate.
+The current package is derived from the pinned Protomaps snapshot `https://build.protomaps.com/20260720.pmtiles` with `go-pmtiles v1.31.1`. It contains worldwide zooms 0–6 only. The archive is exactly 44,725,293 bytes with SHA-256 `2d97ee8907670936ab722da7ca06eafec0734392f73fa1cd337d4debd85d676f`; the style SHA-256 is `eeb32e219ad7dd4178377e21a2f11477b44408ab44a4878579692315add1e7f7`; and glyphs and sprites are pinned to Protomaps basemap-assets revision `028c18f713baecad011301ff7a69acc39bcc2ae7`. Data is attributed to OpenStreetMap contributors under ODbL 1.0, and the derived style is BSD-3-Clause.
 
-LeapView verifies the complete installed package before opening instance state. The same verifier backs the `mapAssets` readiness check: unchanged files use cached metadata, while any changed file is rehashed and a missing or mismatched asset immediately makes `/readyz` return `503`.
+Maintainers rebuild the checked-in package with `task map-assets:generate`. The generator verifies every digest and the exact archive size before the package can be embedded. Application readiness verifies the embedded inventory, HTTP qualification exercises `200`/`206` range delivery, `Content-Range`, `Accept-Ranges`, immutable caching, and ETags, and production-image CI measures the exact packaged binary against its size budget.
 
-The previews on this page exercise rendering only. Semantic and spatial selections require the dashboard command and SSE runtime, so crossfilter behavior belongs in a runtime-capable dashboard rather than this static visual reference. Camera, zoom, reset, compass, label density, and light/dark basemap themes are typed under `geo`.
+The basemap is intentionally a global decision-context layer, not a street-navigation product. World, country, first-order region, major-city, water, boundary, and primary-road context is qualified through zoom 6. Brazil uses the same worldwide archive and style as every other region; no regional extraction or privileged rendering path exists. Street-level detail above zoom 6 and author-supplied tile sources are explicit non-goals for this package.
+
+The previews on this page exercise rendering only. Semantic and spatial selections require the dashboard command and SSE runtime, so crossfilter behavior belongs in a runtime-capable dashboard rather than this static visual reference. Camera, zoom, reset, compass, deterministic label density, and light/dark basemap themes are typed under `geo`.
 
 ## Choropleth
 
@@ -54,7 +56,7 @@ visuals:
 
 ## Points
 
-Point layers bind numeric latitude and longitude query aliases. An optional value controls marker size without exposing MapLibre configuration. Coordinate layers include a subtle geographic reference grid when no basemap asset is present.
+Point layers bind numeric latitude and longitude query aliases. An optional value controls marker size without exposing MapLibre configuration.
 
 The Visual Showcase includes a dedicated `chart-map-scale` page backed by exactly one million deterministic locations. It demonstrates the production spatial-window path: LeapView aggregates the governed viewport at low zoom, returns raw governed points only when the visible cardinality fits, and never sends more than 5,000 rendered features to the browser.
 
@@ -162,7 +164,6 @@ visuals:
         order_count: null
       limit: 27
     geo:
-      basemap: blank
       layers:
         - id: state_boundaries
           kind: reference

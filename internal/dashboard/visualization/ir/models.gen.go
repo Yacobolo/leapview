@@ -63,7 +63,7 @@ type DurationVisualizationFormat struct {
 type GeographicVisualizationPresentation struct {
 	VisualizationPresentation
 	Roam         bool                         `json:"roam"`
-	Basemap      *VisualizationMapStyleAsset  `json:"basemap,omitempty"`
+	Basemap      VisualizationMapStyleAsset   `json:"basemap"`
 	Theme        VisualizationMapTheme        `json:"theme"`
 	LabelDensity VisualizationMapLabelDensity `json:"labelDensity"`
 	Camera       VisualizationMapCamera       `json:"camera"`

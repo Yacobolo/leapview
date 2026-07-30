@@ -467,11 +467,9 @@ func validateGeographicSpecification(spec VisualizationSpec) error {
 			return fmt.Errorf("unsupported geographic layer kind %q", kind)
 		}
 	}
-	if value.Presentation.Basemap != nil {
-		asset := value.Presentation.Basemap
-		if asset.ID == "" || asset.StyleURL == "" || asset.ArchiveURL == "" || len(asset.StyleDigest) != 71 || len(asset.ArchiveDigest) != 71 || asset.Attribution == "" {
-			return fmt.Errorf("geographic basemap has incomplete provenance")
-		}
+	asset := value.Presentation.Basemap
+	if asset.ID == "" || asset.StyleURL == "" || asset.ArchiveURL == "" || len(asset.StyleDigest) != 71 || len(asset.ArchiveDigest) != 71 || asset.Attribution == "" {
+		return fmt.Errorf("geographic basemap has incomplete provenance")
 	}
 	return nil
 }

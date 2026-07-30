@@ -59,7 +59,7 @@ func (m fakeMetrics) Report(string) (dashboarddefinition.Definition, *semanticmo
 					Dimensions: []reportdef.FieldRef{{Field: "latitude", Alias: "latitude"}, {Field: "longitude", Alias: "longitude"}, {Field: "state", Alias: "state"}},
 					Measures:   []reportdef.FieldRef{{Field: "order_count", Alias: "value"}},
 				},
-				Geo: reportdef.VisualGeo{Basemap: "blank", Layers: []reportdef.VisualGeoLayer{{ID: "customers", Kind: "point", Latitude: "latitude", Longitude: "longitude", Value: "value"}}},
+				Geo: reportdef.VisualGeo{Layers: []reportdef.VisualGeoLayer{{ID: "customers", Kind: "point", Latitude: "latitude", Longitude: "longitude", Value: "value"}}},
 				Interaction: reportdef.Interaction{SpatialSelection: reportdef.SpatialSelectionInteraction{
 					Gestures:  []string{"box", "lasso", "radius"},
 					Latitude:  reportdef.SpatialSelectionMapping{Source: "latitude", Field: "latitude"},

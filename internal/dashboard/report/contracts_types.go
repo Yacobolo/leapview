@@ -186,7 +186,6 @@ type VisualDataBudget struct {
 }
 
 type VisualGeo struct {
-	Basemap      string            `yaml:"basemap" json:"basemap"`
 	Theme        string            `yaml:"theme" json:"theme"`
 	LabelDensity string            `yaml:"label_density" json:"labelDensity"`
 	Camera       VisualGeoCamera   `yaml:"camera" json:"camera"`

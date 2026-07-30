@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 
 import type { VisualizationEnvelope, VisualizationGeographicLayer } from '../../../../generated/visualization'
 import type { FeatureCollection } from 'geojson'
-import { applyFeatureScales, basemapBoundaryLayer, basemapLayer, basemapThemeKey, clusterExpansionForRenderedFeatures, concreteCSSColor, coordinateGeometry, coordinateReferenceGrid, createBasemapThemeScheduler, fitMapToGeographicData, installWebGLRecovery, interactionCommandForRenderedFeatures, joinGeometry, loadMapStyleAsset, mapAccessibleData, mapInteractionCommand, mapLayer, mapLibreChromeCSS, mapOutlineLayer, mapPointerOptions, mapThemeColors, mapTooltipEntries, nextSpatialRequestSequence, normalizeFeatureWeights, pathGeometry, removeRendererFrame, resetMapToHome, sameOriginGeometryURL, setRendererFramePresented, spatialWindowAlreadyCurrent, spatialWindowRequest, updateSelectionSources, verifyGeometryDigest, waitForMapRender } from './maplibre'
+import { applyBasemapTheme, applyFeatureScales, basemapBoundaryLayer, basemapLayer, basemapThemeKey, canvasPNGSnapshot, clusterExpansionForRenderedFeatures, concreteCSSColor, coordinateGeometry, createBasemapThemeScheduler, fitMapToGeographicData, installWebGLRecovery, interactionCommandForRenderedFeatures, joinGeometry, loadMapStyleAsset, mapAccessibleData, mapInteractionCommand, mapLayer, mapLibreChromeCSS, mapOutlineLayer, mapPointerOptions, mapThemeColors, mapTooltipEntries, nextSpatialRequestSequence, normalizeFeatureWeights, pathGeometry, removeRendererFrame, resetMapToHome, sameOriginGeometryURL, setRendererFramePresented, spatialWindowAlreadyCurrent, spatialWindowRequest, updateSelectionSources, verifyGeometryDigest, waitForMapRender, waitForMapStyle } from './maplibre'
 import { adapterObservation } from '../telemetry'
 
 test('MapLibre owns usable shadow-DOM styles for map navigation controls', () => {
@@ -83,6 +83,33 @@ test('MapLibre becomes renderer-ready after a rendered frame without waiting for
 
   expect(listeners.get('idle')?.size).toBe(0)
   expect(listeners.get('render')?.size).toBe(0)
+})
+
+test('MapLibre starts governed layers after style readiness without waiting for source tiles', async () => {
+  const listeners = new Map<string, Set<(event?: unknown) => void>>()
+  const map = {
+    isStyleLoaded: () => false,
+    once: (event: string, listener: (event?: unknown) => void) => {
+      const eventListeners = listeners.get(event) ?? new Set()
+      eventListeners.add(listener)
+      listeners.set(event, eventListeners)
+    },
+    off: (event: string, listener: (event?: unknown) => void) => listeners.get(event)?.delete(listener),
+  }
+
+  const ready = waitForMapStyle(map, 100)
+  expect(listeners.get('style.load')?.size).toBe(1)
+  expect(listeners.get('load')?.size).toBe(1)
+  listeners.get('style.load')?.forEach((listener) => listener())
+  await ready
+  expect(listeners.get('style.load')?.size).toBe(0)
+  expect(listeners.get('load')?.size).toBe(0)
+})
+
+test('MapLibre snapshots the presented frame without an unbounded canvas callback', async () => {
+  const snapshot = canvasPNGSnapshot({ toDataURL: () => 'data:image/png;base64,iVBORw==' })
+  expect(snapshot.type).toBe('image/png')
+  expect([...new Uint8Array(await snapshot.arrayBuffer())]).toEqual([137, 80, 78, 71])
 })
 
 test('MapLibre keeps its frame hidden and inaccessible until the final fitted frame is presented', () => {
@@ -391,23 +418,6 @@ test('MapLibre reset cancels queued camera motion before restoring the home came
   expect(calls).toEqual(['stop', `jump:${JSON.stringify(home)}`])
 })
 
-test('MapLibre coordinate maps get a bounded geographic reference grid', () => {
-  const data = {
-    type: 'FeatureCollection',
-    features: [
-      { type: 'Feature', geometry: { type: 'Point', coordinates: [-73.9, -33.7] }, properties: {} },
-      { type: 'Feature', geometry: { type: 'Point', coordinates: [-35.1, 4.2] }, properties: {} },
-    ],
-  } as FeatureCollection
-
-  const grid = coordinateReferenceGrid([data])
-  expect(grid.features.length).toBeGreaterThanOrEqual(8)
-  expect(grid.features.every((feature) => feature.geometry.type === 'LineString')).toBe(true)
-  expect(grid.features.flatMap((feature) => feature.geometry.type === 'LineString' ? feature.geometry.coordinates : [])
-    .every(([longitude, latitude]) => longitude! >= -180 && longitude! <= 180 && latitude! >= -90 && latitude! <= 90)).toBe(true)
-  expect(coordinateReferenceGrid([{ type: 'FeatureCollection', features: [] }]).features).toEqual([])
-})
-
 test('MapLibre heat palettes increase monotonically from transparent to dark', () => {
   for (const kind of ['heat', 'density'] as const) {
     const layer = mapLayer('observations', kind)
@@ -478,6 +488,43 @@ test('MapLibre auto basemaps follow the resolved application color scheme', () =
   expect(mapThemeColors('auto', 'dark')).toEqual(mapThemeColors('dark', 'light'))
   expect(mapThemeColors('auto', 'light')).toEqual(mapThemeColors('light', 'dark'))
   expect(mapThemeColors('auto', 'dark')).not.toEqual(mapThemeColors('auto', 'light'))
+})
+
+test('MapLibre basemap theming preserves cartographic hierarchy and deterministic label density', () => {
+  const layers = [
+    { id: 'earth', type: 'fill', metadata: { 'leapview:role': 'land' } },
+    { id: 'landuse_park', type: 'fill', metadata: { 'leapview:role': 'land' } },
+    { id: 'boundaries_country', type: 'line', metadata: { 'leapview:role': 'boundary' } },
+    { id: 'boundaries', type: 'line', metadata: { 'leapview:role': 'boundary' } },
+    { id: 'roads_highway', type: 'line', metadata: { 'leapview:role': 'road' } },
+    { id: 'roads_minor', type: 'line', metadata: { 'leapview:role': 'road' } },
+    { id: 'places_country', type: 'symbol', metadata: { 'leapview:role': 'label' } },
+    { id: 'places_locality', type: 'symbol', metadata: { 'leapview:role': 'label' } },
+    { id: 'pois', type: 'symbol', metadata: { 'leapview:role': 'label' } },
+  ] as any[]
+  const paint = new Map<string, unknown>()
+  const layout = new Map<string, unknown>()
+  const map = {
+    getStyle: () => ({ layers }),
+    getLayer: () => ({}),
+    setPaintProperty: (id: string, property: string, value: unknown) => paint.set(`${id}.${property}`, value),
+    setLayoutProperty: (id: string, property: string, value: unknown) => layout.set(`${id}.${property}`, value),
+  } as any
+
+  const colors = mapThemeColors('light', 'dark')
+  applyBasemapTheme(map, colors, '#fff', 'normal')
+  expect(paint.get('earth.fill-color')).not.toBe(paint.get('landuse_park.fill-color'))
+  expect(paint.get('boundaries_country.line-color')).not.toBe(paint.get('boundaries.line-color'))
+  expect(paint.get('roads_highway.line-color')).not.toBe(paint.get('roads_minor.line-color'))
+  expect(paint.get('places_country.text-color')).not.toBe(paint.get('places_locality.text-color'))
+  expect(layout.get('places_country.visibility')).toBe('visible')
+  expect(layout.get('places_locality.visibility')).toBe('visible')
+  expect(layout.get('pois.visibility')).toBe('none')
+
+  applyBasemapTheme(map, colors, '#fff', 'dense')
+  expect(layout.get('pois.visibility')).toBe('visible')
+  applyBasemapTheme(map, colors, '#fff', 'hidden')
+  expect(layout.get('places_country.visibility')).toBe('none')
 })
 
 test('MapLibre coalesces unchanged themes and serializes WebGL style mutations by frame', async () => {

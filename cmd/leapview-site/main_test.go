@@ -1,9 +1,6 @@
 package main
 
 import (
-	"context"
-	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -81,27 +78,5 @@ func TestParseShowcaseEmbedURL(t *testing.T) {
 		if got.String() != test.want {
 			t.Errorf("parseShowcaseEmbedURL(%q) = %q, want %q", test.raw, got, test.want)
 		}
-	}
-}
-
-func TestMapAssetsRootFromEnvironmentAllowsEmbeddedDevelopmentFallback(t *testing.T) {
-	t.Setenv("LEAPVIEW_SITE_MAP_ASSETS_ROOT", "")
-	if got := mapAssetsRootFromEnvironment(); got != "" {
-		t.Fatalf("mapAssetsRootFromEnvironment() = %q, want empty development fallback", got)
-	}
-	root := filepath.Join(t.TempDir(), "map-assets")
-	t.Setenv("LEAPVIEW_SITE_MAP_ASSETS_ROOT", "  "+root+"  ")
-	if got := mapAssetsRootFromEnvironment(); got != root {
-		t.Fatalf("mapAssetsRootFromEnvironment() = %q, want %q", got, root)
-	}
-}
-
-func TestRunFailsBeforeListeningWhenMapAssetPackageIsInvalid(t *testing.T) {
-	if err := run(context.Background(), "127.0.0.1:0", nil, nil, "relative"); err == nil || !strings.Contains(err.Error(), "must be absolute") {
-		t.Fatalf("run(relative root) error = %v, want absolute-path diagnostic", err)
-	}
-	root := filepath.Join(t.TempDir(), "missing")
-	if err := run(context.Background(), "127.0.0.1:0", nil, nil, root); err == nil || !strings.Contains(err.Error(), "map asset") {
-		t.Fatalf("run(missing root) error = %v, want map-asset diagnostic", err)
 	}
 }

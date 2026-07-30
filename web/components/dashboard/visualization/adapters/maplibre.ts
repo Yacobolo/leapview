@@ -4,17 +4,17 @@ import type { FeatureCollection } from 'geojson'
 import type { OptimisticInteractionCommand } from '../../interaction-selection'
 import { Change, type RendererAdapter, type RendererContext, type RendererHandle } from '../host-controller'
 import { MapSelectionControl } from './map-selection-control'
-import { blankMapStyle, loadGeometryAsset, loadMapStyleAsset, registerPMTilesProtocol } from './maplibre/assets'
+import { loadGeometryAsset, loadMapStyleAsset, registerPMTilesProtocol } from './maplibre/assets'
 import { applyBasemapTheme, basemapThemeKey, createBasemapThemeScheduler, mapThemeColors, scheduleBasemapThemeMutation, type BasemapColors } from './maplibre/basemap'
 import { installMapLibreChromeStyles } from './maplibre/chrome'
 import { coordinateGeometry, joinGeometry, pathGeometry } from './maplibre/data'
 import { applyFeatureScales, mapLayer, mapOutlineLayer, paletteColors } from './maplibre/layers'
 import { clusterExpansionForRenderedFeatures, interactionCommandForRenderedFeatures, mapInteractionCommand, updateSelectionSources } from './maplibre/interactions'
 import { mapAccessibleData, mapTooltipEntries, type RenderedFeatureLocator } from './maplibre/overlays'
-import { emitMapObservation, installWebGLRecovery, mapNow, removeRendererFrame, waitForMapIdle, waitForMapRender, type MapObservationStage } from './maplibre/lifecycle'
+import { emitMapObservation, installWebGLRecovery, mapNow, removeRendererFrame, waitForMapRender, waitForMapStyle, type MapObservationStage } from './maplibre/lifecycle'
 import { nextSpatialRequestSequence, spatialWindowAlreadyCurrent, spatialWindowRequest, type MapSpatialWindowRequest } from './maplibre/spatial'
 import { MapSpatialSelectionControl } from './maplibre/spatial-selection-control'
-import { coordinateReferenceGrid, fitMapToGeographicData, resetMapToHome, type MapHomeCamera } from './maplibre/viewport'
+import { fitMapToGeographicData, resetMapToHome, type MapHomeCamera } from './maplibre/viewport'
 
 export { loadMapStyleAsset, sameOriginGeometryURL, verifyGeometryDigest } from './maplibre/assets'
 export { applyBasemapTheme, basemapBoundaryLayer, basemapLayer, basemapThemeKey, concreteCSSColor, createBasemapThemeScheduler, mapThemeColors } from './maplibre/basemap'
@@ -23,9 +23,9 @@ export { coordinateGeometry, joinGeometry, pathGeometry } from './maplibre/data'
 export { applyFeatureScales, mapLayer, mapOutlineLayer, normalizeFeatureWeights } from './maplibre/layers'
 export { clusterExpansionForRenderedFeatures, interactionCommandForRenderedFeatures, mapInteractionCommand, updateSelectionSources } from './maplibre/interactions'
 export { mapAccessibleData, mapTooltipEntries } from './maplibre/overlays'
-export { installWebGLRecovery, removeRendererFrame, waitForMapIdle, waitForMapRender } from './maplibre/lifecycle'
+export { installWebGLRecovery, removeRendererFrame, waitForMapIdle, waitForMapRender, waitForMapStyle } from './maplibre/lifecycle'
 export { nextSpatialRequestSequence, spatialWindowAlreadyCurrent, spatialWindowRequest, type MapSpatialWindowRequest } from './maplibre/spatial'
-export { coordinateReferenceGrid, fitMapToGeographicData, resetMapToHome } from './maplibre/viewport'
+export { fitMapToGeographicData, resetMapToHome } from './maplibre/viewport'
 
 export const adapter: RendererAdapter = {
   async mount(container, envelope, context) {
@@ -36,12 +36,12 @@ export const adapter: RendererAdapter = {
     const attribution = document.createElement('div'); attribution.dataset.mapAttribution = ''; attribution.setAttribute('role', 'note'); attribution.setAttribute('aria-label', 'Map attribution')
     attribution.style.cssText = 'position:absolute;right:6px;bottom:6px;z-index:1;max-width:calc(100% - 12px);padding:2px 5px;border-radius:4px;background:color-mix(in srgb,var(--lv-bg-panel,#fff) 88%,transparent);color:var(--lv-fg-muted,#57606a);font:10px/1.3 var(--lv-font-family-ui,system-ui);pointer-events:none;text-align:right'
     frame.append(surface, attribution); container.replaceChildren(frame)
+    if (envelope.spec.kind !== 'geographic') throw new Error(`MapLibre cannot render ${envelope.spec.kind}`)
     const pointerOptions = mapPointerOptions(envelope)
-    const backgroundColor = getComputedStyle(frame).backgroundColor || '#f6f8fa'
-    const basemap = envelope.spec.kind === 'geographic' ? envelope.spec.presentation.basemap : undefined
+    const basemap = envelope.spec.presentation.basemap
     const basemapStarted = mapNow()
-    const style = basemap ? await loadMapStyleAsset(basemap, location.href) : blankMapStyle(backgroundColor)
-    emitMapObservation(frame, 'basemap_load', mapNow() - basemapStarted, envelope, { assetID: basemap?.id ?? 'blank' })
+    const style = await loadMapStyleAsset(basemap, location.href)
+    emitMapObservation(frame, 'basemap_load', mapNow() - basemapStarted, envelope, { assetID: basemap.id })
     registerPMTilesProtocol()
     const map = new MapLibre({
       container: surface,
@@ -50,7 +50,7 @@ export const adapter: RendererAdapter = {
       canvasContextAttributes: { preserveDrawingBuffer: true },
       ...pointerOptions,
     })
-    await new Promise<void>((resolve) => { map.once('load', () => resolve()) })
+    await waitForMapStyle(map)
     const handle = new MapLibreHandle(container, frame, map, attribution, context)
     try {
       await handle.update(envelope, Change.All, context)
@@ -174,19 +174,16 @@ class MapLibreHandle implements RendererHandle {
     this.clusterSources.clear()
     this.viewportInitialized = false
     const collections: FeatureCollection[] = []
-    const coordinateCollections: FeatureCollection[] = []
     const attributions = new Set<string>()
-    if (envelope.spec.presentation.basemap) attributions.add(envelope.spec.presentation.basemap.attribution)
+    attributions.add(envelope.spec.presentation.basemap.attribution)
     for (const layer of envelope.spec.layers) {
       const shapeStarted = mapNow()
       const collection = await this.addLayer(envelope, layer)
       emitMapObservation(this.frame, 'layer_shape', mapNow() - shapeStarted, envelope, { layerID: layer.id, featureCount: collection.features.length })
       if (this.disposed) return
       collections.push(collection)
-      if (layer.kind !== 'choropleth') coordinateCollections.push(collection)
       if ('geometry' in layer && layer.geometry.attribution) attributions.add(layer.geometry.attribution)
     }
-    if (!envelope.spec.presentation.basemap) this.addCoordinateReferenceGrid(coordinateCollections)
     this.attribution.textContent = [...attributions].join(' · ')
     this.attribution.hidden = attributions.size === 0
     this.initializeViewport(envelope, collections)
@@ -198,9 +195,8 @@ class MapLibreHandle implements RendererHandle {
   }
   resize(): void { this.map.resize() }
   async snapshot(): Promise<Blob> {
-    await waitForMapIdle(this.map)
-    const canvas = this.map.getCanvas()
-    return new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('MapLibre snapshot failed')), 'image/png'))
+    await waitForMapRender(this.map)
+    return canvasPNGSnapshot(this.map.getCanvas())
   }
   captureViewState(): MapHomeCamera {
     const center = this.map.getCenter()
@@ -227,22 +223,6 @@ class MapLibreHandle implements RendererHandle {
     removeRendererFrame(this.container, this.frame)
   }
 
-  private addCoordinateReferenceGrid(collections: FeatureCollection[]): void {
-    const data = coordinateReferenceGrid(collections)
-    if (data.features.length === 0) return
-    let id = '__lv-coordinate-reference'
-    while (this.map.getSource(id) || this.map.getLayer(id)) id += '-'
-    this.map.addSource(id, { type: 'geojson', data })
-    this.map.addLayer({
-      id,
-      source: id,
-      type: 'line',
-      paint: { 'line-color': '#8c959f', 'line-opacity': 0.22, 'line-width': 1, 'line-dasharray': [2, 3] },
-    }, this.sourceIDs[0])
-    this.sourceIDs.push(id)
-    this.layerIDs.push(id)
-  }
-
   private async addLayer(envelope: VisualizationEnvelope, layer: VisualizationGeographicLayer): Promise<FeatureCollection> {
     let data: FeatureCollection
     let geometry: FeatureCollection | undefined
@@ -264,7 +244,7 @@ class MapLibreHandle implements RendererHandle {
     const sourceOptions: any = { type: 'geojson', data }
     if (layer.kind === 'point' && layer.cluster.enabled) Object.assign(sourceOptions, { cluster: true, clusterRadius: layer.cluster.radius, clusterMaxZoom: layer.cluster.maximumZoom, clusterMinPoints: layer.cluster.minimumPoints })
     this.map.addSource(id, sourceOptions)
-    const before = layer.position === 'below_labels' && envelope.spec.kind === 'geographic' && envelope.spec.presentation.basemap?.labelAnchor && this.map.getLayer(envelope.spec.presentation.basemap.labelAnchor)
+    const before = layer.position === 'below_labels' && envelope.spec.kind === 'geographic' && envelope.spec.presentation.basemap.labelAnchor && this.map.getLayer(envelope.spec.presentation.basemap.labelAnchor)
       ? envelope.spec.presentation.basemap.labelAnchor : undefined
     this.map.addLayer(mapLayer(id, layer), before)
     this.sourceIDs.push(id)
@@ -531,6 +511,18 @@ class MapLibreHandle implements RendererHandle {
     return mapThemeColors(theme, this.context.theme)
   }
 
+}
+
+// MapLibre uses preserveDrawingBuffer for product snapshots. Reading that
+// already-presented frame synchronously avoids the browser's unbounded
+// HTMLCanvasElement.toBlob callback when several WebGL canvases share a page.
+export function canvasPNGSnapshot(canvas: Pick<HTMLCanvasElement, 'toDataURL'>): Blob {
+  const value = canvas.toDataURL('image/png')
+  const prefix = 'data:image/png;base64,'
+  if (!value.startsWith(prefix)) throw new Error('MapLibre snapshot did not produce PNG data')
+  const decoded = atob(value.slice(prefix.length))
+  const bytes = Uint8Array.from(decoded, (character) => character.charCodeAt(0))
+  return new Blob([bytes], { type: 'image/png' })
 }
 
 function mapHomeCamera(value: unknown): MapHomeCamera | undefined {

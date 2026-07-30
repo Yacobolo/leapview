@@ -345,11 +345,11 @@ func validateVisualPresentation(name string, visual Visual) error {
 	if presentation.DualAxis && visual.Type != "combo" {
 		return fmt.Errorf("visual %q presentation.dual_axis is only valid for combo", name)
 	}
-	if presentation.Basemap != "" && visual.Type != "map" {
-		return fmt.Errorf("visual %q presentation.basemap is only valid for map", name)
+	if presentation.Basemap != "" {
+		return fmt.Errorf("visual %q presentation.basemap was removed; maps always use the built-in worldwide basemap", name)
 	}
-	if visual.Type == "map" && (presentation.Basemap != "" || presentation.Roam) {
-		return fmt.Errorf("visual %q map presentation.basemap and presentation.roam were replaced by geo.basemap and geo.controls", name)
+	if visual.Type == "map" && presentation.Roam {
+		return fmt.Errorf("visual %q map presentation.roam was replaced by geo.controls", name)
 	}
 	if presentation.InnerRadius < 0 || presentation.InnerRadius > 1 || presentation.OuterRadius < 0 || presentation.OuterRadius > 1 || (presentation.InnerRadius > 0 && presentation.OuterRadius > 0 && presentation.InnerRadius >= presentation.OuterRadius) {
 		return fmt.Errorf("visual %q has invalid presentation radii", name)

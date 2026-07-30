@@ -1089,7 +1089,6 @@ spec:
           order_count: null
         limit: 27
       geo:
-        basemap: blank
         layers:
           - id: state_boundaries
             kind: reference

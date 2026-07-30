@@ -1194,16 +1194,6 @@
         "geo": {
           "additionalProperties": false,
           "properties": {
-            "basemap": {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/%23Identifier"
-                },
-                {
-                  "const": "blank"
-                }
-              ]
-            },
             "camera": {
               "additionalProperties": false,
               "properties": {

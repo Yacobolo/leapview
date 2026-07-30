@@ -2071,13 +2071,6 @@
       "x-lifecycle": "supported",
       "x-scope": "serve"
     },
-    "LEAPVIEW_MAP_ASSET_DIR": {
-      "default": ".data/map-assets",
-      "description": "Local root containing the verified, content-addressed basemap package.",
-      "type": "string",
-      "x-lifecycle": "supported",
-      "x-scope": "serve"
-    },
     "LEAPVIEW_MCP_OAUTH_ISSUER_URL": {
       "description": "Optional external OAuth issuer for MCP JWT access tokens; when omitted, LeapView provides the MCP authorization server.",
       "type": "string",
@@ -2349,12 +2342,6 @@
       "type": "string",
       "x-lifecycle": "tooling",
       "x-scope": "public-site provisioner"
-    },
-    "LEAPVIEW_SITE_MAP_ASSETS_ROOT": {
-      "description": "Absolute path to the complete immutable MapLibre asset package; configured production sites verify it before listening and during readiness checks.",
-      "type": "string",
-      "x-lifecycle": "supported",
-      "x-scope": "public site"
     },
     "LEAPVIEW_SITE_SHOWCASE_EMBED_URL": {
       "description": "Optional public dashboard embed URL that enables the live /showcase route and its exact frame-src policy.",

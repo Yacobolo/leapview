@@ -9,8 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/flidai/leapview/internal/dashboard/visualization/mapasset"
@@ -27,19 +25,12 @@ type Options struct {
 	// ShowcaseEmbedURL is the live public dashboard iframe URL. When omitted,
 	// the showcase route and navigation are not registered.
 	ShowcaseEmbedURL *url.URL
-	// MapAssetsRoot is the absolute path to the complete immutable MapLibre
-	// package. When omitted, only the reduced embedded documentation fallback
-	// is served and map assets are excluded from readiness.
-	MapAssetsRoot string
 }
 
 type siteServer struct {
 	baseURL          *url.URL
 	showcaseEmbedURL *url.URL
 	showcaseOrigin   string
-	mapAssetsRoot    string
-	mapAssets        *mapasset.Verifier
-	mapAssetsError   error
 }
 
 // NewHandler builds the public site HTTP handler without starting a server.
@@ -52,14 +43,6 @@ func NewHandlerWithOptions(options Options) http.Handler {
 	server := &siteServer{
 		baseURL:          cloneURL(options.BaseURL),
 		showcaseEmbedURL: cloneURL(options.ShowcaseEmbedURL),
-		mapAssetsRoot:    strings.TrimSpace(options.MapAssetsRoot),
-	}
-	if server.mapAssetsRoot != "" {
-		if !filepath.IsAbs(server.mapAssetsRoot) {
-			server.mapAssetsError = fmt.Errorf("map asset root must be absolute")
-		} else {
-			server.mapAssets = mapasset.NewVerifier(server.mapAssetsRoot)
-		}
 	}
 	if server.showcaseEmbedURL != nil {
 		server.showcaseOrigin = (&url.URL{Scheme: server.showcaseEmbedURL.Scheme, Host: server.showcaseEmbedURL.Host}).String()
@@ -96,20 +79,13 @@ func NewHandlerWithOptions(options Options) http.Handler {
 	mux.HandleFunc("GET /updates", updates)
 	mux.Handle("GET /static/", compressedAssets(http.StripPrefix("/static/", http.FileServer(http.FS(siteassets.Static())))))
 	mux.Handle("GET /shared/", compressedAssets(http.StripPrefix("/shared/", http.FileServer(http.FS(siteassets.Shared())))))
-	mux.Handle("GET /map-assets/", mapassethttp.CacheHandler(http.StripPrefix("/map-assets/", siteMapAssets(server.mapAssetsRoot))))
+	mux.Handle("GET /map-assets/", mapassethttp.CacheHandler(http.StripPrefix("/map-assets/", siteMapAssets())))
 	mux.HandleFunc("GET /{path...}", server.notFound)
 	return server.productionHeaders(mux)
 }
 
-func siteMapAssets(root string) http.Handler {
-	embedded := http.FileServer(http.FS(siteassets.MapAssets()))
-	if root == "" {
-		return embedded
-	}
-	if !filepath.IsAbs(root) {
-		return http.NotFoundHandler()
-	}
-	return http.FileServer(http.FS(os.DirFS(root)))
+func siteMapAssets() http.Handler {
+	return http.FileServer(http.FS(mapasset.EmbeddedFS()))
 }
 
 func cloneURL(value *url.URL) *url.URL {
@@ -290,15 +266,9 @@ func health(w http.ResponseWriter, _ *http.Request) {
 
 func (s *siteServer) ready(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	if s.mapAssetsError != nil {
-		http.Error(w, s.mapAssetsError.Error(), http.StatusServiceUnavailable)
+	if err := mapasset.VerifyEmbedded(r.Context()); err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
-	}
-	if s.mapAssets != nil {
-		if err := s.mapAssets.Verify(r.Context()); err != nil {
-			http.Error(w, err.Error(), http.StatusServiceUnavailable)
-			return
-		}
 	}
 	_, _ = io.WriteString(w, "ok\n")
 }

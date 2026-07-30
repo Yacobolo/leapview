@@ -3064,9 +3064,6 @@
               "area": {
                 "type": "boolean"
               },
-              "basemap": {
-                "type": "string"
-              },
               "breadcrumb": {
                 "type": "boolean"
               },

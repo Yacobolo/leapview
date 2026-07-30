@@ -14,10 +14,6 @@ export function registerPMTilesProtocol(): void {
   pmtilesRegistered = true
 }
 
-export function blankMapStyle(background: string): StyleSpecification {
-  return { version: 8, sources: {}, layers: [{ id: '__lv-background', type: 'background', metadata: { 'leapview:role': 'background' }, paint: { 'background-color': background } }] }
-}
-
 export async function loadMapStyleAsset(asset: VisualizationMapStyleAsset, baseURL: string): Promise<StyleSpecification> {
   const styleURL = contentAddressedMapAssetURL(asset.styleUrl, asset.styleDigest, 'styles', baseURL)
   const archiveURL = contentAddressedMapAssetURL(asset.archiveUrl, asset.archiveDigest, 'archives', baseURL)

@@ -17,6 +17,7 @@ import (
 
 	content "github.com/flidai/leapview/docs"
 	"github.com/flidai/leapview/internal/analytics/connectors"
+	"github.com/flidai/leapview/internal/dashboard/visualization/mapasset"
 )
 
 func TestHomepageFeaturedIntegrationsExistInTheConnectorRegistry(t *testing.T) {
@@ -318,34 +319,31 @@ func TestSiteAssetsDoNotDependOnWorkingDirectory(t *testing.T) {
 	}
 }
 
-func TestConfiguredMapAssetsDoNotDependOnWorkingDirectory(t *testing.T) {
-	root := t.TempDir()
-	name := filepath.Join(root, "leapview-streets", "test.txt")
-	if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(name, []byte("map asset"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+func TestEmbeddedMapAssetsDoNotDependOnWorkingDirectory(t *testing.T) {
 	workingDirectory, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Chdir(filepath.Dir(workingDirectory))
 
-	request := httptest.NewRequest(http.MethodGet, "/leapview-streets/test.txt", nil)
-	response := httptest.NewRecorder()
-	siteMapAssets(root).ServeHTTP(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("map asset status = %d, want %d", response.Code, http.StatusOK)
+	asset, err := mapasset.Resolve("streets")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := response.Body.String(); got != "map asset" {
-		t.Fatalf("map asset body = %q, want map asset", got)
+	request := httptest.NewRequest(http.MethodGet, asset.ArchiveURL, nil)
+	request.Header.Set("Range", "bytes=0-6")
+	response := httptest.NewRecorder()
+	NewHandler().ServeHTTP(response, request)
+	if response.Code != http.StatusPartialContent {
+		t.Fatalf("map asset status = %d, want %d", response.Code, http.StatusPartialContent)
+	}
+	if got := response.Body.String(); got != "PMTiles" {
+		t.Fatalf("map asset body = %q, want PMTiles header", got)
 	}
 }
 
-func TestReadinessFailsWhenConfiguredMapAssetPackageIsMissing(t *testing.T) {
-	server := httptest.NewServer(NewHandlerWithOptions(Options{MapAssetsRoot: filepath.Join(t.TempDir(), "missing")}))
+func TestReadinessVerifiesEmbeddedMapPackage(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
 	defer server.Close()
 
 	response, err := server.Client().Get(server.URL + "/readyz")
@@ -353,11 +351,8 @@ func TestReadinessFailsWhenConfiguredMapAssetPackageIsMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer response.Body.Close()
-	if response.StatusCode != http.StatusServiceUnavailable {
-		t.Fatalf("readiness status = %d, want %d", response.StatusCode, http.StatusServiceUnavailable)
-	}
-	if body := readBody(t, response); !strings.Contains(body, "map asset") {
-		t.Fatalf("readiness body = %q, want map asset diagnostic", body)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("readiness status = %d, want %d: %s", response.StatusCode, http.StatusOK, readBody(t, response))
 	}
 }
 
