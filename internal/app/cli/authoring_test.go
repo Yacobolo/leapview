@@ -20,9 +20,14 @@ func TestGeneratedCandidateSynchronizationTransportMapsTypedProtocol(t *testing.
 		ArtifactDigest:         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		ExpectedCandidateID:    "cand_1",
 		ExpectedArtifactDigest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		CandidateKey:           "github:pull/42",
 		Artifacts: []projectdevloop.ArtifactReference{{
 			Path: "leapview.yaml", Digest: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 		}},
+		SourceRevision: &projectdevloop.SourceRevision{
+			Revision: "commit-a", Repository: "https://code.example/acme/analytics",
+			Ref: "refs/pull/42/head", ChangeID: "pull/42",
+		},
 	}
 
 	plan, err := transport.Plan(t.Context(), request)
@@ -54,6 +59,16 @@ func TestGeneratedCandidateSynchronizationTransportMapsTypedProtocol(t *testing.
 		string(generic.requests[1].Body.([]byte)) != "source" {
 		t.Fatalf("generated requests = %#v", generic.requests)
 	}
+	body := generic.requests[2].Body.(deploymentgen.CandidateSynchronizationRequest)
+	if body.SourceRevision == nil ||
+		body.SourceRevision.Revision != request.SourceRevision.Revision ||
+		body.SourceRevision.Repository == nil ||
+		*body.SourceRevision.Repository != request.SourceRevision.Repository {
+		t.Fatalf("source revision request = %#v", body.SourceRevision)
+	}
+	if body.CandidateKey == nil || *body.CandidateKey != request.CandidateKey {
+		t.Fatalf("candidate key request = %#v", body.CandidateKey)
+	}
 }
 
 func TestDevCommandExposesOneAuthenticatedRemoteWorkflow(t *testing.T) {
@@ -61,7 +76,10 @@ func TestDevCommandExposesOneAuthenticatedRemoteWorkflow(t *testing.T) {
 	if command.Name() != "dev" || !strings.Contains(strings.ToLower(command.Short), "private") {
 		t.Fatalf("dev command = %q %q", command.Name(), command.Short)
 	}
-	for _, flag := range []string{"project", "target", "token", "upload-concurrency", "once"} {
+	for _, flag := range []string{
+		"project", "target", "token", "upload-concurrency", "once",
+		"candidate-key", "source-revision", "source-repository", "source-ref", "source-change",
+	} {
 		if command.Flags().Lookup(flag) == nil {
 			t.Errorf("dev command is missing --%s", flag)
 		}

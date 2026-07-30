@@ -36,7 +36,7 @@ func (m *Module) PlanProjectCandidateSynchronization(w http.ResponseWriter, r *h
 		return
 	}
 	missing, err := m.candidateSources.Plan(r.Context(), deployment.CandidateSourceScope{
-		ProjectID: project, OwnerID: principalID,
+		ProjectID: project, OwnerID: principalID, CandidateKey: request.CandidateKey,
 	}, request)
 	if err != nil {
 		writeCandidateAPIError(w, r, err)
@@ -99,6 +99,7 @@ func (m *Module) CommitProjectCandidateSynchronization(
 		return
 	}
 	scope := deployment.CandidateSourceScope{ProjectID: project, OwnerID: principalID}
+	scope.CandidateKey = request.CandidateKey
 	source, err := m.candidateSources.Commit(r.Context(), scope, request)
 	if err != nil {
 		writeCandidateAPIError(w, r, err)
@@ -109,6 +110,7 @@ func (m *Module) CommitProjectCandidateSynchronization(
 		var started deployment.CandidateStartResult
 		started, err = m.candidates.Start(r.Context(), deployment.StartCandidateRequest{
 			ProjectID: project, OwnerID: principalID, ArtifactDigest: request.ArtifactDigest,
+			Key: request.CandidateKey,
 		})
 		candidate = started.Candidate
 		if err == nil && candidate.Status == deployment.CandidateFailed {
@@ -123,19 +125,37 @@ func (m *Module) CommitProjectCandidateSynchronization(
 		writeCandidateAPIError(w, r, err)
 		return
 	}
+	requestedSourceRevision, err := candidateSourceRevisionProvenance(
+		request.SourceRevision,
+	)
+	if err != nil {
+		writeCandidateAPIError(w, r, candidatePreparationError(err))
+		return
+	}
 	if candidate.Status == deployment.CandidateReady &&
 		candidate.ArtifactDigest == request.ArtifactDigest {
-		if err := m.verifyCandidateProvenance(r.Context(), candidate); err != nil {
+		provenance, verifyErr := m.verifiedCandidateProvenance(
+			r.Context(),
+			candidate,
+		)
+		if verifyErr != nil {
 			writeCandidateAPIError(
 				w,
 				r,
-				candidatePreparationError(err),
+				candidatePreparationError(verifyErr),
 			)
 			return
 		}
-		apitransport.WriteJSON(w, http.StatusOK, m.candidateResponse(candidate, false))
-		return
+		if equalCandidateSourceRevision(
+			provenance.SourceRevision,
+			requestedSourceRevision,
+		) {
+			apitransport.WriteJSON(w, http.StatusOK, m.candidateResponse(candidate, false))
+			return
+		}
 	}
+	replaceCandidate := candidate.Status == deployment.CandidateReady
+	currentArtifactDigest := candidate.ArtifactDigest
 	tentative, err := tentativeCandidate(candidate, request)
 	if err != nil {
 		writeCandidateAPIError(w, r, err)
@@ -177,11 +197,11 @@ func (m *Module) CommitProjectCandidateSynchronization(
 		writeCandidateAPIError(w, r, candidatePreparationError(err))
 		return
 	}
-	if request.ExpectedCandidateID != "" {
+	if replaceCandidate {
 		candidate, err = m.candidates.ReplaceArtifact(
 			r.Context(),
 			candidateScope(candidate),
-			request.ExpectedArtifactDigest,
+			currentArtifactDigest,
 			request.ArtifactDigest,
 		)
 		if err != nil {
@@ -257,7 +277,12 @@ func (m *Module) prepareCandidate(
 	if err != nil {
 		return release.Provenance{}, err
 	}
-	provenance, err := candidateReleaseProvenance(candidate, artifacts, receipt)
+	provenance, err := candidateReleaseProvenance(
+		candidate,
+		artifacts,
+		receipt,
+		source.SourceRevision,
+	)
 	if err != nil {
 		return release.Provenance{}, err
 	}
@@ -289,6 +314,7 @@ func candidateReleaseProvenance(
 	candidate deployment.Candidate,
 	artifacts release.CandidateArtifactSet,
 	receipt deployment.CandidateRuntimeReceipt,
+	sourceRevision *project.CandidateSourceRevision,
 ) (release.Provenance, error) {
 	if strings.TrimSpace(artifacts.Artifact.SourceDigest) !=
 		strings.TrimSpace(candidate.ArtifactDigest) {
@@ -356,6 +382,7 @@ func candidateReleaseProvenance(
 			Revision: candidate.Revision + 1,
 			OwnerID:  candidate.OwnerID,
 		},
+		SourceRevision: candidateSourceRevision(sourceRevision),
 		Plan: release.TargetPlanProvenance{
 			TargetID:       candidate.TargetID,
 			Environment:    candidate.Environment,
@@ -379,13 +406,13 @@ func candidateProvenanceArtifactDigest(value string) (string, error) {
 	return "sha256:" + value, nil
 }
 
-func (m *Module) verifyCandidateProvenance(
+func (m *Module) verifiedCandidateProvenance(
 	ctx context.Context,
 	candidate deployment.Candidate,
-) error {
+) (release.Provenance, error) {
 	if candidate.Status != deployment.CandidateReady ||
 		digest.ValidateSHA256Identity(candidate.ProvenanceDigest) != nil {
-		return release.ErrProvenanceInvalid
+		return release.Provenance{}, release.ErrProvenanceInvalid
 	}
 	provenance, err := m.candidateArtifacts.CandidateProvenance(
 		ctx,
@@ -394,13 +421,43 @@ func (m *Module) verifyCandidateProvenance(
 		candidate.Revision,
 	)
 	if err != nil {
-		return err
+		return release.Provenance{}, err
 	}
 	if provenance.Digest != candidate.ProvenanceDigest ||
 		provenance.Artifact.SourceDigest != candidate.ArtifactDigest {
-		return release.ErrProvenanceInvalid
+		return release.Provenance{}, release.ErrProvenanceInvalid
 	}
-	return nil
+	return provenance, nil
+}
+
+func candidateSourceRevision(
+	value *project.CandidateSourceRevision,
+) *release.SourceRevisionProvenance {
+	if value == nil {
+		return nil
+	}
+	return &release.SourceRevisionProvenance{
+		Revision: value.Revision, Repository: value.Repository,
+		Ref: value.Ref, ChangeID: value.ChangeID,
+	}
+}
+
+func candidateSourceRevisionProvenance(
+	value *project.CandidateSourceRevision,
+) (*release.SourceRevisionProvenance, error) {
+	return release.NormalizeSourceRevisionProvenance(
+		candidateSourceRevision(value),
+	)
+}
+
+func equalCandidateSourceRevision(
+	first,
+	second *release.SourceRevisionProvenance,
+) bool {
+	if first == nil || second == nil {
+		return first == second
+	}
+	return *first == *second
 }
 
 func candidateRuntimeRestrictions(values []release.CandidateRestriction) []deployment.CandidateRestriction {
@@ -419,10 +476,12 @@ func tentativeCandidate(
 	request deployment.CandidateSynchronizationRequest,
 ) (deployment.Candidate, error) {
 	if request.ExpectedCandidateID == "" {
-		if candidate.Status != deployment.CandidatePreparing {
+		if candidate.Status == deployment.CandidatePreparing {
+			return candidate, nil
+		}
+		if candidate.Status != deployment.CandidateReady {
 			return deployment.Candidate{}, deployment.ErrCandidateConflict
 		}
-		return candidate, nil
 	}
 	if candidate.Status != deployment.CandidateReady ||
 		candidate.ArtifactDigest != strings.TrimSpace(request.ExpectedArtifactDigest) {
@@ -474,6 +533,23 @@ func (m *Module) decodeCandidateSynchronizationRequest(
 	request := deployment.CandidateSynchronizationRequest{
 		ProjectFile: body.ProjectFile, ArtifactDigest: body.ArtifactDigest,
 		Artifacts: make([]deployment.CandidateSourceArtifact, len(body.Artifacts)),
+	}
+	if body.CandidateKey != nil {
+		request.CandidateKey = *body.CandidateKey
+	}
+	if body.SourceRevision != nil {
+		request.SourceRevision = &project.CandidateSourceRevision{
+			Revision: body.SourceRevision.Revision,
+		}
+		if body.SourceRevision.Repository != nil {
+			request.SourceRevision.Repository = *body.SourceRevision.Repository
+		}
+		if body.SourceRevision.Ref != nil {
+			request.SourceRevision.Ref = *body.SourceRevision.Ref
+		}
+		if body.SourceRevision.ChangeID != nil {
+			request.SourceRevision.ChangeID = *body.SourceRevision.ChangeID
+		}
 	}
 	if body.ExpectedCandidateID != nil {
 		request.ExpectedCandidateID = *body.ExpectedCandidateID
@@ -530,6 +606,14 @@ func (m *Module) validateExpectedCandidate(
 		return false
 	}
 	if candidate.ArtifactDigest != strings.TrimSpace(request.ExpectedArtifactDigest) {
+		writeCandidateAPIError(w, r, deployment.ErrCandidateConflict)
+		return false
+	}
+	candidateKey := strings.TrimSpace(request.CandidateKey)
+	if candidateKey == "" {
+		candidateKey = "default"
+	}
+	if candidate.Key != candidateKey {
 		writeCandidateAPIError(w, r, deployment.ErrCandidateConflict)
 		return false
 	}

@@ -16,7 +16,11 @@ import (
 
 const stableCaptureAttempts = 3
 
-type FilesystemBuilder struct{ ProjectPath string }
+type FilesystemBuilder struct {
+	ProjectPath    string
+	SourceRevision *SourceRevision
+	CandidateKey   string
+}
 
 func (builder FilesystemBuilder) Build(ctx context.Context) (Snapshot, error) {
 	projectPath, err := filepath.Abs(builder.ProjectPath)
@@ -59,6 +63,8 @@ func (builder FilesystemBuilder) Build(ctx context.Context) (Snapshot, error) {
 	return normalizeSnapshot(Snapshot{
 		ProjectID: compiled.ID(), ProjectFile: projectFile,
 		Digest: candidateSetDigest(compiled.ID(), projectFile, artifacts), Artifacts: artifacts,
+		SourceRevision: builder.SourceRevision,
+		CandidateKey:   builder.CandidateKey,
 	})
 }
 

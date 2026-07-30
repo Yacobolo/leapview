@@ -21,6 +21,7 @@ const (
 type CandidateRepository interface {
 	ActiveCandidateBaseGeneration(context.Context, string, string) (string, error)
 	StartCandidate(context.Context, Candidate, int) (Candidate, bool, error)
+	ActiveCandidate(context.Context, string, string, string, string) (Candidate, error)
 	CandidateByID(context.Context, string) (Candidate, error)
 	SaveCandidate(context.Context, Candidate, int64) (Candidate, error)
 	ExpireCandidates(context.Context, string, time.Time) (int64, error)
@@ -53,6 +54,7 @@ type StartCandidateRequest struct {
 	ProjectID      string
 	OwnerID        string
 	ArtifactDigest string
+	Key            string
 }
 
 type CandidateStartResult struct {
@@ -125,7 +127,7 @@ func (service *CandidateService) Start(ctx context.Context, request StartCandida
 	candidate, err := NewCandidate(CandidateStartInput{
 		ID: id, ProjectID: request.ProjectID, TargetID: service.targetID, Environment: service.environment,
 		OwnerID: request.OwnerID, BaseGeneration: baseGeneration, ArtifactDigest: request.ArtifactDigest,
-		ExpiresAt: now.Add(service.lifetime), Now: now,
+		Key: request.Key, ExpiresAt: now.Add(service.lifetime), Now: now,
 	})
 	if err != nil {
 		return CandidateStartResult{}, err
@@ -142,6 +144,32 @@ func (service *CandidateService) Start(ctx context.Context, request StartCandida
 		return CandidateStartResult{}, err
 	}
 	return CandidateStartResult{Candidate: candidate, PreviewURL: service.PreviewURL(candidate.ID), Resumed: resumed}, nil
+}
+
+func (service *CandidateService) CancelActive(
+	ctx context.Context,
+	projectID,
+	ownerID,
+	key string,
+) (Candidate, error) {
+	candidate, err := service.repository.ActiveCandidate(
+		ctx,
+		service.targetID,
+		strings.TrimSpace(projectID),
+		strings.TrimSpace(ownerID),
+		normalizeCandidateKey(key),
+	)
+	if err != nil {
+		return Candidate{}, err
+	}
+	return service.Cancel(ctx, candidateScopeForService(candidate))
+}
+
+func candidateScopeForService(candidate Candidate) CandidateScope {
+	return CandidateScope{
+		ProjectID: candidate.ProjectID, CandidateID: candidate.ID,
+		OwnerID: candidate.OwnerID, TargetID: candidate.TargetID,
+	}
 }
 
 func (service *CandidateService) Get(ctx context.Context, scope CandidateScope) (Candidate, error) {
@@ -307,6 +335,7 @@ func (service *CandidateService) record(ctx context.Context, action string, cand
 	metadata["environment"] = candidate.Environment
 	metadata["baseGeneration"] = candidate.BaseGeneration
 	metadata["projectId"] = candidate.ProjectID
+	metadata["candidateKey"] = candidate.Key
 	encoded, err := json.Marshal(metadata)
 	if err != nil {
 		return err

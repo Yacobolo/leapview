@@ -50,6 +50,19 @@ func TestAPIGenDispatcherMapsCandidateOperationsAndIdempotency(t *testing.T) {
 	if handler.operation != "cancel:p1:cand_1" || handler.idempotencyKey != "cancel-1" {
 		t.Fatalf("cancel mapping = operation:%q key:%q", handler.operation, handler.idempotencyKey)
 	}
+	dispatcher.CancelProjectCandidateByKey(
+		recorder,
+		request,
+		"p1",
+		"github:pull/42",
+		deploymentgen.GenCancelProjectCandidateByKeyHeaders{
+			IdempotencyKey: "cancel-key-1",
+		},
+	)
+	if handler.operation != "cancel-key:p1:github:pull/42" ||
+		handler.idempotencyKey != "cancel-key-1" {
+		t.Fatalf("cancel-by-key mapping = operation:%q key:%q", handler.operation, handler.idempotencyKey)
+	}
 	dispatcher.PublishProjectCandidate(recorder, request, "p1", "cand_1", deploymentgen.GenPublishProjectCandidateHeaders{IdempotencyKey: "publish-1"})
 	if handler.operation != "publish:p1:cand_1" || handler.idempotencyKey != "publish-1" {
 		t.Fatalf("publish mapping = operation:%q key:%q", handler.operation, handler.idempotencyKey)
@@ -93,6 +106,9 @@ func (h *recordingDeploymentHandler) RetryProjectCandidate(_ stdhttp.ResponseWri
 }
 func (h *recordingDeploymentHandler) CancelProjectCandidate(_ stdhttp.ResponseWriter, _ *stdhttp.Request, project, candidate, key string) {
 	h.operation, h.idempotencyKey = "cancel:"+project+":"+candidate, key
+}
+func (h *recordingDeploymentHandler) CancelProjectCandidateByKey(_ stdhttp.ResponseWriter, _ *stdhttp.Request, project, candidateKey, key string) {
+	h.operation, h.idempotencyKey = "cancel-key:"+project+":"+candidateKey, key
 }
 func (h *recordingDeploymentHandler) PublishProjectCandidate(_ stdhttp.ResponseWriter, _ *stdhttp.Request, project, candidate, key string) {
 	h.operation, h.idempotencyKey = "publish:"+project+":"+candidate, key

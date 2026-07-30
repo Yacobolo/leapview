@@ -198,12 +198,12 @@ ORDER BY collection_id;
 
 -- name: CreateProjectCandidate :exec
 INSERT INTO project_candidates (
-  id, project_id, target_id, environment, owner_principal_id,
+  id, project_id, target_id, environment, owner_principal_id, candidate_key,
   base_generation, artifact_digest, provenance_digest, status, failure_reason,
   expires_at, created_at, updated_at, ready_at, cancelled_at,
   expired_at, revision
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetProjectCandidate :one
 SELECT *
@@ -216,6 +216,18 @@ FROM project_candidates
 WHERE target_id = ?
   AND project_id = ?
   AND owner_principal_id = ?
+  AND candidate_key = ?
+  AND status IN ('preparing', 'ready', 'failed')
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
+
+-- name: GetActiveProjectCandidateByKey :one
+SELECT *
+FROM project_candidates
+WHERE target_id = ?
+  AND project_id = ?
+  AND owner_principal_id = ?
+  AND candidate_key = ?
   AND status IN ('preparing', 'ready', 'failed')
 ORDER BY created_at DESC, id DESC
 LIMIT 1;

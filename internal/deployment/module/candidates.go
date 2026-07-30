@@ -77,9 +77,13 @@ func (m *Module) StartProjectCandidate(w http.ResponseWriter, r *http.Request, p
 	if !ok {
 		return
 	}
-	result, err := m.candidates.Start(r.Context(), deployment.StartCandidateRequest{
+	startRequest := deployment.StartCandidateRequest{
 		ProjectID: project, OwnerID: principalID, ArtifactDigest: body.ArtifactDigest,
-	})
+	}
+	if body.CandidateKey != nil {
+		startRequest.Key = *body.CandidateKey
+	}
+	result, err := m.candidates.Start(r.Context(), startRequest)
 	if err != nil {
 		writeCandidateAPIError(w, r, err)
 		return
@@ -164,6 +168,30 @@ func (m *Module) CancelProjectCandidate(w http.ResponseWriter, r *http.Request, 
 	candidate, err := m.candidates.Cancel(r.Context(), deployment.CandidateScope{
 		ProjectID: project, CandidateID: candidateID, OwnerID: principalID,
 	})
+	if err != nil {
+		writeCandidateAPIError(w, r, err)
+		return
+	}
+	apitransport.WriteJSON(w, http.StatusOK, m.candidateResponse(candidate, false))
+}
+
+func (m *Module) CancelProjectCandidateByKey(
+	w http.ResponseWriter,
+	r *http.Request,
+	project,
+	candidateKey,
+	_ string,
+) {
+	principalID, ok := m.candidatePrincipalID(w, r)
+	if !ok {
+		return
+	}
+	candidate, err := m.candidates.CancelActive(
+		r.Context(),
+		project,
+		principalID,
+		candidateKey,
+	)
 	if err != nil {
 		writeCandidateAPIError(w, r, err)
 		return
@@ -271,7 +299,8 @@ func (m *Module) candidatePrincipalID(w http.ResponseWriter, r *http.Request) (s
 
 func (m *Module) candidateResponse(candidate deployment.Candidate, resumed bool) deploymentapi.CandidateResponse {
 	response := deploymentapi.CandidateResponse{
-		ID: candidate.ID, ProjectID: candidate.ProjectID, TargetID: candidate.TargetID,
+		ID: candidate.ID, ProjectID: candidate.ProjectID, CandidateKey: candidate.Key,
+		TargetID:    candidate.TargetID,
 		Environment: candidate.Environment, OwnerID: candidate.OwnerID, BaseGeneration: candidate.BaseGeneration,
 		ArtifactDigest: candidate.ArtifactDigest, Status: string(candidate.Status),
 		PreviewURL: m.candidates.PreviewURL(candidate.ID), ExpiresAt: candidate.ExpiresAt.UTC().Format(time.RFC3339Nano),

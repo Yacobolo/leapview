@@ -59,7 +59,8 @@ func TestCandidateSynchronizationPlansUploadsAndCommitsOwnedCandidate(t *testing
 	}
 	module.candidateRuntimes = runtimes
 	body := `{"projectFile":"leapview.yaml","artifactDigest":"` + digest +
-		`","artifacts":[{"path":"leapview.yaml","digest":"` + blobDigest + `"}]}`
+		`","sourceRevision":{"revision":"commit-a","repository":"https://code.example/acme/analytics","ref":"refs/pull/42/head","changeId":"pull/42"}` +
+		`,"artifacts":[{"path":"leapview.yaml","digest":"` + blobDigest + `"}]}`
 
 	planned := callCandidateAPI(t, http.MethodPost, "/api/v1/projects/finance/candidate-sync/plan", body, func(w http.ResponseWriter, r *http.Request) {
 		module.PlanProjectCandidateSynchronization(w, r, "finance")
@@ -88,6 +89,8 @@ func TestCandidateSynchronizationPlansUploadsAndCommitsOwnedCandidate(t *testing
 	if retained := artifacts.retained[0]; retained.Digest != candidate.ProvenanceDigest ||
 		retained.Candidate.ID != candidate.ID ||
 		retained.Candidate.Revision != candidate.Revision ||
+		retained.SourceRevision == nil ||
+		retained.SourceRevision.Revision != "commit-a" ||
 		retained.Plan.RuntimeVersion != "runtime:test" {
 		t.Fatalf("retained provenance = %#v, candidate = %#v", retained, candidate)
 	}
@@ -95,7 +98,8 @@ func TestCandidateSynchronizationPlansUploadsAndCommitsOwnedCandidate(t *testing
 	nextDigest := "sha256:" + strings.Repeat("c", 64)
 	artifacts.result.Artifact.SourceDigest = nextDigest
 	replacementBody := `{"projectFile":"leapview.yaml","artifactDigest":"` + nextDigest +
-		`","expectedCandidateId":"` + candidate.ID + `","expectedArtifactDigest":"` + digest +
+		`","sourceRevision":{"revision":"commit-b","repository":"https://code.example/acme/analytics","ref":"refs/pull/42/head","changeId":"pull/42"}` +
+		`,"expectedCandidateId":"` + candidate.ID + `","expectedArtifactDigest":"` + digest +
 		`","artifacts":[{"path":"leapview.yaml","digest":"` + blobDigest + `"}]}`
 	replaced := callCandidateAPI(t, http.MethodPost, "/api/v1/projects/finance/candidate-sync/commit", replacementBody, func(w http.ResponseWriter, r *http.Request) {
 		module.CommitProjectCandidateSynchronization(w, r, "finance", "commit-2")
@@ -108,6 +112,38 @@ func TestCandidateSynchronizationPlansUploadsAndCommitsOwnedCandidate(t *testing
 		replacement.ProvenanceDigest == candidate.ProvenanceDigest ||
 		len(artifacts.retained) != 2 {
 		t.Fatalf("replacement response = %d candidate=%#v", replaced.Code, replacement)
+	}
+	sameContentBody := `{"projectFile":"leapview.yaml","artifactDigest":"` + nextDigest +
+		`","sourceRevision":{"revision":"commit-c","repository":"https://code.example/acme/analytics","ref":"refs/pull/42/head","changeId":"pull/42"}` +
+		`,"expectedCandidateId":"` + replacement.ID + `","expectedArtifactDigest":"` + nextDigest +
+		`","artifacts":[{"path":"leapview.yaml","digest":"` + blobDigest + `"}]}`
+	advanced := callCandidateAPI(t, http.MethodPost, "/api/v1/projects/finance/candidate-sync/commit", sameContentBody, func(w http.ResponseWriter, r *http.Request) {
+		module.CommitProjectCandidateSynchronization(w, r, "finance", "commit-3")
+	})
+	var sameContent candidateAPIResponse
+	decodeCandidateResponse(t, advanced, &sameContent)
+	if advanced.Code != http.StatusOK ||
+		sameContent.ArtifactDigest != replacement.ArtifactDigest ||
+		sameContent.Revision != replacement.Revision+2 ||
+		sameContent.ProvenanceDigest == replacement.ProvenanceDigest ||
+		len(artifacts.retained) != 3 ||
+		artifacts.retained[2].SourceRevision == nil ||
+		artifacts.retained[2].SourceRevision.Revision != "commit-c" {
+		t.Fatalf("same-content source advance = %d candidate=%#v", advanced.Code, sameContent)
+	}
+	replayBody := `{"projectFile":"leapview.yaml","artifactDigest":"` + nextDigest +
+		`","sourceRevision":{"revision":"commit-c","repository":"https://code.example/acme/analytics","ref":"refs/pull/42/head","changeId":"pull/42"}` +
+		`,"artifacts":[{"path":"leapview.yaml","digest":"` + blobDigest + `"}]}`
+	replayed := callCandidateAPI(t, http.MethodPost, "/api/v1/projects/finance/candidate-sync/commit", replayBody, func(w http.ResponseWriter, r *http.Request) {
+		module.CommitProjectCandidateSynchronization(w, r, "finance", "commit-4")
+	})
+	var replay candidateAPIResponse
+	decodeCandidateResponse(t, replayed, &replay)
+	if replayed.Code != http.StatusOK ||
+		replay.Revision != sameContent.Revision ||
+		replay.ProvenanceDigest != sameContent.ProvenanceDigest ||
+		runtimes.calls != 3 || len(artifacts.retained) != 3 {
+		t.Fatalf("idempotent source replay = %d candidate=%#v runtimes=%d", replayed.Code, replay, runtimes.calls)
 	}
 }
 
@@ -214,6 +250,7 @@ func TestCandidateReleaseProvenanceRejectsMismatchedSourceIdentity(t *testing.T)
 				WorkspaceID: "sales",
 			}},
 		},
+		nil,
 	)
 	if !errors.Is(err, release.ErrProvenanceInvalid) {
 		t.Fatalf("candidateReleaseProvenance() error = %v", err)
@@ -311,7 +348,7 @@ func TestCandidateSynchronizationMapsProjectSourceErrors(t *testing.T) {
 func TestCandidateAPIStartsResumesUpdatesAndCancelsOwnedSession(t *testing.T) {
 	module := testCandidateModule(t, "principal_1")
 	digest := "sha256:" + strings.Repeat("a", 64)
-	started := callCandidateAPI(t, http.MethodPost, "/api/v1/projects/finance/candidates", `{"artifactDigest":"`+digest+`"}`, func(w http.ResponseWriter, r *http.Request) {
+	started := callCandidateAPI(t, http.MethodPost, "/api/v1/projects/finance/candidates", `{"artifactDigest":"`+digest+`","candidateKey":"github:pull/42"}`, func(w http.ResponseWriter, r *http.Request) {
 		module.StartProjectCandidate(w, r, "finance", "start-1")
 	})
 	if started.Code != http.StatusCreated {
@@ -319,7 +356,9 @@ func TestCandidateAPIStartsResumesUpdatesAndCancelsOwnedSession(t *testing.T) {
 	}
 	var created candidateAPIResponse
 	decodeCandidateResponse(t, started, &created)
-	if created.ID == "" || created.BaseGeneration != deployment.CandidateBaseGenerationEmpty || created.Status != string(deployment.CandidatePreparing) {
+	if created.ID == "" || created.CandidateKey != "github:pull/42" ||
+		created.BaseGeneration != deployment.CandidateBaseGenerationEmpty ||
+		created.Status != string(deployment.CandidatePreparing) {
 		t.Fatalf("created candidate = %#v", created)
 	}
 	if want := "https://prod.leapview.example/candidates/" + created.ID; created.PreviewURL != want {
@@ -329,7 +368,7 @@ func TestCandidateAPIStartsResumesUpdatesAndCancelsOwnedSession(t *testing.T) {
 		t.Fatalf("Location = %q", got)
 	}
 
-	resumed := callCandidateAPI(t, http.MethodPost, "/api/v1/projects/finance/candidates", `{"artifactDigest":"`+digest+`"}`, func(w http.ResponseWriter, r *http.Request) {
+	resumed := callCandidateAPI(t, http.MethodPost, "/api/v1/projects/finance/candidates", `{"artifactDigest":"`+digest+`","candidateKey":"github:pull/42"}`, func(w http.ResponseWriter, r *http.Request) {
 		module.StartProjectCandidate(w, r, "finance", "start-retry")
 	})
 	var replay candidateAPIResponse
@@ -350,8 +389,8 @@ func TestCandidateAPIStartsResumesUpdatesAndCancelsOwnedSession(t *testing.T) {
 		t.Fatalf("replacement status=%d candidate=%#v", replaced.Code, updated)
 	}
 
-	cancelled := callCandidateAPI(t, http.MethodPost, "/api/v1/projects/finance/candidates/"+created.ID+"/cancel", "", func(w http.ResponseWriter, r *http.Request) {
-		module.CancelProjectCandidate(w, r, "finance", created.ID, "cancel-1")
+	cancelled := callCandidateAPI(t, http.MethodPost, "/api/v1/projects/finance/candidate-sessions/github:pull%2F42/cancel", "", func(w http.ResponseWriter, r *http.Request) {
+		module.CancelProjectCandidateByKey(w, r, "finance", "github:pull/42", "cancel-1")
 	})
 	var stopped candidateAPIResponse
 	decodeCandidateResponse(t, cancelled, &stopped)
@@ -531,6 +570,7 @@ func callCandidateAPI(t *testing.T, method, target, body string, handler http.Ha
 
 type candidateAPIResponse struct {
 	ID               string `json:"id"`
+	CandidateKey     string `json:"candidateKey"`
 	BaseGeneration   string `json:"baseGeneration"`
 	ArtifactDigest   string `json:"artifactDigest"`
 	ProvenanceDigest string `json:"provenanceDigest"`
@@ -581,7 +621,8 @@ func (stub *candidateSourceSynchronizerStub) Commit(
 	stub.commits++
 	return project.CandidateSourceSnapshot{
 		ProjectID: "finance", ArtifactDigest: request.ArtifactDigest,
-		ProjectPath: "/target/snapshots/project/leapview.yaml",
+		ProjectPath:    "/target/snapshots/project/leapview.yaml",
+		SourceRevision: request.SourceRevision,
 	}, nil
 }
 

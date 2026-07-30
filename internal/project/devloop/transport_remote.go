@@ -18,9 +18,11 @@ type SynchronizationPlanRequest struct {
 	ProjectID              string
 	ProjectFile            string
 	ArtifactDigest         string
+	CandidateKey           string
 	ExpectedCandidateID    string
 	ExpectedArtifactDigest string
 	Artifacts              []ArtifactReference
+	SourceRevision         *SourceRevision
 }
 
 type SynchronizationPlan struct {
@@ -60,9 +62,11 @@ func (remote *TransportRemote) Synchronize(ctx context.Context, request SyncRequ
 		ProjectID:              snapshot.ProjectID,
 		ProjectFile:            snapshot.ProjectFile,
 		ArtifactDigest:         snapshot.Digest,
+		CandidateKey:           snapshot.CandidateKey,
 		ExpectedCandidateID:    strings.TrimSpace(request.ExpectedCandidateID),
 		ExpectedArtifactDigest: strings.TrimSpace(request.ExpectedArtifactDigest),
 		Artifacts:              make([]ArtifactReference, len(snapshot.Artifacts)),
+		SourceRevision:         snapshot.SourceRevision,
 	}
 	artifactsByDigest := make(map[string]Artifact, len(snapshot.Artifacts))
 	for index, artifact := range snapshot.Artifacts {
@@ -124,5 +128,9 @@ func missingArtifacts(digests []string, available map[string]Artifact) ([]Artifa
 func clonePlanRequest(request SynchronizationPlanRequest) SynchronizationPlanRequest {
 	out := request
 	out.Artifacts = append([]ArtifactReference(nil), request.Artifacts...)
+	if request.SourceRevision != nil {
+		copied := *request.SourceRevision
+		out.SourceRevision = &copied
+	}
 	return out
 }

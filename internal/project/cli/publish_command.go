@@ -12,9 +12,10 @@ import (
 )
 
 type PublishOptions struct {
-	ProjectPath string
-	Credentials cliapi.Credentials
-	Checkpoint  CandidateCheckpoint
+	ProjectPath  string
+	Credentials  cliapi.Credentials
+	Checkpoint   CandidateCheckpoint
+	CandidateKey string
 }
 
 // PublishOperations is the Project-owned port for requesting policy-governed
@@ -30,7 +31,10 @@ func PublishCommand(
 	store *CandidateCheckpointStore,
 	operations PublishOperations,
 ) *cobra.Command {
-	values := PublishOptions{ProjectPath: filepath.Join("dashboards", "leapview.yaml")}
+	values := PublishOptions{
+		ProjectPath:  filepath.Join("dashboards", "leapview.yaml"),
+		CandidateKey: "default",
+	}
 	command := &cobra.Command{
 		Use:   "publish",
 		Short: "Publish the exact candidate last synchronized by dev",
@@ -49,6 +53,10 @@ func PublishCommand(
 	command.Flags().StringVar(
 		&values.ProjectPath, "project", values.ProjectPath,
 		"project manifest path used by leapview dev",
+	)
+	command.Flags().StringVar(
+		&values.CandidateKey, "candidate-key", values.CandidateKey,
+		"stable authoring session key used by leapview dev",
 	)
 	command.Flags().StringVar(
 		&values.Credentials.Target, "target", "",
@@ -85,7 +93,11 @@ func RunPublish(
 	if err != nil {
 		return err
 	}
-	checkpoint, err := store.Load(options.ProjectPath, credentials.Target)
+	checkpoint, err := store.LoadCandidate(
+		options.ProjectPath,
+		credentials.Target,
+		options.CandidateKey,
+	)
 	if errors.Is(err, ErrCandidateCheckpointNotFound) {
 		return fmt.Errorf(
 			"%w for this project and target; run leapview dev first",

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/flidai/leapview/internal/platform/cliapi"
@@ -20,6 +21,8 @@ type DevOptions struct {
 	Credentials       cliapi.Credentials
 	UploadConcurrency int
 	Once              bool
+	CandidateKey      string
+	SourceRevision    devloop.SourceRevision
 }
 
 // DevRemoteFactory is the Project-owned port for binding the dev loop to an
@@ -44,6 +47,7 @@ func DevCommand(
 	values := DevOptions{
 		ProjectPath:       filepath.Join("dashboards", "leapview.yaml"),
 		UploadConcurrency: 4,
+		CandidateKey:      "default",
 	}
 	command := &cobra.Command{
 		Use:   "dev [project]",
@@ -99,6 +103,36 @@ func DevCommand(
 		false,
 		"synchronize one candidate and exit",
 	)
+	command.Flags().StringVar(
+		&values.CandidateKey,
+		"candidate-key",
+		values.CandidateKey,
+		"stable authoring session key for branch or change reconciliation",
+	)
+	command.Flags().StringVar(
+		&values.SourceRevision.Revision,
+		"source-revision",
+		"",
+		"exact vendor-neutral source revision to bind as release evidence",
+	)
+	command.Flags().StringVar(
+		&values.SourceRevision.Repository,
+		"source-repository",
+		"",
+		"credential-free source repository identity",
+	)
+	command.Flags().StringVar(
+		&values.SourceRevision.Ref,
+		"source-ref",
+		"",
+		"source ref associated with the revision",
+	)
+	command.Flags().StringVar(
+		&values.SourceRevision.ChangeID,
+		"source-change",
+		"",
+		"change or review identity associated with the revision",
+	)
 	return command
 }
 
@@ -135,8 +169,15 @@ func RunDev(
 	if err != nil {
 		return err
 	}
+	sourceRevision, err := devSourceRevision(options.SourceRevision)
+	if err != nil {
+		return err
+	}
 	service, err := devloop.New(
-		devloop.FilesystemBuilder{ProjectPath: options.ProjectPath},
+		devloop.FilesystemBuilder{
+			ProjectPath: options.ProjectPath, SourceRevision: sourceRevision,
+			CandidateKey: options.CandidateKey,
+		},
 		remote,
 	)
 	if err != nil {
@@ -158,6 +199,7 @@ func RunDev(
 			ProjectPath: options.ProjectPath, TargetOrigin: credentials.Target,
 			TargetID: candidate.TargetID, Environment: candidate.Environment,
 			ProjectID: candidate.ProjectID, CandidateID: candidate.ID,
+			CandidateKey:      options.CandidateKey,
 			CandidateRevision: candidate.Revision,
 			ArtifactDigest:    candidate.ArtifactDigest,
 			ProvenanceDigest:  candidate.ProvenanceDigest,
@@ -165,6 +207,15 @@ func RunDev(
 			return fmt.Errorf("persist publish candidate: %w", err)
 		}
 		fmt.Fprintf(out, "synchronized %s\n", candidate.ArtifactDigest)
+		fmt.Fprintf(
+			out,
+			"candidate %s revision %d target %s environment %s principal %s\n",
+			candidate.ID,
+			candidate.Revision,
+			candidate.TargetID,
+			candidate.Environment,
+			candidate.OwnerID,
+		)
 		if candidate.PreviewURL != "" &&
 			candidate.PreviewURL != lastPreviewURL {
 			fmt.Fprintf(out, "preview %s\n", candidate.PreviewURL)
@@ -198,4 +249,22 @@ func RunDev(
 			fmt.Fprintln(errOut, err)
 		}
 	})
+}
+
+func devSourceRevision(
+	value devloop.SourceRevision,
+) (*devloop.SourceRevision, error) {
+	value.Revision = strings.TrimSpace(value.Revision)
+	value.Repository = strings.TrimSpace(value.Repository)
+	value.Ref = strings.TrimSpace(value.Ref)
+	value.ChangeID = strings.TrimSpace(value.ChangeID)
+	if value.Revision == "" {
+		if value.Repository != "" || value.Ref != "" || value.ChangeID != "" {
+			return nil, fmt.Errorf(
+				"--source-revision is required when source evidence is supplied",
+			)
+		}
+		return nil, nil
+	}
+	return &value, nil
 }

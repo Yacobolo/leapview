@@ -17,17 +17,27 @@ type CandidateSourceArtifact struct {
 	Digest string
 }
 
+type CandidateSourceRevision struct {
+	Revision   string
+	Repository string
+	Ref        string
+	ChangeID   string
+}
+
 type CandidateSynchronizationRequest struct {
 	ProjectFile            string
 	ArtifactDigest         string
+	CandidateKey           string
 	ExpectedCandidateID    string
 	ExpectedArtifactDigest string
 	Artifacts              []CandidateSourceArtifact
+	SourceRevision         *CandidateSourceRevision
 }
 
 type CandidateSourceScope struct {
-	ProjectID string
-	OwnerID   string
+	ProjectID    string
+	OwnerID      string
+	CandidateKey string
 }
 
 type CandidateSourceSnapshot struct {
@@ -36,6 +46,7 @@ type CandidateSourceSnapshot struct {
 	ProjectPath         string
 	ProjectDigest       string
 	ProjectArtifactPath string
+	SourceRevision      *CandidateSourceRevision
 }
 
 // CandidateSourceSynchronizer owns target-side retention and compiler

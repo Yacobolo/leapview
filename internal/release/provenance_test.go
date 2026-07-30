@@ -42,6 +42,59 @@ func TestProvenanceSeparatesImmutableArtifactFromTargetPlan(t *testing.T) {
 	}
 }
 
+func TestProvenanceBindsOptionalSourceRevisionWithoutChangingArtifactIdentity(t *testing.T) {
+	withoutRevision, err := NewProvenance(provenanceInput("target-dev", "dev", "a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := provenanceInput("target-dev", "dev", "a")
+	input.SourceRevision = &SourceRevisionProvenance{
+		Revision:   "0123456789abcdef",
+		Repository: "https://code.example/acme/analytics",
+		Ref:        "refs/pull/42/merge",
+		ChangeID:   "pull/42",
+	}
+	withRevision, err := NewProvenance(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withRevision.ArtifactDigest != withoutRevision.ArtifactDigest {
+		t.Fatalf("source revision changed artifact identity: %q / %q", withRevision.ArtifactDigest, withoutRevision.ArtifactDigest)
+	}
+	if withRevision.PlanDigest == withoutRevision.PlanDigest ||
+		withRevision.Digest == withoutRevision.Digest {
+		t.Fatalf("source revision was not bound to release identity: %#v / %#v", withRevision, withoutRevision)
+	}
+	if withRevision.SourceRevision == nil ||
+		withRevision.SourceRevision.Revision != input.SourceRevision.Revision {
+		t.Fatalf("source revision = %#v, want %#v", withRevision.SourceRevision, input.SourceRevision)
+	}
+	if err := withRevision.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestProvenanceRejectsUnsafeSourceRevisionEvidence(t *testing.T) {
+	for name, sourceRevision := range map[string]*SourceRevisionProvenance{
+		"missing revision": {Repository: "https://code.example/acme/analytics"},
+		"control character": {
+			Revision: "abc\nsecret",
+		},
+		"credential URL": {
+			Revision:   "abc123",
+			Repository: "https://token:secret@code.example/acme/analytics",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			input := provenanceInput("target-dev", "dev", "a")
+			input.SourceRevision = sourceRevision
+			if _, err := NewProvenance(input); !errors.Is(err, ErrProvenanceInvalid) {
+				t.Fatalf("NewProvenance() error = %v, want ErrProvenanceInvalid", err)
+			}
+		})
+	}
+}
+
 func TestProvenanceFailsClosedOnTamperingAndIncompleteCompatibility(t *testing.T) {
 	valid, err := NewProvenance(provenanceInput("target-dev", "dev", "a"))
 	if err != nil {

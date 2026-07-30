@@ -862,6 +862,23 @@ func publishEvidenceResponse(
 			len(targetRelease.Provenance.Plan.Workspaces),
 		),
 	}
+	if source := targetRelease.Provenance.SourceRevision; source != nil {
+		response.SourceRevision = &deploymentapi.CandidateSourceRevision{
+			Revision: source.Revision,
+		}
+		if source.Repository != "" {
+			value := source.Repository
+			response.SourceRevision.Repository = &value
+		}
+		if source.Ref != "" {
+			value := source.Ref
+			response.SourceRevision.Ref = &value
+		}
+		if source.ChangeID != "" {
+			value := source.ChangeID
+			response.SourceRevision.ChangeID = &value
+		}
+	}
 	for _, workspace := range targetRelease.Provenance.Plan.Workspaces {
 		mapped := deploymentapi.WorkspacePublishEvidence{
 			WorkspaceID: workspace.WorkspaceID, ServingStateID: workspace.ServingStateID,

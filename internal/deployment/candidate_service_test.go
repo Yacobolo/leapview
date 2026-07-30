@@ -47,6 +47,48 @@ func TestCandidateServiceCreatesResumesAndBuildsCanonicalPreviewURL(t *testing.T
 	}
 }
 
+func TestCandidateServiceIsolatesAutomationKeysAndCancelsByKey(t *testing.T) {
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	repository := newCandidateMemoryRepository()
+	service := newCandidateTestService(t, repository, now)
+	digest := "sha256:" + strings.Repeat("a", 64)
+	first, err := service.Start(t.Context(), StartCandidateRequest{
+		ProjectID: "finance", OwnerID: "principal_1",
+		ArtifactDigest: digest, Key: "github:pull/41",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.Start(t.Context(), StartCandidateRequest{
+		ProjectID: "finance", OwnerID: "principal_1",
+		ArtifactDigest: digest, Key: "github:pull/42",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Candidate.ID == second.Candidate.ID ||
+		first.Candidate.Key == second.Candidate.Key {
+		t.Fatalf("isolated candidates = %#v / %#v", first, second)
+	}
+	cancelled, err := service.CancelActive(
+		t.Context(),
+		"finance",
+		"principal_1",
+		"github:pull/41",
+	)
+	if err != nil || cancelled.ID != first.Candidate.ID ||
+		cancelled.Status != CandidateCancelled {
+		t.Fatalf("CancelActive() = %#v, %v", cancelled, err)
+	}
+	remaining, err := service.Get(t.Context(), CandidateScope{
+		ProjectID: "finance", CandidateID: second.Candidate.ID,
+		OwnerID: "principal_1",
+	})
+	if err != nil || remaining.Status != CandidatePreparing {
+		t.Fatalf("remaining candidate = %#v, %v", remaining, err)
+	}
+}
+
 func TestCandidateServiceConcealsForeignCandidatesAndUsesOptimisticReplacement(t *testing.T) {
 	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
 	repository := newCandidateMemoryRepository()
@@ -253,7 +295,8 @@ func (repository *candidateMemoryRepository) StartCandidate(_ context.Context, c
 			active++
 		}
 		if existing.OwnerID == candidate.OwnerID && existing.ProjectID == candidate.ProjectID &&
-			existing.TargetID == candidate.TargetID && !existing.Terminal() {
+			existing.TargetID == candidate.TargetID && existing.Key == candidate.Key &&
+			!existing.Terminal() {
 			if existing.BaseGeneration == candidate.BaseGeneration && existing.ArtifactDigest == candidate.ArtifactDigest {
 				return existing, true, nil
 			}
@@ -265,6 +308,23 @@ func (repository *candidateMemoryRepository) StartCandidate(_ context.Context, c
 	}
 	repository.candidates[candidate.ID] = candidate
 	return candidate, false, nil
+}
+
+func (repository *candidateMemoryRepository) ActiveCandidate(
+	_ context.Context,
+	targetID,
+	projectID,
+	ownerID,
+	key string,
+) (Candidate, error) {
+	for _, candidate := range repository.candidates {
+		if candidate.TargetID == targetID && candidate.ProjectID == projectID &&
+			candidate.OwnerID == ownerID && candidate.Key == key &&
+			!candidate.Terminal() {
+			return candidate, nil
+		}
+	}
+	return Candidate{}, ErrCandidateNotFound
 }
 
 func (repository *candidateMemoryRepository) CandidateByID(_ context.Context, id string) (Candidate, error) {

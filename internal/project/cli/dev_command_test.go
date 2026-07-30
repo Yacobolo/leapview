@@ -69,6 +69,7 @@ func (devCommandRemote) Synchronize(
 	return devloop.Candidate{
 		ID:               "cand_1",
 		ProjectID:        request.Snapshot.ProjectID,
+		OwnerID:          "principal_ci",
 		ArtifactDigest:   request.Snapshot.Digest,
 		PreviewURL:       "https://prod.example.com/candidates/cand_1",
 		TargetID:         "lvinst_prod",
@@ -94,6 +95,8 @@ func TestDevCommandOwnsOneAuthenticatedRemoteWorkflow(t *testing.T) {
 		"--project", projectPath,
 		"--target", "prod",
 		"--upload-concurrency", "3",
+		"--candidate-key", "github:pull/42",
+		"--source-revision", "commit-a",
 	})
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
@@ -105,19 +108,25 @@ func TestDevCommandOwnsOneAuthenticatedRemoteWorkflow(t *testing.T) {
 			remotes.concurrency,
 		)
 	}
-	checkpoint, err := checkpoints.Load(
+	checkpoint, err := checkpoints.LoadCandidate(
 		projectPath,
 		client.resolved.Target,
+		"github:pull/42",
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if checkpoint.TargetID != "lvinst_prod" ||
 		checkpoint.CandidateID != "cand_1" ||
+		checkpoint.CandidateKey != "github:pull/42" ||
 		checkpoint.CandidateRevision != 7 {
 		t.Fatalf("checkpoint = %+v", checkpoint)
 	}
 	if !strings.Contains(output.String(), "synchronized sha256:") ||
+		!strings.Contains(
+			output.String(),
+			"candidate cand_1 revision 7 target lvinst_prod environment production principal principal_ci",
+		) ||
 		!strings.Contains(
 			output.String(),
 			"preview https://prod.example.com/candidates/cand_1",

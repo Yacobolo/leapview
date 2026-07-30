@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -44,6 +45,70 @@ func TestCandidateCheckpointStoreRoundTripsExactNonSecretIdentity(t *testing.T) 
 		if strings.Contains(strings.ToLower(string(content)), forbidden) {
 			t.Fatalf("checkpoint persisted forbidden secret material: %s", content)
 		}
+	}
+}
+
+func TestCandidateCheckpointStoreIsolatesStableAuthoringKeys(t *testing.T) {
+	store := NewCandidateCheckpointStore(
+		filepath.Join(t.TempDir(), "authoring.json"),
+	)
+	projectPath := filepath.Join(t.TempDir(), "leapview.yaml")
+	first := candidateCheckpoint(projectPath)
+	first.CandidateKey = "github:pull/41"
+	first.CandidateID = "cand_41"
+	second := candidateCheckpoint(projectPath)
+	second.CandidateKey = "github:pull/42"
+	second.CandidateID = "cand_42"
+	if err := store.Save(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(second); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.LoadCandidate(
+		projectPath,
+		first.TargetOrigin,
+		first.CandidateKey,
+	)
+	if err != nil || loaded != first {
+		t.Fatalf("LoadCandidate() = %#v, %v", loaded, err)
+	}
+	loaded, err = store.LoadCandidate(
+		projectPath,
+		second.TargetOrigin,
+		second.CandidateKey,
+	)
+	if err != nil || loaded != second {
+		t.Fatalf("LoadCandidate() = %#v, %v", loaded, err)
+	}
+}
+
+func TestCandidateCheckpointStoreReadsLegacyDefaultCheckpoint(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "authoring.json")
+	projectPath := filepath.Join(t.TempDir(), "leapview.yaml")
+	checkpoint := candidateCheckpoint(projectPath)
+	checkpoint.CandidateKey = ""
+	key := legacyCandidateCheckpointKey(
+		checkpoint.ProjectPath,
+		checkpoint.TargetOrigin,
+	)
+	content := `{"version":1,"candidates":{"` + key + `":{` +
+		`"projectPath":` + strconv.Quote(checkpoint.ProjectPath) + `,` +
+		`"targetOrigin":` + strconv.Quote(checkpoint.TargetOrigin) + `,` +
+		`"targetId":"target_1","environment":"production",` +
+		`"projectId":"finance","candidateId":"cand_1",` +
+		`"candidateRevision":7,` +
+		`"artifactDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",` +
+		`"provenanceDigest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}}`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := NewCandidateCheckpointStore(path).Load(
+		projectPath,
+		checkpoint.TargetOrigin,
+	)
+	if err != nil || loaded.CandidateKey != "default" {
+		t.Fatalf("legacy Load() = %#v, %v", loaded, err)
 	}
 }
 
@@ -151,7 +216,7 @@ func candidateCheckpoint(projectPath string) CandidateCheckpoint {
 	return CandidateCheckpoint{
 		ProjectPath: absolute, TargetOrigin: "https://target.example",
 		TargetID: "target_1", Environment: "production", ProjectID: "finance",
-		CandidateID: "cand_1", CandidateRevision: 7,
+		CandidateID: "cand_1", CandidateKey: "default", CandidateRevision: 7,
 		ArtifactDigest:   "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		ProvenanceDigest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 	}

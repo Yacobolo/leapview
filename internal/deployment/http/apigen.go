@@ -18,6 +18,7 @@ type APIGenHandler interface {
 	ReplaceProjectCandidateArtifact(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string)
 	RetryProjectCandidate(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string)
 	CancelProjectCandidate(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string)
+	CancelProjectCandidateByKey(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string)
 	PublishProjectCandidate(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string)
 	ReviewProjectCandidate(stdhttp.ResponseWriter, *stdhttp.Request, string, string)
 	ListDeployments(stdhttp.ResponseWriter, *stdhttp.Request, string, *int32, *string)
@@ -70,6 +71,22 @@ func (d *APIGenDispatcher) RetryProjectCandidate(w stdhttp.ResponseWriter, r *st
 
 func (d *APIGenDispatcher) CancelProjectCandidate(w stdhttp.ResponseWriter, r *stdhttp.Request, project, candidate string, headers deploymentgen.GenCancelProjectCandidateHeaders) {
 	d.handler.CancelProjectCandidate(w, r, project, candidate, headers.IdempotencyKey)
+}
+
+func (d *APIGenDispatcher) CancelProjectCandidateByKey(
+	w stdhttp.ResponseWriter,
+	r *stdhttp.Request,
+	project,
+	candidateKey string,
+	headers deploymentgen.GenCancelProjectCandidateByKeyHeaders,
+) {
+	d.handler.CancelProjectCandidateByKey(
+		w,
+		r,
+		project,
+		candidateKey,
+		headers.IdempotencyKey,
+	)
 }
 
 func (d *APIGenDispatcher) PublishProjectCandidate(w stdhttp.ResponseWriter, r *stdhttp.Request, project, candidate string, headers deploymentgen.GenPublishProjectCandidateHeaders) {

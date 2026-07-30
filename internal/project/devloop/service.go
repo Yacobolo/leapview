@@ -19,16 +19,28 @@ type Artifact struct {
 	Content []byte
 }
 
+// SourceRevision is optional vendor-neutral change evidence. It deliberately
+// does not participate in the candidate-set digest.
+type SourceRevision struct {
+	Revision   string
+	Repository string
+	Ref        string
+	ChangeID   string
+}
+
 type Snapshot struct {
-	ProjectID   string
-	ProjectFile string
-	Digest      string
-	Artifacts   []Artifact
+	ProjectID      string
+	ProjectFile    string
+	Digest         string
+	Artifacts      []Artifact
+	SourceRevision *SourceRevision
+	CandidateKey   string
 }
 
 type Candidate struct {
 	ID               string
 	ProjectID        string
+	OwnerID          string
 	ArtifactDigest   string
 	PreviewURL       string
 	TargetID         string
@@ -102,7 +114,9 @@ func (service *Service) Reconcile(ctx context.Context) (Result, error) {
 	if err != nil {
 		return service.result(StatusInvalid), err
 	}
-	if service.candidate.ID != "" && snapshot.Digest == service.snapshot.Digest {
+	if service.candidate.ID != "" &&
+		snapshot.Digest == service.snapshot.Digest &&
+		equalSourceRevision(snapshot.SourceRevision, service.snapshot.SourceRevision) {
 		result := service.result(StatusUnchanged)
 		result.Snapshot = cloneSnapshot(snapshot)
 		return result, nil
@@ -140,6 +154,7 @@ func (service *Service) result(status Status) Result {
 func normalizeSnapshot(snapshot Snapshot) (Snapshot, error) {
 	snapshot.ProjectID = strings.TrimSpace(snapshot.ProjectID)
 	snapshot.ProjectFile = strings.TrimSpace(snapshot.ProjectFile)
+	snapshot.CandidateKey = strings.TrimSpace(snapshot.CandidateKey)
 	snapshot.Digest = strings.TrimSpace(snapshot.Digest)
 	if snapshot.ProjectID == "" || !canonicalArtifactPath(snapshot.ProjectFile) || len(snapshot.Artifacts) == 0 {
 		return Snapshot{}, fmt.Errorf("project snapshot requires project, canonical entrypoint, and artifacts")
@@ -178,18 +193,24 @@ func normalizeSnapshot(snapshot Snapshot) (Snapshot, error) {
 	if actual := candidateSetDigest(snapshot.ProjectID, snapshot.ProjectFile, snapshot.Artifacts); snapshot.Digest != actual {
 		return Snapshot{}, fmt.Errorf("project snapshot content does not match candidate-set digest")
 	}
+	var err error
+	snapshot.SourceRevision, err = normalizeSourceRevision(snapshot.SourceRevision)
+	if err != nil {
+		return Snapshot{}, err
+	}
 	return cloneSnapshot(snapshot), nil
 }
 
 func normalizeCandidate(candidate Candidate, snapshot Snapshot) (Candidate, error) {
 	candidate.ID = strings.TrimSpace(candidate.ID)
 	candidate.ProjectID = strings.TrimSpace(candidate.ProjectID)
+	candidate.OwnerID = strings.TrimSpace(candidate.OwnerID)
 	candidate.ArtifactDigest = strings.TrimSpace(candidate.ArtifactDigest)
 	candidate.PreviewURL = strings.TrimSpace(candidate.PreviewURL)
 	candidate.TargetID = strings.TrimSpace(candidate.TargetID)
 	candidate.Environment = strings.TrimSpace(candidate.Environment)
 	candidate.ProvenanceDigest = strings.TrimSpace(candidate.ProvenanceDigest)
-	if candidate.ID == "" || candidate.PreviewURL == "" ||
+	if candidate.ID == "" || candidate.OwnerID == "" || candidate.PreviewURL == "" ||
 		candidate.TargetID == "" || candidate.Environment == "" ||
 		candidate.Revision <= 0 ||
 		candidate.ProjectID != snapshot.ProjectID ||
@@ -206,6 +227,11 @@ func cloneSnapshot(snapshot Snapshot) Snapshot {
 	out := Snapshot{
 		ProjectID: snapshot.ProjectID, ProjectFile: snapshot.ProjectFile,
 		Digest: snapshot.Digest, Artifacts: make([]Artifact, len(snapshot.Artifacts)),
+		CandidateKey: snapshot.CandidateKey,
+	}
+	if snapshot.SourceRevision != nil {
+		copied := *snapshot.SourceRevision
+		out.SourceRevision = &copied
 	}
 	for index, artifact := range snapshot.Artifacts {
 		out.Artifacts[index] = Artifact{
@@ -215,6 +241,28 @@ func cloneSnapshot(snapshot Snapshot) Snapshot {
 		}
 	}
 	return out
+}
+
+func normalizeSourceRevision(value *SourceRevision) (*SourceRevision, error) {
+	if value == nil {
+		return nil, nil
+	}
+	normalized := *value
+	normalized.Revision = strings.TrimSpace(normalized.Revision)
+	normalized.Repository = strings.TrimSpace(normalized.Repository)
+	normalized.Ref = strings.TrimSpace(normalized.Ref)
+	normalized.ChangeID = strings.TrimSpace(normalized.ChangeID)
+	if normalized.Revision == "" {
+		return nil, fmt.Errorf("source revision requires a revision")
+	}
+	return &normalized, nil
+}
+
+func equalSourceRevision(first, second *SourceRevision) bool {
+	if first == nil || second == nil {
+		return first == second
+	}
+	return *first == *second
 }
 
 func canonicalArtifactPath(value string) bool {

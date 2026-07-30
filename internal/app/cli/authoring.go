@@ -79,7 +79,8 @@ func (transport *candidateSynchronizationTransport) Plan(
 				IdempotencyKey: deploymentIdempotencyKey(
 					"candidate-plan", request.ProjectID,
 					transport.sessionID,
-					request.ExpectedCandidateID, request.ArtifactDigest,
+					request.CandidateKey, request.ExpectedCandidateID,
+					request.ArtifactDigest,
 				),
 			},
 			Body: candidateSynchronizationBody(request),
@@ -140,7 +141,8 @@ func (transport *candidateSynchronizationTransport) Commit(
 				IdempotencyKey: deploymentIdempotencyKey(
 					"candidate-sync", request.ProjectID,
 					transport.sessionID,
-					request.ExpectedCandidateID, request.ArtifactDigest,
+					request.CandidateKey, request.ExpectedCandidateID,
+					request.ArtifactDigest,
 				),
 			},
 			Body: candidateSynchronizationBody(request),
@@ -154,6 +156,7 @@ func (transport *candidateSynchronizationTransport) Commit(
 	}
 	return projectdevloop.Candidate{
 		ID: response.Body.Id, ProjectID: response.Body.ProjectId,
+		OwnerID:          response.Body.OwnerId,
 		ArtifactDigest:   response.Body.ArtifactDigest,
 		PreviewURL:       response.Body.PreviewUrl,
 		TargetID:         response.Body.TargetId,
@@ -169,6 +172,27 @@ func candidateSynchronizationBody(
 	body := deploymentgen.CandidateSynchronizationRequest{
 		ProjectFile: request.ProjectFile, ArtifactDigest: request.ArtifactDigest,
 		Artifacts: make([]deploymentgen.CandidateSourceArtifact, len(request.Artifacts)),
+	}
+	if request.CandidateKey != "" {
+		value := request.CandidateKey
+		body.CandidateKey = &value
+	}
+	if request.SourceRevision != nil {
+		body.SourceRevision = &deploymentgen.CandidateSourceRevision{
+			Revision: request.SourceRevision.Revision,
+		}
+		if request.SourceRevision.Repository != "" {
+			value := request.SourceRevision.Repository
+			body.SourceRevision.Repository = &value
+		}
+		if request.SourceRevision.Ref != "" {
+			value := request.SourceRevision.Ref
+			body.SourceRevision.Ref = &value
+		}
+		if request.SourceRevision.ChangeID != "" {
+			value := request.SourceRevision.ChangeID
+			body.SourceRevision.ChangeId = &value
+		}
 	}
 	if request.ExpectedCandidateID != "" {
 		value := request.ExpectedCandidateID

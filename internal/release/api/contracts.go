@@ -39,6 +39,13 @@ type CandidateProvenance struct {
 	OwnerID  string `json:"ownerId"`
 }
 
+type SourceRevisionProvenance struct {
+	Revision   string  `json:"revision"`
+	Repository *string `json:"repository,omitempty"`
+	Ref        *string `json:"ref,omitempty"`
+	ChangeID   *string `json:"changeId,omitempty"`
+}
+
 type ManagedDataPin struct {
 	ConnectionID string `json:"connectionId"`
 	RevisionID   string `json:"revisionId"`
@@ -73,6 +80,7 @@ type Provenance struct {
 	Version        int32                     `json:"version"`
 	Artifact       ProjectArtifactProvenance `json:"artifact"`
 	Candidate      CandidateProvenance       `json:"candidate"`
+	SourceRevision *SourceRevisionProvenance `json:"sourceRevision,omitempty"`
 	Plan           TargetPlanProvenance      `json:"plan"`
 	ArtifactDigest string                    `json:"artifactDigest"`
 	PlanDigest     string                    `json:"planDigest"`

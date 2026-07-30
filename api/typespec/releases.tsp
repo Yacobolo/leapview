@@ -41,6 +41,13 @@ model ReleaseCandidateProvenance {
   ownerId: string;
 }
 
+model ReleaseSourceRevisionProvenance {
+  revision: string;
+  repository?: string;
+  ref?: string;
+  changeId?: string;
+}
+
 model ReleaseManagedDataPin {
   connectionId: string;
   revisionId: string;
@@ -80,6 +87,7 @@ model ReleaseProvenance {
   version: int32;
   artifact: ReleaseProjectArtifactProvenance;
   candidate: ReleaseCandidateProvenance;
+  sourceRevision?: ReleaseSourceRevisionProvenance;
   plan: ReleaseTargetPlanProvenance;
   artifactDigest: string;
   planDigest: string;

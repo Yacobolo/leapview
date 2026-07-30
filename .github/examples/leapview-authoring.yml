@@ -1,0 +1,136 @@
+# Maintained reference workflow. Copy it into .github/workflows in the project
+# repository after providing `leapview` on the runner.
+name: LeapView enterprise authoring
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  LEAPVIEW_PROJECT_FILE: dashboards/leapview.yaml
+  LEAPVIEW_TARGET: ${{ vars.LEAPVIEW_TARGET }}
+  LEAPVIEW_WORKLOAD_PROJECT: ${{ vars.LEAPVIEW_PROJECT_ID }}
+
+jobs:
+  validate:
+    if: github.event_name != 'pull_request' || github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify CLI is available
+        run: leapview version
+      - name: Validate without target credentials
+        run: leapview validate --project "$LEAPVIEW_PROJECT_FILE" --json
+
+  candidate:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action != 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: leapview-authoring
+    env:
+      LEAPVIEW_WORKLOAD_CLIENT_ID: ${{ secrets.LEAPVIEW_WORKLOAD_CLIENT_ID }}
+      LEAPVIEW_WORKLOAD_CLIENT_SECRET: ${{ secrets.LEAPVIEW_WORKLOAD_CLIENT_SECRET }}
+      CHANGE_KEY: github:pull/${{ github.event.pull_request.number }}
+      SOURCE_REPOSITORY: ${{ github.server_url }}/${{ github.repository }}
+      SOURCE_REF: refs/pull/${{ github.event.pull_request.number }}/merge
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create or update exact candidate
+        run: |
+          leapview dev --once \
+            --project "$LEAPVIEW_PROJECT_FILE" \
+            --candidate-key "$CHANGE_KEY" \
+            --source-revision "$GITHUB_SHA" \
+            --source-repository "$SOURCE_REPOSITORY" \
+            --source-ref "$SOURCE_REF" \
+            --source-change "$CHANGE_KEY"
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: leapview-production
+    concurrency:
+      group: leapview-production
+      cancel-in-progress: false
+    env:
+      LEAPVIEW_WORKLOAD_CLIENT_ID: ${{ secrets.LEAPVIEW_WORKLOAD_CLIENT_ID }}
+      LEAPVIEW_WORKLOAD_CLIENT_SECRET: ${{ secrets.LEAPVIEW_WORKLOAD_CLIENT_SECRET }}
+      CHANGE_KEY: github:branch/main
+      SOURCE_REPOSITORY: ${{ github.server_url }}/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build exact protected-branch candidate
+        run: |
+          leapview dev --once \
+            --project "$LEAPVIEW_PROJECT_FILE" \
+            --candidate-key "$CHANGE_KEY" \
+            --source-revision "$GITHUB_SHA" \
+            --source-repository "$SOURCE_REPOSITORY" \
+            --source-ref "$GITHUB_REF" \
+            --source-change "$CHANGE_KEY"
+      - name: Request policy-governed publication
+        run: |
+          leapview publish \
+            --project "$LEAPVIEW_PROJECT_FILE" \
+            --candidate-key "$CHANGE_KEY"
+
+  reconcile-closed:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action == 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: leapview-authoring
+    env:
+      LEAPVIEW_WORKLOAD_CLIENT_ID: ${{ secrets.LEAPVIEW_WORKLOAD_CLIENT_ID }}
+      LEAPVIEW_WORKLOAD_CLIENT_SECRET: ${{ secrets.LEAPVIEW_WORKLOAD_CLIENT_SECRET }}
+      CHANGE_KEY: github:pull/${{ github.event.pull_request.number }}
+    steps:
+      - name: Cancel abandoned candidate idempotently
+        run: |
+          leapview api call cancelProjectCandidateByKey \
+            --path project="$LEAPVIEW_WORKLOAD_PROJECT" \
+            --path candidateKey="$CHANGE_KEY" \
+            --idempotency-key "candidate-close:${{ github.event.pull_request.id }}"
+
+  reconcile-missed-close:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    environment: leapview-authoring
+    env:
+      GH_TOKEN: ${{ github.token }}
+      LEAPVIEW_WORKLOAD_CLIENT_ID: ${{ secrets.LEAPVIEW_WORKLOAD_CLIENT_ID }}
+      LEAPVIEW_WORKLOAD_CLIENT_SECRET: ${{ secrets.LEAPVIEW_WORKLOAD_CLIENT_SECRET }}
+    steps:
+      - name: Reconcile recently closed pull requests
+        shell: bash
+        run: |
+          while read -r number; do
+            key="github:pull/$number"
+            evidence="$(mktemp)"
+            if leapview api call cancelProjectCandidateByKey \
+              --path project="$LEAPVIEW_WORKLOAD_PROJECT" \
+              --path candidateKey="$key" \
+              --idempotency-key "candidate-reconcile:$key" \
+              >"$evidence" 2>&1; then
+              cat "$evidence"
+            elif grep -q "CANDIDATE_NOT_FOUND" "$evidence"; then
+              echo "candidate already absent: $key"
+            else
+              cat "$evidence" >&2
+              exit 1
+            fi
+          done < <(gh pr list --state closed --limit 100 --json number --jq '.[].number')

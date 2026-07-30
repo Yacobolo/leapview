@@ -49,6 +49,9 @@ func TestAPICommandCallUsesGeneratedContract(t *testing.T) {
 		if got := r.Header.Get("Content-Type"); got != "application/json" {
 			t.Fatalf("Content-Type = %q", got)
 		}
+		if got := r.Header.Get("Idempotency-Key"); got != "run-commit-a" {
+			t.Fatalf("Idempotency-Key = %q", got)
+		}
 		var body map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode body: %v", err)
@@ -69,6 +72,7 @@ func TestAPICommandCallUsesGeneratedContract(t *testing.T) {
 			"--path", "conversation=conv_1",
 			"--query", "trace=1",
 			"--body-json", `{"input":"hello"}`,
+			"--idempotency-key", "run-commit-a",
 		})
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("api call: %v", err)

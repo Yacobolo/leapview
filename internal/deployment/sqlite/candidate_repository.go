@@ -30,7 +30,8 @@ func (r *Repository) StartCandidate(ctx context.Context, candidate deployment.Ca
 		return deployment.Candidate{}, false, err
 	}
 	existing, err := queries.GetActiveProjectCandidateSession(ctx, platformdb.GetActiveProjectCandidateSessionParams{
-		TargetID: candidate.TargetID, ProjectID: candidate.ProjectID, OwnerPrincipalID: candidate.OwnerID,
+		TargetID: candidate.TargetID, ProjectID: candidate.ProjectID,
+		OwnerPrincipalID: candidate.OwnerID, CandidateKey: candidate.Key,
 	})
 	if err == nil {
 		mapped, mapErr := mapCandidate(existing)
@@ -62,6 +63,32 @@ func (r *Repository) StartCandidate(ctx context.Context, candidate deployment.Ca
 		return deployment.Candidate{}, false, err
 	}
 	return candidate, false, nil
+}
+
+func (r *Repository) ActiveCandidate(
+	ctx context.Context,
+	targetID,
+	projectID,
+	ownerID,
+	key string,
+) (deployment.Candidate, error) {
+	if r == nil || r.q == nil {
+		return deployment.Candidate{}, deployment.ErrCandidateNotFound
+	}
+	row, err := r.q.GetActiveProjectCandidateByKey(
+		ctx,
+		platformdb.GetActiveProjectCandidateByKeyParams{
+			TargetID: targetID, ProjectID: projectID,
+			OwnerPrincipalID: ownerID, CandidateKey: key,
+		},
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return deployment.Candidate{}, deployment.ErrCandidateNotFound
+	}
+	if err != nil {
+		return deployment.Candidate{}, err
+	}
+	return mapCandidate(row)
 }
 
 func (r *Repository) CandidateByID(ctx context.Context, id string) (deployment.Candidate, error) {
@@ -130,6 +157,7 @@ func candidateCreateParams(candidate deployment.Candidate) platformdb.CreateProj
 	return platformdb.CreateProjectCandidateParams{
 		ID: candidate.ID, ProjectID: candidate.ProjectID, TargetID: candidate.TargetID,
 		Environment: candidate.Environment, OwnerPrincipalID: candidate.OwnerID,
+		CandidateKey:   candidate.Key,
 		BaseGeneration: candidate.BaseGeneration, ArtifactDigest: candidate.ArtifactDigest,
 		ProvenanceDigest: candidate.ProvenanceDigest,
 		Status:           string(candidate.Status), FailureReason: candidate.FailureReason,
@@ -166,7 +194,8 @@ func mapCandidate(row platformdb.ProjectCandidate) (deployment.Candidate, error)
 		return deployment.Candidate{}, fmt.Errorf("parse candidate expiration: %w", err)
 	}
 	candidate := deployment.Candidate{
-		ID: row.ID, ProjectID: row.ProjectID, TargetID: row.TargetID, Environment: row.Environment,
+		ID: row.ID, ProjectID: row.ProjectID, Key: row.CandidateKey,
+		TargetID: row.TargetID, Environment: row.Environment,
 		OwnerID: row.OwnerPrincipalID, BaseGeneration: row.BaseGeneration, ArtifactDigest: row.ArtifactDigest,
 		ProvenanceDigest: row.ProvenanceDigest,
 		Status:           deployment.CandidateStatus(row.Status), FailureReason: row.FailureReason,
@@ -182,6 +211,7 @@ func mapCandidate(row platformdb.ProjectCandidate) (deployment.Candidate, error)
 func sameCandidateStart(existing, candidate deployment.Candidate) bool {
 	return existing.ProjectID == candidate.ProjectID && existing.TargetID == candidate.TargetID &&
 		existing.Environment == candidate.Environment && existing.OwnerID == candidate.OwnerID &&
+		existing.Key == candidate.Key &&
 		existing.ArtifactDigest == candidate.ArtifactDigest
 }
 

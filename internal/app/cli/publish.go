@@ -79,6 +79,7 @@ func (operations projectPublishOperations) Publish(
 			)
 		}
 		fmt.Fprintf(out, "publish request %s pending approval\n", response.Body.Id)
+		writePublicationEvidence(out, response.Body)
 		return nil
 	}
 	deployment, err := waitForCandidatePublish(
@@ -95,7 +96,29 @@ func (operations projectPublishOperations) Publish(
 		deployment.ReleaseId,
 		deployment.Id,
 	)
+	writePublicationEvidence(out, deployment)
 	return nil
+}
+
+func writePublicationEvidence(
+	out io.Writer,
+	deployment deploymentgen.DeploymentResponse,
+) {
+	sourceRevision := "none"
+	if deployment.Evidence.SourceRevision != nil {
+		sourceRevision = deployment.Evidence.SourceRevision.Revision
+	}
+	fmt.Fprintf(
+		out,
+		"evidence result %s artifact %s target %s candidate %s revision %d principal %s source %s\n",
+		deployment.Status,
+		deployment.Evidence.ArtifactDigest,
+		deployment.Evidence.TargetId,
+		deployment.Evidence.CandidateId,
+		deployment.Evidence.CandidateRevision,
+		deployment.CreatedBy,
+		sourceRevision,
+	)
 }
 
 func waitForCandidatePublish(

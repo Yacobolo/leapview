@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
+	"unicode"
 
 	platformdigest "github.com/flidai/leapview/internal/platform/digest"
 )
@@ -33,6 +35,16 @@ type CandidateProvenance struct {
 	ID       string `json:"id"`
 	Revision int64  `json:"revision"`
 	OwnerID  string `json:"ownerId"`
+}
+
+// SourceRevisionProvenance is optional, vendor-neutral change evidence supplied
+// by an authoring client. It is release evidence, not an artifact identity:
+// identical project bytes retain the same ArtifactDigest across revisions.
+type SourceRevisionProvenance struct {
+	Revision   string `json:"revision"`
+	Repository string `json:"repository,omitempty"`
+	Ref        string `json:"ref,omitempty"`
+	ChangeID   string `json:"changeId,omitempty"`
 }
 
 type ManagedDataPin struct {
@@ -73,15 +85,17 @@ type TargetPlanProvenance struct {
 }
 
 type ProvenanceInput struct {
-	Artifact  ProjectArtifactProvenance
-	Candidate CandidateProvenance
-	Plan      TargetPlanProvenance
+	Artifact       ProjectArtifactProvenance
+	Candidate      CandidateProvenance
+	SourceRevision *SourceRevisionProvenance
+	Plan           TargetPlanProvenance
 }
 
 type Provenance struct {
 	Version        int                       `json:"version"`
 	Artifact       ProjectArtifactProvenance `json:"artifact"`
 	Candidate      CandidateProvenance       `json:"candidate"`
+	SourceRevision *SourceRevisionProvenance `json:"sourceRevision,omitempty"`
 	Plan           TargetPlanProvenance      `json:"plan"`
 	ArtifactDigest string                    `json:"artifactDigest"`
 	PlanDigest     string                    `json:"planDigest"`
@@ -97,6 +111,10 @@ func NewProvenance(input ProvenanceInput) (Provenance, error) {
 	if err != nil {
 		return Provenance{}, err
 	}
+	sourceRevision, err := NormalizeSourceRevisionProvenance(input.SourceRevision)
+	if err != nil {
+		return Provenance{}, err
+	}
 	plan, err := normalizeTargetPlanProvenance(input.Plan, artifact)
 	if err != nil {
 		return Provenance{}, err
@@ -106,9 +124,10 @@ func NewProvenance(input ProvenanceInput) (Provenance, error) {
 		return Provenance{}, provenanceInvalid(err)
 	}
 	planDigest, err := canonicalDigest(struct {
-		Candidate CandidateProvenance  `json:"candidate"`
-		Plan      TargetPlanProvenance `json:"plan"`
-	}{Candidate: candidate, Plan: plan})
+		Candidate      CandidateProvenance       `json:"candidate"`
+		SourceRevision *SourceRevisionProvenance `json:"sourceRevision,omitempty"`
+		Plan           TargetPlanProvenance      `json:"plan"`
+	}{Candidate: candidate, SourceRevision: sourceRevision, Plan: plan})
 	if err != nil {
 		return Provenance{}, provenanceInvalid(err)
 	}
@@ -125,7 +144,8 @@ func NewProvenance(input ProvenanceInput) (Provenance, error) {
 	}
 	return Provenance{
 		Version: ProvenanceVersion, Artifact: artifact, Candidate: candidate,
-		Plan: plan, ArtifactDigest: artifactDigest, PlanDigest: planDigest,
+		SourceRevision: sourceRevision, Plan: plan,
+		ArtifactDigest: artifactDigest, PlanDigest: planDigest,
 		Digest: releaseDigest,
 	}, nil
 }
@@ -140,7 +160,7 @@ func (provenance Provenance) Validate() error {
 	}
 	expected, err := NewProvenance(ProvenanceInput{
 		Artifact: provenance.Artifact, Candidate: provenance.Candidate,
-		Plan: provenance.Plan,
+		SourceRevision: provenance.SourceRevision, Plan: provenance.Plan,
 	})
 	if err != nil {
 		return err
@@ -151,6 +171,51 @@ func (provenance Provenance) Validate() error {
 		return provenanceInvalid(fmt.Errorf("content digest mismatch"))
 	}
 	return nil
+}
+
+func NormalizeSourceRevisionProvenance(
+	value *SourceRevisionProvenance,
+) (*SourceRevisionProvenance, error) {
+	if value == nil {
+		return nil, nil
+	}
+	normalized := *value
+	normalized.Revision = strings.TrimSpace(normalized.Revision)
+	normalized.Repository = strings.TrimSpace(normalized.Repository)
+	normalized.Ref = strings.TrimSpace(normalized.Ref)
+	normalized.ChangeID = strings.TrimSpace(normalized.ChangeID)
+	fields := []struct {
+		name  string
+		value string
+		limit int
+	}{
+		{name: "revision", value: normalized.Revision, limit: 256},
+		{name: "repository", value: normalized.Repository, limit: 2048},
+		{name: "ref", value: normalized.Ref, limit: 1024},
+		{name: "change id", value: normalized.ChangeID, limit: 512},
+	}
+	for _, field := range fields {
+		if len(field.value) > field.limit ||
+			strings.IndexFunc(field.value, unicode.IsControl) >= 0 {
+			return nil, provenanceInvalid(fmt.Errorf(
+				"source %s is invalid",
+				field.name,
+			))
+		}
+	}
+	if normalized.Revision == "" {
+		return nil, provenanceInvalid(fmt.Errorf("source revision is required"))
+	}
+	if normalized.Repository != "" {
+		parsed, err := url.Parse(normalized.Repository)
+		if err != nil || parsed.User != nil ||
+			parsed.RawQuery != "" || parsed.Fragment != "" {
+			return nil, provenanceInvalid(
+				fmt.Errorf("source repository must not contain credentials, query, or fragment"),
+			)
+		}
+	}
+	return &normalized, nil
 }
 
 func normalizeProjectArtifactProvenance(

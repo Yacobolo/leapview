@@ -31,6 +31,7 @@ enum DeploymentApprovalStatus {
 
 model CandidateStartRequest {
   artifactDigest: string;
+  candidateKey?: string;
 }
 
 model CandidateArtifactRequest {
@@ -49,9 +50,18 @@ model CandidateSourceArtifact {
   digest: string;
 }
 
+model CandidateSourceRevision {
+  revision: string;
+  repository?: string;
+  ref?: string;
+  changeId?: string;
+}
+
 model CandidateSynchronizationRequest {
   projectFile: string;
   artifactDigest: string;
+  candidateKey?: string;
+  sourceRevision?: CandidateSourceRevision;
   expectedCandidateId?: string;
   expectedArtifactDigest?: string;
   artifacts: CandidateSourceArtifact[];
@@ -70,6 +80,7 @@ model CandidateSourceBlobResponse {
 model CandidateResponse {
   id: string;
   projectId: string;
+  candidateKey: string;
   targetId: string;
   environment: string;
   ownerId: string;
@@ -145,6 +156,7 @@ model DeploymentPublishEvidence {
   baseGeneration: string;
   runtimeVersion: string;
   policyDigest: string;
+  sourceRevision?: CandidateSourceRevision;
   workspaces: DeploymentWorkspacePublishEvidence[];
 }
 
@@ -342,6 +354,14 @@ op retryProjectCandidate(@path project: string, @path candidate: string, @header
 @apigen.authz(#{ mode: "privilege", privilege: "AUTHOR_PROJECT" })
 @operationId("cancelProjectCandidate")
 op cancelProjectCandidate(@path project: string, @path candidate: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): OkJson<CandidateResponse> | CommonErrors;
+
+@tag("Deployments")
+@summary("Cancel the current principal's active candidate by stable authoring key")
+@route("/projects/{project}/candidate-sessions/{candidateKey}/cancel")
+@post
+@apigen.authz(#{ mode: "privilege", privilege: "AUTHOR_PROJECT" })
+@operationId("cancelProjectCandidateByKey")
+op cancelProjectCandidateByKey(@path project: string, @path candidateKey: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): OkJson<CandidateResponse> | CommonErrors;
 
 @tag("Deployments")
 @summary("Publish the exact ready candidate through target policy")

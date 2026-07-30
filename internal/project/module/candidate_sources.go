@@ -33,6 +33,7 @@ type candidateSourceSynchronizer struct {
 type candidateSourcePlanKey struct {
 	projectID      string
 	ownerID        string
+	candidateKey   string
 	artifactDigest string
 }
 
@@ -45,6 +46,7 @@ type candidateSourcePlanRecord struct {
 	Version        int      `json:"version"`
 	ProjectID      string   `json:"projectId"`
 	OwnerID        string   `json:"ownerId"`
+	CandidateKey   string   `json:"candidateKey,omitempty"`
 	ArtifactDigest string   `json:"artifactDigest"`
 	ExpiresAt      string   `json:"expiresAt"`
 	Missing        []string `json:"missing"`
@@ -89,6 +91,7 @@ func (synchronizer *candidateSourceSynchronizer) Plan(
 	}
 	key := candidateSourcePlanKey{
 		projectID: strings.TrimSpace(scope.ProjectID), ownerID: strings.TrimSpace(scope.OwnerID),
+		candidateKey:   normalizeCandidateSourceKey(scope.CandidateKey),
 		artifactDigest: strings.TrimSpace(request.ArtifactDigest),
 	}
 	plan := candidateSourcePlan{
@@ -153,6 +156,7 @@ func (synchronizer *candidateSourceSynchronizer) Commit(
 	synchronizer.mu.Lock()
 	key := candidateSourcePlanKey{
 		projectID: strings.TrimSpace(scope.ProjectID), ownerID: strings.TrimSpace(scope.OwnerID),
+		candidateKey:   normalizeCandidateSourceKey(scope.CandidateKey),
 		artifactDigest: strings.TrimSpace(request.ArtifactDigest),
 	}
 	delete(synchronizer.plans, key)
@@ -162,6 +166,7 @@ func (synchronizer *candidateSourceSynchronizer) Commit(
 		ProjectID: stored.ProjectID, ArtifactDigest: stored.Digest,
 		ProjectPath: stored.ProjectPath, ProjectDigest: stored.ProjectDigest,
 		ProjectArtifactPath: stored.ProjectArtifactPath,
+		SourceRevision:      cloneCandidateSourceRevision(request.SourceRevision),
 	}, nil
 }
 
@@ -204,6 +209,7 @@ func (synchronizer *candidateSourceSynchronizer) loadPlans() error {
 		key := candidateSourcePlanKey{
 			projectID:      strings.TrimSpace(record.ProjectID),
 			ownerID:        strings.TrimSpace(record.OwnerID),
+			candidateKey:   normalizeCandidateSourceKey(record.CandidateKey),
 			artifactDigest: strings.TrimSpace(record.ArtifactDigest),
 		}
 		if entry.Name() != filepath.Base(synchronizer.planPath(key)) {
@@ -234,6 +240,7 @@ func (synchronizer *candidateSourceSynchronizer) savePlan(
 	content, err := json.Marshal(candidateSourcePlanRecord{
 		Version:   candidateSourcePlanVersion,
 		ProjectID: key.projectID, OwnerID: key.ownerID,
+		CandidateKey:   key.candidateKey,
 		ArtifactDigest: key.artifactDigest,
 		ExpiresAt:      plan.expiresAt.UTC().Format(time.RFC3339Nano),
 		Missing:        missing,
@@ -266,8 +273,13 @@ func (synchronizer *candidateSourceSynchronizer) savePlan(
 }
 
 func (synchronizer *candidateSourceSynchronizer) planPath(key candidateSourcePlanKey) string {
+	key.candidateKey = normalizeCandidateSourceKey(key.candidateKey)
+	identity := key.projectID + "\x00" + key.ownerID + "\x00" + key.artifactDigest
+	if key.candidateKey != "default" {
+		identity += "\x00" + key.candidateKey
+	}
 	sum := sha256.Sum256([]byte(
-		key.projectID + "\x00" + key.ownerID + "\x00" + key.artifactDigest,
+		identity,
 	))
 	return filepath.Join(synchronizer.planDir, hex.EncodeToString(sum[:])+".json")
 }
@@ -278,6 +290,7 @@ func synchronizationPlanRequest(
 ) projectdevloop.SynchronizationPlanRequest {
 	result := projectdevloop.SynchronizationPlanRequest{
 		ProjectID: strings.TrimSpace(scope.ProjectID), ProjectFile: request.ProjectFile,
+		CandidateKey:           request.CandidateKey,
 		ArtifactDigest:         request.ArtifactDigest,
 		ExpectedCandidateID:    request.ExpectedCandidateID,
 		ExpectedArtifactDigest: request.ExpectedArtifactDigest,
@@ -289,6 +302,24 @@ func synchronizationPlanRequest(
 		}
 	}
 	return result
+}
+
+func normalizeCandidateSourceKey(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "default"
+	}
+	return value
+}
+
+func cloneCandidateSourceRevision(
+	value *project.CandidateSourceRevision,
+) *project.CandidateSourceRevision {
+	if value == nil {
+		return nil
+	}
+	copied := *value
+	return &copied
 }
 
 func candidateSourceInvalid(err error) error {

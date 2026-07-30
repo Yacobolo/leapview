@@ -9354,6 +9354,7 @@ paths:
               example:
                 artifactDigest: example
                 baseGeneration: example
+                candidateKey: example
                 createdAt: "2026-01-02T15:04:05Z"
                 environment: example
                 expiresAt: "2026-01-02T15:04:05Z"
@@ -9607,6 +9608,295 @@ paths:
       x-authz:
         mode: privilege
         privilege: REVIEW_CANDIDATE
+  /api/v1/projects/{project}/candidate-sessions/{candidateKey}/cancel:
+    post:
+      operationId: cancelProjectCandidateByKey
+      summary: Cancel the current principal's active candidate by stable authoring key
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+          example: example
+        - name: candidateKey
+          in: path
+          required: true
+          schema:
+            type: string
+          example: example
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+          example: example
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CandidateResponse'
+              example:
+                artifactDigest: example
+                baseGeneration: example
+                candidateKey: example
+                createdAt: "2026-01-02T15:04:05Z"
+                environment: example
+                expiresAt: "2026-01-02T15:04:05Z"
+                failureReason: example
+                id: example
+                ownerId: example
+                previewUrl: example
+                projectId: example
+                provenanceDigest: example
+                resumed: true
+                revision: 1
+                status: preparing
+                targetId: example
+                updatedAt: "2026-01-02T15:04:05Z"
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '403':
+          description: Access is forbidden.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '412':
+          description: Precondition failed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '413':
+          description: Client error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '415':
+          description: Client error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '422':
+          description: Client error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '429':
+          description: Client error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '500':
+          description: Server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '502':
+          description: Server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+        '503':
+          description: Service unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                code: example
+                detail: example
+                errors:
+                  - code: example
+                    detail: example
+                    field: example
+                instance: example
+                requestId: example
+                status: 1
+                title: example
+                type: example
+      tags:
+        - Deployments
+      x-authz:
+        mode: privilege
+        privilege: AUTHOR_PROJECT
   /api/v1/projects/{project}/candidate-sync/blobs/{digest}:
     put:
       operationId: uploadProjectCandidateSourceBlob
@@ -9930,6 +10220,7 @@ paths:
               example:
                 artifactDigest: example
                 baseGeneration: example
+                candidateKey: example
                 createdAt: "2026-01-02T15:04:05Z"
                 environment: example
                 expiresAt: "2026-01-02T15:04:05Z"
@@ -10191,9 +10482,15 @@ paths:
               artifacts:
                 - digest: example
                   path: example
+              candidateKey: example
               expectedArtifactDigest: example
               expectedCandidateId: example
               projectFile: example
+              sourceRevision:
+                changeId: example
+                ref: example
+                repository: example
+                revision: example
       x-authz:
         mode: privilege
         privilege: AUTHOR_PROJECT
@@ -10474,9 +10771,15 @@ paths:
               artifacts:
                 - digest: example
                   path: example
+              candidateKey: example
               expectedArtifactDigest: example
               expectedCandidateId: example
               projectFile: example
+              sourceRevision:
+                changeId: example
+                ref: example
+                repository: example
+                revision: example
       x-authz:
         mode: privilege
         privilege: AUTHOR_PROJECT
@@ -10514,6 +10817,7 @@ paths:
               example:
                 artifactDigest: example
                 baseGeneration: example
+                candidateKey: example
                 createdAt: "2026-01-02T15:04:05Z"
                 environment: example
                 expiresAt: "2026-01-02T15:04:05Z"
@@ -10772,6 +11076,7 @@ paths:
               $ref: '#/components/schemas/CandidateStartRequest'
             example:
               artifactDigest: example
+              candidateKey: example
       x-authz:
         mode: privilege
         privilege: AUTHOR_PROJECT
@@ -10802,6 +11107,7 @@ paths:
               example:
                 artifactDigest: example
                 baseGeneration: example
+                candidateKey: example
                 createdAt: "2026-01-02T15:04:05Z"
                 environment: example
                 expiresAt: "2026-01-02T15:04:05Z"
@@ -11090,6 +11396,7 @@ paths:
               example:
                 artifactDigest: example
                 baseGeneration: example
+                candidateKey: example
                 createdAt: "2026-01-02T15:04:05Z"
                 environment: example
                 expiresAt: "2026-01-02T15:04:05Z"
@@ -11387,6 +11694,7 @@ paths:
               example:
                 artifactDigest: example
                 baseGeneration: example
+                candidateKey: example
                 createdAt: "2026-01-02T15:04:05Z"
                 environment: example
                 expiresAt: "2026-01-02T15:04:05Z"
@@ -11714,6 +12022,11 @@ paths:
                   policyDigest: example
                   releaseDigest: example
                   runtimeVersion: example
+                  sourceRevision:
+                    changeId: example
+                    ref: example
+                    repository: example
+                    revision: example
                   targetId: example
                   workspaces:
                     - artifactDigest: example
@@ -12032,6 +12345,7 @@ paths:
               example:
                 artifactDigest: example
                 baseGeneration: example
+                candidateKey: example
                 createdAt: "2026-01-02T15:04:05Z"
                 environment: example
                 expiresAt: "2026-01-02T15:04:05Z"
@@ -16937,6 +17251,11 @@ paths:
                       policyDigest: example
                       releaseDigest: example
                       runtimeVersion: example
+                      sourceRevision:
+                        changeId: example
+                        ref: example
+                        repository: example
+                        revision: example
                       targetId: example
                       workspaces:
                         - artifactDigest: example
@@ -17279,6 +17598,11 @@ paths:
                   policyDigest: example
                   releaseDigest: example
                   runtimeVersion: example
+                  sourceRevision:
+                    changeId: example
+                    ref: example
+                    repository: example
+                    revision: example
                   targetId: example
                   workspaces:
                     - artifactDigest: example
@@ -17621,6 +17945,11 @@ paths:
                   policyDigest: example
                   releaseDigest: example
                   runtimeVersion: example
+                  sourceRevision:
+                    changeId: example
+                    ref: example
+                    repository: example
+                    revision: example
                   targetId: example
                   workspaces:
                     - artifactDigest: example
@@ -17968,6 +18297,11 @@ paths:
                   policyDigest: example
                   releaseDigest: example
                   runtimeVersion: example
+                  sourceRevision:
+                    changeId: example
+                    ref: example
+                    repository: example
+                    revision: example
                   targetId: example
                   workspaces:
                     - artifactDigest: example
@@ -19518,6 +19852,11 @@ paths:
                   policyDigest: example
                   releaseDigest: example
                   runtimeVersion: example
+                  sourceRevision:
+                    changeId: example
+                    ref: example
+                    repository: example
+                    revision: example
                   targetId: example
                   workspaces:
                     - artifactDigest: example
@@ -20182,6 +20521,11 @@ paths:
                   policyDigest: example
                   releaseDigest: example
                   runtimeVersion: example
+                  sourceRevision:
+                    changeId: example
+                    ref: example
+                    repository: example
+                    revision: example
                   targetId: example
                   workspaces:
                     - artifactDigest: example
@@ -20529,6 +20873,11 @@ paths:
                   policyDigest: example
                   releaseDigest: example
                   runtimeVersion: example
+                  sourceRevision:
+                    changeId: example
+                    ref: example
+                    repository: example
+                    revision: example
                   targetId: example
                   workspaces:
                     - artifactDigest: example
@@ -20886,6 +21235,11 @@ paths:
                             servingStateId: example
                             workspaceId: example
                       planDigest: example
+                      sourceRevision:
+                        changeId: example
+                        ref: example
+                        repository: example
+                        revision: example
                       version: 1
                     status: draft
                     workspaces:
@@ -21209,6 +21563,11 @@ paths:
                         servingStateId: example
                         workspaceId: example
                   planDigest: example
+                  sourceRevision:
+                    changeId: example
+                    ref: example
+                    repository: example
+                    revision: example
                   version: 1
                 status: draft
                 workspaces:
@@ -21497,6 +21856,11 @@ paths:
                       servingStateId: example
                       workspaceId: example
                 planDigest: example
+                sourceRevision:
+                  changeId: example
+                  ref: example
+                  repository: example
+                  revision: example
                 version: 1
               workspaces:
                 - artifactDigest: example
@@ -21575,6 +21939,11 @@ paths:
                         servingStateId: example
                         workspaceId: example
                   planDigest: example
+                  sourceRevision:
+                    changeId: example
+                    ref: example
+                    repository: example
+                    revision: example
                   version: 1
                 status: draft
                 workspaces:
@@ -22220,6 +22589,11 @@ paths:
                         servingStateId: example
                         workspaceId: example
                   planDigest: example
+                  sourceRevision:
+                    changeId: example
+                    ref: example
+                    repository: example
+                    revision: example
                   version: 1
                 status: draft
                 workspaces:
@@ -49788,6 +50162,7 @@ components:
       required:
         - id
         - projectId
+        - candidateKey
         - targetId
         - environment
         - ownerId
@@ -49804,6 +50179,9 @@ components:
           type: string
           example: example
         projectId:
+          type: string
+          example: example
+        candidateKey:
           type: string
           example: example
         targetId:
@@ -49854,6 +50232,7 @@ components:
       example:
         artifactDigest: example
         baseGeneration: example
+        candidateKey: example
         createdAt: "2026-01-02T15:04:05Z"
         environment: example
         expiresAt: "2026-01-02T15:04:05Z"
@@ -49899,6 +50278,28 @@ components:
       example:
         digest: example
         sizeBytes: 1
+    CandidateSourceRevision:
+      type: object
+      required:
+        - revision
+      properties:
+        revision:
+          type: string
+          example: example
+        repository:
+          type: string
+          example: example
+        ref:
+          type: string
+          example: example
+        changeId:
+          type: string
+          example: example
+      example:
+        changeId: example
+        ref: example
+        repository: example
+        revision: example
     CandidateStartRequest:
       type: object
       required:
@@ -49907,8 +50308,12 @@ components:
         artifactDigest:
           type: string
           example: example
+        candidateKey:
+          type: string
+          example: example
       example:
         artifactDigest: example
+        candidateKey: example
     CandidateStatus:
       type: string
       enum:
@@ -49950,6 +50355,11 @@ components:
         artifactDigest:
           type: string
           example: example
+        candidateKey:
+          type: string
+          example: example
+        sourceRevision:
+          $ref: '#/components/schemas/CandidateSourceRevision'
         expectedCandidateId:
           type: string
           example: example
@@ -49968,9 +50378,15 @@ components:
         artifacts:
           - digest: example
             path: example
+        candidateKey: example
         expectedArtifactDigest: example
         expectedCandidateId: example
         projectFile: example
+        sourceRevision:
+          changeId: example
+          ref: example
+          repository: example
+          revision: example
     CapabilitiesResponse:
       type: object
       required:
@@ -52298,6 +52714,11 @@ components:
                 policyDigest: example
                 releaseDigest: example
                 runtimeVersion: example
+                sourceRevision:
+                  changeId: example
+                  ref: example
+                  repository: example
+                  revision: example
                 targetId: example
                 workspaces:
                   - artifactDigest: example
@@ -52372,6 +52793,11 @@ components:
               policyDigest: example
               releaseDigest: example
               runtimeVersion: example
+              sourceRevision:
+                changeId: example
+                ref: example
+                repository: example
+                revision: example
               targetId: example
               workspaces:
                 - artifactDigest: example
@@ -52487,6 +52913,8 @@ components:
         policyDigest:
           type: string
           example: example
+        sourceRevision:
+          $ref: '#/components/schemas/CandidateSourceRevision'
         workspaces:
           type: array
           items:
@@ -52513,6 +52941,11 @@ components:
         policyDigest: example
         releaseDigest: example
         runtimeVersion: example
+        sourceRevision:
+          changeId: example
+          ref: example
+          repository: example
+          revision: example
         targetId: example
         workspaces:
           - artifactDigest: example
@@ -52643,6 +53076,11 @@ components:
           policyDigest: example
           releaseDigest: example
           runtimeVersion: example
+          sourceRevision:
+            changeId: example
+            ref: example
+            repository: example
+            revision: example
           targetId: example
           workspaces:
             - artifactDigest: example
@@ -55722,6 +56160,11 @@ components:
                 servingStateId: example
                 workspaceId: example
           planDigest: example
+          sourceRevision:
+            changeId: example
+            ref: example
+            repository: example
+            revision: example
           version: 1
         workspaces:
           - artifactDigest: example
@@ -55783,6 +56226,11 @@ components:
                       servingStateId: example
                       workspaceId: example
                 planDigest: example
+                sourceRevision:
+                  changeId: example
+                  ref: example
+                  repository: example
+                  revision: example
                 version: 1
               status: draft
               workspaces:
@@ -55838,6 +56286,11 @@ components:
                     servingStateId: example
                     workspaceId: example
               planDigest: example
+              sourceRevision:
+                changeId: example
+                ref: example
+                repository: example
+                revision: example
               version: 1
             status: draft
             workspaces:
@@ -55932,6 +56385,8 @@ components:
           $ref: '#/components/schemas/ReleaseProjectArtifactProvenance'
         candidate:
           $ref: '#/components/schemas/ReleaseCandidateProvenance'
+        sourceRevision:
+          $ref: '#/components/schemas/ReleaseSourceRevisionProvenance'
         plan:
           $ref: '#/components/schemas/ReleaseTargetPlanProvenance'
         artifactDigest:
@@ -55978,6 +56433,11 @@ components:
               servingStateId: example
               workspaceId: example
         planDigest: example
+        sourceRevision:
+          changeId: example
+          ref: example
+          repository: example
+          revision: example
         version: 1
     ReleaseResponse:
       type: object
@@ -56079,12 +56539,39 @@ components:
                 servingStateId: example
                 workspaceId: example
           planDigest: example
+          sourceRevision:
+            changeId: example
+            ref: example
+            repository: example
+            revision: example
           version: 1
         status: draft
         workspaces:
           - artifactDigest: example
             servingStateId: example
             workspace: example
+    ReleaseSourceRevisionProvenance:
+      type: object
+      required:
+        - revision
+      properties:
+        revision:
+          type: string
+          example: example
+        repository:
+          type: string
+          example: example
+        ref:
+          type: string
+          example: example
+        changeId:
+          type: string
+          example: example
+      example:
+        changeId: example
+        ref: example
+        repository: example
+        revision: example
     ReleaseStatus:
       type: string
       enum:

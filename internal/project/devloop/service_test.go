@@ -129,6 +129,43 @@ func TestReconcileBindsReplacementToCandidateIdentityAndDigest(t *testing.T) {
 	}
 }
 
+func TestReconcileSynchronizesChangedSourceRevisionForSameContent(t *testing.T) {
+	first := testSnapshot("same")
+	first.SourceRevision = &SourceRevision{
+		Revision: "commit-a", Repository: "https://code.example/acme/analytics",
+		Ref: "refs/pull/42/head", ChangeID: "pull/42",
+	}
+	second := first
+	second.SourceRevision = &SourceRevision{
+		Revision: "commit-b", Repository: first.SourceRevision.Repository,
+		Ref: first.SourceRevision.Ref, ChangeID: first.SourceRevision.ChangeID,
+	}
+	remote := &recordingRemote{}
+	service, err := New(
+		&scriptedBuilder{steps: []buildStep{{snapshot: first}, {snapshot: second}}},
+		remote,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(remote.requests) != 2 {
+		t.Fatalf("remote requests = %d, want new synchronization for changed revision", len(remote.requests))
+	}
+	if remote.requests[1].Snapshot.Digest != remote.requests[0].Snapshot.Digest {
+		t.Fatalf("source revision changed content digest: %#v", remote.requests)
+	}
+	if remote.requests[1].Snapshot.SourceRevision == nil ||
+		remote.requests[1].Snapshot.SourceRevision.Revision != "commit-b" {
+		t.Fatalf("second source revision = %#v", remote.requests[1].Snapshot.SourceRevision)
+	}
+}
+
 type buildStep struct {
 	snapshot Snapshot
 	err      error
@@ -172,6 +209,7 @@ func (remote *recordingRemote) Synchronize(_ context.Context, request SyncReques
 	}
 	return Candidate{
 		ID: "cand_1", ProjectID: request.Snapshot.ProjectID,
+		OwnerID:          "principal_1",
 		ArtifactDigest:   request.Snapshot.Digest,
 		PreviewURL:       "https://target.example/candidates/cand_1",
 		TargetID:         "target_1",

@@ -48,6 +48,33 @@ func TestCandidateRepositoryPersistsResumeAndOptimisticReplacementAcrossRestart(
 	}
 }
 
+func TestCandidateRepositoryIsolatesActiveSessionsByCandidateKey(t *testing.T) {
+	ctx, db, repository := testRepository(t)
+	insertCandidatePrincipal(t, ctx, db, "principal_1")
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	digest := "sha256:" + strings.Repeat("a", 64)
+	first := candidateRecord(t, now, "cand_1", "finance", "principal_1", digest)
+	first.Key = "github:pull/41"
+	second := candidateRecord(t, now, "cand_2", "finance", "principal_1", digest)
+	second.Key = "github:pull/42"
+	if _, _, err := repository.StartCandidate(ctx, first, 4); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := repository.StartCandidate(ctx, second, 4); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := repository.ActiveCandidate(
+		ctx,
+		"lvinst_prod",
+		"finance",
+		"principal_1",
+		"github:pull/42",
+	)
+	if err != nil || resolved.ID != second.ID {
+		t.Fatalf("ActiveCandidate() = %#v, %v", resolved, err)
+	}
+}
+
 func TestCandidateRepositoryEnforcesQuotaAndExpiresOnlyMatchingTarget(t *testing.T) {
 	ctx, db, repository := testRepository(t)
 	insertCandidatePrincipal(t, ctx, db, "principal_1")

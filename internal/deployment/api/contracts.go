@@ -10,7 +10,8 @@ type PageParams struct {
 }
 
 type CandidateStartRequest struct {
-	ArtifactDigest string `json:"artifactDigest"`
+	ArtifactDigest string  `json:"artifactDigest"`
+	CandidateKey   *string `json:"candidateKey,omitempty"`
 }
 
 type CandidateArtifactRequest struct {
@@ -29,9 +30,18 @@ type CandidateSourceArtifact struct {
 	Digest string `json:"digest"`
 }
 
+type CandidateSourceRevision struct {
+	Revision   string  `json:"revision"`
+	Repository *string `json:"repository,omitempty"`
+	Ref        *string `json:"ref,omitempty"`
+	ChangeID   *string `json:"changeId,omitempty"`
+}
+
 type CandidateSynchronizationRequest struct {
 	ProjectFile            string                    `json:"projectFile"`
 	ArtifactDigest         string                    `json:"artifactDigest"`
+	CandidateKey           *string                   `json:"candidateKey,omitempty"`
+	SourceRevision         *CandidateSourceRevision  `json:"sourceRevision,omitempty"`
 	ExpectedCandidateID    *string                   `json:"expectedCandidateId,omitempty"`
 	ExpectedArtifactDigest *string                   `json:"expectedArtifactDigest,omitempty"`
 	Artifacts              []CandidateSourceArtifact `json:"artifacts"`
@@ -50,6 +60,7 @@ type CandidateSourceBlobResponse struct {
 type CandidateResponse struct {
 	ID               string  `json:"id"`
 	ProjectID        string  `json:"projectId"`
+	CandidateKey     string  `json:"candidateKey"`
 	TargetID         string  `json:"targetId"`
 	Environment      string  `json:"environment"`
 	OwnerID          string  `json:"ownerId"`
@@ -104,6 +115,7 @@ type PublishEvidenceResponse struct {
 	BaseGeneration    string                     `json:"baseGeneration"`
 	RuntimeVersion    string                     `json:"runtimeVersion"`
 	PolicyDigest      string                     `json:"policyDigest"`
+	SourceRevision    *CandidateSourceRevision   `json:"sourceRevision,omitempty"`
 	Workspaces        []WorkspacePublishEvidence `json:"workspaces"`
 }
 

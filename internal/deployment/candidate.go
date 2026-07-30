@@ -32,6 +32,7 @@ const (
 type Candidate struct {
 	ID               string
 	ProjectID        string
+	Key              string
 	TargetID         string
 	Environment      string
 	OwnerID          string
@@ -52,6 +53,7 @@ type Candidate struct {
 type CandidateStartInput struct {
 	ID             string
 	ProjectID      string
+	Key            string
 	TargetID       string
 	Environment    string
 	OwnerID        string
@@ -64,6 +66,7 @@ type CandidateStartInput struct {
 func (candidate Candidate) Validate() error {
 	if strings.TrimSpace(candidate.ID) == "" ||
 		strings.TrimSpace(candidate.ProjectID) == "" ||
+		!canonicalCandidateKey(candidate.Key) ||
 		strings.TrimSpace(candidate.TargetID) == "" ||
 		strings.TrimSpace(candidate.Environment) == "" ||
 		strings.TrimSpace(candidate.OwnerID) == "" ||
@@ -99,6 +102,7 @@ func (candidate Candidate) Validate() error {
 func NewCandidate(input CandidateStartInput) (Candidate, error) {
 	input.ID = strings.TrimSpace(input.ID)
 	input.ProjectID = strings.TrimSpace(input.ProjectID)
+	input.Key = normalizeCandidateKey(input.Key)
 	input.TargetID = strings.TrimSpace(input.TargetID)
 	input.Environment = strings.TrimSpace(input.Environment)
 	input.OwnerID = strings.TrimSpace(input.OwnerID)
@@ -117,7 +121,7 @@ func NewCandidate(input CandidateStartInput) (Candidate, error) {
 		return Candidate{}, fmt.Errorf("%w: expiry must be after creation", ErrCandidateInvalid)
 	}
 	candidate := Candidate{
-		ID: input.ID, ProjectID: input.ProjectID, TargetID: input.TargetID,
+		ID: input.ID, ProjectID: input.ProjectID, Key: input.Key, TargetID: input.TargetID,
 		Environment: input.Environment, OwnerID: input.OwnerID, BaseGeneration: input.BaseGeneration,
 		ArtifactDigest: input.ArtifactDigest, Status: CandidatePreparing,
 		ExpiresAt: input.ExpiresAt, CreatedAt: input.Now, UpdatedAt: input.Now, Revision: 1,
@@ -126,6 +130,30 @@ func NewCandidate(input CandidateStartInput) (Candidate, error) {
 		return Candidate{}, err
 	}
 	return candidate, nil
+}
+
+func normalizeCandidateKey(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "default"
+	}
+	return value
+}
+
+func canonicalCandidateKey(value string) bool {
+	if len(value) < 1 || len(value) > 128 {
+		return false
+	}
+	for _, character := range value {
+		if character >= 'a' && character <= 'z' ||
+			character >= 'A' && character <= 'Z' ||
+			character >= '0' && character <= '9' ||
+			strings.ContainsRune("._:/-", character) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func (candidate Candidate) Terminal() bool {

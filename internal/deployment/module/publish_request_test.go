@@ -39,7 +39,9 @@ func TestPublishEvidenceAcceptsExactTargetRelease(t *testing.T) {
 	if len(response.Workspaces) != 1 ||
 		len(response.Workspaces[0].ManagedDataPins) != 1 ||
 		len(response.Workspaces[0].Bindings) != 1 ||
-		response.Workspaces[0].Bindings[0].ValidatedVersion != "version_7" {
+		response.Workspaces[0].Bindings[0].ValidatedVersion != "version_7" ||
+		response.SourceRevision == nil ||
+		response.SourceRevision.Revision != "commit-a" {
 		t.Fatalf("redacted publish evidence response = %#v", response)
 	}
 }
@@ -336,6 +338,11 @@ func publishTestRelease(t *testing.T) release.Release {
 		},
 		Candidate: release.CandidateProvenance{
 			ID: "candidate_1", Revision: 4, OwnerID: "author_1",
+		},
+		SourceRevision: &release.SourceRevisionProvenance{
+			Revision:   "commit-a",
+			Repository: "https://code.example/acme/analytics",
+			Ref:        "refs/heads/main", ChangeID: "github:branch/main",
 		},
 		Plan: release.TargetPlanProvenance{
 			TargetID: "lvinst_prod", Environment: "prod",

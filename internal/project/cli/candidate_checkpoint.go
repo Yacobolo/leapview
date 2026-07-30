@@ -30,6 +30,7 @@ type CandidateCheckpoint struct {
 	Environment       string `json:"environment"`
 	ProjectID         string `json:"projectId"`
 	CandidateID       string `json:"candidateId"`
+	CandidateKey      string `json:"candidateKey"`
 	CandidateRevision int64  `json:"candidateRevision"`
 	ArtifactDigest    string `json:"artifactDigest"`
 	ProvenanceDigest  string `json:"provenanceDigest"`
@@ -64,11 +65,23 @@ func (store *CandidateCheckpointStore) Save(checkpoint CandidateCheckpoint) erro
 	if err != nil {
 		return err
 	}
-	document.Candidates[candidateCheckpointKey(normalized.ProjectPath, normalized.TargetOrigin)] = normalized
+	document.Candidates[candidateCheckpointKey(
+		normalized.ProjectPath,
+		normalized.TargetOrigin,
+		normalized.CandidateKey,
+	)] = normalized
 	return store.save(document)
 }
 
 func (store *CandidateCheckpointStore) Load(projectPath, targetOrigin string) (CandidateCheckpoint, error) {
+	return store.LoadCandidate(projectPath, targetOrigin, "default")
+}
+
+func (store *CandidateCheckpointStore) LoadCandidate(
+	projectPath,
+	targetOrigin,
+	candidateKey string,
+) (CandidateCheckpoint, error) {
 	if store == nil {
 		return CandidateCheckpoint{}, fmt.Errorf("candidate checkpoint store is required")
 	}
@@ -80,13 +93,24 @@ func (store *CandidateCheckpointStore) Load(projectPath, targetOrigin string) (C
 	if err != nil {
 		return CandidateCheckpoint{}, err
 	}
+	candidateKey = normalizeCheckpointCandidateKey(candidateKey)
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	document, err := store.load()
 	if err != nil {
 		return CandidateCheckpoint{}, err
 	}
-	checkpoint, ok := document.Candidates[candidateCheckpointKey(absolute, origin)]
+	checkpoint, ok := document.Candidates[candidateCheckpointKey(
+		absolute,
+		origin,
+		candidateKey,
+	)]
+	if !ok && candidateKey == "default" {
+		checkpoint, ok = document.Candidates[legacyCandidateCheckpointKey(
+			absolute,
+			origin,
+		)]
+	}
 	if !ok {
 		return CandidateCheckpoint{}, ErrCandidateCheckpointNotFound
 	}
@@ -94,7 +118,8 @@ func (store *CandidateCheckpointStore) Load(projectPath, targetOrigin string) (C
 	if err != nil {
 		return CandidateCheckpoint{}, fmt.Errorf("stored candidate checkpoint is invalid: %w", err)
 	}
-	if normalized.ProjectPath != absolute || normalized.TargetOrigin != origin {
+	if normalized.ProjectPath != absolute || normalized.TargetOrigin != origin ||
+		normalized.CandidateKey != candidateKey {
 		return CandidateCheckpoint{}, fmt.Errorf("stored candidate checkpoint identity does not match lookup")
 	}
 	return normalized, nil
@@ -183,6 +208,7 @@ func normalizeCandidateCheckpoint(checkpoint CandidateCheckpoint) (CandidateChec
 	checkpoint.Environment = strings.TrimSpace(checkpoint.Environment)
 	checkpoint.ProjectID = strings.TrimSpace(checkpoint.ProjectID)
 	checkpoint.CandidateID = strings.TrimSpace(checkpoint.CandidateID)
+	checkpoint.CandidateKey = normalizeCheckpointCandidateKey(checkpoint.CandidateKey)
 	checkpoint.ArtifactDigest = strings.TrimSpace(checkpoint.ArtifactDigest)
 	checkpoint.ProvenanceDigest = strings.TrimSpace(checkpoint.ProvenanceDigest)
 	if checkpoint.TargetID == "" || checkpoint.Environment == "" ||
@@ -223,7 +249,23 @@ func canonicalCheckpointOrigin(value string) (string, error) {
 	return strings.TrimRight(parsed.String(), "/"), nil
 }
 
-func candidateCheckpointKey(projectPath, targetOrigin string) string {
+func candidateCheckpointKey(projectPath, targetOrigin, candidateKey string) string {
+	sum := sha256.Sum256([]byte(
+		projectPath + "\x00" + targetOrigin + "\x00" +
+			normalizeCheckpointCandidateKey(candidateKey),
+	))
+	return hex.EncodeToString(sum[:])
+}
+
+func legacyCandidateCheckpointKey(projectPath, targetOrigin string) string {
 	sum := sha256.Sum256([]byte(projectPath + "\x00" + targetOrigin))
 	return hex.EncodeToString(sum[:])
+}
+
+func normalizeCheckpointCandidateKey(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "default"
+	}
+	return value
 }
