@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import type { PublicReleaseManifest } from './public_site_smoke'
+import type { DesktopReleaseManifest, PublicReleaseManifest } from './public_site_smoke'
 import { verifyPublicSite } from './public_site_smoke'
 
 const release: PublicReleaseManifest = {
@@ -19,6 +19,26 @@ const release: PublicReleaseManifest = {
   ],
 }
 
+const desktopRelease: DesktopReleaseManifest = {
+  schemaVersion: 1,
+  status: 'preparing',
+  product: {
+    name: 'LeapView',
+    applicationId: 'dev.leapview.desktop',
+  },
+  channel: {
+    name: 'stable',
+    updateOrigin: 'https://releases.leapview.dev',
+    pathVersion: 'v1',
+  },
+  support: [
+    { platform: 'darwin', architectures: ['arm64', 'x64'], minimumVersion: 'macOS 13 Ventura' },
+    { platform: 'linux', architectures: ['x64'], minimumVersion: 'Ubuntu 22.04 LTS' },
+    { platform: 'win32', architectures: ['x64'], minimumVersion: 'Windows 10' },
+  ],
+  release: null,
+}
+
 const servers: ReturnType<typeof Bun.serve>[] = []
 
 afterEach(() => {
@@ -31,7 +51,10 @@ function installation(values: string[]): string {
   return `<html><body>${values.map((value) => `<p>${value}</p>`).join('')}</body></html>`
 }
 
-function startSite(installationBody: string): string {
+function startSite(
+  installationBody: string,
+  desktopDownloadBody = '<html><body>Production downloads are not published yet.</body></html>',
+): string {
   const server = Bun.serve({
     port: 0,
     fetch(request) {
@@ -42,6 +65,10 @@ function startSite(installationBody: string): string {
           return new Response('ok')
         case '/release.json':
           return Response.json(release)
+        case '/desktop-release.json':
+          return Response.json(desktopRelease)
+        case '/download':
+          return new Response(desktopDownloadBody, { headers: { 'Content-Type': 'text/html' } })
         case '/docs/installation':
           return new Response(installationBody, { headers: { 'Content-Type': 'text/html' } })
         default:
@@ -69,6 +96,7 @@ describe('public site adoption smoke', () => {
       verifyPublicSite({
         baseURL,
         expectedRelease: release,
+        expectedDesktopRelease: desktopRelease,
         allowHTTP: true,
         verifyArtifacts: false,
       }),
@@ -82,6 +110,7 @@ describe('public site adoption smoke', () => {
       verifyPublicSite({
         baseURL,
         expectedRelease: release,
+        expectedDesktopRelease: desktopRelease,
         allowHTTP: true,
         verifyArtifacts: false,
       }),
@@ -93,8 +122,34 @@ describe('public site adoption smoke', () => {
       verifyPublicSite({
         baseURL: 'http://leapview.dev',
         expectedRelease: release,
+        expectedDesktopRelease: desktopRelease,
         verifyArtifacts: false,
       }),
     ).rejects.toThrow('public site must use HTTPS')
+  })
+
+  test('rejects an unpublished desktop page that leaks a release-host download', async () => {
+    const required = [
+      release.version,
+      release.tag,
+      release.revision,
+      release.image,
+      release.releaseUrl,
+      ...release.artifacts.flatMap((artifact) => [artifact.archiveUrl, artifact.checksumUrl]),
+    ]
+    const baseURL = startSite(
+      installation(required),
+      '<a href="https://releases.leapview.dev/unsigned.dmg" download>Download</a>',
+    )
+
+    await expect(
+      verifyPublicSite({
+        baseURL,
+        expectedRelease: release,
+        expectedDesktopRelease: desktopRelease,
+        allowHTTP: true,
+        verifyArtifacts: false,
+      }),
+    ).rejects.toThrow('unpublished desktop page exposes an artifact')
   })
 })

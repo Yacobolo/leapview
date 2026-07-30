@@ -477,6 +477,22 @@ test('site brand pairs the LeapView wordmark with the Lucide Aperture ring mark'
   }
 })
 
+test('desktop download page remains accessible before publication', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  try {
+    await page.goto(`${baseURL}/download`)
+
+    expect(await page.getByRole('heading', { level: 1, name: 'LeapView on your desktop.' }).isVisible()).toBe(true)
+    expect(await page.getByText('Production downloads are not published yet.').isVisible()).toBe(true)
+    expect(await page.getByRole('link', { name: 'Read the install guide' }).getAttribute('href')).toBe('/docs/desktop/install')
+    expect(await page.getByRole('link', { name: 'Review desktop security' }).getAttribute('href')).toBe('/docs/desktop/security')
+    expect(await page.locator('.site-download-platform').count()).toBe(3)
+    expect(await page.locator('a[download]').count()).toBe(0)
+  } finally {
+    await page.close()
+  }
+})
+
 test('site loads Inter and uses a readable marketing and documentation type scale', async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
   try {

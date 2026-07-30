@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "status": "preparing",
+  "product": {
+    "name": "LeapView",
+    "applicationId": "dev.leapview.desktop"
+  },
+  "channel": {
+    "name": "stable",
+    "updateOrigin": "https://releases.leapview.dev",
+    "pathVersion": "v1"
+  },
+  "support": [
+    {
+      "platform": "darwin",
+      "architectures": [
+        "arm64",
+        "x64"
+      ],
+      "minimumVersion": "macOS 13 Ventura"
+    },
+    {
+      "platform": "linux",
+      "architectures": [
+        "x64"
+      ],
+      "minimumVersion": "Ubuntu 22.04 LTS"
+    },
+    {
+      "platform": "win32",
+      "architectures": [
+        "x64"
+      ],
+      "minimumVersion": "Windows 10"
+    }
+  ],
+  "release": null
+}

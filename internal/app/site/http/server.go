@@ -51,6 +51,7 @@ func NewHandlerWithOptions(options Options) http.Handler {
 	mux.Handle("POST /mcp", documentationMCP)
 	mux.Handle("DELETE /mcp", documentationMCP)
 	mux.HandleFunc("GET /{$}", server.home)
+	mux.HandleFunc("GET /download", server.desktopDownload)
 	mux.HandleFunc("GET /visuals", server.visuals)
 	if server.showcaseEmbedURL != nil {
 		mux.HandleFunc("GET /showcase", server.showcase)
@@ -71,6 +72,7 @@ func NewHandlerWithOptions(options Options) http.Handler {
 	mux.HandleFunc("GET /healthz", health)
 	mux.HandleFunc("GET /readyz", health)
 	mux.HandleFunc("GET /release.json", docsPublicRelease)
+	mux.HandleFunc("GET /desktop-release.json", docsDesktopRelease)
 	mux.HandleFunc("GET /robots.txt", server.robots)
 	mux.HandleFunc("GET /llms.txt", docsLLMs)
 	mux.HandleFunc("GET /sitemap.xml", server.sitemap)
@@ -199,6 +201,11 @@ func (s *siteServer) visuals(w http.ResponseWriter, r *http.Request) {
 	renderHTML(w, http.StatusOK, visualsPage(metadata), "render visuals page")
 }
 
+func (s *siteServer) desktopDownload(w http.ResponseWriter, r *http.Request) {
+	metadata := s.metadata(r, "Download "+siteBrandName+" Desktop", "Install the signed "+siteBrandName+" desktop client for macOS, Windows, or Ubuntu.", "website", "")
+	renderHTML(w, http.StatusOK, desktopDownloadPage(metadata, desktopRelease), "render desktop download page")
+}
+
 func (s *siteServer) showcase(w http.ResponseWriter, r *http.Request) {
 	metadata := s.metadata(r, siteBrandName+" live dashboard showcase", "Explore a live, interactive "+siteBrandName+" dashboard.", "website", "")
 	renderHTML(w, http.StatusOK, showcasePage(metadata, s.showcaseEmbedURL), "render dashboard showcase")
@@ -324,7 +331,7 @@ func (s *siteServer) absoluteURL(r *http.Request, requestedPath string) string {
 }
 
 func (s *siteServer) sitemap(w http.ResponseWriter, r *http.Request) {
-	paths := []string{"/", "/visuals", "/docs"}
+	paths := []string{"/", "/download", "/visuals", "/docs"}
 	if s.showcaseEmbedURL != nil {
 		paths = append(paths, "/showcase")
 	}

@@ -44,6 +44,10 @@ jobs:
             os: macos-15-intel
             artifact: macos-x64
             format: dmg
+          - name: macOS Apple silicon
+            os: macos-15
+            artifact: macos-arm64
+            format: dmg
           - name: Windows x64
             os: windows-2025
             artifact: windows-x64
@@ -161,6 +165,9 @@ jobs:
           - name: macOS Intel
             artifact: macos-x64
             format: dmg
+          - name: macOS Apple silicon
+            artifact: macos-arm64
+            format: dmg
           - name: Windows x64
             artifact: windows-x64
             format: exe
@@ -214,8 +221,16 @@ jobs:
           sbom-path: candidate/out/evidence/*.spdx.json
 
   macos:
-    name: Candidate proof (macOS Intel)
-    runs-on: macos-15-intel
+    name: Candidate proof (macOS ${{ matrix.architecture }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: Intel
+            runner: macos-15-intel
+          - architecture: Apple silicon
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
 
     steps:

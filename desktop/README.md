@@ -140,10 +140,10 @@ candidates intentionally have no privileged attestation job.
 `desktop/release-policy.json` is the reviewed source of truth for consumer
 formats, update mechanisms, scope, runtime, hardening, and support. The current
 candidate support floor is macOS 13 on Intel and Apple silicon, Windows 10 on
-x64, and Ubuntu 22.04 LTS on x64. Only the Intel macOS, Windows x64, and Linux
-x64 candidates are presently built in CI; Apple-silicon distribution remains
-blocked until it has an equivalent native build, signing, installation, and
-launch proof.
+x64, and Ubuntu 22.04 LTS on x64. macOS Intel and Apple-silicon candidates are
+built natively in CI with equivalent package, installation, launch, evidence,
+and malicious-instance proofs. Windows x64 and Linux x64 are built natively on
+their corresponding hosted runners.
 
 Evidence timestamps derive from the source commit time, and every toolchain
 input is exactly pinned, so repeated candidates expose input drift instead of

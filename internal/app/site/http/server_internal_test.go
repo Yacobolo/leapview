@@ -73,6 +73,219 @@ func TestSiteUnknownRouteReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestDesktopDownloadPagePublishesFailClosedReleaseState(t *testing.T) {
+	baseURL, err := url.Parse("https://leapview.dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(NewHandlerWithOptions(Options{BaseURL: baseURL}))
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/download")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := readBody(t, response)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("download status = %d, want 200", response.StatusCode)
+	}
+	for _, want := range []string{
+		`<h1>LeapView on your desktop.</h1>`,
+		`Production downloads are not published yet.`,
+		`href="/docs/desktop/install"`,
+		`href="/docs/desktop/security"`,
+		`macOS 13 Ventura`,
+		`Windows 10`,
+		`Ubuntu 22.04 LTS`,
+		`Intel and Apple silicon`,
+		`x64`,
+		`<link rel="canonical" href="https://leapview.dev/download">`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("download page missing %q:\n%s", want, body)
+		}
+	}
+	for _, forbidden := range []string{
+		`download="`,
+		`href="https://releases.leapview.dev/`,
+		`unsigned-candidate`,
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("unpublished download page contains %q:\n%s", forbidden, body)
+		}
+	}
+
+	manifestResponse, err := server.Client().Get(server.URL + "/desktop-release.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := readBody(t, manifestResponse)
+	manifestResponse.Body.Close()
+	if manifestResponse.StatusCode != http.StatusOK {
+		t.Fatalf("desktop release manifest status = %d, want 200", manifestResponse.StatusCode)
+	}
+	if got := manifestResponse.Header.Get("Content-Type"); got != "application/json; charset=utf-8" {
+		t.Errorf("desktop release manifest content type = %q", got)
+	}
+	for _, want := range []string{
+		`"schemaVersion": 1`,
+		`"status": "preparing"`,
+		`"applicationId": "dev.leapview.desktop"`,
+		`"updateOrigin": "https://releases.leapview.dev"`,
+		`"release": null`,
+	} {
+		if !strings.Contains(manifest, want) {
+			t.Errorf("desktop release manifest missing %q:\n%s", want, manifest)
+		}
+	}
+}
+
+func TestDesktopReleaseManifestRejectsUntrustedOrIncompletePublication(t *testing.T) {
+	valid := desktopReleaseManifest{
+		SchemaVersion: 1,
+		Status:        "published",
+		Product:       desktopReleaseProduct{Name: "LeapView", ApplicationID: "dev.leapview.desktop"},
+		Channel:       desktopReleaseChannel{Name: "stable", UpdateOrigin: "https://releases.leapview.dev", PathVersion: "v1"},
+		Support: []desktopReleasePlatform{
+			{Platform: "darwin", Architectures: []string{"arm64", "x64"}, MinimumVersion: "macOS 13 Ventura"},
+			{Platform: "linux", Architectures: []string{"x64"}, MinimumVersion: "Ubuntu 22.04 LTS"},
+			{Platform: "win32", Architectures: []string{"x64"}, MinimumVersion: "Windows 10"},
+		},
+		Release: &desktopPublishedRelease{
+			Version:      "1.0.0",
+			PublishedAt:  "2026-07-30T08:00:00Z",
+			NotesURL:     "https://leapview.dev/releases/desktop/1.0.0",
+			SourceCommit: strings.Repeat("a", 40),
+			Artifacts: []desktopReleaseArtifact{
+				desktopReleaseArtifactFixture("darwin", "arm64", "dmg", "LeapView-1.0.0-arm64.dmg", "developer-id-application"),
+				desktopReleaseArtifactFixture("darwin", "x64", "dmg", "LeapView-1.0.0-x64.dmg", "developer-id-application"),
+				desktopReleaseArtifactFixture("linux", "x64", "deb", "leapview_1.0.0_amd64.deb", "apt-repository"),
+				desktopReleaseArtifactFixture("win32", "x64", "exe", "LeapView-Setup-1.0.0.exe", "authenticode"),
+			},
+		},
+	}
+	if err := validateDesktopReleaseManifest(valid); err != nil {
+		t.Fatalf("valid published release: %v", err)
+	}
+	var publishedPage strings.Builder
+	if err := desktopDownloadPage(sitePageMetadata{
+		title:       "Download LeapView Desktop",
+		description: "Desktop downloads",
+		canonical:   "https://leapview.dev/download",
+		contentType: "website",
+	}, valid).Render(&publishedPage); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`download=""`,
+		`href="https://releases.leapview.dev/desktop/v1/releases/1.0.0/darwin/arm64/LeapView-1.0.0-arm64.dmg"`,
+		`SHA-256`,
+		strings.Repeat("b", 64),
+		`LeapView release identity`,
+		`checksums.txt`,
+		`provenance.json`,
+		`sbom.spdx.json`,
+	} {
+		if !strings.Contains(publishedPage.String(), want) {
+			t.Errorf("published desktop page missing %q", want)
+		}
+	}
+	withdrawn := cloneDesktopReleaseManifest(t, valid)
+	withdrawn.Status = "withdrawn"
+	var withdrawnPage strings.Builder
+	if err := desktopDownloadPage(sitePageMetadata{
+		title:       "Download LeapView Desktop",
+		description: "Desktop downloads",
+		canonical:   "https://leapview.dev/download",
+		contentType: "website",
+	}, withdrawn).Render(&withdrawnPage); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(withdrawnPage.String(), `download="`) ||
+		!strings.Contains(withdrawnPage.String(), "Desktop downloads are temporarily withdrawn.") {
+		t.Error("withdrawn release still exposes a download")
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*desktopReleaseManifest)
+	}{
+		{
+			name: "instance controlled download",
+			mutate: func(manifest *desktopReleaseManifest) {
+				manifest.Release.Artifacts[0].DownloadURL = "https://analytics.company.com/LeapView.dmg"
+			},
+		},
+		{
+			name: "missing architecture",
+			mutate: func(manifest *desktopReleaseManifest) {
+				manifest.Release.Artifacts = manifest.Release.Artifacts[1:]
+			},
+		},
+		{
+			name: "mutable stable artifact",
+			mutate: func(manifest *desktopReleaseManifest) {
+				manifest.Release.Artifacts[0].DownloadURL = "https://releases.leapview.dev/desktop/v1/stable/LeapView.dmg"
+			},
+		},
+		{
+			name: "wrong signature type",
+			mutate: func(manifest *desktopReleaseManifest) {
+				manifest.Release.Artifacts[0].Signature.Type = "unsigned"
+			},
+		},
+		{
+			name: "invalid checksum",
+			mutate: func(manifest *desktopReleaseManifest) {
+				manifest.Release.Artifacts[0].SHA256 = "not-a-digest"
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := cloneDesktopReleaseManifest(t, valid)
+			test.mutate(&candidate)
+			if err := validateDesktopReleaseManifest(candidate); err == nil {
+				t.Fatal("invalid published release was accepted")
+			}
+		})
+	}
+}
+
+func desktopReleaseArtifactFixture(platform, architecture, format, fileName, signatureType string) desktopReleaseArtifact {
+	base := "https://releases.leapview.dev/desktop/v1/releases/1.0.0/" + platform + "/" + architecture + "/"
+	return desktopReleaseArtifact{
+		Platform:      platform,
+		Architecture:  architecture,
+		Format:        format,
+		FileName:      fileName,
+		Bytes:         1024,
+		DownloadURL:   base + fileName,
+		SHA256:        strings.Repeat("b", 64),
+		ChecksumURL:   base + "checksums.txt",
+		ProvenanceURL: base + "provenance.json",
+		SBOMURL:       base + "sbom.spdx.json",
+		Signature: desktopReleaseSignature{
+			Type:     signatureType,
+			Identity: "LeapView release identity",
+		},
+	}
+}
+
+func cloneDesktopReleaseManifest(t *testing.T, manifest desktopReleaseManifest) desktopReleaseManifest {
+	t.Helper()
+	contents, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cloned desktopReleaseManifest
+	if err := json.Unmarshal(contents, &cloned); err != nil {
+		t.Fatal(err)
+	}
+	return cloned
+}
+
 func TestSiteShowcaseIsRegisteredOnlyWhenConfigured(t *testing.T) {
 	embedURL, err := url.Parse("https://app.leapview.dev/embed/dashboards/publication-id")
 	if err != nil {
@@ -175,6 +388,7 @@ func TestSitePublishesSitemapAndRobots(t *testing.T) {
 	}
 	for _, want := range []string{
 		"https://docs.leapview.dev/",
+		"https://docs.leapview.dev/download",
 		"https://docs.leapview.dev/visuals",
 		"https://docs.leapview.dev/docs",
 		"https://docs.leapview.dev/docs/introduction",
