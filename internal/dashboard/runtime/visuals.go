@@ -51,6 +51,7 @@ func (s *VisualizationDataService) visuals(ctx context.Context, runtime *modelRu
 		if err != nil {
 			return nil, err
 		}
+		frame.Completeness = visualizationFrameCompleteness(definition.Spec, definition.Query.DatasetID, len(data), visualizationQueryLimit(definition.Query))
 		frames := map[string]visualizationruntime.Frame{definition.Query.DatasetID: frame}
 		contextFrames, err := s.contextFrames(ctx, runtime, report, key, definition, filters)
 		if err != nil {
@@ -167,10 +168,7 @@ func frameFromDatums(definition visualizationdefinition.Definition, data []dashb
 	if schema == nil {
 		return visualizationruntime.Frame{}, fmt.Errorf("visualization %q primary query targets unknown dataset %q", definition.ID, definition.Query.DatasetID)
 	}
-	columns := make([]string, len(schema.Fields))
-	for index, field := range schema.Fields {
-		columns[index] = field.ID
-	}
+	columns := sourceFrameColumns(schema.Fields)
 	rows := make([][]any, len(data))
 	for index, datum := range data {
 		rows[index] = make([]any, len(columns))
@@ -239,10 +237,7 @@ func (s *VisualizationDataService) contextFrames(ctx context.Context, runtime *m
 		if !ok {
 			return nil, fmt.Errorf("visualization %q context dataset %q has no schema", visualID, datasetID)
 		}
-		columns := make([]string, len(schema.Fields))
-		for index, field := range schema.Fields {
-			columns[index] = field.ID
-		}
+		columns := sourceFrameColumns(schema.Fields)
 		rows := make([][]any, len(data))
 		for rowIndex, datum := range data {
 			rows[rowIndex] = make([]any, len(columns))
@@ -250,9 +245,20 @@ func (s *VisualizationDataService) contextFrames(ctx context.Context, runtime *m
 				rows[rowIndex][columnIndex] = normalizeDatumValue(datum[column])
 			}
 		}
-		frames[datasetID] = visualizationruntime.Frame{Columns: columns, Rows: rows}
+		frames[datasetID] = visualizationruntime.Frame{Columns: columns, Rows: rows, Completeness: visualizationFrameCompleteness(definition.Spec, datasetID, len(rows), int(query.Limit))}
 	}
 	return frames, nil
+}
+
+func sourceFrameColumns(fields []visualizationir.VisualizationField) []string {
+	columns := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if field.Provenance != nil && field.Provenance.Kind == visualizationir.VisualizationFieldProvenanceKindVisualCalculation {
+			continue
+		}
+		columns = append(columns, field.ID)
+	}
+	return columns
 }
 
 func (s *VisualizationDataService) bundledVisuals(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, filters dashboard.Filters, keys []string) (map[string]visualizationir.VisualizationEnvelope, error) {
@@ -310,6 +316,7 @@ func (s *VisualizationDataService) bundledVisuals(ctx context.Context, runtime *
 		if frameErr != nil {
 			return nil, frameErr
 		}
+		frame.Completeness = visualizationFrameCompleteness(definition.Spec, definition.Query.DatasetID, len(data), visualizationQueryLimit(definition.Query))
 		frames := map[string]visualizationruntime.Frame{definition.Query.DatasetID: frame}
 		contextFrames, contextErr := s.contextFrames(ctx, runtime, report, key, definition, filters)
 		if contextErr != nil {
@@ -326,6 +333,54 @@ func (s *VisualizationDataService) bundledVisuals(ctx context.Context, runtime *
 		visuals[key] = envelope
 	}
 	return visuals, nil
+}
+
+func boundedFrameCompleteness(rows, limit int) visualizationir.VisualizationCompleteness {
+	if rows == 0 {
+		return visualizationir.VisualizationCompletenessEmpty
+	}
+	if limit > 0 && rows >= limit {
+		return visualizationir.VisualizationCompletenessTruncated
+	}
+	return visualizationir.VisualizationCompletenessComplete
+}
+
+func visualizationFrameCompleteness(spec visualizationir.VisualizationSpec, datasetID string, rows, limit int) visualizationir.VisualizationCompleteness {
+	base, err := visualizationir.SpecificationBase(spec)
+	if err != nil || base.Calculations == nil {
+		if rows == 0 {
+			return visualizationir.VisualizationCompletenessEmpty
+		}
+		return visualizationir.VisualizationCompletenessComplete
+	}
+	for _, calculation := range *base.Calculations {
+		if calculation.Dataset == datasetID {
+			return boundedFrameCompleteness(rows, limit)
+		}
+	}
+	if rows == 0 {
+		return visualizationir.VisualizationCompletenessEmpty
+	}
+	return visualizationir.VisualizationCompletenessComplete
+}
+
+func visualizationQueryLimit(query visualizationdefinition.QueryBinding) int {
+	switch query.Kind {
+	case visualizationdefinition.QueryAggregate:
+		return int(query.Aggregate.Limit)
+	case visualizationdefinition.QueryDetail:
+		return int(query.Detail.Limit)
+	case visualizationdefinition.QueryMatrix:
+		return int(query.Matrix.Limit)
+	case visualizationdefinition.QueryPivot:
+		return int(query.Pivot.Limit)
+	case visualizationdefinition.QueryCustom:
+		return int(query.Custom.Limit)
+	case visualizationdefinition.QuerySpatial:
+		return int(query.Spatial.Limit)
+	default:
+		return 0
+	}
 }
 
 func (s *VisualizationDataService) bundleAggregateRequest(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, filters dashboard.Filters, visualID string, visual visualPlan) (reportdef.AggregateQuery, error) {

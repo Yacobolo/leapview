@@ -66,21 +66,22 @@ type VisualAuthorizationRequest struct {
 }
 
 type agentVisualInput struct {
-	Workspace    string                  `json:"workspace"`
-	Model        string                  `json:"model"`
-	Dataset      string                  `json:"dataset"`
-	Title        string                  `json:"title"`
-	Type         string                  `json:"type"`
-	Presentation agentVisualPresentation `json:"presentation"`
-	Dimensions   []agentVisualFieldRef   `json:"dimensions"`
-	Series       *agentVisualFieldRef    `json:"series"`
-	Measures     []agentVisualFieldRef   `json:"measures"`
-	Fields       []agentVisualFieldRef   `json:"fields"`
-	Rows         []agentVisualFieldRef   `json:"rows"`
-	Columns      []dashboard.TableColumn `json:"columns"`
-	Filters      []agentVisualFilter     `json:"filters"`
-	Sort         []agentVisualSort       `json:"sort"`
-	Limit        int                     `json:"limit"`
+	Workspace    string                        `json:"workspace"`
+	Model        string                        `json:"model"`
+	Dataset      string                        `json:"dataset"`
+	Title        string                        `json:"title"`
+	Type         string                        `json:"type"`
+	Presentation agentVisualPresentation       `json:"presentation"`
+	Dimensions   []agentVisualFieldRef         `json:"dimensions"`
+	Series       *agentVisualFieldRef          `json:"series"`
+	Measures     []agentVisualFieldRef         `json:"measures"`
+	Fields       []agentVisualFieldRef         `json:"fields"`
+	Rows         []agentVisualFieldRef         `json:"rows"`
+	Columns      []dashboard.TableColumn       `json:"columns"`
+	Filters      []agentVisualFilter           `json:"filters"`
+	Sort         []agentVisualSort             `json:"sort"`
+	Limit        int                           `json:"limit"`
+	Calculations []reportdef.VisualCalculation `json:"calculations"`
 }
 
 type agentVisualPresentation = reportdef.VisualPresentation
@@ -600,7 +601,8 @@ func agentReportVisual(input agentVisualInput) reportdef.Visual {
 	}
 	return reportdef.Visual{
 		Title: firstNonEmpty(input.Title, "Agent visual"), Type: input.Type, Presentation: input.Presentation,
-		Query: reportdef.VisualQuery{Table: input.Dataset, Dimensions: dimensions, Series: series, Measures: measures, Limit: input.Limit},
+		Query:        reportdef.VisualQuery{Table: input.Dataset, Dimensions: dimensions, Series: series, Measures: measures, Limit: input.Limit},
+		Calculations: input.Calculations,
 	}
 }
 
@@ -873,7 +875,7 @@ func (p VisualProvider) queryAgentTable(ctx context.Context, workspaceID string,
 	if len(input.Sort) > 0 {
 		sortSpec = dashboard.TableSort{Key: agentFieldAlias(input.Sort[0].Field), Direction: normalizedSortDirection(input.Sort[0].Direction)}
 	}
-	authored := reportdef.TableVisual{Title: title, DefaultSort: sortSpec, Style: dashboard.TableStyle{}.WithDefaults(), Columns: columns, Query: reportdef.TableQuery{Table: input.Dataset}}
+	authored := reportdef.TableVisual{Title: title, DefaultSort: sortSpec, Style: dashboard.TableStyle{}.WithDefaults(), Columns: columns, Query: reportdef.TableQuery{Table: input.Dataset}, Calculations: input.Calculations}
 	for _, field := range fields {
 		authored.DataColumns = append(authored.DataColumns, reportdef.FieldRef{Field: field.Field, Alias: agentFieldAliasForRef(field)})
 	}
@@ -896,6 +898,19 @@ func (p VisualProvider) queryAgentTable(ctx context.Context, workspaceID string,
 	if err != nil {
 		return agentVisualResult{}, err
 	}
+	base, err := visualizationir.SpecificationBase(definitions[id].Spec)
+	if err != nil {
+		return agentVisualResult{}, err
+	}
+	limitReached := len(tableRows) >= input.Limit
+	tableRows, columns, err = applyAgentTableCalculations(base, tableRows, columns, limitReached)
+	if err != nil {
+		return agentVisualResult{}, err
+	}
+	cardinality := dashboard.ExactCardinality(len(tableRows))
+	if limitReached {
+		cardinality = dashboard.LowerBoundCardinality(len(tableRows))
+	}
 	table := dashboard.Table{
 		Version:       2,
 		Kind:          map[string]string{"table": "data_table", "matrix": "matrix_table", "pivot": "pivot_table"}[input.Type],
@@ -904,9 +919,9 @@ func (p VisualProvider) queryAgentTable(ctx context.Context, workspaceID string,
 		Interaction:   dashboard.InteractionConfig{},
 		Selection:     []dashboard.InteractionSelectionEntry{},
 		Columns:       columns,
-		Cardinality:   dashboard.ExactCardinality(len(tableRows)),
+		Cardinality:   cardinality,
 		AvailableRows: len(tableRows),
-		IsCapped:      false,
+		IsCapped:      limitReached,
 		RowCap:        maxVisualRows,
 		ChunkSize:     dashboard.TableChunkSize,
 		RowHeight:     dashboard.TableRowHeight,
@@ -928,6 +943,72 @@ func (p VisualProvider) queryAgentTable(ctx context.Context, workspaceID string,
 		Patch:   map[string]map[string]visualizationir.VisualizationEnvelope{"visuals": {id: envelope}},
 		Summary: fmt.Sprintf("Created table %q with %d rows.", title, len(tableRows)),
 	}, nil
+}
+
+func applyAgentTableCalculations(base visualizationir.VisualizationSpecBase, records []map[string]any, columns []dashboard.TableColumn, incomplete bool) ([]map[string]any, []dashboard.TableColumn, error) {
+	if base.Calculations == nil || len(*base.Calculations) == 0 {
+		return records, columns, nil
+	}
+	var schema *visualizationir.VisualizationDatasetSchema
+	for index := range base.Datasets {
+		if base.Datasets[index].ID == "primary" {
+			schema = &base.Datasets[index]
+			break
+		}
+	}
+	if schema == nil {
+		return nil, nil, fmt.Errorf("agent table visual calculation has no primary dataset")
+	}
+	sourceColumns := []string{}
+	fields := map[string]visualizationir.VisualizationField{}
+	for _, field := range schema.Fields {
+		fields[field.ID] = field
+		if field.Provenance == nil || field.Provenance.Kind != visualizationir.VisualizationFieldProvenanceKindVisualCalculation {
+			sourceColumns = append(sourceColumns, field.ID)
+		}
+	}
+	rows := make([][]any, len(records))
+	for rowIndex, record := range records {
+		rows[rowIndex] = make([]any, len(sourceColumns))
+		for columnIndex, column := range sourceColumns {
+			rows[rowIndex][columnIndex] = record[column]
+		}
+	}
+	completeness := visualizationir.VisualizationCompletenessComplete
+	if incomplete {
+		completeness = visualizationir.VisualizationCompletenessTruncated
+	} else if len(rows) == 0 {
+		completeness = visualizationir.VisualizationCompletenessEmpty
+	}
+	frame, _, err := visualizationruntime.ApplyVisualCalculations(base, "primary", visualizationruntime.Frame{Columns: sourceColumns, Rows: rows, Completeness: completeness}, completeness)
+	if err != nil {
+		return nil, nil, err
+	}
+	out := make([]map[string]any, len(records))
+	for rowIndex, record := range records {
+		next := make(map[string]any, len(frame.Columns))
+		for key, value := range record {
+			next[key] = value
+		}
+		for columnIndex, column := range frame.Columns {
+			next[column] = frame.Rows[rowIndex][columnIndex]
+		}
+		out[rowIndex] = next
+	}
+	for _, calculation := range *base.Calculations {
+		if calculation.Dataset != "primary" || calculation.Hidden {
+			continue
+		}
+		field := fields[calculation.ID]
+		format := "decimal"
+		if field.Format != nil {
+			if kind, kindErr := field.Format.Kind(); kindErr == nil {
+				format = kind
+			}
+		}
+		columns = append(columns, dashboard.TableColumn{Key: calculation.ID, Label: field.Label, Align: "right", Role: "measure", Measure: calculation.ID, Format: format})
+	}
+	return out, columns, nil
 }
 
 func agentTableFields(model *semanticmodel.Model, fields []agentVisualFieldRef, overrides []dashboard.TableColumn) ([]reportdef.QueryField, []reportdef.QueryField, []dashboard.TableColumn, error) {

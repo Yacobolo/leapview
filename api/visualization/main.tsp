@@ -325,6 +325,37 @@ enum VisualizationSortDirection {
   descending: "descending",
 }
 
+enum VisualizationCalculationTemplate {
+  runningTotal: "running_total",
+  movingAverage: "moving_average",
+  difference: "difference",
+  percentageDifference: "percentage_difference",
+  percentOfParent: "percent_of_parent",
+  percentOfGrandTotal: "percent_of_grand_total",
+  rank: "rank",
+  cumulativeContribution: "cumulative_contribution",
+  lookup: "lookup",
+}
+
+enum VisualizationCalculationAxis {
+  rows: "rows",
+  columns: "columns",
+  hierarchy: "hierarchy",
+  facets: "facets",
+}
+
+enum VisualizationCalculationReset {
+  none: "none",
+  highestParent: "highest_parent",
+  lowestParent: "lowest_parent",
+}
+
+enum VisualizationFieldProvenanceKind {
+  modeled: "modeled",
+  aggregated: "aggregated",
+  visualCalculation: "visual_calculation",
+}
+
 enum VisualizationCardinalityKind {
   unknownValue: "unknown",
   lowerBound: "lower_bound",
@@ -430,6 +461,12 @@ model VisualizationGridFieldMetadata {
   `formatting`: TableVisualizationFormattingRule[];
 }
 
+model VisualizationFieldProvenance {
+  `kind`: VisualizationFieldProvenanceKind;
+  `sourceRefs`: string[];
+  `calculationID`?: string;
+}
+
 model VisualizationField {
   `id`: string;
   `sourceRef`?: string;
@@ -441,6 +478,7 @@ model VisualizationField {
   `time`?: VisualizationTemporalMetadata;
   `geographic`?: VisualizationGeographicMetadata;
   `grid`?: VisualizationGridFieldMetadata;
+  `provenance`?: VisualizationFieldProvenance;
 }
 
 model VisualizationDatasetSchema {
@@ -451,6 +489,34 @@ model VisualizationDatasetSchema {
 model VisualizationFieldRef {
   `dataset`: string;
   `field`: string;
+}
+
+model VisualizationCalculationOrder {
+  `field`: VisualizationFieldRef;
+  `direction`: VisualizationSortDirection;
+}
+
+model VisualizationCalculationLookup {
+  `field`: VisualizationFieldRef;
+  `value`: string;
+}
+
+model VisualizationCalculation {
+  `id`: string;
+  `label`: string;
+  `dataset`: string;
+  `template`: VisualizationCalculationTemplate;
+  `source`: VisualizationFieldRef;
+  `axis`: VisualizationCalculationAxis;
+  `orderBy`: VisualizationCalculationOrder[];
+  `partitionBy`: VisualizationFieldRef[];
+  `reset`: VisualizationCalculationReset;
+  `window`?: int64;
+  `offset`?: int64;
+  `parent`?: VisualizationFieldRef;
+  `lookup`?: VisualizationCalculationLookup;
+  `hidden`: boolean;
+  `format`?: VisualizationFormat;
 }
 
 @discriminator("kind")
@@ -759,6 +825,7 @@ model VisualizationSpec {
   `interactions`: VisualizationInteraction[];
   `conditionalFormatting`?: VisualizationConditionalFormat[];
   `metadataBindings`?: VisualizationMetadataBindings;
+  `calculations`?: VisualizationCalculation[];
 }
 
 model CartesianVisualizationSpec extends VisualizationSpec {
@@ -1291,7 +1358,7 @@ model VisualizationDiagnostic {
 @apigen.contract(#{ kind: "visualization-envelope", tags: #["visualization", "ir"] })
 @apigen.`metadata`(#{ `x-leapview-contract-role`: "visualization-envelope" })
 model VisualizationEnvelope {
-  `schemaVersion`: 7;
+  `schemaVersion`: 8;
   `visualID`: string;
   `rendererID`: string;
   `specRevision`: string;

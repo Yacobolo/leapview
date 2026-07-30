@@ -475,7 +475,35 @@ package contracts
 		max_rows?:              int & >0
 		required_completeness?: "complete" | "truncated" | "partial" | "empty"
 	})
+	calculations?: [...#VisualCalculation]
 }
+
+#VisualCalculationOrder: close({
+	field!:     string & !=""
+	direction?: "asc" | "desc"
+})
+
+#VisualCalculationLookup: close({
+	field!: string & !=""
+	value!: string
+})
+
+#VisualCalculation: close({
+	id!:           =~"^[A-Za-z_][A-Za-z0-9_]*$"
+	label?:        string & !=""
+	template!:     "running_total" | "moving_average" | "difference" | "percentage_difference" | "percent_of_parent" | "percent_of_grand_total" | "rank" | "cumulative_contribution" | "lookup"
+	source!:       string & !=""
+	axis?:         "rows" | "columns" | "hierarchy" | "facets"
+	order_by?:     [...#VisualCalculationOrder]
+	partition_by?: [...(string & !="")]
+	reset?:        "none" | "highest_parent" | "lowest_parent"
+	window?:       int & >0
+	offset?:       int & >0
+	parent?:       string & !=""
+	lookup?:       #VisualCalculationLookup
+	hidden?:       bool
+	format?:       "number" | "decimal" | "integer" | "percent" | "compact" | "currency"
+})
 
 #VisualTextBinding: close({
 	dataset?:  string & !=""

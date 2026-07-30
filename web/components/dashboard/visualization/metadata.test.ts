@@ -4,7 +4,7 @@ import { resolveVisualizationMetadata } from './metadata'
 
 function envelope(rows: unknown[][]): VisualizationEnvelope {
   return {
-    schemaVersion: 7, visualID: 'revenue', rendererID: 'echarts', specRevision: 'sha256:spec', dataRevision: 3,
+    schemaVersion: 8, visualID: 'revenue', rendererID: 'echarts', specRevision: 'sha256:spec', dataRevision: 3,
     spec: {
       kind: 'cartesian', title: 'Revenue', subtitle: 'Current scope', mark: 'line',
       datasets: [

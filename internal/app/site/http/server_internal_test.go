@@ -1256,7 +1256,7 @@ func TestSiteVisualDocumentationUpdatesAreScopedToTheArticle(t *testing.T) {
 	}
 	defer response.Body.Close()
 	line := readSSEUntil(t, response, `"visuals"`)
-	for _, want := range []string{`"visualID":"revenue_line"`, `"visualID":"revenue_line_status"`, `"visualID":"revenue_line_step"`, `"step":true`} {
+	for _, want := range []string{`"visualID":"revenue_line"`, `"visualID":"revenue_line_status"`, `"visualID":"revenue_line_running"`, `"template":"running_total"`, `"visualID":"revenue_line_step"`, `"step":true`} {
 		if !strings.Contains(line, want) {
 			t.Errorf("line documentation updates missing %q:\n%s", want, line)
 		}
@@ -1290,6 +1290,7 @@ func readSSEUntil(t *testing.T, response *http.Response, marker string) string {
 	t.Helper()
 	var builder strings.Builder
 	scanner := bufio.NewScanner(response.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		builder.WriteString(line)

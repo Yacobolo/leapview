@@ -320,6 +320,9 @@ func validateSpecification(spec VisualizationSpec, base VisualizationSpecBase) (
 	if len(schemas) == 0 {
 		return nil, fmt.Errorf("visualization requires at least one dataset")
 	}
+	if err := validateVisualCalculations(base.Calculations, schemas); err != nil {
+		return nil, err
+	}
 	for _, ref := range specificationRefs(spec) {
 		if err := validateFieldRef(ref, schemas); err != nil {
 			return nil, err

@@ -13,8 +13,9 @@ import (
 // Frame is the renderer-independent result of a compiled visualization query.
 // Columns must use compiled field aliases; rows are ordered to those columns.
 type Frame struct {
-	Columns []string
-	Rows    [][]any
+	Columns      []string
+	Rows         [][]any
+	Completeness ir.VisualizationCompleteness
 }
 
 // FrameFromRecords orders named query values according to the immutable
@@ -29,8 +30,9 @@ func FrameFromRecords(definition visualizationdefinition.Definition, records []m
 	if err != nil {
 		return Frame{}, err
 	}
-	columns := make([]string, len(schema.Fields))
-	for index, field := range schema.Fields {
+	fields := sourceDatasetFields(schema.Fields)
+	columns := make([]string, len(fields))
+	for index, field := range fields {
 		columns[index] = field.ID
 	}
 	rows := make([][]any, len(records))
@@ -68,22 +70,33 @@ func EnvelopeFromFrames(definition visualizationdefinition.Definition, frames ma
 		return ir.VisualizationEnvelope{}, err
 	}
 	datasets := make([]ir.VisualizationInlineDataset, 0, len(base.Datasets))
+	diagnostics := []ir.VisualizationDiagnostic{}
 	primaryRows := 0
 	for _, schema := range base.Datasets {
 		frame, ok := frames[schema.ID]
 		if !ok {
 			return ir.VisualizationEnvelope{}, fmt.Errorf("visualization %q has no frame for dataset %q", definition.ID, schema.ID)
 		}
-		wantColumns := make([]string, len(schema.Fields))
-		for index, field := range schema.Fields {
+		wantSourceFields := sourceDatasetFields(schema.Fields)
+		wantColumns := make([]string, len(wantSourceFields))
+		for index, field := range wantSourceFields {
 			wantColumns[index] = field.ID
 		}
 		if err := validateFrameColumns(definition.ID+" dataset "+schema.ID, frame.Columns, wantColumns); err != nil {
 			return ir.VisualizationEnvelope{}, err
 		}
+		frameCompleteness := frame.Completeness
+		if frameCompleteness == "" {
+			frameCompleteness = completeness(frame.Rows)
+		}
+		frame, calculationDiagnostics, err := ApplyVisualCalculations(base, schema.ID, frame, frameCompleteness)
+		if err != nil {
+			return ir.VisualizationEnvelope{}, err
+		}
+		diagnostics = append(diagnostics, calculationDiagnostics...)
 		datasets = append(datasets, ir.VisualizationInlineDataset{
 			ID: schema.ID, SpecRevision: definition.SpecRevision, DataRevision: dataRevision, Generation: generation,
-			Columns: append([]string{}, frame.Columns...), Rows: frame.Rows, Completeness: completeness(frame.Rows),
+			Columns: append([]string{}, frame.Columns...), Rows: frame.Rows, Completeness: frameCompleteness,
 		})
 		if schema.ID == definition.Query.DatasetID {
 			primaryRows = len(frame.Rows)
@@ -95,7 +108,10 @@ func EnvelopeFromFrames(definition visualizationdefinition.Definition, frames ma
 	}
 	envelope := ir.VisualizationEnvelope{
 		SchemaVersion: ir.CurrentSchemaVersion, VisualID: definition.ID, RendererID: definition.RendererID, SpecRevision: definition.SpecRevision, Spec: definition.Spec,
-		DataRevision: dataRevision, DataState: ir.VisualizationDataState{Value: &state}, Status: ir.VisualizationStatus{Kind: statusKind(primaryRows, "")}, Diagnostics: []ir.VisualizationDiagnostic{},
+		DataRevision: dataRevision, DataState: ir.VisualizationDataState{Value: &state}, Status: ir.VisualizationStatus{Kind: statusKind(primaryRows, "")}, Diagnostics: diagnostics,
+	}
+	if len(diagnostics) > 0 && envelope.Status.Kind == ir.VisualizationStatusKindReady {
+		envelope.Status.Kind = ir.VisualizationStatusKindPartial
 	}
 	envelope.Selection, err = compiledSelections(definition.Spec, selections, dataRevision)
 	if err != nil {
@@ -105,6 +121,17 @@ func EnvelopeFromFrames(definition visualizationdefinition.Definition, frames ma
 		return ir.VisualizationEnvelope{}, fmt.Errorf("compiled visualization %q: %w", definition.ID, err)
 	}
 	return envelope, nil
+}
+
+func sourceDatasetFields(fields []ir.VisualizationField) []ir.VisualizationField {
+	out := make([]ir.VisualizationField, 0, len(fields))
+	for _, field := range fields {
+		if field.Provenance != nil && field.Provenance.Kind == ir.VisualizationFieldProvenanceKindVisualCalculation {
+			continue
+		}
+		out = append(out, field)
+	}
+	return out
 }
 
 func validateFrameColumns(visualID string, got, want []string) error {
@@ -230,11 +257,22 @@ func WindowEnvelopeFromDefinition(definition visualizationdefinition.Definition,
 		ChunkSize: int64(max(table.ChunkSize, dashboard.TableChunkSize)), ResetVersion: int64(table.ResetVersion), Sort: []ir.VisualizationSort{sortValue}, Blocks: blocks,
 	}
 	message := table.Error
+	diagnostics := []ir.VisualizationDiagnostic{}
+	if base.Calculations != nil && len(*base.Calculations) > 0 &&
+		(table.IsCapped || table.Cardinality.Kind != dashboard.CardinalityExact) {
+		diagnostics = append(diagnostics, ir.VisualizationDiagnostic{
+			Code: "visual_calculation_incomplete_frame", Severity: ir.VisualizationDiagnosticSeverityWarning,
+			Message: "Visual calculations were evaluated over the bounded visible table frame; unavailable rows are excluded.",
+		})
+	}
 	envelope := ir.VisualizationEnvelope{
 		SchemaVersion: ir.CurrentSchemaVersion, VisualID: definition.ID, RendererID: definition.RendererID,
 		SpecRevision: definition.SpecRevision, Spec: definition.Spec, DataRevision: dataRevision,
 		DataState: ir.VisualizationDataState{Value: &state}, Selection: []ir.VisualizationSelectionEntry{},
-		Status: ir.VisualizationStatus{Kind: statusKind(table.AvailableRows, message), Message: optional(message)}, Diagnostics: []ir.VisualizationDiagnostic{},
+		Status: ir.VisualizationStatus{Kind: statusKind(table.AvailableRows, message), Message: optional(message)}, Diagnostics: diagnostics,
+	}
+	if len(diagnostics) > 0 && envelope.Status.Kind == ir.VisualizationStatusKindReady {
+		envelope.Status.Kind = ir.VisualizationStatusKindPartial
 	}
 	envelope.Selection, err = compiledSelections(definition.Spec, table.Selection, dataRevision)
 	if err != nil {

@@ -119,7 +119,7 @@ func TestGenerateVisualExamplesExecutesEveryDocumentedQuery(t *testing.T) {
 			}
 		}
 	}
-	if got, want := count, 79; got != want {
+	if got, want := count, 80; got != want {
 		t.Fatalf("examples = %d, want %d", got, want)
 	}
 	if got, want := len(artifact.Showcase), 27; got != want {
@@ -152,14 +152,19 @@ func TestGenerateVisualExamplesExecutesEveryDocumentedQuery(t *testing.T) {
 	if !ok || seriesSpec.Series == nil {
 		t.Fatalf("series line spec = %#v", line[1].Spec.Value)
 	}
-	stepSpec, ok := line[2].Spec.Value.(*visualizationir.CartesianVisualizationSpec)
-	if !ok || !stepSpec.Presentation.Step {
-		t.Fatalf("stepped line presentation was not compiled: %#v", line[2].Spec.Value)
+	calculationSpec, ok := line[2].Spec.Value.(*visualizationir.CartesianVisualizationSpec)
+	if !ok || calculationSpec.Calculations == nil || len(*calculationSpec.Calculations) != 1 ||
+		(*calculationSpec.Calculations)[0].Template != visualizationir.VisualizationCalculationTemplateRunningTotal {
+		t.Fatalf("visual calculation was not compiled: %#v", line[2].Spec.Value)
 	}
-	contextSpec, ok := line[3].Spec.Value.(*visualizationir.CartesianVisualizationSpec)
-	contextState, inline := line[3].DataState.Value.(*visualizationir.InlineVisualizationDataState)
+	stepSpec, ok := line[3].Spec.Value.(*visualizationir.CartesianVisualizationSpec)
+	if !ok || !stepSpec.Presentation.Step {
+		t.Fatalf("stepped line presentation was not compiled: %#v", line[3].Spec.Value)
+	}
+	contextSpec, ok := line[4].Spec.Value.(*visualizationir.CartesianVisualizationSpec)
+	contextState, inline := line[4].DataState.Value.(*visualizationir.InlineVisualizationDataState)
 	if !ok || !inline || len(contextSpec.Datasets) != 2 || len(contextState.Datasets) != 2 || contextSpec.MetadataBindings == nil || contextSpec.MetadataBindings.Title == nil || contextSpec.ReferenceLines == nil {
-		t.Fatalf("context line spec/state = %#v / %#v", line[3].Spec.Value, line[3].DataState.Value)
+		t.Fatalf("context line spec/state = %#v / %#v", line[4].Spec.Value, line[4].DataState.Value)
 	}
 	first, err := json.Marshal(artifact)
 	if err != nil {

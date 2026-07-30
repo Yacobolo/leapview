@@ -876,6 +876,33 @@ type QueryFreshness struct {
 	Status                  string `json:"status"`
 }
 
+type QueryVisualCalculation struct {
+	ID          string                         `json:"id"`
+	Label       *string                        `json:"label,omitempty"`
+	Template    string                         `json:"template"`
+	Source      string                         `json:"source"`
+	Axis        *string                        `json:"axis,omitempty"`
+	OrderBy     *[]QueryVisualCalculationOrder `json:"orderBy,omitempty"`
+	PartitionBy *[]string                      `json:"partitionBy,omitempty"`
+	Reset       *string                        `json:"reset,omitempty"`
+	Window      *int32                         `json:"window,omitempty"`
+	Offset      *int32                         `json:"offset,omitempty"`
+	Parent      *string                        `json:"parent,omitempty"`
+	Lookup      *QueryVisualCalculationLookup  `json:"lookup,omitempty"`
+	Hidden      *bool                          `json:"hidden,omitempty"`
+	Format      *string                        `json:"format,omitempty"`
+}
+
+type QueryVisualCalculationLookup struct {
+	Field string `json:"field"`
+	Value string `json:"value"`
+}
+
+type QueryVisualCalculationOrder struct {
+	Field     string  `json:"field"`
+	Direction *string `json:"direction,omitempty"`
+}
+
 type QueryVisualCompleteness struct {
 	ReturnedRows int32  `json:"returnedRows"`
 	Limit        int32  `json:"limit"`
@@ -933,6 +960,7 @@ type QueryVisualInput struct {
 	Sort         *[]QueryVisualSort        `json:"sort,omitempty"`
 	Limit        *int32                    `json:"limit,omitempty"`
 	Presentation *QueryVisualPresentation  `json:"presentation,omitempty"`
+	Calculations *[]QueryVisualCalculation `json:"calculations,omitempty"`
 }
 
 type QueryVisualLabelPolicy struct {

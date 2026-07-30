@@ -654,6 +654,65 @@ const (
 	VisualizationAxisZeroPolicyExclude   VisualizationAxisZeroPolicy = "exclude"
 )
 
+type VisualizationCalculation struct {
+	ID          string                           `json:"id"`
+	Label       string                           `json:"label"`
+	Dataset     string                           `json:"dataset"`
+	Template    VisualizationCalculationTemplate `json:"template"`
+	Source      VisualizationFieldRef            `json:"source"`
+	Axis        VisualizationCalculationAxis     `json:"axis"`
+	OrderBy     []VisualizationCalculationOrder  `json:"orderBy"`
+	PartitionBy []VisualizationFieldRef          `json:"partitionBy"`
+	Reset       VisualizationCalculationReset    `json:"reset"`
+	Window      *int64                           `json:"window,omitempty"`
+	Offset      *int64                           `json:"offset,omitempty"`
+	Parent      *VisualizationFieldRef           `json:"parent,omitempty"`
+	Lookup      *VisualizationCalculationLookup  `json:"lookup,omitempty"`
+	Hidden      bool                             `json:"hidden"`
+	Format      *VisualizationFormat             `json:"format,omitempty"`
+}
+
+type VisualizationCalculationAxis string
+
+const (
+	VisualizationCalculationAxisRows      VisualizationCalculationAxis = "rows"
+	VisualizationCalculationAxisColumns   VisualizationCalculationAxis = "columns"
+	VisualizationCalculationAxisHierarchy VisualizationCalculationAxis = "hierarchy"
+	VisualizationCalculationAxisFacets    VisualizationCalculationAxis = "facets"
+)
+
+type VisualizationCalculationLookup struct {
+	Field VisualizationFieldRef `json:"field"`
+	Value string                `json:"value"`
+}
+
+type VisualizationCalculationOrder struct {
+	Field     VisualizationFieldRef      `json:"field"`
+	Direction VisualizationSortDirection `json:"direction"`
+}
+
+type VisualizationCalculationReset string
+
+const (
+	VisualizationCalculationResetNone          VisualizationCalculationReset = "none"
+	VisualizationCalculationResetHighestParent VisualizationCalculationReset = "highest_parent"
+	VisualizationCalculationResetLowestParent  VisualizationCalculationReset = "lowest_parent"
+)
+
+type VisualizationCalculationTemplate string
+
+const (
+	VisualizationCalculationTemplateRunningTotal           VisualizationCalculationTemplate = "running_total"
+	VisualizationCalculationTemplateMovingAverage          VisualizationCalculationTemplate = "moving_average"
+	VisualizationCalculationTemplateDifference             VisualizationCalculationTemplate = "difference"
+	VisualizationCalculationTemplatePercentageDifference   VisualizationCalculationTemplate = "percentage_difference"
+	VisualizationCalculationTemplatePercentOfParent        VisualizationCalculationTemplate = "percent_of_parent"
+	VisualizationCalculationTemplatePercentOfGrandTotal    VisualizationCalculationTemplate = "percent_of_grand_total"
+	VisualizationCalculationTemplateRank                   VisualizationCalculationTemplate = "rank"
+	VisualizationCalculationTemplateCumulativeContribution VisualizationCalculationTemplate = "cumulative_contribution"
+	VisualizationCalculationTemplateLookup                 VisualizationCalculationTemplate = "lookup"
+)
+
 type VisualizationCardinality struct {
 	Kind  VisualizationCardinalityKind `json:"kind"`
 	Count *int64                       `json:"count,omitempty"`
@@ -1383,7 +1442,22 @@ type VisualizationField struct {
 	Time       *VisualizationTemporalMetadata   `json:"time,omitempty"`
 	Geographic *VisualizationGeographicMetadata `json:"geographic,omitempty"`
 	Grid       *VisualizationGridFieldMetadata  `json:"grid,omitempty"`
+	Provenance *VisualizationFieldProvenance    `json:"provenance,omitempty"`
 }
+
+type VisualizationFieldProvenance struct {
+	Kind          VisualizationFieldProvenanceKind `json:"kind"`
+	SourceRefs    []string                         `json:"sourceRefs"`
+	CalculationID *string                          `json:"calculationID,omitempty"`
+}
+
+type VisualizationFieldProvenanceKind string
+
+const (
+	VisualizationFieldProvenanceKindModeled           VisualizationFieldProvenanceKind = "modeled"
+	VisualizationFieldProvenanceKindAggregated        VisualizationFieldProvenanceKind = "aggregated"
+	VisualizationFieldProvenanceKindVisualCalculation VisualizationFieldProvenanceKind = "visual_calculation"
+)
 
 type VisualizationFieldRef struct {
 	Dataset string `json:"dataset"`
@@ -3834,6 +3908,7 @@ type VisualizationSpecBase struct {
 	Interactions          []VisualizationInteraction        `json:"interactions"`
 	ConditionalFormatting *[]VisualizationConditionalFormat `json:"conditionalFormatting,omitempty"`
 	MetadataBindings      *VisualizationMetadataBindings    `json:"metadataBindings,omitempty"`
+	Calculations          *[]VisualizationCalculation       `json:"calculations,omitempty"`
 }
 
 type VisualizationStackingMode string
