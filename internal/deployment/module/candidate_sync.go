@@ -124,6 +124,14 @@ func (m *Module) CommitProjectCandidateSynchronization(
 	}
 	if candidate.Status == deployment.CandidateReady &&
 		candidate.ArtifactDigest == request.ArtifactDigest {
+		if err := m.verifyCandidateProvenance(r.Context(), candidate); err != nil {
+			writeCandidateAPIError(
+				w,
+				r,
+				candidatePreparationError(err),
+			)
+			return
+		}
 		apitransport.WriteJSON(w, http.StatusOK, m.candidateResponse(candidate, false))
 		return
 	}
@@ -132,7 +140,8 @@ func (m *Module) CommitProjectCandidateSynchronization(
 		writeCandidateAPIError(w, r, err)
 		return
 	}
-	if err := m.prepareCandidate(r.Context(), tentative, source); err != nil {
+	provenance, err := m.prepareCandidate(r.Context(), tentative, source)
+	if err != nil {
 		if request.ExpectedCandidateID == "" {
 			_, _ = m.candidates.MarkFailed(
 				r.Context(),
@@ -160,6 +169,7 @@ func (m *Module) CommitProjectCandidateSynchronization(
 		r.Context(),
 		candidateScope(candidate),
 		request.ArtifactDigest,
+		provenance.Digest,
 	)
 	if err != nil {
 		writeCandidateAPIError(w, r, err)
@@ -172,9 +182,9 @@ func (m *Module) prepareCandidate(
 	ctx context.Context,
 	candidate deployment.Candidate,
 	source project.CandidateSourceSnapshot,
-) error {
+) (release.Provenance, error) {
 	if m == nil || m.candidateArtifacts == nil || m.candidateRuntimes == nil {
-		return deployment.ErrCandidateUnavailable
+		return release.Provenance{}, deployment.ErrCandidateUnavailable
 	}
 	artifacts, err := m.candidateArtifacts.PrepareCandidateArtifacts(
 		ctx,
@@ -185,7 +195,7 @@ func (m *Module) prepareCandidate(
 		},
 	)
 	if err != nil {
-		return err
+		return release.Provenance{}, err
 	}
 	workspaces := make([]deployment.CandidateWorkspaceRuntime, len(artifacts.Workspaces))
 	for index, workspace := range artifacts.Workspaces {
@@ -206,10 +216,129 @@ func (m *Module) prepareCandidate(
 			Restrictions: candidateRuntimeRestrictions(workspace.Restrictions),
 		}
 	}
-	return m.candidateRuntimes.Prepare(ctx, deployment.CandidateRuntimeRequest{
+	receipt, err := m.candidateRuntimes.Prepare(ctx, deployment.CandidateRuntimeRequest{
 		Candidate: candidate, AuthorizationFingerprint: artifacts.AuthorizationFingerprint,
 		Workspaces: workspaces,
 	})
+	if err != nil {
+		return release.Provenance{}, err
+	}
+	provenance, err := candidateReleaseProvenance(candidate, artifacts, receipt)
+	if err != nil {
+		return release.Provenance{}, err
+	}
+	retained, err := m.candidateArtifacts.RetainCandidateProvenance(
+		ctx,
+		candidate.ProjectID,
+		provenance,
+	)
+	if err != nil {
+		return release.Provenance{}, err
+	}
+	if retained.Digest != provenance.Digest {
+		return release.Provenance{}, release.ErrConflict
+	}
+	return retained, nil
+}
+
+func candidateReleaseProvenance(
+	candidate deployment.Candidate,
+	artifacts release.CandidateArtifactSet,
+	receipt deployment.CandidateRuntimeReceipt,
+) (release.Provenance, error) {
+	if strings.TrimSpace(artifacts.Artifact.SourceDigest) !=
+		strings.TrimSpace(candidate.ArtifactDigest) {
+		return release.Provenance{}, release.ErrProvenanceInvalid
+	}
+	bindings := make(
+		map[string][]release.BindingEvidence,
+		len(receipt.Workspaces),
+	)
+	for _, workspace := range receipt.Workspaces {
+		workspaceID := strings.TrimSpace(workspace.WorkspaceID)
+		if workspaceID == "" {
+			return release.Provenance{}, release.ErrProvenanceInvalid
+		}
+		if _, exists := bindings[workspaceID]; exists {
+			return release.Provenance{}, release.ErrProvenanceInvalid
+		}
+		evidence := make([]release.BindingEvidence, len(workspace.Bindings))
+		for index, item := range workspace.Bindings {
+			evidence[index] = release.BindingEvidence{
+				BindingID:        item.BindingID,
+				Revision:         item.Revision,
+				ValidatedVersion: item.ProviderVersion,
+			}
+		}
+		bindings[workspaceID] = evidence
+	}
+	plans := make(
+		[]release.TargetWorkspacePlan,
+		len(artifacts.Workspaces),
+	)
+	for index, workspace := range artifacts.Workspaces {
+		workspaceID := strings.TrimSpace(workspace.WorkspaceID)
+		workspaceBindings, exists := bindings[workspaceID]
+		if !exists {
+			return release.Provenance{}, release.ErrProvenanceInvalid
+		}
+		delete(bindings, workspaceID)
+		plans[index] = release.TargetWorkspacePlan{
+			WorkspaceID:    workspaceID,
+			ServingStateID: workspace.ServingStateID,
+			ArtifactDigest: workspace.ArtifactDigest,
+			DataRevision:   workspace.DataRevision,
+			DataMode:       release.TargetDataMode(workspace.DataMode),
+			ManagedDataPins: append(
+				[]release.ManagedDataPin(nil),
+				workspace.ManagedDataPins...,
+			),
+			Bindings: workspaceBindings,
+		}
+	}
+	if len(bindings) != 0 {
+		return release.Provenance{}, release.ErrProvenanceInvalid
+	}
+	return release.NewProvenance(release.ProvenanceInput{
+		Artifact: artifacts.Artifact,
+		Candidate: release.CandidateProvenance{
+			ID:       candidate.ID,
+			Revision: candidate.Revision + 1,
+			OwnerID:  candidate.OwnerID,
+		},
+		Plan: release.TargetPlanProvenance{
+			TargetID:       candidate.TargetID,
+			Environment:    candidate.Environment,
+			BaseGeneration: candidate.BaseGeneration,
+			RuntimeVersion: receipt.RuntimeVersion,
+			PolicyDigest:   artifacts.AuthorizationFingerprint,
+			Workspaces:     plans,
+		},
+	})
+}
+
+func (m *Module) verifyCandidateProvenance(
+	ctx context.Context,
+	candidate deployment.Candidate,
+) error {
+	if candidate.Status != deployment.CandidateReady ||
+		digest.ValidateSHA256Identity(candidate.ProvenanceDigest) != nil {
+		return release.ErrProvenanceInvalid
+	}
+	provenance, err := m.candidateArtifacts.CandidateProvenance(
+		ctx,
+		candidate.ProjectID,
+		candidate.ID,
+		candidate.Revision,
+	)
+	if err != nil {
+		return err
+	}
+	if provenance.Digest != candidate.ProvenanceDigest ||
+		provenance.Artifact.SourceDigest != candidate.ArtifactDigest {
+		return release.ErrProvenanceInvalid
+	}
+	return nil
 }
 
 func candidateRuntimeRestrictions(values []release.CandidateRestriction) []deployment.CandidateRestriction {
@@ -238,9 +367,11 @@ func tentativeCandidate(
 		return deployment.Candidate{}, deployment.ErrCandidateConflict
 	}
 	candidate.ArtifactDigest = strings.TrimSpace(request.ArtifactDigest)
+	candidate.ProvenanceDigest = ""
 	candidate.Status = deployment.CandidatePreparing
 	candidate.FailureReason = ""
 	candidate.ReadyAt = time.Time{}
+	candidate.Revision++
 	return candidate, nil
 }
 
@@ -255,6 +386,13 @@ func candidatePreparationError(err error) error {
 	switch {
 	case errors.Is(err, release.ErrCandidateArtifactInvalid):
 		return fmt.Errorf("%w: %v", deployment.ErrCandidateInvalid, err)
+	case errors.Is(err, release.ErrProvenanceInvalid),
+		errors.Is(err, release.ErrConflict),
+		errors.Is(err, release.ErrNotFound):
+		return fmt.Errorf(
+			"%w: candidate provenance validation failed",
+			deployment.ErrCandidateInvalid,
+		)
 	case errors.Is(err, release.ErrCandidateArtifactUnavailable):
 		return fmt.Errorf("%w: %v", deployment.ErrCandidateUnavailable, err)
 	default:

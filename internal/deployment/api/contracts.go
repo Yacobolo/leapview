@@ -42,21 +42,22 @@ type CandidateSourceBlobResponse struct {
 }
 
 type CandidateResponse struct {
-	ID             string  `json:"id"`
-	ProjectID      string  `json:"projectId"`
-	TargetID       string  `json:"targetId"`
-	Environment    string  `json:"environment"`
-	OwnerID        string  `json:"ownerId"`
-	BaseGeneration string  `json:"baseGeneration"`
-	ArtifactDigest string  `json:"artifactDigest"`
-	Status         string  `json:"status"`
-	FailureReason  *string `json:"failureReason,omitempty"`
-	PreviewURL     string  `json:"previewUrl"`
-	ExpiresAt      string  `json:"expiresAt"`
-	CreatedAt      string  `json:"createdAt"`
-	UpdatedAt      string  `json:"updatedAt"`
-	Revision       int64   `json:"revision"`
-	Resumed        *bool   `json:"resumed,omitempty"`
+	ID               string  `json:"id"`
+	ProjectID        string  `json:"projectId"`
+	TargetID         string  `json:"targetId"`
+	Environment      string  `json:"environment"`
+	OwnerID          string  `json:"ownerId"`
+	BaseGeneration   string  `json:"baseGeneration"`
+	ArtifactDigest   string  `json:"artifactDigest"`
+	ProvenanceDigest *string `json:"provenanceDigest,omitempty"`
+	Status           string  `json:"status"`
+	FailureReason    *string `json:"failureReason,omitempty"`
+	PreviewURL       string  `json:"previewUrl"`
+	ExpiresAt        string  `json:"expiresAt"`
+	CreatedAt        string  `json:"createdAt"`
+	UpdatedAt        string  `json:"updatedAt"`
+	Revision         int64   `json:"revision"`
+	Resumed          *bool   `json:"resumed,omitempty"`
 }
 
 type CreateRequest struct {

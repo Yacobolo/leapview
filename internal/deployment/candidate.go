@@ -30,22 +30,23 @@ const (
 // Candidate is the durable, Deployment-owned identity of one author's private
 // project runtime. It never changes active serving-state pointers.
 type Candidate struct {
-	ID             string
-	ProjectID      string
-	TargetID       string
-	Environment    string
-	OwnerID        string
-	BaseGeneration string
-	ArtifactDigest string
-	Status         CandidateStatus
-	FailureReason  string
-	ExpiresAt      time.Time
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	ReadyAt        time.Time
-	CancelledAt    time.Time
-	ExpiredAt      time.Time
-	Revision       int64
+	ID               string
+	ProjectID        string
+	TargetID         string
+	Environment      string
+	OwnerID          string
+	BaseGeneration   string
+	ArtifactDigest   string
+	ProvenanceDigest string
+	Status           CandidateStatus
+	FailureReason    string
+	ExpiresAt        time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	ReadyAt          time.Time
+	CancelledAt      time.Time
+	ExpiredAt        time.Time
+	Revision         int64
 }
 
 type CandidateStartInput struct {
@@ -58,6 +59,41 @@ type CandidateStartInput struct {
 	ArtifactDigest string
 	ExpiresAt      time.Time
 	Now            time.Time
+}
+
+func (candidate Candidate) Validate() error {
+	if strings.TrimSpace(candidate.ID) == "" ||
+		strings.TrimSpace(candidate.ProjectID) == "" ||
+		strings.TrimSpace(candidate.TargetID) == "" ||
+		strings.TrimSpace(candidate.Environment) == "" ||
+		strings.TrimSpace(candidate.OwnerID) == "" ||
+		strings.TrimSpace(candidate.BaseGeneration) == "" ||
+		!canonicalCandidateDigest(candidate.ArtifactDigest) ||
+		candidate.Revision < 1 ||
+		candidate.CreatedAt.IsZero() ||
+		candidate.UpdatedAt.IsZero() ||
+		candidate.ExpiresAt.IsZero() {
+		return fmt.Errorf("%w: candidate identity is incomplete", ErrCandidateInvalid)
+	}
+	switch candidate.Status {
+	case CandidatePreparing, CandidateFailed, CandidateCancelled, CandidateExpired:
+		if strings.TrimSpace(candidate.ProvenanceDigest) != "" {
+			return fmt.Errorf(
+				"%w: only a ready candidate may reference provenance",
+				ErrCandidateInvalid,
+			)
+		}
+	case CandidateReady:
+		if !canonicalCandidateDigest(candidate.ProvenanceDigest) {
+			return fmt.Errorf(
+				"%w: ready candidate provenance must be canonical sha256",
+				ErrCandidateInvalid,
+			)
+		}
+	default:
+		return fmt.Errorf("%w: candidate status is invalid", ErrCandidateInvalid)
+	}
+	return nil
 }
 
 func NewCandidate(input CandidateStartInput) (Candidate, error) {
@@ -80,12 +116,16 @@ func NewCandidate(input CandidateStartInput) (Candidate, error) {
 	if input.Now.IsZero() || !input.ExpiresAt.After(input.Now) {
 		return Candidate{}, fmt.Errorf("%w: expiry must be after creation", ErrCandidateInvalid)
 	}
-	return Candidate{
+	candidate := Candidate{
 		ID: input.ID, ProjectID: input.ProjectID, TargetID: input.TargetID,
 		Environment: input.Environment, OwnerID: input.OwnerID, BaseGeneration: input.BaseGeneration,
 		ArtifactDigest: input.ArtifactDigest, Status: CandidatePreparing,
 		ExpiresAt: input.ExpiresAt, CreatedAt: input.Now, UpdatedAt: input.Now, Revision: 1,
-	}, nil
+	}
+	if err := candidate.Validate(); err != nil {
+		return Candidate{}, err
+	}
+	return candidate, nil
 }
 
 func (candidate Candidate) Terminal() bool {
@@ -113,6 +153,7 @@ func (candidate Candidate) ReplaceArtifact(expectedDigest, nextDigest string, no
 		return candidate, nil
 	}
 	candidate.ArtifactDigest = nextDigest
+	candidate.ProvenanceDigest = ""
 	candidate.Status = CandidatePreparing
 	candidate.FailureReason = ""
 	candidate.ReadyAt = time.Time{}
@@ -120,8 +161,13 @@ func (candidate Candidate) ReplaceArtifact(expectedDigest, nextDigest string, no
 	return candidate.advance(now), nil
 }
 
-func (candidate Candidate) MarkReady(artifactDigest string, now time.Time) (Candidate, error) {
+func (candidate Candidate) MarkReady(
+	artifactDigest,
+	provenanceDigest string,
+	now time.Time,
+) (Candidate, error) {
 	artifactDigest = strings.TrimSpace(artifactDigest)
+	provenanceDigest = strings.TrimSpace(provenanceDigest)
 	now = now.UTC()
 	if candidate.Terminal() {
 		return Candidate{}, fmt.Errorf("%w: candidate is %s", ErrCandidateConflict, candidate.Status)
@@ -130,12 +176,25 @@ func (candidate Candidate) MarkReady(artifactDigest string, now time.Time) (Cand
 		return Candidate{}, fmt.Errorf("%w: candidate artifact advanced", ErrCandidateConflict)
 	}
 	if candidate.Status == CandidateReady {
+		if provenanceDigest != candidate.ProvenanceDigest {
+			return Candidate{}, fmt.Errorf(
+				"%w: candidate provenance changed",
+				ErrCandidateConflict,
+			)
+		}
 		return candidate, nil
 	}
 	if candidate.Status != CandidatePreparing {
 		return Candidate{}, fmt.Errorf("%w: candidate is %s", ErrCandidateConflict, candidate.Status)
 	}
+	if !canonicalCandidateDigest(provenanceDigest) {
+		return Candidate{}, fmt.Errorf(
+			"%w: provenance digest must be canonical sha256",
+			ErrCandidateInvalid,
+		)
+	}
 	candidate.Status = CandidateReady
+	candidate.ProvenanceDigest = provenanceDigest
 	candidate.FailureReason = ""
 	candidate.ReadyAt = now
 	return candidate.advance(now), nil
@@ -161,6 +220,7 @@ func (candidate Candidate) MarkFailed(artifactDigest, failureCode string, now ti
 		return Candidate{}, fmt.Errorf("%w: candidate is %s", ErrCandidateConflict, candidate.Status)
 	}
 	candidate.Status = CandidateFailed
+	candidate.ProvenanceDigest = ""
 	candidate.FailureReason = failureCode
 	candidate.ReadyAt = time.Time{}
 	return candidate.advance(now), nil
@@ -179,6 +239,7 @@ func (candidate Candidate) Retry(now, expiresAt time.Time) (Candidate, error) {
 		return Candidate{}, fmt.Errorf("%w: expiry must be after retry", ErrCandidateInvalid)
 	}
 	candidate.Status = CandidatePreparing
+	candidate.ProvenanceDigest = ""
 	candidate.FailureReason = ""
 	candidate.ReadyAt = time.Time{}
 	candidate.ExpiresAt = expiresAt
@@ -194,6 +255,7 @@ func (candidate Candidate) Cancel(now time.Time) (Candidate, error) {
 		return Candidate{}, fmt.Errorf("%w: candidate is expired", ErrCandidateConflict)
 	}
 	candidate.Status = CandidateCancelled
+	candidate.ProvenanceDigest = ""
 	candidate.CancelledAt = now
 	candidate.FailureReason = ""
 	candidate.ReadyAt = time.Time{}
@@ -209,6 +271,7 @@ func (candidate Candidate) Expire(now time.Time) (Candidate, bool, error) {
 		return candidate, false, nil
 	}
 	candidate.Status = CandidateExpired
+	candidate.ProvenanceDigest = ""
 	candidate.ExpiredAt = now
 	candidate.FailureReason = ""
 	candidate.ReadyAt = time.Time{}

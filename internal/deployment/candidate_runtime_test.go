@@ -22,7 +22,7 @@ func TestCandidateRuntimeServicePreparesCredentialFreeAndBoundWorkspacesTogether
 		t.Fatal(err)
 	}
 
-	err = service.Prepare(t.Context(), CandidateRuntimeRequest{
+	receipt, err := service.Prepare(t.Context(), CandidateRuntimeRequest{
 		Candidate: candidate, AuthorizationFingerprint: "policy:v1",
 		Workspaces: []CandidateWorkspaceRuntime{
 			{
@@ -42,6 +42,16 @@ func TestCandidateRuntimeServicePreparesCredentialFreeAndBoundWorkspacesTogether
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if receipt.RuntimeVersion != "leapview:test" || len(receipt.Workspaces) != 2 {
+		t.Fatalf("runtime receipt = %#v", receipt)
+	}
+	if receipt.Workspaces[0].WorkspaceID != "dashboard" ||
+		len(receipt.Workspaces[0].Bindings) != 0 ||
+		receipt.Workspaces[1].WorkspaceID != "sales" ||
+		len(receipt.Workspaces[1].Bindings) != 1 ||
+		receipt.Workspaces[1].Bindings[0].BindingID != "binding_warehouse" {
+		t.Fatalf("runtime receipt workspaces = %#v", receipt.Workspaces)
 	}
 	if len(connections.requests) != 2 || len(connections.requests[0].Requirements) != 0 ||
 		len(connections.requests[1].Requirements) != 1 {
@@ -84,7 +94,7 @@ func TestCandidateRuntimeServiceReleasesPartialConnectionsOnFailure(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = service.Prepare(t.Context(), CandidateRuntimeRequest{
+	_, err = service.Prepare(t.Context(), CandidateRuntimeRequest{
 		Candidate:                candidateRuntimeTestCandidate(t, now),
 		AuthorizationFingerprint: "policy:v1",
 		Workspaces: []CandidateWorkspaceRuntime{
@@ -128,7 +138,7 @@ func TestCandidateRuntimeServiceRejectsDuplicateNormalizedWorkspacesBeforeAcquir
 		t.Fatal(err)
 	}
 
-	err = service.Prepare(t.Context(), CandidateRuntimeRequest{
+	_, err = service.Prepare(t.Context(), CandidateRuntimeRequest{
 		Candidate:                candidateRuntimeTestCandidate(t, now),
 		AuthorizationFingerprint: "policy:v1",
 		Workspaces: []CandidateWorkspaceRuntime{
@@ -178,7 +188,7 @@ func TestCandidateRuntimeServiceRejectsDataModeAndConnectionMismatchBeforeAcquis
 			if err != nil {
 				t.Fatal(err)
 			}
-			err = service.Prepare(t.Context(), CandidateRuntimeRequest{
+			_, err = service.Prepare(t.Context(), CandidateRuntimeRequest{
 				Candidate:                candidateRuntimeTestCandidate(t, now),
 				AuthorizationFingerprint: "policy:v1",
 				Workspaces:               []CandidateWorkspaceRuntime{workspace},

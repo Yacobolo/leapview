@@ -53,6 +53,10 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	if err != nil {
 		return nil, err
 	}
+	candidateProvenance, ok := releases.(release.CandidateProvenanceRepository)
+	if !ok {
+		return nil, errors.New("candidate provenance repository is required")
+	}
 	store := releasefilesystem.NewArtifactStore(config.ArtifactDirectory)
 	hooks := []validate.Hook{}
 	if config.ManagedDataHook != nil {
@@ -62,6 +66,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	service, err := release.NewService(release.ServiceOptions{
 		Releases: releases, Finalization: finalization, States: config.States, Workspaces: config.Workspaces,
 		Artifacts: store, Validator: validator, Pins: config.ManagedDataPins, Environment: config.Environment,
+		CandidateProvenance: candidateProvenance,
 	})
 	if err != nil {
 		return nil, err
@@ -86,6 +91,34 @@ func (m *Module) PrepareCandidateArtifacts(
 		return release.CandidateArtifactSet{}, release.ErrCandidateArtifactUnavailable
 	}
 	return m.candidateArtifacts.Prepare(ctx, request)
+}
+
+func (m *Module) RetainCandidateProvenance(
+	ctx context.Context,
+	projectID string,
+	provenance release.Provenance,
+) (release.Provenance, error) {
+	if m == nil || m.service == nil {
+		return release.Provenance{}, release.ErrCandidateArtifactUnavailable
+	}
+	return m.service.RetainCandidateProvenance(ctx, projectID, provenance)
+}
+
+func (m *Module) CandidateProvenance(
+	ctx context.Context,
+	projectID,
+	candidateID string,
+	candidateRevision int64,
+) (release.Provenance, error) {
+	if m == nil || m.service == nil {
+		return release.Provenance{}, release.ErrCandidateArtifactUnavailable
+	}
+	return m.service.CandidateProvenance(
+		ctx,
+		projectID,
+		candidateID,
+		candidateRevision,
+	)
 }
 
 func releaseStores(database *sql.DB, workflow ...jobs.WorkflowRecorder) (release.Repository, release.FinalizationUnitOfWork, release.CatalogRepository, release.DeploymentLinkage, error) {

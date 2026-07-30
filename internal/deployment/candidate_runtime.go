@@ -89,6 +89,16 @@ type CandidateRuntimeRequest struct {
 	Workspaces               []CandidateWorkspaceRuntime
 }
 
+type CandidateWorkspaceRuntimeReceipt struct {
+	WorkspaceID string
+	Bindings    []CandidateConnectionEvidence
+}
+
+type CandidateRuntimeReceipt struct {
+	RuntimeVersion string
+	Workspaces     []CandidateWorkspaceRuntimeReceipt
+}
+
 func NewCandidateRuntimeService(
 	config CandidateRuntimeServiceConfig,
 ) (*CandidateRuntimeService, error) {
@@ -108,9 +118,9 @@ func NewCandidateRuntimeService(
 func (service *CandidateRuntimeService) Prepare(
 	ctx context.Context,
 	request CandidateRuntimeRequest,
-) error {
+) (CandidateRuntimeReceipt, error) {
 	if service == nil {
-		return ErrCandidateUnavailable
+		return CandidateRuntimeReceipt{}, ErrCandidateUnavailable
 	}
 	request.AuthorizationFingerprint = strings.TrimSpace(
 		request.AuthorizationFingerprint,
@@ -120,7 +130,7 @@ func (service *CandidateRuntimeService) Prepare(
 		candidate.ID == "" || candidate.OwnerID == "" || candidate.TargetID == "" ||
 		candidate.Environment == "" || candidate.ExpiresAt.IsZero() ||
 		request.AuthorizationFingerprint == "" || len(request.Workspaces) == 0 {
-		return ErrCandidateInvalid
+		return CandidateRuntimeReceipt{}, ErrCandidateInvalid
 	}
 	workspaces := append([]CandidateWorkspaceRuntime(nil), request.Workspaces...)
 	for index := range workspaces {
@@ -130,19 +140,19 @@ func (service *CandidateRuntimeService) Prepare(
 		workspaces[index].DataRevision = strings.TrimSpace(workspaces[index].DataRevision)
 		if workspaces[index].WorkspaceID == "" || workspaces[index].ServingStateID == "" ||
 			workspaces[index].ArtifactDigest == "" || workspaces[index].DataRevision == "" {
-			return ErrCandidateInvalid
+			return CandidateRuntimeReceipt{}, ErrCandidateInvalid
 		}
 		switch workspaces[index].DataMode {
 		case CandidateDataReuseSnapshot:
 			if len(workspaces[index].Connections) != 0 {
-				return ErrCandidateInvalid
+				return CandidateRuntimeReceipt{}, ErrCandidateInvalid
 			}
 		case CandidateDataRefreshSources:
 			if len(workspaces[index].Connections) == 0 {
-				return ErrCandidateInvalid
+				return CandidateRuntimeReceipt{}, ErrCandidateInvalid
 			}
 		default:
-			return ErrCandidateInvalid
+			return CandidateRuntimeReceipt{}, ErrCandidateInvalid
 		}
 	}
 	sort.Slice(workspaces, func(i, j int) bool {
@@ -150,10 +160,18 @@ func (service *CandidateRuntimeService) Prepare(
 	})
 	for index := 1; index < len(workspaces); index++ {
 		if workspaces[index-1].WorkspaceID == workspaces[index].WorkspaceID {
-			return ErrCandidateInvalid
+			return CandidateRuntimeReceipt{}, ErrCandidateInvalid
 		}
 	}
 	inputs := make([]runtimehost.CandidatePreparation, 0, len(workspaces))
+	receipt := CandidateRuntimeReceipt{
+		RuntimeVersion: service.runtimeVersion,
+		Workspaces: make(
+			[]CandidateWorkspaceRuntimeReceipt,
+			0,
+			len(workspaces),
+		),
+	}
 	owned := make([]CandidateConnectionLeases, 0, len(workspaces))
 	releaseOwned := func() {
 		for index := len(owned) - 1; index >= 0; index-- {
@@ -173,7 +191,7 @@ func (service *CandidateRuntimeService) Prepare(
 		})
 		if err != nil || leases == nil {
 			releaseOwned()
-			return fmt.Errorf(
+			return CandidateRuntimeReceipt{}, fmt.Errorf(
 				"%w: target connections unavailable for workspace %q",
 				ErrCandidateUnavailable,
 				workspace.WorkspaceID,
@@ -183,8 +201,15 @@ func (service *CandidateRuntimeService) Prepare(
 		bindings, err := candidateBindingVersions(leases.Evidence())
 		if err != nil {
 			releaseOwned()
-			return err
+			return CandidateRuntimeReceipt{}, err
 		}
+		receipt.Workspaces = append(
+			receipt.Workspaces,
+			CandidateWorkspaceRuntimeReceipt{
+				WorkspaceID: workspace.WorkspaceID,
+				Bindings:    candidateConnectionEvidence(bindings),
+			},
+		)
 		inputs = append(inputs, runtimehost.CandidatePreparation{
 			Registration: runtimehost.CandidateRegistration{
 				CandidateID: candidate.ID, OwnerID: candidate.OwnerID,
@@ -208,10 +233,27 @@ func (service *CandidateRuntimeService) Prepare(
 		// Runtime Host accepts ownership of every lifetime supplied to the set,
 		// including failure paths.
 		owned = nil
-		return fmt.Errorf("%w: candidate runtime preparation failed", ErrCandidateUnavailable)
+		return CandidateRuntimeReceipt{}, fmt.Errorf(
+			"%w: candidate runtime preparation failed",
+			ErrCandidateUnavailable,
+		)
 	}
 	owned = nil
-	return nil
+	return receipt, nil
+}
+
+func candidateConnectionEvidence(
+	values []runtimehost.CandidateBindingVersion,
+) []CandidateConnectionEvidence {
+	result := make([]CandidateConnectionEvidence, len(values))
+	for index, value := range values {
+		result[index] = CandidateConnectionEvidence{
+			BindingID:       value.BindingID,
+			Revision:        value.Revision,
+			ProviderVersion: value.ProviderVersion,
+		}
+	}
+	return result
 }
 
 func candidateRestrictions(values []CandidateRestriction) []runtimehost.CandidateRestriction {

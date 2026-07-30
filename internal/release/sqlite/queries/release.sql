@@ -1,5 +1,24 @@
 -- API v1 releases and project discovery.
 
+-- Immutable provenance retained when a private candidate becomes ready.
+
+-- name: RetainCandidateProvenance :execrows
+INSERT OR IGNORE INTO release_candidate_provenance (
+  project_id,
+  candidate_id,
+  candidate_revision,
+  provenance_digest,
+  provenance_json
+)
+VALUES (?, ?, ?, ?, ?);
+
+-- name: GetCandidateProvenance :one
+SELECT provenance_json
+FROM release_candidate_provenance
+WHERE project_id = ?
+  AND candidate_id = ?
+  AND candidate_revision = ?;
+
 -- name: CreateAPIRelease :exec
 INSERT INTO api_releases (id, project_id, project_digest, request_digest, idempotency_key, status, manifest_json, provenance_json, created_by)
 VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?);

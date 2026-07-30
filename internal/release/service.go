@@ -52,33 +52,94 @@ type PinValidator interface {
 	ValidateServingStatePins(context.Context, string, string, map[string]string) error
 }
 
+type CandidateProvenanceRepository interface {
+	RetainCandidateProvenance(
+		context.Context,
+		string,
+		Provenance,
+	) (Provenance, error)
+	CandidateProvenance(
+		context.Context,
+		string,
+		string,
+		int64,
+	) (Provenance, error)
+}
+
 type Service struct {
-	releases     Repository
-	finalization FinalizationUnitOfWork
-	states       ServingStateRepository
-	workspaces   WorkspaceRepository
-	artifacts    ArtifactStore
-	validator    ArtifactValidator
-	pins         PinValidator
-	environment  servingstate.Environment
+	releases            Repository
+	finalization        FinalizationUnitOfWork
+	states              ServingStateRepository
+	workspaces          WorkspaceRepository
+	artifacts           ArtifactStore
+	validator           ArtifactValidator
+	pins                PinValidator
+	candidateProvenance CandidateProvenanceRepository
+	environment         servingstate.Environment
 }
 
 type ServiceOptions struct {
-	Releases     Repository
-	Finalization FinalizationUnitOfWork
-	States       ServingStateRepository
-	Workspaces   WorkspaceRepository
-	Artifacts    ArtifactStore
-	Validator    ArtifactValidator
-	Pins         PinValidator
-	Environment  servingstate.Environment
+	Releases            Repository
+	Finalization        FinalizationUnitOfWork
+	States              ServingStateRepository
+	Workspaces          WorkspaceRepository
+	Artifacts           ArtifactStore
+	Validator           ArtifactValidator
+	Pins                PinValidator
+	CandidateProvenance CandidateProvenanceRepository
+	Environment         servingstate.Environment
 }
 
 func NewService(options ServiceOptions) (*Service, error) {
 	if options.Releases == nil || options.Finalization == nil || options.States == nil || options.Workspaces == nil || options.Artifacts == nil || options.Validator == nil {
 		return nil, fmt.Errorf("release repository, finalization unit of work, artifact store, and validator are required")
 	}
-	return &Service{releases: options.Releases, finalization: options.Finalization, states: options.States, workspaces: options.Workspaces, artifacts: options.Artifacts, validator: options.Validator, pins: options.Pins, environment: servingstate.NormalizeEnvironment(options.Environment)}, nil
+	return &Service{
+		releases: options.Releases, finalization: options.Finalization,
+		states: options.States, workspaces: options.Workspaces,
+		artifacts: options.Artifacts, validator: options.Validator,
+		pins:                options.Pins,
+		candidateProvenance: options.CandidateProvenance,
+		environment:         servingstate.NormalizeEnvironment(options.Environment),
+	}, nil
+}
+
+func (s *Service) RetainCandidateProvenance(
+	ctx context.Context,
+	projectID string,
+	provenance Provenance,
+) (Provenance, error) {
+	if s == nil || s.candidateProvenance == nil {
+		return Provenance{}, ErrCandidateArtifactUnavailable
+	}
+	if strings.TrimSpace(projectID) == "" {
+		return Provenance{}, ErrInvalid
+	}
+	if err := provenance.Validate(); err != nil {
+		return Provenance{}, err
+	}
+	return s.candidateProvenance.RetainCandidateProvenance(
+		ctx,
+		strings.TrimSpace(projectID),
+		provenance,
+	)
+}
+
+func (s *Service) CandidateProvenance(
+	ctx context.Context,
+	projectID,
+	candidateID string,
+	candidateRevision int64,
+) (Provenance, error) {
+	if s == nil || s.candidateProvenance == nil {
+		return Provenance{}, ErrCandidateArtifactUnavailable
+	}
+	return s.candidateProvenance.CandidateProvenance(
+		ctx,
+		strings.TrimSpace(projectID),
+		strings.TrimSpace(candidateID),
+		candidateRevision,
+	)
 }
 
 func (s *Service) Create(ctx context.Context, input CreateInput) (Release, error) {

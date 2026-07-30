@@ -126,6 +126,84 @@ func (r *Repository) RecordArtifact(ctx context.Context, artifact release.Artifa
 	return nil
 }
 
+func (r *Repository) RetainCandidateProvenance(
+	ctx context.Context,
+	projectID string,
+	provenance release.Provenance,
+) (release.Provenance, error) {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return release.Provenance{}, release.ErrInvalid
+	}
+	if err := provenance.Validate(); err != nil {
+		return release.Provenance{}, err
+	}
+	encoded, err := json.Marshal(provenance)
+	if err != nil {
+		return release.Provenance{}, err
+	}
+	if _, err := r.q.RetainCandidateProvenance(
+		ctx,
+		platformdb.RetainCandidateProvenanceParams{
+			ProjectID:         projectID,
+			CandidateID:       provenance.Candidate.ID,
+			CandidateRevision: provenance.Candidate.Revision,
+			ProvenanceDigest:  provenance.Digest,
+			ProvenanceJson:    string(encoded),
+		},
+	); err != nil {
+		return release.Provenance{}, err
+	}
+	retained, err := r.CandidateProvenance(
+		ctx,
+		projectID,
+		provenance.Candidate.ID,
+		provenance.Candidate.Revision,
+	)
+	if err != nil {
+		return release.Provenance{}, err
+	}
+	if retained.Digest != provenance.Digest {
+		return release.Provenance{}, release.ErrConflict
+	}
+	return retained, nil
+}
+
+func (r *Repository) CandidateProvenance(
+	ctx context.Context,
+	projectID,
+	candidateID string,
+	candidateRevision int64,
+) (release.Provenance, error) {
+	projectID = strings.TrimSpace(projectID)
+	candidateID = strings.TrimSpace(candidateID)
+	if projectID == "" || candidateID == "" || candidateRevision < 1 {
+		return release.Provenance{}, release.ErrInvalid
+	}
+	raw, err := r.q.GetCandidateProvenance(
+		ctx,
+		platformdb.GetCandidateProvenanceParams{
+			ProjectID:         projectID,
+			CandidateID:       candidateID,
+			CandidateRevision: candidateRevision,
+		},
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return release.Provenance{}, release.ErrNotFound
+	}
+	if err != nil {
+		return release.Provenance{}, err
+	}
+	var provenance release.Provenance
+	if err := json.Unmarshal([]byte(raw), &provenance); err != nil {
+		return release.Provenance{}, err
+	}
+	if err := provenance.Validate(); err != nil {
+		return release.Provenance{}, err
+	}
+	return provenance, nil
+}
+
 func (r *Repository) AssignArtifactTarget(ctx context.Context, projectID, releaseID, workspaceID, servingStateID string) error {
 	changed, err := r.q.AssignAPIReleaseArtifactTarget(ctx, platformdb.AssignAPIReleaseArtifactTargetParams{ServingStateID: sql.NullString{String: strings.TrimSpace(servingStateID), Valid: true}, ReleaseID: releaseID, WorkspaceID: workspaceID, ID: releaseID, ProjectID: projectID})
 	if err != nil {

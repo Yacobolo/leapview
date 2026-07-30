@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -28,14 +29,30 @@ func TestCandidateSynchronizationPlansUploadsAndCommitsOwnedCandidate(t *testing
 	blobDigest := "sha256:" + strings.Repeat("b", 64)
 	sources := &candidateSourceSynchronizerStub{missing: []string{blobDigest}}
 	module.candidateSources = sources
-	module.candidateArtifacts = candidateArtifactPreparerStub{result: release.CandidateArtifactSet{
-		AuthorizationFingerprint: "sha256:policy",
+	artifacts := &candidateArtifactPreparerStub{result: release.CandidateArtifactSet{
+		Artifact: release.ProjectArtifactProvenance{
+			SourceDigest:    digest,
+			ProjectDigest:   "sha256:" + strings.Repeat("d", 64),
+			CompilerVersion: "compiler:test",
+			SchemaVersion:   2,
+			Workspaces: []release.WorkspaceArtifactProvenance{{
+				WorkspaceID:    "sales",
+				ArtifactDigest: "sha256:" + strings.Repeat("e", 64),
+			}},
+		},
+		AuthorizationFingerprint: "sha256:" + strings.Repeat("f", 64),
 		Workspaces: []release.CandidateArtifactWorkspace{{
 			WorkspaceID: "sales", ServingStateID: "state_sales",
 			ArtifactDigest: digest, DataRevision: "snapshot:1", DataMode: string(deployment.CandidateDataReuseSnapshot),
 		}},
 	}}
-	runtimes := &candidateRuntimePreparerStub{}
+	module.candidateArtifacts = artifacts
+	runtimes := &candidateRuntimePreparerStub{receipt: deployment.CandidateRuntimeReceipt{
+		RuntimeVersion: "runtime:test",
+		Workspaces: []deployment.CandidateWorkspaceRuntimeReceipt{{
+			WorkspaceID: "sales",
+		}},
+	}}
 	module.candidateRuntimes = runtimes
 	body := `{"projectFile":"leapview.yaml","artifactDigest":"` + digest +
 		`","artifacts":[{"path":"leapview.yaml","digest":"` + blobDigest + `"}]}`
@@ -60,11 +77,19 @@ func TestCandidateSynchronizationPlansUploadsAndCommitsOwnedCandidate(t *testing
 	decodeCandidateResponse(t, committed, &candidate)
 	if committed.Code != http.StatusOK || candidate.ID == "" ||
 		candidate.ArtifactDigest != digest || candidate.Status != string(deployment.CandidateReady) ||
-		sources.commits != 1 || runtimes.calls != 1 {
+		candidate.ProvenanceDigest == "" ||
+		sources.commits != 1 || runtimes.calls != 1 || len(artifacts.retained) != 1 {
 		t.Fatalf("commit response = %d candidate=%#v commits=%d", committed.Code, candidate, sources.commits)
+	}
+	if retained := artifacts.retained[0]; retained.Digest != candidate.ProvenanceDigest ||
+		retained.Candidate.ID != candidate.ID ||
+		retained.Candidate.Revision != candidate.Revision ||
+		retained.Plan.RuntimeVersion != "runtime:test" {
+		t.Fatalf("retained provenance = %#v, candidate = %#v", retained, candidate)
 	}
 
 	nextDigest := "sha256:" + strings.Repeat("c", 64)
+	artifacts.result.Artifact.SourceDigest = nextDigest
 	replacementBody := `{"projectFile":"leapview.yaml","artifactDigest":"` + nextDigest +
 		`","expectedCandidateId":"` + candidate.ID + `","expectedArtifactDigest":"` + digest +
 		`","artifacts":[{"path":"leapview.yaml","digest":"` + blobDigest + `"}]}`
@@ -74,8 +99,120 @@ func TestCandidateSynchronizationPlansUploadsAndCommitsOwnedCandidate(t *testing
 	var replacement candidateAPIResponse
 	decodeCandidateResponse(t, replaced, &replacement)
 	if replaced.Code != http.StatusOK || replacement.ID != candidate.ID ||
-		replacement.ArtifactDigest != nextDigest || replacement.Revision != candidate.Revision+2 {
+		replacement.ArtifactDigest != nextDigest ||
+		replacement.Revision != candidate.Revision+2 ||
+		replacement.ProvenanceDigest == candidate.ProvenanceDigest ||
+		len(artifacts.retained) != 2 {
 		t.Fatalf("replacement response = %d candidate=%#v", replaced.Code, replacement)
+	}
+}
+
+func TestCandidateSynchronizationNeverMarksReadyBeforeProvenanceIsRetained(t *testing.T) {
+	module := testCandidateModule(t, "principal_1")
+	digest := "sha256:" + strings.Repeat("a", 64)
+	module.candidateSources = &candidateSourceSynchronizerStub{}
+	module.candidateArtifacts = &candidateArtifactPreparerStub{
+		result: release.CandidateArtifactSet{
+			Artifact: release.ProjectArtifactProvenance{
+				SourceDigest:    digest,
+				ProjectDigest:   "sha256:" + strings.Repeat("b", 64),
+				CompilerVersion: "compiler:test",
+				SchemaVersion:   2,
+				Workspaces: []release.WorkspaceArtifactProvenance{{
+					WorkspaceID:    "sales",
+					ArtifactDigest: "sha256:" + strings.Repeat("c", 64),
+				}},
+			},
+			AuthorizationFingerprint: "sha256:" + strings.Repeat("d", 64),
+			Workspaces: []release.CandidateArtifactWorkspace{{
+				WorkspaceID: "sales", ServingStateID: "state_sales",
+				ArtifactDigest: "sha256:" + strings.Repeat("e", 64),
+				DataRevision:   "snapshot:1",
+				DataMode:       string(deployment.CandidateDataReuseSnapshot),
+			}},
+		},
+		retainErr: release.ErrConflict,
+	}
+	module.candidateRuntimes = &candidateRuntimePreparerStub{
+		receipt: deployment.CandidateRuntimeReceipt{
+			RuntimeVersion: "runtime:test",
+			Workspaces: []deployment.CandidateWorkspaceRuntimeReceipt{{
+				WorkspaceID: "sales",
+			}},
+		},
+	}
+	body := `{"projectFile":"leapview.yaml","artifactDigest":"` + digest +
+		`","artifacts":[{"path":"leapview.yaml","digest":"` + digest + `"}]}`
+	response := callCandidateAPI(
+		t,
+		http.MethodPost,
+		"/api/v1/projects/finance/candidate-sync/commit",
+		body,
+		func(w http.ResponseWriter, r *http.Request) {
+			module.CommitProjectCandidateSynchronization(w, r, "finance", "commit-1")
+		},
+	)
+	if response.Code == http.StatusOK {
+		t.Fatalf("provenance failure unexpectedly succeeded: %s", response.Body.String())
+	}
+	current, err := module.candidates.Get(
+		t.Context(),
+		deployment.CandidateScope{
+			ProjectID: "finance", CandidateID: "cand_opaque_1",
+			OwnerID: "principal_1",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Status == deployment.CandidateReady ||
+		current.ProvenanceDigest != "" {
+		t.Fatalf("candidate became ready without provenance: %#v", current)
+	}
+}
+
+func TestCandidateReleaseProvenanceRejectsMismatchedSourceIdentity(t *testing.T) {
+	module := testCandidateModule(t, "principal_1")
+	digest := "sha256:" + strings.Repeat("a", 64)
+	started, err := module.candidates.Start(
+		t.Context(),
+		deployment.StartCandidateRequest{
+			ProjectID: "finance", OwnerID: "principal_1",
+			ArtifactDigest: digest,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = candidateReleaseProvenance(
+		started.Candidate,
+		release.CandidateArtifactSet{
+			Artifact: release.ProjectArtifactProvenance{
+				SourceDigest:    "sha256:" + strings.Repeat("b", 64),
+				ProjectDigest:   "sha256:" + strings.Repeat("c", 64),
+				CompilerVersion: "compiler:test", SchemaVersion: 2,
+				Workspaces: []release.WorkspaceArtifactProvenance{{
+					WorkspaceID:    "sales",
+					ArtifactDigest: "sha256:" + strings.Repeat("d", 64),
+				}},
+			},
+			AuthorizationFingerprint: "sha256:" + strings.Repeat("e", 64),
+			Workspaces: []release.CandidateArtifactWorkspace{{
+				WorkspaceID: "sales", ServingStateID: "state_sales",
+				ArtifactDigest: "sha256:" + strings.Repeat("f", 64),
+				DataRevision:   "snapshot:1",
+				DataMode:       string(deployment.CandidateDataReuseSnapshot),
+			}},
+		},
+		deployment.CandidateRuntimeReceipt{
+			RuntimeVersion: "runtime:test",
+			Workspaces: []deployment.CandidateWorkspaceRuntimeReceipt{{
+				WorkspaceID: "sales",
+			}},
+		},
+	)
+	if !errors.Is(err, release.ErrProvenanceInvalid) {
+		t.Fatalf("candidateReleaseProvenance() error = %v", err)
 	}
 }
 
@@ -90,12 +227,12 @@ func TestCandidateSynchronizationPreservesReadyCandidateWhenPreparationFails(t *
 	}
 	ready, err := module.candidates.MarkReady(t.Context(), deployment.CandidateScope{
 		ProjectID: "finance", CandidateID: started.Candidate.ID, OwnerID: "principal_1",
-	}, firstDigest)
+	}, firstDigest, "sha256:"+strings.Repeat("f", 64))
 	if err != nil {
 		t.Fatal(err)
 	}
 	module.candidateSources = &candidateSourceSynchronizerStub{}
-	module.candidateArtifacts = candidateArtifactPreparerStub{
+	module.candidateArtifacts = &candidateArtifactPreparerStub{
 		err: release.ErrCandidateArtifactUnavailable,
 	}
 	module.candidateRuntimes = &candidateRuntimePreparerStub{}
@@ -278,7 +415,12 @@ func TestCandidatePreviewMapsLifecycleAndConcealsRuntimeDetails(t *testing.T) {
 			now = now.Add(30 * time.Second)
 			switch test.status {
 			case deployment.CandidateReady:
-				_, err = module.candidates.MarkReady(context.Background(), scope, digest)
+				_, err = module.candidates.MarkReady(
+					context.Background(),
+					scope,
+					digest,
+					"sha256:"+strings.Repeat("f", 64),
+				)
 			case deployment.CandidateFailed:
 				_, err = module.candidates.MarkFailed(context.Background(), scope, digest, "RUNTIME_PREPARATION_FAILED")
 			case deployment.CandidateCancelled:
@@ -384,13 +526,14 @@ func callCandidateAPI(t *testing.T, method, target, body string, handler http.Ha
 }
 
 type candidateAPIResponse struct {
-	ID             string `json:"id"`
-	BaseGeneration string `json:"baseGeneration"`
-	ArtifactDigest string `json:"artifactDigest"`
-	Status         string `json:"status"`
-	PreviewURL     string `json:"previewUrl"`
-	Revision       int64  `json:"revision"`
-	Resumed        bool   `json:"resumed"`
+	ID               string `json:"id"`
+	BaseGeneration   string `json:"baseGeneration"`
+	ArtifactDigest   string `json:"artifactDigest"`
+	ProvenanceDigest string `json:"provenanceDigest"`
+	Status           string `json:"status"`
+	PreviewURL       string `json:"previewUrl"`
+	Revision         int64  `json:"revision"`
+	Resumed          bool   `json:"resumed"`
 }
 
 func decodeCandidateResponse(t *testing.T, response *httptest.ResponseRecorder, target *candidateAPIResponse) {
@@ -439,28 +582,57 @@ func (stub *candidateSourceSynchronizerStub) Commit(
 }
 
 type candidateArtifactPreparerStub struct {
-	result release.CandidateArtifactSet
-	err    error
+	result    release.CandidateArtifactSet
+	err       error
+	retained  []release.Provenance
+	retainErr error
 }
 
-func (stub candidateArtifactPreparerStub) PrepareCandidateArtifacts(
+func (stub *candidateArtifactPreparerStub) PrepareCandidateArtifacts(
 	context.Context,
 	release.CandidateArtifactRequest,
 ) (release.CandidateArtifactSet, error) {
 	return stub.result, stub.err
 }
 
+func (stub *candidateArtifactPreparerStub) RetainCandidateProvenance(
+	_ context.Context,
+	_ string,
+	provenance release.Provenance,
+) (release.Provenance, error) {
+	if stub.retainErr != nil {
+		return release.Provenance{}, stub.retainErr
+	}
+	stub.retained = append(stub.retained, provenance)
+	return provenance, nil
+}
+
+func (stub *candidateArtifactPreparerStub) CandidateProvenance(
+	_ context.Context,
+	_ string,
+	_ string,
+	revision int64,
+) (release.Provenance, error) {
+	for _, provenance := range stub.retained {
+		if provenance.Candidate.Revision == revision {
+			return provenance, nil
+		}
+	}
+	return release.Provenance{}, release.ErrNotFound
+}
+
 type candidateRuntimePreparerStub struct {
-	calls int
-	err   error
+	calls   int
+	err     error
+	receipt deployment.CandidateRuntimeReceipt
 }
 
 func (stub *candidateRuntimePreparerStub) Prepare(
 	context.Context,
 	deployment.CandidateRuntimeRequest,
-) error {
+) (deployment.CandidateRuntimeReceipt, error) {
 	stub.calls++
-	return stub.err
+	return stub.receipt, stub.err
 }
 
 func standardContentDigest(t *testing.T, identity string) string {

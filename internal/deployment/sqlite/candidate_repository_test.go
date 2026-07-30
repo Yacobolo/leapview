@@ -101,6 +101,39 @@ func TestCandidateRepositoryNeverChangesActiveServingState(t *testing.T) {
 	assertActiveState(t, ctx, db, "sales", "prod", "sales_old")
 }
 
+func TestCandidateRepositoryRejectsReadyCandidateWithoutReleaseProvenance(t *testing.T) {
+	ctx, db, repository := testRepository(t)
+	insertCandidatePrincipal(t, ctx, db, "principal_1")
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	candidate := candidateRecord(
+		t,
+		now,
+		"cand_1",
+		"finance",
+		"principal_1",
+		"sha256:"+strings.Repeat("a", 64),
+	)
+	if _, _, err := repository.StartCandidate(ctx, candidate, 4); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(
+		ctx,
+		`UPDATE project_candidates
+		 SET status = 'ready', ready_at = ?, revision = revision + 1
+		 WHERE id = ?`,
+		now.Add(time.Minute).Format(time.RFC3339Nano),
+		candidate.ID,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.CandidateByID(
+		ctx,
+		candidate.ID,
+	); !errors.Is(err, deployment.ErrCandidateInvalid) {
+		t.Fatalf("CandidateByID() error = %v, want ErrCandidateInvalid", err)
+	}
+}
+
 func candidateRecord(t *testing.T, now time.Time, id, project, owner, artifactDigest string) deployment.Candidate {
 	t.Helper()
 	candidate, err := deployment.NewCandidate(deployment.CandidateStartInput{

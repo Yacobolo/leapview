@@ -92,6 +92,17 @@ func (service *candidateArtifactService) Prepare(
 	}
 
 	result := release.CandidateArtifactSet{
+		Artifact: release.ProjectArtifactProvenance{
+			SourceDigest:    request.ArtifactDigest,
+			ProjectDigest:   compiledProject.Digest(),
+			CompilerVersion: projectartifact.CompilerVersion,
+			SchemaVersion:   compiledProject.Version(),
+			Workspaces: make(
+				[]release.WorkspaceArtifactProvenance,
+				0,
+				len(workspaces),
+			),
+		},
 		Workspaces: make([]release.CandidateArtifactWorkspace, 0, len(workspaces)),
 	}
 	policyHash := sha256.New()
@@ -106,6 +117,13 @@ func (service *candidateArtifactService) Prepare(
 				fmt.Errorf("project has no workspace %q", workspaceID),
 			)
 		}
+		result.Artifact.Workspaces = append(
+			result.Artifact.Workspaces,
+			release.WorkspaceArtifactProvenance{
+				WorkspaceID:    workspaceID,
+				ArtifactDigest: compiledWorkspace.Digest(),
+			},
+		)
 		if err := service.workspaces.Ensure(ctx, workspace.EnsureInput{
 			ID: workspace.WorkspaceID(workspaceID), Title: workspaceID,
 		}); err != nil {
@@ -197,8 +215,10 @@ func (service *candidateArtifactService) Prepare(
 		result.Workspaces = append(result.Workspaces, release.CandidateArtifactWorkspace{
 			WorkspaceID: workspaceID, ServingStateID: string(validated.ID),
 			ArtifactDigest: validated.Digest, DataRevision: dataRevision,
-			DataMode: mode, Connections: connections,
-			Restrictions: restrictions,
+			DataMode:        mode,
+			ManagedDataPins: candidateManagedDataPins(base.pins),
+			Connections:     connections,
+			Restrictions:    restrictions,
 		})
 		_, _ = fmt.Fprintf(
 			policyHash,
@@ -377,6 +397,22 @@ func cloneCandidatePins(values map[string]string) map[string]string {
 	result := make(map[string]string, len(values))
 	for key, value := range values {
 		result[key] = value
+	}
+	return result
+}
+
+func candidateManagedDataPins(values map[string]string) []release.ManagedDataPin {
+	connections := make([]string, 0, len(values))
+	for connection := range values {
+		connections = append(connections, connection)
+	}
+	sort.Strings(connections)
+	result := make([]release.ManagedDataPin, 0, len(connections))
+	for _, connection := range connections {
+		result = append(result, release.ManagedDataPin{
+			ConnectionID: connection,
+			RevisionID:   values[connection],
+		})
 	}
 	return result
 }

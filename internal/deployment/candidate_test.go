@@ -11,6 +11,8 @@ func TestCandidateStateMachineSupportsIdempotentPreparationLifecycle(t *testing.
 	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
 	firstDigest := "sha256:" + strings.Repeat("a", 64)
 	secondDigest := "sha256:" + strings.Repeat("b", 64)
+	firstProvenance := "sha256:" + strings.Repeat("c", 64)
+	secondProvenance := "sha256:" + strings.Repeat("d", 64)
 	candidate, err := NewCandidate(CandidateStartInput{
 		ID: "cand_opaque", ProjectID: "finance", TargetID: "lvinst_prod",
 		Environment: "prod", OwnerID: "principal_1", BaseGeneration: "deployment_7",
@@ -23,11 +25,14 @@ func TestCandidateStateMachineSupportsIdempotentPreparationLifecycle(t *testing.
 		t.Fatalf("candidate = %#v", candidate)
 	}
 
-	ready, err := candidate.MarkReady(firstDigest, now.Add(time.Minute))
+	ready, err := candidate.MarkReady(firstDigest, firstProvenance, now.Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
-	replayed, err := ready.MarkReady(firstDigest, now.Add(2*time.Minute))
+	if ready.ProvenanceDigest != firstProvenance {
+		t.Fatalf("ready provenance = %q, want %q", ready.ProvenanceDigest, firstProvenance)
+	}
+	replayed, err := ready.MarkReady(firstDigest, firstProvenance, now.Add(2*time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,8 +45,12 @@ func TestCandidateStateMachineSupportsIdempotentPreparationLifecycle(t *testing.
 		t.Fatal(err)
 	}
 	if replaced.Status != CandidatePreparing || replaced.ArtifactDigest != secondDigest ||
-		replaced.Revision != ready.Revision+1 || replaced.FailureReason != "" {
+		replaced.Revision != ready.Revision+1 || replaced.FailureReason != "" ||
+		replaced.ProvenanceDigest != "" {
 		t.Fatalf("replacement = %#v", replaced)
+	}
+	if _, err := ready.MarkReady(firstDigest, secondProvenance, now.Add(2*time.Minute)); !errors.Is(err, ErrCandidateConflict) {
+		t.Fatalf("changed provenance replay error = %v, want ErrCandidateConflict", err)
 	}
 	if _, err := replaced.ReplaceArtifact(firstDigest, firstDigest, now, now.Add(time.Hour)); !errors.Is(err, ErrCandidateConflict) {
 		t.Fatalf("stale replacement error = %v, want ErrCandidateConflict", err)

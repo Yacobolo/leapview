@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -57,6 +58,13 @@ func TestCandidateArtifactsRefreshThenReuseTargetSnapshot(t *testing.T) {
 	if first.AuthorizationFingerprint == "" || len(first.Workspaces) == 0 {
 		t.Fatalf("first artifact set = %#v", first)
 	}
+	if first.Artifact.SourceDigest != snapshot.Digest ||
+		first.Artifact.ProjectDigest != source.ProjectDigest ||
+		first.Artifact.CompilerVersion == "" ||
+		first.Artifact.SchemaVersion < 1 ||
+		len(first.Artifact.Workspaces) != len(first.Workspaces) {
+		t.Fatalf("immutable project artifact provenance = %#v", first.Artifact)
+	}
 	for _, prepared := range first.Workspaces {
 		if prepared.DataMode != "refresh_sources" || len(prepared.Connections) == 0 {
 			t.Fatalf("initial workspace must refresh through target bindings: %#v", prepared)
@@ -80,6 +88,13 @@ func TestCandidateArtifactsRefreshThenReuseTargetSnapshot(t *testing.T) {
 	}
 	if second.AuthorizationFingerprint == "" || len(second.Workspaces) != len(first.Workspaces) {
 		t.Fatalf("second artifact set = %#v", second)
+	}
+	if !reflect.DeepEqual(second.Artifact, first.Artifact) {
+		t.Fatalf(
+			"target snapshot reuse changed project artifact provenance: %#v / %#v",
+			first.Artifact,
+			second.Artifact,
+		)
 	}
 	for _, prepared := range second.Workspaces {
 		if prepared.DataMode != "reuse_snapshot" ||

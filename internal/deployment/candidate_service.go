@@ -173,9 +173,18 @@ func (service *CandidateService) ReplaceArtifact(ctx context.Context, scope Cand
 	})
 }
 
-func (service *CandidateService) MarkReady(ctx context.Context, scope CandidateScope, artifactDigest string) (Candidate, error) {
+func (service *CandidateService) MarkReady(
+	ctx context.Context,
+	scope CandidateScope,
+	artifactDigest,
+	provenanceDigest string,
+) (Candidate, error) {
 	return service.mutate(ctx, scope, "candidate.ready", func(candidate Candidate) (Candidate, error) {
-		return candidate.MarkReady(artifactDigest, service.now().UTC())
+		return candidate.MarkReady(
+			artifactDigest,
+			provenanceDigest,
+			service.now().UTC(),
+		)
 	})
 }
 

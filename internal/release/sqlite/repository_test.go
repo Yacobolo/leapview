@@ -80,6 +80,115 @@ func TestReleaseRepositoryRoundTripsAndValidatesImmutableProvenance(t *testing.T
 	}
 }
 
+func TestReleaseRepositoryRetainsCandidateProvenanceImmutably(t *testing.T) {
+	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "leapview.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	repo := NewRepository(store.SQLDB())
+	provenance := candidateReleaseProvenance(t)
+
+	retained, err := repo.RetainCandidateProvenance(
+		t.Context(),
+		"commerce",
+		provenance,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := repo.RetainCandidateProvenance(
+		t.Context(),
+		"commerce",
+		provenance,
+	)
+	if err != nil || !reflect.DeepEqual(replayed, retained) {
+		t.Fatalf("replayed provenance = %#v, %v", replayed, err)
+	}
+	loaded, err := repo.CandidateProvenance(
+		t.Context(),
+		"commerce",
+		provenance.Candidate.ID,
+		provenance.Candidate.Revision,
+	)
+	if err != nil || !reflect.DeepEqual(loaded, provenance) {
+		t.Fatalf("loaded provenance = %#v, %v", loaded, err)
+	}
+
+	changed := provenance
+	changed.Plan.RuntimeVersion = "runtime:changed"
+	changed, err = release.NewProvenance(release.ProvenanceInput{
+		Artifact:  changed.Artifact,
+		Candidate: changed.Candidate,
+		Plan:      changed.Plan,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.RetainCandidateProvenance(
+		t.Context(),
+		"commerce",
+		changed,
+	); !errors.Is(err, release.ErrConflict) {
+		t.Fatalf("changed replay error = %v, want ErrConflict", err)
+	}
+	if _, err := store.SQLDB().ExecContext(
+		t.Context(),
+		`UPDATE release_candidate_provenance
+		 SET provenance_json = json_set(
+		   provenance_json,
+		   '$.plan.runtimeVersion',
+		   'runtime:tampered'
+		 )
+		 WHERE candidate_id = ? AND candidate_revision = ?`,
+		provenance.Candidate.ID,
+		provenance.Candidate.Revision,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.CandidateProvenance(
+		t.Context(),
+		"commerce",
+		provenance.Candidate.ID,
+		provenance.Candidate.Revision,
+	); !errors.Is(err, release.ErrProvenanceInvalid) {
+		t.Fatalf("tampered candidate provenance error = %v", err)
+	}
+}
+
+func candidateReleaseProvenance(t *testing.T) release.Provenance {
+	t.Helper()
+	provenance, err := release.NewProvenance(release.ProvenanceInput{
+		Artifact: release.ProjectArtifactProvenance{
+			SourceDigest:    "sha256:" + strings.Repeat("1", 64),
+			ProjectDigest:   "sha256:" + strings.Repeat("2", 64),
+			CompilerVersion: "leapview:test", SchemaVersion: 3,
+			Workspaces: []release.WorkspaceArtifactProvenance{{
+				WorkspaceID:    "sales",
+				ArtifactDigest: "sha256:" + strings.Repeat("3", 64),
+			}},
+		},
+		Candidate: release.CandidateProvenance{
+			ID: "cand_1", Revision: 2, OwnerID: "principal_1",
+		},
+		Plan: release.TargetPlanProvenance{
+			TargetID: "target_1", Environment: "dev",
+			BaseGeneration: "empty", RuntimeVersion: "runtime:test",
+			PolicyDigest: "sha256:" + strings.Repeat("4", 64),
+			Workspaces: []release.TargetWorkspacePlan{{
+				WorkspaceID: "sales", ServingStateID: "state_1",
+				ArtifactDigest: "sha256:" + strings.Repeat("5", 64),
+				DataRevision:   "snapshot:1",
+				DataMode:       release.TargetDataReuseSnapshot,
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return provenance
+}
+
 type failingWorkflowRecorder struct{ err error }
 
 func (r failingWorkflowRecorder) RecordWorkflow(context.Context, transaction.Transaction, jobs.WorkflowIntent) error {

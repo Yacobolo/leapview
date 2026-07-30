@@ -41,7 +41,10 @@ type CandidateRestriction = deployment.CandidateRestriction
 type CandidateDataMode = deployment.CandidateDataMode
 
 type CandidateRuntimePreparer interface {
-	Prepare(context.Context, deployment.CandidateRuntimeRequest) error
+	Prepare(
+		context.Context,
+		deployment.CandidateRuntimeRequest,
+	) (deployment.CandidateRuntimeReceipt, error)
 }
 
 const (
@@ -159,9 +162,9 @@ func (m *Module) HTTP() *deploymenthttp.Handler { return m.handler }
 func (m *Module) PrepareCandidateRuntime(
 	ctx context.Context,
 	request deployment.CandidateRuntimeRequest,
-) error {
+) (deployment.CandidateRuntimeReceipt, error) {
 	if m == nil || m.candidateRuntimes == nil {
-		return deployment.ErrCandidateUnavailable
+		return deployment.CandidateRuntimeReceipt{}, deployment.ErrCandidateUnavailable
 	}
 	return m.candidateRuntimes.Prepare(ctx, request)
 }

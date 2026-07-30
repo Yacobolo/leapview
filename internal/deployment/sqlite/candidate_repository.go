@@ -99,7 +99,9 @@ func (r *Repository) SaveCandidate(ctx context.Context, candidate deployment.Can
 		return deployment.Candidate{}, fmt.Errorf("%w: invalid candidate revision", deployment.ErrCandidateConflict)
 	}
 	count, err := r.q.UpdateProjectCandidate(ctx, platformdb.UpdateProjectCandidateParams{
-		ArtifactDigest: candidate.ArtifactDigest, Status: string(candidate.Status), FailureReason: candidate.FailureReason,
+		ArtifactDigest:   candidate.ArtifactDigest,
+		ProvenanceDigest: candidate.ProvenanceDigest,
+		Status:           string(candidate.Status), FailureReason: candidate.FailureReason,
 		ExpiresAt: formatCandidateTime(candidate.ExpiresAt), UpdatedAt: formatCandidateTime(candidate.UpdatedAt),
 		ReadyAt: nullableCandidateTime(candidate.ReadyAt), CancelledAt: nullableCandidateTime(candidate.CancelledAt),
 		ExpiredAt: nullableCandidateTime(candidate.ExpiredAt), Revision: candidate.Revision,
@@ -129,7 +131,8 @@ func candidateCreateParams(candidate deployment.Candidate) platformdb.CreateProj
 		ID: candidate.ID, ProjectID: candidate.ProjectID, TargetID: candidate.TargetID,
 		Environment: candidate.Environment, OwnerPrincipalID: candidate.OwnerID,
 		BaseGeneration: candidate.BaseGeneration, ArtifactDigest: candidate.ArtifactDigest,
-		Status: string(candidate.Status), FailureReason: candidate.FailureReason,
+		ProvenanceDigest: candidate.ProvenanceDigest,
+		Status:           string(candidate.Status), FailureReason: candidate.FailureReason,
 		ExpiresAt: formatCandidateTime(candidate.ExpiresAt), CreatedAt: formatCandidateTime(candidate.CreatedAt),
 		UpdatedAt: formatCandidateTime(candidate.UpdatedAt), ReadyAt: nullableCandidateTime(candidate.ReadyAt),
 		CancelledAt: nullableCandidateTime(candidate.CancelledAt), ExpiredAt: nullableCandidateTime(candidate.ExpiredAt),
@@ -162,13 +165,18 @@ func mapCandidate(row platformdb.ProjectCandidate) (deployment.Candidate, error)
 	if err != nil {
 		return deployment.Candidate{}, fmt.Errorf("parse candidate expiration: %w", err)
 	}
-	return deployment.Candidate{
+	candidate := deployment.Candidate{
 		ID: row.ID, ProjectID: row.ProjectID, TargetID: row.TargetID, Environment: row.Environment,
 		OwnerID: row.OwnerPrincipalID, BaseGeneration: row.BaseGeneration, ArtifactDigest: row.ArtifactDigest,
-		Status: deployment.CandidateStatus(row.Status), FailureReason: row.FailureReason,
+		ProvenanceDigest: row.ProvenanceDigest,
+		Status:           deployment.CandidateStatus(row.Status), FailureReason: row.FailureReason,
 		ExpiresAt: expiresAt, CreatedAt: createdAt, UpdatedAt: updatedAt, ReadyAt: readyAt,
 		CancelledAt: cancelledAt, ExpiredAt: expiredAt, Revision: row.Revision,
-	}, nil
+	}
+	if err := candidate.Validate(); err != nil {
+		return deployment.Candidate{}, err
+	}
+	return candidate, nil
 }
 
 func sameCandidateStart(existing, candidate deployment.Candidate) bool {

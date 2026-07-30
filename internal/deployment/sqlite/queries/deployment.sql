@@ -156,11 +156,11 @@ ORDER BY collection_id;
 -- name: CreateProjectCandidate :exec
 INSERT INTO project_candidates (
   id, project_id, target_id, environment, owner_principal_id,
-  base_generation, artifact_digest, status, failure_reason,
+  base_generation, artifact_digest, provenance_digest, status, failure_reason,
   expires_at, created_at, updated_at, ready_at, cancelled_at,
   expired_at, revision
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetProjectCandidate :one
 SELECT *
@@ -195,6 +195,7 @@ LIMIT 1;
 -- name: UpdateProjectCandidate :execrows
 UPDATE project_candidates
 SET artifact_digest = ?,
+    provenance_digest = ?,
     status = ?,
     failure_reason = ?,
     expires_at = ?,
@@ -209,6 +210,7 @@ WHERE id = ?
 -- name: ExpireProjectCandidates :execrows
 UPDATE project_candidates
 SET status = 'expired',
+    provenance_digest = '',
     failure_reason = '',
     ready_at = NULL,
     expired_at = ?,

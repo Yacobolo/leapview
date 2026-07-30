@@ -185,6 +185,9 @@ func (m *Module) candidateResponse(candidate deployment.Candidate, resumed bool)
 	if candidate.FailureReason != "" {
 		response.FailureReason = &candidate.FailureReason
 	}
+	if candidate.ProvenanceDigest != "" {
+		response.ProvenanceDigest = &candidate.ProvenanceDigest
+	}
 	if resumed {
 		response.Resumed = &resumed
 	}

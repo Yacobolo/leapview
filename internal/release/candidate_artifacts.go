@@ -26,13 +26,14 @@ type CandidateRestriction struct {
 }
 
 type CandidateArtifactWorkspace struct {
-	WorkspaceID    string
-	ServingStateID string
-	ArtifactDigest string
-	DataRevision   string
-	DataMode       string
-	Connections    []CandidateConnectionRequirement
-	Restrictions   []CandidateRestriction
+	WorkspaceID     string
+	ServingStateID  string
+	ArtifactDigest  string
+	DataRevision    string
+	DataMode        string
+	ManagedDataPins []ManagedDataPin
+	Connections     []CandidateConnectionRequirement
+	Restrictions    []CandidateRestriction
 }
 
 type CandidateArtifactRequest struct {
@@ -45,10 +46,22 @@ type CandidateArtifactRequest struct {
 }
 
 type CandidateArtifactSet struct {
+	Artifact                 ProjectArtifactProvenance
 	AuthorizationFingerprint string
 	Workspaces               []CandidateArtifactWorkspace
 }
 
 type CandidateArtifactPreparer interface {
 	PrepareCandidateArtifacts(context.Context, CandidateArtifactRequest) (CandidateArtifactSet, error)
+	RetainCandidateProvenance(
+		context.Context,
+		string,
+		Provenance,
+	) (Provenance, error)
+	CandidateProvenance(
+		context.Context,
+		string,
+		string,
+		int64,
+	) (Provenance, error)
 }

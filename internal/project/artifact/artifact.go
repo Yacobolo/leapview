@@ -16,7 +16,10 @@ import (
 	"github.com/flidai/leapview/internal/workspace"
 )
 
-const Version = 2
+const (
+	Version         = 2
+	CompilerVersion = "leapview-project-compiler:v2"
+)
 
 type UnsupportedVersionError struct {
 	Version int

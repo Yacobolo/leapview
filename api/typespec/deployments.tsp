@@ -61,6 +61,7 @@ model CandidateResponse {
   ownerId: string;
   baseGeneration: string;
   artifactDigest: string;
+  provenanceDigest?: string;
   status: CandidateStatus;
   failureReason?: string;
   previewUrl: url;

@@ -9658,6 +9658,7 @@ paths:
                 ownerId: example
                 previewUrl: example
                 projectId: example
+                provenanceDigest: example
                 resumed: true
                 revision: 1
                 status: preparing
@@ -10241,6 +10242,7 @@ paths:
                 ownerId: example
                 previewUrl: example
                 projectId: example
+                provenanceDigest: example
                 resumed: true
                 revision: 1
                 status: preparing
@@ -10528,6 +10530,7 @@ paths:
                 ownerId: example
                 previewUrl: example
                 projectId: example
+                provenanceDigest: example
                 resumed: true
                 revision: 1
                 status: preparing
@@ -10815,6 +10818,7 @@ paths:
                 ownerId: example
                 previewUrl: example
                 projectId: example
+                provenanceDigest: example
                 resumed: true
                 revision: 1
                 status: preparing
@@ -11111,6 +11115,7 @@ paths:
                 ownerId: example
                 previewUrl: example
                 projectId: example
+                provenanceDigest: example
                 resumed: true
                 revision: 1
                 status: preparing
@@ -11398,6 +11403,7 @@ paths:
                 ownerId: example
                 previewUrl: example
                 projectId: example
+                provenanceDigest: example
                 resumed: true
                 revision: 1
                 status: preparing
@@ -47030,6 +47036,9 @@ components:
         artifactDigest:
           type: string
           example: example
+        provenanceDigest:
+          type: string
+          example: example
         status:
           $ref: '#/components/schemas/CandidateStatus'
         failureReason:
@@ -47068,6 +47077,7 @@ components:
         ownerId: example
         previewUrl: example
         projectId: example
+        provenanceDigest: example
         resumed: true
         revision: 1
         status: preparing
