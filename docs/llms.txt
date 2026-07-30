@@ -44,6 +44,7 @@ Focused slices are available at `/docs/agent-tools/tools/{name}.json|md`, `/docs
 - [Filters and interactions](/docs/guides/build/filters-interactions): Configure filter cards and cross-visual selections.
 - [Tables, matrices, and pivots](/docs/guides/build/tables): Choose and configure tabular BI surfaces.
 - [Dashboard authoring patterns](/docs/guides/build/patterns): Apply maintainable modeling and presentation conventions.
+- [Visual calculations](/docs/guides/build/visual-calculations): Add governed post-aggregation analysis to one compiled result frame.
 
 ### Manage data
 

@@ -791,25 +791,28 @@ test('chart documentation renders every executable variation from its YAML', asy
     expect(referenceColors.interactive).not.toBe(referenceColors.article)
     expect(await page.getByRole('heading', { name: 'Basic' }).isVisible()).toBe(true)
     expect(await page.getByRole('heading', { name: 'Multiple series' }).isVisible()).toBe(true)
+    expect(await page.getByRole('heading', { name: 'Visual calculation' }).isVisible()).toBe(true)
     expect(await page.getByRole('heading', { name: 'Stepped line' }).isVisible()).toBe(true)
     await page.waitForFunction(() => {
       const examples = [...document.querySelectorAll('lv-site-visual-example')] as Array<HTMLElement & { shadowRoot: ShadowRoot }>
-      return examples.length === 4 && examples.every((example) => {
+      return examples.length === 5 && examples.every((example) => {
         const host = example.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & { envelope?: { dataState?: { datasets?: Array<{ rows?: unknown[] }> } } }
         return Boolean(host?.envelope?.dataState?.datasets?.some((dataset) => dataset.rows?.length))
       })
     })
-    expect(await page.locator('lv-site-visual-example').count()).toBe(4)
+    expect(await page.locator('lv-site-visual-example').count()).toBe(5)
     expect(await page.locator('lv-site-visual-example').nth(0).getAttribute('example-id')).toBe('revenue_line')
-    expect(await page.locator('lv-site-visual-example').nth(2).getAttribute('example-id')).toBe('revenue_line_step')
-    expect(await page.locator('lv-site-visual-example').nth(3).getAttribute('example-id')).toBe('revenue_line_context')
+    expect(await page.locator('lv-site-visual-example').nth(2).getAttribute('example-id')).toBe('revenue_line_running')
+    expect(await page.locator('lv-site-visual-example').nth(3).getAttribute('example-id')).toBe('revenue_line_step')
+    expect(await page.locator('lv-site-visual-example').nth(4).getAttribute('example-id')).toBe('revenue_line_context')
     const configurations = await page.locator('.site-docs-article pre code').allTextContents()
     expect(configurations.some((source) => source.includes('visuals:\n  revenue_line:'))).toBe(true)
     expect(configurations.every((source) => !source.includes('shape:'))).toBe(true)
     expect(configurations.some((source) => source.includes('step: true'))).toBe(true)
     const keyFields = await page.locator('.site-visual-key-fields').allTextContents()
-    expect(keyFields).toHaveLength(4)
-    expect(keyFields[2]).toContain('presentation.step')
+    expect(keyFields).toHaveLength(5)
+    expect(keyFields[2]).toContain('calculations')
+    expect(keyFields[3]).toContain('presentation.step')
     await page.waitForFunction(() => document.querySelectorAll('lv-code-block[data-visual-example="revenue_line_step"] .code-block-highlighted-line').length === 3)
     const steppedConfiguration = page.locator('lv-code-block[data-visual-example="revenue_line_step"]')
     expect(await steppedConfiguration.getAttribute('data-highlighted-fields')).toBe('presentation.data_zoom,presentation.show_symbols,presentation.step')
@@ -831,7 +834,7 @@ test('chart documentation renders every executable variation from its YAML', asy
     expect(await steppedConfiguration.locator('.code-block-focused-line').allTextContents()).toEqual(['      step: true'])
     await stepField.blur()
     await page.waitForFunction(() => document.querySelectorAll('lv-code-block[data-visual-example="revenue_line_step"] .code-block-focused-line').length === 0)
-    const stepped = await page.locator('lv-site-visual-example').nth(2).evaluate((element) => {
+    const stepped = await page.locator('lv-site-visual-example').nth(3).evaluate((element) => {
       const host = element.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & { envelope?: { spec?: { presentation?: Record<string, unknown> } } }
       return host?.envelope?.spec?.presentation?.step
     })
@@ -943,7 +946,7 @@ test('every visual documentation page mounts its generated production payloads',
   try {
     for (const visualType of visualTypes) {
       await page.goto(`${baseURL}/docs/visuals/${visualType}`)
-      const expected = visualType === 'map' ? 6 : visualType === 'line' ? 4 : visualType === 'candlestick' ? 2 : visualType === 'kpi' ? 6 : ['custom', 'table', 'matrix', 'pivot'].includes(visualType) ? 1 : 3
+      const expected = visualType === 'map' ? 6 : visualType === 'line' ? 5 : visualType === 'candlestick' ? 2 : visualType === 'kpi' ? 6 : ['custom', 'table', 'matrix', 'pivot'].includes(visualType) ? 1 : 3
       await page.waitForFunction(
         ({ count }) => {
           const examples = [...document.querySelectorAll('lv-site-visual-example')]

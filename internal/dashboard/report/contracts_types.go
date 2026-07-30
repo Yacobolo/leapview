@@ -44,7 +44,7 @@ func (v *AuthoringVisualization) UnmarshalYAML(value *yaml.Node) error {
 	case "table", "matrix", "pivot":
 		if err := rejectUnknownVisualizationFields(value, map[string]struct{}{
 			"type": {}, "title": {}, "description": {}, "cardinality": {}, "query": {}, "default_sort": {},
-			"presentation": {}, "columns": {}, "interaction": {}, "measure_formatting": {}, "conditional_formatting": {},
+			"presentation": {}, "columns": {}, "interaction": {}, "measure_formatting": {}, "conditional_formatting": {}, "calculations": {},
 		}); err != nil {
 			return err
 		}
@@ -56,7 +56,7 @@ func (v *AuthoringVisualization) UnmarshalYAML(value *yaml.Node) error {
 	default:
 		if err := rejectUnknownVisualizationFields(value, map[string]struct{}{
 			"type": {}, "title": {}, "subtitle": {}, "description": {}, "query": {}, "datasets": {}, "metadata": {},
-			"presentation": {}, "accessibility": {}, "data_budget": {}, "interaction": {}, "geo": {}, "kpi": {}, "point": {}, "custom": {},
+			"presentation": {}, "accessibility": {}, "data_budget": {}, "interaction": {}, "geo": {}, "kpi": {}, "point": {}, "custom": {}, "calculations": {},
 		}); err != nil {
 			return err
 		}
@@ -133,6 +133,36 @@ type Visual struct {
 	Point         VisualPoint            `yaml:"point" json:"point"`
 	Custom        VisualCustom           `yaml:"custom" json:"custom"`
 	Interaction   Interaction            `yaml:"interaction"`
+	Calculations  []VisualCalculation    `yaml:"calculations" json:"calculations,omitempty"`
+}
+
+// VisualCalculation is a closed post-aggregation authoring template. Fields
+// address compiled result-frame aliases, never semantic-model expressions.
+type VisualCalculation struct {
+	ID          string                   `yaml:"id" json:"id"`
+	Label       string                   `yaml:"label" json:"label,omitempty"`
+	Template    string                   `yaml:"template" json:"template"`
+	Source      string                   `yaml:"source" json:"source"`
+	Axis        string                   `yaml:"axis" json:"axis,omitempty"`
+	OrderBy     []VisualCalculationOrder `yaml:"order_by" json:"orderBy,omitempty"`
+	PartitionBy []string                 `yaml:"partition_by" json:"partitionBy,omitempty"`
+	Reset       string                   `yaml:"reset" json:"reset,omitempty"`
+	Window      int                      `yaml:"window" json:"window,omitempty"`
+	Offset      int                      `yaml:"offset" json:"offset,omitempty"`
+	Parent      string                   `yaml:"parent" json:"parent,omitempty"`
+	Lookup      *VisualCalculationLookup `yaml:"lookup" json:"lookup,omitempty"`
+	Hidden      bool                     `yaml:"hidden" json:"hidden,omitempty"`
+	Format      string                   `yaml:"format" json:"format,omitempty"`
+}
+
+type VisualCalculationOrder struct {
+	Field     string `yaml:"field" json:"field"`
+	Direction string `yaml:"direction" json:"direction,omitempty"`
+}
+
+type VisualCalculationLookup struct {
+	Field string `yaml:"field" json:"field"`
+	Value string `yaml:"value" json:"value"`
 }
 
 // VisualPoint binds a point mark to compiler-owned query aliases. Identity is
@@ -807,6 +837,7 @@ type TableVisual struct {
 	Measures              []string                                   `yaml:"-"`
 	MeasureFormatting     map[string][]dashboard.TableFormattingRule `yaml:"measure_formatting"`
 	ConditionalFormatting []VisualConditionalFormat                  `yaml:"conditional_formatting"`
+	Calculations          []VisualCalculation                        `yaml:"calculations"`
 	DataColumns           []FieldRef                                 `yaml:"-"`
 	ColumnDims            []string                                   `yaml:"-"`
 }

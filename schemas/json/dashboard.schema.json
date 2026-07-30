@@ -3357,6 +3357,160 @@
         }
       ]
     },
+    "#VisualCalculation": {
+      "additionalProperties": false,
+      "properties": {
+        "axis": {
+          "enum": [
+            "rows",
+            "columns",
+            "hierarchy",
+            "facets"
+          ]
+        },
+        "format": {
+          "enum": [
+            "number",
+            "decimal",
+            "integer",
+            "percent",
+            "compact",
+            "currency"
+          ]
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "id": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "type": "string"
+        },
+        "label": {
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "lookup": {
+          "$ref": "#/$defs/%23VisualCalculationLookup"
+        },
+        "offset": {
+          "allOf": [
+            {
+              "type": "number"
+            },
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            }
+          ]
+        },
+        "order_by": {
+          "items": {
+            "$ref": "#/$defs/%23VisualCalculationOrder"
+          },
+          "type": "array"
+        },
+        "parent": {
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "partition_by": {
+          "items": {
+            "not": {
+              "const": ""
+            },
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "reset": {
+          "enum": [
+            "none",
+            "highest_parent",
+            "lowest_parent"
+          ]
+        },
+        "source": {
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "template": {
+          "enum": [
+            "running_total",
+            "moving_average",
+            "difference",
+            "percentage_difference",
+            "percent_of_parent",
+            "percent_of_grand_total",
+            "rank",
+            "cumulative_contribution",
+            "lookup"
+          ]
+        },
+        "window": {
+          "allOf": [
+            {
+              "type": "number"
+            },
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "source",
+        "template"
+      ],
+      "type": "object"
+    },
+    "#VisualCalculationLookup": {
+      "additionalProperties": false,
+      "properties": {
+        "field": {
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "value"
+      ],
+      "type": "object"
+    },
+    "#VisualCalculationOrder": {
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        },
+        "field": {
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        }
+      },
+      "required": [
+        "field"
+      ],
+      "type": "object"
+    },
     "#VisualCommon": {
       "additionalProperties": false,
       "properties": {
@@ -3377,6 +3531,12 @@
             }
           },
           "type": "object"
+        },
+        "calculations": {
+          "items": {
+            "$ref": "#/$defs/%23VisualCalculation"
+          },
+          "type": "array"
         },
         "data_budget": {
           "additionalProperties": false,

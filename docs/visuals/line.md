@@ -51,6 +51,37 @@ visuals:
       limit: 60
 ```
 
+## Visual calculation
+
+Use a visual calculation for analysis that belongs only to this result frame, such as a running total. The source and ordering fields are compiler-owned output aliases (`value` and `label` for this line shape), not semantic expressions. LeapView evaluates the closed template on the trusted runtime before the renderer receives the frame.
+
+{{< visual id="revenue_line_running" >}}
+
+```yaml visual-example=revenue_line_running
+visuals:
+  revenue_line_running:
+    title: Revenue and running total
+    type: line
+    calculations:
+      - id: running_revenue
+        label: Running revenue
+        template: running_total
+        source: value
+        order_by:
+          - field: label
+            direction: asc
+        format: currency
+    query:
+      dimensions:
+        purchase_month: orders.purchase_month
+      measures:
+        revenue: null
+      sort:
+        - field: purchase_month
+          direction: asc
+      limit: 30
+```
+
 ## Stepped line
 
 Set `presentation.step: true` for discrete changes between periods, hide point symbols for a quieter trace, and enable `data_zoom` for long ranges.

@@ -83,6 +83,9 @@ func compileAuthoringVisualization(ctx compileContext, authoring reportdef.Autho
 		if err != nil {
 			return visualizationdefinition.Definition{}, err
 		}
+		if err := compileVisualCalculations(spec, authored.Calculations); err != nil {
+			return visualizationdefinition.Definition{}, err
+		}
 		return visualizationdefinition.New(ctx.visualID, spec, binding)
 	}
 	if authoring.Chart == nil {
@@ -106,6 +109,9 @@ func compileAuthoringVisualization(ctx compileContext, authoring reportdef.Autho
 	}
 	binding, err := compileVisualizationQueryBinding(ctx, authored)
 	if err != nil {
+		return visualizationdefinition.Definition{}, err
+	}
+	if err := compileVisualCalculations(spec, authored.Calculations); err != nil {
 		return visualizationdefinition.Definition{}, err
 	}
 	secondary, err := compileSecondaryQueryBindings(ctx, authored)

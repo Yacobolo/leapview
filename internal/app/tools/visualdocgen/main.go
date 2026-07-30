@@ -498,6 +498,7 @@ func buildVisualDocumentReference(examples []visualExample) (visualDocumentRefer
 	shapes := map[string]struct{}{}
 	queryFields := map[string]struct{}{}
 	presentation := map[string]struct{}{}
+	hasCalculations := false
 	reference := visualDocumentReference{Examples: make(map[string]visualExampleReference, len(examples))}
 	var previous *reportdef.Visual
 	for index := range examples {
@@ -509,6 +510,9 @@ func buildVisualDocumentReference(examples []visualExample) (visualDocumentRefer
 		collectQueryFields(visual.Query, queryFields)
 		if len(visual.Datasets) > 0 {
 			queryFields["datasets"] = struct{}{}
+		}
+		if len(visual.Calculations) > 0 {
+			hasCalculations = true
 		}
 		for key := range visualPresentationValues(visual) {
 			presentation[key] = struct{}{}
@@ -527,6 +531,13 @@ func buildVisualDocumentReference(examples []visualExample) (visualDocumentRefer
 	fields, err := visualFieldReferences(reference.QueryFields, reference.Presentation, examples[0].Chart.Type)
 	if err != nil {
 		return visualDocumentReference{}, err
+	}
+	if hasCalculations {
+		fields = append(fields, visualdocs.FieldReference{
+			Path: "calculations", Type: "closed visual calculation list", Default: "none",
+			AllowedValues: []string{"running_total", "moving_average", "difference", "percentage_difference", "percent_of_parent", "percent_of_grand_total", "rank", "cumulative_contribution", "lookup"},
+			Description:   "Evaluates governed post-aggregation templates over compiler-owned result-frame aliases with explicit ordering, partitions, and incomplete-frame diagnostics.",
+		})
 	}
 	reference.Fields = fields
 	reference.Accessibility = visualAccessibilityGuidance(*examples[0].Chart)
@@ -601,6 +612,9 @@ func visualKeyFields(previous *reportdef.Visual, visual reportdef.Visual) []stri
 	}
 	if len(visual.Datasets) > 0 && (previous == nil || !reflect.DeepEqual(previous.Datasets, visual.Datasets)) {
 		fields = append(fields, "datasets")
+	}
+	if len(visual.Calculations) > 0 && (previous == nil || !reflect.DeepEqual(previous.Calculations, visual.Calculations)) {
+		fields = append(fields, "calculations")
 	}
 	kpiValues := visualKPIValues(visual)
 	previousKPIValues := map[string]any{}

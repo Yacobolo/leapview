@@ -341,6 +341,7 @@ tasks:
       - internal/dashboard/**/*.go
       - internal/analytics/**/*.go
       - internal/workspace/compiler/**/*.go
+      - internal/project/compiler/**/*.go
     generates:
       - docs/visuals/examples.gen.json
     cmds:

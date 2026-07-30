@@ -47081,6 +47081,11 @@ components:
               id: example
               label: example
               nullable: true
+              provenance:
+                calculationID: example
+                kind: modeled
+                sourceRefs:
+                  - example
               role: dimension
               sourceRef: example
               time:
@@ -47500,6 +47505,158 @@ components:
         - include
         - exclude
       example: automatic
+    VisualizationCalculation:
+      type: object
+      required:
+        - id
+        - label
+        - dataset
+        - template
+        - source
+        - axis
+        - orderBy
+        - partitionBy
+        - reset
+        - hidden
+      properties:
+        id:
+          type: string
+          example: example
+        label:
+          type: string
+          example: example
+        dataset:
+          type: string
+          example: example
+        template:
+          $ref: '#/components/schemas/VisualizationCalculationTemplate'
+        source:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        axis:
+          $ref: '#/components/schemas/VisualizationCalculationAxis'
+        orderBy:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationCalculationOrder'
+          example:
+            - direction: ascending
+              field:
+                dataset: example
+                field: example
+        partitionBy:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationFieldRef'
+          example:
+            - dataset: example
+              field: example
+        reset:
+          $ref: '#/components/schemas/VisualizationCalculationReset'
+        window:
+          type: integer
+          format: int64
+          example: 1
+        offset:
+          type: integer
+          format: int64
+          example: 1
+        parent:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        lookup:
+          $ref: '#/components/schemas/VisualizationCalculationLookup'
+        hidden:
+          type: boolean
+          example: true
+        format:
+          $ref: '#/components/schemas/VisualizationFormat'
+      example:
+        axis: rows
+        dataset: example
+        hidden: true
+        id: example
+        label: example
+        lookup:
+          field:
+            dataset: example
+            field: example
+          value: example
+        offset: 1
+        orderBy:
+          - direction: ascending
+            field:
+              dataset: example
+              field: example
+        parent:
+          dataset: example
+          field: example
+        partitionBy:
+          - dataset: example
+            field: example
+        reset: none
+        source:
+          dataset: example
+          field: example
+        template: running_total
+        window: 1
+    VisualizationCalculationAxis:
+      type: string
+      enum:
+        - rows
+        - columns
+        - hierarchy
+        - facets
+      example: rows
+    VisualizationCalculationLookup:
+      type: object
+      required:
+        - field
+        - value
+      properties:
+        field:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        value:
+          type: string
+          example: example
+      example:
+        field:
+          dataset: example
+          field: example
+        value: example
+    VisualizationCalculationOrder:
+      type: object
+      required:
+        - field
+        - direction
+      properties:
+        field:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        direction:
+          $ref: '#/components/schemas/VisualizationSortDirection'
+      example:
+        direction: ascending
+        field:
+          dataset: example
+          field: example
+    VisualizationCalculationReset:
+      type: string
+      enum:
+        - none
+        - highest_parent
+        - lowest_parent
+      example: none
+    VisualizationCalculationTemplate:
+      type: string
+      enum:
+        - running_total
+        - moving_average
+        - difference
+        - percentage_difference
+        - percent_of_parent
+        - percent_of_grand_total
+        - rank
+        - cumulative_contribution
+        - lookup
+      example: running_total
     VisualizationCapabilities:
       type: object
       required:
@@ -47874,6 +48031,11 @@ components:
               id: example
               label: example
               nullable: true
+              provenance:
+                calculationID: example
+                kind: modeled
+                sourceRefs:
+                  - example
               role: dimension
               sourceRef: example
               time:
@@ -47898,6 +48060,11 @@ components:
             id: example
             label: example
             nullable: true
+            provenance:
+              calculationID: example
+              kind: modeled
+              sourceRefs:
+                - example
             role: dimension
             sourceRef: example
             time:
@@ -48173,6 +48340,8 @@ components:
           $ref: '#/components/schemas/VisualizationGeographicMetadata'
         grid:
           $ref: '#/components/schemas/VisualizationGridFieldMetadata'
+        provenance:
+          $ref: '#/components/schemas/VisualizationFieldProvenance'
       example:
         dataType: string
         geographic:
@@ -48188,6 +48357,11 @@ components:
         id: example
         label: example
         nullable: true
+        provenance:
+          calculationID: example
+          kind: modeled
+          sourceRefs:
+            - example
         role: dimension
         sourceRef: example
         time:
@@ -48196,6 +48370,35 @@ components:
           meaning: instant
           timezone: example
           weekStart: monday
+    VisualizationFieldProvenance:
+      type: object
+      required:
+        - kind
+        - sourceRefs
+      properties:
+        kind:
+          $ref: '#/components/schemas/VisualizationFieldProvenanceKind'
+        sourceRefs:
+          type: array
+          items:
+            type: string
+          example:
+            - example
+        calculationID:
+          type: string
+          example: example
+      example:
+        calculationID: example
+        kind: modeled
+        sourceRefs:
+          - example
+    VisualizationFieldProvenanceKind:
+      type: string
+      enum:
+        - modeled
+        - aggregated
+        - visual_calculation
+      example: modeled
     VisualizationFieldRef:
       type: object
       required:
@@ -49988,6 +50191,11 @@ components:
                   id: example
                   label: example
                   nullable: true
+                  provenance:
+                    calculationID: example
+                    kind: modeled
+                    sourceRefs:
+                      - example
                   role: dimension
                   sourceRef: example
                   time:
@@ -50034,12 +50242,74 @@ components:
               target: mark_fill
         metadataBindings:
           $ref: '#/components/schemas/VisualizationMetadataBindings'
+        calculations:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationCalculation'
+          example:
+            - axis: rows
+              dataset: example
+              hidden: true
+              id: example
+              label: example
+              lookup:
+                field:
+                  dataset: example
+                  field: example
+                value: example
+              offset: 1
+              orderBy:
+                - direction: ascending
+                  field:
+                    dataset: example
+                    field: example
+              parent:
+                dataset: example
+                field: example
+              partitionBy:
+                - dataset: example
+                  field: example
+              reset: none
+              source:
+                dataset: example
+                field: example
+              template: running_total
+              window: 1
       example:
         accessibility:
           announceChanges: true
           description: example
           summary: example
           title: example
+        calculations:
+          - axis: rows
+            dataset: example
+            hidden: true
+            id: example
+            label: example
+            lookup:
+              field:
+                dataset: example
+                field: example
+              value: example
+            offset: 1
+            orderBy:
+              - direction: ascending
+                field:
+                  dataset: example
+                  field: example
+            parent:
+              dataset: example
+              field: example
+            partitionBy:
+              - dataset: example
+                field: example
+            reset: none
+            source:
+              dataset: example
+              field: example
+            template: running_total
+            window: 1
         conditionalFormatting:
           - field:
               dataset: example
@@ -50065,6 +50335,11 @@ components:
                 id: example
                 label: example
                 nullable: true
+                provenance:
+                  calculationID: example
+                  kind: modeled
+                  sourceRefs:
+                    - example
                 role: dimension
                 sourceRef: example
                 time:
@@ -50428,6 +50703,11 @@ components:
               id: example
               label: example
               nullable: true
+              provenance:
+                calculationID: example
+                kind: modeled
+                sourceRefs:
+                  - example
               role: dimension
               sourceRef: example
               time:
