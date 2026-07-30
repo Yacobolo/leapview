@@ -27,9 +27,9 @@ visuals:
       limit: 10
 ```
 
-## Alternate measure
+## Delivery SLA distribution
 
-Keep the bar contract and replace the dimension with delivery buckets to compare counts across an ordered operational grouping.
+Use ordered delivery buckets and order volume to reveal how much demand lands inside each delivery-speed band.
 
 {{< visual id="delivery" >}}
 

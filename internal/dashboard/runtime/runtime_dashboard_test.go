@@ -818,7 +818,7 @@ relogios_presentes,watches_gifts
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertVisualKeys(t, funnelPatch, []string{"delivery_funnel", "status_funnel", "status_funnel_left"})
+	assertVisualKeys(t, funnelPatch, []string{"revenue_funnel", "status_funnel", "status_funnel_left"})
 
 	pieFilters := compiledFiltersForTest(t, metrics, "executive-sales", "chart-pie", map[string]dashboardfilter.Expression{
 		"category": comparisonExpression(dashboardfilter.OperatorContains, "health"),

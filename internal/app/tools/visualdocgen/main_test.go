@@ -108,6 +108,13 @@ func TestGenerateVisualExamplesExecutesEveryDocumentedQuery(t *testing.T) {
 			if visualizationEnvelopeRowCount(example) == 0 {
 				t.Fatalf("%s/%s has no query data", slug, example.VisualID)
 			}
+			base, err := visualizationir.SpecificationBase(example.Spec)
+			if err != nil {
+				t.Fatalf("%s/%s specification base: %v", slug, example.VisualID, err)
+			}
+			if len(base.Interactions) != 0 {
+				t.Fatalf("%s/%s has %d runtime interactions; visual documentation previews must be render-only", slug, example.VisualID, len(base.Interactions))
+			}
 		}
 	}
 	if got, want := count, 76; got != want {
@@ -124,6 +131,126 @@ func TestGenerateVisualExamplesExecutesEveryDocumentedQuery(t *testing.T) {
 	stepSpec, ok := line[2].Spec.Value.(*visualizationir.CartesianVisualizationSpec)
 	if !ok || !stepSpec.Presentation.Step {
 		t.Fatalf("stepped line presentation was not compiled: %#v", line[2].Spec.Value)
+	}
+	barRows := envelopeRows(artifact.Documents["visuals/bar"][0])
+	for index := 1; index < len(barRows); index++ {
+		previous, previousOK := barRows[index-1]["value"].(float64)
+		current, currentOK := barRows[index]["value"].(float64)
+		if !previousOK || !currentOK {
+			t.Fatalf("ranked bar values are not numeric: %#v", barRows)
+		}
+		if previous < current {
+			t.Fatalf("ranked bar query order was not preserved at row %d: %#v", index, barRows)
+		}
+	}
+	histogramRows := envelopeRows(artifact.Documents["visuals/histogram"][0])
+	for index := 1; index < len(histogramRows); index++ {
+		previous, previousOK := histogramRows[index-1]["binStart"].(float64)
+		current, currentOK := histogramRows[index]["binStart"].(float64)
+		if !previousOK || !currentOK {
+			t.Fatalf("histogram bin starts are not numeric: %#v", histogramRows)
+		}
+		if previous > current {
+			t.Fatalf("histogram numeric order was not preserved at row %d: %#v", index, histogramRows)
+		}
+	}
+	donut := artifact.Documents["visuals/donut"]
+	basicDonut, ok := donut[0].Spec.Value.(*visualizationir.ProportionalVisualizationSpec)
+	if !ok {
+		t.Fatalf("basic donut spec = %#v", donut[0].Spec.Value)
+	}
+	revenueDonut, ok := donut[1].Spec.Value.(*visualizationir.ProportionalVisualizationSpec)
+	if !ok {
+		t.Fatalf("revenue donut spec = %#v", donut[1].Spec.Value)
+	}
+	if got, want := visualFieldSourceRef(basicDonut.VisualizationSpecBase, basicDonut.Value), "order_count"; got != want {
+		t.Fatalf("basic donut value source = %q, want %q", got, want)
+	}
+	if got, want := visualFieldSourceRef(revenueDonut.VisualizationSpecBase, revenueDonut.Value), "revenue"; got != want {
+		t.Fatalf("revenue donut value source = %q, want %q", got, want)
+	}
+	if !revenueDonut.Presentation.ShowLabels {
+		t.Fatal("revenue donut must expose its distinct currency measure with labels")
+	}
+	scatter := artifact.Documents["visuals/scatter"]
+	basicScatter, ok := scatter[0].Spec.Value.(*visualizationir.CartesianVisualizationSpec)
+	if !ok {
+		t.Fatalf("basic scatter spec = %#v", scatter[0].Spec.Value)
+	}
+	if got, want := visualFieldSourceRef(basicScatter.VisualizationSpecBase, basicScatter.X), "orders.delivery_bucket"; got != want {
+		t.Fatalf("basic scatter x source = %q, want %q", got, want)
+	}
+	if got, want := visualFieldSourceRef(basicScatter.VisualizationSpecBase, basicScatter.Y[0]), "review_score"; got != want {
+		t.Fatalf("basic scatter y source = %q, want %q", got, want)
+	}
+	scatterRows := envelopeRows(scatter[0])
+	for index := 1; index < len(scatterRows); index++ {
+		previous, previousOK := documentationNumber(scatterRows[index-1]["value"])
+		current, currentOK := documentationNumber(scatterRows[index]["value"])
+		if !previousOK || !currentOK || previous < current {
+			t.Fatalf("basic scatter must rank delivery bands by review score: %#v", scatterRows)
+		}
+	}
+	funnelRows := envelopeRows(artifact.Documents["visuals/funnel"][0])
+	wantStages := []string{"Order placed", "Payment confirmed", "Shipped", "Delivered"}
+	for index, want := range wantStages {
+		if index >= len(funnelRows) || funnelRows[index]["label"] != want {
+			t.Fatalf("funnel stages = %#v, want %q at row %d", funnelRows, want, index)
+		}
+		if index > 0 {
+			previous, previousOK := documentationNumber(funnelRows[index-1]["value"])
+			current, currentOK := documentationNumber(funnelRows[index]["value"])
+			if !previousOK || !currentOK || previous <= current {
+				t.Fatalf("funnel values must strictly decrease by stage: %#v", funnelRows)
+			}
+		}
+	}
+	areaRows := envelopeRows(artifact.Documents["visuals/area"][1])
+	quarterSeries := map[any]map[any]struct{}{}
+	for _, row := range areaRows {
+		if quarterSeries[row["label"]] == nil {
+			quarterSeries[row["label"]] = map[any]struct{}{}
+		}
+		quarterSeries[row["label"]][row["series"]] = struct{}{}
+	}
+	if len(quarterSeries) != 4 {
+		t.Fatalf("stacked area quarters = %#v, want four complete quarters", quarterSeries)
+	}
+	for quarter, series := range quarterSeries {
+		if len(series) != 4 {
+			t.Fatalf("stacked area quarter %v has %d series, want 4: %#v", quarter, len(series), areaRows)
+		}
+	}
+	treeRows := envelopeRows(artifact.Documents["visuals/tree"][0])
+	roots := 0
+	children := 0
+	for _, row := range treeRows {
+		if row["parent"] == nil {
+			roots++
+		} else {
+			children++
+		}
+	}
+	if roots < 3 || roots > 8 || children < roots {
+		t.Fatalf("basic tree must be a compact branching hierarchy, got roots=%d children=%d rows=%#v", roots, children, treeRows)
+	}
+	basicTree, ok := artifact.Documents["visuals/tree"][0].Spec.Value.(*visualizationir.HierarchyVisualizationSpec)
+	if !ok || !basicTree.Presentation.ShowLabels {
+		t.Fatalf("basic tree must label its category and status nodes: %#v", artifact.Documents["visuals/tree"][0].Spec.Value)
+	}
+	deepTree, ok := artifact.Documents["visuals/tree"][2].Spec.Value.(*visualizationir.HierarchyVisualizationSpec)
+	if !ok || deepTree.Presentation.InitialDepth == nil || *deepTree.Presentation.InitialDepth != 0 {
+		t.Fatalf("three-level tree must start at category depth and expand on demand: %#v", artifact.Documents["visuals/tree"][2].Spec.Value)
+	}
+	for _, example := range artifact.Documents["visuals/sankey"] {
+		spec, ok := example.Spec.Value.(*visualizationir.HierarchyVisualizationSpec)
+		if !ok || !spec.Presentation.ShowLabels {
+			t.Fatalf("sankey example %q must label both sides of its flow: %#v", example.VisualID, example.Spec.Value)
+		}
+	}
+	mapExamples := artifact.Documents["visuals/map"]
+	if got, want := len(mapExamples), 6; got != want {
+		t.Fatalf("map examples = %d, want %d render-only layer examples", got, want)
 	}
 	first, err := json.Marshal(artifact)
 	if err != nil {
@@ -365,7 +492,11 @@ func TestVisualDocumentationUsesPatternHeadingsAndSpecificGuidance(t *testing.T)
 		headings := map[string]struct{}{}
 		for _, line := range strings.Split(source, "\n") {
 			if strings.HasPrefix(line, "## ") {
-				headings[strings.TrimPrefix(line, "## ")] = struct{}{}
+				heading := strings.TrimPrefix(line, "## ")
+				headings[heading] = struct{}{}
+				if strings.HasPrefix(strings.ToLower(heading), "alternate") {
+					t.Errorf("%s uses generic variation heading %q", file, heading)
+				}
 			}
 		}
 		for _, title := range regexp.MustCompile(`(?m)^    title: (.+)$`).FindAllStringSubmatch(source, -1) {
@@ -373,6 +504,33 @@ func TestVisualDocumentationUsesPatternHeadingsAndSpecificGuidance(t *testing.T)
 				t.Errorf("%s repeats rendered visual title %q as a variation heading", file, title[1])
 			}
 		}
+	}
+}
+
+func visualFieldSourceRef(spec visualizationir.VisualizationSpecBase, ref visualizationir.VisualizationFieldRef) string {
+	for _, dataset := range spec.Datasets {
+		if dataset.ID != ref.Dataset {
+			continue
+		}
+		for _, field := range dataset.Fields {
+			if field.ID == ref.Field && field.SourceRef != nil {
+				return *field.SourceRef
+			}
+		}
+	}
+	return ""
+}
+
+func documentationNumber(value any) (float64, bool) {
+	switch typed := value.(type) {
+	case int:
+		return float64(typed), true
+	case int64:
+		return float64(typed), true
+	case float64:
+		return typed, true
+	default:
+		return 0, false
 	}
 }
 

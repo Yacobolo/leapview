@@ -28,9 +28,9 @@ visuals:
       limit: 40
 ```
 
-## Alternate relationships
+## Category-to-status network
 
-Replace the source dimension with category to inspect a different relationship while retaining the same weighted graph shape.
+Connect product categories to order outcomes to reveal which category and status combinations carry the most volume.
 
 {{< visual id="category_status_graph" >}}
 

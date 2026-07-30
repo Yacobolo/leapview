@@ -28,6 +28,10 @@ spec:
       label: Purchase month
       description: Calendar month when the order was purchased.
       type: string
+    purchase_quarter:
+      label: Purchase quarter
+      description: Calendar quarter when the order was purchased.
+      type: string
     purchase_timestamp:
       label: Purchase timestamp
       description: Timestamp when the customer placed the order.
@@ -90,6 +94,8 @@ spec:
         o.customer_id,
         CAST(o.order_purchase_timestamp AS TIMESTAMP) AS purchase_timestamp,
         strftime(CAST(o.order_purchase_timestamp AS TIMESTAMP), '%Y-%m') AS purchase_month,
+        strftime(CAST(o.order_purchase_timestamp AS TIMESTAMP), '%Y') || '-Q' ||
+          CAST(((CAST(strftime(CAST(o.order_purchase_timestamp AS TIMESTAMP), '%m') AS INTEGER) - 1) // 3) + 1 AS VARCHAR) AS purchase_quarter,
         CAST(o.order_purchase_timestamp AS DATE) AS purchase_date,
         o.order_status AS status,
         COALESCE(category.category, 'uncategorized') AS category,

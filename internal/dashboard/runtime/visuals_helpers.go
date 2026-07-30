@@ -144,29 +144,58 @@ func displayField(field string) string {
 }
 
 func visualSorts(visual visualPlan) []reportdef.QuerySort {
+	sorts := make([]reportdef.QuerySort, 0, len(visual.Sort)+len(visual.Dimensions)+1)
 	if len(visual.Sort) == 0 {
-		return []reportdef.QuerySort{{Field: defaultSortColumn(visual), Direction: "asc"}}
-	}
-	sorts := make([]reportdef.QuerySort, 0, len(visual.Sort))
-	for _, sort := range visual.Sort {
-		field := sort.FieldID
-		if field == "" {
-			field = defaultSortColumn(visual)
-		}
-		if field != "value" && field != "series" {
-			for index, dimension := range visual.Dimensions {
-				if field == dimension.FieldID || field == dimension.Alias || field == displayField(dimension.FieldID) {
-					field = dimensionSortColumn(visual.ResultShape(), index)
-					break
+		sorts = append(sorts, reportdef.QuerySort{Field: defaultSortColumn(visual), Direction: "asc"})
+	} else {
+		for _, sort := range visual.Sort {
+			field := sort.FieldID
+			if field == "" {
+				field = defaultSortColumn(visual)
+			}
+			if field != "value" && field != "series" {
+				for index, dimension := range visual.Dimensions {
+					if field == dimension.FieldID || field == dimension.Alias || field == displayField(dimension.FieldID) {
+						field = visualDimensionSortColumn(visual, index)
+						break
+					}
+				}
+				if visual.Series != nil && (field == visual.Series.FieldID || field == visual.Series.Alias || field == displayField(visual.Series.FieldID)) {
+					field = "series"
 				}
 			}
-			if visual.Series != nil && (field == visual.Series.FieldID || field == visual.Series.Alias || field == displayField(visual.Series.FieldID)) {
-				field = "series"
-			}
+			sorts = append(sorts, reportdef.QuerySort{Field: field, Direction: sort.Direction})
 		}
-		sorts = append(sorts, reportdef.QuerySort{Field: field, Direction: sort.Direction})
+	}
+	for index := range visual.Dimensions {
+		sorts = appendSortUnlessPresent(sorts, visualDimensionSortColumn(visual, index))
+	}
+	if visual.Series != nil {
+		sorts = appendSortUnlessPresent(sorts, "series")
 	}
 	return sorts
+}
+
+func visualDimensionSortColumn(visual visualPlan, index int) string {
+	if index < 0 || index >= len(visual.Dimensions) {
+		return ""
+	}
+	if visual.ResultShape() == visualizationdefinition.ResultHierarchyNodes {
+		return visual.Dimensions[index].Alias
+	}
+	return dimensionSortColumn(visual.ResultShape(), index)
+}
+
+func appendSortUnlessPresent(sorts []reportdef.QuerySort, field string) []reportdef.QuerySort {
+	if field == "" {
+		return sorts
+	}
+	for _, sort := range sorts {
+		if sort.Field == field {
+			return sorts
+		}
+	}
+	return append(sorts, reportdef.QuerySort{Field: field, Direction: "asc"})
 }
 
 func measureLabel(name string, measure semanticmodel.MetricMeasure) string {

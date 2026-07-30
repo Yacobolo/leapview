@@ -1,6 +1,6 @@
 import type { VisualizationEnvelope } from '../../../../../generated/visualization'
 import type { RendererContext } from '../../host-controller'
-import { axis, field, fieldLabel, labelFormatter, legend, selectedDatasetSource, type EChartsTranslation } from './common'
+import { axis, field, fieldLabel, inlineDataset, labelFormatter, legend, selectedDatasetSource, type EChartsTranslation } from './common'
 
 type CartesianSpec = Extract<VisualizationEnvelope['spec'], { kind: 'cartesian' }>
 
@@ -34,17 +34,20 @@ export function cartesianOption(envelope: VisualizationEnvelope, context: Render
     }
   }
   if (spec.mark === 'heatmap' && spec.y.length >= 2) {
+    const extent = heatmapExtent(envelope, spec.y[1]!)
     return {
       xAxis: axis(envelope, spec.x, 'category', context), yAxis: axis(envelope, spec.y[0]!, 'category', context),
-      visualMap: { min: 0, calculable: true, orient: 'horizontal', left: 'center', bottom: 0, textStyle: { color: context.colors.muted } },
+      visualMap: { ...extent, calculable: true, orient: 'horizontal', left: 'center', bottom: 0, textStyle: { color: context.colors.muted } },
       series: [{ id: 'series:primary:heatmap', type: 'heatmap', encode: { x: spec.x.field, y: spec.y[0]?.field, value: spec.y[1]?.field }, label: chartLabel(envelope, spec.y[1], spec, context) }],
     }
   }
   const split = splitCartesianSeries(envelope, context)
   if (split) {
     const secondary = split.series.some((item) => item.yAxisIndex === 1)
+    const splitXAxis = axis(envelope, spec.x, axisType(envelope, spec.x, 'category'), context)
+    if (splitXAxis.type === 'category') splitXAxis.data = split.categories
     return {
-      dataset: split.datasets, legend: legend(spec.presentation.legend, context), xAxis: axis(envelope, spec.x, axisType(envelope, spec.x, 'category'), context),
+      dataset: split.datasets, legend: legend(spec.presentation.legend, context), xAxis: splitXAxis,
       yAxis: secondary ? [axis(envelope, spec.y[0]!, 'value', context), axis(envelope, spec.y[0]!, 'value', context)] : axis(envelope, spec.y[0]!, 'value', context),
       dataZoom, series: [...split.series, ...interactionHitSeries(envelope, spec, split.series)],
     }
@@ -52,7 +55,8 @@ export function cartesianOption(envelope: VisualizationEnvelope, context: Render
   const series = spec.y.map((value) => ({
     id: seriesID(value.dataset, value.field), type: cartesianSeriesType(spec.mark), name: fieldLabel(envelope, value),
     encode: horizontal ? { x: value.field, y: spec.x.field } : { x: spec.x.field, y: value.field },
-    smooth: spec.presentation.smooth, symbol: spec.presentation.showSymbols ? undefined : 'none', symbolSize: spec.presentation.symbolSize,
+    smooth: spec.presentation.smooth, symbol: spec.presentation.showSymbols ? undefined : 'none',
+    ...(spec.presentation.symbolSize === undefined ? {} : { symbolSize: spec.presentation.symbolSize }),
     stack: spec.presentation.stacked ? 'total' : undefined, areaStyle: spec.presentation.area || spec.mark === 'area' ? {} : undefined,
     step: spec.presentation.step ? 'middle' : false, label: chartLabel(envelope, value, spec, context),
   }))
@@ -91,34 +95,52 @@ function chartLabel(envelope: VisualizationEnvelope, value: CartesianSpec['y'][n
   return { show: spec.presentation.showLabels, position, formatter: labelFormatter(envelope, value, context) }
 }
 
-function splitCartesianSeries(envelope: VisualizationEnvelope, context: RendererContext): { datasets: EChartsTranslation[]; series: EChartsTranslation[] } | undefined {
+function splitCartesianSeries(envelope: VisualizationEnvelope, context: RendererContext): { categories: unknown[]; datasets: EChartsTranslation[]; series: EChartsTranslation[] } | undefined {
   const spec = envelope.spec
   if (spec.kind !== 'cartesian' || !spec.series || spec.y.length !== 1 || envelope.dataState.kind !== 'inline') return undefined
   const dataset = envelope.dataState.datasets.find((candidate) => candidate.id === spec.series?.dataset)
   const seriesIndex = dataset?.columns.indexOf(spec.series.field) ?? -1
-  if (!dataset || seriesIndex < 0) return undefined
+  const categoryIndex = dataset?.columns.indexOf(spec.x.field) ?? -1
+  if (!dataset || seriesIndex < 0 || categoryIndex < 0) return undefined
   const available = [...new Set(dataset.rows.map((row) => row[seriesIndex]).filter((value): value is string | number | boolean => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'))]
+  const categories = [...new Set(dataset.rows.map((row) => row[categoryIndex]))]
   const configured = new Map((spec.presentation.comboSeries ?? []).map((item) => [String(item.seriesValue), item]))
   const configuredOrder = (spec.presentation.comboSeries ?? []).map((item) => String(item.seriesValue))
   const values = [
     ...configuredOrder.filter((value) => available.some((candidate) => String(candidate) === value)),
     ...available.filter((value) => !configured.has(String(value))).sort((left, right) => String(left).localeCompare(String(right), 'en')),
   ]
-  const datasets: EChartsTranslation[] = [{ id: `dataset:${dataset.id}`, source: selectedDatasetSource(envelope, dataset) }]
+  const source = selectedDatasetSource(envelope, dataset)
+  const header = source[0] ?? dataset.columns
+  const selectedSeriesIndex = header.indexOf(spec.series.field)
+  const datasets: EChartsTranslation[] = [{ id: `dataset:${dataset.id}`, source }]
   const series = values.map((value) => {
     const token = encodeURIComponent(String(value))
     const datasetID = `dataset:series:${spec.series?.field}:${token}`
-    datasets.push({ id: datasetID, fromDatasetId: `dataset:${dataset.id}`, transform: { type: 'filter', config: { dimension: spec.series?.field, '=': value } } })
+    datasets.push({ id: datasetID, source: [header, ...source.slice(1).filter((row) => Object.is(row[selectedSeriesIndex], value))] })
     const combo = configured.get(String(value))
     const mark = combo?.mark ?? (spec.mark === 'combo' ? 'line' : spec.mark)
     return {
       id: `series:${spec.series?.dataset}:${spec.series?.field}:${token}`, datasetId: datasetID, name: String(value), type: cartesianSeriesType(mark), yAxisIndex: combo?.axis === 'secondary' ? 1 : 0,
       encode: { x: spec.x.field, y: spec.y[0]?.field }, smooth: spec.presentation.smooth, symbol: spec.presentation.showSymbols ? undefined : 'none',
+      ...(spec.presentation.symbolSize === undefined ? {} : { symbolSize: spec.presentation.symbolSize }),
       stack: spec.presentation.stacked ? 'total' : undefined, areaStyle: spec.presentation.area || mark === 'area' ? {} : undefined,
       step: spec.presentation.step ? 'middle' : false, label: chartLabel(envelope, spec.y[0], spec, context),
     }
   })
-  return { datasets, series }
+  return { categories, datasets, series }
+}
+
+function heatmapExtent(envelope: VisualizationEnvelope, value: CartesianSpec['y'][number]): { min: number; max: number } {
+  const dataset = inlineDataset(envelope, value.dataset)
+  const valueIndex = dataset?.columns.indexOf(value.field) ?? -1
+  const values = valueIndex < 0
+    ? []
+    : (dataset?.rows ?? []).map((row) => row[valueIndex]).filter((candidate): candidate is number => typeof candidate === 'number' && Number.isFinite(candidate))
+  if (values.length === 0) return { min: 0, max: 1 }
+  const min = Math.min(0, ...values)
+  const max = Math.max(0, ...values)
+  return min === max ? { min, max: min + 1 } : { min, max }
 }
 
 function axisType(envelope: VisualizationEnvelope, ref: CartesianSpec['x'], fallback: 'category' | 'value'): 'category' | 'value' | 'time' {

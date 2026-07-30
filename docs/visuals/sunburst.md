@@ -28,9 +28,9 @@ visuals:
       limit: 80
 ```
 
-## Alternate hierarchy
+## Geographic status hierarchy
 
-Replace the parent dimension with state to reuse the hierarchy contract for a geographic breakdown.
+Nest fulfillment status under customer state to reveal regional outcome composition as concentric sectors.
 
 {{< visual id="state_status_sunburst" >}}
 

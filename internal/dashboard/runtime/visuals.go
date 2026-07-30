@@ -250,9 +250,6 @@ func (s *VisualizationDataService) bundleAggregateRequest(ctx context.Context, r
 			dimensions = append(dimensions, fieldRef(visual.Series.FieldID, "series"))
 		}
 		sorts := visualSorts(visual)
-		if len(visual.Sort) == 0 {
-			sorts = []reportdef.QuerySort{{Field: "label", Direction: "asc"}}
-		}
 		return reportdef.AggregateQuery{Table: visual.Table, Dimensions: dimensions, Measures: []reportdef.QueryField{queryFieldRef(visual.Measures[0], "value")}, Time: queryTime, Filters: queryFilters, Sort: sorts, Limit: visual.Limit}, nil
 	case visualizationdefinition.ResultCategoryMultiMeasure:
 		dimensions, queryTime := categoryDimension(visual, "label")
@@ -437,9 +434,6 @@ func (s *VisualizationDataService) categoryData(ctx context.Context, runtime *mo
 		columns = []string{dimensionAlias, "series", measureAlias}
 	}
 	sorts := visualSorts(visual)
-	if len(visual.Sort) == 0 {
-		sorts = []reportdef.QuerySort{{Field: dimensionAlias, Direction: "asc"}}
-	}
 	data, err := s.querySemanticDatums(ctx, runtime, reportdef.AggregateQuery{
 		Table:      visual.Table,
 		Dimensions: dimensions,
@@ -795,23 +789,26 @@ func aliasedQueryFields(bindings []visualizationdefinition.FieldBinding) []repor
 }
 
 func aliasedVisualSorts(visual visualPlan) []reportdef.QuerySort {
+	sorts := make([]reportdef.QuerySort, 0, len(visual.Sort)+len(visual.Dimensions))
 	if len(visual.Sort) == 0 {
 		if len(visual.Dimensions) > 0 {
-			return []reportdef.QuerySort{{Field: visual.Dimensions[0].Alias, Direction: "asc"}}
+			sorts = append(sorts, reportdef.QuerySort{Field: visual.Dimensions[0].Alias, Direction: "asc"})
 		}
-		return nil
-	}
-	bindings := append(append([]visualizationdefinition.FieldBinding{}, visual.Dimensions...), visual.Measures...)
-	sorts := make([]reportdef.QuerySort, len(visual.Sort))
-	for index, sort := range visual.Sort {
-		field := sort.FieldID
-		for _, binding := range bindings {
-			if field == binding.FieldID || field == binding.Alias || field == displayField(binding.FieldID) {
-				field = binding.Alias
-				break
+	} else {
+		bindings := append(append([]visualizationdefinition.FieldBinding{}, visual.Dimensions...), visual.Measures...)
+		for _, sort := range visual.Sort {
+			field := sort.FieldID
+			for _, binding := range bindings {
+				if field == binding.FieldID || field == binding.Alias || field == displayField(binding.FieldID) {
+					field = binding.Alias
+					break
+				}
 			}
+			sorts = append(sorts, reportdef.QuerySort{Field: field, Direction: sort.Direction})
 		}
-		sorts[index] = reportdef.QuerySort{Field: field, Direction: sort.Direction}
+	}
+	for _, dimension := range visual.Dimensions {
+		sorts = appendSortUnlessPresent(sorts, dimension.Alias)
 	}
 	return sorts
 }

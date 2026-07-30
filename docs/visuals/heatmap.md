@@ -30,9 +30,9 @@ visuals:
       limit: 120
 ```
 
-## Alternate dimensions
+## Category and status concentration
 
-Replace the row dimension with product category to reuse the same matrix contract for a different categorical relationship.
+Cross product categories with order status to surface operational concentrations that are hidden in either one-dimensional distribution.
 
 {{< visual id="category_status_heatmap" >}}
 

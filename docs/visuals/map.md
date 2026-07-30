@@ -12,7 +12,7 @@ After the edge route is live, run `task map-assets:verify MAP_ASSET_BASE_URL=htt
 
 LeapView verifies the complete installed package before opening instance state. The same verifier backs the `mapAssets` readiness check: unchanged files use cached metadata, while any changed file is rehashed and a missing or mismatched asset immediately makes `/readyz` return `503`.
 
-Point and choropleth maps can originate semantic crossfilters. Select a mark by click or tap, or use the visible **Select map data** menu for keyboard access. Blank map space clears only that map's selection. Camera, zoom, reset, compass, label density, and light/dark basemap themes are typed under `geo`.
+The previews on this page exercise rendering only. Semantic and spatial selections require the dashboard command and SSE runtime, so crossfilter behavior belongs in a runtime-capable dashboard rather than this static visual reference. Camera, zoom, reset, compass, label density, and light/dark basemap themes are typed under `geo`.
 
 ## Choropleth
 
@@ -50,15 +50,6 @@ visuals:
             kind: sequential
             palette: teal
             null_color: "#d8dee4"
-    interaction:
-      point_selection:
-        toggle: true
-        mappings:
-          - field: orders.state
-            fact: orders
-            value: state
-            label: state
-        targets: [order_point_map, revenue_heat_map, order_density_map]
 ```
 
 ## Points
@@ -95,15 +86,6 @@ visuals:
           tooltip: [order_id, revenue]
           size: {minimum_radius: 5, maximum_radius: 28}
           stroke: {color: "#ffffff", width: 1.5, opacity: 1}
-    interaction:
-      point_selection:
-        toggle: true
-        mappings:
-          - field: orders.order_id
-            fact: orders
-            value: order_id
-            label: order_id
-        targets: [state_order_map, revenue_heat_map, order_density_map]
 ```
 
 ## Heat
@@ -225,76 +207,3 @@ visuals:
           line: {width: 3, curvature: 0}
           opacity: 0.9
 ```
-
-## Crossfilter two maps
-
-Map interactions use compiled query aliases for `value` and `label`, while `field` names the governed semantic field. The identity value must come from a stable dimension or time field. Explicit `targets` keep filtering predictable.
-
-```yaml
-visuals:
-  orders_by_state:
-    title: Orders by state
-    type: map
-    query:
-      dimensions:
-        state: customers.state
-      measures:
-        order_count: null
-    geo:
-      layers:
-        - id: states
-          kind: choropleth
-          geometry_asset: brazil_states
-          join: state
-          value: order_count
-    interaction:
-      point_selection:
-        toggle: true
-        mappings:
-          - field: customers.state
-            fact: orders
-            value: state
-            label: state
-        targets: [customer_locations]
-
-  customer_locations:
-    title: Customer locations
-    type: map
-    query:
-      dimensions:
-        customer_id: customers.customer_id
-        latitude: customers.latitude
-        longitude: customers.longitude
-      measures:
-        order_count: null
-    geo:
-      controls: {zoom: true, reset: true, compass: true}
-      layers:
-        - id: customers
-          kind: point
-          latitude: latitude
-          longitude: longitude
-          value: order_count
-    interaction:
-      point_selection:
-        toggle: true
-        mappings:
-          - field: customers.customer_id
-            fact: orders
-            value: customer_id
-            label: customer_id
-        targets: [orders_by_state]
-      spatial_selection:
-        gestures: [box, lasso, radius]
-        latitude:
-          source: latitude
-          field: customers.latitude
-          fact: orders
-        longitude:
-          source: longitude
-          field: customers.longitude
-          fact: orders
-        targets: [orders_by_state]
-```
-
-Point and choropleth marks originate semantic datum selections. A map with stable coordinate fields can additionally originate exact bounding-box, lasso, and radius filters through `spatial_selection`; those filters are compiled against governed latitude and longitude fields and apply only to explicit targets. Heat and density layers remain display-only marks, but they can receive both semantic and spatial filters from another map.

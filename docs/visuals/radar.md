@@ -27,9 +27,9 @@ visuals:
       limit: 8
 ```
 
-## Alternate categories
+## Delivery profile
 
-Replace status with delivery buckets to compare a different categorical profile while preserving the same category-value shape.
+Plot order volume across ordered delivery-speed bands to make the operational profile easy to compare around one shared scale.
 
 {{< visual id="delivery_radar" >}}
 
@@ -60,7 +60,7 @@ visuals:
     title: State revenue radar
     type: radar
     presentation:
-      area: false
+      area: true
     query:
       dimensions:
         state: orders.state

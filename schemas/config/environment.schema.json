@@ -2350,6 +2350,12 @@
       "x-lifecycle": "tooling",
       "x-scope": "public-site provisioner"
     },
+    "LEAPVIEW_SITE_MAP_ASSETS_ROOT": {
+      "description": "Absolute path to the complete immutable MapLibre asset package; configured production sites verify it before listening and during readiness checks.",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "public site"
+    },
     "LEAPVIEW_SITE_SHOWCASE_EMBED_URL": {
       "description": "Optional public dashboard embed URL that enables the live /showcase route and its exact frame-src policy.",
       "type": "string",

@@ -26,9 +26,9 @@ visuals:
       limit: 18
 ```
 
-## Alternate measure
+## Geographic revenue distribution
 
-Replace the dimension and measure to compare revenue by state without changing the category-value shape.
+Size state rectangles by revenue to make geographic concentration visible in a compact ranked layout.
 
 {{< visual id="state_treemap" >}}
 

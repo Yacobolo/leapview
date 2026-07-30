@@ -318,6 +318,49 @@ func TestSiteAssetsDoNotDependOnWorkingDirectory(t *testing.T) {
 	}
 }
 
+func TestConfiguredMapAssetsDoNotDependOnWorkingDirectory(t *testing.T) {
+	root := t.TempDir()
+	name := filepath.Join(root, "leapview-streets", "test.txt")
+	if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(name, []byte("map asset"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(filepath.Dir(workingDirectory))
+
+	request := httptest.NewRequest(http.MethodGet, "/leapview-streets/test.txt", nil)
+	response := httptest.NewRecorder()
+	siteMapAssets(root).ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("map asset status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if got := response.Body.String(); got != "map asset" {
+		t.Fatalf("map asset body = %q, want map asset", got)
+	}
+}
+
+func TestReadinessFailsWhenConfiguredMapAssetPackageIsMissing(t *testing.T) {
+	server := httptest.NewServer(NewHandlerWithOptions(Options{MapAssetsRoot: filepath.Join(t.TempDir(), "missing")}))
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/readyz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("readiness status = %d, want %d", response.StatusCode, http.StatusServiceUnavailable)
+	}
+	if body := readBody(t, response); !strings.Contains(body, "map asset") {
+		t.Fatalf("readiness body = %q, want map asset diagnostic", body)
+	}
+}
+
 func TestLogoLabIsSelfContainedAndComparesFourDirections(t *testing.T) {
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()

@@ -158,6 +158,31 @@ func TestCompiledHierarchyFrameBudgetAccountsForMaterializedAncestors(t *testing
 	}
 }
 
+func TestCompiledHierarchyPreservesExplicitZeroInitialDepth(t *testing.T) {
+	t.Parallel()
+	initialDepth := 0
+	authored := reportdef.Visual{
+		Title: "Hierarchy",
+		Type:  "tree",
+		Presentation: reportdef.VisualPresentation{
+			InitialDepth: &initialDepth,
+		},
+		Query: reportdef.VisualQuery{
+			Dimensions: []reportdef.FieldRef{{Field: "orders.category", Alias: "category"}, {Field: "orders.status", Alias: "status"}},
+			Measures:   []reportdef.FieldRef{{Field: "order_count", Alias: "order_count"}},
+			Limit:      80,
+		},
+	}
+	spec, err := compileBuiltInVisualizationSpec("hierarchy", authored, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hierarchy, ok := spec.Value.(*visualizationir.HierarchyVisualizationSpec)
+	if !ok || hierarchy.Presentation.InitialDepth == nil || *hierarchy.Presentation.InitialDepth != 0 {
+		t.Fatalf("compiled hierarchy initial depth = %#v, want explicit zero", spec.Value)
+	}
+}
+
 func TestCompiledMultiMeasureFrameBudgetAccountsForNormalizedSeriesRows(t *testing.T) {
 	t.Parallel()
 

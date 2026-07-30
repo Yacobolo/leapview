@@ -7,6 +7,7 @@ metadata:
 spec:
   tables:
   - orders
+  - order_funnel
   measures:
     order_count:
       label: Orders
@@ -68,6 +69,22 @@ spec:
       input: {field: orders.delivery_days}
       empty: "null"
       format: decimal
+    funnel_order_count:
+      label: Orders
+      fact: order_funnel
+      aggregation: count_distinct
+      input: {field: order_funnel.order_id}
+      empty: zero
+      unit: orders
+      format: integer
+    funnel_revenue:
+      label: Revenue
+      fact: order_funnel
+      aggregation: sum
+      input: {field: order_funnel.revenue}
+      empty: zero
+      unit: USD
+      format: currency
   metrics:
     aov:
       label: Average order value

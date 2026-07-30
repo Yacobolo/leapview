@@ -372,8 +372,8 @@ func validateVisualPresentation(name string, visual Visual) error {
 	if presentation.Focus != "" && (!oneOf(visual.Type, "graph", "sankey") || !oneOf(presentation.Focus, "none", "adjacency")) {
 		return fmt.Errorf("visual %q has unsupported presentation.focus %q", name, presentation.Focus)
 	}
-	if presentation.InitialDepth < 0 || (presentation.InitialDepth > 0 && !oneOf(visual.Type, "tree", "treemap", "sunburst")) {
-		return fmt.Errorf("visual %q has unsupported presentation.initial_depth %d", name, presentation.InitialDepth)
+	if presentation.InitialDepth != nil && (*presentation.InitialDepth < 0 || !oneOf(visual.Type, "tree", "treemap", "sunburst")) {
+		return fmt.Errorf("visual %q has unsupported presentation.initial_depth %d", name, *presentation.InitialDepth)
 	}
 	if presentation.NodeGap < 0 || (presentation.NodeGap > 0 && visual.Type != "sankey") {
 		return fmt.Errorf("visual %q has unsupported presentation.node_gap %v", name, presentation.NodeGap)

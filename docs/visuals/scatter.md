@@ -6,48 +6,48 @@ Every preview on this page is generated from the YAML shown below it using a fix
 
 ## Basic
 
-Use an ordered category and numeric measure to place one point per period, making isolated delivery values and gaps easy to spot.
+Rank delivery-speed bands by average review score so isolated satisfaction values and gaps remain visible without implying a continuous line or a false lexical SLA sequence.
 
 {{< visual id="delivery_scatter" >}}
 
 ```yaml visual-example=delivery_scatter
 visuals:
   delivery_scatter:
-    title: Delivery days scatter by month
+    title: Review score by delivery speed
     type: scatter
     query:
       dimensions:
-        purchase_month: orders.purchase_month
+        delivery_bucket: orders.delivery_bucket
       measures:
-        delivery_days: null
+        review_score: null
       sort:
-        - field: purchase_month
-          direction: asc
+        - field: value
+          direction: desc
       limit: 30
 ```
 
 ## Multiple series
 
-Map status through `query.series` to split points into comparable groups while retaining the same axes.
+Map status through `query.series` to compare fulfillment outcomes while ranking the delivery-speed bands by review score.
 
 {{< visual id="delivery_scatter_status" >}}
 
 ```yaml visual-example=delivery_scatter_status
 visuals:
   delivery_scatter_status:
-    title: Delivery days scatter by status
+    title: Delivery satisfaction by status
     type: scatter
     query:
       dimensions:
-        purchase_month: orders.purchase_month
+        delivery_bucket: orders.delivery_bucket
       series:
         field: orders.status
         alias: status
       measures:
-        delivery_days: null
+        review_score: null
       sort:
-        - field: purchase_month
-          direction: asc
+        - field: value
+          direction: desc
       limit: 60
 ```
 
@@ -60,7 +60,7 @@ Enable labels and place them above larger symbols when exact point values matter
 ```yaml visual-example=delivery_scatter_labeled
 visuals:
   delivery_scatter_labeled:
-    title: Labeled delivery scatter
+    title: Revenue by product category
     type: scatter
     presentation:
       show_labels: true
@@ -68,10 +68,10 @@ visuals:
       symbol_size: 12
     query:
       dimensions:
-        delivery_bucket: orders.delivery_bucket
+        category: orders.category
       measures:
-        delivery_days: null
+        revenue: null
       sort:
-        - field: delivery_bucket
-          direction: asc
+        - field: value
+          direction: desc
 ```

@@ -6,7 +6,7 @@ Every preview is compiled and queried from the YAML printed beside it against a 
 
 ## ECharts interaction capabilities
 
-All built-in charts below use the typed ECharts adapter. “Selectable” means a rendered source row can originate the existing semantic `point_selection` interaction when the YAML declares stable mappings and explicit targets. It does not mean selection is enabled by default.
+All built-in charts below use the typed ECharts adapter. The preview pages are render-only and do not initialize dashboard commands or SSE crossfilter state. “Selectable” describes a visual's capability when it runs inside the dashboard runtime with stable mappings and explicit targets; it does not mean selection is active in this reference.
 
 | Visuals | Source-row selection | Notes |
 | --- | --- | --- |
@@ -19,7 +19,7 @@ All built-in charts below use the typed ECharts adapter. “Selectable” means 
 | Graph, Sankey | Yes | Source links are selectable through their private row locators; aggregate renderer nodes remain silent. |
 | Radar | No | A radar polygon represents several source rows, so `point_selection` fails compilation. |
 
-Unsupported interaction declarations fail deployment compilation instead of rendering an approximation. Map point and region selection use the separate MapLibre interaction path documented on the [map page](/docs/visuals/map).
+Unsupported interaction declarations fail dashboard deployment compilation instead of rendering an approximation. Map point and region selection use a separate MapLibre interaction path in the dashboard runtime.
 
 ## Change over time
 

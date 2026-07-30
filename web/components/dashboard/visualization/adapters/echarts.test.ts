@@ -157,6 +157,26 @@ test('ECharts translation preserves combo series marks and axes', () => {
   expect(new Set(reorderedOption.dataset.map((dataset: any) => dataset.id))).toEqual(new Set(option.dataset.map((dataset: any) => dataset.id)))
 })
 
+test('ECharts split series share the authoritative category order and preserve per-series row order', () => {
+  const envelope = cartesianFixture('line') as any
+  envelope.spec.datasets[0].fields.splice(1, 0, { id: 'series', role: 'dimension', dataType: 'string', nullable: false, label: 'Series' })
+  envelope.spec.series = { dataset: 'primary', field: 'series' }
+  envelope.dataState.datasets[0].columns = ['label', 'series', 'value']
+  envelope.dataState.datasets[0].rows = [
+    ['Feb', 'Revenue', 20],
+    ['Feb', 'Orders', 2],
+    ['Jan', 'Revenue', 10],
+    ['Jan', 'Orders', 1],
+  ]
+
+  const option = echartsOption(envelope, defaultRendererContext) as any
+  expect(option.xAxis.data).toEqual(['Feb', 'Jan'])
+  expect(option.dataset.slice(1).map((dataset: any) => dataset.source)).toEqual([
+    [['label', 'series', 'value'], ['Feb', 'Orders', 2], ['Jan', 'Orders', 1]],
+    [['label', 'series', 'value'], ['Feb', 'Revenue', 20], ['Jan', 'Revenue', 10]],
+  ])
+})
+
 test('ECharts translation emits one multi-value financial series', () => {
   const envelope = {
     schemaVersion: 3, visualID: 'ohlc', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
@@ -200,6 +220,7 @@ test('ECharts translation builds radar indicators and aligned series from typed 
   } as VisualizationEnvelope
   const option = echartsOption(envelope) as any
   expect(option.radar.indicator.map((item: any) => item.name)).toEqual(['Speed', 'Quality'])
+  expect(option.radar.indicator.map((item: any) => item.max)).toEqual([9, 9])
   expect(option.series[0].data).toEqual([{ name: 'A', value: [8, 9] }, { name: 'B', value: [6, 7] }])
 })
 
@@ -255,6 +276,28 @@ test('ECharts constructs deterministic nested hierarchy data and honors layout p
   expect(option.series[0].id).toBe('series:hierarchy:tree')
   expect(option.series[0].orient).toBe('LR')
   expect(option.series[0].data).toEqual([{ name: 'root', value: 10, __lv_dataset: 'primary', __lv_row_index: 0, children: [{ name: 'child', value: 4, __lv_dataset: 'primary', __lv_row_index: 1 }] }])
+})
+
+test('ECharts gives multi-root trees one synthetic renderer root without changing authored depth', () => {
+  const envelope = hierarchyFixture('tree') as any
+  envelope.spec.title = 'Category and status tree'
+  envelope.dataState.datasets[0].rows = [
+    ['Books', null, 10],
+    ['delivered', 'Books', 8],
+    ['Furniture', null, 6],
+    ['shipped', 'Furniture', 4],
+  ]
+
+  const option = echartsOption(envelope, defaultRendererContext) as any
+  expect(option.series[0].data).toEqual([{
+    name: 'Category and status tree',
+    __lv_synthetic: true,
+    children: [
+      { name: 'Books', value: 10, __lv_dataset: 'primary', __lv_row_index: 0, children: [{ name: 'delivered', value: 8, __lv_dataset: 'primary', __lv_row_index: 1 }] },
+      { name: 'Furniture', value: 6, __lv_dataset: 'primary', __lv_row_index: 2, children: [{ name: 'shipped', value: 4, __lv_dataset: 'primary', __lv_row_index: 3 }] },
+    ],
+  }])
+  expect(option.series[0].initialTreeDepth).toBe(3)
 })
 
 test('ECharts hierarchy source nodes select only when their compiled identity tuple is complete', () => {
@@ -416,6 +459,32 @@ test('ECharts translates every cartesian mark with stable renderer-owned identit
   expect(heatmap.series[0]).toMatchObject({ id: 'series:primary:heatmap', type: 'heatmap', encode: { x: 'label', y: 'row', value: 'value' } })
   const boxplot = echartsOption(cartesianFixture('boxplot', ['label', 'min', 'q1', 'median', 'q3', 'max']), defaultRendererContext) as any
   expect(boxplot.series[0]).toMatchObject({ id: 'series:primary:boxplot', type: 'boxplot', encode: { x: 'label', y: ['min', 'q1', 'median', 'q3', 'max'] } })
+})
+
+test('ECharts leaves absent Scatter and Sankey geometry fields to renderer defaults', () => {
+  const scatterEnvelope = cartesianFixture('scatter') as any
+  scatterEnvelope.spec.presentation.symbolSize = undefined
+  const scatter = echartsOption(scatterEnvelope, defaultRendererContext) as any
+  expect(Object.hasOwn(scatter.series[0], 'symbolSize')).toBe(false)
+
+  const sankeyEnvelope = networkFixture('sankey') as any
+  sankeyEnvelope.spec.presentation.nodeGap = undefined
+  sankeyEnvelope.spec.presentation.curveness = undefined
+  const sankey = echartsOption(sankeyEnvelope, defaultRendererContext) as any
+  expect(Object.hasOwn(sankey.series[0], 'nodeGap')).toBe(false)
+  expect(Object.hasOwn(sankey.series[0].lineStyle, 'curveness')).toBe(false)
+})
+
+test('ECharts fits the Heatmap color domain to finite encoded values', () => {
+  const envelope = cartesianFixture('heatmap', ['label', 'row', 'value']) as any
+  envelope.dataState.datasets[0].rows = [
+    ['Jan', 'delivered', 1],
+    ['Feb', 'delivered', 4],
+    ['Jan', 'shipped', 2],
+  ]
+  const option = echartsOption(envelope, defaultRendererContext) as any
+  expect(option.visualMap.min).toBe(0)
+  expect(option.visualMap.max).toBe(4)
 })
 
 test('ECharts honors proportional presentation and hierarchy/network layout', () => {
