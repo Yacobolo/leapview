@@ -69,6 +69,11 @@ func (d *Dashboard) validateChartContract(name string, visual Visual) error {
 	if err := validateVisualQueryShape(name, visual); err != nil {
 		return err
 	}
+	if shape == "point" {
+		if err := validatePointVisual(name, visual); err != nil {
+			return err
+		}
+	}
 	if err := validateVisualPresentation(name, visual); err != nil {
 		return err
 	}

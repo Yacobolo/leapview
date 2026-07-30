@@ -51,13 +51,33 @@ enum VisualizationCartesianMark {
   area: "area",
   bar: "bar",
   column: "column",
-  scatter: "scatter",
   histogram: "histogram",
   combo: "combo",
   waterfall: "waterfall",
   candlestick: "candlestick",
   boxplot: "boxplot",
   heatmap: "heatmap",
+}
+
+enum VisualizationPointColorScaleKind {
+  categorical: "categorical",
+  quantitative: "quantitative",
+}
+
+enum VisualizationPointOverplotStrategy {
+  showAll: "show_all",
+  opacity: "opacity",
+}
+
+enum VisualizationPointLargeMode {
+  automatic: "automatic",
+  always: "always",
+  neverMode: "never",
+}
+
+enum VisualizationPointBrushGesture {
+  rectangle: "rectangle",
+  lasso: "lasso",
 }
 
 enum VisualizationProportionalMark {
@@ -607,6 +627,28 @@ model CartesianVisualizationPresentation extends VisualizationPresentation {
   `seriesIntent`?: VisualizationSeriesIntent[];
 }
 
+model PointVisualizationColorScale {
+  `kind`: VisualizationPointColorScaleKind;
+  `minimum`?: float64;
+  `maximum`?: float64;
+  `scheme`?: string;
+}
+
+model PointVisualizationSizeScale {
+  `minimum`?: float64;
+  `maximum`?: float64;
+  `minimumPixels`: float64;
+  `maximumPixels`: float64;
+}
+
+model PointVisualizationPresentation extends VisualizationPresentation {
+  `overplot`: VisualizationPointOverplotStrategy;
+  `opacity`: float64;
+  `largeMode`: VisualizationPointLargeMode;
+  `largeThreshold`: int64;
+  `brush`: VisualizationPointBrushGesture[];
+}
+
 model ProportionalVisualizationPresentation extends VisualizationPresentation {
   `orientation`: VisualizationOrientation;
   `rose`: boolean;
@@ -710,6 +752,25 @@ model CartesianVisualizationSpec extends VisualizationSpec {
   `eventAnnotations`?: VisualizationEventAnnotation[];
   `tooltip`?: VisualizationFieldRef[];
   `presentation`: CartesianVisualizationPresentation;
+}
+
+model PointVisualizationSpec extends VisualizationSpec {
+  `kind`: "point";
+  `identity`: VisualizationFieldRef[];
+  `x`: VisualizationFieldRef;
+  `y`: VisualizationFieldRef;
+  `size`?: VisualizationFieldRef;
+  `color`?: VisualizationFieldRef;
+  `series`?: VisualizationFieldRef;
+  `label`?: VisualizationFieldRef;
+  `tooltip`?: VisualizationFieldRef[];
+  `colorScale`?: PointVisualizationColorScale;
+  `sizeScale`?: PointVisualizationSizeScale;
+  `axes`?: VisualizationAxisConfiguration[];
+  `referenceLines`?: VisualizationReferenceLine[];
+  `referenceBands`?: VisualizationReferenceBand[];
+  `eventAnnotations`?: VisualizationEventAnnotation[];
+  `presentation`: PointVisualizationPresentation;
 }
 
 model ProportionalVisualizationSpec extends VisualizationSpec {
@@ -1209,7 +1270,7 @@ model VisualizationDiagnostic {
 @apigen.contract(#{ kind: "visualization-envelope", tags: #["visualization", "ir"] })
 @apigen.`metadata`(#{ `x-leapview-contract-role`: "visualization-envelope" })
 model VisualizationEnvelope {
-  `schemaVersion`: 5;
+  `schemaVersion`: 6;
   `visualID`: string;
   `rendererID`: string;
   `specRevision`: string;

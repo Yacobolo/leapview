@@ -6,6 +6,7 @@ import { baseOption } from './echarts/common'
 import { cartesianOption } from './echarts/cartesian'
 import { hierarchyOption } from './echarts/hierarchy'
 import { polarOption } from './echarts/polar'
+import { pointOption } from './echarts/point'
 import { proportionalOption } from './echarts/proportional'
 
 export { interactionCommandForRow, normalizeRendererLocale }
@@ -18,6 +19,7 @@ export function echartsOption(envelope: VisualizationEnvelope, context: Renderer
     case 'proportional': translated = proportionalOption(envelope, context); break
     case 'hierarchy': translated = hierarchyOption(envelope, context); break
     case 'polar': translated = polarOption(envelope, context); break
+    case 'point': translated = pointOption(envelope, context); break
     default: throw new Error(`ECharts cannot render visualization kind ${JSON.stringify(envelope.spec.kind)}`)
   }
   const option = { ...base, ...translated } as Record<string, any>
@@ -60,6 +62,7 @@ class EChartsHandle implements RendererHandle {
 
   constructor(private readonly container: HTMLElement, private readonly frame: HTMLElement, private readonly chart: ECharts) {
     this.chart.on('click', this.handleClick)
+    this.chart.on('brushSelected', this.handleBrushSelected)
   }
 
   mount(envelope: VisualizationEnvelope, context: RendererContext): void {
@@ -93,6 +96,7 @@ class EChartsHandle implements RendererHandle {
     this.readinessAbort?.abort()
     this.readinessAbort = undefined
     this.chart.off('click', this.handleClick)
+    this.chart.off('brushSelected', this.handleBrushSelected)
     this.chart.dispose()
     removeEChartsRendererFrame(this.container, this.frame)
   }
@@ -117,6 +121,34 @@ class EChartsHandle implements RendererHandle {
     if (!command) return
     this.container.dispatchEvent(new CustomEvent('lv-interaction-select', { bubbles: true, composed: true, detail: command }))
   }
+
+  private readonly handleBrushSelected = (params: unknown) => {
+    const envelope = this.envelope
+    if (!envelope) return
+    for (const command of brushSelectionCommands(envelope, params)) {
+      this.container.dispatchEvent(new CustomEvent('lv-interaction-select', { bubbles: true, composed: true, detail: command }))
+    }
+  }
+}
+
+export function brushSelectionCommands(envelope: VisualizationEnvelope, params: unknown) {
+  if (envelope.spec.kind !== 'point' || envelope.dataState.kind !== 'inline') return []
+  const datasetID = envelope.spec.x.dataset
+  const dataset = envelope.dataState.datasets.find((candidate) => candidate.id === datasetID)
+  if (!dataset) return []
+  const event = params as { batch?: Array<{ selected?: Array<{ dataIndex?: number[] }> }> }
+  const indexes = new Set<number>()
+  for (const batch of event.batch ?? []) {
+    for (const selected of batch.selected ?? []) {
+      for (const index of selected.dataIndex ?? []) {
+        if (Number.isInteger(index) && index >= 0 && index < dataset.rows.length) indexes.add(index)
+      }
+    }
+  }
+  return [...indexes].sort((left, right) => left - right).flatMap((index) => {
+    const command = interactionCommandForRow(envelope, datasetID, dataset.rows[index]!)
+    return command ? [command] : []
+  })
 }
 
 export type EChartsUpdatePlan = Readonly<{

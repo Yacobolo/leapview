@@ -59,7 +59,7 @@ func compileVisualizationQueryBinding(ctx compileContext, authored reportdef.Vis
 	}
 	binding := visualizationdefinition.QueryBinding{
 		Kind: visualizationdefinition.QueryAggregate, ResultShape: resultShape, ModelID: ctx.modelID, DatasetID: ctx.datasetID,
-		Identity: interactionIdentity(authored.Interaction.PointSelection),
+		Identity: compiledVisualizationIdentity(authored),
 		Aggregate: &visualizationdefinition.AggregateQueryBinding{
 			TableID: authored.Query.Table, Dimensions: compiledFields(authored.Query.Dimensions), Measures: compiledFields(authored.Query.Measures),
 			Series: compiledOptionalField(authored.Query.Series), Time: compiledTime(authored.Query.Time), Sort: compiledSort(authored.Query.Sort), Limit: limit,
@@ -75,6 +75,22 @@ func compileVisualizationQueryBinding(ctx compileContext, authored reportdef.Vis
 		binding.Custom = &visualizationdefinition.CustomQueryBinding{TableID: authored.Query.Table, Fields: compiledVisualFields(authored.Query), Sort: compiledSort(authored.Query.Sort), Limit: limit}
 	}
 	return binding, nil
+}
+
+func compiledVisualizationIdentity(authored reportdef.Visual) []string {
+	identities := interactionIdentity(authored.Interaction.PointSelection)
+	if authored.ResultShape() != "point" {
+		return identities
+	}
+	for _, identityAlias := range authored.Point.Identity {
+		for _, field := range compiledVisualFields(authored.Query) {
+			if field.Alias == identityAlias {
+				identities = append(identities, field.FieldID)
+				break
+			}
+		}
+	}
+	return uniqueStrings(identities)
 }
 
 func compiledVisualResultShape(authored reportdef.Visual) (visualizationdefinition.ResultShape, error) {
@@ -104,6 +120,8 @@ func compiledVisualResultShape(authored reportdef.Visual) (visualizationdefiniti
 		return visualizationdefinition.ResultDistribution, nil
 	case "custom":
 		return visualizationdefinition.ResultCustomRows, nil
+	case "point":
+		return visualizationdefinition.ResultPoints, nil
 	case "category_series_value":
 		return visualizationdefinition.ResultCategorySeriesValue, nil
 	case "category_value":

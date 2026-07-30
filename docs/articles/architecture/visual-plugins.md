@@ -122,7 +122,8 @@ The specification is a discriminated union. Each kind has only meaningful fields
 
 The closed kinds are:
 
-- `cartesian` for line, area, bar, column, scatter, histogram, combo, waterfall, heatmap, candlestick, and boxplot marks;
+- `cartesian` for line, area, bar, column, histogram, combo, waterfall, heatmap, candlestick, and boxplot marks;
+- `point` for true scatter and bubble marks with stable entity identity and independent X/Y channels;
 - `proportional` for pie, donut, and funnel;
 - `hierarchy` for treemap, sunburst, tree, graph, and Sankey;
 - `polar` for radar and gauge;

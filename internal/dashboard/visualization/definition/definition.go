@@ -47,6 +47,7 @@ const (
 	ResultPivotWindow          ResultShape = "pivot_window"
 	ResultGeographicFeatures   ResultShape = "geographic_features"
 	ResultCustomRows           ResultShape = "custom_rows"
+	ResultPoints               ResultShape = "points"
 )
 
 // QueryBinding is the closed compiler/runtime boundary. Exactly one branch is
@@ -223,7 +224,7 @@ func queryKindSupportsResult(kind QueryKind, shape ResultShape) bool {
 	switch kind {
 	case QueryAggregate:
 		switch shape {
-		case ResultScalar, ResultCategoryValue, ResultCategorySeriesValue, ResultCategoryMultiMeasure, ResultCategoryDelta, ResultHistogramBins, ResultMatrixCells, ResultHierarchyNodes, ResultGraphEdges, ResultOHLC, ResultDistribution:
+		case ResultScalar, ResultCategoryValue, ResultCategorySeriesValue, ResultCategoryMultiMeasure, ResultCategoryDelta, ResultHistogramBins, ResultMatrixCells, ResultHierarchyNodes, ResultGraphEdges, ResultOHLC, ResultDistribution, ResultPoints:
 			return true
 		}
 	case QueryDetail:
@@ -494,6 +495,8 @@ func validateQuerySortFields(spec ir.VisualizationSpec, query QueryBinding) erro
 
 func specSupportsResultShape(spec ir.VisualizationSpec, shape ResultShape) bool {
 	switch value := spec.Value.(type) {
+	case *ir.PointVisualizationSpec:
+		return shape == ResultPoints
 	case *ir.CartesianVisualizationSpec:
 		switch value.Mark {
 		case ir.VisualizationCartesianMarkWaterfall:
@@ -543,6 +546,7 @@ func specSupportsResultShape(spec ir.VisualizationSpec, shape ResultShape) bool 
 func ownership(spec ir.VisualizationSpec) (string, QueryKind, error) {
 	switch spec.Value.(type) {
 	case *ir.CartesianVisualizationSpec,
+		*ir.PointVisualizationSpec,
 		*ir.ProportionalVisualizationSpec,
 		*ir.HierarchyVisualizationSpec,
 		*ir.PolarVisualizationSpec:

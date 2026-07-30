@@ -89,6 +89,8 @@ func (visual visualPlan) KindAndType() (string, string) {
 		return "kpi", "kpi"
 	case *visualizationir.CartesianVisualizationSpec:
 		return "chart", string(value.Mark)
+	case *visualizationir.PointVisualizationSpec:
+		return "chart", "scatter"
 	case *visualizationir.ProportionalVisualizationSpec:
 		return "chart", string(value.Mark)
 	case *visualizationir.HierarchyVisualizationSpec:

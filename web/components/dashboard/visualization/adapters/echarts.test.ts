@@ -2,7 +2,89 @@ import { expect, test } from 'bun:test'
 
 import type { VisualizationEnvelope } from '../../../../generated/visualization'
 import { Change, defaultRendererContext } from '../host-controller'
-import { createEChartsRendererFrame, echartsOption, echartsUpdatePlan, interactionCommandForRow, normalizeRendererLocale, removeEChartsRendererFrame, waitForEChartsFrame } from './echarts'
+import { brushSelectionCommands, createEChartsRendererFrame, echartsOption, echartsUpdatePlan, interactionCommandForRow, normalizeRendererLocale, removeEChartsRendererFrame, waitForEChartsFrame } from './echarts'
+
+test('ECharts renders governed bivariate points, bubbles, labels, color, and stable brushes', () => {
+  const envelope = {
+    schemaVersion: 6, visualID: 'delivery', rendererID: 'echarts', specRevision: 'sha256:point', dataRevision: 4,
+    spec: {
+      kind: 'point', title: 'Delivery and revenue',
+      datasets: [{ id: 'primary', fields: [
+        { id: 'order_id', role: 'identity', dataType: 'string', nullable: false, label: 'Order' },
+        { id: 'segment', role: 'dimension', dataType: 'string', nullable: false, label: 'Segment' },
+        { id: 'delivery_days', role: 'measure', dataType: 'decimal', nullable: false, label: 'Delivery days' },
+        { id: 'revenue', role: 'measure', dataType: 'decimal', nullable: false, label: 'Revenue' },
+        { id: 'quantity', role: 'measure', dataType: 'decimal', nullable: false, label: 'Quantity' },
+      ] }],
+      dataBudget: { maxRows: 2000, requiredCompleteness: 'complete' },
+      accessibility: { title: 'Delivery and revenue', description: 'Each point is one order.' },
+      interactions: [{ id: 'point_selection', kind: 'select', mode: 'multiple', requiresStableIdentity: true, targets: ['detail'], mappings: [
+        { source: { dataset: 'primary', field: 'order_id' }, targetFieldID: 'orders.id', targetFactID: 'orders' },
+      ] }],
+      identity: [{ dataset: 'primary', field: 'order_id' }],
+      x: { dataset: 'primary', field: 'delivery_days' }, y: { dataset: 'primary', field: 'revenue' },
+      size: { dataset: 'primary', field: 'quantity' }, color: { dataset: 'primary', field: 'segment' },
+      label: { dataset: 'primary', field: 'order_id' },
+      tooltip: [{ dataset: 'primary', field: 'segment' }, { dataset: 'primary', field: 'revenue' }],
+      colorScale: { kind: 'categorical' },
+      sizeScale: { minimum: 1, maximum: 5, minimumPixels: 8, maximumPixels: 32 },
+      presentation: {
+        legend: 'bottom', showLabels: true, overplot: 'opacity', opacity: 0.55,
+        largeMode: 'automatic', largeThreshold: 1000, brush: ['rectangle', 'lasso'],
+      },
+    },
+    dataState: { kind: 'inline', specRevision: 'sha256:point', dataRevision: 4, generation: 1, datasets: [{
+      id: 'primary', specRevision: 'sha256:point', dataRevision: 4, generation: 1,
+      columns: ['order_id', 'segment', 'delivery_days', 'revenue', 'quantity'],
+      rows: [['o-1', 'Consumer', 2, 80, 1], ['o-2', 'Corporate', 7, 240, 5]], completeness: 'complete',
+    }] },
+    selection: [], status: { kind: 'ready' }, diagnostics: [],
+  } as VisualizationEnvelope
+
+  const option = echartsOption(envelope, defaultRendererContext) as any
+  expect(option.xAxis.type).toBe('value')
+  expect(option.yAxis.type).toBe('value')
+  expect(option.series[0]).toMatchObject({
+    type: 'scatter',
+    encode: { x: 'delivery_days', y: 'revenue', itemName: 'segment' },
+    itemStyle: { opacity: 0.55 },
+    large: false,
+  })
+  expect(option.series[0].symbolSize(['o-1', 'Consumer', 2, 80, 1])).toBe(8)
+  expect(option.series[0].symbolSize(['o-2', 'Corporate', 7, 240, 5])).toBe(32)
+  expect(option.brush.toolbox).toEqual(['rect', 'polygon'])
+  expect(option.tooltip.formatter({ value: ['o-1', 'Consumer', 2, 80, 1] })).toBe('Segment: Consumer<br>Revenue: 80')
+
+  envelope.spec.color = { dataset: 'primary', field: 'revenue' }
+  envelope.spec.colorScale = { kind: 'quantitative' }
+  const quantitative = echartsOption(envelope, defaultRendererContext) as any
+  expect(quantitative.visualMap).toMatchObject({ type: 'continuous', dimension: 'revenue', min: 80, max: 240 })
+
+  envelope.spec.x = { dataset: 'primary', field: 'purchase_time' }
+  envelope.spec.datasets[0].fields.push({ id: 'purchase_time', role: 'temporal', dataType: 'temporal', nullable: false, label: 'Purchase time' })
+  envelope.dataState.datasets[0].columns.push('purchase_time')
+  envelope.dataState.datasets[0].rows[0].push(Date.UTC(2026, 0, 2))
+  envelope.dataState.datasets[0].rows[1].push(Date.UTC(2026, 1, 3))
+  const temporal = echartsOption(envelope, defaultRendererContext) as any
+  expect(temporal.xAxis.type).toBe('time')
+  expect(temporal.xAxis.splitNumber).toBe(6)
+  expect(temporal.xAxis.axisLabel.hideOverlap).toBe(true)
+  expect(temporal.xAxis.axisLabel.formatter(Date.UTC(2026, 0, 2))).toMatch(/2026/)
+  expect(temporal.xAxis.axisLabel.formatter(Date.UTC(2026, 0, 2))).not.toContain('1767')
+
+  expect(brushSelectionCommands(envelope, {
+    batch: [{ selected: [{ dataIndex: [1, 0, 1] }] }],
+  })).toEqual([
+    {
+      sourceKind: 'visual', sourceId: 'delivery', interactionKind: 'point_selection', action: 'set', toggle: true,
+      mappings: [{ field: 'orders.id', fact: 'orders', value: 'o-1', label: 'o-1' }],
+    },
+    {
+      sourceKind: 'visual', sourceId: 'delivery', interactionKind: 'point_selection', action: 'set', toggle: true,
+      mappings: [{ field: 'orders.id', fact: 'orders', value: 'o-2', label: 'o-2' }],
+    },
+  ])
+})
 
 test('superseded ECharts mounts own isolated renderer frames', () => {
   const mounted: HTMLElement[] = []
@@ -31,7 +113,7 @@ test('superseded ECharts mounts own isolated renderer frames', () => {
 
 test('ECharts translation uses dataset and encode without native option passthrough', () => {
   const envelope = {
-    schemaVersion: 5, visualID: 'revenue', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
+    schemaVersion: 6, visualID: 'revenue', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
     spec: {
       kind: 'cartesian', title: 'Revenue', mark: 'line',
       datasets: [{ id: 'primary', fields: [
@@ -166,7 +248,7 @@ test('ECharts translates governed heatmap gradients and waterfall rule styles', 
 
 test('ECharts interactions translate stable IR field mappings without renderer row keys', () => {
   const envelope = {
-    schemaVersion: 5, visualID: 'orders', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 7,
+    schemaVersion: 6, visualID: 'orders', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 7,
     spec: {
       kind: 'cartesian', title: 'Orders', mark: 'bar',
       datasets: [{ id: 'primary', fields: [
@@ -233,7 +315,7 @@ test('ECharts gives selectable line and area rows reliable hit targets at either
 
 test('ECharts translation preserves combo series marks and axes', () => {
   const base = {
-    schemaVersion: 5, visualID: 'combo', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
+    schemaVersion: 6, visualID: 'combo', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
     spec: {
       kind: 'cartesian', title: 'Combo', mark: 'combo',
       datasets: [{ id: 'primary', fields: [
@@ -345,7 +427,7 @@ test('ECharts normalizes multi-measure percent stacks without changing raw toolt
 
 test('ECharts translation emits one multi-value financial series', () => {
   const envelope = {
-    schemaVersion: 5, visualID: 'ohlc', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
+    schemaVersion: 6, visualID: 'ohlc', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
     spec: {
       kind: 'cartesian', title: 'OHLC', mark: 'candlestick',
       datasets: [{ id: 'primary', fields: ['label', 'open', 'close', 'low', 'high'].map((id, index) => ({ id, role: index ? 'measure' : 'dimension', dataType: index ? 'decimal' : 'string', nullable: false, label: id })) }],
@@ -366,7 +448,7 @@ test('ECharts translation emits one multi-value financial series', () => {
 
 test('ECharts translation builds radar indicators and aligned series from typed fields', () => {
   const envelope = {
-    schemaVersion: 5, visualID: 'quality', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
+    schemaVersion: 6, visualID: 'quality', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
     spec: {
       kind: 'polar', title: 'Quality', mark: 'radar',
       datasets: [{ id: 'primary', fields: [
@@ -397,7 +479,7 @@ test('ECharts normalizes supported document locales and fails closed on unknown 
 
 test('ECharts uses stable IDs, contractual formatting, and resolved theme colors', () => {
   const envelope = {
-    schemaVersion: 5, visualID: 'revenue', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
+    schemaVersion: 6, visualID: 'revenue', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
     spec: {
       kind: 'cartesian', title: 'Revenue', mark: 'column',
       datasets: [{ id: 'primary', fields: [
@@ -422,7 +504,7 @@ test('ECharts uses stable IDs, contractual formatting, and resolved theme colors
 
 test('ECharts constructs deterministic nested hierarchy data and honors layout presentation', () => {
   const envelope = {
-    schemaVersion: 5, visualID: 'tree', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
+    schemaVersion: 6, visualID: 'tree', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
     spec: {
       kind: 'hierarchy', title: 'Tree', mark: 'tree',
       datasets: [{ id: 'primary', fields: [
@@ -583,7 +665,7 @@ test('ECharts first-frame readiness exits cleanly when its mount is disposed', a
 
 test('ECharts translates every cartesian mark with stable renderer-owned identities', () => {
   const expectations: Array<[string, string]> = [
-    ['line', 'line'], ['area', 'line'], ['bar', 'bar'], ['column', 'bar'], ['scatter', 'scatter'], ['histogram', 'bar'],
+    ['line', 'line'], ['area', 'line'], ['bar', 'bar'], ['column', 'bar'], ['histogram', 'bar'],
   ]
   for (const [mark, type] of expectations) {
     const option = echartsOption(cartesianFixture(mark), defaultRendererContext) as any
@@ -592,7 +674,6 @@ test('ECharts translates every cartesian mark with stable renderer-owned identit
   }
   expect((echartsOption(cartesianFixture('area')) as any).series[0].areaStyle).toEqual({})
   expect((echartsOption(cartesianFixture('bar')) as any).series[0].encode).toEqual({ x: 'value', y: 'label' })
-  expect((echartsOption(cartesianFixture('scatter')) as any).series[0].symbolSize).toBe(12)
 
   const waterfall = echartsOption(cartesianFixture('waterfall', ['label', 'value', 'start']), defaultRendererContext) as any
   expect(waterfall.series.map((series: any) => [series.id, series.type, series.silent])).toEqual([
@@ -692,7 +773,7 @@ function cartesianFixture(mark: string, columns = ['label', 'value']): Visualiza
   const y = columns.slice(1).map((field) => ({ dataset: 'primary', field }))
   const row = columns.map((id, index) => index === 0 ? 'A' : id === 'row' ? 'R1' : index)
   return {
-    schemaVersion: 5, visualID: mark, rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
+    schemaVersion: 6, visualID: mark, rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
     spec: { kind: 'cartesian', title: mark, mark, datasets: [{ id: 'primary', fields }], dataBudget: { maxRows: 100, requiredCompleteness: 'complete' }, accessibility: { title: mark, description: mark }, interactions: [], x: { dataset: 'primary', field: 'label' }, y, presentation: { legend: 'bottom', showLabels: true, smooth: true, stacked: true, showSymbols: false, dataZoom: true, area: mark === 'area', step: true, symbolSize: 12, labelPosition: 'top', orientation: mark === 'bar' ? 'horizontal' : 'vertical', histogramBins: mark === 'histogram' ? 10 : undefined } },
     dataState: { kind: 'inline', specRevision: 'sha256:test', dataRevision: 1, generation: 1, datasets: [{ id: 'primary', specRevision: 'sha256:test', dataRevision: 1, generation: 1, columns, rows: [row], completeness: 'complete' }] }, selection: [], status: { kind: 'ready' }, diagnostics: [],
   } as VisualizationEnvelope
@@ -700,7 +781,7 @@ function cartesianFixture(mark: string, columns = ['label', 'value']): Visualiza
 
 function cartesianSeriesFixture(): VisualizationEnvelope {
   return {
-    schemaVersion: 5, visualID: 'series', rendererID: 'echarts', specRevision: 'sha256:series', dataRevision: 1,
+    schemaVersion: 6, visualID: 'series', rendererID: 'echarts', specRevision: 'sha256:series', dataRevision: 1,
     spec: {
       kind: 'cartesian', title: 'Orders', mark: 'area',
       datasets: [{ id: 'primary', fields: [
@@ -727,7 +808,7 @@ function cartesianSeriesFixture(): VisualizationEnvelope {
 
 function proportionalFixture(mark: 'pie' | 'donut' | 'funnel'): VisualizationEnvelope {
   return {
-    schemaVersion: 5, visualID: mark, rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
+    schemaVersion: 6, visualID: mark, rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
     spec: { kind: 'proportional', title: mark, mark, datasets: [{ id: 'primary', fields: [{ id: 'label', role: 'dimension', dataType: 'string', nullable: false, label: 'Label' }, { id: 'value', role: 'measure', dataType: 'decimal', nullable: false, label: 'Value' }] }], dataBudget: { maxRows: 100, requiredCompleteness: 'complete' }, accessibility: { title: mark, description: mark }, interactions: [], category: { dataset: 'primary', field: 'label' }, value: { dataset: 'primary', field: 'value' }, presentation: { legend: 'right', showLabels: true, orientation: 'vertical', rose: true, centerLabel: mark === 'donut' ? 'Orders' : undefined, labelPosition: 'outside', innerRadius: mark === 'donut' ? 0.54 : undefined, outerRadius: mark === 'donut' ? 0.76 : undefined, align: mark === 'funnel' ? 'left' : undefined, sort: mark === 'funnel' ? 'ascending' : undefined } },
     dataState: { kind: 'inline', specRevision: 'sha256:test', dataRevision: 1, generation: 1, datasets: [{ id: 'primary', specRevision: 'sha256:test', dataRevision: 1, generation: 1, columns: ['label', 'value'], rows: [['A', 10]], completeness: 'complete' }] }, selection: [], status: { kind: 'ready' }, diagnostics: [],
   } as VisualizationEnvelope
@@ -757,7 +838,7 @@ function networkFixture(mark: 'graph' | 'sankey'): VisualizationEnvelope {
 
 function gaugeFixture(): VisualizationEnvelope {
   return {
-    schemaVersion: 5, visualID: 'gauge', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
+    schemaVersion: 6, visualID: 'gauge', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
     spec: { kind: 'polar', title: 'Gauge', mark: 'gauge', datasets: [{ id: 'primary', fields: [{ id: 'value', role: 'measure', dataType: 'decimal', nullable: false, label: 'Rate', format: { kind: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 } }] }], dataBudget: { maxRows: 1, requiredCompleteness: 'complete' }, accessibility: { title: 'Gauge', description: 'Gauge' }, interactions: [], value: { dataset: 'primary', field: 'value' }, presentation: { legend: 'hidden', showLabels: true, minimum: 0, maximum: 1, showPointer: true, progressWidth: 12, thresholds: [{ value: 0.5, tone: 'warning' }, { value: 0.8, tone: 'danger' }] } },
     dataState: { kind: 'inline', specRevision: 'sha256:test', dataRevision: 1, generation: 1, datasets: [{ id: 'primary', specRevision: 'sha256:test', dataRevision: 1, generation: 1, columns: ['value'], rows: [[0.75]], completeness: 'complete' }] }, selection: [], status: { kind: 'ready' }, diagnostics: [],
   } as VisualizationEnvelope

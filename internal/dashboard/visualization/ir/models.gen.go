@@ -208,6 +208,49 @@ type PivotVisualizationSpec struct {
 	Presentation      GridVisualizationPresentation                 `json:"presentation"`
 }
 
+type PointVisualizationColorScale struct {
+	Kind    VisualizationPointColorScaleKind `json:"kind"`
+	Minimum *float64                         `json:"minimum,omitempty"`
+	Maximum *float64                         `json:"maximum,omitempty"`
+	Scheme  *string                          `json:"scheme,omitempty"`
+}
+
+type PointVisualizationPresentation struct {
+	VisualizationPresentation
+	Overplot       VisualizationPointOverplotStrategy `json:"overplot"`
+	Opacity        float64                            `json:"opacity"`
+	LargeMode      VisualizationPointLargeMode        `json:"largeMode"`
+	LargeThreshold int64                              `json:"largeThreshold"`
+	Brush          []VisualizationPointBrushGesture   `json:"brush"`
+}
+
+type PointVisualizationSizeScale struct {
+	Minimum       *float64 `json:"minimum,omitempty"`
+	Maximum       *float64 `json:"maximum,omitempty"`
+	MinimumPixels float64  `json:"minimumPixels"`
+	MaximumPixels float64  `json:"maximumPixels"`
+}
+
+type PointVisualizationSpec struct {
+	VisualizationSpecBase
+	Kind             string                            `json:"kind"`
+	Identity         []VisualizationFieldRef           `json:"identity"`
+	X                VisualizationFieldRef             `json:"x"`
+	Y                VisualizationFieldRef             `json:"y"`
+	Size             *VisualizationFieldRef            `json:"size,omitempty"`
+	Color            *VisualizationFieldRef            `json:"color,omitempty"`
+	Series           *VisualizationFieldRef            `json:"series,omitempty"`
+	Label            *VisualizationFieldRef            `json:"label,omitempty"`
+	Tooltip          *[]VisualizationFieldRef          `json:"tooltip,omitempty"`
+	ColorScale       *PointVisualizationColorScale     `json:"colorScale,omitempty"`
+	SizeScale        *PointVisualizationSizeScale      `json:"sizeScale,omitempty"`
+	Axes             *[]VisualizationAxisConfiguration `json:"axes,omitempty"`
+	ReferenceLines   *[]VisualizationReferenceLine     `json:"referenceLines,omitempty"`
+	ReferenceBands   *[]VisualizationReferenceBand     `json:"referenceBands,omitempty"`
+	EventAnnotations *[]VisualizationEventAnnotation   `json:"eventAnnotations,omitempty"`
+	Presentation     PointVisualizationPresentation    `json:"presentation"`
+}
+
 type PolarVisualizationPresentation struct {
 	VisualizationPresentation
 	Minimum       *float64                  `json:"minimum,omitempty"`
@@ -640,7 +683,6 @@ const (
 	VisualizationCartesianMarkArea        VisualizationCartesianMark = "area"
 	VisualizationCartesianMarkBar         VisualizationCartesianMark = "bar"
 	VisualizationCartesianMarkColumn      VisualizationCartesianMark = "column"
-	VisualizationCartesianMarkScatter     VisualizationCartesianMark = "scatter"
 	VisualizationCartesianMarkHistogram   VisualizationCartesianMark = "histogram"
 	VisualizationCartesianMarkCombo       VisualizationCartesianMark = "combo"
 	VisualizationCartesianMarkWaterfall   VisualizationCartesianMark = "waterfall"
@@ -2421,6 +2463,28 @@ type VisualizationPathLayer struct {
 	Opacity   float64                    `json:"opacity"`
 }
 
+type VisualizationPointBrushGesture string
+
+const (
+	VisualizationPointBrushGestureRectangle VisualizationPointBrushGesture = "rectangle"
+	VisualizationPointBrushGestureLasso     VisualizationPointBrushGesture = "lasso"
+)
+
+type VisualizationPointColorScaleKind string
+
+const (
+	VisualizationPointColorScaleKindCategorical  VisualizationPointColorScaleKind = "categorical"
+	VisualizationPointColorScaleKindQuantitative VisualizationPointColorScaleKind = "quantitative"
+)
+
+type VisualizationPointLargeMode string
+
+const (
+	VisualizationPointLargeModeAutomatic VisualizationPointLargeMode = "automatic"
+	VisualizationPointLargeModeAlways    VisualizationPointLargeMode = "always"
+	VisualizationPointLargeModeNever     VisualizationPointLargeMode = "never"
+)
+
 type VisualizationPointLayer struct {
 	VisualizationGeographicLayerBase
 	Kind      string                     `json:"kind"`
@@ -2434,6 +2498,13 @@ type VisualizationPointLayer struct {
 	Cluster   VisualizationMapCluster    `json:"cluster"`
 	Opacity   float64                    `json:"opacity"`
 }
+
+type VisualizationPointOverplotStrategy string
+
+const (
+	VisualizationPointOverplotStrategyShowAll VisualizationPointOverplotStrategy = "show_all"
+	VisualizationPointOverplotStrategyOpacity VisualizationPointOverplotStrategy = "opacity"
+)
 
 type VisualizationPolarMark string
 
@@ -3034,6 +3105,7 @@ func (*HierarchyVisualizationSpec) isVisualizationSpecVariant()    {}
 func (*KPIVisualizationSpec) isVisualizationSpecVariant()          {}
 func (*MatrixVisualizationSpec) isVisualizationSpecVariant()       {}
 func (*PivotVisualizationSpec) isVisualizationSpecVariant()        {}
+func (*PointVisualizationSpec) isVisualizationSpecVariant()        {}
 func (*PolarVisualizationSpec) isVisualizationSpecVariant()        {}
 func (*ProportionalVisualizationSpec) isVisualizationSpecVariant() {}
 func (*TableVisualizationSpec) isVisualizationSpecVariant()        {}
@@ -3071,6 +3143,11 @@ func (value VisualizationSpec) MarshalJSON() ([]byte, error) {
 		}
 		return json.Marshal(variant)
 	case *PivotVisualizationSpec:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationSpec variant is nil")
+		}
+		return json.Marshal(variant)
+	case *PointVisualizationSpec:
 		if variant == nil {
 			return nil, fmt.Errorf("VisualizationSpec variant is nil")
 		}
@@ -3363,6 +3440,42 @@ func (value *VisualizationSpec) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Value, err)
 		}
 		value.Value = &variant
+	case "point":
+		if _, ok := fields["accessibility"]; !ok {
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Value)
+		}
+		if _, ok := fields["dataBudget"]; !ok {
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Value)
+		}
+		if _, ok := fields["datasets"]; !ok {
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Value)
+		}
+		if _, ok := fields["identity"]; !ok {
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property identity is missing", tag.Value)
+		}
+		if _, ok := fields["interactions"]; !ok {
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Value)
+		}
+		if _, ok := fields["kind"]; !ok {
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Value)
+		}
+		if _, ok := fields["presentation"]; !ok {
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property presentation is missing", tag.Value)
+		}
+		if _, ok := fields["title"]; !ok {
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Value)
+		}
+		if _, ok := fields["x"]; !ok {
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property x is missing", tag.Value)
+		}
+		if _, ok := fields["y"]; !ok {
+			return fmt.Errorf("decode VisualizationSpec variant %q: required property y is missing", tag.Value)
+		}
+		var variant PointVisualizationSpec
+		if err := decode(&variant); err != nil {
+			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Value, err)
+		}
+		value.Value = &variant
 	case "polar":
 		if _, ok := fields["accessibility"]; !ok {
 			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Value)
@@ -3476,6 +3589,7 @@ type VisualizationSpecVisitor interface {
 	VisitKPIVisualizationSpec(*KPIVisualizationSpec) error
 	VisitMatrixVisualizationSpec(*MatrixVisualizationSpec) error
 	VisitPivotVisualizationSpec(*PivotVisualizationSpec) error
+	VisitPointVisualizationSpec(*PointVisualizationSpec) error
 	VisitPolarVisualizationSpec(*PolarVisualizationSpec) error
 	VisitProportionalVisualizationSpec(*ProportionalVisualizationSpec) error
 	VisitTableVisualizationSpec(*TableVisualizationSpec) error
@@ -3524,6 +3638,11 @@ func (value *VisualizationSpec) Visit(visitor VisualizationSpecVisitor) error {
 			return fmt.Errorf("VisualizationSpec variant is nil")
 		}
 		return visitor.VisitPivotVisualizationSpec(variant)
+	case *PointVisualizationSpec:
+		if variant == nil {
+			return fmt.Errorf("VisualizationSpec variant is nil")
+		}
+		return visitor.VisitPointVisualizationSpec(variant)
 	case *PolarVisualizationSpec:
 		if variant == nil {
 			return fmt.Errorf("VisualizationSpec variant is nil")
@@ -3586,6 +3705,11 @@ func (value *VisualizationSpec) Kind() (string, error) {
 			return "", fmt.Errorf("VisualizationSpec variant is nil")
 		}
 		return "pivot", nil
+	case *PointVisualizationSpec:
+		if variant == nil {
+			return "", fmt.Errorf("VisualizationSpec variant is nil")
+		}
+		return "point", nil
 	case *PolarVisualizationSpec:
 		if variant == nil {
 			return "", fmt.Errorf("VisualizationSpec variant is nil")
@@ -3644,6 +3768,11 @@ func (value *VisualizationSpec) Base() (*VisualizationSpecBase, error) {
 		}
 		return &variant.VisualizationSpecBase, nil
 	case *PivotVisualizationSpec:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationSpec variant is nil")
+		}
+		return &variant.VisualizationSpecBase, nil
+	case *PointVisualizationSpec:
 		if variant == nil {
 			return nil, fmt.Errorf("VisualizationSpec variant is nil")
 		}

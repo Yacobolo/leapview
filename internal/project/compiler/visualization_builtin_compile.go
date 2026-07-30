@@ -16,6 +16,11 @@ import (
 func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model *semanticmodel.Model) (visualizationir.VisualizationSpec, error) {
 	shape := authored.ResultShape()
 	columns := compiledShapeColumns(shape)
+	if shape == "point" {
+		for _, binding := range compiledVisualFields(authored.Query) {
+			columns = append(columns, binding.Alias)
+		}
+	}
 	if shape == "hierarchy" {
 		seen := map[string]struct{}{"node": {}, "parent": {}, "value": {}}
 		for _, binding := range compiledFields(authored.Query.Dimensions) {
@@ -34,18 +39,36 @@ func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model
 	}
 	fields := make([]visualizationir.VisualizationField, len(columns))
 	identities := map[string]struct{}{}
+	for _, identity := range authored.Point.Identity {
+		identities[identity] = struct{}{}
+	}
 	for _, mapping := range authored.Interaction.PointSelection.Mappings {
 		identities[mapping.Value] = struct{}{}
 	}
+	pointMeasures := map[string]struct{}{}
+	for _, measure := range compiledFields(authored.Query.Measures) {
+		pointMeasures[measure.Alias] = struct{}{}
+	}
+	pointTime := ""
+	if value := compiledTime(authored.Query.Time); value != nil {
+		pointTime = value.Alias
+	}
 	for index, column := range columns {
 		role := visualizationir.VisualizationFieldRoleDimension
-		if compiledShapeMeasure(column) {
+		if compiledShapeMeasure(column) || shape == "point" && containsStringKey(pointMeasures, column) {
 			role = visualizationir.VisualizationFieldRoleMeasure
 		}
 		if _, ok := identities[column]; ok {
 			role = visualizationir.VisualizationFieldRoleIdentity
 		}
-		fields[index] = visualizationir.VisualizationField{ID: column, Role: role, DataType: compiledShapeDataType(column), Nullable: true, Label: compiledShapeLabel(column)}
+		dataType := compiledShapeDataType(column)
+		if shape == "point" && containsStringKey(pointMeasures, column) {
+			dataType = visualizationir.VisualizationDataTypeDecimal
+		}
+		if shape == "point" && column == pointTime {
+			dataType = visualizationir.VisualizationDataTypeTemporal
+		}
+		fields[index] = visualizationir.VisualizationField{ID: column, Role: role, DataType: dataType, Nullable: true, Label: compiledShapeLabel(column)}
 	}
 	applyBuiltInFieldSemantics(fields, shape, authored, model)
 	title := compiledVisualTitle(authored, id, model)
@@ -139,11 +162,89 @@ func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model
 			VisualizationSpecBase: base, Kind: "polar", Mark: visualizationir.VisualizationPolarMark(authored.Type), Category: optionalRef("label"), Value: ref("value"), Series: optionalRef("series"),
 			Presentation: visualizationir.PolarVisualizationPresentation{VisualizationPresentation: common, Minimum: presentation.Minimum, Maximum: presentation.Maximum, Target: presentation.Target, ShowPointer: true, Area: presentation.Area, ProgressWidth: optionalPositiveFloat(presentation.ProgressWidth), Thresholds: compiledThresholds(presentation.Thresholds)},
 		}}, nil
+	case "scatter":
+		base.Kind = "point"
+		decisionContext, err := compileCartesianDecisionContext(datasets, presentation)
+		if err != nil {
+			return visualizationir.VisualizationSpec{}, err
+		}
+		identity := make([]visualizationir.VisualizationFieldRef, 0, len(authored.Point.Identity))
+		for _, field := range authored.Point.Identity {
+			identity = append(identity, ref(field))
+		}
+		tooltip := make([]visualizationir.VisualizationFieldRef, 0, len(authored.Point.Tooltip))
+		for _, field := range authored.Point.Tooltip {
+			tooltip = append(tooltip, ref(field))
+		}
+		var tooltipRef *[]visualizationir.VisualizationFieldRef
+		if len(tooltip) > 0 {
+			tooltipRef = &tooltip
+		}
+		var colorScale *visualizationir.PointVisualizationColorScale
+		if authored.Point.Color != "" {
+			kind := authored.Point.ColorScale.Kind
+			if kind == "" {
+				kind = "categorical"
+				if containsStringKey(pointMeasures, authored.Point.Color) {
+					kind = "quantitative"
+				}
+			}
+			colorScale = &visualizationir.PointVisualizationColorScale{
+				Kind: visualizationir.VisualizationPointColorScaleKind(kind), Minimum: authored.Point.ColorScale.Minimum,
+				Maximum: authored.Point.ColorScale.Maximum, Scheme: optionalString(authored.Point.ColorScale.Scheme),
+			}
+		}
+		var sizeScale *visualizationir.PointVisualizationSizeScale
+		if authored.Point.Size != "" {
+			minimumPixels := authored.Point.SizeScale.MinimumPixels
+			if minimumPixels <= 0 {
+				minimumPixels = 8
+			}
+			maximumPixels := authored.Point.SizeScale.MaximumPixels
+			if maximumPixels <= 0 {
+				maximumPixels = 40
+			}
+			sizeScale = &visualizationir.PointVisualizationSizeScale{
+				Minimum: authored.Point.SizeScale.Minimum, Maximum: authored.Point.SizeScale.Maximum,
+				MinimumPixels: minimumPixels, MaximumPixels: maximumPixels,
+			}
+		}
+		overplot := authored.Point.Overplot.Strategy
+		if overplot == "" {
+			overplot = "opacity"
+		}
+		opacity := authored.Point.Overplot.Opacity
+		if opacity <= 0 {
+			opacity = 0.7
+		}
+		largeMode := authored.Point.Overplot.LargeMode
+		if largeMode == "" {
+			largeMode = "automatic"
+		}
+		largeThreshold := authored.Point.Overplot.LargeThreshold
+		if largeThreshold <= 0 {
+			largeThreshold = 2_000
+		}
+		brush := make([]visualizationir.VisualizationPointBrushGesture, 0, len(authored.Point.Brush))
+		for _, gesture := range authored.Point.Brush {
+			brush = append(brush, visualizationir.VisualizationPointBrushGesture(gesture))
+		}
+		return visualizationir.VisualizationSpec{Value: &visualizationir.PointVisualizationSpec{
+			VisualizationSpecBase: base, Kind: "point", Identity: identity, X: ref(authored.Point.X), Y: ref(authored.Point.Y),
+			Size: optionalRef(authored.Point.Size), Color: optionalRef(authored.Point.Color), Series: optionalRef(authored.Point.Series),
+			Label: optionalRef(authored.Point.Label), Tooltip: tooltipRef, ColorScale: colorScale, SizeScale: sizeScale,
+			Axes: decisionContext.axes, ReferenceLines: decisionContext.referenceLines, ReferenceBands: decisionContext.referenceBands,
+			EventAnnotations: decisionContext.eventAnnotations,
+			Presentation: visualizationir.PointVisualizationPresentation{
+				VisualizationPresentation: common, Overplot: visualizationir.VisualizationPointOverplotStrategy(overplot), Opacity: opacity,
+				LargeMode: visualizationir.VisualizationPointLargeMode(largeMode), LargeThreshold: int64(largeThreshold), Brush: brush,
+			},
+		}}, nil
 	default:
 		mark := visualizationir.VisualizationCartesianMark(authored.Type)
 		supported := map[visualizationir.VisualizationCartesianMark]bool{
 			visualizationir.VisualizationCartesianMarkLine: true, visualizationir.VisualizationCartesianMarkArea: true, visualizationir.VisualizationCartesianMarkBar: true,
-			visualizationir.VisualizationCartesianMarkColumn: true, visualizationir.VisualizationCartesianMarkScatter: true, visualizationir.VisualizationCartesianMarkHistogram: true,
+			visualizationir.VisualizationCartesianMarkColumn: true, visualizationir.VisualizationCartesianMarkHistogram: true,
 			visualizationir.VisualizationCartesianMarkCombo: true, visualizationir.VisualizationCartesianMarkWaterfall: true, visualizationir.VisualizationCartesianMarkCandlestick: true,
 			visualizationir.VisualizationCartesianMarkBoxplot: true, visualizationir.VisualizationCartesianMarkHeatmap: true,
 		}
@@ -186,6 +287,11 @@ func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model
 			},
 		}}, nil
 	}
+}
+
+func containsStringKey(values map[string]struct{}, candidate string) bool {
+	_, ok := values[candidate]
+	return ok
 }
 
 func compileContextDatasetSchemas(authored reportdef.Visual, model *semanticmodel.Model) ([]visualizationir.VisualizationDatasetSchema, error) {

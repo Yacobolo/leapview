@@ -347,6 +347,8 @@ func dashboardVisualMark(spec visualizationir.VisualizationSpec) *string {
 	switch value := spec.Value.(type) {
 	case *visualizationir.CartesianVisualizationSpec:
 		mark = string(value.Mark)
+	case *visualizationir.PointVisualizationSpec:
+		mark = "scatter"
 	case *visualizationir.ProportionalVisualizationSpec:
 		mark = string(value.Mark)
 	case *visualizationir.HierarchyVisualizationSpec:

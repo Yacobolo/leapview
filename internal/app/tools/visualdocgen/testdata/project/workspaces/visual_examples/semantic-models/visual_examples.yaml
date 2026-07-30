@@ -7,6 +7,12 @@ metadata:
 spec:
   tables:
   - orders
+  dimensions:
+    purchase_date:
+      type: date
+      grains: [day, week, month]
+      bindings:
+        orders: {field: orders.purchase_date}
   measures:
     order_count:
       label: Orders

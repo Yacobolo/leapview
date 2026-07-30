@@ -30,6 +30,7 @@ spec:
         orders: {field: orders.purchase_timestamp}
     purchase_date:
       type: date
+      grains: [day, week, month]
       bindings:
         orders: {field: orders.purchase_date}
     state:
