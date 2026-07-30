@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 	_ "github.com/duckdb/duckdb-go/v2"
+	"github.com/flidai/leapview/internal/analytics/connectionbinding"
 	analyticsduckdb "github.com/flidai/leapview/internal/analytics/duckdb"
 	analyticsducklake "github.com/flidai/leapview/internal/analytics/ducklake"
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
@@ -53,6 +54,19 @@ func TestMinIOParquetSourceRefreshContract(t *testing.T) {
 		t.Fatalf("path escape validation error = %v", err)
 	}
 
+	selection, err := connectionbinding.NewResolverSelection(connectionbinding.ResolverSelectionInput{
+		TargetID:    "minio-integration",
+		Environment: "test",
+		TargetClass: connectionbinding.TargetDevelopment,
+		Kind:        connectionbinding.ResolverEnvironment,
+	})
+	if err != nil {
+		t.Fatalf("select development credential resolver: %v", err)
+	}
+	credentialResolver, err := analyticsduckdb.NewDevelopmentEnvironmentCredentialResolver(selection)
+	if err != nil {
+		t.Fatalf("configure development credential resolver: %v", err)
+	}
 	db, err := analyticsducklake.Open(ctx, analyticsducklake.Config{RootDir: filepath.Join(t.TempDir(), "ducklake"), MaxConnections: 2})
 	if err != nil {
 		t.Fatal(err)
@@ -67,7 +81,11 @@ func TestMinIOParquetSourceRefreshContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(refreshLease.Context(), analyticsduckdb.WorkspaceRuntimeConfig{Models: map[string]*semanticmodel.Model{"commerce": model}, Database: db})
+	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(refreshLease.Context(), analyticsduckdb.WorkspaceRuntimeConfig{
+		Models:             map[string]*semanticmodel.Model{"commerce": model},
+		Database:           db,
+		CredentialResolver: credentialResolver,
+	})
 	refreshLease.Release()
 	if err != nil {
 		t.Fatalf("initial MinIO refresh: %v", err)
