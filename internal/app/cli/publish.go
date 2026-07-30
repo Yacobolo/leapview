@@ -15,7 +15,8 @@ import (
 )
 
 type projectPublishOperations struct {
-	client cliapi.Client
+	client        cliapi.Client
+	requireActive bool
 }
 
 func publishCommand(ctx context.Context) *cobra.Command {
@@ -71,6 +72,12 @@ func (operations projectPublishOperations) Publish(
 	}
 	if response.Body.Approval != nil &&
 		response.Body.Approval.Status == deploymentgen.DeploymentApprovalStatusPending {
+		if operations.requireActive {
+			return fmt.Errorf(
+				"publish request %s is pending approval; target bootstrap requires an active deployment",
+				response.Body.Id,
+			)
+		}
 		fmt.Fprintf(out, "publish request %s pending approval\n", response.Body.Id)
 		return nil
 	}

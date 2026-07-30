@@ -151,6 +151,31 @@ func TestRepositoryInitializeInstanceRollsBackWhenCredentialPreparationFails(t *
 	}
 }
 
+func TestRepositoryRejectsEvaluationIngestOutsideEvaluation(t *testing.T) {
+	ctx := context.Background()
+	store, repo := openAccessRepo(t, ctx)
+	_, err := repo.InitializeInstance(
+		ctx,
+		access.InstanceInitializationInput{
+			Email:                "admin@example.com",
+			Environment:          "production",
+			Now:                  time.Date(2026, time.July, 29, 12, 0, 0, 0, time.UTC),
+			EvaluationDataIngest: true,
+		},
+		nil,
+	)
+	if err == nil ||
+		!strings.Contains(err.Error(), "restricted to the evaluation environment") {
+		t.Fatalf("InitializeInstance() error = %v", err)
+	}
+	if _, err := store.GetSetting(
+		ctx,
+		access.InstanceInitializedSetting,
+	); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("instance initialization setting error = %v", err)
+	}
+}
+
 func TestRepositoryLocalUserPasswordLifecycle(t *testing.T) {
 	ctx := context.Background()
 	_, repo := openAccessRepo(t, ctx)

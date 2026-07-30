@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -48,6 +49,32 @@ func TestProjectPublishOperationsUseGeneratedExactCandidateProtocol(t *testing.T
 	}
 	if !strings.Contains(output.String(), "pending approval") {
 		t.Fatalf("output = %q", output.String())
+	}
+}
+
+func TestProjectPublishOperationsRequireActivationForBootstrap(t *testing.T) {
+	transport := &publishTransportStub{pendingApproval: true}
+	operations := projectPublishOperations{
+		client:        fixedTransportClient{transport: transport},
+		requireActive: true,
+	}
+	checkpoint := projectcli.CandidateCheckpoint{
+		ProjectPath: "/work/leapview.yaml", TargetOrigin: "https://target.example",
+		TargetID: "target_1", Environment: "evaluation", ProjectID: "finance",
+		CandidateID: "cand_1", CandidateRevision: 7,
+		ArtifactDigest:   "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		ProvenanceDigest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+	}
+	err := operations.Publish(t.Context(), projectcli.PublishOptions{
+		ProjectPath: checkpoint.ProjectPath,
+		Credentials: cliapi.Credentials{
+			Target: checkpoint.TargetOrigin,
+			Token:  "token",
+		},
+		Checkpoint: checkpoint,
+	}, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "pending approval") {
+		t.Fatalf("Publish() error = %v", err)
 	}
 }
 

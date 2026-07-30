@@ -11,9 +11,10 @@ var ErrInstanceAlreadyInitialized = errors.New("LeapView instance is already ini
 const InstanceInitializedSetting = "instance.initialized"
 
 type InstanceInitializationInput struct {
-	Email       string
-	Environment string
-	Now         time.Time
+	Email                string
+	Environment          string
+	Now                  time.Time
+	EvaluationDataIngest bool
 }
 
 type InitialInstanceCredentials struct {
@@ -38,4 +39,12 @@ func InitialPublisherPrivileges() []Privilege {
 		PrivilegeRequestDeployment,
 		PrivilegeViewAudit,
 	}
+}
+
+// LocalEvaluationPublisherPrivileges extend the one-time publisher only far
+// enough to stage the bundled synthetic dataset. Evaluation remains unable to
+// approve or activate deployments directly.
+func LocalEvaluationPublisherPrivileges() []Privilege {
+	privileges := InitialPublisherPrivileges()
+	return append(privileges, PrivilegeIngestData)
 }

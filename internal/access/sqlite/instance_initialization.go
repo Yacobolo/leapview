@@ -14,6 +14,12 @@ func (r *Repository) InitializeInstance(
 	prepare func(access.InitialInstanceCredentials) error,
 ) (access.InitialInstanceCredentials, error) {
 	var result access.InitialInstanceCredentials
+	if input.EvaluationDataIngest &&
+		input.Environment != "evaluation" {
+		return result, fmt.Errorf(
+			"evaluation data ingest is restricted to the evaluation environment",
+		)
+	}
 	err := r.RunAuditedMutationBatch(ctx, func(txRepo access.Repository) ([]access.AuditEventInput, error) {
 		sqliteRepo, ok := txRepo.(*Repository)
 		if !ok {
@@ -46,10 +52,14 @@ func (r *Repository) InitializeInstance(
 			return nil, err
 		}
 		expires := input.Now.UTC().Add(24 * time.Hour).Truncate(time.Second)
+		privileges := access.InitialPublisherPrivileges()
+		if input.EvaluationDataIngest {
+			privileges = access.LocalEvaluationPublisherPrivileges()
+		}
 		token, _, err := txRepo.CreateAPITokenWithMetadata(ctx, access.APITokenInput{
 			PrincipalID: principal.ID,
 			Name:        access.APITokenNameInitialPublisher,
-			Privileges:  access.InitialPublisherPrivileges(),
+			Privileges:  privileges,
 			ExpiresAt:   expires,
 		})
 		if err != nil {

@@ -99,6 +99,7 @@ func TestDeveloperWorkflowsUseExactCandidatePublishing(t *testing.T) {
 		"Taskfile.yml": {
 			"go run ./cmd/leapview dev --once",
 			"go run ./cmd/leapview publish",
+			"dev:publish:",
 		},
 		filepath.Join("scripts", "dev-server.sh"): {
 			"go run ./cmd/leapview dev --once",
@@ -128,6 +129,7 @@ func TestDeveloperWorkflowsUseExactCandidatePublishing(t *testing.T) {
 			"leapview deploy",
 			`"$BIN" deploy`,
 			"--auto-approve",
+			"deploy:dev:",
 		} {
 			if strings.Contains(body, forbidden) {
 				t.Fatalf("%s still invokes removed command surface %q", name, forbidden)

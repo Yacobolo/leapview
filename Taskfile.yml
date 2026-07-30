@@ -84,8 +84,8 @@ tasks:
     cmds:
       - ./scripts/dev-server.sh status
 
-  deploy:dev:
-    desc: Sync Olist data and atomically deploy all project workspaces
+  dev:publish:
+    desc: Sync Olist data and publish the exact current development candidate
     cmds:
       - |
         test -f .tmp/dev-server.port || { echo "Dev server port file missing. Run task dev first."; exit 1; }

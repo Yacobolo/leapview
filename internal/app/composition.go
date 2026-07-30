@@ -299,7 +299,10 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	deploymentConfig := deploymentmodule.Config{
 		Database: store.SQLDB(), States: servingStateRepo, Runtime: deploymentRuntime,
 		ManagedData: managedDataResolver, DeploymentMetadata: managedDataModule.DeploymentMetadata(),
-		Protected: production,
+		Protected: protectedPublishingTarget(
+			production,
+			cfg.EvaluationMode,
+		),
 		CurrentApprovalActor: func(r *http.Request) (deploymentmodule.ApprovalActor, bool) {
 			evidence, ok := accessModule.CurrentCredentialEvidence(r)
 			if !ok {
@@ -416,7 +419,7 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 			DuckLakeCatalogPath: duckLakeCatalogPath, DuckLakeDataPath: cfg.DuckLakeDataDir(),
 			DefaultEnvironment: string(environment), SCIMBearerToken: cfg.SCIMBearerToken,
 			MetricsBearerToken: cfg.MetricsBearerToken, AllowedHosts: allowedHosts, Assets: assets,
-			InstanceID: instanceID,
+			InstanceID: instanceID, RequireActiveDeployment: cfg.EvaluationMode,
 		},
 		httpAssemblyInputs{
 			PublicURL:       publicURL,
@@ -433,6 +436,10 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	handler := Routes(routes, runtime, platformServices, policy)
 	lifecycle := newRuntimeLifecycle(platformServices.workers, runtime.analyticsModule, runtime.workloads)
 	return handler, lifecycle, cleanup.Close, nil
+}
+
+func protectedPublishingTarget(production, evaluation bool) bool {
+	return production && !evaluation
 }
 
 func firstConfigured(values ...string) string {

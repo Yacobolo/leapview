@@ -22,9 +22,32 @@ func TestEvaluationCommandExposesServerAndOneTimeFirstLogin(t *testing.T) {
 	if command.Name() != "evaluate" || !command.Runnable() {
 		t.Fatalf("evaluation command = %#v, want runnable evaluate command", command)
 	}
+	if command.Flags().Lookup("port") == nil {
+		t.Fatal("evaluation command is missing its isolated loopback --port")
+	}
+	for _, forbidden := range []string{"project", "target", "token"} {
+		if command.Flags().Lookup(forbidden) != nil {
+			t.Fatalf("evaluation command exposes authoring flag --%s", forbidden)
+		}
+	}
 	firstLogin, _, err := command.Find([]string{"first-login"})
 	if err != nil || firstLogin == nil || firstLogin.Name() != "first-login" {
 		t.Fatalf("first-login command = %#v, err=%v", firstLogin, err)
+	}
+}
+
+func TestEvaluationTargetDerivesOneOrdinaryLoopbackIdentity(t *testing.T) {
+	target, err := newEvaluationTarget(8181)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target.ListenAddress != ":8181" ||
+		target.PublicURL != "http://localhost:8181" ||
+		target.ServerOrigin != "http://127.0.0.1:8181" {
+		t.Fatalf("target = %#v", target)
+	}
+	if _, err := newEvaluationTarget(0); err == nil {
+		t.Fatal("port zero created an ambiguous evaluation target")
 	}
 }
 
@@ -34,7 +57,11 @@ func TestConfigureEvaluationEnvironmentPersistsPrivateRuntimeSecrets(t *testing.
 	t.Setenv("LEAPVIEW_PUBLIC_URL", "https://unsafe.example.com")
 	t.Setenv("LEAPVIEW_TRUST_PROXY_HEADERS", "true")
 
-	if err := configureEvaluationEnvironment(home); err != nil {
+	target, err := newEvaluationTarget(8181)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := configureEvaluationEnvironment(home, target); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := config.Load()
@@ -42,7 +69,8 @@ func TestConfigureEvaluationEnvironmentPersistsPrivateRuntimeSecrets(t *testing.
 		t.Fatal(err)
 	}
 	if !cfg.EvaluationMode || !cfg.Production || cfg.Environment != evaluationEnvironment ||
-		!cfg.LocalAuth || cfg.PublicURL != evaluationPublicURL || cfg.TrustProxyHeaders {
+		!cfg.LocalAuth || cfg.PublicURL != target.PublicURL ||
+		cfg.ListenAddr() != target.ListenAddress || cfg.TrustProxyHeaders {
 		t.Fatalf("evaluation configuration = %#v", cfg)
 	}
 	if err := cfg.Validate(config.ProfileServe); err != nil {
@@ -57,7 +85,7 @@ func TestConfigureEvaluationEnvironmentPersistsPrivateRuntimeSecrets(t *testing.
 		t.Fatalf("runtime config mode = %o, want 600", info.Mode().Perm())
 	}
 	firstCSRF := cfg.CSRFKey
-	if err := configureEvaluationEnvironment(home); err != nil {
+	if err := configureEvaluationEnvironment(home, target); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err = config.Load()
@@ -72,7 +100,11 @@ func TestConfigureEvaluationEnvironmentPersistsPrivateRuntimeSecrets(t *testing.
 func TestEvaluationCredentialHandoffIsPrivateRecoverableAndOneTime(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("LEAPVIEW_HOME", home)
-	if err := configureEvaluationEnvironment(home); err != nil {
+	target, err := newEvaluationTarget(8080)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := configureEvaluationEnvironment(home, target); err != nil {
 		t.Fatal(err)
 	}
 	token, err := prepareEvaluationCredentials(context.Background(), home)
@@ -112,6 +144,25 @@ func TestEvaluationCredentialHandoffIsPrivateRecoverableAndOneTime(t *testing.T)
 	}
 	if err := consumeEvaluationFirstLogin(home, &out); err == nil {
 		t.Fatal("second first-login delivery succeeded")
+	}
+}
+
+func TestEvaluationBootstrapUsesExactProjectCandidatePipeline(t *testing.T) {
+	source, err := os.ReadFile("evaluation.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(source)
+	for _, required := range []string{
+		"projectcli.RunDev",
+		"projectcli.RunPublish",
+	} {
+		if !strings.Contains(body, required) {
+			t.Fatalf("evaluation bootstrap is missing %s", required)
+		}
+	}
+	if strings.Contains(body, "runDeploy(") {
+		t.Fatal("evaluation bootstrap bypasses the candidate publication pipeline")
 	}
 }
 

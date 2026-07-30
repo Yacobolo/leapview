@@ -36,29 +36,14 @@ func PublishCommand(
 		Short: "Publish the exact candidate last synchronized by dev",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			if client == nil {
-				return fmt.Errorf("Project CLI API client is required")
-			}
-			if store == nil {
-				return fmt.Errorf("Project candidate checkpoint store is required")
-			}
-			if operations == nil {
-				return fmt.Errorf("Project publish operations are required")
-			}
-			credentials, err := client.Resolve(ctx, values.Credentials)
-			if err != nil {
-				return err
-			}
-			checkpoint, err := store.Load(values.ProjectPath, credentials.Target)
-			if errors.Is(err, ErrCandidateCheckpointNotFound) {
-				return fmt.Errorf("%w for this project and target; run leapview dev first", err)
-			}
-			if err != nil {
-				return err
-			}
-			values.Credentials = credentials
-			values.Checkpoint = checkpoint
-			return operations.Publish(ctx, values, command.OutOrStdout())
+			return RunPublish(
+				ctx,
+				client,
+				store,
+				operations,
+				values,
+				command.OutOrStdout(),
+			)
 		},
 	}
 	command.Flags().StringVar(
@@ -74,4 +59,43 @@ func PublishCommand(
 		"ephemeral API token compatibility path",
 	)
 	return command
+}
+
+// RunPublish promotes the exact candidate checkpoint produced by RunDev. It is
+// shared by the public command and target bootstrap adapters that must not
+// bypass policy-governed publication.
+func RunPublish(
+	ctx context.Context,
+	client cliapi.Client,
+	store *CandidateCheckpointStore,
+	operations PublishOperations,
+	options PublishOptions,
+	out io.Writer,
+) error {
+	if client == nil {
+		return fmt.Errorf("Project CLI API client is required")
+	}
+	if store == nil {
+		return fmt.Errorf("Project candidate checkpoint store is required")
+	}
+	if operations == nil {
+		return fmt.Errorf("Project publish operations are required")
+	}
+	credentials, err := client.Resolve(ctx, options.Credentials)
+	if err != nil {
+		return err
+	}
+	checkpoint, err := store.Load(options.ProjectPath, credentials.Target)
+	if errors.Is(err, ErrCandidateCheckpointNotFound) {
+		return fmt.Errorf(
+			"%w for this project and target; run leapview dev first",
+			err,
+		)
+	}
+	if err != nil {
+		return err
+	}
+	options.Credentials = credentials
+	options.Checkpoint = checkpoint
+	return operations.Publish(ctx, options, out)
 }

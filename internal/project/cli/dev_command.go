@@ -58,7 +58,7 @@ func DevCommand(
 				}
 				values.ProjectPath = args[0]
 			}
-			return runDev(
+			return RunDev(
 				ctx,
 				client,
 				checkpoints,
@@ -102,7 +102,10 @@ func DevCommand(
 	return command
 }
 
-func runDev(
+// RunDev executes the Project-owned candidate synchronization lifecycle. It is
+// shared by the public command and target bootstrap adapters that must exercise
+// the exact same candidate contract.
+func RunDev(
 	ctx context.Context,
 	client cliapi.Client,
 	checkpoints *CandidateCheckpointStore,

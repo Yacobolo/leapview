@@ -429,6 +429,31 @@ func TestReadinessChecksActiveWorkspaceRuntime(t *testing.T) {
 	}
 }
 
+func TestReadinessCanRequireOneActiveDeployment(t *testing.T) {
+	handler := newHealth(healthConfig{
+		Platform: func(context.Context) error { return nil },
+		ActiveWorkspaces: func(context.Context) ([]string, error) {
+			return nil, nil
+		},
+		RuntimeReady:            func(context.Context, string) error { return nil },
+		RequireActiveDeployment: true,
+	})
+	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	response := httptest.NewRecorder()
+	handler.Readyz(response, request)
+	if response.Code != http.StatusServiceUnavailable ||
+		!strings.Contains(
+			response.Body.String(),
+			`"runtime":"no_active_deployments"`,
+		) {
+		t.Fatalf(
+			"readyz without active deployment = %d %s",
+			response.Code,
+			response.Body.String(),
+		)
+	}
+}
+
 func TestReadinessIncludesMapAssetIntegrity(t *testing.T) {
 	assets := &fakeMapAssetReadiness{}
 	server := assembleRuntime(fakeMetrics{}, testStoreOptions(testStore(t), assemblyConfig{DashboardAssets: assets}))

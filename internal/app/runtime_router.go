@@ -76,17 +76,18 @@ type runtimeServices struct {
 }
 
 type platformServices struct {
-	asyncJobs     jobs.Repository
-	jobModule     *jobsmodule.Module
-	auth          *accessmodule.Auth
-	assets        staticasset.Resolver
-	buildIdentity buildinfo.Identity
-	telemetry     *observability.Telemetry
-	health        *health
-	logger        *slog.Logger
-	workers       *platformlifecycle.Group
-	apiProtocol   *apiprotocol.Protocol
-	apiGenServers apiaggregate.Servers
+	asyncJobs               jobs.Repository
+	jobModule               *jobsmodule.Module
+	auth                    *accessmodule.Auth
+	assets                  staticasset.Resolver
+	buildIdentity           buildinfo.Identity
+	telemetry               *observability.Telemetry
+	health                  *health
+	logger                  *slog.Logger
+	workers                 *platformlifecycle.Group
+	apiProtocol             *apiprotocol.Protocol
+	apiGenServers           apiaggregate.Servers
+	requireActiveDeployment bool
 }
 
 type httpPolicy struct {
@@ -194,16 +195,17 @@ type workflowAssemblyInputs struct {
 }
 
 type runtimeAssemblyInputs struct {
-	InstanceID          string
-	DuckDBDir           string
-	DuckLakeCatalogPath string
-	DuckLakeDataPath    string
-	DefaultWorkspaceID  string
-	DefaultEnvironment  string
-	SCIMBearerToken     string
-	MetricsBearerToken  string
-	AllowedHosts        []string
-	Assets              staticasset.Resolver
+	InstanceID              string
+	DuckDBDir               string
+	DuckLakeCatalogPath     string
+	DuckLakeDataPath        string
+	DefaultWorkspaceID      string
+	DefaultEnvironment      string
+	SCIMBearerToken         string
+	MetricsBearerToken      string
+	AllowedHosts            []string
+	Assets                  staticasset.Resolver
+	RequireActiveDeployment bool
 }
 
 type httpAssemblyInputs struct {
@@ -335,6 +337,7 @@ func buildApplicationSurfaces(
 	}
 	servingStateRepo := data.ServingStateRepo
 	routes, runtime, platform, policy := newCompositionSurfaces(metrics, runtimeConfig.Assets, telemetry, dashboardTelemetry)
+	platform.requireActiveDeployment = runtimeConfig.RequireActiveDeployment
 	persistence := persistenceInputs{}
 	moduleWorkflow := workflowInputs{}
 	storage := storageInputs{}
@@ -1145,8 +1148,9 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				return routes.dashboardAssets.Verify(ctx)
 			},
 		},
-		ActiveWorkspaces: routes.workspaceModule.ActiveRuntimeWorkspaces,
-		RuntimeReady:     routes.dashboardModule.RuntimeReady,
+		ActiveWorkspaces:        routes.workspaceModule.ActiveRuntimeWorkspaces,
+		RuntimeReady:            routes.dashboardModule.RuntimeReady,
+		RequireActiveDeployment: platform.requireActiveDeployment,
 	})
 	platform.workers = platformlifecycle.New(
 		platformlifecycle.Component{Start: routes.refreshModule.Start, Stop: routes.refreshModule.Stop},

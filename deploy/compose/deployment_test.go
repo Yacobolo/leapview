@@ -207,6 +207,32 @@ func TestFiveMinuteEvaluationContract(t *testing.T) {
 			}
 		}
 	}
+	installation := read(
+		t,
+		filepath.Join(
+			root,
+			"docs",
+			"articles",
+			"start",
+			"installation.md",
+		),
+	)
+	for _, required := range []string{
+		"--name leapview-evaluate-2",
+		"--publish 127.0.0.1:8081:8081",
+		"--volume leapview-evaluate-2:/var/lib/leapview",
+		"evaluate --port 8081",
+		"leapview login http://localhost:8080",
+		"leapview dev --once",
+		"leapview publish",
+	} {
+		if !strings.Contains(installation, required) {
+			t.Errorf(
+				"installation guide missing isolated evaluation target contract %q",
+				required,
+			)
+		}
+	}
 }
 
 func readPublicReleaseImage(t *testing.T) string {

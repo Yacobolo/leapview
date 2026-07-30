@@ -86,6 +86,64 @@ func TestAdminInitializeCreatesOneTimeCredentialBundle(t *testing.T) {
 	}
 }
 
+func TestAdminInitializeEvaluationPublisherCanStageDataWithoutAdminAuthority(
+	t *testing.T,
+) {
+	home := t.TempDir()
+	t.Setenv("LEAPVIEW_HOME", home)
+	t.Setenv("LEAPVIEW_PRODUCTION", "1")
+	t.Setenv("LEAPVIEW_ENVIRONMENT", "evaluation")
+	t.Setenv("LEAPVIEW_BOOTSTRAP_ADMIN_EMAIL", "admin@localhost")
+	var out bytes.Buffer
+	if err := runAdminInitialize(
+		context.Background(),
+		"json",
+		&out,
+	); err != nil {
+		t.Fatal(err)
+	}
+	var credentials initialInstanceCredentials
+	if err := json.Unmarshal(out.Bytes(), &credentials); err != nil {
+		t.Fatal(err)
+	}
+	store, err := platform.Open(
+		context.Background(),
+		filepath.Join(home, "leapview.db"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	credential, err := accesssqlite.NewRepository(
+		store.SQLDB(),
+	).CredentialForAPIToken(
+		context.Background(),
+		credentials.PublisherToken,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privileges := make(map[access.Privilege]bool)
+	for _, privilege := range credential.Token.Privileges {
+		privileges[privilege] = true
+	}
+	if !privileges[access.PrivilegeIngestData] {
+		t.Fatal("evaluation publisher cannot stage bundled managed data")
+	}
+	for _, forbidden := range []access.Privilege{
+		access.PrivilegeManagePlatform,
+		access.PrivilegeApproveDeployment,
+		access.PrivilegeActivateDeployment,
+	} {
+		if privileges[forbidden] {
+			t.Fatalf(
+				"evaluation publisher contains forbidden privilege %q",
+				forbidden,
+			)
+		}
+	}
+}
+
 func TestAdminInitializeReplaysCredentialsAfterDeliveryFailure(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("LEAPVIEW_HOME", home)
