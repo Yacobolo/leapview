@@ -134,7 +134,6 @@ Focused slices are available at `/docs/agent-tools/tools/{name}.json|md`, `/docs
 - [leapview config](/docs/cli/config): Inspect and validate process-global configuration
 - [leapview dashboards](/docs/cli/dashboards): Inspect dashboards
 - [leapview data](/docs/cli/data): Manage project-global data revisions
-- [leapview deploy](/docs/cli/deploy): Atomically deploy a configuration-as-code project
 - [leapview dev](/docs/cli/dev): Synchronize a project into your private target candidate
 - [leapview evaluate](/docs/cli/evaluate): Run the self-contained local evaluation server
 - [leapview healthcheck](/docs/cli/healthcheck): Check the local LeapView readiness endpoint

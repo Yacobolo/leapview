@@ -22,8 +22,9 @@ type authoringCredentialResolver interface {
 }
 
 type capabilityAPIClient struct {
-	httpClient *http.Client
-	authoring  authoringCredentialResolver
+	httpClient        *http.Client
+	authoring         authoringCredentialResolver
+	validateAuthoring bool
 }
 
 func (client capabilityAPIClient) Resolve(ctx context.Context, credentials cliapi.Credentials) (cliapi.Credentials, error) {
@@ -42,7 +43,11 @@ func (client capabilityAPIClient) Resolve(ctx context.Context, credentials cliap
 	// Explicit tokens remain a compatibility path for ephemeral CI and small
 	// teams, but are never persisted by the CLI.
 	if token != "" {
-		return cliapi.Credentials{Target: target, Token: token}, nil
+		return client.resolveResult(
+			ctx,
+			cliapi.Credentials{Target: target, Token: token},
+			nil,
+		)
 	}
 	workloadConfigured := strings.TrimSpace(cfg.WorkloadClientID) != "" ||
 		strings.TrimSpace(cfg.WorkloadClientSecret) != "" ||
@@ -71,7 +76,19 @@ func (client capabilityAPIClient) Resolve(ctx context.Context, credentials cliap
 		if err != nil {
 			return cliapi.Credentials{}, err
 		}
-		return cliapi.Credentials{Target: target, Token: workload.AccessToken}, nil
+		return client.resolveResult(
+			ctx,
+			cliapi.Credentials{
+				Target: target,
+				Token:  workload.AccessToken,
+			},
+			&cliapi.TargetProfile{
+				Origin:      target,
+				InstanceID:  instance.Id,
+				Environment: instance.Environment,
+				ProjectID:   cfg.WorkloadProject,
+			},
+		)
 	}
 	resolver := client.authoring
 	if resolver == nil {
@@ -85,7 +102,112 @@ func (client capabilityAPIClient) Resolve(ctx context.Context, credentials cliap
 	if err != nil {
 		return cliapi.Credentials{}, fmt.Errorf("resolve authoring login for %q: %w; run leapview login %s", target, err, target)
 	}
-	return cliapi.Credentials{Target: resolved.Profile.Origin, Token: resolved.AccessToken}, nil
+	return client.resolveResult(
+		ctx,
+		cliapi.Credentials{
+			Target: resolved.Profile.Origin,
+			Token:  resolved.AccessToken,
+		},
+		&resolved.Profile,
+	)
+}
+
+func (client capabilityAPIClient) resolveResult(
+	ctx context.Context,
+	credentials cliapi.Credentials,
+	expected *cliapi.TargetProfile,
+) (cliapi.Credentials, error) {
+	if !client.validateAuthoring {
+		return credentials, nil
+	}
+	return client.validateAuthoringTarget(ctx, credentials, expected)
+}
+
+func (client capabilityAPIClient) validateAuthoringTarget(
+	ctx context.Context,
+	credentials cliapi.Credentials,
+	expected *cliapi.TargetProfile,
+) (cliapi.Credentials, error) {
+	target := strings.TrimRight(
+		strings.TrimSpace(credentials.Target),
+		"/",
+	)
+	token := strings.TrimSpace(credentials.Token)
+	remote := newDeploymentCLIClient(client.http(), target, token)
+	instance, err := remote.instance(ctx)
+	if err != nil {
+		return cliapi.Credentials{}, fmt.Errorf(
+			"could not reach authoring target %q: %w",
+			target,
+			err,
+		)
+	}
+	instance.Id = strings.TrimSpace(instance.Id)
+	instance.CanonicalOrigin = strings.TrimRight(
+		strings.TrimSpace(instance.CanonicalOrigin),
+		"/",
+	)
+	instance.Environment = strings.TrimSpace(instance.Environment)
+	if instance.Id == "" ||
+		instance.CanonicalOrigin == "" ||
+		instance.Environment == "" {
+		return cliapi.Credentials{}, fmt.Errorf(
+			"incompatible client/server identity response from %q",
+			target,
+		)
+	}
+	if expected != nil {
+		expectedOrigin := strings.TrimRight(
+			strings.TrimSpace(expected.Origin),
+			"/",
+		)
+		expectedEnvironment := strings.TrimSpace(
+			expected.Environment,
+		)
+		if instance.Id != strings.TrimSpace(expected.InstanceID) ||
+			instance.CanonicalOrigin != expectedOrigin ||
+			(expectedEnvironment != "" &&
+				instance.Environment != expectedEnvironment) {
+			return cliapi.Credentials{}, fmt.Errorf(
+				"target identity changed for %q; expected instance %q at %q in %q, got %q at %q in %q; run leapview logout and login again only after verifying the target",
+				target,
+				expected.InstanceID,
+				expectedOrigin,
+				expectedEnvironment,
+				instance.Id,
+				instance.CanonicalOrigin,
+				instance.Environment,
+			)
+		}
+	}
+	capabilities, err := remote.capabilities(ctx)
+	if err != nil {
+		return cliapi.Credentials{}, fmt.Errorf(
+			"authenticate authoring target %q and verify authoring permission: %w",
+			target,
+			err,
+		)
+	}
+	apiVersion := strings.TrimSpace(capabilities.ApiVersion)
+	if apiVersion != "v1" {
+		return cliapi.Credentials{}, fmt.Errorf(
+			"incompatible client/server API at %q: LeapView CLI requires v1, target reports %q",
+			target,
+			apiVersion,
+		)
+	}
+	capabilitiesEnvironment := strings.TrimSpace(
+		capabilities.Environment,
+	)
+	if capabilitiesEnvironment != instance.Environment {
+		return cliapi.Credentials{}, fmt.Errorf(
+			"incompatible client/server environment identity at %q: instance reports %q, capabilities report %q",
+			target,
+			instance.Environment,
+			capabilitiesEnvironment,
+		)
+	}
+	return cliapi.Credentials{Target: target, Token: token}, nil
 }
 
 func (client capabilityAPIClient) Environment(ctx context.Context, credentials cliapi.Credentials, asserted string) (string, error) {

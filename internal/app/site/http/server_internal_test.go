@@ -936,15 +936,15 @@ func TestSiteServesMachineDocumentationArtifacts(t *testing.T) {
 		contains    []string
 	}{
 		{path: "/llms.txt", contentType: "text/plain", contains: []string{"# LeapView", "/mcp", "/docs/cli/manifest.json", "/docs/api/operations.json"}},
-		{path: "/docs/cli/manifest.json", contentType: "application/json", contains: []string{`"schemaVersion": 1`, `"id": "deploy"`, `"effect": "write"`}},
+		{path: "/docs/cli/manifest.json", contentType: "application/json", contains: []string{`"schemaVersion": 1`, `"id": "publish"`, `"effect": "write"`}},
 		{path: "/docs/agent-tools/manifest.json", contentType: "application/json", contains: []string{`"schemaVersion": 1`, `"name": "catalog_search"`, `"inputSchema": {`, `"outputSchema": {`}},
 		{path: "/docs/agent-tools/tools/catalog_search.json", contentType: "application/json", contains: []string{`"name": "catalog_search"`, `"privilege": "VIEW_ITEM"`, `"readOnlyHint": true`}},
 		{path: "/docs/agent-tools/tools/catalog_search.md", contentType: "text/markdown", contains: []string{"# `catalog_search`", "## Input schema", "## Output schema"}},
 		{path: "/docs/api/operations.json", contentType: "application/json", contains: []string{`"schemaVersion": 1`, `"operationId": "listWorkspaces"`}},
 		{path: "/docs/api/operations/listWorkspaces.json", contentType: "application/json", contains: []string{`"operationId": "listWorkspaces"`, `"method": "GET"`, `"schemas": {`, `"WorkspaceListResponse": {`}},
 		{path: "/docs/api/operations/listWorkspaces.md", contentType: "text/markdown", contains: []string{"# List workspaces", "`GET /api/v1/workspaces`", "USE_WORKSPACE"}},
-		{path: "/docs/cli/commands/deploy.json", contentType: "application/json", contains: []string{`"id": "deploy"`, `"usage": "leapview deploy`}},
-		{path: "/docs/cli/commands/deploy.md", contentType: "text/markdown", contains: []string{"# leapview deploy", "## Usage"}},
+		{path: "/docs/cli/commands/dev.json", contentType: "application/json", contains: []string{`"id": "dev"`, `"usage": "leapview dev`}},
+		{path: "/docs/cli/commands/publish.md", contentType: "text/markdown", contains: []string{"# leapview publish", "## Usage"}},
 		{path: "/docs/cli/commands/semantic-models-query.md", contentType: "text/markdown", contains: []string{"# leapview semantic-models query", "## Usage", "## Behavior", "--body-json"}},
 	}
 	for _, test := range tests {

@@ -20,7 +20,8 @@ type projectPublishOperations struct {
 
 func publishCommand(ctx context.Context) *cobra.Command {
 	client := capabilityAPIClient{
-		httpClient: authoringRefreshingHTTPClient(http.DefaultClient),
+		httpClient:        authoringRefreshingHTTPClient(http.DefaultClient),
+		validateAuthoring: true,
 	}
 	return projectcli.PublishCommand(
 		ctx,

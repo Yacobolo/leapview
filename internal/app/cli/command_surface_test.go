@@ -49,8 +49,8 @@ func TestRootHelpExposesDevPublishLifecycle(t *testing.T) {
 	}
 
 	output := help("--help")
-	if !strings.Contains(output, "\n  deploy ") {
-		t.Fatalf("root help missing deploy command:\n%s", output)
+	if strings.Contains(output, "\n  deploy ") {
+		t.Fatalf("root help exposes removed direct deploy command:\n%s", output)
 	}
 	if !strings.Contains(output, "\n  dev ") {
 		t.Fatalf("root help missing dev command:\n%s", output)
@@ -61,15 +61,9 @@ func TestRootHelpExposesDevPublishLifecycle(t *testing.T) {
 	if !strings.Contains(output, "\n  version ") {
 		t.Fatalf("root help missing version command:\n%s", output)
 	}
-	deployHelp := help("deploy", "--help")
-	if !strings.Contains(deployHelp, "--revision") {
-		t.Fatalf("deploy help missing managed revision pins:\n%s", deployHelp)
-	}
-	if strings.Contains(deployHelp, "--workspace") {
-		t.Fatalf("project deploy help exposes workspace targeting:\n%s", deployHelp)
-	}
-	if strings.Contains(deployHelp, "--connection") {
-		t.Fatalf("project deploy help exposes split data-deploy targeting:\n%s", deployHelp)
+	command := NewCommand(context.Background())
+	if found, _, err := command.Find([]string{"deploy"}); err == nil && found != command {
+		t.Fatal("root command still resolves removed direct deploy path")
 	}
 }
 

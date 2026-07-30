@@ -5,20 +5,14 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"net/http"
-	"os"
-	"os/signal"
-	"path/filepath"
 	"strings"
-	"syscall"
 
 	deploymentgen "github.com/flidai/leapview/internal/deployment/api/gen"
 	"github.com/flidai/leapview/internal/platform/cliapi"
 	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
 	projectcli "github.com/flidai/leapview/internal/project/cli"
 	projectdevloop "github.com/flidai/leapview/internal/project/devloop"
-	configschema "github.com/flidai/leapview/internal/project/schema"
 	"github.com/spf13/cobra"
 )
 
@@ -27,133 +21,39 @@ type candidateSynchronizationTransport struct {
 	sessionID string
 }
 
-type devOptions struct {
-	project           string
-	target            string
-	token             string
-	uploadConcurrency int
-	once              bool
+type projectDevRemoteFactory struct {
+	client cliapi.Client
 }
 
 func devCommand(ctx context.Context) *cobra.Command {
-	options := &devOptions{uploadConcurrency: 4}
-	command := &cobra.Command{
-		Use:   "dev [project]",
-		Short: "Synchronize a project into your private target candidate",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(command *cobra.Command, args []string) error {
-			if len(args) == 1 {
-				if command.Flags().Changed("project") {
-					return fmt.Errorf("choose either --project or positional project, not both")
-				}
-				options.project = args[0]
-			}
-			return runDev(ctx, options, command.OutOrStdout(), command.ErrOrStderr())
-		},
+	client := capabilityAPIClient{
+		httpClient:        authoringRefreshingHTTPClient(http.DefaultClient),
+		validateAuthoring: true,
 	}
-	command.Flags().StringVar(
-		&options.project, "project", filepath.Join("dashboards", "leapview.yaml"),
-		"project manifest path",
+	return projectcli.DevCommand(
+		ctx,
+		client,
+		projectcli.NewCandidateCheckpointStore(candidateCheckpointPath()),
+		projectDevRemoteFactory{client: client},
 	)
-	command.Flags().StringVar(
-		&options.target, "target", "",
-		"authenticated target profile or LeapView target URL",
-	)
-	command.Flags().StringVar(
-		&options.token, "token", "",
-		"ephemeral API token compatibility path",
-	)
-	command.Flags().IntVar(
-		&options.uploadConcurrency, "upload-concurrency", options.uploadConcurrency,
-		"maximum parallel content-addressed source uploads (1-16)",
-	)
-	command.Flags().BoolVar(
-		&options.once, "once", false,
-		"synchronize one candidate and exit",
-	)
-	return command
 }
 
-func runDev(ctx context.Context, options *devOptions, out, errOut io.Writer) error {
-	if options == nil {
-		return fmt.Errorf("dev options are required")
+func (factory projectDevRemoteFactory) Remote(
+	ctx context.Context,
+	credentials cliapi.Credentials,
+	uploadConcurrency int,
+) (projectdevloop.Remote, error) {
+	if factory.client == nil {
+		return nil, fmt.Errorf("Project CLI API client is required")
 	}
-	client := capabilityAPIClient{
-		httpClient: authoringRefreshingHTTPClient(http.DefaultClient),
-	}
-	credentials, err := client.Resolve(ctx, cliapi.Credentials{
-		Target: options.target, Token: options.token,
-	})
+	generic, err := factory.client.Transport(ctx, credentials)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	generic, err := client.Transport(ctx, credentials)
-	if err != nil {
-		return err
-	}
-	remote, err := projectdevloop.NewTransportRemote(
+	return projectdevloop.NewTransportRemote(
 		newCandidateSynchronizationTransport(deploymentgen.NewGenClient(generic)),
-		options.uploadConcurrency,
+		uploadConcurrency,
 	)
-	if err != nil {
-		return err
-	}
-	service, err := projectdevloop.New(
-		projectdevloop.FilesystemBuilder{ProjectPath: options.project},
-		remote,
-	)
-	if err != nil {
-		return err
-	}
-	checkpoints := projectcli.NewCandidateCheckpointStore(candidateCheckpointPath())
-	lastPreviewURL := ""
-	report := func(update projectdevloop.Update) error {
-		if update.Err != nil {
-			for _, diagnostic := range configschema.Diagnostics(update.Err) {
-				fmt.Fprintln(errOut, diagnostic.String())
-			}
-			return update.Err
-		}
-		if update.Result.Status != projectdevloop.StatusSynchronized {
-			return nil
-		}
-		candidate := update.Result.Candidate
-		if err := checkpoints.Save(projectcli.CandidateCheckpoint{
-			ProjectPath: options.project, TargetOrigin: credentials.Target,
-			TargetID: candidate.TargetID, Environment: candidate.Environment,
-			ProjectID: candidate.ProjectID, CandidateID: candidate.ID,
-			CandidateRevision: candidate.Revision,
-			ArtifactDigest:    candidate.ArtifactDigest,
-			ProvenanceDigest:  candidate.ProvenanceDigest,
-		}); err != nil {
-			return fmt.Errorf("persist publish candidate: %w", err)
-		}
-		fmt.Fprintf(out, "synchronized %s\n", candidate.ArtifactDigest)
-		if candidate.PreviewURL != "" && candidate.PreviewURL != lastPreviewURL {
-			fmt.Fprintf(out, "preview %s\n", candidate.PreviewURL)
-			lastPreviewURL = candidate.PreviewURL
-		}
-		return nil
-	}
-	if options.once {
-		result, reconcileErr := service.Reconcile(ctx)
-		reportErr := report(projectdevloop.Update{Result: result, Err: reconcileErr})
-		if reconcileErr != nil {
-			return reconcileErr
-		}
-		return reportErr
-	}
-	watcher, err := projectdevloop.NewWatcher(options.project, service)
-	if err != nil {
-		return err
-	}
-	signalContext, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	return watcher.Run(signalContext, func(update projectdevloop.Update) {
-		if err := report(update); err != nil && update.Err == nil {
-			fmt.Fprintln(errOut, err)
-		}
-	})
 }
 
 func newCandidateSynchronizationTransport(

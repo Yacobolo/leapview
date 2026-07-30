@@ -43,25 +43,104 @@ func TestCapabilityAPIClientRejectsLegacyPlaintextTokenConfig(t *testing.T) {
 }
 
 type fakeAuthoringResolver struct {
-	name string
+	name    string
+	profile cliapi.TargetProfile
 }
 
 func (resolver *fakeAuthoringResolver) Resolve(_ context.Context, name string) (accesscli.ResolvedCredential, error) {
 	resolver.name = name
 	return accesscli.ResolvedCredential{
-		Profile:     cliapi.TargetProfile{Origin: "https://canonical.example.com"},
+		Profile:     resolver.profile,
 		AccessToken: "short-lived",
 	}, nil
 }
 
 func TestCapabilityAPIClientResolvesAuthoringProfile(t *testing.T) {
-	resolver := &fakeAuthoringResolver{}
-	credentials, err := (capabilityAPIClient{authoring: resolver}).Resolve(context.Background(), cliapi.Credentials{Target: "prod"})
+	server := authoringIdentityServer(t, "v1")
+	defer server.Close()
+	resolver := &fakeAuthoringResolver{profile: cliapi.TargetProfile{
+		Origin:      server.URL,
+		InstanceID:  "lvinst_prod",
+		Environment: "production",
+		ProjectID:   "analytics",
+	}}
+	credentials, err := (capabilityAPIClient{
+		httpClient:        server.Client(),
+		authoring:         resolver,
+		validateAuthoring: true,
+	}).Resolve(
+		context.Background(),
+		cliapi.Credentials{Target: "prod"},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolver.name != "prod" || credentials.Target != "https://canonical.example.com" || credentials.Token != "short-lived" {
+	if resolver.name != "prod" ||
+		credentials.Target != server.URL ||
+		credentials.Token != "short-lived" {
 		t.Fatalf("resolver name=%q credentials=%+v", resolver.name, credentials)
+	}
+}
+
+func TestCapabilityAPIClientRejectsReplacedAndIncompatibleTargets(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		apiVersion string
+		instanceID string
+		want       string
+	}{
+		{
+			name:       "instance changed",
+			apiVersion: "v1",
+			instanceID: "lvinst_other",
+			want:       "target identity changed",
+		},
+		{
+			name:       "api changed",
+			apiVersion: "v2",
+			instanceID: "lvinst_prod",
+			want:       "incompatible client/server API",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := authoringIdentityServerFor(
+				t,
+				test.instanceID,
+				test.apiVersion,
+			)
+			defer server.Close()
+			resolver := &fakeAuthoringResolver{profile: cliapi.TargetProfile{
+				Origin:      server.URL,
+				InstanceID:  "lvinst_prod",
+				Environment: "production",
+				ProjectID:   "analytics",
+			}}
+			_, err := (capabilityAPIClient{
+				httpClient:        server.Client(),
+				authoring:         resolver,
+				validateAuthoring: true,
+			}).Resolve(
+				t.Context(),
+				cliapi.Credentials{Target: "prod"},
+			)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Resolve error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestCapabilityAPIClientReportsUnreachableTargetBeforeAuthoring(t *testing.T) {
+	_, err := (capabilityAPIClient{validateAuthoring: true}).Resolve(
+		t.Context(),
+		cliapi.Credentials{
+			Target: "http://127.0.0.1:1",
+			Token:  "ephemeral",
+		},
+	)
+	if err == nil ||
+		!strings.Contains(err.Error(), "could not reach authoring target") {
+		t.Fatalf("Resolve error = %v", err)
 	}
 }
 
@@ -75,6 +154,21 @@ func TestCapabilityAPIClientExchangesEphemeralWorkloadIdentity(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/v1/instance":
 			_, _ = w.Write([]byte(`{"id":"lvinst_prod","canonicalOrigin":"` + "http://" + r.Host + `","environment":"production"}`))
+		case "/api/v1/capabilities":
+			if r.Header.Get("Authorization") != "Bearer ephemeral-access" {
+				t.Fatalf(
+					"capabilities authorization = %q",
+					r.Header.Get("Authorization"),
+				)
+			}
+			_, _ = w.Write([]byte(`{
+				"apiVersion":"v1","buildVersion":"test","buildRevision":"test",
+				"buildTime":"2026-07-29T12:00:00Z","buildDirty":false,
+				"buildDevelopment":false,"environment":"production",
+				"authentication":["bearer"],"queryFormats":["application/json"],
+				"uploadProtocols":[],
+				"visualization":{"schemaVersion":3,"renderers":[]}
+			}`))
 		case "/api/v1/access/workload-token":
 			if r.Header.Get("Authorization") != "" {
 				t.Fatalf("workload exchange used authorization header %q", r.Header.Get("Authorization"))
@@ -101,13 +195,68 @@ func TestCapabilityAPIClientExchangesEphemeralWorkloadIdentity(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	credentials, err := (capabilityAPIClient{httpClient: server.Client()}).Resolve(context.Background(), cliapi.Credentials{Target: server.URL})
+	credentials, err := (capabilityAPIClient{
+		httpClient:        server.Client(),
+		validateAuthoring: true,
+	}).Resolve(
+		context.Background(),
+		cliapi.Credentials{Target: server.URL},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if credentials.Target != server.URL || credentials.Token != "ephemeral-access" {
 		t.Fatalf("credentials = %+v", credentials)
 	}
+}
+
+func authoringIdentityServer(
+	t *testing.T,
+	apiVersion string,
+) *httptest.Server {
+	t.Helper()
+	return authoringIdentityServerFor(t, "lvinst_prod", apiVersion)
+}
+
+func authoringIdentityServerFor(
+	t *testing.T,
+	instanceID,
+	apiVersion string,
+) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			switch r.URL.Path {
+			case "/api/v1/instance":
+				_, _ = w.Write([]byte(`{
+					"id":"` + instanceID + `",
+					"canonicalOrigin":"http://` + r.Host + `",
+					"environment":"production"
+				}`))
+			case "/api/v1/capabilities":
+				if r.Header.Get("Authorization") != "Bearer short-lived" {
+					t.Fatalf(
+						"capabilities authorization = %q",
+						r.Header.Get("Authorization"),
+					)
+				}
+				_, _ = w.Write([]byte(`{
+					"apiVersion":"` + apiVersion + `",
+					"buildVersion":"test","buildRevision":"test",
+					"buildTime":"2026-07-29T12:00:00Z",
+					"buildDirty":false,"buildDevelopment":false,
+					"environment":"production",
+					"authentication":["bearer"],
+					"queryFormats":["application/json"],
+					"uploadProtocols":[],
+					"visualization":{"schemaVersion":3,"renderers":[]}
+				}`))
+			default:
+				t.Fatalf("unexpected path %q", r.URL.Path)
+			}
+		},
+	))
 }
 
 func assertMode(t *testing.T, path string, want os.FileMode) {

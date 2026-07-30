@@ -84,7 +84,8 @@ func TestPublicDocsAdvertiseExactCandidatePublishing(t *testing.T) {
 	for _, want := range []string{
 		"leapview data plan",
 		"leapview data sync",
-		"--revision",
+		"leapview dev --once",
+		"leapview publish",
 	} {
 		if !strings.Contains(revisionsGuide, want) {
 			t.Fatalf("docs/articles/data/revisions.md missing current command surface %q", want)
@@ -106,6 +107,18 @@ func TestDeveloperWorkflowsUseExactCandidatePublishing(t *testing.T) {
 		filepath.Join("scripts", "agent_e2e.sh"): {
 			`"$BIN" dev --once`,
 			`"$BIN" publish`,
+		},
+		filepath.Join("deploy", "compose", "qualification", "qualify.sh"): {
+			"leapview dev --once",
+			"leapview publish",
+		},
+		filepath.Join("deploy", "compose", "qualification", "recover.sh"): {
+			"leapview dev --once",
+			"leapview publish",
+		},
+		filepath.Join("deploy", "hetzner", "README.md"): {
+			"leapview dev --once",
+			"leapview publish",
 		},
 	}
 	for name, required := range files {

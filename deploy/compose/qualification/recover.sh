@@ -298,16 +298,17 @@ managedUpload=true
 
 stage="release finalization interruption"
 deploy_a_log="$evidence_dir/recovery-release-finalization.log"
+run_in_candidate \
+  leapview dev --once \
+  --project /var/lib/leapview/qualification-recovery/project-a/leapview.yaml \
+  > "$deploy_a_log" 2>&1
 release_ids_before_file="$work_dir/release-ids-before.json"
 api GET "/api/v1/projects/$project_id/releases?limit=100" "$release_ids_before_file"
 release_ids_before="$(jq -c '[.items[].id]' "$release_ids_before_file")"
 run_in_candidate \
-  leapview deploy \
+  leapview publish \
   --project /var/lib/leapview/qualification-recovery/project-a/leapview.yaml \
-  --revision "sample=$fault_revision" \
-  --environment qualification \
-  --auto-approve \
-  > "$deploy_a_log" 2>&1 &
+  >> "$deploy_a_log" 2>&1 &
 deploy_a_pid=$!
 
 releases="$work_dir/releases.json"
@@ -339,11 +340,8 @@ kill_candidate
 wait_for_process_exit "$deploy_a_pid"
 
 run_in_candidate \
-  leapview deploy \
+  leapview publish \
   --project /var/lib/leapview/qualification-recovery/project-a/leapview.yaml \
-  --revision "sample=$fault_revision" \
-  --environment qualification \
-  --auto-approve \
   >> "$deploy_a_log" 2>&1
 release_after="$work_dir/release-after.json"
 wait_for_json "/api/v1/projects/$project_id/releases/$interrupted_release_id" '.status == "ready"' "$release_after"
@@ -358,12 +356,13 @@ stage="deployment activation interruption"
 deploy_b_log="$evidence_dir/recovery-deployment-activation.log"
 docker update --cpus 0.25 "$container_id" >/dev/null
 run_in_candidate \
-  leapview deploy \
+  leapview dev --once \
   --project /var/lib/leapview/qualification-recovery/project-b/leapview.yaml \
-  --revision "sample=$fault_revision" \
-  --environment qualification \
-  --auto-approve \
-  > "$deploy_b_log" 2>&1 &
+  > "$deploy_b_log" 2>&1
+run_in_candidate \
+  leapview publish \
+  --project /var/lib/leapview/qualification-recovery/project-b/leapview.yaml \
+  >> "$deploy_b_log" 2>&1 &
 deploy_b_pid=$!
 
 deployments="$work_dir/deployments.json"

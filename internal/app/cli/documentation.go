@@ -55,7 +55,6 @@ var documentedCommandSafety = map[string]commandSafety{
 	"leapview data revisions current":          {effect: "read", confirmation: "never"},
 	"leapview data revisions list":             {effect: "read", confirmation: "never"},
 	"leapview data sync":                       {effect: "write", confirmation: "never"},
-	"leapview deploy":                          {effect: "write", confirmation: "conditional"},
 	"leapview dev":                             {effect: "write", confirmation: "never"},
 	"leapview evaluate":                        {effect: "local-write", confirmation: "never"},
 	"leapview evaluate first-login":            {effect: "destructive", confirmation: "never"},

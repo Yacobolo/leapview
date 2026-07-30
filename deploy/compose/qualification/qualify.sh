@@ -256,11 +256,14 @@ docker exec \
   -e "LEAPVIEW_API_TOKEN=$publisher_token" \
   -e LEAPVIEW_TARGET=http://localhost:8080 \
   "$container_id" \
-  leapview deploy \
-    --project /app/evaluation/project/leapview.yaml \
-    --revision "sample=$revision" \
-    --environment qualification \
-    --auto-approve >/dev/null
+  leapview dev --once \
+    --project /app/evaluation/project/leapview.yaml >/dev/null
+docker exec \
+  -e "LEAPVIEW_API_TOKEN=$publisher_token" \
+  -e LEAPVIEW_TARGET=http://localhost:8080 \
+  "$container_id" \
+  leapview publish \
+    --project /app/evaluation/project/leapview.yaml >/dev/null
 
 metrics_token="$(sed -n 's/^LEAPVIEW_METRICS_BEARER_TOKEN=//p' "$bundle_root/leapview.env")"
 browser_image="mcr.microsoft.com/playwright:v1.61.1-noble"
