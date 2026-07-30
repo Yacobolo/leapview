@@ -1,4 +1,4 @@
-import type { VisualizationEnvelope } from '../../../../../generated/visualization'
+import type { VisualizationColorIntent, VisualizationEnvelope } from '../../../../../generated/visualization'
 import type { RendererContext } from '../../host-controller'
 import { axis, field, fieldLabel, inlineDataset, labelFormatter, legend, selectedDatasetSource, toneColor, type EChartsTranslation } from './common'
 
@@ -15,6 +15,8 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
   const xType = axisType(envelope, spec.x, horizontal ? 'value' : 'category')
   const xAxis = axis(envelope, horizontal ? spec.y[0]! : spec.x, xType, context)
   const yAxis = axis(envelope, horizontal ? spec.x : spec.y[0]!, horizontal ? 'category' : 'value', context)
+  const stack = stackingMode(spec)
+  if (stack === 'percent') applyPercentAxis(horizontal ? xAxis : yAxis, context)
   const axes = { grid: { left: 12, right: 16, top: 16, bottom: spec.presentation.dataZoom ? 54 : 16, containLabel: true }, xAxis, yAxis }
   const dataZoom = spec.presentation.dataZoom ? [{ type: 'inside' }, { type: 'slider' }] : undefined
   if (spec.mark === 'histogram') {
@@ -48,20 +50,36 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
   const split = splitCartesianSeries(envelope, context)
   if (split) {
     const secondary = split.series.some((item) => item.yAxisIndex === 1)
+    const primaryAxis = axis(envelope, spec.y[0]!, 'value', context)
+    if (stackingMode(spec) === 'percent') applyPercentAxis(primaryAxis, context)
     return {
       dataset: split.datasets, legend: legend(spec.presentation.legend, context), xAxis: axis(envelope, spec.x, axisType(envelope, spec.x, 'category'), context),
-      yAxis: secondary ? [axis(envelope, spec.y[0]!, 'value', context), axis(envelope, spec.y[0]!, 'value', context)] : axis(envelope, spec.y[0]!, 'value', context),
+      yAxis: secondary ? [primaryAxis, axis(envelope, spec.y[0]!, 'value', context)] : primaryAxis,
       dataZoom, series: [...split.series, ...interactionHitSeries(envelope, spec, split.series)],
     }
   }
-  const series = spec.y.map((value) => ({
-    id: seriesID(value.dataset, value.field), type: cartesianSeriesType(spec.mark), name: fieldLabel(envelope, value),
-    encode: horizontal ? { x: value.field, y: spec.x.field } : { x: spec.x.field, y: value.field },
-    smooth: spec.presentation.smooth, symbol: spec.presentation.showSymbols ? undefined : 'none', symbolSize: spec.presentation.symbolSize,
-    stack: spec.presentation.stacked ? 'total' : undefined, areaStyle: spec.presentation.area || spec.mark === 'area' ? {} : undefined,
-    step: spec.presentation.step ? 'middle' : false, label: chartLabel(envelope, value, spec, context),
-  }))
-  return { ...axes, legend: legend(spec.presentation.legend, context), dataZoom, series: [...series, ...interactionHitSeries(envelope, spec, series)] }
+  const values = orderedY(spec)
+  const normalized = stack === 'percent' ? normalizedMeasureDataset(envelope, spec, values) : undefined
+  const series = values.map((value) => {
+    const normalizedField = normalized?.dimensions.get(value.field)
+    return {
+      id: seriesID(value.dataset, value.field), type: cartesianSeriesType(spec.mark), name: fieldLabel(envelope, value),
+      encode: horizontal ? { x: normalizedField ?? value.field, y: spec.x.field } : { x: spec.x.field, y: normalizedField ?? value.field },
+      smooth: spec.presentation.smooth, symbol: spec.presentation.showSymbols ? undefined : 'none', symbolSize: spec.presentation.symbolSize,
+      stack: stack === 'none' ? undefined : stack, areaStyle: spec.presentation.area || spec.mark === 'area' ? {} : undefined,
+      itemStyle: { color: seriesColor(value.field, spec.presentation.seriesIntent?.find((intent) => intent.value === value.field)?.color, context) },
+      step: spec.presentation.step ? 'middle' : false,
+      label: normalizedField
+        ? percentLabel(spec.presentation.showLabels, context, normalized?.columnIndices.get(value.field))
+        : chartLabel(envelope, value, spec, context),
+    }
+  })
+  return {
+    ...axes,
+    ...(normalized ? { dataset: { id: `dataset:${normalized.datasetID}`, source: normalized.source } } : {}),
+    legend: legend(spec.presentation.legend, context), dataZoom,
+    series: [...series, ...interactionHitSeries(envelope, spec, series)],
+  }
 }
 
 function applyDecisionContext(envelope: VisualizationEnvelope, context: RendererContext, option: EChartsTranslation): EChartsTranslation {
@@ -232,26 +250,192 @@ function splitCartesianSeries(envelope: VisualizationEnvelope, context: Renderer
   if (!dataset || seriesIndex < 0) return undefined
   const available = [...new Set(dataset.rows.map((row) => row[seriesIndex]).filter((value): value is string | number | boolean => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'))]
   const configured = new Map((spec.presentation.comboSeries ?? []).map((item) => [String(item.seriesValue), item]))
-  const configuredOrder = (spec.presentation.comboSeries ?? []).map((item) => String(item.seriesValue))
+  const intents = new Map((spec.presentation.seriesIntent ?? []).map((item) => [String(item.value), item]))
+  const authoredOrder = (spec.presentation.seriesIntent ?? [])
+    .filter((item) => item.order !== undefined)
+    .sort((left, right) => left.order! - right.order! || left.value.localeCompare(right.value, 'en'))
+    .map((item) => String(item.value))
+  const configuredOrder = [
+    ...authoredOrder,
+    ...(spec.presentation.comboSeries ?? []).map((item) => String(item.seriesValue)).filter((value) => !authoredOrder.includes(value)),
+  ]
   const values = [
     ...configuredOrder.filter((value) => available.some((candidate) => String(candidate) === value)),
-    ...available.filter((value) => !configured.has(String(value))).sort((left, right) => String(left).localeCompare(String(right), 'en')),
+    ...available.filter((value) => !configuredOrder.includes(String(value))).sort((left, right) => String(left).localeCompare(String(right), 'en')),
   ]
   const datasets: EChartsTranslation[] = [{ id: `dataset:${dataset.id}`, source: selectedDatasetSource(envelope, dataset) }]
+  const stack = stackingMode(spec)
+  const normalizedSources = stack === 'percent' ? normalizedSeriesSources(envelope, dataset, spec, values) : undefined
   const series = values.map((value) => {
     const token = encodeURIComponent(String(value))
     const datasetID = `dataset:series:${spec.series?.field}:${token}`
-    datasets.push({ id: datasetID, fromDatasetId: `dataset:${dataset.id}`, transform: { type: 'filter', config: { dimension: spec.series?.field, '=': value } } })
+    const normalized = normalizedSources?.get(String(value))
+    datasets.push(normalized
+      ? { id: datasetID, source: normalized.source }
+      : { id: datasetID, fromDatasetId: `dataset:${dataset.id}`, transform: { type: 'filter', config: { dimension: spec.series?.field, '=': value } } })
     const combo = configured.get(String(value))
+    const intent = intents.get(String(value))
     const mark = combo?.mark ?? (spec.mark === 'combo' ? 'line' : spec.mark)
     return {
       id: `series:${spec.series?.dataset}:${spec.series?.field}:${token}`, datasetId: datasetID, name: String(value), type: cartesianSeriesType(mark), yAxisIndex: combo?.axis === 'secondary' ? 1 : 0,
-      encode: { x: spec.x.field, y: spec.y[0]?.field }, smooth: spec.presentation.smooth, symbol: spec.presentation.showSymbols ? undefined : 'none',
-      stack: spec.presentation.stacked ? 'total' : undefined, areaStyle: spec.presentation.area || mark === 'area' ? {} : undefined,
-      step: spec.presentation.step ? 'middle' : false, label: chartLabel(envelope, spec.y[0], spec, context),
+      encode: { x: spec.x.field, y: normalized?.dimension ?? spec.y[0]?.field }, smooth: spec.presentation.smooth, symbol: spec.presentation.showSymbols ? undefined : 'none',
+      stack: stack === 'none' ? undefined : stack, areaStyle: spec.presentation.area || mark === 'area' ? {} : undefined,
+      itemStyle: { color: seriesColor(String(value), intent?.color, context) },
+      step: spec.presentation.step ? 'middle' : false,
+      label: normalized
+        ? percentLabel(spec.presentation.showLabels, context, normalized.columnIndex)
+        : chartLabel(envelope, spec.y[0], spec, context),
     }
   })
   return { datasets, series }
+}
+
+function normalizedSeriesSources(
+  envelope: VisualizationEnvelope,
+  dataset: NonNullable<ReturnType<typeof inlineDataset>>,
+  spec: CartesianSpec,
+  values: (string | number | boolean)[],
+): Map<string, { source: unknown[][]; dimension: string; columnIndex: number }> {
+  const source = selectedDatasetSource(envelope, dataset)
+  const columns = source[0] as string[]
+  const xIndex = columns.indexOf(spec.x.field)
+  const seriesIndex = columns.indexOf(spec.series!.field)
+  const valueIndex = columns.indexOf(spec.y[0]!.field)
+  const totals = new Map<string, { positive: number; negative: number }>()
+  const key = (value: unknown) => `${typeof value}:${String(value)}`
+  for (const row of source.slice(1)) {
+    const amount = row[valueIndex]
+    if (typeof amount !== 'number' || !Number.isFinite(amount)) continue
+    const category = key(row[xIndex])
+    const total = totals.get(category) ?? { positive: 0, negative: 0 }
+    if (amount >= 0) total.positive += amount
+    else total.negative += Math.abs(amount)
+    totals.set(category, total)
+  }
+  const dimension = uniqueDimension('__lv_percent_value', new Set(columns))
+  const result = new Map<string, { source: unknown[][]; dimension: string; columnIndex: number }>()
+  for (const value of values) {
+    const rows = source.slice(1).filter((row) => Object.is(row[seriesIndex], value)).map((row) => {
+      const amount = row[valueIndex]
+      const total = totals.get(key(row[xIndex]))
+      const denominator = typeof amount === 'number' && amount < 0 ? total?.negative : total?.positive
+      const normalized = typeof amount === 'number' && Number.isFinite(amount) && denominator ? amount / denominator * 100 : null
+      return [...row, normalized]
+    })
+    result.set(String(value), {
+      source: [[...columns, dimension], ...rows],
+      dimension,
+      columnIndex: columns.length,
+    })
+  }
+  return result
+}
+
+function orderedY(spec: CartesianSpec): CartesianSpec['y'] {
+  const order = new Map(
+    (spec.presentation.seriesIntent ?? [])
+      .filter((intent) => intent.order !== undefined)
+      .map((intent) => [intent.value, intent.order!] as const),
+  )
+  return [...spec.y].sort((left, right) => {
+    const leftOrder = order.get(left.field)
+    const rightOrder = order.get(right.field)
+    if (leftOrder !== undefined && rightOrder !== undefined) return leftOrder - rightOrder
+    if (leftOrder !== undefined) return -1
+    if (rightOrder !== undefined) return 1
+    return spec.y.indexOf(left) - spec.y.indexOf(right)
+  })
+}
+
+function normalizedMeasureDataset(
+  envelope: VisualizationEnvelope,
+  spec: CartesianSpec,
+  values: CartesianSpec['y'],
+): { datasetID: string; source: unknown[][]; dimensions: Map<string, string>; columnIndices: Map<string, number> } | undefined {
+  const dataset = inlineDataset(envelope, spec.x.dataset)
+  if (!dataset || values.some((value) => value.dataset !== dataset.id)) return undefined
+  const source = selectedDatasetSource(envelope, dataset)
+  const columns = source[0] as string[]
+  const indices = values.map((value) => columns.indexOf(value.field))
+  if (indices.some((index) => index < 0)) return undefined
+  const dimensions = new Map<string, string>()
+  const columnIndices = new Map<string, number>()
+  const reserved = new Set(columns)
+  for (const value of values) {
+    const base = `__lv_percent_${value.field.replace(/[^a-zA-Z0-9_]/g, '_')}`
+    const dimension = uniqueDimension(base, reserved)
+    reserved.add(dimension)
+    dimensions.set(value.field, dimension)
+    columnIndices.set(value.field, columns.length + columnIndices.size)
+  }
+  const rows = source.slice(1).map((row) => {
+    let positive = 0
+    let negative = 0
+    for (const index of indices) {
+      const amount = row[index]
+      if (typeof amount !== 'number' || !Number.isFinite(amount)) continue
+      if (amount >= 0) positive += amount
+      else negative += Math.abs(amount)
+    }
+    const normalized = indices.map((index) => {
+      const amount = row[index]
+      if (typeof amount !== 'number' || !Number.isFinite(amount)) return null
+      const denominator = amount < 0 ? negative : positive
+      return denominator ? amount / denominator * 100 : null
+    })
+    return [...row, ...normalized]
+  })
+  return {
+    datasetID: dataset.id,
+    source: [[...columns, ...values.map((value) => dimensions.get(value.field)!)], ...rows],
+    dimensions,
+    columnIndices,
+  }
+}
+
+function uniqueDimension(base: string, reserved: Set<string>): string {
+  if (!reserved.has(base)) return base
+  let suffix = 2
+  while (reserved.has(`${base}_${suffix}`)) suffix++
+  return `${base}_${suffix}`
+}
+
+function stackingMode(spec: CartesianSpec): 'none' | 'normal' | 'percent' {
+  return spec.presentation.stacking ?? (spec.presentation.stacked ? 'normal' : 'none')
+}
+
+function applyPercentAxis(axisOption: EChartsTranslation, context: RendererContext): void {
+  const formatter = new Intl.NumberFormat(context.locale, { maximumFractionDigits: 1 })
+  axisOption.axisLabel = { ...axisOption.axisLabel, formatter: (value: unknown) => typeof value === 'number' ? `${formatter.format(value)}%` : String(value) }
+}
+
+function percentLabel(show: boolean, context: RendererContext, columnIndex = -1) {
+  const formatter = new Intl.NumberFormat(context.locale, { maximumFractionDigits: 1 })
+  return {
+    show,
+    formatter: (params: { value?: unknown }) => {
+      const value = Array.isArray(params.value) ? params.value.at(columnIndex) : params.value
+      return typeof value === 'number' ? `${formatter.format(value)}%` : ''
+    },
+  }
+}
+
+function seriesColor(value: string, intent: VisualizationColorIntent | undefined, context: RendererContext): string {
+  switch (intent) {
+    case 'accent': return context.colors.accent
+    case 'neutral': return context.colors.muted
+    case 'ink': return context.colors.foreground
+    case 'success': return context.colors.success
+    case 'warning': return context.colors.attention
+    case 'danger': return context.colors.danger
+  }
+  if (intent?.startsWith('data_')) {
+    const index = Number(intent.slice(5)) - 1
+    if (Number.isInteger(index) && context.colors.data.length > 0) return context.colors.data[index % context.colors.data.length]!
+  }
+  let hash = 2166136261
+  for (let index = 0; index < value.length; index++) hash = Math.imul(hash ^ value.charCodeAt(index), 16777619)
+  return context.colors.data.length > 0 ? context.colors.data[(hash >>> 0) % context.colors.data.length]! : context.colors.accent
 }
 
 function axisType(envelope: VisualizationEnvelope, ref: CartesianSpec['x'], fallback: 'category' | 'value'): 'category' | 'value' | 'time' {

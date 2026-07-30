@@ -82,3 +82,43 @@ func TestCompiledCartesianDecisionContextRejectsUnknownFields(t *testing.T) {
 		t.Fatalf("compileBuiltInVisualizationSpec() error = %v", err)
 	}
 }
+
+func TestCompiledCartesianSeriesIntentIsDeterministic(t *testing.T) {
+	t.Parallel()
+
+	authored := reportdef.Visual{
+		Type: "area",
+		Query: reportdef.VisualQuery{
+			Dimensions: []reportdef.FieldRef{{Field: "orders.month"}},
+			Series:     reportdef.FieldRef{Field: "orders.status", Alias: "status"},
+			Measures:   []reportdef.FieldRef{{Field: "revenue"}},
+		},
+		Presentation: reportdef.VisualPresentation{
+			Stacking:     "percent",
+			SeriesOrder:  []string{"delivered", "processing"},
+			SeriesColors: map[string]string{"processing": "data_3", "canceled": "danger"},
+		},
+	}
+
+	spec, err := compileBuiltInVisualizationSpec("revenue", authored, nil)
+	if err != nil {
+		t.Fatalf("compileBuiltInVisualizationSpec() error = %v", err)
+	}
+	presentation := spec.Value.(*visualizationir.CartesianVisualizationSpec).Presentation
+	if presentation.Stacking == nil || *presentation.Stacking != visualizationir.VisualizationStackingModePercent {
+		t.Fatalf("stacking = %v, want percent", presentation.Stacking)
+	}
+	if presentation.SeriesIntent == nil || len(*presentation.SeriesIntent) != 3 {
+		t.Fatalf("series intent = %#v, want three entries", presentation.SeriesIntent)
+	}
+	first, second, third := (*presentation.SeriesIntent)[0], (*presentation.SeriesIntent)[1], (*presentation.SeriesIntent)[2]
+	if first.Value != "delivered" || first.Order == nil || *first.Order != 0 || first.Color != nil {
+		t.Fatalf("first series intent = %#v", first)
+	}
+	if second.Value != "processing" || second.Order == nil || *second.Order != 1 || second.Color == nil || *second.Color != visualizationir.VisualizationColorIntentData3 {
+		t.Fatalf("second series intent = %#v", second)
+	}
+	if third.Value != "canceled" || third.Order != nil || third.Color == nil || *third.Color != visualizationir.VisualizationColorIntentDanger {
+		t.Fatalf("third series intent = %#v", third)
+	}
+}

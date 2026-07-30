@@ -454,6 +454,9 @@ func validateCartesianDecisionContext(spec VisualizationSpec) error {
 	if !ok {
 		return nil
 	}
+	if err := validateCartesianSeriesPresentation(*value); err != nil {
+		return err
+	}
 	axes := map[VisualizationCartesianAxis]struct{}{}
 	if value.Axes != nil {
 		for _, axis := range *value.Axes {
@@ -557,6 +560,81 @@ func validateCartesianDecisionContext(spec VisualizationSpec) error {
 		}
 	}
 	return nil
+}
+
+func validateCartesianSeriesPresentation(spec CartesianVisualizationSpec) error {
+	stacking := VisualizationStackingModeNone
+	if spec.Presentation.Stacked {
+		stacking = VisualizationStackingModeNormal
+	}
+	if spec.Presentation.Stacking != nil {
+		stacking = *spec.Presentation.Stacking
+	}
+	switch stacking {
+	case VisualizationStackingModeNone:
+	case VisualizationStackingModeNormal, VisualizationStackingModePercent:
+		switch spec.Mark {
+		case VisualizationCartesianMarkLine, VisualizationCartesianMarkArea, VisualizationCartesianMarkBar,
+			VisualizationCartesianMarkColumn, VisualizationCartesianMarkCombo:
+		default:
+			return fmt.Errorf("cartesian mark %q does not support stacking", spec.Mark)
+		}
+	default:
+		return fmt.Errorf("unsupported stacking mode %q", stacking)
+	}
+	if stacking == VisualizationStackingModePercent && spec.Series == nil && len(spec.Y) < 2 {
+		return fmt.Errorf("percent stacking requires multiple series")
+	}
+	if stacking == VisualizationStackingModePercent && spec.Presentation.ComboSeries != nil {
+		for _, series := range *spec.Presentation.ComboSeries {
+			if series.Axis == VisualizationAxisSecondary {
+				return fmt.Errorf("percent stacking cannot use dual axes")
+			}
+		}
+	}
+	if spec.Presentation.SeriesIntent == nil {
+		return nil
+	}
+	if spec.Series == nil && len(spec.Y) < 2 {
+		return fmt.Errorf("series intent requires multiple series")
+	}
+	values := map[string]struct{}{}
+	orders := map[int32]struct{}{}
+	for _, intent := range *spec.Presentation.SeriesIntent {
+		if strings.TrimSpace(intent.Value) == "" {
+			return fmt.Errorf("series intent value is required")
+		}
+		if _, exists := values[intent.Value]; exists {
+			return fmt.Errorf("duplicate series intent %q", intent.Value)
+		}
+		values[intent.Value] = struct{}{}
+		if intent.Order != nil {
+			if *intent.Order < 0 {
+				return fmt.Errorf("series intent %q has negative order", intent.Value)
+			}
+			if _, exists := orders[*intent.Order]; exists {
+				return fmt.Errorf("duplicate series order %d", *intent.Order)
+			}
+			orders[*intent.Order] = struct{}{}
+		}
+		if intent.Color != nil && !validVisualizationColorIntent(*intent.Color) {
+			return fmt.Errorf("series intent %q has unsupported color %q", intent.Value, *intent.Color)
+		}
+	}
+	return nil
+}
+
+func validVisualizationColorIntent(intent VisualizationColorIntent) bool {
+	switch intent {
+	case VisualizationColorIntentAccent, VisualizationColorIntentNeutral, VisualizationColorIntentInk,
+		VisualizationColorIntentSuccess, VisualizationColorIntentWarning, VisualizationColorIntentDanger,
+		VisualizationColorIntentData1, VisualizationColorIntentData2, VisualizationColorIntentData3,
+		VisualizationColorIntentData4, VisualizationColorIntentData5, VisualizationColorIntentData6,
+		VisualizationColorIntentData7, VisualizationColorIntentData8:
+		return true
+	default:
+		return false
+	}
 }
 
 func cartesianMarkSupportsReferences(mark VisualizationCartesianMark) bool {

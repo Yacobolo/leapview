@@ -87,3 +87,89 @@ func TestValidateSpecRejectsInvalidDecisionContext(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateSpecEnforcesStackingAndSeriesIntent(t *testing.T) {
+	t.Parallel()
+
+	base := VisualizationSpecBase{
+		Kind: "cartesian", Title: "Revenue",
+		Datasets: []VisualizationDatasetSchema{{ID: "primary", Fields: []VisualizationField{
+			{ID: "month", Role: VisualizationFieldRoleDimension, DataType: VisualizationDataTypeString, Label: "Month"},
+			{ID: "status", Role: VisualizationFieldRoleDimension, DataType: VisualizationDataTypeString, Label: "Status"},
+			{ID: "revenue", Role: VisualizationFieldRoleMeasure, DataType: VisualizationDataTypeDecimal, Label: "Revenue"},
+		}}},
+		DataBudget:    VisualizationDataBudget{MaxRows: 100, RequiredCompleteness: VisualizationCompletenessComplete},
+		Accessibility: VisualizationAccessibility{Title: "Revenue", Description: "Revenue by month"},
+		Interactions:  []VisualizationInteraction{},
+	}
+	stacking := VisualizationStackingModePercent
+	order := int32(0)
+	color := VisualizationColorIntentSuccess
+	valid := func() VisualizationSpec {
+		intent := []VisualizationSeriesIntent{{Value: "delivered", Order: &order, Color: &color}}
+		return VisualizationSpec{Value: &CartesianVisualizationSpec{
+			VisualizationSpecBase: base, Kind: "cartesian", Mark: VisualizationCartesianMarkArea,
+			X: VisualizationFieldRef{Dataset: "primary", Field: "month"}, Y: []VisualizationFieldRef{{Dataset: "primary", Field: "revenue"}},
+			Series: &VisualizationFieldRef{Dataset: "primary", Field: "status"},
+			Presentation: CartesianVisualizationPresentation{
+				VisualizationPresentation: VisualizationPresentation{Legend: VisualizationLegendPositionBottom},
+				ShowSymbols:               true, Stacking: &stacking, SeriesIntent: &intent,
+			},
+		}}
+	}
+
+	if err := ValidateSpec(valid()); err != nil {
+		t.Fatalf("valid stacking and series intent: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*CartesianVisualizationSpec)
+		want   string
+	}{
+		{
+			name: "percent without series",
+			mutate: func(spec *CartesianVisualizationSpec) {
+				spec.Series = nil
+			},
+			want: "percent stacking requires multiple series",
+		},
+		{
+			name: "unsupported mark",
+			mutate: func(spec *CartesianVisualizationSpec) {
+				spec.Mark = VisualizationCartesianMarkScatter
+			},
+			want: `mark "scatter" does not support stacking`,
+		},
+		{
+			name: "percent with dual axes",
+			mutate: func(spec *CartesianVisualizationSpec) {
+				spec.Mark = VisualizationCartesianMarkCombo
+				spec.Presentation.ComboSeries = &[]VisualizationComboSeries{{
+					SeriesValue: "delivered",
+					Mark:        VisualizationCartesianMarkLine,
+					Axis:        VisualizationAxisSecondary,
+				}}
+			},
+			want: "percent stacking cannot use dual axes",
+		},
+		{
+			name: "duplicate series value",
+			mutate: func(spec *CartesianVisualizationSpec) {
+				*spec.Presentation.SeriesIntent = append(*spec.Presentation.SeriesIntent, (*spec.Presentation.SeriesIntent)[0])
+			},
+			want: `duplicate series intent "delivered"`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			spec := valid()
+			test.mutate(spec.Value.(*CartesianVisualizationSpec))
+			err := ValidateSpec(spec)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("ValidateSpec() error = %v, want containing %q", err, test.want)
+			}
+		})
+	}
+}

@@ -9,17 +9,19 @@ import (
 
 type CartesianVisualizationPresentation struct {
 	VisualizationPresentation
-	Smooth        bool                        `json:"smooth"`
-	Stacked       bool                        `json:"stacked"`
-	ShowSymbols   bool                        `json:"showSymbols"`
-	DataZoom      bool                        `json:"dataZoom"`
-	Area          bool                        `json:"area"`
-	Step          bool                        `json:"step"`
-	Orientation   *VisualizationOrientation   `json:"orientation,omitempty"`
-	LabelPosition *VisualizationLabelPosition `json:"labelPosition,omitempty"`
-	SymbolSize    *float64                    `json:"symbolSize,omitempty"`
-	HistogramBins *int32                      `json:"histogramBins,omitempty"`
-	ComboSeries   *[]VisualizationComboSeries `json:"comboSeries,omitempty"`
+	Smooth        bool                         `json:"smooth"`
+	Stacked       bool                         `json:"stacked"`
+	ShowSymbols   bool                         `json:"showSymbols"`
+	DataZoom      bool                         `json:"dataZoom"`
+	Area          bool                         `json:"area"`
+	Step          bool                         `json:"step"`
+	Orientation   *VisualizationOrientation    `json:"orientation,omitempty"`
+	LabelPosition *VisualizationLabelPosition  `json:"labelPosition,omitempty"`
+	SymbolSize    *float64                     `json:"symbolSize,omitempty"`
+	HistogramBins *int32                       `json:"histogramBins,omitempty"`
+	ComboSeries   *[]VisualizationComboSeries  `json:"comboSeries,omitempty"`
+	Stacking      *VisualizationStackingMode   `json:"stacking,omitempty"`
+	SeriesIntent  *[]VisualizationSeriesIntent `json:"seriesIntent,omitempty"`
 }
 
 type CartesianVisualizationSpec struct {
@@ -626,6 +628,25 @@ type VisualizationChoroplethLayer struct {
 	Stroke   VisualizationMapStroke     `json:"stroke"`
 	Opacity  float64                    `json:"opacity"`
 }
+
+type VisualizationColorIntent string
+
+const (
+	VisualizationColorIntentAccent  VisualizationColorIntent = "accent"
+	VisualizationColorIntentNeutral VisualizationColorIntent = "neutral"
+	VisualizationColorIntentInk     VisualizationColorIntent = "ink"
+	VisualizationColorIntentSuccess VisualizationColorIntent = "success"
+	VisualizationColorIntentWarning VisualizationColorIntent = "warning"
+	VisualizationColorIntentDanger  VisualizationColorIntent = "danger"
+	VisualizationColorIntentData1   VisualizationColorIntent = "data_1"
+	VisualizationColorIntentData2   VisualizationColorIntent = "data_2"
+	VisualizationColorIntentData3   VisualizationColorIntent = "data_3"
+	VisualizationColorIntentData4   VisualizationColorIntent = "data_4"
+	VisualizationColorIntentData5   VisualizationColorIntent = "data_5"
+	VisualizationColorIntentData6   VisualizationColorIntent = "data_6"
+	VisualizationColorIntentData7   VisualizationColorIntent = "data_7"
+	VisualizationColorIntentData8   VisualizationColorIntent = "data_8"
+)
 
 type VisualizationComboSeries struct {
 	SeriesValue string                     `json:"seriesValue"`
@@ -2324,6 +2345,12 @@ const (
 	VisualizationSelectionModeMultiple VisualizationSelectionMode = "multiple"
 )
 
+type VisualizationSeriesIntent struct {
+	Value string                    `json:"value"`
+	Order *int32                    `json:"order,omitempty"`
+	Color *VisualizationColorIntent `json:"color,omitempty"`
+}
+
 type VisualizationSort struct {
 	Field     VisualizationFieldRef      `json:"field"`
 	Direction VisualizationSortDirection `json:"direction"`
@@ -3294,6 +3321,14 @@ type VisualizationSpecBase struct {
 	Accessibility VisualizationAccessibility   `json:"accessibility"`
 	Interactions  []VisualizationInteraction   `json:"interactions"`
 }
+
+type VisualizationStackingMode string
+
+const (
+	VisualizationStackingModeNone    VisualizationStackingMode = "none"
+	VisualizationStackingModeNormal  VisualizationStackingMode = "normal"
+	VisualizationStackingModePercent VisualizationStackingMode = "percent"
+)
 
 type VisualizationStatus struct {
 	Kind    VisualizationStatusKind `json:"kind"`

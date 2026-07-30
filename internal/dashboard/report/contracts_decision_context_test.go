@@ -102,6 +102,77 @@ func TestValidateVisualPresentationRejectsInvalidDecisionContext(t *testing.T) {
 	}
 }
 
+func TestValidateVisualPresentationAcceptsDeterministicSeriesIntent(t *testing.T) {
+	t.Parallel()
+
+	visual := Visual{
+		Type: "area",
+		Query: VisualQuery{
+			Series:   FieldRef{Field: "orders.status", Alias: "status"},
+			Measures: []FieldRef{{Field: "revenue", Alias: "revenue"}},
+		},
+		Presentation: VisualPresentation{
+			Stacking:     "percent",
+			SeriesOrder:  []string{"delivered", "processing", "canceled"},
+			SeriesColors: map[string]string{"delivered": "success", "processing": "data_3", "canceled": "danger"},
+		},
+	}
+
+	if err := validateVisualPresentation("revenue", visual); err != nil {
+		t.Fatalf("validateVisualPresentation() error = %v", err)
+	}
+}
+
+func TestValidateVisualPresentationRejectsInvalidSeriesIntent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		visual Visual
+		want   string
+	}{
+		{
+			name:   "legacy conflict",
+			visual: Visual{Type: "line", Presentation: VisualPresentation{Stacked: true, Stacking: "normal"}},
+			want:   "cannot combine presentation.stacked and presentation.stacking",
+		},
+		{
+			name:   "percent without series",
+			visual: Visual{Type: "area", Query: VisualQuery{Measures: []FieldRef{{Field: "revenue"}}}, Presentation: VisualPresentation{Stacking: "percent"}},
+			want:   "percent stacking requires a series or multiple measures",
+		},
+		{
+			name:   "unsupported mark",
+			visual: Visual{Type: "scatter", Query: VisualQuery{Series: FieldRef{Field: "status"}}, Presentation: VisualPresentation{Stacking: "normal"}},
+			want:   "stacking is unsupported",
+		},
+		{
+			name:   "percent with dual axes",
+			visual: Visual{Type: "combo", Query: VisualQuery{Series: FieldRef{Field: "status"}}, Presentation: VisualPresentation{Stacking: "percent", DualAxis: true}},
+			want:   "percent stacking cannot use dual axes",
+		},
+		{
+			name:   "duplicate order",
+			visual: Visual{Type: "line", Query: VisualQuery{Series: FieldRef{Field: "status"}}, Presentation: VisualPresentation{SeriesOrder: []string{"a", "a"}}},
+			want:   `duplicate series order value "a"`,
+		},
+		{
+			name:   "unsupported color",
+			visual: Visual{Type: "line", Query: VisualQuery{Series: FieldRef{Field: "status"}}, Presentation: VisualPresentation{SeriesColors: map[string]string{"a": "#ff0000"}}},
+			want:   `unsupported color intent "#ff0000"`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateVisualPresentation("visual", test.visual)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("validateVisualPresentation() error = %v, want containing %q", err, test.want)
+			}
+		})
+	}
+}
+
 func numberPointer(value float64) *float64 {
 	return &value
 }

@@ -151,7 +151,13 @@ func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model
 			VisualizationSpecBase: base, Kind: "cartesian", Mark: mark, X: ref(xField), Y: y, Series: optionalRef("series"),
 			Axes: decisionContext.axes, ReferenceLines: decisionContext.referenceLines, ReferenceBands: decisionContext.referenceBands,
 			EventAnnotations: decisionContext.eventAnnotations, Tooltip: decisionContext.tooltip,
-			Presentation: visualizationir.CartesianVisualizationPresentation{VisualizationPresentation: common, Smooth: presentation.Smooth, Stacked: presentation.Stacked, ShowSymbols: showSymbols, DataZoom: presentation.DataZoom, Area: area, Step: presentation.Step, Orientation: compiledOptionalOrientation(presentation.Orientation), LabelPosition: compiledLabelPosition(presentation.LabelPosition), SymbolSize: optionalPositiveFloat(presentation.SymbolSize), HistogramBins: optionalPositiveInt32(presentation.HistogramBins), ComboSeries: compiledComboSeries(presentation.SeriesTypes, presentation.DualAxis)},
+			Presentation: visualizationir.CartesianVisualizationPresentation{
+				VisualizationPresentation: common, Smooth: presentation.Smooth, Stacked: presentation.Stacked, ShowSymbols: showSymbols,
+				DataZoom: presentation.DataZoom, Area: area, Step: presentation.Step, Orientation: compiledOptionalOrientation(presentation.Orientation),
+				LabelPosition: compiledLabelPosition(presentation.LabelPosition), SymbolSize: optionalPositiveFloat(presentation.SymbolSize),
+				HistogramBins: optionalPositiveInt32(presentation.HistogramBins), ComboSeries: compiledComboSeries(presentation.SeriesTypes, presentation.DualAxis),
+				Stacking: compiledStackingMode(presentation), SeriesIntent: compiledSeriesIntent(presentation.SeriesOrder, presentation.SeriesColors),
+			},
 		}}, nil
 	}
 }
@@ -298,6 +304,49 @@ func compiledAxisTickDensity(value string) visualizationir.VisualizationAxisTick
 		return visualizationir.VisualizationAxisTickDensityAutomatic
 	}
 	return visualizationir.VisualizationAxisTickDensity(value)
+}
+
+func compiledStackingMode(presentation reportdef.VisualPresentation) *visualizationir.VisualizationStackingMode {
+	value := presentation.Stacking
+	if value == "" {
+		if presentation.Stacked {
+			value = "normal"
+		} else {
+			value = "none"
+		}
+	}
+	out := visualizationir.VisualizationStackingMode(value)
+	return &out
+}
+
+func compiledSeriesIntent(order []string, colors map[string]string) *[]visualizationir.VisualizationSeriesIntent {
+	if len(order) == 0 && len(colors) == 0 {
+		return nil
+	}
+	out := make([]visualizationir.VisualizationSeriesIntent, 0, len(order)+len(colors))
+	seen := make(map[string]struct{}, len(order))
+	for index, value := range order {
+		position := int32(index)
+		item := visualizationir.VisualizationSeriesIntent{Value: value, Order: &position}
+		if authored := colors[value]; authored != "" {
+			color := visualizationir.VisualizationColorIntent(authored)
+			item.Color = &color
+		}
+		out = append(out, item)
+		seen[value] = struct{}{}
+	}
+	remaining := make([]string, 0, len(colors))
+	for value := range colors {
+		if _, exists := seen[value]; !exists {
+			remaining = append(remaining, value)
+		}
+	}
+	sort.Strings(remaining)
+	for _, value := range remaining {
+		color := visualizationir.VisualizationColorIntent(colors[value])
+		out = append(out, visualizationir.VisualizationSeriesIntent{Value: value, Color: &color})
+	}
+	return &out
 }
 
 func containsCompiledColumn(values []string, candidate string) bool {
