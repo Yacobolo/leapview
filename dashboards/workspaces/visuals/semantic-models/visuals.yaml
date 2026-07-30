@@ -106,6 +106,19 @@ spec:
       empty: "null"
       unit: R$
       format: currency
+    missing_revenue:
+      label: Missing revenue comparison
+      description: Documentation-only comparison measure with no matching rows.
+      fact: orders
+      aggregation: sum
+      input: {field: orders.revenue}
+      filters:
+      - field: orders.status
+        operator: equals
+        values: [comparison_fixture_without_rows]
+      empty: "null"
+      unit: R$
+      format: currency
     review_score:
       label: Review
       description: Average order review score.
@@ -161,6 +174,18 @@ spec:
       label: AOV
       description: Average order value.
       expression: safe_divide(${revenue}, ${order_count})
+      unit: R$
+      format: currency
+    revenue_baseline:
+      label: Revenue baseline
+      description: Filter-aligned baseline used by KPI comparison examples.
+      expression: ${revenue} * 0.9
+      unit: R$
+      format: currency
+    revenue_target:
+      label: Revenue target
+      description: Filter-aligned target used by KPI goal examples.
+      expression: ${revenue} * 1.1
       unit: R$
       format: currency
     revenue_q1:

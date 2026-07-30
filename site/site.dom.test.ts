@@ -845,7 +845,7 @@ test('KPI documentation uses compact example frames', async () => {
   const page = await browser.newPage()
   try {
     await page.goto(`${baseURL}/docs/visuals/kpi`)
-    await page.waitForFunction(() => document.querySelectorAll('lv-site-visual-example[type="kpi"]').length === 4)
+    await page.waitForFunction(() => document.querySelectorAll('lv-site-visual-example[type="kpi"]').length === 6)
     const heights = await page.locator('lv-site-visual-example[type="kpi"]').evaluateAll((examples) =>
       examples.map((example) => Math.round(example.getBoundingClientRect().height)),
     )
@@ -876,7 +876,7 @@ test('every visual documentation page mounts its generated production payloads',
   try {
     for (const visualType of visualTypes) {
       await page.goto(`${baseURL}/docs/visuals/${visualType}`)
-      const expected = visualType === 'map' ? 6 : visualType === 'line' ? 4 : visualType === 'candlestick' ? 2 : visualType === 'kpi' ? 4 : ['custom', 'table', 'matrix', 'pivot'].includes(visualType) ? 1 : 3
+      const expected = visualType === 'map' ? 6 : visualType === 'line' ? 4 : visualType === 'candlestick' ? 2 : visualType === 'kpi' ? 6 : ['custom', 'table', 'matrix', 'pivot'].includes(visualType) ? 1 : 3
       await page.waitForFunction(
         ({ count }) => {
           const examples = [...document.querySelectorAll('lv-site-visual-example')]

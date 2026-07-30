@@ -148,19 +148,24 @@ type InlineVisualizationDataState struct {
 }
 
 type KPIVisualizationPresentation struct {
-	Trend      VisualizationKPITrend     `json:"trend"`
-	Note       *string                   `json:"note,omitempty"`
-	Tone       *VisualizationTone        `json:"tone,omitempty"`
-	Thresholds *[]VisualizationThreshold `json:"thresholds,omitempty"`
+	Mode               VisualizationKPIMode               `json:"mode"`
+	Delta              VisualizationKPIDeltaMode          `json:"delta"`
+	FavorableDirection VisualizationKPIDirection          `json:"favorableDirection"`
+	MissingComparison  VisualizationKPIMissingComparison  `json:"missingComparison"`
+	Ranges             []VisualizationKPIQualitativeRange `json:"ranges"`
+	Note               *string                            `json:"note,omitempty"`
+	Tone               *VisualizationTone                 `json:"tone,omitempty"`
+	Thresholds         *[]VisualizationThreshold          `json:"thresholds,omitempty"`
 }
 
 type KPIVisualizationSpec struct {
 	VisualizationSpecBase
-	Kind         string                       `json:"kind"`
-	Value        VisualizationFieldRef        `json:"value"`
-	Comparison   *VisualizationFieldRef       `json:"comparison,omitempty"`
-	Trend        *VisualizationFieldRef       `json:"trend,omitempty"`
-	Presentation KPIVisualizationPresentation `json:"presentation"`
+	Kind         string                        `json:"kind"`
+	Value        VisualizationFieldRef         `json:"value"`
+	Comparison   *VisualizationKPIValueBinding `json:"comparison,omitempty"`
+	Goal         *VisualizationKPIValueBinding `json:"goal,omitempty"`
+	Trend        *VisualizationKPITrendBinding `json:"trend,omitempty"`
+	Presentation KPIVisualizationPresentation  `json:"presentation"`
 }
 
 type MatrixVisualizationSpec struct {
@@ -2203,13 +2208,53 @@ type VisualizationInteractionMapping struct {
 	Label         *VisualizationFieldRef `json:"label,omitempty"`
 }
 
-type VisualizationKPITrend string
+type VisualizationKPIDeltaMode string
 
 const (
-	VisualizationKPITrendNeutral  VisualizationKPITrend = "neutral"
-	VisualizationKPITrendPositive VisualizationKPITrend = "positive"
-	VisualizationKPITrendNegative VisualizationKPITrend = "negative"
+	VisualizationKPIDeltaModeAbsolute VisualizationKPIDeltaMode = "absolute"
+	VisualizationKPIDeltaModeRelative VisualizationKPIDeltaMode = "relative"
 )
+
+type VisualizationKPIDirection string
+
+const (
+	VisualizationKPIDirectionIncrease VisualizationKPIDirection = "increase"
+	VisualizationKPIDirectionDecrease VisualizationKPIDirection = "decrease"
+	VisualizationKPIDirectionNeutral  VisualizationKPIDirection = "neutral"
+)
+
+type VisualizationKPIMissingComparison string
+
+const (
+	VisualizationKPIMissingComparisonShowUnavailable VisualizationKPIMissingComparison = "show_unavailable"
+	VisualizationKPIMissingComparisonHide            VisualizationKPIMissingComparison = "hide"
+)
+
+type VisualizationKPIMode string
+
+const (
+	VisualizationKPIModeCompact  VisualizationKPIMode = "compact"
+	VisualizationKPIModeBullet   VisualizationKPIMode = "bullet"
+	VisualizationKPIModeProgress VisualizationKPIMode = "progress"
+)
+
+type VisualizationKPIQualitativeRange struct {
+	Minimum *float64          `json:"minimum,omitempty"`
+	Maximum *float64          `json:"maximum,omitempty"`
+	Label   string            `json:"label"`
+	Tone    VisualizationTone `json:"tone"`
+}
+
+type VisualizationKPITrendBinding struct {
+	Category VisualizationFieldRef `json:"category"`
+	Value    VisualizationFieldRef `json:"value"`
+}
+
+type VisualizationKPIValueBinding struct {
+	Field   VisualizationFieldRef         `json:"field"`
+	Reducer VisualizationReferenceReducer `json:"reducer"`
+	Label   string                        `json:"label"`
+}
 
 type VisualizationLabelPosition string
 

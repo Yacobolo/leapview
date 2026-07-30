@@ -92,8 +92,17 @@ func TestGenerateVisualExamplesExecutesEveryDocumentedQuery(t *testing.T) {
 	if got := artifact.References["visuals/map"].Accessibility; !strings.Contains(got, "coordinate fields") {
 		t.Fatalf("map accessibility guidance = %q", got)
 	}
-	if got := artifact.References["visuals/kpi"].Accessibility; !strings.Contains(got, "tone as the only") {
+	if got := artifact.References["visuals/kpi"].Accessibility; !strings.Contains(got, "current, comparison, target, and status") {
 		t.Fatalf("KPI accessibility guidance = %q", got)
+	}
+	kpiReference := artifact.References["visuals/kpi"]
+	if got := strings.Join(kpiReference.Examples["revenue_kpi_bullet"].KeyFields, ","); !strings.Contains(got, "datasets") ||
+		!strings.Contains(got, "kpi.mode") || !strings.Contains(got, "kpi.goal") || !strings.Contains(got, "kpi.ranges") {
+		t.Fatalf("bullet KPI key fields = %q", got)
+	}
+	if got := strings.Join(kpiReference.Presentation, ","); !strings.Contains(got, "kpi.favorable_direction") ||
+		!strings.Contains(got, "kpi.missing_comparison") {
+		t.Fatalf("KPI presentation reference = %q", got)
 	}
 	if got, want := len(artifact.Documents), 27; got != want {
 		t.Fatalf("documents = %d, want %d", got, want)
@@ -110,11 +119,33 @@ func TestGenerateVisualExamplesExecutesEveryDocumentedQuery(t *testing.T) {
 			}
 		}
 	}
-	if got, want := count, 77; got != want {
+	if got, want := count, 79; got != want {
 		t.Fatalf("examples = %d, want %d", got, want)
 	}
 	if got, want := len(artifact.Showcase), 27; got != want {
 		t.Fatalf("showcase examples = %d, want %d", got, want)
+	}
+	kpis := artifact.Documents["visuals/kpi"]
+	if got, want := len(kpis), 6; got != want {
+		t.Fatalf("KPI examples = %d, want %d", got, want)
+	}
+	favorable, ok := kpis[1].Spec.Value.(*visualizationir.KPIVisualizationSpec)
+	if !ok || favorable.Comparison == nil || favorable.Trend == nil ||
+		favorable.Presentation.FavorableDirection != visualizationir.VisualizationKPIDirectionIncrease {
+		t.Fatalf("favorable KPI spec = %#v", kpis[1].Spec.Value)
+	}
+	favorableState, ok := kpis[1].DataState.Value.(*visualizationir.InlineVisualizationDataState)
+	if !ok || len(favorableState.Datasets) != 3 || len(favorableState.Datasets[2].Rows) != 12 {
+		t.Fatalf("favorable KPI datasets = %#v", kpis[1].DataState.Value)
+	}
+	bullet, ok := kpis[3].Spec.Value.(*visualizationir.KPIVisualizationSpec)
+	if !ok || bullet.Goal == nil || bullet.Presentation.Mode != visualizationir.VisualizationKPIModeBullet {
+		t.Fatalf("bullet KPI spec = %#v", kpis[3].Spec.Value)
+	}
+	missingState, ok := kpis[5].DataState.Value.(*visualizationir.InlineVisualizationDataState)
+	if !ok || len(missingState.Datasets) != 2 || len(missingState.Datasets[1].Rows) != 1 ||
+		missingState.Datasets[1].Rows[0][0] != nil {
+		t.Fatalf("missing comparison KPI datasets = %#v", kpis[5].DataState.Value)
 	}
 	line := artifact.Documents["visuals/line"]
 	seriesSpec, ok := line[1].Spec.Value.(*visualizationir.CartesianVisualizationSpec)

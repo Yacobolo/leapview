@@ -102,13 +102,133 @@ spec:
         tone: ink
     revenue_kpi:
       type: kpi
-      description: Shows filtered total payment revenue.
+      title: Revenue versus baseline
+      description: Shows filtered revenue, its governed baseline, and compact trend.
       query:
         measures:
           revenue: null
-      presentation:
-        note: Payment value
-        tone: success
+      datasets:
+        comparison:
+          measures:
+            value:
+              measure: revenue_baseline
+          limit: 1
+        trend:
+          dimensions:
+            period: orders.purchase_month
+          measures:
+            value:
+              measure: revenue
+          sort:
+            - field: period
+              direction: asc
+          limit: 12
+      kpi:
+        mode: compact
+        comparison:
+          dataset: comparison
+          field: value
+          label: Baseline
+        trend:
+          dataset: trend
+          category: period
+          value: value
+        delta: relative
+        favorable_direction: increase
+    revenue_kpi_unfavorable:
+      type: kpi
+      title: Cost proxy versus baseline
+      description: Demonstrates a positive delta that is explicitly unfavorable.
+      query:
+        measures:
+          revenue: null
+      datasets:
+        comparison:
+          measures:
+            value:
+              measure: revenue_baseline
+          limit: 1
+      kpi:
+        comparison:
+          dataset: comparison
+          field: value
+          label: Baseline
+        delta: relative
+        favorable_direction: decrease
+    revenue_kpi_bullet:
+      type: kpi
+      title: Revenue goal
+      description: Shows filtered revenue against a governed target.
+      query:
+        measures:
+          revenue: null
+      datasets:
+        goal:
+          measures:
+            value:
+              measure: revenue_target
+          limit: 1
+      kpi:
+        mode: bullet
+        goal:
+          dataset: goal
+          field: value
+          label: Target
+        ranges:
+          - maximum: 1000000
+            label: Behind
+            tone: danger
+          - minimum: 1000000
+            maximum: 20000000
+            label: On track
+            tone: success
+          - minimum: 20000000
+            label: Ahead
+            tone: ink
+    revenue_kpi_out_of_range:
+      type: kpi
+      title: Revenue outside the operating band
+      description: Demonstrates explicit out-of-range status without hiding the actual value.
+      query:
+        measures:
+          revenue: null
+      datasets:
+        goal:
+          measures:
+            value:
+              measure: revenue_target
+          limit: 1
+      kpi:
+        mode: progress
+        goal:
+          dataset: goal
+          field: value
+          label: Target
+        ranges:
+          - maximum: 100
+            label: Operating band
+            tone: neutral
+    revenue_kpi_missing_comparison:
+      type: kpi
+      title: Revenue with unavailable comparison
+      description: Demonstrates a missing comparison that remains explicit.
+      query:
+        measures:
+          revenue: null
+      datasets:
+        comparison:
+          measures:
+            value:
+              measure: missing_revenue
+          limit: 1
+      kpi:
+        comparison:
+          dataset: comparison
+          field: value
+          label: Prior period
+        delta: absolute
+        favorable_direction: neutral
+        missing_comparison: show_unavailable
     aov_kpi:
       type: kpi
       description: Shows average order value for the current filters.
@@ -1947,6 +2067,42 @@ spec:
             col_span: 6
             row_span: 6
       id: overview
+    - title: KPI
+      description: Governed KPI comparisons, goals, trends, missing context, and qualitative status
+      canvas:
+        width: 1366
+        height: 672
+      grid:
+        columns: 12
+        row_height: 48
+        gap: 16
+        padding: 16
+      components:
+        - id: kpi-current
+          kind: visual
+          visual: total_orders
+          placement: {col: 1, row: 1, col_span: 4, row_span: 4}
+        - id: kpi-favorable
+          kind: visual
+          visual: revenue_kpi
+          placement: {col: 5, row: 1, col_span: 4, row_span: 4}
+        - id: kpi-unfavorable
+          kind: visual
+          visual: revenue_kpi_unfavorable
+          placement: {col: 9, row: 1, col_span: 4, row_span: 4}
+        - id: kpi-bullet
+          kind: visual
+          visual: revenue_kpi_bullet
+          placement: {col: 1, row: 5, col_span: 4, row_span: 4}
+        - id: kpi-out-of-range
+          kind: visual
+          visual: revenue_kpi_out_of_range
+          placement: {col: 5, row: 5, col_span: 4, row_span: 4}
+        - id: kpi-missing
+          kind: visual
+          visual: revenue_kpi_missing_comparison
+          placement: {col: 9, row: 5, col_span: 4, row_span: 4}
+      id: kpi
     - title: Line
       description: Single and multi-series line chart variations
       canvas:

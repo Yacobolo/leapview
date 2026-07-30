@@ -661,6 +661,37 @@ package contracts
 	conditional_formatting?: [...#ConditionalFormat]
 })
 
+#KPIValueBinding: close({
+	dataset!: string & !=""
+	field!:   string & !=""
+	reducer?: "first" | "last" | "minimum" | "maximum" | "mean" | "median"
+	label?:   string
+})
+
+#KPITrendBinding: close({
+	dataset!:  string & !=""
+	category!: string & !=""
+	value!:    string & !=""
+})
+
+#KPIQualitativeRange: close({
+	minimum?: number
+	maximum?: number
+	label!:   string & !=""
+	tone!:    "neutral" | "ink" | "success" | "warning" | "danger"
+})
+
+#KPIConfiguration: close({
+	mode?:                "compact" | "bullet" | "progress"
+	comparison?:          #KPIValueBinding
+	goal?:                #KPIValueBinding
+	trend?:               #KPITrendBinding
+	delta?:               "absolute" | "relative"
+	favorable_direction?: "increase" | "decrease" | "neutral"
+	missing_comparison?:  "show_unavailable" | "hide"
+	ranges?:              [...#KPIQualitativeRange]
+})
+
 #CartesianVisual: close({
 	#VisualCommon
 	type!:         "line" | "area" | "bar" | "column" | "scatter" | "heatmap" | "candlestick" | "boxplot" | "combo" | "waterfall" | "histogram"
@@ -780,6 +811,7 @@ package contracts
 	#VisualCommon
 	type!:    "kpi"
 	query!:   #VisualQuery
+	kpi?:     #KPIConfiguration
 	presentation?: #KPIVisualPresentation
 })
 

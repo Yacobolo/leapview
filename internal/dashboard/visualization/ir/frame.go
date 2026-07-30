@@ -283,6 +283,9 @@ func validateSpecification(spec VisualizationSpec, base VisualizationSpecBase) (
 	if err := validateMetadataBindings(base.MetadataBindings, schemas); err != nil {
 		return nil, err
 	}
+	if err := validateKPISpecification(spec, schemas); err != nil {
+		return nil, err
+	}
 	if err := validateCartesianDecisionContext(spec); err != nil {
 		return nil, err
 	}
@@ -314,6 +317,67 @@ func validateSpecification(spec VisualizationSpec, base VisualizationSpecBase) (
 		}
 	}
 	return schemas, nil
+}
+
+func validateKPISpecification(spec VisualizationSpec, schemas map[string]VisualizationDatasetSchema) error {
+	kpi, ok := spec.Value.(*KPIVisualizationSpec)
+	if !ok {
+		return nil
+	}
+	valueField, _ := visualizationField(kpi.Value, schemas)
+	if !numericVisualizationField(valueField) {
+		return fmt.Errorf("KPI value field must be numeric")
+	}
+	for name, binding := range map[string]*VisualizationKPIValueBinding{
+		"comparison": kpi.Comparison,
+		"goal":       kpi.Goal,
+	} {
+		if binding == nil {
+			continue
+		}
+		field, _ := visualizationField(binding.Field, schemas)
+		if !numericVisualizationField(field) {
+			return fmt.Errorf("KPI %s field must be numeric", name)
+		}
+		if !validVisualizationReferenceReducer(binding.Reducer) {
+			return fmt.Errorf("KPI %s uses unsupported reducer %q", name, binding.Reducer)
+		}
+		if strings.TrimSpace(binding.Label) == "" {
+			return fmt.Errorf("KPI %s requires a label", name)
+		}
+	}
+	if kpi.Comparison != nil && kpi.Presentation.FavorableDirection == "" {
+		return fmt.Errorf("KPI comparison requires favorable direction")
+	}
+	if (kpi.Presentation.Mode == VisualizationKPIModeBullet || kpi.Presentation.Mode == VisualizationKPIModeProgress) && kpi.Goal == nil {
+		return fmt.Errorf("KPI mode %q requires a goal", kpi.Presentation.Mode)
+	}
+	if kpi.Trend != nil {
+		field, _ := visualizationField(kpi.Trend.Value, schemas)
+		if !numericVisualizationField(field) {
+			return fmt.Errorf("KPI trend value field must be numeric")
+		}
+	}
+	var previousMaximum *float64
+	for index, valueRange := range kpi.Presentation.Ranges {
+		if strings.TrimSpace(valueRange.Label) == "" {
+			return fmt.Errorf("KPI qualitative range %d requires a label", index)
+		}
+		if valueRange.Minimum != nil && valueRange.Maximum != nil && *valueRange.Minimum >= *valueRange.Maximum {
+			return fmt.Errorf("KPI qualitative range %d minimum must be less than maximum", index)
+		}
+		if index > 0 && valueRange.Minimum == nil {
+			return fmt.Errorf("KPI qualitative range %d requires a minimum", index)
+		}
+		if index < len(kpi.Presentation.Ranges)-1 && valueRange.Maximum == nil {
+			return fmt.Errorf("KPI qualitative range %d requires a maximum", index)
+		}
+		if previousMaximum != nil && valueRange.Minimum != nil && *valueRange.Minimum < *previousMaximum {
+			return fmt.Errorf("KPI qualitative ranges overlap at index %d", index)
+		}
+		previousMaximum = valueRange.Maximum
+	}
+	return nil
 }
 
 func validateMetadataBindings(bindings *VisualizationMetadataBindings, schemas map[string]VisualizationDatasetSchema) error {
@@ -659,8 +723,15 @@ func (visitor *specificationReferenceVisitor) VisitPivotVisualizationSpec(value 
 
 func (visitor *specificationReferenceVisitor) VisitKPIVisualizationSpec(value *KPIVisualizationSpec) error {
 	visitor.refs = append(visitor.refs, value.Value)
-	visitor.add(value.Comparison)
-	visitor.add(value.Trend)
+	if value.Comparison != nil {
+		visitor.refs = append(visitor.refs, value.Comparison.Field)
+	}
+	if value.Goal != nil {
+		visitor.refs = append(visitor.refs, value.Goal.Field)
+	}
+	if value.Trend != nil {
+		visitor.refs = append(visitor.refs, value.Trend.Category, value.Trend.Value)
+	}
 	return nil
 }
 

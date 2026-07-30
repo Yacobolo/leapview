@@ -2,11 +2,16 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/flidai/leapview/internal/app/site/visualdocs"
 )
 
 var queryFieldReferences = map[string]visualdocs.FieldReference{
+	"datasets": {
+		Type:        "named query mapping",
+		Description: "Declares bounded comparison, goal, trend, and decision-context queries that inherit the visual's active semantic filters.",
+	},
 	"table": {
 		Type:        "string",
 		Description: "Selects the fact table when the semantic model cannot infer one from the referenced fields.",
@@ -37,6 +42,17 @@ var queryFieldReferences = map[string]visualdocs.FieldReference{
 		AllowedValues: []string{"positive integer"},
 		Description:   "Caps the number of rows returned to the renderer.",
 	},
+}
+
+var kpiFieldReferences = map[string]visualdocs.FieldReference{
+	"mode":                field("string", "compact", []string{"compact", "bullet", "progress"}, "Selects compact value, bullet, or progress presentation; bullet and progress require a goal."),
+	"comparison":          field("value binding", "none", nil, "Binds a labeled comparison to a compiler-owned dataset field and deterministic reducer."),
+	"goal":                field("value binding", "none", nil, "Binds an explicit labeled target used by bullet and progress modes."),
+	"trend":               field("trend binding", "none", nil, "Binds ordered category and numeric value fields for the compact sparkline."),
+	"delta":               field("string", "absolute", []string{"absolute", "relative"}, "Controls whether change is formatted in the value's unit or as a relative percentage."),
+	"favorable_direction": field("string", "neutral", []string{"increase", "decrease", "neutral"}, "Defines whether an increase or decrease is favorable; LeapView never infers business meaning from the sign."),
+	"missing_comparison":  field("string", "show_unavailable", []string{"show_unavailable", "hide"}, "Controls whether missing comparison context is stated explicitly or intentionally hidden."),
+	"ranges":              field("ordered qualitative range list", "none", nil, "Maps non-overlapping numeric ranges to a status label and semantic tone, with unmatched values reported as out of range."),
 }
 
 var presentationFieldReferences = map[string]visualdocs.FieldReference{
@@ -92,10 +108,24 @@ func visualFieldReferences(queryFields, optionFields []string, chartType string)
 		if !ok {
 			return nil, fmt.Errorf("query.%s has no documentation field metadata", name)
 		}
-		reference.Path = "query." + name
+		if name == "datasets" {
+			reference.Path = "datasets"
+		} else {
+			reference.Path = "query." + name
+		}
 		result = append(result, reference)
 	}
 	for _, name := range optionFields {
+		if strings.HasPrefix(name, "kpi.") {
+			fieldName := strings.TrimPrefix(name, "kpi.")
+			reference, ok := kpiFieldReferences[fieldName]
+			if !ok {
+				return nil, fmt.Errorf("kpi.%s has no documentation field metadata", fieldName)
+			}
+			reference.Path = "kpi." + fieldName
+			result = append(result, reference)
+			continue
+		}
 		reference, ok := presentationFieldReferences[name]
 		if !ok {
 			return nil, fmt.Errorf("presentation.%s has no documentation field metadata", name)

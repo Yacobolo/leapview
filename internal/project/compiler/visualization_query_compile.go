@@ -31,7 +31,7 @@ func compileSecondaryQueryBindings(ctx compileContext, authored reportdef.Visual
 		if limit <= 0 {
 			limit = 1000
 		}
-		maxRows := int(compiledVisualFrameLimit(authored, authored.ResultShape()))
+		maxRows := int(compiledVisualDataBudgetMaxRows(authored, authored.ResultShape()))
 		if limit > maxRows {
 			limit = maxRows
 		}
@@ -222,6 +222,23 @@ func compiledVisualFrameLimit(authored reportdef.Visual, shape string) int64 {
 	default:
 		return limit
 	}
+}
+
+func compiledVisualDataBudgetMaxRows(authored reportdef.Visual, shape string) int64 {
+	if authored.DataBudget.MaxRows > 0 {
+		return int64(authored.DataBudget.MaxRows)
+	}
+	maxRows := compiledVisualFrameLimit(authored, shape)
+	for _, query := range authored.Datasets {
+		limit := query.Limit
+		if limit <= 0 {
+			limit = 1000
+		}
+		if int64(limit) > maxRows {
+			maxRows = int64(limit)
+		}
+	}
+	return maxRows
 }
 
 func compiledTableBinding(modelID, visualType string, authored reportdef.TableVisual) visualizationdefinition.QueryBinding {

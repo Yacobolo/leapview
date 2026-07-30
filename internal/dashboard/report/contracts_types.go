@@ -56,7 +56,7 @@ func (v *AuthoringVisualization) UnmarshalYAML(value *yaml.Node) error {
 	default:
 		if err := rejectUnknownVisualizationFields(value, map[string]struct{}{
 			"type": {}, "title": {}, "subtitle": {}, "description": {}, "query": {}, "datasets": {}, "metadata": {},
-			"presentation": {}, "accessibility": {}, "data_budget": {}, "interaction": {}, "geo": {}, "custom": {},
+			"presentation": {}, "accessibility": {}, "data_budget": {}, "interaction": {}, "geo": {}, "kpi": {}, "custom": {},
 		}); err != nil {
 			return err
 		}
@@ -129,8 +129,42 @@ type Visual struct {
 	Accessibility VisualAccessibility    `yaml:"accessibility" json:"accessibility"`
 	DataBudget    VisualDataBudget       `yaml:"data_budget" json:"dataBudget"`
 	Geo           VisualGeo              `yaml:"geo" json:"geo"`
+	KPI           VisualKPI              `yaml:"kpi" json:"kpi"`
 	Custom        VisualCustom           `yaml:"custom" json:"custom"`
 	Interaction   Interaction            `yaml:"interaction"`
+}
+
+// VisualKPI defines comparison semantics independently from renderer layout.
+// Every field binding addresses a compiler-owned dataset alias.
+type VisualKPI struct {
+	Mode               string                      `yaml:"mode" json:"mode,omitempty"`
+	Comparison         *VisualKPIValueBinding      `yaml:"comparison" json:"comparison,omitempty"`
+	Goal               *VisualKPIValueBinding      `yaml:"goal" json:"goal,omitempty"`
+	Trend              *VisualKPITrendBinding      `yaml:"trend" json:"trend,omitempty"`
+	Delta              string                      `yaml:"delta" json:"delta,omitempty"`
+	FavorableDirection string                      `yaml:"favorable_direction" json:"favorableDirection,omitempty"`
+	MissingComparison  string                      `yaml:"missing_comparison" json:"missingComparison,omitempty"`
+	Ranges             []VisualKPIQualitativeRange `yaml:"ranges" json:"ranges,omitempty"`
+}
+
+type VisualKPIValueBinding struct {
+	Dataset string `yaml:"dataset" json:"dataset"`
+	Field   string `yaml:"field" json:"field"`
+	Reducer string `yaml:"reducer" json:"reducer,omitempty"`
+	Label   string `yaml:"label" json:"label,omitempty"`
+}
+
+type VisualKPITrendBinding struct {
+	Dataset  string `yaml:"dataset" json:"dataset"`
+	Category string `yaml:"category" json:"category"`
+	Value    string `yaml:"value" json:"value"`
+}
+
+type VisualKPIQualitativeRange struct {
+	Minimum *float64 `yaml:"minimum" json:"minimum,omitempty"`
+	Maximum *float64 `yaml:"maximum" json:"maximum,omitempty"`
+	Label   string   `yaml:"label" json:"label"`
+	Tone    string   `yaml:"tone" json:"tone"`
 }
 
 type VisualMetadataBindings struct {

@@ -129,10 +129,26 @@ enum VisualizationSelectionMode {
   multiple: "multiple",
 }
 
-enum VisualizationKPITrend {
+enum VisualizationKPIMode {
+  compact: "compact",
+  bullet: "bullet",
+  progress: "progress",
+}
+
+enum VisualizationKPIDeltaMode {
+  absolute: "absolute",
+  relative: "relative",
+}
+
+enum VisualizationKPIDirection {
+  increase: "increase",
+  decrease: "decrease",
   neutral: "neutral",
-  positive: "positive",
-  negative: "negative",
+}
+
+enum VisualizationKPIMissingComparison {
+  showUnavailable: "show_unavailable",
+  hide: "hide",
 }
 
 enum VisualizationTone {
@@ -630,10 +646,32 @@ model GridVisualizationPresentation {
 }
 
 model KPIVisualizationPresentation {
-  `trend`: VisualizationKPITrend;
+  `mode`: VisualizationKPIMode;
+  `delta`: VisualizationKPIDeltaMode;
+  `favorableDirection`: VisualizationKPIDirection;
+  `missingComparison`: VisualizationKPIMissingComparison;
+  `ranges`: VisualizationKPIQualitativeRange[];
   `note`?: string;
   `tone`?: VisualizationTone;
   `thresholds`?: VisualizationThreshold[];
+}
+
+model VisualizationKPIValueBinding {
+  `field`: VisualizationFieldRef;
+  `reducer`: VisualizationReferenceReducer;
+  `label`: string;
+}
+
+model VisualizationKPITrendBinding {
+  `category`: VisualizationFieldRef;
+  `value`: VisualizationFieldRef;
+}
+
+model VisualizationKPIQualitativeRange {
+  `minimum`?: float64;
+  `maximum`?: float64;
+  `label`: string;
+  `tone`: VisualizationTone;
 }
 
 model GeographicVisualizationPresentation extends VisualizationPresentation {
@@ -780,8 +818,9 @@ model PivotVisualizationSpec extends VisualizationSpec {
 model KPIVisualizationSpec extends VisualizationSpec {
   `kind`: "kpi";
   `value`: VisualizationFieldRef;
-  `comparison`?: VisualizationFieldRef;
-  `trend`?: VisualizationFieldRef;
+  `comparison`?: VisualizationKPIValueBinding;
+  `goal`?: VisualizationKPIValueBinding;
+  `trend`?: VisualizationKPITrendBinding;
   `presentation`: KPIVisualizationPresentation;
 }
 
@@ -1170,7 +1209,7 @@ model VisualizationDiagnostic {
 @apigen.contract(#{ kind: "visualization-envelope", tags: #["visualization", "ir"] })
 @apigen.`metadata`(#{ `x-leapview-contract-role`: "visualization-envelope" })
 model VisualizationEnvelope {
-  `schemaVersion`: 4;
+  `schemaVersion`: 5;
   `visualID`: string;
   `rendererID`: string;
   `specRevision`: string;

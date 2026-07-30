@@ -54,6 +54,9 @@ func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model
 		accessibilityTitle = authored.Accessibility.Title
 	}
 	accessibilityDescription := title
+	if authored.Description != "" {
+		accessibilityDescription = authored.Description
+	}
 	if authored.Accessibility.Description != "" {
 		accessibilityDescription = authored.Accessibility.Description
 	}
@@ -79,7 +82,7 @@ func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model
 	}
 	base := visualizationir.VisualizationSpecBase{
 		Title: title, Subtitle: optionalString(authored.Subtitle), Datasets: datasets, MetadataBindings: metadataBindings,
-		DataBudget:    visualizationir.VisualizationDataBudget{MaxRows: compiledVisualFrameLimit(authored, shape), RequiredCompleteness: completeness},
+		DataBudget:    visualizationir.VisualizationDataBudget{MaxRows: compiledVisualDataBudgetMaxRows(authored, shape), RequiredCompleteness: completeness},
 		Accessibility: accessibility, Interactions: customVisualizationInteractions(authored.Interaction.PointSelection),
 	}
 	conditionalFormatting, err := compileConditionalFormatting(columns, authored.Presentation.ConditionalFormatting)
@@ -105,9 +108,18 @@ func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model
 	switch authored.Type {
 	case "kpi":
 		base.Kind = "kpi"
+		kpi, err := compileKPIConfiguration(authored.KPI, datasets)
+		if err != nil {
+			return visualizationir.VisualizationSpec{}, err
+		}
 		return visualizationir.VisualizationSpec{Value: &visualizationir.KPIVisualizationSpec{
 			VisualizationSpecBase: base, Kind: "kpi", Value: ref("value"),
-			Presentation: visualizationir.KPIVisualizationPresentation{Trend: compiledKPITrend(presentation.Tone), Note: optionalString(presentation.Note), Tone: compiledTone(presentation.Tone), Thresholds: compiledThresholds(presentation.Thresholds)},
+			Comparison: kpi.comparison, Goal: kpi.goal, Trend: kpi.trend,
+			Presentation: visualizationir.KPIVisualizationPresentation{
+				Mode: kpi.mode, Delta: kpi.delta, FavorableDirection: kpi.favorableDirection,
+				MissingComparison: kpi.missingComparison, Ranges: kpi.ranges,
+				Note: optionalString(presentation.Note), Tone: compiledTone(presentation.Tone), Thresholds: compiledThresholds(presentation.Thresholds),
+			},
 		}}, nil
 	case "pie", "donut", "funnel":
 		base.Kind = "proportional"
@@ -276,6 +288,90 @@ func compiledDatasetContainsField(datasets []visualizationir.VisualizationDatase
 		}
 	}
 	return false
+}
+
+type compiledKPIConfigurationValue struct {
+	mode               visualizationir.VisualizationKPIMode
+	comparison         *visualizationir.VisualizationKPIValueBinding
+	goal               *visualizationir.VisualizationKPIValueBinding
+	trend              *visualizationir.VisualizationKPITrendBinding
+	delta              visualizationir.VisualizationKPIDeltaMode
+	favorableDirection visualizationir.VisualizationKPIDirection
+	missingComparison  visualizationir.VisualizationKPIMissingComparison
+	ranges             []visualizationir.VisualizationKPIQualitativeRange
+}
+
+func compileKPIConfiguration(authored reportdef.VisualKPI, datasets []visualizationir.VisualizationDatasetSchema) (compiledKPIConfigurationValue, error) {
+	out := compiledKPIConfigurationValue{
+		mode:               visualizationir.VisualizationKPIModeCompact,
+		delta:              visualizationir.VisualizationKPIDeltaModeAbsolute,
+		favorableDirection: visualizationir.VisualizationKPIDirectionNeutral,
+		missingComparison:  visualizationir.VisualizationKPIMissingComparisonShowUnavailable,
+		ranges:             []visualizationir.VisualizationKPIQualitativeRange{},
+	}
+	if authored.Mode != "" {
+		out.mode = visualizationir.VisualizationKPIMode(authored.Mode)
+	}
+	if authored.Delta != "" {
+		out.delta = visualizationir.VisualizationKPIDeltaMode(authored.Delta)
+	}
+	if authored.FavorableDirection != "" {
+		out.favorableDirection = visualizationir.VisualizationKPIDirection(authored.FavorableDirection)
+	}
+	if authored.MissingComparison != "" {
+		out.missingComparison = visualizationir.VisualizationKPIMissingComparison(authored.MissingComparison)
+	}
+	compileValue := func(name, fallbackLabel string, authored *reportdef.VisualKPIValueBinding) (*visualizationir.VisualizationKPIValueBinding, error) {
+		if authored == nil {
+			return nil, nil
+		}
+		datasetID := authored.Dataset
+		if datasetID == "" {
+			datasetID = "primary"
+		}
+		if !compiledDatasetContainsField(datasets, datasetID, authored.Field) {
+			return nil, fmt.Errorf("KPI %s field %q is not in dataset %q", name, authored.Field, datasetID)
+		}
+		reducer := authored.Reducer
+		if reducer == "" {
+			reducer = "first"
+		}
+		label := strings.TrimSpace(authored.Label)
+		if label == "" {
+			label = fallbackLabel
+		}
+		return &visualizationir.VisualizationKPIValueBinding{
+			Field:   visualizationir.VisualizationFieldRef{Dataset: datasetID, Field: authored.Field},
+			Reducer: visualizationir.VisualizationReferenceReducer(reducer), Label: label,
+		}, nil
+	}
+	var err error
+	if out.comparison, err = compileValue("comparison", "Comparison", authored.Comparison); err != nil {
+		return out, err
+	}
+	if out.goal, err = compileValue("goal", "Target", authored.Goal); err != nil {
+		return out, err
+	}
+	if authored.Trend != nil {
+		if !compiledDatasetContainsField(datasets, authored.Trend.Dataset, authored.Trend.Category) {
+			return out, fmt.Errorf("KPI trend category field %q is not in dataset %q", authored.Trend.Category, authored.Trend.Dataset)
+		}
+		if !compiledDatasetContainsField(datasets, authored.Trend.Dataset, authored.Trend.Value) {
+			return out, fmt.Errorf("KPI trend value field %q is not in dataset %q", authored.Trend.Value, authored.Trend.Dataset)
+		}
+		out.trend = &visualizationir.VisualizationKPITrendBinding{
+			Category: visualizationir.VisualizationFieldRef{Dataset: authored.Trend.Dataset, Field: authored.Trend.Category},
+			Value:    visualizationir.VisualizationFieldRef{Dataset: authored.Trend.Dataset, Field: authored.Trend.Value},
+		}
+	}
+	out.ranges = make([]visualizationir.VisualizationKPIQualitativeRange, len(authored.Ranges))
+	for index, valueRange := range authored.Ranges {
+		out.ranges[index] = visualizationir.VisualizationKPIQualitativeRange{
+			Minimum: valueRange.Minimum, Maximum: valueRange.Maximum, Label: valueRange.Label,
+			Tone: visualizationir.VisualizationTone(valueRange.Tone),
+		}
+	}
+	return out, nil
 }
 
 func compileConditionalFormatting(columns []string, authored []reportdef.VisualConditionalFormat) (*[]visualizationir.VisualizationConditionalFormat, error) {
@@ -701,17 +797,6 @@ func compiledTone(value string) *visualizationir.VisualizationTone {
 	}
 	out := visualizationir.VisualizationTone(value)
 	return &out
-}
-
-func compiledKPITrend(value string) visualizationir.VisualizationKPITrend {
-	switch value {
-	case "success", "positive":
-		return visualizationir.VisualizationKPITrendPositive
-	case "danger", "negative":
-		return visualizationir.VisualizationKPITrendNegative
-	default:
-		return visualizationir.VisualizationKPITrendNeutral
-	}
 }
 
 func compiledThresholds(values []reportdef.VisualThreshold) *[]visualizationir.VisualizationThreshold {
