@@ -124,7 +124,7 @@ func TestRepositoryInitializeInstanceRollsBackWhenCredentialPreparationFails(t *
 	_, err := repo.InitializeInstance(ctx, access.InstanceInitializationInput{
 		Email:       "admin@example.com",
 		Environment: "production",
-		Now:         time.Date(2026, time.July, 29, 12, 0, 0, 0, time.UTC),
+		Now:         time.Now().UTC(),
 	}, func(access.InitialInstanceCredentials) error {
 		return prepareErr
 	})
