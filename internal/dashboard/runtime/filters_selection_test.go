@@ -75,7 +75,7 @@ func TestSemanticFiltersTargetGridThroughVisualNamespace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	base.Interactions[0].Targets = []string{"plain_table"}
+	base.Interactions[0].Targets = []visualizationir.VisualizationInteractionTarget{{VisualID: "plain_table", Effect: visualizationir.VisualizationInteractionEffectFilter}}
 	report.Visualizations["decades"] = source
 
 	selection := filterSelection("decades", dashboard.InteractionSelectionMapping{Field: "release_decade", Value: "1990s"})
@@ -92,6 +92,39 @@ func TestSemanticFiltersTargetGridThroughVisualNamespace(t *testing.T) {
 	}
 	if len(filters) != 1 || filters[0].Field != "release_decade" {
 		t.Fatalf("grid visual filters = %#v, want conformed selection", filters)
+	}
+}
+
+func TestSemanticFiltersKeepHighlightAndNoneEdgesOutOfTargetQueries(t *testing.T) {
+	report, model := selectionFilterFixture()
+	selection := filterSelection("decades", dashboard.InteractionSelectionMapping{Field: "release_decade", Value: "1990s"})
+	source := report.Visualizations["decades"]
+	base, err := source.Spec.Base()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, effect := range []visualizationir.VisualizationInteractionEffect{
+		visualizationir.VisualizationInteractionEffectHighlight,
+		visualizationir.VisualizationInteractionEffectNone,
+	} {
+		t.Run(string(effect), func(t *testing.T) {
+			base.Interactions[0].Targets = []visualizationir.VisualizationInteractionTarget{{VisualID: "cross", Effect: effect}}
+			report.Visualizations["decades"] = source
+			filters, err := (&FilterService{}).semanticFilters(
+				context.Background(),
+				&modelRuntime{model: model},
+				report,
+				dashboard.Filters{Selections: []dashboard.InteractionSelection{selection}},
+				"visual",
+				"cross",
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(filters) != 0 {
+				t.Fatalf("%s edge mutated target query: %#v", effect, filters)
+			}
+		})
 	}
 }
 
@@ -268,7 +301,11 @@ func compiledSelectionVisual(id string, authored reportdef.Visual) visualization
 			}
 			mappings[index] = item
 		}
-		interactions = append(interactions, visualizationir.VisualizationInteraction{ID: "point_selection", Kind: visualizationir.VisualizationInteractionKindSelect, Mappings: mappings, Targets: selection.Targets, Mode: visualizationir.VisualizationSelectionModeSingle, RequiresStableIdentity: true})
+		targets := make([]visualizationir.VisualizationInteractionTarget, len(selection.Targets))
+		for index, target := range selection.Targets {
+			targets[index] = visualizationir.VisualizationInteractionTarget{VisualID: target, Effect: visualizationir.VisualizationInteractionEffectFilter}
+		}
+		interactions = append(interactions, visualizationir.VisualizationInteraction{ID: "point_selection", Kind: visualizationir.VisualizationInteractionKindSelect, Mappings: mappings, Targets: targets, Mode: visualizationir.VisualizationSelectionModeSingle, RequiresStableIdentity: true})
 	}
 	base := visualizationir.VisualizationSpecBase{Kind: "cartesian", Title: id, Datasets: []visualizationir.VisualizationDatasetSchema{{ID: "primary", Fields: fields}}, Interactions: interactions}
 	spec := visualizationir.VisualizationSpec{Value: &visualizationir.CartesianVisualizationSpec{VisualizationSpecBase: base, Kind: "cartesian"}}

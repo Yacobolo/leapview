@@ -108,7 +108,7 @@ func EnvelopeFromFrames(definition visualizationdefinition.Definition, frames ma
 	}
 	envelope := ir.VisualizationEnvelope{
 		SchemaVersion: ir.CurrentSchemaVersion, VisualID: definition.ID, RendererID: definition.RendererID, SpecRevision: definition.SpecRevision, Spec: definition.Spec,
-		DataRevision: dataRevision, DataState: ir.VisualizationDataState{Value: &state}, Status: ir.VisualizationStatus{Kind: statusKind(primaryRows, "")}, Diagnostics: diagnostics,
+		DataRevision: dataRevision, DataState: ir.VisualizationDataState{Value: &state}, Highlights: []ir.VisualizationHighlightState{}, Status: ir.VisualizationStatus{Kind: statusKind(primaryRows, "")}, Diagnostics: diagnostics,
 	}
 	if len(diagnostics) > 0 && envelope.Status.Kind == ir.VisualizationStatusKindReady {
 		envelope.Status.Kind = ir.VisualizationStatusKindPartial
@@ -183,7 +183,7 @@ func SpatialEnvelopeFromFrame(definition visualizationdefinition.Definition, fra
 	}
 	envelope := ir.VisualizationEnvelope{
 		SchemaVersion: ir.CurrentSchemaVersion, VisualID: definition.ID, RendererID: definition.RendererID, SpecRevision: definition.SpecRevision, Spec: definition.Spec,
-		DataRevision: dataRevision, DataState: ir.VisualizationDataState{Value: &state}, Status: ir.VisualizationStatus{Kind: status}, Diagnostics: []ir.VisualizationDiagnostic{},
+		DataRevision: dataRevision, DataState: ir.VisualizationDataState{Value: &state}, Highlights: []ir.VisualizationHighlightState{}, Status: ir.VisualizationStatus{Kind: status}, Diagnostics: []ir.VisualizationDiagnostic{},
 	}
 	envelope.Selection, err = compiledSelections(definition.Spec, selections, dataRevision)
 	if err != nil {
@@ -268,7 +268,7 @@ func WindowEnvelopeFromDefinition(definition visualizationdefinition.Definition,
 	envelope := ir.VisualizationEnvelope{
 		SchemaVersion: ir.CurrentSchemaVersion, VisualID: definition.ID, RendererID: definition.RendererID,
 		SpecRevision: definition.SpecRevision, Spec: definition.Spec, DataRevision: dataRevision,
-		DataState: ir.VisualizationDataState{Value: &state}, Selection: []ir.VisualizationSelectionEntry{},
+		DataState: ir.VisualizationDataState{Value: &state}, Selection: []ir.VisualizationSelectionEntry{}, Highlights: []ir.VisualizationHighlightState{},
 		Status: ir.VisualizationStatus{Kind: statusKind(table.AvailableRows, message), Message: optional(message)}, Diagnostics: diagnostics,
 	}
 	if len(diagnostics) > 0 && envelope.Status.Kind == ir.VisualizationStatusKindReady {
@@ -332,7 +332,7 @@ func EmptyEnvelopeFromDefinition(definition visualizationdefinition.Definition, 
 	envelope := ir.VisualizationEnvelope{
 		SchemaVersion: ir.CurrentSchemaVersion, VisualID: definition.ID, RendererID: definition.RendererID,
 		SpecRevision: definition.SpecRevision, Spec: definition.Spec, DataRevision: dataRevision,
-		Selection: []ir.VisualizationSelectionEntry{}, Status: ir.VisualizationStatus{Kind: ir.VisualizationStatusKindNoData}, Diagnostics: []ir.VisualizationDiagnostic{},
+		Selection: []ir.VisualizationSelectionEntry{}, Highlights: []ir.VisualizationHighlightState{}, Status: ir.VisualizationStatus{Kind: ir.VisualizationStatusKindNoData}, Diagnostics: []ir.VisualizationDiagnostic{},
 	}
 	if definition.Query.Kind == visualizationdefinition.QuerySpatial && definition.Query.Spatial != nil && definition.Query.Spatial.Viewport != nil {
 		geographic, ok := definition.Spec.Value.(*ir.GeographicVisualizationSpec)

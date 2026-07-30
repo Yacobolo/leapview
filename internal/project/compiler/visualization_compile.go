@@ -71,6 +71,9 @@ func compileVisualizationDefinitions(report *reportdef.Dashboard, models ...*sem
 		}
 		out[id] = definition
 	}
+	if err := completeVisualizationInteractionGraph(out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 

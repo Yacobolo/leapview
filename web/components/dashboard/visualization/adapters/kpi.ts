@@ -45,13 +45,15 @@ export interface KPIState {
   rangeLabel?: string
   rangeTone?: VisualizationTone
   trend: KPITrendPoint[]
+  highlightActive: boolean
+  highlightAnnouncement?: string
   accessibleSummary: string
 }
 
 export function resolveKPIState(envelope: VisualizationEnvelope, context: RendererContext): KPIState {
   const spec = envelope.spec
   if (spec.kind !== 'kpi') {
-    return { currentText: '—', trend: [], bulletRanges: [], accessibleSummary: 'Value unavailable.' }
+    return { currentText: '—', trend: [], bulletRanges: [], highlightActive: false, accessibleSummary: 'Value unavailable.' }
   }
   const current = numericScalar(envelope, spec.value)
   const currentText = formatField(envelope, spec.value, current, context)
@@ -92,6 +94,12 @@ export function resolveKPIState(envelope: VisualizationEnvelope, context: Render
   if (qualitativeRange) summary.push(`Status ${qualitativeRange.label}.`)
   else if (spec.presentation.ranges.length > 0 && current !== undefined) summary.push('Status out of range.')
   if (trend.length > 1) summary.push(`Trend includes ${trend.length} points, from ${trend[0]!.label} to ${trend.at(-1)!.label}.`)
+  const highlights = envelope.highlights ?? []
+  const highlightActive = highlights.length > 0
+  const highlightAnnouncement = highlightActive
+    ? `${highlights.map((highlight) => highlight.label).filter(Boolean).join(' · ') || 'Selection'} highlighted. Comparison total is unchanged.`
+    : undefined
+  if (highlightAnnouncement) summary.push(highlightAnnouncement)
 
   return {
     ...(current === undefined ? {} : { current }),
@@ -113,6 +121,8 @@ export function resolveKPIState(envelope: VisualizationEnvelope, context: Render
     bulletRanges: bullet?.ranges ?? [],
     ...(qualitativeRange ? { rangeLabel: qualitativeRange.label, rangeTone: qualitativeRange.tone } : {}),
     trend,
+    highlightActive,
+    ...(highlightAnnouncement ? { highlightAnnouncement } : {}),
     accessibleSummary: summary.join(' '),
   }
 }

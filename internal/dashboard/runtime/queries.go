@@ -175,6 +175,13 @@ func (s *SnapshotService) QueryDashboardPage(ctx context.Context, dashboardID, p
 			visuals[visualID] = envelope
 			continue
 		}
+		envelope.Highlights, envelopeErr = selectedHighlights(runtime, report, filters, visualID)
+		if envelopeErr != nil {
+			return dashboard.EmptyPatch(filters, envelopeErr), nil
+		}
+		if envelopeErr := visualizationir.ValidateEnvelope(envelope); envelopeErr != nil {
+			return dashboard.EmptyPatch(filters, envelopeErr), nil
+		}
 		visuals[visualID] = envelope
 	}
 	patch.Visuals = visuals
@@ -301,7 +308,7 @@ func (s *VisualizationDataService) queryVisualizationWindowPage(ctx context.Cont
 	if err != nil {
 		return visualizationir.VisualizationEnvelope{}, err
 	}
-	report, _, err := s.reports.reportRuntime(dashboardID, s.runtimes)
+	report, runtime, err := s.reports.reportRuntime(dashboardID, s.runtimes)
 	if err != nil {
 		return visualizationir.VisualizationEnvelope{}, err
 	}
@@ -320,7 +327,15 @@ func (s *VisualizationDataService) queryVisualizationWindowPage(ctx context.Cont
 	if err != nil {
 		return visualizationir.VisualizationEnvelope{}, err
 	}
-	return visualizationruntime.WindowEnvelopeFromDefinition(definition, table, window.DataRevision, 0)
+	envelope, err := visualizationruntime.WindowEnvelopeFromDefinition(definition, table, window.DataRevision, 0)
+	if err != nil {
+		return visualizationir.VisualizationEnvelope{}, err
+	}
+	envelope.Highlights, err = selectedHighlights(runtime, report, filters, window.VisualID)
+	if err != nil {
+		return visualizationir.VisualizationEnvelope{}, err
+	}
+	return envelope, visualizationir.ValidateEnvelope(envelope)
 }
 
 func visualizationTableRequest(window visualizationir.VisualizationWindowRequest) (dashboard.TableRequest, error) {

@@ -14,18 +14,23 @@ import (
 )
 
 func TestVisualPayloadIncludesPointSelectionContract(t *testing.T) {
-	dashboardDefinition := &report.Dashboard{SemanticModel: "model", Visuals: report.ChartVisualizations(map[string]report.Visual{"source": {Type: "bar", Title: "Source", Query: report.VisualQuery{
-		Dimensions: []report.FieldRef{{Field: "activity_date", Alias: "label"}}, Measures: []report.FieldRef{{Field: "event_count", Alias: "value"}}, Limit: 100,
-	}, Interaction: report.Interaction{PointSelection: report.SelectionInteraction{
-		Toggle: true,
-		Mappings: []report.SelectionMapping{{
-			Field: "activity_date",
-			Grain: "month",
-			Value: "label",
-			Label: "label",
+	dashboardDefinition := &report.Dashboard{SemanticModel: "model", Visuals: report.ChartVisualizations(map[string]report.Visual{
+		"source": {Type: "bar", Title: "Source", Query: report.VisualQuery{
+			Dimensions: []report.FieldRef{{Field: "activity_date", Alias: "label"}}, Measures: []report.FieldRef{{Field: "event_count", Alias: "value"}}, Limit: 100,
+		}, Interaction: report.Interaction{PointSelection: report.SelectionInteraction{
+			Toggle: true,
+			Mappings: []report.SelectionMapping{{
+				Field: "activity_date",
+				Grain: "month",
+				Value: "label",
+				Label: "label",
+			}},
+			Targets: []string{"tags_per_rating"},
+		}}},
+		"tags_per_rating": {Type: "bar", Query: report.VisualQuery{
+			Dimensions: []report.FieldRef{{Field: "tag", Alias: "tag"}}, Measures: []report.FieldRef{{Field: "event_count", Alias: "value"}}, Limit: 100,
 		}},
-		Targets: []string{"tags_per_rating"},
-	}}}})}
+	})}
 
 	definitions, err := compileVisualizationDefinitions(dashboardDefinition)
 	if err != nil {
@@ -40,17 +45,27 @@ func TestVisualPayloadIncludesPointSelectionContract(t *testing.T) {
 			t.Fatalf("visual payload = %s, want %s", payload, want)
 		}
 	}
+	revision, err := visualizationir.ComputeSpecRevision(definitions["source"].Spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := definitions["source"].SpecRevision; got != revision.String() {
+		t.Fatalf("completed interaction graph revision = %q, want %q", got, revision)
+	}
 }
 
 func TestTablePayloadIncludesFactLocalRowSelectionContract(t *testing.T) {
-	dashboardDefinition := &report.Dashboard{SemanticModel: "model", Visuals: report.TabularVisualizations("table", map[string]report.TableVisual{"source": {Title: "Source", Query: report.TableQuery{Table: "ratings", Fields: []string{"ratings.rating_bucket"}}, Columns: []dashboard.TableColumn{{Key: "rating_bucket", Label: "Rating"}}, Interaction: report.Interaction{RowSelection: report.SelectionInteraction{
-		Mappings: []report.SelectionMapping{{
-			Field: "ratings.rating_bucket",
-			Fact:  "ratings",
-			Value: "rating_bucket",
-		}},
-		Targets: []string{"tags_per_rating"},
-	}}}})}
+	dashboardDefinition := &report.Dashboard{SemanticModel: "model", Visuals: report.TabularVisualizations("table", map[string]report.TableVisual{
+		"source": {Title: "Source", Query: report.TableQuery{Table: "ratings", Fields: []string{"ratings.rating_bucket"}}, Columns: []dashboard.TableColumn{{Key: "rating_bucket", Label: "Rating"}}, Interaction: report.Interaction{RowSelection: report.SelectionInteraction{
+			Mappings: []report.SelectionMapping{{
+				Field: "ratings.rating_bucket",
+				Fact:  "ratings",
+				Value: "rating_bucket",
+			}},
+			Targets: []string{"tags_per_rating"},
+		}}},
+		"tags_per_rating": {Title: "Tags", Query: report.TableQuery{Table: "ratings", Fields: []string{"ratings.rating_bucket"}}, Columns: []dashboard.TableColumn{{Key: "rating_bucket", Label: "Rating"}}},
+	})}
 
 	definitions, err := compileVisualizationDefinitions(dashboardDefinition)
 	if err != nil {
@@ -88,40 +103,48 @@ func TestCustomVisualCompilesToSandboxedVegaLiteDefinition(t *testing.T) {
 }
 
 func TestGeographicVisualCompilesEveryLayerKind(t *testing.T) {
-	dashboardDefinition := &report.Dashboard{SemanticModel: "model", Visuals: report.ChartVisualizations(map[string]report.Visual{"locations": {
-		Type: "map", Title: "Locations", Query: report.VisualQuery{
-			Table: "orders",
-			Dimensions: []report.FieldRef{
-				{Field: "orders.state", Alias: "state"},
-				{Field: "orders.latitude", Alias: "latitude"},
-				{Field: "orders.longitude", Alias: "longitude"},
-			},
-			Measures: []report.FieldRef{{Field: "orders.revenue", Alias: "revenue"}},
+	dashboardDefinition := &report.Dashboard{SemanticModel: "model", Visuals: report.ChartVisualizations(map[string]report.Visual{
+		"detail": {
+			Type: "bar", Query: report.VisualQuery{Table: "orders", Dimensions: []report.FieldRef{{Field: "orders.state", Alias: "state"}}, Measures: []report.FieldRef{{Field: "orders.revenue", Alias: "revenue"}}},
 		},
-		Geo: report.VisualGeo{
-			Basemap: "streets", Theme: "auto", LabelDensity: "normal",
-			Camera:   report.VisualGeoCamera{Mode: "fit_data", Padding: 32, MinimumZoom: 2, MaximumZoom: 14},
-			Controls: report.VisualGeoControls{Zoom: true, Reset: true, Compass: true},
-			Layers: []report.VisualGeoLayer{
-				{ID: "states", Kind: "choropleth", GeometryAsset: "brazil_states", Join: "state", Value: "revenue", Tooltip: []string{"state", "revenue"}, Color: report.VisualGeoColorScale{Kind: "sequential", Palette: "blue"}},
-				{ID: "stores", Kind: "point", Latitude: "latitude", Longitude: "longitude", Value: "revenue", Label: "state", Size: report.VisualGeoSizeScale{MinimumRadius: 5, MaximumRadius: 28}, Cluster: report.VisualGeoCluster{Enabled: true, Radius: 48, MaximumZoom: 10, ShowCount: true}},
-				{ID: "demand", Kind: "heat", Latitude: "latitude", Longitude: "longitude", Value: "revenue"},
-				{ID: "density", Kind: "density", Latitude: "latitude", Longitude: "longitude"},
-			}},
-		Interaction: report.Interaction{PointSelection: report.SelectionInteraction{
-			Toggle: true,
-			Mappings: []report.SelectionMapping{
-				{Field: "orders.state", Fact: "orders", Value: "state", Label: "state"},
-				{Field: "orders.latitude", Fact: "orders", Value: "latitude", Label: "revenue"},
+		"locations": {
+			Type: "map", Title: "Locations", Query: report.VisualQuery{
+				Table: "orders",
+				Dimensions: []report.FieldRef{
+					{Field: "orders.state", Alias: "state"},
+					{Field: "orders.latitude", Alias: "latitude"},
+					{Field: "orders.longitude", Alias: "longitude"},
+				},
+				Measures: []report.FieldRef{{Field: "orders.revenue", Alias: "revenue"}},
 			},
-			Targets: []string{"detail", "summary"},
-		}, SpatialSelection: report.SpatialSelectionInteraction{
-			Gestures:  []string{"box", "lasso", "radius"},
-			Latitude:  report.SpatialSelectionMapping{Source: "latitude", Field: "orders.latitude", Fact: "orders"},
-			Longitude: report.SpatialSelectionMapping{Source: "longitude", Field: "orders.longitude", Fact: "orders"},
-			Targets:   []string{"detail", "summary"},
-		}},
-	}})}
+			Geo: report.VisualGeo{
+				Basemap: "streets", Theme: "auto", LabelDensity: "normal",
+				Camera:   report.VisualGeoCamera{Mode: "fit_data", Padding: 32, MinimumZoom: 2, MaximumZoom: 14},
+				Controls: report.VisualGeoControls{Zoom: true, Reset: true, Compass: true},
+				Layers: []report.VisualGeoLayer{
+					{ID: "states", Kind: "choropleth", GeometryAsset: "brazil_states", Join: "state", Value: "revenue", Tooltip: []string{"state", "revenue"}, Color: report.VisualGeoColorScale{Kind: "sequential", Palette: "blue"}},
+					{ID: "stores", Kind: "point", Latitude: "latitude", Longitude: "longitude", Value: "revenue", Label: "state", Size: report.VisualGeoSizeScale{MinimumRadius: 5, MaximumRadius: 28}, Cluster: report.VisualGeoCluster{Enabled: true, Radius: 48, MaximumZoom: 10, ShowCount: true}},
+					{ID: "demand", Kind: "heat", Latitude: "latitude", Longitude: "longitude", Value: "revenue"},
+					{ID: "density", Kind: "density", Latitude: "latitude", Longitude: "longitude"},
+				}},
+			Interaction: report.Interaction{PointSelection: report.SelectionInteraction{
+				Toggle: true,
+				Mappings: []report.SelectionMapping{
+					{Field: "orders.state", Fact: "orders", Value: "state", Label: "state"},
+					{Field: "orders.latitude", Fact: "orders", Value: "latitude", Label: "revenue"},
+				},
+				Targets: []string{"detail", "summary"},
+			}, SpatialSelection: report.SpatialSelectionInteraction{
+				Gestures:  []string{"box", "lasso", "radius"},
+				Latitude:  report.SpatialSelectionMapping{Source: "latitude", Field: "orders.latitude", Fact: "orders"},
+				Longitude: report.SpatialSelectionMapping{Source: "longitude", Field: "orders.longitude", Fact: "orders"},
+				Targets:   []string{"detail", "summary"},
+			}},
+		},
+		"summary": {
+			Type: "bar", Query: report.VisualQuery{Table: "orders", Dimensions: []report.FieldRef{{Field: "orders.state", Alias: "state"}}, Measures: []report.FieldRef{{Field: "orders.revenue", Alias: "revenue"}}},
+		},
+	})}
 
 	definitions, err := compileVisualizationDefinitions(dashboardDefinition)
 	if err != nil {
@@ -185,8 +208,11 @@ func TestGeographicVisualCompilesEveryLayerKind(t *testing.T) {
 	if interaction.Mode != visualizationir.VisualizationSelectionModeMultiple || !interaction.RequiresStableIdentity || len(interaction.Mappings) != 2 {
 		t.Fatalf("geographic interaction = %#v", interaction)
 	}
-	if got, want := interaction.Targets, []string{"detail", "summary"}; !slices.Equal(got, want) {
-		t.Fatalf("geographic targets = %#v, want %#v", got, want)
+	if got := interaction.Targets; len(got) != 3 ||
+		got[0].VisualID != "detail" || got[0].Effect != visualizationir.VisualizationInteractionEffectFilter ||
+		got[1].VisualID != "locations" || got[1].Effect != visualizationir.VisualizationInteractionEffectNone ||
+		got[2].VisualID != "summary" || got[2].Effect != visualizationir.VisualizationInteractionEffectFilter {
+		t.Fatalf("geographic targets = %#v", got)
 	}
 	if got, want := len(spec.SpatialInteractions), 1; got != want {
 		t.Fatalf("geographic spatial interactions = %d, want %d", got, want)

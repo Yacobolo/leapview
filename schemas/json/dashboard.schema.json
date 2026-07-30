@@ -2870,6 +2870,12 @@
     "#SelectionInteraction": {
       "additionalProperties": false,
       "properties": {
+        "highlight_targets": {
+          "items": {
+            "$ref": "#/$defs/%23Identifier"
+          },
+          "type": "array"
+        },
         "mappings": {
           "items": {
             "additionalProperties": false,
@@ -2908,6 +2914,12 @@
               "value"
             ],
             "type": "object"
+          },
+          "type": "array"
+        },
+        "none_targets": {
+          "items": {
+            "$ref": "#/$defs/%23Identifier"
           },
           "type": "array"
         },
@@ -3019,11 +3031,23 @@
           },
           "type": "array"
         },
+        "highlight_targets": {
+          "items": {
+            "$ref": "#/$defs/%23Identifier"
+          },
+          "type": "array"
+        },
         "latitude": {
           "$ref": "#/$defs/%23SpatialSelectionMapping"
         },
         "longitude": {
           "$ref": "#/$defs/%23SpatialSelectionMapping"
+        },
+        "none_targets": {
+          "items": {
+            "$ref": "#/$defs/%23Identifier"
+          },
+          "type": "array"
         },
         "targets": {
           "items": {

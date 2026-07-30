@@ -162,6 +162,12 @@ enum VisualizationSelectionMode {
   multiple: "multiple",
 }
 
+enum VisualizationInteractionEffect {
+  none: "none",
+  filter: "filter",
+  highlight: "highlight",
+}
+
 enum VisualizationKPIMode {
   compact: "compact",
   bullet: "bullet",
@@ -659,11 +665,16 @@ model VisualizationInteractionMapping {
   `label`?: VisualizationFieldRef;
 }
 
+model VisualizationInteractionTarget {
+  `visualID`: string;
+  `effect`: VisualizationInteractionEffect;
+}
+
 model VisualizationInteraction {
   `id`: string;
   `kind`: VisualizationInteractionKind;
   `mappings`: VisualizationInteractionMapping[];
-  `targets`: string[];
+  `targets`: VisualizationInteractionTarget[];
   `mode`: VisualizationSelectionMode;
   `requiresStableIdentity`: boolean;
 }
@@ -1072,7 +1083,7 @@ model VisualizationSpatialSelectionInteraction {
   `gestures`: VisualizationSpatialSelectionGesture[];
   `latitude`: VisualizationSpatialFieldMapping;
   `longitude`: VisualizationSpatialFieldMapping;
-  `targets`: string[];
+  `targets`: VisualizationInteractionTarget[];
 }
 
 model VisualizationSpatialCoordinate {
@@ -1112,6 +1123,9 @@ model VisualizationSpatialSelectionCommand {
   `visualID`: string;
   `specRevision`: string;
   `dataRevision`: int64;
+  `servingStateID`: string;
+  `filterRevision`: int64;
+  `interactionRevision`: int64;
   `interactionID`: string;
   `action`: "set" | "clear";
   `gesture`: VisualizationSpatialSelectionGesture;
@@ -1343,6 +1357,29 @@ model VisualizationSelectionEntry {
   `label`?: string;
 }
 
+model VisualizationHighlightMapping {
+  `targetFieldID`: string;
+  `targetFactID`?: string;
+  `grain`?: string;
+  `value`: unknown;
+  `label`?: string;
+}
+
+model VisualizationHighlightEntry {
+  `mappings`: VisualizationHighlightMapping[];
+  `label`: string;
+}
+
+model VisualizationHighlightState {
+  `sourceVisualID`: string;
+  `interactionID`: string;
+  `entries`: VisualizationHighlightEntry[];
+  `spatialGeometry`?: VisualizationSpatialSelectionGeometry;
+  `spatialLatitudeFieldID`?: string;
+  `spatialLongitudeFieldID`?: string;
+  `label`: string;
+}
+
 model VisualizationStatus {
   `kind`: VisualizationStatusKind;
   `message`?: string;
@@ -1358,7 +1395,7 @@ model VisualizationDiagnostic {
 @apigen.contract(#{ kind: "visualization-envelope", tags: #["visualization", "ir"] })
 @apigen.`metadata`(#{ `x-leapview-contract-role`: "visualization-envelope" })
 model VisualizationEnvelope {
-  `schemaVersion`: 8;
+  `schemaVersion`: 9;
   `visualID`: string;
   `rendererID`: string;
   `specRevision`: string;
@@ -1366,6 +1403,7 @@ model VisualizationEnvelope {
   `dataRevision`: int64;
   `dataState`: VisualizationDataState;
   `selection`: VisualizationSelectionEntry[];
+  `highlights`: VisualizationHighlightState[];
   `spatialSelection`?: VisualizationSpatialSelectionState;
   `status`: VisualizationStatus;
   `diagnostics`: VisualizationDiagnostic[];

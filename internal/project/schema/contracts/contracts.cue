@@ -984,14 +984,18 @@ package contracts
 		value!: string
 		label?: string
 	})]
-	targets?: [...#Identifier]
+	targets?:           [...#Identifier]
+	highlight_targets?: [...#Identifier]
+	none_targets?:      [...#Identifier]
 })
 
 #SpatialSelectionInteraction: close({
 	gestures!: [...("box" | "lasso" | "radius")]
 	latitude!:  #SpatialSelectionMapping
 	longitude!: #SpatialSelectionMapping
-	targets!: [...#Identifier]
+	targets!:           [...#Identifier]
+	highlight_targets?: [...#Identifier]
+	none_targets?:      [...#Identifier]
 })
 
 #SpatialSelectionMapping: close({

@@ -44,6 +44,7 @@ export class DashboardVisualizationSignalDecoder {
       servingStateID: _servingStateID,
       streamGeneration: _streamGeneration,
       filterRevision: _filterRevision,
+      interactionRevision: _interactionRevision,
       consumerIdentity: _consumerIdentity,
       ...envelope
     } = signal

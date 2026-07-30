@@ -58,7 +58,7 @@ export interface InteractionConfig {
   kind?: string
   toggle?: boolean
   mappings?: InteractionMapping[]
-  targets?: string[]
+  targets?: Array<{ visualID: string; effect: 'none' | 'filter' | 'highlight' }>
 }
 
 export type TableRow = Record<string, unknown>
@@ -79,6 +79,7 @@ export interface TableSignal {
   style: TableStyle
 	interaction?: InteractionConfig
   selection?: InteractionSelectionEntry[]
+  highlight?: { active: boolean; announcement: string }
   columns: TableColumn[]
   cardinality: TableCardinality
   availableRows: number

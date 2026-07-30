@@ -29,7 +29,20 @@ func compiledSelectionInteractions(id string, selection reportdef.SelectionInter
 	if selection.Toggle {
 		mode = visualizationir.VisualizationSelectionModeMultiple
 	}
-	return []visualizationir.VisualizationInteraction{{ID: id, Kind: visualizationir.VisualizationInteractionKindSelect, Mappings: mappings, Targets: append([]string{}, selection.Targets...), Mode: mode, RequiresStableIdentity: true}}
+	return []visualizationir.VisualizationInteraction{{ID: id, Kind: visualizationir.VisualizationInteractionKindSelect, Mappings: mappings, Targets: compiledInteractionTargets(selection.Targets, selection.HighlightTargets, selection.NoneTargets), Mode: mode, RequiresStableIdentity: true}}
+}
+
+func compiledInteractionTargets(filter, highlight, none []string) []visualizationir.VisualizationInteractionTarget {
+	targets := make([]visualizationir.VisualizationInteractionTarget, 0, len(filter)+len(highlight)+len(none))
+	appendTargets := func(ids []string, effect visualizationir.VisualizationInteractionEffect) {
+		for _, id := range ids {
+			targets = append(targets, visualizationir.VisualizationInteractionTarget{VisualID: id, Effect: effect})
+		}
+	}
+	appendTargets(filter, visualizationir.VisualizationInteractionEffectFilter)
+	appendTargets(highlight, visualizationir.VisualizationInteractionEffectHighlight)
+	appendTargets(none, visualizationir.VisualizationInteractionEffectNone)
+	return targets
 }
 
 func interactionIdentity(selection reportdef.SelectionInteraction) []string {

@@ -30898,6 +30898,20 @@ paths:
                         fieldID: example
                         message: example
                         severity: info
+                    highlights:
+                      - entries:
+                          - label: example
+                            mappings:
+                              - grain: example
+                                label: example
+                                targetFactID: example
+                                targetFieldID: example
+                                value: example
+                        interactionID: example
+                        label: example
+                        sourceVisualID: example
+                        spatialLatitudeFieldID: example
+                        spatialLongitudeFieldID: example
                     rendererID: example
                     schemaVersion: 1
                     selection:
@@ -31529,6 +31543,20 @@ paths:
                     fieldID: example
                     message: example
                     severity: info
+                highlights:
+                  - entries:
+                      - label: example
+                        mappings:
+                          - grain: example
+                            label: example
+                            targetFactID: example
+                            targetFieldID: example
+                            value: example
+                    interactionID: example
+                    label: example
+                    sourceVisualID: example
+                    spatialLatitudeFieldID: example
+                    spatialLongitudeFieldID: example
                 rendererID: example
                 schemaVersion: 1
                 selection:
@@ -50820,6 +50848,20 @@ components:
                   fieldID: example
                   message: example
                   severity: info
+              highlights:
+                - entries:
+                    - label: example
+                      mappings:
+                        - grain: example
+                          label: example
+                          targetFactID: example
+                          targetFieldID: example
+                          value: example
+                  interactionID: example
+                  label: example
+                  sourceVisualID: example
+                  spatialLatitudeFieldID: example
+                  spatialLongitudeFieldID: example
               rendererID: example
               schemaVersion: 1
               selection:
@@ -50854,6 +50896,20 @@ components:
                 fieldID: example
                 message: example
                 severity: info
+            highlights:
+              - entries:
+                  - label: example
+                    mappings:
+                      - grain: example
+                        label: example
+                        targetFactID: example
+                        targetFieldID: example
+                        value: example
+                interactionID: example
+                label: example
+                sourceVisualID: example
+                spatialLatitudeFieldID: example
+                spatialLongitudeFieldID: example
             rendererID: example
             schemaVersion: 1
             selection:
@@ -52609,7 +52665,8 @@ components:
                 targetFactID: example
                 targetFieldID: example
               targets:
-                - example
+                - effect: none
+                  visualID: example
         presentation:
           $ref: '#/components/schemas/GeographicVisualizationPresentation'
       example:
@@ -52664,7 +52721,8 @@ components:
               targetFactID: example
               targetFieldID: example
             targets:
-              - example
+              - effect: none
+                visualID: example
     GradientVisualizationConditionalRule:
       type: object
       allOf:
@@ -59537,6 +59595,7 @@ components:
         - dataRevision
         - dataState
         - selection
+        - highlights
         - status
         - diagnostics
       properties:
@@ -59573,6 +59632,24 @@ components:
                   key: example
                 resetVersion: 1
               label: example
+        highlights:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationHighlightState'
+          example:
+            - entries:
+                - label: example
+                  mappings:
+                    - grain: example
+                      label: example
+                      targetFactID: example
+                      targetFieldID: example
+                      value: example
+              interactionID: example
+              label: example
+              sourceVisualID: example
+              spatialLatitudeFieldID: example
+              spatialLongitudeFieldID: example
         spatialSelection:
           $ref: '#/components/schemas/VisualizationSpatialSelectionState'
         status:
@@ -59593,6 +59670,20 @@ components:
             fieldID: example
             message: example
             severity: info
+        highlights:
+          - entries:
+              - label: example
+                mappings:
+                  - grain: example
+                    label: example
+                    targetFactID: example
+                    targetFieldID: example
+                    value: example
+            interactionID: example
+            label: example
+            sourceVisualID: example
+            spatialLatitudeFieldID: example
+            spatialLongitudeFieldID: example
         rendererID: example
         schemaVersion: 1
         selection:
@@ -60006,6 +60097,110 @@ components:
         - sankey
         - graph
       example: treemap
+    VisualizationHighlightEntry:
+      type: object
+      required:
+        - mappings
+        - label
+      properties:
+        mappings:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationHighlightMapping'
+          example:
+            - grain: example
+              label: example
+              targetFactID: example
+              targetFieldID: example
+              value: example
+        label:
+          type: string
+          example: example
+      example:
+        label: example
+        mappings:
+          - grain: example
+            label: example
+            targetFactID: example
+            targetFieldID: example
+            value: example
+    VisualizationHighlightMapping:
+      type: object
+      required:
+        - targetFieldID
+        - value
+      properties:
+        targetFieldID:
+          type: string
+          example: example
+        targetFactID:
+          type: string
+          example: example
+        grain:
+          type: string
+          example: example
+        value:
+          example: example
+        label:
+          type: string
+          example: example
+      example:
+        grain: example
+        label: example
+        targetFactID: example
+        targetFieldID: example
+        value: example
+    VisualizationHighlightState:
+      type: object
+      required:
+        - sourceVisualID
+        - interactionID
+        - entries
+        - label
+      properties:
+        sourceVisualID:
+          type: string
+          example: example
+        interactionID:
+          type: string
+          example: example
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationHighlightEntry'
+          example:
+            - label: example
+              mappings:
+                - grain: example
+                  label: example
+                  targetFactID: example
+                  targetFieldID: example
+                  value: example
+        spatialGeometry:
+          $ref: '#/components/schemas/VisualizationSpatialSelectionGeometry'
+        spatialLatitudeFieldID:
+          type: string
+          example: example
+        spatialLongitudeFieldID:
+          type: string
+          example: example
+        label:
+          type: string
+          example: example
+      example:
+        entries:
+          - label: example
+            mappings:
+              - grain: example
+                label: example
+                targetFactID: example
+                targetFieldID: example
+                value: example
+        interactionID: example
+        label: example
+        sourceVisualID: example
+        spatialLatitudeFieldID: example
+        spatialLongitudeFieldID: example
     VisualizationIconIntent:
       type: string
       enum:
@@ -60100,9 +60295,10 @@ components:
         targets:
           type: array
           items:
-            type: string
+            $ref: '#/components/schemas/VisualizationInteractionTarget'
           example:
-            - example
+            - effect: none
+              visualID: example
         mode:
           $ref: '#/components/schemas/VisualizationSelectionMode'
         requiresStableIdentity:
@@ -60124,7 +60320,15 @@ components:
         mode: single
         requiresStableIdentity: true
         targets:
-          - example
+          - effect: none
+            visualID: example
+    VisualizationInteractionEffect:
+      type: string
+      enum:
+        - none
+        - filter
+        - highlight
+      example: none
     VisualizationInteractionKind:
       type: string
       enum:
@@ -60162,6 +60366,20 @@ components:
           field: example
         targetFactID: example
         targetFieldID: example
+    VisualizationInteractionTarget:
+      type: object
+      required:
+        - visualID
+        - effect
+      properties:
+        visualID:
+          type: string
+          example: example
+        effect:
+          $ref: '#/components/schemas/VisualizationInteractionEffect'
+      example:
+        effect: none
+        visualID: example
     VisualizationKPIDeltaMode:
       type: string
       enum:
@@ -61359,9 +61577,10 @@ components:
         targets:
           type: array
           items:
-            type: string
+            $ref: '#/components/schemas/VisualizationInteractionTarget'
           example:
-            - example
+            - effect: none
+              visualID: example
       example:
         gestures:
           - box
@@ -61379,7 +61598,8 @@ components:
           targetFactID: example
           targetFieldID: example
         targets:
-          - example
+          - effect: none
+            visualID: example
     VisualizationSpatialSelectionState:
       type: object
       required:
@@ -61564,7 +61784,8 @@ components:
               mode: single
               requiresStableIdentity: true
               targets:
-                - example
+                - effect: none
+                  visualID: example
         conditionalFormatting:
           type: array
           items:
@@ -61700,7 +61921,8 @@ components:
             mode: single
             requiresStableIdentity: true
             targets:
-              - example
+              - effect: none
+                visualID: example
         kind: example
         metadataBindings:
           description:

@@ -64,7 +64,14 @@ func (s *VisualizationDataService) visuals(ctx context.Context, runtime *modelRu
 		if err != nil {
 			return nil, err
 		}
+		envelope.Highlights, err = selectedHighlights(runtime, report, filters, key)
+		if err != nil {
+			return nil, err
+		}
 		envelope.SpatialSelection = selectedSpatialState(filters, key)
+		if err := visualizationir.ValidateEnvelope(envelope); err != nil {
+			return nil, err
+		}
 		visuals[key] = envelope
 	}
 	return visuals, nil
@@ -141,7 +148,14 @@ func (s *VisualizationDataService) spatialEnvelope(ctx context.Context, runtime 
 	if err != nil {
 		return visualizationir.VisualizationEnvelope{}, err
 	}
+	envelope.Highlights, err = selectedHighlights(runtime, report, filters, request.VisualID)
+	if err != nil {
+		return visualizationir.VisualizationEnvelope{}, err
+	}
 	envelope.SpatialSelection = selectedSpatialState(filters, request.VisualID)
+	if err := visualizationir.ValidateEnvelope(envelope); err != nil {
+		return visualizationir.VisualizationEnvelope{}, err
+	}
 	return envelope, nil
 }
 
@@ -329,7 +343,14 @@ func (s *VisualizationDataService) bundledVisuals(ctx context.Context, runtime *
 		if envelopeErr != nil {
 			return nil, envelopeErr
 		}
+		envelope.Highlights, envelopeErr = selectedHighlights(runtime, report, filters, key)
+		if envelopeErr != nil {
+			return nil, envelopeErr
+		}
 		envelope.SpatialSelection = selectedSpatialState(filters, key)
+		if envelopeErr := visualizationir.ValidateEnvelope(envelope); envelopeErr != nil {
+			return nil, envelopeErr
+		}
 		visuals[key] = envelope
 	}
 	return visuals, nil

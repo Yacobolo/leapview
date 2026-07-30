@@ -197,8 +197,14 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 	if !strings.Contains(showcaseSignals, `"active_chart"`) || !strings.Contains(showcaseSignals, `"active_kpi"`) {
 		t.Fatalf("showcase bootstrap did not include active chart and KPI visuals:\n%s", showcaseSignals)
 	}
-	if strings.Contains(showcaseSignals, `"off_page_chart"`) {
-		t.Fatalf("showcase bootstrap included off-page chart:\n%s", showcaseSignals)
+	var showcaseRoot struct {
+		Visuals map[string]json.RawMessage `json:"visuals"`
+	}
+	if err := json.Unmarshal([]byte(showcaseSignals), &showcaseRoot); err != nil {
+		t.Fatalf("decode showcase bootstrap: %v", err)
+	}
+	if _, exists := showcaseRoot.Visuals["off_page_chart"]; exists {
+		t.Fatalf("showcase bootstrap included an off-page visual envelope:\n%s", showcaseSignals)
 	}
 	if strings.Contains(showcaseSignals, `"kpis"`) {
 		t.Fatalf("showcase bootstrap included legacy kpis signal:\n%s", showcaseSignals)
@@ -224,6 +230,12 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 
 	tables := renderPageForTest(t, compiled, model, report.Pages[1])
 	tableSignals := html.UnescapeString(jsonString(BootstrapSignals("client", "stream-instance", dashboard.Catalog{}, compiled, model, definitions, report.Pages, report.Pages[1], dashboard.Filters{})))
+	var tableRoot struct {
+		Visuals map[string]json.RawMessage `json:"visuals"`
+	}
+	if err := json.Unmarshal([]byte(tableSignals), &tableRoot); err != nil {
+		t.Fatalf("decode tables bootstrap: %v", err)
+	}
 	for tableID, visualType := range map[string]string{"orders": "table", "matrix": "matrix", "pivot": "pivot"} {
 		if !strings.Contains(tableSignals, `"`+tableID+`":{`) || !strings.Contains(tableSignals, `"kind":"`+visualType+`"`) {
 			t.Fatalf("visual bootstrap did not include tabular visual %q with type %q:\n%s", tableID, visualType, tableSignals)
@@ -233,15 +245,43 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 		t.Fatalf("tables bootstrap did not include table style and column display metadata:\n%s", tableSignals)
 	}
 	assertNoDashboardProductDOM(t, tables)
-	if !strings.Contains(showcaseSignals, `"interactions":[{"id":"point_selection","kind":"select","mappings":[{"source":{"dataset":"primary","field":"label"},"targetFieldID":"orders.status","targetFactID":"orders"}],"targets":["orders"],"mode":"single","requiresStableIdentity":true}]`) {
-		t.Fatalf("showcase bootstrap did not include the compiled point selection:\n%s", showcaseSignals)
+	if !bootstrapHasInteractionTarget(showcaseRoot.Visuals["active_chart"], "point_selection", "orders", "filter") {
+		t.Fatalf("showcase bootstrap did not include the compiled point-selection filter edge:\n%s", showcaseSignals)
 	}
-	if !strings.Contains(tableSignals, `"interactions":[{"id":"row_selection","kind":"select","mappings":[{"source":{"dataset":"primary","field":"order_id"},"targetFieldID":"orders.order_id","targetFactID":"orders"}],"targets":["active_chart"],"mode":"single","requiresStableIdentity":true}]`) {
-		t.Fatalf("tables bootstrap did not include the compiled row selection:\n%s", tableSignals)
+	if !bootstrapHasInteractionTarget(tableRoot.Visuals["orders"], "row_selection", "active_chart", "filter") {
+		t.Fatalf("tables bootstrap did not include the compiled row-selection filter edge:\n%s", tableSignals)
 	}
-	if strings.Contains(tableSignals, `"off_page"`) {
-		t.Fatalf("tables bootstrap included off-page table:\n%s", tableSignals)
+	if _, exists := tableRoot.Visuals["off_page"]; exists {
+		t.Fatalf("tables bootstrap included an off-page visual envelope:\n%s", tableSignals)
 	}
+}
+
+func bootstrapHasInteractionTarget(envelope json.RawMessage, interactionID, targetID, effect string) bool {
+	var value struct {
+		Spec struct {
+			Interactions []struct {
+				ID      string `json:"id"`
+				Targets []struct {
+					VisualID string `json:"visualID"`
+					Effect   string `json:"effect"`
+				} `json:"targets"`
+			} `json:"interactions"`
+		} `json:"spec"`
+	}
+	if json.Unmarshal(envelope, &value) != nil {
+		return false
+	}
+	for _, interaction := range value.Spec.Interactions {
+		if interaction.ID != interactionID {
+			continue
+		}
+		for _, target := range interaction.Targets {
+			if target.VisualID == targetID && target.Effect == effect {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func renderPageForTest(t *testing.T, report dashboarddefinition.Definition, model *semanticmodel.Model, activePage dashboard.Page) string {

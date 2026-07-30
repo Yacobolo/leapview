@@ -91,27 +91,50 @@ By default, a binding applies to every semantically compatible consumer in its s
 
 Test combinations, not just filters in isolation. Two individually valid filters can produce an empty intersection, and users should see a deliberate empty state rather than a broken chart.
 
-### Map visual or table selections
+### Declare a visual interaction matrix
 
-Selection interactions map delivered row values back to semantic fields:
+Selection interactions map delivered row values back to semantic fields and
+declare one of three effects for every target:
 
 ```yaml
 interaction:
-  row_selection:
+  point_selection:
     toggle: true
     mappings:
-      - field: orders.order_id
+      - field: orders.status
         fact: orders
-        value: order_id
-        label: order_id
+        value: status
+        label: status
     targets:
-      - revenue_kpi
-      - revenue_by_month
+      - orders_table
+      - category_revenue
+    highlight_targets:
+      - status_breakdown
+      - orders_kpi
+    none_targets:
+      - explanatory_note
 ```
 
-`value` names a delivered result field. `field` and `fact` establish semantic identity. The server rejects incomplete or forged mappings before applying them. Targets are dashboard definition IDs, not arbitrary CSS selectors or browser element IDs.
+`targets` cross-filter their target queries. `highlight_targets` keep the
+comparison result intact and emphasize the compatible selected subset.
+`none_targets` document intentional non-interaction. The compiler completes the
+matrix for every other visual with deterministic `none` edges, so runtime code
+never infers behavior from a missing list entry.
 
-Point selection on supported visuals uses the same principle. Keep mapping values typed: a numeric zero, boolean false, string `"0"`, and null are not interchangeable.
+`value` names a delivered result field. `field` and `fact` establish semantic
+identity. The server rejects incomplete, unauthorized, or stale mappings before
+applying them. Targets are dashboard definition IDs, not arbitrary CSS selectors
+or browser element IDs.
+
+Table `row_selection` and map `spatial_selection` use the same target lists.
+Point, multi-point, brush replacement, hierarchy, and keyboard selection events
+all return through this compiled contract. Keep mapping values typed: a numeric
+zero, boolean false, string `"0"`, and null are not interchangeable.
+
+Cross-filter, cross-highlight, and applied filters are separate state roots.
+An interaction never silently rewrites canonical filter or slicer state. Each
+command carries serving-state, filter, interaction, specification, and data
+revisions; stale commands are rejected before affected consumers are planned.
 
 ## Verify predictable interactions
 

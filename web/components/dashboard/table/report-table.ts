@@ -792,6 +792,14 @@ export class ReportTable extends LitElement {
       background: var(--lv-row-bg-selected-hover);
     }
 
+    .row.highlight-dimmed {
+      opacity: 0.24;
+    }
+
+    .row.highlighted {
+      box-shadow: inset 3px 0 0 var(--lv-line-accent);
+    }
+
     .row.skeleton-row {
       pointer-events: none;
     }
@@ -1539,9 +1547,11 @@ export class ReportTable extends LitElement {
   private renderRowSegment(cells: any[], row: TableRow, index: number, key: string) {
     const selected = this.rowIsSelected(row, key)
     const hovered = key === this.hoveredRowId
+    const highlightActive = this.table.highlight?.active === true
+    const highlighted = row.__lv_highlighted === true
     return html`
       <div
-        class=${`row ${selected ? 'selected' : ''} ${hovered ? 'hovered' : ''}`}
+        class=${`row ${selected ? 'selected' : ''} ${hovered ? 'hovered' : ''} ${highlighted ? 'highlighted' : ''} ${highlightActive && !highlighted ? 'highlight-dimmed' : ''}`}
         role="row"
         aria-selected=${selected ? 'true' : 'false'}
         style=${`top:${index * this.rowHeight}px`}
@@ -1608,6 +1618,7 @@ export class ReportTable extends LitElement {
 
     return html`
       <section class=${shellClass} style=${shellStyle}>
+        ${this.table.highlight?.announcement ? html`<span class="conditional-cue-label" aria-live="polite">${this.table.highlight.announcement}</span>` : nothing}
         <div class="toolbar">
           <div class="toolbar-title">
             <h2>${this.table?.title ?? 'Orders'}</h2>
