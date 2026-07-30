@@ -60,7 +60,7 @@ visuals:
     presentation:
       align: left
       sort: ascending
-      show_labels: true
+      labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 20, minimum_spacing: 6, tooltip_fallback: true}
     query:
       dimensions:
         status: orders.status

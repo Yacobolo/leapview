@@ -68,6 +68,7 @@ var presentationFieldReferences = map[string]visualdocs.FieldReference{
 	"focus":                  field("string", "renderer default", []string{"adjacency", "descendant"}, "Selects which related graph or hierarchy elements receive emphasis."),
 	"align":                  field("string", "center", []string{"left", "center", "right"}, "Aligns funnel stages within the plotting area."),
 	"initial_depth":          field("integer", "-1", []string{"-1 or greater"}, "Sets the deepest hierarchy level expanded initially; -1 expands all levels."),
+	"labels":                 field("label policy", "hidden", []string{"hidden", "automatic", "dense", "always"}, "Controls deterministic label density, priority preservation, grapheme-safe truncation, collision spacing, and tooltip fallback."),
 	"label_position":         field("string", "renderer default", []string{"top", "bottom", "left", "right", "inside", "outside"}, "Positions value labels relative to their marks."),
 	"layout":                 field("string", "force", []string{"force", "circular"}, "Selects the graph node layout algorithm."),
 	"legend":                 field("boolean | string", "false", []string{"true", "false", "top", "bottom", "left", "right"}, "Shows the legend and optionally selects its position."),

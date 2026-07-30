@@ -200,9 +200,22 @@ model QueryVisualThreshold {
   tone: string;
 }
 
+model QueryVisualLabelPolicy {
+  density?: "hidden" | "automatic" | "dense" | "always";
+  priority?: ("selected" | "anomaly" | "threshold")[];
+  @minValue(4)
+  @maxValue(200)
+  maxCharacters?: int32;
+  @minValue(0)
+  @maxValue(64)
+  minimumSpacing?: int32;
+  tooltipFallback?: boolean;
+}
+
 model QueryVisualPresentation {
   legend?: "none" | "top" | "right" | "bottom" | "left";
   showLabels?: boolean;
+  labels?: QueryVisualLabelPolicy;
   stacked?: boolean;
   smooth?: boolean;
   showSymbols?: boolean;

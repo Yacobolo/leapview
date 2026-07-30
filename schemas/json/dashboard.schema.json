@@ -1720,6 +1720,9 @@
               },
               "type": "array"
             },
+            "labels": {
+              "$ref": "#/$defs/%23LabelPolicy"
+            },
             "legend": {
               "enum": [
                 "hidden",
@@ -2061,6 +2064,57 @@
             "warning",
             "danger"
           ]
+        }
+      },
+      "type": "object"
+    },
+    "#LabelPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "density": {
+          "enum": [
+            "hidden",
+            "automatic",
+            "dense",
+            "always"
+          ]
+        },
+        "max_characters": {
+          "allOf": [
+            {
+              "type": "number"
+            },
+            {
+              "maximum": 200,
+              "minimum": 4,
+              "type": "integer"
+            }
+          ]
+        },
+        "minimum_spacing": {
+          "allOf": [
+            {
+              "type": "number"
+            },
+            {
+              "maximum": 64,
+              "minimum": 0,
+              "type": "integer"
+            }
+          ]
+        },
+        "priority": {
+          "items": {
+            "enum": [
+              "selected",
+              "anomaly",
+              "threshold"
+            ]
+          },
+          "type": "array"
+        },
+        "tooltip_fallback": {
+          "type": "boolean"
         }
       },
       "type": "object"
@@ -2572,6 +2626,9 @@
             "$ref": "#/$defs/%23ConditionalFormat"
           },
           "type": "array"
+        },
+        "labels": {
+          "$ref": "#/$defs/%23LabelPolicy"
         },
         "legend": {
           "enum": [

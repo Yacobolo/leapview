@@ -51,7 +51,7 @@ visuals:
 
 ## Labels and zoom
 
-Enable `show_labels` for exact contributions and `data_zoom` when many categories make the running sequence too dense.
+Use `presentation.labels` for exact contributions and `data_zoom` when many categories make the running sequence dense. Automatic collision handling keeps compact cards readable.
 
 {{< visual id="revenue_waterfall_labeled" >}}
 
@@ -61,7 +61,7 @@ visuals:
     title: Labeled revenue waterfall
     type: waterfall
     presentation:
-      show_labels: true
+      labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 18, minimum_spacing: 6, tooltip_fallback: true}
       data_zoom: true
     query:
       dimensions:

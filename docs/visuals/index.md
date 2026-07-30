@@ -22,6 +22,12 @@ All built-in charts below use the typed ECharts adapter. “Selectable” means 
 
 Unsupported interaction declarations fail deployment compilation instead of rendering an approximation. Map point and region selection use the separate MapLibre interaction path documented on the [map page](/docs/visuals/map).
 
+## Label density and collision policy
+
+Supported built-in ECharts visuals compile `presentation.labels` into one deterministic policy. `hidden` suppresses rendered labels while retaining full tooltip and a bounded accessibility summary; `automatic` shows labels and suppresses collisions; `dense` uses tighter spacing and type for compact matrices; and `always` deliberately disables collision suppression. The legacy `show_labels: true` shorthand compiles to `automatic`. Policies that may suppress labels require `tooltip_fallback: true`; unsupported surfaces such as radar indicators fail compilation instead of silently ignoring the policy.
+
+Policies also bound label length by Unicode grapheme, set minimum collision spacing, and declare whether selected, anomalous, or threshold-crossing data should win a collision. The same frame, locale, dimensions, and policy always produce the same label decision. Full untruncated values remain in governed tooltips when `tooltip_fallback` is enabled.
+
 ## Decision-context capability matrix
 
 All entries below describe renderer-neutral compiled contracts. Unsupported combinations fail project validation; LeapView never accepts an ECharts option object as a substitute.

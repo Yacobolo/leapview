@@ -120,6 +120,19 @@ enum VisualizationMapLabelDensity {
   dense: "dense",
 }
 
+enum VisualizationLabelDensity {
+  hidden: "hidden",
+  automatic: "automatic",
+  dense: "dense",
+  always: "always",
+}
+
+enum VisualizationLabelPriority {
+  selected: "selected",
+  anomaly: "anomaly",
+  threshold: "threshold",
+}
+
 enum VisualizationMapCameraMode {
   fitData: "fit_data",
   fixed: "fixed",
@@ -589,9 +602,17 @@ model VisualizationInteraction {
   `requiresStableIdentity`: boolean;
 }
 
+model VisualizationLabelPolicy {
+  `density`: VisualizationLabelDensity;
+  `priority`: VisualizationLabelPriority[];
+  `maxCharacters`: int32;
+  `minimumSpacing`: int32;
+  `tooltipFallback`: boolean;
+}
+
 model VisualizationPresentation {
   `legend`: VisualizationLegendPosition;
-  `showLabels`: boolean;
+  `labelPolicy`: VisualizationLabelPolicy;
 }
 
 model VisualizationThreshold {
@@ -1270,7 +1291,7 @@ model VisualizationDiagnostic {
 @apigen.contract(#{ kind: "visualization-envelope", tags: #["visualization", "ir"] })
 @apigen.`metadata`(#{ `x-leapview-contract-role`: "visualization-envelope" })
 model VisualizationEnvelope {
-  `schemaVersion`: 6;
+  `schemaVersion`: 7;
   `visualID`: string;
   `rendererID`: string;
   `specRevision`: string;

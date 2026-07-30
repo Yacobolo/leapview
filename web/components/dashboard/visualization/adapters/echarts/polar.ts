@@ -1,6 +1,7 @@
 import type { VisualizationEnvelope } from '../../../../../generated/visualization'
 import type { RendererContext } from '../../host-controller'
 import { formatField, inlineDataset, legend, toneColor, type EChartsTranslation } from './common'
+import { echartsLabelPolicy, truncateVisualizationLabel } from './label-policy'
 
 export function polarOption(envelope: VisualizationEnvelope, context: RendererContext): EChartsTranslation {
   const spec = envelope.spec
@@ -36,11 +37,22 @@ export function polarOption(envelope: VisualizationEnvelope, context: RendererCo
     const span = maximum - minimum
     const authoredColors = (spec.presentation.thresholds ?? []).map((threshold) => [Math.max(0, Math.min(1, span > 0 ? (threshold.value - minimum) / span : 1)), toneColor(threshold.tone, context)])
     const colors = authoredColors.length ? authoredColors : [[1, context.colors.accent]]
+    const labelPolicy = spec.presentation.labelPolicy
+    const showDetail = labelPolicy.density !== 'hidden'
     const series: Record<string, any>[] = [{
       id: 'series:polar:gauge', type: 'gauge', min: minimum, max: maximum,
       data: [{ value, __lv_dataset: dataset?.id ?? 'primary', __lv_row_index: 0 }], pointer: { show: spec.presentation.showPointer },
       progress: { show: true, width: spec.presentation.progressWidth }, axisLine: { lineStyle: { color: colors } },
-      detail: { formatter: (raw: unknown) => formatField(envelope, spec.value, raw, context), color: context.colors.foreground },
+      detail: {
+        show: showDetail,
+        formatter: (raw: unknown) => truncateVisualizationLabel(
+          formatField(envelope, spec.value, raw, context),
+          labelPolicy.maxCharacters,
+          context.locale,
+        ),
+        color: context.colors.foreground,
+        fontSize: labelPolicy.density === 'dense' ? 14 : undefined,
+      },
     }]
     if (spec.presentation.target !== undefined) {
       const targetLabel = `Target ${formatField(envelope, spec.value, spec.presentation.target, context)}`
@@ -58,13 +70,13 @@ export function polarOption(envelope: VisualizationEnvelope, context: RendererCo
         progress: { show: false },
         pointer: { show: true, length: '72%', width: 4, itemStyle: { color: context.colors.foreground } },
         anchor: { show: false },
-        title: { show: true, offsetCenter: [0, '64%'], color: context.colors.muted, fontFamily: context.fontFamily },
+        title: { show: showDetail, offsetCenter: [0, '64%'], color: context.colors.muted, fontFamily: context.fontFamily },
         detail: { show: false },
         data: [{
           value: spec.presentation.target,
           name: targetLabel,
           pointer: { show: true, length: '72%', width: 4, itemStyle: { color: context.colors.foreground } },
-          title: { show: true },
+          title: { show: showDetail },
           detail: { show: false },
         }],
       })
@@ -86,9 +98,16 @@ export function polarOption(envelope: VisualizationEnvelope, context: RendererCo
   }))
   const configuredMaximum = spec.presentation.maximum
   const maxima = categories.map((_, index) => configuredMaximum ?? Math.max(1, ...values.map((series) => typeof series.value[index] === 'number' ? series.value[index] as number : 0)))
+  const labels = echartsLabelPolicy(
+    envelope,
+    spec.value.dataset,
+    spec.presentation.labelPolicy,
+    (params) => Array.isArray(params.value) ? params.value.map((value) => formatField(envelope, spec.value, value, context)).join(', ') : '',
+    context,
+  )
   return {
     dataset: undefined, legend: legend(spec.presentation.legend, context),
     radar: { indicator: categories.map((name, index) => ({ name, max: maxima[index], color: context.colors.muted })) },
-    series: [{ id: 'series:polar:radar', type: 'radar', data: values, areaStyle: spec.presentation.area ? {} : undefined, label: { show: spec.presentation.showLabels } }],
+    series: [{ id: 'series:polar:radar', type: 'radar', data: values, areaStyle: spec.presentation.area ? {} : undefined, ...labels }],
   }
 }

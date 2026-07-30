@@ -3,6 +3,7 @@ import type { RendererContext } from '../../host-controller'
 import { conditionalIconGlyph, conditionalStyleColor, resolveConditionalFormat } from '../../conditional-format'
 import { resolveVisualizationMetadata } from '../../metadata'
 import { axis, field, fieldLabel, inlineDataset, labelFormatter, legend, selectedDatasetSource, toneColor, type EChartsTranslation } from './common'
+import { echartsLabelPolicy } from './label-policy'
 
 type CartesianSpec = Extract<VisualizationEnvelope['spec'], { kind: 'cartesian' }>
 type ReferenceValue = NonNullable<CartesianSpec['referenceLines']>[number]['value']
@@ -23,7 +24,7 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
   const dataZoom = spec.presentation.dataZoom ? [{ type: 'inside' }, { type: 'slider' }] : undefined
   if (spec.mark === 'histogram') {
     const value = spec.y.find((item) => item.field === 'value') ?? spec.y.at(-1)
-    return { ...axes, dataZoom, series: [{ id: seriesID(value?.dataset, value?.field), type: 'bar', encode: { x: spec.x.field, y: value?.field }, label: chartLabel(envelope, value, spec, context) }] }
+    return { ...axes, dataZoom, series: [{ id: seriesID(value?.dataset, value?.field), type: 'bar', encode: { x: spec.x.field, y: value?.field }, ...chartLabel(envelope, value, spec, context) }] }
   }
   if (spec.mark === 'waterfall') {
     const start = spec.y.find((item) => item.field === 'start')
@@ -40,7 +41,7 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
           id: seriesID(value?.dataset, value?.field), type: 'bar', stack: 'waterfall',
           encode: { x: spec.x.field, y: value?.field },
           itemStyle: { color: fill, borderColor: stroke, borderWidth: stroke ? 2 : undefined },
-          label: chartLabel(envelope, value, spec, context),
+          ...chartLabel(envelope, value, spec, context),
         },
       ],
     }
@@ -48,7 +49,11 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
   if (spec.mark === 'candlestick' || spec.mark === 'boxplot') {
     return {
       ...axes, dataZoom, legend: legend(spec.presentation.legend, context),
-      series: [{ id: `series:primary:${spec.mark}`, type: spec.mark, name: spec.title, encode: { x: spec.x.field, y: spec.y.map((item) => item.field) } }],
+      series: [{
+        id: `series:primary:${spec.mark}`, type: spec.mark, name: spec.title,
+        encode: { x: spec.x.field, y: spec.y.map((item) => item.field) },
+        ...chartLabel(envelope, spec.y[0], spec, context),
+      }],
     }
   }
   if (spec.mark === 'heatmap' && spec.y.length >= 2) {
@@ -69,7 +74,7 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
         id: 'series:primary:heatmap', type: 'heatmap',
         encode: { x: spec.x.field, y: spec.y[0]?.field, value: value.field },
         itemStyle: { color: gradient ? undefined : fill, borderColor: stroke, borderWidth: stroke ? 2 : undefined },
-        label: chartLabel(envelope, value, spec, context),
+        ...chartLabel(envelope, value, spec, context),
       }],
     }
   }
@@ -101,9 +106,9 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
         borderWidth: stroke ? 2 : undefined,
       },
       step: spec.presentation.step ? 'middle' : false,
-      label: normalizedField
-        ? percentLabel(spec.presentation.showLabels, context, normalized?.columnIndices.get(value.field))
-        : chartLabel(envelope, value, spec, context),
+      ...(normalizedField
+        ? percentLabel(envelope, spec, context, normalized?.columnIndices.get(value.field))
+        : chartLabel(envelope, value, spec, context)),
     }
   })
   return {
@@ -274,19 +279,18 @@ function chartLabel(envelope: VisualizationEnvelope, value: CartesianSpec['y'][n
   const baseFormatter = labelFormatter(envelope, value, context)
   const cue = value ? conditionalCueFormat(envelope, value) : undefined
   const color = value ? conditionalItemColor(envelope, value, 'label_foreground', context) : undefined
-  return {
-    show: spec.presentation.showLabels || cue !== undefined,
-    position,
-    color,
-    formatter: cue
+  const formatter = cue
       ? (params: { value?: unknown }) => {
           const row = Array.isArray(params.value) ? params.value : []
           const result = resolveConditionalForRow(envelope, cue, row)
           const glyph = result?.style.icon ? conditionalIconGlyph(result.style.icon) : ''
           return [glyph, baseFormatter(params)].filter(Boolean).join(' ')
         }
-      : baseFormatter,
-  }
+      : baseFormatter
+  const translated = echartsLabelPolicy(envelope, value?.dataset ?? spec.x.dataset, spec.presentation.labelPolicy, formatter, context)
+  translated.label.position = position
+  if (color) translated.label.color = color
+  return translated
 }
 
 function splitCartesianSeries(envelope: VisualizationEnvelope, context: RendererContext): { datasets: EChartsTranslation[]; series: EChartsTranslation[] } | undefined {
@@ -336,9 +340,9 @@ function splitCartesianSeries(envelope: VisualizationEnvelope, context: Renderer
         borderWidth: stroke ? 2 : undefined,
       },
       step: spec.presentation.step ? 'middle' : false,
-      label: normalized
-        ? percentLabel(spec.presentation.showLabels, context, normalized.columnIndex)
-        : chartLabel(envelope, spec.y[0], spec, context),
+      ...(normalized
+        ? percentLabel(envelope, spec, context, normalized.columnIndex)
+        : chartLabel(envelope, spec.y[0], spec, context)),
     }
   })
   return { datasets, series }
@@ -463,15 +467,18 @@ function applyPercentAxis(axisOption: EChartsTranslation, context: RendererConte
   axisOption.axisLabel = { ...axisOption.axisLabel, formatter: (value: unknown) => typeof value === 'number' ? `${formatter.format(value)}%` : String(value) }
 }
 
-function percentLabel(show: boolean, context: RendererContext, columnIndex = -1) {
+function percentLabel(envelope: VisualizationEnvelope, spec: CartesianSpec, context: RendererContext, columnIndex = -1) {
   const formatter = new Intl.NumberFormat(context.locale, { maximumFractionDigits: 1 })
-  return {
-    show,
-    formatter: (params: { value?: unknown }) => {
+  return echartsLabelPolicy(
+    envelope,
+    spec.x.dataset,
+    spec.presentation.labelPolicy,
+    (params: { value?: unknown }) => {
       const value = Array.isArray(params.value) ? params.value.at(columnIndex) : params.value
       return typeof value === 'number' ? `${formatter.format(value)}%` : ''
     },
-  }
+    context,
+  )
 }
 
 function seriesColor(value: string, intent: VisualizationColorIntent | undefined, context: RendererContext): string {

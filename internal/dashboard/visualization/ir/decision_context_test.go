@@ -35,9 +35,10 @@ func TestValidateSpecRejectsInvalidDecisionContext(t *testing.T) {
 			VisualizationSpecBase: base, Kind: "cartesian", Mark: VisualizationCartesianMarkLine,
 			X: VisualizationFieldRef{Dataset: "primary", Field: "month"}, Y: []VisualizationFieldRef{{Dataset: "primary", Field: "revenue"}},
 			ReferenceLines: &lines,
-			Presentation: CartesianVisualizationPresentation{VisualizationPresentation: VisualizationPresentation{
-				Legend: VisualizationLegendPositionBottom,
-			}, ShowSymbols: true},
+			Presentation: CartesianVisualizationPresentation{
+				VisualizationPresentation: testVisualizationPresentation(VisualizationLegendPositionBottom),
+				ShowSymbols:               true,
+			},
 		}}
 	}
 
@@ -112,7 +113,7 @@ func TestValidateSpecEnforcesStackingAndSeriesIntent(t *testing.T) {
 			X: VisualizationFieldRef{Dataset: "primary", Field: "month"}, Y: []VisualizationFieldRef{{Dataset: "primary", Field: "revenue"}},
 			Series: &VisualizationFieldRef{Dataset: "primary", Field: "status"},
 			Presentation: CartesianVisualizationPresentation{
-				VisualizationPresentation: VisualizationPresentation{Legend: VisualizationLegendPositionBottom},
+				VisualizationPresentation: testVisualizationPresentation(VisualizationLegendPositionBottom),
 				ShowSymbols:               true, Stacking: &stacking, SeriesIntent: &intent,
 			},
 		}}

@@ -223,9 +223,25 @@ type VisualTextBinding struct {
 	Fallback string `yaml:"fallback" json:"fallback,omitempty"`
 }
 
+// VisualLabelPolicy is a renderer-neutral density and collision contract.
+// show_labels remains a compatibility shorthand; labels is authoritative when
+// density or any of its policy fields are authored.
+type VisualLabelPolicy struct {
+	Density         string   `yaml:"density" json:"density,omitempty"`
+	Priority        []string `yaml:"priority" json:"priority,omitempty"`
+	MaxCharacters   *int     `yaml:"max_characters" json:"maxCharacters,omitempty"`
+	MinimumSpacing  *int     `yaml:"minimum_spacing" json:"minimumSpacing,omitempty"`
+	TooltipFallback *bool    `yaml:"tooltip_fallback" json:"tooltipFallback,omitempty"`
+}
+
+func (p VisualLabelPolicy) IsZero() bool {
+	return p.Density == "" && len(p.Priority) == 0 && p.MaxCharacters == nil && p.MinimumSpacing == nil && p.TooltipFallback == nil
+}
+
 type VisualPresentation struct {
 	Legend                string                    `yaml:"legend" json:"legend,omitempty"`
 	ShowLabels            bool                      `yaml:"show_labels" json:"showLabels,omitempty"`
+	Labels                VisualLabelPolicy         `yaml:"labels" json:"labels,omitempty"`
 	Stacked               bool                      `yaml:"stacked" json:"stacked,omitempty"`
 	Smooth                bool                      `yaml:"smooth" json:"smooth,omitempty"`
 	ShowSymbols           *bool                     `yaml:"show_symbols" json:"showSymbols,omitempty"`

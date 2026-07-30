@@ -31,8 +31,14 @@ func TestNewWithSecondaryQueriesOwnsEveryDataset(t *testing.T) {
 		X: ir.VisualizationFieldRef{Dataset: "primary", Field: "label"},
 		Y: []ir.VisualizationFieldRef{{Dataset: "primary", Field: "value"}},
 		Presentation: ir.CartesianVisualizationPresentation{
-			VisualizationPresentation: ir.VisualizationPresentation{Legend: ir.VisualizationLegendPositionBottom},
-			ShowSymbols:               true,
+			VisualizationPresentation: ir.VisualizationPresentation{
+				Legend: ir.VisualizationLegendPositionBottom,
+				LabelPolicy: ir.VisualizationLabelPolicy{
+					Density: ir.VisualizationLabelDensityHidden, Priority: []ir.VisualizationLabelPriority{},
+					MaxCharacters: 24, MinimumSpacing: 0, TooltipFallback: true,
+				},
+			},
+			ShowSymbols: true,
 		},
 	}}
 	primary := QueryBinding{

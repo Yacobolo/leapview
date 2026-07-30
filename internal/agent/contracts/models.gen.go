@@ -935,9 +935,18 @@ type QueryVisualInput struct {
 	Presentation *QueryVisualPresentation  `json:"presentation,omitempty"`
 }
 
+type QueryVisualLabelPolicy struct {
+	Density         *string   `json:"density,omitempty"`
+	Priority        *[]string `json:"priority,omitempty"`
+	MaxCharacters   *int32    `json:"maxCharacters,omitempty"`
+	MinimumSpacing  *int32    `json:"minimumSpacing,omitempty"`
+	TooltipFallback *bool     `json:"tooltipFallback,omitempty"`
+}
+
 type QueryVisualPresentation struct {
 	Legend        *string                 `json:"legend,omitempty"`
 	ShowLabels    *bool                   `json:"showLabels,omitempty"`
+	Labels        *QueryVisualLabelPolicy `json:"labels,omitempty"`
 	Stacked       *bool                   `json:"stacked,omitempty"`
 	Smooth        *bool                   `json:"smooth,omitempty"`
 	ShowSymbols   *bool                   `json:"showSymbols,omitempty"`

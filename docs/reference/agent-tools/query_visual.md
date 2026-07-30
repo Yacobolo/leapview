@@ -303,6 +303,45 @@ Machine-readable: [focused JSON](/docs/agent-tools/tools/query_visual.json) · [
           ],
           "type": "string"
         },
+        "labels": {
+          "additionalProperties": false,
+          "properties": {
+            "density": {
+              "enum": [
+                "hidden",
+                "automatic",
+                "dense",
+                "always"
+              ],
+              "type": "string"
+            },
+            "maxCharacters": {
+              "maximum": 200,
+              "minimum": 4,
+              "type": "integer"
+            },
+            "minimumSpacing": {
+              "maximum": 64,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "priority": {
+              "items": {
+                "enum": [
+                  "selected",
+                  "anomaly",
+                  "threshold"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "tooltipFallback": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
         "layout": {
           "type": "string"
         },

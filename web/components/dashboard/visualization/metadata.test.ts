@@ -4,7 +4,7 @@ import { resolveVisualizationMetadata } from './metadata'
 
 function envelope(rows: unknown[][]): VisualizationEnvelope {
   return {
-    schemaVersion: 6, visualID: 'revenue', rendererID: 'echarts', specRevision: 'sha256:spec', dataRevision: 3,
+    schemaVersion: 7, visualID: 'revenue', rendererID: 'echarts', specRevision: 'sha256:spec', dataRevision: 3,
     spec: {
       kind: 'cartesian', title: 'Revenue', subtitle: 'Current scope', mark: 'line',
       datasets: [
@@ -25,7 +25,7 @@ function envelope(rows: unknown[][]): VisualizationEnvelope {
         description: { field: { dataset: 'context', field: 'target' }, reducer: 'median', prefix: 'Target ', suffix: ' USD', fallback: 'Target unavailable' },
       },
       x: { dataset: 'primary', field: 'label' }, y: [{ dataset: 'primary', field: 'value' }],
-      presentation: { legend: 'bottom', showLabels: false, smooth: false, stacked: false, showSymbols: true, dataZoom: false, area: false, step: false },
+      presentation: { legend: 'bottom', labelPolicy: { density: 'hidden', priority: [], maxCharacters: 24, minimumSpacing: 0, tooltipFallback: true }, smooth: false, stacked: false, showSymbols: true, dataZoom: false, area: false, step: false },
     },
     dataState: {
       kind: 'inline', specRevision: 'sha256:spec', dataRevision: 3, generation: 1,
