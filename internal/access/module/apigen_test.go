@@ -83,8 +83,8 @@ func TestAPIGenAuthorizationContractCoverage(t *testing.T) {
 	if !ok {
 		t.Fatal("uploadReleaseArtifact contract is missing")
 	}
-	if got, _ := apiGenOperationPrivilege(contract); got != access.PrivilegeDeploy {
-		t.Fatalf("uploadReleaseArtifact privilege = %q, want %q", got, access.PrivilegeDeploy)
+	if got, _ := apiGenOperationPrivilege(contract); got != access.PrivilegePublishRelease {
+		t.Fatalf("uploadReleaseArtifact privilege = %q, want %q", got, access.PrivilegePublishRelease)
 	}
 }
 
@@ -151,19 +151,24 @@ func TestManagedDataAndDeploymentAPIGenPrivilegesArePlatformGlobal(t *testing.T)
 		"signManagedDataS3MultipartPart":        access.PrivilegeIngestData,
 		"completeManagedDataS3MultipartUpload":  access.PrivilegeIngestData,
 		"abortManagedDataS3MultipartUpload":     access.PrivilegeIngestData,
-		"startProjectCandidate":                 access.PrivilegeDeploy,
-		"getProjectCandidate":                   access.PrivilegeDeploy,
-		"replaceProjectCandidateArtifact":       access.PrivilegeDeploy,
-		"retryProjectCandidate":                 access.PrivilegeDeploy,
-		"cancelProjectCandidate":                access.PrivilegeDeploy,
-		"planProjectCandidateSynchronization":   access.PrivilegeDeploy,
-		"uploadProjectCandidateSourceBlob":      access.PrivilegeDeploy,
-		"commitProjectCandidateSynchronization": access.PrivilegeDeploy,
-		"createDeployment":                      access.PrivilegeActivateDeployment,
+		"startProjectCandidate":                 access.PrivilegeAuthorProject,
+		"getProjectCandidate":                   access.PrivilegeAuthorProject,
+		"reviewProjectCandidate":                access.PrivilegeReviewCandidate,
+		"replaceProjectCandidateArtifact":       access.PrivilegeAuthorProject,
+		"retryProjectCandidate":                 access.PrivilegeAuthorProject,
+		"cancelProjectCandidate":                access.PrivilegeAuthorProject,
+		"planProjectCandidateSynchronization":   access.PrivilegeAuthorProject,
+		"uploadProjectCandidateSourceBlob":      access.PrivilegeAuthorProject,
+		"commitProjectCandidateSynchronization": access.PrivilegeAuthorProject,
+		"createDeployment":                      access.PrivilegeRequestDeployment,
 		"getDeployment":                         access.PrivilegeViewItem,
 		"listDeployments":                       access.PrivilegeViewItem,
-		"cancelDeployment":                      access.PrivilegeActivateDeployment,
-		"rollbackDeployment":                    access.PrivilegeActivateDeployment,
+		"cancelDeployment":                      access.PrivilegeRequestDeployment,
+		"rollbackDeployment":                    access.PrivilegeRollbackDeployment,
+		"requestDeploymentApproval":             access.PrivilegeRequestDeployment,
+		"approveDeployment":                     access.PrivilegeApproveDeployment,
+		"revokeDeploymentApproval":              access.PrivilegeApproveDeployment,
+		"activateDeployment":                    access.PrivilegeActivateDeployment,
 	}
 	for operationID, expected := range want {
 		contract, ok := authorizer.operations[operationID]

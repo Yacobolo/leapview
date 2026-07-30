@@ -33,12 +33,9 @@ func InitialPublisherPrivileges() []Privilege {
 	return []Privilege{
 		PrivilegeUseWorkspace,
 		PrivilegeViewItem,
-		PrivilegeQueryData,
-		PrivilegeRefreshData,
-		PrivilegeDeploy,
-		PrivilegeActivateDeployment,
-		PrivilegeViewData,
-		PrivilegeIngestData,
+		PrivilegeAuthorProject,
+		PrivilegePublishRelease,
+		PrivilegeRequestDeployment,
 		PrivilegeViewAudit,
 	}
 }

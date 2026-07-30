@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/flidai/leapview/internal/deployment"
 	"github.com/flidai/leapview/internal/deployment/apiadapter"
 	"github.com/flidai/leapview/internal/platform/jobs"
 )
@@ -13,10 +14,13 @@ import (
 const ActivateJobKind = "deployment.activate"
 
 type ActivateJob struct {
-	Project        string
-	Deployment     string
-	Actor          string
-	IdempotencyKey string
+	Project          string
+	Deployment       string
+	Actor            string
+	Credential       deployment.ApprovalActor
+	ApprovalID       string
+	ApprovalRevision int64
+	IdempotencyKey   string
 }
 
 type DeploymentCoordinator interface {
@@ -53,6 +57,39 @@ func (m *Module) activate(ctx context.Context, job jobs.Job) error {
 	if err != nil {
 		return err
 	}
+	if m.protected {
+		if m.api.Releases == nil ||
+			payload.Credential.PrincipalID != payload.Actor {
+			return deployment.ErrApprovalRequired
+		}
+		releaseID, _, releaseErr := m.api.Releases.DeploymentRelease(
+			ctx,
+			payload.Project,
+			payload.Deployment,
+		)
+		if releaseErr != nil {
+			return releaseErr
+		}
+		approval, approvalErr := m.authorizeApprovedActivation(
+			ctx,
+			pending,
+			releaseID,
+			payload.Credential,
+		)
+		if approvalErr != nil {
+			m.appendEvent(
+				ctx,
+				payload.Deployment,
+				"deployment.authorization_failed",
+				"failed",
+			)
+			return approvalErr
+		}
+		if approval.ID != payload.ApprovalID ||
+			approval.Revision != payload.ApprovalRevision {
+			return deployment.ErrApprovalConflict
+		}
+	}
 	targets := make([]apiadapter.TargetRequest, 0, len(pending.Targets))
 	for _, target := range pending.Targets {
 		targets = append(targets, apiadapter.TargetRequest{Workspace: target.Workspace, CandidateID: target.CandidateID})
@@ -82,6 +119,43 @@ func (m *Module) activate(ctx context.Context, job jobs.Job) error {
 	}
 	m.appendEvent(ctx, payload.Deployment, event, string(row.Status))
 	return err
+}
+
+func activationWorkflow(
+	project,
+	deploymentID,
+	releaseID string,
+	actor deployment.ApprovalActor,
+	approval deployment.Approval,
+	idempotencyKey string,
+) jobs.WorkflowIntent {
+	payload, _ := json.Marshal(ActivateJob{
+		Project: project, Deployment: deploymentID,
+		Actor: actor.PrincipalID, Credential: actor,
+		ApprovalID:       approval.ID,
+		ApprovalRevision: approval.Revision,
+		IdempotencyKey:   idempotencyKey,
+	})
+	event, _ := json.Marshal(map[string]any{
+		"deploymentId": deploymentID,
+		"projectId":    project,
+		"releaseId":    releaseID,
+		"status":       "queued",
+	})
+	return jobs.WorkflowIntent{
+		Event: jobs.EventInput{
+			Key:          "deployment.queued",
+			ResourceKind: "deployment", ResourceID: deploymentID,
+			EventType: "deployment.queued", Data: event,
+		},
+		Job: jobs.EnqueueInput{
+			ID:            "deployment:" + deploymentID + ":activate",
+			Kind:          ActivateJobKind,
+			WorkloadClass: "control", WorkspaceID: "_node",
+			ResourceKind: "deployment", ResourceID: deploymentID,
+			Payload: payload,
+		},
+	}
 }
 
 func (m *Module) appendEvent(ctx context.Context, deploymentID, event, status string) {

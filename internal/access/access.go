@@ -22,8 +22,15 @@ const (
 	PrivilegePreviewData              Privilege = "PREVIEW_DATA"
 	PrivilegeTestDataPolicy           Privilege = "TEST_DATA_POLICY"
 	PrivilegeRefreshData              Privilege = "REFRESH_DATA"
+	PrivilegeAuthorProject            Privilege = "AUTHOR_PROJECT"
+	PrivilegePublishRelease           Privilege = "PUBLISH_RELEASE"
+	PrivilegeReviewCandidate          Privilege = "REVIEW_CANDIDATE"
+	PrivilegeRequestDeployment        Privilege = "REQUEST_DEPLOYMENT"
+	PrivilegeApproveDeployment        Privilege = "APPROVE_DEPLOYMENT"
 	PrivilegeDeploy                   Privilege = "DEPLOY"
 	PrivilegeActivateDeployment       Privilege = "ACTIVATE_DEPLOYMENT"
+	PrivilegeVerifyDeployment         Privilege = "VERIFY_DEPLOYMENT"
+	PrivilegeRollbackDeployment       Privilege = "ROLLBACK_DEPLOYMENT"
 	PrivilegeManagePublications       Privilege = "MANAGE_PUBLICATIONS"
 	PrivilegeUseAgent                 Privilege = "USE_AGENT"
 	PrivilegeViewAgent                Privilege = "VIEW_AGENT"
@@ -42,8 +49,11 @@ func ParsePrivilege(value string) (Privilege, bool) {
 	privilege := Privilege(strings.TrimSpace(value))
 	switch privilege {
 	case PrivilegeUseWorkspace, PrivilegeViewItem, PrivilegeEditItem, PrivilegeManageItem,
-		PrivilegeQueryData, PrivilegePreviewData, PrivilegeTestDataPolicy, PrivilegeRefreshData, PrivilegeDeploy,
-		PrivilegeActivateDeployment, PrivilegeManagePublications, PrivilegeUseAgent, PrivilegeViewAgent,
+		PrivilegeQueryData, PrivilegePreviewData, PrivilegeTestDataPolicy, PrivilegeRefreshData,
+		PrivilegeAuthorProject, PrivilegePublishRelease, PrivilegeReviewCandidate,
+		PrivilegeRequestDeployment, PrivilegeApproveDeployment, PrivilegeDeploy,
+		PrivilegeActivateDeployment, PrivilegeVerifyDeployment, PrivilegeRollbackDeployment,
+		PrivilegeManagePublications, PrivilegeUseAgent, PrivilegeViewAgent,
 		PrivilegeManageGrants, PrivilegeViewAudit, PrivilegeManageWorkspace,
 		PrivilegeManagePlatform, PrivilegeViewData, PrivilegeIngestData,
 		PrivilegeManageConnectionMetadata, PrivilegeTestConnection, PrivilegeViewConnectionHealth:
@@ -54,16 +64,22 @@ func ParsePrivilege(value string) (Privilege, bool) {
 }
 
 const (
-	RoleOwner              = "owner"
-	RoleAdmin              = "admin"
-	RoleDeployer           = "deployer"
-	RoleContributor        = "contributor"
-	RoleEditor             = "editor"
-	RoleMember             = "member"
-	RoleViewer             = "viewer"
-	RoleDataDeployer       = "data_deployer"
-	RoleConnectionOperator = "connection_operator"
-	RolePlatformAdmin      = "platform_admin"
+	RoleOwner               = "owner"
+	RoleAdmin               = "admin"
+	RoleDeployer            = "deployer"
+	RoleContributor         = "contributor"
+	RoleEditor              = "editor"
+	RoleMember              = "member"
+	RoleViewer              = "viewer"
+	RoleDataDeployer        = "data_deployer"
+	RoleConnectionOperator  = "connection_operator"
+	RolePlatformAdmin       = "platform_admin"
+	RoleProjectAuthor       = "project_author"
+	RoleReleasePublisher    = "release_publisher"
+	RoleDeploymentReviewer  = "deployment_reviewer"
+	RoleDeploymentActivator = "deployment_activator"
+	RoleDeploymentVerifier  = "deployment_verifier"
+	RoleRollbackOperator    = "rollback_operator"
 )
 
 var defaultRoles = []Role{
@@ -78,8 +94,15 @@ var defaultRoles = []Role{
 			PrivilegePreviewData,
 			PrivilegeTestDataPolicy,
 			PrivilegeRefreshData,
+			PrivilegeAuthorProject,
+			PrivilegePublishRelease,
+			PrivilegeReviewCandidate,
+			PrivilegeRequestDeployment,
+			PrivilegeApproveDeployment,
 			PrivilegeDeploy,
 			PrivilegeActivateDeployment,
+			PrivilegeVerifyDeployment,
+			PrivilegeRollbackDeployment,
 			PrivilegeManagePublications,
 			PrivilegeUseAgent,
 			PrivilegeViewAgent,
@@ -99,8 +122,15 @@ var defaultRoles = []Role{
 			PrivilegePreviewData,
 			PrivilegeTestDataPolicy,
 			PrivilegeRefreshData,
+			PrivilegeAuthorProject,
+			PrivilegePublishRelease,
+			PrivilegeReviewCandidate,
+			PrivilegeRequestDeployment,
+			PrivilegeApproveDeployment,
 			PrivilegeDeploy,
 			PrivilegeActivateDeployment,
+			PrivilegeVerifyDeployment,
+			PrivilegeRollbackDeployment,
 			PrivilegeManagePublications,
 			PrivilegeUseAgent,
 			PrivilegeViewAgent,
@@ -116,8 +146,13 @@ var defaultRoles = []Role{
 			PrivilegeViewItem,
 			PrivilegeQueryData,
 			PrivilegeRefreshData,
+			PrivilegePublishRelease,
+			PrivilegeReviewCandidate,
+			PrivilegeRequestDeployment,
 			PrivilegeDeploy,
 			PrivilegeActivateDeployment,
+			PrivilegeVerifyDeployment,
+			PrivilegeRollbackDeployment,
 		},
 	},
 	{
@@ -128,6 +163,9 @@ var defaultRoles = []Role{
 			PrivilegeEditItem,
 			PrivilegeQueryData,
 			PrivilegeRefreshData,
+			PrivilegeAuthorProject,
+			PrivilegePublishRelease,
+			PrivilegeRequestDeployment,
 			PrivilegeDeploy,
 			PrivilegeUseAgent,
 			PrivilegeViewAgent,
@@ -154,6 +192,7 @@ var defaultRoles = []Role{
 			PrivilegeManageItem,
 			PrivilegeQueryData,
 			PrivilegeRefreshData,
+			PrivilegeAuthorProject,
 			PrivilegeDeploy,
 			PrivilegeUseAgent,
 			PrivilegeViewAgent,
@@ -185,6 +224,36 @@ var defaultRoles = []Role{
 		},
 	},
 	{
+		Name:       RoleProjectAuthor,
+		Privileges: []Privilege{PrivilegeAuthorProject},
+	},
+	{
+		Name: RoleReleasePublisher,
+		Privileges: []Privilege{
+			PrivilegePublishRelease,
+			PrivilegeRequestDeployment,
+		},
+	},
+	{
+		Name: RoleDeploymentReviewer,
+		Privileges: []Privilege{
+			PrivilegeReviewCandidate,
+			PrivilegeApproveDeployment,
+		},
+	},
+	{
+		Name:       RoleDeploymentActivator,
+		Privileges: []Privilege{PrivilegeActivateDeployment},
+	},
+	{
+		Name:       RoleDeploymentVerifier,
+		Privileges: []Privilege{PrivilegeVerifyDeployment},
+	},
+	{
+		Name:       RoleRollbackOperator,
+		Privileges: []Privilege{PrivilegeRollbackDeployment},
+	},
+	{
 		Name: RolePlatformAdmin,
 		Privileges: []Privilege{
 			PrivilegeManagePlatform,
@@ -198,8 +267,15 @@ var defaultRoles = []Role{
 			PrivilegePreviewData,
 			PrivilegeTestDataPolicy,
 			PrivilegeRefreshData,
+			PrivilegeAuthorProject,
+			PrivilegePublishRelease,
+			PrivilegeReviewCandidate,
+			PrivilegeRequestDeployment,
+			PrivilegeApproveDeployment,
 			PrivilegeDeploy,
 			PrivilegeActivateDeployment,
+			PrivilegeVerifyDeployment,
+			PrivilegeRollbackDeployment,
 			PrivilegeManagePublications,
 			PrivilegeUseAgent,
 			PrivilegeViewAgent,
@@ -583,6 +659,13 @@ type APICredential struct {
 	Authoring *AuthoringSession
 }
 
+type CredentialEvidence struct {
+	Class       string
+	ID          string
+	PrincipalID string
+	ExpiresAt   time.Time
+}
+
 type Session struct {
 	ID          string
 	PrincipalID string
@@ -748,8 +831,15 @@ func KnownPrivileges() []Privilege {
 		PrivilegePreviewData,
 		PrivilegeTestDataPolicy,
 		PrivilegeRefreshData,
+		PrivilegeAuthorProject,
+		PrivilegePublishRelease,
+		PrivilegeReviewCandidate,
+		PrivilegeRequestDeployment,
+		PrivilegeApproveDeployment,
 		PrivilegeDeploy,
 		PrivilegeActivateDeployment,
+		PrivilegeVerifyDeployment,
+		PrivilegeRollbackDeployment,
 		PrivilegeManagePublications,
 		PrivilegeUseAgent,
 		PrivilegeViewAgent,

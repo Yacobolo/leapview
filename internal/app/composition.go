@@ -299,6 +299,67 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	deploymentConfig := deploymentmodule.Config{
 		Database: store.SQLDB(), States: servingStateRepo, Runtime: deploymentRuntime,
 		ManagedData: managedDataResolver, DeploymentMetadata: managedDataModule.DeploymentMetadata(),
+		Protected: production,
+		CurrentApprovalActor: func(r *http.Request) (deploymentmodule.ApprovalActor, bool) {
+			evidence, ok := accessModule.CurrentCredentialEvidence(r)
+			if !ok {
+				return deploymentmodule.ApprovalActor{}, false
+			}
+			return deploymentmodule.ApprovalActor{
+				PrincipalID:         evidence.PrincipalID,
+				CredentialClass:     deploymentmodule.CredentialClass(evidence.Class),
+				CredentialID:        evidence.ID,
+				CredentialExpiresAt: evidence.ExpiresAt,
+			}, true
+		},
+		AuthorizeApproval: func(
+			ctx context.Context,
+			actor deploymentmodule.ApprovalActor,
+			projectID string,
+			_ string,
+		) error {
+			allowed, err := accessModule.AuthorizeCredentialEvidence(
+				ctx,
+				accessmodule.CredentialEvidence{
+					Class: string(actor.CredentialClass), ID: actor.CredentialID,
+					PrincipalID: actor.PrincipalID,
+					ExpiresAt:   actor.CredentialExpiresAt,
+				},
+				projectID,
+				accessmodule.PrivilegeApproveDeployment,
+			)
+			if err != nil {
+				return err
+			}
+			if !allowed {
+				return deploymentmodule.ErrApprovalForbidden
+			}
+			return nil
+		},
+		AuthorizeActivation: func(
+			ctx context.Context,
+			actor deploymentmodule.ApprovalActor,
+			projectID string,
+			_ string,
+		) error {
+			allowed, err := accessModule.AuthorizeCredentialEvidence(
+				ctx,
+				accessmodule.CredentialEvidence{
+					Class: string(actor.CredentialClass), ID: actor.CredentialID,
+					PrincipalID: actor.PrincipalID,
+					ExpiresAt:   actor.CredentialExpiresAt,
+				},
+				projectID,
+				accessmodule.PrivilegeActivateDeployment,
+			)
+			if err != nil {
+				return err
+			}
+			if !allowed {
+				return deploymentmodule.ErrActivationForbidden
+			}
+			return nil
+		},
 		CandidateConnections: candidateConnectionLeaser{
 			leaser: candidateBindings, module: analyticsModule,
 		},

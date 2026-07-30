@@ -215,6 +215,20 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 	if deployed.ProjectId != project.Name || deployed.ReleaseId != created.Id || deployed.Id == "" {
 		return fmt.Errorf("project deployment returned inconsistent scope or status")
 	}
+	if deployed.Approval != nil && deployed.Status != deploymentgen.DeploymentStatusActive {
+		_, err = fmt.Fprintf(
+			outputOrDiscard(request.Out),
+			"published %s release=%s deployment=%s environment=%s status=%s approval=%s approval_status=%s\n",
+			project.Name,
+			created.Id,
+			deployed.Id,
+			request.Environment,
+			deployed.Status,
+			deployed.Approval.Id,
+			deployed.Approval.Status,
+		)
+		return err
+	}
 	deployed, err = waitForProjectDeployment(ctx, client, project.Name, created.Id, deployed)
 	if err != nil {
 		return err

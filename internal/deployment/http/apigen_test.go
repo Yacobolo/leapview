@@ -90,6 +90,9 @@ func (h *recordingDeploymentHandler) RetryProjectCandidate(_ stdhttp.ResponseWri
 func (h *recordingDeploymentHandler) CancelProjectCandidate(_ stdhttp.ResponseWriter, _ *stdhttp.Request, project, candidate, key string) {
 	h.operation, h.idempotencyKey = "cancel:"+project+":"+candidate, key
 }
+func (h *recordingDeploymentHandler) ReviewProjectCandidate(_ stdhttp.ResponseWriter, _ *stdhttp.Request, project, candidate string) {
+	h.operation = "review:" + project + ":" + candidate
+}
 func (h *recordingDeploymentHandler) PlanProjectCandidateSynchronization(_ stdhttp.ResponseWriter, _ *stdhttp.Request, project string) {
 	h.operation = "sync-plan:" + project
 }
@@ -112,4 +115,12 @@ func (*recordingDeploymentHandler) CancelDeployment(stdhttp.ResponseWriter, *std
 func (*recordingDeploymentHandler) ListDeploymentEvents(stdhttp.ResponseWriter, *stdhttp.Request, string, string, *int32, *string) {
 }
 func (*recordingDeploymentHandler) RollbackDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string) {
+}
+func (*recordingDeploymentHandler) RequestDeploymentApproval(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string) {
+}
+func (*recordingDeploymentHandler) ApproveDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string, string) {
+}
+func (*recordingDeploymentHandler) RevokeDeploymentApproval(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string, string) {
+}
+func (*recordingDeploymentHandler) ActivateDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string) {
 }

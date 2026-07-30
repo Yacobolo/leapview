@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/flidai/leapview/internal/access"
 	"github.com/flidai/leapview/internal/access/httpauth"
@@ -182,6 +183,116 @@ func (m *Module) AuthorizeAnyObject(ctx context.Context, principalID string, pri
 		return true, nil
 	}
 	decision, err := repository.AuthorizeAny(ctx, principalID, privilege, objects)
+	return decision.Allowed, err
+}
+
+func (m *Module) AuthorizeCredentialEvidence(
+	ctx context.Context,
+	evidence access.CredentialEvidence,
+	projectID string,
+	privilege access.Privilege,
+) (bool, error) {
+	repository := m.repositoryValue()
+	if repository == nil ||
+		strings.TrimSpace(evidence.PrincipalID) == "" ||
+		strings.TrimSpace(evidence.ID) == "" ||
+		!time.Now().UTC().Before(evidence.ExpiresAt.UTC()) {
+		return false, nil
+	}
+	valid := false
+	switch evidence.Class {
+	case "human", "workload":
+		resolver, ok := repository.(interface {
+			ListAuthoringSessions(
+				context.Context,
+				string,
+			) ([]access.AuthoringSession, error)
+		})
+		if !ok || m.authoringAuth == nil {
+			return false, nil
+		}
+		sessions, err := resolver.ListAuthoringSessions(
+			ctx,
+			evidence.PrincipalID,
+		)
+		if err != nil {
+			return false, err
+		}
+		for _, session := range sessions {
+			if session.ID != evidence.ID ||
+				session.PrincipalID != evidence.PrincipalID ||
+				!session.RevokedAt.IsZero() ||
+				!time.Now().UTC().Before(session.ExpiresAt) ||
+				!session.ExpiresAt.UTC().Equal(evidence.ExpiresAt.UTC()) {
+				continue
+			}
+			expectedClass := "human"
+			if session.Kind == access.AuthoringSessionWorkload {
+				expectedClass = "workload"
+			}
+			if expectedClass != evidence.Class ||
+				session.Scope.Authorize(
+					m.authoringAuth.InstanceID(),
+					projectID,
+					privilege,
+				) != nil {
+				continue
+			}
+			valid = true
+			break
+		}
+	case "api_token":
+		tokens, err := repository.ListAPITokens(
+			ctx,
+			evidence.PrincipalID,
+		)
+		if err != nil {
+			return false, err
+		}
+		for _, token := range tokens {
+			expiresAt, parseErr := time.Parse(time.RFC3339Nano, token.ExpiresAt)
+			if parseErr == nil &&
+				token.ID == evidence.ID &&
+				token.PrincipalID == evidence.PrincipalID &&
+				token.RevokedAt == "" &&
+				expiresAt.UTC().Equal(evidence.ExpiresAt.UTC()) &&
+				access.TokenAllows(token, "", privilege) {
+				valid = true
+				break
+			}
+		}
+	case "session":
+		sessions, err := repository.ListSessions(
+			ctx,
+			evidence.PrincipalID,
+		)
+		if err != nil {
+			return false, err
+		}
+		for _, session := range sessions {
+			expiresAt, parseErr := time.Parse(time.RFC3339Nano, session.ExpiresAt)
+			if parseErr == nil &&
+				session.ID == evidence.ID &&
+				session.PrincipalID == evidence.PrincipalID &&
+				session.RevokedAt == "" &&
+				expiresAt.UTC().Equal(evidence.ExpiresAt.UTC()) &&
+				time.Now().UTC().Before(expiresAt.UTC()) {
+				valid = true
+				break
+			}
+		}
+	default:
+		return false, nil
+	}
+	if !valid {
+		return false, nil
+	}
+	decision, err := repository.Authorize(
+		ctx,
+		evidence.PrincipalID,
+		privilege,
+		access.PlatformObject(),
+	)
 	return decision.Allowed, err
 }
 

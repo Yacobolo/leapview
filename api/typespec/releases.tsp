@@ -123,7 +123,7 @@ model ReleaseArtifactResponse {
 @summary("List project releases")
 @route("/projects/{project}/releases")
 @get
-@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@apigen.authz(#{ mode: "privilege", privilege: "PUBLISH_RELEASE" })
 @operationId("listReleases")
 op listReleases(@path project: string, @query limit?: ListLimit, @query pageToken?: PageToken): OkJson<ReleaseListResponse> | CommonErrors;
 
@@ -131,7 +131,7 @@ op listReleases(@path project: string, @query limit?: ListLimit, @query pageToke
 @summary("Create a draft project release")
 @route("/projects/{project}/releases")
 @post
-@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@apigen.authz(#{ mode: "privilege", privilege: "PUBLISH_RELEASE" })
 @operationId("createRelease")
 op createRelease(@path project: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: ReleaseCreateRequest): CreatedJson<ReleaseResponse> | CommonErrors;
 
@@ -139,7 +139,7 @@ op createRelease(@path project: string, @header("Idempotency-Key") idempotencyKe
 @summary("Get a project release")
 @route("/projects/{project}/releases/{release}")
 @get
-@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@apigen.authz(#{ mode: "privilege", privilege: "PUBLISH_RELEASE" })
 @operationId("getRelease")
 op getRelease(@path project: string, @path release: string): OkJson<ReleaseResponse> | CommonErrors;
 
@@ -147,7 +147,7 @@ op getRelease(@path project: string, @path release: string): OkJson<ReleaseRespo
 @summary("Upload an immutable workspace artifact")
 @route("/projects/{project}/releases/{release}/workspaces/{workspace}/artifact")
 @put
-@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@apigen.authz(#{ mode: "privilege", privilege: "PUBLISH_RELEASE" })
 @apigen.manual
 @operationId("uploadReleaseArtifact")
 op uploadReleaseArtifact(@path project: string, @path release: string, @path workspace: string, @header contentType: "application/octet-stream", @header("Content-Digest") contentDigest: string, @body body: bytes): CreatedJson<ReleaseArtifactResponse> | CommonErrors;
@@ -156,7 +156,7 @@ op uploadReleaseArtifact(@path project: string, @path release: string, @path wor
 @summary("Finalize and validate a release")
 @route("/projects/{project}/releases/{release}/finalize")
 @post
-@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@apigen.authz(#{ mode: "privilege", privilege: "PUBLISH_RELEASE" })
 @operationId("finalizeRelease")
 op finalizeRelease(@path project: string, @path release: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<ReleaseResponse> | CommonErrors;
 
@@ -164,6 +164,6 @@ op finalizeRelease(@path project: string, @path release: string, @header("Idempo
 @summary("List or stream release events")
 @route("/projects/{project}/releases/{release}/events")
 @get
-@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@apigen.authz(#{ mode: "privilege", privilege: "PUBLISH_RELEASE" })
 @operationId("listReleaseEvents")
 op listReleaseEvents(@path project: string, @path release: string, @header accept?: string, @header("Last-Event-ID") lastEventId?: string, @query limit?: ListLimit, @query pageToken?: PageToken): EventHistoryResponse<AsyncEventListResponse> | CommonErrors;

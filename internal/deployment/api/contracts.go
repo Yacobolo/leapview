@@ -64,6 +64,28 @@ type CreateRequest struct {
 	ReleaseID string `json:"releaseId"`
 }
 
+type ApprovalDecisionRequest struct {
+	ExpectedRevision int64 `json:"expectedRevision"`
+}
+
+type ApprovalResponse struct {
+	ID            string  `json:"id"`
+	ProjectID     string  `json:"projectId"`
+	DeploymentID  string  `json:"deploymentId"`
+	Environment   string  `json:"environment"`
+	RequestDigest string  `json:"requestDigest"`
+	ReleaseID     string  `json:"releaseId"`
+	Status        string  `json:"status"`
+	RequestedBy   string  `json:"requestedBy"`
+	RequestedAt   string  `json:"requestedAt"`
+	ApprovedBy    *string `json:"approvedBy,omitempty"`
+	ApprovedAt    *string `json:"approvedAt,omitempty"`
+	RevokedBy     *string `json:"revokedBy,omitempty"`
+	RevokedAt     *string `json:"revokedAt,omitempty"`
+	ExpiresAt     string  `json:"expiresAt"`
+	Revision      int64   `json:"revision"`
+}
+
 type Status string
 
 const StatusQueued Status = "queued"
@@ -88,6 +110,7 @@ type Response struct {
 	CreatedBy   string               `json:"createdBy"`
 	Environment string               `json:"environment"`
 	Error       *string              `json:"error,omitempty"`
+	Approval    *ApprovalResponse    `json:"approval,omitempty"`
 	FinishedAt  *string              `json:"finishedAt,omitempty"`
 	ID          string               `json:"id"`
 	ProjectID   string               `json:"projectId"`

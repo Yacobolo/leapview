@@ -5,9 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/flidai/leapview/internal/access"
+	accesssqlite "github.com/flidai/leapview/internal/access/sqlite"
+	"github.com/flidai/leapview/internal/platform"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -125,5 +129,68 @@ func TestAuthorizationAllowedAuditInputIdentifiesConnectionDecision(t *testing.T
 	}
 	if metadata["reason"] != "granted" {
 		t.Fatalf("allowed audit metadata = %#v", metadata)
+	}
+}
+
+func TestAuthorizeCredentialEvidenceFailsAfterTokenRevocation(t *testing.T) {
+	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "leapview.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	module, err := Build(t.Context(), Config{Database: store.SQLDB()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := accesssqlite.NewRepository(store.SQLDB())
+	principal, err := repository.SetPlatformRole(t.Context(), access.PlatformRoleInput{
+		PrincipalID: "activator", Email: "activator@example.test",
+		DisplayName: "Activator", Role: access.RoleDeploymentActivator,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, token, err := repository.CreateAPITokenWithMetadata(
+		t.Context(),
+		access.APITokenInput{
+			PrincipalID: principal.ID, Name: "activation",
+			Privileges: []access.Privilege{access.PrivilegeActivateDeployment},
+			ExpiresAt:  time.Now().UTC().Add(time.Hour).Truncate(time.Second),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiresAt, err := time.Parse(time.RFC3339Nano, token.ExpiresAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence := access.CredentialEvidence{
+		Class: "api_token", ID: token.ID, PrincipalID: principal.ID,
+		ExpiresAt: expiresAt,
+	}
+	allowed, err := module.AuthorizeCredentialEvidence(
+		t.Context(),
+		evidence,
+		"finance",
+		access.PrivilegeActivateDeployment,
+	)
+	if err != nil || !allowed {
+		t.Fatalf("initial authorization = %t, %v", allowed, err)
+	}
+	if err := repository.RevokeAPIToken(t.Context(), token.ID); err != nil {
+		t.Fatal(err)
+	}
+	allowed, err = module.AuthorizeCredentialEvidence(
+		t.Context(),
+		evidence,
+		"finance",
+		access.PrivilegeActivateDeployment,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if allowed {
+		t.Fatal("revoked activation credential remained authorized")
 	}
 }

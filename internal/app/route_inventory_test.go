@@ -84,7 +84,7 @@ func TestRouteInventory(t *testing.T) {
 		rows = append(rows, fmt.Sprintf("%s|%s|%s|%s", key, contract.owner, contract.access, contract.privilege))
 	}
 	sort.Strings(rows)
-	const expectedRouteContractDigest = "5bb1709a22559c4e35e4e537cdc818ba10be6ea5c68e32a9fb554d046897beeb"
+	const expectedRouteContractDigest = "da4e0f2bdbecbf663cf54f389e901a1c1858184bad76f8ee5126458fc400b812"
 	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(rows, "\n"))))
 	if digest != expectedRouteContractDigest {
 		t.Fatalf("route ownership/auth contract changed: got digest %s\n%s", digest, strings.Join(rows, "\n"))
@@ -148,10 +148,10 @@ func nonAPIRouteMetadata(method, path string) (routeMetadata, bool) {
 		authenticated.owner = "agent"
 	case path == "/candidates/{candidate}":
 		authenticated.owner = "deployment"
-		authenticated.privilege = "DEPLOY"
+		authenticated.privilege = "AUTHOR_PROJECT"
 	case strings.HasPrefix(path, "/candidates/{candidate}/"):
 		authenticated.owner = "dashboard"
-		authenticated.privilege = "DEPLOY"
+		authenticated.privilege = "AUTHOR_PROJECT"
 	case strings.Contains(path, "/dashboards/") || strings.Contains(path, "/commands/"):
 		authenticated.owner = "dashboard"
 		authenticated.privilege = "VIEW_ITEM"

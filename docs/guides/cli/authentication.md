@@ -14,7 +14,7 @@ Run device login from the project you intend to publish:
 leapview login https://dash.example.com
 ```
 
-LeapView discovers the target's canonical origin, immutable instance identity, and environment; reads the project identity from `dashboards/leapview.yaml`; opens the target's browser approval screen; and requests only `DEPLOY` and `ACTIVATE_DEPLOYMENT`. The access credential lasts 15 minutes and rotates through a revocable CLI session.
+LeapView discovers the target's canonical origin, immutable instance identity, and environment; reads the project identity from `dashboards/leapview.yaml`; opens the target's browser approval screen; and requests only `USE_WORKSPACE`, `VIEW_ITEM`, `AUTHOR_PROJECT`, `PUBLISH_RELEASE`, and `REQUEST_DEPLOYMENT`. It does not request data-query, connection-secret, approval, or production-activation access. The credential lasts 15 minutes and rotates through a revocable CLI session.
 
 Access and refresh credentials are stored only in the operating-system credential store. The versioned CLI profile contains the canonical origin, instance ID, environment, project ID, and a credential-store account reference. It never contains a token. LeapView CLI and LeapView Desktop use separate credential namespaces and cannot reuse each other's sessions.
 
@@ -40,7 +40,7 @@ export LEAPVIEW_WORKLOAD_PROJECT=analytics
 leapview plan --project dashboards/leapview.yaml --json
 ```
 
-The CLI exchanges those values immediately before the operation for a credential bound to the discovered instance, exact project, deploy actions, and a 15-minute maximum lifetime. It does not persist the service-principal secret or workload access token.
+The CLI exchanges those values immediately before the operation for a credential bound to the discovered instance, exact project, author/publish/request actions, and a 15-minute maximum lifetime. It does not persist the service-principal secret or workload access token.
 
 `LEAPVIEW_API_TOKEN` and `--token` remain a compatibility path for small teams and transitional automation. They are never written by `leapview login`; prefer workload identity for production CI.
 

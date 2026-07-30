@@ -56,8 +56,16 @@ func TestAdminInitializeCreatesOneTimeCredentialBundle(t *testing.T) {
 	}
 	canVerifyAudit := false
 	for _, privilege := range apiCredential.Token.Privileges {
-		if privilege == access.PrivilegeManagePlatform || privilege == access.PrivilegeManageGrants {
-			t.Fatalf("publisher token contains administrative privilege %q", privilege)
+		switch privilege {
+		case access.PrivilegeManagePlatform,
+			access.PrivilegeManageGrants,
+			access.PrivilegeQueryData,
+			access.PrivilegePreviewData,
+			access.PrivilegeViewData,
+			access.PrivilegeIngestData,
+			access.PrivilegeActivateDeployment,
+			access.PrivilegeApproveDeployment:
+			t.Fatalf("publisher token contains forbidden privilege %q", privilege)
 		}
 		if privilege == access.PrivilegeViewAudit {
 			canVerifyAudit = true

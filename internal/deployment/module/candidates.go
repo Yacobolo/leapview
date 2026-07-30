@@ -95,6 +95,31 @@ func (m *Module) GetProjectCandidate(w http.ResponseWriter, r *http.Request, pro
 	apitransport.WriteJSON(w, http.StatusOK, m.candidateResponse(candidate, false))
 }
 
+func (m *Module) ReviewProjectCandidate(
+	w http.ResponseWriter,
+	r *http.Request,
+	project,
+	candidateID string,
+) {
+	if _, ok := m.candidatePrincipalID(w, r); !ok {
+		return
+	}
+	candidate, err := m.candidates.Review(
+		r.Context(),
+		project,
+		candidateID,
+	)
+	if err != nil {
+		writeCandidateAPIError(w, r, err)
+		return
+	}
+	apitransport.WriteJSON(
+		w,
+		http.StatusOK,
+		m.candidateResponse(candidate, false),
+	)
+}
+
 func (m *Module) ReplaceProjectCandidateArtifact(w http.ResponseWriter, r *http.Request, project, candidateID, _ string) {
 	var body deploymentapi.CandidateArtifactRequest
 	if err := apitransport.DecodeBody(w, r, &body); err != nil {

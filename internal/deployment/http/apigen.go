@@ -18,12 +18,17 @@ type APIGenHandler interface {
 	ReplaceProjectCandidateArtifact(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string)
 	RetryProjectCandidate(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string)
 	CancelProjectCandidate(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string)
+	ReviewProjectCandidate(stdhttp.ResponseWriter, *stdhttp.Request, string, string)
 	ListDeployments(stdhttp.ResponseWriter, *stdhttp.Request, string, *int32, *string)
 	CreateDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string)
 	GetDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string)
 	CancelDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string)
 	ListDeploymentEvents(stdhttp.ResponseWriter, *stdhttp.Request, string, string, *int32, *string)
 	RollbackDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string)
+	RequestDeploymentApproval(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string)
+	ApproveDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string, string)
+	RevokeDeploymentApproval(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string, string)
+	ActivateDeployment(stdhttp.ResponseWriter, *stdhttp.Request, string, string, string)
 }
 
 func (d *APIGenDispatcher) UploadProjectCandidateSourceBlob(w stdhttp.ResponseWriter, r *stdhttp.Request, project, digest string, headers deploymentgen.GenUploadProjectCandidateSourceBlobHeaders) {
@@ -64,6 +69,10 @@ func (d *APIGenDispatcher) CancelProjectCandidate(w stdhttp.ResponseWriter, r *s
 	d.handler.CancelProjectCandidate(w, r, project, candidate, headers.IdempotencyKey)
 }
 
+func (d *APIGenDispatcher) ReviewProjectCandidate(w stdhttp.ResponseWriter, r *stdhttp.Request, project, candidate string) {
+	d.handler.ReviewProjectCandidate(w, r, project, candidate)
+}
+
 func (d *APIGenDispatcher) ListDeployments(w stdhttp.ResponseWriter, r *stdhttp.Request, project string, params deploymentgen.GenListDeploymentsParams) {
 	d.handler.ListDeployments(w, r, project, params.Limit, params.PageToken)
 }
@@ -86,6 +95,22 @@ func (d *APIGenDispatcher) ListDeploymentEvents(w stdhttp.ResponseWriter, r *std
 
 func (d *APIGenDispatcher) RollbackDeployment(w stdhttp.ResponseWriter, r *stdhttp.Request, project, deployment string, headers deploymentgen.GenRollbackDeploymentHeaders) {
 	d.handler.RollbackDeployment(w, r, project, deployment, headers.IdempotencyKey)
+}
+
+func (d *APIGenDispatcher) RequestDeploymentApproval(w stdhttp.ResponseWriter, r *stdhttp.Request, project, deployment string, headers deploymentgen.GenRequestDeploymentApprovalHeaders) {
+	d.handler.RequestDeploymentApproval(w, r, project, deployment, headers.IdempotencyKey)
+}
+
+func (d *APIGenDispatcher) ApproveDeployment(w stdhttp.ResponseWriter, r *stdhttp.Request, project, deployment, approval string, headers deploymentgen.GenApproveDeploymentHeaders) {
+	d.handler.ApproveDeployment(w, r, project, deployment, approval, headers.IdempotencyKey)
+}
+
+func (d *APIGenDispatcher) RevokeDeploymentApproval(w stdhttp.ResponseWriter, r *stdhttp.Request, project, deployment, approval string, headers deploymentgen.GenRevokeDeploymentApprovalHeaders) {
+	d.handler.RevokeDeploymentApproval(w, r, project, deployment, approval, headers.IdempotencyKey)
+}
+
+func (d *APIGenDispatcher) ActivateDeployment(w stdhttp.ResponseWriter, r *stdhttp.Request, project, deployment string, headers deploymentgen.GenActivateDeploymentHeaders) {
+	d.handler.ActivateDeployment(w, r, project, deployment, headers.IdempotencyKey)
 }
 
 type APIGenTransportErrorResponder struct{ Logger *slog.Logger }

@@ -64,7 +64,7 @@ func DeployCommand(ctx context.Context, client cliapi.Client, operations DeployO
 	command.Flags().StringVar(&values.ProjectPath, "project", values.ProjectPath, "project path")
 	command.Flags().StringVar(&values.Environment, "environment", "", "assert the target instance environment")
 	command.Flags().StringArrayVar(&revisions, "revision", nil, "managed revision pin as connection=sha256:<digest> (repeatable)")
-	command.Flags().BoolVar(&values.AutoApprove, "auto-approve", false, "approve and activate the deployment without prompting")
+	command.Flags().BoolVar(&values.AutoApprove, "auto-approve", false, "accept the local deployment plan without prompting; target approval policy still applies")
 	return command
 }
 

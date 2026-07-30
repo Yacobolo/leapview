@@ -79,6 +79,44 @@ ORDER BY workspace_id;
 SELECT * FROM project_deployment_connections
 WHERE deployment_id = ?
 ORDER BY collection_id;
+
+-- Deployment approval decisions are immutable in scope and optimistic in
+-- transition. A revoked decision remains as audit evidence; a later request
+-- receives a new identity.
+
+-- name: CreateDeploymentApproval :exec
+INSERT INTO deployment_approvals (
+  id, project_id, deployment_id, environment, request_digest, release_id,
+  status, requested_by, request_credential_class, request_credential_id,
+  requested_at, approved_by, approval_credential_class,
+  approval_credential_id, approval_credential_expires_at, approved_at, revoked_by, revoked_at,
+  expires_at, revision
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- name: GetCurrentDeploymentApproval :one
+SELECT *
+FROM deployment_approvals
+WHERE deployment_id = ?
+ORDER BY requested_at DESC, id DESC
+LIMIT 1;
+
+-- name: UpdateDeploymentApproval :execrows
+UPDATE deployment_approvals
+SET status = ?,
+    approved_by = ?,
+    approval_credential_class = ?,
+    approval_credential_id = ?,
+    approval_credential_expires_at = ?,
+    approved_at = ?,
+    revoked_by = ?,
+    revoked_at = ?,
+    expires_at = ?,
+    revision = ?
+WHERE id = ?
+  AND deployment_id = ?
+  AND revision = ?;
+
 -- name: GetWorkspaceActiveServingStateID :one
 SELECT serving_state_id
 FROM workspace_active_serving_states

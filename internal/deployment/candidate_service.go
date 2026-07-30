@@ -166,6 +166,25 @@ func (service *CandidateService) GetOwned(ctx context.Context, candidateID, owne
 	return service.expireOnRead(ctx, candidate)
 }
 
+func (service *CandidateService) Review(
+	ctx context.Context,
+	projectID,
+	candidateID string,
+) (Candidate, error) {
+	candidate, err := service.repository.CandidateByID(
+		ctx,
+		strings.TrimSpace(candidateID),
+	)
+	if err != nil {
+		return Candidate{}, err
+	}
+	if candidate.TargetID != service.targetID ||
+		candidate.ProjectID != strings.TrimSpace(projectID) {
+		return Candidate{}, ErrCandidateNotFound
+	}
+	return service.expireOnRead(ctx, candidate)
+}
+
 func (service *CandidateService) ReplaceArtifact(ctx context.Context, scope CandidateScope, expectedDigest, nextDigest string) (Candidate, error) {
 	return service.mutate(ctx, scope, "candidate.artifact_replaced", func(candidate Candidate) (Candidate, error) {
 		now := service.now().UTC()

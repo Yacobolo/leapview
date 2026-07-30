@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -78,10 +79,21 @@ func TestCapabilityAPIClientExchangesEphemeralWorkloadIdentity(t *testing.T) {
 			if r.Header.Get("Authorization") != "" {
 				t.Fatalf("workload exchange used authorization header %q", r.Header.Get("Authorization"))
 			}
+			var request struct {
+				Scope struct {
+					Privileges []string `json:"privileges"`
+				} `json:"scope"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Fatal(err)
+			}
+			if strings.Join(request.Scope.Privileges, ",") != "USE_WORKSPACE,VIEW_ITEM,AUTHOR_PROJECT,PUBLISH_RELEASE,REQUEST_DEPLOYMENT" {
+				t.Fatalf("workload privileges = %v", request.Scope.Privileges)
+			}
 			_, _ = w.Write([]byte(`{
 				"accessToken":"ephemeral-access","tokenType":"Bearer","expiresIn":900,
 				"session":{"id":"session-1","kind":"workload","clientId":"sp-ci","targetId":"lvinst_prod",
-				"projectId":"analytics","privileges":["DEPLOY","ACTIVATE_DEPLOYMENT"],
+				"projectId":"analytics","privileges":["USE_WORKSPACE","VIEW_ITEM","AUTHOR_PROJECT","PUBLISH_RELEASE","REQUEST_DEPLOYMENT"],
 				"createdAt":"2026-07-29T12:00:00Z","expiresAt":"2026-07-29T12:15:00Z"}
 			}`))
 		default:

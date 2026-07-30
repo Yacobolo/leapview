@@ -59,7 +59,14 @@ func (client capabilityAPIClient) Resolve(ctx context.Context, credentials cliap
 		workload, err := accesscli.ExchangeWorkloadIdentity(ctx, client, accesscli.WorkloadIdentityRequest{
 			Origin: target, InstanceID: instance.Id, ProjectID: cfg.WorkloadProject,
 			ClientID: cfg.WorkloadClientID, ClientSecret: cfg.WorkloadClientSecret,
-			Privileges: []string{"DEPLOY", "ACTIVATE_DEPLOYMENT"}, Lifetime: 15 * time.Minute,
+			Privileges: []string{
+				"USE_WORKSPACE",
+				"VIEW_ITEM",
+				"AUTHOR_PROJECT",
+				"PUBLISH_RELEASE",
+				"REQUEST_DEPLOYMENT",
+			},
+			Lifetime: 15 * time.Minute,
 		}, nil)
 		if err != nil {
 			return cliapi.Credentials{}, err

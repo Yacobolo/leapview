@@ -21,7 +21,7 @@ func TestProjectDeploymentAPIContract(t *testing.T) {
 	if _, ok := openAPIMap(t, create, "responses")["202"]; !ok {
 		t.Fatal("create deployment must return 202")
 	}
-	if privilege := openAPIMap(t, create, "x-authz")["privilege"]; privilege != "ACTIVATE_DEPLOYMENT" {
+	if privilege := openAPIMap(t, create, "x-authz")["privilege"]; privilege != "REQUEST_DEPLOYMENT" {
 		t.Fatalf("deployment privilege = %#v", privilege)
 	}
 	for suffix, operationID := range map[string]string{
@@ -36,8 +36,26 @@ func TestProjectDeploymentAPIContract(t *testing.T) {
 			t.Fatalf("%s operation = %#v", operationID, operation)
 		}
 	}
-	if _, exists := paths[base+"/{deployment}/activate"]; exists {
-		t.Fatal("separate deployment activation route remains public")
+	activate := openAPIOperation(t, paths, base+"/{deployment}/activate", "post")
+	if activate["operationId"] != "activateDeployment" ||
+		openAPIMap(t, activate, "x-authz")["privilege"] != "ACTIVATE_DEPLOYMENT" {
+		t.Fatalf("activate deployment operation = %#v", activate)
+	}
+	requestApproval := openAPIOperation(t, paths, base+"/{deployment}/approval-requests", "post")
+	if requestApproval["operationId"] != "requestDeploymentApproval" ||
+		openAPIMap(t, requestApproval, "x-authz")["privilege"] != "REQUEST_DEPLOYMENT" {
+		t.Fatalf("request approval operation = %#v", requestApproval)
+	}
+	approvalItem := base + "/{deployment}/approval-requests/{approval}"
+	for suffix, operationID := range map[string]string{
+		"/approve": "approveDeployment",
+		"/revoke":  "revokeDeploymentApproval",
+	} {
+		operation := openAPIOperation(t, paths, approvalItem+suffix, "post")
+		if operation["operationId"] != operationID ||
+			openAPIMap(t, operation, "x-authz")["privilege"] != "APPROVE_DEPLOYMENT" {
+			t.Fatalf("%s operation = %#v", operationID, operation)
+		}
 	}
 
 	schemas := openAPIMap(t, openAPIMap(t, spec, "components"), "schemas")
@@ -46,6 +64,7 @@ func TestProjectDeploymentAPIContract(t *testing.T) {
 		_ = schemaProperty(t, response, field)
 	}
 	assertEnum(t, openAPISchema(t, schemas, "DeploymentStatus"), "queued", "running", "active", "failed", "cancelled", "superseded")
+	assertEnum(t, openAPISchema(t, schemas, "DeploymentApprovalStatus"), "pending", "approved", "revoked", "expired")
 
 	for path := range paths {
 		if strings.Contains(path, "/rollouts") || strings.Contains(path, "/deployment-candidates") {
@@ -68,7 +87,7 @@ func TestPrivateProjectCandidateAPIContract(t *testing.T) {
 	if _, ok := openAPIMap(t, start, "responses")["201"]; !ok {
 		t.Fatal("start candidate must return 201")
 	}
-	if privilege := openAPIMap(t, start, "x-authz")["privilege"]; privilege != "DEPLOY" {
+	if privilege := openAPIMap(t, start, "x-authz")["privilege"]; privilege != "AUTHOR_PROJECT" {
 		t.Fatalf("candidate privilege = %#v", privilege)
 	}
 

@@ -61,19 +61,19 @@ func Routes(routes *capabilityRoutes, runtime *runtimeServices, platform *platfo
 		r.Use(csrf)
 		r.With(policy.rateLimits.Updates()).Get("/updates", runtime.pageStreams.ServeHTTP)
 		r.Get("/", routes.accessModule.ProtectViewItem(routes.workspaceModule.Home))
-		r.Get("/candidates/{candidate}", routes.accessModule.Protect(accessmodule.PrivilegeDeploy, func(w http.ResponseWriter, request *http.Request) {
+		r.Get("/candidates/{candidate}", routes.accessModule.Protect(accessmodule.PrivilegeAuthorProject, func(w http.ResponseWriter, request *http.Request) {
 			candidatePreview(routes, runtime, platform, policy, w, request)
 		}))
-		r.Get("/candidates/{candidate}/workspaces/{workspace}/dashboards/{dashboard}", routes.accessModule.Protect(accessmodule.PrivilegeDeploy, func(w http.ResponseWriter, request *http.Request) {
+		r.Get("/candidates/{candidate}/workspaces/{workspace}/dashboards/{dashboard}", routes.accessModule.Protect(accessmodule.PrivilegeAuthorProject, func(w http.ResponseWriter, request *http.Request) {
 			candidateDashboardDocument(routes, runtime, w, request)
 		}))
-		r.Get("/candidates/{candidate}/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}", routes.accessModule.Protect(accessmodule.PrivilegeDeploy, func(w http.ResponseWriter, request *http.Request) {
+		r.Get("/candidates/{candidate}/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}", routes.accessModule.Protect(accessmodule.PrivilegeAuthorProject, func(w http.ResponseWriter, request *http.Request) {
 			candidateDashboardDocument(routes, runtime, w, request)
 		}))
-		r.With(policy.rateLimits.Updates()).Get("/candidates/{candidate}/workspaces/{workspace}/updates", routes.accessModule.Protect(accessmodule.PrivilegeDeploy, func(w http.ResponseWriter, request *http.Request) {
+		r.With(policy.rateLimits.Updates()).Get("/candidates/{candidate}/workspaces/{workspace}/updates", routes.accessModule.Protect(accessmodule.PrivilegeAuthorProject, func(w http.ResponseWriter, request *http.Request) {
 			candidateDashboardUpdates(routes, runtime, w, request)
 		}))
-		r.Post("/candidates/{candidate}/workspaces/{workspace}/commands/{command}", routes.accessModule.Protect(accessmodule.PrivilegeDeploy, func(w http.ResponseWriter, request *http.Request) {
+		r.Post("/candidates/{candidate}/workspaces/{workspace}/commands/{command}", routes.accessModule.Protect(accessmodule.PrivilegeAuthorProject, func(w http.ResponseWriter, request *http.Request) {
 			candidateDashboardCommand(routes, runtime, w, request)
 		}))
 		routes.workspaceModule.MountAuthenticated(r, workspacemodule.RouteGuard{

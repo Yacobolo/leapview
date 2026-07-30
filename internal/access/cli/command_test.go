@@ -56,7 +56,7 @@ func TestLoginCommandDiscoversTargetAndProject(t *testing.T) {
 		request.InstanceID != "lvinst_prod" || request.ProjectID != "analytics" || !request.Headless {
 		t.Fatalf("login request = %+v", request)
 	}
-	if strings.Join(request.Privileges, ",") != "DEPLOY,ACTIVATE_DEPLOYMENT" {
+	if strings.Join(request.Privileges, ",") != "USE_WORKSPACE,VIEW_ITEM,AUTHOR_PROJECT,PUBLISH_RELEASE,REQUEST_DEPLOYMENT" {
 		t.Fatalf("privileges = %v", request.Privileges)
 	}
 	if !strings.Contains(output.String(), "ABCD-EFGH") || !strings.Contains(output.String(), "session-1") {

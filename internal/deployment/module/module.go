@@ -15,13 +15,18 @@ import (
 )
 
 type Module struct {
-	handler            *deploymenthttp.Handler
-	candidates         *deployment.CandidateService
-	candidateRuntimes  CandidateRuntimePreparer
-	candidateSources   deployment.CandidateSourceSynchronizer
-	candidateArtifacts release.CandidateArtifactPreparer
-	jobs               JobConfig
-	api                APIConfig
+	handler              *deploymenthttp.Handler
+	candidates           *deployment.CandidateService
+	approvals            *deployment.ApprovalService
+	candidateRuntimes    CandidateRuntimePreparer
+	candidateSources     deployment.CandidateSourceSynchronizer
+	candidateArtifacts   release.CandidateArtifactPreparer
+	jobs                 JobConfig
+	api                  APIConfig
+	protected            bool
+	currentApprovalActor func(*http.Request) (deployment.ApprovalActor, bool)
+	authorizeApproval    func(context.Context, deployment.ApprovalActor, string, string) error
+	authorizeActivation  func(context.Context, deployment.ApprovalActor, string, string) error
 }
 
 type Principal struct {
@@ -79,6 +84,7 @@ type Config struct {
 	CanonicalOrigin          string
 	InstanceEnvironment      string
 	CandidateLifetime        time.Duration
+	ApprovalLifetime         time.Duration
 	MaxCandidatesPerOwner    int
 	CandidateAudit           func(context.Context, deployment.CandidateEvent) error
 	CandidateConnections     deployment.CandidateConnectionLeaser
@@ -87,6 +93,10 @@ type Config struct {
 	CandidateArtifacts       release.CandidateArtifactPreparer
 	RuntimeVersion           string
 	CurrentPrincipal         func(*http.Request) (Principal, bool)
+	CurrentApprovalActor     func(*http.Request) (deployment.ApprovalActor, bool)
+	AuthorizeApproval        func(context.Context, deployment.ApprovalActor, string, string) error
+	AuthorizeActivation      func(context.Context, deployment.ApprovalActor, string, string) error
+	Protected                bool
 	Jobs                     JobConfig
 	API                      APIConfig
 	PublicationAuthorization PublicationAuthorizationConfig
@@ -103,12 +113,18 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	}
 	var coordinator deploymenthttp.Coordinator
 	var candidates *deployment.CandidateService
+	var approvals *deployment.ApprovalService
 	var candidateRuntimes *deployment.CandidateRuntimeService
 	if config.Database != nil {
 		if config.States == nil || config.Runtime == nil || config.ManagedData == nil || config.DeploymentMetadata == nil {
 			return nil, errors.New("deployment states, runtime, managed data, and metadata are required")
 		}
-		repository, activation, candidateRepository := newPersistence(config.Database, config.ActivationHooks, config.API.Releases, config.API.Workflow)
+		repository, activation, candidateRepository, approvalRepository := newPersistence(
+			config.Database,
+			config.ActivationHooks,
+			config.API.Releases,
+			config.API.Workflow,
+		)
 		service, err := deployment.New(repository, activation, config.States, config.Runtime, config.ManagedData)
 		if err != nil {
 			return nil, err
@@ -137,6 +153,15 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		if err != nil {
 			return nil, err
 		}
+		approvals, err = deployment.NewApprovalService(
+			approvalRepository,
+			deployment.ApprovalServiceConfig{
+				Lifetime: config.ApprovalLifetime,
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 	options.Coordinator = coordinator
 	options.Logger = config.Logger
@@ -147,9 +172,13 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	}
 	m := &Module{
 		handler: deploymenthttp.NewHandler(options), candidates: candidates,
+		approvals:         approvals,
 		candidateRuntimes: candidateRuntimes, candidateSources: config.CandidateSources,
 		candidateArtifacts: config.CandidateArtifacts,
-		jobs:               jobs, api: config.API,
+		jobs:               jobs, api: config.API, protected: config.Protected,
+		currentApprovalActor: config.CurrentApprovalActor,
+		authorizeApproval:    config.AuthorizeApproval,
+		authorizeActivation:  config.AuthorizeActivation,
 	}
 	if m.jobs.Authorize == nil {
 		m.jobs.Authorize = m.publicationAuthorizer(config.PublicationAuthorization)

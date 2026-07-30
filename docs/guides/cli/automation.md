@@ -1,10 +1,10 @@
 # Automation and CI
 
-Treat validation, planning, approval, and deployment as separate gates. Build one candidate from an immutable Git revision, review its plan, and deploy that unchanged candidate only from an approved branch or environment.
+Treat validation, planning, publication, approval, activation, and verification as separate gates. Build one candidate from an immutable Git revision and publish that unchanged candidate only from an approved branch or environment.
 
 ## Provide bounded credentials
 
-Inject `LEAPVIEW_TARGET` and `LEAPVIEW_API_TOKEN` from the CI secret manager. Use a dedicated service principal, protect production secrets with environment approval, and prevent pull requests from untrusted forks from reading them. The validation job does not need either secret.
+Use `LEAPVIEW_WORKLOAD_CLIENT_ID`, `LEAPVIEW_WORKLOAD_CLIENT_SECRET`, and `LEAPVIEW_WORKLOAD_PROJECT` for production CI. Inject the service-principal secret from the CI secret manager and prevent pull requests from untrusted forks from reading it. The validation job does not need target credentials. `LEAPVIEW_API_TOKEN` remains a compatibility option for smaller teams.
 
 Keep the expected environment and workspace in reviewable pipeline configuration:
 
@@ -38,9 +38,9 @@ leapview plan \
 
 Publish `leapview-plan.json` as a protected artifact. Review removals, access-policy changes, resource identity changes, and managed-data revision pins. Regenerate the plan after any source change.
 
-## Deploy after approval
+## Publish an immutable deployment request
 
-Run deployment from a protected job using the same project, target, environment, and revision pins that produced the reviewed plan:
+Run publication from a protected job using the same project, target, environment, and revision pins that produced the reviewed plan:
 
 ```sh
 leapview deploy \
@@ -50,10 +50,12 @@ leapview deploy \
   --auto-approve
 ```
 
-`--auto-approve` is appropriate only because the pipeline provides the approval gate. Do not use it to bypass review in an unprotected job.
+`--auto-approve` accepts the CLI's local confirmation prompt only. It never bypasses target policy. A production target returns the immutable deployment and approval IDs without activating it.
+
+Approve the exact persisted plan with a different principal holding `APPROVE_DEPLOYMENT`, then request cutover with a principal holding `ACTIVATE_DEPLOYMENT`. Immediately before cutover, LeapView rechecks the release, plan digest, approval revision, expiry, reviewer credential and grant, and activator credential and grant. Revocation or expiry closes the workflow safely.
 
 ## Preserve evidence and verify
 
-Record the Git revision, target environment, actor, plan artifact, deployment result, and managed-data digests together. After deployment, probe readiness and exercise a representative workspace query or dashboard. A transport retry must reuse the same immutable candidate; never rebuild from a moving branch between attempts.
+Record the Git revision, target environment, publisher, approval, activator, plan artifact, deployment result, and managed-data digests together. After activation, verify readiness and exercise a representative workspace query or dashboard with a separate verifier identity. A transport retry must reuse the same immutable candidate; never rebuild from a moving branch between attempts.
 
 See [Validate, plan, and deploy](/docs/cli/validate-deploy) for the operational sequence, [Targets and environments](/docs/cli/targets) for environment safeguards, and the generated [`validate`](/docs/cli/validate), [`plan`](/docs/cli/plan), and [`deploy`](/docs/cli/deploy) references for all flags.

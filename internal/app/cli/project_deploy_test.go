@@ -153,12 +153,14 @@ func TestDeployRecoversWhenReleaseAdvancesDuringArtifactReplay(t *testing.T) {
 				"id": "deployment-1", "projectId": "leapview-showcase", "releaseId": "release-1",
 				"environment": "prod", "status": "queued", "createdBy": "test",
 				"createdAt": "2026-01-01T00:00:00Z", "targets": []any{}, "connections": []any{},
-			})
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/projects/leapview-showcase/deployments/deployment-1":
-			writeCLIJSON(t, w, map[string]any{
-				"id": "deployment-1", "projectId": "leapview-showcase", "releaseId": "release-1",
-				"environment": "prod", "status": "active", "createdBy": "test",
-				"createdAt": "2026-01-01T00:00:00Z", "targets": []any{}, "connections": []any{},
+				"approval": map[string]any{
+					"id": "approval-1", "projectId": "leapview-showcase",
+					"deploymentId": "deployment-1", "environment": "prod",
+					"requestDigest": "sha256:plan", "releaseId": "release-1",
+					"status": "pending", "requestedBy": "publisher",
+					"requestedAt": "2026-01-01T00:00:00Z",
+					"expiresAt":   "2026-01-01T00:30:00Z", "revision": 1,
+				},
 			})
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
@@ -166,13 +168,14 @@ func TestDeployRecoversWhenReleaseAdvancesDuringArtifactReplay(t *testing.T) {
 	}))
 	defer server.Close()
 
+	var out bytes.Buffer
 	err := runDeploy(context.Background(), deployRequest{
 		ProjectPath: projectPath,
 		Revisions:   map[string]string{"olist": revision},
 		Target:      server.URL,
 		Token:       "secret-token",
 		AutoApprove: true,
-		Out:         &bytes.Buffer{},
+		Out:         &out,
 		HTTPClient:  server.Client(),
 	})
 	if err != nil {
@@ -180,6 +183,11 @@ func TestDeployRecoversWhenReleaseAdvancesDuringArtifactReplay(t *testing.T) {
 	}
 	if artifactConflicts != 1 {
 		t.Fatalf("artifact conflict attempts = %d, want 1", artifactConflicts)
+	}
+	if !strings.Contains(out.String(), "published leapview-showcase") ||
+		!strings.Contains(out.String(), "approval=approval-1") ||
+		!strings.Contains(out.String(), "approval_status=pending") {
+		t.Fatalf("output = %q", out.String())
 	}
 }
 

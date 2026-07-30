@@ -21,6 +21,13 @@ enum CandidateStatus {
   expired;
 }
 
+enum DeploymentApprovalStatus {
+  pending;
+  approved;
+  revoked;
+  expired;
+}
+
 model CandidateStartRequest {
   artifactDigest: string;
 }
@@ -76,6 +83,28 @@ model DeploymentCreateRequest {
   releaseId: string;
 }
 
+model DeploymentApprovalDecisionRequest {
+  expectedRevision: int64;
+}
+
+model DeploymentApprovalResponse {
+  id: string;
+  projectId: string;
+  deploymentId: string;
+  environment: string;
+  requestDigest: string;
+  releaseId: string;
+  status: DeploymentApprovalStatus;
+  requestedBy: string;
+  requestedAt: utcDateTime;
+  approvedBy?: string;
+  approvedAt?: utcDateTime;
+  revokedBy?: string;
+  revokedAt?: utcDateTime;
+  expiresAt: utcDateTime;
+  revision: int64;
+}
+
 model DeploymentTargetResponse {
   workspaceId: string;
   servingStateId?: string;
@@ -110,6 +139,7 @@ model DeploymentResponse {
   startedAt?: utcDateTime;
   finishedAt?: utcDateTime;
   error?: string;
+  approval?: DeploymentApprovalResponse;
 }
 
 model DeploymentListResponse {
@@ -129,7 +159,7 @@ op listDeployments(@path project: string, @query limit?: ListLimit, @query pageT
 @summary("Deploy a ready project release")
 @route("/projects/{project}/deployments")
 @post
-@apigen.authz(#{ mode: "privilege", privilege: "ACTIVATE_DEPLOYMENT" })
+@apigen.authz(#{ mode: "privilege", privilege: "REQUEST_DEPLOYMENT" })
 @operationId("createDeployment")
 op createDeployment(@path project: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: DeploymentCreateRequest): AcceptedJson<DeploymentResponse> | CommonErrors;
 
@@ -153,7 +183,7 @@ op listDeploymentEvents(@path project: string, @path deployment: string, @header
 @summary("Cancel a deployment before cutover")
 @route("/projects/{project}/deployments/{deployment}/cancel")
 @post
-@apigen.authz(#{ mode: "privilege", privilege: "ACTIVATE_DEPLOYMENT" })
+@apigen.authz(#{ mode: "privilege", privilege: "REQUEST_DEPLOYMENT" })
 @operationId("cancelDeployment")
 op cancelDeployment(@path project: string, @path deployment: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<DeploymentResponse> | CommonErrors;
 
@@ -161,15 +191,47 @@ op cancelDeployment(@path project: string, @path deployment: string, @header("Id
 @summary("Roll back by creating a deployment of the prior release")
 @route("/projects/{project}/deployments/{deployment}/rollback")
 @post
-@apigen.authz(#{ mode: "privilege", privilege: "ACTIVATE_DEPLOYMENT" })
+@apigen.authz(#{ mode: "privilege", privilege: "ROLLBACK_DEPLOYMENT" })
 @operationId("rollbackDeployment")
 op rollbackDeployment(@path project: string, @path deployment: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<DeploymentResponse> | CommonErrors;
+
+@tag("Deployments")
+@summary("Request approval for an immutable deployment plan")
+@route("/projects/{project}/deployments/{deployment}/approval-requests")
+@post
+@apigen.authz(#{ mode: "privilege", privilege: "REQUEST_DEPLOYMENT" })
+@operationId("requestDeploymentApproval")
+op requestDeploymentApproval(@path project: string, @path deployment: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): CreatedJson<DeploymentApprovalResponse> | CommonErrors;
+
+@tag("Deployments")
+@summary("Approve an immutable deployment plan")
+@route("/projects/{project}/deployments/{deployment}/approval-requests/{approval}/approve")
+@post
+@apigen.authz(#{ mode: "privilege", privilege: "APPROVE_DEPLOYMENT" })
+@operationId("approveDeployment")
+op approveDeployment(@path project: string, @path deployment: string, @path approval: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: DeploymentApprovalDecisionRequest): OkJson<DeploymentApprovalResponse> | CommonErrors;
+
+@tag("Deployments")
+@summary("Revoke a pending or approved deployment decision")
+@route("/projects/{project}/deployments/{deployment}/approval-requests/{approval}/revoke")
+@post
+@apigen.authz(#{ mode: "privilege", privilege: "APPROVE_DEPLOYMENT" })
+@operationId("revokeDeploymentApproval")
+op revokeDeploymentApproval(@path project: string, @path deployment: string, @path approval: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: DeploymentApprovalDecisionRequest): OkJson<DeploymentApprovalResponse> | CommonErrors;
+
+@tag("Deployments")
+@summary("Activate an approved immutable deployment plan")
+@route("/projects/{project}/deployments/{deployment}/activate")
+@post
+@apigen.authz(#{ mode: "privilege", privilege: "ACTIVATE_DEPLOYMENT" })
+@operationId("activateDeployment")
+op activateDeployment(@path project: string, @path deployment: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<DeploymentResponse> | CommonErrors;
 
 @tag("Deployments")
 @summary("Create or resume the current author's private project candidate")
 @route("/projects/{project}/candidates")
 @post
-@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@apigen.authz(#{ mode: "privilege", privilege: "AUTHOR_PROJECT" })
 @operationId("startProjectCandidate")
 op startProjectCandidate(@path project: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: CandidateStartRequest): CreatedJson<CandidateResponse> | CommonErrors;
 
@@ -177,15 +239,23 @@ op startProjectCandidate(@path project: string, @header("Idempotency-Key") idemp
 @summary("Get an owned private project candidate")
 @route("/projects/{project}/candidates/{candidate}")
 @get
-@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@apigen.authz(#{ mode: "privilege", privilege: "AUTHOR_PROJECT" })
 @operationId("getProjectCandidate")
 op getProjectCandidate(@path project: string, @path candidate: string): OkJson<CandidateResponse> | CommonErrors;
+
+@tag("Deployments")
+@summary("Review a private candidate without acquiring its data credentials")
+@route("/projects/{project}/candidate-reviews/{candidate}")
+@get
+@apigen.authz(#{ mode: "privilege", privilege: "REVIEW_CANDIDATE" })
+@operationId("reviewProjectCandidate")
+op reviewProjectCandidate(@path project: string, @path candidate: string): OkJson<CandidateResponse> | CommonErrors;
 
 @tag("Deployments")
 @summary("Replace a private candidate artifact with optimistic concurrency")
 @route("/projects/{project}/candidates/{candidate}/artifact")
 @put
-@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@apigen.authz(#{ mode: "privilege", privilege: "AUTHOR_PROJECT" })
 @operationId("replaceProjectCandidateArtifact")
 op replaceProjectCandidateArtifact(@path project: string, @path candidate: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: CandidateArtifactRequest): OkJson<CandidateResponse> | CommonErrors;
 
@@ -193,7 +263,7 @@ op replaceProjectCandidateArtifact(@path project: string, @path candidate: strin
 @summary("Retry preparation of a failed private candidate")
 @route("/projects/{project}/candidates/{candidate}/retry")
 @post
-@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@apigen.authz(#{ mode: "privilege", privilege: "AUTHOR_PROJECT" })
 @operationId("retryProjectCandidate")
 op retryProjectCandidate(@path project: string, @path candidate: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): OkJson<CandidateResponse> | CommonErrors;
 
@@ -201,7 +271,7 @@ op retryProjectCandidate(@path project: string, @path candidate: string, @header
 @summary("Cancel an owned private project candidate")
 @route("/projects/{project}/candidates/{candidate}/cancel")
 @post
-@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@apigen.authz(#{ mode: "privilege", privilege: "AUTHOR_PROJECT" })
 @operationId("cancelProjectCandidate")
 op cancelProjectCandidate(@path project: string, @path candidate: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): OkJson<CandidateResponse> | CommonErrors;
 
@@ -209,7 +279,7 @@ op cancelProjectCandidate(@path project: string, @path candidate: string, @heade
 @summary("Plan content-addressed synchronization for the current author's private candidate")
 @route("/projects/{project}/candidate-sync/plan")
 @post
-@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@apigen.authz(#{ mode: "privilege", privilege: "AUTHOR_PROJECT" })
 @operationId("planProjectCandidateSynchronization")
 op planProjectCandidateSynchronization(@path project: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: CandidateSynchronizationRequest): OkJson<CandidateSynchronizationPlanResponse> | CommonErrors;
 
@@ -217,7 +287,7 @@ op planProjectCandidateSynchronization(@path project: string, @header("Idempoten
 @summary("Upload a missing immutable private-candidate source blob")
 @route("/projects/{project}/candidate-sync/blobs/{digest}")
 @put
-@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@apigen.authz(#{ mode: "privilege", privilege: "AUTHOR_PROJECT" })
 @apigen.manual
 @operationId("uploadProjectCandidateSourceBlob")
 op uploadProjectCandidateSourceBlob(@path project: string, @path digest: string, @header contentType: "application/octet-stream", @header("Content-Digest") contentDigest: string, @body body: bytes): CreatedJson<CandidateSourceBlobResponse> | CommonErrors;
@@ -226,6 +296,6 @@ op uploadProjectCandidateSourceBlob(@path project: string, @path digest: string,
 @summary("Atomically commit a complete source snapshot to the current author's private candidate")
 @route("/projects/{project}/candidate-sync/commit")
 @post
-@apigen.authz(#{ mode: "privilege", privilege: "DEPLOY" })
+@apigen.authz(#{ mode: "privilege", privilege: "AUTHOR_PROJECT" })
 @operationId("commitProjectCandidateSynchronization")
 op commitProjectCandidateSynchronization(@path project: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: CandidateSynchronizationRequest): OkJson<CandidateResponse> | CommonErrors;

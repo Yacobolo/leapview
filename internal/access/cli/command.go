@@ -59,7 +59,14 @@ func LoginCommand(ctx context.Context, authentication AuthenticationService, dis
 			result, err := authentication.Login(ctx, LoginRequest{
 				Name: profileName, Origin: metadata.Origin, InstanceID: metadata.InstanceID,
 				Environment: metadata.Environment, ProjectID: projectID,
-				Privileges: []string{"DEPLOY", "ACTIVATE_DEPLOYMENT"}, Headless: headless,
+				Privileges: []string{
+					"USE_WORKSPACE",
+					"VIEW_ITEM",
+					"AUTHOR_PROJECT",
+					"PUBLISH_RELEASE",
+					"REQUEST_DEPLOYMENT",
+				},
+				Headless: headless,
 			}, func(challenge DeviceChallenge) {
 				fmt.Fprintf(command.OutOrStdout(), "Open %s and enter code %s\n", challenge.VerificationURI, challenge.UserCode)
 			})
