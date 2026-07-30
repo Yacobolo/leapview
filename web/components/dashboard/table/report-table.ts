@@ -907,7 +907,7 @@ export class ReportTable extends LitElement {
 
     .conditional-cue {
       display: inline-block;
-      margin-inline-end: var(--base-size-4, 4px);
+      margin-inline-end: var(--base-size-4);
       font-weight: var(--lv-font-weight-strong);
     }
 
