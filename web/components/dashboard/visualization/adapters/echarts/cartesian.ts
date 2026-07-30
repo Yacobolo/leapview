@@ -1,10 +1,15 @@
 import type { VisualizationEnvelope } from '../../../../../generated/visualization'
 import type { RendererContext } from '../../host-controller'
-import { axis, field, fieldLabel, labelFormatter, legend, selectedDatasetSource, type EChartsTranslation } from './common'
+import { axis, field, fieldLabel, inlineDataset, labelFormatter, legend, selectedDatasetSource, toneColor, type EChartsTranslation } from './common'
 
 type CartesianSpec = Extract<VisualizationEnvelope['spec'], { kind: 'cartesian' }>
+type ReferenceValue = NonNullable<CartesianSpec['referenceLines']>[number]['value']
 
 export function cartesianOption(envelope: VisualizationEnvelope, context: RendererContext): EChartsTranslation {
+  return applyDecisionContext(envelope, context, cartesianBaseOption(envelope, context))
+}
+
+function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererContext): EChartsTranslation {
   const spec = envelope.spec as CartesianSpec
   const horizontal = spec.presentation.orientation === 'horizontal' || spec.mark === 'bar'
   const xType = axisType(envelope, spec.x, horizontal ? 'value' : 'category')
@@ -57,6 +62,134 @@ export function cartesianOption(envelope: VisualizationEnvelope, context: Render
     step: spec.presentation.step ? 'middle' : false, label: chartLabel(envelope, value, spec, context),
   }))
   return { ...axes, legend: legend(spec.presentation.legend, context), dataZoom, series: [...series, ...interactionHitSeries(envelope, spec, series)] }
+}
+
+function applyDecisionContext(envelope: VisualizationEnvelope, context: RendererContext, option: EChartsTranslation): EChartsTranslation {
+  const spec = envelope.spec
+  if (spec.kind !== 'cartesian') return option
+  const accessibilityDetails = [
+    ...(spec.referenceLines ?? []).map((line) => line.label ? `Reference line: ${line.label}.` : ''),
+    ...(spec.referenceBands ?? []).map((band) => band.label ? `Reference band: ${band.label}.` : ''),
+    ...(spec.eventAnnotations ?? []).map((annotation) => `Event: ${annotation.label}${annotation.description ? ` — ${annotation.description}` : ''}.`),
+  ].filter(Boolean)
+  if (accessibilityDetails.length > 0) {
+    const authoredDescription = spec.accessibility.description.trim()
+    const description = /[.!?]$/.test(authoredDescription) ? authoredDescription : `${authoredDescription}.`
+    option.aria = { enabled: true, description: [description, ...accessibilityDetails].join(' ') }
+  }
+  for (const authored of spec.axes ?? []) {
+    const horizontal = spec.presentation.orientation === 'horizontal' || spec.mark === 'bar'
+    const physical = authored.id === 'x'
+      ? horizontal ? 'yAxis' : 'xAxis'
+      : horizontal ? 'xAxis' : 'yAxis'
+    const index = authored.id === 'secondary_y' ? 1 : 0
+    const target = axisAt(option, physical, index)
+    if (!target) continue
+    const title = [authored.title, authored.unit ? `(${authored.unit})` : ''].filter(Boolean).join(' ')
+    if (title) target.name = title
+    if (authored.scale === 'log') target.type = 'log'
+    else if (authored.scale === 'linear') target.type = 'value'
+    if (authored.minimum !== undefined) target.min = authored.minimum
+    if (authored.maximum !== undefined) target.max = authored.maximum
+    if (authored.zero === 'include') target.scale = false
+    else if (authored.zero === 'exclude') target.scale = true
+    applyTickDensity(target, authored.tickDensity)
+  }
+
+  const coordinate = (axisID: 'x' | 'primary_y' | 'secondary_y') => {
+    const horizontal = spec.presentation.orientation === 'horizontal' || spec.mark === 'bar'
+    if (axisID === 'x') return horizontal ? 'yAxis' : 'xAxis'
+    return horizontal ? 'xAxis' : 'yAxis'
+  }
+  const markLineData = [
+    ...(spec.referenceLines ?? []).flatMap((line) => {
+      const value = resolveReferenceValue(envelope, line.value)
+      if (value === undefined) return []
+      return [{
+        id: `reference-line:${line.id}`, name: line.label ?? '', [coordinate(line.axis)]: value,
+        lineStyle: { color: toneColor(line.tone, context) },
+      }]
+    }),
+    ...(spec.eventAnnotations ?? []).flatMap((annotation) => {
+      const value = resolveReferenceValue(envelope, annotation.value)
+      if (value === undefined) return []
+      return [{
+        id: `event-annotation:${annotation.id}`, name: annotation.label, [coordinate(annotation.axis)]: value,
+        lineStyle: { color: toneColor(annotation.tone, context) },
+      }]
+    }),
+  ]
+  const markAreaData = (spec.referenceBands ?? []).flatMap((band) => {
+    const from = resolveReferenceValue(envelope, band.from)
+    const to = resolveReferenceValue(envelope, band.to)
+    if (from === undefined || to === undefined) return []
+    const key = coordinate(band.axis)
+    return [[
+      { id: `reference-band:${band.id}`, name: band.label ?? '', [key]: from, itemStyle: { color: toneColor(band.tone, context), opacity: 0.12 } },
+      { [key]: to },
+    ]]
+  })
+  if (markLineData.length === 0 && markAreaData.length === 0) return option
+  const series = Array.isArray(option.series) ? option.series : []
+  const owner = series.find((candidate: EChartsTranslation) => !candidate.silent && !String(candidate.id ?? '').startsWith('series:interaction-hit:'))
+  if (!owner) return option
+  if (markLineData.length > 0) owner.markLine = { symbol: ['none', 'none'], data: markLineData }
+  if (markAreaData.length > 0) owner.markArea = { silent: true, data: markAreaData }
+  return option
+}
+
+function axisAt(option: EChartsTranslation, key: 'xAxis' | 'yAxis', index: number): EChartsTranslation | undefined {
+  const current = option[key]
+  if (Array.isArray(current)) return current[index]
+  if (index === 0) return current
+  if (!current) return undefined
+  const secondary = structuredClone(current)
+  option[key] = [current, secondary]
+  return secondary
+}
+
+function applyTickDensity(axisOption: EChartsTranslation, density: 'automatic' | 'sparse' | 'normal' | 'dense'): void {
+  if (density === 'automatic') return
+  if (axisOption.type === 'category' || axisOption.type === 'time') {
+    axisOption.axisLabel = { ...axisOption.axisLabel, interval: density === 'sparse' ? 2 : density === 'dense' ? 0 : 'auto' }
+    return
+  }
+  axisOption.splitNumber = density === 'sparse' ? 3 : density === 'dense' ? 8 : 5
+}
+
+function resolveReferenceValue(envelope: VisualizationEnvelope, value: ReferenceValue): string | number | undefined {
+  if (value.kind === 'number' || value.kind === 'text') return value.value
+  const dataset = inlineDataset(envelope, value.field.dataset)
+  const index = dataset?.columns.indexOf(value.field.field) ?? -1
+  if (!dataset || index < 0) return undefined
+  const values = dataset.rows.map((row) => row[index]).filter((candidate): candidate is string | number => typeof candidate === 'string' || typeof candidate === 'number')
+  if (values.length === 0) return undefined
+  switch (value.reducer) {
+    case 'first': return values[0]
+    case 'last': return values.at(-1)
+    case 'minimum': return orderedReferenceValue(values, 'minimum')
+    case 'maximum': return orderedReferenceValue(values, 'maximum')
+    case 'mean': {
+      const numbers = values.filter((candidate): candidate is number => typeof candidate === 'number' && Number.isFinite(candidate))
+      return numbers.length === values.length ? numbers.reduce((sum, candidate) => sum + candidate, 0) / numbers.length : undefined
+    }
+    case 'median': {
+      const numbers = values.filter((candidate): candidate is number => typeof candidate === 'number' && Number.isFinite(candidate)).sort((left, right) => left - right)
+      if (numbers.length !== values.length) return undefined
+      const middle = Math.floor(numbers.length / 2)
+      return numbers.length % 2 ? numbers[middle] : (numbers[middle - 1]! + numbers[middle]!) / 2
+    }
+  }
+}
+
+function orderedReferenceValue(values: (string | number)[], reducer: 'minimum' | 'maximum'): string | number | undefined {
+  if (values.every((value) => typeof value === 'number')) {
+    return reducer === 'minimum' ? Math.min(...values as number[]) : Math.max(...values as number[])
+  }
+  if (values.every((value) => typeof value === 'string')) {
+    return [...values as string[]].sort((left, right) => left.localeCompare(right, 'en'))[reducer === 'minimum' ? 0 : values.length - 1]
+  }
+  return undefined
 }
 
 function interactionHitSeries(envelope: VisualizationEnvelope, spec: CartesianSpec, series: EChartsTranslation[]): EChartsTranslation[] {

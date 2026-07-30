@@ -7,6 +7,56 @@
       "additionalProperties": true,
       "type": "object"
     },
+    "#CartesianAxis": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "enum": [
+            "x",
+            "primary_y",
+            "secondary_y"
+          ]
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "scale": {
+          "enum": [
+            "automatic",
+            "linear",
+            "log"
+          ]
+        },
+        "tick_density": {
+          "enum": [
+            "automatic",
+            "sparse",
+            "normal",
+            "dense"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "zero": {
+          "enum": [
+            "automatic",
+            "include",
+            "exclude"
+          ]
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
     "#CartesianPresentation": {
       "$ref": "#/$defs/%23PresentationCommon",
       "additionalProperties": false,
@@ -14,11 +64,23 @@
         "area": {
           "type": "boolean"
         },
+        "axes": {
+          "items": {
+            "$ref": "#/$defs/%23CartesianAxis"
+          },
+          "type": "array"
+        },
         "data_zoom": {
           "type": "boolean"
         },
         "dual_axis": {
           "type": "boolean"
+        },
+        "event_annotations": {
+          "items": {
+            "$ref": "#/$defs/%23EventAnnotation"
+          },
+          "type": "array"
         },
         "histogram_bins": {
           "allOf": [
@@ -44,6 +106,18 @@
             "horizontal",
             "vertical"
           ]
+        },
+        "reference_bands": {
+          "items": {
+            "$ref": "#/$defs/%23ReferenceBand"
+          },
+          "type": "array"
+        },
+        "reference_lines": {
+          "items": {
+            "$ref": "#/$defs/%23ReferenceLine"
+          },
+          "type": "array"
         },
         "series_types": {
           "additionalProperties": {
@@ -71,6 +145,15 @@
         "symbol_size": {
           "exclusiveMinimum": 0,
           "type": "number"
+        },
+        "tooltip": {
+          "items": {
+            "not": {
+              "const": ""
+            },
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "type": "object"
@@ -207,6 +290,51 @@
       "required": [
         "query",
         "type"
+      ],
+      "type": "object"
+    },
+    "#DecisionTone": {
+      "enum": [
+        "neutral",
+        "ink",
+        "success",
+        "warning",
+        "danger"
+      ]
+    },
+    "#EventAnnotation": {
+      "additionalProperties": false,
+      "properties": {
+        "axis": {
+          "const": "x"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "label": {
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "tone": {
+          "$ref": "#/$defs/%23DecisionTone"
+        },
+        "value": {
+          "$ref": "#/$defs/%23ReferenceValue"
+        }
+      },
+      "required": [
+        "axis",
+        "id",
+        "label",
+        "value"
       ],
       "type": "object"
     },
@@ -1867,6 +1995,144 @@
         "type"
       ],
       "type": "object"
+    },
+    "#ReferenceBand": {
+      "additionalProperties": false,
+      "properties": {
+        "axis": {
+          "enum": [
+            "x",
+            "primary_y",
+            "secondary_y"
+          ]
+        },
+        "from": {
+          "$ref": "#/$defs/%23ReferenceValue"
+        },
+        "id": {
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "to": {
+          "$ref": "#/$defs/%23ReferenceValue"
+        },
+        "tone": {
+          "$ref": "#/$defs/%23DecisionTone"
+        }
+      },
+      "required": [
+        "axis",
+        "from",
+        "id",
+        "to"
+      ],
+      "type": "object"
+    },
+    "#ReferenceLine": {
+      "additionalProperties": false,
+      "properties": {
+        "axis": {
+          "enum": [
+            "x",
+            "primary_y",
+            "secondary_y"
+          ]
+        },
+        "id": {
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "tone": {
+          "$ref": "#/$defs/%23DecisionTone"
+        },
+        "value": {
+          "$ref": "#/$defs/%23ReferenceValue"
+        }
+      },
+      "required": [
+        "axis",
+        "id",
+        "value"
+      ],
+      "type": "object"
+    },
+    "#ReferenceValue": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "number": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "number"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "text": {
+              "not": {
+                "const": ""
+              },
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "not": {
+                "const": ""
+              },
+              "type": "string"
+            },
+            "reducer": {
+              "anyOf": [
+                {
+                  "const": "first"
+                },
+                {
+                  "const": "last"
+                },
+                {
+                  "const": "minimum"
+                },
+                {
+                  "const": "maximum"
+                },
+                {
+                  "const": "mean"
+                },
+                {
+                  "const": "median"
+                }
+              ]
+            }
+          },
+          "required": [
+            "field"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "#ResourceID": {
       "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$",

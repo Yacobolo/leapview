@@ -39753,9 +39753,72 @@ components:
               field: example
         series:
           $ref: '#/components/schemas/VisualizationFieldRef'
+        axes:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationAxisConfiguration'
+          example:
+            - id: x
+              maximum: !!float 1
+              minimum: !!float 1
+              scale: automatic
+              tickDensity: automatic
+              title: example
+              unit: example
+              zero: automatic
+        referenceLines:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationReferenceLine'
+          example:
+            - axis: x
+              id: example
+              label: example
+              tone: neutral
+        referenceBands:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationReferenceBand'
+          example:
+            - axis: x
+              id: example
+              label: example
+              tone: neutral
+        eventAnnotations:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationEventAnnotation'
+          example:
+            - axis: x
+              description: example
+              id: example
+              label: example
+              tone: neutral
+        tooltip:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationFieldRef'
+          example:
+            - dataset: example
+              field: example
         presentation:
           $ref: '#/components/schemas/CartesianVisualizationPresentation'
       example:
+        axes:
+          - id: x
+            maximum: !!float 1
+            minimum: !!float 1
+            scale: automatic
+            tickDensity: automatic
+            title: example
+            unit: example
+            zero: automatic
+        eventAnnotations:
+          - axis: x
+            description: example
+            id: example
+            label: example
+            tone: neutral
         kind: example
         mark: line
         presentation:
@@ -39773,9 +39836,22 @@ components:
           stacked: true
           step: true
           symbolSize: !!float 1
+        referenceBands:
+          - axis: x
+            id: example
+            label: example
+            tone: neutral
+        referenceLines:
+          - axis: x
+            id: example
+            label: example
+            tone: neutral
         series:
           dataset: example
           field: example
+        tooltip:
+          - dataset: example
+            field: example
         x:
           dataset: example
           field: example
@@ -42042,6 +42118,30 @@ components:
         privileges:
           - example
         workspaceId: example
+    FieldVisualizationReferenceValue:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/VisualizationReferenceValueBase'
+      required:
+        - kind
+        - field
+        - reducer
+      properties:
+        kind:
+          type: string
+          enum:
+            - field
+          example: example
+        field:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        reducer:
+          $ref: '#/components/schemas/VisualizationReferenceReducer'
+      example:
+        field:
+          dataset: example
+          field: example
+        kind: example
+        reducer: first
     GeographicVisualizationPresentation:
       type: object
       allOf:
@@ -43619,6 +43719,26 @@ components:
         kind: example
         maximumFractionDigits: 1
         minimumFractionDigits: 1
+    NumberVisualizationReferenceValue:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/VisualizationReferenceValueBase'
+      required:
+        - kind
+        - value
+      properties:
+        kind:
+          type: string
+          enum:
+            - number
+          example: example
+        value:
+          type: number
+          format: double
+          example: !!float 1
+      example:
+        kind: example
+        value: !!float 1
     OwnershipTransferRequest:
       type: object
       required:
@@ -46820,6 +46940,25 @@ components:
         dateStyle: example
         kind: example
         timeStyle: example
+    TextVisualizationReferenceValue:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/VisualizationReferenceValueBase'
+      required:
+        - kind
+        - value
+      properties:
+        kind:
+          type: string
+          enum:
+            - text
+          example: example
+        value:
+          type: string
+          example: example
+      example:
+        kind: example
+        value: example
     UploadProtocol:
       type: string
       enum:
@@ -46855,6 +46994,67 @@ components:
         - primary
         - secondary
       example: primary
+    VisualizationAxisConfiguration:
+      type: object
+      required:
+        - id
+        - scale
+        - zero
+        - tickDensity
+      properties:
+        id:
+          $ref: '#/components/schemas/VisualizationCartesianAxis'
+        title:
+          type: string
+          example: example
+        scale:
+          $ref: '#/components/schemas/VisualizationAxisScale'
+        zero:
+          $ref: '#/components/schemas/VisualizationAxisZeroPolicy'
+        minimum:
+          type: number
+          format: double
+          example: !!float 1
+        maximum:
+          type: number
+          format: double
+          example: !!float 1
+        unit:
+          type: string
+          example: example
+        tickDensity:
+          $ref: '#/components/schemas/VisualizationAxisTickDensity'
+      example:
+        id: x
+        maximum: !!float 1
+        minimum: !!float 1
+        scale: automatic
+        tickDensity: automatic
+        title: example
+        unit: example
+        zero: automatic
+    VisualizationAxisScale:
+      type: string
+      enum:
+        - automatic
+        - linear
+        - log
+      example: automatic
+    VisualizationAxisTickDensity:
+      type: string
+      enum:
+        - automatic
+        - sparse
+        - normal
+        - dense
+      example: automatic
+    VisualizationAxisZeroPolicy:
+      type: string
+      enum:
+        - automatic
+        - include
+        - exclude
+      example: automatic
     VisualizationCapabilities:
       type: object
       required:
@@ -46904,6 +47104,13 @@ components:
         - estimated
         - exact
       example: unknown
+    VisualizationCartesianAxis:
+      type: string
+      enum:
+        - x
+        - primary_y
+        - secondary_y
+      example: x
     VisualizationCartesianMark:
       type: string
       enum:
@@ -47343,6 +47550,36 @@ components:
           kind: idle
           message: example
         visualID: example
+    VisualizationEventAnnotation:
+      type: object
+      required:
+        - id
+        - axis
+        - value
+        - label
+        - tone
+      properties:
+        id:
+          type: string
+          example: example
+        axis:
+          $ref: '#/components/schemas/VisualizationCartesianAxis'
+        value:
+          $ref: '#/components/schemas/VisualizationReferenceValue'
+        label:
+          type: string
+          example: example
+        description:
+          type: string
+          example: example
+        tone:
+          $ref: '#/components/schemas/VisualizationTone'
+      example:
+        axis: x
+        description: example
+        id: example
+        label: example
+        tone: neutral
     VisualizationField:
       type: object
       required:
@@ -48376,6 +48613,34 @@ components:
         - donut
         - funnel
       example: pie
+    VisualizationReferenceBand:
+      type: object
+      required:
+        - id
+        - axis
+        - from
+        - to
+        - tone
+      properties:
+        id:
+          type: string
+          example: example
+        axis:
+          $ref: '#/components/schemas/VisualizationCartesianAxis'
+        from:
+          $ref: '#/components/schemas/VisualizationReferenceValue'
+        to:
+          $ref: '#/components/schemas/VisualizationReferenceValue'
+        label:
+          type: string
+          example: example
+        tone:
+          $ref: '#/components/schemas/VisualizationTone'
+      example:
+        axis: x
+        id: example
+        label: example
+        tone: neutral
     VisualizationReferenceLayer:
       type: object
       allOf:
@@ -48425,6 +48690,62 @@ components:
           color: example
           opacity: !!float 1
           width: !!float 1
+    VisualizationReferenceLine:
+      type: object
+      required:
+        - id
+        - axis
+        - value
+        - tone
+      properties:
+        id:
+          type: string
+          example: example
+        axis:
+          $ref: '#/components/schemas/VisualizationCartesianAxis'
+        value:
+          $ref: '#/components/schemas/VisualizationReferenceValue'
+        label:
+          type: string
+          example: example
+        tone:
+          $ref: '#/components/schemas/VisualizationTone'
+      example:
+        axis: x
+        id: example
+        label: example
+        tone: neutral
+    VisualizationReferenceReducer:
+      type: string
+      enum:
+        - first
+        - last
+        - minimum
+        - maximum
+        - mean
+        - median
+      example: first
+    VisualizationReferenceValue:
+      oneOf:
+        - $ref: '#/components/schemas/NumberVisualizationReferenceValue'
+        - $ref: '#/components/schemas/TextVisualizationReferenceValue'
+        - $ref: '#/components/schemas/FieldVisualizationReferenceValue'
+      discriminator:
+        propertyName: kind
+        mapping:
+          field: '#/components/schemas/FieldVisualizationReferenceValue'
+          number: '#/components/schemas/NumberVisualizationReferenceValue'
+          text: '#/components/schemas/TextVisualizationReferenceValue'
+    VisualizationReferenceValueBase:
+      type: object
+      required:
+        - kind
+      properties:
+        kind:
+          type: string
+          example: example
+      example:
+        kind: example
     VisualizationRendererCapability:
       type: object
       required:

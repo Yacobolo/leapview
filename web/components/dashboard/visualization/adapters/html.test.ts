@@ -6,7 +6,7 @@ import { kpiText } from './html'
 
 test('HTML KPI values use the field formatting contract', () => {
   const envelope = {
-    schemaVersion: 3, visualID: 'revenue', rendererID: 'html', specRevision: 'sha256:test', dataRevision: 1,
+    schemaVersion: 4, visualID: 'revenue', rendererID: 'html', specRevision: 'sha256:test', dataRevision: 1,
     spec: {
       kind: 'kpi', title: 'Revenue', datasets: [{ id: 'primary', fields: [{ id: 'value', role: 'measure', dataType: 'decimal', nullable: false, label: 'Revenue', format: { kind: 'currency', currency: 'BRL' } }] }],
       dataBudget: { maxRows: 1, requiredCompleteness: 'complete' }, accessibility: { title: 'Revenue', description: 'Revenue' }, interactions: [],

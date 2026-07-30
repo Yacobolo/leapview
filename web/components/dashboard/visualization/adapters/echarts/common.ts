@@ -134,7 +134,15 @@ function tooltipFormatter(envelope: VisualizationEnvelope, context: RendererCont
       const dataset = inlineDataset(envelope)
       if (!dataset) continue
       const schema = envelope.spec.datasets.find((candidate) => candidate.id === dataset.id)
-      for (const definition of schema?.fields ?? []) {
+      const authored = envelope.spec.kind === 'cartesian' ? envelope.spec.tooltip : undefined
+      const definitions = authored
+        ? authored.flatMap((ref) => {
+            if (ref.dataset !== dataset.id) return []
+            const definition = schema?.fields.find((candidate) => candidate.id === ref.field)
+            return definition ? [definition] : []
+          })
+        : schema?.fields ?? []
+      for (const definition of definitions) {
         const index = dataset.columns.indexOf(definition.id)
         if (index < 0) continue
         const formatted = definition.format ? formatValue(context.locale, definition.format, value[index]) : value[index] === null || value[index] === undefined ? '—' : String(value[index])

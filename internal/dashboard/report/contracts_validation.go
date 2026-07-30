@@ -415,6 +415,174 @@ func validateVisualPresentation(name string, visual Visual) error {
 		}
 		previous = threshold.Value
 	}
+	if err := validateDecisionContext(name, visual); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateDecisionContext(name string, visual Visual) error {
+	presentation := visual.Presentation
+	hasDecisionContext := len(presentation.Axes) > 0 || len(presentation.ReferenceLines) > 0 || len(presentation.ReferenceBands) > 0 || len(presentation.EventAnnotations) > 0 || len(presentation.Tooltip) > 0
+	if !hasDecisionContext {
+		return nil
+	}
+	if !oneOf(visual.Type, "line", "area", "bar", "column", "combo", "scatter", "waterfall", "heatmap") {
+		return fmt.Errorf("visual %q decision context is only valid for cartesian visualizations", name)
+	}
+
+	axes := make(map[string]struct{}, len(presentation.Axes))
+	for _, axis := range presentation.Axes {
+		if !oneOf(axis.ID, "x", "primary_y", "secondary_y") {
+			return fmt.Errorf("visual %q has unsupported axis %q", name, axis.ID)
+		}
+		if _, exists := axes[axis.ID]; exists {
+			return fmt.Errorf("visual %q has duplicate axis %q", name, axis.ID)
+		}
+		axes[axis.ID] = struct{}{}
+		if axis.ID == "secondary_y" && visual.Type != "combo" {
+			return fmt.Errorf("visual %q secondary_y axis is only valid for combo", name)
+		}
+		if !oneOf(axis.Scale, "", "automatic", "linear", "log") {
+			return fmt.Errorf("visual %q axis %q has unsupported scale %q", name, axis.ID, axis.Scale)
+		}
+		if !oneOf(axis.Zero, "", "automatic", "include", "exclude") {
+			return fmt.Errorf("visual %q axis %q has unsupported zero policy %q", name, axis.ID, axis.Zero)
+		}
+		if !oneOf(axis.TickDensity, "", "automatic", "sparse", "normal", "dense") {
+			return fmt.Errorf("visual %q axis %q has unsupported tick density %q", name, axis.ID, axis.TickDensity)
+		}
+		if axis.Minimum != nil && axis.Maximum != nil && *axis.Minimum >= *axis.Maximum {
+			return fmt.Errorf("visual %q axis %q minimum must be less than maximum", name, axis.ID)
+		}
+		if axis.Scale == "log" {
+			if axis.Zero == "include" {
+				return fmt.Errorf("visual %q axis %q log scale cannot include zero", name, axis.ID)
+			}
+			if axis.Minimum != nil && *axis.Minimum <= 0 || axis.Maximum != nil && *axis.Maximum <= 0 {
+				return fmt.Errorf("visual %q axis %q log scale requires a positive domain", name, axis.ID)
+			}
+		}
+	}
+
+	tooltip := make(map[string]struct{}, len(presentation.Tooltip))
+	for _, field := range presentation.Tooltip {
+		if strings.TrimSpace(field) == "" {
+			return fmt.Errorf("visual %q tooltip field cannot be empty", name)
+		}
+		if _, exists := tooltip[field]; exists {
+			return fmt.Errorf("visual %q has duplicate tooltip field %q", name, field)
+		}
+		tooltip[field] = struct{}{}
+	}
+
+	ids := make(map[string]struct{}, len(presentation.ReferenceLines)+len(presentation.ReferenceBands)+len(presentation.EventAnnotations))
+	validateIdentity := func(id string) error {
+		if strings.TrimSpace(id) == "" {
+			return fmt.Errorf("visual %q decision context ID is required", name)
+		}
+		if _, exists := ids[id]; exists {
+			return fmt.Errorf("visual %q has duplicate decision context ID %q", name, id)
+		}
+		ids[id] = struct{}{}
+		return nil
+	}
+	validateAxis := func(axis string) error {
+		if !oneOf(axis, "x", "primary_y", "secondary_y") {
+			return fmt.Errorf("visual %q has unsupported decision context axis %q", name, axis)
+		}
+		if axis == "secondary_y" && visual.Type != "combo" {
+			return fmt.Errorf("visual %q secondary_y decision context is only valid for combo", name)
+		}
+		return nil
+	}
+	validateTone := func(tone string) error {
+		if !oneOf(tone, "", "neutral", "ink", "success", "warning", "danger") {
+			return fmt.Errorf("visual %q has unsupported decision context tone %q", name, tone)
+		}
+		return nil
+	}
+
+	for _, line := range presentation.ReferenceLines {
+		if !oneOf(visual.Type, "line", "area", "bar", "column", "combo", "scatter", "waterfall") {
+			return fmt.Errorf("visual %q reference lines are unsupported for type %q", name, visual.Type)
+		}
+		if err := validateIdentity(line.ID); err != nil {
+			return err
+		}
+		if err := validateAxis(line.Axis); err != nil {
+			return err
+		}
+		if err := validateReferenceValue(name, "reference line "+line.ID, line.Value); err != nil {
+			return err
+		}
+		if err := validateTone(line.Tone); err != nil {
+			return err
+		}
+	}
+	for _, band := range presentation.ReferenceBands {
+		if !oneOf(visual.Type, "line", "area", "bar", "column", "combo", "scatter", "waterfall") {
+			return fmt.Errorf("visual %q reference bands are unsupported for type %q", name, visual.Type)
+		}
+		if err := validateIdentity(band.ID); err != nil {
+			return err
+		}
+		if err := validateAxis(band.Axis); err != nil {
+			return err
+		}
+		if err := validateReferenceValue(name, "reference band "+band.ID+" from", band.From); err != nil {
+			return err
+		}
+		if err := validateReferenceValue(name, "reference band "+band.ID+" to", band.To); err != nil {
+			return err
+		}
+		if band.From.Number != nil && band.To.Number != nil && *band.From.Number >= *band.To.Number {
+			return fmt.Errorf("visual %q reference band %q from must be less than to", name, band.ID)
+		}
+		if err := validateTone(band.Tone); err != nil {
+			return err
+		}
+	}
+	for _, event := range presentation.EventAnnotations {
+		if err := validateIdentity(event.ID); err != nil {
+			return err
+		}
+		if event.Axis != "x" {
+			return fmt.Errorf("visual %q event annotation axis must be x", name)
+		}
+		if strings.TrimSpace(event.Label) == "" {
+			return fmt.Errorf("visual %q event annotation %q requires a label", name, event.ID)
+		}
+		if err := validateReferenceValue(name, "event annotation "+event.ID, event.Value); err != nil {
+			return err
+		}
+		if err := validateTone(event.Tone); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateReferenceValue(name, context string, value VisualReferenceValue) error {
+	branches := 0
+	if value.Number != nil {
+		branches++
+	}
+	if value.Text != "" {
+		branches++
+	}
+	if value.Field != "" {
+		branches++
+	}
+	if branches != 1 {
+		return fmt.Errorf("visual %q %s value requires exactly one of number, text, or field", name, context)
+	}
+	if value.Field == "" && value.Reducer != "" {
+		return fmt.Errorf("visual %q %s reducer requires a field binding", name, context)
+	}
+	if value.Field != "" && !oneOf(value.Reducer, "", "first", "last", "minimum", "maximum", "mean", "median") {
+		return fmt.Errorf("visual %q %s has unsupported reducer %q", name, context, value.Reducer)
+	}
 	return nil
 }
 

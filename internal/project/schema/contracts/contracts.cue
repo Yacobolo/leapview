@@ -479,6 +479,54 @@ package contracts
 	show_labels?: bool
 }
 
+#DecisionTone: "neutral" | "ink" | "success" | "warning" | "danger"
+
+#ReferenceValue: close({
+	"number"!: number
+}) | close({
+	"text"!: string & !=""
+}) | close({
+	"field"!: string & !=""
+	reducer?: "first" | "last" | "minimum" | "maximum" | "mean" | "median"
+})
+
+#CartesianAxis: close({
+	id!:            "x" | "primary_y" | "secondary_y"
+	title?:         string
+	scale?:         "automatic" | "linear" | "log"
+	zero?:          "automatic" | "include" | "exclude"
+	minimum?:       number
+	maximum?:       number
+	unit?:          string
+	tick_density?:  "automatic" | "sparse" | "normal" | "dense"
+})
+
+#ReferenceLine: close({
+	id!:    string & !=""
+	axis!:  "x" | "primary_y" | "secondary_y"
+	value!: #ReferenceValue
+	label?: string
+	tone?:  #DecisionTone
+})
+
+#ReferenceBand: close({
+	id!:    string & !=""
+	axis!:  "x" | "primary_y" | "secondary_y"
+	from!:  #ReferenceValue
+	to!:    #ReferenceValue
+	label?: string
+	tone?:  #DecisionTone
+})
+
+#EventAnnotation: close({
+	id!:          string & !=""
+	axis!:        "x"
+	value!:       #ReferenceValue
+	label!:       string & !=""
+	description?: string
+	tone?:        #DecisionTone
+})
+
 #CartesianPresentation: close({
 	#PresentationCommon
 	stacked?:       bool
@@ -493,6 +541,11 @@ package contracts
 	histogram_bins?: int & >0
 	series_types?: close({[string]: "line" | "area" | "bar" | "column"})
 	dual_axis?: bool
+	axes?:              [...#CartesianAxis]
+	reference_lines?:   [...#ReferenceLine]
+	reference_bands?:   [...#ReferenceBand]
+	event_annotations?: [...#EventAnnotation]
+	tooltip?:            [...string & !=""]
 })
 
 #ProportionalPresentation: close({

@@ -131,46 +131,101 @@ type Visual struct {
 }
 
 type VisualPresentation struct {
-	Legend        string            `yaml:"legend" json:"legend,omitempty"`
-	ShowLabels    bool              `yaml:"show_labels" json:"showLabels,omitempty"`
-	Stacked       bool              `yaml:"stacked" json:"stacked,omitempty"`
-	Smooth        bool              `yaml:"smooth" json:"smooth,omitempty"`
-	ShowSymbols   *bool             `yaml:"show_symbols" json:"showSymbols,omitempty"`
-	DataZoom      bool              `yaml:"data_zoom" json:"dataZoom,omitempty"`
-	Area          *bool             `yaml:"area" json:"area,omitempty"`
-	Step          bool              `yaml:"step" json:"step,omitempty"`
-	Orientation   string            `yaml:"orientation" json:"orientation,omitempty"`
-	LabelPosition string            `yaml:"label_position" json:"labelPosition,omitempty"`
-	SymbolSize    float64           `yaml:"symbol_size" json:"symbolSize,omitempty"`
-	HistogramBins int               `yaml:"histogram_bins" json:"histogramBins,omitempty"`
-	SeriesTypes   map[string]string `yaml:"series_types" json:"seriesTypes,omitempty"`
-	DualAxis      bool              `yaml:"dual_axis" json:"dualAxis,omitempty"`
-	Rose          bool              `yaml:"rose" json:"rose,omitempty"`
-	CenterLabel   string            `yaml:"center_label" json:"centerLabel,omitempty"`
-	InnerRadius   float64           `yaml:"inner_radius" json:"innerRadius,omitempty"`
-	OuterRadius   float64           `yaml:"outer_radius" json:"outerRadius,omitempty"`
-	Align         string            `yaml:"align" json:"align,omitempty"`
-	Sort          string            `yaml:"sort" json:"sort,omitempty"`
-	InitialDepth  int               `yaml:"initial_depth" json:"initialDepth,omitempty"`
-	Basemap       string            `yaml:"basemap" json:"basemap,omitempty"`
-	Roam          bool              `yaml:"roam" json:"roam,omitempty"`
-	Layout        string            `yaml:"layout" json:"layout,omitempty"`
-	Breadcrumb    *bool             `yaml:"breadcrumb" json:"breadcrumb,omitempty"`
-	NodeGap       float64           `yaml:"node_gap" json:"nodeGap,omitempty"`
-	Curveness     float64           `yaml:"curveness" json:"curveness,omitempty"`
-	Focus         string            `yaml:"focus" json:"focus,omitempty"`
-	Minimum       *float64          `yaml:"minimum" json:"minimum,omitempty"`
-	Maximum       *float64          `yaml:"maximum" json:"maximum,omitempty"`
-	Target        *float64          `yaml:"target" json:"target,omitempty"`
-	ProgressWidth float64           `yaml:"progress_width" json:"progressWidth,omitempty"`
-	Thresholds    []VisualThreshold `yaml:"thresholds" json:"thresholds,omitempty"`
-	Note          string            `yaml:"note" json:"note,omitempty"`
-	Tone          string            `yaml:"tone" json:"tone,omitempty"`
+	Legend           string                  `yaml:"legend" json:"legend,omitempty"`
+	ShowLabels       bool                    `yaml:"show_labels" json:"showLabels,omitempty"`
+	Stacked          bool                    `yaml:"stacked" json:"stacked,omitempty"`
+	Smooth           bool                    `yaml:"smooth" json:"smooth,omitempty"`
+	ShowSymbols      *bool                   `yaml:"show_symbols" json:"showSymbols,omitempty"`
+	DataZoom         bool                    `yaml:"data_zoom" json:"dataZoom,omitempty"`
+	Area             *bool                   `yaml:"area" json:"area,omitempty"`
+	Step             bool                    `yaml:"step" json:"step,omitempty"`
+	Orientation      string                  `yaml:"orientation" json:"orientation,omitempty"`
+	LabelPosition    string                  `yaml:"label_position" json:"labelPosition,omitempty"`
+	SymbolSize       float64                 `yaml:"symbol_size" json:"symbolSize,omitempty"`
+	HistogramBins    int                     `yaml:"histogram_bins" json:"histogramBins,omitempty"`
+	SeriesTypes      map[string]string       `yaml:"series_types" json:"seriesTypes,omitempty"`
+	DualAxis         bool                    `yaml:"dual_axis" json:"dualAxis,omitempty"`
+	Rose             bool                    `yaml:"rose" json:"rose,omitempty"`
+	CenterLabel      string                  `yaml:"center_label" json:"centerLabel,omitempty"`
+	InnerRadius      float64                 `yaml:"inner_radius" json:"innerRadius,omitempty"`
+	OuterRadius      float64                 `yaml:"outer_radius" json:"outerRadius,omitempty"`
+	Align            string                  `yaml:"align" json:"align,omitempty"`
+	Sort             string                  `yaml:"sort" json:"sort,omitempty"`
+	InitialDepth     int                     `yaml:"initial_depth" json:"initialDepth,omitempty"`
+	Basemap          string                  `yaml:"basemap" json:"basemap,omitempty"`
+	Roam             bool                    `yaml:"roam" json:"roam,omitempty"`
+	Layout           string                  `yaml:"layout" json:"layout,omitempty"`
+	Breadcrumb       *bool                   `yaml:"breadcrumb" json:"breadcrumb,omitempty"`
+	NodeGap          float64                 `yaml:"node_gap" json:"nodeGap,omitempty"`
+	Curveness        float64                 `yaml:"curveness" json:"curveness,omitempty"`
+	Focus            string                  `yaml:"focus" json:"focus,omitempty"`
+	Minimum          *float64                `yaml:"minimum" json:"minimum,omitempty"`
+	Maximum          *float64                `yaml:"maximum" json:"maximum,omitempty"`
+	Target           *float64                `yaml:"target" json:"target,omitempty"`
+	ProgressWidth    float64                 `yaml:"progress_width" json:"progressWidth,omitempty"`
+	Thresholds       []VisualThreshold       `yaml:"thresholds" json:"thresholds,omitempty"`
+	Note             string                  `yaml:"note" json:"note,omitempty"`
+	Tone             string                  `yaml:"tone" json:"tone,omitempty"`
+	Axes             []VisualAxis            `yaml:"axes" json:"axes,omitempty"`
+	ReferenceLines   []VisualReferenceLine   `yaml:"reference_lines" json:"referenceLines,omitempty"`
+	ReferenceBands   []VisualReferenceBand   `yaml:"reference_bands" json:"referenceBands,omitempty"`
+	EventAnnotations []VisualEventAnnotation `yaml:"event_annotations" json:"eventAnnotations,omitempty"`
+	Tooltip          []string                `yaml:"tooltip" json:"tooltip,omitempty"`
 }
 
 type VisualThreshold struct {
 	Value float64 `yaml:"value" json:"value"`
 	Tone  string  `yaml:"tone" json:"tone"`
+}
+
+// VisualAxis describes author intent without exposing renderer-native axis
+// options. ID selects the semantic axis; omitted policies compile to stable
+// automatic defaults.
+type VisualAxis struct {
+	ID          string   `yaml:"id" json:"id"`
+	Title       string   `yaml:"title" json:"title,omitempty"`
+	Scale       string   `yaml:"scale" json:"scale,omitempty"`
+	Zero        string   `yaml:"zero" json:"zero,omitempty"`
+	Minimum     *float64 `yaml:"minimum" json:"minimum,omitempty"`
+	Maximum     *float64 `yaml:"maximum" json:"maximum,omitempty"`
+	Unit        string   `yaml:"unit" json:"unit,omitempty"`
+	TickDensity string   `yaml:"tick_density" json:"tickDensity,omitempty"`
+}
+
+// VisualReferenceValue is a closed scalar binding at the authoring boundary.
+// Exactly one of number, text, or field is required. Field bindings are
+// reduced deterministically when a dataset contains more than one row.
+type VisualReferenceValue struct {
+	Number  *float64 `yaml:"number" json:"number,omitempty"`
+	Text    string   `yaml:"text" json:"text,omitempty"`
+	Field   string   `yaml:"field" json:"field,omitempty"`
+	Reducer string   `yaml:"reducer" json:"reducer,omitempty"`
+}
+
+type VisualReferenceLine struct {
+	ID    string               `yaml:"id" json:"id"`
+	Axis  string               `yaml:"axis" json:"axis"`
+	Value VisualReferenceValue `yaml:"value" json:"value"`
+	Label string               `yaml:"label" json:"label,omitempty"`
+	Tone  string               `yaml:"tone" json:"tone,omitempty"`
+}
+
+type VisualReferenceBand struct {
+	ID    string               `yaml:"id" json:"id"`
+	Axis  string               `yaml:"axis" json:"axis"`
+	From  VisualReferenceValue `yaml:"from" json:"from"`
+	To    VisualReferenceValue `yaml:"to" json:"to"`
+	Label string               `yaml:"label" json:"label,omitempty"`
+	Tone  string               `yaml:"tone" json:"tone,omitempty"`
+}
+
+type VisualEventAnnotation struct {
+	ID          string               `yaml:"id" json:"id"`
+	Axis        string               `yaml:"axis" json:"axis"`
+	Value       VisualReferenceValue `yaml:"value" json:"value"`
+	Label       string               `yaml:"label" json:"label"`
+	Description string               `yaml:"description" json:"description,omitempty"`
+	Tone        string               `yaml:"tone" json:"tone,omitempty"`
 }
 
 type VisualAccessibility struct {

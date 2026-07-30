@@ -931,7 +931,7 @@ model DashboardInteractionCommand {
 @apigen.contract(#{ kind: "ui-signal", tags: #["dashboard", "signal"] })
 @apigen.`metadata`(#{ `x-leapview-contract-role`: "signal", `x-leapview-surface`: "dashboard" })
 model DashboardVisualizationSignal {
-  `schemaVersion`: 3;
+  `schemaVersion`: 4;
   `visualID`: string;
   `rendererID`: string;
   `specRevision`: string;

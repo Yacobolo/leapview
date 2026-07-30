@@ -143,11 +143,170 @@ func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model
 		if presentation.Area != nil && *presentation.Area {
 			area = true
 		}
+		decisionContext, err := compileCartesianDecisionContext(columns, presentation)
+		if err != nil {
+			return visualizationir.VisualizationSpec{}, err
+		}
 		return visualizationir.VisualizationSpec{Value: &visualizationir.CartesianVisualizationSpec{
 			VisualizationSpecBase: base, Kind: "cartesian", Mark: mark, X: ref(xField), Y: y, Series: optionalRef("series"),
+			Axes: decisionContext.axes, ReferenceLines: decisionContext.referenceLines, ReferenceBands: decisionContext.referenceBands,
+			EventAnnotations: decisionContext.eventAnnotations, Tooltip: decisionContext.tooltip,
 			Presentation: visualizationir.CartesianVisualizationPresentation{VisualizationPresentation: common, Smooth: presentation.Smooth, Stacked: presentation.Stacked, ShowSymbols: showSymbols, DataZoom: presentation.DataZoom, Area: area, Step: presentation.Step, Orientation: compiledOptionalOrientation(presentation.Orientation), LabelPosition: compiledLabelPosition(presentation.LabelPosition), SymbolSize: optionalPositiveFloat(presentation.SymbolSize), HistogramBins: optionalPositiveInt32(presentation.HistogramBins), ComboSeries: compiledComboSeries(presentation.SeriesTypes, presentation.DualAxis)},
 		}}, nil
 	}
+}
+
+type compiledCartesianDecisionContextValue struct {
+	axes             *[]visualizationir.VisualizationAxisConfiguration
+	referenceLines   *[]visualizationir.VisualizationReferenceLine
+	referenceBands   *[]visualizationir.VisualizationReferenceBand
+	eventAnnotations *[]visualizationir.VisualizationEventAnnotation
+	tooltip          *[]visualizationir.VisualizationFieldRef
+}
+
+func compileCartesianDecisionContext(columns []string, presentation reportdef.VisualPresentation) (compiledCartesianDecisionContextValue, error) {
+	var result compiledCartesianDecisionContextValue
+	if len(presentation.Axes) > 0 {
+		values := make([]visualizationir.VisualizationAxisConfiguration, len(presentation.Axes))
+		for index, authored := range presentation.Axes {
+			values[index] = visualizationir.VisualizationAxisConfiguration{
+				ID:          visualizationir.VisualizationCartesianAxis(authored.ID),
+				Title:       optionalString(authored.Title),
+				Scale:       compiledAxisScale(authored.Scale),
+				Zero:        compiledAxisZeroPolicy(authored.Zero),
+				Minimum:     authored.Minimum,
+				Maximum:     authored.Maximum,
+				Unit:        optionalString(authored.Unit),
+				TickDensity: compiledAxisTickDensity(authored.TickDensity),
+			}
+		}
+		result.axes = &values
+	}
+	compileValue := func(authored reportdef.VisualReferenceValue) (visualizationir.VisualizationReferenceValue, error) {
+		switch {
+		case authored.Number != nil:
+			return visualizationir.VisualizationReferenceValue{Value: &visualizationir.NumberVisualizationReferenceValue{
+				VisualizationReferenceValueBase: visualizationir.VisualizationReferenceValueBase{Kind: "number"},
+				Kind:                            "number",
+				Value:                           *authored.Number,
+			}}, nil
+		case authored.Text != "":
+			return visualizationir.VisualizationReferenceValue{Value: &visualizationir.TextVisualizationReferenceValue{
+				VisualizationReferenceValueBase: visualizationir.VisualizationReferenceValueBase{Kind: "text"},
+				Kind:                            "text",
+				Value:                           authored.Text,
+			}}, nil
+		case authored.Field != "":
+			if !containsCompiledColumn(columns, authored.Field) {
+				return visualizationir.VisualizationReferenceValue{}, fmt.Errorf("reference field %q is not in the compiled result", authored.Field)
+			}
+			reducer := authored.Reducer
+			if reducer == "" {
+				reducer = "first"
+			}
+			return visualizationir.VisualizationReferenceValue{Value: &visualizationir.FieldVisualizationReferenceValue{
+				VisualizationReferenceValueBase: visualizationir.VisualizationReferenceValueBase{Kind: "field"},
+				Kind:                            "field",
+				Field:                           visualizationir.VisualizationFieldRef{Dataset: "primary", Field: authored.Field},
+				Reducer:                         visualizationir.VisualizationReferenceReducer(reducer),
+			}}, nil
+		default:
+			return visualizationir.VisualizationReferenceValue{}, fmt.Errorf("reference value requires number, text, or field")
+		}
+	}
+	tone := func(value string) visualizationir.VisualizationTone {
+		if value == "" {
+			return visualizationir.VisualizationToneNeutral
+		}
+		return visualizationir.VisualizationTone(value)
+	}
+	if len(presentation.ReferenceLines) > 0 {
+		values := make([]visualizationir.VisualizationReferenceLine, len(presentation.ReferenceLines))
+		for index, authored := range presentation.ReferenceLines {
+			value, err := compileValue(authored.Value)
+			if err != nil {
+				return result, fmt.Errorf("reference line %q: %w", authored.ID, err)
+			}
+			values[index] = visualizationir.VisualizationReferenceLine{
+				ID: authored.ID, Axis: visualizationir.VisualizationCartesianAxis(authored.Axis), Value: value,
+				Label: optionalString(authored.Label), Tone: tone(authored.Tone),
+			}
+		}
+		result.referenceLines = &values
+	}
+	if len(presentation.ReferenceBands) > 0 {
+		values := make([]visualizationir.VisualizationReferenceBand, len(presentation.ReferenceBands))
+		for index, authored := range presentation.ReferenceBands {
+			from, err := compileValue(authored.From)
+			if err != nil {
+				return result, fmt.Errorf("reference band %q from: %w", authored.ID, err)
+			}
+			to, err := compileValue(authored.To)
+			if err != nil {
+				return result, fmt.Errorf("reference band %q to: %w", authored.ID, err)
+			}
+			values[index] = visualizationir.VisualizationReferenceBand{
+				ID: authored.ID, Axis: visualizationir.VisualizationCartesianAxis(authored.Axis), From: from, To: to,
+				Label: optionalString(authored.Label), Tone: tone(authored.Tone),
+			}
+		}
+		result.referenceBands = &values
+	}
+	if len(presentation.EventAnnotations) > 0 {
+		values := make([]visualizationir.VisualizationEventAnnotation, len(presentation.EventAnnotations))
+		for index, authored := range presentation.EventAnnotations {
+			value, err := compileValue(authored.Value)
+			if err != nil {
+				return result, fmt.Errorf("event annotation %q: %w", authored.ID, err)
+			}
+			values[index] = visualizationir.VisualizationEventAnnotation{
+				ID: authored.ID, Axis: visualizationir.VisualizationCartesianAxis(authored.Axis), Value: value,
+				Label: authored.Label, Description: optionalString(authored.Description), Tone: tone(authored.Tone),
+			}
+		}
+		result.eventAnnotations = &values
+	}
+	if len(presentation.Tooltip) > 0 {
+		values := make([]visualizationir.VisualizationFieldRef, len(presentation.Tooltip))
+		for index, field := range presentation.Tooltip {
+			if !containsCompiledColumn(columns, field) {
+				return result, fmt.Errorf("tooltip field %q is not in the compiled result", field)
+			}
+			values[index] = visualizationir.VisualizationFieldRef{Dataset: "primary", Field: field}
+		}
+		result.tooltip = &values
+	}
+	return result, nil
+}
+
+func compiledAxisScale(value string) visualizationir.VisualizationAxisScale {
+	if value == "" {
+		return visualizationir.VisualizationAxisScaleAutomatic
+	}
+	return visualizationir.VisualizationAxisScale(value)
+}
+
+func compiledAxisZeroPolicy(value string) visualizationir.VisualizationAxisZeroPolicy {
+	if value == "" {
+		return visualizationir.VisualizationAxisZeroPolicyAutomatic
+	}
+	return visualizationir.VisualizationAxisZeroPolicy(value)
+}
+
+func compiledAxisTickDensity(value string) visualizationir.VisualizationAxisTickDensity {
+	if value == "" {
+		return visualizationir.VisualizationAxisTickDensityAutomatic
+	}
+	return visualizationir.VisualizationAxisTickDensity(value)
+}
+
+func containsCompiledColumn(values []string, candidate string) bool {
+	for _, value := range values {
+		if value == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func compiledShapeColumns(shape string) []string {

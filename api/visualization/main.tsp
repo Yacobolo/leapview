@@ -165,6 +165,40 @@ enum VisualizationAxis {
   secondary: "secondary",
 }
 
+enum VisualizationCartesianAxis {
+  x: "x",
+  primaryY: "primary_y",
+  secondaryY: "secondary_y",
+}
+
+enum VisualizationAxisScale {
+  automatic: "automatic",
+  linear: "linear",
+  log: "log",
+}
+
+enum VisualizationAxisZeroPolicy {
+  automatic: "automatic",
+  include: "include",
+  exclude: "exclude",
+}
+
+enum VisualizationAxisTickDensity {
+  automatic: "automatic",
+  sparse: "sparse",
+  normal: "normal",
+  dense: "dense",
+}
+
+enum VisualizationReferenceReducer {
+  first: "first",
+  last: "last",
+  minimum: "minimum",
+  maximum: "maximum",
+  mean: "mean",
+  median: "median",
+}
+
 enum VisualizationOrientation {
   horizontal: "horizontal",
   vertical: "vertical",
@@ -315,6 +349,64 @@ model VisualizationFieldRef {
   `field`: string;
 }
 
+@discriminator("kind")
+model VisualizationReferenceValue {
+  `kind`: string;
+}
+
+model NumberVisualizationReferenceValue extends VisualizationReferenceValue {
+  `kind`: "number";
+  `value`: float64;
+}
+
+model TextVisualizationReferenceValue extends VisualizationReferenceValue {
+  `kind`: "text";
+  `value`: string;
+}
+
+model FieldVisualizationReferenceValue extends VisualizationReferenceValue {
+  `kind`: "field";
+  `field`: VisualizationFieldRef;
+  `reducer`: VisualizationReferenceReducer;
+}
+
+model VisualizationAxisConfiguration {
+  `id`: VisualizationCartesianAxis;
+  `title`?: string;
+  `scale`: VisualizationAxisScale;
+  `zero`: VisualizationAxisZeroPolicy;
+  `minimum`?: float64;
+  `maximum`?: float64;
+  `unit`?: string;
+  `tickDensity`: VisualizationAxisTickDensity;
+}
+
+model VisualizationReferenceLine {
+  `id`: string;
+  `axis`: VisualizationCartesianAxis;
+  `value`: VisualizationReferenceValue;
+  `label`?: string;
+  `tone`: VisualizationTone;
+}
+
+model VisualizationReferenceBand {
+  `id`: string;
+  `axis`: VisualizationCartesianAxis;
+  `from`: VisualizationReferenceValue;
+  `to`: VisualizationReferenceValue;
+  `label`?: string;
+  `tone`: VisualizationTone;
+}
+
+model VisualizationEventAnnotation {
+  `id`: string;
+  `axis`: VisualizationCartesianAxis;
+  `value`: VisualizationReferenceValue;
+  `label`: string;
+  `description`?: string;
+  `tone`: VisualizationTone;
+}
+
 model VisualizationDataBudget {
   `maxRows`: int64;
   `requiredCompleteness`: VisualizationCompleteness;
@@ -446,6 +538,11 @@ model CartesianVisualizationSpec extends VisualizationSpec {
   `x`: VisualizationFieldRef;
   `y`: VisualizationFieldRef[];
   `series`?: VisualizationFieldRef;
+  `axes`?: VisualizationAxisConfiguration[];
+  `referenceLines`?: VisualizationReferenceLine[];
+  `referenceBands`?: VisualizationReferenceBand[];
+  `eventAnnotations`?: VisualizationEventAnnotation[];
+  `tooltip`?: VisualizationFieldRef[];
   `presentation`: CartesianVisualizationPresentation;
 }
 
@@ -945,7 +1042,7 @@ model VisualizationDiagnostic {
 @apigen.contract(#{ kind: "visualization-envelope", tags: #["visualization", "ir"] })
 @apigen.`metadata`(#{ `x-leapview-contract-role`: "visualization-envelope" })
 model VisualizationEnvelope {
-  `schemaVersion`: 3;
+  `schemaVersion`: 4;
   `visualID`: string;
   `rendererID`: string;
   `specRevision`: string;

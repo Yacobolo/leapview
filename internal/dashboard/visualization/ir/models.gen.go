@@ -24,12 +24,17 @@ type CartesianVisualizationPresentation struct {
 
 type CartesianVisualizationSpec struct {
 	VisualizationSpecBase
-	Kind         string                             `json:"kind"`
-	Mark         VisualizationCartesianMark         `json:"mark"`
-	X            VisualizationFieldRef              `json:"x"`
-	Y            []VisualizationFieldRef            `json:"y"`
-	Series       *VisualizationFieldRef             `json:"series,omitempty"`
-	Presentation CartesianVisualizationPresentation `json:"presentation"`
+	Kind             string                             `json:"kind"`
+	Mark             VisualizationCartesianMark         `json:"mark"`
+	X                VisualizationFieldRef              `json:"x"`
+	Y                []VisualizationFieldRef            `json:"y"`
+	Series           *VisualizationFieldRef             `json:"series,omitempty"`
+	Axes             *[]VisualizationAxisConfiguration  `json:"axes,omitempty"`
+	ReferenceLines   *[]VisualizationReferenceLine      `json:"referenceLines,omitempty"`
+	ReferenceBands   *[]VisualizationReferenceBand      `json:"referenceBands,omitempty"`
+	EventAnnotations *[]VisualizationEventAnnotation    `json:"eventAnnotations,omitempty"`
+	Tooltip          *[]VisualizationFieldRef           `json:"tooltip,omitempty"`
+	Presentation     CartesianVisualizationPresentation `json:"presentation"`
 }
 
 type CompactVisualizationFormat struct {
@@ -58,6 +63,13 @@ type DurationVisualizationFormat struct {
 	VisualizationFormatBase
 	Kind string `json:"kind"`
 	Unit string `json:"unit"`
+}
+
+type FieldVisualizationReferenceValue struct {
+	VisualizationReferenceValueBase
+	Kind    string                        `json:"kind"`
+	Field   VisualizationFieldRef         `json:"field"`
+	Reducer VisualizationReferenceReducer `json:"reducer"`
 }
 
 type GeographicVisualizationPresentation struct {
@@ -145,6 +157,12 @@ type NumberVisualizationFormat struct {
 	Kind                  string `json:"kind"`
 	MinimumFractionDigits *int32 `json:"minimumFractionDigits,omitempty"`
 	MaximumFractionDigits *int32 `json:"maximumFractionDigits,omitempty"`
+}
+
+type NumberVisualizationReferenceValue struct {
+	VisualizationReferenceValueBase
+	Kind  string  `json:"kind"`
+	Value float64 `json:"value"`
 }
 
 type PercentVisualizationFormat struct {
@@ -503,6 +521,12 @@ type TemporalVisualizationFormat struct {
 	TimeStyle *string `json:"timeStyle,omitempty"`
 }
 
+type TextVisualizationReferenceValue struct {
+	VisualizationReferenceValueBase
+	Kind  string `json:"kind"`
+	Value string `json:"value"`
+}
+
 type VisualizationAccessibility struct {
 	Title           string  `json:"title"`
 	Description     string  `json:"description"`
@@ -517,6 +541,42 @@ const (
 	VisualizationAxisSecondary VisualizationAxis = "secondary"
 )
 
+type VisualizationAxisConfiguration struct {
+	ID          VisualizationCartesianAxis   `json:"id"`
+	Title       *string                      `json:"title,omitempty"`
+	Scale       VisualizationAxisScale       `json:"scale"`
+	Zero        VisualizationAxisZeroPolicy  `json:"zero"`
+	Minimum     *float64                     `json:"minimum,omitempty"`
+	Maximum     *float64                     `json:"maximum,omitempty"`
+	Unit        *string                      `json:"unit,omitempty"`
+	TickDensity VisualizationAxisTickDensity `json:"tickDensity"`
+}
+
+type VisualizationAxisScale string
+
+const (
+	VisualizationAxisScaleAutomatic VisualizationAxisScale = "automatic"
+	VisualizationAxisScaleLinear    VisualizationAxisScale = "linear"
+	VisualizationAxisScaleLog       VisualizationAxisScale = "log"
+)
+
+type VisualizationAxisTickDensity string
+
+const (
+	VisualizationAxisTickDensityAutomatic VisualizationAxisTickDensity = "automatic"
+	VisualizationAxisTickDensitySparse    VisualizationAxisTickDensity = "sparse"
+	VisualizationAxisTickDensityNormal    VisualizationAxisTickDensity = "normal"
+	VisualizationAxisTickDensityDense     VisualizationAxisTickDensity = "dense"
+)
+
+type VisualizationAxisZeroPolicy string
+
+const (
+	VisualizationAxisZeroPolicyAutomatic VisualizationAxisZeroPolicy = "automatic"
+	VisualizationAxisZeroPolicyInclude   VisualizationAxisZeroPolicy = "include"
+	VisualizationAxisZeroPolicyExclude   VisualizationAxisZeroPolicy = "exclude"
+)
+
 type VisualizationCardinality struct {
 	Kind  VisualizationCardinalityKind `json:"kind"`
 	Count *int64                       `json:"count,omitempty"`
@@ -529,6 +589,14 @@ const (
 	VisualizationCardinalityKindLowerBound VisualizationCardinalityKind = "lower_bound"
 	VisualizationCardinalityKindEstimated  VisualizationCardinalityKind = "estimated"
 	VisualizationCardinalityKindExact      VisualizationCardinalityKind = "exact"
+)
+
+type VisualizationCartesianAxis string
+
+const (
+	VisualizationCartesianAxisX          VisualizationCartesianAxis = "x"
+	VisualizationCartesianAxisPrimaryY   VisualizationCartesianAxis = "primary_y"
+	VisualizationCartesianAxisSecondaryY VisualizationCartesianAxis = "secondary_y"
 )
 
 type VisualizationCartesianMark string
@@ -933,6 +1001,15 @@ type VisualizationEnvelope struct {
 	SpatialSelection *VisualizationSpatialSelectionState `json:"spatialSelection,omitempty"`
 	Status           VisualizationStatus                 `json:"status"`
 	Diagnostics      []VisualizationDiagnostic           `json:"diagnostics"`
+}
+
+type VisualizationEventAnnotation struct {
+	ID          string                      `json:"id"`
+	Axis        VisualizationCartesianAxis  `json:"axis"`
+	Value       VisualizationReferenceValue `json:"value"`
+	Label       string                      `json:"label"`
+	Description *string                     `json:"description,omitempty"`
+	Tone        VisualizationTone           `json:"tone"`
 }
 
 type VisualizationField struct {
@@ -2000,6 +2077,15 @@ const (
 	VisualizationProportionalMarkFunnel VisualizationProportionalMark = "funnel"
 )
 
+type VisualizationReferenceBand struct {
+	ID    string                      `json:"id"`
+	Axis  VisualizationCartesianAxis  `json:"axis"`
+	From  VisualizationReferenceValue `json:"from"`
+	To    VisualizationReferenceValue `json:"to"`
+	Label *string                     `json:"label,omitempty"`
+	Tone  VisualizationTone           `json:"tone"`
+}
+
 type VisualizationReferenceLayer struct {
 	VisualizationGeographicLayerBase
 	Kind     string                     `json:"kind"`
@@ -2007,6 +2093,223 @@ type VisualizationReferenceLayer struct {
 	Color    VisualizationMapColorScale `json:"color"`
 	Stroke   VisualizationMapStroke     `json:"stroke"`
 	Opacity  float64                    `json:"opacity"`
+}
+
+type VisualizationReferenceLine struct {
+	ID    string                      `json:"id"`
+	Axis  VisualizationCartesianAxis  `json:"axis"`
+	Value VisualizationReferenceValue `json:"value"`
+	Label *string                     `json:"label,omitempty"`
+	Tone  VisualizationTone           `json:"tone"`
+}
+
+type VisualizationReferenceReducer string
+
+const (
+	VisualizationReferenceReducerFirst   VisualizationReferenceReducer = "first"
+	VisualizationReferenceReducerLast    VisualizationReferenceReducer = "last"
+	VisualizationReferenceReducerMinimum VisualizationReferenceReducer = "minimum"
+	VisualizationReferenceReducerMaximum VisualizationReferenceReducer = "maximum"
+	VisualizationReferenceReducerMean    VisualizationReferenceReducer = "mean"
+	VisualizationReferenceReducerMedian  VisualizationReferenceReducer = "median"
+)
+
+type VisualizationReferenceValueVariant interface {
+	isVisualizationReferenceValueVariant()
+}
+
+type VisualizationReferenceValue struct {
+	Value VisualizationReferenceValueVariant
+}
+
+func (*FieldVisualizationReferenceValue) isVisualizationReferenceValueVariant()  {}
+func (*NumberVisualizationReferenceValue) isVisualizationReferenceValueVariant() {}
+func (*TextVisualizationReferenceValue) isVisualizationReferenceValueVariant()   {}
+
+func (value VisualizationReferenceValue) MarshalJSON() ([]byte, error) {
+	switch variant := value.Value.(type) {
+	case *FieldVisualizationReferenceValue:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationReferenceValue variant is nil")
+		}
+		return json.Marshal(variant)
+	case *NumberVisualizationReferenceValue:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationReferenceValue variant is nil")
+		}
+		return json.Marshal(variant)
+	case *TextVisualizationReferenceValue:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationReferenceValue variant is nil")
+		}
+		return json.Marshal(variant)
+	case nil:
+		return nil, fmt.Errorf("VisualizationReferenceValue variant is required")
+	default:
+		return nil, fmt.Errorf("unsupported VisualizationReferenceValue variant %T", variant)
+	}
+}
+
+func (value *VisualizationReferenceValue) UnmarshalJSON(data []byte) error {
+	if value == nil {
+		return fmt.Errorf("cannot unmarshal VisualizationReferenceValue into nil receiver")
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return fmt.Errorf("decode VisualizationReferenceValue object: %w", err)
+	}
+	var tag struct {
+		Value string `json:"kind"`
+	}
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return fmt.Errorf("decode VisualizationReferenceValue discriminator: %w", err)
+	}
+	if tag.Value == "" {
+		return fmt.Errorf("VisualizationReferenceValue discriminator kind is required")
+	}
+	decode := func(dest any) error {
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.DisallowUnknownFields()
+		return decoder.Decode(dest)
+	}
+	switch tag.Value {
+	case "field":
+		if _, ok := fields["field"]; !ok {
+			return fmt.Errorf("decode VisualizationReferenceValue variant %q: required property field is missing", tag.Value)
+		}
+		if _, ok := fields["kind"]; !ok {
+			return fmt.Errorf("decode VisualizationReferenceValue variant %q: required property kind is missing", tag.Value)
+		}
+		if _, ok := fields["reducer"]; !ok {
+			return fmt.Errorf("decode VisualizationReferenceValue variant %q: required property reducer is missing", tag.Value)
+		}
+		var variant FieldVisualizationReferenceValue
+		if err := decode(&variant); err != nil {
+			return fmt.Errorf("decode VisualizationReferenceValue variant %q: %w", tag.Value, err)
+		}
+		value.Value = &variant
+	case "number":
+		if _, ok := fields["kind"]; !ok {
+			return fmt.Errorf("decode VisualizationReferenceValue variant %q: required property kind is missing", tag.Value)
+		}
+		if _, ok := fields["value"]; !ok {
+			return fmt.Errorf("decode VisualizationReferenceValue variant %q: required property value is missing", tag.Value)
+		}
+		var variant NumberVisualizationReferenceValue
+		if err := decode(&variant); err != nil {
+			return fmt.Errorf("decode VisualizationReferenceValue variant %q: %w", tag.Value, err)
+		}
+		value.Value = &variant
+	case "text":
+		if _, ok := fields["kind"]; !ok {
+			return fmt.Errorf("decode VisualizationReferenceValue variant %q: required property kind is missing", tag.Value)
+		}
+		if _, ok := fields["value"]; !ok {
+			return fmt.Errorf("decode VisualizationReferenceValue variant %q: required property value is missing", tag.Value)
+		}
+		var variant TextVisualizationReferenceValue
+		if err := decode(&variant); err != nil {
+			return fmt.Errorf("decode VisualizationReferenceValue variant %q: %w", tag.Value, err)
+		}
+		value.Value = &variant
+	default:
+		return fmt.Errorf("unknown VisualizationReferenceValue discriminator %q", tag.Value)
+	}
+	return nil
+}
+
+type VisualizationReferenceValueVisitor interface {
+	VisitFieldVisualizationReferenceValue(*FieldVisualizationReferenceValue) error
+	VisitNumberVisualizationReferenceValue(*NumberVisualizationReferenceValue) error
+	VisitTextVisualizationReferenceValue(*TextVisualizationReferenceValue) error
+}
+
+func (value *VisualizationReferenceValue) Visit(visitor VisualizationReferenceValueVisitor) error {
+	if value == nil {
+		return fmt.Errorf("cannot visit nil VisualizationReferenceValue")
+	}
+	if visitor == nil {
+		return fmt.Errorf("VisualizationReferenceValue visitor is required")
+	}
+	switch variant := value.Value.(type) {
+	case *FieldVisualizationReferenceValue:
+		if variant == nil {
+			return fmt.Errorf("VisualizationReferenceValue variant is nil")
+		}
+		return visitor.VisitFieldVisualizationReferenceValue(variant)
+	case *NumberVisualizationReferenceValue:
+		if variant == nil {
+			return fmt.Errorf("VisualizationReferenceValue variant is nil")
+		}
+		return visitor.VisitNumberVisualizationReferenceValue(variant)
+	case *TextVisualizationReferenceValue:
+		if variant == nil {
+			return fmt.Errorf("VisualizationReferenceValue variant is nil")
+		}
+		return visitor.VisitTextVisualizationReferenceValue(variant)
+	case nil:
+		return fmt.Errorf("VisualizationReferenceValue variant is required")
+	default:
+		return fmt.Errorf("unsupported VisualizationReferenceValue variant %T", variant)
+	}
+}
+
+func (value *VisualizationReferenceValue) Kind() (string, error) {
+	if value == nil {
+		return "", fmt.Errorf("cannot inspect nil VisualizationReferenceValue")
+	}
+	switch variant := value.Value.(type) {
+	case *FieldVisualizationReferenceValue:
+		if variant == nil {
+			return "", fmt.Errorf("VisualizationReferenceValue variant is nil")
+		}
+		return "field", nil
+	case *NumberVisualizationReferenceValue:
+		if variant == nil {
+			return "", fmt.Errorf("VisualizationReferenceValue variant is nil")
+		}
+		return "number", nil
+	case *TextVisualizationReferenceValue:
+		if variant == nil {
+			return "", fmt.Errorf("VisualizationReferenceValue variant is nil")
+		}
+		return "text", nil
+	case nil:
+		return "", fmt.Errorf("VisualizationReferenceValue variant is required")
+	default:
+		return "", fmt.Errorf("unsupported VisualizationReferenceValue variant %T", variant)
+	}
+}
+
+func (value *VisualizationReferenceValue) Base() (*VisualizationReferenceValueBase, error) {
+	if value == nil {
+		return nil, fmt.Errorf("cannot inspect nil VisualizationReferenceValue")
+	}
+	switch variant := value.Value.(type) {
+	case *FieldVisualizationReferenceValue:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationReferenceValue variant is nil")
+		}
+		return &variant.VisualizationReferenceValueBase, nil
+	case *NumberVisualizationReferenceValue:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationReferenceValue variant is nil")
+		}
+		return &variant.VisualizationReferenceValueBase, nil
+	case *TextVisualizationReferenceValue:
+		if variant == nil {
+			return nil, fmt.Errorf("VisualizationReferenceValue variant is nil")
+		}
+		return &variant.VisualizationReferenceValueBase, nil
+	case nil:
+		return nil, fmt.Errorf("VisualizationReferenceValue variant is required")
+	default:
+		return nil, fmt.Errorf("unsupported VisualizationReferenceValue variant %T", variant)
+	}
+}
+
+type VisualizationReferenceValueBase struct {
+	Kind string `json:"kind"`
 }
 
 type VisualizationSelectionEntry struct {
