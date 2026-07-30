@@ -4,23 +4,11 @@ LeapView visuals are defined in dashboard YAML. Every visual has a required `typ
 
 Every preview is compiled and queried from the YAML printed beside it against a fixed documentation dataset. Invalid or stale examples fail documentation generation.
 
-## ECharts interaction capabilities
-
-All built-in charts below use the typed ECharts adapter. “Selectable” means a rendered source row can originate the existing semantic `point_selection` interaction when the YAML declares stable mappings and explicit targets. It does not mean selection is enabled by default.
-
-| Visuals | Source-row selection | Notes |
-| --- | --- | --- |
-| Line, area, bar, column, combo | Yes | Each rendered Cartesian datum resolves to its original frame row. |
-| Scatter and bubble | Yes | Point identity is explicit and never derived from a durable renderer row index. |
-| Waterfall | Yes | The visible value bar is selectable; the synthetic offset series is silent. |
-| Histogram, heatmap, candlestick, boxplot | Yes | Selection requires a stable compiled identity in the shaped source row. |
-| Pie, donut, funnel | Yes | Each sector or stage resolves to a source row. |
-| Gauge | Yes | The single gauge datum may resolve to its source row. |
-| Treemap, sunburst, tree | Yes | A real hierarchy row is selectable when every compiled mapping has a value at that depth; incomplete ancestors and synthetic roots are silent. |
-| Graph, Sankey | Yes | Source links are selectable through their private row locators; aggregate renderer nodes remain silent. |
-| Radar | No | A radar polygon represents several source rows, so `point_selection` fails compilation. |
-
-Unsupported interaction declarations fail deployment compilation instead of rendering an approximation. Map point and region selection use the separate MapLibre interaction path documented on the [map page](/docs/visuals/map).
+Visual previews are deliberately isolated and do not run the dashboard interaction
+runtime. Keep cross-filter and cross-highlight declarations out of these examples.
+Use the [Filters and interactions guide](/docs/guides/build/filters-interactions)
+and the Visual Showcase interaction matrix to test selections with canonical
+filter state, revisions, target planning, and clear behavior.
 
 ## Label density and collision policy
 

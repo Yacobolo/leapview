@@ -1,7 +1,8 @@
 import type { VisualizationEnvelope } from '../../../../generated/visualization'
 import type { ECharts, EChartsOption } from 'echarts'
 import { Change, defaultRendererContext, normalizeRendererLocale, type RendererAdapter, type RendererContext, type RendererHandle } from '../host-controller'
-import { interactionCommandForRow } from '../interaction-command'
+import { clearInteractionCommand, interactionCommandForRow } from '../interaction-command'
+import { projectVisualizationHighlights } from '../highlight'
 import { baseOption } from './echarts/common'
 import { cartesianOption } from './echarts/cartesian'
 import { hierarchyOption } from './echarts/hierarchy'
@@ -24,7 +25,42 @@ export function echartsOption(envelope: VisualizationEnvelope, context: Renderer
   }
   const option = { ...base, ...translated } as Record<string, any>
   if (base.graphic && translated.graphic) option.graphic = [...base.graphic, ...translated.graphic]
+  applyCrossHighlight(option, envelope)
   return option as EChartsOption
+}
+
+function applyCrossHighlight(option: Record<string, any>, envelope: VisualizationEnvelope): void {
+  if (envelope.dataState.kind !== 'inline' || (envelope.highlights ?? []).length === 0) return
+  const datasetID = envelope.spec.datasets[0]?.id
+  const dataset = envelope.dataState.datasets.find((candidate) => candidate.id === datasetID)
+  if (!dataset) return
+  const projection = projectVisualizationHighlights(envelope, dataset.id, dataset.columns, dataset.rows)
+  const series = Array.isArray(option.series) ? option.series : option.series ? [option.series] : []
+  for (const item of series) {
+    const rowIndices = seriesRowIndices(envelope, dataset.columns, dataset.rows, item)
+    const opacity = (params: { dataIndex?: number }) => {
+      if (projection.matchedRows.size === 0) return 0.45
+      const rowIndex = params.dataIndex === undefined ? undefined : rowIndices[params.dataIndex]
+      return rowIndex !== undefined && projection.matchedRows.has(rowIndex) ? 1 : 0.2
+    }
+    item.itemStyle = { ...(item.itemStyle ?? {}), opacity }
+    item.lineStyle = { ...(item.lineStyle ?? {}), opacity: 0.55 }
+  }
+  option.aria = { ...(option.aria ?? {}), enabled: true, description: projection.announcement }
+}
+
+function seriesRowIndices(
+  envelope: VisualizationEnvelope,
+  columns: readonly string[],
+  rows: readonly (readonly unknown[])[],
+  series: Record<string, any>,
+): number[] {
+  if (envelope.spec.kind !== 'cartesian' || !envelope.spec.series || series.name === undefined) {
+    return rows.map((_, index) => index)
+  }
+  const index = columns.indexOf(envelope.spec.series.field)
+  if (index < 0) return rows.map((_, rowIndex) => rowIndex)
+  return rows.flatMap((row, rowIndex) => String(row[index]) === String(series.name) ? [rowIndex] : [])
 }
 
 export const adapter: RendererAdapter = {
@@ -145,10 +181,16 @@ export function brushSelectionCommands(envelope: VisualizationEnvelope, params: 
       }
     }
   }
-  return [...indexes].sort((left, right) => left - right).flatMap((index) => {
+  const commands = [...indexes].sort((left, right) => left - right).flatMap((index) => {
     const command = interactionCommandForRow(envelope, datasetID, dataset.rows[index]!)
     return command ? [command] : []
   })
+  if (commands.length === 0) {
+    const clear = clearInteractionCommand(envelope)
+    return clear ? [clear] : []
+  }
+  commands[0] = { ...commands[0]!, action: 'replace' }
+  return commands
 }
 
 export type EChartsUpdatePlan = Readonly<{

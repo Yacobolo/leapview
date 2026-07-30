@@ -30,6 +30,9 @@ func ValidateEnvelope(envelope VisualizationEnvelope) error {
 	if err := validateSelections(envelope, schemas); err != nil {
 		return err
 	}
+	if err := validateHighlights(envelope.Highlights); err != nil {
+		return err
+	}
 	switch state := envelope.DataState.Value.(type) {
 	case *InlineVisualizationDataState:
 		if err := validateInlineState(*state, schemas, base.DataBudget); err != nil {
@@ -246,6 +249,47 @@ func validateSelections(envelope VisualizationEnvelope, schemas map[string]Visua
 		}
 	}
 	return nil
+}
+
+func validateHighlights(highlights []VisualizationHighlightState) error {
+	seen := map[string]struct{}{}
+	for index, highlight := range highlights {
+		if highlight.SourceVisualID == "" || highlight.InteractionID == "" || highlight.Label == "" {
+			return fmt.Errorf("highlight %d requires source visual, interaction, and label", index)
+		}
+		key := highlight.SourceVisualID + "\x00" + highlight.InteractionID
+		if _, exists := seen[key]; exists {
+			return fmt.Errorf("duplicate highlight source %q", key)
+		}
+		seen[key] = struct{}{}
+		if len(highlight.Entries) == 0 && highlight.SpatialGeometry == nil {
+			return fmt.Errorf("highlight %d requires entries or spatial geometry", index)
+		}
+		if highlight.SpatialGeometry != nil && (highlight.SpatialLatitudeFieldID == nil || *highlight.SpatialLatitudeFieldID == "" || highlight.SpatialLongitudeFieldID == nil || *highlight.SpatialLongitudeFieldID == "") {
+			return fmt.Errorf("highlight %d spatial geometry requires latitude and longitude fields", index)
+		}
+		for entryIndex, entry := range highlight.Entries {
+			if len(entry.Mappings) == 0 {
+				return fmt.Errorf("highlight %d entry %d has no mappings", index, entryIndex)
+			}
+			for mappingIndex, mapping := range entry.Mappings {
+				if mapping.TargetFieldID == "" || !isHighlightScalar(mapping.Value) {
+					return fmt.Errorf("highlight %d entry %d mapping %d is invalid", index, entryIndex, mappingIndex)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func isHighlightScalar(value any) bool {
+	switch value := value.(type) {
+	case nil, string, bool:
+		return true
+	default:
+		number, ok := scalarNumber(value)
+		return ok && !math.IsNaN(number) && !math.IsInf(number, 0)
+	}
 }
 
 // ValidateSpec validates semantic field references and data requirements

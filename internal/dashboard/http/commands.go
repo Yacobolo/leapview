@@ -96,6 +96,7 @@ func (h Handler) handleCommandWithBefore(w nethttp.ResponseWriter, r *nethttp.Re
 	_, err := coordinator.BeginPrepared(func(current dashboard.Filters) (dashboardstream.RefreshPreparation, error) {
 		if h.SharedCommandPrepare != nil {
 			prepared, generation, err := h.SharedCommandPrepare(r, request, signals, func(shared dashboard.Filters) (command.PreparedRefresh, error) {
+				shared.DataRevisions = current.DataRevisions
 				return prepare(command.Service{Metrics: metrics}, request, shared)
 			})
 			if err == nil {

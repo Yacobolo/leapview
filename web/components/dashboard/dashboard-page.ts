@@ -36,6 +36,7 @@ import { DashboardVisualizationSignalDecoder } from './visualization/signal-enve
 import {
   applyOptimisticInteraction,
   validateInteractionCommand,
+  visualizationHighlightStates,
   visualizationSelectionEntries,
   type CanonicalInteractionSelection,
   type InteractionConfigLike,
@@ -1000,20 +1001,38 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
   }
 
   private visualFor(component: DashboardComponentSignal): VisualizationEnvelope | undefined {
-    const visuals = this.renderSnapshot?.visuals ?? this.visuals
-    const visual = component.visual ? visuals[component.visual] : undefined
+    const visualMap = this.renderSnapshot?.visuals ?? this.visuals
+    const visual = component.visual ? visualMap[component.visual] : undefined
     if (!visual) return undefined
     const selections = this.optimisticSelections ?? this.interactionSelections
     const spatialSelections = this.optimisticSpatialSelections ?? this.spatialSelections
     const spatialSelection = [...spatialSelections].reverse().find((selection) => selection.visualID === visual.visualID)
-    return { ...visual, selection: visualizationSelectionEntries(visual, selections), ...(spatialSelection ? { spatialSelection } : { spatialSelection: undefined }) }
+    const highlights = this.optimisticSelections !== null || this.optimisticSpatialSelections !== null
+      ? visualizationHighlightStates(visual, visualMap, selections, spatialSelections)
+      : visual.highlights
+    return {
+      ...visual,
+      selection: visualizationSelectionEntries(visual, selections),
+      highlights,
+      ...(spatialSelection ? { spatialSelection } : { spatialSelection: undefined }),
+    }
   }
 
   private handleOptimisticInteraction = (event: CustomEvent<unknown>): void => {
-    const command = optimisticCommand(event.detail)
-    if (!command) return
-    const source = this.visualSignals[command.sourceId]
+    if (!event.detail || typeof event.detail !== 'object') return
+    const candidate = event.detail as Partial<OptimisticInteractionCommand>
+    if (typeof candidate.sourceId !== 'string') return
+    const source = this.visualSignals[candidate.sourceId]
     if (!source || source.filterRevision !== this.canonicalFilterState.revision || this.status.loading) return
+    Object.assign(candidate, {
+      specRevision: source.specRevision,
+      dataRevision: source.dataRevision,
+      servingStateID: source.servingStateID,
+      filterRevision: this.canonicalFilterState.revision,
+      interactionRevision: this.signal<number>('interactionRevision', 0),
+    })
+    const command = optimisticCommand(candidate)
+    if (!command) return
     const configured = this.interactionConfigFor(command.sourceKind, command.sourceId)
     if (!validateInteractionCommand(command, configured)) return
 
@@ -1125,10 +1144,20 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
   }
 
   private handleOptimisticSpatialInteraction = (event: CustomEvent<unknown>): void => {
-    const command = optimisticSpatialCommand(event.detail)
-    if (!command) return
-    const source = this.visualSignals[command.visualID]
+    if (!event.detail || typeof event.detail !== 'object') return
+    const candidate = event.detail as Partial<VisualizationSpatialSelectionCommand>
+    if (typeof candidate.visualID !== 'string') return
+    const source = this.visualSignals[candidate.visualID]
     if (!source || source.filterRevision !== this.canonicalFilterState.revision || this.status.loading) return
+    Object.assign(candidate, {
+      specRevision: source.specRevision,
+      dataRevision: source.dataRevision,
+      servingStateID: source.servingStateID,
+      filterRevision: this.canonicalFilterState.revision,
+      interactionRevision: this.signal<number>('interactionRevision', 0),
+    })
+    const command = optimisticSpatialCommand(candidate)
+    if (!command) return
     const visual = this.visuals[command.visualID]
     if (!visual || visual.spec.kind !== 'geographic' || visual.specRevision !== command.specRevision || visual.dataRevision !== command.dataRevision) return
     const interaction = visual.spec.spatialInteractions.find((candidate) => candidate.id === command.interactionID)
@@ -1186,6 +1215,7 @@ function optimisticSpatialCommand(value: unknown): VisualizationSpatialSelection
   if (!value || typeof value !== 'object') return undefined
   const command = value as Partial<VisualizationSpatialSelectionCommand>
   if (typeof command.visualID !== 'string' || typeof command.specRevision !== 'string' || typeof command.dataRevision !== 'number') return undefined
+  if (typeof command.servingStateID !== 'string' || typeof command.filterRevision !== 'number' || typeof command.interactionRevision !== 'number') return undefined
   if (typeof command.interactionID !== 'string' || (command.gesture !== 'box' && command.gesture !== 'lasso' && command.gesture !== 'radius')) return undefined
   if (command.action !== 'set' && command.action !== 'clear') return undefined
   if (command.action === 'set' && (!command.geometry || command.geometry.kind !== command.gesture)) return undefined
@@ -1197,6 +1227,8 @@ function optimisticCommand(value: unknown): OptimisticInteractionCommand | undef
   const command = value as Partial<OptimisticInteractionCommand>
   if (command.sourceKind !== 'visual') return undefined
   if (typeof command.sourceId !== 'string' || typeof command.interactionKind !== 'string') return undefined
+  if (typeof command.specRevision !== 'string' || typeof command.dataRevision !== 'number' || typeof command.servingStateID !== 'string') return undefined
+  if (typeof command.filterRevision !== 'number' || typeof command.interactionRevision !== 'number') return undefined
   if (command.action !== 'set' && command.action !== 'replace' && command.action !== 'clear') return undefined
   if (typeof command.toggle !== 'boolean' || !Array.isArray(command.mappings)) return undefined
   return command as OptimisticInteractionCommand

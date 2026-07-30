@@ -98,6 +98,7 @@ func RefreshEventPatch(event dashboardstream.RefreshEvent) pagestream.SignalPatc
 		}
 		return pagestream.SignalPatch{
 			"interactionSelections": uisignals.DashboardInteractionSelectionsFromDashboard(event.Filters.Selections),
+			"interactionRevision":   int64(event.Filters.InteractionRevision),
 			"spatialSelections":     uisignals.DashboardSpatialSelectionsFromDashboard(event.Filters.SpatialSelections),
 			"status":                status(true, nil),
 			"visuals":               visuals,
@@ -148,10 +149,11 @@ func visualizationEnvelopeSignal(event dashboardstream.RefreshEvent) Visualizati
 			Kind: visualizationir.VisualizationDataStateKind(transport.Kind), SpecRevision: transport.SpecRevision,
 			DataRevision: transport.DataRevision, Generation: transport.Generation, Payload: transport.Payload,
 		},
-		Selection: envelope.Selection, SpatialSelection: envelope.SpatialSelection,
+		Selection: envelope.Selection, Highlights: envelope.Highlights, SpatialSelection: envelope.SpatialSelection,
 		Status: envelope.Status, Diagnostics: envelope.Diagnostics,
 		StreamGeneration: int64(event.Generation), FilterRevision: event.FilterRevision,
-		ServingStateID: event.ServingStateID, ConsumerIdentity: event.Target,
+		InteractionRevision: int64(event.Filters.InteractionRevision),
+		ServingStateID:      event.ServingStateID, ConsumerIdentity: event.Target,
 	}
 }
 

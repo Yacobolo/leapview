@@ -396,6 +396,22 @@ spec:
           - field: status
             direction: asc
         limit: 120
+    state_status_column:
+      title: Order status by state
+      description: Faceted status columns used as a cross-highlight target in the interaction matrix.
+      type: column
+      query:
+        dimensions:
+          state: customers.state
+        series:
+          field: orders.status
+          alias: status
+        measures:
+          order_count: null
+        sort:
+          - field: state
+            direction: asc
+        limit: 120
     status_delivery_flow:
       title: Status to delivery speed
       description: Shows flow from order status to delivery-speed bucket.
@@ -467,6 +483,54 @@ spec:
             - customer_point_map
             - customer_revenue_heat_map
             - customer_density_map
+    interaction_state_order_map:
+      title: Interaction source by state
+      description: Select a state to exercise explicit filter, highlight, and none edges.
+      type: map
+      presentation: {}
+      query:
+        dimensions:
+          state: customers.state
+        measures:
+          order_count: null
+        sort:
+          - field: order_count
+            direction: desc
+        limit: 27
+      geo:
+        theme: light
+        label_density: normal
+        controls:
+          zoom: true
+          reset: true
+          compass: true
+        layers:
+          - id: states
+            kind: choropleth
+            geometry_asset: brazil_states
+            join: state
+            value: order_count
+            tooltip: [state, order_count]
+            color:
+              kind: sequential
+              palette: teal
+              null_color: "#d8dee4"
+      interaction:
+        point_selection:
+          toggle: true
+          mappings:
+            - field: customers.state
+              fact: orders
+              value: state
+              label: state
+          targets:
+            - orders_table
+          highlight_targets:
+            - state_status_column
+            - customer_point_map
+            - total_orders
+          none_targets:
+            - orders
     status_delivery_graph:
       title: Status and delivery network
       description: Shows status and delivery-speed relationships as a network.
@@ -2096,6 +2160,48 @@ spec:
             col_span: 6
             row_span: 6
       id: overview
+    - id: interactions
+      title: Interaction matrix
+      description: One governed state selection demonstrates filter, highlight, and none edges across ECharts, MapLibre, TanStack, and KPI targets.
+      canvas:
+        width: 1366
+        height: 1056
+      grid:
+        columns: 12
+        row_height: 48
+        gap: 16
+        padding: 16
+      components:
+        - id: interaction-source-map
+          kind: visual
+          visual: interaction_state_order_map
+          description: Select a state to exercise the compiled interaction matrix.
+          placement: {col: 1, row: 1, col_span: 5, row_span: 7}
+        - id: interaction-kpi
+          kind: visual
+          visual: total_orders
+          description: Highlight target that preserves and announces the comparison total.
+          placement: {col: 6, row: 1, col_span: 3, row_span: 3}
+        - id: interaction-none
+          kind: visual
+          visual: orders
+          description: Explicit none target; it remains unchanged by the source map.
+          placement: {col: 9, row: 1, col_span: 4, row_span: 7}
+        - id: interaction-faceted
+          kind: visual
+          visual: state_status_column
+          description: Faceted ECharts highlight target.
+          placement: {col: 6, row: 4, col_span: 3, row_span: 4}
+        - id: interaction-target-map
+          kind: visual
+          visual: customer_point_map
+          description: MapLibre highlight target.
+          placement: {col: 1, row: 8, col_span: 5, row_span: 7}
+        - id: interaction-table
+          kind: visual
+          visual: orders_table
+          description: TanStack cross-filter target.
+          placement: {col: 6, row: 8, col_span: 7, row_span: 7}
     - title: KPI
       description: Governed KPI comparisons, goals, trends, missing context, and qualitative status
       canvas:

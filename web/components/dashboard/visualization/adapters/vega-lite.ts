@@ -82,7 +82,11 @@ export function interactionCommandForDatum(envelope: VisualizationEnvelope, datu
     }
   })
   if (mappings.some((mapping) => mapping === undefined)) return undefined
-  return { sourceKind: 'visual', sourceId: envelope.visualID, interactionKind: interaction.id, action: 'set', toggle: interaction.mode === 'multiple', mappings: mappings as OptimisticInteractionCommand['mappings'] }
+  return {
+    sourceKind: 'visual', sourceId: envelope.visualID, interactionKind: interaction.id,
+    action: 'set', toggle: interaction.mode === 'multiple',
+    mappings: mappings as OptimisticInteractionCommand['mappings'],
+  }
 }
 
 export function assertSafeVegaLiteProgram(source: string, fields: string[]): object {

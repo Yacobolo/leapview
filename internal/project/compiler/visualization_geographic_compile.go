@@ -118,7 +118,8 @@ func compiledSpatialSelectionInteractions(selection reportdef.SpatialSelectionIn
 		}
 	}
 	return []visualizationir.VisualizationSpatialSelectionInteraction{{
-		ID: "spatial_selection", Gestures: gestures, Latitude: mapping(selection.Latitude), Longitude: mapping(selection.Longitude), Targets: append([]string(nil), selection.Targets...),
+		ID: "spatial_selection", Gestures: gestures, Latitude: mapping(selection.Latitude), Longitude: mapping(selection.Longitude),
+		Targets: compiledInteractionTargets(selection.Targets, selection.HighlightTargets, selection.NoneTargets),
 	}}
 }
 

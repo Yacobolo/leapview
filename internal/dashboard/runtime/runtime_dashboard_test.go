@@ -37,17 +37,18 @@ func setCompiledInteractionTarget(spec *visualizationir.VisualizationSpec, targe
 	}
 	targets := proportional.Interactions[0].Targets
 	if enabled {
-		for _, existing := range targets {
-			if existing == target {
+		for index := range targets {
+			if targets[index].VisualID == target {
+				targets[index].Effect = visualizationir.VisualizationInteractionEffectFilter
 				return
 			}
 		}
-		proportional.Interactions[0].Targets = append(targets, target)
+		proportional.Interactions[0].Targets = append(targets, visualizationir.VisualizationInteractionTarget{VisualID: target, Effect: visualizationir.VisualizationInteractionEffectFilter})
 		return
 	}
 	filtered := targets[:0]
 	for _, existing := range targets {
-		if existing != target {
+		if existing.VisualID != target {
 			filtered = append(filtered, existing)
 		}
 	}

@@ -259,10 +259,11 @@ test('dashboard keeps the source visualization selected through canonicalization
       await element.updateComplete
       const source = Array.from(element.shadowRoot.querySelectorAll('lv-visualization-host') as NodeListOf<any>)
         .find((host: any) => host.envelope?.visualID === 'orders_chart')
-      source.dispatchEvent(new CustomEvent('lv-interaction-select', { bubbles: true, composed: true, detail: {
+      const command = {
         sourceKind: 'visual', sourceId: 'orders_chart', interactionKind: 'selection', action: 'set', toggle: true,
         mappings: [{ field: 'orders.status', fact: 'orders', value: 'delivered', label: 'Delivered' }],
-      } }))
+      }
+      source.dispatchEvent(new CustomEvent('lv-interaction-select', { bubbles: true, composed: true, detail: command }))
       const optimistic = await readSelection()
 
       mergePatch({
@@ -279,12 +280,25 @@ test('dashboard keeps the source visualization selected through canonicalization
         status: { generation: 5, refreshId: 'refresh-5', loading: false, progressPercent: 100 },
       })
       const cleared = await readSelection()
-      return { optimistic, canonical, cleared }
+      return { optimistic, canonical, cleared, command }
     })
     const selected = [{
       datum: { dataset: 'primary', dataRevision: 1, identity: { label: 'delivered' } }, label: 'Delivered',
     }]
-    expect(selections).toEqual({ optimistic: selected, canonical: selected, cleared: [] })
+    expect(selections).toEqual({
+      optimistic: selected,
+      canonical: selected,
+      cleared: [],
+      command: {
+        sourceKind: 'visual', sourceId: 'orders_chart', interactionKind: 'selection', action: 'set', toggle: true,
+        mappings: [{ field: 'orders.status', fact: 'orders', value: 'delivered', label: 'Delivered' }],
+        specRevision: `sha256:${'2'.repeat(64)}`,
+        dataRevision: 1,
+        servingStateID: 'serving-test',
+        filterRevision: 0,
+        interactionRevision: 0,
+      },
+    })
   } finally { await page.close() }
 })
 
@@ -1720,6 +1734,7 @@ function testDocument(): string {
       dashboardId: 'executive-sales', pageId: 'overview', servingStateId: 'serving-test',
     },
     interactionSelections,
+    interactionRevision: 0,
     spatialSelections: [],
     visuals: testVisualizationSignals(),
     status: { loading: true, error: '', refreshId: 'refresh-3', generation: 3, lastUpdated: '2026-07-18T10:00:00Z', setupRequired: false, progressPercent: 50 },
@@ -1776,16 +1791,24 @@ function testVisualizationEnvelopes() {
   const base = (title: string, fields: unknown[]) => ({ title, datasets: [{ id: 'primary', fields }], dataBudget: { maxRows: 1000, requiredCompleteness: 'complete' }, accessibility: { title, description: title }, interactions: [] })
   const inline = (revision: string, columns: string[], rows: unknown[][]) => ({ kind: 'inline', specRevision: revision, dataRevision: 1, generation: 3, datasets: [{ id: 'primary', specRevision: revision, dataRevision: 1, generation: 3, columns, rows, completeness: 'complete' }] })
   return {
-    orders_kpi: { schemaVersion: 8, visualID: 'orders_kpi', rendererID: 'html', specRevision: kpiRevision, dataRevision: 1, spec: { ...base('Orders', [field('value', 'measure', 'decimal', 'Orders')]), kind: 'kpi', value: { dataset: 'primary', field: 'value' }, presentation: { mode: 'compact', delta: 'absolute', favorableDirection: 'neutral', missingComparison: 'show_unavailable', ranges: [], tone: 'ink', note: 'Filtered' } }, dataState: inline(kpiRevision, ['value'], [[42]]), selection: [], status: { kind: 'ready' }, diagnostics: [] },
-    orders_chart: { schemaVersion: 8, visualID: 'orders_chart', rendererID: 'echarts', specRevision: chartRevision, dataRevision: 1, spec: { ...base('Orders by status', [field('label', 'identity', 'string', 'Status'), field('value', 'measure', 'decimal', 'Orders')]), kind: 'cartesian', mark: 'bar', interactions: [{ id: 'selection', kind: 'select', mappings: [{ source: { dataset: 'primary', field: 'label' }, targetFieldID: 'orders.status', targetFactID: 'orders' }], targets: ['orders_kpi', 'orders'], mode: 'multiple', requiresStableIdentity: true }], x: { dataset: 'primary', field: 'label' }, y: [{ dataset: 'primary', field: 'value' }], presentation: { legend: 'hidden', labelPolicy: { density: 'hidden', priority: [], maxCharacters: 24, minimumSpacing: 0, tooltipFallback: true }, smooth: false, stacked: false, showSymbols: true, dataZoom: false, area: false, step: false } }, dataState: inline(chartRevision, ['label', 'value'], [['delivered', 42], ['shipped', 7]]), selection: [], status: { kind: 'loading', message: 'Refreshing' }, diagnostics: [] },
-    orders: { schemaVersion: 8, visualID: 'orders', rendererID: 'tanstack', specRevision: tableRevision, dataRevision: 1, spec: { ...base('Orders', [field('order_id', 'identity', 'string', 'Order')]), kind: 'table', dataBudget: { maxRows: 1000, requiredCompleteness: 'partial' }, columns: [{ field: { dataset: 'primary', field: 'order_id' }, label: 'Order', width: 180, formatting: [] }], defaultSort: [{ field: { dataset: 'primary', field: 'order_id' }, direction: 'ascending' }], presentation: { rowHeight: 28, striped: true, showHeader: true } }, dataState: { kind: 'windowed', specRevision: tableRevision, dataRevision: 1, generation: 3, schema: { id: 'primary', fields: [field('order_id', 'identity', 'string', 'Order')] }, cardinality: { kind: 'exact', count: 250 }, availableRows: 250, rowCap: 1000, chunkSize: 50, resetVersion: 0, sort: [{ field: { dataset: 'primary', field: 'order_id' }, direction: 'ascending' }], blocks: { a: { id: 'a', start: 0, rows: Array.from({ length: 50 }, (_, index) => [`o${index + 1}`]), requestSeq: 0, resetVersion: 0, sort: [{ field: { dataset: 'primary', field: 'order_id' }, direction: 'ascending' }] } } }, selection: [], status: { kind: 'error', message: 'Ratings query failed' }, diagnostics: [{ code: 'query_failed', severity: 'error', message: 'Ratings query failed' }] },
+    orders_kpi: { schemaVersion: 9, visualID: 'orders_kpi', rendererID: 'html', specRevision: kpiRevision, dataRevision: 1, spec: { ...base('Orders', [field('value', 'measure', 'decimal', 'Orders')]), kind: 'kpi', value: { dataset: 'primary', field: 'value' }, presentation: { mode: 'compact', delta: 'absolute', favorableDirection: 'neutral', missingComparison: 'show_unavailable', ranges: [], tone: 'ink', note: 'Filtered' } }, dataState: inline(kpiRevision, ['value'], [[42]]), selection: [], highlights: [], status: { kind: 'ready' }, diagnostics: [] },
+    orders_chart: { schemaVersion: 9, visualID: 'orders_chart', rendererID: 'echarts', specRevision: chartRevision, dataRevision: 1, spec: { ...base('Orders by status', [field('label', 'identity', 'string', 'Status'), field('value', 'measure', 'decimal', 'Orders')]), kind: 'cartesian', mark: 'bar', interactions: [{ id: 'selection', kind: 'select', mappings: [{ source: { dataset: 'primary', field: 'label' }, targetFieldID: 'orders.status', targetFactID: 'orders' }], targets: [{ visualID: 'orders_kpi', effect: 'highlight' }, { visualID: 'orders', effect: 'filter' }], mode: 'multiple', requiresStableIdentity: true }], x: { dataset: 'primary', field: 'label' }, y: [{ dataset: 'primary', field: 'value' }], presentation: { legend: 'hidden', labelPolicy: { density: 'hidden', priority: [], maxCharacters: 24, minimumSpacing: 0, tooltipFallback: true }, smooth: false, stacked: false, showSymbols: true, dataZoom: false, area: false, step: false } }, dataState: inline(chartRevision, ['label', 'value'], [['delivered', 42], ['shipped', 7]]), selection: [], highlights: [], status: { kind: 'loading', message: 'Refreshing' }, diagnostics: [] },
+    orders: { schemaVersion: 9, visualID: 'orders', rendererID: 'tanstack', specRevision: tableRevision, dataRevision: 1, spec: { ...base('Orders', [field('order_id', 'identity', 'string', 'Order')]), kind: 'table', dataBudget: { maxRows: 1000, requiredCompleteness: 'partial' }, columns: [{ field: { dataset: 'primary', field: 'order_id' }, label: 'Order', width: 180, formatting: [] }], defaultSort: [{ field: { dataset: 'primary', field: 'order_id' }, direction: 'ascending' }], presentation: { rowHeight: 28, striped: true, showHeader: true } }, dataState: { kind: 'windowed', specRevision: tableRevision, dataRevision: 1, generation: 3, schema: { id: 'primary', fields: [field('order_id', 'identity', 'string', 'Order')] }, cardinality: { kind: 'exact', count: 250 }, availableRows: 250, rowCap: 1000, chunkSize: 50, resetVersion: 0, sort: [{ field: { dataset: 'primary', field: 'order_id' }, direction: 'ascending' }], blocks: { a: { id: 'a', start: 0, rows: Array.from({ length: 50 }, (_, index) => [`o${index + 1}`]), requestSeq: 0, resetVersion: 0, sort: [{ field: { dataset: 'primary', field: 'order_id' }, direction: 'ascending' }] } } }, selection: [], highlights: [], status: { kind: 'error', message: 'Ratings query failed' }, diagnostics: [{ code: 'query_failed', severity: 'error', message: 'Ratings query failed' }] },
   }
 }
 
 function testVisualizationSignals() {
   return Object.fromEntries(Object.entries(testVisualizationEnvelopes()).map(([id, envelope]) => {
     const { dataState, ...signal } = envelope
-    return [id, { ...signal, filterRevision: 0, dataState: { schemaVersion: 1, encoding: 'json', kind: dataState.kind, specRevision: dataState.specRevision, dataRevision: dataState.dataRevision, generation: dataState.generation, payload: JSON.stringify(dataState) } }]
+    return [id, {
+      ...signal,
+      servingStateID: 'serving-test',
+      streamGeneration: 3,
+      filterRevision: 0,
+      interactionRevision: 0,
+      consumerIdentity: `visual:${id}`,
+      dataState: { schemaVersion: 1, encoding: 'json', kind: dataState.kind, specRevision: dataState.specRevision, dataRevision: dataState.dataRevision, generation: dataState.generation, payload: JSON.stringify(dataState) },
+    }]
   }))
 }
 

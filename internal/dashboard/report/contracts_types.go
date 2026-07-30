@@ -702,9 +702,11 @@ type Interaction struct {
 }
 
 type SelectionInteraction struct {
-	Toggle   bool               `yaml:"toggle" json:"toggle,omitempty"`
-	Mappings []SelectionMapping `yaml:"mappings" json:"mappings,omitempty"`
-	Targets  []string           `yaml:"targets" json:"targets,omitempty"`
+	Toggle           bool               `yaml:"toggle" json:"toggle,omitempty"`
+	Mappings         []SelectionMapping `yaml:"mappings" json:"mappings,omitempty"`
+	Targets          []string           `yaml:"targets" json:"targets,omitempty"`
+	HighlightTargets []string           `yaml:"highlight_targets" json:"highlightTargets,omitempty"`
+	NoneTargets      []string           `yaml:"none_targets" json:"noneTargets,omitempty"`
 }
 
 type SelectionMapping struct {
@@ -716,10 +718,12 @@ type SelectionMapping struct {
 }
 
 type SpatialSelectionInteraction struct {
-	Gestures  []string                `yaml:"gestures" json:"gestures"`
-	Latitude  SpatialSelectionMapping `yaml:"latitude" json:"latitude"`
-	Longitude SpatialSelectionMapping `yaml:"longitude" json:"longitude"`
-	Targets   []string                `yaml:"targets" json:"targets"`
+	Gestures         []string                `yaml:"gestures" json:"gestures"`
+	Latitude         SpatialSelectionMapping `yaml:"latitude" json:"latitude"`
+	Longitude        SpatialSelectionMapping `yaml:"longitude" json:"longitude"`
+	Targets          []string                `yaml:"targets" json:"targets"`
+	HighlightTargets []string                `yaml:"highlight_targets" json:"highlightTargets,omitempty"`
+	NoneTargets      []string                `yaml:"none_targets" json:"noneTargets,omitempty"`
 }
 
 type SpatialSelectionMapping struct {
@@ -729,7 +733,7 @@ type SpatialSelectionMapping struct {
 }
 
 func (s SpatialSelectionInteraction) IsZero() bool {
-	return len(s.Gestures) == 0 && s.Latitude == (SpatialSelectionMapping{}) && s.Longitude == (SpatialSelectionMapping{}) && len(s.Targets) == 0
+	return len(s.Gestures) == 0 && s.Latitude == (SpatialSelectionMapping{}) && s.Longitude == (SpatialSelectionMapping{}) && len(s.Targets) == 0 && len(s.HighlightTargets) == 0 && len(s.NoneTargets) == 0
 }
 
 func (s *SpatialSelectionInteraction) UnmarshalYAML(value *yaml.Node) error {
@@ -754,6 +758,14 @@ func (s *SpatialSelectionInteraction) UnmarshalYAML(value *yaml.Node) error {
 			}
 		case "targets":
 			if err := item.Decode(&s.Targets); err != nil {
+				return err
+			}
+		case "highlight_targets":
+			if err := item.Decode(&s.HighlightTargets); err != nil {
+				return err
+			}
+		case "none_targets":
+			if err := item.Decode(&s.NoneTargets); err != nil {
 				return err
 			}
 		default:
@@ -781,6 +793,14 @@ func (s *SelectionInteraction) UnmarshalYAML(value *yaml.Node) error {
 			}
 		case "targets":
 			if err := item.Decode(&s.Targets); err != nil {
+				return err
+			}
+		case "highlight_targets":
+			if err := item.Decode(&s.HighlightTargets); err != nil {
+				return err
+			}
+		case "none_targets":
+			if err := item.Decode(&s.NoneTargets); err != nil {
 				return err
 			}
 		default:
@@ -821,7 +841,7 @@ func (i *Interaction) UnmarshalYAML(value *yaml.Node) error {
 }
 
 func (s SelectionInteraction) IsZero() bool {
-	return !s.Toggle && len(s.Mappings) == 0 && len(s.Targets) == 0
+	return !s.Toggle && len(s.Mappings) == 0 && len(s.Targets) == 0 && len(s.HighlightTargets) == 0 && len(s.NoneTargets) == 0
 }
 
 type TableVisual struct {

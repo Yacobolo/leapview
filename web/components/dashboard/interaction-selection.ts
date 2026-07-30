@@ -1,4 +1,9 @@
-import type { VisualizationEnvelope, VisualizationSelectionEntry } from '../../generated/visualization'
+import type {
+  VisualizationEnvelope,
+  VisualizationHighlightState,
+  VisualizationSelectionEntry,
+  VisualizationSpatialSelectionState,
+} from '../../generated/visualization'
 
 export type InteractionSelectionValue = string | number | boolean | null
 
@@ -37,7 +42,7 @@ export interface InteractionConfigLike {
   kind?: string
   toggle?: boolean
   mappings?: InteractionMapping[]
-  targets?: string[]
+  targets?: Array<{ visualID: string; effect: 'none' | 'filter' | 'highlight' }>
 }
 
 export interface OptimisticInteractionCommand {
@@ -47,6 +52,11 @@ export interface OptimisticInteractionCommand {
   action: 'set' | 'replace' | 'clear'
   toggle: boolean
   mappings: InteractionSelectionMapping[]
+  specRevision?: string
+  dataRevision?: number
+  servingStateID?: string
+  filterRevision?: number
+  interactionRevision?: number
 }
 
 export function canonicalSelectionEntriesForSource(
@@ -93,6 +103,56 @@ export function visualizationSelectionEntries(
       ...(entry.label ? { label: entry.label } : {}),
     }]
   })
+}
+
+export function visualizationHighlightStates(
+  target: VisualizationEnvelope,
+  visuals: Readonly<Record<string, VisualizationEnvelope>>,
+  selections: readonly CanonicalInteractionSelection[] | undefined,
+  spatialSelections: readonly VisualizationSpatialSelectionState[] | undefined,
+): VisualizationHighlightState[] {
+  const highlights: VisualizationHighlightState[] = []
+  for (const selection of selections ?? []) {
+    if (selection.sourceKind !== 'visual' || (selection.entries?.length ?? 0) === 0) continue
+    const source = visuals[selection.sourceId]
+    const interaction = source?.spec.interactions.find((candidate) =>
+      candidate.id === selection.interactionKind
+      && candidate.targets.some((candidate) => candidate.visualID === target.visualID && candidate.effect === 'highlight'))
+    if (!interaction) continue
+    highlights.push({
+      sourceVisualID: selection.sourceId,
+      interactionID: interaction.id,
+      entries: (selection.entries ?? []).map((entry) => ({
+        mappings: (entry.mappings ?? []).map((mapping) => ({
+          targetFieldID: mapping.field,
+          ...(mapping.fact ? { targetFactID: mapping.fact } : {}),
+          ...(mapping.grain ? { grain: mapping.grain } : {}),
+          value: mapping.value,
+          ...(mapping.label ? { label: mapping.label } : {}),
+        })),
+        label: entry.label ?? '',
+      })),
+      label: selection.label ?? '',
+    })
+  }
+  for (const selection of spatialSelections ?? []) {
+    const source = visuals[selection.visualID]
+    if (source?.spec.kind !== 'geographic') continue
+    const interaction = source.spec.spatialInteractions.find((candidate) =>
+      candidate.id === selection.interactionID
+      && candidate.targets.some((candidate) => candidate.visualID === target.visualID && candidate.effect === 'highlight'))
+    if (!interaction) continue
+    highlights.push({
+      sourceVisualID: selection.visualID,
+      interactionID: selection.interactionID,
+      entries: [],
+      spatialGeometry: selection.geometry,
+      spatialLatitudeFieldID: interaction.latitude.targetFieldID,
+      spatialLongitudeFieldID: interaction.longitude.targetFieldID,
+      label: 'Spatial selection',
+    })
+  }
+  return highlights
 }
 
 export function interactionSelectionValue(value: unknown): InteractionSelectionValue | undefined {

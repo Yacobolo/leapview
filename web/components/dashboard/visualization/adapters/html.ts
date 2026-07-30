@@ -30,6 +30,7 @@ class HTMLHandle implements RendererHandle {
       const tone = state.rangeTone ?? envelope.spec.presentation.tone
       if (tone) article.dataset.tone = tone
     }
+    if (state.highlightActive) article.dataset.highlighted = 'true'
     const label = document.createElement('div')
     label.className = 'lv-visualization-label'
     label.textContent = metadata.title
@@ -116,6 +117,13 @@ class HTMLHandle implements RendererHandle {
       status.dataset.tone = 'warning'
       status.textContent = 'Status: Out of range'
       article.append(status)
+    }
+    if (state.highlightAnnouncement) {
+      const highlight = document.createElement('small')
+      highlight.className = 'lv-visualization-note'
+      highlight.setAttribute('aria-live', 'polite')
+      highlight.textContent = state.highlightAnnouncement
+      article.append(highlight)
     }
     if (state.trend.length > 0) {
       const namespace = 'http://www.w3.org/2000/svg'

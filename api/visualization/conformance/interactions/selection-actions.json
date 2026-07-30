@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "sourceKind": "visual",
+  "sourceId": "state_chart",
+  "interactionKind": "point_selection",
+  "field": "customers.state",
+  "cases": [
+    {
+      "name": "multi_point_add",
+      "steps": [
+        {"action": "set", "toggle": true, "value": "SP"},
+        {"action": "set", "toggle": true, "value": "RJ"}
+      ],
+      "expectedValues": ["SP", "RJ"]
+    },
+    {
+      "name": "brush_replace",
+      "steps": [
+        {"action": "set", "toggle": true, "value": "SP"},
+        {"action": "replace", "toggle": true, "value": "RJ"}
+      ],
+      "expectedValues": ["RJ"]
+    },
+    {
+      "name": "brush_addition",
+      "steps": [
+        {"action": "replace", "toggle": true, "value": "SP"},
+        {"action": "set", "toggle": true, "value": "RJ"}
+      ],
+      "expectedValues": ["SP", "RJ"]
+    },
+    {
+      "name": "clear",
+      "steps": [
+        {"action": "set", "toggle": true, "value": "SP"},
+        {"action": "set", "toggle": true, "value": "RJ"},
+        {"action": "clear", "toggle": true}
+      ],
+      "expectedValues": []
+    }
+  ]
+}

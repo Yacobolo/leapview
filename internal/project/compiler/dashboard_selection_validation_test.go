@@ -97,6 +97,28 @@ func TestValidateDashboardAllowsSelectionFromHierarchyNodesAndNetworkLinks(t *te
 	}
 }
 
+func TestCompileDashboardRequiresHighlightTargetsToExposeMappedFieldsUnlessTheyAreKPIs(t *testing.T) {
+	dashboardDefinition, model := compilerSelectionFixture(report.SelectionMapping{Field: "release_decade", Value: "label"})
+	source := *dashboardDefinition.Visuals["source"].Chart
+	source.Interaction.PointSelection.Targets = nil
+	source.Interaction.PointSelection.HighlightTargets = []string{"target"}
+	dashboardDefinition.Visuals["source"] = report.ChartVisualization(source)
+
+	target := *dashboardDefinition.Visuals["target"].Chart
+	target.Query.Dimensions = nil
+	dashboardDefinition.Visuals["target"] = report.ChartVisualization(target)
+	if _, err := CompileVisualizationDefinitions(dashboardDefinition, model); err == nil || !strings.Contains(err.Error(), `does not expose mapped field "release_decade"`) {
+		t.Fatalf("incompatible highlight target error = %v", err)
+	}
+
+	target.Type = "kpi"
+	target.Query.Measures = target.Query.Measures[:1]
+	dashboardDefinition.Visuals["target"] = report.ChartVisualization(target)
+	if _, err := CompileVisualizationDefinitions(dashboardDefinition, model); err != nil {
+		t.Fatalf("KPI comparison-context highlight error = %v", err)
+	}
+}
+
 func TestValidateDashboardResolvesNumericSpatialSelectionCoordinates(t *testing.T) {
 	dashboardDefinition, model := compilerSpatialSelectionFixture()
 	if err := ValidateDashboard(dashboardDefinition, map[string]*semanticmodel.Model{"model": model}); err != nil {

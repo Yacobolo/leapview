@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 8,
+  "schemaVersion": 9,
   "visualID": "orders",
   "rendererID": "tanstack",
   "specRevision": "sha256:8e2bcc88fa8dec7ee0588bcc09cfda7b28ff97679a1e2d2c67280a189f9a7fdc",
@@ -130,6 +130,7 @@
       }
     }
   },
+  "highlights": [],
   "selection": [],
   "status": {
     "kind": "ready"

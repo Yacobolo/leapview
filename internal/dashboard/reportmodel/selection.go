@@ -29,9 +29,10 @@ type ResolvedSelectionMapping struct {
 }
 
 type ResolvedSelectionTarget struct {
-	Kind  string
-	ID    string
-	Facts []string
+	Kind   string
+	ID     string
+	Facts  []string
+	Effect string
 }
 
 type ResolvedSpatialSelectionInteraction struct {
@@ -73,8 +74,13 @@ func ResolveSpatialSelectionInteraction(d *report.Dashboard, model *semanticmode
 	if err := validateSelectionSourceFacts(d, model, "visual", sourceID, mappings); err != nil {
 		return ResolvedSpatialSelectionInteraction{}, err
 	}
-	resolved := ResolvedSpatialSelectionInteraction{Latitude: latitude, Longitude: longitude, Targets: make([]ResolvedSelectionTarget, 0, len(selection.Targets))}
-	for _, targetID := range selection.Targets {
+	targetEffects, err := authoredInteractionTargets(selection.Targets, selection.HighlightTargets, selection.NoneTargets)
+	if err != nil {
+		return ResolvedSpatialSelectionInteraction{}, fmt.Errorf("visual %q spatial_selection: %w", sourceID, err)
+	}
+	resolved := ResolvedSpatialSelectionInteraction{Latitude: latitude, Longitude: longitude, Targets: make([]ResolvedSelectionTarget, 0, len(targetEffects))}
+	for _, target := range targetEffects {
+		targetID, effect := target.ID, target.Effect
 		targetKind, err := selectionTargetKind(d, targetID)
 		if err != nil {
 			return ResolvedSpatialSelectionInteraction{}, err
@@ -86,7 +92,7 @@ func ResolveSpatialSelectionInteraction(d *report.Dashboard, model *semanticmode
 		if err := validateSelectionTarget(model, targetID, facts, mappings); err != nil {
 			return ResolvedSpatialSelectionInteraction{}, fmt.Errorf("visual %q spatial_selection: %w", sourceID, err)
 		}
-		resolved.Targets = append(resolved.Targets, ResolvedSelectionTarget{Kind: targetKind, ID: targetID, Facts: facts})
+		resolved.Targets = append(resolved.Targets, ResolvedSelectionTarget{Kind: targetKind, ID: targetID, Facts: facts, Effect: effect})
 	}
 	return resolved, nil
 }
@@ -152,7 +158,12 @@ func ResolveSelectionInteraction(d *report.Dashboard, model *semanticmodel.Model
 	if err := validateSelectionSourceFacts(d, model, sourceKind, sourceID, resolved.Mappings); err != nil {
 		return ResolvedSelectionInteraction{}, err
 	}
-	for _, targetID := range selection.Targets {
+	targets, err := authoredInteractionTargets(selection.Targets, selection.HighlightTargets, selection.NoneTargets)
+	if err != nil {
+		return ResolvedSelectionInteraction{}, fmt.Errorf("%s %q interaction: %w", sourceKind, sourceID, err)
+	}
+	for _, target := range targets {
+		targetID, effect := target.ID, target.Effect
 		targetKind, err := selectionTargetKind(d, targetID)
 		if err != nil {
 			return ResolvedSelectionInteraction{}, err
@@ -164,9 +175,39 @@ func ResolveSelectionInteraction(d *report.Dashboard, model *semanticmodel.Model
 		if err := validateSelectionTarget(model, targetID, facts, resolved.Mappings); err != nil {
 			return ResolvedSelectionInteraction{}, fmt.Errorf("%s %q interaction: %w", sourceKind, sourceID, err)
 		}
-		resolved.Targets = append(resolved.Targets, ResolvedSelectionTarget{Kind: targetKind, ID: targetID, Facts: facts})
+		resolved.Targets = append(resolved.Targets, ResolvedSelectionTarget{Kind: targetKind, ID: targetID, Facts: facts, Effect: effect})
 	}
 	return resolved, nil
+}
+
+type authoredInteractionTarget struct {
+	ID     string
+	Effect string
+}
+
+func authoredInteractionTargets(filter, highlight, none []string) ([]authoredInteractionTarget, error) {
+	targets := make([]authoredInteractionTarget, 0, len(filter)+len(highlight)+len(none))
+	seen := make(map[string]string, cap(targets))
+	appendTargets := func(ids []string, effect string) error {
+		for _, id := range ids {
+			if previous, ok := seen[id]; ok {
+				return fmt.Errorf("target %q declares both %q and %q", id, previous, effect)
+			}
+			seen[id] = effect
+			targets = append(targets, authoredInteractionTarget{ID: id, Effect: effect})
+		}
+		return nil
+	}
+	if err := appendTargets(filter, "filter"); err != nil {
+		return nil, err
+	}
+	if err := appendTargets(highlight, "highlight"); err != nil {
+		return nil, err
+	}
+	if err := appendTargets(none, "none"); err != nil {
+		return nil, err
+	}
+	return targets, nil
 }
 
 func sourceSelection(d *report.Dashboard, sourceKind, sourceID string) (report.SelectionInteraction, error) {

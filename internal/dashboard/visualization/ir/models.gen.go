@@ -1417,6 +1417,7 @@ type VisualizationEnvelope struct {
 	DataRevision     int64                               `json:"dataRevision"`
 	DataState        VisualizationDataState              `json:"dataState"`
 	Selection        []VisualizationSelectionEntry       `json:"selection"`
+	Highlights       []VisualizationHighlightState       `json:"highlights"`
 	SpatialSelection *VisualizationSpatialSelectionState `json:"spatialSelection,omitempty"`
 	Status           VisualizationStatus                 `json:"status"`
 	Diagnostics      []VisualizationDiagnostic           `json:"diagnostics"`
@@ -2275,6 +2276,29 @@ const (
 	VisualizationHierarchyMarkGraph    VisualizationHierarchyMark = "graph"
 )
 
+type VisualizationHighlightEntry struct {
+	Mappings []VisualizationHighlightMapping `json:"mappings"`
+	Label    string                          `json:"label"`
+}
+
+type VisualizationHighlightMapping struct {
+	TargetFieldID string  `json:"targetFieldID"`
+	TargetFactID  *string `json:"targetFactID,omitempty"`
+	Grain         *string `json:"grain,omitempty"`
+	Value         any     `json:"value"`
+	Label         *string `json:"label,omitempty"`
+}
+
+type VisualizationHighlightState struct {
+	SourceVisualID          string                                 `json:"sourceVisualID"`
+	InteractionID           string                                 `json:"interactionID"`
+	Entries                 []VisualizationHighlightEntry          `json:"entries"`
+	SpatialGeometry         *VisualizationSpatialSelectionGeometry `json:"spatialGeometry,omitempty"`
+	SpatialLatitudeFieldID  *string                                `json:"spatialLatitudeFieldID,omitempty"`
+	SpatialLongitudeFieldID *string                                `json:"spatialLongitudeFieldID,omitempty"`
+	Label                   string                                 `json:"label"`
+}
+
 type VisualizationIconIntent string
 
 const (
@@ -2302,10 +2326,18 @@ type VisualizationInteraction struct {
 	ID                     string                            `json:"id"`
 	Kind                   VisualizationInteractionKind      `json:"kind"`
 	Mappings               []VisualizationInteractionMapping `json:"mappings"`
-	Targets                []string                          `json:"targets"`
+	Targets                []VisualizationInteractionTarget  `json:"targets"`
 	Mode                   VisualizationSelectionMode        `json:"mode"`
 	RequiresStableIdentity bool                              `json:"requiresStableIdentity"`
 }
+
+type VisualizationInteractionEffect string
+
+const (
+	VisualizationInteractionEffectNone      VisualizationInteractionEffect = "none"
+	VisualizationInteractionEffectFilter    VisualizationInteractionEffect = "filter"
+	VisualizationInteractionEffectHighlight VisualizationInteractionEffect = "highlight"
+)
 
 type VisualizationInteractionKind string
 
@@ -2322,6 +2354,11 @@ type VisualizationInteractionMapping struct {
 	TargetFactID  *string                `json:"targetFactID,omitempty"`
 	Grain         *string                `json:"grain,omitempty"`
 	Label         *VisualizationFieldRef `json:"label,omitempty"`
+}
+
+type VisualizationInteractionTarget struct {
+	VisualID string                         `json:"visualID"`
+	Effect   VisualizationInteractionEffect `json:"effect"`
 }
 
 type VisualizationKPIDeltaMode string
@@ -2935,13 +2972,16 @@ type VisualizationSpatialRadiusSelection struct {
 }
 
 type VisualizationSpatialSelectionCommand struct {
-	VisualID      string                                 `json:"visualID"`
-	SpecRevision  string                                 `json:"specRevision"`
-	DataRevision  int64                                  `json:"dataRevision"`
-	InteractionID string                                 `json:"interactionID"`
-	Action        string                                 `json:"action"`
-	Gesture       VisualizationSpatialSelectionGesture   `json:"gesture"`
-	Geometry      *VisualizationSpatialSelectionGeometry `json:"geometry,omitempty"`
+	VisualID            string                                 `json:"visualID"`
+	SpecRevision        string                                 `json:"specRevision"`
+	DataRevision        int64                                  `json:"dataRevision"`
+	ServingStateID      string                                 `json:"servingStateID"`
+	FilterRevision      int64                                  `json:"filterRevision"`
+	InteractionRevision int64                                  `json:"interactionRevision"`
+	InteractionID       string                                 `json:"interactionID"`
+	Action              string                                 `json:"action"`
+	Gesture             VisualizationSpatialSelectionGesture   `json:"gesture"`
+	Geometry            *VisualizationSpatialSelectionGeometry `json:"geometry,omitempty"`
 }
 
 type VisualizationSpatialSelectionGeometryVariant interface {
@@ -3155,7 +3195,7 @@ type VisualizationSpatialSelectionInteraction struct {
 	Gestures  []VisualizationSpatialSelectionGesture `json:"gestures"`
 	Latitude  VisualizationSpatialFieldMapping       `json:"latitude"`
 	Longitude VisualizationSpatialFieldMapping       `json:"longitude"`
-	Targets   []string                               `json:"targets"`
+	Targets   []VisualizationInteractionTarget       `json:"targets"`
 }
 
 type VisualizationSpatialSelectionState struct {

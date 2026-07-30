@@ -504,7 +504,7 @@ test('MapLibre coalesces unchanged themes and serializes WebGL style mutations b
 
 function selectableEnvelope(): VisualizationEnvelope {
   return {
-    schemaVersion: 8, visualID: 'state-map', rendererID: 'maplibre', specRevision: 'sha256:test', dataRevision: 4,
+    schemaVersion: 9, visualID: 'state-map', rendererID: 'maplibre', specRevision: 'sha256:test', dataRevision: 4,
     spec: {
       kind: 'geographic', title: 'States', datasets: [{ id: 'primary', fields: [
         { id: 'state', role: 'identity', dataType: 'string', nullable: false, label: 'State' },

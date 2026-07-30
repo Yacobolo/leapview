@@ -413,7 +413,15 @@ LeapView deliberately differs:
 - Scope is never inferred from canvas placement.
 - Synchronization shares binding state rather than forwarding changes between independent slicers.
 - Cross-filter and cross-highlight selections remain interaction state.
+- The compiled interaction graph assigns every source/target pair an explicit
+  `filter`, `highlight`, or `none` effect; missing edges never acquire runtime
+  behavior by inference.
+- Interaction commands are accepted only against the current serving state,
+  specification, data, filter, and interaction revisions.
 - Generated contracts reject invalid combinations instead of tolerating optional property bags.
+
+See [Filters and interactions](/docs/guides/build/filters-interactions) for
+authoring and verification examples.
 
 See the official Power BI documentation for [slicers](https://learn.microsoft.com/power-bi/visuals/power-bi-visualization-slicers), [filter scopes](https://learn.microsoft.com/power-bi/create-reports/power-bi-report-add-filter), and [filter-pane behavior](https://learn.microsoft.com/power-bi/create-reports/power-bi-report-filter).
 
