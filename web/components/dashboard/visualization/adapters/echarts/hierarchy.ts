@@ -1,6 +1,7 @@
 import type { VisualizationEnvelope } from '../../../../../generated/visualization'
 import type { RendererContext } from '../../host-controller'
 import { escapeHTML, formatField, inlineDataset, legend, type EChartsTranslation } from './common'
+import { echartsLabelPolicy } from './label-policy'
 
 type HierarchyNode = { name: string; value?: unknown; __lv_dataset: string; __lv_row_index: number; children?: HierarchyNode[] }
 
@@ -8,6 +9,13 @@ export function hierarchyOption(envelope: VisualizationEnvelope, context: Render
   const spec = envelope.spec
   if (spec.kind !== 'hierarchy') return {}
   const dataset = inlineDataset(envelope, spec.node.dataset)
+  const labels = echartsLabelPolicy(
+    envelope,
+    spec.node.dataset,
+    spec.presentation.labelPolicy,
+    (params) => String((params as { data?: { name?: unknown } }).data?.name ?? ''),
+    context,
+  )
   if (spec.mark === 'sankey' || spec.mark === 'graph') {
     const columns = dataset?.columns ?? []
     const sourceIndex = spec.source ? columns.indexOf(spec.source.field) : -1
@@ -21,7 +29,7 @@ export function hierarchyOption(envelope: VisualizationEnvelope, context: Render
     const series: EChartsTranslation = {
       id: `series:hierarchy:${spec.mark}`, type: spec.mark, data: names.map((name) => ({ name })), links,
       lineStyle: { curveness: spec.presentation.curveness }, emphasis: { focus: spec.presentation.focus },
-      label: { show: spec.presentation.showLabels, color: context.colors.foreground },
+      ...labels,
       tooltip: { formatter: (params: { data?: { source?: unknown; target?: unknown; value?: unknown } }) => {
         const link = params.data
         if (!link || link.source === undefined || link.target === undefined) return ''
@@ -41,7 +49,7 @@ export function hierarchyOption(envelope: VisualizationEnvelope, context: Render
   const data = hierarchyData(envelope)
   const common: EChartsTranslation = {
     id: `series:hierarchy:${spec.mark}`, type: spec.mark, data, roam: spec.presentation.roam,
-    label: { show: spec.presentation.showLabels, color: context.colors.foreground },
+    ...labels,
     tooltip: { formatter: (params: { data?: HierarchyNode }) => params.data ? `${escapeHTML(params.data.name)}: ${escapeHTML(hierarchyTooltipValue(envelope, params.data, context))}` : '' },
   }
   if (spec.mark === 'tree') {

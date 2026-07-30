@@ -343,6 +343,9 @@ func validateVisualPresentation(name string, visual Visual) error {
 	if !oneOf(presentation.Legend, "", "hidden", "top", "right", "bottom", "left") {
 		return fmt.Errorf("visual %q has unsupported presentation.legend %q", name, presentation.Legend)
 	}
+	if err := validateLabelPolicy(name, visual.Type, presentation.Labels); err != nil {
+		return err
+	}
 	if !oneOf(presentation.Orientation, "", "horizontal", "vertical") {
 		return fmt.Errorf("visual %q has unsupported presentation.orientation %q", name, presentation.Orientation)
 	}
@@ -439,6 +442,42 @@ func validateVisualPresentation(name string, visual Visual) error {
 	}
 	if err := validateConditionalFormatting(name, visual.Type, visual.Presentation.ConditionalFormatting); err != nil {
 		return err
+	}
+	return nil
+}
+
+func validateLabelPolicy(name, visualType string, policy VisualLabelPolicy) error {
+	if policy.IsZero() {
+		return nil
+	}
+	if !oneOf(visualType,
+		"line", "area", "bar", "column", "combo", "scatter", "waterfall", "heatmap", "histogram",
+		"candlestick", "boxplot", "pie", "donut", "funnel", "tree", "treemap", "sunburst", "sankey", "graph",
+		"gauge",
+	) {
+		return fmt.Errorf("visual %q label policies are unsupported for type %q", name, visualType)
+	}
+	if !oneOf(policy.Density, "", "hidden", "automatic", "dense", "always") {
+		return fmt.Errorf("visual %q has unsupported presentation.labels.density %q", name, policy.Density)
+	}
+	seen := make(map[string]struct{}, len(policy.Priority))
+	for _, priority := range policy.Priority {
+		if !oneOf(priority, "selected", "anomaly", "threshold") {
+			return fmt.Errorf("visual %q has unsupported presentation.labels priority %q", name, priority)
+		}
+		if _, exists := seen[priority]; exists {
+			return fmt.Errorf("visual %q has duplicate presentation.labels priority %q", name, priority)
+		}
+		seen[priority] = struct{}{}
+	}
+	if policy.MaxCharacters != nil && (*policy.MaxCharacters < 4 || *policy.MaxCharacters > 200) {
+		return fmt.Errorf("visual %q presentation.labels.max_characters must be between 4 and 200", name)
+	}
+	if policy.MinimumSpacing != nil && (*policy.MinimumSpacing < 0 || *policy.MinimumSpacing > 64) {
+		return fmt.Errorf("visual %q presentation.labels.minimum_spacing must be between 0 and 64", name)
+	}
+	if policy.Density != "always" && policy.TooltipFallback != nil && !*policy.TooltipFallback {
+		return fmt.Errorf("visual %q labels that can be suppressed require tooltip fallback", name)
 	}
 	return nil
 }

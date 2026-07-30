@@ -855,6 +855,73 @@ test('KPI documentation uses compact example frames', async () => {
   }
 })
 
+test('governed label policies remain renderable across visual families, locales, and compact resizes', async () => {
+  const context = await browser.newContext({ locale: 'pt-BR', viewport: { width: 1280, height: 900 } })
+  const page = await context.newPage()
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  const cases = [
+    { path: 'heatmap', id: 'category_status_heatmap_labels', density: 'automatic' },
+    { path: 'pie', id: 'category_pie_inside', density: 'dense' },
+    { path: 'scatter', id: 'delivery_scatter_labeled', density: 'automatic' },
+    { path: 'tree', id: 'category_state_status_tree', density: 'dense' },
+    { path: 'gauge', id: 'review_gauge_thresholds', density: 'automatic' },
+  ]
+  try {
+    for (const item of cases) {
+      await page.goto(`${baseURL}/docs/visuals/${item.path}`)
+      const example = page.locator(`lv-site-visual-example[example-id="${item.id}"]`)
+      await page.waitForFunction(
+        ({ id }) => {
+          const element = document.querySelector(`lv-site-visual-example[example-id="${id}"]`)
+          const host = element?.shadowRoot?.querySelector('lv-visualization-host')
+          const canvas = host?.shadowRoot?.querySelector('canvas') as HTMLCanvasElement | null
+          return Boolean(canvas?.width && canvas.height && !host?.shadowRoot?.querySelector('[role="alert"]'))
+        },
+        { id: item.id },
+      )
+      const desktop = await example.evaluate((element) => {
+        const host = element.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & {
+          envelope?: { spec?: { presentation?: { labelPolicy?: { density?: string; tooltipFallback?: boolean } } } }
+        }
+        const canvas = host?.shadowRoot?.querySelector('canvas') as HTMLCanvasElement | null
+        return {
+          density: host.envelope?.spec?.presentation?.labelPolicy?.density,
+          fallback: host.envelope?.spec?.presentation?.labelPolicy?.tooltipFallback,
+          width: canvas?.width ?? 0,
+          height: canvas?.height ?? 0,
+        }
+      })
+      expect(desktop).toMatchObject({ density: item.density, fallback: true })
+      expect(desktop.width).toBeGreaterThan(0)
+      expect(desktop.height).toBeGreaterThan(0)
+
+      await page.setViewportSize({ width: 480, height: 900 })
+      await page.waitForFunction(
+        ({ id, desktopWidth }) => {
+          const element = document.querySelector(`lv-site-visual-example[example-id="${id}"]`)
+          const host = element?.shadowRoot?.querySelector('lv-visualization-host')
+          const canvas = host?.shadowRoot?.querySelector('canvas') as HTMLCanvasElement | null
+          return Boolean(canvas?.width && canvas.height && canvas.width < desktopWidth && !host?.shadowRoot?.querySelector('[role="alert"]'))
+        },
+        { id: item.id, desktopWidth: desktop.width },
+      )
+      const compact = await example.evaluate((element) => {
+        const host = element.shadowRoot?.querySelector('lv-visualization-host')
+        const canvas = host?.shadowRoot?.querySelector('canvas') as HTMLCanvasElement | null
+        return { width: canvas?.width ?? 0, height: canvas?.height ?? 0 }
+      })
+      expect(compact.width).toBeGreaterThan(0)
+      expect(compact.width).toBeLessThan(desktop.width)
+      expect(compact.height).toBeGreaterThan(0)
+      await page.setViewportSize({ width: 1280, height: 900 })
+    }
+    expect(pageErrors).toEqual([])
+  } finally {
+    await context.close()
+  }
+}, 60_000)
+
 test('Custom Vega-Lite documentation is marked experimental', async () => {
   const page = await browser.newPage()
   try {

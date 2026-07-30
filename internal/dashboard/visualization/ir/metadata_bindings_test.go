@@ -39,7 +39,7 @@ func TestValidateSpecEnforcesDataBoundMetadata(t *testing.T) {
 			X: VisualizationFieldRef{Dataset: "primary", Field: "month"},
 			Y: []VisualizationFieldRef{{Dataset: "primary", Field: "value"}},
 			Presentation: CartesianVisualizationPresentation{
-				VisualizationPresentation: VisualizationPresentation{Legend: VisualizationLegendPositionBottom},
+				VisualizationPresentation: testVisualizationPresentation(VisualizationLegendPositionBottom),
 				ShowSymbols:               true,
 			},
 		}}

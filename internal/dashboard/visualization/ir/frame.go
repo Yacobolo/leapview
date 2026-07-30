@@ -331,6 +331,9 @@ func validateSpecification(spec VisualizationSpec, base VisualizationSpecBase) (
 	if err := validateMetadataBindings(base.MetadataBindings, schemas); err != nil {
 		return nil, err
 	}
+	if err := validateLabelPolicy(spec); err != nil {
+		return nil, err
+	}
 	if err := validateKPISpecification(spec, schemas); err != nil {
 		return nil, err
 	}
@@ -368,6 +371,53 @@ func validateSpecification(spec VisualizationSpec, base VisualizationSpecBase) (
 		}
 	}
 	return schemas, nil
+}
+
+func validateLabelPolicy(spec VisualizationSpec) error {
+	var policy VisualizationLabelPolicy
+	switch value := spec.Value.(type) {
+	case *CartesianVisualizationSpec:
+		policy = value.Presentation.LabelPolicy
+	case *PointVisualizationSpec:
+		policy = value.Presentation.LabelPolicy
+	case *ProportionalVisualizationSpec:
+		policy = value.Presentation.LabelPolicy
+	case *HierarchyVisualizationSpec:
+		policy = value.Presentation.LabelPolicy
+	case *PolarVisualizationSpec:
+		policy = value.Presentation.LabelPolicy
+	case *GeographicVisualizationSpec:
+		policy = value.Presentation.LabelPolicy
+	default:
+		return nil
+	}
+	switch policy.Density {
+	case VisualizationLabelDensityHidden, VisualizationLabelDensityAutomatic, VisualizationLabelDensityDense, VisualizationLabelDensityAlways:
+	default:
+		return fmt.Errorf("unsupported label density %q", policy.Density)
+	}
+	seen := make(map[VisualizationLabelPriority]struct{}, len(policy.Priority))
+	for _, priority := range policy.Priority {
+		switch priority {
+		case VisualizationLabelPrioritySelected, VisualizationLabelPriorityAnomaly, VisualizationLabelPriorityThreshold:
+		default:
+			return fmt.Errorf("unsupported label priority %q", priority)
+		}
+		if _, exists := seen[priority]; exists {
+			return fmt.Errorf("duplicate label priority %q", priority)
+		}
+		seen[priority] = struct{}{}
+	}
+	if policy.MaxCharacters < 4 || policy.MaxCharacters > 200 {
+		return fmt.Errorf("label max characters must be between 4 and 200")
+	}
+	if policy.MinimumSpacing < 0 || policy.MinimumSpacing > 64 {
+		return fmt.Errorf("label minimum spacing must be between 0 and 64")
+	}
+	if policy.Density != VisualizationLabelDensityAlways && !policy.TooltipFallback {
+		return fmt.Errorf("labels that can be suppressed require tooltip fallback")
+	}
+	return nil
 }
 
 func validatePointSpecification(spec VisualizationSpec, schemas map[string]VisualizationDatasetSchema) error {

@@ -496,8 +496,17 @@ package contracts
 #PresentationCommon: {
 	legend?:      "hidden" | "top" | "right" | "bottom" | "left"
 	show_labels?: bool
+	labels?: #LabelPolicy
 	conditional_formatting?: [...#ConditionalFormat]
 }
+
+#LabelPolicy: close({
+	density?:          "hidden" | "automatic" | "dense" | "always"
+	priority?:         [...("selected" | "anomaly" | "threshold")]
+	max_characters?:   int & >=4 & <=200
+	minimum_spacing?:  int & >=0 & <=64
+	tooltip_fallback?: bool
+})
 
 #DecisionTone: "neutral" | "ink" | "success" | "warning" | "danger"
 #ColorIntent: #DecisionTone | "accent" | "data_1" | "data_2" | "data_3" | "data_4" | "data_5" | "data_6" | "data_7" | "data_8"

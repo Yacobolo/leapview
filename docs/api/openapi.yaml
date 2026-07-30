@@ -48711,6 +48711,49 @@ components:
           field: example
         label: example
         reducer: first
+    VisualizationLabelDensity:
+      type: string
+      enum:
+        - hidden
+        - automatic
+        - dense
+        - always
+      example: hidden
+    VisualizationLabelPolicy:
+      type: object
+      required:
+        - density
+        - priority
+        - maxCharacters
+        - minimumSpacing
+        - tooltipFallback
+      properties:
+        density:
+          $ref: '#/components/schemas/VisualizationLabelDensity'
+        priority:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationLabelPriority'
+          example:
+            - selected
+        maxCharacters:
+          type: integer
+          format: int32
+          example: 1
+        minimumSpacing:
+          type: integer
+          format: int32
+          example: 1
+        tooltipFallback:
+          type: boolean
+          example: true
+      example:
+        density: hidden
+        maxCharacters: 1
+        minimumSpacing: 1
+        priority:
+          - selected
+        tooltipFallback: true
     VisualizationLabelPosition:
       type: string
       enum:
@@ -48719,6 +48762,13 @@ components:
         - outside
         - top
       example: automatic
+    VisualizationLabelPriority:
+      type: string
+      enum:
+        - selected
+        - anomaly
+        - threshold
+      example: selected
     VisualizationLegendPosition:
       type: string
       enum:
@@ -49317,16 +49367,21 @@ components:
       type: object
       required:
         - legend
-        - showLabels
+        - labelPolicy
       properties:
         legend:
           $ref: '#/components/schemas/VisualizationLegendPosition'
-        showLabels:
-          type: boolean
-          example: true
+        labelPolicy:
+          $ref: '#/components/schemas/VisualizationLabelPolicy'
       example:
+        labelPolicy:
+          density: hidden
+          maxCharacters: 1
+          minimumSpacing: 1
+          priority:
+            - selected
+          tooltipFallback: true
         legend: hidden
-        showLabels: true
     VisualizationProportionalMark:
       type: string
       enum:

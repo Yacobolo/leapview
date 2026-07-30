@@ -2298,6 +2298,23 @@ type VisualizationKPIValueBinding struct {
 	Label   string                        `json:"label"`
 }
 
+type VisualizationLabelDensity string
+
+const (
+	VisualizationLabelDensityHidden    VisualizationLabelDensity = "hidden"
+	VisualizationLabelDensityAutomatic VisualizationLabelDensity = "automatic"
+	VisualizationLabelDensityDense     VisualizationLabelDensity = "dense"
+	VisualizationLabelDensityAlways    VisualizationLabelDensity = "always"
+)
+
+type VisualizationLabelPolicy struct {
+	Density         VisualizationLabelDensity    `json:"density"`
+	Priority        []VisualizationLabelPriority `json:"priority"`
+	MaxCharacters   int32                        `json:"maxCharacters"`
+	MinimumSpacing  int32                        `json:"minimumSpacing"`
+	TooltipFallback bool                         `json:"tooltipFallback"`
+}
+
 type VisualizationLabelPosition string
 
 const (
@@ -2305,6 +2322,14 @@ const (
 	VisualizationLabelPositionInside    VisualizationLabelPosition = "inside"
 	VisualizationLabelPositionOutside   VisualizationLabelPosition = "outside"
 	VisualizationLabelPositionTop       VisualizationLabelPosition = "top"
+)
+
+type VisualizationLabelPriority string
+
+const (
+	VisualizationLabelPrioritySelected  VisualizationLabelPriority = "selected"
+	VisualizationLabelPriorityAnomaly   VisualizationLabelPriority = "anomaly"
+	VisualizationLabelPriorityThreshold VisualizationLabelPriority = "threshold"
 )
 
 type VisualizationLegendPosition string
@@ -2514,8 +2539,8 @@ const (
 )
 
 type VisualizationPresentation struct {
-	Legend     VisualizationLegendPosition `json:"legend"`
-	ShowLabels bool                        `json:"showLabels"`
+	Legend      VisualizationLegendPosition `json:"legend"`
+	LabelPolicy VisualizationLabelPolicy    `json:"labelPolicy"`
 }
 
 type VisualizationProportionalMark string

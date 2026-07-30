@@ -21,6 +21,13 @@ func testCartesianDefinition(t *testing.T, id string, fields []ir.VisualizationF
 		},
 		Kind: "cartesian", Mark: ir.VisualizationCartesianMarkLine,
 		X: ir.VisualizationFieldRef{Dataset: "primary", Field: "label"}, Y: []ir.VisualizationFieldRef{{Dataset: "primary", Field: "value"}},
+		Presentation: ir.CartesianVisualizationPresentation{VisualizationPresentation: ir.VisualizationPresentation{
+			Legend: ir.VisualizationLegendPositionHidden,
+			LabelPolicy: ir.VisualizationLabelPolicy{
+				Density: ir.VisualizationLabelDensityHidden, Priority: []ir.VisualizationLabelPriority{},
+				MaxCharacters: 24, MinimumSpacing: 0, TooltipFallback: true,
+			},
+		}},
 	}}
 	definition, err := visualizationdefinition.New(id, spec, visualizationdefinition.QueryBinding{
 		Kind: visualizationdefinition.QueryAggregate, ResultShape: visualizationdefinition.ResultCategoryValue, ModelID: "sales", DatasetID: "primary",

@@ -91,8 +91,14 @@ func compileGeographicVisualizationSpec(authored reportdef.Visual) (visualizatio
 	return visualizationir.VisualizationSpec{Value: &visualizationir.GeographicVisualizationSpec{
 		VisualizationSpecBase: base, Kind: "geographic", Layers: layers, SpatialInteractions: spatialInteractions,
 		Presentation: visualizationir.GeographicVisualizationPresentation{
-			VisualizationPresentation: visualizationir.VisualizationPresentation{Legend: legend, ShowLabels: authored.Presentation.ShowLabels},
-			Roam:                      true, Basemap: basemap, Theme: theme, LabelDensity: labelDensity, Camera: camera, Controls: controls,
+			VisualizationPresentation: visualizationir.VisualizationPresentation{
+				Legend: legend,
+				LabelPolicy: visualizationir.VisualizationLabelPolicy{
+					Density: visualizationir.VisualizationLabelDensityHidden, Priority: []visualizationir.VisualizationLabelPriority{},
+					MaxCharacters: 24, MinimumSpacing: 0, TooltipFallback: true,
+				},
+			},
+			Roam: true, Basemap: basemap, Theme: theme, LabelDensity: labelDensity, Camera: camera, Controls: controls,
 		},
 	}}, nil
 }

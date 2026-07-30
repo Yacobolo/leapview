@@ -712,7 +712,7 @@ spec:
       title: Orders by status rose pie
       type: pie
       presentation:
-        show_labels: true
+        labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 24, minimum_spacing: 6, tooltip_fallback: true}
         rose: true
       query:
         dimensions:
@@ -726,7 +726,7 @@ spec:
       title: Compact category pie
       type: pie
       presentation:
-        show_labels: true
+        labels: {density: dense, priority: [selected, anomaly, threshold], max_characters: 18, minimum_spacing: 2, tooltip_fallback: true}
         label_position: inside
       query:
         dimensions:
@@ -815,7 +815,7 @@ spec:
       title: Labeled revenue by purchase time
       type: scatter
       presentation:
-        show_labels: true
+        labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 16, minimum_spacing: 6, tooltip_fallback: true}
       query:
         dimensions:
           order_id: orders.order_id
@@ -864,7 +864,7 @@ spec:
       presentation:
         align: left
         sort: ascending
-        show_labels: true
+        labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 20, minimum_spacing: 6, tooltip_fallback: true}
       query:
         dimensions:
           status: orders.status
@@ -968,7 +968,7 @@ spec:
       title: Labeled category status heatmap
       type: heatmap
       presentation:
-        show_labels: true
+        labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 12, minimum_spacing: 4, tooltip_fallback: true}
       query:
         dimensions:
           category: orders.category
@@ -1061,8 +1061,6 @@ spec:
     state_revenue_map_labeled:
       title: Labeled revenue map
       type: map
-      presentation:
-        show_labels: true
       query:
         dimensions:
           state: customers.state
@@ -1458,7 +1456,7 @@ spec:
       title: Labeled revenue waterfall
       type: waterfall
       presentation:
-        show_labels: true
+        labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 18, minimum_spacing: 6, tooltip_fallback: true}
         data_zoom: true
       query:
         dimensions:
@@ -1483,7 +1481,7 @@ spec:
       type: histogram
       presentation:
         histogram_bins: 10
-        show_labels: true
+        labels: {density: dense, priority: [selected, anomaly, threshold], max_characters: 12, minimum_spacing: 2, tooltip_fallback: true}
       query:
         table: orders
         measures:
@@ -1532,6 +1530,7 @@ spec:
       presentation:
         orientation: vertical
         initial_depth: 2
+        labels: {density: dense, priority: [selected, anomaly, threshold], max_characters: 16, minimum_spacing: 2, tooltip_fallback: true}
       query:
         dimensions:
           category: orders.category

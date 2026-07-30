@@ -50,9 +50,11 @@ export function selectedDatasetSource(envelope: VisualizationEnvelope, dataset: 
 export function baseOption(envelope: VisualizationEnvelope, context: RendererContext): EChartsTranslation {
   const dataset = inlineDataset(envelope)
   const metadata = resolveVisualizationMetadata(envelope)
+  const description = metadata.summary ?? metadata.description
+  const dataSummary = labelAccessibilitySummary(envelope, context)
   return {
     animation: false,
-    aria: { enabled: true, description: metadata.summary ?? metadata.description },
+    aria: { enabled: true, description: [description, dataSummary].filter(Boolean).join(' ') },
     backgroundColor: 'transparent',
     color: [...context.colors.data],
     textStyle: { color: context.colors.foreground, fontFamily: context.fontFamily },
@@ -68,6 +70,33 @@ export function baseOption(envelope: VisualizationEnvelope, context: RendererCon
     graphic: statusGraphic(envelope, context),
     visualMap: envelope.selection.length > 0 ? { show: false, dimension: '__lv_selected', pieces: [{ value: true, opacity: 1 }, { value: false, opacity: 0.35 }] } : undefined,
   }
+}
+
+function labelAccessibilitySummary(envelope: VisualizationEnvelope, context: RendererContext): string {
+  const spec = envelope.spec
+  if (!(
+    spec.kind === 'cartesian'
+    || spec.kind === 'point'
+    || spec.kind === 'proportional'
+    || spec.kind === 'hierarchy'
+    || spec.kind === 'polar'
+  )) return ''
+  const policy = spec.presentation.labelPolicy
+  if (policy.density === 'always' || !policy.tooltipFallback) return ''
+  const dataset = inlineDataset(envelope)
+  const schema = spec.datasets.find((candidate) => candidate.id === dataset?.id)
+  if (!dataset || !schema || dataset.rows.length === 0) return ''
+  const fields = schema.fields.filter((definition) => dataset.columns.includes(definition.id))
+  const rowLimit = 6
+  const rows = dataset.rows.slice(0, rowLimit).map((row) =>
+    fields.map((definition) => {
+      const index = dataset.columns.indexOf(definition.id)
+      const formatted = formatField(envelope, { dataset: dataset.id, field: definition.id }, row[index], context)
+      return `${definition.label}: ${formatted}`
+    }).join(', '),
+  )
+  const remainder = dataset.rows.length - rows.length
+  return `Data values: ${rows.join('; ')}.${remainder > 0 ? ` ${remainder} more rows.` : ''}`
 }
 
 function tooltipTrigger(envelope: VisualizationEnvelope): 'axis' | 'item' {

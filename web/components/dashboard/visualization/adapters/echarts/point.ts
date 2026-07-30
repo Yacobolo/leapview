@@ -2,6 +2,7 @@ import type { VisualizationEnvelope, VisualizationFieldRef } from '../../../../.
 import type { RendererContext } from '../../host-controller'
 import { axis, field, formatField, inlineDataset, labelFormatter, legend, type EChartsTranslation } from './common'
 import { applyDecisionContext } from './cartesian'
+import { echartsLabelPolicy } from './label-policy'
 
 type PointSpec = Extract<VisualizationEnvelope['spec'], { kind: 'point' }>
 
@@ -13,6 +14,9 @@ export function pointOption(envelope: VisualizationEnvelope, context: RendererCo
     spec.presentation.largeMode === 'always'
     || spec.presentation.largeMode === 'automatic' && rows.length >= spec.presentation.largeThreshold
   )
+  const labels = spec.label
+    ? echartsLabelPolicy(envelope, spec.label.dataset, spec.presentation.labelPolicy, labelFormatter(envelope, spec.label, context), context)
+    : { label: { show: false }, labelLayout: { hideOverlap: true } }
   const option: EChartsTranslation = {
     grid: { left: 12, right: spec.colorScale?.kind === 'quantitative' ? 54 : 16, top: 16, bottom: 16, containLabel: true },
     xAxis: pointAxis(envelope, spec.x, pointAxisType(envelope, spec.x), context),
@@ -33,12 +37,8 @@ export function pointOption(envelope: VisualizationEnvelope, context: RendererCo
         opacity: spec.presentation.overplot === 'opacity' ? spec.presentation.opacity : 1,
         ...(spec.colorScale?.kind === 'categorical' && spec.color ? { color: categoricalPointColor(envelope, spec.color, context) } : {}),
       },
-      label: spec.label ? {
-        show: spec.presentation.showLabels,
-        position: 'top',
-        color: context.colors.foreground,
-        formatter: labelFormatter(envelope, spec.label, context),
-      } : { show: false },
+      ...labels,
+      label: { ...labels.label, position: 'top' },
       large,
       largeThreshold: spec.presentation.largeThreshold,
       progressiveThreshold: spec.presentation.largeThreshold,

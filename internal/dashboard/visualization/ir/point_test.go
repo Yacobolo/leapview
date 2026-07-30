@@ -57,7 +57,7 @@ func pointEnvelope(t *testing.T, rows [][]any) VisualizationEnvelope {
 		VisualizationSpecBase: base, Kind: "point", Identity: []VisualizationFieldRef{ref("order_id")},
 		X: ref("delivery_days"), Y: ref("revenue"),
 		Presentation: PointVisualizationPresentation{
-			VisualizationPresentation: VisualizationPresentation{Legend: VisualizationLegendPositionHidden},
+			VisualizationPresentation: testVisualizationPresentation(VisualizationLegendPositionHidden),
 			Overplot:                  VisualizationPointOverplotStrategyOpacity,
 			Opacity:                   0.7,
 			LargeMode:                 VisualizationPointLargeModeAutomatic,

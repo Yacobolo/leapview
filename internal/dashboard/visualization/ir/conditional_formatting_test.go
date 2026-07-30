@@ -53,7 +53,7 @@ func TestValidateSpecEnforcesGovernedConditionalFormatting(t *testing.T) {
 			VisualizationSpecBase: base, Kind: "cartesian", Mark: VisualizationCartesianMarkColumn,
 			X: VisualizationFieldRef{Dataset: "primary", Field: "month"}, Y: []VisualizationFieldRef{{Dataset: "primary", Field: "revenue"}},
 			Presentation: CartesianVisualizationPresentation{
-				VisualizationPresentation: VisualizationPresentation{Legend: VisualizationLegendPositionBottom},
+				VisualizationPresentation: testVisualizationPresentation(VisualizationLegendPositionBottom),
 				ShowSymbols:               true,
 			},
 		}}

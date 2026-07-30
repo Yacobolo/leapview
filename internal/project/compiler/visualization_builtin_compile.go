@@ -126,7 +126,7 @@ func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model
 		return nil
 	}
 	presentation := authored.Presentation
-	common := visualizationir.VisualizationPresentation{Legend: compiledLegend(presentation.Legend), ShowLabels: presentation.ShowLabels}
+	common := visualizationir.VisualizationPresentation{Legend: compiledLegend(presentation.Legend), LabelPolicy: compiledLabelPolicy(presentation, authored.Type)}
 
 	switch authored.Type {
 	case "kpi":
@@ -825,6 +825,58 @@ func compiledLegend(value string) visualizationir.VisualizationLegendPosition {
 		return visualizationir.VisualizationLegendPositionLeft
 	default:
 		return visualizationir.VisualizationLegendPositionBottom
+	}
+}
+
+func compiledLabelPolicy(presentation reportdef.VisualPresentation, visualType string) visualizationir.VisualizationLabelPolicy {
+	policy := presentation.Labels
+	density := visualizationir.VisualizationLabelDensity(policy.Density)
+	if density == "" {
+		if policy.IsZero() && !presentation.ShowLabels {
+			if visualType == "gauge" {
+				density = visualizationir.VisualizationLabelDensityAutomatic
+			} else {
+				density = visualizationir.VisualizationLabelDensityHidden
+			}
+		} else {
+			density = visualizationir.VisualizationLabelDensityAutomatic
+		}
+	}
+	priority := make([]visualizationir.VisualizationLabelPriority, 0)
+	if density != visualizationir.VisualizationLabelDensityHidden {
+		priority = []visualizationir.VisualizationLabelPriority{
+			visualizationir.VisualizationLabelPrioritySelected,
+			visualizationir.VisualizationLabelPriorityAnomaly,
+			visualizationir.VisualizationLabelPriorityThreshold,
+		}
+	}
+	if policy.Priority != nil {
+		priority = make([]visualizationir.VisualizationLabelPriority, 0, len(policy.Priority))
+		for _, value := range policy.Priority {
+			priority = append(priority, visualizationir.VisualizationLabelPriority(value))
+		}
+	}
+	maxCharacters := int32(24)
+	if policy.MaxCharacters != nil {
+		maxCharacters = int32(*policy.MaxCharacters)
+	}
+	minimumSpacing := int32(6)
+	switch density {
+	case visualizationir.VisualizationLabelDensityHidden, visualizationir.VisualizationLabelDensityAlways:
+		minimumSpacing = 0
+	case visualizationir.VisualizationLabelDensityDense:
+		minimumSpacing = 2
+	}
+	if policy.MinimumSpacing != nil {
+		minimumSpacing = int32(*policy.MinimumSpacing)
+	}
+	tooltipFallback := true
+	if policy.TooltipFallback != nil {
+		tooltipFallback = *policy.TooltipFallback
+	}
+	return visualizationir.VisualizationLabelPolicy{
+		Density: density, Priority: priority, MaxCharacters: maxCharacters,
+		MinimumSpacing: minimumSpacing, TooltipFallback: tooltipFallback,
 	}
 }
 

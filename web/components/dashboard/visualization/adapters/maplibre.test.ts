@@ -504,7 +504,7 @@ test('MapLibre coalesces unchanged themes and serializes WebGL style mutations b
 
 function selectableEnvelope(): VisualizationEnvelope {
   return {
-    schemaVersion: 6, visualID: 'state-map', rendererID: 'maplibre', specRevision: 'sha256:test', dataRevision: 4,
+    schemaVersion: 7, visualID: 'state-map', rendererID: 'maplibre', specRevision: 'sha256:test', dataRevision: 4,
     spec: {
       kind: 'geographic', title: 'States', datasets: [{ id: 'primary', fields: [
         { id: 'state', role: 'identity', dataType: 'string', nullable: false, label: 'State' },
@@ -516,7 +516,7 @@ function selectableEnvelope(): VisualizationEnvelope {
         { source: { dataset: 'primary', field: 'state' }, targetFieldID: 'customers.state', targetFactID: 'customers' },
       ] }],
       layers: [{ id: 'states', kind: 'choropleth', geometry: {} as any, join: { dataset: 'primary', field: 'state' }, value: { dataset: 'primary', field: 'value' }, tooltip: [{ dataset: 'primary', field: 'state' }, { dataset: 'primary', field: 'value' }], position: 'below_labels', visibility: { minimumZoom: 0, maximumZoom: 24 }, color: { kind: 'sequential', palette: 'blue', reverse: false, nullColor: '#d0d7de' }, stroke: { color: '#fff', width: 1.5, opacity: 1 }, opacity: .82 }],
-      presentation: { legend: 'hidden', showLabels: false, roam: false, theme: 'auto', labelDensity: 'normal', camera: { mode: 'fit_data', padding: 24, minimumZoom: 0, maximumZoom: 10 }, controls: { zoom: false, reset: false, compass: false } },
+      presentation: { legend: 'hidden', labelPolicy: { density: 'hidden', priority: [], maxCharacters: 24, minimumSpacing: 0, tooltipFallback: true }, roam: false, theme: 'auto', labelDensity: 'normal', camera: { mode: 'fit_data', padding: 24, minimumZoom: 0, maximumZoom: 10 }, controls: { zoom: false, reset: false, compass: false } },
     },
     dataState: { kind: 'inline', specRevision: 'sha256:test', dataRevision: 4, generation: 1, datasets: [{
       id: 'primary', specRevision: 'sha256:test', dataRevision: 4, generation: 1, columns: ['state', 'value', 'customer_secret'], rows: [['SP', 10, 'governed-a'], ['RJ', 20, 'governed-b']], completeness: 'complete',
