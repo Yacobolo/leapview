@@ -47,7 +47,11 @@ func TestProjectPublishOperationsUseGeneratedExactCandidateProtocol(t *testing.T
 		body.TargetId != checkpoint.TargetID {
 		t.Fatalf("body = %#v", body)
 	}
-	if !strings.Contains(output.String(), "pending approval") {
+	if !strings.Contains(output.String(), "pending approval") ||
+		!strings.Contains(
+			output.String(),
+			"release sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		) {
 		t.Fatalf("output = %q", output.String())
 	}
 }
@@ -154,6 +158,9 @@ func (stub *publishTransportStub) DoAPIGen(
 	response := deploymentgen.DeploymentResponse{
 		Id: "request_1", ProjectId: "finance", ReleaseId: "release_1",
 		Status: deploymentgen.DeploymentStatusQueued,
+		Evidence: deploymentgen.DeploymentPublishEvidence{
+			ReleaseDigest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		},
 	}
 	if stub.pendingApproval {
 		response.Approval = &deploymentgen.DeploymentApprovalResponse{

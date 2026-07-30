@@ -9,6 +9,7 @@ same journey.
 | --- | --- | --- |
 | Anonymous distribution | Log out of GHCR, pull `image-reference.txt`, download the release archive without credentials, and verify both checksums and runtime identity. | Open the documented release links in a private browser session and confirm neither the image nor archive requires an account. |
 | Initialization | Run real `./leapviewctl init`, `start`, `status`, and `first-login`; reject a second credential read. | Confirm the first-login warning is unavoidable and the output is understandable without repository context. |
+| Enterprise authoring | In an unprivileged client container, run `leapview login`, approve its device challenge in a real browser, persist the credential in a native Secret Service keyring, stage the bundled source revision, run `leapview dev`, and verify governed candidate data. Publish that exact candidate to the protected target, approve it as a distinct human with a separately issued scoped credential, activate it, and prove the active candidate ID, revision, target, publisher, artifact digest, and release provenance match the previewed candidate without a rebuild. | Repeat login, private preview, publish, approval, and activation with the intended production author and reviewer identities. Confirm the candidate remains private before publish and that the approval history names distinct principals. |
 | Five-minute sample | Stage the bundled synthetic data, deploy the bundled evaluation project, sign in, change the password, open **Five-minute Sales Evaluation**, select State `SP`, and verify KPI and governed table results. | Starting from the installation guide, time the same journey from the first pull through the filtered dashboard. Record the total without recording credentials. |
 | Governed access | Execute a governed semantic query, verify an unauthenticated query is denied, then use the deliberately restricted bootstrap publisher token against a workspace administration endpoint and require the denial to appear as `authorization.denied` through its read-only audit scope. | Inspect the access/query audit surfaces for the successful and denied attempts and retain only IDs/timestamps. |
 | Performance and resources | Against the exact installed digest, collect three restart-cold dashboard samples, five warm dashboard samples, eight filter interactions, six governed table-sort interactions, ten governed queries, three refresh runs, and an eight-reader concurrency wave. Enforce p95 latency, zero-error, CPU, RSS, temporary-disk, goroutine, and DuckDB-connection budgets from `qualification/performance-policy.json`. | Compare `performance-report.json` with the last accepted candidate. Investigate any material regression even when it remains under the absolute ceiling. |
@@ -30,6 +31,18 @@ creates isolated Compose projects, stores credentials only in an owner-readable
 temporary file, emits a bounded `qualification-evidence` directory, and removes
 containers, volumes, and credentials on exit. Do not upload any other files
 from the working directory.
+
+From a source checkout, CI and local image qualification run the same authoring
+journey against the already-built production image:
+
+```sh
+./scripts/qualify_authoring_image.sh leapview:ci
+```
+
+The wrapper pushes the local image through an isolated registry, deploys its
+immutable digest with the production Compose bundle, and writes
+`qualification-evidence/authoring-ci/authoring-report.json`. Both trusted and
+fork pull-request production-image jobs run this gate.
 
 ## Performance policy
 
@@ -80,7 +93,7 @@ redirect the bounded report and failure screenshot.
 
 ## Evidence and timing
 
-Retain only `qualification-report.json`, `performance-report.json`,
+Retain only `qualification-report.json`, `authoring-report.json`, `performance-report.json`,
 `recovery-report.json`, `recovery-events.json`, `runtime-identity.json`,
 bounded redacted Compose logs, and the failure screenshot when present. Never retain
 `initial-credentials.json`, `leapview.env`, browser storage state, cookies, or

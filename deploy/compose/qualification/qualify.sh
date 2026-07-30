@@ -23,6 +23,8 @@ mkdir -p "$evidence_dir"
 chmod 0700 "$evidence_dir"
 rm -f \
   "$evidence_dir/browser-failure.png" \
+  "$evidence_dir/authoring-browser-failure.png" \
+  "$evidence_dir/authoring-report.json" \
   "$evidence_dir/compose.log" \
   "$evidence_dir/qualification-report.json" \
   "$evidence_dir/performance-report.json" \
@@ -218,7 +220,7 @@ cd "$bundle_root"
 ./leapviewctl init \
   --admin-email admin@localhost \
   --domain localhost \
-  --environment qualification \
+  --environment evaluation \
   --image "$image_reference"
 set_min_free_bytes "$bundle_root"
 set_qualification_job_lease "$bundle_root"
@@ -252,18 +254,14 @@ sync_output="$(
 )"
 revision="$(awk '$1 == "staged" { print $2 }' <<<"$sync_output")"
 [[ "$revision" =~ ^sha256:[0-9a-f]{64}$ ]]
-docker exec \
-  -e "LEAPVIEW_API_TOKEN=$publisher_token" \
-  -e LEAPVIEW_TARGET=http://localhost:8080 \
-  "$container_id" \
-  leapview dev --once --no-browser \
-    --project /app/evaluation/project/leapview.yaml >/dev/null
-docker exec \
-  -e "LEAPVIEW_API_TOKEN=$publisher_token" \
-  -e LEAPVIEW_TARGET=http://localhost:8080 \
-  "$container_id" \
-  leapview publish \
-    --project /app/evaluation/project/leapview.yaml >/dev/null
+
+QUALIFICATION_BUNDLE_ROOT="$bundle_root" \
+QUALIFICATION_IMAGE="$image_reference" \
+QUALIFICATION_CREDENTIALS="$credentials_file" \
+QUALIFICATION_COMPOSE_PROJECT="$primary_project" \
+QUALIFICATION_SOURCE_REVISION="$revision" \
+LEAPVIEW_QUALIFICATION_EVIDENCE_DIR="$evidence_dir" \
+  ./qualification/authoring.sh
 
 metrics_token="$(sed -n 's/^LEAPVIEW_METRICS_BEARER_TOKEN=//p' "$bundle_root/leapview.env")"
 browser_image="mcr.microsoft.com/playwright:v1.61.1-noble"

@@ -9,6 +9,7 @@
 node_modules/
 bin/
 coverage.out
+qualification-evidence/
 api/gen/
 api/.apigen/
 internal/access/api/gen/

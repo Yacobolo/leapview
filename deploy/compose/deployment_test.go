@@ -328,6 +328,7 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 	script := read(t, filepath.Join(root, "deploy", "compose", "qualification", "qualify.sh"))
 	recovery := read(t, filepath.Join(root, "deploy", "compose", "qualification", "recover.sh"))
 	browser := read(t, filepath.Join(root, "deploy", "compose", "qualification", "browser.mjs"))
+	authoringBrowser := read(t, filepath.Join(root, "deploy", "compose", "qualification", "authoring.mjs"))
 	performance := read(t, filepath.Join(root, "deploy", "compose", "qualification", "performance.mjs"))
 	performancePolicy := read(t, filepath.Join(root, "deploy", "compose", "qualification", "performance-policy.json"))
 	compatibilityPolicy := read(t, filepath.Join(root, "deploy", "compose", "qualification", "v0.1.0-policy.json"))
@@ -568,8 +569,8 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 	if !strings.Contains(script, `cp "$bundle_root/leapview.env" "$restore_root/leapview.env"`) {
 		t.Error("isolated restore qualification must supply the original separately managed signing and encryption secrets")
 	}
-	if !strings.Contains(browser, `getByLabel('New password').press('Enter')`) {
-		t.Error("browser qualification must submit the password form without relying on an animated button's stability")
+	if !strings.Contains(authoringBrowser, `getByLabel('New password').press('Enter')`) {
+		t.Error("authoring browser qualification must submit the password form without relying on an animated button's stability")
 	}
 	for _, required := range []string{
 		"page.goto(new URL(dashboardHref, baseURL)",
@@ -677,6 +678,94 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 		!slices.Equal(policy.Platforms, []string{"linux/amd64"}) ||
 		!slices.Contains(policy.LegacyMarkers, "libredash.db") {
 		t.Fatalf("unexpected v0.1.0 compatibility policy: %#v", policy)
+	}
+}
+
+func TestEnterpriseAuthoringGoldenJourneyContract(t *testing.T) {
+	root := filepath.Join("..", "..")
+	ci := read(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
+	qualification := read(t, filepath.Join(root, "deploy", "compose", "qualification", "qualify.sh"))
+	golden := read(t, filepath.Join(root, "deploy", "compose", "qualification", "authoring.sh"))
+	browser := read(t, filepath.Join(root, "deploy", "compose", "qualification", "authoring.mjs"))
+	clientImage := read(t, filepath.Join(root, "deploy", "compose", "qualification", "Dockerfile.authoring-client"))
+	imageWrapper := read(t, filepath.Join(root, "scripts", "qualify_authoring_image.sh"))
+
+	for _, required := range []string{
+		"./scripts/qualify_authoring_image.sh leapview:ci",
+		"name: Qualify enterprise authoring journey",
+	} {
+		if !strings.Contains(ci, required) {
+			t.Errorf("CI production-image gate missing %q", required)
+		}
+	}
+	if count := strings.Count(ci, "./scripts/qualify_authoring_image.sh leapview:ci"); count != 2 {
+		t.Errorf("both trusted and fork production-image jobs must run the golden journey; found %d invocations", count)
+	}
+	if !strings.Contains(qualification, "./qualification/authoring.sh") {
+		t.Error("installed-candidate qualification does not reuse the enterprise authoring golden journey")
+	}
+
+	for _, required := range []string{
+		"leapview login",
+		"--no-browser",
+		"dev_args=(--once --no-browser",
+		"leapview publish",
+		"gnome-keyring-daemon",
+		"dbus-run-session",
+		"authoring-preview-verified",
+		"authoring-publish-verified",
+		"authoring-report.json",
+		`"$dev_candidate" != "$publish_candidate"`,
+		`"$dev_revision" != "$publish_revision"`,
+		`"$dev_provenance" != "$publish_release"`,
+	} {
+		if !strings.Contains(golden, required) {
+			t.Errorf("enterprise authoring qualification missing %q", required)
+		}
+	}
+	if strings.Contains(golden, "LEAPVIEW_API_TOKEN") {
+		t.Error("golden authoring CLI must use the browser-approved login credential, not an injected API token")
+	}
+	for _, required := range []string{
+		"redact()",
+		"Authorization: Bearer ",
+		"publisherToken|temporaryPassword|qualificationPassword",
+		`compose_in logs --no-color --tail 500 2>&1 | redact`,
+	} {
+		if !strings.Contains(imageWrapper, required) {
+			t.Errorf("production-image wrapper missing evidence redaction contract %q", required)
+		}
+	}
+	for _, required := range []string{
+		"Authorize LeapView CLI",
+		"CLI authorized",
+		"/candidates/",
+		"Governed order rows",
+		"authoring-preview-verified",
+		"MANAGE_GRANTS",
+		"MANAGE_PLATFORM",
+		"APPROVE_DEPLOYMENT",
+		"ACTIVATE_DEPLOYMENT",
+		"/grants",
+		"pending approval",
+		"approval-requests",
+		"/activate",
+		"authoring-publish-verified",
+	} {
+		if !strings.Contains(browser, required) {
+			t.Errorf("authoring browser qualification missing %q", required)
+		}
+	}
+	for _, required := range []string{
+		"ARG LEAPVIEW_IMAGE",
+		"FROM ${LEAPVIEW_IMAGE}",
+		"dbus-daemon",
+		"gnome-keyring",
+		"USER author",
+	} {
+		if !strings.Contains(clientImage, required) {
+			t.Errorf("authoring client image missing %q", required)
+		}
 	}
 }
 

@@ -110,7 +110,11 @@ func TestDeveloperWorkflowsUseExactCandidatePublishing(t *testing.T) {
 			`"$BIN" publish`,
 		},
 		filepath.Join("deploy", "compose", "qualification", "qualify.sh"): {
-			"leapview dev --once",
+			"./qualification/authoring.sh",
+		},
+		filepath.Join("deploy", "compose", "qualification", "authoring.sh"): {
+			"dev_args=(--once --no-browser",
+			`leapview dev "${dev_args[@]}"`,
 			"leapview publish",
 		},
 		filepath.Join("deploy", "compose", "qualification", "recover.sh"): {

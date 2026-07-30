@@ -37,6 +37,33 @@ func TestPrivilegeWorkspaceIDPreservesExplicitAPIWorkspace(t *testing.T) {
 	}
 }
 
+func TestAuthoringProjectScopeUsesCredentialProjectForProjectAgnosticRoute(
+	t *testing.T,
+) {
+	request := httptest.NewRequest("GET", "/api/v1/capabilities", nil)
+	session := &access.AuthoringSession{
+		Scope: access.AuthoringScope{ProjectID: "leapview-evaluation"},
+	}
+
+	if got := authoringProjectScope(request, session); got != "leapview-evaluation" {
+		t.Fatalf("project-agnostic authoring scope = %q", got)
+	}
+}
+
+func TestAuthoringProjectScopePreservesExplicitRouteProject(t *testing.T) {
+	request := httptest.NewRequest("POST", "/api/v1/projects/finance/candidates", nil)
+	routeContext := chi.NewRouteContext()
+	routeContext.URLParams.Add("project", "finance")
+	request = request.WithContext(contextWithRouteContext(request, routeContext))
+	session := &access.AuthoringSession{
+		Scope: access.AuthoringScope{ProjectID: "leapview-evaluation"},
+	}
+
+	if got := authoringProjectScope(request, session); got != "finance" {
+		t.Fatalf("explicit authoring route project = %q", got)
+	}
+}
+
 func contextWithRouteContext(request *http.Request, routeContext *chi.Context) context.Context {
 	return context.WithValue(request.Context(), chi.RouteCtxKey, routeContext)
 }

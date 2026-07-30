@@ -1,0 +1,25 @@
+# syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
+
+ARG LEAPVIEW_IMAGE
+FROM ${LEAPVIEW_IMAGE}
+
+USER root
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends dbus-daemon gnome-keyring && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --system author && \
+    useradd --system --gid author --home-dir /home/author --create-home --shell /bin/bash author && \
+    mkdir -p /workspace && \
+    cp -a /app/evaluation /workspace/evaluation && \
+    chown -R author:author /home/author /workspace
+
+USER author
+WORKDIR /workspace
+
+ENV HOME=/home/author \
+    LEAPVIEW_HOME=/home/author/.local/share/leapview
+
+ENTRYPOINT []
+CMD ["bash"]

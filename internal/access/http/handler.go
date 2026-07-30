@@ -1811,28 +1811,12 @@ func correlationIDFromRequest(r *stdhttp.Request) string {
 }
 
 func knownPrivileges() []string {
-	return []string{
-		string(access.PrivilegeUseWorkspace),
-		string(access.PrivilegeViewItem),
-		string(access.PrivilegeEditItem),
-		string(access.PrivilegeManageItem),
-		string(access.PrivilegeQueryData),
-		string(access.PrivilegePreviewData),
-		string(access.PrivilegeTestDataPolicy),
-		string(access.PrivilegeRefreshData),
-		string(access.PrivilegeDeploy),
-		string(access.PrivilegeActivateDeployment),
-		string(access.PrivilegeManagePublications),
-		string(access.PrivilegeUseAgent),
-		string(access.PrivilegeViewAgent),
-		string(access.PrivilegeManageGrants),
-		string(access.PrivilegeViewAudit),
-		string(access.PrivilegeManageWorkspace),
-		string(access.PrivilegeManagePlatform),
-		string(access.PrivilegeManageConnectionMetadata),
-		string(access.PrivilegeTestConnection),
-		string(access.PrivilegeViewConnectionHealth),
+	known := access.KnownPrivileges()
+	out := make([]string, len(known))
+	for i, privilege := range known {
+		out[i] = string(privilege)
 	}
+	return out
 }
 
 func privilegesFromStrings(values []string) []access.Privilege {
@@ -1873,31 +1857,8 @@ func privilegesFromOAuthScope(scope string) ([]access.Privilege, error) {
 }
 
 func knownPrivilege(value access.Privilege) bool {
-	switch value {
-	case access.PrivilegeUseWorkspace,
-		access.PrivilegeViewItem,
-		access.PrivilegeEditItem,
-		access.PrivilegeManageItem,
-		access.PrivilegeQueryData,
-		access.PrivilegePreviewData,
-		access.PrivilegeTestDataPolicy,
-		access.PrivilegeRefreshData,
-		access.PrivilegeDeploy,
-		access.PrivilegeActivateDeployment,
-		access.PrivilegeManagePublications,
-		access.PrivilegeUseAgent,
-		access.PrivilegeViewAgent,
-		access.PrivilegeManageGrants,
-		access.PrivilegeViewAudit,
-		access.PrivilegeManageWorkspace,
-		access.PrivilegeManagePlatform,
-		access.PrivilegeManageConnectionMetadata,
-		access.PrivilegeTestConnection,
-		access.PrivilegeViewConnectionHealth:
-		return true
-	default:
-		return false
-	}
+	parsed, ok := access.ParsePrivilege(string(value))
+	return ok && parsed == value
 }
 
 func knownGrantSubjectType(value access.SubjectType) bool {

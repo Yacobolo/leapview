@@ -136,6 +136,10 @@ func TestDevCommandOwnsOneAuthenticatedRemoteWorkflow(t *testing.T) {
 	if !strings.Contains(output.String(), "synchronized sha256:") ||
 		!strings.Contains(
 			output.String(),
+			"provenance sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		) ||
+		!strings.Contains(
+			output.String(),
 			"candidate cand_1 revision 7 target lvinst_prod environment production principal principal_ci",
 		) ||
 		!strings.Contains(

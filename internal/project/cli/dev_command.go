@@ -225,6 +225,7 @@ func RunDev(
 			return fmt.Errorf("persist publish candidate: %w", err)
 		}
 		fmt.Fprintf(out, "synchronized %s\n", candidate.ArtifactDigest)
+		fmt.Fprintf(out, "provenance %s\n", candidate.ProvenanceDigest)
 		fmt.Fprintf(
 			out,
 			"candidate %s revision %d target %s environment %s principal %s\n",

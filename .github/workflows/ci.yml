@@ -722,7 +722,7 @@ jobs:
   production-image:
     name: Production image
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 50
     needs: classify
     if: >-
       ${{
@@ -753,6 +753,18 @@ jobs:
 
       - name: Smoke test production image
         run: ./scripts/smoke_production_image.sh leapview:ci
+
+      - name: Qualify enterprise authoring journey
+        run: ./scripts/qualify_authoring_image.sh leapview:ci
+
+      - name: Upload enterprise authoring evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: enterprise-authoring-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: qualification-evidence/authoring-ci
 
   production-image-fork:
     name: Production image (external pull request)
@@ -787,6 +799,18 @@ jobs:
 
       - name: Smoke test production image
         run: ./scripts/smoke_production_image.sh leapview:ci
+
+      - name: Qualify enterprise authoring journey
+        run: ./scripts/qualify_authoring_image.sh leapview:ci
+
+      - name: Upload enterprise authoring evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: enterprise-authoring-fork-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: qualification-evidence/authoring-ci
 
   deployment-contracts:
     name: Deployment contracts
@@ -837,7 +861,9 @@ jobs:
           deploy/hetzner-site/files/deploy.sh
           deploy/hetzner-site/files/provision.sh
           deploy/compose/qualification/qualify.sh
+          deploy/compose/qualification/authoring.sh
           deploy/compose/qualification/recover.sh
+          scripts/qualify_authoring_image.sh
           scripts/deploy_site.sh
 
       - name: Initialize Terraform providers

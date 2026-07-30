@@ -453,7 +453,7 @@ func (a *Auth) MiddlewareWithObjectResolver(privilege access.Privilege, objectRe
 				}
 			}
 			if credential != nil && credential.Authoring != nil {
-				projectID := strings.TrimSpace(chi.URLParam(r, "project"))
+				projectID := authoringProjectScope(r, credential.Authoring)
 				if err := credential.Authoring.Scope.Authorize(a.authoringAuth.InstanceID(), projectID, privilege); err != nil {
 					status := http.StatusForbidden
 					if concealDenied && strings.HasPrefix(r.URL.Path, "/api/v1/") {
@@ -534,6 +534,17 @@ func (a *Auth) MiddlewareWithObjectResolver(privilege access.Privilege, objectRe
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func authoringProjectScope(
+	request *http.Request,
+	session *access.AuthoringSession,
+) string {
+	projectID := strings.TrimSpace(chi.URLParam(request, "project"))
+	if projectID == "" && session != nil {
+		projectID = strings.TrimSpace(session.Scope.ProjectID)
+	}
+	return projectID
 }
 
 func (a *Auth) defaultLoginRedirect() string {

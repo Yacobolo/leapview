@@ -110,7 +110,7 @@ func writePublicationEvidence(
 	}
 	fmt.Fprintf(
 		out,
-		"evidence result %s artifact %s target %s candidate %s revision %d principal %s source %s\n",
+		"evidence result %s artifact %s target %s candidate %s revision %d principal %s source %s release %s\n",
 		deployment.Status,
 		deployment.Evidence.ArtifactDigest,
 		deployment.Evidence.TargetId,
@@ -118,6 +118,7 @@ func writePublicationEvidence(
 		deployment.Evidence.CandidateRevision,
 		deployment.CreatedBy,
 		sourceRevision,
+		deployment.Evidence.ReleaseDigest,
 	)
 }
 
