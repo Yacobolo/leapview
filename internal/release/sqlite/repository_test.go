@@ -156,6 +156,90 @@ func TestReleaseRepositoryRetainsCandidateProvenanceImmutably(t *testing.T) {
 	}
 }
 
+func TestPriorDeploymentReleaseSkipsRequestsThatNeverActivated(t *testing.T) {
+	store, err := platform.Open(
+		t.Context(),
+		filepath.Join(t.TempDir(), "leapview.db"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	db := store.SQLDB()
+	for _, releaseID := range []string{"rel_1", "rel_failed", "rel_2"} {
+		if _, err := db.ExecContext(t.Context(), `
+			INSERT INTO api_releases (
+				id, project_id, project_digest, request_digest, idempotency_key,
+				status, manifest_json, created_by, finalized_at
+			) VALUES (?, 'project', 'sha256:project', ?, ?, 'ready', '{}',
+				'principal', CURRENT_TIMESTAMP)`,
+			releaseID,
+			"sha256:"+releaseID,
+			releaseID,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	deployments := []struct {
+		id, status, createdAt, error string
+	}{
+		{"dep_1", "superseded", "2026-01-01T00:00:00Z", ""},
+		{"dep_failed", "failed", "2026-01-02T00:00:00Z", "verification failed"},
+		{"dep_2", "active", "2026-01-03T00:00:00Z", ""},
+	}
+	for _, item := range deployments {
+		activatedAt := any(nil)
+		if item.status == "active" || item.status == "superseded" {
+			activatedAt = item.createdAt
+		}
+		if _, err := db.ExecContext(t.Context(), `
+			INSERT INTO project_deployments (
+				id, project_id, environment, request_digest, status,
+				created_by, created_at, activated_at, error
+			) VALUES (?, 'project', 'prod', ?, ?, 'principal', ?, ?, ?)`,
+			item.id,
+			"sha256:"+item.id,
+			item.status,
+			item.createdAt,
+			activatedAt,
+			item.error,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	links := []struct {
+		deployment, release, createdAt string
+	}{
+		{"dep_1", "rel_1", "2026-01-01T00:00:00Z"},
+		{"dep_failed", "rel_failed", "2026-01-02T00:00:00Z"},
+		{"dep_2", "rel_2", "2026-01-03T00:00:00Z"},
+	}
+	for _, item := range links {
+		if _, err := db.ExecContext(t.Context(), `
+			INSERT INTO api_deployment_releases (
+				deployment_id, project_id, release_id, created_at
+			) VALUES (?, 'project', ?, ?)`,
+			item.deployment,
+			item.release,
+			item.createdAt,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := NewRepository(db).PriorDeploymentRelease(
+		t.Context(),
+		"project",
+		"dep_2",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "rel_1" {
+		t.Fatalf("prior release = %q, want retained active release rel_1", got)
+	}
+}
+
 func candidateReleaseProvenance(t *testing.T) release.Provenance {
 	t.Helper()
 	provenance, err := release.NewProvenance(release.ProvenanceInput{

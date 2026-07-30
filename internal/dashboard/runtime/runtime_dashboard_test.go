@@ -234,6 +234,9 @@ func TestMissingDataReturnsSetupPatch(t *testing.T) {
 	if !errors.As(metrics.runtimes["sales"].missing, &missing) {
 		t.Fatalf("missing error type = %T, want *MissingDataError", metrics.runtimes["sales"].missing)
 	}
+	if err := metrics.Verify(context.Background()); err == nil {
+		t.Fatal("runtime verification accepted missing data")
+	}
 }
 
 func TestOperationsFulfillmentDashboardQueryFixture(t *testing.T) {
@@ -256,6 +259,9 @@ c2,20040,Rio de Janeiro,RJ
 		t.Fatal(err)
 	}
 	defer metrics.Close()
+	if err := metrics.Verify(context.Background()); err != nil {
+		t.Fatalf("verify prepared dashboard runtime: %v", err)
+	}
 
 	patch, err := metrics.QueryDashboardPage(context.Background(), "fulfillment-operations", "overview", dashboard.Filters{})
 	if err != nil {

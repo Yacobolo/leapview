@@ -101,6 +101,13 @@ func (m *Module) ActivatePrepared(candidate servingstate.PreparedRuntime, activa
 func (m *Module) ActivatePreparedSet(set *runtimehost.PreparedSet, activate func() error) error {
 	return m.registry.ActivatePreparedSet(set, activate)
 }
+
+func (m *Module) VerifyPreparedSet(
+	ctx context.Context,
+	set *runtimehost.PreparedSet,
+) (runtimehost.PreparedVerification, error) {
+	return m.registry.VerifyPreparedSet(ctx, set)
+}
 func (m *Module) ProviderForWorkspace(id servingstate.WorkspaceID) runtimehost.Provider {
 	return m.registry.ProviderForWorkspace(id)
 }

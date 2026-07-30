@@ -150,7 +150,12 @@ WHERE deployment_id = ? AND collection_id = ? AND activated_generation IS NULL;
 
 -- name: ActivateProjectDeployment :execresult
 UPDATE project_deployments
-SET status = 'active', activated_at = CURRENT_TIMESTAMP, error = ''
+SET status = 'active',
+    activated_at = CURRENT_TIMESTAMP,
+    activation_principal = ?,
+    verification_digest = ?,
+    verified_at = CURRENT_TIMESTAMP,
+    error = ''
 WHERE id = ? AND status = 'pending';
 
 -- name: SupersedeOtherProjectDeployments :exec

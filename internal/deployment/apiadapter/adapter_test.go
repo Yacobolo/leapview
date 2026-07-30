@@ -111,9 +111,11 @@ func TestCreateRejectsDuplicateWorkspaceAsInvalidRequest(t *testing.T) {
 func TestMapResponseExposesPublicManagedRevisionDigests(t *testing.T) {
 	service := &fakeService{row: deployment.Deployment{
 		ID: "deployment_1", ProjectID: "project", Environment: "prod", RequestDigest: "sha256:request", Status: deployment.StatusActive,
-		CreatedBy:   "publisher",
-		Targets:     []deployment.Target{{DeploymentID: "deployment_1", WorkspaceID: "sales", ServingStateID: "sales_2", Status: deployment.TargetStatusActive}},
-		Connections: []deployment.ConnectionPointer{{DeploymentID: "deployment_1", CollectionID: "orders", RevisionID: "revision_2", PriorRevisionID: "revision_1", PriorGeneration: 1, ActivatedGeneration: 2}},
+		CreatedBy: "publisher", ActivationPrincipal: "activator",
+		VerificationDigest: "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+		VerifiedAt:         "2026-07-30T09:00:00Z",
+		Targets:            []deployment.Target{{DeploymentID: "deployment_1", WorkspaceID: "sales", ServingStateID: "sales_2", Status: deployment.TargetStatusActive}},
+		Connections:        []deployment.ConnectionPointer{{DeploymentID: "deployment_1", CollectionID: "orders", RevisionID: "revision_2", PriorRevisionID: "revision_1", PriorGeneration: 1, ActivatedGeneration: 2}},
 	}}
 	metadata := &fakeMetadata{
 		collections: map[string]manageddata.Collection{"orders": {ID: "orders", ProjectID: "project", ConnectionName: "orders"}},
@@ -130,14 +132,39 @@ func TestMapResponseExposesPublicManagedRevisionDigests(t *testing.T) {
 	}
 	if got.Project != "project" || got.CreatedBy != "publisher" ||
 		got.Status != StatusActive || len(got.Connections) != 1 ||
-		got.Connections[0].RevisionID != metadata.revisions["revision_2"].Digest {
+		got.Connections[0].RevisionID != metadata.revisions["revision_2"].Digest ||
+		got.ActivationPrincipal != "activator" ||
+		got.VerificationDigest != service.row.VerificationDigest ||
+		got.VerifiedAt != service.row.VerifiedAt {
 		t.Fatalf("response = %#v", got)
 	}
 }
 
+func TestActivateForwardsTheBoundedActivationPrincipal(t *testing.T) {
+	service := &fakeService{row: deployment.Deployment{
+		ID: "deployment_1", ProjectID: "project", Status: deployment.StatusActive,
+	}}
+	adapter, err := New(service, &fakeMetadata{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapter.Activate(context.Background(), ActivateRequest{
+		Scope: Scope{Project: "project", DeploymentID: "deployment_1"},
+		Actor: "principal_activator", IdempotencyKey: "activation-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if service.activation.ProjectID != "project" ||
+		service.activation.DeploymentID != "deployment_1" ||
+		service.activation.ActorID != "principal_activator" {
+		t.Fatalf("activation request = %#v", service.activation)
+	}
+}
+
 type fakeService struct {
-	row     deployment.Deployment
-	created deployment.CreateInput
+	row        deployment.Deployment
+	created    deployment.CreateInput
+	activation deployment.ActivationRequest
 }
 
 func (s *fakeService) Create(_ context.Context, input deployment.CreateInput) (deployment.Deployment, error) {
@@ -153,7 +180,11 @@ func (s *fakeService) Create(_ context.Context, input deployment.CreateInput) (d
 func (s *fakeService) Get(context.Context, deployment.Scope) (deployment.Deployment, error) {
 	return s.row, nil
 }
-func (s *fakeService) Activate(context.Context, deployment.Scope) (deployment.Deployment, error) {
+func (s *fakeService) Activate(
+	_ context.Context,
+	request deployment.ActivationRequest,
+) (deployment.Deployment, error) {
+	s.activation = request
 	return s.row, nil
 }
 func (s *fakeService) Cancel(context.Context, deployment.Scope) (deployment.Deployment, error) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/flidai/leapview/internal/runtimehost"
@@ -29,7 +30,10 @@ func TestActivateResolvesPersistedBindingsPreparesAndAtomicallyCommits(t *testin
 	states := &fakeServingStates{}
 	service := mustService(t, repo, states, runtime, resolver)
 
-	got, err := service.Activate(context.Background(), Scope{ProjectID: "project", DeploymentID: "deployment_1"})
+	got, err := service.Activate(context.Background(), ActivationRequest{
+		Scope:   Scope{ProjectID: "project", DeploymentID: "deployment_1"},
+		ActorID: "principal_activator",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,6 +53,13 @@ func TestActivateResolvesPersistedBindingsPreparesAndAtomicallyCommits(t *testin
 	if repo.activateCalls != 1 || !runtime.committed {
 		t.Fatalf("activate calls = %d, runtime committed = %v", repo.activateCalls, runtime.committed)
 	}
+	if runtime.verifyCalls != 1 {
+		t.Fatalf("verify calls = %d, want 1", runtime.verifyCalls)
+	}
+	if repo.activationInput.ActivationPrincipal != "principal_activator" ||
+		repo.activationInput.VerificationDigest != runtime.verification.Digest {
+		t.Fatalf("activation evidence = %#v", repo.activationInput)
+	}
 }
 
 func TestActivateSupportsDeploymentWithoutManagedConnections(t *testing.T) {
@@ -62,7 +73,10 @@ func TestActivateSupportsDeploymentWithoutManagedConnections(t *testing.T) {
 	runtime := &fakeRuntime{prepared: &fakePrepared{}}
 	service := mustService(t, repo, &fakeServingStates{}, runtime, resolver)
 
-	if _, err := service.Activate(context.Background(), Scope{ProjectID: "project", DeploymentID: "deployment_empty"}); err != nil {
+	if _, err := service.Activate(context.Background(), ActivationRequest{
+		Scope:   Scope{ProjectID: "project", DeploymentID: "deployment_empty"},
+		ActorID: "principal_activator",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if len(runtime.candidates) != 1 || len(runtime.candidates[0].ManagedData.Roots) != 0 {
@@ -79,7 +93,49 @@ func TestActivatePreparationFailureLeavesDeploymentPending(t *testing.T) {
 	runtime := &fakeRuntime{prepareErr: wantErr}
 	service := mustService(t, repo, &fakeServingStates{}, runtime, &fakeResolver{resolutions: map[servingstate.ID]runtimehost.ManagedDataResolution{"sales_2": {Roots: map[string]string{}}}})
 
-	_, err := service.Activate(context.Background(), Scope{ProjectID: "project", DeploymentID: "deployment_1"})
+	_, err := service.Activate(context.Background(), ActivationRequest{
+		Scope:   Scope{ProjectID: "project", DeploymentID: "deployment_1"},
+		ActorID: "principal_activator",
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("error = %v, want %v", err, wantErr)
+	}
+	if repo.activateCalls != 0 || runtime.committed {
+		t.Fatalf("activate calls = %d, runtime committed = %v", repo.activateCalls, runtime.committed)
+	}
+	if repo.failedID != "deployment_1" {
+		t.Fatalf("failed deployment = %q", repo.failedID)
+	}
+}
+
+func TestActivateVerificationFailureLeavesPriorGenerationActive(t *testing.T) {
+	wantErr := errors.New("representative query failed")
+	repo := &fakeRepository{deployment: Deployment{
+		ID: "deployment_1", ProjectID: "project", Environment: "prod", Status: StatusPending,
+		Targets: []Target{{
+			DeploymentID: "deployment_1", WorkspaceID: "sales",
+			ServingStateID: "sales_2", PriorServingStateID: "sales_1",
+			Status: TargetStatusPending,
+		}},
+	}}
+	runtime := &fakeRuntime{
+		prepared:  &fakePrepared{},
+		verifyErr: wantErr,
+	}
+	service := mustService(
+		t,
+		repo,
+		&fakeServingStates{},
+		runtime,
+		&fakeResolver{resolutions: map[servingstate.ID]runtimehost.ManagedDataResolution{
+			"sales_2": {Roots: map[string]string{}},
+		}},
+	)
+
+	_, err := service.Activate(context.Background(), ActivationRequest{
+		Scope:   Scope{ProjectID: "project", DeploymentID: "deployment_1"},
+		ActorID: "principal_activator",
+	})
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("error = %v, want %v", err, wantErr)
 	}
@@ -96,7 +152,10 @@ func TestActivateIsIdempotentAfterSuccess(t *testing.T) {
 	runtime := &fakeRuntime{}
 	service := mustService(t, repo, &fakeServingStates{}, runtime, &fakeResolver{})
 
-	got, err := service.Activate(context.Background(), Scope{ProjectID: "project", DeploymentID: "deployment_1"})
+	got, err := service.Activate(context.Background(), ActivationRequest{
+		Scope:   Scope{ProjectID: "project", DeploymentID: "deployment_1"},
+		ActorID: "principal_activator",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,10 +197,11 @@ func mustService(t *testing.T, repo Repository, states ServingStateRepository, r
 }
 
 type fakeRepository struct {
-	deployment    Deployment
-	activateCalls int
-	cancelCalls   int
-	failedID      string
+	deployment      Deployment
+	activateCalls   int
+	cancelCalls     int
+	failedID        string
+	activationInput ActivationInput
 }
 
 func (r *fakeRepository) CreateDeployment(context.Context, CreateInput) (Deployment, error) {
@@ -150,9 +210,12 @@ func (r *fakeRepository) CreateDeployment(context.Context, CreateInput) (Deploym
 func (r *fakeRepository) DeploymentByID(context.Context, string) (Deployment, error) {
 	return r.deployment, nil
 }
-func (r *fakeRepository) ActivateDeployment(context.Context, string) (Deployment, error) {
+func (r *fakeRepository) ActivateDeployment(_ context.Context, input ActivationInput) (Deployment, error) {
 	r.activateCalls++
+	r.activationInput = input
 	r.deployment.Status = StatusActive
+	r.deployment.ActivationPrincipal = input.ActivationPrincipal
+	r.deployment.VerificationDigest = input.VerificationDigest
 	return r.deployment, nil
 }
 
@@ -188,14 +251,24 @@ type fakeRuntime struct {
 	prepared     Prepared
 	prepareErr   error
 	prepareCalls int
+	verifyCalls  int
 	candidates   []runtimehost.ServingStateCandidate
 	committed    bool
+	verification Verification
+	verifyErr    error
 }
 
 func (r *fakeRuntime) Prepare(_ context.Context, candidates []runtimehost.ServingStateCandidate) (Prepared, error) {
 	r.prepareCalls++
 	r.candidates = append([]runtimehost.ServingStateCandidate(nil), candidates...)
 	return r.prepared, r.prepareErr
+}
+func (r *fakeRuntime) Verify(_ context.Context, _ Prepared) (Verification, error) {
+	r.verifyCalls++
+	if r.verification.Digest == "" {
+		r.verification.Digest = "sha256:" + strings.Repeat("a", 64)
+	}
+	return r.verification, r.verifyErr
 }
 func (r *fakeRuntime) Activate(_ Prepared, activate func() error) error {
 	if err := activate(); err != nil {

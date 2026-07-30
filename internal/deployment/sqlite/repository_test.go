@@ -147,7 +147,7 @@ func TestActivateDeploymentAtomicallyAppliesArtifactAccessPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	created := createDeployment(t, ctx, repository, "deployment_access", targets)
-	if _, err := repository.ActivateDeployment(ctx, created.ID); err != nil {
+	if _, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID)); err != nil {
 		t.Fatal(err)
 	}
 	var groupCount, objectCount int
@@ -177,7 +177,7 @@ func TestActivateDeploymentAtomicallyReconcilesDashboardPublications(t *testing.
 		t.Fatal(err)
 	}
 	created := createDeployment(t, ctx, repository, "deployment_publication", targets)
-	if _, err := repository.ActivateDeployment(ctx, created.ID); err != nil {
+	if _, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID)); err != nil {
 		t.Fatal(err)
 	}
 	row, err := publicationsqlite.NewRepository(db).Get(ctx, "sales", "website")
@@ -198,7 +198,7 @@ func TestActivateDeploymentRollsBackWhenPublicationSnapshotIsInvalid(t *testing.
 		t.Fatal(err)
 	}
 	created := createDeployment(t, ctx, repository, "deployment_bad_publication", targets)
-	if _, err := repository.ActivateDeployment(ctx, created.ID); !errors.Is(err, deployment.ErrConflict) {
+	if _, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID)); !errors.Is(err, deployment.ErrConflict) {
 		t.Fatalf("ActivateDeployment() error = %v", err)
 	}
 	assertActiveState(t, ctx, db, "sales", "prod", "sales_old")
@@ -223,7 +223,7 @@ func TestActivateDeploymentPersistsPublishSemanticModelDataVersion(t *testing.T)
 		t.Fatal(err)
 	}
 	created := createDeployment(t, ctx, repository, "deployment_data_version", targets)
-	if _, err := repository.ActivateDeployment(ctx, created.ID); err != nil {
+	if _, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID)); err != nil {
 		t.Fatal(err)
 	}
 	var modelID, servingStateID, source string
@@ -258,7 +258,7 @@ func TestActivateDeploymentRemovesDataVersionsForDeletedSemanticModels(t *testin
 		t.Fatal(err)
 	}
 	created := createDeployment(t, ctx, repository, "deployment_removes_model_version", targets)
-	if _, err := repository.ActivateDeployment(ctx, created.ID); err != nil {
+	if _, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID)); err != nil {
 		t.Fatal(err)
 	}
 	var count int
@@ -279,7 +279,7 @@ func TestActivateDeploymentRollsBackOnInvalidAccessPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := repository.ActivateDeployment(ctx, created.ID); !errors.Is(err, deployment.ErrConflict) {
+	if _, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID)); !errors.Is(err, deployment.ErrConflict) {
 		t.Fatalf("ActivateDeployment() error = %v, want conflict", err)
 	}
 	assertActiveState(t, ctx, db, "sales", "prod", "sales_old")
@@ -300,12 +300,17 @@ func TestActivateDeploymentAtomicallyUpdatesAllWorkspaceAndManagedPointers(t *te
 		{WorkspaceID: "support", ServingStateID: "support_new"},
 	})
 
-	active, err := repository.ActivateDeployment(ctx, created.ID)
+	active, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if active.Status != deployment.StatusActive || len(active.Connections) != 2 {
 		t.Fatalf("active deployment = %#v", active)
+	}
+	if active.ActivationPrincipal != "principal" ||
+		active.VerificationDigest != testActivationInput(created.ID).VerificationDigest ||
+		active.VerifiedAt == "" {
+		t.Fatalf("activation evidence = %#v", active)
 	}
 	assertActiveState(t, ctx, db, "sales", "prod", "sales_new")
 	assertActiveState(t, ctx, db, "support", "prod", "support_new")
@@ -314,7 +319,7 @@ func TestActivateDeploymentAtomicallyUpdatesAllWorkspaceAndManagedPointers(t *te
 	assertPointer(t, ctx, db, "orders", "prod", "orders_v2", created.ID, 1)
 	assertPointer(t, ctx, db, "tickets", "prod", "tickets_v3", created.ID, 1)
 
-	replayed, err := repository.ActivateDeployment(ctx, created.ID)
+	replayed, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID))
 	if err != nil || replayed.Status != deployment.StatusActive {
 		t.Fatalf("activation replay = %#v, err = %v", replayed, err)
 	}
@@ -353,7 +358,10 @@ func TestServiceActivationKeepsDurableAndRuntimeStateConsistentWhenRetiredRuntim
 		t.Fatal(err)
 	}
 
-	activated, err := service.Activate(ctx, deployment.Scope{ProjectID: "project", DeploymentID: created.ID})
+	activated, err := service.Activate(ctx, deployment.ActivationRequest{
+		Scope:   deployment.Scope{ProjectID: "project", DeploymentID: created.ID},
+		ActorID: "principal",
+	})
 	if err != nil {
 		t.Fatalf("activate deployment: %v", err)
 	}
@@ -412,7 +420,7 @@ func TestActivateDeploymentRollsBackOnWorkspacePointerConflict(t *testing.T) {
 	})
 	setActiveState(t, ctx, db, "support", "prod", "support_new")
 
-	_, err := repository.ActivateDeployment(ctx, created.ID)
+	_, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID))
 	if !errors.Is(err, deployment.ErrConflict) {
 		t.Fatalf("activation error = %v", err)
 	}
@@ -434,7 +442,7 @@ func TestActivateDeploymentRollsBackWhenCandidateBindingsChange(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := repository.ActivateDeployment(ctx, created.ID)
+	_, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID))
 	if !errors.Is(err, deployment.ErrConflict) {
 		t.Fatalf("activation error = %v", err)
 	}
@@ -459,7 +467,7 @@ func TestActivateDeploymentRollsBackOnManagedPointerConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := repository.ActivateDeployment(ctx, created.ID)
+	_, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID))
 	if !errors.Is(err, deployment.ErrConflict) {
 		t.Fatalf("activation error = %v", err)
 	}
@@ -474,7 +482,7 @@ func TestDeploymentWithoutManagedConnectionsActivates(t *testing.T) {
 	if len(created.Connections) != 0 {
 		t.Fatalf("connections = %#v", created.Connections)
 	}
-	if _, err := repository.ActivateDeployment(ctx, created.ID); err != nil {
+	if _, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID)); err != nil {
 		t.Fatal(err)
 	}
 	assertActiveState(t, ctx, db, "sales", "prod", "sales_new")
@@ -488,7 +496,7 @@ func TestCancelDeploymentOnlyTransitionsPendingDeployment(t *testing.T) {
 	if err != nil || cancelled.Status != deployment.StatusCancelled {
 		t.Fatalf("cancelled = %#v, error = %v", cancelled, err)
 	}
-	if _, err := repository.ActivateDeployment(ctx, created.ID); !errors.Is(err, deployment.ErrConflict) {
+	if _, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID)); !errors.Is(err, deployment.ErrConflict) {
 		t.Fatalf("activation after cancellation error = %v", err)
 	}
 }
@@ -582,7 +590,8 @@ type cutoverRuntime struct {
 	closeErr error
 }
 
-func (r *cutoverRuntime) Close() error { return r.closeErr }
+func (r *cutoverRuntime) Close() error                 { return r.closeErr }
+func (r *cutoverRuntime) Verify(context.Context) error { return nil }
 
 type emptyManagedDataResolver struct{}
 
@@ -624,6 +633,13 @@ func createDeployment(t *testing.T, ctx context.Context, repository *Repository,
 		t.Fatal(err)
 	}
 	return created
+}
+
+func testActivationInput(deploymentID string) deployment.ActivationInput {
+	return deployment.ActivationInput{
+		DeploymentID: deploymentID, ActivationPrincipal: "principal",
+		VerificationDigest: "sha256:" + strings.Repeat("f", 64),
+	}
 }
 
 func setCandidateProjectMetadata(t *testing.T, ctx context.Context, db *sql.DB, targets []deployment.TargetInput) {

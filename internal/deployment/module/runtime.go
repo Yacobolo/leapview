@@ -9,6 +9,7 @@ import (
 
 type RuntimeRegistry interface {
 	PrepareServingStateCandidates(context.Context, []runtimehost.ServingStateCandidate) (*runtimehost.PreparedSet, error)
+	VerifyPreparedSet(context.Context, *runtimehost.PreparedSet) (runtimehost.PreparedVerification, error)
 	ActivatePreparedSet(*runtimehost.PreparedSet, func() error) error
 }
 

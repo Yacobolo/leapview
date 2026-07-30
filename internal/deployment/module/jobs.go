@@ -117,7 +117,13 @@ func (m *Module) activate(ctx context.Context, job jobs.Job) error {
 	if err != nil {
 		event = "deployment.failed"
 	}
-	m.appendEvent(ctx, payload.Deployment, event, string(row.Status))
+	m.appendActivationEvent(
+		ctx,
+		payload.Deployment,
+		event,
+		payload.Actor,
+		row,
+	)
 	return err
 }
 
@@ -164,4 +170,29 @@ func (m *Module) appendEvent(ctx context.Context, deploymentID, event, status st
 	}
 	data, _ := json.Marshal(map[string]any{"deploymentId": deploymentID, "status": status})
 	_, _ = m.jobs.Events.AppendEvent(context.WithoutCancel(ctx), "deployment", deploymentID, event, data)
+}
+
+func (m *Module) appendActivationEvent(
+	ctx context.Context,
+	deploymentID,
+	event,
+	actor string,
+	row apiadapter.Deployment,
+) {
+	if m.jobs.Events == nil {
+		return
+	}
+	data, _ := json.Marshal(map[string]any{
+		"deploymentId":        deploymentID,
+		"status":              row.Status,
+		"activationPrincipal": actor,
+		"verificationDigest":  row.VerificationDigest,
+	})
+	_, _ = m.jobs.Events.AppendEvent(
+		context.WithoutCancel(ctx),
+		"deployment",
+		deploymentID,
+		event,
+		data,
+	)
 }

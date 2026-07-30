@@ -81,17 +81,20 @@ type ActivateRequest struct {
 }
 
 type Deployment struct {
-	ID            string
-	Project       string
-	Environment   string
-	RequestDigest string
-	Status        Status
-	CreatedBy     string
-	CreatedAt     string
-	ActivatedAt   string
-	Error         string
-	Targets       []Target
-	Connections   []Connection
+	ID                  string
+	Project             string
+	Environment         string
+	RequestDigest       string
+	Status              Status
+	CreatedBy           string
+	CreatedAt           string
+	ActivatedAt         string
+	ActivationPrincipal string
+	VerificationDigest  string
+	VerifiedAt          string
+	Error               string
+	Targets             []Target
+	Connections         []Connection
 }
 
 type Target struct {
@@ -114,7 +117,7 @@ type Connection struct {
 type Service interface {
 	Create(context.Context, deployment.CreateInput) (deployment.Deployment, error)
 	Get(context.Context, deployment.Scope) (deployment.Deployment, error)
-	Activate(context.Context, deployment.Scope) (deployment.Deployment, error)
+	Activate(context.Context, deployment.ActivationRequest) (deployment.Deployment, error)
 	Cancel(context.Context, deployment.Scope) (deployment.Deployment, error)
 }
 
@@ -228,7 +231,13 @@ func (a *Adapter) Activate(ctx context.Context, request ActivateRequest) (Deploy
 	if strings.TrimSpace(request.IdempotencyKey) == "" || strings.TrimSpace(request.Actor) == "" {
 		return Deployment{}, fmt.Errorf("%w: actor and idempotency key are required", ErrInvalid)
 	}
-	row, err := a.service.Activate(ctx, deployment.Scope{ProjectID: strings.TrimSpace(request.Project), DeploymentID: strings.TrimSpace(request.DeploymentID)})
+	row, err := a.service.Activate(ctx, deployment.ActivationRequest{
+		Scope: deployment.Scope{
+			ProjectID:    strings.TrimSpace(request.Project),
+			DeploymentID: strings.TrimSpace(request.DeploymentID),
+		},
+		ActorID: strings.TrimSpace(request.Actor),
+	})
 	if err != nil {
 		return Deployment{}, err
 	}
@@ -240,7 +249,10 @@ func (a *Adapter) mapDeployment(ctx context.Context, row deployment.Deployment) 
 		ID: row.ID, Project: row.ProjectID, Environment: row.Environment, RequestDigest: row.RequestDigest,
 		Status: Status(row.Status), CreatedBy: row.CreatedBy,
 		CreatedAt: row.CreatedAt, ActivatedAt: row.ActivatedAt, Error: row.Error,
-		Targets: make([]Target, 0, len(row.Targets)), Connections: make([]Connection, 0, len(row.Connections)),
+		ActivationPrincipal: row.ActivationPrincipal,
+		VerificationDigest:  row.VerificationDigest,
+		VerifiedAt:          row.VerifiedAt,
+		Targets:             make([]Target, 0, len(row.Targets)), Connections: make([]Connection, 0, len(row.Connections)),
 	}
 	for _, target := range row.Targets {
 		result.Targets = append(result.Targets, Target{

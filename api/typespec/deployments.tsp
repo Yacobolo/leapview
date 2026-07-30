@@ -168,6 +168,11 @@ model DeploymentProgress {
   unit: string;
 }
 
+model DeploymentVerification {
+  digest: string;
+  verifiedAt: utcDateTime;
+}
+
 model DeploymentResponse {
   id: string;
   projectId: string;
@@ -180,6 +185,8 @@ model DeploymentResponse {
   targets: DeploymentTargetResponse[];
   connections: DeploymentConnectionResponse[];
   createdBy: string;
+  activationPrincipal?: string;
+  verification?: DeploymentVerification;
   createdAt: utcDateTime;
   startedAt?: utcDateTime;
   finishedAt?: utcDateTime;

@@ -90,10 +90,21 @@ SELECT deployment_id FROM api_deployment_releases
 WHERE project_id = ? ORDER BY created_at DESC, deployment_id DESC;
 
 -- name: GetPriorAPIReleaseDeployment :one
-SELECT prior.release_id FROM api_deployment_releases current
-JOIN api_deployment_releases prior ON prior.project_id = current.project_id AND prior.created_at < current.created_at
-WHERE current.project_id = ? AND current.deployment_id = ?
-ORDER BY prior.created_at DESC, prior.deployment_id DESC LIMIT 1;
+SELECT prior.release_id
+FROM api_deployment_releases current
+JOIN project_deployments current_deployment
+  ON current_deployment.id = current.deployment_id
+JOIN api_deployment_releases prior
+  ON prior.project_id = current.project_id
+JOIN project_deployments prior_deployment
+  ON prior_deployment.id = prior.deployment_id
+WHERE current.project_id = ?
+  AND current.deployment_id = ?
+  AND current_deployment.status IN ('active', 'superseded')
+  AND prior_deployment.status IN ('active', 'superseded')
+  AND prior_deployment.activated_at < current_deployment.activated_at
+ORDER BY prior_deployment.activated_at DESC, prior.deployment_id DESC
+LIMIT 1;
 
 -- name: ListAPIProjects :many
 SELECT project_id, CAST(MIN(created_at) AS TEXT) AS created_at, CAST(MAX(updated_at) AS TEXT) AS updated_at FROM (

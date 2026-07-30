@@ -71,6 +71,24 @@ func TestPublishEvidenceRejectsCrossTargetAndIncompleteRelease(t *testing.T) {
 	}
 }
 
+func TestDeploymentResponseExposesOnlyBoundedActivationEvidence(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("f", 64)
+	response := deploymentResponse(apiadapter.Deployment{
+		ID: "deployment_1", Project: "project", Environment: "prod",
+		Status: apiadapter.StatusActive, CreatedBy: "publisher",
+		ActivationPrincipal: "activator",
+		VerificationDigest:  digest,
+		VerifiedAt:          "2026-07-30T09:00:00Z",
+	}, publishTestRelease(t))
+	if response.ActivationPrincipal == nil ||
+		*response.ActivationPrincipal != "activator" ||
+		response.Verification == nil ||
+		response.Verification.Digest != digest ||
+		response.Verification.VerifiedAt != "2026-07-30T09:00:00Z" {
+		t.Fatalf("activation response = %#v", response)
+	}
+}
+
 func TestRetryCreatesOneNewRequestForTheSameImmutableRelease(t *testing.T) {
 	targetRelease := publishTestRelease(t)
 	coordinator := &publishCoordinatorStub{
@@ -119,6 +137,53 @@ func TestRetryCreatesOneNewRequestForTheSameImmutableRelease(t *testing.T) {
 		coordinator.created.Evidence.PlanDigest != targetRelease.Provenance.PlanDigest ||
 		coordinator.created.Evidence.ReleaseDigest != targetRelease.Provenance.Digest {
 		t.Fatalf("retry request = %#v", coordinator.created)
+	}
+}
+
+func TestRollbackCreatesFreshPlanFromTheRetainedPriorRelease(t *testing.T) {
+	targetRelease := publishTestRelease(t)
+	coordinator := &publishCoordinatorStub{}
+	releases := &publishReleaseStub{
+		targetRelease:  targetRelease,
+		priorReleaseID: targetRelease.ID,
+	}
+	module := &Module{
+		handler: deploymenthttp.NewHandler(deploymenthttp.Options{
+			Coordinator: coordinator, InstanceEnvironment: "prod",
+			CurrentPrincipal: func(*http.Request) (deploymenthttp.Principal, bool) {
+				return deploymenthttp.Principal{ID: "operator"}, true
+			},
+		}),
+		instanceID: "lvinst_prod",
+		jobs:       JobConfig{Coordinator: coordinator},
+		api:        APIConfig{Releases: releases},
+	}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/projects/project/deployments/deployment_active/rollback",
+		nil,
+	)
+
+	module.RollbackDeployment(
+		recorder,
+		request,
+		"project",
+		"deployment_active",
+		"rollback-1",
+	)
+
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	if coordinator.created.ReleaseID != targetRelease.ID ||
+		coordinator.created.RollbackOf != "deployment_active" ||
+		coordinator.created.IdempotencyKey != "rollback-1" ||
+		coordinator.created.Evidence.PlanDigest != targetRelease.Provenance.PlanDigest ||
+		len(coordinator.created.Targets) != 1 ||
+		coordinator.created.Targets[0].CandidateID !=
+			targetRelease.Artifacts[0].ServingStateID {
+		t.Fatalf("rollback request = %#v", coordinator.created)
 	}
 }
 
@@ -349,9 +414,10 @@ func (*publishCoordinatorStub) Cancel(
 }
 
 type publishReleaseStub struct {
-	targetRelease release.Release
-	deployments   map[string]string
-	published     release.PublishCandidateInput
+	targetRelease  release.Release
+	deployments    map[string]string
+	published      release.PublishCandidateInput
+	priorReleaseID string
 }
 
 func (stub *publishReleaseStub) Get(
@@ -417,10 +483,14 @@ func (*publishReleaseStub) ListDeploymentIDs(
 	return nil, nil
 }
 
-func (*publishReleaseStub) PriorDeploymentRelease(
-	context.Context,
-	string,
-	string,
+func (stub *publishReleaseStub) PriorDeploymentRelease(
+	_ context.Context,
+	projectID,
+	_ string,
 ) (string, error) {
-	return "", release.ErrNotFound
+	if projectID != stub.targetRelease.ProjectID ||
+		stub.priorReleaseID == "" {
+		return "", release.ErrNotFound
+	}
+	return stub.priorReleaseID, nil
 }

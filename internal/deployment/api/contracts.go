@@ -146,22 +146,29 @@ type ConnectionResponse struct {
 	RevisionID      string  `json:"revisionId"`
 }
 
+type VerificationResponse struct {
+	Digest     string `json:"digest"`
+	VerifiedAt string `json:"verifiedAt"`
+}
+
 type Response struct {
-	Connections   []ConnectionResponse    `json:"connections"`
-	CreatedAt     string                  `json:"createdAt"`
-	CreatedBy     string                  `json:"createdBy"`
-	Environment   string                  `json:"environment"`
-	RequestDigest string                  `json:"requestDigest"`
-	Evidence      PublishEvidenceResponse `json:"evidence"`
-	Error         *string                 `json:"error,omitempty"`
-	Approval      *ApprovalResponse       `json:"approval,omitempty"`
-	FinishedAt    *string                 `json:"finishedAt,omitempty"`
-	ID            string                  `json:"id"`
-	ProjectID     string                  `json:"projectId"`
-	ReleaseID     string                  `json:"releaseId"`
-	StartedAt     *string                 `json:"startedAt,omitempty"`
-	Status        Status                  `json:"status"`
-	Targets       []TargetResponse        `json:"targets"`
+	Connections         []ConnectionResponse    `json:"connections"`
+	CreatedAt           string                  `json:"createdAt"`
+	CreatedBy           string                  `json:"createdBy"`
+	ActivationPrincipal *string                 `json:"activationPrincipal,omitempty"`
+	Verification        *VerificationResponse   `json:"verification,omitempty"`
+	Environment         string                  `json:"environment"`
+	RequestDigest       string                  `json:"requestDigest"`
+	Evidence            PublishEvidenceResponse `json:"evidence"`
+	Error               *string                 `json:"error,omitempty"`
+	Approval            *ApprovalResponse       `json:"approval,omitempty"`
+	FinishedAt          *string                 `json:"finishedAt,omitempty"`
+	ID                  string                  `json:"id"`
+	ProjectID           string                  `json:"projectId"`
+	ReleaseID           string                  `json:"releaseId"`
+	StartedAt           *string                 `json:"startedAt,omitempty"`
+	Status              Status                  `json:"status"`
+	Targets             []TargetResponse        `json:"targets"`
 }
 
 type ListResponse struct {

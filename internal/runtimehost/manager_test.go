@@ -1112,6 +1112,45 @@ func TestPreparedSetReportsCandidateSnapshots(t *testing.T) {
 	}
 }
 
+func TestRegistryVerifiesEveryPreparedRuntimeAndReturnsStableEvidence(t *testing.T) {
+	repo := newFakeRegistryRepo()
+	repo.deployments["dep_sales_prod"] = servingstate.State{
+		ID: "dep_sales_prod", WorkspaceID: "sales",
+		Environment: "prod", Status: servingstate.StatusValidated,
+	}
+	repo.artifacts["dep_sales_prod"] = servingstate.Artifact{
+		ServingStateID: "dep_sales_prod", WorkspaceID: "sales",
+		Environment: "prod", Digest: "sales-prod",
+	}
+	factory := &fakeFactory{snapshotID: 42}
+	registry := NewRegistryWithFactory(RegistryOptions{
+		Repo: repo, Environment: "prod", Factory: factory,
+	})
+	prepared, err := registry.PrepareServingStates(
+		context.Background(),
+		[]string{"dep_sales_prod"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prepared.Close()
+
+	first, err := registry.VerifyPreparedSet(context.Background(), prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := registry.VerifyPreparedSet(context.Background(), prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Digest == "" || first.Digest != second.Digest {
+		t.Fatalf("verification evidence = %#v, replay = %#v", first, second)
+	}
+	if factory.runtime.verifyCalls != 2 {
+		t.Fatalf("verify calls = %d, want 2", factory.runtime.verifyCalls)
+	}
+}
+
 func TestRegistryServesActiveGenerationWhilePreparedSetIsBuilding(t *testing.T) {
 	repo := newFakeRegistryRepo()
 	repo.active["sales/prod"] = registryDeploymentArtifact{
@@ -1503,8 +1542,9 @@ func (r fakeManagedDataResolver) ResolveManagedData(context.Context, servingstat
 }
 
 type fakeRuntime struct {
-	closed     bool
-	snapshotID int64
+	closed      bool
+	snapshotID  int64
+	verifyCalls int
 }
 
 func (r *fakeRuntime) Close() error {
@@ -1514,6 +1554,11 @@ func (r *fakeRuntime) Close() error {
 
 func (r *fakeRuntime) DuckLakeSnapshotID() int64 {
 	return r.snapshotID
+}
+
+func (r *fakeRuntime) Verify(context.Context) error {
+	r.verifyCalls++
+	return nil
 }
 
 type fakePrepared struct{}

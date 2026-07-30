@@ -11678,6 +11678,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/DeploymentResponse'
               example:
+                activationPrincipal: example
                 approval:
                   approvedAt: "2026-01-02T15:04:05Z"
                   approvedBy: example
@@ -11744,6 +11745,9 @@ paths:
                     servingStateId: example
                     status: example
                     workspaceId: example
+                verification:
+                  digest: example
+                  verifiedAt: "2026-01-02T15:04:05Z"
         '400':
           description: The server could not understand the request due to invalid syntax.
           content:
@@ -16897,7 +16901,8 @@ paths:
                 $ref: '#/components/schemas/DeploymentListResponse'
               example:
                 items:
-                  - approval:
+                  - activationPrincipal: example
+                    approval:
                       approvedAt: "2026-01-02T15:04:05Z"
                       approvedBy: example
                       deniedAt: "2026-01-02T15:04:05Z"
@@ -16963,6 +16968,9 @@ paths:
                         servingStateId: example
                         status: example
                         workspaceId: example
+                    verification:
+                      digest: example
+                      verifiedAt: "2026-01-02T15:04:05Z"
                 page:
                   nextCursor: example
         '400':
@@ -17235,6 +17243,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/DeploymentResponse'
               example:
+                activationPrincipal: example
                 approval:
                   approvedAt: "2026-01-02T15:04:05Z"
                   approvedBy: example
@@ -17301,6 +17310,9 @@ paths:
                     servingStateId: example
                     status: example
                     workspaceId: example
+                verification:
+                  digest: example
+                  verifiedAt: "2026-01-02T15:04:05Z"
         '400':
           description: The server could not understand the request due to invalid syntax.
           content:
@@ -17573,6 +17585,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/DeploymentResponse'
               example:
+                activationPrincipal: example
                 approval:
                   approvedAt: "2026-01-02T15:04:05Z"
                   approvedBy: example
@@ -17639,6 +17652,9 @@ paths:
                     servingStateId: example
                     status: example
                     workspaceId: example
+                verification:
+                  digest: example
+                  verifiedAt: "2026-01-02T15:04:05Z"
         '400':
           description: The server could not understand the request due to invalid syntax.
           content:
@@ -17916,6 +17932,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/DeploymentResponse'
               example:
+                activationPrincipal: example
                 approval:
                   approvedAt: "2026-01-02T15:04:05Z"
                   approvedBy: example
@@ -17982,6 +17999,9 @@ paths:
                     servingStateId: example
                     status: example
                     workspaceId: example
+                verification:
+                  digest: example
+                  verifiedAt: "2026-01-02T15:04:05Z"
         '400':
           description: The server could not understand the request due to invalid syntax.
           content:
@@ -19462,6 +19482,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/DeploymentResponse'
               example:
+                activationPrincipal: example
                 approval:
                   approvedAt: "2026-01-02T15:04:05Z"
                   approvedBy: example
@@ -19528,6 +19549,9 @@ paths:
                     servingStateId: example
                     status: example
                     workspaceId: example
+                verification:
+                  digest: example
+                  verifiedAt: "2026-01-02T15:04:05Z"
         '400':
           description: The server could not understand the request due to invalid syntax.
           content:
@@ -20122,6 +20146,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/DeploymentResponse'
               example:
+                activationPrincipal: example
                 approval:
                   approvedAt: "2026-01-02T15:04:05Z"
                   approvedBy: example
@@ -20188,6 +20213,9 @@ paths:
                     servingStateId: example
                     status: example
                     workspaceId: example
+                verification:
+                  digest: example
+                  verifiedAt: "2026-01-02T15:04:05Z"
         '400':
           description: The server could not understand the request due to invalid syntax.
           content:
@@ -20465,6 +20493,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/DeploymentResponse'
               example:
+                activationPrincipal: example
                 approval:
                   approvedAt: "2026-01-02T15:04:05Z"
                   approvedBy: example
@@ -20531,6 +20560,9 @@ paths:
                     servingStateId: example
                     status: example
                     workspaceId: example
+                verification:
+                  digest: example
+                  verifiedAt: "2026-01-02T15:04:05Z"
         '400':
           description: The server could not understand the request due to invalid syntax.
           content:
@@ -52230,7 +52262,8 @@ components:
           items:
             $ref: '#/components/schemas/DeploymentResponse'
           example:
-            - approval:
+            - activationPrincipal: example
+              approval:
                 approvedAt: "2026-01-02T15:04:05Z"
                 approvedBy: example
                 deniedAt: "2026-01-02T15:04:05Z"
@@ -52296,11 +52329,15 @@ components:
                   servingStateId: example
                   status: example
                   workspaceId: example
+              verification:
+                digest: example
+                verifiedAt: "2026-01-02T15:04:05Z"
         page:
           $ref: '#/components/schemas/PageInfo'
       example:
         items:
-          - approval:
+          - activationPrincipal: example
+            approval:
               approvedAt: "2026-01-02T15:04:05Z"
               approvedBy: example
               deniedAt: "2026-01-02T15:04:05Z"
@@ -52366,6 +52403,9 @@ components:
                 servingStateId: example
                 status: example
                 workspaceId: example
+            verification:
+              digest: example
+              verifiedAt: "2026-01-02T15:04:05Z"
         page:
           nextCursor: example
     DeploymentManagedDataPinEvidence:
@@ -52544,6 +52584,11 @@ components:
         createdBy:
           type: string
           example: example
+        activationPrincipal:
+          type: string
+          example: example
+        verification:
+          $ref: '#/components/schemas/DeploymentVerification'
         createdAt:
           type: string
           format: date-time
@@ -52562,6 +52607,7 @@ components:
         approval:
           $ref: '#/components/schemas/DeploymentApprovalResponse'
       example:
+        activationPrincipal: example
         approval:
           approvedAt: "2026-01-02T15:04:05Z"
           approvedBy: example
@@ -52628,6 +52674,9 @@ components:
             servingStateId: example
             status: example
             workspaceId: example
+        verification:
+          digest: example
+          verifiedAt: "2026-01-02T15:04:05Z"
     DeploymentStatus:
       type: string
       enum:
@@ -52665,6 +52714,22 @@ components:
         servingStateId: example
         status: example
         workspaceId: example
+    DeploymentVerification:
+      type: object
+      required:
+        - digest
+        - verifiedAt
+      properties:
+        digest:
+          type: string
+          example: example
+        verifiedAt:
+          type: string
+          format: date-time
+          example: "2026-01-02T15:04:05Z"
+      example:
+        digest: example
+        verifiedAt: "2026-01-02T15:04:05Z"
     DeploymentWorkspacePublishEvidence:
       type: object
       required:

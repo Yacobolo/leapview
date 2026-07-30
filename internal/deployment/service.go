@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/flidai/leapview/internal/platform/digest"
 	"github.com/flidai/leapview/internal/runtimehost"
 	servingstate "github.com/flidai/leapview/internal/servingstate"
 )
@@ -21,7 +22,7 @@ type Repository interface {
 // managed-data and serving-state pointers, installs access/publication
 // projections, and marks the deployment active.
 type ActivationUnitOfWork interface {
-	ActivateDeployment(context.Context, string) (Deployment, error)
+	ActivateDeployment(context.Context, ActivationInput) (Deployment, error)
 }
 
 func (s *Service) Cancel(ctx context.Context, scope Scope) (Deployment, error) {
@@ -53,11 +54,13 @@ type Prepared interface {
 
 type Runtime interface {
 	Prepare(context.Context, []runtimehost.ServingStateCandidate) (Prepared, error)
+	Verify(context.Context, Prepared) (Verification, error)
 	Activate(Prepared, func() error) error
 }
 
 type runtimeRegistry interface {
 	PrepareServingStateCandidates(context.Context, []runtimehost.ServingStateCandidate) (*runtimehost.PreparedSet, error)
+	VerifyPreparedSet(context.Context, *runtimehost.PreparedSet) (runtimehost.PreparedVerification, error)
 	ActivatePreparedSet(*runtimehost.PreparedSet, func() error) error
 }
 
@@ -85,6 +88,23 @@ func (r registryRuntime) Activate(prepared Prepared, activate func() error) erro
 		return fmt.Errorf("prepared runtimes belong to a different deployment coordinator")
 	}
 	return r.registry.ActivatePreparedSet(value.set, activate)
+}
+
+func (r registryRuntime) Verify(
+	ctx context.Context,
+	prepared Prepared,
+) (Verification, error) {
+	value, ok := prepared.(registryPrepared)
+	if !ok || value.set == nil {
+		return Verification{}, fmt.Errorf(
+			"prepared runtimes belong to a different deployment coordinator",
+		)
+	}
+	verification, err := r.registry.VerifyPreparedSet(ctx, value.set)
+	if err != nil {
+		return Verification{}, err
+	}
+	return Verification{Digest: verification.Digest}, nil
 }
 
 func (p registryPrepared) Snapshots() []runtimehost.PreparedSnapshot { return p.set.Snapshots() }
@@ -135,8 +155,15 @@ func (s *Service) Get(ctx context.Context, scope Scope) (Deployment, error) {
 	return row, nil
 }
 
-func (s *Service) Activate(ctx context.Context, scope Scope) (Deployment, error) {
-	row, err := s.Get(ctx, scope)
+func (s *Service) Activate(
+	ctx context.Context,
+	request ActivationRequest,
+) (Deployment, error) {
+	request.ActorID = strings.TrimSpace(request.ActorID)
+	if request.ActorID == "" {
+		return Deployment{}, fmt.Errorf("activation principal is required")
+	}
+	row, err := s.Get(ctx, request.Scope)
 	if err != nil {
 		return Deployment{}, err
 	}
@@ -174,11 +201,24 @@ func (s *Service) Activate(ctx context.Context, scope Scope) (Deployment, error)
 			return Deployment{}, err
 		}
 	}
+	verification, err := s.runtime.Verify(ctx, prepared)
+	if err != nil {
+		_ = s.repository.FailDeployment(ctx, row.ID, err)
+		return Deployment{}, err
+	}
+	if err := digest.ValidateSHA256Identity(verification.Digest); err != nil {
+		invalid := fmt.Errorf("runtime verification returned invalid evidence: %w", err)
+		_ = s.repository.FailDeployment(ctx, row.ID, invalid)
+		return Deployment{}, invalid
+	}
 
 	var activated Deployment
 	err = s.runtime.Activate(prepared, func() error {
 		var activateErr error
-		activated, activateErr = s.activation.ActivateDeployment(ctx, row.ID)
+		activated, activateErr = s.activation.ActivateDeployment(ctx, ActivationInput{
+			DeploymentID: row.ID, ActivationPrincipal: request.ActorID,
+			VerificationDigest: verification.Digest,
+		})
 		return activateErr
 	})
 	if err != nil {

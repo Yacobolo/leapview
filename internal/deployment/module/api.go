@@ -824,6 +824,14 @@ func deploymentResponse(
 		result.StartedAt = &row.ActivatedAt
 		result.FinishedAt = &row.ActivatedAt
 	}
+	if row.ActivationPrincipal != "" {
+		result.ActivationPrincipal = &row.ActivationPrincipal
+	}
+	if row.VerificationDigest != "" && row.VerifiedAt != "" {
+		result.Verification = &deploymentapi.VerificationResponse{
+			Digest: row.VerificationDigest, VerifiedAt: row.VerifiedAt,
+		}
+	}
 	if row.Error != "" {
 		result.Error = &row.Error
 	}
