@@ -206,6 +206,82 @@ test('ECharts translation preserves combo series marks and axes', () => {
   expect(new Set(reorderedOption.dataset.map((dataset: any) => dataset.id))).toEqual(new Set(option.dataset.map((dataset: any) => dataset.id)))
 })
 
+test('ECharts normalizes stacks and preserves series order and color identity across filters', () => {
+  const envelope = cartesianSeriesFixture() as any
+  envelope.spec.presentation.stacking = 'percent'
+  envelope.spec.presentation.seriesIntent = [
+    { value: 'delivered', order: 0, color: 'success' },
+    { value: 'processing', order: 1, color: 'data_3' },
+    { value: 'canceled', order: 2, color: 'danger' },
+  ]
+
+  const option = echartsOption(envelope, defaultRendererContext) as any
+  expect(option.series.map((series: any) => series.name)).toEqual(['delivered', 'processing'])
+  expect(option.series.map((series: any) => series.itemStyle.color)).toEqual([
+    defaultRendererContext.colors.success,
+    defaultRendererContext.colors.data[2],
+  ])
+  expect(option.series.map((series: any) => series.stack)).toEqual(['percent', 'percent'])
+  expect(option.series.map((series: any) => series.encode.y)).toEqual(['__lv_percent_value', '__lv_percent_value'])
+  expect(option.dataset[1].source).toEqual([
+    ['label', 'series', 'value', '__lv_percent_value'],
+    ['Jan', 'delivered', 10, 25],
+    ['Feb', 'delivered', 30, 75],
+  ])
+  expect(option.dataset[2].source).toEqual([
+    ['label', 'series', 'value', '__lv_percent_value'],
+    ['Jan', 'processing', 30, 75],
+    ['Feb', 'processing', 10, 25],
+  ])
+  expect(option.yAxis.axisLabel.formatter(25)).toBe('25%')
+
+  const filtered = structuredClone(envelope) as any
+  filtered.dataState.datasets[0].rows = filtered.dataState.datasets[0].rows.filter((row: unknown[]) => row[1] === 'processing')
+  const filteredOption = echartsOption(filtered, defaultRendererContext) as any
+  expect(filteredOption.series.map((series: any) => [series.name, series.itemStyle.color])).toEqual([
+    ['processing', defaultRendererContext.colors.data[2]],
+  ])
+  expect(filteredOption.dataset[1].source.map((row: unknown[]) => row.at(-1))).toEqual(['__lv_percent_value', 100, 100])
+
+  delete envelope.spec.presentation.seriesIntent
+  const automatic = echartsOption(envelope, defaultRendererContext) as any
+  const automaticProcessing = automatic.series.find((series: any) => series.name === 'processing').itemStyle.color
+  delete filtered.spec.presentation.seriesIntent
+  const automaticFiltered = echartsOption(filtered, defaultRendererContext) as any
+  expect(automaticFiltered.series[0].itemStyle.color).toBe(automaticProcessing)
+})
+
+test('ECharts normalizes multi-measure percent stacks without changing raw tooltip values', () => {
+  const envelope = cartesianFixture('area', ['label', 'revenue', 'cost']) as any
+  envelope.spec.presentation.stacked = false
+  envelope.spec.presentation.stacking = 'percent'
+  envelope.spec.presentation.showLabels = false
+  envelope.spec.presentation.seriesIntent = [
+    { value: 'cost', order: 0, color: 'warning' },
+    { value: 'revenue', order: 1, color: 'success' },
+  ]
+  envelope.dataState.datasets[0].rows = [
+    ['Jan', 10, 30],
+    ['Feb', 30, 10],
+  ]
+
+  const option = echartsOption(envelope, defaultRendererContext) as any
+  expect(option.series.map((series: any) => series.name)).toEqual(['cost', 'revenue'])
+  expect(option.series.map((series: any) => series.encode.y)).toEqual(['__lv_percent_cost', '__lv_percent_revenue'])
+  expect(option.series.map((series: any) => series.itemStyle.color)).toEqual([
+    defaultRendererContext.colors.attention,
+    defaultRendererContext.colors.success,
+  ])
+  expect(option.series.every((series: any) => series.label.show === false)).toBe(true)
+  expect(option.series[0].label.formatter({ value: ['Jan', 10, 30, 75, 25] })).toBe('75%')
+  expect(option.series[1].label.formatter({ value: ['Jan', 10, 30, 75, 25] })).toBe('25%')
+  expect(option.dataset.source).toEqual([
+    ['label', 'revenue', 'cost', '__lv_percent_cost', '__lv_percent_revenue'],
+    ['Jan', 10, 30, 75, 25],
+    ['Feb', 30, 10, 25, 75],
+  ])
+})
+
 test('ECharts translation emits one multi-value financial series', () => {
   const envelope = {
     schemaVersion: 4, visualID: 'ohlc', rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
@@ -558,6 +634,33 @@ function cartesianFixture(mark: string, columns = ['label', 'value']): Visualiza
     schemaVersion: 4, visualID: mark, rendererID: 'echarts', specRevision: 'sha256:test', dataRevision: 1,
     spec: { kind: 'cartesian', title: mark, mark, datasets: [{ id: 'primary', fields }], dataBudget: { maxRows: 100, requiredCompleteness: 'complete' }, accessibility: { title: mark, description: mark }, interactions: [], x: { dataset: 'primary', field: 'label' }, y, presentation: { legend: 'bottom', showLabels: true, smooth: true, stacked: true, showSymbols: false, dataZoom: true, area: mark === 'area', step: true, symbolSize: 12, labelPosition: 'top', orientation: mark === 'bar' ? 'horizontal' : 'vertical', histogramBins: mark === 'histogram' ? 10 : undefined } },
     dataState: { kind: 'inline', specRevision: 'sha256:test', dataRevision: 1, generation: 1, datasets: [{ id: 'primary', specRevision: 'sha256:test', dataRevision: 1, generation: 1, columns, rows: [row], completeness: 'complete' }] }, selection: [], status: { kind: 'ready' }, diagnostics: [],
+  } as VisualizationEnvelope
+}
+
+function cartesianSeriesFixture(): VisualizationEnvelope {
+  return {
+    schemaVersion: 4, visualID: 'series', rendererID: 'echarts', specRevision: 'sha256:series', dataRevision: 1,
+    spec: {
+      kind: 'cartesian', title: 'Orders', mark: 'area',
+      datasets: [{ id: 'primary', fields: [
+        { id: 'label', role: 'dimension', dataType: 'string', nullable: false, label: 'Month' },
+        { id: 'series', role: 'dimension', dataType: 'string', nullable: false, label: 'Status' },
+        { id: 'value', role: 'measure', dataType: 'decimal', nullable: false, label: 'Orders' },
+      ] }],
+      dataBudget: { maxRows: 100, requiredCompleteness: 'complete' }, accessibility: { title: 'Orders', description: 'Orders by status' }, interactions: [],
+      x: { dataset: 'primary', field: 'label' }, y: [{ dataset: 'primary', field: 'value' }], series: { dataset: 'primary', field: 'series' },
+      presentation: { legend: 'bottom', showLabels: true, smooth: false, stacked: false, stacking: 'normal', showSymbols: true, dataZoom: false, area: true, step: false },
+    },
+    dataState: {
+      kind: 'inline', specRevision: 'sha256:series', dataRevision: 1, generation: 1,
+      datasets: [{
+        id: 'primary', specRevision: 'sha256:series', dataRevision: 1, generation: 1,
+        columns: ['label', 'series', 'value'],
+        rows: [['Jan', 'processing', 30], ['Jan', 'delivered', 10], ['Feb', 'processing', 10], ['Feb', 'delivered', 30]],
+        completeness: 'complete',
+      }],
+    },
+    selection: [], status: { kind: 'ready' }, diagnostics: [],
   } as VisualizationEnvelope
 }
 

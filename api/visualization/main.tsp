@@ -199,6 +199,29 @@ enum VisualizationReferenceReducer {
   median: "median",
 }
 
+enum VisualizationStackingMode {
+  none: "none",
+  normal: "normal",
+  percent: "percent",
+}
+
+enum VisualizationColorIntent {
+  accent: "accent",
+  neutral: "neutral",
+  ink: "ink",
+  success: "success",
+  warning: "warning",
+  danger: "danger",
+  data1: "data_1",
+  data2: "data_2",
+  data3: "data_3",
+  data4: "data_4",
+  data5: "data_5",
+  data6: "data_6",
+  data7: "data_7",
+  data8: "data_8",
+}
+
 enum VisualizationOrientation {
   horizontal: "horizontal",
   vertical: "vertical",
@@ -452,6 +475,12 @@ model VisualizationComboSeries {
   `axis`: VisualizationAxis;
 }
 
+model VisualizationSeriesIntent {
+  `value`: string;
+  `order`?: int32;
+  `color`?: VisualizationColorIntent;
+}
+
 model CartesianVisualizationPresentation extends VisualizationPresentation {
   `smooth`: boolean;
   `stacked`: boolean;
@@ -464,6 +493,8 @@ model CartesianVisualizationPresentation extends VisualizationPresentation {
   `symbolSize`?: float64;
   `histogramBins`?: int32;
   `comboSeries`?: VisualizationComboSeries[];
+  `stacking`?: VisualizationStackingMode;
+  `seriesIntent`?: VisualizationSeriesIntent[];
 }
 
 model ProportionalVisualizationPresentation extends VisualizationPresentation {

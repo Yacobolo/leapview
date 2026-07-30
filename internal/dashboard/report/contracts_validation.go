@@ -2,6 +2,7 @@ package report
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -418,7 +419,68 @@ func validateVisualPresentation(name string, visual Visual) error {
 	if err := validateDecisionContext(name, visual); err != nil {
 		return err
 	}
+	if err := validateSeriesPresentation(name, visual); err != nil {
+		return err
+	}
 	return nil
+}
+
+func validateSeriesPresentation(name string, visual Visual) error {
+	presentation := visual.Presentation
+	if presentation.Stacked && presentation.Stacking != "" {
+		return fmt.Errorf("visual %q cannot combine presentation.stacked and presentation.stacking", name)
+	}
+	if !oneOf(presentation.Stacking, "", "none", "normal", "percent") {
+		return fmt.Errorf("visual %q has unsupported presentation.stacking %q", name, presentation.Stacking)
+	}
+	if presentation.Stacking != "" && presentation.Stacking != "none" {
+		if !oneOf(visual.Type, "line", "area", "bar", "column", "combo") {
+			return fmt.Errorf("visual %q stacking is unsupported for type %q", name, visual.Type)
+		}
+		if presentation.Stacking == "percent" && visual.Query.Series.IsZero() && len(visual.Query.Measures) < 2 {
+			return fmt.Errorf("visual %q percent stacking requires a series or multiple measures", name)
+		}
+		if presentation.Stacking == "percent" && presentation.DualAxis {
+			return fmt.Errorf("visual %q percent stacking cannot use dual axes", name)
+		}
+	}
+	hasSeriesIntent := len(presentation.SeriesOrder) > 0 || len(presentation.SeriesColors) > 0
+	if !hasSeriesIntent {
+		return nil
+	}
+	if !oneOf(visual.Type, "line", "area", "bar", "column", "combo", "scatter") {
+		return fmt.Errorf("visual %q series intent is unsupported for type %q", name, visual.Type)
+	}
+	if visual.Query.Series.IsZero() && len(visual.Query.Measures) < 2 {
+		return fmt.Errorf("visual %q series intent requires a series or multiple measures", name)
+	}
+	seen := make(map[string]struct{}, len(presentation.SeriesOrder))
+	for _, value := range presentation.SeriesOrder {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("visual %q series order value cannot be empty", name)
+		}
+		if _, exists := seen[value]; exists {
+			return fmt.Errorf("visual %q has duplicate series order value %q", name, value)
+		}
+		seen[value] = struct{}{}
+	}
+	for value, intent := range presentation.SeriesColors {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("visual %q series color value cannot be empty", name)
+		}
+		if !validColorIntent(intent) {
+			return fmt.Errorf("visual %q has unsupported color intent %q", name, intent)
+		}
+	}
+	return nil
+}
+
+func validColorIntent(value string) bool {
+	if oneOf(value, "accent", "neutral", "ink", "success", "warning", "danger") {
+		return true
+	}
+	index, err := strconv.Atoi(strings.TrimPrefix(value, "data_"))
+	return err == nil && strings.HasPrefix(value, "data_") && index >= 1 && index <= 8
 }
 
 func validateDecisionContext(name string, visual Visual) error {

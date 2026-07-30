@@ -171,6 +171,9 @@ type VisualPresentation struct {
 	ReferenceBands   []VisualReferenceBand   `yaml:"reference_bands" json:"referenceBands,omitempty"`
 	EventAnnotations []VisualEventAnnotation `yaml:"event_annotations" json:"eventAnnotations,omitempty"`
 	Tooltip          []string                `yaml:"tooltip" json:"tooltip,omitempty"`
+	Stacking         string                  `yaml:"stacking" json:"stacking,omitempty"`
+	SeriesOrder      []string                `yaml:"series_order" json:"seriesOrder,omitempty"`
+	SeriesColors     map[string]string       `yaml:"series_colors" json:"seriesColors,omitempty"`
 }
 
 type VisualThreshold struct {

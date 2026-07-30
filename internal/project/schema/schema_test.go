@@ -182,7 +182,10 @@ spec:
     revenue:
       type: line
       title: Revenue
-      query: {dimensions: [orders.purchase_month], measures: [revenue]}
+      query:
+        dimensions: [orders.purchase_month]
+        series: {field: orders.status, alias: status}
+        measures: [revenue]
       presentation:
         axes:
           - {id: x, title: Month, tick_density: sparse}
@@ -198,6 +201,9 @@ spec:
         event_annotations:
           - {id: launch, axis: x, value: {text: "2026-03-01"}, label: Launch}
         tooltip: [label, value]
+        stacking: percent
+        series_order: [delivered, processing]
+        series_colors: {delivered: success, processing: data_3}
   pages:
     - id: overview
       title: Overview

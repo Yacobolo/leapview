@@ -39709,6 +39709,16 @@ components:
             - axis: primary
               mark: line
               seriesValue: example
+        stacking:
+          $ref: '#/components/schemas/VisualizationStackingMode'
+        seriesIntent:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationSeriesIntent'
+          example:
+            - color: accent
+              order: 1
+              value: example
       example:
         area: true
         comboSeries:
@@ -39719,9 +39729,14 @@ components:
         histogramBins: 1
         labelPosition: automatic
         orientation: horizontal
+        seriesIntent:
+          - color: accent
+            order: 1
+            value: example
         showSymbols: true
         smooth: true
         stacked: true
+        stacking: none
         step: true
         symbolSize: !!float 1
     CartesianVisualizationSpec:
@@ -39831,9 +39846,14 @@ components:
           histogramBins: 1
           labelPosition: automatic
           orientation: horizontal
+          seriesIntent:
+            - color: accent
+              order: 1
+              value: example
           showSymbols: true
           smooth: true
           stacked: true
+          stacking: none
           step: true
           symbolSize: !!float 1
         referenceBands:
@@ -47191,6 +47211,24 @@ components:
         value:
           dataset: example
           field: example
+    VisualizationColorIntent:
+      type: string
+      enum:
+        - accent
+        - neutral
+        - ink
+        - success
+        - warning
+        - danger
+        - data_1
+        - data_2
+        - data_3
+        - data_4
+        - data_5
+        - data_6
+        - data_7
+        - data_8
+      example: accent
     VisualizationComboSeries:
       type: object
       required:
@@ -48808,6 +48846,24 @@ components:
         - single
         - multiple
       example: single
+    VisualizationSeriesIntent:
+      type: object
+      required:
+        - value
+      properties:
+        value:
+          type: string
+          example: example
+        order:
+          type: integer
+          format: int32
+          example: 1
+        color:
+          $ref: '#/components/schemas/VisualizationColorIntent'
+      example:
+        color: accent
+        order: 1
+        value: example
     VisualizationSort:
       type: object
       required:
@@ -49290,6 +49346,13 @@ components:
         - geographic
         - custom
       example: cartesian
+    VisualizationStackingMode:
+      type: string
+      enum:
+        - none
+        - normal
+        - percent
+      example: none
     VisualizationStatus:
       type: object
       required:

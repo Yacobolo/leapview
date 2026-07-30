@@ -119,6 +119,19 @@
           },
           "type": "array"
         },
+        "series_colors": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "series_order": {
+          "items": {
+            "not": {
+              "const": ""
+            },
+            "type": "string"
+          },
+          "type": "array"
+        },
         "series_types": {
           "additionalProperties": {
             "enum": [
@@ -138,6 +151,13 @@
         },
         "stacked": {
           "type": "boolean"
+        },
+        "stacking": {
+          "enum": [
+            "none",
+            "normal",
+            "percent"
+          ]
         },
         "step": {
           "type": "boolean"

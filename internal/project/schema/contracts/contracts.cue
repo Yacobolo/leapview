@@ -480,6 +480,7 @@ package contracts
 }
 
 #DecisionTone: "neutral" | "ink" | "success" | "warning" | "danger"
+#ColorIntent: #DecisionTone | "accent" | "data_1" | "data_2" | "data_3" | "data_4" | "data_5" | "data_6" | "data_7" | "data_8"
 
 #ReferenceValue: close({
 	"number"!: number
@@ -546,6 +547,9 @@ package contracts
 	reference_bands?:   [...#ReferenceBand]
 	event_annotations?: [...#EventAnnotation]
 	tooltip?:            [...string & !=""]
+	stacking?:           "none" | "normal" | "percent"
+	series_order?:       [...string & !=""]
+	series_colors?:      close({[string & !=""]: #ColorIntent})
 })
 
 #ProportionalPresentation: close({
