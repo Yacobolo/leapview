@@ -1,6 +1,7 @@
 import type { VisualizationColorIntent, VisualizationConditionalFormat, VisualizationEnvelope, VisualizationFieldRef } from '../../../../../generated/visualization'
 import type { RendererContext } from '../../host-controller'
 import { conditionalIconGlyph, conditionalStyleColor, resolveConditionalFormat } from '../../conditional-format'
+import { resolveVisualizationMetadata } from '../../metadata'
 import { axis, field, fieldLabel, inlineDataset, labelFormatter, legend, selectedDatasetSource, toneColor, type EChartsTranslation } from './common'
 
 type CartesianSpec = Extract<VisualizationEnvelope['spec'], { kind: 'cartesian' }>
@@ -122,7 +123,7 @@ function applyDecisionContext(envelope: VisualizationEnvelope, context: Renderer
     ...(spec.eventAnnotations ?? []).map((annotation) => `Event: ${annotation.label}${annotation.description ? ` — ${annotation.description}` : ''}.`),
   ].filter(Boolean)
   if (accessibilityDetails.length > 0) {
-    const authoredDescription = spec.accessibility.description.trim()
+    const authoredDescription = resolveVisualizationMetadata(envelope).description.trim()
     const description = /[.!?]$/.test(authoredDescription) ? authoredDescription : `${authoredDescription}.`
     option.aria = { enabled: true, description: [description, ...accessibilityDetails].join(' ') }
   }

@@ -298,10 +298,12 @@ func validateVisualData(example visualExample, payload []dashboard.Datum) error 
 func envelopeRows(envelope visualizationir.VisualizationEnvelope) []dashboard.Datum {
 	switch state := envelope.DataState.Value.(type) {
 	case *visualizationir.InlineVisualizationDataState:
-		if len(state.Datasets) != 1 {
-			return nil
+		for _, dataset := range state.Datasets {
+			if dataset.ID == "primary" {
+				return envelopeDatums(dataset.Columns, dataset.Rows)
+			}
 		}
-		return envelopeDatums(state.Datasets[0].Columns, state.Datasets[0].Rows)
+		return nil
 	case *visualizationir.WindowedVisualizationDataState:
 		columns := make([]string, len(state.Schema.Fields))
 		for index, field := range state.Schema.Fields {

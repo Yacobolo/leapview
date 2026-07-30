@@ -280,6 +280,9 @@ func validateSpecification(spec VisualizationSpec, base VisualizationSpecBase) (
 	if err := validateConditionalFormatting(spec, base, schemas); err != nil {
 		return nil, err
 	}
+	if err := validateMetadataBindings(base.MetadataBindings, schemas); err != nil {
+		return nil, err
+	}
 	if err := validateCartesianDecisionContext(spec); err != nil {
 		return nil, err
 	}
@@ -311,6 +314,39 @@ func validateSpecification(spec VisualizationSpec, base VisualizationSpecBase) (
 		}
 	}
 	return schemas, nil
+}
+
+func validateMetadataBindings(bindings *VisualizationMetadataBindings, schemas map[string]VisualizationDatasetSchema) error {
+	if bindings == nil {
+		return nil
+	}
+	for _, named := range []struct {
+		name    string
+		binding *VisualizationTextBinding
+	}{
+		{"title", bindings.Title},
+		{"subtitle", bindings.Subtitle},
+		{"description", bindings.Description},
+		{"summary", bindings.Summary},
+	} {
+		if named.binding == nil {
+			continue
+		}
+		if err := validateFieldRef(named.binding.Field, schemas); err != nil {
+			return fmt.Errorf("visualization %s binding: %w", named.name, err)
+		}
+		if strings.TrimSpace(named.binding.Fallback) == "" {
+			return fmt.Errorf("visualization %s binding requires a non-empty fallback", named.name)
+		}
+		if !validVisualizationReferenceReducer(named.binding.Reducer) {
+			return fmt.Errorf("visualization %s binding uses unsupported reducer %q", named.name, named.binding.Reducer)
+		}
+		field, _ := visualizationField(named.binding.Field, schemas)
+		if (named.binding.Reducer == VisualizationReferenceReducerMean || named.binding.Reducer == VisualizationReferenceReducerMedian) && !numericVisualizationField(field) {
+			return fmt.Errorf("visualization %s binding reducer %q requires a numeric field", named.name, named.binding.Reducer)
+		}
+	}
+	return nil
 }
 
 func validateConditionalFormatting(spec VisualizationSpec, base VisualizationSpecBase, schemas map[string]VisualizationDatasetSchema) error {
@@ -876,16 +912,23 @@ func validateVisualizationReferenceValue(value VisualizationReferenceValue) erro
 		if typed == nil {
 			return fmt.Errorf("field value is required")
 		}
-		switch typed.Reducer {
-		case VisualizationReferenceReducerFirst, VisualizationReferenceReducerLast, VisualizationReferenceReducerMinimum,
-			VisualizationReferenceReducerMaximum, VisualizationReferenceReducerMean, VisualizationReferenceReducerMedian:
-		default:
+		if !validVisualizationReferenceReducer(typed.Reducer) {
 			return fmt.Errorf("field reference has unsupported reducer %q", typed.Reducer)
 		}
 	default:
 		return fmt.Errorf("reference value variant is required")
 	}
 	return nil
+}
+
+func validVisualizationReferenceReducer(reducer VisualizationReferenceReducer) bool {
+	switch reducer {
+	case VisualizationReferenceReducerFirst, VisualizationReferenceReducerLast, VisualizationReferenceReducerMinimum,
+		VisualizationReferenceReducerMaximum, VisualizationReferenceReducerMean, VisualizationReferenceReducerMedian:
+		return true
+	default:
+		return false
+	}
 }
 
 func validateGeographicSpecification(spec VisualizationSpec) error {
@@ -1008,6 +1051,11 @@ func validateInlineState(state InlineVisualizationDataState, schemas map[string]
 		}
 		if err := validateRows(schema, dataset.Columns, dataset.Rows); err != nil {
 			return fmt.Errorf("dataset %q: %w", dataset.ID, err)
+		}
+	}
+	for datasetID := range schemas {
+		if _, ok := seen[datasetID]; !ok {
+			return fmt.Errorf("inline data is missing dataset %q", datasetID)
 		}
 	}
 	return nil

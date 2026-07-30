@@ -48705,6 +48705,50 @@ components:
       example:
         maximumZoom: !!float 1
         minimumZoom: !!float 1
+    VisualizationMetadataBindings:
+      type: object
+      properties:
+        title:
+          $ref: '#/components/schemas/VisualizationTextBinding'
+        subtitle:
+          $ref: '#/components/schemas/VisualizationTextBinding'
+        description:
+          $ref: '#/components/schemas/VisualizationTextBinding'
+        summary:
+          $ref: '#/components/schemas/VisualizationTextBinding'
+      example:
+        description:
+          fallback: example
+          field:
+            dataset: example
+            field: example
+          prefix: example
+          reducer: first
+          suffix: example
+        subtitle:
+          fallback: example
+          field:
+            dataset: example
+            field: example
+          prefix: example
+          reducer: first
+          suffix: example
+        summary:
+          fallback: example
+          field:
+            dataset: example
+            field: example
+          prefix: example
+          reducer: first
+          suffix: example
+        title:
+          fallback: example
+          field:
+            dataset: example
+            field: example
+          prefix: example
+          reducer: first
+          suffix: example
     VisualizationOrientation:
       type: string
       enum:
@@ -49467,6 +49511,9 @@ components:
         title:
           type: string
           example: example
+        subtitle:
+          type: string
+          example: example
         datasets:
           type: array
           items:
@@ -49531,6 +49578,8 @@ components:
                 field: example
               id: example
               target: mark_fill
+        metadataBindings:
+          $ref: '#/components/schemas/VisualizationMetadataBindings'
       example:
         accessibility:
           announceChanges: true
@@ -49589,6 +49638,40 @@ components:
             targets:
               - example
         kind: example
+        metadataBindings:
+          description:
+            fallback: example
+            field:
+              dataset: example
+              field: example
+            prefix: example
+            reducer: first
+            suffix: example
+          subtitle:
+            fallback: example
+            field:
+              dataset: example
+              field: example
+            prefix: example
+            reducer: first
+            suffix: example
+          summary:
+            fallback: example
+            field:
+              dataset: example
+              field: example
+            prefix: example
+            reducer: first
+            suffix: example
+          title:
+            fallback: example
+            field:
+              dataset: example
+              field: example
+            prefix: example
+            reducer: first
+            suffix: example
+        subtitle: example
         title: example
     VisualizationSpecKind:
       type: string
@@ -49668,6 +49751,36 @@ components:
         meaning: instant
         timezone: example
         weekStart: monday
+    VisualizationTextBinding:
+      type: object
+      required:
+        - field
+        - reducer
+        - prefix
+        - suffix
+        - fallback
+      properties:
+        field:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        reducer:
+          $ref: '#/components/schemas/VisualizationReferenceReducer'
+        prefix:
+          type: string
+          example: example
+        suffix:
+          type: string
+          example: example
+        fallback:
+          type: string
+          example: example
+      example:
+        fallback: example
+        field:
+          dataset: example
+          field: example
+        prefix: example
+        reducer: first
+        suffix: example
     VisualizationThreshold:
       type: object
       required:

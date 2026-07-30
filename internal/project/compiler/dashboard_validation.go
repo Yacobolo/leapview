@@ -113,24 +113,37 @@ func ValidateDashboard(d *report.Dashboard, models map[string]*semanticmodel.Mod
 
 func validateVisualQueryPlan(d *report.Dashboard, model *semanticmodel.Model, name string, visual report.Visual) error {
 	planner := semanticquery.NewPlanner(model)
-	dimensions := reportFieldRefsToQueryFields(visual.Query.Dimensions)
-	if !visual.Query.Series.IsZero() {
-		dimensions = append(dimensions, reportFieldRefToQueryField(visual.Query.Series))
+	plan := func(query report.VisualQuery) error {
+		dimensions := reportFieldRefsToQueryFields(query.Dimensions)
+		if !query.Series.IsZero() {
+			dimensions = append(dimensions, reportFieldRefToQueryField(query.Series))
+		}
+		_, err := planner.Plan(semanticquery.Request{
+			Table:      query.Table,
+			Dimensions: dimensions,
+			Measures:   reportFieldRefsToQueryFields(query.Measures),
+			Time: semanticquery.Time{
+				Field: query.Time.Field,
+				Grain: query.Time.Grain,
+				Alias: query.Time.Alias,
+			},
+			Filters: scopedQueryFilters(d, model, "visual", name),
+			Limit:   query.Limit,
+		})
+		return err
 	}
-	_, err := planner.Plan(semanticquery.Request{
-		Table:      visual.Query.Table,
-		Dimensions: dimensions,
-		Measures:   reportFieldRefsToQueryFields(visual.Query.Measures),
-		Time: semanticquery.Time{
-			Field: visual.Query.Time.Field,
-			Grain: visual.Query.Time.Grain,
-			Alias: visual.Query.Time.Alias,
-		},
-		Filters: scopedQueryFilters(d, model, "visual", name),
-		Limit:   visual.Query.Limit,
-	})
+	err := plan(visual.Query)
 	if err != nil {
 		return fmt.Errorf("visual %q query is invalid: %w", name, err)
+	}
+	for _, datasetID := range sortedMapKeys(visual.Datasets) {
+		query := visual.Datasets[datasetID]
+		if query.Table == "" {
+			query.Table = visual.Query.Table
+		}
+		if err := plan(query); err != nil {
+			return fmt.Errorf("visual %q context dataset %q query is invalid: %w", name, datasetID, err)
+		}
 	}
 	return nil
 }

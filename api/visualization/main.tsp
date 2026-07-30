@@ -509,6 +509,21 @@ model VisualizationConditionalFormat {
   `rule`: VisualizationConditionalRule;
 }
 
+model VisualizationTextBinding {
+  `field`: VisualizationFieldRef;
+  `reducer`: VisualizationReferenceReducer;
+  `prefix`: string;
+  `suffix`: string;
+  `fallback`: string;
+}
+
+model VisualizationMetadataBindings {
+  `title`?: VisualizationTextBinding;
+  `subtitle`?: VisualizationTextBinding;
+  `description`?: VisualizationTextBinding;
+  `summary`?: VisualizationTextBinding;
+}
+
 model VisualizationDataBudget {
   `maxRows`: int64;
   `requiredCompleteness`: VisualizationCompleteness;
@@ -636,11 +651,13 @@ model GeographicVisualizationPresentation extends VisualizationPresentation {
 model VisualizationSpec {
   `kind`: string;
   `title`: string;
+  `subtitle`?: string;
   `datasets`: VisualizationDatasetSchema[];
   `dataBudget`: VisualizationDataBudget;
   `accessibility`: VisualizationAccessibility;
   `interactions`: VisualizationInteraction[];
   `conditionalFormatting`?: VisualizationConditionalFormat[];
+  `metadataBindings`?: VisualizationMetadataBindings;
 }
 
 model CartesianVisualizationSpec extends VisualizationSpec {

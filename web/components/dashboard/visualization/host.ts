@@ -8,6 +8,7 @@ import type { VisualActionDetail } from '../visual-modal'
 import { defaultRendererContext, normalizeRendererLocale, VisualizationController, validateEnvelopeBoundary, type RendererContext } from './host-controller'
 import { visualizationRegistry } from './registry'
 import { adapterObservation } from './telemetry'
+import { resolveVisualizationMetadata } from './metadata'
 
 export class VisualizationHost extends LitElement {
   @property({ attribute: false }) envelope?: VisualizationEnvelope
@@ -136,6 +137,15 @@ export class VisualizationHost extends LitElement {
       letter-spacing: 0;
       line-height: var(--lv-line-height-compact);
     }
+    .toolbar-subtitle {
+      margin: var(--base-size-2) 0 0;
+      overflow: hidden;
+      color: var(--lv-fg-muted);
+      font-size: var(--lv-font-size-caption);
+      line-height: var(--lv-line-height-compact);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .error { position: absolute; inset: 0; display: grid; place-items: center; color: var(--lv-fg-danger); padding: 1rem; text-align: center; background: var(--lv-bg-panel); }
     .fallback { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
   `]
@@ -203,12 +213,16 @@ export class VisualizationHost extends LitElement {
     const statusError = this.envelope?.status.kind === 'error' ? this.envelope.status.message ?? 'Visualization error' : ''
     const error = this.error || statusError
     const header = this.sharedHeader()
+    const metadata = this.envelope ? resolveVisualizationMetadata(this.envelope) : undefined
     const showInitialLoading = !this.presented && !error
     const loadingLabel = `Loading ${header ?? 'visualization'}…`
     return html`<div class=${header ? 'surface' : 'surface headerless'}>
       ${header ? html`
         <header class="toolbar">
-          <div class="toolbar-title"><h2 data-visualization-title>${this.envelope?.spec.title}</h2></div>
+          <div class="toolbar-title">
+            <h2 data-visualization-title>${metadata?.title}</h2>
+            ${metadata?.subtitle ? html`<p class="toolbar-subtitle" data-visualization-subtitle>${metadata.subtitle}</p>` : null}
+          </div>
           <div class="visual-actions">
             <slot name="agent-action"></slot>
             <button class="icon-action" type="button" data-visualization-expand data-visualization-id=${this.envelope?.visualID ?? ''} aria-label=${`Expand ${header}`} title=${`Expand ${header}`} @click=${this.expand}>${visualMenuIcon('focus')}</button>
@@ -216,7 +230,7 @@ export class VisualizationHost extends LitElement {
         </header>
       ` : html`<div class="headerless-actions"><slot name="agent-action"></slot></div>`}
       <div class="renderer-stage" aria-busy=${String(this.applying)}>
-        <div class="renderer" role="group" aria-label=${this.envelope?.spec.accessibility.title ?? 'Visualization'} aria-describedby="visualization-fallback" aria-busy=${String(this.applying)} aria-hidden=${String(!this.presented)} ?inert=${!this.presented} @lv-map-observation=${this.forwardAdapterObservation}></div>
+        <div class="renderer" role="group" aria-label=${metadata?.title ?? 'Visualization'} aria-describedby="visualization-fallback" aria-busy=${String(this.applying)} aria-hidden=${String(!this.presented)} ?inert=${!this.presented} @lv-map-observation=${this.forwardAdapterObservation}></div>
         ${showInitialLoading ? html`<div class="initial-loading" data-visualization-loading role="status" aria-live="polite">
           <span class="loading-spinner" aria-hidden="true"></span>
           <span>${loadingLabel}</span>
@@ -264,7 +278,7 @@ export class VisualizationHost extends LitElement {
       action: 'focus',
       visualType,
       visualId: envelope.visualID,
-      title: envelope.spec.title,
+      title: resolveVisualizationMetadata(envelope).title,
       columns: [],
       rows: [],
       selection: envelope.selection.map((entry) => entry.label ?? Object.values(entry.datum.identity).join(' · ')),
@@ -340,8 +354,9 @@ export class VisualizationHost extends LitElement {
     const envelope = this.envelope
     if (!envelope) return 'Visualization is loading.'
     const status = envelope.status.message ?? envelope.status.kind.replaceAll('_', ' ')
-    const summary = envelope.spec.accessibility.summary ?? envelope.spec.accessibility.description
-    return `${envelope.spec.accessibility.title}. ${summary}. Status: ${status}.`
+    const metadata = resolveVisualizationMetadata(envelope)
+    const summary = metadata.summary ?? metadata.description
+    return `${metadata.title}.${metadata.subtitle ? ` ${metadata.subtitle}.` : ''} ${summary}. Status: ${status}.`
   }
 }
 

@@ -55,8 +55,8 @@ func (v *AuthoringVisualization) UnmarshalYAML(value *yaml.Node) error {
 		v.Tabular = &definition
 	default:
 		if err := rejectUnknownVisualizationFields(value, map[string]struct{}{
-			"type": {}, "title": {}, "description": {}, "query": {}, "presentation": {}, "accessibility": {},
-			"data_budget": {}, "interaction": {}, "geo": {}, "custom": {},
+			"type": {}, "title": {}, "subtitle": {}, "description": {}, "query": {}, "datasets": {}, "metadata": {},
+			"presentation": {}, "accessibility": {}, "data_budget": {}, "interaction": {}, "geo": {}, "custom": {},
 		}); err != nil {
 			return err
 		}
@@ -118,16 +118,35 @@ func MergeVisualizations(groups ...map[string]AuthoringVisualization) map[string
 }
 
 type Visual struct {
-	Title         string              `yaml:"title"`
-	Description   string              `yaml:"description"`
-	Type          string              `yaml:"type"`
-	Query         VisualQuery         `yaml:"query"`
-	Presentation  VisualPresentation  `yaml:"presentation" json:"presentation"`
-	Accessibility VisualAccessibility `yaml:"accessibility" json:"accessibility"`
-	DataBudget    VisualDataBudget    `yaml:"data_budget" json:"dataBudget"`
-	Geo           VisualGeo           `yaml:"geo" json:"geo"`
-	Custom        VisualCustom        `yaml:"custom" json:"custom"`
-	Interaction   Interaction         `yaml:"interaction"`
+	Title         string                 `yaml:"title"`
+	Subtitle      string                 `yaml:"subtitle"`
+	Description   string                 `yaml:"description"`
+	Type          string                 `yaml:"type"`
+	Query         VisualQuery            `yaml:"query"`
+	Datasets      map[string]VisualQuery `yaml:"datasets"`
+	Metadata      VisualMetadataBindings `yaml:"metadata"`
+	Presentation  VisualPresentation     `yaml:"presentation" json:"presentation"`
+	Accessibility VisualAccessibility    `yaml:"accessibility" json:"accessibility"`
+	DataBudget    VisualDataBudget       `yaml:"data_budget" json:"dataBudget"`
+	Geo           VisualGeo              `yaml:"geo" json:"geo"`
+	Custom        VisualCustom           `yaml:"custom" json:"custom"`
+	Interaction   Interaction            `yaml:"interaction"`
+}
+
+type VisualMetadataBindings struct {
+	Title       *VisualTextBinding `yaml:"title" json:"title,omitempty"`
+	Subtitle    *VisualTextBinding `yaml:"subtitle" json:"subtitle,omitempty"`
+	Description *VisualTextBinding `yaml:"description" json:"description,omitempty"`
+	Summary     *VisualTextBinding `yaml:"summary" json:"summary,omitempty"`
+}
+
+type VisualTextBinding struct {
+	Dataset  string `yaml:"dataset" json:"dataset"`
+	Field    string `yaml:"field" json:"field"`
+	Reducer  string `yaml:"reducer" json:"reducer,omitempty"`
+	Prefix   string `yaml:"prefix" json:"prefix,omitempty"`
+	Suffix   string `yaml:"suffix" json:"suffix,omitempty"`
+	Fallback string `yaml:"fallback" json:"fallback,omitempty"`
 }
 
 type VisualPresentation struct {
@@ -232,6 +251,7 @@ type VisualAxis struct {
 type VisualReferenceValue struct {
 	Number  *float64 `yaml:"number" json:"number,omitempty"`
 	Text    string   `yaml:"text" json:"text,omitempty"`
+	Dataset string   `yaml:"dataset" json:"dataset,omitempty"`
 	Field   string   `yaml:"field" json:"field,omitempty"`
 	Reducer string   `yaml:"reducer" json:"reducer,omitempty"`
 }

@@ -328,6 +328,9 @@ func validateGeographicVisual(name string, visual Visual) error {
 }
 
 func validateVisualPresentation(name string, visual Visual) error {
+	if err := validateContextDatasetsAndMetadata(name, visual); err != nil {
+		return err
+	}
 	presentation := visual.Presentation
 	if !oneOf(presentation.Legend, "", "hidden", "top", "right", "bottom", "left") {
 		return fmt.Errorf("visual %q has unsupported presentation.legend %q", name, presentation.Legend)
@@ -428,6 +431,57 @@ func validateVisualPresentation(name string, visual Visual) error {
 	}
 	if err := validateConditionalFormatting(name, visual.Type, visual.Presentation.ConditionalFormatting); err != nil {
 		return err
+	}
+	return nil
+}
+
+func validateContextDatasetsAndMetadata(name string, visual Visual) error {
+	hasMetadata := visual.Metadata.Title != nil || visual.Metadata.Subtitle != nil || visual.Metadata.Description != nil || visual.Metadata.Summary != nil
+	if oneOf(visual.Type, "map", "custom") && (len(visual.Datasets) > 0 || hasMetadata) {
+		return fmt.Errorf("visual %q type %q does not support context datasets or data-bound metadata", name, visual.Type)
+	}
+	for datasetID, query := range visual.Datasets {
+		if strings.TrimSpace(datasetID) == "" {
+			return fmt.Errorf("visual %q context dataset id is required", name)
+		}
+		if datasetID == "primary" {
+			return fmt.Errorf("visual %q dataset id %q is reserved", name, datasetID)
+		}
+		if len(query.Dimensions) == 0 && query.Time.Field == "" && len(query.Measures) == 0 {
+			return fmt.Errorf("visual %q dataset %q requires dimensions, time, or measures", name, datasetID)
+		}
+	}
+	bindings := []struct {
+		name    string
+		binding *VisualTextBinding
+	}{
+		{"title", visual.Metadata.Title},
+		{"subtitle", visual.Metadata.Subtitle},
+		{"description", visual.Metadata.Description},
+		{"summary", visual.Metadata.Summary},
+	}
+	for _, item := range bindings {
+		if item.binding == nil {
+			continue
+		}
+		dataset := item.binding.Dataset
+		if dataset == "" {
+			dataset = "primary"
+		}
+		if dataset != "primary" {
+			if _, ok := visual.Datasets[dataset]; !ok {
+				return fmt.Errorf("visual %q metadata %s references unknown dataset %q", name, item.name, dataset)
+			}
+		}
+		if strings.TrimSpace(item.binding.Field) == "" {
+			return fmt.Errorf("visual %q metadata %s requires field", name, item.name)
+		}
+		if !oneOf(item.binding.Reducer, "", "first", "last", "minimum", "maximum", "mean", "median") {
+			return fmt.Errorf("visual %q metadata %s has unsupported reducer %q", name, item.name, item.binding.Reducer)
+		}
+		if strings.TrimSpace(item.binding.Fallback) == "" {
+			return fmt.Errorf("visual %q metadata %s requires fallback", name, item.name)
+		}
 	}
 	return nil
 }
@@ -775,6 +829,9 @@ func validateDecisionContext(name string, visual Visual) error {
 }
 
 func validateReferenceValue(name, context string, value VisualReferenceValue) error {
+	if value.Dataset != "" && value.Field == "" {
+		return fmt.Errorf("visual %q %s reference value dataset requires field", name, context)
+	}
 	branches := 0
 	if value.Number != nil {
 		branches++

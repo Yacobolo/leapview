@@ -1,6 +1,7 @@
 import type { TableVisualizationFormattingRule, VisualizationConditionalFormat, VisualizationEnvelope, VisualizationField } from '../../../../generated/visualization'
 import type { TableBlock, TableColumn, TableFormattingRule, TableSignal, TableSort } from '../../table/types'
 import type { RendererAdapter, RendererHandle } from '../host-controller'
+import { resolveVisualizationMetadata } from '../metadata'
 
 type ReportTableElement = HTMLElement & { tableId: string; table: TableSignal }
 
@@ -72,7 +73,7 @@ export function tableSignal(envelope: VisualizationEnvelope): TableSignal {
   const cardinalityCount = state.kind === 'windowed' ? state.cardinality.count ?? availableRows : availableRows
   const interaction = tableInteraction(spec)
   return {
-    id: envelope.visualID, version: 2, type: spec.kind, title: spec.title,
+    id: envelope.visualID, version: 2, type: spec.kind, title: resolveVisualizationMetadata(envelope).title,
     style: { density: spec.presentation.rowHeight <= 30 ? 'compact' : spec.presentation.rowHeight >= 42 ? 'spacious' : 'comfortable', zebra: spec.presentation.striped, grid: 'rows' },
     interaction, selection: tableSelection(envelope, interaction), columns,
     cardinality: { kind: state.kind === 'windowed' ? state.cardinality.kind : 'exact', value: cardinalityCount },

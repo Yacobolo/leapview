@@ -2347,6 +2347,13 @@ type VisualizationMapVisibility struct {
 	MaximumZoom float64 `json:"maximumZoom"`
 }
 
+type VisualizationMetadataBindings struct {
+	Title       *VisualizationTextBinding `json:"title,omitempty"`
+	Subtitle    *VisualizationTextBinding `json:"subtitle,omitempty"`
+	Description *VisualizationTextBinding `json:"description,omitempty"`
+	Summary     *VisualizationTextBinding `json:"summary,omitempty"`
+}
+
 type VisualizationOrientation string
 
 const (
@@ -3621,11 +3628,13 @@ func (value *VisualizationSpec) Base() (*VisualizationSpecBase, error) {
 type VisualizationSpecBase struct {
 	Kind                  string                            `json:"kind"`
 	Title                 string                            `json:"title"`
+	Subtitle              *string                           `json:"subtitle,omitempty"`
 	Datasets              []VisualizationDatasetSchema      `json:"datasets"`
 	DataBudget            VisualizationDataBudget           `json:"dataBudget"`
 	Accessibility         VisualizationAccessibility        `json:"accessibility"`
 	Interactions          []VisualizationInteraction        `json:"interactions"`
 	ConditionalFormatting *[]VisualizationConditionalFormat `json:"conditionalFormatting,omitempty"`
+	MetadataBindings      *VisualizationMetadataBindings    `json:"metadataBindings,omitempty"`
 }
 
 type VisualizationStackingMode string
@@ -3665,6 +3674,14 @@ type VisualizationTemporalMetadata struct {
 	Calendar  string                       `json:"calendar"`
 	WeekStart VisualizationWeekStart       `json:"weekStart"`
 	Meaning   VisualizationTemporalMeaning `json:"meaning"`
+}
+
+type VisualizationTextBinding struct {
+	Field    VisualizationFieldRef         `json:"field"`
+	Reducer  VisualizationReferenceReducer `json:"reducer"`
+	Prefix   string                        `json:"prefix"`
+	Suffix   string                        `json:"suffix"`
+	Fallback string                        `json:"fallback"`
 }
 
 type VisualizationThreshold struct {

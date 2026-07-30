@@ -76,3 +76,70 @@ visuals:
           direction: asc
       limit: 30
 ```
+
+## Governed decision context
+
+Use a named context dataset when a title or reference line must be recomputed from the same active semantic filters as the chart. Context queries are compiled with the visual, bounded by the data budget, and delivered in the typed visualization envelope; the renderer cannot issue its own query.
+
+{{< visual id="revenue_line_context" >}}
+
+```yaml visual-example=revenue_line_context
+visuals:
+  revenue_line_context:
+    title: Revenue trend
+    subtitle: Current filtered scope
+    type: line
+    datasets:
+      context:
+        dimensions:
+          status: orders.status
+        measures:
+          target:
+            measure: revenue
+        sort:
+          - field: status
+            direction: asc
+        limit: 1
+    metadata:
+      title:
+        dataset: context
+        field: status
+        reducer: first
+        prefix: "Revenue — "
+        fallback: Revenue trend
+      description:
+        dataset: context
+        field: target
+        reducer: mean
+        prefix: "Current target is "
+        suffix: " USD."
+        fallback: Current target is unavailable.
+    presentation:
+      axes:
+        - id: x
+          title: Month
+          tick_density: sparse
+        - id: primary_y
+          title: Revenue
+          scale: linear
+          zero: include
+          unit: USD
+      reference_lines:
+        - id: target
+          axis: primary_y
+          value:
+            dataset: context
+            field: target
+            reducer: mean
+          label: Current target
+          tone: success
+    query:
+      dimensions:
+        purchase_month: orders.purchase_month
+      measures:
+        revenue: null
+      sort:
+        - field: purchase_month
+          direction: asc
+      limit: 30
+```

@@ -68,8 +68,17 @@ func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model
 	if authored.Accessibility.AnnounceChanges {
 		accessibility.AnnounceChanges = &authored.Accessibility.AnnounceChanges
 	}
+	contextSchemas, err := compileContextDatasetSchemas(authored, model)
+	if err != nil {
+		return visualizationir.VisualizationSpec{}, err
+	}
+	datasets := append([]visualizationir.VisualizationDatasetSchema{{ID: "primary", Fields: fields}}, contextSchemas...)
+	metadataBindings, err := compileMetadataBindings(authored.Metadata, datasets)
+	if err != nil {
+		return visualizationir.VisualizationSpec{}, err
+	}
 	base := visualizationir.VisualizationSpecBase{
-		Title: title, Datasets: []visualizationir.VisualizationDatasetSchema{{ID: "primary", Fields: fields}},
+		Title: title, Subtitle: optionalString(authored.Subtitle), Datasets: datasets, MetadataBindings: metadataBindings,
 		DataBudget:    visualizationir.VisualizationDataBudget{MaxRows: compiledVisualFrameLimit(authored, shape), RequiredCompleteness: completeness},
 		Accessibility: accessibility, Interactions: customVisualizationInteractions(authored.Interaction.PointSelection),
 	}
@@ -148,7 +157,7 @@ func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model
 		if presentation.Area != nil && *presentation.Area {
 			area = true
 		}
-		decisionContext, err := compileCartesianDecisionContext(columns, presentation)
+		decisionContext, err := compileCartesianDecisionContext(datasets, presentation)
 		if err != nil {
 			return visualizationir.VisualizationSpec{}, err
 		}
@@ -165,6 +174,108 @@ func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model
 			},
 		}}, nil
 	}
+}
+
+func compileContextDatasetSchemas(authored reportdef.Visual, model *semanticmodel.Model) ([]visualizationir.VisualizationDatasetSchema, error) {
+	datasetIDs := sortedMapKeys(authored.Datasets)
+	out := make([]visualizationir.VisualizationDatasetSchema, 0, len(datasetIDs))
+	for _, datasetID := range datasetIDs {
+		query := authored.Datasets[datasetID]
+		bindings := compiledVisualFields(query)
+		fields := make([]visualizationir.VisualizationField, 0, len(bindings))
+		seen := make(map[string]struct{}, len(bindings))
+		dimensions := make(map[string]struct{}, len(query.Dimensions)+2)
+		for _, binding := range compiledFields(query.Dimensions) {
+			dimensions[binding.Alias] = struct{}{}
+		}
+		if binding := compiledOptionalField(query.Series); binding != nil {
+			dimensions[binding.Alias] = struct{}{}
+		}
+		if binding := compiledTime(query.Time); binding != nil {
+			dimensions[binding.Alias] = struct{}{}
+		}
+		for _, binding := range bindings {
+			if _, exists := seen[binding.Alias]; exists {
+				return nil, fmt.Errorf("context dataset %q uses duplicate alias %q", datasetID, binding.Alias)
+			}
+			seen[binding.Alias] = struct{}{}
+			role := visualizationir.VisualizationFieldRoleMeasure
+			dataType := visualizationir.VisualizationDataTypeDecimal
+			if _, ok := dimensions[binding.Alias]; ok {
+				role = visualizationir.VisualizationFieldRoleDimension
+				dataType = visualizationir.VisualizationDataTypeString
+			}
+			field := visualizationir.VisualizationField{
+				ID: binding.Alias, Role: role, DataType: dataType, Nullable: true, Label: binding.Alias,
+			}
+			if model != nil {
+				applySemanticField(&field, binding.FieldID, model)
+			} else {
+				source := binding.FieldID
+				field.SourceRef = &source
+			}
+			fields = append(fields, field)
+		}
+		out = append(out, visualizationir.VisualizationDatasetSchema{ID: datasetID, Fields: fields})
+	}
+	return out, nil
+}
+
+func compileMetadataBindings(authored reportdef.VisualMetadataBindings, datasets []visualizationir.VisualizationDatasetSchema) (*visualizationir.VisualizationMetadataBindings, error) {
+	compile := func(name string, binding *reportdef.VisualTextBinding) (*visualizationir.VisualizationTextBinding, error) {
+		if binding == nil {
+			return nil, nil
+		}
+		datasetID := binding.Dataset
+		if datasetID == "" {
+			datasetID = "primary"
+		}
+		if !compiledDatasetContainsField(datasets, datasetID, binding.Field) {
+			return nil, fmt.Errorf("%s metadata binding field %q is not in dataset %q", name, binding.Field, datasetID)
+		}
+		reducer := binding.Reducer
+		if reducer == "" {
+			reducer = "first"
+		}
+		return &visualizationir.VisualizationTextBinding{
+			Field:   visualizationir.VisualizationFieldRef{Dataset: datasetID, Field: binding.Field},
+			Reducer: visualizationir.VisualizationReferenceReducer(reducer), Prefix: binding.Prefix, Suffix: binding.Suffix, Fallback: binding.Fallback,
+		}, nil
+	}
+	title, err := compile("title", authored.Title)
+	if err != nil {
+		return nil, err
+	}
+	subtitle, err := compile("subtitle", authored.Subtitle)
+	if err != nil {
+		return nil, err
+	}
+	description, err := compile("description", authored.Description)
+	if err != nil {
+		return nil, err
+	}
+	summary, err := compile("summary", authored.Summary)
+	if err != nil {
+		return nil, err
+	}
+	if title == nil && subtitle == nil && description == nil && summary == nil {
+		return nil, nil
+	}
+	return &visualizationir.VisualizationMetadataBindings{Title: title, Subtitle: subtitle, Description: description, Summary: summary}, nil
+}
+
+func compiledDatasetContainsField(datasets []visualizationir.VisualizationDatasetSchema, datasetID, fieldID string) bool {
+	for _, dataset := range datasets {
+		if dataset.ID != datasetID {
+			continue
+		}
+		for _, field := range dataset.Fields {
+			if field.ID == fieldID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func compileConditionalFormatting(columns []string, authored []reportdef.VisualConditionalFormat) (*[]visualizationir.VisualizationConditionalFormat, error) {
@@ -251,7 +362,7 @@ type compiledCartesianDecisionContextValue struct {
 	tooltip          *[]visualizationir.VisualizationFieldRef
 }
 
-func compileCartesianDecisionContext(columns []string, presentation reportdef.VisualPresentation) (compiledCartesianDecisionContextValue, error) {
+func compileCartesianDecisionContext(datasets []visualizationir.VisualizationDatasetSchema, presentation reportdef.VisualPresentation) (compiledCartesianDecisionContextValue, error) {
 	var result compiledCartesianDecisionContextValue
 	if len(presentation.Axes) > 0 {
 		values := make([]visualizationir.VisualizationAxisConfiguration, len(presentation.Axes))
@@ -284,8 +395,15 @@ func compileCartesianDecisionContext(columns []string, presentation reportdef.Vi
 				Value:                           authored.Text,
 			}}, nil
 		case authored.Field != "":
-			if !containsCompiledColumn(columns, authored.Field) {
-				return visualizationir.VisualizationReferenceValue{}, fmt.Errorf("reference field %q is not in the compiled result", authored.Field)
+			datasetID := authored.Dataset
+			if datasetID == "" {
+				datasetID = "primary"
+			}
+			if !compiledDatasetContainsField(datasets, datasetID, authored.Field) {
+				if datasetID == "primary" {
+					return visualizationir.VisualizationReferenceValue{}, fmt.Errorf("reference field %q is not in the compiled result", authored.Field)
+				}
+				return visualizationir.VisualizationReferenceValue{}, fmt.Errorf("reference field %q is not in compiled dataset %q", authored.Field, datasetID)
 			}
 			reducer := authored.Reducer
 			if reducer == "" {
@@ -294,7 +412,7 @@ func compileCartesianDecisionContext(columns []string, presentation reportdef.Vi
 			return visualizationir.VisualizationReferenceValue{Value: &visualizationir.FieldVisualizationReferenceValue{
 				VisualizationReferenceValueBase: visualizationir.VisualizationReferenceValueBase{Kind: "field"},
 				Kind:                            "field",
-				Field:                           visualizationir.VisualizationFieldRef{Dataset: "primary", Field: authored.Field},
+				Field:                           visualizationir.VisualizationFieldRef{Dataset: datasetID, Field: authored.Field},
 				Reducer:                         visualizationir.VisualizationReferenceReducer(reducer),
 			}}, nil
 		default:
@@ -356,7 +474,7 @@ func compileCartesianDecisionContext(columns []string, presentation reportdef.Vi
 	if len(presentation.Tooltip) > 0 {
 		values := make([]visualizationir.VisualizationFieldRef, len(presentation.Tooltip))
 		for index, field := range presentation.Tooltip {
-			if !containsCompiledColumn(columns, field) {
+			if !compiledDatasetContainsField(datasets, "primary", field) {
 				return result, fmt.Errorf("tooltip field %q is not in the compiled result", field)
 			}
 			values[index] = visualizationir.VisualizationFieldRef{Dataset: "primary", Field: field}

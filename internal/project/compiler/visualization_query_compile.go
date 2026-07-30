@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
@@ -9,6 +10,46 @@ import (
 	reportdef "github.com/flidai/leapview/internal/dashboard/report"
 	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
 )
+
+func compileSecondaryQueryBindings(ctx compileContext, authored reportdef.Visual) (map[string]visualizationdefinition.QueryBinding, error) {
+	if len(authored.Datasets) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]visualizationdefinition.QueryBinding, len(authored.Datasets))
+	datasetIDs := make([]string, 0, len(authored.Datasets))
+	for datasetID := range authored.Datasets {
+		datasetIDs = append(datasetIDs, datasetID)
+	}
+	sort.Strings(datasetIDs)
+	for _, datasetID := range datasetIDs {
+		query := authored.Datasets[datasetID]
+		tableID := query.Table
+		if tableID == "" {
+			tableID = authored.Query.Table
+		}
+		limit := query.Limit
+		if limit <= 0 {
+			limit = 1000
+		}
+		maxRows := int(compiledVisualFrameLimit(authored, authored.ResultShape()))
+		if limit > maxRows {
+			limit = maxRows
+		}
+		binding := visualizationdefinition.QueryBinding{
+			Kind: visualizationdefinition.QueryAggregate, ResultShape: visualizationdefinition.ResultCategoryMultiMeasure,
+			ModelID: ctx.modelID, DatasetID: datasetID,
+			Aggregate: &visualizationdefinition.AggregateQueryBinding{
+				TableID: tableID, Dimensions: compiledFields(query.Dimensions), Measures: compiledFields(query.Measures),
+				Series: compiledOptionalField(query.Series), Time: compiledTime(query.Time), Sort: compiledSort(query.Sort), Limit: int64(limit),
+			},
+		}
+		if err := binding.Validate(); err != nil {
+			return nil, fmt.Errorf("context dataset %q: %w", datasetID, err)
+		}
+		out[datasetID] = binding
+	}
+	return out, nil
+}
 
 func compileVisualizationQueryBinding(ctx compileContext, authored reportdef.Visual) (visualizationdefinition.QueryBinding, error) {
 	limit := compiledVisualLimit(authored)
