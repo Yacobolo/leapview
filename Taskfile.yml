@@ -596,8 +596,13 @@ tasks:
       - go run ./cmd/leapview schema export --format json-schema --out schemas/json
       - go run ./internal/app/tools/schemadocgen
 
+  # APIGen materializes one bundled TypeSpec package in the user cache.
+  # Initialize it through the canonical API target before another target can
+  # enter the compiler on a cold machine.
   ui-signals:generate:
     desc: Generate UI signal Go and TypeScript contracts from TypeSpec
+    deps:
+      - api:generate
     method: checksum
     sources:
       - Taskfile.yml

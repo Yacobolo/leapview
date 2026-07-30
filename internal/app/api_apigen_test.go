@@ -103,6 +103,7 @@ func TestAPIGenUsesTypedClientGenerator(t *testing.T) {
 		"- task: api:generate\n      - task: agent-contracts:generate\n      - task: ui-signals:generate\n      - task: schema:generate",
 		"- task: desktop-discovery:generate",
 		"schema:generate:\n    desc: Generate JSON Schema artifacts for LeapView YAML contracts\n    deps:\n      - db:generate\n      - config:generate\n      - api:generate\n      - ui-signals:generate",
+		"ui-signals:generate:\n    desc: Generate UI signal Go and TypeScript contracts from TypeSpec\n    deps:\n      - api:generate",
 	} {
 		if !strings.Contains(taskText, want) {
 			t.Fatalf("Taskfile.yml does not enforce generated-model ordering %q", want)
