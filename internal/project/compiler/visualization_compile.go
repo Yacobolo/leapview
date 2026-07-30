@@ -108,7 +108,11 @@ func compileAuthoringVisualization(ctx compileContext, authoring reportdef.Autho
 	if err != nil {
 		return visualizationdefinition.Definition{}, err
 	}
-	return visualizationdefinition.New(ctx.visualID, spec, binding)
+	secondary, err := compileSecondaryQueryBindings(ctx, authored)
+	if err != nil {
+		return visualizationdefinition.Definition{}, err
+	}
+	return visualizationdefinition.NewWithSecondaryQueries(ctx.visualID, spec, binding, secondary)
 }
 
 func CompileVisualizationDefinitions(report *reportdef.Dashboard, models ...*semanticmodel.Model) (map[string]visualizationdefinition.Definition, error) {

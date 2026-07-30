@@ -460,7 +460,10 @@ package contracts
 
 #VisualCommon: {
 	title?:            string
+	subtitle?:         string
 	description?:      string
+	datasets?:         close({[string & !="" & !="primary"]: #VisualQuery})
+	metadata?:         #VisualMetadataBindings
 	interaction?:      null | #Interaction
 	accessibility?: close({
 		title?:            string
@@ -473,6 +476,22 @@ package contracts
 		required_completeness?: "complete" | "truncated" | "partial" | "empty"
 	})
 }
+
+#VisualTextBinding: close({
+	dataset?:  string & !=""
+	field!:    string & !=""
+	reducer?:  "first" | "last" | "minimum" | "maximum" | "mean" | "median"
+	prefix?:   string
+	suffix?:   string
+	fallback!: string & !=""
+})
+
+#VisualMetadataBindings: close({
+	title?:       #VisualTextBinding
+	subtitle?:    #VisualTextBinding
+	description?: #VisualTextBinding
+	summary?:     #VisualTextBinding
+})
 
 #PresentationCommon: {
 	legend?:      "hidden" | "top" | "right" | "bottom" | "left"
@@ -533,6 +552,7 @@ package contracts
 }) | close({
 	"text"!: string & !=""
 }) | close({
+	dataset?: string & !=""
 	"field"!: string & !=""
 	reducer?: "first" | "last" | "minimum" | "maximum" | "mean" | "median"
 })

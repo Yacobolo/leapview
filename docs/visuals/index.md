@@ -21,6 +21,26 @@ All built-in charts below use the typed ECharts adapter. “Selectable” means 
 
 Unsupported interaction declarations fail deployment compilation instead of rendering an approximation. Map point and region selection use the separate MapLibre interaction path documented on the [map page](/docs/visuals/map).
 
+## Decision-context capability matrix
+
+All entries below describe renderer-neutral compiled contracts. Unsupported combinations fail project validation; LeapView never accepts an ECharts option object as a substitute.
+
+| Visuals | Axes | Lines and bands | Events | Conditional formatting | Filtered context datasets and bound metadata |
+| --- | --- | --- | --- | --- | --- |
+| Line, area, bar, column, combo, scatter, waterfall | Yes | Yes | Yes, on the horizontal axis | Yes | Yes |
+| Heatmap | Yes | No | No | Yes | Yes |
+| Histogram, candlestick, boxplot | Yes | No | No | No | Yes |
+| Pie, donut, funnel | No | No | No | No | Yes |
+| Treemap, sunburst, tree, Sankey, graph | No | No | No | No | Yes |
+| Radar, gauge | No | No | No | No | Yes |
+| KPI | No | No | No | Value, icon, and background | Yes |
+| Table, matrix, pivot | Table-owned sorting and formatting | No | No | Cell foreground/background and icons | Static titles; governed cell bindings |
+| Map, custom Vega-Lite | Renderer-owned geographic/custom contract | No | No | No | No secondary context datasets |
+
+Decision-context field references use stable dataset and field identities. Gradient domains, rule order, null/default outcomes, series order, colors, scale domains, zero policies, units, and tick density are explicit in the compiled IR. Bound titles, subtitles, descriptions, summaries, reference values, and accessibility text recompute when filters or data revisions change and use authored fallbacks when governed data is empty.
+
+Deleted fields, unknown datasets, incompatible reducers, unsupported mark/feature combinations, and unsafe formatting intents are deployment errors with the binding path in the diagnostic. Authorization remains part of governed query execution; an unauthorized or failed context query produces the visual’s normal error state and does not reveal a hidden value through metadata or a renderer message.
+
 ## Change over time
 
 - [Line chart](/docs/visuals/line)

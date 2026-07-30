@@ -1,6 +1,7 @@
 import type { VisualizationEnvelope, VisualizationField, VisualizationFieldRef } from '../../../../../generated/visualization'
 import type { RendererContext } from '../../host-controller'
 import { formatValue } from '../../format'
+import { resolveVisualizationMetadata } from '../../metadata'
 
 export type EChartsTranslation = Record<string, any>
 
@@ -48,9 +49,10 @@ export function selectedDatasetSource(envelope: VisualizationEnvelope, dataset: 
 
 export function baseOption(envelope: VisualizationEnvelope, context: RendererContext): EChartsTranslation {
   const dataset = inlineDataset(envelope)
+  const metadata = resolveVisualizationMetadata(envelope)
   return {
     animation: false,
-    aria: { enabled: true, description: envelope.spec.accessibility.description },
+    aria: { enabled: true, description: metadata.summary ?? metadata.description },
     backgroundColor: 'transparent',
     color: [...context.colors.data],
     textStyle: { color: context.colors.foreground, fontFamily: context.fontFamily },

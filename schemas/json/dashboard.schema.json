@@ -2409,6 +2409,12 @@
         {
           "additionalProperties": false,
           "properties": {
+            "dataset": {
+              "not": {
+                "const": ""
+              },
+              "type": "string"
+            },
             "field": {
               "not": {
                 "const": ""
@@ -2982,6 +2988,10 @@
           },
           "type": "object"
         },
+        "datasets": {
+          "additionalProperties": true,
+          "type": "object"
+        },
         "description": {
           "type": "string"
         },
@@ -2994,6 +3004,12 @@
               "$ref": "#/$defs/%23Interaction"
             }
           ]
+        },
+        "metadata": {
+          "$ref": "#/$defs/%23VisualMetadataBindings"
+        },
+        "subtitle": {
+          "type": "string"
         },
         "title": {
           "type": "string"
@@ -3016,6 +3032,24 @@
         "kind",
         "visual"
       ],
+      "type": "object"
+    },
+    "#VisualMetadataBindings": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "$ref": "#/$defs/%23VisualTextBinding"
+        },
+        "subtitle": {
+          "$ref": "#/$defs/%23VisualTextBinding"
+        },
+        "summary": {
+          "$ref": "#/$defs/%23VisualTextBinding"
+        },
+        "title": {
+          "$ref": "#/$defs/%23VisualTextBinding"
+        }
+      },
       "type": "object"
     },
     "#VisualQuery": {
@@ -3065,6 +3099,50 @@
           "type": "object"
         }
       },
+      "type": "object"
+    },
+    "#VisualTextBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "dataset": {
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "fallback": {
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "field": {
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "reducer": {
+          "enum": [
+            "first",
+            "last",
+            "minimum",
+            "maximum",
+            "mean",
+            "median"
+          ]
+        },
+        "suffix": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "fallback",
+        "field"
+      ],
       "type": "object"
     }
   },

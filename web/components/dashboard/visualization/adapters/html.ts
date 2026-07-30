@@ -2,6 +2,7 @@ import type { VisualizationEnvelope, VisualizationFieldRef } from '../../../../g
 import { defaultRendererContext, type RendererAdapter, type RendererContext, type RendererHandle } from '../host-controller'
 import { conditionalIconGlyph, conditionalStyleColor, contrastTextColor, resolveConditionalFormat } from '../conditional-format'
 import { formatValue } from '../format'
+import { resolveVisualizationMetadata } from '../metadata'
 
 export const adapter: RendererAdapter = {
   mount(container, envelope, context) { return new HTMLHandle(container, envelope, context) },
@@ -14,8 +15,10 @@ class HTMLHandle implements RendererHandle {
     const article = document.createElement('article')
     article.className = 'lv-kpi-card'
     const conditional = kpiConditionalPresentation(envelope, context)
+    const metadata = resolveVisualizationMetadata(envelope)
     article.setAttribute('aria-label', [
-      envelope.spec.accessibility.title,
+      metadata.title,
+      metadata.summary ?? metadata.description,
       conditional.iconLabel ? `Status: ${conditional.iconLabel}.` : '',
     ].filter(Boolean).join('. '))
     if (conditional.background) article.style.backgroundColor = conditional.background
@@ -23,12 +26,19 @@ class HTMLHandle implements RendererHandle {
     if (envelope.spec.kind === 'kpi') article.dataset.tone = envelope.spec.presentation.tone
     const label = document.createElement('div')
     label.className = 'lv-visualization-label'
-    label.textContent = envelope.spec.title
+    label.textContent = metadata.title
+    const subtitle = metadata.subtitle ? document.createElement('small') : undefined
+    if (subtitle) {
+      subtitle.className = 'lv-visualization-note'
+      subtitle.textContent = metadata.subtitle!
+    }
     const value = document.createElement('strong')
     value.className = 'lv-visualization-kpi'
     if (conditional.valueColor) value.style.color = conditional.valueColor
     value.textContent = [conditional.icon, kpiText(envelope, context)].filter(Boolean).join(' ')
-    article.append(label, value)
+    article.append(label)
+    if (subtitle) article.append(subtitle)
+    article.append(value)
     if (envelope.spec.kind === 'kpi' && envelope.spec.presentation.note) {
       const note = document.createElement('small'); note.className = 'lv-visualization-note'; note.textContent = envelope.spec.presentation.note; article.append(note)
     }

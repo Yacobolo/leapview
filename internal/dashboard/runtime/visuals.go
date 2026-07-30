@@ -51,7 +51,15 @@ func (s *VisualizationDataService) visuals(ctx context.Context, runtime *modelRu
 		if err != nil {
 			return nil, err
 		}
-		envelope, err := visualizationruntime.EnvelopeFromFrame(definition, frame, selectedEntries(filters, "visual", key), 0, 0)
+		frames := map[string]visualizationruntime.Frame{definition.Query.DatasetID: frame}
+		contextFrames, err := s.contextFrames(ctx, runtime, report, key, definition, filters)
+		if err != nil {
+			return nil, err
+		}
+		for datasetID, contextFrame := range contextFrames {
+			frames[datasetID] = contextFrame
+		}
+		envelope, err := visualizationruntime.EnvelopeFromFrames(definition, frames, selectedEntries(filters, "visual", key), 0, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -146,11 +154,21 @@ func fieldBindingsToDataFields(bindings []visualizationdefinition.FieldBinding) 
 
 func frameFromDatums(definition visualizationdefinition.Definition, data []dashboard.Datum) (visualizationruntime.Frame, error) {
 	base, err := visualizationir.SpecificationBase(definition.Spec)
-	if err != nil || len(base.Datasets) != 1 {
+	if err != nil {
 		return visualizationruntime.Frame{}, fmt.Errorf("visualization %q has invalid compiled dataset", definition.ID)
 	}
-	columns := make([]string, len(base.Datasets[0].Fields))
-	for index, field := range base.Datasets[0].Fields {
+	var schema *visualizationir.VisualizationDatasetSchema
+	for index := range base.Datasets {
+		if base.Datasets[index].ID == definition.Query.DatasetID {
+			schema = &base.Datasets[index]
+			break
+		}
+	}
+	if schema == nil {
+		return visualizationruntime.Frame{}, fmt.Errorf("visualization %q primary query targets unknown dataset %q", definition.ID, definition.Query.DatasetID)
+	}
+	columns := make([]string, len(schema.Fields))
+	for index, field := range schema.Fields {
 		columns[index] = field.ID
 	}
 	rows := make([][]any, len(data))
@@ -161,6 +179,80 @@ func frameFromDatums(definition visualizationdefinition.Definition, data []dashb
 		}
 	}
 	return visualizationruntime.Frame{Columns: columns, Rows: rows}, nil
+}
+
+func (s *VisualizationDataService) contextFrames(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, visualID string, definition visualizationdefinition.Definition, filters dashboard.Filters) (map[string]visualizationruntime.Frame, error) {
+	if len(definition.SecondaryQueries) == 0 {
+		return nil, nil
+	}
+	queryFilters, err := s.filters.semanticFilters(ctx, runtime, report, filters, "visual", visualID)
+	if err != nil {
+		return nil, err
+	}
+	base, err := visualizationir.SpecificationBase(definition.Spec)
+	if err != nil {
+		return nil, err
+	}
+	schemas := make(map[string]visualizationir.VisualizationDatasetSchema, len(base.Datasets))
+	for _, schema := range base.Datasets {
+		schemas[schema.ID] = schema
+	}
+	datasetIDs := make([]string, 0, len(definition.SecondaryQueries))
+	for datasetID := range definition.SecondaryQueries {
+		datasetIDs = append(datasetIDs, datasetID)
+	}
+	sort.Strings(datasetIDs)
+	frames := make(map[string]visualizationruntime.Frame, len(datasetIDs))
+	for _, datasetID := range datasetIDs {
+		binding := definition.SecondaryQueries[datasetID]
+		query := binding.Aggregate
+		if binding.Kind != visualizationdefinition.QueryAggregate || query == nil {
+			return nil, fmt.Errorf("visualization %q context dataset %q has invalid aggregate binding", visualID, datasetID)
+		}
+		dimensions := make([]reportdef.QueryField, 0, len(query.Dimensions)+1)
+		for _, field := range query.Dimensions {
+			dimensions = append(dimensions, queryFieldRef(field, field.Alias))
+		}
+		if query.Series != nil {
+			dimensions = append(dimensions, queryFieldRef(*query.Series, query.Series.Alias))
+		}
+		measures := make([]reportdef.QueryField, len(query.Measures))
+		for index, field := range query.Measures {
+			measures[index] = queryFieldRef(field, field.Alias)
+		}
+		queryTime := reportdef.QueryTime{}
+		if query.Time != nil {
+			queryTime = reportdef.QueryTime{Field: query.Time.FieldID, Alias: query.Time.Alias, Grain: query.Time.Grain}
+		}
+		sorts := make([]reportdef.QuerySort, len(query.Sort))
+		for index, value := range query.Sort {
+			sorts[index] = reportdef.QuerySort{Field: value.FieldID, Direction: value.Direction}
+		}
+		data, err := s.querySemanticDatums(ctx, runtime, reportdef.AggregateQuery{
+			Table: query.TableID, Dimensions: dimensions, Measures: measures, Time: queryTime,
+			Filters: queryFilters, Sort: sorts, Limit: int(query.Limit),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("visualization %q context dataset %q: %w", visualID, datasetID, err)
+		}
+		schema, ok := schemas[datasetID]
+		if !ok {
+			return nil, fmt.Errorf("visualization %q context dataset %q has no schema", visualID, datasetID)
+		}
+		columns := make([]string, len(schema.Fields))
+		for index, field := range schema.Fields {
+			columns[index] = field.ID
+		}
+		rows := make([][]any, len(data))
+		for rowIndex, datum := range data {
+			rows[rowIndex] = make([]any, len(columns))
+			for columnIndex, column := range columns {
+				rows[rowIndex][columnIndex] = normalizeDatumValue(datum[column])
+			}
+		}
+		frames[datasetID] = visualizationruntime.Frame{Columns: columns, Rows: rows}
+	}
+	return frames, nil
 }
 
 func (s *VisualizationDataService) bundledVisuals(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, filters dashboard.Filters, keys []string) (map[string]visualizationir.VisualizationEnvelope, error) {
@@ -218,7 +310,15 @@ func (s *VisualizationDataService) bundledVisuals(ctx context.Context, runtime *
 		if frameErr != nil {
 			return nil, frameErr
 		}
-		envelope, envelopeErr := visualizationruntime.EnvelopeFromFrame(definition, frame, selectedEntries(filters, "visual", key), 0, 0)
+		frames := map[string]visualizationruntime.Frame{definition.Query.DatasetID: frame}
+		contextFrames, contextErr := s.contextFrames(ctx, runtime, report, key, definition, filters)
+		if contextErr != nil {
+			return nil, contextErr
+		}
+		for datasetID, contextFrame := range contextFrames {
+			frames[datasetID] = contextFrame
+		}
+		envelope, envelopeErr := visualizationruntime.EnvelopeFromFrames(definition, frames, selectedEntries(filters, "visual", key), 0, 0)
 		if envelopeErr != nil {
 			return nil, envelopeErr
 		}
