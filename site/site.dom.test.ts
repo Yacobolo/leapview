@@ -973,6 +973,19 @@ test('responsive widget reference covers every KPI and filter layout plus interm
     await page.waitForFunction(() => document.querySelector('lv-site-responsive-widget-reference')?.shadowRoot?.querySelector('[data-playground-frame]')?.getAttribute('data-selected-layout') === 'stacked')
     expect(await reference.locator('[data-playground-frame]').getAttribute('data-fit')).toBe('fit')
 
+    await width.fill('520')
+    await page.waitForFunction(() => {
+      const frame = document.querySelector('lv-site-responsive-widget-reference')?.shadowRoot?.querySelector('[data-playground-frame]')
+      return frame?.getAttribute('data-selected-layout') === 'stacked' && frame.getBoundingClientRect().width >= 520
+    })
+    const maxWidthStackedValueFits = await reference.evaluate((element) => {
+      const host = element.shadowRoot!.querySelector('[data-playground-frame] lv-visualization-host')
+      const value = host?.shadowRoot?.querySelector<HTMLElement>('.lv-visualization-kpi')
+      return Boolean(value) && value!.scrollHeight <= value!.clientHeight && value!.scrollWidth <= value!.clientWidth
+    })
+    expect(maxWidthStackedValueFits).toBe(true)
+    await width.fill('250')
+
     await reference.getByRole('combobox', { name: 'Preview widget' }).selectOption('date-range')
     await page.waitForFunction(() => document.querySelector('lv-site-responsive-widget-reference')?.shadowRoot?.querySelector('[data-playground-frame]')?.getAttribute('data-fit') === 'too-small')
     await height.fill('154')

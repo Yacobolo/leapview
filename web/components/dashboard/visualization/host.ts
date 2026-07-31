@@ -180,6 +180,10 @@ export class VisualizationHost extends LitElement {
       gap: var(--base-size-4);
       padding: var(--base-size-8) var(--base-size-12) var(--base-size-8) var(--base-size-16);
     }
+    .lv-kpi-card[data-layout='stacked'] .lv-visualization-kpi {
+      font-size: clamp(18px, 10cqi, var(--lv-font-size-title-md));
+      line-height: var(--lv-line-height-tight);
+    }
     .lv-kpi-card[data-layout='stacked'] .lv-kpi-comparison {
       display: grid;
       gap: var(--base-size-2);
