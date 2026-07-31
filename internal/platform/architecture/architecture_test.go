@@ -2370,6 +2370,20 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 			t.Fatalf("%s must retain a GitHub-hosted Buildx fallback", job)
 		}
 	}
+	for _, job := range []string{"production-image", "production-image-fork"} {
+		block := workflowJobBlock(t, text, job)
+		for _, want := range []string{
+			"actions/setup-go@",
+			"cache: false",
+			"oven-sh/setup-bun@",
+			"go install github.com/go-task/task/v3/cmd/task@v3.50.0",
+			"task api:generate",
+		} {
+			if !strings.Contains(block, want) {
+				t.Fatalf("%s must prepare qualification API inputs: missing %q", job, want)
+			}
+		}
+	}
 	deploymentContracts := workflowJobBlock(t, text, "deployment-contracts")
 	if !strings.Contains(deploymentContracts, "cache: false") {
 		t.Fatal("deployment-contracts must not race prepare to populate the shared Go cache")
