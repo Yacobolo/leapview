@@ -173,12 +173,15 @@ try {
     let request
     try {
       request = JSON.parse(line)
+      if (request.jsonrpc !== '2.0' || request.id === undefined || typeof request.method !== 'string') {
+        throw new Error('invalid JSON-RPC 2.0 request')
+      }
       const method = methods[request.method]
       if (!method) {
         throw new Error(`unsupported browser worker method ${request.method}`)
       }
       const result = await method(request.params || {})
-      process.stdout.write(`${JSON.stringify({ id: request.id, result })}\n`)
+      process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: request.id, result })}\n`)
       if (request.method === 'close') break
     } catch (error) {
       await writeFile(
@@ -193,8 +196,12 @@ try {
       ).catch(() => {})
       await administratorPage.screenshot({ path: screenshotPath }).catch(() => {})
       process.stdout.write(`${JSON.stringify({
+        jsonrpc: '2.0',
         id: request?.id || 0,
-        error: String(error),
+        error: {
+          code: -32603,
+          message: String(error),
+        },
       })}\n`)
     }
   }

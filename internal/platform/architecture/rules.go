@@ -185,7 +185,7 @@ var PackageRules = []PackageRule{
 	{Prefix: "internal/app/brand", Capability: "composition", Layer: LayerAdapter},
 	{Prefix: "internal/dashboard/catalog", Capability: "dashboard", Layer: LayerContract},
 	{Prefix: "internal/app/cli", Capability: "composition", Layer: LayerComposition},
-	{Prefix: "internal/app/cli/composectl", Capability: "project", Layer: LayerAdapter},
+	{Prefix: "internal/app/cli/composectl", Capability: "composition", Layer: LayerComposition},
 	{Prefix: "internal/app/config", Capability: "composition", Layer: LayerComposition},
 	{Prefix: "internal/project/schema", Capability: "project", Layer: LayerContract},
 	{Prefix: "internal/platform/http/cursorsigning", Capability: "platform", Layer: LayerAdapter},

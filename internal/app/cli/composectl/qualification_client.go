@@ -10,6 +10,9 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/creachadair/jrpc2"
+	"github.com/creachadair/jrpc2/handler"
 )
 
 type QualificationClientWorkerOptions struct {
@@ -17,19 +20,6 @@ type QualificationClientWorkerOptions struct {
 	Project         string
 	SourceRevision  string
 	KeyringPassword string
-}
-
-type qualificationWorkerRequest struct {
-	ID     int             `json:"id"`
-	Method string          `json:"method"`
-	Params json.RawMessage `json:"params,omitempty"`
-}
-
-type qualificationWorkerResponse struct {
-	ID     int    `json:"id"`
-	Event  string `json:"event,omitempty"`
-	Result any    `json:"result,omitempty"`
-	Error  string `json:"error,omitempty"`
 }
 
 type qualificationLoginChallenge struct {
@@ -120,65 +110,66 @@ func (c *Controller) RunQualificationClientWorker(
 		return err
 	}
 
-	decoder := json.NewDecoder(c.stdin)
-	encoder := json.NewEncoder(c.stdout)
-	for {
-		var request qualificationWorkerRequest
-		if err := decoder.Decode(&request); err != nil {
-			if err == io.EOF {
-				return nil
-			}
-			return fmt.Errorf("decode qualification client request: %w", err)
-		}
-		var result any
-		var runErr error
-		switch request.Method {
-		case "login":
-			runErr = runQualificationLogin(
-				ctx,
+	server := jrpc2.NewServer(handler.Map{
+		"login": handler.New(func(callCtx context.Context) (map[string]bool, error) {
+			err := runQualificationLogin(
+				callCtx,
 				environment,
 				options,
-				request.ID,
-				encoder,
+				func(challenge qualificationLoginChallenge) error {
+					_, err := jrpc2.ServerFromContext(callCtx).Callback(
+						callCtx,
+						"device_challenge",
+						challenge,
+					)
+					return err
+				},
 			)
-			result = map[string]bool{"authenticated": runErr == nil}
-		case "dev":
-			var output string
-			output, runErr = runQualificationCLI(
-				ctx,
+			return map[string]bool{"authenticated": err == nil}, err
+		}),
+		"dev": handler.New(func(callCtx context.Context) (QualificationCandidate, error) {
+			output, err := runQualificationCLI(
+				callCtx,
 				environment,
 				"dev",
 				qualificationDevArguments(options)...,
 			)
-			if runErr == nil {
-				result, runErr = parseQualificationCandidate(output, options.SourceRevision)
+			if err != nil {
+				return QualificationCandidate{}, err
 			}
-		case "publish":
-			var output string
-			output, runErr = runQualificationCLI(
-				ctx,
+			return parseQualificationCandidate(output, options.SourceRevision)
+		}),
+		"publish": handler.New(func(callCtx context.Context) (QualificationPublication, error) {
+			output, err := runQualificationCLI(
+				callCtx,
 				environment,
 				"publish",
 				"--project", options.Project,
 				"--target", options.Target,
 				"--format", "json",
 			)
-			if runErr == nil {
-				result, runErr = parseQualificationPublication(output)
+			if err != nil {
+				return QualificationPublication{}, err
 			}
-		default:
-			runErr = fmt.Errorf("unsupported qualification client method %q", request.Method)
-		}
-		response := qualificationWorkerResponse{ID: request.ID, Result: result}
-		if runErr != nil {
-			response.Result = nil
-			response.Error = runErr.Error()
-		}
-		if err := encoder.Encode(response); err != nil {
-			return fmt.Errorf("encode qualification client response: %w", err)
-		}
+			return parseQualificationPublication(output)
+		}),
+	}, &jrpc2.ServerOptions{
+		AllowPush:   true,
+		Concurrency: 1,
+		NewContext:  func() context.Context { return ctx },
+	}).Start(newQualificationRPCChannel(
+		c.stdin,
+		qualificationOutputWriteCloser{Writer: c.stdout},
+	))
+	if err := server.Wait(); err != nil && ctx.Err() == nil {
+		return fmt.Errorf("qualification client worker: %w", err)
 	}
+	return ctx.Err()
 }
+
+type qualificationOutputWriteCloser struct{ io.Writer }
+
+func (qualificationOutputWriteCloser) Close() error { return nil }
 
 func qualificationDevArguments(options QualificationClientWorkerOptions) []string {
 	arguments := []string{
@@ -252,8 +243,7 @@ func runQualificationLogin(
 	ctx context.Context,
 	environment []string,
 	options QualificationClientWorkerOptions,
-	requestID int,
-	encoder *json.Encoder,
+	notify func(qualificationLoginChallenge) error,
 ) error {
 	command := exec.CommandContext(
 		ctx,
@@ -301,13 +291,9 @@ func runQualificationLogin(
 					return
 				}
 				challengeSent = true
-				if err := encoder.Encode(qualificationWorkerResponse{
-					ID:    requestID,
-					Event: "device_challenge",
-					Result: qualificationLoginChallenge{
-						VerificationURL: event.VerificationURL,
-						UserCode:        event.UserCode,
-					},
+				if err := notify(qualificationLoginChallenge{
+					VerificationURL: event.VerificationURL,
+					UserCode:        event.UserCode,
 				}); err != nil {
 					scanned <- err
 					return

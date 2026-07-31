@@ -1,7 +1,6 @@
 package composectl
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -17,6 +16,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/creachadair/jrpc2"
+	"github.com/creachadair/jrpc2/channel"
+	"github.com/creachadair/jrpc2/handler"
 )
 
 func TestQualificationCommandSurfaceBelongsToLeapviewctl(t *testing.T) {
@@ -253,6 +256,52 @@ func TestQualificationAPIUsesProductionAllowedHostForLoopback(t *testing.T) {
 	}
 	if gotHost != "localhost" {
 		t.Fatalf("API request Host = %q, want localhost", gotHost)
+	}
+}
+
+func TestQualificationMetricIntegerParsesPrometheusExposition(t *testing.T) {
+	for name, test := range map[string]struct {
+		exposition string
+		want       int64
+		wantError  string
+	}{
+		"gauge": {
+			exposition: "# HELP go_goroutines Number of goroutines.\n# TYPE go_goroutines gauge\ngo_goroutines 42\n",
+			want:       42,
+		},
+		"untyped": {
+			exposition: "go_goroutines 7\n",
+			want:       7,
+		},
+		"missing": {
+			exposition: "# TYPE another gauge\nanother 1\n",
+			wantError:  "metrics omit go_goroutines",
+		},
+		"malformed": {
+			exposition: "go_goroutines definitely-not-a-number\n",
+			wantError:  "parse Prometheus metrics",
+		},
+		"fractional": {
+			exposition: "# TYPE go_goroutines gauge\ngo_goroutines 1.5\n",
+			wantError:  "is not an integer",
+		},
+		"labelled": {
+			exposition: "go_goroutines{worker=\"one\"} 1\n",
+			wantError:  "must contain one unlabelled sample",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := qualificationMetricInteger([]byte(test.exposition), "go_goroutines")
+			if test.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), test.wantError) {
+					t.Fatalf("qualificationMetricInteger() error = %v, want %q", err, test.wantError)
+				}
+				return
+			}
+			if err != nil || got != test.want {
+				t.Fatalf("qualificationMetricInteger() = %d, %v; want %d", got, err, test.want)
+			}
+		})
 	}
 }
 
@@ -721,20 +770,114 @@ func TestQualificationJSONWorkerRejectsMalformedAndMismatchedResponses(t *testin
 		response string
 		wanted   string
 	}{
-		"malformed":  {"not-json\n", "decode inspect worker response"},
-		"mismatched": {`{"id":42,"result":{}}` + "\n", "does not match request"},
+		"malformed": {
+			"not-json\n",
+			"invalid request",
+		},
+		"mismatched": {
+			`{"jsonrpc":"2.0","id":42,"result":{}}` + "\n",
+			"context canceled",
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			worker := &qualificationJSONWorker{
-				stdin:  &qualificationTestWriteCloser{},
-				stdout: bufio.NewScanner(strings.NewReader(response.response)),
 				stderr: &boundedQualificationBuffer{maxBytes: 1024},
 			}
+			worker.client = jrpc2.NewClient(
+				newQualificationRPCChannel(
+					strings.NewReader(response.response),
+					&qualificationTestWriteCloser{},
+				),
+				&jrpc2.ClientOptions{
+					OnNotify:   worker.handleNotification,
+					OnCallback: worker.handleCallback,
+				},
+			)
 			err := worker.Call("inspect", nil, nil, nil)
 			if err == nil || !strings.Contains(err.Error(), response.wanted) {
 				t.Fatalf("worker error = %v", err)
 			}
 		})
+	}
+}
+
+func TestQualificationJSONWorkerSupportsResultsEventsAndCancellation(t *testing.T) {
+	clientChannel, serverChannel := channel.Direct()
+	worker := &qualificationJSONWorker{
+		stderr: &boundedQualificationBuffer{maxBytes: 1024},
+	}
+	worker.client = jrpc2.NewClient(
+		clientChannel,
+		&jrpc2.ClientOptions{
+			OnNotify:   worker.handleNotification,
+			OnCallback: worker.handleCallback,
+		},
+	)
+	server := jrpc2.NewServer(handler.Map{
+		"inspect": handler.New(func(ctx context.Context) (map[string]string, error) {
+			if _, err := jrpc2.ServerFromContext(ctx).Callback(
+				ctx,
+				"progress",
+				map[string]int{"percent": 50},
+			); err != nil {
+				return nil, err
+			}
+			return map[string]string{"status": "ready"}, nil
+		}),
+		"block": handler.New(func(ctx context.Context) error {
+			<-ctx.Done()
+			return ctx.Err()
+		}),
+	}, &jrpc2.ServerOptions{AllowPush: true}).Start(serverChannel)
+	t.Cleanup(func() {
+		_ = worker.client.Close()
+		server.Stop()
+		_ = server.Wait()
+	})
+
+	var result map[string]string
+	var event json.RawMessage
+	err := worker.CallContext(
+		t.Context(),
+		"inspect",
+		nil,
+		&result,
+		func(name string, params json.RawMessage) error {
+			if name != "progress" {
+				return fmt.Errorf("unexpected event %q", name)
+			}
+			event = append(event[:0], params...)
+			return nil
+		},
+	)
+	if err != nil || result["status"] != "ready" ||
+		!strings.Contains(string(event), `"percent":50`) {
+		t.Fatalf("inspect result = %v, event = %s, error = %v", result, event, err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
+	defer cancel()
+	err = worker.CallContext(ctx, "block", nil, nil, nil)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("block error = %v, want deadline exceeded", err)
+	}
+}
+
+func TestQualificationRPCChannelRejectsOversizedMessages(t *testing.T) {
+	oversized := strings.Repeat("x", qualificationRPCMaxMessageBytes+1) + "\n"
+	channel := newQualificationRPCChannel(
+		strings.NewReader(oversized),
+		&qualificationTestWriteCloser{},
+	)
+	if _, err := channel.Recv(); err == nil ||
+		!strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("oversized receive error = %v", err)
+	}
+	if err := channel.Send(bytes.Repeat(
+		[]byte("x"),
+		qualificationRPCMaxMessageBytes+1,
+	)); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("oversized send error = %v", err)
 	}
 }
 

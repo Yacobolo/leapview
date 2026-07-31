@@ -1,20 +1,22 @@
 package composectl
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
+
+	apigenclient "github.com/Yacobolo/toolbelt/apigen/runtime/client"
+	accessgen "github.com/flidai/leapview/internal/access/api/gen"
+	"github.com/flidai/leapview/internal/app/api/clienttransport"
+	deploymentgen "github.com/flidai/leapview/internal/deployment/api/gen"
 )
 
 const qualificationBrowserImage = "mcr.microsoft.com/playwright:v1.61.1-noble"
@@ -104,31 +106,6 @@ type qualificationAuthoringReport struct {
 
 type qualificationBrowserToken struct {
 	AccessToken string `json:"accessToken"`
-}
-
-type qualificationReviewerResponse struct {
-	Principal struct {
-		ID string `json:"id"`
-	} `json:"principal"`
-	TemporaryPassword string `json:"temporaryPassword"`
-}
-
-type qualificationDeploymentResponse struct {
-	Status    string `json:"status"`
-	Error     string `json:"error"`
-	CreatedBy string `json:"createdBy"`
-	Approval  *struct {
-		ID       string `json:"id"`
-		Status   string `json:"status"`
-		Revision int64  `json:"revision"`
-	} `json:"approval"`
-	Evidence struct {
-		CandidateID       string `json:"candidateId"`
-		CandidateRevision int64  `json:"candidateRevision"`
-		TargetID          string `json:"targetId"`
-		ArtifactDigest    string `json:"artifactDigest"`
-		ReleaseDigest     string `json:"releaseDigest"`
-	} `json:"evidence"`
 }
 
 func (c *Controller) runQualificationAuthoring(
@@ -323,24 +300,30 @@ func (c *Controller) runQualificationAuthoring(
 	}
 
 	apiClient := qualificationHTTPSClient()
-	reviewerEmail := fmt.Sprintf("authoring-reviewer-%d@qualification.invalid", time.Now().UnixNano())
-	var reviewer qualificationReviewerResponse
-	if err := qualificationAPI(
-		ctx,
-		apiClient,
-		http.MethodPost,
-		options.Target+"/api/v1/principals",
+	administratorAPI := accessgen.NewGenClient(qualificationGeneratedTransport(
+		options.Target,
 		administratorToken.AccessToken,
-		map[string]string{
-			"email":       reviewerEmail,
-			"displayName": "Authoring Qualification Reviewer",
+		apiClient,
+	))
+	reviewerEmail := fmt.Sprintf("authoring-reviewer-%d@qualification.invalid", time.Now().UnixNano())
+	displayName := "Authoring Qualification Reviewer"
+	reviewerResponse, err := administratorAPI.CreatePrincipal(
+		ctx,
+		accessgen.GenCreatePrincipalClientRequest{
+			Headers: accessgen.GenCreatePrincipalClientHeaders{
+				IdempotencyKey: "authoring-reviewer-" + runSuffix,
+			},
+			Body: accessgen.GenSchemaPrincipalCreateRequest{
+				Email:       reviewerEmail,
+				DisplayName: &displayName,
+			},
 		},
-		"authoring-reviewer-"+runSuffix,
-		&reviewer,
-	); err != nil {
+	)
+	if err != nil {
 		return report, fmt.Errorf("create qualification reviewer: %w", err)
 	}
-	if reviewer.Principal.ID == "" || reviewer.TemporaryPassword == "" {
+	reviewer := reviewerResponse.Body
+	if reviewer.Principal.Id == "" || reviewer.TemporaryPassword == "" {
 		return report, fmt.Errorf("reviewer creation returned incomplete credentials")
 	}
 	for _, privilege := range []string{
@@ -348,26 +331,26 @@ func (c *Controller) runQualificationAuthoring(
 		"APPROVE_DEPLOYMENT",
 		"ACTIVATE_DEPLOYMENT",
 	} {
-		if err := qualificationAPI(
+		objectType := "project_environment"
+		objectID := options.Environment
+		_, err := administratorAPI.CreateGrant(
 			ctx,
-			apiClient,
-			http.MethodPost,
-			fmt.Sprintf(
-				"%s/api/v1/workspaces/%s/grants",
-				options.Target,
-				url.PathEscape(options.ProjectID),
-			),
-			administratorToken.AccessToken,
-			map[string]string{
-				"objectType":  "project_environment",
-				"objectId":    options.Environment,
-				"privilege":   privilege,
-				"subjectId":   reviewer.Principal.ID,
-				"subjectType": "principal",
+			accessgen.GenCreateGrantClientRequest{
+				Workspace: options.ProjectID,
+				Headers: accessgen.GenCreateGrantClientHeaders{
+					IdempotencyKey: "authoring-reviewer-" +
+						strings.ToLower(privilege) + "-" + runSuffix,
+				},
+				Body: accessgen.GenSchemaGrantRequest{
+					ObjectType:  &objectType,
+					ObjectId:    &objectID,
+					Privilege:   privilege,
+					SubjectId:   reviewer.Principal.Id,
+					SubjectType: "principal",
+				},
 			},
-			"authoring-reviewer-"+strings.ToLower(privilege)+"-"+runSuffix,
-			nil,
-		); err != nil {
+		)
+		if err != nil {
 			return report, fmt.Errorf(
 				"grant qualification reviewer %s: %w",
 				privilege,
@@ -578,33 +561,33 @@ func (c *Controller) createQualificationAPIToken(
 	privileges []string,
 	idempotencyKey string,
 ) (string, error) {
-	body := map[string]any{
-		"name":       name,
-		"privileges": privileges,
-		"expiresAt":  c.now().UTC().Add(2 * time.Hour).Format(time.RFC3339),
+	expiresAt := c.now().UTC().Add(2 * time.Hour).Format(time.RFC3339)
+	body := accessgen.GenSchemaAPITokenCreateRequest{
+		Name: name, Privileges: &privileges, ExpiresAt: &expiresAt,
 	}
 	if workspaceID != "" {
-		body["workspaceId"] = workspaceID
+		body.WorkspaceId = &workspaceID
 	}
-	var created struct {
-		Token string `json:"token"`
-	}
-	if err := qualificationAPI(
-		ctx,
-		client,
-		http.MethodPost,
-		target+"/api/v1/me/api-tokens",
+	response, err := accessgen.NewGenClient(qualificationGeneratedTransport(
+		target,
 		authorizationToken,
-		body,
-		idempotencyKey,
-		&created,
-	); err != nil {
+		client,
+	)).CreateCurrentAPIToken(
+		ctx,
+		accessgen.GenCreateCurrentAPITokenClientRequest{
+			Headers: accessgen.GenCreateCurrentAPITokenClientHeaders{
+				IdempotencyKey: idempotencyKey,
+			},
+			Body: body,
+		},
+	)
+	if err != nil {
 		return "", err
 	}
-	if created.Token == "" {
+	if response.Body.Token == "" {
 		return "", fmt.Errorf("%s token creation returned an empty credential", name)
 	}
-	return created.Token, nil
+	return response.Body.Token, nil
 }
 
 func normalizeQualificationAuthoringOptions(options qualificationAuthoringOptions) qualificationAuthoringOptions {
@@ -671,45 +654,34 @@ func qualificationAPI(
 	idempotencyKey string,
 	result any,
 ) error {
-	var reader io.Reader
+	headers := make(http.Header)
 	if body != nil {
-		contents, err := json.Marshal(body)
-		if err != nil {
-			return err
-		}
-		reader = bytes.NewReader(contents)
-	}
-	request, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
-	if err != nil {
-		return err
-	}
-	applyQualificationLoopbackHost(request)
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Authorization", "Bearer "+token)
-	if body != nil {
-		request.Header.Set("Content-Type", "application/json")
+		headers.Set("Content-Type", "application/json")
 	}
 	if idempotencyKey != "" {
-		request.Header.Set("Idempotency-Key", idempotencyKey)
+		headers.Set("Idempotency-Key", idempotencyKey)
 	}
-	response, err := client.Do(request)
-	if err != nil {
-		return err
+	_, err := qualificationGeneratedTransport("", token, client).DoAPIGen(
+		ctx,
+		apigenclient.Request{
+			Method: method, Path: endpoint, Headers: headers, Body: body,
+			ContentType: headers.Get("Content-Type"), Accept: "application/json",
+		},
+		result,
+	)
+	return err
+}
+
+func qualificationGeneratedTransport(
+	target string,
+	token string,
+	client *http.Client,
+) clienttransport.Transport {
+	return clienttransport.Transport{
+		Target: target, Token: token, Client: client,
+		MaxResponseBytes: 8 << 20,
+		PrepareRequest:   applyQualificationLoopbackHost,
 	}
-	defer response.Body.Close()
-	contents, err := io.ReadAll(io.LimitReader(response.Body, 8<<20))
-	if err != nil {
-		return err
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("%s %s returned %d: %s", method, endpoint, response.StatusCode, contents)
-	}
-	if result != nil && len(bytes.TrimSpace(contents)) > 0 {
-		if err := json.Unmarshal(contents, result); err != nil {
-			return fmt.Errorf("decode %s %s: %w", method, endpoint, err)
-		}
-	}
-	return nil
 }
 
 func approveAndActivateQualificationPublication(
@@ -720,77 +692,72 @@ func approveAndActivateQualificationPublication(
 	publication QualificationPublication,
 	runSuffix string,
 ) (QualificationDeployment, error) {
-	endpoint := fmt.Sprintf(
-		"%s/api/v1/projects/%s/deployments/%s",
+	deployments := deploymentgen.NewGenClient(qualificationGeneratedTransport(
 		options.Target,
-		url.PathEscape(options.ProjectID),
-		url.PathEscape(publication.DeploymentID),
-	)
-	var response qualificationDeploymentResponse
-	if err := qualificationAPI(ctx, client, http.MethodGet, endpoint, token, nil, "", &response); err != nil {
+		token,
+		client,
+	))
+	getRequest := deploymentgen.GenGetDeploymentClientRequest{
+		Project: options.ProjectID, Deployment: publication.DeploymentID,
+	}
+	getResponse, err := deployments.GetDeployment(ctx, getRequest)
+	if err != nil {
 		return QualificationDeployment{}, err
 	}
+	response := getResponse.Body
 	if response.Approval == nil || response.Approval.Status != "pending" {
 		return QualificationDeployment{}, fmt.Errorf("publication approval is not pending")
 	}
-	approvalEndpoint := fmt.Sprintf(
-		"%s/approval-requests/%s/approve",
-		endpoint,
-		url.PathEscape(response.Approval.ID),
-	)
-	var approval struct {
-		Status string `json:"status"`
-	}
-	if err := qualificationAPI(
+	approval, err := deployments.ApproveDeployment(
 		ctx,
-		client,
-		http.MethodPost,
-		approvalEndpoint,
-		token,
-		map[string]int64{"expectedRevision": response.Approval.Revision},
-		"authoring-approve-"+runSuffix,
-		&approval,
-	); err != nil {
+		deploymentgen.GenApproveDeploymentClientRequest{
+			Project: options.ProjectID, Deployment: publication.DeploymentID,
+			Approval: response.Approval.Id,
+			Headers: deploymentgen.GenApproveDeploymentClientHeaders{
+				IdempotencyKey: "authoring-approve-" + runSuffix,
+			},
+			Body: deploymentgen.GenSchemaDeploymentApprovalDecisionRequest{
+				ExpectedRevision: response.Approval.Revision,
+			},
+		},
+	)
+	if err != nil {
 		return QualificationDeployment{}, err
 	}
-	if approval.Status != "approved" {
-		return QualificationDeployment{}, fmt.Errorf("publication approval transitioned to %q", approval.Status)
+	if approval.Body.Status != "approved" {
+		return QualificationDeployment{}, fmt.Errorf("publication approval transitioned to %q", approval.Body.Status)
 	}
-	if err := qualificationAPI(
+	if _, err := deployments.ActivateDeployment(
 		ctx,
-		client,
-		http.MethodPost,
-		endpoint+"/activate",
-		token,
-		nil,
-		"authoring-activate-"+runSuffix,
-		nil,
+		deploymentgen.GenActivateDeploymentClientRequest{
+			Project: options.ProjectID, Deployment: publication.DeploymentID,
+			Headers: deploymentgen.GenActivateDeploymentClientHeaders{
+				IdempotencyKey: "authoring-activate-" + runSuffix,
+			},
+		},
 	); err != nil {
 		return QualificationDeployment{}, err
 	}
 	activationCtx, cancel := qualificationContext(ctx, 5*time.Minute)
 	defer cancel()
-	err := qualificationWait(activationCtx, 250*time.Millisecond, func(waitCtx context.Context) (bool, error) {
-		if err := qualificationAPI(
-			waitCtx,
-			client,
-			http.MethodGet,
-			endpoint,
-			token,
-			nil,
-			"",
-			&response,
-		); err != nil {
+	err = qualificationWait(activationCtx, 250*time.Millisecond, func(waitCtx context.Context) (bool, error) {
+		current, err := deployments.GetDeployment(waitCtx, getRequest)
+		if err != nil {
 			return false, err
 		}
+		response = current.Body
 		switch response.Status {
 		case "active":
 			return true, nil
 		case "cancelled", "failed", "superseded":
+			message := ""
+			if response.Error != nil {
+				message = *response.Error
+			}
 			return false, fmt.Errorf(
 				"publication activation ended in %s: %s",
 				response.Status,
-				response.Error,
+				message,
 			)
 		default:
 			return false, nil
@@ -800,13 +767,13 @@ func approveAndActivateQualificationPublication(
 		return QualificationDeployment{}, err
 	}
 	return QualificationDeployment{
-		CandidateID:       response.Evidence.CandidateID,
+		CandidateID:       response.Evidence.CandidateId,
 		CandidateRevision: response.Evidence.CandidateRevision,
-		TargetID:          response.Evidence.TargetID,
+		TargetID:          response.Evidence.TargetId,
 		PrincipalID:       response.CreatedBy,
 		ArtifactDigest:    response.Evidence.ArtifactDigest,
 		ReleaseDigest:     response.Evidence.ReleaseDigest,
-		Status:            response.Status,
+		Status:            string(response.Status),
 	}, nil
 }
 

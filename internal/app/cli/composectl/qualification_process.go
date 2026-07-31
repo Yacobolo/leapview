@@ -17,8 +17,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/creachadair/jrpc2"
+	"github.com/creachadair/jrpc2/channel"
 	securefs "github.com/flidai/leapview/internal/platform/filesystem"
 )
+
+const qualificationRPCMaxMessageBytes = 64 << 10
 
 type qualificationProcess struct {
 	dir         string
@@ -124,12 +128,13 @@ func (c *Controller) qualificationCompose(
 }
 
 type qualificationJSONWorker struct {
-	command *exec.Cmd
-	stdin   io.WriteCloser
-	stdout  *bufio.Scanner
-	stderr  *boundedQualificationBuffer
-	nextID  int
-	mu      sync.Mutex
+	command  *exec.Cmd
+	client   *jrpc2.Client
+	stderr   *boundedQualificationBuffer
+	mu       sync.Mutex
+	eventMu  sync.Mutex
+	onEvent  func(string, json.RawMessage) error
+	eventErr error
 }
 
 func startQualificationJSONWorker(
@@ -160,12 +165,18 @@ func startQualificationJSONWorker(
 		_ = stdin.Close()
 		return nil, err
 	}
-	return &qualificationJSONWorker{
+	worker := &qualificationJSONWorker{
 		command: command,
-		stdin:   stdin,
-		stdout:  bufio.NewScanner(stdout),
 		stderr:  stderr,
-	}, nil
+	}
+	worker.client = jrpc2.NewClient(
+		newQualificationRPCChannel(stdout, stdin),
+		&jrpc2.ClientOptions{
+			OnNotify:   worker.handleNotification,
+			OnCallback: worker.handleCallback,
+		},
+	)
+	return worker, nil
 }
 
 func (w *qualificationJSONWorker) Call(
@@ -187,79 +198,82 @@ func (w *qualificationJSONWorker) CallContext(
 	if ctx == nil {
 		return fmt.Errorf("%s worker context is required", method)
 	}
-	done := make(chan error, 1)
-	go func() {
-		done <- w.call(method, params, result, onEvent)
-	}()
-	select {
-	case err := <-done:
-		return err
-	case <-ctx.Done():
-		_ = w.Kill()
-		<-done
-		return fmt.Errorf("%s worker call: %w", method, ctx.Err())
-	}
-}
-
-func (w *qualificationJSONWorker) call(
-	method string,
-	params any,
-	result any,
-	onEvent func(string, json.RawMessage) error,
-) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.nextID++
-	request := struct {
-		ID     int    `json:"id"`
-		Method string `json:"method"`
-		Params any    `json:"params,omitempty"`
-	}{ID: w.nextID, Method: method, Params: params}
-	if err := json.NewEncoder(w.stdin).Encode(request); err != nil {
-		return fmt.Errorf("write %s worker request: %w", method, err)
+	if w.client == nil {
+		return fmt.Errorf("%s worker client is not configured", method)
 	}
-	for w.stdout.Scan() {
-		var response struct {
-			ID     int             `json:"id"`
-			Event  string          `json:"event,omitempty"`
-			Result json.RawMessage `json:"result,omitempty"`
-			Error  string          `json:"error,omitempty"`
-		}
-		if err := json.Unmarshal(w.stdout.Bytes(), &response); err != nil {
-			return fmt.Errorf("decode %s worker response: %w", method, err)
-		}
-		if response.ID != request.ID {
-			return fmt.Errorf("%s worker response id %d does not match request %d", method, response.ID, request.ID)
-		}
-		if response.Event != "" {
-			if onEvent == nil {
-				return fmt.Errorf("%s worker emitted unexpected event %q", method, response.Event)
-			}
-			if err := onEvent(response.Event, response.Result); err != nil {
-				return err
-			}
-			continue
-		}
-		if response.Error != "" {
-			return fmt.Errorf("%s worker: %s", method, response.Error)
-		}
-		if result != nil && len(response.Result) > 0 {
-			if err := json.Unmarshal(response.Result, result); err != nil {
-				return fmt.Errorf("decode %s worker result: %w", method, err)
-			}
-		}
-		return nil
+	w.eventMu.Lock()
+	w.onEvent = onEvent
+	w.eventErr = nil
+	w.eventMu.Unlock()
+	defer func() {
+		w.eventMu.Lock()
+		w.onEvent = nil
+		w.eventMu.Unlock()
+	}()
+	var err error
+	if result == nil {
+		_, err = w.client.Call(ctx, method, params)
+	} else {
+		err = w.client.CallResult(ctx, method, params, result)
 	}
-	if err := w.stdout.Err(); err != nil {
-		return fmt.Errorf("read %s worker response: %w", method, err)
+	if ctx.Err() != nil {
+		_ = w.Kill()
+		return fmt.Errorf("%s worker call: %w", method, ctx.Err())
 	}
-	return fmt.Errorf("%s worker exited: %s", method, w.stderr.String())
+	w.eventMu.Lock()
+	eventErr := w.eventErr
+	w.eventMu.Unlock()
+	if eventErr != nil {
+		return eventErr
+	}
+	if err != nil {
+		return fmt.Errorf("%s worker: %w", method, err)
+	}
+	return nil
+}
+
+func (w *qualificationJSONWorker) handleNotification(request *jrpc2.Request) {
+	_, _ = w.handleEvent(request)
+}
+
+func (w *qualificationJSONWorker) handleCallback(
+	_ context.Context,
+	request *jrpc2.Request,
+) (any, error) {
+	return w.handleEvent(request)
+}
+
+func (w *qualificationJSONWorker) handleEvent(
+	request *jrpc2.Request,
+) (any, error) {
+	var params json.RawMessage
+	err := request.UnmarshalParams(&params)
+	w.eventMu.Lock()
+	defer w.eventMu.Unlock()
+	if err == nil {
+		if w.onEvent == nil {
+			err = fmt.Errorf("worker emitted unexpected event %q", request.Method())
+		} else {
+			err = w.onEvent(request.Method(), params)
+		}
+	}
+	if err != nil && w.eventErr == nil {
+		w.eventErr = err
+	}
+	return map[string]bool{"handled": err == nil}, err
 }
 
 func (w *qualificationJSONWorker) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	_ = w.stdin.Close()
+	if w.client != nil {
+		_ = w.client.Close()
+	}
+	if w.command == nil {
+		return nil
+	}
 	waitErr := w.command.Wait()
 	if waitErr != nil {
 		return fmt.Errorf("qualification worker exit: %w: %s", waitErr, w.stderr.String())
@@ -269,14 +283,67 @@ func (w *qualificationJSONWorker) Close() error {
 
 func (w *qualificationJSONWorker) Kill() error {
 	if w == nil || w.command == nil || w.command.Process == nil {
+		if w != nil && w.client != nil {
+			return w.client.Close()
+		}
 		return nil
 	}
-	_ = w.stdin.Close()
+	if w.client != nil {
+		_ = w.client.Close()
+	}
 	if err := w.command.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
 		return err
 	}
 	_ = w.command.Wait()
 	return nil
+}
+
+type qualificationRPCChannel struct {
+	reader *bufio.Reader
+	writer io.WriteCloser
+}
+
+func newQualificationRPCChannel(
+	reader io.Reader,
+	writer io.WriteCloser,
+) channel.Channel {
+	return &qualificationRPCChannel{
+		reader: bufio.NewReaderSize(reader, qualificationRPCMaxMessageBytes+1),
+		writer: writer,
+	}
+}
+
+func (c *qualificationRPCChannel) Send(message []byte) error {
+	if len(message) > qualificationRPCMaxMessageBytes {
+		return fmt.Errorf("qualification RPC message exceeds %d bytes", qualificationRPCMaxMessageBytes)
+	}
+	if bytes.Contains(message, []byte{'\n'}) {
+		return fmt.Errorf("qualification RPC message contains a newline")
+	}
+	framed := make([]byte, len(message)+1)
+	copy(framed, message)
+	framed[len(message)] = '\n'
+	_, err := c.writer.Write(framed)
+	return err
+}
+
+func (c *qualificationRPCChannel) Recv() ([]byte, error) {
+	message, err := c.reader.ReadSlice('\n')
+	if errors.Is(err, bufio.ErrBufferFull) ||
+		len(message) > qualificationRPCMaxMessageBytes+1 {
+		return nil, fmt.Errorf(
+			"qualification RPC message exceeds %d bytes",
+			qualificationRPCMaxMessageBytes,
+		)
+	}
+	if err != nil && !(errors.Is(err, io.EOF) && len(message) != 0) {
+		return nil, err
+	}
+	return bytes.TrimSuffix(message, []byte{'\n'}), nil
+}
+
+func (c *qualificationRPCChannel) Close() error {
+	return c.writer.Close()
 }
 
 type boundedQualificationBuffer struct {

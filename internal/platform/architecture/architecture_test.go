@@ -3224,8 +3224,12 @@ func isForbiddenUseCaseImport(imported string) bool {
 	if !strings.HasPrefix(imported, modulePath+"/internal/") {
 		return false
 	}
+	packagePath := strings.TrimPrefix(imported, modulePath+"/")
+	if rule, ok := ClassifyPackage(packagePath); ok && rule.Layer == LayerPlatform {
+		return false
+	}
 	for _, segment := range []string{"/sqlite", "/filesystem", "/s3", "/tus", "/duckdb", "/ducklake", "/datastar", "/http", "/openai"} {
-		if strings.Contains(strings.TrimPrefix(imported, modulePath), segment) {
+		if strings.Contains(packagePath, segment) {
 			return true
 		}
 	}

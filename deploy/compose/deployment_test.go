@@ -394,6 +394,7 @@ func TestEnterpriseAuthoringGoldenJourneyContract(t *testing.T) {
 	installed := read(t, filepath.Join(root, "internal", "app", "cli", "composectl", "qualification_installed.go"))
 	authoring := read(t, filepath.Join(root, "internal", "app", "cli", "composectl", "qualification_authoring.go"))
 	client := read(t, filepath.Join(root, "internal", "app", "cli", "composectl", "qualification_client.go"))
+	deploymentClient := read(t, filepath.Join(root, "internal", "deployment", "api", "gen", "client.apigen.gen.go"))
 	worker := read(t, filepath.Join(root, "deploy", "compose", "qualification", "authoring-worker.mjs"))
 	clientImage := read(t, filepath.Join(root, "deploy", "compose", "qualification", "Dockerfile.authoring-client"))
 
@@ -411,9 +412,14 @@ func TestEnterpriseAuthoringGoldenJourneyContract(t *testing.T) {
 	if strings.Contains(client, "LEAPVIEW_API_TOKEN") {
 		t.Error("authoring must use browser-approved login")
 	}
-	for _, required := range []string{"verifyExactAuthoringCandidate", "authoring-report.json", "BrowserApprovedLogin", "NativeKeyring", "PrivatePreview", "ExactCandidateActivated", "approval-requests", "/activate", "dbus-run-session", "MANAGE_GRANTS", "project_environment", "VIEW_ITEM", "APPROVE_DEPLOYMENT", "ACTIVATE_DEPLOYMENT"} {
+	for _, required := range []string{"verifyExactAuthoringCandidate", "authoring-report.json", "BrowserApprovedLogin", "NativeKeyring", "PrivatePreview", "ExactCandidateActivated", "ApproveDeployment", "ActivateDeployment", "dbus-run-session", "MANAGE_GRANTS", "project_environment", "VIEW_ITEM", "APPROVE_DEPLOYMENT", "ACTIVATE_DEPLOYMENT"} {
 		if !strings.Contains(authoring, required) {
 			t.Errorf("typed authoring controller missing %q", required)
+		}
+	}
+	for _, required := range []string{"approval-requests", "/activate"} {
+		if !strings.Contains(deploymentClient, required) {
+			t.Errorf("generated deployment client missing %q", required)
 		}
 	}
 	if strings.Contains(authoring, "MANAGE_PLATFORM") {

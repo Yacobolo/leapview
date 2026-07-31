@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,6 +17,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	deploymentgen "github.com/flidai/leapview/internal/deployment/api/gen"
+	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 )
 
 const qualificationRecoveryDiskLimitKiB = int64(51200)
@@ -1256,52 +1261,56 @@ func startQualificationDeploymentActivation(
 	token string,
 	idempotencySuffix string,
 ) error {
-	endpoint := apiRoot + "/api/v1/projects/" + urlPath(projectID) +
-		"/deployments/" + urlPath(deploymentID)
-	var deployment qualificationDeploymentResponse
-	if err := qualificationAPI(
-		ctx,
-		client,
-		http.MethodGet,
-		endpoint,
+	deployments := deploymentgen.NewGenClient(qualificationGeneratedTransport(
+		apiRoot,
 		token,
-		nil,
-		"",
-		&deployment,
-	); err != nil {
+		client,
+	))
+	deployment, err := deployments.GetDeployment(
+		ctx,
+		deploymentgen.GenGetDeploymentClientRequest{
+			Project: projectID, Deployment: deploymentID,
+		},
+	)
+	if err != nil {
 		return err
 	}
-	if deployment.Approval == nil || deployment.Approval.Status != "pending" {
+	if deployment.Body.Approval == nil ||
+		deployment.Body.Approval.Status != "pending" {
 		return fmt.Errorf("recovery deployment approval is not pending")
 	}
-	var approval struct {
-		Status string `json:"status"`
-	}
-	if err := qualificationAPI(
+	approval, err := deployments.ApproveDeployment(
 		ctx,
-		client,
-		http.MethodPost,
-		endpoint+"/approval-requests/"+urlPath(deployment.Approval.ID)+"/approve",
-		token,
-		map[string]int64{"expectedRevision": deployment.Approval.Revision},
-		"recovery-approve-"+idempotencySuffix,
-		&approval,
-	); err != nil {
+		deploymentgen.GenApproveDeploymentClientRequest{
+			Project: projectID, Deployment: deploymentID,
+			Approval: deployment.Body.Approval.Id,
+			Headers: deploymentgen.GenApproveDeploymentClientHeaders{
+				IdempotencyKey: "recovery-approve-" + idempotencySuffix,
+			},
+			Body: deploymentgen.GenSchemaDeploymentApprovalDecisionRequest{
+				ExpectedRevision: deployment.Body.Approval.Revision,
+			},
+		},
+	)
+	if err != nil {
 		return err
 	}
-	if approval.Status != "approved" {
-		return fmt.Errorf("recovery deployment approval transitioned to %q", approval.Status)
+	if approval.Body.Status != "approved" {
+		return fmt.Errorf(
+			"recovery deployment approval transitioned to %q",
+			approval.Body.Status,
+		)
 	}
-	return qualificationAPI(
+	_, err = deployments.ActivateDeployment(
 		ctx,
-		client,
-		http.MethodPost,
-		endpoint+"/activate",
-		token,
-		nil,
-		"recovery-activate-"+idempotencySuffix,
-		nil,
+		deploymentgen.GenActivateDeploymentClientRequest{
+			Project: projectID, Deployment: deploymentID,
+			Headers: deploymentgen.GenActivateDeploymentClientHeaders{
+				IdempotencyKey: "recovery-activate-" + idempotencySuffix,
+			},
+		},
 	)
+	return err
 }
 
 func waitForQualificationEvents(
@@ -1368,13 +1377,34 @@ func readQualificationMetrics(
 }
 
 func qualificationMetricInteger(metrics []byte, name string) (int64, error) {
-	for _, line := range strings.Split(string(metrics), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) == 2 && fields[0] == name {
-			return parseQualificationInteger(fields[1], name)
-		}
+	parser := expfmt.NewTextParser(model.UTF8Validation)
+	families, err := parser.TextToMetricFamilies(bytes.NewReader(metrics))
+	if err != nil {
+		return 0, fmt.Errorf("parse Prometheus metrics: %w", err)
 	}
-	return 0, fmt.Errorf("metrics omit %s", name)
+	family, ok := families[name]
+	if !ok {
+		return 0, fmt.Errorf("metrics omit %s", name)
+	}
+	if len(family.Metric) != 1 || len(family.Metric[0].Label) != 0 {
+		return 0, fmt.Errorf("metric %s must contain one unlabelled sample", name)
+	}
+	metric := family.Metric[0]
+	var value float64
+	switch {
+	case metric.Gauge != nil:
+		value = metric.Gauge.GetValue()
+	case metric.Counter != nil:
+		value = metric.Counter.GetValue()
+	case metric.Untyped != nil:
+		value = metric.Untyped.GetValue()
+	default:
+		return 0, fmt.Errorf("metric %s is not a scalar", name)
+	}
+	if math.IsNaN(value) || math.IsInf(value, 0) || math.Trunc(value) != value {
+		return 0, fmt.Errorf("metric %s value %v is not an integer", name, value)
+	}
+	return parseQualificationInteger(strconv.FormatFloat(value, 'f', -1, 64), name)
 }
 
 func observeQualificationSSE(
