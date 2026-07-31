@@ -815,6 +815,7 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
                 data-canvas-visual
                 data-component-kind=${component.kind}
                 data-visual-type=${visualType}
+                data-slicer-style=${component.kind === 'slicer' ? component.presentation?.style ?? '' : nothing}
 		data-visual-id=${component.visual || nothing}
         ?data-canvas-filter-visual=${filterVisual}
         data-x=${component.x}

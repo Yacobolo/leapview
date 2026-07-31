@@ -172,6 +172,31 @@ export class VisualizationHost extends LitElement {
       align-content: center;
       gap: var(--base-size-4);
     }
+    .lv-kpi-card[data-layout='wide'] {
+      grid-template-columns: minmax(0, 3fr) minmax(80px, 2fr);
+    }
+    .lv-kpi-card[data-layout='wide'] > :not(.lv-kpi-sparkline) {
+      grid-column: 1;
+    }
+    .lv-kpi-card[data-layout='wide'] > .lv-kpi-sparkline {
+      grid-column: 2;
+      grid-row: 1 / span 4;
+      align-self: stretch;
+      height: 100%;
+      min-height: var(--base-size-24);
+    }
+    .lv-kpi-card[data-layout='stacked'] {
+      gap: var(--base-size-4);
+      padding: var(--base-size-8) var(--base-size-12) var(--base-size-8) var(--base-size-16);
+    }
+    .lv-kpi-card[data-layout='stacked'] .lv-kpi-comparison {
+      display: grid;
+      gap: var(--base-size-2);
+    }
+    .lv-kpi-card[data-layout-fit='too-small'] {
+      outline: var(--lv-border-width-focus) solid var(--lv-fg-danger);
+      outline-offset: calc(-1 * var(--lv-border-width-focus));
+    }
     .initial-loading {
       position: absolute;
       inset: 0;

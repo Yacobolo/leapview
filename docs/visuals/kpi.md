@@ -4,6 +4,8 @@ Use a KPI for a governed current value, an optional comparison and delta, an exp
 
 Every preview on this page is generated from the YAML shown below it using a fixed documentation dataset.
 
+Each preview automatically shows every valid responsive arrangement derived from that visual's explicitly configured features. The YAML does not name layout variants: LeapView rearranges the same label, value, comparison, goal, status, trend, and note, while enforcing the minimum size needed to preserve them.
+
 ## Current value
 
 Use compact mode when the current value is meaningful without a comparison. A note may add context, but it should not duplicate the title.

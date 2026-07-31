@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "widgets": {
+    "kpi": {
+      "layouts": [
+        {
+          "id": "wide",
+          "minimum": { "width": 288, "height": 56 },
+          "features": {
+            "subtitle": { "height": 18 },
+            "comparison": { "height": 20 },
+            "progress": { "height": 18 },
+            "goal": { "height": 18 },
+            "status": { "height": 18 },
+            "trend": { "height": 28 },
+            "note": { "height": 10 }
+          }
+        },
+        {
+          "id": "stacked",
+          "minimum": { "width": 160, "height": 64 },
+          "features": {
+            "subtitle": { "height": 18 },
+            "comparison": { "width": 32, "height": 28 },
+            "progress": { "height": 18 },
+            "goal": { "height": 18 },
+            "status": { "height": 18 },
+            "trend": { "width": 32, "height": 32 },
+            "note": { "height": 18 }
+          }
+        }
+      ],
+      "chrome": { "width": 0, "height": 0 }
+    },
+    "slicer.dropdown": {
+      "layouts": [
+        {
+          "id": "control",
+          "minimum": { "width": 140, "height": 66 },
+          "features": {}
+        }
+      ],
+      "chrome": { "width": 20, "height": 16 }
+    },
+    "slicer.input": {
+      "layouts": [
+        {
+          "id": "control",
+          "minimum": { "width": 140, "height": 82 },
+          "features": {}
+        }
+      ],
+      "chrome": { "width": 20, "height": 16 }
+    },
+    "slicer.numeric_range": {
+      "layouts": [
+        {
+          "id": "inline",
+          "minimum": { "width": 268, "height": 88 },
+          "features": {}
+        },
+        {
+          "id": "stacked",
+          "minimum": { "width": 172, "height": 136 },
+          "features": {}
+        }
+      ],
+      "chrome": { "width": 20, "height": 16 }
+    },
+    "slicer.date_range": {
+      "layouts": [
+        {
+          "id": "inline",
+          "minimum": { "width": 268, "height": 88 },
+          "features": {}
+        },
+        {
+          "id": "stacked",
+          "minimum": { "width": 172, "height": 136 },
+          "features": {}
+        }
+      ],
+      "chrome": { "width": 20, "height": 16 }
+    },
+    "slicer.relative_period": {
+      "layouts": [
+        {
+          "id": "inline",
+          "minimum": { "width": 268, "height": 82 },
+          "features": {}
+        },
+        {
+          "id": "stacked",
+          "minimum": { "width": 172, "height": 168 },
+          "features": {}
+        }
+      ],
+      "chrome": { "width": 20, "height": 16 }
+    }
+  }
+}

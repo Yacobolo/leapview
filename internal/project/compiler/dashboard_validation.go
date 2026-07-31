@@ -22,6 +22,9 @@ func ValidateDashboard(d *report.Dashboard, models map[string]*semanticmodel.Mod
 	if err := validateFilterArchitecture(d, model); err != nil {
 		return err
 	}
+	if err := validateWidgetPlacements(d); err != nil {
+		return err
+	}
 	for name, authored := range d.Visuals {
 		if authored.Chart == nil {
 			continue

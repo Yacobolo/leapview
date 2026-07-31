@@ -71,6 +71,8 @@ Choose spans based on the information a component must display:
 - Tables need enough height for a useful initial window.
 - Slicers need space for selected values, summaries, search, and operators.
 
+LeapView applies **explicit features, automatic layout, enforced minimums**. A configured sparkline, comparison, goal, status, filter input, or other feature remains present at every valid size. Renderers may rearrange that content, but they do not hide it or change an explicit number format. The compiler calculates the component's pixel dimensions from the canvas, grid, gap, padding, and placement spans, then rejects a placement when none of the component's internal arrangements fit. Intermediate sizes remain valid and do not snap to presets.
+
 Do not solve overcrowding by shrinking every component. Split a page when users are expected to answer distinct questions or when details push the primary analysis below several screenfuls.
 
 ## Stabilize and test the layout

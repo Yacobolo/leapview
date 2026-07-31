@@ -9,6 +9,11 @@ import type {
   DashboardFilterPresentation,
   DashboardFilterValue,
 } from '../../../generated/signals'
+import {
+  resolveWidgetLayout,
+  type WidgetContractID,
+  type WidgetLayoutResolution,
+} from '../visualization/layout'
 
 export type FilterMutationDetail = {
   bindingKey: string
@@ -38,6 +43,7 @@ export class DashboardFilterLeaf extends LitElement {
   private optionRequestAttempts = 0
   private optionRetryTimer?: ReturnType<typeof setTimeout>
   private optionRetryDelay = 1_200
+  private resizeObserver?: ResizeObserver
   @state() private optionLoading = false
 
   static styles = css`
@@ -66,6 +72,7 @@ export class DashboardFilterLeaf extends LitElement {
     .buttons { display: flex; flex-wrap: wrap; gap: 4px; }
     .buttons button[aria-pressed='true'] { background: var(--bgColor-accent-muted); }
     .range { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    :host([data-layout-variant='stacked']) .range { grid-template-columns: minmax(0, 1fr); }
     .range label { display: grid; min-width: 0; gap: var(--base-size-4); }
     .field-label {
       color: var(--lv-fg-muted);
@@ -79,6 +86,7 @@ export class DashboardFilterLeaf extends LitElement {
       font-weight: var(--lv-font-weight-medium);
     }
     .relative { display: grid; grid-template-columns: 1fr 72px 1fr; gap: 6px; }
+    :host([data-layout-variant='stacked']) .relative { grid-template-columns: minmax(0, 1fr); }
     .status { min-height: 1em; color: var(--lv-fg-muted); font-size: var(--lv-font-size-caption); }
     :host([pending]) fieldset { opacity: .78; }
     button:focus-visible, input:focus-visible, select:focus-visible { outline: var(--lv-border-width-focus) solid var(--lv-accent); outline-offset: var(--base-size-2); }
@@ -86,10 +94,17 @@ export class DashboardFilterLeaf extends LitElement {
 
   protected firstUpdated() {
     this.requestInitialOptions()
+    this.resizeObserver = new ResizeObserver(([entry]) => {
+      if (!entry) return
+      this.applyResponsiveLayout(entry.contentRect.width, entry.contentRect.height)
+    })
+    this.resizeObserver.observe(this)
   }
 
   disconnectedCallback(): void {
     this.clearOptionRetry()
+    this.resizeObserver?.disconnect()
+    this.resizeObserver = undefined
     super.disconnectedCallback()
   }
 
@@ -109,6 +124,10 @@ export class DashboardFilterLeaf extends LitElement {
     if (changed.has('stale') && changed.get('stale') === true && !this.stale) {
       if (this.hasRequestedOptions) this.requestOptions()
       else this.requestInitialOptions()
+    }
+    if (changed.has('presentation') || changed.has('definition')) {
+      const rect = this.getBoundingClientRect()
+      this.applyResponsiveLayout(rect.width, rect.height)
     }
   }
 
@@ -383,6 +402,20 @@ export class DashboardFilterLeaf extends LitElement {
     if (this.optionRetryTimer !== undefined) clearTimeout(this.optionRetryTimer)
     this.optionRetryTimer = undefined
   }
+
+  private applyResponsiveLayout(width: number, height: number): void {
+    const presentation = this.presentation ?? (this.definition ? defaultPresentation(this.definition) : undefined)
+    const contractID = presentation ? slicerContractID(presentation.style) : undefined
+    if (!contractID || width <= 0 || height <= 0) {
+      delete this.dataset.layoutVariant
+      delete this.dataset.layoutFit
+      return
+    }
+    const resolution = resolveWidgetLayout(contractID, { width, height })
+    const requirement = selectedRequirement(resolution)
+    this.dataset.layoutVariant = requirement.layout
+    this.dataset.layoutFit = resolution.kind === 'fit' ? 'fit' : 'too-small'
+  }
 }
 
 abstract class FilterShell extends LitElement {
@@ -513,11 +546,30 @@ export class DashboardSlicer extends FilterShell {
   static styles = css`
     :host { display: block; height: 100%; }
     section { height: 100%; padding: 8px 10px; box-sizing: border-box; }
+    lv-filter-leaf { display: block; width: 100%; height: 100%; }
   `
 
   render() {
     return html`<section aria-label=${this.presentation?.ariaLabel || this.definition?.label || 'Slicer'}>${this.leaf()}</section>`
   }
+}
+
+function slicerContractID(style: DashboardFilterPresentation['style']): WidgetContractID | undefined {
+  switch (style) {
+    case 'dropdown':
+    case 'input':
+    case 'numeric_range':
+    case 'date_range':
+    case 'relative_period':
+      return `slicer.${style}`
+    case 'list':
+    case 'buttons':
+      return undefined
+  }
+}
+
+function selectedRequirement(resolution: WidgetLayoutResolution) {
+  return resolution.kind === 'fit' ? resolution : resolution.requirements.at(-1)!
 }
 
 function defaultPresentation(definition: DashboardCompiledFilterDefinition): DashboardFilterPresentation {

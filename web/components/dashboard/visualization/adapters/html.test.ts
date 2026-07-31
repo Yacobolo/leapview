@@ -2,7 +2,13 @@ import { expect, test } from 'bun:test'
 
 import type { VisualizationEnvelope } from '../../../../generated/visualization'
 import { defaultRendererContext } from '../host-controller'
-import { accessibleLabel, kpiConditionalPresentation, kpiText } from './html'
+import {
+  accessibleLabel,
+  kpiConditionalPresentation,
+  kpiLayoutFeatures,
+  kpiText,
+  resolveKPIWidgetLayout,
+} from './html'
 
 test('HTML KPI accessible labels normalize sentence boundaries', () => {
   expect(accessibleLabel(['Revenue', 'Revenue against target.', 'Current $10.00. Target $12.00.', undefined]))
@@ -55,5 +61,65 @@ test('HTML KPI formatting resolves semantic backgrounds, readable text, and redu
     valueColor: defaultRendererContext.colors.surface,
     icon: '↓',
     iconLabel: 'decreasing',
+  })
+})
+
+test('HTML KPI layout requirements come only from explicitly configured features', () => {
+  const envelope = {
+    schemaVersion: 9, visualID: 'revenue', rendererID: 'html', specRevision: 'sha256:responsive', dataRevision: 1,
+    spec: {
+      kind: 'kpi', title: 'Revenue', subtitle: 'Trailing 12 months',
+      datasets: [
+        {
+          id: 'primary',
+          fields: [
+            { id: 'value', role: 'measure', dataType: 'decimal', nullable: false, label: 'Revenue' },
+            { id: 'comparison', role: 'measure', dataType: 'decimal', nullable: false, label: 'Baseline' },
+            { id: 'goal', role: 'measure', dataType: 'decimal', nullable: false, label: 'Goal' },
+          ],
+        },
+        {
+          id: 'trend',
+          fields: [
+            { id: 'month', role: 'category', dataType: 'date', nullable: false, label: 'Month' },
+            { id: 'trend_value', role: 'measure', dataType: 'decimal', nullable: false, label: 'Revenue' },
+          ],
+        },
+      ],
+      dataBudget: { maxRows: 24, requiredCompleteness: 'complete' },
+      accessibility: { title: 'Revenue', description: 'Revenue against baseline and goal' },
+      interactions: [],
+      value: { dataset: 'primary', field: 'value' },
+      comparison: { field: { dataset: 'primary', field: 'comparison' }, reducer: 'first', label: 'Baseline' },
+      goal: { field: { dataset: 'primary', field: 'goal' }, reducer: 'first', label: 'Goal' },
+      trend: {
+        category: { dataset: 'trend', field: 'month' },
+        value: { dataset: 'trend', field: 'trend_value' },
+      },
+      presentation: {
+        mode: 'progress', delta: 'absolute', favorableDirection: 'increase',
+        missingComparison: 'show_unavailable',
+        ranges: [{ minimum: 0, maximum: 10_000, label: 'On track', tone: 'success' }],
+        note: 'Governed revenue',
+      },
+    },
+    dataState: { kind: 'inline', specRevision: 'sha256:responsive', dataRevision: 1, generation: 1, datasets: [] },
+    selection: [], status: { kind: 'ready' }, diagnostics: [],
+  } as VisualizationEnvelope
+
+  expect(kpiLayoutFeatures(envelope)).toEqual([
+    'subtitle',
+    'comparison',
+    'progress',
+    'goal',
+    'status',
+    'trend',
+    'note',
+  ])
+  expect(resolveKPIWidgetLayout(envelope, { width: 288, height: 185 }).kind).toBe('too-small')
+  expect(resolveKPIWidgetLayout(envelope, { width: 288, height: 186 })).toEqual({
+    kind: 'fit',
+    layout: 'wide',
+    minimum: { width: 288, height: 186 },
   })
 })

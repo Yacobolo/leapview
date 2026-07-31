@@ -700,6 +700,44 @@ test('collapsed filters and page navigation use the same rail width', async () =
   }
 })
 
+test('opening the desktop filter pane reduces the usable canvas instead of covering it', async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  try {
+    await page.addInitScript(() => localStorage.setItem('leapview:filters-open', 'closed'))
+    await page.goto(baseURL)
+    await page.waitForFunction(() => (document.querySelector('lv-dashboard-page') as any)?.page)
+    const result = await page.locator('lv-dashboard-page').evaluate(async (element: any) => {
+      await element.updateComplete
+      const root = element.shadowRoot
+      const dock = root.querySelector('lv-filter-dock') as any
+      const canvas = root.querySelector('.canvas-wrap') as HTMLElement
+      await dock.updateComplete
+      const before = canvas.getBoundingClientRect()
+      ;(dock.shadowRoot.querySelector('.rail') as HTMLButtonElement).click()
+      await dock.updateComplete
+      await new Promise(requestAnimationFrame)
+      await Promise.all(dock.getAnimations().map((animation: Animation) => animation.finished))
+      const after = canvas.getBoundingClientRect()
+      const pane = dock.getBoundingClientRect()
+      return {
+        beforeWidth: Math.round(before.width),
+        afterWidth: Math.round(after.width),
+        canvasRight: Math.round(after.right),
+        paneLeft: Math.round(pane.left),
+        paneWidth: Math.round(pane.width),
+        expanded: dock.hasAttribute('data-open'),
+      }
+    })
+
+    expect(result.expanded).toBe(true)
+    expect(result.paneWidth).toBeGreaterThan(240)
+    expect(result.afterWidth).toBeLessThan(result.beforeWidth)
+    expect(result.canvasRight).toBeLessThanOrEqual(result.paneLeft)
+  } finally {
+    await page.close()
+  }
+})
+
 test('mobile filter dock is reachable before the canvas and opens with pointer activation', async () => {
   const page = await browser.newPage({ viewport: { width: 390, height: 820 } })
   try {
@@ -970,6 +1008,65 @@ test('range and text leaves expose visible input semantics', async () => {
       placeholder: 'Enter value',
       rangeLabels: ['Minimum', 'Maximum'],
     })
+  } finally {
+    await page.close()
+  }
+})
+
+test('date-range slicers rearrange at contract boundaries without removing either input', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('lv-filter-leaf'))
+    const result = await page.evaluate(async () => {
+      const leaf = document.createElement('lv-filter-leaf') as any
+      leaf.style.display = 'block'
+      leaf.style.width = '268px'
+      leaf.style.height = '88px'
+      leaf.definition = {
+        id: 'purchase_date', label: 'Purchase date', field: 'orders.purchase_date', valueKind: 'date',
+        predicates: [{ kind: 'range', operators: [] }],
+        options: { kind: 'none', limit: 0, values: [] },
+      }
+      leaf.binding = {
+        key: 'purchase_date', id: 'purchase_date', filter: 'purchase_date', scope: 'page', pageID: 'overview',
+        default: { kind: 'unfiltered' }, selectionMode: 'single', maxSelectedValues: 1,
+        readerEditable: true, paneVisible: true, paneOrder: 0, targets: [], optionDependencies: [],
+      }
+      leaf.presentation = {
+        style: 'date_range', search: false, selectAll: false,
+        showCounts: false, showSummary: true, compact: false,
+      }
+      document.body.append(leaf)
+      await leaf.updateComplete
+      const settle = async () => {
+        await new Promise(requestAnimationFrame)
+        await leaf.updateComplete
+      }
+      await settle()
+      const snapshot = () => ({
+        variant: leaf.dataset.layoutVariant,
+        fit: leaf.dataset.layoutFit,
+        inputs: leaf.shadowRoot.querySelectorAll('.range input[type="date"]').length,
+        columns: getComputedStyle(leaf.shadowRoot.querySelector('.range')).gridTemplateColumns,
+      })
+      const inline = snapshot()
+      leaf.style.width = '240px'
+      leaf.style.height = '136px'
+      await settle()
+      const stacked = snapshot()
+      leaf.style.width = '171px'
+      await settle()
+      const invalid = snapshot()
+      return { inline, stacked, invalid }
+    })
+
+    expect(result.inline.variant).toBe('inline')
+    expect(result.inline.fit).toBe('fit')
+    expect(result.inline.inputs).toBe(2)
+    expect(result.inline.columns.split(' ')).toHaveLength(2)
+    expect(result.stacked).toMatchObject({ variant: 'stacked', fit: 'fit', inputs: 2, columns: '240px' })
+    expect(result.invalid).toMatchObject({ variant: 'stacked', fit: 'too-small', inputs: 2 })
   } finally {
     await page.close()
   }

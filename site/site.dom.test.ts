@@ -844,15 +844,38 @@ test('chart documentation renders every executable variation from its YAML', asy
   }
 })
 
-test('KPI documentation uses compact example frames', async () => {
+test('KPI documentation automatically demonstrates every valid layout from one visual definition', async () => {
   const page = await browser.newPage()
   try {
     await page.goto(`${baseURL}/docs/visuals/kpi`)
     await page.waitForFunction(() => document.querySelectorAll('lv-site-visual-example[type="kpi"]').length === 6)
-    const heights = await page.locator('lv-site-visual-example[type="kpi"]').evaluateAll((examples) =>
-      examples.map((example) => Math.round(example.getBoundingClientRect().height)),
+    await page.waitForFunction(() => {
+      const examples = [...document.querySelectorAll('lv-site-visual-example[type="kpi"]')]
+      return examples.length === 6 && examples.every((example) => example.shadowRoot?.querySelectorAll('[data-layout-preview]').length === 2)
+    })
+    const favorable = page.locator('lv-site-visual-example[example-id="revenue_kpi_favorable"]')
+    const previews = await favorable.evaluate((example) =>
+      [...example.shadowRoot!.querySelectorAll<HTMLElement>('[data-layout-preview]')].map((preview) => {
+        const host = preview.querySelector('lv-visualization-host')
+        const renderer = host?.shadowRoot?.querySelector<HTMLElement>('.renderer')
+        return {
+          documented: preview.dataset.layoutPreview,
+          selected: renderer?.dataset.layoutVariant,
+          fit: renderer?.dataset.layoutFit,
+          sparkline: renderer?.querySelectorAll('.lv-kpi-sparkline').length,
+          width: Math.round(host?.getBoundingClientRect().width ?? 0),
+          height: Math.round(host?.getBoundingClientRect().height ?? 0),
+        }
+      }),
     )
-    expect(heights.every((height) => height >= 180 && height <= 240)).toBe(true)
+    expect(previews).toEqual([
+      { documented: 'wide', selected: 'wide', fit: 'fit', sparkline: 1, width: 288, height: 104 },
+      { documented: 'stacked', selected: 'stacked', fit: 'fit', sparkline: 1, width: 192, height: 124 },
+    ])
+    const yaml = await page.locator('lv-code-block[data-visual-example="revenue_kpi_favorable"]').getAttribute('code')
+      ?? await page.locator('lv-code-block[data-visual-example="revenue_kpi_favorable"]').textContent()
+    expect(yaml).not.toContain('layout_variant')
+    expect(yaml).not.toContain('responsive_visibility')
   } finally {
     await page.close()
   }

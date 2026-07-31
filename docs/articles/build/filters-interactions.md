@@ -41,6 +41,8 @@ Optionally present the same report binding as a page slicer:
 
 The pane card and slicer are separate shells around the same canonical binding state. Removing either presentation does not remove the binding or its filtering effect.
 
+Slicer layout is automatic rather than authored. For example, a date range uses two inline inputs when there is sufficient width and stacks those same inputs when a narrower, taller placement is valid. LeapView never removes one of the bounds to make an undersized placement appear usable. Compilation reports the required dimensions when neither arrangement fits.
+
 ### Define date and relative-period predicates
 
 ```yaml

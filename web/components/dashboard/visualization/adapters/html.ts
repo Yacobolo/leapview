@@ -1,19 +1,52 @@
 import type { VisualizationEnvelope } from '../../../../generated/visualization'
 import { defaultRendererContext, type RendererAdapter, type RendererContext, type RendererHandle } from '../host-controller'
 import { conditionalIconGlyph, conditionalStyleColor, contrastTextColor, resolveConditionalFormat } from '../conditional-format'
+import { resolveKPIWidgetLayout } from '../kpi-layout'
+import type { WidgetSize } from '../layout'
 import { resolveVisualizationMetadata } from '../metadata'
 import { kpiSparklinePath, resolveKPIState } from './kpi'
+
+export { kpiLayoutFeatures, resolveKPIWidgetLayout } from '../kpi-layout'
 
 export const adapter: RendererAdapter = {
   mount(container, envelope, context) { return new HTMLHandle(container, envelope, context) },
 }
 
 class HTMLHandle implements RendererHandle {
-  constructor(private readonly container: HTMLElement, envelope: VisualizationEnvelope, context: RendererContext) { this.update(envelope, 0, context) }
+  private envelope: VisualizationEnvelope
+  private context: RendererContext
+  private size: WidgetSize = { width: Number.POSITIVE_INFINITY, height: Number.POSITIVE_INFINITY }
+  private selectedLayout = ''
+  private fit = true
+
+  constructor(private readonly container: HTMLElement, envelope: VisualizationEnvelope, context: RendererContext) {
+    this.envelope = envelope
+    this.context = context
+    this.render()
+  }
+
   update(envelope: VisualizationEnvelope, _change: number, context: RendererContext): void {
+    this.envelope = envelope
+    this.context = context
+    this.render()
+  }
+
+  private render(): void {
+    const envelope = this.envelope
+    const context = this.context
     this.container.replaceChildren()
     const article = document.createElement('article')
     article.className = 'lv-kpi-card'
+    const resolution = resolveKPIWidgetLayout(envelope, this.size)
+    const requirement = resolution.kind === 'fit'
+      ? resolution
+      : resolution.requirements.at(-1)!
+    this.selectedLayout = requirement.layout
+    this.fit = resolution.kind === 'fit'
+    this.container.dataset.layoutVariant = requirement.layout
+    this.container.dataset.layoutFit = this.fit ? 'fit' : 'too-small'
+    article.dataset.layout = requirement.layout
+    article.dataset.layoutFit = this.container.dataset.layoutFit
     const conditional = kpiConditionalPresentation(envelope, context)
     const metadata = resolveVisualizationMetadata(envelope)
     const state = resolveKPIState(envelope, context)
@@ -142,9 +175,23 @@ class HTMLHandle implements RendererHandle {
     }
     this.container.append(article)
   }
-  resize(): void {}
+
+  resize(width: number, height: number): void {
+    const next = { width, height }
+    const resolution = resolveKPIWidgetLayout(this.envelope, next)
+    const requirement = resolution.kind === 'fit' ? resolution : resolution.requirements.at(-1)!
+    const fit = resolution.kind === 'fit'
+    this.size = next
+    if (requirement.layout === this.selectedLayout && fit === this.fit) return
+    this.render()
+  }
+
   async snapshot(): Promise<Blob> { return new Blob([this.container.textContent ?? ''], { type: 'text/plain' }) }
-  dispose(): void { this.container.replaceChildren() }
+  dispose(): void {
+    delete this.container.dataset.layoutVariant
+    delete this.container.dataset.layoutFit
+    this.container.replaceChildren()
+  }
 }
 
 export function kpiConditionalPresentation(envelope: VisualizationEnvelope, context: RendererContext): {

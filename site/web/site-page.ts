@@ -5,6 +5,8 @@ import { lucideIcon } from '../../web/components/shared/lucide-icons'
 import '../../web/components/shared/brand-mark'
 import '../../web/components/shared/code-block'
 import type { VisualizationEnvelope } from '../../web/generated/visualization'
+import { kpiLayoutFeatures } from '../../web/components/dashboard/visualization/kpi-layout'
+import { layoutRequirements } from '../../web/components/dashboard/visualization/layout'
 import { visualExampleHighlightLines } from './visual-example-highlights'
 
 type ThemeMode = 'system' | 'light' | 'dark'
@@ -1550,11 +1552,40 @@ class SiteVisualExample extends DatastarLit(LitElement) {
     }
 
     :host([type='kpi']) {
-      min-height: 12rem;
+      min-height: 0;
+      padding: var(--base-size-16);
+      overflow: auto;
     }
 
-    :host([type='kpi']) lv-visualization-host {
-      height: 12rem;
+    .layout-gallery {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: start;
+      gap: var(--base-size-20);
+    }
+
+    .layout-preview {
+      display: grid;
+      gap: var(--base-size-8);
+      margin: 0;
+    }
+
+    .layout-frame {
+      overflow: hidden;
+      border: var(--lv-border-default);
+      border-radius: var(--lv-radius-default);
+      background: var(--lv-chart-surface);
+    }
+
+    .layout-frame lv-visualization-host {
+      width: 100%;
+      height: 100%;
+    }
+
+    figcaption {
+      color: var(--lv-fg-muted);
+      font-size: var(--lv-font-size-caption);
+      line-height: var(--lv-line-height-compact);
     }
 
   `
@@ -1569,7 +1600,26 @@ class SiteVisualExample extends DatastarLit(LitElement) {
         else this.removeAttribute('type')
       })
     }
-    return visual ? html`<lv-visualization-host .envelope=${visual}></lv-visualization-host>` : null
+    if (!visual) return null
+    if (visual.spec.kind !== 'kpi') {
+      return html`<lv-visualization-host .envelope=${visual}></lv-visualization-host>`
+    }
+    const requirements = layoutRequirements('kpi', kpiLayoutFeatures(visual))
+    return html`<div class="layout-gallery" aria-label="Automatic responsive layouts">
+      ${requirements.map((requirement) => html`
+        <figure class="layout-preview" data-layout-preview=${requirement.layout}>
+          <div
+            class="layout-frame"
+            style=${`width: ${requirement.minimum.width}px; height: ${requirement.minimum.height}px`}
+          >
+            <lv-visualization-host .envelope=${visual}></lv-visualization-host>
+          </div>
+          <figcaption>
+            ${requirement.minimum.width}×${requirement.minimum.height} · Automatically selected: ${requirement.layout}
+          </figcaption>
+        </figure>
+      `)}
+    </div>`
   }
 }
 
