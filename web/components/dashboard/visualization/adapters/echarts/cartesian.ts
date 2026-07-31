@@ -65,6 +65,7 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
     const stroke = conditionalItemColor(envelope, value, 'mark_stroke', context)
     const gradient = conditionalGradient(envelope, value, 'mark_fill')
     const extent = finiteFieldExtent(envelope, value)
+    const primary = context.colors.data[0] ?? context.colors.accent
     return {
       xAxis: axis(envelope, spec.x, 'category', context), yAxis: axis(envelope, spec.y[0]!, 'category', context),
       visualMap: gradient
@@ -73,7 +74,11 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
             inRange: { color: [seriesColor('', gradient.low.color, context), seriesColor('', gradient.high.color, context)] },
             textStyle: { color: context.colors.muted },
           }
-        : fill ? undefined : { min: extent.minimum, max: extent.maximum, calculable: true, orient: 'horizontal', left: 'center', bottom: 0, textStyle: { color: context.colors.muted } },
+        : fill ? undefined : {
+            min: extent.minimum, max: extent.maximum, calculable: true, orient: 'horizontal', left: 'center', bottom: 0,
+            inRange: { color: [colorWithAlpha(primary, 0.18), primary] },
+            textStyle: { color: context.colors.muted },
+          },
       series: [{
         id: 'series:primary:heatmap', type: 'heatmap',
         encode: { x: spec.x.field, y: spec.y[0]?.field, value: value.field },
@@ -124,6 +129,14 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
     legend: legend(spec.presentation.legend, context), dataZoom,
     series: [...series, ...interactionHitSeries(envelope, spec, series)],
   }
+}
+
+function colorWithAlpha(color: string, alpha: number): string {
+  const longHex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(color)
+  if (longHex) return `rgba(${Number.parseInt(longHex[1]!, 16)}, ${Number.parseInt(longHex[2]!, 16)}, ${Number.parseInt(longHex[3]!, 16)}, ${alpha})`
+  const shortHex = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(color)
+  if (shortHex) return `rgba(${Number.parseInt(shortHex[1]! + shortHex[1]!, 16)}, ${Number.parseInt(shortHex[2]! + shortHex[2]!, 16)}, ${Number.parseInt(shortHex[3]! + shortHex[3]!, 16)}, ${alpha})`
+  return color
 }
 
 function finiteFieldExtent(envelope: VisualizationEnvelope, ref: VisualizationFieldRef): { minimum: number; maximum: number } {

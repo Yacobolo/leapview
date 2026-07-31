@@ -732,7 +732,11 @@ test('ECharts translates every cartesian mark with stable renderer-owned identit
   heatmapEnvelope.dataState.datasets[0].rows = [['A', 'R1', 1], ['B', 'R1', 3]]
   const heatmap = echartsOption(heatmapEnvelope, defaultRendererContext) as any
   expect(heatmap.series[0]).toMatchObject({ id: 'series:primary:heatmap', type: 'heatmap', encode: { x: 'label', y: 'row', value: 'value' } })
-  expect(heatmap.visualMap).toMatchObject({ min: 1, max: 3 })
+  expect(heatmap.visualMap).toMatchObject({
+    min: 1,
+    max: 3,
+    inRange: { color: ['rgba(9, 105, 218, 0.18)', defaultRendererContext.colors.data[0]] },
+  })
   const boxplot = echartsOption(cartesianFixture('boxplot', ['label', 'min', 'q1', 'median', 'q3', 'max']), defaultRendererContext) as any
   expect(boxplot.series[0]).toMatchObject({ id: 'series:primary:boxplot', type: 'boxplot', encode: { x: 'label', y: ['min', 'q1', 'median', 'q3', 'max'] } })
   expect(boxplot.series[0].itemStyle).toEqual({ color: defaultRendererContext.colors.data[0], borderColor: defaultRendererContext.colors.accent })
