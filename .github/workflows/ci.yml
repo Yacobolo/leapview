@@ -855,6 +855,12 @@ jobs:
       - name: Test deployment lifecycle
         run: go test ./deploy/compose ./deploy/hetzner ./deploy/hetzner-site
 
+      - name: Test qualification container runtime
+        run: >-
+          LEAPVIEW_TEST_CONTAINERS=1
+          go test ./internal/app/cli/composectl
+          -run '^TestQualificationContainerRuntimeLifecycle$'
+
       - name: Lint workflow definitions
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 

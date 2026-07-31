@@ -241,47 +241,49 @@ func (c *Controller) runQualificationAuthoring(
 		return report, fmt.Errorf("pull qualification browser: %w", err)
 	}
 
-	if _, err := c.qualificationDocker(
-		ctx,
-		nil,
-		"run", "--detach",
-		"--name", browserContainer,
-		"--network", "host",
-		"--volume", qualificationRoot+":/qualification:ro",
-		"--volume", options.EvidenceDir+":/evidence",
-		"--env", "QUALIFICATION_URL="+options.Target,
-		"--env", "QUALIFICATION_PROJECT_ID="+options.ProjectID,
-		"--env", "QUALIFICATION_EVIDENCE_ROOT=/evidence",
-		qualificationBrowserImage,
-		"sleep", "infinity",
-	); err != nil {
+	browser, err := c.qualificationContainers.Start(ctx, qualificationContainerRequest{
+		Name: browserContainer, Image: qualificationBrowserImage, NetworkMode: "host",
+		Volumes: []qualificationContainerVolume{
+			{Source: qualificationRoot, Target: "/qualification", ReadOnly: true},
+			{Source: options.EvidenceDir, Target: "/evidence"},
+		},
+		Environment: map[string]string{
+			"QUALIFICATION_URL":           options.Target,
+			"QUALIFICATION_PROJECT_ID":    options.ProjectID,
+			"QUALIFICATION_EVIDENCE_ROOT": "/evidence",
+		},
+		Command: []string{"sleep", "infinity"},
+	})
+	if err != nil {
 		return report, fmt.Errorf("start qualification browser: %w", err)
 	}
 	cleanup.Add(func(cleanupCtx context.Context) error {
-		_, err := c.qualificationDocker(cleanupCtx, nil, "rm", "--force", browserContainer)
+		_, err := browser.Remove(cleanupCtx)
 		return err
 	})
-	if _, err := c.qualificationDocker(ctx, nil, "exec", browserContainer, "mkdir", "-p", "/work"); err != nil {
-		return report, err
+	if _, err := browser.Exec(ctx, nil, "mkdir", "-p", "/work"); err != nil {
+		return report, qualificationContainerOperationError(
+			ctx, browser, "prepare authoring browser work directory", err,
+		)
 	}
 	for _, name := range []string{"package.json", "authoring-worker.mjs"} {
-		if _, err := c.qualificationDocker(
+		if _, err := browser.CopyTo(
 			ctx,
-			nil,
-			"cp",
 			filepath.Join(qualificationRoot, name),
-			browserContainer+":/work/"+name,
+			"/work/"+name,
 		); err != nil {
-			return report, err
+			return report, qualificationContainerOperationError(
+				ctx, browser, "copy authoring browser asset "+name, err,
+			)
 		}
 	}
-	if _, err := c.qualificationDocker(
-		ctx,
-		nil,
-		"exec", browserContainer,
+	if _, err := browser.Exec(
+		ctx, nil,
 		"npm", "install", "--prefix", "/work", "--no-audit", "--no-fund", "--silent",
 	); err != nil {
-		return report, fmt.Errorf("install qualification browser dependencies: %w", err)
+		return report, qualificationContainerOperationError(
+			ctx, browser, "install authoring browser dependencies", err,
+		)
 	}
 	browserWorker, err := startQualificationJSONWorker(
 		rootContext,
@@ -431,7 +433,7 @@ func (c *Controller) runQualificationAuthoring(
 	keyringPassword = ""
 	cleanup.Add(func(context.Context) error { return clientWorker.Kill() })
 	cleanup.Add(func(cleanupCtx context.Context) error {
-		_, err := c.qualificationDocker(cleanupCtx, nil, "rm", "--force", clientContainer)
+		_, err := c.qualificationContainers.Existing(clientContainer).Remove(cleanupCtx)
 		return ignoreQualificationNotFound(err)
 	})
 

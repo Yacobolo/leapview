@@ -653,6 +653,7 @@ tasks:
     desc: Validate product and public-site deployment contracts
     cmds:
       - go test ./cmd/leapviewctl ./internal/app/cli/composectl ./deploy/compose
+      - LEAPVIEW_TEST_CONTAINERS=1 go test ./internal/app/cli/composectl -run '^TestQualificationContainerRuntimeLifecycle$'
       - go test ./deploy/hetzner
       - go test ./deploy/hetzner-site
       - terraform fmt -check -recursive deploy/hetzner

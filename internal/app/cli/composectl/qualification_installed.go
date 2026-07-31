@@ -171,7 +171,7 @@ func (c *Controller) QualifyInstalledCandidate(
 		if browserContainer == "" {
 			return nil
 		}
-		_, err := c.qualificationDocker(cleanupCtx, nil, "rm", "--force", browserContainer)
+		_, err := c.qualificationContainers.Existing(browserContainer).Remove(cleanupCtx)
 		return ignoreQualificationNotFound(err)
 	})
 	cleanup.Add(func(cleanupCtx context.Context) error {
@@ -328,12 +328,11 @@ func (c *Controller) QualifyInstalledCandidate(
 	if err != nil {
 		return err
 	}
-	syncOutput, err := c.qualificationDocker(
+	syncOutput, err := c.qualificationContainers.Existing(containerID).Exec(
 		ctx, nil,
-		"exec",
-		"--env", "LEAPVIEW_API_TOKEN="+credentials.PublisherToken,
-		"--env", "LEAPVIEW_TARGET=http://localhost:8080",
-		containerID,
+		"env",
+		"LEAPVIEW_API_TOKEN="+credentials.PublisherToken,
+		"LEAPVIEW_TARGET=http://localhost:8080",
 		"leapview", "data", "sync",
 		"--project", "/app/evaluation/project/leapview.yaml",
 		"--connection", "sample",
@@ -406,7 +405,7 @@ func (c *Controller) QualifyInstalledCandidate(
 		return err
 	}
 	report.Assertions.PerformanceBudgets = true
-	_, _ = c.qualificationDocker(ctx, nil, "rm", "--force", browserContainer)
+	_, _ = c.qualificationContainers.Existing(browserContainer).Remove(ctx)
 	browserContainer = ""
 	if err := phases.Finish(nil); err != nil {
 		return err
@@ -414,12 +413,11 @@ func (c *Controller) QualifyInstalledCandidate(
 	ctx = phases.Begin(rootContext, "governance", 10*time.Minute)
 
 	queryBody := `{"dimensions":[{"field":"state"}],"measures":[{"field":"order_count"},{"field":"revenue"}],"limit":10}`
-	queryOutput, err := c.qualificationDocker(
+	queryOutput, err := c.qualificationContainers.Existing(containerID).Exec(
 		ctx, nil,
-		"exec",
-		"--env", "LEAPVIEW_API_TOKEN="+workloadToken,
-		"--env", "LEAPVIEW_TARGET=http://localhost:8080",
-		containerID,
+		"env",
+		"LEAPVIEW_API_TOKEN="+workloadToken,
+		"LEAPVIEW_TARGET=http://localhost:8080",
 		"leapview", "semantic-models",
 		"--workspace", "evaluation",
 		"query", "sales",
@@ -474,7 +472,7 @@ func (c *Controller) QualifyInstalledCandidate(
 	if err != nil {
 		return err
 	}
-	if _, err := c.qualificationDocker(ctx, nil, "restart", containerID); err != nil {
+	if _, err := c.qualificationContainers.Existing(containerID).Restart(ctx); err != nil {
 		return err
 	}
 	if err := c.waitQualificationHealthy(ctx, containerID, "restart persistence"); err != nil {
@@ -718,24 +716,29 @@ func (c *Controller) startQualificationPerformanceBrowser(
 	}
 	container := normalizedQualificationName(composeProject + "-browser")
 	qualificationRoot := c.path("qualification")
-	if _, err := c.qualificationDocker(
-		ctx, nil,
-		"run", "--detach",
-		"--name", container,
-		"--network", "host",
-		"--volume", qualificationRoot+":/qualification:ro",
-		"--volume", credentialsPath+":/run/secrets/credentials.json:ro",
-		"--volume", evidenceDir+":/evidence",
-		"--env", "QUALIFICATION_URL=https://localhost",
-		"--env", "QUALIFICATION_CREDENTIALS=/run/secrets/credentials.json",
-		"--env", "QUALIFICATION_SCREENSHOT=/evidence/browser-failure.png",
-		qualificationBrowserImage,
-		"sleep", "infinity",
-	); err != nil {
+	browser, err := c.qualificationContainers.Start(ctx, qualificationContainerRequest{
+		Name:        container,
+		Image:       qualificationBrowserImage,
+		NetworkMode: "host",
+		Volumes: []qualificationContainerVolume{
+			{Source: qualificationRoot, Target: "/qualification", ReadOnly: true},
+			{Source: credentialsPath, Target: "/run/secrets/credentials.json", ReadOnly: true},
+			{Source: evidenceDir, Target: "/evidence"},
+		},
+		Environment: map[string]string{
+			"QUALIFICATION_URL":         "https://localhost",
+			"QUALIFICATION_CREDENTIALS": "/run/secrets/credentials.json",
+			"QUALIFICATION_SCREENSHOT":  "/evidence/browser-failure.png",
+		},
+		Command: []string{"sleep", "infinity"},
+	})
+	if err != nil {
 		return "", err
 	}
-	if _, err := c.qualificationDocker(ctx, nil, "exec", container, "mkdir", "-p", "/work"); err != nil {
-		return container, err
+	if _, err := browser.Exec(ctx, nil, "mkdir", "-p", "/work"); err != nil {
+		return container, qualificationContainerOperationError(
+			ctx, browser, "prepare browser work directory", err,
+		)
 	}
 	for _, name := range []string{
 		"package.json",
@@ -743,25 +746,26 @@ func (c *Controller) startQualificationPerformanceBrowser(
 		"performance.mjs",
 		"performance-policy.json",
 	} {
-		if _, err := c.qualificationDocker(
-			ctx, nil, "cp",
-			filepath.Join(qualificationRoot, name),
-			container+":/work/"+name,
+		if _, err := browser.CopyTo(
+			ctx, filepath.Join(qualificationRoot, name), "/work/"+name,
 		); err != nil {
-			return container, err
+			return container, qualificationContainerOperationError(
+				ctx, browser, "copy browser qualification asset "+name, err,
+			)
 		}
 	}
-	if _, err := c.qualificationDocker(
-		ctx, nil, "exec", container,
+	if _, err := browser.Exec(
+		ctx, nil,
 		"npm", "install", "--prefix", "/work", "--no-audit", "--no-fund", "--silent",
 	); err != nil {
-		return container, err
+		return container, qualificationContainerOperationError(
+			ctx, browser, "install browser qualification dependencies", err,
+		)
 	}
-	if _, err := c.qualificationDocker(
-		ctx, nil, "exec", container,
-		"node", "/work/browser.mjs",
-	); err != nil {
-		return container, err
+	if _, err := browser.Exec(ctx, nil, "node", "/work/browser.mjs"); err != nil {
+		return container, qualificationContainerOperationError(
+			ctx, browser, "run browser qualification", err,
+		)
 	}
 	return container, nil
 }
@@ -800,7 +804,7 @@ func (c *Controller) runQualificationPerformance(
 	}
 	coldPaths := make([]string, 0, policy.Assumptions.Samples.ColdDashboardLoads)
 	for index := 1; index <= policy.Assumptions.Samples.ColdDashboardLoads; index++ {
-		if _, err := c.qualificationDocker(ctx, nil, "restart", appContainer); err != nil {
+		if _, err := c.qualificationContainers.Existing(appContainer).Restart(ctx); err != nil {
 			return err
 		}
 		if err := c.waitQualificationHealthy(ctx, appContainer, "cold performance sample"); err != nil {
@@ -808,26 +812,34 @@ func (c *Controller) runQualificationPerformance(
 		}
 		path := fmt.Sprintf("/evidence/performance-cold-%d.json", index)
 		coldPaths = append(coldPaths, path)
-		if _, err := c.qualificationDocker(
+		if _, err := c.qualificationContainers.Existing(browserContainer).Exec(
 			ctx, nil,
-			"exec",
-			"--env", "QUALIFICATION_METRICS_TOKEN="+metricsToken,
-			browserContainer,
+			"env",
+			"QUALIFICATION_METRICS_TOKEN="+metricsToken,
 			"node", "/work/performance.mjs", "cold", path,
 		); err != nil {
-			return err
+			return qualificationContainerOperationError(
+				ctx,
+				c.qualificationContainers.Existing(browserContainer),
+				"capture cold performance sample",
+				err,
+			)
 		}
 	}
 	coldJSON, _ := json.Marshal(coldPaths)
-	if _, err := c.qualificationDocker(
+	if _, err := c.qualificationContainers.Existing(browserContainer).Exec(
 		ctx, nil,
-		"exec",
-		"--env", "QUALIFICATION_METRICS_TOKEN="+metricsToken,
-		"--env", "QUALIFICATION_COLD_RESULTS="+string(coldJSON),
-		browserContainer,
+		"env",
+		"QUALIFICATION_METRICS_TOKEN="+metricsToken,
+		"QUALIFICATION_COLD_RESULTS="+string(coldJSON),
 		"node", "/work/performance.mjs", "workload", "/evidence/performance-report.json",
 	); err != nil {
-		return err
+		return qualificationContainerOperationError(
+			ctx,
+			c.qualificationContainers.Existing(browserContainer),
+			"capture performance workload",
+			err,
+		)
 	}
 	diskAfter, err := c.qualificationDiskUsage(
 		ctx,
@@ -859,8 +871,8 @@ func (c *Controller) runQualificationPerformance(
 	if err != nil {
 		return err
 	}
-	rowsOutput, err := c.qualificationDocker(
-		ctx, nil, "exec", appContainer,
+	rowsOutput, err := c.qualificationContainers.Existing(appContainer).Exec(
+		ctx, nil,
 		"wc", "-l", "/app/evaluation/data/orders.csv",
 	)
 	if err != nil {
@@ -899,11 +911,8 @@ func (c *Controller) qualificationDiskUsage(
 	appContainer string,
 	label string,
 ) (int64, error) {
-	output, err := c.qualificationDocker(
-		ctx,
-		nil,
-		"exec",
-		appContainer,
+	output, err := c.qualificationContainers.Existing(appContainer).Exec(
+		ctx, nil,
 		"du",
 		"-sb",
 		"--exclude=*.db-wal",

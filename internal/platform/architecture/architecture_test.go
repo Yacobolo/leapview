@@ -422,6 +422,19 @@ func TestAccessCLIUsesStandardOAuthClient(t *testing.T) {
 	}
 }
 
+func TestProductionQualificationDoesNotImportTestcontainers(t *testing.T) {
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/app/cli/composectl" {
+			continue
+		}
+		for _, imported := range file.imports {
+			if strings.HasPrefix(imported, "github.com/testcontainers/testcontainers-go") {
+				t.Errorf("%s imports test-only qualification framework %q", file.path, imported)
+			}
+		}
+	}
+}
+
 func TestCapabilityAPIPackagesOptIntoTypedClientGeneration(t *testing.T) {
 	content, err := os.ReadFile(filepath.Join(repoRoot(t), "api", "apigen.yaml"))
 	if err != nil {

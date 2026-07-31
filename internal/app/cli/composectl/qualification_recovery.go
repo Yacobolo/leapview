@@ -199,11 +199,7 @@ func (c *Controller) runQualificationRecovery(
 		return report, err
 	}
 	cleanup.Add(func(cleanupCtx context.Context) error {
-		_, err := c.qualificationDocker(
-			cleanupCtx,
-			nil,
-			"rm", "--force", recoveryClient,
-		)
+		_, err := c.qualificationContainers.Existing(recoveryClient).Remove(cleanupCtx)
 		return ignoreQualificationNotFound(err)
 	})
 	client := &http.Client{Timeout: 30 * time.Second}
@@ -698,8 +694,9 @@ func (c *Controller) runQualificationRecovery(
 		return report, err
 	}
 	_ = backupCommand.Stop()
-	_, _ = c.qualificationDocker(ctx, nil, "kill", "--signal", "KILL", backupOneoff)
-	_, _ = c.qualificationDocker(ctx, nil, "rm", "--force", backupOneoff)
+	backupContainer := c.qualificationContainers.Existing(backupOneoff)
+	_, _ = backupContainer.Kill(ctx, "KILL")
+	_, _ = backupContainer.Remove(ctx)
 	if _, statErr := os.Stat(filepath.Join(options.BundleRoot, "backups", "interrupted.tar.gz")); !os.IsNotExist(statErr) {
 		return report, fmt.Errorf("interrupted backup produced a completed archive")
 	}
@@ -758,8 +755,9 @@ func (c *Controller) runQualificationRecovery(
 		return report, err
 	}
 	_ = restoreCommand.Stop()
-	_, _ = c.qualificationDocker(ctx, nil, "kill", "--signal", "KILL", restoreOneoff)
-	_, _ = c.qualificationDocker(ctx, nil, "rm", "--force", restoreOneoff)
+	restoreContainer := c.qualificationContainers.Existing(restoreOneoff)
+	_, _ = restoreContainer.Kill(ctx, "KILL")
+	_, _ = restoreContainer.Remove(ctx)
 	if err := recoveryController.Start(ctx); err != nil {
 		return report, err
 	}
@@ -919,12 +917,13 @@ func (c *Controller) prepareQualificationRecoveryData(
 			return err
 		}
 	}
-	_, _ = c.qualificationDocker(
-		ctx, nil, "exec", options.ContainerID,
+	candidate := c.qualificationContainers.Existing(options.ContainerID)
+	_, _ = candidate.Exec(
+		ctx, nil,
 		"rm", "-rf", "/var/lib/leapview/qualification-recovery",
 	)
-	if _, err := c.qualificationDocker(
-		ctx, nil, "exec", options.ContainerID,
+	if _, err := candidate.Exec(
+		ctx, nil,
 		"mkdir", "-p", "/var/lib/leapview/qualification-recovery",
 	); err != nil {
 		return err
@@ -934,10 +933,10 @@ func (c *Controller) prepareQualificationRecoveryData(
 		if err := makeQualificationContainerReadable(source); err != nil {
 			return err
 		}
-		if _, err := c.qualificationDocker(
-			ctx, nil, "cp",
+		if _, err := candidate.CopyTo(
+			ctx,
 			source,
-			options.ContainerID+":/var/lib/leapview/qualification-recovery/"+name,
+			"/var/lib/leapview/qualification-recovery/"+name,
 		); err != nil {
 			return err
 		}
@@ -1050,21 +1049,22 @@ func (c *Controller) startQualificationRecoveryClient(
 	container := normalizedQualificationName(
 		options.ComposeProject + "-recovery-client",
 	)
-	if _, err := c.qualificationDocker(
-		ctx,
-		nil,
-		"run", "--detach",
-		"--name", container,
-		"--network", "host",
-		"--no-healthcheck",
-		"--volume", workDir+":/work:ro",
-		"--volume", clientHome+":/client-home",
-		"--volume", certificateFile+":/run/certs/caddy-root.crt:ro",
-		"--env", "SSL_CERT_FILE=/run/certs/caddy-root.crt",
-		"--entrypoint", "sleep",
-		options.Image,
-		"infinity",
-	); err != nil {
+	if _, err := c.qualificationContainers.Start(ctx, qualificationContainerRequest{
+		Name:        container,
+		Image:       options.Image,
+		NetworkMode: "host",
+		NoHealth:    true,
+		Volumes: []qualificationContainerVolume{
+			{Source: workDir, Target: "/work", ReadOnly: true},
+			{Source: clientHome, Target: "/client-home"},
+			{Source: certificateFile, Target: "/run/certs/caddy-root.crt", ReadOnly: true},
+		},
+		Environment: map[string]string{
+			"SSL_CERT_FILE": "/run/certs/caddy-root.crt",
+		},
+		Entrypoint: []string{"sleep"},
+		Command:    []string{"infinity"},
+	}); err != nil {
 		return "", err
 	}
 	return container, nil
@@ -1122,12 +1122,15 @@ func (c *Controller) runQualificationClientCommand(
 	token string,
 	arguments ...string,
 ) ([]byte, error) {
-	return c.qualificationDocker(
-		ctx,
-		nil,
-		qualificationClientExecArguments(
-			clientContainer,
-			token,
+	return c.qualificationContainers.Existing(clientContainer).Exec(
+		ctx, nil,
+		append(
+			[]string{
+				"env",
+				"LEAPVIEW_API_TOKEN=" + token,
+				"LEAPVIEW_TARGET=https://localhost",
+				"LEAPVIEW_HOME=/client-home",
+			},
 			arguments...,
 		)...,
 	)
@@ -1179,10 +1182,11 @@ func (c *Controller) killAndRecoverQualificationCandidate(
 	containerID string,
 	stage string,
 ) error {
-	if _, err := c.qualificationDocker(ctx, nil, "kill", "--signal", "KILL", containerID); err != nil {
+	container := c.qualificationContainers.Existing(containerID)
+	if _, err := container.Kill(ctx, "KILL"); err != nil {
 		return err
 	}
-	if _, err := c.qualificationDocker(ctx, nil, "start", containerID); err != nil {
+	if _, err := container.Start(ctx); err != nil {
 		return err
 	}
 	if _, err := c.qualificationDocker(
@@ -1203,16 +1207,20 @@ func (c *Controller) waitQualificationHealthy(
 	healthCtx, cancel := qualificationContext(ctx, 3*time.Minute)
 	defer cancel()
 	err := qualificationWait(healthCtx, time.Second, func(waitCtx context.Context) (bool, error) {
-		output, inspectErr := c.qualificationDocker(
-			waitCtx, nil, "inspect", "--format", "{{.State.Health.Status}}", containerID,
-		)
+		output, inspectErr := c.qualificationContainers.Existing(containerID).
+			Inspect(waitCtx, "{{.State.Health.Status}}")
 		if inspectErr != nil {
 			return false, nil
 		}
 		return strings.TrimSpace(string(output)) == "healthy", nil
 	})
 	if err != nil {
-		return fmt.Errorf("candidate did not recover health after %s: %w", stage, err)
+		return qualificationContainerOperationError(
+			ctx,
+			c.qualificationContainers.Existing(containerID),
+			"recover candidate health after "+stage,
+			err,
+		)
 	}
 	return nil
 }
@@ -1408,9 +1416,8 @@ func (c *Controller) qualificationContainerDiskKiB(
 	ctx context.Context,
 	containerID string,
 ) (int64, error) {
-	output, err := c.qualificationDocker(
-		ctx, nil, "exec", containerID, "du", "-sk", "/var/lib/leapview",
-	)
+	output, err := c.qualificationContainers.Existing(containerID).
+		Exec(ctx, nil, "du", "-sk", "/var/lib/leapview")
 	if err != nil {
 		return 0, err
 	}
@@ -1427,9 +1434,8 @@ func (c *Controller) countQualificationContainerPaths(
 	root string,
 	pattern string,
 ) (int64, error) {
-	output, err := c.qualificationDocker(
+	output, err := c.qualificationContainers.Existing(containerID).Exec(
 		ctx, nil,
-		"exec", containerID,
 		"find", root, "-maxdepth", "1", "-name", pattern, "-print",
 	)
 	if err != nil {
@@ -1464,10 +1470,8 @@ func (c *Controller) waitForQualificationComposeOneoff(
 			return false, nil
 		}
 		for _, candidate := range strings.Fields(string(output)) {
-			commandOutput, inspectErr := c.qualificationDocker(
-				requestCtx, nil,
-				"inspect", "--format", "{{json .Config.Cmd}}", candidate,
-			)
+			commandOutput, inspectErr := c.qualificationContainers.Existing(candidate).
+				Inspect(requestCtx, "{{json .Config.Cmd}}")
 			if inspectErr != nil {
 				continue
 			}

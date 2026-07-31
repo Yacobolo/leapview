@@ -36,25 +36,27 @@ var (
 )
 
 type Options struct {
-	Root                  string
-	DockerBin             string
-	Stdin                 io.Reader
-	Stdout                io.Writer
-	Stderr                io.Writer
-	Now                   func() time.Time
-	Sleep                 func(context.Context, time.Duration) error
-	qualificationExecutor qualificationCommandExecutor
+	Root                    string
+	DockerBin               string
+	Stdin                   io.Reader
+	Stdout                  io.Writer
+	Stderr                  io.Writer
+	Now                     func() time.Time
+	Sleep                   func(context.Context, time.Duration) error
+	qualificationExecutor   qualificationCommandExecutor
+	qualificationContainers qualificationContainerRuntime
 }
 
 type Controller struct {
-	root                  string
-	dockerBin             string
-	stdin                 io.Reader
-	stdout                io.Writer
-	stderr                io.Writer
-	now                   func() time.Time
-	sleep                 func(context.Context, time.Duration) error
-	qualificationExecutor qualificationCommandExecutor
+	root                    string
+	dockerBin               string
+	stdin                   io.Reader
+	stdout                  io.Writer
+	stderr                  io.Writer
+	now                     func() time.Time
+	sleep                   func(context.Context, time.Duration) error
+	qualificationExecutor   qualificationCommandExecutor
+	qualificationContainers qualificationContainerRuntime
 }
 
 type InitOptions struct {
@@ -102,10 +104,15 @@ func New(options Options) (*Controller, error) {
 	if executor == nil {
 		executor = osQualificationCommandExecutor{}
 	}
+	containers := options.qualificationContainers
+	if containers == nil {
+		containers = newDockerCLIQualificationRuntime(root, dockerBin, executor)
+	}
 	return &Controller{
 		root: root, dockerBin: dockerBin, stdin: stdin, stdout: stdout,
 		stderr: stderr, now: now, sleep: sleep,
-		qualificationExecutor: executor,
+		qualificationExecutor:   executor,
+		qualificationContainers: containers,
 	}, nil
 }
 

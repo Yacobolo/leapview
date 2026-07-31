@@ -279,13 +279,11 @@ func (c *Controller) QualifyImage(
 	if err != nil {
 		return err
 	}
-	syncOutput, err := c.qualificationDocker(
-		ctx,
-		nil,
-		"exec",
-		"--env", "LEAPVIEW_API_TOKEN="+credentials.PublisherToken,
-		"--env", "LEAPVIEW_TARGET=http://localhost:8080",
-		containerID,
+	syncOutput, err := c.qualificationContainers.Existing(containerID).Exec(
+		ctx, nil,
+		"env",
+		"LEAPVIEW_API_TOKEN="+credentials.PublisherToken,
+		"LEAPVIEW_TARGET=http://localhost:8080",
 		"leapview", "data", "sync",
 		"--project", "/app/evaluation/project/leapview.yaml",
 		"--connection", "sample",
