@@ -515,6 +515,7 @@ test('ECharts translation builds radar indicators and aligned series from typed 
   } as VisualizationEnvelope
   const option = echartsOption(envelope) as any
   expect(option.radar.indicator.map((item: any) => item.name)).toEqual(['Speed', 'Quality'])
+  expect(option.radar.indicator.map((item: any) => item.max)).toEqual([10, 10])
   expect(option.series[0].data).toEqual([{ name: 'A', value: [8, 9] }, { name: 'B', value: [6, 7] }])
 })
 
@@ -721,15 +722,20 @@ test('ECharts translates every cartesian mark with stable renderer-owned identit
   }
   expect((echartsOption(cartesianFixture('area')) as any).series[0].areaStyle).toEqual({})
   expect((echartsOption(cartesianFixture('bar')) as any).series[0].encode).toEqual({ x: 'value', y: 'label' })
+  expect((echartsOption(cartesianFixture('bar'), defaultRendererContext) as any).series[0].itemStyle.color).toBe(defaultRendererContext.colors.data[0])
 
   const waterfall = echartsOption(cartesianFixture('waterfall', ['label', 'value', 'start']), defaultRendererContext) as any
   expect(waterfall.series.map((series: any) => [series.id, series.type, series.silent])).toEqual([
     ['series:waterfall:offset', 'bar', true], ['series:primary:value', 'bar', undefined],
   ])
-  const heatmap = echartsOption(cartesianFixture('heatmap', ['label', 'row', 'value']), defaultRendererContext) as any
+  const heatmapEnvelope = cartesianFixture('heatmap', ['label', 'row', 'value']) as any
+  heatmapEnvelope.dataState.datasets[0].rows = [['A', 'R1', 1], ['B', 'R1', 3]]
+  const heatmap = echartsOption(heatmapEnvelope, defaultRendererContext) as any
   expect(heatmap.series[0]).toMatchObject({ id: 'series:primary:heatmap', type: 'heatmap', encode: { x: 'label', y: 'row', value: 'value' } })
+  expect(heatmap.visualMap).toMatchObject({ min: 1, max: 3 })
   const boxplot = echartsOption(cartesianFixture('boxplot', ['label', 'min', 'q1', 'median', 'q3', 'max']), defaultRendererContext) as any
   expect(boxplot.series[0]).toMatchObject({ id: 'series:primary:boxplot', type: 'boxplot', encode: { x: 'label', y: ['min', 'q1', 'median', 'q3', 'max'] } })
+  expect(boxplot.series[0].itemStyle).toEqual({ color: defaultRendererContext.colors.data[0], borderColor: defaultRendererContext.colors.accent })
 })
 
 test('ECharts honors proportional presentation and hierarchy/network layout', () => {
@@ -744,6 +750,8 @@ test('ECharts honors proportional presentation and hierarchy/network layout', ()
   expect(graph.series[0].links[0]).toMatchObject({ source: 'A', target: 'B', __lv_dataset: 'primary', __lv_row_index: 0 })
   const sankey = echartsOption(networkFixture('sankey'), defaultRendererContext) as any
   expect(sankey.series[0]).toMatchObject({ id: 'series:hierarchy:sankey', type: 'sankey', orient: 'vertical', nodeGap: 18 })
+  expect(sankey.series[0].lineStyle).toMatchObject({ color: 'gradient', opacity: 0.45 })
+  expect(sankey.series[0]).toMatchObject({ left: '3%', right: '5%', top: '8%', bottom: '8%' })
 
   for (const mark of ['treemap', 'sunburst'] as const) {
     const envelope = hierarchyFixture(mark)
@@ -751,6 +759,18 @@ test('ECharts honors proportional presentation and hierarchy/network layout', ()
     expect(option.series[0].id).toBe(`series:hierarchy:${mark}`)
     expect(option.series[0].data[0].children[0].name).toBe('child')
   }
+})
+
+test('ECharts wraps a hierarchy forest so every tree root is rendered', () => {
+  const envelope = hierarchyFixture('tree') as any
+  envelope.dataState.datasets[0].rows = [['A', null, 10], ['A child', 'A', 4], ['B', null, 8], ['B child', 'B', 3]]
+  const option = echartsOption(envelope, defaultRendererContext) as any
+  expect(option.series[0].data).toHaveLength(1)
+  expect(option.series[0].data[0]).toMatchObject({
+    name: 'All',
+    children: [{ name: 'A' }, { name: 'B' }],
+  })
+  expect(option.series[0].data[0].__lv_synthetic).toBe(true)
 })
 
 test('ECharts leaves absent proportional geometry fields to renderer defaults', () => {

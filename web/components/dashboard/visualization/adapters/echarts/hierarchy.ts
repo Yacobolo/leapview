@@ -3,7 +3,7 @@ import type { RendererContext } from '../../host-controller'
 import { escapeHTML, formatField, inlineDataset, legend, type EChartsTranslation } from './common'
 import { echartsLabelPolicy } from './label-policy'
 
-type HierarchyNode = { name: string; value?: unknown; __lv_dataset: string; __lv_row_index: number; children?: HierarchyNode[] }
+type HierarchyNode = { name: string; value?: unknown; __lv_dataset: string; __lv_row_index: number; __lv_synthetic?: boolean; children?: HierarchyNode[] }
 
 export function hierarchyOption(envelope: VisualizationEnvelope, context: RendererContext): EChartsTranslation {
   const spec = envelope.spec
@@ -28,7 +28,9 @@ export function hierarchyOption(envelope: VisualizationEnvelope, context: Render
     const names = [...new Set(links.flatMap((link) => [link.source, link.target]))]
     const series: EChartsTranslation = {
       id: `series:hierarchy:${spec.mark}`, type: spec.mark, data: names.map((name) => ({ name })), links,
-      lineStyle: { curveness: spec.presentation.curveness }, emphasis: { focus: spec.presentation.focus },
+      lineStyle: spec.mark === 'sankey'
+        ? { color: 'gradient', opacity: 0.45, curveness: spec.presentation.curveness }
+        : { curveness: spec.presentation.curveness },
       ...labels,
       tooltip: { formatter: (params: { data?: { source?: unknown; target?: unknown; value?: unknown } }) => {
         const link = params.data
@@ -43,10 +45,19 @@ export function hierarchyOption(envelope: VisualizationEnvelope, context: Render
     } else {
       series.orient = spec.presentation.orientation
       series.nodeGap = spec.presentation.nodeGap
+      series.left = '3%'
+      series.right = '5%'
+      series.top = '8%'
+      series.bottom = '8%'
+      series.nodeWidth = 18
+      series.itemStyle = { borderColor: context.colors.surface, borderWidth: 1 }
     }
     return { legend: legend(spec.presentation.legend, context), series: [series] }
   }
-  const data = hierarchyData(envelope)
+  const roots = hierarchyData(envelope)
+  const data = spec.mark === 'tree' && roots.length > 1 && dataset
+    ? [{ name: 'All', __lv_dataset: dataset.id, __lv_row_index: -1, __lv_synthetic: true, children: roots }]
+    : roots
   const common: EChartsTranslation = {
     id: `series:hierarchy:${spec.mark}`, type: spec.mark, data, roam: spec.presentation.roam,
     ...labels,
@@ -79,10 +90,10 @@ export function hierarchyData(envelope: VisualizationEnvelope): HierarchyNode[] 
     const row = dataset.rows[rowIndex]!
     const name = String(row[nodeIndex])
     const parent = parentIndex >= 0 && row[parentIndex] !== null && row[parentIndex] !== undefined && row[parentIndex] !== '' ? String(row[parentIndex]) : undefined
-    const id = parent ? `${parent}\u001f${escapeSegment(name)}` : escapeSegment(name)
+    const id = escapeSegment(name)
     if (byID.has(id)) throw new Error(`duplicate hierarchy node ${JSON.stringify(id)}`)
     byID.set(id, { name, value: valueIndex >= 0 ? row[valueIndex] : undefined, __lv_dataset: dataset.id, __lv_row_index: rowIndex })
-    parentByID.set(id, parent)
+    parentByID.set(id, parent ? escapeSegment(parent) : undefined)
   }
   const roots: HierarchyNode[] = []
   for (const [id, node] of byID) {

@@ -97,7 +97,9 @@ export function polarOption(envelope: VisualizationEnvelope, context: RendererCo
     value: categories.map((category) => dataset.rows.find((row, index) => String(seriesIndex >= 0 ? row[seriesIndex] : spec.title) === series && String(categoryIndex >= 0 ? row[categoryIndex] : index + 1) === category)?.[valueIndex] ?? null),
   }))
   const configuredMaximum = spec.presentation.maximum
-  const maxima = categories.map((_, index) => configuredMaximum ?? Math.max(1, ...values.map((series) => typeof series.value[index] === 'number' ? series.value[index] as number : 0)))
+  const observedMaximum = Math.max(0, ...values.flatMap((series) => series.value.flatMap((value) => typeof value === 'number' && Number.isFinite(value) ? [value] : [])))
+  const sharedMaximum = configuredMaximum ?? niceRadarMaximum(observedMaximum)
+  const maxima = categories.map(() => sharedMaximum)
   const labels = echartsLabelPolicy(
     envelope,
     spec.value.dataset,
@@ -110,4 +112,12 @@ export function polarOption(envelope: VisualizationEnvelope, context: RendererCo
     radar: { indicator: categories.map((name, index) => ({ name, max: maxima[index], color: context.colors.muted })) },
     series: [{ id: 'series:polar:radar', type: 'radar', data: values, areaStyle: spec.presentation.area ? {} : undefined, ...labels }],
   }
+}
+
+function niceRadarMaximum(value: number): number {
+  if (value <= 0) return 1
+  const magnitude = 10 ** Math.floor(Math.log10(value))
+  const normalized = value / magnitude
+  const factor = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10
+  return factor * magnitude
 }

@@ -125,6 +125,19 @@ func TestGenerateVisualExamplesExecutesEveryDocumentedQuery(t *testing.T) {
 	if got, want := len(artifact.Showcase), 26; got != want {
 		t.Fatalf("showcase examples = %d, want %d", got, want)
 	}
+	barState, ok := artifact.Documents["visuals/bar"][0].DataState.Value.(*visualizationir.InlineVisualizationDataState)
+	if !ok || len(barState.Datasets) != 1 || len(barState.Datasets[0].Rows) < 2 {
+		t.Fatalf("ranked bar rows are missing: %#v", artifact.Documents["visuals/bar"][0].DataState.Value)
+	}
+	firstBarValue, firstOK := envelopeNumber(barState.Datasets[0].Rows[0][1])
+	secondBarValue, secondOK := envelopeNumber(barState.Datasets[0].Rows[1][1])
+	if !firstOK || !secondOK || firstBarValue < secondBarValue {
+		t.Fatalf("ranked bar rows do not preserve descending query order: %#v", artifact.Documents["visuals/bar"][0].DataState.Value)
+	}
+	histogramState, ok := artifact.Documents["visuals/histogram"][0].DataState.Value.(*visualizationir.InlineVisualizationDataState)
+	if !ok || len(histogramState.Datasets) != 1 || len(histogramState.Datasets[0].Rows) == 0 || histogramState.Datasets[0].Rows[0][0] != "2-3.81" {
+		t.Fatalf("histogram bins do not preserve numeric query order: %#v", artifact.Documents["visuals/histogram"][0].DataState.Value)
+	}
 	kpis := artifact.Documents["visuals/kpi"]
 	if got, want := len(kpis), 9; got != want {
 		t.Fatalf("KPI examples = %d, want %d", got, want)

@@ -222,7 +222,9 @@ func generateVisualExamples(docsDir, projectPath, dataRoot string) (visualExampl
 			if err := validateVisualEnvelope(example, envelope); err != nil {
 				return visualExamplesArtifact{}, err
 			}
-			canonicalizeEnvelopeData(&envelope)
+			preserveAllOrder := example.Type == "histogram"
+			sortColumn, descending := visualExampleSort(example, envelope)
+			canonicalizeEnvelopeData(&envelope, sortColumn, descending, preserveAllOrder)
 			normalizeEnvelopeRevision(&envelope, 1, 1)
 			payloads = append(payloads, envelope)
 		}
@@ -236,6 +238,105 @@ func generateVisualExamples(docsDir, projectPath, dataRoot string) (visualExampl
 		artifact.Showcase = append(artifact.Showcase, payloads[0])
 	}
 	return artifact, nil
+}
+
+func canonicalizeEnvelopeData(envelope *visualizationir.VisualizationEnvelope, sortColumn int, descending, preserveAllOrder bool) {
+	if envelope == nil || preserveAllOrder {
+		return
+	}
+	state, ok := envelope.DataState.Value.(*visualizationir.InlineVisualizationDataState)
+	if !ok {
+		return
+	}
+	for datasetIndex := range state.Datasets {
+		rows := state.Datasets[datasetIndex].Rows
+		sortEnvelopeRows(rows, sortColumn, descending)
+	}
+}
+
+func sortEnvelopeRows(rows [][]any, sortColumn int, descending bool) {
+	sort.SliceStable(rows, func(left, right int) bool {
+		if sortColumn >= 0 && sortColumn < len(rows[left]) && sortColumn < len(rows[right]) {
+			comparison := compareEnvelopeValues(rows[left][sortColumn], rows[right][sortColumn])
+			if comparison != 0 {
+				if descending {
+					return comparison > 0
+				}
+				return comparison < 0
+			}
+		}
+		for column := 0; column < len(rows[left]) && column < len(rows[right]); column++ {
+			if column == sortColumn {
+				continue
+			}
+			comparison := compareEnvelopeValues(rows[left][column], rows[right][column])
+			if comparison != 0 {
+				return comparison < 0
+			}
+		}
+		return len(rows[left]) < len(rows[right])
+	})
+}
+
+func visualExampleSort(example visualExample, envelope visualizationir.VisualizationEnvelope) (int, bool) {
+	if example.Chart == nil || len(example.Chart.Query.Sort) == 0 {
+		return -1, false
+	}
+	authored := example.Chart.Query.Sort[0]
+	state, ok := envelope.DataState.Value.(*visualizationir.InlineVisualizationDataState)
+	if !ok || len(state.Datasets) == 0 {
+		return -1, authored.Direction == "desc"
+	}
+	columns := state.Datasets[0].Columns
+	for index, column := range columns {
+		if column == authored.Field {
+			return index, authored.Direction == "desc"
+		}
+	}
+	fieldMatches := func(field reportdef.FieldRef) bool {
+		shortField := field.Field
+		if separator := strings.LastIndex(shortField, "."); separator >= 0 {
+			shortField = shortField[separator+1:]
+		}
+		return authored.Field != "" && (authored.Field == field.Alias || authored.Field == field.Field || authored.Field == shortField)
+	}
+	columnIndex := func(name string) int {
+		for index, column := range columns {
+			if column == name {
+				return index
+			}
+		}
+		return -1
+	}
+	for _, field := range example.Chart.Query.Dimensions {
+		if fieldMatches(field) {
+			return columnIndex("label"), authored.Direction == "desc"
+		}
+	}
+	if fieldMatches(example.Chart.Query.Series) {
+		return columnIndex("series"), authored.Direction == "desc"
+	}
+	for _, field := range example.Chart.Query.Measures {
+		if fieldMatches(field) || authored.Field == "value" {
+			return columnIndex("value"), authored.Direction == "desc"
+		}
+	}
+	return -1, authored.Direction == "desc"
+}
+
+func compareEnvelopeValues(left, right any) int {
+	leftNumber, leftIsNumber := envelopeNumber(left)
+	rightNumber, rightIsNumber := envelopeNumber(right)
+	if leftIsNumber && rightIsNumber {
+		if leftNumber < rightNumber {
+			return -1
+		}
+		if leftNumber > rightNumber {
+			return 1
+		}
+		return 0
+	}
+	return strings.Compare(fmt.Sprint(left), fmt.Sprint(right))
 }
 
 var visualDocMapRegions = map[string]map[string]struct{}{
@@ -371,43 +472,6 @@ func normalizeEnvelopeRevision(envelope *visualizationir.VisualizationEnvelope, 
 	case *visualizationir.SpatialWindowedVisualizationDataState:
 		state.DataRevision, state.Generation = dataRevision, generation
 	}
-}
-
-func canonicalizeEnvelopeData(envelope *visualizationir.VisualizationEnvelope) {
-	if envelope == nil {
-		return
-	}
-	state, ok := envelope.DataState.Value.(*visualizationir.InlineVisualizationDataState)
-	if !ok {
-		return
-	}
-	for datasetIndex := range state.Datasets {
-		rows := state.Datasets[datasetIndex].Rows
-		sort.SliceStable(rows, func(left, right int) bool {
-			for column := 0; column < len(rows[left]) && column < len(rows[right]); column++ {
-				comparison := compareEnvelopeValues(rows[left][column], rows[right][column])
-				if comparison != 0 {
-					return comparison < 0
-				}
-			}
-			return len(rows[left]) < len(rows[right])
-		})
-	}
-}
-
-func compareEnvelopeValues(left, right any) int {
-	leftNumber, leftIsNumber := envelopeNumber(left)
-	rightNumber, rightIsNumber := envelopeNumber(right)
-	if leftIsNumber && rightIsNumber {
-		if leftNumber < rightNumber {
-			return -1
-		}
-		if leftNumber > rightNumber {
-			return 1
-		}
-		return 0
-	}
-	return strings.Compare(fmt.Sprint(left), fmt.Sprint(right))
 }
 
 func envelopeNumber(value any) (float64, bool) {

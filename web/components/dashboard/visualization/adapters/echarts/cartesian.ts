@@ -52,6 +52,9 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
       series: [{
         id: `series:primary:${spec.mark}`, type: spec.mark, name: spec.title,
         encode: { x: spec.x.field, y: spec.y.map((item) => item.field) },
+        itemStyle: spec.mark === 'boxplot'
+          ? { color: context.colors.data[0] ?? context.colors.accent, borderColor: context.colors.accent }
+          : undefined,
         ...chartLabel(envelope, spec.y[0], spec, context),
       }],
     }
@@ -61,6 +64,7 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
     const fill = conditionalItemColor(envelope, value, 'mark_fill', context) ?? conditionalItemColor(envelope, value, 'series_color', context)
     const stroke = conditionalItemColor(envelope, value, 'mark_stroke', context)
     const gradient = conditionalGradient(envelope, value, 'mark_fill')
+    const extent = finiteFieldExtent(envelope, value)
     return {
       xAxis: axis(envelope, spec.x, 'category', context), yAxis: axis(envelope, spec.y[0]!, 'category', context),
       visualMap: gradient
@@ -69,7 +73,7 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
             inRange: { color: [seriesColor('', gradient.low.color, context), seriesColor('', gradient.high.color, context)] },
             textStyle: { color: context.colors.muted },
           }
-        : fill ? undefined : { min: 0, calculable: true, orient: 'horizontal', left: 'center', bottom: 0, textStyle: { color: context.colors.muted } },
+        : fill ? undefined : { min: extent.minimum, max: extent.maximum, calculable: true, orient: 'horizontal', left: 'center', bottom: 0, textStyle: { color: context.colors.muted } },
       series: [{
         id: 'series:primary:heatmap', type: 'heatmap',
         encode: { x: spec.x.field, y: spec.y[0]?.field, value: value.field },
@@ -95,13 +99,16 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
     const normalizedField = normalized?.dimensions.get(value.field)
     const fill = conditionalItemColor(envelope, value, 'mark_fill', context) ?? conditionalItemColor(envelope, value, 'series_color', context)
     const stroke = conditionalItemColor(envelope, value, 'mark_stroke', context)
+    const intent = spec.presentation.seriesIntent?.find((candidate) => candidate.value === value.field)?.color
     return {
       id: seriesID(value.dataset, value.field), type: cartesianSeriesType(spec.mark), name: fieldLabel(envelope, value),
       encode: horizontal ? { x: normalizedField ?? value.field, y: spec.x.field } : { x: spec.x.field, y: normalizedField ?? value.field },
       smooth: spec.presentation.smooth, symbol: spec.presentation.showSymbols ? undefined : 'none', symbolSize: spec.presentation.symbolSize,
       stack: stack === 'none' ? undefined : stack, areaStyle: spec.presentation.area || spec.mark === 'area' ? {} : undefined,
       itemStyle: {
-        color: fill ?? seriesColor(value.field, spec.presentation.seriesIntent?.find((intent) => intent.value === value.field)?.color, context),
+        color: fill ?? (intent === undefined && values.length === 1
+          ? context.colors.data[0] ?? context.colors.accent
+          : seriesColor(value.field, intent, context)),
         borderColor: stroke,
         borderWidth: stroke ? 2 : undefined,
       },
@@ -117,6 +124,22 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
     legend: legend(spec.presentation.legend, context), dataZoom,
     series: [...series, ...interactionHitSeries(envelope, spec, series)],
   }
+}
+
+function finiteFieldExtent(envelope: VisualizationEnvelope, ref: VisualizationFieldRef): { minimum: number; maximum: number } {
+  const dataset = inlineDataset(envelope, ref.dataset)
+  const index = dataset?.columns.indexOf(ref.field) ?? -1
+  const values = index < 0 ? [] : (dataset?.rows ?? []).flatMap((row) => {
+    const value = row[index]
+    return typeof value === 'number' && Number.isFinite(value) ? [value] : []
+  })
+  if (values.length === 0) return { minimum: 0, maximum: 1 }
+  const minimum = Math.min(...values)
+  const maximum = Math.max(...values)
+  if (minimum !== maximum) return { minimum, maximum }
+  if (maximum > 0) return { minimum: 0, maximum }
+  if (minimum < 0) return { minimum, maximum: 0 }
+  return { minimum: 0, maximum: 1 }
 }
 
 export function applyDecisionContext(envelope: VisualizationEnvelope, context: RendererContext, option: EChartsTranslation): EChartsTranslation {
