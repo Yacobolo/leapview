@@ -1,7 +1,7 @@
-// Package layout owns the internal responsive layout contracts shared by
-// dashboard compilation and browser rendering. These contracts are not an
-// authoring API: authors choose features, while LeapView owns their layout.
-package layout
+// Package layoutcontract owns the responsive widget layout rules used during
+// project compilation. Browser consumers receive a generated copy of the
+// canonical contract document instead of importing Go-internal source files.
+package layoutcontract
 
 import (
 	_ "embed"

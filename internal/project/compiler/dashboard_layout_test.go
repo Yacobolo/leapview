@@ -27,7 +27,7 @@ func TestValidateWidgetPlacementsRejectsUndersizedDateRangeSlicer(t *testing.T) 
 	if err == nil {
 		t.Fatal("expected undersized slicer error")
 	}
-	for _, fragment := range []string{`page "overview"`, `slicer "period"`, "provides 322x48", "inline requires 288x112", "stacked requires 192x172"} {
+	for _, fragment := range []string{`page "overview"`, `slicer "period"`, "provides 322x48", "inline requires 288x94", "stacked requires 192x154"} {
 		if !strings.Contains(err.Error(), fragment) {
 			t.Fatalf("error %q does not contain %q", err, fragment)
 		}

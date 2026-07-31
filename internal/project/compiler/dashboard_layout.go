@@ -7,8 +7,8 @@ import (
 
 	"github.com/flidai/leapview/internal/dashboard"
 	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
-	dashboardlayout "github.com/flidai/leapview/internal/dashboard/layout"
 	"github.com/flidai/leapview/internal/dashboard/report"
+	dashboardlayout "github.com/flidai/leapview/internal/project/layoutcontract"
 )
 
 func validateWidgetPlacements(authored *report.Dashboard) error {

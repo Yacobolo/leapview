@@ -112,6 +112,7 @@ tasks:
     desc: Build browser assets
     deps:
       - node:deps
+      - layout-contract:generate
     cmds:
       - bun run build
 
@@ -120,6 +121,7 @@ tasks:
     cmds:
       - task: ui-signals:generate
       - task: visualization-ir:generate
+      - task: layout-contract:generate
       - task: node:deps
       - bun run build:site
 
@@ -263,6 +265,7 @@ tasks:
       - task: ui-signals:generate
       - task: schema:generate
       - task: visualization-ir:generate
+      - task: layout-contract:generate
       - task: map-style:generate
       - task: cli-docs:generate
       - task: agent-tool-docs:generate
@@ -587,6 +590,18 @@ tasks:
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 all -manifest api/apigen.yaml -target visualization-ir
       - bun scripts/generate_visualization_validator.ts
       - bun scripts/generate_vega_lite_validator.ts
+
+  layout-contract:generate:
+    desc: Generate the browser responsive-widget layout contract
+    method: checksum
+    sources:
+      - Taskfile.yml
+      - internal/project/layoutcontract/contracts.json
+      - internal/app/tools/layoutcontractgen/**/*.go
+    generates:
+      - web/generated/dashboard-layout/contracts.json
+    cmds:
+      - go run ./internal/app/tools/layoutcontractgen
 
   test:
     desc: Run tests

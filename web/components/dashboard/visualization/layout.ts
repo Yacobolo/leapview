@@ -1,4 +1,4 @@
-import rawContracts from '../../../../internal/dashboard/layout/contracts.json'
+import rawContracts from '../../../generated/dashboard-layout/contracts.json'
 
 export type WidgetLayoutFeature =
   | 'subtitle'
