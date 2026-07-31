@@ -88,7 +88,10 @@ export function resolveKPIState(envelope: VisualizationEnvelope, context: Render
   const summary = [`Current ${currentText}.`]
   if (spec.comparison && comparisonVisible) {
     summary.push(`${spec.comparison.label} ${comparisonText}.`)
-    summary.push(`Change ${deltaText}${changeStatus ? `, ${changeStatus}` : ''}.`)
+    const distinctChangeStatus = changeStatus && changeStatus.toLowerCase() !== deltaText?.toLowerCase()
+      ? changeStatus
+      : undefined
+    summary.push(`Change ${deltaText}${distinctChangeStatus ? `, ${distinctChangeStatus}` : ''}.`)
   }
   if (spec.goal) summary.push(`${spec.goal.label} ${goalText}.`)
   if (qualitativeRange) summary.push(`Status ${qualitativeRange.label}.`)

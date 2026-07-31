@@ -1013,6 +1013,64 @@ test('range and text leaves expose visible input semantics', async () => {
   }
 })
 
+test('filter summaries are explicit while operational status remains visible', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('lv-filter-leaf'))
+    const result = await page.evaluate(async () => {
+      const leaf = document.createElement('lv-filter-leaf') as any
+      leaf.definition = {
+        id: 'state', label: 'State', field: 'orders.state', valueKind: 'string',
+        predicates: [{ kind: 'set', operators: ['in'] }],
+        options: {
+          kind: 'static', limit: 1,
+          values: [{ value: { kind: 'string', value: 'CA' }, label: 'California' }],
+        },
+      }
+      leaf.binding = {
+        key: 'state', id: 'state', filter: 'state', scope: 'page', pageID: 'overview',
+        default: { kind: 'unfiltered' }, selectionMode: 'single', maxSelectedValues: 1,
+        readerEditable: true, paneVisible: true, paneOrder: 0, targets: [], optionDependencies: [],
+      }
+      leaf.expression = { kind: 'set', operator: 'in', values: [{ kind: 'string', value: 'CA' }] }
+      leaf.presentation = {
+        style: 'dropdown', search: false, selectAll: false,
+        showCounts: false, showSummary: false, compact: false,
+      }
+      document.body.append(leaf)
+      await leaf.updateComplete
+      const idle = {
+        summary: leaf.shadowRoot.querySelector('.selection-summary')?.textContent?.trim() ?? null,
+        status: leaf.shadowRoot.querySelector('.status')?.textContent?.trim() ?? null,
+      }
+
+      leaf.presentation = { ...leaf.presentation, showSummary: true }
+      await leaf.updateComplete
+      const explicit = leaf.shadowRoot.querySelector('.selection-summary')?.textContent?.trim() ?? null
+
+      leaf.presentation = { ...leaf.presentation, showSummary: false }
+      leaf.pending = true
+      await leaf.updateComplete
+      const status = leaf.shadowRoot.querySelector('.status')
+      return {
+        idle,
+        explicit,
+        pending: status?.textContent?.trim() ?? null,
+        pendingInHeading: Boolean(status?.closest('.field-heading')),
+      }
+    })
+    expect(result).toEqual({
+      idle: { summary: null, status: null },
+      explicit: '1 selected',
+      pending: 'Updating',
+      pendingInHeading: true,
+    })
+  } finally {
+    await page.close()
+  }
+})
+
 test('date-range slicers rearrange at contract boundaries without removing either input', async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
   try {
@@ -1022,7 +1080,7 @@ test('date-range slicers rearrange at contract boundaries without removing eithe
       const leaf = document.createElement('lv-filter-leaf') as any
       leaf.style.display = 'block'
       leaf.style.width = '268px'
-      leaf.style.height = '96px'
+      leaf.style.height = '78px'
       leaf.definition = {
         id: 'purchase_date', label: 'Purchase date', field: 'orders.purchase_date', valueKind: 'date',
         predicates: [{ kind: 'range', operators: [] }],
@@ -1035,7 +1093,7 @@ test('date-range slicers rearrange at contract boundaries without removing eithe
       }
       leaf.presentation = {
         style: 'date_range', search: false, selectAll: false,
-        showCounts: false, showSummary: true, compact: false,
+        showCounts: false, showSummary: false, compact: false,
       }
       document.body.append(leaf)
       await leaf.updateComplete
@@ -1052,7 +1110,7 @@ test('date-range slicers rearrange at contract boundaries without removing eithe
       })
       const inline = snapshot()
       leaf.style.width = '240px'
-      leaf.style.height = '156px'
+      leaf.style.height = '138px'
       await settle()
       const stacked = snapshot()
       leaf.style.width = '171px'

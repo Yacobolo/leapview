@@ -93,7 +93,10 @@ class HTMLHandle implements RendererHandle {
         const delta = document.createElement('span')
         delta.className = 'lv-kpi-delta'
         if (state.changeStatus) delta.dataset.status = state.changeStatus
-        delta.textContent = [state.deltaCue, state.deltaText, state.changeStatus].filter(Boolean).join(' ')
+        const distinctChangeStatus = state.changeStatus && state.changeStatus.toLowerCase() !== state.deltaText.toLowerCase()
+          ? state.changeStatus
+          : undefined
+        delta.textContent = [state.deltaCue, state.deltaText, distinctChangeStatus].filter(Boolean).join(' ')
         comparison.append(delta)
       }
       article.append(comparison)

@@ -17,6 +17,7 @@ import {
   resolveWidgetLayout,
   widgetChrome,
   type WidgetContractID,
+  type WidgetLayoutFeature,
   type WidgetLayoutResolution,
 } from '../../web/components/dashboard/visualization/layout'
 import { visualExampleHighlightLines } from './visual-example-highlights'
@@ -1658,7 +1659,7 @@ const kpiScenarios: readonly KPIScenario[] = [
   { id: 'revenue_kpi_bullet', label: 'Bullet', description: 'Goal, qualitative ranges, and measured value.' },
   { id: 'revenue_kpi_out_of_range', label: 'Progress', description: 'Goal progress with truthful out-of-range status.' },
   { id: 'revenue_kpi_status', label: 'Status', description: 'Qualitative status without implying a goal.' },
-  { id: 'revenue_kpi_all_features', label: 'All explicit features', description: 'Subtitle, comparison, progress, goal, status, trend, and note.' },
+  { id: 'revenue_kpi_all_features', label: 'All features — stress test', description: 'Boundary coverage for subtitle, comparison, progress, goal, status, trend, and note.' },
   { id: 'revenue_kpi_missing_comparison', label: 'Missing comparison', description: 'Unavailable baseline remains visibly distinct from zero.' },
 ]
 
@@ -1749,7 +1750,7 @@ class SiteResponsiveWidgetReference extends DatastarLit(LitElement) {
 
     .scenario-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(min(100%, 34rem), 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 33rem), 1fr));
       gap: var(--base-size-16);
     }
 
@@ -1873,8 +1874,12 @@ class SiteResponsiveWidgetReference extends DatastarLit(LitElement) {
       .scenario { padding: var(--base-size-12); }
       .frame-row {
         flex-direction: column;
-        overflow-x: visible;
+        overflow-x: auto;
       }
+    }
+
+    @media (width < 25rem) {
+      .scenario { padding-inline: var(--base-size-8); }
     }
   `
 
@@ -1890,7 +1895,7 @@ class SiteResponsiveWidgetReference extends DatastarLit(LitElement) {
       <section aria-labelledby="responsive-kpi-heading">
         <div class="section-heading">
           <h2 id="responsive-kpi-heading">KPI feature combinations</h2>
-          <p>Each configuration uses one compiled payload in every registered layout. Feature chips describe authored intent; frame labels describe the automatic result.</p>
+          <p>Each configuration uses one compiled payload in every registered layout. Feature chips describe authored intent; every fixed preview is an exact-minimum boundary test.</p>
         </div>
         <div class="scenario-grid">
           ${scenarios.map(({ scenario, visual }) => this.renderKPIScenario(scenario, visual))}
@@ -1899,7 +1904,7 @@ class SiteResponsiveWidgetReference extends DatastarLit(LitElement) {
       <section aria-labelledby="responsive-filter-heading">
         <div class="section-heading">
           <h2 id="responsive-filter-heading">Dashboard filter controls</h2>
-          <p>These are production slicer controls, not chart renderings. Every explicit field stays present while the layout changes around it.</p>
+          <p>These are production slicer controls, not chart renderings. Every explicit field stays present while the layout changes around it; every fixed preview is an exact-minimum boundary test.</p>
         </div>
         <div class="scenario-grid">
           ${filterScenarios.map((scenario) => this.renderFilterScenario(scenario))}
@@ -1937,19 +1942,20 @@ class SiteResponsiveWidgetReference extends DatastarLit(LitElement) {
       <div class="layout-frame" style=${frameSize(width, height)}>
         <lv-visualization-host .envelope=${visual}></lv-visualization-host>
       </div>
-      <figcaption><strong>${layout}</strong> · ${width}×${height} · exact minimum</figcaption>
+      <figcaption><strong>${layout}</strong> · ${width}×${height}</figcaption>
     </figure>`
   }
 
   private renderFilterScenario(scenario: FilterScenario) {
     const chrome = widgetChrome(scenario.contract)
+    const features = slicerLayoutFeatures(scenario.presentation)
     return html`<article class="scenario" data-filter-scenario=${scenario.id}>
       <div class="scenario-copy">
         <h3>${scenario.label}</h3>
         <p>${scenario.description}</p>
       </div>
       <div class="frame-row">
-        ${layoutRequirements(scenario.contract).map((requirement) => {
+        ${layoutRequirements(scenario.contract, features).map((requirement) => {
           const width = requirement.minimum.width + chrome.width
           const height = requirement.minimum.height + chrome.height
           const ariaLabel = `${scenario.label}, ${requirement.layout} layout, ${width}×${height}`
@@ -1957,7 +1963,7 @@ class SiteResponsiveWidgetReference extends DatastarLit(LitElement) {
             <div class="layout-frame" style=${frameSize(width, height)}>
               ${filterSlicer(scenario)}
             </div>
-            <figcaption><strong>${requirement.layout}</strong> · ${width}×${height} · exact minimum</figcaption>
+            <figcaption><strong>${requirement.layout}</strong> · ${width}×${height}</figcaption>
           </figure>`
         })}
       </div>
@@ -1969,7 +1975,7 @@ class SiteResponsiveWidgetReference extends DatastarLit(LitElement) {
     const filter = filterScenarios.find((scenario) => scenario.id === 'date-range')!
     const resolution = isKPI
       ? resolveKPIWidgetLayout(kpi, { width: this.previewWidth, height: this.previewHeight })
-      : filterOuterResolution(filter.contract, this.previewWidth, this.previewHeight)
+      : filterOuterResolution(filter, this.previewWidth, this.previewHeight)
     const selected = selectedLayout(resolution)
     return html`<div class="playground">
       <div class="playground-copy">
@@ -2044,7 +2050,7 @@ function filterDefinition(
 }
 
 function filterPresentation(style: DashboardFilterPresentation['style']): DashboardFilterPresentation {
-  return { style, search: false, selectAll: false, showCounts: false, showSummary: true, compact: false }
+  return { style, search: false, selectAll: false, showCounts: false, showSummary: false, compact: false }
 }
 
 function filterSlicer(scenario: FilterScenario) {
@@ -2056,12 +2062,16 @@ function filterSlicer(scenario: FilterScenario) {
   ></lv-slicer>`
 }
 
-function filterOuterResolution(contract: WidgetContractID, width: number, height: number): WidgetLayoutResolution {
-  const chrome = widgetChrome(contract)
-  return resolveWidgetLayout(contract, {
+function slicerLayoutFeatures(presentation: DashboardFilterPresentation): WidgetLayoutFeature[] {
+  return presentation.showSummary ? ['summary'] : []
+}
+
+function filterOuterResolution(scenario: FilterScenario, width: number, height: number): WidgetLayoutResolution {
+  const chrome = widgetChrome(scenario.contract)
+  return resolveWidgetLayout(scenario.contract, {
     width: Math.max(0, width - chrome.width),
     height: Math.max(0, height - chrome.height),
-  })
+  }, slicerLayoutFeatures(scenario.presentation))
 }
 
 function selectedLayout(resolution: WidgetLayoutResolution) {

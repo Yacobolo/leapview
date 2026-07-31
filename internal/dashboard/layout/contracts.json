@@ -36,8 +36,8 @@
       "layouts": [
         {
           "id": "control",
-          "minimum": { "width": 140, "height": 74 },
-          "features": {}
+          "minimum": { "width": 140, "height": 56 },
+          "features": { "summary": { "height": 18 } }
         }
       ],
       "chrome": { "width": 20, "height": 16 }
@@ -46,8 +46,8 @@
       "layouts": [
         {
           "id": "control",
-          "minimum": { "width": 140, "height": 96 },
-          "features": {}
+          "minimum": { "width": 140, "height": 78 },
+          "features": { "summary": { "height": 18 } }
         }
       ],
       "chrome": { "width": 20, "height": 16 }
@@ -56,13 +56,13 @@
       "layouts": [
         {
           "id": "inline",
-          "minimum": { "width": 268, "height": 96 },
-          "features": {}
+          "minimum": { "width": 268, "height": 78 },
+          "features": { "summary": { "height": 18 } }
         },
         {
           "id": "stacked",
-          "minimum": { "width": 172, "height": 156 },
-          "features": {}
+          "minimum": { "width": 172, "height": 138 },
+          "features": { "summary": { "height": 18 } }
         }
       ],
       "chrome": { "width": 20, "height": 16 }
@@ -71,13 +71,13 @@
       "layouts": [
         {
           "id": "inline",
-          "minimum": { "width": 268, "height": 96 },
-          "features": {}
+          "minimum": { "width": 268, "height": 78 },
+          "features": { "summary": { "height": 18 } }
         },
         {
           "id": "stacked",
-          "minimum": { "width": 172, "height": 156 },
-          "features": {}
+          "minimum": { "width": 172, "height": 138 },
+          "features": { "summary": { "height": 18 } }
         }
       ],
       "chrome": { "width": 20, "height": 16 }
@@ -86,13 +86,13 @@
       "layouts": [
         {
           "id": "inline",
-          "minimum": { "width": 268, "height": 82 },
-          "features": {}
+          "minimum": { "width": 268, "height": 64 },
+          "features": { "summary": { "height": 18 } }
         },
         {
           "id": "stacked",
-          "minimum": { "width": 172, "height": 168 },
-          "features": {}
+          "minimum": { "width": 172, "height": 150 },
+          "features": { "summary": { "height": 18 } }
         }
       ],
       "chrome": { "width": 20, "height": 16 }

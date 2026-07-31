@@ -46,24 +46,31 @@ test('explicit KPI features deterministically increase every applicable layout m
 })
 
 test('date-range slicers switch layout without changing their two explicit inputs', () => {
-  expect(resolveWidgetLayout('slicer.date_range', { width: 268, height: 96 })).toEqual({
+  expect(resolveWidgetLayout('slicer.date_range', { width: 268, height: 78 })).toEqual({
     kind: 'fit',
     layout: 'inline',
-    minimum: { width: 268, height: 96 },
+    minimum: { width: 268, height: 78 },
   })
-  expect(resolveWidgetLayout('slicer.date_range', { width: 240, height: 156 })).toEqual({
+  expect(resolveWidgetLayout('slicer.date_range', { width: 240, height: 138 })).toEqual({
     kind: 'fit',
     layout: 'stacked',
-    minimum: { width: 172, height: 156 },
+    minimum: { width: 172, height: 138 },
   })
-  expect(resolveWidgetLayout('slicer.date_range', { width: 171, height: 156 }).kind).toBe('too-small')
+  expect(resolveWidgetLayout('slicer.date_range', { width: 171, height: 138 }).kind).toBe('too-small')
+})
+
+test('explicit slicer summaries add one deterministic line to every layout', () => {
+  expect(layoutRequirements('slicer.date_range', ['summary'])).toEqual([
+    { layout: 'inline', minimum: { width: 268, height: 96 } },
+    { layout: 'stacked', minimum: { width: 172, height: 156 } },
+  ])
 })
 
 test('subpixel browser rounding does not demote an exact-minimum layout', () => {
-  expect(resolveWidgetLayout('slicer.date_range', { width: 267.997, height: 95.997 })).toEqual({
+  expect(resolveWidgetLayout('slicer.date_range', { width: 267.997, height: 77.997 })).toEqual({
     kind: 'fit',
     layout: 'inline',
-    minimum: { width: 268, height: 96 },
+    minimum: { width: 268, height: 78 },
   })
-  expect(resolveWidgetLayout('slicer.date_range', { width: 267.4, height: 96 }).kind).toBe('too-small')
+  expect(resolveWidgetLayout('slicer.date_range', { width: 267.4, height: 78 }).kind).toBe('too-small')
 })

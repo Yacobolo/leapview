@@ -8,6 +8,7 @@ export type WidgetLayoutFeature =
   | 'status'
   | 'trend'
   | 'note'
+  | 'summary'
 
 export type WidgetContractID =
   | 'kpi'
@@ -144,5 +145,5 @@ function optionalDimension(value: unknown): number | undefined {
 }
 
 function isFeature(value: string): value is WidgetLayoutFeature {
-  return ['subtitle', 'comparison', 'progress', 'goal', 'status', 'trend', 'note'].includes(value)
+  return ['subtitle', 'comparison', 'progress', 'goal', 'status', 'trend', 'note', 'summary'].includes(value)
 }

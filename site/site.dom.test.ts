@@ -917,26 +917,17 @@ test('responsive widget reference covers every KPI and filter layout plus interm
             && value!.clientHeight > 0
             && card!.scrollHeight <= card!.clientHeight
         }),
-        filterSummariesFit: [...root.querySelectorAll('[data-filter-scenario] lv-slicer')].every((slicer) => {
-          const hostRect = slicer.getBoundingClientRect()
+        filterIdleSummariesAbsent: [...root.querySelectorAll('[data-filter-scenario] lv-slicer')].every((slicer) => {
           const leaf = slicer.shadowRoot?.querySelector('lv-filter-leaf')
-          const status = leaf?.shadowRoot?.querySelector<HTMLElement>('.status')
-          const statusRect = status?.getBoundingClientRect()
-          return Boolean(statusRect)
-            && statusRect!.bottom <= hostRect.bottom - 4
-            && statusRect!.top >= hostRect.top
+          return !leaf?.shadowRoot?.querySelector('.selection-summary, .status')
         }),
         frameRowsFit: [...root.querySelectorAll<HTMLElement>('.frame-row')].every((row) => row.scrollWidth <= row.clientWidth + 1),
-        filterSummaries: (() => {
-          const summary = (scenario: string) => root
-            .querySelector(`[data-filter-scenario="${scenario}"] lv-slicer`)
-            ?.shadowRoot?.querySelector('lv-filter-leaf')
-            ?.shadowRoot?.querySelector('.status')
-            ?.textContent?.trim()
-          return {
-            comparison: summary('input'),
-            numericRange: summary('numeric-range'),
-          }
+        captionsAreCompact: [...root.querySelectorAll('figcaption')].every((caption) => !caption.textContent?.includes('exact minimum')),
+        stressTestLabel: root.querySelector('[data-kpi-scenario="revenue_kpi_all_features"] h3')?.textContent?.trim(),
+        missingComparison: (() => {
+          const host = root.querySelector('[data-kpi-scenario="revenue_kpi_missing_comparison"] lv-visualization-host')
+          const card = host?.shadowRoot?.querySelector<HTMLElement>('.lv-kpi-card')
+          return { text: card?.textContent?.replace(/\s+/g, ' ').trim(), aria: card?.getAttribute('aria-label') }
         })(),
         filterControlType: [...root.querySelectorAll('[data-filter-scenario] lv-slicer')].every((slicer) => {
           const leaf = slicer.shadowRoot?.querySelector('lv-filter-leaf')
@@ -962,9 +953,14 @@ test('responsive widget reference covers every KPI and filter layout plus interm
       filterFrames: 8,
       dimensions: true,
       valuesFit: true,
-      filterSummariesFit: true,
+      filterIdleSummariesAbsent: true,
       frameRowsFit: true,
-      filterSummaries: { comparison: '≥ 1000', numericRange: '50 – 500' },
+      captionsAreCompact: true,
+      stressTestLabel: 'All features — stress test',
+      missingComparison: {
+        text: 'Revenue with unavailable comparison$4,597.00Prior period: —Unavailable',
+        aria: 'Revenue with unavailable comparison. Demonstrates an explicitly unavailable comparison. Current $4,597.00. Prior period —. Change Unavailable.',
+      },
       filterControlType: true,
       wideTrendBelowValue: true,
     })
@@ -979,7 +975,7 @@ test('responsive widget reference covers every KPI and filter layout plus interm
 
     await reference.getByRole('combobox', { name: 'Preview widget' }).selectOption('date-range')
     await page.waitForFunction(() => document.querySelector('lv-site-responsive-widget-reference')?.shadowRoot?.querySelector('[data-playground-frame]')?.getAttribute('data-fit') === 'too-small')
-    await height.fill('172')
+    await height.fill('154')
     await page.waitForFunction(() => document.querySelector('lv-site-responsive-widget-reference')?.shadowRoot?.querySelector('[data-playground-frame]')?.getAttribute('data-fit') === 'fit')
 
     await page.setViewportSize({ width: 1150, height: 845 })
@@ -990,9 +986,10 @@ test('responsive widget reference covers every KPI and filter layout plus interm
         constrainedRowsStack: rows
           .filter((row) => row.clientWidth < 532)
           .every((row) => getComputedStyle(row).flexDirection === 'column'),
+        scenarioColumns: getComputedStyle(element.shadowRoot!.querySelector('.scenario-grid')!).gridTemplateColumns.split(' ').length,
       }
     })
-    expect(intermediateLayout).toEqual({ rowsFit: true, constrainedRowsStack: true })
+    expect(intermediateLayout).toEqual({ rowsFit: true, constrainedRowsStack: true, scenarioColumns: 2 })
 
     await page.setViewportSize({ width: 390, height: 844 })
     const mobileLayout = await reference.evaluate((element) => {
@@ -1000,11 +997,24 @@ test('responsive widget reference covers every KPI and filter layout plus interm
       const frameRows = [...root.querySelectorAll<HTMLElement>('.frame-row')]
       return {
         frameRowsStack: frameRows.every((row) => getComputedStyle(row).flexDirection === 'column'),
+        frameRowsFit: frameRows.every((row) => row.scrollWidth <= row.clientWidth + 1),
         documentFits: document.documentElement.scrollWidth === document.documentElement.clientWidth,
       }
     })
-    expect(mobileLayout).toEqual({ frameRowsStack: true, documentFits: true })
+    expect(mobileLayout).toEqual({ frameRowsStack: true, frameRowsFit: true, documentFits: true })
     expect(await reference.locator('[data-playground-frame]').getAttribute('data-selected-layout')).toBe('stacked')
+
+    await page.setViewportSize({ width: 355, height: 844 })
+    const narrowMobileLayout = await reference.evaluate((element) => {
+      const rows = [...element.shadowRoot!.querySelectorAll<HTMLElement>('.frame-row')]
+      return {
+        documentFits: document.documentElement.scrollWidth === document.documentElement.clientWidth,
+        overflowIsContained: rows
+          .filter((row) => row.scrollWidth > row.clientWidth + 1)
+          .every((row) => getComputedStyle(row).overflowX === 'auto'),
+      }
+    })
+    expect(narrowMobileLayout).toEqual({ documentFits: true, overflowIsContained: true })
   } finally {
     await page.close()
   }

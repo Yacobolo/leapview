@@ -75,9 +75,9 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 					},
 				},
 				Visuals: []dashboard.PageVisual{
-					{ID: "state-slicer", Kind: "slicer", Binding: dashboardfilter.BindingRef{Scope: dashboardfilter.ScopePage, ID: "state"}, Placement: dashboard.PagePlacement{Col: 1, Row: 1, ColSpan: 3, RowSpan: 1}},
-					{ID: "kpi", Kind: "visual", Visual: "active_kpi", Placement: dashboard.PagePlacement{Col: 1, Row: 2, ColSpan: 3, RowSpan: 2}},
-					{ID: "chart", Kind: "visual", Visual: "active_chart", Placement: dashboard.PagePlacement{Col: 4, Row: 2, ColSpan: 6, RowSpan: 4}},
+					{ID: "state-slicer", Kind: "slicer", Binding: dashboardfilter.BindingRef{Scope: dashboardfilter.ScopePage, ID: "state"}, Placement: dashboard.PagePlacement{Col: 1, Row: 1, ColSpan: 3, RowSpan: 2}},
+					{ID: "kpi", Kind: "visual", Visual: "active_kpi", Placement: dashboard.PagePlacement{Col: 1, Row: 3, ColSpan: 3, RowSpan: 2}},
+					{ID: "chart", Kind: "visual", Visual: "active_chart", Placement: dashboard.PagePlacement{Col: 4, Row: 3, ColSpan: 6, RowSpan: 4}},
 				},
 			},
 			{

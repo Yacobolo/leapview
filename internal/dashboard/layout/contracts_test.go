@@ -33,6 +33,20 @@ func TestOuterRequirementsIncludeComponentChrome(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []Requirement{
+		{Layout: "inline", Minimum: Size{Width: 288, Height: 94}},
+		{Layout: "stacked", Minimum: Size{Width: 192, Height: 154}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("outer requirements = %#v, want %#v", got, want)
+	}
+}
+
+func TestExplicitSlicerSummaryAddsOneLine(t *testing.T) {
+	got, err := OuterRequirements(ContractSlicerDateRange, []Feature{FeatureSummary})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Requirement{
 		{Layout: "inline", Minimum: Size{Width: 288, Height: 112}},
 		{Layout: "stacked", Minimum: Size{Width: 192, Height: 172}},
 	}

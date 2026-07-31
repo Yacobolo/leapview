@@ -33,6 +33,7 @@ const (
 	FeatureStatus     Feature = "status"
 	FeatureTrend      Feature = "trend"
 	FeatureNote       Feature = "note"
+	FeatureSummary    Feature = "summary"
 )
 
 type Size struct {
@@ -195,7 +196,7 @@ func mustLoadContracts() contractDocument {
 
 func knownFeature(feature Feature) bool {
 	switch feature {
-	case FeatureSubtitle, FeatureComparison, FeatureProgress, FeatureGoal, FeatureStatus, FeatureTrend, FeatureNote:
+	case FeatureSubtitle, FeatureComparison, FeatureProgress, FeatureGoal, FeatureStatus, FeatureTrend, FeatureNote, FeatureSummary:
 		return true
 	default:
 		return false

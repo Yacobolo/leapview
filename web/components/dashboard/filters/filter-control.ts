@@ -49,7 +49,6 @@ export class DashboardFilterLeaf extends LitElement {
   static styles = css`
     :host { display: block; min-width: 0; font: inherit; }
     fieldset { display: grid; min-width: 0; gap: var(--base-size-6); border: 0; margin: 0; padding: 0; }
-    legend { padding: 0; font-size: var(--lv-font-size-caption); font-weight: var(--lv-font-weight-strong); }
     legend.visually-hidden {
       position: absolute;
       width: 1px;
@@ -58,6 +57,23 @@ export class DashboardFilterLeaf extends LitElement {
       clip: rect(0 0 0 0);
       clip-path: inset(50%);
       white-space: nowrap;
+    }
+    .field-heading {
+      display: flex;
+      min-width: 0;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: var(--base-size-6);
+      font-size: var(--lv-font-size-caption);
+      line-height: var(--lv-line-height-compact);
+    }
+    .field-heading[data-title='false'] { justify-content: flex-end; }
+    .field-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: var(--lv-font-weight-strong);
     }
     input, select, button {
       min-height: var(--control-medium-size);
@@ -92,7 +108,17 @@ export class DashboardFilterLeaf extends LitElement {
     }
     .relative { display: grid; grid-template-columns: 1fr 72px 1fr; gap: 6px; }
     :host([data-layout-variant='stacked']) .relative { grid-template-columns: minmax(0, 1fr); }
-    .status { min-height: 1em; color: var(--lv-fg-muted); font-size: var(--lv-font-size-caption); }
+    .status,
+    .selection-summary {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--lv-fg-muted);
+      font-size: var(--lv-font-size-caption);
+      line-height: var(--lv-line-height-compact);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .status { flex: 0 1 auto; }
     :host([pending]) fieldset { opacity: .78; }
     button:focus-visible, input:focus-visible, select:focus-visible { outline: var(--lv-border-width-focus) solid var(--lv-accent); outline-offset: var(--base-size-2); }
   `
@@ -141,19 +167,26 @@ export class DashboardFilterLeaf extends LitElement {
     const binding = this.binding
     if (!definition || !binding) return nothing
     const presentation = this.presentation ?? defaultPresentation(definition)
+    const label = presentation.title || binding.paneLabel || definition.label
+    const operationalStatus = this.stale
+      ? 'Waiting for current data'
+      : this.optionLoading
+        ? 'Loading values'
+        : this.pending
+          ? 'Updating'
+          : undefined
+    const selectionSummary = presentation.showSummary ? expressionSummary(this.expression) : undefined
     return html`
       <fieldset ?disabled=${!binding.readerEditable || this.stale} aria-busy=${String(this.pending)}>
-        <legend class=${this.showTitle ? '' : 'visually-hidden'}>${presentation.title || binding.paneLabel || definition.label}</legend>
+        <legend class="visually-hidden">${label}</legend>
+        ${this.showTitle || operationalStatus ? html`
+          <div class="field-heading" data-title=${String(this.showTitle)}>
+            ${this.showTitle ? html`<span class="field-title" aria-hidden="true" title=${label}>${label}</span>` : nothing}
+            ${operationalStatus ? html`<span class="status" aria-live="polite" title=${operationalStatus}>${operationalStatus}</span>` : nothing}
+          </div>
+        ` : nothing}
         ${this.renderControl(presentation)}
-        <span class="status" aria-live="polite">
-          ${this.stale
-            ? 'Waiting for current data'
-            : this.optionLoading
-              ? 'Loading values'
-              : this.pending
-                ? 'Updating'
-                : expressionSummary(this.expression)}
-        </span>
+        ${selectionSummary ? html`<span class="selection-summary" title=${selectionSummary}>${selectionSummary}</span>` : nothing}
       </fieldset>
     `
   }
@@ -411,12 +444,12 @@ export class DashboardFilterLeaf extends LitElement {
   private applyResponsiveLayout(width: number, height: number): void {
     const presentation = this.presentation ?? (this.definition ? defaultPresentation(this.definition) : undefined)
     const contractID = presentation ? slicerContractID(presentation.style) : undefined
-    if (!contractID || width <= 0 || height <= 0) {
+    if (!presentation || !contractID || width <= 0 || height <= 0) {
       delete this.dataset.layoutVariant
       delete this.dataset.layoutFit
       return
     }
-    const resolution = resolveWidgetLayout(contractID, { width, height })
+    const resolution = resolveWidgetLayout(contractID, { width, height }, presentation.showSummary ? ['summary'] : [])
     const requirement = selectedRequirement(resolution)
     this.dataset.layoutVariant = requirement.layout
     this.dataset.layoutFit = resolution.kind === 'fit' ? 'fit' : 'too-small'
@@ -586,7 +619,7 @@ function defaultPresentation(definition: DashboardCompiledFilterDefinition): Das
   if (definition.predicates.some((predicate) => predicate.kind === 'relative_period')) {
     style = 'relative_period'
   }
-  return { style, search: false, selectAll: false, showCounts: false, showSummary: true, compact: false }
+  return { style, search: false, selectAll: false, showCounts: false, showSummary: false, compact: false }
 }
 
 function firstComparisonOperator(definition?: DashboardCompiledFilterDefinition): 'equals' | 'not_equals' | 'contains' | 'not_contains' | 'starts_with' | 'ends_with' | 'greater_than' | 'greater_than_or_equal' | 'less_than' | 'less_than_or_equal' {

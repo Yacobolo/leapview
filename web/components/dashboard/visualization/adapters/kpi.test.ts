@@ -110,6 +110,8 @@ test('KPI missing comparison remains explicit and out-of-range values stay truth
   expect(state.changeStatus).toBe('unavailable')
   expect(state.progress).toBe(1)
   expect(state.rangeLabel).toBeUndefined()
+  expect(state.accessibleSummary).toContain('Change Unavailable.')
+  expect(state.accessibleSummary).not.toContain('Unavailable, unavailable')
   expect(state.accessibleSummary).toContain('Status out of range.')
 })
 
