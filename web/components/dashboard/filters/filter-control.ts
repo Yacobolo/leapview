@@ -59,7 +59,12 @@ export class DashboardFilterLeaf extends LitElement {
       clip-path: inset(50%);
       white-space: nowrap;
     }
-    input, select, button { min-height: var(--control-medium-size); font: inherit; }
+    input, select, button {
+      min-height: var(--control-medium-size);
+      font: inherit;
+      font-size: var(--lv-font-size-body-sm);
+      line-height: var(--lv-line-height-compact);
+    }
     input, select {
       width: 100%; min-width: 0; border: var(--lv-border-default);
       border-radius: var(--lv-radius-default); background: var(--lv-bg-panel);

@@ -938,6 +938,14 @@ test('responsive widget reference covers every KPI and filter layout plus interm
             numericRange: summary('numeric-range'),
           }
         })(),
+        filterControlType: [...root.querySelectorAll('[data-filter-scenario] lv-slicer')].every((slicer) => {
+          const leaf = slicer.shadowRoot?.querySelector('lv-filter-leaf')
+          const controls = [...(leaf?.shadowRoot?.querySelectorAll<HTMLElement>('input, select, button') ?? [])]
+          return controls.length > 0 && controls.every((control) => {
+            const size = Number.parseFloat(getComputedStyle(control).fontSize)
+            return size > 0 && size <= 14
+          })
+        }),
         wideTrendBelowValue: (() => {
           const host = root.querySelector('[data-kpi-scenario="revenue_kpi_trend"] [data-layout-frame="wide"] lv-visualization-host')
           const value = host?.shadowRoot?.querySelector<HTMLElement>('.lv-visualization-kpi')
@@ -957,6 +965,7 @@ test('responsive widget reference covers every KPI and filter layout plus interm
       filterSummariesFit: true,
       frameRowsFit: true,
       filterSummaries: { comparison: '≥ 1000', numericRange: '50 – 500' },
+      filterControlType: true,
       wideTrendBelowValue: true,
     })
 
@@ -972,6 +981,18 @@ test('responsive widget reference covers every KPI and filter layout plus interm
     await page.waitForFunction(() => document.querySelector('lv-site-responsive-widget-reference')?.shadowRoot?.querySelector('[data-playground-frame]')?.getAttribute('data-fit') === 'too-small')
     await height.fill('172')
     await page.waitForFunction(() => document.querySelector('lv-site-responsive-widget-reference')?.shadowRoot?.querySelector('[data-playground-frame]')?.getAttribute('data-fit') === 'fit')
+
+    await page.setViewportSize({ width: 1150, height: 845 })
+    const intermediateLayout = await reference.evaluate((element) => {
+      const rows = [...element.shadowRoot!.querySelectorAll<HTMLElement>('.frame-row')]
+      return {
+        rowsFit: rows.every((row) => row.scrollWidth <= row.clientWidth + 1),
+        constrainedRowsStack: rows
+          .filter((row) => row.clientWidth < 532)
+          .every((row) => getComputedStyle(row).flexDirection === 'column'),
+      }
+    })
+    expect(intermediateLayout).toEqual({ rowsFit: true, constrainedRowsStack: true })
 
     await page.setViewportSize({ width: 390, height: 844 })
     const mobileLayout = await reference.evaluate((element) => {

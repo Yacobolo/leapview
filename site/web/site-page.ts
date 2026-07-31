@@ -1756,6 +1756,7 @@ class SiteResponsiveWidgetReference extends DatastarLit(LitElement) {
     .scenario {
       display: grid;
       min-width: 0;
+      container-type: inline-size;
       align-content: start;
       gap: var(--base-size-16);
       border: var(--lv-border-default);
@@ -1859,6 +1860,13 @@ class SiteResponsiveWidgetReference extends DatastarLit(LitElement) {
 
     .playground-stage figure { width: max-content; }
     .playground-frame[data-fit='too-small'] { outline: 2px solid var(--lv-line-danger); outline-offset: -2px; }
+
+    @container (width < 532px) {
+      .frame-row {
+        flex-direction: column;
+        overflow-x: visible;
+      }
+    }
 
     @media (width < 48rem) {
       .playground { grid-template-columns: minmax(0, 1fr); padding: var(--base-size-16); }

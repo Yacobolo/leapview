@@ -38,6 +38,7 @@ type WidgetContract = Readonly<{
 }>
 
 const contracts = parseContracts(rawContracts)
+const layoutRoundingTolerance = 0.5
 
 export function layoutRequirements(
   contractID: WidgetContractID,
@@ -64,7 +65,10 @@ export function resolveWidgetLayout(
   features: readonly WidgetLayoutFeature[] = [],
 ): WidgetLayoutResolution {
   const requirements = layoutRequirements(contractID, features)
-  const match = requirements.find(({ minimum }) => size.width >= minimum.width && size.height >= minimum.height)
+  const match = requirements.find(({ minimum }) => (
+    size.width + layoutRoundingTolerance >= minimum.width
+    && size.height + layoutRoundingTolerance >= minimum.height
+  ))
   return match ? { kind: 'fit', ...match } : { kind: 'too-small', requirements }
 }
 

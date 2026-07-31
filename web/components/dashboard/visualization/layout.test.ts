@@ -58,3 +58,12 @@ test('date-range slicers switch layout without changing their two explicit input
   })
   expect(resolveWidgetLayout('slicer.date_range', { width: 171, height: 156 }).kind).toBe('too-small')
 })
+
+test('subpixel browser rounding does not demote an exact-minimum layout', () => {
+  expect(resolveWidgetLayout('slicer.date_range', { width: 267.997, height: 95.997 })).toEqual({
+    kind: 'fit',
+    layout: 'inline',
+    minimum: { width: 268, height: 96 },
+  })
+  expect(resolveWidgetLayout('slicer.date_range', { width: 267.4, height: 96 }).kind).toBe('too-small')
+})
