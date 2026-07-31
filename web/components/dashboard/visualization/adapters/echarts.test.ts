@@ -761,7 +761,7 @@ test('ECharts honors proportional presentation and hierarchy/network layout', ()
   const sankey = echartsOption(networkFixture('sankey'), defaultRendererContext) as any
   expect(sankey.series[0]).toMatchObject({ id: 'series:hierarchy:sankey', type: 'sankey', orient: 'vertical', nodeGap: 18 })
   expect(sankey.series[0].lineStyle).toMatchObject({ color: 'gradient', opacity: 0.45 })
-  expect(sankey.series[0]).toMatchObject({ left: '3%', right: '18%', top: '8%', bottom: '8%' })
+  expect(sankey.series[0]).toMatchObject({ left: '3%', right: '21%', top: '8%', bottom: '8%' })
 
   for (const mark of ['treemap', 'sunburst'] as const) {
     const envelope = hierarchyFixture(mark)
