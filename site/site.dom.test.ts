@@ -2232,6 +2232,94 @@ test('visual showcase renders every supported visual type', async () => {
   }
 }, 20_000)
 
+test('visual showcase remains visibly rendered in light and dark themes', async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
+  try {
+    await page.goto(`${baseURL}/visuals`)
+    await page.waitForFunction(() => {
+      const root = document.querySelector('lv-site-visual-showcase')?.shadowRoot
+      const hosts = Array.from(root?.querySelectorAll('lv-visualization-host') ?? [])
+      return hosts.length === 26 && hosts.every((host: any) =>
+        Boolean(host.envelope?.visualID) &&
+        Boolean(host.shadowRoot?.querySelector('.renderer')?.firstElementChild) &&
+        !host.shadowRoot?.querySelector('[role="alert"]'),
+      )
+    })
+
+    for (const theme of ['light', 'dark'] as const) {
+      await page.evaluate((mode) => document.dispatchEvent(new CustomEvent('leapview-theme-change', { detail: { mode } })), theme)
+      await page.waitForFunction((mode) => document.documentElement.getAttribute('data-color-mode') === mode, theme)
+      await page.waitForTimeout(250)
+
+      const metrics = await page.locator('lv-site-visual-showcase').evaluate((element) =>
+        Array.from(element.shadowRoot?.querySelectorAll('article') ?? []).map((card) => {
+          const host = card.querySelector('lv-visualization-host') as HTMLElement & {
+            envelope?: { visualID?: string; spec?: { kind?: string } }
+            shadowRoot: ShadowRoot
+          }
+          const renderer = host.shadowRoot?.querySelector<HTMLElement>('.renderer')
+          const canvases = Array.from(host.shadowRoot?.querySelectorAll<HTMLCanvasElement>('canvas') ?? [])
+          const table = renderer?.querySelector<HTMLElement>('lv-report-table')
+          const bounds = renderer?.getBoundingClientRect()
+          let sampledPixels = 0
+          let coloredPixels = 0
+          for (const canvas of canvases) {
+            const context = canvas.getContext('2d', { willReadFrequently: true })
+            if (context && canvas.width > 0 && canvas.height > 0) {
+              const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+              const stride = Math.max(1, Math.floor((canvas.width * canvas.height) / 4096)) * 4
+              for (let index = 0; index < pixels.length; index += stride) {
+                if (pixels[index + 3]! < 32) continue
+                sampledPixels++
+                const maximum = Math.max(pixels[index]!, pixels[index + 1]!, pixels[index + 2]!)
+                const minimum = Math.min(pixels[index]!, pixels[index + 1]!, pixels[index + 2]!)
+                if (maximum - minimum >= 24) coloredPixels++
+              }
+            }
+          }
+          return {
+            visualID: host.envelope?.visualID,
+            kind: host.envelope?.spec?.kind,
+            alert: host.shadowRoot?.querySelector('[role="alert"]')?.textContent?.trim() ?? '',
+            width: Math.round(bounds?.width ?? 0),
+            height: Math.round(bounds?.height ?? 0),
+            canvasWidth: Math.max(0, ...canvases.map((canvas) => canvas.width)),
+            canvasHeight: Math.max(0, ...canvases.map((canvas) => canvas.height)),
+            sampledPixels,
+            coloredPixels,
+            mapFrame: host.shadowRoot?.querySelectorAll('.maplibregl-map .maplibregl-canvas').length ?? 0,
+            tableText: table?.shadowRoot?.textContent?.replace(/\s+/g, ' ').trim().length ?? 0,
+            rendererText: renderer?.textContent?.replace(/\s+/g, ' ').trim().length ?? 0,
+          }
+        }),
+      )
+
+      expect(metrics, `${theme} catalog inventory`).toHaveLength(26)
+      for (const metric of metrics) {
+        expect(metric.alert, `${theme}/${metric.visualID} renderer alert`).toBe('')
+        expect(metric.width, `${theme}/${metric.visualID} renderer width`).toBeGreaterThan(100)
+        expect(metric.height, `${theme}/${metric.visualID} renderer height`).toBeGreaterThan(100)
+        if (metric.kind === 'table' || metric.kind === 'matrix' || metric.kind === 'pivot') {
+          expect(metric.tableText, `${theme}/${metric.visualID} visible table content`).toBeGreaterThan(40)
+        } else if (metric.kind === 'kpi') {
+          expect(metric.rendererText, `${theme}/${metric.visualID} visible KPI context`).toBeGreaterThan(30)
+        } else {
+          expect(metric.canvasWidth, `${theme}/${metric.visualID} canvas width`).toBeGreaterThan(100)
+          expect(metric.canvasHeight, `${theme}/${metric.visualID} canvas height`).toBeGreaterThan(100)
+          if (metric.kind === 'geographic') {
+            expect(metric.mapFrame, `${theme}/${metric.visualID} MapLibre frame`).toBe(1)
+          } else {
+            expect(metric.sampledPixels, `${theme}/${metric.visualID} painted pixels`).toBeGreaterThan(20)
+            expect(metric.coloredPixels, `${theme}/${metric.visualID} visible data marks`).toBeGreaterThan(0)
+          }
+        }
+      }
+    }
+  } finally {
+    await page.close()
+  }
+}, 30_000)
+
 async function waitForSite(): Promise<void> {
   const deadline = Date.now() + siteReadyTimeout
   while (Date.now() < deadline) {
