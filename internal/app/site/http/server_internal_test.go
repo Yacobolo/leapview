@@ -17,6 +17,7 @@ import (
 
 	content "github.com/flidai/leapview/docs"
 	"github.com/flidai/leapview/internal/analytics/connectors"
+	"github.com/flidai/leapview/internal/app/site/visualdocs"
 	"github.com/stretchr/testify/require"
 )
 
@@ -1268,6 +1269,37 @@ func TestSiteVisualShowcaseUpdatesIncludeEveryVisualType(t *testing.T) {
 	for _, want := range []string{`"kind":"cartesian","mark":"line"`, `"kind":"hierarchy","mark":"sunburst"`, `"kind":"kpi"`, `"kind":"table"`, `"kind":"matrix"`, `"kind":"pivot"`} {
 		if !strings.Contains(line, want) {
 			t.Errorf("chart showcase updates missing %q:\n%s", want, line)
+		}
+	}
+}
+
+func TestVisualShowcasePatchPairsEveryDocumentWithItsFirstExample(t *testing.T) {
+	patch := visualShowcasePatch()
+	visuals, ok := patch["visuals"].([]visualdocs.Payload)
+	if !ok {
+		t.Fatalf("visuals signal type = %T, want []visualdocs.Payload", patch["visuals"])
+	}
+	documents, ok := patch["visualDocuments"].([]visualShowcaseDocument)
+	if !ok {
+		t.Fatalf("visualDocuments signal type = %T, want []visualShowcaseDocument", patch["visualDocuments"])
+	}
+	if got, want := len(visuals), len(visualDocuments); got != want {
+		t.Fatalf("visuals = %d, want %d", got, want)
+	}
+	if got, want := len(documents), len(visualDocuments); got != want {
+		t.Fatalf("visual documents = %d, want %d", got, want)
+	}
+	for index, document := range visualDocuments {
+		first := visualDocumentation.Documents[document.slug][0]
+		if got := visuals[index].VisualID; got != first.VisualID {
+			t.Errorf("visual %d = %q, want first %s example %q", index, got, document.slug, first.VisualID)
+		}
+		if got, want := documents[index], (visualShowcaseDocument{
+			Slug:     document.slug,
+			Title:    document.title,
+			VisualID: first.VisualID,
+		}); got != want {
+			t.Errorf("visual document %d = %#v, want %#v", index, got, want)
 		}
 	}
 }

@@ -2217,9 +2217,10 @@ test('visual showcase renders every supported visual type', async () => {
         cards: root?.querySelectorAll('.chart').length,
         hosts: root?.querySelectorAll('.chart lv-visualization-host').length,
         kpis: Array.from(root?.querySelectorAll('.chart lv-visualization-host') ?? []).filter((host: any) => host.envelope?.spec?.kind === 'kpi').length,
+        links: root?.querySelectorAll('article a[href^="/docs/visuals/"]').length,
       }
     })
-    expect(visuals).toEqual({ cards: 24, hosts: 24, kpis: 1 })
+    expect(visuals).toEqual({ cards: 24, hosts: 24, kpis: 1, links: 27 })
     await page.waitForFunction(() => {
       const showcase = document.querySelector('lv-site-visual-showcase') as HTMLElement & { shadowRoot: ShadowRoot }
       return showcase?.shadowRoot?.querySelectorAll('.table-card lv-visualization-host').length === 3
@@ -2233,6 +2234,21 @@ test('visual showcase renders every supported visual type', async () => {
     expect(tables.cards).toBe(3)
     expect(tables.tables).toBe(3)
     expect(tables.titles).toContain('Orders')
+    const catalog = await page.locator('lv-site-visual-showcase').evaluate((element) =>
+      Array.from(element.shadowRoot?.querySelectorAll('article') ?? []).map((card) => {
+        const host = card.querySelector('lv-visualization-host') as any
+        const link = card.querySelector<HTMLAnchorElement>('a[href^="/docs/visuals/"]')
+        return {
+          visualID: host?.envelope?.visualID,
+          href: link?.getAttribute('href'),
+          label: link?.getAttribute('aria-label'),
+        }
+      }),
+    )
+    expect(catalog).toHaveLength(27)
+    expect(catalog).toContainEqual({ visualID: 'revenue_line', href: '/docs/visuals/line', label: 'Open Line chart documentation' })
+    expect(catalog).toContainEqual({ visualID: 'total_orders', href: '/docs/visuals/kpi', label: 'Open KPI documentation' })
+    expect(catalog.every(({ visualID, href, label }) => Boolean(visualID && href && label))).toBe(true)
   } finally {
     await page.close()
   }
