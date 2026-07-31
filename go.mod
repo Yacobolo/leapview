@@ -40,6 +40,7 @@ require (
 	github.com/starfederation/datastar-go v1.2.2
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.42.0
+	github.com/testcontainers/testcontainers-go/modules/minio v0.42.0
 	github.com/toon-format/toon-go v0.0.0-20251202084852-7ca0e27c4e8c
 	github.com/tus/tusd/v2 v2.10.0
 	github.com/yuin/goldmark v1.7.17

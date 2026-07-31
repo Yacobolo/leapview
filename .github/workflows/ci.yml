@@ -417,25 +417,6 @@ jobs:
           name: generated-assets
           path: .
 
-      - name: Start MinIO source integration service
-        if: matrix.app_shard != ''
-        run: |
-          docker run --detach --name leapview-minio \
-            --publish 127.0.0.1:9000:9000 \
-            --env MINIO_ROOT_USER=leapview \
-            --env MINIO_ROOT_PASSWORD=leapview-integration-secret \
-            minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e \
-            server /data --address :9000
-          attempt=0
-          until curl --fail --silent http://127.0.0.1:9000/minio/health/ready >/dev/null; do
-            attempt=$((attempt + 1))
-            if [ "$attempt" -ge 60 ]; then
-              docker logs leapview-minio
-              exit 1
-            fi
-            sleep 1
-          done
-
       - name: Run Go package tests
         if: matrix.app_shard == ''
         run: |
@@ -444,8 +425,6 @@ jobs:
 
       - name: Run internal/app test shard
         if: matrix.app_shard != ''
-        env:
-          LEAPVIEW_TEST_MINIO_ENDPOINT: http://127.0.0.1:9000
         run: |
           pattern="$(
             go run ./internal/app/tools/testshard \

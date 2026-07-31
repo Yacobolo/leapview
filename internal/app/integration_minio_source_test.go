@@ -21,29 +21,33 @@ import (
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 	"github.com/flidai/leapview/internal/workload"
 	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/log"
+	tcminio "github.com/testcontainers/testcontainers-go/modules/minio"
+)
+
+const (
+	minIOIntegrationImage  = "minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
+	minIOIntegrationUser   = "leapview"
+	minIOIntegrationSecret = "leapview-integration-secret"
 )
 
 func TestMinIOParquetSourceRefreshContract(t *testing.T) {
-	endpoint := strings.TrimRight(os.Getenv("LEAPVIEW_TEST_MINIO_ENDPOINT"), "/")
-	if endpoint == "" {
-		t.Skip("set LEAPVIEW_TEST_MINIO_ENDPOINT to run the MinIO integration test")
-	}
 	ctx := context.Background()
+	endpoint := startMinIO(t, ctx)
 	const (
 		bucket = "leapview-integration"
 		key    = "orders/current.parquet"
 		region = "us-east-1"
-		user   = "leapview"
-		secret = "leapview-integration-secret"
 	)
-	client := minIOClient(t, ctx, endpoint, region, user, secret)
+	client := minIOClient(t, ctx, endpoint, region, minIOIntegrationUser, minIOIntegrationSecret)
 	if _, err := client.CreateBucket(ctx, &awss3.CreateBucketInput{Bucket: aws.String(bucket)}); err != nil {
 		t.Fatalf("create MinIO bucket: %v", err)
 	}
 
 	putMinIOObject(t, ctx, client, bucket, "commerce/"+key, parquetFixture(t, 10, 20))
 	credentialJSON := fmt.Sprintf(`{"access_key_id":%q,"secret_access_key":%q,"region":%q,"endpoint":%q,"url_style":"path","use_ssl":false}`,
-		user, secret, region, strings.TrimPrefix(strings.TrimPrefix(endpoint, "http://"), "https://"))
+		minIOIntegrationUser, minIOIntegrationSecret, region, strings.TrimPrefix(strings.TrimPrefix(endpoint, "http://"), "https://"))
 	t.Setenv("LEAPVIEW_TEST_MINIO_CREDENTIALS", credentialJSON)
 	model := minIOModel(bucket, key)
 	if err := model.Validate(); err != nil {
@@ -116,6 +120,25 @@ func TestMinIOParquetSourceRefreshContract(t *testing.T) {
 	if got := materializedRevenue(t, ctx, controller, db); got != 90 {
 		t.Fatalf("failed refresh replaced prior materialization: %v", got)
 	}
+}
+
+func startMinIO(t *testing.T, ctx context.Context) string {
+	t.Helper()
+	if os.Getenv("CI") == "" {
+		testcontainers.SkipIfProviderIsNotHealthy(t)
+	}
+	minioContainer, err := tcminio.Run(
+		ctx,
+		minIOIntegrationImage,
+		tcminio.WithUsername(minIOIntegrationUser),
+		tcminio.WithPassword(minIOIntegrationSecret),
+		testcontainers.WithLogger(log.TestLogger(t)),
+	)
+	testcontainers.CleanupContainer(t, minioContainer)
+	require.NoError(t, err)
+	endpoint, err := minioContainer.ConnectionString(ctx)
+	require.NoError(t, err)
+	return "http://" + strings.TrimRight(endpoint, "/")
 }
 
 func minIOClient(t *testing.T, ctx context.Context, endpoint, region, user, secret string) *awss3.Client {

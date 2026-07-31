@@ -410,16 +410,58 @@ func TestAccessCLIUsesStandardOAuthClient(t *testing.T) {
 	}
 }
 
-func TestProductionQualificationDoesNotImportTestcontainers(t *testing.T) {
+func TestProductionCodeDoesNotImportTestcontainers(t *testing.T) {
 	for _, file := range productionGoFiles(t) {
-		if file.pkgDir != "internal/app/cli/composectl" {
-			continue
-		}
 		for _, imported := range file.imports {
 			if strings.HasPrefix(imported, "github.com/testcontainers/testcontainers-go") {
-				t.Errorf("%s imports test-only qualification framework %q", file.path, imported)
+				t.Errorf("%s imports test-only container framework %q", file.path, imported)
 			}
 		}
+	}
+}
+
+func TestMinIOIntegrationOwnsItsContainerLifecycle(t *testing.T) {
+	root := repoRoot(t)
+	testSource, err := os.ReadFile(filepath.Join(root, "internal", "app", "integration_minio_source_test.go"))
+	require.NoError(t, err)
+	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))
+	require.NoError(t, err)
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	require.NoError(t, err)
+
+	testText := string(testSource)
+	for _, want := range []string{
+		`github.com/testcontainers/testcontainers-go/modules/minio`,
+		`testcontainers.CleanupContainer(t, minioContainer)`,
+		`testcontainers.WithLogger(log.TestLogger(t))`,
+		`minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e`,
+	} {
+		if !strings.Contains(testText, want) {
+			t.Errorf("MinIO integration test must own container lifecycle: missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"LEAPVIEW_TEST_MINIO_ENDPOINT",
+		"Start MinIO source integration service",
+		"docker run --detach --name leapview-minio",
+		"minio/minio@sha256:",
+	} {
+		if strings.Contains(string(workflow), forbidden) {
+			t.Errorf("CI workflow must not own MinIO integration lifecycle: found %q", forbidden)
+		}
+	}
+	taskText := string(taskfile)
+	for _, want := range []string{
+		"test:go:external:",
+		`-run '^TestMinIOParquetSourceRefreshContract$'`,
+	} {
+		if !strings.Contains(taskText, want) {
+			t.Errorf("local Go suite must run external-service tests serially: missing %q", want)
+		}
+	}
+	const skipMinIO = `-skip '^TestMinIOParquetSourceRefreshContract$'`
+	if count := strings.Count(taskText, skipMinIO); count != 4 {
+		t.Errorf("each local application shard must defer MinIO to the serial external-service task: found %d %q flags, want 4", count, skipMinIO)
 	}
 }
 

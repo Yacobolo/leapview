@@ -609,6 +609,7 @@ tasks:
     cmds:
       - task: generate
       - task --parallel test:go:packages test:go:app:0 test:go:app:1 test:go:app:2 test:go:app:3
+      - task: test:go:external
 
   test:go:packages:
     cmds:
@@ -618,25 +619,30 @@ tasks:
     cmds:
       - |
         pattern="$(go run ./internal/app/tools/testshard --package ./internal/app --shard-index 0 --shard-count 4)"
-        go test ./internal/app -run "$pattern"
+        go test ./internal/app -run "$pattern" -skip '^TestMinIOParquetSourceRefreshContract$'
 
   test:go:app:1:
     cmds:
       - |
         pattern="$(go run ./internal/app/tools/testshard --package ./internal/app --shard-index 1 --shard-count 4)"
-        go test ./internal/app -run "$pattern"
+        go test ./internal/app -run "$pattern" -skip '^TestMinIOParquetSourceRefreshContract$'
 
   test:go:app:2:
     cmds:
       - |
         pattern="$(go run ./internal/app/tools/testshard --package ./internal/app --shard-index 2 --shard-count 4)"
-        go test ./internal/app -run "$pattern"
+        go test ./internal/app -run "$pattern" -skip '^TestMinIOParquetSourceRefreshContract$'
 
   test:go:app:3:
     cmds:
       - |
         pattern="$(go run ./internal/app/tools/testshard --package ./internal/app --shard-index 3 --shard-count 4)"
-        go test ./internal/app -run "$pattern"
+        go test ./internal/app -run "$pattern" -skip '^TestMinIOParquetSourceRefreshContract$'
+
+  test:go:external:
+    desc: Run container-backed external-service integration tests serially
+    cmds:
+      - go test ./internal/app -run '^TestMinIOParquetSourceRefreshContract$' -count=1
 
   ci:
     desc: Run the full CI test suite
