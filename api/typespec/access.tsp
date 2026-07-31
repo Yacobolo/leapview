@@ -244,23 +244,6 @@ model AuthoringScopeRequest {
   privileges: string[];
 }
 
-model DeviceAuthorizationStartRequest {
-  scope: AuthoringScopeRequest;
-}
-
-model DeviceAuthorizationResponse {
-  deviceCode: string;
-  userCode: string;
-  verificationUri: string;
-  verificationUriComplete: string;
-  expiresIn: int64;
-  interval: int64;
-}
-
-model DeviceAuthorizationTokenRequest {
-  deviceCode: string;
-}
-
 model DeviceAuthorizationApprovalRequest {
   userCode: string;
   approved: boolean;
@@ -308,22 +291,6 @@ model WorkloadIdentityTokenRequest {
 }
 
 alias PublicAuthoringAuthErrors = BadRequest | NotFound | Conflict | UnprocessableContent | RateLimited | InternalServerError | ServiceUnavailable;
-
-@tag("Access")
-@summary("Begin CLI device authorization")
-@route("/access/device-authorizations")
-@post
-@apigen.authz(#{ mode: "none" })
-@operationId("beginDeviceAuthorization")
-op beginDeviceAuthorization(@body body: DeviceAuthorizationStartRequest): CreatedJson<DeviceAuthorizationResponse> | PublicAuthoringAuthErrors;
-
-@tag("Access")
-@summary("Exchange an approved CLI device code")
-@route("/access/device-authorizations/token")
-@post
-@apigen.authz(#{ mode: "none" })
-@operationId("exchangeDeviceAuthorization")
-op exchangeDeviceAuthorization(@body body: DeviceAuthorizationTokenRequest): OkJson<AuthoringTokenResponse> | PublicAuthoringAuthErrors;
 
 @tag("Access")
 @summary("Approve or deny CLI device authorization")

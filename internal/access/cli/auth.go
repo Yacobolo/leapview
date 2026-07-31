@@ -84,12 +84,12 @@ type credentialDocument struct {
 // Authenticator implements human CLI device login and credential lifecycle.
 // Profiles contain references only; token material stays in the native store.
 type Authenticator struct {
-	Factory     PublicTransportFactory
-	Profiles    *cliapi.ProfileStore
-	Secrets     securestore.Store
-	OpenBrowser func(string) error
-	Now         func() time.Time
-	Wait        func(context.Context, time.Duration) error
+	Factory          PublicTransportFactory
+	DeviceAuthorizer DeviceAuthorizer
+	Profiles         *cliapi.ProfileStore
+	Secrets          securestore.Store
+	OpenBrowser      func(string) error
+	Now              func() time.Time
 }
 
 func (auth Authenticator) Login(ctx context.Context, request LoginRequest, notify func(DeviceChallenge)) (LoginResult, error) {
@@ -113,74 +113,37 @@ func (auth Authenticator) Login(ctx context.Context, request LoginRequest, notif
 	} else if !errors.Is(err, cliapi.ErrProfileNotFound) {
 		return LoginResult{}, err
 	}
-	transport, err := auth.Factory.PublicTransport(ctx, request.Origin)
-	if err != nil {
-		return LoginResult{}, fmt.Errorf("create Access API transport: %w", err)
-	}
-	client := accessgen.NewGenClient(transport)
-	start, err := client.BeginDeviceAuthorization(ctx, accessgen.GenBeginDeviceAuthorizationClientRequest{
-		Body: accessgen.GenSchemaDeviceAuthorizationStartRequest{
-			Scope: accessgen.GenSchemaAuthoringScopeRequest{
-				ProjectId: request.ProjectID, Privileges: append([]string(nil), request.Privileges...),
-			},
-		},
+	authorization, err := auth.DeviceAuthorizer.Begin(ctx, DeviceAuthorizationRequest{
+		Origin: request.Origin, ProjectID: request.ProjectID,
+		Privileges: append([]string(nil), request.Privileges...),
 	})
 	if err != nil {
 		return LoginResult{}, fmt.Errorf("begin device authorization: %w", err)
 	}
-	challenge := DeviceChallenge{
-		UserCode: start.Body.UserCode, VerificationURI: start.Body.VerificationUri,
-		VerificationURIComplete: start.Body.VerificationUriComplete,
-		ExpiresIn:               time.Duration(start.Body.ExpiresIn) * time.Second,
-	}
+	challenge := authorization.Challenge()
 	if notify != nil {
 		notify(challenge)
 	}
 	if !request.Headless && auth.OpenBrowser != nil {
-		if err := auth.OpenBrowser(start.Body.VerificationUriComplete); err != nil {
+		if err := auth.OpenBrowser(challenge.VerificationURIComplete); err != nil {
 			return LoginResult{}, fmt.Errorf("open device authorization in browser: %w", err)
 		}
 	}
-	interval := time.Duration(start.Body.Interval) * time.Second
-	if interval <= 0 {
-		interval = time.Second
+	token, err := authorization.Token(ctx)
+	if err != nil {
+		return LoginResult{}, err
 	}
-	expiresAt := auth.now().Add(challenge.ExpiresIn)
-	var tokens accessgen.GenSchemaAuthoringTokenResponse
-	for {
-		if !auth.now().Before(expiresAt) {
-			return LoginResult{}, fmt.Errorf("device authorization expired")
-		}
-		if err := auth.wait(ctx, interval); err != nil {
-			return LoginResult{}, err
-		}
-		exchange, exchangeErr := client.ExchangeDeviceAuthorization(ctx, accessgen.GenExchangeDeviceAuthorizationClientRequest{
-			Body: accessgen.GenSchemaDeviceAuthorizationTokenRequest{DeviceCode: start.Body.DeviceCode},
-		})
-		if exchangeErr == nil {
-			tokens = exchange.Body
-			break
-		}
-		switch exchange.StatusCode {
-		case http.StatusConflict:
-			continue
-		case http.StatusTooManyRequests:
-			interval += time.Second
-			continue
-		default:
-			return LoginResult{}, fmt.Errorf("exchange device authorization: %w", exchangeErr)
-		}
+	details, err := oauthAuthoringTokenDetails(token)
+	if err != nil {
+		return LoginResult{}, err
 	}
-	if tokens.RefreshToken == nil || strings.TrimSpace(*tokens.RefreshToken) == "" {
-		return LoginResult{}, fmt.Errorf("device authorization returned no refresh credential")
-	}
-	if tokens.Session.TargetId != request.InstanceID || tokens.Session.ProjectId != request.ProjectID {
+	if details.TargetID != request.InstanceID || details.ProjectID != request.ProjectID {
 		return LoginResult{}, fmt.Errorf("device authorization returned credentials for an unexpected target or project")
 	}
 	account := credentialAccount(request.InstanceID, request.ProjectID)
 	credential := credentialDocument{
-		Version: credentialVersion, AccessToken: tokens.AccessToken, RefreshToken: *tokens.RefreshToken,
-		AccessExpiresAt: auth.now().Add(time.Duration(tokens.ExpiresIn) * time.Second), SessionID: tokens.Session.Id,
+		Version: credentialVersion, AccessToken: token.AccessToken, RefreshToken: token.RefreshToken,
+		AccessExpiresAt: token.Expiry.UTC(), SessionID: details.SessionID,
 	}
 	if err := auth.storeCredential(ctx, account, credential); err != nil {
 		return LoginResult{}, err
@@ -193,7 +156,7 @@ func (auth Authenticator) Login(ctx context.Context, request LoginRequest, notif
 		_ = auth.Secrets.Delete(ctx, account)
 		return LoginResult{}, err
 	}
-	return LoginResult{SessionID: tokens.Session.Id, Profile: profile}, nil
+	return LoginResult{SessionID: details.SessionID, Profile: profile}, nil
 }
 
 // Resolve returns a usable access credential, rotating it before expiry to
@@ -354,6 +317,8 @@ func (auth Authenticator) validate() error {
 	switch {
 	case auth.Factory == nil:
 		return fmt.Errorf("Access public transport factory is required")
+	case auth.DeviceAuthorizer == nil:
+		return fmt.Errorf("OAuth device authorizer is required")
 	case auth.Profiles == nil:
 		return fmt.Errorf("target profile store is required")
 	case auth.Secrets == nil:
@@ -368,20 +333,6 @@ func (auth Authenticator) now() time.Time {
 		return auth.Now().UTC()
 	}
 	return time.Now().UTC()
-}
-
-func (auth Authenticator) wait(ctx context.Context, duration time.Duration) error {
-	if auth.Wait != nil {
-		return auth.Wait(ctx, duration)
-	}
-	timer := time.NewTimer(duration)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
 }
 
 func (auth Authenticator) storeCredential(ctx context.Context, account string, credential credentialDocument) error {

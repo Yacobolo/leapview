@@ -10,59 +10,6 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func (h Handler) BeginDeviceAuthorization(w stdhttp.ResponseWriter, r *stdhttp.Request) {
-	service, ok := h.authoringAuthentication(w)
-	if !ok {
-		return
-	}
-	var input struct {
-		Scope struct {
-			ProjectID  string   `json:"projectId"`
-			Privileges []string `json:"privileges"`
-		} `json:"scope"`
-	}
-	if err := decodeStrictJSON(r, &input); err != nil {
-		writeJSONError(w, err, stdhttp.StatusBadRequest)
-		return
-	}
-	scope, err := access.NewAuthoringScope(service.InstanceID(), input.Scope.ProjectID, privilegesFromStrings(input.Scope.Privileges))
-	if err != nil {
-		writeJSONError(w, err, stdhttp.StatusBadRequest)
-		return
-	}
-	response, err := service.BeginDeviceAuthorization(r.Context(), scope)
-	if err != nil {
-		writeAuthoringAuthError(w, err)
-		return
-	}
-	w.Header().Set("Location", response.VerificationURIComplete)
-	writeSecretJSON(w, stdhttp.StatusCreated, map[string]any{
-		"deviceCode": response.DeviceCode, "userCode": response.UserCode,
-		"verificationUri": response.VerificationURI, "verificationUriComplete": response.VerificationURIComplete,
-		"expiresIn": response.ExpiresIn, "interval": response.Interval,
-	})
-}
-
-func (h Handler) ExchangeDeviceAuthorization(w stdhttp.ResponseWriter, r *stdhttp.Request) {
-	service, ok := h.authoringAuthentication(w)
-	if !ok {
-		return
-	}
-	var input struct {
-		DeviceCode string `json:"deviceCode"`
-	}
-	if err := decodeStrictJSON(r, &input); err != nil {
-		writeJSONError(w, err, stdhttp.StatusBadRequest)
-		return
-	}
-	tokens, err := service.ExchangeDeviceCode(r.Context(), input.DeviceCode)
-	if err != nil {
-		writeAuthoringAuthError(w, err)
-		return
-	}
-	writeSecretJSON(w, stdhttp.StatusOK, authoringTokenDTO(tokens))
-}
-
 func (h Handler) DecideDeviceAuthorization(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	service, ok := h.authoringAuthentication(w)
 	if !ok {

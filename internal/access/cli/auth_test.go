@@ -11,9 +11,11 @@ import (
 	"time"
 
 	apigenclient "github.com/Yacobolo/toolbelt/apigen/runtime/client"
+	"github.com/flidai/leapview/internal/access"
 	accessgen "github.com/flidai/leapview/internal/access/api/gen"
 	"github.com/flidai/leapview/internal/platform/cliapi"
 	"github.com/flidai/leapview/internal/platform/securestore"
+	"golang.org/x/oauth2"
 )
 
 type fakeTransport struct {
@@ -29,6 +31,31 @@ func (transport *fakeTransport) DoAPIGen(_ context.Context, request apigenclient
 type fakeFactory struct {
 	transport *fakeTransport
 	targets   []string
+}
+
+type fakeDeviceAuthorizer struct {
+	request       DeviceAuthorizationRequest
+	authorization DeviceAuthorization
+	err           error
+}
+
+func (authorizer *fakeDeviceAuthorizer) Begin(_ context.Context, request DeviceAuthorizationRequest) (DeviceAuthorization, error) {
+	authorizer.request = request
+	return authorizer.authorization, authorizer.err
+}
+
+type fakeDeviceAuthorization struct {
+	challenge DeviceChallenge
+	token     *oauth2.Token
+	err       error
+}
+
+func (authorization fakeDeviceAuthorization) Challenge() DeviceChallenge {
+	return authorization.challenge
+}
+
+func (authorization fakeDeviceAuthorization) Token(context.Context) (*oauth2.Token, error) {
+	return authorization.token, authorization.err
 }
 
 func (factory *fakeFactory) PublicTransport(_ context.Context, target string) (apigenclient.Transport, error) {
@@ -74,48 +101,34 @@ func (store *memorySecrets) Delete(_ context.Context, account string) error {
 	return nil
 }
 
-func TestLoginUsesGeneratedDeviceFlowAndNativeCredentialReference(t *testing.T) {
+func TestLoginUsesOAuthDeviceFlowAndNativeCredentialReference(t *testing.T) {
 	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
-	polls := 0
-	transport := &fakeTransport{}
-	transport.do = func(request apigenclient.Request, out any) (apigenclient.Response, error) {
-		switch request.OperationID {
-		case accessgen.GenOperationBeginDeviceAuthorization:
-			body := request.Body.(accessgen.GenSchemaDeviceAuthorizationStartRequest)
-			if body.Scope.ProjectId != "analytics" || strings.Join(body.Scope.Privileges, ",") != "DEPLOY,ACTIVATE_DEPLOYMENT" {
-				t.Fatalf("scope = %+v", body.Scope)
-			}
-			*out.(*accessgen.GenSchemaDeviceAuthorizationResponse) = accessgen.GenSchemaDeviceAuthorizationResponse{
-				DeviceCode: "device-secret", UserCode: "ABCD-EFGH",
-				VerificationUri:         "https://prod.example.com/device",
-				VerificationUriComplete: "https://prod.example.com/device?user_code=ABCD-EFGH",
-				ExpiresIn:               600, Interval: 5,
-			}
-			return apigenclient.Response{StatusCode: http.StatusCreated}, nil
-		case accessgen.GenOperationExchangeDeviceAuthorization:
-			polls++
-			if polls == 1 {
-				return apigenclient.Response{StatusCode: http.StatusConflict}, errors.New("authorization pending")
-			}
-			refresh := "refresh-secret"
-			tokens := tokenResponse(now, "access-secret", &refresh)
-			tokens.Session.ProjectId = "analytics"
-			*out.(*accessgen.GenSchemaAuthoringTokenResponse) = tokens
-			return apigenclient.Response{StatusCode: http.StatusOK}, nil
-		default:
-			t.Fatalf("unexpected operation %q", request.OperationID)
-			return apigenclient.Response{}, nil
-		}
+	deviceAuthorizer := &fakeDeviceAuthorizer{
+		authorization: fakeDeviceAuthorization{
+			challenge: DeviceChallenge{
+				UserCode:                "ABCD-EFGH",
+				VerificationURI:         "https://prod.example.com/device",
+				VerificationURIComplete: "https://prod.example.com/device?user_code=ABCD-EFGH",
+				ExpiresIn:               10 * time.Minute,
+			},
+			token: (&oauth2.Token{
+				AccessToken: "access-secret", RefreshToken: "refresh-secret",
+				TokenType: "Bearer", Expiry: now.Add(15 * time.Minute),
+			}).WithExtra(map[string]any{
+				"session_id": "session-1", "session_kind": "human_cli",
+				"target_id": "lvinst_prod", "project_id": "analytics",
+			}),
+		},
 	}
 	secrets := &memorySecrets{}
 	profiles := cliapi.NewProfileStore(filepath.Join(t.TempDir(), "cli.json"))
 	var opened, shown string
 	auth := Authenticator{
-		Factory:  &fakeFactory{transport: transport},
-		Profiles: profiles,
-		Secrets:  secrets,
-		Now:      func() time.Time { return now },
-		Wait:     func(context.Context, time.Duration) error { return nil },
+		Factory:          &fakeFactory{transport: &fakeTransport{}},
+		DeviceAuthorizer: deviceAuthorizer,
+		Profiles:         profiles,
+		Secrets:          secrets,
+		Now:              func() time.Time { return now },
 		OpenBrowser: func(uri string) error {
 			opened = uri
 			return nil
@@ -132,8 +145,13 @@ func TestLoginUsesGeneratedDeviceFlowAndNativeCredentialReference(t *testing.T) 
 	if shown != "ABCD-EFGH" || opened != "https://prod.example.com/device?user_code=ABCD-EFGH" {
 		t.Fatalf("challenge shown=%q opened=%q", shown, opened)
 	}
-	if result.SessionID != "session-1" || polls != 2 {
-		t.Fatalf("result=%+v polls=%d", result, polls)
+	if result.SessionID != "session-1" {
+		t.Fatalf("result=%+v", result)
+	}
+	if deviceAuthorizer.request.Origin != "https://prod.example.com" ||
+		deviceAuthorizer.request.ProjectID != "analytics" ||
+		strings.Join(deviceAuthorizer.request.Privileges, ",") != "DEPLOY,ACTIVATE_DEPLOYMENT" {
+		t.Fatalf("device request=%+v", deviceAuthorizer.request)
 	}
 	profile, err := profiles.Get("prod")
 	if err != nil {
@@ -325,21 +343,8 @@ func TestExchangeWorkloadIdentityUsesExactGeneratedScopeWithoutPersistence(t *te
 }
 
 func successfulLoginTransport(now time.Time) *fakeTransport {
-	return &fakeTransport{do: func(request apigenclient.Request, out any) (apigenclient.Response, error) {
-		switch request.OperationID {
-		case accessgen.GenOperationBeginDeviceAuthorization:
-			*out.(*accessgen.GenSchemaDeviceAuthorizationResponse) = accessgen.GenSchemaDeviceAuthorizationResponse{
-				DeviceCode: "device", UserCode: "USER-CODE", VerificationUri: "https://example.test/device",
-				VerificationUriComplete: "https://example.test/device?user_code=USER-CODE", ExpiresIn: 600, Interval: 1,
-			}
-			return apigenclient.Response{StatusCode: http.StatusCreated}, nil
-		case accessgen.GenOperationExchangeDeviceAuthorization:
-			refresh := "refresh"
-			*out.(*accessgen.GenSchemaAuthoringTokenResponse) = tokenResponse(now, "access", &refresh)
-			return apigenclient.Response{StatusCode: http.StatusOK}, nil
-		default:
-			return apigenclient.Response{}, errors.New("unexpected operation")
-		}
+	return &fakeTransport{do: func(apigenclient.Request, any) (apigenclient.Response, error) {
+		return apigenclient.Response{}, errors.New("unexpected operation")
 	}}
 }
 
@@ -359,8 +364,24 @@ func testAuthenticator(t *testing.T, now time.Time, transport *fakeTransport) (A
 	profiles := cliapi.NewProfileStore(filepath.Join(t.TempDir(), "cli.json"))
 	secrets := &memorySecrets{}
 	return Authenticator{
-		Factory: &fakeFactory{transport: transport}, Profiles: profiles, Secrets: secrets,
-		Now: func() time.Time { return now }, Wait: func(context.Context, time.Duration) error { return nil },
+		Factory: &fakeFactory{transport: transport},
+		DeviceAuthorizer: &fakeDeviceAuthorizer{authorization: fakeDeviceAuthorization{
+			challenge: DeviceChallenge{
+				UserCode:                "USER-CODE",
+				VerificationURI:         "https://example.test/device",
+				VerificationURIComplete: "https://example.test/device?user_code=USER-CODE",
+				ExpiresIn:               10 * time.Minute,
+			},
+			token: (&oauth2.Token{
+				AccessToken: "access", RefreshToken: "refresh",
+				TokenType: "Bearer", Expiry: now.Add(15 * time.Minute),
+			}).WithExtra(map[string]any{
+				"session_id": "session-1", "session_kind": string(access.AuthoringSessionHumanCLI),
+				"target_id": "lvinst_prod", "project_id": "project",
+			}),
+		}},
+		Profiles: profiles, Secrets: secrets,
+		Now: func() time.Time { return now },
 	}, profiles, secrets
 }
 

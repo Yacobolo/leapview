@@ -38,6 +38,7 @@ func (m *Module) MountOAuthEndpoints(r chi.Router) {
 	}
 	r.Get("/auth/{provider}", m.Begin)
 	r.Get("/auth/{provider}/callback", m.Callback)
+	r.Post("/oauth/device/code", m.AuthoringDeviceAuthorization)
 	r.Post("/oauth/token", m.OAuthToken)
 	r.Post("/oauth/register", m.MCPOAuthRegister)
 	r.Post("/oauth/revoke", m.MCPOAuthRevoke)

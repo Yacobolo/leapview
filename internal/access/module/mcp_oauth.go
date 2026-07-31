@@ -11,11 +11,26 @@ import (
 )
 
 func (s *Module) OAuthToken(w http.ResponseWriter, r *http.Request) {
+	if requestTargetsAuthoringOAuth(r) {
+		s.AuthoringOAuthToken(w, r)
+		return
+	}
 	if requestTargetsMCPOAuth(r) {
 		s.MCPOAuthToken(w, r)
 		return
 	}
 	s.handler.OAuthToken(w, r)
+}
+
+func requestTargetsAuthoringOAuth(r *http.Request) bool {
+	if r == nil || strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		return false
+	}
+	if err := r.ParseForm(); err != nil {
+		return false
+	}
+	return r.Form.Get("grant_type") == authoringDeviceGrantType ||
+		r.Form.Get("client_id") == access.AuthoringCLIClientID
 }
 
 func requestTargetsMCPOAuth(r *http.Request) bool {

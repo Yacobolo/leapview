@@ -40,12 +40,10 @@ func TestAPIGenAuthorizationContractCoverage(t *testing.T) {
 		t.Fatal("no generated operation contracts")
 	}
 	publicAuthoringAuth := map[string]bool{
-		"beginDeviceAuthorization":    true,
-		"exchangeDeviceAuthorization": true,
-		"refreshAuthoringToken":       true,
-		"revokeAuthoringToken":        true,
-		"exchangeWorkloadIdentity":    true,
-		"getInstance":                 true,
+		"refreshAuthoringToken":    true,
+		"revokeAuthoringToken":     true,
+		"exchangeWorkloadIdentity": true,
+		"getInstance":              true,
 	}
 	for operationID, contract := range contracts {
 		if publicAuthoringAuth[operationID] {

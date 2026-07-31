@@ -35,14 +35,6 @@ func (d *APIGenDispatcher) GetCurrentPrincipal(w stdhttp.ResponseWriter, r *stdh
 	d.handler.GetCurrentPrincipal(w, r)
 }
 
-func (d *APIGenDispatcher) BeginDeviceAuthorization(w stdhttp.ResponseWriter, r *stdhttp.Request) {
-	d.handler.BeginDeviceAuthorization(w, r)
-}
-
-func (d *APIGenDispatcher) ExchangeDeviceAuthorization(w stdhttp.ResponseWriter, r *stdhttp.Request) {
-	d.handler.ExchangeDeviceAuthorization(w, r)
-}
-
 func (d *APIGenDispatcher) DecideDeviceAuthorization(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	d.handler.DecideDeviceAuthorization(w, r)
 }
