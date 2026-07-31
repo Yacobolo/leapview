@@ -16,6 +16,8 @@ visuals:
     title: Status to delivery speed
     description: Shows flow from order status to delivery-speed bucket.
     type: sankey
+    presentation:
+      show_labels: true
     query:
       dimensions:
         status: orders.status
@@ -28,9 +30,9 @@ visuals:
       limit: 40
 ```
 
-## Alternate flow
+## Category-to-status flow
 
-Replace the source and target dimensions to inspect category-to-status flow without changing the weighted graph contract.
+Trace order volume from product category into fulfillment status to expose the strongest operational paths.
 
 {{< visual id="category_status_flow" >}}
 
@@ -39,6 +41,8 @@ visuals:
   category_status_flow:
     title: Category to status flow
     type: sankey
+    presentation:
+      show_labels: true
     query:
       dimensions:
         category: orders.category
@@ -63,6 +67,7 @@ visuals:
     title: Spacious category to status flow
     type: sankey
     presentation:
+      show_labels: true
       node_gap: 18
       curveness: 0.32
     query:

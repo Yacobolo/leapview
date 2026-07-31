@@ -29,29 +29,29 @@ visuals:
 
 ## Stacked series
 
-Map `query.series` to status and enable `presentation.stacked` to show how each status contributes to the monthly total.
+Map `query.series` to status and enable `presentation.stacked` to show how each status contributes to quarterly revenue. Quarter-level aggregation keeps every status present and makes the evolving composition readable.
 
 {{< visual id="revenue_area_status" >}}
 
 ```yaml visual-example=revenue_area_status
 visuals:
   revenue_area_status:
-    title: Stacked revenue area
+    title: Quarterly revenue mix by status
     type: area
     presentation:
       stacked: true
     query:
       dimensions:
-        purchase_month: orders.purchase_month
+        purchase_quarter: orders.purchase_quarter
       series:
         field: orders.status
         alias: status
       measures:
         revenue: null
       sort:
-        - field: purchase_month
+        - field: purchase_quarter
           direction: asc
-      limit: 60
+      limit: 20
 ```
 
 ## Smoothed line

@@ -807,7 +807,6 @@ package contracts
 		#PresentationCommon
 	})
 	geo!: close({
-		basemap?:       #Identifier | "blank"
 		theme?:         "auto" | "light" | "dark"
 		label_density?: "hidden" | "normal" | "dense"
 		camera?: close({

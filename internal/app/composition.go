@@ -46,7 +46,7 @@ func assemble(ctx context.Context, cfg config.Config) (http.Handler, Lifecycle, 
 
 func buildRuntime(ctx context.Context, cfg config.Config, production bool, environment servingstatemodule.Environment) (http.Handler, Lifecycle, cleanupFunc, error) {
 	assets := applicationAssets(cfg, production)
-	dashboardAssets, err := dashboardmodule.BuildAssets(ctx, cfg.MapAssetDir)
+	dashboardAssets, err := dashboardmodule.BuildAssets(ctx)
 	if err != nil {
 		return nil, nil, nil, err
 	}

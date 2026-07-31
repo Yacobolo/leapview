@@ -12,6 +12,8 @@ filter state, revisions, target planning, and clear behavior.
 
 ## Label density and collision policy
 
+All built-in charts below use the typed ECharts adapter. The preview pages are render-only and do not initialize dashboard commands or SSE crossfilter state. “Selectable” describes a visual's capability when it runs inside the dashboard runtime with stable mappings and explicit targets; it does not mean selection is active in this reference.
+
 Supported built-in ECharts visuals compile `presentation.labels` into one deterministic policy. `hidden` suppresses rendered labels while retaining full tooltip and a bounded accessibility summary; `automatic` shows labels and suppresses collisions; `dense` uses tighter spacing and type for compact matrices; and `always` deliberately disables collision suppression. The legacy `show_labels: true` shorthand compiles to `automatic`. Policies that may suppress labels require `tooltip_fallback: true`; unsupported surfaces such as radar indicators fail compilation instead of silently ignoring the policy.
 
 Policies also bound label length by Unicode grapheme, set minimum collision spacing, and declare whether selected, anomalous, or threshold-crossing data should win a collision. The same frame, locale, dimensions, and policy always produce the same label decision. Full untruncated values remain in governed tooltips when `tooltip_fallback` is enabled.
@@ -35,6 +37,8 @@ All entries below describe renderer-neutral compiled contracts. Unsupported comb
 Decision-context field references use stable dataset and field identities. Gradient domains, rule order, null/default outcomes, series order, colors, scale domains, zero policies, units, and tick density are explicit in the compiled IR. Bound titles, subtitles, descriptions, summaries, reference values, and accessibility text recompute when filters or data revisions change and use authored fallbacks when governed data is empty.
 
 Deleted fields, unknown datasets, incompatible reducers, unsupported mark/feature combinations, and unsafe formatting intents are deployment errors with the binding path in the diagnostic. Authorization remains part of governed query execution; an unauthorized or failed context query produces the visual’s normal error state and does not reveal a hidden value through metadata or a renderer message.
+
+Unsupported interaction declarations fail dashboard deployment compilation instead of rendering an approximation. Map point and region selection use a separate MapLibre interaction path in the dashboard runtime.
 
 ## Change over time
 

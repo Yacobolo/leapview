@@ -241,7 +241,6 @@ model QueryVisualPresentation {
   sort?: string;
   @minValue(0)
   initialDepth?: int32;
-  basemap?: string;
   roam?: boolean;
   layout?: string;
   breadcrumb?: boolean;

@@ -69,14 +69,17 @@ func TestInstallSeedArchiveRejectsUnverifiedInput(t *testing.T) {
 	}
 }
 
-func TestRegionalExtractionProfileExtendsTheGlobalArchive(t *testing.T) {
-	if regionalBounds != "-82,-56,-30,14" || regionalMinimumZoom != "7" || regionalMaximumZoom != "10" {
-		t.Fatalf("regional profile = bounds %q zoom %s..%s", regionalBounds, regionalMinimumZoom, regionalMaximumZoom)
-	}
+func TestWorldwideExtractionProfileIsPinnedAndHasNoRegionalException(t *testing.T) {
 	if archiveDownloadThreads != "2" {
 		t.Fatalf("archive download threads = %q, want conservative range concurrency", archiveDownloadThreads)
 	}
-	if archiveDigest == globalArchiveDigest {
-		t.Fatal("regional detail was not merged into a distinct immutable archive")
+	if planetURL != "https://build.protomaps.com/20260720.pmtiles" {
+		t.Fatalf("planet snapshot = %q", planetURL)
+	}
+	if archiveDigest != "2d97ee8907670936ab722da7ca06eafec0734392f73fa1cd337d4debd85d676f" {
+		t.Fatalf("worldwide archive digest = %q", archiveDigest)
+	}
+	if pmtilesToolModule != "github.com/protomaps/go-pmtiles@v1.31.1" {
+		t.Fatalf("PMTiles tool = %q", pmtilesToolModule)
 	}
 }

@@ -154,7 +154,7 @@ func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model
 		base.Kind = "hierarchy"
 		return visualizationir.VisualizationSpec{Value: &visualizationir.HierarchyVisualizationSpec{
 			VisualizationSpecBase: base, Kind: "hierarchy", Mark: visualizationir.VisualizationHierarchyMark(authored.Type), Node: ref(firstCompiledField(columns, "node", "source", "label")), Value: optionalRef("value"), Parent: optionalRef("parent"), Source: optionalRef("source"), Target: optionalRef("target"),
-			Presentation: visualizationir.HierarchyVisualizationPresentation{VisualizationPresentation: common, Orientation: compiledOrientation(presentation.Orientation), InitialDepth: optionalPositiveInt32(presentation.InitialDepth), Roam: presentation.Roam, Layout: compiledHierarchyLayout(presentation.Layout), Breadcrumb: presentation.Breadcrumb, NodeGap: optionalPositiveFloat(presentation.NodeGap), Curveness: optionalPositiveFloat(presentation.Curveness), Focus: compiledGraphFocus(presentation.Focus)},
+			Presentation: visualizationir.HierarchyVisualizationPresentation{VisualizationPresentation: common, Orientation: compiledOrientation(presentation.Orientation), InitialDepth: optionalInt32(presentation.InitialDepth), Roam: presentation.Roam, Layout: compiledHierarchyLayout(presentation.Layout), Breadcrumb: presentation.Breadcrumb, NodeGap: optionalPositiveFloat(presentation.NodeGap), Curveness: optionalPositiveFloat(presentation.Curveness), Focus: compiledGraphFocus(presentation.Focus)},
 		}}, nil
 	case "radar", "gauge":
 		base.Kind = "polar"
@@ -899,6 +899,14 @@ func optionalPositiveInt32(value int) *int32 {
 		return nil
 	}
 	out := int32(value)
+	return &out
+}
+
+func optionalInt32(value *int) *int32 {
+	if value == nil {
+		return nil
+	}
+	out := int32(*value)
 	return &out
 }
 

@@ -16,7 +16,8 @@ func CacheHandler(next http.Handler) http.Handler {
 		next = http.NotFoundHandler()
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !visualizationmapasset.IsContentAddressedURLPath(r.URL.Path) {
+		digest, ok := visualizationmapasset.DigestForContentAddressedURLPath(r.URL.Path)
+		if !ok {
 			w.Header().Set("Cache-Control", "no-store")
 			http.NotFound(w, r)
 			return
@@ -30,6 +31,7 @@ func CacheHandler(next http.Handler) http.Handler {
 		w.Header().Set("Cache-Control", visualizationmapasset.ImmutableCacheControl)
 		w.Header().Set("Accept-Ranges", "bytes")
 		w.Header().Set("Content-Type", visualizationmapasset.ContentType(r.URL.Path))
+		w.Header().Set("ETag", `"sha256-`+digest+`"`)
 		next.ServeHTTP(w, r)
 	})
 }

@@ -2,10 +2,6 @@
 
 FROM node:24-bookworm@sha256:392e1e23f34da768d8d1f4e502b64f200d3be3465934d4b7930f57d7e2fc1989 AS node
 
-# A caller may override this empty stage with a named build context containing
-# basemap.pmtiles. The generator verifies the pinned digest before accepting it.
-FROM scratch AS mapassetseed
-
 FROM golang:1.25-bookworm@sha256:a9c020ee3d1508c7be5435c262434e3d3fc1d0e76a11afeb9ddae7d60bc86aa4 AS go-deps
 WORKDIR /src
 
@@ -28,17 +24,6 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     go run ./internal/app/tools/schemadocgen && \
     go run ./internal/app/tools/openapidocgen && \
     go run ./internal/app/tools/docsitegen
-
-# Keep the large, network-backed map extraction separate so a transient remote
-# failure can be retried without repeating deterministic source generation.
-RUN --mount=type=cache,target=/root/.cache/go-build \
-    --mount=type=cache,id=leapview-go-mod,target=/go/pkg/mod,from=go-deps,source=/go/pkg/mod,sharing=locked \
-    --mount=type=bind,from=mapassetseed,source=/,target=/mapasset-seed,ro \
-    if [ -f /mapasset-seed/basemap.pmtiles ]; then \
-      go run ./internal/app/tools/mapassets --out .data/map-assets --seed-archive /mapasset-seed/basemap.pmtiles; \
-    else \
-      go run ./internal/app/tools/mapassets --out .data/map-assets; \
-    fi
 
 FROM oven/bun:1.3.7@sha256:6cd5f00020e48b77a253bc8249f6b6dd3d92b3c04c2607f1f5a6d7dbf0a6fca3 AS web
 WORKDIR /src
@@ -151,7 +136,6 @@ COPY --from=build /out/leapview /usr/local/bin/leapview
 COPY --from=build /out/leapviewctl /usr/local/libexec/leapviewctl
 COPY --from=web /src/static ./static
 COPY --from=build /src/schemas ./schemas
-COPY --from=sourcegen /src/.data/map-assets ./.data/map-assets
 COPY dashboards ./dashboards
 COPY evaluation ./evaluation
 
@@ -163,7 +147,6 @@ USER leapview
 ENV LEAPVIEW_ADDR=:8080 \
     LEAPVIEW_ENVIRONMENT=prod \
     LEAPVIEW_HOME=/var/lib/leapview/home \
-    LEAPVIEW_MAP_ASSET_DIR=/app/.data/map-assets \
     LEAPVIEW_MANAGED_DATA_DIR=/var/lib/leapview/home/managed-data \
     LEAPVIEW_PRODUCTION=1
 

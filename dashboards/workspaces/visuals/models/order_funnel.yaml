@@ -1,0 +1,56 @@
+apiVersion: leapview.dev/v1
+kind: ModelTable
+metadata:
+  workspace: visuals
+  name: order_funnel
+  title: Order Fulfillment Funnel
+  description: Cumulative order-stage rows for truthful fulfillment funnel analysis.
+spec:
+  description: Each order contributes to every fulfillment stage it reached, preserving monotonic stage counts and revenue.
+  primaryKey: stage_order_id
+  sources:
+  - olist.orders
+  - olist.payments
+  fields:
+    stage_order_id:
+      label: Stage order ID
+      description: Stable identity for an order at one fulfillment stage.
+      type: string
+    order_id:
+      label: Order ID
+      description: Order represented by the cumulative stage row.
+      type: string
+    stage:
+      label: Fulfillment stage
+      description: Ordered business stage reached by the order.
+      type: string
+    revenue:
+      label: Revenue
+      description: Order payment revenue retained at this stage.
+      type: number
+  transform:
+    sql: |
+      WITH revenue AS (
+        SELECT order_id, SUM(try_cast(payment_value AS DOUBLE)) AS revenue
+        FROM source."olist.payments"
+        GROUP BY order_id
+      )
+      SELECT
+        o.order_id || ':' || CAST(stage_order AS VARCHAR) AS stage_order_id,
+        o.order_id,
+        stage,
+        round(COALESCE(revenue.revenue, 0), 2) AS revenue
+      FROM source."olist.orders" o
+      LEFT JOIN revenue ON revenue.order_id = o.order_id
+      CROSS JOIN (
+        VALUES
+          ('Order placed', 1),
+          ('Payment confirmed', 2),
+          ('Shipped', 3),
+          ('Delivered', 4)
+      ) AS stages(stage, stage_order)
+      WHERE
+        stage_order = 1
+        OR (stage_order = 2 AND o.order_status NOT IN ('canceled', 'unavailable'))
+        OR (stage_order = 3 AND o.order_status IN ('shipped', 'delivered'))
+        OR (stage_order = 4 AND o.order_status = 'delivered')

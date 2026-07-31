@@ -3,6 +3,7 @@ package ir
 import (
 	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -88,7 +89,7 @@ func TestValidateSpecEnforcesGeographicLayerRequirements(t *testing.T) {
 	latitude := VisualizationFieldRef{Dataset: "primary", Field: "lat"}
 	longitude := VisualizationFieldRef{Dataset: "primary", Field: "lon"}
 	layerBase := VisualizationGeographicLayerBase{ID: "stores", Kind: "point", Tooltip: []VisualizationFieldRef{}, Position: VisualizationMapLayerPositionBelowLabels, Visibility: VisualizationMapVisibility{MaximumZoom: 24}}
-	point := VisualizationSpec{Value: &GeographicVisualizationSpec{VisualizationSpecBase: base, Kind: "geographic", Layers: []VisualizationGeographicLayer{{Value: &VisualizationPointLayer{VisualizationGeographicLayerBase: layerBase, Kind: "point", Latitude: latitude, Longitude: longitude, Size: VisualizationMapSizeScale{MinimumRadius: 5, MaximumRadius: 28}, Cluster: VisualizationMapCluster{Radius: 50, MinimumPoints: 2}}}}, Presentation: GeographicVisualizationPresentation{VisualizationPresentation: testVisualizationPresentation(VisualizationLegendPositionHidden)}}}
+	point := VisualizationSpec{Value: &GeographicVisualizationSpec{VisualizationSpecBase: base, Kind: "geographic", Layers: []VisualizationGeographicLayer{{Value: &VisualizationPointLayer{VisualizationGeographicLayerBase: layerBase, Kind: "point", Latitude: latitude, Longitude: longitude, Size: VisualizationMapSizeScale{MinimumRadius: 5, MaximumRadius: 28}, Cluster: VisualizationMapCluster{Radius: 50, MinimumPoints: 2}}}}, Presentation: GeographicVisualizationPresentation{VisualizationPresentation: testVisualizationPresentation(VisualizationLegendPositionHidden), Basemap: testMapStyleAsset()}}}
 	if err := ValidateSpec(point); err != nil {
 		t.Fatalf("point layer: %v", err)
 	}
@@ -97,7 +98,7 @@ func TestValidateSpecEnforcesGeographicLayerRequirements(t *testing.T) {
 		t.Fatal("point layer without longitude was accepted")
 	}
 	join := VisualizationFieldRef{Dataset: "primary", Field: "lat"}
-	choropleth := VisualizationSpec{Value: &GeographicVisualizationSpec{VisualizationSpecBase: base, Kind: "geographic", Layers: []VisualizationGeographicLayer{{Value: &VisualizationChoroplethLayer{VisualizationGeographicLayerBase: VisualizationGeographicLayerBase{ID: "states", Kind: "choropleth", Tooltip: []VisualizationFieldRef{}, Position: VisualizationMapLayerPositionBelowLabels, Visibility: VisualizationMapVisibility{MaximumZoom: 24}}, Kind: "choropleth", Join: join}}}, Presentation: GeographicVisualizationPresentation{VisualizationPresentation: testVisualizationPresentation(VisualizationLegendPositionHidden)}}}
+	choropleth := VisualizationSpec{Value: &GeographicVisualizationSpec{VisualizationSpecBase: base, Kind: "geographic", Layers: []VisualizationGeographicLayer{{Value: &VisualizationChoroplethLayer{VisualizationGeographicLayerBase: VisualizationGeographicLayerBase{ID: "states", Kind: "choropleth", Tooltip: []VisualizationFieldRef{}, Position: VisualizationMapLayerPositionBelowLabels, Visibility: VisualizationMapVisibility{MaximumZoom: 24}}, Kind: "choropleth", Join: join}}}, Presentation: GeographicVisualizationPresentation{VisualizationPresentation: testVisualizationPresentation(VisualizationLegendPositionHidden), Basemap: testMapStyleAsset()}}}
 	if err := ValidateSpec(choropleth); err == nil {
 		t.Fatal("choropleth layer without geometry was accepted")
 	}
@@ -110,7 +111,7 @@ func TestValidateEnvelopeEnforcesSpatialWindowInvariants(t *testing.T) {
 	}
 	base := VisualizationSpecBase{Kind: "geographic", Title: "Stores", Datasets: []VisualizationDatasetSchema{{ID: "primary", Fields: fields}}, DataBudget: VisualizationDataBudget{MaxRows: 1_000_000, RequiredCompleteness: VisualizationCompletenessPartial}, Accessibility: VisualizationAccessibility{Title: "Stores", Description: "Stores"}, Interactions: []VisualizationInteraction{}}
 	layerBase := VisualizationGeographicLayerBase{ID: "stores", Kind: "point", Tooltip: []VisualizationFieldRef{}, Position: VisualizationMapLayerPositionBelowLabels, Visibility: VisualizationMapVisibility{MaximumZoom: 24}}
-	spec := VisualizationSpec{Value: &GeographicVisualizationSpec{VisualizationSpecBase: base, Kind: "geographic", Layers: []VisualizationGeographicLayer{{Value: &VisualizationPointLayer{VisualizationGeographicLayerBase: layerBase, Kind: "point", Latitude: VisualizationFieldRef{Dataset: "primary", Field: "lat"}, Longitude: VisualizationFieldRef{Dataset: "primary", Field: "lon"}, Size: VisualizationMapSizeScale{MinimumRadius: 5, MaximumRadius: 28}, Cluster: VisualizationMapCluster{Radius: 50, MinimumPoints: 2}}}}, Presentation: GeographicVisualizationPresentation{VisualizationPresentation: testVisualizationPresentation(VisualizationLegendPositionHidden), Theme: VisualizationMapThemeAuto, LabelDensity: VisualizationMapLabelDensityNormal, Camera: VisualizationMapCamera{Mode: VisualizationMapCameraModeFitData, MaximumZoom: 14}}}}
+	spec := VisualizationSpec{Value: &GeographicVisualizationSpec{VisualizationSpecBase: base, Kind: "geographic", Layers: []VisualizationGeographicLayer{{Value: &VisualizationPointLayer{VisualizationGeographicLayerBase: layerBase, Kind: "point", Latitude: VisualizationFieldRef{Dataset: "primary", Field: "lat"}, Longitude: VisualizationFieldRef{Dataset: "primary", Field: "lon"}, Size: VisualizationMapSizeScale{MinimumRadius: 5, MaximumRadius: 28}, Cluster: VisualizationMapCluster{Radius: 50, MinimumPoints: 2}}}}, Presentation: GeographicVisualizationPresentation{VisualizationPresentation: testVisualizationPresentation(VisualizationLegendPositionHidden), Basemap: testMapStyleAsset(), Theme: VisualizationMapThemeAuto, LabelDensity: VisualizationMapLabelDensityNormal, Camera: VisualizationMapCamera{Mode: VisualizationMapCameraModeFitData, MaximumZoom: 14}}}}
 	revision, err := ComputeSpecRevision(spec)
 	if err != nil {
 		t.Fatal(err)
@@ -134,6 +135,14 @@ func TestValidateEnvelopeEnforcesSpatialWindowInvariants(t *testing.T) {
 	state.FeatureCap = 1
 	if err := ValidateEnvelope(envelope); err == nil {
 		t.Fatal("spatial feature cap overflow accepted")
+	}
+}
+
+func testMapStyleAsset() VisualizationMapStyleAsset {
+	return VisualizationMapStyleAsset{
+		ID: "leapview-streets", StyleURL: "/map-assets/style.json", ArchiveURL: "/map-assets/basemap.pmtiles",
+		StyleDigest: "sha256:" + strings.Repeat("a", 64), ArchiveDigest: "sha256:" + strings.Repeat("b", 64),
+		Attribution: "© OpenStreetMap contributors",
 	}
 }
 

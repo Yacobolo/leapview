@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/flidai/leapview/internal/dashboard/visualization/ir"
+	"github.com/flidai/leapview/internal/dashboard/visualization/mapasset"
 )
 
 func TestDefinitionValidateRejectsRendererAndQueryMismatches(t *testing.T) {
@@ -184,7 +185,11 @@ func TestGeographicDefinitionOwnsExplicitSpatialQuery(t *testing.T) {
 			},
 		},
 	}
-	definition, err := New("orders", geographicSpec(), binding)
+	basemap, err := mapasset.Resolve("streets")
+	if err != nil {
+		t.Fatalf("resolve built-in basemap: %v", err)
+	}
+	definition, err := New("orders", geographicSpec(basemap), binding)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -206,7 +211,7 @@ func tableSpec() ir.VisualizationSpec {
 	}}
 }
 
-func geographicSpec() ir.VisualizationSpec {
+func geographicSpec(basemap ir.VisualizationMapStyleAsset) ir.VisualizationSpec {
 	latitude := ir.VisualizationField{ID: "latitude", Role: ir.VisualizationFieldRoleDimension, DataType: ir.VisualizationDataTypeDecimal, Nullable: true, Label: "Latitude"}
 	longitude := ir.VisualizationField{ID: "longitude", Role: ir.VisualizationFieldRoleDimension, DataType: ir.VisualizationDataTypeDecimal, Nullable: true, Label: "Longitude"}
 	return ir.VisualizationSpec{Value: &ir.GeographicVisualizationSpec{
@@ -229,7 +234,7 @@ func geographicSpec() ir.VisualizationSpec {
 					MaxCharacters: 24, MinimumSpacing: 0, TooltipFallback: true,
 				},
 			}, Roam: true, Theme: ir.VisualizationMapThemeAuto, LabelDensity: ir.VisualizationMapLabelDensityNormal,
-			Camera: ir.VisualizationMapCamera{Mode: ir.VisualizationMapCameraModeFitData, Padding: 20, MinimumZoom: 0, MaximumZoom: 22}, Controls: ir.VisualizationMapControls{},
+			Basemap: basemap, Camera: ir.VisualizationMapCamera{Mode: ir.VisualizationMapCameraModeFitData, Padding: 20, MinimumZoom: 0, MaximumZoom: 22}, Controls: ir.VisualizationMapControls{},
 		},
 	}}
 }

@@ -1,0 +1,35 @@
+apiVersion: leapview.dev/v1
+kind: ModelTable
+metadata:
+  workspace: visual_examples
+  name: order_funnel
+  title: Documentation fulfillment funnel
+spec:
+  primaryKey: stage_order_id
+  sources:
+  - docs.orders
+  fields:
+    stage_order_id: {label: Stage order ID}
+    order_id: {label: Order ID}
+    stage: {label: Fulfillment stage}
+    revenue: {label: Revenue}
+  transform:
+    sql: |
+      SELECT
+        order_id || ':' || CAST(stage_order AS VARCHAR) AS stage_order_id,
+        order_id,
+        stage,
+        CAST(revenue AS DOUBLE) AS revenue
+      FROM source."docs.orders"
+      CROSS JOIN (
+        VALUES
+          ('Order placed', 1),
+          ('Payment confirmed', 2),
+          ('Shipped', 3),
+          ('Delivered', 4)
+      ) AS stages(stage, stage_order)
+      WHERE
+        stage_order = 1
+        OR (stage_order = 2 AND status <> 'canceled')
+        OR (stage_order = 3 AND status IN ('shipped', 'delivered'))
+        OR (stage_order = 4 AND status = 'delivered')

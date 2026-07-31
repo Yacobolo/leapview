@@ -75,7 +75,7 @@ func chartShowcaseMatrix() map[string][]string {
 		"pie":         {"status_pie", "status_pie_rose", "category_pie_inside"},
 		"donut":       {"orders", "category_donut", "orders_donut_center"},
 		"scatter":     {"delivery_scatter", "delivery_scatter_status", "delivery_scatter_labeled"},
-		"funnel":      {"status_funnel", "delivery_funnel", "status_funnel_left"},
+		"funnel":      {"status_funnel", "revenue_funnel", "status_funnel_left"},
 		"treemap":     {"category_treemap", "state_treemap", "category_treemap_roam"},
 		"gauge":       {"total_orders_gauge", "review_gauge", "review_gauge_thresholds"},
 		"heatmap":     {"state_status_heatmap", "category_status_heatmap", "category_status_heatmap_labels"},
@@ -88,7 +88,7 @@ func chartShowcaseMatrix() map[string][]string {
 		"waterfall":   {"revenue_waterfall", "orders_waterfall", "revenue_waterfall_labeled"},
 		"histogram":   {"delivery_histogram", "revenue_histogram", "review_histogram"},
 		"radar":       {"status_radar", "delivery_radar", "state_radar"},
-		"tree":        {"state_status_tree", "category_status_tree", "category_state_status_tree"},
+		"tree":        {"category_status_tree", "delivery_status_tree", "category_delivery_status_tree"},
 		"sunburst":    {"category_status_sunburst", "state_status_sunburst", "category_state_status_sunburst"},
 	}
 }

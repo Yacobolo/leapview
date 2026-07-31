@@ -10,7 +10,6 @@ tasks:
       - task: generate
       - task: build
       - task: bootstrap
-      - task: map-assets:install
       - ./scripts/dev-server.sh start
 
   dev:movielens:
@@ -39,35 +38,10 @@ tasks:
     cmds:
       - bun scripts/generate_map_style.ts
 
-  map-assets:install:
-    desc: Install the pinned local PMTiles, glyph, and sprite assets used by development
+  map-assets:generate:
+    desc: Rebuild the pinned worldwide basemap package embedded in released binaries
     cmds:
-      - go run ./internal/app/tools/mapassets --out .data/map-assets
-
-  map-assets:publish:
-    desc: Publish the verified content-addressed map package to managed S3 storage and optionally verify its public delivery
-    requires:
-      vars: [MAP_ASSET_S3_BUCKET]
-    cmds:
-      - >-
-        go run ./internal/app/tools/mapassets
-        --out .data/map-assets
-        --publish-s3-bucket {{.MAP_ASSET_S3_BUCKET | quote}}
-        --publish-s3-prefix {{default "map-assets" .MAP_ASSET_S3_PREFIX | quote}}
-        {{if .MAP_ASSET_S3_REGION}}--publish-s3-region {{.MAP_ASSET_S3_REGION | quote}}{{end}}
-        {{if .MAP_ASSET_S3_ENDPOINT}}--publish-s3-endpoint {{.MAP_ASSET_S3_ENDPOINT | quote}}{{end}}
-        {{if .MAP_ASSET_S3_PATH_STYLE}}--publish-s3-path-style{{end}}
-        {{if .MAP_ASSET_BASE_URL}}--verify-base-url {{.MAP_ASSET_BASE_URL | quote}}{{end}}
-
-  map-assets:verify:
-    desc: Verify the complete map package through its same-origin production delivery path
-    requires:
-      vars: [MAP_ASSET_BASE_URL]
-    cmds:
-      - >-
-        go run ./internal/app/tools/mapassets
-        --out .data/map-assets
-        --verify-base-url {{.MAP_ASSET_BASE_URL | quote}}
+      - go run ./internal/app/tools/mapassets
 
   bootstrap:movielens:
     desc: Download/sync MovieLens 32M CSVs if missing

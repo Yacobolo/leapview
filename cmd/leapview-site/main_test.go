@@ -1,6 +1,8 @@
 package main
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestParseBaseURL(t *testing.T) {
 	for _, test := range []struct {

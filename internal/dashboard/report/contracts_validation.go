@@ -364,11 +364,11 @@ func validateVisualPresentation(name string, visual Visual) error {
 	if presentation.DualAxis && visual.Type != "combo" {
 		return fmt.Errorf("visual %q presentation.dual_axis is only valid for combo", name)
 	}
-	if presentation.Basemap != "" && visual.Type != "map" {
-		return fmt.Errorf("visual %q presentation.basemap is only valid for map", name)
+	if presentation.Basemap != "" {
+		return fmt.Errorf("visual %q presentation.basemap was removed; maps always use the built-in worldwide basemap", name)
 	}
-	if visual.Type == "map" && (presentation.Basemap != "" || presentation.Roam) {
-		return fmt.Errorf("visual %q map presentation.basemap and presentation.roam were replaced by geo.basemap and geo.controls", name)
+	if visual.Type == "map" && presentation.Roam {
+		return fmt.Errorf("visual %q map presentation.roam was replaced by geo.controls", name)
 	}
 	if presentation.InnerRadius < 0 || presentation.InnerRadius > 1 || presentation.OuterRadius < 0 || presentation.OuterRadius > 1 || (presentation.InnerRadius > 0 && presentation.OuterRadius > 0 && presentation.InnerRadius >= presentation.OuterRadius) {
 		return fmt.Errorf("visual %q has invalid presentation radii", name)
@@ -391,8 +391,8 @@ func validateVisualPresentation(name string, visual Visual) error {
 	if presentation.Focus != "" && (!oneOf(visual.Type, "graph", "sankey") || !oneOf(presentation.Focus, "none", "adjacency")) {
 		return fmt.Errorf("visual %q has unsupported presentation.focus %q", name, presentation.Focus)
 	}
-	if presentation.InitialDepth < 0 || (presentation.InitialDepth > 0 && !oneOf(visual.Type, "tree", "treemap", "sunburst")) {
-		return fmt.Errorf("visual %q has unsupported presentation.initial_depth %d", name, presentation.InitialDepth)
+	if presentation.InitialDepth != nil && (*presentation.InitialDepth < 0 || !oneOf(visual.Type, "tree", "treemap", "sunburst")) {
+		return fmt.Errorf("visual %q has unsupported presentation.initial_depth %d", name, *presentation.InitialDepth)
 	}
 	if presentation.NodeGap < 0 || (presentation.NodeGap > 0 && visual.Type != "sankey") {
 		return fmt.Errorf("visual %q has unsupported presentation.node_gap %v", name, presentation.NodeGap)

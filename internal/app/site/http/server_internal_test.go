@@ -17,6 +17,7 @@ import (
 
 	content "github.com/flidai/leapview/docs"
 	"github.com/flidai/leapview/internal/analytics/connectors"
+	"github.com/flidai/leapview/internal/dashboard/visualization/mapasset"
 )
 
 func TestHomepageFeaturedIntegrationsExistInTheConnectorRegistry(t *testing.T) {
@@ -315,6 +316,43 @@ func TestSiteAssetsDoNotDependOnWorkingDirectory(t *testing.T) {
 		if response.StatusCode != http.StatusOK {
 			t.Errorf("%s status = %d, want %d", path, response.StatusCode, http.StatusOK)
 		}
+	}
+}
+
+func TestEmbeddedMapAssetsDoNotDependOnWorkingDirectory(t *testing.T) {
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(filepath.Dir(workingDirectory))
+
+	asset, err := mapasset.Resolve("streets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, asset.ArchiveURL, nil)
+	request.Header.Set("Range", "bytes=0-6")
+	response := httptest.NewRecorder()
+	NewHandler().ServeHTTP(response, request)
+	if response.Code != http.StatusPartialContent {
+		t.Fatalf("map asset status = %d, want %d", response.Code, http.StatusPartialContent)
+	}
+	if got := response.Body.String(); got != "PMTiles" {
+		t.Fatalf("map asset body = %q, want PMTiles header", got)
+	}
+}
+
+func TestReadinessVerifiesEmbeddedMapPackage(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/readyz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("readiness status = %d, want %d: %s", response.StatusCode, http.StatusOK, readBody(t, response))
 	}
 }
 

@@ -290,7 +290,7 @@ type VisualPresentation struct {
 	OuterRadius           float64                   `yaml:"outer_radius" json:"outerRadius,omitempty"`
 	Align                 string                    `yaml:"align" json:"align,omitempty"`
 	Sort                  string                    `yaml:"sort" json:"sort,omitempty"`
-	InitialDepth          int                       `yaml:"initial_depth" json:"initialDepth,omitempty"`
+	InitialDepth          *int                      `yaml:"initial_depth" json:"initialDepth,omitempty"`
 	Basemap               string                    `yaml:"basemap" json:"basemap,omitempty"`
 	Roam                  bool                      `yaml:"roam" json:"roam,omitempty"`
 	Layout                string                    `yaml:"layout" json:"layout,omitempty"`
@@ -415,7 +415,6 @@ type VisualDataBudget struct {
 }
 
 type VisualGeo struct {
-	Basemap      string            `yaml:"basemap" json:"basemap"`
 	Theme        string            `yaml:"theme" json:"theme"`
 	LabelDensity string            `yaml:"label_density" json:"labelDensity"`
 	Camera       VisualGeoCamera   `yaml:"camera" json:"camera"`

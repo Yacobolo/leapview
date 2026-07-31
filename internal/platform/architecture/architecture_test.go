@@ -1762,7 +1762,6 @@ func TestProductionContainerContractExists(t *testing.T) {
 		"COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules",
 		"ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm",
 		"./scripts/generate_build_sources.sh",
-		"go run ./internal/app/tools/mapassets --out .data/map-assets",
 		"go run ./internal/app/tools/clidocgen",
 		"go run ./internal/app/tools/schemadocgen",
 		"go run ./internal/app/tools/openapidocgen",
@@ -1800,7 +1799,6 @@ func TestProductionContainerContractExists(t *testing.T) {
 		"USER leapview",
 		"WORKDIR /app",
 		"COPY --from=web /src/static ./static",
-		"COPY --from=sourcegen /src/.data/map-assets ./.data/map-assets",
 		"LEAPVIEW_HOME=/var/lib/leapview/home",
 		"LEAPVIEW_MANAGED_DATA_DIR=/var/lib/leapview/home/managed-data",
 		"LEAPVIEW_PRODUCTION=1",
@@ -1815,8 +1813,13 @@ func TestProductionContainerContractExists(t *testing.T) {
 		t.Fatalf("Dockerfile downloads Go modules %d times, want one shared dependency stage", count)
 	}
 	const seededModuleCache = "type=cache,id=leapview-go-mod,target=/go/pkg/mod,from=go-deps,source=/go/pkg/mod,sharing=locked"
-	if count := strings.Count(text, seededModuleCache); count != 3 {
-		t.Fatalf("Dockerfile uses the seeded persistent Go module cache %d times, want source generation, map extraction, and compilation", count)
+	if count := strings.Count(text, seededModuleCache); count != 2 {
+		t.Fatalf("Dockerfile uses the seeded persistent Go module cache %d times, want source generation and compilation", count)
+	}
+	for _, forbidden := range []string{"LEAPVIEW_MAP_ASSET_DIR", ".data/map-assets", "mapassetseed"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("Dockerfile retains external basemap packaging path %q", forbidden)
+		}
 	}
 
 	ignored, err := os.ReadFile(filepath.Join(root, ".dockerignore"))
@@ -1899,6 +1902,11 @@ func TestPublicSiteProductionContainerContractExists(t *testing.T) {
 	}
 	if strings.Contains(text, "apigen@v0.4.0") || strings.Contains(text, "apigenpostprocess") {
 		t.Error("Dockerfile.site still uses the retired APIGen v0.4 generation pipeline")
+	}
+	for _, forbidden := range []string{"LEAPVIEW_SITE_MAP_ASSETS_ROOT", ".data/map-assets", "internal/app/tools/mapassets"} {
+		if strings.Contains(text, forbidden) {
+			t.Errorf("Dockerfile.site retains external basemap packaging path %q", forbidden)
+		}
 	}
 }
 
@@ -2235,6 +2243,10 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"/readyz",
 		"/docs",
 		"leapview-site:ci",
+		"maximum_binary_bytes",
+		"docker cp \"$container:/leapview-site\"",
+		"content-range: bytes 0-126/44725293",
+		"etag: \\\"sha256-${archive_digest}\\\"",
 	} {
 		if !strings.Contains(siteScriptText, want) {
 			t.Fatalf("public site image smoke script missing fragment %q", want)

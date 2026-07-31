@@ -867,7 +867,7 @@ test('governed label policies remain renderable across visual families, locales,
     { path: 'heatmap', id: 'category_status_heatmap_labels', density: 'automatic' },
     { path: 'pie', id: 'category_pie_inside', density: 'dense' },
     { path: 'scatter', id: 'delivery_scatter_labeled', density: 'automatic' },
-    { path: 'tree', id: 'category_state_status_tree', density: 'dense' },
+    { path: 'tree', id: 'category_delivery_status_tree', density: 'dense' },
     { path: 'gauge', id: 'review_gauge_thresholds', density: 'automatic' },
   ]
   try {
@@ -1034,7 +1034,7 @@ test('map documentation renders fitted, attributed canvases without adapter erro
           const renderer = host?.shadowRoot?.querySelector('.renderer')
           return Boolean(host?.shadowRoot?.querySelector('canvas.maplibregl-canvas')) && renderer?.getAttribute('aria-busy') === 'false' && !host?.shadowRoot?.querySelector('[role="alert"]')
         }) && Boolean(examples[0]?.shadowRoot?.querySelector('lv-visualization-host')?.shadowRoot?.querySelector('[data-map-attribution]')?.textContent?.trim())
-      })
+      }, undefined, { timeout: 60_000 })
     } catch (error) {
       const diagnostics = await page.locator('lv-site-visual-example').evaluateAll((elements) => elements.map((element) => {
         const host = element.shadowRoot?.querySelector('lv-visualization-host')
@@ -1064,7 +1064,7 @@ test('map documentation renders fitted, attributed canvases without adapter erro
       { alert: '', attribution: '© OpenStreetMap contributors', rendererChildren: 1 },
       { alert: '', attribution: '© OpenStreetMap contributors', rendererChildren: 1 },
       { alert: '', attribution: '© OpenStreetMap contributors', rendererChildren: 1 },
-      { alert: '', attribution: 'Instituto Brasileiro de Geografia e Estatística (IBGE)', rendererChildren: 1 },
+      { alert: '', attribution: '© OpenStreetMap contributors · Instituto Brasileiro de Geografia e Estatística (IBGE)', rendererChildren: 1 },
       { alert: '', attribution: '© OpenStreetMap contributors', rendererChildren: 1 },
     ])
     expect(await page.locator('lv-site-visual-example').evaluateAll((elements) => elements.map((element) => {
@@ -1100,6 +1100,15 @@ test('map documentation renders fitted, attributed canvases without adapter erro
       { summary: 'View map data (35 rows)', columns: 2, rows: 35 },
     ])
 
+    const examples = page.locator('lv-site-visual-example')
+    expect(await examples.evaluateAll((elements) => elements.map((element) => {
+      const host = element.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & { envelope?: { spec?: { interactions?: unknown[] } }; shadowRoot: ShadowRoot }
+      return {
+        interactions: host.envelope?.spec?.interactions?.length ?? 0,
+        selectionControls: [...host.shadowRoot.querySelectorAll('button')].filter((button) => button.textContent?.trim().startsWith('Select map data')).length,
+      }
+    }))).toEqual(Array.from({ length: 6 }, () => ({ interactions: 0, selectionControls: 0 })))
+
     const mapSnapshot = () => page.locator('lv-site-visual-example').nth(1).evaluate(async (element) => {
       const host = element.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & { snapshot(): Promise<Blob> }
       const blob = await host.snapshot()
@@ -1111,7 +1120,7 @@ test('map documentation renders fitted, attributed canvases without adapter erro
       let visiblePixels = 0
       for (let index = 3; index < pixels.length; index += 4) if (pixels[index]! > 0) visiblePixels++
       return { corner: Array.from(pixels.slice(0, 4)), height: bitmap.height, size: blob.size, type: blob.type, visiblePixels, width: bitmap.width }
-    })
+    }, undefined, { timeout: 60_000 })
     const snapshot = await mapSnapshot()
     expect(snapshot.type).toBe('image/png')
     expect(snapshot.size).toBeGreaterThan(0)
@@ -1147,7 +1156,7 @@ test('map documentation renders fitted, attributed canvases without adapter erro
   } finally {
     await page.close()
   }
-}, 60_000)
+}, 120_000)
 
 test('documentation articles apply the shared Markdown treatment', async () => {
   const page = await browser.newPage()

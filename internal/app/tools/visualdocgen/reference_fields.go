@@ -137,8 +137,9 @@ func visualFieldReferences(queryFields, optionFields []string, chartType string)
 	}
 	if chartType == "map" {
 		result = append(result,
-			visualdocs.FieldReference{Path: "presentation.basemap", Type: "string", Default: "world_countries", AllowedValues: []string{"world_countries", "none"}, Description: "Selects the vendored, content-addressed world basemap or disables geographic context explicitly."},
-			visualdocs.FieldReference{Path: "geo.layers", Type: "geographic layer list", AllowedValues: []string{"choropleth", "point", "heat", "density"}, Description: "Declares typed geographic layers and binds their geometry or coordinates to query aliases."},
+			visualdocs.FieldReference{Path: "geo.theme", Type: "string", Default: "auto", AllowedValues: []string{"auto", "light", "dark"}, Description: "Applies LeapView's qualified light or dark cartographic hierarchy to the unconditional built-in basemap."},
+			visualdocs.FieldReference{Path: "geo.label_density", Type: "string", Default: "normal", AllowedValues: []string{"hidden", "normal", "dense"}, Description: "Selects a deterministic built-in label-density policy without changing the map data source."},
+			visualdocs.FieldReference{Path: "geo.layers", Type: "geographic layer list", AllowedValues: []string{"choropleth", "point", "heat", "density", "reference", "path"}, Description: "Declares typed geographic layers and binds their geometry or coordinates to query aliases."},
 		)
 	}
 	if chartType == "custom" {

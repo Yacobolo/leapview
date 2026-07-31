@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
 
 	visualizationmapasset "github.com/flidai/leapview/internal/dashboard/visualization/mapasset"
 	mapassethttp "github.com/flidai/leapview/internal/dashboard/visualization/mapasset/http"
@@ -18,26 +17,17 @@ type Assets interface {
 }
 
 type mapAssets struct {
-	root     string
-	verifier *visualizationmapasset.Verifier
-	handler  http.Handler
+	handler http.Handler
 }
 
-// BuildAssets verifies the configured package before the application opens
-// persistent state, then returns the narrow surface retained by composition.
-func BuildAssets(ctx context.Context, root string) (Assets, error) {
-	root = strings.TrimSpace(root)
-	if root == "" {
-		return nil, nil
-	}
-	verifier := visualizationmapasset.NewVerifier(root)
-	if err := verifier.Verify(ctx); err != nil {
+// BuildAssets verifies the package embedded in the released binary before the
+// application opens persistent state, then returns its delivery surface.
+func BuildAssets(ctx context.Context) (Assets, error) {
+	if err := visualizationmapasset.VerifyEmbedded(ctx); err != nil {
 		return nil, fmt.Errorf("verify map assets: %w", err)
 	}
 	return &mapAssets{
-		root:     root,
-		verifier: verifier,
-		handler:  mapassethttp.CacheHandler(http.StripPrefix("/map-assets/", http.FileServer(http.Dir(root)))),
+		handler: mapassethttp.CacheHandler(http.StripPrefix("/map-assets/", http.FileServer(http.FS(visualizationmapasset.EmbeddedFS())))),
 	}, nil
 }
 
@@ -49,8 +39,8 @@ func (a *mapAssets) Handler() http.Handler {
 }
 
 func (a *mapAssets) Verify(ctx context.Context) error {
-	if a == nil || a.verifier == nil {
-		return nil
+	if a == nil {
+		return fmt.Errorf("embedded map assets are unavailable")
 	}
-	return a.verifier.Verify(ctx)
+	return visualizationmapasset.VerifyEmbedded(ctx)
 }

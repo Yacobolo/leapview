@@ -1,4 +1,4 @@
-import type { Feature, FeatureCollection, Geometry, Position } from 'geojson'
+import type { FeatureCollection, Geometry, Position } from 'geojson'
 import type { VisualizationMapCamera } from '../../../../../generated/visualization'
 
 type GeographicViewport = {
@@ -26,30 +26,6 @@ export function fitMapToGeographicData(map: GeographicViewport, collections: Fea
   if (south === north) { south -= 0.01; north += 0.01 }
   map.fitBounds([[west, south], [east, north]], { padding: camera?.padding ?? 24, duration: 0, maxZoom: camera?.maximumZoom ?? 10 })
   return true
-}
-
-export function coordinateReferenceGrid(collections: FeatureCollection[]): FeatureCollection {
-  const extent = geographicExtent(collections)
-  if (!extent) return { type: 'FeatureCollection', features: [] }
-  const [[west, south], [east, north]] = extent
-  const longitudeStep = referenceGridStep(east - west)
-  const latitudeStep = referenceGridStep(north - south)
-  const features: Feature<Geometry>[] = []
-  for (let longitude = Math.ceil(west / longitudeStep) * longitudeStep; longitude <= east; longitude += longitudeStep) {
-    features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: [[longitude, south], [longitude, north]] }, properties: {} })
-  }
-  for (let latitude = Math.ceil(south / latitudeStep) * latitudeStep; latitude <= north; latitude += latitudeStep) {
-    features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: [[west, latitude], [east, latitude]] }, properties: {} })
-  }
-  return { type: 'FeatureCollection', features }
-}
-
-function referenceGridStep(span: number): number {
-  const target = Math.max(span / 5, 0.0001)
-  const magnitude = 10 ** Math.floor(Math.log10(target))
-  const normalized = target / magnitude
-  const interval = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10
-  return interval * magnitude
 }
 
 function geographicExtent(collections: FeatureCollection[]): [[number, number], [number, number]] | undefined {

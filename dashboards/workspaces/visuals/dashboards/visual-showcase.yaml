@@ -416,6 +416,8 @@ spec:
       title: Status to delivery speed
       description: Shows flow from order status to delivery-speed bucket.
       type: sankey
+      presentation:
+        show_labels: true
       query:
         dimensions:
           status: orders.status
@@ -613,13 +615,15 @@ spec:
           - field: value
             direction: desc
         limit: 80
-    state_status_tree:
-      title: State and status tree
-      description: Shows customer state and order status as a hierarchy.
+    category_status_tree:
+      title: Category and status tree
+      description: Shows product categories and fulfillment statuses as a compact hierarchy.
       type: tree
+      presentation:
+        show_labels: true
       query:
         dimensions:
-          state: customers.state
+          category: orders.category
           status: orders.status
         measures:
           order_count: null
@@ -671,22 +675,22 @@ spec:
             direction: asc
         limit: 30
     revenue_area_status:
-      title: Stacked revenue area
+      title: Quarterly revenue mix by status
       type: area
       presentation:
         stacked: true
       query:
         dimensions:
-          purchase_month: orders.purchase_month
+          purchase_quarter: orders.purchase_quarter
         series:
           field: orders.status
           alias: status
         measures:
           revenue: null
         sort:
-          - field: purchase_month
+          - field: purchase_quarter
             direction: asc
-        limit: 60
+        limit: 20
     revenue_area_smooth:
       title: Smooth revenue area
       type: area
@@ -804,6 +808,9 @@ spec:
     category_donut:
       title: Revenue by category donut
       type: donut
+      presentation:
+        show_labels: true
+        label_position: outside
       query:
         dimensions:
           category: orders.category
@@ -892,6 +899,8 @@ spec:
         sort:
           - field: purchase_day
             direction: asc
+          - field: order_id
+            direction: asc
         limit: 30
       point:
         identity: [order_id]
@@ -901,42 +910,45 @@ spec:
         tooltip: [order_id, purchase_day, revenue]
         overplot: {strategy: show_all, large_mode: never}
     status_funnel:
-      title: Orders by status funnel
+      title: Order fulfillment funnel
       type: funnel
       query:
+        table: order_funnel
         dimensions:
-          status: orders.status
+          stage: order_funnel.stage
         measures:
-          order_count: null
+          funnel_order_count: null
         sort:
           - field: value
             direction: desc
-    delivery_funnel:
-      title: Delivery speed funnel
+    revenue_funnel:
+      title: Fulfillment revenue funnel
       type: funnel
       query:
+        table: order_funnel
         dimensions:
-          delivery_bucket: orders.delivery_bucket
+          stage: order_funnel.stage
         measures:
-          order_count: null
+          funnel_revenue: null
         sort:
-          - field: delivery_bucket
-            direction: asc
+          - field: value
+            direction: desc
     status_funnel_left:
-      title: Left aligned status funnel
+      title: Labeled fulfillment funnel
       type: funnel
       presentation:
         align: left
         sort: ascending
         labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 20, minimum_spacing: 6, tooltip_fallback: true}
       query:
+        table: order_funnel
         dimensions:
-          status: orders.status
+          stage: order_funnel.stage
         measures:
-          order_count: null
+          funnel_order_count: null
         sort:
           - field: value
-            direction: asc
+            direction: desc
     category_treemap:
       title: Category revenue treemap
       type: treemap
@@ -1046,6 +1058,8 @@ spec:
     category_status_flow:
       title: Category to status flow
       type: sankey
+      presentation:
+        show_labels: true
       query:
         dimensions:
           category: orders.category
@@ -1060,6 +1074,7 @@ spec:
       title: Spacious category to status flow
       type: sankey
       presentation:
+        show_labels: true
         node_gap: 18
         curveness: 0.32
       query:
@@ -1288,7 +1303,6 @@ spec:
           order_count: null
         limit: 27
       geo:
-        basemap: blank
         layers:
           - id: state_boundaries
             kind: reference
@@ -1565,7 +1579,7 @@ spec:
       title: State order radar
       type: radar
       presentation:
-        area: false
+        area: true
       query:
         dimensions:
           state: customers.state
@@ -1575,12 +1589,14 @@ spec:
           - field: value
             direction: desc
         limit: 8
-    category_status_tree:
-      title: Category and status tree
+    delivery_status_tree:
+      title: Delivery speed and status tree
       type: tree
+      presentation:
+        show_labels: true
       query:
         dimensions:
-          category: orders.category
+          delivery_bucket: orders.delivery_bucket
           status: orders.status
         measures:
           order_count: null
@@ -1588,17 +1604,18 @@ spec:
           - field: value
             direction: desc
         limit: 80
-    category_state_status_tree:
-      title: Category, state, and status tree
+    category_delivery_status_tree:
+      title: Category, delivery speed, and status tree
       type: tree
       presentation:
+        show_labels: true
         orientation: vertical
         initial_depth: 2
         labels: {density: dense, priority: [selected, anomaly, threshold], max_characters: 16, minimum_spacing: 2, tooltip_fallback: true}
       query:
         dimensions:
           category: orders.category
-          state: customers.state
+          delivery_bucket: orders.delivery_bucket
           status: orders.status
         measures:
           order_count: null
@@ -2653,9 +2670,9 @@ spec:
             row: 2
             col_span: 4
             row_span: 8
-        - id: delivery-funnel
+        - id: revenue-funnel
           kind: visual
-          visual: delivery_funnel
+          visual: revenue_funnel
           placement:
             col: 5
             row: 2
@@ -3403,25 +3420,25 @@ spec:
             row: 1
             col_span: 3
             row_span: 1
-        - id: state-status-tree
+        - id: category-status-tree
           kind: visual
-          visual: state_status_tree
+          visual: category_status_tree
           placement:
             col: 1
             row: 2
             col_span: 4
             row_span: 8
-        - id: category-status-tree
+        - id: delivery-status-tree
           kind: visual
-          visual: category_status_tree
+          visual: delivery_status_tree
           placement:
             col: 5
             row: 2
             col_span: 4
             row_span: 8
-        - id: category-state-status-tree
+        - id: category-delivery-status-tree
           kind: visual
-          visual: category_state_status_tree
+          visual: category_delivery_status_tree
           placement:
             col: 9
             row: 2

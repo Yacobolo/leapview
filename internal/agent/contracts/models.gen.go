@@ -994,7 +994,6 @@ type QueryVisualPresentation struct {
 	Align         *string                 `json:"align,omitempty"`
 	Sort          *string                 `json:"sort,omitempty"`
 	InitialDepth  *int32                  `json:"initialDepth,omitempty"`
-	Basemap       *string                 `json:"basemap,omitempty"`
 	Roam          *bool                   `json:"roam,omitempty"`
 	Layout        *string                 `json:"layout,omitempty"`
 	Breadcrumb    *bool                   `json:"breadcrumb,omitempty"`

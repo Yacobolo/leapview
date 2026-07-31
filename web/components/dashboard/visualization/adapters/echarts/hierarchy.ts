@@ -3,7 +3,14 @@ import type { RendererContext } from '../../host-controller'
 import { escapeHTML, formatField, inlineDataset, legend, type EChartsTranslation } from './common'
 import { echartsLabelPolicy } from './label-policy'
 
-type HierarchyNode = { name: string; value?: unknown; __lv_dataset: string; __lv_row_index: number; children?: HierarchyNode[] }
+type HierarchyNode = {
+  name: string
+  value?: unknown
+  __lv_dataset?: string
+  __lv_row_index?: number
+  __lv_synthetic?: true
+  children?: HierarchyNode[]
+}
 
 export function hierarchyOption(envelope: VisualizationEnvelope, context: RendererContext): EChartsTranslation {
   const spec = envelope.spec
@@ -28,7 +35,7 @@ export function hierarchyOption(envelope: VisualizationEnvelope, context: Render
     const names = [...new Set(links.flatMap((link) => [link.source, link.target]))]
     const series: EChartsTranslation = {
       id: `series:hierarchy:${spec.mark}`, type: spec.mark, data: names.map((name) => ({ name })), links,
-      lineStyle: { curveness: spec.presentation.curveness }, emphasis: { focus: spec.presentation.focus },
+      lineStyle: spec.presentation.curveness === undefined ? {} : { curveness: spec.presentation.curveness }, emphasis: { focus: spec.presentation.focus },
       ...labels,
       tooltip: { formatter: (params: { data?: { source?: unknown; target?: unknown; value?: unknown } }) => {
         const link = params.data
@@ -42,20 +49,30 @@ export function hierarchyOption(envelope: VisualizationEnvelope, context: Render
       series.layout = spec.presentation.layout === 'circular' ? 'circular' : 'force'
     } else {
       series.orient = spec.presentation.orientation
-      series.nodeGap = spec.presentation.nodeGap
+      if (spec.presentation.nodeGap !== undefined) series.nodeGap = spec.presentation.nodeGap
     }
     return { legend: legend(spec.presentation.legend, context), series: [series] }
   }
-  const data = hierarchyData(envelope)
+  const roots = hierarchyData(envelope)
+  const hasSyntheticTreeRoot = spec.mark === 'tree' && roots.length > 1
+  const data = hasSyntheticTreeRoot
+    ? [{ name: spec.title, __lv_synthetic: true as const, children: roots }]
+    : roots
   const common: EChartsTranslation = {
     id: `series:hierarchy:${spec.mark}`, type: spec.mark, data, roam: spec.presentation.roam,
     ...labels,
-    tooltip: { formatter: (params: { data?: HierarchyNode }) => params.data ? `${escapeHTML(params.data.name)}: ${escapeHTML(hierarchyTooltipValue(envelope, params.data, context))}` : '' },
+    tooltip: { formatter: (params: { data?: HierarchyNode }) => {
+      if (!params.data) return ''
+      if (params.data.__lv_synthetic) return escapeHTML(params.data.name)
+      return `${escapeHTML(params.data.name)}: ${escapeHTML(hierarchyTooltipValue(envelope, params.data, context))}`
+    } },
   }
   if (spec.mark === 'tree') {
     common.orient = spec.presentation.orientation === 'vertical' ? 'TB' : 'LR'
     common.layout = spec.presentation.layout === 'circular' ? 'radial' : 'orthogonal'
-    common.initialTreeDepth = spec.presentation.initialDepth
+    common.initialTreeDepth = spec.presentation.initialDepth === undefined
+      ? undefined
+      : spec.presentation.initialDepth + (hasSyntheticTreeRoot ? 1 : 0)
   }
   if (spec.mark === 'treemap') {
     common.breadcrumb = { show: spec.presentation.breadcrumb }

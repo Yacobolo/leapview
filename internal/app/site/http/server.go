@@ -7,12 +7,11 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 
+	"github.com/flidai/leapview/internal/dashboard/visualization/mapasset"
 	mapassethttp "github.com/flidai/leapview/internal/dashboard/visualization/mapasset/http"
 	"github.com/flidai/leapview/pkg/pagestream"
 	siteassets "github.com/flidai/leapview/site"
@@ -41,7 +40,10 @@ func NewHandler() http.Handler {
 
 // NewHandlerWithOptions builds the public site HTTP handler with deployment settings.
 func NewHandlerWithOptions(options Options) http.Handler {
-	server := &siteServer{baseURL: cloneURL(options.BaseURL), showcaseEmbedURL: cloneURL(options.ShowcaseEmbedURL)}
+	server := &siteServer{
+		baseURL:          cloneURL(options.BaseURL),
+		showcaseEmbedURL: cloneURL(options.ShowcaseEmbedURL),
+	}
 	if server.showcaseEmbedURL != nil {
 		server.showcaseOrigin = (&url.URL{Scheme: server.showcaseEmbedURL.Scheme, Host: server.showcaseEmbedURL.Host}).String()
 	}
@@ -69,7 +71,7 @@ func NewHandlerWithOptions(options Options) http.Handler {
 	mux.HandleFunc("GET /docs/{path...}", server.docsArticle)
 	mux.HandleFunc("GET /getting-started", gettingStarted)
 	mux.HandleFunc("GET /healthz", health)
-	mux.HandleFunc("GET /readyz", health)
+	mux.HandleFunc("GET /readyz", server.ready)
 	mux.HandleFunc("GET /release.json", docsPublicRelease)
 	mux.HandleFunc("GET /robots.txt", server.robots)
 	mux.HandleFunc("GET /llms.txt", docsLLMs)
@@ -83,19 +85,7 @@ func NewHandlerWithOptions(options Options) http.Handler {
 }
 
 func siteMapAssets() http.Handler {
-	diskFS := os.DirFS(".data/map-assets")
-	disk := http.FileServer(http.FS(diskFS))
-	embedded := http.FileServer(http.FS(siteassets.MapAssets()))
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path := strings.TrimPrefix(r.URL.Path, "/")
-		if path != "" && fs.ValidPath(path) {
-			if _, err := fs.Stat(diskFS, path); err == nil {
-				disk.ServeHTTP(w, r)
-				return
-			}
-		}
-		embedded.ServeHTTP(w, r)
-	})
+	return http.FileServer(http.FS(mapasset.EmbeddedFS()))
 }
 
 func cloneURL(value *url.URL) *url.URL {
@@ -271,6 +261,15 @@ func (s *siteServer) docsArticle(w http.ResponseWriter, r *http.Request) {
 
 func health(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = io.WriteString(w, "ok\n")
+}
+
+func (s *siteServer) ready(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	if err := mapasset.VerifyEmbedded(r.Context()); err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
 	_, _ = io.WriteString(w, "ok\n")
 }
 

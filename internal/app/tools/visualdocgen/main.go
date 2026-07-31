@@ -216,13 +216,15 @@ func generateVisualExamples(docsDir, projectPath, dataRoot string) (visualExampl
 		payloads := make([]visualdocs.Payload, 0, len(examplesByPage[document.Source]))
 		for _, example := range examplesByPage[document.Source] {
 			envelope, ok := patch.Visuals[example.ID]
-			if !ok || len(envelopeRows(envelope)) == 0 {
+			if !ok {
 				return visualExamplesArtifact{}, fmt.Errorf("query %s did not return visual %q data", document.Source, example.ID)
+			}
+			if len(envelopeRows(envelope)) == 0 {
+				return visualExamplesArtifact{}, fmt.Errorf("query %s returned no visual %q data: status=%#v diagnostics=%#v", document.Source, example.ID, envelope.Status, envelope.Diagnostics)
 			}
 			if err := validateVisualEnvelope(example, envelope); err != nil {
 				return visualExamplesArtifact{}, err
 			}
-			canonicalizeEnvelopeData(&envelope)
 			normalizeEnvelopeRevision(&envelope, 1, 1)
 			payloads = append(payloads, envelope)
 		}
@@ -370,66 +372,6 @@ func normalizeEnvelopeRevision(envelope *visualizationir.VisualizationEnvelope, 
 		state.DataRevision, state.Generation = dataRevision, generation
 	case *visualizationir.SpatialWindowedVisualizationDataState:
 		state.DataRevision, state.Generation = dataRevision, generation
-	}
-}
-
-func canonicalizeEnvelopeData(envelope *visualizationir.VisualizationEnvelope) {
-	if envelope == nil {
-		return
-	}
-	state, ok := envelope.DataState.Value.(*visualizationir.InlineVisualizationDataState)
-	if !ok {
-		return
-	}
-	for datasetIndex := range state.Datasets {
-		rows := state.Datasets[datasetIndex].Rows
-		sort.SliceStable(rows, func(left, right int) bool {
-			for column := 0; column < len(rows[left]) && column < len(rows[right]); column++ {
-				comparison := compareEnvelopeValues(rows[left][column], rows[right][column])
-				if comparison != 0 {
-					return comparison < 0
-				}
-			}
-			return len(rows[left]) < len(rows[right])
-		})
-	}
-}
-
-func compareEnvelopeValues(left, right any) int {
-	leftNumber, leftIsNumber := envelopeNumber(left)
-	rightNumber, rightIsNumber := envelopeNumber(right)
-	if leftIsNumber && rightIsNumber {
-		if leftNumber < rightNumber {
-			return -1
-		}
-		if leftNumber > rightNumber {
-			return 1
-		}
-		return 0
-	}
-	return strings.Compare(fmt.Sprint(left), fmt.Sprint(right))
-}
-
-func envelopeNumber(value any) (float64, bool) {
-	switch typed := value.(type) {
-	case int:
-		return float64(typed), true
-	case int32:
-		return float64(typed), true
-	case int64:
-		return float64(typed), true
-	case uint:
-		return float64(typed), true
-	case uint32:
-		return float64(typed), true
-	case uint64:
-		return float64(typed), true
-	case float32:
-		return float64(typed), true
-	case float64:
-		return typed, true
-	default:
-		return 0, false
 	}
 }
 

@@ -816,7 +816,7 @@ model VisualizationKPIQualitativeRange {
 
 model GeographicVisualizationPresentation extends VisualizationPresentation {
   `roam`: boolean;
-  `basemap`?: VisualizationMapStyleAsset;
+  `basemap`: VisualizationMapStyleAsset;
   `theme`: VisualizationMapTheme;
   `labelDensity`: VisualizationMapLabelDensity;
   `camera`: VisualizationMapCamera;

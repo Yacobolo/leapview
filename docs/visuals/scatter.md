@@ -96,6 +96,8 @@ visuals:
       sort:
         - field: purchase_day
           direction: asc
+        - field: order_id
+          direction: asc
       limit: 30
     point:
       identity: [order_id]

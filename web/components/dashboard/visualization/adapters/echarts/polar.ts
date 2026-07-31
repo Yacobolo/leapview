@@ -97,7 +97,8 @@ export function polarOption(envelope: VisualizationEnvelope, context: RendererCo
     value: categories.map((category) => dataset.rows.find((row, index) => String(seriesIndex >= 0 ? row[seriesIndex] : spec.title) === series && String(categoryIndex >= 0 ? row[categoryIndex] : index + 1) === category)?.[valueIndex] ?? null),
   }))
   const configuredMaximum = spec.presentation.maximum
-  const maxima = categories.map((_, index) => configuredMaximum ?? Math.max(1, ...values.map((series) => typeof series.value[index] === 'number' ? series.value[index] as number : 0)))
+  const inferredMaximum = Math.max(1, ...values.flatMap((series) => series.value).filter((value): value is number => typeof value === 'number' && Number.isFinite(value)))
+  const maxima = categories.map(() => configuredMaximum ?? inferredMaximum)
   const labels = echartsLabelPolicy(
     envelope,
     spec.value.dataset,

@@ -26,9 +26,9 @@ visuals:
           direction: desc
 ```
 
-## Alternate measure
+## Revenue mix
 
-Replace the category and measure to compare revenue composition without changing the donut renderer or query shape.
+Break revenue into product categories and show currency labels so this monetary composition is immediately distinguishable from the order-count example.
 
 {{< visual id="category_donut" >}}
 
@@ -37,6 +37,9 @@ visuals:
   category_donut:
     title: Revenue by category donut
     type: donut
+    presentation:
+      show_labels: true
+      label_position: outside
     query:
       dimensions:
         category: orders.category

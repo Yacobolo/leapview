@@ -6,6 +6,7 @@ import (
 
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 	"github.com/flidai/leapview/internal/dashboard"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
 	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
 )
 
@@ -33,5 +34,40 @@ func TestCategoryMultiMeasureDatumsDecodesBundledWideRows(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("datums = %#v, want %#v", got, want)
+	}
+}
+
+func TestVisualSortsAppendDeterministicDimensionAndSeriesTieBreakers(t *testing.T) {
+	series := visualizationdefinition.FieldBinding{FieldID: "orders.status", Alias: "status"}
+	visual := visualPlan{
+		Definition: visualizationdefinition.Definition{Query: visualizationdefinition.QueryBinding{ResultShape: visualizationdefinition.ResultCategorySeriesValue}},
+		Dimensions: []visualizationdefinition.FieldBinding{{FieldID: "orders.purchase_month", Alias: "purchase_month"}},
+		Series:     &series,
+		Sort:       []visualizationdefinition.Sort{{FieldID: "value", Direction: "desc"}},
+	}
+	want := []reportdef.QuerySort{
+		{Field: "value", Direction: "desc"},
+		{Field: "label", Direction: "asc"},
+		{Field: "series", Direction: "asc"},
+	}
+	if got := visualSorts(visual); !reflect.DeepEqual(got, want) {
+		t.Fatalf("visualSorts() = %#v, want %#v", got, want)
+	}
+}
+
+func TestAliasedVisualSortsAppendEveryDimensionAsTieBreaker(t *testing.T) {
+	visual := visualPlan{
+		Dimensions: []visualizationdefinition.FieldBinding{
+			{FieldID: "orders.state", Alias: "state"},
+			{FieldID: "orders.order_id", Alias: "order_id"},
+		},
+		Sort: []visualizationdefinition.Sort{{FieldID: "orders.state", Direction: "desc"}},
+	}
+	want := []reportdef.QuerySort{
+		{Field: "state", Direction: "desc"},
+		{Field: "order_id", Direction: "asc"},
+	}
+	if got := aliasedVisualSorts(visual); !reflect.DeepEqual(got, want) {
+		t.Fatalf("aliasedVisualSorts() = %#v, want %#v", got, want)
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/flidai/leapview/internal/dashboard"
@@ -118,7 +117,7 @@ func TestGeographicVisualCompilesEveryLayerKind(t *testing.T) {
 				Measures: []report.FieldRef{{Field: "orders.revenue", Alias: "revenue"}},
 			},
 			Geo: report.VisualGeo{
-				Basemap: "streets", Theme: "auto", LabelDensity: "normal",
+				Theme: "auto", LabelDensity: "normal",
 				Camera:   report.VisualGeoCamera{Mode: "fit_data", Padding: 32, MinimumZoom: 2, MaximumZoom: 14},
 				Controls: report.VisualGeoControls{Zoom: true, Reset: true, Compass: true},
 				Layers: []report.VisualGeoLayer{
@@ -170,7 +169,7 @@ func TestGeographicVisualCompilesEveryLayerKind(t *testing.T) {
 	if got, want := spec.Presentation.Legend, visualizationir.VisualizationLegendPositionHidden; got != want {
 		t.Fatalf("geographic legend = %q, want %q", got, want)
 	}
-	if spec.Presentation.Basemap == nil || spec.Presentation.Basemap.ID != "leapview-streets" || spec.Presentation.Basemap.ArchiveDigest == "" {
+	if spec.Presentation.Basemap.ID != "leapview-streets" || spec.Presentation.Basemap.ArchiveDigest == "" {
 		t.Fatalf("geographic basemap = %#v, want content-addressed streets asset", spec.Presentation.Basemap)
 	}
 	if spec.Presentation.Camera.Mode != visualizationir.VisualizationMapCameraModeFitData || !spec.Presentation.Controls.Reset {
@@ -233,12 +232,12 @@ func TestGeographicVisualCompilesEveryLayerKind(t *testing.T) {
 	}
 }
 
-func TestGeographicVisualCanExplicitlyDisableTheDefaultBasemap(t *testing.T) {
+func TestGeographicVisualAlwaysCompilesTheBuiltInBasemap(t *testing.T) {
 	dashboardDefinition := &report.Dashboard{SemanticModel: "model", Visuals: report.ChartVisualizations(map[string]report.Visual{"locations": {
 		Type: "map", Query: report.VisualQuery{
 			Table: "orders", Dimensions: []report.FieldRef{{Field: "orders.latitude", Alias: "latitude"}, {Field: "orders.longitude", Alias: "longitude"}}, Measures: []report.FieldRef{{Field: "orders.revenue", Alias: "revenue"}}, Limit: 100,
 		},
-		Geo: report.VisualGeo{Basemap: "blank", Layers: []report.VisualGeoLayer{{ID: "stores", Kind: "point", Latitude: "latitude", Longitude: "longitude"}}},
+		Geo: report.VisualGeo{Layers: []report.VisualGeoLayer{{ID: "stores", Kind: "point", Latitude: "latitude", Longitude: "longitude"}}},
 	}})}
 
 	definitions, err := compileVisualizationDefinitions(dashboardDefinition)
@@ -246,16 +245,7 @@ func TestGeographicVisualCanExplicitlyDisableTheDefaultBasemap(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := definitions["locations"].Spec.Value.(*visualizationir.GeographicVisualizationSpec)
-	if spec.Presentation.Basemap != nil {
-		t.Fatalf("geographic basemap = %#v, want none", spec.Presentation.Basemap)
-	}
-
-	dashboardDefinition.Visuals["locations"] = func() report.AuthoringVisualization {
-		visual := *dashboardDefinition.Visuals["locations"].Chart
-		visual.Geo.Basemap = "unknown"
-		return report.ChartVisualization(visual)
-	}()
-	if _, err := compileVisualizationDefinitions(dashboardDefinition); err == nil || !strings.Contains(err.Error(), `geographic basemap: unknown map style asset "unknown"`) {
-		t.Fatalf("unknown basemap error = %v", err)
+	if spec.Presentation.Basemap.ID != "leapview-streets" {
+		t.Fatalf("geographic basemap = %#v, want built-in streets", spec.Presentation.Basemap)
 	}
 }

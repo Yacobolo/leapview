@@ -27,9 +27,9 @@ visuals:
       limit: 18
 ```
 
-## Alternate measure
+## Order volume contribution
 
-Replace revenue with order count to reuse the same running-contribution structure for volume rather than value.
+Accumulate monthly order counts to separate volume growth from the monetary contribution shown in the first waterfall.
 
 {{< visual id="orders_waterfall" >}}
 

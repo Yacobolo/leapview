@@ -14,22 +14,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 	visualizationmapasset "github.com/flidai/leapview/internal/dashboard/visualization/mapasset"
-	visualizationmapassethttp "github.com/flidai/leapview/internal/dashboard/visualization/mapasset/http"
 )
 
 const (
-	planetURL              = "https://build.protomaps.com/20260720.pmtiles"
+	planetURL              = visualizationmapasset.PlanetSnapshotURL
 	archiveDigest          = visualizationmapasset.ArchiveSHA256
-	globalArchiveDigest    = "2d97ee8907670936ab722da7ca06eafec0734392f73fa1cd337d4debd85d676f"
-	regionalBounds         = "-82,-56,-30,14"
-	regionalMinimumZoom    = "7"
-	regionalMaximumZoom    = "10"
 	archiveDownloadThreads = "2"
 	basemapAssetsSHA       = visualizationmapasset.BasemapAssetsRevision
+	pmtilesToolModule      = "github.com/protomaps/go-pmtiles@" + visualizationmapasset.PMTilesToolVersion
 )
 
 var glyphRanges = []string{
@@ -45,14 +38,8 @@ var glyphRanges = []string{
 }
 
 func main() {
-	out := flag.String("out", ".data/map-assets", "map asset root directory")
+	out := flag.String("out", "internal/dashboard/visualization/mapasset/package", "embedded map package output directory")
 	seedArchive := flag.String("seed-archive", "", "verified pinned archive to reuse instead of extracting it")
-	publishBucket := flag.String("publish-s3-bucket", "", "publish verified assets to this S3 bucket")
-	publishPrefix := flag.String("publish-s3-prefix", "map-assets", "S3 key prefix used for published assets")
-	publishRegion := flag.String("publish-s3-region", "", "AWS region override for map asset publication")
-	publishEndpoint := flag.String("publish-s3-endpoint", "", "S3-compatible endpoint override")
-	publishPathStyle := flag.Bool("publish-s3-path-style", false, "use path-style S3 addressing")
-	verifyBaseURL := flag.String("verify-base-url", "", "verify the installed package through this same-origin HTTP(S) endpoint")
 	flag.Parse()
 	ctx := context.Background()
 	if strings.TrimSpace(*seedArchive) != "" {
@@ -64,23 +51,6 @@ func main() {
 	if err := install(ctx, *out); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
-	}
-	if strings.TrimSpace(*publishBucket) != "" {
-		summary, err := publishS3(ctx, *out, *publishBucket, *publishPrefix, *publishRegion, *publishEndpoint, *publishPathStyle)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		fmt.Printf("published map assets: uploaded=%d reused=%d bytes=%d\n", summary.Uploaded, summary.Reused, summary.Bytes)
-	}
-	if strings.TrimSpace(*verifyBaseURL) != "" {
-		client := &http.Client{Timeout: 2 * time.Minute}
-		summary, err := visualizationmapassethttp.VerifyDelivery(ctx, *out, *verifyBaseURL, client)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		fmt.Printf("verified map asset delivery: files=%d full=%d ranges=%d bytes=%d\n", summary.Files, summary.FullResponses, summary.RangeResponses, summary.Bytes)
 	}
 }
 
@@ -108,28 +78,6 @@ func installSeedArchive(source, out string) error {
 		return err
 	}
 	return nil
-}
-
-func publishS3(ctx context.Context, root, bucket, prefix, region, endpoint string, pathStyle bool) (visualizationmapasset.PublicationSummary, error) {
-	loadOptions := []func(*awsconfig.LoadOptions) error{}
-	if strings.TrimSpace(region) != "" {
-		loadOptions = append(loadOptions, awsconfig.WithRegion(strings.TrimSpace(region)))
-	}
-	config, err := awsconfig.LoadDefaultConfig(ctx, loadOptions...)
-	if err != nil {
-		return visualizationmapasset.PublicationSummary{}, fmt.Errorf("load AWS configuration for map asset publication: %w", err)
-	}
-	client := awss3.NewFromConfig(config, func(options *awss3.Options) {
-		options.UsePathStyle = pathStyle
-		if strings.TrimSpace(endpoint) != "" {
-			options.BaseEndpoint = aws.String(strings.TrimRight(strings.TrimSpace(endpoint), "/"))
-		}
-	})
-	store, err := visualizationmapasset.NewS3PublicationStore(client, visualizationmapasset.S3PublicationConfig{Bucket: bucket, Prefix: prefix})
-	if err != nil {
-		return visualizationmapasset.PublicationSummary{}, err
-	}
-	return visualizationmapasset.PublishInstalled(ctx, root, store)
 }
 
 func install(ctx context.Context, out string) error {
@@ -191,7 +139,7 @@ func install(ctx context.Context, out string) error {
 			return err
 		}
 	}
-	return visualizationmapasset.VerifyInstalled(out)
+	return visualizationmapasset.VerifyGeneratedPackage(out)
 }
 
 func ensureArchive(ctx context.Context, target, legacy string) error {
@@ -208,27 +156,22 @@ func ensureArchive(ctx context.Context, target, legacy string) error {
 		return fmt.Errorf("create map archive build directory: %w", err)
 	}
 	defer os.RemoveAll(build)
-	global := filepath.Join(build, "global-z0-z6.pmtiles")
-	installedGlobal := filepath.Join(filepath.Dir(filepath.Dir(target)), globalArchiveDigest, "basemap.pmtiles")
-	if err := reuseVerifiedArchive(installedGlobal, legacy, globalArchiveDigest, global); err != nil {
+	global := filepath.Join(build, "worldwide-z0-z6.pmtiles")
+	if err := reuseVerifiedArchive(target, legacy, archiveDigest, global); err != nil {
 		if err := runPMTiles(ctx, "extract", planetURL, global, "--maxzoom=6", "--download-threads="+archiveDownloadThreads); err != nil {
 			return fmt.Errorf("extract pinned global PMTiles: %w", err)
 		}
-		if err := verifyFile(global, globalArchiveDigest); err != nil {
+		if err := verifyFile(global, archiveDigest); err != nil {
 			return err
 		}
-	}
-	regional := filepath.Join(build, "south-america-z7-z10.pmtiles")
-	if err := runPMTiles(ctx, "extract", planetURL, regional, "--bbox="+regionalBounds, "--minzoom="+regionalMinimumZoom, "--maxzoom="+regionalMaximumZoom, "--download-threads="+archiveDownloadThreads); err != nil {
-		return fmt.Errorf("extract pinned regional PMTiles: %w", err)
 	}
 	temporary := target + ".partial"
 	if err := os.Remove(temporary); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	defer os.Remove(temporary)
-	if err := runPMTiles(ctx, "merge", global, regional, temporary, "--quiet"); err != nil {
-		return fmt.Errorf("merge global and regional PMTiles: %w", err)
+	if err := copyFile(global, temporary); err != nil {
+		return fmt.Errorf("stage worldwide PMTiles: %w", err)
 	}
 	if err := verifyFile(temporary, archiveDigest); err != nil {
 		return err
@@ -255,7 +198,7 @@ func reuseVerifiedArchive(primary, legacy, digest, target string) error {
 }
 
 func runPMTiles(ctx context.Context, arguments ...string) error {
-	command := exec.CommandContext(ctx, "go", append([]string{"run", "github.com/protomaps/go-pmtiles@v1.31.1"}, arguments...)...)
+	command := exec.CommandContext(ctx, "go", append([]string{"run", pmtilesToolModule}, arguments...)...)
 	command.Stdout, command.Stderr = os.Stdout, os.Stderr
 	return command.Run()
 }

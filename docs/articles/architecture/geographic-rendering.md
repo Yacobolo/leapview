@@ -10,13 +10,14 @@ LeapView maps are an analytical mapping subsystem rather than a static geographi
 
 ECharts `geo` is strong for thematic diagrams over one registered GeoJSON or SVG resource. It can place pie, scatter, line, and custom series in that coordinate system and provides excellent canvas and SVG export. It does not provide LeapView's vector-tile asset lifecycle, progressive basemap detail, or source-and-layer camera model. Using it beside MapLibre for built-in maps would create two projection, hit-testing, accessibility, selection, snapshot, and lifecycle implementations.
 
-Neither renderer supplies authoritative world data. LeapView owns the map package: a pinned OSM-derived PMTiles archive, style, glyphs, sprites, provenance, license, attribution, and digests. The package is verified before serving or publication, exposed through same-origin immutable URLs, and never replaced at an existing content address.
+Neither renderer supplies authoritative world data. LeapView owns the map package: a pinned OSM-derived PMTiles archive, style, glyphs, sprites, provenance, license, attribution, and digests. The complete worldwide zoom 0–6 package is embedded in each released Go binary, verified as one immutable inventory, exposed through same-origin content-addressed URLs, and never replaced at an existing content address.
 
 ## Decision
 
 One geographic visual has one geographic camera and one renderer owner:
 
 - MapLibre owns projection, camera, basemap sources and layers, geographic hit testing, clustering, data-layer ordering, spatial gestures, and map snapshots.
+- The built-in worldwide basemap is unconditional. Authors cannot select, disable, replace, or remotely configure it; the compiler injects its complete provenance into every geographic specification.
 - The visualization IR remains renderer-independent. Authors cannot provide MapLibre styles, ECharts options, remote tile URLs, or callbacks.
 - The governed runtime owns inline budgets and spatial-windowed queries. The browser requests a bounded viewport; it does not query arbitrary sources.
 - ECharts remains the renderer for non-geographic charts and is not mounted as a second interactive canvas over MapLibre.
@@ -37,6 +38,6 @@ One geographic visual has one geographic camera and one renderer owner:
 
 ## Consequences
 
-LeapView accepts MapLibre's WebGL, asset-packaging, and headless-export complexity in exchange for one scalable cartographic runtime. Map rendering must remain isolated behind the visualization host, recover from WebGL context loss, preserve its camera during compatible updates, and always expose an accessible tabular equivalent.
+LeapView accepts MapLibre's WebGL, binary-size, asset-packaging, and headless-export complexity in exchange for one scalable cartographic runtime. Map rendering must remain isolated behind the visualization host, recover from WebGL context loss, preserve its camera during compatible updates, and always expose an accessible tabular equivalent.
 
 Adding ECharts `geo` is a new architecture decision, not an adapter shortcut. It requires evidence for a distinct product surface that cannot be expressed as a typed MapLibre layer and must not duplicate ordinary map behavior.
