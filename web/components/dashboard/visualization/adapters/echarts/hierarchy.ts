@@ -67,6 +67,12 @@ export function hierarchyOption(envelope: VisualizationEnvelope, context: Render
     common.orient = spec.presentation.orientation === 'vertical' ? 'TB' : 'LR'
     common.layout = spec.presentation.layout === 'circular' ? 'radial' : 'orthogonal'
     common.initialTreeDepth = spec.presentation.initialDepth
+    if (spec.presentation.orientation === 'horizontal') {
+      const label = common.label ?? {}
+      const background = { backgroundColor: context.colors.surface, borderRadius: 2, padding: [2, 4] }
+      common.label = { ...label, ...background, position: 'left', align: 'right' }
+      common.leaves = { label: { ...label, ...background, position: 'right', align: 'left' } }
+    }
   }
   if (spec.mark === 'treemap') {
     common.breadcrumb = { show: spec.presentation.breadcrumb }
