@@ -90,10 +90,10 @@ export function hierarchyData(envelope: VisualizationEnvelope): HierarchyNode[] 
     const row = dataset.rows[rowIndex]!
     const name = String(row[nodeIndex])
     const parent = parentIndex >= 0 && row[parentIndex] !== null && row[parentIndex] !== undefined && row[parentIndex] !== '' ? String(row[parentIndex]) : undefined
-    const id = escapeSegment(name)
+    const id = parent ? `${parent}\u001f${escapeSegment(name)}` : escapeSegment(name)
     if (byID.has(id)) throw new Error(`duplicate hierarchy node ${JSON.stringify(id)}`)
     byID.set(id, { name, value: valueIndex >= 0 ? row[valueIndex] : undefined, __lv_dataset: dataset.id, __lv_row_index: rowIndex })
-    parentByID.set(id, parent ? escapeSegment(parent) : undefined)
+    parentByID.set(id, parent)
   }
   const roots: HierarchyNode[] = []
   for (const [id, node] of byID) {

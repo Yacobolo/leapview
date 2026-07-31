@@ -773,6 +773,27 @@ test('ECharts wraps a hierarchy forest so every tree root is rendered', () => {
   expect(option.series[0].data[0].__lv_synthetic).toBe(true)
 })
 
+test('ECharts scopes repeated hierarchy labels to their compiled parent path', () => {
+  const envelope = hierarchyFixture('tree') as any
+  envelope.dataState.datasets[0].rows = [
+    ['Books', null, 6],
+    ['Electronics', null, 5],
+    ['BA', 'Books', 2],
+    ['BA', 'Electronics', 1],
+    ['delivered', 'Books\u001fBA', 2],
+    ['delivered', 'Electronics\u001fBA', 1],
+  ]
+
+  const option = echartsOption(envelope, defaultRendererContext) as any
+  expect(option.series[0].data).toEqual([{
+    name: 'All', __lv_dataset: 'primary', __lv_row_index: -1, __lv_synthetic: true,
+    children: [
+      { name: 'Books', value: 6, __lv_dataset: 'primary', __lv_row_index: 0, children: [{ name: 'BA', value: 2, __lv_dataset: 'primary', __lv_row_index: 2, children: [{ name: 'delivered', value: 2, __lv_dataset: 'primary', __lv_row_index: 4 }] }] },
+      { name: 'Electronics', value: 5, __lv_dataset: 'primary', __lv_row_index: 1, children: [{ name: 'BA', value: 1, __lv_dataset: 'primary', __lv_row_index: 3, children: [{ name: 'delivered', value: 1, __lv_dataset: 'primary', __lv_row_index: 5 }] }] },
+    ],
+  }])
+})
+
 test('ECharts leaves absent proportional geometry fields to renderer defaults', () => {
   const pie = echartsOption(proportionalFixture('pie'), defaultRendererContext) as any
   expect(Object.hasOwn(pie.series[0], 'radius')).toBe(false)
