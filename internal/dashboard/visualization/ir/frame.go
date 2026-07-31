@@ -318,8 +318,6 @@ func specificationBase(spec VisualizationSpec) (VisualizationSpecBase, error) {
 			result.Kind = variant.Kind
 		case *PointVisualizationSpec:
 			result.Kind = variant.Kind
-		case *CustomVisualizationSpec:
-			result.Kind = variant.Kind
 		case *GeographicVisualizationSpec:
 			result.Kind = variant.Kind
 		case *HierarchyVisualizationSpec:
@@ -1032,10 +1030,6 @@ func (visitor *specificationReferenceVisitor) VisitGeographicVisualizationSpec(v
 			visitor.add(layer.Category)
 		}
 	}
-	return nil
-}
-
-func (visitor *specificationReferenceVisitor) VisitCustomVisualizationSpec(*CustomVisualizationSpec) error {
 	return nil
 }
 

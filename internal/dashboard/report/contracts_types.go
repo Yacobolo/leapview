@@ -56,7 +56,7 @@ func (v *AuthoringVisualization) UnmarshalYAML(value *yaml.Node) error {
 	default:
 		if err := rejectUnknownVisualizationFields(value, map[string]struct{}{
 			"type": {}, "title": {}, "subtitle": {}, "description": {}, "query": {}, "datasets": {}, "metadata": {},
-			"presentation": {}, "accessibility": {}, "data_budget": {}, "interaction": {}, "geo": {}, "kpi": {}, "point": {}, "custom": {}, "calculations": {},
+			"presentation": {}, "accessibility": {}, "data_budget": {}, "interaction": {}, "geo": {}, "kpi": {}, "point": {}, "calculations": {},
 		}); err != nil {
 			return err
 		}
@@ -131,7 +131,6 @@ type Visual struct {
 	Geo           VisualGeo              `yaml:"geo" json:"geo"`
 	KPI           VisualKPI              `yaml:"kpi" json:"kpi"`
 	Point         VisualPoint            `yaml:"point" json:"point"`
-	Custom        VisualCustom           `yaml:"custom" json:"custom"`
 	Interaction   Interaction            `yaml:"interaction"`
 	Calculations  []VisualCalculation    `yaml:"calculations" json:"calculations,omitempty"`
 }
@@ -506,11 +505,6 @@ type VisualGeoHeatStyle struct {
 type VisualGeoLineStyle struct {
 	Width     float64 `yaml:"width" json:"width,omitempty"`
 	Curvature float64 `yaml:"curvature" json:"curvature,omitempty"`
-}
-
-type VisualCustom struct {
-	Engine  string         `yaml:"engine"`
-	Program map[string]any `yaml:"program"`
 }
 
 type VisualQuery struct {

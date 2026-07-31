@@ -106,7 +106,7 @@ func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model
 	base := visualizationir.VisualizationSpecBase{
 		Title: title, Subtitle: optionalString(authored.Subtitle), Datasets: datasets, MetadataBindings: metadataBindings,
 		DataBudget:    visualizationir.VisualizationDataBudget{MaxRows: compiledVisualDataBudgetMaxRows(authored, shape), RequiredCompleteness: completeness},
-		Accessibility: accessibility, Interactions: customVisualizationInteractions(authored.Interaction.PointSelection),
+		Accessibility: accessibility, Interactions: compiledSelectionInteractions("point_selection", authored.Interaction.PointSelection),
 	}
 	conditionalFormatting, err := compileConditionalFormatting(columns, authored.Presentation.ConditionalFormatting)
 	if err != nil {

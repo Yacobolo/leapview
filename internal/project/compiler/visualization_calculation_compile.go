@@ -341,8 +341,6 @@ func mutableSpecificationBase(spec visualizationir.VisualizationSpec) (*visualiz
 		return &value.VisualizationSpecBase, nil
 	case *visualizationir.GeographicVisualizationSpec:
 		return &value.VisualizationSpecBase, nil
-	case *visualizationir.CustomVisualizationSpec:
-		return &value.VisualizationSpecBase, nil
 	default:
 		return nil, fmt.Errorf("unsupported visualization specification %T", spec.Value)
 	}

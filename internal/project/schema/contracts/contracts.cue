@@ -456,7 +456,7 @@ package contracts
 	inclusive!: bool
 })
 
-#Visual: #CartesianVisual | #PointVisual | #ProportionalVisual | #HierarchyVisual | #PolarVisual | #GeographicVisual | #CustomVisual | #KPIVisual | #DataTableVisual | #MatrixVisual | #PivotVisual
+#Visual: #CartesianVisual | #PointVisual | #ProportionalVisual | #HierarchyVisual | #PolarVisual | #GeographicVisual | #KPIVisual | #DataTableVisual | #MatrixVisual | #PivotVisual
 
 #VisualCommon: {
 	title?:            string
@@ -874,16 +874,6 @@ package contracts
 	path!:      #Identifier
 	order!:     #Identifier
 	line?: close({width?: number & >0, curvature?: number & >=0 & <=1})
-})
-
-#CustomVisual: close({
-	#VisualCommon
-	type!: "custom"
-	query!: #VisualQuery
-	custom!: close({
-		engine!: "vega_lite"
-		program!: #AnyObject
-	})
 })
 
 #KPIVisual: close({

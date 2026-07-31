@@ -246,17 +246,6 @@ func TestSiteProductionHeadersAndHealthEndpoints(t *testing.T) {
 		t.Fatalf("site asset cache control = %q", got)
 	}
 
-	response, err = server.Client().Get(server.URL + "/static/vega-sandbox.js")
-	if err != nil {
-		t.Fatalf("get Vega-Lite sandbox: %v", err)
-	}
-	response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("Vega-Lite sandbox status = %d, want %d", response.StatusCode, http.StatusOK)
-	}
-	if got := response.Header.Get("Access-Control-Allow-Origin"); got != "*" {
-		t.Fatalf("Vega-Lite sandbox Access-Control-Allow-Origin = %q, want *", got)
-	}
 }
 
 func TestPublicReleaseManifestIsMachineReadable(t *testing.T) {
@@ -300,7 +289,7 @@ func TestSiteAssetsDoNotDependOnWorkingDirectory(t *testing.T) {
 
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()
-	for _, path := range []string{"/static/favicon.svg", "/static/logo-lab.html", "/static/site.css", "/static/site-page.js", "/static/vega-sandbox.js", "/static/geometry/br-states-ibge.geojson", "/static/geometry/world-countries-natural-earth-110m.geojson", "/shared/app.css", "/shared/theme.js", "/shared/files/inter-latin-wght-normal.woff2", "/static/vendor/datastar-1.0.2.js", "/static/vendor/github-mark.svg"} {
+	for _, path := range []string{"/static/favicon.svg", "/static/logo-lab.html", "/static/site.css", "/static/site-page.js", "/static/geometry/br-states-ibge.geojson", "/static/geometry/world-countries-natural-earth-110m.geojson", "/shared/app.css", "/shared/theme.js", "/shared/files/inter-latin-wght-normal.woff2", "/static/vendor/datastar-1.0.2.js", "/static/vendor/github-mark.svg"} {
 		response, err := server.Client().Get(server.URL + path)
 		if err != nil {
 			t.Fatalf("get %s: %v", path, err)
@@ -1132,7 +1121,7 @@ func TestSiteChartDocumentationArticleRendersConfiguration(t *testing.T) {
 }
 
 func TestSiteEveryVisualTypeHasDocumentation(t *testing.T) {
-	if got, want := len(visualDocuments), 27; got != want {
+	if got, want := len(visualDocuments), 26; got != want {
 		t.Fatalf("documented visual types = %d, want %d", got, want)
 	}
 

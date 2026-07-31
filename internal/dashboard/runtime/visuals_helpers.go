@@ -46,27 +46,6 @@ func newVisualPlan(definition visualizationdefinition.Definition) (visualPlan, e
 			return visualPlan{}, fmt.Errorf("visualization %q has no spatial binding", definition.ID)
 		}
 		plan.Table, plan.Dimensions, plan.Series, plan.Measures, plan.Time, plan.Sort, plan.Limit = query.TableID, query.Dimensions, query.Series, query.Measures, query.Time, query.Sort, int(query.Limit)
-	case visualizationdefinition.QueryCustom:
-		query := definition.Query.Custom
-		if query == nil {
-			return visualPlan{}, fmt.Errorf("visualization %q has no custom binding", definition.ID)
-		}
-		plan.Table, plan.Sort, plan.Limit = query.TableID, query.Sort, int(query.Limit)
-		base, err := visualizationir.SpecificationBase(definition.Spec)
-		if err != nil {
-			return visualPlan{}, err
-		}
-		roles := make(map[string]visualizationir.VisualizationFieldRole, len(base.Datasets[0].Fields))
-		for _, field := range base.Datasets[0].Fields {
-			roles[field.ID] = field.Role
-		}
-		for _, binding := range query.Fields {
-			if roles[binding.Alias] == visualizationir.VisualizationFieldRoleMeasure {
-				plan.Measures = append(plan.Measures, binding)
-			} else {
-				plan.Dimensions = append(plan.Dimensions, binding)
-			}
-		}
 	default:
 		return visualPlan{}, fmt.Errorf("visualization %q query kind %q is not a chart query", definition.ID, definition.Query.Kind)
 	}
@@ -101,8 +80,6 @@ func (visual visualPlan) KindAndType() (string, string) {
 		return "chart", string(value.Mark)
 	case *visualizationir.GeographicVisualizationSpec:
 		return "chart", "map"
-	case *visualizationir.CustomVisualizationSpec:
-		return "chart", "custom"
 	default:
 		return "chart", ""
 	}

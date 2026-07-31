@@ -30,10 +30,6 @@ test('production topology JavaScript has no external CDN dependencies', async ()
   expect(forbiddenReferences).toEqual([])
 })
 
-test('Vega-Lite sandbox is a self-contained production entrypoint', async () => {
-  const sandbox = Bun.file('static/vega-sandbox.js')
-  expect(await sandbox.exists()).toBe(true)
-  const source = await sandbox.text()
-  expect(source).toContain('addEventListener("message"')
-  expect(source).not.toMatch(/^import\s/m)
+test('production build does not publish the retired Vega-Lite sandbox', async () => {
+  expect(await Bun.file('static/vega-sandbox.js').exists()).toBe(false)
 })

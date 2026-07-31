@@ -3,10 +3,6 @@
     "#APIVersion": {
       "const": "leapview.dev/v1"
     },
-    "#AnyObject": {
-      "additionalProperties": true,
-      "type": "object"
-    },
     "#CartesianAxis": {
       "additionalProperties": false,
       "properties": {
@@ -469,40 +465,6 @@
         "kpi_value",
         "icon"
       ]
-    },
-    "#CustomVisual": {
-      "$ref": "#/$defs/%23VisualCommon",
-      "additionalProperties": false,
-      "properties": {
-        "custom": {
-          "additionalProperties": false,
-          "properties": {
-            "engine": {
-              "const": "vega_lite"
-            },
-            "program": {
-              "$ref": "#/$defs/%23AnyObject"
-            }
-          },
-          "required": [
-            "engine",
-            "program"
-          ],
-          "type": "object"
-        },
-        "query": {
-          "$ref": "#/$defs/%23VisualQuery"
-        },
-        "type": {
-          "const": "custom"
-        }
-      },
-      "required": [
-        "custom",
-        "query",
-        "type"
-      ],
-      "type": "object"
     },
     "#DashboardSpec": {
       "additionalProperties": false,
@@ -3363,9 +3325,6 @@
         },
         {
           "$ref": "#/$defs/%23GeographicVisual"
-        },
-        {
-          "$ref": "#/$defs/%23CustomVisual"
         },
         {
           "$ref": "#/$defs/%23KPIVisual"

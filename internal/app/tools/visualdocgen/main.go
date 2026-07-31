@@ -630,12 +630,6 @@ func visualKeyFields(previous *reportdef.Visual, visual reportdef.Visual) []stri
 			fields = append(fields, "kpi."+key)
 		}
 	}
-	if visual.Custom.Engine != "" && (previous == nil || previous.Custom.Engine != visual.Custom.Engine) {
-		fields = append(fields, "custom.engine")
-	}
-	if len(visual.Custom.Program) > 0 && (previous == nil || !reflect.DeepEqual(previous.Custom.Program, visual.Custom.Program)) {
-		fields = append(fields, "custom.program")
-	}
 	return fields
 }
 

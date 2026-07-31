@@ -8,7 +8,7 @@ import (
 var supportedVisualShapes = map[string]struct{}{
 	"category_value": {}, "category_series_value": {}, "category_multi_measure": {}, "category_delta": {},
 	"single_value": {}, "matrix": {}, "graph": {}, "geo": {}, "ohlc": {}, "distribution": {},
-	"binned_measure": {}, "hierarchy": {}, "point": {}, "custom": {},
+	"binned_measure": {}, "hierarchy": {}, "point": {},
 }
 
 type VisualizationCapability struct {
@@ -26,7 +26,6 @@ var visualizationCapabilities = map[string]VisualizationCapability{
 	"candlestick": {Type: "candlestick", Kind: "chart", Renderer: "echarts", ResultShape: "ohlc"},
 	"column":      {Type: "column", Kind: "chart", Renderer: "echarts", ResultShape: "category_value", SupportsSeries: true},
 	"combo":       {Type: "combo", Kind: "chart", Renderer: "echarts", ResultShape: "category_multi_measure"},
-	"custom":      {Type: "custom", Kind: "chart", Renderer: "vega-lite-sandbox", ResultShape: "custom"},
 	"donut":       {Type: "donut", Kind: "chart", Renderer: "echarts", ResultShape: "category_value"},
 	"funnel":      {Type: "funnel", Kind: "chart", Renderer: "echarts", ResultShape: "category_value"},
 	"gauge":       {Type: "gauge", Kind: "chart", Renderer: "echarts", ResultShape: "single_value"},
@@ -121,9 +120,6 @@ func rendererSupportsShapeType(renderer, shape, chartType string) bool {
 	}
 	if renderer == "maplibre" {
 		return shape == "geo" && chartType == "map"
-	}
-	if renderer == "vega-lite-sandbox" {
-		return shape == "custom" && chartType == "custom"
 	}
 	if renderer != "echarts" {
 		return false

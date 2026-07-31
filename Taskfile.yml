@@ -575,7 +575,6 @@ tasks:
       - api/apigen.yaml
       - api/visualization/**/*.tsp
       - scripts/generate_visualization_validator.ts
-      - scripts/generate_vega_lite_validator.ts
     generates:
       - api/gen/visualization-ir.json
       - internal/dashboard/visualization/ir/models.gen.go
@@ -583,13 +582,11 @@ tasks:
       - web/generated/visualization/index.ts
       - web/generated/visualization/schema-version.ts
       - web/generated/visualization/validate.ts
-      - web/generated/vega-lite/validate.ts
       - api/gen/visualization.schema.json
     cmds:
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 typespec-compile -manifest api/apigen.yaml -target visualization-ir
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 all -manifest api/apigen.yaml -target visualization-ir
       - bun scripts/generate_visualization_validator.ts
-      - bun scripts/generate_vega_lite_validator.ts
 
   layout-contract:generate:
     desc: Generate the browser responsive-widget layout contract

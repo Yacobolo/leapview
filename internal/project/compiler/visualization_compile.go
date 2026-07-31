@@ -100,8 +100,6 @@ func compileAuthoringVisualization(ctx compileContext, authoring reportdef.Autho
 		err  error
 	)
 	switch ctx.capability.Renderer {
-	case visualizationdefinition.RendererVegaLite:
-		spec, err = compileCustomVisualizationSpec(authored)
 	case visualizationdefinition.RendererMapLibre:
 		spec, err = compileGeographicVisualizationSpec(authored)
 	default:

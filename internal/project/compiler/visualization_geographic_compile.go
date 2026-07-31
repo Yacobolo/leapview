@@ -50,7 +50,7 @@ func compileGeographicVisualizationSpec(authored reportdef.Visual) (visualizatio
 		Kind: "geographic", Title: title, Datasets: []visualizationir.VisualizationDatasetSchema{{ID: "primary", Fields: fields}},
 		DataBudget:    visualizationir.VisualizationDataBudget{MaxRows: compiledVisualLimit(authored), RequiredCompleteness: visualizationir.VisualizationCompletenessComplete},
 		Accessibility: visualizationir.VisualizationAccessibility{Title: accessibilityTitle, Description: accessibilityDescription},
-		Interactions:  customVisualizationInteractions(authored.Interaction.PointSelection),
+		Interactions:  compiledSelectionInteractions("point_selection", authored.Interaction.PointSelection),
 	}
 	fieldIDs := make([]string, len(fields))
 	for index, field := range fields {

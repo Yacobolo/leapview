@@ -1385,32 +1385,6 @@ spec:
               width: 3
               curvature: 0
             opacity: 0.9
-    custom_monthly_revenue:
-      title: Custom monthly revenue
-      description: Exercises the sandboxed Vega-Lite adapter with governed data.
-      type: custom
-      query:
-        dimensions:
-          purchase_month: orders.purchase_month
-        measures:
-          revenue: null
-        sort:
-          - field: purchase_month
-            direction: asc
-        limit: 30
-      custom:
-        engine: vega_lite
-        program:
-          data:
-            name: primary
-          mark: bar
-          encoding:
-            x:
-              field: purchase_month
-              type: ordinal
-            y:
-              field: revenue
-              type: quantitative
     delivery_candlestick:
       title: Delivery day candlestick by month
       type: candlestick
@@ -3038,26 +3012,6 @@ spec:
             col_span: 12
             row_span: 13
       id: chart-map-scale
-    - title: Custom Vega-Lite
-      description: Sandboxed custom declarative visualization
-      canvas:
-        width: 1366
-        height: 672
-      grid:
-        columns: 12
-        row_height: 48
-        gap: 16
-        padding: 16
-      components:
-        - id: custom-monthly-revenue
-          kind: visual
-          visual: custom_monthly_revenue
-          placement:
-            col: 1
-            row: 1
-            col_span: 12
-            row_span: 10
-      id: chart-custom
     - title: Candlestick
       description: OHLC chart examples
       canvas:

@@ -90,9 +90,6 @@ func (d *Dashboard) validateChartContract(name string, visual Visual) error {
 			return err
 		}
 	}
-	if visual.Type == "custom" && (visual.Custom.Engine != "vega_lite" || len(visual.Custom.Program) == 0) {
-		return fmt.Errorf("visual %q custom visualization requires a non-empty vega_lite program", name)
-	}
 	for _, sort := range visual.Query.Sort {
 		if sort.Field == "" && sort.Expr == "" {
 			return fmt.Errorf("visual %q has sort missing field or expr", name)
@@ -484,7 +481,7 @@ func validateLabelPolicy(name, visualType string, policy VisualLabelPolicy) erro
 
 func validateContextDatasetsAndMetadata(name string, visual Visual) error {
 	hasMetadata := visual.Metadata.Title != nil || visual.Metadata.Subtitle != nil || visual.Metadata.Description != nil || visual.Metadata.Summary != nil
-	if oneOf(visual.Type, "map", "custom") && (len(visual.Datasets) > 0 || hasMetadata) {
+	if visual.Type == "map" && (len(visual.Datasets) > 0 || hasMetadata) {
 		return fmt.Errorf("visual %q type %q does not support context datasets or data-bound metadata", name, visual.Type)
 	}
 	for datasetID, query := range visual.Datasets {

@@ -53,14 +53,6 @@ type CurrencyVisualizationFormat struct {
 	MaximumFractionDigits *int32 `json:"maximumFractionDigits,omitempty"`
 }
 
-type CustomVisualizationSpec struct {
-	VisualizationSpecBase
-	Kind          string                    `json:"kind"`
-	Engine        VisualizationCustomEngine `json:"engine"`
-	Program       string                    `json:"program"`
-	ProgramDigest string                    `json:"programDigest"`
-}
-
 type DurationVisualizationFormat struct {
 	VisualizationFormatBase
 	Kind string `json:"kind"`
@@ -1060,12 +1052,6 @@ type VisualizationConditionalThreshold struct {
 	Value    float64                         `json:"value"`
 	Style    VisualizationConditionalStyle   `json:"style"`
 }
-
-type VisualizationCustomEngine string
-
-const (
-	VisualizationCustomEngineVegaLite VisualizationCustomEngine = "vega_lite"
-)
 
 type VisualizationDataBudget struct {
 	MaxRows              int64                     `json:"maxRows"`
@@ -3238,7 +3224,6 @@ type VisualizationSpec struct {
 }
 
 func (*CartesianVisualizationSpec) isVisualizationSpecVariant()    {}
-func (*CustomVisualizationSpec) isVisualizationSpecVariant()       {}
 func (*GeographicVisualizationSpec) isVisualizationSpecVariant()   {}
 func (*HierarchyVisualizationSpec) isVisualizationSpecVariant()    {}
 func (*KPIVisualizationSpec) isVisualizationSpecVariant()          {}
@@ -3252,11 +3237,6 @@ func (*TableVisualizationSpec) isVisualizationSpecVariant()        {}
 func (value VisualizationSpec) MarshalJSON() ([]byte, error) {
 	switch variant := value.Value.(type) {
 	case *CartesianVisualizationSpec:
-		if variant == nil {
-			return nil, fmt.Errorf("VisualizationSpec variant is nil")
-		}
-		return json.Marshal(variant)
-	case *CustomVisualizationSpec:
 		if variant == nil {
 			return nil, fmt.Errorf("VisualizationSpec variant is nil")
 		}
@@ -3368,39 +3348,6 @@ func (value *VisualizationSpec) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("decode VisualizationSpec variant %q: required property y is missing", tag.Value)
 		}
 		var variant CartesianVisualizationSpec
-		if err := decode(&variant); err != nil {
-			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Value, err)
-		}
-		value.Value = &variant
-	case "custom":
-		if _, ok := fields["accessibility"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property accessibility is missing", tag.Value)
-		}
-		if _, ok := fields["dataBudget"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property dataBudget is missing", tag.Value)
-		}
-		if _, ok := fields["datasets"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property datasets is missing", tag.Value)
-		}
-		if _, ok := fields["engine"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property engine is missing", tag.Value)
-		}
-		if _, ok := fields["interactions"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property interactions is missing", tag.Value)
-		}
-		if _, ok := fields["kind"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property kind is missing", tag.Value)
-		}
-		if _, ok := fields["program"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property program is missing", tag.Value)
-		}
-		if _, ok := fields["programDigest"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property programDigest is missing", tag.Value)
-		}
-		if _, ok := fields["title"]; !ok {
-			return fmt.Errorf("decode VisualizationSpec variant %q: required property title is missing", tag.Value)
-		}
-		var variant CustomVisualizationSpec
 		if err := decode(&variant); err != nil {
 			return fmt.Errorf("decode VisualizationSpec variant %q: %w", tag.Value, err)
 		}
@@ -3722,7 +3669,6 @@ func (value *VisualizationSpec) UnmarshalJSON(data []byte) error {
 
 type VisualizationSpecVisitor interface {
 	VisitCartesianVisualizationSpec(*CartesianVisualizationSpec) error
-	VisitCustomVisualizationSpec(*CustomVisualizationSpec) error
 	VisitGeographicVisualizationSpec(*GeographicVisualizationSpec) error
 	VisitHierarchyVisualizationSpec(*HierarchyVisualizationSpec) error
 	VisitKPIVisualizationSpec(*KPIVisualizationSpec) error
@@ -3747,11 +3693,6 @@ func (value *VisualizationSpec) Visit(visitor VisualizationSpecVisitor) error {
 			return fmt.Errorf("VisualizationSpec variant is nil")
 		}
 		return visitor.VisitCartesianVisualizationSpec(variant)
-	case *CustomVisualizationSpec:
-		if variant == nil {
-			return fmt.Errorf("VisualizationSpec variant is nil")
-		}
-		return visitor.VisitCustomVisualizationSpec(variant)
 	case *GeographicVisualizationSpec:
 		if variant == nil {
 			return fmt.Errorf("VisualizationSpec variant is nil")
@@ -3814,11 +3755,6 @@ func (value *VisualizationSpec) Kind() (string, error) {
 			return "", fmt.Errorf("VisualizationSpec variant is nil")
 		}
 		return "cartesian", nil
-	case *CustomVisualizationSpec:
-		if variant == nil {
-			return "", fmt.Errorf("VisualizationSpec variant is nil")
-		}
-		return "custom", nil
 	case *GeographicVisualizationSpec:
 		if variant == nil {
 			return "", fmt.Errorf("VisualizationSpec variant is nil")
@@ -3877,11 +3813,6 @@ func (value *VisualizationSpec) Base() (*VisualizationSpecBase, error) {
 	}
 	switch variant := value.Value.(type) {
 	case *CartesianVisualizationSpec:
-		if variant == nil {
-			return nil, fmt.Errorf("VisualizationSpec variant is nil")
-		}
-		return &variant.VisualizationSpecBase, nil
-	case *CustomVisualizationSpec:
 		if variant == nil {
 			return nil, fmt.Errorf("VisualizationSpec variant is nil")
 		}

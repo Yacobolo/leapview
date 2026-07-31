@@ -395,8 +395,6 @@ func visualizationQueryLimit(query visualizationdefinition.QueryBinding) int {
 		return int(query.Matrix.Limit)
 	case visualizationdefinition.QueryPivot:
 		return int(query.Pivot.Limit)
-	case visualizationdefinition.QueryCustom:
-		return int(query.Custom.Limit)
 	case visualizationdefinition.QuerySpatial:
 		return int(query.Spatial.Limit)
 	default:
@@ -588,8 +586,6 @@ func (s *VisualizationDataService) visualData(ctx context.Context, runtime *mode
 		return s.graphData(ctx, runtime, report, visualID, visual, filters)
 	case visualizationdefinition.ResultGeographicFeatures:
 		return s.geoData(ctx, runtime, report, visualID, visual, filters)
-	case visualizationdefinition.ResultCustomRows:
-		return s.customData(ctx, runtime, report, visualID, visual, filters)
 	case visualizationdefinition.ResultOHLC:
 		return s.ohlcData(ctx, runtime, report, visualID, visual, filters)
 	case visualizationdefinition.ResultDistribution:
@@ -1013,17 +1009,6 @@ func (s *VisualizationDataService) geoData(ctx context.Context, runtime *modelRu
 		return nil, err
 	}
 	return data, nil
-}
-
-func (s *VisualizationDataService) customData(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, visualID string, visual visualPlan, filters dashboard.Filters) ([]dashboard.Datum, error) {
-	queryFilters, err := s.filters.semanticFilters(ctx, runtime, report, filters, "visual", visualID)
-	if err != nil {
-		return nil, err
-	}
-	return s.querySemanticDatums(ctx, runtime, reportdef.AggregateQuery{
-		Table: visual.Table, Dimensions: aliasedQueryFields(visual.Dimensions), Measures: aliasedQueryFields(visual.Measures),
-		Filters: queryFilters, Sort: aliasedVisualSorts(visual), Limit: visual.Limit,
-	})
 }
 
 func aliasedQueryFields(bindings []visualizationdefinition.FieldBinding) []reportdef.QueryField {

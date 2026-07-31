@@ -14,7 +14,6 @@ const (
 	RendererTanStack = "tanstack"
 	RendererHTML     = "html"
 	RendererMapLibre = "maplibre"
-	RendererVegaLite = "vega-lite-sandbox"
 )
 
 type QueryKind string
@@ -26,7 +25,6 @@ const (
 	QueryDetail    QueryKind = "detail"
 	QueryMatrix    QueryKind = "matrix"
 	QueryPivot     QueryKind = "pivot"
-	QueryCustom    QueryKind = "custom"
 	QuerySpatial   QueryKind = "spatial"
 )
 
@@ -46,7 +44,6 @@ const (
 	ResultMatrixWindow         ResultShape = "matrix_window"
 	ResultPivotWindow          ResultShape = "pivot_window"
 	ResultGeographicFeatures   ResultShape = "geographic_features"
-	ResultCustomRows           ResultShape = "custom_rows"
 	ResultPoints               ResultShape = "points"
 )
 
@@ -65,7 +62,6 @@ type QueryBinding struct {
 	Detail    *DetailQueryBinding    `json:"detail,omitempty" yaml:"detail,omitempty"`
 	Matrix    *MatrixQueryBinding    `json:"matrix,omitempty" yaml:"matrix,omitempty"`
 	Pivot     *PivotQueryBinding     `json:"pivot,omitempty" yaml:"pivot,omitempty"`
-	Custom    *CustomQueryBinding    `json:"custom,omitempty" yaml:"custom,omitempty"`
 	Spatial   *SpatialQueryBinding   `json:"spatial,omitempty" yaml:"spatial,omitempty"`
 }
 
@@ -107,13 +103,6 @@ type MatrixQueryBinding struct {
 
 type PivotQueryBinding = MatrixQueryBinding
 
-type CustomQueryBinding struct {
-	TableID string         `json:"tableID" yaml:"table_id"`
-	Fields  []FieldBinding `json:"fields" yaml:"fields"`
-	Sort    []Sort         `json:"sort,omitempty" yaml:"sort,omitempty"`
-	Limit   int64          `json:"limit" yaml:"limit"`
-}
-
 // SpatialQueryBinding is the compiler-resolved query contract for a
 // geographic visualization. Viewport is present only when the visual uses the
 // large-data spatial runtime; inline and keyed choropleth maps deliberately
@@ -149,7 +138,7 @@ func (query QueryBinding) Validate() error {
 		return fmt.Errorf("visualization query binding requires kind, result shape, model ID, and dataset ID")
 	}
 	branches := 0
-	for _, present := range []bool{query.Aggregate != nil, query.Detail != nil, query.Matrix != nil, query.Pivot != nil, query.Custom != nil, query.Spatial != nil} {
+	for _, present := range []bool{query.Aggregate != nil, query.Detail != nil, query.Matrix != nil, query.Pivot != nil, query.Spatial != nil} {
 		if present {
 			branches++
 		}
@@ -235,8 +224,6 @@ func queryKindSupportsResult(kind QueryKind, shape ResultShape) bool {
 		return shape == ResultPivotWindow
 	case QuerySpatial:
 		return shape == ResultGeographicFeatures
-	case QueryCustom:
-		return shape == ResultCustomRows
 	}
 	return false
 }
@@ -303,11 +290,6 @@ func (query QueryBinding) validationView() (queryBindingView, error) {
 		view.fields = append(view.fields, query.Pivot.Rows...)
 		view.fields = append(view.fields, query.Pivot.Columns...)
 		view.fields = append(view.fields, query.Pivot.Measures...)
-	case QueryCustom:
-		if query.Custom == nil {
-			return queryBindingView{}, fmt.Errorf("custom query binding requires custom branch")
-		}
-		view.tableID, view.fields, view.sorts, view.limit = query.Custom.TableID, query.Custom.Fields, query.Custom.Sort, query.Custom.Limit
 	case QuerySpatial:
 		if query.Spatial == nil {
 			return queryBindingView{}, fmt.Errorf("spatial query binding requires spatial branch")
@@ -530,8 +512,6 @@ func specSupportsResultShape(spec ir.VisualizationSpec, shape ResultShape) bool 
 		return shape == ResultScalar
 	case *ir.GeographicVisualizationSpec:
 		return shape == ResultGeographicFeatures
-	case *ir.CustomVisualizationSpec:
-		return shape == ResultCustomRows
 	case *ir.TableVisualizationSpec:
 		return shape == ResultDetailWindow
 	case *ir.MatrixVisualizationSpec:
@@ -561,8 +541,6 @@ func ownership(spec ir.VisualizationSpec) (string, QueryKind, error) {
 		return RendererHTML, QueryAggregate, nil
 	case *ir.GeographicVisualizationSpec:
 		return RendererMapLibre, QuerySpatial, nil
-	case *ir.CustomVisualizationSpec:
-		return RendererVegaLite, QueryCustom, nil
 	default:
 		return "", "", fmt.Errorf("unsupported visualization specification %T", spec.Value)
 	}

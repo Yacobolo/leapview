@@ -30,7 +30,7 @@ All entries below describe renderer-neutral compiled contracts. Unsupported comb
 | Radar, gauge | No | No | No | No | Yes |
 | KPI | No | No | No | Value, icon, and background | Yes |
 | Table, matrix, pivot | Table-owned sorting and formatting | No | No | Cell foreground/background and icons | Static titles; governed cell bindings |
-| Map, custom Vega-Lite | Renderer-owned geographic/custom contract | No | No | No | No secondary context datasets |
+| Map | Renderer-owned geographic contract | No | No | No | No secondary context datasets |
 
 Decision-context field references use stable dataset and field identities. Gradient domains, rule order, null/default outcomes, series order, colors, scale domains, zero policies, units, and tick density are explicit in the compiled IR. Bound titles, subtitles, descriptions, summaries, reference values, and accessibility text recompute when filters or data revisions change and use authored fallbacks when governed data is empty.
 
@@ -68,10 +68,6 @@ Deleted fields, unknown datasets, incompatible reducers, unsupported mark/featur
 - [Sankey](/docs/visuals/sankey)
 - [Graph](/docs/visuals/graph)
 - [Map](/docs/visuals/map)
-
-## Custom
-
-- [Custom Vega-Lite](/docs/visuals/custom)
 
 ## Summary and exact values
 

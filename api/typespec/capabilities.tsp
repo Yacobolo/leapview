@@ -24,7 +24,6 @@ enum VisualizationRendererID {
   tanstack,
   html,
   maplibre,
-  vegaLiteSandbox: "vega-lite-sandbox",
 }
 
 enum VisualizationSpecKind {
@@ -38,7 +37,6 @@ enum VisualizationSpecKind {
   pivot,
   kpi,
   geographic,
-  custom,
 }
 
 model VisualizationRendererCapability {

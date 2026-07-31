@@ -82,26 +82,6 @@ func TestTablePayloadIncludesFactLocalRowSelectionContract(t *testing.T) {
 	}
 }
 
-func TestCustomVisualCompilesToSandboxedVegaLiteDefinition(t *testing.T) {
-	dashboardDefinition := &report.Dashboard{SemanticModel: "model", Visuals: report.ChartVisualizations(map[string]report.Visual{"custom": {
-		Type: "custom", Title: "Custom", Query: report.VisualQuery{Table: "orders", Dimensions: []report.FieldRef{{Field: "orders.month", Alias: "month"}}, Measures: []report.FieldRef{{Field: "orders.revenue", Alias: "revenue"}}, Limit: 100},
-		Custom: report.VisualCustom{Engine: "vega_lite", Program: map[string]any{"mark": "bar", "data": map[string]any{"name": "primary"}, "encoding": map[string]any{"x": map[string]any{"field": "month"}, "y": map[string]any{"field": "revenue"}}}},
-	}})}
-
-	definitions, err := compileVisualizationDefinitions(dashboardDefinition)
-	if err != nil {
-		t.Fatal(err)
-	}
-	definition := definitions["custom"]
-	if definition.RendererID != "vega-lite-sandbox" || definition.Query.Kind != "custom" || definition.Query.Custom == nil {
-		t.Fatalf("custom definition = %#v", definition)
-	}
-	spec, ok := definition.Spec.Value.(*visualizationir.CustomVisualizationSpec)
-	if !ok || spec.ProgramDigest == "" || spec.Program == "" {
-		t.Fatalf("custom spec = %#v", definition.Spec.Value)
-	}
-}
-
 func TestGeographicVisualCompilesEveryLayerKind(t *testing.T) {
 	dashboardDefinition := &report.Dashboard{SemanticModel: "model", Visuals: report.ChartVisualizations(map[string]report.Visual{
 		"detail": {

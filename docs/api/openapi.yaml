@@ -49773,34 +49773,6 @@ components:
         kind: example
         maximumFractionDigits: 1
         minimumFractionDigits: 1
-    CustomVisualizationSpec:
-      type: object
-      allOf:
-        - $ref: '#/components/schemas/VisualizationSpecBase'
-      required:
-        - kind
-        - engine
-        - program
-        - programDigest
-      properties:
-        kind:
-          type: string
-          enum:
-            - custom
-          example: example
-        engine:
-          $ref: '#/components/schemas/VisualizationCustomEngine'
-        program:
-          type: string
-          example: example
-        programDigest:
-          type: string
-          example: example
-      example:
-        engine: vega_lite
-        kind: example
-        program: example
-        programDigest: example
     DashboardAppliedFilterInput:
       type: object
       required:
@@ -59327,11 +59299,6 @@ components:
           color: accent
           icon: circle
         value: !!float 1
-    VisualizationCustomEngine:
-      type: string
-      enum:
-        - vega_lite
-      example: vega_lite
     VisualizationDataBudget:
       type: object
       required:
@@ -61313,7 +61280,6 @@ components:
         - tanstack
         - html
         - maplibre
-        - vega-lite-sandbox
       example: echarts
     VisualizationSelectionEntry:
       type: object
@@ -61692,12 +61658,10 @@ components:
         - $ref: '#/components/schemas/PivotVisualizationSpec'
         - $ref: '#/components/schemas/KPIVisualizationSpec'
         - $ref: '#/components/schemas/GeographicVisualizationSpec'
-        - $ref: '#/components/schemas/CustomVisualizationSpec'
       discriminator:
         propertyName: kind
         mapping:
           cartesian: '#/components/schemas/CartesianVisualizationSpec'
-          custom: '#/components/schemas/CustomVisualizationSpec'
           geographic: '#/components/schemas/GeographicVisualizationSpec'
           hierarchy: '#/components/schemas/HierarchyVisualizationSpec'
           kpi: '#/components/schemas/KPIVisualizationSpec'
@@ -61972,7 +61936,6 @@ components:
         - pivot
         - kpi
         - geographic
-        - custom
       example: cartesian
     VisualizationStackingMode:
       type: string

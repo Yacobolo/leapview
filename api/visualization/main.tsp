@@ -322,10 +322,6 @@ enum VisualizationLegendPosition {
   left: "left",
 }
 
-enum VisualizationCustomEngine {
-  vegaLite: "vega_lite",
-}
-
 enum VisualizationSortDirection {
   ascending: "ascending",
   descending: "descending",
@@ -1213,13 +1209,6 @@ model GeographicVisualizationSpec extends VisualizationSpec {
   `layers`: VisualizationGeographicLayer[];
   `spatialInteractions`: VisualizationSpatialSelectionInteraction[];
   `presentation`: GeographicVisualizationPresentation;
-}
-
-model CustomVisualizationSpec extends VisualizationSpec {
-  `kind`: "custom";
-  `engine`: VisualizationCustomEngine;
-  `program`: string;
-  `programDigest`: string;
 }
 
 model VisualizationInlineDataset {

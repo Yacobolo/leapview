@@ -68,11 +68,6 @@ func compileVisualizationQueryBinding(ctx compileContext, authored reportdef.Vis
 	switch ctx.capability.Renderer {
 	case visualizationdefinition.RendererMapLibre:
 		return compiledSpatialBinding(ctx.modelID, authored, ctx.model)
-	case visualizationdefinition.RendererVegaLite:
-		binding.Kind = visualizationdefinition.QueryCustom
-		binding.ResultShape = visualizationdefinition.ResultCustomRows
-		binding.Aggregate = nil
-		binding.Custom = &visualizationdefinition.CustomQueryBinding{TableID: authored.Query.Table, Fields: compiledVisualFields(authored.Query), Sort: compiledSort(authored.Query.Sort), Limit: limit}
 	}
 	return binding, nil
 }
@@ -118,8 +113,6 @@ func compiledVisualResultShape(authored reportdef.Visual) (visualizationdefiniti
 		return visualizationdefinition.ResultOHLC, nil
 	case "distribution":
 		return visualizationdefinition.ResultDistribution, nil
-	case "custom":
-		return visualizationdefinition.ResultCustomRows, nil
 	case "point":
 		return visualizationdefinition.ResultPoints, nil
 	case "category_series_value":

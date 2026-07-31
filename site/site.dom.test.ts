@@ -1100,28 +1100,15 @@ test('governed label policies remain renderable across visual families, locales,
   }
 }, 60_000)
 
-test('Custom Vega-Lite documentation is marked experimental', async () => {
-  const page = await browser.newPage()
-  try {
-    await page.goto(`${baseURL}/docs/visuals/custom`)
-    const callout = page.locator('.site-docs-callout[data-callout="experimental"]')
-    expect(await callout.count()).toBe(1)
-    expect(await callout.locator('.site-docs-callout-label').getByText('Experimental', { exact: true }).isVisible()).toBe(true)
-    expect(await callout.getByText('Custom Vega-Lite is experimental.', { exact: false }).isVisible()).toBe(true)
-  } finally {
-    await page.close()
-  }
-})
-
 test('every visual documentation page mounts its generated production payloads', async () => {
   const page = await browser.newPage()
   const pageErrors: Array<{ url: string; message: string; stack?: string }> = []
   page.on('pageerror', (error) => pageErrors.push({ url: page.url(), message: error.message, stack: error.stack }))
-  const visualTypes = ['line', 'area', 'bar', 'column', 'pie', 'donut', 'scatter', 'funnel', 'treemap', 'gauge', 'heatmap', 'sankey', 'graph', 'map', 'custom', 'candlestick', 'boxplot', 'combo', 'waterfall', 'histogram', 'radar', 'tree', 'sunburst', 'kpi', 'table', 'matrix', 'pivot']
+  const visualTypes = ['line', 'area', 'bar', 'column', 'pie', 'donut', 'scatter', 'funnel', 'treemap', 'gauge', 'heatmap', 'sankey', 'graph', 'map', 'candlestick', 'boxplot', 'combo', 'waterfall', 'histogram', 'radar', 'tree', 'sunburst', 'kpi', 'table', 'matrix', 'pivot']
   try {
     for (const visualType of visualTypes) {
       await page.goto(`${baseURL}/docs/visuals/${visualType}`)
-      const expected = visualType === 'map' ? 6 : visualType === 'line' ? 5 : visualType === 'candlestick' ? 2 : visualType === 'kpi' ? 9 : ['custom', 'table', 'matrix', 'pivot'].includes(visualType) ? 1 : 3
+      const expected = visualType === 'map' ? 6 : visualType === 'line' ? 5 : visualType === 'candlestick' ? 2 : visualType === 'kpi' ? 9 : ['table', 'matrix', 'pivot'].includes(visualType) ? 1 : 3
       await page.waitForFunction(
         ({ count }) => {
           const examples = [...document.querySelectorAll('lv-site-visual-example')]
@@ -1164,20 +1151,6 @@ test('every visual documentation page mounts its generated production payloads',
       const host = element.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & { shadowRoot: ShadowRoot }
       return host?.shadowRoot?.querySelector('.renderer[aria-label]')?.getAttribute('aria-label')
     })).not.toContain('NaN')
-    await page.goto(`${baseURL}/docs/visuals/custom`)
-    await page.waitForFunction(() => {
-      const example = document.querySelector('lv-site-visual-example') as HTMLElement & { shadowRoot: ShadowRoot }
-      const host = example?.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & { envelope?: any; shadowRoot: ShadowRoot }
-      return host?.envelope?.rendererID === 'vega-lite-sandbox' && Boolean(host.shadowRoot?.querySelector('iframe[title="Monthly revenue"]'))
-    })
-    expect(await page.locator('lv-site-visual-example').evaluate((element) => {
-      const host = element.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & { shadowRoot: ShadowRoot }
-      return Boolean(host.shadowRoot?.querySelector('[role="alert"]'))
-    })).toBe(false)
-    const sandboxFrame = page.frames().find((frame) => frame !== page.mainFrame())
-    expect(sandboxFrame).toBeDefined()
-    await sandboxFrame!.waitForSelector('#view canvas')
-
     await page.goto(`${baseURL}/docs/visuals/combo`)
     await page.waitForFunction(() => document.querySelectorAll('lv-site-visual-example').length === 3)
     expect(await page.locator('lv-site-visual-example').first().evaluate((element) => {
@@ -2209,7 +2182,7 @@ test('visual showcase renders every supported visual type', async () => {
     await page.goto(`${baseURL}/visuals`)
     await page.waitForFunction(() => {
       const showcase = document.querySelector('lv-site-visual-showcase') as HTMLElement & { shadowRoot: ShadowRoot }
-      return showcase?.shadowRoot?.querySelectorAll('.chart').length === 24 && showcase?.shadowRoot?.querySelectorAll('.table-card lv-visualization-host').length === 3
+      return showcase?.shadowRoot?.querySelectorAll('.chart').length === 23 && showcase?.shadowRoot?.querySelectorAll('.table-card lv-visualization-host').length === 3
     })
     const visuals = await page.locator('lv-site-visual-showcase').evaluate((element) => {
       const root = element.shadowRoot
@@ -2220,7 +2193,7 @@ test('visual showcase renders every supported visual type', async () => {
         links: root?.querySelectorAll('article a[href^="/docs/visuals/"]').length,
       }
     })
-    expect(visuals).toEqual({ cards: 24, hosts: 24, kpis: 1, links: 27 })
+    expect(visuals).toEqual({ cards: 23, hosts: 23, kpis: 1, links: 26 })
     await page.waitForFunction(() => {
       const showcase = document.querySelector('lv-site-visual-showcase') as HTMLElement & { shadowRoot: ShadowRoot }
       return showcase?.shadowRoot?.querySelectorAll('.table-card lv-visualization-host').length === 3
@@ -2245,7 +2218,7 @@ test('visual showcase renders every supported visual type', async () => {
         }
       }),
     )
-    expect(catalog).toHaveLength(27)
+    expect(catalog).toHaveLength(26)
     expect(catalog).toContainEqual({ visualID: 'revenue_line', href: '/docs/visuals/line', label: 'Open Line chart documentation' })
     expect(catalog).toContainEqual({ visualID: 'total_orders', href: '/docs/visuals/kpi', label: 'Open KPI documentation' })
     expect(catalog.every(({ visualID, href, label }) => Boolean(visualID && href && label))).toBe(true)

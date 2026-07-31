@@ -22,8 +22,3 @@ visualizationRegistry.register({
   capabilities: { snapshot: true, windowed: true, interactive: true },
   load: async () => (await import('./adapters/maplibre')).adapter,
 })
-visualizationRegistry.register({
-  id: 'vega-lite-sandbox', version: '6.4.3', schemaVersion: currentVisualizationSchemaVersion, kinds: ['custom'],
-  capabilities: { snapshot: true, windowed: false, interactive: true },
-  load: async () => (await import('./adapters/vega-lite')).adapter,
-})
