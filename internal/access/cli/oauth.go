@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -27,6 +28,11 @@ type OAuthRefreshRequest struct {
 	RefreshToken string
 }
 
+type OAuthRevokeRequest struct {
+	Origin      string
+	AccessToken string
+}
+
 type DeviceAuthorization interface {
 	Challenge() DeviceChallenge
 	Token(context.Context) (*oauth2.Token, error)
@@ -36,6 +42,7 @@ type AuthoringOAuthClient interface {
 	Begin(context.Context, DeviceAuthorizationRequest) (DeviceAuthorization, error)
 	Refresh(context.Context, OAuthRefreshRequest) (*oauth2.Token, error)
 	Workload(context.Context, WorkloadIdentityRequest) (*oauth2.Token, error)
+	Revoke(context.Context, OAuthRevokeRequest) error
 }
 
 type StandardOAuthClient struct {
@@ -128,12 +135,48 @@ func (client StandardOAuthClient) Workload(ctx context.Context, request Workload
 	return token, nil
 }
 
-func (client StandardOAuthClient) context(ctx context.Context) context.Context {
-	httpClient := client.HTTPClient
-	if httpClient == nil {
-		httpClient = http.DefaultClient
+func (client StandardOAuthClient) Revoke(ctx context.Context, request OAuthRevokeRequest) error {
+	origin := strings.TrimRight(strings.TrimSpace(request.Origin), "/")
+	accessToken := strings.TrimSpace(request.AccessToken)
+	if origin == "" || accessToken == "" {
+		return fmt.Errorf("OAuth revocation origin and credential are required")
 	}
-	return context.WithValue(ctx, oauth2.HTTPClient, httpClient)
+	form := url.Values{
+		"client_id":       {access.AuthoringCLIClientID},
+		"token":           {accessToken},
+		"token_type_hint": {"access_token"},
+	}
+	httpRequest, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		origin+"/oauth/revoke",
+		strings.NewReader(form.Encode()),
+	)
+	if err != nil {
+		return fmt.Errorf("create OAuth revocation request: %w", err)
+	}
+	httpRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response, err := client.httpClient().Do(httpRequest)
+	if err != nil {
+		return fmt.Errorf("revoke OAuth credential: %w", err)
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, response.Body)
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("revoke OAuth credential: token endpoint returned HTTP %d", response.StatusCode)
+	}
+	return nil
+}
+
+func (client StandardOAuthClient) context(ctx context.Context) context.Context {
+	return context.WithValue(ctx, oauth2.HTTPClient, client.httpClient())
+}
+
+func (client StandardOAuthClient) httpClient() *http.Client {
+	if client.HTTPClient != nil {
+		return client.HTTPClient
+	}
+	return http.DefaultClient
 }
 
 type oauthDeviceAuthorization struct {

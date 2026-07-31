@@ -40,7 +40,6 @@ func defaultAuthoringAuthenticator(client *http.Client) (*accesscli.Authenticato
 		return nil, err
 	}
 	return &accesscli.Authenticator{
-		Factory:     capabilityAPIClient{httpClient: client},
 		OAuth:       accesscli.StandardOAuthClient{HTTPClient: client},
 		Profiles:    cliapi.NewProfileStore(clientConfigPath()),
 		Secrets:     secrets,

@@ -262,12 +262,6 @@ model AuthoringSessionListResponse {
   page: PageInfo;
 }
 
-model AuthoringRevokeRequest {
-  accessToken: string;
-}
-
-alias PublicAuthoringAuthErrors = BadRequest | NotFound | Conflict | UnprocessableContent | RateLimited | InternalServerError | ServiceUnavailable;
-
 @tag("Access")
 @summary("Approve or deny CLI device authorization")
 @route("/access/device-authorizations/approval")
@@ -275,14 +269,6 @@ alias PublicAuthoringAuthErrors = BadRequest | NotFound | Conflict | Unprocessab
 @apigen.authz(#{ mode: "authenticated" })
 @operationId("decideDeviceAuthorization")
 op decideDeviceAuthorization(@body body: DeviceAuthorizationApprovalRequest): OkJson<StatusResponse> | CommonErrors;
-
-@tag("Access")
-@summary("Revoke an authoring credential session")
-@route("/access/authoring-token/revoke")
-@post
-@apigen.authz(#{ mode: "none" })
-@operationId("revokeAuthoringToken")
-op revokeAuthoringToken(@body body: AuthoringRevokeRequest): OkJson<StatusResponse> | PublicAuthoringAuthErrors;
 
 @tag("Current User")
 @summary("List current CLI and workload sessions")

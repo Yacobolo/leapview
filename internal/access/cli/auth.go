@@ -11,8 +11,6 @@ import (
 	"strings"
 	"time"
 
-	apigenclient "github.com/Yacobolo/toolbelt/apigen/runtime/client"
-	accessgen "github.com/flidai/leapview/internal/access/api/gen"
 	"github.com/flidai/leapview/internal/platform/cliapi"
 	"github.com/flidai/leapview/internal/platform/securestore"
 	"golang.org/x/oauth2"
@@ -22,12 +20,6 @@ const (
 	credentialVersion = 1
 	refreshClockSkew  = 30 * time.Second
 )
-
-// PublicTransportFactory constructs a transport without resolving credentials.
-// Device authorization and refresh exchanges are intentionally public.
-type PublicTransportFactory interface {
-	PublicTransport(context.Context, string) (apigenclient.Transport, error)
-}
 
 type DeviceChallenge struct {
 	UserCode                string
@@ -84,7 +76,6 @@ type credentialDocument struct {
 // Authenticator implements human CLI device login and credential lifecycle.
 // Profiles contain references only; token material stays in the native store.
 type Authenticator struct {
-	Factory     PublicTransportFactory
 	OAuth       AuthoringOAuthClient
 	Profiles    *cliapi.ProfileStore
 	Secrets     securestore.Store
@@ -241,13 +232,9 @@ func (auth Authenticator) Logout(ctx context.Context, name string) error {
 	credential, credentialErr := auth.loadCredential(ctx, profile.CredentialAccount)
 	var revokeErr error
 	if credentialErr == nil {
-		if transport, err := auth.Factory.PublicTransport(ctx, profile.Origin); err != nil {
-			revokeErr = err
-		} else {
-			_, revokeErr = accessgen.NewGenClient(transport).RevokeAuthoringToken(ctx, accessgen.GenRevokeAuthoringTokenClientRequest{
-				Body: accessgen.GenSchemaAuthoringRevokeRequest{AccessToken: credential.AccessToken},
-			})
-		}
+		revokeErr = auth.OAuth.Revoke(ctx, OAuthRevokeRequest{
+			Origin: profile.Origin, AccessToken: credential.AccessToken,
+		})
 	}
 	cleanupErr := auth.purgeLocal(ctx, name, profile.CredentialAccount)
 	if errors.Is(credentialErr, securestore.ErrNotFound) {
@@ -300,8 +287,6 @@ func ExchangeWorkloadIdentity(
 
 func (auth Authenticator) validate() error {
 	switch {
-	case auth.Factory == nil:
-		return fmt.Errorf("Access public transport factory is required")
 	case auth.OAuth == nil:
 		return fmt.Errorf("authoring OAuth client is required")
 	case auth.Profiles == nil:

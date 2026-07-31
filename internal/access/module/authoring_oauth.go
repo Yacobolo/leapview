@@ -91,6 +91,31 @@ func (m *Module) AuthoringOAuthToken(w http.ResponseWriter, r *http.Request) {
 	writeAuthoringOAuthToken(w, tokens)
 }
 
+func (m *Module) AuthoringOAuthRevoke(w http.ResponseWriter, r *http.Request) {
+	service, ok := m.authoringOAuthService(w)
+	if !ok {
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		writeAuthoringOAuthError(w, http.StatusBadRequest, "invalid_request", "invalid revocation request")
+		return
+	}
+	if !requireAuthoringCLIClient(w, r) {
+		return
+	}
+	if hint := r.Form.Get("token_type_hint"); hint != "" && hint != "access_token" {
+		writeAuthoringOAuthError(w, http.StatusBadRequest, "unsupported_token_type", "unsupported authoring token type")
+		return
+	}
+	err := service.RevokeAccessToken(r.Context(), r.Form.Get("token"))
+	if err != nil && !errors.Is(err, access.ErrInvalidAuthoringCredential) {
+		writeAuthoringOAuthError(w, http.StatusInternalServerError, "server_error", "authoring token revocation failed")
+		return
+	}
+	setAuthoringOAuthNoStore(w)
+	w.WriteHeader(http.StatusOK)
+}
+
 func requireAuthoringCLIClient(w http.ResponseWriter, r *http.Request) bool {
 	if r.Form.Get("client_id") == access.AuthoringCLIClientID {
 		return true
@@ -148,6 +173,7 @@ type authoringOAuthAuthentication interface {
 	ExchangeDeviceCode(context.Context, string) (access.AuthoringTokenSet, error)
 	Refresh(context.Context, string) (access.AuthoringTokenSet, error)
 	ExchangeWorkloadIdentity(context.Context, access.WorkloadIdentityInput) (access.AuthoringTokenSet, error)
+	RevokeAccessToken(context.Context, string) error
 }
 
 func (m *Module) authoringOAuthService(w http.ResponseWriter) (authoringOAuthAuthentication, bool) {

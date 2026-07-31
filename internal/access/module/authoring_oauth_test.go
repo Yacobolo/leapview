@@ -23,6 +23,8 @@ type fakeAuthoringOAuth struct {
 	refreshErr    error
 	workloadInput access.WorkloadIdentityInput
 	workloadErr   error
+	revokedToken  string
+	revokeErr     error
 }
 
 func (service *fakeAuthoringOAuth) InstanceID() string {
@@ -72,6 +74,11 @@ func (service *fakeAuthoringOAuth) ExchangeWorkloadIdentity(_ context.Context, i
 	tokens.Session.Kind = access.AuthoringSessionWorkload
 	tokens.Session.ClientID = input.ClientID
 	return tokens, nil
+}
+
+func (service *fakeAuthoringOAuth) RevokeAccessToken(_ context.Context, token string) error {
+	service.revokedToken = token
+	return service.revokeErr
 }
 
 func fakeAuthoringTokenSet() access.AuthoringTokenSet {
@@ -343,5 +350,29 @@ func TestAuthoringOAuthClientCredentialsIssuesExactScopeWorkloadToken(t *testing
 		response["session_kind"] != string(access.AuthoringSessionWorkload) ||
 		response["refresh_token"] != nil {
 		t.Fatalf("response=%v", response)
+	}
+}
+
+func TestAuthoringOAuthRevocationUsesRFC7009WireFormat(t *testing.T) {
+	form := url.Values{
+		"client_id":       {access.AuthoringCLIClientID},
+		"token":           {"access-secret"},
+		"token_type_hint": {"access_token"},
+	}
+	request := httptest.NewRequest(http.MethodPost, "/oauth/revoke", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	service := &fakeAuthoringOAuth{}
+	recorder := httptest.NewRecorder()
+
+	(&Module{handler: accesshttp.Handler{AuthoringAuth: service}}).OAuthRevoke(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if service.revokedToken != "access-secret" {
+		t.Fatalf("revoked token=%q", service.revokedToken)
+	}
+	if recorder.Body.Len() != 0 {
+		t.Fatalf("body=%q", recorder.Body.String())
 	}
 }

@@ -364,7 +364,6 @@ func TestEnterpriseAuthoringGuideDefinesOneTargetHostedLifecycle(t *testing.T) {
 
 func TestCapabilityCLIsUseGeneratedTypedClients(t *testing.T) {
 	clientImports := map[string]string{
-		"internal/access/cli":    modulePath + "/internal/access/api/gen",
 		"internal/agent/cli":     modulePath + "/internal/agent/api/gen",
 		"internal/dashboard/cli": modulePath + "/internal/dashboard/api/gen",
 		"internal/workspace/cli": modulePath + "/internal/workspace/api/gen",
@@ -383,9 +382,6 @@ func TestCapabilityCLIsUseGeneratedTypedClients(t *testing.T) {
 		}
 	}
 	for pkgDir := range clientImports {
-		if pkgDir == "internal/access/cli" && !packageDirExists(repoRoot(t), pkgDir) {
-			continue
-		}
 		if !seen[pkgDir] {
 			t.Errorf("%s does not import its generated typed client package", pkgDir)
 		}
@@ -398,6 +394,30 @@ func TestCapabilityCLIsUseGeneratedTypedClients(t *testing.T) {
 	for _, forbidden := range []string{"type Request struct", "DoJSON("} {
 		if strings.Contains(string(cliAPI), forbidden) {
 			t.Errorf("platform CLI port retains transitional surface %q", forbidden)
+		}
+	}
+}
+
+func TestAccessCLIUsesStandardOAuthClient(t *testing.T) {
+	requiredImports := map[string]bool{
+		"golang.org/x/oauth2":                   false,
+		"golang.org/x/oauth2/clientcredentials": false,
+	}
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/access/cli" {
+			continue
+		}
+		for requiredImport := range requiredImports {
+			requiredImports[requiredImport] = requiredImports[requiredImport] ||
+				importListContains(file.imports, requiredImport)
+		}
+		if importListContains(file.imports, modulePath+"/internal/access/api/gen") {
+			t.Errorf("%s routes OAuth lifecycle operations through the generated REST client", file.path)
+		}
+	}
+	for requiredImport, found := range requiredImports {
+		if !found {
+			t.Errorf("internal/access/cli does not import standard OAuth package %q", requiredImport)
 		}
 	}
 }

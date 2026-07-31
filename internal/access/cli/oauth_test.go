@@ -177,6 +177,31 @@ func TestStandardOAuthClientUsesClientCredentialsForWorkloadIdentity(t *testing.
 	}
 }
 
+func TestStandardOAuthClientRevokesThroughRFC7009Endpoint(t *testing.T) {
+	var request url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		request = r.Form
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	err := (StandardOAuthClient{HTTPClient: server.Client()}).Revoke(
+		context.Background(),
+		OAuthRevokeRequest{Origin: server.URL, AccessToken: "access-secret"},
+	)
+	if err != nil {
+		t.Fatalf("Revoke() error = %v", err)
+	}
+	if request.Get("client_id") != access.AuthoringCLIClientID ||
+		request.Get("token") != "access-secret" ||
+		request.Get("token_type_hint") != "access_token" {
+		t.Fatalf("request=%v", request)
+	}
+}
+
 func serverURL(r *http.Request) string {
 	return "http://" + r.Host
 }

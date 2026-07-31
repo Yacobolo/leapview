@@ -10,28 +10,11 @@ import (
 	"testing"
 	"time"
 
-	apigenclient "github.com/Yacobolo/toolbelt/apigen/runtime/client"
 	"github.com/flidai/leapview/internal/access"
-	accessgen "github.com/flidai/leapview/internal/access/api/gen"
 	"github.com/flidai/leapview/internal/platform/cliapi"
 	"github.com/flidai/leapview/internal/platform/securestore"
 	"golang.org/x/oauth2"
 )
-
-type fakeTransport struct {
-	requests []apigenclient.Request
-	do       func(apigenclient.Request, any) (apigenclient.Response, error)
-}
-
-func (transport *fakeTransport) DoAPIGen(_ context.Context, request apigenclient.Request, out any) (apigenclient.Response, error) {
-	transport.requests = append(transport.requests, request)
-	return transport.do(request, out)
-}
-
-type fakeFactory struct {
-	transport *fakeTransport
-	targets   []string
-}
 
 type fakeAuthoringOAuthClient struct {
 	request         DeviceAuthorizationRequest
@@ -43,6 +26,8 @@ type fakeAuthoringOAuthClient struct {
 	workloadRequest WorkloadIdentityRequest
 	workloadToken   *oauth2.Token
 	workloadErr     error
+	revokeRequest   OAuthRevokeRequest
+	revokeErr       error
 }
 
 func (client *fakeAuthoringOAuthClient) Begin(_ context.Context, request DeviceAuthorizationRequest) (DeviceAuthorization, error) {
@@ -60,6 +45,11 @@ func (client *fakeAuthoringOAuthClient) Workload(_ context.Context, request Work
 	return client.workloadToken, client.workloadErr
 }
 
+func (client *fakeAuthoringOAuthClient) Revoke(_ context.Context, request OAuthRevokeRequest) error {
+	client.revokeRequest = request
+	return client.revokeErr
+}
+
 type fakeDeviceAuthorization struct {
 	challenge DeviceChallenge
 	token     *oauth2.Token
@@ -72,11 +62,6 @@ func (authorization fakeDeviceAuthorization) Challenge() DeviceChallenge {
 
 func (authorization fakeDeviceAuthorization) Token(context.Context) (*oauth2.Token, error) {
 	return authorization.token, authorization.err
-}
-
-func (factory *fakeFactory) PublicTransport(_ context.Context, target string) (apigenclient.Transport, error) {
-	factory.targets = append(factory.targets, target)
-	return factory.transport, nil
 }
 
 type memorySecrets struct {
@@ -140,7 +125,6 @@ func TestLoginUsesOAuthDeviceFlowAndNativeCredentialReference(t *testing.T) {
 	profiles := cliapi.NewProfileStore(filepath.Join(t.TempDir(), "cli.json"))
 	var opened, shown string
 	auth := Authenticator{
-		Factory:  &fakeFactory{transport: &fakeTransport{}},
 		OAuth:    oauthClient,
 		Profiles: profiles,
 		Secrets:  secrets,
@@ -184,9 +168,8 @@ func TestLoginUsesOAuthDeviceFlowAndNativeCredentialReference(t *testing.T) {
 
 func TestHeadlessLoginShowsCodeWithoutOpeningBrowser(t *testing.T) {
 	now := time.Now().UTC()
-	transport := successfulLoginTransport(now)
 	opened := false
-	auth, _, _ := testAuthenticator(t, now, transport)
+	auth, _, _ := testAuthenticator(t, now)
 	auth.OpenBrowser = func(string) error {
 		opened = true
 		return nil
@@ -206,7 +189,7 @@ func TestHeadlessLoginShowsCodeWithoutOpeningBrowser(t *testing.T) {
 
 func TestLoginFailsClosedWhenNativeStoreIsUnavailable(t *testing.T) {
 	now := time.Now().UTC()
-	auth, profiles, _ := testAuthenticator(t, now, successfulLoginTransport(now))
+	auth, profiles, _ := testAuthenticator(t, now)
 	auth.Secrets = &memorySecrets{err: errors.New("keychain locked")}
 	_, err := auth.Login(context.Background(), LoginRequest{
 		Name: "prod", Origin: "https://example.test", InstanceID: "lvinst_prod",
@@ -222,8 +205,7 @@ func TestLoginFailsClosedWhenNativeStoreIsUnavailable(t *testing.T) {
 
 func TestResolveRefreshesBeforeClockSkewAndPersistsRotation(t *testing.T) {
 	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
-	transport := &fakeTransport{}
-	auth, profiles, secrets := testAuthenticator(t, now, transport)
+	auth, profiles, secrets := testAuthenticator(t, now)
 	oauthClient := auth.OAuth.(*fakeAuthoringOAuthClient)
 	oauthClient.refreshToken = (&oauth2.Token{
 		AccessToken: "access-new", RefreshToken: "refresh-new",
@@ -264,8 +246,7 @@ func TestResolveRefreshesBeforeClockSkewAndPersistsRotation(t *testing.T) {
 
 func TestResolvePurgesCompromisedRefreshFamily(t *testing.T) {
 	now := time.Now().UTC()
-	transport := &fakeTransport{}
-	auth, profiles, secrets := testAuthenticator(t, now, transport)
+	auth, profiles, secrets := testAuthenticator(t, now)
 	auth.OAuth.(*fakeAuthoringOAuthClient).refreshErr = &oauth2.RetrieveError{
 		Response:  &http.Response{StatusCode: http.StatusBadRequest},
 		Body:      []byte(`{"error":"invalid_grant"}`),
@@ -294,17 +275,8 @@ func TestResolvePurgesCompromisedRefreshFamily(t *testing.T) {
 
 func TestLogoutRevokesServerSessionAndDeletesLocalState(t *testing.T) {
 	now := time.Now().UTC()
-	transport := &fakeTransport{do: func(request apigenclient.Request, out any) (apigenclient.Response, error) {
-		if request.OperationID != accessgen.GenOperationRevokeAuthoringToken {
-			t.Fatalf("operation = %q", request.OperationID)
-		}
-		if request.Body.(accessgen.GenSchemaAuthoringRevokeRequest).AccessToken != "access-token" {
-			t.Fatalf("body = %+v", request.Body)
-		}
-		*out.(*accessgen.GenSchemaStatusResponse) = accessgen.GenSchemaStatusResponse{Status: "revoked"}
-		return apigenclient.Response{StatusCode: http.StatusOK}, nil
-	}}
-	auth, profiles, secrets := testAuthenticator(t, now, transport)
+	auth, profiles, secrets := testAuthenticator(t, now)
+	oauthClient := auth.OAuth.(*fakeAuthoringOAuthClient)
 	account := "target/account"
 	if err := profiles.Put("prod", cliapi.TargetProfile{
 		Origin: "https://example.test", InstanceID: "lvinst_prod", ProjectID: "project", CredentialAccount: account,
@@ -317,6 +289,10 @@ func TestLogoutRevokesServerSessionAndDeletesLocalState(t *testing.T) {
 	})
 	if err := auth.Logout(context.Background(), "prod"); err != nil {
 		t.Fatal(err)
+	}
+	if oauthClient.revokeRequest.Origin != "https://example.test" ||
+		oauthClient.revokeRequest.AccessToken != "access-token" {
+		t.Fatalf("revoke request=%+v", oauthClient.revokeRequest)
 	}
 	if _, ok := secrets.values[account]; ok {
 		t.Fatal("credential remained after logout")
@@ -355,18 +331,11 @@ func TestExchangeWorkloadIdentityUsesExactGeneratedScopeWithoutPersistence(t *te
 	}
 }
 
-func successfulLoginTransport(now time.Time) *fakeTransport {
-	return &fakeTransport{do: func(apigenclient.Request, any) (apigenclient.Response, error) {
-		return apigenclient.Response{}, errors.New("unexpected operation")
-	}}
-}
-
-func testAuthenticator(t *testing.T, now time.Time, transport *fakeTransport) (Authenticator, *cliapi.ProfileStore, *memorySecrets) {
+func testAuthenticator(t *testing.T, now time.Time) (Authenticator, *cliapi.ProfileStore, *memorySecrets) {
 	t.Helper()
 	profiles := cliapi.NewProfileStore(filepath.Join(t.TempDir(), "cli.json"))
 	secrets := &memorySecrets{}
 	return Authenticator{
-		Factory: &fakeFactory{transport: transport},
 		OAuth: &fakeAuthoringOAuthClient{authorization: fakeDeviceAuthorization{
 			challenge: DeviceChallenge{
 				UserCode:                "USER-CODE",

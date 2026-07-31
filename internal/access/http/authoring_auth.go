@@ -50,25 +50,6 @@ func (h Handler) DecideDeviceAuthorization(w stdhttp.ResponseWriter, r *stdhttp.
 	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": status})
 }
 
-func (h Handler) RevokeAuthoringToken(w stdhttp.ResponseWriter, r *stdhttp.Request) {
-	service, ok := h.authoringAuthentication(w)
-	if !ok {
-		return
-	}
-	var input struct {
-		AccessToken string `json:"accessToken"`
-	}
-	if err := decodeStrictJSON(r, &input); err != nil {
-		writeJSONError(w, err, stdhttp.StatusBadRequest)
-		return
-	}
-	if err := service.RevokeAccessToken(r.Context(), input.AccessToken); err != nil {
-		writeAuthoringAuthError(w, err)
-		return
-	}
-	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "revoked"})
-}
-
 func (h Handler) ListCurrentAuthoringSessions(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	service, ok := h.authoringAuthentication(w)
 	if !ok {

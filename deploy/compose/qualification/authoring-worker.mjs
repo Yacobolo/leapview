@@ -30,25 +30,37 @@ async function signIn(page, email, temporaryPassword, password) {
 async function issueToken(context, page, privileges) {
   const challenge = await requireJSON(
     await context.request.post(
-      new URL('/api/v1/access/device-authorizations', baseURL).href,
-      { data: { scope: { projectId: projectID, privileges } } },
+      new URL('/oauth/device/code', baseURL).href,
+      {
+        form: {
+          client_id: 'leapview-cli',
+          project_id: projectID,
+          scope: privileges.join(' '),
+        },
+      },
     ),
     `device authorization for ${privileges.join(', ')}`,
   )
-  const deviceURL = new URL(challenge.verificationUriComplete, baseURL)
+  const deviceURL = new URL(challenge.verification_uri_complete, baseURL)
   await page.goto(deviceURL.href, { waitUntil: 'domcontentloaded', timeout: 60_000 })
   await page.getByRole('heading', { name: 'Authorize LeapView CLI' }).waitFor()
-  await page.getByLabel('Device code').fill(challenge.userCode)
+  await page.getByLabel('Device code').fill(challenge.user_code)
   await page.getByRole('button', { name: 'Authorize', exact: true }).click({ force: true })
   await page.getByRole('heading', { name: 'CLI authorized' }).waitFor({ timeout: 30_000 })
   const tokens = await requireJSON(
     await context.request.post(
-      new URL('/api/v1/access/device-authorizations/token', baseURL).href,
-      { data: { deviceCode: challenge.deviceCode } },
+      new URL('/oauth/token', baseURL).href,
+      {
+        form: {
+          client_id: 'leapview-cli',
+          grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+          device_code: challenge.device_code,
+        },
+      },
     ),
     `device token exchange for ${privileges.join(', ')}`,
   )
-  return { accessToken: tokens.accessToken }
+  return { accessToken: tokens.access_token }
 }
 
 const browser = await chromium.launch({ headless: true })
@@ -177,7 +189,7 @@ try {
           title: await administratorPage.title().catch(() => ''),
           url: administratorPage.url(),
         })}\n`,
-        { mode: 0o600 },
+        { mode: 0o644 },
       ).catch(() => {})
       await administratorPage.screenshot({ path: screenshotPath }).catch(() => {})
       process.stdout.write(`${JSON.stringify({

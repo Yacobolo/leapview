@@ -22,6 +22,14 @@ func (s *Module) OAuthToken(w http.ResponseWriter, r *http.Request) {
 	s.handler.OAuthToken(w, r)
 }
 
+func (s *Module) OAuthRevoke(w http.ResponseWriter, r *http.Request) {
+	if requestTargetsAuthoringOAuthRevoke(r) {
+		s.AuthoringOAuthRevoke(w, r)
+		return
+	}
+	s.MCPOAuthRevoke(w, r)
+}
+
 func requestTargetsAuthoringOAuth(r *http.Request) bool {
 	if r == nil || strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 		return false
@@ -59,6 +67,16 @@ func requestTargetsMCPOAuth(r *http.Request) bool {
 	default:
 		return false
 	}
+}
+
+func requestTargetsAuthoringOAuthRevoke(r *http.Request) bool {
+	if r == nil || strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		return false
+	}
+	if err := r.ParseForm(); err != nil {
+		return false
+	}
+	return r.Form.Get("client_id") == access.AuthoringCLIClientID
 }
 
 func (s *Module) MCPProtectedResourceMetadata(w http.ResponseWriter, r *http.Request) {

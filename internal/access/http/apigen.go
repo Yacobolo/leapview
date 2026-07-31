@@ -39,10 +39,6 @@ func (d *APIGenDispatcher) DecideDeviceAuthorization(w stdhttp.ResponseWriter, r
 	d.handler.DecideDeviceAuthorization(w, r)
 }
 
-func (d *APIGenDispatcher) RevokeAuthoringToken(w stdhttp.ResponseWriter, r *stdhttp.Request) {
-	d.handler.RevokeAuthoringToken(w, r)
-}
-
 func (d *APIGenDispatcher) ListCurrentAuthoringSessions(w stdhttp.ResponseWriter, r *stdhttp.Request, _ accessgen.GenListCurrentAuthoringSessionsParams) {
 	d.handler.ListCurrentAuthoringSessions(w, r)
 }
