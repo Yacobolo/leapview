@@ -16,6 +16,11 @@ visuals:
     title: State and status tree
     description: Shows customer state and order status as a hierarchy.
     type: tree
+    presentation:
+      orientation: horizontal
+      initial_depth: 2
+      roam: true
+      labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 18, minimum_spacing: 6, tooltip_fallback: true}
     query:
       dimensions:
         state: orders.state

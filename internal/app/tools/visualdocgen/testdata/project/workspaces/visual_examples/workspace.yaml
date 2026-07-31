@@ -7,6 +7,9 @@ spec:
   uses:
     sources:
     - docs.orders
+    - docs.conversion_stages
+    - docs.revenue_bridge
+    - docs.market_ohlc
   models:
     include:
     - models/*.yaml

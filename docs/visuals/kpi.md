@@ -6,64 +6,9 @@ Every preview on this page is generated from the YAML shown below it using a fix
 
 Each preview automatically shows every valid responsive arrangement derived from that visual's explicitly configured features. The YAML does not name layout variants: LeapView rearranges the same label, value, comparison, goal, status, trend, and note, while enforcing the minimum size needed to preserve them.
 
-## Current value
+## Decision-ready comparison and trend
 
-Use compact mode when the current value is meaningful without a comparison. A note may add context, but it should not duplicate the title.
-
-{{< visual id="total_orders" >}}
-
-```yaml visual-example=total_orders
-visuals:
-  total_orders:
-    type: kpi
-    description: Shows the filtered count of distinct orders.
-    query:
-      measures:
-        order_count: null
-    kpi:
-      mode: compact
-    presentation:
-      note: Filtered order count
-      tone: ink
-```
-
-## Trend only
-
-A trend is an explicit feature, independent of comparison. This example keeps the current value and historical shape without adding baseline semantics.
-
-{{< visual id="revenue_kpi_trend" >}}
-
-```yaml visual-example=revenue_kpi_trend
-visuals:
-  revenue_kpi_trend:
-    title: Revenue trend
-    type: kpi
-    description: Shows revenue with an explicitly configured monthly trend.
-    query:
-      measures:
-        revenue: null
-    datasets:
-      trend:
-        dimensions:
-          period: orders.purchase_month
-        measures:
-          value:
-            measure: revenue
-        sort:
-          - field: period
-            direction: asc
-        limit: 12
-    kpi:
-      mode: compact
-      trend:
-        dataset: trend
-        category: period
-        value: value
-```
-
-## Favorable comparison and trend
-
-Bind comparison and trend to named datasets. `favorable_direction` is required whenever a comparison exists; LeapView never assumes that an increase is good.
+Lead with the current result, a filter-aligned baseline, the relative change, and recent history. `favorable_direction` makes the decision meaning explicit instead of assuming that an increase is good.
 
 {{< visual id="revenue_kpi_favorable" >}}
 
@@ -106,6 +51,61 @@ visuals:
       delta: relative
       favorable_direction: increase
       missing_comparison: show_unavailable
+```
+
+## Trend only
+
+A trend is an explicit feature, independent of comparison. This example keeps the current value and historical shape without adding baseline semantics.
+
+{{< visual id="revenue_kpi_trend" >}}
+
+```yaml visual-example=revenue_kpi_trend
+visuals:
+  revenue_kpi_trend:
+    title: Revenue trend
+    type: kpi
+    description: Shows revenue with an explicitly configured monthly trend.
+    query:
+      measures:
+        revenue: null
+    datasets:
+      trend:
+        dimensions:
+          period: orders.purchase_month
+        measures:
+          value:
+            measure: revenue
+        sort:
+          - field: period
+            direction: asc
+        limit: 12
+    kpi:
+      mode: compact
+      trend:
+        dataset: trend
+        category: period
+        value: value
+```
+
+## Current value
+
+Use compact mode when the current value is meaningful without a comparison. A note may add context, but it should not duplicate the title.
+
+{{< visual id="total_orders" >}}
+
+```yaml visual-example=total_orders
+visuals:
+  total_orders:
+    type: kpi
+    description: Shows the filtered count of distinct orders.
+    query:
+      measures:
+        order_count: null
+    kpi:
+      mode: compact
+    presentation:
+      note: Filtered order count
+      tone: ink
 ```
 
 ## Unfavorable direction

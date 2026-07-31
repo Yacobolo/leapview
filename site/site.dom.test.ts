@@ -2220,7 +2220,7 @@ test('visual showcase renders every supported visual type', async () => {
     )
     expect(catalog).toHaveLength(26)
     expect(catalog).toContainEqual({ visualID: 'revenue_line', href: '/docs/visuals/line', label: 'Open Line chart documentation' })
-    expect(catalog).toContainEqual({ visualID: 'total_orders', href: '/docs/visuals/kpi', label: 'Open KPI documentation' })
+    expect(catalog).toContainEqual({ visualID: 'revenue_kpi_favorable', href: '/docs/visuals/kpi', label: 'Open KPI documentation' })
     expect(catalog.every(({ visualID, href, label }) => Boolean(visualID && href && label))).toBe(true)
   } finally {
     await page.close()

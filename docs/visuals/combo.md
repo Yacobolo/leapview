@@ -17,6 +17,7 @@ visuals:
     description: Compares monthly revenue and order volume together.
     type: combo
     presentation:
+      dual_axis: true
       series_types:
         Revenue: line
         Orders: column

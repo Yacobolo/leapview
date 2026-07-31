@@ -4,27 +4,29 @@ Use a waterfall chart to show how category contributions build from one total to
 
 Every preview on this page is generated from the YAML shown below it using a fixed documentation dataset.
 
-## Basic
+## Revenue bridge
 
-Use an ordered dimension and one measure with `type: waterfall`; the compiler derives the cumulative fields needed to show how each period contributes to the running total.
+Use signed business contributions so the bridge visibly distinguishes gains from losses and explains the net movement.
 
-{{< visual id="revenue_waterfall" >}}
+{{< visual id="revenue_bridge_waterfall" >}}
 
-```yaml visual-example=revenue_waterfall
+```yaml visual-example=revenue_bridge_waterfall
 visuals:
-  revenue_waterfall:
-    title: Monthly revenue contribution
-    description: Shows each month contribution to total revenue.
+  revenue_bridge_waterfall:
+    title: Revenue drivers
+    description: Explains positive and negative contributions to net revenue growth.
     type: waterfall
+    presentation:
+      labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 18, minimum_spacing: 6, tooltip_fallback: true}
     query:
+      table: revenue_bridge
       dimensions:
-        purchase_month: orders.purchase_month
+        component: revenue_bridge.component
       measures:
-        revenue: null
+        revenue_impact: null
       sort:
-        - field: purchase_month
+        - field: component
           direction: asc
-      limit: 18
 ```
 
 ## Alternate measure

@@ -16,6 +16,12 @@ visuals:
     title: Status and delivery network
     description: Shows status and delivery-speed relationships as a network.
     type: graph
+    presentation:
+      layout: circular
+      roam: true
+      curveness: 0.24
+      focus: adjacency
+      labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 18, minimum_spacing: 6, tooltip_fallback: true}
     query:
       dimensions:
         status: orders.status

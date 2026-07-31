@@ -7,6 +7,9 @@ metadata:
 spec:
   tables:
   - orders
+  - conversion_stages
+  - revenue_bridge
+  - market_ohlc
   dimensions:
     purchase_date:
       type: date
@@ -14,6 +17,49 @@ spec:
       bindings:
         orders: {field: orders.purchase_date}
   measures:
+    conversions:
+      label: Conversions
+      fact: conversion_stages
+      aggregation: sum
+      input: {field: conversion_stages.conversions}
+      empty: zero
+      format: integer
+    revenue_impact:
+      label: Revenue impact
+      fact: revenue_bridge
+      aggregation: sum
+      input: {field: revenue_bridge.amount}
+      empty: zero
+      unit: USD
+      format: currency
+    market_open:
+      label: Open
+      fact: market_ohlc
+      aggregation: sum
+      input: {field: market_ohlc.open}
+      empty: "null"
+      format: decimal
+    market_close:
+      label: Close
+      fact: market_ohlc
+      aggregation: sum
+      input: {field: market_ohlc.close}
+      empty: "null"
+      format: decimal
+    market_low:
+      label: Low
+      fact: market_ohlc
+      aggregation: sum
+      input: {field: market_ohlc.low}
+      empty: "null"
+      format: decimal
+    market_high:
+      label: High
+      fact: market_ohlc
+      aggregation: sum
+      input: {field: market_ohlc.high}
+      empty: "null"
+      format: decimal
     order_count:
       label: Orders
       fact: orders
