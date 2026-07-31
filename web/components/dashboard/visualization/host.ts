@@ -176,17 +176,6 @@ export class VisualizationHost extends LitElement {
       align-content: center;
       gap: var(--base-size-4);
     }
-    .lv-kpi-card[data-layout='wide'][data-has-trend='true'] {
-      padding-inline-end: 42%;
-    }
-    .lv-kpi-card[data-layout='wide'][data-has-trend='true'] > .lv-kpi-sparkline {
-      position: absolute;
-      inset-block: var(--base-size-12);
-      inset-inline-end: var(--base-size-16);
-      width: 34%;
-      height: auto;
-      min-height: var(--base-size-24);
-    }
     .lv-kpi-card[data-layout='stacked'] {
       gap: var(--base-size-4);
       padding: var(--base-size-8) var(--base-size-12) var(--base-size-8) var(--base-size-16);

@@ -9,10 +9,10 @@ import {
 test('responsive layout selects the richest layout that preserves every explicit feature', () => {
   const features: WidgetLayoutFeature[] = ['comparison', 'trend']
 
-  expect(resolveWidgetLayout('kpi', { width: 320, height: 120 }, features)).toEqual({
+  expect(resolveWidgetLayout('kpi', { width: 320, height: 148 }, features)).toEqual({
     kind: 'fit',
     layout: 'wide',
-    minimum: { width: 320, height: 120 },
+    minimum: { width: 320, height: 148 },
   })
   expect(resolveWidgetLayout('kpi', { width: 250, height: 130 }, features)).toEqual({
     kind: 'fit',
@@ -27,7 +27,7 @@ test('responsive layout rejects boundary-minus-one sizes instead of dropping fea
   expect(resolveWidgetLayout('kpi', { width: 191, height: 124 }, features)).toEqual({
     kind: 'too-small',
     requirements: [
-      { layout: 'wide', minimum: { width: 320, height: 120 } },
+      { layout: 'wide', minimum: { width: 320, height: 148 } },
       { layout: 'stacked', minimum: { width: 192, height: 124 } },
     ],
   })
@@ -40,21 +40,21 @@ test('explicit KPI features deterministically increase every applicable layout m
     { layout: 'stacked', minimum: { width: 192, height: 68 } },
   ])
   expect(layoutRequirements('kpi', ['subtitle', 'comparison', 'progress', 'goal', 'status', 'trend', 'note'])).toEqual([
-    { layout: 'wide', minimum: { width: 320, height: 214 } },
+    { layout: 'wide', minimum: { width: 320, height: 242 } },
     { layout: 'stacked', minimum: { width: 192, height: 218 } },
   ])
 })
 
 test('date-range slicers switch layout without changing their two explicit inputs', () => {
-  expect(resolveWidgetLayout('slicer.date_range', { width: 268, height: 88 })).toEqual({
+  expect(resolveWidgetLayout('slicer.date_range', { width: 268, height: 96 })).toEqual({
     kind: 'fit',
     layout: 'inline',
-    minimum: { width: 268, height: 88 },
+    minimum: { width: 268, height: 96 },
   })
-  expect(resolveWidgetLayout('slicer.date_range', { width: 240, height: 136 })).toEqual({
+  expect(resolveWidgetLayout('slicer.date_range', { width: 240, height: 156 })).toEqual({
     kind: 'fit',
     layout: 'stacked',
-    minimum: { width: 172, height: 136 },
+    minimum: { width: 172, height: 156 },
   })
-  expect(resolveWidgetLayout('slicer.date_range', { width: 171, height: 136 }).kind).toBe('too-small')
+  expect(resolveWidgetLayout('slicer.date_range', { width: 171, height: 156 }).kind).toBe('too-small')
 })

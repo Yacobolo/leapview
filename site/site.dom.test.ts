@@ -869,7 +869,7 @@ test('KPI documentation automatically demonstrates every valid layout from one v
       }),
     )
     expect(previews).toEqual([
-      { documented: 'wide', selected: 'wide', fit: 'fit', sparkline: 1, width: 320, height: 120 },
+      { documented: 'wide', selected: 'wide', fit: 'fit', sparkline: 1, width: 320, height: 148 },
       { documented: 'stacked', selected: 'stacked', fit: 'fit', sparkline: 1, width: 192, height: 124 },
     ])
     const yaml = await page.locator('lv-code-block[data-visual-example="revenue_kpi_favorable"]').getAttribute('code')
@@ -917,9 +917,48 @@ test('responsive widget reference covers every KPI and filter layout plus interm
             && value!.clientHeight > 0
             && card!.scrollHeight <= card!.clientHeight
         }),
+        filterSummariesFit: [...root.querySelectorAll('[data-filter-scenario] lv-slicer')].every((slicer) => {
+          const hostRect = slicer.getBoundingClientRect()
+          const leaf = slicer.shadowRoot?.querySelector('lv-filter-leaf')
+          const status = leaf?.shadowRoot?.querySelector<HTMLElement>('.status')
+          const statusRect = status?.getBoundingClientRect()
+          return Boolean(statusRect)
+            && statusRect!.bottom <= hostRect.bottom - 4
+            && statusRect!.top >= hostRect.top
+        }),
+        frameRowsFit: [...root.querySelectorAll<HTMLElement>('.frame-row')].every((row) => row.scrollWidth <= row.clientWidth + 1),
+        filterSummaries: (() => {
+          const summary = (scenario: string) => root
+            .querySelector(`[data-filter-scenario="${scenario}"] lv-slicer`)
+            ?.shadowRoot?.querySelector('lv-filter-leaf')
+            ?.shadowRoot?.querySelector('.status')
+            ?.textContent?.trim()
+          return {
+            comparison: summary('input'),
+            numericRange: summary('numeric-range'),
+          }
+        })(),
+        wideTrendBelowValue: (() => {
+          const host = root.querySelector('[data-kpi-scenario="revenue_kpi_trend"] [data-layout-frame="wide"] lv-visualization-host')
+          const value = host?.shadowRoot?.querySelector<HTMLElement>('.lv-visualization-kpi')
+          const sparkline = host?.shadowRoot?.querySelector<HTMLElement>('.lv-kpi-sparkline')
+          if (!value || !sparkline) return false
+          return sparkline.getBoundingClientRect().top >= value.getBoundingClientRect().bottom
+        })(),
       }
     })
-    expect(coverage).toEqual({ kpiScenarios: 9, kpiFrames: 18, filterScenarios: 5, filterFrames: 8, dimensions: true, valuesFit: true })
+    expect(coverage).toEqual({
+      kpiScenarios: 9,
+      kpiFrames: 18,
+      filterScenarios: 5,
+      filterFrames: 8,
+      dimensions: true,
+      valuesFit: true,
+      filterSummariesFit: true,
+      frameRowsFit: true,
+      filterSummaries: { comparison: '≥ 1000', numericRange: '50 – 500' },
+      wideTrendBelowValue: true,
+    })
 
     const reference = page.locator('lv-site-responsive-widget-reference')
     const width = reference.getByRole('slider', { name: 'Preview width' })
@@ -931,7 +970,7 @@ test('responsive widget reference covers every KPI and filter layout plus interm
 
     await reference.getByRole('combobox', { name: 'Preview widget' }).selectOption('date-range')
     await page.waitForFunction(() => document.querySelector('lv-site-responsive-widget-reference')?.shadowRoot?.querySelector('[data-playground-frame]')?.getAttribute('data-fit') === 'too-small')
-    await height.fill('152')
+    await height.fill('172')
     await page.waitForFunction(() => document.querySelector('lv-site-responsive-widget-reference')?.shadowRoot?.querySelector('[data-playground-frame]')?.getAttribute('data-fit') === 'fit')
 
     await page.setViewportSize({ width: 390, height: 844 })

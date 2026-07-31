@@ -642,11 +642,26 @@ export function expressionSummary(expression: DashboardFilterExpression): string
     case 'set':
       return `${expression.values.length} selected`
     case 'comparison':
-      return `${expression.operator.replaceAll('_', ' ')} ${String(expression.value.value)}`
+      return `${comparisonOperatorSymbol(expression.operator)} ${String(expression.value.value)}`
     case 'range':
       return `${expression.lower ? String(expression.lower.value.value) : '…'} – ${expression.upper ? String(expression.upper.value.value) : '…'}`
     case 'relative_period':
       return `${expression.direction} ${expression.count} ${expression.unit}`
+  }
+}
+
+function comparisonOperatorSymbol(operator: Extract<DashboardFilterExpression, { kind: 'comparison' }>['operator']): string {
+  switch (operator) {
+    case 'equals': return '='
+    case 'not_equals': return '≠'
+    case 'greater_than': return '>'
+    case 'greater_than_or_equal': return '≥'
+    case 'less_than': return '<'
+    case 'less_than_or_equal': return '≤'
+    case 'contains': return 'contains'
+    case 'not_contains': return 'does not contain'
+    case 'starts_with': return 'starts with'
+    case 'ends_with': return 'ends with'
   }
 }
 

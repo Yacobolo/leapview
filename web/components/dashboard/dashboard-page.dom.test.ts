@@ -1022,7 +1022,7 @@ test('date-range slicers rearrange at contract boundaries without removing eithe
       const leaf = document.createElement('lv-filter-leaf') as any
       leaf.style.display = 'block'
       leaf.style.width = '268px'
-      leaf.style.height = '88px'
+      leaf.style.height = '96px'
       leaf.definition = {
         id: 'purchase_date', label: 'Purchase date', field: 'orders.purchase_date', valueKind: 'date',
         predicates: [{ kind: 'range', operators: [] }],
@@ -1052,7 +1052,7 @@ test('date-range slicers rearrange at contract boundaries without removing eithe
       })
       const inline = snapshot()
       leaf.style.width = '240px'
-      leaf.style.height = '136px'
+      leaf.style.height = '156px'
       await settle()
       const stacked = snapshot()
       leaf.style.width = '171px'

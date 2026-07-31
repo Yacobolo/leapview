@@ -1796,6 +1796,7 @@ class SiteResponsiveWidgetReference extends DatastarLit(LitElement) {
     figure {
       display: grid;
       flex: 0 0 auto;
+      min-width: 0;
       gap: var(--base-size-8);
       margin: 0;
     }
@@ -1823,6 +1824,8 @@ class SiteResponsiveWidgetReference extends DatastarLit(LitElement) {
       font-size: var(--lv-font-size-caption);
       line-height: var(--lv-line-height-compact);
     }
+
+    figcaption { overflow-wrap: anywhere; }
 
     figcaption strong,
     .diagnostic strong { color: var(--lv-fg-default); font-weight: var(--lv-font-weight-strong); }
@@ -1922,7 +1925,7 @@ class SiteResponsiveWidgetReference extends DatastarLit(LitElement) {
 
   private renderKPIFrame(label: string, visual: VisualPayload, layout: string, width: number, height: number) {
     const ariaLabel = `${label}, ${layout} layout, ${width}×${height}`
-    return html`<figure data-layout-frame=${layout} aria-label=${ariaLabel}>
+    return html`<figure data-layout-frame=${layout} aria-label=${ariaLabel} style=${frameWidth(width)}>
       <div class="layout-frame" style=${frameSize(width, height)}>
         <lv-visualization-host .envelope=${visual}></lv-visualization-host>
       </div>
@@ -1942,7 +1945,7 @@ class SiteResponsiveWidgetReference extends DatastarLit(LitElement) {
           const width = requirement.minimum.width + chrome.width
           const height = requirement.minimum.height + chrome.height
           const ariaLabel = `${scenario.label}, ${requirement.layout} layout, ${width}×${height}`
-          return html`<figure data-layout-frame=${requirement.layout} aria-label=${ariaLabel}>
+          return html`<figure data-layout-frame=${requirement.layout} aria-label=${ariaLabel} style=${frameWidth(width)}>
             <div class="layout-frame" style=${frameSize(width, height)}>
               ${filterSlicer(scenario)}
             </div>
@@ -2059,6 +2062,10 @@ function selectedLayout(resolution: WidgetLayoutResolution) {
 
 function frameSize(width: number, height: number): string {
   return `width: ${width}px; height: ${height}px`
+}
+
+function frameWidth(width: number): string {
+  return `width: ${width}px`
 }
 
 class SiteVisualShowcase extends DatastarLit(LitElement) {

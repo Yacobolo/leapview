@@ -50,7 +50,6 @@ class HTMLHandle implements RendererHandle {
     const conditional = kpiConditionalPresentation(envelope, context)
     const metadata = resolveVisualizationMetadata(envelope)
     const state = resolveKPIState(envelope, context)
-    article.dataset.hasTrend = state.trend.length > 0 ? 'true' : 'false'
     article.setAttribute('aria-label', accessibleLabel([
       metadata.title,
       metadata.summary ?? metadata.description,

@@ -11,7 +11,7 @@ func TestRequirementsPreserveExplicitFeaturesAcrossLayouts(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []Requirement{
-		{Layout: "wide", Minimum: Size{Width: 320, Height: 120}},
+		{Layout: "wide", Minimum: Size{Width: 320, Height: 148}},
 		{Layout: "stacked", Minimum: Size{Width: 192, Height: 124}},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -33,8 +33,8 @@ func TestOuterRequirementsIncludeComponentChrome(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []Requirement{
-		{Layout: "inline", Minimum: Size{Width: 288, Height: 104}},
-		{Layout: "stacked", Minimum: Size{Width: 192, Height: 152}},
+		{Layout: "inline", Minimum: Size{Width: 288, Height: 112}},
+		{Layout: "stacked", Minimum: Size{Width: 192, Height: 172}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("outer requirements = %#v, want %#v", got, want)

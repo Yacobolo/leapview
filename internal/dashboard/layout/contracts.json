@@ -12,7 +12,7 @@
             "progress": { "height": 12 },
             "goal": { "height": 19 },
             "status": { "height": 19 },
-            "trend": { "height": 0 },
+            "trend": { "height": 28 },
             "note": { "height": 22 }
           }
         },
@@ -36,7 +36,7 @@
       "layouts": [
         {
           "id": "control",
-          "minimum": { "width": 140, "height": 66 },
+          "minimum": { "width": 140, "height": 74 },
           "features": {}
         }
       ],
@@ -46,7 +46,7 @@
       "layouts": [
         {
           "id": "control",
-          "minimum": { "width": 140, "height": 82 },
+          "minimum": { "width": 140, "height": 96 },
           "features": {}
         }
       ],
@@ -56,12 +56,12 @@
       "layouts": [
         {
           "id": "inline",
-          "minimum": { "width": 268, "height": 88 },
+          "minimum": { "width": 268, "height": 96 },
           "features": {}
         },
         {
           "id": "stacked",
-          "minimum": { "width": 172, "height": 136 },
+          "minimum": { "width": 172, "height": 156 },
           "features": {}
         }
       ],
@@ -71,12 +71,12 @@
       "layouts": [
         {
           "id": "inline",
-          "minimum": { "width": 268, "height": 88 },
+          "minimum": { "width": 268, "height": 96 },
           "features": {}
         },
         {
           "id": "stacked",
-          "minimum": { "width": 172, "height": 136 },
+          "minimum": { "width": 172, "height": 156 },
           "features": {}
         }
       ],
