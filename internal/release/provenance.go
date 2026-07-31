@@ -1,8 +1,6 @@
 package release
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +10,7 @@ import (
 	"unicode"
 
 	platformdigest "github.com/flidai/leapview/internal/platform/digest"
+	ocidigest "github.com/opencontainers/go-digest"
 )
 
 const ProvenanceVersion = 1
@@ -411,8 +410,7 @@ func canonicalDigest(value any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	sum := sha256.Sum256(encoded)
-	return "sha256:" + hex.EncodeToString(sum[:]), nil
+	return ocidigest.FromBytes(encoded).String(), nil
 }
 
 func provenanceInvalid(err error) error {

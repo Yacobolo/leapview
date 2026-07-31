@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	securefs "github.com/flidai/leapview/internal/platform/filesystem"
 	"github.com/flidai/leapview/internal/project"
 	projectdevloop "github.com/flidai/leapview/internal/project/devloop"
 )
@@ -248,28 +249,7 @@ func (synchronizer *candidateSourceSynchronizer) savePlan(
 	if err != nil {
 		return err
 	}
-	temporary, err := os.CreateTemp(synchronizer.planDir, ".plan-*.json")
-	if err != nil {
-		return err
-	}
-	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
-	if err := temporary.Chmod(0o600); err != nil {
-		temporary.Close()
-		return err
-	}
-	if _, err := temporary.Write(content); err != nil {
-		temporary.Close()
-		return err
-	}
-	if err := temporary.Sync(); err != nil {
-		temporary.Close()
-		return err
-	}
-	if err := temporary.Close(); err != nil {
-		return err
-	}
-	return os.Rename(temporaryPath, synchronizer.planPath(key))
+	return securefs.WritePrivateFileAtomic(synchronizer.planPath(key), content)
 }
 
 func (synchronizer *candidateSourceSynchronizer) planPath(key candidateSourcePlanKey) string {

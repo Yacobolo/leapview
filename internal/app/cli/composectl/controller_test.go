@@ -8,21 +8,23 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	instancelock "github.com/flidai/leapview/internal/platform/locking"
 )
 
 func TestControllerLockRejectsConcurrentOperationAndRecoversAfterRelease(t *testing.T) {
-	path := filepath.Join(t.TempDir(), controllerLockName)
-	first, err := acquireControllerLock(path)
+	root := t.TempDir()
+	first, err := instancelock.AcquireNamed(root, controllerLockName)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := acquireControllerLock(path); err == nil || !strings.Contains(err.Error(), "another LeapView operation") {
+	if _, err := instancelock.AcquireNamed(root, controllerLockName); err == nil || !strings.Contains(err.Error(), "another process") {
 		t.Fatalf("concurrent lock error = %v", err)
 	}
 	if err := first.Release(); err != nil {
 		t.Fatal(err)
 	}
-	second, err := acquireControllerLock(path)
+	second, err := instancelock.AcquireNamed(root, controllerLockName)
 	if err != nil {
 		t.Fatalf("reacquire released lock: %v", err)
 	}

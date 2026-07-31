@@ -78,6 +78,33 @@ func TestUploadArtifactRejectsDifferentContentAfterArtifactWasRecorded(t *testin
 	}
 }
 
+func TestUploadArtifactRejectsMalformedExpectedDigestWithoutSaving(t *testing.T) {
+	repo := &serviceTestReleaseRepository{current: Release{
+		ID: "release-1", ProjectID: "project-a", Status: StatusDraft,
+		Artifacts: []Artifact{{
+			ReleaseID: "release-1", WorkspaceID: "sales", ServingStateID: "state-1",
+			ExpectedDigest: "not-a-sha256-digest",
+		}},
+	}}
+	artifacts := &serviceTestArtifactStore{}
+	service := &Service{releases: repo, artifacts: artifacts}
+
+	_, err := service.UploadArtifact(
+		t.Context(),
+		"project-a",
+		"release-1",
+		"sales",
+		"sha-256=:invalid:",
+		strings.NewReader("artifact"),
+	)
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("UploadArtifact() error = %v, want ErrInvalid", err)
+	}
+	if artifacts.saveCalls != 0 {
+		t.Fatalf("malformed expected digest saved %d uploads", artifacts.saveCalls)
+	}
+}
+
 func TestValidateFinalizationRequiresEveryArtifactToMatchReleaseConnectionPins(t *testing.T) {
 	pinErr := errors.New("artifact pins disagree with release manifest")
 	repo := &serviceTestReleaseRepository{current: Release{

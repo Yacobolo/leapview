@@ -12,6 +12,7 @@ import (
 
 	apigenclient "github.com/Yacobolo/toolbelt/apigen/runtime/client"
 	"github.com/flidai/leapview/internal/platform/cliapi"
+	instancelock "github.com/flidai/leapview/internal/platform/locking"
 )
 
 func TestCandidateCheckpointStoreRoundTripsExactNonSecretIdentity(t *testing.T) {
@@ -45,6 +46,44 @@ func TestCandidateCheckpointStoreRoundTripsExactNonSecretIdentity(t *testing.T) 
 		if strings.Contains(strings.ToLower(string(content)), forbidden) {
 			t.Fatalf("checkpoint persisted forbidden secret material: %s", content)
 		}
+	}
+}
+
+func TestCandidateCheckpointStoreRefusesReadModifyWriteWhileAnotherProcessOwnsLock(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "authoring.json")
+	store := NewCandidateCheckpointStore(path)
+	projectPath := filepath.Join(t.TempDir(), "leapview.yaml")
+	existing := candidateCheckpoint(projectPath)
+	if err := store.Save(existing); err != nil {
+		t.Fatal(err)
+	}
+	lock, err := instancelock.AcquireNamed(directory, ".authoring.json.lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+
+	concurrent := existing
+	concurrent.CandidateKey = "github:pull/194"
+	concurrent.CandidateID = "cand_194"
+	if err := store.Save(concurrent); err == nil {
+		t.Fatal("Save succeeded while another process owned the checkpoint lock")
+	}
+	loaded, err := store.LoadCandidate(
+		existing.ProjectPath,
+		existing.TargetOrigin,
+		existing.CandidateKey,
+	)
+	if err != nil || loaded != existing {
+		t.Fatalf("existing checkpoint was corrupted: %#v, %v", loaded, err)
+	}
+	if _, err := store.LoadCandidate(
+		concurrent.ProjectPath,
+		concurrent.TargetOrigin,
+		concurrent.CandidateKey,
+	); !errors.Is(err, ErrCandidateCheckpointNotFound) {
+		t.Fatalf("concurrent checkpoint unexpectedly persisted: %v", err)
 	}
 }
 

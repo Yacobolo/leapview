@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	securefs "github.com/flidai/leapview/internal/platform/filesystem"
 )
 
 type qualificationProcess struct {
@@ -331,7 +333,7 @@ func writeQualificationJSON(path string, value any) error {
 		return err
 	}
 	contents = append(contents, '\n')
-	return writePrivateAtomic(path, contents)
+	return securefs.WritePrivateFileAtomic(path, contents)
 }
 
 func readQualificationJSON(path string, value any) error {
@@ -369,7 +371,7 @@ func appendOrReplaceQualificationEnv(path, key, value string) error {
 		lines = append(lines, key+"=", "")
 		lines[len(lines)-2] = key + "=" + value
 	}
-	return writePrivateAtomic(path, []byte(strings.Join(lines, "\n")))
+	return securefs.WritePrivateFileAtomic(path, []byte(strings.Join(lines, "\n")))
 }
 
 func qualificationWait(

@@ -1,10 +1,13 @@
 package cliapi
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	instancelock "github.com/flidai/leapview/internal/platform/locking"
 )
 
 func TestProfileStorePersistsOnlyNonSecretTargetMetadata(t *testing.T) {
@@ -42,6 +45,37 @@ func TestProfileStorePersistsOnlyNonSecretTargetMetadata(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("profile mode = %o, want 600", info.Mode().Perm())
+	}
+}
+
+func TestProfileStoreRefusesReadModifyWriteWhileAnotherProcessOwnsLock(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "cli.json")
+	store := NewProfileStore(path)
+	if err := store.Put("existing", TargetProfile{
+		Origin: "https://existing.example", InstanceID: "lvinst_existing",
+		CredentialAccount: "existing", ProjectID: "project",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	lock, err := instancelock.AcquireNamed(directory, ".cli.json.lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+
+	err = store.Put("concurrent", TargetProfile{
+		Origin: "https://concurrent.example", InstanceID: "lvinst_concurrent",
+		CredentialAccount: "concurrent", ProjectID: "project",
+	})
+	if err == nil {
+		t.Fatal("Put succeeded while another process owned the profile lock")
+	}
+	if _, getErr := store.Get("existing"); getErr != nil {
+		t.Fatalf("existing profile was corrupted: %v", getErr)
+	}
+	if _, getErr := store.Get("concurrent"); !errors.Is(getErr, ErrProfileNotFound) {
+		t.Fatalf("concurrent profile unexpectedly persisted: %v", getErr)
 	}
 }
 

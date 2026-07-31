@@ -13,6 +13,7 @@ import (
 	"github.com/flidai/leapview/internal/platform/jobs"
 	"github.com/flidai/leapview/internal/servingstate"
 	"github.com/flidai/leapview/internal/workspace"
+	ocidigest "github.com/opencontainers/go-digest"
 )
 
 type Repository interface {
@@ -187,8 +188,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Release, error
 	if err != nil {
 		return Release{}, err
 	}
-	sum := sha256.Sum256(encoded)
-	input.RequestDigest = "sha256:" + hex.EncodeToString(sum[:])
+	input.RequestDigest = ocidigest.FromBytes(encoded).String()
 	created, err := s.releases.Create(ctx, input)
 	if err != nil {
 		return Release{}, err
@@ -265,8 +265,15 @@ func (s *Service) UploadArtifact(ctx context.Context, projectID, releaseID, work
 	if !found || target.ServingStateID == "" {
 		return Artifact{}, ErrNotFound
 	}
-	expectedDigestBytes, err := hex.DecodeString(target.ExpectedDigest)
-	if err != nil || len(expectedDigestBytes) != sha256.Size {
+	expectedDigest := ocidigest.NewDigestFromEncoded(
+		ocidigest.SHA256,
+		strings.TrimSpace(target.ExpectedDigest),
+	)
+	if err := expectedDigest.Validate(); err != nil {
+		return Artifact{}, ErrInvalid
+	}
+	expectedDigestBytes, err := hex.DecodeString(expectedDigest.Encoded())
+	if err != nil {
 		return Artifact{}, ErrInvalid
 	}
 	expectedContentDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(expectedDigestBytes) + ":"
@@ -276,13 +283,16 @@ func (s *Service) UploadArtifact(ctx context.Context, projectID, releaseID, work
 	if target.UploadedAt != "" {
 		return target, nil
 	}
-	hash := sha256.New()
-	size, err := s.artifacts.SaveUpload(ctx, servingstate.ID(target.ServingStateID), io.TeeReader(source, hash))
+	verifier := expectedDigest.Verifier()
+	size, err := s.artifacts.SaveUpload(
+		ctx,
+		servingstate.ID(target.ServingStateID),
+		io.TeeReader(source, verifier),
+	)
 	if err != nil {
 		return Artifact{}, err
 	}
-	actualContentDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(hash.Sum(nil)) + ":"
-	if strings.TrimSpace(contentDigest) != actualContentDigest {
+	if !verifier.Verified() {
 		return Artifact{}, ErrDigest
 	}
 	target.SizeBytes = size

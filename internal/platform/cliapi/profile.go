@@ -9,6 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+
+	securefs "github.com/flidai/leapview/internal/platform/filesystem"
+	instancelock "github.com/flidai/leapview/internal/platform/locking"
 )
 
 const profileDocumentVersion = 1
@@ -38,6 +42,7 @@ type profileDocument struct {
 // ProfileStore persists non-secret CLI target metadata in a versioned document.
 type ProfileStore struct {
 	path string
+	mu   sync.Mutex
 }
 
 func NewProfileStore(path string) *ProfileStore {
@@ -107,6 +112,13 @@ func (store *ProfileStore) Put(name string, profile TargetProfile) error {
 	if strings.TrimSpace(profile.CredentialAccount) == "" {
 		return fmt.Errorf("target credential account is required")
 	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	lock, err := store.acquireMutationLock()
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
 	document, err := store.load()
 	if err != nil {
 		return err
@@ -124,6 +136,13 @@ func (store *ProfileStore) Put(name string, profile TargetProfile) error {
 }
 
 func (store *ProfileStore) Delete(name string) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	lock, err := store.acquireMutationLock()
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
 	document, err := store.load()
 	if err != nil {
 		return err
@@ -180,35 +199,20 @@ func (store *ProfileStore) save(document profileDocument) error {
 	if err != nil {
 		return fmt.Errorf("encode target profiles: %w", err)
 	}
-	directory := filepath.Dir(store.path)
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return fmt.Errorf("create target profile directory: %w", err)
-	}
-	temporary, err := os.CreateTemp(directory, ".cli-*.json")
-	if err != nil {
-		return fmt.Errorf("create target profile temporary file: %w", err)
-	}
-	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
-	if err := temporary.Chmod(0o600); err != nil {
-		temporary.Close()
-		return fmt.Errorf("protect target profile temporary file: %w", err)
-	}
-	if _, err := temporary.Write(content); err != nil {
-		temporary.Close()
+	if err := securefs.WritePrivateFileAtomic(store.path, content); err != nil {
 		return fmt.Errorf("write target profiles: %w", err)
 	}
-	if err := temporary.Sync(); err != nil {
-		temporary.Close()
-		return fmt.Errorf("sync target profiles: %w", err)
-	}
-	if err := temporary.Close(); err != nil {
-		return fmt.Errorf("close target profiles: %w", err)
-	}
-	if err := os.Rename(temporaryPath, store.path); err != nil {
-		return fmt.Errorf("replace target profiles: %w", err)
-	}
 	return nil
+}
+
+func (store *ProfileStore) acquireMutationLock() (*instancelock.Lock, error) {
+	if strings.TrimSpace(store.path) == "" {
+		return nil, fmt.Errorf("target profile path is required")
+	}
+	return instancelock.AcquireNamed(
+		filepath.Dir(store.path),
+		"."+filepath.Base(store.path)+".lock",
+	)
 }
 
 func canonicalTargetOrigin(value string) (string, error) {
