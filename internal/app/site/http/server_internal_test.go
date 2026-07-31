@@ -472,6 +472,32 @@ func TestSiteVisualsRendersPageStreamShowcase(t *testing.T) {
 	}
 }
 
+func TestSiteResponsiveWidgetsRendersContractDrivenReference(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/visuals/responsive")
+	if err != nil {
+		t.Fatalf("get responsive widget reference: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("responsive widget reference status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	body := readBody(t, response)
+	for _, want := range []string{
+		"<title>LeapView responsive widget reference</title>",
+		`data-init="@get(&#39;/updates?view=responsive-widgets&#39;, {openWhenHidden: true})"`,
+		"<lv-site-responsive-widget-reference>",
+		`href="/visuals"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("responsive widget reference missing %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestSiteGettingStartedRendersGuide(t *testing.T) {
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()
@@ -1242,6 +1268,24 @@ func TestSiteVisualShowcaseUpdatesIncludeEveryVisualType(t *testing.T) {
 	for _, want := range []string{`"kind":"cartesian","mark":"line"`, `"kind":"hierarchy","mark":"sunburst"`, `"kind":"kpi"`, `"kind":"table"`, `"kind":"matrix"`, `"kind":"pivot"`} {
 		if !strings.Contains(line, want) {
 			t.Errorf("chart showcase updates missing %q:\n%s", want, line)
+		}
+	}
+}
+
+func TestSiteResponsiveWidgetUpdatesUseCompiledKPIExamples(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/updates?view=responsive-widgets")
+	if err != nil {
+		t.Fatalf("get responsive widget updates: %v", err)
+	}
+	defer response.Body.Close()
+
+	line := readSSEUntil(t, response, `"visuals"`)
+	for _, want := range []string{`"visualID":"total_orders"`, `"visualID":"revenue_kpi_favorable"`, `"kind":"kpi"`} {
+		if !strings.Contains(line, want) {
+			t.Errorf("responsive widget updates missing %q:\n%s", want, line)
 		}
 	}
 }

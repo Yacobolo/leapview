@@ -848,10 +848,10 @@ test('KPI documentation automatically demonstrates every valid layout from one v
   const page = await browser.newPage()
   try {
     await page.goto(`${baseURL}/docs/visuals/kpi`)
-    await page.waitForFunction(() => document.querySelectorAll('lv-site-visual-example[type="kpi"]').length === 6)
+    await page.waitForFunction(() => document.querySelectorAll('lv-site-visual-example[type="kpi"]').length === 9)
     await page.waitForFunction(() => {
       const examples = [...document.querySelectorAll('lv-site-visual-example[type="kpi"]')]
-      return examples.length === 6 && examples.every((example) => example.shadowRoot?.querySelectorAll('[data-layout-preview]').length === 2)
+      return examples.length === 9 && examples.every((example) => example.shadowRoot?.querySelectorAll('[data-layout-preview]').length === 2)
     })
     const favorable = page.locator('lv-site-visual-example[example-id="revenue_kpi_favorable"]')
     const previews = await favorable.evaluate((example) =>
@@ -869,7 +869,7 @@ test('KPI documentation automatically demonstrates every valid layout from one v
       }),
     )
     expect(previews).toEqual([
-      { documented: 'wide', selected: 'wide', fit: 'fit', sparkline: 1, width: 288, height: 104 },
+      { documented: 'wide', selected: 'wide', fit: 'fit', sparkline: 1, width: 320, height: 120 },
       { documented: 'stacked', selected: 'stacked', fit: 'fit', sparkline: 1, width: 192, height: 124 },
     ])
     const yaml = await page.locator('lv-code-block[data-visual-example="revenue_kpi_favorable"]').getAttribute('code')
@@ -880,6 +880,75 @@ test('KPI documentation automatically demonstrates every valid layout from one v
     await page.close()
   }
 })
+
+test('responsive widget reference covers every KPI and filter layout plus intermediate sizes', async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
+  try {
+    await page.goto(`${baseURL}/visuals/responsive`)
+    await page.waitForFunction(() => {
+      const reference = document.querySelector('lv-site-responsive-widget-reference')
+      const root = reference?.shadowRoot
+      return root?.querySelectorAll('[data-kpi-scenario]').length === 9
+        && root.querySelectorAll('[data-filter-scenario]').length === 5
+        && root.querySelectorAll('[data-layout-frame]').length === 26
+    })
+    await page.waitForFunction(() => {
+      const root = document.querySelector('lv-site-responsive-widget-reference')?.shadowRoot
+      const kpis = [...(root?.querySelectorAll('[data-kpi-scenario] lv-visualization-host') ?? [])]
+      const filters = [...(root?.querySelectorAll('[data-filter-scenario] lv-slicer') ?? [])]
+      return kpis.length === 18 && filters.length === 8
+        && kpis.every((host) => host.shadowRoot?.querySelector('.renderer')?.getAttribute('data-layout-fit') === 'fit')
+        && filters.every((slicer) => slicer.shadowRoot?.querySelector('lv-filter-leaf')?.getAttribute('data-layout-fit') === 'fit')
+    })
+
+    const coverage = await page.locator('lv-site-responsive-widget-reference').evaluate((element) => {
+      const root = element.shadowRoot!
+      return {
+        kpiScenarios: root.querySelectorAll('[data-kpi-scenario]').length,
+        kpiFrames: root.querySelectorAll('[data-kpi-scenario] [data-layout-frame]').length,
+        filterScenarios: root.querySelectorAll('[data-filter-scenario]').length,
+        filterFrames: root.querySelectorAll('[data-filter-scenario] [data-layout-frame]').length,
+        dimensions: [...root.querySelectorAll('[data-layout-frame]')].every((frame) => /\d+×\d+/.test(frame.getAttribute('aria-label') ?? '')),
+        valuesFit: [...root.querySelectorAll('[data-kpi-scenario] lv-visualization-host')].every((host) => {
+          const value = host.shadowRoot?.querySelector<HTMLElement>('.lv-visualization-kpi')
+          const card = host.shadowRoot?.querySelector<HTMLElement>('.lv-kpi-card')
+          return Boolean(value && card)
+            && value!.scrollWidth <= value!.clientWidth
+            && value!.clientHeight > 0
+            && card!.scrollHeight <= card!.clientHeight
+        }),
+      }
+    })
+    expect(coverage).toEqual({ kpiScenarios: 9, kpiFrames: 18, filterScenarios: 5, filterFrames: 8, dimensions: true, valuesFit: true })
+
+    const reference = page.locator('lv-site-responsive-widget-reference')
+    const width = reference.getByRole('slider', { name: 'Preview width' })
+    const height = reference.getByRole('slider', { name: 'Preview height' })
+    await width.fill('250')
+    await height.fill('130')
+    await page.waitForFunction(() => document.querySelector('lv-site-responsive-widget-reference')?.shadowRoot?.querySelector('[data-playground-frame]')?.getAttribute('data-selected-layout') === 'stacked')
+    expect(await reference.locator('[data-playground-frame]').getAttribute('data-fit')).toBe('fit')
+
+    await reference.getByRole('combobox', { name: 'Preview widget' }).selectOption('date-range')
+    await page.waitForFunction(() => document.querySelector('lv-site-responsive-widget-reference')?.shadowRoot?.querySelector('[data-playground-frame]')?.getAttribute('data-fit') === 'too-small')
+    await height.fill('152')
+    await page.waitForFunction(() => document.querySelector('lv-site-responsive-widget-reference')?.shadowRoot?.querySelector('[data-playground-frame]')?.getAttribute('data-fit') === 'fit')
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    const mobileLayout = await reference.evaluate((element) => {
+      const root = element.shadowRoot!
+      const frameRows = [...root.querySelectorAll<HTMLElement>('.frame-row')]
+      return {
+        frameRowsStack: frameRows.every((row) => getComputedStyle(row).flexDirection === 'column'),
+        documentFits: document.documentElement.scrollWidth === document.documentElement.clientWidth,
+      }
+    })
+    expect(mobileLayout).toEqual({ frameRowsStack: true, documentFits: true })
+    expect(await reference.locator('[data-playground-frame]').getAttribute('data-selected-layout')).toBe('stacked')
+  } finally {
+    await page.close()
+  }
+}, 20_000)
 
 test('governed label policies remain renderable across visual families, locales, and compact resizes', async () => {
   const context = await browser.newContext({ locale: 'pt-BR', viewport: { width: 1280, height: 900 } })
@@ -969,7 +1038,7 @@ test('every visual documentation page mounts its generated production payloads',
   try {
     for (const visualType of visualTypes) {
       await page.goto(`${baseURL}/docs/visuals/${visualType}`)
-      const expected = visualType === 'map' ? 6 : visualType === 'line' ? 5 : visualType === 'candlestick' ? 2 : visualType === 'kpi' ? 6 : ['custom', 'table', 'matrix', 'pivot'].includes(visualType) ? 1 : 3
+      const expected = visualType === 'map' ? 6 : visualType === 'line' ? 5 : visualType === 'candlestick' ? 2 : visualType === 'kpi' ? 9 : ['custom', 'table', 'matrix', 'pivot'].includes(visualType) ? 1 : 3
       await page.waitForFunction(
         ({ count }) => {
           const examples = [...document.querySelectorAll('lv-site-visual-example')]

@@ -44,6 +44,7 @@ export class VisualizationHost extends LitElement {
       padding: var(--base-size-12) var(--base-size-16) var(--base-size-12) var(--base-size-20);
       overflow: hidden;
       background: var(--lv-chart-surface);
+      container-type: inline-size;
     }
     .lv-kpi-card::before {
       content: '';
@@ -58,19 +59,22 @@ export class VisualizationHost extends LitElement {
     .lv-kpi-card[data-tone='danger']::before { background: var(--lv-fg-danger); }
     .lv-kpi-card[data-tone='ink']::before { background: var(--lv-data-1); }
     .lv-visualization-label {
+      overflow: hidden;
       color: var(--lv-fg-muted);
       font-size: var(--lv-font-size-caption);
       font-weight: var(--lv-font-weight-strong);
       line-height: var(--lv-line-height-compact);
       text-transform: uppercase;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .lv-visualization-kpi {
       display: block;
       overflow: hidden;
       color: var(--lv-fg-default);
-      font-size: clamp(var(--lv-font-size-title-md, var(--lv-font-size-title-sm)), 2.5vw, var(--lv-font-size-display));
+      font-size: clamp(18px, 10cqi, var(--lv-font-size-display));
       font-weight: var(--lv-font-weight-strong);
-      line-height: var(--lv-line-height-none);
+      line-height: 1.1;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
@@ -172,17 +176,15 @@ export class VisualizationHost extends LitElement {
       align-content: center;
       gap: var(--base-size-4);
     }
-    .lv-kpi-card[data-layout='wide'] {
-      grid-template-columns: minmax(0, 3fr) minmax(80px, 2fr);
+    .lv-kpi-card[data-layout='wide'][data-has-trend='true'] {
+      padding-inline-end: 42%;
     }
-    .lv-kpi-card[data-layout='wide'] > :not(.lv-kpi-sparkline) {
-      grid-column: 1;
-    }
-    .lv-kpi-card[data-layout='wide'] > .lv-kpi-sparkline {
-      grid-column: 2;
-      grid-row: 1 / span 4;
-      align-self: stretch;
-      height: 100%;
+    .lv-kpi-card[data-layout='wide'][data-has-trend='true'] > .lv-kpi-sparkline {
+      position: absolute;
+      inset-block: var(--base-size-12);
+      inset-inline-end: var(--base-size-16);
+      width: 34%;
+      height: auto;
       min-height: var(--base-size-24);
     }
     .lv-kpi-card[data-layout='stacked'] {

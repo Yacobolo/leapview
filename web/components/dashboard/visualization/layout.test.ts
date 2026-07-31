@@ -9,10 +9,10 @@ import {
 test('responsive layout selects the richest layout that preserves every explicit feature', () => {
   const features: WidgetLayoutFeature[] = ['comparison', 'trend']
 
-  expect(resolveWidgetLayout('kpi', { width: 288, height: 104 }, features)).toEqual({
+  expect(resolveWidgetLayout('kpi', { width: 320, height: 120 }, features)).toEqual({
     kind: 'fit',
     layout: 'wide',
-    minimum: { width: 288, height: 104 },
+    minimum: { width: 320, height: 120 },
   })
   expect(resolveWidgetLayout('kpi', { width: 250, height: 130 }, features)).toEqual({
     kind: 'fit',
@@ -27,7 +27,7 @@ test('responsive layout rejects boundary-minus-one sizes instead of dropping fea
   expect(resolveWidgetLayout('kpi', { width: 191, height: 124 }, features)).toEqual({
     kind: 'too-small',
     requirements: [
-      { layout: 'wide', minimum: { width: 288, height: 104 } },
+      { layout: 'wide', minimum: { width: 320, height: 120 } },
       { layout: 'stacked', minimum: { width: 192, height: 124 } },
     ],
   })
@@ -36,12 +36,12 @@ test('responsive layout rejects boundary-minus-one sizes instead of dropping fea
 
 test('explicit KPI features deterministically increase every applicable layout minimum', () => {
   expect(layoutRequirements('kpi', [])).toEqual([
-    { layout: 'wide', minimum: { width: 288, height: 56 } },
-    { layout: 'stacked', minimum: { width: 160, height: 64 } },
+    { layout: 'wide', minimum: { width: 320, height: 80 } },
+    { layout: 'stacked', minimum: { width: 192, height: 68 } },
   ])
   expect(layoutRequirements('kpi', ['subtitle', 'comparison', 'progress', 'goal', 'status', 'trend', 'note'])).toEqual([
-    { layout: 'wide', minimum: { width: 288, height: 186 } },
-    { layout: 'stacked', minimum: { width: 192, height: 214 } },
+    { layout: 'wide', minimum: { width: 320, height: 214 } },
+    { layout: 'stacked', minimum: { width: 192, height: 218 } },
   ])
 })
 

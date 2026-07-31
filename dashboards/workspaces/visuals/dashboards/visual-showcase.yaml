@@ -2051,7 +2051,7 @@ spec:
       description: Executive sales summary
       canvas:
         width: 1366
-        height: 976
+        height: 1040
       grid:
         columns: 12
         row_height: 48
@@ -2086,7 +2086,7 @@ spec:
             col: 1
             row: 3
             col_span: 3
-            row_span: 2
+            row_span: 3
         - id: revenue-kpi
           kind: visual
           visual: revenue_kpi
@@ -2095,7 +2095,7 @@ spec:
             col: 4
             row: 3
             col_span: 3
-            row_span: 2
+            row_span: 3
         - id: aov-kpi
           kind: visual
           visual: aov_kpi
@@ -2104,7 +2104,7 @@ spec:
             col: 7
             row: 3
             col_span: 3
-            row_span: 2
+            row_span: 3
         - id: review-kpi
           kind: visual
           visual: review_kpi
@@ -2113,14 +2113,14 @@ spec:
             col: 10
             row: 3
             col_span: 3
-            row_span: 2
+            row_span: 3
         - id: revenue
           kind: visual
           visual: revenue
           description: Revenue trend chart placement on the overview page.
           placement:
             col: 1
-            row: 5
+            row: 6
             col_span: 6
             row_span: 5
         - id: orders
@@ -2129,7 +2129,7 @@ spec:
           description: Order status chart placement on the overview page.
           placement:
             col: 7
-            row: 5
+            row: 6
             col_span: 3
             row_span: 5
         - id: delivery
@@ -2138,7 +2138,7 @@ spec:
           description: Delivery speed chart placement on the overview page.
           placement:
             col: 10
-            row: 5
+            row: 6
             col_span: 3
             row_span: 5
         - id: categories
@@ -2147,7 +2147,7 @@ spec:
           description: Product category chart placement on the overview page.
           placement:
             col: 1
-            row: 10
+            row: 11
             col_span: 6
             row_span: 6
         - id: orders-table
@@ -2156,7 +2156,7 @@ spec:
           description: Orders table placement on the overview page.
           placement:
             col: 7
-            row: 10
+            row: 11
             col_span: 6
             row_span: 6
       id: overview

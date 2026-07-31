@@ -27,6 +27,40 @@ visuals:
       tone: ink
 ```
 
+## Trend only
+
+A trend is an explicit feature, independent of comparison. This example keeps the current value and historical shape without adding baseline semantics.
+
+{{< visual id="revenue_kpi_trend" >}}
+
+```yaml visual-example=revenue_kpi_trend
+visuals:
+  revenue_kpi_trend:
+    title: Revenue trend
+    type: kpi
+    description: Shows revenue with an explicitly configured monthly trend.
+    query:
+      measures:
+        revenue: null
+    datasets:
+      trend:
+        dimensions:
+          period: orders.purchase_month
+        measures:
+          value:
+            measure: revenue
+        sort:
+          - field: period
+            direction: asc
+        limit: 12
+    kpi:
+      mode: compact
+      trend:
+        dataset: trend
+        category: period
+        value: value
+```
+
 ## Favorable comparison and trend
 
 Bind comparison and trend to named datasets. `favorable_direction` is required whenever a comparison exists; LeapView never assumes that an increase is good.
@@ -175,6 +209,105 @@ visuals:
         - maximum: 4000
           label: Operating band
           tone: neutral
+```
+
+## Status without a goal
+
+Qualitative status may describe the current value without implying progress toward a target. The visible label keeps the status independent of color.
+
+{{< visual id="revenue_kpi_status" >}}
+
+```yaml visual-example=revenue_kpi_status
+visuals:
+  revenue_kpi_status:
+    title: Revenue operating status
+    type: kpi
+    description: Shows a current value classified by explicit operating ranges.
+    query:
+      measures:
+        revenue: null
+    kpi:
+      mode: compact
+      ranges:
+        - maximum: 4000
+          label: Below plan
+          tone: warning
+        - minimum: 4000
+          maximum: 6000
+          label: On plan
+          tone: success
+        - minimum: 6000
+          label: Above plan
+          tone: ink
+```
+
+## All explicit features
+
+This coverage fixture intentionally combines subtitle, comparison, progress, goal, status, trend, and note. Automatic layout may rearrange them, but it may not remove or reformat any configured feature.
+
+{{< visual id="revenue_kpi_all_features" >}}
+
+```yaml visual-example=revenue_kpi_all_features
+visuals:
+  revenue_kpi_all_features:
+    title: Revenue decision summary
+    subtitle: Current filtered scope
+    type: kpi
+    description: Exercises every explicit KPI feature in one responsive contract.
+    query:
+      measures:
+        revenue: null
+    datasets:
+      comparison:
+        measures:
+          value:
+            measure: revenue_baseline
+        limit: 1
+      goal:
+        measures:
+          value:
+            measure: revenue_target
+        limit: 1
+      trend:
+        dimensions:
+          period: orders.purchase_month
+        measures:
+          value:
+            measure: revenue
+        sort:
+          - field: period
+            direction: asc
+        limit: 12
+    kpi:
+      mode: progress
+      comparison:
+        dataset: comparison
+        field: value
+        label: Baseline
+      trend:
+        dataset: trend
+        category: period
+        value: value
+      goal:
+        dataset: goal
+        field: value
+        label: Target
+      ranges:
+        - maximum: 4000
+          label: Behind
+          tone: danger
+        - minimum: 4000
+          maximum: 6000
+          label: On track
+          tone: success
+        - minimum: 6000
+          label: Ahead
+          tone: ink
+      delta: relative
+      favorable_direction: increase
+      missing_comparison: show_unavailable
+    presentation:
+      note: Filter-aligned decision context
 ```
 
 ## Missing comparison

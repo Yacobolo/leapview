@@ -116,10 +116,10 @@ test('HTML KPI layout requirements come only from explicitly configured features
     'trend',
     'note',
   ])
-  expect(resolveKPIWidgetLayout(envelope, { width: 288, height: 185 }).kind).toBe('too-small')
-  expect(resolveKPIWidgetLayout(envelope, { width: 288, height: 186 })).toEqual({
+  expect(resolveKPIWidgetLayout(envelope, { width: 320, height: 213 }).kind).toBe('too-small')
+  expect(resolveKPIWidgetLayout(envelope, { width: 320, height: 214 })).toEqual({
     kind: 'fit',
     layout: 'wide',
-    minimum: { width: 288, height: 186 },
+    minimum: { width: 320, height: 214 },
   })
 })

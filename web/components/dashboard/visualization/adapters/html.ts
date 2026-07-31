@@ -50,6 +50,7 @@ class HTMLHandle implements RendererHandle {
     const conditional = kpiConditionalPresentation(envelope, context)
     const metadata = resolveVisualizationMetadata(envelope)
     const state = resolveKPIState(envelope, context)
+    article.dataset.hasTrend = state.trend.length > 0 ? 'true' : 'false'
     article.setAttribute('aria-label', accessibleLabel([
       metadata.title,
       metadata.summary ?? metadata.description,
@@ -67,6 +68,7 @@ class HTMLHandle implements RendererHandle {
     const label = document.createElement('div')
     label.className = 'lv-visualization-label'
     label.textContent = metadata.title
+    label.title = metadata.title
     const subtitle = metadata.subtitle ? document.createElement('small') : undefined
     if (subtitle) {
       subtitle.className = 'lv-visualization-note'
@@ -76,6 +78,7 @@ class HTMLHandle implements RendererHandle {
     value.className = 'lv-visualization-kpi'
     if (conditional.valueColor) value.style.color = conditional.valueColor
     value.textContent = [conditional.icon, state.currentText].filter(Boolean).join(' ')
+    value.title = state.currentText
     article.append(label)
     if (subtitle) article.append(subtitle)
     article.append(value)

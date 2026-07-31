@@ -11,7 +11,7 @@ func TestRequirementsPreserveExplicitFeaturesAcrossLayouts(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []Requirement{
-		{Layout: "wide", Minimum: Size{Width: 288, Height: 104}},
+		{Layout: "wide", Minimum: Size{Width: 320, Height: 120}},
 		{Layout: "stacked", Minimum: Size{Width: 192, Height: 124}},
 	}
 	if !reflect.DeepEqual(got, want) {

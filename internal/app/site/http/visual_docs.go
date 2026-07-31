@@ -7,6 +7,7 @@ import (
 
 	content "github.com/flidai/leapview/docs"
 	"github.com/flidai/leapview/internal/app/site/visualdocs"
+	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 type visualDocumentationArtifact = visualdocs.Artifact
@@ -75,6 +76,14 @@ func visualExampleReferenceForDocument(slug, id string) (visualdocs.ExampleRefer
 func visualExamplesForDocument(slug string) ([]visualdocs.Payload, bool) {
 	examples, ok := visualDocumentation.Documents[slug]
 	return examples, ok
+}
+
+func responsiveWidgetReferencePatch() pagestream.SignalPatch {
+	examples, ok := visualDocumentation.Documents["visuals/kpi"]
+	if !ok || len(examples) == 0 {
+		panic("responsive widget reference requires compiled KPI examples")
+	}
+	return pagestream.SignalPatch{"visuals": examples}
 }
 
 func documentHasVisualExample(slug, id string) bool {

@@ -5,28 +5,28 @@
       "layouts": [
         {
           "id": "wide",
-          "minimum": { "width": 288, "height": 56 },
+          "minimum": { "width": 320, "height": 80 },
           "features": {
-            "subtitle": { "height": 18 },
-            "comparison": { "height": 20 },
-            "progress": { "height": 18 },
-            "goal": { "height": 18 },
-            "status": { "height": 18 },
-            "trend": { "height": 28 },
-            "note": { "height": 10 }
+            "subtitle": { "height": 22 },
+            "comparison": { "height": 40 },
+            "progress": { "height": 12 },
+            "goal": { "height": 19 },
+            "status": { "height": 19 },
+            "trend": { "height": 0 },
+            "note": { "height": 22 }
           }
         },
         {
           "id": "stacked",
-          "minimum": { "width": 160, "height": 64 },
+          "minimum": { "width": 192, "height": 68 },
           "features": {
-            "subtitle": { "height": 18 },
-            "comparison": { "width": 32, "height": 28 },
-            "progress": { "height": 18 },
-            "goal": { "height": 18 },
-            "status": { "height": 18 },
-            "trend": { "width": 32, "height": 32 },
-            "note": { "height": 18 }
+            "subtitle": { "height": 22 },
+            "comparison": { "height": 28 },
+            "progress": { "height": 12 },
+            "goal": { "height": 19 },
+            "status": { "height": 19 },
+            "trend": { "height": 28 },
+            "note": { "height": 22 }
           }
         }
       ],

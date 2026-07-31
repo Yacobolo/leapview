@@ -52,6 +52,7 @@ func NewHandlerWithOptions(options Options) http.Handler {
 	mux.Handle("DELETE /mcp", documentationMCP)
 	mux.HandleFunc("GET /{$}", server.home)
 	mux.HandleFunc("GET /visuals", server.visuals)
+	mux.HandleFunc("GET /visuals/responsive", server.responsiveWidgets)
 	if server.showcaseEmbedURL != nil {
 		mux.HandleFunc("GET /showcase", server.showcase)
 	}
@@ -199,6 +200,11 @@ func (s *siteServer) visuals(w http.ResponseWriter, r *http.Request) {
 	renderHTML(w, http.StatusOK, visualsPage(metadata), "render visuals page")
 }
 
+func (s *siteServer) responsiveWidgets(w http.ResponseWriter, r *http.Request) {
+	metadata := s.metadata(r, siteBrandName+" responsive widget reference", "Inspect every responsive KPI and dashboard filter layout at deterministic and intermediate dimensions.", "website", "")
+	renderHTML(w, http.StatusOK, responsiveWidgetsPage(metadata), "render responsive widget reference")
+}
+
 func (s *siteServer) showcase(w http.ResponseWriter, r *http.Request) {
 	metadata := s.metadata(r, siteBrandName+" live dashboard showcase", "Explore a live, interactive "+siteBrandName+" dashboard.", "website", "")
 	renderHTML(w, http.StatusOK, showcasePage(metadata, s.showcaseEmbedURL), "render dashboard showcase")
@@ -324,7 +330,7 @@ func (s *siteServer) absoluteURL(r *http.Request, requestedPath string) string {
 }
 
 func (s *siteServer) sitemap(w http.ResponseWriter, r *http.Request) {
-	paths := []string{"/", "/visuals", "/docs"}
+	paths := []string{"/", "/visuals", "/visuals/responsive", "/docs"}
 	if s.showcaseEmbedURL != nil {
 		paths = append(paths, "/showcase")
 	}
@@ -369,6 +375,8 @@ func updates(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Query().Get("view") {
 	case "visuals":
 		patch = visualShowcasePatch()
+	case "responsive-widgets":
+		patch = responsiveWidgetReferencePatch()
 	case "visual-docs":
 		examples, ok := visualExamplesForDocument(r.URL.Query().Get("document"))
 		if !ok {
