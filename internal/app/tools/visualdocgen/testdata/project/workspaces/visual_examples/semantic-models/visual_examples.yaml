@@ -10,6 +10,7 @@ spec:
   - conversion_stages
   - revenue_bridge
   - market_ohlc
+  - service_teams
   dimensions:
     purchase_date:
       type: date
@@ -17,6 +18,13 @@ spec:
       bindings:
         orders: {field: orders.purchase_date}
   measures:
+    active_work_items:
+      label: Active work items
+      fact: service_teams
+      aggregation: sum
+      input: {field: service_teams.active_work_items}
+      empty: zero
+      format: integer
     conversions:
       label: Conversions
       fact: conversion_stages

@@ -4,17 +4,17 @@ Use a tree to show hierarchical paths when parent-child structure should remain 
 
 Every preview on this page is generated from the YAML shown below it using a fixed documentation dataset.
 
-## Two-level hierarchy
+## Operating model
 
-Order dimensions from parent to child and use the measure to annotate the resulting state-to-status hierarchy.
+Order dimensions from division to team and use workload to make the hierarchy useful without overcrowding a dashboard card.
 
-{{< visual id="state_status_tree" >}}
+{{< visual id="operating_model_tree" >}}
 
-```yaml visual-example=state_status_tree
+```yaml visual-example=operating_model_tree
 visuals:
-  state_status_tree:
-    title: State and status tree
-    description: Shows customer state and order status as a hierarchy.
+  operating_model_tree:
+    title: Workload by division and team
+    description: Shows the operating model and active workload across its teams.
     type: tree
     presentation:
       orientation: horizontal
@@ -22,15 +22,15 @@ visuals:
       roam: true
       labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 18, minimum_spacing: 6, tooltip_fallback: true}
     query:
+      table: service_teams
       dimensions:
-        state: orders.state
-        status: orders.status
+        division: service_teams.division
+        team: service_teams.team
       measures:
-        order_count: null
+        active_work_items: null
       sort:
         - field: value
           direction: desc
-      limit: 80
 ```
 
 ## Alternate hierarchy

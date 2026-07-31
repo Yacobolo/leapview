@@ -303,9 +303,9 @@ func assertCuratedShowcaseExamples(t *testing.T, artifact visualExamplesArtifact
 		t.Fatalf("showcase graph must demonstrate a navigable network: %#v", graphPayload.Spec.Value)
 	}
 
-	treePayload := first("tree", "state_status_tree")
+	treePayload := first("tree", "operating_model_tree")
 	tree, ok := treePayload.Spec.Value.(*visualizationir.HierarchyVisualizationSpec)
-	if !ok || tree.Parent == nil || tree.Presentation.InitialDepth == nil || len(rows(treePayload)) < 8 {
+	if !ok || tree.Parent == nil || tree.Presentation.InitialDepth == nil || len(rows(treePayload)) < 8 || len(rows(treePayload)) > 16 {
 		t.Fatalf("showcase tree must demonstrate a multi-level hierarchy: %#v", treePayload.Spec.Value)
 	}
 
