@@ -8,6 +8,7 @@ import (
 	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
 	dashboardhttp "github.com/flidai/leapview/internal/dashboard/http"
 	"github.com/flidai/leapview/internal/dashboard/queryruntime"
+	"github.com/stretchr/testify/require"
 )
 
 type candidateMetricsStub struct {
@@ -27,9 +28,7 @@ func TestCandidateHTTPScopesRoutesStreamsAndSessions(t *testing.T) {
 			PolicyType: "row_filter", ExpressionJSON: `{"field":"orders.region"}`,
 		}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if handler.RouteScope.BasePath != "/candidates/cand_1/workspaces/sales" ||
 		handler.StreamNamespace != "candidate:cand_1" {
 		t.Fatalf("candidate handler scope = (%q, %q)", handler.RouteScope.BasePath, handler.StreamNamespace)

@@ -10,14 +10,13 @@ import (
 
 	"github.com/flidai/leapview/internal/analytics/connectionbinding"
 	"github.com/flidai/leapview/internal/platform"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConnectionBindingRepositoryPersistsOnlyNonSecretTargetStateAcrossRestart(t *testing.T) {
 	ctx := context.Background()
 	store, err := platform.Open(ctx, filepath.Join(t.TempDir(), "leapview.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	repository := NewConnectionBindingRepository(store.SQLDB())
 	binding := testTargetBinding(t)
@@ -34,9 +33,7 @@ func TestConnectionBindingRepositoryPersistsOnlyNonSecretTargetStateAcrossRestar
 	loaded, err := restarted.Binding(ctx, connectionbinding.BindingScope{
 		WorkspaceID: "sales", Environment: "prod",
 	}, "lvinst_prod", binding.LogicalConnectionID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if loaded.ID != binding.ID || loaded.CredentialReference != binding.CredentialReference ||
 		loaded.Endpoint.Host != "warehouse.internal" || loaded.Revision != 1 {
 		t.Fatalf("loaded binding = %#v", loaded)
@@ -58,9 +55,7 @@ func TestConnectionBindingRepositoryPersistsOnlyNonSecretTargetStateAcrossRestar
 func TestConnectionBindingRepositoryUsesOptimisticRevisionAndUniqueTargetScope(t *testing.T) {
 	ctx := context.Background()
 	store, err := platform.Open(ctx, filepath.Join(t.TempDir(), "leapview.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	repository := NewConnectionBindingRepository(store.SQLDB())
 	binding := testTargetBinding(t)
@@ -74,9 +69,7 @@ func TestConnectionBindingRepositoryUsesOptimisticRevisionAndUniqueTargetScope(t
 	}
 
 	validated, err := binding.MarkValidated("provider-version-8", binding.UpdatedAt.Add(time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	saved, err := repository.Save(ctx, validated, binding.Revision)
 	if err != nil || saved.ValidatedVersion != "provider-version-8" {
 		t.Fatalf("Save() = %#v, %v", saved, err)
@@ -88,9 +81,7 @@ func TestConnectionBindingRepositoryUsesOptimisticRevisionAndUniqueTargetScope(t
 	immutableDrift := validated
 	immutableDrift.TargetID = "lvinst_other"
 	immutableDrift, err = immutableDrift.MarkDegraded("BINDING_DRIFT", validated.UpdatedAt.Add(time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := repository.Save(ctx, immutableDrift, validated.Revision); !errors.Is(err, connectionbinding.ErrIncompatibleBinding) {
 		t.Fatalf("immutable drift save error = %v", err)
 	}
@@ -99,9 +90,7 @@ func TestConnectionBindingRepositoryUsesOptimisticRevisionAndUniqueTargetScope(t
 func TestConnectionBindingRepositoryListsOnlyRequestedTargetScope(t *testing.T) {
 	ctx := context.Background()
 	store, err := platform.Open(ctx, filepath.Join(t.TempDir(), "leapview.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	repository := NewConnectionBindingRepository(store.SQLDB())
 	first := testTargetBinding(t)
@@ -115,9 +104,7 @@ func TestConnectionBindingRepositoryListsOnlyRequestedTargetScope(t *testing.T) 
 	}
 
 	bindings, err := repository.List(ctx, first.Scope, first.TargetID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if len(bindings) != 2 ||
 		bindings[0].LogicalConnectionID != second.LogicalConnectionID ||
 		bindings[1].LogicalConnectionID != first.LogicalConnectionID {
@@ -128,9 +115,7 @@ func TestConnectionBindingRepositoryListsOnlyRequestedTargetScope(t *testing.T) 
 		connectionbinding.BindingScope{WorkspaceID: "sales", Environment: "dev"},
 		first.TargetID,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if len(other) != 0 {
 		t.Fatalf("other-scope bindings = %#v", other)
 	}
@@ -150,8 +135,6 @@ func testTargetBinding(t *testing.T) connectionbinding.TargetBinding {
 		},
 		Enabled: true, Now: time.Date(2026, 7, 29, 15, 0, 0, 0, time.UTC),
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return binding
 }

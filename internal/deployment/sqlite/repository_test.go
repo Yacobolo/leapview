@@ -23,6 +23,7 @@ import (
 	servingstatesqlite "github.com/flidai/leapview/internal/servingstate/sqlite"
 	"github.com/flidai/leapview/internal/workspace"
 	"github.com/pressly/goose/v3"
+	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 )
 
@@ -39,9 +40,7 @@ func TestCreateDeploymentSnapshotsCompleteTargetsAndManagedPointers(t *testing.T
 		ID: "deployment_1", ProjectID: "project", Environment: "prod", RequestDigest: "sha256:request", CreatedBy: "principal",
 		Targets: []deployment.TargetInput{{WorkspaceID: "support", ServingStateID: "support_new"}, {WorkspaceID: "sales", ServingStateID: "sales_new"}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if created.Status != deployment.StatusPending || len(created.Targets) != 2 || len(created.Connections) != 1 {
 		t.Fatalf("created deployment = %#v", created)
 	}
@@ -137,9 +136,7 @@ func TestActivateDeploymentAtomicallyAppliesArtifactAccessPolicy(t *testing.T) {
 	policy, err := json.Marshal(workspace.AccessPolicy{
 		Groups: map[string]workspace.WorkspaceGroup{"analysts": {Name: "Analysts", Members: []workspace.WorkspaceGroupMember{{Email: "analyst@example.com"}}}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := db.ExecContext(ctx, `UPDATE serving_states SET access_policy_json = ? WHERE id = 'sales_new'`, string(policy)); err != nil {
 		t.Fatal(err)
 	}
@@ -170,9 +167,7 @@ func TestActivateDeploymentAtomicallyReconcilesDashboardPublications(t *testing.
 	snapshot, err := json.Marshal(map[string]publication.Definition{
 		"website": {Name: "website", Dashboard: "executive", DefaultPage: "overview", ConfigurationDigest: "sha256:publication", AllowedOrigins: []string{"https://leapview.dev"}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := db.ExecContext(ctx, `UPDATE serving_states SET dashboard_publications_json = ? WHERE id = 'sales_new'`, string(snapshot)); err != nil {
 		t.Fatal(err)
 	}
@@ -181,9 +176,7 @@ func TestActivateDeploymentAtomicallyReconcilesDashboardPublications(t *testing.
 		t.Fatal(err)
 	}
 	row, err := publicationsqlite.NewRepository(db).Get(ctx, "sales", "website")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if row.Status() != publication.StatusActive || row.ServingStateID != "sales_new" || row.Dashboard != "executive" {
 		t.Fatalf("publication = %#v, status=%s", row, row.Status())
 	}
@@ -301,9 +294,7 @@ func TestActivateDeploymentAtomicallyUpdatesAllWorkspaceAndManagedPointers(t *te
 	})
 
 	active, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if active.Status != deployment.StatusActive || len(active.Connections) != 2 {
 		t.Fatalf("active deployment = %#v", active)
 	}
@@ -350,13 +341,9 @@ func TestServiceActivationKeepsDurableAndRuntimeStateConsistentWhenRetiredRuntim
 	wantCleanupErr := errors.New("retired runtime close failed")
 	factory.runtimes["sales_old"].closeErr = wantCleanupErr
 	coordinator, err := deployment.NewRegistryRuntime(registry)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	service, err := deployment.New(repository, repository, states, coordinator, emptyManagedDataResolver{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	activated, err := service.Activate(ctx, deployment.ActivationRequest{
 		Scope:   deployment.Scope{ProjectID: "project", DeploymentID: created.ID},
@@ -521,9 +508,7 @@ func testRepository(t *testing.T) (context.Context, *sql.DB, *Repository) {
 	t.Helper()
 	ctx := context.Background()
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "leapview.db")+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	db.SetMaxOpenConns(1)
 	if err := goose.SetDialect("sqlite3"); err != nil {
 		t.Fatal(err)
@@ -629,9 +614,7 @@ func createDeployment(t *testing.T, ctx context.Context, repository *Repository,
 	t.Helper()
 	setCandidateProjectMetadata(t, ctx, repository.db, targets)
 	created, err := repository.CreateDeployment(ctx, deployment.CreateInput{ID: id, ProjectID: "project", Environment: "prod", RequestDigest: "sha256:" + id, Targets: targets, CreatedBy: "principal"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return created
 }
 
@@ -650,9 +633,7 @@ func setCandidateProjectMetadata(t *testing.T, ctx context.Context, db *sql.DB, 
 	}
 	sort.Strings(workspaces)
 	encoded, err := json.Marshal(workspaces)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, target := range targets {
 		if _, err := db.ExecContext(ctx, `UPDATE serving_states SET project_digest = ?, project_workspaces_json = ? WHERE id = ?`, "sha256:"+strings.Repeat("a", 64), string(encoded), target.ServingStateID); err != nil {
 			t.Fatal(err)

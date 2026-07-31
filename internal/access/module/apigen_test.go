@@ -6,6 +6,7 @@ import (
 
 	"github.com/flidai/leapview/internal/access"
 	apiaggregate "github.com/flidai/leapview/internal/app/api/aggregate"
+	"github.com/stretchr/testify/require"
 )
 
 func testAPIGenAuthorizer(t *testing.T) *APIGenAuthorizer {
@@ -15,9 +16,7 @@ func testAPIGenAuthorizer(t *testing.T) *APIGenAuthorizer {
 		Dashboard: resolver, SemanticModel: resolver, WorkspaceAsset: resolver,
 		ProjectEnvironment: resolver,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return authorizer
 }
 

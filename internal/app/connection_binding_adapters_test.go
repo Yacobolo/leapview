@@ -9,6 +9,7 @@ import (
 
 	accessmodule "github.com/flidai/leapview/internal/access/module"
 	analyticsmodule "github.com/flidai/leapview/internal/analytics/module"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConnectionRotationAuditAdapterPersistsOnlyRedactedBoundedMetadata(t *testing.T) {
@@ -25,9 +26,7 @@ func TestConnectionRotationAuditAdapterPersistsOnlyRedactedBoundedMetadata(t *te
 		Operation: "credential.test.requested", Outcome: "degraded",
 		Reason: "POOL_HEALTH_CHECK_FAILED", Timestamp: time.Now(),
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if input.WorkspaceID != "sales" || input.PrincipalID != "operator-1" ||
 		input.Action != "credential.test.requested" ||
 		input.TargetType != "connection_binding" || input.TargetID != "binding_prod_warehouse" ||
@@ -64,9 +63,7 @@ func TestConnectionAdministrationAuditAdapterPersistsOnlyBindingIdentity(t *test
 		Action: "connection.binding.updated", Outcome: "succeeded", Revision: 7,
 		Timestamp: time.Now(),
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if input.WorkspaceID != "sales" || input.PrincipalID != "operator-1" ||
 		input.Action != "connection.binding.updated" ||
 		input.TargetType != "connection_binding" || input.TargetID != "binding_prod_warehouse" ||

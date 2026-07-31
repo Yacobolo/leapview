@@ -9,6 +9,7 @@ import (
 
 	"github.com/flidai/leapview/internal/runtimehost"
 	servingstate "github.com/flidai/leapview/internal/servingstate"
+	"github.com/stretchr/testify/require"
 )
 
 func TestActivateResolvesPersistedBindingsPreparesAndAtomicallyCommits(t *testing.T) {
@@ -34,9 +35,7 @@ func TestActivateResolvesPersistedBindingsPreparesAndAtomicallyCommits(t *testin
 		Scope:   Scope{ProjectID: "project", DeploymentID: "deployment_1"},
 		ActorID: "principal_activator",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got.Status != StatusActive {
 		t.Fatalf("status = %q", got.Status)
 	}
@@ -156,9 +155,7 @@ func TestActivateIsIdempotentAfterSuccess(t *testing.T) {
 		Scope:   Scope{ProjectID: "project", DeploymentID: "deployment_1"},
 		ActorID: "principal_activator",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got.Status != StatusActive || runtime.prepareCalls != 0 || repo.activateCalls != 0 {
 		t.Fatalf("deployment = %#v, prepare calls = %d, activate calls = %d", got, runtime.prepareCalls, repo.activateCalls)
 	}
@@ -175,9 +172,7 @@ func TestCancelIsIdempotentAfterCancellation(t *testing.T) {
 		context.Background(),
 		Scope{ProjectID: "project", DeploymentID: "deployment_1"},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got.Status != StatusCancelled || repo.cancelCalls != 0 {
 		t.Fatalf("deployment = %#v, cancel calls = %d", got, repo.cancelCalls)
 	}
@@ -190,9 +185,7 @@ func mustService(t *testing.T, repo Repository, states ServingStateRepository, r
 		t.Fatal("test repository does not implement deployment activation")
 	}
 	service, err := New(repo, activation, states, runtime, resolver)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return service
 }
 

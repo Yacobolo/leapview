@@ -13,8 +13,9 @@ import (
 	adminoffline "github.com/flidai/leapview/internal/admin/offline"
 	"github.com/flidai/leapview/internal/app/config"
 	"github.com/flidai/leapview/internal/manageddata/localplan"
-	"github.com/flidai/leapview/internal/platform/filesystem"
+	securefs "github.com/flidai/leapview/internal/platform/filesystem"
 	workspacecompiler "github.com/flidai/leapview/internal/project/compiler"
+	"github.com/stretchr/testify/require"
 )
 
 func TestEvaluationCommandExposesServerAndOneTimeFirstLogin(t *testing.T) {
@@ -38,9 +39,7 @@ func TestEvaluationCommandExposesServerAndOneTimeFirstLogin(t *testing.T) {
 
 func TestEvaluationTargetDerivesOneOrdinaryLoopbackIdentity(t *testing.T) {
 	target, err := newEvaluationTarget(8181)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if target.ListenAddress != ":8181" ||
 		target.PublicURL != "http://localhost:8181" ||
 		target.ServerOrigin != "http://127.0.0.1:8181" {
@@ -58,16 +57,12 @@ func TestConfigureEvaluationEnvironmentPersistsPrivateRuntimeSecrets(t *testing.
 	t.Setenv("LEAPVIEW_TRUST_PROXY_HEADERS", "true")
 
 	target, err := newEvaluationTarget(8181)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := configureEvaluationEnvironment(home, target); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := config.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if !cfg.EvaluationMode || !cfg.Production || cfg.Environment != evaluationEnvironment ||
 		!cfg.LocalAuth || cfg.PublicURL != target.PublicURL ||
 		cfg.ListenAddr() != target.ListenAddress || cfg.TrustProxyHeaders {
@@ -78,9 +73,7 @@ func TestConfigureEvaluationEnvironmentPersistsPrivateRuntimeSecrets(t *testing.
 	}
 	path := evaluationRuntimeConfigPath(home)
 	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("runtime config mode = %o, want 600", info.Mode().Perm())
 	}
@@ -89,9 +82,7 @@ func TestConfigureEvaluationEnvironmentPersistsPrivateRuntimeSecrets(t *testing.
 		t.Fatal(err)
 	}
 	cfg, err = config.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if cfg.CSRFKey != firstCSRF {
 		t.Fatal("evaluation runtime secret changed across restart")
 	}
@@ -101,16 +92,12 @@ func TestEvaluationCredentialHandoffIsPrivateRecoverableAndOneTime(t *testing.T)
 	home := t.TempDir()
 	t.Setenv("LEAPVIEW_HOME", home)
 	target, err := newEvaluationTarget(8080)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := configureEvaluationEnvironment(home, target); err != nil {
 		t.Fatal(err)
 	}
 	token, err := prepareEvaluationCredentials(context.Background(), home)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if strings.TrimSpace(token) == "" {
 		t.Fatal("evaluation bootstrap token is empty")
 	}
@@ -118,9 +105,7 @@ func TestEvaluationCredentialHandoffIsPrivateRecoverableAndOneTime(t *testing.T)
 		t.Fatalf("platform recovery bundle still exists: %v", err)
 	}
 	info, err := os.Stat(evaluationFirstLoginPath(home))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("first-login mode = %o, want 600", info.Mode().Perm())
 	}
@@ -149,9 +134,7 @@ func TestEvaluationCredentialHandoffIsPrivateRecoverableAndOneTime(t *testing.T)
 
 func TestEvaluationBootstrapUsesExactProjectCandidatePipeline(t *testing.T) {
 	source, err := os.ReadFile("evaluation.go")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	body := string(source)
 	for _, required := range []string{
 		"projectcli.RunDev",
@@ -188,14 +171,10 @@ func (evaluationErrorWriter) Write([]byte) (int, error) {
 
 func TestBundledEvaluationProjectCompilesAndPlansOneSmallManagedFile(t *testing.T) {
 	root, err := evaluationAssetsRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	projectPath := filepath.Join(root, evaluationProjectRelativePath)
 	compiled, err := workspacecompiler.CompileProject(projectPath, workspacecompiler.Options{ServingStateID: "evaluation-test"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got := compiled.WorkspaceIDs(); len(got) != 1 || got[0] != evaluationWorkspaceID {
 		t.Fatalf("compiled evaluation workspaces = %#v", got)
 	}
@@ -204,9 +183,7 @@ func TestBundledEvaluationProjectCompilesAndPlansOneSmallManagedFile(t *testing.
 		Connection:  evaluationConnection,
 		From:        filepath.Join(root, evaluationDataRelativePath),
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if len(plan.Manifest.Files) != 1 || plan.Manifest.Files[0].Path != "orders.csv" || plan.Manifest.Files[0].Size > 16<<10 {
 		t.Fatalf("evaluation manifest = %#v", plan.Manifest)
 	}
@@ -224,9 +201,7 @@ func TestEvaluationCompletionMarkerIsStrictAndPrivate(t *testing.T) {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(evaluationCompletePath(home))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("completion mode = %o, want 600", info.Mode().Perm())
 	}

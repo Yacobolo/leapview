@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestCandidateServiceCreatesResumesAndBuildsCanonicalPreviewURL(t *testing.T) {
@@ -17,18 +19,14 @@ func TestCandidateServiceCreatesResumesAndBuildsCanonicalPreviewURL(t *testing.T
 	started, err := service.Start(context.Background(), StartCandidateRequest{
 		ProjectID: "finance", OwnerID: "principal_1", ArtifactDigest: digest,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if started.Candidate.BaseGeneration != "deployment_7" {
 		t.Fatalf("base generation = %q, want server-resolved deployment_7", started.Candidate.BaseGeneration)
 	}
 	resumed, err := service.Start(context.Background(), StartCandidateRequest{
 		ProjectID: "finance", OwnerID: "principal_1", ArtifactDigest: digest,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if resumed.Candidate != started.Candidate || !resumed.Resumed || started.Resumed {
 		t.Fatalf("started=%#v resumed=%#v", started, resumed)
 	}
@@ -56,16 +54,12 @@ func TestCandidateServiceIsolatesAutomationKeysAndCancelsByKey(t *testing.T) {
 		ProjectID: "finance", OwnerID: "principal_1",
 		ArtifactDigest: digest, Key: "github:pull/41",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	second, err := service.Start(t.Context(), StartCandidateRequest{
 		ProjectID: "finance", OwnerID: "principal_1",
 		ArtifactDigest: digest, Key: "github:pull/42",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if first.Candidate.ID == second.Candidate.ID ||
 		first.Candidate.Key == second.Candidate.Key {
 		t.Fatalf("isolated candidates = %#v / %#v", first, second)
@@ -98,9 +92,7 @@ func TestCandidateServiceConcealsForeignCandidatesAndUsesOptimisticReplacement(t
 	started, err := service.Start(context.Background(), StartCandidateRequest{
 		ProjectID: "finance", OwnerID: "principal_1", ArtifactDigest: first,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for name, scope := range map[string]CandidateScope{
 		"owner":   {ProjectID: "finance", CandidateID: started.Candidate.ID, OwnerID: "principal_2"},
 		"project": {ProjectID: "marketing", CandidateID: started.Candidate.ID, OwnerID: "principal_1"},
@@ -116,9 +108,7 @@ func TestCandidateServiceConcealsForeignCandidatesAndUsesOptimisticReplacement(t
 	updated, err := service.ReplaceArtifact(context.Background(), CandidateScope{
 		ProjectID: "finance", CandidateID: started.Candidate.ID, OwnerID: "principal_1",
 	}, first, second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if updated.ArtifactDigest != second || updated.Status != CandidatePreparing {
 		t.Fatalf("updated = %#v", updated)
 	}
@@ -138,9 +128,7 @@ func TestCandidateServiceEnforcesQuotaCancelExpiryAndRestartDurability(t *testin
 		ProjectID: "finance", OwnerID: "principal_1",
 		ArtifactDigest: "sha256:" + strings.Repeat("a", 64),
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := service.Start(context.Background(), StartCandidateRequest{
 		ProjectID: "marketing", OwnerID: "principal_1",
 		ArtifactDigest: "sha256:" + strings.Repeat("b", 64),
@@ -175,9 +163,7 @@ func TestCandidateServiceEnforcesQuotaCancelExpiryAndRestartDurability(t *testin
 		ProjectID: "marketing", OwnerID: "principal_1",
 		ArtifactDigest: "sha256:" + strings.Repeat("b", 64),
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	expiring.now = func() time.Time { return now.Add(2 * time.Minute) }
 	if count, err := expiring.Reconcile(context.Background()); err != nil || count != 1 {
 		t.Fatalf("Reconcile() = %d, %v", count, err)
@@ -199,15 +185,11 @@ func TestCandidateServiceExpiresOwnedCandidateOnRead(t *testing.T) {
 		ProjectID: "finance", OwnerID: "principal_1",
 		ArtifactDigest: "sha256:" + strings.Repeat("a", 64),
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	service.now = func() time.Time { return now.Add(2 * time.Minute) }
 	expired, err := service.GetOwned(context.Background(), started.Candidate.ID, "principal_1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if expired.Status != CandidateExpired || expired.Revision != started.Candidate.Revision+1 {
 		t.Fatalf("expired candidate = %#v", expired)
 	}
@@ -230,9 +212,7 @@ func TestCandidateServiceAuditsLifecycleWithoutArtifactDigest(t *testing.T) {
 	started, err := service.Start(context.Background(), StartCandidateRequest{
 		ProjectID: "finance", OwnerID: "principal_1", ArtifactDigest: digest,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := service.Cancel(context.Background(), CandidateScope{
 		ProjectID: "finance", CandidateID: started.Candidate.ID, OwnerID: "principal_1",
 	}); err != nil {
@@ -260,9 +240,7 @@ func newCandidateTestService(t *testing.T, repository CandidateRepository, now t
 			return "cand_test_" + string(rune('0'+counter)), nil
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return service
 }
 

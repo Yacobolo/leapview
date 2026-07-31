@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/flidai/leapview/internal/deployment"
+	"github.com/stretchr/testify/require"
 )
 
 func TestApprovalRepositoryPersistsImmutableScopeAndOptimisticTransitions(t *testing.T) {
@@ -112,9 +113,7 @@ func TestApprovalRepositoryRetainsExpiredHistoryAndAcceptsReplacement(t *testing
 		t.Fatal(err)
 	}
 	current, err := repository.ApprovalByDeployment(ctx, first.DeploymentID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if current.ID != replacement.ID {
 		t.Fatalf("current approval = %q, want %q", current.ID, replacement.ID)
 	}
@@ -159,9 +158,7 @@ func TestApprovalRepositoryPersistsDeniedDecision(t *testing.T) {
 	}
 	loaded, err := NewRepositoryWithHooks(db, ActivationHooks{}).
 		ApprovalByDeployment(ctx, pending.DeploymentID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if loaded != denied {
 		t.Fatalf("loaded denial = %#v, want %#v", loaded, denied)
 	}

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestTransportRemoteUploadsOnlyMissingContentBeforeCommit(t *testing.T) {
@@ -17,17 +19,13 @@ func TestTransportRemoteUploadsOnlyMissingContentBeforeCommit(t *testing.T) {
 		missing: []string{snapshot.Artifacts[0].Digest, snapshot.Artifacts[2].Digest},
 	}
 	remote, err := NewTransportRemote(transport, 2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	candidate, err := remote.Synchronize(t.Context(), SyncRequest{
 		Snapshot: snapshot, ExpectedCandidateID: "cand_existing",
 		ExpectedArtifactDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if candidate.ArtifactDigest != snapshot.Digest || len(transport.uploaded) != 2 || transport.commits != 1 {
 		t.Fatalf("candidate=%#v uploads=%#v commits=%d", candidate, transport.uploaded, transport.commits)
 	}
@@ -47,9 +45,7 @@ func TestTransportRemoteRejectsUnknownMissingDigestWithoutUploadingOrCommit(t *t
 		"sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
 	}}
 	remote, err := NewTransportRemote(transport, 2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if _, err := remote.Synchronize(t.Context(), SyncRequest{Snapshot: testSnapshot("unknown")}); err == nil {
 		t.Fatal("remote accepted a missing digest outside the planned snapshot")
@@ -75,9 +71,7 @@ func TestTransportRemoteBoundsUploadsAndDoesNotCommitPartialFailure(t *testing.T
 	injected := errors.New("upload failed")
 	transport := &recordingSyncTransport{missing: missing, uploadErr: injected}
 	remote, err := NewTransportRemote(transport, 3)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if _, err := remote.Synchronize(t.Context(), SyncRequest{Snapshot: snapshot}); !errors.Is(err, injected) {
 		t.Fatalf("synchronize error = %v, want injected upload failure", err)

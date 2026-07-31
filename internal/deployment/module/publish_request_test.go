@@ -14,6 +14,7 @@ import (
 	deploymenthttp "github.com/flidai/leapview/internal/deployment/http"
 	"github.com/flidai/leapview/internal/platform/transaction"
 	"github.com/flidai/leapview/internal/release"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPublishEvidenceAcceptsExactTargetRelease(t *testing.T) {
@@ -24,9 +25,7 @@ func TestPublishEvidenceAcceptsExactTargetRelease(t *testing.T) {
 		"lvinst_prod",
 		"prod",
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if evidence.ArtifactDigest != targetRelease.Provenance.ArtifactDigest ||
 		evidence.PlanDigest != targetRelease.Provenance.PlanDigest ||
 		evidence.ReleaseDigest != targetRelease.Provenance.Digest ||
@@ -200,9 +199,7 @@ func TestPublishProjectCandidatePromotesAndRequestsTheExactReadyCandidate(t *tes
 			ArtifactDigest: artifactDigest,
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	targetRelease := publishTestRelease(t)
 	provenance, err := release.NewProvenance(release.ProvenanceInput{
 		Artifact: targetRelease.Provenance.Artifact,
@@ -212,9 +209,7 @@ func TestPublishProjectCandidatePromotesAndRequestsTheExactReadyCandidate(t *tes
 		},
 		Plan: targetRelease.Provenance.Plan,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	targetRelease.Provenance = &provenance
 	ready, err := module.candidates.MarkReady(
 		t.Context(),
@@ -225,9 +220,7 @@ func TestPublishProjectCandidatePromotesAndRequestsTheExactReadyCandidate(t *tes
 		artifactDigest,
 		provenance.Digest,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	coordinator := &publishCoordinatorStub{}
 	releases := &publishReleaseStub{targetRelease: targetRelease}
 	module.jobs = JobConfig{Coordinator: coordinator}
@@ -281,9 +274,7 @@ func TestPublishProjectCandidateRejectsStaleClientRevision(t *testing.T) {
 			ArtifactDigest: digest,
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	ready, err := module.candidates.MarkReady(
 		t.Context(),
 		deployment.CandidateScope{
@@ -293,9 +284,7 @@ func TestPublishProjectCandidateRejectsStaleClientRevision(t *testing.T) {
 		digest,
 		"sha256:"+strings.Repeat("9", 64),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	releases := &publishReleaseStub{targetRelease: publishTestRelease(t)}
 	module.api = APIConfig{Releases: releases}
 	response := callCandidateAPI(
@@ -363,9 +352,7 @@ func publishTestRelease(t *testing.T) release.Release {
 			}},
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return release.Release{
 		ID: "release_1", ProjectID: "project",
 		ProjectDigest: provenance.Artifact.SourceDigest,

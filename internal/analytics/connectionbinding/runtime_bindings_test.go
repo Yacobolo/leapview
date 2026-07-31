@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestRuntimeBindingLeaserAcquiresDeterministicValidatedEvidence(t *testing.T) {
@@ -30,9 +32,7 @@ func TestRuntimeBindingLeaserAcquiresDeterministicValidatedEvidence(t *testing.T
 			return nil
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	leases, err := leaser.Acquire(t.Context(), RuntimeBindingRequest{
 		Actor:    "principal:author_1",
@@ -43,9 +43,7 @@ func TestRuntimeBindingLeaserAcquiresDeterministicValidatedEvidence(t *testing.T
 			{LogicalConnectionID: warehouse.LogicalConnectionID, ConnectorKind: warehouse.ConnectorKind},
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	evidence := leases.Evidence()
 	if len(evidence) != 2 ||
 		evidence[0].LogicalConnection != reporting.LogicalConnectionID ||
@@ -80,16 +78,12 @@ func TestRuntimeBindingLeaserAllowsCredentialFreeCandidateAndReleasesPartialFail
 		Bindings: repository, Pools: directory,
 		Authorize: func(context.Context, string, TargetBinding) error { return nil },
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	credentialFree, err := leaser.Acquire(t.Context(), RuntimeBindingRequest{
 		Actor: "principal:author_1", Scope: warehouse.Scope, TargetID: warehouse.TargetID,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if len(credentialFree.Evidence()) != 0 || len(directory.acquired) != 0 {
 		t.Fatalf("credential-free acquisition touched target pools: %#v", directory.acquired)
 	}
@@ -130,9 +124,7 @@ func TestRuntimeBindingLeaserFailsClosedBeforePoolAcquisition(t *testing.T) {
 				},
 				Pools: directory, Authorize: authorize,
 			})
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			_, err = leaser.Acquire(t.Context(), RuntimeBindingRequest{
 				Actor: "principal:author_1", Scope: binding.Scope, TargetID: binding.TargetID,
 				Requirements: []Requirement{{
@@ -165,9 +157,7 @@ func TestRuntimeBindingLeasesExposeOnlyTheValidatedLogicalPool(t *testing.T) {
 			return nil
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	leases, err := leaser.Acquire(t.Context(), RuntimeBindingRequest{
 		Actor: "author_1", Scope: binding.Scope, TargetID: binding.TargetID,
 		Requirements: []Requirement{{
@@ -175,9 +165,7 @@ func TestRuntimeBindingLeasesExposeOnlyTheValidatedLogicalPool(t *testing.T) {
 			ConnectorKind:       binding.ConnectorKind,
 		}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer leases.Release()
 
 	var used RuntimePool

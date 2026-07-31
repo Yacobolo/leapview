@@ -12,6 +12,7 @@ import (
 	apigenclient "github.com/Yacobolo/toolbelt/apigen/runtime/client"
 	"github.com/flidai/leapview/internal/platform/cliapi"
 	"github.com/flidai/leapview/internal/project/devloop"
+	"github.com/stretchr/testify/require"
 )
 
 type devCommandClient struct {
@@ -125,9 +126,7 @@ func TestDevCommandOwnsOneAuthenticatedRemoteWorkflow(t *testing.T) {
 		client.resolved.Target,
 		"github:pull/42",
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if checkpoint.TargetID != "lvinst_prod" ||
 		checkpoint.CandidateID != "cand_1" ||
 		checkpoint.CandidateKey != "github:pull/42" ||

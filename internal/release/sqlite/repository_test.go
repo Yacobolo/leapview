@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -14,13 +13,13 @@ import (
 	jobsqlite "github.com/flidai/leapview/internal/platform/jobs/sqlite"
 	"github.com/flidai/leapview/internal/platform/transaction"
 	"github.com/flidai/leapview/internal/release"
+	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/require"
 )
 
 func TestReleaseRepositoryRoundTripsAndValidatesImmutableProvenance(t *testing.T) {
 	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "leapview.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	repo := NewRepository(store.SQLDB())
 	provenance, err := release.NewProvenance(release.ProvenanceInput{
@@ -49,9 +48,7 @@ func TestReleaseRepositoryRoundTripsAndValidatesImmutableProvenance(t *testing.T
 			}},
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	created, err := repo.Create(t.Context(), release.CreateInput{
 		ID: "rel_provenance", ProjectID: "commerce",
 		ProjectDigest:  provenance.Artifact.SourceDigest,
@@ -62,12 +59,9 @@ func TestReleaseRepositoryRoundTripsAndValidatesImmutableProvenance(t *testing.T
 		}},
 		Provenance: &provenance,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if created.Provenance == nil || !reflect.DeepEqual(*created.Provenance, provenance) {
-		t.Fatalf("created provenance = %#v, want %#v", created.Provenance, provenance)
-	}
+	require.NoError(t, err)
+	require.NotNil(t, created.Provenance)
+	require.Empty(t, cmp.Diff(provenance, *created.Provenance), "created provenance mismatch (-want +got)")
 	if _, err := store.SQLDB().ExecContext(
 		t.Context(),
 		`UPDATE api_releases SET provenance_json = json_set(provenance_json, '$.plan.runtimeVersion', 'tampered') WHERE id = ?`,
@@ -82,9 +76,7 @@ func TestReleaseRepositoryRoundTripsAndValidatesImmutableProvenance(t *testing.T
 
 func TestReleaseRepositoryRetainsCandidateProvenanceImmutably(t *testing.T) {
 	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "leapview.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	repo := NewRepository(store.SQLDB())
 	provenance := candidateReleaseProvenance(t)
@@ -94,26 +86,22 @@ func TestReleaseRepositoryRetainsCandidateProvenanceImmutably(t *testing.T) {
 		"commerce",
 		provenance,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	replayed, err := repo.RetainCandidateProvenance(
 		t.Context(),
 		"commerce",
 		provenance,
 	)
-	if err != nil || !reflect.DeepEqual(replayed, retained) {
-		t.Fatalf("replayed provenance = %#v, %v", replayed, err)
-	}
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(retained, replayed), "replayed provenance mismatch (-want +got)")
 	loaded, err := repo.CandidateProvenance(
 		t.Context(),
 		"commerce",
 		provenance.Candidate.ID,
 		provenance.Candidate.Revision,
 	)
-	if err != nil || !reflect.DeepEqual(loaded, provenance) {
-		t.Fatalf("loaded provenance = %#v, %v", loaded, err)
-	}
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(provenance, loaded), "loaded provenance mismatch (-want +got)")
 
 	changed := provenance
 	changed.Plan.RuntimeVersion = "runtime:changed"
@@ -122,9 +110,7 @@ func TestReleaseRepositoryRetainsCandidateProvenanceImmutably(t *testing.T) {
 		Candidate: changed.Candidate,
 		Plan:      changed.Plan,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := repo.RetainCandidateProvenance(
 		t.Context(),
 		"commerce",
@@ -161,9 +147,7 @@ func TestPriorDeploymentReleaseSkipsRequestsThatNeverActivated(t *testing.T) {
 		t.Context(),
 		filepath.Join(t.TempDir(), "leapview.db"),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	db := store.SQLDB()
 	for _, releaseID := range []string{"rel_1", "rel_failed", "rel_2"} {
@@ -232,9 +216,7 @@ func TestPriorDeploymentReleaseSkipsRequestsThatNeverActivated(t *testing.T) {
 		"project",
 		"dep_2",
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got != "rel_1" {
 		t.Fatalf("prior release = %q, want retained active release rel_1", got)
 	}
@@ -267,9 +249,7 @@ func candidateReleaseProvenance(t *testing.T) release.Provenance {
 			}},
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return provenance
 }
 
@@ -281,9 +261,7 @@ func (r failingWorkflowRecorder) RecordWorkflow(context.Context, transaction.Tra
 
 func TestReleaseLifecycleIsIdempotentAndImmutable(t *testing.T) {
 	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "leapview.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	eventRepo := jobsqlite.NewRepository(store.SQLDB())
 	repo := NewRepositoryWithWorkflow(store.SQLDB(), eventRepo)
@@ -347,18 +325,14 @@ func TestReleaseLifecycleIsIdempotentAndImmutable(t *testing.T) {
 
 func TestReleaseFinalizationRejectsMissingOrMismatchedArtifacts(t *testing.T) {
 	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "leapview.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	repo := NewRepository(store.SQLDB())
 	created, err := repo.Create(t.Context(), release.CreateInput{
 		ID: "rel_2", ProjectID: "commerce", ProjectDigest: "sha256:project", RequestDigest: "sha256:req-2", IdempotencyKey: "release-2", CreatedBy: "principal",
 		Workspaces: []release.WorkspaceManifest{{WorkspaceID: "sales", ArtifactDigest: "sha256:expected"}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := repo.BeginFinalization(t.Context(), created.ProjectID, created.ID, jobs.WorkflowIntent{}); !errors.Is(err, release.ErrIncomplete) {
 		t.Fatalf("missing artifact error = %v", err)
 	}
@@ -366,9 +340,7 @@ func TestReleaseFinalizationRejectsMissingOrMismatchedArtifacts(t *testing.T) {
 
 func TestBeginFinalizationRollsBackWhenWorkflowCannotBeRecorded(t *testing.T) {
 	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "leapview.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	injected := errors.New("injected workflow failure")
 	repo := NewRepositoryWithWorkflow(store.SQLDB(), failingWorkflowRecorder{err: injected})
@@ -383,9 +355,7 @@ func TestBeginFinalizationRollsBackWhenWorkflowCannotBeRecorded(t *testing.T) {
 		IdempotencyKey: "atomic", CreatedBy: "principal",
 		Workspaces: []release.WorkspaceManifest{{WorkspaceID: "sales", ArtifactDigest: "sha256:artifact"}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := repo.AssignArtifactTarget(t.Context(), created.ProjectID, created.ID, "sales", "state_1"); err != nil {
 		t.Fatal(err)
 	}
@@ -400,9 +370,7 @@ func TestBeginFinalizationRollsBackWhenWorkflowCannotBeRecorded(t *testing.T) {
 		t.Fatalf("BeginFinalization() error = %v, want injected failure", err)
 	}
 	current, err := repo.Get(t.Context(), created.ProjectID, created.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if current.Status != release.StatusDraft {
 		t.Fatalf("status after workflow failure = %q, want draft", current.Status)
 	}
@@ -410,9 +378,7 @@ func TestBeginFinalizationRollsBackWhenWorkflowCannotBeRecorded(t *testing.T) {
 
 func TestCompleteFinalizationRollsBackWhenReadyEventCannotBeRecorded(t *testing.T) {
 	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "leapview.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	injected := errors.New("injected terminal event failure")
 	repo := NewRepositoryWithWorkflow(store.SQLDB(), failingWorkflowRecorder{err: injected})
@@ -427,9 +393,7 @@ func TestCompleteFinalizationRollsBackWhenReadyEventCannotBeRecorded(t *testing.
 		IdempotencyKey: "atomic-ready", CreatedBy: "principal",
 		Workspaces: []release.WorkspaceManifest{{WorkspaceID: "sales", ArtifactDigest: "sha256:artifact"}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := repo.AssignArtifactTarget(t.Context(), created.ProjectID, created.ID, "sales", "state_1"); err != nil {
 		t.Fatal(err)
 	}
@@ -444,9 +408,7 @@ func TestCompleteFinalizationRollsBackWhenReadyEventCannotBeRecorded(t *testing.
 		t.Fatalf("CompleteFinalization() error = %v, want injected failure", err)
 	}
 	current, err := repo.Get(t.Context(), created.ProjectID, created.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if current.Status != release.StatusValidating {
 		t.Fatalf("status after terminal event failure = %q, want validating", current.Status)
 	}
@@ -454,9 +416,7 @@ func TestCompleteFinalizationRollsBackWhenReadyEventCannotBeRecorded(t *testing.
 
 func TestFailFinalizationRollsBackWhenFailedEventCannotBeRecorded(t *testing.T) {
 	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "leapview.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	injected := errors.New("injected terminal event failure")
 	repo := NewRepositoryWithWorkflow(store.SQLDB(), failingWorkflowRecorder{err: injected})
@@ -471,9 +431,7 @@ func TestFailFinalizationRollsBackWhenFailedEventCannotBeRecorded(t *testing.T) 
 		IdempotencyKey: "atomic-failed", CreatedBy: "principal",
 		Workspaces: []release.WorkspaceManifest{{WorkspaceID: "sales", ArtifactDigest: "sha256:artifact"}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := repo.AssignArtifactTarget(t.Context(), created.ProjectID, created.ID, "sales", "state_1"); err != nil {
 		t.Fatal(err)
 	}
@@ -488,9 +446,7 @@ func TestFailFinalizationRollsBackWhenFailedEventCannotBeRecorded(t *testing.T) 
 		t.Fatalf("FailFinalization() error = %v, want injected failure", err)
 	}
 	current, err := repo.Get(t.Context(), created.ProjectID, created.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if current.Status != release.StatusValidating {
 		t.Fatalf("status after terminal event failure = %q, want validating", current.Status)
 	}

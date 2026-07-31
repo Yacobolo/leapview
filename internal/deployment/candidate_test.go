@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestCandidateStateMachineSupportsIdempotentPreparationLifecycle(t *testing.T) {
@@ -18,32 +20,24 @@ func TestCandidateStateMachineSupportsIdempotentPreparationLifecycle(t *testing.
 		Environment: "prod", OwnerID: "principal_1", BaseGeneration: "deployment_7",
 		ArtifactDigest: firstDigest, ExpiresAt: now.Add(time.Hour), Now: now,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if candidate.Status != CandidatePreparing || candidate.Revision != 1 {
 		t.Fatalf("candidate = %#v", candidate)
 	}
 
 	ready, err := candidate.MarkReady(firstDigest, firstProvenance, now.Add(time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if ready.ProvenanceDigest != firstProvenance {
 		t.Fatalf("ready provenance = %q, want %q", ready.ProvenanceDigest, firstProvenance)
 	}
 	replayed, err := ready.MarkReady(firstDigest, firstProvenance, now.Add(2*time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if replayed != ready {
 		t.Fatalf("idempotent ready changed candidate: %#v", replayed)
 	}
 
 	replaced, err := ready.ReplaceArtifact(firstDigest, secondDigest, now.Add(3*time.Minute), now.Add(2*time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if replaced.Status != CandidatePreparing || replaced.ArtifactDigest != secondDigest ||
 		replaced.Revision != ready.Revision+1 || replaced.FailureReason != "" ||
 		replaced.ProvenanceDigest != "" {
@@ -65,39 +59,27 @@ func TestCandidateStateMachineRetryCancelAndExpireAreDeterministic(t *testing.T)
 		Environment: "prod", OwnerID: "principal_1", BaseGeneration: "deployment_7",
 		ArtifactDigest: digest, ExpiresAt: now.Add(time.Hour), Now: now,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	failed, err := candidate.MarkFailed(digest, "RUNTIME_PREPARATION_FAILED", now.Add(time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if failed.FailureReason != "RUNTIME_PREPARATION_FAILED" {
 		t.Fatalf("failure reason = %q", failed.FailureReason)
 	}
 	retried, err := failed.Retry(now.Add(2*time.Minute), now.Add(2*time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if retried.Status != CandidatePreparing || retried.FailureReason != "" {
 		t.Fatalf("retry = %#v", retried)
 	}
 	replayed, err := retried.Retry(now.Add(3*time.Minute), now.Add(3*time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if replayed != retried {
 		t.Fatalf("idempotent retry changed candidate: %#v", replayed)
 	}
 
 	cancelled, err := retried.Cancel(now.Add(4 * time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	replayedCancel, err := cancelled.Cancel(now.Add(5 * time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if replayedCancel != cancelled {
 		t.Fatalf("idempotent cancel changed candidate: %#v", replayedCancel)
 	}
@@ -106,9 +88,7 @@ func TestCandidateStateMachineRetryCancelAndExpireAreDeterministic(t *testing.T)
 	}
 
 	expired, changed, err := retried.Expire(now.Add(3 * time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if !changed || expired.Status != CandidateExpired {
 		t.Fatalf("expiry = %#v changed=%v", expired, changed)
 	}
@@ -126,9 +106,7 @@ func TestCandidateRejectsUnsafeFailureReasons(t *testing.T) {
 		Environment: "prod", OwnerID: "principal_1", BaseGeneration: "deployment_7",
 		ArtifactDigest: digest, ExpiresAt: now.Add(time.Hour), Now: now,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, reason := range []string{
 		"",
 		"runtime preparation failed",

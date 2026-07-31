@@ -20,6 +20,7 @@ import (
 	"github.com/creachadair/jrpc2"
 	"github.com/creachadair/jrpc2/channel"
 	"github.com/creachadair/jrpc2/handler"
+	"github.com/stretchr/testify/require"
 )
 
 func TestQualificationCommandSurfaceBelongsToLeapviewctl(t *testing.T) {
@@ -28,9 +29,7 @@ func TestQualificationCommandSurfaceBelongsToLeapviewctl(t *testing.T) {
 		Stdout: &bytes.Buffer{},
 		Stderr: &bytes.Buffer{},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	command := Command(context.Background(), controller)
 	command.SetArgs([]string{"qualify", "--help"})
 	var output bytes.Buffer
@@ -50,9 +49,7 @@ func TestInstalledQualificationAcceptsExplicitReleaseBundle(t *testing.T) {
 	controller, err := New(Options{
 		Root: t.TempDir(), Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	command := Command(t.Context(), controller)
 	command.SetArgs([]string{"qualify", "installed-candidate", "--help"})
 	var output bytes.Buffer
@@ -142,9 +139,7 @@ func TestQualificationWorkloadTokenNeverFallsBackToPublisher(t *testing.T) {
 	}
 	credentials.WorkloadToken = "workload-secret"
 	got, err := credentials.workloadToken()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got != credentials.WorkloadToken {
 		t.Fatalf("workloadToken() = %q, want dedicated workload token", got)
 	}
@@ -159,9 +154,7 @@ func TestQualificationProjectDataTokenNeverFallsBackToPublisher(t *testing.T) {
 	}
 	credentials.ProjectDataToken = "project-data-secret"
 	got, err := credentials.projectDataToken()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got != credentials.ProjectDataToken {
 		t.Fatalf("projectDataToken() = %q, want dedicated project-data token", got)
 	}
@@ -176,9 +169,7 @@ func TestQualificationRecoveryControlTokenNeverFallsBackToPublisher(t *testing.T
 	}
 	credentials.RecoveryControlToken = "recovery-control-secret"
 	got, err := credentials.recoveryControlToken()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got != credentials.RecoveryControlToken {
 		t.Fatalf("recoveryControlToken() = %q, want dedicated control token", got)
 	}
@@ -222,9 +213,7 @@ func TestQualificationLoopbackRequestUsesProductionAllowedHost(t *testing.T) {
 		"http://127.0.0.1:8080/metrics",
 		nil,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if request.Host != "localhost" {
 		t.Fatalf("request Host = %q, want localhost", request.Host)
 	}
@@ -411,9 +400,7 @@ func TestFinalizeQualificationPerformanceReportWritesFailureEvidence(t *testing.
 		"logicalCPUs": policy.Assumptions.MinimumLogicalCPUs - 1,
 		"memoryBytes": policy.Assumptions.MinimumMemoryBytes,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	err = finalizeQualificationPerformanceReport(
 		path,
 		policy,
@@ -551,9 +538,7 @@ func TestQualificationDockerExecutorPreservesExactArgumentsWithoutShell(t *testi
 		Root: root, DockerBin: "docker-probe",
 		qualificationExecutor: executor,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	stdin := strings.NewReader("payload")
 	arguments := []string{
 		"run",
@@ -566,9 +551,7 @@ func TestQualificationDockerExecutorPreservesExactArgumentsWithoutShell(t *testi
 		stdin,
 		arguments...,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if string(output) != "ok" || len(executor.requests) != 1 {
 		t.Fatalf("execution = %q, requests %d", output, len(executor.requests))
 	}
@@ -595,9 +578,7 @@ func TestQualificationComposeBuildsExactDockerArguments(t *testing.T) {
 		Root: root, DockerBin: "docker",
 		qualificationExecutor: executor,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := controller.qualificationCompose(
 		t.Context(),
 		root,
@@ -628,18 +609,14 @@ func TestQualificationDiskUsageExcludesTransientSQLiteSidecars(t *testing.T) {
 		Root: root, DockerBin: "docker",
 		qualificationExecutor: executor,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	got, err := controller.qualificationDiskUsage(
 		t.Context(),
 		"leapview-app",
 		"performance disk",
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	wantArguments := []string{
 		"exec",
 		"leapview-app",
@@ -677,9 +654,7 @@ func TestQualificationRecoveryDataIsReadableByHardenedRuntimeUser(t *testing.T) 
 		nested:               0o644,
 	} {
 		info, err := os.Stat(path)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		if got := info.Mode().Perm(); got != want {
 			t.Errorf("%s mode = %o, want %o", path, got, want)
 		}
@@ -734,9 +709,7 @@ func TestQualificationClientParsesTypedCLIResults(t *testing.T) {
 		strings.Repeat("a", 64),
 		strings.Repeat("b", 64),
 	), "sha256:"+strings.Repeat("c", 64))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if candidate.ID != "cand_1" || candidate.Revision != 7 ||
 		candidate.TargetID != "target_1" || candidate.PrincipalID != "principal_1" {
 		t.Fatalf("candidate = %+v", candidate)
@@ -751,9 +724,7 @@ func TestQualificationClientParsesTypedCLIResults(t *testing.T) {
 		strings.Repeat("c", 64),
 		strings.Repeat("b", 64),
 	))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if publication.DeploymentID != "deployment_1" ||
 		publication.CandidateID != candidate.ID ||
 		publication.ReleaseDigest != candidate.ProvenanceDigest {
@@ -893,14 +864,10 @@ func TestExpandQualificationCSVFlushesEveryGeneratedRow(t *testing.T) {
 		t.Fatal(err)
 	}
 	file, err := os.Open(destination)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer file.Close()
 	rows, err := csv.NewReader(file).ReadAll()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got := len(rows); got != 4 {
 		t.Fatalf("expanded row count = %d, want 4", got)
 	}

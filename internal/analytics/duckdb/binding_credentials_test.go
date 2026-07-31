@@ -8,6 +8,7 @@ import (
 
 	"github.com/flidai/leapview/internal/analytics/connectionbinding"
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	"github.com/stretchr/testify/require"
 )
 
 func TestApplyTargetBindingBuildsBoundedValidatedRuntimeConnection(t *testing.T) {
@@ -16,17 +17,13 @@ func TestApplyTargetBindingBuildsBoundedValidatedRuntimeConnection(t *testing.T)
 		map[string]string{"password": "source-secret"},
 		"secret-1:v4", time.Now(), time.Now().Add(time.Minute),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	connection, err := ApplyTargetBinding(
 		semanticmodel.Connection{Kind: "postgres"},
 		binding,
 		snapshot,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if connection.Host != "warehouse.internal" || connection.Port != 5432 ||
 		connection.Database != "analytics" || connection.Username != "leapview_runtime" ||
 		connection.SSLMode != "verify-full" {
@@ -42,9 +39,7 @@ func TestApplyTargetBindingFailsClosedWithoutDisclosingInvalidBundle(t *testing.
 		map[string]string{"api_token": "source-secret"},
 		"secret-1:v5", time.Now(), time.Now().Add(time.Minute),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, err = ApplyTargetBinding(semanticmodel.Connection{Kind: "postgres"}, testDuckDBTargetBinding(t), snapshot)
 	if !errors.Is(err, connectionbinding.ErrInvalidCredentialBundle) || strings.Contains(err.Error(), "source-secret") {
 		t.Fatalf("ApplyTargetBinding() error = %v", err)
@@ -66,8 +61,6 @@ func testDuckDBTargetBinding(t *testing.T) connectionbinding.TargetBinding {
 		},
 		Enabled: true, Now: time.Now(),
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return binding
 }

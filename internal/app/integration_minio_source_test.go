@@ -20,6 +20,7 @@ import (
 	analyticsducklake "github.com/flidai/leapview/internal/analytics/ducklake"
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 	"github.com/flidai/leapview/internal/workload"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMinIOParquetSourceRefreshContract(t *testing.T) {
@@ -68,19 +69,13 @@ func TestMinIOParquetSourceRefreshContract(t *testing.T) {
 		t.Fatalf("configure development credential resolver: %v", err)
 	}
 	db, err := analyticsducklake.Open(ctx, analyticsducklake.Config{RootDir: filepath.Join(t.TempDir(), "ducklake"), MaxConnections: 2})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer db.Close()
 	controller, err := workload.New(workload.DefaultConfig())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer controller.Close()
 	refreshLease, err := controller.Acquire(ctx, workload.Request{Class: workload.Refresh, WorkspaceID: "commerce", Operation: "minio.refresh"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	runtime, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(refreshLease.Context(), analyticsduckdb.WorkspaceRuntimeConfig{
 		Models:             map[string]*semanticmodel.Model{"commerce": model},
 		Database:           db,
@@ -100,9 +95,7 @@ func TestMinIOParquetSourceRefreshContract(t *testing.T) {
 		t.Fatalf("external replacement changed served data before refresh: %v", got)
 	}
 	refreshLease, err = controller.Acquire(ctx, workload.Request{Class: workload.Refresh, WorkspaceID: "commerce", Operation: "minio.refresh"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	err = runtime.Refresh(refreshLease.Context())
 	refreshLease.Release()
 	if err != nil {
@@ -114,9 +107,7 @@ func TestMinIOParquetSourceRefreshContract(t *testing.T) {
 
 	putMinIOObject(t, ctx, client, bucket, "commerce/"+key, []byte("not parquet"))
 	refreshLease, err = controller.Acquire(ctx, workload.Request{Class: workload.Refresh, WorkspaceID: "commerce", Operation: "minio.refresh"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	err = runtime.Refresh(refreshLease.Context())
 	refreshLease.Release()
 	if err == nil {
@@ -133,9 +124,7 @@ func minIOClient(t *testing.T, ctx context.Context, endpoint, region, user, secr
 		awsconfig.WithRegion(region),
 		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(user, secret, "")),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return awss3.NewFromConfig(cfg, func(options *awss3.Options) {
 		options.BaseEndpoint = aws.String(endpoint)
 		options.UsePathStyle = true
@@ -153,9 +142,7 @@ func parquetFixture(t *testing.T, revenues ...int) []byte {
 	t.Helper()
 	dir := t.TempDir()
 	db, err := sql.Open("duckdb", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	values := make([]string, 0, len(revenues))
 	for index, revenue := range revenues {
 		values = append(values, fmt.Sprintf("('o%d', %d)", index+1, revenue))
@@ -163,16 +150,12 @@ func parquetFixture(t *testing.T, revenues ...int) []byte {
 	path := filepath.Join(dir, "orders.parquet")
 	_, err = db.Exec(`CREATE TABLE orders(order_id VARCHAR, revenue DOUBLE); INSERT INTO orders VALUES ` + strings.Join(values, ",") + `; COPY orders TO '` + analyticsduckdb.SQLString(path) + `' (FORMAT PARQUET)`)
 	closeErr := db.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if closeErr != nil {
 		t.Fatal(closeErr)
 	}
 	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return content
 }
 
@@ -202,19 +185,13 @@ func minIOModel(bucket, key string) *semanticmodel.Model {
 func materializedRevenue(t *testing.T, ctx context.Context, controller *workload.Controller, db *analyticsducklake.Environment) float64 {
 	t.Helper()
 	workloadLease, err := controller.Acquire(ctx, workload.Request{Class: workload.Interactive, WorkspaceID: "commerce", Operation: "minio.query"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer workloadLease.Release()
 	lease, err := db.Acquire(workloadLease.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer lease.Release()
 	session, err := db.Session(lease.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	var total float64
 	if err := session.QueryRowContext(lease.Context(), `SELECT SUM(revenue) FROM model.orders`).Scan(&total); err != nil {
 		t.Fatal(err)

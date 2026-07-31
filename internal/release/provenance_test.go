@@ -5,22 +5,20 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestProvenanceSeparatesImmutableArtifactFromTargetPlan(t *testing.T) {
 	first, err := NewProvenance(provenanceInput("target-dev", "dev", "a"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	reordered := provenanceInput("target-dev", "dev", "a")
 	reordered.Artifact.Workspaces[0], reordered.Artifact.Workspaces[1] =
 		reordered.Artifact.Workspaces[1], reordered.Artifact.Workspaces[0]
 	reordered.Plan.Workspaces[0], reordered.Plan.Workspaces[1] =
 		reordered.Plan.Workspaces[1], reordered.Plan.Workspaces[0]
 	second, err := NewProvenance(reordered)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if first.Digest != second.Digest ||
 		first.ArtifactDigest != second.ArtifactDigest ||
 		first.PlanDigest != second.PlanDigest {
@@ -28,9 +26,7 @@ func TestProvenanceSeparatesImmutableArtifactFromTargetPlan(t *testing.T) {
 	}
 
 	promoted, err := NewProvenance(provenanceInput("target-prod", "prod", "b"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if promoted.ArtifactDigest != first.ArtifactDigest {
 		t.Fatalf("promotion changed artifact digest: %q / %q", first.ArtifactDigest, promoted.ArtifactDigest)
 	}
@@ -44,9 +40,7 @@ func TestProvenanceSeparatesImmutableArtifactFromTargetPlan(t *testing.T) {
 
 func TestProvenanceBindsOptionalSourceRevisionWithoutChangingArtifactIdentity(t *testing.T) {
 	withoutRevision, err := NewProvenance(provenanceInput("target-dev", "dev", "a"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	input := provenanceInput("target-dev", "dev", "a")
 	input.SourceRevision = &SourceRevisionProvenance{
 		Revision:   "0123456789abcdef",
@@ -55,9 +49,7 @@ func TestProvenanceBindsOptionalSourceRevisionWithoutChangingArtifactIdentity(t 
 		ChangeID:   "pull/42",
 	}
 	withRevision, err := NewProvenance(input)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if withRevision.ArtifactDigest != withoutRevision.ArtifactDigest {
 		t.Fatalf("source revision changed artifact identity: %q / %q", withRevision.ArtifactDigest, withoutRevision.ArtifactDigest)
 	}
@@ -97,9 +89,7 @@ func TestProvenanceRejectsUnsafeSourceRevisionEvidence(t *testing.T) {
 
 func TestProvenanceFailsClosedOnTamperingAndIncompleteCompatibility(t *testing.T) {
 	valid, err := NewProvenance(provenanceInput("target-dev", "dev", "a"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	tampered := valid
 	tampered.Artifact.ProjectDigest = shaIdentity("f")
 	if err := tampered.Validate(); !errors.Is(err, ErrProvenanceInvalid) {
@@ -139,13 +129,9 @@ func TestProvenanceFailsClosedOnTamperingAndIncompleteCompatibility(t *testing.T
 
 func TestProvenanceSerializesOnlyRedactedTargetEvidence(t *testing.T) {
 	provenance, err := NewProvenance(provenanceInput("target-dev", "dev", "a"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	encoded, err := json.Marshal(provenance)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, forbidden := range []string{
 		"infisicalProject", "secretPath", "secretKey", "credential",
 		"postgres://", "super-secret",

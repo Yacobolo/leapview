@@ -8,19 +8,16 @@ import (
 	"github.com/flidai/leapview/internal/project"
 	projectdevloop "github.com/flidai/leapview/internal/project/devloop"
 	projectmodule "github.com/flidai/leapview/internal/project/module"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCandidateSourceSynchronizerAuthorizesOnlyPlannedOwnerUploads(t *testing.T) {
 	snapshot, err := (projectdevloop.FilesystemBuilder{
 		ProjectPath: filepath.Join("..", "..", "..", "dashboards", "leapview.yaml"),
 	}).Build(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	synchronizer, err := projectmodule.NewCandidateSourceSynchronizer(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	scope := project.CandidateSourceScope{ProjectID: snapshot.ProjectID, OwnerID: "principal_1"}
 	request := synchronizationRequest(snapshot)
 
@@ -53,24 +50,18 @@ func TestCandidateSourceSynchronizerRetainsActivePlanAcrossRestart(t *testing.T)
 	snapshot, err := (projectdevloop.FilesystemBuilder{
 		ProjectPath: filepath.Join("..", "..", "..", "dashboards", "leapview.yaml"),
 	}).Build(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	scope := project.CandidateSourceScope{ProjectID: snapshot.ProjectID, OwnerID: "principal_1"}
 	request := synchronizationRequest(snapshot)
 	first, err := projectmodule.NewCandidateSourceSynchronizer(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	missing, err := first.Plan(t.Context(), scope, request)
 	if err != nil || len(missing) == 0 {
 		t.Fatalf("Plan() missing=%d error=%v", len(missing), err)
 	}
 
 	restarted, err := projectmodule.NewCandidateSourceSynchronizer(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	byDigest := make(map[string]projectdevloop.Artifact, len(snapshot.Artifacts))
 	for _, artifact := range snapshot.Artifacts {
 		byDigest[artifact.Digest] = artifact

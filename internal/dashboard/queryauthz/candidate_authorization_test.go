@@ -6,6 +6,7 @@ import (
 
 	"github.com/flidai/leapview/internal/access"
 	"github.com/flidai/leapview/internal/analytics/dataquery"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCandidateQueryCapabilityRejectsOwnershipWorkspaceAndIdentityExpansion(t *testing.T) {
@@ -95,9 +96,7 @@ func TestCandidateQueryCapabilityAddsRestrictionsAndEffectivePolicyFingerprint(t
 		WithCandidateQueryCapability(t.Context(), capability),
 		candidateGovernanceRequest(),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if governed.CandidateID != capability.CandidateID ||
 		governed.EffectivePolicyFingerprint == "" {
 		t.Fatalf("governed candidate identity = %#v", governed)
@@ -116,9 +115,7 @@ func TestCandidateQueryCapabilityAddsRestrictionsAndEffectivePolicyFingerprint(t
 		WithCandidateQueryCapability(t.Context(), changed),
 		candidateGovernanceRequest(),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if next.EffectivePolicyFingerprint == governed.EffectivePolicyFingerprint {
 		t.Fatal("candidate policy change reused the effective policy fingerprint")
 	}
@@ -146,9 +143,7 @@ func TestCandidateQueryCapabilityAppliesOnlyRelevantObjectRestrictions(t *testin
 		WithCandidateQueryCapability(t.Context(), capability),
 		candidateGovernanceRequest(),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if len(governed.Filters) != 0 {
 		t.Fatalf("unrelated candidate restriction leaked into query = %#v", governed.Filters)
 	}
@@ -184,9 +179,7 @@ func TestCandidateQueryCapabilityCannotDeleteOrShadowActiveRestrictions(t *testi
 		WithCandidateQueryCapability(t.Context(), capability),
 		candidateGovernanceRequest(),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if len(governed.Filters) != 2 ||
 		governed.Filters[0].Field != "ratings.country" ||
 		governed.Filters[1].Field != "ratings.region" {
@@ -224,9 +217,7 @@ func TestCandidateViewAsIntersectsSubjectAndCandidateRestrictions(t *testing.T) 
 	ctx = WithViewAsCapability(ctx, viewAs)
 
 	governed, _, err := metrics.GovernDataQuery(ctx, candidateGovernanceRequest())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if governed.PrincipalID != "viewer_1" || governed.CandidateID != "cand_1" {
 		t.Fatalf("candidate view-as identity = %#v", governed)
 	}

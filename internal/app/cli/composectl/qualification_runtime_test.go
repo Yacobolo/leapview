@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestDockerCLIRuntimeStartsContainerWithDeterministicArguments(t *testing.T) {
@@ -27,9 +29,7 @@ func TestDockerCLIRuntimeStartsContainerWithDeterministicArguments(t *testing.T)
 		},
 		Command: []string{"sleep", "infinity"},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if container.Name() != "qualification-browser" {
 		t.Fatalf("container name=%q", container.Name())
 	}

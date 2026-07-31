@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestWritePrivateFileAtomicRoundTripsWithPrivatePermissions(t *testing.T) {
@@ -15,16 +17,12 @@ func TestWritePrivateFileAtomicRoundTripsWithPrivatePermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := ReadPrivateFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if !bytes.Equal(got, contents) {
 		t.Fatalf("contents = %q", got)
 	}
 	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if info.Mode().Perm() != PrivateFileMode {
 		t.Fatalf("mode = %o", info.Mode().Perm())
 	}
@@ -62,28 +60,20 @@ func TestWritePrivateFileAtomicConcurrentWritersLeaveOneCompletePrivateFile(t *t
 	close(errors)
 
 	for err := range errors {
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 	}
 	got, err := ReadPrivateFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if !bytes.Equal(got, first) && !bytes.Equal(got, second) {
 		t.Fatalf("concurrent write left partial contents of %d bytes", len(got))
 	}
 	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if info.Mode().Perm() != PrivateFileMode {
 		t.Fatalf("mode = %o", info.Mode().Perm())
 	}
 	matches, err := filepath.Glob(filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if len(matches) != 0 {
 		t.Fatalf("temporary files remain after concurrent writes: %v", matches)
 	}

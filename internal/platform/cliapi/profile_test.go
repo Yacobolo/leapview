@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	instancelock "github.com/flidai/leapview/internal/platform/locking"
+	"github.com/stretchr/testify/require"
 )
 
 func TestProfileStorePersistsOnlyNonSecretTargetMetadata(t *testing.T) {
@@ -24,25 +25,19 @@ func TestProfileStorePersistsOnlyNonSecretTargetMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := store.Get("prod")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got.Origin != "https://analytics.example.com" || got.InstanceID != profile.InstanceID || got.ProjectID != profile.ProjectID {
 		t.Fatalf("profile = %+v", got)
 	}
 	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, forbidden := range []string{"accessToken", "refreshToken", "password", "secret"} {
 		if strings.Contains(strings.ToLower(string(content)), strings.ToLower(forbidden)) {
 			t.Fatalf("profile contains secret-bearing field %q: %s", forbidden, content)
 		}
 	}
 	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("profile mode = %o, want 600", info.Mode().Perm())
 	}
@@ -59,9 +54,7 @@ func TestProfileStoreRefusesReadModifyWriteWhileAnotherProcessOwnsLock(t *testin
 		t.Fatal(err)
 	}
 	lock, err := instancelock.AcquireNamed(directory, ".cli.json.lock")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer lock.Release()
 
 	err = store.Put("concurrent", TargetProfile{
@@ -141,9 +134,7 @@ func TestProfileStoreFindsStableNameByCanonicalOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 	name, profile, err := store.FindByOrigin("https://example.com/")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if name != "production" || profile.InstanceID != "lvinst_prod" {
 		t.Fatalf("name=%q profile=%+v", name, profile)
 	}

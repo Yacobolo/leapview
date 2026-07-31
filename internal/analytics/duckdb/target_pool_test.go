@@ -11,6 +11,7 @@ import (
 	"github.com/flidai/leapview/internal/analytics/connectionbinding"
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 	analyticsruntime "github.com/flidai/leapview/internal/analytics/runtime"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTargetRuntimePoolFactoryPreparesOnlyConnectorOwnedReadOnlyProbe(t *testing.T) {
@@ -22,21 +23,15 @@ func TestTargetRuntimePoolFactoryPreparesOnlyConnectorOwnedReadOnlyProbe(t *test
 		},
 		RequireTLS: true,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	binding := testDuckDBTargetBinding(t)
 	snapshot, err := connectionbinding.NewCredentialSnapshot(
 		map[string]string{"password": "source-secret"},
 		"secret-1:v4", time.Now(), time.Now().Add(time.Minute),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	pool, err := factory.Prepare(context.Background(), binding, snapshot)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := pool.HealthCheck(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -84,16 +79,12 @@ func TestTargetRuntimePoolFactoryRejectsUnboundedOrUnsupportedEndpointsBeforeOpe
 		Limits:     TargetRuntimeLimits{MemoryMaxBytes: 1, TempMaxBytes: 1, MaxThreads: 1},
 		RequireTLS: true,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	snapshot, err := connectionbinding.NewCredentialSnapshot(
 		map[string]string{"password": "source-secret"},
 		"secret-1:v4", time.Now(), time.Now().Add(time.Minute),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for name, mutate := range map[string]func(*connectionbinding.TargetBinding){
 		"unsupported_connector": func(binding *connectionbinding.TargetBinding) {
 			binding.ConnectorKind = "s3"
@@ -133,20 +124,14 @@ func TestTargetRuntimePoolResolvesTargetOwnedConnectionAfterProviderSnapshotIsDe
 		Limits:     TargetRuntimeLimits{MemoryMaxBytes: 1, TempMaxBytes: 1, MaxThreads: 1},
 		RequireTLS: true,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	snapshot, err := connectionbinding.NewCredentialSnapshot(
 		map[string]string{"password": "source-secret"},
 		"secret-1:v4", time.Now(), time.Now().Add(time.Minute),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	pool, err := factory.Prepare(t.Context(), testDuckDBTargetBinding(t), snapshot)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	snapshot.Destroy()
 	resolver, ok := pool.(analyticsruntime.ConnectionResolver)
 	if !ok {
@@ -157,9 +142,7 @@ func TestTargetRuntimePoolResolvesTargetOwnedConnectionAfterProviderSnapshotIsDe
 		"warehouse",
 		semanticmodel.Connection{Kind: "postgres"},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if resolved.Host != "warehouse.internal" || resolved.Database != "analytics" ||
 		resolved.Auth["password"] != "source-secret" {
 		t.Fatalf("resolved target connection = %#v", resolved)
@@ -185,20 +168,14 @@ func TestTargetRuntimePoolHealthAndCloseAreIdempotentAndPropagateOnlyInternally(
 		Limits:     TargetRuntimeLimits{MemoryMaxBytes: 1, TempMaxBytes: 1, MaxThreads: 1},
 		RequireTLS: true,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	snapshot, err := connectionbinding.NewCredentialSnapshot(
 		map[string]string{"password": "source-secret"},
 		"secret-1:v4", time.Now(), time.Now().Add(time.Minute),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	pool, err := factory.Prepare(context.Background(), testDuckDBTargetBinding(t), snapshot)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := pool.HealthCheck(context.Background()); !errors.Is(err, sourceErr) {
 		t.Fatalf("HealthCheck() error = %v", err)
 	}
@@ -216,9 +193,7 @@ func TestTargetRuntimePoolHealthAndCloseAreIdempotentAndPropagateOnlyInternally(
 func TestIsolatedTargetRuntimeOpenerCreatesPrivateSingleConnectionSession(t *testing.T) {
 	open := NewIsolatedTargetRuntimeOpener()
 	session, err := open(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := session.ExecContext(context.Background(), "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}

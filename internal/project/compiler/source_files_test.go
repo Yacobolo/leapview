@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestSourceFilesFromProjectReturnsOnlyResolvedReachableFiles(t *testing.T) {
@@ -42,9 +44,7 @@ func TestSourceFilesFromProjectReturnsOnlyResolvedReachableFiles(t *testing.T) {
 	}
 	projectPath := path("leapview.yaml")
 	got, err := sourceFilesFromProject(projectPath, project)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want := []string{
 		projectPath,
 		path("connections/warehouse.yaml"),

@@ -10,6 +10,7 @@ import (
 	apigenclient "github.com/Yacobolo/toolbelt/apigen/runtime/client"
 	deploymentgen "github.com/flidai/leapview/internal/deployment/api/gen"
 	projectdevloop "github.com/flidai/leapview/internal/project/devloop"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGeneratedCandidateSynchronizationTransportMapsTypedProtocol(t *testing.T) {
@@ -41,9 +42,7 @@ func TestGeneratedCandidateSynchronizationTransportMapsTypedProtocol(t *testing.
 		t.Fatal(err)
 	}
 	candidate, err := transport.Commit(t.Context(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if candidate.ID != "cand_1" || candidate.ProjectID != "finance" ||
 		candidate.ArtifactDigest != request.ArtifactDigest ||
 		candidate.TargetID != "target_1" ||

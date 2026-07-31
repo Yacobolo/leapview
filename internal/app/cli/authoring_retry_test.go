@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	accesscli "github.com/flidai/leapview/internal/access/cli"
+	"github.com/stretchr/testify/require"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -42,14 +43,10 @@ func TestAuthoringRetryTransportRefreshesOnceAfterMidSyncExpiry(t *testing.T) {
 	resolver := &fakeOriginResolver{}
 	transport := authoringRetryTransport{base: base, credentials: resolver}
 	request, err := http.NewRequest(http.MethodPost, "https://prod.example.com/api/v1/projects/analytics/releases", strings.NewReader(`{}`))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	request.Header.Set("Authorization", "Bearer lv_cli_access_expired")
 	response, err := transport.RoundTrip(request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK || requests != 2 || resolver.calls != 1 {
 		t.Fatalf("status=%d requests=%d refreshes=%d", response.StatusCode, requests, resolver.calls)
@@ -72,9 +69,7 @@ func TestAuthoringRetryTransportNeverSubstitutesForPATOrWorkloadCredential(t *te
 			request, _ := http.NewRequest(http.MethodGet, "https://prod.example.com/api/v1/instance", nil)
 			request.Header.Set("Authorization", "Bearer "+token)
 			response, err := transport.RoundTrip(request)
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			response.Body.Close()
 			if resolver.calls != 0 {
 				t.Fatalf("resolver calls = %d", resolver.calls)

@@ -15,6 +15,7 @@ import (
 	workspacecompiler "github.com/flidai/leapview/internal/project/compiler"
 	"github.com/flidai/leapview/internal/project/manifest"
 	"github.com/flidai/leapview/internal/workspace"
+	"github.com/stretchr/testify/require"
 )
 
 const olistManagedDataRevision = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -89,9 +90,7 @@ func TestPackProjectValidatesSelectedWorkspace(t *testing.T) {
 func TestPackCompiledProjectCreatesTargetPlansFromTheSameImmutableArtifact(t *testing.T) {
 	projectPath := filepath.Join("..", "..", "..", "dashboards", ProjectFile)
 	projectArtifact, err := workspacecompiler.CompileProjectArtifact(projectPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	sourceDigest := "sha256:" + strings.Repeat("1", 64)
 	targets := []struct {
 		environment    string
@@ -141,9 +140,7 @@ func TestPackCompiledProjectCreatesTargetPlansFromTheSameImmutableArtifact(t *te
 			t.Fatal(err)
 		}
 		retained, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(ProjectArtifactFile)))
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		if !bytes.Equal(retained, projectArtifact.Canonical()) {
 			t.Fatal("target plan mutated the immutable project artifact")
 		}
@@ -175,9 +172,7 @@ func TestPackProjectEmbedsCanonicalManagedDataRevisionPins(t *testing.T) {
 		t.Fatal(err)
 	}
 	compiled, _, err := LoadCompiledWorkspaceArtifact(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got := compiled.ManagedDataRevisions["orders"]; got != digest {
 		t.Fatalf("managedDataRevisions[orders] = %q, want %q", got, digest)
 	}
@@ -353,9 +348,7 @@ func TestValidateArtifactRejectsMissingOrMismatchedEnvironment(t *testing.T) {
 func digestCompiledForTest(t *testing.T, compiled CompiledWorkspaceArtifact) string {
 	t.Helper()
 	raw, err := json.MarshalIndent(compiled, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return digestBytes(raw)
 }
 
@@ -385,27 +378,19 @@ func mutateArtifactForTest(t *testing.T, path string, mutate func(*CompiledWorks
 	}
 	mutate(&compiled, &manifest)
 	compiledRel, err := safeBundlePath(manifest.CompiledPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	compiledBytes, err := json.MarshalIndent(compiled, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := os.WriteFile(filepath.Join(root, compiledRel), compiledBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := os.WriteFile(filepath.Join(root, "manifest.json"), manifestBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".leapview-test-artifact-*.tar.gz")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	tmpPath := tmp.Name()
 	if err := writeExtractedRoot(root, tmp); err != nil {
 		tmp.Close()
@@ -436,9 +421,7 @@ func addUnlistedArtifactFileForTest(t *testing.T, path, name, content string) {
 		t.Fatal(err)
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".leapview-test-artifact-*.tar.gz")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	tmpPath := tmp.Name()
 	if err := writeExtractedRoot(root, tmp); err != nil {
 		tmp.Close()
@@ -687,9 +670,7 @@ func TestReadCompiledWorkspaceArtifactRejectsStaleContractVersion(t *testing.T) 
 	}
 	stale := CompiledWorkspaceArtifact{Version: compiledWorkspaceArtifactVersion - 1}
 	data, err := json.Marshal(stale)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}

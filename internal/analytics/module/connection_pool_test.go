@@ -9,6 +9,7 @@ import (
 
 	"github.com/flidai/leapview/internal/analytics/connectionbinding"
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConnectionAdministrationComposesTargetOwnedValidatedPoolDirectory(t *testing.T) {
@@ -34,15 +35,11 @@ func TestConnectionAdministrationComposesTargetOwnedValidatedPoolDirectory(t *te
 		RefreshTimeout: time.Second,
 		MaxConcurrent:  1,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	health, err := administration.Test(context.Background(), "operator-1", connectionbinding.BindingKey{
 		Scope: binding.Scope, TargetID: binding.TargetID, LogicalConnectionID: binding.LogicalConnectionID,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if resolver.calls != 1 || factory.calls != 1 || health.Health != connectionbinding.HealthHealthy ||
 		health.ValidatedVersion != "secret:v2" || !health.HasActivePool {
 		t.Fatalf("resolver=%d factory=%d health=%#v", resolver.calls, factory.calls, health)
@@ -58,9 +55,7 @@ func TestConnectionAdministrationComposesTargetOwnedValidatedPoolDirectory(t *te
 		RefreshTimeout: time.Second,
 		MaxConcurrent:  1,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	leases, err := runtimeBindings.Acquire(t.Context(), RuntimeBindingRequest{
 		Actor: "principal:author-1", Scope: binding.Scope, TargetID: binding.TargetID,
 		Requirements: []connectionbinding.Requirement{{
@@ -68,9 +63,7 @@ func TestConnectionAdministrationComposesTargetOwnedValidatedPoolDirectory(t *te
 			ConnectorKind:       binding.ConnectorKind,
 		}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	evidence := leases.Evidence()
 	if len(evidence) != 1 || evidence[0].ValidatedVersion != "secret:v2" ||
 		resolver.calls != 1 || factory.calls != 1 {
@@ -113,9 +106,7 @@ func TestConnectionAdministrationRejectsBindingsForAnotherTarget(t *testing.T) {
 		RefreshTimeout: time.Second,
 		MaxConcurrent:  1,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, err = administration.Get(context.Background(), "operator-1", connectionbinding.BindingKey{
 		Scope: binding.Scope, TargetID: binding.TargetID, LogicalConnectionID: binding.LogicalConnectionID,
 	})
@@ -143,9 +134,7 @@ func TestCandidateRuntimeBindingRegistrationMakesOnlyItsValidatedGenerationAvail
 		},
 		Now: func() time.Time { return now },
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	leases, err := leaser.Acquire(t.Context(), RuntimeBindingRequest{
 		Actor: "author_1", Scope: binding.Scope, TargetID: binding.TargetID,
 		Requirements: []ConnectionRequirement{{
@@ -153,17 +142,13 @@ func TestCandidateRuntimeBindingRegistrationMakesOnlyItsValidatedGenerationAvail
 			ConnectorKind:       binding.ConnectorKind,
 		}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	registration, err := module.BindCandidateRuntime(
 		"cand_1",
 		binding.Scope.WorkspaceID,
 		leases,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	resolver, ok := module.candidateRuntimeConnectionResolver(
 		"cand_1",
 		binding.Scope.WorkspaceID,
@@ -176,9 +161,7 @@ func TestCandidateRuntimeBindingRegistrationMakesOnlyItsValidatedGenerationAvail
 		binding.LogicalConnectionID.String(),
 		semanticmodel.Connection{Kind: binding.ConnectorKind},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if resolved.Host != binding.Endpoint.Host ||
 		resolved.Auth["password"] != "source-secret" {
 		t.Fatalf("resolved candidate connection = %#v", resolved)
@@ -214,16 +197,12 @@ func TestCandidateRuntimeBindingReplacementRemovalIsGenerationSafe(t *testing.T)
 		},
 		Now: func() time.Time { return now },
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	acquire := func() *RuntimeBindingLeases {
 		leases, err := leaser.Acquire(t.Context(), RuntimeBindingRequest{
 			Actor: "author_1", Scope: binding.Scope, TargetID: binding.TargetID,
 		})
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		return leases
 	}
 	first, err := module.BindCandidateRuntime(
@@ -231,17 +210,13 @@ func TestCandidateRuntimeBindingReplacementRemovalIsGenerationSafe(t *testing.T)
 		binding.Scope.WorkspaceID,
 		acquire(),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	second, err := module.BindCandidateRuntime(
 		"cand_1",
 		binding.Scope.WorkspaceID,
 		acquire(),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := first.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -290,15 +265,11 @@ func TestConnectionAdministrationUsesExplicitEnvironmentResolverOnlyForDevelopme
 		RefreshTimeout: time.Second,
 		MaxConcurrent:  1,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, err = administration.Test(context.Background(), "operator-1", connectionbinding.BindingKey{
 		Scope: binding.Scope, TargetID: binding.TargetID, LogicalConnectionID: binding.LogicalConnectionID,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if resolver.calls != 1 {
 		t.Fatalf("development environment resolver calls = %d", resolver.calls)
 	}
@@ -319,9 +290,7 @@ func modulePoolBinding(t *testing.T, now time.Time) connectionbinding.TargetBind
 		},
 		Enabled: true, Now: now,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return binding
 }
 
@@ -330,9 +299,7 @@ func modulePoolSnapshot(t *testing.T, now time.Time) connectionbinding.Credentia
 	snapshot, err := connectionbinding.NewCredentialSnapshot(
 		map[string]string{"password": "source-secret"}, "secret:v2", now, now.Add(time.Hour),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return snapshot
 }
 

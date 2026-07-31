@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/flidai/leapview/internal/analytics/connectionbinding"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBuildDevelopmentTargetResolverAllowsOnlyDedicatedConnectionVariables(t *testing.T) {
@@ -30,16 +31,12 @@ func TestBuildDevelopmentTargetResolverAllowsOnlyDedicatedConnectionVariables(t 
 		},
 		func() time.Time { return now },
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	snapshot, err := resolver.Resolve(context.Background(), connectionbinding.CredentialReference{
 		ProjectID: "lvinst_local", Environment: "dev",
 		SecretPath: "/", SecretKey: "LEAPVIEW_DEV_CONNECTION_WAREHOUSE",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if snapshot.ProviderVersion() == "" {
 		t.Fatal("development snapshot has no version")
 	}
@@ -60,9 +57,7 @@ func TestBuildTargetResolversComposesOnlyTheConfiguredInfisicalAuthority(t *test
 		InfisicalUniversalClientSecret: "bootstrap-secret",
 		InfisicalAllowedScopes:         `[{"projectId":"project-1","environment":"prod","secretPathPrefix":"/leapview"}]`,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if resolvers.Infisical == nil || resolvers.Environment != nil {
 		t.Fatalf("resolver set = %#v", resolvers)
 	}
@@ -71,9 +66,7 @@ func TestBuildTargetResolversComposesOnlyTheConfiguredInfisicalAuthority(t *test
 		TargetID: "target-prod", Environment: "prod",
 		TargetClass: connectionbinding.TargetProduction, Kind: connectionbinding.ResolverInfisical,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := module.TargetCredentialResolver(selection, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -103,9 +96,7 @@ func TestTargetCredentialConfigExcludesBootstrapSecretFromSerializationAndFormat
 		InfisicalUniversalClientSecret: "bootstrap-secret",
 	}
 	encoded, err := json.Marshal(config)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, rendered := range []string{string(encoded), config.String(), config.GoString()} {
 		if strings.Contains(rendered, "bootstrap-secret") {
 			t.Fatalf("target credential config disclosed secret: %s", rendered)

@@ -13,8 +13,9 @@ import (
 	reportdef "github.com/flidai/leapview/internal/dashboard/report"
 	projectartifact "github.com/flidai/leapview/internal/project/artifact"
 	"github.com/flidai/leapview/internal/project/manifest"
-	"github.com/flidai/leapview/internal/project/schema"
+	configschema "github.com/flidai/leapview/internal/project/schema"
 	"github.com/flidai/leapview/internal/workspace"
+	"github.com/stretchr/testify/require"
 )
 
 type compiledWorkspaceTestView struct {
@@ -432,9 +433,7 @@ func TestCompileShowcaseProject(t *testing.T) {
 	}
 	assertVisualShowcaseCoverage(t, showcase)
 	servingState, err := json.Marshal(visuals.Definition)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	serialized := string(servingState)
 	// Page layout legitimately uses a "visuals" collection; authored dashboard
 	// visual maps are gone because the dashboard root now exposes only
@@ -590,9 +589,7 @@ func TestSemanticModelPayloadContainsOnlyLogicalConnectionRequirements(t *testin
 		}
 	}
 	manifest, err := json.Marshal(compiledWorkspace.Definition)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, forbidden := range []string{`"Host"`, `"Port"`, `"Database"`, `"Username"`, `"SSLMode"`, `"Credentials"`, `"credentials"`} {
 		if bytes.Contains(manifest, []byte(forbidden)) {
 			t.Fatalf("compiled workspace manifest contains target-owned field %s: %s", forbidden, manifest)
@@ -627,9 +624,7 @@ func TestPlanProjectAgainstGraphReportsSemanticAndAccessImpact(t *testing.T) {
 			field.Type = "integer"
 			payload.Fields["order_id"] = field
 			raw, err := json.Marshal(payload)
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			activeGraph.Assets[index].PayloadJSON = string(raw)
 			activeGraph.Assets[index].ContentHash = "old-source-hash"
 		case "workspace_group:sales.analysts":
@@ -1454,18 +1449,14 @@ func minimalProjectFiles(extra map[string]string) map[string]string {
 func testPlanAsset(t *testing.T, workspaceID workspace.WorkspaceID, servingStateID workspace.ServingStateID, typ workspace.AssetType, key string, parent workspace.AssetID) workspace.Asset {
 	t.Helper()
 	asset, err := workspace.NewAsset(workspaceID, servingStateID, typ, key, parent, key, "", workspace.PayloadSchemaForAssetType(typ), map[string]any{"key": key})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return asset
 }
 
 func testPlanAssetPayload(t *testing.T, workspaceID workspace.WorkspaceID, servingStateID workspace.ServingStateID, typ workspace.AssetType, key string, parent workspace.AssetID, payload any) workspace.Asset {
 	t.Helper()
 	asset, err := workspace.NewAsset(workspaceID, servingStateID, typ, key, parent, key, "", workspace.PayloadSchemaForAssetType(typ), payload)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return asset
 }
 

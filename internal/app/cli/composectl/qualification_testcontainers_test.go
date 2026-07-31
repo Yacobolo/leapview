@@ -15,6 +15,7 @@ import (
 	"time"
 
 	dockercontainer "github.com/moby/moby/api/types/container"
+	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tcexec "github.com/testcontainers/testcontainers-go/exec"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -256,9 +257,7 @@ func exerciseQualificationContainerRuntime(
 		Name: name, Image: "alpine:3.22",
 		Command: []string{"sh", "-c", "echo ready; sleep 60"}, ReadyLog: "ready",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	removed := false
 	t.Cleanup(func() {
 		if removed {
@@ -276,30 +275,22 @@ func exerciseQualificationContainerRuntime(
 		t.Fatal(err)
 	}
 	output, err := container.Exec(t.Context(), nil, "sh", "-c", "printf lifecycle-ok")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if string(output) != "lifecycle-ok" {
 		t.Fatalf("exec output=%q", output)
 	}
 	state, err := container.Inspect(t.Context(), "{{.State.Status}}")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if strings.TrimSpace(string(state)) != "running" {
 		t.Fatalf("state=%q", state)
 	}
 	logs, err := container.Logs(t.Context(), 20)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if !bytes.Contains(logs, []byte("ready")) {
 		t.Fatalf("logs=%q", logs)
 	}
 	copied, err := container.Exec(t.Context(), nil, "cat", "/tmp/runtime.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if string(copied) != "copied-ok" {
 		t.Fatalf("copied content=%q", copied)
 	}

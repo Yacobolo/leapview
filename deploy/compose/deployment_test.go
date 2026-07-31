@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"golang.org/x/mod/semver"
 )
 
@@ -762,9 +763,7 @@ fi
 		root, fakeDocker := setup(t)
 		examplePath := filepath.Join(root, "deployment.env.example")
 		contents, err := os.ReadFile(examplePath)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		lines := strings.Split(string(contents), "\n")
 		for i := range lines {
 			if strings.HasPrefix(lines[i], "CADDY_IMAGE=") {
@@ -783,9 +782,7 @@ fi
 func copyDeploymentFile(t *testing.T, targetDir, name string, mode os.FileMode) {
 	t.Helper()
 	contents, err := os.ReadFile(name)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := os.WriteFile(filepath.Join(targetDir, name), contents, mode); err != nil {
 		t.Fatal(err)
 	}
@@ -805,9 +802,7 @@ func buildController(t *testing.T, targetDir string) string {
 func buildConfigValidator(t *testing.T, targetDir string) string {
 	t.Helper()
 	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	generateConfigOnce.Do(func() {
 		command := exec.Command("go", "run", "./internal/app/tools/configgen")
 		command.Dir = repositoryRoot
@@ -822,17 +817,13 @@ func buildConfigValidator(t *testing.T, targetDir string) string {
 		t.Fatal(err)
 	}
 	sourceDir, err := os.MkdirTemp(temporaryRoot, "compose-config-validator-")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(sourceDir) })
 	if err := os.WriteFile(filepath.Join(sourceDir, "validator_test.go"), []byte(configValidatorTestProgram), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	relativeSourceDir, err := filepath.Rel(repositoryRoot, sourceDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	target := filepath.Join(targetDir, "config-validator")
 	command := exec.Command("go", "test", "-c", "-o", target, "./"+filepath.ToSlash(relativeSourceDir))
@@ -876,8 +867,6 @@ func read(t *testing.T, name string) string {
 func readFile(t *testing.T, name string) string {
 	t.Helper()
 	value, err := os.ReadFile(name)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return string(value)
 }

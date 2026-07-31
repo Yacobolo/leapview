@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestApprovalBindsDecisionToExactDeploymentPlan(t *testing.T) {
@@ -21,9 +23,7 @@ func TestApprovalBindsDecisionToExactDeploymentPlan(t *testing.T) {
 		Environment: "prod", RequestDigest: "sha256:plan",
 		ReleaseID: "release_1", RequestedBy: requester,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	now = now.Add(time.Minute)
 	approver := ApprovalActor{
 		PrincipalID: "reviewer", CredentialClass: CredentialClassHuman,
@@ -33,9 +33,7 @@ func TestApprovalBindsDecisionToExactDeploymentPlan(t *testing.T) {
 		ProjectID: "finance", DeploymentID: "deployment_1",
 		ApprovalID: approval.ID, ExpectedRevision: approval.Revision, Actor: approver,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if approved.Status != ApprovalApproved || approved.ApprovedBy != approver.PrincipalID {
 		t.Fatalf("approved = %#v", approved)
 	}
@@ -132,9 +130,7 @@ func TestApprovalThreatModelFailsClosed(t *testing.T) {
 						CredentialID: "reviewer_workload", CredentialExpiresAt: expires,
 					},
 				})
-				if err != nil {
-					t.Fatal(err)
-				}
+				require.NoError(t, err)
 				if !approved.ExpiresAt.Equal(expires) {
 					t.Fatalf("approval expiry = %s, want %s", approved.ExpiresAt, expires)
 				}
@@ -164,9 +160,7 @@ func TestApprovalThreatModelFailsClosed(t *testing.T) {
 						CredentialID: "reviewer", CredentialExpiresAt: now.Add(time.Hour),
 					},
 				})
-				if err != nil {
-					t.Fatal(err)
-				}
+				require.NoError(t, err)
 				if revoked.Status != ApprovalRevoked {
 					t.Fatalf("revoked status = %q", revoked.Status)
 				}
@@ -220,9 +214,7 @@ func TestDenyRecordsBoundDecisionAndCannotActivate(t *testing.T) {
 			CredentialExpiresAt: now.Add(15 * time.Minute),
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if denied.Status != ApprovalDenied || denied.ApprovedBy != "reviewer" {
 		t.Fatalf("denied approval = %#v", denied)
 	}
@@ -239,9 +231,7 @@ func TestCurrentPersistsExpiryForStatusReporting(t *testing.T) {
 	now = approval.ExpiresAt
 
 	current, err := service.Current(t.Context(), approval.DeploymentID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if current.Status != ApprovalExpired || repository.approval.Status != ApprovalExpired {
 		t.Fatalf("current approval = %#v, persisted = %#v", current, repository.approval)
 	}
@@ -258,9 +248,7 @@ func TestExpiredApprovalIsClosedAndCanBeRequestedAgain(t *testing.T) {
 		PrincipalID: "publisher", CredentialClass: CredentialClassHuman,
 		CredentialID: "publisher_next", CredentialExpiresAt: now.Add(time.Hour),
 	}))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if replacement.ID == first.ID || replacement.Status != ApprovalPending {
 		t.Fatalf("replacement = %#v, want a new pending approval", replacement)
 	}
@@ -289,9 +277,7 @@ func requestApproval(t *testing.T, service *ApprovalService, now time.Time) Appr
 		PrincipalID: "publisher", CredentialClass: CredentialClassHuman,
 		CredentialID: "publisher", CredentialExpiresAt: now.Add(time.Hour),
 	}))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return approval
 }
 
@@ -306,9 +292,7 @@ func approveApproval(t *testing.T, service *ApprovalService, now *time.Time) App
 			CredentialID: "reviewer", CredentialExpiresAt: now.Add(time.Hour),
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return approved
 }
 
@@ -323,9 +307,7 @@ func mustApprovalService(t *testing.T, repository ApprovalRepository, now *time.
 			return fmt.Sprintf("approval_%d", sequence), nil
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return service
 }
 

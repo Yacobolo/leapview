@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/flidai/leapview/internal/analytics/connectionbinding"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConnectionBindingAPICreatesOnlyNonSecretMetadata(t *testing.T) {
@@ -107,9 +108,7 @@ func newTestConnectionAdministration(
 		Pools:        pools,
 		Now:          func() time.Time { return now },
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return administration
 }
 
@@ -202,8 +201,6 @@ func testAPIBinding(t *testing.T, now time.Time) connectionbinding.TargetBinding
 		},
 		Enabled: true, Now: now,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return binding
 }

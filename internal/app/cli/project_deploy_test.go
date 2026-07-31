@@ -19,6 +19,7 @@ import (
 	projectbundle "github.com/flidai/leapview/internal/project/bundle"
 	releasegen "github.com/flidai/leapview/internal/release/api/gen"
 	"github.com/flidai/leapview/internal/workspace/api"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDeployPreparesCompleteProjectBeforeOneAtomicActivation(t *testing.T) {
@@ -242,9 +243,7 @@ func readManagedDataPinsFromUpload(t *testing.T, body io.Reader) (map[string]str
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "artifact.tar.gz")
 	file, err := os.Create(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	digest := sha256.New()
 	if _, err := io.Copy(io.MultiWriter(file, digest), body); err != nil {
 		t.Fatal(err)
@@ -257,9 +256,7 @@ func readManagedDataPinsFromUpload(t *testing.T, body io.Reader) (map[string]str
 		t.Fatal(err)
 	}
 	compiled, _, err := projectbundle.LoadCompiledWorkspaceArtifact(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return compiled.ManagedDataRevisions, hex.EncodeToString(digest.Sum(nil))
 }
 

@@ -17,6 +17,7 @@ import (
 
 	content "github.com/flidai/leapview/docs"
 	"github.com/flidai/leapview/internal/analytics/connectors"
+	"github.com/stretchr/testify/require"
 )
 
 func TestHomepageFeaturedIntegrationsExistInTheConnectorRegistry(t *testing.T) {
@@ -75,16 +76,12 @@ func TestSiteUnknownRouteReturnsNotFound(t *testing.T) {
 
 func TestSiteShowcaseIsRegisteredOnlyWhenConfigured(t *testing.T) {
 	embedURL, err := url.Parse("https://app.leapview.dev/embed/dashboards/publication-id")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	server := httptest.NewServer(NewHandlerWithOptions(Options{ShowcaseEmbedURL: embedURL}))
 	defer server.Close()
 
 	response, err := server.Client().Get(server.URL + "/showcase")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	body := readBody(t, response)
 	response.Body.Close()
 	for _, want := range []string{
@@ -102,9 +99,7 @@ func TestSiteShowcaseIsRegisteredOnlyWhenConfigured(t *testing.T) {
 	}
 
 	home, err := server.Client().Get(server.URL + "/")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	homeBody := readBody(t, home)
 	home.Body.Close()
 	if !strings.Contains(homeBody, `href="/showcase"`) {
@@ -114,9 +109,7 @@ func TestSiteShowcaseIsRegisteredOnlyWhenConfigured(t *testing.T) {
 	unconfigured := httptest.NewServer(NewHandler())
 	defer unconfigured.Close()
 	missing, err := unconfigured.Client().Get(unconfigured.URL + "/showcase")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer missing.Body.Close()
 	if missing.StatusCode != http.StatusNotFound {
 		t.Fatalf("unconfigured showcase status = %d, want 404", missing.StatusCode)
@@ -950,9 +943,7 @@ func TestSiteServesMachineDocumentationArtifacts(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.path, func(t *testing.T) {
 			response, err := server.Client().Get(server.URL + test.path)
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			defer response.Body.Close()
 			if response.StatusCode != http.StatusOK {
 				t.Fatalf("status = %d, want 200", response.StatusCode)
@@ -975,9 +966,7 @@ func TestSiteCLIReferenceGroupsSubcommandsAndRedirectsLeafPages(t *testing.T) {
 	defer server.Close()
 
 	article, err := server.Client().Get(server.URL + "/docs/cli/semantic-models")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer article.Body.Close()
 	if article.StatusCode != http.StatusOK {
 		t.Fatalf("semantic models status = %d, want 200", article.StatusCode)
@@ -999,9 +988,7 @@ func TestSiteCLIReferenceGroupsSubcommandsAndRedirectsLeafPages(t *testing.T) {
 	client := server.Client()
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	legacy, err := client.Get(server.URL + "/docs/cli/semantic-models-query")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer legacy.Body.Close()
 	if legacy.StatusCode != http.StatusPermanentRedirect {
 		t.Fatalf("legacy leaf status = %d, want %d", legacy.StatusCode, http.StatusPermanentRedirect)
@@ -1040,15 +1027,11 @@ func TestSiteDocumentationMCPTools(t *testing.T) {
 	}
 
 	crossOrigin, err := http.NewRequest(http.MethodPost, server.URL+"/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":5,"method":"tools/list","params":{}}`))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	crossOrigin.Header.Set("Content-Type", "application/json")
 	crossOrigin.Header.Set("Origin", "https://untrusted.example")
 	response, err := http.DefaultClient.Do(crossOrigin)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusForbidden {
 		t.Errorf("cross-origin MCP status = %d, want %d", response.StatusCode, http.StatusForbidden)
@@ -1058,15 +1041,11 @@ func TestSiteDocumentationMCPTools(t *testing.T) {
 func postMCP(t *testing.T, baseURL, body string) string {
 	t.Helper()
 	request, err := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json, text/event-stream")
 	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("MCP status = %d, body = %s", response.StatusCode, readBody(t, response))

@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestWatcherDebouncesReachableChangesAndIgnoresUnrelatedFiles(t *testing.T) {
@@ -17,9 +19,7 @@ func TestWatcherDebouncesReachableChangesAndIgnoresUnrelatedFiles(t *testing.T) 
 	builder := &countingBuilder{snapshot: testSnapshot("watch")}
 	remote := &recordingRemote{}
 	service, err := New(builder, remote)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	source := newFakeWatchSource()
 	watcher, err := newWatcher(projectPath, service, watcherOptions{
 		debounce:  10 * time.Millisecond,
@@ -28,9 +28,7 @@ func TestWatcherDebouncesReachableChangesAndIgnoresUnrelatedFiles(t *testing.T) 
 			return []string{projectPath, modelPath}, nil
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	updates := make(chan Update, 4)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -71,9 +69,7 @@ func TestWatcherRecognizesNewlyReachableFileAndAddsItsDirectory(t *testing.T) {
 	sources := []string{projectPath, modelPath}
 	builder := &countingBuilder{snapshot: testSnapshot("new-file")}
 	service, err := New(builder, &recordingRemote{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	source := newFakeWatchSource()
 	watcher, err := newWatcher(projectPath, service, watcherOptions{
 		debounce:  10 * time.Millisecond,
@@ -84,9 +80,7 @@ func TestWatcherRecognizesNewlyReachableFileAndAddsItsDirectory(t *testing.T) {
 			return append([]string(nil), sources...), nil
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	updates := make(chan Update, 4)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -125,17 +119,13 @@ func TestWatcherReceivesRealFilesystemChanges(t *testing.T) {
 	}
 	builder := &countingBuilder{snapshot: testSnapshot("real-watch")}
 	service, err := New(builder, &recordingRemote{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	watcher, err := newWatcher(projectPath, service, watcherOptions{
 		debounce:       10 * time.Millisecond,
 		newSource:      newFSNotifySource,
 		resolveSources: func(string) ([]string, error) { return []string{projectPath, modelPath}, nil },
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	updates := make(chan Update, 4)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -163,9 +153,7 @@ func TestWatcherRetriesRemoteFailureWithoutAnotherFileChange(t *testing.T) {
 	builder := &countingBuilder{snapshot: snapshot}
 	remote := &recordingRemote{errors: []error{errors.New("target disconnected"), nil}}
 	service, err := New(builder, remote)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	source := newFakeWatchSource()
 	watcher, err := newWatcher(projectPath, service, watcherOptions{
 		debounce: 10 * time.Millisecond, retryMin: 10 * time.Millisecond, retryMax: 20 * time.Millisecond,
@@ -174,9 +162,7 @@ func TestWatcherRetriesRemoteFailureWithoutAnotherFileChange(t *testing.T) {
 			return []string{projectPath}, nil
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	updates := make(chan Update, 4)
 	ctx, cancel := context.WithCancel(t.Context())

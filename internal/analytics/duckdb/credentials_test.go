@@ -7,6 +7,7 @@ import (
 
 	"github.com/flidai/leapview/internal/analytics/connectionbinding"
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNonSecretCredentialResolverRejectsEnvironmentCredentials(t *testing.T) {
@@ -26,9 +27,7 @@ func TestDevelopmentEnvironmentCredentialResolverRequiresExplicitDevelopmentSele
 		TargetID: "target-prod", Environment: "prod", TargetClass: connectionbinding.TargetProduction,
 		Kind: connectionbinding.ResolverInfisical,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := NewDevelopmentEnvironmentCredentialResolver(production); !errors.Is(err, connectionbinding.ErrInvalidBinding) {
 		t.Fatalf("production selection error = %v", err)
 	}
@@ -37,22 +36,16 @@ func TestDevelopmentEnvironmentCredentialResolverRequiresExplicitDevelopmentSele
 		TargetID: "target-dev", Environment: "dev", TargetClass: connectionbinding.TargetDevelopment,
 		Kind: connectionbinding.ResolverEnvironment,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	resolver, err := NewDevelopmentEnvironmentCredentialResolver(development)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Setenv("LEAPVIEW_TEST_DEVELOPMENT_CREDENTIAL", `{"password":"source-secret"}`)
 	auth, err := resolver.Resolve(context.Background(), "warehouse", semanticmodel.Connection{
 		Kind: "postgres", Credentials: semanticmodel.ConnectionCredentials{
 			Provider: "env", Secret: "LEAPVIEW_TEST_DEVELOPMENT_CREDENTIAL",
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if auth["password"] != "source-secret" {
 		t.Fatalf("resolved auth = %#v", auth)
 	}

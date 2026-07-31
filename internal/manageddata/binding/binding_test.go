@@ -9,6 +9,7 @@ import (
 
 	"github.com/flidai/leapview/internal/manageddata"
 	servingstate "github.com/flidai/leapview/internal/servingstate"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -86,9 +87,7 @@ func TestBinderResolvesCandidatePinsFromPointerOrLatestBootstrapRevision(t *test
 	pins, err := binder.ResolveCandidatePins(
 		t.Context(), "project-a", []string{"users", "orders"}, "dev",
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if !reflect.DeepEqual(pins, map[string]string{
 		"orders": digestA,
 		"users":  digestA,

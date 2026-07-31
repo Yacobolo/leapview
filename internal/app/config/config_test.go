@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flidai/leapview/internal/app/config/spec"
+	configspec "github.com/flidai/leapview/internal/app/config/spec"
 	"github.com/flidai/leapview/internal/workload"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLoadRejectsMalformedWorkloadConfiguration(t *testing.T) {
@@ -70,18 +71,14 @@ func TestListenAddressUsesExplicitLeapViewSetting(t *testing.T) {
 	t.Setenv("ADDR", "127.0.0.1:9002")
 	t.Setenv("PORT", "9003")
 	cfg, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got := cfg.ListenAddr(); got != ":8080" {
 		t.Fatalf("ListenAddr() with only legacy aliases = %q, want default", got)
 	}
 
 	t.Setenv("LEAPVIEW_ADDR", "127.0.0.1:9001")
 	cfg, err = Load()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got := cfg.ListenAddr(); got != "127.0.0.1:9001" {
 		t.Fatalf("ListenAddr() = %q", got)
 	}
@@ -92,9 +89,7 @@ func TestManagedDataDefaultsUnderConfiguredHome(t *testing.T) {
 	t.Setenv("LEAPVIEW_HOME", home)
 	t.Setenv("LEAPVIEW_MANAGED_DATA_DIR", "")
 	cfg, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if want := filepath.Join(home, "managed-data"); cfg.ManagedDataDir != want {
 		t.Fatalf("ManagedDataDir = %q, want %q", cfg.ManagedDataDir, want)
 	}
@@ -107,9 +102,7 @@ func TestGeneratedEnvironmentExampleValidates(t *testing.T) {
 		}
 	}
 	body, err := os.ReadFile(filepath.Join("..", "..", "..", ".env.example"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, line := range strings.Split(string(body), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {

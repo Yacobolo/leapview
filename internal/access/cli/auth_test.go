@@ -13,6 +13,7 @@ import (
 	"github.com/flidai/leapview/internal/access"
 	"github.com/flidai/leapview/internal/platform/cliapi"
 	"github.com/flidai/leapview/internal/platform/securestore"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 )
 
@@ -139,9 +140,7 @@ func TestLoginUsesOAuthDeviceFlowAndNativeCredentialReference(t *testing.T) {
 		Environment: "production", ProjectID: "analytics",
 		Privileges: []string{"DEPLOY", "ACTIVATE_DEPLOYMENT"},
 	}, func(challenge DeviceChallenge) { shown = challenge.UserCode })
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if shown != "ABCD-EFGH" || opened != "https://prod.example.com/device?user_code=ABCD-EFGH" {
 		t.Fatalf("challenge shown=%q opened=%q", shown, opened)
 	}
@@ -154,9 +153,7 @@ func TestLoginUsesOAuthDeviceFlowAndNativeCredentialReference(t *testing.T) {
 		t.Fatalf("device request=%+v", oauthClient.request)
 	}
 	profile, err := profiles.Get("prod")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if profile.InstanceID != "lvinst_prod" || profile.CredentialAccount == "" {
 		t.Fatalf("profile = %+v", profile)
 	}
@@ -179,9 +176,7 @@ func TestHeadlessLoginShowsCodeWithoutOpeningBrowser(t *testing.T) {
 		Name: "ci", Origin: "https://example.test", InstanceID: "lvinst_prod",
 		ProjectID: "project", Privileges: []string{"DEPLOY"}, Headless: true,
 	}, func(value DeviceChallenge) { challenge = value })
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if opened || challenge.UserCode == "" || challenge.VerificationURI == "" {
 		t.Fatalf("opened=%v challenge=%+v", opened, challenge)
 	}
@@ -225,9 +220,7 @@ func TestResolveRefreshesBeforeClockSkewAndPersistsRotation(t *testing.T) {
 		AccessExpiresAt: now.Add(20 * time.Second), SessionID: "session-old",
 	})
 	resolved, err := auth.Resolve(context.Background(), "prod")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if resolved.AccessToken != "access-new" || resolved.Profile.Origin != "https://example.test" {
 		t.Fatalf("resolved = %+v", resolved)
 	}
@@ -318,9 +311,7 @@ func TestExchangeWorkloadIdentityUsesExactGeneratedScopeWithoutPersistence(t *te
 		Privileges: []string{"DEPLOY", "ACTIVATE_DEPLOYMENT"}, Lifetime: 10 * time.Minute,
 	}
 	result, err := ExchangeWorkloadIdentity(context.Background(), oauthClient, request, func() time.Time { return now })
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if oauthClient.workloadRequest.Origin != request.Origin ||
 		strings.Join(oauthClient.workloadRequest.Privileges, ",") != "DEPLOY,ACTIVATE_DEPLOYMENT" {
 		t.Fatalf("workload request = %+v", oauthClient.workloadRequest)
@@ -360,8 +351,6 @@ func putCredential(t *testing.T, store *memorySecrets, account string, credentia
 	t.Helper()
 	credential.Version = credentialVersion
 	content, err := json.Marshal(credential)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	store.values = map[string]string{account: string(content)}
 }

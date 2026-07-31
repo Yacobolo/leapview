@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,6 +15,8 @@ import (
 	"github.com/flidai/leapview/internal/release"
 	"github.com/flidai/leapview/internal/servingstate"
 	"github.com/flidai/leapview/internal/workspace"
+	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCandidateArtifactsRefreshThenReuseTargetSnapshot(t *testing.T) {
@@ -23,15 +24,11 @@ func TestCandidateArtifactsRefreshThenReuseTargetSnapshot(t *testing.T) {
 	snapshot, err := (projectdevloop.FilesystemBuilder{
 		ProjectPath: projectPath,
 	}).Build(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	states := newCandidateArtifactStateRepository()
 	workspaces := &candidateArtifactWorkspaceRepository{}
 	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "leapview.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	module, err := Build(t.Context(), Config{
 		Database:          store.SQLDB(),
@@ -40,9 +37,7 @@ func TestCandidateArtifactsRefreshThenReuseTargetSnapshot(t *testing.T) {
 		ArtifactDirectory: t.TempDir(),
 		Environment:       servingstate.DefaultEnvironment,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	source := releaseCandidateSource(t, snapshot, projectPath)
 	if err := os.RemoveAll(filepath.Dir(projectPath)); err != nil {
 		t.Fatal(err)
@@ -52,9 +47,7 @@ func TestCandidateArtifactsRefreshThenReuseTargetSnapshot(t *testing.T) {
 		OwnerID: "principal_1", Environment: "dev", ArtifactDigest: snapshot.Digest,
 		Source: source,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if first.AuthorizationFingerprint == "" || len(first.Workspaces) == 0 {
 		t.Fatalf("first artifact set = %#v", first)
 	}
@@ -83,17 +76,14 @@ func TestCandidateArtifactsRefreshThenReuseTargetSnapshot(t *testing.T) {
 		OwnerID: "principal_1", Environment: "dev", ArtifactDigest: snapshot.Digest,
 		Source: source,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if second.AuthorizationFingerprint == "" || len(second.Workspaces) != len(first.Workspaces) {
 		t.Fatalf("second artifact set = %#v", second)
 	}
-	if !reflect.DeepEqual(second.Artifact, first.Artifact) {
+	if diff := cmp.Diff(first.Artifact, second.Artifact); diff != "" {
 		t.Fatalf(
-			"target snapshot reuse changed project artifact provenance: %#v / %#v",
-			first.Artifact,
-			second.Artifact,
+			"target snapshot reuse changed project artifact provenance (-first +second):\n%s",
+			diff,
 		)
 	}
 	for _, prepared := range second.Workspaces {
@@ -122,9 +112,7 @@ func TestCandidateRestrictionsSelectOnlyOwnerAndUniversalPolicies(t *testing.T) 
 		}
 	}`
 	restrictions, err := candidateRestrictions(policy, "sales", "author_1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if len(restrictions) != 3 {
 		t.Fatalf("candidate restrictions = %#v", restrictions)
 	}
@@ -139,24 +127,16 @@ func targetBoundCandidateProject(t *testing.T) string {
 	t.Helper()
 	sourceProject := filepath.Join("..", "..", "..", "dashboards", "leapview.yaml")
 	sourceProject, err := filepath.Abs(sourceProject)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	sourceRoot := filepath.Dir(sourceProject)
 	destinationRoot := t.TempDir()
 	files, err := projectcompiler.SourceFiles(sourceProject)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, source := range files {
 		relative, err := filepath.Rel(sourceRoot, source)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		content, err := os.ReadFile(source)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		if filepath.ToSlash(relative) == "connections/olist.yaml" {
 			content = []byte(strings.Replace(
 				string(content),
@@ -191,9 +171,7 @@ func releaseCandidateSource(
 ) project.CandidateSourceSnapshot {
 	t.Helper()
 	compiled, err := projectcompiler.CompileProjectArtifact(projectPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	artifactPath := filepath.Join(t.TempDir(), "project.artifact.json")
 	if err := os.WriteFile(artifactPath, compiled.Canonical(), 0o600); err != nil {
 		t.Fatal(err)

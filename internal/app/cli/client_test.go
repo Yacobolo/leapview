@@ -11,6 +11,7 @@ import (
 
 	accesscli "github.com/flidai/leapview/internal/access/cli"
 	"github.com/flidai/leapview/internal/platform/cliapi"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTargetEnvironmentDiscoversAndAssertsInstance(t *testing.T) {
@@ -71,9 +72,7 @@ func TestCapabilityAPIClientResolvesAuthoringProfile(t *testing.T) {
 		context.Background(),
 		cliapi.Credentials{Target: "prod"},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if resolver.name != "prod" ||
 		credentials.Target != server.URL ||
 		credentials.Token != "short-lived" {
@@ -200,9 +199,7 @@ func TestCapabilityAPIClientExchangesEphemeralWorkloadIdentity(t *testing.T) {
 		context.Background(),
 		cliapi.Credentials{Target: server.URL},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if credentials.Target != server.URL || credentials.Token != "ephemeral-access" {
 		t.Fatalf("credentials = %+v", credentials)
 	}

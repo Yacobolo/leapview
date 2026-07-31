@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/flidai/leapview/internal/deployment"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCandidateRepositoryPersistsResumeAndOptimisticReplacementAcrossRestart(t *testing.T) {
@@ -36,9 +37,7 @@ func TestCandidateRepositoryPersistsResumeAndOptimisticReplacementAcrossRestart(
 	}
 
 	next, err := created.ReplaceArtifact(firstDigest, secondDigest, now.Add(time.Minute), now.Add(2*time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	saved, err := restarted.SaveCandidate(ctx, next, created.Revision)
 	if err != nil || saved.ArtifactDigest != secondDigest {
 		t.Fatalf("SaveCandidate() = %#v, %v", saved, err)
@@ -119,9 +118,7 @@ func TestCandidateRepositoryNeverChangesActiveServingState(t *testing.T) {
 		t.Fatal(err)
 	}
 	cancelled, err := candidate.Cancel(now.Add(time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := repository.SaveCandidate(ctx, cancelled, candidate.Revision); err != nil {
 		t.Fatal(err)
 	}
@@ -167,9 +164,7 @@ func candidateRecord(t *testing.T, now time.Time, id, project, owner, artifactDi
 		ID: id, ProjectID: project, TargetID: "lvinst_prod", Environment: "prod", OwnerID: owner,
 		BaseGeneration: "deployment_7", ArtifactDigest: artifactDigest, ExpiresAt: now.Add(time.Hour), Now: now,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return candidate
 }
 

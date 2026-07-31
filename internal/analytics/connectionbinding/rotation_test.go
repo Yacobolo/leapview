@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestPoolManagerActivatesValidatedReplacementAndDrainsPreviousLeases(t *testing.T) {
@@ -22,16 +24,12 @@ func TestPoolManagerActivatesValidatedReplacementAndDrainsPreviousLeases(t *test
 		Binding: validTargetBinding(t), Resolver: resolver, Factory: factory, Store: store,
 		Now: func() time.Time { return now }, StaleAfter: time.Hour,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := manager.RefreshNow(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	firstLease, err := manager.Lease()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	first := firstLease.Pool().(*recordingRuntimePool)
 
 	now = now.Add(time.Minute)
@@ -39,9 +37,7 @@ func TestPoolManagerActivatesValidatedReplacementAndDrainsPreviousLeases(t *test
 		t.Fatal(err)
 	}
 	secondLease, err := manager.Lease()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	second := secondLease.Pool().(*recordingRuntimePool)
 	if first == second || first.closed {
 		t.Fatalf("first=%p second=%p first.closed=%t", first, second, first.closed)
@@ -71,16 +67,12 @@ func TestPoolManagerKeepsHealthyPoolWhenNewVersionFailsValidation(t *testing.T) 
 		Binding: validTargetBinding(t), Resolver: resolver, Factory: factory, Store: store,
 		Now: func() time.Time { return now }, StaleAfter: time.Hour,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := manager.RefreshNow(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	healthy, err := manager.Lease()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	active := healthy.Pool()
 	healthy.Release()
 
@@ -90,9 +82,7 @@ func TestPoolManagerKeepsHealthyPoolWhenNewVersionFailsValidation(t *testing.T) 
 		t.Fatalf("RefreshNow() error = %v", err)
 	}
 	current, err := manager.Lease()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer current.Release()
 	if current.Pool() != active || manager.Evidence().Health != HealthDegraded ||
 		manager.Evidence().ValidatedVersion != "version-1" {
@@ -112,9 +102,7 @@ func TestPoolManagerCoalescesConcurrentRefreshAndDisableFailsClosed(t *testing.T
 		Binding: validTargetBinding(t), Resolver: resolver, Factory: factory, Store: &recordingBindingStore{},
 		Now: func() time.Time { return now }, StaleAfter: time.Hour,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	var wait sync.WaitGroup
 	errs := make(chan error, 8)
 	for range 8 {
@@ -127,17 +115,13 @@ func TestPoolManagerCoalescesConcurrentRefreshAndDisableFailsClosed(t *testing.T
 	wait.Wait()
 	close(errs)
 	for err := range errs {
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 	}
 	if resolver.calls != 1 || len(factory.pools) != 1 {
 		t.Fatalf("resolver calls=%d pools=%d", resolver.calls, len(factory.pools))
 	}
 	lease, err := manager.Lease()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := manager.Disable(context.Background(), now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
@@ -164,9 +148,7 @@ func TestPoolManagerRetainsValidatedPoolOnlyWithinStalePolicyDuringProviderOutag
 		Binding: validTargetBinding(t), Resolver: resolver, Factory: &recordingPoolFactory{}, Store: &recordingBindingStore{},
 		Now: func() time.Time { return now }, StaleAfter: 5 * time.Minute,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := manager.RefreshNow(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -203,9 +185,7 @@ func TestPoolManagerRunUsesIntervalThenExponentialBackoffAndStopsOnCancellation(
 			JitterRatio: 0.1, Random: func() float64 { return 1 }, Wait: waiter.Wait,
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	err = manager.Run(context.Background())
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run() error = %v", err)
@@ -239,9 +219,7 @@ func TestPoolManagerAuditsActivationDegradationRecoveryAndExplicitRefreshActor(t
 		Binding: validTargetBinding(t), Resolver: resolver, Factory: factory, Store: &recordingBindingStore{},
 		Audit: audit, Now: func() time.Time { return now }, StaleAfter: time.Hour,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := manager.Refresh(context.Background(), RefreshRequest{Actor: "runtime:target-1", Operation: RefreshScheduled}); err != nil {
 		t.Fatal(err)
 	}
@@ -262,9 +240,7 @@ func TestPoolManagerAuditsActivationDegradationRecoveryAndExplicitRefreshActor(t
 	assertRotationAudit(t, audit.events[2], "principal:author-1", RefreshRequested, RotationActivated, "version-2", "")
 	for _, event := range audit.events {
 		encoded, err := json.Marshal(event)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		if strings.Contains(string(encoded), "source-secret") || strings.Contains(string(encoded), "connection_string") {
 			t.Fatalf("audit disclosed credential material: %s", encoded)
 		}
@@ -277,9 +253,7 @@ func TestPoolManagerCancellationDoesNotDegradeOrPersist(t *testing.T) {
 		Binding: validTargetBinding(t), Resolver: canceledResolver{}, Factory: &recordingPoolFactory{},
 		Store: &recordingBindingStore{}, Now: func() time.Time { return now }, StaleAfter: time.Hour,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := manager.RefreshNow(context.Background()); !errors.Is(err, context.Canceled) {
 		t.Fatalf("RefreshNow() error = %v", err)
 	}
@@ -291,9 +265,7 @@ func TestPoolManagerCancellationDoesNotDegradeOrPersist(t *testing.T) {
 func TestPoolManagerRestartRevalidatesPersistedVersionAndRepeatedOutageIsIdempotent(t *testing.T) {
 	now := time.Date(2026, 7, 29, 17, 0, 0, 0, time.UTC)
 	binding, err := validTargetBinding(t).MarkValidated("version-1", now)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	now = now.Add(time.Minute)
 	resolver := &sequenceResolver{
 		snapshots: []CredentialSnapshot{testSnapshot(t, "version-1", now)},
@@ -305,9 +277,7 @@ func TestPoolManagerRestartRevalidatesPersistedVersionAndRepeatedOutageIsIdempot
 		Binding: binding, Resolver: resolver, Factory: factory, Store: store,
 		Now: func() time.Time { return now }, StaleAfter: time.Hour,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := manager.RefreshNow(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -339,9 +309,7 @@ func TestPoolManagerHealthStatusIsCompleteAndRedacted(t *testing.T) {
 		Binding: validTargetBinding(t), Resolver: resolver, Factory: &recordingPoolFactory{},
 		Store: &recordingBindingStore{}, Now: func() time.Time { return now }, StaleAfter: 10 * time.Minute,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := manager.RefreshNow(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -358,9 +326,7 @@ func TestPoolManagerHealthStatusIsCompleteAndRedacted(t *testing.T) {
 		t.Fatalf("health status = %#v", status)
 	}
 	encoded, err := json.Marshal(status)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, forbidden := range []string{"source-secret", "connection_string", "infisical-project", "/leapview/sales"} {
 		if strings.Contains(string(encoded), forbidden) {
 			t.Fatalf("health status disclosed %q: %s", forbidden, encoded)
@@ -371,9 +337,7 @@ func TestPoolManagerHealthStatusIsCompleteAndRedacted(t *testing.T) {
 func testSnapshot(t *testing.T, version string, now time.Time) CredentialSnapshot {
 	t.Helper()
 	snapshot, err := NewCredentialSnapshot(map[string]string{"connection_string": "source-secret"}, version, now, now.Add(time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return snapshot
 }
 

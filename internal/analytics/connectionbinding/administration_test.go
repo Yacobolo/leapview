@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestAdministrationRequiresDependencyPlanConfirmationForConfigurationChanges(t *testing.T) {
@@ -20,18 +22,14 @@ func TestAdministrationRequiresDependencyPlanConfirmationForConfigurationChanges
 		}},
 		Now: func() time.Time { return now },
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	key := BindingKey{
 		Scope: binding.Scope, TargetID: binding.TargetID, LogicalConnectionID: binding.LogicalConnectionID,
 	}
 	configuration := binding.Configuration()
 	configuration.Endpoint.Host = "warehouse-next.internal"
 	plan, err := service.PlanConfigurationChange(context.Background(), "operator-1", key, configuration)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if !plan.RequiresConfirmation || plan.ConfirmationToken == "" || len(plan.Dependencies) != 2 ||
 		plan.ExpectedRevision != binding.Revision {
 		t.Fatalf("change plan = %#v", plan)
@@ -46,9 +44,7 @@ func TestAdministrationRequiresDependencyPlanConfirmationForConfigurationChanges
 		ActorID: "operator-1", Key: key, Configuration: configuration,
 		ExpectedRevision: binding.Revision, ConfirmationToken: plan.ConfirmationToken,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if updated.Endpoint.Host != "warehouse-next.internal" || repository.saves != 1 {
 		t.Fatalf("updated=%#v saves=%d", updated, repository.saves)
 	}
@@ -70,9 +66,7 @@ func TestAdministrationSeparatesMetadataAndRefreshAuthorization(t *testing.T) {
 		Pools:        staticPoolDirectory{pool: pool},
 		Now:          time.Now,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	key := BindingKey{
 		Scope: binding.Scope, TargetID: binding.TargetID, LogicalConnectionID: binding.LogicalConnectionID,
 	}
@@ -95,9 +89,7 @@ func TestAdministrationTestUsesCandidateRuntimePathAndDistinctAuditOperation(t *
 		Pools:        staticPoolDirectory{pool: pool},
 		Now:          time.Now,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	key := BindingKey{
 		Scope: binding.Scope, TargetID: binding.TargetID, LogicalConnectionID: binding.LogicalConnectionID,
 	}
@@ -133,14 +125,10 @@ func TestAdministrationListsOnlyTheRequestedTargetScope(t *testing.T) {
 		Dependencies: staticDependencyInspector{},
 		Now:          time.Now,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	bindings, err := service.List(context.Background(), "operator-1", binding.Scope, binding.TargetID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if authorized.TargetID != binding.TargetID || authorized.Scope != binding.Scope {
 		t.Fatalf("authorized scope = %#v", authorized)
 	}

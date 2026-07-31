@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestPoolDirectoryCreatesOneManagerPerBindingRevision(t *testing.T) {
@@ -33,19 +35,13 @@ func TestPoolDirectoryCreatesOneManagerPerBindingRevision(t *testing.T) {
 		RefreshTimeout: time.Second,
 		MaxConcurrent:  1,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = directory.Close() })
 
 	first, err := directory.Pool(binding)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	same, err := directory.Pool(binding)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if first != same || builds != 1 {
 		t.Fatalf("same revision returned pools %p and %p after %d builds", first, same, builds)
 	}
@@ -55,13 +51,9 @@ func TestPoolDirectoryCreatesOneManagerPerBindingRevision(t *testing.T) {
 		Endpoint:            EndpointConfig{Host: "warehouse-next.internal", Port: binding.Endpoint.Port},
 		CredentialReference: binding.CredentialReference,
 	}, binding.UpdatedAt.Add(time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	replacement, err := directory.Pool(updated)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if replacement == first || builds != 2 {
 		t.Fatalf("new revision returned pool %p after %d builds; old=%p", replacement, builds, first)
 	}
@@ -91,18 +83,12 @@ func TestPoolDirectoryBoundsRefreshConcurrencyAndTimeout(t *testing.T) {
 		RefreshTimeout: 40 * time.Millisecond,
 		MaxConcurrent:  1,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = directory.Close() })
 	first, err := directory.Pool(binding)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	other, err := directory.Pool(second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	firstDone := make(chan error, 1)
 	go func() {
@@ -147,13 +133,9 @@ func TestPoolDirectoryCloseRetiresManagersAndRejectsNewPools(t *testing.T) {
 		RefreshTimeout: time.Second,
 		MaxConcurrent:  1,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	pool, err := directory.Pool(binding)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := pool.Refresh(context.Background(), RefreshRequest{
 		Actor: "principal:operator-1", Operation: RefreshTest,
 	}); err != nil {
@@ -188,9 +170,7 @@ func TestPoolDirectoryAcquiresOnlyValidatedGenerationsAndReusesThem(t *testing.T
 		RefreshTimeout: time.Second,
 		MaxConcurrent:  1,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = directory.Close() })
 
 	first, err := directory.AcquireValidated(
@@ -198,9 +178,7 @@ func TestPoolDirectoryAcquiresOnlyValidatedGenerationsAndReusesThem(t *testing.T
 		binding,
 		"candidate:cand_1",
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if first.Pool() == nil {
 		t.Fatal("validated lease has no runtime pool")
 	}
@@ -215,9 +193,7 @@ func TestPoolDirectoryAcquiresOnlyValidatedGenerationsAndReusesThem(t *testing.T
 		store.binding,
 		"candidate:cand_1",
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if resolver.calls != 1 || len(factory.pools) != 1 || second.Pool() != first.Pool() {
 		t.Fatalf(
 			"pool reuse resolver=%d pools=%d first=%p second=%p",
@@ -247,9 +223,7 @@ func TestPoolDirectoryValidatedAcquireIsBoundedAndFailsClosed(t *testing.T) {
 		RefreshTimeout: 40 * time.Millisecond,
 		MaxConcurrent:  1,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = directory.Close() })
 
 	started := time.Now()

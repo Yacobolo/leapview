@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestProductionGoEnvironmentReadsAreCataloged(t *testing.T) {
@@ -46,9 +48,7 @@ func TestProductionGoEnvironmentReadsAreCataloged(t *testing.T) {
 		})
 		return nil
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 }
 
 func TestOperationalEnvironmentReferencesAreCataloged(t *testing.T) {
@@ -59,9 +59,7 @@ func TestOperationalEnvironmentReferencesAreCataloged(t *testing.T) {
 	for _, relative := range paths {
 		path := filepath.Join(root, relative)
 		info, err := os.Stat(path)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		visit := func(path string) {
 			body, err := os.ReadFile(path)
 			if err != nil {

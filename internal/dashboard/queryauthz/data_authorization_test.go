@@ -15,6 +15,7 @@ import (
 	"github.com/flidai/leapview/internal/platform"
 	"github.com/flidai/leapview/internal/workspace"
 	workspacesqlite "github.com/flidai/leapview/internal/workspace/sqlite"
+	"github.com/stretchr/testify/require"
 )
 
 type semanticModelMetrics struct {
@@ -29,18 +30,14 @@ func (m semanticModelMetrics) SemanticModel(modelID string) (*semanticmodel.Mode
 func TestGovernModelAggregateUsesTransitivePhysicalPolicies(t *testing.T) {
 	ctx := context.Background()
 	store, err := platform.Open(ctx, filepath.Join(t.TempDir(), "leapview.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
 		t.Fatal(err)
 	}
 	repo := accesssqlite.NewRepository(store.SQLDB())
 	principal, err := repo.UpsertPrincipal(ctx, access.PrincipalInput{ID: "analyst", Email: "analyst@example.com"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	model := governanceTestModel()
 	modelObject := access.ItemObject(access.SecurableSemanticModel, "test", model.Name)
@@ -92,9 +89,7 @@ func TestGovernModelAggregateUsesTransitivePhysicalPolicies(t *testing.T) {
 		},
 	}
 	governed, _, err := metrics.GovernDataQuery(ctx, request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if len(governed.Filters) != 1 || governed.Filters[0].Fact != "ratings" {
 		t.Fatalf("governed filters = %#v, want ratings-targeted row policy", governed.Filters)
 	}
@@ -118,18 +113,14 @@ func TestGovernModelAggregateUsesTransitivePhysicalPolicies(t *testing.T) {
 func TestGovernDashboardCountUsesAuthorizationProjectionPolicies(t *testing.T) {
 	ctx := context.Background()
 	store, err := platform.Open(ctx, filepath.Join(t.TempDir(), "leapview.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
 		t.Fatal(err)
 	}
 	repo := accesssqlite.NewRepository(store.SQLDB())
 	principal, err := repo.UpsertPrincipal(ctx, access.PrincipalInput{ID: "analyst", Email: "analyst@example.com"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	model := governanceTestModel()
 	modelObject := access.ItemObject(access.SecurableSemanticModel, "test", model.Name)
@@ -168,9 +159,7 @@ func TestGovernDashboardCountUsesAuthorizationProjectionPolicies(t *testing.T) {
 		WorkspaceID: "test", ModelID: model.Name, Kind: dataquery.KindSemanticRows, Target: "ratings", IncludeTotal: true,
 		AuthorizationFields: []dataquery.Field{{Field: "ratings.rating", Alias: "rating"}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if len(governed.Filters) != 1 || governed.Filters[0].Field != "ratings.status" {
 		t.Fatalf("governed count filters = %#v", governed.Filters)
 	}
@@ -182,9 +171,7 @@ func TestGovernDashboardCountUsesAuthorizationProjectionPolicies(t *testing.T) {
 func TestGovernDataQueryRejectsPrincipalEscalationAgainstAuthenticatedActor(t *testing.T) {
 	ctx := context.Background()
 	store, err := platform.Open(ctx, filepath.Join(t.TempDir(), "leapview.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(
 		ctx,
@@ -197,16 +184,12 @@ func TestGovernDataQueryRejectsPrincipalEscalationAgainstAuthenticatedActor(t *t
 		ctx,
 		access.PrincipalInput{ID: "author", Email: "author@example.com"},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	privileged, err := repo.UpsertPrincipal(
 		ctx,
 		access.PrincipalInput{ID: "admin", Email: "admin@example.com"},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := repo.CreateGrant(ctx, access.GrantInput{
 		Object: access.WorkspaceObject("test"), SubjectType: access.SubjectPrincipal,
 		SubjectID: privileged.ID, Privilege: access.PrivilegePreviewData,
@@ -249,9 +232,7 @@ func TestResolvedDependencyObjectsIncludesRowQueryFilterFields(t *testing.T) {
 		Fields:  []dataquery.Field{{Field: "ratings.rating"}},
 		Filters: []dataquery.Filter{{Field: "ratings.status", Operator: "equals", Values: []any{"published"}}},
 	}, true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if !containsObject(physicalObjects, access.SecurableColumn, "activity/ratings/status") {
 		t.Fatalf("physical dependencies = %#v, want ratings/status", physicalObjects)
 	}
@@ -260,9 +241,7 @@ func TestResolvedDependencyObjectsIncludesRowQueryFilterFields(t *testing.T) {
 func TestPublicationQueryFailsClosedWhenAuditIdentityIsMissing(t *testing.T) {
 	ctx := context.Background()
 	store, err := platform.Open(ctx, filepath.Join(t.TempDir(), "leapview.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
 		t.Fatal(err)
@@ -292,9 +271,7 @@ func TestPublicationQueryFailsClosedWhenAuditIdentityIsMissing(t *testing.T) {
 func TestPublicationQueryAppliesGlobalAndPublicationPoliciesAndPersistsAudit(t *testing.T) {
 	ctx := context.Background()
 	store, err := platform.Open(ctx, filepath.Join(t.TempDir(), "leapview.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "test", Title: "Test"}); err != nil {
 		t.Fatal(err)
@@ -336,9 +313,7 @@ func TestPublicationQueryAppliesGlobalAndPublicationPoliciesAndPersistsAudit(t *
 		WorkspaceID: "test", Surface: dataquery.SurfacePublicDashboard, Operation: dataquery.OperationDashboardRows,
 		ModelID: model.Name, Kind: dataquery.KindSemanticRows, Target: "ratings", Fields: []dataquery.Field{{Field: "ratings.rating"}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if len(governed.Filters) != 1 || governed.Filters[0].Field != "ratings.status" {
 		t.Fatalf("publication row filters = %#v", governed.Filters)
 	}

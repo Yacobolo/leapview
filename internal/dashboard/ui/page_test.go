@@ -2,12 +2,14 @@ package ui
 
 import (
 	"encoding/json"
-	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
-	reportdef "github.com/flidai/leapview/internal/dashboard/report"
 	"html"
 	"net/url"
 	"strings"
 	"testing"
+
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	"github.com/stretchr/testify/require"
 
 	"github.com/flidai/leapview/internal/dashboard"
 	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
@@ -117,13 +119,9 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 		t.Fatal(err)
 	}
 	definitions, err := workspacecompiler.CompileVisualizationDefinitions(&report, model)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	compiled, err := workspacecompiler.CompileDashboardDefinition(&report, definitions)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	showcase := renderPageForTest(t, compiled, model, report.Pages[0])
 	if !strings.Contains(showcase, `<lv-dashboard-page`) || !strings.Contains(showcase, `data-on:lv-filter-command`) || !strings.Contains(showcase, `data-on:lv-interaction-select`) {
@@ -250,9 +248,7 @@ func renderPageForTest(t *testing.T, report dashboarddefinition.Definition, mode
 	t.Helper()
 	var out strings.Builder
 	err := Page("client", "", dashboard.Catalog{}, report, model, report.Pages, activePage, dashboard.Filters{}).Render(&out)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return html.UnescapeString(out.String())
 }
 

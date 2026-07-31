@@ -13,6 +13,7 @@ import (
 	apigenclient "github.com/Yacobolo/toolbelt/apigen/runtime/client"
 	"github.com/flidai/leapview/internal/platform/cliapi"
 	instancelock "github.com/flidai/leapview/internal/platform/locking"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCandidateCheckpointStoreRoundTripsExactNonSecretIdentity(t *testing.T) {
@@ -25,23 +26,17 @@ func TestCandidateCheckpointStoreRoundTripsExactNonSecretIdentity(t *testing.T) 
 		t.Fatal(err)
 	}
 	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode = %o, want 600", info.Mode().Perm())
 	}
 	loaded, err := store.Load(projectPath, checkpoint.TargetOrigin)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if loaded != checkpoint {
 		t.Fatalf("loaded = %#v, want %#v", loaded, checkpoint)
 	}
 	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, forbidden := range []string{"secret-token", `"token"`, `"password"`} {
 		if strings.Contains(strings.ToLower(string(content)), forbidden) {
 			t.Fatalf("checkpoint persisted forbidden secret material: %s", content)
@@ -59,9 +54,7 @@ func TestCandidateCheckpointStoreRefusesReadModifyWriteWhileAnotherProcessOwnsLo
 		t.Fatal(err)
 	}
 	lock, err := instancelock.AcquireNamed(directory, ".authoring.json.lock")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer lock.Release()
 
 	concurrent := existing

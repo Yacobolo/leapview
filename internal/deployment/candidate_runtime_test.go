@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/flidai/leapview/internal/runtimehost"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCandidateRuntimeServicePreparesCredentialFreeAndBoundWorkspacesTogether(t *testing.T) {
@@ -18,9 +19,7 @@ func TestCandidateRuntimeServicePreparesCredentialFreeAndBoundWorkspacesTogether
 	service, err := NewCandidateRuntimeService(CandidateRuntimeServiceConfig{
 		Connections: connections, Runtime: host, RuntimeVersion: "leapview:test",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	receipt, err := service.Prepare(t.Context(), CandidateRuntimeRequest{
 		Candidate: candidate, AuthorizationFingerprint: "policy:v1",
@@ -40,9 +39,7 @@ func TestCandidateRuntimeServicePreparesCredentialFreeAndBoundWorkspacesTogether
 			},
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if receipt.RuntimeVersion != "leapview:test" || len(receipt.Workspaces) != 2 {
 		t.Fatalf("runtime receipt = %#v", receipt)
 	}
@@ -91,9 +88,7 @@ func TestCandidateRuntimeServiceAllowsManagedOnlyRefreshWithoutSecretBinding(t *
 	service, err := NewCandidateRuntimeService(CandidateRuntimeServiceConfig{
 		Connections: connections, Runtime: host, RuntimeVersion: "leapview:test",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	receipt, err := service.Prepare(t.Context(), CandidateRuntimeRequest{
 		Candidate:                candidateRuntimeTestCandidate(t, now),
@@ -105,9 +100,7 @@ func TestCandidateRuntimeServiceAllowsManagedOnlyRefreshWithoutSecretBinding(t *
 			ManagedDataConnections: []string{"olist"},
 		}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if len(receipt.Workspaces) != 1 || len(receipt.Workspaces[0].Bindings) != 0 {
 		t.Fatalf("receipt = %#v", receipt)
 	}
@@ -124,9 +117,7 @@ func TestCandidateRuntimeServiceReleasesPartialConnectionsOnFailure(t *testing.T
 	service, err := NewCandidateRuntimeService(CandidateRuntimeServiceConfig{
 		Connections: connections, Runtime: host, RuntimeVersion: "leapview:test",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, err = service.Prepare(t.Context(), CandidateRuntimeRequest{
 		Candidate:                candidateRuntimeTestCandidate(t, now),
 		AuthorizationFingerprint: "policy:v1",
@@ -167,9 +158,7 @@ func TestCandidateRuntimeServiceRejectsDuplicateNormalizedWorkspacesBeforeAcquir
 		Connections: connections, Runtime: &candidateRuntimeHost{},
 		RuntimeVersion: "leapview:test",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	_, err = service.Prepare(t.Context(), CandidateRuntimeRequest{
 		Candidate:                candidateRuntimeTestCandidate(t, now),
@@ -218,9 +207,7 @@ func TestCandidateRuntimeServiceRejectsDataModeAndConnectionMismatchBeforeAcquis
 				Connections: connections, Runtime: &candidateRuntimeHost{},
 				RuntimeVersion: "leapview:test",
 			})
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			_, err = service.Prepare(t.Context(), CandidateRuntimeRequest{
 				Candidate:                candidateRuntimeTestCandidate(t, now),
 				AuthorizationFingerprint: "policy:v1",
@@ -245,9 +232,7 @@ func candidateRuntimeTestCandidate(t *testing.T, now time.Time) Candidate {
 		ArtifactDigest: "sha256:" + strings.Repeat("a", 64),
 		ExpiresAt:      now.Add(time.Hour), Now: now,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return candidate
 }
 

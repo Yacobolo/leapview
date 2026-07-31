@@ -10,14 +10,13 @@ import (
 	"testing"
 
 	instancelock "github.com/flidai/leapview/internal/platform/locking"
+	"github.com/stretchr/testify/require"
 )
 
 func TestControllerLockRejectsConcurrentOperationAndRecoversAfterRelease(t *testing.T) {
 	root := t.TempDir()
 	first, err := instancelock.AcquireNamed(root, controllerLockName)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := instancelock.AcquireNamed(root, controllerLockName); err == nil || !strings.Contains(err.Error(), "another process") {
 		t.Fatalf("concurrent lock error = %v", err)
 	}
@@ -62,9 +61,7 @@ func TestUpgradeRejectsReleasedV010BeforeDockerOrStateMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 	controller, err := New(Options{Root: root, DockerBin: "/bin/false"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	err = controller.Upgrade(t.Context(), next)
 	if err == nil || !strings.Contains(err.Error(), "v0.1.0") || !strings.Contains(err.Error(), "fresh-install-only") {
@@ -88,9 +85,7 @@ func TestFirstLoginRetainsCredentialsUntilOutputSucceeds(t *testing.T) {
 		t.Fatal(err)
 	}
 	controller, err := New(Options{Root: root, Stdout: failingWriter{}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := controller.FirstLogin(); err == nil {
 		t.Fatal("first-login output failure = nil")
 	}
@@ -100,9 +95,7 @@ func TestFirstLoginRetainsCredentialsUntilOutputSucceeds(t *testing.T) {
 
 	var output bytes.Buffer
 	controller, err = New(Options{Root: root, Stdout: &output})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := controller.FirstLogin(); err != nil {
 		t.Fatal(err)
 	}
@@ -127,9 +120,7 @@ func TestUpdateEnvFileIsPrivateAndRejectsMissingContractKeys(t *testing.T) {
 		t.Fatalf("updated environment = %q, %v", contents, err)
 	}
 	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("environment permissions = %v", info.Mode().Perm())
 	}
@@ -158,9 +149,7 @@ func TestInitializeRejectsInvalidPublicDomainBeforeStateMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 	controller, err := New(Options{Root: root, DockerBin: "/bin/false"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	err = controller.Initialize(context.Background(), InitOptions{
 		AdminEmail: "admin@example.com",

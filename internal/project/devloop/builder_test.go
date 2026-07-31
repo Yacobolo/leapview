@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/flidai/leapview/internal/platform/digest"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFilesystemBuilderProducesDeterministicWorkspaceArtifacts(t *testing.T) {
@@ -12,13 +13,9 @@ func TestFilesystemBuilderProducesDeterministicWorkspaceArtifacts(t *testing.T) 
 	builder := FilesystemBuilder{ProjectPath: projectPath}
 
 	first, err := builder.Build(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	second, err := builder.Build(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if first.ProjectID != "leapview-showcase" ||
 		first.ProjectFile != "leapview.yaml" ||
 		first.Digest != second.Digest {

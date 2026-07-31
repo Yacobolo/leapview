@@ -5,6 +5,8 @@ import (
 	"errors"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestReconcilePreservesLastValidCandidateWhenNextBuildFails(t *testing.T) {
@@ -14,9 +16,7 @@ func TestReconcilePreservesLastValidCandidateWhenNextBuildFails(t *testing.T) {
 	}}
 	remote := &recordingRemote{}
 	service, err := New(builder, remote)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	first, err := service.Reconcile(t.Context())
 	if err != nil || first.Status != StatusSynchronized {
@@ -44,9 +44,7 @@ func TestReconcileIsIdempotentAndRetriesFailedSynchronization(t *testing.T) {
 	}}
 	remote := &recordingRemote{errors: []error{errors.New("temporary disconnect"), nil}}
 	service, err := New(builder, remote)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if result, err := service.Reconcile(t.Context()); err == nil || result.Status != StatusRetryable {
 		t.Fatalf("first reconcile = %#v, %v, want retryable", result, err)
@@ -72,9 +70,7 @@ func TestConcurrentReconcileSerializesOneDigestSynchronization(t *testing.T) {
 	builder := &constantBuilder{snapshot: testSnapshot("concurrent")}
 	remote := &recordingRemote{}
 	service, err := New(builder, remote)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	var wait sync.WaitGroup
 	results := make(chan Result, 8)
@@ -92,9 +88,7 @@ func TestConcurrentReconcileSerializesOneDigestSynchronization(t *testing.T) {
 	close(results)
 	close(errors)
 	for err := range errors {
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 	}
 	synchronized := 0
 	for result := range results {
@@ -113,9 +107,7 @@ func TestReconcileBindsReplacementToCandidateIdentityAndDigest(t *testing.T) {
 	builder := &scriptedBuilder{steps: []buildStep{{snapshot: first}, {snapshot: second}}}
 	remote := &recordingRemote{}
 	service, err := New(builder, remote)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := service.Reconcile(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -145,9 +137,7 @@ func TestReconcileSynchronizesChangedSourceRevisionForSameContent(t *testing.T) 
 		&scriptedBuilder{steps: []buildStep{{snapshot: first}, {snapshot: second}}},
 		remote,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := service.Reconcile(t.Context()); err != nil {
 		t.Fatal(err)
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/flidai/leapview/internal/access"
 	accesssqlite "github.com/flidai/leapview/internal/access/sqlite"
 	"github.com/flidai/leapview/internal/platform"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAdminInitializeCreatesOneTimeCredentialBundle(t *testing.T) {
@@ -38,9 +39,7 @@ func TestAdminInitializeCreatesOneTimeCredentialBundle(t *testing.T) {
 		t.Fatalf("publisher expiry = %q, %v", credentials.PublisherTokenExpiresAt, err)
 	}
 	store, err := platform.Open(context.Background(), filepath.Join(home, "leapview.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	repo := accesssqlite.NewRepository(store.SQLDB())
 	principal, local, err := repo.VerifyLocalPassword(context.Background(), credentials.Email, credentials.TemporaryPassword)
 	if err != nil || !local.MustChangePassword {
@@ -110,9 +109,7 @@ func TestAdminInitializeEvaluationPublisherCanStageDataWithoutAdminAuthority(
 		context.Background(),
 		filepath.Join(home, "leapview.db"),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer store.Close()
 	credential, err := accesssqlite.NewRepository(
 		store.SQLDB(),
@@ -120,9 +117,7 @@ func TestAdminInitializeEvaluationPublisherCanStageDataWithoutAdminAuthority(
 		context.Background(),
 		credentials.PublisherToken,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	privileges := make(map[access.Privilege]bool)
 	for _, privilege := range credential.Token.Privileges {
 		privileges[privilege] = true

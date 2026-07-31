@@ -8,6 +8,7 @@ import (
 
 	"github.com/flidai/leapview/internal/deployment"
 	"github.com/flidai/leapview/internal/deployment/apiadapter"
+	"github.com/stretchr/testify/require"
 )
 
 func TestProtectedActivationReauthorizesApprovalAndActivationCredentials(t *testing.T) {
@@ -116,9 +117,7 @@ func approvedService(t *testing.T, now time.Time) *deployment.ApprovalService {
 			},
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	requested, err := service.Request(t.Context(), deployment.ApprovalRequest{
 		ProjectID: "finance", DeploymentID: "deployment_1",
 		Environment: "prod", RequestDigest: "sha256:plan", ReleaseID: "release_1",
@@ -127,9 +126,7 @@ func approvedService(t *testing.T, now time.Time) *deployment.ApprovalService {
 			CredentialID: "publish_session", CredentialExpiresAt: now.Add(time.Hour),
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := service.Approve(t.Context(), deployment.ApprovalTransition{
 		ProjectID: "finance", DeploymentID: "deployment_1",
 		ApprovalID: requested.ID, ExpectedRevision: requested.Revision,

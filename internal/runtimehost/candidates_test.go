@@ -9,6 +9,7 @@ import (
 	"time"
 
 	servingstate "github.com/flidai/leapview/internal/servingstate"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCandidateRuntimeReplacementIsPrivateAndDrainsLeasedGeneration(t *testing.T) {
@@ -43,9 +44,7 @@ func TestCandidateRuntimeReplacementIsPrivateAndDrainsLeasedGeneration(t *testin
 		CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "sales",
 		Compatibility: candidateCompatibility("one"),
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	oldRuntime := oldLease.Runtime().(*recordingRuntime)
 
 	registerCandidateRuntime(t, registry, CandidateRegistration{
@@ -59,18 +58,14 @@ func TestCandidateRuntimeReplacementIsPrivateAndDrainsLeasedGeneration(t *testin
 		CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "sales",
 		Compatibility: candidateCompatibility("two"),
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if newLease.ServingStateID() != "candidate_sales_2" || newLease.DuckLakeSnapshotID() != 22 {
 		t.Fatalf("new candidate lease = (%s, %d)", newLease.ServingStateID(), newLease.DuckLakeSnapshotID())
 	}
 	newLease.Release()
 
 	active, err := registry.AcquireForWorkspace(t.Context(), "sales")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if active.ServingStateID() != "active_sales" || active.DuckLakeSnapshotID() != 11 {
 		t.Fatalf("candidate replacement changed active runtime = (%s, %d)", active.ServingStateID(), active.DuckLakeSnapshotID())
 	}
@@ -176,9 +171,7 @@ func TestCandidateRuntimeExpiryRejectsNewLeasesAndDrainsExistingLease(t *testing
 		Compatibility: candidateCompatibility("one"),
 	}
 	lease, err := registry.AcquireCandidate(t.Context(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	runtime := lease.Runtime().(*recordingRuntime)
 
 	now = now.Add(2 * time.Minute)
@@ -211,9 +204,7 @@ func TestCandidateRuntimeRetirementIsSafeWithConcurrentLeaseRelease(t *testing.T
 	leases := make([]Lease, 32)
 	for index := range leases {
 		lease, err := registry.AcquireCandidate(t.Context(), request)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		leases[index] = lease
 	}
 	runtime := leases[0].Runtime().(*recordingRuntime)
@@ -262,9 +253,7 @@ func TestCandidateRuntimeOwnsExternalDependenciesUntilGenerationDrains(t *testin
 		OwnerID:     registration.OwnerID, WorkspaceID: registration.WorkspaceID,
 		Compatibility: registration.Compatibility,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	registry.RetireCandidate(registration.CandidateID)
 	if lifetime.closes != 0 {
 		t.Fatal("candidate dependency closed while a runtime lease was active")
@@ -285,9 +274,7 @@ func TestCandidateRuntimeRejectsRegistrationUnderDifferentCompatibility(t *testi
 		},
 		ServingStateID: "candidate_sales_1",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer prepared.Close()
 
 	err = registry.RegisterPreparedCandidate(CandidateRegistration{
@@ -344,9 +331,7 @@ func TestCandidateRuntimeSetReplacesEveryWorkspaceAsOneGeneration(t *testing.T) 
 		CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "sales",
 		Compatibility: candidateCompatibility("sales-1"),
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	oldRuntime := old.Runtime().(*recordingRuntime)
 
 	if err := registry.PrepareAndRegisterCandidateSet(t.Context(), prepareSet("2")); err != nil {

@@ -21,6 +21,7 @@ import (
 	"github.com/flidai/leapview/internal/platform"
 	"github.com/flidai/leapview/internal/project"
 	"github.com/flidai/leapview/internal/release"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCandidateSynchronizationPlansUploadsAndCommitsOwnedCandidate(t *testing.T) {
@@ -202,9 +203,7 @@ func TestCandidateSynchronizationNeverMarksReadyBeforeProvenanceIsRetained(t *te
 			OwnerID: "principal_1",
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if current.Status == deployment.CandidateReady ||
 		current.ProvenanceDigest != "" {
 		t.Fatalf("candidate became ready without provenance: %#v", current)
@@ -221,9 +220,7 @@ func TestCandidateReleaseProvenanceRejectsMismatchedSourceIdentity(t *testing.T)
 			ArtifactDigest: digest,
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, err = candidateReleaseProvenance(
 		started.Candidate,
 		release.CandidateArtifactSet{
@@ -263,15 +260,11 @@ func TestCandidateSynchronizationPreservesReadyCandidateWhenPreparationFails(t *
 	started, err := module.candidates.Start(t.Context(), deployment.StartCandidateRequest{
 		ProjectID: "finance", OwnerID: "principal_1", ArtifactDigest: firstDigest,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	ready, err := module.candidates.MarkReady(t.Context(), deployment.CandidateScope{
 		ProjectID: "finance", CandidateID: started.Candidate.ID, OwnerID: "principal_1",
 	}, firstDigest, "sha256:"+strings.Repeat("f", 64))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	module.candidateSources = &candidateSourceSynchronizerStub{}
 	module.candidateArtifacts = &candidateArtifactPreparerStub{
 		err: release.ErrCandidateArtifactUnavailable,
@@ -296,9 +289,7 @@ func TestCandidateSynchronizationPreservesReadyCandidateWhenPreparationFails(t *
 	current, err := module.candidates.Get(t.Context(), deployment.CandidateScope{
 		ProjectID: "finance", CandidateID: ready.ID, OwnerID: "principal_1",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if current.Status != deployment.CandidateReady || current.ArtifactDigest != firstDigest {
 		t.Fatalf("last ready candidate changed: %#v", current)
 	}
@@ -449,9 +440,7 @@ func TestCandidatePreviewMapsLifecycleAndConcealsRuntimeDetails(t *testing.T) {
 			started, err := module.candidates.Start(context.Background(), deployment.StartCandidateRequest{
 				ProjectID: "finance", OwnerID: "principal_1", ArtifactDigest: digest,
 			})
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			scope := deployment.CandidateScope{
 				ProjectID: "finance", CandidateID: started.Candidate.ID, OwnerID: "principal_1",
 			}
@@ -471,9 +460,7 @@ func TestCandidatePreviewMapsLifecycleAndConcealsRuntimeDetails(t *testing.T) {
 			case deployment.CandidateExpired:
 				now = start.Add(2 * time.Minute)
 			}
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 
 			request := httptest.NewRequest(http.MethodGet, "/candidates/"+started.Candidate.ID, nil)
 			response := httptest.NewRecorder()
@@ -502,9 +489,7 @@ func TestCandidatePreviewConcealsForeignOwnership(t *testing.T) {
 	started, err := module.candidates.Start(context.Background(), deployment.StartCandidateRequest{
 		ProjectID: "finance", OwnerID: "principal_1", ArtifactDigest: digest,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	request := httptest.NewRequest(http.MethodGet, "/candidates/"+started.Candidate.ID, nil)
 	response := httptest.NewRecorder()
 	module.ServeCandidatePreview(response, request, started.Candidate.ID, "principal_2", nil)
@@ -526,9 +511,7 @@ func testCandidateModule(t *testing.T, principalID string) *Module {
 func testCandidateModuleWithClock(t *testing.T, principalID string, now func() time.Time, lifetime time.Duration) *Module {
 	t.Helper()
 	store, err := platform.Open(context.Background(), filepath.Join(t.TempDir(), "leapview.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	for _, id := range []string{"principal_1", "principal_2"} {
 		if _, err := store.SQLDB().ExecContext(context.Background(),
@@ -543,9 +526,7 @@ func testCandidateModuleWithClock(t *testing.T, principalID string, now func() t
 		TargetID: "lvinst_prod", CanonicalOrigin: "https://prod.leapview.example", Environment: "prod",
 		Lifetime: lifetime, Now: now, NewID: func() (string, error) { return "cand_opaque_1", nil },
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return &Module{
 		candidates: service,
 		handler: deploymenthttp.NewHandler(deploymenthttp.Options{
@@ -710,8 +691,6 @@ func (candidatePreparationLeaseStub) Release()                       {}
 func standardContentDigest(t *testing.T, identity string) string {
 	t.Helper()
 	decoded, err := hex.DecodeString(strings.TrimPrefix(identity, "sha256:"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return "sha-256=:" + base64.StdEncoding.EncodeToString(decoded) + ":"
 }

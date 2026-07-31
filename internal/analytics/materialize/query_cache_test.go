@@ -22,6 +22,7 @@ import (
 	semanticquery "github.com/flidai/leapview/internal/analytics/query"
 	"github.com/flidai/leapview/internal/analytics/resultcache"
 	"github.com/flidai/leapview/internal/workload"
+	"github.com/stretchr/testify/require"
 )
 
 // The row-shaped helpers below exist only to preserve cache-policy tests while
@@ -131,13 +132,9 @@ func TestRuntimeCachesOwnedArrowAndRebuildsRequestTimingOnHit(t *testing.T) {
 	}
 	request := dataquery.Query{Surface: dataquery.SurfaceDashboard, Operation: dataquery.OperationDashboardRows, ModelID: "sales", Kind: dataquery.KindModelTableRows, Target: "orders", Fields: []dataquery.Field{{Field: "id"}}, Limit: 1}
 	first, err := runtime.ExecuteDataQuery(context.Background(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	second, err := runtime.ExecuteDataQuery(context.Background(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if first.CacheOutcome != dataquery.CacheMiss || second.CacheOutcome != dataquery.CacheHit {
 		t.Fatalf("outcomes = (%q, %q)", first.CacheOutcome, second.CacheOutcome)
 	}
@@ -184,13 +181,9 @@ func TestRuntimeExecutesSpatialQueriesThroughOwnedArrowResults(t *testing.T) {
 	}
 
 	first, err := runtime.ExecuteDataQuery(context.Background(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	second, err := runtime.ExecuteDataQuery(context.Background(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if first.CacheOutcome != dataquery.CacheMiss || second.CacheOutcome != dataquery.CacheHit {
 		t.Fatalf("cache outcomes = (%q, %q), want (miss, hit)", first.CacheOutcome, second.CacheOutcome)
 	}
@@ -227,9 +220,7 @@ func TestQueryResultCacheUsesGovernedRequestAndReturnsDeepCopies(t *testing.T) {
 		return dataquery.Result{Rows: []dataquery.Row{{"value": "SP"}}}, nil
 	}
 	first, err := cache.execute(context.Background(), request, execute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if first.CacheOutcome != dataquery.CacheMiss {
 		t.Fatalf("first cache outcome = %q, want miss", first.CacheOutcome)
 	}
@@ -238,9 +229,7 @@ func TestQueryResultCacheUsesGovernedRequestAndReturnsDeepCopies(t *testing.T) {
 	request.RequestID = "request-2"
 	request.CorrelationID = "refresh-2"
 	second, err := cache.execute(context.Background(), request, execute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if calls.Load() != 1 {
 		t.Fatalf("physical executions = %d, want 1", calls.Load())
 	}
@@ -277,14 +266,10 @@ func TestQueryResultCacheEnforcesByteBudgetAndRejectsOversizedEntries(t *testing
 	large.Measures = []dataquery.Field{{Field: "large"}}
 
 	_, firstKey, generation, _, err := cache.lookup(first)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	cache.store(firstKey, generation, dataquery.Result{Rows: []dataquery.Row{{"value": strings.Repeat("a", 80)}}})
 	_, secondKey, generation, _, err := cache.lookup(second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	cache.store(secondKey, generation, dataquery.Result{Rows: []dataquery.Row{{"value": strings.Repeat("b", 80)}}})
 	if cache.currentBytes > cache.maxBytes {
 		t.Fatalf("cache bytes = %d, budget = %d", cache.currentBytes, cache.maxBytes)
@@ -294,9 +279,7 @@ func TestQueryResultCacheEnforcesByteBudgetAndRejectsOversizedEntries(t *testing
 	}
 
 	_, largeKey, generation, _, err := cache.lookup(large)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	cache.store(largeKey, generation, dataquery.Result{Rows: []dataquery.Row{{"value": strings.Repeat("x", 5000)}}})
 	if _, ok := cache.get(largeKey); ok {
 		t.Fatal("oversized result was cached")
@@ -335,14 +318,10 @@ func TestQueryResultCacheKeyIncludesAuthorizationProjection(t *testing.T) {
 		AuthorizationFields: []dataquery.Field{{Field: "orders.customer_email"}},
 	}
 	first, _, err := cache.cacheKey(request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	request.AuthorizationFields = []dataquery.Field{{Field: "orders.customer_id"}}
 	second, _, err := cache.cacheKey(request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if first == second {
 		t.Fatal("count cache key ignored its authorization projection")
 	}
@@ -351,13 +330,9 @@ func TestQueryResultCacheKeyIncludesAuthorizationProjection(t *testing.T) {
 func TestQueryResultCacheKeyIncludesRuntimeNamespace(t *testing.T) {
 	request := dataquery.Query{ModelID: "sales", Kind: dataquery.KindSemanticAggregate}
 	first, _, err := newQueryResultCache(256, "snapshot=1;source=old").cacheKey(request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	second, _, err := newQueryResultCache(256, "snapshot=2;source=new").cacheKey(request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if first == second {
 		t.Fatal("cache keys matched across snapshot/source namespaces")
 	}
@@ -401,9 +376,7 @@ func TestQueryResultCacheKeysEverySpatialViewportCoordinate(t *testing.T) {
 		},
 	}
 	baseline, _, err := cache.cacheKey(request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	identical, _, err := cache.cacheKey(request)
 	if err != nil || identical != baseline {
 		t.Fatalf("identical spatial cache key = %q, %v; want %q", identical, err, baseline)
@@ -425,9 +398,7 @@ func TestQueryResultCacheKeysEverySpatialViewportCoordinate(t *testing.T) {
 		variant.Spatial = &window
 		mutate(variant.Spatial)
 		key, _, err := cache.cacheKey(variant)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		if key == baseline {
 			t.Fatalf("spatial cache variant %d reused the baseline key", index)
 		}
@@ -468,9 +439,7 @@ func TestQueryResultCacheLiveWaiterRetriesCanceledFlightAndCachesResult(t *testi
 		}
 
 		key, generation, err := cache.cacheKey(request)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		flightStarted := make(chan struct{})
 		releaseCanceledFlight := make(chan struct{})
 		ownerContext, cancelOwner := context.WithCancel(context.Background())
@@ -513,9 +482,7 @@ func TestQueryResultCacheLiveWaiterRetriesCanceledFlightAndCachesResult(t *testi
 			physicalExecutions.Add(1)
 			return dataquery.Result{}, nil
 		})
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		if cached.CacheOutcome != dataquery.CacheHit {
 			t.Fatalf("follow-up cache outcome = %q, want hit", cached.CacheOutcome)
 		}
@@ -769,9 +736,7 @@ func TestRuntimeBundleCacheMixedHitExecutesOnlyLoneMiss(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := runtime.ExecuteDataQueryBundle(context.Background(), requests)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got := database.queries.Load(); got != 2 {
 		t.Fatalf("physical executions = %d, want prime plus lone miss", got)
 	}
@@ -1037,9 +1002,7 @@ func TestRuntimeDashboardCacheHitDoesNotConsumeReadPermit(t *testing.T) {
 	}
 
 	admission, err := workload.New(workload.Config{MaxRunning: 1, Classes: map[workload.Class]workload.Policy{workload.Interactive: {MaximumRunning: 1}}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	occupied := make(chan struct{})
 	release := make(chan struct{})
 	var occupying sync.WaitGroup
@@ -1276,9 +1239,7 @@ func TestRuntimeSeparatesConnectionWaitFromDatabaseExecution(t *testing.T) {
 		Fields:    []dataquery.Field{{Field: "id"}},
 		Limit:     1,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if result.ConnectionWaitMS != 10_000 {
 		t.Fatalf("connection wait = %dms, want 10000ms", result.ConnectionWaitMS)
 	}

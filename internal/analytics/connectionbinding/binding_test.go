@@ -10,14 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
 
 func TestLogicalConnectionIDIsEnvironmentNeutralAndCanonical(t *testing.T) {
 	id, err := ParseLogicalConnectionID("warehouse_primary")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if id.String() != "warehouse_primary" {
 		t.Fatalf("logical connection id = %q", id)
 	}
@@ -42,9 +41,7 @@ func TestTargetBindingSeparatesTargetReferenceFromLogicalRequirement(t *testing.
 		},
 		Enabled: true, Now: now,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if binding.Revision != 1 || binding.Health != HealthPending || binding.LogicalConnectionID.String() != "warehouse" {
 		t.Fatalf("binding = %#v", binding)
 	}
@@ -53,9 +50,7 @@ func TestTargetBindingSeparatesTargetReferenceFromLogicalRequirement(t *testing.
 		t.Fatalf("redacted evidence = %#v", evidence)
 	}
 	raw, err := json.Marshal(evidence)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, forbidden := range []string{"infisical-project", "/leapview/sales", "secretPath", "secretKey", "credentialReference"} {
 		if bytes.Contains(raw, []byte(forbidden)) {
 			t.Fatalf("redacted evidence = %s, contains %q", raw, forbidden)
@@ -80,18 +75,12 @@ func TestSameLogicalRequirementBindsIndependentlyAcrossTargets(t *testing.T) {
 	developmentInput.CredentialReference.Environment = "dev"
 	developmentInput.CredentialReference.SecretPath = "/leapview/dev"
 	development, err := NewTargetBinding(developmentInput)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	requirement := Requirement{LogicalConnectionID: production.LogicalConnectionID, ConnectorKind: "postgres"}
 	productionEvidence, err := production.CompatibleEvidence(requirement, true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	developmentEvidence, err := development.CompatibleEvidence(requirement, true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if productionEvidence.TargetID == developmentEvidence.TargetID ||
 		productionEvidence.LogicalConnection != developmentEvidence.LogicalConnection {
 		t.Fatalf("production=%#v development=%#v", productionEvidence, developmentEvidence)
@@ -153,9 +142,7 @@ func TestCredentialSnapshotCannotBeSerializedOrFormattedWithValues(t *testing.T)
 		now,
 		now.Add(time.Hour),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := json.Marshal(snapshot); !errors.Is(err, ErrCredentialSerialization) {
 		t.Fatalf("json marshal error = %v", err)
 	}
@@ -201,17 +188,13 @@ func TestTargetBindingValidationEvidenceAdvancesOptimistically(t *testing.T) {
 	binding := validTargetBinding(t)
 	now := binding.UpdatedAt.Add(time.Minute)
 	validated, err := binding.MarkValidated("provider-version-8", now)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if validated.Health != HealthHealthy || validated.ValidatedVersion != "provider-version-8" ||
 		validated.LastValidatedAt != now || validated.Revision != binding.Revision+1 {
 		t.Fatalf("validated binding = %#v", validated)
 	}
 	degraded, err := validated.MarkDegraded("PROVIDER_UNAVAILABLE", now.Add(time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if degraded.Health != HealthDegraded || degraded.ValidatedVersion != validated.ValidatedVersion {
 		t.Fatalf("degraded binding = %#v", degraded)
 	}
@@ -223,9 +206,7 @@ func TestTargetBindingValidationEvidenceAdvancesOptimistically(t *testing.T) {
 func TestTargetBindingConfigurationUpdateInvalidatesPriorRuntimeEvidence(t *testing.T) {
 	binding := validTargetBinding(t)
 	validated, err := binding.MarkValidated("secret:v1", binding.UpdatedAt.Add(time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	updated, err := validated.UpdateConfiguration(TargetBindingConfiguration{
 		ConnectorKind:      validated.ConnectorKind,
 		AuthenticationMode: validated.AuthenticationMode,
@@ -234,9 +215,7 @@ func TestTargetBindingConfigurationUpdateInvalidatesPriorRuntimeEvidence(t *test
 		},
 		CredentialReference: validated.CredentialReference,
 	}, validated.UpdatedAt.Add(time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if updated.Revision != validated.Revision+1 || updated.Health != HealthPending ||
 		updated.ValidatedVersion != "" || !updated.LastValidatedAt.IsZero() ||
 		updated.Endpoint.Host != "warehouse-next.internal" {
@@ -248,9 +227,7 @@ func TestTargetBindingConfigurationUpdateIsIdempotentAndValidated(t *testing.T) 
 	binding := validTargetBinding(t)
 	config := binding.Configuration()
 	unchanged, err := binding.UpdateConfiguration(config, binding.UpdatedAt.Add(time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if unchanged.Revision != binding.Revision || !unchanged.UpdatedAt.Equal(binding.UpdatedAt) {
 		t.Fatalf("idempotent update changed binding: %#v", unchanged)
 	}
@@ -264,13 +241,9 @@ func TestTargetBindingConfigurationUpdateIsIdempotentAndValidated(t *testing.T) 
 func TestTargetBindingEnableReturnsToPendingWithoutRestoringOldEvidence(t *testing.T) {
 	binding := validTargetBinding(t)
 	disabled, err := binding.Disable(binding.UpdatedAt.Add(time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	enabled, err := disabled.Enable(disabled.UpdatedAt.Add(time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if !enabled.Enabled || enabled.Health != HealthPending || enabled.ValidatedVersion != "" ||
 		!enabled.LastValidatedAt.IsZero() || enabled.Revision != disabled.Revision+1 {
 		t.Fatalf("enabled binding = %#v", enabled)
@@ -280,9 +253,7 @@ func TestTargetBindingEnableReturnsToPendingWithoutRestoringOldEvidence(t *testi
 func validTargetBinding(t *testing.T) TargetBinding {
 	t.Helper()
 	binding, err := NewTargetBinding(validTargetBindingInput())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return binding
 }
 

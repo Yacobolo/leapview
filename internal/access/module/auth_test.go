@@ -13,6 +13,7 @@ import (
 	accesssqlite "github.com/flidai/leapview/internal/access/sqlite"
 	"github.com/flidai/leapview/internal/platform"
 	"github.com/go-chi/chi/v5"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPrivilegeWorkspaceIDUsesConfiguredWorkspaceWhenRouteHasNoScope(t *testing.T) {
@@ -161,22 +162,16 @@ func TestAuthorizationAllowedAuditInputIdentifiesConnectionDecision(t *testing.T
 
 func TestAuthorizeCredentialEvidenceFailsAfterTokenRevocation(t *testing.T) {
 	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "leapview.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	module, err := Build(t.Context(), Config{Database: store.SQLDB()})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	repository := accesssqlite.NewRepository(store.SQLDB())
 	principal, err := repository.SetPlatformRole(t.Context(), access.PlatformRoleInput{
 		PrincipalID: "activator", Email: "activator@example.test",
 		DisplayName: "Activator", Role: access.RoleDeploymentActivator,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := repository.UpsertSecurableObject(
 		t.Context(),
 		access.ProjectEnvironmentObject("finance", "production"),
@@ -192,13 +187,9 @@ func TestAuthorizeCredentialEvidenceFailsAfterTokenRevocation(t *testing.T) {
 			ExpiresAt:  time.Now().UTC().Add(time.Hour).Truncate(time.Second),
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	expiresAt, err := time.Parse(time.RFC3339Nano, token.ExpiresAt)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	evidence := access.CredentialEvidence{
 		Class: "api_token", ID: token.ID, PrincipalID: principal.ID,
 		ExpiresAt: expiresAt,
@@ -223,9 +214,7 @@ func TestAuthorizeCredentialEvidenceFailsAfterTokenRevocation(t *testing.T) {
 		"production",
 		access.PrivilegeActivateDeployment,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if allowed {
 		t.Fatal("revoked activation credential remained authorized")
 	}
@@ -233,22 +222,16 @@ func TestAuthorizeCredentialEvidenceFailsAfterTokenRevocation(t *testing.T) {
 
 func TestAuthorizeCredentialEvidenceUsesProjectEnvironmentGrant(t *testing.T) {
 	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "leapview.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	module, err := Build(t.Context(), Config{Database: store.SQLDB()})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	repository := accesssqlite.NewRepository(store.SQLDB())
 	principal, err := repository.UpsertPrincipal(t.Context(), access.PrincipalInput{
 		ID: "scoped-reviewer", Email: "reviewer@example.test",
 		DisplayName: "Scoped Reviewer",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := repository.CreateGrant(t.Context(), access.GrantInput{
 		Object:      access.ProjectEnvironmentObject("finance", "production"),
 		SubjectType: access.SubjectPrincipal, SubjectID: principal.ID,
@@ -264,13 +247,9 @@ func TestAuthorizeCredentialEvidenceUsesProjectEnvironmentGrant(t *testing.T) {
 			ExpiresAt:  time.Now().UTC().Add(time.Hour).Truncate(time.Second),
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	expiresAt, err := time.Parse(time.RFC3339Nano, token.ExpiresAt)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	evidence := access.CredentialEvidence{
 		Class: "api_token", ID: token.ID, PrincipalID: principal.ID,
 		ExpiresAt: expiresAt,
@@ -288,9 +267,7 @@ func TestAuthorizeCredentialEvidenceUsesProjectEnvironmentGrant(t *testing.T) {
 				t.Context(), evidence, test.projectID, test.environment,
 				access.PrivilegeApproveDeployment,
 			)
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			if allowed != test.want {
 				t.Fatalf("allowed = %t, want %t", allowed, test.want)
 			}

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/flidai/leapview/internal/analytics/connectionbinding"
+	"github.com/stretchr/testify/require"
 )
 
 func TestResolverReadsOneAtomicVersionedSecretBundle(t *testing.T) {
@@ -52,15 +53,11 @@ func TestResolverReadsOneAtomicVersionedSecretBundle(t *testing.T) {
 		MaxBundleSize: 64 << 10,
 		AllowedScopes: testAllowedScopes(),
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	snapshot, err := resolver.Resolve(context.Background(), connectionbinding.CredentialReference{
 		ProjectID: "project-1", Environment: "prod", SecretPath: "/leapview/sales", SecretKey: "warehouse",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if !requested || snapshot.ProviderVersion() != "secret-warehouse:v7" {
 		t.Fatalf("requested=%t provider version=%q", requested, snapshot.ProviderVersion())
 	}
@@ -97,9 +94,7 @@ func TestResolverMapsProviderFailuresWithoutLeakingResponseValues(t *testing.T) 
 				Authenticator: staticAuthenticator{token: AccessToken{value: "access", expiresAt: time.Now().Add(time.Hour)}},
 				Now:           time.Now, AllowedScopes: testAllowedScopes(),
 			})
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			_, err = resolver.Resolve(context.Background(), connectionbinding.CredentialReference{
 				ProjectID: "project-1", Environment: "prod", SecretPath: "/", SecretKey: "warehouse",
 			})
@@ -141,25 +136,17 @@ func TestUniversalAuthenticatorCachesAndRefreshesShortLivedAccessTokens(t *testi
 		BaseURL: server.URL, ClientID: "machine-client", ClientSecret: "bootstrap-secret",
 		HTTPClient: server.Client(), Now: func() time.Time { return now },
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	first, err := authenticator.AccessToken(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	second, err := authenticator.AccessToken(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if first.value != "access-1" || second.value != first.value || logins != 1 {
 		t.Fatalf("first=%q second=%q logins=%d", first.value, second.value, logins)
 	}
 	now = now.Add(91 * time.Second)
 	rotated, err := authenticator.AccessToken(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if rotated.value != "access-2" || logins != 2 {
 		t.Fatalf("rotated=%q logins=%d", rotated.value, logins)
 	}
@@ -200,22 +187,16 @@ func TestResolverInvalidatesRejectedAccessTokenAndRetriesOnce(t *testing.T) {
 		BaseURL: server.URL, ClientID: "machine-client", ClientSecret: "bootstrap-secret",
 		HTTPClient: server.Client(), Now: func() time.Time { return now },
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	resolver, err := NewResolver(Config{
 		BaseURL: server.URL, HTTPClient: server.Client(), Authenticator: authenticator,
 		Now: func() time.Time { return now }, AllowedScopes: testAllowedScopes(),
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	snapshot, err := resolver.Resolve(context.Background(), connectionbinding.CredentialReference{
 		ProjectID: "project-1", Environment: "prod", SecretPath: "/leapview/sales", SecretKey: "warehouse",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer snapshot.Destroy()
 	if snapshot.ProviderVersion() != "secret-warehouse:v8" || logins != 2 || reads != 2 {
 		t.Fatalf("version=%q logins=%d reads=%d", snapshot.ProviderVersion(), logins, reads)
@@ -242,9 +223,7 @@ func TestResolverRejectsReferencesOutsideOperatorAllowedScopesBeforeAuthenticati
 			ProjectID: "project-1", Environment: "prod", SecretPathPrefix: "/leapview/sales",
 		}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, reference := range []connectionbinding.CredentialReference{
 		{ProjectID: "project-2", Environment: "prod", SecretPath: "/leapview/sales", SecretKey: "warehouse"},
 		{ProjectID: "project-1", Environment: "dev", SecretPath: "/leapview/sales", SecretKey: "warehouse"},
@@ -280,13 +259,9 @@ func TestOIDCAuthenticatorExchangesWorkloadIdentityWithoutPersistingIt(t *testin
 		BaseURL: server.URL, IdentityID: "identity-1", IdentityTokens: staticIdentityTokenSource("workload-jwt"),
 		HTTPClient: server.Client(), Now: func() time.Time { return now },
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	token, err := authenticator.AccessToken(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if token.value != "oidc-access" {
 		t.Fatalf("access token = %q", token.value)
 	}
@@ -314,9 +289,7 @@ func TestUniversalAuthenticatorNeverForwardsBootstrapSecretAcrossRedirects(t *te
 		BaseURL: redirector.URL, ClientID: "machine-client", ClientSecret: "bootstrap-secret",
 		HTTPClient: redirector.Client(), Now: time.Now,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := authenticator.AccessToken(context.Background()); !errors.Is(err, connectionbinding.ErrProviderUnavailable) {
 		t.Fatalf("redirected login error = %v", err)
 	}

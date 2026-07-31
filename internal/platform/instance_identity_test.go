@@ -5,15 +5,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestInstanceIDIsGeneratedOnceAndPersists(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "leapview.db")
 	store, err := Open(ctx, path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	first, err := store.InstanceID(ctx)
 	if err != nil {
 		t.Fatalf("first InstanceID() error = %v", err)
@@ -26,9 +26,7 @@ func TestInstanceIDIsGeneratedOnceAndPersists(t *testing.T) {
 	}
 
 	reopened, err := Open(ctx, path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer reopened.Close()
 	second, err := reopened.InstanceID(ctx)
 	if err != nil {

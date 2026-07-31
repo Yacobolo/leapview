@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestAdministrationAuditsSuccessfulMetadataMutationsWithoutCredentialMetadata(t *testing.T) {
@@ -22,9 +24,7 @@ func TestAdministrationAuditsSuccessfulMetadataMutationsWithoutCredentialMetadat
 			return now
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	key := BindingKey{
 		Scope: binding.Scope, TargetID: binding.TargetID, LogicalConnectionID: binding.LogicalConnectionID,
 	}
@@ -35,9 +35,7 @@ func TestAdministrationAuditsSuccessfulMetadataMutationsWithoutCredentialMetadat
 		ActorID: "operator-1", Key: key, Configuration: configuration,
 		ExpectedRevision: binding.Revision,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := service.Disable(context.Background(), "operator-1", key); err != nil {
 		t.Fatal(err)
 	}
@@ -60,9 +58,7 @@ func TestAdministrationAuditsSuccessfulMetadataMutationsWithoutCredentialMetadat
 			t.Fatalf("audit event[%d] = %#v", index, event)
 		}
 		encoded, err := json.Marshal(event)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		for _, forbidden := range []string{
 			"source-secret", "connection_string", "project-1", "/leapview/sales",
 		} {
@@ -85,9 +81,7 @@ func TestAdministrationFailsClosedWhenMutationAuditIsUnavailable(t *testing.T) {
 		Audit:        failingAdministrationAudit{},
 		Now:          func() time.Time { return binding.UpdatedAt.Add(time.Minute) },
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, err = service.Disable(context.Background(), "operator-1", BindingKey{
 		Scope: binding.Scope, TargetID: binding.TargetID, LogicalConnectionID: binding.LogicalConnectionID,
 	})
@@ -107,13 +101,9 @@ func TestAdministrationAuditsBindingCreation(t *testing.T) {
 		Dependencies: staticDependencyInspector{}, Audit: audit,
 		Now: func() time.Time { return now },
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	created, err := service.Create(context.Background(), "operator-1", input)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if len(audit.events) != 1 || audit.events[0].Action != AuditBindingCreated ||
 		audit.events[0].Revision != created.Revision {
 		t.Fatalf("create audit events = %#v", audit.events)

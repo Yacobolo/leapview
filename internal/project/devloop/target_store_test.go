@@ -8,13 +8,12 @@ import (
 	"testing"
 
 	projectartifact "github.com/flidai/leapview/internal/project/artifact"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTargetStorePlansAndRetainsContentAddressedBlobs(t *testing.T) {
 	store, err := NewTargetStore(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	snapshot := testSnapshotWithArtifacts("store", []Artifact{
 		contentArtifact("leapview.yaml", []byte("project")),
 		contentArtifact("models/orders.yaml", []byte("orders")),
@@ -22,9 +21,7 @@ func TestTargetStorePlansAndRetainsContentAddressedBlobs(t *testing.T) {
 	request := planRequestForSnapshot(snapshot)
 
 	missing, err := store.Missing(t.Context(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if len(missing) != 2 {
 		t.Fatalf("missing blobs = %#v, want 2", missing)
 	}
@@ -34,9 +31,7 @@ func TestTargetStorePlansAndRetainsContentAddressedBlobs(t *testing.T) {
 		}
 	}
 	missing, err = store.Missing(t.Context(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if len(missing) != 0 {
 		t.Fatalf("missing blobs after upload = %#v", missing)
 	}
@@ -44,18 +39,14 @@ func TestTargetStorePlansAndRetainsContentAddressedBlobs(t *testing.T) {
 
 func TestTargetStoreRejectsDigestMismatchWithoutRetainingBlob(t *testing.T) {
 	store, err := NewTargetStore(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	artifact := contentArtifact("leapview.yaml", []byte("expected"))
 	if err := store.Put(t.Context(), artifact.Digest, bytes.NewReader([]byte("tampered"))); err == nil {
 		t.Fatal("target store accepted bytes that do not match content digest")
 	}
 	request := planRequestForSnapshot(testSnapshotWithArtifacts("store", []Artifact{artifact}))
 	missing, err := store.Missing(t.Context(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if len(missing) != 1 || missing[0] != artifact.Digest {
 		t.Fatalf("missing blobs = %#v, want rejected digest", missing)
 	}
@@ -64,14 +55,10 @@ func TestTargetStoreRejectsDigestMismatchWithoutRetainingBlob(t *testing.T) {
 func TestTargetStoreCommitsValidatedSnapshotIdempotently(t *testing.T) {
 	projectPath := filepath.Join("..", "..", "..", "dashboards", "leapview.yaml")
 	snapshot, err := (FilesystemBuilder{ProjectPath: projectPath}).Build(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	root := t.TempDir()
 	store, err := NewTargetStore(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, artifact := range snapshot.Artifacts {
 		if err := store.Put(t.Context(), artifact.Digest, bytes.NewReader(artifact.Content)); err != nil {
 			t.Fatal(err)
@@ -96,9 +83,7 @@ func TestTargetStoreCommitsValidatedSnapshotIdempotently(t *testing.T) {
 	close(results)
 	close(errors)
 	for err := range errors {
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 	}
 	var committedPath string
 	var artifactPath string
@@ -125,20 +110,14 @@ func TestTargetStoreCommitsValidatedSnapshotIdempotently(t *testing.T) {
 		t.Fatalf("committed project path %q escapes store %q", committedPath, root)
 	}
 	info, err := os.Stat(committedPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if info.Mode().Perm()&0o077 != 0 {
 		t.Fatalf("committed project mode = %o, want no group/world access", info.Mode().Perm())
 	}
 	encoded, err := os.ReadFile(artifactPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	compiled, err := projectartifact.Decode(encoded)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if compiled.ID() != snapshot.ProjectID || compiled.Digest() != projectDigest {
 		t.Fatalf("retained project artifact = id %q digest %q, want %q %q", compiled.ID(), compiled.Digest(), snapshot.ProjectID, projectDigest)
 	}
@@ -150,13 +129,9 @@ func TestTargetStoreCommitsValidatedSnapshotIdempotently(t *testing.T) {
 func TestTargetStoreRejectsTamperedRetainedProjectArtifact(t *testing.T) {
 	projectPath := filepath.Join("..", "..", "..", "dashboards", "leapview.yaml")
 	snapshot, err := (FilesystemBuilder{ProjectPath: projectPath}).Build(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	store, err := NewTargetStore(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, artifact := range snapshot.Artifacts {
 		if err := store.Put(t.Context(), artifact.Digest, bytes.NewReader(artifact.Content)); err != nil {
 			t.Fatal(err)
@@ -164,9 +139,7 @@ func TestTargetStoreRejectsTamperedRetainedProjectArtifact(t *testing.T) {
 	}
 	request := planRequestForSnapshot(snapshot)
 	stored, err := store.Commit(t.Context(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := os.WriteFile(stored.ProjectArtifactPath, []byte(`{"version":2}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -178,13 +151,9 @@ func TestTargetStoreRejectsTamperedRetainedProjectArtifact(t *testing.T) {
 func TestTargetStoreRepairsLegacySnapshotMissingRetainedProjectArtifact(t *testing.T) {
 	projectPath := filepath.Join("..", "..", "..", "dashboards", "leapview.yaml")
 	snapshot, err := (FilesystemBuilder{ProjectPath: projectPath}).Build(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	store, err := NewTargetStore(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, artifact := range snapshot.Artifacts {
 		if err := store.Put(t.Context(), artifact.Digest, bytes.NewReader(artifact.Content)); err != nil {
 			t.Fatal(err)
@@ -192,16 +161,12 @@ func TestTargetStoreRepairsLegacySnapshotMissingRetainedProjectArtifact(t *testi
 	}
 	request := planRequestForSnapshot(snapshot)
 	stored, err := store.Commit(t.Context(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := os.Remove(stored.ProjectArtifactPath); err != nil {
 		t.Fatal(err)
 	}
 	repaired, err := store.Commit(t.Context(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if repaired.ProjectDigest == "" {
 		t.Fatalf("repaired snapshot = %#v", repaired)
 	}
@@ -212,9 +177,7 @@ func TestTargetStoreRepairsLegacySnapshotMissingRetainedProjectArtifact(t *testi
 
 func TestTargetStoreCannotCommitWithMissingBlobs(t *testing.T) {
 	store, err := NewTargetStore(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	snapshot := testSnapshot("missing")
 	if _, err := store.Commit(t.Context(), planRequestForSnapshot(snapshot)); err == nil {
 		t.Fatal("target store committed a snapshot with missing source blobs")

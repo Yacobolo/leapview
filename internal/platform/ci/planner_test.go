@@ -3,6 +3,8 @@ package ci
 import (
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestPlanChanges(t *testing.T) {
@@ -321,9 +323,7 @@ func TestParseNameStatusZ(t *testing.T) {
 
 	input := []byte("M\x00README.md\x00R100\x00old name.md\x00docs/new name.md\x00D\x00site/old.ts\x00")
 	got, err := ParseNameStatusZ(input)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want := []Change{
 		{Status: "M", Paths: []string{"README.md"}},
 		{Status: "R100", Paths: []string{"old name.md", "docs/new name.md"}},

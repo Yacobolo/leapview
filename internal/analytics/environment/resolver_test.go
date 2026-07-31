@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/flidai/leapview/internal/analytics/connectionbinding"
+	"github.com/stretchr/testify/require"
 )
 
 func TestResolverRequiresExplicitDevelopmentSelectionAndAllowedVariable(t *testing.T) {
@@ -15,9 +16,7 @@ func TestResolverRequiresExplicitDevelopmentSelectionAndAllowedVariable(t *testi
 		TargetID: "local-target", Environment: "dev", TargetClass: connectionbinding.TargetDevelopment,
 		Kind: connectionbinding.ResolverEnvironment,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	resolver, err := NewResolver(Config{
 		Selection: selection, AllowedVariables: []string{"LEAPVIEW_DEV_WAREHOUSE"},
 		LookupEnv: func(name string) (string, bool) {
@@ -29,15 +28,11 @@ func TestResolverRequiresExplicitDevelopmentSelectionAndAllowedVariable(t *testi
 		Now: func() time.Time { return time.Date(2026, 7, 29, 18, 0, 0, 0, time.UTC) },
 		TTL: time.Minute,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	snapshot, err := resolver.Resolve(context.Background(), connectionbinding.CredentialReference{
 		ProjectID: "local-target", Environment: "dev", SecretPath: "/", SecretKey: "LEAPVIEW_DEV_WAREHOUSE",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer snapshot.Destroy()
 	if !strings.HasPrefix(snapshot.ProviderVersion(), "env:sha256:") {
 		t.Fatalf("provider version = %q", snapshot.ProviderVersion())
@@ -49,9 +44,7 @@ func TestResolverRejectsProductionSelectionAndOutOfScopeReferenceBeforeLookup(t 
 		TargetID: "target-prod", Environment: "prod", TargetClass: connectionbinding.TargetProduction,
 		Kind: connectionbinding.ResolverInfisical,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := NewResolver(Config{Selection: production, LookupEnv: func(string) (string, bool) {
 		return "", false
 	}, AllowedVariables: []string{"LEAPVIEW_DEV_WAREHOUSE"}, Now: time.Now, TTL: time.Minute}); !errors.Is(err, connectionbinding.ErrInvalidBinding) {
@@ -62,9 +55,7 @@ func TestResolverRejectsProductionSelectionAndOutOfScopeReferenceBeforeLookup(t 
 		TargetID: "local-target", Environment: "dev", TargetClass: connectionbinding.TargetDevelopment,
 		Kind: connectionbinding.ResolverEnvironment,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	lookups := 0
 	resolver, err := NewResolver(Config{
 		Selection: development, AllowedVariables: []string{"LEAPVIEW_DEV_WAREHOUSE"},
@@ -74,9 +65,7 @@ func TestResolverRejectsProductionSelectionAndOutOfScopeReferenceBeforeLookup(t 
 		},
 		Now: time.Now, TTL: time.Minute,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := resolver.Resolve(context.Background(), connectionbinding.CredentialReference{
 		ProjectID: "other-target", Environment: "dev", SecretPath: "/", SecretKey: "LEAPVIEW_DEV_WAREHOUSE",
 	}); !errors.Is(err, connectionbinding.ErrCredentialDenied) {

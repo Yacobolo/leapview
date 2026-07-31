@@ -14,6 +14,7 @@ import (
 
 	"github.com/flidai/leapview/internal/platform/jobs"
 	"github.com/flidai/leapview/internal/servingstate"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUploadArtifactReplaysAlreadyRecordedContent(t *testing.T) {
@@ -179,9 +180,7 @@ func TestPublishCandidatePromotesExactRetainedProvenanceWithoutRebuilding(t *tes
 			}},
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	repository := &serviceTestReleaseRepository{}
 	service := &Service{
 		releases: repository, finalization: repository,
@@ -202,9 +201,7 @@ func TestPublishCandidatePromotesExactRetainedProvenanceWithoutRebuilding(t *tes
 		TargetID: "lvinst_dev", Environment: "dev",
 		IdempotencyKey: "publish-1", CreatedBy: "publisher",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if published.Status != StatusReady || published.Provenance == nil ||
 		published.Provenance.Digest != provenance.Digest {
 		t.Fatalf("published release = %#v", published)
@@ -427,9 +424,7 @@ func candidateServiceTestProvenance(t *testing.T) Provenance {
 			}},
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return provenance
 }
 

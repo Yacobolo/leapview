@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/flidai/leapview/internal/access"
+	"github.com/stretchr/testify/require"
 )
 
 func TestViewAsRequiresSeparateActorPrivilegeAndAuditsDenial(t *testing.T) {
@@ -85,9 +86,7 @@ func TestViewAsRunsAsSubjectWithSubjectPoliciesAndDistinctFingerprint(t *testing
 		WithViewAsCapability(t.Context(), capability),
 		candidateGovernanceRequest(),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if governed.PrincipalID != "viewer_1" || governed.EffectivePolicyFingerprint == "" {
 		t.Fatalf("governed view-as identity = %#v", governed)
 	}
@@ -96,9 +95,7 @@ func TestViewAsRunsAsSubjectWithSubjectPoliciesAndDistinctFingerprint(t *testing
 	}
 
 	direct, _, err := metrics.GovernDataQuery(t.Context(), candidateGovernanceRequest())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if direct.EffectivePolicyFingerprint == governed.EffectivePolicyFingerprint {
 		t.Fatal("view-as query reused the direct author's policy fingerprint")
 	}
