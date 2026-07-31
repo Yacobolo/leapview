@@ -212,6 +212,7 @@ Focused slices are available at `/docs/agent-tools/tools/{name}.json|md`, `/docs
 - [Filter and slicer target architecture](/docs/architecture/filters-slicers): Understand semantic filter definitions, scoped bindings, canonical state, pane controls, slicers, and governed option queries.
 - [Visualization architecture](/docs/architecture/visual-plugins): Understand the visualization IR, generated contracts, runtime data states, and renderer adapters.
 - [Geographic rendering decision](/docs/architecture/geographic-rendering): Understand why MapLibre exclusively owns built-in geographic rendering.
+- [Infisical Go SDK decision](/docs/architecture/infisical-go-sdk): Understand why LeapView retains its narrow Infisical resolver for SDK v0.8.0.
 
 #### Contributing
 
