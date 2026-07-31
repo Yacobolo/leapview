@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/flidai/leapview/internal/access"
 	accesshttp "github.com/flidai/leapview/internal/access/http"
@@ -18,6 +19,10 @@ type fakeAuthoringOAuth struct {
 	beganScope    access.AuthoringScope
 	exchangedCode string
 	exchangeErr   error
+	refreshToken  string
+	refreshErr    error
+	workloadInput access.WorkloadIdentityInput
+	workloadErr   error
 }
 
 func (service *fakeAuthoringOAuth) InstanceID() string {
@@ -41,6 +46,35 @@ func (service *fakeAuthoringOAuth) ExchangeDeviceCode(_ context.Context, code st
 	if service.exchangeErr != nil {
 		return access.AuthoringTokenSet{}, service.exchangeErr
 	}
+	return fakeAuthoringTokenSet(), nil
+}
+
+func (service *fakeAuthoringOAuth) Refresh(_ context.Context, token string) (access.AuthoringTokenSet, error) {
+	service.refreshToken = token
+	if service.refreshErr != nil {
+		return access.AuthoringTokenSet{}, service.refreshErr
+	}
+	tokens := fakeAuthoringTokenSet()
+	tokens.AccessToken = "access-rotated"
+	tokens.RefreshToken = "refresh-rotated"
+	return tokens, nil
+}
+
+func (service *fakeAuthoringOAuth) ExchangeWorkloadIdentity(_ context.Context, input access.WorkloadIdentityInput) (access.AuthoringTokenSet, error) {
+	service.workloadInput = input
+	if service.workloadErr != nil {
+		return access.AuthoringTokenSet{}, service.workloadErr
+	}
+	tokens := fakeAuthoringTokenSet()
+	tokens.AccessToken = "workload-access"
+	tokens.RefreshToken = ""
+	tokens.ExpiresIn = 600
+	tokens.Session.Kind = access.AuthoringSessionWorkload
+	tokens.Session.ClientID = input.ClientID
+	return tokens, nil
+}
+
+func fakeAuthoringTokenSet() access.AuthoringTokenSet {
 	return access.AuthoringTokenSet{
 		AccessToken:  "access-secret",
 		RefreshToken: "refresh-secret",
@@ -56,7 +90,7 @@ func (service *fakeAuthoringOAuth) ExchangeDeviceCode(_ context.Context, code st
 				Privileges: []access.Privilege{access.PrivilegeDeploy},
 			},
 		},
-	}, nil
+	}
 }
 
 func TestAuthoringDeviceAuthorizationUsesRFC8628WireFormat(t *testing.T) {
@@ -202,6 +236,12 @@ func TestAuthoringOAuthRoutingIsUnambiguous(t *testing.T) {
 			"grant_type": {"refresh_token"},
 			"client_id":  {access.AuthoringCLIClientID},
 		},
+		"authoring workload": {
+			"grant_type":       {"client_credentials"},
+			"client_id":        {"sp-ci"},
+			"project_id":       {"analytics"},
+			"lifetime_seconds": {"600"},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(values.Encode()))
@@ -219,5 +259,89 @@ func TestAuthoringOAuthRoutingIsUnambiguous(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if requestTargetsAuthoringOAuth(request) {
 		t.Fatal("MCP authorization-code request routed to authoring OAuth")
+	}
+}
+
+func TestAuthoringOAuthRefreshRotatesTokensAndMapsReplayToInvalidGrant(t *testing.T) {
+	form := url.Values{
+		"client_id":     {access.AuthoringCLIClientID},
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {"refresh-secret"},
+	}
+	request := func() *http.Request {
+		value := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(form.Encode()))
+		value.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		return value
+	}
+
+	service := &fakeAuthoringOAuth{}
+	recorder := httptest.NewRecorder()
+	(&Module{handler: accesshttp.Handler{AuthoringAuth: service}}).AuthoringOAuthToken(recorder, request())
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if service.refreshToken != "refresh-secret" {
+		t.Fatalf("refresh token=%q", service.refreshToken)
+	}
+	var response map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response["access_token"] != "access-rotated" || response["refresh_token"] != "refresh-rotated" {
+		t.Fatalf("response=%v", response)
+	}
+
+	service = &fakeAuthoringOAuth{refreshErr: access.ErrAuthoringRefreshReplay}
+	recorder = httptest.NewRecorder()
+	(&Module{handler: accesshttp.Handler{AuthoringAuth: service}}).AuthoringOAuthToken(recorder, request())
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("replay status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var replay struct {
+		Error            string `json:"error"`
+		ErrorDescription string `json:"error_description"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &replay); err != nil {
+		t.Fatalf("decode replay response: %v", err)
+	}
+	if replay.Error != "invalid_grant" || strings.Contains(replay.ErrorDescription, "refresh-secret") {
+		t.Fatalf("replay response=%+v", replay)
+	}
+}
+
+func TestAuthoringOAuthClientCredentialsIssuesExactScopeWorkloadToken(t *testing.T) {
+	form := url.Values{
+		"grant_type":       {"client_credentials"},
+		"client_id":        {"sp-ci"},
+		"client_secret":    {"service-secret"},
+		"project_id":       {"analytics"},
+		"scope":            {"DEPLOY ACTIVATE_DEPLOYMENT"},
+		"lifetime_seconds": {"600"},
+	}
+	request := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	service := &fakeAuthoringOAuth{}
+	recorder := httptest.NewRecorder()
+
+	(&Module{handler: accesshttp.Handler{AuthoringAuth: service}}).AuthoringOAuthToken(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if service.workloadInput.ClientID != "sp-ci" ||
+		service.workloadInput.ClientSecret != "service-secret" ||
+		service.workloadInput.Scope.TargetID != "lvinst_prod" ||
+		service.workloadInput.Scope.ProjectID != "analytics" ||
+		service.workloadInput.Lifetime != 10*time.Minute {
+		t.Fatalf("workload input=%+v", service.workloadInput)
+	}
+	var response map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response["access_token"] != "workload-access" ||
+		response["session_kind"] != string(access.AuthoringSessionWorkload) ||
+		response["refresh_token"] != nil {
+		t.Fatalf("response=%v", response)
 	}
 }

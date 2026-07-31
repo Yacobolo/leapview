@@ -224,8 +224,8 @@ func TestAuthoringAuthRejectsDisabledHumanAndExcessiveWorkloadLifetime(t *testin
 	_, err = service.ExchangeWorkloadIdentity(context.Background(), WorkloadIdentityInput{
 		ClientID: workload.ID, ClientSecret: "secret", Scope: scope, Lifetime: 31 * time.Minute,
 	})
-	if err == nil {
-		t.Fatal("ExchangeWorkloadIdentity() accepted excessive lifetime")
+	if !errors.Is(err, ErrInvalidWorkloadLifetime) {
+		t.Fatalf("ExchangeWorkloadIdentity() error = %v, want invalid lifetime", err)
 	}
 }
 

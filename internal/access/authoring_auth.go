@@ -25,6 +25,7 @@ var (
 	ErrAuthoringCredentialExpired  = errors.New("authoring credential expired")
 	ErrAuthoringRefreshReplay      = errors.New("authoring refresh token replay detected")
 	ErrInvalidAuthoringPrincipal   = errors.New("invalid authoring principal")
+	ErrInvalidWorkloadLifetime     = errors.New("invalid authoring workload lifetime")
 )
 
 const AuthoringCLIClientID = "leapview-cli"
@@ -390,7 +391,7 @@ func (service *AuthoringAuthService) ExchangeWorkloadIdentity(ctx context.Contex
 		return AuthoringTokenSet{}, err
 	}
 	if input.Lifetime <= 0 || input.Lifetime > service.workloadMaxTTL {
-		return AuthoringTokenSet{}, fmt.Errorf("workload credential lifetime must be between zero and %s", service.workloadMaxTTL)
+		return AuthoringTokenSet{}, fmt.Errorf("%w: must be between zero and %s", ErrInvalidWorkloadLifetime, service.workloadMaxTTL)
 	}
 	principal, err := service.repository.PrincipalForServicePrincipalSecret(ctx, strings.TrimSpace(input.ClientID), input.ClientSecret)
 	if err != nil || principal.Kind != PrincipalKindServicePrincipal || principal.DisabledAt != "" {

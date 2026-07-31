@@ -61,7 +61,7 @@ func (client capabilityAPIClient) Resolve(ctx context.Context, credentials cliap
 		if err != nil {
 			return cliapi.Credentials{}, fmt.Errorf("discover workload target: %w", err)
 		}
-		workload, err := accesscli.ExchangeWorkloadIdentity(ctx, client, accesscli.WorkloadIdentityRequest{
+		workload, err := accesscli.ExchangeWorkloadIdentity(ctx, accesscli.StandardOAuthClient{HTTPClient: client.http()}, accesscli.WorkloadIdentityRequest{
 			Origin: target, InstanceID: instance.Id, ProjectID: cfg.WorkloadProject,
 			ClientID: cfg.WorkloadClientID, ClientSecret: cfg.WorkloadClientSecret,
 			Privileges: []string{

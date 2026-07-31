@@ -33,15 +33,31 @@ type fakeFactory struct {
 	targets   []string
 }
 
-type fakeDeviceAuthorizer struct {
-	request       DeviceAuthorizationRequest
-	authorization DeviceAuthorization
-	err           error
+type fakeAuthoringOAuthClient struct {
+	request         DeviceAuthorizationRequest
+	authorization   DeviceAuthorization
+	err             error
+	refreshRequest  OAuthRefreshRequest
+	refreshToken    *oauth2.Token
+	refreshErr      error
+	workloadRequest WorkloadIdentityRequest
+	workloadToken   *oauth2.Token
+	workloadErr     error
 }
 
-func (authorizer *fakeDeviceAuthorizer) Begin(_ context.Context, request DeviceAuthorizationRequest) (DeviceAuthorization, error) {
-	authorizer.request = request
-	return authorizer.authorization, authorizer.err
+func (client *fakeAuthoringOAuthClient) Begin(_ context.Context, request DeviceAuthorizationRequest) (DeviceAuthorization, error) {
+	client.request = request
+	return client.authorization, client.err
+}
+
+func (client *fakeAuthoringOAuthClient) Refresh(_ context.Context, request OAuthRefreshRequest) (*oauth2.Token, error) {
+	client.refreshRequest = request
+	return client.refreshToken, client.refreshErr
+}
+
+func (client *fakeAuthoringOAuthClient) Workload(_ context.Context, request WorkloadIdentityRequest) (*oauth2.Token, error) {
+	client.workloadRequest = request
+	return client.workloadToken, client.workloadErr
 }
 
 type fakeDeviceAuthorization struct {
@@ -103,7 +119,7 @@ func (store *memorySecrets) Delete(_ context.Context, account string) error {
 
 func TestLoginUsesOAuthDeviceFlowAndNativeCredentialReference(t *testing.T) {
 	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
-	deviceAuthorizer := &fakeDeviceAuthorizer{
+	oauthClient := &fakeAuthoringOAuthClient{
 		authorization: fakeDeviceAuthorization{
 			challenge: DeviceChallenge{
 				UserCode:                "ABCD-EFGH",
@@ -124,11 +140,11 @@ func TestLoginUsesOAuthDeviceFlowAndNativeCredentialReference(t *testing.T) {
 	profiles := cliapi.NewProfileStore(filepath.Join(t.TempDir(), "cli.json"))
 	var opened, shown string
 	auth := Authenticator{
-		Factory:          &fakeFactory{transport: &fakeTransport{}},
-		DeviceAuthorizer: deviceAuthorizer,
-		Profiles:         profiles,
-		Secrets:          secrets,
-		Now:              func() time.Time { return now },
+		Factory:  &fakeFactory{transport: &fakeTransport{}},
+		OAuth:    oauthClient,
+		Profiles: profiles,
+		Secrets:  secrets,
+		Now:      func() time.Time { return now },
 		OpenBrowser: func(uri string) error {
 			opened = uri
 			return nil
@@ -148,10 +164,10 @@ func TestLoginUsesOAuthDeviceFlowAndNativeCredentialReference(t *testing.T) {
 	if result.SessionID != "session-1" {
 		t.Fatalf("result=%+v", result)
 	}
-	if deviceAuthorizer.request.Origin != "https://prod.example.com" ||
-		deviceAuthorizer.request.ProjectID != "analytics" ||
-		strings.Join(deviceAuthorizer.request.Privileges, ",") != "DEPLOY,ACTIVATE_DEPLOYMENT" {
-		t.Fatalf("device request=%+v", deviceAuthorizer.request)
+	if oauthClient.request.Origin != "https://prod.example.com" ||
+		oauthClient.request.ProjectID != "analytics" ||
+		strings.Join(oauthClient.request.Privileges, ",") != "DEPLOY,ACTIVATE_DEPLOYMENT" {
+		t.Fatalf("device request=%+v", oauthClient.request)
 	}
 	profile, err := profiles.Get("prod")
 	if err != nil {
@@ -207,18 +223,15 @@ func TestLoginFailsClosedWhenNativeStoreIsUnavailable(t *testing.T) {
 func TestResolveRefreshesBeforeClockSkewAndPersistsRotation(t *testing.T) {
 	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
 	transport := &fakeTransport{}
-	transport.do = func(request apigenclient.Request, out any) (apigenclient.Response, error) {
-		if request.OperationID != accessgen.GenOperationRefreshAuthoringToken {
-			t.Fatalf("operation = %q", request.OperationID)
-		}
-		if request.Body.(accessgen.GenSchemaAuthoringRefreshRequest).RefreshToken != "refresh-old" {
-			t.Fatalf("refresh body = %+v", request.Body)
-		}
-		refresh := "refresh-new"
-		*out.(*accessgen.GenSchemaAuthoringTokenResponse) = tokenResponse(now, "access-new", &refresh)
-		return apigenclient.Response{StatusCode: http.StatusOK}, nil
-	}
 	auth, profiles, secrets := testAuthenticator(t, now, transport)
+	oauthClient := auth.OAuth.(*fakeAuthoringOAuthClient)
+	oauthClient.refreshToken = (&oauth2.Token{
+		AccessToken: "access-new", RefreshToken: "refresh-new",
+		TokenType: "Bearer", Expiry: now.Add(15 * time.Minute),
+	}).WithExtra(map[string]any{
+		"session_id": "session-1", "session_kind": string(access.AuthoringSessionHumanCLI),
+		"target_id": "lvinst_prod", "project_id": "project",
+	})
 	account := "target/account"
 	if err := profiles.Put("prod", cliapi.TargetProfile{
 		Origin: "https://example.test", InstanceID: "lvinst_prod", ProjectID: "project", CredentialAccount: account,
@@ -236,6 +249,10 @@ func TestResolveRefreshesBeforeClockSkewAndPersistsRotation(t *testing.T) {
 	if resolved.AccessToken != "access-new" || resolved.Profile.Origin != "https://example.test" {
 		t.Fatalf("resolved = %+v", resolved)
 	}
+	if oauthClient.refreshRequest.Origin != "https://example.test" ||
+		oauthClient.refreshRequest.RefreshToken != "refresh-old" {
+		t.Fatalf("refresh request=%+v", oauthClient.refreshRequest)
+	}
 	var stored credentialDocument
 	if err := json.Unmarshal([]byte(secrets.values[account]), &stored); err != nil {
 		t.Fatal(err)
@@ -247,13 +264,13 @@ func TestResolveRefreshesBeforeClockSkewAndPersistsRotation(t *testing.T) {
 
 func TestResolvePurgesCompromisedRefreshFamily(t *testing.T) {
 	now := time.Now().UTC()
-	transport := &fakeTransport{do: func(request apigenclient.Request, _ any) (apigenclient.Response, error) {
-		if request.OperationID != accessgen.GenOperationRefreshAuthoringToken {
-			t.Fatalf("operation = %q", request.OperationID)
-		}
-		return apigenclient.Response{StatusCode: http.StatusConflict}, errors.New("refresh replay")
-	}}
+	transport := &fakeTransport{}
 	auth, profiles, secrets := testAuthenticator(t, now, transport)
+	auth.OAuth.(*fakeAuthoringOAuthClient).refreshErr = &oauth2.RetrieveError{
+		Response:  &http.Response{StatusCode: http.StatusBadRequest},
+		Body:      []byte(`{"error":"invalid_grant"}`),
+		ErrorCode: "invalid_grant",
+	}
 	account := "target/account"
 	if err := profiles.Put("prod", cliapi.TargetProfile{
 		Origin: "https://example.test", InstanceID: "lvinst_prod", ProjectID: "project", CredentialAccount: account,
@@ -311,33 +328,29 @@ func TestLogoutRevokesServerSessionAndDeletesLocalState(t *testing.T) {
 
 func TestExchangeWorkloadIdentityUsesExactGeneratedScopeWithoutPersistence(t *testing.T) {
 	now := time.Now().UTC()
-	transport := &fakeTransport{do: func(request apigenclient.Request, out any) (apigenclient.Response, error) {
-		if request.OperationID != accessgen.GenOperationExchangeWorkloadIdentity {
-			t.Fatalf("operation = %q", request.OperationID)
-		}
-		body := request.Body.(accessgen.GenSchemaWorkloadIdentityTokenRequest)
-		if body.ClientId != "sp-ci" || body.ClientSecret != "service-secret" ||
-			body.Scope.ProjectId != "analytics" || strings.Join(body.Scope.Privileges, ",") != "DEPLOY,ACTIVATE_DEPLOYMENT" ||
-			body.LifetimeSeconds != 600 {
-			t.Fatalf("workload request = %+v", body)
-		}
-		response := tokenResponse(now, "workload-access", nil)
-		response.Session.Kind = "workload"
-		response.Session.ProjectId = "analytics"
-		response.ExpiresIn = 600
-		*out.(*accessgen.GenSchemaAuthoringTokenResponse) = response
-		return apigenclient.Response{StatusCode: http.StatusOK}, nil
-	}}
-	factory := &fakeFactory{transport: transport}
-	result, err := ExchangeWorkloadIdentity(context.Background(), factory, WorkloadIdentityRequest{
+	oauthClient := &fakeAuthoringOAuthClient{
+		workloadToken: (&oauth2.Token{
+			AccessToken: "workload-access", TokenType: "Bearer", Expiry: now.Add(10 * time.Minute),
+		}).WithExtra(map[string]any{
+			"session_id": "session-1", "session_kind": "workload",
+			"target_id": "lvinst_prod", "project_id": "analytics",
+		}),
+	}
+	request := WorkloadIdentityRequest{
 		Origin: "https://prod.example.com", InstanceID: "lvinst_prod", ProjectID: "analytics",
 		ClientID: "sp-ci", ClientSecret: "service-secret",
 		Privileges: []string{"DEPLOY", "ACTIVATE_DEPLOYMENT"}, Lifetime: 10 * time.Minute,
-	}, func() time.Time { return now })
+	}
+	result, err := ExchangeWorkloadIdentity(context.Background(), oauthClient, request, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.AccessToken != "workload-access" || result.ExpiresAt != now.Add(10*time.Minute) {
+	if oauthClient.workloadRequest.Origin != request.Origin ||
+		strings.Join(oauthClient.workloadRequest.Privileges, ",") != "DEPLOY,ACTIVATE_DEPLOYMENT" {
+		t.Fatalf("workload request = %+v", oauthClient.workloadRequest)
+	}
+	if result.AccessToken != "workload-access" || result.ExpiresAt != now.Add(10*time.Minute) ||
+		result.SessionID != "session-1" {
 		t.Fatalf("result = %+v", result)
 	}
 }
@@ -348,24 +361,13 @@ func successfulLoginTransport(now time.Time) *fakeTransport {
 	}}
 }
 
-func tokenResponse(now time.Time, accessToken string, refreshToken *string) accessgen.GenSchemaAuthoringTokenResponse {
-	return accessgen.GenSchemaAuthoringTokenResponse{
-		AccessToken: accessToken, RefreshToken: refreshToken, TokenType: "Bearer", ExpiresIn: 900,
-		Session: accessgen.GenSchemaAuthoringSessionResponse{
-			Id: "session-1", Kind: "human_cli", ClientId: "leapview-cli", TargetId: "lvinst_prod",
-			ProjectId: "project", Privileges: []string{"DEPLOY"}, CreatedAt: now.Format(time.RFC3339),
-			ExpiresAt: now.Add(30 * 24 * time.Hour).Format(time.RFC3339),
-		},
-	}
-}
-
 func testAuthenticator(t *testing.T, now time.Time, transport *fakeTransport) (Authenticator, *cliapi.ProfileStore, *memorySecrets) {
 	t.Helper()
 	profiles := cliapi.NewProfileStore(filepath.Join(t.TempDir(), "cli.json"))
 	secrets := &memorySecrets{}
 	return Authenticator{
 		Factory: &fakeFactory{transport: transport},
-		DeviceAuthorizer: &fakeDeviceAuthorizer{authorization: fakeDeviceAuthorization{
+		OAuth: &fakeAuthoringOAuthClient{authorization: fakeDeviceAuthorization{
 			challenge: DeviceChallenge{
 				UserCode:                "USER-CODE",
 				VerificationURI:         "https://example.test/device",

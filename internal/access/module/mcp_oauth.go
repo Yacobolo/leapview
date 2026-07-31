@@ -29,8 +29,13 @@ func requestTargetsAuthoringOAuth(r *http.Request) bool {
 	if err := r.ParseForm(); err != nil {
 		return false
 	}
-	return r.Form.Get("grant_type") == authoringDeviceGrantType ||
-		r.Form.Get("client_id") == access.AuthoringCLIClientID
+	if r.Form.Get("grant_type") == authoringDeviceGrantType ||
+		r.Form.Get("client_id") == access.AuthoringCLIClientID {
+		return true
+	}
+	return r.Form.Get("grant_type") == "client_credentials" &&
+		strings.TrimSpace(r.Form.Get("project_id")) != "" &&
+		strings.TrimSpace(r.Form.Get("lifetime_seconds")) != ""
 }
 
 func requestTargetsMCPOAuth(r *http.Request) bool {

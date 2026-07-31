@@ -239,11 +239,6 @@ model AuthorizationBatchCheckResponse {
   decisions: AuthorizationDecisionResponse[];
 }
 
-model AuthoringScopeRequest {
-  projectId: string;
-  privileges: string[];
-}
-
 model DeviceAuthorizationApprovalRequest {
   userCode: string;
   approved: boolean;
@@ -267,27 +262,8 @@ model AuthoringSessionListResponse {
   page: PageInfo;
 }
 
-model AuthoringTokenResponse {
-  accessToken: string;
-  refreshToken?: string;
-  tokenType: string;
-  expiresIn: int64;
-  session: AuthoringSessionResponse;
-}
-
-model AuthoringRefreshRequest {
-  refreshToken: string;
-}
-
 model AuthoringRevokeRequest {
   accessToken: string;
-}
-
-model WorkloadIdentityTokenRequest {
-  clientId: string;
-  clientSecret: string;
-  scope: AuthoringScopeRequest;
-  lifetimeSeconds: int64;
 }
 
 alias PublicAuthoringAuthErrors = BadRequest | NotFound | Conflict | UnprocessableContent | RateLimited | InternalServerError | ServiceUnavailable;
@@ -301,28 +277,12 @@ alias PublicAuthoringAuthErrors = BadRequest | NotFound | Conflict | Unprocessab
 op decideDeviceAuthorization(@body body: DeviceAuthorizationApprovalRequest): OkJson<StatusResponse> | CommonErrors;
 
 @tag("Access")
-@summary("Rotate a CLI refresh credential")
-@route("/access/authoring-token/refresh")
-@post
-@apigen.authz(#{ mode: "none" })
-@operationId("refreshAuthoringToken")
-op refreshAuthoringToken(@body body: AuthoringRefreshRequest): OkJson<AuthoringTokenResponse> | PublicAuthoringAuthErrors;
-
-@tag("Access")
 @summary("Revoke an authoring credential session")
 @route("/access/authoring-token/revoke")
 @post
 @apigen.authz(#{ mode: "none" })
 @operationId("revokeAuthoringToken")
 op revokeAuthoringToken(@body body: AuthoringRevokeRequest): OkJson<StatusResponse> | PublicAuthoringAuthErrors;
-
-@tag("Access")
-@summary("Exchange service-principal credentials for scoped workload identity")
-@route("/access/workload-token")
-@post
-@apigen.authz(#{ mode: "none" })
-@operationId("exchangeWorkloadIdentity")
-op exchangeWorkloadIdentity(@body body: WorkloadIdentityTokenRequest): OkJson<AuthoringTokenResponse> | PublicAuthoringAuthErrors;
 
 @tag("Current User")
 @summary("List current CLI and workload sessions")

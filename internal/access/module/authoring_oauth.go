@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/flidai/leapview/internal/access"
 )
@@ -60,41 +63,91 @@ func (m *Module) AuthoringOAuthToken(w http.ResponseWriter, r *http.Request) {
 		writeAuthoringOAuthError(w, http.StatusBadRequest, "invalid_request", "invalid token request")
 		return
 	}
-	if r.Form.Get("client_id") != access.AuthoringCLIClientID {
-		writeAuthoringOAuthError(w, http.StatusUnauthorized, "invalid_client", "unknown authoring client")
-		return
-	}
-	if r.Form.Get("grant_type") != authoringDeviceGrantType {
+	var (
+		tokens access.AuthoringTokenSet
+		err    error
+	)
+	switch r.Form.Get("grant_type") {
+	case authoringDeviceGrantType:
+		if !requireAuthoringCLIClient(w, r) {
+			return
+		}
+		tokens, err = service.ExchangeDeviceCode(r.Context(), r.Form.Get("device_code"))
+	case "refresh_token":
+		if !requireAuthoringCLIClient(w, r) {
+			return
+		}
+		tokens, err = service.Refresh(r.Context(), r.Form.Get("refresh_token"))
+	case "client_credentials":
+		tokens, err = exchangeAuthoringClientCredentials(r, service)
+	default:
 		writeAuthoringOAuthError(w, http.StatusBadRequest, "unsupported_grant_type", "unsupported authoring grant type")
 		return
 	}
-	tokens, err := service.ExchangeDeviceCode(r.Context(), r.Form.Get("device_code"))
 	if err != nil {
 		writeAuthoringOAuthServiceError(w, err)
 		return
 	}
+	writeAuthoringOAuthToken(w, tokens)
+}
+
+func requireAuthoringCLIClient(w http.ResponseWriter, r *http.Request) bool {
+	if r.Form.Get("client_id") == access.AuthoringCLIClientID {
+		return true
+	}
+	writeAuthoringOAuthError(w, http.StatusUnauthorized, "invalid_client", "unknown authoring client")
+	return false
+}
+
+func exchangeAuthoringClientCredentials(r *http.Request, service authoringOAuthAuthentication) (access.AuthoringTokenSet, error) {
+	privileges, err := authoringOAuthPrivileges(r.Form.Get("scope"))
+	if err != nil {
+		return access.AuthoringTokenSet{}, fmt.Errorf("%w: %v", access.ErrAuthoringScopeDenied, err)
+	}
+	scope, err := access.NewAuthoringScope(service.InstanceID(), r.Form.Get("project_id"), privileges)
+	if err != nil {
+		return access.AuthoringTokenSet{}, fmt.Errorf("%w: %v", access.ErrAuthoringScopeDenied, err)
+	}
+	lifetimeSeconds, err := strconv.ParseInt(r.Form.Get("lifetime_seconds"), 10, 64)
+	if err != nil || lifetimeSeconds <= 0 || lifetimeSeconds > math.MaxInt64/int64(time.Second) {
+		return access.AuthoringTokenSet{}, access.ErrInvalidWorkloadLifetime
+	}
+	return service.ExchangeWorkloadIdentity(r.Context(), access.WorkloadIdentityInput{
+		ClientID:     r.Form.Get("client_id"),
+		ClientSecret: r.Form.Get("client_secret"),
+		Scope:        scope,
+		Lifetime:     time.Duration(lifetimeSeconds) * time.Second,
+	})
+}
+
+func writeAuthoringOAuthToken(w http.ResponseWriter, tokens access.AuthoringTokenSet) {
 	privileges := make([]string, len(tokens.Session.Scope.Privileges))
 	for index, privilege := range tokens.Session.Scope.Privileges {
 		privileges[index] = string(privilege)
 	}
 	setAuthoringOAuthNoStore(w)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"access_token":  tokens.AccessToken,
-		"refresh_token": tokens.RefreshToken,
-		"token_type":    tokens.TokenType,
-		"expires_in":    tokens.ExpiresIn,
-		"session_id":    tokens.Session.ID,
-		"session_kind":  tokens.Session.Kind,
-		"target_id":     tokens.Session.Scope.TargetID,
-		"project_id":    tokens.Session.Scope.ProjectID,
-		"scope":         strings.Join(privileges, " "),
-	})
+	response := map[string]any{
+		"access_token": tokens.AccessToken,
+		"token_type":   tokens.TokenType,
+		"expires_in":   tokens.ExpiresIn,
+		"session_id":   tokens.Session.ID,
+		"session_kind": tokens.Session.Kind,
+		"target_id":    tokens.Session.Scope.TargetID,
+		"project_id":   tokens.Session.Scope.ProjectID,
+		"scope":        strings.Join(privileges, " "),
+	}
+	if tokens.RefreshToken != "" {
+		response["refresh_token"] = tokens.RefreshToken
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 type authoringOAuthAuthentication interface {
 	InstanceID() string
 	BeginDeviceAuthorization(context.Context, access.AuthoringScope) (access.DeviceAuthorizationResponse, error)
 	ExchangeDeviceCode(context.Context, string) (access.AuthoringTokenSet, error)
+	Refresh(context.Context, string) (access.AuthoringTokenSet, error)
+	ExchangeWorkloadIdentity(context.Context, access.WorkloadIdentityInput) (access.AuthoringTokenSet, error)
 }
 
 func (m *Module) authoringOAuthService(w http.ResponseWriter) (authoringOAuthAuthentication, bool) {
@@ -133,8 +186,16 @@ func writeAuthoringOAuthServiceError(w http.ResponseWriter, err error) {
 		writeAuthoringOAuthError(w, http.StatusBadRequest, "expired_token", "device authorization expired")
 	case errors.Is(err, access.ErrAuthoringScopeDenied):
 		writeAuthoringOAuthError(w, http.StatusBadRequest, "invalid_scope", "authoring scope was denied")
+	case errors.Is(err, access.ErrInvalidAuthoringPrincipal):
+		writeAuthoringOAuthError(w, http.StatusUnauthorized, "invalid_client", "service principal credentials are invalid")
+	case errors.Is(err, access.ErrInvalidWorkloadLifetime):
+		writeAuthoringOAuthError(w, http.StatusBadRequest, "invalid_request", "workload credential lifetime is invalid")
 	case errors.Is(err, access.ErrInvalidAuthoringCredential):
 		writeAuthoringOAuthError(w, http.StatusBadRequest, "invalid_grant", "device credential is invalid")
+	case errors.Is(err, access.ErrAuthoringRefreshReplay):
+		writeAuthoringOAuthError(w, http.StatusBadRequest, "invalid_grant", "refresh credential replay was detected")
+	case errors.Is(err, access.ErrAuthoringCredentialExpired):
+		writeAuthoringOAuthError(w, http.StatusBadRequest, "invalid_grant", "authoring credential expired")
 	default:
 		writeAuthoringOAuthError(w, http.StatusInternalServerError, "server_error", "authoring token exchange failed")
 	}

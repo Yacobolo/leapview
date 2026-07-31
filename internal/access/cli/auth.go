@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	accessgen "github.com/flidai/leapview/internal/access/api/gen"
 	"github.com/flidai/leapview/internal/platform/cliapi"
 	"github.com/flidai/leapview/internal/platform/securestore"
+	"golang.org/x/oauth2"
 )
 
 const (
@@ -84,12 +84,12 @@ type credentialDocument struct {
 // Authenticator implements human CLI device login and credential lifecycle.
 // Profiles contain references only; token material stays in the native store.
 type Authenticator struct {
-	Factory          PublicTransportFactory
-	DeviceAuthorizer DeviceAuthorizer
-	Profiles         *cliapi.ProfileStore
-	Secrets          securestore.Store
-	OpenBrowser      func(string) error
-	Now              func() time.Time
+	Factory     PublicTransportFactory
+	OAuth       AuthoringOAuthClient
+	Profiles    *cliapi.ProfileStore
+	Secrets     securestore.Store
+	OpenBrowser func(string) error
+	Now         func() time.Time
 }
 
 func (auth Authenticator) Login(ctx context.Context, request LoginRequest, notify func(DeviceChallenge)) (LoginResult, error) {
@@ -113,7 +113,7 @@ func (auth Authenticator) Login(ctx context.Context, request LoginRequest, notif
 	} else if !errors.Is(err, cliapi.ErrProfileNotFound) {
 		return LoginResult{}, err
 	}
-	authorization, err := auth.DeviceAuthorizer.Begin(ctx, DeviceAuthorizationRequest{
+	authorization, err := auth.OAuth.Begin(ctx, DeviceAuthorizationRequest{
 		Origin: request.Origin, ProjectID: request.ProjectID,
 		Privileges: append([]string(nil), request.Privileges...),
 	})
@@ -176,15 +176,11 @@ func (auth Authenticator) Resolve(ctx context.Context, name string) (ResolvedCre
 	if auth.now().Add(refreshClockSkew).Before(credential.AccessExpiresAt) {
 		return ResolvedCredential{Profile: profile, AccessToken: credential.AccessToken, ExpiresAt: credential.AccessExpiresAt}, nil
 	}
-	transport, err := auth.Factory.PublicTransport(ctx, profile.Origin)
-	if err != nil {
-		return ResolvedCredential{}, err
-	}
-	response, refreshErr := accessgen.NewGenClient(transport).RefreshAuthoringToken(ctx, accessgen.GenRefreshAuthoringTokenClientRequest{
-		Body: accessgen.GenSchemaAuthoringRefreshRequest{RefreshToken: credential.RefreshToken},
+	token, refreshErr := auth.OAuth.Refresh(ctx, OAuthRefreshRequest{
+		Origin: profile.Origin, RefreshToken: credential.RefreshToken,
 	})
 	if refreshErr != nil {
-		if invalidRefreshStatus(response.StatusCode) {
+		if invalidOAuthRefreshError(refreshErr) {
 			cleanupErr := auth.purgeLocal(ctx, name, profile.CredentialAccount)
 			if cleanupErr != nil {
 				return ResolvedCredential{}, errors.Join(refreshErr, cleanupErr)
@@ -192,16 +188,16 @@ func (auth Authenticator) Resolve(ctx context.Context, name string) (ResolvedCre
 		}
 		return ResolvedCredential{}, fmt.Errorf("refresh CLI credential: %w", refreshErr)
 	}
-	if response.Body.RefreshToken == nil || *response.Body.RefreshToken == "" {
-		return ResolvedCredential{}, fmt.Errorf("refresh response omitted the rotated refresh credential")
+	details, err := oauthAuthoringTokenDetails(token)
+	if err != nil {
+		return ResolvedCredential{}, err
 	}
-	if response.Body.Session.TargetId != profile.InstanceID || response.Body.Session.ProjectId != profile.ProjectID {
+	if details.TargetID != profile.InstanceID || details.ProjectID != profile.ProjectID {
 		return ResolvedCredential{}, fmt.Errorf("refresh response changed target or project scope")
 	}
 	credential = credentialDocument{
-		Version: credentialVersion, AccessToken: response.Body.AccessToken, RefreshToken: *response.Body.RefreshToken,
-		AccessExpiresAt: auth.now().Add(time.Duration(response.Body.ExpiresIn) * time.Second),
-		SessionID:       response.Body.Session.Id,
+		Version: credentialVersion, AccessToken: token.AccessToken, RefreshToken: token.RefreshToken,
+		AccessExpiresAt: token.Expiry.UTC(), SessionID: details.SessionID,
 	}
 	if err := auth.storeCredential(ctx, profile.CredentialAccount, credential); err != nil {
 		return ResolvedCredential{}, err
@@ -265,12 +261,12 @@ func (auth Authenticator) Logout(ctx context.Context, name string) error {
 // access token are never persisted by this adapter.
 func ExchangeWorkloadIdentity(
 	ctx context.Context,
-	factory PublicTransportFactory,
+	client AuthoringOAuthClient,
 	request WorkloadIdentityRequest,
 	now func() time.Time,
 ) (WorkloadIdentityResult, error) {
-	if factory == nil {
-		return WorkloadIdentityResult{}, fmt.Errorf("Access public transport factory is required")
+	if client == nil {
+		return WorkloadIdentityResult{}, fmt.Errorf("authoring OAuth client is required")
 	}
 	if strings.TrimSpace(request.Origin) == "" || strings.TrimSpace(request.InstanceID) == "" ||
 		strings.TrimSpace(request.ProjectID) == "" || strings.TrimSpace(request.ClientID) == "" ||
@@ -278,38 +274,27 @@ func ExchangeWorkloadIdentity(
 		request.Lifetime <= 0 {
 		return WorkloadIdentityResult{}, fmt.Errorf("workload target, instance, project, client credentials, privileges, and lifetime are required")
 	}
-	transport, err := factory.PublicTransport(ctx, request.Origin)
-	if err != nil {
-		return WorkloadIdentityResult{}, err
-	}
-	response, err := accessgen.NewGenClient(transport).ExchangeWorkloadIdentity(ctx, accessgen.GenExchangeWorkloadIdentityClientRequest{
-		Body: accessgen.GenSchemaWorkloadIdentityTokenRequest{
-			ClientId: request.ClientID, ClientSecret: request.ClientSecret,
-			Scope: accessgen.GenSchemaAuthoringScopeRequest{
-				ProjectId: request.ProjectID, Privileges: append([]string(nil), request.Privileges...),
-			},
-			LifetimeSeconds: int64(request.Lifetime / time.Second),
-		},
-	})
+	token, err := client.Workload(ctx, request)
 	if err != nil {
 		return WorkloadIdentityResult{}, fmt.Errorf("exchange workload identity: %w", err)
 	}
-	if response.Body.RefreshToken != nil {
-		return WorkloadIdentityResult{}, fmt.Errorf("workload identity unexpectedly returned a refresh credential")
-	}
-	if response.Body.Session.Kind != "workload" || response.Body.Session.TargetId != request.InstanceID ||
-		response.Body.Session.ProjectId != request.ProjectID || response.Body.ExpiresIn <= 0 ||
-		response.Body.ExpiresIn > int64(request.Lifetime/time.Second) {
-		return WorkloadIdentityResult{}, fmt.Errorf("workload identity response changed the requested scope or lifetime")
+	details, err := oauthWorkloadTokenDetails(token)
+	if err != nil {
+		return WorkloadIdentityResult{}, err
 	}
 	clock := time.Now
 	if now != nil {
 		clock = now
 	}
+	current := clock().UTC()
+	if details.TargetID != request.InstanceID || details.ProjectID != request.ProjectID ||
+		!token.Expiry.After(current) || token.Expiry.After(current.Add(request.Lifetime)) {
+		return WorkloadIdentityResult{}, fmt.Errorf("workload identity response changed the requested scope or lifetime")
+	}
 	return WorkloadIdentityResult{
-		AccessToken: response.Body.AccessToken,
-		ExpiresAt:   clock().UTC().Add(time.Duration(response.Body.ExpiresIn) * time.Second),
-		SessionID:   response.Body.Session.Id,
+		AccessToken: token.AccessToken,
+		ExpiresAt:   token.Expiry,
+		SessionID:   details.SessionID,
 	}, nil
 }
 
@@ -317,8 +302,8 @@ func (auth Authenticator) validate() error {
 	switch {
 	case auth.Factory == nil:
 		return fmt.Errorf("Access public transport factory is required")
-	case auth.DeviceAuthorizer == nil:
-		return fmt.Errorf("OAuth device authorizer is required")
+	case auth.OAuth == nil:
+		return fmt.Errorf("authoring OAuth client is required")
 	case auth.Profiles == nil:
 		return fmt.Errorf("target profile store is required")
 	case auth.Secrets == nil:
@@ -379,11 +364,7 @@ func credentialAccount(instanceID, projectID string) string {
 	return "target/" + hex.EncodeToString(digest[:])
 }
 
-func invalidRefreshStatus(status int) bool {
-	switch status {
-	case http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity:
-		return true
-	default:
-		return false
-	}
+func invalidOAuthRefreshError(err error) bool {
+	var retrieveError *oauth2.RetrieveError
+	return errors.As(err, &retrieveError) && retrieveError.ErrorCode == "invalid_grant"
 }

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -169,26 +168,25 @@ func TestCapabilityAPIClientExchangesEphemeralWorkloadIdentity(t *testing.T) {
 				"uploadProtocols":[],
 				"visualization":{"schemaVersion":3,"renderers":[]}
 			}`))
-		case "/api/v1/access/workload-token":
+		case "/oauth/token":
 			if r.Header.Get("Authorization") != "" {
 				t.Fatalf("workload exchange used authorization header %q", r.Header.Get("Authorization"))
 			}
-			var request struct {
-				Scope struct {
-					Privileges []string `json:"privileges"`
-				} `json:"scope"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			if err := r.ParseForm(); err != nil {
 				t.Fatal(err)
 			}
-			if strings.Join(request.Scope.Privileges, ",") != "USE_WORKSPACE,VIEW_ITEM,AUTHOR_PROJECT,PUBLISH_RELEASE,REQUEST_DEPLOYMENT" {
-				t.Fatalf("workload privileges = %v", request.Scope.Privileges)
+			if r.Form.Get("grant_type") != "client_credentials" ||
+				r.Form.Get("client_id") != "sp-ci" ||
+				r.Form.Get("client_secret") != "service-secret" ||
+				r.Form.Get("project_id") != "analytics" ||
+				r.Form.Get("scope") != "USE_WORKSPACE VIEW_ITEM AUTHOR_PROJECT PUBLISH_RELEASE REQUEST_DEPLOYMENT" ||
+				r.Form.Get("lifetime_seconds") != "900" {
+				t.Fatalf("workload form = %v", r.Form)
 			}
 			_, _ = w.Write([]byte(`{
-				"accessToken":"ephemeral-access","tokenType":"Bearer","expiresIn":900,
-				"session":{"id":"session-1","kind":"workload","clientId":"sp-ci","targetId":"lvinst_prod",
-				"projectId":"analytics","privileges":["USE_WORKSPACE","VIEW_ITEM","AUTHOR_PROJECT","PUBLISH_RELEASE","REQUEST_DEPLOYMENT"],
-				"createdAt":"2026-07-29T12:00:00Z","expiresAt":"2026-07-29T12:15:00Z"}
+				"access_token":"ephemeral-access","token_type":"Bearer","expires_in":900,
+				"session_id":"session-1","session_kind":"workload","target_id":"lvinst_prod",
+				"project_id":"analytics","scope":"USE_WORKSPACE VIEW_ITEM AUTHOR_PROJECT PUBLISH_RELEASE REQUEST_DEPLOYMENT"
 			}`))
 		default:
 			t.Fatalf("unexpected path %q", r.URL.Path)

@@ -50,26 +50,6 @@ func (h Handler) DecideDeviceAuthorization(w stdhttp.ResponseWriter, r *stdhttp.
 	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": status})
 }
 
-func (h Handler) RefreshAuthoringToken(w stdhttp.ResponseWriter, r *stdhttp.Request) {
-	service, ok := h.authoringAuthentication(w)
-	if !ok {
-		return
-	}
-	var input struct {
-		RefreshToken string `json:"refreshToken"`
-	}
-	if err := decodeStrictJSON(r, &input); err != nil {
-		writeJSONError(w, err, stdhttp.StatusBadRequest)
-		return
-	}
-	tokens, err := service.Refresh(r.Context(), input.RefreshToken)
-	if err != nil {
-		writeAuthoringAuthError(w, err)
-		return
-	}
-	writeSecretJSON(w, stdhttp.StatusOK, authoringTokenDTO(tokens))
-}
-
 func (h Handler) RevokeAuthoringToken(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	service, ok := h.authoringAuthentication(w)
 	if !ok {
@@ -87,40 +67,6 @@ func (h Handler) RevokeAuthoringToken(w stdhttp.ResponseWriter, r *stdhttp.Reque
 		return
 	}
 	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "revoked"})
-}
-
-func (h Handler) ExchangeWorkloadIdentity(w stdhttp.ResponseWriter, r *stdhttp.Request) {
-	service, ok := h.authoringAuthentication(w)
-	if !ok {
-		return
-	}
-	var input struct {
-		ClientID        string `json:"clientId"`
-		ClientSecret    string `json:"clientSecret"`
-		LifetimeSeconds int64  `json:"lifetimeSeconds"`
-		Scope           struct {
-			ProjectID  string   `json:"projectId"`
-			Privileges []string `json:"privileges"`
-		} `json:"scope"`
-	}
-	if err := decodeStrictJSON(r, &input); err != nil {
-		writeJSONError(w, err, stdhttp.StatusBadRequest)
-		return
-	}
-	scope, err := access.NewAuthoringScope(service.InstanceID(), input.Scope.ProjectID, privilegesFromStrings(input.Scope.Privileges))
-	if err != nil {
-		writeJSONError(w, err, stdhttp.StatusBadRequest)
-		return
-	}
-	tokens, err := service.ExchangeWorkloadIdentity(r.Context(), access.WorkloadIdentityInput{
-		ClientID: input.ClientID, ClientSecret: input.ClientSecret, Scope: scope,
-		Lifetime: time.Duration(input.LifetimeSeconds) * time.Second,
-	})
-	if err != nil {
-		writeAuthoringAuthError(w, err)
-		return
-	}
-	writeSecretJSON(w, stdhttp.StatusOK, authoringTokenDTO(tokens))
 }
 
 func (h Handler) ListCurrentAuthoringSessions(w stdhttp.ResponseWriter, r *stdhttp.Request) {
