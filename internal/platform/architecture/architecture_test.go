@@ -2374,7 +2374,19 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 	if !strings.Contains(deploymentContracts, "cache: false") {
 		t.Fatal("deployment-contracts must not race prepare to populate the shared Go cache")
 	}
+	for _, want := range []string{
+		"go install github.com/go-task/task/v3/cmd/task@v3.50.0",
+		"task api:generate",
+	} {
+		if !strings.Contains(deploymentContracts, want) {
+			t.Fatalf("deployment-contracts must prepare its build-only API inputs: missing %q", want)
+		}
+	}
 	taskText := string(taskfile)
+	deployCheck := taskfileTaskBlock(t, taskText, "deploy:check")
+	if !strings.Contains(deployCheck, "- api:generate") {
+		t.Fatal("deploy:check must generate its build-only API inputs")
+	}
 	for _, want := range []string{
 		"config:generate:",
 		"go run ./internal/app/tools/configgen",
