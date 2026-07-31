@@ -72,6 +72,10 @@ export function hierarchyOption(envelope: VisualizationEnvelope, context: Render
       const background = { backgroundColor: context.colors.surface, borderRadius: 2, padding: [2, 4] }
       common.label = { ...label, ...background, position: 'left', align: 'right' }
       common.leaves = { label: { ...label, ...background, position: 'right', align: 'left' } }
+      common.left = '8%'
+      common.right = '25%'
+      common.top = '8%'
+      common.bottom = '8%'
     }
   }
   if (spec.mark === 'treemap') {

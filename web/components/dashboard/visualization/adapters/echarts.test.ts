@@ -574,6 +574,7 @@ test('ECharts constructs deterministic nested hierarchy data and honors layout p
   const option = echartsOption(envelope, defaultRendererContext) as any
   expect(option.series[0].id).toBe('series:hierarchy:tree')
   expect(option.series[0].orient).toBe('LR')
+  expect(option.series[0]).toMatchObject({ left: '8%', right: '25%', top: '8%', bottom: '8%' })
   expect(option.series[0].label).toMatchObject({ position: 'left', align: 'right', backgroundColor: defaultRendererContext.colors.surface })
   expect(option.series[0].leaves.label).toMatchObject({ position: 'right', align: 'left', backgroundColor: defaultRendererContext.colors.surface })
   expect(option.series[0].data).toEqual([{ name: 'root', value: 10, __lv_dataset: 'primary', __lv_row_index: 0, children: [{ name: 'child', value: 4, __lv_dataset: 'primary', __lv_row_index: 1 }] }])
