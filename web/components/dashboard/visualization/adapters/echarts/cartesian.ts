@@ -2,7 +2,7 @@ import type { VisualizationColorIntent, VisualizationConditionalFormat, Visualiz
 import type { RendererContext } from '../../host-controller'
 import { conditionalIconGlyph, conditionalStyleColor, resolveConditionalFormat } from '../../conditional-format'
 import { resolveVisualizationMetadata } from '../../metadata'
-import { axis, field, fieldLabel, inlineDataset, labelFormatter, legend, selectedDatasetSource, toneColor, type EChartsTranslation } from './common'
+import { axis, escapeHTML, field, fieldLabel, formatField, inlineDataset, labelFormatter, legend, selectedDatasetSource, toneColor, type EChartsTranslation } from './common'
 import { echartsLabelPolicy } from './label-policy'
 
 type CartesianSpec = Extract<VisualizationEnvelope['spec'], { kind: 'cartesian' }>
@@ -40,21 +40,47 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
         {
           id: seriesID(value?.dataset, value?.field), type: 'bar', stack: 'waterfall',
           encode: { x: spec.x.field, y: value?.field },
-          itemStyle: { color: fill, borderColor: stroke, borderWidth: stroke ? 2 : undefined },
+          itemStyle: { color: fill ?? signedWaterfallColor(envelope, value, context), borderColor: stroke, borderWidth: stroke ? 2 : undefined },
           ...chartLabel(envelope, value, spec, context),
         },
       ],
     }
   }
-  if (spec.mark === 'candlestick' || spec.mark === 'boxplot') {
+  if (spec.mark === 'candlestick') {
+    const dataset = inlineDataset(envelope, spec.x.dataset)
+    const categoryIndex = dataset?.columns.indexOf(spec.x.field) ?? -1
+    const valueIndices = spec.y.map((item) => dataset?.columns.indexOf(item.field) ?? -1)
+    const data = (dataset?.rows ?? []).map((row, rowIndex) => ({
+      name: String(row[categoryIndex]),
+      value: valueIndices.map((index) => row[index]),
+      __lv_dataset: dataset?.id ?? spec.x.dataset,
+      __lv_row_index: rowIndex,
+    }))
+    return {
+      ...axes, xAxis: { ...axes.xAxis, data: (dataset?.rows ?? []).map((row) => String(row[categoryIndex])) }, dataZoom,
+      legend: legend(spec.presentation.legend, context),
+      series: [{
+        id: 'series:primary:candlestick', type: 'candlestick', name: spec.title, data,
+        tooltip: { formatter: (params: { data?: { __lv_row_index?: number } }) => {
+          const rowIndex = params.data?.__lv_row_index
+          const row = rowIndex === undefined ? undefined : dataset?.rows[rowIndex]
+          if (!row || !dataset) return ''
+          return [spec.x, ...spec.y].map((ref) => {
+            const value = row[dataset.columns.indexOf(ref.field)]
+            return `${escapeHTML(fieldLabel(envelope, ref))}: ${escapeHTML(formatField(envelope, ref, value, context))}`
+          }).join('<br>')
+        } },
+        ...chartLabel(envelope, spec.y[0], spec, context),
+      }],
+    }
+  }
+  if (spec.mark === 'boxplot') {
     return {
       ...axes, dataZoom, legend: legend(spec.presentation.legend, context),
       series: [{
         id: `series:primary:${spec.mark}`, type: spec.mark, name: spec.title,
         encode: { x: spec.x.field, y: spec.y.map((item) => item.field) },
-        itemStyle: spec.mark === 'boxplot'
-          ? { color: context.colors.data[0] ?? context.colors.accent, borderColor: context.colors.accent }
-          : undefined,
+        itemStyle: { color: context.colors.data[0] ?? context.colors.accent, borderColor: context.colors.accent },
         ...chartLabel(envelope, spec.y[0], spec, context),
       }],
     }
@@ -128,6 +154,17 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
     ...(normalized ? { dataset: { id: `dataset:${normalized.datasetID}`, source: normalized.source } } : {}),
     legend: legend(spec.presentation.legend, context), dataZoom,
     series: [...series, ...interactionHitSeries(envelope, spec, series)],
+  }
+}
+
+function signedWaterfallColor(envelope: VisualizationEnvelope, ref: VisualizationFieldRef | undefined, context: RendererContext) {
+  const dataset = ref ? inlineDataset(envelope, ref.dataset) : undefined
+  const index = ref && dataset ? dataset.columns.indexOf(ref.field) : -1
+  return (params: { value?: unknown[] }) => {
+    const value = index >= 0 && Array.isArray(params.value) ? Number(params.value[index]) : 0
+    if (value < 0) return context.colors.danger
+    if (value > 0) return context.colors.success
+    return context.colors.accent
   }
 }
 

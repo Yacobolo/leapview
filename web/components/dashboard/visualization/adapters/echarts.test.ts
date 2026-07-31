@@ -490,7 +490,11 @@ test('ECharts translation emits one multi-value financial series', () => {
 
   const option = echartsOption(envelope) as any
   expect(option.series).toHaveLength(1)
-  expect(option.series[0].encode).toEqual({ x: 'label', y: ['open', 'close', 'low', 'high'] })
+  expect(option.xAxis.data).toEqual(['Jan'])
+  expect(option.series[0].encode).toBeUndefined()
+  expect(option.series[0].data).toEqual([{
+    name: 'Jan', value: [1, 2, 0, 3], __lv_dataset: 'primary', __lv_row_index: 0,
+  }])
 })
 
 test('ECharts translation builds radar indicators and aligned series from typed fields', () => {
@@ -728,6 +732,8 @@ test('ECharts translates every cartesian mark with stable renderer-owned identit
   expect(waterfall.series.map((series: any) => [series.id, series.type, series.silent])).toEqual([
     ['series:waterfall:offset', 'bar', true], ['series:primary:value', 'bar', undefined],
   ])
+  expect(waterfall.series[1].itemStyle.color({ value: ['Gain', 12, 0] })).toBe(defaultRendererContext.colors.success)
+  expect(waterfall.series[1].itemStyle.color({ value: ['Loss', -5, 12] })).toBe(defaultRendererContext.colors.danger)
   const heatmapEnvelope = cartesianFixture('heatmap', ['label', 'row', 'value']) as any
   heatmapEnvelope.dataState.datasets[0].rows = [['A', 'R1', 1], ['B', 'R1', 3]]
   const heatmap = echartsOption(heatmapEnvelope, defaultRendererContext) as any
@@ -755,7 +761,7 @@ test('ECharts honors proportional presentation and hierarchy/network layout', ()
   const sankey = echartsOption(networkFixture('sankey'), defaultRendererContext) as any
   expect(sankey.series[0]).toMatchObject({ id: 'series:hierarchy:sankey', type: 'sankey', orient: 'vertical', nodeGap: 18 })
   expect(sankey.series[0].lineStyle).toMatchObject({ color: 'gradient', opacity: 0.45 })
-  expect(sankey.series[0]).toMatchObject({ left: '3%', right: '5%', top: '8%', bottom: '8%' })
+  expect(sankey.series[0]).toMatchObject({ left: '3%', right: '18%', top: '8%', bottom: '8%' })
 
   for (const mark of ['treemap', 'sunburst'] as const) {
     const envelope = hierarchyFixture(mark)

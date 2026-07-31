@@ -46,7 +46,7 @@ export function hierarchyOption(envelope: VisualizationEnvelope, context: Render
       series.orient = spec.presentation.orientation
       series.nodeGap = spec.presentation.nodeGap
       series.left = '3%'
-      series.right = '5%'
+      series.right = '18%'
       series.top = '8%'
       series.bottom = '8%'
       series.nodeWidth = 18
