@@ -375,7 +375,6 @@ export class VisualizationHost extends LitElement {
     const kind = this.envelope?.spec.kind
     if (!kind || kind === 'kpi' || kind === 'table' || kind === 'matrix' || kind === 'pivot') return undefined
     if (kind === 'geographic') return 'map'
-    if (kind === 'custom') return 'visualization'
     return 'chart'
   }
 
