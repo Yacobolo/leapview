@@ -1,0 +1,94 @@
+version: '3'
+
+vars:
+  BUF_VERSION: v1.57.2
+
+tasks:
+  test:
+    cmds:
+      - go test ./...
+      - task: proto:check
+      - task: terraform:check
+
+  proto:check:
+    desc: Lint protobuf definitions and verify committed generated clients are current
+    cmds:
+      - go run github.com/bufbuild/buf/cmd/buf@{{.BUF_VERSION}} lint
+      - go run github.com/bufbuild/buf/cmd/buf@{{.BUF_VERSION}} generate
+      - git diff --exit-code -- internal/gen
+
+  terraform:check:
+    desc: Initialize providers without a backend and validate the Terraform module
+    cmds:
+      - terraform -chdir=infra fmt -check -recursive
+      - |
+        set -eu
+        validation_dir="$(mktemp -d)"
+        trap 'rm -rf "${validation_dir}"' EXIT
+        TF_DATA_DIR="${validation_dir}" terraform -chdir=infra init -backend=false -input=false
+        TF_DATA_DIR="${validation_dir}" terraform -chdir=infra validate
+
+  fmt:
+    cmds:
+      - gofmt -w cmd internal examples
+      - terraform -chdir=infra fmt -recursive
+
+  provision:
+    cmds:
+      - ./scripts/provision.zsh
+
+  deploy:
+    cmds:
+      - ./scripts/deploy.zsh
+
+  deploy:standards:
+    desc: Deploy REAPI and BuildKit to an explicitly supplied existing host; never provisions
+    cmds:
+      - ./scripts/deploy-standards.zsh
+
+  deploy:swarm:
+    desc: Deploy the shared service, CAS, private Docker Swarm jobs, and BuildKit to an explicitly supplied existing host
+    cmds:
+      - ./scripts/deploy-swarm.zsh
+
+  deploy:service:
+    desc: Deploy the shared service to an explicitly supplied existing host; never provisions
+    cmds:
+      - ./scripts/deploy-swarm.zsh
+
+  install:
+    cmds:
+      - ./scripts/install-cli.zsh
+
+  e2e:
+    cmds:
+      - ./scripts/e2e.zsh
+
+  e2e:standards:
+    cmds:
+      - ./scripts/e2e-standards.zsh
+
+  e2e:swarm:local:
+    desc: Run the complete CAS and Docker Swarm proof on the local Docker engine
+    cmds:
+      - ./scripts/e2e-swarm-local.zsh
+
+  e2e:service:local:
+    desc: Run the shared-service control plane, scoped mTLS, generic OCI, Testcontainers, and BuildKit proof locally
+    cmds:
+      - ./scripts/e2e-service-local.zsh
+
+  e2e:swarm:
+    desc: Run the complete proof against an explicitly supplied existing host
+    cmds:
+      - ./scripts/e2e-swarm.zsh
+
+  e2e:service:
+    desc: Run the shared-service proof against an explicitly supplied existing host
+    cmds:
+      - ./scripts/e2e-service.zsh
+
+  benchmark:
+    desc: Prime and measure a real project command through rtest
+    cmds:
+      - ./scripts/benchmark.zsh {{.CLI_ARGS}}

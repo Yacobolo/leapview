@@ -3109,6 +3109,14 @@ func productionGoFiles(t *testing.T) []goFile {
 			return err
 		}
 		if entry.IsDir() {
+			// Self-contained tools may live in the monorepo while retaining their own
+			// module and architecture. The LeapView package rules stop at that module
+			// boundary just as the Go toolchain does.
+			if path != root {
+				if _, statErr := os.Stat(filepath.Join(path, "go.mod")); statErr == nil {
+					return filepath.SkipDir
+				}
+			}
 			switch entry.Name() {
 			case ".git", "node_modules":
 				return filepath.SkipDir

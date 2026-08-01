@@ -1,0 +1,302 @@
+syntax = "proto3";
+
+package rtest.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/flidai/leapview/rtest/internal/gen/rtest/v1;rtestv1";
+
+service ControlService {
+  rpc GetServiceInfo(GetServiceInfoRequest) returns (GetServiceInfoResponse);
+
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse);
+  rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
+  rpc AddProjectMember(AddProjectMemberRequest) returns (AddProjectMemberResponse);
+
+  rpc PrepareJob(PrepareJobRequest) returns (PrepareJobResponse);
+  rpc StartJob(StartJobRequest) returns (StartJobResponse);
+  rpc GetJob(GetJobRequest) returns (GetJobResponse);
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse);
+  rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
+  rpc StreamJobLogs(StreamJobLogsRequest) returns (stream StreamJobLogsResponse);
+
+  rpc PrepareBuild(PrepareBuildRequest) returns (PrepareBuildResponse);
+  rpc FinishBuild(FinishBuildRequest) returns (FinishBuildResponse);
+
+  rpc ExchangeGitHubOIDC(ExchangeGitHubOIDCRequest) returns (ExchangeGitHubOIDCResponse);
+  rpc CreateGitHubTrust(CreateGitHubTrustRequest) returns (CreateGitHubTrustResponse);
+  rpc ListGitHubTrusts(ListGitHubTrustsRequest) returns (ListGitHubTrustsResponse);
+  rpc RevokeGitHubTrust(RevokeGitHubTrustRequest) returns (RevokeGitHubTrustResponse);
+  rpc CreateDeviceToken(CreateDeviceTokenRequest) returns (CreateDeviceTokenResponse);
+  rpc ListDeviceTokens(ListDeviceTokensRequest) returns (ListDeviceTokensResponse);
+  rpc RevokeDeviceToken(RevokeDeviceTokenRequest) returns (RevokeDeviceTokenResponse);
+}
+
+message GetServiceInfoRequest {}
+
+message GetServiceInfoResponse {
+  string version = 1;
+  repeated string capabilities = 2;
+}
+
+message User {
+  string id = 1;
+  string name = 2;
+  bool admin = 3;
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message CreateUserRequest {
+  string name = 1;
+  bool admin = 2;
+}
+
+message CreateUserResponse {
+  User user = 1;
+}
+
+message Project {
+  string id = 1;
+  string slug = 2;
+  string name = 3;
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message CreateProjectRequest {
+  string slug = 1;
+  string name = 2;
+}
+
+message CreateProjectResponse {
+  Project project = 1;
+}
+
+message AddProjectMemberRequest {
+  string project = 1;
+  string user_id = 2;
+}
+
+message AddProjectMemberResponse {}
+
+enum JobStatus {
+  JOB_STATUS_UNSPECIFIED = 0;
+  JOB_STATUS_PREPARING = 1;
+  JOB_STATUS_QUEUED = 2;
+  JOB_STATUS_RUNNING = 3;
+  JOB_STATUS_SUCCEEDED = 4;
+  JOB_STATUS_FAILED = 5;
+  JOB_STATUS_CANCELLED = 6;
+  JOB_STATUS_TIMED_OUT = 7;
+  JOB_STATUS_LOST = 8;
+}
+
+message Job {
+  string id = 1;
+  string project_id = 2;
+  string image = 3;
+  repeated string command = 4;
+  string working_directory = 5;
+  map<string, string> environment = 6;
+  string root_digest = 7;
+  JobStatus status = 8;
+  google.protobuf.Duration timeout = 9;
+  string cpus = 10;
+  string memory = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp started_at = 13;
+  google.protobuf.Timestamp finished_at = 14;
+  optional int32 exit_code = 15;
+  string error_message = 16;
+  bool cancel_requested = 17;
+  string worker_id = 18;
+}
+
+message PrepareJobRequest {
+  string project = 1;
+  string image = 2;
+  repeated string command = 3;
+  string working_directory = 4;
+  map<string, string> environment = 5;
+  google.protobuf.Duration timeout = 6;
+  string cpus = 7;
+  string memory = 8;
+}
+
+message DataPlaneConnection {
+  string endpoint = 1;
+  string instance_name = 2;
+  string server_name = 3;
+  bytes ca_pem = 4;
+  bytes certificate_pem = 5;
+  bytes private_key_pem = 6;
+  google.protobuf.Timestamp expires_at = 7;
+}
+
+message PrepareJobResponse {
+  Job job = 1;
+  DataPlaneConnection cas = 2;
+}
+
+message StartJobRequest {
+  string id = 1;
+  string root_digest = 2;
+}
+
+message StartJobResponse {
+  Job job = 1;
+}
+
+message GetJobRequest {
+  string id = 1;
+}
+
+message GetJobResponse {
+  Job job = 1;
+}
+
+message ListJobsRequest {
+  string project = 1;
+  int32 limit = 2;
+}
+
+message ListJobsResponse {
+  repeated Job jobs = 1;
+}
+
+message CancelJobRequest {
+  string id = 1;
+}
+
+message CancelJobResponse {
+  Job job = 1;
+}
+
+message StreamJobLogsRequest {
+  string id = 1;
+}
+
+message StreamJobLogsResponse {
+  bytes data = 1;
+  Job terminal_job = 2;
+}
+
+enum BuildStatus {
+  BUILD_STATUS_UNSPECIFIED = 0;
+  BUILD_STATUS_RUNNING = 1;
+  BUILD_STATUS_SUCCEEDED = 2;
+  BUILD_STATUS_FAILED = 3;
+  BUILD_STATUS_CANCELLED = 4;
+}
+
+message Build {
+  string id = 1;
+  string project_id = 2;
+  BuildStatus status = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp finished_at = 5;
+  optional int32 exit_code = 6;
+}
+
+message PrepareBuildRequest {
+  string project = 1;
+}
+
+message PrepareBuildResponse {
+  Build build = 1;
+  DataPlaneConnection buildkit = 2;
+}
+
+message FinishBuildRequest {
+  string id = 1;
+  int32 exit_code = 2;
+  bool cancelled = 3;
+}
+
+message FinishBuildResponse {
+  Build build = 1;
+}
+
+message ExchangeGitHubOIDCRequest {
+  string project = 1;
+  string id_token = 2;
+}
+
+message ExchangeGitHubOIDCResponse {
+  string token = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+message GitHubTrust {
+  string id = 1;
+  string project_id = 2;
+  string repository_owner_id = 3;
+  string repository_id = 4;
+  string workflow_ref = 5;
+  string ref = 6;
+  string environment = 7;
+  repeated string events = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp revoked_at = 10;
+}
+
+message CreateGitHubTrustRequest {
+  string project = 1;
+  string repository_owner_id = 2;
+  string repository_id = 3;
+  string workflow_ref = 4;
+  string ref = 5;
+  string environment = 6;
+  repeated string events = 7;
+}
+
+message CreateGitHubTrustResponse {
+  GitHubTrust trust = 1;
+}
+
+message ListGitHubTrustsRequest {
+  string project = 1;
+}
+
+message ListGitHubTrustsResponse {
+  repeated GitHubTrust trusts = 1;
+}
+
+message RevokeGitHubTrustRequest {
+  string id = 1;
+}
+
+message RevokeGitHubTrustResponse {}
+
+message DeviceToken {
+  string id = 1;
+  string name = 2;
+  string user_id = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  google.protobuf.Timestamp last_used_at = 6;
+  google.protobuf.Timestamp revoked_at = 7;
+}
+
+message CreateDeviceTokenRequest {
+  string name = 1;
+  google.protobuf.Timestamp expires_at = 2;
+  string user_id = 3;
+}
+
+message CreateDeviceTokenResponse {
+  DeviceToken token_metadata = 1;
+  string token = 2;
+}
+
+message ListDeviceTokensRequest {}
+
+message ListDeviceTokensResponse {
+  repeated DeviceToken tokens = 1;
+}
+
+message RevokeDeviceTokenRequest {
+  string id = 1;
+}
+
+message RevokeDeviceTokenResponse {}

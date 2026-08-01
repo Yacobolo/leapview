@@ -1,0 +1,105 @@
+{
+  "benchmark": "leapview-minio-warm",
+  "commit": "23248fa0c4ebbef579b10f090a7ad26e7ccc67f3",
+  "completed_at": "2026-08-01T09:39:07Z",
+  "warmup_runs": 1,
+  "measured_runs": 5,
+  "all_measured_transfers_zero": true,
+  "wall_seconds": {
+    "values": [
+      28.830199003219604,
+      29.407668113708496,
+      29.703704118728638,
+      29.03820013999939,
+      28.713557004928589
+    ],
+    "min": 28.713557004928589,
+    "median": 29.03820013999939,
+    "p95": 29.703704118728638,
+    "max": 29.703704118728638
+  },
+  "remote_seconds": {
+    "values": [
+      24.592,
+      24.571,
+      24.104,
+      24.527,
+      24.467
+    ],
+    "median": 24.527,
+    "p95": 24.592
+  },
+  "client_overhead_seconds": {
+    "values": [
+      4.238199003219606,
+      4.836668113708495,
+      5.5997041187286385,
+      4.511200139999389,
+      4.24655700492859
+    ],
+    "median": 4.511200139999389,
+    "p95": 5.5997041187286385
+  },
+  "runs": [
+    {
+      "phase": "warmup",
+      "run": 1,
+      "job_id": "rtest-dd3d65b87751224f",
+      "transfer": "0 B",
+      "remote_execution": "27.56s",
+      "wall_seconds": 31.802816152572632,
+      "exit_code": 0,
+      "remote_seconds": 27.56
+    },
+    {
+      "phase": "measured",
+      "run": 1,
+      "job_id": "rtest-ca147e80f89a73b7",
+      "transfer": "0 B",
+      "remote_execution": "24.592s",
+      "wall_seconds": 28.830199003219604,
+      "exit_code": 0,
+      "remote_seconds": 24.592
+    },
+    {
+      "phase": "measured",
+      "run": 2,
+      "job_id": "rtest-39bb841ded20925f",
+      "transfer": "0 B",
+      "remote_execution": "24.571s",
+      "wall_seconds": 29.407668113708496,
+      "exit_code": 0,
+      "remote_seconds": 24.571
+    },
+    {
+      "phase": "measured",
+      "run": 3,
+      "job_id": "rtest-e45be0c536de34f3",
+      "transfer": "0 B",
+      "remote_execution": "24.104s",
+      "wall_seconds": 29.703704118728638,
+      "exit_code": 0,
+      "remote_seconds": 24.104
+    },
+    {
+      "phase": "measured",
+      "run": 4,
+      "job_id": "rtest-528ef3a8eb90aaa6",
+      "transfer": "0 B",
+      "remote_execution": "24.527s",
+      "wall_seconds": 29.03820013999939,
+      "exit_code": 0,
+      "remote_seconds": 24.527
+    },
+    {
+      "phase": "measured",
+      "run": 5,
+      "job_id": "rtest-d6055c8256c603f0",
+      "transfer": "0 B",
+      "remote_execution": "24.467s",
+      "wall_seconds": 28.713557004928589,
+      "exit_code": 0,
+      "remote_seconds": 24.467
+    }
+  ]
+}

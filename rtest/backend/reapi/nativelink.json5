@@ -1,0 +1,99 @@
+{
+  stores: [
+    {
+      name: "CAS_MAIN_STORE",
+      filesystem: {
+        content_path: "/var/lib/rtest/reapi/cas/content",
+        temp_path: "/var/lib/rtest/reapi/cas/tmp",
+        eviction_policy: { max_bytes: 20000000000 },
+      },
+    },
+    {
+      name: "AC_MAIN_STORE",
+      filesystem: {
+        content_path: "/var/lib/rtest/reapi/ac/content",
+        temp_path: "/var/lib/rtest/reapi/ac/tmp",
+        eviction_policy: { max_bytes: 1000000000 },
+      },
+    },
+    {
+      name: "WORKER_FAST_SLOW_STORE",
+      fast_slow: {
+        fast: {
+          filesystem: {
+            content_path: "/var/lib/rtest/reapi/worker/content",
+            temp_path: "/var/lib/rtest/reapi/worker/tmp",
+            eviction_policy: { max_bytes: 10000000000 },
+          },
+        },
+        slow: { ref_store: { name: "CAS_MAIN_STORE" } },
+      },
+    },
+  ],
+  schedulers: [
+    {
+      name: "MAIN_SCHEDULER",
+      simple: {
+        supported_platform_properties: {
+          OSFamily: "priority",
+          "rtest.repository": "priority",
+          "rtest.runner": "priority",
+        },
+      },
+    },
+  ],
+  workers: [
+    {
+      local: {
+        name: "rtest-standard-",
+        worker_api_endpoint: { uri: "grpc://127.0.0.1:50061" },
+        cas_fast_slow_store: "WORKER_FAST_SLOW_STORE",
+        upload_action_result: {
+          ac_store: "AC_MAIN_STORE",
+          upload_ac_results_strategy: "never",
+        },
+        work_directory: "/var/lib/rtest/reapi/work",
+        max_action_timeout: 3700,
+        max_inflight_tasks: 1,
+        timeout_handled_externally: true,
+        entrypoint: "/usr/local/bin/rtest-reapi-entrypoint",
+        additional_environment: {
+          PATH: { value: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" },
+          RTEST_ACTION_DIRECTORY: "action_directory",
+          RTEST_TIMEOUT_MILLIS: "timeout_millis",
+          RTEST_SIDE_CHANNEL_FILE: "side_channel_file",
+          RTEST_RUNNER_IMAGE: "from_environment",
+          RTEST_JOB_CPUS: "from_environment",
+          RTEST_JOB_MEMORY: "from_environment",
+        },
+        platform_properties: {
+          OSFamily: { values: [""] },
+          "rtest.repository": { values: [""] },
+          "rtest.runner": { values: [""] },
+        },
+      },
+    },
+  ],
+  servers: [
+    {
+      name: "reapi",
+      listener: { http: { socket_address: "127.0.0.1:50051" } },
+      services: {
+        cas: [{ instance_name: "rtest", cas_store: "CAS_MAIN_STORE" }],
+        ac: [{ instance_name: "rtest", ac_store: "AC_MAIN_STORE" }],
+        bytestream: [{ instance_name: "rtest", cas_store: "CAS_MAIN_STORE" }],
+        execution: [{ instance_name: "rtest", cas_store: "CAS_MAIN_STORE", scheduler: "MAIN_SCHEDULER" }],
+        capabilities: [{ instance_name: "rtest", remote_execution: { scheduler: "MAIN_SCHEDULER" } }],
+      },
+    },
+    {
+      name: "worker_api",
+      listener: { http: { socket_address: "127.0.0.1:50061" } },
+      services: {
+        worker_api: { scheduler: "MAIN_SCHEDULER" },
+        health: {},
+      },
+    },
+  ],
+  global: { max_open_files: 24576 },
+}

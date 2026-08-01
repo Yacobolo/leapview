@@ -1,0 +1,26 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+packages:
+  - ca-certificates
+  - docker.io
+  - openssl
+  - zstd
+
+users:
+  - default
+  - name: rtest
+    system: true
+    shell: /usr/sbin/nologin
+    groups: docker
+
+write_files:
+  - path: /etc/docker/daemon.json
+    permissions: "0644"
+    content: |
+      {"log-driver":"local","log-opts":{"max-size":"20m","max-file":"3"}}
+
+runcmd:
+  - [mkdir, -p, /etc/rtest, /var/lib/rtest/jobs]
+  - [chown, -R, "rtest:rtest", /var/lib/rtest]
+  - [systemctl, restart, docker]

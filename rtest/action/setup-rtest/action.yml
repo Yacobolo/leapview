@@ -1,0 +1,78 @@
+name: Set up rtest
+description: Build rtest and configure GitHub OIDC access to a shared rtest service.
+
+inputs:
+  service-url:
+    description: HTTPS URL of the rtest control plane.
+    required: true
+  project:
+    description: rtest project slug or ID authorized for this workflow.
+    required: true
+  image:
+    description: Digest-pinned OCI image used to execute project commands.
+    required: true
+  ca-certificate:
+    description: Optional PEM CA certificate when the service does not use a publicly trusted HTTPS certificate.
+    required: false
+  oidc-audience:
+    description: GitHub OIDC audience; defaults to the service URL.
+    required: false
+  job-cpus:
+    description: CPU limit and reservation for each test job.
+    required: false
+    default: "2"
+  job-memory:
+    description: Memory limit and reservation for each test job.
+    required: false
+    default: 4g
+
+runs:
+  using: composite
+  steps:
+    - name: Build and configure rtest
+      shell: bash
+      env:
+        INPUT_SERVICE_URL: ${{ inputs.service-url }}
+        INPUT_PROJECT: ${{ inputs.project }}
+        INPUT_IMAGE: ${{ inputs.image }}
+        INPUT_CA_CERTIFICATE: ${{ inputs.ca-certificate }}
+        INPUT_OIDC_AUDIENCE: ${{ inputs.oidc-audience }}
+        INPUT_JOB_CPUS: ${{ inputs.job-cpus }}
+        INPUT_JOB_MEMORY: ${{ inputs.job-memory }}
+      run: |
+        set -euo pipefail
+        install_root="${RUNNER_TEMP}/rtest"
+        bin_dir="${install_root}/bin"
+        config_file="${install_root}/config.json"
+        ca_file=""
+        install -d -m 0700 "${bin_dir}"
+
+        action_root="$(cd "${GITHUB_ACTION_PATH}/../.." && pwd)"
+        (cd "${action_root}" && go build -trimpath -o "${bin_dir}/rtest" ./cmd/rtest)
+
+        if [[ -n "${INPUT_CA_CERTIFICATE}" ]]; then
+          ca_file="${install_root}/ca.pem"
+          umask 077
+          printf '%s\n' "${INPUT_CA_CERTIFICATE}" > "${ca_file}"
+          chmod 0600 "${ca_file}"
+        fi
+
+        audience="${INPUT_OIDC_AUDIENCE:-${INPUT_SERVICE_URL}}"
+        umask 077
+        jq -n \
+          --arg url "${INPUT_SERVICE_URL}" \
+          --arg project "${INPUT_PROJECT}" \
+          --arg image "${INPUT_IMAGE}" \
+          --arg ca "${ca_file}" \
+          --arg audience "${audience}" \
+          --arg cpus "${INPUT_JOB_CPUS}" \
+          --arg memory "${INPUT_JOB_MEMORY}" \
+          '{
+            backend: "service",
+            url: $url,
+            service: ({project: $project, image: $image, cpus: $cpus, memory: $memory, oidc_audience: $audience} + if $ca == "" then {} else {ca_cert_file: $ca} end)
+          }' > "${config_file}"
+        chmod 0600 "${config_file}"
+
+        printf '%s\n' "${bin_dir}" >> "$GITHUB_PATH"
+        printf 'RTEST_CONFIG=%s\n' "${config_file}" >> "$GITHUB_ENV"

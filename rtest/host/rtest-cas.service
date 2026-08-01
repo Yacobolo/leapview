@@ -1,0 +1,17 @@
+[Unit]
+Description=rtest REAPI content-addressable store
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/rtest/swarm.env
+ExecStartPre=-/usr/bin/docker rm -f rtest-cas
+ExecStart=/usr/bin/docker run --rm --name rtest-cas --network host --memory 768m --pids-limit 512 -v /var/lib/rtest/cas:/data ${RTEST_CAS_IMAGE} --dir /data --max_size 40 --grpc_address 127.0.0.1:50051 --http_address 127.0.0.1:50050 --access_log_level none
+ExecStop=/usr/bin/docker stop -t 20 rtest-cas
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

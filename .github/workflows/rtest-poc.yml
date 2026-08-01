@@ -1,0 +1,43 @@
+name: rtest POC
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: rtest-poc-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    if: github.repository == 'flidai/leapview'
+    environment: rtest-poc
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: rtest/go.mod
+          cache-dependency-path: rtest/go.sum
+
+      - name: Set up rtest
+        uses: ./rtest/action/setup-rtest
+        with:
+          service-url: ${{ vars.RTEST_SERVICE_URL }}
+          project: poc
+          image: ${{ vars.RTEST_PROJECT_IMAGE }}
+          ca-certificate: ${{ vars.RTEST_CA_CERTIFICATE }}
+
+      - name: Check worker dependencies
+        run: rtest doctor
+
+      - name: Run the Testcontainers integration suite remotely
+        working-directory: rtest/examples/go-redis
+        run: rtest exec -- go test -count=1 -v ./...

@@ -1,0 +1,10 @@
+{
+  "repository": "rtest/example-go-redis",
+  "runner": "standard",
+  "suites": {
+    "integration": {
+      "command": ["go", "test", "-count=1", "-v", "./..."],
+      "timeout_seconds": 300
+    }
+  }
+}

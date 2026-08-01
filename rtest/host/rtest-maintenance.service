@@ -1,0 +1,8 @@
+[Unit]
+Description=rtest stale resource cleanup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/rtest-maintain
