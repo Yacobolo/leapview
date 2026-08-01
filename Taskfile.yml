@@ -491,7 +491,11 @@ tasks:
       - docs/api/openapi.yaml
       - docs/api/operations.json
     cmds:
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 typespec-compile -manifest api/apigen.yaml -target leapview-v1
+      - |
+        set -eu
+        cache_dir="$(mktemp -d)"
+        trap 'rm -rf "${cache_dir}"' EXIT
+        XDG_CACHE_HOME="${cache_dir}" go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 typespec-compile -manifest api/apigen.yaml -target leapview-v1
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 all -manifest api/apigen.yaml -target leapview-v1
       - go run ./internal/app/tools/openapidocgen
 
@@ -509,7 +513,11 @@ tasks:
       - internal/agent/contracts/models.gen.go
       - internal/agent/contracts/schemas.gen.go
     cmds:
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 typespec-compile -manifest api/apigen.yaml -target agent-tool-contracts
+      - |
+        set -eu
+        cache_dir="$(mktemp -d)"
+        trap 'rm -rf "${cache_dir}"' EXIT
+        XDG_CACHE_HOME="${cache_dir}" go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 typespec-compile -manifest api/apigen.yaml -target agent-tool-contracts
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 all -manifest api/apigen.yaml -target agent-tool-contracts
       - go run ./internal/agent/contracts/generate
 
@@ -557,7 +565,11 @@ tasks:
       - internal/workspace/ui/signals/models.gen.go
       - web/generated/signals/index.ts
     cmds:
-      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 typespec-compile -manifest api/apigen.yaml -target ui-signals
+      - |
+        set -eu
+        cache_dir="$(mktemp -d)"
+        trap 'rm -rf "${cache_dir}"' EXIT
+        XDG_CACHE_HOME="${cache_dir}" go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 typespec-compile -manifest api/apigen.yaml -target ui-signals
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 all -manifest api/apigen.yaml -target ui-signals
       - go run ./internal/app/tools/signalcontracts
 
