@@ -53,6 +53,11 @@ independent because Swarm does not expose the task completion timestamp in `serv
 `RTEST_CACHE_HIGH_BYTES`, `RTEST_CACHE_LOW_BYTES`, and `RTEST_DISK_HIGH_PERCENT` override
 these defaults for a larger worker.
 
+The CPX32 hardening exercise—including two projects, two device identities, hosted OIDC,
+cache isolation, serialized execution, restart convergence, durable logs, closed Docker
+ports, and a backup/restore drill—is recorded in
+[`../evidence/service/hardening.json`](../evidence/service/hardening.json).
+
 ## Deployment and first login
 
 `task deploy:swarm` (also exposed as `task deploy:service`) requires an explicit existing

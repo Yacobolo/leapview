@@ -1,0 +1,74 @@
+{
+  "completed_at": "2026-08-01T23:07:30Z",
+  "server_ipv4": "62.238.54.70",
+  "rtest_version": "0.7.0",
+  "commit": "d3bf1018",
+  "existing_host_reused": true,
+  "new_resources_provisioned": false,
+  "readiness_http_status": 204,
+  "project_cache": {
+    "first_project_id": "prj1928e851bdaf6135037d4603",
+    "second_project_id": "prj65f77bfe512df46a2c06ee43",
+    "cache_name": "proof",
+    "first_project_values": [1, 2],
+    "second_project_first_value": 1,
+    "host_directory_mode": "0700",
+    "writable_isolation": true
+  },
+  "exclusive_admission": {
+    "first_job": "jobcfd34d3b85629dc616a64439",
+    "second_job": "jobb029f1cefc44f33cc05b97dd",
+    "first_finished_unix_millis": 1785625299324,
+    "second_started_unix_millis": 1785625299330,
+    "second_waited_for_worker_slot": true,
+    "serialized": true
+  },
+  "remote_race_suite": {
+    "command": "go test -race ./...",
+    "cold_job": "jobd058cbccd170e6d65f1ae57b",
+    "cold_seconds": 92.888,
+    "warm_job": "jobd9141fcde920876eb1d99d3a",
+    "warm_seconds": 30.131,
+    "warm_transfer_bytes": 0,
+    "passed": true
+  },
+  "restart_reconciliation": {
+    "job": "jobf4fd8e959fe004483da49e40",
+    "swarm_service_forcibly_removed": true,
+    "control_service_restarted": true,
+    "durable_status": "lost",
+    "service_leaked": false
+  },
+  "durable_logs": {
+    "job": "job8c1d80786e02ebbe344f8458",
+    "swarm_service_removed": true,
+    "job_directory_owner": "rtest:rtest",
+    "job_directory_mode": "0700",
+    "log_owner": "rtest:rtest",
+    "log_mode": "0600",
+    "logs_readable_after_removal": true
+  },
+  "recovery": {
+    "sqlite_snapshot": true,
+    "manifest_sha256_validation": true,
+    "token_pepper_restored": true,
+    "private_pki_restored": true,
+    "temporary_proof_assets_removed": true
+  },
+  "identity": {
+    "owner_device": true,
+    "second_device_token_id": "tok09aa8189e737512d3f8f6dd5",
+    "second_device_project_scope_validated": true,
+    "second_device_revoked": true,
+    "revoked_device_rejected": true,
+    "github_oidc_job": "job64537a82e5a007b3be3fe053",
+    "github_oidc_hosted_proof": true
+  },
+  "network": {
+    "control_tls_port": 443,
+    "cas_mtls_port": 50052,
+    "buildkit_mtls_port": 1235,
+    "public_docker_2375_closed": true,
+    "public_docker_2376_closed": true
+  }
+}
