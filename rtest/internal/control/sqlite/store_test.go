@@ -295,18 +295,53 @@ func TestProjectMembershipAndGitHubTrustAreScoped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	matched, err := store.MatchGitHubTrust(ctx, bootstrap.Project.ID, control.GitHubClaims{
+	validClaims := control.GitHubClaims{
 		RepositoryOwnerID: "100", RepositoryID: "200",
+		Repository:  "renamed-owner/renamed-repository",
 		WorkflowRef: "flidai/leapview/.github/workflows/ci.yml@refs/heads/main", Ref: "refs/heads/main",
 		Environment: "rtest", EventName: "push",
-	})
+	}
+	matched, err := store.MatchGitHubTrust(ctx, bootstrap.Project.ID, validClaims)
 	if err != nil || matched.ID != trust.ID {
 		t.Fatalf("matched=%#v err=%v", matched, err)
 	}
-	if _, err := store.MatchGitHubTrust(ctx, bootstrap.Project.ID, control.GitHubClaims{
-		RepositoryOwnerID: "100", RepositoryID: "999", WorkflowRef: "x", Ref: "refs/heads/main", Environment: "rtest", EventName: "push",
-	}); !errors.Is(err, control.ErrForbidden) {
-		t.Fatalf("mismatched repository error = %v", err)
+	tests := []struct {
+		name   string
+		mutate func(*control.GitHubClaims)
+	}{
+		{name: "owner ID", mutate: func(claims *control.GitHubClaims) { claims.RepositoryOwnerID = "999" }},
+		{name: "repository ID", mutate: func(claims *control.GitHubClaims) { claims.RepositoryID = "999" }},
+		{name: "workflow", mutate: func(claims *control.GitHubClaims) {
+			claims.WorkflowRef = "flidai/leapview/.github/workflows/other.yml@refs/heads/main"
+		}},
+		{name: "ref", mutate: func(claims *control.GitHubClaims) { claims.Ref = "refs/tags/release" }},
+		{name: "environment", mutate: func(claims *control.GitHubClaims) { claims.Environment = "production" }},
+		{name: "event", mutate: func(claims *control.GitHubClaims) { claims.EventName = "pull_request" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			claims := validClaims
+			test.mutate(&claims)
+			if _, err := store.MatchGitHubTrust(ctx, bootstrap.Project.ID, claims); !errors.Is(err, control.ErrForbidden) {
+				t.Fatalf("mismatched %s error = %v", test.name, err)
+			}
+		})
+	}
+
+	_, err = store.CreateGitHubTrust(ctx, owner, control.GitHubTrust{
+		ProjectID: bootstrap.Project.ID, RepositoryOwnerID: "100", RepositoryID: "200",
+		WorkflowRef: "flidai/leapview/.github/workflows/ci.yml@refs/pull/*/merge", Ref: "refs/pull/*/merge",
+		Events: []string{"pull_request"},
+	})
+	if err == nil {
+		t.Fatal("pull_request trust without an environment gate was accepted")
+	}
+	if _, err := store.CreateGitHubTrust(ctx, owner, control.GitHubTrust{
+		ProjectID: bootstrap.Project.ID, RepositoryOwnerID: "100", RepositoryID: "200",
+		WorkflowRef: "flidai/leapview/.github/workflows/ci.yml@refs/pull/*/merge", Ref: "refs/pull/*/merge",
+		Environment: "rtest-pr", Events: []string{"pull_request"},
+	}); err != nil {
+		t.Fatalf("protected pull_request trust: %v", err)
 	}
 }
 

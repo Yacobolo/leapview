@@ -9,8 +9,8 @@ inputs:
     description: rtest project slug or ID authorized for this workflow.
     required: true
   image:
-    description: Digest-pinned OCI image used to execute project commands.
-    required: true
+    description: Optional digest-pinned OCI image override; the project default is used when omitted.
+    required: false
   ca-certificate:
     description: Optional PEM CA certificate when the service does not use a publicly trusted HTTPS certificate.
     required: false
@@ -69,7 +69,9 @@ runs:
           '{
             backend: "service",
             url: $url,
-            service: ({image: $image, cpus: $cpus, memory: $memory, oidc_audience: $audience} + if $ca == "" then {} else {ca_cert_file: $ca} end)
+            service: ({cpus: $cpus, memory: $memory, oidc_audience: $audience}
+              + if $image == "" then {} else {image: $image} end
+              + if $ca == "" then {} else {ca_cert_file: $ca} end)
           }' > "${config_file}"
         chmod 0600 "${config_file}"
 

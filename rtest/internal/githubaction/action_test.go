@@ -55,6 +55,23 @@ func TestPOCWorkflowIsManualOIDCAndRepositoryScoped(t *testing.T) {
 	}
 }
 
+func TestMainCIUsesOIDCOnlyForTrustedSameRepositoryPullRequests(t *testing.T) {
+	data := read(t, filepath.Join("..", "..", "..", ".github", "workflows", "ci.yml"))
+	for _, want := range []string{
+		"rtest-oidc-e2e:",
+		"github.event.pull_request.head.repo.full_name == github.repository",
+		"github.actor != 'dependabot[bot]'",
+		"environment: rtest-poc",
+		"id-token: write",
+		"uses: ./rtest/action/setup-rtest",
+		"rtest exec -- go test -count=1 -v ./...",
+	} {
+		if !strings.Contains(data, want) {
+			t.Fatalf("ci.yml missing rtest OIDC gate %q", want)
+		}
+	}
+}
+
 func read(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -37,24 +38,68 @@ func TestVerifierChecksOIDCAndExtractsImmutableGitHubClaims(t *testing.T) {
 	}
 }
 
-func TestVerifierRejectsWrongAudienceAndMissingImmutableIDs(t *testing.T) {
+func TestVerifierRejectsInvalidStandardClaimsAndSignatures(t *testing.T) {
 	issuer, sign := testIssuer(t)
 	verifier, err := githuboidc.New(context.Background(), issuer, "https://rtest.example")
 	if err != nil {
 		t.Fatal(err)
 	}
-	base := map[string]any{
-		"iss": issuer, "aud": "wrong", "sub": "repo:flidai/leapview:ref:refs/heads/main",
-		"iat": time.Now().Add(-time.Minute).Unix(), "nbf": time.Now().Add(-time.Minute).Unix(), "exp": time.Now().Add(5 * time.Minute).Unix(),
+	now := time.Now()
+	valid := map[string]any{
+		"iss": issuer, "aud": "https://rtest.example", "sub": "repo:flidai/leapview:ref:refs/heads/main",
+		"iat": now.Add(-time.Minute).Unix(), "nbf": now.Add(-time.Minute).Unix(), "exp": now.Add(5 * time.Minute).Unix(),
 		"repository_owner_id": "100", "repository_id": "200", "workflow_ref": "workflow", "ref": "refs/heads/main", "event_name": "push",
 	}
-	if _, err := verifier.Verify(context.Background(), sign(t, base)); err == nil {
-		t.Fatal("wrong audience was accepted")
+	_, untrustedSign := testIssuer(t)
+	tests := []struct {
+		name   string
+		mutate func(map[string]any)
+		sign   func(*testing.T, map[string]any) string
+	}{
+		{name: "wrong audience", mutate: func(claims map[string]any) { claims["aud"] = "wrong" }},
+		{name: "wrong issuer", mutate: func(claims map[string]any) { claims["iss"] = "https://issuer.invalid" }},
+		{name: "expired", mutate: func(claims map[string]any) { claims["exp"] = now.Add(-time.Minute).Unix() }},
+		{name: "not before", mutate: func(claims map[string]any) { claims["nbf"] = now.Add(5 * time.Minute).Unix() }},
+		{name: "untrusted signature", mutate: func(map[string]any) {}, sign: untrustedSign},
 	}
-	base["aud"] = "https://rtest.example"
-	delete(base, "repository_id")
-	if _, err := verifier.Verify(context.Background(), sign(t, base)); err == nil {
-		t.Fatal("missing repository ID was accepted")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			claims := maps.Clone(valid)
+			test.mutate(claims)
+			signer := test.sign
+			if signer == nil {
+				signer = sign
+			}
+			if _, err := verifier.Verify(context.Background(), signer(t, claims)); err == nil {
+				t.Fatalf("%s token was accepted", test.name)
+			}
+		})
+	}
+}
+
+func TestVerifierRejectsMissingIdentityAndPolicyClaims(t *testing.T) {
+	issuer, sign := testIssuer(t)
+	verifier, err := githuboidc.New(context.Background(), issuer, "https://rtest.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	valid := map[string]any{
+		"iss": issuer, "aud": "https://rtest.example", "sub": "repo:flidai/leapview:ref:refs/heads/main",
+		"iat": now.Add(-time.Minute).Unix(), "nbf": now.Add(-time.Minute).Unix(), "exp": now.Add(5 * time.Minute).Unix(),
+		"repository_owner_id": "100", "repository_id": "200", "workflow_ref": "workflow", "ref": "refs/heads/main", "event_name": "push",
+	}
+	for _, claim := range []string{"sub", "repository_owner_id", "repository_id", "workflow_ref", "ref", "event_name"} {
+		t.Run(claim, func(t *testing.T) {
+			claims := maps.Clone(valid)
+			delete(claims, claim)
+			if claim == "workflow_ref" {
+				claims["job_workflow_ref"] = "trusted/reusable.yml@refs/heads/main"
+			}
+			if _, err := verifier.Verify(context.Background(), sign(t, claims)); err == nil {
+				t.Fatalf("token missing %s was accepted", claim)
+			}
+		})
 	}
 }
 

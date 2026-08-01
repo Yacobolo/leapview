@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/flidai/leapview/rtest/internal/control"
@@ -42,24 +43,23 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (control.GitHubClaims
 		RepositoryID      string `json:"repository_id"`
 		Repository        string `json:"repository"`
 		WorkflowRef       string `json:"workflow_ref"`
-		JobWorkflowRef    string `json:"job_workflow_ref"`
 		Ref               string `json:"ref"`
 		Environment       string `json:"environment"`
 		EventName         string `json:"event_name"`
+		NotBefore         int64  `json:"nbf"`
 	}
 	if err := token.Claims(&rawClaims); err != nil {
 		return control.GitHubClaims{}, err
 	}
-	workflowRef := rawClaims.WorkflowRef
-	if workflowRef == "" {
-		workflowRef = rawClaims.JobWorkflowRef
-	}
-	if token.Subject == "" || rawClaims.RepositoryOwnerID == "" || rawClaims.RepositoryID == "" || workflowRef == "" || rawClaims.Ref == "" || rawClaims.EventName == "" {
+	if token.Subject == "" || rawClaims.RepositoryOwnerID == "" || rawClaims.RepositoryID == "" || rawClaims.WorkflowRef == "" || rawClaims.Ref == "" || rawClaims.EventName == "" {
 		return control.GitHubClaims{}, errors.New("GitHub OIDC token is missing required immutable identity or policy claims")
+	}
+	if rawClaims.NotBefore == 0 || time.Now().Add(30*time.Second).Before(time.Unix(rawClaims.NotBefore, 0)) {
+		return control.GitHubClaims{}, errors.New("GitHub OIDC token is not yet valid")
 	}
 	return control.GitHubClaims{
 		Subject: token.Subject, RepositoryOwnerID: rawClaims.RepositoryOwnerID, RepositoryID: rawClaims.RepositoryID,
-		Repository: rawClaims.Repository, WorkflowRef: workflowRef, Ref: rawClaims.Ref,
+		Repository: rawClaims.Repository, WorkflowRef: rawClaims.WorkflowRef, Ref: rawClaims.Ref,
 		Environment: rawClaims.Environment, EventName: rawClaims.EventName, ExpiresAt: token.Expiry,
 	}, nil
 }

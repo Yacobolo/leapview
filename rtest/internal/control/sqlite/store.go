@@ -755,6 +755,9 @@ func (s *Store) CreateGitHubTrust(ctx context.Context, principal control.Princip
 	if trust.RepositoryOwnerID == "" || trust.RepositoryID == "" || trust.WorkflowRef == "" || trust.Ref == "" || len(trust.Events) == 0 {
 		return control.GitHubTrust{}, errors.New("repository owner ID, repository ID, workflow ref, ref, and events are required")
 	}
+	if contains(trust.Events, "pull_request") && trust.Environment == "" {
+		return control.GitHubTrust{}, errors.New("pull_request trust requires a protected GitHub environment")
+	}
 	events, _ := json.Marshal(trust.Events)
 	trustID, err := randomID("ght")
 	if err != nil {

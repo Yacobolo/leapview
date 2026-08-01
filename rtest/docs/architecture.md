@@ -102,8 +102,10 @@ expiry, not-before time, and an enabled project trust relationship.
 Authorization uses immutable `repository_id` and `repository_owner_id` claims, plus the
 configured workflow, ref, environment, and event policy. Repository names are metadata,
 not identity. A successful exchange returns a short-lived project credential bounded to
-the workflow job. Trusted pull requests use a protected environment or an explicit policy
-gate; public forks are denied.
+the workflow job. A `pull_request` trust must name a protected GitHub environment because
+the OIDC JWT does not contain an immutable head-repository ID. Environment approval is the
+explicit trust gate; unapproved forks and other untrusted PRs never receive an rtest
+project session.
 
 ### Jobs and builds
 
