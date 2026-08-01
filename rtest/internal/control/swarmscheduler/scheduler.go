@@ -88,11 +88,30 @@ func (s *Scheduler) Status(ctx context.Context, id string) (protocol.Job, error)
 }
 
 func (s *Scheduler) Logs(ctx context.Context, id string, follow bool, output io.Writer) error {
+	if !follow {
+		file, err := os.Open(filepath.Join(s.config.JobsRoot, id, "job.log"))
+		if err == nil {
+			defer file.Close()
+			_, err = io.Copy(output, file)
+			return err
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
 	return s.config.Client.Logs(ctx, id, follow, output)
 }
 
 func (s *Scheduler) Cancel(ctx context.Context, id string) error {
 	return s.config.Client.Cancel(ctx, id)
+}
+
+func (s *Scheduler) ManagedJobs(ctx context.Context) ([]protocol.Job, error) {
+	return s.config.Client.List(ctx, "", 0)
+}
+
+func (s *Scheduler) Remove(ctx context.Context, id string) error {
+	return s.config.Client.Remove(ctx, id)
 }
 
 var _ control.Scheduler = (*Scheduler)(nil)

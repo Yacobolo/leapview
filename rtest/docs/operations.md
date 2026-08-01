@@ -10,6 +10,7 @@ rtest doctor
 ssh <worker> sudo systemctl status rtest-server rtest-cas rtest-buildkit rtest-maintenance.timer
 ssh <worker> sudo journalctl -u rtest-server -u rtest-cas -u rtest-buildkit --since today
 ssh <worker> docker service ls --filter label=rtest.managed=true
+curl --fail --cacert <ca.pem> https://<worker>/readyz
 ```
 
 The public endpoints are:
@@ -21,6 +22,9 @@ The public endpoints are:
 The actual bazel-remote and BuildKit daemons listen only on `127.0.0.1:50051` and
 `127.0.0.1:1234`. The private CA key, token pepper, SQLite control state, and audit data
 live under `/var/lib/rtest` with service-user-only permissions.
+
+`/healthz` is process liveness. `/readyz` returns success only when both SQLite and
+Docker Swarm respond, so it is the endpoint to use for alerts and deployment verification.
 
 ## Capacity
 
@@ -38,6 +42,16 @@ BuildKit uses `rtest-buildkit-state`. CAS and BuildKit content caches are intent
 shared by mutually trusted projects in the initial single-VM deployment. Control-plane
 authorization and accounting remain project-scoped, but the service does not claim cache
 confidentiality between these projects.
+
+The hourly maintenance job keeps completed Swarm services for one hour and durable job
+logs/workspaces for seven days. Project caches use a 12 GiB high watermark and are pruned
+oldest-first to 8 GiB, but only while the exclusive worker lock is idle. At 85% filesystem
+use, the same cache pruning runs and BuildKit retention tightens from 10 GiB to 4 GiB.
+The shell fallback removes only terminal services older than 24 hours. Its cutoff is
+independent because Swarm does not expose the task completion timestamp in `service ls`.
+`RTEST_SERVICE_FALLBACK_RETENTION_SECONDS`, `RTEST_JOB_RETENTION_MINUTES`,
+`RTEST_CACHE_HIGH_BYTES`, `RTEST_CACHE_LOW_BYTES`, and `RTEST_DISK_HIGH_PERCENT` override
+these defaults for a larger worker.
 
 ## Deployment and first login
 
@@ -94,6 +108,37 @@ For emergency CA rotation, schedule control-plane downtime, back up `/var/lib/rt
 the service to generate a new CA/server identity, and redistribute the new `ca.pem` to
 client configuration. Verify control, CAS, and BuildKit TLS before deleting the recovery
 copy. Every old operation certificate becomes invalid at the gateway after the restart.
+
+## Backup and restore
+
+Create a consistent, private recovery bundle without copying SQLite WAL files directly:
+
+```console
+sudo install -d -o rtest -g rtest -m 0700 /var/backups/rtest
+sudo -u rtest rtest-server backup \
+  --data-dir /var/lib/rtest \
+  --output /var/backups/rtest/2026-08-01T120000Z
+```
+
+The bundle contains a SQLite `VACUUM INTO` snapshot, token pepper, private PKI, and a
+SHA-256 manifest. Copy it to storage outside the worker and apply separate retention and
+encryption there. It deliberately excludes rebuildable CAS, BuildKit layers, job
+workspaces, and project caches.
+
+Restore is offline and refuses to overwrite a data directory. Stop the service, move the
+old directory to a dated recovery path, restore, fix ownership, and start the service:
+
+```console
+sudo systemctl stop rtest-server
+sudo mv /var/lib/rtest /var/lib/rtest.failed-20260801
+sudo rtest-server restore --input /var/backups/rtest/2026-08-01T120000Z --data-dir /var/lib/rtest
+sudo chown -R rtest:rtest /var/lib/rtest
+sudo systemctl start rtest-server
+curl --fail --cacert /var/lib/rtest/pki/ca.pem https://localhost/readyz
+```
+
+Restore validates every declared path and checksum before writing. Keep the moved state
+until device login, OIDC exchange, CAS credentials, and a real job have been verified.
 
 ## Troubleshooting
 

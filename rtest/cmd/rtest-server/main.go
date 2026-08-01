@@ -21,6 +21,8 @@ import (
 	"github.com/flidai/leapview/rtest/internal/control/githuboidc"
 	"github.com/flidai/leapview/rtest/internal/control/mtlsproxy"
 	"github.com/flidai/leapview/rtest/internal/control/pki"
+	"github.com/flidai/leapview/rtest/internal/control/reconciler"
+	"github.com/flidai/leapview/rtest/internal/control/recovery"
 	"github.com/flidai/leapview/rtest/internal/control/secret"
 	controlsqlite "github.com/flidai/leapview/rtest/internal/control/sqlite"
 	"github.com/flidai/leapview/rtest/internal/control/swarmscheduler"
@@ -28,12 +30,18 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "bootstrap" {
-		bootstrap(os.Args[2:])
-		return
-	}
 	if len(os.Args) > 1 {
-		log.Fatalf("unknown command %q", os.Args[1])
+		switch os.Args[1] {
+		case "bootstrap":
+			bootstrap(os.Args[2:])
+		case "backup":
+			backupState(os.Args[2:])
+		case "restore":
+			restoreState(os.Args[2:])
+		default:
+			log.Fatalf("unknown command %q", os.Args[1])
+		}
+		return
 	}
 	serve()
 }
@@ -72,6 +80,14 @@ func serve() {
 		EntrypointHostPath: env("RTEST_JOB_ENTRYPOINT", "/usr/local/lib/rtest/rtest-job-entrypoint"),
 		CacheRoot:          env("RTEST_CACHE_ROOT", "/var/lib/rtest/cache"),
 	})
+	reconcile := reconciler.New(reconciler.Config{
+		Store: store, Scheduler: scheduler,
+		ServiceRetention: durationEnv("RTEST_SERVICE_RETENTION", time.Hour),
+	})
+	if err := reconcile.RunOnce(ctx); err != nil {
+		log.Printf("initial reconciliation: %v", err)
+	}
+	go runReconciler(ctx, reconcile, durationEnv("RTEST_RECONCILE_INTERVAL", 30*time.Second))
 	var verifier controlapi.OIDCVerifier
 	if audience := os.Getenv("RTEST_GITHUB_OIDC_AUDIENCE"); audience != "" {
 		verifier, err = githuboidc.New(ctx, env("RTEST_GITHUB_OIDC_ISSUER", githuboidc.Issuer), audience)
@@ -121,6 +137,25 @@ func serve() {
 	}
 }
 
+type reconciliationRunner interface {
+	RunOnce(context.Context) error
+}
+
+func runReconciler(ctx context.Context, runner reconciliationRunner, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := runner.RunOnce(ctx); err != nil && ctx.Err() == nil {
+				log.Printf("reconciliation: %v", err)
+			}
+		}
+	}
+}
+
 func bootstrap(args []string) {
 	flags := flag.NewFlagSet("rtest-server bootstrap", flag.ExitOnError)
 	dataDir := flags.String("data-dir", env("RTEST_DATA_DIR", "/var/lib/rtest"), "persistent rtest data directory")
@@ -141,6 +176,36 @@ func bootstrap(args []string) {
 		log.Fatal(err)
 	}
 	fmt.Printf("Project: %s (%s)\nUser: %s (%s)\nToken: %s\n", result.Project.Slug, result.Project.ID, result.User.Name, result.User.ID, result.Token)
+}
+
+func backupState(args []string) {
+	flags := flag.NewFlagSet("rtest-server backup", flag.ExitOnError)
+	dataDir := flags.String("data-dir", env("RTEST_DATA_DIR", "/var/lib/rtest"), "persistent rtest data directory")
+	output := flags.String("output", "", "new private backup directory")
+	_ = flags.Parse(args)
+	if *output == "" {
+		log.Fatal("--output is required")
+	}
+	store := openStore(*dataDir)
+	defer store.Close()
+	if err := recovery.Create(context.Background(), store, *dataDir, *output); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Backup: %s\n", *output)
+}
+
+func restoreState(args []string) {
+	flags := flag.NewFlagSet("rtest-server restore", flag.ExitOnError)
+	input := flags.String("input", "", "validated rtest backup directory")
+	dataDir := flags.String("data-dir", env("RTEST_DATA_DIR", "/var/lib/rtest"), "new persistent rtest data directory")
+	_ = flags.Parse(args)
+	if *input == "" {
+		log.Fatal("--input is required")
+	}
+	if err := recovery.Restore(*input, *dataDir); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Restored: %s\n", *dataDir)
 }
 
 func openStore(dataDir string) *controlsqlite.Store {

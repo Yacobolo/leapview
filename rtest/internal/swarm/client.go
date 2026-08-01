@@ -201,6 +201,13 @@ func (c *Client) Cancel(ctx context.Context, id string) error {
 	return nil
 }
 
+func (c *Client) Remove(ctx context.Context, id string) error {
+	if err := c.commands.Run(ctx, io.Discard, io.Discard, "service", "rm", id); err != nil {
+		return fmt.Errorf("remove job %s: %w", id, err)
+	}
+	return nil
+}
+
 func (c *Client) List(ctx context.Context, repository string, limit int) ([]protocol.Job, error) {
 	data, err := c.commands.Output(ctx, "service", "ls", "--filter", "label="+managedLabel+"=true", "--format", "{{.Name}}")
 	if err != nil {

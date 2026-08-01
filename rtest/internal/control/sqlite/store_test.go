@@ -131,6 +131,27 @@ func TestBootstrapTokenAuthenticatesWithoutPersistingSecret(t *testing.T) {
 	}
 }
 
+func TestBackupProducesAConsistentStandaloneDatabase(t *testing.T) {
+	store := openStore(t)
+	ctx := context.Background()
+	if _, err := store.Bootstrap(ctx, control.Bootstrap{UserName: "Owner", ProjectSlug: "example", ProjectName: "Example", TokenName: "device"}); err != nil {
+		t.Fatal(err)
+	}
+	backup := filepath.Join(t.TempDir(), "control.db")
+	if err := store.Backup(ctx, backup); err != nil {
+		t.Fatal(err)
+	}
+	copy, err := controlsqlite.Open(filepath.Dir(backup), []byte("test-pepper-that-is-at-least-32-bytes"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer copy.Close()
+	initialized, err := copy.Initialized(ctx)
+	if err != nil || !initialized {
+		t.Fatalf("initialized=%v err=%v", initialized, err)
+	}
+}
+
 func TestDeviceTokensAreIndependentlyRevocable(t *testing.T) {
 	store := openStore(t)
 	ctx := context.Background()

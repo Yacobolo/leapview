@@ -619,6 +619,28 @@ func newFixtureWithVerifier(t *testing.T, verifier controlapi.OIDCVerifier) *fix
 	return &fixture{store: store, bootstrap: bootstrap, scheduler: scheduler, server: server}
 }
 
+func TestReadinessChecksStoreAndScheduler(t *testing.T) {
+	fixture := newFixture(t)
+	response, err := http.Get(fixture.server.URL + "/readyz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("ready status = %d", response.StatusCode)
+	}
+
+	fixture.scheduler.checkErr = errors.New("swarm unavailable")
+	response, err = http.Get(fixture.server.URL + "/readyz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("unready status = %d", response.StatusCode)
+	}
+}
+
 func (f *fixture) client(token string) rtestv1connect.ControlServiceClient {
 	transport := roundTripper(func(request *http.Request) (*http.Response, error) {
 		if token != "" {
@@ -640,9 +662,10 @@ type fakeScheduler struct {
 	blockFollowingLogs bool
 	logsStarted        chan struct{}
 	validateErr        error
+	checkErr           error
 }
 
-func (f *fakeScheduler) Check(context.Context) error { return nil }
+func (f *fakeScheduler) Check(context.Context) error { return f.checkErr }
 
 func (f *fakeScheduler) ValidateImage(context.Context, string) error { return f.validateErr }
 

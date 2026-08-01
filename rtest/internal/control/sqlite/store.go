@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -59,6 +60,29 @@ func ensurePrivateDir(root string) error {
 func (s *Store) Root() string { return s.root }
 
 func (s *Store) Close() error { return s.db.Close() }
+
+func (s *Store) Check(ctx context.Context) error { return s.db.PingContext(ctx) }
+
+func (s *Store) Backup(ctx context.Context, output string) error {
+	if output == "" {
+		return errors.New("backup output path is required")
+	}
+	if _, err := os.Stat(output); err == nil {
+		return errors.New("backup output already exists")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(output), 0o700); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `VACUUM INTO ?`, output); err != nil {
+		return fmt.Errorf("snapshot control database: %w", err)
+	}
+	if err := os.Chmod(output, 0o600); err != nil {
+		return err
+	}
+	return nil
+}
 
 func (s *Store) Initialized(ctx context.Context) (bool, error) {
 	var count int
@@ -919,6 +943,23 @@ func (s *Store) StartJob(ctx context.Context, id, rootDigest string) (control.Jo
 func (s *Store) Job(ctx context.Context, id string) (control.Job, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT id,project_id,image,command_json,working_directory,environment_json,caches_json,root_digest,status,timeout_millis,cpus,memory,created_at,started_at,finished_at,exit_code,error_message,cancel_requested,worker_id FROM control_jobs WHERE id=?`, id)
 	return scanJob(row)
+}
+
+func (s *Store) ScheduledJobs(ctx context.Context) ([]control.Job, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id,project_id,image,command_json,working_directory,environment_json,caches_json,root_digest,status,timeout_millis,cpus,memory,created_at,started_at,finished_at,exit_code,error_message,cancel_requested,worker_id FROM control_jobs WHERE status IN (?,?) ORDER BY created_at,id`, protocol.StatusQueued, protocol.StatusRunning)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var jobs []control.Job
+	for rows.Next() {
+		job, err := scanJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs, rows.Err()
 }
 
 func (s *Store) ListJobs(ctx context.Context, projectID string, pageSize int, pageToken string) (control.JobPage, error) {

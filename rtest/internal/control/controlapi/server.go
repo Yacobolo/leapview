@@ -67,6 +67,19 @@ func New(config Config) (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 	mux.HandleFunc("GET /healthz", func(response http.ResponseWriter, _ *http.Request) { response.WriteHeader(http.StatusNoContent) })
+	mux.HandleFunc("GET /readyz", func(response http.ResponseWriter, request *http.Request) {
+		ctx, cancel := context.WithTimeout(request.Context(), 2*time.Second)
+		defer cancel()
+		if err := config.Store.Check(ctx); err != nil {
+			http.Error(response, "control store unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if err := config.Scheduler.Check(ctx); err != nil {
+			http.Error(response, "worker unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		response.WriteHeader(http.StatusNoContent)
+	})
 	return securityHeaders(mux), nil
 }
 
