@@ -1,11 +1,20 @@
 package cli
 
 import (
+	"bytes"
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/flidai/leapview/rtest/internal/config"
+	rtestv1 "github.com/flidai/leapview/rtest/internal/gen/rtest/v1"
+	"github.com/flidai/leapview/rtest/internal/gen/rtest/v1/rtestv1connect"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestParseExecUsesGenericProjectImageAndArbitraryArgv(t *testing.T) {
@@ -34,4 +43,49 @@ func TestGlobalTokenIsRemovedBeforeCommandDispatch(t *testing.T) {
 	if err != nil || token != "secret" || !reflect.DeepEqual(args, []string{"exec", "--", "true"}) {
 		t.Fatalf("token=%q args=%#v err=%v", token, args, err)
 	}
+}
+
+func TestWaitServiceJobReconnectsWithoutDuplicatingLogBytes(t *testing.T) {
+	service := &interruptedLogService{}
+	path, handler := rtestv1connect.NewControlServiceHandler(service)
+	mux := http.NewServeMux()
+	mux.Handle(path, handler)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	client := rtestv1connect.NewControlServiceClient(server.Client(), server.URL)
+	var stdout, stderr bytes.Buffer
+	code := waitServiceJob(context.Background(), client, "job-1", IO{Stdout: &stdout, Stderr: &stderr})
+	if code != 0 || stdout.String() != "abcdef" {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	service.mu.Lock()
+	offsets := append([]int64(nil), service.offsets...)
+	service.mu.Unlock()
+	if !reflect.DeepEqual(offsets, []int64{0, 3}) {
+		t.Fatalf("stream offsets = %v", offsets)
+	}
+}
+
+type interruptedLogService struct {
+	rtestv1connect.UnimplementedControlServiceHandler
+	mu      sync.Mutex
+	offsets []int64
+}
+
+func (s *interruptedLogService) StreamJobLogs(_ context.Context, request *connect.Request[rtestv1.StreamJobLogsRequest], stream *connect.ServerStream[rtestv1.StreamJobLogsResponse]) error {
+	s.mu.Lock()
+	s.offsets = append(s.offsets, request.Msg.Offset)
+	call := len(s.offsets)
+	s.mu.Unlock()
+	if call == 1 {
+		if err := stream.Send(&rtestv1.StreamJobLogsResponse{Data: []byte("abc"), NextOffset: 3}); err != nil {
+			return err
+		}
+		return connect.NewError(connect.CodeUnavailable, context.DeadlineExceeded)
+	}
+	exitCode := int32(0)
+	return stream.Send(&rtestv1.StreamJobLogsResponse{
+		Data: []byte("def"), NextOffset: 6,
+		TerminalJob: &rtestv1.Job{Id: "job-1", Status: rtestv1.JobStatus_JOB_STATUS_SUCCEEDED, ExitCode: &exitCode, CreatedAt: timestamppb.Now()},
+	})
 }

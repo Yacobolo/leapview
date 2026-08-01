@@ -2,6 +2,9 @@ package controlapi
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -23,7 +26,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-const Version = "0.4.0"
+const Version = "0.5.0"
 
 type OIDCVerifier interface {
 	Verify(context.Context, string) (control.GitHubClaims, error)
@@ -145,17 +148,25 @@ func (s *Server) PrepareJob(ctx context.Context, request *connect.Request[rtestv
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	job, err := s.config.Store.CreatePreparedJob(ctx, input)
+	requestHash, err := admissionHash(input)
+	if err != nil {
+		return nil, connectError(err)
+	}
+	job, replayed, err := s.config.Store.CreatePreparedJob(ctx, input, control.Idempotency{Key: request.Msg.IdempotencyKey, RequestHash: requestHash})
 	if err != nil {
 		return nil, connectError(err)
 	}
 	credential, err := s.config.Authority.Issue(pki.OperationJob, job.ID, s.config.CredentialTTL)
 	if err != nil {
-		_, _ = s.config.Store.FailJob(ctx, job.ID, "issue CAS credential")
+		if !replayed {
+			_, _ = s.config.Store.FailJob(ctx, job.ID, "issue CAS credential")
+		}
 		return nil, connectError(err)
 	}
-	if err := s.config.Store.Audit(ctx, principal, project.ID, "job.prepare", job.ID, map[string]string{"image": job.Image}); err != nil {
-		return nil, connectError(err)
+	if !replayed {
+		if err := s.config.Store.Audit(ctx, principal, project.ID, "job.prepare", job.ID, map[string]string{"image": job.Image}); err != nil {
+			return nil, connectError(err)
+		}
 	}
 	return connect.NewResponse(&rtestv1.PrepareJobResponse{Job: jobProto(job), Cas: connectionProto(s.config.CASEndpoint, s.config.CASInstance, credential)}), nil
 }
@@ -214,16 +225,22 @@ func (s *Server) ListJobs(ctx context.Context, request *connect.Request[rtestv1.
 	if err != nil {
 		return nil, connectError(err)
 	}
-	limit := int(request.Msg.Limit)
-	if limit == 0 {
-		limit = 20
+	pageSize := int(request.Msg.PageSize)
+	if pageSize == 0 {
+		pageSize = int(request.Msg.Limit)
 	}
-	jobs, err := s.config.Store.ListJobs(ctx, project.ID, limit)
+	if pageSize == 0 {
+		pageSize = 20
+	}
+	if pageSize < 1 || pageSize > 100 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("page size must be between 1 and 100"))
+	}
+	page, err := s.config.Store.ListJobs(ctx, project.ID, pageSize, request.Msg.PageToken)
 	if err != nil {
 		return nil, connectError(err)
 	}
-	response := &rtestv1.ListJobsResponse{Jobs: make([]*rtestv1.Job, 0, len(jobs))}
-	for _, job := range jobs {
+	response := &rtestv1.ListJobsResponse{Jobs: make([]*rtestv1.Job, 0, len(page.Jobs)), NextPageToken: page.NextPageToken}
+	for _, job := range page.Jobs {
 		refreshed, refreshErr := s.refreshJob(ctx, job)
 		if refreshErr == nil {
 			job = refreshed
@@ -261,6 +278,9 @@ func (s *Server) CancelJob(ctx context.Context, request *connect.Request[rtestv1
 }
 
 func (s *Server) StreamJobLogs(ctx context.Context, request *connect.Request[rtestv1.StreamJobLogsRequest], stream *connect.ServerStream[rtestv1.StreamJobLogsResponse]) error {
+	if request.Msg.Offset < 0 {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("log offset cannot be negative"))
+	}
 	principal, err := s.authenticate(ctx, request.Header())
 	if err != nil {
 		return err
@@ -269,20 +289,28 @@ func (s *Server) StreamJobLogs(ctx context.Context, request *connect.Request[rte
 	if err != nil {
 		return err
 	}
+	writer := &streamWriter{stream: stream, offset: request.Msg.Offset}
 	if job.Status != protocol.StatusPreparing {
-		writer := &streamWriter{stream: stream}
+		output := io.Writer(writer)
+		if request.Msg.Offset > 0 {
+			output = &offsetWriter{remaining: request.Msg.Offset, destination: writer}
+		}
 		if job.Status.Terminal() {
-			if err := s.config.Scheduler.Logs(ctx, job.ID, false, writer); err != nil && ctx.Err() == nil {
+			if err := s.config.Scheduler.Logs(ctx, job.ID, false, output); err != nil && ctx.Err() == nil {
 				return connect.NewError(connect.CodeUnavailable, err)
 			}
 		} else {
-			job, err = s.followJob(ctx, job, writer)
+			job, err = s.followJob(ctx, job, output)
 			if err != nil {
 				return err
 			}
 		}
 	}
-	return stream.Send(&rtestv1.StreamJobLogsResponse{TerminalJob: jobProto(job)})
+	nextOffset := request.Msg.Offset
+	if job.Status != protocol.StatusPreparing {
+		nextOffset = writer.offset
+	}
+	return stream.Send(&rtestv1.StreamJobLogsResponse{TerminalJob: jobProto(job), NextOffset: nextOffset})
 }
 
 func (s *Server) followJob(ctx context.Context, job control.Job, output io.Writer) (control.Job, error) {
@@ -340,17 +368,28 @@ func (s *Server) PrepareBuild(ctx context.Context, request *connect.Request[rtes
 	if err != nil {
 		return nil, connectError(err)
 	}
-	build, err := s.config.Store.CreateBuild(ctx, project.ID)
+	if !idempotencyKeyPattern.MatchString(request.Msg.IdempotencyKey) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("idempotency key must contain 8 to 128 safe characters"))
+	}
+	requestHash, err := admissionHash(struct{ ProjectID string }{ProjectID: project.ID})
+	if err != nil {
+		return nil, connectError(err)
+	}
+	build, replayed, err := s.config.Store.CreateBuild(ctx, project.ID, control.Idempotency{Key: request.Msg.IdempotencyKey, RequestHash: requestHash})
 	if err != nil {
 		return nil, connectError(err)
 	}
 	credential, err := s.config.Authority.Issue(pki.OperationBuild, build.ID, s.config.CredentialTTL)
 	if err != nil {
-		_, _ = s.config.Store.FinishBuild(ctx, build.ID, control.BuildFailed, 1)
+		if !replayed {
+			_, _ = s.config.Store.FinishBuild(ctx, build.ID, control.BuildFailed, 1)
+		}
 		return nil, connectError(err)
 	}
-	if err := s.config.Store.Audit(ctx, principal, project.ID, "build.prepare", build.ID, nil); err != nil {
-		return nil, connectError(err)
+	if !replayed {
+		if err := s.config.Store.Audit(ctx, principal, project.ID, "build.prepare", build.ID, nil); err != nil {
+			return nil, connectError(err)
+		}
 	}
 	return connect.NewResponse(&rtestv1.PrepareBuildResponse{Build: buildProto(build), Buildkit: connectionProto(s.config.BuildKitEndpoint, "", credential)}), nil
 }
@@ -546,9 +585,10 @@ func (s *Server) refreshJob(ctx context.Context, job control.Job) (control.Job, 
 }
 
 var (
-	imageDigestPattern = regexp.MustCompile(`^.+@sha256:[0-9a-f]{64}$`)
-	rootDigestPattern  = regexp.MustCompile(`^[0-9a-f]{64}/[1-9][0-9]*$`)
-	environmentKey     = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	imageDigestPattern    = regexp.MustCompile(`^.+@sha256:[0-9a-f]{64}$`)
+	rootDigestPattern     = regexp.MustCompile(`^[0-9a-f]{64}/[1-9][0-9]*$`)
+	environmentKey        = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	idempotencyKeyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$`)
 )
 
 func (s *Server) validateJob(projectID string, message *rtestv1.PrepareJobRequest) (control.PrepareJob, error) {
@@ -592,6 +632,9 @@ func (s *Server) validateJob(projectID string, message *rtestv1.PrepareJobReques
 	if strings.TrimSpace(message.Cpus) == "" || strings.TrimSpace(message.Memory) == "" {
 		return control.PrepareJob{}, errors.New("CPU and memory reservations are required")
 	}
+	if !idempotencyKeyPattern.MatchString(message.IdempotencyKey) {
+		return control.PrepareJob{}, errors.New("idempotency key must contain 8 to 128 safe characters")
+	}
 	return control.PrepareJob{
 		ProjectID: projectID, Image: message.Image, Command: append([]string(nil), message.Command...),
 		WorkingDirectory: clean, Environment: cloneMap(message.Environment), Timeout: timeout,
@@ -601,14 +644,45 @@ func (s *Server) validateJob(projectID string, message *rtestv1.PrepareJobReques
 
 type streamWriter struct {
 	stream *connect.ServerStream[rtestv1.StreamJobLogsResponse]
+	offset int64
 }
 
 func (w *streamWriter) Write(data []byte) (int, error) {
 	copyData := append([]byte(nil), data...)
-	if err := w.stream.Send(&rtestv1.StreamJobLogsResponse{Data: copyData}); err != nil {
+	w.offset += int64(len(copyData))
+	if err := w.stream.Send(&rtestv1.StreamJobLogsResponse{Data: copyData, NextOffset: w.offset}); err != nil {
+		w.offset -= int64(len(copyData))
 		return 0, err
 	}
 	return len(data), nil
+}
+
+type offsetWriter struct {
+	remaining   int64
+	destination io.Writer
+}
+
+func (w *offsetWriter) Write(data []byte) (int, error) {
+	originalLength := len(data)
+	if int64(len(data)) <= w.remaining {
+		w.remaining -= int64(len(data))
+		return originalLength, nil
+	}
+	data = data[w.remaining:]
+	w.remaining = 0
+	if _, err := w.destination.Write(data); err != nil {
+		return 0, err
+	}
+	return originalLength, nil
+}
+
+func admissionHash(value any) (string, error) {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(payload)
+	return hex.EncodeToString(digest[:]), nil
 }
 
 func connectionProto(endpoint, instance string, credential pki.Credential) *rtestv1.DataPlaneConnection {
@@ -726,6 +800,10 @@ func connectError(err error) error {
 		return connect.NewError(connect.CodeNotFound, control.ErrNotFound)
 	case errors.Is(err, control.ErrAlreadyExists):
 		return connect.NewError(connect.CodeAlreadyExists, control.ErrAlreadyExists)
+	case errors.Is(err, control.ErrIdempotencyConflict):
+		return connect.NewError(connect.CodeAlreadyExists, control.ErrIdempotencyConflict)
+	case errors.Is(err, control.ErrInvalidPageToken):
+		return connect.NewError(connect.CodeInvalidArgument, control.ErrInvalidPageToken)
 	default:
 		return connect.NewError(connect.CodeInternal, errors.New("internal rtest error"))
 	}
@@ -733,3 +811,4 @@ func connectError(err error) error {
 
 var _ rtestv1connect.ControlServiceHandler = (*Server)(nil)
 var _ io.Writer = (*streamWriter)(nil)
+var _ io.Writer = (*offsetWriter)(nil)

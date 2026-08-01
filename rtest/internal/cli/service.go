@@ -209,9 +209,14 @@ func serviceExec(ctx context.Context, api rtestv1connect.ControlServiceClient, s
 	if err != nil {
 		return fail(streams.Stderr, err)
 	}
+	idempotencyKey, err := jobID()
+	if err != nil {
+		return fail(streams.Stderr, err)
+	}
 	prepared, err := api.PrepareJob(ctx, connect.NewRequest(&rtestv1.PrepareJobRequest{
 		Project: options.project, Image: options.image, Command: options.command, WorkingDirectory: options.workdir,
 		Environment: options.environment, Timeout: durationpb.New(options.timeout), Cpus: options.cpus, Memory: options.memory,
+		IdempotencyKey: idempotencyKey,
 	}))
 	if err != nil {
 		return fail(streams.Stderr, fmt.Errorf("prepare remote job: %w", err))
@@ -295,32 +300,53 @@ func parseExec(settings config.Config, args []string) (execOptions, error) {
 }
 
 func waitServiceJob(ctx context.Context, api rtestv1connect.ControlServiceClient, id string, streams IO) int {
-	stream, err := api.StreamJobLogs(ctx, connect.NewRequest(&rtestv1.StreamJobLogsRequest{Id: id}))
-	if err != nil {
-		return fail(streams.Stderr, err)
-	}
 	var terminal *rtestv1.Job
-	for stream.Receive() {
-		message := stream.Msg()
-		if len(message.Data) > 0 {
-			if _, err := streams.Stdout.Write(message.Data); err != nil {
-				return fail(streams.Stderr, err)
+	var offset int64
+	retryDelay := 250 * time.Millisecond
+	for terminal == nil {
+		stream, err := api.StreamJobLogs(ctx, connect.NewRequest(&rtestv1.StreamJobLogsRequest{Id: id, Offset: offset}))
+		if err == nil {
+			for stream.Receive() {
+				message := stream.Msg()
+				if len(message.Data) > 0 {
+					if _, err := streams.Stdout.Write(message.Data); err != nil {
+						return fail(streams.Stderr, err)
+					}
+				}
+				if message.NextOffset >= offset {
+					offset = message.NextOffset
+				}
+				if message.TerminalJob != nil {
+					terminal = message.TerminalJob
+				}
 			}
+			err = stream.Err()
 		}
-		if message.TerminalJob != nil {
-			terminal = message.TerminalJob
+		if terminal != nil {
+			break
 		}
-	}
-	if err := stream.Err(); err != nil {
 		if ctx.Err() != nil {
 			cancelCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			_, _ = api.CancelJob(cancelCtx, connect.NewRequest(&rtestv1.CancelJobRequest{Id: id}))
 			cancel()
+			return fail(streams.Stderr, fmt.Errorf("stream job logs: %w", ctx.Err()))
 		}
-		return fail(streams.Stderr, fmt.Errorf("stream job logs: %w", err))
-	}
-	if terminal == nil {
-		return fail(streams.Stderr, errors.New("remote log stream ended without terminal job status"))
+		if err != nil && connect.CodeOf(err) != connect.CodeUnavailable {
+			return fail(streams.Stderr, fmt.Errorf("stream job logs: %w", err))
+		}
+		timer := time.NewTimer(retryDelay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			continue
+		case <-timer.C:
+		}
+		if retryDelay < 5*time.Second {
+			retryDelay *= 2
+			if retryDelay > 5*time.Second {
+				retryDelay = 5 * time.Second
+			}
+		}
 	}
 	job := protocolJob(terminal)
 	printCompletion(streams.Stderr, job)
@@ -344,7 +370,11 @@ func serviceBuild(ctx context.Context, api rtestv1connect.ControlServiceClient, 
 	if _, err := profile.Root(ctx, streams.Dir); err != nil {
 		return fail(streams.Stderr, err)
 	}
-	prepared, err := api.PrepareBuild(ctx, connect.NewRequest(&rtestv1.PrepareBuildRequest{Project: project}))
+	random, err := jobID()
+	if err != nil {
+		return fail(streams.Stderr, err)
+	}
+	prepared, err := api.PrepareBuild(ctx, connect.NewRequest(&rtestv1.PrepareBuildRequest{Project: project, IdempotencyKey: random}))
 	if err != nil {
 		return fail(streams.Stderr, fmt.Errorf("prepare remote build: %w", err))
 	}
@@ -354,10 +384,6 @@ func serviceBuild(ctx context.Context, api rtestv1connect.ControlServiceClient, 
 		return fail(streams.Stderr, err)
 	}
 	defer credentials.Cleanup()
-	random, err := jobID()
-	if err != nil {
-		return fail(streams.Stderr, err)
-	}
 	builderName := strings.Replace(random, "rtest-", "rtest-build-", 1)
 	address := connection.Endpoint
 	if !strings.Contains(address, "://") {
@@ -443,7 +469,7 @@ func serviceList(ctx context.Context, api rtestv1connect.ControlServiceClient, s
 	if project == "" {
 		return failUsage(streams.Stderr, "list requires a project")
 	}
-	response, err := api.ListJobs(ctx, connect.NewRequest(&rtestv1.ListJobsRequest{Project: project, Limit: int32(limit)}))
+	response, err := api.ListJobs(ctx, connect.NewRequest(&rtestv1.ListJobsRequest{Project: project, PageSize: int32(limit)}))
 	if err != nil {
 		return fail(streams.Stderr, err)
 	}
@@ -469,7 +495,7 @@ func serviceDoctor(ctx context.Context, api rtestv1connect.ControlServiceClient,
 		return fail(streams.Stderr, err)
 	}
 	if settings.Service.Project != "" {
-		if _, err := api.ListJobs(ctx, connect.NewRequest(&rtestv1.ListJobsRequest{Project: settings.Service.Project, Limit: 1})); err != nil {
+		if _, err := api.ListJobs(ctx, connect.NewRequest(&rtestv1.ListJobsRequest{Project: settings.Service.Project, PageSize: 1})); err != nil {
 			return fail(streams.Stderr, err)
 		}
 	}

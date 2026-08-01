@@ -143,7 +143,9 @@ CREATE TABLE IF NOT EXISTS control_jobs (
   exit_code INTEGER,
   error_message TEXT NOT NULL DEFAULT '',
   cancel_requested INTEGER NOT NULL DEFAULT 0,
-  worker_id TEXT NOT NULL DEFAULT ''
+  worker_id TEXT NOT NULL DEFAULT '',
+  idempotency_key TEXT NOT NULL DEFAULT '',
+  request_hash TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS control_jobs_project_idx ON control_jobs(project_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS control_builds (
@@ -152,10 +154,61 @@ CREATE TABLE IF NOT EXISTS control_builds (
   status TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   finished_at INTEGER,
-  exit_code INTEGER
+  exit_code INTEGER,
+  idempotency_key TEXT NOT NULL DEFAULT '',
+  request_hash TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS control_builds_project_idx ON control_builds(project_id, created_at DESC);
 `)
+	if err != nil {
+		return err
+	}
+	for _, column := range []struct {
+		table, name string
+	}{
+		{"control_jobs", "idempotency_key"}, {"control_jobs", "request_hash"},
+		{"control_builds", "idempotency_key"}, {"control_builds", "request_hash"},
+	} {
+		if err := s.ensureTextColumn(ctx, column.table, column.name); err != nil {
+			return err
+		}
+	}
+	_, err = s.db.ExecContext(ctx, `
+CREATE UNIQUE INDEX IF NOT EXISTS control_jobs_idempotency_idx ON control_jobs(project_id,idempotency_key) WHERE idempotency_key <> '';
+CREATE UNIQUE INDEX IF NOT EXISTS control_builds_idempotency_idx ON control_builds(project_id,idempotency_key) WHERE idempotency_key <> '';
+`)
+	return err
+}
+
+func (s *Store) ensureTextColumn(ctx context.Context, table, column string) error {
+	if table != "control_jobs" && table != "control_builds" {
+		return errors.New("unsupported migration table")
+	}
+	if column != "idempotency_key" && column != "request_hash" {
+		return errors.New("unsupported migration column")
+	}
+	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)
+	if err != nil {
+		return err
+	}
+	found := false
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, kind string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &kind, &notNull, &defaultValue, &primaryKey); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		found = found || name == column
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if found {
+		return nil
+	}
+	_, err = s.db.ExecContext(ctx, `ALTER TABLE `+table+` ADD COLUMN `+column+` TEXT NOT NULL DEFAULT ''`)
 	return err
 }
 
@@ -520,30 +573,52 @@ func (s *Store) Audit(ctx context.Context, principal control.Principal, projectI
 	return err
 }
 
-func (s *Store) CreatePreparedJob(ctx context.Context, input control.PrepareJob) (control.Job, error) {
+func (s *Store) CreatePreparedJob(ctx context.Context, input control.PrepareJob, idempotency control.Idempotency) (control.Job, bool, error) {
 	command, err := json.Marshal(input.Command)
 	if err != nil {
-		return control.Job{}, err
+		return control.Job{}, false, err
 	}
 	environment, err := json.Marshal(input.Environment)
 	if err != nil {
-		return control.Job{}, err
+		return control.Job{}, false, err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return control.Job{}, false, err
+	}
+	defer tx.Rollback()
+	row := tx.QueryRowContext(ctx, `SELECT id,project_id,image,command_json,working_directory,environment_json,root_digest,status,timeout_millis,cpus,memory,created_at,started_at,finished_at,exit_code,error_message,cancel_requested,worker_id,request_hash FROM control_jobs WHERE project_id=? AND idempotency_key=?`, input.ProjectID, idempotency.Key)
+	job, storedHash, err := scanIdempotentJob(row)
+	if err == nil {
+		if storedHash != idempotency.RequestHash {
+			return control.Job{}, false, control.ErrIdempotencyConflict
+		}
+		return job, true, nil
+	}
+	if !errors.Is(err, control.ErrNotFound) {
+		return control.Job{}, false, err
 	}
 	id, err := randomID("job")
 	if err != nil {
-		return control.Job{}, err
+		return control.Job{}, false, err
 	}
 	now := time.Now().UTC()
-	job := control.Job{
+	job = control.Job{
 		ID: id, ProjectID: input.ProjectID, Image: input.Image,
 		Command: append([]string(nil), input.Command...), WorkingDirectory: input.WorkingDirectory,
 		Environment: cloneMap(input.Environment), Status: protocol.StatusPreparing, Timeout: input.Timeout,
 		CPUs: input.CPUs, Memory: input.Memory, CreatedAt: now,
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO control_jobs(id,project_id,image,command_json,working_directory,environment_json,status,timeout_millis,cpus,memory,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+	_, err = tx.ExecContext(ctx, `INSERT INTO control_jobs(id,project_id,image,command_json,working_directory,environment_json,status,timeout_millis,cpus,memory,created_at,idempotency_key,request_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		job.ID, job.ProjectID, job.Image, string(command), job.WorkingDirectory, string(environment), job.Status,
-		job.Timeout.Milliseconds(), job.CPUs, job.Memory, unix(now))
-	return job, err
+		job.Timeout.Milliseconds(), job.CPUs, job.Memory, unix(now), idempotency.Key, idempotency.RequestHash)
+	if err != nil {
+		return control.Job{}, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return control.Job{}, false, err
+	}
+	return job, false, nil
 }
 
 func (s *Store) StartJob(ctx context.Context, id, rootDigest string) (control.Job, error) {
@@ -563,24 +638,47 @@ func (s *Store) Job(ctx context.Context, id string) (control.Job, error) {
 	return scanJob(row)
 }
 
-func (s *Store) ListJobs(ctx context.Context, projectID string, limit int) ([]control.Job, error) {
-	if limit < 1 || limit > 100 {
-		return nil, errors.New("job limit must be between 1 and 100")
+func (s *Store) ListJobs(ctx context.Context, projectID string, pageSize int, pageToken string) (control.JobPage, error) {
+	if pageSize < 1 || pageSize > 100 {
+		return control.JobPage{}, errors.New("job page size must be between 1 and 100")
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id,project_id,image,command_json,working_directory,environment_json,root_digest,status,timeout_millis,cpus,memory,created_at,started_at,finished_at,exit_code,error_message,cancel_requested,worker_id FROM control_jobs WHERE project_id=? ORDER BY created_at DESC,id DESC LIMIT ?`, projectID, limit)
+	query := `SELECT id,project_id,image,command_json,working_directory,environment_json,root_digest,status,timeout_millis,cpus,memory,created_at,started_at,finished_at,exit_code,error_message,cancel_requested,worker_id FROM control_jobs WHERE project_id=?`
+	arguments := []any{projectID}
+	if pageToken != "" {
+		cursor, err := s.decodeJobCursor(projectID, pageToken)
+		if err != nil {
+			return control.JobPage{}, err
+		}
+		query += ` AND (created_at < ? OR (created_at = ? AND id < ?))`
+		arguments = append(arguments, cursor.CreatedAt, cursor.CreatedAt, cursor.ID)
+	}
+	query += ` ORDER BY created_at DESC,id DESC LIMIT ?`
+	arguments = append(arguments, pageSize+1)
+	rows, err := s.db.QueryContext(ctx, query, arguments...)
 	if err != nil {
-		return nil, err
+		return control.JobPage{}, err
 	}
 	defer rows.Close()
-	var jobs []control.Job
+	page := control.JobPage{Jobs: make([]control.Job, 0, pageSize)}
 	for rows.Next() {
 		job, err := scanJob(rows)
 		if err != nil {
-			return nil, err
+			return control.JobPage{}, err
 		}
-		jobs = append(jobs, job)
+		page.Jobs = append(page.Jobs, job)
 	}
-	return jobs, rows.Err()
+	if err := rows.Err(); err != nil {
+		return control.JobPage{}, err
+	}
+	if len(page.Jobs) > pageSize {
+		page.Jobs = page.Jobs[:pageSize]
+		last := page.Jobs[len(page.Jobs)-1]
+		page.NextPageToken, err = s.encodeJobCursor(projectID, last)
+		if err != nil {
+			return control.JobPage{}, err
+		}
+	}
+	return page, nil
 }
 
 func (s *Store) SyncJob(ctx context.Context, id string, remote protocol.Job) (control.Job, error) {
@@ -621,15 +719,46 @@ func (s *Store) FailJob(ctx context.Context, id, message string) (control.Job, e
 	return s.Job(ctx, id)
 }
 
-func (s *Store) CreateBuild(ctx context.Context, projectID string) (control.Build, error) {
+func (s *Store) CreateBuild(ctx context.Context, projectID string, idempotency control.Idempotency) (control.Build, bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return control.Build{}, false, err
+	}
+	defer tx.Rollback()
+	var existing control.Build
+	var created int64
+	var storedHash string
+	var finished, exitCode sql.NullInt64
+	err = tx.QueryRowContext(ctx, `SELECT id,project_id,status,created_at,finished_at,exit_code,request_hash FROM control_builds WHERE project_id=? AND idempotency_key=?`, projectID, idempotency.Key).
+		Scan(&existing.ID, &existing.ProjectID, &existing.Status, &created, &finished, &exitCode, &storedHash)
+	if err == nil {
+		if storedHash != idempotency.RequestHash {
+			return control.Build{}, false, control.ErrIdempotencyConflict
+		}
+		existing.CreatedAt, existing.FinishedAt = fromUnix(created), nullableTime(finished)
+		if exitCode.Valid {
+			value := int(exitCode.Int64)
+			existing.ExitCode = &value
+		}
+		return existing, true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return control.Build{}, false, err
+	}
 	id, err := randomID("bld")
 	if err != nil {
-		return control.Build{}, err
+		return control.Build{}, false, err
 	}
 	now := time.Now().UTC()
 	build := control.Build{ID: id, ProjectID: projectID, Status: control.BuildRunning, CreatedAt: now}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO control_builds(id,project_id,status,created_at) VALUES(?,?,?,?)`, build.ID, build.ProjectID, build.Status, unix(now))
-	return build, err
+	_, err = tx.ExecContext(ctx, `INSERT INTO control_builds(id,project_id,status,created_at,idempotency_key,request_hash) VALUES(?,?,?,?,?,?)`, build.ID, build.ProjectID, build.Status, unix(now), idempotency.Key, idempotency.RequestHash)
+	if err != nil {
+		return control.Build{}, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return control.Build{}, false, err
+	}
+	return build, false, nil
 }
 
 func (s *Store) Build(ctx context.Context, id string) (control.Build, error) {
@@ -733,6 +862,70 @@ func scanJob(row interface{ Scan(...any) error }) (control.Job, error) {
 		job.ExitCode = &value
 	}
 	return job, nil
+}
+
+func scanIdempotentJob(row interface{ Scan(...any) error }) (control.Job, string, error) {
+	var job control.Job
+	var command, environment, status, requestHash string
+	var timeoutMillis, created int64
+	var started, finished, exitCode sql.NullInt64
+	var cancelled int
+	if err := row.Scan(&job.ID, &job.ProjectID, &job.Image, &command, &job.WorkingDirectory, &environment,
+		&job.RootDigest, &status, &timeoutMillis, &job.CPUs, &job.Memory, &created, &started, &finished,
+		&exitCode, &job.ErrorMessage, &cancelled, &job.WorkerID, &requestHash); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return control.Job{}, "", control.ErrNotFound
+		}
+		return control.Job{}, "", err
+	}
+	if err := json.Unmarshal([]byte(command), &job.Command); err != nil {
+		return control.Job{}, "", err
+	}
+	if err := json.Unmarshal([]byte(environment), &job.Environment); err != nil {
+		return control.Job{}, "", err
+	}
+	job.Status, job.Timeout, job.CreatedAt = protocol.Status(status), time.Duration(timeoutMillis)*time.Millisecond, fromUnix(created)
+	job.StartedAt, job.FinishedAt, job.CancelRequested = nullableTime(started), nullableTime(finished), cancelled != 0
+	if exitCode.Valid {
+		value := int(exitCode.Int64)
+		job.ExitCode = &value
+	}
+	return job, requestHash, nil
+}
+
+type jobCursor struct {
+	ProjectID string `json:"project_id"`
+	CreatedAt int64  `json:"created_at"`
+	ID        string `json:"id"`
+}
+
+func (s *Store) encodeJobCursor(projectID string, job control.Job) (string, error) {
+	payload, err := json.Marshal(jobCursor{ProjectID: projectID, CreatedAt: unix(job.CreatedAt), ID: job.ID})
+	if err != nil {
+		return "", err
+	}
+	mac := hmac.New(sha256.New, s.pepper)
+	_, _ = mac.Write(payload)
+	value := append(payload, mac.Sum(nil)...)
+	return base64.RawURLEncoding.EncodeToString(value), nil
+}
+
+func (s *Store) decodeJobCursor(projectID, token string) (jobCursor, error) {
+	value, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil || len(value) <= sha256.Size {
+		return jobCursor{}, control.ErrInvalidPageToken
+	}
+	payload, signature := value[:len(value)-sha256.Size], value[len(value)-sha256.Size:]
+	mac := hmac.New(sha256.New, s.pepper)
+	_, _ = mac.Write(payload)
+	if !hmac.Equal(signature, mac.Sum(nil)) {
+		return jobCursor{}, control.ErrInvalidPageToken
+	}
+	var cursor jobCursor
+	if err := json.Unmarshal(payload, &cursor); err != nil || cursor.ProjectID != projectID || cursor.CreatedAt <= 0 || cursor.ID == "" {
+		return jobCursor{}, control.ErrInvalidPageToken
+	}
+	return cursor, nil
 }
 
 func (s *Store) newToken(kind string) (string, string, string, error) {

@@ -39,7 +39,8 @@ rtest exec --project example --image ghcr.io/example/ci@sha256:... -- go test -r
 The current POC still accepts named suites from `.rtest.json` during migration. That
 profile format and the `standard` Go runner are not part of the accepted long-term
 contract. See [the architecture](docs/architecture.md) and
-[ADR 0001](docs/decisions/0001-shared-service-architecture.md).
+[ADR 0001](docs/decisions/0001-shared-service-architecture.md). The versioned service
+contract is documented in [Control API v1](docs/control-api.md).
 
 ## Existing-host deployment
 

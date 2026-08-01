@@ -51,6 +51,8 @@ The public control plane is a protobuf-defined API served with Connect over HTTP
 authentication, authorization, projects, admission, job identity, status, logs,
 cancellation, scheduling decisions, credential issuance, and audit records. Clients never
 receive Docker or Swarm credentials and never address a worker directly.
+The stable v1 compatibility, idempotency, pagination, error, and reconnectable-log
+semantics are specified in [Control API v1](control-api.md).
 
 The data planes remain upstream protocols:
 

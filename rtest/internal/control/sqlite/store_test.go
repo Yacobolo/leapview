@@ -12,6 +12,63 @@ import (
 	controlsqlite "github.com/flidai/leapview/rtest/internal/control/sqlite"
 )
 
+func TestOpenMigratesAdmissionIdempotencyColumns(t *testing.T) {
+	root := t.TempDir()
+	database, err := sql.Open("sqlite", filepath.Join(root, "control.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = database.Exec(`
+CREATE TABLE control_jobs (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL, image TEXT NOT NULL, command_json TEXT NOT NULL,
+  working_directory TEXT NOT NULL, environment_json TEXT NOT NULL, root_digest TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL, timeout_millis INTEGER NOT NULL, cpus TEXT NOT NULL, memory TEXT NOT NULL,
+  created_at INTEGER NOT NULL, started_at INTEGER, finished_at INTEGER, exit_code INTEGER,
+  error_message TEXT NOT NULL DEFAULT '', cancel_requested INTEGER NOT NULL DEFAULT 0, worker_id TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE control_builds (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL,
+  finished_at INTEGER, exit_code INTEGER
+);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := controlsqlite.Open(root, []byte("test-pepper-that-is-at-least-32-bytes"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	database, err = sql.Open("sqlite", filepath.Join(root, "control.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	for _, table := range []string{"control_jobs", "control_builds"} {
+		rows, err := database.Query(`PRAGMA table_info(` + table + `)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		columns := map[string]bool{}
+		for rows.Next() {
+			var cid, notNull, primaryKey int
+			var name, kind string
+			var defaultValue any
+			if err := rows.Scan(&cid, &name, &kind, &notNull, &defaultValue, &primaryKey); err != nil {
+				t.Fatal(err)
+			}
+			columns[name] = true
+		}
+		_ = rows.Close()
+		if !columns["idempotency_key"] || !columns["request_hash"] {
+			t.Fatalf("%s columns = %#v", table, columns)
+		}
+	}
+}
+
 func TestBootstrapTokenAuthenticatesWithoutPersistingSecret(t *testing.T) {
 	store := openStore(t)
 	ctx := context.Background()

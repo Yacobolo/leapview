@@ -3,6 +3,7 @@ package controlapi_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -28,9 +29,10 @@ func TestAuthenticatedGenericJobLifecycle(t *testing.T) {
 	client := fixture.client(fixture.bootstrap.Token)
 	ctx := context.Background()
 	prepared, err := client.PrepareJob(ctx, connect.NewRequest(&rtestv1.PrepareJobRequest{
-		Project: fixture.bootstrap.Project.Slug,
-		Image:   "ghcr.io/example/ci@sha256:" + strings.Repeat("1", 64),
-		Command: []string{"task", "test"}, WorkingDirectory: "services/api",
+		IdempotencyKey: "job-lifecycle-1",
+		Project:        fixture.bootstrap.Project.Slug,
+		Image:          "ghcr.io/example/ci@sha256:" + strings.Repeat("1", 64),
+		Command:        []string{"task", "test"}, WorkingDirectory: "services/api",
 		Environment: map[string]string{"CI": "true"}, Timeout: durationpb.New(10 * time.Minute),
 		Cpus: "2", Memory: "4g",
 	}))
@@ -94,9 +96,10 @@ func TestStreamingLogsStopsFollowerWhenJobBecomesTerminal(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	prepared, err := client.PrepareJob(ctx, connect.NewRequest(&rtestv1.PrepareJobRequest{
-		Project: fixture.bootstrap.Project.Slug,
-		Image:   "ghcr.io/example/ci@sha256:" + strings.Repeat("3", 64),
-		Command: []string{"true"}, Timeout: durationpb.New(time.Minute), Cpus: "1", Memory: "1g",
+		IdempotencyKey: "job-follow-1",
+		Project:        fixture.bootstrap.Project.Slug,
+		Image:          "ghcr.io/example/ci@sha256:" + strings.Repeat("3", 64),
+		Command:        []string{"true"}, Timeout: durationpb.New(time.Minute), Cpus: "1", Memory: "1g",
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -156,7 +159,8 @@ func TestProjectAuthorizationPreventsCrossProjectJobAccess(t *testing.T) {
 
 	ownerClient := fixture.client(fixture.bootstrap.Token)
 	prepared, err := ownerClient.PrepareJob(ctx, connect.NewRequest(&rtestv1.PrepareJobRequest{
-		Project: fixture.bootstrap.Project.ID, Image: "ghcr.io/example/ci@sha256:" + strings.Repeat("2", 64),
+		IdempotencyKey: "job-authorization-1",
+		Project:        fixture.bootstrap.Project.ID, Image: "ghcr.io/example/ci@sha256:" + strings.Repeat("2", 64),
 		Command: []string{"true"}, Timeout: durationpb.New(time.Minute), Cpus: "1", Memory: "1g",
 	}))
 	if err != nil {
@@ -166,6 +170,19 @@ func TestProjectAuthorizationPreventsCrossProjectJobAccess(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("cross-project error = %v", err)
 	}
+	_, err = fixture.client(issued.Secret).CancelJob(ctx, connect.NewRequest(&rtestv1.CancelJobRequest{Id: prepared.Msg.Job.Id}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("cross-project cancel error = %v", err)
+	}
+	stream, err := fixture.client(issued.Secret).StreamJobLogs(ctx, connect.NewRequest(&rtestv1.StreamJobLogsRequest{Id: prepared.Msg.Job.Id}))
+	if err == nil {
+		for stream.Receive() {
+		}
+		err = stream.Err()
+	}
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("cross-project stream error = %v", err)
+	}
 	_, err = fixture.client("").ListJobs(ctx, connect.NewRequest(&rtestv1.ListJobsRequest{Project: other.ID}))
 	if connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatalf("unauthenticated error = %v", err)
@@ -174,7 +191,9 @@ func TestProjectAuthorizationPreventsCrossProjectJobAccess(t *testing.T) {
 
 func TestBuildPreparationReturnsBuildScopedCertificate(t *testing.T) {
 	fixture := newFixture(t)
-	response, err := fixture.client(fixture.bootstrap.Token).PrepareBuild(context.Background(), connect.NewRequest(&rtestv1.PrepareBuildRequest{Project: fixture.bootstrap.Project.ID}))
+	response, err := fixture.client(fixture.bootstrap.Token).PrepareBuild(context.Background(), connect.NewRequest(&rtestv1.PrepareBuildRequest{
+		Project: fixture.bootstrap.Project.ID, IdempotencyKey: "build-certificate-1",
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,6 +212,139 @@ func TestBuildPreparationReturnsBuildScopedCertificate(t *testing.T) {
 	}
 	if fixture.store.OperationActive(context.Background(), "build", response.Msg.Build.Id) {
 		t.Fatal("finished build credential remains active")
+	}
+}
+
+func TestAdmissionIdempotencyReplaysResourcesAndRejectsChangedRequests(t *testing.T) {
+	fixture := newFixture(t)
+	client := fixture.client(fixture.bootstrap.Token)
+	ctx := context.Background()
+	request := &rtestv1.PrepareJobRequest{
+		Project: fixture.bootstrap.Project.ID, IdempotencyKey: "job-retry-1",
+		Image: "ghcr.io/example/ci@sha256:" + strings.Repeat("4", 64), Command: []string{"task", "test"},
+		Timeout: durationpb.New(time.Minute), Cpus: "1", Memory: "1g",
+	}
+	first, err := client.PrepareJob(ctx, connect.NewRequest(request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := client.PrepareJob(ctx, connect.NewRequest(request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Msg.Job.Id != first.Msg.Job.Id {
+		t.Fatalf("replayed job ID = %q, want %q", second.Msg.Job.Id, first.Msg.Job.Id)
+	}
+	changed := *request
+	changed.Command = []string{"task", "ci"}
+	if _, err := client.PrepareJob(ctx, connect.NewRequest(&changed)); connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Fatalf("changed idempotent request error = %v", err)
+	}
+
+	buildRequest := &rtestv1.PrepareBuildRequest{Project: fixture.bootstrap.Project.ID, IdempotencyKey: "build-retry-1"}
+	firstBuild, err := client.PrepareBuild(ctx, connect.NewRequest(buildRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondBuild, err := client.PrepareBuild(ctx, connect.NewRequest(buildRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondBuild.Msg.Build.Id != firstBuild.Msg.Build.Id {
+		t.Fatalf("replayed build ID = %q, want %q", secondBuild.Msg.Build.Id, firstBuild.Msg.Build.Id)
+	}
+}
+
+func TestListJobsUsesOpaqueProjectBoundKeysetPagination(t *testing.T) {
+	fixture := newFixture(t)
+	client := fixture.client(fixture.bootstrap.Token)
+	ctx := context.Background()
+	for index := 0; index < 3; index++ {
+		_, err := client.PrepareJob(ctx, connect.NewRequest(&rtestv1.PrepareJobRequest{
+			Project: fixture.bootstrap.Project.ID, IdempotencyKey: fmt.Sprintf("page-job-%d", index),
+			Image: "ghcr.io/example/ci@sha256:" + strings.Repeat("5", 64), Command: []string{"true"},
+			Timeout: durationpb.New(time.Minute), Cpus: "1", Memory: "1g",
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err := client.ListJobs(ctx, connect.NewRequest(&rtestv1.ListJobsRequest{Project: fixture.bootstrap.Project.ID, PageSize: 2}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Msg.Jobs) != 2 || first.Msg.NextPageToken == "" {
+		t.Fatalf("first page = %#v", first.Msg)
+	}
+	second, err := client.ListJobs(ctx, connect.NewRequest(&rtestv1.ListJobsRequest{
+		Project: fixture.bootstrap.Project.ID, PageSize: 2, PageToken: first.Msg.NextPageToken,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Msg.Jobs) != 1 || second.Msg.NextPageToken != "" || second.Msg.Jobs[0].Id == first.Msg.Jobs[0].Id || second.Msg.Jobs[0].Id == first.Msg.Jobs[1].Id {
+		t.Fatalf("second page = %#v", second.Msg)
+	}
+	if _, err := client.ListJobs(ctx, connect.NewRequest(&rtestv1.ListJobsRequest{
+		Project: fixture.bootstrap.Project.ID, PageSize: 2, PageToken: first.Msg.NextPageToken + "tampered",
+	})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("tampered page token error = %v", err)
+	}
+	owner, err := fixture.store.Authenticate(ctx, fixture.bootstrap.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherProject, err := fixture.store.CreateProject(ctx, owner, "other-page-project", "Other page project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ListJobs(ctx, connect.NewRequest(&rtestv1.ListJobsRequest{
+		Project: otherProject.ID, PageSize: 2, PageToken: first.Msg.NextPageToken,
+	})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("cross-project page token error = %v", err)
+	}
+}
+
+func TestStreamJobLogsResumesAtByteOffset(t *testing.T) {
+	fixture := newFixture(t)
+	client := fixture.client(fixture.bootstrap.Token)
+	ctx := context.Background()
+	prepared, err := client.PrepareJob(ctx, connect.NewRequest(&rtestv1.PrepareJobRequest{
+		Project: fixture.bootstrap.Project.ID, IdempotencyKey: "job-log-offset-1",
+		Image: "ghcr.io/example/ci@sha256:" + strings.Repeat("6", 64), Command: []string{"true"},
+		Timeout: durationpb.New(time.Minute), Cpus: "1", Memory: "1g",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.StartJob(ctx, connect.NewRequest(&rtestv1.StartJobRequest{Id: prepared.Msg.Job.Id, RootDigest: strings.Repeat("c", 64) + "/1"})); err != nil {
+		t.Fatal(err)
+	}
+	fixture.scheduler.complete(prepared.Msg.Job.Id, protocol.StatusSucceeded, 0)
+	stream, err := client.StreamJobLogs(ctx, connect.NewRequest(&rtestv1.StreamJobLogsRequest{Id: prepared.Msg.Job.Id, Offset: 7}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	var nextOffset int64
+	for stream.Receive() {
+		output.Write(stream.Msg().Data)
+		nextOffset = stream.Msg().NextOffset
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != "output\n" || nextOffset != int64(len("remote output\n")) {
+		t.Fatalf("output=%q next offset=%d", output.String(), nextOffset)
+	}
+	stream, err = client.StreamJobLogs(ctx, connect.NewRequest(&rtestv1.StreamJobLogsRequest{Id: prepared.Msg.Job.Id, Offset: -1}))
+	if err == nil {
+		for stream.Receive() {
+		}
+		err = stream.Err()
+	}
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("negative offset error = %v", err)
 	}
 }
 

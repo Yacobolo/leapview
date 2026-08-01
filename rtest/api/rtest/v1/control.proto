@@ -121,6 +121,7 @@ message PrepareJobRequest {
   google.protobuf.Duration timeout = 6;
   string cpus = 7;
   string memory = 8;
+  string idempotency_key = 9;
 }
 
 message DataPlaneConnection {
@@ -157,11 +158,14 @@ message GetJobResponse {
 
 message ListJobsRequest {
   string project = 1;
-  int32 limit = 2;
+  int32 limit = 2 [deprecated = true];
+  int32 page_size = 3;
+  string page_token = 4;
 }
 
 message ListJobsResponse {
   repeated Job jobs = 1;
+  string next_page_token = 2;
 }
 
 message CancelJobRequest {
@@ -174,11 +178,13 @@ message CancelJobResponse {
 
 message StreamJobLogsRequest {
   string id = 1;
+  int64 offset = 2;
 }
 
 message StreamJobLogsResponse {
   bytes data = 1;
   Job terminal_job = 2;
+  int64 next_offset = 3;
 }
 
 enum BuildStatus {
@@ -200,6 +206,7 @@ message Build {
 
 message PrepareBuildRequest {
   string project = 1;
+  string idempotency_key = 2;
 }
 
 message PrepareBuildResponse {

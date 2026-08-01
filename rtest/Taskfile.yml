@@ -11,9 +11,10 @@ tasks:
       - task: terraform:check
 
   proto:check:
-    desc: Lint protobuf definitions and verify committed generated clients are current
+    desc: Lint protobufs, reject v1 breakage, and verify committed generated clients
     cmds:
       - go run github.com/bufbuild/buf/cmd/buf@{{.BUF_VERSION}} lint
+      - go run github.com/bufbuild/buf/cmd/buf@{{.BUF_VERSION}} breaking --against api/compat/control-v1.binpb
       - go run github.com/bufbuild/buf/cmd/buf@{{.BUF_VERSION}} generate
       - git diff --exit-code -- internal/gen
 

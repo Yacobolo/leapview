@@ -839,6 +839,7 @@ type PrepareJobRequest struct {
 	Timeout          *durationpb.Duration   `protobuf:"bytes,6,opt,name=timeout,proto3" json:"timeout,omitempty"`
 	Cpus             string                 `protobuf:"bytes,7,opt,name=cpus,proto3" json:"cpus,omitempty"`
 	Memory           string                 `protobuf:"bytes,8,opt,name=memory,proto3" json:"memory,omitempty"`
+	IdempotencyKey   string                 `protobuf:"bytes,9,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -925,6 +926,13 @@ func (x *PrepareJobRequest) GetCpus() string {
 func (x *PrepareJobRequest) GetMemory() string {
 	if x != nil {
 		return x.Memory
+	}
+	return ""
+}
+
+func (x *PrepareJobRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
 	}
 	return ""
 }
@@ -1258,9 +1266,12 @@ func (x *GetJobResponse) GetJob() *Job {
 }
 
 type ListJobsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
-	Limit         int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Project string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	// Deprecated: Marked as deprecated in rtest/v1/control.proto.
+	Limit         int32  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	PageSize      int32  `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1302,6 +1313,7 @@ func (x *ListJobsRequest) GetProject() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in rtest/v1/control.proto.
 func (x *ListJobsRequest) GetLimit() int32 {
 	if x != nil {
 		return x.Limit
@@ -1309,9 +1321,24 @@ func (x *ListJobsRequest) GetLimit() int32 {
 	return 0
 }
 
+func (x *ListJobsRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListJobsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
 type ListJobsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Jobs          []*Job                 `protobuf:"bytes,1,rep,name=jobs,proto3" json:"jobs,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1351,6 +1378,13 @@ func (x *ListJobsResponse) GetJobs() []*Job {
 		return x.Jobs
 	}
 	return nil
+}
+
+func (x *ListJobsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
 }
 
 type CancelJobRequest struct {
@@ -1444,6 +1478,7 @@ func (x *CancelJobResponse) GetJob() *Job {
 type StreamJobLogsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Offset        int64                  `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1485,10 +1520,18 @@ func (x *StreamJobLogsRequest) GetId() string {
 	return ""
 }
 
+func (x *StreamJobLogsRequest) GetOffset() int64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
 type StreamJobLogsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
 	TerminalJob   *Job                   `protobuf:"bytes,2,opt,name=terminal_job,json=terminalJob,proto3" json:"terminal_job,omitempty"`
+	NextOffset    int64                  `protobuf:"varint,3,opt,name=next_offset,json=nextOffset,proto3" json:"next_offset,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1535,6 +1578,13 @@ func (x *StreamJobLogsResponse) GetTerminalJob() *Job {
 		return x.TerminalJob
 	}
 	return nil
+}
+
+func (x *StreamJobLogsResponse) GetNextOffset() int64 {
+	if x != nil {
+		return x.NextOffset
+	}
+	return 0
 }
 
 type Build struct {
@@ -1622,10 +1672,11 @@ func (x *Build) GetExitCode() int32 {
 }
 
 type PrepareBuildRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Project        string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	IdempotencyKey string                 `protobuf:"bytes,2,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *PrepareBuildRequest) Reset() {
@@ -1661,6 +1712,13 @@ func (*PrepareBuildRequest) Descriptor() ([]byte, []int) {
 func (x *PrepareBuildRequest) GetProject() string {
 	if x != nil {
 		return x.Project
+	}
+	return ""
+}
+
+func (x *PrepareBuildRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
 	}
 	return ""
 }
@@ -2773,7 +2831,7 @@ const file_rtest_v1_control_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\f\n" +
 	"\n" +
-	"_exit_code\"\xfb\x02\n" +
+	"_exit_code\"\xa4\x03\n" +
 	"\x11PrepareJobRequest\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\x12\x18\n" +
@@ -2782,7 +2840,8 @@ const file_rtest_v1_control_proto_rawDesc = "" +
 	"\venvironment\x18\x05 \x03(\v2,.rtest.v1.PrepareJobRequest.EnvironmentEntryR\venvironment\x123\n" +
 	"\atimeout\x18\x06 \x01(\v2\x19.google.protobuf.DurationR\atimeout\x12\x12\n" +
 	"\x04cpus\x18\a \x01(\tR\x04cpus\x12\x16\n" +
-	"\x06memory\x18\b \x01(\tR\x06memory\x1a>\n" +
+	"\x06memory\x18\b \x01(\tR\x06memory\x12'\n" +
+	"\x0fidempotency_key\x18\t \x01(\tR\x0eidempotencyKey\x1a>\n" +
 	"\x10EnvironmentEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x9a\x02\n" +
@@ -2808,21 +2867,28 @@ const file_rtest_v1_control_proto_rawDesc = "" +
 	"\rGetJobRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"1\n" +
 	"\x0eGetJobResponse\x12\x1f\n" +
-	"\x03job\x18\x01 \x01(\v2\r.rtest.v1.JobR\x03job\"A\n" +
+	"\x03job\x18\x01 \x01(\v2\r.rtest.v1.JobR\x03job\"\x81\x01\n" +
 	"\x0fListJobsRequest\x12\x18\n" +
-	"\aproject\x18\x01 \x01(\tR\aproject\x12\x14\n" +
-	"\x05limit\x18\x02 \x01(\x05R\x05limit\"5\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x12\x18\n" +
+	"\x05limit\x18\x02 \x01(\x05B\x02\x18\x01R\x05limit\x12\x1b\n" +
+	"\tpage_size\x18\x03 \x01(\x05R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x04 \x01(\tR\tpageToken\"]\n" +
 	"\x10ListJobsResponse\x12!\n" +
-	"\x04jobs\x18\x01 \x03(\v2\r.rtest.v1.JobR\x04jobs\"\"\n" +
+	"\x04jobs\x18\x01 \x03(\v2\r.rtest.v1.JobR\x04jobs\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\"\n" +
 	"\x10CancelJobRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"4\n" +
 	"\x11CancelJobResponse\x12\x1f\n" +
-	"\x03job\x18\x01 \x01(\v2\r.rtest.v1.JobR\x03job\"&\n" +
+	"\x03job\x18\x01 \x01(\v2\r.rtest.v1.JobR\x03job\">\n" +
 	"\x14StreamJobLogsRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"]\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
+	"\x06offset\x18\x02 \x01(\x03R\x06offset\"~\n" +
 	"\x15StreamJobLogsResponse\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\x120\n" +
-	"\fterminal_job\x18\x02 \x01(\v2\r.rtest.v1.JobR\vterminalJob\"\x8d\x02\n" +
+	"\fterminal_job\x18\x02 \x01(\v2\r.rtest.v1.JobR\vterminalJob\x12\x1f\n" +
+	"\vnext_offset\x18\x03 \x01(\x03R\n" +
+	"nextOffset\"\x8d\x02\n" +
 	"\x05Build\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -2834,9 +2900,10 @@ const file_rtest_v1_control_proto_rawDesc = "" +
 	"finishedAt\x12 \n" +
 	"\texit_code\x18\x06 \x01(\x05H\x00R\bexitCode\x88\x01\x01B\f\n" +
 	"\n" +
-	"_exit_code\"/\n" +
+	"_exit_code\"X\n" +
 	"\x13PrepareBuildRequest\x12\x18\n" +
-	"\aproject\x18\x01 \x01(\tR\aproject\"x\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x12'\n" +
+	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\"x\n" +
 	"\x14PrepareBuildResponse\x12%\n" +
 	"\x05build\x18\x01 \x01(\v2\x0f.rtest.v1.BuildR\x05build\x129\n" +
 	"\bbuildkit\x18\x02 \x01(\v2\x1d.rtest.v1.DataPlaneConnectionR\bbuildkit\"_\n" +

@@ -8,10 +8,12 @@ import (
 )
 
 var (
-	ErrAlreadyExists   = errors.New("already exists")
-	ErrForbidden       = errors.New("forbidden")
-	ErrNotFound        = errors.New("not found")
-	ErrUnauthenticated = errors.New("unauthenticated")
+	ErrAlreadyExists       = errors.New("already exists")
+	ErrForbidden           = errors.New("forbidden")
+	ErrIdempotencyConflict = errors.New("idempotency key was already used with a different request")
+	ErrInvalidPageToken    = errors.New("invalid page token")
+	ErrNotFound            = errors.New("not found")
+	ErrUnauthenticated     = errors.New("unauthenticated")
 )
 
 type PrincipalKind string
@@ -138,6 +140,16 @@ type PrepareJob struct {
 	Timeout          time.Duration
 	CPUs             string
 	Memory           string
+}
+
+type Idempotency struct {
+	Key         string
+	RequestHash string
+}
+
+type JobPage struct {
+	Jobs          []Job
+	NextPageToken string
 }
 
 type BuildStatus string
