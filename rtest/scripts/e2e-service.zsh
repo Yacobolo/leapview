@@ -24,8 +24,8 @@ mkdir -p "${proof_dir}"
 go -C "${RTEST_DIR}" build -trimpath -o "${RTEST_TMP_DIR}/rtest" ./cmd/rtest
 config_file="${RTEST_TMP_DIR}/service-e2e-config.json"
 umask 077
-jq -n --arg url "${service_url}" --arg project "${project}" --arg image "${project_image}" --arg ca "${ca_file}" \
-  '{backend:"service",url:$url,service:{project:$project,image:$image,cpus:"2",memory:"4g",ca_cert_file:$ca,oidc_audience:$url}}' \
+jq -n --arg url "${service_url}" --arg image "${project_image}" --arg ca "${ca_file}" \
+  '{backend:"service",url:$url,service:{image:$image,cpus:"2",memory:"4g",ca_cert_file:$ca,oidc_audience:$url}}' \
   > "${config_file}"
 chmod 0600 "${config_file}"
 export RTEST_CONFIG="${config_file}"
@@ -34,6 +34,7 @@ cp -R "${RTEST_DIR}/examples/go-redis/." "${fixture}/"
 git -C "${fixture}" init -q
 git -C "${fixture}" config user.name 'rtest proof'
 git -C "${fixture}" config user.email 'rtest@example.invalid'
+jq -n --arg project "${project}" '{project:$project}' > "${fixture}/rtest.json"
 git -C "${fixture}" add .
 git -C "${fixture}" commit -qm 'committed baseline'
 print 'dirty worktree reached remote worker' > "${fixture}/proof.txt"

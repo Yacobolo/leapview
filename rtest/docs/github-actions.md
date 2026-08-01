@@ -36,6 +36,9 @@ Create a protected GitHub environment named `rtest-poc`, then configure variable
 The workflow needs `id-token: write` and `contents: read`. The composite action writes a
 mode-0600 configuration under `RUNNER_TEMP`; the CLI detects the standard Actions OIDC
 environment, requests an ID token for the rtest audience, and exchanges it on demand.
+The action exposes its required `project` input as `RTEST_PROJECT`, so the OIDC exchange
+and every subsequent operation are bound to that selected project. It does not create or
+rely on a user-wide default.
 
 The POC stays `workflow_dispatch`-only. Enabling trusted pull requests is a separate
 policy change: forked or otherwise untrusted changes must never reach a Docker-backed

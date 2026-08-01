@@ -61,7 +61,6 @@ runs:
         umask 077
         jq -n \
           --arg url "${INPUT_SERVICE_URL}" \
-          --arg project "${INPUT_PROJECT}" \
           --arg image "${INPUT_IMAGE}" \
           --arg ca "${ca_file}" \
           --arg audience "${audience}" \
@@ -70,9 +69,10 @@ runs:
           '{
             backend: "service",
             url: $url,
-            service: ({project: $project, image: $image, cpus: $cpus, memory: $memory, oidc_audience: $audience} + if $ca == "" then {} else {ca_cert_file: $ca} end)
+            service: ({image: $image, cpus: $cpus, memory: $memory, oidc_audience: $audience} + if $ca == "" then {} else {ca_cert_file: $ca} end)
           }' > "${config_file}"
         chmod 0600 "${config_file}"
 
         printf '%s\n' "${bin_dir}" >> "$GITHUB_PATH"
         printf 'RTEST_CONFIG=%s\n' "${config_file}" >> "$GITHUB_ENV"
+        printf 'RTEST_PROJECT=%s\n' "${INPUT_PROJECT}" >> "$GITHUB_ENV"

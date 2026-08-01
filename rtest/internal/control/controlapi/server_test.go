@@ -255,6 +255,36 @@ func TestAdmissionIdempotencyReplaysResourcesAndRejectsChangedRequests(t *testin
 	}
 }
 
+func TestOneDeviceCredentialListsEveryAuthorizedProject(t *testing.T) {
+	fixture := newFixture(t)
+	ctx := context.Background()
+	ownerClient := fixture.client(fixture.bootstrap.Token)
+	second, err := ownerClient.CreateProject(ctx, connect.NewRequest(&rtestv1.CreateProjectRequest{Slug: "second-project", Name: "Second project"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := ownerClient.CreateUser(ctx, connect.NewRequest(&rtestv1.CreateUserRequest{Name: "Project member"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, project := range []string{fixture.bootstrap.Project.ID, second.Msg.Project.Id} {
+		if _, err := ownerClient.AddProjectMember(ctx, connect.NewRequest(&rtestv1.AddProjectMemberRequest{Project: project, UserId: member.Msg.User.Id})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	issued, err := ownerClient.CreateDeviceToken(ctx, connect.NewRequest(&rtestv1.CreateDeviceTokenRequest{Name: "member-laptop", UserId: member.Msg.User.Id}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	projects, err := fixture.client(issued.Msg.Token).ListProjects(ctx, connect.NewRequest(&rtestv1.ListProjectsRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projects.Msg.Projects) != 2 || projects.Msg.Projects[0].Slug != "example" || projects.Msg.Projects[1].Slug != "second-project" {
+		t.Fatalf("projects = %#v", projects.Msg.Projects)
+	}
+}
+
 func TestListJobsUsesOpaqueProjectBoundKeysetPagination(t *testing.T) {
 	fixture := newFixture(t)
 	client := fixture.client(fixture.bootstrap.Token)

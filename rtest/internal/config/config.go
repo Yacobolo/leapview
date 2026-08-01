@@ -120,6 +120,9 @@ func Load() (Config, error) {
 		if config.Service == nil {
 			config.Service = &Service{}
 		}
+		if config.Service.Project != "" {
+			return Config{}, fmt.Errorf("service.project is no longer a global default; remove it and run rtest init to create rtest.json")
+		}
 		if config.Service.CPUs == "" {
 			config.Service.CPUs = "2"
 		}

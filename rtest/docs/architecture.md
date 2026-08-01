@@ -29,6 +29,11 @@ There are no language-specific runner types, generated preparation hooks, or req
 added later if real consumers need it, but the Dev Container specification is not a CI
 or remote-execution dependency.
 
+Repository identity uses one deliberately small, non-secret `rtest.json` containing only
+the rtest project slug. The CLI resolves an explicit flag, `RTEST_PROJECT`, or the nearest
+link between the working directory and Git root, in that order. This supports nested
+monorepos without turning the file into a task or environment specification.
+
 ## Service topology
 
 ```mermaid

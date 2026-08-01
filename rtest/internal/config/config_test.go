@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/flidai/leapview/rtest/internal/config"
@@ -117,7 +118,7 @@ func TestLoadReadsSwarmConfigurationWithoutLegacyToken(t *testing.T) {
 	}
 }
 
-func TestLoadReadsSharedServiceConfigurationWithoutPersistedToken(t *testing.T) {
+func TestLoadRejectsSilentGlobalServiceProject(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	data := []byte(`{
   "backend": "service",
@@ -138,11 +139,33 @@ func TestLoadReadsSharedServiceConfigurationWithoutPersistedToken(t *testing.T) 
 	t.Setenv("RTEST_URL", "")
 	t.Setenv("RTEST_TOKEN", "")
 
+	if _, err := config.Load(); err == nil || !strings.Contains(err.Error(), "rtest.json") {
+		t.Fatalf("global project error = %v", err)
+	}
+}
+
+func TestLoadReadsSharedServiceConfigurationWithoutProjectOrPersistedToken(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	data := []byte(`{
+  "backend": "service",
+  "url": "https://rtest.example",
+  "service": {
+    "image": "ghcr.io/example/ci@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "cpus": "2",
+    "memory": "4g"
+  }
+}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RTEST_CONFIG", path)
+	t.Setenv("RTEST_URL", "")
+	t.Setenv("RTEST_TOKEN", "")
 	got, err := config.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Backend != config.BackendService || got.Service == nil || got.Service.Project != "example-service" || got.Token != "" {
+	if got.Backend != config.BackendService || got.Service == nil || got.Token != "" {
 		t.Fatalf("config = %#v", got)
 	}
 }

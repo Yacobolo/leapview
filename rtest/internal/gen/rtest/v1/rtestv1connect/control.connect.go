@@ -42,6 +42,9 @@ const (
 	// ControlServiceCreateProjectProcedure is the fully-qualified name of the ControlService's
 	// CreateProject RPC.
 	ControlServiceCreateProjectProcedure = "/rtest.v1.ControlService/CreateProject"
+	// ControlServiceListProjectsProcedure is the fully-qualified name of the ControlService's
+	// ListProjects RPC.
+	ControlServiceListProjectsProcedure = "/rtest.v1.ControlService/ListProjects"
 	// ControlServiceAddProjectMemberProcedure is the fully-qualified name of the ControlService's
 	// AddProjectMember RPC.
 	ControlServiceAddProjectMemberProcedure = "/rtest.v1.ControlService/AddProjectMember"
@@ -94,6 +97,7 @@ type ControlServiceClient interface {
 	GetServiceInfo(context.Context, *connect.Request[v1.GetServiceInfoRequest]) (*connect.Response[v1.GetServiceInfoResponse], error)
 	CreateUser(context.Context, *connect.Request[v1.CreateUserRequest]) (*connect.Response[v1.CreateUserResponse], error)
 	CreateProject(context.Context, *connect.Request[v1.CreateProjectRequest]) (*connect.Response[v1.CreateProjectResponse], error)
+	ListProjects(context.Context, *connect.Request[v1.ListProjectsRequest]) (*connect.Response[v1.ListProjectsResponse], error)
 	AddProjectMember(context.Context, *connect.Request[v1.AddProjectMemberRequest]) (*connect.Response[v1.AddProjectMemberResponse], error)
 	PrepareJob(context.Context, *connect.Request[v1.PrepareJobRequest]) (*connect.Response[v1.PrepareJobResponse], error)
 	StartJob(context.Context, *connect.Request[v1.StartJobRequest]) (*connect.Response[v1.StartJobResponse], error)
@@ -139,6 +143,12 @@ func NewControlServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			httpClient,
 			baseURL+ControlServiceCreateProjectProcedure,
 			connect.WithSchema(controlServiceMethods.ByName("CreateProject")),
+			connect.WithClientOptions(opts...),
+		),
+		listProjects: connect.NewClient[v1.ListProjectsRequest, v1.ListProjectsResponse](
+			httpClient,
+			baseURL+ControlServiceListProjectsProcedure,
+			connect.WithSchema(controlServiceMethods.ByName("ListProjects")),
 			connect.WithClientOptions(opts...),
 		),
 		addProjectMember: connect.NewClient[v1.AddProjectMemberRequest, v1.AddProjectMemberResponse](
@@ -245,6 +255,7 @@ type controlServiceClient struct {
 	getServiceInfo     *connect.Client[v1.GetServiceInfoRequest, v1.GetServiceInfoResponse]
 	createUser         *connect.Client[v1.CreateUserRequest, v1.CreateUserResponse]
 	createProject      *connect.Client[v1.CreateProjectRequest, v1.CreateProjectResponse]
+	listProjects       *connect.Client[v1.ListProjectsRequest, v1.ListProjectsResponse]
 	addProjectMember   *connect.Client[v1.AddProjectMemberRequest, v1.AddProjectMemberResponse]
 	prepareJob         *connect.Client[v1.PrepareJobRequest, v1.PrepareJobResponse]
 	startJob           *connect.Client[v1.StartJobRequest, v1.StartJobResponse]
@@ -276,6 +287,11 @@ func (c *controlServiceClient) CreateUser(ctx context.Context, req *connect.Requ
 // CreateProject calls rtest.v1.ControlService.CreateProject.
 func (c *controlServiceClient) CreateProject(ctx context.Context, req *connect.Request[v1.CreateProjectRequest]) (*connect.Response[v1.CreateProjectResponse], error) {
 	return c.createProject.CallUnary(ctx, req)
+}
+
+// ListProjects calls rtest.v1.ControlService.ListProjects.
+func (c *controlServiceClient) ListProjects(ctx context.Context, req *connect.Request[v1.ListProjectsRequest]) (*connect.Response[v1.ListProjectsResponse], error) {
+	return c.listProjects.CallUnary(ctx, req)
 }
 
 // AddProjectMember calls rtest.v1.ControlService.AddProjectMember.
@@ -363,6 +379,7 @@ type ControlServiceHandler interface {
 	GetServiceInfo(context.Context, *connect.Request[v1.GetServiceInfoRequest]) (*connect.Response[v1.GetServiceInfoResponse], error)
 	CreateUser(context.Context, *connect.Request[v1.CreateUserRequest]) (*connect.Response[v1.CreateUserResponse], error)
 	CreateProject(context.Context, *connect.Request[v1.CreateProjectRequest]) (*connect.Response[v1.CreateProjectResponse], error)
+	ListProjects(context.Context, *connect.Request[v1.ListProjectsRequest]) (*connect.Response[v1.ListProjectsResponse], error)
 	AddProjectMember(context.Context, *connect.Request[v1.AddProjectMemberRequest]) (*connect.Response[v1.AddProjectMemberResponse], error)
 	PrepareJob(context.Context, *connect.Request[v1.PrepareJobRequest]) (*connect.Response[v1.PrepareJobResponse], error)
 	StartJob(context.Context, *connect.Request[v1.StartJobRequest]) (*connect.Response[v1.StartJobResponse], error)
@@ -404,6 +421,12 @@ func NewControlServiceHandler(svc ControlServiceHandler, opts ...connect.Handler
 		ControlServiceCreateProjectProcedure,
 		svc.CreateProject,
 		connect.WithSchema(controlServiceMethods.ByName("CreateProject")),
+		connect.WithHandlerOptions(opts...),
+	)
+	controlServiceListProjectsHandler := connect.NewUnaryHandler(
+		ControlServiceListProjectsProcedure,
+		svc.ListProjects,
+		connect.WithSchema(controlServiceMethods.ByName("ListProjects")),
 		connect.WithHandlerOptions(opts...),
 	)
 	controlServiceAddProjectMemberHandler := connect.NewUnaryHandler(
@@ -510,6 +533,8 @@ func NewControlServiceHandler(svc ControlServiceHandler, opts ...connect.Handler
 			controlServiceCreateUserHandler.ServeHTTP(w, r)
 		case ControlServiceCreateProjectProcedure:
 			controlServiceCreateProjectHandler.ServeHTTP(w, r)
+		case ControlServiceListProjectsProcedure:
+			controlServiceListProjectsHandler.ServeHTTP(w, r)
 		case ControlServiceAddProjectMemberProcedure:
 			controlServiceAddProjectMemberHandler.ServeHTTP(w, r)
 		case ControlServicePrepareJobProcedure:
@@ -561,6 +586,10 @@ func (UnimplementedControlServiceHandler) CreateUser(context.Context, *connect.R
 
 func (UnimplementedControlServiceHandler) CreateProject(context.Context, *connect.Request[v1.CreateProjectRequest]) (*connect.Response[v1.CreateProjectResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("rtest.v1.ControlService.CreateProject is not implemented"))
+}
+
+func (UnimplementedControlServiceHandler) ListProjects(context.Context, *connect.Request[v1.ListProjectsRequest]) (*connect.Response[v1.ListProjectsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("rtest.v1.ControlService.ListProjects is not implemented"))
 }
 
 func (UnimplementedControlServiceHandler) AddProjectMember(context.Context, *connect.Request[v1.AddProjectMemberRequest]) (*connect.Response[v1.AddProjectMemberResponse], error) {

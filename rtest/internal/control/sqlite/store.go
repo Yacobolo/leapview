@@ -360,6 +360,36 @@ func (s *Store) CreateProject(ctx context.Context, principal control.Principal, 
 	return project, err
 }
 
+func (s *Store) ListProjects(ctx context.Context, principal control.Principal) ([]control.Project, error) {
+	var rows *sql.Rows
+	var err error
+	switch {
+	case principal.ProjectID != "":
+		rows, err = s.db.QueryContext(ctx, `SELECT id,slug,name,created_at FROM projects WHERE id=? ORDER BY slug,id`, principal.ProjectID)
+	case principal.UserID == "":
+		return nil, control.ErrForbidden
+	case principal.Admin:
+		rows, err = s.db.QueryContext(ctx, `SELECT id,slug,name,created_at FROM projects ORDER BY slug,id`)
+	default:
+		rows, err = s.db.QueryContext(ctx, `SELECT p.id,p.slug,p.name,p.created_at FROM projects p JOIN project_members m ON m.project_id=p.id WHERE m.user_id=? ORDER BY p.slug,p.id`, principal.UserID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	projects := make([]control.Project, 0)
+	for rows.Next() {
+		var project control.Project
+		var created int64
+		if err := rows.Scan(&project.ID, &project.Slug, &project.Name, &created); err != nil {
+			return nil, err
+		}
+		project.CreatedAt = fromUnix(created)
+		projects = append(projects, project)
+	}
+	return projects, rows.Err()
+}
+
 func (s *Store) AddProjectMember(ctx context.Context, principal control.Principal, projectSelector, userID string) error {
 	if !principal.Admin {
 		return control.ErrForbidden

@@ -12,6 +12,7 @@ service ControlService {
 
   rpc CreateUser(CreateUserRequest) returns (CreateUserResponse);
   rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
   rpc AddProjectMember(AddProjectMemberRequest) returns (AddProjectMemberResponse);
 
   rpc PrepareJob(PrepareJobRequest) returns (PrepareJobResponse);
@@ -70,6 +71,12 @@ message CreateProjectRequest {
 
 message CreateProjectResponse {
   Project project = 1;
+}
+
+message ListProjectsRequest {}
+
+message ListProjectsResponse {
+  repeated Project projects = 1;
 }
 
 message AddProjectMemberRequest {

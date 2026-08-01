@@ -19,6 +19,9 @@ Every job and build belongs to one project. The server resolves a project slug o
 admission and stores the immutable project ID. Get, list, cancel, log, and finish
 operations authorize the caller against that stored project; knowing a resource ID does
 not grant access. Page tokens are also bound cryptographically to their project.
+`ListProjects` returns only projects available to the authenticated device user or the
+single project embedded in a temporary GitHub credential; clients use it to validate a
+repository selection before transferring source bytes.
 
 ## Admission idempotency
 

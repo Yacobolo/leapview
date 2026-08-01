@@ -117,6 +117,22 @@ func (s *Server) CreateProject(ctx context.Context, request *connect.Request[rte
 	return connect.NewResponse(&rtestv1.CreateProjectResponse{Project: projectProto(project)}), nil
 }
 
+func (s *Server) ListProjects(ctx context.Context, request *connect.Request[rtestv1.ListProjectsRequest]) (*connect.Response[rtestv1.ListProjectsResponse], error) {
+	principal, err := s.authenticate(ctx, request.Header())
+	if err != nil {
+		return nil, err
+	}
+	projects, err := s.config.Store.ListProjects(ctx, principal)
+	if err != nil {
+		return nil, connectError(err)
+	}
+	response := &rtestv1.ListProjectsResponse{Projects: make([]*rtestv1.Project, 0, len(projects))}
+	for _, project := range projects {
+		response.Projects = append(response.Projects, projectProto(project))
+	}
+	return connect.NewResponse(response), nil
+}
+
 func (s *Server) AddProjectMember(ctx context.Context, request *connect.Request[rtestv1.AddProjectMemberRequest]) (*connect.Response[rtestv1.AddProjectMemberResponse], error) {
 	principal, err := s.authenticate(ctx, request.Header())
 	if err != nil {

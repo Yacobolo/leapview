@@ -26,7 +26,7 @@ import (
 	"github.com/flidai/leapview/rtest/internal/workspace"
 )
 
-const version = "0.4.0"
+const version = "0.5.0"
 
 type IO struct {
 	Stdout io.Writer
@@ -698,6 +698,7 @@ func defaults(streams IO) IO {
 
 func usage(output io.Writer) {
 	fmt.Fprintln(output, `Usage:
+  rtest init [--project <project>]
   rtest [--token <token>] exec [--project <project>] [--image <digest>] [--detach] [--timeout 15m] [--cpus 2] [--memory 4g] [--workdir <path>] [--env KEY=VALUE] -- <command> [arguments...]
   rtest [--token <token>] build [--project <project>] [-- <buildx arguments...>]
   rtest login --token <device-token>

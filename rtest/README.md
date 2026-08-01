@@ -32,12 +32,15 @@ rtest executes arbitrary argument vectors; repositories keep task composition in
 existing Taskfile, scripts, Makefile, or CI configuration:
 
 ```console
+rtest init --project example
 rtest exec --project example --image ghcr.io/example/ci@sha256:... -- task test
 rtest exec --project example --image ghcr.io/example/ci@sha256:... -- go test -race ./...
 ```
 
-The current POC still accepts named suites from `.rtest.json` during migration. That
-profile format and the `standard` Go runner are not part of the accepted long-term
+The committed `rtest.json` contains only the rtest project identifier. It is discovered
+from the nearest directory up to the Git root and is safe to commit; flags and
+`RTEST_PROJECT` can override it. The current POC still accepts named suites from the
+legacy `.rtest.json` during migration. That profile format and the `standard` Go runner are not part of the accepted long-term
 contract. See [the architecture](docs/architecture.md) and
 [ADR 0001](docs/decisions/0001-shared-service-architecture.md). The versioned service
 contract is documented in [Control API v1](docs/control-api.md).

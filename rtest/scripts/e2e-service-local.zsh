@@ -104,6 +104,7 @@ cp -R "${RTEST_DIR}/examples/go-redis/." "${fixture}/"
 git -C "${fixture}" init -q
 git -C "${fixture}" config user.name 'rtest proof'
 git -C "${fixture}" config user.email 'rtest@example.invalid'
+jq -n --arg project "example" '{project:$project}' > "${fixture}/rtest.json"
 git -C "${fixture}" add .
 git -C "${fixture}" commit -qm 'committed baseline'
 print 'dirty worktree reached remote worker' > "${fixture}/proof.txt"
@@ -117,7 +118,7 @@ umask 077
 jq -n \
   --arg ca "${data_dir}/pki/ca.pem" \
   --arg image "${project_image}" \
-  '{backend:"service",url:"https://localhost:18443",service:{project:"example",image:$image,cpus:"2",memory:"4g",ca_cert_file:$ca,oidc_audience:"https://localhost:18443"}}' \
+  '{backend:"service",url:"https://localhost:18443",service:{image:$image,cpus:"2",memory:"4g",ca_cert_file:$ca,oidc_audience:"https://localhost:18443"}}' \
   > "${config_file}"
 chmod 0600 "${config_file}"
 export RTEST_CONFIG="${config_file}"
@@ -192,7 +193,7 @@ print 'FROM scratch\nCOPY proof.txt /proof.txt' > "${build_fixture}/Dockerfile"
 ) 2>&1 | tee "${proof_dir}/build.log"
 cmp "${build_fixture}/proof.txt" "${build_output}/proof.txt"
 
-"${build_dir}/rtest" list --json > "${proof_dir}/list.json"
+"${build_dir}/rtest" list --project example --json > "${proof_dir}/list.json"
 for attempt in {1..80}; do
   docker ps --format '{{.Names}} {{.Labels}}' > "${proof_dir}/docker-containers.txt"
   if ! grep -Eq 'reaper_|org.testcontainers=true' "${proof_dir}/docker-containers.txt"; then
@@ -211,7 +212,7 @@ jq -n \
   --arg queue_first_job "${queue_first_job}" --arg queue_second_job "${queue_second_job}" \
   --arg project_image "${project_image}" \
   --argjson first_seconds "${first_seconds}" --argjson cached_seconds "${cached_seconds}" \
-  '{completed_at:$completed,backend:"connect-https+reapi-cas+docker-swarm+buildkit",project_image:$project_image,first_job:$first_job,cached_job:$cached_job,timeout_job:$timeout_job,cancel_job:$cancel_job,queue_first_job:$queue_first_job,queue_second_job:$queue_second_job,first_seconds:$first_seconds,cached_seconds:$cached_seconds,generic_oci:true,connect_https:true,device_token:true,job_scoped_cas_mtls:true,build_scoped_buildkit_mtls:true,testcontainers:true,dirty_worktree:true,incremental_cas:true,timeout:true,cancellation:true,capacity_queue:true}' \
+  '{completed_at:$completed,backend:"connect-https+reapi-cas+docker-swarm+buildkit",project_image:$project_image,first_job:$first_job,cached_job:$cached_job,timeout_job:$timeout_job,cancel_job:$cancel_job,queue_first_job:$queue_first_job,queue_second_job:$queue_second_job,first_seconds:$first_seconds,cached_seconds:$cached_seconds,generic_oci:true,repository_project_discovery:true,connect_https:true,device_token:true,job_scoped_cas_mtls:true,build_scoped_buildkit_mtls:true,testcontainers:true,dirty_worktree:true,incremental_cas:true,timeout:true,cancellation:true,capacity_queue:true}' \
   > "${proof_dir}/proof.json"
 
 print "shared-service E2E passed: cached ${cached_seconds}s (first ${first_seconds}s)"
