@@ -36,6 +36,8 @@ service ControlService {
   rpc CreateDeviceToken(CreateDeviceTokenRequest) returns (CreateDeviceTokenResponse);
   rpc ListDeviceTokens(ListDeviceTokensRequest) returns (ListDeviceTokensResponse);
   rpc RevokeDeviceToken(RevokeDeviceTokenRequest) returns (RevokeDeviceTokenResponse);
+  rpc CreateEnrollmentCode(CreateEnrollmentCodeRequest) returns (CreateEnrollmentCodeResponse);
+  rpc ExchangeEnrollmentCode(ExchangeEnrollmentCodeRequest) returns (ExchangeEnrollmentCodeResponse);
 }
 
 message GetServiceInfoRequest {}
@@ -92,6 +94,37 @@ message AddProjectMemberRequest {
 }
 
 message AddProjectMemberResponse {}
+
+message EnrollmentCode {
+  string id = 1;
+  string user_id = 2;
+  string device_name = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  google.protobuf.Timestamp consumed_at = 6;
+  int32 failed_attempts = 7;
+  int32 max_attempts = 8;
+}
+
+message CreateEnrollmentCodeRequest {
+  string user_id = 1;
+  string device_name = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message CreateEnrollmentCodeResponse {
+  EnrollmentCode enrollment = 1;
+  string code = 2;
+}
+
+message ExchangeEnrollmentCodeRequest {
+  string code = 1;
+}
+
+message ExchangeEnrollmentCodeResponse {
+  DeviceToken device_token = 1;
+  string token = 2;
+}
 
 message ActivateProjectImageRequest {
   string project = 1;

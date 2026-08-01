@@ -7,8 +7,12 @@ proof_dir="${RTEST_DIR}/evidence/service-local"
 fixture="$(mktemp -d "${TMPDIR:-/tmp}/rtest-service-local-fixture.XXXXXX")"
 data_dir="$(mktemp -d "${TMPDIR:-/tmp}/rtest-service-local-data.XXXXXX")"
 server_pid=""
+keychain_enrolled=false
 
 cleanup() {
+  if [[ "${keychain_enrolled}" == "true" && -x "${build_dir:-}/rtest" && -n "${config_file:-}" ]]; then
+    env -u RTEST_TOKEN RTEST_CONFIG="${config_file}" "${build_dir}/rtest" logout >/dev/null 2>&1 || true
+  fi
   if [[ -n "${server_pid}" ]]; then
     kill "${server_pid}" >/dev/null 2>&1 || true
     wait "${server_pid}" >/dev/null 2>&1 || true
@@ -144,6 +148,32 @@ export RTEST_CONFIG="${config_file}"
 export RTEST_TOKEN="${device_token}"
 
 "${build_dir}/rtest" doctor | tee "${proof_dir}/doctor.log"
+coworker_json="$("${build_dir}/rtest" admin user create --name coworker)"
+print -r -- "${coworker_json}" > "${proof_dir}/coworker.json"
+coworker_id="$(print -r -- "${coworker_json}" | jq -r '.id')"
+"${build_dir}/rtest" admin member add --project example --user "${coworker_id}" > "${proof_dir}/coworker-member.log"
+enrollment_code="$("${build_dir}/rtest" admin enrollment create --user "${coworker_id}" --device coworker-laptop --expires 10m 2> "${proof_dir}/enrollment-create.log")"
+print -r -- "${enrollment_code}" | env -u RTEST_TOKEN RTEST_CONFIG="${config_file}" \
+  "${build_dir}/rtest" login > "${proof_dir}/enrollment-login.log" 2>&1
+keychain_enrolled=true
+env -u RTEST_TOKEN RTEST_CONFIG="${config_file}" "${build_dir}/rtest" doctor > "${proof_dir}/coworker-doctor.log"
+set +e
+print -r -- "${enrollment_code}" | env -u RTEST_TOKEN RTEST_CONFIG="${config_file}" \
+  "${build_dir}/rtest" login > "${proof_dir}/enrollment-reuse.log" 2>&1
+enrollment_reuse_exit=$?
+set -e
+[[ ${enrollment_reuse_exit} -ne 0 ]] || { print -u2 'single-use enrollment code was accepted twice'; exit 1; }
+env -u RTEST_TOKEN RTEST_CONFIG="${config_file}" "${build_dir}/rtest" token list > "${proof_dir}/coworker-tokens.json"
+coworker_token_id="$(jq -r '.[] | select(.name == "coworker-laptop") | .id' "${proof_dir}/coworker-tokens.json")"
+[[ -n "${coworker_token_id}" ]] || { print -u2 'enrolled device token was not listed'; exit 1; }
+env -u RTEST_TOKEN RTEST_CONFIG="${config_file}" "${build_dir}/rtest" token revoke "${coworker_token_id}" > "${proof_dir}/coworker-revoke.log"
+set +e
+env -u RTEST_TOKEN RTEST_CONFIG="${config_file}" "${build_dir}/rtest" token list > "${proof_dir}/coworker-revoked-token-list.log" 2>&1
+revoked_exit=$?
+set -e
+[[ ${revoked_exit} -ne 0 ]] || { print -u2 'revoked enrolled device remained authenticated'; exit 1; }
+env -u RTEST_TOKEN RTEST_CONFIG="${config_file}" "${build_dir}/rtest" logout > "${proof_dir}/coworker-logout.log"
+keychain_enrolled=false
 "${build_dir}/rtest" image activate --project example --image "${project_image}" | tee "${proof_dir}/image-activate.log"
 "${build_dir}/rtest" image activate --project example --image "${cas_image}" | tee "${proof_dir}/image-second-activate.log"
 "${build_dir}/rtest" image rollback --project example | tee "${proof_dir}/image-rollback.log"
@@ -260,7 +290,7 @@ jq -n \
   --arg queue_first_job "${queue_first_job}" --arg queue_second_job "${queue_second_job}" \
   --arg project_image "${project_image}" \
   --argjson first_seconds "${first_seconds}" --argjson cached_seconds "${cached_seconds}" \
-  '{completed_at:$completed,backend:"connect-https+reapi-cas+docker-swarm+buildkit",project_image:$project_image,first_job:$first_job,cached_job:$cached_job,timeout_job:$timeout_job,cancel_job:$cancel_job,queue_first_job:$queue_first_job,queue_second_job:$queue_second_job,first_seconds:$first_seconds,cached_seconds:$cached_seconds,generic_oci:true,repository_project_discovery:true,project_image_lifecycle:true,image_default_resolution:true,image_validation:true,image_rollback:true,image_history:true,image_override_policy:true,image_build_push_activate_execute:true,connect_https:true,device_token:true,job_scoped_cas_mtls:true,build_scoped_buildkit_mtls:true,testcontainers:true,dirty_worktree:true,incremental_cas:true,timeout:true,cancellation:true,capacity_queue:true}' \
+  '{completed_at:$completed,backend:"connect-https+reapi-cas+docker-swarm+buildkit",project_image:$project_image,first_job:$first_job,cached_job:$cached_job,timeout_job:$timeout_job,cancel_job:$cancel_job,queue_first_job:$queue_first_job,queue_second_job:$queue_second_job,first_seconds:$first_seconds,cached_seconds:$cached_seconds,generic_oci:true,repository_project_discovery:true,project_image_lifecycle:true,image_default_resolution:true,image_validation:true,image_rollback:true,image_history:true,image_override_policy:true,image_build_push_activate_execute:true,connect_https:true,device_token:true,one_time_device_enrollment:true,os_keychain_storage:true,enrollment_single_use:true,independent_device_revocation:true,logout:true,job_scoped_cas_mtls:true,build_scoped_buildkit_mtls:true,testcontainers:true,dirty_worktree:true,incremental_cas:true,timeout:true,cancellation:true,capacity_queue:true}' \
   > "${proof_dir}/proof.json"
 
 print "shared-service E2E passed: cached ${cached_seconds}s (first ${first_seconds}s)"

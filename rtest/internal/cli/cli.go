@@ -13,6 +13,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/flidai/leapview/rtest/internal/authclient"
 	"github.com/flidai/leapview/rtest/internal/buildkit"
 	"github.com/flidai/leapview/rtest/internal/cas"
 	"github.com/flidai/leapview/rtest/internal/client"
@@ -26,12 +27,14 @@ import (
 	"github.com/flidai/leapview/rtest/internal/workspace"
 )
 
-const version = "0.5.0"
+const version = "0.6.0"
 
 type IO struct {
-	Stdout io.Writer
-	Stderr io.Writer
-	Dir    string
+	Stdin   io.Reader
+	Stdout  io.Writer
+	Stderr  io.Writer
+	Dir     string
+	Keyring authclient.Keyring
 }
 
 func Run(ctx context.Context, args []string, streams IO) int {
@@ -684,6 +687,9 @@ func encode(streams IO, value any) int {
 }
 
 func defaults(streams IO) IO {
+	if streams.Stdin == nil {
+		streams.Stdin = os.Stdin
+	}
 	if streams.Stdout == nil {
 		streams.Stdout = os.Stdout
 	}
@@ -692,6 +698,9 @@ func defaults(streams IO) IO {
 	}
 	if streams.Dir == "" {
 		streams.Dir = "."
+	}
+	if streams.Keyring == nil {
+		streams.Keyring = authclient.SystemKeyring{}
 	}
 	return streams
 }
@@ -707,7 +716,7 @@ func usage(output io.Writer) {
   rtest [--token <token>] image history [--project <project>]
   rtest [--token <token>] image overrides [--project <project>] <allow|deny>
   rtest [--token <token>] image build [--project <project>] --tag <registry/repository:tag> [--file Dockerfile] [-- <buildx arguments...>]
-  rtest login --token <device-token>
+  rtest login
   rtest logout
   rtest token create --name <device> [--user <id>] [--expires 720h]
   rtest token list
@@ -718,6 +727,7 @@ func usage(output io.Writer) {
   rtest admin user create --name <name> [--admin]
   rtest admin project create --slug <slug> --name <name>
   rtest admin member add --project <project> --user <user-id>
+  rtest admin enrollment create --user <user-id> --device <name> [--expires 10m]
   rtest run [--detach] [--timeout 15m] <suite> [-- <arguments...>]
   rtest run [--detach] [--timeout 15m] -- <command> [arguments...]
   rtest status [--json] <job-id>

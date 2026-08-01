@@ -164,6 +164,96 @@ func TestDeviceTokensAreIndependentlyRevocable(t *testing.T) {
 	}
 }
 
+func TestEnrollmentCodeIsSingleUseAndCreatesIndependentDeviceToken(t *testing.T) {
+	store := openStore(t)
+	ctx := context.Background()
+	bootstrap, err := store.Bootstrap(ctx, control.Bootstrap{UserName: "Owner", ProjectSlug: "one", TokenName: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, _ := store.Authenticate(ctx, bootstrap.Token)
+	user, err := store.CreateUser(ctx, owner, "Coworker", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enrollment, err := store.CreateEnrollmentCode(ctx, owner, user.ID, "coworker-laptop", time.Now().Add(10*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	database, err := sql.Open("sqlite", filepath.Join(store.Root(), "control.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persistedDigest string
+	if err := database.QueryRowContext(ctx, `SELECT digest FROM enrollment_codes WHERE id=?`, enrollment.Metadata.ID).Scan(&persistedDigest); err != nil {
+		t.Fatal(err)
+	}
+	_ = database.Close()
+	if persistedDigest == "" || persistedDigest == enrollment.Secret {
+		t.Fatalf("persisted enrollment material = %q", persistedDigest)
+	}
+	issued, _, err := store.ExchangeEnrollmentCode(ctx, enrollment.Secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issued.Metadata.UserID != user.ID || issued.Metadata.Name != "coworker-laptop" || issued.Secret == "" {
+		t.Fatalf("issued token = %#v", issued)
+	}
+	if _, _, err := store.ExchangeEnrollmentCode(ctx, enrollment.Secret); !errors.Is(err, control.ErrUnauthenticated) {
+		t.Fatalf("reuse error = %v", err)
+	}
+	principal, err := store.Authenticate(ctx, issued.Secret)
+	if err != nil || principal.UserID != user.ID {
+		t.Fatalf("principal=%#v err=%v", principal, err)
+	}
+	if _, err := store.Authenticate(ctx, bootstrap.Token); err != nil {
+		t.Fatalf("owner token was affected: %v", err)
+	}
+}
+
+func TestEnrollmentCodeExpiryAndRetryLimitFailClosed(t *testing.T) {
+	store := openStore(t)
+	ctx := context.Background()
+	bootstrap, err := store.Bootstrap(ctx, control.Bootstrap{UserName: "Owner", ProjectSlug: "one", TokenName: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, _ := store.Authenticate(ctx, bootstrap.Token)
+	expired, err := store.CreateEnrollmentCode(ctx, owner, bootstrap.User.ID, "expired", time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	database, err := sql.Open("sqlite", filepath.Join(store.Root(), "control.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.ExecContext(ctx, `UPDATE enrollment_codes SET expires_at=? WHERE id=?`, time.Now().Add(-time.Second).UnixNano(), expired.Metadata.ID); err != nil {
+		t.Fatal(err)
+	}
+	_ = database.Close()
+	if _, _, err := store.ExchangeEnrollmentCode(ctx, expired.Secret); !errors.Is(err, control.ErrUnauthenticated) {
+		t.Fatalf("expired error = %v", err)
+	}
+
+	limited, err := store.CreateEnrollmentCode(ctx, owner, bootstrap.User.ID, "limited", time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement := byte('x')
+	if limited.Secret[len(limited.Secret)-1] == replacement {
+		replacement = 'y'
+	}
+	wrong := limited.Secret[:len(limited.Secret)-1] + string(replacement)
+	for attempt := 0; attempt < limited.Metadata.MaxAttempts; attempt++ {
+		if _, _, err := store.ExchangeEnrollmentCode(ctx, wrong); !errors.Is(err, control.ErrUnauthenticated) {
+			t.Fatalf("attempt %d error = %v", attempt+1, err)
+		}
+	}
+	if _, _, err := store.ExchangeEnrollmentCode(ctx, limited.Secret); !errors.Is(err, control.ErrUnauthenticated) {
+		t.Fatalf("correct code after retry limit error = %v", err)
+	}
+}
+
 func TestProjectMembershipAndGitHubTrustAreScoped(t *testing.T) {
 	store := openStore(t)
 	ctx := context.Background()

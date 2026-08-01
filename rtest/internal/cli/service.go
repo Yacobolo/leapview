@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -24,6 +26,7 @@ import (
 	"github.com/flidai/leapview/rtest/internal/projectlink"
 	"github.com/flidai/leapview/rtest/internal/protocol"
 	"github.com/flidai/leapview/rtest/internal/workspace"
+	"golang.org/x/term"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -50,7 +53,7 @@ func runService(ctx context.Context, settings config.Config, explicitToken strin
 			return failUsage(streams.Stderr, err.Error())
 		}
 	}
-	api, source, err := authenticatedServiceClient(ctx, settings, explicitToken, selectedProject)
+	api, source, err := authenticatedServiceClient(ctx, settings, explicitToken, selectedProject, streams.Keyring)
 	if err != nil {
 		return fail(streams.Stderr, err)
 	}
@@ -87,7 +90,7 @@ func runService(ctx context.Context, settings config.Config, explicitToken strin
 
 func serviceAdmin(ctx context.Context, api rtestv1connect.ControlServiceClient, args []string, streams IO) int {
 	if len(args) < 2 {
-		return failUsage(streams.Stderr, "admin requires user create, project create, or member add")
+		return failUsage(streams.Stderr, "admin requires user create, project create, member add, or enrollment create")
 	}
 	resource, command, args := args[0], args[1], args[2:]
 	values := map[string]string{}
@@ -130,12 +133,33 @@ func serviceAdmin(ctx context.Context, api rtestv1connect.ControlServiceClient, 
 		}
 		fmt.Fprintf(streams.Stdout, "Added user %s to project %s\n", values["--user"], values["--project"])
 		return 0
+	case "enrollment create":
+		if values["--user"] == "" || values["--device"] == "" {
+			return failUsage(streams.Stderr, "admin enrollment create requires --user and --device")
+		}
+		expires := 10 * time.Minute
+		if values["--expires"] != "" {
+			parsed, err := time.ParseDuration(values["--expires"])
+			if err != nil || parsed < time.Minute || parsed > 30*time.Minute {
+				return failUsage(streams.Stderr, "enrollment expiry must be between 1m and 30m")
+			}
+			expires = parsed
+		}
+		response, err := api.CreateEnrollmentCode(ctx, connect.NewRequest(&rtestv1.CreateEnrollmentCodeRequest{
+			UserId: values["--user"], DeviceName: values["--device"], ExpiresAt: timestamppb.New(time.Now().Add(expires)),
+		}))
+		if err != nil {
+			return fail(streams.Stderr, err)
+		}
+		fmt.Fprintln(streams.Stdout, response.Msg.Code)
+		fmt.Fprintf(streams.Stderr, "Enrollment for %s expires at %s and can be used once.\n", response.Msg.Enrollment.DeviceName, response.Msg.Enrollment.ExpiresAt.AsTime().Format(time.RFC3339))
+		return 0
 	default:
-		return failUsage(streams.Stderr, "admin requires user create, project create, or member add")
+		return failUsage(streams.Stderr, "admin requires user create, project create, member add, or enrollment create")
 	}
 }
 
-func authenticatedServiceClient(ctx context.Context, settings config.Config, explicitToken, project string) (rtestv1connect.ControlServiceClient, authclient.Source, error) {
+func authenticatedServiceClient(ctx context.Context, settings config.Config, explicitToken, project string, keyring authclient.Keyring) (rtestv1connect.ControlServiceClient, authclient.Source, error) {
 	github := authclient.GitHubActions{}
 	oidc := func(ctx context.Context) (string, error) {
 		if !github.Available() {
@@ -162,7 +186,7 @@ func authenticatedServiceClient(ctx context.Context, settings config.Config, exp
 		oidc = nil
 	}
 	token, source, err := authclient.Resolve(ctx, authclient.ResolveOptions{
-		ExplicitToken: explicitToken, ServiceURL: settings.URL, Keyring: authclient.SystemKeyring{}, OIDC: oidc,
+		ExplicitToken: explicitToken, ServiceURL: settings.URL, Keyring: keyring, OIDC: oidc,
 	})
 	if err != nil {
 		return nil, "", err
@@ -177,11 +201,23 @@ func serviceLogin(ctx context.Context, settings config.Config, explicitToken str
 		token = args[1]
 		args = nil
 	}
-	if token == "" {
-		token = os.Getenv("RTEST_TOKEN")
+	if len(args) != 0 {
+		return failUsage(streams.Stderr, "login accepts no arguments; enter an enrollment code when prompted")
 	}
-	if len(args) != 0 || token == "" {
-		return failUsage(streams.Stderr, "login requires --token <device-token>")
+	if token == "" {
+		code, err := readEnrollmentCode(streams)
+		if err != nil {
+			return fail(streams.Stderr, err)
+		}
+		api, err := controlclient.New(settings.URL, "", settings.Service.CACertFile)
+		if err != nil {
+			return fail(streams.Stderr, err)
+		}
+		exchanged, err := api.ExchangeEnrollmentCode(ctx, connect.NewRequest(&rtestv1.ExchangeEnrollmentCodeRequest{Code: code}))
+		if err != nil {
+			return fail(streams.Stderr, fmt.Errorf("exchange enrollment code: %w", err))
+		}
+		token = exchanged.Msg.Token
 	}
 	api, err := controlclient.New(settings.URL, token, settings.Service.CACertFile)
 	if err != nil {
@@ -190,7 +226,7 @@ func serviceLogin(ctx context.Context, settings config.Config, explicitToken str
 	if _, err := api.ListDeviceTokens(ctx, connect.NewRequest(&rtestv1.ListDeviceTokensRequest{})); err != nil {
 		return fail(streams.Stderr, fmt.Errorf("validate device token: %w", err))
 	}
-	if err := authclient.StoreToken(authclient.SystemKeyring{}, settings.URL, token); err != nil {
+	if err := authclient.StoreToken(streams.Keyring, settings.URL, token); err != nil {
 		return fail(streams.Stderr, fmt.Errorf("store device token: %w", err))
 	}
 	fmt.Fprintln(streams.Stdout, "Authenticated to "+settings.URL)
@@ -198,11 +234,37 @@ func serviceLogin(ctx context.Context, settings config.Config, explicitToken str
 }
 
 func serviceLogout(settings config.Config, streams IO) int {
-	if err := authclient.DeleteToken(authclient.SystemKeyring{}, settings.URL); err != nil {
+	if err := authclient.DeleteToken(streams.Keyring, settings.URL); err != nil {
 		return fail(streams.Stderr, err)
 	}
 	fmt.Fprintln(streams.Stdout, "Removed the local rtest credential")
 	return 0
+}
+
+func readEnrollmentCode(streams IO) (string, error) {
+	fmt.Fprint(streams.Stderr, "Enrollment code: ")
+	if input, ok := streams.Stdin.(*os.File); ok && term.IsTerminal(int(input.Fd())) {
+		secret, err := term.ReadPassword(int(input.Fd()))
+		fmt.Fprintln(streams.Stderr)
+		if err != nil {
+			return "", err
+		}
+		return validateEnrollmentInput(string(secret))
+	}
+	reader := bufio.NewReader(io.LimitReader(streams.Stdin, 257))
+	secret, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+	return validateEnrollmentInput(secret)
+}
+
+func validateEnrollmentInput(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if len(value) < 32 || len(value) > 256 {
+		return "", errors.New("invalid enrollment code")
+	}
+	return value, nil
 }
 
 func serviceInit(ctx context.Context, api rtestv1connect.ControlServiceClient, args []string, streams IO) int {

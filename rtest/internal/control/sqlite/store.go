@@ -105,6 +105,18 @@ CREATE TABLE IF NOT EXISTS access_tokens (
   revoked_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS access_tokens_user_idx ON access_tokens(user_id, created_at);
+CREATE TABLE IF NOT EXISTS enrollment_codes (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  device_name TEXT NOT NULL,
+  digest TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  consumed_at INTEGER,
+  failed_attempts INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS enrollment_codes_expiry_idx ON enrollment_codes(expires_at, consumed_at);
 CREATE TABLE IF NOT EXISTS github_trusts (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -579,6 +591,97 @@ func (s *Store) CreateDeviceToken(ctx context.Context, principal control.Princip
 		return control.IssuedDeviceToken{}, err
 	}
 	return control.IssuedDeviceToken{Metadata: control.DeviceToken{ID: id, Name: input.Name, UserID: input.UserID, CreatedAt: now, ExpiresAt: expiresPtr}, Secret: secret}, nil
+}
+
+func (s *Store) CreateEnrollmentCode(ctx context.Context, principal control.Principal, userID, deviceName string, expiresAt time.Time) (control.IssuedEnrollmentCode, error) {
+	if principal.Kind != control.PrincipalDevice || !principal.Admin {
+		return control.IssuedEnrollmentCode{}, control.ErrForbidden
+	}
+	if strings.TrimSpace(userID) == "" || strings.TrimSpace(deviceName) == "" {
+		return control.IssuedEnrollmentCode{}, errors.New("enrollment user and device name are required")
+	}
+	now := time.Now().UTC()
+	if !expiresAt.After(now) || expiresAt.After(now.Add(30*time.Minute)) {
+		return control.IssuedEnrollmentCode{}, errors.New("enrollment expiry must be within 30 minutes")
+	}
+	var exists int
+	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM users WHERE id=?`, userID).Scan(&exists); err != nil {
+		return control.IssuedEnrollmentCode{}, control.ErrNotFound
+	}
+	id, secret, digest, err := s.newToken("enr")
+	if err != nil {
+		return control.IssuedEnrollmentCode{}, err
+	}
+	metadata := control.EnrollmentCode{
+		ID: id, UserID: userID, DeviceName: deviceName, CreatedAt: now, ExpiresAt: expiresAt.UTC(), MaxAttempts: 5,
+	}
+	_, err = s.db.ExecContext(ctx, `INSERT INTO enrollment_codes(id,user_id,device_name,digest,created_at,expires_at,max_attempts) VALUES(?,?,?,?,?,?,?)`,
+		metadata.ID, metadata.UserID, metadata.DeviceName, digest, unix(metadata.CreatedAt), unix(metadata.ExpiresAt), metadata.MaxAttempts)
+	if err != nil {
+		return control.IssuedEnrollmentCode{}, err
+	}
+	return control.IssuedEnrollmentCode{Metadata: metadata, Secret: secret}, nil
+}
+
+func (s *Store) ExchangeEnrollmentCode(ctx context.Context, code string) (control.IssuedDeviceToken, control.EnrollmentCode, error) {
+	parts := strings.SplitN(code, "_", 4)
+	if len(parts) != 4 || parts[0] != "rtest" || parts[1] != "enr" || parts[2] == "" || parts[3] == "" {
+		return control.IssuedDeviceToken{}, control.EnrollmentCode{}, control.ErrUnauthenticated
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return control.IssuedDeviceToken{}, control.EnrollmentCode{}, err
+	}
+	defer tx.Rollback()
+	var enrollment control.EnrollmentCode
+	var digest string
+	var created, expires int64
+	var consumed sql.NullInt64
+	err = tx.QueryRowContext(ctx, `SELECT id,user_id,device_name,digest,created_at,expires_at,consumed_at,failed_attempts,max_attempts FROM enrollment_codes WHERE id=?`, parts[2]).
+		Scan(&enrollment.ID, &enrollment.UserID, &enrollment.DeviceName, &digest, &created, &expires, &consumed, &enrollment.FailedAttempts, &enrollment.MaxAttempts)
+	if errors.Is(err, sql.ErrNoRows) {
+		return control.IssuedDeviceToken{}, control.EnrollmentCode{}, control.ErrUnauthenticated
+	}
+	if err != nil {
+		return control.IssuedDeviceToken{}, control.EnrollmentCode{}, err
+	}
+	enrollment.CreatedAt, enrollment.ExpiresAt, enrollment.ConsumedAt = fromUnix(created), fromUnix(expires), nullableTime(consumed)
+	now := time.Now().UTC()
+	if enrollment.ConsumedAt != nil || !now.Before(enrollment.ExpiresAt) || enrollment.FailedAttempts >= enrollment.MaxAttempts {
+		return control.IssuedDeviceToken{}, enrollment, control.ErrUnauthenticated
+	}
+	want := s.digest(code)
+	if len(want) != len(digest) || subtle.ConstantTimeCompare([]byte(want), []byte(digest)) != 1 {
+		enrollment.FailedAttempts++
+		if _, err := tx.ExecContext(ctx, `UPDATE enrollment_codes SET failed_attempts=? WHERE id=?`, enrollment.FailedAttempts, enrollment.ID); err != nil {
+			return control.IssuedDeviceToken{}, control.EnrollmentCode{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return control.IssuedDeviceToken{}, control.EnrollmentCode{}, err
+		}
+		return control.IssuedDeviceToken{}, enrollment, control.ErrUnauthenticated
+	}
+	tokenID, secret, tokenDigest, err := s.newToken("dt")
+	if err != nil {
+		return control.IssuedDeviceToken{}, control.EnrollmentCode{}, err
+	}
+	deviceToken := control.DeviceToken{ID: tokenID, Name: enrollment.DeviceName, UserID: enrollment.UserID, CreatedAt: now}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO access_tokens(id,kind,user_id,name,digest,created_at) VALUES(?,?,?,?,?,?)`,
+		deviceToken.ID, control.PrincipalDevice, deviceToken.UserID, deviceToken.Name, tokenDigest, unix(now)); err != nil {
+		return control.IssuedDeviceToken{}, control.EnrollmentCode{}, err
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE enrollment_codes SET consumed_at=? WHERE id=? AND consumed_at IS NULL AND failed_attempts < max_attempts`, unix(now), enrollment.ID)
+	if err != nil {
+		return control.IssuedDeviceToken{}, control.EnrollmentCode{}, err
+	}
+	if count, _ := result.RowsAffected(); count != 1 {
+		return control.IssuedDeviceToken{}, enrollment, control.ErrUnauthenticated
+	}
+	if err := tx.Commit(); err != nil {
+		return control.IssuedDeviceToken{}, control.EnrollmentCode{}, err
+	}
+	enrollment.ConsumedAt = &now
+	return control.IssuedDeviceToken{Metadata: deviceToken, Secret: secret}, enrollment, nil
 }
 
 func (s *Store) ListDeviceTokens(ctx context.Context, principal control.Principal) ([]control.DeviceToken, error) {

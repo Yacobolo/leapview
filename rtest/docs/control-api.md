@@ -37,6 +37,20 @@ the previous digest before atomically swapping active and previous. `ListProject
 is project-authorized and returns the activation/rollback actor, digest, replaced digest, and
 timestamp in newest-first order.
 
+## Device enrollment
+
+`CreateEnrollmentCode` requires an administrator's device credential and names the target
+user and device. Codes expire between one and 30 minutes after issuance, contain 256 bits
+of entropy, are stored only as a keyed digest, and lock permanently after five failed
+secret comparisons. The response is the only time the code is returned.
+
+`ExchangeEnrollmentCode` is intentionally unauthenticated: the one-time code is its
+credential. A successful SQLite transaction consumes the code and creates the same opaque,
+independently revocable device-token type used everywhere else. Reuse, expiry, malformed
+input, an unknown code, or the retry limit returns `UNAUTHENTICATED` without revealing
+which condition occurred. The CLI sends the code in the protobuf request body over TLS,
+never in a URL or required command argument.
+
 ## Admission idempotency
 
 `PrepareJob` and `PrepareBuild` require an `idempotency_key` containing 8–128 URL-safe

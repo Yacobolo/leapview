@@ -753,6 +753,314 @@ func (*AddProjectMemberResponse) Descriptor() ([]byte, []int) {
 	return file_rtest_v1_control_proto_rawDescGZIP(), []int{11}
 }
 
+type EnrollmentCode struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	UserId         string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	DeviceName     string                 `protobuf:"bytes,3,opt,name=device_name,json=deviceName,proto3" json:"device_name,omitempty"`
+	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	ExpiresAt      *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	ConsumedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=consumed_at,json=consumedAt,proto3" json:"consumed_at,omitempty"`
+	FailedAttempts int32                  `protobuf:"varint,7,opt,name=failed_attempts,json=failedAttempts,proto3" json:"failed_attempts,omitempty"`
+	MaxAttempts    int32                  `protobuf:"varint,8,opt,name=max_attempts,json=maxAttempts,proto3" json:"max_attempts,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *EnrollmentCode) Reset() {
+	*x = EnrollmentCode{}
+	mi := &file_rtest_v1_control_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnrollmentCode) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnrollmentCode) ProtoMessage() {}
+
+func (x *EnrollmentCode) ProtoReflect() protoreflect.Message {
+	mi := &file_rtest_v1_control_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnrollmentCode.ProtoReflect.Descriptor instead.
+func (*EnrollmentCode) Descriptor() ([]byte, []int) {
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *EnrollmentCode) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *EnrollmentCode) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *EnrollmentCode) GetDeviceName() string {
+	if x != nil {
+		return x.DeviceName
+	}
+	return ""
+}
+
+func (x *EnrollmentCode) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *EnrollmentCode) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *EnrollmentCode) GetConsumedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ConsumedAt
+	}
+	return nil
+}
+
+func (x *EnrollmentCode) GetFailedAttempts() int32 {
+	if x != nil {
+		return x.FailedAttempts
+	}
+	return 0
+}
+
+func (x *EnrollmentCode) GetMaxAttempts() int32 {
+	if x != nil {
+		return x.MaxAttempts
+	}
+	return 0
+}
+
+type CreateEnrollmentCodeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	DeviceName    string                 `protobuf:"bytes,2,opt,name=device_name,json=deviceName,proto3" json:"device_name,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateEnrollmentCodeRequest) Reset() {
+	*x = CreateEnrollmentCodeRequest{}
+	mi := &file_rtest_v1_control_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateEnrollmentCodeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateEnrollmentCodeRequest) ProtoMessage() {}
+
+func (x *CreateEnrollmentCodeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rtest_v1_control_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateEnrollmentCodeRequest.ProtoReflect.Descriptor instead.
+func (*CreateEnrollmentCodeRequest) Descriptor() ([]byte, []int) {
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *CreateEnrollmentCodeRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *CreateEnrollmentCodeRequest) GetDeviceName() string {
+	if x != nil {
+		return x.DeviceName
+	}
+	return ""
+}
+
+func (x *CreateEnrollmentCodeRequest) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+type CreateEnrollmentCodeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Enrollment    *EnrollmentCode        `protobuf:"bytes,1,opt,name=enrollment,proto3" json:"enrollment,omitempty"`
+	Code          string                 `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateEnrollmentCodeResponse) Reset() {
+	*x = CreateEnrollmentCodeResponse{}
+	mi := &file_rtest_v1_control_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateEnrollmentCodeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateEnrollmentCodeResponse) ProtoMessage() {}
+
+func (x *CreateEnrollmentCodeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_rtest_v1_control_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateEnrollmentCodeResponse.ProtoReflect.Descriptor instead.
+func (*CreateEnrollmentCodeResponse) Descriptor() ([]byte, []int) {
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *CreateEnrollmentCodeResponse) GetEnrollment() *EnrollmentCode {
+	if x != nil {
+		return x.Enrollment
+	}
+	return nil
+}
+
+func (x *CreateEnrollmentCodeResponse) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+type ExchangeEnrollmentCodeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Code          string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExchangeEnrollmentCodeRequest) Reset() {
+	*x = ExchangeEnrollmentCodeRequest{}
+	mi := &file_rtest_v1_control_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExchangeEnrollmentCodeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExchangeEnrollmentCodeRequest) ProtoMessage() {}
+
+func (x *ExchangeEnrollmentCodeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rtest_v1_control_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExchangeEnrollmentCodeRequest.ProtoReflect.Descriptor instead.
+func (*ExchangeEnrollmentCodeRequest) Descriptor() ([]byte, []int) {
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ExchangeEnrollmentCodeRequest) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+type ExchangeEnrollmentCodeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DeviceToken   *DeviceToken           `protobuf:"bytes,1,opt,name=device_token,json=deviceToken,proto3" json:"device_token,omitempty"`
+	Token         string                 `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExchangeEnrollmentCodeResponse) Reset() {
+	*x = ExchangeEnrollmentCodeResponse{}
+	mi := &file_rtest_v1_control_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExchangeEnrollmentCodeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExchangeEnrollmentCodeResponse) ProtoMessage() {}
+
+func (x *ExchangeEnrollmentCodeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_rtest_v1_control_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExchangeEnrollmentCodeResponse.ProtoReflect.Descriptor instead.
+func (*ExchangeEnrollmentCodeResponse) Descriptor() ([]byte, []int) {
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ExchangeEnrollmentCodeResponse) GetDeviceToken() *DeviceToken {
+	if x != nil {
+		return x.DeviceToken
+	}
+	return nil
+}
+
+func (x *ExchangeEnrollmentCodeResponse) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
 type ActivateProjectImageRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
@@ -763,7 +1071,7 @@ type ActivateProjectImageRequest struct {
 
 func (x *ActivateProjectImageRequest) Reset() {
 	*x = ActivateProjectImageRequest{}
-	mi := &file_rtest_v1_control_proto_msgTypes[12]
+	mi := &file_rtest_v1_control_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -775,7 +1083,7 @@ func (x *ActivateProjectImageRequest) String() string {
 func (*ActivateProjectImageRequest) ProtoMessage() {}
 
 func (x *ActivateProjectImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[12]
+	mi := &file_rtest_v1_control_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -788,7 +1096,7 @@ func (x *ActivateProjectImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActivateProjectImageRequest.ProtoReflect.Descriptor instead.
 func (*ActivateProjectImageRequest) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{12}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ActivateProjectImageRequest) GetProject() string {
@@ -814,7 +1122,7 @@ type ActivateProjectImageResponse struct {
 
 func (x *ActivateProjectImageResponse) Reset() {
 	*x = ActivateProjectImageResponse{}
-	mi := &file_rtest_v1_control_proto_msgTypes[13]
+	mi := &file_rtest_v1_control_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -826,7 +1134,7 @@ func (x *ActivateProjectImageResponse) String() string {
 func (*ActivateProjectImageResponse) ProtoMessage() {}
 
 func (x *ActivateProjectImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[13]
+	mi := &file_rtest_v1_control_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -839,7 +1147,7 @@ func (x *ActivateProjectImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActivateProjectImageResponse.ProtoReflect.Descriptor instead.
 func (*ActivateProjectImageResponse) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{13}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ActivateProjectImageResponse) GetProject() *Project {
@@ -858,7 +1166,7 @@ type RollbackProjectImageRequest struct {
 
 func (x *RollbackProjectImageRequest) Reset() {
 	*x = RollbackProjectImageRequest{}
-	mi := &file_rtest_v1_control_proto_msgTypes[14]
+	mi := &file_rtest_v1_control_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -870,7 +1178,7 @@ func (x *RollbackProjectImageRequest) String() string {
 func (*RollbackProjectImageRequest) ProtoMessage() {}
 
 func (x *RollbackProjectImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[14]
+	mi := &file_rtest_v1_control_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -883,7 +1191,7 @@ func (x *RollbackProjectImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RollbackProjectImageRequest.ProtoReflect.Descriptor instead.
 func (*RollbackProjectImageRequest) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{14}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *RollbackProjectImageRequest) GetProject() string {
@@ -902,7 +1210,7 @@ type RollbackProjectImageResponse struct {
 
 func (x *RollbackProjectImageResponse) Reset() {
 	*x = RollbackProjectImageResponse{}
-	mi := &file_rtest_v1_control_proto_msgTypes[15]
+	mi := &file_rtest_v1_control_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -914,7 +1222,7 @@ func (x *RollbackProjectImageResponse) String() string {
 func (*RollbackProjectImageResponse) ProtoMessage() {}
 
 func (x *RollbackProjectImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[15]
+	mi := &file_rtest_v1_control_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -927,7 +1235,7 @@ func (x *RollbackProjectImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RollbackProjectImageResponse.ProtoReflect.Descriptor instead.
 func (*RollbackProjectImageResponse) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{15}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *RollbackProjectImageResponse) GetProject() *Project {
@@ -947,7 +1255,7 @@ type SetProjectImagePolicyRequest struct {
 
 func (x *SetProjectImagePolicyRequest) Reset() {
 	*x = SetProjectImagePolicyRequest{}
-	mi := &file_rtest_v1_control_proto_msgTypes[16]
+	mi := &file_rtest_v1_control_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -959,7 +1267,7 @@ func (x *SetProjectImagePolicyRequest) String() string {
 func (*SetProjectImagePolicyRequest) ProtoMessage() {}
 
 func (x *SetProjectImagePolicyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[16]
+	mi := &file_rtest_v1_control_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -972,7 +1280,7 @@ func (x *SetProjectImagePolicyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetProjectImagePolicyRequest.ProtoReflect.Descriptor instead.
 func (*SetProjectImagePolicyRequest) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{16}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *SetProjectImagePolicyRequest) GetProject() string {
@@ -998,7 +1306,7 @@ type SetProjectImagePolicyResponse struct {
 
 func (x *SetProjectImagePolicyResponse) Reset() {
 	*x = SetProjectImagePolicyResponse{}
-	mi := &file_rtest_v1_control_proto_msgTypes[17]
+	mi := &file_rtest_v1_control_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1010,7 +1318,7 @@ func (x *SetProjectImagePolicyResponse) String() string {
 func (*SetProjectImagePolicyResponse) ProtoMessage() {}
 
 func (x *SetProjectImagePolicyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[17]
+	mi := &file_rtest_v1_control_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1023,7 +1331,7 @@ func (x *SetProjectImagePolicyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetProjectImagePolicyResponse.ProtoReflect.Descriptor instead.
 func (*SetProjectImagePolicyResponse) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{17}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *SetProjectImagePolicyResponse) GetProject() *Project {
@@ -1048,7 +1356,7 @@ type ProjectImageEvent struct {
 
 func (x *ProjectImageEvent) Reset() {
 	*x = ProjectImageEvent{}
-	mi := &file_rtest_v1_control_proto_msgTypes[18]
+	mi := &file_rtest_v1_control_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1060,7 +1368,7 @@ func (x *ProjectImageEvent) String() string {
 func (*ProjectImageEvent) ProtoMessage() {}
 
 func (x *ProjectImageEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[18]
+	mi := &file_rtest_v1_control_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1073,7 +1381,7 @@ func (x *ProjectImageEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectImageEvent.ProtoReflect.Descriptor instead.
 func (*ProjectImageEvent) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{18}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ProjectImageEvent) GetId() string {
@@ -1134,7 +1442,7 @@ type ListProjectImageHistoryRequest struct {
 
 func (x *ListProjectImageHistoryRequest) Reset() {
 	*x = ListProjectImageHistoryRequest{}
-	mi := &file_rtest_v1_control_proto_msgTypes[19]
+	mi := &file_rtest_v1_control_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1146,7 +1454,7 @@ func (x *ListProjectImageHistoryRequest) String() string {
 func (*ListProjectImageHistoryRequest) ProtoMessage() {}
 
 func (x *ListProjectImageHistoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[19]
+	mi := &file_rtest_v1_control_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1159,7 +1467,7 @@ func (x *ListProjectImageHistoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProjectImageHistoryRequest.ProtoReflect.Descriptor instead.
 func (*ListProjectImageHistoryRequest) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{19}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ListProjectImageHistoryRequest) GetProject() string {
@@ -1178,7 +1486,7 @@ type ListProjectImageHistoryResponse struct {
 
 func (x *ListProjectImageHistoryResponse) Reset() {
 	*x = ListProjectImageHistoryResponse{}
-	mi := &file_rtest_v1_control_proto_msgTypes[20]
+	mi := &file_rtest_v1_control_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1190,7 +1498,7 @@ func (x *ListProjectImageHistoryResponse) String() string {
 func (*ListProjectImageHistoryResponse) ProtoMessage() {}
 
 func (x *ListProjectImageHistoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[20]
+	mi := &file_rtest_v1_control_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1203,7 +1511,7 @@ func (x *ListProjectImageHistoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProjectImageHistoryResponse.ProtoReflect.Descriptor instead.
 func (*ListProjectImageHistoryResponse) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{20}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ListProjectImageHistoryResponse) GetEvents() []*ProjectImageEvent {
@@ -1239,7 +1547,7 @@ type Job struct {
 
 func (x *Job) Reset() {
 	*x = Job{}
-	mi := &file_rtest_v1_control_proto_msgTypes[21]
+	mi := &file_rtest_v1_control_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1251,7 +1559,7 @@ func (x *Job) String() string {
 func (*Job) ProtoMessage() {}
 
 func (x *Job) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[21]
+	mi := &file_rtest_v1_control_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1264,7 +1572,7 @@ func (x *Job) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Job.ProtoReflect.Descriptor instead.
 func (*Job) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{21}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *Job) GetId() string {
@@ -1410,7 +1718,7 @@ type PrepareJobRequest struct {
 
 func (x *PrepareJobRequest) Reset() {
 	*x = PrepareJobRequest{}
-	mi := &file_rtest_v1_control_proto_msgTypes[22]
+	mi := &file_rtest_v1_control_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1422,7 +1730,7 @@ func (x *PrepareJobRequest) String() string {
 func (*PrepareJobRequest) ProtoMessage() {}
 
 func (x *PrepareJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[22]
+	mi := &file_rtest_v1_control_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1435,7 +1743,7 @@ func (x *PrepareJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareJobRequest.ProtoReflect.Descriptor instead.
 func (*PrepareJobRequest) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{22}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *PrepareJobRequest) GetProject() string {
@@ -1516,7 +1824,7 @@ type DataPlaneConnection struct {
 
 func (x *DataPlaneConnection) Reset() {
 	*x = DataPlaneConnection{}
-	mi := &file_rtest_v1_control_proto_msgTypes[23]
+	mi := &file_rtest_v1_control_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1528,7 +1836,7 @@ func (x *DataPlaneConnection) String() string {
 func (*DataPlaneConnection) ProtoMessage() {}
 
 func (x *DataPlaneConnection) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[23]
+	mi := &file_rtest_v1_control_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1541,7 +1849,7 @@ func (x *DataPlaneConnection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DataPlaneConnection.ProtoReflect.Descriptor instead.
 func (*DataPlaneConnection) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{23}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *DataPlaneConnection) GetEndpoint() string {
@@ -1603,7 +1911,7 @@ type PrepareJobResponse struct {
 
 func (x *PrepareJobResponse) Reset() {
 	*x = PrepareJobResponse{}
-	mi := &file_rtest_v1_control_proto_msgTypes[24]
+	mi := &file_rtest_v1_control_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1615,7 +1923,7 @@ func (x *PrepareJobResponse) String() string {
 func (*PrepareJobResponse) ProtoMessage() {}
 
 func (x *PrepareJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[24]
+	mi := &file_rtest_v1_control_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1628,7 +1936,7 @@ func (x *PrepareJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareJobResponse.ProtoReflect.Descriptor instead.
 func (*PrepareJobResponse) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{24}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *PrepareJobResponse) GetJob() *Job {
@@ -1655,7 +1963,7 @@ type StartJobRequest struct {
 
 func (x *StartJobRequest) Reset() {
 	*x = StartJobRequest{}
-	mi := &file_rtest_v1_control_proto_msgTypes[25]
+	mi := &file_rtest_v1_control_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1667,7 +1975,7 @@ func (x *StartJobRequest) String() string {
 func (*StartJobRequest) ProtoMessage() {}
 
 func (x *StartJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[25]
+	mi := &file_rtest_v1_control_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1680,7 +1988,7 @@ func (x *StartJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartJobRequest.ProtoReflect.Descriptor instead.
 func (*StartJobRequest) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{25}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *StartJobRequest) GetId() string {
@@ -1706,7 +2014,7 @@ type StartJobResponse struct {
 
 func (x *StartJobResponse) Reset() {
 	*x = StartJobResponse{}
-	mi := &file_rtest_v1_control_proto_msgTypes[26]
+	mi := &file_rtest_v1_control_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1718,7 +2026,7 @@ func (x *StartJobResponse) String() string {
 func (*StartJobResponse) ProtoMessage() {}
 
 func (x *StartJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[26]
+	mi := &file_rtest_v1_control_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1731,7 +2039,7 @@ func (x *StartJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartJobResponse.ProtoReflect.Descriptor instead.
 func (*StartJobResponse) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{26}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *StartJobResponse) GetJob() *Job {
@@ -1750,7 +2058,7 @@ type GetJobRequest struct {
 
 func (x *GetJobRequest) Reset() {
 	*x = GetJobRequest{}
-	mi := &file_rtest_v1_control_proto_msgTypes[27]
+	mi := &file_rtest_v1_control_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1762,7 +2070,7 @@ func (x *GetJobRequest) String() string {
 func (*GetJobRequest) ProtoMessage() {}
 
 func (x *GetJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[27]
+	mi := &file_rtest_v1_control_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1775,7 +2083,7 @@ func (x *GetJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetJobRequest.ProtoReflect.Descriptor instead.
 func (*GetJobRequest) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{27}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *GetJobRequest) GetId() string {
@@ -1794,7 +2102,7 @@ type GetJobResponse struct {
 
 func (x *GetJobResponse) Reset() {
 	*x = GetJobResponse{}
-	mi := &file_rtest_v1_control_proto_msgTypes[28]
+	mi := &file_rtest_v1_control_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1806,7 +2114,7 @@ func (x *GetJobResponse) String() string {
 func (*GetJobResponse) ProtoMessage() {}
 
 func (x *GetJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[28]
+	mi := &file_rtest_v1_control_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1819,7 +2127,7 @@ func (x *GetJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetJobResponse.ProtoReflect.Descriptor instead.
 func (*GetJobResponse) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{28}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *GetJobResponse) GetJob() *Job {
@@ -1842,7 +2150,7 @@ type ListJobsRequest struct {
 
 func (x *ListJobsRequest) Reset() {
 	*x = ListJobsRequest{}
-	mi := &file_rtest_v1_control_proto_msgTypes[29]
+	mi := &file_rtest_v1_control_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1854,7 +2162,7 @@ func (x *ListJobsRequest) String() string {
 func (*ListJobsRequest) ProtoMessage() {}
 
 func (x *ListJobsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[29]
+	mi := &file_rtest_v1_control_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1867,7 +2175,7 @@ func (x *ListJobsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListJobsRequest.ProtoReflect.Descriptor instead.
 func (*ListJobsRequest) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{29}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ListJobsRequest) GetProject() string {
@@ -1909,7 +2217,7 @@ type ListJobsResponse struct {
 
 func (x *ListJobsResponse) Reset() {
 	*x = ListJobsResponse{}
-	mi := &file_rtest_v1_control_proto_msgTypes[30]
+	mi := &file_rtest_v1_control_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1921,7 +2229,7 @@ func (x *ListJobsResponse) String() string {
 func (*ListJobsResponse) ProtoMessage() {}
 
 func (x *ListJobsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[30]
+	mi := &file_rtest_v1_control_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1934,7 +2242,7 @@ func (x *ListJobsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListJobsResponse.ProtoReflect.Descriptor instead.
 func (*ListJobsResponse) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{30}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ListJobsResponse) GetJobs() []*Job {
@@ -1960,7 +2268,7 @@ type CancelJobRequest struct {
 
 func (x *CancelJobRequest) Reset() {
 	*x = CancelJobRequest{}
-	mi := &file_rtest_v1_control_proto_msgTypes[31]
+	mi := &file_rtest_v1_control_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1972,7 +2280,7 @@ func (x *CancelJobRequest) String() string {
 func (*CancelJobRequest) ProtoMessage() {}
 
 func (x *CancelJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[31]
+	mi := &file_rtest_v1_control_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1985,7 +2293,7 @@ func (x *CancelJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelJobRequest.ProtoReflect.Descriptor instead.
 func (*CancelJobRequest) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{31}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *CancelJobRequest) GetId() string {
@@ -2004,7 +2312,7 @@ type CancelJobResponse struct {
 
 func (x *CancelJobResponse) Reset() {
 	*x = CancelJobResponse{}
-	mi := &file_rtest_v1_control_proto_msgTypes[32]
+	mi := &file_rtest_v1_control_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2016,7 +2324,7 @@ func (x *CancelJobResponse) String() string {
 func (*CancelJobResponse) ProtoMessage() {}
 
 func (x *CancelJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[32]
+	mi := &file_rtest_v1_control_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2029,7 +2337,7 @@ func (x *CancelJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelJobResponse.ProtoReflect.Descriptor instead.
 func (*CancelJobResponse) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{32}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *CancelJobResponse) GetJob() *Job {
@@ -2049,7 +2357,7 @@ type StreamJobLogsRequest struct {
 
 func (x *StreamJobLogsRequest) Reset() {
 	*x = StreamJobLogsRequest{}
-	mi := &file_rtest_v1_control_proto_msgTypes[33]
+	mi := &file_rtest_v1_control_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2061,7 +2369,7 @@ func (x *StreamJobLogsRequest) String() string {
 func (*StreamJobLogsRequest) ProtoMessage() {}
 
 func (x *StreamJobLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[33]
+	mi := &file_rtest_v1_control_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2074,7 +2382,7 @@ func (x *StreamJobLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamJobLogsRequest.ProtoReflect.Descriptor instead.
 func (*StreamJobLogsRequest) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{33}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *StreamJobLogsRequest) GetId() string {
@@ -2102,7 +2410,7 @@ type StreamJobLogsResponse struct {
 
 func (x *StreamJobLogsResponse) Reset() {
 	*x = StreamJobLogsResponse{}
-	mi := &file_rtest_v1_control_proto_msgTypes[34]
+	mi := &file_rtest_v1_control_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2114,7 +2422,7 @@ func (x *StreamJobLogsResponse) String() string {
 func (*StreamJobLogsResponse) ProtoMessage() {}
 
 func (x *StreamJobLogsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[34]
+	mi := &file_rtest_v1_control_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2127,7 +2435,7 @@ func (x *StreamJobLogsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamJobLogsResponse.ProtoReflect.Descriptor instead.
 func (*StreamJobLogsResponse) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{34}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *StreamJobLogsResponse) GetData() []byte {
@@ -2165,7 +2473,7 @@ type Build struct {
 
 func (x *Build) Reset() {
 	*x = Build{}
-	mi := &file_rtest_v1_control_proto_msgTypes[35]
+	mi := &file_rtest_v1_control_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2177,7 +2485,7 @@ func (x *Build) String() string {
 func (*Build) ProtoMessage() {}
 
 func (x *Build) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[35]
+	mi := &file_rtest_v1_control_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2190,7 +2498,7 @@ func (x *Build) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Build.ProtoReflect.Descriptor instead.
 func (*Build) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{35}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *Build) GetId() string {
@@ -2245,7 +2553,7 @@ type PrepareBuildRequest struct {
 
 func (x *PrepareBuildRequest) Reset() {
 	*x = PrepareBuildRequest{}
-	mi := &file_rtest_v1_control_proto_msgTypes[36]
+	mi := &file_rtest_v1_control_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2257,7 +2565,7 @@ func (x *PrepareBuildRequest) String() string {
 func (*PrepareBuildRequest) ProtoMessage() {}
 
 func (x *PrepareBuildRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[36]
+	mi := &file_rtest_v1_control_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2270,7 +2578,7 @@ func (x *PrepareBuildRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareBuildRequest.ProtoReflect.Descriptor instead.
 func (*PrepareBuildRequest) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{36}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *PrepareBuildRequest) GetProject() string {
@@ -2297,7 +2605,7 @@ type PrepareBuildResponse struct {
 
 func (x *PrepareBuildResponse) Reset() {
 	*x = PrepareBuildResponse{}
-	mi := &file_rtest_v1_control_proto_msgTypes[37]
+	mi := &file_rtest_v1_control_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2309,7 +2617,7 @@ func (x *PrepareBuildResponse) String() string {
 func (*PrepareBuildResponse) ProtoMessage() {}
 
 func (x *PrepareBuildResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[37]
+	mi := &file_rtest_v1_control_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2322,7 +2630,7 @@ func (x *PrepareBuildResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareBuildResponse.ProtoReflect.Descriptor instead.
 func (*PrepareBuildResponse) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{37}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *PrepareBuildResponse) GetBuild() *Build {
@@ -2350,7 +2658,7 @@ type FinishBuildRequest struct {
 
 func (x *FinishBuildRequest) Reset() {
 	*x = FinishBuildRequest{}
-	mi := &file_rtest_v1_control_proto_msgTypes[38]
+	mi := &file_rtest_v1_control_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2362,7 +2670,7 @@ func (x *FinishBuildRequest) String() string {
 func (*FinishBuildRequest) ProtoMessage() {}
 
 func (x *FinishBuildRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[38]
+	mi := &file_rtest_v1_control_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2375,7 +2683,7 @@ func (x *FinishBuildRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FinishBuildRequest.ProtoReflect.Descriptor instead.
 func (*FinishBuildRequest) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{38}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *FinishBuildRequest) GetId() string {
@@ -2408,7 +2716,7 @@ type FinishBuildResponse struct {
 
 func (x *FinishBuildResponse) Reset() {
 	*x = FinishBuildResponse{}
-	mi := &file_rtest_v1_control_proto_msgTypes[39]
+	mi := &file_rtest_v1_control_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2420,7 +2728,7 @@ func (x *FinishBuildResponse) String() string {
 func (*FinishBuildResponse) ProtoMessage() {}
 
 func (x *FinishBuildResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[39]
+	mi := &file_rtest_v1_control_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2433,7 +2741,7 @@ func (x *FinishBuildResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FinishBuildResponse.ProtoReflect.Descriptor instead.
 func (*FinishBuildResponse) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{39}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *FinishBuildResponse) GetBuild() *Build {
@@ -2453,7 +2761,7 @@ type ExchangeGitHubOIDCRequest struct {
 
 func (x *ExchangeGitHubOIDCRequest) Reset() {
 	*x = ExchangeGitHubOIDCRequest{}
-	mi := &file_rtest_v1_control_proto_msgTypes[40]
+	mi := &file_rtest_v1_control_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2465,7 +2773,7 @@ func (x *ExchangeGitHubOIDCRequest) String() string {
 func (*ExchangeGitHubOIDCRequest) ProtoMessage() {}
 
 func (x *ExchangeGitHubOIDCRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[40]
+	mi := &file_rtest_v1_control_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2478,7 +2786,7 @@ func (x *ExchangeGitHubOIDCRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExchangeGitHubOIDCRequest.ProtoReflect.Descriptor instead.
 func (*ExchangeGitHubOIDCRequest) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{40}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *ExchangeGitHubOIDCRequest) GetProject() string {
@@ -2505,7 +2813,7 @@ type ExchangeGitHubOIDCResponse struct {
 
 func (x *ExchangeGitHubOIDCResponse) Reset() {
 	*x = ExchangeGitHubOIDCResponse{}
-	mi := &file_rtest_v1_control_proto_msgTypes[41]
+	mi := &file_rtest_v1_control_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2517,7 +2825,7 @@ func (x *ExchangeGitHubOIDCResponse) String() string {
 func (*ExchangeGitHubOIDCResponse) ProtoMessage() {}
 
 func (x *ExchangeGitHubOIDCResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[41]
+	mi := &file_rtest_v1_control_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2530,7 +2838,7 @@ func (x *ExchangeGitHubOIDCResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExchangeGitHubOIDCResponse.ProtoReflect.Descriptor instead.
 func (*ExchangeGitHubOIDCResponse) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{41}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *ExchangeGitHubOIDCResponse) GetToken() string {
@@ -2565,7 +2873,7 @@ type GitHubTrust struct {
 
 func (x *GitHubTrust) Reset() {
 	*x = GitHubTrust{}
-	mi := &file_rtest_v1_control_proto_msgTypes[42]
+	mi := &file_rtest_v1_control_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2577,7 +2885,7 @@ func (x *GitHubTrust) String() string {
 func (*GitHubTrust) ProtoMessage() {}
 
 func (x *GitHubTrust) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[42]
+	mi := &file_rtest_v1_control_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2590,7 +2898,7 @@ func (x *GitHubTrust) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitHubTrust.ProtoReflect.Descriptor instead.
 func (*GitHubTrust) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{42}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *GitHubTrust) GetId() string {
@@ -2678,7 +2986,7 @@ type CreateGitHubTrustRequest struct {
 
 func (x *CreateGitHubTrustRequest) Reset() {
 	*x = CreateGitHubTrustRequest{}
-	mi := &file_rtest_v1_control_proto_msgTypes[43]
+	mi := &file_rtest_v1_control_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2690,7 +2998,7 @@ func (x *CreateGitHubTrustRequest) String() string {
 func (*CreateGitHubTrustRequest) ProtoMessage() {}
 
 func (x *CreateGitHubTrustRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[43]
+	mi := &file_rtest_v1_control_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2703,7 +3011,7 @@ func (x *CreateGitHubTrustRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateGitHubTrustRequest.ProtoReflect.Descriptor instead.
 func (*CreateGitHubTrustRequest) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{43}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *CreateGitHubTrustRequest) GetProject() string {
@@ -2764,7 +3072,7 @@ type CreateGitHubTrustResponse struct {
 
 func (x *CreateGitHubTrustResponse) Reset() {
 	*x = CreateGitHubTrustResponse{}
-	mi := &file_rtest_v1_control_proto_msgTypes[44]
+	mi := &file_rtest_v1_control_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2776,7 +3084,7 @@ func (x *CreateGitHubTrustResponse) String() string {
 func (*CreateGitHubTrustResponse) ProtoMessage() {}
 
 func (x *CreateGitHubTrustResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[44]
+	mi := &file_rtest_v1_control_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2789,7 +3097,7 @@ func (x *CreateGitHubTrustResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateGitHubTrustResponse.ProtoReflect.Descriptor instead.
 func (*CreateGitHubTrustResponse) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{44}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *CreateGitHubTrustResponse) GetTrust() *GitHubTrust {
@@ -2808,7 +3116,7 @@ type ListGitHubTrustsRequest struct {
 
 func (x *ListGitHubTrustsRequest) Reset() {
 	*x = ListGitHubTrustsRequest{}
-	mi := &file_rtest_v1_control_proto_msgTypes[45]
+	mi := &file_rtest_v1_control_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2820,7 +3128,7 @@ func (x *ListGitHubTrustsRequest) String() string {
 func (*ListGitHubTrustsRequest) ProtoMessage() {}
 
 func (x *ListGitHubTrustsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[45]
+	mi := &file_rtest_v1_control_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2833,7 +3141,7 @@ func (x *ListGitHubTrustsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGitHubTrustsRequest.ProtoReflect.Descriptor instead.
 func (*ListGitHubTrustsRequest) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{45}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *ListGitHubTrustsRequest) GetProject() string {
@@ -2852,7 +3160,7 @@ type ListGitHubTrustsResponse struct {
 
 func (x *ListGitHubTrustsResponse) Reset() {
 	*x = ListGitHubTrustsResponse{}
-	mi := &file_rtest_v1_control_proto_msgTypes[46]
+	mi := &file_rtest_v1_control_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2864,7 +3172,7 @@ func (x *ListGitHubTrustsResponse) String() string {
 func (*ListGitHubTrustsResponse) ProtoMessage() {}
 
 func (x *ListGitHubTrustsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[46]
+	mi := &file_rtest_v1_control_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2877,7 +3185,7 @@ func (x *ListGitHubTrustsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGitHubTrustsResponse.ProtoReflect.Descriptor instead.
 func (*ListGitHubTrustsResponse) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{46}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *ListGitHubTrustsResponse) GetTrusts() []*GitHubTrust {
@@ -2896,7 +3204,7 @@ type RevokeGitHubTrustRequest struct {
 
 func (x *RevokeGitHubTrustRequest) Reset() {
 	*x = RevokeGitHubTrustRequest{}
-	mi := &file_rtest_v1_control_proto_msgTypes[47]
+	mi := &file_rtest_v1_control_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2908,7 +3216,7 @@ func (x *RevokeGitHubTrustRequest) String() string {
 func (*RevokeGitHubTrustRequest) ProtoMessage() {}
 
 func (x *RevokeGitHubTrustRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[47]
+	mi := &file_rtest_v1_control_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2921,7 +3229,7 @@ func (x *RevokeGitHubTrustRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeGitHubTrustRequest.ProtoReflect.Descriptor instead.
 func (*RevokeGitHubTrustRequest) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{47}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *RevokeGitHubTrustRequest) GetId() string {
@@ -2939,7 +3247,7 @@ type RevokeGitHubTrustResponse struct {
 
 func (x *RevokeGitHubTrustResponse) Reset() {
 	*x = RevokeGitHubTrustResponse{}
-	mi := &file_rtest_v1_control_proto_msgTypes[48]
+	mi := &file_rtest_v1_control_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2951,7 +3259,7 @@ func (x *RevokeGitHubTrustResponse) String() string {
 func (*RevokeGitHubTrustResponse) ProtoMessage() {}
 
 func (x *RevokeGitHubTrustResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[48]
+	mi := &file_rtest_v1_control_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2964,7 +3272,7 @@ func (x *RevokeGitHubTrustResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeGitHubTrustResponse.ProtoReflect.Descriptor instead.
 func (*RevokeGitHubTrustResponse) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{48}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{53}
 }
 
 type DeviceToken struct {
@@ -2982,7 +3290,7 @@ type DeviceToken struct {
 
 func (x *DeviceToken) Reset() {
 	*x = DeviceToken{}
-	mi := &file_rtest_v1_control_proto_msgTypes[49]
+	mi := &file_rtest_v1_control_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2994,7 +3302,7 @@ func (x *DeviceToken) String() string {
 func (*DeviceToken) ProtoMessage() {}
 
 func (x *DeviceToken) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[49]
+	mi := &file_rtest_v1_control_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3007,7 +3315,7 @@ func (x *DeviceToken) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeviceToken.ProtoReflect.Descriptor instead.
 func (*DeviceToken) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{49}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *DeviceToken) GetId() string {
@@ -3070,7 +3378,7 @@ type CreateDeviceTokenRequest struct {
 
 func (x *CreateDeviceTokenRequest) Reset() {
 	*x = CreateDeviceTokenRequest{}
-	mi := &file_rtest_v1_control_proto_msgTypes[50]
+	mi := &file_rtest_v1_control_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3082,7 +3390,7 @@ func (x *CreateDeviceTokenRequest) String() string {
 func (*CreateDeviceTokenRequest) ProtoMessage() {}
 
 func (x *CreateDeviceTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[50]
+	mi := &file_rtest_v1_control_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3095,7 +3403,7 @@ func (x *CreateDeviceTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateDeviceTokenRequest.ProtoReflect.Descriptor instead.
 func (*CreateDeviceTokenRequest) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{50}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *CreateDeviceTokenRequest) GetName() string {
@@ -3129,7 +3437,7 @@ type CreateDeviceTokenResponse struct {
 
 func (x *CreateDeviceTokenResponse) Reset() {
 	*x = CreateDeviceTokenResponse{}
-	mi := &file_rtest_v1_control_proto_msgTypes[51]
+	mi := &file_rtest_v1_control_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3141,7 +3449,7 @@ func (x *CreateDeviceTokenResponse) String() string {
 func (*CreateDeviceTokenResponse) ProtoMessage() {}
 
 func (x *CreateDeviceTokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[51]
+	mi := &file_rtest_v1_control_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3154,7 +3462,7 @@ func (x *CreateDeviceTokenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateDeviceTokenResponse.ProtoReflect.Descriptor instead.
 func (*CreateDeviceTokenResponse) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{51}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *CreateDeviceTokenResponse) GetTokenMetadata() *DeviceToken {
@@ -3179,7 +3487,7 @@ type ListDeviceTokensRequest struct {
 
 func (x *ListDeviceTokensRequest) Reset() {
 	*x = ListDeviceTokensRequest{}
-	mi := &file_rtest_v1_control_proto_msgTypes[52]
+	mi := &file_rtest_v1_control_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3191,7 +3499,7 @@ func (x *ListDeviceTokensRequest) String() string {
 func (*ListDeviceTokensRequest) ProtoMessage() {}
 
 func (x *ListDeviceTokensRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[52]
+	mi := &file_rtest_v1_control_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3204,7 +3512,7 @@ func (x *ListDeviceTokensRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDeviceTokensRequest.ProtoReflect.Descriptor instead.
 func (*ListDeviceTokensRequest) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{52}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{57}
 }
 
 type ListDeviceTokensResponse struct {
@@ -3216,7 +3524,7 @@ type ListDeviceTokensResponse struct {
 
 func (x *ListDeviceTokensResponse) Reset() {
 	*x = ListDeviceTokensResponse{}
-	mi := &file_rtest_v1_control_proto_msgTypes[53]
+	mi := &file_rtest_v1_control_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3228,7 +3536,7 @@ func (x *ListDeviceTokensResponse) String() string {
 func (*ListDeviceTokensResponse) ProtoMessage() {}
 
 func (x *ListDeviceTokensResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[53]
+	mi := &file_rtest_v1_control_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3241,7 +3549,7 @@ func (x *ListDeviceTokensResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDeviceTokensResponse.ProtoReflect.Descriptor instead.
 func (*ListDeviceTokensResponse) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{53}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *ListDeviceTokensResponse) GetTokens() []*DeviceToken {
@@ -3260,7 +3568,7 @@ type RevokeDeviceTokenRequest struct {
 
 func (x *RevokeDeviceTokenRequest) Reset() {
 	*x = RevokeDeviceTokenRequest{}
-	mi := &file_rtest_v1_control_proto_msgTypes[54]
+	mi := &file_rtest_v1_control_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3272,7 +3580,7 @@ func (x *RevokeDeviceTokenRequest) String() string {
 func (*RevokeDeviceTokenRequest) ProtoMessage() {}
 
 func (x *RevokeDeviceTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[54]
+	mi := &file_rtest_v1_control_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3285,7 +3593,7 @@ func (x *RevokeDeviceTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeDeviceTokenRequest.ProtoReflect.Descriptor instead.
 func (*RevokeDeviceTokenRequest) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{54}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *RevokeDeviceTokenRequest) GetId() string {
@@ -3303,7 +3611,7 @@ type RevokeDeviceTokenResponse struct {
 
 func (x *RevokeDeviceTokenResponse) Reset() {
 	*x = RevokeDeviceTokenResponse{}
-	mi := &file_rtest_v1_control_proto_msgTypes[55]
+	mi := &file_rtest_v1_control_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3315,7 +3623,7 @@ func (x *RevokeDeviceTokenResponse) String() string {
 func (*RevokeDeviceTokenResponse) ProtoMessage() {}
 
 func (x *RevokeDeviceTokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rtest_v1_control_proto_msgTypes[55]
+	mi := &file_rtest_v1_control_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3328,7 +3636,7 @@ func (x *RevokeDeviceTokenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeDeviceTokenResponse.ProtoReflect.Descriptor instead.
 func (*RevokeDeviceTokenResponse) Descriptor() ([]byte, []int) {
-	return file_rtest_v1_control_proto_rawDescGZIP(), []int{55}
+	return file_rtest_v1_control_proto_rawDescGZIP(), []int{60}
 }
 
 var File_rtest_v1_control_proto protoreflect.FileDescriptor
@@ -3371,7 +3679,36 @@ const file_rtest_v1_control_proto_rawDesc = "" +
 	"\x17AddProjectMemberRequest\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\"\x1a\n" +
-	"\x18AddProjectMemberResponse\"M\n" +
+	"\x18AddProjectMemberResponse\"\xd9\x02\n" +
+	"\x0eEnrollmentCode\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x1f\n" +
+	"\vdevice_name\x18\x03 \x01(\tR\n" +
+	"deviceName\x129\n" +
+	"\n" +
+	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"expires_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12;\n" +
+	"\vconsumed_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"consumedAt\x12'\n" +
+	"\x0ffailed_attempts\x18\a \x01(\x05R\x0efailedAttempts\x12!\n" +
+	"\fmax_attempts\x18\b \x01(\x05R\vmaxAttempts\"\x92\x01\n" +
+	"\x1bCreateEnrollmentCodeRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1f\n" +
+	"\vdevice_name\x18\x02 \x01(\tR\n" +
+	"deviceName\x129\n" +
+	"\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"l\n" +
+	"\x1cCreateEnrollmentCodeResponse\x128\n" +
+	"\n" +
+	"enrollment\x18\x01 \x01(\v2\x18.rtest.v1.EnrollmentCodeR\n" +
+	"enrollment\x12\x12\n" +
+	"\x04code\x18\x02 \x01(\tR\x04code\"3\n" +
+	"\x1dExchangeEnrollmentCodeRequest\x12\x12\n" +
+	"\x04code\x18\x01 \x01(\tR\x04code\"p\n" +
+	"\x1eExchangeEnrollmentCodeResponse\x128\n" +
+	"\fdevice_token\x18\x01 \x01(\v2\x15.rtest.v1.DeviceTokenR\vdeviceToken\x12\x14\n" +
+	"\x05token\x18\x02 \x01(\tR\x05token\"M\n" +
 	"\x1bActivateProjectImageRequest\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\"K\n" +
@@ -3591,7 +3928,7 @@ const file_rtest_v1_control_proto_rawDesc = "" +
 	"\x14BUILD_STATUS_RUNNING\x10\x01\x12\x1a\n" +
 	"\x16BUILD_STATUS_SUCCEEDED\x10\x02\x12\x17\n" +
 	"\x13BUILD_STATUS_FAILED\x10\x03\x12\x1a\n" +
-	"\x16BUILD_STATUS_CANCELLED\x10\x042\xa2\x10\n" +
+	"\x16BUILD_STATUS_CANCELLED\x10\x042\xf6\x11\n" +
 	"\x0eControlService\x12S\n" +
 	"\x0eGetServiceInfo\x12\x1f.rtest.v1.GetServiceInfoRequest\x1a .rtest.v1.GetServiceInfoResponse\x12G\n" +
 	"\n" +
@@ -3618,7 +3955,9 @@ const file_rtest_v1_control_proto_rawDesc = "" +
 	"\x11RevokeGitHubTrust\x12\".rtest.v1.RevokeGitHubTrustRequest\x1a#.rtest.v1.RevokeGitHubTrustResponse\x12\\\n" +
 	"\x11CreateDeviceToken\x12\".rtest.v1.CreateDeviceTokenRequest\x1a#.rtest.v1.CreateDeviceTokenResponse\x12Y\n" +
 	"\x10ListDeviceTokens\x12!.rtest.v1.ListDeviceTokensRequest\x1a\".rtest.v1.ListDeviceTokensResponse\x12\\\n" +
-	"\x11RevokeDeviceToken\x12\".rtest.v1.RevokeDeviceTokenRequest\x1a#.rtest.v1.RevokeDeviceTokenResponseB@Z>github.com/flidai/leapview/rtest/internal/gen/rtest/v1;rtestv1b\x06proto3"
+	"\x11RevokeDeviceToken\x12\".rtest.v1.RevokeDeviceTokenRequest\x1a#.rtest.v1.RevokeDeviceTokenResponse\x12e\n" +
+	"\x14CreateEnrollmentCode\x12%.rtest.v1.CreateEnrollmentCodeRequest\x1a&.rtest.v1.CreateEnrollmentCodeResponse\x12k\n" +
+	"\x16ExchangeEnrollmentCode\x12'.rtest.v1.ExchangeEnrollmentCodeRequest\x1a(.rtest.v1.ExchangeEnrollmentCodeResponseB@Z>github.com/flidai/leapview/rtest/internal/gen/rtest/v1;rtestv1b\x06proto3"
 
 var (
 	file_rtest_v1_control_proto_rawDescOnce sync.Once
@@ -3633,7 +3972,7 @@ func file_rtest_v1_control_proto_rawDescGZIP() []byte {
 }
 
 var file_rtest_v1_control_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_rtest_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 58)
+var file_rtest_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 63)
 var file_rtest_v1_control_proto_goTypes = []any{
 	(JobStatus)(0),                          // 0: rtest.v1.JobStatus
 	(BuildStatus)(0),                        // 1: rtest.v1.BuildStatus
@@ -3649,153 +3988,168 @@ var file_rtest_v1_control_proto_goTypes = []any{
 	(*ListProjectsResponse)(nil),            // 11: rtest.v1.ListProjectsResponse
 	(*AddProjectMemberRequest)(nil),         // 12: rtest.v1.AddProjectMemberRequest
 	(*AddProjectMemberResponse)(nil),        // 13: rtest.v1.AddProjectMemberResponse
-	(*ActivateProjectImageRequest)(nil),     // 14: rtest.v1.ActivateProjectImageRequest
-	(*ActivateProjectImageResponse)(nil),    // 15: rtest.v1.ActivateProjectImageResponse
-	(*RollbackProjectImageRequest)(nil),     // 16: rtest.v1.RollbackProjectImageRequest
-	(*RollbackProjectImageResponse)(nil),    // 17: rtest.v1.RollbackProjectImageResponse
-	(*SetProjectImagePolicyRequest)(nil),    // 18: rtest.v1.SetProjectImagePolicyRequest
-	(*SetProjectImagePolicyResponse)(nil),   // 19: rtest.v1.SetProjectImagePolicyResponse
-	(*ProjectImageEvent)(nil),               // 20: rtest.v1.ProjectImageEvent
-	(*ListProjectImageHistoryRequest)(nil),  // 21: rtest.v1.ListProjectImageHistoryRequest
-	(*ListProjectImageHistoryResponse)(nil), // 22: rtest.v1.ListProjectImageHistoryResponse
-	(*Job)(nil),                             // 23: rtest.v1.Job
-	(*PrepareJobRequest)(nil),               // 24: rtest.v1.PrepareJobRequest
-	(*DataPlaneConnection)(nil),             // 25: rtest.v1.DataPlaneConnection
-	(*PrepareJobResponse)(nil),              // 26: rtest.v1.PrepareJobResponse
-	(*StartJobRequest)(nil),                 // 27: rtest.v1.StartJobRequest
-	(*StartJobResponse)(nil),                // 28: rtest.v1.StartJobResponse
-	(*GetJobRequest)(nil),                   // 29: rtest.v1.GetJobRequest
-	(*GetJobResponse)(nil),                  // 30: rtest.v1.GetJobResponse
-	(*ListJobsRequest)(nil),                 // 31: rtest.v1.ListJobsRequest
-	(*ListJobsResponse)(nil),                // 32: rtest.v1.ListJobsResponse
-	(*CancelJobRequest)(nil),                // 33: rtest.v1.CancelJobRequest
-	(*CancelJobResponse)(nil),               // 34: rtest.v1.CancelJobResponse
-	(*StreamJobLogsRequest)(nil),            // 35: rtest.v1.StreamJobLogsRequest
-	(*StreamJobLogsResponse)(nil),           // 36: rtest.v1.StreamJobLogsResponse
-	(*Build)(nil),                           // 37: rtest.v1.Build
-	(*PrepareBuildRequest)(nil),             // 38: rtest.v1.PrepareBuildRequest
-	(*PrepareBuildResponse)(nil),            // 39: rtest.v1.PrepareBuildResponse
-	(*FinishBuildRequest)(nil),              // 40: rtest.v1.FinishBuildRequest
-	(*FinishBuildResponse)(nil),             // 41: rtest.v1.FinishBuildResponse
-	(*ExchangeGitHubOIDCRequest)(nil),       // 42: rtest.v1.ExchangeGitHubOIDCRequest
-	(*ExchangeGitHubOIDCResponse)(nil),      // 43: rtest.v1.ExchangeGitHubOIDCResponse
-	(*GitHubTrust)(nil),                     // 44: rtest.v1.GitHubTrust
-	(*CreateGitHubTrustRequest)(nil),        // 45: rtest.v1.CreateGitHubTrustRequest
-	(*CreateGitHubTrustResponse)(nil),       // 46: rtest.v1.CreateGitHubTrustResponse
-	(*ListGitHubTrustsRequest)(nil),         // 47: rtest.v1.ListGitHubTrustsRequest
-	(*ListGitHubTrustsResponse)(nil),        // 48: rtest.v1.ListGitHubTrustsResponse
-	(*RevokeGitHubTrustRequest)(nil),        // 49: rtest.v1.RevokeGitHubTrustRequest
-	(*RevokeGitHubTrustResponse)(nil),       // 50: rtest.v1.RevokeGitHubTrustResponse
-	(*DeviceToken)(nil),                     // 51: rtest.v1.DeviceToken
-	(*CreateDeviceTokenRequest)(nil),        // 52: rtest.v1.CreateDeviceTokenRequest
-	(*CreateDeviceTokenResponse)(nil),       // 53: rtest.v1.CreateDeviceTokenResponse
-	(*ListDeviceTokensRequest)(nil),         // 54: rtest.v1.ListDeviceTokensRequest
-	(*ListDeviceTokensResponse)(nil),        // 55: rtest.v1.ListDeviceTokensResponse
-	(*RevokeDeviceTokenRequest)(nil),        // 56: rtest.v1.RevokeDeviceTokenRequest
-	(*RevokeDeviceTokenResponse)(nil),       // 57: rtest.v1.RevokeDeviceTokenResponse
-	nil,                                     // 58: rtest.v1.Job.EnvironmentEntry
-	nil,                                     // 59: rtest.v1.PrepareJobRequest.EnvironmentEntry
-	(*timestamppb.Timestamp)(nil),           // 60: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),             // 61: google.protobuf.Duration
+	(*EnrollmentCode)(nil),                  // 14: rtest.v1.EnrollmentCode
+	(*CreateEnrollmentCodeRequest)(nil),     // 15: rtest.v1.CreateEnrollmentCodeRequest
+	(*CreateEnrollmentCodeResponse)(nil),    // 16: rtest.v1.CreateEnrollmentCodeResponse
+	(*ExchangeEnrollmentCodeRequest)(nil),   // 17: rtest.v1.ExchangeEnrollmentCodeRequest
+	(*ExchangeEnrollmentCodeResponse)(nil),  // 18: rtest.v1.ExchangeEnrollmentCodeResponse
+	(*ActivateProjectImageRequest)(nil),     // 19: rtest.v1.ActivateProjectImageRequest
+	(*ActivateProjectImageResponse)(nil),    // 20: rtest.v1.ActivateProjectImageResponse
+	(*RollbackProjectImageRequest)(nil),     // 21: rtest.v1.RollbackProjectImageRequest
+	(*RollbackProjectImageResponse)(nil),    // 22: rtest.v1.RollbackProjectImageResponse
+	(*SetProjectImagePolicyRequest)(nil),    // 23: rtest.v1.SetProjectImagePolicyRequest
+	(*SetProjectImagePolicyResponse)(nil),   // 24: rtest.v1.SetProjectImagePolicyResponse
+	(*ProjectImageEvent)(nil),               // 25: rtest.v1.ProjectImageEvent
+	(*ListProjectImageHistoryRequest)(nil),  // 26: rtest.v1.ListProjectImageHistoryRequest
+	(*ListProjectImageHistoryResponse)(nil), // 27: rtest.v1.ListProjectImageHistoryResponse
+	(*Job)(nil),                             // 28: rtest.v1.Job
+	(*PrepareJobRequest)(nil),               // 29: rtest.v1.PrepareJobRequest
+	(*DataPlaneConnection)(nil),             // 30: rtest.v1.DataPlaneConnection
+	(*PrepareJobResponse)(nil),              // 31: rtest.v1.PrepareJobResponse
+	(*StartJobRequest)(nil),                 // 32: rtest.v1.StartJobRequest
+	(*StartJobResponse)(nil),                // 33: rtest.v1.StartJobResponse
+	(*GetJobRequest)(nil),                   // 34: rtest.v1.GetJobRequest
+	(*GetJobResponse)(nil),                  // 35: rtest.v1.GetJobResponse
+	(*ListJobsRequest)(nil),                 // 36: rtest.v1.ListJobsRequest
+	(*ListJobsResponse)(nil),                // 37: rtest.v1.ListJobsResponse
+	(*CancelJobRequest)(nil),                // 38: rtest.v1.CancelJobRequest
+	(*CancelJobResponse)(nil),               // 39: rtest.v1.CancelJobResponse
+	(*StreamJobLogsRequest)(nil),            // 40: rtest.v1.StreamJobLogsRequest
+	(*StreamJobLogsResponse)(nil),           // 41: rtest.v1.StreamJobLogsResponse
+	(*Build)(nil),                           // 42: rtest.v1.Build
+	(*PrepareBuildRequest)(nil),             // 43: rtest.v1.PrepareBuildRequest
+	(*PrepareBuildResponse)(nil),            // 44: rtest.v1.PrepareBuildResponse
+	(*FinishBuildRequest)(nil),              // 45: rtest.v1.FinishBuildRequest
+	(*FinishBuildResponse)(nil),             // 46: rtest.v1.FinishBuildResponse
+	(*ExchangeGitHubOIDCRequest)(nil),       // 47: rtest.v1.ExchangeGitHubOIDCRequest
+	(*ExchangeGitHubOIDCResponse)(nil),      // 48: rtest.v1.ExchangeGitHubOIDCResponse
+	(*GitHubTrust)(nil),                     // 49: rtest.v1.GitHubTrust
+	(*CreateGitHubTrustRequest)(nil),        // 50: rtest.v1.CreateGitHubTrustRequest
+	(*CreateGitHubTrustResponse)(nil),       // 51: rtest.v1.CreateGitHubTrustResponse
+	(*ListGitHubTrustsRequest)(nil),         // 52: rtest.v1.ListGitHubTrustsRequest
+	(*ListGitHubTrustsResponse)(nil),        // 53: rtest.v1.ListGitHubTrustsResponse
+	(*RevokeGitHubTrustRequest)(nil),        // 54: rtest.v1.RevokeGitHubTrustRequest
+	(*RevokeGitHubTrustResponse)(nil),       // 55: rtest.v1.RevokeGitHubTrustResponse
+	(*DeviceToken)(nil),                     // 56: rtest.v1.DeviceToken
+	(*CreateDeviceTokenRequest)(nil),        // 57: rtest.v1.CreateDeviceTokenRequest
+	(*CreateDeviceTokenResponse)(nil),       // 58: rtest.v1.CreateDeviceTokenResponse
+	(*ListDeviceTokensRequest)(nil),         // 59: rtest.v1.ListDeviceTokensRequest
+	(*ListDeviceTokensResponse)(nil),        // 60: rtest.v1.ListDeviceTokensResponse
+	(*RevokeDeviceTokenRequest)(nil),        // 61: rtest.v1.RevokeDeviceTokenRequest
+	(*RevokeDeviceTokenResponse)(nil),       // 62: rtest.v1.RevokeDeviceTokenResponse
+	nil,                                     // 63: rtest.v1.Job.EnvironmentEntry
+	nil,                                     // 64: rtest.v1.PrepareJobRequest.EnvironmentEntry
+	(*timestamppb.Timestamp)(nil),           // 65: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),             // 66: google.protobuf.Duration
 }
 var file_rtest_v1_control_proto_depIdxs = []int32{
-	60, // 0: rtest.v1.User.created_at:type_name -> google.protobuf.Timestamp
+	65, // 0: rtest.v1.User.created_at:type_name -> google.protobuf.Timestamp
 	4,  // 1: rtest.v1.CreateUserResponse.user:type_name -> rtest.v1.User
-	60, // 2: rtest.v1.Project.created_at:type_name -> google.protobuf.Timestamp
+	65, // 2: rtest.v1.Project.created_at:type_name -> google.protobuf.Timestamp
 	7,  // 3: rtest.v1.CreateProjectResponse.project:type_name -> rtest.v1.Project
 	7,  // 4: rtest.v1.ListProjectsResponse.projects:type_name -> rtest.v1.Project
-	7,  // 5: rtest.v1.ActivateProjectImageResponse.project:type_name -> rtest.v1.Project
-	7,  // 6: rtest.v1.RollbackProjectImageResponse.project:type_name -> rtest.v1.Project
-	7,  // 7: rtest.v1.SetProjectImagePolicyResponse.project:type_name -> rtest.v1.Project
-	60, // 8: rtest.v1.ProjectImageEvent.created_at:type_name -> google.protobuf.Timestamp
-	20, // 9: rtest.v1.ListProjectImageHistoryResponse.events:type_name -> rtest.v1.ProjectImageEvent
-	58, // 10: rtest.v1.Job.environment:type_name -> rtest.v1.Job.EnvironmentEntry
-	0,  // 11: rtest.v1.Job.status:type_name -> rtest.v1.JobStatus
-	61, // 12: rtest.v1.Job.timeout:type_name -> google.protobuf.Duration
-	60, // 13: rtest.v1.Job.created_at:type_name -> google.protobuf.Timestamp
-	60, // 14: rtest.v1.Job.started_at:type_name -> google.protobuf.Timestamp
-	60, // 15: rtest.v1.Job.finished_at:type_name -> google.protobuf.Timestamp
-	59, // 16: rtest.v1.PrepareJobRequest.environment:type_name -> rtest.v1.PrepareJobRequest.EnvironmentEntry
-	61, // 17: rtest.v1.PrepareJobRequest.timeout:type_name -> google.protobuf.Duration
-	60, // 18: rtest.v1.DataPlaneConnection.expires_at:type_name -> google.protobuf.Timestamp
-	23, // 19: rtest.v1.PrepareJobResponse.job:type_name -> rtest.v1.Job
-	25, // 20: rtest.v1.PrepareJobResponse.cas:type_name -> rtest.v1.DataPlaneConnection
-	23, // 21: rtest.v1.StartJobResponse.job:type_name -> rtest.v1.Job
-	23, // 22: rtest.v1.GetJobResponse.job:type_name -> rtest.v1.Job
-	23, // 23: rtest.v1.ListJobsResponse.jobs:type_name -> rtest.v1.Job
-	23, // 24: rtest.v1.CancelJobResponse.job:type_name -> rtest.v1.Job
-	23, // 25: rtest.v1.StreamJobLogsResponse.terminal_job:type_name -> rtest.v1.Job
-	1,  // 26: rtest.v1.Build.status:type_name -> rtest.v1.BuildStatus
-	60, // 27: rtest.v1.Build.created_at:type_name -> google.protobuf.Timestamp
-	60, // 28: rtest.v1.Build.finished_at:type_name -> google.protobuf.Timestamp
-	37, // 29: rtest.v1.PrepareBuildResponse.build:type_name -> rtest.v1.Build
-	25, // 30: rtest.v1.PrepareBuildResponse.buildkit:type_name -> rtest.v1.DataPlaneConnection
-	37, // 31: rtest.v1.FinishBuildResponse.build:type_name -> rtest.v1.Build
-	60, // 32: rtest.v1.ExchangeGitHubOIDCResponse.expires_at:type_name -> google.protobuf.Timestamp
-	60, // 33: rtest.v1.GitHubTrust.created_at:type_name -> google.protobuf.Timestamp
-	60, // 34: rtest.v1.GitHubTrust.revoked_at:type_name -> google.protobuf.Timestamp
-	44, // 35: rtest.v1.CreateGitHubTrustResponse.trust:type_name -> rtest.v1.GitHubTrust
-	44, // 36: rtest.v1.ListGitHubTrustsResponse.trusts:type_name -> rtest.v1.GitHubTrust
-	60, // 37: rtest.v1.DeviceToken.created_at:type_name -> google.protobuf.Timestamp
-	60, // 38: rtest.v1.DeviceToken.expires_at:type_name -> google.protobuf.Timestamp
-	60, // 39: rtest.v1.DeviceToken.last_used_at:type_name -> google.protobuf.Timestamp
-	60, // 40: rtest.v1.DeviceToken.revoked_at:type_name -> google.protobuf.Timestamp
-	60, // 41: rtest.v1.CreateDeviceTokenRequest.expires_at:type_name -> google.protobuf.Timestamp
-	51, // 42: rtest.v1.CreateDeviceTokenResponse.token_metadata:type_name -> rtest.v1.DeviceToken
-	51, // 43: rtest.v1.ListDeviceTokensResponse.tokens:type_name -> rtest.v1.DeviceToken
-	2,  // 44: rtest.v1.ControlService.GetServiceInfo:input_type -> rtest.v1.GetServiceInfoRequest
-	5,  // 45: rtest.v1.ControlService.CreateUser:input_type -> rtest.v1.CreateUserRequest
-	8,  // 46: rtest.v1.ControlService.CreateProject:input_type -> rtest.v1.CreateProjectRequest
-	10, // 47: rtest.v1.ControlService.ListProjects:input_type -> rtest.v1.ListProjectsRequest
-	12, // 48: rtest.v1.ControlService.AddProjectMember:input_type -> rtest.v1.AddProjectMemberRequest
-	14, // 49: rtest.v1.ControlService.ActivateProjectImage:input_type -> rtest.v1.ActivateProjectImageRequest
-	16, // 50: rtest.v1.ControlService.RollbackProjectImage:input_type -> rtest.v1.RollbackProjectImageRequest
-	18, // 51: rtest.v1.ControlService.SetProjectImagePolicy:input_type -> rtest.v1.SetProjectImagePolicyRequest
-	21, // 52: rtest.v1.ControlService.ListProjectImageHistory:input_type -> rtest.v1.ListProjectImageHistoryRequest
-	24, // 53: rtest.v1.ControlService.PrepareJob:input_type -> rtest.v1.PrepareJobRequest
-	27, // 54: rtest.v1.ControlService.StartJob:input_type -> rtest.v1.StartJobRequest
-	29, // 55: rtest.v1.ControlService.GetJob:input_type -> rtest.v1.GetJobRequest
-	31, // 56: rtest.v1.ControlService.ListJobs:input_type -> rtest.v1.ListJobsRequest
-	33, // 57: rtest.v1.ControlService.CancelJob:input_type -> rtest.v1.CancelJobRequest
-	35, // 58: rtest.v1.ControlService.StreamJobLogs:input_type -> rtest.v1.StreamJobLogsRequest
-	38, // 59: rtest.v1.ControlService.PrepareBuild:input_type -> rtest.v1.PrepareBuildRequest
-	40, // 60: rtest.v1.ControlService.FinishBuild:input_type -> rtest.v1.FinishBuildRequest
-	42, // 61: rtest.v1.ControlService.ExchangeGitHubOIDC:input_type -> rtest.v1.ExchangeGitHubOIDCRequest
-	45, // 62: rtest.v1.ControlService.CreateGitHubTrust:input_type -> rtest.v1.CreateGitHubTrustRequest
-	47, // 63: rtest.v1.ControlService.ListGitHubTrusts:input_type -> rtest.v1.ListGitHubTrustsRequest
-	49, // 64: rtest.v1.ControlService.RevokeGitHubTrust:input_type -> rtest.v1.RevokeGitHubTrustRequest
-	52, // 65: rtest.v1.ControlService.CreateDeviceToken:input_type -> rtest.v1.CreateDeviceTokenRequest
-	54, // 66: rtest.v1.ControlService.ListDeviceTokens:input_type -> rtest.v1.ListDeviceTokensRequest
-	56, // 67: rtest.v1.ControlService.RevokeDeviceToken:input_type -> rtest.v1.RevokeDeviceTokenRequest
-	3,  // 68: rtest.v1.ControlService.GetServiceInfo:output_type -> rtest.v1.GetServiceInfoResponse
-	6,  // 69: rtest.v1.ControlService.CreateUser:output_type -> rtest.v1.CreateUserResponse
-	9,  // 70: rtest.v1.ControlService.CreateProject:output_type -> rtest.v1.CreateProjectResponse
-	11, // 71: rtest.v1.ControlService.ListProjects:output_type -> rtest.v1.ListProjectsResponse
-	13, // 72: rtest.v1.ControlService.AddProjectMember:output_type -> rtest.v1.AddProjectMemberResponse
-	15, // 73: rtest.v1.ControlService.ActivateProjectImage:output_type -> rtest.v1.ActivateProjectImageResponse
-	17, // 74: rtest.v1.ControlService.RollbackProjectImage:output_type -> rtest.v1.RollbackProjectImageResponse
-	19, // 75: rtest.v1.ControlService.SetProjectImagePolicy:output_type -> rtest.v1.SetProjectImagePolicyResponse
-	22, // 76: rtest.v1.ControlService.ListProjectImageHistory:output_type -> rtest.v1.ListProjectImageHistoryResponse
-	26, // 77: rtest.v1.ControlService.PrepareJob:output_type -> rtest.v1.PrepareJobResponse
-	28, // 78: rtest.v1.ControlService.StartJob:output_type -> rtest.v1.StartJobResponse
-	30, // 79: rtest.v1.ControlService.GetJob:output_type -> rtest.v1.GetJobResponse
-	32, // 80: rtest.v1.ControlService.ListJobs:output_type -> rtest.v1.ListJobsResponse
-	34, // 81: rtest.v1.ControlService.CancelJob:output_type -> rtest.v1.CancelJobResponse
-	36, // 82: rtest.v1.ControlService.StreamJobLogs:output_type -> rtest.v1.StreamJobLogsResponse
-	39, // 83: rtest.v1.ControlService.PrepareBuild:output_type -> rtest.v1.PrepareBuildResponse
-	41, // 84: rtest.v1.ControlService.FinishBuild:output_type -> rtest.v1.FinishBuildResponse
-	43, // 85: rtest.v1.ControlService.ExchangeGitHubOIDC:output_type -> rtest.v1.ExchangeGitHubOIDCResponse
-	46, // 86: rtest.v1.ControlService.CreateGitHubTrust:output_type -> rtest.v1.CreateGitHubTrustResponse
-	48, // 87: rtest.v1.ControlService.ListGitHubTrusts:output_type -> rtest.v1.ListGitHubTrustsResponse
-	50, // 88: rtest.v1.ControlService.RevokeGitHubTrust:output_type -> rtest.v1.RevokeGitHubTrustResponse
-	53, // 89: rtest.v1.ControlService.CreateDeviceToken:output_type -> rtest.v1.CreateDeviceTokenResponse
-	55, // 90: rtest.v1.ControlService.ListDeviceTokens:output_type -> rtest.v1.ListDeviceTokensResponse
-	57, // 91: rtest.v1.ControlService.RevokeDeviceToken:output_type -> rtest.v1.RevokeDeviceTokenResponse
-	68, // [68:92] is the sub-list for method output_type
-	44, // [44:68] is the sub-list for method input_type
-	44, // [44:44] is the sub-list for extension type_name
-	44, // [44:44] is the sub-list for extension extendee
-	0,  // [0:44] is the sub-list for field type_name
+	65, // 5: rtest.v1.EnrollmentCode.created_at:type_name -> google.protobuf.Timestamp
+	65, // 6: rtest.v1.EnrollmentCode.expires_at:type_name -> google.protobuf.Timestamp
+	65, // 7: rtest.v1.EnrollmentCode.consumed_at:type_name -> google.protobuf.Timestamp
+	65, // 8: rtest.v1.CreateEnrollmentCodeRequest.expires_at:type_name -> google.protobuf.Timestamp
+	14, // 9: rtest.v1.CreateEnrollmentCodeResponse.enrollment:type_name -> rtest.v1.EnrollmentCode
+	56, // 10: rtest.v1.ExchangeEnrollmentCodeResponse.device_token:type_name -> rtest.v1.DeviceToken
+	7,  // 11: rtest.v1.ActivateProjectImageResponse.project:type_name -> rtest.v1.Project
+	7,  // 12: rtest.v1.RollbackProjectImageResponse.project:type_name -> rtest.v1.Project
+	7,  // 13: rtest.v1.SetProjectImagePolicyResponse.project:type_name -> rtest.v1.Project
+	65, // 14: rtest.v1.ProjectImageEvent.created_at:type_name -> google.protobuf.Timestamp
+	25, // 15: rtest.v1.ListProjectImageHistoryResponse.events:type_name -> rtest.v1.ProjectImageEvent
+	63, // 16: rtest.v1.Job.environment:type_name -> rtest.v1.Job.EnvironmentEntry
+	0,  // 17: rtest.v1.Job.status:type_name -> rtest.v1.JobStatus
+	66, // 18: rtest.v1.Job.timeout:type_name -> google.protobuf.Duration
+	65, // 19: rtest.v1.Job.created_at:type_name -> google.protobuf.Timestamp
+	65, // 20: rtest.v1.Job.started_at:type_name -> google.protobuf.Timestamp
+	65, // 21: rtest.v1.Job.finished_at:type_name -> google.protobuf.Timestamp
+	64, // 22: rtest.v1.PrepareJobRequest.environment:type_name -> rtest.v1.PrepareJobRequest.EnvironmentEntry
+	66, // 23: rtest.v1.PrepareJobRequest.timeout:type_name -> google.protobuf.Duration
+	65, // 24: rtest.v1.DataPlaneConnection.expires_at:type_name -> google.protobuf.Timestamp
+	28, // 25: rtest.v1.PrepareJobResponse.job:type_name -> rtest.v1.Job
+	30, // 26: rtest.v1.PrepareJobResponse.cas:type_name -> rtest.v1.DataPlaneConnection
+	28, // 27: rtest.v1.StartJobResponse.job:type_name -> rtest.v1.Job
+	28, // 28: rtest.v1.GetJobResponse.job:type_name -> rtest.v1.Job
+	28, // 29: rtest.v1.ListJobsResponse.jobs:type_name -> rtest.v1.Job
+	28, // 30: rtest.v1.CancelJobResponse.job:type_name -> rtest.v1.Job
+	28, // 31: rtest.v1.StreamJobLogsResponse.terminal_job:type_name -> rtest.v1.Job
+	1,  // 32: rtest.v1.Build.status:type_name -> rtest.v1.BuildStatus
+	65, // 33: rtest.v1.Build.created_at:type_name -> google.protobuf.Timestamp
+	65, // 34: rtest.v1.Build.finished_at:type_name -> google.protobuf.Timestamp
+	42, // 35: rtest.v1.PrepareBuildResponse.build:type_name -> rtest.v1.Build
+	30, // 36: rtest.v1.PrepareBuildResponse.buildkit:type_name -> rtest.v1.DataPlaneConnection
+	42, // 37: rtest.v1.FinishBuildResponse.build:type_name -> rtest.v1.Build
+	65, // 38: rtest.v1.ExchangeGitHubOIDCResponse.expires_at:type_name -> google.protobuf.Timestamp
+	65, // 39: rtest.v1.GitHubTrust.created_at:type_name -> google.protobuf.Timestamp
+	65, // 40: rtest.v1.GitHubTrust.revoked_at:type_name -> google.protobuf.Timestamp
+	49, // 41: rtest.v1.CreateGitHubTrustResponse.trust:type_name -> rtest.v1.GitHubTrust
+	49, // 42: rtest.v1.ListGitHubTrustsResponse.trusts:type_name -> rtest.v1.GitHubTrust
+	65, // 43: rtest.v1.DeviceToken.created_at:type_name -> google.protobuf.Timestamp
+	65, // 44: rtest.v1.DeviceToken.expires_at:type_name -> google.protobuf.Timestamp
+	65, // 45: rtest.v1.DeviceToken.last_used_at:type_name -> google.protobuf.Timestamp
+	65, // 46: rtest.v1.DeviceToken.revoked_at:type_name -> google.protobuf.Timestamp
+	65, // 47: rtest.v1.CreateDeviceTokenRequest.expires_at:type_name -> google.protobuf.Timestamp
+	56, // 48: rtest.v1.CreateDeviceTokenResponse.token_metadata:type_name -> rtest.v1.DeviceToken
+	56, // 49: rtest.v1.ListDeviceTokensResponse.tokens:type_name -> rtest.v1.DeviceToken
+	2,  // 50: rtest.v1.ControlService.GetServiceInfo:input_type -> rtest.v1.GetServiceInfoRequest
+	5,  // 51: rtest.v1.ControlService.CreateUser:input_type -> rtest.v1.CreateUserRequest
+	8,  // 52: rtest.v1.ControlService.CreateProject:input_type -> rtest.v1.CreateProjectRequest
+	10, // 53: rtest.v1.ControlService.ListProjects:input_type -> rtest.v1.ListProjectsRequest
+	12, // 54: rtest.v1.ControlService.AddProjectMember:input_type -> rtest.v1.AddProjectMemberRequest
+	19, // 55: rtest.v1.ControlService.ActivateProjectImage:input_type -> rtest.v1.ActivateProjectImageRequest
+	21, // 56: rtest.v1.ControlService.RollbackProjectImage:input_type -> rtest.v1.RollbackProjectImageRequest
+	23, // 57: rtest.v1.ControlService.SetProjectImagePolicy:input_type -> rtest.v1.SetProjectImagePolicyRequest
+	26, // 58: rtest.v1.ControlService.ListProjectImageHistory:input_type -> rtest.v1.ListProjectImageHistoryRequest
+	29, // 59: rtest.v1.ControlService.PrepareJob:input_type -> rtest.v1.PrepareJobRequest
+	32, // 60: rtest.v1.ControlService.StartJob:input_type -> rtest.v1.StartJobRequest
+	34, // 61: rtest.v1.ControlService.GetJob:input_type -> rtest.v1.GetJobRequest
+	36, // 62: rtest.v1.ControlService.ListJobs:input_type -> rtest.v1.ListJobsRequest
+	38, // 63: rtest.v1.ControlService.CancelJob:input_type -> rtest.v1.CancelJobRequest
+	40, // 64: rtest.v1.ControlService.StreamJobLogs:input_type -> rtest.v1.StreamJobLogsRequest
+	43, // 65: rtest.v1.ControlService.PrepareBuild:input_type -> rtest.v1.PrepareBuildRequest
+	45, // 66: rtest.v1.ControlService.FinishBuild:input_type -> rtest.v1.FinishBuildRequest
+	47, // 67: rtest.v1.ControlService.ExchangeGitHubOIDC:input_type -> rtest.v1.ExchangeGitHubOIDCRequest
+	50, // 68: rtest.v1.ControlService.CreateGitHubTrust:input_type -> rtest.v1.CreateGitHubTrustRequest
+	52, // 69: rtest.v1.ControlService.ListGitHubTrusts:input_type -> rtest.v1.ListGitHubTrustsRequest
+	54, // 70: rtest.v1.ControlService.RevokeGitHubTrust:input_type -> rtest.v1.RevokeGitHubTrustRequest
+	57, // 71: rtest.v1.ControlService.CreateDeviceToken:input_type -> rtest.v1.CreateDeviceTokenRequest
+	59, // 72: rtest.v1.ControlService.ListDeviceTokens:input_type -> rtest.v1.ListDeviceTokensRequest
+	61, // 73: rtest.v1.ControlService.RevokeDeviceToken:input_type -> rtest.v1.RevokeDeviceTokenRequest
+	15, // 74: rtest.v1.ControlService.CreateEnrollmentCode:input_type -> rtest.v1.CreateEnrollmentCodeRequest
+	17, // 75: rtest.v1.ControlService.ExchangeEnrollmentCode:input_type -> rtest.v1.ExchangeEnrollmentCodeRequest
+	3,  // 76: rtest.v1.ControlService.GetServiceInfo:output_type -> rtest.v1.GetServiceInfoResponse
+	6,  // 77: rtest.v1.ControlService.CreateUser:output_type -> rtest.v1.CreateUserResponse
+	9,  // 78: rtest.v1.ControlService.CreateProject:output_type -> rtest.v1.CreateProjectResponse
+	11, // 79: rtest.v1.ControlService.ListProjects:output_type -> rtest.v1.ListProjectsResponse
+	13, // 80: rtest.v1.ControlService.AddProjectMember:output_type -> rtest.v1.AddProjectMemberResponse
+	20, // 81: rtest.v1.ControlService.ActivateProjectImage:output_type -> rtest.v1.ActivateProjectImageResponse
+	22, // 82: rtest.v1.ControlService.RollbackProjectImage:output_type -> rtest.v1.RollbackProjectImageResponse
+	24, // 83: rtest.v1.ControlService.SetProjectImagePolicy:output_type -> rtest.v1.SetProjectImagePolicyResponse
+	27, // 84: rtest.v1.ControlService.ListProjectImageHistory:output_type -> rtest.v1.ListProjectImageHistoryResponse
+	31, // 85: rtest.v1.ControlService.PrepareJob:output_type -> rtest.v1.PrepareJobResponse
+	33, // 86: rtest.v1.ControlService.StartJob:output_type -> rtest.v1.StartJobResponse
+	35, // 87: rtest.v1.ControlService.GetJob:output_type -> rtest.v1.GetJobResponse
+	37, // 88: rtest.v1.ControlService.ListJobs:output_type -> rtest.v1.ListJobsResponse
+	39, // 89: rtest.v1.ControlService.CancelJob:output_type -> rtest.v1.CancelJobResponse
+	41, // 90: rtest.v1.ControlService.StreamJobLogs:output_type -> rtest.v1.StreamJobLogsResponse
+	44, // 91: rtest.v1.ControlService.PrepareBuild:output_type -> rtest.v1.PrepareBuildResponse
+	46, // 92: rtest.v1.ControlService.FinishBuild:output_type -> rtest.v1.FinishBuildResponse
+	48, // 93: rtest.v1.ControlService.ExchangeGitHubOIDC:output_type -> rtest.v1.ExchangeGitHubOIDCResponse
+	51, // 94: rtest.v1.ControlService.CreateGitHubTrust:output_type -> rtest.v1.CreateGitHubTrustResponse
+	53, // 95: rtest.v1.ControlService.ListGitHubTrusts:output_type -> rtest.v1.ListGitHubTrustsResponse
+	55, // 96: rtest.v1.ControlService.RevokeGitHubTrust:output_type -> rtest.v1.RevokeGitHubTrustResponse
+	58, // 97: rtest.v1.ControlService.CreateDeviceToken:output_type -> rtest.v1.CreateDeviceTokenResponse
+	60, // 98: rtest.v1.ControlService.ListDeviceTokens:output_type -> rtest.v1.ListDeviceTokensResponse
+	62, // 99: rtest.v1.ControlService.RevokeDeviceToken:output_type -> rtest.v1.RevokeDeviceTokenResponse
+	16, // 100: rtest.v1.ControlService.CreateEnrollmentCode:output_type -> rtest.v1.CreateEnrollmentCodeResponse
+	18, // 101: rtest.v1.ControlService.ExchangeEnrollmentCode:output_type -> rtest.v1.ExchangeEnrollmentCodeResponse
+	76, // [76:102] is the sub-list for method output_type
+	50, // [50:76] is the sub-list for method input_type
+	50, // [50:50] is the sub-list for extension type_name
+	50, // [50:50] is the sub-list for extension extendee
+	0,  // [0:50] is the sub-list for field type_name
 }
 
 func init() { file_rtest_v1_control_proto_init() }
@@ -3803,15 +4157,15 @@ func file_rtest_v1_control_proto_init() {
 	if File_rtest_v1_control_proto != nil {
 		return
 	}
-	file_rtest_v1_control_proto_msgTypes[21].OneofWrappers = []any{}
-	file_rtest_v1_control_proto_msgTypes[35].OneofWrappers = []any{}
+	file_rtest_v1_control_proto_msgTypes[26].OneofWrappers = []any{}
+	file_rtest_v1_control_proto_msgTypes[40].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rtest_v1_control_proto_rawDesc), len(file_rtest_v1_control_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   58,
+			NumMessages:   63,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

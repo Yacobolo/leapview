@@ -80,7 +80,7 @@ func securityHeaders(next http.Handler) http.Handler {
 
 func (s *Server) GetServiceInfo(context.Context, *connect.Request[rtestv1.GetServiceInfoRequest]) (*connect.Response[rtestv1.GetServiceInfoResponse], error) {
 	return connect.NewResponse(&rtestv1.GetServiceInfoResponse{Version: Version, Capabilities: []string{
-		"connect", "projects", "project-images", "device-tokens", "github-oidc", "reapi-cas-mtls", "swarm-jobs", "buildkit-mtls",
+		"connect", "projects", "project-images", "device-tokens", "device-enrollment", "github-oidc", "reapi-cas-mtls", "swarm-jobs", "buildkit-mtls",
 	}}), nil
 }
 
@@ -666,6 +666,47 @@ func (s *Server) RevokeDeviceToken(ctx context.Context, request *connect.Request
 	return connect.NewResponse(&rtestv1.RevokeDeviceTokenResponse{}), nil
 }
 
+func (s *Server) CreateEnrollmentCode(ctx context.Context, request *connect.Request[rtestv1.CreateEnrollmentCodeRequest]) (*connect.Response[rtestv1.CreateEnrollmentCodeResponse], error) {
+	principal, err := s.authenticate(ctx, request.Header())
+	if err != nil {
+		return nil, err
+	}
+	if request.Msg.ExpiresAt == nil || request.Msg.ExpiresAt.CheckValid() != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("valid enrollment expiry is required"))
+	}
+	if len(request.Msg.DeviceName) < 1 || len(request.Msg.DeviceName) > 128 || strings.ContainsRune(request.Msg.DeviceName, 0) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("device name must contain 1 to 128 characters"))
+	}
+	now := time.Now().UTC()
+	expiresAt := request.Msg.ExpiresAt.AsTime()
+	if expiresAt.Before(now.Add(time.Minute)) || expiresAt.After(now.Add(30*time.Minute)) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("enrollment expiry must be between 1 and 30 minutes"))
+	}
+	issued, err := s.config.Store.CreateEnrollmentCode(ctx, principal, request.Msg.UserId, request.Msg.DeviceName, expiresAt)
+	if err != nil {
+		return nil, connectError(err)
+	}
+	if err := s.config.Store.Audit(ctx, principal, "", "enrollment.create", issued.Metadata.ID, map[string]string{"user_id": issued.Metadata.UserID, "device_name": issued.Metadata.DeviceName}); err != nil {
+		return nil, connectError(err)
+	}
+	return connect.NewResponse(&rtestv1.CreateEnrollmentCodeResponse{Enrollment: enrollmentProto(issued.Metadata), Code: issued.Secret}), nil
+}
+
+func (s *Server) ExchangeEnrollmentCode(ctx context.Context, request *connect.Request[rtestv1.ExchangeEnrollmentCodeRequest]) (*connect.Response[rtestv1.ExchangeEnrollmentCodeResponse], error) {
+	if len(request.Msg.Code) < 32 || len(request.Msg.Code) > 256 {
+		return nil, connectError(control.ErrUnauthenticated)
+	}
+	issued, enrollment, err := s.config.Store.ExchangeEnrollmentCode(ctx, request.Msg.Code)
+	if err != nil {
+		return nil, connectError(err)
+	}
+	principal := control.Principal{Kind: control.PrincipalDevice, TokenID: issued.Metadata.ID, UserID: issued.Metadata.UserID}
+	if err := s.config.Store.Audit(ctx, principal, "", "enrollment.exchange", enrollment.ID, map[string]string{"device_token_id": issued.Metadata.ID}); err != nil {
+		return nil, connectError(err)
+	}
+	return connect.NewResponse(&rtestv1.ExchangeEnrollmentCodeResponse{DeviceToken: tokenProto(issued.Metadata), Token: issued.Secret}), nil
+}
+
 func (s *Server) authenticate(ctx context.Context, header http.Header) (control.Principal, error) {
 	value := header.Get("Authorization")
 	token, ok := strings.CutPrefix(value, "Bearer ")
@@ -899,6 +940,14 @@ func tokenProto(token control.DeviceToken) *rtestv1.DeviceToken {
 	return &rtestv1.DeviceToken{
 		Id: token.ID, Name: token.Name, UserId: token.UserID, CreatedAt: timestamppb.New(token.CreatedAt),
 		ExpiresAt: timestamp(token.ExpiresAt), LastUsedAt: timestamp(token.LastUsedAt), RevokedAt: timestamp(token.RevokedAt),
+	}
+}
+
+func enrollmentProto(enrollment control.EnrollmentCode) *rtestv1.EnrollmentCode {
+	return &rtestv1.EnrollmentCode{
+		Id: enrollment.ID, UserId: enrollment.UserID, DeviceName: enrollment.DeviceName,
+		CreatedAt: timestamppb.New(enrollment.CreatedAt), ExpiresAt: timestamppb.New(enrollment.ExpiresAt),
+		ConsumedAt: timestamp(enrollment.ConsumedAt), FailedAttempts: int32(enrollment.FailedAttempts), MaxAttempts: int32(enrollment.MaxAttempts),
 	}
 }
 

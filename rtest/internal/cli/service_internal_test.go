@@ -104,6 +104,35 @@ func TestImageHelpersPreserveBuildxArgumentsAndNormalizeTags(t *testing.T) {
 	}
 }
 
+func TestServiceLoginExchangesEnrollmentFromStdinWithoutEchoingSecrets(t *testing.T) {
+	code := "rtest_enr_tok123_" + strings.Repeat("a", 43)
+	token := "rtest_dt_tok456_" + strings.Repeat("b", 43)
+	service := &enrollmentService{wantCode: code, token: token}
+	path, handler := rtestv1connect.NewControlServiceHandler(service)
+	mux := http.NewServeMux()
+	mux.Handle(path, handler)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	keyring := &memoryKeyring{}
+	var stdout, stderr bytes.Buffer
+	settings := config.Config{URL: server.URL, Service: &config.Service{}}
+	result := serviceLogin(context.Background(), settings, "", nil, IO{
+		Stdin: strings.NewReader(code + "\n"), Stdout: &stdout, Stderr: &stderr, Keyring: keyring,
+	})
+	if result != 0 {
+		t.Fatalf("result=%d stderr=%q", result, stderr.String())
+	}
+	if keyring.token != token || service.gotCode != code {
+		t.Fatalf("stored=%q exchanged=%q", keyring.token, service.gotCode)
+	}
+	if strings.Contains(stdout.String()+stderr.String(), code) || strings.Contains(stdout.String()+stderr.String(), token) {
+		t.Fatalf("secret was echoed: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+	if result := serviceLogout(settings, IO{Stdout: &stdout, Stderr: &stderr, Keyring: keyring}); result != 0 || keyring.token != "" {
+		t.Fatalf("logout result=%d stored=%q", result, keyring.token)
+	}
+}
+
 func TestServiceInitWritesOnlyAnAuthorizedProjectLink(t *testing.T) {
 	service := &projectListService{projects: []*rtestv1.Project{
 		{Id: "prj1", Slug: "one", Name: "One"}, {Id: "prj2", Slug: "two", Name: "Two"},
@@ -192,6 +221,33 @@ type interruptedLogService struct {
 	mu      sync.Mutex
 	offsets []int64
 }
+
+type enrollmentService struct {
+	rtestv1connect.UnimplementedControlServiceHandler
+	wantCode string
+	gotCode  string
+	token    string
+}
+
+func (s *enrollmentService) ExchangeEnrollmentCode(_ context.Context, request *connect.Request[rtestv1.ExchangeEnrollmentCodeRequest]) (*connect.Response[rtestv1.ExchangeEnrollmentCodeResponse], error) {
+	s.gotCode = request.Msg.Code
+	if request.Msg.Code != s.wantCode {
+		return nil, connect.NewError(connect.CodeUnauthenticated, context.Canceled)
+	}
+	return connect.NewResponse(&rtestv1.ExchangeEnrollmentCodeResponse{
+		Token: s.token, DeviceToken: &rtestv1.DeviceToken{Id: "tok456", UserId: "usr1", Name: "laptop"},
+	}), nil
+}
+
+func (s *enrollmentService) ListDeviceTokens(context.Context, *connect.Request[rtestv1.ListDeviceTokensRequest]) (*connect.Response[rtestv1.ListDeviceTokensResponse], error) {
+	return connect.NewResponse(&rtestv1.ListDeviceTokensResponse{}), nil
+}
+
+type memoryKeyring struct{ token string }
+
+func (m *memoryKeyring) Get(string, string) (string, error) { return m.token, nil }
+func (m *memoryKeyring) Set(_, _, token string) error       { m.token = token; return nil }
+func (m *memoryKeyring) Delete(string, string) error        { m.token = ""; return nil }
 
 type projectListService struct {
 	rtestv1connect.UnimplementedControlServiceHandler

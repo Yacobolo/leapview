@@ -93,6 +93,22 @@ type IssuedDeviceToken struct {
 	Secret   string
 }
 
+type EnrollmentCode struct {
+	ID             string
+	UserID         string
+	DeviceName     string
+	CreatedAt      time.Time
+	ExpiresAt      time.Time
+	ConsumedAt     *time.Time
+	FailedAttempts int
+	MaxAttempts    int
+}
+
+type IssuedEnrollmentCode struct {
+	Metadata EnrollmentCode
+	Secret   string
+}
+
 type GitHubTrust struct {
 	ID                string
 	ProjectID         string

@@ -23,6 +23,7 @@ import (
 	"github.com/flidai/leapview/rtest/internal/gen/rtest/v1/rtestv1connect"
 	"github.com/flidai/leapview/rtest/internal/protocol"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestAuthenticatedGenericJobLifecycle(t *testing.T) {
@@ -177,6 +178,39 @@ func TestProjectImageOverridePolicyIsEnforcedAtAdmission(t *testing.T) {
 	}))
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("override error = %v", err)
+	}
+}
+
+func TestOneTimeEnrollmentExchangeNeedsNoExistingCredential(t *testing.T) {
+	fixture := newFixture(t)
+	admin := fixture.client(fixture.bootstrap.Token)
+	ctx := context.Background()
+	user, err := admin.CreateUser(ctx, connect.NewRequest(&rtestv1.CreateUserRequest{Name: "Coworker"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	enrollment, err := admin.CreateEnrollmentCode(ctx, connect.NewRequest(&rtestv1.CreateEnrollmentCodeRequest{
+		UserId: user.Msg.User.Id, DeviceName: "coworker-laptop", ExpiresAt: timestamppb.New(time.Now().Add(10 * time.Minute)),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if enrollment.Msg.Code == "" || enrollment.Msg.Enrollment.MaxAttempts != 5 {
+		t.Fatalf("enrollment = %#v", enrollment.Msg)
+	}
+	unauthenticated := fixture.client("")
+	exchanged, err := unauthenticated.ExchangeEnrollmentCode(ctx, connect.NewRequest(&rtestv1.ExchangeEnrollmentCodeRequest{Code: enrollment.Msg.Code}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exchanged.Msg.Token == "" || exchanged.Msg.DeviceToken.UserId != user.Msg.User.Id || exchanged.Msg.DeviceToken.Name != "coworker-laptop" {
+		t.Fatalf("exchange = %#v", exchanged.Msg)
+	}
+	if _, err := unauthenticated.ExchangeEnrollmentCode(ctx, connect.NewRequest(&rtestv1.ExchangeEnrollmentCodeRequest{Code: enrollment.Msg.Code})); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatalf("reuse error = %v", err)
+	}
+	if _, err := fixture.client(exchanged.Msg.Token).ListProjects(ctx, connect.NewRequest(&rtestv1.ListProjectsRequest{})); err != nil {
+		t.Fatal(err)
 	}
 }
 

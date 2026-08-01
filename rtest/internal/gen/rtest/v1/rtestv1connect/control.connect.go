@@ -102,6 +102,12 @@ const (
 	// ControlServiceRevokeDeviceTokenProcedure is the fully-qualified name of the ControlService's
 	// RevokeDeviceToken RPC.
 	ControlServiceRevokeDeviceTokenProcedure = "/rtest.v1.ControlService/RevokeDeviceToken"
+	// ControlServiceCreateEnrollmentCodeProcedure is the fully-qualified name of the ControlService's
+	// CreateEnrollmentCode RPC.
+	ControlServiceCreateEnrollmentCodeProcedure = "/rtest.v1.ControlService/CreateEnrollmentCode"
+	// ControlServiceExchangeEnrollmentCodeProcedure is the fully-qualified name of the ControlService's
+	// ExchangeEnrollmentCode RPC.
+	ControlServiceExchangeEnrollmentCodeProcedure = "/rtest.v1.ControlService/ExchangeEnrollmentCode"
 )
 
 // ControlServiceClient is a client for the rtest.v1.ControlService service.
@@ -130,6 +136,8 @@ type ControlServiceClient interface {
 	CreateDeviceToken(context.Context, *connect.Request[v1.CreateDeviceTokenRequest]) (*connect.Response[v1.CreateDeviceTokenResponse], error)
 	ListDeviceTokens(context.Context, *connect.Request[v1.ListDeviceTokensRequest]) (*connect.Response[v1.ListDeviceTokensResponse], error)
 	RevokeDeviceToken(context.Context, *connect.Request[v1.RevokeDeviceTokenRequest]) (*connect.Response[v1.RevokeDeviceTokenResponse], error)
+	CreateEnrollmentCode(context.Context, *connect.Request[v1.CreateEnrollmentCodeRequest]) (*connect.Response[v1.CreateEnrollmentCodeResponse], error)
+	ExchangeEnrollmentCode(context.Context, *connect.Request[v1.ExchangeEnrollmentCodeRequest]) (*connect.Response[v1.ExchangeEnrollmentCodeResponse], error)
 }
 
 // NewControlServiceClient constructs a client for the rtest.v1.ControlService service. By default,
@@ -287,6 +295,18 @@ func NewControlServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(controlServiceMethods.ByName("RevokeDeviceToken")),
 			connect.WithClientOptions(opts...),
 		),
+		createEnrollmentCode: connect.NewClient[v1.CreateEnrollmentCodeRequest, v1.CreateEnrollmentCodeResponse](
+			httpClient,
+			baseURL+ControlServiceCreateEnrollmentCodeProcedure,
+			connect.WithSchema(controlServiceMethods.ByName("CreateEnrollmentCode")),
+			connect.WithClientOptions(opts...),
+		),
+		exchangeEnrollmentCode: connect.NewClient[v1.ExchangeEnrollmentCodeRequest, v1.ExchangeEnrollmentCodeResponse](
+			httpClient,
+			baseURL+ControlServiceExchangeEnrollmentCodeProcedure,
+			connect.WithSchema(controlServiceMethods.ByName("ExchangeEnrollmentCode")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -316,6 +336,8 @@ type controlServiceClient struct {
 	createDeviceToken       *connect.Client[v1.CreateDeviceTokenRequest, v1.CreateDeviceTokenResponse]
 	listDeviceTokens        *connect.Client[v1.ListDeviceTokensRequest, v1.ListDeviceTokensResponse]
 	revokeDeviceToken       *connect.Client[v1.RevokeDeviceTokenRequest, v1.RevokeDeviceTokenResponse]
+	createEnrollmentCode    *connect.Client[v1.CreateEnrollmentCodeRequest, v1.CreateEnrollmentCodeResponse]
+	exchangeEnrollmentCode  *connect.Client[v1.ExchangeEnrollmentCodeRequest, v1.ExchangeEnrollmentCodeResponse]
 }
 
 // GetServiceInfo calls rtest.v1.ControlService.GetServiceInfo.
@@ -438,6 +460,16 @@ func (c *controlServiceClient) RevokeDeviceToken(ctx context.Context, req *conne
 	return c.revokeDeviceToken.CallUnary(ctx, req)
 }
 
+// CreateEnrollmentCode calls rtest.v1.ControlService.CreateEnrollmentCode.
+func (c *controlServiceClient) CreateEnrollmentCode(ctx context.Context, req *connect.Request[v1.CreateEnrollmentCodeRequest]) (*connect.Response[v1.CreateEnrollmentCodeResponse], error) {
+	return c.createEnrollmentCode.CallUnary(ctx, req)
+}
+
+// ExchangeEnrollmentCode calls rtest.v1.ControlService.ExchangeEnrollmentCode.
+func (c *controlServiceClient) ExchangeEnrollmentCode(ctx context.Context, req *connect.Request[v1.ExchangeEnrollmentCodeRequest]) (*connect.Response[v1.ExchangeEnrollmentCodeResponse], error) {
+	return c.exchangeEnrollmentCode.CallUnary(ctx, req)
+}
+
 // ControlServiceHandler is an implementation of the rtest.v1.ControlService service.
 type ControlServiceHandler interface {
 	GetServiceInfo(context.Context, *connect.Request[v1.GetServiceInfoRequest]) (*connect.Response[v1.GetServiceInfoResponse], error)
@@ -464,6 +496,8 @@ type ControlServiceHandler interface {
 	CreateDeviceToken(context.Context, *connect.Request[v1.CreateDeviceTokenRequest]) (*connect.Response[v1.CreateDeviceTokenResponse], error)
 	ListDeviceTokens(context.Context, *connect.Request[v1.ListDeviceTokensRequest]) (*connect.Response[v1.ListDeviceTokensResponse], error)
 	RevokeDeviceToken(context.Context, *connect.Request[v1.RevokeDeviceTokenRequest]) (*connect.Response[v1.RevokeDeviceTokenResponse], error)
+	CreateEnrollmentCode(context.Context, *connect.Request[v1.CreateEnrollmentCodeRequest]) (*connect.Response[v1.CreateEnrollmentCodeResponse], error)
+	ExchangeEnrollmentCode(context.Context, *connect.Request[v1.ExchangeEnrollmentCodeRequest]) (*connect.Response[v1.ExchangeEnrollmentCodeResponse], error)
 }
 
 // NewControlServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -617,6 +651,18 @@ func NewControlServiceHandler(svc ControlServiceHandler, opts ...connect.Handler
 		connect.WithSchema(controlServiceMethods.ByName("RevokeDeviceToken")),
 		connect.WithHandlerOptions(opts...),
 	)
+	controlServiceCreateEnrollmentCodeHandler := connect.NewUnaryHandler(
+		ControlServiceCreateEnrollmentCodeProcedure,
+		svc.CreateEnrollmentCode,
+		connect.WithSchema(controlServiceMethods.ByName("CreateEnrollmentCode")),
+		connect.WithHandlerOptions(opts...),
+	)
+	controlServiceExchangeEnrollmentCodeHandler := connect.NewUnaryHandler(
+		ControlServiceExchangeEnrollmentCodeProcedure,
+		svc.ExchangeEnrollmentCode,
+		connect.WithSchema(controlServiceMethods.ByName("ExchangeEnrollmentCode")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/rtest.v1.ControlService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ControlServiceGetServiceInfoProcedure:
@@ -667,6 +713,10 @@ func NewControlServiceHandler(svc ControlServiceHandler, opts ...connect.Handler
 			controlServiceListDeviceTokensHandler.ServeHTTP(w, r)
 		case ControlServiceRevokeDeviceTokenProcedure:
 			controlServiceRevokeDeviceTokenHandler.ServeHTTP(w, r)
+		case ControlServiceCreateEnrollmentCodeProcedure:
+			controlServiceCreateEnrollmentCodeHandler.ServeHTTP(w, r)
+		case ControlServiceExchangeEnrollmentCodeProcedure:
+			controlServiceExchangeEnrollmentCodeHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -770,4 +820,12 @@ func (UnimplementedControlServiceHandler) ListDeviceTokens(context.Context, *con
 
 func (UnimplementedControlServiceHandler) RevokeDeviceToken(context.Context, *connect.Request[v1.RevokeDeviceTokenRequest]) (*connect.Response[v1.RevokeDeviceTokenResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("rtest.v1.ControlService.RevokeDeviceToken is not implemented"))
+}
+
+func (UnimplementedControlServiceHandler) CreateEnrollmentCode(context.Context, *connect.Request[v1.CreateEnrollmentCodeRequest]) (*connect.Response[v1.CreateEnrollmentCodeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("rtest.v1.ControlService.CreateEnrollmentCode is not implemented"))
+}
+
+func (UnimplementedControlServiceHandler) ExchangeEnrollmentCode(context.Context, *connect.Request[v1.ExchangeEnrollmentCodeRequest]) (*connect.Response[v1.ExchangeEnrollmentCodeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("rtest.v1.ControlService.ExchangeEnrollmentCode is not implemented"))
 }

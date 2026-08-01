@@ -66,6 +66,22 @@ The control plane serves Connect over HTTPS on 443. Protocol-transparent mTLS ga
 The CLI never receives Docker access. Swarm remains private to the server and provides
 detached job identity, logs, status, cancellation, and resource-aware queuing.
 
+## Enroll a developer laptop
+
+An administrator creates the user, grants project membership, and generates a ten-minute
+single-use code:
+
+```console
+rtest admin user create --name coworker
+rtest admin member add --project example --user usr...
+rtest admin enrollment create --user usr... --device coworker-laptop --expires 10m
+```
+
+The coworker runs `rtest login` and enters that code at the hidden prompt. rtest exchanges
+it once and stores the resulting named device token in macOS Keychain, Linux Secret
+Service, or Windows Credential Manager through the operating-system keyring. `rtest logout`
+removes the local entry; `rtest token revoke <id>` independently revokes one laptop.
+
 The manual GitHub Actions POC exchanges GitHub OIDC directly for a short-lived project
 credential; see [GitHub Actions](docs/github-actions.md). It deliberately has no
 pull-request trigger until the protected environment and trusted-change policy are proven.

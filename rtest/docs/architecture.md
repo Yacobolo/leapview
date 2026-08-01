@@ -76,6 +76,13 @@ Each laptop receives its own named, revocable, opaque token for one user. Tokens
 an expiry and are stored server-side only as a keyed digest. Compromise of one laptop does
 not require rotating every user or CI credential.
 
+An administrator enrolls a new laptop with a high-entropy code that expires within 30
+minutes and locks after five failed attempts. `rtest login` reads the code from a hidden
+terminal prompt or stdin, exchanges it once for the ordinary per-device token, and stores
+that durable token in the operating-system credential store. The durable token is never
+placed in a command argument, repository file, or enrollment message. Browser OAuth can
+be added later without changing the resulting device-token model.
+
 Credential resolution is deterministic:
 
 1. `--token`, for explicit automation and diagnostics;
