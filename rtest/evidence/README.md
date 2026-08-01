@@ -4,6 +4,7 @@ This directory commits only compact, reviewed, machine-readable evidence:
 
 - `service-local/proof.json` records the final local shared-service E2E;
 - `service/proof.json` records the final CPX32 shared-service E2E;
+- `github-actions/proof.json` records the hosted GitHub OIDC and Testcontainers E2E;
 - benchmark `summary.json` files record the five-run warm-cache samples used
   by `docs/benchmarks.md`.
 

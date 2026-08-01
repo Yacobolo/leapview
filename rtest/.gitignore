@@ -13,6 +13,9 @@ evidence/service/**
 !evidence/service-local/
 evidence/service-local/**
 !evidence/service-local/proof.json
+!evidence/github-actions/
+evidence/github-actions/**
+!evidence/github-actions/proof.json
 !evidence/benchmarks/
 evidence/benchmarks/**
 !evidence/benchmarks/leapview-minio-warm/
