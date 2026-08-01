@@ -120,6 +120,12 @@ jobs:
       - name: Check the shared worker
         run: rtest doctor
 
+      - name: Prepare exact-worktree proof
+        working-directory: rtest/examples/go-redis
+        run: |
+          printf '%s\n' 'dirty worktree reached remote worker' > proof.txt
+          printf '%s\n' 'untracked worktree bytes' > untracked.txt
+
       - name: Run Testcontainers remotely
         working-directory: rtest/examples/go-redis
         run: rtest exec -- go test -count=1 -v ./...
