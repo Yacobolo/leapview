@@ -17,7 +17,8 @@ func TestCreateArgsUseReplicatedJobAndSamePathWorkspace(t *testing.T) {
 		Timeout: 15 * time.Minute, CPUs: "2", Memory: "4g",
 		WorkingDirectory: "cmd/service", Environment: map[string]string{"RTEST_PROOF": "generic-oci"},
 		EntrypointHostPath: "/usr/local/lib/rtest/rtest-job-entrypoint",
-		CacheRoot:          "/var/lib/rtest/cache", ProjectID: "prj-example",
+		HostUID:            "123", HostGID: "456",
+		CacheRoot: "/var/lib/rtest/cache", ProjectID: "prj-example",
 		Caches: []CacheMount{{Name: "go-build", Target: "/root/.cache/go-build"}, {Name: "modules", Target: "/go/pkg/mod"}},
 	}
 	args := CreateArgs(spec)
@@ -35,10 +36,13 @@ func TestCreateArgsUseReplicatedJobAndSamePathWorkspace(t *testing.T) {
 		{"--label", "rtest.job=rtest-job-1"},
 		{"--env", "RTEST_WORKSPACE=/var/lib/rtest/jobs/rtest-job-1/workspace"},
 		{"--env", "RTEST_WORKER_LOCK=/var/lib/rtest/jobs/.worker.lock"},
+		{"--env", "RTEST_HOST_UID=123"},
+		{"--env", "RTEST_HOST_GID=456"},
 		{"--env", "RTEST_ROOT_DIGEST=abc/123"},
 		{"--env", "RTEST_WORKING_DIRECTORY=cmd/service"},
 		{"--env", "RTEST_PROOF=generic-oci"},
 		{"--entrypoint", "/usr/local/bin/rtest-job-entrypoint"},
+		{"--user", "0:0"},
 		{"runner:test", "go", "test", "./..."},
 	} {
 		if !containsSequence(args, sequence) {

@@ -19,6 +19,8 @@ type Config struct {
 	JobsRoot           string
 	EntrypointHostPath string
 	CacheRoot          string
+	HostUID            string
+	HostGID            string
 }
 
 type Scheduler struct {
@@ -54,6 +56,7 @@ func specForJob(config Config, job control.Job) swarm.Spec {
 		EntrypointHostPath: config.EntrypointHostPath,
 		Timeout:            job.Timeout, CPUs: job.CPUs, Memory: job.Memory,
 		CacheRoot: config.CacheRoot, ProjectID: job.ProjectID, Caches: caches,
+		HostUID: config.HostUID, HostGID: config.HostGID,
 	}
 }
 

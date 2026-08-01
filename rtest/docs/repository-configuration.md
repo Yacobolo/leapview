@@ -80,6 +80,12 @@ the existing native Buildx/BuildKit path: it pushes the tag, reads Buildx's stan
 `containerimage.digest` metadata, and activates the immutable `repository@sha256:...`
 reference. No rtest-specific image or installation format is involved.
 
+The worker starts the injected entrypoint as root even when the selected OCI image declares
+a different default user. Root is required for the trusted Docker-socket boundary and lets
+the entrypoint assign the durable job directory and log back to the unprivileged host
+control UID/GID. The project command therefore also runs as root; select a dedicated CI
+image and do not treat this runner as a multi-tenant sandbox.
+
 `--project`, `--cpus`, and `--memory` can override repository or local defaults. `--image`
 is an explicit migration/debugging override and can be disabled per project. Every image
 scheduled by the service must be pinned by SHA-256 digest. Commands are transmitted as

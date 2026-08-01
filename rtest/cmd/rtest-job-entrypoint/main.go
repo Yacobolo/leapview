@@ -40,8 +40,21 @@ func run() int {
 		fmt.Fprintln(os.Stderr, "rtest-job-entrypoint: RTEST_WORKSPACE is required")
 		return 2
 	}
+	hostUID, hostGID, err := hostIdentityFromEnvironment()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
 	jobDirectory := filepath.Dir(workspace)
 	if err := os.MkdirAll(jobDirectory, 0o700); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := os.Chown(jobDirectory, hostUID, hostGID); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := os.Chmod(jobDirectory, 0o700); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -52,6 +65,11 @@ func run() int {
 	logFile, err := os.OpenFile(filepath.Join(jobDirectory, "job.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := logFile.Chown(hostUID, hostGID); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		_ = logFile.Close()
 		return 1
 	}
 	defer logFile.Close()
@@ -121,6 +139,18 @@ func run() int {
 	}
 	fmt.Fprintln(stderr, err)
 	return finish(jobDirectory, "failed", 1)
+}
+
+func hostIdentityFromEnvironment() (int, int, error) {
+	uid, err := strconv.Atoi(os.Getenv("RTEST_HOST_UID"))
+	if err != nil || uid < 0 {
+		return 0, 0, errors.New("RTEST_HOST_UID must be a non-negative integer")
+	}
+	gid, err := strconv.Atoi(os.Getenv("RTEST_HOST_GID"))
+	if err != nil || gid < 0 {
+		return 0, 0, errors.New("RTEST_HOST_GID must be a non-negative integer")
+	}
+	return uid, gid, nil
 }
 
 func acquireWorkerSlot(ctx context.Context, path string, output io.Writer) (func(), error) {

@@ -35,6 +35,8 @@ type Spec struct {
 	CacheRoot          string
 	ProjectID          string
 	Caches             []CacheMount
+	HostUID            string
+	HostGID            string
 }
 
 type CacheMount struct {
@@ -57,6 +59,7 @@ func CreateArgs(spec Spec) []string {
 		"--mode", "replicated-job", "--replicas", "1", "--max-concurrent", "1",
 		"--restart-condition", "none", "--stop-grace-period", "15s",
 		"--network", "host",
+		"--user", "0:0",
 		"--limit-cpu", fallback(spec.CPUs, "1.5"), "--limit-memory", fallback(spec.Memory, "2500m"),
 		"--reserve-cpu", fallback(spec.CPUs, "1.5"), "--reserve-memory", fallback(spec.Memory, "2500m"),
 		"--mount", "type=bind,src=" + spec.JobsRoot + ",dst=" + spec.JobsRoot,
@@ -64,6 +67,8 @@ func CreateArgs(spec Spec) []string {
 		"--env", "RTEST_JOB_ID=" + spec.ID,
 		"--env", "RTEST_WORKSPACE=" + workspace,
 		"--env", "RTEST_WORKER_LOCK=" + filepath.Join(spec.JobsRoot, ".worker.lock"),
+		"--env", "RTEST_HOST_UID=" + spec.HostUID,
+		"--env", "RTEST_HOST_GID=" + spec.HostGID,
 		"--env", "RTEST_CAS_ADDRESS=" + spec.CASAddress,
 		"--env", "RTEST_CAS_INSTANCE=" + fallback(spec.CASInstance, "rtest"),
 		"--env", "RTEST_ROOT_DIGEST=" + spec.RootDigest,

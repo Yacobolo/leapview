@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -79,6 +80,7 @@ func serve() {
 		Client: docker, CASAddress: casInternal, CASInstance: casInstance, JobsRoot: env("RTEST_JOBS_ROOT", "/var/lib/rtest/jobs"),
 		EntrypointHostPath: env("RTEST_JOB_ENTRYPOINT", "/usr/local/lib/rtest/rtest-job-entrypoint"),
 		CacheRoot:          env("RTEST_CACHE_ROOT", "/var/lib/rtest/cache"),
+		HostUID:            strconv.Itoa(os.Getuid()), HostGID: strconv.Itoa(os.Getgid()),
 	})
 	reconcile := reconciler.New(reconciler.Config{
 		Store: store, Scheduler: scheduler,
