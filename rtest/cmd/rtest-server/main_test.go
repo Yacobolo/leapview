@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"testing"
+	"time"
+)
 
 func TestEndpointUsesThePublicServerNameAndListenerPort(t *testing.T) {
 	for _, test := range []struct {
@@ -14,4 +18,23 @@ func TestEndpointUsesThePublicServerNameAndListenerPort(t *testing.T) {
 			t.Errorf("endpoint(%q, %q) = %q, want %q", test.name, test.listen, got, test.want)
 		}
 	}
+}
+
+func TestReconcilerRunsImmediatelyWithoutBlockingStartup(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runner := &recordingReconciler{called: make(chan struct{}, 1)}
+	go runReconciler(ctx, runner, time.Hour)
+	select {
+	case <-runner.called:
+	case <-time.After(time.Second):
+		t.Fatal("reconciler did not run immediately")
+	}
+}
+
+type recordingReconciler struct{ called chan struct{} }
+
+func (r *recordingReconciler) RunOnce(context.Context) error {
+	r.called <- struct{}{}
+	return nil
 }

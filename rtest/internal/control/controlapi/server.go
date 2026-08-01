@@ -27,7 +27,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-const Version = "0.6.0"
+const Version = "0.7.0"
 
 type OIDCVerifier interface {
 	Verify(context.Context, string) (control.GitHubClaims, error)
@@ -94,7 +94,7 @@ func securityHeaders(next http.Handler) http.Handler {
 
 func (s *Server) GetServiceInfo(context.Context, *connect.Request[rtestv1.GetServiceInfoRequest]) (*connect.Response[rtestv1.GetServiceInfoResponse], error) {
 	return connect.NewResponse(&rtestv1.GetServiceInfoResponse{Version: Version, Capabilities: []string{
-		"connect", "projects", "project-images", "device-tokens", "device-enrollment", "github-oidc", "reapi-cas-mtls", "swarm-jobs", "buildkit-mtls",
+		"connect", "projects", "project-images", "project-caches", "device-tokens", "device-enrollment", "github-oidc", "reapi-cas-mtls", "swarm-jobs", "single-worker-admission", "buildkit-mtls",
 	}}), nil
 }
 

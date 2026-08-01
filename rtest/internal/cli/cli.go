@@ -27,7 +27,7 @@ import (
 	"github.com/flidai/leapview/rtest/internal/workspace"
 )
 
-const version = "0.6.0"
+const version = "0.7.0"
 
 type IO struct {
 	Stdin   io.Reader

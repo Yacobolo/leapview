@@ -84,9 +84,6 @@ func serve() {
 		Store: store, Scheduler: scheduler,
 		ServiceRetention: durationEnv("RTEST_SERVICE_RETENTION", time.Hour),
 	})
-	if err := reconcile.RunOnce(ctx); err != nil {
-		log.Printf("initial reconciliation: %v", err)
-	}
 	go runReconciler(ctx, reconcile, durationEnv("RTEST_RECONCILE_INTERVAL", 30*time.Second))
 	var verifier controlapi.OIDCVerifier
 	if audience := os.Getenv("RTEST_GITHUB_OIDC_AUDIENCE"); audience != "" {
@@ -142,6 +139,12 @@ type reconciliationRunner interface {
 }
 
 func runReconciler(ctx context.Context, runner reconciliationRunner, interval time.Duration) {
+	if err := runner.RunOnce(ctx); err != nil && ctx.Err() == nil {
+		log.Printf("initial reconciliation: %v", err)
+	}
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
