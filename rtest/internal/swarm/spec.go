@@ -32,6 +32,14 @@ type Spec struct {
 	Timeout            time.Duration
 	CPUs               string
 	Memory             string
+	CacheRoot          string
+	ProjectID          string
+	Caches             []CacheMount
+}
+
+type CacheMount struct {
+	Name   string
+	Target string
 }
 
 func CreateArgs(spec Spec) []string {
@@ -39,6 +47,8 @@ func CreateArgs(spec Spec) []string {
 	args := []string{
 		"service", "create", "--detach", "--quiet", "--name", spec.ID, "--init",
 		"--label", managedLabel + "=true",
+		"--label", "rtest.project=" + spec.ProjectID,
+		"--label", "rtest.job=" + spec.ID,
 		"--label", "rtest.repository=" + encodeLabel(spec.Repository),
 		"--label", "rtest.suite=" + encodeLabel(spec.Suite),
 		"--label", "rtest.runner=" + encodeLabel(spec.Runner),
@@ -51,10 +61,9 @@ func CreateArgs(spec Spec) []string {
 		"--reserve-cpu", fallback(spec.CPUs, "1.5"), "--reserve-memory", fallback(spec.Memory, "2500m"),
 		"--mount", "type=bind,src=" + spec.JobsRoot + ",dst=" + spec.JobsRoot,
 		"--mount", "type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock",
-		"--mount", "type=volume,src=rtest-go-build-cache,dst=/root/.cache/go-build",
-		"--mount", "type=volume,src=rtest-go-mod-cache,dst=/go/pkg/mod",
 		"--env", "RTEST_JOB_ID=" + spec.ID,
 		"--env", "RTEST_WORKSPACE=" + workspace,
+		"--env", "RTEST_WORKER_LOCK=" + filepath.Join(spec.JobsRoot, ".worker.lock"),
 		"--env", "RTEST_CAS_ADDRESS=" + spec.CASAddress,
 		"--env", "RTEST_CAS_INSTANCE=" + fallback(spec.CASInstance, "rtest"),
 		"--env", "RTEST_ROOT_DIGEST=" + spec.RootDigest,
@@ -66,6 +75,17 @@ func CreateArgs(spec Spec) []string {
 		"--env", "TMPDIR=" + filepath.Join(spec.JobsRoot, spec.ID, "tmp"),
 		"--env", "TEST_DATA_DIR=" + filepath.Join(workspace, ".rtest", "data"),
 		"--entrypoint", "/usr/local/bin/rtest-job-entrypoint",
+	}
+	caches := append([]CacheMount(nil), spec.Caches...)
+	sort.Slice(caches, func(i, j int) bool {
+		if caches[i].Name == caches[j].Name {
+			return caches[i].Target < caches[j].Target
+		}
+		return caches[i].Name < caches[j].Name
+	})
+	for _, cache := range caches {
+		source := filepath.Join(spec.CacheRoot, spec.ProjectID, cache.Name)
+		args = append(args, "--mount", "type=bind,src="+source+",dst="+cache.Target)
 	}
 	if spec.EntrypointHostPath != "" {
 		args = append(args, "--mount", "type=bind,src="+spec.EntrypointHostPath+",dst=/usr/local/bin/rtest-job-entrypoint,readonly")

@@ -708,7 +708,7 @@ func defaults(streams IO) IO {
 func usage(output io.Writer) {
 	fmt.Fprintln(output, `Usage:
   rtest init [--project <project>]
-  rtest [--token <token>] exec [--project <project>] [--image <digest>] [--detach] [--timeout 15m] [--cpus 2] [--memory 4g] [--workdir <path>] [--env KEY=VALUE] -- <command> [arguments...]
+  rtest [--token <token>] exec [--project <project>] [--image <digest>] [--detach] [--timeout 15m] [--cpus 2] [--memory 4g] [--workdir <path>] [--env KEY=VALUE] [--cache NAME=/absolute/path] -- <command> [arguments...]
   rtest [--token <token>] build [--project <project>] [-- <buildx arguments...>]
   rtest [--token <token>] image show [--project <project>]
   rtest [--token <token>] image activate [--project <project>] --image <digest>

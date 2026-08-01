@@ -181,6 +181,46 @@ func TestProjectImageOverridePolicyIsEnforcedAtAdmission(t *testing.T) {
 	}
 }
 
+func TestJobAdmissionValidatesAndPersistsGenericProjectCaches(t *testing.T) {
+	fixture := newFixture(t)
+	client := fixture.client(fixture.bootstrap.Token)
+	ctx := context.Background()
+	request := &rtestv1.PrepareJobRequest{
+		IdempotencyKey: "generic-cache-job", Project: "example",
+		Image:   "ghcr.io/example/ci@sha256:" + strings.Repeat("a", 64),
+		Command: []string{"go", "test", "./..."}, Timeout: durationpb.New(time.Minute), Cpus: "1", Memory: "1g",
+		Caches: []*rtestv1.CacheMount{{Name: "modules", Target: "/go/pkg/mod"}, {Name: "go-build", Target: "/root/.cache/go-build"}},
+	}
+	prepared, err := client.PrepareJob(ctx, connect.NewRequest(request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prepared.Msg.Job.Caches) != 2 || prepared.Msg.Job.Caches[0].Name != "go-build" || prepared.Msg.Job.Caches[1].Name != "modules" {
+		t.Fatalf("caches = %#v", prepared.Msg.Job.Caches)
+	}
+
+	invalid := []struct {
+		name   string
+		caches []*rtestv1.CacheMount
+	}{
+		{name: "unsafe name", caches: []*rtestv1.CacheMount{{Name: "../shared", Target: "/cache"}}},
+		{name: "relative target", caches: []*rtestv1.CacheMount{{Name: "cache", Target: "cache"}}},
+		{name: "duplicate name", caches: []*rtestv1.CacheMount{{Name: "cache", Target: "/one"}, {Name: "cache", Target: "/two"}}},
+		{name: "duplicate target", caches: []*rtestv1.CacheMount{{Name: "one", Target: "/cache"}, {Name: "two", Target: "/cache"}}},
+		{name: "docker socket overlap", caches: []*rtestv1.CacheMount{{Name: "socket", Target: "/var/run"}}},
+	}
+	for index, test := range invalid {
+		t.Run(test.name, func(t *testing.T) {
+			copyRequest := *request
+			copyRequest.IdempotencyKey = fmt.Sprintf("invalid-cache-%02d", index)
+			copyRequest.Caches = test.caches
+			if _, err := client.PrepareJob(ctx, connect.NewRequest(&copyRequest)); connect.CodeOf(err) != connect.CodeInvalidArgument {
+				t.Fatalf("error = %v", err)
+			}
+		})
+	}
+}
+
 func TestOneTimeEnrollmentExchangeNeedsNoExistingCredential(t *testing.T) {
 	fixture := newFixture(t)
 	admin := fixture.client(fixture.bootstrap.Token)

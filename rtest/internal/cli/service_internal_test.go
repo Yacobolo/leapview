@@ -23,7 +23,7 @@ import (
 
 func TestParseExecUsesGenericProjectImageAndArbitraryArgv(t *testing.T) {
 	settings := config.Config{Service: &config.Service{Project: "example", Image: "image@sha256:digest", CPUs: "2", Memory: "4g"}}
-	got, err := parseExec(settings, "example", []string{"--timeout", "5m", "--workdir", "service", "--env", "CI=true", "--", "task", "test", "--race"})
+	got, err := parseExec(settings, "example", []string{"--timeout", "5m", "--workdir", "service", "--env", "CI=true", "--cache", "go-build=/root/.cache/go-build", "--cache", "modules=/go/pkg/mod", "--", "task", "test", "--race"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,6 +32,9 @@ func TestParseExecUsesGenericProjectImageAndArbitraryArgv(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got.command, []string{"task", "test", "--race"}) {
 		t.Fatalf("command = %#v", got.command)
+	}
+	if len(got.caches) != 2 || got.caches[0].Name != "go-build" || got.caches[0].Target != "/root/.cache/go-build" || got.caches[1].Name != "modules" || got.caches[1].Target != "/go/pkg/mod" {
+		t.Fatalf("caches = %#v", got.caches)
 	}
 }
 

@@ -39,7 +39,7 @@ Repositories keep orchestration in existing Taskfiles, scripts, Makefiles, or CI
 
 ```console
 rtest exec -- task test
-rtest exec -- go test -count=1 -race ./...
+rtest exec --cache go-build=/root/.cache/go-build --cache go-mod=/go/pkg/mod -- go test -count=1 -race ./...
 rtest exec --workdir services/api --env CI=true -- npm test
 rtest build -- --push -t ghcr.io/example/service:sha .
 ```
@@ -47,6 +47,21 @@ rtest build -- --push -t ghcr.io/example/service:sha .
 `rtest exec` preserves the caller's directory relative to the Git worktree, so invoking it
 from a nested module runs there remotely. `--workdir` remains available when a command
 should deliberately run somewhere else in the uploaded worktree.
+
+Persistent dependency and compiler caches are explicit OCI bind mounts:
+
+```console
+rtest exec \
+  --cache go-build=/root/.cache/go-build \
+  --cache go-mod=/go/pkg/mod \
+  -- task test
+```
+
+`NAME` is a safe project-local identifier and the target is an absolute path inside the
+runner container. The control plane validates and persists the declaration, while the
+worker resolves it beneath `/var/lib/rtest/cache/<immutable-project-id>/`. Projects cannot
+name host paths or mount another project's writable cache. rtest does not prescribe Go,
+npm, Cargo, or another cache convention.
 
 The server-side project owns its default runner image. An administrator can activate an
 existing digest, build and activate from a normal Dockerfile, inspect history, or roll back:

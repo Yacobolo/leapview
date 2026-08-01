@@ -157,6 +157,7 @@ CREATE TABLE IF NOT EXISTS control_jobs (
   command_json TEXT NOT NULL,
   working_directory TEXT NOT NULL,
   environment_json TEXT NOT NULL,
+  caches_json TEXT NOT NULL DEFAULT '[]',
   root_digest TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL,
   timeout_millis INTEGER NOT NULL,
@@ -192,6 +193,7 @@ CREATE INDEX IF NOT EXISTS control_builds_project_idx ON control_builds(project_
 		table, name string
 	}{
 		{"control_jobs", "idempotency_key"}, {"control_jobs", "request_hash"},
+		{"control_jobs", "caches_json"},
 		{"control_builds", "idempotency_key"}, {"control_builds", "request_hash"},
 		{"projects", "active_image"}, {"projects", "previous_image"},
 	} {
@@ -212,6 +214,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS control_builds_idempotency_idx ON control_buil
 func (s *Store) ensureTextColumn(ctx context.Context, table, column string) error {
 	allowed := map[string]bool{
 		"control_jobs.idempotency_key": true, "control_jobs.request_hash": true,
+		"control_jobs.caches_json":       true,
 		"control_builds.idempotency_key": true, "control_builds.request_hash": true,
 		"projects.active_image": true, "projects.previous_image": true,
 	}
@@ -239,7 +242,11 @@ func (s *Store) ensureTextColumn(ctx context.Context, table, column string) erro
 	if found {
 		return nil
 	}
-	_, err = s.db.ExecContext(ctx, `ALTER TABLE `+table+` ADD COLUMN `+column+` TEXT NOT NULL DEFAULT ''`)
+	defaultValue := `''`
+	if table == "control_jobs" && column == "caches_json" {
+		defaultValue = `'[]'`
+	}
+	_, err = s.db.ExecContext(ctx, `ALTER TABLE `+table+` ADD COLUMN `+column+` TEXT NOT NULL DEFAULT `+defaultValue)
 	return err
 }
 
@@ -854,12 +861,16 @@ func (s *Store) CreatePreparedJob(ctx context.Context, input control.PrepareJob,
 	if err != nil {
 		return control.Job{}, false, err
 	}
+	caches, err := json.Marshal(input.Caches)
+	if err != nil {
+		return control.Job{}, false, err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return control.Job{}, false, err
 	}
 	defer tx.Rollback()
-	row := tx.QueryRowContext(ctx, `SELECT id,project_id,image,command_json,working_directory,environment_json,root_digest,status,timeout_millis,cpus,memory,created_at,started_at,finished_at,exit_code,error_message,cancel_requested,worker_id,request_hash FROM control_jobs WHERE project_id=? AND idempotency_key=?`, input.ProjectID, idempotency.Key)
+	row := tx.QueryRowContext(ctx, `SELECT id,project_id,image,command_json,working_directory,environment_json,caches_json,root_digest,status,timeout_millis,cpus,memory,created_at,started_at,finished_at,exit_code,error_message,cancel_requested,worker_id,request_hash FROM control_jobs WHERE project_id=? AND idempotency_key=?`, input.ProjectID, idempotency.Key)
 	job, storedHash, err := scanIdempotentJob(row)
 	if err == nil {
 		if storedHash != idempotency.RequestHash {
@@ -879,10 +890,10 @@ func (s *Store) CreatePreparedJob(ctx context.Context, input control.PrepareJob,
 		ID: id, ProjectID: input.ProjectID, Image: input.Image,
 		Command: append([]string(nil), input.Command...), WorkingDirectory: input.WorkingDirectory,
 		Environment: cloneMap(input.Environment), Status: protocol.StatusPreparing, Timeout: input.Timeout,
-		CPUs: input.CPUs, Memory: input.Memory, CreatedAt: now,
+		CPUs: input.CPUs, Memory: input.Memory, Caches: cloneCaches(input.Caches), CreatedAt: now,
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO control_jobs(id,project_id,image,command_json,working_directory,environment_json,status,timeout_millis,cpus,memory,created_at,idempotency_key,request_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		job.ID, job.ProjectID, job.Image, string(command), job.WorkingDirectory, string(environment), job.Status,
+	_, err = tx.ExecContext(ctx, `INSERT INTO control_jobs(id,project_id,image,command_json,working_directory,environment_json,caches_json,status,timeout_millis,cpus,memory,created_at,idempotency_key,request_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		job.ID, job.ProjectID, job.Image, string(command), job.WorkingDirectory, string(environment), string(caches), job.Status,
 		job.Timeout.Milliseconds(), job.CPUs, job.Memory, unix(now), idempotency.Key, idempotency.RequestHash)
 	if err != nil {
 		return control.Job{}, false, err
@@ -906,7 +917,7 @@ func (s *Store) StartJob(ctx context.Context, id, rootDigest string) (control.Jo
 }
 
 func (s *Store) Job(ctx context.Context, id string) (control.Job, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT id,project_id,image,command_json,working_directory,environment_json,root_digest,status,timeout_millis,cpus,memory,created_at,started_at,finished_at,exit_code,error_message,cancel_requested,worker_id FROM control_jobs WHERE id=?`, id)
+	row := s.db.QueryRowContext(ctx, `SELECT id,project_id,image,command_json,working_directory,environment_json,caches_json,root_digest,status,timeout_millis,cpus,memory,created_at,started_at,finished_at,exit_code,error_message,cancel_requested,worker_id FROM control_jobs WHERE id=?`, id)
 	return scanJob(row)
 }
 
@@ -914,7 +925,7 @@ func (s *Store) ListJobs(ctx context.Context, projectID string, pageSize int, pa
 	if pageSize < 1 || pageSize > 100 {
 		return control.JobPage{}, errors.New("job page size must be between 1 and 100")
 	}
-	query := `SELECT id,project_id,image,command_json,working_directory,environment_json,root_digest,status,timeout_millis,cpus,memory,created_at,started_at,finished_at,exit_code,error_message,cancel_requested,worker_id FROM control_jobs WHERE project_id=?`
+	query := `SELECT id,project_id,image,command_json,working_directory,environment_json,caches_json,root_digest,status,timeout_millis,cpus,memory,created_at,started_at,finished_at,exit_code,error_message,cancel_requested,worker_id FROM control_jobs WHERE project_id=?`
 	arguments := []any{projectID}
 	if pageToken != "" {
 		cursor, err := s.decodeJobCursor(projectID, pageToken)
@@ -1117,11 +1128,11 @@ func scanTrust(row interface{ Scan(...any) error }) (control.GitHubTrust, error)
 
 func scanJob(row interface{ Scan(...any) error }) (control.Job, error) {
 	var job control.Job
-	var command, environment, status string
+	var command, environment, caches, status string
 	var timeoutMillis, created int64
 	var started, finished, exitCode sql.NullInt64
 	var cancelled int
-	if err := row.Scan(&job.ID, &job.ProjectID, &job.Image, &command, &job.WorkingDirectory, &environment,
+	if err := row.Scan(&job.ID, &job.ProjectID, &job.Image, &command, &job.WorkingDirectory, &environment, &caches,
 		&job.RootDigest, &status, &timeoutMillis, &job.CPUs, &job.Memory, &created, &started, &finished,
 		&exitCode, &job.ErrorMessage, &cancelled, &job.WorkerID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1135,6 +1146,9 @@ func scanJob(row interface{ Scan(...any) error }) (control.Job, error) {
 	if err := json.Unmarshal([]byte(environment), &job.Environment); err != nil {
 		return control.Job{}, err
 	}
+	if err := json.Unmarshal([]byte(caches), &job.Caches); err != nil {
+		return control.Job{}, err
+	}
 	job.Status, job.Timeout, job.CreatedAt = protocol.Status(status), time.Duration(timeoutMillis)*time.Millisecond, fromUnix(created)
 	job.StartedAt, job.FinishedAt, job.CancelRequested = nullableTime(started), nullableTime(finished), cancelled != 0
 	if exitCode.Valid {
@@ -1146,11 +1160,11 @@ func scanJob(row interface{ Scan(...any) error }) (control.Job, error) {
 
 func scanIdempotentJob(row interface{ Scan(...any) error }) (control.Job, string, error) {
 	var job control.Job
-	var command, environment, status, requestHash string
+	var command, environment, caches, status, requestHash string
 	var timeoutMillis, created int64
 	var started, finished, exitCode sql.NullInt64
 	var cancelled int
-	if err := row.Scan(&job.ID, &job.ProjectID, &job.Image, &command, &job.WorkingDirectory, &environment,
+	if err := row.Scan(&job.ID, &job.ProjectID, &job.Image, &command, &job.WorkingDirectory, &environment, &caches,
 		&job.RootDigest, &status, &timeoutMillis, &job.CPUs, &job.Memory, &created, &started, &finished,
 		&exitCode, &job.ErrorMessage, &cancelled, &job.WorkerID, &requestHash); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1162,6 +1176,9 @@ func scanIdempotentJob(row interface{ Scan(...any) error }) (control.Job, string
 		return control.Job{}, "", err
 	}
 	if err := json.Unmarshal([]byte(environment), &job.Environment); err != nil {
+		return control.Job{}, "", err
+	}
+	if err := json.Unmarshal([]byte(caches), &job.Caches); err != nil {
 		return control.Job{}, "", err
 	}
 	job.Status, job.Timeout, job.CreatedAt = protocol.Status(status), time.Duration(timeoutMillis)*time.Millisecond, fromUnix(created)
@@ -1311,4 +1328,8 @@ func cloneMap(input map[string]string) map[string]string {
 		result[key] = value
 	}
 	return result
+}
+
+func cloneCaches(input []control.CacheMount) []control.CacheMount {
+	return append([]control.CacheMount(nil), input...)
 }

@@ -201,6 +201,12 @@ message Job {
   string error_message = 16;
   bool cancel_requested = 17;
   string worker_id = 18;
+  repeated CacheMount caches = 19;
+}
+
+message CacheMount {
+  string name = 1;
+  string target = 2;
 }
 
 message PrepareJobRequest {
@@ -213,6 +219,7 @@ message PrepareJobRequest {
   string cpus = 7;
   string memory = 8;
   string idempotency_key = 9;
+  repeated CacheMount caches = 10;
 }
 
 message DataPlaneConnection {

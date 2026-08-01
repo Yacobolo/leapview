@@ -25,11 +25,15 @@ live under `/var/lib/rtest` with service-user-only permissions.
 ## Capacity
 
 The reused CPX32 has 4 vCPU and 8 GB RAM. Jobs default to 2 CPU and 4 GB RAM; reservations
-equal limits, so insufficient capacity leaves work queued instead of overcommitting the
-host. BuildKit is capped separately at 3 GB. Avoid intentionally overlapping a large
-build and memory-heavy test until measurements justify a larger or additional worker.
+equal limits. The single-worker service also holds an exclusive host-backed admission lock
+while a project command runs. This intentionally serializes Docker/Testcontainers-heavy
+jobs across projects instead of relying only on Swarm's memory arithmetic. Jobs may
+materialize source concurrently but wait before executing. BuildKit is capped separately
+at 3 GB; do not overlap a large image build and a memory-heavy test until measurements
+justify a larger or additional worker.
 
 CAS data lives under `/var/lib/rtest/cas`; workspaces live under `/var/lib/rtest/jobs`;
+explicit project caches live under `/var/lib/rtest/cache/<project-id>/<cache-name>`;
 BuildKit uses `rtest-buildkit-state`. CAS and BuildKit content caches are intentionally
 shared by mutually trusted projects in the initial single-VM deployment. Control-plane
 authorization and accounting remain project-scoped, but the service does not claim cache

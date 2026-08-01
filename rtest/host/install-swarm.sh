@@ -15,7 +15,7 @@ fi
 usermod -aG docker rtest
 
 install -d -o root -g root -m 0700 /etc/rtest
-install -d -o rtest -g rtest -m 0700 /var/lib/rtest /var/lib/rtest/control /var/lib/rtest/pki /var/lib/rtest/jobs
+install -d -o rtest -g rtest -m 0700 /var/lib/rtest /var/lib/rtest/control /var/lib/rtest/pki /var/lib/rtest/jobs /var/lib/rtest/cache
 install -d -o 65532 -g 65532 -m 0700 /var/lib/rtest/cas
 install -d -o root -g root -m 0755 /usr/local/lib/rtest
 install -o root -g root -m 0755 /tmp/rtest-server /usr/local/bin/rtest-server

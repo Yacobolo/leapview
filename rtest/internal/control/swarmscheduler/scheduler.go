@@ -2,7 +2,10 @@ package swarmscheduler
 
 import (
 	"context"
+	"errors"
 	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/flidai/leapview/rtest/internal/control"
 	"github.com/flidai/leapview/rtest/internal/protocol"
@@ -15,6 +18,7 @@ type Config struct {
 	CASInstance        string
 	JobsRoot           string
 	EntrypointHostPath string
+	CacheRoot          string
 }
 
 type Scheduler struct {
@@ -30,15 +34,53 @@ func (s *Scheduler) ValidateImage(ctx context.Context, image string) error {
 }
 
 func (s *Scheduler) Create(ctx context.Context, job control.Job) error {
-	_, err := s.config.Client.Create(ctx, swarm.Spec{
-		ID: job.ID, Repository: job.ProjectID, Suite: "exec", Runner: "oci",
-		Image: job.Image, CASAddress: s.config.CASAddress, CASInstance: s.config.CASInstance,
-		RootDigest: job.RootDigest, JobsRoot: s.config.JobsRoot, Command: job.Command,
-		WorkingDirectory: job.WorkingDirectory, Environment: job.Environment,
-		EntrypointHostPath: s.config.EntrypointHostPath,
-		Timeout:            job.Timeout, CPUs: job.CPUs, Memory: job.Memory,
-	})
+	if err := prepareCacheDirectories(s.config.CacheRoot, job.ProjectID, job.Caches); err != nil {
+		return err
+	}
+	_, err := s.config.Client.Create(ctx, specForJob(s.config, job))
 	return err
+}
+
+func specForJob(config Config, job control.Job) swarm.Spec {
+	caches := make([]swarm.CacheMount, 0, len(job.Caches))
+	for _, cache := range job.Caches {
+		caches = append(caches, swarm.CacheMount{Name: cache.Name, Target: cache.Target})
+	}
+	return swarm.Spec{
+		ID: job.ID, Repository: job.ProjectID, Suite: "exec", Runner: "oci",
+		Image: job.Image, CASAddress: config.CASAddress, CASInstance: config.CASInstance,
+		RootDigest: job.RootDigest, JobsRoot: config.JobsRoot, Command: job.Command,
+		WorkingDirectory: job.WorkingDirectory, Environment: job.Environment,
+		EntrypointHostPath: config.EntrypointHostPath,
+		Timeout:            job.Timeout, CPUs: job.CPUs, Memory: job.Memory,
+		CacheRoot: config.CacheRoot, ProjectID: job.ProjectID, Caches: caches,
+	}
+}
+
+func prepareCacheDirectories(root, projectID string, caches []control.CacheMount) error {
+	if len(caches) == 0 {
+		return nil
+	}
+	if root == "" || !safeComponent(projectID) {
+		return errors.New("cache root and safe project ID are required")
+	}
+	for _, cache := range caches {
+		if !safeComponent(cache.Name) {
+			return errors.New("cache name is not a safe path component")
+		}
+		directory := filepath.Join(root, projectID, cache.Name)
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			return err
+		}
+		if err := os.Chmod(directory, 0o700); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func safeComponent(value string) bool {
+	return value != "" && value != "." && value != ".." && filepath.Base(value) == value
 }
 
 func (s *Scheduler) Status(ctx context.Context, id string) (protocol.Job, error) {

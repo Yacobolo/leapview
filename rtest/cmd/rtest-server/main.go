@@ -70,6 +70,7 @@ func serve() {
 	scheduler := swarmscheduler.New(swarmscheduler.Config{
 		Client: docker, CASAddress: casInternal, CASInstance: casInstance, JobsRoot: env("RTEST_JOBS_ROOT", "/var/lib/rtest/jobs"),
 		EntrypointHostPath: env("RTEST_JOB_ENTRYPOINT", "/usr/local/lib/rtest/rtest-job-entrypoint"),
+		CacheRoot:          env("RTEST_CACHE_ROOT", "/var/lib/rtest/cache"),
 	})
 	var verifier controlapi.OIDCVerifier
 	if audience := os.Getenv("RTEST_GITHUB_OIDC_AUDIENCE"); audience != "" {

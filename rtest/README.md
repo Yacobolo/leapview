@@ -10,7 +10,7 @@ GitHub-hosted runners without defining a proprietary execution protocol:
 - Testcontainers owns integration-test dependencies.
 
 ```console
-rtest exec -- go test -count=1 -race ./...
+rtest exec --cache go-build=/root/.cache/go-build --cache go-mod=/go/pkg/mod -- go test -count=1 -race ./...
 rtest exec -- task test
 rtest build -- --push -t ghcr.io/example/service:sha .
 rtest image build --tag ghcr.io/example/ci:rtest --file Dockerfile.rtest
@@ -19,8 +19,10 @@ rtest image build --tag ghcr.io/example/ci:rtest --file Dockerfile.rtest
 Git selects tracked and untracked non-ignored files from the exact worktree. The REAPI CAS
 uploads only missing content, so a repeated action transfers zero unchanged file bytes.
 Test action results are deliberately not cached because Testcontainers and other external
-services make them non-hermetic. Go module/build caches and Docker/BuildKit layers remain
-persistent on the worker.
+services make them non-hermetic. Projects may explicitly declare persistent OCI-directory
+caches with repeatable `--cache NAME=/absolute/container/path` flags. The server scopes
+each writable directory to the immutable project ID; cache names never imply a language
+or tool. Docker/BuildKit layers remain persistent on the worker.
 
 The target service does not supply a language runner. Each project selects a
 digest-pinned OCI image, while rtest injects only its static CAS/materialization

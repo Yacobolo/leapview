@@ -158,6 +158,12 @@ type Job struct {
 	ErrorMessage     string
 	CancelRequested  bool
 	WorkerID         string
+	Caches           []CacheMount
+}
+
+type CacheMount struct {
+	Name   string
+	Target string
 }
 
 type PrepareJob struct {
@@ -169,6 +175,7 @@ type PrepareJob struct {
 	Timeout          time.Duration
 	CPUs             string
 	Memory           string
+	Caches           []CacheMount
 }
 
 type Idempotency struct {

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -747,6 +748,7 @@ var (
 	rootDigestPattern     = regexp.MustCompile(`^[0-9a-f]{64}/[1-9][0-9]*$`)
 	environmentKey        = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	idempotencyKeyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$`)
+	cacheNamePattern      = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
 )
 
 func (s *Server) validateJob(projectID string, message *rtestv1.PrepareJobRequest) (control.PrepareJob, error) {
@@ -772,6 +774,10 @@ func (s *Server) validateJob(projectID string, message *rtestv1.PrepareJobReques
 	if len(message.Environment) > 128 {
 		return control.PrepareJob{}, errors.New("environment may contain at most 128 values")
 	}
+	caches, err := validateCaches(message.Caches)
+	if err != nil {
+		return control.PrepareJob{}, err
+	}
 	for key, value := range message.Environment {
 		if !environmentKey.MatchString(key) || strings.ContainsRune(value, 0) {
 			return control.PrepareJob{}, fmt.Errorf("invalid environment value %q", key)
@@ -796,8 +802,45 @@ func (s *Server) validateJob(projectID string, message *rtestv1.PrepareJobReques
 	return control.PrepareJob{
 		ProjectID: projectID, Image: message.Image, Command: append([]string(nil), message.Command...),
 		WorkingDirectory: clean, Environment: cloneMap(message.Environment), Timeout: timeout,
-		CPUs: message.Cpus, Memory: message.Memory,
+		CPUs: message.Cpus, Memory: message.Memory, Caches: caches,
 	}, nil
+}
+
+func validateCaches(input []*rtestv1.CacheMount) ([]control.CacheMount, error) {
+	if len(input) > 16 {
+		return nil, errors.New("a job may declare at most 16 caches")
+	}
+	result := make([]control.CacheMount, 0, len(input))
+	names, targets := map[string]bool{}, map[string]bool{}
+	reserved := []string{"/var/run/docker.sock", "/usr/local/bin/rtest-job-entrypoint"}
+	for _, item := range input {
+		if item == nil || !cacheNamePattern.MatchString(item.Name) {
+			return nil, errors.New("cache name must contain 1 to 63 lowercase safe characters")
+		}
+		target := path.Clean(item.Target)
+		if !path.IsAbs(item.Target) || target == "/" || strings.ContainsRune(item.Target, 0) {
+			return nil, fmt.Errorf("cache %q target must be an absolute container path below /", item.Name)
+		}
+		if names[item.Name] {
+			return nil, fmt.Errorf("cache name %q is declared more than once", item.Name)
+		}
+		if targets[target] {
+			return nil, fmt.Errorf("cache target %q is declared more than once", target)
+		}
+		for _, protected := range reserved {
+			if pathsOverlap(target, protected) {
+				return nil, fmt.Errorf("cache target %q overlaps protected runtime path %q", target, protected)
+			}
+		}
+		names[item.Name], targets[target] = true, true
+		result = append(result, control.CacheMount{Name: item.Name, Target: target})
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
+	return result, nil
+}
+
+func pathsOverlap(first, second string) bool {
+	return first == second || strings.HasPrefix(first, second+"/") || strings.HasPrefix(second, first+"/")
 }
 
 type streamWriter struct {
@@ -857,6 +900,9 @@ func jobProto(job control.Job) *rtestv1.Job {
 		WorkingDirectory: job.WorkingDirectory, Environment: cloneMap(job.Environment), RootDigest: job.RootDigest,
 		Status: jobStatusProto(job.Status), Timeout: durationpb.New(job.Timeout), Cpus: job.CPUs, Memory: job.Memory,
 		CreatedAt: timestamppb.New(job.CreatedAt), ErrorMessage: job.ErrorMessage, CancelRequested: job.CancelRequested, WorkerId: job.WorkerID,
+	}
+	for _, cache := range job.Caches {
+		result.Caches = append(result.Caches, &rtestv1.CacheMount{Name: cache.Name, Target: cache.Target})
 	}
 	result.StartedAt, result.FinishedAt = timestamp(job.StartedAt), timestamp(job.FinishedAt)
 	if job.ExitCode != nil {

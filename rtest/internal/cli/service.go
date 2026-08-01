@@ -351,6 +351,7 @@ type execOptions struct {
 	detach                                bool
 	environment                           map[string]string
 	command                               []string
+	caches                                []*rtestv1.CacheMount
 }
 
 func serviceExec(ctx context.Context, api rtestv1connect.ControlServiceClient, settings config.Config, project string, args []string, streams IO) int {
@@ -382,7 +383,7 @@ func serviceExec(ctx context.Context, api rtestv1connect.ControlServiceClient, s
 	prepared, err := api.PrepareJob(ctx, connect.NewRequest(&rtestv1.PrepareJobRequest{
 		Project: options.project, Image: options.image, Command: options.command, WorkingDirectory: options.workdir,
 		Environment: options.environment, Timeout: durationpb.New(options.timeout), Cpus: options.cpus, Memory: options.memory,
-		IdempotencyKey: idempotencyKey,
+		IdempotencyKey: idempotencyKey, Caches: options.caches,
 	}))
 	if err != nil {
 		return fail(streams.Stderr, fmt.Errorf("prepare remote job: %w", err))
@@ -421,7 +422,7 @@ func parseExec(settings config.Config, project string, args []string) (execOptio
 		switch args[0] {
 		case "--detach":
 			options.detach, args = true, args[1:]
-		case "--project", "--image", "--cpus", "--memory", "--workdir", "--timeout", "--env":
+		case "--project", "--image", "--cpus", "--memory", "--workdir", "--timeout", "--env", "--cache":
 			if len(args) < 2 {
 				return execOptions{}, errors.New(args[0] + " requires a value")
 			}
@@ -450,6 +451,12 @@ func parseExec(settings config.Config, project string, args []string) (execOptio
 					return execOptions{}, errors.New("--env requires KEY=VALUE")
 				}
 				options.environment[key] = item
+			case "--cache":
+				name, target, ok := strings.Cut(value, "=")
+				if !ok || name == "" || target == "" {
+					return execOptions{}, errors.New("--cache requires NAME=/absolute/container/path")
+				}
+				options.caches = append(options.caches, &rtestv1.CacheMount{Name: name, Target: target})
 			}
 		default:
 			return execOptions{}, errors.New("unknown exec option " + args[0])

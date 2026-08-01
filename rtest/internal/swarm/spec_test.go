@@ -2,6 +2,7 @@ package swarm
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +17,8 @@ func TestCreateArgsUseReplicatedJobAndSamePathWorkspace(t *testing.T) {
 		Timeout: 15 * time.Minute, CPUs: "2", Memory: "4g",
 		WorkingDirectory: "cmd/service", Environment: map[string]string{"RTEST_PROOF": "generic-oci"},
 		EntrypointHostPath: "/usr/local/lib/rtest/rtest-job-entrypoint",
+		CacheRoot:          "/var/lib/rtest/cache", ProjectID: "prj-example",
+		Caches: []CacheMount{{Name: "go-build", Target: "/root/.cache/go-build"}, {Name: "modules", Target: "/go/pkg/mod"}},
 	}
 	args := CreateArgs(spec)
 	for _, sequence := range [][]string{
@@ -25,8 +28,13 @@ func TestCreateArgsUseReplicatedJobAndSamePathWorkspace(t *testing.T) {
 		{"--reserve-cpu", "2"},
 		{"--reserve-memory", "4g"},
 		{"--mount", "type=bind,src=/var/lib/rtest/jobs,dst=/var/lib/rtest/jobs"},
+		{"--mount", "type=bind,src=/var/lib/rtest/cache/prj-example/go-build,dst=/root/.cache/go-build"},
+		{"--mount", "type=bind,src=/var/lib/rtest/cache/prj-example/modules,dst=/go/pkg/mod"},
 		{"--mount", "type=bind,src=/usr/local/lib/rtest/rtest-job-entrypoint,dst=/usr/local/bin/rtest-job-entrypoint,readonly"},
+		{"--label", "rtest.project=prj-example"},
+		{"--label", "rtest.job=rtest-job-1"},
 		{"--env", "RTEST_WORKSPACE=/var/lib/rtest/jobs/rtest-job-1/workspace"},
+		{"--env", "RTEST_WORKER_LOCK=/var/lib/rtest/jobs/.worker.lock"},
 		{"--env", "RTEST_ROOT_DIGEST=abc/123"},
 		{"--env", "RTEST_WORKING_DIRECTORY=cmd/service"},
 		{"--env", "RTEST_PROOF=generic-oci"},
@@ -35,6 +43,11 @@ func TestCreateArgsUseReplicatedJobAndSamePathWorkspace(t *testing.T) {
 	} {
 		if !containsSequence(args, sequence) {
 			t.Fatalf("args %#v missing sequence %#v", args, sequence)
+		}
+	}
+	for _, forbidden := range []string{"rtest-go-build-cache", "rtest-go-mod-cache"} {
+		if strings.Contains(strings.Join(args, "\n"), forbidden) {
+			t.Fatalf("args %#v contain global cache %q", args, forbidden)
 		}
 	}
 }

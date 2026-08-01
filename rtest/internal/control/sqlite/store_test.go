@@ -66,7 +66,7 @@ CREATE TABLE control_builds (
 			columns[name] = true
 		}
 		_ = rows.Close()
-		if !columns["idempotency_key"] || !columns["request_hash"] {
+		if !columns["idempotency_key"] || !columns["request_hash"] || table == "control_jobs" && !columns["caches_json"] {
 			t.Fatalf("%s columns = %#v", table, columns)
 		}
 	}
