@@ -40,10 +40,23 @@ type User struct {
 }
 
 type Project struct {
-	ID        string
-	Slug      string
-	Name      string
-	CreatedAt time.Time
+	ID                  string
+	Slug                string
+	Name                string
+	ActiveImage         string
+	PreviousImage       string
+	AllowImageOverrides bool
+	CreatedAt           time.Time
+}
+
+type ProjectImageEvent struct {
+	ID            string
+	ProjectID     string
+	Action        string
+	Image         string
+	ReplacedImage string
+	Actor         string
+	CreatedAt     time.Time
 }
 
 type Bootstrap struct {

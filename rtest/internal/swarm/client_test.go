@@ -77,6 +77,19 @@ func TestCancelMarksThenScalesJobToZero(t *testing.T) {
 	}
 }
 
+func TestValidateImagePullsAndInspectsThePinnedReference(t *testing.T) {
+	image := "ghcr.io/example/runner@sha256:" + strings.Repeat("a", 64)
+	commands := &fakeCommander{outputs: map[string]string{
+		"image inspect --format {{.Id}} " + image: "sha256:" + strings.Repeat("b", 64),
+	}}
+	if err := newClient(commands).ValidateImage(context.Background(), image); err != nil {
+		t.Fatal(err)
+	}
+	if len(commands.runs) != 1 || strings.Join(commands.runs[0], " ") != "image pull "+image {
+		t.Fatalf("runs = %#v", commands.runs)
+	}
+}
+
 func TestStatusReportsScaledToZeroJobAsCancelled(t *testing.T) {
 	commands := &fakeCommander{outputs: map[string]string{
 		"service inspect rtest-job-1": `[{

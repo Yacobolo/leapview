@@ -29,7 +29,6 @@ defaults:
   "backend": "service",
   "url": "https://rtest.example.com",
   "service": {
-    "image": "ghcr.io/example/ci@sha256:...",
     "cpus": "2",
     "memory": "4g"
   }
@@ -45,9 +44,27 @@ rtest exec --workdir services/api --env CI=true -- npm test
 rtest build -- --push -t ghcr.io/example/service:sha .
 ```
 
-`--project`, `--image`, `--cpus`, and `--memory` can override repository or local defaults. Images must
-be pinned by SHA-256 digest. Commands are transmitted as argument vectors without shell
-interpretation unless the caller explicitly invokes a shell.
+The server-side project owns its default runner image. An administrator can activate an
+existing digest, build and activate from a normal Dockerfile, inspect history, or roll back:
+
+```console
+rtest image activate --image ghcr.io/example/ci@sha256:...
+rtest image build --tag ghcr.io/example/ci:rtest --file Dockerfile.rtest
+rtest image history
+rtest image rollback
+rtest image overrides deny
+```
+
+Activation pulls and inspects the digest on the worker before changing project state. A
+failed validation leaves the active image unchanged. `image build` is a convenience around
+the existing native Buildx/BuildKit path: it pushes the tag, reads Buildx's standard
+`containerimage.digest` metadata, and activates the immutable `repository@sha256:...`
+reference. No rtest-specific image or installation format is involved.
+
+`--project`, `--cpus`, and `--memory` can override repository or local defaults. `--image`
+is an explicit migration/debugging override and can be disabled per project. Every image
+scheduled by the service must be pinned by SHA-256 digest. Commands are transmitted as
+argument vectors without shell interpretation unless the caller explicitly invokes a shell.
 
 Git ignore rules are the source-transfer boundary. Tracked files and non-ignored
 untracked files are uploaded; ignored local databases, secrets, caches, and build output

@@ -48,6 +48,18 @@ const (
 	// ControlServiceAddProjectMemberProcedure is the fully-qualified name of the ControlService's
 	// AddProjectMember RPC.
 	ControlServiceAddProjectMemberProcedure = "/rtest.v1.ControlService/AddProjectMember"
+	// ControlServiceActivateProjectImageProcedure is the fully-qualified name of the ControlService's
+	// ActivateProjectImage RPC.
+	ControlServiceActivateProjectImageProcedure = "/rtest.v1.ControlService/ActivateProjectImage"
+	// ControlServiceRollbackProjectImageProcedure is the fully-qualified name of the ControlService's
+	// RollbackProjectImage RPC.
+	ControlServiceRollbackProjectImageProcedure = "/rtest.v1.ControlService/RollbackProjectImage"
+	// ControlServiceSetProjectImagePolicyProcedure is the fully-qualified name of the ControlService's
+	// SetProjectImagePolicy RPC.
+	ControlServiceSetProjectImagePolicyProcedure = "/rtest.v1.ControlService/SetProjectImagePolicy"
+	// ControlServiceListProjectImageHistoryProcedure is the fully-qualified name of the
+	// ControlService's ListProjectImageHistory RPC.
+	ControlServiceListProjectImageHistoryProcedure = "/rtest.v1.ControlService/ListProjectImageHistory"
 	// ControlServicePrepareJobProcedure is the fully-qualified name of the ControlService's PrepareJob
 	// RPC.
 	ControlServicePrepareJobProcedure = "/rtest.v1.ControlService/PrepareJob"
@@ -99,6 +111,10 @@ type ControlServiceClient interface {
 	CreateProject(context.Context, *connect.Request[v1.CreateProjectRequest]) (*connect.Response[v1.CreateProjectResponse], error)
 	ListProjects(context.Context, *connect.Request[v1.ListProjectsRequest]) (*connect.Response[v1.ListProjectsResponse], error)
 	AddProjectMember(context.Context, *connect.Request[v1.AddProjectMemberRequest]) (*connect.Response[v1.AddProjectMemberResponse], error)
+	ActivateProjectImage(context.Context, *connect.Request[v1.ActivateProjectImageRequest]) (*connect.Response[v1.ActivateProjectImageResponse], error)
+	RollbackProjectImage(context.Context, *connect.Request[v1.RollbackProjectImageRequest]) (*connect.Response[v1.RollbackProjectImageResponse], error)
+	SetProjectImagePolicy(context.Context, *connect.Request[v1.SetProjectImagePolicyRequest]) (*connect.Response[v1.SetProjectImagePolicyResponse], error)
+	ListProjectImageHistory(context.Context, *connect.Request[v1.ListProjectImageHistoryRequest]) (*connect.Response[v1.ListProjectImageHistoryResponse], error)
 	PrepareJob(context.Context, *connect.Request[v1.PrepareJobRequest]) (*connect.Response[v1.PrepareJobResponse], error)
 	StartJob(context.Context, *connect.Request[v1.StartJobRequest]) (*connect.Response[v1.StartJobResponse], error)
 	GetJob(context.Context, *connect.Request[v1.GetJobRequest]) (*connect.Response[v1.GetJobResponse], error)
@@ -155,6 +171,30 @@ func NewControlServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			httpClient,
 			baseURL+ControlServiceAddProjectMemberProcedure,
 			connect.WithSchema(controlServiceMethods.ByName("AddProjectMember")),
+			connect.WithClientOptions(opts...),
+		),
+		activateProjectImage: connect.NewClient[v1.ActivateProjectImageRequest, v1.ActivateProjectImageResponse](
+			httpClient,
+			baseURL+ControlServiceActivateProjectImageProcedure,
+			connect.WithSchema(controlServiceMethods.ByName("ActivateProjectImage")),
+			connect.WithClientOptions(opts...),
+		),
+		rollbackProjectImage: connect.NewClient[v1.RollbackProjectImageRequest, v1.RollbackProjectImageResponse](
+			httpClient,
+			baseURL+ControlServiceRollbackProjectImageProcedure,
+			connect.WithSchema(controlServiceMethods.ByName("RollbackProjectImage")),
+			connect.WithClientOptions(opts...),
+		),
+		setProjectImagePolicy: connect.NewClient[v1.SetProjectImagePolicyRequest, v1.SetProjectImagePolicyResponse](
+			httpClient,
+			baseURL+ControlServiceSetProjectImagePolicyProcedure,
+			connect.WithSchema(controlServiceMethods.ByName("SetProjectImagePolicy")),
+			connect.WithClientOptions(opts...),
+		),
+		listProjectImageHistory: connect.NewClient[v1.ListProjectImageHistoryRequest, v1.ListProjectImageHistoryResponse](
+			httpClient,
+			baseURL+ControlServiceListProjectImageHistoryProcedure,
+			connect.WithSchema(controlServiceMethods.ByName("ListProjectImageHistory")),
 			connect.WithClientOptions(opts...),
 		),
 		prepareJob: connect.NewClient[v1.PrepareJobRequest, v1.PrepareJobResponse](
@@ -252,26 +292,30 @@ func NewControlServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // controlServiceClient implements ControlServiceClient.
 type controlServiceClient struct {
-	getServiceInfo     *connect.Client[v1.GetServiceInfoRequest, v1.GetServiceInfoResponse]
-	createUser         *connect.Client[v1.CreateUserRequest, v1.CreateUserResponse]
-	createProject      *connect.Client[v1.CreateProjectRequest, v1.CreateProjectResponse]
-	listProjects       *connect.Client[v1.ListProjectsRequest, v1.ListProjectsResponse]
-	addProjectMember   *connect.Client[v1.AddProjectMemberRequest, v1.AddProjectMemberResponse]
-	prepareJob         *connect.Client[v1.PrepareJobRequest, v1.PrepareJobResponse]
-	startJob           *connect.Client[v1.StartJobRequest, v1.StartJobResponse]
-	getJob             *connect.Client[v1.GetJobRequest, v1.GetJobResponse]
-	listJobs           *connect.Client[v1.ListJobsRequest, v1.ListJobsResponse]
-	cancelJob          *connect.Client[v1.CancelJobRequest, v1.CancelJobResponse]
-	streamJobLogs      *connect.Client[v1.StreamJobLogsRequest, v1.StreamJobLogsResponse]
-	prepareBuild       *connect.Client[v1.PrepareBuildRequest, v1.PrepareBuildResponse]
-	finishBuild        *connect.Client[v1.FinishBuildRequest, v1.FinishBuildResponse]
-	exchangeGitHubOIDC *connect.Client[v1.ExchangeGitHubOIDCRequest, v1.ExchangeGitHubOIDCResponse]
-	createGitHubTrust  *connect.Client[v1.CreateGitHubTrustRequest, v1.CreateGitHubTrustResponse]
-	listGitHubTrusts   *connect.Client[v1.ListGitHubTrustsRequest, v1.ListGitHubTrustsResponse]
-	revokeGitHubTrust  *connect.Client[v1.RevokeGitHubTrustRequest, v1.RevokeGitHubTrustResponse]
-	createDeviceToken  *connect.Client[v1.CreateDeviceTokenRequest, v1.CreateDeviceTokenResponse]
-	listDeviceTokens   *connect.Client[v1.ListDeviceTokensRequest, v1.ListDeviceTokensResponse]
-	revokeDeviceToken  *connect.Client[v1.RevokeDeviceTokenRequest, v1.RevokeDeviceTokenResponse]
+	getServiceInfo          *connect.Client[v1.GetServiceInfoRequest, v1.GetServiceInfoResponse]
+	createUser              *connect.Client[v1.CreateUserRequest, v1.CreateUserResponse]
+	createProject           *connect.Client[v1.CreateProjectRequest, v1.CreateProjectResponse]
+	listProjects            *connect.Client[v1.ListProjectsRequest, v1.ListProjectsResponse]
+	addProjectMember        *connect.Client[v1.AddProjectMemberRequest, v1.AddProjectMemberResponse]
+	activateProjectImage    *connect.Client[v1.ActivateProjectImageRequest, v1.ActivateProjectImageResponse]
+	rollbackProjectImage    *connect.Client[v1.RollbackProjectImageRequest, v1.RollbackProjectImageResponse]
+	setProjectImagePolicy   *connect.Client[v1.SetProjectImagePolicyRequest, v1.SetProjectImagePolicyResponse]
+	listProjectImageHistory *connect.Client[v1.ListProjectImageHistoryRequest, v1.ListProjectImageHistoryResponse]
+	prepareJob              *connect.Client[v1.PrepareJobRequest, v1.PrepareJobResponse]
+	startJob                *connect.Client[v1.StartJobRequest, v1.StartJobResponse]
+	getJob                  *connect.Client[v1.GetJobRequest, v1.GetJobResponse]
+	listJobs                *connect.Client[v1.ListJobsRequest, v1.ListJobsResponse]
+	cancelJob               *connect.Client[v1.CancelJobRequest, v1.CancelJobResponse]
+	streamJobLogs           *connect.Client[v1.StreamJobLogsRequest, v1.StreamJobLogsResponse]
+	prepareBuild            *connect.Client[v1.PrepareBuildRequest, v1.PrepareBuildResponse]
+	finishBuild             *connect.Client[v1.FinishBuildRequest, v1.FinishBuildResponse]
+	exchangeGitHubOIDC      *connect.Client[v1.ExchangeGitHubOIDCRequest, v1.ExchangeGitHubOIDCResponse]
+	createGitHubTrust       *connect.Client[v1.CreateGitHubTrustRequest, v1.CreateGitHubTrustResponse]
+	listGitHubTrusts        *connect.Client[v1.ListGitHubTrustsRequest, v1.ListGitHubTrustsResponse]
+	revokeGitHubTrust       *connect.Client[v1.RevokeGitHubTrustRequest, v1.RevokeGitHubTrustResponse]
+	createDeviceToken       *connect.Client[v1.CreateDeviceTokenRequest, v1.CreateDeviceTokenResponse]
+	listDeviceTokens        *connect.Client[v1.ListDeviceTokensRequest, v1.ListDeviceTokensResponse]
+	revokeDeviceToken       *connect.Client[v1.RevokeDeviceTokenRequest, v1.RevokeDeviceTokenResponse]
 }
 
 // GetServiceInfo calls rtest.v1.ControlService.GetServiceInfo.
@@ -297,6 +341,26 @@ func (c *controlServiceClient) ListProjects(ctx context.Context, req *connect.Re
 // AddProjectMember calls rtest.v1.ControlService.AddProjectMember.
 func (c *controlServiceClient) AddProjectMember(ctx context.Context, req *connect.Request[v1.AddProjectMemberRequest]) (*connect.Response[v1.AddProjectMemberResponse], error) {
 	return c.addProjectMember.CallUnary(ctx, req)
+}
+
+// ActivateProjectImage calls rtest.v1.ControlService.ActivateProjectImage.
+func (c *controlServiceClient) ActivateProjectImage(ctx context.Context, req *connect.Request[v1.ActivateProjectImageRequest]) (*connect.Response[v1.ActivateProjectImageResponse], error) {
+	return c.activateProjectImage.CallUnary(ctx, req)
+}
+
+// RollbackProjectImage calls rtest.v1.ControlService.RollbackProjectImage.
+func (c *controlServiceClient) RollbackProjectImage(ctx context.Context, req *connect.Request[v1.RollbackProjectImageRequest]) (*connect.Response[v1.RollbackProjectImageResponse], error) {
+	return c.rollbackProjectImage.CallUnary(ctx, req)
+}
+
+// SetProjectImagePolicy calls rtest.v1.ControlService.SetProjectImagePolicy.
+func (c *controlServiceClient) SetProjectImagePolicy(ctx context.Context, req *connect.Request[v1.SetProjectImagePolicyRequest]) (*connect.Response[v1.SetProjectImagePolicyResponse], error) {
+	return c.setProjectImagePolicy.CallUnary(ctx, req)
+}
+
+// ListProjectImageHistory calls rtest.v1.ControlService.ListProjectImageHistory.
+func (c *controlServiceClient) ListProjectImageHistory(ctx context.Context, req *connect.Request[v1.ListProjectImageHistoryRequest]) (*connect.Response[v1.ListProjectImageHistoryResponse], error) {
+	return c.listProjectImageHistory.CallUnary(ctx, req)
 }
 
 // PrepareJob calls rtest.v1.ControlService.PrepareJob.
@@ -381,6 +445,10 @@ type ControlServiceHandler interface {
 	CreateProject(context.Context, *connect.Request[v1.CreateProjectRequest]) (*connect.Response[v1.CreateProjectResponse], error)
 	ListProjects(context.Context, *connect.Request[v1.ListProjectsRequest]) (*connect.Response[v1.ListProjectsResponse], error)
 	AddProjectMember(context.Context, *connect.Request[v1.AddProjectMemberRequest]) (*connect.Response[v1.AddProjectMemberResponse], error)
+	ActivateProjectImage(context.Context, *connect.Request[v1.ActivateProjectImageRequest]) (*connect.Response[v1.ActivateProjectImageResponse], error)
+	RollbackProjectImage(context.Context, *connect.Request[v1.RollbackProjectImageRequest]) (*connect.Response[v1.RollbackProjectImageResponse], error)
+	SetProjectImagePolicy(context.Context, *connect.Request[v1.SetProjectImagePolicyRequest]) (*connect.Response[v1.SetProjectImagePolicyResponse], error)
+	ListProjectImageHistory(context.Context, *connect.Request[v1.ListProjectImageHistoryRequest]) (*connect.Response[v1.ListProjectImageHistoryResponse], error)
 	PrepareJob(context.Context, *connect.Request[v1.PrepareJobRequest]) (*connect.Response[v1.PrepareJobResponse], error)
 	StartJob(context.Context, *connect.Request[v1.StartJobRequest]) (*connect.Response[v1.StartJobResponse], error)
 	GetJob(context.Context, *connect.Request[v1.GetJobRequest]) (*connect.Response[v1.GetJobResponse], error)
@@ -433,6 +501,30 @@ func NewControlServiceHandler(svc ControlServiceHandler, opts ...connect.Handler
 		ControlServiceAddProjectMemberProcedure,
 		svc.AddProjectMember,
 		connect.WithSchema(controlServiceMethods.ByName("AddProjectMember")),
+		connect.WithHandlerOptions(opts...),
+	)
+	controlServiceActivateProjectImageHandler := connect.NewUnaryHandler(
+		ControlServiceActivateProjectImageProcedure,
+		svc.ActivateProjectImage,
+		connect.WithSchema(controlServiceMethods.ByName("ActivateProjectImage")),
+		connect.WithHandlerOptions(opts...),
+	)
+	controlServiceRollbackProjectImageHandler := connect.NewUnaryHandler(
+		ControlServiceRollbackProjectImageProcedure,
+		svc.RollbackProjectImage,
+		connect.WithSchema(controlServiceMethods.ByName("RollbackProjectImage")),
+		connect.WithHandlerOptions(opts...),
+	)
+	controlServiceSetProjectImagePolicyHandler := connect.NewUnaryHandler(
+		ControlServiceSetProjectImagePolicyProcedure,
+		svc.SetProjectImagePolicy,
+		connect.WithSchema(controlServiceMethods.ByName("SetProjectImagePolicy")),
+		connect.WithHandlerOptions(opts...),
+	)
+	controlServiceListProjectImageHistoryHandler := connect.NewUnaryHandler(
+		ControlServiceListProjectImageHistoryProcedure,
+		svc.ListProjectImageHistory,
+		connect.WithSchema(controlServiceMethods.ByName("ListProjectImageHistory")),
 		connect.WithHandlerOptions(opts...),
 	)
 	controlServicePrepareJobHandler := connect.NewUnaryHandler(
@@ -537,6 +629,14 @@ func NewControlServiceHandler(svc ControlServiceHandler, opts ...connect.Handler
 			controlServiceListProjectsHandler.ServeHTTP(w, r)
 		case ControlServiceAddProjectMemberProcedure:
 			controlServiceAddProjectMemberHandler.ServeHTTP(w, r)
+		case ControlServiceActivateProjectImageProcedure:
+			controlServiceActivateProjectImageHandler.ServeHTTP(w, r)
+		case ControlServiceRollbackProjectImageProcedure:
+			controlServiceRollbackProjectImageHandler.ServeHTTP(w, r)
+		case ControlServiceSetProjectImagePolicyProcedure:
+			controlServiceSetProjectImagePolicyHandler.ServeHTTP(w, r)
+		case ControlServiceListProjectImageHistoryProcedure:
+			controlServiceListProjectImageHistoryHandler.ServeHTTP(w, r)
 		case ControlServicePrepareJobProcedure:
 			controlServicePrepareJobHandler.ServeHTTP(w, r)
 		case ControlServiceStartJobProcedure:
@@ -594,6 +694,22 @@ func (UnimplementedControlServiceHandler) ListProjects(context.Context, *connect
 
 func (UnimplementedControlServiceHandler) AddProjectMember(context.Context, *connect.Request[v1.AddProjectMemberRequest]) (*connect.Response[v1.AddProjectMemberResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("rtest.v1.ControlService.AddProjectMember is not implemented"))
+}
+
+func (UnimplementedControlServiceHandler) ActivateProjectImage(context.Context, *connect.Request[v1.ActivateProjectImageRequest]) (*connect.Response[v1.ActivateProjectImageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("rtest.v1.ControlService.ActivateProjectImage is not implemented"))
+}
+
+func (UnimplementedControlServiceHandler) RollbackProjectImage(context.Context, *connect.Request[v1.RollbackProjectImageRequest]) (*connect.Response[v1.RollbackProjectImageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("rtest.v1.ControlService.RollbackProjectImage is not implemented"))
+}
+
+func (UnimplementedControlServiceHandler) SetProjectImagePolicy(context.Context, *connect.Request[v1.SetProjectImagePolicyRequest]) (*connect.Response[v1.SetProjectImagePolicyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("rtest.v1.ControlService.SetProjectImagePolicy is not implemented"))
+}
+
+func (UnimplementedControlServiceHandler) ListProjectImageHistory(context.Context, *connect.Request[v1.ListProjectImageHistoryRequest]) (*connect.Response[v1.ListProjectImageHistoryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("rtest.v1.ControlService.ListProjectImageHistory is not implemented"))
 }
 
 func (UnimplementedControlServiceHandler) PrepareJob(context.Context, *connect.Request[v1.PrepareJobRequest]) (*connect.Response[v1.PrepareJobResponse], error) {

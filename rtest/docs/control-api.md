@@ -23,6 +23,20 @@ not grant access. Page tokens are also bound cryptographically to their project.
 single project embedded in a temporary GitHub credential; clients use it to validate a
 repository selection before transferring source bytes.
 
+## Project runner images
+
+A project stores an active and previous digest-pinned OCI image. `PrepareJob` resolves an
+omitted image to the active project image before hashing and persisting admission, so every
+job record contains the immutable digest it actually used. An explicit different image is
+accepted only while project override policy allows it.
+
+Only an administrator authenticated with a device credential can activate, roll back, or
+change image policy. Activation requires an `@sha256:` reference and asks the scheduler to
+pull and inspect it before the store transaction changes the active digest. Rollback validates
+the previous digest before atomically swapping active and previous. `ListProjectImageHistory`
+is project-authorized and returns the activation/rollback actor, digest, replaced digest, and
+timestamp in newest-first order.
+
 ## Admission idempotency
 
 `PrepareJob` and `PrepareBuild` require an `idempotency_key` containing 8–128 URL-safe
@@ -71,6 +85,7 @@ order without text transformations.
 | `PERMISSION_DENIED` | The principal is not authorized for the resource's project. |
 | `INVALID_ARGUMENT` | Input validation, page-token, or log-offset failure. |
 | `NOT_FOUND` | The addressed resource does not exist. |
+| `FAILED_PRECONDITION` | The project has no active image/default or no image to roll back to. |
 | `ALREADY_EXISTS` | A unique resource exists or an idempotency key conflicts. |
 | `UNAVAILABLE` | A scheduler or log dependency is temporarily unavailable. |
 | `CANCELED` | The caller canceled the request. |

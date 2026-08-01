@@ -23,6 +23,7 @@ fi
 
 cas_image='buchgr/bazel-remote-cache@sha256:d9b104d02bea731f5a8ce6d3c518f814953ef54c2e0218744ce7643ff9d85ca8'
 buildkit_image='moby/buildkit@sha256:0168606be2315b7c807a03b3d8aa79beefdb31c98740cebdffdfeebf31190c9f'
+registry_image='registry:2.8.3@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373'
 project_image='golang:1.25-bookworm@sha256:ea341baa9bd5ba6784f6d7161ace70544349a6242d54d34a0fbfd2c4d51c9d58'
 
 ensure_container() {
@@ -38,8 +39,27 @@ ensure_container() {
 ensure_container rtest-cas-service-local --network host --volume rtest-cas-service-local:/data \
   "${cas_image}" --dir /data --max_size 5 --grpc_address 127.0.0.1:50051 \
   --http_address 127.0.0.1:50050 --access_log_level none
-ensure_container rtest-buildkit-service-local --privileged --network host --volume rtest-buildkit-service-local:/var/lib/buildkit \
-  "${buildkit_image}" --addr tcp://127.0.0.1:1234
+ensure_container rtest-registry-service-local --network host --volume rtest-registry-service-local:/var/lib/registry \
+  --env REGISTRY_HTTP_ADDR=0.0.0.0:15000 "${registry_image}"
+buildkit_config="${RTEST_TMP_DIR}/service-local-buildkitd.toml"
+print '[registry."127.0.0.1:15000"]\n  http = true' > "${buildkit_config}"
+ensure_container rtest-buildkit-service-local-image-lifecycle --privileged --network host \
+  --volume rtest-buildkit-service-local-image-lifecycle:/var/lib/buildkit \
+  --volume "${buildkit_config}:/etc/buildkit/buildkitd.toml:ro" \
+  "${buildkit_image}" --config /etc/buildkit/buildkitd.toml --addr tcp://127.0.0.1:1236
+
+for attempt in {1..80}; do
+  if curl --silent --fail http://127.0.0.1:15000/v2/ >/dev/null && \
+    docker exec rtest-buildkit-service-local-image-lifecycle \
+      buildctl --addr tcp://127.0.0.1:1236 debug workers >/dev/null 2>&1; then
+    break
+  fi
+  if [[ ${attempt} -eq 80 ]]; then
+    print -u2 'local OCI registry or image-lifecycle BuildKit did not become ready'
+    exit 1
+  fi
+  sleep 0.25
+done
 
 architecture="$(docker info --format '{{.Architecture}}')"
 case "${architecture}" in
@@ -79,7 +99,7 @@ RTEST_CAS_ENDPOINT='localhost:15052' \
 RTEST_CAS_INTERNAL='127.0.0.1:50051' \
 RTEST_BUILDKIT_LISTEN='127.0.0.1:11235' \
 RTEST_BUILDKIT_ENDPOINT='localhost:11235' \
-RTEST_BUILDKIT_INTERNAL='127.0.0.1:1234' \
+RTEST_BUILDKIT_INTERNAL='127.0.0.1:1236' \
 RTEST_JOB_ENTRYPOINT='/var/lib/rtest/bin/rtest-job-entrypoint' \
 "${build_dir}/rtest-server" > "${proof_dir}/server.log" 2>&1 &
 server_pid=$!
@@ -117,14 +137,42 @@ config_file="${data_dir}/client.json"
 umask 077
 jq -n \
   --arg ca "${data_dir}/pki/ca.pem" \
-  --arg image "${project_image}" \
-  '{backend:"service",url:"https://localhost:18443",service:{image:$image,cpus:"2",memory:"4g",ca_cert_file:$ca,oidc_audience:"https://localhost:18443"}}' \
+  '{backend:"service",url:"https://localhost:18443",service:{cpus:"2",memory:"4g",ca_cert_file:$ca,oidc_audience:"https://localhost:18443"}}' \
   > "${config_file}"
 chmod 0600 "${config_file}"
 export RTEST_CONFIG="${config_file}"
 export RTEST_TOKEN="${device_token}"
 
 "${build_dir}/rtest" doctor | tee "${proof_dir}/doctor.log"
+"${build_dir}/rtest" image activate --project example --image "${project_image}" | tee "${proof_dir}/image-activate.log"
+"${build_dir}/rtest" image activate --project example --image "${cas_image}" | tee "${proof_dir}/image-second-activate.log"
+"${build_dir}/rtest" image rollback --project example | tee "${proof_dir}/image-rollback.log"
+"${build_dir}/rtest" image history --project example > "${proof_dir}/image-history.json"
+jq -e --arg image "${project_image}" 'length == 3 and .[0].action == "rollback" and .[0].image == $image' "${proof_dir}/image-history.json" >/dev/null
+"${build_dir}/rtest" image overrides --project example deny | tee "${proof_dir}/image-policy.log"
+
+set +e
+(
+  cd "${fixture}"
+  "${build_dir}/rtest" exec --image "${cas_image}" -- true
+) > "${proof_dir}/image-override-denied.log" 2>&1
+override_exit=$?
+set -e
+[[ ${override_exit} -ne 0 ]] || { print -u2 'denied image override unexpectedly succeeded'; exit 1; }
+grep -q 'project image overrides are disabled' "${proof_dir}/image-override-denied.log"
+
+runner_fixture="${fixture}/runner-image"
+mkdir -p "${runner_fixture}"
+print "FROM ${project_image}\nLABEL org.opencontainers.image.source=rtest-e2e" > "${runner_fixture}/Dockerfile"
+(
+  cd "${runner_fixture}"
+  "${build_dir}/rtest" image build --tag 127.0.0.1:15000/rtest/e2e:latest -- --progress plain
+) 2>&1 | tee "${proof_dir}/image-build.log"
+(
+  cd "${fixture}"
+  "${build_dir}/rtest" exec -- go version
+) 2>&1 | tee "${proof_dir}/image-build-exec.log"
+grep -q '^go version ' "${proof_dir}/image-build-exec.log"
 
 run_remote_test() {
   local log_file="$1"
@@ -212,7 +260,7 @@ jq -n \
   --arg queue_first_job "${queue_first_job}" --arg queue_second_job "${queue_second_job}" \
   --arg project_image "${project_image}" \
   --argjson first_seconds "${first_seconds}" --argjson cached_seconds "${cached_seconds}" \
-  '{completed_at:$completed,backend:"connect-https+reapi-cas+docker-swarm+buildkit",project_image:$project_image,first_job:$first_job,cached_job:$cached_job,timeout_job:$timeout_job,cancel_job:$cancel_job,queue_first_job:$queue_first_job,queue_second_job:$queue_second_job,first_seconds:$first_seconds,cached_seconds:$cached_seconds,generic_oci:true,repository_project_discovery:true,connect_https:true,device_token:true,job_scoped_cas_mtls:true,build_scoped_buildkit_mtls:true,testcontainers:true,dirty_worktree:true,incremental_cas:true,timeout:true,cancellation:true,capacity_queue:true}' \
+  '{completed_at:$completed,backend:"connect-https+reapi-cas+docker-swarm+buildkit",project_image:$project_image,first_job:$first_job,cached_job:$cached_job,timeout_job:$timeout_job,cancel_job:$cancel_job,queue_first_job:$queue_first_job,queue_second_job:$queue_second_job,first_seconds:$first_seconds,cached_seconds:$cached_seconds,generic_oci:true,repository_project_discovery:true,project_image_lifecycle:true,image_default_resolution:true,image_validation:true,image_rollback:true,image_history:true,image_override_policy:true,image_build_push_activate_execute:true,connect_https:true,device_token:true,job_scoped_cas_mtls:true,build_scoped_buildkit_mtls:true,testcontainers:true,dirty_worktree:true,incremental_cas:true,timeout:true,cancellation:true,capacity_queue:true}' \
   > "${proof_dir}/proof.json"
 
 print "shared-service E2E passed: cached ${cached_seconds}s (first ${first_seconds}s)"

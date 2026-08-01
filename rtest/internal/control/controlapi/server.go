@@ -26,7 +26,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-const Version = "0.5.0"
+const Version = "0.6.0"
 
 type OIDCVerifier interface {
 	Verify(context.Context, string) (control.GitHubClaims, error)
@@ -80,7 +80,7 @@ func securityHeaders(next http.Handler) http.Handler {
 
 func (s *Server) GetServiceInfo(context.Context, *connect.Request[rtestv1.GetServiceInfoRequest]) (*connect.Response[rtestv1.GetServiceInfoResponse], error) {
 	return connect.NewResponse(&rtestv1.GetServiceInfoResponse{Version: Version, Capabilities: []string{
-		"connect", "projects", "device-tokens", "github-oidc", "reapi-cas-mtls", "swarm-jobs", "buildkit-mtls",
+		"connect", "projects", "project-images", "device-tokens", "github-oidc", "reapi-cas-mtls", "swarm-jobs", "buildkit-mtls",
 	}}), nil
 }
 
@@ -151,6 +151,98 @@ func (s *Server) AddProjectMember(ctx context.Context, request *connect.Request[
 	return connect.NewResponse(&rtestv1.AddProjectMemberResponse{}), nil
 }
 
+func (s *Server) ActivateProjectImage(ctx context.Context, request *connect.Request[rtestv1.ActivateProjectImageRequest]) (*connect.Response[rtestv1.ActivateProjectImageResponse], error) {
+	principal, project, err := s.projectConfiguration(ctx, request.Header(), request.Msg.Project)
+	if err != nil {
+		return nil, err
+	}
+	if !imageDigestPattern.MatchString(request.Msg.Image) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("image must be pinned by sha256 digest"))
+	}
+	if err := s.config.Scheduler.ValidateImage(ctx, request.Msg.Image); err != nil {
+		return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("validate project image: %w", err))
+	}
+	project, err = s.config.Store.ActivateProjectImage(ctx, principal, project.ID, request.Msg.Image)
+	if err != nil {
+		return nil, connectError(err)
+	}
+	if err := s.config.Store.Audit(ctx, principal, project.ID, "project.image.activate", project.ID, map[string]string{"image": project.ActiveImage, "replaced_image": project.PreviousImage}); err != nil {
+		return nil, connectError(err)
+	}
+	return connect.NewResponse(&rtestv1.ActivateProjectImageResponse{Project: projectProto(project)}), nil
+}
+
+func (s *Server) RollbackProjectImage(ctx context.Context, request *connect.Request[rtestv1.RollbackProjectImageRequest]) (*connect.Response[rtestv1.RollbackProjectImageResponse], error) {
+	principal, project, err := s.projectConfiguration(ctx, request.Header(), request.Msg.Project)
+	if err != nil {
+		return nil, err
+	}
+	if project.PreviousImage == "" {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("project has no previous image"))
+	}
+	if err := s.config.Scheduler.ValidateImage(ctx, project.PreviousImage); err != nil {
+		return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("validate rollback image: %w", err))
+	}
+	project, err = s.config.Store.RollbackProjectImage(ctx, principal, project.ID)
+	if err != nil {
+		return nil, connectError(err)
+	}
+	if err := s.config.Store.Audit(ctx, principal, project.ID, "project.image.rollback", project.ID, map[string]string{"image": project.ActiveImage, "replaced_image": project.PreviousImage}); err != nil {
+		return nil, connectError(err)
+	}
+	return connect.NewResponse(&rtestv1.RollbackProjectImageResponse{Project: projectProto(project)}), nil
+}
+
+func (s *Server) SetProjectImagePolicy(ctx context.Context, request *connect.Request[rtestv1.SetProjectImagePolicyRequest]) (*connect.Response[rtestv1.SetProjectImagePolicyResponse], error) {
+	principal, project, err := s.projectConfiguration(ctx, request.Header(), request.Msg.Project)
+	if err != nil {
+		return nil, err
+	}
+	project, err = s.config.Store.SetProjectImagePolicy(ctx, principal, project.ID, request.Msg.AllowImageOverrides)
+	if err != nil {
+		return nil, connectError(err)
+	}
+	if err := s.config.Store.Audit(ctx, principal, project.ID, "project.image.policy", project.ID, map[string]string{"allow_overrides": fmt.Sprint(project.AllowImageOverrides)}); err != nil {
+		return nil, connectError(err)
+	}
+	return connect.NewResponse(&rtestv1.SetProjectImagePolicyResponse{Project: projectProto(project)}), nil
+}
+
+func (s *Server) ListProjectImageHistory(ctx context.Context, request *connect.Request[rtestv1.ListProjectImageHistoryRequest]) (*connect.Response[rtestv1.ListProjectImageHistoryResponse], error) {
+	principal, err := s.authenticate(ctx, request.Header())
+	if err != nil {
+		return nil, err
+	}
+	project, err := s.config.Store.AuthorizeProject(ctx, principal, request.Msg.Project)
+	if err != nil {
+		return nil, connectError(err)
+	}
+	events, err := s.config.Store.ListProjectImageHistory(ctx, project.ID)
+	if err != nil {
+		return nil, connectError(err)
+	}
+	response := &rtestv1.ListProjectImageHistoryResponse{Events: make([]*rtestv1.ProjectImageEvent, 0, len(events))}
+	for _, event := range events {
+		response.Events = append(response.Events, projectImageEventProto(event))
+	}
+	return connect.NewResponse(response), nil
+}
+
+func (s *Server) projectConfiguration(ctx context.Context, header http.Header, selector string) (control.Principal, control.Project, error) {
+	principal, err := s.authenticate(ctx, header)
+	if err != nil {
+		return control.Principal{}, control.Project{}, err
+	}
+	project, err := s.config.Store.AuthorizeProject(ctx, principal, selector)
+	if err != nil {
+		return control.Principal{}, control.Project{}, connectError(err)
+	}
+	if principal.Kind != control.PrincipalDevice || !principal.Admin {
+		return control.Principal{}, control.Project{}, connectError(control.ErrForbidden)
+	}
+	return principal, project, nil
+}
+
 func (s *Server) PrepareJob(ctx context.Context, request *connect.Request[rtestv1.PrepareJobRequest]) (*connect.Response[rtestv1.PrepareJobResponse], error) {
 	principal, err := s.authenticate(ctx, request.Header())
 	if err != nil {
@@ -160,7 +252,16 @@ func (s *Server) PrepareJob(ctx context.Context, request *connect.Request[rtestv
 	if err != nil {
 		return nil, connectError(err)
 	}
-	input, err := s.validateJob(project.ID, request.Msg)
+	message := *request.Msg
+	if message.Image == "" {
+		message.Image = project.ActiveImage
+	} else if project.ActiveImage != "" && message.Image != project.ActiveImage && !project.AllowImageOverrides {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("project image overrides are disabled"))
+	}
+	if message.Image == "" {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("project has no active runner image; activate one or pass --image while overrides are enabled"))
+	}
+	input, err := s.validateJob(project.ID, &message)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
@@ -771,7 +872,17 @@ func userProto(user control.User) *rtestv1.User {
 }
 
 func projectProto(project control.Project) *rtestv1.Project {
-	return &rtestv1.Project{Id: project.ID, Slug: project.Slug, Name: project.Name, CreatedAt: timestamppb.New(project.CreatedAt)}
+	return &rtestv1.Project{
+		Id: project.ID, Slug: project.Slug, Name: project.Name, CreatedAt: timestamppb.New(project.CreatedAt),
+		ActiveImage: project.ActiveImage, PreviousImage: project.PreviousImage, AllowImageOverrides: project.AllowImageOverrides,
+	}
+}
+
+func projectImageEventProto(event control.ProjectImageEvent) *rtestv1.ProjectImageEvent {
+	return &rtestv1.ProjectImageEvent{
+		Id: event.ID, ProjectId: event.ProjectID, Action: event.Action, Image: event.Image,
+		ReplacedImage: event.ReplacedImage, Actor: event.Actor, CreatedAt: timestamppb.New(event.CreatedAt),
+	}
 }
 
 func trustProto(trust control.GitHubTrust) *rtestv1.GitHubTrust {

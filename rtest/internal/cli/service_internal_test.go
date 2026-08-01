@@ -42,6 +42,35 @@ func TestParseExecRequiresExplicitCommandBoundary(t *testing.T) {
 	}
 }
 
+func TestParseExecAllowsServerOwnedDefaultImage(t *testing.T) {
+	settings := config.Config{Service: &config.Service{CPUs: "2", Memory: "4g"}}
+	got, err := parseExec(settings, "example", []string{"--", "go", "version"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.project != "example" || got.image != "" || !reflect.DeepEqual(got.command, []string{"go", "version"}) {
+		t.Fatalf("options = %#v", got)
+	}
+}
+
+func TestImageActivateUsesRepositoryProjectAndPinnedImage(t *testing.T) {
+	service := &projectListService{projects: []*rtestv1.Project{{Id: "prj1", Slug: "example", Name: "Example"}}}
+	client, closeServer := testServiceClient(t, service)
+	defer closeServer()
+	image := "ghcr.io/example/runner@sha256:" + strings.Repeat("a", 64)
+	var stdout, stderr bytes.Buffer
+	code := serviceImage(context.Background(), client, config.Config{}, "example", []string{"activate", "--image", image}, IO{Stdout: &stdout, Stderr: &stderr})
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%q", code, stderr.String())
+	}
+	service.mu.Lock()
+	gotProject, gotImage := service.activatedProject, service.activatedImage
+	service.mu.Unlock()
+	if gotProject != "example" || gotImage != image || !strings.Contains(stdout.String(), image) {
+		t.Fatalf("project=%q image=%q stdout=%q", gotProject, gotImage, stdout.String())
+	}
+}
+
 func TestGlobalTokenIsRemovedBeforeCommandDispatch(t *testing.T) {
 	token, args, err := globalArgs([]string{"--token", "secret", "exec", "--", "true"})
 	if err != nil || token != "secret" || !reflect.DeepEqual(args, []string{"exec", "--", "true"}) {
@@ -56,6 +85,22 @@ func TestExplicitProjectRejectsConflictsAndStopsAtCommandBoundary(t *testing.T) 
 	}
 	if _, err := explicitProject([]string{"--project", "one", "--project", "two", "--", "true"}); err == nil {
 		t.Fatal("conflicting project flags were accepted")
+	}
+}
+
+func TestImageHelpersPreserveBuildxArgumentsAndNormalizeTags(t *testing.T) {
+	project, args, err := consumeProject("", []string{"--project", "example", "--", "--label", "value=--project"})
+	if err != nil || project != "example" || !reflect.DeepEqual(args, []string{"--", "--label", "value=--project"}) {
+		t.Fatalf("project=%q args=%#v err=%v", project, args, err)
+	}
+	for input, want := range map[string]string{
+		"ghcr.io/acme/runner:latest": "ghcr.io/acme/runner",
+		"localhost:5000/runner:dev":  "localhost:5000/runner",
+		"localhost:5000/runner":      "localhost:5000/runner",
+	} {
+		if got := repositoryFromTag(input); got != want {
+			t.Fatalf("repositoryFromTag(%q)=%q, want %q", input, got, want)
+		}
 	}
 }
 
@@ -150,9 +195,18 @@ type interruptedLogService struct {
 
 type projectListService struct {
 	rtestv1connect.UnimplementedControlServiceHandler
-	mu           sync.Mutex
-	projects     []*rtestv1.Project
-	prepareCount int
+	mu               sync.Mutex
+	projects         []*rtestv1.Project
+	prepareCount     int
+	activatedProject string
+	activatedImage   string
+}
+
+func (s *projectListService) ActivateProjectImage(_ context.Context, request *connect.Request[rtestv1.ActivateProjectImageRequest]) (*connect.Response[rtestv1.ActivateProjectImageResponse], error) {
+	s.mu.Lock()
+	s.activatedProject, s.activatedImage = request.Msg.Project, request.Msg.Image
+	s.mu.Unlock()
+	return connect.NewResponse(&rtestv1.ActivateProjectImageResponse{Project: &rtestv1.Project{Slug: request.Msg.Project, ActiveImage: request.Msg.Image}}), nil
 }
 
 func (s *projectListService) ListProjects(context.Context, *connect.Request[rtestv1.ListProjectsRequest]) (*connect.Response[rtestv1.ListProjectsResponse], error) {

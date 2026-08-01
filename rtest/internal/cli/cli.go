@@ -701,6 +701,12 @@ func usage(output io.Writer) {
   rtest init [--project <project>]
   rtest [--token <token>] exec [--project <project>] [--image <digest>] [--detach] [--timeout 15m] [--cpus 2] [--memory 4g] [--workdir <path>] [--env KEY=VALUE] -- <command> [arguments...]
   rtest [--token <token>] build [--project <project>] [-- <buildx arguments...>]
+  rtest [--token <token>] image show [--project <project>]
+  rtest [--token <token>] image activate [--project <project>] --image <digest>
+  rtest [--token <token>] image rollback [--project <project>]
+  rtest [--token <token>] image history [--project <project>]
+  rtest [--token <token>] image overrides [--project <project>] <allow|deny>
+  rtest [--token <token>] image build [--project <project>] --tag <registry/repository:tag> [--file Dockerfile] [-- <buildx arguments...>]
   rtest login --token <device-token>
   rtest logout
   rtest token create --name <device> [--user <id>] [--expires 720h]

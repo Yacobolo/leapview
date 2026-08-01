@@ -121,8 +121,9 @@ other, add a gRPC-aware method/root authorizer or isolated per-project CAS names
 
 1. The CLI resolves the Git root and project identity, then selects tracked and
    non-ignored untracked files with Git.
-2. It asks the control plane to admit an arbitrary argument-vector command with an OCI
-   image, resources, timeout, and input-root metadata.
+2. It asks the control plane to admit an arbitrary argument-vector command. The control
+   plane resolves the project-owned active OCI digest unless an allowed explicit override
+   was supplied, then records that immutable digest with resources and timeout.
 3. The CLI uses its job-scoped credential to query CAS and upload only missing blobs.
 4. The control plane creates a Swarm replicated job. The scheduler and Docker API remain
    private implementation details.
@@ -130,6 +131,13 @@ other, add a gRPC-aware method/root authorizer or isolated per-project CAS names
    the command directly in the project-selected, digest-pinned OCI image.
 6. The control plane exposes reconnectable status and logs. Cancellation scales the job
    to zero; timeout terminates the process group and returns exit code 124.
+
+Project runner images follow an intentionally small OCI lifecycle. A normal Dockerfile is
+built and pushed through native Buildx/BuildKit; Buildx reports the manifest digest; the
+control plane pulls and validates that digest before atomically activating it. The previous
+digest remains available for rollback, and activation/rollback history is project-scoped.
+Runner images contain toolchains and system dependencies, while worktree source continues
+to arrive through CAS and writable dependency caches remain explicit worker state.
 
 The server associates CAS roots, jobs, builds, logs, and audit events with a project.
 Project identity replaces a managed server-side Git clone: CAS already provides

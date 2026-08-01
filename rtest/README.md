@@ -13,6 +13,7 @@ GitHub-hosted runners without defining a proprietary execution protocol:
 rtest exec -- go test -count=1 -race ./...
 rtest exec -- task test
 rtest build -- --push -t ghcr.io/example/service:sha .
+rtest image build --tag ghcr.io/example/ci:rtest --file Dockerfile.rtest
 ```
 
 Git selects tracked and untracked non-ignored files from the exact worktree. The REAPI CAS
@@ -33,8 +34,9 @@ existing Taskfile, scripts, Makefile, or CI configuration:
 
 ```console
 rtest init --project example
-rtest exec --project example --image ghcr.io/example/ci@sha256:... -- task test
-rtest exec --project example --image ghcr.io/example/ci@sha256:... -- go test -race ./...
+rtest image activate --project example --image ghcr.io/example/ci@sha256:...
+rtest exec --project example -- task test
+rtest exec --project example -- go test -race ./...
 ```
 
 The committed `rtest.json` contains only the rtest project identifier. It is discovered

@@ -3,6 +3,7 @@ package controlapi_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -85,6 +86,97 @@ func TestAuthenticatedGenericJobLifecycle(t *testing.T) {
 	}
 	if output.String() != "remote output\n" || terminal == nil || terminal.Status != rtestv1.JobStatus_JOB_STATUS_SUCCEEDED {
 		t.Fatalf("output=%q terminal=%#v", output.String(), terminal)
+	}
+}
+
+func TestProjectImageActivationResolvesDefaultAndRollbackIsAudited(t *testing.T) {
+	fixture := newFixture(t)
+	client := fixture.client(fixture.bootstrap.Token)
+	ctx := context.Background()
+	first := "ghcr.io/example/runner@sha256:" + strings.Repeat("a", 64)
+	second := "ghcr.io/example/runner@sha256:" + strings.Repeat("b", 64)
+
+	activated, err := client.ActivateProjectImage(ctx, connect.NewRequest(&rtestv1.ActivateProjectImageRequest{
+		Project: fixture.bootstrap.Project.Slug, Image: first,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if activated.Msg.Project.ActiveImage != first || !activated.Msg.Project.AllowImageOverrides {
+		t.Fatalf("activated project = %#v", activated.Msg.Project)
+	}
+	prepared, err := client.PrepareJob(ctx, connect.NewRequest(&rtestv1.PrepareJobRequest{
+		IdempotencyKey: "default-image-job", Project: fixture.bootstrap.Project.Slug,
+		Command: []string{"go", "version"}, Timeout: durationpb.New(time.Minute), Cpus: "1", Memory: "1g",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.Msg.Job.Image != first {
+		t.Fatalf("resolved image = %q, want %q", prepared.Msg.Job.Image, first)
+	}
+
+	if _, err := client.ActivateProjectImage(ctx, connect.NewRequest(&rtestv1.ActivateProjectImageRequest{
+		Project: fixture.bootstrap.Project.Slug, Image: second,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	rolledBack, err := client.RollbackProjectImage(ctx, connect.NewRequest(&rtestv1.RollbackProjectImageRequest{Project: fixture.bootstrap.Project.Slug}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rolledBack.Msg.Project.ActiveImage != first || rolledBack.Msg.Project.PreviousImage != second {
+		t.Fatalf("rolled back project = %#v", rolledBack.Msg.Project)
+	}
+	history, err := client.ListProjectImageHistory(ctx, connect.NewRequest(&rtestv1.ListProjectImageHistoryRequest{Project: fixture.bootstrap.Project.Slug}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history.Msg.Events) != 3 || history.Msg.Events[0].Action != "rollback" || history.Msg.Events[0].Image != first {
+		t.Fatalf("history = %#v", history.Msg.Events)
+	}
+}
+
+func TestProjectImageActivationFailsClosedBeforeMutation(t *testing.T) {
+	fixture := newFixture(t)
+	client := fixture.client(fixture.bootstrap.Token)
+	ctx := context.Background()
+	good := "ghcr.io/example/runner@sha256:" + strings.Repeat("c", 64)
+	bad := "ghcr.io/example/runner@sha256:" + strings.Repeat("d", 64)
+	if _, err := client.ActivateProjectImage(ctx, connect.NewRequest(&rtestv1.ActivateProjectImageRequest{Project: "example", Image: good})); err != nil {
+		t.Fatal(err)
+	}
+	fixture.scheduler.validateErr = errors.New("registry unavailable")
+	if _, err := client.ActivateProjectImage(ctx, connect.NewRequest(&rtestv1.ActivateProjectImageRequest{Project: "example", Image: bad})); connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Fatalf("activation error = %v", err)
+	}
+	projects, err := client.ListProjects(ctx, connect.NewRequest(&rtestv1.ListProjectsRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projects.Msg.Projects[0].ActiveImage != good || projects.Msg.Projects[0].PreviousImage != "" {
+		t.Fatalf("failed activation mutated project = %#v", projects.Msg.Projects[0])
+	}
+}
+
+func TestProjectImageOverridePolicyIsEnforcedAtAdmission(t *testing.T) {
+	fixture := newFixture(t)
+	client := fixture.client(fixture.bootstrap.Token)
+	ctx := context.Background()
+	active := "ghcr.io/example/runner@sha256:" + strings.Repeat("e", 64)
+	override := "ghcr.io/example/runner@sha256:" + strings.Repeat("f", 64)
+	if _, err := client.ActivateProjectImage(ctx, connect.NewRequest(&rtestv1.ActivateProjectImageRequest{Project: "example", Image: active})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.SetProjectImagePolicy(ctx, connect.NewRequest(&rtestv1.SetProjectImagePolicyRequest{Project: "example", AllowImageOverrides: false})); err != nil {
+		t.Fatal(err)
+	}
+	_, err := client.PrepareJob(ctx, connect.NewRequest(&rtestv1.PrepareJobRequest{
+		IdempotencyKey: "denied-override-job", Project: "example", Image: override,
+		Command: []string{"true"}, Timeout: durationpb.New(time.Minute), Cpus: "1", Memory: "1g",
+	}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("override error = %v", err)
 	}
 }
 
@@ -473,9 +565,12 @@ type fakeScheduler struct {
 	jobs               map[string]protocol.Job
 	blockFollowingLogs bool
 	logsStarted        chan struct{}
+	validateErr        error
 }
 
 func (f *fakeScheduler) Check(context.Context) error { return nil }
+
+func (f *fakeScheduler) ValidateImage(context.Context, string) error { return f.validateErr }
 
 func (f *fakeScheduler) Create(_ context.Context, job control.Job) error {
 	f.mu.Lock()

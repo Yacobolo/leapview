@@ -24,8 +24,8 @@ mkdir -p "${proof_dir}"
 go -C "${RTEST_DIR}" build -trimpath -o "${RTEST_TMP_DIR}/rtest" ./cmd/rtest
 config_file="${RTEST_TMP_DIR}/service-e2e-config.json"
 umask 077
-jq -n --arg url "${service_url}" --arg image "${project_image}" --arg ca "${ca_file}" \
-  '{backend:"service",url:$url,service:{image:$image,cpus:"2",memory:"4g",ca_cert_file:$ca,oidc_audience:$url}}' \
+jq -n --arg url "${service_url}" --arg ca "${ca_file}" \
+  '{backend:"service",url:$url,service:{cpus:"2",memory:"4g",ca_cert_file:$ca,oidc_audience:$url}}' \
   > "${config_file}"
 chmod 0600 "${config_file}"
 export RTEST_CONFIG="${config_file}"
@@ -44,6 +44,7 @@ print 'must not upload' > "${fixture}/ignored/large.bin"
 print 'ignored/' >> "${fixture}/.gitignore"
 
 "${RTEST_TMP_DIR}/rtest" doctor | tee "${proof_dir}/doctor.log"
+"${RTEST_TMP_DIR}/rtest" image activate --project "${project}" --image "${project_image}" | tee "${proof_dir}/image-activate.log"
 
 run_remote_test() {
   local log_file="$1"
@@ -133,7 +134,7 @@ jq -n \
   --arg project_image "${project_image}" --arg first_job "${first_job}" --arg cached_job "${cached_job}" --arg timeout_job "${timeout_job}" --arg cancel_job "${cancel_job}" \
   --arg queue_first_job "${queue_first_job}" --arg queue_second_job "${queue_second_job}" \
   --argjson first_seconds "${first_seconds}" --argjson cached_seconds "${cached_seconds}" \
-  '{completed_at:$completed,server_ipv4:$server,backend:"connect-https+reapi-cas+docker-swarm+buildkit",project_image:$project_image,first_job:$first_job,cached_job:$cached_job,timeout_job:$timeout_job,cancel_job:$cancel_job,queue_first_job:$queue_first_job,queue_second_job:$queue_second_job,first_seconds:$first_seconds,cached_seconds:$cached_seconds,generic_oci:true,device_token:true,job_scoped_cas_mtls:true,build_scoped_buildkit_mtls:true,testcontainers:true,dirty_worktree:true,incremental_cas:true,timeout:true,cancellation:true,capacity_queue:true}' \
+  '{completed_at:$completed,server_ipv4:$server,backend:"connect-https+reapi-cas+docker-swarm+buildkit",project_image:$project_image,first_job:$first_job,cached_job:$cached_job,timeout_job:$timeout_job,cancel_job:$cancel_job,queue_first_job:$queue_first_job,queue_second_job:$queue_second_job,first_seconds:$first_seconds,cached_seconds:$cached_seconds,generic_oci:true,project_image_lifecycle:true,image_default_resolution:true,image_validation:true,device_token:true,job_scoped_cas_mtls:true,build_scoped_buildkit_mtls:true,testcontainers:true,dirty_worktree:true,incremental_cas:true,timeout:true,cancellation:true,capacity_queue:true}' \
   > "${proof_dir}/proof.json"
 
 print "remote shared-service E2E passed: cached ${cached_seconds}s (first ${first_seconds}s)"

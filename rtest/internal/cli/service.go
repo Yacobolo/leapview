@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -39,7 +40,7 @@ func runService(ctx context.Context, settings config.Config, explicitToken strin
 		return serviceLogout(settings, streams)
 	}
 	selectedProject := ""
-	if args[0] == "exec" || args[0] == "build" || args[0] == "list" {
+	if args[0] == "exec" || args[0] == "build" || args[0] == "image" || args[0] == "list" {
 		explicitProject, err := explicitProject(args[1:])
 		if err != nil {
 			return failUsage(streams.Stderr, err.Error())
@@ -61,6 +62,8 @@ func runService(ctx context.Context, settings config.Config, explicitToken strin
 		return serviceExec(ctx, api, settings, selectedProject, args[1:], streams)
 	case "build":
 		return serviceBuild(ctx, api, settings, selectedProject, args[1:], streams)
+	case "image":
+		return serviceImage(ctx, api, settings, selectedProject, args[1:], streams)
 	case "status":
 		return serviceStatus(ctx, api, args[1:], streams)
 	case "logs":
@@ -385,10 +388,167 @@ func parseExec(settings config.Config, project string, args []string) (execOptio
 		return execOptions{}, errors.New("exec requires -- <command> [arguments...]")
 	}
 	options.command = append([]string(nil), args[1:]...)
-	if options.project == "" || options.image == "" {
-		return execOptions{}, errors.New("project selection and image are required")
+	if options.project == "" {
+		return execOptions{}, errors.New("project selection is required")
 	}
 	return options, nil
+}
+
+func serviceImage(ctx context.Context, api rtestv1connect.ControlServiceClient, settings config.Config, project string, args []string, streams IO) int {
+	if len(args) == 0 {
+		return failUsage(streams.Stderr, "image requires show, activate, rollback, history, overrides, or build")
+	}
+	command, args := args[0], args[1:]
+	project, args, err := consumeProject(project, args)
+	if err != nil {
+		return failUsage(streams.Stderr, err.Error())
+	}
+	if project == "" {
+		return failUsage(streams.Stderr, "image command requires repository project selection or --project")
+	}
+	switch command {
+	case "show":
+		if len(args) != 0 {
+			return failUsage(streams.Stderr, "image show accepts only --project")
+		}
+		item, err := authorizedProject(ctx, api, project)
+		if err != nil {
+			return fail(streams.Stderr, err)
+		}
+		return encode(streams, item)
+	case "activate":
+		if len(args) != 2 || args[0] != "--image" || args[1] == "" {
+			return failUsage(streams.Stderr, "image activate requires --image <digest>")
+		}
+		response, err := api.ActivateProjectImage(ctx, connect.NewRequest(&rtestv1.ActivateProjectImageRequest{Project: project, Image: args[1]}))
+		if err != nil {
+			return fail(streams.Stderr, err)
+		}
+		fmt.Fprintf(streams.Stdout, "Activated %s for project %s\n", response.Msg.Project.ActiveImage, response.Msg.Project.Slug)
+		return 0
+	case "rollback":
+		if len(args) != 0 {
+			return failUsage(streams.Stderr, "image rollback accepts only --project")
+		}
+		response, err := api.RollbackProjectImage(ctx, connect.NewRequest(&rtestv1.RollbackProjectImageRequest{Project: project}))
+		if err != nil {
+			return fail(streams.Stderr, err)
+		}
+		fmt.Fprintf(streams.Stdout, "Rolled project %s back to %s\n", response.Msg.Project.Slug, response.Msg.Project.ActiveImage)
+		return 0
+	case "history":
+		if len(args) != 0 {
+			return failUsage(streams.Stderr, "image history accepts only --project")
+		}
+		response, err := api.ListProjectImageHistory(ctx, connect.NewRequest(&rtestv1.ListProjectImageHistoryRequest{Project: project}))
+		if err != nil {
+			return fail(streams.Stderr, err)
+		}
+		return encode(streams, response.Msg.Events)
+	case "overrides":
+		if len(args) != 1 || args[0] != "allow" && args[0] != "deny" {
+			return failUsage(streams.Stderr, "image overrides requires allow or deny")
+		}
+		response, err := api.SetProjectImagePolicy(ctx, connect.NewRequest(&rtestv1.SetProjectImagePolicyRequest{Project: project, AllowImageOverrides: args[0] == "allow"}))
+		if err != nil {
+			return fail(streams.Stderr, err)
+		}
+		fmt.Fprintf(streams.Stdout, "Project %s image overrides: %t\n", response.Msg.Project.Slug, response.Msg.Project.AllowImageOverrides)
+		return 0
+	case "build":
+		return serviceImageBuild(ctx, api, settings, project, args, streams)
+	default:
+		return failUsage(streams.Stderr, "unknown image command "+command)
+	}
+}
+
+func serviceImageBuild(ctx context.Context, api rtestv1connect.ControlServiceClient, settings config.Config, project string, args []string, streams IO) int {
+	tag, dockerfile := "", "Dockerfile"
+	var extra []string
+	for len(args) > 0 {
+		if args[0] == "--" {
+			extra, args = append([]string(nil), args[1:]...), nil
+			break
+		}
+		if len(args) < 2 {
+			return failUsage(streams.Stderr, args[0]+" requires a value")
+		}
+		switch args[0] {
+		case "--tag":
+			tag = args[1]
+		case "--file":
+			dockerfile = args[1]
+		default:
+			return failUsage(streams.Stderr, "unknown image build option "+args[0])
+		}
+		args = args[2:]
+	}
+	if tag == "" || strings.Contains(tag, "@") {
+		return failUsage(streams.Stderr, "image build requires a mutable --tag <registry/repository:tag> destination")
+	}
+	metadata, err := os.CreateTemp("", "rtest-build-metadata-*.json")
+	if err != nil {
+		return fail(streams.Stderr, err)
+	}
+	metadataPath := metadata.Name()
+	_ = metadata.Close()
+	defer os.Remove(metadataPath)
+	buildArgs := []string{"--file", dockerfile, "--tag", tag, "--push", "--metadata-file", metadataPath}
+	buildArgs = append(buildArgs, extra...)
+	buildArgs = append(buildArgs, ".")
+	if code := serviceBuild(ctx, api, settings, project, buildArgs, streams); code != 0 {
+		return code
+	}
+	payload, err := os.ReadFile(metadataPath)
+	if err != nil {
+		return fail(streams.Stderr, fmt.Errorf("read Buildx metadata: %w", err))
+	}
+	var values map[string]any
+	if err := json.Unmarshal(payload, &values); err != nil {
+		return fail(streams.Stderr, fmt.Errorf("decode Buildx metadata: %w", err))
+	}
+	digest, _ := values["containerimage.digest"].(string)
+	if !strings.HasPrefix(digest, "sha256:") {
+		return fail(streams.Stderr, errors.New("Buildx did not report containerimage.digest"))
+	}
+	image := repositoryFromTag(tag) + "@" + digest
+	response, err := api.ActivateProjectImage(ctx, connect.NewRequest(&rtestv1.ActivateProjectImageRequest{Project: project, Image: image}))
+	if err != nil {
+		return fail(streams.Stderr, fmt.Errorf("activate built image: %w", err))
+	}
+	fmt.Fprintf(streams.Stdout, "Activated %s for project %s\n", response.Msg.Project.ActiveImage, response.Msg.Project.Slug)
+	return 0
+}
+
+func consumeProject(project string, args []string) (string, []string, error) {
+	result := make([]string, 0, len(args))
+	for index := 0; index < len(args); index++ {
+		if args[index] == "--" {
+			result = append(result, args[index:]...)
+			break
+		}
+		if args[index] != "--project" {
+			result = append(result, args[index])
+			continue
+		}
+		if index+1 >= len(args) || args[index+1] == "" {
+			return "", nil, errors.New("--project requires a value")
+		}
+		if project != "" && project != args[index+1] {
+			return "", nil, errors.New("conflicting --project values")
+		}
+		project = args[index+1]
+		index++
+	}
+	return project, result, nil
+}
+
+func repositoryFromTag(reference string) string {
+	lastSlash := strings.LastIndex(reference, "/")
+	if colon := strings.LastIndex(reference, ":"); colon > lastSlash {
+		return reference[:colon]
+	}
+	return reference
 }
 
 func waitServiceJob(ctx context.Context, api rtestv1connect.ControlServiceClient, id string, streams IO) int {

@@ -80,6 +80,9 @@ CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY,
   slug TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
+  active_image TEXT NOT NULL DEFAULT '',
+  previous_image TEXT NOT NULL DEFAULT '',
+  allow_image_overrides INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS project_members (
@@ -125,6 +128,16 @@ CREATE TABLE IF NOT EXISTS audit_events (
   created_at INTEGER NOT NULL,
   metadata_json TEXT NOT NULL DEFAULT '{}'
 );
+CREATE TABLE IF NOT EXISTS project_image_events (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  action TEXT NOT NULL,
+  image TEXT NOT NULL,
+  replaced_image TEXT NOT NULL DEFAULT '',
+  actor TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS project_image_events_project_idx ON project_image_events(project_id, created_at DESC, id DESC);
 CREATE TABLE IF NOT EXISTS control_jobs (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -168,10 +181,14 @@ CREATE INDEX IF NOT EXISTS control_builds_project_idx ON control_builds(project_
 	}{
 		{"control_jobs", "idempotency_key"}, {"control_jobs", "request_hash"},
 		{"control_builds", "idempotency_key"}, {"control_builds", "request_hash"},
+		{"projects", "active_image"}, {"projects", "previous_image"},
 	} {
 		if err := s.ensureTextColumn(ctx, column.table, column.name); err != nil {
 			return err
 		}
+	}
+	if err := s.ensureIntegerColumn(ctx, "projects", "allow_image_overrides", 1); err != nil {
+		return err
 	}
 	_, err = s.db.ExecContext(ctx, `
 CREATE UNIQUE INDEX IF NOT EXISTS control_jobs_idempotency_idx ON control_jobs(project_id,idempotency_key) WHERE idempotency_key <> '';
@@ -181,10 +198,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS control_builds_idempotency_idx ON control_buil
 }
 
 func (s *Store) ensureTextColumn(ctx context.Context, table, column string) error {
-	if table != "control_jobs" && table != "control_builds" {
-		return errors.New("unsupported migration table")
+	allowed := map[string]bool{
+		"control_jobs.idempotency_key": true, "control_jobs.request_hash": true,
+		"control_builds.idempotency_key": true, "control_builds.request_hash": true,
+		"projects.active_image": true, "projects.previous_image": true,
 	}
-	if column != "idempotency_key" && column != "request_hash" {
+	if !allowed[table+"."+column] {
 		return errors.New("unsupported migration column")
 	}
 	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)
@@ -209,6 +228,32 @@ func (s *Store) ensureTextColumn(ctx context.Context, table, column string) erro
 		return nil
 	}
 	_, err = s.db.ExecContext(ctx, `ALTER TABLE `+table+` ADD COLUMN `+column+` TEXT NOT NULL DEFAULT ''`)
+	return err
+}
+
+func (s *Store) ensureIntegerColumn(ctx context.Context, table, column string, defaultValue int) error {
+	if table != "projects" || column != "allow_image_overrides" || defaultValue != 1 {
+		return errors.New("unsupported integer migration column")
+	}
+	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(projects)`)
+	if err != nil {
+		return err
+	}
+	found := false
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, kind string
+		var value any
+		if err := rows.Scan(&cid, &name, &kind, &notNull, &value, &primaryKey); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		found = found || name == column
+	}
+	if err := rows.Close(); err != nil || found {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `ALTER TABLE projects ADD COLUMN allow_image_overrides INTEGER NOT NULL DEFAULT 1`)
 	return err
 }
 
@@ -241,7 +286,7 @@ func (s *Store) Bootstrap(ctx context.Context, input control.Bootstrap) (control
 	}
 	now := time.Now().UTC()
 	user := control.User{ID: userID, Name: input.UserName, Admin: true, CreatedAt: now}
-	project := control.Project{ID: projectID, Slug: input.ProjectSlug, Name: input.ProjectName, CreatedAt: now}
+	project := control.Project{ID: projectID, Slug: input.ProjectSlug, Name: input.ProjectName, AllowImageOverrides: true, CreatedAt: now}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO users(id,name,admin,created_at) VALUES(?,?,1,?)`, user.ID, user.Name, unix(now)); err != nil {
 		return control.BootstrapResult{}, err
 	}
@@ -352,7 +397,7 @@ func (s *Store) CreateProject(ctx context.Context, principal control.Principal, 
 		return control.Project{}, err
 	}
 	now := time.Now().UTC()
-	project := control.Project{ID: id, Slug: slug, Name: name, CreatedAt: now}
+	project := control.Project{ID: id, Slug: slug, Name: name, AllowImageOverrides: true, CreatedAt: now}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO projects(id,slug,name,created_at) VALUES(?,?,?,?)`, project.ID, project.Slug, project.Name, unix(now))
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return control.Project{}, control.ErrAlreadyExists
@@ -365,13 +410,13 @@ func (s *Store) ListProjects(ctx context.Context, principal control.Principal) (
 	var err error
 	switch {
 	case principal.ProjectID != "":
-		rows, err = s.db.QueryContext(ctx, `SELECT id,slug,name,created_at FROM projects WHERE id=? ORDER BY slug,id`, principal.ProjectID)
+		rows, err = s.db.QueryContext(ctx, `SELECT id,slug,name,active_image,previous_image,allow_image_overrides,created_at FROM projects WHERE id=? ORDER BY slug,id`, principal.ProjectID)
 	case principal.UserID == "":
 		return nil, control.ErrForbidden
 	case principal.Admin:
-		rows, err = s.db.QueryContext(ctx, `SELECT id,slug,name,created_at FROM projects ORDER BY slug,id`)
+		rows, err = s.db.QueryContext(ctx, `SELECT id,slug,name,active_image,previous_image,allow_image_overrides,created_at FROM projects ORDER BY slug,id`)
 	default:
-		rows, err = s.db.QueryContext(ctx, `SELECT p.id,p.slug,p.name,p.created_at FROM projects p JOIN project_members m ON m.project_id=p.id WHERE m.user_id=? ORDER BY p.slug,p.id`, principal.UserID)
+		rows, err = s.db.QueryContext(ctx, `SELECT p.id,p.slug,p.name,p.active_image,p.previous_image,p.allow_image_overrides,p.created_at FROM projects p JOIN project_members m ON m.project_id=p.id WHERE m.user_id=? ORDER BY p.slug,p.id`, principal.UserID)
 	}
 	if err != nil {
 		return nil, err
@@ -381,9 +426,11 @@ func (s *Store) ListProjects(ctx context.Context, principal control.Principal) (
 	for rows.Next() {
 		var project control.Project
 		var created int64
-		if err := rows.Scan(&project.ID, &project.Slug, &project.Name, &created); err != nil {
+		var allowOverrides int
+		if err := rows.Scan(&project.ID, &project.Slug, &project.Name, &project.ActiveImage, &project.PreviousImage, &allowOverrides, &created); err != nil {
 			return nil, err
 		}
+		project.AllowImageOverrides = allowOverrides != 0
 		project.CreatedAt = fromUnix(created)
 		projects = append(projects, project)
 	}
@@ -410,6 +457,92 @@ func (s *Store) AddProjectMember(ctx context.Context, principal control.Principa
 		}
 	}
 	return nil
+}
+
+func (s *Store) ActivateProjectImage(ctx context.Context, principal control.Principal, projectID, image string) (control.Project, error) {
+	if principal.Kind != control.PrincipalDevice || !principal.Admin {
+		return control.Project{}, control.ErrForbidden
+	}
+	return s.changeProjectImage(ctx, principal, projectID, "activate", image)
+}
+
+func (s *Store) RollbackProjectImage(ctx context.Context, principal control.Principal, projectID string) (control.Project, error) {
+	if principal.Kind != control.PrincipalDevice || !principal.Admin {
+		return control.Project{}, control.ErrForbidden
+	}
+	return s.changeProjectImage(ctx, principal, projectID, "rollback", "")
+}
+
+func (s *Store) changeProjectImage(ctx context.Context, principal control.Principal, projectID, action, image string) (control.Project, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return control.Project{}, err
+	}
+	defer tx.Rollback()
+	project, err := scanProject(tx.QueryRowContext(ctx, `SELECT id,slug,name,active_image,previous_image,allow_image_overrides,created_at FROM projects WHERE id=?`, projectID))
+	if err != nil {
+		return control.Project{}, err
+	}
+	replaced := project.ActiveImage
+	if action == "rollback" {
+		if project.PreviousImage == "" {
+			return control.Project{}, control.ErrNotFound
+		}
+		image = project.PreviousImage
+	}
+	if image == project.ActiveImage {
+		return project, nil
+	}
+	project.ActiveImage, project.PreviousImage = image, replaced
+	if _, err := tx.ExecContext(ctx, `UPDATE projects SET active_image=?,previous_image=? WHERE id=?`, project.ActiveImage, project.PreviousImage, project.ID); err != nil {
+		return control.Project{}, err
+	}
+	eventID, err := randomID("img")
+	if err != nil {
+		return control.Project{}, err
+	}
+	now := time.Now().UTC()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO project_image_events(id,project_id,action,image,replaced_image,actor,created_at) VALUES(?,?,?,?,?,?,?)`,
+		eventID, project.ID, action, image, replaced, actorID(principal), unix(now)); err != nil {
+		return control.Project{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return control.Project{}, err
+	}
+	return project, nil
+}
+
+func (s *Store) SetProjectImagePolicy(ctx context.Context, principal control.Principal, projectID string, allow bool) (control.Project, error) {
+	if principal.Kind != control.PrincipalDevice || !principal.Admin {
+		return control.Project{}, control.ErrForbidden
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE projects SET allow_image_overrides=? WHERE id=?`, boolInt(allow), projectID)
+	if err != nil {
+		return control.Project{}, err
+	}
+	if count, _ := result.RowsAffected(); count != 1 {
+		return control.Project{}, control.ErrNotFound
+	}
+	return s.project(ctx, projectID)
+}
+
+func (s *Store) ListProjectImageHistory(ctx context.Context, projectID string) ([]control.ProjectImageEvent, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id,project_id,action,image,replaced_image,actor,created_at FROM project_image_events WHERE project_id=? ORDER BY created_at DESC,id DESC`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	events := make([]control.ProjectImageEvent, 0)
+	for rows.Next() {
+		var event control.ProjectImageEvent
+		var created int64
+		if err := rows.Scan(&event.ID, &event.ProjectID, &event.Action, &event.Image, &event.ReplacedImage, &event.Actor, &created); err != nil {
+			return nil, err
+		}
+		event.CreatedAt = fromUnix(created)
+		events = append(events, event)
+	}
+	return events, rows.Err()
 }
 
 func (s *Store) CreateDeviceToken(ctx context.Context, principal control.Principal, input control.CreateDeviceToken) (control.IssuedDeviceToken, error) {
@@ -594,13 +727,16 @@ func (s *Store) Audit(ctx context.Context, principal control.Principal, projectI
 	if err != nil {
 		return err
 	}
-	actorID := principal.UserID
-	if actorID == "" {
-		actorID = principal.Subject
-	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO audit_events(actor_kind,actor_id,project_id,action,target_id,created_at,metadata_json) VALUES(?,?,?,?,?,?,?)`,
-		principal.Kind, actorID, nullable(projectID), action, targetID, unix(time.Now().UTC()), string(encoded))
+		principal.Kind, actorID(principal), nullable(projectID), action, targetID, unix(time.Now().UTC()), string(encoded))
 	return err
+}
+
+func actorID(principal control.Principal) string {
+	if principal.UserID != "" {
+		return principal.UserID
+	}
+	return principal.Subject
 }
 
 func (s *Store) CreatePreparedJob(ctx context.Context, input control.PrepareJob, idempotency control.Idempotency) (control.Job, bool, error) {
@@ -839,15 +975,23 @@ func (s *Store) OperationActive(ctx context.Context, kind string, id string) boo
 }
 
 func (s *Store) project(ctx context.Context, selector string) (control.Project, error) {
-	var project control.Project
-	var created int64
-	err := s.db.QueryRowContext(ctx, `SELECT id,slug,name,created_at FROM projects WHERE id=? OR slug=?`, selector, selector).
-		Scan(&project.ID, &project.Slug, &project.Name, &created)
+	project, err := scanProject(s.db.QueryRowContext(ctx, `SELECT id,slug,name,active_image,previous_image,allow_image_overrides,created_at FROM projects WHERE id=? OR slug=?`, selector, selector))
 	if errors.Is(err, sql.ErrNoRows) {
 		return control.Project{}, control.ErrNotFound
 	}
-	project.CreatedAt = fromUnix(created)
 	return project, err
+}
+
+func scanProject(row interface{ Scan(...any) error }) (control.Project, error) {
+	var project control.Project
+	var created int64
+	var allowOverrides int
+	if err := row.Scan(&project.ID, &project.Slug, &project.Name, &project.ActiveImage, &project.PreviousImage, &allowOverrides, &created); err != nil {
+		return control.Project{}, err
+	}
+	project.AllowImageOverrides = allowOverrides != 0
+	project.CreatedAt = fromUnix(created)
+	return project, nil
 }
 
 func scanTrust(row interface{ Scan(...any) error }) (control.GitHubTrust, error) {

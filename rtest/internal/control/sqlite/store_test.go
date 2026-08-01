@@ -19,6 +19,9 @@ func TestOpenMigratesAdmissionIdempotencyColumns(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = database.Exec(`
+CREATE TABLE projects (
+  id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL, created_at INTEGER NOT NULL
+);
 CREATE TABLE control_jobs (
   id TEXT PRIMARY KEY, project_id TEXT NOT NULL, image TEXT NOT NULL, command_json TEXT NOT NULL,
   working_directory TEXT NOT NULL, environment_json TEXT NOT NULL, root_digest TEXT NOT NULL DEFAULT '',
@@ -65,6 +68,26 @@ CREATE TABLE control_builds (
 		_ = rows.Close()
 		if !columns["idempotency_key"] || !columns["request_hash"] {
 			t.Fatalf("%s columns = %#v", table, columns)
+		}
+	}
+	rows, err := database.Query(`PRAGMA table_info(projects)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectColumns := map[string]bool{}
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, kind string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &kind, &notNull, &defaultValue, &primaryKey); err != nil {
+			t.Fatal(err)
+		}
+		projectColumns[name] = true
+	}
+	_ = rows.Close()
+	for _, name := range []string{"active_image", "previous_image", "allow_image_overrides"} {
+		if !projectColumns[name] {
+			t.Fatalf("projects columns = %#v", projectColumns)
 		}
 	}
 }

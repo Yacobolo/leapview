@@ -14,6 +14,10 @@ service ControlService {
   rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
   rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
   rpc AddProjectMember(AddProjectMemberRequest) returns (AddProjectMemberResponse);
+  rpc ActivateProjectImage(ActivateProjectImageRequest) returns (ActivateProjectImageResponse);
+  rpc RollbackProjectImage(RollbackProjectImageRequest) returns (RollbackProjectImageResponse);
+  rpc SetProjectImagePolicy(SetProjectImagePolicyRequest) returns (SetProjectImagePolicyResponse);
+  rpc ListProjectImageHistory(ListProjectImageHistoryRequest) returns (ListProjectImageHistoryResponse);
 
   rpc PrepareJob(PrepareJobRequest) returns (PrepareJobResponse);
   rpc StartJob(StartJobRequest) returns (StartJobResponse);
@@ -62,6 +66,9 @@ message Project {
   string slug = 2;
   string name = 3;
   google.protobuf.Timestamp created_at = 4;
+  string active_image = 5;
+  string previous_image = 6;
+  bool allow_image_overrides = 7;
 }
 
 message CreateProjectRequest {
@@ -85,6 +92,50 @@ message AddProjectMemberRequest {
 }
 
 message AddProjectMemberResponse {}
+
+message ActivateProjectImageRequest {
+  string project = 1;
+  string image = 2;
+}
+
+message ActivateProjectImageResponse {
+  Project project = 1;
+}
+
+message RollbackProjectImageRequest {
+  string project = 1;
+}
+
+message RollbackProjectImageResponse {
+  Project project = 1;
+}
+
+message SetProjectImagePolicyRequest {
+  string project = 1;
+  bool allow_image_overrides = 2;
+}
+
+message SetProjectImagePolicyResponse {
+  Project project = 1;
+}
+
+message ProjectImageEvent {
+  string id = 1;
+  string project_id = 2;
+  string action = 3;
+  string image = 4;
+  string replaced_image = 5;
+  string actor = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message ListProjectImageHistoryRequest {
+  string project = 1;
+}
+
+message ListProjectImageHistoryResponse {
+  repeated ProjectImageEvent events = 1;
+}
 
 enum JobStatus {
   JOB_STATUS_UNSPECIFIED = 0;

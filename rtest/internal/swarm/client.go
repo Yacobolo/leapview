@@ -55,6 +55,21 @@ func (c *Client) Check(ctx context.Context) error {
 	return nil
 }
 
+func (c *Client) ValidateImage(ctx context.Context, image string) error {
+	var output bytes.Buffer
+	if err := c.commands.Run(ctx, &output, &output, "image", "pull", image); err != nil {
+		return fmt.Errorf("pull image %s: %w: %s", image, err, strings.TrimSpace(output.String()))
+	}
+	data, err := c.commands.Output(ctx, "image", "inspect", "--format", "{{.Id}}", image)
+	if err != nil {
+		return fmt.Errorf("inspect image %s: %w", image, err)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(string(data)), "sha256:") {
+		return fmt.Errorf("inspect image %s: missing content digest", image)
+	}
+	return nil
+}
+
 func (c *Client) Create(ctx context.Context, spec Spec) (string, error) {
 	if spec.ID == "" {
 		return "", errors.New("job ID is required")

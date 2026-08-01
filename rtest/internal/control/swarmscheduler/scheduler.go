@@ -25,6 +25,10 @@ func New(config Config) *Scheduler { return &Scheduler{config: config} }
 
 func (s *Scheduler) Check(ctx context.Context) error { return s.config.Client.Check(ctx) }
 
+func (s *Scheduler) ValidateImage(ctx context.Context, image string) error {
+	return s.config.Client.ValidateImage(ctx, image)
+}
+
 func (s *Scheduler) Create(ctx context.Context, job control.Job) error {
 	_, err := s.config.Client.Create(ctx, swarm.Spec{
 		ID: job.ID, Repository: job.ProjectID, Suite: "exec", Runner: "oci",
