@@ -30,8 +30,10 @@ host. BuildKit is capped separately at 3 GB. Avoid intentionally overlapping a l
 build and memory-heavy test until measurements justify a larger or additional worker.
 
 CAS data lives under `/var/lib/rtest/cas`; workspaces live under `/var/lib/rtest/jobs`;
-Go caches use Docker volumes `rtest-go-build-cache` and `rtest-go-mod-cache`; BuildKit
-uses `rtest-buildkit-state`.
+BuildKit uses `rtest-buildkit-state`. CAS and BuildKit content caches are intentionally
+shared by mutually trusted projects in the initial single-VM deployment. Control-plane
+authorization and accounting remain project-scoped, but the service does not claim cache
+confidentiality between these projects.
 
 ## Deployment and first login
 
@@ -51,11 +53,14 @@ RTEST_PROJECT_IMAGE=ghcr.io/example/ci@sha256:... \
 task deploy:service
 ```
 
-Create a separate device token for every laptop or coworker:
+Create a separate user and one-time enrollment for every coworker laptop:
 
 ```console
-rtest token create --name yacobolo-workstation --expires 2160h
-rtest login --token <one-time-secret>
+rtest admin user create --name coworker
+rtest admin member add --project leapview --user usr...
+rtest admin enrollment create --user usr... --device coworker-laptop --expires 10m
+# On the coworker's laptop; the code is read by a hidden prompt:
+rtest login
 rtest token list
 rtest token revoke <token-id>
 ```
@@ -66,6 +71,25 @@ to create coworker/project identities. No user's device token is shared.
 Terraform under `infra/` provisions an optional dedicated Hetzner worker and firewall.
 Provisioning remains a separate explicit action; the existing-host deploy path cannot
 call HCP or Hetzner APIs.
+
+## Operation credential lifecycle and rotation
+
+Job and build certificates contain exactly one SPIFFE identity of the form
+`spiffe://rtest/<job|build>/<operation-id>`. The data-plane gateway requires TLS 1.3,
+the private rtest CA, the expected operation kind, a currently valid certificate, and an
+operation that is still active in SQLite. User tokens, GitHub session tokens, missing
+certificates, wrong-kind certificates, unknown IDs, and completed/cancelled operations
+therefore cannot reach CAS or BuildKit. The CLI writes each issued key bundle to a private
+temporary directory and removes it after the operation; it never persists the bundle in
+configuration or logs.
+
+Routine revocation is automatic: completing or cancelling the operation makes the live
+operation callback reject its certificate immediately, before its normal 15-minute expiry.
+For emergency CA rotation, schedule control-plane downtime, back up `/var/lib/rtest`, stop
+`rtest-server`, move `/var/lib/rtest/pki` to a dated root-only recovery directory, restart
+the service to generate a new CA/server identity, and redistribute the new `ca.pem` to
+client configuration. Verify control, CAS, and BuildKit TLS before deleting the recovery
+copy. Every old operation certificate becomes invalid at the gateway after the restart.
 
 ## Troubleshooting
 

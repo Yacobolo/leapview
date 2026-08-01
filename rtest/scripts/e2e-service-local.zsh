@@ -148,6 +148,7 @@ export RTEST_CONFIG="${config_file}"
 export RTEST_TOKEN="${device_token}"
 
 "${build_dir}/rtest" doctor | tee "${proof_dir}/doctor.log"
+"${build_dir}/rtest" admin project create --slug second --name 'Second E2E Project' > "${proof_dir}/second-project.json"
 coworker_json="$("${build_dir}/rtest" admin user create --name coworker)"
 print -r -- "${coworker_json}" > "${proof_dir}/coworker.json"
 coworker_id="$(print -r -- "${coworker_json}" | jq -r '.id')"
@@ -175,6 +176,7 @@ set -e
 env -u RTEST_TOKEN RTEST_CONFIG="${config_file}" "${build_dir}/rtest" logout > "${proof_dir}/coworker-logout.log"
 keychain_enrolled=false
 "${build_dir}/rtest" image activate --project example --image "${project_image}" | tee "${proof_dir}/image-activate.log"
+"${build_dir}/rtest" image activate --project second --image "${project_image}" > "${proof_dir}/second-image-activate.log"
 "${build_dir}/rtest" image activate --project example --image "${cas_image}" | tee "${proof_dir}/image-second-activate.log"
 "${build_dir}/rtest" image rollback --project example | tee "${proof_dir}/image-rollback.log"
 "${build_dir}/rtest" image history --project example > "${proof_dir}/image-history.json"
@@ -221,6 +223,12 @@ cached_seconds="$(run_remote_test "${proof_dir}/cached-run.log")"
 cached_job="$(grep -E '^Job: (job|rtest-)' "${proof_dir}/cached-run.log" | tail -1 | awk '{print $2}')"
 grep -q 'Transfer: 0 B uploaded' "${proof_dir}/cached-run.log"
 grep -q 'REMOTE_E2E_PROOF' "${proof_dir}/cached-run.log"
+
+(
+  cd "${fixture}"
+  "${build_dir}/rtest" exec --project second -- go version
+) 2>&1 | tee "${proof_dir}/second-project-cas.log"
+grep -q 'Transfer: 0 B uploaded' "${proof_dir}/second-project-cas.log"
 
 set +e
 (
@@ -270,6 +278,57 @@ print 'FROM scratch\nCOPY proof.txt /proof.txt' > "${build_fixture}/Dockerfile"
   "${build_dir}/rtest" build -- --progress plain --output "type=local,dest=${build_output}" .
 ) 2>&1 | tee "${proof_dir}/build.log"
 cmp "${build_fixture}/proof.txt" "${build_output}/proof.txt"
+second_build_output="${fixture}/second-build-output"
+mkdir -p "${second_build_output}"
+(
+  cd "${build_fixture}"
+  "${build_dir}/rtest" build --project second -- --progress plain --output "type=local,dest=${second_build_output}" .
+) 2>&1 | tee "${proof_dir}/second-project-build.log"
+cmp "${build_fixture}/proof.txt" "${second_build_output}/proof.txt"
+grep -q 'CACHED' "${proof_dir}/second-project-build.log"
+
+cancel_build_fixture="${fixture}/cancel-build-proof"
+mkdir -p "${cancel_build_fixture}"
+print 'FROM alpine:3.22.1\nRUN echo BUILD_CANCEL_PROOF_STARTED; sleep 60' > "${cancel_build_fixture}/Dockerfile"
+(
+  cd "${cancel_build_fixture}"
+  exec "${build_dir}/rtest" build -- --progress plain .
+) > "${proof_dir}/cancel-build.log" 2>&1 &
+cancel_build_pid=$!
+for attempt in {1..120}; do
+  if grep -q 'BUILD_CANCEL_PROOF_STARTED' "${proof_dir}/cancel-build.log"; then
+    break
+  fi
+  if ! kill -0 "${cancel_build_pid}" >/dev/null 2>&1; then
+    print -u2 'BuildKit cancellation proof stopped before reaching the long-running step'
+    tail -100 "${proof_dir}/cancel-build.log" >&2
+    exit 1
+  fi
+  if [[ ${attempt} -eq 120 ]]; then
+    print -u2 'BuildKit cancellation proof did not reach the long-running step'
+    exit 1
+  fi
+  sleep 0.25
+done
+kill -INT "${cancel_build_pid}"
+set +e
+wait "${cancel_build_pid}"
+cancel_build_exit=$?
+set -e
+[[ ${cancel_build_exit} -ne 0 ]] || { print -u2 'cancelled BuildKit build unexpectedly succeeded'; exit 1; }
+cancel_build="$(grep -E '^Build: bld' "${proof_dir}/cancel-build.log" | tail -1 | awk '{print $2}')"
+[[ -n "${cancel_build}" ]] || { print -u2 'cancelled BuildKit build ID was not recorded'; exit 1; }
+for attempt in {1..40}; do
+  cancel_build_status="$(sqlite3 "${data_dir}/control/control.db" "SELECT status FROM control_builds WHERE id='${cancel_build}'")"
+  if [[ "${cancel_build_status}" == "cancelled" ]]; then
+    break
+  fi
+  if [[ ${attempt} -eq 40 ]]; then
+    print -u2 "BuildKit cancellation status is ${cancel_build_status:-missing}, expected cancelled"
+    exit 1
+  fi
+  sleep 0.25
+done
 
 "${build_dir}/rtest" list --project example --json > "${proof_dir}/list.json"
 for attempt in {1..80}; do
@@ -287,10 +346,10 @@ done
 jq -n \
   --arg completed "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --arg first_job "${first_job}" --arg cached_job "${cached_job}" --arg timeout_job "${timeout_job}" --arg cancel_job "${cancel_job}" \
-  --arg queue_first_job "${queue_first_job}" --arg queue_second_job "${queue_second_job}" \
+  --arg queue_first_job "${queue_first_job}" --arg queue_second_job "${queue_second_job}" --arg cancel_build "${cancel_build}" \
   --arg project_image "${project_image}" \
   --argjson first_seconds "${first_seconds}" --argjson cached_seconds "${cached_seconds}" \
-  '{completed_at:$completed,backend:"connect-https+reapi-cas+docker-swarm+buildkit",project_image:$project_image,first_job:$first_job,cached_job:$cached_job,timeout_job:$timeout_job,cancel_job:$cancel_job,queue_first_job:$queue_first_job,queue_second_job:$queue_second_job,first_seconds:$first_seconds,cached_seconds:$cached_seconds,generic_oci:true,repository_project_discovery:true,project_image_lifecycle:true,image_default_resolution:true,image_validation:true,image_rollback:true,image_history:true,image_override_policy:true,image_build_push_activate_execute:true,connect_https:true,device_token:true,one_time_device_enrollment:true,os_keychain_storage:true,enrollment_single_use:true,independent_device_revocation:true,logout:true,job_scoped_cas_mtls:true,build_scoped_buildkit_mtls:true,testcontainers:true,dirty_worktree:true,incremental_cas:true,timeout:true,cancellation:true,capacity_queue:true}' \
+  '{completed_at:$completed,backend:"connect-https+reapi-cas+docker-swarm+buildkit",project_image:$project_image,first_job:$first_job,cached_job:$cached_job,timeout_job:$timeout_job,cancel_job:$cancel_job,cancel_build:$cancel_build,queue_first_job:$queue_first_job,queue_second_job:$queue_second_job,first_seconds:$first_seconds,cached_seconds:$cached_seconds,generic_oci:true,repository_project_discovery:true,project_image_lifecycle:true,image_default_resolution:true,image_validation:true,image_rollback:true,image_history:true,image_override_policy:true,image_build_push_activate_execute:true,connect_https:true,device_token:true,one_time_device_enrollment:true,os_keychain_storage:true,enrollment_single_use:true,independent_device_revocation:true,logout:true,job_scoped_cas_mtls:true,build_scoped_buildkit_mtls:true,two_project_shared_cas:true,two_project_shared_buildkit_cache:true,buildkit_cancellation:true,testcontainers:true,dirty_worktree:true,incremental_cas:true,timeout:true,cancellation:true,capacity_queue:true}' \
   > "${proof_dir}/proof.json"
 
 print "shared-service E2E passed: cached ${cached_seconds}s (first ${first_seconds}s)"

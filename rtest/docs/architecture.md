@@ -123,6 +123,9 @@ individual REAPI methods or enforce a project namespace within that active conne
 Because CAS digests are capabilities, this is acceptable only for the current mutually
 trusted POC projects. Before onboarding projects that require confidentiality from each
 other, add a gRPC-aware method/root authorizer or isolated per-project CAS namespaces.
+The shared-cache contract is exercised with two independently authorized projects: the
+second project transfers zero already-present CAS bytes and reuses a BuildKit layer while
+retaining separate control-plane job/build records.
 
 ## Execution flow
 
