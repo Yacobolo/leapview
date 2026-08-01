@@ -53,6 +53,24 @@ func TestParseExecAllowsServerOwnedDefaultImage(t *testing.T) {
 	}
 }
 
+func TestDefaultExecWorkingDirectoryFollowsInvocationDirectory(t *testing.T) {
+	root := t.TempDir()
+	nested := filepath.Join(root, "services", "api")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := defaultExecWorkingDirectory(root, nested)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != filepath.Join("services", "api") {
+		t.Fatalf("working directory = %q", got)
+	}
+	if got, err := defaultExecWorkingDirectory(root, root); err != nil || got != "." {
+		t.Fatalf("root working directory = %q, err = %v", got, err)
+	}
+}
+
 func TestImageActivateUsesRepositoryProjectAndPinnedImage(t *testing.T) {
 	service := &projectListService{projects: []*rtestv1.Project{{Id: "prj1", Slug: "example", Name: "Example"}}}
 	client, closeServer := testServiceClient(t, service)

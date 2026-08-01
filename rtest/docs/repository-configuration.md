@@ -44,6 +44,10 @@ rtest exec --workdir services/api --env CI=true -- npm test
 rtest build -- --push -t ghcr.io/example/service:sha .
 ```
 
+`rtest exec` preserves the caller's directory relative to the Git worktree, so invoking it
+from a nested module runs there remotely. `--workdir` remains available when a command
+should deliberately run somewhere else in the uploaded worktree.
+
 The server-side project owns its default runner image. An administrator can activate an
 existing digest, build and activate from a normal Dockerfile, inspect history, or roll back:
 

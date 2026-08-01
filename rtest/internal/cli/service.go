@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -364,6 +365,12 @@ func serviceExec(ctx context.Context, api rtestv1connect.ControlServiceClient, s
 	if err != nil {
 		return fail(streams.Stderr, err)
 	}
+	if options.workdir == "" {
+		options.workdir, err = defaultExecWorkingDirectory(root, streams.Dir)
+		if err != nil {
+			return fail(streams.Stderr, err)
+		}
+	}
 	files, err := workspace.Files(ctx, root)
 	if err != nil {
 		return fail(streams.Stderr, err)
@@ -408,7 +415,7 @@ func serviceExec(ctx context.Context, api rtestv1connect.ControlServiceClient, s
 func parseExec(settings config.Config, project string, args []string) (execOptions, error) {
 	options := execOptions{
 		project: project, image: settings.Service.Image, cpus: settings.Service.CPUs,
-		memory: settings.Service.Memory, workdir: ".", timeout: 30 * time.Minute, environment: map[string]string{},
+		memory: settings.Service.Memory, timeout: 30 * time.Minute, environment: map[string]string{},
 	}
 	for len(args) > 0 && args[0] != "--" {
 		switch args[0] {
@@ -456,6 +463,25 @@ func parseExec(settings config.Config, project string, args []string) (execOptio
 		return execOptions{}, errors.New("project selection is required")
 	}
 	return options, nil
+}
+
+func defaultExecWorkingDirectory(root, directory string) (string, error) {
+	absoluteRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", fmt.Errorf("resolve repository root: %w", err)
+	}
+	absoluteDirectory, err := filepath.Abs(directory)
+	if err != nil {
+		return "", fmt.Errorf("resolve invocation directory: %w", err)
+	}
+	relative, err := filepath.Rel(absoluteRoot, absoluteDirectory)
+	if err != nil {
+		return "", fmt.Errorf("resolve invocation directory: %w", err)
+	}
+	if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", errors.New("invocation directory is outside the Git worktree")
+	}
+	return filepath.ToSlash(relative), nil
 }
 
 func serviceImage(ctx context.Context, api rtestv1connect.ControlServiceClient, settings config.Config, project string, args []string, streams IO) int {
